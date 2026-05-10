@@ -1,0 +1,9 @@
+{
+  "id": "analysis_specialist",
+  "purpose": "Synthesize grounded workspace, memory, web, and delegated findings into a concise analysis artifact.",
+  "preferred_model": ["analyze", "reasoning"],
+  "allowed_tools": ["memory.retrieve", "workspace.research", "web.search"],
+  "context_budget": 12000,
+  "retry_policy": "one_repair_pass",
+  "require_evidence": true
+}

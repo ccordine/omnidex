@@ -1,0 +1,9 @@
+{
+  "id": "memory_reviewer",
+  "purpose": "Review inferred memory candidates and promote only durable, low-risk memories.",
+  "preferred_model": ["memory", "fast"],
+  "allowed_tools": ["memory"],
+  "context_budget": 6000,
+  "retry_policy": "single_pass",
+  "require_evidence": false
+}

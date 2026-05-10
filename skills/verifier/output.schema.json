@@ -1,0 +1,1 @@
+{"type":"object","required":["verdict"],"properties":{"verdict":{"type":"string"},"supported_claims":{"type":"array","items":{"type":"string"}},"unsupported_claims":{"type":"array","items":{"type":"string"}},"recommended_actions":{"type":"array","items":{"type":"string"}}}}

@@ -1,0 +1,13 @@
+{
+  "id": "memory_retriever",
+  "purpose": "Retrieve and rank relevant memory without turning historical context into execution evidence.",
+  "preferred_model": ["memory", "fast"],
+  "allowed_tools": ["memory.retrieve"],
+  "forbidden_tools": ["web.search", "workspace.research", "shell_exec"],
+  "context_budget": 9000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
+  "stop_conditions": ["relevant memory is ranked", "stale memory is not overstated"],
+  "retry_policy": "single_pass",
+  "require_evidence": true
+}

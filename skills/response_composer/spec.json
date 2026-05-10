@@ -1,0 +1,13 @@
+{
+  "id": "response_composer",
+  "purpose": "Compose the final user-facing answer from verified analysis and evidence without inventing unsupported claims.",
+  "preferred_model": ["responder", "reasoning"],
+  "allowed_tools": [],
+  "forbidden_tools": ["shell_exec", "web_search", "workspace"],
+  "context_budget": 10000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
+  "stop_conditions": ["all required claims are supported", "tone matches system policy"],
+  "retry_policy": "one_repair_pass",
+  "require_evidence": true
+}

@@ -1,0 +1,11 @@
+{
+  "id": "subtask_executor",
+  "purpose": "Execute a bounded delegated subtask and return a compact grounded result.",
+  "preferred_model": ["fast", "analyze"],
+  "allowed_tools": ["workspace.research", "memory.retrieve", "web.search"],
+  "context_budget": 8000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
+  "retry_policy": "single_pass",
+  "require_evidence": true
+}

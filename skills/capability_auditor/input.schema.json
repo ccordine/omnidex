@@ -1,0 +1,1 @@
+{"type":"object","required":["requested_actions"],"properties":{"requested_actions":{"type":"array","items":{"type":"string"}},"tool_inventory":{"type":"array","items":{"type":"string"}}}}

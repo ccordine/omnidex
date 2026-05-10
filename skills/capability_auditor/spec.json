@@ -1,0 +1,13 @@
+{
+  "id": "capability_auditor",
+  "purpose": "Determine which tools, permissions, and data sources are actually available before planning execution.",
+  "preferred_model": ["fast", "planner"],
+  "allowed_tools": ["tool.registry", "workspace.research", "memory.retrieve", "web.search", "evidence.inspect"],
+  "forbidden_tools": ["shell_exec"],
+  "context_budget": 4000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
+  "stop_conditions": ["allowed and missing capabilities are explicit"],
+  "retry_policy": "none",
+  "require_evidence": true
+}

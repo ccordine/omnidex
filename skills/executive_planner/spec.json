@@ -1,0 +1,13 @@
+{
+  "id": "executive_planner",
+  "purpose": "Break a user objective into bounded subtasks with success criteria and explicit constraints.",
+  "preferred_model": ["reasoning", "planner"],
+  "allowed_tools": ["memory.retrieve", "workspace.research", "web.search"],
+  "forbidden_tools": ["shell_exec", "media_control"],
+  "context_budget": 12000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
+  "stop_conditions": ["plan is valid", "subtasks are bounded", "success criteria are present"],
+  "retry_policy": "one_repair_pass",
+  "require_evidence": false
+}

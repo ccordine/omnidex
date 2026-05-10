@@ -1,0 +1,88 @@
+services:
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LISTEN_ADDR: ${LISTEN_ADDR:-:8090}
+      WRAPPER_ONLY: ${WRAPPER_ONLY:-false}
+      DATABASE_URL: ${DATABASE_URL:-postgres://agent:agent@postgres:5432/agent?sslmode=disable}
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_ORGANIZATION: ${OPENAI_ORGANIZATION:-}
+      OPENAI_PROJECT: ${OPENAI_PROJECT:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      OLLAMA_MODEL_FAST: ${OLLAMA_MODEL_FAST:-llama3.2}
+      OLLAMA_MODEL_REASONING: ${OLLAMA_MODEL_REASONING:-llama3.2}
+      OLLAMA_MODEL_TAGGER: ${OLLAMA_MODEL_TAGGER:-llama3.2}
+      OLLAMA_MODEL_PLANNER: ${OLLAMA_MODEL_PLANNER:-llama3.2}
+      OLLAMA_MODEL_ANALYZER: ${OLLAMA_MODEL_ANALYZER:-llama3.2}
+      OLLAMA_MODEL_RESPONDER: ${OLLAMA_MODEL_RESPONDER:-llama3.2}
+      OLLAMA_MODEL_SEARCH: ${OLLAMA_MODEL_SEARCH:-llama3.2}
+      OLLAMA_MODEL_MEMORY: ${OLLAMA_MODEL_MEMORY:-llama3.2}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-true}
+      WEB_SEARCH_PROVIDERS: ${WEB_SEARCH_PROVIDERS:-yahoo,google,reddit}
+      WEB_SEARCH_TIMEOUT: ${WEB_SEARCH_TIMEOUT:-15s}
+      WEB_SEARCH_PER_SOURCE_BUDGET: ${WEB_SEARCH_PER_SOURCE_BUDGET:-3000}
+      WEB_SEARCH_TOTAL_BUDGET: ${WEB_SEARCH_TOTAL_BUDGET:-6000}
+      WORKSPACE_SCAN_ENABLED: ${WORKSPACE_SCAN_ENABLED:-true}
+      WORKSPACE_ROOT: ${WORKSPACE_ROOT:-/workspace}
+      WORKSPACE_MAX_FILES: ${WORKSPACE_MAX_FILES:-5000}
+      WORKSPACE_CONTEXT_BUDGET: ${WORKSPACE_CONTEXT_BUDGET:-6000}
+      STOP_ON_SUFFICIENT_CONTEXT: ${STOP_ON_SUFFICIENT_CONTEXT:-true}
+      SUFFICIENT_CONTEXT_CHARS: ${SUFFICIENT_CONTEXT_CHARS:-1400}
+      MEMORY_INFERENCE_ENABLED: ${MEMORY_INFERENCE_ENABLED:-true}
+      MEMORY_INFERENCE_MAX_ITEMS: ${MEMORY_INFERENCE_MAX_ITEMS:-3}
+      WORKER_COUNT: ${WORKER_COUNT:-3}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-2s}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-90s}
+      RETRIEVAL_LIMIT: ${RETRIEVAL_LIMIT:-8}
+      CONTEXT_CHAR_BUDGET: ${CONTEXT_CHAR_BUDGET:-4000}
+      HALLUCINATION_RETRY_LIMIT: ${HALLUCINATION_RETRY_LIMIT:-2}
+      OLLAMA_RESTART_COMMAND: ${OLLAMA_RESTART_COMMAND:-}
+      OLLAMA_RESTART_TIMEOUT: ${OLLAMA_RESTART_TIMEOUT:-20s}
+      MIGRATE_ON_STARTUP: ${MIGRATE_ON_STARTUP:-true}
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${HOST_WORKSPACE_PATH:-../}:/workspace:ro
+    networks:
+      - omnidex-internal
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: agent
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - omnidex-internal
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+networks:
+  omnidex-internal:
+    driver: bridge

@@ -1,0 +1,9 @@
+{
+  "id": "web_researcher",
+  "purpose": "Fetch real pages from search results and return source-grounded evidence.",
+  "preferred_model": ["search", "fast"],
+  "allowed_tools": ["web.search"],
+  "context_budget": 9000,
+  "retry_policy": "provider_fallback",
+  "require_evidence": true
+}

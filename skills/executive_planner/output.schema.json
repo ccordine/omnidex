@@ -1,0 +1,1 @@
+{"type":"object","required":["goal","subtasks"],"properties":{"goal":{"type":"string"},"subtasks":{"type":"array","items":{"type":"object","required":["id","kind","objective"]}}}}

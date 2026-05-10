@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "required": ["summary", "items"],
+  "properties": {
+    "summary": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "content", "tags", "score"],
+        "properties": {
+          "id": { "type": "integer" },
+          "kind": { "type": "string" },
+          "content": { "type": "string" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "score": { "type": "number" }
+        }
+      }
+    }
+  }
+}

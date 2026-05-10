@@ -1,0 +1,1 @@
+{"type":"object","required":["allowed_tools","missing_tools"],"properties":{"allowed_tools":{"type":"array","items":{"type":"string"}},"missing_tools":{"type":"array","items":{"type":"string"}},"notes":{"type":"array","items":{"type":"string"}}}}

@@ -1,0 +1,1 @@
+{"type":"object","required":["goal"],"properties":{"goal":{"type":"string"},"constraints":{"type":"array","items":{"type":"string"}},"available_capabilities":{"type":"array","items":{"type":"string"}}}}

@@ -1,0 +1,1 @@
+{"type":"object","required":["draft_response","evidence"],"properties":{"draft_response":{"type":"string"},"evidence":{"type":"array","items":{"type":"object"}},"constraints":{"type":"array","items":{"type":"string"}}}}

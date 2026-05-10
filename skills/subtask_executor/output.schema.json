@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "required": ["summary"],
+  "properties": {
+    "summary": { "type": "string" },
+    "sources": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tool_calls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "input": { "type": "object" },
+          "accepted": { "type": "boolean" },
+          "summary": { "type": "string" },
+          "output": { "type": "object" },
+          "error": { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "required": ["query"],
+  "properties": {
+    "query": { "type": "string" },
+    "limit": { "type": "integer" },
+    "scope_tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "project_tag": { "type": "string" },
+    "session_tag": { "type": "string" }
+  }
+}

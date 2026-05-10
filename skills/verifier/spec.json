@@ -1,0 +1,13 @@
+{
+  "id": "verifier",
+  "purpose": "Evaluate whether claims are supported, constraints were respected, and more work is required.",
+  "preferred_model": ["reasoning", "analyzer"],
+  "allowed_tools": ["evidence.inspect"],
+  "forbidden_tools": ["web_search", "shell_exec"],
+  "context_budget": 12000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
+  "stop_conditions": ["supported claims are accounted for", "unsupported claims are listed"],
+  "retry_policy": "one_repair_pass",
+  "require_evidence": true
+}

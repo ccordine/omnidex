@@ -1,0 +1,9 @@
+{
+  "id": "workspace_researcher",
+  "purpose": "Extract language-aware workspace evidence, symbols, and relevant file excerpts.",
+  "preferred_model": ["fast", "analyze"],
+  "allowed_tools": ["workspace.research"],
+  "context_budget": 10000,
+  "retry_policy": "single_pass",
+  "require_evidence": true
+}
