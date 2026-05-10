@@ -457,6 +457,10 @@ func runChat(c *client.Client, args []string) {
 	shellState := &localShellState{}
 	var pendingAction *chatActionCandidate
 	ui := newChatUI()
+	restorePermissionPrompt := installPermissionPromptFunc(func(key, reason, storePath, description string) (bool, error) {
+		return promptChatPermissionDecision(input, ui, key, reason, storePath, description)
+	})
+	defer restorePermissionPrompt()
 	ui.printBanner(session, architectMode)
 
 	for {
@@ -1164,6 +1168,58 @@ func executeConfirmedChatAction(
 	}
 }
 
+func promptChatPermissionDecision(input *chatInputReader, ui *chatUI, key, reason, storePath, description string) (bool, error) {
+	reason = strings.TrimSpace(reason)
+	description = strings.TrimSpace(description)
+	if ui != nil {
+		emitSystem(ui, "permission required:")
+		emitSystem(ui, "  key: "+key)
+		if description != "" {
+			emitSystem(ui, "  description: "+description)
+		}
+		if reason != "" {
+			emitSystem(ui, "  reason: "+reason)
+		}
+		if strings.TrimSpace(storePath) != "" {
+			emitSystem(ui, "  store: "+storePath)
+		}
+	} else {
+		fmt.Println("permission required:")
+		fmt.Println("  key: " + key)
+		if description != "" {
+			fmt.Println("  description: " + description)
+		}
+		if reason != "" {
+			fmt.Println("  reason: " + reason)
+		}
+		if strings.TrimSpace(storePath) != "" {
+			fmt.Println("  store: " + storePath)
+		}
+	}
+	for {
+		fmt.Print("allow and save this permission? [y/n]: ")
+		line, eof, err := input.readBlocking()
+		if err != nil {
+			return false, err
+		}
+		if eof {
+			return false, fmt.Errorf("permission prompt closed before answer for %s", key)
+		}
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true, nil
+		case "n", "no":
+			return false, nil
+		default:
+			if ui != nil {
+				emitSystem(ui, "please answer y or n")
+			} else {
+				fmt.Println("please answer y or n")
+			}
+		}
+	}
+}
+
 func runDeterministicLocalActionReview(
 	c *client.Client,
 	input *chatInputReader,
@@ -1251,6 +1307,22 @@ func buildDeterministicLocalActionReviewPrompt(candidate *chatActionCandidate, a
 	return strings.Join(lines, "\n")
 }
 
+func isDeterministicLocalActionReviewPrompt(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), "Deterministic post-action review step")
+}
+
+func isLikelyCoreUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "connection refused") ||
+		strings.Contains(text, "no such host") ||
+		strings.Contains(text, "context deadline exceeded") ||
+		strings.Contains(text, "client.timeout") ||
+		strings.Contains(text, "connection reset")
+}
+
 func executeChatCoreTurn(
 	c *client.Client,
 	input *chatInputReader,
@@ -1282,6 +1354,10 @@ func executeChatCoreTurn(
 
 	job, err := c.Enqueue(context.Background(), line, model.PipelineChat, turnMetadata)
 	if err != nil {
+		if isDeterministicLocalActionReviewPrompt(line) && isLikelyCoreUnavailableError(err) {
+			emitSystem(ui, "core service unavailable; skipped deterministic post-action review after local action")
+			return false
+		}
 		fmt.Fprintf(os.Stderr, "error enqueueing turn: %v\n", err)
 		return false
 	}

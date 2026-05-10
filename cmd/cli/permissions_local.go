@@ -54,6 +54,31 @@ var (
 	permissionManagerInst *permissionManager
 )
 
+type permissionPromptFunc func(key, reason, storePath, description string) (bool, error)
+
+var (
+	permissionPromptOverrideMu sync.RWMutex
+	permissionPromptOverride   permissionPromptFunc
+)
+
+func installPermissionPromptFunc(fn permissionPromptFunc) func() {
+	permissionPromptOverrideMu.Lock()
+	previous := permissionPromptOverride
+	permissionPromptOverride = fn
+	permissionPromptOverrideMu.Unlock()
+	return func() {
+		permissionPromptOverrideMu.Lock()
+		permissionPromptOverride = previous
+		permissionPromptOverrideMu.Unlock()
+	}
+}
+
+func currentPermissionPromptFunc() permissionPromptFunc {
+	permissionPromptOverrideMu.RLock()
+	defer permissionPromptOverrideMu.RUnlock()
+	return permissionPromptOverride
+}
+
 var knownPermissionDescriptions = map[string]string{
 	permissionKeyMediaControl:    "Control local media playback and open files in VLC/player.",
 	permissionKeyMediaRead:       "Read local media player metadata (title, path, playback timestamp).",
@@ -302,6 +327,9 @@ func writePermissionRegistry(path string, state permissionRegistry) error {
 func promptPermissionDecision(key, reason, storePath string) (bool, error) {
 	reason = strings.TrimSpace(reason)
 	description := strings.TrimSpace(knownPermissionDescriptions[key])
+	if fn := currentPermissionPromptFunc(); fn != nil {
+		return fn(key, reason, storePath, description)
+	}
 
 	reader, writer, closer, err := openPermissionPromptIO()
 	if err != nil {

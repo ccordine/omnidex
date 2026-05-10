@@ -1,6 +1,6 @@
 module github.com/gryph/omnidex
 
-go 1.24.1
+go 1.23
 
 require (
 	github.com/jackc/pgx/v5 v5.8.0
