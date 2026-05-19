@@ -265,6 +265,148 @@ func TestStructuredCommandDecisionCanAskUserAndContinue(t *testing.T) {
 	}
 }
 
+func TestStructuredCommandDecisionAskWithCommandRunsAfterApproval(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'blocked first\n' >&2; exit 1","done":false,"answer":""}`,
+		`{"command":"printf 'ran approved command\n'","done":false,"answer":"","ask":true,"question":"Proceed with creating the requested project directory?"}`,
+		`{"command":"","done":true,"answer":"ran approved command"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	asked := []string{}
+
+	result, err := RunStructuredCommandDecisionWithEventsAndAsk(
+		context.Background(),
+		"Create the requested project.",
+		client,
+		stdout,
+		stderr,
+		nil,
+		func(ctx context.Context, question string) (string, error) {
+			asked = append(asked, question)
+			return "yes", nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 {
+		t.Fatalf("asked = %#v, want one approval", asked)
+	}
+	if !strings.Contains(stdout.String(), "ran approved command") {
+		t.Fatalf("approval-gated command did not run: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if len(result.Observations) != 3 {
+		t.Fatalf("observations = %#v, want failed command + user answer + approved command", result.Observations)
+	}
+	if result.Observations[1].Question == "" || result.Observations[2].Command == "" {
+		t.Fatalf("expected user answer followed by command observation: %#v", result.Observations)
+	}
+}
+
+func TestStructuredCommandDecisionReusesRepeatedApprovalQuestionWithCommand(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'blocked first\n' >&2; exit 1","done":false,"answer":""}`,
+		`{"command":"","done":false,"answer":"","ask":true,"question":"Proceed with creating the requested project directory?"}`,
+		`{"command":"printf 'created after reused approval\n'","done":false,"answer":"","ask":true,"question":"Proceed with creating the requested project directory?"}`,
+		`{"command":"","done":true,"answer":"created after reused approval"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	askCount := 0
+
+	result, err := RunStructuredCommandDecisionWithEventsAndAsk(
+		context.Background(),
+		"Create the requested project.",
+		client,
+		stdout,
+		stderr,
+		nil,
+		func(ctx context.Context, question string) (string, error) {
+			askCount++
+			return "yes", nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if askCount != 1 {
+		t.Fatalf("askCount = %d, want repeated question reused", askCount)
+	}
+	if !strings.Contains(stdout.String(), "created after reused approval") {
+		t.Fatalf("reused approval command did not run: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if result.Answer != "created after reused approval" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionIncludesRecentConversationForFollowups(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'Pattaya rain chance from history\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Using prior location Pattaya, Thailand."}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	history := []Message{
+		{Role: "user", Content: "what is the weather in Pattaya Thailand today?"},
+		{Role: "assistant", Content: "The weather in Pattaya, Thailand today is Partly Cloudy with temperatures ranging from +31°C to +36°C."},
+	}
+
+	result, err := RunStructuredCommandDecisionWithHistoryEventsAndAsk(
+		context.Background(),
+		"Will it rain there today?",
+		history,
+		client,
+		stdout,
+		stderr,
+		nil,
+		func(ctx context.Context, question string) (string, error) {
+			t.Fatalf("should use recent conversation instead of asking: %q", question)
+			return "", nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(client.prompts[0], "recent_conversation") || !strings.Contains(client.prompts[0], "Pattaya") {
+		t.Fatalf("structured prompt missing conversation history: %s", client.prompts[0])
+	}
+	if !strings.Contains(stdout.String(), "Pattaya rain chance") {
+		t.Fatalf("history-resolved command did not run: stdout=%q", stdout.String())
+	}
+	if !strings.Contains(result.Answer, "Pattaya") {
+		t.Fatalf("answer should preserve resolved location: %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsPlaceholderAngleBracketCommand(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"curl -s wttr.in/<location> | grep Sunny","done":false,"answer":""}`,
+		`{"command":"printf 'used concrete location\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"used concrete location"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "The weather where will be sunny?", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 3 {
+		t.Fatalf("llm calls = %d, want placeholder rejection and retry", client.calls)
+	}
+	if len(result.Observations) < 2 || !strings.Contains(result.Observations[0].Stderr, "placeholder angle-bracket") {
+		t.Fatalf("first observation should reject placeholder command: %#v", result.Observations)
+	}
+	if strings.Contains(stderr.String(), "syntax error") {
+		t.Fatalf("placeholder command reached bash: stderr=%q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "used concrete location") {
+		t.Fatalf("retry command did not run: stdout=%q", stdout.String())
+	}
+}
+
 func TestStructuredCommandDecisionRejectsAskBeforeCommandObservation(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":false,"answer":"","ask":true,"question":"Should I inspect this system?"}`,
@@ -605,7 +747,7 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 }
 
 func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *testing.T) {
-	message := buildStructuredCommandUserMessage("make a project", nil)
+	message := buildStructuredCommandUserMessage("make a project", nil, nil)
 	if !strings.Contains(message, `"must_return_command":true`) {
 		t.Fatalf("message missing must_return_command=true: %s", message)
 	}
@@ -619,7 +761,7 @@ func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *t
 		t.Fatalf("message missing command outcome counts: %s", message)
 	}
 
-	message = buildStructuredCommandUserMessage("make a project", []StructuredCommandObservation{{
+	message = buildStructuredCommandUserMessage("make a project", nil, []StructuredCommandObservation{{
 		Step:     1,
 		Command:  "mkdir -p /tmp/example",
 		ExitCode: 0,

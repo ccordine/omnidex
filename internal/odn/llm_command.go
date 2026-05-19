@@ -97,6 +97,10 @@ func RunStructuredCommandDecisionWithEvents(ctx context.Context, prompt string, 
 }
 
 func RunStructuredCommandDecisionWithEventsAndAsk(ctx context.Context, prompt string, client CommandDecisionClient, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc) (CommandDecisionResult, error) {
+	return RunStructuredCommandDecisionWithHistoryEventsAndAsk(ctx, prompt, nil, client, stdout, stderr, onEvent, onAsk)
+}
+
+func RunStructuredCommandDecisionWithHistoryEventsAndAsk(ctx context.Context, prompt string, history []Message, client CommandDecisionClient, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc) (CommandDecisionResult, error) {
 	if strings.TrimSpace(prompt) == "" {
 		return CommandDecisionResult{}, fmt.Errorf("prompt is empty")
 	}
@@ -112,7 +116,7 @@ func RunStructuredCommandDecisionWithEventsAndAsk(ctx context.Context, prompt st
 		emitStructuredCommandEvent(onEvent, "structured_llm_request_started", "Requesting next structured command decision", map[string]string{
 			"step": fmt.Sprintf("%d", step),
 		})
-		resp, err := client.ChatRaw(ctx, buildStructuredCommandRequest(prompt, result.Observations))
+		resp, err := client.ChatRaw(ctx, buildStructuredCommandRequest(prompt, history, result.Observations))
 		if err != nil {
 			return result, err
 		}
@@ -129,7 +133,8 @@ func RunStructuredCommandDecisionWithEventsAndAsk(ctx context.Context, prompt st
 		})
 		if payload.Ask {
 			question := strings.TrimSpace(payload.Question)
-			if !hasRealCommandObservation(result.Observations) {
+			command := strings.TrimSpace(payload.Command)
+			if !hasRealCommandObservation(result.Observations) && command == "" {
 				emitStructuredCommandEvent(onEvent, "structured_ask_rejected", "Ask rejected before real command evidence", map[string]string{
 					"step": fmt.Sprintf("%d", step),
 				})
@@ -140,7 +145,7 @@ func RunStructuredCommandDecisionWithEventsAndAsk(ctx context.Context, prompt st
 				})
 				continue
 			}
-			if latestRealCommandSucceeded(result.Observations) {
+			if latestRealCommandSucceeded(result.Observations) && command == "" {
 				emitStructuredCommandEvent(onEvent, "structured_ask_rejected", "Ask rejected after latest command success", map[string]string{
 					"step": fmt.Sprintf("%d", step),
 				})
@@ -149,6 +154,37 @@ func RunStructuredCommandDecisionWithEventsAndAsk(ctx context.Context, prompt st
 					ExitCode: 1,
 					Stderr:   "ask rejected: latest real command succeeded; continue with observed evidence, verify with another command, or finish",
 				})
+				continue
+			}
+			previousAnswer, alreadyAnswered := previousUserResponseForQuestion(result.Observations, question)
+			if alreadyAnswered {
+				emitStructuredCommandEvent(onEvent, "structured_user_input_reused", "Structured loop reused prior user input", map[string]string{
+					"step":     fmt.Sprintf("%d", step),
+					"question": truncateStructuredTimelineValue(question),
+				})
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:         step,
+					ExitCode:     0,
+					Question:     question,
+					UserResponse: previousAnswer,
+				})
+				if command != "" {
+					if err := validateStructuredCommandString(payload.Command); err != nil {
+						emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
+							"step":   fmt.Sprintf("%d", step),
+							"reason": err.Error(),
+						})
+						result.Observations = append(result.Observations, StructuredCommandObservation{
+							Step:     step,
+							ExitCode: 1,
+							Stderr:   "command rejected: " + err.Error(),
+						})
+						continue
+					}
+					if err := runStructuredPayloadCommand(ctx, step, payload.Command, stdout, stderr, onEvent, &result); err != nil {
+						return result, err
+					}
+				}
 				continue
 			}
 			if question == "" {
@@ -183,6 +219,23 @@ func RunStructuredCommandDecisionWithEventsAndAsk(ctx context.Context, prompt st
 			emitStructuredCommandEvent(onEvent, "structured_user_input_received", "Structured loop received user input", map[string]string{
 				"step": fmt.Sprintf("%d", step),
 			})
+			if command != "" {
+				if err := validateStructuredCommandString(payload.Command); err != nil {
+					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
+						"step":   fmt.Sprintf("%d", step),
+						"reason": err.Error(),
+					})
+					result.Observations = append(result.Observations, StructuredCommandObservation{
+						Step:     step,
+						ExitCode: 1,
+						Stderr:   "command rejected: " + err.Error(),
+					})
+					continue
+				}
+				if err := runStructuredPayloadCommand(ctx, step, payload.Command, stdout, stderr, onEvent, &result); err != nil {
+					return result, err
+				}
+			}
 			continue
 		}
 		if payload.Done {
@@ -238,31 +291,20 @@ func RunStructuredCommandDecisionWithEventsAndAsk(ctx context.Context, prompt st
 			})
 			continue
 		}
+		if err := validateStructuredCommandString(payload.Command); err != nil {
+			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
+				"step":   fmt.Sprintf("%d", step),
+				"reason": err.Error(),
+			})
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:     step,
+				ExitCode: 1,
+				Stderr:   "command rejected: " + err.Error(),
+			})
+			continue
+		}
 
-		var stdoutBuf bytes.Buffer
-		var stderrBuf bytes.Buffer
-		emitStructuredCommandEvent(onEvent, "structured_command_started", "Executing structured command", map[string]string{
-			"step":    fmt.Sprintf("%d", step),
-			"command": truncateStructuredTimelineValue(payload.Command),
-		})
-		exitCode, err := ExecuteStructuredCommand(ctx, payload.Command, io.MultiWriter(stdout, &stdoutBuf), io.MultiWriter(stderr, &stderrBuf))
-		result.Command = payload.Command
-		result.ExitCode = exitCode
-		result.Observations = append(result.Observations, StructuredCommandObservation{
-			Step:     step,
-			Command:  payload.Command,
-			ExitCode: exitCode,
-			Stdout:   truncateStructuredObservation(stdoutBuf.String()),
-			Stderr:   truncateStructuredObservation(stderrBuf.String()),
-		})
-		emitStructuredCommandEvent(onEvent, "structured_command_finished", "Structured command finished", map[string]string{
-			"step":      fmt.Sprintf("%d", step),
-			"command":   truncateStructuredTimelineValue(payload.Command),
-			"exit_code": fmt.Sprintf("%d", exitCode),
-			"stdout":    truncateStructuredTimelineValue(stdoutBuf.String()),
-			"stderr":    truncateStructuredTimelineValue(stderrBuf.String()),
-		})
-		if err != nil {
+		if err := runStructuredPayloadCommand(ctx, step, payload.Command, stdout, stderr, onEvent, &result); err != nil {
 			return result, err
 		}
 	}
@@ -274,6 +316,62 @@ func RunStructuredCommandDecisionWithEventsAndAsk(ctx context.Context, prompt st
 		result.ExitCode = 1
 	}
 	return result, CommandDecisionExhaustedError{MaxSteps: defaultCommandDecisionMaxSteps}
+}
+
+func runStructuredPayloadCommand(ctx context.Context, step int, command string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	emitStructuredCommandEvent(onEvent, "structured_command_started", "Executing structured command", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"command": truncateStructuredTimelineValue(command),
+	})
+	exitCode, err := ExecuteStructuredCommand(ctx, command, io.MultiWriter(stdout, &stdoutBuf), io.MultiWriter(stderr, &stderrBuf))
+	result.Command = command
+	result.ExitCode = exitCode
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:     step,
+		Command:  command,
+		ExitCode: exitCode,
+		Stdout:   truncateStructuredObservation(stdoutBuf.String()),
+		Stderr:   truncateStructuredObservation(stderrBuf.String()),
+	})
+	emitStructuredCommandEvent(onEvent, "structured_command_finished", "Structured command finished", map[string]string{
+		"step":      fmt.Sprintf("%d", step),
+		"command":   truncateStructuredTimelineValue(command),
+		"exit_code": fmt.Sprintf("%d", exitCode),
+		"stdout":    truncateStructuredTimelineValue(stdoutBuf.String()),
+		"stderr":    truncateStructuredTimelineValue(stderrBuf.String()),
+	})
+	return err
+}
+
+func previousUserResponseForQuestion(observations []StructuredCommandObservation, question string) (string, bool) {
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return "", false
+	}
+	for i := len(observations) - 1; i >= 0; i-- {
+		if strings.TrimSpace(observations[i].Question) == question && strings.TrimSpace(observations[i].UserResponse) != "" {
+			return observations[i].UserResponse, true
+		}
+	}
+	return "", false
+}
+
+func validateStructuredCommandString(command string) error {
+	lower := strings.ToLower(command)
+	for _, placeholder := range []string{
+		"<location>", "<query>", "<file>", "<filename>", "<path>", "<url>", "<number>", "<name>", "<project>",
+		"<city>", "<country>", "<timezone>", "<api_key>", "<token>", "<placeholder>",
+	} {
+		if strings.Contains(lower, placeholder) {
+			return fmt.Errorf("placeholder angle-bracket value in command")
+		}
+	}
+	if strings.Contains(lower, "your_api_key") || strings.Contains(lower, "api_key_here") {
+		return fmt.Errorf("placeholder angle-bracket value in command")
+	}
+	return nil
 }
 
 func emitStructuredCommandEvent(onEvent func(StructuredCommandEvent), eventType, summary string, details map[string]string) {
@@ -311,7 +409,7 @@ func latestRealCommandSucceeded(observations []StructuredCommandObservation) boo
 	return false
 }
 
-func buildStructuredCommandRequest(prompt string, observations []StructuredCommandObservation) OllamaChatRequest {
+func buildStructuredCommandRequest(prompt string, history []Message, observations []StructuredCommandObservation) OllamaChatRequest {
 	return OllamaChatRequest{
 		Messages: []OllamaMessage{
 			{
@@ -329,12 +427,17 @@ func buildStructuredCommandRequest(prompt string, observations []StructuredComma
 					"Use shell commands to satisfy requests; do not answer from memory when command evidence is required.",
 					"Never return an empty command when done=false.",
 					"If a command fails, the failure is recorded in observations; use that context to pivot to a different command, source, or tool.",
+					"If the user already answered a question, do not ask the same question again; use the observed user_response.",
+					"If you ask for approval and include an approval-gated command, that command may run after the user answers.",
+					"Use recent_conversation to resolve follow-up references before asking the user.",
+					"If recent_conversation contains the missing subject, location, file, project, or preference, use it in the command instead of asking.",
 					"Ask the user only when progress requires permission, credentials, sudo, destructive approval, or a choice that cannot be inferred from evidence.",
 					"Do not ask for help when another non-destructive command, public source, or local inspection can be tried.",
 					"After each command, inspect stdout/stderr/exit_code and decide whether another command is needed.",
 					"The command must be a single shell command.",
 					"Each command runs in a fresh shell; cd does not persist to the next step.",
 					"Use absolute paths or include cd in the same command that needs it.",
+					"A command that only changes directory does not help later steps; combine cd with the file creation, build, test, or verification command that needs that directory.",
 					"Use current_working_directory for project creation unless the user explicitly provided another path.",
 					"Do not create demo projects in the home directory unless the user explicitly asked for home.",
 					"Available terminal tools may include bash, curl, python3, sed, awk, grep, jq, date, uname, and package managers; discover with commands when uncertain.",
@@ -351,6 +454,7 @@ func buildStructuredCommandRequest(prompt string, observations []StructuredComma
 					"Do not use placeholder credentials.",
 					"Do not call APIs that require unavailable keys.",
 					"Never put placeholder key text in a command.",
+					"Never put placeholder angle-bracket values such as <location>, <query>, <file>, or <url> in a command.",
 					"For external facts, use public unauthenticated sources.",
 					"For timely public information, use internet commands by default.",
 					"For current, recent, latest, today, or now public facts, the first accepted command should gather live evidence from the internet.",
@@ -387,7 +491,7 @@ func buildStructuredCommandRequest(prompt string, observations []StructuredComma
 					"No markdown.",
 				}, "\n"),
 			},
-			{Role: "user", Content: buildStructuredCommandUserMessage(prompt, observations)},
+			{Role: "user", Content: buildStructuredCommandUserMessage(prompt, history, observations)},
 		},
 		Format: map[string]interface{}{
 			"type": "object",
@@ -406,9 +510,10 @@ func buildStructuredCommandRequest(prompt string, observations []StructuredComma
 	}
 }
 
-func buildStructuredCommandUserMessage(prompt string, observations []StructuredCommandObservation) string {
+func buildStructuredCommandUserMessage(prompt string, history []Message, observations []StructuredCommandObservation) string {
 	payload := struct {
 		Prompt                      string                         `json:"prompt"`
+		RecentConversation          []Message                      `json:"recent_conversation,omitempty"`
 		CurrentWorkingDirectory     string                         `json:"current_working_directory"`
 		MustReturnCommand           bool                           `json:"must_return_command"`
 		RealCommandObservationCount int                            `json:"real_command_observation_count"`
@@ -418,6 +523,7 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 		Observations                []StructuredCommandObservation `json:"observations"`
 	}{
 		Prompt:                      prompt,
+		RecentConversation:          recentStructuredConversation(history),
 		CurrentWorkingDirectory:     currentWorkingDirectoryForStructuredPrompt(),
 		MustReturnCommand:           !hasRealCommandObservation(observations),
 		RealCommandObservationCount: realCommandObservationCount(observations),
@@ -431,6 +537,30 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 		return prompt
 	}
 	return string(blob)
+}
+
+func recentStructuredConversation(history []Message) []Message {
+	if len(history) == 0 {
+		return nil
+	}
+	start := 0
+	if len(history) > maxConversationHistoryMessages {
+		start = len(history) - maxConversationHistoryMessages
+	}
+	out := make([]Message, 0, len(history)-start)
+	for _, msg := range history[start:] {
+		role := strings.TrimSpace(msg.Role)
+		content := strings.TrimSpace(msg.Content)
+		if role == "" || content == "" {
+			continue
+		}
+		out = append(out, Message{
+			Role:      role,
+			Content:   truncateStructuredObservation(content),
+			CreatedAt: msg.CreatedAt,
+		})
+	}
+	return out
 }
 
 func currentWorkingDirectoryForStructuredPrompt() string {

@@ -435,9 +435,10 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	defer stopSignal()
 	var stdoutBuf strings.Builder
 	var stderrBuf strings.Builder
-	result, execErr := RunStructuredCommandDecisionWithEventsAndAsk(
+	result, execErr := RunStructuredCommandDecisionWithHistoryEventsAndAsk(
 		signalCtx,
 		input,
+		session.Messages,
 		a.ollama,
 		&stdoutBuf,
 		&stderrBuf,
@@ -878,7 +879,7 @@ func (a *App) conversationReply(session *Session, input string) (string, string)
 	messages := make([]OllamaMessage, 0, maxConversationHistoryMessages+2)
 	messages = append(messages, OllamaMessage{
 		Role:    "system",
-		Content: MinimalOutputContract + " Practical. Current workspace: " + session.WorkspacePath + ".",
+		Content: MinimalOutputContract + " Practical. Current workspace: " + session.WorkspacePath + ". Use conversation history to answer follow-up, reflection, and recall questions before asking the user to repeat context.",
 	})
 
 	start := 0

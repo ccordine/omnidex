@@ -3,6 +3,9 @@ package odn
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +159,64 @@ func TestHandleTurnUsesStructuredLLMCommandPath(t *testing.T) {
 	}
 	if countEventsOfType(turn.Events, "structured_command_completed") != 1 {
 		t.Fatalf("missing structured command event: %#v", turn.Events)
+	}
+}
+
+func TestHandleTurnPassesSessionHistoryToStructuredCommandPath(t *testing.T) {
+	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	requests := []OllamaChatRequest{}
+	responses := []string{
+		`{"command":"printf 'history says Pattaya\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Using Pattaya from session history."}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var raw struct {
+			Messages []OllamaMessage `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			t.Fatal(err)
+		}
+		requests = append(requests, OllamaChatRequest{Messages: raw.Messages})
+		if len(requests) == 1 {
+			lastMessage := raw.Messages[len(raw.Messages)-1].Content
+			if !strings.Contains(lastMessage, "recent_conversation") || !strings.Contains(lastMessage, "Pattaya") {
+				t.Fatalf("structured request missing session history: %s", lastMessage)
+			}
+		}
+		if len(requests) > len(responses) {
+			t.Fatalf("unexpected ollama request %d", len(requests))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"model":      "fake",
+			"created_at": "2026-05-19T00:00:00Z",
+			"done":       true,
+			"message": map[string]string{
+				"role":    "assistant",
+				"content": responses[len(requests)-1],
+			},
+		})
+	}))
+	defer server.Close()
+	app.ollama = NewOllamaClient(server.URL, "fake")
+	app.runLogger, _ = NewRunLogger(t.TempDir(), "structured-history-test")
+	defer app.runLogger.Close()
+
+	session := &Session{
+		WorkspacePath: t.TempDir(),
+		WorkspaceHash: "structured-history-test",
+		Permission:    PermissionFull,
+		Messages: []Message{
+			{Role: "user", Content: "what is the weather in Pattaya Thailand today?"},
+			{Role: "assistant", Content: "The weather in Pattaya, Thailand today is Partly Cloudy with temperatures ranging from +31°C to +36°C."},
+		},
+	}
+	_, response, err := app.handleTurn(session, "The weather where will be sunny?", &activityIndicator{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(response, "history says Pattaya") {
+		t.Fatalf("response missing history-resolved command output: %q", response)
 	}
 }
 
