@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/websearch"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type App struct {
@@ -21,6 +25,9 @@ type App struct {
 	store    SessionStore
 	ollama   *OllamaClient
 	registry Registry
+	memory   *PGMemoryStore
+	pgPool   *pgxpool.Pool
+	web      WebSearchService
 
 	runLogger *RunLogger
 
@@ -35,6 +42,11 @@ func (a *App) Run(args []string) error {
 	if len(args) > 0 && args[0] == "migrate" {
 		return a.runMigrate(args[1:])
 	}
+	strictOneShot := false
+	if len(args) > 0 && args[0] == "run" {
+		strictOneShot = true
+		args = args[1:]
+	}
 	if len(args) > 0 && args[0] == "chat" {
 		args = args[1:]
 	}
@@ -43,19 +55,21 @@ func (a *App) Run(args []string) error {
 	fs.SetOutput(a.errOut)
 
 	permissionFlag := fs.String("permission", "", "permission mode: ask_permission|full_access")
-	modelFlag := fs.String("model", defaultOllamaModel, "ollama model to use for conversation + routing")
+	modelFlag := fs.String("model", defaultOllamaModel, "ollama model to use for command decisions")
 	endpointFlag := fs.String("ollama-endpoint", defaultOllamaEndpoint, "ollama chat endpoint")
 	noOllama := fs.Bool("no-ollama", false, "disable ollama calls")
 	sessionRoot := fs.String("session-root", "", "override session root directory")
 	runLogRoot := fs.String("run-log-root", "", "override run log root directory")
+	memoryDatabaseURL := fs.String("memory-database-url", "", "Postgres URL for /research memory storage")
 	skipPermissionPrompt := fs.Bool("no-permission-prompt", false, "skip startup permission prompt and keep current/default mode")
 
 	fs.Usage = func() {
-		fmt.Fprintln(a.errOut, "Usage: odn [chat] [flags]")
+		fmt.Fprintln(a.errOut, "Usage: odn [chat|run] [flags]")
 		fmt.Fprintln(a.errOut, "")
 		fmt.Fprintln(a.errOut, "Commands:")
-		fmt.Fprintln(a.errOut, "  odn          start chat loop")
-		fmt.Fprintln(a.errOut, "  odn chat     start chat loop")
+		fmt.Fprintln(a.errOut, "  odn          start chat when interactive; run one-shot when stdin is piped")
+		fmt.Fprintln(a.errOut, "  odn chat     start interactive chat")
+		fmt.Fprintln(a.errOut, "  odn run      strict stdin -> LLM JSON command -> execute")
 		fmt.Fprintln(a.errOut, "  odn migrate  run migration commands")
 		fmt.Fprintln(a.errOut, "")
 		fmt.Fprintln(a.errOut, "Flags:")
@@ -67,6 +81,19 @@ func (a *App) Run(args []string) error {
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+
+	if !*noOllama {
+		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)
+	}
+
+	if strictOneShot || !isInteractive(a.in) {
+		promptBytes, err := io.ReadAll(a.in)
+		if err != nil {
+			return fmt.Errorf("read stdin: %w", err)
+		}
+		_, err = RunStructuredCommandDecision(context.Background(), string(promptBytes), a.ollama, a.out, a.errOut)
+		return err
 	}
 
 	workspacePath, err := os.Getwd()
@@ -102,8 +129,17 @@ func (a *App) Run(args []string) error {
 		return err
 	}
 
-	if !*noOllama {
-		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)
+	a.web = websearch.New([]string{"duckduckgo", "yahoo", "google"}, 20*time.Second, 3000, 7000)
+	if dbURL := firstNonEmpty(*memoryDatabaseURL, os.Getenv("ODN_MEMORY_DATABASE_URL"), os.Getenv("DATABASE_URL")); dbURL != "" {
+		poolCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		pool, poolErr := pgxpool.New(poolCtx, dbURL)
+		cancel()
+		if poolErr != nil {
+			return fmt.Errorf("connect memory database: %w", poolErr)
+		}
+		a.pgPool = pool
+		a.memory = NewPGMemoryStore(NewPgxMemoryRunner(pool))
+		defer a.pgPool.Close()
 	}
 
 	a.runLogger, err = NewRunLogger(*runLogRoot, session.WorkspaceHash)
@@ -294,8 +330,32 @@ func (a *App) loop(session *Session) error {
 			_ = a.runLogger.Log("session", "permission_mode_changed", map[string]interface{}{"mode": session.Permission})
 			continue
 		}
+		if query, ok := researchCommandQuery(input); ok {
+			activity := a.startTurnActivity(session)
+			turn, assistantMessage, turnErr := a.handleResearchTurn(session, query)
+			activity.Stop()
+			if turnErr != nil {
+				fmt.Fprintf(a.out, "[error] %v\n", turnErr)
+				_ = a.runLogger.Log("runtime", "research_error", map[string]interface{}{"error": turnErr.Error()})
+				continue
+			}
+			session.Turns = append(session.Turns, turn)
+			session.Messages = append(session.Messages,
+				Message{Role: "user", Content: input, CreatedAt: nowUTC()},
+				Message{Role: "assistant", Content: assistantMessage, CreatedAt: nowUTC()},
+			)
+			if err := a.store.Save(session); err != nil {
+				return err
+			}
+			a.printTimeline(turn.Events)
+			fmt.Fprintf(a.out, "\nassistant> %s\n", assistantMessage)
+			continue
+		}
 
-		turn, assistantMessage, err := a.handleTurn(session, input)
+		liveTimeline := isInteractiveWriter(a.out)
+		activity := a.startTurnActivity(session)
+		turn, assistantMessage, err := a.handleTurn(session, input, activity)
+		activity.Stop()
 		if err != nil {
 			fmt.Fprintf(a.out, "[error] %v\n", err)
 			_ = a.runLogger.Log("runtime", "turn_error", map[string]interface{}{"error": err.Error()})
@@ -312,8 +372,10 @@ func (a *App) loop(session *Session) error {
 			return err
 		}
 
+		if !liveTimeline {
+			a.printTimeline(turn.Events)
+		}
 		fmt.Fprintf(a.out, "\nassistant> %s\n", assistantMessage)
-		a.printTimeline(turn.Events)
 
 		_ = a.runLogger.Log("turn", "turn_completed", map[string]interface{}{
 			"turn_id":     turn.ID,
@@ -328,60 +390,481 @@ func (a *App) loop(session *Session) error {
 	}
 }
 
-func (a *App) handleTurn(session *Session, input string) (Turn, string, error) {
-	intent := ClassifyIntent(input)
-	events := []Event{a.newEvent("intent_classified", "Intent gate completed", map[string]string{
-		"intent_classification": string(intent.Classification),
-		"confidence":            fmt.Sprintf("%.2f", intent.Confidence),
-		"reason_codes":          strings.Join(intent.ReasonCodes, ","),
-	})}
-
-	_ = a.runLogger.Log("intent", "intent_classified", map[string]interface{}{
-		"classification": intent.Classification,
-		"confidence":     intent.Confidence,
-		"reason_codes":   strings.Join(intent.ReasonCodes, ","),
-		"user_input":     input,
-	})
+func (a *App) handleTurn(session *Session, input string, activity *activityIndicator) (Turn, string, error) {
+	if objective, ok := microQueueObjective(input); ok {
+		return a.handleMicroQueueTurn(session, objective)
+	}
+	if objective, ok := managerObjective(input); ok {
+		return a.handleManagerTurn(session, objective)
+	}
 
 	turnID := fmt.Sprintf("turn_%06d", len(session.Turns)+1)
-	assistantResponse := ""
-
-	switch intent.Classification {
-	case IntentConversation:
-		message, mode := a.conversationReply(session, input)
-		assistantResponse = message
-		events = append(events, a.newEvent("conversation_completed", "Conversation response generated", map[string]string{
-			"response_mode": mode,
-		}))
-	case IntentAmbiguous:
-		assistantResponse = "I’m not fully sure whether you want discussion or execution. Clarify your goal, or say: do it."
-		events = append(events, a.newEvent("clarification_required", "Ambiguous intent blocked execution", nil))
-	case IntentExecution:
-		execCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		response, execEvents, execErr := ExecuteDeterministicPipeline(execCtx, session, input, session.Permission, a.in, a.out, a.registry, a.ollama, a.nextEventID, a.runLogger)
-		cancel()
-		events = append(events, execEvents...)
-		if execErr != nil {
-			assistantResponse = fmt.Sprintf("Execution failed: %v", execErr)
-			events = append(events, a.newEvent("execution_failed", "Execution terminated with error", map[string]string{"error": execErr.Error()}))
-			break
+	events := []Event{}
+	liveTimeline := isInteractiveWriter(a.out)
+	timelineStarted := false
+	emitEvent := func(eventType, summary string, details map[string]string) {
+		evt := a.newEvent(eventType, summary, details)
+		events = append(events, evt)
+		if !liveTimeline {
+			return
 		}
-		assistantResponse = response
-		events = append(events, a.newEvent("execution_completed", "Execution pipeline completed", nil))
+		activity.Pause()
+		if !timelineStarted {
+			fmt.Fprintln(a.out, "timeline>")
+			timelineStarted = true
+		}
+		a.printTimelineEvent(evt)
+		activity.Resume()
+	}
+	emitEvent("structured_command_started", "LLM structured command decision started", map[string]string{
+		"permission_mode": string(session.Permission),
+	})
+
+	_ = a.runLogger.Log("structured_command", "turn_started", map[string]interface{}{
+		"user_input":       input,
+		"permission_mode":  session.Permission,
+		"workspace":        session.WorkspacePath,
+		"execution_policy": "stdin_prompt_llm_json_command_execute",
+	})
+
+	if activity == nil {
+		activity = &activityIndicator{}
+	}
+	execCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	signalCtx, stopSignal := signal.NotifyContext(execCtx, os.Interrupt)
+	defer stopSignal()
+	var stdoutBuf strings.Builder
+	var stderrBuf strings.Builder
+	result, execErr := RunStructuredCommandDecisionWithEventsAndAsk(
+		signalCtx,
+		input,
+		a.ollama,
+		&stdoutBuf,
+		&stderrBuf,
+		func(evt StructuredCommandEvent) {
+			emitEvent(evt.Type, evt.Summary, evt.Details)
+		},
+		func(ctx context.Context, question string) (string, error) {
+			activity.Pause()
+			fmt.Fprintf(a.out, "\nassistant?> %s\nuser> ", question)
+			answer, err := readLineFromReader(ctx, a.in)
+			activity.Resume()
+			if err != nil {
+				return "", err
+			}
+			return strings.TrimSpace(answer), nil
+		},
+	)
+	cancel()
+
+	assistantResponse := formatStructuredCommandChatResponse(result, stdoutBuf.String(), stderrBuf.String(), "")
+	if execErr != nil {
+		assistantResponse = formatStructuredCommandChatResponse(result, stdoutBuf.String(), stderrBuf.String(), execErr.Error())
+		emitEvent("structured_command_failed", "Structured command execution failed", map[string]string{
+			"error":     execErr.Error(),
+			"command":   result.Command,
+			"exit_code": fmt.Sprintf("%d", result.ExitCode),
+			"stdout":    truncateOutput(stdoutBuf.String()),
+			"stderr":    truncateOutput(stderrBuf.String()),
+		})
+	} else {
+		emitEvent("structured_command_completed", "Structured command executed", map[string]string{
+			"command":   result.Command,
+			"exit_code": fmt.Sprintf("%d", result.ExitCode),
+			"stdout":    truncateOutput(stdoutBuf.String()),
+			"stderr":    truncateOutput(stderrBuf.String()),
+		})
 	}
 
 	turn := Turn{
 		ID:                   turnID,
 		UserInput:            input,
-		IntentClassification: intent.Classification,
-		Confidence:           intent.Confidence,
-		ReasonCodes:          sortedCopy(intent.ReasonCodes),
+		IntentClassification: IntentExecution,
+		Confidence:           1.0,
+		ReasonCodes:          []string{"structured_llm_command"},
 		Response:             assistantResponse,
 		Events:               events,
 		CreatedAt:            nowUTC(),
 	}
 
 	return turn, assistantResponse, nil
+}
+
+func (a *App) handleMicroQueueTurn(session *Session, objective string) (Turn, string, error) {
+	turnID := fmt.Sprintf("turn_%06d", len(session.Turns)+1)
+	events := []Event{a.newEvent("micro_queue_started", "Manager-manager micro job queue started", map[string]string{
+		"permission_mode": string(session.Permission),
+	})}
+
+	_ = a.runLogger.Log("micro_queue", "turn_started", map[string]interface{}{
+		"objective":       objective,
+		"permission_mode": session.Permission,
+		"workspace":       session.WorkspacePath,
+	})
+
+	var stdoutBuf strings.Builder
+	var stderrBuf strings.Builder
+	execCtx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	result, execErr := ExecuteMicroJobQueue(execCtx, objective, session.WorkspacePath, a.ollama, &stdoutBuf, &stderrBuf, DefaultMicroJobQueueConfig())
+	cancel()
+
+	if result.ProjectProfile.Summary != "" {
+		events = append(events, a.newEvent("micro_queue_project_profiled", "Project run profile created", map[string]string{
+			"summary":        result.ProjectProfile.Summary,
+			"run_commands":   strings.Join(result.ProjectProfile.RunCommands, " | "),
+			"test_commands":  strings.Join(result.ProjectProfile.TestCommands, " | "),
+			"build_commands": strings.Join(result.ProjectProfile.BuildCommands, " | "),
+		}))
+	}
+	if len(result.Jobs) > 0 {
+		events = append(events, a.newEvent("micro_queue_plan_created", "Micro job queue plan created", map[string]string{
+			"job_count": fmt.Sprintf("%d", len(result.Jobs)),
+		}))
+	}
+	for _, item := range result.Results {
+		events = append(events, a.newEvent("micro_job_completed", "Micro job completed", map[string]string{
+			"job_id":    item.Job.ID,
+			"done":      fmt.Sprintf("%t", item.Done),
+			"exit_code": fmt.Sprintf("%d", item.ExitCode),
+			"command":   truncateOutput(item.Command),
+			"error":     item.Error,
+		}))
+	}
+
+	response := formatMicroQueueResponse(result, stdoutBuf.String(), stderrBuf.String(), "")
+	if execErr != nil {
+		response = formatMicroQueueResponse(result, stdoutBuf.String(), stderrBuf.String(), execErr.Error())
+		events = append(events, a.newEvent("micro_queue_failed", "Micro job queue failed", map[string]string{"error": execErr.Error()}))
+	} else {
+		events = append(events, a.newEvent("micro_queue_completed", "Micro job queue completed", map[string]string{
+			"done":      fmt.Sprintf("%t", result.Done),
+			"jobs":      fmt.Sprintf("%d", len(result.Jobs)),
+			"completed": fmt.Sprintf("%d", len(result.Results)),
+		}))
+	}
+
+	turn := Turn{
+		ID:                   turnID,
+		UserInput:            "/micro " + objective,
+		IntentClassification: IntentExecution,
+		Confidence:           1.0,
+		ReasonCodes:          []string{"micro_job_queue"},
+		Response:             response,
+		Events:               events,
+		CreatedAt:            nowUTC(),
+	}
+	return turn, response, nil
+}
+
+func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, stderr, errText string) string {
+	lines := []string{
+		"Command: " + result.Command,
+		fmt.Sprintf("Exit code: %d", result.ExitCode),
+	}
+	if len(result.Observations) > 1 {
+		lines = append(lines, fmt.Sprintf("Attempts: %d", len(result.Observations)))
+	}
+	if strings.TrimSpace(stdout) != "" {
+		lines = append(lines, "Stdout: "+truncateOutput(stdout))
+	}
+	if strings.TrimSpace(stderr) != "" {
+		lines = append(lines, "Stderr: "+truncateOutput(stderr))
+	}
+	if strings.TrimSpace(result.Answer) != "" {
+		lines = append(lines, "Answer: "+result.Answer)
+	}
+	if strings.TrimSpace(errText) != "" {
+		lines = append(lines, "Error: "+errText)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (a *App) startTurnActivity(session *Session) *activityIndicator {
+	if session.Permission != PermissionFull || !isInteractiveWriter(a.out) {
+		return &activityIndicator{}
+	}
+	return startActivityIndicator(a.out, "working")
+}
+
+func readLineFromReader(ctx context.Context, reader io.Reader) (string, error) {
+	type stringReader interface {
+		ReadString(delim byte) (string, error)
+	}
+	if sr, ok := reader.(stringReader); ok {
+		return readLineWithContext(ctx, sr)
+	}
+	return readLineWithContext(ctx, bufio.NewReader(reader))
+}
+
+func readLineWithContext(ctx context.Context, reader interface {
+	ReadString(delim byte) (string, error)
+}) (string, error) {
+	type result struct {
+		line string
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		line, err := reader.ReadString('\n')
+		done <- result{line: line, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-done:
+		if res.err != nil && res.err != io.EOF {
+			return "", res.err
+		}
+		return res.line, nil
+	}
+}
+
+func (a *App) ollamaModelName() string {
+	if a.ollama == nil {
+		return "disabled"
+	}
+	return a.ollama.Model
+}
+
+func (a *App) planContextForTurn(ctx context.Context, input string) (ContextToolPlan, []Event) {
+	plan, err := PlanContextTools(ctx, a.ollama, input)
+	events := []Event{a.newEvent("context_plan_created", "Context tool plan created", map[string]string{
+		"tools":  strings.Join(plan.Tools, ","),
+		"reason": plan.Reason,
+	})}
+	if err != nil {
+		events = append(events, a.newEvent("context_plan_failed", "Context tool planner fell back to default", map[string]string{"error": err.Error()}))
+	}
+	return plan, events
+}
+
+func (a *App) autoResearchForTurn(ctx context.Context, input string, plan ContextToolPlan) ([]Event, *CommandObservation) {
+	if !plan.NeedsWebResearch {
+		return nil, nil
+	}
+	query := strings.TrimSpace(input)
+	if query == "" {
+		return nil, nil
+	}
+	events := []Event{}
+	events = append(events, a.newEvent("auto_research_started", "Automatic web research started", map[string]string{"query": query}))
+	if a.web == nil {
+		events = append(events, a.newEvent("auto_research_skipped", "Web search service is unavailable", nil))
+		return events, nil
+	}
+	searchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	results, err := a.web.SearchAll(searchCtx, query)
+	if err != nil {
+		events = append(events, a.newEvent("auto_research_failed", "Automatic web research failed", map[string]string{"error": err.Error()}))
+		return events, nil
+	}
+	contextText := websearch.BuildContext(results, 5000)
+	if strings.TrimSpace(contextText) == "" {
+		events = append(events, a.newEvent("auto_research_failed", "Automatic web research returned empty context", nil))
+		return events, nil
+	}
+	events = append(events, a.newEvent("auto_research_completed", "Automatic web research context captured", map[string]string{
+		"query":   query,
+		"results": fmt.Sprintf("%d", len(results)),
+	}))
+
+	if a.memory != nil {
+		if result, storeErr := ResearchWebToMemory(ctx, query, staticWebSearchResults{results: results}, a.memory, WebResearchMemoryConfig{
+			AgentID: "odn_auto_researcher",
+			Tags:    researchTagsFromQuery(query),
+		}); storeErr != nil {
+			events = append(events, a.newEvent("auto_research_memory_failed", "Automatic research memory write failed", map[string]string{"error": storeErr.Error()}))
+		} else {
+			events = append(events, a.newEvent("auto_research_memory_stored", "Automatic research stored in Postgres memory", map[string]string{
+				"stored": fmt.Sprintf("%d", result.StoredCount),
+			}))
+		}
+	}
+
+	return events, &CommandObservation{
+		Step:    0,
+		Command: "AUTO_RESEARCH: " + query,
+		Status:  "success",
+		Stdout:  truncateForObservation(contextText, defaultAgentObservationChars),
+	}
+}
+
+type staticWebSearchResults struct {
+	results []websearch.Result
+}
+
+func (s staticWebSearchResults) SearchAll(ctx context.Context, query string) ([]websearch.Result, error) {
+	return s.results, nil
+}
+
+func (a *App) handleManagerTurn(session *Session, objective string) (Turn, string, error) {
+	turnID := fmt.Sprintf("turn_%06d", len(session.Turns)+1)
+	events := []Event{a.newEvent("manager_started", "Manager-worker job started", map[string]string{
+		"permission_mode": string(session.Permission),
+	})}
+
+	_ = a.runLogger.Log("manager", "turn_started", map[string]interface{}{
+		"objective":       objective,
+		"permission_mode": session.Permission,
+		"workspace":       session.WorkspacePath,
+	})
+
+	execCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	result, execErr := ExecuteManagerWorkerJob(execCtx, session, objective, session.Permission, a.in, a.out, a.ollama, a.nextEventID, a.runLogger)
+	cancel()
+	events = append(events, result.Events...)
+
+	assistantResponse := result.Summary
+	if execErr != nil {
+		assistantResponse = fmt.Sprintf("Manager execution failed: %v", execErr)
+		events = append(events, a.newEvent("manager_failed", "Manager-worker job terminated with error", map[string]string{"error": execErr.Error()}))
+	} else {
+		events = append(events, a.newEvent("manager_completed", "Manager-worker job completed", map[string]string{
+			"done":     fmt.Sprintf("%t", result.Done),
+			"tasks":    fmt.Sprintf("%d", len(result.Tasks)),
+			"workers":  fmt.Sprintf("%d", len(result.Workers)),
+			"executed": fmt.Sprintf("%d", result.Executed),
+			"blocked":  fmt.Sprintf("%d", result.Blocked),
+			"failed":   fmt.Sprintf("%d", result.Failed),
+		}))
+	}
+
+	turn := Turn{
+		ID:                   turnID,
+		UserInput:            "/manage " + objective,
+		IntentClassification: IntentExecution,
+		Confidence:           1.0,
+		ReasonCodes:          []string{"manager_worker_job"},
+		Response:             assistantResponse,
+		Events:               events,
+		CreatedAt:            nowUTC(),
+	}
+	return turn, assistantResponse, nil
+}
+
+func (a *App) handleResearchTurn(session *Session, query string) (Turn, string, error) {
+	turnID := fmt.Sprintf("turn_%06d", len(session.Turns)+1)
+	events := []Event{a.newEvent("research_started", "Web research memory job started", map[string]string{"query": query})}
+	if a.web == nil {
+		events = append(events, a.newEvent("research_blocked", "Web search service is unavailable", nil))
+		return Turn{}, "", fmt.Errorf("web search service is unavailable")
+	}
+	if a.memory == nil {
+		events = append(events, a.newEvent("research_blocked", "Postgres memory is not configured", map[string]string{
+			"hint": "set --memory-database-url or ODN_MEMORY_DATABASE_URL",
+		}))
+		turn := Turn{
+			ID:                   turnID,
+			UserInput:            "/research " + query,
+			IntentClassification: IntentExecution,
+			Confidence:           1.0,
+			ReasonCodes:          []string{"web_research_memory"},
+			Response:             "Research blocked: Postgres memory is not configured. Set --memory-database-url or ODN_MEMORY_DATABASE_URL.",
+			Events:               events,
+			CreatedAt:            nowUTC(),
+		}
+		return turn, turn.Response, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	result, err := ResearchWebToMemory(ctx, query, a.web, a.memory, WebResearchMemoryConfig{
+		AgentID: "odn_research_manager",
+		Tags:    researchTagsFromQuery(query),
+	})
+	if err != nil {
+		events = append(events, a.newEvent("research_failed", "Web research memory job failed", map[string]string{"error": err.Error()}))
+		return Turn{}, "", err
+	}
+	events = append(events, a.newEvent("research_completed", "Web research stored in Postgres memory", map[string]string{
+		"query":        query,
+		"results":      fmt.Sprintf("%d", len(result.Results)),
+		"stored":       fmt.Sprintf("%d", result.StoredCount),
+		"stored_agent": "odn_research_manager",
+	}))
+	response := fmt.Sprintf("Stored %d web research memory chunk(s) from %d search result(s) for: %s", result.StoredCount, len(result.Results), query)
+	turn := Turn{
+		ID:                   turnID,
+		UserInput:            "/research " + query,
+		IntentClassification: IntentExecution,
+		Confidence:           1.0,
+		ReasonCodes:          []string{"web_research_memory"},
+		Response:             response,
+		Events:               events,
+		CreatedAt:            nowUTC(),
+	}
+	return turn, response, nil
+}
+
+func researchCommandQuery(input string) (string, bool) {
+	trimmed := strings.TrimSpace(input)
+	for _, prefix := range []string{"/research "} {
+		if strings.HasPrefix(strings.ToLower(trimmed), prefix) {
+			query := strings.TrimSpace(trimmed[len(prefix):])
+			return query, query != ""
+		}
+	}
+	return "", false
+}
+
+func researchTagsFromQuery(query string) []string {
+	parts := strings.Fields(strings.ToLower(query))
+	tags := []string{"web-research"}
+	for _, part := range parts {
+		clean := strings.Trim(part, ".,;:!?()[]{}\"'")
+		if len(clean) >= 4 {
+			tags = append(tags, clean)
+		}
+		if len(tags) >= 8 {
+			break
+		}
+	}
+	return cleanMemoryTags(tags)
+}
+
+func managerObjective(input string) (string, bool) {
+	trimmed := strings.TrimSpace(input)
+	for _, prefix := range []string{"/manage ", "/job "} {
+		if strings.HasPrefix(strings.ToLower(trimmed), prefix) {
+			objective := strings.TrimSpace(trimmed[len(prefix):])
+			return objective, objective != ""
+		}
+	}
+	return "", false
+}
+
+func microQueueObjective(input string) (string, bool) {
+	trimmed := strings.TrimSpace(input)
+	for _, prefix := range []string{"/micro ", "/queue "} {
+		if strings.HasPrefix(strings.ToLower(trimmed), prefix) {
+			objective := strings.TrimSpace(trimmed[len(prefix):])
+			return objective, objective != ""
+		}
+	}
+	return "", false
+}
+
+func formatMicroQueueResponse(result MicroJobQueueResult, stdout, stderr, errText string) string {
+	lines := []string{
+		result.Summary,
+		fmt.Sprintf("Jobs: %d", len(result.Jobs)),
+		fmt.Sprintf("Completed: %d", len(result.Results)),
+		fmt.Sprintf("Done: %t", result.Done),
+	}
+	if strings.TrimSpace(result.ProjectProfile.Summary) != "" {
+		lines = append(lines, "Profile: "+result.ProjectProfile.Summary)
+	}
+	if strings.TrimSpace(stdout) != "" {
+		lines = append(lines, "Stdout: "+truncateOutput(stdout))
+	}
+	if strings.TrimSpace(stderr) != "" {
+		lines = append(lines, "Stderr: "+truncateOutput(stderr))
+	}
+	if strings.TrimSpace(errText) != "" {
+		lines = append(lines, "Error: "+errText)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (a *App) conversationReply(session *Session, input string) (string, string) {
@@ -394,9 +877,8 @@ func (a *App) conversationReply(session *Session, input string) (string, string)
 
 	messages := make([]OllamaMessage, 0, maxConversationHistoryMessages+2)
 	messages = append(messages, OllamaMessage{
-		Role: "system",
-		Content: "You are OmnidexNeo. Keep responses concise and practical. " +
-			"Current workspace: " + session.WorkspacePath + ".",
+		Role:    "system",
+		Content: MinimalOutputContract + " Practical. Current workspace: " + session.WorkspacePath + ".",
 	})
 
 	start := 0
@@ -463,6 +945,11 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "  /history   show recent turns")
 	fmt.Fprintln(a.out, "  /mode      change permission mode")
 	fmt.Fprintln(a.out, "  /clear     clear workspace session history")
+	fmt.Fprintln(a.out, "  /research X search web, fetch pages, store chunks in Postgres memory")
+	fmt.Fprintln(a.out, "  /manage X  run X through manager-worker orchestration")
+	fmt.Fprintln(a.out, "  /job X     alias for /manage X")
+	fmt.Fprintln(a.out, "  /micro X   run X through project-profiled micro job queue")
+	fmt.Fprintln(a.out, "  /queue X   alias for /micro X")
 	fmt.Fprintln(a.out, "  /exit      exit")
 }
 
@@ -474,10 +961,108 @@ func (a *App) printStatus(session *Session) {
 	fmt.Fprintf(a.out, "Turns: %d\n", len(session.Turns))
 	if a.ollama != nil {
 		fmt.Fprintf(a.out, "Ollama model: %s\n", a.ollama.Model)
+		fmt.Fprintf(a.out, "Ollama endpoint: %s\n", a.ollama.Endpoint)
+	} else {
+		fmt.Fprintln(a.out, "Ollama model: disabled")
 	}
 	if a.runLogger != nil {
+		fmt.Fprintf(a.out, "Run ID: %s\n", a.runLogger.RunID())
 		fmt.Fprintf(a.out, "Run log: %s\n", a.runLogger.Path())
 	}
+	if a.memory != nil {
+		fmt.Fprintln(a.out, "Memory DB: connected")
+	} else {
+		fmt.Fprintln(a.out, "Memory DB: not configured")
+	}
+
+	fmt.Fprintln(a.out, "")
+	fmt.Fprintln(a.out, "Execution stack:")
+	fmt.Fprintln(a.out, "  normal prompts: execution-first command loop")
+	fmt.Fprintln(a.out, "  context plan: auto-select web research, memory, docs, shell")
+	fmt.Fprintln(a.out, "  /manage, /job: manager-worker orchestration")
+	fmt.Fprintln(a.out, "  /micro, /queue: project-profiled manager-manager micro job queue")
+	fmt.Fprintln(a.out, "  document search: chunked manager-worker needle finding")
+	fmt.Fprintln(a.out, "  web docs: fetch, normalize, chunk, search, and cite documentation")
+	fmt.Fprintln(a.out, "  memory: Postgres-backed tags + query retrieval")
+	fmt.Fprintln(a.out, "  /research: search web, follow result links, store source chunks in memory")
+	fmt.Fprintln(a.out, "  relay service: exact JSON handoff with checksum validation")
+	fmt.Fprintf(a.out, "  command loop: max_steps=%d max_commands_per_step=%d planner_timeout=%s command_timeout=%s\n",
+		defaultAgentLoopSteps,
+		defaultAgentCommandsPerStep,
+		defaultPlannerTimeout,
+		defaultCommandTimeout,
+	)
+	fmt.Fprintf(a.out, "  manager: max_workers=%d plan_timeout=%s reduce_timeout=%s\n",
+		defaultManagerMaxWorkers,
+		defaultManagerPlanTimeout,
+		defaultManagerReduceTimeout,
+	)
+	fmt.Fprintf(a.out, "  document chunks: chunk_chars=%d overlap=%d\n",
+		defaultDocumentChunkChars,
+		defaultDocumentChunkOverlap,
+	)
+
+	implementedTools := a.registry.ToolIDs(true)
+	plannedTools := a.registry.ToolIDs(false)
+	fmt.Fprintln(a.out, "")
+	fmt.Fprintf(a.out, "Tools: implemented=%d registered=%d\n", len(implementedTools), len(plannedTools))
+	if len(implementedTools) > 0 {
+		fmt.Fprintf(a.out, "  implemented: %s\n", strings.Join(implementedTools, ", "))
+	}
+
+	fmt.Fprintln(a.out, "")
+	a.printLastTurnStatus(session)
+}
+
+func (a *App) printLastTurnStatus(session *Session) {
+	if len(session.Turns) == 0 {
+		fmt.Fprintln(a.out, "Last turn: none")
+		return
+	}
+
+	last := session.Turns[len(session.Turns)-1]
+	counts := countEventTypes(last.Events)
+	fmt.Fprintf(a.out, "Last turn: %s at %s\n", last.ID, last.CreatedAt)
+	fmt.Fprintf(a.out, "  user: %s\n", last.UserInput)
+	fmt.Fprintf(a.out, "  response: %s\n", last.Response)
+	fmt.Fprintf(a.out, "  reason_codes: %s\n", strings.Join(last.ReasonCodes, ","))
+	fmt.Fprintf(a.out, "  events=%d commands_success=%d commands_failed=%d policy_blocked=%d manager_events=%d worker_events=%d\n",
+		len(last.Events),
+		counts["command_success"]+counts["command_executed"],
+		counts["command_failed"],
+		counts["policy_blocked"],
+		counts["manager_started"]+counts["manager_plan_created"]+counts["manager_reduced"]+counts["manager_completed"],
+		counts["worker_completed"],
+	)
+
+	if len(last.Events) == 0 {
+		return
+	}
+	recent := last.Events
+	if len(recent) > 5 {
+		recent = recent[len(recent)-5:]
+	}
+	fmt.Fprintln(a.out, "  recent timeline:")
+	for _, evt := range recent {
+		fmt.Fprintf(a.out, "    - %s: %s\n", evt.Type, evt.Summary)
+		if command := evt.Details["command"]; strings.TrimSpace(command) != "" {
+			fmt.Fprintf(a.out, "      command=%s\n", command)
+		}
+		if stdout := evt.Details["stdout"]; strings.TrimSpace(stdout) != "" {
+			fmt.Fprintf(a.out, "      stdout=%s\n", truncateOutput(stdout))
+		}
+		if reason := evt.Details["reason_code"]; strings.TrimSpace(reason) != "" {
+			fmt.Fprintf(a.out, "      reason=%s\n", reason)
+		}
+	}
+}
+
+func countEventTypes(events []Event) map[string]int {
+	counts := make(map[string]int, len(events))
+	for _, evt := range events {
+		counts[evt.Type]++
+	}
+	return counts
 }
 
 func (a *App) printHistory(session *Session) {
@@ -504,22 +1089,26 @@ func (a *App) printTimeline(events []Event) {
 	}
 	fmt.Fprintln(a.out, "timeline>")
 	for _, evt := range events {
-		fmt.Fprintf(a.out, "  - [%s] %s: %s\n", evt.CreatedAt, evt.Type, evt.Summary)
-		if len(evt.Details) == 0 {
-			continue
+		a.printTimelineEvent(evt)
+	}
+}
+
+func (a *App) printTimelineEvent(evt Event) {
+	fmt.Fprintf(a.out, "  - [%s] %s: %s\n", evt.CreatedAt, evt.Type, evt.Summary)
+	if len(evt.Details) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(evt.Details))
+	for k := range evt.Details {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		value := evt.Details[k]
+		if shouldTruncateTimelineValue(value) {
+			value = value[:400] + "..."
 		}
-		keys := make([]string, 0, len(evt.Details))
-		for k := range evt.Details {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			value := evt.Details[k]
-			if shouldTruncateTimelineValue(value) {
-				value = value[:400] + "..."
-			}
-			fmt.Fprintf(a.out, "      %s=%s\n", k, value)
-		}
+		fmt.Fprintf(a.out, "      %s=%s\n", k, value)
 	}
 }
 
@@ -546,6 +1135,15 @@ func sortedCopy(values []string) []string {
 	copyValues := append([]string(nil), values...)
 	sort.Strings(copyValues)
 	return copyValues
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func isInteractive(r io.Reader) bool {

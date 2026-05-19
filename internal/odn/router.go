@@ -159,43 +159,7 @@ func callRouterLLM(ctx context.Context, client *OllamaClient, registry Registry,
 }
 
 func heuristicRoute(userInput string) []string {
-	normalized := strings.ToLower(strings.TrimSpace(userInput))
-	if normalized == "" {
-		return []string{}
-	}
-
-	result := make([]string, 0, 3)
-	add := func(id string) {
-		for _, current := range result {
-			if current == id {
-				return
-			}
-		}
-		result = append(result, id)
-	}
-
-	isScaffold := (strings.Contains(normalized, "make") || strings.Contains(normalized, "create") || strings.Contains(normalized, "build") || strings.Contains(normalized, "scaffold")) &&
-		strings.Contains(normalized, "project") &&
-		(strings.Contains(normalized, "go") || strings.Contains(normalized, "golang")) &&
-		strings.Contains(normalized, "html")
-	if isScaffold {
-		add("scaffold_go_html_project")
-	}
-
-	hasCommandLanguage := strings.Contains(normalized, "command") ||
-		strings.Contains(normalized, "terminal") ||
-		strings.Contains(normalized, "shell") ||
-		strings.Contains(normalized, "run ") ||
-		strings.Contains(normalized, "install ")
-	if hasCommandLanguage {
-		add("linux_command")
-	}
-
-	if len(result) > 0 {
-		add("verification_gate")
-	}
-
-	return result
+	return nil
 }
 
 func registryToolSummary(registry Registry) []string {

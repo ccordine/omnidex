@@ -59,7 +59,7 @@ func NewOllamaClient(endpoint, model string) *OllamaClient {
 		Endpoint: ep,
 		Model:    m,
 		Client: &http.Client{
-			Timeout: 45 * time.Second,
+			Timeout: 2 * time.Minute,
 		},
 	}
 }
@@ -133,7 +133,7 @@ func (c *OllamaClient) ChatRaw(ctx context.Context, req OllamaChatRequest) (Olla
 		return OllamaChatResponse{}, err
 	}
 	if strings.TrimSpace(decoded.Error) != "" {
-		return OllamaChatResponse{}, fmt.Errorf(decoded.Error)
+		return OllamaChatResponse{}, fmt.Errorf("%s", decoded.Error)
 	}
 
 	content := strings.TrimSpace(decoded.Message.Content)
@@ -162,9 +162,8 @@ func (c *OllamaClient) ChatRaw(ctx context.Context, req OllamaChatRequest) (Olla
 func (c *OllamaClient) Chat(ctx context.Context, workspacePath string, history []Message, userInput string) (string, error) {
 	messages := make([]OllamaMessage, 0, maxConversationHistoryMessages+2)
 	messages = append(messages, OllamaMessage{
-		Role: "system",
-		Content: "You are OmnidexNeo. Keep responses concise and practical. " +
-			"Current workspace: " + workspacePath + ".",
+		Role:    "system",
+		Content: MinimalOutputContract + " Practical. Current workspace: " + workspacePath + ".",
 	})
 
 	start := 0

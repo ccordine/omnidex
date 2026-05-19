@@ -7,7 +7,7 @@ const (
 	intentConfidenceThreshold      = 0.70
 	defaultProjectFolderName       = "test-go-html"
 	defaultOllamaEndpoint          = "http://localhost:11434/api/chat"
-	defaultOllamaModel             = "tinyllama:latest"
+	defaultOllamaModel             = "qwen2.5-coder:7b"
 	maxConversationHistoryMessages = 16
 )
 

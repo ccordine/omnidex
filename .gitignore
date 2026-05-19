@@ -1,2 +1,44 @@
+# Local environment and secrets
 .env
-bin/
+.env.*
+!.env.example
+!.env*.example
+*.local
+
+# Build outputs
+/bin/
+/odn
+/*.test
+
+# Go test and coverage artifacts
+coverage.out
+*.cover
+*.prof
+
+# Runtime state and logs
+.odn/
+runs/
+logs/
+*.log
+*.jsonl
+
+# Local databases and scratch data
+*.db
+*.sqlite
+*.sqlite3
+tmp/
+temp/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Dependency/cache folders for generated experiments
+node_modules/
+dist/
+build/
+.cache/

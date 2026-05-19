@@ -9,21 +9,7 @@ import (
 )
 
 func BuildExecutionPlan(message, workspacePath string) (ExecutionPlan, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(message))
-	if normalized == "" {
-		return ExecutionPlan{}, false
-	}
-
-	hasCreateVerb := strings.Contains(normalized, "make") || strings.Contains(normalized, "create") || strings.Contains(normalized, "build") || strings.Contains(normalized, "scaffold")
-	hasProject := strings.Contains(normalized, "project")
-	hasGo := strings.Contains(normalized, "go") || strings.Contains(normalized, "golang")
-	hasHTML := strings.Contains(normalized, "html")
-
-	if !(hasCreateVerb && hasProject && hasGo && hasHTML) {
-		return ExecutionPlan{}, false
-	}
-
-	return BuildGoHTMLScaffoldPlan(workspacePath), true
+	return ExecutionPlan{}, false
 }
 
 func BuildGoHTMLScaffoldPlan(workspacePath string) ExecutionPlan {

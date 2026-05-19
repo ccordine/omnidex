@@ -593,12 +593,13 @@ func (r *Repository) ExpandDelegatedSubtasks(ctx context.Context, jobID int64, a
 	created := make([]model.Step, 0, len(subtasks))
 	for idx, subtask := range subtasks {
 		sortIndex := anchorSort + ((idx + 1) * spacing)
-		var step model.Step
-		if err := tx.QueryRow(ctx, `
+		row := tx.QueryRow(ctx, `
 			INSERT INTO job_steps (job_id, action, sort_index, status)
 			VALUES ($1, $2, $3, $4)
 			RETURNING id, job_id, action, sort_index, status, worker_id, output, error, started_at, finished_at, created_at, updated_at
-		`, jobID, "v3_subtask", sortIndex, model.StepStatusPending).Scan(&step.ID, &step.JobID, &step.Action, &step.SortIndex, &step.Status, &step.WorkerID, &step.Output, &step.Error, &step.StartedAt, &step.FinishedAt, &step.CreatedAt, &step.UpdatedAt); err != nil {
+		`, jobID, "v3_subtask", sortIndex, model.StepStatusPending)
+		step, err := scanStep(row)
+		if err != nil {
 			return nil, err
 		}
 		contexts := map[string]string{

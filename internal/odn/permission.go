@@ -48,6 +48,20 @@ func PromptYesNo(in io.Reader, out io.Writer, prompt string) (bool, error) {
 	return s == "y" || s == "yes", nil
 }
 
+func PromptClarification(in io.Reader, out io.Writer, question string) (string, error) {
+	fmt.Fprintf(out, "\nclarify> %s\nuser> ", strings.TrimSpace(question))
+	reader := bufferedReader(in)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	answer := strings.TrimSpace(line)
+	if err == io.EOF && answer == "" {
+		return "", io.ErrUnexpectedEOF
+	}
+	return answer, nil
+}
+
 func bufferedReader(in io.Reader) *bufio.Reader {
 	if reader, ok := in.(*bufio.Reader); ok {
 		return reader
