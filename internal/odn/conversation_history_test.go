@@ -130,6 +130,11 @@ func capturingOllamaClient(t *testing.T, responses []string, requests *[]OllamaC
 	t.Helper()
 	index := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/create" || r.URL.Path == "/api/delete" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success"}`))
+			return
+		}
 		if index >= len(responses) {
 			t.Fatalf("unexpected ollama request %d", index+1)
 		}

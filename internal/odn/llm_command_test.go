@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 type fakeCommandDecisionClient struct {
 	responses []string
+	errors    []error
 	calls     int
 	prompts   []string
 	requests  []OllamaChatRequest
@@ -23,6 +25,13 @@ func (f *fakeCommandDecisionClient) ChatRaw(ctx context.Context, req OllamaChatR
 	f.requests = append(f.requests, req)
 	if len(req.Messages) > 0 {
 		f.prompts = append(f.prompts, req.Messages[len(req.Messages)-1].Content)
+	}
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return OllamaChatResponse{}, err
+		}
 	}
 	if len(f.responses) == 0 {
 		return OllamaChatResponse{Content: `{"command":"","done":true,"answer":"done"}`}, nil
@@ -77,6 +86,12 @@ func TestStructuredCommandDecisionAlwaysCallsLLMForNaturalLanguagePrompts(t *tes
 			if !strings.Contains(client.prompts[0], quoteJSONForTest(tc.prompt)) {
 				t.Fatalf("first llm prompt = %q, want original prompt encoded", client.prompts[0])
 			}
+			if client.requests[0].ContextSystem == "" {
+				t.Fatal("structured command request should place planner contract in context system")
+			}
+			if len(client.requests[0].Messages) != 1 || client.requests[0].Messages[0].Role != "user" {
+				t.Fatalf("structured command request should isolate current payload as one user message: %#v", client.requests[0].Messages)
+			}
 			if result.Command != tc.command {
 				t.Fatalf("command = %q, want %q", result.Command, tc.command)
 			}
@@ -84,6 +99,123 @@ func TestStructuredCommandDecisionAlwaysCallsLLMForNaturalLanguagePrompts(t *tes
 				t.Fatalf("stdout = %q, want %q; stderr=%q", stdout.String(), tc.want, stderr.String())
 			}
 		})
+	}
+}
+
+func TestStructuredCommandRequestIsolatesCurrentPromptFromHistory(t *testing.T) {
+	req := buildStructuredCommandRequest(
+		"Yes, but will it rain though was my question",
+		[]Message{
+			{Role: "user", Content: "what's the weather in Pattaya right now?"},
+			{Role: "assistant", Content: "The weather in Pattaya, Thailand today is Partly Cloudy with temperatures ranging from +33C to +41C."},
+		},
+		nil,
+	)
+	if req.ContextSystem == "" {
+		t.Fatal("missing context system")
+	}
+	if !strings.Contains(req.ContextSystem, "active_task.current_prompt field is the command objective") {
+		t.Fatalf("context system missing prompt isolation rule: %s", req.ContextSystem)
+	}
+	if len(req.Messages) != 3 {
+		t.Fatalf("messages = %#v, want reference history, acknowledgement, active task", req.Messages)
+	}
+	if !strings.Contains(req.Messages[0].Content, "reference_history") || !strings.Contains(req.Messages[0].Content, "Pattaya") {
+		t.Fatalf("first message missing reference history: %#v", req.Messages)
+	}
+	content := req.Messages[2].Content
+	if !strings.Contains(content, `"active_prompt_open":"Yes, but will it rain though was my question"`) {
+		t.Fatalf("payload missing opening active prompt anchor: %s", content)
+	}
+	if !strings.Contains(content, `"current_prompt":"Yes, but will it rain though was my question"`) {
+		t.Fatalf("payload missing authoritative current_prompt: %s", content)
+	}
+	if !strings.Contains(content, `"active_prompt_close":"Yes, but will it rain though was my question"`) {
+		t.Fatalf("payload missing closing active prompt anchor: %s", content)
+	}
+	if strings.Contains(content, "Pattaya") || strings.Contains(content, "reference_history") {
+		t.Fatalf("active task payload should not contain reference history: %s", content)
+	}
+}
+
+func TestStructuredCommandRequestUsesTerseInertMemoryRecords(t *testing.T) {
+	req := buildStructuredCommandRequest(
+		"What time is it in Virginia right now?",
+		[]Message{
+			{Role: "user", Content: "What's the weather in Pattaya right now?"},
+			{Role: "assistant", Content: "Command: curl -s wttr.in/Pattaya+Thailand?format=%C+%t+%f\nAnswer: Partly cloudy +33C +41C."},
+			{Role: "user", Content: "Build a demo Go project in ~/Projects/tmp-project."},
+			{Role: "assistant", Content: "Asked for permission to create the requested project directory."},
+		},
+		nil,
+	)
+	if len(req.Messages) != 3 {
+		t.Fatalf("messages = %#v, want separated memory and active task", req.Messages)
+	}
+	history := req.Messages[0].Content
+	for _, want := range []string{`"reference_history"`, `"not_prompt":true`, `"memory_style":"terse_reference_only"`, `"memory_note"`} {
+		if !strings.Contains(history, want) {
+			t.Fatalf("history missing %q: %s", want, history)
+		}
+	}
+	active := req.Messages[2].Content
+	if strings.Contains(active, "Pattaya") || strings.Contains(active, "tmp-project") || strings.Contains(active, "wttr.in") {
+		t.Fatalf("active prompt is polluted by memory: %s", active)
+	}
+	if strings.Count(active, "What time is it in Virginia right now?") != 4 {
+		t.Fatalf("active prompt should appear as open/current/prompt/close anchors: %s", active)
+	}
+}
+
+func TestStructuredCommandDecisionAnswersActivePromptDespiteConflictingMemory(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'Virginia time evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Virginia time evidence"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	history := []Message{
+		{Role: "user", Content: "What's the weather in Pattaya right now?"},
+		{Role: "assistant", Content: "Command: curl -s wttr.in/Pattaya+Thailand?format=%C+%t+%f\nAnswer: Partly cloudy +33C +41C."},
+		{Role: "user", Content: "What are the current events in Saipan?"},
+		{Role: "assistant", Content: "Command: curl -s https://news.google.com/rss/search?q=Saipan"},
+		{Role: "user", Content: "Build a React TypeScript app."},
+		{Role: "assistant", Content: "Command: npm run build"},
+	}
+
+	result, err := RunStructuredCommandDecisionWithHistoryEventsAndAsk(
+		context.Background(),
+		"What time is it in Virginia right now?",
+		history,
+		client,
+		stdout,
+		stderr,
+		nil,
+		func(ctx context.Context, question string) (string, error) {
+			t.Fatalf("should not ask when active prompt is specific: %q", question)
+			return "", nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command != "printf 'Virginia time evidence\n'" {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if stdout.String() != "Virginia time evidence\n" || result.Answer != "Virginia time evidence" {
+		t.Fatalf("unexpected result stdout=%q answer=%q", stdout.String(), result.Answer)
+	}
+	if len(client.requests[0].Messages) != 3 {
+		t.Fatalf("messages = %#v, want memory + ack + active task", client.requests[0].Messages)
+	}
+	active := client.requests[0].Messages[2].Content
+	for _, polluted := range []string{"Pattaya", "Saipan", "React", "wttr.in", "news.google.com", "npm run build"} {
+		if strings.Contains(active, polluted) {
+			t.Fatalf("active task contains memory %q: %s", polluted, active)
+		}
+	}
+	if strings.Count(active, "What time is it in Virginia right now?") != 4 {
+		t.Fatalf("active prompt not anchored open/current/prompt/close: %s", active)
 	}
 }
 
@@ -114,6 +246,72 @@ func TestStructuredCommandDecisionFailsBeforeExecutionWhenLLMResponseInvalid(t *
 	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("command executed from invalid llm response: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestStructuredCommandDecisionRetriesTransientOllamaRunnerStop(t *testing.T) {
+	client := &fakeCommandDecisionClient{
+		errors: []error{
+			fmt.Errorf(`ollama returned status 500: {"error":"model runner has unexpectedly stopped"}`),
+			nil,
+			nil,
+		},
+		responses: []string{
+			`{"command":"printf 'recovered\n'","done":false,"answer":""}`,
+			`{"command":"","done":true,"answer":"recovered"}`,
+		},
+	}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := RunStructuredCommandDecisionWithEvents(context.Background(), "Recover from transient model failure.", client, stdout, stderr, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 3 {
+		t.Fatalf("llm calls = %d, want retry then command/done", client.calls)
+	}
+	if !strings.Contains(stdout.String(), "recovered") || result.Answer != "recovered" {
+		t.Fatalf("unexpected result stdout=%q answer=%q", stdout.String(), result.Answer)
+	}
+	if !structuredEventsContain(events, "structured_llm_request_failed") || !structuredEventsContain(events, "structured_llm_request_recovered") {
+		t.Fatalf("missing retry events: %#v", events)
+	}
+	if !structuredEventsContain(events, "structured_llm_backend_unstable") {
+		t.Fatalf("missing backend instability event: %#v", events)
+	}
+}
+
+func TestClassifyStructuredLLMFailureIdentifiesRunnerCrash(t *testing.T) {
+	err := fmt.Errorf(`ollama returned status 500: {"error":"model runner has unexpectedly stopped"}`)
+	if got := classifyStructuredLLMFailure(err); got != "ollama_model_runner_crash_or_restart" {
+		t.Fatalf("diagnosis = %q", got)
+	}
+}
+
+func TestStructuredCommandDecisionLLMFailureBeforeCommandSetsExitCodeOne(t *testing.T) {
+	client := &fakeCommandDecisionClient{
+		errors: []error{
+			fmt.Errorf(`ollama returned status 500: {"error":"model runner has unexpectedly stopped"}`),
+			fmt.Errorf(`ollama returned status 500: {"error":"model runner has unexpectedly stopped"}`),
+			fmt.Errorf(`ollama returned status 500: {"error":"model runner has unexpectedly stopped"}`),
+		},
+	}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "What is the weather?", client, stdout, stderr)
+	if err == nil {
+		t.Fatal("expected unrecovered LLM error")
+	}
+	if result.ExitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", result.ExitCode)
+	}
+	if result.Command != "" || stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("command should not execute on LLM failure: result=%#v stdout=%q stderr=%q", result, stdout.String(), stderr.String())
 	}
 }
 
@@ -304,6 +502,46 @@ func TestStructuredCommandDecisionAskWithCommandRunsAfterApproval(t *testing.T) 
 	}
 }
 
+func TestStructuredCommandDecisionIgnoresMalformedAskWhenCommandIsPresent(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'weather evidence\n'","done":false,"answer":"","ask":true,"question":""}`,
+		`{"command":"","done":true,"answer":"weather evidence"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := RunStructuredCommandDecisionWithEventsAndAsk(
+		context.Background(),
+		"Check the requested weather.",
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		func(ctx context.Context, question string) (string, error) {
+			t.Fatalf("ask callback should not run for empty question with executable command: %q", question)
+			return "", nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "weather evidence") {
+		t.Fatalf("command did not run: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(result.Command, "weather evidence") {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if result.Answer != "weather evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+	if !structuredEventsContain(events, "structured_ask_ignored") {
+		t.Fatalf("events = %#v, want structured_ask_ignored", events)
+	}
+}
+
 func TestStructuredCommandDecisionReusesRepeatedApprovalQuestionWithCommand(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'blocked first\n' >&2; exit 1","done":false,"answer":""}`,
@@ -369,8 +607,14 @@ func TestStructuredCommandDecisionIncludesRecentConversationForFollowups(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(client.prompts[0], "recent_conversation") || !strings.Contains(client.prompts[0], "Pattaya") {
-		t.Fatalf("structured prompt missing conversation history: %s", client.prompts[0])
+	if len(client.requests[0].Messages) != 3 {
+		t.Fatalf("messages = %#v, want reference history plus active task", client.requests[0].Messages)
+	}
+	if !strings.Contains(client.requests[0].Messages[0].Content, "reference_history") || !strings.Contains(client.requests[0].Messages[0].Content, "Pattaya") {
+		t.Fatalf("structured request missing conversation history: %#v", client.requests[0].Messages)
+	}
+	if strings.Contains(client.requests[0].Messages[2].Content, "Pattaya") {
+		t.Fatalf("active task should not contain copied reference location: %s", client.requests[0].Messages[2].Content)
 	}
 	if !strings.Contains(stdout.String(), "Pattaya rain chance") {
 		t.Fatalf("history-resolved command did not run: stdout=%q", stdout.String())
@@ -684,7 +928,7 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 	if len(client.requests) < 1 || len(client.requests[0].Messages) == 0 {
 		t.Fatalf("missing captured LLM request: %#v", client.requests)
 	}
-	systemPrompt := client.requests[0].Messages[0].Content
+	systemPrompt := client.requests[0].ContextSystem
 	for _, want := range []string{
 		"Do not use placeholder credentials.",
 		"Do not call APIs that require unavailable keys.",
@@ -747,7 +991,7 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 }
 
 func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *testing.T) {
-	message := buildStructuredCommandUserMessage("make a project", nil, nil)
+	message := buildStructuredCommandUserMessage("make a project", nil)
 	if !strings.Contains(message, `"must_return_command":true`) {
 		t.Fatalf("message missing must_return_command=true: %s", message)
 	}
@@ -761,7 +1005,7 @@ func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *t
 		t.Fatalf("message missing command outcome counts: %s", message)
 	}
 
-	message = buildStructuredCommandUserMessage("make a project", nil, []StructuredCommandObservation{{
+	message = buildStructuredCommandUserMessage("make a project", []StructuredCommandObservation{{
 		Step:     1,
 		Command:  "mkdir -p /tmp/example",
 		ExitCode: 0,
@@ -774,6 +1018,30 @@ func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *t
 	}
 	if !strings.Contains(message, `"successful_command_count":1`) || !strings.Contains(message, `"failed_command_count":0`) {
 		t.Fatalf("message missing successful command count after command: %s", message)
+	}
+}
+
+func TestStructuredCommandDecisionFirstRequestSchemaRequiresCommand(t *testing.T) {
+	format := buildStructuredCommandResponseFormat(nil)
+	props := format["properties"].(map[string]interface{})
+	command := props["command"].(map[string]interface{})
+	done := props["done"].(map[string]interface{})
+	if command["minLength"] != 1 {
+		t.Fatalf("first command schema missing minLength: %#v", command)
+	}
+	if enum, ok := done["enum"].([]bool); !ok || len(enum) != 1 || enum[0] {
+		t.Fatalf("first command schema should force done=false: %#v", done)
+	}
+
+	format = buildStructuredCommandResponseFormat([]StructuredCommandObservation{{Command: "printf ok", ExitCode: 0}})
+	props = format["properties"].(map[string]interface{})
+	command = props["command"].(map[string]interface{})
+	done = props["done"].(map[string]interface{})
+	if _, ok := command["minLength"]; ok {
+		t.Fatalf("post-evidence command schema should allow empty done command: %#v", command)
+	}
+	if _, ok := done["enum"]; ok {
+		t.Fatalf("post-evidence done schema should allow true/false: %#v", done)
 	}
 }
 
@@ -850,4 +1118,13 @@ func TestCommandDecisionSourceAuditNoPromptPhraseMatching(t *testing.T) {
 func quoteJSONForTest(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 	return `"` + replacer.Replace(value) + `"`
+}
+
+func structuredEventsContain(events []StructuredCommandEvent, eventType string) bool {
+	for _, event := range events {
+		if event.Type == eventType {
+			return true
+		}
+	}
+	return false
 }

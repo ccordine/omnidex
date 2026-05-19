@@ -102,6 +102,11 @@ func fakeOllamaClient(t *testing.T, responses []string) (*OllamaClient, func()) 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
+		if r.URL.Path == "/api/create" || r.URL.Path == "/api/delete" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success"}`))
+			return
+		}
 		if index >= len(responses) {
 			t.Fatalf("unexpected ollama request %d", index+1)
 		}

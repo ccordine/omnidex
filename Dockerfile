@@ -14,6 +14,9 @@ USER app
 WORKDIR /app
 
 COPY --from=build /out/agent-core /usr/local/bin/agent-core
+COPY --from=build /src/skills ./skills
+COPY --from=build /src/migrations ./migrations
+COPY --from=build /src/database ./database
 
 ENV LISTEN_ADDR=:8090
 EXPOSE 8090

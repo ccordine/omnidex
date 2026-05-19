@@ -170,6 +170,11 @@ func TestHandleTurnPassesSessionHistoryToStructuredCommandPath(t *testing.T) {
 		`{"command":"","done":true,"answer":"Using Pattaya from session history."}`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/create" || r.URL.Path == "/api/delete" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success"}`))
+			return
+		}
 		var raw struct {
 			Messages []OllamaMessage `json:"messages"`
 		}
@@ -178,9 +183,16 @@ func TestHandleTurnPassesSessionHistoryToStructuredCommandPath(t *testing.T) {
 		}
 		requests = append(requests, OllamaChatRequest{Messages: raw.Messages})
 		if len(requests) == 1 {
-			lastMessage := raw.Messages[len(raw.Messages)-1].Content
-			if !strings.Contains(lastMessage, "recent_conversation") || !strings.Contains(lastMessage, "Pattaya") {
-				t.Fatalf("structured request missing session history: %s", lastMessage)
+			if len(raw.Messages) < 3 {
+				t.Fatalf("structured request missing separated history and active task messages: %#v", raw.Messages)
+			}
+			historyMessage := raw.Messages[0].Content
+			activeMessage := raw.Messages[len(raw.Messages)-1].Content
+			if !strings.Contains(historyMessage, "reference_history") || !strings.Contains(historyMessage, "Pattaya") {
+				t.Fatalf("structured request missing session history: %s", historyMessage)
+			}
+			if strings.Contains(activeMessage, "Pattaya") {
+				t.Fatalf("active task should not contain copied session history: %s", activeMessage)
 			}
 		}
 		if len(requests) > len(responses) {

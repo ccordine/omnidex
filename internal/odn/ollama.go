@@ -3,18 +3,25 @@ package odn
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 type OllamaClient struct {
-	Endpoint string
-	Model    string
-	Client   *http.Client
+	Endpoint         string
+	Model            string
+	DefaultKeepAlive string
+	DefaultNumCtx    int
+	Client           *http.Client
 }
 
 type OllamaMessage struct {
@@ -23,10 +30,11 @@ type OllamaMessage struct {
 }
 
 type OllamaChatRequest struct {
-	Messages  []OllamaMessage
-	Format    interface{}
-	Options   map[string]interface{}
-	KeepAlive string
+	Messages      []OllamaMessage
+	Format        interface{}
+	Options       map[string]interface{}
+	KeepAlive     string
+	ContextSystem string
 }
 
 type OllamaChatResponse struct {
@@ -46,6 +54,8 @@ type OllamaChatResponse struct {
 	ResponseJSON       string
 }
 
+var odnContextModelCounter uint64
+
 func NewOllamaClient(endpoint, model string) *OllamaClient {
 	ep := strings.TrimSpace(endpoint)
 	if ep == "" {
@@ -64,24 +74,58 @@ func NewOllamaClient(endpoint, model string) *OllamaClient {
 	}
 }
 
+func (c *OllamaClient) ConfigureRuntime(defaultKeepAlive string, defaultNumCtx int) {
+	c.DefaultKeepAlive = strings.TrimSpace(defaultKeepAlive)
+	if defaultNumCtx > 0 {
+		c.DefaultNumCtx = defaultNumCtx
+	}
+}
+
 func (c *OllamaClient) ChatRaw(ctx context.Context, req OllamaChatRequest) (OllamaChatResponse, error) {
 	if len(req.Messages) == 0 {
 		return OllamaChatResponse{}, fmt.Errorf("ollama request requires at least one message")
 	}
+	model := c.Model
+	messages := req.Messages
+	if strings.TrimSpace(req.ContextSystem) != "" {
+		contextModel, err := c.createChatContextModel(ctx, req.ContextSystem)
+		if err != nil {
+			return OllamaChatResponse{}, err
+		}
+		defer c.bestEffortDeleteChatContextModel(contextModel)
+		model = contextModel
+		messages = nonSystemMessages(messages)
+		if len(messages) == 0 {
+			return OllamaChatResponse{}, fmt.Errorf("ollama context request requires at least one non-system message")
+		}
+	}
 
 	payload := map[string]interface{}{
-		"model":    c.Model,
+		"model":    model,
 		"stream":   false,
-		"messages": req.Messages,
+		"messages": messages,
 	}
 	if req.Format != nil {
 		payload["format"] = req.Format
 	}
-	if len(req.Options) > 0 {
-		payload["options"] = req.Options
+	options := map[string]interface{}{}
+	for key, value := range req.Options {
+		options[key] = value
 	}
-	if strings.TrimSpace(req.KeepAlive) != "" {
-		payload["keep_alive"] = req.KeepAlive
+	if c.DefaultNumCtx > 0 {
+		if _, exists := options["num_ctx"]; !exists {
+			options["num_ctx"] = c.DefaultNumCtx
+		}
+	}
+	if len(options) > 0 {
+		payload["options"] = options
+	}
+	keepAlive := strings.TrimSpace(req.KeepAlive)
+	if keepAlive == "" {
+		keepAlive = strings.TrimSpace(c.DefaultKeepAlive)
+	}
+	if keepAlive != "" {
+		payload["keep_alive"] = keepAlive
 	}
 
 	blob, err := json.Marshal(payload)
@@ -157,6 +201,165 @@ func (c *OllamaClient) ChatRaw(ctx context.Context, req OllamaChatRequest) (Olla
 		RequestJSON:        string(blob),
 		ResponseJSON:       string(respBlob),
 	}, nil
+}
+
+func nonSystemMessages(messages []OllamaMessage) []OllamaMessage {
+	out := make([]OllamaMessage, 0, len(messages))
+	for _, message := range messages {
+		if strings.EqualFold(strings.TrimSpace(message.Role), "system") {
+			continue
+		}
+		out = append(out, message)
+	}
+	return out
+}
+
+func (c *OllamaClient) createChatContextModel(ctx context.Context, systemPrompt string) (string, error) {
+	modelName := buildODNContextModelName(c.Model, systemPrompt)
+	modelfile := buildODNContextModelfile(c.Model, systemPrompt)
+	if _, err := persistODNContextModelfile(modelName, modelfile); err != nil {
+		return "", err
+	}
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"name":      modelName,
+		"model":     modelName,
+		"from":      c.Model,
+		"modelfile": modelfile,
+		"stream":    false,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.ollamaBaseURL()+"/api/create", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.Client.Do(httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	respBlob, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("ollama create context model returned status %d: %s", resp.StatusCode, truncateForError(string(respBlob)))
+	}
+	return modelName, nil
+}
+
+func (c *OllamaClient) bestEffortDeleteChatContextModel(modelName string) {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"name":  modelName,
+		"model": modelName,
+	})
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.ollamaBaseURL()+"/api/delete", bytes.NewReader(payload))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+}
+
+func (c *OllamaClient) ollamaBaseURL() string {
+	endpoint := strings.TrimRight(strings.TrimSpace(c.Endpoint), "/")
+	for _, suffix := range []string{"/api/chat", "/api/generate"} {
+		if strings.HasSuffix(endpoint, suffix) {
+			return strings.TrimSuffix(endpoint, suffix)
+		}
+	}
+	return endpoint
+}
+
+func buildODNContextModelName(baseModel string, systemPrompt string) string {
+	base := sanitizeODNModelNameComponent(baseModel)
+	if base == "" {
+		base = "model"
+	}
+	if len(base) > 24 {
+		base = base[:24]
+	}
+	sum := sha1.Sum([]byte(systemPrompt))
+	seq := atomic.AddUint64(&odnContextModelCounter, 1)
+	return strings.ToLower(strings.Join([]string{
+		"odnctx",
+		base,
+		fmt.Sprintf("%x", sum[:4]),
+		strconv.FormatUint(seq, 10),
+	}, "-"))
+}
+
+func sanitizeODNModelNameComponent(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, ch := range value {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
+			b.WriteRune(ch)
+			lastDash = false
+			continue
+		}
+		if lastDash {
+			continue
+		}
+		b.WriteByte('-')
+		lastDash = true
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func buildODNContextModelfile(baseModel string, systemPrompt string) string {
+	baseModel = strings.TrimSpace(baseModel)
+	if baseModel == "" {
+		baseModel = defaultOllamaModel
+	}
+	systemPrompt = strings.ReplaceAll(strings.TrimSpace(systemPrompt), `"""`, `\"\"\"`)
+	return strings.Join([]string{
+		"FROM " + baseModel,
+		"SYSTEM \"\"\"",
+		systemPrompt,
+		"\"\"\"",
+	}, "\n")
+}
+
+func persistODNContextModelfile(modelName, modelfile string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return "", fmt.Errorf("resolve home directory for odn modelfile storage: %w", err)
+	}
+	dir := filepath.Join(home, ".odn", "modelfiles")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create odn modelfile directory %s: %w", dir, err)
+	}
+	path := filepath.Join(dir, sanitizeODNModelNameComponent(modelName)+".Modelfile")
+	if err := os.WriteFile(path, []byte(modelfile), 0o600); err != nil {
+		return "", fmt.Errorf("write odn modelfile %s: %w", path, err)
+	}
+	return path, nil
 }
 
 func (c *OllamaClient) Chat(ctx context.Context, workspacePath string, history []Message, userInput string) (string, error) {

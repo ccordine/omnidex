@@ -3,6 +3,7 @@ package odn
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +59,8 @@ func (a *App) Run(args []string) error {
 	permissionFlag := fs.String("permission", "", "permission mode: ask_permission|full_access")
 	modelFlag := fs.String("model", defaultOllamaModel, "ollama model to use for command decisions")
 	endpointFlag := fs.String("ollama-endpoint", defaultOllamaEndpoint, "ollama chat endpoint")
+	ollamaKeepAlive := fs.String("ollama-keep-alive", envOrDefault("ODN_OLLAMA_KEEP_ALIVE", "30s"), "default Ollama keep_alive for chat requests; use 0 to unload after each response")
+	ollamaNumCtx := fs.Int("ollama-num-ctx", envIntOrDefault("ODN_OLLAMA_NUM_CTX", 2048), "default Ollama num_ctx option; set 0 to use Ollama default")
 	noOllama := fs.Bool("no-ollama", false, "disable ollama calls")
 	sessionRoot := fs.String("session-root", "", "override session root directory")
 	runLogRoot := fs.String("run-log-root", "", "override run log root directory")
@@ -85,6 +89,7 @@ func (a *App) Run(args []string) error {
 
 	if !*noOllama {
 		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)
+		a.ollama.ConfigureRuntime(*ollamaKeepAlive, *ollamaNumCtx)
 	}
 
 	if strictOneShot || !isInteractive(a.in) {
@@ -461,13 +466,18 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	assistantResponse := formatStructuredCommandChatResponse(result, stdoutBuf.String(), stderrBuf.String(), "")
 	if execErr != nil {
 		assistantResponse = formatStructuredCommandChatResponse(result, stdoutBuf.String(), stderrBuf.String(), execErr.Error())
-		emitEvent("structured_command_failed", "Structured command execution failed", map[string]string{
+		details := map[string]string{
 			"error":     execErr.Error(),
 			"command":   result.Command,
 			"exit_code": fmt.Sprintf("%d", result.ExitCode),
 			"stdout":    truncateOutput(stdoutBuf.String()),
 			"stderr":    truncateOutput(stderrBuf.String()),
-		})
+		}
+		if isTransientStructuredLLMError(execErr) {
+			details["diagnosis"] = classifyStructuredLLMFailure(execErr)
+			details["mitigation"] = "Ollama backend failed before command completion; inspect journalctl -u ollama and consider CPU library mode."
+		}
+		emitEvent("structured_command_failed", "Structured command execution failed", details)
 	} else {
 		emitEvent("structured_command_completed", "Structured command executed", map[string]string{
 			"command":   result.Command,
@@ -576,6 +586,9 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 	}
 	if strings.TrimSpace(errText) != "" {
 		lines = append(lines, "Error: "+errText)
+		if diagnosis := classifyStructuredLLMFailure(errors.New(errText)); diagnosis != "ollama_request_failure" {
+			lines = append(lines, "Diagnosis: "+diagnosis)
+		}
 	}
 	return strings.Join(lines, "\n")
 }
@@ -963,6 +976,11 @@ func (a *App) printStatus(session *Session) {
 	if a.ollama != nil {
 		fmt.Fprintf(a.out, "Ollama model: %s\n", a.ollama.Model)
 		fmt.Fprintf(a.out, "Ollama endpoint: %s\n", a.ollama.Endpoint)
+		keepAlive := a.ollama.DefaultKeepAlive
+		if strings.TrimSpace(keepAlive) == "" {
+			keepAlive = "ollama-default"
+		}
+		fmt.Fprintf(a.out, "Ollama request defaults: keep_alive=%s num_ctx=%d\n", keepAlive, a.ollama.DefaultNumCtx)
 	} else {
 		fmt.Fprintln(a.out, "Ollama model: disabled")
 	}
@@ -1145,6 +1163,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func envIntOrDefault(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func isInteractive(r io.Reader) bool {

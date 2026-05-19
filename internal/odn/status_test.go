@@ -10,6 +10,7 @@ func TestPrintStatusShowsExecutionStackAndLastTurn(t *testing.T) {
 	var out bytes.Buffer
 	app := NewApp(strings.NewReader(""), &out, &bytes.Buffer{})
 	app.ollama = NewOllamaClient("http://127.0.0.1:11434/api/chat", "test-model")
+	app.ollama.ConfigureRuntime("30s", 2048)
 	session := &Session{
 		WorkspacePath: "/tmp/workspace",
 		WorkspaceHash: "workspace_hash",
@@ -32,6 +33,7 @@ func TestPrintStatusShowsExecutionStackAndLastTurn(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		"Execution stack:",
+		"Ollama request defaults: keep_alive=30s num_ctx=2048",
 		"normal prompts: execution-first command loop",
 		"/manage, /job: manager-worker orchestration",
 		"/micro, /queue: project-profiled manager-manager micro job queue",

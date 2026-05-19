@@ -16,6 +16,7 @@ import (
 const defaultCommandDecisionTimeout = 3 * time.Minute
 const defaultCommandDecisionMaxSteps = 10
 const defaultStructuredObservationChars = 2400
+const defaultStructuredLLMRequestAttempts = 3
 
 type CommandDecisionClient interface {
 	ChatRaw(ctx context.Context, req OllamaChatRequest) (OllamaChatResponse, error)
@@ -116,8 +117,11 @@ func RunStructuredCommandDecisionWithHistoryEventsAndAsk(ctx context.Context, pr
 		emitStructuredCommandEvent(onEvent, "structured_llm_request_started", "Requesting next structured command decision", map[string]string{
 			"step": fmt.Sprintf("%d", step),
 		})
-		resp, err := client.ChatRaw(ctx, buildStructuredCommandRequest(prompt, history, result.Observations))
+		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequest(prompt, history, result.Observations), step, onEvent)
 		if err != nil {
+			if result.ExitCode == 0 {
+				result.ExitCode = 1
+			}
 			return result, err
 		}
 
@@ -154,6 +158,28 @@ func RunStructuredCommandDecisionWithHistoryEventsAndAsk(ctx context.Context, pr
 					ExitCode: 1,
 					Stderr:   "ask rejected: latest real command succeeded; continue with observed evidence, verify with another command, or finish",
 				})
+				continue
+			}
+			if question == "" && command != "" {
+				emitStructuredCommandEvent(onEvent, "structured_ask_ignored", "Ask flag ignored for non-empty command", map[string]string{
+					"step":   fmt.Sprintf("%d", step),
+					"reason": "empty question with ask=true; executing non-empty command",
+				})
+				if err := validateStructuredCommandString(payload.Command); err != nil {
+					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
+						"step":   fmt.Sprintf("%d", step),
+						"reason": err.Error(),
+					})
+					result.Observations = append(result.Observations, StructuredCommandObservation{
+						Step:     step,
+						ExitCode: 1,
+						Stderr:   "command rejected: " + err.Error(),
+					})
+					continue
+				}
+				if err := runStructuredPayloadCommand(ctx, step, payload.Command, stdout, stderr, onEvent, &result); err != nil {
+					return result, err
+				}
 				continue
 			}
 			previousAnswer, alreadyAnswered := previousUserResponseForQuestion(result.Observations, question)
@@ -345,6 +371,43 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command string, 
 	return err
 }
 
+func requestStructuredCommandPayload(ctx context.Context, client CommandDecisionClient, req OllamaChatRequest, step int, onEvent func(StructuredCommandEvent)) (OllamaChatResponse, error) {
+	var lastErr error
+	for attempt := 1; attempt <= defaultStructuredLLMRequestAttempts; attempt++ {
+		resp, err := client.ChatRaw(ctx, req)
+		if err == nil {
+			if attempt > 1 {
+				emitStructuredCommandEvent(onEvent, "structured_llm_request_recovered", "Structured LLM request recovered after retry", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"attempt": fmt.Sprintf("%d", attempt),
+				})
+			}
+			return resp, nil
+		}
+		lastErr = err
+		emitStructuredCommandEvent(onEvent, "structured_llm_request_failed", "Structured LLM request failed", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"attempt": fmt.Sprintf("%d", attempt),
+			"error":   truncateStructuredTimelineValue(err.Error()),
+		})
+		if !isTransientStructuredLLMError(err) || attempt == defaultStructuredLLMRequestAttempts {
+			return OllamaChatResponse{}, err
+		}
+		emitStructuredCommandEvent(onEvent, "structured_llm_backend_unstable", "Ollama backend appears unstable; retrying request", map[string]string{
+			"step":       fmt.Sprintf("%d", step),
+			"attempt":    fmt.Sprintf("%d", attempt),
+			"diagnosis":  classifyStructuredLLMFailure(err),
+			"mitigation": "check journalctl -u ollama; prefer cpu_avx2 or reduce Ollama context/keep_alive if ROCm is crashing",
+		})
+		select {
+		case <-ctx.Done():
+			return OllamaChatResponse{}, ctx.Err()
+		case <-time.After(time.Duration(attempt) * 2 * time.Second):
+		}
+	}
+	return OllamaChatResponse{}, lastErr
+}
+
 func previousUserResponseForQuestion(observations []StructuredCommandObservation, question string) (string, bool) {
 	question = strings.TrimSpace(question)
 	if question == "" {
@@ -356,6 +419,36 @@ func previousUserResponseForQuestion(observations []StructuredCommandObservation
 		}
 	}
 	return "", false
+}
+
+func isTransientStructuredLLMError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "model runner has unexpectedly stopped") ||
+		strings.Contains(text, "ollama returned status 500") ||
+		strings.Contains(text, "unexpected eof") ||
+		strings.Contains(text, "connection reset by peer")
+}
+
+func classifyStructuredLLMFailure(err error) string {
+	if err == nil {
+		return ""
+	}
+	text := strings.ToLower(err.Error())
+	if strings.Contains(text, "model runner has unexpectedly stopped") ||
+		strings.Contains(text, "unexpected eof") ||
+		strings.Contains(text, "connection reset by peer") {
+		return "ollama_model_runner_crash_or_restart"
+	}
+	if strings.Contains(text, "ollama returned status 500") {
+		return "ollama_internal_error"
+	}
+	if strings.Contains(text, "context deadline exceeded") || strings.Contains(text, "client.timeout") {
+		return "ollama_request_timeout"
+	}
+	return "ollama_request_failure"
 }
 
 func validateStructuredCommandString(command string) error {
@@ -411,132 +504,218 @@ func latestRealCommandSucceeded(observations []StructuredCommandObservation) boo
 
 func buildStructuredCommandRequest(prompt string, history []Message, observations []StructuredCommandObservation) OllamaChatRequest {
 	return OllamaChatRequest{
-		Messages: []OllamaMessage{
-			{
-				Role: "system",
-				Content: strings.Join([]string{
-					"Return JSON only.",
-					"Schema: {\"command\":\"shell command to execute\",\"done\":false,\"answer\":\"\"}",
-					"To stop, return {\"command\":\"\",\"done\":true,\"answer\":\"brief result from observed evidence\"}.",
-					"To ask the user for needed help, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"ask\":true,\"question\":\"brief specific question\"}.",
-					"If must_return_command is true, done=true is invalid; return a non-empty command.",
-					"If must_return_command is true, ask=true is invalid; inspect or try a command first.",
-					"If the latest real command succeeded, ask=true is invalid; continue, verify, or finish from evidence.",
-					"Do not return done=true until at least one command has exit_code 0.",
-					"If the latest command failed, return a different command instead of done=true.",
-					"Use shell commands to satisfy requests; do not answer from memory when command evidence is required.",
-					"Never return an empty command when done=false.",
-					"If a command fails, the failure is recorded in observations; use that context to pivot to a different command, source, or tool.",
-					"If the user already answered a question, do not ask the same question again; use the observed user_response.",
-					"If you ask for approval and include an approval-gated command, that command may run after the user answers.",
-					"Use recent_conversation to resolve follow-up references before asking the user.",
-					"If recent_conversation contains the missing subject, location, file, project, or preference, use it in the command instead of asking.",
-					"Ask the user only when progress requires permission, credentials, sudo, destructive approval, or a choice that cannot be inferred from evidence.",
-					"Do not ask for help when another non-destructive command, public source, or local inspection can be tried.",
-					"After each command, inspect stdout/stderr/exit_code and decide whether another command is needed.",
-					"The command must be a single shell command.",
-					"Each command runs in a fresh shell; cd does not persist to the next step.",
-					"Use absolute paths or include cd in the same command that needs it.",
-					"A command that only changes directory does not help later steps; combine cd with the file creation, build, test, or verification command that needs that directory.",
-					"Use current_working_directory for project creation unless the user explicitly provided another path.",
-					"Do not create demo projects in the home directory unless the user explicitly asked for home.",
-					"Available terminal tools may include bash, curl, python3, sed, awk, grep, jq, date, uname, and package managers; discover with commands when uncertain.",
-					"To identify the operating system, inspect command evidence such as uname and /etc/os-release.",
-					"For identification tasks, inspect available package managers only; do not ask for permission to proceed with a package manager.",
-					"Before OS-specific package or install advice, verify OS, distro, version, architecture, and available package managers with commands.",
-					"If a needed tool is missing, identify install options from verified OS/package-manager evidence.",
-					"Do not install missing tools unless the user explicitly asked to install or approved installation.",
-					"When installation is not approved, answer with the proposed install command and ask for approval.",
-					"For desktop/browser tasks, inspect running processes and the GUI session with commands before acting.",
-					"For browser window tasks, discover available tools such as firefox, xdg-open, wmctrl, xdotool, gdbus, or gio with commands when uncertain.",
-					"When asked to use a browser PID or existing browser process, find the running process first, then use window/browser commands based on observed evidence.",
-					"If desktop control is impossible because no GUI session, browser process, or needed tool is available, report the missing evidence and ask for the smallest needed user action.",
-					"Do not use placeholder credentials.",
-					"Do not call APIs that require unavailable keys.",
-					"Never put placeholder key text in a command.",
-					"Never put placeholder angle-bracket values such as <location>, <query>, <file>, or <url> in a command.",
-					"For external facts, use public unauthenticated sources.",
-					"For timely public information, use internet commands by default.",
-					"For current, recent, latest, today, or now public facts, the first accepted command should gather live evidence from the internet.",
-					"For current external facts, run an internet command and use observed output before done.",
-					"For filesystem changes, run shell commands that create or modify the requested filesystem state.",
-					"For local static web app demos, create files locally and serve them with a local server such as python3 http.server.",
-					"For Go CLI demos, use curl to discover the latest Go release from go.dev/dl/?mode=json, install that Go toolchain into a user-writable project directory unless system installation is approved, then build, test, and run the app.",
-					"The Go release JSON has version and files[].filename fields; construct downloads as https://go.dev/dl/<filename>.",
-					"For Go CLI demos, do not return done=true until go test, go build, and the built executable have all succeeded.",
-					"Do not treat null or empty JSON query output as useful evidence.",
-					"For npm React TypeScript demos, prefer a minimal Vite project with package.json and src files; do not use create-react-app.",
-					"For npm install/build commands in tests, keep output concise when possible.",
-					"For Docker app tasks, verify docker is available, create the app and Dockerfile, build the image, run a named container, verify it with curl, inspect container state/restart count, and inspect docker logs before done=true.",
-					"For Docker smoke tests, prefer local build contexts that do not require pulling large base images when a static binary or scratch image can satisfy the request.",
-					"Do not return done=true for a Docker app until docker build, docker run, live endpoint verification, docker inspect, and docker logs checks have succeeded.",
-					"When starting a background server, use nohup or equivalent and write the background process PID with $! if a PID file is requested.",
-					"When starting a background server, redirect stdout and stderr away from the command pipe.",
-					"Do not background file creation or setup commands; only background the long-running server process.",
-					"When chaining commands before a background server, use semicolons before nohup; avoid '&& nohup ... &' because bash may background the setup chain.",
-					"After starting a local server, verify it with a short curl retry loop before done=true.",
-					"Do not ask for public sources when the task can be completed with local files.",
-					"If observed output is empty, denied, or not useful, try a different public source.",
-					"If output reports invalid credentials, try a no-key public source before done.",
-					"If the shell reports a syntax or quoting error, correct the command or use a simpler command.",
-					"Match the command source to the requested fact type.",
-					"Public no-key internet sources available: wttr.in, news.google.com/rss/search?q=<query>, duckduckgo.com/html/?q=<query>.",
-					"Prefer simple curl commands that print readable evidence over fragile HTML parsing.",
-					"For current time, prefer shell time/date commands or public no-key time sources.",
-					"For location-specific time, produce local-time evidence for that location; do not answer from UTC unless UTC was requested.",
-					"Do not use weather services as time sources.",
-					"If using shell date for a location, choose an IANA timezone and prefix the command with TZ=Area/City before date.",
-					"Do not pass TZ=Area/City as an argument to date.",
-					"Prefer concise command output; use format/query options instead of large pages when available.",
-					"No markdown.",
-				}, "\n"),
-			},
-			{Role: "user", Content: buildStructuredCommandUserMessage(prompt, history, observations)},
-		},
-		Format: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"command":  map[string]interface{}{"type": "string"},
-				"done":     map[string]interface{}{"type": "boolean"},
-				"answer":   map[string]interface{}{"type": "string"},
-				"ask":      map[string]interface{}{"type": "boolean"},
-				"question": map[string]interface{}{"type": "string"},
-			},
-			"required": []string{"command", "done", "answer"},
-		},
+		ContextSystem: buildStructuredCommandSystemContext(),
+		Messages:      buildStructuredCommandMessages(prompt, history, observations),
+		Format:        buildStructuredCommandResponseFormat(observations),
 		Options: map[string]interface{}{
 			"temperature": 0,
 		},
 	}
 }
 
-func buildStructuredCommandUserMessage(prompt string, history []Message, observations []StructuredCommandObservation) string {
-	payload := struct {
-		Prompt                      string                         `json:"prompt"`
-		RecentConversation          []Message                      `json:"recent_conversation,omitempty"`
-		CurrentWorkingDirectory     string                         `json:"current_working_directory"`
-		MustReturnCommand           bool                           `json:"must_return_command"`
-		RealCommandObservationCount int                            `json:"real_command_observation_count"`
-		SuccessfulCommandCount      int                            `json:"successful_command_count"`
-		FailedCommandCount          int                            `json:"failed_command_count"`
-		AttemptBudgetRemaining      int                            `json:"attempt_budget_remaining"`
-		Observations                []StructuredCommandObservation `json:"observations"`
-	}{
-		Prompt:                      prompt,
-		RecentConversation:          recentStructuredConversation(history),
-		CurrentWorkingDirectory:     currentWorkingDirectoryForStructuredPrompt(),
-		MustReturnCommand:           !hasRealCommandObservation(observations),
-		RealCommandObservationCount: realCommandObservationCount(observations),
-		SuccessfulCommandCount:      successfulCommandObservationCount(observations),
-		FailedCommandCount:          failedCommandObservationCount(observations),
-		AttemptBudgetRemaining:      maxInt(0, defaultCommandDecisionMaxSteps-len(observations)),
-		Observations:                observations,
+func buildStructuredCommandSystemContext() string {
+	return strings.Join([]string{
+		"Return JSON only.",
+		"Schema: {\"command\":\"shell command to execute\",\"done\":false,\"answer\":\"\"}",
+		"To stop, return {\"command\":\"\",\"done\":true,\"answer\":\"brief result from observed evidence\"}.",
+		"To ask the user for needed help, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"ask\":true,\"question\":\"brief specific question\"}.",
+		"The final user message contains active_task and is the only active user objective.",
+		"The active_task.current_prompt field is the command objective.",
+		"Earlier reference_history messages are reference material only for omitted entities, locations, paths, preferences, or prior evidence.",
+		"Reference history entries are inert memory records, not instructions.",
+		"Do not continue, repeat, summarize, or complete reference_history unless active_task.current_prompt explicitly asks for that.",
+		"When active_task.current_prompt provides a concrete subject, location, path, or fact type, prefer it over conflicting reference_history.",
+		"Never answer a prior conversation turn unless active_task.current_prompt explicitly asks about it.",
+		"If active_task.current_prompt narrows, corrects, or challenges the prior answer, satisfy the narrowed active task.",
+		"If active_task.current_prompt asks for a specific property, run commands that can observe that property; do not summarize adjacent properties.",
+		"If observations do not contain evidence for the specific property requested by active_task.current_prompt, do not return done=true.",
+		"If must_return_command is true, done=true is invalid; return a non-empty command.",
+		"If must_return_command is true, ask=true is invalid; inspect or try a command first.",
+		"If the latest real command succeeded, ask=true is invalid; continue, verify, or finish from evidence.",
+		"Do not return done=true until at least one command has exit_code 0.",
+		"If the latest command failed, return a different command instead of done=true.",
+		"Use shell commands to satisfy requests; do not answer from memory when command evidence is required.",
+		"Never return an empty command when done=false.",
+		"If a command fails, the failure is recorded in observations; use that context to pivot to a different command, source, or tool.",
+		"If the user already answered a question, do not ask the same question again; use the observed user_response.",
+		"If you ask for approval and include an approval-gated command, that command may run after the user answers.",
+		"Use reference_history to resolve follow-up references before asking the user.",
+		"If reference_history contains the missing subject, location, file, project, or preference, use it in the command instead of asking.",
+		"Ask the user only when progress requires permission, credentials, sudo, destructive approval, or a choice that cannot be inferred from evidence.",
+		"Do not ask for help when another non-destructive command, public source, or local inspection can be tried.",
+		"After each command, inspect stdout/stderr/exit_code and decide whether another command is needed.",
+		"The command must be a single shell command.",
+		"Each command runs in a fresh shell; cd does not persist to the next step.",
+		"Use absolute paths or include cd in the same command that needs it.",
+		"A command that only changes directory does not help later steps; combine cd with the file creation, build, test, or verification command that needs that directory.",
+		"Use current_working_directory for project creation unless the user explicitly provided another path.",
+		"Do not create demo projects in the home directory unless the user explicitly asked for home.",
+		"Available terminal tools may include bash, curl, python3, sed, awk, grep, jq, date, uname, and package managers; discover with commands when uncertain.",
+		"To identify the operating system, inspect command evidence such as uname and /etc/os-release.",
+		"For identification tasks, inspect available package managers only; do not ask for permission to proceed with a package manager.",
+		"Before OS-specific package or install advice, verify OS, distro, version, architecture, and available package managers with commands.",
+		"If a needed tool is missing, identify install options from verified OS/package-manager evidence.",
+		"Do not install missing tools unless the user explicitly asked to install or approved installation.",
+		"When installation is not approved, answer with the proposed install command and ask for approval.",
+		"For desktop/browser tasks, inspect running processes and the GUI session with commands before acting.",
+		"For browser window tasks, discover available tools such as firefox, xdg-open, wmctrl, xdotool, gdbus, or gio with commands when uncertain.",
+		"When asked to use a browser PID or existing browser process, find the running process first, then use window/browser commands based on observed evidence.",
+		"If desktop control is impossible because no GUI session, browser process, or needed tool is available, report the missing evidence and ask for the smallest needed user action.",
+		"Do not use placeholder credentials.",
+		"Do not call APIs that require unavailable keys.",
+		"Never put placeholder key text in a command.",
+		"Never put placeholder angle-bracket values such as <location>, <query>, <file>, or <url> in a command.",
+		"For external facts, use public unauthenticated sources.",
+		"For timely public information, use internet commands by default.",
+		"For current, recent, latest, today, or now public facts, the first accepted command should gather live evidence from the internet.",
+		"For current external facts, run an internet command and use observed output before done.",
+		"For filesystem changes, run shell commands that create or modify the requested filesystem state.",
+		"For local static web app demos, create files locally and serve them with a local server such as python3 http.server.",
+		"For Go CLI demos, use curl to discover the latest Go release from go.dev/dl/?mode=json, install that Go toolchain into a user-writable project directory unless system installation is approved, then build, test, and run the app.",
+		"The Go release JSON has version and files[].filename fields; construct downloads as https://go.dev/dl/<filename>.",
+		"For Go CLI demos, do not return done=true until go test, go build, and the built executable have all succeeded.",
+		"Do not treat null or empty JSON query output as useful evidence.",
+		"For npm React TypeScript demos, prefer a minimal Vite project with package.json and src files; do not use create-react-app.",
+		"For npm install/build commands in tests, keep output concise when possible.",
+		"For Docker app tasks, verify docker is available, create the app and Dockerfile, build the image, run a named container, verify it with curl, inspect container state/restart count, and inspect docker logs before done=true.",
+		"For Docker smoke tests, prefer local build contexts that do not require pulling large base images when a static binary or scratch image can satisfy the request.",
+		"Do not return done=true for a Docker app until docker build, docker run, live endpoint verification, docker inspect, and docker logs checks have succeeded.",
+		"When starting a background server, use nohup or equivalent and write the background process PID with $! if a PID file is requested.",
+		"When starting a background server, redirect stdout and stderr away from the command pipe.",
+		"Do not background file creation or setup commands; only background the long-running server process.",
+		"When chaining commands before a background server, use semicolons before nohup; avoid '&& nohup ... &' because bash may background the setup chain.",
+		"After starting a local server, verify it with a short curl retry loop before done=true.",
+		"Do not ask for public sources when the task can be completed with local files.",
+		"If observed output is empty, denied, or not useful, try a different public source.",
+		"If output reports invalid credentials, try a no-key public source before done.",
+		"If the shell reports a syntax or quoting error, correct the command or use a simpler command.",
+		"Match the command source to the requested fact type.",
+		"Public no-key internet sources available: wttr.in, news.google.com/rss/search?q=<query>, duckduckgo.com/html/?q=<query>.",
+		"Prefer simple curl commands that print readable evidence over fragile HTML parsing.",
+		"For current time, prefer shell time/date commands or public no-key time sources.",
+		"For location-specific time, produce local-time evidence for that location; do not answer from UTC unless UTC was requested.",
+		"Do not use weather services as time sources.",
+		"If using shell date for a location, choose an IANA timezone and prefix the command with TZ=Area/City before date.",
+		"Do not pass TZ=Area/City as an argument to date.",
+		"Prefer concise command output; use format/query options instead of large pages when available.",
+		"No markdown.",
+	}, "\n")
+}
+
+func buildStructuredCommandResponseFormat(observations []StructuredCommandObservation) map[string]interface{} {
+	properties := map[string]interface{}{
+		"command":  map[string]interface{}{"type": "string"},
+		"done":     map[string]interface{}{"type": "boolean"},
+		"answer":   map[string]interface{}{"type": "string"},
+		"ask":      map[string]interface{}{"type": "boolean"},
+		"question": map[string]interface{}{"type": "string"},
 	}
+	if !hasRealCommandObservation(observations) {
+		properties["command"] = map[string]interface{}{"type": "string", "minLength": 1}
+		properties["done"] = map[string]interface{}{"type": "boolean", "enum": []bool{false}}
+	}
+	return map[string]interface{}{
+		"type":       "object",
+		"properties": properties,
+		"required":   []string{"command", "done", "answer"},
+	}
+}
+
+func buildStructuredCommandMessages(prompt string, history []Message, observations []StructuredCommandObservation) []OllamaMessage {
+	messages := []OllamaMessage{}
+	if historyMessage := buildStructuredCommandHistoryMessage(history); historyMessage != "" {
+		messages = append(messages,
+			OllamaMessage{Role: "user", Content: historyMessage},
+			OllamaMessage{Role: "assistant", Content: "Reference history received. I will use it only when the active task needs omitted context."},
+		)
+	}
+	messages = append(messages, OllamaMessage{Role: "user", Content: buildStructuredCommandUserMessage(prompt, observations)})
+	return messages
+}
+
+func buildStructuredCommandHistoryMessage(history []Message) string {
+	recent := recentStructuredMemoryRecords(history)
+	if len(recent) == 0 {
+		return ""
+	}
+	payload := struct {
+		ReferenceHistory []StructuredMemoryRecord `json:"reference_history"`
+	}{
+		ReferenceHistory: recent,
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(blob)
+}
+
+func buildStructuredCommandUserMessage(prompt string, observations []StructuredCommandObservation) string {
+	payload := struct {
+		ActivePromptOpen string `json:"active_prompt_open"`
+		ActiveTask       struct {
+			CurrentPrompt               string                         `json:"current_prompt"`
+			Prompt                      string                         `json:"prompt"`
+			CurrentWorkingDirectory     string                         `json:"current_working_directory"`
+			MustReturnCommand           bool                           `json:"must_return_command"`
+			RealCommandObservationCount int                            `json:"real_command_observation_count"`
+			SuccessfulCommandCount      int                            `json:"successful_command_count"`
+			FailedCommandCount          int                            `json:"failed_command_count"`
+			AttemptBudgetRemaining      int                            `json:"attempt_budget_remaining"`
+			Observations                []StructuredCommandObservation `json:"observations"`
+		} `json:"active_task"`
+		ActivePromptClose string `json:"active_prompt_close"`
+	}{}
+	payload.ActivePromptOpen = prompt
+	payload.ActiveTask.CurrentPrompt = prompt
+	payload.ActiveTask.Prompt = prompt
+	payload.ActiveTask.CurrentWorkingDirectory = currentWorkingDirectoryForStructuredPrompt()
+	payload.ActiveTask.MustReturnCommand = !hasRealCommandObservation(observations)
+	payload.ActiveTask.RealCommandObservationCount = realCommandObservationCount(observations)
+	payload.ActiveTask.SuccessfulCommandCount = successfulCommandObservationCount(observations)
+	payload.ActiveTask.FailedCommandCount = failedCommandObservationCount(observations)
+	payload.ActiveTask.AttemptBudgetRemaining = maxInt(0, defaultCommandDecisionMaxSteps-len(observations))
+	payload.ActiveTask.Observations = observations
+	payload.ActivePromptClose = prompt
 	blob, err := json.Marshal(payload)
 	if err != nil {
 		return prompt
 	}
 	return string(blob)
+}
+
+type StructuredMemoryRecord struct {
+	Turn        int    `json:"turn"`
+	Role        string `json:"role"`
+	NotPrompt   bool   `json:"not_prompt"`
+	MemoryStyle string `json:"memory_style"`
+	MemoryNote  string `json:"memory_note"`
+}
+
+func recentStructuredMemoryRecords(history []Message) []StructuredMemoryRecord {
+	recent := recentStructuredConversation(history)
+	if len(recent) == 0 {
+		return nil
+	}
+	out := make([]StructuredMemoryRecord, 0, len(recent))
+	for i, msg := range recent {
+		out = append(out, StructuredMemoryRecord{
+			Turn:        i + 1,
+			Role:        msg.Role,
+			NotPrompt:   true,
+			MemoryStyle: "terse_reference_only",
+			MemoryNote:  compactStructuredMemoryNote(msg.Content),
+		})
+	}
+	return out
+}
+
+func compactStructuredMemoryNote(content string) string {
+	note := strings.Join(strings.Fields(content), " ")
+	if len(note) <= 320 {
+		return note
+	}
+	return note[:320] + " [truncated]"
 }
 
 func recentStructuredConversation(history []Message) []Message {
