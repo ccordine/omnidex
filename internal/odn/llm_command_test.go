@@ -100,6 +100,29 @@ type fakeContextSummarizer struct {
 	inputs   []MinimalContextInput
 }
 
+type fakeCompletionChecker struct {
+	checks []CompletionCheck
+	errors []error
+	inputs []CompletionCheckInput
+}
+
+func (f *fakeCompletionChecker) CheckCompletion(ctx context.Context, input CompletionCheckInput) (CompletionCheck, error) {
+	f.inputs = append(f.inputs, input)
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return CompletionCheck{}, err
+		}
+	}
+	if len(f.checks) == 0 {
+		return CompletionCheck{}, nil
+	}
+	check := f.checks[0]
+	f.checks = f.checks[1:]
+	return check, nil
+}
+
 func (f *fakeContextSummarizer) SummarizeContext(ctx context.Context, input MinimalContextInput) (MinimalContext, error) {
 	f.inputs = append(f.inputs, input)
 	if len(f.errors) > 0 {
@@ -1780,6 +1803,113 @@ func TestStructuredCommandDecisionRejectsDoneWithPendingObjectiveLedger(t *testi
 	}
 }
 
+func TestStructuredCommandDecisionCanFinishFromFreshMinimalContext(t *testing.T) {
+	client := &fakeCommandDecisionClient{}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "retrieve_weather_pattaya", Description: "Retrieve current Pattaya weather", Status: "pending"},
+		},
+	}}}
+	summarizer := &fakeContextSummarizer{contexts: []MinimalContext{{
+		Summary: "Pattaya weather is fresh from memory.",
+		Facts:   []string{"Partly Cloudy +29C humidity 76%, observed moments ago."},
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "fresh memory satisfies weather objective",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "retrieve_weather_pattaya", Description: "Retrieve current Pattaya weather", Status: "satisfied", Evidence: "fresh minimal context"},
+		},
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"current weather request",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{
+			PromptInterpreter: interpreter,
+			ContextSummarizer: summarizer,
+			CompletionChecker: checker,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 0 {
+		t.Fatalf("planner should not be called when fresh context completes task, calls=%d", client.calls)
+	}
+	if result.Command != "MEMORY_CONTEXT" || result.ExitCode != 0 {
+		t.Fatalf("result should finish from memory context: %#v", result)
+	}
+	if !strings.Contains(result.Answer, "Partly Cloudy") {
+		t.Fatalf("answer missing memory fact: %q", result.Answer)
+	}
+	if !structuredEventsContain(events, "completion_check_accepted_from_context") {
+		t.Fatalf("missing context completion event: %#v", events)
+	}
+}
+
+func TestStructuredCommandDecisionDoneCheckSatisfiesSinglePendingObjective(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'Partly Cloudy +29C humidity 76%%\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Partly Cloudy +29C humidity 76%"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "retrieve_weather_pattaya", Description: "Retrieve current Pattaya weather", Status: "pending"},
+		},
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "command output satisfies weather objective",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "retrieve_weather_pattaya", Description: "Retrieve current Pattaya weather", Status: "satisfied", Evidence: "Partly Cloudy +29C humidity 76%"},
+		},
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"current weather request",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{
+			PromptInterpreter: interpreter,
+			CompletionChecker: checker,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Answer != "Partly Cloudy +29C humidity 76%" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
+	}
+	if !structuredEventsContain(events, "completion_check_completed") {
+		t.Fatalf("missing done-check event: %#v", events)
+	}
+}
+
 func TestStructuredCommandDecisionDelegatesShellTaskToSpecialist(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Get current Pattaya time using local timezone evidence."}`,
@@ -2192,6 +2322,30 @@ func TestContextSummarizerRequestCarriesCandidateContextButReturnsInventorySchem
 		if !strings.Contains(string(formatBlob), want) {
 			t.Fatalf("minimal context schema missing %q: %s", want, string(formatBlob))
 		}
+	}
+}
+
+func TestCompletionCheckerRequestAndParser(t *testing.T) {
+	req := buildCompletionCheckerRequest(CompletionCheckInput{
+		UserPrompt: "weather request",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "retrieve_weather_pattaya", Description: "Retrieve current Pattaya weather", Status: "pending"},
+		},
+		MinimalContext:  MinimalContext{Summary: "Fresh weather exists."},
+		CandidateAnswer: "Partly Cloudy +29C",
+	})
+	content := joinOllamaMessageContent(req.Messages)
+	for _, want := range []string{"done-check specialist", "objective_ledger", "minimal_context", "candidate_answer"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("completion checker request missing %q: %s", want, content)
+		}
+	}
+	check, err := ParseCompletionCheck(`{"done":true,"reason":"fresh memory","objective_ledger":[{"id":"retrieve_weather_pattaya","description":"Retrieve weather","status":"satisfied","evidence":"fresh memory"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !check.Done || len(pendingStructuredObjectives(check.ObjectiveLedger)) != 0 {
+		t.Fatalf("unexpected completion check: %#v", check)
 	}
 }
 

@@ -138,16 +138,43 @@ type MinimalContextInput struct {
 	ExistingContext         MinimalContext
 }
 
+type CompletionCheckInput struct {
+	UserPrompt              string
+	CurrentWorkingDirectory string
+	ObjectiveLedger         []StructuredObjective
+	MinimalContext          MinimalContext
+	Observations            []StructuredCommandObservation
+	CandidateAnswer         string
+}
+
+type CompletionCheck struct {
+	Done            bool
+	Reason          string
+	ObjectiveLedger []StructuredObjective
+}
+
 type ContextSummarizer interface {
 	SummarizeContext(ctx context.Context, input MinimalContextInput) (MinimalContext, error)
+}
+
+type CompletionChecker interface {
+	CheckCompletion(ctx context.Context, input CompletionCheckInput) (CompletionCheck, error)
 }
 
 type OllamaContextSummarizer struct {
 	Client CommandDecisionClient
 }
 
+type OllamaCompletionChecker struct {
+	Client CommandDecisionClient
+}
+
 func NewOllamaContextSummarizer(client CommandDecisionClient) OllamaContextSummarizer {
 	return OllamaContextSummarizer{Client: client}
+}
+
+func NewOllamaCompletionChecker(client CommandDecisionClient) OllamaCompletionChecker {
+	return OllamaCompletionChecker{Client: client}
 }
 
 func (s OllamaContextSummarizer) SummarizeContext(ctx context.Context, input MinimalContextInput) (MinimalContext, error) {
@@ -159,6 +186,17 @@ func (s OllamaContextSummarizer) SummarizeContext(ctx context.Context, input Min
 		return MinimalContext{}, err
 	}
 	return ParseMinimalContext(resp.Content)
+}
+
+func (c OllamaCompletionChecker) CheckCompletion(ctx context.Context, input CompletionCheckInput) (CompletionCheck, error) {
+	if c.Client == nil {
+		return CompletionCheck{}, fmt.Errorf("completion checker client is required")
+	}
+	resp, err := c.Client.ChatRaw(ctx, buildCompletionCheckerRequest(input))
+	if err != nil {
+		return CompletionCheck{}, err
+	}
+	return ParseCompletionCheck(resp.Content)
 }
 
 type PromptInterpreter interface {
@@ -281,6 +319,7 @@ type structuredCommandDecisionRunConfig struct {
 	CurrentWorkingDirectory string
 	PromptInterpreter       PromptInterpreter
 	ContextSummarizer       ContextSummarizer
+	CompletionChecker       CompletionChecker
 	Evaluator               StructuredLLMResponseEvaluator
 	EvaluatorThreshold      int
 	ShellSpecialist         ShellCommandSpecialist
@@ -351,6 +390,19 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"constraints": fmt.Sprintf("%d", len(minimalContext.Constraints)),
 				"open_items":  fmt.Sprintf("%d", len(minimalContext.OpenItems)),
 			})
+		}
+	}
+	if cfg.CompletionChecker != nil && minimalContextHasContent(minimalContext) && len(pendingStructuredObjectives(ledger)) > 0 {
+		ledger = runCompletionCheck(ctx, 0, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, nil, minimalContextAnswer(minimalContext), cfg.CompletionChecker, onEvent)
+		result.ObjectiveLedger = ledger
+		if len(pendingStructuredObjectives(ledger)) == 0 {
+			result.Command = "MEMORY_CONTEXT"
+			result.ExitCode = 0
+			result.Answer = minimalContextAnswer(minimalContext)
+			emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_context", "Done-check specialist accepted existing context without a command", map[string]string{
+				"answer": truncateStructuredTimelineValue(result.Answer),
+			})
+			return result, nil
 		}
 	}
 	for step := 1; step <= defaultCommandDecisionMaxSteps; step++ {
@@ -631,6 +683,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if strings.TrimSpace(payload.Command) != "" {
 				if latest, ok := latestSuccessfulCommandObservation(result.Observations); ok && latestRealCommandSucceeded(result.Observations) {
 					result.Answer = finalStructuredAnswer(payload.Answer, latest)
+					ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
+					ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
+					result.ObjectiveLedger = ledger
 					if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 						continue
 					}
@@ -715,6 +770,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			latest, _ := latestSuccessfulCommandObservation(result.Observations)
 			result.Answer = finalStructuredAnswer(payload.Answer, latest)
+			ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
+			ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
+			result.ObjectiveLedger = ledger
 			if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 				continue
 			}
@@ -1359,6 +1417,81 @@ func buildContextSummarizerRequest(input MinimalContextInput) OllamaChatRequest 
 			"num_predict": 512,
 		},
 	}
+}
+
+func buildCompletionCheckerRequest(input CompletionCheckInput) OllamaChatRequest {
+	payload := struct {
+		Role                    string                         `json:"role"`
+		UserPrompt              string                         `json:"user_prompt"`
+		CurrentWorkingDirectory string                         `json:"current_working_directory"`
+		ObjectiveLedger         []StructuredObjective          `json:"objective_ledger,omitempty"`
+		MinimalContext          MinimalContext                 `json:"minimal_context,omitempty"`
+		Observations            []StructuredCommandObservation `json:"observations"`
+		CandidateAnswer         string                         `json:"candidate_answer"`
+		Instructions            []string                       `json:"instructions"`
+	}{
+		Role:                    "done_check_specialist",
+		UserPrompt:              input.UserPrompt,
+		CurrentWorkingDirectory: input.CurrentWorkingDirectory,
+		ObjectiveLedger:         mergeStructuredObjectiveLedger(nil, input.ObjectiveLedger),
+		MinimalContext:          normalizeMinimalContext(input.MinimalContext),
+		Observations:            input.Observations,
+		CandidateAnswer:         input.CandidateAnswer,
+		Instructions: []string{
+			"Decide whether the task is already complete from objective ledger, minimal context, observations, and candidate answer.",
+			"Mark objectives satisfied only when observations or explicit evidence prove them.",
+			"Do not choose shell commands.",
+			"Do not answer the user.",
+			"Return updated objective_ledger and a concise reason.",
+		},
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		blob = []byte(`{"role":"done_check_specialist"}`)
+	}
+	return OllamaChatRequest{
+		Messages: []OllamaMessage{
+			{
+				Role: "system",
+				Content: strings.Join([]string{
+					"You are the done-check specialist for ODN.",
+					"Your only job is deciding whether the current task is already complete.",
+					"You update objective ledger statuses from observed evidence.",
+					"Return JSON only.",
+				}, " "),
+			},
+			{Role: "user", Content: string(blob)},
+		},
+		Format: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"done":             map[string]interface{}{"type": "boolean"},
+				"reason":           map[string]interface{}{"type": "string"},
+				"objective_ledger": structuredObjectiveLedgerSchema(),
+			},
+			"required": []string{"done", "reason", "objective_ledger"},
+		},
+		Options: map[string]interface{}{
+			"temperature": 0,
+			"num_predict": 512,
+		},
+	}
+}
+
+func ParseCompletionCheck(raw string) (CompletionCheck, error) {
+	var decoded struct {
+		Done            bool                  `json:"done"`
+		Reason          string                `json:"reason"`
+		ObjectiveLedger []StructuredObjective `json:"objective_ledger"`
+	}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return CompletionCheck{}, fmt.Errorf("parse completion check: %w", err)
+	}
+	return CompletionCheck{
+		Done:            decoded.Done,
+		Reason:          strings.TrimSpace(decoded.Reason),
+		ObjectiveLedger: mergeStructuredObjectiveLedger(nil, decoded.ObjectiveLedger),
+	}, nil
 }
 
 func minimalContextSchema() map[string]interface{} {
@@ -2116,6 +2249,87 @@ func rejectDoneForObjectiveLedger(step int, ledger []StructuredObjective, onEven
 	})
 	result.Answer = ""
 	return true
+}
+
+func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDirectory string, ledger []StructuredObjective, minimalContext MinimalContext, observations []StructuredCommandObservation, candidateAnswer string, checker CompletionChecker, onEvent func(StructuredCommandEvent)) []StructuredObjective {
+	if checker == nil || len(pendingStructuredObjectives(ledger)) == 0 {
+		return ledger
+	}
+	check, err := checker.CheckCompletion(ctx, CompletionCheckInput{
+		UserPrompt:              prompt,
+		CurrentWorkingDirectory: structuredPromptWorkingDirectory(currentWorkingDirectory),
+		ObjectiveLedger:         mergeStructuredObjectiveLedger(nil, ledger),
+		MinimalContext:          normalizeMinimalContext(minimalContext),
+		Observations:            observations,
+		CandidateAnswer:         candidateAnswer,
+	})
+	if err != nil {
+		emitStructuredCommandEvent(onEvent, "completion_check_failed", "Done-check specialist failed; continuing with deterministic checks", map[string]string{
+			"step":  fmt.Sprintf("%d", step),
+			"error": truncateStructuredTimelineValue(err.Error()),
+		})
+		return ledger
+	}
+	updated := mergeStructuredObjectiveLedger(ledger, check.ObjectiveLedger)
+	emitStructuredCommandEvent(onEvent, "completion_check_completed", "Done-check specialist reviewed completion", map[string]string{
+		"step":               fmt.Sprintf("%d", step),
+		"done":               fmt.Sprintf("%t", check.Done),
+		"reason":             truncateStructuredTimelineValue(check.Reason),
+		"pending_objectives": pendingStructuredObjectiveIDs(updated),
+	})
+	return updated
+}
+
+func minimalContextHasContent(context MinimalContext) bool {
+	context = normalizeMinimalContext(context)
+	return context.Summary != "" || len(context.Facts) > 0 || len(context.Constraints) > 0 || len(context.OpenItems) > 0
+}
+
+func minimalContextAnswer(context MinimalContext) string {
+	context = normalizeMinimalContext(context)
+	parts := []string{}
+	if context.Summary != "" {
+		parts = append(parts, context.Summary)
+	}
+	if len(context.Facts) > 0 {
+		parts = append(parts, strings.Join(context.Facts, " "))
+	}
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+func reconcileStructuredObjectiveLedgerForDone(step int, ledger []StructuredObjective, latest StructuredCommandObservation, onEvent func(StructuredCommandEvent)) []StructuredObjective {
+	pending := pendingStructuredObjectives(ledger)
+	if len(pending) != 1 {
+		return ledger
+	}
+	if strings.TrimSpace(latest.Command) == "" || latest.ExitCode != 0 {
+		return ledger
+	}
+	if strings.TrimSpace(latest.Stdout) == "" && strings.TrimSpace(latest.Stderr) == "" {
+		return ledger
+	}
+	reconciled := mergeStructuredObjectiveLedger(ledger, []StructuredObjective{{
+		ID:          pending[0].ID,
+		Description: pending[0].Description,
+		Status:      "satisfied",
+		Evidence:    structuredObjectiveEvidenceFromObservation(latest),
+	}})
+	emitStructuredCommandEvent(onEvent, "objective_ledger_reconciled", "Single pending objective satisfied from command evidence", map[string]string{
+		"step":      fmt.Sprintf("%d", step),
+		"objective": pending[0].ID,
+	})
+	return reconciled
+}
+
+func structuredObjectiveEvidenceFromObservation(obs StructuredCommandObservation) string {
+	evidence := strings.TrimSpace(obs.Stdout)
+	if evidence == "" {
+		evidence = strings.TrimSpace(obs.Stderr)
+	}
+	if evidence == "" {
+		evidence = strings.TrimSpace(obs.Command)
+	}
+	return truncateStructuredObservation(evidence)
 }
 
 func pendingStructuredObjectiveIDs(ledger []StructuredObjective) string {

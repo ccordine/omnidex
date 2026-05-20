@@ -29,6 +29,7 @@ type App struct {
 	planner            *OllamaClient
 	promptInterpreter  PromptInterpreter
 	contextSummarizer  ContextSummarizer
+	completionChecker  CompletionChecker
 	evaluator          StructuredLLMResponseEvaluator
 	evaluatorThreshold int
 	shellSpecialist    ShellCommandSpecialist
@@ -109,6 +110,7 @@ func (a *App) Run(args []string) error {
 		a.planner.ConfigureRuntime(*ollamaKeepAlive, *plannerNumCtx)
 		a.promptInterpreter = NewOllamaPromptInterpreter(a.planner)
 		a.contextSummarizer = NewOllamaContextSummarizer(a.planner)
+		a.completionChecker = NewOllamaCompletionChecker(a.planner)
 		a.evaluatorThreshold = normalizeStructuredEvaluatorThreshold(*evaluatorThreshold)
 		if !*disableEvaluator {
 			evaluatorClient := NewOllamaClient(*endpointFlag, *evaluatorModel)
@@ -140,6 +142,7 @@ func (a *App) Run(args []string) error {
 				CurrentWorkingDirectory: workspacePathOrCurrentDir(),
 				PromptInterpreter:       a.promptInterpreter,
 				ContextSummarizer:       a.contextSummarizer,
+				CompletionChecker:       a.completionChecker,
 				Evaluator:               a.evaluator,
 				EvaluatorThreshold:      a.evaluatorThreshold,
 				ShellSpecialist:         a.shellSpecialist,
@@ -521,6 +524,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			CurrentWorkingDirectory: activeDirectory,
 			PromptInterpreter:       a.promptInterpreter,
 			ContextSummarizer:       a.contextSummarizer,
+			CompletionChecker:       a.completionChecker,
 			Evaluator:               a.evaluator,
 			EvaluatorThreshold:      a.evaluatorThreshold,
 			ShellSpecialist:         a.shellSpecialist,
