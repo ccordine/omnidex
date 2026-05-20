@@ -98,11 +98,11 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 			Type:     "object",
 			Required: []string{"summary", "files_considered", "relevant_files"},
 			Properties: map[string]toolruntime.Schema{
-				"root":            {Type: "string"},
+				"root":             {Type: "string"},
 				"files_considered": {Type: "integer"},
-				"languages":       {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
-				"summary":         {Type: "string"},
-				"missing_context": {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
+				"languages":        {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
+				"summary":          {Type: "string"},
+				"missing_context":  {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
 				"relevant_files": {
 					Type: "array",
 					Items: &toolruntime.Schema{

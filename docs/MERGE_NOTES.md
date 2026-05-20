@@ -1,49 +1,45 @@
-# Omnidex Recovery Merge Notes
+# Omnidex Integration Notes
 
-This recovered tree merges the most complete recovered Omnidex V2 codebase with the Omnidex Neo deterministic CLI scaffold.
+This document records the internal integration pass that brought the local deterministic CLI and service-backed queue/runtime into one Omnidex repository before public release.
 
 ## Base
 
-- Base project: `omnidex-v2`
+- Base project: `omnidex`
 - Module path: `github.com/gryph/omnidex`
 - Go version normalized to `go 1.23` to avoid automatic Go 1.24 toolchain downloads on systems that do not already have Go 1.24 installed.
 
-## Merged from Omnidex Neo
+## Integrated Components
 
 Copied into this tree:
 
-- `cmd/odn` -> deterministic Neo CLI entrypoint
-- `internal/odn` -> Neo app, router, permissions, run logs, migrations, policies, tools, verification
-- `docs/neo/*` -> Neo docs: contracts, roadmap, dev bible
-- `database/migrations` -> Neo-style migration directory placeholder
+- `cmd/omni` -> deterministic Omnidex CLI entrypoint
+- `internal/omni` -> Omnidex app, router, permissions, run logs, migrations, policies, tools, verification
+- `docs/omni/*` -> Omnidex docs: contracts, roadmap, dev bible
+- `database/migrations` -> Omnidex migration directory placeholder
 
 Adjusted:
 
-- `cmd/odn/main.go` import path changed from `omnidexneo/internal/odn` to `github.com/gryph/omnidex/internal/odn`.
+- `cmd/omni/main.go` import path changed from `omnidex/internal/omni` to `github.com/gryph/omnidex/internal/omni`.
 
-## Validation performed in recovery environment
+## Validation
 
-The recovery environment had Go 1.23.2 and no internet access, so full `go test ./...` could not fetch external dependencies (`pgx`, `ledongthuc/pdf`) or download the Go 1.24.1 toolchain.
-
-Validated locally without external dependency fetch:
+Focused validation:
 
 ```bash
-GOTOOLCHAIN=local go build ./cmd/odn
-GOTOOLCHAIN=local go test ./internal/odn ./cmd/odn
+GOTOOLCHAIN=local go build ./cmd/omni
+GOTOOLCHAIN=local go test ./internal/omni ./cmd/omni
 ```
 
-Both passed.
-
-Full validation to run on your machine:
+Full validation:
 
 ```bash
 go mod tidy
 go test ./...
 go build ./cmd/core
 go build ./cmd/cli
-go build ./cmd/odn
+go build ./cmd/omni
 ```
 
-## Suggested next step
+## Architecture Direction
 
-Treat `cmd/odn` / `internal/odn` as the lightweight local deterministic CLI and `cmd/core` / `internal/worker` as the heavier queue/runtime engine. The clean path is to make Neo's deterministic permission/router/logging model a front door that can call Omnidex V2 runtime stages.
+Treat `cmd/omni` / `internal/omni` as the lightweight local deterministic CLI and `cmd/core` / `internal/worker` as the heavier queue/runtime engine. The clean path is to make Omnidex's deterministic permission/router/logging model a front door that can call the queue runtime stages.

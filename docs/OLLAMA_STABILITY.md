@@ -8,7 +8,7 @@ ROCm backend:
 - `reason :GPU Hang`
 - `systemd-coredump ... (ollama) ... dumped core`
 - stack frames in `libhsa-runtime64.so.1`
-- ODN then received Ollama `/api/chat` failures such as HTTP 500 and EOF.
+- Omni then received Ollama `/api/chat` failures such as HTTP 500 and EOF.
 
 The active local systemd drop-ins force ROCm:
 
@@ -36,11 +36,11 @@ Sources:
 - https://docs.ollama.com/gpu
 - https://docs.ollama.com/faq
 
-## Applied ODN Changes
+## Applied Omni Changes
 
-- ODN now supports default Ollama request controls:
-  - `--ollama-keep-alive`, env `ODN_OLLAMA_KEEP_ALIVE`, default `30s`
-  - `--ollama-num-ctx`, env `ODN_OLLAMA_NUM_CTX`, default `2048`
+- Omni now supports default Ollama request controls:
+  - `--ollama-keep-alive`, env `OMNI_OLLAMA_KEEP_ALIVE`, default `30s`
+  - `--ollama-num-ctx`, env `OMNI_OLLAMA_NUM_CTX`, default `2048`
 - Structured command failures now emit `structured_llm_backend_unstable` during
   transient Ollama runner failures.
 - Final failed turns include a diagnosis such as
@@ -57,7 +57,7 @@ Run this from the repo to install a CPU-first systemd drop-in:
 ./scripts/ollama-stable-cpu.sh
 ```
 
-It writes `/etc/systemd/system/ollama.service.d/zz-odn-stable-cpu.conf` with:
+It writes `/etc/systemd/system/ollama.service.d/zz-omni-stable-cpu.conf` with:
 
 ```ini
 [Service]
@@ -75,7 +75,7 @@ Environment="OLLAMA_FLASH_ATTENTION=0"
 ```
 
 This prioritizes reliability over speed. The script removes the ROCm and Vulkan
-ODN drop-ins before writing the CPU profile.
+Omni drop-ins before writing the CPU profile.
 
 ```bash
 sudo systemctl daemon-reload
@@ -97,7 +97,7 @@ dedicated RX 7700S path instead, run:
 ```
 
 It removes the CPU fallback drop-in and writes
-`/etc/systemd/system/ollama.service.d/zz-odn-rx7700s-rocm.conf` with:
+`/etc/systemd/system/ollama.service.d/zz-omni-rx7700s-rocm.conf` with:
 
 ```ini
 [Service]
@@ -147,7 +147,7 @@ Then apply the profile:
 ./scripts/ollama-vulkan.sh
 ```
 
-It removes the CPU and ROCm ODN drop-ins and writes:
+It removes the CPU and ROCm Omni drop-ins and writes:
 
 ```ini
 [Service]

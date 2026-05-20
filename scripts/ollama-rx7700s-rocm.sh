@@ -2,9 +2,9 @@
 set -euo pipefail
 
 dropin_dir="/etc/systemd/system/ollama.service.d"
-dropin_file="${dropin_dir}/zz-odn-rx7700s-rocm.conf"
-cpu_dropin="${dropin_dir}/zz-odn-stable-cpu.conf"
-vulkan_dropin="${dropin_dir}/zz-odn-vulkan.conf"
+dropin_file="${dropin_dir}/zz-omni-rx7700s-rocm.conf"
+cpu_dropin="${dropin_dir}/zz-omni-stable-cpu.conf"
+vulkan_dropin="${dropin_dir}/zz-omni-vulkan.conf"
 
 if [[ "${EUID}" -ne 0 ]]; then
   exec sudo "$0" "$@"
@@ -14,7 +14,7 @@ install -d -m 0755 "${dropin_dir}"
 rm -f "${cpu_dropin}" "${vulkan_dropin}"
 cat > "${dropin_file}" <<'EOF'
 [Service]
-# ODN RX 7700S ROCm profile.
+# Omni RX 7700S ROCm profile.
 # rocminfo reports:
 #   GPU 0: gfx1103 AMD Radeon 780M Graphics
 #   GPU 1: gfx1102 AMD Radeon RX 7700S

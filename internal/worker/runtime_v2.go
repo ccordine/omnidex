@@ -850,7 +850,7 @@ func (r *agentRuntime) inferRequiredTools() []string {
 	}
 	instruction := strings.ToLower(strings.TrimSpace(r.claim.Job.Instruction + "\n" + r.contexts["user_feedback"]))
 	if instruction != "" {
-		if containsAnyToken(instruction, "code", "repo", "repository", "file", "golang", "go", "laravel", "project", "workspace") {
+		if containsAnyToken(instruction, "code", "repo", "repository", "file", "golang", "go", "postgres", "project", "workspace") {
 			appendTool("workspace")
 		}
 		if containsAnyToken(instruction, "latest", "recent", "today", "current", "news", "price", "weather", "who is", "what's happening") {

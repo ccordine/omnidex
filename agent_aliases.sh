@@ -14,23 +14,8 @@ unset _agent_aliases_script_dir
 _agent_cli_cmd() {
   local caller_cwd="${PWD}"
 
-  if [[ -x "${OMNIDEX_DIR}/bin/omni" ]]; then
-    OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/omni" "$@"
-    return $?
-  fi
-
   if [[ -x "${OMNIDEX_DIR}/bin/agent-cli" ]]; then
     OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/agent-cli" "$@"
-    return $?
-  fi
-
-  if [[ "${OMNIDEX_USE_SYSTEM_OMNI:-0}" != "1" ]]; then
-    (cd "${OMNIDEX_DIR}" && OMNI_INVOKE_CWD="${caller_cwd}" go run ./cmd/cli "$@")
-    return $?
-  fi
-
-  if omni_bin="$(type -P omni 2>/dev/null)"; then
-    OMNI_INVOKE_CWD="${caller_cwd}" "${omni_bin}" "$@"
     return $?
   fi
 
@@ -42,11 +27,32 @@ _agent_cli_cmd() {
   (cd "${OMNIDEX_DIR}" && OMNI_INVOKE_CWD="${caller_cwd}" go run ./cmd/cli "$@")
 }
 
-# Canonical passthrough
-omni() { _agent_cli_cmd "$@"; }
-omnidex() { _agent_cli_cmd "$@"; }
+_omni_cmd() {
+  local caller_cwd="${PWD}"
 
-# Legacy passthrough
+  if [[ -x "${OMNIDEX_DIR}/bin/omni" ]]; then
+    OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/omni" "$@"
+    return $?
+  fi
+
+  if [[ "${OMNIDEX_USE_SYSTEM_OMNI:-0}" != "1" ]]; then
+    (cd "${OMNIDEX_DIR}" && OMNI_INVOKE_CWD="${caller_cwd}" go run ./cmd/omni "$@")
+    return $?
+  fi
+
+  if omni_bin="$(type -P omni 2>/dev/null)"; then
+    OMNI_INVOKE_CWD="${caller_cwd}" "${omni_bin}" "$@"
+    return $?
+  fi
+
+  (cd "${OMNIDEX_DIR}" && OMNI_INVOKE_CWD="${caller_cwd}" go run ./cmd/omni "$@")
+}
+
+# Canonical deterministic Omnidex CLI
+omni() { _omni_cmd "$@"; }
+omnidex() { _omni_cmd "$@"; }
+
+# Queue/API CLI passthrough
 acli() { _agent_cli_cmd "$@"; }
 
 # Core URL helper

@@ -22,7 +22,7 @@ Working or mostly working:
 - Permission registry commands exist.
 - Core service/queue architecture exists.
 - Docker compose service stack exists.
-- Neo/ODN deterministic pipeline exists separately under `cmd/odn` and `internal/odn`.
+- The deterministic Omnidex pipeline exists separately under `cmd/omni` and `internal/omni`.
 
 Broken or incomplete:
 
@@ -30,7 +30,7 @@ Broken or incomplete:
 - Local actions depend on a deterministic post-action review through the core queue. If core is not running at `localhost:8090`, a local action can finish but review/finalization fails or emits errors.
 - Tool routing in classic `omni chat` is mostly deterministic scoring/phrase parsing, not fully LLM-driven tool selection.
 - Memory sync depends on the core service. If core is down, startup prints `capability memory sync failed`.
-- The merged repo builds `cmd/odn` and `internal/odn`, but full `cmd/cli` validation was blocked in this environment because Go dependencies could not be fetched from the internet.
+- The merged repo builds `cmd/omni` and `internal/omni`, but full `cmd/cli` validation was blocked in this environment because Go dependencies could not be fetched from the internet.
 
 ## Actual Classic Chat Flow
 
@@ -180,13 +180,13 @@ Commands intended to manage this exist under:
 cmd/cli/service_commands.go
 ```
 
-## Neo / ODN Reality
+## Deterministic Omni Reality
 
-The recovered Neo path is separate:
+The deterministic path is separate:
 
 ```text
-cmd/odn
-internal/odn
+cmd/omni
+internal/omni
 ```
 
 It has its own deterministic execution pipeline and permission mode:
@@ -199,8 +199,8 @@ full_access
 Validated in this environment:
 
 ```bash
-GOTOOLCHAIN=local go build ./cmd/odn
-GOTOOLCHAIN=local go test ./internal/odn ./cmd/odn
+GOTOOLCHAIN=local go build ./cmd/omni
+GOTOOLCHAIN=local go test ./internal/omni ./cmd/omni
 ```
 
 Both passed.
@@ -217,10 +217,10 @@ Run these locally after dependency fetch:
 
 ```bash
 go mod tidy
-go test ./cmd/cli ./internal/odn ./cmd/odn
+go test ./cmd/cli ./internal/omni ./cmd/omni
 go build ./cmd/cli
 go build ./cmd/core
-go build ./cmd/odn
+go build ./cmd/omni
 ```
 
 ## Verdict

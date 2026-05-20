@@ -27,7 +27,7 @@ can't scan into dest[5] (col: worker_id): cannot scan NULL into *string
 If Docker cannot reach Ollama through `host.docker.internal`, set `OLLAMA_BASE_URL` to the compose gateway shown by:
 
 ```bash
-docker inspect omni-nxt-core-1 --format '{{json .NetworkSettings.Networks}}' | jq
+docker inspect omnidex-core-1 --format '{{json .NetworkSettings.Networks}}' | jq
 ```
 
 Example:

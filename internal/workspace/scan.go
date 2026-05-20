@@ -405,7 +405,7 @@ func languageHintsFromTokens(tokens []string) map[string]float64 {
 		switch token {
 		case "go", "golang", "gomod":
 			out["go"] += 1.8
-		case "php", "laravel", "blade", "artisan", "composer":
+		case "php", "blade", "artisan", "composer":
 			out["php"] += 1.8
 		case "javascript", "typescript", "node", "react", "vite", "npm", "pnpm", "yarn", "tsx", "stimulus", "tailwind":
 			out["typescript"] += 1.4

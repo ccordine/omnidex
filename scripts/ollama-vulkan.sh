@@ -2,9 +2,9 @@
 set -euo pipefail
 
 dropin_dir="/etc/systemd/system/ollama.service.d"
-dropin_file="${dropin_dir}/zz-odn-vulkan.conf"
-cpu_dropin="${dropin_dir}/zz-odn-stable-cpu.conf"
-rocm_dropin="${dropin_dir}/zz-odn-rx7700s-rocm.conf"
+dropin_file="${dropin_dir}/zz-omni-vulkan.conf"
+cpu_dropin="${dropin_dir}/zz-omni-stable-cpu.conf"
+rocm_dropin="${dropin_dir}/zz-omni-rx7700s-rocm.conf"
 
 if [[ "${EUID}" -ne 0 ]]; then
   exec sudo "$0" "$@"
@@ -24,7 +24,7 @@ install -d -m 0755 "${dropin_dir}"
 rm -f "${cpu_dropin}" "${rocm_dropin}"
 cat > "${dropin_file}" <<'EOF'
 [Service]
-# ODN Vulkan experiment profile.
+# Omni Vulkan experiment profile.
 # Vulkan is experimental in Ollama, but can be a useful fallback when ROCm
 # detects the hardware through rocminfo but Ollama still reports total_vram=0.
 Environment="OLLAMA_LLM_LIBRARY="

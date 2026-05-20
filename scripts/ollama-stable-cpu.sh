@@ -2,9 +2,9 @@
 set -euo pipefail
 
 dropin_dir="/etc/systemd/system/ollama.service.d"
-dropin_file="${dropin_dir}/zz-odn-stable-cpu.conf"
-rocm_dropin="${dropin_dir}/zz-odn-rx7700s-rocm.conf"
-vulkan_dropin="${dropin_dir}/zz-odn-vulkan.conf"
+dropin_file="${dropin_dir}/zz-omni-stable-cpu.conf"
+rocm_dropin="${dropin_dir}/zz-omni-rx7700s-rocm.conf"
+vulkan_dropin="${dropin_dir}/zz-omni-vulkan.conf"
 
 if [[ "${EUID}" -ne 0 ]]; then
   exec sudo "$0" "$@"
@@ -14,7 +14,7 @@ install -d -m 0755 "${dropin_dir}"
 rm -f "${rocm_dropin}" "${vulkan_dropin}"
 cat > "${dropin_file}" <<'EOF'
 [Service]
-# ODN stability profile.
+# Omni stability profile.
 # The local logs showed ROCm/HSA GPU hangs on the Radeon 780M path. Ollama's
 # troubleshooting docs recommend forcing a specific LLM library when GPU
 # crashes occur; cpu_avx2 is the fastest CPU fallback when available.

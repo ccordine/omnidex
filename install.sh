@@ -30,7 +30,7 @@ Options:
 
 What this installer does:
   1) Copies Omnidex runtime files into --prefix
-  2) Builds binaries (bin/agent-core, bin/agent-cli, bin/omni, bin/acli)
+  2) Builds binaries (bin/omni, bin/agent-core, bin/agent-cli, bin/acli)
   3) Installs host dependencies via scripts/setup-host-deps.sh (unless --skip-deps)
   4) Adds a managed shell-init block so aliases are loaded automatically
 EOF
@@ -236,8 +236,8 @@ build_binaries() {
     cd "${PREFIX}"
     go build -o bin/agent-core ./cmd/core
     go build -o bin/agent-cli ./cmd/cli
+    go build -o bin/omni ./cmd/omni
   )
-  ln -sfn agent-cli "${PREFIX}/bin/omni"
   ln -sfn agent-cli "${PREFIX}/bin/acli"
   log "built binaries in ${PREFIX}/bin"
 }

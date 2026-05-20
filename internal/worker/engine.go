@@ -6613,7 +6613,7 @@ func inferRequiredToolsFromInstruction(instruction string) []string {
 		{tool: "pnpm", triggers: []string{" pnpm "}},
 		{tool: "yarn", triggers: []string{" yarn "}},
 		{tool: "python", triggers: []string{" python ", " pip ", " requirements.txt ", " pyproject.toml"}},
-		{tool: "composer", triggers: []string{" composer ", " laravel ", " php "}},
+		{tool: "composer", triggers: []string{" composer ", " postgres ", " php "}},
 		{tool: "docker", triggers: []string{" docker ", " container ", " dockerfile ", " compose "}},
 		{tool: "git", triggers: []string{" git ", " repository ", " repo ", " branch ", " commit "}},
 		{tool: "make", triggers: []string{" makefile ", " make "}},

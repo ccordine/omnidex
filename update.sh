@@ -12,6 +12,7 @@ NO_PULL=0
 NO_BUILD=0
 NO_RESTART=0
 NO_CACHE=0
+HOST_ONLY=0
 
 usage() {
   cat <<EOF
@@ -27,12 +28,14 @@ Options:
   --no-pull               Skip git fetch/pull
   --no-build              Skip docker compose build
   --no-restart            Skip docker compose up -d
+  --host-only             Only pull latest source and rebuild installed host binaries
   -h, --help              Show this help
 
 What this updater does:
   1) Fetches latest git refs and fast-forward pulls to latest
-  2) Rebuilds the Docker image for the selected service
-  3) Restarts the selected service with docker compose
+  2) Rebuilds host binaries, including bin/omni
+  3) Rebuilds the Docker image for the selected service
+  4) Restarts the selected service with docker compose
 EOF
 }
 
@@ -147,6 +150,12 @@ parse_args() {
         NO_RESTART=1
         shift
         ;;
+      --host-only)
+        HOST_ONLY=1
+        NO_BUILD=1
+        NO_RESTART=1
+        shift
+        ;;
       -h|--help)
         usage
         exit 0
@@ -156,6 +165,16 @@ parse_args() {
         ;;
     esac
   done
+}
+
+needs_compose_work() {
+  if ((HOST_ONLY)); then
+    return 1
+  fi
+  if ((NO_BUILD && NO_RESTART)); then
+    return 1
+  fi
+  return 0
 }
 
 git_update_repo() {
@@ -257,9 +276,25 @@ rebuild_host_binaries() {
     mkdir -p bin
     go build -o bin/agent-core ./cmd/core
     go build -o bin/agent-cli ./cmd/cli
-    ln -sfn agent-cli bin/omni
+    go build -o bin/omni ./cmd/omni
     ln -sfn agent-cli bin/acli
   )
+}
+
+refresh_installed_payload_permissions() {
+  local repo_dir="$1"
+
+  for path in \
+    "${repo_dir}/agent_aliases.sh" \
+    "${repo_dir}/install.sh" \
+    "${repo_dir}/update.sh" \
+    "${repo_dir}/uninstall.sh" \
+    "${repo_dir}/scripts/setup-host-deps.sh" \
+    "${repo_dir}/up.sh" \
+    "${repo_dir}/down.sh"; do
+    [[ -f "${path}" ]] || continue
+    chmod +x "${path}"
+  done
 }
 
 main() {
@@ -271,27 +306,33 @@ main() {
   fi
   [[ -d "${PREFIX}" ]] || die "prefix path does not exist: ${PREFIX}"
 
-  if [[ -z "${COMPOSE_FILE}" ]]; then
-    COMPOSE_FILE="${PREFIX}/docker-compose.yml"
-  else
-    COMPOSE_FILE="$(expand_home_path "${COMPOSE_FILE}")"
-    if [[ "${COMPOSE_FILE}" != /* ]]; then
-      COMPOSE_FILE="${PREFIX}/${COMPOSE_FILE#./}"
+  local compose_cmd=""
+  if needs_compose_work; then
+    if [[ -z "${COMPOSE_FILE}" ]]; then
+      COMPOSE_FILE="${PREFIX}/docker-compose.yml"
+    else
+      COMPOSE_FILE="$(expand_home_path "${COMPOSE_FILE}")"
+      if [[ "${COMPOSE_FILE}" != /* ]]; then
+        COMPOSE_FILE="${PREFIX}/${COMPOSE_FILE#./}"
+      fi
     fi
+    [[ -f "${COMPOSE_FILE}" ]] || die "compose file not found: ${COMPOSE_FILE}"
+    [[ -n "${SERVICE}" ]] || die "service cannot be empty"
+    compose_cmd="$(resolve_compose_cmd)"
+    log "using compose command: ${compose_cmd}"
+  else
+    log "skipping docker compose checks (--host-only or --no-build --no-restart)"
   fi
-  [[ -f "${COMPOSE_FILE}" ]] || die "compose file not found: ${COMPOSE_FILE}"
 
-  [[ -n "${SERVICE}" ]] || die "service cannot be empty"
-
-  local compose_cmd
-  compose_cmd="$(resolve_compose_cmd)"
-  log "using compose command: ${compose_cmd}"
   log "target path: ${PREFIX}"
 
   git_update_repo "${PREFIX}" "${BRANCH}"
+  refresh_installed_payload_permissions "${PREFIX}"
   rebuild_host_binaries "${PREFIX}"
-  compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
-  compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
+  if needs_compose_work; then
+    compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
+    compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
+  fi
 
   log "update complete"
 }

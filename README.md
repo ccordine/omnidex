@@ -1,13 +1,21 @@
-# Omnidex (Go)
+# Omnidex
 
-Go-first replacement for the Laravel + wrapper flow:
-- `agent-core`: API + Postgres queue + worker pipeline + LLM provider integration (Ollama/OpenAI)
-- `omni` (formerly `agent-cli`): portable CLI for queue jobs/memory operations plus optional local host automations in chat mode
+Omnidex is a local-first LLM system for orchestrating hot-swappable models across jobs, skills, tools, and specialist roles.
 
-## Why this design
+- `omni`: deterministic local CLI for chat, command execution, research, install/update, and workspace-aware automation.
+- Specialist roles handle bounded jobs such as prompt interpretation, planning, shell command selection, summarization, done checks, retrieval, analysis, and verification.
+- Model routing is configurable per role, so fast utility models and deeper reasoning models can be swapped independently.
+- Skills and tools extend what Omnidex can do while deterministic code owns policy, execution, evidence, and state transitions.
+- `agent-core`: API + Postgres queue + worker pipeline for service-backed workflows.
+- `agent-cli`: queue/API CLI for enqueueing and inspecting core jobs; helper aliases expose it for advanced workflows.
 
-- Stateless execution per job: each step calls Ollama with a fresh prompt (no rolling hidden thread state).
-- Small context windows by default: workers only use retrieved memory slices within a character budget.
+License: MIT.
+
+## Why This Design
+
+- Deterministic control plane: models propose structured outputs; code validates, gates, executes, and records evidence.
+- Hot-swappable model roles: each specialist can use the model best suited to its job.
+- Minimal context by default: specialists receive the narrow slice of memory, history, and artifacts they need.
 - Relevance-first retrieval: tags + pgvector similarity (`memory_chunks.embedding`) before analysis/response.
 - Queue-native processing: workers lease steps with `FOR UPDATE SKIP LOCKED`.
 - Cognition routing in-core: fast models handle high-frequency utility steps; reasoning models are used for deeper synthesis.
@@ -19,7 +27,7 @@ Default step pipelines by type:
 - `chat`: `plan -> tooling -> workspace_scan -> tag -> retrieve -> web_search -> analyze -> roleplay -> verify`
 - `story`: `plan -> tooling -> workspace_scan -> tag -> retrieve -> web_search -> analyze -> narrate -> verify`
 
-Worker runtime uses a stage-driven orchestrator (`runtime v2`) with stable per-stage context contracts:
+Worker runtime uses a stage-driven orchestrator with stable per-stage context contracts:
 - `tooling` -> writes `tooling`
 - `workspace_scan` -> writes `workspace`
 - `tag` -> writes `tags`
@@ -43,7 +51,7 @@ Live progress reports these pipeline phases explicitly:
 
 Jobs can still pause/continue through `feedback`, be steered with `interrupt`, or be reset with `replan`.
 
-See `internal/worker/RUNTIME_V2.md` for stage contracts and extension points.
+See `internal/worker/RUNTIME.md` for stage contracts and extension points.
 
 Memory is typed so retrieval can prioritize durable guidance:
 - `instruction` (rules/policies)
@@ -124,7 +132,7 @@ Environment variables:
 - `OPENAI_MODEL_SEARCH`
 - `OPENAI_MODEL_MEMORY`
 - `OPENAI_EMBEDDING_MODEL`
-- `OLLAMA_MODEL` / `ODN_MODEL` / `ODN_CONVERSATION_MODEL` (default conversation fallback; CLI default `qwen2.5-coder:7b`)
+- `OLLAMA_MODEL` / `OMNI_MODEL` / `OMNI_CONVERSATION_MODEL` (default conversation fallback; CLI default `qwen2.5-coder:7b`)
 - `OLLAMA_MODEL_FAST`
 - `OLLAMA_MODEL_REASONING`
 - `OLLAMA_MODEL_TAGGER`
@@ -132,9 +140,9 @@ Environment variables:
 - `OLLAMA_MODEL_RESPONDER`
 - `OLLAMA_MODEL_SEARCH`
 - `OLLAMA_MODEL_MEMORY`
-- `OLLAMA_MODEL_PLANNER` / `ODN_PLANNER_MODEL` (structured command planner; CLI default `qwen2.5-coder:14b`)
-- `OLLAMA_MODEL_EVALUATOR` / `ODN_EVALUATOR_MODEL` (structured response self-evaluator; CLI default `qwen2.5:7b`)
-- `OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION` / `ODN_SHELL_SPECIALIST_MODEL` (shell command specialist; CLI default `qwen2.5-coder:7b`)
+- `OLLAMA_MODEL_PLANNER` / `OMNI_PLANNER_MODEL` (structured command planner; CLI default `qwen2.5-coder:14b`)
+- `OLLAMA_MODEL_EVALUATOR` / `OMNI_EVALUATOR_MODEL` (structured response self-evaluator; CLI default `qwen2.5:7b`)
+- `OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION` / `OMNI_SHELL_SPECIALIST_MODEL` (shell command specialist; CLI default `qwen2.5-coder:7b`)
 - `OLLAMA_MODEL_SPECIALIST_PLANNER`
 - `OLLAMA_MODEL_SPECIALIST_TOOLING`
 - `OLLAMA_MODEL_SPECIALIST_FILESYSTEM_RESEARCH`
@@ -149,10 +157,10 @@ Environment variables:
 - `OLLAMA_MODEL_SPECIALIST_SCREEN_VISION`
 - `OLLAMA_MODEL_SPECIALIST_AUDIO_NOTES`
 - `OLLAMA_MODEL_VISION` (used by `screen-read --vision`; default `llava:latest`)
-- `ODN_EVALUATOR_THRESHOLD` (integer 0..100; default `70`)
-- `ODN_PLANNER_NUM_CTX` (default `4096`)
-- `ODN_EVALUATOR_NUM_CTX` (default `2048`)
-- `ODN_DISABLE_EVALUATOR=true` disables the self-evaluator.
+- `OMNI_EVALUATOR_THRESHOLD` (integer 0..100; default `70`)
+- `OMNI_PLANNER_NUM_CTX` (default `4096`)
+- `OMNI_EVALUATOR_NUM_CTX` (default `2048`)
+- `OMNI_DISABLE_EVALUATOR=true` disables the self-evaluator.
 - `STOP_ON_SUFFICIENT_CONTEXT=true|false` (skip web search in auto mode when memory context is already sufficient)
 - `SUFFICIENT_CONTEXT_CHARS=1400`
 - `MEMORY_INFERENCE_ENABLED=true|false`
@@ -208,6 +216,8 @@ Install Omnidex into a user-local directory (default: `~/.omnidex`), build binar
 ./install.sh
 ```
 
+The installer places `omni` in `~/.omnidex/bin` and prepends that directory to `PATH` through the managed shell-init block. Running `omni` from any directory uses that shell directory as the active working directory for deterministic file and command work.
+
 Non-interactive install with explicit flags:
 
 ```bash
@@ -221,6 +231,18 @@ cd ~/.omnidex
 ./update.sh
 ```
 
+From any directory after install, the same managed updater is available through `omni`:
+
+```bash
+omni update
+```
+
+To update only the installed source and host binaries (`omni`, `agent-cli`, `agent-core`) without requiring Docker Compose:
+
+```bash
+omni update --host-only
+```
+
 Optional update flags:
 
 ```bash
@@ -231,16 +253,16 @@ You can run the same workflow via CLI command wrappers:
 
 ```bash
 omni update --branch main --service core --no-cache
-omni build --race -v
-omni uninstall --yes
-omni migrate:fresh --yes
+acli build --race -v
+acli uninstall --yes
+acli migrate:fresh --yes
 ```
 
 Notes:
 - Installer adds a managed shell-init block to existing `~/.bashrc`, `~/.bash_profile`, `~/.profile`, and `~/.zshrc` files (or creates one fallback file if none exist).
-- Shell-init block exports `OMNIDEX_DIR`, prepends `~/.omnidex/bin` to `PATH`, and sources `agent_aliases.sh`.
+- Shell-init block exports `OMNIDEX_DIR`, prepends `~/.omnidex/bin` to `PATH`, and sources `agent_aliases.sh`; this exposes the global `omni` binary plus `agent-cli` helper aliases.
 - `aupdate` runs `~/.omnidex/update.sh` through your loaded aliases.
-- `update.sh` expects `.git` in the install path; installer copies `.git` when installing from a git checkout.
+- `update.sh` expects `.git` in the install path; installer copies `.git` when installing from a git checkout. It pulls latest refs, refreshes installed script permissions, and rebuilds host binaries.
 - Skip dependency install with `--skip-deps`.
 - Include whisper CLI bootstrap with `--with-whisper`.
 
@@ -262,7 +284,8 @@ Optional uninstall flags:
 cd omnidex
 go mod tidy
 ./scripts/build-core.sh
-go build -o omni ./cmd/cli
+go build -o bin/omni ./cmd/omni
+go build -o bin/agent-cli ./cmd/cli
 ```
 
 Run core locally:
@@ -284,7 +307,7 @@ Load helper aliases:
 source ./agent_aliases.sh
 ```
 
-Alias note: `omni`/`acli` preserve your shell working directory for CLI context and relative-path operations, and prefer this repo's current code (`bin/omni` or `go run`) over a stale system-wide install. Set `OMNIDEX_USE_SYSTEM_OMNI=1` to force system binary resolution.
+Alias note: `omni` preserves your shell working directory for deterministic local work. `acli` and the `a*` helper aliases preserve your working directory while targeting the queue/API CLI.
 
 Install dependencies via alias:
 
@@ -298,12 +321,22 @@ Set core URL (optional; defaults to `http://localhost:8090`):
 asetcore http://localhost:8090
 ```
 
-Start interactive chat mode (conversation-focused defaults: `web=off`, `workspace=off`, `verify=off`, `allow-missing-tools=true`):
+Start deterministic local chat:
 
 ```bash
-omni chat --session daily-chat
+omni
+# or explicitly:
+omni chat
+```
+
+The deterministic CLI stores workspace sessions under `~/.omni/sessions`, run logs under `~/.omni/runs`, and uses the directory where you launched `omni` as the active working directory.
+
+Legacy queue/API chat remains available through `acli`:
+
+```bash
+acli chat --session daily-chat
 # architect profile (recommended for vague implementation requests):
-# omni chat --profile architect --session build-thread
+# acli chat --profile architect --session build-thread
 # live stage/event progress is shown by default (disable with --progress=false)
 # progress output is rendered as an activity timeline (Inspect/Explore/Run) during each turn
 # action confirmation is on by default: chat asks "So you want me to..." before execution (disable with --confirm-actions=false)
@@ -427,9 +460,9 @@ acont <job-id> "Now draft the implementation tasks for sprint planning."
 
 | Alias | Expands to |
 |---|---|
-| `omni ...` | `omni ...` (or `agent-cli ...`, or local `bin/omni`/`bin/agent-cli`, or `go run ./cmd/cli`) |
+| `omni ...` | deterministic local Omnidex CLI (`bin/omni` or `go run ./cmd/omni`) |
 | `omnidex ...` | same as `omni ...` |
-| `acli ...` | legacy alias, same as `omni ...` |
+| `acli ...` | queue/API CLI (`agent-cli` or `go run ./cmd/cli`) |
 | `asetcore <url>` | `export CORE_URL=<url>` |
 | `asetupdeps ...` | `./scripts/setup-host-deps.sh ...` |
 | `aq "..."` | `enqueue --pipeline assistant --web auto --workspace auto` |
