@@ -405,7 +405,22 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			return result, nil
 		}
 	}
+	lastCompletionCheckedObservationCount := 0
 	for step := 1; step <= defaultCommandDecisionMaxSteps; step++ {
+		if cfg.CompletionChecker != nil && len(result.Observations) != lastCompletionCheckedObservationCount && latestObservationIsSuccessfulCommand(result.Observations) && len(pendingStructuredObjectives(ledger)) > 0 {
+			latest, _ := latestSuccessfulCommandObservation(result.Observations)
+			result.Answer = finalStructuredAnswer(result.Answer, latest)
+			ledger = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
+			result.ObjectiveLedger = ledger
+			lastCompletionCheckedObservationCount = len(result.Observations)
+			if len(pendingStructuredObjectives(ledger)) == 0 {
+				emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_observations", "Done-check specialist accepted observed command evidence", map[string]string{
+					"step":   fmt.Sprintf("%d", step-1),
+					"answer": truncateStructuredTimelineValue(result.Answer),
+				})
+				return result, nil
+			}
+		}
 		emitStructuredCommandEvent(onEvent, "structured_llm_request_started", "Requesting next structured command decision", map[string]string{
 			"step":               fmt.Sprintf("%d", step),
 			"pending_objectives": pendingStructuredObjectiveIDs(ledger),
@@ -1832,6 +1847,9 @@ func validateStructuredCommandForObservations(command string, observations []Str
 	if repeatedFailedStructuredCommand(command, observations) {
 		return fmt.Errorf("command repeats a previous failed command; choose a different command, source, or local tool")
 	}
+	if repeatedSuccessfulStructuredCommand(command, observations) {
+		return fmt.Errorf("command repeats a previous successful command; inspect the result, update the objective ledger, or choose the next required action")
+	}
 	if err := validateStructuredCommandString(command); err != nil {
 		return err
 	}
@@ -1970,6 +1988,22 @@ func repeatedFailedStructuredCommand(command string, observations []StructuredCo
 			if normalizeStructuredCommandForComparison(previous) == normalized {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func repeatedSuccessfulStructuredCommand(command string, observations []StructuredCommandObservation) bool {
+	normalized := normalizeStructuredCommandForComparison(command)
+	if normalized == "" {
+		return false
+	}
+	for _, obs := range observations {
+		if obs.ExitCode != 0 || strings.TrimSpace(obs.Command) == "" {
+			continue
+		}
+		if normalizeStructuredCommandForComparison(obs.Command) == normalized {
+			return true
 		}
 	}
 	return false
@@ -2618,6 +2652,14 @@ func latestRealCommandSucceeded(observations []StructuredCommandObservation) boo
 	return false
 }
 
+func latestObservationIsSuccessfulCommand(observations []StructuredCommandObservation) bool {
+	if len(observations) == 0 {
+		return false
+	}
+	latest := observations[len(observations)-1]
+	return strings.TrimSpace(latest.Command) != "" && latest.ExitCode == 0
+}
+
 func isShellToolDelegation(payload StructuredCommandPayload) bool {
 	tool := strings.ToLower(strings.TrimSpace(payload.Tool))
 	return !payload.Done &&
@@ -2683,6 +2725,7 @@ func buildStructuredCommandSystemContext() string {
 		"If the latest real command succeeded, ask=true is invalid; continue, verify, or finish from evidence.",
 		"Do not return done=true until at least one command has exit_code 0.",
 		"If the latest command failed, return a different command instead of done=true.",
+		"Never repeat an exact command that already succeeded; inspect the observation, update objective_ledger, verify, or choose the next action.",
 		"Use shell commands to satisfy requests; do not answer from memory when command evidence is required.",
 		"Planner authority may delegate tool details to specialized tools; when shell syntax or system inspection is the narrow task, prefer tool=shell with a specific tool_task.",
 		"Specialist team profiles define authority boundaries, allowed tools, memory permissions, and context contributions.",

@@ -1511,6 +1511,19 @@ func TestRepeatedFailedStructuredCommandIncludesRejectedCommand(t *testing.T) {
 	}
 }
 
+func TestValidateStructuredCommandRejectsRepeatedSuccessfulCommand(t *testing.T) {
+	observations := []StructuredCommandObservation{{
+		Step:     1,
+		Command:  "npm init -y",
+		ExitCode: 0,
+		Stdout:   "Wrote to package.json",
+	}}
+	err := validateStructuredCommandForObservations("npm   init   -y", observations)
+	if err == nil || !strings.Contains(err.Error(), "previous successful command") {
+		t.Fatalf("repeated successful command should fail, got %v", err)
+	}
+}
+
 func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "test_project_20260520115716")
@@ -1530,6 +1543,76 @@ func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 	}
 	if err := validateStructuredCommandForRun("mkdir -p . && npm init -y", nil, projectDir); err != nil {
 		t.Fatalf("additive initialization should be allowed: %v", err)
+	}
+}
+
+func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsRepeat(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"npm init -y","done":false,"answer":""}`,
+		`{"command":"npm init -y","done":false,"answer":""}`,
+		`{"command":"printf 'webpack stimulus tailwind recyclr done\n' > setup.txt","done":false,"answer":"","objective_ledger":[{"id":"install_stimulus_js","description":"Install or account for Stimulus JS","status":"satisfied","evidence":"command output"},{"id":"install_recyclr_js","description":"Install or account for Recyclr JS","status":"satisfied","evidence":"command output"},{"id":"install_tailwind_css","description":"Install or account for Tailwind CSS","status":"satisfied","evidence":"command output"},{"id":"setup_webpack","description":"Set up webpack","status":"satisfied","evidence":"command output"}]}`,
+		`{"command":"","done":true,"answer":"Project initialized and dependencies accounted for."}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "initialize_npm_project", Description: "Initialize npm project", Status: "pending"},
+			{ID: "install_stimulus_js", Description: "Install or account for Stimulus JS", Status: "pending"},
+			{ID: "install_recyclr_js", Description: "Install or account for Recyclr JS", Status: "pending"},
+			{ID: "install_tailwind_css", Description: "Install or account for Tailwind CSS", Status: "pending"},
+			{ID: "setup_webpack", Description: "Set up webpack", Status: "pending"},
+		},
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   false,
+		Reason: "npm init output proves package.json was initialized",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "initialize_npm_project", Description: "Initialize npm project", Status: "satisfied", Evidence: "npm init wrote package.json"},
+		},
+	}, {
+		Done:   true,
+		Reason: "all objectives satisfied by command evidence and planner ledger update",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "install_stimulus_js", Description: "Install or account for Stimulus JS", Status: "satisfied", Evidence: "command output"},
+			{ID: "install_recyclr_js", Description: "Install or account for Recyclr JS", Status: "satisfied", Evidence: "command output"},
+			{ID: "install_tailwind_css", Description: "Install or account for Tailwind CSS", Status: "satisfied", Evidence: "command output"},
+			{ID: "setup_webpack", Description: "Set up webpack", Status: "satisfied", Evidence: "command output"},
+		},
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"make a test project here",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: t.TempDir(),
+			PromptInterpreter:       interpreter,
+			CompletionChecker:       checker,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command != "printf 'webpack stimulus tailwind recyclr done\n' > setup.txt" {
+		t.Fatalf("command = %q, want next non-repeated command", result.Command)
+	}
+	if len(checker.inputs) != 1 {
+		t.Fatalf("completion checker calls = %d, want post-npm-init ledger check", len(checker.inputs))
+	}
+	if !structuredEventsContain(events, "structured_command_rejected") {
+		t.Fatalf("expected repeated command rejection; events=%#v", events)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
 	}
 }
 
