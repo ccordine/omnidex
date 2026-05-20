@@ -38,6 +38,20 @@ Core mission constraints:
 8. Maintainable code shape: cohesive modules, small clear interfaces, low debt.
 9. Fat domain models, skinny controllers.
 10. Functional object-oriented style: pure decision logic + explicit effect boundaries.
+11. No production prompt phrase matching. Deterministic code must never infer user intent, objectives, routing, tool choice, or completion criteria from substrings, regexes, keyword lists, or other direct natural-language matching against the user prompt. Natural-language interpretation belongs exclusively to the prompt interpreter specialist and other explicit LLM specialist contracts. Runtime code may validate structured specialist output, merge state, enforce policy, and execute deterministic checks against tool evidence.
+
+### 3.1 Prompt Interpretation Hard Ban
+The runtime is forbidden from doing natural-language prompt interpretation with code.
+
+Hard banned in production control flow unless an explicit written architecture amendment grants a narrow exception:
+- `strings.Contains(prompt, ...)`, `strings.Contains(strings.ToLower(prompt), ...)`, regex matching, switch/case matching, prefix/suffix checks, or token keyword scans against raw user prompt text.
+- Deriving objective ledgers, context inventory, routing decisions, tool selection, or done/finish criteria from user prompt phrases.
+- Adding "quick" prompt heuristics because a test prompt is known.
+
+Required path:
+- The `prompt_interpreter` specialist reads the user prompt and emits structured intent/objective data as `objective_ledger`.
+- A summary specialist loads a `minimal_context` inventory from relevant memory/history/artifacts.
+- Deterministic code validates schemas, carries state, gates side effects, and checks observed evidence. It does not decide what the user's words mean.
 
 ## 4) Current-State Audit (Observed on 2026-05-07)
 

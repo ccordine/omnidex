@@ -124,16 +124,17 @@ Environment variables:
 - `OPENAI_MODEL_SEARCH`
 - `OPENAI_MODEL_MEMORY`
 - `OPENAI_EMBEDDING_MODEL`
-- `OLLAMA_MODEL` (default fallback)
+- `OLLAMA_MODEL` / `ODN_MODEL` / `ODN_CONVERSATION_MODEL` (default conversation fallback; CLI default `qwen2.5-coder:7b`)
 - `OLLAMA_MODEL_FAST`
 - `OLLAMA_MODEL_REASONING`
 - `OLLAMA_MODEL_TAGGER`
-- `OLLAMA_MODEL_PLANNER`
 - `OLLAMA_MODEL_ANALYZER`
 - `OLLAMA_MODEL_RESPONDER`
 - `OLLAMA_MODEL_SEARCH`
 - `OLLAMA_MODEL_MEMORY`
-- `OLLAMA_MODEL_EVALUATOR` (tiny structured response self-evaluator; CLI default `qwen2.5:0.5b`)
+- `OLLAMA_MODEL_PLANNER` / `ODN_PLANNER_MODEL` (structured command planner; CLI default `qwen2.5-coder:14b`)
+- `OLLAMA_MODEL_EVALUATOR` / `ODN_EVALUATOR_MODEL` (structured response self-evaluator; CLI default `qwen2.5:7b`)
+- `OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION` / `ODN_SHELL_SPECIALIST_MODEL` (shell command specialist; CLI default `qwen2.5-coder:7b`)
 - `OLLAMA_MODEL_SPECIALIST_PLANNER`
 - `OLLAMA_MODEL_SPECIALIST_TOOLING`
 - `OLLAMA_MODEL_SPECIALIST_FILESYSTEM_RESEARCH`
@@ -146,11 +147,11 @@ Environment variables:
 - `OLLAMA_MODEL_SPECIALIST_MEDIA_CONTROL`
 - `OLLAMA_MODEL_SPECIALIST_BROWSER_INSPECTION`
 - `OLLAMA_MODEL_SPECIALIST_SCREEN_VISION`
-- `OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION`
 - `OLLAMA_MODEL_SPECIALIST_AUDIO_NOTES`
 - `OLLAMA_MODEL_VISION` (used by `screen-read --vision`; default `llava:latest`)
 - `ODN_EVALUATOR_THRESHOLD` (integer 0..100; default `70`)
-- `ODN_EVALUATOR_NUM_CTX` (default `1024`)
+- `ODN_PLANNER_NUM_CTX` (default `4096`)
+- `ODN_EVALUATOR_NUM_CTX` (default `2048`)
 - `ODN_DISABLE_EVALUATOR=true` disables the self-evaluator.
 - `STOP_ON_SUFFICIENT_CONTEXT=true|false` (skip web search in auto mode when memory context is already sufficient)
 - `SUFFICIENT_CONTEXT_CHARS=1400`

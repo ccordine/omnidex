@@ -71,6 +71,52 @@ type fakeShellCommandSpecialist struct {
 	inputs    []ShellCommandSpecialistInput
 }
 
+type fakePromptInterpreter struct {
+	interpretations []PromptInterpretation
+	errors          []error
+	inputs          []PromptInterpretationInput
+}
+
+func (f *fakePromptInterpreter) InterpretPrompt(ctx context.Context, input PromptInterpretationInput) (PromptInterpretation, error) {
+	f.inputs = append(f.inputs, input)
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return PromptInterpretation{}, err
+		}
+	}
+	if len(f.interpretations) == 0 {
+		return PromptInterpretation{}, nil
+	}
+	interpretation := f.interpretations[0]
+	f.interpretations = f.interpretations[1:]
+	return interpretation, nil
+}
+
+type fakeContextSummarizer struct {
+	contexts []MinimalContext
+	errors   []error
+	inputs   []MinimalContextInput
+}
+
+func (f *fakeContextSummarizer) SummarizeContext(ctx context.Context, input MinimalContextInput) (MinimalContext, error) {
+	f.inputs = append(f.inputs, input)
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return MinimalContext{}, err
+		}
+	}
+	if len(f.contexts) == 0 {
+		return MinimalContext{}, nil
+	}
+	context := f.contexts[0]
+	f.contexts = f.contexts[1:]
+	return context, nil
+}
+
 func (f *fakeShellCommandSpecialist) ProposeShellCommand(ctx context.Context, input ShellCommandSpecialistInput) (ShellCommandProposal, error) {
 	f.inputs = append(f.inputs, input)
 	if len(f.errors) > 0 {
@@ -1619,6 +1665,121 @@ func TestStructuredCommandDecisionRejectsEmptyCommandAndContinues(t *testing.T) 
 	}
 }
 
+func TestStructuredCommandDecisionRejectsBareShellAndInstructionalDone(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "test-project-20260520")
+	readmePath := filepath.Join(projectDir, "readme.md")
+	command := fmt.Sprintf("mkdir -p %q && printf '# Test Project\\n' > %q && test -f %q && printf 'CREATED %s\\n'", projectDir, readmePath, readmePath, projectDir)
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"bash","done":false,"answer":""}`,
+		`{"command":"printf 'noop\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"To create a brand new test project with today's date in the name, you can follow these steps:\n1. Open your terminal.\n2. Navigate to ~/Projects.\n3. Run mkdir test_project_$(date +%Y%m%d)."} `,
+		fmt.Sprintf(`{"command":%q,"done":false,"answer":""}`, command),
+		`{"command":"","done":true,"answer":"Created the dated test project with readme.md."}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := RunStructuredCommandDecisionWithEvents(
+		context.Background(),
+		"So in ~/Projects/ let's make a brand new test project with todays date as part of the name, and inside it just have a simple readme.md file",
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command != command {
+		t.Fatalf("command = %q, want filesystem command", result.Command)
+	}
+	if _, err := os.Stat(readmePath); err != nil {
+		t.Fatalf("readme was not created: %v", err)
+	}
+	if !structuredEventsContain(events, "structured_done_rejected") {
+		t.Fatalf("instructional done should be rejected: %#v", events)
+	}
+	if !strings.Contains(result.Observations[0].Stderr, "shell/no-op launcher") {
+		t.Fatalf("bare shell should be rejected first: %#v", result.Observations[0])
+	}
+}
+
+func TestStructuredCommandDecisionRejectsDoneWithPendingObjectiveLedger(t *testing.T) {
+	activeDir := t.TempDir()
+	command := strings.Join([]string{
+		"printf '%s\n' '{\"scripts\":{\"start\":\"vite\"},\"dependencies\":{\"recyclrjs\":\"latest\",\"tailwindcss\":\"latest\"}}' > package.json",
+		"printf '%s\n' '<!doctype html><script src=\"https://cdn.tailwindcss.com\"></script><main id=\"calculator\">Calculator display operator operand</main><script type=\"module\">import \"recyclrjs\"; console.log(\"calculate\")</script>' > index.html",
+		"test -f package.json",
+		"test -f index.html",
+		"grep -qi calculator index.html",
+		"grep -qi tailwind index.html",
+		"grep -qi recyclr package.json index.html",
+		"printf 'CALCULATOR_APP_OK tailwind recyclr npm package.json index.html\n'",
+	}, " && ")
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf '{\"name\":\"placeholder\"}\n' > package.json","done":false,"answer":"","objective_ledger":[{"id":"npm_project","description":"Create an npm package manifest","status":"satisfied","evidence":"package.json written"}]}`,
+		`{"command":"","done":true,"answer":"npm project initialized"}`,
+		`{"command":` + quoteJSONForTest(command) + `,"done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Calculator app created.","objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"satisfied","evidence":"index.html contains calculator UI and logic"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html references Tailwind CDN"},{"id":"recyclrjs","description":"Account for RecyclrJS","status":"satisfied","evidence":"package.json/index.html reference recyclrjs"}]}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "npm_project", Description: "Create an npm package manifest", Status: "pending"},
+			{ID: "calculator", Description: "Implement calculator UI and logic", Status: "pending"},
+			{ID: "tailwind_css", Description: "Include Tailwind CSS", Status: "pending"},
+			{ID: "recyclrjs", Description: "Account for RecyclrJS", Status: "pending"},
+		},
+	}}}
+	summarizer := &fakeContextSummarizer{contexts: []MinimalContext{{
+		Summary:     "Build the calculator app in the active directory.",
+		Facts:       []string{"active directory is the target project"},
+		Constraints: []string{"do not use the repository root"},
+		OpenItems:   []string{"finish calculator, Tailwind, and RecyclrJS objectives"},
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"build a test calculator web app with recyclrjs and npm and tailwind css",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: activeDir, PromptInterpreter: interpreter, ContextSummarizer: summarizer},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command != command {
+		t.Fatalf("command = %q, want final app creation command", result.Command)
+	}
+	if !structuredEventsContain(events, "structured_done_rejected") {
+		t.Fatalf("done with pending objectives should be rejected: %#v", events)
+	}
+	if !structuredEventsContain(events, "prompt_interpreter_completed") {
+		t.Fatalf("prompt interpreter should seed objective ledger: %#v", events)
+	}
+	if !structuredEventsContain(events, "minimal_context_updated") {
+		t.Fatalf("context summarizer should load minimal context: %#v", events)
+	}
+	if !strings.Contains(result.Observations[1].Stderr, "pending objective") {
+		t.Fatalf("second observation should record pending objective rejection: %#v", result.Observations[1])
+	}
+	if _, err := os.Stat(filepath.Join(activeDir, "index.html")); err != nil {
+		t.Fatalf("index.html was not created in active dir: %v", err)
+	}
+}
+
 func TestStructuredCommandDecisionDelegatesShellTaskToSpecialist(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Get current Pattaya time using local timezone evidence."}`,
@@ -1940,6 +2101,193 @@ func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *t
 	}
 }
 
+func TestStructuredObjectiveLedgerMergesPlannerDeclaredCriteria(t *testing.T) {
+	ledger := mergeStructuredObjectiveLedger(nil, []StructuredObjective{
+		{ID: "npm_project", Description: "Create an npm package manifest", Status: "satisfied", Evidence: "package.json written"},
+		{ID: "calculator", Description: "Implement calculator UI and logic", Status: "pending"},
+		{ID: "tailwind_css", Description: "Include Tailwind CSS", Status: "pending"},
+		{ID: "recyclrjs", Description: "Account for RecyclrJS", Status: "pending"},
+	})
+	if got := structuredObjectiveIDs(pendingStructuredObjectives(ledger)); !sameStringSet(got, []string{"calculator", "tailwind_css", "recyclrjs"}) {
+		t.Fatalf("pending objectives after partial planner update = %#v\nledger=%#v", got, ledger)
+	}
+
+	ledger = mergeStructuredObjectiveLedger(ledger, []StructuredObjective{
+		{ID: "calculator", Status: "satisfied", Evidence: "index.html contains calculator UI and logic"},
+		{ID: "tailwind_css", Status: "satisfied", Evidence: "index.html references Tailwind CDN"},
+		{ID: "recyclrjs", Status: "satisfied", Evidence: "package.json references recyclrjs"},
+	})
+	if pending := pendingStructuredObjectives(ledger); len(pending) != 0 {
+		t.Fatalf("ledger should be complete, pending=%#v ledger=%#v", pending, ledger)
+	}
+}
+
+func TestPromptInterpreterParsesObjectiveLedger(t *testing.T) {
+	interpretation, err := ParsePromptInterpretation(`{"objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"pending"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html links Tailwind"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := structuredObjectiveIDs(pendingStructuredObjectives(interpretation.ObjectiveLedger)); !sameStringSet(got, []string{"calculator"}) {
+		t.Fatalf("pending objectives = %#v interpretation=%#v", got, interpretation)
+	}
+}
+
+func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.T) {
+	req := buildPromptInterpreterRequest(PromptInterpretationInput{
+		UserPrompt:              "build a calculator app",
+		CurrentWorkingDirectory: t.TempDir(),
+	})
+	content := joinOllamaMessageContent(req.Messages)
+	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("interpreter request missing %q: %s", want, content)
+		}
+	}
+	formatBlob, err := json.Marshal(req.Format)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(formatBlob), "objective_ledger") || strings.Contains(string(formatBlob), "command") {
+		t.Fatalf("interpreter format should only require objective ledger: %s", string(formatBlob))
+	}
+}
+
+func TestContextSummarizerProducesMinimalContextInventory(t *testing.T) {
+	context, err := ParseMinimalContext(`{"summary":"Use the active project only.","facts":["active project is /tmp/app","active project is /tmp/app"],"constraints":["do not use repo root"],"open_items":["create calculator files"]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.Summary != "Use the active project only." {
+		t.Fatalf("summary = %q", context.Summary)
+	}
+	if len(context.Facts) != 1 || context.Facts[0] != "active project is /tmp/app" {
+		t.Fatalf("facts not deduped: %#v", context.Facts)
+	}
+}
+
+func TestContextSummarizerRequestCarriesCandidateContextButReturnsInventorySchema(t *testing.T) {
+	req := buildContextSummarizerRequest(MinimalContextInput{
+		UserPrompt:              "build here",
+		CurrentWorkingDirectory: t.TempDir(),
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "calculator", Description: "Build calculator", Status: "pending"},
+		},
+		History: []Message{{Role: "user", Content: "prior irrelevant detail"}},
+		SessionMemories: []SessionMemory{{
+			Kind:    "preference",
+			Content: "Prefer active directory over repo root.",
+		}},
+	})
+	content := joinOllamaMessageContent(req.Messages)
+	for _, want := range []string{"summary specialist", "minimal context inventory", "objective_ledger", "reference_history", "session_memories"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("summarizer request missing %q: %s", want, content)
+		}
+	}
+	formatBlob, err := json.Marshal(req.Format)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"summary", "facts", "constraints", "open_items"} {
+		if !strings.Contains(string(formatBlob), want) {
+			t.Fatalf("minimal context schema missing %q: %s", want, string(formatBlob))
+		}
+	}
+}
+
+func TestStructuredCommandUsesMinimalContextInsteadOfRawHistoryWhenAvailable(t *testing.T) {
+	req := buildStructuredCommandRequestWithContext(
+		"build here",
+		[]Message{{Role: "user", Content: "raw history detail that should not be sent"}},
+		nil,
+		nil,
+		t.TempDir(),
+		nil,
+		MinimalContext{Summary: "Only use active project.", Facts: []string{"active project is selected"}},
+	)
+	joined := joinOllamaMessageContent(req.Messages)
+	if !strings.Contains(joined, "minimal_context") || !strings.Contains(joined, "Only use active project.") {
+		t.Fatalf("request missing minimal context: %s", joined)
+	}
+	if strings.Contains(joined, "raw history detail that should not be sent") || strings.Contains(joined, "reference_history") {
+		t.Fatalf("raw history leaked despite minimal context: %s", joined)
+	}
+}
+
+func TestStructuredCommandUserMessageIncludesObjectiveLedger(t *testing.T) {
+	message := buildStructuredCommandUserMessage(
+		"build a test calculator web app with recyclrjs and npm and tailwind css",
+		nil,
+		t.TempDir(),
+		[]StructuredObjective{
+			{ID: "calculator", Description: "Implement calculator UI and logic", Status: "pending"},
+			{ID: "tailwind_css", Description: "Include Tailwind CSS", Status: "pending"},
+			{ID: "recyclrjs", Description: "Account for RecyclrJS", Status: "pending"},
+		},
+	)
+	for _, want := range []string{
+		`"objective_ledger"`,
+		`"pending_objective_ids"`,
+		`"calculator"`,
+		`"tailwind_css"`,
+		`"recyclrjs"`,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing objective ledger content %q: %s", want, message)
+		}
+	}
+}
+
+func TestStructuredCommandRequestUsesSessionActiveDirectory(t *testing.T) {
+	activeDir := filepath.Join(t.TempDir(), "active-project")
+	req := buildStructuredCommandRequestWithMemoriesAndCWD(
+		"build the app here",
+		nil,
+		nil,
+		nil,
+		activeDir,
+	)
+	if len(req.Messages) != 1 {
+		t.Fatalf("messages = %#v, want active task only", req.Messages)
+	}
+	active := req.Messages[0].Content
+	escapedActiveDir := strings.Trim(quoteJSONForTest(activeDir), `"`)
+	if !strings.Contains(active, `"current_working_directory":"`+escapedActiveDir+`"`) {
+		t.Fatalf("active task missing session active directory %q: %s", activeDir, active)
+	}
+}
+
+func TestStructuredCommandExecutesRelativeCommandsInConfiguredDirectory(t *testing.T) {
+	activeDir := t.TempDir()
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"pwd; touch app.marker","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"created marker"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"create a marker in the active directory",
+		nil,
+		client,
+		stdout,
+		stderr,
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: activeDir},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command == "" || !strings.Contains(stdout.String(), activeDir) {
+		t.Fatalf("command did not run in active dir: command=%q stdout=%q stderr=%q", result.Command, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(activeDir, "app.marker")); err != nil {
+		t.Fatalf("marker was not created in active dir: %v", err)
+	}
+}
+
 func TestStructuredCommandRequestIncludesCapabilityMemorySeparately(t *testing.T) {
 	req := buildStructuredCommandRequestWithMemories(
 		"What time is it in Virginia right now?",
@@ -2080,6 +2428,51 @@ func TestCommandDecisionSourceAuditNoPromptPhraseMatching(t *testing.T) {
 	}
 }
 
+func TestPromptInterpretationDoctrineDocumentsHardBan(t *testing.T) {
+	for _, path := range []string{
+		filepath.Join("..", "..", "docs", "neo", "DEV_BIBLE.md"),
+		filepath.Join("..", "..", "docs", "neo", "CONTRACTS.md"),
+	} {
+		blob, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(blob)
+		for _, want := range []string{
+			"No production prompt phrase matching",
+			"prompt_interpreter",
+			"objective_ledger",
+			"minimal_context",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("%s missing doctrine marker %q", path, want)
+			}
+		}
+	}
+}
+
+func TestObjectiveLedgerAndMinimalContextDoNotUsePromptPhraseHeuristics(t *testing.T) {
+	sourcePath := filepath.Join("llm_command.go")
+	sourceBytes, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(sourceBytes)
+	forbidden := []string{
+		"structuredObjectiveSpecsForPrompt",
+		"buildStructuredObjectiveLedger(prompt",
+		"strings.Contains(lower, \"web app\")",
+		"strings.Contains(lower, \"calculator\")",
+		"strings.Contains(lower, \"tailwind\")",
+		"strings.Contains(lower, \"recyclr\")",
+	}
+	for _, needle := range forbidden {
+		if strings.Contains(source, needle) {
+			t.Fatalf("objective/minimal-context path contains banned prompt phrase heuristic %q", needle)
+		}
+	}
+}
+
 func quoteJSONForTest(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 	return `"` + replacer.Replace(value) + `"`
@@ -2092,6 +2485,23 @@ func structuredEventsContain(events []StructuredCommandEvent, eventType string) 
 		}
 	}
 	return false
+}
+
+func sameStringSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	gotSet := map[string]int{}
+	for _, value := range got {
+		gotSet[value]++
+	}
+	for _, value := range want {
+		if gotSet[value] == 0 {
+			return false
+		}
+		gotSet[value]--
+	}
+	return true
 }
 
 func activeTaskJSONForTest(t *testing.T, raw string) string {

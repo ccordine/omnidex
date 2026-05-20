@@ -23,6 +23,29 @@ These contracts are designed for deterministic orchestration. Any output that fa
 6. Any enum mismatch is a hard parse failure.
 7. All list orderings must be deterministic and stable.
 8. Free-form prose is not accepted where structured fields are required.
+9. Production code must not interpret user prompt semantics with phrase matching. Prompt semantics must enter the deterministic control plane only through specialist JSON contracts, starting with `prompt_interpreter`.
+
+## 2.1 Prompt Interpreter Contract Boundary
+No production prompt phrase matching is allowed.
+
+The `prompt_interpreter` role is the sole owner of natural-language user prompt interpretation.
+
+Allowed:
+- Read raw user prompt and relevant minimal prior context.
+- Emit structured objective ledger, constraints, unresolved references, and explicit interpretation notes.
+
+Forbidden outside this role:
+- Runtime code matching prompt substrings, keywords, regexes, or token lists to infer intent.
+- Planners, shell specialists, summarizers, or verifiers reinterpreting raw prompt text when structured interpreter output is available.
+- Completion gates based on prompt wording instead of objective ledger state and observed evidence.
+
+Downstream roles consume:
+- `objective_ledger`
+- `minimal_context`
+- command/tool observations
+- explicit policy and permission state
+
+They do not receive broad raw transcript context by default.
 
 ## 3) Shared Envelopes
 

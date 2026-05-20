@@ -51,15 +51,16 @@ func (s SessionStore) LoadOrCreate(workspacePath string) (*Session, bool, error)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			session := &Session{
-				Version:       sessionVersion,
-				WorkspacePath: absWorkspace,
-				WorkspaceHash: hash,
-				Permission:    PermissionAsk,
-				CreatedAt:     now,
-				UpdatedAt:     now,
-				Messages:      []Message{},
-				Memories:      []SessionMemory{},
-				Turns:         []Turn{},
+				Version:             sessionVersion,
+				WorkspacePath:       absWorkspace,
+				WorkspaceHash:       hash,
+				ActiveDirectoryPath: absWorkspace,
+				Permission:          PermissionAsk,
+				CreatedAt:           now,
+				UpdatedAt:           now,
+				Messages:            []Message{},
+				Memories:            []SessionMemory{},
+				Turns:               []Turn{},
 			}
 			if err := s.Save(session); err != nil {
 				return nil, false, err
@@ -83,6 +84,9 @@ func (s SessionStore) LoadOrCreate(workspacePath string) (*Session, bool, error)
 	if session.WorkspaceHash == "" {
 		session.WorkspaceHash = hash
 	}
+	if strings.TrimSpace(session.ActiveDirectoryPath) == "" {
+		session.ActiveDirectoryPath = session.WorkspacePath
+	}
 	if session.Permission != PermissionAsk && session.Permission != PermissionFull {
 		session.Permission = PermissionAsk
 	}
@@ -104,6 +108,9 @@ func (s SessionStore) Save(session *Session) error {
 
 	if strings.TrimSpace(session.WorkspacePath) == "" {
 		return errors.New("session workspace path is required")
+	}
+	if strings.TrimSpace(session.ActiveDirectoryPath) == "" {
+		session.ActiveDirectoryPath = session.WorkspacePath
 	}
 
 	if session.WorkspaceHash == "" {

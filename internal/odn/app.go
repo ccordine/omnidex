@@ -26,6 +26,9 @@ type App struct {
 
 	store              SessionStore
 	ollama             *OllamaClient
+	planner            *OllamaClient
+	promptInterpreter  PromptInterpreter
+	contextSummarizer  ContextSummarizer
 	evaluator          StructuredLLMResponseEvaluator
 	evaluatorThreshold int
 	shellSpecialist    ShellCommandSpecialist
@@ -60,15 +63,17 @@ func (a *App) Run(args []string) error {
 	fs.SetOutput(a.errOut)
 
 	permissionFlag := fs.String("permission", "", "permission mode: ask_permission|full_access")
-	modelFlag := fs.String("model", defaultOllamaModel, "ollama model to use for command decisions")
+	modelFlag := fs.String("model", firstNonEmpty(os.Getenv("ODN_MODEL"), os.Getenv("ODN_CONVERSATION_MODEL"), os.Getenv("OLLAMA_MODEL_RESPONDER"), os.Getenv("OLLAMA_MODEL"), defaultOllamaModel), "ollama model to use for conversation responses")
+	plannerModel := fs.String("planner-model", firstNonEmpty(os.Getenv("ODN_PLANNER_MODEL"), os.Getenv("ODN_STRUCTURED_PLANNER_MODEL"), os.Getenv("OLLAMA_MODEL_PLANNER"), defaultOllamaPlannerModel), "ollama model for structured command planning")
 	endpointFlag := fs.String("ollama-endpoint", defaultOllamaEndpoint, "ollama chat endpoint")
 	ollamaKeepAlive := fs.String("ollama-keep-alive", envOrDefault("ODN_OLLAMA_KEEP_ALIVE", "30s"), "default Ollama keep_alive for chat requests; use 0 to unload after each response")
 	ollamaNumCtx := fs.Int("ollama-num-ctx", envIntOrDefault("ODN_OLLAMA_NUM_CTX", 2048), "default Ollama num_ctx option; set 0 to use Ollama default")
-	evaluatorModel := fs.String("evaluator-model", firstNonEmpty(os.Getenv("ODN_EVALUATOR_MODEL"), os.Getenv("OLLAMA_MODEL_EVALUATOR"), defaultOllamaEvaluatorModel), "ollama model for tiny structured response evaluator")
+	plannerNumCtx := fs.Int("planner-num-ctx", envIntOrDefault("ODN_PLANNER_NUM_CTX", envIntOrDefault("ODN_OLLAMA_NUM_CTX", 4096)), "Ollama num_ctx option for structured planner requests; set 0 to use Ollama default")
+	evaluatorModel := fs.String("evaluator-model", firstNonEmpty(os.Getenv("ODN_EVALUATOR_MODEL"), os.Getenv("OLLAMA_MODEL_EVALUATOR"), defaultOllamaEvaluatorModel), "ollama model for structured response evaluator")
 	evaluatorThreshold := fs.Int("evaluator-threshold", envIntOrDefault("ODN_EVALUATOR_THRESHOLD", defaultEvaluatorThreshold), "minimum evaluator confidence 0..100 before planner output is accepted")
-	evaluatorNumCtx := fs.Int("evaluator-num-ctx", envIntOrDefault("ODN_EVALUATOR_NUM_CTX", 1024), "Ollama num_ctx option for evaluator requests; set 0 to use Ollama default")
+	evaluatorNumCtx := fs.Int("evaluator-num-ctx", envIntOrDefault("ODN_EVALUATOR_NUM_CTX", 2048), "Ollama num_ctx option for evaluator requests; set 0 to use Ollama default")
 	disableEvaluator := fs.Bool("disable-evaluator", envBoolOrDefault("ODN_DISABLE_EVALUATOR", false), "disable structured response self-evaluator")
-	shellSpecialistModel := fs.String("shell-specialist-model", firstNonEmpty(os.Getenv("ODN_SHELL_SPECIALIST_MODEL"), os.Getenv("OLLAMA_MODEL_SHELL"), *modelFlag), "ollama model for shell execution specialist")
+	shellSpecialistModel := fs.String("shell-specialist-model", firstNonEmpty(os.Getenv("ODN_SHELL_SPECIALIST_MODEL"), os.Getenv("OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION"), os.Getenv("OLLAMA_MODEL_SHELL"), defaultOllamaModel), "ollama model for shell execution specialist")
 	shellSpecialistNumCtx := fs.Int("shell-specialist-num-ctx", envIntOrDefault("ODN_SHELL_SPECIALIST_NUM_CTX", 2048), "Ollama num_ctx option for shell specialist requests; set 0 to use Ollama default")
 	disableShellSpecialist := fs.Bool("disable-shell-specialist", envBoolOrDefault("ODN_DISABLE_SHELL_SPECIALIST", false), "disable delegated shell execution specialist")
 	noOllama := fs.Bool("no-ollama", false, "disable ollama calls")
@@ -100,6 +105,10 @@ func (a *App) Run(args []string) error {
 	if !*noOllama {
 		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)
 		a.ollama.ConfigureRuntime(*ollamaKeepAlive, *ollamaNumCtx)
+		a.planner = NewOllamaClient(*endpointFlag, *plannerModel)
+		a.planner.ConfigureRuntime(*ollamaKeepAlive, *plannerNumCtx)
+		a.promptInterpreter = NewOllamaPromptInterpreter(a.planner)
+		a.contextSummarizer = NewOllamaContextSummarizer(a.planner)
 		a.evaluatorThreshold = normalizeStructuredEvaluatorThreshold(*evaluatorThreshold)
 		if !*disableEvaluator {
 			evaluatorClient := NewOllamaClient(*endpointFlag, *evaluatorModel)
@@ -122,15 +131,18 @@ func (a *App) Run(args []string) error {
 			context.Background(),
 			string(promptBytes),
 			nil,
-			a.ollama,
+			a.structuredPlannerClient(),
 			a.out,
 			a.errOut,
 			nil,
 			nil,
 			structuredCommandDecisionRunConfig{
-				Evaluator:          a.evaluator,
-				EvaluatorThreshold: a.evaluatorThreshold,
-				ShellSpecialist:    a.shellSpecialist,
+				CurrentWorkingDirectory: workspacePathOrCurrentDir(),
+				PromptInterpreter:       a.promptInterpreter,
+				ContextSummarizer:       a.contextSummarizer,
+				Evaluator:               a.evaluator,
+				EvaluatorThreshold:      a.evaluatorThreshold,
+				ShellSpecialist:         a.shellSpecialist,
 			},
 		)
 		return err
@@ -195,6 +207,7 @@ func (a *App) Run(args []string) error {
 		"permission_mode":          session.Permission,
 		"ollama_enabled":           !*noOllama,
 		"model":                    *modelFlag,
+		"planner_model":            *plannerModel,
 		"endpoint":                 *endpointFlag,
 		"evaluator_model":          *evaluatorModel,
 		"evaluator_threshold":      normalizeStructuredEvaluatorThreshold(*evaluatorThreshold),
@@ -470,6 +483,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 		"user_input":       input,
 		"permission_mode":  session.Permission,
 		"workspace":        session.WorkspacePath,
+		"active_directory": session.ActiveDirectoryPath,
 		"execution_policy": "stdin_prompt_llm_json_command_execute",
 	})
 
@@ -481,11 +495,12 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	defer stopSignal()
 	var stdoutBuf strings.Builder
 	var stderrBuf strings.Builder
+	activeDirectory := a.resolveActiveDirectoryForTurn(session, input, emitEvent)
 	result, execErr := runStructuredCommandDecisionWithConfig(
 		signalCtx,
 		input,
 		session.Messages,
-		a.ollama,
+		a.structuredPlannerClient(),
 		&stdoutBuf,
 		&stderrBuf,
 		func(evt StructuredCommandEvent) {
@@ -502,10 +517,13 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			return strings.TrimSpace(answer), nil
 		},
 		structuredCommandDecisionRunConfig{
-			SessionMemories:    session.Memories,
-			Evaluator:          a.evaluator,
-			EvaluatorThreshold: a.evaluatorThreshold,
-			ShellSpecialist:    a.shellSpecialist,
+			SessionMemories:         session.Memories,
+			CurrentWorkingDirectory: activeDirectory,
+			PromptInterpreter:       a.promptInterpreter,
+			ContextSummarizer:       a.contextSummarizer,
+			Evaluator:               a.evaluator,
+			EvaluatorThreshold:      a.evaluatorThreshold,
+			ShellSpecialist:         a.shellSpecialist,
 		},
 	)
 	cancel()
@@ -794,6 +812,13 @@ func (a *App) ollamaModelName() string {
 		return "disabled"
 	}
 	return a.ollama.Model
+}
+
+func (a *App) structuredPlannerClient() CommandDecisionClient {
+	if a.planner != nil {
+		return a.planner
+	}
+	return a.ollama
 }
 
 func (a *App) planContextForTurn(ctx context.Context, input string) (ContextToolPlan, []Event) {
@@ -1108,6 +1133,9 @@ func (a *App) printBanner(session *Session, loaded bool, noOllama bool) {
 		fmt.Fprintln(a.out, "Conversation model: disabled")
 	} else if a.ollama != nil {
 		fmt.Fprintf(a.out, "Conversation model: %s\n", a.ollama.Model)
+		if a.planner != nil {
+			fmt.Fprintf(a.out, "Structured planner model: %s\n", a.planner.Model)
+		}
 		if evaluator, ok := a.evaluator.(OllamaStructuredResponseEvaluator); ok && evaluator.Client != nil {
 			if client, ok := evaluator.Client.(*OllamaClient); ok {
 				fmt.Fprintf(a.out, "Evaluator model: %s (threshold %d)\n", client.Model, normalizeStructuredEvaluatorThreshold(a.evaluatorThreshold))
@@ -1150,6 +1178,7 @@ func (a *App) printHelp() {
 func (a *App) printStatus(session *Session) {
 	fmt.Fprintln(a.out, "")
 	fmt.Fprintf(a.out, "Workspace: %s\n", session.WorkspacePath)
+	fmt.Fprintf(a.out, "Active directory: %s\n", activeDirectoryOrWorkspace(session))
 	fmt.Fprintf(a.out, "Session ID: %s\n", session.WorkspaceHash)
 	fmt.Fprintf(a.out, "Permission: %s\n", session.Permission)
 	fmt.Fprintf(a.out, "Turns: %d\n", len(session.Turns))
@@ -1161,6 +1190,9 @@ func (a *App) printStatus(session *Session) {
 			keepAlive = "ollama-default"
 		}
 		fmt.Fprintf(a.out, "Ollama request defaults: keep_alive=%s num_ctx=%d\n", keepAlive, a.ollama.DefaultNumCtx)
+		if a.planner != nil {
+			fmt.Fprintf(a.out, "Structured planner model: %s num_ctx=%d\n", a.planner.Model, a.planner.DefaultNumCtx)
+		}
 		if evaluator, ok := a.evaluator.(OllamaStructuredResponseEvaluator); ok && evaluator.Client != nil {
 			if client, ok := evaluator.Client.(*OllamaClient); ok {
 				fmt.Fprintf(a.out, "Evaluator model: %s threshold=%d num_ctx=%d\n", client.Model, normalizeStructuredEvaluatorThreshold(a.evaluatorThreshold), client.DefaultNumCtx)
@@ -1382,6 +1414,109 @@ func envBoolOrDefault(key string, fallback bool) bool {
 		return fallback
 	}
 	return parsed
+}
+
+func workspacePathOrCurrentDir() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	abs, err := filepath.Abs(wd)
+	if err != nil {
+		return wd
+	}
+	return abs
+}
+
+func activeDirectoryOrWorkspace(session *Session) string {
+	if session == nil {
+		return ""
+	}
+	if strings.TrimSpace(session.ActiveDirectoryPath) != "" {
+		return strings.TrimSpace(session.ActiveDirectoryPath)
+	}
+	return strings.TrimSpace(session.WorkspacePath)
+}
+
+func (a *App) resolveActiveDirectoryForTurn(session *Session, input string, emitEvent func(string, string, map[string]string)) string {
+	activeDirectory := activeDirectoryOrWorkspace(session)
+	if session == nil {
+		return activeDirectory
+	}
+	if inferred := inferRequestedActiveDirectory(input); inferred != "" {
+		if abs, err := filepath.Abs(inferred); err == nil {
+			inferred = abs
+		}
+		if info, err := os.Stat(inferred); err == nil && info.IsDir() {
+			if inferred != activeDirectory {
+				session.ActiveDirectoryPath = inferred
+				activeDirectory = inferred
+				if emitEvent != nil {
+					emitEvent("active_directory_updated", "Active directory updated from conversation context", map[string]string{
+						"active_directory": inferred,
+					})
+				}
+			}
+		}
+	}
+	if strings.TrimSpace(activeDirectory) == "" {
+		activeDirectory = strings.TrimSpace(session.WorkspacePath)
+	}
+	return activeDirectory
+}
+
+func inferRequestedActiveDirectory(input string) string {
+	lower := strings.ToLower(input)
+	if !strings.Contains(lower, "active directory") && !strings.Contains(lower, "active dir") && !strings.Contains(lower, "working directory") {
+		return ""
+	}
+	if explicit := firstExplicitDirectoryPath(input); explicit != "" {
+		return explicit
+	}
+	if strings.Contains(lower, "that") || strings.Contains(lower, "this") || strings.Contains(lower, "going forward") || strings.Contains(lower, "from now") {
+		return latestTimestampedTestProjectDirectory()
+	}
+	return ""
+}
+
+func firstExplicitDirectoryPath(input string) string {
+	for _, field := range strings.Fields(input) {
+		candidate := strings.Trim(field, " \t\r\n\"'`.,;:()[]{}")
+		if strings.HasPrefix(candidate, "~/") {
+			if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+				return filepath.Join(home, strings.TrimPrefix(candidate, "~/"))
+			}
+		}
+		if filepath.IsAbs(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func latestTimestampedTestProjectDirectory() string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	matches, err := filepath.Glob(filepath.Join(home, "Projects", "test_project_[0-9]*"))
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		iInfo, iErr := os.Stat(matches[i])
+		jInfo, jErr := os.Stat(matches[j])
+		if iErr == nil && jErr == nil && !iInfo.ModTime().Equal(jInfo.ModTime()) {
+			return iInfo.ModTime().After(jInfo.ModTime())
+		}
+		return matches[i] > matches[j]
+	})
+	for _, candidate := range matches {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func isInteractive(r io.Reader) bool {

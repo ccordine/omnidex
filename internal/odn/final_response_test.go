@@ -154,6 +154,21 @@ func TestReviewFinalAssistantResponseFlagsOffTaskLongResponse(t *testing.T) {
 	}
 }
 
+func TestReviewFinalAssistantResponseRejectsInstructionsForExecutionRequest(t *testing.T) {
+	review := ReviewFinalAssistantResponse(FinalAssistantResponseReviewInput{
+		UserInput: "make a brand new test project in ~/Projects with todays date as part of the name and add a readme.md file",
+		Response:  "To create the project, follow these steps:\n1. Open your terminal.\n2. Navigate to ~/Projects.\n3. Run mkdir test_project_$(date +%Y%m%d), then create readme.md.",
+		Evidence:  []string{"command=bash", "exit_code=0"},
+	})
+
+	if review.Passed {
+		t.Fatalf("instructional response should not pass: %#v", review)
+	}
+	if !strings.Contains(review.Feedback, "should have been executed") {
+		t.Fatalf("unexpected feedback: %q", review.Feedback)
+	}
+}
+
 func TestReviewFinalAssistantResponsePassesGroundedResponse(t *testing.T) {
 	review := ReviewFinalAssistantResponse(FinalAssistantResponseReviewInput{
 		UserInput: "what time is it in Virginia right now?",
