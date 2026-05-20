@@ -420,6 +420,9 @@ func TestStructuredCommandDefaultTimeoutAllowsLongRunningAgenticWork(t *testing.
 	if defaultCommandDecisionTimeout != 6*time.Hour {
 		t.Fatalf("command decision timeout = %s, want 6h long-running task budget", defaultCommandDecisionTimeout)
 	}
+	if defaultCommandDecisionMaxSteps < 40 {
+		t.Fatalf("max structured steps = %d, want enough steps for multi-objective app builds", defaultCommandDecisionMaxSteps)
+	}
 }
 
 func TestStructuredCommandDecisionLLMFailureBeforeCommandSetsExitCodeOne(t *testing.T) {
@@ -1437,98 +1440,6 @@ func TestValidateStructuredCommandRequiresStableGoogleNewsRSSCurl(t *testing.T) 
 	}
 }
 
-func TestStructuredCommandPromptCorrectionRewritesCurrentEventsPseudoTool(t *testing.T) {
-	command, reason, ok := structuredCommandPromptCorrection(
-		"What are the current events in Saipan?",
-		`web.search "current events saipan"`,
-	)
-	if !ok {
-		t.Fatal("current-events pseudo-tool should be corrected")
-	}
-	if !strings.Contains(reason, "current-events") {
-		t.Fatalf("reason = %q", reason)
-	}
-	for _, want := range []string{"news.google.com/rss/search", "current+events+saipan", "ceid=US:en", "curl -fsSL -A 'Mozilla/5.0'"} {
-		if !strings.Contains(command, want) {
-			t.Fatalf("corrected command missing %q: %s", want, command)
-		}
-	}
-	if err := validateStructuredCommandString(command); err != nil {
-		t.Fatalf("corrected current-events command rejected: %v", err)
-	}
-}
-
-func TestStructuredCommandPromptCorrectionRewritesHeavyBuildPrompts(t *testing.T) {
-	goCommand, goReason, goOK := structuredCommandPromptCorrection("build me a demo go application", "mkdir ~/go-demo-app && cd ~/go-demo-app && go run main.go")
-	if !goOK || !strings.Contains(goReason, "Go CLI demo") {
-		t.Fatalf("Go correction missing: ok=%t reason=%q command=%s", goOK, goReason, goCommand)
-	}
-	for _, want := range []string{"go.dev/dl/?mode=json", "test ./...", "build -o demo-go-cli", "RUN_GUIDE"} {
-		if !strings.Contains(goCommand, want) {
-			t.Fatalf("Go corrected command missing %q:\n%s", want, goCommand)
-		}
-	}
-
-	dockerRoot := filepath.Join(t.TempDir(), "docker-smoke")
-	dockerPrompt := fmt.Sprintf("Build a simple Docker web application in %s, run it as container %s from image %s on host port %d, confirm it is alive with curl, inspect Docker state to prove it is running and not restarting, verify restart count is zero, inspect docker logs, and report how to run/check it. Use a local static Go binary and FROM scratch if that avoids pulling base images. Do not install packages.", dockerRoot, "omni-docker-test", "omni-docker-test:image", 41730)
-	dockerCommand, dockerReason, dockerOK := structuredCommandPromptCorrection(dockerPrompt, "docker build .")
-	if !dockerOK || !strings.Contains(dockerReason, "Docker smoke") {
-		t.Fatalf("Docker correction missing: ok=%t reason=%q command=%s", dockerOK, dockerReason, dockerCommand)
-	}
-	for _, want := range []string{"docker build", "docker run -d", "docker inspect", "docker logs", "DOCKER_SMOKE_OK", "DOCKER_LOGS_CLEAR"} {
-		if !strings.Contains(dockerCommand, want) {
-			t.Fatalf("Docker corrected command missing %q:\n%s", want, dockerCommand)
-		}
-	}
-	deterministicDockerCommand, deterministicDockerAnswer, deterministicDockerOK := deterministicStructuredCommandForPrompt(dockerPrompt)
-	if !deterministicDockerOK || deterministicDockerAnswer == "" || !strings.Contains(deterministicDockerCommand, "DOCKER_SMOKE_OK") {
-		t.Fatalf("Docker deterministic pre-LLM command missing: ok=%t answer=%q command=%s", deterministicDockerOK, deterministicDockerAnswer, deterministicDockerCommand)
-	}
-
-	root := t.TempDir()
-	appDir := filepath.Join(root, "react-ts-smoke")
-	pidFile := filepath.Join(root, "react-ts.pid")
-	logFile := filepath.Join(root, "react-preview.log")
-	reactPrompt := fmt.Sprintf(
-		"Build a boilerplate React TypeScript npm project in %s, then install dependencies, run an equivalent TypeScript/build check, build it, start a local preview server on http://127.0.0.1:%d/, write the server PID to %s, and verify it with curl. The app must visibly render Omni React TypeScript Smoke. Start only the long-running preview server in the background, redirect its stdout/stderr to %s, capture $! in the PID file.",
-		appDir,
-		41731,
-		pidFile,
-		logFile,
-	)
-	reactCommand, reactReason, reactOK := structuredCommandPromptCorrection(reactPrompt, "bash")
-	if !reactOK || !strings.Contains(reactReason, "React TypeScript") {
-		t.Fatalf("React correction missing: ok=%t reason=%q command=%s", reactOK, reactReason, reactCommand)
-	}
-	for _, want := range []string{"package.json", "src/App.tsx", "npm install --silent", "npm run build --silent", "npm run preview", "Omni React TypeScript Smoke"} {
-		if !strings.Contains(reactCommand, want) {
-			t.Fatalf("React corrected command missing %q:\n%s", want, reactCommand)
-		}
-	}
-
-	webDir := filepath.Join(root, "stimulus-tailwind-smoke")
-	webPID := filepath.Join(root, "omni-webapp.pid")
-	webLog := filepath.Join(root, "server.log")
-	webPrompt := fmt.Sprintf(
-		"Build a smoke test demo web app in %s and serve it at http://127.0.0.1:%d/. Use Tailwind CSS from a CDN and Stimulus JS from a CDN. The page must include visible text Omni Stimulus Tailwind Smoke. Use this server shape after file creation with semicolons: nohup python3 -m http.server %d --bind 127.0.0.1 --directory %s > %s 2>&1 & server_pid=$!; echo \"$server_pid\" > %s; Then verify with curl.",
-		webDir,
-		41732,
-		41732,
-		webDir,
-		webLog,
-		webPID,
-	)
-	webCommand, webReason, webOK := structuredCommandPromptCorrection(webPrompt, "bash")
-	if !webOK || !strings.Contains(webReason, "Stimulus Tailwind") {
-		t.Fatalf("web correction missing: ok=%t reason=%q command=%s", webOK, webReason, webCommand)
-	}
-	for _, want := range []string{"index.html", "Omni Stimulus Tailwind Smoke", "python3 -m http.server", "server_pid", "data-controller"} {
-		if !strings.Contains(webCommand, want) {
-			t.Fatalf("web corrected command missing %q:\n%s", want, webCommand)
-		}
-	}
-}
-
 func TestValidateStructuredCommandRejectsOSIdentificationWithoutPackageDiscovery(t *testing.T) {
 	command := "uname -a && cat /etc/os-release"
 	err := validateStructuredCommandString(command)
@@ -1684,6 +1595,285 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsR
 	}
 }
 
+func TestStructuredCommandDecisionSeedsLedgerFromSelectedRecipe(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'bundle evidence' > bundle.txt","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"bundle evidence"}`,
+	}}
+	recipe := Recipe{
+		ID:               "frontend.stimulus-tailwind-recyclr",
+		Description:      "Build frontend app",
+		Objectives:       []RecipeObjective{{ID: "verify_build", Description: "Verify webpack bundle"}},
+		AllowedCommands:  []string{"printf"},
+		EvidenceRequired: []string{"bundle exists"},
+	}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		RecipeIDs: []string{recipe.ID},
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "bundle evidence satisfies recipe objective",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "verify_build", Description: "Verify webpack bundle", Status: "satisfied", Evidence: "bundle evidence"},
+		},
+	}}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"build frontend app",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: t.TempDir(),
+			Recipes:                 []Recipe{recipe},
+			PromptInterpreter:       interpreter,
+			CompletionChecker:       checker,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("recipe objective still pending: %#v", result.ObjectiveLedger)
+	}
+	if !structuredEventsContain(events, "recipe_selected") {
+		t.Fatalf("missing recipe_selected event: %#v", events)
+	}
+}
+
+func TestStructuredCommandDecisionAcceptsSelectedRecipeCompletionProbes(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recipe := Recipe{
+		ID:               "probe.recipe",
+		Description:      "Probe recipe",
+		Objectives:       []RecipeObjective{{ID: "package_json", Description: "package.json exists"}},
+		AllowedCommands:  []string{"test"},
+		EvidenceRequired: []string{"package.json exists"},
+		CompletionChecks: []string{"test -f package.json"},
+	}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		RecipeIDs: []string{recipe.ID},
+	}}}
+	summarizer := &fakeContextSummarizer{contexts: []MinimalContext{{
+		Summary: "unused",
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done: true,
+	}}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"structured recipe probe task",
+		nil,
+		nil,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			Recipes:                 []Recipe{recipe},
+			PromptInterpreter:       interpreter,
+			ContextSummarizer:       summarizer,
+			CompletionChecker:       checker,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command != "RECIPE_COMPLETION_PROBES" {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("recipe objective still pending: %#v", result.ObjectiveLedger)
+	}
+	if !structuredEventsContain(events, "completion_check_accepted_from_recipe_probes") {
+		t.Fatalf("missing recipe probe completion event: %#v", events)
+	}
+	if !structuredEventsContain(events, "adaptive_roles_collapsed") {
+		t.Fatalf("missing adaptive role collapse event: %#v", events)
+	}
+	if len(summarizer.inputs) != 0 {
+		t.Fatalf("context summarizer should be skipped after deterministic probes pass, calls=%d", len(summarizer.inputs))
+	}
+	if len(checker.inputs) != 0 {
+		t.Fatalf("completion checker should be skipped after deterministic probes pass, calls=%d", len(checker.inputs))
+	}
+}
+
+func TestStructuredPayloadCommandReusesCommandCacheForUnchangedInputs(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "marker.txt"), []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cacheRoot := filepath.Join(workspace, ".cache")
+	first := CommandDecisionResult{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, "test -f marker.txt", workspace, true, cacheRoot, &bytes.Buffer{}, &bytes.Buffer{}, nil, &first); err != nil {
+		t.Fatal(err)
+	}
+	second := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	if err := runStructuredPayloadCommand(
+		context.Background(),
+		2,
+		"test -f marker.txt",
+		workspace,
+		true,
+		cacheRoot,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&second,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Observations) != 1 || !second.Observations[0].Cached {
+		t.Fatalf("expected cached observation: %#v", second.Observations)
+	}
+	if !structuredEventsContain(events, "command_cache_hit") {
+		t.Fatalf("missing command_cache_hit event: %#v", events)
+	}
+}
+
+func TestStructuredPayloadCommandCacheInvalidatesWhenInputsChange(t *testing.T) {
+	workspace := t.TempDir()
+	marker := filepath.Join(workspace, "marker.txt")
+	if err := os.WriteFile(marker, []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cacheRoot := filepath.Join(workspace, ".cache")
+	first := CommandDecisionResult{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, "test -f marker.txt", workspace, true, cacheRoot, &bytes.Buffer{}, &bytes.Buffer{}, nil, &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	if err := runStructuredPayloadCommand(
+		context.Background(),
+		2,
+		"test -f marker.txt",
+		workspace,
+		true,
+		cacheRoot,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&second,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Observations) != 1 || second.Observations[0].Cached {
+		t.Fatalf("expected fresh observation after input change: %#v", second.Observations)
+	}
+	if structuredEventsContain(events, "command_cache_hit") {
+		t.Fatalf("unexpected command_cache_hit event after input change: %#v", events)
+	}
+}
+
+func TestStructuredPayloadCommandDoesNotCacheFailures(t *testing.T) {
+	workspace := t.TempDir()
+	cacheRoot := filepath.Join(workspace, ".cache")
+	first := CommandDecisionResult{}
+	_ = runStructuredPayloadCommand(context.Background(), 1, "test -f missing.txt", workspace, true, cacheRoot, &bytes.Buffer{}, &bytes.Buffer{}, nil, &first)
+	if first.ExitCode == 0 {
+		t.Fatal("expected missing file command to have nonzero exit code")
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "missing.txt"), []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	if err := runStructuredPayloadCommand(
+		context.Background(),
+		2,
+		"test -f missing.txt",
+		workspace,
+		true,
+		cacheRoot,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&second,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Observations) != 1 || second.Observations[0].Cached {
+		t.Fatalf("expected successful fresh observation, not cached failure: %#v", second.Observations)
+	}
+	if structuredEventsContain(events, "command_cache_hit") {
+		t.Fatalf("unexpected command_cache_hit for prior failure: %#v", events)
+	}
+}
+
+func TestStructuredCommandDecisionAppliesPatchToolArtifact(t *testing.T) {
+	workspace := t.TempDir()
+	target := filepath.Join(workspace, "hello.txt")
+	if err := os.WriteFile(target, []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	patch := `diff --git a/hello.txt b/hello.txt
+--- a/hello.txt
++++ b/hello.txt
+@@ -1,2 +1,2 @@
+ one
+-two
++TWO
+`
+	response, err := json.Marshal(StructuredCommandPayload{
+		Command: "",
+		Done:    false,
+		Answer:  "",
+		Tool:    "patch.apply",
+		Patch:   patch,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		string(response),
+		`{"command":"test -f hello.txt","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"updated hello.txt"}`,
+	}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"update the file",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "one\nTWO\n" {
+		t.Fatalf("patched file = %q", string(data))
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit code = %d", result.ExitCode)
+	}
+	if !structuredEventsContain(events, "structured_patch_apply_finished") {
+		t.Fatalf("missing patch apply event: %#v", events)
+	}
+}
+
 func TestStructuredCommandDecisionRejectsVagueWTTRAndRetries(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"curl -s wttr.in","done":false,"answer":""}`,
@@ -1733,74 +1923,6 @@ func TestStructuredCommandDecisionRejectsRepeatedFailedCommandAndRetries(t *test
 	}
 	if result.Answer != "fallback evidence" {
 		t.Fatalf("answer = %q", result.Answer)
-	}
-}
-
-func TestStructuredCommandDecisionRejectsOSDoneWithoutPackageManagerDiscovery(t *testing.T) {
-	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"printf 'x86_64\\n'","done":false,"answer":""}`,
-		`{"command":"","done":true,"answer":"Arch Linux x86_64 using APT"}`,
-		`{"command":"command -v pacman apt dnf yum zypper apk || true","done":false,"answer":""}`,
-		`{"command":"","done":true,"answer":"Package-manager discovery was checked from command evidence."}`,
-	}}
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-
-	result, err := RunStructuredCommandDecision(context.Background(), "Identify this machine's operating system, distro/version, kernel, architecture, and package manager from command evidence.", client, stdout, stderr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Observations) < 3 {
-		t.Fatalf("observations = %#v, want OS evidence, done rejection, package-manager discovery", result.Observations)
-	}
-	if !strings.Contains(result.Observations[1].Stderr, "missing package-manager discovery evidence") {
-		t.Fatalf("second observation should reject OS done without package manager evidence: %#v", result.Observations[1])
-	}
-	foundDiscovery := false
-	for _, obs := range result.Observations {
-		if strings.Contains(obs.Command, "command -v pacman apt dnf yum zypper apk") {
-			foundDiscovery = true
-			break
-		}
-	}
-	if !foundDiscovery {
-		t.Fatalf("package-manager discovery command not executed: %#v", result.Observations)
-	}
-}
-
-func TestStructuredCommandDecisionCorrectsPartialOSIdentificationCommand(t *testing.T) {
-	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"uname -a && cat /etc/os-release","done":false,"answer":""}`,
-		`{"command":"","done":true,"answer":"OS evidence collected."}`,
-	}}
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	events := []StructuredCommandEvent{}
-
-	result, err := runStructuredCommandDecisionWithConfig(
-		context.Background(),
-		"Identify this machine's operating system, distro/version, kernel, architecture, and package manager from command evidence.",
-		nil,
-		client,
-		stdout,
-		stderr,
-		func(evt StructuredCommandEvent) {
-			events = append(events, evt)
-		},
-		nil,
-		structuredCommandDecisionRunConfig{},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(result.Command, "PACKAGE_MANAGERS") {
-		t.Fatalf("command was not corrected to OS evidence command: %q", result.Command)
-	}
-	if !strings.Contains(stdout.String(), "PACKAGE_MANAGERS") {
-		t.Fatalf("stdout missing package-manager evidence section: %q", stdout.String())
-	}
-	if !structuredEventsContain(events, "structured_command_corrected") {
-		t.Fatalf("missing correction event: %#v", events)
 	}
 }
 
@@ -2477,12 +2599,15 @@ func TestStructuredObjectiveLedgerMergesPlannerDeclaredCriteria(t *testing.T) {
 }
 
 func TestPromptInterpreterParsesObjectiveLedger(t *testing.T) {
-	interpretation, err := ParsePromptInterpretation(`{"objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"pending"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html links Tailwind"}]}`)
+	interpretation, err := ParsePromptInterpretation(`{"selected_recipe_ids":["frontend.stimulus-tailwind-recyclr"],"objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"pending"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html links Tailwind"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := structuredObjectiveIDs(pendingStructuredObjectives(interpretation.ObjectiveLedger)); !sameStringSet(got, []string{"calculator"}) {
 		t.Fatalf("pending objectives = %#v interpretation=%#v", got, interpretation)
+	}
+	if len(interpretation.RecipeIDs) != 1 || interpretation.RecipeIDs[0] != "frontend.stimulus-tailwind-recyclr" {
+		t.Fatalf("recipe ids = %#v", interpretation.RecipeIDs)
 	}
 }
 
@@ -2490,9 +2615,16 @@ func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.
 	req := buildPromptInterpreterRequest(PromptInterpretationInput{
 		UserPrompt:              "build a calculator app",
 		CurrentWorkingDirectory: t.TempDir(),
+		Recipes: []Recipe{{
+			ID:               "frontend.stimulus-tailwind-recyclr",
+			Description:      "Build frontend app",
+			Objectives:       []RecipeObjective{{ID: "initialize_npm", Description: "Initialize npm"}},
+			AllowedCommands:  []string{"npm init"},
+			EvidenceRequired: []string{"package.json exists"},
+		}},
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger"} {
+	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger", "available_recipes", "selected_recipe_ids", "frontend.stimulus-tailwind-recyclr"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("interpreter request missing %q: %s", want, content)
 		}
@@ -2501,7 +2633,7 @@ func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(formatBlob), "objective_ledger") || strings.Contains(string(formatBlob), "command") {
+	if !strings.Contains(string(formatBlob), "objective_ledger") || !strings.Contains(string(formatBlob), "selected_recipe_ids") || strings.Contains(string(formatBlob), "command") {
 		t.Fatalf("interpreter format should only require objective ledger: %s", string(formatBlob))
 	}
 }
@@ -2612,6 +2744,33 @@ func TestStructuredCommandUserMessageIncludesObjectiveLedger(t *testing.T) {
 	} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("message missing objective ledger content %q: %s", want, message)
+		}
+	}
+}
+
+func TestStructuredCommandUserMessageIncludesRecipeConstraints(t *testing.T) {
+	message := buildStructuredCommandUserMessage(
+		"build frontend",
+		nil,
+		t.TempDir(),
+		nil,
+		MinimalContext{},
+		[]Recipe{{
+			ID:               "frontend.stimulus-tailwind-recyclr",
+			Description:      "Build frontend app",
+			AllowedCommands:  []string{"npm install", "npx webpack"},
+			EvidenceRequired: []string{"dist/bundle.js exists"},
+			CompletionChecks: []string{"test -f dist/bundle.js"},
+		}},
+	)
+	for _, want := range []string{
+		`"recipes"`,
+		`"frontend.stimulus-tailwind-recyclr"`,
+		`"allowed_commands"`,
+		`"dist/bundle.js exists"`,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing recipe content %q: %s", want, message)
 		}
 	}
 }

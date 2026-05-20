@@ -1,0 +1,69 @@
+{
+  "id": "frontend.stimulus-tailwind-recyclr",
+  "description": "Build a small npm frontend project using Stimulus, RecyclrJS, Tailwind CSS, and webpack.",
+  "objectives": [
+    {
+      "id": "initialize_npm",
+      "description": "Initialize or update package.json in the active project directory."
+    },
+    {
+      "id": "install_dependencies",
+      "description": "Install or verify @hotwired/stimulus, recyclrjs, tailwindcss, webpack, and webpack-cli.",
+      "depends_on": ["initialize_npm"]
+    },
+    {
+      "id": "create_entrypoint",
+      "description": "Create a browser entrypoint and HTML page for the calculator app.",
+      "depends_on": ["initialize_npm"]
+    },
+    {
+      "id": "create_stimulus_controller",
+      "description": "Create a Stimulus controller that implements calculator interactions.",
+      "depends_on": ["create_entrypoint", "install_dependencies"]
+    },
+    {
+      "id": "use_recyclrjs",
+      "description": "Reference or exercise RecyclrJS from application source so the dependency is accounted for.",
+      "depends_on": ["create_entrypoint", "install_dependencies"]
+    },
+    {
+      "id": "configure_webpack_bundle",
+      "description": "Configure webpack to bundle source assets into dist/bundle.js.",
+      "depends_on": ["create_entrypoint", "install_dependencies"]
+    },
+    {
+      "id": "verify_build",
+      "description": "Run a build or equivalent smoke verification and record evidence.",
+      "depends_on": ["create_stimulus_controller", "use_recyclrjs", "configure_webpack_bundle"]
+    }
+  ],
+  "allowed_commands": [
+    "npm init",
+    "npm install",
+    "npm ls",
+    "npm run",
+    "npx webpack",
+    "test",
+    "find",
+    "cat",
+    "printf",
+    "mkdir"
+  ],
+  "evidence_required": [
+    "package.json exists",
+    "dependencies are recorded or npm ls verifies them",
+    "source files exist",
+    "webpack.config.js exists and names dist/bundle.js",
+    "dist/bundle.js exists after build",
+    "calculator UI and logic exist in source or bundled files"
+  ],
+  "completion_checks": [
+    "test -f package.json",
+    "test -f webpack.config.js",
+    "test -f dist/bundle.js",
+    "grep -R \"@hotwired/stimulus\\|Stimulus\" package.json src index.html dist 2>/dev/null",
+    "grep -R \"recyclr\" package.json src index.html dist 2>/dev/null",
+    "grep -R \"tailwind\" package.json src index.html dist 2>/dev/null",
+    "grep -R \"calculator\\|data-controller\" src index.html dist 2>/dev/null"
+  ]
+}

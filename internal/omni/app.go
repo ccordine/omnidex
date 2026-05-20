@@ -3,6 +3,7 @@ package omni
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -34,6 +35,9 @@ type App struct {
 	evaluator          StructuredLLMResponseEvaluator
 	evaluatorThreshold int
 	shellSpecialist    ShellCommandSpecialist
+	recipes            []Recipe
+	enableCommandCache bool
+	commandCacheRoot   string
 	registry           Registry
 	memory             *PGMemoryStore
 	pgPool             *pgxpool.Pool
@@ -54,6 +58,30 @@ func (a *App) Run(args []string) error {
 	}
 	if len(args) > 0 && args[0] == "migrate" {
 		return a.runMigrate(args[1:])
+	}
+	if len(args) > 0 && args[0] == "ledger" {
+		return a.runLedger(args[1:])
+	}
+	if len(args) > 0 && args[0] == "bench" {
+		return a.runBench(args[1:])
+	}
+	if len(args) > 0 && args[0] == "run:trace" {
+		return a.runTrace(args[1:])
+	}
+	if len(args) > 0 && args[0] == "fastpath" {
+		return a.runFastPath(args[1:])
+	}
+	if len(args) > 0 && args[0] == "index" {
+		return a.runIndex(args[1:])
+	}
+	if len(args) > 0 && args[0] == "fingerprint" {
+		return a.runFingerprint(args[1:])
+	}
+	if len(args) > 0 && args[0] == "patch" {
+		return a.runPatch(args[1:])
+	}
+	if len(args) > 0 && args[0] == "ollama" {
+		return a.runOllama(args[1:])
 	}
 	strictOneShot := false
 	if len(args) > 0 && args[0] == "run" {
@@ -85,6 +113,9 @@ func (a *App) Run(args []string) error {
 	sessionRoot := fs.String("session-root", "", "override session root directory")
 	runLogRoot := fs.String("run-log-root", "", "override run log root directory")
 	memoryDatabaseURL := fs.String("memory-database-url", "", "Postgres URL for /research memory storage")
+	recipeRoot := fs.String("recipe-root", envOrDefault("OMNI_RECIPE_ROOT", "recipes"), "recipe manifest root; missing roots are ignored")
+	enableCommandCache := fs.Bool("enable-command-cache", envBoolOrDefault("OMNI_ENABLE_COMMAND_CACHE", false), "reuse eligible command results when workspace inputs are unchanged")
+	commandCacheRoot := fs.String("command-cache-root", os.Getenv("OMNI_COMMAND_CACHE_ROOT"), "command cache root; defaults to .omni/command-cache in the workspace")
 	skipPermissionPrompt := fs.Bool("no-permission-prompt", false, "skip startup permission prompt and keep current/default mode")
 
 	fs.Usage = func() {
@@ -96,6 +127,14 @@ func (a *App) Run(args []string) error {
 		fmt.Fprintln(a.errOut, "  omni run      strict stdin -> LLM JSON command -> execute")
 		fmt.Fprintln(a.errOut, "  omni update   run the managed update.sh for this install")
 		fmt.Fprintln(a.errOut, "  omni migrate  run migration commands")
+		fmt.Fprintln(a.errOut, "  omni ledger   export evidence ledgers")
+		fmt.Fprintln(a.errOut, "  omni bench    list benchmark manifests and report session metrics")
+		fmt.Fprintln(a.errOut, "  omni run:trace latest run telemetry for this workspace")
+		fmt.Fprintln(a.errOut, "  omni fastpath run explicit deterministic probes")
+		fmt.Fprintln(a.errOut, "  omni index    build deterministic workspace index")
+		fmt.Fprintln(a.errOut, "  omni fingerprint classify failure output")
+		fmt.Fprintln(a.errOut, "  omni patch    inspect or apply unified diffs")
+		fmt.Fprintln(a.errOut, "  omni ollama   prewarm/profile local model calls")
 		fmt.Fprintln(a.errOut, "")
 		fmt.Fprintln(a.errOut, "Flags:")
 		fs.PrintDefaults()
@@ -107,6 +146,9 @@ func (a *App) Run(args []string) error {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected argument(s): %s", strings.Join(fs.Args(), " "))
 	}
+	a.recipes = loadOptionalRecipes(*recipeRoot)
+	a.enableCommandCache = *enableCommandCache
+	a.commandCacheRoot = *commandCacheRoot
 
 	if !*noOllama {
 		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)
@@ -145,12 +187,15 @@ func (a *App) Run(args []string) error {
 			nil,
 			structuredCommandDecisionRunConfig{
 				CurrentWorkingDirectory: workspacePathOrCurrentDir(),
+				Recipes:                 a.recipes,
 				PromptInterpreter:       a.promptInterpreter,
 				ContextSummarizer:       a.contextSummarizer,
 				CompletionChecker:       a.completionChecker,
 				Evaluator:               a.evaluator,
 				EvaluatorThreshold:      a.evaluatorThreshold,
 				ShellSpecialist:         a.shellSpecialist,
+				EnableCommandCache:      *enableCommandCache,
+				CommandCacheRoot:        *commandCacheRoot,
 			},
 		)
 		return err
@@ -472,6 +517,493 @@ func (a *App) runUpdate(args []string) error {
 	return cmd.Run()
 }
 
+func (a *App) runLedger(args []string) error {
+	if len(args) == 0 || args[0] != "export" {
+		return fmt.Errorf("usage: omni ledger export [--workspace PATH] [--session-root PATH] [--out PATH|-]")
+	}
+	fs := flag.NewFlagSet("omni ledger export", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	workspaceFlag := fs.String("workspace", "", "workspace whose session ledger should be exported; defaults to current directory")
+	sessionRootFlag := fs.String("session-root", "", "override session root directory")
+	outFlag := fs.String("out", "-", "output path, or - for stdout")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected ledger argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	workspace := strings.TrimSpace(*workspaceFlag)
+	if workspace == "" {
+		var err error
+		workspace, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("resolve workspace: %w", err)
+		}
+	}
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		return fmt.Errorf("resolve absolute workspace: %w", err)
+	}
+	store := NewSessionStore(*sessionRootFlag)
+	session, _, err := store.LoadOrCreate(absWorkspace)
+	if err != nil {
+		return err
+	}
+	ledger := BuildEvidenceLedger(session)
+	blob, err := json.MarshalIndent(ledger, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode evidence ledger: %w", err)
+	}
+	if strings.TrimSpace(*outFlag) == "" || strings.TrimSpace(*outFlag) == "-" {
+		_, err = fmt.Fprintln(a.out, string(blob))
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(*outFlag), 0o755); err != nil {
+		return fmt.Errorf("create ledger output directory: %w", err)
+	}
+	if err := os.WriteFile(*outFlag, append(blob, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write evidence ledger: %w", err)
+	}
+	fmt.Fprintf(a.out, "Wrote evidence ledger: %s\n", *outFlag)
+	return nil
+}
+
+func (a *App) runTrace(args []string) error {
+	if len(args) == 0 || args[0] != "latest" {
+		return fmt.Errorf("usage: omni run:trace latest [--workspace PATH] [--session-root PATH] [--json]")
+	}
+	fs := flag.NewFlagSet("omni run:trace latest", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	workspaceFlag := fs.String("workspace", "", "workspace whose latest session trace should be summarized; defaults to current directory")
+	sessionRootFlag := fs.String("session-root", "", "override session root directory")
+	jsonFlag := fs.Bool("json", false, "print JSON trace")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected run:trace argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	session, err := loadSessionForWorkspace(*workspaceFlag, *sessionRootFlag)
+	if err != nil {
+		return err
+	}
+	trace := BuildRunTrace(session)
+	if *jsonFlag {
+		blob, err := json.MarshalIndent(trace, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode run trace: %w", err)
+		}
+		_, err = fmt.Fprintln(a.out, string(blob))
+		return err
+	}
+	_, err = fmt.Fprintln(a.out, formatRunTraceText(trace))
+	return err
+}
+
+func (a *App) runFastPath(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: omni fastpath <git.branch|git.status|git.diffstat|package.manager|project.probe> [--workspace PATH] [--json]")
+	}
+	action := args[0]
+	fs := flag.NewFlagSet("omni fastpath", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	workspaceFlag := fs.String("workspace", "", "workspace for deterministic probe; defaults to current directory")
+	jsonFlag := fs.Bool("json", false, "print JSON result")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected fastpath argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	result := RunFastPath(context.Background(), action, *workspaceFlag)
+	if *jsonFlag {
+		blob, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode fastpath result: %w", err)
+		}
+		fmt.Fprintln(a.out, string(blob))
+	} else {
+		fmt.Fprintln(a.out, formatFastPathResult(result))
+	}
+	if !result.Success {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
+}
+
+func (a *App) runIndex(args []string) error {
+	if len(args) == 0 || (args[0] != "build" && args[0] != "update") {
+		return fmt.Errorf("usage: omni index <build|update> [--workspace PATH] [--out PATH] [--max-files N] [--json]")
+	}
+	mode := args[0]
+	fs := flag.NewFlagSet("omni index "+mode, flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	workspaceFlag := fs.String("workspace", "", "workspace to index; defaults to current directory")
+	outFlag := fs.String("out", "", "output path; defaults to .omni/index.json in the workspace")
+	maxFilesFlag := fs.Int("max-files", 5000, "maximum files to hash")
+	jsonFlag := fs.Bool("json", false, "print JSON index")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected index argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	workspace := strings.TrimSpace(*workspaceFlag)
+	if workspace == "" {
+		workspace = workspacePathOrCurrentDir()
+	}
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		return err
+	}
+	target := strings.TrimSpace(*outFlag)
+	if target == "" {
+		target = filepath.Join(absWorkspace, ".omni", "index.json")
+	}
+	var index WorkspaceIndex
+	if mode == "update" {
+		index, err = UpdateWorkspaceIndex(absWorkspace, target, *maxFilesFlag)
+	} else {
+		index, err = BuildWorkspaceIndex(absWorkspace, *maxFilesFlag)
+	}
+	if err != nil {
+		return err
+	}
+	if *jsonFlag {
+		blob, err := json.MarshalIndent(index, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode workspace index: %w", err)
+		}
+		fmt.Fprintln(a.out, string(blob))
+		return nil
+	}
+	if err := WriteWorkspaceIndex(index, target); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.out, "Wrote workspace index: %s\nfiles=%d manifests=%d package_manager=%s\n", target, len(index.Files), len(index.Manifests), index.PackageProbe.PackageManager)
+	if mode == "update" {
+		fmt.Fprintf(a.out, "reused_hashes=%d rehashed_files=%d added_files=%d removed_files=%d\n", index.Update.ReusedHashes, index.Update.RehashedFiles, index.Update.AddedFiles, index.Update.RemovedFiles)
+	}
+	return nil
+}
+
+func (a *App) runFingerprint(args []string) error {
+	fs := flag.NewFlagSet("omni fingerprint", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	textFlag := fs.String("text", "", "failure text to classify; defaults to stdin")
+	jsonFlag := fs.Bool("json", false, "print JSON result")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected fingerprint argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	text := *textFlag
+	if strings.TrimSpace(text) == "" {
+		blob, err := io.ReadAll(a.in)
+		if err != nil {
+			return fmt.Errorf("read failure text: %w", err)
+		}
+		text = string(blob)
+	}
+	fp := ClassifyFailure(text)
+	if *jsonFlag {
+		blob, err := json.MarshalIndent(fp, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode fingerprint: %w", err)
+		}
+		fmt.Fprintln(a.out, string(blob))
+		return nil
+	}
+	fmt.Fprintf(a.out, "kind=%s\nsummary=%s\n", fp.Kind, fp.Summary)
+	if fp.Remediation != "" {
+		fmt.Fprintf(a.out, "remediation=%s\n", fp.Remediation)
+	}
+	return nil
+}
+
+func (a *App) runPatch(args []string) error {
+	if len(args) == 0 || args[0] != "apply" {
+		return fmt.Errorf("usage: omni patch apply [--workspace PATH] [--file PATCH|-] [--dry-run] [--json]")
+	}
+	fs := flag.NewFlagSet("omni patch apply", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	workspaceFlag := fs.String("workspace", "", "workspace where the patch should apply; defaults to current directory")
+	fileFlag := fs.String("file", "-", "unified diff path, or - for stdin")
+	dryRunFlag := fs.Bool("dry-run", false, "validate and report without writing files")
+	jsonFlag := fs.Bool("json", false, "print JSON result")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected patch argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	patchText, err := a.readPatchInput(*fileFlag)
+	if err != nil {
+		return err
+	}
+	result, err := ApplyUnifiedPatch(PatchApplyOptions{
+		Workspace: *workspaceFlag,
+		Patch:     patchText,
+		DryRun:    *dryRunFlag,
+	})
+	if err != nil {
+		return err
+	}
+	if *jsonFlag {
+		blob, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode patch result: %w", err)
+		}
+		fmt.Fprintln(a.out, string(blob))
+		return nil
+	}
+	fmt.Fprint(a.out, FormatPatchApplyResult(result))
+	return nil
+}
+
+func (a *App) readPatchInput(path string) (string, error) {
+	if strings.TrimSpace(path) == "" || path == "-" {
+		blob, err := io.ReadAll(a.in)
+		if err != nil {
+			return "", fmt.Errorf("read patch from stdin: %w", err)
+		}
+		return string(blob), nil
+	}
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read patch file: %w", err)
+	}
+	return string(blob), nil
+}
+
+func (a *App) runOllama(args []string) error {
+	if len(args) == 0 || args[0] != "prewarm" {
+		return fmt.Errorf("usage: omni ollama prewarm [--endpoint URL] [--model NAME] [--keep-alive DURATION] [--num-ctx N] [--json]")
+	}
+	fs := flag.NewFlagSet("omni ollama prewarm", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	endpointFlag := fs.String("endpoint", defaultOllamaEndpoint, "ollama chat endpoint")
+	modelFlag := fs.String("model", firstNonEmpty(os.Getenv("OMNI_PLANNER_MODEL"), os.Getenv("OMNI_MODEL"), defaultOllamaPlannerModel), "model to prewarm")
+	keepAliveFlag := fs.String("keep-alive", envOrDefault("OMNI_OLLAMA_KEEP_ALIVE", "30s"), "Ollama keep_alive value")
+	numCtxFlag := fs.Int("num-ctx", envIntOrDefault("OMNI_PLANNER_NUM_CTX", envIntOrDefault("OMNI_OLLAMA_NUM_CTX", 4096)), "Ollama num_ctx value")
+	jsonFlag := fs.Bool("json", false, "print JSON result")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected ollama argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	client := NewOllamaClient(*endpointFlag, *modelFlag)
+	client.ConfigureRuntime(*keepAliveFlag, *numCtxFlag)
+	result, err := client.Prewarm(context.Background())
+	if *jsonFlag {
+		blob, encodeErr := json.MarshalIndent(result, "", "  ")
+		if encodeErr != nil {
+			return fmt.Errorf("encode ollama prewarm result: %w", encodeErr)
+		}
+		fmt.Fprintln(a.out, string(blob))
+		return err
+	}
+	fmt.Fprintf(a.out, "model=%s\nendpoint=%s\nkeep_alive=%s\nnum_ctx=%d\n", result.Model, result.Endpoint, result.KeepAlive, result.NumCtx)
+	if err != nil {
+		fmt.Fprintf(a.out, "diagnosis=%s\n", result.Diagnosis)
+		return err
+	}
+	fmt.Fprintf(a.out, "done=%t\ntotal_duration=%d\nload_duration=%d\nprompt_eval_count=%d\neval_count=%d\n", result.Done, result.TotalDuration, result.LoadDuration, result.PromptEvalCount, result.EvalCount)
+	return nil
+}
+
+func loadSessionForWorkspace(workspaceFlag, sessionRootFlag string) (*Session, error) {
+	workspace := strings.TrimSpace(workspaceFlag)
+	if workspace == "" {
+		var err error
+		workspace, err = os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve workspace: %w", err)
+		}
+	}
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		return nil, fmt.Errorf("resolve absolute workspace: %w", err)
+	}
+	store := NewSessionStore(sessionRootFlag)
+	session, _, err := store.LoadOrCreate(absWorkspace)
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func (a *App) runBench(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: omni bench <list|report>")
+	}
+	switch args[0] {
+	case "list":
+		return a.runBenchList(args[1:])
+	case "report":
+		return a.runBenchReport(args[1:])
+	case "run":
+		return a.runBenchRun(args[1:])
+	default:
+		return fmt.Errorf("usage: omni bench <list|report|run>")
+	}
+}
+
+func (a *App) runBenchList(args []string) error {
+	fs := flag.NewFlagSet("omni bench list", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	rootFlag := fs.String("root", envOrDefault("OMNI_BENCHMARK_ROOT", "benchmarks"), "benchmark manifest root")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected bench list argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	manifests, err := LoadBenchmarkManifests(resolveOmniResourceRoot(*rootFlag, "benchmarks"))
+	if err != nil {
+		return err
+	}
+	for _, manifest := range manifests {
+		recipe := manifest.Recipe
+		if strings.TrimSpace(recipe) == "" {
+			recipe = "none"
+		}
+		fmt.Fprintf(a.out, "%s\trecipe=%s\t%s\n", manifest.ID, recipe, manifest.Description)
+	}
+	return nil
+}
+
+func (a *App) runBenchReport(args []string) error {
+	fs := flag.NewFlagSet("omni bench report", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	workspaceFlag := fs.String("workspace", "", "workspace whose session metrics should be reported; defaults to current directory")
+	sessionRootFlag := fs.String("session-root", "", "override session root directory")
+	jsonFlag := fs.Bool("json", false, "print JSON report")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected bench report argument(s): %s", strings.Join(fs.Args(), " "))
+	}
+	session, err := loadSessionForWorkspace(*workspaceFlag, *sessionRootFlag)
+	if err != nil {
+		return err
+	}
+	report := BenchmarkReportFromSession(session)
+	if *jsonFlag {
+		blob, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode benchmark report: %w", err)
+		}
+		_, err = fmt.Fprintln(a.out, string(blob))
+		return err
+	}
+	fmt.Fprintln(a.out, formatBenchmarkReportText(report))
+	return nil
+}
+
+func (a *App) runBenchRun(args []string) error {
+	fs := flag.NewFlagSet("omni bench run", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	rootFlag := fs.String("root", envOrDefault("OMNI_BENCHMARK_ROOT", "benchmarks"), "benchmark manifest root")
+	workspaceFlag := fs.String("workspace", "", "benchmark workspace; defaults to an isolated temp directory")
+	sessionRootFlag := fs.String("session-root", "", "override session root directory")
+	runRootFlag := fs.String("run-root", filepath.Join(os.TempDir(), "omni-bench"), "root for isolated benchmark workspaces")
+	jsonFlag := fs.Bool("json", false, "print JSON result")
+	dryRunFlag := fs.Bool("dry-run", false, "prepare and report the benchmark without model execution")
+	manifestID := ""
+	parseArgs := args
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		manifestID = args[0]
+		parseArgs = args[1:]
+	}
+	if err := fs.Parse(parseArgs); err != nil {
+		return err
+	}
+	if manifestID == "" && fs.NArg() == 1 {
+		manifestID = fs.Arg(0)
+	} else if fs.NArg() > 0 {
+		return fmt.Errorf("usage: omni bench run <id> [--root PATH] [--workspace PATH] [--session-root PATH] [--run-root PATH] [--json] [--dry-run]")
+	}
+	if manifestID == "" {
+		return fmt.Errorf("usage: omni bench run <id> [--root PATH] [--workspace PATH] [--session-root PATH] [--run-root PATH] [--json] [--dry-run]")
+	}
+	manifests, err := LoadBenchmarkManifests(resolveOmniResourceRoot(*rootFlag, "benchmarks"))
+	if err != nil {
+		return err
+	}
+	manifest, ok := findBenchmarkManifest(manifests, manifestID)
+	if !ok {
+		return fmt.Errorf("benchmark %q not found", manifestID)
+	}
+	client := a.structuredPlannerClient()
+	if client == nil && !*dryRunFlag {
+		return fmt.Errorf("llm client is required")
+	}
+	result, runErr := RunBenchmarkManifest(
+		context.Background(),
+		manifest,
+		client,
+		io.Discard,
+		io.Discard,
+		BenchmarkRunOptions{
+			Root:        *runRootFlag,
+			Workspace:   *workspaceFlag,
+			SessionRoot: *sessionRootFlag,
+			DryRun:      *dryRunFlag,
+		},
+	)
+	if *jsonFlag {
+		blob, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode benchmark run result: %w", err)
+		}
+		fmt.Fprintln(a.out, string(blob))
+	} else {
+		fmt.Fprintln(a.out, formatBenchmarkRunResultText(result))
+	}
+	if runErr != nil {
+		return runErr
+	}
+	if !result.Success {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
+}
+
+func findBenchmarkManifest(manifests []BenchmarkManifest, id string) (BenchmarkManifest, bool) {
+	id = strings.TrimSpace(id)
+	for _, manifest := range manifests {
+		if manifest.ID == id {
+			return manifest, true
+		}
+	}
+	return BenchmarkManifest{}, false
+}
+
+func formatBenchmarkRunResultText(result BenchmarkRunResult) string {
+	lines := []string{
+		fmt.Sprintf("benchmark=%s", result.ID),
+		fmt.Sprintf("success=%t duration=%s", result.Success, result.Duration),
+		fmt.Sprintf("workspace=%s", result.Workspace),
+		fmt.Sprintf("model_calls=%d commands=%d rejected_commands=%d loop_exhaustions=%d", result.Report.ModelCalls, result.Report.Commands, result.Report.RejectedCommands, result.Report.LoopExhaustions),
+	}
+	if strings.TrimSpace(result.Error) != "" {
+		lines = append(lines, "error="+result.Error)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func loadOptionalRecipes(root string) []Recipe {
+	recipes, err := LoadRecipes(resolveOmniResourceRoot(root, "recipes"))
+	if err == nil {
+		return recipes
+	}
+	return nil
+}
+
 func (a *App) handleTurn(session *Session, input string, activity *activityIndicator) (Turn, string, error) {
 	if objective, ok := microQueueObjective(input); ok {
 		return a.handleMicroQueueTurn(session, objective)
@@ -542,12 +1074,15 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 		structuredCommandDecisionRunConfig{
 			SessionMemories:         session.Memories,
 			CurrentWorkingDirectory: activeDirectory,
+			Recipes:                 a.recipes,
 			PromptInterpreter:       a.promptInterpreter,
 			ContextSummarizer:       a.contextSummarizer,
 			CompletionChecker:       a.completionChecker,
 			Evaluator:               a.evaluator,
 			EvaluatorThreshold:      a.evaluatorThreshold,
 			ShellSpecialist:         a.shellSpecialist,
+			EnableCommandCache:      a.enableCommandCache,
+			CommandCacheRoot:        a.commandCacheRoot,
 		},
 	)
 	cancel()
@@ -866,7 +1401,10 @@ func (a *App) structuredPlannerClient() CommandDecisionClient {
 	if a.planner != nil {
 		return a.planner
 	}
-	return a.ollama
+	if a.ollama != nil {
+		return a.ollama
+	}
+	return nil
 }
 
 func (a *App) planContextForTurn(ctx context.Context, input string) (ContextToolPlan, []Event) {
@@ -1280,6 +1818,11 @@ func (a *App) printStatus(session *Session) {
 	fmt.Fprintln(a.out, "  memory: Postgres-backed tags + query retrieval")
 	fmt.Fprintln(a.out, "  /research: search web, follow result links, store source chunks in memory")
 	fmt.Fprintln(a.out, "  relay service: exact JSON handoff with checksum validation")
+	fmt.Fprintf(a.out, "  structured command loop: max_steps=%d task_budget=%s ollama_request_timeout=%s\n",
+		defaultCommandDecisionMaxSteps,
+		defaultCommandDecisionTimeout,
+		defaultOllamaRequestTimeout,
+	)
 	fmt.Fprintf(a.out, "  command loop: max_steps=%d max_commands_per_step=%d planner_timeout=%s command_timeout=%s\n",
 		defaultAgentLoopSteps,
 		defaultAgentCommandsPerStep,
@@ -1516,6 +2059,49 @@ func locateManagedScript(roots []string, scriptName string) string {
 	return ""
 }
 
+func resolveOmniResourceRoot(root, defaultName string) string {
+	root = strings.TrimSpace(root)
+	defaultName = filepath.Clean(strings.TrimSpace(defaultName))
+	if defaultName == "" || defaultName == "." || filepath.IsAbs(defaultName) {
+		defaultName = ""
+	}
+	if root == "" {
+		root = defaultName
+	}
+	if filepath.IsAbs(root) {
+		return root
+	}
+	for _, candidate := range omniResourceRootCandidates(root, defaultName) {
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return filepath.Clean(root)
+}
+
+func omniResourceRootCandidates(root, defaultName string) []string {
+	raw := []string{}
+	if strings.TrimSpace(root) != "" {
+		raw = append(raw, root)
+	}
+	resourceName := strings.TrimSpace(root)
+	if resourceName == "" {
+		resourceName = defaultName
+	}
+	if strings.TrimSpace(resourceName) != "" && !filepath.IsAbs(resourceName) {
+		roots := managedScriptRootCandidates(
+			strings.TrimSpace(os.Getenv("OMNIDEX_DIR")),
+			workspacePathOrCurrentDir(),
+			currentExecutablePath(),
+		)
+		for _, base := range roots {
+			raw = append(raw, filepath.Join(base, resourceName))
+		}
+	}
+	return dedupeCleanAbsPaths(raw)
+}
+
 func currentExecutablePath() string {
 	path, err := os.Executable()
 	if err != nil {
@@ -1562,85 +2148,15 @@ func activeDirectoryOrWorkspace(session *Session) string {
 	return strings.TrimSpace(session.WorkspacePath)
 }
 
-func (a *App) resolveActiveDirectoryForTurn(session *Session, input string, emitEvent func(string, string, map[string]string)) string {
+func (a *App) resolveActiveDirectoryForTurn(session *Session, _ string, _ func(string, string, map[string]string)) string {
 	activeDirectory := activeDirectoryOrWorkspace(session)
 	if session == nil {
 		return activeDirectory
-	}
-	if inferred := inferRequestedActiveDirectory(input); inferred != "" {
-		if abs, err := filepath.Abs(inferred); err == nil {
-			inferred = abs
-		}
-		if info, err := os.Stat(inferred); err == nil && info.IsDir() {
-			if inferred != activeDirectory {
-				session.ActiveDirectoryPath = inferred
-				activeDirectory = inferred
-				if emitEvent != nil {
-					emitEvent("active_directory_updated", "Active directory updated from conversation context", map[string]string{
-						"active_directory": inferred,
-					})
-				}
-			}
-		}
 	}
 	if strings.TrimSpace(activeDirectory) == "" {
 		activeDirectory = strings.TrimSpace(session.WorkspacePath)
 	}
 	return activeDirectory
-}
-
-func inferRequestedActiveDirectory(input string) string {
-	lower := strings.ToLower(input)
-	if !strings.Contains(lower, "active directory") && !strings.Contains(lower, "active dir") && !strings.Contains(lower, "working directory") {
-		return ""
-	}
-	if explicit := firstExplicitDirectoryPath(input); explicit != "" {
-		return explicit
-	}
-	if strings.Contains(lower, "that") || strings.Contains(lower, "this") || strings.Contains(lower, "going forward") || strings.Contains(lower, "from now") {
-		return latestTimestampedTestProjectDirectory()
-	}
-	return ""
-}
-
-func firstExplicitDirectoryPath(input string) string {
-	for _, field := range strings.Fields(input) {
-		candidate := strings.Trim(field, " \t\r\n\"'`.,;:()[]{}")
-		if strings.HasPrefix(candidate, "~/") {
-			if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-				return filepath.Join(home, strings.TrimPrefix(candidate, "~/"))
-			}
-		}
-		if filepath.IsAbs(candidate) {
-			return candidate
-		}
-	}
-	return ""
-}
-
-func latestTimestampedTestProjectDirectory() string {
-	home, err := os.UserHomeDir()
-	if err != nil || strings.TrimSpace(home) == "" {
-		return ""
-	}
-	matches, err := filepath.Glob(filepath.Join(home, "Projects", "test_project_[0-9]*"))
-	if err != nil || len(matches) == 0 {
-		return ""
-	}
-	sort.Slice(matches, func(i, j int) bool {
-		iInfo, iErr := os.Stat(matches[i])
-		jInfo, jErr := os.Stat(matches[j])
-		if iErr == nil && jErr == nil && !iInfo.ModTime().Equal(jInfo.ModTime()) {
-			return iInfo.ModTime().After(jInfo.ModTime())
-		}
-		return matches[i] > matches[j]
-	})
-	for _, candidate := range matches {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
 }
 
 func isInteractive(r io.Reader) bool {

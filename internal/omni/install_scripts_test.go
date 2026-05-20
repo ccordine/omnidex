@@ -32,6 +32,26 @@ func TestInstallScriptAddsBinDirectoryToPath(t *testing.T) {
 	}
 }
 
+func TestInstallScriptCopiesPublicRuntimeResources(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	body := readRepoScript(t, root, "install.sh")
+
+	for _, want := range []string{
+		"recipes",
+		"benchmarks",
+		"docs",
+		"SECURITY.md",
+		"LICENSE",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("install.sh runtime payload missing %q", want)
+		}
+		if _, err := os.Stat(filepath.Join(root, want)); err != nil {
+			t.Fatalf("runtime payload item %s must exist in repo: %v", want, err)
+		}
+	}
+}
+
 func TestUpdateScriptSupportsHostOnlyInstalledUpdate(t *testing.T) {
 	root := repoRootFromOmniTest(t)
 	body := readRepoScript(t, root, "update.sh")

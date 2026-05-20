@@ -165,11 +165,16 @@ copy_runtime_payload() {
     cmd
     internal
     migrations
+    recipes
+    benchmarks
+    docs
     scripts
     .git
     go.mod
     go.sum
     README.md
+    SECURITY.md
+    LICENSE
     Makefile
     default.env
     .env.example

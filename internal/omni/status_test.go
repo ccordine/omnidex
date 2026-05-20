@@ -41,6 +41,7 @@ func TestPrintStatusShowsExecutionStackAndLastTurn(t *testing.T) {
 		"web docs: fetch, normalize, chunk, search, and cite documentation",
 		"memory: Postgres-backed tags + query retrieval",
 		"relay service: exact JSON handoff with checksum validation",
+		"structured command loop: max_steps=40 task_budget=6h0m0s ollama_request_timeout=10m0s",
 		"command loop: max_steps=",
 		"manager: max_workers=",
 		"document chunks: chunk_chars=",

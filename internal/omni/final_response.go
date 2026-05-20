@@ -95,7 +95,7 @@ func ReviewFinalAssistantResponse(input FinalAssistantResponseReviewInput) Final
 	}
 
 	evidenceText := strings.TrimSpace(strings.Join(input.Evidence, "\n"))
-	if structuredFinalAnswerGivesInstructionsInsteadOfCompletion(userInput, response) {
+	if structuredFinalAnswerGivesInstructionsInsteadOfCompletion(response) {
 		return FinalAssistantResponseReview{
 			Passed:     false,
 			Confidence: 25,

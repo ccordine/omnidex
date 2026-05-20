@@ -54,6 +54,21 @@ type OllamaChatResponse struct {
 	ResponseJSON       string
 }
 
+type OllamaPrewarmResult struct {
+	Model              string `json:"model"`
+	Endpoint           string `json:"endpoint"`
+	KeepAlive          string `json:"keep_alive,omitempty"`
+	NumCtx             int    `json:"num_ctx,omitempty"`
+	Done               bool   `json:"done"`
+	TotalDuration      int64  `json:"total_duration,omitempty"`
+	LoadDuration       int64  `json:"load_duration,omitempty"`
+	PromptEvalCount    int64  `json:"prompt_eval_count,omitempty"`
+	PromptEvalDuration int64  `json:"prompt_eval_duration,omitempty"`
+	EvalCount          int64  `json:"eval_count,omitempty"`
+	EvalDuration       int64  `json:"eval_duration,omitempty"`
+	Diagnosis          string `json:"diagnosis,omitempty"`
+}
+
 var omniContextModelCounter uint64
 
 const defaultOllamaRequestTimeout = 10 * time.Minute
@@ -81,6 +96,37 @@ func (c *OllamaClient) ConfigureRuntime(defaultKeepAlive string, defaultNumCtx i
 	if defaultNumCtx > 0 {
 		c.DefaultNumCtx = defaultNumCtx
 	}
+}
+
+func (c *OllamaClient) Prewarm(ctx context.Context) (OllamaPrewarmResult, error) {
+	resp, err := c.ChatRaw(ctx, OllamaChatRequest{
+		Messages: []OllamaMessage{
+			{Role: "system", Content: "Return exactly: ok"},
+			{Role: "user", Content: "ok"},
+		},
+		Options: map[string]interface{}{
+			"temperature": 0,
+			"num_predict": 1,
+		},
+	})
+	result := OllamaPrewarmResult{
+		Model:     c.Model,
+		Endpoint:  c.Endpoint,
+		KeepAlive: c.DefaultKeepAlive,
+		NumCtx:    c.DefaultNumCtx,
+	}
+	if err != nil {
+		result.Diagnosis = classifyStructuredLLMFailure(err)
+		return result, err
+	}
+	result.Done = resp.Done
+	result.TotalDuration = resp.TotalDuration
+	result.LoadDuration = resp.LoadDuration
+	result.PromptEvalCount = resp.PromptEvalCount
+	result.PromptEvalDuration = resp.PromptEvalDuration
+	result.EvalCount = resp.EvalCount
+	result.EvalDuration = resp.EvalDuration
+	return result, nil
 }
 
 func (c *OllamaClient) ChatRaw(ctx context.Context, req OllamaChatRequest) (OllamaChatResponse, error) {

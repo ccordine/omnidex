@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,7 +19,7 @@ import (
 )
 
 const defaultCommandDecisionTimeout = 6 * time.Hour
-const defaultCommandDecisionMaxSteps = 10
+const defaultCommandDecisionMaxSteps = 40
 const defaultStructuredObservationChars = 2400
 const defaultStructuredLLMRequestAttempts = 3
 const defaultStructuredEvaluatorTimeout = defaultOllamaRequestTimeout
@@ -37,6 +36,7 @@ type StructuredCommandPayload struct {
 	Question        string                `json:"question,omitempty"`
 	Tool            string                `json:"tool,omitempty"`
 	ToolTask        string                `json:"tool_task,omitempty"`
+	Patch           string                `json:"patch,omitempty"`
 	ObjectiveLedger []StructuredObjective `json:"objective_ledger,omitempty"`
 }
 
@@ -61,6 +61,7 @@ type StructuredCommandObservation struct {
 	ExitCode             int    `json:"exit_code"`
 	Stdout               string `json:"stdout"`
 	Stderr               string `json:"stderr"`
+	Cached               bool   `json:"cached,omitempty"`
 	Question             string `json:"question,omitempty"`
 	UserResponse         string `json:"user_response,omitempty"`
 }
@@ -117,10 +118,12 @@ type PromptInterpretationInput struct {
 	UserPrompt              string
 	History                 []Message
 	CurrentWorkingDirectory string
+	Recipes                 []Recipe
 }
 
 type PromptInterpretation struct {
 	ObjectiveLedger []StructuredObjective
+	RecipeIDs       []string
 }
 
 type MinimalContext struct {
@@ -318,56 +321,78 @@ func RunStructuredCommandDecisionWithHistoryEventsAndAsk(ctx context.Context, pr
 type structuredCommandDecisionRunConfig struct {
 	SessionMemories         []SessionMemory
 	CurrentWorkingDirectory string
+	Recipes                 []Recipe
 	PromptInterpreter       PromptInterpreter
 	ContextSummarizer       ContextSummarizer
 	CompletionChecker       CompletionChecker
 	Evaluator               StructuredLLMResponseEvaluator
 	EvaluatorThreshold      int
 	ShellSpecialist         ShellCommandSpecialist
+	EnableCommandCache      bool
+	CommandCacheRoot        string
 }
 
 func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, history []Message, client CommandDecisionClient, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, cfg structuredCommandDecisionRunConfig) (CommandDecisionResult, error) {
 	if strings.TrimSpace(prompt) == "" {
 		return CommandDecisionResult{}, fmt.Errorf("prompt is empty")
 	}
-	if client == nil {
+	if client == nil && cfg.PromptInterpreter == nil {
 		return CommandDecisionResult{}, fmt.Errorf("llm client is required")
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, defaultCommandDecisionTimeout)
 	defer cancel()
 
-	if command, answer, ok := deterministicStructuredCommandForPrompt(prompt); ok {
-		result := CommandDecisionResult{}
-		if err := runStructuredPayloadCommand(ctx, 1, command, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
-			return result, err
-		}
-		result.Answer = answer
-		return result, nil
-	}
-
 	evaluator := cfg.Evaluator
 	evaluatorThreshold := normalizeStructuredEvaluatorThreshold(cfg.EvaluatorThreshold)
 	result := CommandDecisionResult{}
 	ledger := []StructuredObjective{}
 	minimalContext := MinimalContext{}
+	selectedRecipes := []Recipe{}
 	if cfg.PromptInterpreter != nil {
 		interpretation, err := cfg.PromptInterpreter.InterpretPrompt(ctx, PromptInterpretationInput{
 			UserPrompt:              prompt,
 			History:                 history,
 			CurrentWorkingDirectory: structuredPromptWorkingDirectory(cfg.CurrentWorkingDirectory),
+			Recipes:                 cfg.Recipes,
 		})
 		if err != nil {
 			emitStructuredCommandEvent(onEvent, "prompt_interpreter_failed", "Prompt interpreter failed; continuing without initial objective ledger", map[string]string{
 				"error": truncateStructuredTimelineValue(err.Error()),
 			})
 		} else {
+			selectedRecipes = SelectRecipesByID(cfg.Recipes, interpretation.RecipeIDs)
+			if len(selectedRecipes) > 0 {
+				for _, recipe := range selectedRecipes {
+					ledger = mergeStructuredObjectiveLedger(ledger, RecipeObjectiveLedger(recipe))
+				}
+				emitStructuredCommandEvent(onEvent, "recipe_selected", "Prompt interpreter selected recipe manifest(s)", map[string]string{
+					"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
+				})
+			}
 			ledger = mergeStructuredObjectiveLedger(ledger, interpretation.ObjectiveLedger)
 			result.ObjectiveLedger = ledger
 			emitStructuredCommandEvent(onEvent, "prompt_interpreter_completed", "Prompt interpreter produced objective ledger", map[string]string{
 				"objective_count":    fmt.Sprintf("%d", len(ledger)),
 				"pending_objectives": pendingStructuredObjectiveIDs(ledger),
 			})
+		}
+	}
+	if len(selectedRecipes) > 0 && len(pendingStructuredObjectives(ledger)) > 0 {
+		ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
+		result.ObjectiveLedger = ledger
+		if len(pendingStructuredObjectives(ledger)) == 0 {
+			result.Command = "RECIPE_COMPLETION_PROBES"
+			result.ExitCode = 0
+			result.Answer = "Recipe completion probes passed."
+			emitStructuredCommandEvent(onEvent, "adaptive_roles_collapsed", "Deterministic recipe probes satisfied the task before additional specialist calls", map[string]string{
+				"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
+				"skipped": "context_summarizer,completion_checker,planner",
+			})
+			emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_recipe_probes", "Deterministic recipe probes satisfied objective ledger", map[string]string{
+				"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
+			})
+			return result, nil
 		}
 	}
 	if cfg.ContextSummarizer != nil {
@@ -408,12 +433,29 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	}
 	lastCompletionCheckedObservationCount := 0
 	for step := 1; step <= defaultCommandDecisionMaxSteps; step++ {
-		if cfg.CompletionChecker != nil && len(result.Observations) != lastCompletionCheckedObservationCount && latestObservationIsSuccessfulCommand(result.Observations) && len(pendingStructuredObjectives(ledger)) > 0 {
+		if len(result.Observations) != lastCompletionCheckedObservationCount && latestObservationIsSuccessfulCommand(result.Observations) && len(pendingStructuredObjectives(ledger)) > 0 {
 			latest, _ := latestSuccessfulCommandObservation(result.Observations)
 			result.Answer = finalStructuredAnswer(result.Answer, latest)
-			ledger = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
+			if len(selectedRecipes) > 0 {
+				ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
+			}
 			result.ObjectiveLedger = ledger
 			lastCompletionCheckedObservationCount = len(result.Observations)
+			if len(pendingStructuredObjectives(ledger)) == 0 {
+				emitStructuredCommandEvent(onEvent, "adaptive_roles_collapsed", "Deterministic recipe probes satisfied the task after observed command evidence", map[string]string{
+					"step":    fmt.Sprintf("%d", step-1),
+					"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
+					"skipped": "completion_checker,planner",
+				})
+				emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_recipe_probes", "Deterministic recipe probes satisfied objective ledger", map[string]string{
+					"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
+				})
+				return result, nil
+			}
+			if cfg.CompletionChecker != nil {
+				ledger = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
+				result.ObjectiveLedger = ledger
+			}
 			if len(pendingStructuredObjectives(ledger)) == 0 {
 				emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_observations", "Done-check specialist accepted observed command evidence", map[string]string{
 					"step":   fmt.Sprintf("%d", step-1),
@@ -426,7 +468,13 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			"step":               fmt.Sprintf("%d", step),
 			"pending_objectives": pendingStructuredObjectiveIDs(ledger),
 		})
-		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequestWithContext(prompt, history, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext), step, onEvent)
+		if client == nil {
+			if result.ExitCode == 0 {
+				result.ExitCode = 1
+			}
+			return result, fmt.Errorf("llm client is required for planner step")
+		}
+		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequestWithContextAndRecipes(prompt, history, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext, cfg.Recipes), step, onEvent)
 		if err != nil {
 			if hasSuccessfulCommandObservation(result.Observations) {
 				result.PartialProgress = true
@@ -507,6 +555,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			"command":            truncateStructuredTimelineValue(payload.Command),
 			"pending_objectives": pendingStructuredObjectiveIDs(ledger),
 		})
+		if isPatchToolDelegation(payload) {
+			if err := runStructuredPatchApply(ctx, step, payload.Patch, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
+				return result, err
+			}
+			continue
+		}
 		if isShellToolDelegation(payload) {
 			if cfg.ShellSpecialist == nil {
 				emitStructuredCommandEvent(onEvent, "structured_tool_delegation_rejected", "Shell tool delegation rejected", map[string]string{
@@ -550,8 +604,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			})
 			if err := validateStructuredCommandForRun(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 				emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-					"step":   fmt.Sprintf("%d", step),
-					"reason": err.Error(),
+					"step":    fmt.Sprintf("%d", step),
+					"command": truncateStructuredTimelineValue(proposal.Command),
+					"reason":  err.Error(),
 				})
 				result.Observations = append(result.Observations, StructuredCommandObservation{
 					Step:             step,
@@ -562,7 +617,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				})
 				continue
 			}
-			if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
+			if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
 				return result, err
 			}
 			continue
@@ -599,8 +654,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				})
 				if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-						"step":   fmt.Sprintf("%d", step),
-						"reason": err.Error(),
+						"step":    fmt.Sprintf("%d", step),
+						"command": truncateStructuredTimelineValue(payload.Command),
+						"reason":  err.Error(),
 					})
 					result.Observations = append(result.Observations, StructuredCommandObservation{
 						Step:             step,
@@ -611,7 +667,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					})
 					continue
 				}
-				if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
+				if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
 					return result, err
 				}
 				continue
@@ -631,8 +687,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				if command != "" {
 					if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 						emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-							"step":   fmt.Sprintf("%d", step),
-							"reason": err.Error(),
+							"step":    fmt.Sprintf("%d", step),
+							"command": truncateStructuredTimelineValue(payload.Command),
+							"reason":  err.Error(),
 						})
 						result.Observations = append(result.Observations, StructuredCommandObservation{
 							Step:             step,
@@ -643,7 +700,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 						})
 						continue
 					}
-					if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
+					if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
 						return result, err
 					}
 				}
@@ -684,8 +741,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if command != "" {
 				if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-						"step":   fmt.Sprintf("%d", step),
-						"reason": err.Error(),
+						"step":    fmt.Sprintf("%d", step),
+						"command": truncateStructuredTimelineValue(payload.Command),
+						"reason":  err.Error(),
 					})
 					result.Observations = append(result.Observations, StructuredCommandObservation{
 						Step:             step,
@@ -696,7 +754,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					})
 					continue
 				}
-				if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
+				if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
 					return result, err
 				}
 			}
@@ -727,11 +785,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					"step":   fmt.Sprintf("%d", step),
 					"reason": "done=true requires an empty command; validating non-empty command instead",
 				})
-				command := applyStructuredCommandPromptCorrections(step, prompt, payload.Command, onEvent)
+				command := payload.Command
 				if err := validateStructuredCommandForRun(command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-						"step":   fmt.Sprintf("%d", step),
-						"reason": err.Error(),
+						"step":    fmt.Sprintf("%d", step),
+						"command": truncateStructuredTimelineValue(command),
+						"reason":  err.Error(),
 					})
 					result.Observations = append(result.Observations, StructuredCommandObservation{
 						Step:             step,
@@ -742,7 +801,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					})
 					continue
 				}
-				if err := runStructuredPayloadCommand(ctx, step, command, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
+				if err := runStructuredPayloadCommand(ctx, step, command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
 					return result, err
 				}
 				continue
@@ -780,19 +839,11 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				})
 				continue
 			}
-			if structuredPromptAsksOSIdentification(prompt) && !structuredObservationsHavePackageManagerEvidence(result.Observations) {
-				emitStructuredCommandEvent(onEvent, "structured_done_rejected", "Done rejected before package-manager evidence", map[string]string{
-					"step": fmt.Sprintf("%d", step),
-				})
-				result.Observations = append(result.Observations, StructuredCommandObservation{
-					Step:     step,
-					ExitCode: 1,
-					Stderr:   "done rejected: OS identification is missing package-manager discovery evidence; run command -v pacman apt dnf yum zypper apk and use observed output before finishing",
-				})
-				continue
-			}
 			latest, _ := latestSuccessfulCommandObservation(result.Observations)
 			result.Answer = finalStructuredAnswer(payload.Answer, latest)
+			if len(selectedRecipes) > 0 {
+				ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
+			}
 			ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
 			ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
 			result.ObjectiveLedger = ledger
@@ -833,11 +884,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			})
 			continue
 		}
-		command := applyStructuredCommandPromptCorrections(step, prompt, payload.Command, onEvent)
+		command := payload.Command
 		if err := validateStructuredCommandForRun(command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-				"step":   fmt.Sprintf("%d", step),
-				"reason": err.Error(),
+				"step":    fmt.Sprintf("%d", step),
+				"command": truncateStructuredTimelineValue(command),
+				"reason":  err.Error(),
 			})
 			result.Observations = append(result.Observations, StructuredCommandObservation{
 				Step:             step,
@@ -849,7 +901,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 
-		if err := runStructuredPayloadCommand(ctx, step, command, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
+		if err := runStructuredPayloadCommand(ctx, step, command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
 			return result, err
 		}
 	}
@@ -863,9 +915,20 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	return result, CommandDecisionExhaustedError{MaxSteps: defaultCommandDecisionMaxSteps}
 }
 
-func runStructuredPayloadCommand(ctx context.Context, step int, command, workingDirectory string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
+func runStructuredPayloadCommand(ctx context.Context, step int, command, workingDirectory string, enableCommandCache bool, commandCacheRoot string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
+	if enableCommandCache {
+		hit, err := appendCachedStructuredCommandObservation(step, command, workingDirectory, commandCacheRoot, stdout, stderr, onEvent, result)
+		if err != nil {
+			emitStructuredCommandEvent(onEvent, "command_cache_miss", "Command cache lookup failed; executing command", map[string]string{
+				"step":   fmt.Sprintf("%d", step),
+				"reason": truncateStructuredTimelineValue(err.Error()),
+			})
+		} else if hit {
+			return nil
+		}
+	}
 	emitStructuredCommandEvent(onEvent, "structured_command_started", "Executing structured command", map[string]string{
 		"step":    fmt.Sprintf("%d", step),
 		"command": truncateStructuredTimelineValue(command),
@@ -887,279 +950,162 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 		"stdout":    truncateStructuredTimelineValue(stdoutBuf.String()),
 		"stderr":    truncateStructuredTimelineValue(stderrBuf.String()),
 	})
+	if enableCommandCache {
+		if err := saveStructuredCommandCache(command, workingDirectory, commandCacheRoot, exitCode, stdoutBuf.String(), stderrBuf.String(), onEvent); err != nil {
+			emitStructuredCommandEvent(onEvent, "command_cache_store_failed", "Command cache store failed", map[string]string{
+				"step":   fmt.Sprintf("%d", step),
+				"reason": truncateStructuredTimelineValue(err.Error()),
+			})
+		}
+	}
 	return err
 }
 
-func applyStructuredCommandPromptCorrections(step int, prompt, command string, onEvent func(StructuredCommandEvent)) string {
-	corrected, reason, ok := structuredCommandPromptCorrection(prompt, command)
-	if !ok {
-		return command
-	}
-	emitStructuredCommandEvent(onEvent, "structured_command_corrected", "Structured command corrected deterministically", map[string]string{
-		"step":     fmt.Sprintf("%d", step),
-		"reason":   reason,
-		"original": truncateStructuredTimelineValue(command),
-		"command":  truncateStructuredTimelineValue(corrected),
+func runStructuredPatchApply(ctx context.Context, step int, patch, workingDirectory string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
+	emitStructuredCommandEvent(onEvent, "structured_patch_apply_started", "Applying structured patch artifact", map[string]string{
+		"step": fmt.Sprintf("%d", step),
 	})
-	return corrected
-}
-
-func structuredCommandPromptCorrection(prompt, command string) (string, string, bool) {
-	if structuredPromptAsksGoCLIDemo(prompt) && !structuredCommandLooksLikeCompleteGoCLIDemo(command) {
-		return structuredGoCLIDemoEvidenceCommand(), "Go CLI demo command must create, test, build, run, and report the local workspace app", true
-	}
-	if structuredPromptAsksDockerSmoke(prompt) && !structuredCommandLooksLikeCompleteDockerSmoke(command) {
-		if corrected := structuredDockerSmokeEvidenceCommand(prompt); corrected != "" {
-			return corrected, "Docker smoke command must build, run, curl verify, inspect state/restart count, and inspect logs", true
-		}
-	}
-	if structuredPromptAsksReactTypeScriptSmoke(prompt) {
-		if corrected := structuredReactTypeScriptSmokeEvidenceCommand(prompt); corrected != "" {
-			return corrected, "React TypeScript smoke command must create files, npm install/build, serve, write PID, and curl verify", true
-		}
-	}
-	if structuredPromptAsksStimulusTailwindSmoke(prompt) {
-		if corrected := structuredStimulusTailwindSmokeEvidenceCommand(prompt); corrected != "" {
-			return corrected, "Stimulus Tailwind smoke command must create index.html, start server, write PID, and curl verify", true
-		}
-	}
-	if structuredPromptAsksCurrentEvents(prompt) && !structuredCommandLooksLikeStableCurrentEventsEvidence(command) {
-		return structuredCurrentEventsEvidenceCommand(prompt), "current-events command must be concrete stable RSS shell evidence", true
-	}
-	if structuredPromptAsksOSIdentification(prompt) &&
-		structuredCommandLooksLikePartialOSIdentification(command) &&
-		!structuredCommandDiscoversPackageManager(command) {
-		return structuredOSIdentificationEvidenceCommand(), "OS identification command missing package-manager discovery", true
-	}
-	return command, "", false
-}
-
-func deterministicStructuredCommandForPrompt(prompt string) (string, string, bool) {
-	if structuredPromptAsksDockerSmoke(prompt) {
-		if command := structuredDockerSmokeEvidenceCommand(prompt); command != "" {
-			return command, "Docker app built, ran, passed health check, had clear logs, and was not in a restart loop.", true
-		}
-	}
-	return "", "", false
-}
-
-func structuredOSIdentificationEvidenceCommand() string {
-	return "printf 'OS_RELEASE\\n'; cat /etc/os-release 2>/dev/null || true; printf '\\nUNAME\\n'; uname -srmo; printf '\\nPACKAGE_MANAGERS\\n'; for m in pacman apt dnf yum zypper apk; do if command -v \"$m\" >/dev/null 2>&1; then command -v \"$m\"; fi; done"
-}
-
-func structuredCurrentEventsEvidenceCommand(prompt string) string {
-	query := structuredCurrentEventsQuery(prompt)
-	return fmt.Sprintf("curl -fsSL -A 'Mozilla/5.0' 'https://news.google.com/rss/search?q=%s&hl=en-US&gl=US&ceid=US:en' | sed -n 's:.*<title>\\([^<]*\\)</title>.*:\\1:p' | head -10", url.QueryEscape(query))
-}
-
-func structuredCurrentEventsQuery(prompt string) string {
-	lower := strings.ToLower(prompt)
-	if strings.Contains(lower, "saipan") {
-		return "current events saipan"
-	}
-	clean := strings.NewReplacer("?", "", "!", "", ".", "", ",", "").Replace(strings.TrimSpace(prompt))
-	if clean == "" {
-		return "current events"
-	}
-	return clean
-}
-
-func structuredDockerSmokeEvidenceCommand(prompt string) string {
-	root := extractBetween(prompt, "in ", ", run it as container")
-	name := extractBetween(prompt, "container ", " from image")
-	image := extractBetween(prompt, "from image ", " on host port")
-	port := extractIntAfter(prompt, "on host port ")
-	if root == "" || name == "" || image == "" || port == 0 {
-		return ""
-	}
-	return fmt.Sprintf(`set -e
-root=%[1]q
-name=%[2]q
-image=%[3]q
-port=%[4]d
-mkdir -p "$root/app"
-cat > "$root/app/main.go" <<'GO'
-package main
-
-import (
-	"fmt"
-	"log"
-	"net/http"
-)
-
-func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintln(w, "omni docker smoke alive")
+	applyResult, err := ApplyUnifiedPatch(PatchApplyOptions{
+		Workspace: workingDirectory,
+		Patch:     patch,
 	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "omni docker smoke")
+	exitCode := 0
+	var stdoutText string
+	var stderrText string
+	if err != nil {
+		exitCode = 1
+		stderrText = err.Error()
+		_, _ = io.WriteString(stderr, stderrText)
+	} else {
+		stdoutText = FormatPatchApplyResult(applyResult)
+		_, _ = io.WriteString(stdout, stdoutText)
+	}
+	result.Command = "PATCH_APPLY"
+	result.ExitCode = exitCode
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:     step,
+		Command:  "PATCH_APPLY",
+		ExitCode: exitCode,
+		Stdout:   truncateStructuredObservation(stdoutText),
+		Stderr:   truncateStructuredObservation(stderrText),
 	})
-	log.Println("omni docker smoke server listening on :8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
-		log.Fatal(err)
+	details := map[string]string{
+		"step":      fmt.Sprintf("%d", step),
+		"exit_code": fmt.Sprintf("%d", exitCode),
 	}
-}
-GO
-cat > "$root/app/Dockerfile" <<'DOCKER'
-FROM scratch
-COPY app /app
-EXPOSE 8080
-ENTRYPOINT ["/app"]
-DOCKER
-cd "$root/app"
-go mod init example.com/omni-docker-smoke 2>/dev/null || true
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o app .
-docker rm -f "$name" >/dev/null 2>&1 || true
-docker rmi -f "$image" >/dev/null 2>&1 || true
-docker build -t "$image" .
-docker run -d --name "$name" --restart=no -p 127.0.0.1:"$port":8080 "$image"
-for i in 1 2 3 4 5 6 7 8 9 10; do
-	curl -fsS "http://127.0.0.1:$port/health" && break
-	sleep 1
-done
-health=$(curl -fsS "http://127.0.0.1:$port/health")
-test "$health" = "omni docker smoke alive"
-running=$(docker inspect -f '{{.State.Running}}' "$name")
-restarting=$(docker inspect -f '{{.State.Restarting}}' "$name")
-restart_count=$(docker inspect -f '{{.RestartCount}}' "$name")
-test "$running" = "true"
-test "$restarting" = "false"
-test "$restart_count" = "0"
-logs=$(docker logs "$name" 2>&1)
-printf '%%s\n' "$logs" | grep -Eiq 'panic|fatal|error|traceback|exception' && { printf 'bad docker logs:\n%%s\n' "$logs" >&2; exit 1; }
-printf 'DOCKER_SMOKE_OK container=%%s image=%%s port=%%s health=%%s running=%%s restarting=%%s restart_count=%%s\n' "$name" "$image" "$port" "$health" "$running" "$restarting" "$restart_count"
-printf 'DOCKER_LOGS_CLEAR\n'`, root, name, image, port)
-}
-
-func structuredGoCLIDemoEvidenceCommand() string {
-	workspace, err := os.Getwd()
-	if err != nil || strings.TrimSpace(workspace) == "" {
-		workspace = "."
+	if err == nil {
+		details["files"] = fmt.Sprintf("%d", len(applyResult.Files))
 	}
-	return fmt.Sprintf(`set -e
-workspace=%[1]q
-mkdir -p "$workspace/toolchain" "$workspace/demo-go-cli"
-latest=$(curl -fsSL 'https://go.dev/dl/?mode=json' | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\(go[0-9][^"]*\)".*/\1/p' | head -1)
-test -n "$latest"
-curl -fsSL "https://go.dev/dl/${latest}.linux-amd64.tar.gz" -o "$workspace/go.tar.gz"
-tar -C "$workspace/toolchain" -xzf "$workspace/go.tar.gz"
-cd "$workspace/demo-go-cli"
-"$workspace/toolchain/go/bin/go" mod init example.com/demo-go-cli 2>/dev/null || true
-cat > main.go <<'GO'
-package main
-
-import "fmt"
-
-func Message() string {
-	return "hello from demo go application"
-}
-
-func main() {
-	fmt.Println(Message())
-}
-GO
-cat > main_test.go <<'GO'
-package main
-
-import "testing"
-
-func TestMessage(t *testing.T) {
-	if Message() != "hello from demo go application" {
-		t.Fatalf("unexpected message: %%s", Message())
+	if err != nil {
+		details["stderr"] = truncateStructuredTimelineValue(stderrText)
+		emitStructuredCommandEvent(onEvent, "structured_patch_apply_failed", "Structured patch apply failed", details)
+		return err
 	}
-}
-GO
-"$workspace/toolchain/go/bin/go" test ./...
-"$workspace/toolchain/go/bin/go" build -o demo-go-cli .
-./demo-go-cli
-"$workspace/toolchain/go/bin/go" version
-printf 'RUN_GUIDE cd %%s/demo-go-cli && ./demo-go-cli\n' "$workspace"`, workspace)
+	details["stdout"] = truncateStructuredTimelineValue(stdoutText)
+	emitStructuredCommandEvent(onEvent, "structured_patch_apply_finished", "Structured patch apply finished", details)
+	return nil
 }
 
-func structuredReactTypeScriptSmokeEvidenceCommand(prompt string) string {
-	appDir := extractBetween(prompt, "project in ", ", then install")
-	pidFile := extractBetween(prompt, "write the server PID to ", ", and verify")
-	logFile := extractBetween(prompt, "redirect its stdout/stderr to ", ", capture")
-	port := extractLocalhostPort(prompt)
-	if appDir == "" || pidFile == "" || logFile == "" || port == 0 {
-		return ""
+func appendCachedStructuredCommandObservation(step int, command, workingDirectory, root string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+	if !commandCacheEligible(command) {
+		return false, nil
 	}
-	return fmt.Sprintf(`set -e
-app_dir=%[1]q
-pid_file=%[3]q
-log_file=%[4]q
-mkdir -p "$app_dir/src"
-cat > "$app_dir/package.json" <<'JSON'
-{"scripts":{"build":"vite build","preview":"vite preview"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","typescript":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}
-JSON
-cat > "$app_dir/index.html" <<'HTML'
-<div id="root"></div><script type="module" src="/src/main.tsx"></script>
-HTML
-cat > "$app_dir/tsconfig.json" <<'JSON'
-{"compilerOptions":{"target":"ES2020","useDefineForClassFields":true,"lib":["DOM","DOM.Iterable","ES2020"],"allowJs":false,"skipLibCheck":true,"esModuleInterop":true,"allowSyntheticDefaultImports":true,"strict":true,"forceConsistentCasingInFileNames":true,"module":"ESNext","moduleResolution":"Node","resolveJsonModule":true,"isolatedModules":true,"noEmit":true,"jsx":"react-jsx"},"include":["src"]}
-JSON
-cat > "$app_dir/src/main.tsx" <<'TS'
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import App from './App';
-createRoot(document.getElementById('root')!).render(<App />);
-TS
-cat > "$app_dir/src/App.tsx" <<'TS'
-export default function App() {
-  return <main><h1>Omni React TypeScript Smoke</h1><p>npm build verified</p></main>;
-}
-TS
-cd "$app_dir"
-npm install --silent
-npm run build --silent
-nohup npm run preview -- --host 127.0.0.1 --port %[2]d > "$log_file" 2>&1 &
-server_pid=$!
-echo "$server_pid" > "$pid_file"
-for i in 1 2 3 4 5 6 7 8 9 10; do curl -fsS http://127.0.0.1:%[2]d/ >/tmp/omni-react-ts-smoke.html 2>/dev/null && break; sleep 1; done
-grep 'script' /tmp/omni-react-ts-smoke.html`, appDir, port, pidFile, logFile)
+	index, err := BuildWorkspaceIndex(workingDirectory, 0)
+	if err != nil {
+		return false, err
+	}
+	key := CommandCacheKey(index, command)
+	cacheRoot := commandCacheRootOrDefault(root, index.Workspace)
+	entry, ok, err := LoadCommandCacheEntry(cacheRoot, key)
+	if err != nil || !ok {
+		return false, err
+	}
+	if entry.Command != strings.TrimSpace(command) || entry.InputHash != CommandCacheInputHash(index) {
+		return false, nil
+	}
+	if entry.Stdout != "" {
+		_, _ = io.WriteString(stdout, entry.Stdout)
+	}
+	if entry.Stderr != "" {
+		_, _ = io.WriteString(stderr, entry.Stderr)
+	}
+	result.Command = command
+	result.ExitCode = entry.ExitCode
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:     step,
+		Command:  command,
+		ExitCode: entry.ExitCode,
+		Stdout:   truncateStructuredObservation(entry.Stdout),
+		Stderr:   truncateStructuredObservation(entry.Stderr),
+		Cached:   true,
+	})
+	emitStructuredCommandEvent(onEvent, "command_cache_hit", "Reused cached command observation for unchanged workspace inputs", map[string]string{
+		"step":      fmt.Sprintf("%d", step),
+		"command":   truncateStructuredTimelineValue(command),
+		"exit_code": fmt.Sprintf("%d", entry.ExitCode),
+	})
+	return true, nil
 }
 
-func structuredStimulusTailwindSmokeEvidenceCommand(prompt string) string {
-	appDir := extractBetween(prompt, "web app in ", " and serve it")
-	port := extractLocalhostPort(prompt)
-	logFile := ""
-	if appDir != "" {
-		logFile = extractBetween(prompt, "--directory "+appDir+" > ", " 2>&1")
+func saveStructuredCommandCache(command, workingDirectory, root string, exitCode int, stdout, stderr string, onEvent func(StructuredCommandEvent)) error {
+	if !commandCacheEligible(command) {
+		return nil
 	}
-	pidFile := extractBetween(prompt, "echo \"$server_pid\" > ", "; Then verify")
-	if appDir == "" || logFile == "" || pidFile == "" || port == 0 {
-		return ""
+	if exitCode != 0 {
+		emitStructuredCommandEvent(onEvent, "command_cache_skipped", "Command observation was not cached because it failed", map[string]string{
+			"command":   truncateStructuredTimelineValue(command),
+			"exit_code": fmt.Sprintf("%d", exitCode),
+		})
+		return nil
 	}
-	return fmt.Sprintf(`set -e
-app_dir=%[1]q
-pid_file=%[3]q
-log_file=%[4]q
-mkdir -p "$app_dir"
-cat > "$app_dir/index.html" <<'HTML'
-<!doctype html>
-<html>
-<head>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script type="module">
-    import { Application, Controller } from "https://unpkg.com/@hotwired/stimulus/dist/stimulus.js"
-    window.Stimulus = Application.start()
-    Stimulus.register("demo", class extends Controller { ping() { this.element.dataset.smoke = "ok" } })
-  </script>
-</head>
-<body class="bg-slate-950 text-white">
-  <main data-controller="demo">
-    <h1 class="text-3xl font-bold">Omni Stimulus Tailwind Smoke</h1>
-    <button class="rounded bg-emerald-500 px-3 py-2" data-action="click->demo#ping">Ping</button>
-  </main>
-</body>
-</html>
-HTML
-nohup python3 -m http.server %[2]d --bind 127.0.0.1 --directory "$app_dir" > "$log_file" 2>&1 &
-server_pid=$!
-echo "$server_pid" > "$pid_file"
-for i in 1 2 3 4 5; do curl -fsS http://127.0.0.1:%[2]d/ 2>/dev/null | grep 'Omni Stimulus Tailwind Smoke' && break; sleep 1; done`, appDir, port, pidFile, logFile)
+	index, err := BuildWorkspaceIndex(workingDirectory, 0)
+	if err != nil {
+		return err
+	}
+	key := CommandCacheKey(index, command)
+	entry := CommandCacheEntry{
+		Key:       key,
+		Workspace: index.Workspace,
+		Command:   strings.TrimSpace(command),
+		InputHash: CommandCacheInputHash(index),
+		ExitCode:  exitCode,
+		Stdout:    truncateStructuredObservation(stdout),
+		Stderr:    truncateStructuredObservation(stderr),
+	}
+	if err := SaveCommandCacheEntry(commandCacheRootOrDefault(root, index.Workspace), entry); err != nil {
+		return err
+	}
+	emitStructuredCommandEvent(onEvent, "command_cache_stored", "Stored command observation for unchanged-input reuse", map[string]string{
+		"command": truncateStructuredTimelineValue(command),
+		"key":     key,
+	})
+	return nil
+}
+
+func commandCacheRootOrDefault(root, workspace string) string {
+	if strings.TrimSpace(root) != "" {
+		return root
+	}
+	return filepath.Join(workspace, ".omni", "command-cache")
+}
+
+func commandCacheEligible(command string) bool {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return false
+	}
+	switch fields[0] {
+	case "go":
+		return len(fields) >= 2 && fields[1] == "test"
+	case "npm":
+		return len(fields) >= 2 && (fields[1] == "test" || (fields[1] == "run" && len(fields) >= 3 && (fields[2] == "test" || fields[2] == "build")))
+	case "git":
+		return len(fields) >= 2 && (fields[1] == "status" || fields[1] == "diff" || fields[1] == "branch")
+	case "test":
+		return len(fields) >= 3 && fields[1] == "-f"
+	default:
+		return false
+	}
 }
 
 func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
@@ -1196,8 +1142,9 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 	})
 	if err := validateStructuredCommandForRun(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 		emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-			"step":   fmt.Sprintf("%d", step),
-			"reason": err.Error(),
+			"step":    fmt.Sprintf("%d", step),
+			"command": truncateStructuredTimelineValue(proposal.Command),
+			"reason":  err.Error(),
 		})
 		result.Observations = append(result.Observations, StructuredCommandObservation{
 			Step:             step,
@@ -1208,7 +1155,7 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 		})
 		return true, nil
 	}
-	if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, result); err != nil {
+	if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -1342,14 +1289,17 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 		UserPrompt              string                   `json:"user_prompt"`
 		ReferenceHistory        []StructuredMemoryRecord `json:"reference_history,omitempty"`
 		CurrentWorkingDirectory string                   `json:"current_working_directory"`
+		AvailableRecipes        []RecipePromptCandidate  `json:"available_recipes,omitempty"`
 		Instructions            []string                 `json:"instructions"`
 	}{
 		Role:                    "prompt_interpreter",
 		UserPrompt:              input.UserPrompt,
 		ReferenceHistory:        recentStructuredMemoryRecords(input.History),
 		CurrentWorkingDirectory: input.CurrentWorkingDirectory,
+		AvailableRecipes:        recipePromptCandidates(input.Recipes),
 		Instructions: []string{
 			"Interpret the user's words into durable task objectives for downstream planners.",
+			"If an available recipe directly matches the task, return its id in selected_recipe_ids.",
 			"Return objectives only when the request has concrete criteria, outputs, constraints, or verification needs.",
 			"Use stable snake_case ids.",
 			"Return the objectives in the objective_ledger JSON field.",
@@ -1379,6 +1329,10 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 			"type": "object",
 			"properties": map[string]interface{}{
 				"objective_ledger": structuredObjectiveLedgerSchema(),
+				"selected_recipe_ids": map[string]interface{}{
+					"type":  "array",
+					"items": map[string]interface{}{"type": "string"},
+				},
 			},
 			"required": []string{"objective_ledger"},
 		},
@@ -1571,13 +1525,32 @@ func truncateMinimalContextValue(value string) string {
 func ParsePromptInterpretation(raw string) (PromptInterpretation, error) {
 	var decoded struct {
 		ObjectiveLedger []StructuredObjective `json:"objective_ledger"`
+		RecipeIDs       []string              `json:"selected_recipe_ids"`
 	}
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		return PromptInterpretation{}, fmt.Errorf("parse prompt interpretation: %w", err)
 	}
 	return PromptInterpretation{
 		ObjectiveLedger: mergeStructuredObjectiveLedger(nil, decoded.ObjectiveLedger),
+		RecipeIDs:       cleanStringList(decoded.RecipeIDs),
 	}, nil
+}
+
+func cleanStringList(values []string) []string {
+	out := []string{}
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		clean := strings.TrimSpace(value)
+		if clean == "" {
+			continue
+		}
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		out = append(out, clean)
+	}
+	return out
 }
 
 func ParseStructuredLLMEvaluation(raw string) (StructuredLLMEvaluation, error) {
@@ -2263,44 +2236,6 @@ func latestSuccessfulCommandObservation(observations []StructuredCommandObservat
 	return StructuredCommandObservation{}, false
 }
 
-func structuredPromptAsksOSIdentification(prompt string) bool {
-	lower := strings.ToLower(prompt)
-	return strings.Contains(lower, "operating system") ||
-		strings.Contains(lower, "distro") ||
-		strings.Contains(lower, "package manager")
-}
-
-func structuredPromptAsksCurrentEvents(prompt string) bool {
-	lower := strings.ToLower(prompt)
-	return strings.Contains(lower, "current events") ||
-		strings.Contains(lower, "current news") ||
-		strings.Contains(lower, "latest news")
-}
-
-func structuredPromptAsksGoCLIDemo(prompt string) bool {
-	lower := strings.ToLower(prompt)
-	return strings.Contains(lower, "demo go application") || strings.Contains(lower, "go cli")
-}
-
-func structuredPromptAsksDockerSmoke(prompt string) bool {
-	lower := strings.ToLower(prompt)
-	return strings.Contains(lower, "docker web application") &&
-		strings.Contains(lower, "restart count") &&
-		strings.Contains(lower, "docker logs")
-}
-
-func structuredPromptAsksReactTypeScriptSmoke(prompt string) bool {
-	lower := strings.ToLower(prompt)
-	return strings.Contains(lower, "react typescript") &&
-		strings.Contains(lower, "omni react typescript smoke")
-}
-
-func structuredPromptAsksStimulusTailwindSmoke(prompt string) bool {
-	lower := strings.ToLower(prompt)
-	return strings.Contains(lower, "stimulus tailwind smoke") ||
-		(strings.Contains(lower, "tailwind css") && strings.Contains(lower, "stimulus js") && strings.Contains(lower, "omni stimulus tailwind smoke"))
-}
-
 func structuredObservationsHavePackageManagerEvidence(observations []StructuredCommandObservation) bool {
 	for _, obs := range observations {
 		if strings.TrimSpace(obs.Command) == "" || obs.ExitCode != 0 {
@@ -2353,101 +2288,6 @@ func structuredCommandLooksLikeStableCurrentEventsEvidence(command string) bool 
 		!strings.Contains(lower, "```")
 }
 
-func structuredCommandLooksLikeCompleteGoCLIDemo(command string) bool {
-	lower := strings.ToLower(command)
-	for _, marker := range []string{"go.dev/dl/?mode=json", "test ./...", "build -o demo-go-cli", "./demo-go-cli"} {
-		if !strings.Contains(lower, marker) {
-			return false
-		}
-	}
-	return true
-}
-
-func structuredCommandLooksLikeCompleteDockerSmoke(command string) bool {
-	lower := strings.ToLower(command)
-	for _, marker := range []string{"docker build", "docker run -d", "curl -fs", "docker inspect", ".restartcount", "docker logs", "docker_smoke_ok"} {
-		if !strings.Contains(lower, marker) {
-			return false
-		}
-	}
-	return true
-}
-
-func structuredCommandLooksLikeCompleteReactTypeScriptSmoke(command string) bool {
-	lower := strings.ToLower(command)
-	for _, marker := range []string{"package.json", "src/app.tsx", "npm install", "npm run build", "npm run preview", "curl -f"} {
-		if !strings.Contains(lower, marker) {
-			return false
-		}
-	}
-	return true
-}
-
-func structuredCommandLooksLikeCompleteStimulusTailwindSmoke(command string) bool {
-	lower := strings.ToLower(command)
-	for _, marker := range []string{"index.html", "omni stimulus tailwind smoke", "python3 -m http.server", "curl -f", "server_pid"} {
-		if !strings.Contains(lower, marker) {
-			return false
-		}
-	}
-	return true
-}
-
-func extractBetween(text, start, end string) string {
-	startIndex := strings.Index(text, start)
-	if startIndex < 0 {
-		return ""
-	}
-	startIndex += len(start)
-	rest := text[startIndex:]
-	endIndex := strings.Index(rest, end)
-	if endIndex < 0 {
-		return ""
-	}
-	return strings.TrimSpace(rest[:endIndex])
-}
-
-func extractIntAfter(text, marker string) int {
-	index := strings.Index(text, marker)
-	if index < 0 {
-		return 0
-	}
-	start := index + len(marker)
-	end := start
-	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
-		end++
-	}
-	if end == start {
-		return 0
-	}
-	value, err := strconv.Atoi(text[start:end])
-	if err != nil {
-		return 0
-	}
-	return value
-}
-
-func extractLocalhostPort(text string) int {
-	marker := "http://127.0.0.1:"
-	index := strings.Index(text, marker)
-	if index < 0 {
-		return 0
-	}
-	start := index + len(marker)
-	end := start
-	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
-		end++
-	}
-	if end == start {
-		return 0
-	}
-	port, err := strconv.Atoi(text[start:end])
-	if err != nil {
-		return 0
-	}
-	return port
-}
-
 func finalStructuredAnswer(payloadAnswer string, latest StructuredCommandObservation) string {
 	if answer := strings.TrimSpace(payloadAnswer); answer != "" {
 		return answer
@@ -2458,9 +2298,9 @@ func finalStructuredAnswer(payloadAnswer string, latest StructuredCommandObserva
 	return strings.TrimSpace(latest.Stderr)
 }
 
-func rejectDoneForFinalAnswer(step int, prompt, answer string, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
+func rejectDoneForFinalAnswer(step int, _ string, answer string, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
 	answer = strings.TrimSpace(answer)
-	if structuredFinalAnswerGivesInstructionsInsteadOfCompletion(prompt, answer) {
+	if structuredFinalAnswerGivesInstructionsInsteadOfCompletion(answer) {
 		emitStructuredCommandEvent(onEvent, "structured_done_rejected", "Done rejected for instructional final answer", map[string]string{
 			"step":   fmt.Sprintf("%d", step),
 			"answer": truncateStructuredTimelineValue(answer),
@@ -2549,6 +2389,23 @@ func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDir
 		"pending_objectives": pendingStructuredObjectiveIDs(updated),
 	})
 	return updated
+}
+
+func runSelectedRecipeCompletionProbes(ctx context.Context, currentWorkingDirectory string, ledger []StructuredObjective, recipes []Recipe, onEvent func(StructuredCommandEvent)) []StructuredObjective {
+	for _, recipe := range recipes {
+		results, passed := RunRecipeCompletionProbes(ctx, recipe, currentWorkingDirectory)
+		if len(results) == 0 {
+			continue
+		}
+		evidence := FormatRecipeProbeEvidence(results)
+		emitStructuredCommandEvent(onEvent, "recipe_completion_probes_completed", "Deterministic recipe completion probes ran", map[string]string{
+			"recipe": recipe.ID,
+			"passed": fmt.Sprintf("%t", passed),
+			"checks": fmt.Sprintf("%d", len(results)),
+		})
+		ledger = ApplyRecipeProbeCompletion(ledger, recipe, passed, evidence)
+	}
+	return ledger
 }
 
 func minimalContextHasContent(context MinimalContext) bool {
@@ -2695,10 +2552,7 @@ func mergeStructuredObjective(existing, update StructuredObjective) StructuredOb
 	return existing
 }
 
-func structuredFinalAnswerGivesInstructionsInsteadOfCompletion(prompt, answer string) bool {
-	if !structuredPromptRequestsExecution(prompt) {
-		return false
-	}
+func structuredFinalAnswerGivesInstructionsInsteadOfCompletion(answer string) bool {
 	lower := strings.ToLower(answer)
 	instructionMarkers := 0
 	for _, phrase := range []string{
@@ -2722,19 +2576,6 @@ func structuredFinalAnswerGivesInstructionsInsteadOfCompletion(prompt, answer st
 		instructionMarkers++
 	}
 	return instructionMarkers >= 2
-}
-
-func structuredPromptRequestsExecution(prompt string) bool {
-	lower := strings.ToLower(prompt)
-	for _, phrase := range []string{
-		"create ", "make ", "build ", "run ", "write ", "edit ", "delete ", "move ", "copy ",
-		"inside it", "in ~/", "in /", "file", "directory", "project",
-	} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return false
 }
 
 func latestRealCommandSucceeded(observations []StructuredCommandObservation) bool {
@@ -2764,6 +2605,15 @@ func isShellToolDelegation(payload StructuredCommandPayload) bool {
 		(tool == "shell" || tool == "terminal" || tool == "system")
 }
 
+func isPatchToolDelegation(payload StructuredCommandPayload) bool {
+	tool := strings.ToLower(strings.TrimSpace(payload.Tool))
+	return !payload.Done &&
+		!payload.Ask &&
+		strings.TrimSpace(payload.Command) == "" &&
+		strings.TrimSpace(payload.Patch) != "" &&
+		(tool == "patch.apply" || tool == "patch")
+}
+
 func buildStructuredCommandRequest(prompt string, history []Message, observations []StructuredCommandObservation) OllamaChatRequest {
 	return buildStructuredCommandRequestWithMemories(prompt, history, nil, observations)
 }
@@ -2781,9 +2631,13 @@ func buildStructuredCommandRequestWithMemoriesCWDAndLedger(prompt string, histor
 }
 
 func buildStructuredCommandRequestWithContext(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext) OllamaChatRequest {
+	return buildStructuredCommandRequestWithContextAndRecipes(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, nil)
+}
+
+func buildStructuredCommandRequestWithContextAndRecipes(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe) OllamaChatRequest {
 	return OllamaChatRequest{
 		ContextSystem: buildStructuredCommandSystemContext(),
-		Messages:      buildStructuredCommandMessages(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext),
+		Messages:      buildStructuredCommandMessages(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes),
 		Format:        buildStructuredCommandResponseFormat(observations),
 		Options: map[string]interface{}{
 			"temperature": 0,
@@ -2796,6 +2650,7 @@ func buildStructuredCommandSystemContext() string {
 		"Return JSON only.",
 		"Schema: {\"command\":\"shell command to execute\",\"done\":false,\"answer\":\"\"}",
 		"To delegate exact shell command selection, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"tool\":\"shell\",\"tool_task\":\"scoped instruction from planner authority\"}.",
+		"To apply source edits, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"tool\":\"patch.apply\",\"patch\":\"unified diff\"}; patch paths must be relative to current_working_directory.",
 		"To stop, return {\"command\":\"\",\"done\":true,\"answer\":\"brief result from observed evidence\"}.",
 		"To ask the user for needed help, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"ask\":true,\"question\":\"brief specific question\"}.",
 		"The final user message contains active_task and is the only active user objective.",
@@ -2828,6 +2683,7 @@ func buildStructuredCommandSystemContext() string {
 		"Do not use echo to print an answer or apology.",
 		"Do not use shell commands to simulate a final answer; commands must inspect files, run tools, query the web, create requested output, or verify evidence.",
 		"Do not emit pseudo-tool names such as web.search, browser.search, None, or null as commands; commands execute in a real shell.",
+		"Prefer tool=patch.apply for source edits when you can produce a small unified diff from observed file contents.",
 		"Use tool_inventory to choose available terminal tools, skills, public sources, and agent roles.",
 		"Never return an empty command when done=false unless delegating with tool=shell and a non-empty tool_task.",
 		"If a command fails, the failure is recorded in observations; use that context to pivot to a different command, source, or tool.",
@@ -2915,6 +2771,7 @@ func buildStructuredCommandResponseFormat(observations []StructuredCommandObserv
 		"ask":              map[string]interface{}{"type": "boolean"},
 		"question":         map[string]interface{}{"type": "string"},
 		"tool":             map[string]interface{}{"type": "string"},
+		"patch":            map[string]interface{}{"type": "string"},
 		"objective_ledger": structuredObjectiveLedgerSchema(),
 		"tool_task": map[string]interface{}{
 			"type": "string",
@@ -3004,7 +2861,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 	}
 }
 
-func buildStructuredCommandMessages(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext) []OllamaMessage {
+func buildStructuredCommandMessages(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe) []OllamaMessage {
 	messages := []OllamaMessage{}
 	if memoryMessage := buildStructuredCommandCapabilityMemoryMessage(memories); memoryMessage != "" {
 		messages = append(messages,
@@ -3023,7 +2880,7 @@ func buildStructuredCommandMessages(prompt string, history []Message, memories [
 			OllamaMessage{Role: "assistant", Content: "Reference history received. I will use it only when the active task needs omitted context."},
 		)
 	}
-	messages = append(messages, OllamaMessage{Role: "user", Content: buildStructuredCommandUserMessage(prompt, observations, currentWorkingDirectory, objectiveLedger, minimalContext)})
+	messages = append(messages, OllamaMessage{Role: "user", Content: buildStructuredCommandUserMessage(prompt, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes)})
 	return messages
 }
 
@@ -3097,6 +2954,12 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			minimalContext = normalizeMinimalContext(value)
 		}
 	}
+	recipes := []Recipe(nil)
+	if len(args) > 3 {
+		if value, ok := args[3].([]Recipe); ok {
+			recipes = value
+		}
+	}
 	payload := struct {
 		ActivePromptOpen string                  `json:"active_prompt_open"`
 		ToolInventory    StructuredToolInventory `json:"tool_inventory"`
@@ -3105,6 +2968,7 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			Prompt                      string                         `json:"prompt"`
 			CurrentWorkingDirectory     string                         `json:"current_working_directory"`
 			MinimalContext              MinimalContext                 `json:"minimal_context,omitempty"`
+			Recipes                     []RecipeRuntimeConstraint      `json:"recipes,omitempty"`
 			ObjectiveLedger             []StructuredObjective          `json:"objective_ledger,omitempty"`
 			PendingObjectiveIDs         []string                       `json:"pending_objective_ids,omitempty"`
 			MustReturnCommand           bool                           `json:"must_return_command"`
@@ -3122,6 +2986,7 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 	payload.ActiveTask.Prompt = prompt
 	payload.ActiveTask.CurrentWorkingDirectory = structuredPromptWorkingDirectory(workingDirectory)
 	payload.ActiveTask.MinimalContext = minimalContext
+	payload.ActiveTask.Recipes = recipeRuntimeConstraints(recipes)
 	payload.ActiveTask.ObjectiveLedger = mergeStructuredObjectiveLedger(nil, objectiveLedger)
 	payload.ActiveTask.PendingObjectiveIDs = structuredObjectiveIDs(pendingStructuredObjectives(payload.ActiveTask.ObjectiveLedger))
 	payload.ActiveTask.MustReturnCommand = !hasRealCommandObservation(observations)
@@ -3393,6 +3258,7 @@ func ParseStructuredCommandPayload(raw string) (StructuredCommandPayload, error)
 		Question        string                `json:"question"`
 		Tool            string                `json:"tool"`
 		ToolTask        string                `json:"tool_task"`
+		Patch           string                `json:"patch"`
 		ObjectiveLedger []StructuredObjective `json:"objective_ledger"`
 	}
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
@@ -3409,6 +3275,7 @@ func ParseStructuredCommandPayload(raw string) (StructuredCommandPayload, error)
 		Question:        decoded.Question,
 		Tool:            decoded.Tool,
 		ToolTask:        decoded.ToolTask,
+		Patch:           decoded.Patch,
 		ObjectiveLedger: mergeStructuredObjectiveLedger(nil, decoded.ObjectiveLedger),
 	}, nil
 }

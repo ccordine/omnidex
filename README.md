@@ -1,11 +1,16 @@
 # Omnidex
 
-Omnidex is a local-first LLM system for orchestrating hot-swappable models across jobs, skills, tools, and specialist roles.
+Omnidex is a local-first agent runtime for evidence-led self-correcting development loops.
+
+It turns model output into permissioned, evidence-checked work: plan, patch, verify, observe, and continue until the evidence says the task is done.
 
 - `omni`: deterministic local CLI for chat, command execution, research, install/update, and workspace-aware automation.
 - Specialist roles handle bounded jobs such as prompt interpretation, planning, shell command selection, summarization, done checks, retrieval, analysis, and verification.
 - Model routing is configurable per role, so fast utility models and deeper reasoning models can be swapped independently.
 - Skills and tools extend what Omnidex can do while deterministic code owns policy, execution, evidence, and state transitions.
+- Evidence ledgers record objectives, commands, rejected commands, observed output, pending work, and final responses.
+- Run traces summarize model calls, command counts, rejections, loop exhaustion, and completion-check pressure from existing session events.
+- Development loops convert discovered failures into regression targets, make scoped changes, run targeted verification, and continue from concrete observations instead of starting over.
 - `agent-core`: API + Postgres queue + worker pipeline for service-backed workflows.
 - `agent-cli`: queue/API CLI for enqueueing and inspecting core jobs; helper aliases expose it for advanced workflows.
 
@@ -16,9 +21,46 @@ License: MIT.
 - Deterministic control plane: models propose structured outputs; code validates, gates, executes, and records evidence.
 - Hot-swappable model roles: each specialist can use the model best suited to its job.
 - Minimal context by default: specialists receive the narrow slice of memory, history, and artifacts they need.
+- Evidence ledger by default: work is explainable after the fact, including rejected commands and remaining objectives.
+- Declarative recipes: repeatable task patterns can define objectives, command classes, and evidence requirements without hardcoding task logic into the command loop.
 - Relevance-first retrieval: tags + pgvector similarity (`memory_chunks.embedding`) before analysis/response.
 - Queue-native processing: workers lease steps with `FOR UPDATE SKIP LOCKED`.
 - Cognition routing in-core: fast models handle high-frequency utility steps; reasoning models are used for deeper synthesis.
+
+## Try This: Frontend Project
+
+```bash
+mkdir demo-calculator && cd demo-calculator
+omni chat
+```
+
+Prompt:
+
+```text
+Create a small npm frontend project using Stimulus, RecyclrJS, Tailwind CSS, and webpack.
+Initialize npm, install dependencies, create a minimal calculator page, wire a Stimulus controller,
+use RecyclrJS, run a build or smoke test, and summarize the evidence.
+```
+
+Then export the evidence ledger:
+
+```bash
+omni ledger export --out evidence-ledger.json
+omni run:trace latest
+omni bench report
+```
+
+Useful deterministic surfaces:
+
+```bash
+omni fastpath project.probe
+omni index build
+omni patch apply --file change.diff --dry-run
+omni fingerprint --text "npm error code E404"
+omni ollama prewarm --json
+```
+
+See `docs/DEVELOPMENT_LOOPS.md`, `docs/EVIDENCE_LEDGER.md`, `docs/RUN_TRACE.md`, `docs/FAST_PATHS.md`, `docs/WORKSPACE_INDEX.md`, `docs/COMMAND_CACHE.md`, `docs/PATCH_MODE.md`, `docs/FAILURE_FINGERPRINTS.md`, `docs/OLLAMA_PREWARM.md`, `docs/COMMAND_POLICY.md`, `docs/RECIPES.md`, `docs/BENCHMARKS.md`, `docs/ROADMAP.md`, and `SECURITY.md`.
 
 ## Pipeline
 

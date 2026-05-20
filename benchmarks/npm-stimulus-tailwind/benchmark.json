@@ -1,0 +1,17 @@
+{
+  "id": "npm-stimulus-tailwind-calculator",
+  "description": "Build a small calculator frontend with npm, Stimulus, RecyclrJS, Tailwind CSS, and webpack.",
+  "workspace": "tmp",
+  "prompt": "Create a small npm frontend calculator project using Stimulus, RecyclrJS, Tailwind CSS, and webpack. Initialize npm, install dependencies, create source files, configure webpack, build a bundle, and verify the evidence before done.",
+  "recipe": "frontend.stimulus-tailwind-recyclr",
+  "success_criteria": [
+    "package.json exists",
+    "package.json records @hotwired/stimulus",
+    "package.json records recyclrjs",
+    "package.json records tailwindcss",
+    "webpack.config.js exists",
+    "src files exist",
+    "dist/bundle.js exists",
+    "final objective ledger has no pending objectives"
+  ]
+}

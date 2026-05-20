@@ -74,3 +74,31 @@ func TestOllamaClientRequestOverridesRuntimeDefaults(t *testing.T) {
 		t.Fatalf("num_ctx = %#v, want 4096", options["num_ctx"])
 	}
 }
+
+func TestOllamaClientPrewarmReportsLoadProfile(t *testing.T) {
+	var captured map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"model":"fake","done":true,"message":{"role":"assistant","content":"ok"},"total_duration":100,"load_duration":25,"prompt_eval_count":2,"eval_count":1}`))
+	}))
+	defer server.Close()
+
+	client := NewOllamaClient(server.URL, "fake")
+	client.ConfigureRuntime("5m", 1024)
+
+	result, err := client.Prewarm(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Model != "fake" || result.Endpoint != server.URL || result.KeepAlive != "5m" || result.NumCtx != 1024 {
+		t.Fatalf("unexpected prewarm result metadata: %#v", result)
+	}
+	if result.TotalDuration != 100 || result.LoadDuration != 25 || result.PromptEvalCount != 2 || result.EvalCount != 1 {
+		t.Fatalf("unexpected prewarm timings: %#v", result)
+	}
+	if captured["keep_alive"] != "5m" {
+		t.Fatalf("keep_alive = %#v, want 5m", captured["keep_alive"])
+	}
+}
