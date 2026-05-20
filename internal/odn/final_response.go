@@ -3,11 +3,27 @@ package odn
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const defaultFinalResponderTimeout = 40 * time.Second
+
+var finalReviewTokenPattern = regexp.MustCompile(`[a-z0-9]{3,}`)
+
+type FinalAssistantResponseReviewInput struct {
+	UserInput string
+	Response  string
+	Evidence  []string
+}
+
+type FinalAssistantResponseReview struct {
+	Passed     bool
+	Confidence int
+	Feedback   string
+	Response   string
+}
 
 func BuildFinalResponderMessages(workspacePath, userInput string, result AgentCommandLoopResult) []OllamaMessage {
 	return []OllamaMessage{
@@ -64,6 +80,45 @@ func FinalizeAgentResponse(ctx context.Context, client *OllamaClient, workspaceP
 		"completion_eval_count": resp.EvalCount,
 	})
 	return guardFinalResponse(strings.TrimSpace(resp.Content), result), nil
+}
+
+func ReviewFinalAssistantResponse(input FinalAssistantResponseReviewInput) FinalAssistantResponseReview {
+	userInput := strings.TrimSpace(input.UserInput)
+	response := strings.TrimSpace(input.Response)
+	if response == "" {
+		return FinalAssistantResponseReview{
+			Passed:     false,
+			Confidence: 0,
+			Feedback:   "final response was empty",
+			Response:   "I could not produce a response for the current request.",
+		}
+	}
+
+	evidenceText := strings.TrimSpace(strings.Join(input.Evidence, "\n"))
+	if finalResponseLooksOffTask(userInput, response, evidenceText) {
+		return FinalAssistantResponseReview{
+			Passed:     false,
+			Confidence: 35,
+			Feedback:   "final response appears weakly related to the current user request",
+			Response:   buildFinalReviewCorrection(userInput, response, evidenceText),
+		}
+	}
+
+	if structuredTextSuggestsFalseCapabilityLimit(response) && finalRequestLikelyNeedsTools(userInput) {
+		return FinalAssistantResponseReview{
+			Passed:     false,
+			Confidence: 40,
+			Feedback:   "final response claims a capability limit where local tools or public sources may be available",
+			Response:   buildFinalReviewCorrection(userInput, response, evidenceText),
+		}
+	}
+
+	return FinalAssistantResponseReview{
+		Passed:     true,
+		Confidence: 100,
+		Feedback:   "deterministic final response review passed",
+		Response:   response,
+	}
 }
 
 func formatCommandTranscript(transcript []CommandObservation, maxItems int) string {
@@ -297,4 +352,83 @@ func tokenContainsRune(token string, target rune) bool {
 		}
 	}
 	return false
+}
+
+func finalResponseLooksOffTask(userInput, response, evidence string) bool {
+	userTokens := finalReviewSignificantTokens(userInput)
+	if len(userTokens) < 4 || len(response) <= 160 {
+		return false
+	}
+	responseTokens := finalReviewTokenSet(response + "\n" + evidence)
+	if len(responseTokens) == 0 {
+		return true
+	}
+	overlap := 0
+	for _, token := range userTokens {
+		if _, ok := responseTokens[token]; ok {
+			overlap++
+		}
+	}
+	if overlap == 0 {
+		return true
+	}
+	return (overlap*100)/len(userTokens) < 8
+}
+
+func finalReviewSignificantTokens(value string) []string {
+	matches := finalReviewTokenPattern.FindAllString(strings.ToLower(value), -1)
+	out := make([]string, 0, len(matches))
+	seen := map[string]struct{}{}
+	for _, token := range matches {
+		if finalReviewStopword(token) {
+			continue
+		}
+		if _, ok := seen[token]; ok {
+			continue
+		}
+		seen[token] = struct{}{}
+		out = append(out, token)
+	}
+	return out
+}
+
+func finalReviewTokenSet(value string) map[string]struct{} {
+	set := map[string]struct{}{}
+	for _, token := range finalReviewSignificantTokens(value) {
+		set[token] = struct{}{}
+	}
+	return set
+}
+
+func finalReviewStopword(token string) bool {
+	switch token {
+	case "the", "and", "for", "that", "this", "with", "you", "your", "are", "was", "were", "have", "has", "had", "from", "into", "what", "when", "where", "which", "who", "why", "how", "can", "could", "would", "should", "about", "please", "need", "want", "assistant", "response":
+		return true
+	default:
+		return false
+	}
+}
+
+func finalRequestLikelyNeedsTools(userInput string) bool {
+	lower := strings.ToLower(userInput)
+	for _, phrase := range []string{
+		"current", "right now", "today", "latest", "weather", "time", "date", "search", "web", "internet", "browse", "file", "run", "create", "edit", "test", "build",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildFinalReviewCorrection(userInput, response, evidence string) string {
+	lines := []string{
+		"Self-review flagged the draft as weakly aligned with the current request.",
+		"Request: " + truncateOutput(userInput),
+	}
+	if strings.TrimSpace(evidence) != "" {
+		lines = append(lines, "Evidence: "+truncateOutput(evidence))
+	}
+	lines = append(lines, "Draft: "+truncateOutput(response))
+	return strings.Join(lines, "\n")
 }

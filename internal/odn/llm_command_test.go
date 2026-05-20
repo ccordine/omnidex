@@ -3,6 +3,7 @@ package odn
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -39,6 +40,52 @@ func (f *fakeCommandDecisionClient) ChatRaw(ctx context.Context, req OllamaChatR
 	response := f.responses[0]
 	f.responses = f.responses[1:]
 	return OllamaChatResponse{Content: response}, nil
+}
+
+type fakeStructuredResponseEvaluator struct {
+	evaluations []StructuredLLMEvaluation
+	errors      []error
+	inputs      []StructuredLLMEvaluationInput
+}
+
+func (f *fakeStructuredResponseEvaluator) EvaluateStructuredLLMResponse(ctx context.Context, input StructuredLLMEvaluationInput) (StructuredLLMEvaluation, error) {
+	f.inputs = append(f.inputs, input)
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return StructuredLLMEvaluation{}, err
+		}
+	}
+	if len(f.evaluations) == 0 {
+		return StructuredLLMEvaluation{Confidence: 100, Feedback: ""}, nil
+	}
+	evaluation := f.evaluations[0]
+	f.evaluations = f.evaluations[1:]
+	return evaluation, nil
+}
+
+type fakeShellCommandSpecialist struct {
+	proposals []ShellCommandProposal
+	errors    []error
+	inputs    []ShellCommandSpecialistInput
+}
+
+func (f *fakeShellCommandSpecialist) ProposeShellCommand(ctx context.Context, input ShellCommandSpecialistInput) (ShellCommandProposal, error) {
+	f.inputs = append(f.inputs, input)
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return ShellCommandProposal{}, err
+		}
+	}
+	if len(f.proposals) == 0 {
+		return ShellCommandProposal{Command: "printf 'default shell evidence\n'", Rationale: "default"}, nil
+	}
+	proposal := f.proposals[0]
+	f.proposals = f.proposals[1:]
+	return proposal, nil
 }
 
 func TestStructuredCommandDecisionAlwaysCallsLLMForNaturalLanguagePrompts(t *testing.T) {
@@ -159,8 +206,9 @@ func TestStructuredCommandRequestUsesTerseInertMemoryRecords(t *testing.T) {
 		}
 	}
 	active := req.Messages[2].Content
-	if strings.Contains(active, "Pattaya") || strings.Contains(active, "tmp-project") || strings.Contains(active, "wttr.in") {
-		t.Fatalf("active prompt is polluted by memory: %s", active)
+	activeTask := activeTaskJSONForTest(t, active)
+	if strings.Contains(activeTask, "Pattaya") || strings.Contains(activeTask, "tmp-project") || strings.Contains(activeTask, "wttr.in") {
+		t.Fatalf("active task is polluted by memory: %s", activeTask)
 	}
 	if strings.Count(active, "What time is it in Virginia right now?") != 4 {
 		t.Fatalf("active prompt should appear as open/current/prompt/close anchors: %s", active)
@@ -209,9 +257,10 @@ func TestStructuredCommandDecisionAnswersActivePromptDespiteConflictingMemory(t 
 		t.Fatalf("messages = %#v, want memory + ack + active task", client.requests[0].Messages)
 	}
 	active := client.requests[0].Messages[2].Content
+	activeTask := activeTaskJSONForTest(t, active)
 	for _, polluted := range []string{"Pattaya", "Saipan", "React", "wttr.in", "news.google.com", "npm run build"} {
-		if strings.Contains(active, polluted) {
-			t.Fatalf("active task contains memory %q: %s", polluted, active)
+		if strings.Contains(activeTask, polluted) {
+			t.Fatalf("active task contains memory %q: %s", polluted, activeTask)
 		}
 	}
 	if strings.Count(active, "What time is it in Virginia right now?") != 4 {
@@ -856,6 +905,431 @@ func TestStructuredCommandDecisionRejectsRepeatedDoneWithoutRealCommand(t *testi
 	}
 }
 
+func TestStructuredCommandDecisionRejectsPureEchoAnswerAsEvidence(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"echo 'I do not have access to real-time weather. Check a weather website.'","done":false,"answer":""}`,
+		`{"command":"printf 'Virginia weather evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Virginia weather evidence"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "What is the weather in Virginia right now?", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 3 {
+		t.Fatalf("llm calls = %d, want rejected echo then command then done", client.calls)
+	}
+	if len(result.Observations) != 2 {
+		t.Fatalf("observations = %#v, want rejected echo + real command", result.Observations)
+	}
+	if result.Observations[0].Command != "" || !strings.Contains(result.Observations[0].Stderr, "pure echo command is not command evidence") {
+		t.Fatalf("first observation should reject pure echo answer: %#v", result.Observations[0])
+	}
+	if strings.Contains(stdout.String(), "I do not have access") {
+		t.Fatalf("fake answer command should not execute: stdout=%q", stdout.String())
+	}
+	if result.Command != "printf 'Virginia weather evidence\n'" {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if result.Answer != "Virginia weather evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsLeadingRedirectArtifact(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":">> echo 'I do not have access to real-time information.'","done":false,"answer":""}`,
+		`{"command":"printf 'Pattaya time evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Pattaya time evidence"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "What time is it in Pattaya right now?", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 3 {
+		t.Fatalf("llm calls = %d, want rejected redirect then command then done", client.calls)
+	}
+	if len(result.Observations) != 2 {
+		t.Fatalf("observations = %#v, want rejected redirect + real command", result.Observations)
+	}
+	if result.Observations[0].Command != "" || !strings.Contains(result.Observations[0].Stderr, "command starts with shell redirection token") {
+		t.Fatalf("first observation should reject leading redirect artifact: %#v", result.Observations[0])
+	}
+	if stdout.String() != "Pattaya time evidence\n" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if result.Answer != "Pattaya time evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionValidatesNonEmptyDoneCommand(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"echo 'I do not have access to real-time information. Check the current time with a time zone app.'","done":true,"answer":"I cannot check."}`,
+		`{"command":"printf 'Pattaya time evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Pattaya time evidence"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "What time is it in Pattaya right now?", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 3 {
+		t.Fatalf("llm calls = %d, want invalid done command then command then done", client.calls)
+	}
+	if len(result.Observations) != 2 {
+		t.Fatalf("observations = %#v, want rejected echo + real command", result.Observations)
+	}
+	if result.Observations[0].Command != "" || !strings.Contains(result.Observations[0].Stderr, "pure echo command is not command evidence") {
+		t.Fatalf("first observation should reject non-empty done echo command: %#v", result.Observations[0])
+	}
+	if strings.Contains(stdout.String(), "I do not have access") {
+		t.Fatalf("fake done command should not execute: stdout=%q", stdout.String())
+	}
+	if result.Answer != "Pattaya time evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionAcceptsDoneWithRepeatedSuccessfulCommand(t *testing.T) {
+	command := "printf 'Pattaya time evidence\n'"
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":` + quoteJSONForTest(command) + `,"done":false,"answer":""}`,
+		`{"command":` + quoteJSONForTest(command) + `,"done":true,"answer":""}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := RunStructuredCommandDecisionWithEvents(
+		context.Background(),
+		"What time is it in Pattaya right now?",
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 2 {
+		t.Fatalf("llm calls = %d, want command then done", client.calls)
+	}
+	if len(result.Observations) != 1 {
+		t.Fatalf("observations = %#v, want only one command execution", result.Observations)
+	}
+	if stdout.String() != "Pattaya time evidence\n" {
+		t.Fatalf("stdout = %q, want one command output", stdout.String())
+	}
+	if result.Answer != "Pattaya time evidence" {
+		t.Fatalf("answer = %q, want synthesized stdout evidence", result.Answer)
+	}
+	if !structuredEventsContain(events, "structured_done_accepted") {
+		t.Fatalf("missing done accepted event: %#v", events)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsFalseCapabilityFinalAnswer(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'Saipan news evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"I'm sorry, but I can't provide real-time news updates."}`,
+		`{"command":"","done":true,"answer":"Saipan news evidence"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "What are the current events in Saipan?", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 3 {
+		t.Fatalf("llm calls = %d, want command, rejected done, accepted done", client.calls)
+	}
+	if len(result.Observations) != 2 {
+		t.Fatalf("observations = %#v, want command + rejected done", result.Observations)
+	}
+	if !strings.Contains(result.Observations[1].Stderr, "final answer claims inability") {
+		t.Fatalf("second observation should reject false limitation: %#v", result.Observations[1])
+	}
+	if result.Answer != "Saipan news evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsDeferredEvidenceFinalAnswer(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"cat /etc/os-release","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"The architecture can be determined by running uname -m."}`,
+		`{"command":"uname -m","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Architecture evidence gathered."}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "Identify this machine's operating system and architecture.", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 4 {
+		t.Fatalf("llm calls = %d, want command, rejected deferred done, command, done", client.calls)
+	}
+	if len(result.Observations) != 3 {
+		t.Fatalf("observations = %#v, want two commands + rejected done", result.Observations)
+	}
+	if !strings.Contains(result.Observations[1].Stderr, "final answer describes commands that should be run") {
+		t.Fatalf("second observation should reject deferred command answer: %#v", result.Observations[1])
+	}
+	if !strings.Contains(stdout.String(), "\n") {
+		t.Fatalf("stdout should include command output: %q", stdout.String())
+	}
+}
+
+func TestStructuredCommandDecisionEvaluatorRejectsOffTrackResponseBeforeExecution(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'I do not have access to real-time information. Check the current time with a time zone app.\n'","done":false,"answer":""}`,
+		`{"command":"TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Virginia is on Eastern Time."}`,
+	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Confidence: 15, Feedback: "The response only prints a false limitation; use a timezone evidence command."},
+		{Confidence: 95, Feedback: ""},
+		{Confidence: 90, Feedback: ""},
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"what time is it in Virginia right now?",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{
+			Evaluator:          evaluator,
+			EvaluatorThreshold: 70,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 3 {
+		t.Fatalf("llm calls = %d, want rejected response then command then done", client.calls)
+	}
+	if len(evaluator.inputs) != 3 {
+		t.Fatalf("evaluator calls = %d, want every llm response evaluated", len(evaluator.inputs))
+	}
+	if strings.Contains(stdout.String(), "I do not have access") {
+		t.Fatalf("off-track response command should not execute: stdout=%q", stdout.String())
+	}
+	if len(result.Observations) != 2 {
+		t.Fatalf("observations = %#v, want evaluator rejection + command", result.Observations)
+	}
+	first := result.Observations[0]
+	if first.EvaluationConfidence != 15 || !strings.Contains(first.Stderr, "self-evaluation rejected response") {
+		t.Fatalf("first observation should record evaluator rejection: %#v", first)
+	}
+	if first.CapabilityMemory != structuredRealtimeCapabilityMemory {
+		t.Fatalf("capability memory = %q", first.CapabilityMemory)
+	}
+	if !structuredEventsContain(events, "structured_response_rejected") {
+		t.Fatalf("missing evaluator rejection event: %#v", events)
+	}
+	if result.Command != "TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z'" {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if result.Answer != "Virginia is on Eastern Time." {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionDisablesUnavailableEvaluatorForTurn(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"evidence"}`,
+	}}
+	evaluator := &fakeStructuredResponseEvaluator{errors: []error{errors.New("model not found")}}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"produce evidence",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{Evaluator: evaluator},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want disabled after first failure", len(evaluator.inputs))
+	}
+	if result.Answer != "evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+	if !structuredEventsContain(events, "structured_response_evaluator_failed") {
+		t.Fatalf("missing evaluator failure event: %#v", events)
+	}
+}
+
+func TestStructuredCommandDecisionDisablesContradictoryEvaluatorForTurn(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"evidence"}`,
+	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Confidence: 50, Feedback: "The planner is on track and correctly answered the request."},
+	}}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"produce evidence",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{Evaluator: evaluator},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want disabled after contradictory scoring", len(evaluator.inputs))
+	}
+	if result.Answer != "evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+	if !structuredEventsContain(events, "structured_response_evaluator_failed") {
+		t.Fatalf("missing evaluator failure event: %#v", events)
+	}
+}
+
+func TestValidateStructuredCommandRejectsOnlyPureEcho(t *testing.T) {
+	if err := validateStructuredCommandString("echo 'fake final answer'"); err == nil {
+		t.Fatal("pure echo should be rejected")
+	}
+	for _, command := range []string{
+		"echo 'hello' > README.md",
+		"echo 'hello' | sed 's/h/H/'",
+		"printf 'test evidence\n'",
+	} {
+		if err := validateStructuredCommandString(command); err != nil {
+			t.Fatalf("command %q rejected: %v", command, err)
+		}
+	}
+}
+
+func TestValidateStructuredCommandRequiresSpecificWTTRQuery(t *testing.T) {
+	for _, command := range []string{
+		"curl -s wttr.in",
+		"curl -s wttr.in?format=%C",
+		"curl -s wttr.in/Virginia",
+	} {
+		if err := validateStructuredCommandString(command); err == nil {
+			t.Fatalf("command %q should be rejected", command)
+		}
+	}
+	if err := validateStructuredCommandString("curl -s 'https://wttr.in/Virginia?format=%l|%C|%t|%f'"); err != nil {
+		t.Fatalf("specific wttr command rejected: %v", err)
+	}
+}
+
+func TestValidateStructuredCommandRejectsInvalidDateTimezoneSyntax(t *testing.T) {
+	for _, command := range []string{
+		"date -t UTC -d 'TZ=America/New_York'",
+		"date -d 'TZ=America/New_York'",
+	} {
+		if err := validateStructuredCommandString(command); err == nil {
+			t.Fatalf("command %q should be rejected", command)
+		}
+	}
+	for _, command := range []string{
+		"TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z'",
+		"cd /tmp && TZ=America/New_York date '+%Z'",
+	} {
+		if err := validateStructuredCommandString(command); err != nil {
+			t.Fatalf("command %q rejected: %v", command, err)
+		}
+	}
+}
+
+func TestStructuredCommandDecisionRejectsVagueWTTRAndRetries(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"curl -s wttr.in","done":false,"answer":""}`,
+		`{"command":"printf 'specific weather evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"specific weather evidence"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "What is the weather in Virginia right now?", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) != 2 {
+		t.Fatalf("observations = %#v, want rejected wttr + specific command", result.Observations)
+	}
+	if !strings.Contains(result.Observations[0].Stderr, "wttr.in command must include an explicit location path") {
+		t.Fatalf("first observation should reject vague wttr: %#v", result.Observations[0])
+	}
+	if result.Command != "printf 'specific weather evidence\n'" {
+		t.Fatalf("command = %q", result.Command)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsRepeatedFailedCommandAndRetries(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"sh -c 'exit 7'","done":false,"answer":""}`,
+		`{"command":"sh -c 'exit 7'","done":true,"answer":"done"}`,
+		`{"command":"printf 'fallback evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"fallback evidence"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "find evidence after a failed command", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) != 3 {
+		t.Fatalf("observations = %#v, want failed command + repeated-command rejection + fallback command", result.Observations)
+	}
+	if result.Observations[1].Command != "" || !strings.Contains(result.Observations[1].Stderr, "command repeats a previous failed command") {
+		t.Fatalf("second observation should reject repeated failed command: %#v", result.Observations[1])
+	}
+	if result.Command != "printf 'fallback evidence\n'" {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if result.Answer != "fallback evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
 func TestStructuredCommandDecisionExhaustsRepeatedDoneWithNonzeroFailure(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":true,"answer":"done without evidence"}`,
@@ -913,6 +1387,121 @@ func TestStructuredCommandDecisionRejectsEmptyCommandAndContinues(t *testing.T) 
 	}
 }
 
+func TestStructuredCommandDecisionDelegatesShellTaskToSpecialist(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Get current Pattaya time using local timezone evidence."}`,
+		`{"command":"","done":true,"answer":"Pattaya time evidence"}`,
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
+		Command:   "TZ=Asia/Bangkok date '+%Y-%m-%d %H:%M:%S %Z'",
+		Rationale: "Use the IANA timezone for Thailand.",
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"What time is it in Pattaya right now?",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{ShellSpecialist: shell},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shell.inputs) != 1 {
+		t.Fatalf("shell specialist calls = %d, want 1", len(shell.inputs))
+	}
+	if shell.inputs[0].ToolTask != "Get current Pattaya time using local timezone evidence." {
+		t.Fatalf("tool task = %q", shell.inputs[0].ToolTask)
+	}
+	if result.Command != "TZ=Asia/Bangkok date '+%Y-%m-%d %H:%M:%S %Z'" {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if !strings.Contains(stdout.String(), "ICT") && !strings.Contains(stdout.String(), "+07") {
+		t.Fatalf("stdout = %q, want Thailand timezone evidence", stdout.String())
+	}
+	if !structuredEventsContain(events, "structured_tool_delegation_started") || !structuredEventsContain(events, "structured_tool_delegation_finished") {
+		t.Fatalf("missing delegation events: %#v", events)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsShellDelegationWithoutSpecialist(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Get current Pattaya time."}`,
+		`{"command":"printf 'fallback evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"fallback evidence"}`,
+	}}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"What time is it in Pattaya right now?",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) != 2 {
+		t.Fatalf("observations = %#v, want delegation rejection + fallback command", result.Observations)
+	}
+	if !strings.Contains(result.Observations[0].Stderr, "shell specialist is not configured") {
+		t.Fatalf("first observation should reject unavailable specialist: %#v", result.Observations[0])
+	}
+	if result.Answer != "fallback evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionFallsBackToShellSpecialistForEmptyCommand(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"fallback shell evidence"}`,
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
+		Command:   "printf 'fallback shell evidence\n'",
+		Rationale: "Recover from empty planner command by executing the active task.",
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"produce fallback shell evidence",
+		nil,
+		client,
+		stdout,
+		stderr,
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{ShellSpecialist: shell},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shell.inputs) != 1 {
+		t.Fatalf("shell specialist calls = %d, want 1", len(shell.inputs))
+	}
+	if shell.inputs[0].ToolTask != "produce fallback shell evidence" {
+		t.Fatalf("tool task = %q", shell.inputs[0].ToolTask)
+	}
+	if result.Answer != "fallback shell evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
 func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'ok\n'","done":false,"answer":""}`,
@@ -933,14 +1522,22 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 		"Do not use placeholder credentials.",
 		"Do not call APIs that require unavailable keys.",
 		"Never put placeholder key text in a command.",
+		"To delegate exact shell command selection, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"tool\":\"shell\",\"tool_task\":\"scoped instruction from planner authority\"}.",
 		"To ask the user for needed help, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"ask\":true,\"question\":\"brief specific question\"}.",
-		"If must_return_command is true, done=true is invalid; return a non-empty command.",
+		"If must_return_command is true, done=true is invalid; return a non-empty command or delegate with tool=shell.",
 		"If must_return_command is true, ask=true is invalid; inspect or try a command first.",
 		"If the latest real command succeeded, ask=true is invalid; continue, verify, or finish from evidence.",
 		"Do not return done=true until at least one command has exit_code 0.",
 		"If the latest command failed, return a different command instead of done=true.",
 		"Use shell commands to satisfy requests; do not answer from memory when command evidence is required.",
-		"Never return an empty command when done=false.",
+		"Capability memory entries are durable self-correction facts about ODN capabilities; use them to avoid repeating rejected false limitations.",
+		"Planner authority may delegate tool details to specialized tools; when shell syntax or system inspection is the narrow task, prefer tool=shell with a specific tool_task.",
+		"Specialist team profiles define authority boundaries, allowed tools, memory permissions, and context contributions.",
+		"Specialists may create evidence-backed memories; memory updates or deprioritization must be routed through memory, correction, manager, or summary specialists according to profile policy.",
+		"Do not use echo to print an answer or apology.",
+		"Do not use shell commands to simulate a final answer; commands must inspect files, run tools, query the web, create requested output, or verify evidence.",
+		"Use tool_inventory to choose available terminal tools, skills, public sources, and agent roles.",
+		"Never return an empty command when done=false unless delegating with tool=shell and a non-empty tool_task.",
 		"If a command fails, the failure is recorded in observations; use that context to pivot to a different command, source, or tool.",
 		"Ask the user only when progress requires permission, credentials, sudo, destructive approval, or a choice that cannot be inferred from evidence.",
 		"Do not ask for help when another non-destructive command, public source, or local inspection can be tried.",
@@ -976,11 +1573,13 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 		"If the shell reports a syntax or quoting error, correct the command or use a simpler command.",
 		"Match the command source to the requested fact type.",
 		"Public no-key internet sources available: wttr.in, news.google.com/rss/search?q=<query>, duckduckgo.com/html/?q=<query>.",
+		"When using wttr.in, include an explicit location path and a concise format query.",
 		"Prefer simple curl commands that print readable evidence over fragile HTML parsing.",
 		"For current time, prefer shell time/date commands or public no-key time sources.",
 		"For location-specific time, produce local-time evidence for that location; do not answer from UTC unless UTC was requested.",
 		"Do not use weather services as time sources.",
 		"If using shell date for a location, choose an IANA timezone and prefix the command with TZ=Area/City before date.",
+		"For Pattaya or any Thailand current-time request, use the IANA timezone Asia/Bangkok, for example TZ=Asia/Bangkok date '+%Y-%m-%d %H:%M:%S %Z'.",
 		"Do not pass TZ=Area/City as an argument to date.",
 		"Prefer concise command output; use format/query options instead of large pages when available.",
 	} {
@@ -1000,6 +1599,11 @@ func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *t
 	}
 	if !strings.Contains(message, `"current_working_directory":`) {
 		t.Fatalf("message missing current working directory: %s", message)
+	}
+	for _, want := range []string{`"tool_inventory"`, `"terminal_tools"`, `"public_sources"`, `"llm_roles"`, `"specialist_team"`, `"shell_rules"`, `"shell_execution_specialist"`, `"memory_specialist"`} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing tool inventory field %q: %s", want, message)
+		}
 	}
 	if !strings.Contains(message, `"successful_command_count":0`) || !strings.Contains(message, `"failed_command_count":0`) {
 		t.Fatalf("message missing command outcome counts: %s", message)
@@ -1021,13 +1625,59 @@ func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *t
 	}
 }
 
-func TestStructuredCommandDecisionFirstRequestSchemaRequiresCommand(t *testing.T) {
+func TestStructuredCommandRequestIncludesCapabilityMemorySeparately(t *testing.T) {
+	req := buildStructuredCommandRequestWithMemories(
+		"What time is it in Virginia right now?",
+		nil,
+		[]SessionMemory{{
+			Kind:      "capability",
+			Content:   structuredRealtimeCapabilityMemory,
+			Tags:      []string{"realtime-evidence", "capability"},
+			CreatedAt: "2026-05-19T10:55:00Z",
+		}},
+		nil,
+	)
+	if len(req.Messages) != 3 {
+		t.Fatalf("messages = %#v, want capability memory ack and active task", req.Messages)
+	}
+	if !strings.Contains(req.Messages[0].Content, `"capability_memory"`) || !strings.Contains(req.Messages[0].Content, "location-specific time") {
+		t.Fatalf("capability memory message missing content: %#v", req.Messages)
+	}
+	activeTask := activeTaskJSONForTest(t, req.Messages[2].Content)
+	if strings.Contains(activeTask, "location-specific time") {
+		t.Fatalf("active task should not be polluted by capability memory: %s", activeTask)
+	}
+}
+
+func TestParseStructuredLLMEvaluationRequiresIntegerConfidence(t *testing.T) {
+	evaluation, err := ParseStructuredLLMEvaluation(`{"confidence":82,"feedback":"on track"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evaluation.Confidence != 82 || evaluation.Feedback != "on track" {
+		t.Fatalf("evaluation = %#v", evaluation)
+	}
+	if _, err := ParseStructuredLLMEvaluation(`{"feedback":"missing score"}`); err == nil {
+		t.Fatal("expected missing confidence error")
+	}
+	if _, err := ParseStructuredLLMEvaluation(`{"confidence":101,"feedback":"too high"}`); err == nil {
+		t.Fatal("expected out-of-range confidence error")
+	}
+}
+
+func TestStructuredCommandDecisionFirstRequestSchemaAllowsCommandOrShellDelegation(t *testing.T) {
 	format := buildStructuredCommandResponseFormat(nil)
 	props := format["properties"].(map[string]interface{})
 	command := props["command"].(map[string]interface{})
 	done := props["done"].(map[string]interface{})
-	if command["minLength"] != 1 {
-		t.Fatalf("first command schema missing minLength: %#v", command)
+	if _, ok := command["minLength"]; ok {
+		t.Fatalf("first command schema should allow empty command for tool delegation: %#v", command)
+	}
+	if _, ok := props["tool"]; !ok {
+		t.Fatalf("first schema missing tool field: %#v", props)
+	}
+	if _, ok := props["tool_task"]; !ok {
+		t.Fatalf("first schema missing tool_task field: %#v", props)
 	}
 	if enum, ok := done["enum"].([]bool); !ok || len(enum) != 1 || enum[0] {
 		t.Fatalf("first command schema should force done=false: %#v", done)
@@ -1127,4 +1777,18 @@ func structuredEventsContain(events []StructuredCommandEvent, eventType string) 
 		}
 	}
 	return false
+}
+
+func activeTaskJSONForTest(t *testing.T, raw string) string {
+	t.Helper()
+	var payload struct {
+		ActiveTask json.RawMessage `json:"active_task"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("decode active payload: %v\n%s", err, raw)
+	}
+	if len(payload.ActiveTask) == 0 {
+		t.Fatalf("missing active_task: %s", raw)
+	}
+	return string(payload.ActiveTask)
 }

@@ -54,6 +54,10 @@ func TestEnvVarForRoleID(t *testing.T) {
 		{roleID: RolePlannerSpecialist, want: "OLLAMA_MODEL_SPECIALIST_PLANNER"},
 		{roleID: RoleBrowserInspectionSpecialist, want: "OLLAMA_MODEL_SPECIALIST_BROWSER_INSPECTION"},
 		{roleID: RoleReviewVerificationSpecialist, want: "OLLAMA_MODEL_SPECIALIST_REVIEW_VERIFICATION"},
+		{roleID: RoleMemorySpecialist, want: "OLLAMA_MODEL_SPECIALIST_MEMORY"},
+		{roleID: RoleCorrectionSpecialist, want: "OLLAMA_MODEL_SPECIALIST_CORRECTION"},
+		{roleID: RoleCodeSpecialist, want: "OLLAMA_MODEL_SPECIALIST_CODE"},
+		{roleID: RoleSummarySpecialist, want: "OLLAMA_MODEL_SPECIALIST_SUMMARY"},
 		{roleID: "unknown", want: ""},
 	}
 

@@ -49,6 +49,7 @@ func TestLiveOllamaFindsThailandWeatherFromWebEvidence(t *testing.T) {
 	}
 
 	evidence := strings.Join([]string{stdout.String(), stderr.String(), result.Answer}, "\n")
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	if !liveWeatherEvidenceMatchesBaseline(evidence, baseline) {
 		t.Fatalf(
 			"ODN weather evidence did not overlap baseline\nbaseline: location=%s temp_C=%s humidity=%s desc=%s\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s",

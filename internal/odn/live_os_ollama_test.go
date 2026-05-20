@@ -38,6 +38,7 @@ func TestLiveOllamaIdentifiesOperatingSystemFromCommandEvidence(t *testing.T) {
 	}
 
 	evidence := strings.Join([]string{stdout.String(), stderr.String(), result.Answer}, "\n")
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	for _, want := range baseline {
 		if !strings.Contains(strings.ToLower(evidence), strings.ToLower(want)) {
 			t.Fatalf("OS evidence missing %q\ncommand=%q\nanswer=%s\nstdout=%s\nstderr=%s", want, result.Command, result.Answer, stdout.String(), stderr.String())

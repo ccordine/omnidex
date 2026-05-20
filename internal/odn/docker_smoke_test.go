@@ -205,6 +205,7 @@ func TestLiveOllamaBuildsRunsAndVerifiesDockerApp(t *testing.T) {
 		t.Fatalf("live Docker app build failed: %v\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s\nobservations=%#v",
 			err, result.Command, result.Answer, stdout.String(), stderr.String(), result.Observations)
 	}
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	validateDockerSmokeEvidence(t, name, stdout.String(), stderr.String(), result.Answer)
 }
 

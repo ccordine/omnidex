@@ -31,6 +31,7 @@ func TestLiveOllamaCreatesRequestedProjectDirectory(t *testing.T) {
 	if !hasRealCommandObservation(result.Observations) {
 		t.Fatalf("expected real command observation: %#v", result.Observations)
 	}
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	info, err := os.Stat(target)
 	if err != nil {
 		t.Fatalf("expected target directory %s to exist; command=%q answer=%q stdout=%q stderr=%q err=%v", target, result.Command, result.Answer, stdout.String(), stderr.String(), err)

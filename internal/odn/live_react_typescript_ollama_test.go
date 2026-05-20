@@ -75,10 +75,22 @@ func TestLiveOllamaBuildsNPMReactTypeScriptSmokeApp(t *testing.T) {
 	defer cancel()
 
 	questions := []string{}
-	result, err := RunStructuredCommandDecisionWithEventsAndAsk(ctx, prompt, client, stdout, stderr, nil, func(ctx context.Context, question string) (string, error) {
-		questions = append(questions, question)
-		return "Proceed. You have permission to write files in the requested temp directory and run npm commands for this test.", nil
-	})
+	result, err := runStructuredCommandDecisionWithConfig(
+		ctx,
+		prompt,
+		nil,
+		client,
+		stdout,
+		stderr,
+		nil,
+		func(ctx context.Context, question string) (string, error) {
+			questions = append(questions, question)
+			return "Proceed. You have permission to write files in the requested temp directory and run npm commands for this test.", nil
+		},
+		structuredCommandDecisionRunConfig{
+			ShellSpecialist: NewOllamaShellCommandSpecialist(client),
+		},
+	)
 	if err != nil {
 		if isOllamaRunnerStoppedError(err) {
 			t.Skipf("Ollama runner stopped during live React TypeScript smoke test: %v", err)
@@ -87,7 +99,8 @@ func TestLiveOllamaBuildsNPMReactTypeScriptSmokeApp(t *testing.T) {
 			if validateReactTypeScriptSmokeArtifacts(appDir, port) == nil {
 				return
 			}
-			t.Skipf("Live model timed out before completing React TypeScript chain: %v", err)
+			t.Fatalf("Live model timed out before completing React TypeScript chain and artifacts were invalid: %v\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s\nobservations=%#v",
+				err, result.Command, result.Answer, stdout.String(), stderr.String(), result.Observations)
 		}
 		t.Fatalf("React TypeScript build failed: %v\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s\nobservations=%#v",
 			err, result.Command, result.Answer, stdout.String(), stderr.String(), result.Observations)
@@ -110,6 +123,7 @@ func TestLiveOllamaBuildsNPMReactTypeScriptSmokeApp(t *testing.T) {
 	}
 	assertReactTypeScriptSource(t, string(appBytes))
 
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	assertReactTypeScriptServedBuild(t, fmt.Sprintf("http://127.0.0.1:%d/", port))
 }
 
@@ -129,17 +143,43 @@ func TestStructuredCommandDecisionBuildsNPMReactTypeScriptProjectFromLLMCommands
 		`{"command":` + quoteJSONForTest(command) + `,"done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"React TypeScript npm smoke app built and served"}`,
 	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Confidence: 99, Feedback: "command creates, builds, serves, and curls the requested React TypeScript app"},
+		{Confidence: 95, Feedback: "final answer follows successful project evidence"},
+	}}
+	events := []StructuredCommandEvent{}
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	result, err := RunStructuredCommandDecision(ctx, "Build and serve a React TypeScript npm smoke app.", client, stdout, stderr)
+	result, err := runStructuredCommandDecisionWithConfig(
+		ctx,
+		"Build and serve a React TypeScript npm smoke app.",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{
+			Evaluator:          evaluator,
+			EvaluatorThreshold: 70,
+		},
+	)
 	if err != nil {
 		t.Fatalf("structured command React build failed: %v\ncommand=%q\nstdout=%s\nstderr=%s", err, result.Command, stdout.String(), stderr.String())
 	}
 	if client.calls != 2 {
 		t.Fatalf("llm calls = %d, want 2", client.calls)
+	}
+	if len(evaluator.inputs) != 2 {
+		t.Fatalf("evaluator calls = %d, want command and done responses evaluated", len(evaluator.inputs))
+	}
+	if !structuredEventsContain(events, "structured_response_evaluated") {
+		t.Fatalf("missing evaluator event: %#v", events)
 	}
 	for _, rel := range []string{"package.json", "tsconfig.json", "src/App.tsx", "dist/index.html"} {
 		if _, err := os.Stat(filepath.Join(appDir, rel)); err != nil {

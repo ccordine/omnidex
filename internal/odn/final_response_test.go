@@ -125,3 +125,43 @@ func TestBuildFinalResponderMessagesIncludesEvidenceOnlyRule(t *testing.T) {
 		t.Fatalf("user prompt missing transcript:\n%s", messages[1].Content)
 	}
 }
+
+func TestReviewFinalAssistantResponseRejectsEmptyResponse(t *testing.T) {
+	review := ReviewFinalAssistantResponse(FinalAssistantResponseReviewInput{
+		UserInput: "create a file",
+		Response:  "  ",
+	})
+
+	if review.Passed {
+		t.Fatalf("empty response should not pass: %#v", review)
+	}
+	if !strings.Contains(review.Response, "could not produce") {
+		t.Fatalf("unexpected correction: %q", review.Response)
+	}
+}
+
+func TestReviewFinalAssistantResponseFlagsOffTaskLongResponse(t *testing.T) {
+	review := ReviewFinalAssistantResponse(FinalAssistantResponseReviewInput{
+		UserInput: "create a Go CLI demo in this workspace",
+		Response:  strings.Repeat("The capital city discussion covers history and restaurants. ", 8),
+	})
+
+	if review.Passed {
+		t.Fatalf("off-task response should not pass: %#v", review)
+	}
+	if !strings.Contains(review.Response, "Self-review flagged") {
+		t.Fatalf("correction missing self-review context: %q", review.Response)
+	}
+}
+
+func TestReviewFinalAssistantResponsePassesGroundedResponse(t *testing.T) {
+	review := ReviewFinalAssistantResponse(FinalAssistantResponseReviewInput{
+		UserInput: "what time is it in Virginia right now?",
+		Response:  "Command: TZ=America/New_York date\nExit code: 0\nStdout: Wed May 20 10:00:00 EDT 2026",
+		Evidence:  []string{"stdout=Wed May 20 10:00:00 EDT 2026"},
+	})
+
+	if !review.Passed {
+		t.Fatalf("grounded response should pass: %#v", review)
+	}
+}

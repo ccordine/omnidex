@@ -91,6 +91,56 @@ func TestPGMemoryStoreSearchRequiresQueryOrTags(t *testing.T) {
 	}
 }
 
+func TestPGMemoryStoreUpdatesAndDeprioritizesStaleMemory(t *testing.T) {
+	ctx := context.Background()
+	runner := newFakeMemoryRunner()
+	store := NewPGMemoryStore(runner)
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	oldRecord, err := store.AddMemory(ctx, "memory_specialist", "project", "Old API endpoint is /v1/legacy.", []string{"api", "project"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newRecord, err := store.AddMemory(ctx, "research_specialist", "project", "Current API endpoint is /v2/current.", []string{"api", "project"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.UpdateMemoryContent(ctx, oldRecord.ID, "correction_specialist", "Old API endpoint /v1/legacy is stale; use /v2/current.", []string{"stale"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.AgentID != "correction_specialist" || !strings.Contains(updated.Content, "stale") {
+		t.Fatalf("updated memory = %#v", updated)
+	}
+	stale, err := store.DeprioritizeMemory(ctx, oldRecord.ID, newRecord.ID, "superseded by current API research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.Priority >= newRecord.Priority {
+		t.Fatalf("stale priority = %d, new priority = %d", stale.Priority, newRecord.Priority)
+	}
+	if stale.SupersededBy != newRecord.ID || stale.StalenessNote == "" {
+		t.Fatalf("stale memory missing supersession metadata: %#v", stale)
+	}
+	memories, err := store.SearchMemory(ctx, "API endpoint", []string{"api"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memories) < 2 {
+		t.Fatalf("memories = %#v, want both current and stale records", memories)
+	}
+	if memories[0].ID != newRecord.ID {
+		t.Fatalf("current memory should rank ahead of stale memory: %#v", memories)
+	}
+	for _, wantSQL := range []string{"ALTER TABLE memory_chunks ADD COLUMN IF NOT EXISTS priority", "UPDATE memory_chunks SET content", "UPDATE memory_chunks SET priority"} {
+		if !runner.SawSQL(wantSQL) {
+			t.Fatalf("runner did not execute SQL containing %q\nqueries:\n%s", wantSQL, strings.Join(runner.SQLLog, "\n---\n"))
+		}
+	}
+}
+
 func TestLivePGMemoryStoreTwoModelMemory(t *testing.T) {
 	if os.Getenv("ODN_LIVE_PG_MEMORY") != "1" {
 		t.Skip("set ODN_LIVE_PG_MEMORY=1 to run live Postgres memory test")
@@ -196,11 +246,44 @@ func (r *fakeMemoryRunner) Query(ctx context.Context, sql string, args ...any) (
 			Source:    stringFromAny(args[1]),
 			Kind:      stringFromAny(args[2]),
 			Content:   stringFromAny(args[3]),
+			Priority:  100,
 			CreatedAt: time.Now().UTC(),
 		}
 		r.nextMemoryID++
 		r.memories = append(r.memories, record)
 		return []MemorySQLRow{rowFromMemoryRecord(record)}, nil
+
+	case strings.Contains(clean, "UPDATE MEMORY_CHUNKS") && strings.Contains(clean, "SET CONTENT"):
+		id := int64FromAny(args[0])
+		content := stringFromAny(args[1])
+		agentID := stringFromAny(args[2])
+		for i := range r.memories {
+			if r.memories[i].ID == id {
+				r.memories[i].Content = content
+				r.memories[i].AgentID = agentID
+				r.memories[i].Priority = 100
+				r.memories[i].SupersededAt = time.Time{}
+				r.memories[i].SupersededBy = 0
+				r.memories[i].StalenessNote = ""
+				return []MemorySQLRow{rowFromMemoryRecord(r.memories[i])}, nil
+			}
+		}
+		return nil, nil
+
+	case strings.Contains(clean, "UPDATE MEMORY_CHUNKS") && strings.Contains(clean, "SET PRIORITY"):
+		id := int64FromAny(args[0])
+		supersededBy := int64FromAny(args[1])
+		note := stringFromAny(args[2])
+		for i := range r.memories {
+			if r.memories[i].ID == id {
+				r.memories[i].Priority = 10
+				r.memories[i].SupersededAt = time.Now().UTC()
+				r.memories[i].SupersededBy = supersededBy
+				r.memories[i].StalenessNote = note
+				return []MemorySQLRow{rowFromMemoryRecord(r.memories[i])}, nil
+			}
+		}
+		return nil, nil
 
 	case strings.Contains(clean, "INSERT INTO TAGS"):
 		tag := stringFromAny(args[0])
@@ -245,6 +328,7 @@ func (r *fakeMemoryRunner) Query(ctx context.Context, sql string, args ...any) (
 		if limit > 0 && len(rows) > limit {
 			rows = rows[:limit]
 		}
+		sortMemoryRowsByPriority(rows)
 		return rows, nil
 	}
 	return nil, nil
@@ -265,13 +349,27 @@ func normalizeSQLForTest(sql string) string {
 
 func rowFromMemoryRecord(record MemoryRecord) MemorySQLRow {
 	return MemorySQLRow{
-		"id":         record.ID,
-		"agent_id":   record.AgentID,
-		"source":     record.Source,
-		"kind":       record.Kind,
-		"content":    record.Content,
-		"created_at": record.CreatedAt,
-		"tags":       append([]string(nil), record.Tags...),
+		"id":             record.ID,
+		"agent_id":       record.AgentID,
+		"source":         record.Source,
+		"kind":           record.Kind,
+		"content":        record.Content,
+		"priority":       record.Priority,
+		"superseded_at":  record.SupersededAt,
+		"superseded_by":  record.SupersededBy,
+		"staleness_note": record.StalenessNote,
+		"created_at":     record.CreatedAt,
+		"tags":           append([]string(nil), record.Tags...),
+	}
+}
+
+func sortMemoryRowsByPriority(rows []MemorySQLRow) {
+	for i := 0; i < len(rows); i++ {
+		for j := i + 1; j < len(rows); j++ {
+			if int64FromAny(rows[j]["priority"]) > int64FromAny(rows[i]["priority"]) {
+				rows[i], rows[j] = rows[j], rows[i]
+			}
+		}
 	}
 }
 

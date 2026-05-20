@@ -139,6 +139,7 @@ func testOllamaClient(t *testing.T) *OllamaClient {
 	if err != nil {
 		t.Skipf("Ollama model %q unavailable at %s: %v", model, endpoint, err)
 	}
+	t.Logf("using live Ollama model %q at %s", model, endpoint)
 	return client
 }
 

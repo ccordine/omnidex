@@ -58,6 +58,7 @@ func (s SessionStore) LoadOrCreate(workspacePath string) (*Session, bool, error)
 				CreatedAt:     now,
 				UpdatedAt:     now,
 				Messages:      []Message{},
+				Memories:      []SessionMemory{},
 				Turns:         []Turn{},
 			}
 			if err := s.Save(session); err != nil {
@@ -87,6 +88,9 @@ func (s SessionStore) LoadOrCreate(workspacePath string) (*Session, bool, error)
 	}
 	if session.CreatedAt == "" {
 		session.CreatedAt = now
+	}
+	if session.Memories == nil {
+		session.Memories = []SessionMemory{}
 	}
 	session.UpdatedAt = now
 

@@ -24,12 +24,15 @@ type App struct {
 	out    io.Writer
 	errOut io.Writer
 
-	store    SessionStore
-	ollama   *OllamaClient
-	registry Registry
-	memory   *PGMemoryStore
-	pgPool   *pgxpool.Pool
-	web      WebSearchService
+	store              SessionStore
+	ollama             *OllamaClient
+	evaluator          StructuredLLMResponseEvaluator
+	evaluatorThreshold int
+	shellSpecialist    ShellCommandSpecialist
+	registry           Registry
+	memory             *PGMemoryStore
+	pgPool             *pgxpool.Pool
+	web                WebSearchService
 
 	runLogger *RunLogger
 
@@ -61,6 +64,13 @@ func (a *App) Run(args []string) error {
 	endpointFlag := fs.String("ollama-endpoint", defaultOllamaEndpoint, "ollama chat endpoint")
 	ollamaKeepAlive := fs.String("ollama-keep-alive", envOrDefault("ODN_OLLAMA_KEEP_ALIVE", "30s"), "default Ollama keep_alive for chat requests; use 0 to unload after each response")
 	ollamaNumCtx := fs.Int("ollama-num-ctx", envIntOrDefault("ODN_OLLAMA_NUM_CTX", 2048), "default Ollama num_ctx option; set 0 to use Ollama default")
+	evaluatorModel := fs.String("evaluator-model", firstNonEmpty(os.Getenv("ODN_EVALUATOR_MODEL"), os.Getenv("OLLAMA_MODEL_EVALUATOR"), defaultOllamaEvaluatorModel), "ollama model for tiny structured response evaluator")
+	evaluatorThreshold := fs.Int("evaluator-threshold", envIntOrDefault("ODN_EVALUATOR_THRESHOLD", defaultEvaluatorThreshold), "minimum evaluator confidence 0..100 before planner output is accepted")
+	evaluatorNumCtx := fs.Int("evaluator-num-ctx", envIntOrDefault("ODN_EVALUATOR_NUM_CTX", 1024), "Ollama num_ctx option for evaluator requests; set 0 to use Ollama default")
+	disableEvaluator := fs.Bool("disable-evaluator", envBoolOrDefault("ODN_DISABLE_EVALUATOR", false), "disable structured response self-evaluator")
+	shellSpecialistModel := fs.String("shell-specialist-model", firstNonEmpty(os.Getenv("ODN_SHELL_SPECIALIST_MODEL"), os.Getenv("OLLAMA_MODEL_SHELL"), *modelFlag), "ollama model for shell execution specialist")
+	shellSpecialistNumCtx := fs.Int("shell-specialist-num-ctx", envIntOrDefault("ODN_SHELL_SPECIALIST_NUM_CTX", 2048), "Ollama num_ctx option for shell specialist requests; set 0 to use Ollama default")
+	disableShellSpecialist := fs.Bool("disable-shell-specialist", envBoolOrDefault("ODN_DISABLE_SHELL_SPECIALIST", false), "disable delegated shell execution specialist")
 	noOllama := fs.Bool("no-ollama", false, "disable ollama calls")
 	sessionRoot := fs.String("session-root", "", "override session root directory")
 	runLogRoot := fs.String("run-log-root", "", "override run log root directory")
@@ -90,6 +100,17 @@ func (a *App) Run(args []string) error {
 	if !*noOllama {
 		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)
 		a.ollama.ConfigureRuntime(*ollamaKeepAlive, *ollamaNumCtx)
+		a.evaluatorThreshold = normalizeStructuredEvaluatorThreshold(*evaluatorThreshold)
+		if !*disableEvaluator {
+			evaluatorClient := NewOllamaClient(*endpointFlag, *evaluatorModel)
+			evaluatorClient.ConfigureRuntime(*ollamaKeepAlive, *evaluatorNumCtx)
+			a.evaluator = NewOllamaStructuredResponseEvaluator(evaluatorClient)
+		}
+		if !*disableShellSpecialist {
+			shellClient := NewOllamaClient(*endpointFlag, *shellSpecialistModel)
+			shellClient.ConfigureRuntime(*ollamaKeepAlive, *shellSpecialistNumCtx)
+			a.shellSpecialist = NewOllamaShellCommandSpecialist(shellClient)
+		}
 	}
 
 	if strictOneShot || !isInteractive(a.in) {
@@ -97,7 +118,21 @@ func (a *App) Run(args []string) error {
 		if err != nil {
 			return fmt.Errorf("read stdin: %w", err)
 		}
-		_, err = RunStructuredCommandDecision(context.Background(), string(promptBytes), a.ollama, a.out, a.errOut)
+		_, err = runStructuredCommandDecisionWithConfig(
+			context.Background(),
+			string(promptBytes),
+			nil,
+			a.ollama,
+			a.out,
+			a.errOut,
+			nil,
+			nil,
+			structuredCommandDecisionRunConfig{
+				Evaluator:          a.evaluator,
+				EvaluatorThreshold: a.evaluatorThreshold,
+				ShellSpecialist:    a.shellSpecialist,
+			},
+		)
 		return err
 	}
 
@@ -156,12 +191,17 @@ func (a *App) Run(args []string) error {
 	}()
 
 	_ = a.runLogger.Log("runtime", "app_initialized", map[string]interface{}{
-		"workspace":       workspacePath,
-		"permission_mode": session.Permission,
-		"ollama_enabled":  !*noOllama,
-		"model":           *modelFlag,
-		"endpoint":        *endpointFlag,
-		"loaded_session":  loaded,
+		"workspace":                workspacePath,
+		"permission_mode":          session.Permission,
+		"ollama_enabled":           !*noOllama,
+		"model":                    *modelFlag,
+		"endpoint":                 *endpointFlag,
+		"evaluator_model":          *evaluatorModel,
+		"evaluator_threshold":      normalizeStructuredEvaluatorThreshold(*evaluatorThreshold),
+		"evaluator_enabled":        !*disableEvaluator && !*noOllama,
+		"shell_specialist_model":   *shellSpecialistModel,
+		"shell_specialist_enabled": !*disableShellSpecialist && !*noOllama,
+		"loaded_session":           loaded,
 	})
 
 	a.printBanner(session, loaded, *noOllama)
@@ -315,6 +355,7 @@ func (a *App) loop(session *Session) error {
 			continue
 		case "/clear":
 			session.Messages = []Message{}
+			session.Memories = []SessionMemory{}
 			session.Turns = []Turn{}
 			if err := a.store.Save(session); err != nil {
 				return err
@@ -440,7 +481,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	defer stopSignal()
 	var stdoutBuf strings.Builder
 	var stderrBuf strings.Builder
-	result, execErr := RunStructuredCommandDecisionWithHistoryEventsAndAsk(
+	result, execErr := runStructuredCommandDecisionWithConfig(
 		signalCtx,
 		input,
 		session.Messages,
@@ -459,6 +500,12 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 				return "", err
 			}
 			return strings.TrimSpace(answer), nil
+		},
+		structuredCommandDecisionRunConfig{
+			SessionMemories:    session.Memories,
+			Evaluator:          a.evaluator,
+			EvaluatorThreshold: a.evaluatorThreshold,
+			ShellSpecialist:    a.shellSpecialist,
 		},
 	)
 	cancel()
@@ -486,6 +533,13 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			"stderr":    truncateOutput(stderrBuf.String()),
 		})
 	}
+	for _, memory := range rememberCapabilityMemoriesFromObservations(session, result.Observations) {
+		emitEvent("capability_memory_stored", "Stored structured self-correction capability memory", map[string]string{
+			"kind":    memory.Kind,
+			"content": truncateOutput(memory.Content),
+		})
+	}
+	assistantResponse = a.reviewFinalResponse(context.Background(), input, assistantResponse, structuredResponseReviewEvidence(result, stdoutBuf.String(), stderrBuf.String(), execErr), emitEvent)
 
 	turn := Turn{
 		ID:                   turnID,
@@ -553,6 +607,13 @@ func (a *App) handleMicroQueueTurn(session *Session, objective string) (Turn, st
 			"completed": fmt.Sprintf("%d", len(result.Results)),
 		}))
 	}
+	response = a.reviewFinalResponse(context.Background(), "/micro "+objective, response, []string{
+		result.Summary,
+		stdoutBuf.String(),
+		stderrBuf.String(),
+	}, func(eventType, summary string, details map[string]string) {
+		events = append(events, a.newEvent(eventType, summary, details))
+	})
 
 	turn := Turn{
 		ID:                   turnID,
@@ -591,6 +652,101 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (a *App) reviewFinalResponse(ctx context.Context, userInput, response string, evidence []string, emitEvent func(string, string, map[string]string)) string {
+	review := ReviewFinalAssistantResponse(FinalAssistantResponseReviewInput{
+		UserInput: userInput,
+		Response:  response,
+		Evidence:  evidence,
+	})
+	finalResponse := review.Response
+	details := map[string]string{
+		"passed":     fmt.Sprintf("%t", review.Passed),
+		"confidence": fmt.Sprintf("%d", review.Confidence),
+		"feedback":   truncateOutput(review.Feedback),
+	}
+
+	if a.evaluator != nil {
+		evaluation, err := a.evaluator.EvaluateStructuredLLMResponse(ctx, StructuredLLMEvaluationInput{
+			Step:        0,
+			UserPrompt:  userInput,
+			PlannerJob:  finalResponseReviewerJobSummary(),
+			LLMResponse: finalResponse,
+			Observations: []StructuredCommandObservation{{
+				Step:     0,
+				Command:  "FINAL_RESPONSE_EVIDENCE",
+				ExitCode: 0,
+				Stdout:   truncateStructuredObservation(strings.Join(evidence, "\n")),
+			}},
+		})
+		if err != nil {
+			details["evaluator_error"] = truncateOutput(err.Error())
+		} else if consistencyErr := validateStructuredEvaluationConsistency(evaluation); consistencyErr != nil {
+			details["evaluator_error"] = truncateOutput(consistencyErr.Error())
+			details["evaluator_confidence"] = fmt.Sprintf("%d", evaluation.Confidence)
+			details["evaluator_feedback"] = truncateOutput(evaluation.Feedback)
+		} else {
+			details["evaluator_confidence"] = fmt.Sprintf("%d", evaluation.Confidence)
+			details["evaluator_feedback"] = truncateOutput(evaluation.Feedback)
+			if evaluation.Confidence < normalizeStructuredEvaluatorThreshold(a.evaluatorThreshold) {
+				review.Passed = false
+				review.Confidence = evaluation.Confidence
+				review.Feedback = strings.TrimSpace(evaluation.Feedback)
+				finalResponse = buildFinalReviewCorrection(userInput, finalResponse, strings.Join(evidence, "\n"))
+				details["passed"] = "false"
+				details["confidence"] = fmt.Sprintf("%d", evaluation.Confidence)
+				details["feedback"] = truncateOutput(review.Feedback)
+			}
+		}
+	}
+
+	if emitEvent != nil {
+		eventType := "final_response_review_passed"
+		summary := "Final response self-review passed"
+		if !review.Passed {
+			eventType = "final_response_review_revised"
+			summary = "Final response self-review revised response"
+		}
+		emitEvent(eventType, summary, details)
+	}
+	if a.runLogger != nil {
+		_ = a.runLogger.Log("final_response_review", "completed", map[string]interface{}{
+			"user_input": userInput,
+			"response":   finalResponse,
+			"details":    details,
+		})
+	}
+	return finalResponse
+}
+
+func finalResponseReviewerJobSummary() string {
+	return strings.Join([]string{
+		"Review the final user-facing assistant response before it is shown.",
+		"Score whether it directly answers the current user prompt, stays grounded in provided evidence, and does not drift to prior tasks.",
+		"High confidence means it is on task and safe to send.",
+		"Low confidence means it is empty, off-task, overclaims, ignores evidence, or falsely refuses available tool capability.",
+	}, " ")
+}
+
+func structuredResponseReviewEvidence(result CommandDecisionResult, stdout, stderr string, execErr error) []string {
+	evidence := []string{
+		"command=" + result.Command,
+		fmt.Sprintf("exit_code=%d", result.ExitCode),
+	}
+	if strings.TrimSpace(stdout) != "" {
+		evidence = append(evidence, "stdout="+stdout)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		evidence = append(evidence, "stderr="+stderr)
+	}
+	if strings.TrimSpace(result.Answer) != "" {
+		evidence = append(evidence, "answer="+result.Answer)
+	}
+	if execErr != nil {
+		evidence = append(evidence, "error="+execErr.Error())
+	}
+	return evidence
 }
 
 func (a *App) startTurnActivity(session *Session) *activityIndicator {
@@ -743,6 +899,9 @@ func (a *App) handleManagerTurn(session *Session, objective string) (Turn, strin
 			"failed":   fmt.Sprintf("%d", result.Failed),
 		}))
 	}
+	assistantResponse = a.reviewFinalResponse(context.Background(), "/manage "+objective, assistantResponse, []string{result.Summary}, func(eventType, summary string, details map[string]string) {
+		events = append(events, a.newEvent(eventType, summary, details))
+	})
 
 	turn := Turn{
 		ID:                   turnID,
@@ -774,10 +933,14 @@ func (a *App) handleResearchTurn(session *Session, query string) (Turn, string, 
 			IntentClassification: IntentExecution,
 			Confidence:           1.0,
 			ReasonCodes:          []string{"web_research_memory"},
-			Response:             "Research blocked: Postgres memory is not configured. Set --memory-database-url or ODN_MEMORY_DATABASE_URL.",
 			Events:               events,
 			CreatedAt:            nowUTC(),
 		}
+		response := "Research blocked: Postgres memory is not configured. Set --memory-database-url or ODN_MEMORY_DATABASE_URL."
+		response = a.reviewFinalResponse(context.Background(), turn.UserInput, response, []string{"Postgres memory is not configured"}, func(eventType, summary string, details map[string]string) {
+			turn.Events = append(turn.Events, a.newEvent(eventType, summary, details))
+		})
+		turn.Response = response
 		return turn, turn.Response, nil
 	}
 
@@ -798,6 +961,11 @@ func (a *App) handleResearchTurn(session *Session, query string) (Turn, string, 
 		"stored_agent": "odn_research_manager",
 	}))
 	response := fmt.Sprintf("Stored %d web research memory chunk(s) from %d search result(s) for: %s", result.StoredCount, len(result.Results), query)
+	response = a.reviewFinalResponse(context.Background(), "/research "+query, response, []string{
+		fmt.Sprintf("stored=%d results=%d", result.StoredCount, len(result.Results)),
+	}, func(eventType, summary string, details map[string]string) {
+		events = append(events, a.newEvent(eventType, summary, details))
+	})
 	turn := Turn{
 		ID:                   turnID,
 		UserInput:            "/research " + query,
@@ -883,7 +1051,8 @@ func formatMicroQueueResponse(result MicroJobQueueResult, stdout, stderr, errTex
 
 func (a *App) conversationReply(session *Session, input string) (string, string) {
 	if a.ollama == nil {
-		return "Conversation mode: understood. Share what you want to explore, and I’ll keep it in planning/discussion mode.", "local_fallback"
+		response := "Conversation mode: understood. Share what you want to explore, and I’ll keep it in planning/discussion mode."
+		return a.reviewFinalResponse(context.Background(), input, response, nil, nil), "local_fallback"
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
@@ -913,7 +1082,8 @@ func (a *App) conversationReply(session *Session, input string) (string, string)
 	})
 	if err != nil {
 		_ = a.runLogger.Log("conversation", "llm_error", map[string]interface{}{"error": err.Error()})
-		return "Conversation mode: understood. (Ollama unavailable right now, continuing with local fallback.)", "local_fallback"
+		response := "Conversation mode: understood. (Ollama unavailable right now, continuing with local fallback.)"
+		return a.reviewFinalResponse(context.Background(), input, response, nil, nil), "local_fallback"
 	}
 
 	_ = a.runLogger.Log("conversation", "llm_call", map[string]interface{}{
@@ -924,7 +1094,7 @@ func (a *App) conversationReply(session *Session, input string) (string, string)
 		"eval_count":        resp.EvalCount,
 	})
 
-	return resp.Content, "ollama"
+	return a.reviewFinalResponse(context.Background(), input, resp.Content, []string{"conversation history response"}, nil), "ollama"
 }
 
 func (a *App) printBanner(session *Session, loaded bool, noOllama bool) {
@@ -938,6 +1108,16 @@ func (a *App) printBanner(session *Session, loaded bool, noOllama bool) {
 		fmt.Fprintln(a.out, "Conversation model: disabled")
 	} else if a.ollama != nil {
 		fmt.Fprintf(a.out, "Conversation model: %s\n", a.ollama.Model)
+		if evaluator, ok := a.evaluator.(OllamaStructuredResponseEvaluator); ok && evaluator.Client != nil {
+			if client, ok := evaluator.Client.(*OllamaClient); ok {
+				fmt.Fprintf(a.out, "Evaluator model: %s (threshold %d)\n", client.Model, normalizeStructuredEvaluatorThreshold(a.evaluatorThreshold))
+			}
+		}
+		if shellSpecialist, ok := a.shellSpecialist.(OllamaShellCommandSpecialist); ok && shellSpecialist.Client != nil {
+			if client, ok := shellSpecialist.Client.(*OllamaClient); ok {
+				fmt.Fprintf(a.out, "Shell specialist model: %s\n", client.Model)
+			}
+		}
 	}
 	if a.runLogger != nil {
 		fmt.Fprintf(a.out, "Run ID: %s\n", a.runLogger.RunID())
@@ -981,6 +1161,20 @@ func (a *App) printStatus(session *Session) {
 			keepAlive = "ollama-default"
 		}
 		fmt.Fprintf(a.out, "Ollama request defaults: keep_alive=%s num_ctx=%d\n", keepAlive, a.ollama.DefaultNumCtx)
+		if evaluator, ok := a.evaluator.(OllamaStructuredResponseEvaluator); ok && evaluator.Client != nil {
+			if client, ok := evaluator.Client.(*OllamaClient); ok {
+				fmt.Fprintf(a.out, "Evaluator model: %s threshold=%d num_ctx=%d\n", client.Model, normalizeStructuredEvaluatorThreshold(a.evaluatorThreshold), client.DefaultNumCtx)
+			}
+		} else {
+			fmt.Fprintln(a.out, "Evaluator model: disabled")
+		}
+		if shellSpecialist, ok := a.shellSpecialist.(OllamaShellCommandSpecialist); ok && shellSpecialist.Client != nil {
+			if client, ok := shellSpecialist.Client.(*OllamaClient); ok {
+				fmt.Fprintf(a.out, "Shell specialist model: %s num_ctx=%d\n", client.Model, client.DefaultNumCtx)
+			}
+		} else {
+			fmt.Fprintln(a.out, "Shell specialist model: disabled")
+		}
 	} else {
 		fmt.Fprintln(a.out, "Ollama model: disabled")
 	}
@@ -993,6 +1187,7 @@ func (a *App) printStatus(session *Session) {
 	} else {
 		fmt.Fprintln(a.out, "Memory DB: not configured")
 	}
+	fmt.Fprintf(a.out, "Session memories: %d\n", len(session.Memories))
 
 	fmt.Fprintln(a.out, "")
 	fmt.Fprintln(a.out, "Execution stack:")
@@ -1171,6 +1366,18 @@ func envIntOrDefault(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envBoolOrDefault(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return fallback
 	}

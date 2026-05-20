@@ -28,6 +28,14 @@ const (
 	RoleShellExecutionSpecialist     = "shell_execution_specialist"
 	RoleAudioNotesSpecialist         = "audio_notes_specialist"
 	RoleOrchestrationSpecialist      = "orchestration_specialist"
+	RoleMemorySpecialist             = "memory_specialist"
+	RoleCorrectionSpecialist         = "correction_specialist"
+	RoleManagerSpecialist            = "manager_specialist"
+	RoleExpectationSpecialist        = "expectation_specialist"
+	RoleResearchSpecialist           = "research_specialist"
+	RoleCodeSpecialist               = "code_specialist"
+	RoleWorkerSpecialist             = "worker_specialist"
+	RoleSummarySpecialist            = "summary_specialist"
 )
 
 func ForPipelineAction(action string) Role {
@@ -296,6 +304,22 @@ func EnvVarForRoleID(roleID string) string {
 		return "OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION"
 	case RoleAudioNotesSpecialist:
 		return "OLLAMA_MODEL_SPECIALIST_AUDIO_NOTES"
+	case RoleMemorySpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_MEMORY"
+	case RoleCorrectionSpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_CORRECTION"
+	case RoleManagerSpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_MANAGER"
+	case RoleExpectationSpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_EXPECTATION"
+	case RoleResearchSpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_RESEARCH"
+	case RoleCodeSpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_CODE"
+	case RoleWorkerSpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_WORKER"
+	case RoleSummarySpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_SUMMARY"
 	default:
 		return ""
 	}

@@ -120,6 +120,7 @@ func TestLiveOllamaBuildsAndServesStimulusTailwindSmokeApp(t *testing.T) {
 	}
 	assertStimulusTailwindSmokePage(t, string(indexBytes))
 
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	body := fetchSmokeApp(t, fmt.Sprintf("http://127.0.0.1:%d/", port))
 	assertStimulusTailwindSmokePage(t, body)
 }

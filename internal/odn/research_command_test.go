@@ -160,6 +160,71 @@ func TestHandleTurnUsesStructuredLLMCommandPath(t *testing.T) {
 	if countEventsOfType(turn.Events, "structured_command_completed") != 1 {
 		t.Fatalf("missing structured command event: %#v", turn.Events)
 	}
+	if countEventsOfType(turn.Events, "final_response_review_passed") != 1 {
+		t.Fatalf("missing final response review event: %#v", turn.Events)
+	}
+}
+
+func TestHandleTurnStoresCapabilityMemoryFromEvaluatorRejection(t *testing.T) {
+	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	client, closeServer := fakeOllamaClient(t, []string{
+		`{"command":"printf 'I cannot access real-time information. Check the current time using a time zone app.\n'","done":false,"answer":""}`,
+		`{"command":"TZ=America/New_York date '+%Z'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Virginia time checked."}`,
+	})
+	defer closeServer()
+	app.ollama = client
+	app.evaluator = &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Confidence: 10, Feedback: "False limitation; use command evidence."},
+		{Confidence: 95, Feedback: ""},
+		{Confidence: 95, Feedback: ""},
+	}}
+	app.evaluatorThreshold = 70
+	app.runLogger, _ = NewRunLogger(t.TempDir(), "structured-memory-test")
+	defer app.runLogger.Close()
+
+	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "structured-memory-test", Permission: PermissionFull}
+	turn, response, err := app.handleTurn(session, "what time is it in Virginia right now?", &activityIndicator{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Memories) != 1 {
+		t.Fatalf("session memories = %#v, want one capability memory", session.Memories)
+	}
+	if !strings.Contains(session.Memories[0].Content, "do not claim no real-time access") {
+		t.Fatalf("unexpected memory: %#v", session.Memories[0])
+	}
+	if countEventsOfType(turn.Events, "capability_memory_stored") != 1 {
+		t.Fatalf("missing capability memory event: %#v", turn.Events)
+	}
+	if strings.Contains(response, "I cannot access real-time") {
+		t.Fatalf("rejected response leaked into final response: %q", response)
+	}
+}
+
+func TestHandleTurnStoresCapabilityMemoryFromDeterministicRejection(t *testing.T) {
+	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	client, closeServer := fakeOllamaClient(t, []string{
+		`{"command":"echo 'I do not have access to real-time information. Check the current time using a time zone app.'","done":false,"answer":""}`,
+		`{"command":"TZ=America/New_York date '+%Z'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Virginia time checked."}`,
+	})
+	defer closeServer()
+	app.ollama = client
+	app.runLogger, _ = NewRunLogger(t.TempDir(), "structured-validator-memory-test")
+	defer app.runLogger.Close()
+
+	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "structured-validator-memory-test", Permission: PermissionFull}
+	turn, _, err := app.handleTurn(session, "what time is it in Virginia right now?", &activityIndicator{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Memories) != 1 {
+		t.Fatalf("session memories = %#v, want deterministic validator capability memory", session.Memories)
+	}
+	if countEventsOfType(turn.Events, "capability_memory_stored") != 1 {
+		t.Fatalf("missing capability memory event: %#v", turn.Events)
+	}
 }
 
 func TestHandleTurnPassesSessionHistoryToStructuredCommandPath(t *testing.T) {
@@ -245,6 +310,37 @@ func TestStructuredCommandChatResponseIncludesAPIErrorOutput(t *testing.T) {
 
 	if !strings.Contains(response, `Stdout: {"cod":401,"message":"Invalid API key"}`) {
 		t.Fatalf("response = %q", response)
+	}
+}
+
+func TestHandleTurnFinalResponseReviewerCanReviseResponse(t *testing.T) {
+	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	client, closeServer := fakeOllamaClient(t, []string{
+		`{"command":"printf 'structured-chat-result\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"structured chat complete"}`,
+	})
+	defer closeServer()
+	app.ollama = client
+	app.evaluator = &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Confidence: 95, Feedback: ""},
+		{Confidence: 95, Feedback: ""},
+		{Confidence: 20, Feedback: "The final response is off task."},
+	}}
+	app.evaluatorThreshold = 70
+	app.runLogger, _ = NewRunLogger(t.TempDir(), "final-review-revision-test")
+	defer app.runLogger.Close()
+
+	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "final-review-revision-test", Permission: PermissionFull}
+	turn, response, err := app.handleTurn(session, "summarize the structured result", &activityIndicator{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(response, "Self-review flagged") {
+		t.Fatalf("response was not revised: %q", response)
+	}
+	if countEventsOfType(turn.Events, "final_response_review_revised") != 1 {
+		t.Fatalf("missing final response review revision event: %#v", turn.Events)
 	}
 }
 

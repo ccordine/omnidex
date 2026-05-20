@@ -133,6 +133,7 @@ Environment variables:
 - `OLLAMA_MODEL_RESPONDER`
 - `OLLAMA_MODEL_SEARCH`
 - `OLLAMA_MODEL_MEMORY`
+- `OLLAMA_MODEL_EVALUATOR` (tiny structured response self-evaluator; CLI default `qwen2.5:0.5b`)
 - `OLLAMA_MODEL_SPECIALIST_PLANNER`
 - `OLLAMA_MODEL_SPECIALIST_TOOLING`
 - `OLLAMA_MODEL_SPECIALIST_FILESYSTEM_RESEARCH`
@@ -148,6 +149,9 @@ Environment variables:
 - `OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION`
 - `OLLAMA_MODEL_SPECIALIST_AUDIO_NOTES`
 - `OLLAMA_MODEL_VISION` (used by `screen-read --vision`; default `llava:latest`)
+- `ODN_EVALUATOR_THRESHOLD` (integer 0..100; default `70`)
+- `ODN_EVALUATOR_NUM_CTX` (default `1024`)
+- `ODN_DISABLE_EVALUATOR=true` disables the self-evaluator.
 - `STOP_ON_SUFFICIENT_CONTEXT=true|false` (skip web search in auto mode when memory context is already sufficient)
 - `SUFFICIENT_CONTEXT_CHARS=1400`
 - `MEMORY_INFERENCE_ENABLED=true|false`

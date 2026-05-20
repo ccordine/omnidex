@@ -8,6 +8,8 @@ const (
 	defaultProjectFolderName       = "test-go-html"
 	defaultOllamaEndpoint          = "http://localhost:11434/api/chat"
 	defaultOllamaModel             = "qwen2.5-coder:7b"
+	defaultOllamaEvaluatorModel    = "qwen2.5:0.5b"
+	defaultEvaluatorThreshold      = 70
 	maxConversationHistoryMessages = 16
 )
 
@@ -41,6 +43,13 @@ type Message struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type SessionMemory struct {
+	Kind      string   `json:"kind"`
+	Content   string   `json:"content"`
+	Tags      []string `json:"tags,omitempty"`
+	CreatedAt string   `json:"created_at"`
+}
+
 type Event struct {
 	ID        string            `json:"id"`
 	Type      string            `json:"type"`
@@ -61,14 +70,15 @@ type Turn struct {
 }
 
 type Session struct {
-	Version       string         `json:"version"`
-	WorkspacePath string         `json:"workspace_path"`
-	WorkspaceHash string         `json:"workspace_hash"`
-	Permission    PermissionMode `json:"permission_mode"`
-	CreatedAt     string         `json:"created_at"`
-	UpdatedAt     string         `json:"updated_at"`
-	Messages      []Message      `json:"messages"`
-	Turns         []Turn         `json:"turns"`
+	Version       string          `json:"version"`
+	WorkspacePath string          `json:"workspace_path"`
+	WorkspaceHash string          `json:"workspace_hash"`
+	Permission    PermissionMode  `json:"permission_mode"`
+	CreatedAt     string          `json:"created_at"`
+	UpdatedAt     string          `json:"updated_at"`
+	Messages      []Message       `json:"messages"`
+	Memories      []SessionMemory `json:"memories,omitempty"`
+	Turns         []Turn          `json:"turns"`
 }
 
 type IntentResult struct {

@@ -110,6 +110,7 @@ func TestLiveOllamaOpensFirefoxTabByPID(t *testing.T) {
 		t.Fatalf("live Firefox desktop command failed: %v\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s\nobservations=%#v",
 			err, result.Command, result.Answer, stdout.String(), stderr.String(), result.Observations)
 	}
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	combined := strings.ToLower(stdout.String() + "\n" + stderr.String() + "\n" + result.Answer)
 	if !strings.Contains(combined, "firefox") || !strings.Contains(combined, strings.ToLower(url)) {
 		t.Fatalf("live Firefox result missing browser/url evidence\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s\nobservations=%#v",

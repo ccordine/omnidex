@@ -27,14 +27,40 @@ func TestStructuredCommandDecisionBuildsGoCLIDemoWithDownloadedLatestGo(t *testi
 		`{"command":` + quoteJSONForGoCLITest(command) + `,"done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"Built demo-go-cli. Run it with ./demo-go-cli from the project directory."}`,
 	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Confidence: 99, Feedback: "command builds and verifies the requested Go CLI project"},
+		{Confidence: 95, Feedback: "final answer follows successful evidence"},
+	}}
+	events := []StructuredCommandEvent{}
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 
-	result, err := RunStructuredCommandDecision(ctx, "build me a demo go application", client, stdout, stderr)
+	result, err := runStructuredCommandDecisionWithConfig(
+		ctx,
+		"build me a demo go application",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{
+			Evaluator:          evaluator,
+			EvaluatorThreshold: 70,
+		},
+	)
 	if err != nil {
 		t.Fatalf("Go CLI deterministic chain failed: %v\ncommand=%q\nstdout=%s\nstderr=%s", err, result.Command, stdout.String(), stderr.String())
+	}
+	if len(evaluator.inputs) != 2 {
+		t.Fatalf("evaluator calls = %d, want command and done responses evaluated", len(evaluator.inputs))
+	}
+	if !structuredEventsContain(events, "structured_response_evaluated") {
+		t.Fatalf("missing evaluator event: %#v", events)
 	}
 	validateGoCLIDemo(t, workspace, latest, stdout.String(), result.Answer)
 }
@@ -66,9 +92,21 @@ func TestLiveOllamaBuildsGoCLIDemoFromSimplePrompt(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	result, err := RunStructuredCommandDecisionWithEventsAndAsk(ctx, "build me a demo go application", client, stdout, stderr, nil, func(ctx context.Context, question string) (string, error) {
-		return "Proceed. Install Go only inside this temporary workspace, then build, test, and run the demo CLI.", nil
-	})
+	result, err := runStructuredCommandDecisionWithConfig(
+		ctx,
+		"build me a demo go application",
+		nil,
+		client,
+		stdout,
+		stderr,
+		nil,
+		func(ctx context.Context, question string) (string, error) {
+			return "Proceed. Install Go only inside this temporary workspace, then build, test, and run the demo CLI.", nil
+		},
+		structuredCommandDecisionRunConfig{
+			ShellSpecialist: NewOllamaShellCommandSpecialist(client),
+		},
+	)
 	if err != nil {
 		if isOllamaRunnerStoppedError(err) {
 			t.Skipf("Ollama runner stopped during live Go CLI demo test: %v", err)
@@ -77,7 +115,8 @@ func TestLiveOllamaBuildsGoCLIDemoFromSimplePrompt(t *testing.T) {
 			if validateGoCLIDemoArtifacts(workspace, latest) == nil {
 				return
 			}
-			t.Skipf("Live model timed out before completing Go CLI chain: %v", err)
+			t.Fatalf("Live model timed out before completing Go CLI chain and artifacts were invalid: %v\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s\nobservations=%#v",
+				err, result.Command, result.Answer, stdout.String(), stderr.String(), result.Observations)
 		}
 		t.Fatalf("Go CLI live build failed: %v\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s\nobservations=%#v",
 			err, result.Command, result.Answer, stdout.String(), stderr.String(), result.Observations)
@@ -86,6 +125,7 @@ func TestLiveOllamaBuildsGoCLIDemoFromSimplePrompt(t *testing.T) {
 		t.Fatalf("Go CLI live artifacts invalid: %v\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s\nobservations=%#v",
 			err, result.Command, result.Answer, stdout.String(), stderr.String(), result.Observations)
 	}
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	validateGoCLIDemo(t, workspace, latest, stdout.String(), result.Answer)
 }
 

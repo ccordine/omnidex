@@ -33,6 +33,7 @@ func TestLiveOllamaFindsCurrentEventsFromWebEvidence(t *testing.T) {
 		t.Fatalf("expected successful command observation: %#v", result.Observations)
 	}
 
+	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	evidence := strings.ToLower(strings.Join([]string{stdout.String(), stderr.String(), result.Answer}, "\n"))
 	if !strings.Contains(evidence, "saipan") {
 		t.Fatalf("current-events evidence missing location\ncommand=%q\nanswer=%q\nstdout=%s\nstderr=%s",

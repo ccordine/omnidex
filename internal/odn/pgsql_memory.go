@@ -22,13 +22,17 @@ type PGMemoryStore struct {
 }
 
 type MemoryRecord struct {
-	ID        int64
-	AgentID   string
-	Source    string
-	Kind      string
-	Content   string
-	Tags      []string
-	CreatedAt time.Time
+	ID            int64
+	AgentID       string
+	Source        string
+	Kind          string
+	Content       string
+	Tags          []string
+	Priority      int
+	SupersededAt  time.Time
+	SupersededBy  int64
+	StalenessNote string
+	CreatedAt     time.Time
 }
 
 func NewPGMemoryStore(runner MemorySQLRunner) *PGMemoryStore {
@@ -53,6 +57,10 @@ func (s *PGMemoryStore) EnsureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`ALTER TABLE memory_chunks ADD COLUMN IF NOT EXISTS agent_id TEXT NOT NULL DEFAULT 'unknown'`,
+		`ALTER TABLE memory_chunks ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 100`,
+		`ALTER TABLE memory_chunks ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ`,
+		`ALTER TABLE memory_chunks ADD COLUMN IF NOT EXISTS superseded_by BIGINT REFERENCES memory_chunks(id) ON DELETE SET NULL`,
+		`ALTER TABLE memory_chunks ADD COLUMN IF NOT EXISTS staleness_note TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS memory_chunk_tags (
 			id BIGSERIAL PRIMARY KEY,
 			memory_chunk_id BIGINT NOT NULL REFERENCES memory_chunks(id) ON DELETE CASCADE,
@@ -128,6 +136,96 @@ func (s *PGMemoryStore) AddMemory(ctx context.Context, agentID, kind, content st
 	return record, nil
 }
 
+func (s *PGMemoryStore) UpdateMemoryContent(ctx context.Context, id int64, agentID, content string, tags []string) (MemoryRecord, error) {
+	if s == nil || s.runner == nil {
+		return MemoryRecord{}, fmt.Errorf("memory store requires SQL runner")
+	}
+	agentID = strings.TrimSpace(agentID)
+	content = strings.TrimSpace(content)
+	tags = cleanMemoryTags(tags)
+	if id <= 0 {
+		return MemoryRecord{}, fmt.Errorf("memory id is required")
+	}
+	if agentID == "" {
+		return MemoryRecord{}, fmt.Errorf("agent id is required")
+	}
+	if content == "" {
+		return MemoryRecord{}, fmt.Errorf("memory content is required")
+	}
+	rows, err := s.runner.Query(ctx, `
+		UPDATE memory_chunks
+		SET content = $2,
+		    agent_id = $3,
+		    priority = GREATEST(priority, 100),
+		    superseded_at = NULL,
+		    superseded_by = NULL,
+		    staleness_note = ''
+		WHERE id = $1
+		RETURNING id, agent_id, source, kind, content, priority, superseded_at, superseded_by, staleness_note, created_at
+	`, id, content, agentID)
+	if err != nil {
+		return MemoryRecord{}, err
+	}
+	if len(rows) != 1 {
+		return MemoryRecord{}, fmt.Errorf("memory update returned %d rows", len(rows))
+	}
+	record := memoryRecordFromRow(rows[0])
+	for _, tag := range tags {
+		tagRows, err := s.runner.Query(ctx, `
+			INSERT INTO tags (name)
+			VALUES ($1)
+			ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+			RETURNING id
+		`, tag)
+		if err != nil {
+			return MemoryRecord{}, err
+		}
+		if len(tagRows) != 1 {
+			return MemoryRecord{}, fmt.Errorf("tag upsert returned %d rows", len(tagRows))
+		}
+		tagID := int64FromAny(tagRows[0]["id"])
+		if err := s.runner.Exec(ctx, `
+			INSERT INTO memory_chunk_tags (memory_chunk_id, tag_id)
+			VALUES ($1, $2)
+			ON CONFLICT (memory_chunk_id, tag_id) DO NOTHING
+		`, record.ID, tagID); err != nil {
+			return MemoryRecord{}, err
+		}
+	}
+	record.Tags = append(record.Tags, tags...)
+	record.Tags = cleanMemoryTags(record.Tags)
+	return record, nil
+}
+
+func (s *PGMemoryStore) DeprioritizeMemory(ctx context.Context, id int64, supersededBy int64, note string) (MemoryRecord, error) {
+	if s == nil || s.runner == nil {
+		return MemoryRecord{}, fmt.Errorf("memory store requires SQL runner")
+	}
+	note = strings.TrimSpace(note)
+	if id <= 0 {
+		return MemoryRecord{}, fmt.Errorf("memory id is required")
+	}
+	if note == "" {
+		return MemoryRecord{}, fmt.Errorf("staleness note is required")
+	}
+	rows, err := s.runner.Query(ctx, `
+		UPDATE memory_chunks
+		SET priority = LEAST(priority, 10),
+		    superseded_at = NOW(),
+		    superseded_by = NULLIF($2, 0),
+		    staleness_note = $3
+		WHERE id = $1
+		RETURNING id, agent_id, source, kind, content, priority, superseded_at, superseded_by, staleness_note, created_at
+	`, id, supersededBy, note)
+	if err != nil {
+		return MemoryRecord{}, err
+	}
+	if len(rows) != 1 {
+		return MemoryRecord{}, fmt.Errorf("memory deprioritize returned %d rows", len(rows))
+	}
+	return memoryRecordFromRow(rows[0]), nil
+}
+
 func (s *PGMemoryStore) ListTags(ctx context.Context, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 50
@@ -159,7 +257,8 @@ func (s *PGMemoryStore) SearchMemory(ctx context.Context, query string, tags []s
 	}
 
 	rows, err := s.runner.Query(ctx, `
-		SELECT mc.id, mc.agent_id, mc.source, mc.kind, mc.content, mc.created_at,
+		SELECT mc.id, mc.agent_id, mc.source, mc.kind, mc.content, mc.priority,
+		       mc.superseded_at, mc.superseded_by, mc.staleness_note, mc.created_at,
 		       COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), ARRAY[]::text[]) AS tags
 		FROM memory_chunks mc
 		LEFT JOIN memory_chunk_tags mct ON mct.memory_chunk_id = mc.id
@@ -175,7 +274,7 @@ func (s *PGMemoryStore) SearchMemory(ctx context.Context, query string, tags []s
 			)
 		  )
 		GROUP BY mc.id, mc.agent_id, mc.source, mc.kind, mc.content, mc.created_at
-		ORDER BY mc.created_at DESC, mc.id DESC
+		ORDER BY mc.priority DESC, mc.created_at DESC, mc.id DESC
 		LIMIT $3
 	`, query, tags, limit)
 	if err != nil {
@@ -245,14 +344,22 @@ func cleanMemoryTags(tags []string) []string {
 }
 
 func memoryRecordFromRow(row MemorySQLRow) MemoryRecord {
+	priority := int(int64FromAny(row["priority"]))
+	if priority == 0 {
+		priority = 100
+	}
 	return MemoryRecord{
-		ID:        int64FromAny(row["id"]),
-		AgentID:   stringFromAny(row["agent_id"]),
-		Source:    stringFromAny(row["source"]),
-		Kind:      stringFromAny(row["kind"]),
-		Content:   stringFromAny(row["content"]),
-		Tags:      stringSliceFromAny(row["tags"]),
-		CreatedAt: timeFromAny(row["created_at"]),
+		ID:            int64FromAny(row["id"]),
+		AgentID:       stringFromAny(row["agent_id"]),
+		Source:        stringFromAny(row["source"]),
+		Kind:          stringFromAny(row["kind"]),
+		Content:       stringFromAny(row["content"]),
+		Tags:          stringSliceFromAny(row["tags"]),
+		Priority:      priority,
+		SupersededAt:  timeFromAny(row["superseded_at"]),
+		SupersededBy:  int64FromAny(row["superseded_by"]),
+		StalenessNote: stringFromAny(row["staleness_note"]),
+		CreatedAt:     timeFromAny(row["created_at"]),
 	}
 }
 
