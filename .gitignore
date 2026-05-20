@@ -7,7 +7,8 @@
 
 # Build outputs
 /bin/
-/odn
+/omni
+/cli
 /*.test
 
 # Go test and coverage artifacts
@@ -16,7 +17,7 @@ coverage.out
 *.prof
 
 # Runtime state and logs
-.odn/
+.omni/
 runs/
 logs/
 *.log
