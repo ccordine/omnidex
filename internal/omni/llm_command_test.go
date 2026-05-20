@@ -1878,6 +1878,58 @@ func TestValidateStructuredCommandRejectsRepeatedSuccessfulCommand(t *testing.T)
 	}
 }
 
+func TestSuccessfulSetupCommandReconcilesPendingObjectiveBeforeRepeat(t *testing.T) {
+	workspace := t.TempDir()
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"mkdir -p src/components","done":false,"answer":""}`,
+		`{"command":"mkdir -p src/components","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"structure ready"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		UserOperation: userOperationModifyExisting,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "setup_calculator_structure", Description: "Set up calculator component structure", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		},
+	}}}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "set up calculator structure", nil, client, &strings.Builder{}, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		PromptInterpreter:       interpreter,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("pending = %#v", pending)
+	}
+}
+
+func TestRepeatedFailedCommandAddsAntiLoopObservation(t *testing.T) {
+	workspace := t.TempDir()
+	command := "printf 'install failed\\n' >&2; exit 7"
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"printf 'alternate path\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"alternate path"}`,
+	}}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "continue", nil, client, &strings.Builder{}, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, obs := range result.Observations {
+		if strings.Contains(obs.Stderr, "anti_loop") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing anti-loop observation: %#v", result.Observations)
+	}
+}
+
 func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "test_project_20260520115716")
@@ -1956,14 +2008,14 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsR
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Command != "printf 'webpack stimulus tailwind recyclr done' > setup.txt" {
-		t.Fatalf("command = %q, want next non-repeated command", result.Command)
+	if result.Command != "npm init -y" {
+		t.Fatalf("command = %q, want original successful command retained", result.Command)
 	}
-	if len(checker.inputs) != 1 {
-		t.Fatalf("completion checker calls = %d, want post-npm-init ledger check", len(checker.inputs))
+	if len(checker.inputs) != 2 {
+		t.Fatalf("completion checker calls = %d, want post-command and post-repeat ledger checks", len(checker.inputs))
 	}
-	if !structuredEventsContain(events, "structured_command_rejected") {
-		t.Fatalf("expected repeated command rejection; events=%#v", events)
+	if !structuredEventsContain(events, "structured_repeat_success_reconciled") {
+		t.Fatalf("expected repeated command reconciliation; events=%#v", events)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
@@ -2791,7 +2843,7 @@ func TestStructuredCommandDecisionShellSpecialistPivotsFromOpenWeatherMap(t *tes
 	if result.Observations[0].CapabilityMemory != structuredWeatherCapabilityMemory {
 		t.Fatalf("weather memory missing from first rejection: %#v", result.Observations[0])
 	}
-	if !strings.Contains(result.Observations[1].Stderr, "command repeats a previous failed command") {
+	if !strings.Contains(result.Observations[1].Stderr, "anti_loop") {
 		t.Fatalf("second rejection should block repeated delegated command: %#v", result.Observations[1])
 	}
 	if result.Command != "printf 'Pattaya weather evidence\n'" {

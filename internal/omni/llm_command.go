@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -482,6 +483,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		if len(result.Observations) != lastCompletionCheckedObservationCount && latestObservationIsSuccessfulCommand(result.Observations) && len(pendingStructuredObjectives(ledger)) > 0 {
 			latest, _ := latestSuccessfulCommandObservation(result.Observations)
 			result.Answer = finalStructuredAnswer(result.Answer, latest)
+			ledger = reconcileStructuredObjectiveLedgerFromObservation(step-1, ledger, latest, onEvent)
 			if len(selectedRecipes) > 0 {
 				ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
 			}
@@ -666,6 +668,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 			})
 			if err := validateStructuredCommandForRunWithSurvey(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+				if handleStructuredRepeatedCommandValidation(step, proposal.Command, err, &ledger, onEvent, &result) {
+					continue
+				}
 				emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 					"step":    fmt.Sprintf("%d", step),
 					"command": truncateStructuredTimelineValue(proposal.Command),
@@ -949,6 +954,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		}
 		command := payload.Command
 		if err := validateStructuredCommandForRunWithSurvey(command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+			if handleStructuredRepeatedCommandValidation(step, command, err, &ledger, onEvent, &result) {
+				continue
+			}
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
 				"command": truncateStructuredTimelineValue(command),
@@ -2081,16 +2089,19 @@ func structuredLineStartsWithPackageManager(line string) bool {
 
 func validateStructuredCommandForObservations(command string, observations []StructuredCommandObservation) error {
 	if repeatedFailedStructuredCommand(command, observations) {
-		return fmt.Errorf("command repeats a previous failed command; choose a different command, source, or local tool")
+		return errRepeatedFailedStructuredCommand
 	}
 	if repeatedSuccessfulStructuredCommand(command, observations) {
-		return fmt.Errorf("command repeats a previous successful command; inspect the result, update the objective ledger, or choose the next required action")
+		return errRepeatedSuccessfulStructuredCommand
 	}
 	if err := validateStructuredCommandString(command); err != nil {
 		return err
 	}
 	return nil
 }
+
+var errRepeatedFailedStructuredCommand = errors.New("command repeats a previous failed command; choose a different command, source, or local tool")
+var errRepeatedSuccessfulStructuredCommand = errors.New("command repeats a previous successful command; inspect the result, update the objective ledger, or choose the next required action")
 
 func validateStructuredCommandForRun(command string, observations []StructuredCommandObservation, workingDirectory string, objectiveLedger []StructuredObjective) error {
 	return validateStructuredCommandForRunWithSurvey(command, observations, workingDirectory, objectiveLedger, WorksiteSurvey{})
@@ -2517,6 +2528,37 @@ func repeatedSuccessfulStructuredCommand(command string, observations []Structur
 	return false
 }
 
+func previousSuccessfulStructuredCommandObservation(command string, observations []StructuredCommandObservation) (StructuredCommandObservation, bool) {
+	normalized := normalizeStructuredCommandForComparison(command)
+	if normalized == "" {
+		return StructuredCommandObservation{}, false
+	}
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if obs.ExitCode != 0 || strings.TrimSpace(obs.Command) == "" {
+			continue
+		}
+		if normalizeStructuredCommandForComparison(obs.Command) == normalized {
+			return obs, true
+		}
+	}
+	return StructuredCommandObservation{}, false
+}
+
+func repeatedRejectedCommandCount(command string, observations []StructuredCommandObservation) int {
+	normalized := normalizeStructuredCommandForComparison(command)
+	if normalized == "" {
+		return 0
+	}
+	count := 0
+	for _, obs := range observations {
+		if normalizeStructuredCommandForComparison(obs.RejectedCommand) == normalized {
+			count++
+		}
+	}
+	return count
+}
+
 func normalizeStructuredCommandForComparison(command string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(command)), " ")
 }
@@ -2800,6 +2842,105 @@ func rejectDoneForObjectiveLedger(step int, ledger []StructuredObjective, onEven
 	})
 	result.Answer = ""
 	return true
+}
+
+func handleStructuredRepeatedCommandValidation(step int, command string, validationErr error, ledger *[]StructuredObjective, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
+	if validationErr == nil || result == nil || ledger == nil {
+		return false
+	}
+	if errors.Is(validationErr, errRepeatedSuccessfulStructuredCommand) {
+		previous, ok := previousSuccessfulStructuredCommandObservation(command, result.Observations)
+		if !ok {
+			return false
+		}
+		before := pendingStructuredObjectiveIDs(*ledger)
+		*ledger = reconcileStructuredObjectiveLedgerFromObservation(step, *ledger, previous, onEvent)
+		result.ObjectiveLedger = *ledger
+		after := pendingStructuredObjectiveIDs(*ledger)
+		emitStructuredCommandEvent(onEvent, "structured_repeat_success_reconciled", "Repeated successful command skipped and used as completion evidence", map[string]string{
+			"step":               fmt.Sprintf("%d", step),
+			"command":            truncateStructuredTimelineValue(command),
+			"pending_before":     before,
+			"pending_objectives": after,
+		})
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:            step,
+			Command:         "SKIPPED_REPEAT_SUCCESS: " + truncateStructuredObservation(command),
+			ExitCode:        0,
+			Stdout:          "repeat skipped: command already succeeded earlier; objective ledger reconciled from prior command evidence",
+			RejectedCommand: truncateStructuredObservation(command),
+		})
+		return true
+	}
+	if errors.Is(validationErr, errRepeatedFailedStructuredCommand) {
+		count := repeatedRejectedCommandCount(command, result.Observations) + 1
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:            step,
+			RejectedCommand: truncateStructuredObservation(command),
+			ExitCode:        1,
+			Stderr: fmt.Sprintf(
+				"anti_loop: command rejected again after prior failure/rejection count=%d; this exact command is exhausted. Choose a different command, inspect current files, use patch.apply for source edits, or revise the objective ledger from observed evidence.",
+				count,
+			),
+		})
+		emitStructuredCommandEvent(onEvent, "structured_command_loop_blocked", "Repeated failed command blocked by anti-loop guard", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"command": truncateStructuredTimelineValue(command),
+			"count":   fmt.Sprintf("%d", count),
+		})
+		return true
+	}
+	return false
+}
+
+func reconcileStructuredObjectiveLedgerFromObservation(step int, ledger []StructuredObjective, obs StructuredCommandObservation, onEvent func(StructuredCommandEvent)) []StructuredObjective {
+	if strings.TrimSpace(obs.Command) == "" || obs.ExitCode != 0 {
+		return ledger
+	}
+	pending := pendingStructuredObjectives(ledger)
+	if len(pending) == 0 {
+		return ledger
+	}
+	satisfied := []StructuredObjective{}
+	for _, objective := range pending {
+		if structuredObservationSatisfiesObjective(obs, objective) {
+			objective.Status = "satisfied"
+			objective.Evidence = structuredObjectiveEvidenceFromObservation(obs)
+			satisfied = append(satisfied, objective)
+		}
+	}
+	if len(satisfied) == 0 {
+		return ledger
+	}
+	ids := structuredObjectiveIDs(satisfied)
+	emitStructuredCommandEvent(onEvent, "objective_ledger_reconciled", "Pending objective(s) satisfied from prior successful command evidence", map[string]string{
+		"step":       fmt.Sprintf("%d", step),
+		"objectives": strings.Join(ids, ","),
+	})
+	return mergeStructuredObjectiveLedger(ledger, satisfied)
+}
+
+func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, objective StructuredObjective) bool {
+	command := strings.ToLower(strings.TrimSpace(obs.Command))
+	target := normalizedDependencyText(objective.ID + " " + objective.Description)
+	if command == "" || target == "" {
+		return false
+	}
+	if strings.Contains(command, "mkdir") && (strings.Contains(target, " setup ") || strings.Contains(target, " structure ") || strings.Contains(target, " component ")) {
+		return true
+	}
+	if strings.Contains(command, "npm install") || strings.Contains(command, "npm add") || strings.Contains(command, "pnpm add") || strings.Contains(command, "yarn add") {
+		for _, pkg := range objective.Packages {
+			if strings.Contains(command, strings.ToLower(pkg)) {
+				return true
+			}
+		}
+	}
+	if (strings.Contains(command, "npm run build") || strings.Contains(command, "npm test") || strings.Contains(command, "go test")) &&
+		(strings.Contains(target, " verify ") || strings.Contains(target, " test ") || strings.Contains(target, " build ")) {
+		return true
+	}
+	return false
 }
 
 func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDirectory string, ledger []StructuredObjective, minimalContext MinimalContext, observations []StructuredCommandObservation, candidateAnswer string, checker CompletionChecker, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent)) []StructuredObjective {
