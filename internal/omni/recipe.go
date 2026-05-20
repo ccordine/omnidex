@@ -10,12 +10,15 @@ import (
 )
 
 type Recipe struct {
-	ID               string            `json:"id"`
-	Description      string            `json:"description"`
-	Objectives       []RecipeObjective `json:"objectives"`
-	AllowedCommands  []string          `json:"allowed_commands"`
-	EvidenceRequired []string          `json:"evidence_required"`
-	CompletionChecks []string          `json:"completion_checks"`
+	ID                      string            `json:"id"`
+	Description             string            `json:"description"`
+	Operation               string            `json:"operation,omitempty"`
+	RequiredProjectStates   []string          `json:"required_project_states,omitempty"`
+	ForbiddenUserOperations []string          `json:"forbidden_user_operations,omitempty"`
+	Objectives              []RecipeObjective `json:"objectives"`
+	AllowedCommands         []string          `json:"allowed_commands"`
+	EvidenceRequired        []string          `json:"evidence_required"`
+	CompletionChecks        []string          `json:"completion_checks"`
 }
 
 type RecipeObjective struct {
@@ -28,6 +31,7 @@ type RecipeObjective struct {
 type RecipePromptCandidate struct {
 	ID               string   `json:"id"`
 	Description      string   `json:"description"`
+	Operation        string   `json:"operation,omitempty"`
 	ObjectiveIDs     []string `json:"objective_ids"`
 	EvidenceRequired []string `json:"evidence_required,omitempty"`
 }
@@ -35,6 +39,7 @@ type RecipePromptCandidate struct {
 type RecipeRuntimeConstraint struct {
 	ID               string   `json:"id"`
 	Description      string   `json:"description"`
+	Operation        string   `json:"operation,omitempty"`
 	AllowedCommands  []string `json:"allowed_commands,omitempty"`
 	EvidenceRequired []string `json:"evidence_required,omitempty"`
 	CompletionChecks []string `json:"completion_checks,omitempty"`
@@ -114,6 +119,48 @@ func SelectRecipesByID(recipes []Recipe, ids []string) []Recipe {
 	return selected
 }
 
+func FilterRecipesForWorksiteSurvey(recipes []Recipe, survey WorksiteSurvey) []Recipe {
+	if len(recipes) == 0 {
+		return nil
+	}
+	out := []Recipe{}
+	for _, recipe := range recipes {
+		if RecipeAllowedByWorksiteSurvey(recipe, survey) {
+			out = append(out, recipe)
+		}
+	}
+	return out
+}
+
+func RecipeAllowedByWorksiteSurvey(recipe Recipe, survey WorksiteSurvey) bool {
+	if stringListContains(cleanStringList(survey.ForbiddenRecipeIDs), strings.TrimSpace(recipe.ID)) {
+		return false
+	}
+	operation := normalizeUserOperation(recipe.Operation)
+	if survey.UserOperation != "" && survey.UserOperation != userOperationUnknown && operation != userOperationUnknown && operation != survey.UserOperation {
+		return false
+	}
+	forbidden := cleanStringList(recipe.ForbiddenUserOperations)
+	if survey.UserOperation != "" && stringListContains(forbidden, survey.UserOperation) {
+		return false
+	}
+	requiredStates := cleanStringList(recipe.RequiredProjectStates)
+	if len(requiredStates) > 0 && !stringListContains(requiredStates, survey.ProjectState) {
+		return false
+	}
+	return true
+}
+
+func stringListContains(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, value := range values {
+		if strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
+}
+
 func recipeIDs(recipes []Recipe) []string {
 	ids := make([]string, 0, len(recipes))
 	for _, recipe := range recipes {
@@ -134,6 +181,7 @@ func recipePromptCandidates(recipes []Recipe) []RecipePromptCandidate {
 		out = append(out, RecipePromptCandidate{
 			ID:               recipe.ID,
 			Description:      recipe.Description,
+			Operation:        recipe.Operation,
 			ObjectiveIDs:     objectiveIDs,
 			EvidenceRequired: recipe.EvidenceRequired,
 		})
@@ -147,6 +195,7 @@ func recipeRuntimeConstraints(recipes []Recipe) []RecipeRuntimeConstraint {
 		out = append(out, RecipeRuntimeConstraint{
 			ID:               recipe.ID,
 			Description:      recipe.Description,
+			Operation:        recipe.Operation,
 			AllowedCommands:  recipe.AllowedCommands,
 			EvidenceRequired: recipe.EvidenceRequired,
 			CompletionChecks: recipe.CompletionChecks,

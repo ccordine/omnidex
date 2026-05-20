@@ -488,6 +488,104 @@ func TestStructuredCommandDecisionRejectsPlannerScopeDriftDependencyCommand(t *t
 	}
 }
 
+func TestStructuredCommandDecisionEvaluatorScopeDriftBlocksExecutionAtThreshold(t *testing.T) {
+	workspace := createReactFixture(t)
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"cd /home/gryph/Projects/tmp && npx create-react-app calculator-app","done":false,"answer":""}`,
+		`{"command":"printf 'modified existing app\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"modified existing app"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		UserOperation: userOperationModifyExisting,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "create_new_react_project", Description: "Create a new React project", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			{ID: "implement_calculator_logic", Description: "Implement calculator logic", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		},
+	}}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Confidence: 70, Feedback: "The response provides a step and shell command to create a new React project, but it does not align with the user's request for making an existing app into a calculator."},
+		{Verdict: "accept", Confidence: 100, Feedback: "on track"},
+		{Verdict: "accept", Confidence: 100, Feedback: "on track"},
+	}}
+	var stdout strings.Builder
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "make this existing React app into a calculator", nil, client, &stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		PromptInterpreter:       interpreter,
+		Evaluator:               evaluator,
+		EvaluatorThreshold:      70,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout.String(), "create-react-app") {
+		t.Fatalf("scaffold command appears to have executed: %q", stdout.String())
+	}
+	if len(result.Observations) == 0 || !strings.Contains(result.Observations[0].Stderr, "scope_drift") {
+		t.Fatalf("missing hard scope drift observation: %#v", result.Observations)
+	}
+	if containsStructuredObjectiveID(result.ObjectiveLedger, "create_new_react_project") {
+		t.Fatalf("create-new objective should be filtered for modify-existing task: %#v", result.ObjectiveLedger)
+	}
+}
+
+func TestStructuredCommandDecisionEvaluatorRejectConfidenceCannotOverride(t *testing.T) {
+	workspace := createReactFixture(t)
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'bad should not run\n'","done":false,"answer":""}`,
+		`{"command":"printf 'corrected\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"corrected"}`,
+	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Verdict: "reject", Confidence: 100, Feedback: "scope drift"},
+		{Verdict: "accept", Confidence: 100, Feedback: "on track"},
+		{Verdict: "accept", Confidence: 100, Feedback: "on track"},
+	}}
+	var stdout strings.Builder
+	_, err := runStructuredCommandDecisionWithConfig(context.Background(), "modify existing app", nil, client, &stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		Evaluator:               evaluator,
+		EvaluatorThreshold:      70,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout.String(), "bad should not run") {
+		t.Fatalf("reject verdict executed despite confidence 100: %q", stdout.String())
+	}
+}
+
+func TestValidateStructuredScaffoldScopeBlocksCreateReactAppInModifyMode(t *testing.T) {
+	survey := WorksiteSurvey{UserOperation: userOperationModifyExisting, ProjectState: projectStateExistingReactApp}
+	err := validateStructuredCommandForRunWithSurvey("npx create-react-app calculator-app", nil, t.TempDir(), nil, survey)
+	if err == nil || !strings.Contains(err.Error(), "scope_drift") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateStructuredScaffoldScopeBlocksNpmCreateViteInModifyMode(t *testing.T) {
+	survey := WorksiteSurvey{UserOperation: userOperationModifyExisting, ProjectState: projectStateExistingReactApp}
+	err := validateStructuredCommandForRunWithSurvey("npm create vite@latest calculator-app -- --template react", nil, t.TempDir(), nil, survey)
+	if err == nil || !strings.Contains(err.Error(), "scope_drift") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateStructuredScaffoldScopeAllowsCreateMode(t *testing.T) {
+	survey := WorksiteSurvey{UserOperation: userOperationCreateNewProject, ProjectState: projectStateEmptyDirectory}
+	if err := validateStructuredCommandForRunWithSurvey("npm create vite@latest calculator-app -- --template react", nil, t.TempDir(), nil, survey); err != nil {
+		t.Fatalf("create mode scaffold should pass scaffold policy: %v", err)
+	}
+}
+
+func containsStructuredObjectiveID(objectives []StructuredObjective, id string) bool {
+	for _, objective := range objectives {
+		if objective.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func TestStructuredDependencyScopeAllowsExplicitUsualStackPackages(t *testing.T) {
 	workspace := t.TempDir()
 	ledger := []StructuredObjective{
@@ -1221,6 +1319,7 @@ func TestStructuredCommandDecisionEmitsRealtimeEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantOrder := []string{
+		"worksite_survey_completed",
 		"structured_llm_request_started",
 		"structured_llm_payload_received",
 		"structured_command_started",
@@ -3136,11 +3235,24 @@ func TestParseStructuredLLMEvaluationRequiresIntegerConfidence(t *testing.T) {
 	if evaluation.Confidence != 82 || evaluation.Feedback != "on track" {
 		t.Fatalf("evaluation = %#v", evaluation)
 	}
+	if evaluation.Verdict != "accept" {
+		t.Fatalf("verdict = %q", evaluation.Verdict)
+	}
 	if _, err := ParseStructuredLLMEvaluation(`{"feedback":"missing score"}`); err == nil {
 		t.Fatal("expected missing confidence error")
 	}
 	if _, err := ParseStructuredLLMEvaluation(`{"confidence":101,"feedback":"too high"}`); err == nil {
 		t.Fatal("expected out-of-range confidence error")
+	}
+}
+
+func TestParseStructuredLLMEvaluationSupportsHardVerdict(t *testing.T) {
+	evaluation, err := ParseStructuredLLMEvaluation(`{"verdict":"reject","confidence":100,"blocking_reason":"scope drift","feedback":"command creates a new project"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evaluation.Verdict != "reject" || evaluation.Confidence != 100 || evaluation.BlockingReason != "scope drift" {
+		t.Fatalf("evaluation = %#v", evaluation)
 	}
 }
 

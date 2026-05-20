@@ -99,11 +99,14 @@ type StructuredLLMEvaluationInput struct {
 	LLMResponse     string
 	Observations    []StructuredCommandObservation
 	SessionMemories []SessionMemory
+	WorksiteSurvey  WorksiteSurvey
 }
 
 type StructuredLLMEvaluation struct {
-	Confidence int
-	Feedback   string
+	Verdict        string
+	Confidence     int
+	BlockingReason string
+	Feedback       string
 }
 
 type StructuredLLMResponseEvaluator interface {
@@ -116,6 +119,7 @@ type ShellCommandSpecialistInput struct {
 	ToolTask        string
 	Observations    []StructuredCommandObservation
 	SessionMemories []SessionMemory
+	WorksiteSurvey  WorksiteSurvey
 }
 
 type ShellCommandProposal struct {
@@ -132,12 +136,16 @@ type PromptInterpretationInput struct {
 	History                 []Message
 	CurrentWorkingDirectory string
 	Recipes                 []Recipe
+	WorksiteSurvey          WorksiteSurvey
 }
 
 type PromptInterpretation struct {
 	ObjectiveLedger          []StructuredObjective
 	RecipeIDs                []string
 	RequiresReferenceHistory bool
+	UserOperation            string
+	RecommendedRecipeIDs     []string
+	ForbiddenRecipeIDs       []string
 }
 
 type MinimalContext struct {
@@ -154,6 +162,7 @@ type MinimalContextInput struct {
 	History                 []Message
 	SessionMemories         []SessionMemory
 	ExistingContext         MinimalContext
+	WorksiteSurvey          WorksiteSurvey
 }
 
 type CompletionCheckInput struct {
@@ -163,6 +172,7 @@ type CompletionCheckInput struct {
 	MinimalContext          MinimalContext
 	Observations            []StructuredCommandObservation
 	CandidateAnswer         string
+	WorksiteSurvey          WorksiteSurvey
 }
 
 type CompletionCheck struct {
@@ -364,12 +374,21 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	minimalContext := MinimalContext{}
 	selectedRecipes := []Recipe{}
 	referenceHistoryAllowed := false
+	worksiteSurvey := BuildWorksiteSurvey(cfg.CurrentWorkingDirectory)
+	result.MinimalContext = minimalContext
+	emitStructuredCommandEvent(onEvent, "worksite_survey_completed", "Worksite survey grounded the active workspace", map[string]string{
+		"workspace":       worksiteSurvey.WorkspacePath,
+		"project_state":   worksiteSurvey.ProjectState,
+		"package_manager": worksiteSurvey.PackageManager,
+		"frameworks":      strings.Join(worksiteSurvey.Frameworks, ","),
+	})
 	if cfg.PromptInterpreter != nil {
 		interpretation, err := cfg.PromptInterpreter.InterpretPrompt(ctx, PromptInterpretationInput{
 			UserPrompt:              prompt,
 			History:                 history,
 			CurrentWorkingDirectory: structuredPromptWorkingDirectory(cfg.CurrentWorkingDirectory),
 			Recipes:                 cfg.Recipes,
+			WorksiteSurvey:          worksiteSurvey,
 		})
 		if err != nil {
 			emitStructuredCommandEvent(onEvent, "prompt_interpreter_failed", "Prompt interpreter failed; continuing without initial objective ledger", map[string]string{
@@ -377,7 +396,10 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			})
 		} else {
 			referenceHistoryAllowed = interpretation.RequiresReferenceHistory
-			selectedRecipes = SelectRecipesByID(cfg.Recipes, interpretation.RecipeIDs)
+			worksiteSurvey = worksiteSurvey.WithOperation(interpretation.UserOperation)
+			worksiteSurvey.RecommendedRecipeIDs = cleanStringList(append(interpretation.RecommendedRecipeIDs, interpretation.RecipeIDs...))
+			worksiteSurvey.ForbiddenRecipeIDs = cleanStringList(append(worksiteSurvey.ForbiddenRecipeIDs, interpretation.ForbiddenRecipeIDs...))
+			selectedRecipes = FilterRecipesForWorksiteSurvey(SelectRecipesByID(cfg.Recipes, interpretation.RecipeIDs), worksiteSurvey)
 			if len(selectedRecipes) > 0 {
 				for _, recipe := range selectedRecipes {
 					ledger = mergeStructuredObjectiveLedger(ledger, RecipeObjectiveLedger(recipe))
@@ -386,12 +408,14 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
 				})
 			}
-			ledger = mergeStructuredObjectiveLedger(ledger, interpretation.ObjectiveLedger)
+			ledger = mergeStructuredObjectiveLedger(ledger, filterObjectiveLedgerForWorksiteSurvey(interpretation.ObjectiveLedger, worksiteSurvey))
 			result.ObjectiveLedger = ledger
 			emitStructuredCommandEvent(onEvent, "prompt_interpreter_completed", "Prompt interpreter produced objective ledger", map[string]string{
 				"objective_count":    fmt.Sprintf("%d", len(ledger)),
 				"pending_objectives": pendingStructuredObjectiveIDs(ledger),
 				"uses_history":       fmt.Sprintf("%t", referenceHistoryAllowed),
+				"user_operation":     worksiteSurvey.UserOperation,
+				"project_state":      worksiteSurvey.ProjectState,
 			})
 		}
 	}
@@ -424,6 +448,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			History:                 referenceHistory,
 			SessionMemories:         cfg.SessionMemories,
 			ExistingContext:         minimalContext,
+			WorksiteSurvey:          worksiteSurvey,
 		})
 		if err != nil {
 			emitStructuredCommandEvent(onEvent, "minimal_context_failed", "Context summarizer failed; continuing with fallback context", map[string]string{
@@ -440,7 +465,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		}
 	}
 	if cfg.CompletionChecker != nil && minimalContextHasContent(minimalContext) && len(pendingStructuredObjectives(ledger)) > 0 {
-		ledger = runCompletionCheck(ctx, 0, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, nil, minimalContextAnswer(minimalContext), cfg.CompletionChecker, onEvent)
+		ledger = runCompletionCheck(ctx, 0, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, nil, minimalContextAnswer(minimalContext), cfg.CompletionChecker, worksiteSurvey, onEvent)
 		result.ObjectiveLedger = ledger
 		if len(pendingStructuredObjectives(ledger)) == 0 {
 			result.Command = "MEMORY_CONTEXT"
@@ -474,7 +499,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				return result, nil
 			}
 			if cfg.CompletionChecker != nil {
-				ledger = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
+				ledger = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
 				result.ObjectiveLedger = ledger
 			}
 			if len(pendingStructuredObjectives(ledger)) == 0 {
@@ -495,7 +520,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			return result, fmt.Errorf("llm client is required for planner step")
 		}
-		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequestWithContextAndRecipes(prompt, referenceHistory, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext, cfg.Recipes), step, onEvent)
+		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequestWithContextRecipesAndSurvey(prompt, referenceHistory, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext, cfg.Recipes, worksiteSurvey), step, onEvent)
 		if err != nil {
 			if hasSuccessfulCommandObservation(result.Observations) {
 				result.PartialProgress = true
@@ -518,6 +543,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				LLMResponse:     resp.Content,
 				Observations:    result.Observations,
 				SessionMemories: cfg.SessionMemories,
+				WorksiteSurvey:  worksiteSurvey,
 			})
 			if evalErr != nil {
 				emitStructuredCommandEvent(onEvent, "structured_response_evaluator_failed", "Structured response evaluator failed; continuing with deterministic validation", map[string]string{
@@ -534,28 +560,43 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				})
 				evaluator = nil
 			} else {
+				if normalizeStructuredEvaluationVerdict(evaluation.Verdict) == "accept" && structuredEvaluationFeedbackSuggestsHardReject(evaluation.Feedback+" "+evaluation.BlockingReason) {
+					evaluation.Verdict = "reject"
+				}
 				emitStructuredCommandEvent(onEvent, "structured_response_evaluated", "Structured response evaluator scored planner output", map[string]string{
 					"step":       fmt.Sprintf("%d", step),
 					"confidence": fmt.Sprintf("%d", evaluation.Confidence),
 					"threshold":  fmt.Sprintf("%d", evaluatorThreshold),
+					"verdict":    normalizeStructuredEvaluationVerdict(evaluation.Verdict),
 					"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
 				})
-				if evaluation.Confidence < evaluatorThreshold {
+				verdict := normalizeStructuredEvaluationVerdict(evaluation.Verdict)
+				if verdict == "reject" || verdict == "revise" || evaluation.Confidence < evaluatorThreshold {
 					memory := structuredCapabilityMemoryForRejectedResponse(resp.Content, evaluation.Feedback)
 					emitStructuredCommandEvent(onEvent, "structured_response_rejected", "Structured response rejected by evaluator", map[string]string{
 						"step":       fmt.Sprintf("%d", step),
 						"confidence": fmt.Sprintf("%d", evaluation.Confidence),
 						"threshold":  fmt.Sprintf("%d", evaluatorThreshold),
+						"verdict":    verdict,
 						"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
 					})
+					reason := structuredEvaluationRetryMessage(evaluation, evaluatorThreshold)
+					if verdict == "reject" {
+						reason = "scope_drift: evaluator rejected planner output; " + reason
+					}
+					rejectedCommand := ""
+					if rejectedPayload, parseErr := ParseStructuredCommandPayload(resp.Content); parseErr == nil {
+						rejectedCommand = truncateStructuredObservation(rejectedPayload.Command)
+					}
 					result.Observations = append(result.Observations, StructuredCommandObservation{
 						Step:                 step,
 						RejectedResponse:     truncateStructuredObservation(resp.Content),
+						RejectedCommand:      rejectedCommand,
 						EvaluationConfidence: evaluation.Confidence,
 						EvaluationFeedback:   truncateStructuredObservation(evaluation.Feedback),
 						CapabilityMemory:     memory,
 						ExitCode:             1,
-						Stderr:               structuredEvaluationRetryMessage(evaluation, evaluatorThreshold),
+						Stderr:               reason,
 					})
 					continue
 				}
@@ -605,6 +646,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				ToolTask:        payload.ToolTask,
 				Observations:    result.Observations,
 				SessionMemories: cfg.SessionMemories,
+				WorksiteSurvey:  worksiteSurvey,
 			})
 			if err != nil {
 				emitStructuredCommandEvent(onEvent, "structured_tool_delegation_failed", "Shell specialist failed", map[string]string{
@@ -623,7 +665,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"command":   truncateStructuredTimelineValue(proposal.Command),
 				"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 			})
-			if err := validateStructuredCommandForRun(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger); err != nil {
+			if err := validateStructuredCommandForRunWithSurvey(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 				emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 					"step":    fmt.Sprintf("%d", step),
 					"command": truncateStructuredTimelineValue(proposal.Command),
@@ -673,7 +715,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					"step":   fmt.Sprintf("%d", step),
 					"reason": "empty question with ask=true; executing non-empty command",
 				})
-				if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger); err != nil {
+				if err := validateStructuredCommandForRunWithSurvey(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":    fmt.Sprintf("%d", step),
 						"command": truncateStructuredTimelineValue(payload.Command),
@@ -706,7 +748,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					UserResponse: previousAnswer,
 				})
 				if command != "" {
-					if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger); err != nil {
+					if err := validateStructuredCommandForRunWithSurvey(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 						emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 							"step":    fmt.Sprintf("%d", step),
 							"command": truncateStructuredTimelineValue(payload.Command),
@@ -760,7 +802,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"step": fmt.Sprintf("%d", step),
 			})
 			if command != "" {
-				if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger); err != nil {
+				if err := validateStructuredCommandForRunWithSurvey(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":    fmt.Sprintf("%d", step),
 						"command": truncateStructuredTimelineValue(payload.Command),
@@ -785,7 +827,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if strings.TrimSpace(payload.Command) != "" {
 				if latest, ok := latestSuccessfulCommandObservation(result.Observations); ok && latestRealCommandSucceeded(result.Observations) {
 					result.Answer = finalStructuredAnswer(payload.Answer, latest)
-					ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
+					ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
 					ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
 					result.ObjectiveLedger = ledger
 					if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
@@ -807,7 +849,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					"reason": "done=true requires an empty command; validating non-empty command instead",
 				})
 				command := payload.Command
-				if err := validateStructuredCommandForRun(command, result.Observations, cfg.CurrentWorkingDirectory, ledger); err != nil {
+				if err := validateStructuredCommandForRunWithSurvey(command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":    fmt.Sprintf("%d", step),
 						"command": truncateStructuredTimelineValue(command),
@@ -865,7 +907,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if len(selectedRecipes) > 0 {
 				ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
 			}
-			ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, onEvent)
+			ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
 			ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
 			result.ObjectiveLedger = ledger
 			if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
@@ -906,7 +948,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 		command := payload.Command
-		if err := validateStructuredCommandForRun(command, result.Observations, cfg.CurrentWorkingDirectory, ledger); err != nil {
+		if err := validateStructuredCommandForRunWithSurvey(command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
 				"command": truncateStructuredTimelineValue(command),
@@ -1143,6 +1185,7 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 		ToolTask:        toolTask,
 		Observations:    result.Observations,
 		SessionMemories: cfg.SessionMemories,
+		WorksiteSurvey:  WorksiteSurvey{},
 	})
 	if err != nil {
 		emitStructuredCommandEvent(onEvent, "structured_tool_delegation_failed", "Shell specialist failed", map[string]string{
@@ -1234,7 +1277,8 @@ func structuredEvaluationRetryMessage(evaluation StructuredLLMEvaluation, thresh
 	if feedback == "" {
 		feedback = "planner response was not sufficiently aligned with the active task"
 	}
-	return fmt.Sprintf("self-evaluation rejected response: confidence=%d threshold=%d; feedback=%s; try again using the active prompt, planner job, observations, and capability memory", evaluation.Confidence, threshold, feedback)
+	verdict := normalizeStructuredEvaluationVerdict(evaluation.Verdict)
+	return fmt.Sprintf("self-evaluation rejected response: verdict=%s confidence=%d threshold=%d; feedback=%s; try again using the active prompt, planner job, observations, worksite survey, and capability memory", verdict, evaluation.Confidence, threshold, feedback)
 }
 
 func structuredCommandPlannerJobSummary() string {
@@ -1256,6 +1300,7 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 		LLMResponse     string                         `json:"llm_response"`
 		Observations    []StructuredCommandObservation `json:"observations"`
 		SessionMemories []SessionMemory                `json:"session_memories,omitempty"`
+		WorksiteSurvey  WorksiteSurvey                 `json:"worksite_survey"`
 	}{
 		Step:            input.Step,
 		Job:             input.PlannerJob,
@@ -1263,6 +1308,7 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 		LLMResponse:     input.LLMResponse,
 		Observations:    input.Observations,
 		SessionMemories: input.SessionMemories,
+		WorksiteSurvey:  input.WorksiteSurvey,
 	}
 	blob, err := json.Marshal(payload)
 	if err != nil {
@@ -1274,9 +1320,11 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 				Role: "system",
 				Content: strings.Join([]string{
 					"You are a tiny strict evaluator.",
-					"Return JSON only with schema {\"confidence\":0,\"feedback\":\"\"}.",
+					"Return JSON only with schema {\"verdict\":\"accept|revise|reject\",\"confidence\":0,\"blocking_reason\":\"\",\"feedback\":\"\"}.",
 					"confidence must be an integer from 0 to 100.",
 					"Score whether llm_response is on track for planner_job and user_prompt.",
+					"Use verdict=reject for semantic mismatch, scope drift, or contradictions with WorksiteSurvey.",
+					"Use verdict=revise when the response may be salvageable but must not execute yet.",
 					"Scoring rubric: 90-100 clearly on track or complete, 70-89 mostly on track, 40-69 uncertain or incomplete, 0-39 off track.",
 					"If feedback says on track, successfully completed, or correctly answered, confidence must be at least 80.",
 					"If confidence is below 70, feedback must state what is missing or wrong and must not say the response is on track.",
@@ -1284,6 +1332,7 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 					"Do not penalize a proposed command merely because it has not executed yet; the runtime executes accepted commands.",
 					"Give low confidence when the response ignores the active prompt, answers from memory, refuses a capability that shell/public sources provide, returns done without evidence, or emits a command that only prints an answer/apology.",
 					"Give low confidence when memory or prior preferences expand dependencies, frameworks, files, services, architecture, or deployment targets beyond the current prompt or selected recipe.",
+					"Reject when a command creates or scaffolds a new project but WorksiteSurvey says the operation is modify_existing_project or fix_existing_project.",
 					"Give low confidence for obviously invalid shell command syntax or repeated commands already shown failing in observations.",
 					"feedback must be one concise sentence explaining how the planner should retry.",
 				}, " "),
@@ -1293,8 +1342,10 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 		Format: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"confidence": map[string]interface{}{"type": "integer", "minimum": 0, "maximum": 100},
-				"feedback":   map[string]interface{}{"type": "string"},
+				"verdict":         map[string]interface{}{"type": "string", "enum": []string{"accept", "revise", "reject"}},
+				"confidence":      map[string]interface{}{"type": "integer", "minimum": 0, "maximum": 100},
+				"blocking_reason": map[string]interface{}{"type": "string"},
+				"feedback":        map[string]interface{}{"type": "string"},
 			},
 			"required": []string{"confidence", "feedback"},
 		},
@@ -1311,6 +1362,7 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 		UserPrompt              string                   `json:"user_prompt"`
 		ReferenceHistory        []StructuredMemoryRecord `json:"reference_history,omitempty"`
 		CurrentWorkingDirectory string                   `json:"current_working_directory"`
+		WorksiteSurvey          WorksiteSurvey           `json:"worksite_survey"`
 		AvailableRecipes        []RecipePromptCandidate  `json:"available_recipes,omitempty"`
 		Instructions            []string                 `json:"instructions"`
 	}{
@@ -1318,9 +1370,14 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 		UserPrompt:              input.UserPrompt,
 		ReferenceHistory:        recentStructuredMemoryRecords(input.History),
 		CurrentWorkingDirectory: input.CurrentWorkingDirectory,
+		WorksiteSurvey:          input.WorksiteSurvey,
 		AvailableRecipes:        recipePromptCandidates(input.Recipes),
 		Instructions: []string{
 			"Interpret the user's words into durable task objectives for downstream planners.",
+			"Classify user_operation as create_new_project, modify_existing_project, fix_existing_project, inspect_existing_project, run_tests, install_deps, or unknown.",
+			"The WorksiteSurvey is authoritative filesystem grounding; do not contradict its project_state or evidence.",
+			"If WorksiteSurvey project_state is an existing app and the current prompt refers to this/current/existing project, prefer modify_existing_project over create_new_project.",
+			"Do not create create-new objectives when user_operation is modify_existing_project or fix_existing_project.",
 			"If an available recipe directly matches the task, return its id in selected_recipe_ids.",
 			"Return objectives only when the request has concrete criteria, outputs, constraints, or verification needs.",
 			"Use stable snake_case ids.",
@@ -1364,6 +1421,18 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 					"type":  "array",
 					"items": map[string]interface{}{"type": "string"},
 				},
+				"user_operation": map[string]interface{}{
+					"type": "string",
+					"enum": []string{userOperationCreateNewProject, userOperationModifyExisting, userOperationFixExisting, userOperationInspectExisting, userOperationRunTests, userOperationInstallDeps, userOperationUnknown},
+				},
+				"recommended_recipe_ids": map[string]interface{}{
+					"type":  "array",
+					"items": map[string]interface{}{"type": "string"},
+				},
+				"forbidden_recipe_ids": map[string]interface{}{
+					"type":  "array",
+					"items": map[string]interface{}{"type": "string"},
+				},
 			},
 			"required": []string{"objective_ledger", "requires_reference_history"},
 		},
@@ -1383,6 +1452,7 @@ func buildContextSummarizerRequest(input MinimalContextInput) OllamaChatRequest 
 		ReferenceHistory        []StructuredMemoryRecord `json:"reference_history,omitempty"`
 		SessionMemories         []SessionMemory          `json:"session_memories,omitempty"`
 		ExistingContext         MinimalContext           `json:"existing_context,omitempty"`
+		WorksiteSurvey          WorksiteSurvey           `json:"worksite_survey"`
 		Instructions            []string                 `json:"instructions"`
 	}{
 		Role:                    "summary_specialist",
@@ -1392,8 +1462,10 @@ func buildContextSummarizerRequest(input MinimalContextInput) OllamaChatRequest 
 		ReferenceHistory:        recentStructuredMemoryRecords(input.History),
 		SessionMemories:         recentStructuredCapabilityMemories(input.SessionMemories),
 		ExistingContext:         normalizeMinimalContext(input.ExistingContext),
+		WorksiteSurvey:          input.WorksiteSurvey,
 		Instructions: []string{
 			"Load the smallest context inventory needed for this active task.",
+			"The WorksiteSurvey is authoritative workspace grounding.",
 			"Keep only facts, constraints, and open items relevant to the objective ledger and current prompt.",
 			"Never carry prior project dependencies, frameworks, package names, or build requirements into a new standalone task.",
 			"Memories may not create requirements, dependencies, frameworks, files, services, architecture, or deployment targets unless the current prompt explicitly asks to apply them.",
@@ -1562,6 +1634,9 @@ func ParsePromptInterpretation(raw string) (PromptInterpretation, error) {
 		ObjectiveLedger          []StructuredObjective `json:"objective_ledger"`
 		RecipeIDs                []string              `json:"selected_recipe_ids"`
 		RequiresReferenceHistory bool                  `json:"requires_reference_history"`
+		UserOperation            string                `json:"user_operation"`
+		RecommendedRecipeIDs     []string              `json:"recommended_recipe_ids"`
+		ForbiddenRecipeIDs       []string              `json:"forbidden_recipe_ids"`
 	}
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		return PromptInterpretation{}, fmt.Errorf("parse prompt interpretation: %w", err)
@@ -1578,6 +1653,9 @@ func ParsePromptInterpretation(raw string) (PromptInterpretation, error) {
 		ObjectiveLedger:          mergeStructuredObjectiveLedger(nil, decoded.ObjectiveLedger),
 		RecipeIDs:                cleanStringList(decoded.RecipeIDs),
 		RequiresReferenceHistory: decoded.RequiresReferenceHistory,
+		UserOperation:            normalizeUserOperation(decoded.UserOperation),
+		RecommendedRecipeIDs:     cleanStringList(decoded.RecommendedRecipeIDs),
+		ForbiddenRecipeIDs:       cleanStringList(decoded.ForbiddenRecipeIDs),
 	}, nil
 }
 
@@ -1610,10 +1688,47 @@ func ParseStructuredLLMEvaluation(raw string) (StructuredLLMEvaluation, error) {
 		return StructuredLLMEvaluation{}, err
 	}
 	feedback, _ := decoded["feedback"].(string)
+	verdict, _ := decoded["verdict"].(string)
+	blockingReason, _ := decoded["blocking_reason"].(string)
+	verdict = normalizeStructuredEvaluationVerdict(verdict)
+	if verdict == "accept" && structuredEvaluationFeedbackSuggestsHardReject(feedback+" "+blockingReason) {
+		verdict = "reject"
+	}
 	return StructuredLLMEvaluation{
-		Confidence: confidence,
-		Feedback:   strings.TrimSpace(feedback),
+		Verdict:        verdict,
+		Confidence:     confidence,
+		BlockingReason: strings.TrimSpace(blockingReason),
+		Feedback:       strings.TrimSpace(feedback),
 	}, nil
+}
+
+func normalizeStructuredEvaluationVerdict(verdict string) string {
+	switch strings.ToLower(strings.TrimSpace(verdict)) {
+	case "reject", "revise":
+		return strings.ToLower(strings.TrimSpace(verdict))
+	default:
+		return "accept"
+	}
+}
+
+func structuredEvaluationFeedbackSuggestsHardReject(feedback string) bool {
+	lower := strings.ToLower(feedback)
+	for _, marker := range []string{
+		"does not align",
+		"not align",
+		"scope drift",
+		"scope_drift",
+		"semantic mismatch",
+		"contradicts worksite",
+		"wrong project",
+		"create a new project",
+		"create a new react project",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseStructuredEvaluationConfidence(raw interface{}) (int, error) {
@@ -1978,16 +2093,70 @@ func validateStructuredCommandForObservations(command string, observations []Str
 }
 
 func validateStructuredCommandForRun(command string, observations []StructuredCommandObservation, workingDirectory string, objectiveLedger []StructuredObjective) error {
+	return validateStructuredCommandForRunWithSurvey(command, observations, workingDirectory, objectiveLedger, WorksiteSurvey{})
+}
+
+func validateStructuredCommandForRunWithSurvey(command string, observations []StructuredCommandObservation, workingDirectory string, objectiveLedger []StructuredObjective, survey WorksiteSurvey) error {
 	if err := validateStructuredCommandForObservations(command, observations); err != nil {
 		return err
 	}
 	if err := validateStructuredCommandWorkspaceProtection(command, workingDirectory); err != nil {
 		return err
 	}
+	if err := validateStructuredScaffoldScope(command, survey); err != nil {
+		return err
+	}
 	if err := validateStructuredDependencyScope(command, objectiveLedger, workingDirectory); err != nil {
 		return err
 	}
 	return nil
+}
+
+func validateStructuredScaffoldScope(command string, survey WorksiteSurvey) error {
+	if strings.TrimSpace(command) == "" || survey.UserOperation == "" || survey.UserOperation == userOperationUnknown {
+		return nil
+	}
+	if !structuredCommandHasScaffold(command) {
+		return nil
+	}
+	if worksiteSurveyAllowsCreateNew(survey) {
+		return nil
+	}
+	return fmt.Errorf("scope_drift: scaffold command forbidden for %s in %s; full access does not permit changing task scope", survey.UserOperation, survey.ProjectState)
+}
+
+func structuredCommandHasScaffold(command string) bool {
+	for _, segment := range structuredCommandSegments(command) {
+		if len(segment) < 2 {
+			continue
+		}
+		root := cleanCommandPathToken(segment[0])
+		if root == "npx" && len(segment) >= 2 {
+			tool := cleanCommandPathToken(segment[1])
+			if tool == "create-react-app" || tool == "degit" {
+				return true
+			}
+		}
+		if root == "npm" && len(segment) >= 3 {
+			action := segment[1]
+			tool := cleanCommandPathToken(segment[2])
+			if action == "create" && strings.HasPrefix(tool, "vite") {
+				return true
+			}
+			if action == "init" && (strings.HasPrefix(tool, "vite") || tool == "react-app") {
+				return true
+			}
+		}
+		if (root == "pnpm" || root == "yarn" || root == "bun") && len(segment) >= 3 && segment[1] == "create" {
+			if strings.HasPrefix(cleanCommandPathToken(segment[2]), "vite") {
+				return true
+			}
+		}
+		if root == "git" && len(segment) >= 2 && segment[1] == "clone" {
+			return true
+		}
+	}
+	return false
 }
 
 type structuredDependencyInstallRequest struct {
@@ -2633,7 +2802,7 @@ func rejectDoneForObjectiveLedger(step int, ledger []StructuredObjective, onEven
 	return true
 }
 
-func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDirectory string, ledger []StructuredObjective, minimalContext MinimalContext, observations []StructuredCommandObservation, candidateAnswer string, checker CompletionChecker, onEvent func(StructuredCommandEvent)) []StructuredObjective {
+func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDirectory string, ledger []StructuredObjective, minimalContext MinimalContext, observations []StructuredCommandObservation, candidateAnswer string, checker CompletionChecker, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent)) []StructuredObjective {
 	if checker == nil || len(pendingStructuredObjectives(ledger)) == 0 {
 		return ledger
 	}
@@ -2644,6 +2813,7 @@ func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDir
 		MinimalContext:          normalizeMinimalContext(minimalContext),
 		Observations:            observations,
 		CandidateAnswer:         candidateAnswer,
+		WorksiteSurvey:          worksiteSurvey,
 	})
 	if err != nil {
 		emitStructuredCommandEvent(onEvent, "completion_check_failed", "Done-check specialist failed; continuing with deterministic checks", map[string]string{
@@ -2652,7 +2822,7 @@ func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDir
 		})
 		return ledger
 	}
-	updated := mergeStructuredObjectiveLedger(ledger, check.ObjectiveLedger)
+	updated := mergeStructuredObjectiveLedger(ledger, filterObjectiveLedgerForWorksiteSurvey(check.ObjectiveLedger, worksiteSurvey))
 	emitStructuredCommandEvent(onEvent, "completion_check_completed", "Done-check specialist reviewed completion", map[string]string{
 		"step":               fmt.Sprintf("%d", step),
 		"done":               fmt.Sprintf("%t", check.Done),
@@ -2797,6 +2967,35 @@ func mergeStructuredObjectiveLedger(existing, update []StructuredObjective) []St
 		merged = append(merged, normalized)
 	}
 	return merged
+}
+
+func filterObjectiveLedgerForWorksiteSurvey(objectives []StructuredObjective, survey WorksiteSurvey) []StructuredObjective {
+	if len(objectives) == 0 {
+		return nil
+	}
+	out := []StructuredObjective{}
+	for _, objective := range objectives {
+		normalized, ok := normalizeStructuredObjective(objective)
+		if !ok {
+			continue
+		}
+		if objectiveForbiddenByWorksiteSurvey(normalized, survey) {
+			continue
+		}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func objectiveForbiddenByWorksiteSurvey(objective StructuredObjective, survey WorksiteSurvey) bool {
+	if survey.UserOperation != userOperationModifyExisting && survey.UserOperation != userOperationFixExisting {
+		return false
+	}
+	text := normalizedDependencyText(objective.ID + " " + objective.Description)
+	return strings.Contains(text, " create new ") ||
+		strings.Contains(text, " new react ") ||
+		strings.Contains(text, " scaffold ") ||
+		strings.Contains(text, " create_new ")
 }
 
 func normalizeStructuredObjective(objective StructuredObjective) (StructuredObjective, bool) {
@@ -2945,9 +3144,13 @@ func buildStructuredCommandRequestWithContext(prompt string, history []Message, 
 }
 
 func buildStructuredCommandRequestWithContextAndRecipes(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe) OllamaChatRequest {
+	return buildStructuredCommandRequestWithContextRecipesAndSurvey(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, WorksiteSurvey{})
+}
+
+func buildStructuredCommandRequestWithContextRecipesAndSurvey(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, survey WorksiteSurvey) OllamaChatRequest {
 	return OllamaChatRequest{
 		ContextSystem: buildStructuredCommandSystemContext(),
-		Messages:      buildStructuredCommandMessages(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes),
+		Messages:      buildStructuredCommandMessages(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, survey),
 		Format:        buildStructuredCommandResponseFormat(observations),
 		Options: map[string]interface{}{
 			"temperature": 0,
@@ -3128,6 +3331,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		ToolTask        string                         `json:"tool_task"`
 		Observations    []StructuredCommandObservation `json:"observations"`
 		SessionMemories []SessionMemory                `json:"session_memories,omitempty"`
+		WorksiteSurvey  WorksiteSurvey                 `json:"worksite_survey"`
 		ToolRules       []string                       `json:"tool_rules"`
 	}{
 		Role:            "shell_execution_specialist",
@@ -3135,10 +3339,12 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		ToolTask:        input.ToolTask,
 		Observations:    input.Observations,
 		SessionMemories: input.SessionMemories,
+		WorksiteSurvey:  input.WorksiteSurvey,
 		ToolRules: []string{
 			"Return JSON only with schema {\"command\":\"...\",\"rationale\":\"...\"}.",
 			"Only choose a shell command that directly satisfies tool_task from the planner authority.",
 			"Memories and prior preferences cannot add dependencies, frameworks, files, services, architecture, or deployment targets unless tool_task explicitly says the current user asked for them.",
+			"The WorksiteSurvey is authoritative; do not scaffold a new project when user_operation is modify_existing_project or fix_existing_project.",
 			"For simple creation tasks, choose the smallest working command that satisfies tool_task.",
 			"Do not answer the user and do not apologize.",
 			"Do not use echo or printf to fake final evidence unless the task is explicitly to create/write literal text.",
@@ -3181,7 +3387,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 	}
 }
 
-func buildStructuredCommandMessages(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe) []OllamaMessage {
+func buildStructuredCommandMessages(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, surveys ...WorksiteSurvey) []OllamaMessage {
 	messages := []OllamaMessage{}
 	if memoryMessage := buildStructuredCommandCapabilityMemoryMessage(memories); memoryMessage != "" {
 		messages = append(messages,
@@ -3200,7 +3406,11 @@ func buildStructuredCommandMessages(prompt string, history []Message, memories [
 			OllamaMessage{Role: "assistant", Content: "Reference history received. I will use it only when the active task needs omitted context."},
 		)
 	}
-	messages = append(messages, OllamaMessage{Role: "user", Content: buildStructuredCommandUserMessage(prompt, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes)})
+	survey := WorksiteSurvey{}
+	if len(surveys) > 0 {
+		survey = surveys[0]
+	}
+	messages = append(messages, OllamaMessage{Role: "user", Content: buildStructuredCommandUserMessage(prompt, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, survey)})
 	return messages
 }
 
@@ -3280,6 +3490,12 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			recipes = value
 		}
 	}
+	worksiteSurvey := WorksiteSurvey{}
+	if len(args) > 4 {
+		if value, ok := args[4].(WorksiteSurvey); ok {
+			worksiteSurvey = value
+		}
+	}
 	payload := struct {
 		ActivePromptOpen string                  `json:"active_prompt_open"`
 		ToolInventory    StructuredToolInventory `json:"tool_inventory"`
@@ -3287,6 +3503,7 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			CurrentPrompt               string                         `json:"current_prompt"`
 			Prompt                      string                         `json:"prompt"`
 			CurrentWorkingDirectory     string                         `json:"current_working_directory"`
+			WorksiteSurvey              WorksiteSurvey                 `json:"worksite_survey"`
 			MinimalContext              MinimalContext                 `json:"minimal_context,omitempty"`
 			Recipes                     []RecipeRuntimeConstraint      `json:"recipes,omitempty"`
 			ObjectiveLedger             []StructuredObjective          `json:"objective_ledger,omitempty"`
@@ -3305,6 +3522,7 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 	payload.ActiveTask.CurrentPrompt = prompt
 	payload.ActiveTask.Prompt = prompt
 	payload.ActiveTask.CurrentWorkingDirectory = structuredPromptWorkingDirectory(workingDirectory)
+	payload.ActiveTask.WorksiteSurvey = worksiteSurvey
 	payload.ActiveTask.MinimalContext = minimalContext
 	payload.ActiveTask.Recipes = recipeRuntimeConstraints(recipes)
 	payload.ActiveTask.ObjectiveLedger = mergeStructuredObjectiveLedger(nil, objectiveLedger)
