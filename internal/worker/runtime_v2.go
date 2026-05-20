@@ -206,7 +206,7 @@ func (r *agentRuntime) runTagging() error {
 	modelName := r.svc.specialistModel(r.claim.Job, specialist.RoleIntentTaggingSpecialist, r.svc.models.Tagging)
 	tags, err := r.svc.llm.SuggestTagsWithModel(r.ctx, modelName, r.claim.Job.Instruction, 8)
 	if err != nil || len(tags) == 0 {
-		tags = llmFallbackTags(r.claim.Job.Instruction, 8)
+		tags = []string{"general"}
 	}
 
 	tags = memoryScopeTags(r.claim.Job, tags)

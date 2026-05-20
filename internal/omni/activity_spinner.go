@@ -10,6 +10,7 @@ import (
 type activitySpinner struct {
 	out     io.Writer
 	label   string
+	started time.Time
 	stopCh  chan struct{}
 	doneCh  chan struct{}
 	stopMux sync.Once
@@ -21,10 +22,11 @@ type activityIndicator struct {
 	enabled bool
 	mu      sync.Mutex
 	spinner *activitySpinner
+	started time.Time
 }
 
 func startActivityIndicator(out io.Writer, label string) *activityIndicator {
-	indicator := &activityIndicator{out: out, label: label, enabled: true}
+	indicator := &activityIndicator{out: out, label: label, enabled: true, started: time.Now()}
 	indicator.Resume()
 	return indicator
 }
@@ -51,7 +53,10 @@ func (i *activityIndicator) Resume() {
 	if !i.enabled || i.spinner != nil {
 		return
 	}
-	i.spinner = startActivitySpinner(i.out, i.label)
+	if i.started.IsZero() {
+		i.started = time.Now()
+	}
+	i.spinner = startActivitySpinner(i.out, i.label, i.started)
 }
 
 func (i *activityIndicator) Stop() {
@@ -68,12 +73,13 @@ func (i *activityIndicator) Stop() {
 	}
 }
 
-func startActivitySpinner(out io.Writer, label string) *activitySpinner {
+func startActivitySpinner(out io.Writer, label string, started time.Time) *activitySpinner {
 	spinner := &activitySpinner{
-		out:    out,
-		label:  label,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		out:     out,
+		label:   label,
+		started: started,
+		stopCh:  make(chan struct{}),
+		doneCh:  make(chan struct{}),
 	}
 	go spinner.run()
 	return spinner
@@ -100,8 +106,21 @@ func (s *activitySpinner) run() {
 			fmt.Fprint(s.out, "\r\033[2K")
 			return
 		case <-ticker.C:
-			fmt.Fprintf(s.out, "\r%s %s", s.label, frames[i%len(frames)])
+			fmt.Fprintf(s.out, "\r%s %s %s Esc to interrupt", s.label, frames[i%len(frames)], formatActivityElapsed(time.Since(s.started)))
 			i++
 		}
 	}
+}
+
+func formatActivityElapsed(elapsed time.Duration) string {
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	totalSeconds := int(elapsed.Round(time.Second).Seconds())
+	minutes := totalSeconds / 60
+	seconds := totalSeconds % 60
+	if minutes > 0 {
+		return fmt.Sprintf("%dm%02ds", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds", seconds)
 }

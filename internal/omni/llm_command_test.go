@@ -322,10 +322,10 @@ func TestStructuredCommandDecisionAnswersActivePromptDespiteConflictingMemory(t 
 	if stdout.String() != "Virginia time evidence\n" || result.Answer != "Virginia time evidence" {
 		t.Fatalf("unexpected result stdout=%q answer=%q", stdout.String(), result.Answer)
 	}
-	if len(client.requests[0].Messages) != 3 {
-		t.Fatalf("messages = %#v, want memory + ack + active task", client.requests[0].Messages)
+	if len(client.requests[0].Messages) != 1 {
+		t.Fatalf("messages = %#v, want active task only without interpreter-approved history", client.requests[0].Messages)
 	}
-	active := client.requests[0].Messages[2].Content
+	active := client.requests[0].Messages[0].Content
 	activeTask := activeTaskJSONForTest(t, active)
 	for _, polluted := range []string{"Pattaya", "Saipan", "React", "wttr.in", "news.google.com", "npm run build"} {
 		if strings.Contains(activeTask, polluted) {
@@ -334,6 +334,236 @@ func TestStructuredCommandDecisionAnswersActivePromptDespiteConflictingMemory(t 
 	}
 	if strings.Count(active, "What time is it in Virginia right now?") != 4 {
 		t.Fatalf("active prompt not anchored open/current/prompt/close: %s", active)
+	}
+}
+
+func TestStructuredCommandDecisionDoesNotSendReferenceHistoryForStandalonePrompt(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'react project only\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"react project only"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		RequiresReferenceHistory: false,
+	}}}
+	summarizer := &fakeContextSummarizer{contexts: []MinimalContext{{
+		Summary:   "Create only the requested React project.",
+		OpenItems: []string{"React project"},
+	}}}
+	history := []Message{
+		{Role: "user", Content: "Create a Stimulus Tailwind RecyclrJS webpack calculator."},
+		{Role: "assistant", Content: "Installed @hotwired/stimulus tailwindcss recyclr-js webpack."},
+	}
+
+	_, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"Create a new React project.",
+		history,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{
+			PromptInterpreter: interpreter,
+			ContextSummarizer: summarizer,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summarizer.inputs) != 1 {
+		t.Fatalf("summarizer inputs = %d", len(summarizer.inputs))
+	}
+	if len(summarizer.inputs[0].History) != 0 {
+		t.Fatalf("standalone prompt leaked history to summarizer: %#v", summarizer.inputs[0].History)
+	}
+	firstRequest := joinOllamaMessageContent(client.requests[0].Messages)
+	for _, polluted := range []string{"Stimulus", "Tailwind", "RecyclrJS", "webpack", "@hotwired/stimulus", "recyclr-js"} {
+		if strings.Contains(firstRequest, polluted) {
+			t.Fatalf("standalone planner request contains prior project dependency %q: %s", polluted, firstRequest)
+		}
+	}
+}
+
+func TestStructuredDependencyScopeRejectsMemorySuggestedPackages(t *testing.T) {
+	workspace := t.TempDir()
+	ledger := []StructuredObjective{
+		{ID: "react_project", Description: "Create a React project", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true, Packages: []string{"react", "react-dom", "vite"}},
+		{ID: "usual_frontend_stack", Description: "User likes Tailwind, RecyclrJS, and Stimulus", Status: "pending", Source: structuredObjectiveSourceMemorySuggested, Packages: []string{"tailwindcss", "recyclrjs", "@hotwired/stimulus"}},
+	}
+	err := validateStructuredCommandForRun("npm install react react-dom vite tailwindcss recyclrjs @hotwired/stimulus", nil, workspace, ledger)
+	if err == nil {
+		t.Fatal("expected memory-suggested dependencies to be rejected")
+	}
+	for _, want := range []string{"tailwindcss", "recyclrjs", "@hotwired/stimulus"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+	if memory := structuredCapabilityMemoryForRejectedResponse("npm install react react-dom vite tailwindcss recyclrjs", err.Error()); memory != structuredScopeCapabilityMemory {
+		t.Fatalf("scope capability memory = %q", memory)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsShellSpecialistScopeDrift(t *testing.T) {
+	workspace := t.TempDir()
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"install dependencies for the React project"}`,
+		`{"command":"touch package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
+		`{"command":"","done":true,"answer":"React project started"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "react_project", Description: "Create a React project", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true, Packages: []string{"react", "react-dom", "vite"}},
+		},
+	}}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
+		Command:   "npm install react react-dom vite tailwindcss recyclrjs",
+		Rationale: "install proposed dependencies",
+	}}}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"create a new React project",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			PromptInterpreter:       interpreter,
+			ShellSpecialist:         shell,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) == 0 || result.Observations[0].RejectedCommand == "" {
+		t.Fatalf("expected rejected shell specialist command: %#v", result.Observations)
+	}
+	if !strings.Contains(result.Observations[0].Stderr, "dependency scope drift") {
+		t.Fatalf("expected scope drift rejection: %#v", result.Observations[0])
+	}
+	if result.Observations[0].CapabilityMemory != structuredScopeCapabilityMemory {
+		t.Fatalf("capability memory = %q", result.Observations[0].CapabilityMemory)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsPlannerScopeDriftDependencyCommand(t *testing.T) {
+	workspace := t.TempDir()
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"npm install react react-dom vite tailwindcss recyclrjs @hotwired/stimulus","done":false,"answer":""}`,
+		`{"command":"touch package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
+		`{"command":"","done":true,"answer":"React project started"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "react_project", Description: "Create a React project", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true, Packages: []string{"react", "react-dom", "vite"}},
+			{ID: "usual_stack", Description: "User likes Tailwind, RecyclrJS, and Stimulus", Status: "pending", Source: structuredObjectiveSourceMemorySuggested, Required: false, Packages: []string{"tailwindcss", "recyclrjs", "@hotwired/stimulus"}},
+		},
+	}}}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"create a new React project",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			PromptInterpreter:       interpreter,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) == 0 || result.Observations[0].RejectedCommand == "" {
+		t.Fatalf("expected rejected planner command: %#v", result.Observations)
+	}
+	if !strings.Contains(result.Observations[0].Stderr, "tailwindcss") || !strings.Contains(result.Observations[0].Stderr, "recyclrjs") {
+		t.Fatalf("scope rejection missing packages: %#v", result.Observations[0])
+	}
+}
+
+func TestStructuredDependencyScopeAllowsExplicitUsualStackPackages(t *testing.T) {
+	workspace := t.TempDir()
+	ledger := []StructuredObjective{
+		{ID: "react_project", Description: "Create a React project using usual frontend stack", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true, Packages: []string{"react", "react-dom", "vite", "tailwindcss", "recyclrjs", "@hotwired/stimulus"}},
+	}
+	if err := validateStructuredCommandForRun("npm install react react-dom vite tailwindcss recyclrjs @hotwired/stimulus", nil, workspace, ledger); err != nil {
+		t.Fatalf("explicit usual stack packages should be allowed: %v", err)
+	}
+}
+
+func TestStructuredDependencyScopeAllowsRecipeRequiredPackages(t *testing.T) {
+	workspace := t.TempDir()
+	recipe := Recipe{
+		ID: "frontend.recipe",
+		Objectives: []RecipeObjective{{
+			ID:          "tailwind",
+			Description: "Install Tailwind",
+			Packages:    []string{"tailwindcss"},
+		}},
+	}
+	ledger := RecipeObjectiveLedger(recipe)
+	if err := validateStructuredCommandForRun("npm install tailwindcss", nil, workspace, ledger); err != nil {
+		t.Fatalf("recipe package should be allowed: %v", err)
+	}
+}
+
+func TestStructuredDependencyScopeAllowsDetectedProjectPackages(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"tailwindcss":"latest"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateStructuredCommandForRun("npm install tailwindcss", nil, workspace, nil); err != nil {
+		t.Fatalf("detected existing dependency should be allowed: %v", err)
+	}
+}
+
+func TestMemorySuggestedObjectiveDoesNotBlockCompletion(t *testing.T) {
+	ledger := []StructuredObjective{
+		{ID: "react_project", Description: "Create React project", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		{ID: "tailwind_preference", Description: "User likes Tailwind", Status: "pending", Source: structuredObjectiveSourceMemorySuggested, Required: false, Packages: []string{"tailwindcss"}},
+	}
+	if pending := pendingStructuredObjectives(ledger); len(pending) != 0 {
+		t.Fatalf("memory-suggested optional objective should not block completion: %#v", pending)
+	}
+}
+
+func TestStructuredCommandDecisionAllowsReferenceHistoryForInterpreterMarkedFollowup(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'Pattaya rain evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Pattaya rain evidence"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		RequiresReferenceHistory: true,
+	}}}
+	history := []Message{
+		{Role: "user", Content: "What is the weather in Pattaya today?"},
+		{Role: "assistant", Content: "Pattaya weather evidence."},
+	}
+
+	_, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"Will it rain there?",
+		history,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{PromptInterpreter: interpreter},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRequest := joinOllamaMessageContent(client.requests[0].Messages)
+	if !strings.Contains(firstRequest, "reference_history") || !strings.Contains(firstRequest, "Pattaya") {
+		t.Fatalf("follow-up did not include interpreter-approved reference history: %s", firstRequest)
 	}
 }
 
@@ -774,6 +1004,52 @@ func TestStructuredCommandDecisionIncludesRecentConversationForFollowups(t *test
 			t.Fatalf("should use recent conversation instead of asking: %q", question)
 			return "", nil
 		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.requests[0].Messages) != 1 {
+		t.Fatalf("messages = %#v, want active task only without interpreter-approved history", client.requests[0].Messages)
+	}
+	if strings.Contains(client.requests[0].Messages[0].Content, "Pattaya") {
+		t.Fatalf("active task should not contain copied reference location without interpreter approval: %s", client.requests[0].Messages[0].Content)
+	}
+	if !strings.Contains(stdout.String(), "Pattaya rain chance") {
+		t.Fatalf("history-resolved command did not run from fake planner response: stdout=%q", stdout.String())
+	}
+	if !strings.Contains(result.Answer, "Pattaya") {
+		t.Fatalf("answer should preserve resolved location from observed evidence: %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionIncludesInterpreterApprovedRecentConversationForFollowups(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'Pattaya rain chance from history\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Using prior location Pattaya, Thailand."}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	history := []Message{
+		{Role: "user", Content: "what is the weather in Pattaya Thailand today?"},
+		{Role: "assistant", Content: "The weather in Pattaya, Thailand today is Partly Cloudy with temperatures ranging from +31°C to +36°C."},
+	}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		RequiresReferenceHistory: true,
+	}}}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"Will it rain there today?",
+		history,
+		client,
+		stdout,
+		stderr,
+		nil,
+		func(ctx context.Context, question string) (string, error) {
+			t.Fatalf("should use interpreter-approved recent conversation instead of asking: %q", question)
+			return "", nil
+		},
+		structuredCommandDecisionRunConfig{PromptInterpreter: interpreter},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1515,12 +1791,12 @@ func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 		fmt.Sprintf("mv %q %q", projectDir, filepath.Join(root, "moved")),
 		fmt.Sprintf("rm %q && mkdir %q", filepath.Join(root, "scratch"), filepath.Join(root, "scratch")),
 	} {
-		err := validateStructuredCommandForRun(command, nil, projectDir)
+		err := validateStructuredCommandForRun(command, nil, projectDir, nil)
 		if err == nil {
 			t.Fatalf("command %q should be rejected", command)
 		}
 	}
-	if err := validateStructuredCommandForRun("mkdir -p . && npm init -y", nil, projectDir); err != nil {
+	if err := validateStructuredCommandForRun("mkdir -p . && npm init -y", nil, projectDir, nil); err != nil {
 		t.Fatalf("additive initialization should be allowed: %v", err)
 	}
 }
@@ -2599,7 +2875,7 @@ func TestStructuredObjectiveLedgerMergesPlannerDeclaredCriteria(t *testing.T) {
 }
 
 func TestPromptInterpreterParsesObjectiveLedger(t *testing.T) {
-	interpretation, err := ParsePromptInterpretation(`{"selected_recipe_ids":["frontend.stimulus-tailwind-recyclr"],"objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"pending"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html links Tailwind"}]}`)
+	interpretation, err := ParsePromptInterpretation(`{"requires_reference_history":true,"selected_recipe_ids":["frontend.stimulus-tailwind-recyclr"],"objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"pending"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html links Tailwind"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2608,6 +2884,9 @@ func TestPromptInterpreterParsesObjectiveLedger(t *testing.T) {
 	}
 	if len(interpretation.RecipeIDs) != 1 || interpretation.RecipeIDs[0] != "frontend.stimulus-tailwind-recyclr" {
 		t.Fatalf("recipe ids = %#v", interpretation.RecipeIDs)
+	}
+	if !interpretation.RequiresReferenceHistory {
+		t.Fatal("requires_reference_history was not parsed")
 	}
 }
 
@@ -2624,7 +2903,7 @@ func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.
 		}},
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger", "available_recipes", "selected_recipe_ids", "frontend.stimulus-tailwind-recyclr"} {
+	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger", "requires_reference_history", "available_recipes", "selected_recipe_ids", "frontend.stimulus-tailwind-recyclr"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("interpreter request missing %q: %s", want, content)
 		}
@@ -2633,7 +2912,7 @@ func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(formatBlob), "objective_ledger") || !strings.Contains(string(formatBlob), "selected_recipe_ids") || strings.Contains(string(formatBlob), "command") {
+	if !strings.Contains(string(formatBlob), "objective_ledger") || !strings.Contains(string(formatBlob), "requires_reference_history") || !strings.Contains(string(formatBlob), "selected_recipe_ids") || strings.Contains(string(formatBlob), "command") {
 		t.Fatalf("interpreter format should only require objective ledger: %s", string(formatBlob))
 	}
 }

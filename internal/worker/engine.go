@@ -1283,21 +1283,6 @@ func (s *Service) runWorkspaceScanStep(ctx context.Context, claim *model.Claimed
 
 func (s *Service) runTagStep(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string) error {
 	s.emitStepEvent(claim.Step.ID, "tag_begin", fmt.Sprintf("instruction_chars=%d", len(strings.TrimSpace(claim.Job.Instruction))))
-	if isLowSignalChatInstruction(claim.Job.Instruction, claim.Job.Pipeline) {
-		output := "chat,checkin"
-		s.emitStepEvent(claim.Step.ID, "tag_ready", "strategy=low_signal tags=2")
-		return s.repo.CompleteStep(ctx, claim.Step.ID, output, "tags", output)
-	}
-	if autonomyEnabled(claim.Job) && isFollowUpStatusCheckInstruction(claim.Job.Instruction, claim.Job.Pipeline) {
-		output := "followup,status,parent-job,completion"
-		s.emitStepEvent(claim.Step.ID, "tag_ready", "strategy=followup_status tags=4")
-		return s.repo.CompleteStep(ctx, claim.Step.ID, output, "tags", output)
-	}
-	if autonomyEnabled(claim.Job) && isSimpleFileTaskInstruction(claim.Job.Instruction, claim.Job.Pipeline) {
-		output := "file,document,touch,shell,quick"
-		s.emitStepEvent(claim.Step.ID, "tag_ready", "strategy=simple_file_task tags=5")
-		return s.repo.CompleteStep(ctx, claim.Step.ID, output, "tags", output)
-	}
 
 	tagFallback := s.specialistModel(claim.Job, specialist.RoleIntentTaggingSpecialist, s.models.Tagging)
 	tagModel := metadataModel(claim.Job, "model_tagger", tagFallback)
@@ -1351,12 +1336,9 @@ func (s *Service) runTagStep(ctx context.Context, claim *model.ClaimedStep, cont
 		}
 	}
 	if len(tags) == 0 {
-		tags = deriveHeuristicTags(tagInput, 8)
-		if len(tags) == 0 {
-			tags = []string{"general"}
-		}
+		tags = []string{"general"}
 		if lastErr != nil {
-			s.emitStepStream(claim.Step.ID, "stderr", "tag fallback to heuristic tags after model error: "+trimForBudget(lastErr.Error(), 260))
+			s.emitStepStream(claim.Step.ID, "stderr", "tag specialist failed; using general tag: "+trimForBudget(lastErr.Error(), 260))
 		}
 	}
 

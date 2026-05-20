@@ -304,6 +304,9 @@ func TestHandleTurnPassesSessionHistoryToStructuredCommandPath(t *testing.T) {
 	}))
 	defer server.Close()
 	app.ollama = NewOllamaClient(server.URL, "fake")
+	app.promptInterpreter = &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		RequiresReferenceHistory: true,
+	}}}
 	app.runLogger, _ = NewRunLogger(t.TempDir(), "structured-history-test")
 	defer app.runLogger.Close()
 

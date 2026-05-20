@@ -22,6 +22,7 @@ type RecipeObjective struct {
 	ID          string   `json:"id"`
 	Description string   `json:"description"`
 	DependsOn   []string `json:"depends_on,omitempty"`
+	Packages    []string `json:"packages,omitempty"`
 }
 
 type RecipePromptCandidate struct {
@@ -85,6 +86,9 @@ func RecipeObjectiveLedger(recipe Recipe) []StructuredObjective {
 			ID:          objective.ID,
 			Description: objective.Description,
 			Status:      "pending",
+			Source:      structuredObjectiveSourceRecipeRequired,
+			Required:    true,
+			Packages:    cleanStringList(objective.Packages),
 		})
 	}
 	return ledger
