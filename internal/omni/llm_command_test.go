@@ -1511,6 +1511,28 @@ func TestRepeatedFailedStructuredCommandIncludesRejectedCommand(t *testing.T) {
 	}
 }
 
+func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "test_project_20260520115716")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{
+		fmt.Sprintf("rm -r %q", projectDir),
+		fmt.Sprintf("rmdir %q", projectDir),
+		fmt.Sprintf("mv %q %q", projectDir, filepath.Join(root, "moved")),
+		fmt.Sprintf("rm %q && mkdir %q", filepath.Join(root, "scratch"), filepath.Join(root, "scratch")),
+	} {
+		err := validateStructuredCommandForRun(command, nil, projectDir)
+		if err == nil {
+			t.Fatalf("command %q should be rejected", command)
+		}
+	}
+	if err := validateStructuredCommandForRun("mkdir -p . && npm init -y", nil, projectDir); err != nil {
+		t.Fatalf("additive initialization should be allowed: %v", err)
+	}
+}
+
 func TestStructuredCommandDecisionRejectsVagueWTTRAndRetries(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"curl -s wttr.in","done":false,"answer":""}`,
@@ -1728,6 +1750,57 @@ func TestStructuredCommandDecisionRejectsBareShellAndInstructionalDone(t *testin
 	}
 	if !strings.Contains(result.Observations[0].Stderr, "shell/no-op launcher") {
 		t.Fatalf("bare shell should be rejected first: %#v", result.Observations[0])
+	}
+}
+
+func TestStructuredCommandDecisionRejectsRecursiveForceDeleteRetry(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "test_project_20260520115716")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(projectDir, "readme.md")
+	if err := os.WriteFile(sentinel, []byte("keep me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	destructive := fmt.Sprintf("rm -rf %q && mkdir %q && cd %q && npm init -y", projectDir, projectDir, projectDir)
+	safe := fmt.Sprintf("mkdir -p %q && printf 'SAFE\\n' > %q", projectDir, filepath.Join(projectDir, "safe.txt"))
+	client := &fakeCommandDecisionClient{responses: []string{
+		fmt.Sprintf(`{"command":%q,"done":false,"answer":""}`, destructive),
+		fmt.Sprintf(`{"command":%q,"done":false,"answer":""}`, safe),
+		`{"command":"","done":true,"answer":"Initialized safely without deleting the existing directory."}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"Initialize the existing project directory without deleting existing files.",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: root},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command != safe {
+		t.Fatalf("command = %q, want safe command", result.Command)
+	}
+	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "keep me\n" {
+		t.Fatalf("sentinel changed: content=%q err=%v", got, err)
+	}
+	if !structuredEventsContain(events, "structured_command_rejected") {
+		t.Fatalf("expected destructive command rejection; events=%#v", events)
+	}
+	if len(result.Observations) == 0 || !strings.Contains(result.Observations[0].Stderr, "recursive force removal is blocked") {
+		t.Fatalf("first observation should explain rm -rf rejection: %#v", result.Observations)
 	}
 }
 

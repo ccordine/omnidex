@@ -525,7 +525,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"command":   truncateStructuredTimelineValue(proposal.Command),
 				"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 			})
-			if err := validateStructuredCommandForObservations(proposal.Command, result.Observations); err != nil {
+			if err := validateStructuredCommandForRun(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 				emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 					"step":   fmt.Sprintf("%d", step),
 					"reason": err.Error(),
@@ -574,7 +574,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					"step":   fmt.Sprintf("%d", step),
 					"reason": "empty question with ask=true; executing non-empty command",
 				})
-				if err := validateStructuredCommandForObservations(payload.Command, result.Observations); err != nil {
+				if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":   fmt.Sprintf("%d", step),
 						"reason": err.Error(),
@@ -606,7 +606,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					UserResponse: previousAnswer,
 				})
 				if command != "" {
-					if err := validateStructuredCommandForObservations(payload.Command, result.Observations); err != nil {
+					if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 						emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 							"step":   fmt.Sprintf("%d", step),
 							"reason": err.Error(),
@@ -659,7 +659,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"step": fmt.Sprintf("%d", step),
 			})
 			if command != "" {
-				if err := validateStructuredCommandForObservations(payload.Command, result.Observations); err != nil {
+				if err := validateStructuredCommandForRun(payload.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":   fmt.Sprintf("%d", step),
 						"reason": err.Error(),
@@ -705,7 +705,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					"reason": "done=true requires an empty command; validating non-empty command instead",
 				})
 				command := applyStructuredCommandPromptCorrections(step, prompt, payload.Command, onEvent)
-				if err := validateStructuredCommandForObservations(command, result.Observations); err != nil {
+				if err := validateStructuredCommandForRun(command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":   fmt.Sprintf("%d", step),
 						"reason": err.Error(),
@@ -811,7 +811,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 		command := applyStructuredCommandPromptCorrections(step, prompt, payload.Command, onEvent)
-		if err := validateStructuredCommandForObservations(command, result.Observations); err != nil {
+		if err := validateStructuredCommandForRun(command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 				"step":   fmt.Sprintf("%d", step),
 				"reason": err.Error(),
@@ -1021,7 +1021,6 @@ mkdir -p "$workspace/toolchain" "$workspace/demo-go-cli"
 latest=$(curl -fsSL 'https://go.dev/dl/?mode=json' | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\(go[0-9][^"]*\)".*/\1/p' | head -1)
 test -n "$latest"
 curl -fsSL "https://go.dev/dl/${latest}.linux-amd64.tar.gz" -o "$workspace/go.tar.gz"
-rm -rf "$workspace/toolchain/go"
 tar -C "$workspace/toolchain" -xzf "$workspace/go.tar.gz"
 cd "$workspace/demo-go-cli"
 "$workspace/toolchain/go/bin/go" mod init example.com/demo-go-cli 2>/dev/null || true
@@ -1172,7 +1171,7 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 		"command":   truncateStructuredTimelineValue(proposal.Command),
 		"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 	})
-	if err := validateStructuredCommandForObservations(proposal.Command, result.Observations); err != nil {
+	if err := validateStructuredCommandForRun(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory); err != nil {
 		emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 			"step":   fmt.Sprintf("%d", step),
 			"reason": err.Error(),
@@ -1770,6 +1769,9 @@ func validateStructuredCommandString(command string) error {
 	if isNonEvidenceShellCommand(command) {
 		return fmt.Errorf("command is a shell/no-op launcher without task-specific side effects or output")
 	}
+	if structuredCommandUsesRecursiveForceRemove(command) {
+		return fmt.Errorf("recursive force removal is blocked; use non-destructive creation/update commands or ask for explicit deletion approval")
+	}
 	if strings.Contains(lower, "openweathermap") || strings.Contains(lower, "api.openweathermap.org") {
 		return fmt.Errorf("OpenWeatherMap requires an API key; use no-key wttr.in with an explicit location path and concise format query instead")
 	}
@@ -1802,6 +1804,30 @@ func validateStructuredCommandString(command string) error {
 	return nil
 }
 
+func structuredCommandUsesRecursiveForceRemove(command string) bool {
+	parts := strings.Fields(command)
+	for i, part := range parts {
+		if cleanCommandPathToken(part) != "rm" {
+			continue
+		}
+		end := len(parts)
+		for j := i + 1; j < len(parts); j++ {
+			token := cleanCommandPathToken(parts[j])
+			switch token {
+			case "&&", "||", ";", "|":
+				end = j
+			}
+			if end == j {
+				break
+			}
+		}
+		if rmUsesRecursiveForce(parts[i:end]) {
+			return true
+		}
+	}
+	return false
+}
+
 func validateStructuredCommandForObservations(command string, observations []StructuredCommandObservation) error {
 	if repeatedFailedStructuredCommand(command, observations) {
 		return fmt.Errorf("command repeats a previous failed command; choose a different command, source, or local tool")
@@ -1810,6 +1836,122 @@ func validateStructuredCommandForObservations(command string, observations []Str
 		return err
 	}
 	return nil
+}
+
+func validateStructuredCommandForRun(command string, observations []StructuredCommandObservation, workingDirectory string) error {
+	if err := validateStructuredCommandForObservations(command, observations); err != nil {
+		return err
+	}
+	if err := validateStructuredCommandWorkspaceProtection(command, workingDirectory); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateStructuredCommandWorkspaceProtection(command, workingDirectory string) error {
+	workspace := strings.TrimSpace(workingDirectory)
+	if workspace == "" {
+		return nil
+	}
+	workspaceAbs, err := filepath.Abs(workspace)
+	if err != nil {
+		return nil
+	}
+	workspaceAbs = filepath.Clean(workspaceAbs)
+	segments := structuredCommandSegments(command)
+	deletedTargets := map[string]struct{}{}
+	for _, segment := range segments {
+		if len(segment) == 0 {
+			continue
+		}
+		root := cleanCommandPathToken(segment[0])
+		switch root {
+		case "rm", "rmdir":
+			for _, target := range structuredCommandPathArgs(segment[1:], workspaceAbs) {
+				if pathIsSameOrAncestor(target, workspaceAbs) {
+					return fmt.Errorf("command attempts to remove the active working directory or one of its parents; creation/build tasks must preserve existing directories")
+				}
+				deletedTargets[target] = struct{}{}
+			}
+		case "mv":
+			args := structuredCommandPathArgs(segment[1:], workspaceAbs)
+			if len(args) > 0 && pathIsSameOrAncestor(args[0], workspaceAbs) {
+				return fmt.Errorf("command attempts to move the active working directory or one of its parents; creation/build tasks must preserve existing directories")
+			}
+		case "mkdir":
+			for _, target := range structuredCommandPathArgs(segment[1:], workspaceAbs) {
+				if _, deleted := deletedTargets[target]; deleted {
+					return fmt.Errorf("command deletes and recreates the same path; use mkdir -p or update files in place instead")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func structuredCommandSegments(command string) [][]string {
+	fields := strings.Fields(command)
+	segments := [][]string{}
+	current := []string{}
+	for _, field := range fields {
+		token := cleanCommandPathToken(field)
+		switch token {
+		case "&&", "||", ";", "|":
+			if len(current) > 0 {
+				segments = append(segments, current)
+				current = []string{}
+			}
+		default:
+			current = append(current, field)
+		}
+	}
+	if len(current) > 0 {
+		segments = append(segments, current)
+	}
+	return segments
+}
+
+func structuredCommandPathArgs(args []string, workspaceAbs string) []string {
+	targets := []string{}
+	stopOptions := false
+	for _, arg := range args {
+		candidate := cleanCommandPathToken(arg)
+		if candidate == "" {
+			continue
+		}
+		if candidate == "--" {
+			stopOptions = true
+			continue
+		}
+		if !stopOptions && strings.HasPrefix(candidate, "-") {
+			continue
+		}
+		if strings.Contains(candidate, "=") || isShellRedirectToken(candidate) {
+			continue
+		}
+		if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") {
+			continue
+		}
+		resolved, pathLike := resolveCommandPathToken(candidate, workspaceAbs)
+		if !pathLike {
+			continue
+		}
+		targets = append(targets, filepath.Clean(resolved))
+	}
+	return targets
+}
+
+func pathIsSameOrAncestor(candidate, target string) bool {
+	candidate = filepath.Clean(candidate)
+	target = filepath.Clean(target)
+	if candidate == target {
+		return true
+	}
+	rel, err := filepath.Rel(candidate, target)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, "../"))
 }
 
 func repeatedFailedStructuredCommand(command string, observations []StructuredCommandObservation) bool {
@@ -2563,6 +2705,8 @@ func buildStructuredCommandSystemContext() string {
 		"Use absolute paths or include cd in the same command that needs it.",
 		"A command that only changes directory does not help later steps; combine cd with the file creation, build, test, or verification command that needs that directory.",
 		"Use current_working_directory for project creation unless the user explicitly provided another path.",
+		"The current_working_directory is protected user state: use it as the project directory, do not delete, move, empty, or recreate it.",
+		"Creation is additive: use mkdir -p for directories and update requested files in place; never satisfy a create/init/build objective by deleting existing state first.",
 		"Do not create demo projects in the home directory unless the user explicitly asked for home.",
 		"Available terminal tools may include bash, curl, python3, sed, awk, grep, jq, date, uname, and package managers; discover with commands when uncertain.",
 		"To identify the operating system, inspect command evidence such as uname and /etc/os-release.",

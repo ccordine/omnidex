@@ -172,7 +172,6 @@ mkdir -p "$workspace/toolchain" "$workspace/demo-go-cli"
 latest=$(curl -fsSL 'https://go.dev/dl/?mode=json' | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\(go[0-9][^"]*\)".*/\1/p' | head -1)
 test -n "$latest"
 curl -fsSL "https://go.dev/dl/${latest}.linux-amd64.tar.gz" -o "$workspace/go.tar.gz"
-rm -rf "$workspace/toolchain/go"
 tar -C "$workspace/toolchain" -xzf "$workspace/go.tar.gz"
 cd "$workspace/demo-go-cli"
 "$workspace/toolchain/go/bin/go" mod init example.com/demo-go-cli

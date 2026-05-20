@@ -102,6 +102,17 @@ func TestPolicyBlocksCD(t *testing.T) {
 	}
 }
 
+func TestPolicyBlocksRecursiveForceRemove(t *testing.T) {
+	decision := EvaluateCommandPolicy("rm -rf ./existing-project", t.TempDir())
+
+	if decision.Allowed {
+		t.Fatal("rm -rf should be blocked")
+	}
+	if decision.ReasonCode != "unsafe_command_structure" {
+		t.Fatalf("reason = %q, want unsafe_command_structure", decision.ReasonCode)
+	}
+}
+
 func TestPolicyDoesNotPhraseMatchPlaceholderAPIKey(t *testing.T) {
 	decision := EvaluateCommandPolicy(`curl --max-time 20 "https://api.openweathermap.org/data/2.5/weather?q=Thailand&appid=YOUR_API_KEY"`, t.TempDir())
 

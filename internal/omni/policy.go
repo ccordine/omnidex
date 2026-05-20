@@ -124,11 +124,38 @@ func blocksByCommandStructure(parts []string) bool {
 	}
 	switch parts[0] {
 	case "rm":
-		return rmTargetsRoot(parts)
+		return rmUsesRecursiveForce(parts) || rmTargetsRoot(parts)
 	case "git":
 		return len(parts) >= 3 && parts[1] == "reset" && parts[2] == "--hard"
 	}
 	return false
+}
+
+func rmUsesRecursiveForce(parts []string) bool {
+	if len(parts) == 0 || parts[0] != "rm" {
+		return false
+	}
+	recursive := false
+	force := false
+	for _, part := range parts[1:] {
+		clean := cleanCommandPathToken(part)
+		if !strings.HasPrefix(clean, "-") {
+			continue
+		}
+		if clean == "--recursive" {
+			recursive = true
+		}
+		if clean == "--force" {
+			force = true
+		}
+		if strings.HasPrefix(clean, "--") {
+			continue
+		}
+		flags := strings.TrimLeft(clean, "-")
+		recursive = recursive || strings.Contains(flags, "r") || strings.Contains(flags, "R")
+		force = force || strings.Contains(flags, "f")
+	}
+	return recursive && force
 }
 
 func rmTargetsRoot(parts []string) bool {
