@@ -1775,6 +1775,9 @@ func classifyStructuredLLMFailure(err error) string {
 }
 
 func validateStructuredCommandString(command string) error {
+	if structuredCommandLooksLikeMultilinePackageManagerScript(command) {
+		return fmt.Errorf("multiline package-manager scripts are blocked; choose one concrete package/build command for the next objective")
+	}
 	if startsWithShellRedirectionToken(command) {
 		return fmt.Errorf("command starts with shell redirection token")
 	}
@@ -1849,6 +1852,90 @@ func structuredCommandUsesRecursiveForceRemove(command string) bool {
 		}
 	}
 	return false
+}
+
+func structuredCommandLooksLikeMultilinePackageManagerScript(command string) bool {
+	if !strings.ContainsAny(command, "\n\r") {
+		return false
+	}
+	if strings.Contains(command, "<<") {
+		return false
+	}
+	packageManagerLines := 0
+	inSingleQuote := false
+	inDoubleQuote := false
+	escaped := false
+	atLineStart := true
+	lineHasContent := false
+	var lineBuilder strings.Builder
+	for _, r := range command {
+		if r == '\r' {
+			continue
+		}
+		if r == '\n' {
+			if lineHasContent {
+				if structuredLineStartsWithPackageManager(lineBuilder.String()) {
+					packageManagerLines++
+					if packageManagerLines > 1 {
+						return true
+					}
+				}
+				lineBuilder.Reset()
+				lineHasContent = false
+			}
+			atLineStart = true
+			escaped = false
+			continue
+		}
+		if atLineStart {
+			if r == ' ' || r == '\t' {
+				continue
+			}
+			if !inSingleQuote && !inDoubleQuote {
+				lineBuilder.WriteRune(r)
+			}
+			atLineStart = false
+		} else if !inSingleQuote && !inDoubleQuote {
+			lineBuilder.WriteRune(r)
+		}
+		lineHasContent = true
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && !inSingleQuote {
+			escaped = true
+			continue
+		}
+		if r == '\'' && !inDoubleQuote {
+			inSingleQuote = !inSingleQuote
+			continue
+		}
+		if r == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+			continue
+		}
+	}
+	if lineHasContent && structuredLineStartsWithPackageManager(lineBuilder.String()) {
+		packageManagerLines++
+	}
+	if packageManagerLines > 1 {
+		return true
+	}
+	return false
+}
+
+func structuredLineStartsWithPackageManager(line string) bool {
+	fields := strings.Fields(strings.TrimSpace(line))
+	if len(fields) == 0 {
+		return false
+	}
+	switch cleanCommandPathToken(fields[0]) {
+	case "npm", "npx", "pnpm", "yarn":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateStructuredCommandForObservations(command string, observations []StructuredCommandObservation) error {

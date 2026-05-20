@@ -1363,6 +1363,24 @@ func TestValidateStructuredCommandRejectsOnlyPureEcho(t *testing.T) {
 	}
 }
 
+func TestValidateStructuredCommandRejectsMultilineScript(t *testing.T) {
+	command := strings.Join([]string{
+		"cd /tmp/project",
+		"npm install @hotwired/stimulus",
+		"npm install webpack webpack-cli --save-dev",
+	}, "\n")
+	err := validateStructuredCommandString(command)
+	if err == nil || !strings.Contains(err.Error(), "multiline package-manager scripts are blocked") {
+		t.Fatalf("multiline script should be rejected, got %v", err)
+	}
+	if err := validateStructuredCommandString("printf 'test evidence\n'"); err != nil {
+		t.Fatalf("quoted newline command should be allowed: %v", err)
+	}
+	if err := validateStructuredCommandString("set -e\nprintf 'evidence'"); err != nil {
+		t.Fatalf("non-package-manager script should be allowed: %v", err)
+	}
+}
+
 func TestValidateStructuredCommandRequiresSpecificWTTRQuery(t *testing.T) {
 	for _, command := range []string{
 		"curl -s wttr.in",
@@ -1600,7 +1618,7 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsR
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"npm init -y","done":false,"answer":""}`,
 		`{"command":"npm init -y","done":false,"answer":""}`,
-		`{"command":"printf 'webpack stimulus tailwind recyclr done\n' > setup.txt","done":false,"answer":"","objective_ledger":[{"id":"install_stimulus_js","description":"Install or account for Stimulus JS","status":"satisfied","evidence":"command output"},{"id":"install_recyclr_js","description":"Install or account for Recyclr JS","status":"satisfied","evidence":"command output"},{"id":"install_tailwind_css","description":"Install or account for Tailwind CSS","status":"satisfied","evidence":"command output"},{"id":"setup_webpack","description":"Set up webpack","status":"satisfied","evidence":"command output"}]}`,
+		`{"command":"printf 'webpack stimulus tailwind recyclr done' > setup.txt","done":false,"answer":"","objective_ledger":[{"id":"install_stimulus_js","description":"Install or account for Stimulus JS","status":"satisfied","evidence":"command output"},{"id":"install_recyclr_js","description":"Install or account for Recyclr JS","status":"satisfied","evidence":"command output"},{"id":"install_tailwind_css","description":"Install or account for Tailwind CSS","status":"satisfied","evidence":"command output"},{"id":"setup_webpack","description":"Set up webpack","status":"satisfied","evidence":"command output"}]}`,
 		`{"command":"","done":true,"answer":"Project initialized and dependencies accounted for."}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -1652,7 +1670,7 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsR
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Command != "printf 'webpack stimulus tailwind recyclr done\n' > setup.txt" {
+	if result.Command != "printf 'webpack stimulus tailwind recyclr done' > setup.txt" {
 		t.Fatalf("command = %q, want next non-repeated command", result.Command)
 	}
 	if len(checker.inputs) != 1 {
