@@ -94,6 +94,63 @@ func TestExecuteManagerWorkerJobUsesSharedCommandKernel(t *testing.T) {
 	}
 }
 
+func TestReduceWorkerResultsCompactsLargeTranscriptIntoCaveManSummary(t *testing.T) {
+	hugeStdout := "FACT_ALPHA_BEGIN " + strings.Repeat("filler ", 2000) + " FACT_OMEGA_END"
+	workers := []WorkerResult{{
+		Task: WorkerTask{
+			ID:        "worker_1",
+			Role:      "workspace_researcher",
+			Objective: "Read the large dataset and report observed facts only.",
+		},
+		Result: AgentCommandLoopResult{
+			Summary:       "worker read large dataset",
+			ExecutedCount: 1,
+			Done:          true,
+			Transcript: []CommandObservation{{
+				Step:    1,
+				Command: "cat large-data.txt",
+				Status:  "success",
+				Stdout:  hugeStdout,
+			}},
+		},
+	}}
+
+	requests := []OllamaChatRequest{}
+	client, closeServer := capturingOllamaClient(t, []string{
+		"- FACT_ALPHA_BEGIN and FACT_OMEGA_END were observed in worker output.",
+	}, &requests)
+	defer closeServer()
+
+	summary, reducedByLLM, compacted := reduceWorkerResults(
+		context.Background(),
+		client,
+		"Summarize the large dataset without inventing facts.",
+		workers,
+		ManagerWorkerConfig{ReduceTimeout: 5 * time.Second, ReduceContextBudget: 1000},
+	)
+	if !reducedByLLM {
+		t.Fatalf("reducedByLLM = false; summary=%q", summary)
+	}
+	if !compacted {
+		t.Fatal("large transcript should be compacted before reducer call")
+	}
+	if len(requests) != 1 {
+		t.Fatalf("reducer requests = %d, want 1", len(requests))
+	}
+	if len(requests[0].Messages) < 2 {
+		t.Fatalf("reducer request messages = %#v", requests[0].Messages)
+	}
+	prompt := requests[0].Messages[1].Content
+	if len(prompt) > 1000 {
+		t.Fatalf("compacted prompt length = %d, want <= 1000\n%s", len(prompt), prompt)
+	}
+	for _, want := range []string{"CAVE MAN SUMMARY", "USE ONLY THESE FACTS", "worker_1", "cat large-data.txt", "FACT_ALPHA_BEGIN", "FACT_OMEGA_END"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("compacted prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func fakeOllamaClient(t *testing.T, responses []string) (*OllamaClient, func()) {
 	t.Helper()
 	var mu sync.Mutex

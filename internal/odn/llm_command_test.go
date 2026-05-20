@@ -1259,6 +1259,153 @@ func TestValidateStructuredCommandRequiresSpecificWTTRQuery(t *testing.T) {
 	}
 }
 
+func TestValidateStructuredCommandRejectsOpenWeatherMapWithoutObservedKey(t *testing.T) {
+	command := `curl -s "http://api.openweathermap.org/data/2.5/weather?q=Pattaya&appid=YOUR_API_KEY&units=metric"`
+	err := validateStructuredCommandString(command)
+	if err == nil {
+		t.Fatal("OpenWeatherMap placeholder command should be rejected")
+	}
+	if !strings.Contains(err.Error(), "OpenWeatherMap") || !strings.Contains(err.Error(), "wttr.in") {
+		t.Fatalf("rejection should explain no-key weather source: %v", err)
+	}
+	if memory := structuredCapabilityMemoryForRejectedResponse(command, err.Error()); memory != structuredWeatherCapabilityMemory {
+		t.Fatalf("weather capability memory = %q", memory)
+	}
+}
+
+func TestValidateStructuredCommandRejectsPseudoToolsAndNone(t *testing.T) {
+	for _, command := range []string{
+		`web.search "current events saipan"`,
+		"None",
+	} {
+		if err := validateStructuredCommandString(command); err == nil {
+			t.Fatalf("command %q should be rejected", command)
+		}
+	}
+}
+
+func TestValidateStructuredCommandRequiresStableGoogleNewsRSSCurl(t *testing.T) {
+	for _, command := range []string{
+		`curl -s 'https://news.google.com/rss/search?q=current+events+saipan' | grep '<title>'`,
+		`curl -fsSL 'https://news.google.com/rss/search?q=current+events+saipan' | grep '<title>'`,
+		`curl -L 'https://news.google.com/rss/search?q=current+events+saipan&hl=en-US&gl=US&ceid=US:en' | grep '<title>'`,
+	} {
+		if err := validateStructuredCommandString(command); err == nil {
+			t.Fatalf("Google News RSS command %q should be rejected", command)
+		}
+	}
+	command := `curl -fsSL -A 'Mozilla/5.0' 'https://news.google.com/rss/search?q=current+events+saipan&hl=en-US&gl=US&ceid=US:en' | sed -n 's:.*<title>\([^<]*\)</title>.*:\1:p' | head -10`
+	if err := validateStructuredCommandString(command); err != nil {
+		t.Fatalf("stable Google News RSS command rejected: %v", err)
+	}
+}
+
+func TestStructuredCommandPromptCorrectionRewritesCurrentEventsPseudoTool(t *testing.T) {
+	command, reason, ok := structuredCommandPromptCorrection(
+		"What are the current events in Saipan?",
+		`web.search "current events saipan"`,
+	)
+	if !ok {
+		t.Fatal("current-events pseudo-tool should be corrected")
+	}
+	if !strings.Contains(reason, "current-events") {
+		t.Fatalf("reason = %q", reason)
+	}
+	for _, want := range []string{"news.google.com/rss/search", "current+events+saipan", "ceid=US:en", "curl -fsSL -A 'Mozilla/5.0'"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("corrected command missing %q: %s", want, command)
+		}
+	}
+	if err := validateStructuredCommandString(command); err != nil {
+		t.Fatalf("corrected current-events command rejected: %v", err)
+	}
+}
+
+func TestStructuredCommandPromptCorrectionRewritesHeavyBuildPrompts(t *testing.T) {
+	goCommand, goReason, goOK := structuredCommandPromptCorrection("build me a demo go application", "mkdir ~/go-demo-app && cd ~/go-demo-app && go run main.go")
+	if !goOK || !strings.Contains(goReason, "Go CLI demo") {
+		t.Fatalf("Go correction missing: ok=%t reason=%q command=%s", goOK, goReason, goCommand)
+	}
+	for _, want := range []string{"go.dev/dl/?mode=json", "test ./...", "build -o demo-go-cli", "RUN_GUIDE"} {
+		if !strings.Contains(goCommand, want) {
+			t.Fatalf("Go corrected command missing %q:\n%s", want, goCommand)
+		}
+	}
+
+	dockerRoot := filepath.Join(t.TempDir(), "docker-smoke")
+	dockerPrompt := fmt.Sprintf("Build a simple Docker web application in %s, run it as container %s from image %s on host port %d, confirm it is alive with curl, inspect Docker state to prove it is running and not restarting, verify restart count is zero, inspect docker logs, and report how to run/check it. Use a local static Go binary and FROM scratch if that avoids pulling base images. Do not install packages.", dockerRoot, "odn-docker-test", "odn-docker-test:image", 41730)
+	dockerCommand, dockerReason, dockerOK := structuredCommandPromptCorrection(dockerPrompt, "docker build .")
+	if !dockerOK || !strings.Contains(dockerReason, "Docker smoke") {
+		t.Fatalf("Docker correction missing: ok=%t reason=%q command=%s", dockerOK, dockerReason, dockerCommand)
+	}
+	for _, want := range []string{"docker build", "docker run -d", "docker inspect", "docker logs", "DOCKER_SMOKE_OK", "DOCKER_LOGS_CLEAR"} {
+		if !strings.Contains(dockerCommand, want) {
+			t.Fatalf("Docker corrected command missing %q:\n%s", want, dockerCommand)
+		}
+	}
+	deterministicDockerCommand, deterministicDockerAnswer, deterministicDockerOK := deterministicStructuredCommandForPrompt(dockerPrompt)
+	if !deterministicDockerOK || deterministicDockerAnswer == "" || !strings.Contains(deterministicDockerCommand, "DOCKER_SMOKE_OK") {
+		t.Fatalf("Docker deterministic pre-LLM command missing: ok=%t answer=%q command=%s", deterministicDockerOK, deterministicDockerAnswer, deterministicDockerCommand)
+	}
+
+	root := t.TempDir()
+	appDir := filepath.Join(root, "react-ts-smoke")
+	pidFile := filepath.Join(root, "react-ts.pid")
+	logFile := filepath.Join(root, "react-preview.log")
+	reactPrompt := fmt.Sprintf(
+		"Build a boilerplate React TypeScript npm project in %s, then install dependencies, run an equivalent TypeScript/build check, build it, start a local preview server on http://127.0.0.1:%d/, write the server PID to %s, and verify it with curl. The app must visibly render ODN React TypeScript Smoke. Start only the long-running preview server in the background, redirect its stdout/stderr to %s, capture $! in the PID file.",
+		appDir,
+		41731,
+		pidFile,
+		logFile,
+	)
+	reactCommand, reactReason, reactOK := structuredCommandPromptCorrection(reactPrompt, "bash")
+	if !reactOK || !strings.Contains(reactReason, "React TypeScript") {
+		t.Fatalf("React correction missing: ok=%t reason=%q command=%s", reactOK, reactReason, reactCommand)
+	}
+	for _, want := range []string{"package.json", "src/App.tsx", "npm install --silent", "npm run build --silent", "npm run preview", "ODN React TypeScript Smoke"} {
+		if !strings.Contains(reactCommand, want) {
+			t.Fatalf("React corrected command missing %q:\n%s", want, reactCommand)
+		}
+	}
+
+	webDir := filepath.Join(root, "stimulus-tailwind-smoke")
+	webPID := filepath.Join(root, "odn-webapp.pid")
+	webLog := filepath.Join(root, "server.log")
+	webPrompt := fmt.Sprintf(
+		"Build a smoke test demo web app in %s and serve it at http://127.0.0.1:%d/. Use Tailwind CSS from a CDN and Stimulus JS from a CDN. The page must include visible text ODN Stimulus Tailwind Smoke. Use this server shape after file creation with semicolons: nohup python3 -m http.server %d --bind 127.0.0.1 --directory %s > %s 2>&1 & server_pid=$!; echo \"$server_pid\" > %s; Then verify with curl.",
+		webDir,
+		41732,
+		41732,
+		webDir,
+		webLog,
+		webPID,
+	)
+	webCommand, webReason, webOK := structuredCommandPromptCorrection(webPrompt, "bash")
+	if !webOK || !strings.Contains(webReason, "Stimulus Tailwind") {
+		t.Fatalf("web correction missing: ok=%t reason=%q command=%s", webOK, webReason, webCommand)
+	}
+	for _, want := range []string{"index.html", "ODN Stimulus Tailwind Smoke", "python3 -m http.server", "server_pid", "data-controller"} {
+		if !strings.Contains(webCommand, want) {
+			t.Fatalf("web corrected command missing %q:\n%s", want, webCommand)
+		}
+	}
+}
+
+func TestValidateStructuredCommandRejectsOSIdentificationWithoutPackageDiscovery(t *testing.T) {
+	command := "uname -a && cat /etc/os-release"
+	err := validateStructuredCommandString(command)
+	if err == nil {
+		t.Fatal("OS identification command without package-manager discovery should be rejected")
+	}
+	if !strings.Contains(err.Error(), "package-manager discovery") {
+		t.Fatalf("unexpected rejection: %v", err)
+	}
+	if err := validateStructuredCommandString("cat /etc/os-release && uname -srmo && command -v pacman apt dnf yum zypper apk || true"); err != nil {
+		t.Fatalf("OS identification command with package-manager discovery rejected: %v", err)
+	}
+}
+
 func TestValidateStructuredCommandRejectsInvalidDateTimezoneSyntax(t *testing.T) {
 	for _, command := range []string{
 		"date -t UTC -d 'TZ=America/New_York'",
@@ -1275,6 +1422,23 @@ func TestValidateStructuredCommandRejectsInvalidDateTimezoneSyntax(t *testing.T)
 		if err := validateStructuredCommandString(command); err != nil {
 			t.Fatalf("command %q rejected: %v", command, err)
 		}
+	}
+}
+
+func TestRepeatedFailedStructuredCommandIncludesRejectedCommand(t *testing.T) {
+	command := `curl -s "http://api.openweathermap.org/data/2.5/weather?q=Pattaya&appid=YOUR_API_KEY&units=metric"`
+	observations := []StructuredCommandObservation{{
+		Step:            1,
+		RejectedCommand: command,
+		ExitCode:        1,
+		Stderr:          "shell specialist command rejected: OpenWeatherMap requires an API key",
+	}}
+	if !repeatedFailedStructuredCommand(command, observations) {
+		t.Fatal("repeated guard should include rejected_command observations")
+	}
+	err := validateStructuredCommandForObservations(command, observations)
+	if err == nil || !strings.Contains(err.Error(), "command repeats a previous failed command") {
+		t.Fatalf("repeated rejected command should fail as repeat, got %v", err)
 	}
 }
 
@@ -1327,6 +1491,74 @@ func TestStructuredCommandDecisionRejectsRepeatedFailedCommandAndRetries(t *test
 	}
 	if result.Answer != "fallback evidence" {
 		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsOSDoneWithoutPackageManagerDiscovery(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'x86_64\\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Arch Linux x86_64 using APT"}`,
+		`{"command":"command -v pacman apt dnf yum zypper apk || true","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Package-manager discovery was checked from command evidence."}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := RunStructuredCommandDecision(context.Background(), "Identify this machine's operating system, distro/version, kernel, architecture, and package manager from command evidence.", client, stdout, stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) < 3 {
+		t.Fatalf("observations = %#v, want OS evidence, done rejection, package-manager discovery", result.Observations)
+	}
+	if !strings.Contains(result.Observations[1].Stderr, "missing package-manager discovery evidence") {
+		t.Fatalf("second observation should reject OS done without package manager evidence: %#v", result.Observations[1])
+	}
+	foundDiscovery := false
+	for _, obs := range result.Observations {
+		if strings.Contains(obs.Command, "command -v pacman apt dnf yum zypper apk") {
+			foundDiscovery = true
+			break
+		}
+	}
+	if !foundDiscovery {
+		t.Fatalf("package-manager discovery command not executed: %#v", result.Observations)
+	}
+}
+
+func TestStructuredCommandDecisionCorrectsPartialOSIdentificationCommand(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"uname -a && cat /etc/os-release","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"OS evidence collected."}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"Identify this machine's operating system, distro/version, kernel, architecture, and package manager from command evidence.",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Command, "PACKAGE_MANAGERS") {
+		t.Fatalf("command was not corrected to OS evidence command: %q", result.Command)
+	}
+	if !strings.Contains(stdout.String(), "PACKAGE_MANAGERS") {
+		t.Fatalf("stdout missing package-manager evidence section: %q", stdout.String())
+	}
+	if !structuredEventsContain(events, "structured_command_corrected") {
+		t.Fatalf("missing correction event: %#v", events)
 	}
 }
 
@@ -1502,6 +1734,82 @@ func TestStructuredCommandDecisionFallsBackToShellSpecialistForEmptyCommand(t *t
 	}
 }
 
+func TestStructuredCommandDecisionShellSpecialistPivotsFromOpenWeatherMap(t *testing.T) {
+	openWeather := `curl -s "http://api.openweathermap.org/data/2.5/weather?q=Pattaya&appid=YOUR_API_KEY&units=metric"`
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Get current Pattaya weather using no-key public evidence."}`,
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Get current Pattaya weather using no-key public evidence."}`,
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Get current Pattaya weather using no-key public evidence."}`,
+		`{"command":"","done":true,"answer":"Pattaya weather evidence"}`,
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{
+		{Command: openWeather, Rationale: "Use OpenWeatherMap current weather endpoint."},
+		{Command: openWeather, Rationale: "Retry the same endpoint."},
+		{Command: "printf 'Pattaya weather evidence\n'", Rationale: "Use a local deterministic stand-in for accepted evidence in the unit test."},
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"Okay, what is the weather in Pattaya right now?",
+		nil,
+		client,
+		stdout,
+		stderr,
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{ShellSpecialist: shell},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shell.inputs) != 3 {
+		t.Fatalf("shell specialist calls = %d, want 3", len(shell.inputs))
+	}
+	if len(shell.inputs[1].Observations) == 0 || shell.inputs[1].Observations[0].RejectedCommand == "" {
+		t.Fatalf("second shell call should receive rejected command feedback: %#v", shell.inputs[1].Observations)
+	}
+	if len(result.Observations) != 3 {
+		t.Fatalf("observations = %#v, want two rejections and one accepted command", result.Observations)
+	}
+	if !strings.Contains(result.Observations[0].Stderr, "OpenWeatherMap requires an API key") {
+		t.Fatalf("first rejection should call out keyed weather source: %#v", result.Observations[0])
+	}
+	if result.Observations[0].CapabilityMemory != structuredWeatherCapabilityMemory {
+		t.Fatalf("weather memory missing from first rejection: %#v", result.Observations[0])
+	}
+	if !strings.Contains(result.Observations[1].Stderr, "command repeats a previous failed command") {
+		t.Fatalf("second rejection should block repeated delegated command: %#v", result.Observations[1])
+	}
+	if result.Command != "printf 'Pattaya weather evidence\n'" {
+		t.Fatalf("accepted command = %q", result.Command)
+	}
+	if result.Answer != "Pattaya weather evidence" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestShellCommandSpecialistRequestForWeatherForbidsOpenWeatherMap(t *testing.T) {
+	req := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{
+		Step:       1,
+		UserPrompt: "Okay, what is the weather in Pattaya right now?",
+		ToolTask:   "Get current Pattaya weather.",
+	})
+	content := joinOllamaMessageContent(req.Messages)
+	for _, want := range []string{
+		"wttr.in",
+		"OpenWeatherMap",
+		"api.openweathermap.org",
+		"YOUR_API_KEY",
+		"rejected_command",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("shell specialist request missing %q:\n%s", want, content)
+		}
+	}
+}
+
 func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'ok\n'","done":false,"answer":""}`,
@@ -1536,6 +1844,7 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 		"Specialists may create evidence-backed memories; memory updates or deprioritization must be routed through memory, correction, manager, or summary specialists according to profile policy.",
 		"Do not use echo to print an answer or apology.",
 		"Do not use shell commands to simulate a final answer; commands must inspect files, run tools, query the web, create requested output, or verify evidence.",
+		"Do not emit pseudo-tool names such as web.search, browser.search, None, or null as commands; commands execute in a real shell.",
 		"Use tool_inventory to choose available terminal tools, skills, public sources, and agent roles.",
 		"Never return an empty command when done=false unless delegating with tool=shell and a non-empty tool_task.",
 		"If a command fails, the failure is recorded in observations; use that context to pivot to a different command, source, or tool.",
@@ -1548,6 +1857,7 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 		"Do not create demo projects in the home directory unless the user explicitly asked for home.",
 		"To identify the operating system, inspect command evidence such as uname and /etc/os-release.",
 		"For identification tasks, inspect available package managers only; do not ask for permission to proceed with a package manager.",
+		"For OS identification requests, package-manager evidence means discovery output from command -v, which, or type -p for pacman apt dnf yum zypper apk; distro-specific files such as /etc/apt/sources.list are not enough.",
 		"Before OS-specific package or install advice, verify OS, distro, version, architecture, and available package managers with commands.",
 		"If a needed tool is missing, identify install options from verified OS/package-manager evidence.",
 		"Do not install missing tools unless the user explicitly asked to install or approved installation.",
@@ -1573,7 +1883,12 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 		"If the shell reports a syntax or quoting error, correct the command or use a simpler command.",
 		"Match the command source to the requested fact type.",
 		"Public no-key internet sources available: wttr.in, news.google.com/rss/search?q=<query>, duckduckgo.com/html/?q=<query>.",
+		"For current events or news, use a concrete shell command such as curl -fsSL -A 'Mozilla/5.0' 'https://news.google.com/rss/search?q=<query>&hl=en-US&gl=US&ceid=US:en' or curl -L 'https://duckduckgo.com/html/?q=<query>'; do not emit web.search.",
+		"For Google News RSS, use curl -fsSL -A 'Mozilla/5.0' 'https://news.google.com/rss/search?q=<query>&hl=en-US&gl=US&ceid=US:en'; keep the requested location in q= and parse a small number of titles.",
 		"When using wttr.in, include an explicit location path and a concise format query.",
+		"For current weather, prefer wttr.in with an explicit location path and concise format query, for example curl -s 'https://wttr.in/Pattaya?format=%l|%C|%t|%f'.",
+		"Do not use OpenWeatherMap or api.openweathermap.org unless a real non-placeholder API key is already available in observed evidence.",
+		"Never use YOUR_API_KEY, API_KEY_HERE, or invented credentials.",
 		"Prefer simple curl commands that print readable evidence over fragile HTML parsing.",
 		"For current time, prefer shell time/date commands or public no-key time sources.",
 		"For location-specific time, produce local-time evidence for that location; do not answer from UTC unless UTC was requested.",

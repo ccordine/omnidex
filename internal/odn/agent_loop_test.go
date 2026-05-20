@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +107,82 @@ func TestPolicyDoesNotPhraseMatchPlaceholderAPIKey(t *testing.T) {
 
 	if !decision.Allowed {
 		t.Fatalf("placeholder-looking phrase should not be blocked by phrase matching: %s %s", decision.ReasonCode, decision.Detail)
+	}
+}
+
+func TestAgentLoopCanUseSedToModifyExistingFileAndVerify(t *testing.T) {
+	workspace := t.TempDir()
+	settingsPath := filepath.Join(workspace, "settings.conf")
+	if err := os.WriteFile(settingsPath, []byte("feature=disabled\nmode=dev\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	requests := []OllamaChatRequest{}
+	client, closeServer := capturingOllamaClient(t, []string{
+		"sed -n '1,120p' settings.conf",
+		"sed -i 's/^feature=disabled$/feature=enabled/' settings.conf",
+		"grep '^feature=enabled$' settings.conf",
+		"DONE: settings.conf changed to feature=enabled and verified with grep",
+	}, &requests)
+	defer closeServer()
+
+	runLogger, err := NewRunLogger(t.TempDir(), "sed-edit-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runLogger.Close()
+
+	session := &Session{
+		WorkspacePath: workspace,
+		WorkspaceHash: "sed-edit-test",
+		Permission:    PermissionFull,
+	}
+	nextID := 0
+	result, err := ExecuteAgentCommandLoopWithConfig(
+		context.Background(),
+		session,
+		"Read settings.conf, use sed to change feature=disabled to feature=enabled, then verify the file content.",
+		PermissionFull,
+		strings.NewReader(""),
+		&bytes.Buffer{},
+		client,
+		func() string {
+			nextID++
+			return fmt.Sprintf("evt_%03d", nextID)
+		},
+		runLogger,
+		AgentCommandLoopConfig{
+			MaxSteps:            5,
+			MaxCommandsPerStep:  1,
+			MaxObservationChars: 1000,
+			PlannerTimeout:      5 * time.Second,
+			CommandTimeout:      5 * time.Second,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Done {
+		t.Fatalf("done = false; result=%#v", result)
+	}
+	updated, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "feature=enabled") || strings.Contains(string(updated), "feature=disabled") {
+		t.Fatalf("settings.conf not updated correctly:\n%s", string(updated))
+	}
+	if !transcriptCommandContains(result.Transcript, "sed -n '1,120p' settings.conf") {
+		t.Fatalf("transcript missing file context read: %#v", result.Transcript)
+	}
+	if !transcriptCommandContains(result.Transcript, "sed -i 's/^feature=disabled$/feature=enabled/' settings.conf") {
+		t.Fatalf("transcript missing sed edit: %#v", result.Transcript)
+	}
+	if !transcriptStdoutContains(result.Transcript, "feature=enabled") {
+		t.Fatalf("transcript missing grep verification output: %#v", result.Transcript)
+	}
+	if len(requests) < 2 || !strings.Contains(joinOllamaMessageContent(requests[1].Messages), "feature=disabled") {
+		t.Fatalf("second planner request should include observed file context: %#v", requests)
 	}
 }
 

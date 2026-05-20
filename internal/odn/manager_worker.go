@@ -11,28 +11,31 @@ import (
 )
 
 const (
-	defaultManagerMaxWorkers    = 4
-	defaultManagerPlanTimeout   = 45 * time.Second
-	defaultManagerReduceTimeout = 45 * time.Second
+	defaultManagerMaxWorkers          = 4
+	defaultManagerPlanTimeout         = 45 * time.Second
+	defaultManagerReduceTimeout       = 45 * time.Second
+	defaultManagerReduceContextBudget = 12000
 )
 
 type ManagerWorkerConfig struct {
-	MaxWorkers    int
-	PlanTimeout   time.Duration
-	ReduceTimeout time.Duration
-	WorkerConfig  AgentCommandLoopConfig
+	MaxWorkers          int
+	PlanTimeout         time.Duration
+	ReduceTimeout       time.Duration
+	ReduceContextBudget int
+	WorkerConfig        AgentCommandLoopConfig
 }
 
 type ManagerWorkerResult struct {
-	Summary      string
-	Tasks        []WorkerTask
-	Workers      []WorkerResult
-	Events       []Event
-	Executed     int
-	Blocked      int
-	Failed       int
-	Done         bool
-	ReducedByLLM bool
+	Summary          string
+	Tasks            []WorkerTask
+	Workers          []WorkerResult
+	Events           []Event
+	Executed         int
+	Blocked          int
+	Failed           int
+	Done             bool
+	ReducedByLLM     bool
+	CompactedContext bool
 }
 
 type WorkerTask struct {
@@ -57,10 +60,11 @@ func ExecuteManagerWorkerJob(ctx context.Context, session *Session, objective st
 
 func DefaultManagerWorkerConfig() ManagerWorkerConfig {
 	return ManagerWorkerConfig{
-		MaxWorkers:    defaultManagerMaxWorkers,
-		PlanTimeout:   defaultManagerPlanTimeout,
-		ReduceTimeout: defaultManagerReduceTimeout,
-		WorkerConfig:  DefaultAgentCommandLoopConfig(),
+		MaxWorkers:          defaultManagerMaxWorkers,
+		PlanTimeout:         defaultManagerPlanTimeout,
+		ReduceTimeout:       defaultManagerReduceTimeout,
+		ReduceContextBudget: defaultManagerReduceContextBudget,
+		WorkerConfig:        DefaultAgentCommandLoopConfig(),
 	}
 }
 
@@ -134,9 +138,10 @@ func ExecuteManagerWorkerJobWithConfig(ctx context.Context, session *Session, ob
 		result.Failed += workerResult.FailedCount
 	}
 
-	summary, reducedByLLM := reduceWorkerResults(ctx, client, objective, result.Workers, cfg)
+	summary, reducedByLLM, compactedContext := reduceWorkerResults(ctx, client, objective, result.Workers, cfg)
 	result.Summary = summary
 	result.ReducedByLLM = reducedByLLM
+	result.CompactedContext = compactedContext
 	result.Done = result.Executed > 0 && result.Failed == 0
 	result.Events = append(result.Events, Event{
 		ID:      nextEventID(),
@@ -148,6 +153,7 @@ func ExecuteManagerWorkerJobWithConfig(ctx context.Context, session *Session, ob
 			"blocked":        fmt.Sprintf("%d", result.Blocked),
 			"failed":         fmt.Sprintf("%d", result.Failed),
 			"done":           fmt.Sprintf("%t", result.Done),
+			"compacted":      fmt.Sprintf("%t", compactedContext),
 		},
 		CreatedAt: nowUTC(),
 	})
@@ -163,6 +169,9 @@ func normalizeManagerWorkerConfig(cfg ManagerWorkerConfig) ManagerWorkerConfig {
 	}
 	if cfg.ReduceTimeout <= 0 {
 		cfg.ReduceTimeout = defaultManagerReduceTimeout
+	}
+	if cfg.ReduceContextBudget <= 0 {
+		cfg.ReduceContextBudget = defaultManagerReduceContextBudget
 	}
 	cfg.WorkerConfig = normalizeAgentCommandLoopConfig(cfg.WorkerConfig)
 	return cfg
@@ -267,22 +276,91 @@ func buildWorkerObjective(overallObjective string, task WorkerTask) string {
 	}, "\n")
 }
 
-func reduceWorkerResults(ctx context.Context, client *OllamaClient, objective string, workers []WorkerResult, cfg ManagerWorkerConfig) (string, bool) {
-	grounding := buildWorkerGrounding(objective, workers)
+func reduceWorkerResults(ctx context.Context, client *OllamaClient, objective string, workers []WorkerResult, cfg ManagerWorkerConfig) (string, bool, bool) {
+	grounding, compacted := buildWorkerReductionGrounding(objective, workers, cfg)
 	reduceCtx, cancel := context.WithTimeout(ctx, cfg.ReduceTimeout)
 	defer cancel()
 
 	resp, err := client.ChatRaw(reduceCtx, OllamaChatRequest{
 		Messages: []OllamaMessage{
-			{Role: "system", Content: MinimalOutputContract + " Role: reducer. Use only transcript facts. Missing evidence: say MISSING: <item>. Max 5 bullets."},
+			{Role: "system", Content: MinimalOutputContract + " Role: reducer. Use only transcript facts. Missing evidence: say MISSING: <item>. Max 5 bullets. If input says CAVE MAN SUMMARY, treat it as the full bounded evidence set and do not invent omitted details."},
 			{Role: "user", Content: grounding},
 		},
 		Options: map[string]interface{}{"temperature": 0, "num_predict": 400},
 	})
 	if err != nil {
-		return deterministicWorkerSummary(objective, workers), false
+		return deterministicWorkerSummary(objective, workers), false, compacted
 	}
-	return strings.TrimSpace(resp.Content), true
+	return strings.TrimSpace(resp.Content), true, compacted
+}
+
+func buildWorkerReductionGrounding(objective string, workers []WorkerResult, cfg ManagerWorkerConfig) (string, bool) {
+	budget := cfg.ReduceContextBudget
+	if budget <= 0 {
+		budget = defaultManagerReduceContextBudget
+	}
+	grounding := buildWorkerGrounding(objective, workers)
+	if len(grounding) <= budget {
+		return grounding, false
+	}
+	return buildCaveManWorkerGrounding(objective, workers, budget), true
+}
+
+func buildCaveManWorkerGrounding(objective string, workers []WorkerResult, budget int) string {
+	if budget <= 0 {
+		budget = defaultManagerReduceContextBudget
+	}
+	perObservationChars := 800
+	if budget/4 < perObservationChars {
+		perObservationChars = budget / 4
+	}
+	if perObservationChars < 160 {
+		perObservationChars = 160
+	}
+
+	var b strings.Builder
+	if !appendCaveManLine(&b, budget, "CAVE MAN SUMMARY. SOURCE IS WORKER TRANSCRIPTS. USE ONLY THESE FACTS.") {
+		return b.String()
+	}
+	if !appendCaveManLine(&b, budget, "Objective: "+compactCaveManText(objective, 600)) {
+		return b.String()
+	}
+	for _, worker := range workers {
+		if !appendCaveManLine(&b, budget, fmt.Sprintf("Worker %s role=%s done=%t executed=%d blocked=%d failed=%d", worker.Task.ID, worker.Task.Role, worker.Result.Done, worker.Result.ExecutedCount, worker.Result.BlockedCount, worker.Result.FailedCount)) {
+			return b.String()
+		}
+		if strings.TrimSpace(worker.Task.Objective) != "" {
+			if !appendCaveManLine(&b, budget, "  objective: "+compactCaveManText(worker.Task.Objective, 320)) {
+				return b.String()
+			}
+		}
+		if strings.TrimSpace(worker.Result.Summary) != "" {
+			if !appendCaveManLine(&b, budget, "  worker_summary: "+compactCaveManText(worker.Result.Summary, 320)) {
+				return b.String()
+			}
+		}
+		for _, obs := range worker.Result.Transcript {
+			if !appendCaveManLine(&b, budget, fmt.Sprintf("  step=%d status=%s command=%q", obs.Step, obs.Status, compactCaveManText(obs.Command, 220))) {
+				return b.String()
+			}
+			if strings.TrimSpace(obs.Stdout) != "" {
+				if !appendCaveManLine(&b, budget, "    stdout facts: "+compactCaveManText(obs.Stdout, perObservationChars)) {
+					return b.String()
+				}
+			}
+			if strings.TrimSpace(obs.Stderr) != "" {
+				if !appendCaveManLine(&b, budget, "    stderr facts: "+compactCaveManText(obs.Stderr, perObservationChars)) {
+					return b.String()
+				}
+			}
+			if strings.TrimSpace(obs.Error) != "" {
+				if !appendCaveManLine(&b, budget, "    error: "+compactCaveManText(obs.Error, perObservationChars)) {
+					return b.String()
+				}
+			}
+		}
+	}
+	return b.String()
 }
 
 func buildWorkerGrounding(objective string, workers []WorkerResult) string {
@@ -310,6 +388,52 @@ func buildWorkerGrounding(objective string, workers []WorkerResult) string {
 		}
 	}
 	return b.String()
+}
+
+func compactCaveManText(raw string, maxChars int) string {
+	text := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if maxChars <= 0 || len(text) <= maxChars {
+		return text
+	}
+	marker := " ... [middle omitted] ... "
+	if maxChars <= len(marker)+20 {
+		return text[:maxChars]
+	}
+	head := (maxChars - len(marker)) / 2
+	tail := maxChars - len(marker) - head
+	return text[:head] + marker + text[len(text)-tail:]
+}
+
+func appendCaveManLine(b *strings.Builder, budget int, line string) bool {
+	if budget <= 0 {
+		b.WriteString(line)
+		b.WriteByte('\n')
+		return true
+	}
+	if b.Len() >= budget {
+		return false
+	}
+	remaining := budget - b.Len()
+	if len(line)+1 <= remaining {
+		b.WriteString(line)
+		b.WriteByte('\n')
+		return true
+	}
+	marker := " ... [truncated to avoid context overflow]"
+	if remaining <= len(marker)+1 {
+		return false
+	}
+	limit := remaining - len(marker) - 1
+	if limit <= 0 {
+		return false
+	}
+	if limit > len(line) {
+		limit = len(line)
+	}
+	b.WriteString(line[:limit])
+	b.WriteString(marker)
+	b.WriteByte('\n')
+	return false
 }
 
 func deterministicWorkerSummary(objective string, workers []WorkerResult) string {

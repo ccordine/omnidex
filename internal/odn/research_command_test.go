@@ -227,6 +227,34 @@ func TestHandleTurnStoresCapabilityMemoryFromDeterministicRejection(t *testing.T
 	}
 }
 
+func TestHandleTurnStoresWeatherCapabilityMemoryFromOpenWeatherMapRejection(t *testing.T) {
+	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	client, closeServer := fakeOllamaClient(t, []string{
+		`{"command":"curl -s \"http://api.openweathermap.org/data/2.5/weather?q=Pattaya&appid=YOUR_API_KEY&units=metric\"","done":false,"answer":""}`,
+		`{"command":"printf 'Pattaya weather evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"Pattaya weather evidence."}`,
+	})
+	defer closeServer()
+	app.ollama = client
+	app.runLogger, _ = NewRunLogger(t.TempDir(), "structured-weather-memory-test")
+	defer app.runLogger.Close()
+
+	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "structured-weather-memory-test", Permission: PermissionFull}
+	turn, _, err := app.handleTurn(session, "Okay, what is the weather in Pattaya right now?", &activityIndicator{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Memories) != 1 {
+		t.Fatalf("session memories = %#v, want one weather capability memory", session.Memories)
+	}
+	if session.Memories[0].Content != structuredWeatherCapabilityMemory {
+		t.Fatalf("unexpected weather memory: %#v", session.Memories[0])
+	}
+	if countEventsOfType(turn.Events, "capability_memory_stored") != 1 {
+		t.Fatalf("missing capability memory event: %#v", turn.Events)
+	}
+}
+
 func TestHandleTurnPassesSessionHistoryToStructuredCommandPath(t *testing.T) {
 	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	requests := []OllamaChatRequest{}
