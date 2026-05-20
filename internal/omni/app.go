@@ -513,7 +513,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	if activity == nil {
 		activity = &activityIndicator{}
 	}
-	execCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	execCtx, cancel := context.WithTimeout(context.Background(), defaultCommandDecisionTimeout)
 	signalCtx, stopSignal := signal.NotifyContext(execCtx, os.Interrupt)
 	defer stopSignal()
 	var stdoutBuf strings.Builder
@@ -555,6 +555,12 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	assistantResponse := formatStructuredCommandChatResponse(result, stdoutBuf.String(), stderrBuf.String(), "")
 	if execErr != nil {
 		assistantResponse = formatStructuredCommandChatResponse(result, stdoutBuf.String(), stderrBuf.String(), execErr.Error())
+		eventType := "structured_command_failed"
+		eventSummary := "Structured command execution failed"
+		if result.PartialProgress {
+			eventType = "structured_planner_failed_after_progress"
+			eventSummary = "Planner failed after successful command progress"
+		}
 		details := map[string]string{
 			"error":     execErr.Error(),
 			"command":   result.Command,
@@ -562,11 +568,18 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			"stdout":    truncateOutput(stdoutBuf.String()),
 			"stderr":    truncateOutput(stderrBuf.String()),
 		}
+		if result.PartialProgress {
+			details["pending_objectives"] = pendingStructuredObjectiveIDs(result.ObjectiveLedger)
+		}
 		if isTransientStructuredLLMError(execErr) {
 			details["diagnosis"] = classifyStructuredLLMFailure(execErr)
-			details["mitigation"] = "Ollama backend failed before command completion; inspect journalctl -u ollama and consider CPU library mode."
+			if result.PartialProgress {
+				details["mitigation"] = "Ollama timed out while planning the next step after successful command progress; rerun the request to continue from the updated workspace state."
+			} else {
+				details["mitigation"] = "Ollama backend failed before command completion; inspect journalctl -u ollama and consider CPU library mode."
+			}
 		}
-		emitEvent("structured_command_failed", "Structured command execution failed", details)
+		emitEvent(eventType, eventSummary, details)
 	} else {
 		emitEvent("structured_command_completed", "Structured command executed", map[string]string{
 			"command":   result.Command,
@@ -671,9 +684,13 @@ func (a *App) handleMicroQueueTurn(session *Session, objective string) (Turn, st
 }
 
 func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, stderr, errText string) string {
+	statusLabel := "Exit code"
+	if result.PartialProgress && strings.TrimSpace(errText) != "" {
+		statusLabel = "Last command exit code"
+	}
 	lines := []string{
 		"Command: " + result.Command,
-		fmt.Sprintf("Exit code: %d", result.ExitCode),
+		fmt.Sprintf("%s: %d", statusLabel, result.ExitCode),
 	}
 	if len(result.Observations) > 1 {
 		lines = append(lines, fmt.Sprintf("Attempts: %d", len(result.Observations)))
@@ -688,7 +705,14 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 		lines = append(lines, "Answer: "+result.Answer)
 	}
 	if strings.TrimSpace(errText) != "" {
-		lines = append(lines, "Error: "+errText)
+		if result.PartialProgress {
+			if pending := pendingStructuredObjectiveIDs(result.ObjectiveLedger); pending != "" {
+				lines = append(lines, "Pending objectives: "+pending)
+			}
+			lines = append(lines, "Planner error after progress: "+errText)
+		} else {
+			lines = append(lines, "Error: "+errText)
+		}
 		if diagnosis := classifyStructuredLLMFailure(errors.New(errText)); diagnosis != "ollama_request_failure" {
 			lines = append(lines, "Diagnosis: "+diagnosis)
 		}

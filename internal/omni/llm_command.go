@@ -19,11 +19,11 @@ import (
 	"github.com/gryph/omnidex/internal/specialist"
 )
 
-const defaultCommandDecisionTimeout = 3 * time.Minute
+const defaultCommandDecisionTimeout = 6 * time.Hour
 const defaultCommandDecisionMaxSteps = 10
 const defaultStructuredObservationChars = 2400
 const defaultStructuredLLMRequestAttempts = 3
-const defaultStructuredEvaluatorTimeout = 20 * time.Second
+const defaultStructuredEvaluatorTimeout = defaultOllamaRequestTimeout
 
 type CommandDecisionClient interface {
 	ChatRaw(ctx context.Context, req OllamaChatRequest) (OllamaChatResponse, error)
@@ -44,6 +44,7 @@ type CommandDecisionResult struct {
 	Command         string
 	ExitCode        int
 	Answer          string
+	PartialProgress bool
 	Observations    []StructuredCommandObservation
 	ObjectiveLedger []StructuredObjective
 	MinimalContext  MinimalContext
@@ -427,7 +428,14 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		})
 		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequestWithContext(prompt, history, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext), step, onEvent)
 		if err != nil {
-			if result.ExitCode == 0 {
+			if hasSuccessfulCommandObservation(result.Observations) {
+				result.PartialProgress = true
+				emitStructuredCommandEvent(onEvent, "structured_planner_failed_after_progress", "Planner request failed after successful command progress", map[string]string{
+					"step":               fmt.Sprintf("%d", step),
+					"error":              truncateStructuredTimelineValue(err.Error()),
+					"pending_objectives": pendingStructuredObjectiveIDs(ledger),
+				})
+			} else if result.ExitCode == 0 {
 				result.ExitCode = 1
 			}
 			return result, err

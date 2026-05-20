@@ -341,6 +341,35 @@ func TestStructuredCommandChatResponseIncludesAPIErrorOutput(t *testing.T) {
 	}
 }
 
+func TestStructuredCommandChatResponseSeparatesPlannerErrorAfterProgress(t *testing.T) {
+	response := formatStructuredCommandChatResponse(
+		CommandDecisionResult{
+			Command:         "npm init -y",
+			ExitCode:        0,
+			PartialProgress: true,
+			ObjectiveLedger: []StructuredObjective{
+				{ID: "install_webpack", Status: "pending"},
+			},
+		},
+		"Wrote to package.json",
+		"",
+		"context deadline exceeded",
+	)
+
+	for _, want := range []string{
+		"Last command exit code: 0",
+		"Pending objectives: install_webpack",
+		"Planner error after progress: context deadline exceeded",
+	} {
+		if !strings.Contains(response, want) {
+			t.Fatalf("response missing %q:\n%s", want, response)
+		}
+	}
+	if strings.Contains(response, "Exit code: 1") {
+		t.Fatalf("response should not report the successful command as failed:\n%s", response)
+	}
+}
+
 func TestHandleTurnFinalResponseReviewerCanReviseResponse(t *testing.T) {
 	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	client, closeServer := fakeOllamaClient(t, []string{

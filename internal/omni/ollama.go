@@ -56,6 +56,8 @@ type OllamaChatResponse struct {
 
 var omniContextModelCounter uint64
 
+const defaultOllamaRequestTimeout = 10 * time.Minute
+
 func NewOllamaClient(endpoint, model string) *OllamaClient {
 	ep := strings.TrimSpace(endpoint)
 	if ep == "" {
@@ -69,7 +71,7 @@ func NewOllamaClient(endpoint, model string) *OllamaClient {
 		Endpoint: ep,
 		Model:    m,
 		Client: &http.Client{
-			Timeout: 2 * time.Minute,
+			Timeout: defaultOllamaRequestTimeout,
 		},
 	}
 }

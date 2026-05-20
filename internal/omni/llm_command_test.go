@@ -410,6 +410,18 @@ func TestClassifyStructuredLLMFailureIdentifiesRunnerCrash(t *testing.T) {
 	}
 }
 
+func TestStructuredCommandDefaultTimeoutAllowsLongRunningAgenticWork(t *testing.T) {
+	if defaultOllamaRequestTimeout != 10*time.Minute {
+		t.Fatalf("ollama request timeout = %s, want 10m", defaultOllamaRequestTimeout)
+	}
+	if defaultStructuredEvaluatorTimeout != defaultOllamaRequestTimeout {
+		t.Fatalf("evaluator timeout = %s, want ollama request timeout %s", defaultStructuredEvaluatorTimeout, defaultOllamaRequestTimeout)
+	}
+	if defaultCommandDecisionTimeout != 6*time.Hour {
+		t.Fatalf("command decision timeout = %s, want 6h long-running task budget", defaultCommandDecisionTimeout)
+	}
+}
+
 func TestStructuredCommandDecisionLLMFailureBeforeCommandSetsExitCodeOne(t *testing.T) {
 	client := &fakeCommandDecisionClient{
 		errors: []error{
@@ -430,6 +442,44 @@ func TestStructuredCommandDecisionLLMFailureBeforeCommandSetsExitCodeOne(t *test
 	}
 	if result.Command != "" || stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("command should not execute on LLM failure: result=%#v stdout=%q stderr=%q", result, stdout.String(), stderr.String())
+	}
+}
+
+func TestStructuredCommandDecisionLLMFailureAfterProgressPreservesLastCommandSuccess(t *testing.T) {
+	client := &fakeCommandDecisionClient{
+		responses: []string{
+			`{"command":"printf 'created package.json\n'","done":false,"answer":""}`,
+		},
+		errors: []error{
+			nil,
+			context.DeadlineExceeded,
+		},
+	}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := RunStructuredCommandDecisionWithEvents(
+		context.Background(),
+		"create the next project step",
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+	)
+	if err == nil {
+		t.Fatal("expected planner error after progress")
+	}
+	if result.ExitCode != 0 || !result.PartialProgress {
+		t.Fatalf("result should preserve successful command progress: %#v", result)
+	}
+	if result.Command != "printf 'created package.json\n'" {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if !structuredEventsContain(events, "structured_planner_failed_after_progress") {
+		t.Fatalf("missing planner-after-progress event: %#v", events)
 	}
 }
 
