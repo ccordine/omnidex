@@ -554,6 +554,59 @@ func TestStructuredCommandDecisionEvaluatorRejectConfidenceCannotOverride(t *tes
 	}
 }
 
+func TestStructuredCommandDecisionRepeatedEvaluatorReviseBypassesEvaluatorLoop(t *testing.T) {
+	workspace := createReactFixture(t)
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'first candidate\n'","done":false,"answer":""}`,
+		`{"command":"printf 'accepted after evaluator loop\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"accepted after evaluator loop"}`,
+	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Verdict: "revise", Confidence: 100, Feedback: "install Tailwind manually"},
+		{Verdict: "revise", Confidence: 100, Feedback: "install Tailwind manually"},
+	}}
+	var stdout strings.Builder
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "continue making the app a calculator", nil, client, &stdout, &strings.Builder{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		Evaluator:               evaluator,
+		EvaluatorThreshold:      70,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "accepted after evaluator loop") {
+		t.Fatalf("second planner command did not execute after evaluator loop bypass: %q", stdout.String())
+	}
+	if !structuredEventsContain(events, "structured_evaluator_loop_bypassed") {
+		t.Fatalf("missing evaluator loop bypass event: %#v", events)
+	}
+	if result.Answer != "accepted after evaluator loop" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestFormatStructuredCommandChatResponseSummarizesExhaustionBlocker(t *testing.T) {
+	result := CommandDecisionResult{
+		ExitCode:        1,
+		PartialProgress: true,
+		ObjectiveLedger: []StructuredObjective{{ID: "implement_calculator_logic", Description: "Implement calculator logic", Status: "pending", Required: true, Source: structuredObjectiveSourceUserExplicit}},
+		Observations: []StructuredCommandObservation{{
+			Step:     40,
+			ExitCode: 1,
+			Stderr:   "anti_loop: evaluator repeated the same revise feedback",
+		}},
+	}
+	response := formatStructuredCommandChatResponse(result, "", "", "structured command loop exhausted after 40 step(s) without accepted completion")
+	for _, want := range []string{"Command: (none accepted)", "Pending objectives: implement_calculator_logic", "Last blocker: anti_loop"} {
+		if !strings.Contains(response, want) {
+			t.Fatalf("response missing %q:\n%s", want, response)
+		}
+	}
+}
+
 func TestValidateStructuredScaffoldScopeBlocksCreateReactAppInModifyMode(t *testing.T) {
 	survey := WorksiteSurvey{UserOperation: userOperationModifyExisting, ProjectState: projectStateExistingReactApp}
 	err := validateStructuredCommandForRunWithSurvey("npx create-react-app calculator-app", nil, t.TempDir(), nil, survey)
@@ -1873,7 +1926,7 @@ func TestValidateStructuredCommandRejectsRepeatedSuccessfulCommand(t *testing.T)
 		Stdout:   "Wrote to package.json",
 	}}
 	err := validateStructuredCommandForObservations("npm   init   -y", observations)
-	if err == nil || !strings.Contains(err.Error(), "previous successful command") {
+	if err == nil || !strings.Contains(err.Error(), "already completed") {
 		t.Fatalf("repeated successful command should fail, got %v", err)
 	}
 }
@@ -3004,6 +3057,49 @@ func TestStructuredCommandDecisionUserMessageCarriesCommandRequirementState(t *t
 	}
 }
 
+func TestCompletedActionsFromStateDeduplicatesSuccessfulProgress(t *testing.T) {
+	actions := completedActionsFromState([]StructuredObjective{
+		{ID: "setup_calculator_structure", Description: "Set up calculator structure", Status: "satisfied", Evidence: "src/components exists"},
+		{ID: "implement_calculator_logic", Description: "Implement calculator logic", Status: "pending"},
+	}, []StructuredCommandObservation{
+		{Step: 1, Command: "mkdir -p src/components", ExitCode: 0, Stdout: "created"},
+		{Step: 2, Command: "mkdir    -p   src/components", ExitCode: 0, Stdout: "created again"},
+		{Step: 3, RejectedCommand: "npm install tailwindcss -D", ExitCode: 1, Stderr: "repeat failed"},
+		{Step: 4, Command: "SKIPPED_REPEAT_SUCCESS: mkdir -p src/components", RejectedCommand: "mkdir -p src/components", ExitCode: 0},
+	})
+	if len(actions) != 2 {
+		t.Fatalf("completed actions = %#v", actions)
+	}
+	if actions[0].Command != "mkdir -p src/components" {
+		t.Fatalf("first action should be the original successful command: %#v", actions[0])
+	}
+	if actions[1].ObjectiveID != "setup_calculator_structure" {
+		t.Fatalf("second action should be satisfied objective: %#v", actions[1])
+	}
+}
+
+func TestStructuredCommandUserMessageIncludesCompletedActions(t *testing.T) {
+	message := buildStructuredCommandUserMessage(
+		"continue the calculator app",
+		[]StructuredCommandObservation{{Step: 1, Command: "mkdir -p src/components", ExitCode: 0, Stdout: "created"}},
+		t.TempDir(),
+		[]StructuredObjective{
+			{ID: "setup_calculator_structure", Description: "Set up calculator structure", Status: "satisfied", Evidence: "src/components exists"},
+			{ID: "implement_calculator_logic", Description: "Implement calculator logic", Status: "pending"},
+		},
+	)
+	for _, want := range []string{
+		`"completed_actions"`,
+		`"mkdir -p src/components"`,
+		`"setup_calculator_structure"`,
+		`"pending_objective_ids":["implement_calculator_logic"]`,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing completed-action content %q: %s", want, message)
+		}
+	}
+}
+
 func TestStructuredObjectiveLedgerMergesPlannerDeclaredCriteria(t *testing.T) {
 	ledger := mergeStructuredObjectiveLedger(nil, []StructuredObjective{
 		{ID: "npm_project", Description: "Create an npm package manifest", Status: "satisfied", Evidence: "package.json written"},
@@ -3088,14 +3184,15 @@ func TestContextSummarizerRequestCarriesCandidateContextButReturnsInventorySchem
 		ObjectiveLedger: []StructuredObjective{
 			{ID: "calculator", Description: "Build calculator", Status: "pending"},
 		},
-		History: []Message{{Role: "user", Content: "prior irrelevant detail"}},
+		CompletedActions: []CompletedAction{{ID: "command_mkdir_src_components", Kind: "file", Summary: "Completed command: mkdir -p src/components", Command: "mkdir -p src/components"}},
+		History:          []Message{{Role: "user", Content: "prior irrelevant detail"}},
 		SessionMemories: []SessionMemory{{
 			Kind:    "preference",
 			Content: "Prefer active directory over repo root.",
 		}},
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"summary specialist", "minimal context inventory", "objective_ledger", "reference_history", "session_memories"} {
+	for _, want := range []string{"summary specialist", "minimal context inventory", "objective_ledger", "completed_actions", "reference_history", "session_memories"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("summarizer request missing %q: %s", want, content)
 		}
@@ -3117,11 +3214,12 @@ func TestCompletionCheckerRequestAndParser(t *testing.T) {
 		ObjectiveLedger: []StructuredObjective{
 			{ID: "retrieve_weather_pattaya", Description: "Retrieve current Pattaya weather", Status: "pending"},
 		},
-		MinimalContext:  MinimalContext{Summary: "Fresh weather exists."},
-		CandidateAnswer: "Partly Cloudy +29C",
+		CompletedActions: []CompletedAction{{ID: "command_curl_weather", Kind: "command", Summary: "Completed command: curl wttr.in/Pattaya", Command: "curl wttr.in/Pattaya"}},
+		MinimalContext:   MinimalContext{Summary: "Fresh weather exists."},
+		CandidateAnswer:  "Partly Cloudy +29C",
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"done-check specialist", "objective_ledger", "minimal_context", "candidate_answer"} {
+	for _, want := range []string{"done-check specialist", "objective_ledger", "completed_actions", "minimal_context", "candidate_answer"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("completion checker request missing %q: %s", want, content)
 		}
@@ -3132,6 +3230,46 @@ func TestCompletionCheckerRequestAndParser(t *testing.T) {
 	}
 	if !check.Done || len(pendingStructuredObjectives(check.ObjectiveLedger)) != 0 {
 		t.Fatalf("unexpected completion check: %#v", check)
+	}
+}
+
+func TestShellSpecialistRequestIncludesCompletedActions(t *testing.T) {
+	req := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{
+		UserPrompt: "continue the calculator app",
+		ToolTask:   "choose the next command",
+		CompletedActions: []CompletedAction{{
+			ID:      "command_mkdir_src_components",
+			Kind:    "file",
+			Summary: "Completed command: mkdir -p src/components",
+			Command: "mkdir -p src/components",
+		}},
+	})
+	content := joinOllamaMessageContent(req.Messages)
+	for _, want := range []string{"shell execution specialist", "completed_actions", "mkdir -p src/components", "never choose a command that repeats"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("shell specialist request missing %q: %s", want, content)
+		}
+	}
+}
+
+func TestEvaluatorRequestIncludesCompletedActions(t *testing.T) {
+	req := buildStructuredLLMEvaluationRequest(StructuredLLMEvaluationInput{
+		Step:        2,
+		UserPrompt:  "continue the calculator app",
+		PlannerJob:  structuredCommandPlannerJobSummary(),
+		LLMResponse: `{"command":"mkdir -p src/components","done":false,"answer":""}`,
+		CompletedActions: []CompletedAction{{
+			ID:      "command_mkdir_src_components",
+			Kind:    "file",
+			Summary: "Completed command: mkdir -p src/components",
+			Command: "mkdir -p src/components",
+		}},
+	})
+	content := joinOllamaMessageContent(req.Messages)
+	for _, want := range []string{"completed_actions", "mkdir -p src/components", "reject planner output that repeats completed work"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("evaluator request missing %q: %s", want, content)
+		}
 	}
 }
 

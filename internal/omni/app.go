@@ -1244,10 +1244,13 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 	if result.PartialProgress && strings.TrimSpace(errText) != "" {
 		statusLabel = "Last command exit code"
 	}
-	lines := []string{
-		"Command: " + result.Command,
-		fmt.Sprintf("%s: %d", statusLabel, result.ExitCode),
+	lines := []string{}
+	if strings.TrimSpace(result.Command) != "" {
+		lines = append(lines, "Command: "+result.Command)
+	} else if strings.TrimSpace(errText) != "" {
+		lines = append(lines, "Command: (none accepted)")
 	}
+	lines = append(lines, fmt.Sprintf("%s: %d", statusLabel, result.ExitCode))
 	if len(result.Observations) > 1 {
 		lines = append(lines, fmt.Sprintf("Attempts: %d", len(result.Observations)))
 	}
@@ -1259,6 +1262,9 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 	}
 	if strings.TrimSpace(result.Answer) != "" {
 		lines = append(lines, "Answer: "+result.Answer)
+	}
+	if blocker := latestStructuredFailureSummary(result.Observations); blocker != "" && strings.TrimSpace(errText) != "" {
+		lines = append(lines, "Last blocker: "+blocker)
 	}
 	if strings.TrimSpace(errText) != "" {
 		if result.PartialProgress {
@@ -1274,6 +1280,25 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func latestStructuredFailureSummary(observations []StructuredCommandObservation) string {
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if obs.ExitCode == 0 {
+			continue
+		}
+		if strings.TrimSpace(obs.Stderr) != "" {
+			return truncateOutput(obs.Stderr)
+		}
+		if strings.TrimSpace(obs.EvaluationFeedback) != "" {
+			return truncateOutput(obs.EvaluationFeedback)
+		}
+		if strings.TrimSpace(obs.RejectedCommand) != "" {
+			return "rejected command: " + truncateOutput(obs.RejectedCommand)
+		}
+	}
+	return ""
 }
 
 func (a *App) reviewFinalResponse(ctx context.Context, userInput, response string, evidence []string, emitEvent func(string, string, map[string]string)) string {
