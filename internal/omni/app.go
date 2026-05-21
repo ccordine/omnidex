@@ -1263,16 +1263,28 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 	if strings.TrimSpace(result.Answer) != "" {
 		lines = append(lines, "Answer: "+result.Answer)
 	}
-	if blocker := latestStructuredFailureSummary(result.Observations); blocker != "" && strings.TrimSpace(errText) != "" {
-		lines = append(lines, "Last blocker: "+blocker)
-	}
+	blocker := latestStructuredFailureSummary(result.Observations)
 	if strings.TrimSpace(errText) != "" {
 		if result.PartialProgress {
 			if pending := pendingStructuredObjectiveIDs(result.ObjectiveLedger); pending != "" {
 				lines = append(lines, "Pending objectives: "+pending)
 			}
-			lines = append(lines, "Planner error after progress: "+errText)
+			if blocker != "" {
+				label := "Last blocker"
+				if strings.Contains(blocker, "anti_loop:") {
+					label = "Loop blocker"
+				}
+				lines = append(lines, label+": "+blocker)
+			}
+			lines = append(lines, "Stopped: "+errText)
 		} else {
+			if blocker != "" {
+				label := "Last blocker"
+				if strings.Contains(blocker, "anti_loop:") {
+					label = "Loop blocker"
+				}
+				lines = append(lines, label+": "+blocker)
+			}
 			lines = append(lines, "Error: "+errText)
 		}
 		if diagnosis := classifyStructuredLLMFailure(errors.New(errText)); diagnosis != "ollama_request_failure" {

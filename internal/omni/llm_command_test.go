@@ -600,7 +600,7 @@ func TestFormatStructuredCommandChatResponseSummarizesExhaustionBlocker(t *testi
 		}},
 	}
 	response := formatStructuredCommandChatResponse(result, "", "", "structured command loop exhausted after 40 step(s) without accepted completion")
-	for _, want := range []string{"Command: (none accepted)", "Pending objectives: implement_calculator_logic", "Last blocker: anti_loop"} {
+	for _, want := range []string{"Command: (none accepted)", "Pending objectives: implement_calculator_logic", "Loop blocker: anti_loop", "Stopped: structured command loop exhausted"} {
 		if !strings.Contains(response, want) {
 			t.Fatalf("response missing %q:\n%s", want, response)
 		}
@@ -2433,6 +2433,49 @@ func TestStructuredCommandDecisionExhaustsRepeatedDoneWithNonzeroFailure(t *test
 	}
 }
 
+func TestStructuredCommandDecisionBlocksRepeatedPrematureDoneWithPendingObjectives(t *testing.T) {
+	workspace := t.TempDir()
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"pwd","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"done"}`,
+		`{"command":"","done":true,"answer":"done"}`,
+		`{"command":"","done":true,"answer":"done"}`,
+		`{"command":"printf 'should not run\n'","done":false,"answer":""}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "design_calculator_ui", Description: "Design calculator UI", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			{ID: "implement_calculator_logic", Description: "Implement calculator logic", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			{ID: "verify_calculator_app", Description: "Verify calculator app", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		},
+	}}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "continue making this calculator app", nil, client, &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		PromptInterpreter:       interpreter,
+	})
+	if err == nil {
+		t.Fatal("expected repeated premature done to stop the loop")
+	}
+	if _, ok := err.(CommandDecisionExhaustedError); !ok {
+		t.Fatalf("err = %T %v, want CommandDecisionExhaustedError", err, err)
+	}
+	if client.calls != 4 {
+		t.Fatalf("planner calls = %d, want stop before fifth response", client.calls)
+	}
+	if !result.PartialProgress {
+		t.Fatal("expected partial progress after initial successful command")
+	}
+	if !structuredEventsContain(events, "structured_done_loop_blocked") {
+		t.Fatalf("missing structured_done_loop_blocked event: %#v", events)
+	}
+	if got := latestStructuredFailureSummary(result.Observations); !strings.Contains(got, "anti_loop: planner returned done=true") {
+		t.Fatalf("latest blocker = %q", got)
+	}
+}
+
 func TestStructuredCommandDecisionRejectsEmptyCommandAndContinues(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":false,"answer":""}`,
@@ -3090,6 +3133,7 @@ func TestStructuredCommandUserMessageIncludesCompletedActions(t *testing.T) {
 	)
 	for _, want := range []string{
 		`"completed_actions"`,
+		`"loop_state"`,
 		`"mkdir -p src/components"`,
 		`"setup_calculator_structure"`,
 		`"pending_objective_ids":["implement_calculator_logic"]`,
@@ -3097,6 +3141,26 @@ func TestStructuredCommandUserMessageIncludesCompletedActions(t *testing.T) {
 		if !strings.Contains(message, want) {
 			t.Fatalf("message missing completed-action content %q: %s", want, message)
 		}
+	}
+}
+
+func TestStructuredLoopStateFlagsPrematureDoneLoop(t *testing.T) {
+	ledger := []StructuredObjective{
+		{ID: "design_calculator_ui", Status: "pending", Required: true, Source: structuredObjectiveSourceUserExplicit},
+		{ID: "implement_calculator_logic", Status: "pending", Required: true, Source: structuredObjectiveSourceUserExplicit},
+	}
+	observations := []StructuredCommandObservation{
+		{Step: 1, Command: "pwd", ExitCode: 0},
+		{Step: 2, ExitCode: 1, Stderr: "done rejected: pending objective(s) remain: design_calculator_ui,implement_calculator_logic; run command(s) that satisfy the objective ledger before finishing"},
+		{Step: 3, ExitCode: 1, Stderr: "done rejected: pending objective(s) remain: design_calculator_ui,implement_calculator_logic; run command(s) that satisfy the objective ledger before finishing"},
+		{Step: 4, ExitCode: 1, Stderr: "anti_loop: planner returned done=true 3 times while the same pending objective(s) remain: design_calculator_ui,implement_calculator_logic. Stop returning done; choose a command or patch that satisfies the next pending objective."},
+	}
+	state := structuredLoopStateFromState(ledger, observations)
+	if state.Status != "blocked" || state.RepeatKind != "premature_done" || state.RepeatCount != 3 {
+		t.Fatalf("loop state = %#v", state)
+	}
+	if !strings.Contains(state.Instruction, "Stop returning done=true") {
+		t.Fatalf("loop state instruction = %q", state.Instruction)
 	}
 }
 
@@ -3219,7 +3283,7 @@ func TestCompletionCheckerRequestAndParser(t *testing.T) {
 		CandidateAnswer:  "Partly Cloudy +29C",
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"done-check specialist", "objective_ledger", "completed_actions", "minimal_context", "candidate_answer"} {
+	for _, want := range []string{"done-check specialist", "objective_ledger", "completed_actions", "loop_state", "minimal_context", "candidate_answer"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("completion checker request missing %q: %s", want, content)
 		}
@@ -3245,7 +3309,7 @@ func TestShellSpecialistRequestIncludesCompletedActions(t *testing.T) {
 		}},
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"shell execution specialist", "completed_actions", "mkdir -p src/components", "never choose a command that repeats"} {
+	for _, want := range []string{"shell execution specialist", "completed_actions", "loop_state", "mkdir -p src/components", "never choose a command that repeats"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("shell specialist request missing %q: %s", want, content)
 		}
@@ -3266,7 +3330,7 @@ func TestEvaluatorRequestIncludesCompletedActions(t *testing.T) {
 		}},
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"completed_actions", "mkdir -p src/components", "reject planner output that repeats completed work"} {
+	for _, want := range []string{"completed_actions", "loop_state", "mkdir -p src/components", "reject planner output that repeats completed work"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("evaluator request missing %q: %s", want, content)
 		}

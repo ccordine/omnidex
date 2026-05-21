@@ -362,7 +362,7 @@ func TestStructuredCommandChatResponseSeparatesPlannerErrorAfterProgress(t *test
 	for _, want := range []string{
 		"Last command exit code: 0",
 		"Pending objectives: install_webpack",
-		"Planner error after progress: context deadline exceeded",
+		"Stopped: context deadline exceeded",
 	} {
 		if !strings.Contains(response, want) {
 			t.Fatalf("response missing %q:\n%s", want, response)
