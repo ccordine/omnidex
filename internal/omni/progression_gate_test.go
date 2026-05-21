@@ -69,3 +69,54 @@ func TestProgressionGateAllowsDifferentFailureFingerprint(t *testing.T) {
 		t.Fatalf("action = %s, want %s", decision.Action, ProgressAllow)
 	}
 }
+
+func TestProgressionGateUsesCompletedEvidenceForRepeatedSuccess(t *testing.T) {
+	command := "ls -la /tmp/demo"
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt: "connect calculator UI to logic",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "create_calculator_ui", Status: "pending"},
+			{ID: "connect_ui_to_logic", Status: "pending"},
+		},
+		Observations: []StructuredCommandObservation{
+			{Step: 2, Command: command, ExitCode: 0, Stdout: "package.json\nsrc\n"},
+			{Step: 4, Command: "SKIPPED_REPEAT_SUCCESS: " + command, RejectedCommand: command, ExitCode: 0, Stdout: "already_completed"},
+		},
+	})
+
+	if decision.Action != ProgressUseCompletedEvidence {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressUseCompletedEvidence)
+	}
+	if decision.PreviousResult == nil || !strings.Contains(decision.PreviousResult.Stdout, "package.json") {
+		t.Fatalf("previous result missing stdout: %#v", decision.PreviousResult)
+	}
+	for _, want := range []string{"Use the previous command output", "package.json", "src", "Do not return done=true"} {
+		if !strings.Contains(decision.RecoveryToolTask, want) {
+			t.Fatalf("recovery task missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+}
+
+func TestProgressionGateBuildsMissingFileRecovery(t *testing.T) {
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt:          "connect calculator UI to logic",
+		ObjectiveLedger: []StructuredObjective{{ID: "create_calculator_ui", Status: "pending"}},
+		Observations: []StructuredCommandObservation{{
+			Step:     1,
+			Command:  "cat /tmp/demo/index.html",
+			ExitCode: 1,
+			Stderr:   "cat: /tmp/demo/index.html: No such file or directory",
+		}},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	for _, want := range []string{"target path does not exist", "ls -la /tmp/demo", "find /tmp/demo -maxdepth 3 -type f", "Do not retry the invalid path"} {
+		if !strings.Contains(decision.RecoveryToolTask, want) {
+			t.Fatalf("missing-file recovery missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+}

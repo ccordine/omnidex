@@ -1942,6 +1942,27 @@ func TestValidateStructuredCommandRejectsRepeatedSuccessfulCommand(t *testing.T)
 	}
 }
 
+func TestEvidenceRequiredPrerequisiteCanJustifyExecutionScope(t *testing.T) {
+	workspace := t.TempDir()
+	ledger := []StructuredObjective{{
+		ID:              "create_calculator_ui",
+		Description:     "Create missing calculator UI required before connecting UI to logic",
+		Status:          "pending",
+		Source:          structuredObjectiveSourceEvidenceRequiredPrerequisite,
+		ParentObjective: "connect_ui_to_logic",
+		Required:        true,
+		Packages:        []string{"react"},
+		Evidence:        "index.html missing and no existing UI entrypoint found",
+	}}
+	if err := validateStructuredCommandForRun("npm install react", nil, workspace, ledger); err != nil {
+		t.Fatalf("evidence-required prerequisite should justify package: %v", err)
+	}
+	normalized, ok := normalizeStructuredObjective(ledger[0])
+	if !ok || normalized.ParentObjective != "connect_ui_to_logic" {
+		t.Fatalf("parent objective not preserved: %#v", normalized)
+	}
+}
+
 func TestSuccessfulSetupCommandReconcilesPendingObjectiveBeforeRepeat(t *testing.T) {
 	workspace := t.TempDir()
 	client := &fakeCommandDecisionClient{responses: []string{
@@ -2003,13 +2024,110 @@ func TestRepeatedFailedCommandForcesShellSpecialistRecovery(t *testing.T) {
 		`{"command":"","done":true,"answer":"alternate path"}`,
 	}}
 	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
-		Command:   "printf 'alternate path\n'",
+		Command:   "test -d .",
 		Rationale: "Use a different command after the planner repeated a blocked failure.",
 	}}}
 	stdout := &bytes.Buffer{}
 	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "continue", nil, client, stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
 		CurrentWorkingDirectory: workspace,
 		ShellSpecialist:         shell,
+		CompletionChecker: &fakeCompletionChecker{checks: []CompletionCheck{{
+			Done:   true,
+			Reason: "alternate command recovered progress",
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("%v observations=%#v shell_inputs=%#v stdout=%q", err, result.Observations, shell.inputs, stdout.String())
+	}
+	if len(shell.inputs) < 1 {
+		t.Fatalf("shell specialist calls = %d, want at least 1", len(shell.inputs))
+	}
+	if !strings.Contains(shell.inputs[0].ToolTask, "Forbidden command(s): false") {
+		t.Fatalf("recovery tool task did not include forbidden command: %q", shell.inputs[0].ToolTask)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit code = %d", result.ExitCode)
+	}
+}
+
+func TestRepeatedSuccessfulCommandForcesCompletedEvidenceRecovery(t *testing.T) {
+	workspace := t.TempDir()
+	command := "ls -la " + workspace
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"inspected package"}`,
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
+		Command:   "test -d .",
+		Rationale: "Use prior ls output and inspect a new target.",
+	}}}
+	stdout := &bytes.Buffer{}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "connect calculator UI to logic", nil, client, stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		ShellSpecialist:         shell,
+		CompletionChecker: &fakeCompletionChecker{checks: []CompletionCheck{
+			{Done: false, Reason: "objectives still pending", ObjectiveLedger: []StructuredObjective{
+				{ID: "create_calculator_ui", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "connect_ui_to_logic", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			}},
+			{Done: false, Reason: "use completed ls evidence first", ObjectiveLedger: []StructuredObjective{
+				{ID: "create_calculator_ui", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "connect_ui_to_logic", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			}},
+			{Done: true, Reason: "recovery inspected next target", ObjectiveLedger: []StructuredObjective{
+				{ID: "create_calculator_ui", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "recovery inspected next target"},
+				{ID: "connect_ui_to_logic", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "recovery inspected next target"},
+			}},
+		}},
+		PromptInterpreter: &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+			ObjectiveLedger: []StructuredObjective{
+				{ID: "create_calculator_ui", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "connect_ui_to_logic", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shell.inputs) < 1 {
+		t.Fatalf("shell specialist calls = %d, want at least 1", len(shell.inputs))
+	}
+	for _, want := range []string{"Use the previous command output", command, "Do not return done=true"} {
+		if !strings.Contains(shell.inputs[0].ToolTask, want) {
+			t.Fatalf("recovery task missing %q: %s", want, shell.inputs[0].ToolTask)
+		}
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("pending = %#v", pending)
+	}
+}
+
+func TestBlockedFalseDoneForcesRecoveryBeforeNormalPlanning(t *testing.T) {
+	workspace := t.TempDir()
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"cat ` + filepath.ToSlash(filepath.Join(workspace, "index.html")) + `","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"done"}`,
+		`{"command":"","done":true,"answer":"recovered"}`,
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
+		Command:   "test -d .",
+		Rationale: "Recover from missing index.html by discovering files.",
+	}}}
+	stdout := &bytes.Buffer{}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "connect calculator UI to logic", nil, client, stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		ShellSpecialist:         shell,
+		CompletionChecker: &fakeCompletionChecker{checks: []CompletionCheck{{
+			Done:   true,
+			Reason: "missing-file recovery discovered project structure",
+			ObjectiveLedger: []StructuredObjective{
+				{ID: "create_calculator_ui", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "discovered project structure"},
+			},
+		}}},
+		PromptInterpreter: &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+			ObjectiveLedger: []StructuredObjective{{ID: "create_calculator_ui", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true}},
+		}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2017,14 +2135,11 @@ func TestRepeatedFailedCommandForcesShellSpecialistRecovery(t *testing.T) {
 	if len(shell.inputs) != 1 {
 		t.Fatalf("shell specialist calls = %d, want 1", len(shell.inputs))
 	}
-	if !strings.Contains(shell.inputs[0].ToolTask, "Forbidden command(s): false") {
-		t.Fatalf("recovery tool task did not include forbidden command: %q", shell.inputs[0].ToolTask)
+	if !strings.Contains(shell.inputs[0].ToolTask, "target path does not exist") {
+		t.Fatalf("missing-file recovery task = %q", shell.inputs[0].ToolTask)
 	}
-	if stdout.String() != "alternate path\n" {
-		t.Fatalf("stdout = %q", stdout.String())
-	}
-	if result.Answer != "alternate path" {
-		t.Fatalf("answer = %q", result.Answer)
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("pending = %#v", pending)
 	}
 }
 

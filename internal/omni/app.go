@@ -84,6 +84,9 @@ func (a *App) Run(args []string) error {
 	if len(args) > 0 && args[0] == "index" {
 		return a.runIndex(args[1:])
 	}
+	if len(args) > 0 && args[0] == "map" {
+		return a.runCodebaseMap(args[1:])
+	}
 	if len(args) > 0 && args[0] == "fingerprint" {
 		return a.runFingerprint(args[1:])
 	}
@@ -142,6 +145,7 @@ func (a *App) Run(args []string) error {
 		fmt.Fprintln(a.errOut, "  omni run:trace latest run telemetry for this workspace")
 		fmt.Fprintln(a.errOut, "  omni fastpath run explicit deterministic probes")
 		fmt.Fprintln(a.errOut, "  omni index    build deterministic workspace index")
+		fmt.Fprintln(a.errOut, "  omni map      build, update, query, or route codebase maps")
 		fmt.Fprintln(a.errOut, "  omni fingerprint classify failure output")
 		fmt.Fprintln(a.errOut, "  omni patch    inspect or apply unified diffs")
 		fmt.Fprintln(a.errOut, "  omni ollama   prewarm/profile local model calls")
@@ -694,6 +698,83 @@ func (a *App) runIndex(args []string) error {
 	fmt.Fprintf(a.out, "Wrote workspace index: %s\nfiles=%d manifests=%d package_manager=%s\n", target, len(index.Files), len(index.Manifests), index.PackageProbe.PackageManager)
 	if mode == "update" {
 		fmt.Fprintf(a.out, "reused_hashes=%d rehashed_files=%d added_files=%d removed_files=%d\n", index.Update.ReusedHashes, index.Update.RehashedFiles, index.Update.AddedFiles, index.Update.RemovedFiles)
+	}
+	return nil
+}
+
+func (a *App) runCodebaseMap(args []string) error {
+	if len(args) == 0 || (args[0] != "build" && args[0] != "update" && args[0] != "query" && args[0] != "route") {
+		return fmt.Errorf("usage: omni map <build|update|query|route> [--workspace PATH] [--out PATH] [--max-files N] [--json] [text]")
+	}
+	mode := args[0]
+	fs := flag.NewFlagSet("omni map "+mode, flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	workspaceFlag := fs.String("workspace", "", "workspace to map; defaults to current directory")
+	outFlag := fs.String("out", "", "map path; defaults to .omni/codebase-map.json in the workspace")
+	maxFilesFlag := fs.Int("max-files", 5000, "maximum files to hash")
+	jsonFlag := fs.Bool("json", false, "print JSON")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	workspace := strings.TrimSpace(*workspaceFlag)
+	if workspace == "" {
+		workspace = workspacePathOrCurrentDir()
+	}
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		return err
+	}
+	target := strings.TrimSpace(*outFlag)
+	if target == "" {
+		target = DefaultCodebaseMapPath(absWorkspace)
+	}
+	switch mode {
+	case "build", "update":
+		var cm CodebaseMap
+		if mode == "update" {
+			cm, err = UpdateCodebaseMap(absWorkspace, target, CodebaseMapConfig{MaxFiles: *maxFilesFlag})
+		} else {
+			cm, err = BuildCodebaseMap(absWorkspace, CodebaseMapConfig{MaxFiles: *maxFilesFlag, PreviousPath: target})
+		}
+		if err != nil {
+			return err
+		}
+		if *jsonFlag {
+			blob, err := json.MarshalIndent(cm, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(a.out, string(blob))
+			return nil
+		}
+		if err := WriteCodebaseMap(cm, target); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "Wrote codebase map: %s\nfiles=%d modules=%d symbols=%d tests=%d commands=%d\n", target, len(cm.Files), len(cm.Modules), len(cm.Symbols), len(cm.Tests), len(cm.Commands))
+	case "query", "route":
+		if fs.NArg() == 0 {
+			return fmt.Errorf("omni map %s requires query text", mode)
+		}
+		cm, err := ReadCodebaseMap(target)
+		if err != nil {
+			return fmt.Errorf("read codebase map: %w", err)
+		}
+		text := strings.Join(fs.Args(), " ")
+		if mode == "route" {
+			route := RouteTaskWithCodebaseMap(cm, text)
+			blob, err := json.MarshalIndent(route, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(a.out, string(blob))
+			return nil
+		}
+		answer := QueryCodebaseMap(cm, text)
+		blob, err := json.MarshalIndent(answer, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(a.out, string(blob))
 	}
 	return nil
 }
