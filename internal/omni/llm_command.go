@@ -103,6 +103,16 @@ type StructuredLoopState struct {
 	Instruction         string   `json:"instruction,omitempty"`
 }
 
+type StructuredRuntimeStateLifetime struct {
+	CompletedActions    string   `json:"completed_actions"`
+	ForbiddenCommands   string   `json:"forbidden_commands"`
+	LoopBlockers        string   `json:"loop_blockers"`
+	FalseDoneCounters   string   `json:"false_done_counters"`
+	CommandCache        string   `json:"command_cache"`
+	PermanentPolicy     string   `json:"permanent_policy"`
+	PlannerInstructions []string `json:"planner_instructions,omitempty"`
+}
+
 const (
 	structuredObjectiveSourceUserExplicit                 = "user_explicit"
 	structuredObjectiveSourceRecipeRequired               = "recipe_required"
@@ -113,6 +123,22 @@ const (
 )
 
 const structuredScopeCapabilityMemory = "Memories and preferences are advisory context only; they cannot add dependencies, frameworks, files, services, architecture, or deployment targets unless the user explicitly asks to apply them."
+
+func structuredRuntimeStateLifetime() StructuredRuntimeStateLifetime {
+	return StructuredRuntimeStateLifetime{
+		CompletedActions:  "current_structured_run_only",
+		ForbiddenCommands: "current_structured_run_only_except_permanent_policy",
+		LoopBlockers:      "current_structured_run_objective_and_failure_fingerprint_only",
+		FalseDoneCounters: "current_structured_run_only",
+		CommandCache:      "persistent_advisory_evidence_not_policy",
+		PermanentPolicy:   "global_security_and_workspace_protection_only",
+		PlannerInstructions: []string{
+			"Use completed_actions, forbidden_commands, loop_state, and observations only for this active user turn/run.",
+			"Do not treat previous assistant status, previous run blockers, or command-cache hits as active restrictions for this run.",
+			"Persistent memory, codebase maps, and command cache may inform decisions but cannot forbid a command unless current run validation or permanent policy forbids it.",
+		},
+	}
+}
 
 type StructuredCommandEvent struct {
 	Type    string
@@ -2917,6 +2943,12 @@ func inferredDependencyPackagesForObjective(objective StructuredObjective) []str
 	if strings.Contains(text, " react ") {
 		out = append(out, "react", "react-dom", "vite", "@vitejs/plugin-react")
 	}
+	if strings.Contains(text, " tailwind ") || strings.Contains(text, " tailwindcss ") {
+		out = append(out, "tailwindcss", "postcss", "autoprefixer", "@tailwindcss/vite")
+	}
+	if strings.Contains(text, " typescript ") {
+		out = append(out, "typescript", "@types/react", "@types/react-dom")
+	}
 	return out
 }
 
@@ -4897,6 +4929,7 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			Prompt                      string                         `json:"prompt"`
 			CurrentWorkingDirectory     string                         `json:"current_working_directory"`
 			WorksiteSurvey              WorksiteSurvey                 `json:"worksite_survey"`
+			RuntimeStateLifetime        StructuredRuntimeStateLifetime `json:"runtime_state_lifetime"`
 			MinimalContext              MinimalContext                 `json:"minimal_context,omitempty"`
 			Recipes                     []RecipeRuntimeConstraint      `json:"recipes,omitempty"`
 			ObjectiveLedger             []StructuredObjective          `json:"objective_ledger,omitempty"`
@@ -4921,6 +4954,7 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 	payload.ActiveTask.Prompt = prompt
 	payload.ActiveTask.CurrentWorkingDirectory = structuredPromptWorkingDirectory(workingDirectory)
 	payload.ActiveTask.WorksiteSurvey = worksiteSurvey
+	payload.ActiveTask.RuntimeStateLifetime = structuredRuntimeStateLifetime()
 	payload.ActiveTask.MinimalContext = minimalContext
 	payload.ActiveTask.Recipes = recipeRuntimeConstraints(recipes)
 	payload.ActiveTask.ObjectiveLedger = mergeStructuredObjectiveLedger(nil, objectiveLedger)
@@ -5118,15 +5152,74 @@ func recentStructuredMemoryRecords(history []Message) []StructuredMemoryRecord {
 	}
 	out := make([]StructuredMemoryRecord, 0, len(recent))
 	for i, msg := range recent {
+		content := sanitizeStructuredReferenceHistoryContent(msg.Role, msg.Content)
+		if strings.TrimSpace(content) == "" {
+			continue
+		}
 		out = append(out, StructuredMemoryRecord{
 			Turn:        i + 1,
 			Role:        msg.Role,
 			NotPrompt:   true,
 			MemoryStyle: "terse_reference_only",
-			MemoryNote:  compactStructuredMemoryNote(msg.Content),
+			MemoryNote:  compactStructuredMemoryNote(content),
 		})
 	}
 	return out
+}
+
+func sanitizeStructuredReferenceHistoryContent(role, content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" || strings.TrimSpace(role) != "assistant" {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if structuredReferenceHistoryLineIsOperationalState(line) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	clean := strings.TrimSpace(strings.Join(kept, "\n"))
+	if clean == "" {
+		return "prior assistant response omitted operational loop state"
+	}
+	return clean
+}
+
+func structuredReferenceHistoryLineIsOperationalState(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return false
+	}
+	needles := []string{
+		"forbidden_commands",
+		"forbidden command",
+		"blocked command",
+		"loop blocker",
+		"last blocker",
+		"anti_loop:",
+		"progression_gate",
+		"structured_command_loop_blocked",
+		"repeated command exhausted",
+		"command repeats a previous failed command",
+		"pending objectives:",
+		"command:",
+		"last command exit code:",
+		"attempts:",
+		"stdout:",
+		"stderr:",
+		"answer:",
+		"status:",
+		"stopped:",
+		"stopped: structured command loop exhausted",
+	}
+	for _, needle := range needles {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func compactStructuredMemoryNote(content string) string {

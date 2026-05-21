@@ -674,6 +674,21 @@ func TestStructuredDependencyScopeAllowsExplicitUsualStackPackages(t *testing.T)
 	}
 }
 
+func TestStructuredDependencyScopeAllowsReactClockTailwindObjectives(t *testing.T) {
+	workspace := t.TempDir()
+	ledger := []StructuredObjective{
+		{ID: "ensure_typical_react_structure", Description: "Ensure typical React structure for the clock app", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		{ID: "install_dependencies", Description: "Install dependencies for the React clock app", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		{ID: "setup_tailwind_css", Description: "Set up Tailwind CSS styling", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+	}
+	if err := validateStructuredCommandForRun("npm install react react-dom tailwindcss", nil, workspace, ledger); err != nil {
+		t.Fatalf("react clock dependency install should be allowed: %v", err)
+	}
+	if err := validateStructuredCommandForRun("npm install -D postcss autoprefixer", nil, workspace, ledger); err != nil {
+		t.Fatalf("tailwind support dependency install should be allowed: %v", err)
+	}
+}
+
 func TestStructuredDependencyScopeAllowsRecipeRequiredPackages(t *testing.T) {
 	workspace := t.TempDir()
 	recipe := Recipe{
@@ -740,6 +755,73 @@ func TestStructuredCommandDecisionAllowsReferenceHistoryForInterpreterMarkedFoll
 	firstRequest := joinOllamaMessageContent(client.requests[0].Messages)
 	if !strings.Contains(firstRequest, "reference_history") || !strings.Contains(firstRequest, "Pattaya") {
 		t.Fatalf("follow-up did not include interpreter-approved reference history: %s", firstRequest)
+	}
+}
+
+func TestStructuredReferenceHistoryOmitsPriorOperationalLoopState(t *testing.T) {
+	history := []Message{
+		{Role: "assistant", Content: strings.Join([]string{
+			"Result",
+			"Command: npm install react react-dom tailwindcss",
+			"Last command exit code: 1",
+			"Stdout: old install output",
+			"Stderr: old install failure",
+			"Status:",
+			"  Pending objectives: setup_tailwind_css",
+			"  Loop blocker: anti_loop: command rejected again",
+			"  Forbidden command(s): npm install react react-dom tailwindcss",
+			"  progression_gate_failed repeated command exhausted",
+			"Useful summary: prior run stopped after inspecting package.json.",
+		}, "\n")},
+		{Role: "user", Content: "Build a React clock app here."},
+	}
+
+	message := buildStructuredCommandHistoryMessage(history)
+	for _, leaked := range []string{
+		"npm install react react-dom tailwindcss",
+		"Loop blocker",
+		"Forbidden command",
+		"anti_loop",
+		"progression_gate",
+		"Pending objectives",
+		"Last command exit code",
+		"old install output",
+		"old install failure",
+	} {
+		if strings.Contains(message, leaked) {
+			t.Fatalf("reference history leaked prior operational state %q: %s", leaked, message)
+		}
+	}
+	if !strings.Contains(message, "Useful summary: prior run stopped after inspecting package.json.") {
+		t.Fatalf("reference history removed non-operational summary: %s", message)
+	}
+	if !strings.Contains(message, "Build a React clock app here.") {
+		t.Fatalf("reference history removed user context: %s", message)
+	}
+}
+
+func TestStructuredRuntimeBlockersAreCurrentRunScoped(t *testing.T) {
+	command := "npm install react react-dom tailwindcss"
+	currentRunObservations := []StructuredCommandObservation{
+		{Step: 1, Command: command, ExitCode: 1, Stderr: "npm failed"},
+	}
+	if err := validateStructuredCommandForObservations(command, currentRunObservations); !errors.Is(err, errRepeatedFailedStructuredCommand) {
+		t.Fatalf("same command in current run should be blocked, err=%v", err)
+	}
+	if err := validateStructuredCommandForObservations(command, nil); err != nil {
+		t.Fatalf("same command in a new run should not inherit blockers, err=%v", err)
+	}
+
+	message := buildStructuredCommandUserMessage("Build a React clock app.", nil, t.TempDir())
+	for _, want := range []string{
+		`"runtime_state_lifetime"`,
+		`"completed_actions":"current_structured_run_only"`,
+		`"forbidden_commands":"current_structured_run_only_except_permanent_policy"`,
+		`"command_cache":"persistent_advisory_evidence_not_policy"`,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing runtime lifetime marker %q: %s", want, message)
+		}
 	}
 }
 

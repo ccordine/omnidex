@@ -451,3 +451,60 @@ Verification:
 - `go test ./...`
   - Exit code: `0`
 - Rebuilt installed Omnidex binary by building to `/tmp/omni-new` and atomically replacing `/home/gryph/.omnidex/bin/omni`, because one existing Omnidex process had the prior binary mapped.
+
+## Omnidex Patch 8
+
+Observed:
+- A later React clock-app run showed `forbidden_commands` containing dependency/scaffold commands that looked like they may have carried over from earlier work.
+- The runtime hard-state path for exhausted commands is already observation-backed, so it is scoped to the current structured job.
+- The soft leakage path was reference history: prior assistant responses can include operational status lines such as blocked commands, forbidden commands, loop blockers, and pending objectives. Those lines were eligible for compacted `reference_history` on later prompts.
+- The dependency policy also under-inferred Tailwind support packages from objectives such as `setup_tailwind_css`, so a valid user-requested React/Tailwind install could be rejected and then treated as exhausted inside the active job.
+
+Decision:
+- Queues, exhausted commands, blocked commands, and forbidden commands must be job scoped: from one user input through final output.
+- Prior chat history can remain useful as human context, but operational runtime state from a previous job must not become new command policy or planner pressure.
+
+Changed Omnidex:
+- `internal/omni/llm_command.go`
+  - Sanitizes assistant reference history before it is attached to structured command prompts.
+  - Strips operational loop-state lines including forbidden commands, blocked commands, loop blockers, anti-loop messages, progression gate markers, repeated-command exhaustion, and pending-objective status.
+  - Keeps normal user context and non-operational summaries.
+  - Infers Tailwind and TypeScript dependency packages from objective text, so user-requested React/Tailwind/TypeScript work can install the packages it needs without relying on memory-suggested package permissions.
+- `internal/omni/llm_command_test.go`
+  - Added regression coverage that prior assistant `forbidden command` and loop-state text does not leak into `reference_history`.
+  - Added regression coverage that a React clock app with Tailwind objectives may install `react`, `react-dom`, `tailwindcss`, `postcss`, and `autoprefixer`.
+
+Verification:
+- Focused reference-history/dependency/source-audit tests passed.
+- `go test ./...`
+  - Exit code: `0`
+- Rebuilt installed Omnidex binary by building to `/tmp/omni-new` and replacing `/home/gryph/.omnidex/bin/omni`.
+
+## Omnidex Patch 9
+
+Design note:
+- Runtime blockers need lifetimes.
+- Evidence can persist, but active restrictions should usually expire with the current structured run/user turn.
+- Permanent security/workspace policy remains global; loop blockers, false-done counters, completed-action blockers, and runtime-forbidden commands are current-run control state.
+
+Changed Omnidex:
+- `internal/omni/llm_command.go`
+  - Adds `runtime_state_lifetime` to the active task payload.
+  - The payload explicitly tells planner/specialist calls that:
+    - `completed_actions` are `current_structured_run_only`.
+    - `forbidden_commands` are `current_structured_run_only_except_permanent_policy`.
+    - `loop_blockers` are scoped to the current structured run/objective/failure fingerprint.
+    - `false_done_counters` are current-run only.
+    - command cache is persistent advisory evidence, not policy.
+    - only permanent security and workspace protection policy is global.
+  - Further sanitizes assistant reference history so prior result/status blocks do not carry `Command:`, exit code, stdout, stderr, answer, status, or stopped-state text into the next job as pseudo-policy.
+- `internal/omni/llm_command_test.go`
+  - Added regression coverage that the same command is blocked within the same observation-backed run, but allowed when the next run starts with no observations.
+  - Added regression coverage that active task JSON carries runtime lifetime metadata.
+  - Extended reference-history leakage coverage for prior command/stdout/stderr/status result blocks.
+
+Verification:
+- Focused runtime-lifetime/reference-history/dependency tests passed.
+- `go test ./...`
+  - Exit code: `0`
+- Rebuilt installed Omnidex binary by building to `/tmp/omni-new` and replacing `/home/gryph/.omnidex/bin/omni`.
