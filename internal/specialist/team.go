@@ -41,11 +41,11 @@ func DefaultTeam() []TeamProfile {
 	return []TeamProfile{
 		profile(RoleManagerSpecialist, "coordinate specialist work and enforce task ownership", allMemoryKinds(),
 			tools("planner.delegate", "worker.dispatch", "summary.request", "memory.search", "memory.create"),
-			[]string{RolePlannerSpecialist, RoleShellExecutionSpecialist, RoleWebResearchSpecialist, RoleMemorySpecialist, RoleResearchSpecialist, RoleCodeSpecialist, RoleWorkerSpecialist, RoleSummarySpecialist, RoleCorrectionSpecialist, RoleExpectationSpecialist},
+			[]string{RolePlannerSpecialist, RoleShellExecutionSpecialist, RoleWebResearchSpecialist, RoleDocumentationSpecialist, RoleMemorySpecialist, RoleResearchSpecialist, RoleCodeSpecialist, RoleWorkerSpecialist, RoleSummarySpecialist, RoleCorrectionSpecialist, RoleExpectationSpecialist},
 			"task graph, ownership, blockers, and completion state"),
 		profile(RolePlannerSpecialist, "translate user intent into delegated, verifiable steps", allMemoryKinds(),
 			tools("planner.delegate", "memory.search", "memory.create"),
-			[]string{RoleShellExecutionSpecialist, RoleWebResearchSpecialist, RoleMemorySpecialist, RoleResearchSpecialist, RoleCodeSpecialist, RoleWorkerSpecialist, RoleExpectationSpecialist},
+			[]string{RoleShellExecutionSpecialist, RoleWebResearchSpecialist, RoleDocumentationSpecialist, RoleMemorySpecialist, RoleResearchSpecialist, RoleCodeSpecialist, RoleWorkerSpecialist, RoleExpectationSpecialist},
 			"plan, required evidence, specialist assignments, and done criteria"),
 		profile(RoleShellExecutionSpecialist, "inspect and modify local systems through shell commands under policy", allMemoryKinds(),
 			tools("bash", "cat", "sed", "grep", "rg", "awk", "find", "ls", "pwd", "jq", "curl", "git", "go", "npm", "python3", "memory.create", "research.enqueue"),
@@ -53,8 +53,12 @@ func DefaultTeam() []TeamProfile {
 			"command output, filesystem evidence, changed paths, and shell-derived memories"),
 		profile(RoleWebResearchSpecialist, "gather fresh external evidence from public sources", allMemoryKinds(),
 			tools("web.search", "web.fetch", "curl", "memory.search", "memory.create"),
-			[]string{RoleMemorySpecialist, RoleSummarySpecialist, RoleCorrectionSpecialist},
+			[]string{RoleDocumentationSpecialist, RoleMemorySpecialist, RoleSummarySpecialist, RoleCorrectionSpecialist},
 			"sourced web findings, citations, freshness notes, and research memories"),
+		profile(RoleDocumentationSpecialist, "act as coding documentation authority for any language, SDK, API, framework, library, or toolchain", allMemoryKinds(),
+			tools("web.search", "web.fetch", "curl", "memory.search", "memory.create", "pgsql.query"),
+			[]string{RoleWebResearchSpecialist, RoleMemorySpecialist, RoleSummarySpecialist, RoleCorrectionSpecialist},
+			"authoritative documentation briefs covering setup, conventions, locations, APIs, examples, risks, citations, and reusable doc memories"),
 		profile(RoleMemorySpecialist, "retrieve, rank, create, update, and deprioritize memories", allMemoryKinds(),
 			tools("memory.search", "memory.create", "memory.update", "memory.deprioritize", "pgsql.query"),
 			[]string{RoleCorrectionSpecialist, RoleSummarySpecialist},
@@ -69,7 +73,7 @@ func DefaultTeam() []TeamProfile {
 			"acceptance criteria, user preferences, and expectation deltas"),
 		profile(RoleResearchSpecialist, "study a codebase, directory, documentation set, or topic into durable memory", allMemoryKinds(),
 			tools("rg", "cat", "sed", "find", "web.search", "web.fetch", "memory.search", "memory.create", "pgsql.query"),
-			[]string{RoleShellExecutionSpecialist, RoleWebResearchSpecialist, RoleMemorySpecialist, RoleSummarySpecialist},
+			[]string{RoleShellExecutionSpecialist, RoleWebResearchSpecialist, RoleDocumentationSpecialist, RoleMemorySpecialist, RoleSummarySpecialist},
 			"research notes, indexed facts, file references, source summaries, and memory chunks"),
 		profile(RoleCodeSpecialist, "change code and validate behavior with focused tests", allMemoryKinds(),
 			tools("bash", "cat", "sed", "grep", "rg", "git", "go", "npm", "python3", "memory.search", "memory.create", "verification.run"),
@@ -202,6 +206,8 @@ func roleByID(roleID string) Role {
 		return Role{ID: RoleExpectationSpecialist, Name: "Expectation Specialist", Scope: "track user expectations, acceptance criteria, and quality bar"}
 	case RoleResearchSpecialist:
 		return Role{ID: RoleResearchSpecialist, Name: "Research Specialist", Scope: "study topics, directories, and documentation into reusable memory"}
+	case RoleDocumentationSpecialist:
+		return Role{ID: RoleDocumentationSpecialist, Name: "Documentation Specialist", Scope: "serve as coding documentation authority for any language, SDK, API, framework, library, or toolchain"}
 	case RoleCodeSpecialist:
 		return Role{ID: RoleCodeSpecialist, Name: "Code Specialist", Scope: "implement code changes and validate them"}
 	case RoleWorkerSpecialist:
@@ -216,6 +222,8 @@ func roleByID(roleID string) Role {
 			return ForLocalCapability("local_shell")
 		case RoleWebResearchSpecialist:
 			return ForPipelineAction("web_search")
+		case RoleDocumentationSpecialist:
+			return ForPipelineAction("documentation")
 		default:
 			return Role{ID: normalize(roleID), Name: "Specialist", Scope: "specialized execution"}
 		}

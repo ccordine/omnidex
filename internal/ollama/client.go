@@ -50,6 +50,12 @@ type deleteModelRequest struct {
 	Model string `json:"model,omitempty"`
 }
 
+type pullModelRequest struct {
+	Name   string `json:"name,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Stream bool   `json:"stream"`
+}
+
 type embeddingsRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
@@ -190,26 +196,76 @@ func (c *Client) createContextModel(ctx context.Context, contextModel, baseModel
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/create", bytes.NewReader(payload))
+	status, body, err := c.postJSON(ctx, "/api/create", payload)
 	if err != nil {
 		return "", err
+	}
+	if status < 200 || status >= 300 {
+		if isOllamaMissingModelResponse(string(body)) {
+			if pullErr := c.PullModel(ctx, baseModel); pullErr != nil {
+				return "", fmt.Errorf("ollama create failed because model %q is missing and pull failed: %w", baseModel, pullErr)
+			}
+			status, body, err = c.postJSON(ctx, "/api/create", payload)
+			if err != nil {
+				return "", err
+			}
+		}
+		if status < 200 || status >= 300 {
+			return "", fmt.Errorf("ollama create failed: status=%d body=%s", status, string(body))
+		}
+	}
+	return modelfilePath, nil
+}
+
+func (c *Client) PullModel(ctx context.Context, model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return fmt.Errorf("model is required")
+	}
+	payload, err := json.Marshal(pullModelRequest{
+		Name:   model,
+		Model:  model,
+		Stream: false,
+	})
+	if err != nil {
+		return err
+	}
+	status, body, err := c.postJSON(ctx, "/api/pull", payload)
+	if err != nil {
+		return err
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("ollama pull failed: status=%d body=%s", status, string(body))
+	}
+	return nil
+}
+
+func (c *Client) postJSON(ctx context.Context, endpoint string, payload []byte) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return 0, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", c.wrapConnectivityError(err, "/api/create")
+		return 0, nil, c.wrapConnectivityError(err, endpoint)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return resp.StatusCode, nil, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ollama create failed: status=%d body=%s", resp.StatusCode, string(body))
-	}
-	return modelfilePath, nil
+	return resp.StatusCode, body, nil
+}
+
+func isOllamaMissingModelResponse(body string) bool {
+	lower := strings.ToLower(strings.TrimSpace(body))
+	return strings.Contains(lower, "not found") ||
+		strings.Contains(lower, "model") && strings.Contains(lower, "does not exist") ||
+		strings.Contains(lower, "pull model") ||
+		strings.Contains(lower, "try pulling")
 }
 
 func (c *Client) bestEffortDeleteContextModel(contextModel string) {

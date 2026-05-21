@@ -22,6 +22,7 @@ type RunTrace struct {
 	LoopExhaustions   int            `json:"loop_exhaustions"`
 	ObjectiveEvents   int            `json:"objective_events"`
 	CompletionChecks  int            `json:"completion_checks"`
+	PrepEvents        int            `json:"prep_events"`
 	EventCounts       map[string]int `json:"event_counts"`
 	Turns             []RunTraceTurn `json:"turns,omitempty"`
 }
@@ -36,6 +37,7 @@ type RunTraceTurn struct {
 	RejectedCommands  int            `json:"rejected_commands"`
 	DoneRejections    int            `json:"done_rejections"`
 	LoopExhaustions   int            `json:"loop_exhaustions"`
+	PrepEvents        int            `json:"prep_events"`
 	EventCounts       map[string]int `json:"event_counts"`
 }
 
@@ -62,6 +64,10 @@ func BuildRunTrace(session *Session) RunTrace {
 			turnTrace.EventCounts[event.Type]++
 			updateTraceCounts(event.Type, &trace.ModelCalls, &trace.ModelFailures, &trace.Commands, &trace.CommandFailures, &trace.RejectedCommands, &trace.DoneRejections, &trace.LoopExhaustions, &trace.ObjectiveEvents, &trace.CompletionChecks)
 			updateTraceCounts(event.Type, &turnTrace.ModelCalls, nil, &turnTrace.Commands, nil, &turnTrace.RejectedCommands, &turnTrace.DoneRejections, &turnTrace.LoopExhaustions, nil, nil)
+			if isPrepEvidenceEvent(event.Type) {
+				trace.PrepEvents++
+				turnTrace.PrepEvents++
+			}
 			if ts, ok := parseEventTime(event.CreatedAt); ok {
 				if first.IsZero() || ts.Before(first) {
 					first = ts

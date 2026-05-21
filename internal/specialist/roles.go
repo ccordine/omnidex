@@ -19,6 +19,7 @@ const (
 	RoleIntentTaggingSpecialist      = "intent_tagging_specialist"
 	RoleMemoryRetrievalSpecialist    = "memory_retrieval_specialist"
 	RoleWebResearchSpecialist        = "web_research_specialist"
+	RoleDocumentationSpecialist      = "documentation_specialist"
 	RoleAnalysisSpecialist           = "analysis_specialist"
 	RoleResponseSpecialist           = "response_specialist"
 	RoleReviewVerificationSpecialist = "review_verification_specialist"
@@ -104,6 +105,19 @@ func ForPipelineAction(action string) Role {
 				"run focused web queries",
 				"return source-grounded context for downstream steps",
 				"skip when freshness/external data is unnecessary",
+			},
+		}
+	case "documentation", "docs", "doc_research", "documentation_research":
+		return Role{
+			ID:    RoleDocumentationSpecialist,
+			Name:  "Documentation Specialist",
+			Scope: "serve as the coding documentation authority for any language, SDK, API, framework, library, or toolchain",
+			Responsibilities: []string{
+				"find authoritative documentation and source-specific examples",
+				"answer implementation questions with grounded citations or local doc evidence",
+				"produce code guidance that fits the current language, framework, and toolchain",
+				"explain getting-started paths, conventions, file locations, API surfaces, examples, and migration risks",
+				"support planners, shell specialists, code specialists, and workers with reusable documentation briefs",
 			},
 		}
 	case "analyze", "analysis":
@@ -288,6 +302,8 @@ func EnvVarForRoleID(roleID string) string {
 		return "OLLAMA_MODEL_SPECIALIST_MEMORY_RETRIEVAL"
 	case RoleWebResearchSpecialist:
 		return "OLLAMA_MODEL_SPECIALIST_WEB_RESEARCH"
+	case RoleDocumentationSpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_DOCUMENTATION"
 	case RoleAnalysisSpecialist:
 		return "OLLAMA_MODEL_SPECIALIST_ANALYSIS"
 	case RoleResponseSpecialist:

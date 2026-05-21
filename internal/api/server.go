@@ -23,6 +23,7 @@ import (
 
 type Server struct {
 	repo                 *queue.Repository
+	channelStore         channelStore
 	llmClient            llm.Client
 	mux                  *http.ServeMux
 	instructIntegration  *instructIntegrationService
@@ -151,8 +152,15 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		options.RequestTimeout = 90 * time.Second
 	}
 
+	var channels channelStore
+	if repo != nil {
+		channels = repo
+	} else {
+		channels = newInMemoryChannelStore()
+	}
 	s := &Server{
 		repo:                 repo,
+		channelStore:         channels,
 		llmClient:            llmClient,
 		mux:                  http.NewServeMux(),
 		instructIntegration:  newInstructIntegrationService(repo),
@@ -190,6 +198,10 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
 		s.mux.HandleFunc("/v1/admin/migrate-fresh", s.handleAdminMigrateFresh)
+	}
+	if s.channelStore != nil {
+		s.mux.HandleFunc("/v1/channels", s.handleChannels)
+		s.mux.HandleFunc("/v1/channels/", s.handleChannelByID)
 	}
 	s.registerUIRoutes()
 }

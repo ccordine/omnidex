@@ -99,6 +99,10 @@ func (a *App) loadInteractiveMemoryContext(ctx context.Context, prompt, activeDi
 		})
 		return interactiveMemoryContext{}
 	}
+	emitEvent("memory_tagging_started", "Prompt tagging specialist started", map[string]string{
+		"active_directory": activeDirectory,
+		"max_tags":         "8",
+	})
 	tagResult, err := tagger.TagPrompt(ctx, PromptTagInput{
 		Prompt:                  prompt,
 		CurrentWorkingDirectory: activeDirectory,
@@ -121,6 +125,12 @@ func (a *App) loadInteractiveMemoryContext(ctx context.Context, prompt, activeDi
 		"tags": strings.Join(tags, ","),
 	})
 
+	emitEvent("memory_search_started", "Searching Postgres memory for relevant context", map[string]string{
+		"query": "",
+		"tags":  strings.Join(tags, ","),
+		"limit": fmt.Sprintf("%d", interactiveMemoryLimit),
+		"role":  "memory_retrieval_specialist",
+	})
 	records, err := a.memory.SearchMemory(ctx, "", tags, interactiveMemoryLimit)
 	if err != nil {
 		emitEvent("memory_context_skipped", "Interactive memory retrieval skipped", map[string]string{
@@ -132,8 +142,34 @@ func (a *App) loadInteractiveMemoryContext(ctx context.Context, prompt, activeDi
 	memories := memoryRecordsToSessionMemories(records)
 	emitEvent("memory_context_loaded", "Interactive memory context loaded", map[string]string{
 		"matches": fmt.Sprintf("%d", len(records)),
+		"ids":     strings.Join(memoryRecordIDs(records), ","),
+		"kinds":   strings.Join(memoryRecordKinds(records), ","),
 	})
 	return interactiveMemoryContext{Tags: tags, Records: records, Memories: memories}
+}
+
+func memoryRecordIDs(records []MemoryRecord) []string {
+	out := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.ID > 0 {
+			out = append(out, fmt.Sprintf("%d", record.ID))
+		}
+	}
+	return out
+}
+
+func memoryRecordKinds(records []MemoryRecord) []string {
+	out := make([]string, 0, len(records))
+	seen := map[string]bool{}
+	for _, record := range records {
+		kind := strings.TrimSpace(record.Kind)
+		if kind == "" || seen[kind] {
+			continue
+		}
+		seen[kind] = true
+		out = append(out, kind)
+	}
+	return out
 }
 
 func memoryRecordsToSessionMemories(records []MemoryRecord) []SessionMemory {

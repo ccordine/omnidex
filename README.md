@@ -62,6 +62,8 @@ omni ollama prewarm --json
 
 See `docs/DEVELOPMENT_LOOPS.md`, `docs/EVIDENCE_LEDGER.md`, `docs/RUN_TRACE.md`, `docs/FAST_PATHS.md`, `docs/WORKSPACE_INDEX.md`, `docs/COMMAND_CACHE.md`, `docs/PATCH_MODE.md`, `docs/FAILURE_FINGERPRINTS.md`, `docs/OLLAMA_PREWARM.md`, `docs/COMMAND_POLICY.md`, `docs/RECIPES.md`, `docs/BENCHMARKS.md`, `docs/ROADMAP.md`, and `SECURITY.md`.
 
+For embedding Omnidex into other apps as a local memory-backed chat/RP/support service, see `docs/LOCAL_SERVICE_CHANNELS.md`.
+
 ## Pipeline
 
 Default step pipelines by type:
@@ -117,6 +119,19 @@ docker compose up --build
 Core API is exposed on `http://localhost:8090`.
 Postgres stays on an internal Docker network (`omnidex-internal`) and is not published to the host by default.
 
+### Local service channels
+
+Core exposes non-agent channel routes for applications that need a local assistant, support bot, roleplay participant, narrator, or instruction-following model with memory:
+
+- `POST /v1/channels`
+- `GET /v1/channels`
+- `POST /v1/channels/{id}/messages`
+- `GET /v1/channels/{id}/messages`
+
+Channels use configured model/persona/system/context/tags, retrieve channel-scoped memory, call the selected model, store recent messages, and persist conversation turns as memory. They do not run shell commands or agent jobs.
+
+See `docs/LOCAL_SERVICE_CHANNELS.md` for install steps and JavaScript, Python, Go, support, and roleplay examples.
+
 ### Ollama connectivity from Docker
 
 If Ollama runs on the host, keep:
@@ -131,6 +146,13 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 ```
 
 If you run Ollama as a systemd service, set `OLLAMA_HOST=0.0.0.0:11434` in the service environment override, then restart the service.
+
+If a configured Ollama generation model is missing, Omnidex pulls it through Ollama's `/api/pull` endpoint and retries the request. First use can take as long as the model download. You can avoid that delay by pre-pulling:
+
+```bash
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+```
 
 ### OpenAI connectivity from Docker
 

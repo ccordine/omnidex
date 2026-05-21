@@ -57,10 +57,11 @@ func buildContextPlannerPrompt() string {
 		"Role: context tool planner.",
 		"Decide tools needed before answering.",
 		"Output JSON only. No markdown.",
-		"Allowed tools: web_research,memory,document_processing,shell.",
+		"Allowed tools: web_research,memory,documentation,document_processing,shell.",
 		"Schema: {\"tools\":[\"shell\"],\"allow_clarify\":false,\"require_evidence\":true,\"reason\":\"...\"}",
 		"Use web_research for external/current facts.",
 		"Use memory to store/retrieve reusable research.",
+		"Use documentation for SDK/API/library docs across any language or tool.",
 		"Use document_processing for long docs/scraping.",
 		"Use shell for terminal evidence/actions.",
 	), "\n")
@@ -95,9 +96,9 @@ func ParseContextToolPlan(raw string) (ContextToolPlan, error) {
 		case "memory":
 			plan.NeedsMemory = true
 			plan.Tools = append(plan.Tools, "memory")
-		case "document_processing":
+		case "documentation", "docs", "document_processing":
 			plan.NeedsDocuments = true
-			plan.Tools = append(plan.Tools, "document_processing")
+			plan.Tools = append(plan.Tools, "documentation")
 		case "shell":
 			plan.NeedsShell = true
 			plan.Tools = append(plan.Tools, "shell")

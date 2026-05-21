@@ -184,6 +184,73 @@ func TestGenerateStillDeletesContextModelWhenGenerateFails(t *testing.T) {
 	}
 }
 
+func TestGeneratePullsMissingBaseModelThenRetriesCreate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var mu sync.Mutex
+	callOrder := make([]string, 0, 5)
+	createCalls := 0
+	pulledModel := ""
+
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/api/create":
+			mu.Lock()
+			callOrder = append(callOrder, "create")
+			createCalls++
+			currentCreate := createCalls
+			mu.Unlock()
+			if currentCreate == 1 {
+				return jsonResponse(http.StatusNotFound, `{"error":"model 'qwen3:14b' not found, try pulling it first"}`), nil
+			}
+			return jsonResponse(http.StatusOK, `{"status":"ok"}`), nil
+		case "/api/pull":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode pull payload: %v", err)
+			}
+			mu.Lock()
+			callOrder = append(callOrder, "pull")
+			pulledModel = asString(payload["name"])
+			mu.Unlock()
+			return jsonResponse(http.StatusOK, `{"status":"success"}`), nil
+		case "/api/generate":
+			mu.Lock()
+			callOrder = append(callOrder, "generate")
+			mu.Unlock()
+			return jsonResponse(http.StatusOK, `{"response":"ok after pull"}`), nil
+		case "/api/delete":
+			mu.Lock()
+			callOrder = append(callOrder, "delete")
+			mu.Unlock()
+			return jsonResponse(http.StatusOK, `{"status":"ok"}`), nil
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		return jsonResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+	})
+
+	client := New("http://ollama.local", "llama3.2", "nomic-embed-text", 5*time.Second)
+	client.httpClient = &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: transport,
+	}
+	got, err := client.Generate(context.Background(), "qwen3:14b", "test")
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+	if got != "ok after pull" {
+		t.Fatalf("Generate()=%q", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(callOrder, []string{"create", "pull", "create", "generate", "delete"}) {
+		t.Fatalf("call order=%v", callOrder)
+	}
+	if pulledModel != "qwen3:14b" {
+		t.Fatalf("pulled model=%q", pulledModel)
+	}
+}
+
 func TestGenerateUsesDerivedPromptHintWhenAuthoritativeInstructionExists(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	generatePrompt := ""

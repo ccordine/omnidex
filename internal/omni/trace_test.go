@@ -19,6 +19,7 @@ func TestBuildRunTraceSummarizesSessionEvents(t *testing.T) {
 			Events: []Event{
 				{Type: "prompt_interpreter_completed", CreatedAt: "2026-05-20T12:00:00Z"},
 				{Type: "structured_llm_request_started", CreatedAt: "2026-05-20T12:00:01Z"},
+				{Type: "prep_workspace_scan_completed", CreatedAt: "2026-05-20T12:00:01Z"},
 				{Type: "structured_command_finished", CreatedAt: "2026-05-20T12:00:02Z"},
 				{Type: "structured_command_rejected", CreatedAt: "2026-05-20T12:00:03Z"},
 				{Type: "structured_done_rejected", CreatedAt: "2026-05-20T12:00:04Z"},
@@ -33,6 +34,9 @@ func TestBuildRunTraceSummarizesSessionEvents(t *testing.T) {
 	}
 	if trace.Commands != 1 || trace.RejectedCommands != 1 || trace.DoneRejections != 1 {
 		t.Fatalf("unexpected trace counts: %#v", trace)
+	}
+	if trace.PrepEvents != 1 || trace.Turns[0].PrepEvents != 1 {
+		t.Fatalf("prep events not counted: %#v", trace)
 	}
 	if trace.EstimatedDuration != "5s" {
 		t.Fatalf("duration = %q", trace.EstimatedDuration)

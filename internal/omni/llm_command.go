@@ -50,6 +50,9 @@ type CommandDecisionResult struct {
 	Observations    []StructuredCommandObservation
 	ObjectiveLedger []StructuredObjective
 	MinimalContext  MinimalContext
+	StartedAt       time.Time
+	FinishedAt      time.Time
+	Elapsed         time.Duration
 }
 
 type StructuredCommandObservation struct {
@@ -376,6 +379,7 @@ func RunStructuredCommandDecisionWithHistoryEventsAndAsk(ctx context.Context, pr
 
 type structuredCommandDecisionRunConfig struct {
 	SessionMemories         []SessionMemory
+	PrepContext             PrepContextBundle
 	CurrentWorkingDirectory string
 	Recipes                 []Recipe
 	PromptInterpreter       PromptInterpreter
@@ -388,7 +392,7 @@ type structuredCommandDecisionRunConfig struct {
 	CommandCacheRoot        string
 }
 
-func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, history []Message, client CommandDecisionClient, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, cfg structuredCommandDecisionRunConfig) (CommandDecisionResult, error) {
+func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, history []Message, client CommandDecisionClient, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, cfg structuredCommandDecisionRunConfig) (result CommandDecisionResult, retErr error) {
 	if strings.TrimSpace(prompt) == "" {
 		return CommandDecisionResult{}, fmt.Errorf("prompt is empty")
 	}
@@ -399,9 +403,18 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	ctx, cancel := context.WithTimeout(ctx, defaultCommandDecisionTimeout)
 	defer cancel()
 
+	startedAt := time.Now()
+	result = CommandDecisionResult{StartedAt: startedAt}
+	defer func() {
+		if result.StartedAt.IsZero() {
+			result.StartedAt = startedAt
+		}
+		result.FinishedAt = time.Now()
+		result.Elapsed = result.FinishedAt.Sub(result.StartedAt)
+	}()
+
 	evaluator := cfg.Evaluator
 	evaluatorThreshold := normalizeStructuredEvaluatorThreshold(cfg.EvaluatorThreshold)
-	result := CommandDecisionResult{}
 	ledger := []StructuredObjective{}
 	minimalContext := MinimalContext{}
 	selectedRecipes := []Recipe{}
@@ -414,6 +427,15 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		"package_manager": worksiteSurvey.PackageManager,
 		"frameworks":      strings.Join(worksiteSurvey.Frameworks, ","),
 	})
+	if len(allPrepBriefs(cfg.PrepContext)) > 0 || len(cfg.PrepContext.Evidence) > 0 {
+		emitStructuredCommandEvent(onEvent, "prep_context_attached_to_planner", "Preparation context attached to structured planner", map[string]string{
+			"briefs":       fmt.Sprintf("%d", len(allPrepBriefs(cfg.PrepContext))),
+			"evidence":     fmt.Sprintf("%d", len(cfg.PrepContext.Evidence)),
+			"budget_used":  fmt.Sprintf("%d", cfg.PrepContext.ContextBudgetUsed),
+			"budget_limit": fmt.Sprintf("%d", cfg.PrepContext.ContextBudgetLimit),
+			"role":         "planner",
+		})
+	}
 	if cfg.PromptInterpreter != nil {
 		interpretation, err := cfg.PromptInterpreter.InterpretPrompt(ctx, PromptInterpretationInput{
 			UserPrompt:              prompt,
@@ -587,7 +609,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			return result, fmt.Errorf("llm client is required for planner step")
 		}
-		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequestWithContextRecipesAndSurvey(prompt, referenceHistory, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext, cfg.Recipes, worksiteSurvey), step, onEvent)
+		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequestWithContextRecipesSurveyAndPrep(prompt, referenceHistory, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext, cfg.Recipes, worksiteSurvey, cfg.PrepContext), step, onEvent)
 		if err != nil {
 			if hasSuccessfulCommandObservation(result.Observations) {
 				result.PartialProgress = true
@@ -603,6 +625,14 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		}
 
 		if evaluator != nil {
+			if len(allPrepBriefs(cfg.PrepContext)) > 0 || len(cfg.PrepContext.Evidence) > 0 {
+				emitStructuredCommandEvent(onEvent, "prep_context_attached_to_specialist", "Preparation context attached to evaluator", map[string]string{
+					"step":     fmt.Sprintf("%d", step),
+					"role":     "evaluator",
+					"briefs":   fmt.Sprintf("%d", len(allPrepBriefs(cfg.PrepContext))),
+					"evidence": fmt.Sprintf("%d", len(cfg.PrepContext.Evidence)),
+				})
+			}
 			evaluation, evalErr := evaluator.EvaluateStructuredLLMResponse(ctx, StructuredLLMEvaluationInput{
 				Step:             step,
 				UserPrompt:       prompt,
@@ -723,6 +753,8 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_started", "Planner delegated shell command selection", map[string]string{
 				"step":      fmt.Sprintf("%d", step),
+				"tool":      "shell",
+				"role":      "shell_execution_specialist",
 				"tool_task": truncateStructuredTimelineValue(payload.ToolTask),
 			})
 			proposal, err := cfg.ShellSpecialist.ProposeShellCommand(ctx, ShellCommandSpecialistInput{
@@ -749,6 +781,8 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_finished", "Shell specialist proposed command", map[string]string{
 				"step":      fmt.Sprintf("%d", step),
+				"tool":      "shell",
+				"role":      "shell_execution_specialist",
 				"command":   truncateStructuredTimelineValue(proposal.Command),
 				"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 			})
@@ -1218,7 +1252,9 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 	}
 	emitStructuredCommandEvent(onEvent, "structured_command_started", "Executing structured command", map[string]string{
 		"step":    fmt.Sprintf("%d", step),
+		"tool":    "shell",
 		"command": truncateStructuredTimelineValue(command),
+		"cwd":     structuredPromptWorkingDirectory(workingDirectory),
 	})
 	exitCode, err := ExecuteStructuredCommandInDir(ctx, command, workingDirectory, io.MultiWriter(stdout, &stdoutBuf), io.MultiWriter(stderr, &stderrBuf))
 	result.Command = command
@@ -1232,10 +1268,12 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 	})
 	emitStructuredCommandEvent(onEvent, "structured_command_finished", "Structured command finished", map[string]string{
 		"step":      fmt.Sprintf("%d", step),
+		"tool":      "shell",
 		"command":   truncateStructuredTimelineValue(command),
+		"cwd":       structuredPromptWorkingDirectory(workingDirectory),
 		"exit_code": fmt.Sprintf("%d", exitCode),
-		"stdout":    truncateStructuredTimelineValue(stdoutBuf.String()),
-		"stderr":    truncateStructuredTimelineValue(stderrBuf.String()),
+		"stdout":    structuredTimelineCommandOutput(stdoutBuf.String()),
+		"stderr":    structuredTimelineCommandOutput(stderrBuf.String()),
 	})
 	if enableCommandCache {
 		if err := saveStructuredCommandCache(command, workingDirectory, commandCacheRoot, exitCode, stdoutBuf.String(), stderrBuf.String(), onEvent); err != nil {
@@ -1251,6 +1289,7 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 func runStructuredPatchApply(ctx context.Context, step int, patch, workingDirectory string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
 	emitStructuredCommandEvent(onEvent, "structured_patch_apply_started", "Applying structured patch artifact", map[string]string{
 		"step": fmt.Sprintf("%d", step),
+		"tool": "patch.apply",
 	})
 	applyResult, err := ApplyUnifiedPatch(PatchApplyOptions{
 		Workspace: workingDirectory,
@@ -1278,6 +1317,7 @@ func runStructuredPatchApply(ctx context.Context, step int, patch, workingDirect
 	})
 	details := map[string]string{
 		"step":      fmt.Sprintf("%d", step),
+		"tool":      "patch.apply",
 		"exit_code": fmt.Sprintf("%d", exitCode),
 	}
 	if err == nil {
@@ -1329,9 +1369,24 @@ func appendCachedStructuredCommandObservation(step int, command, workingDirector
 	emitStructuredCommandEvent(onEvent, "command_cache_hit", "Reused cached command observation for unchanged workspace inputs", map[string]string{
 		"step":      fmt.Sprintf("%d", step),
 		"command":   truncateStructuredTimelineValue(command),
+		"cwd":       structuredPromptWorkingDirectory(workingDirectory),
 		"exit_code": fmt.Sprintf("%d", entry.ExitCode),
+		"stdout":    structuredTimelineCommandOutput(entry.Stdout),
+		"stderr":    structuredTimelineCommandOutput(entry.Stderr),
+		"cached":    "true",
 	})
 	return true, nil
+}
+
+func structuredTimelineCommandOutput(raw string) string {
+	trimmed := strings.TrimRight(raw, "\n")
+	if strings.TrimSpace(trimmed) == "" {
+		return "(empty)"
+	}
+	if len(trimmed) <= defaultStructuredObservationChars {
+		return trimmed
+	}
+	return trimmed[:defaultStructuredObservationChars] + "\n[truncated]"
 }
 
 func saveStructuredCommandCache(command, workingDirectory, root string, exitCode int, stdout, stderr string, onEvent func(StructuredCommandEvent)) error {
@@ -1424,6 +1479,15 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 		"step":      fmt.Sprintf("%d", step),
 		"tool_task": truncateStructuredTimelineValue(toolTask),
 	})
+	if len(allPrepBriefs(cfg.PrepContext)) > 0 || len(cfg.PrepContext.Evidence) > 0 {
+		emitStructuredCommandEvent(onEvent, "prep_context_attached_to_specialist", "Preparation context attached to shell specialist", map[string]string{
+			"step":        fmt.Sprintf("%d", step),
+			"role":        "shell_specialist",
+			"briefs":      fmt.Sprintf("%d", len(allPrepBriefs(cfg.PrepContext))),
+			"evidence":    fmt.Sprintf("%d", len(cfg.PrepContext.Evidence)),
+			"route_files": strings.Join(cfg.PrepContext.CodebaseRoute.LikelyFiles, ","),
+		})
+	}
 	proposal, err := cfg.ShellSpecialist.ProposeShellCommand(ctx, ShellCommandSpecialistInput{
 		Step:             step,
 		UserPrompt:       prompt,
@@ -1717,7 +1781,7 @@ func buildContextSummarizerRequest(input MinimalContextInput) OllamaChatRequest 
 		ObjectiveLedger:         mergeStructuredObjectiveLedger(nil, input.ObjectiveLedger),
 		CompletedActions:        input.CompletedActions,
 		ReferenceHistory:        recentStructuredMemoryRecords(input.History),
-		SessionMemories:         recentStructuredCapabilityMemories(input.SessionMemories),
+		SessionMemories:         recentStructuredSessionMemories(input.SessionMemories),
 		ExistingContext:         normalizeMinimalContext(input.ExistingContext),
 		WorksiteSurvey:          input.WorksiteSurvey,
 		Instructions: []string{
@@ -4050,9 +4114,13 @@ func buildStructuredCommandRequestWithContextAndRecipes(prompt string, history [
 }
 
 func buildStructuredCommandRequestWithContextRecipesAndSurvey(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, survey WorksiteSurvey) OllamaChatRequest {
+	return buildStructuredCommandRequestWithContextRecipesSurveyAndPrep(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, survey, PrepContextBundle{})
+}
+
+func buildStructuredCommandRequestWithContextRecipesSurveyAndPrep(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, survey WorksiteSurvey, prep PrepContextBundle) OllamaChatRequest {
 	return OllamaChatRequest{
 		ContextSystem: buildStructuredCommandSystemContext(),
-		Messages:      buildStructuredCommandMessages(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, survey),
+		Messages:      buildStructuredCommandMessagesWithPrep(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, survey, prep),
 		Format:        buildStructuredCommandResponseFormat(observations),
 		Options: map[string]interface{}{
 			"temperature": 0,
@@ -4306,6 +4374,14 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 }
 
 func buildStructuredCommandMessages(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, surveys ...WorksiteSurvey) []OllamaMessage {
+	survey := WorksiteSurvey{}
+	if len(surveys) > 0 {
+		survey = surveys[0]
+	}
+	return buildStructuredCommandMessagesWithPrep(prompt, history, memories, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, survey, PrepContextBundle{})
+}
+
+func buildStructuredCommandMessagesWithPrep(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, survey WorksiteSurvey, prep PrepContextBundle) []OllamaMessage {
 	messages := []OllamaMessage{}
 	if memoryMessage := buildStructuredCommandCapabilityMemoryMessage(memories); memoryMessage != "" {
 		messages = append(messages,
@@ -4324,9 +4400,17 @@ func buildStructuredCommandMessages(prompt string, history []Message, memories [
 			OllamaMessage{Role: "assistant", Content: "Reference history received. I will use it only when the active task needs omitted context."},
 		)
 	}
-	survey := WorksiteSurvey{}
-	if len(surveys) > 0 {
-		survey = surveys[0]
+	if prepMessage := buildStructuredPrepContextMessage(memories); prepMessage != "" {
+		messages = append(messages,
+			OllamaMessage{Role: "user", Content: prepMessage},
+			OllamaMessage{Role: "assistant", Content: "Prep context received. I will use it as compact advisory routing and documentation context only where it directly helps the active task."},
+		)
+	}
+	if prepMessage := buildStructuredPrepContextBundleMessage(prep); prepMessage != "" {
+		messages = append(messages,
+			OllamaMessage{Role: "user", Content: prepMessage},
+			OllamaMessage{Role: "assistant", Content: "Prep bundle received. I will use only routed, provenance-backed briefs for the role and objective that need them."},
+		)
 	}
 	messages = append(messages, OllamaMessage{Role: "user", Content: buildStructuredCommandUserMessage(prompt, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, survey)})
 	return messages
@@ -4341,6 +4425,55 @@ func buildStructuredMinimalContextMessage(minimalContext MinimalContext) string 
 		MinimalContext MinimalContext `json:"minimal_context"`
 	}{
 		MinimalContext: context,
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(blob)
+}
+
+func buildStructuredPrepContextMessage(memories []SessionMemory) string {
+	prep := compactStructuredPrepMemories(memories, 8)
+	if len(prep) == 0 {
+		return ""
+	}
+	payload := struct {
+		PrepContext []SessionMemory `json:"prep_context"`
+		Rules       []string        `json:"rules"`
+	}{
+		PrepContext: prep,
+		Rules: []string{
+			"Prep context is advisory and scoped to the current task.",
+			"Use codebase_route_brief for likely files/tests and documentation_brief for API/convention guidance.",
+			"Use web_research_brief only for freshness or external facts required by the task.",
+			"Do not let prep context add unrequested dependencies, frameworks, services, or architecture.",
+			"Prefer the smallest subset of prep context needed for the next action.",
+		},
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(blob)
+}
+
+func buildStructuredPrepContextBundleMessage(bundle PrepContextBundle) string {
+	if len(allPrepBriefs(bundle)) == 0 && len(bundle.Evidence) == 0 {
+		return ""
+	}
+	compact := CompactPrepContextBundle(bundle, defaultPrepContextBudgetLimit)
+	payload := struct {
+		PrepBundle PrepContextBundle `json:"prep_context_bundle"`
+		Rules      []string          `json:"rules"`
+	}{
+		PrepBundle: compact,
+		Rules: []string{
+			"Prep bundle is evidence-led, budgeted, routed, and validated.",
+			"Use only briefs whose used_by includes your role or directly supports the active objective.",
+			"Do not treat memory, documentation, or web research as execution permission.",
+			"Do not claim completion from prep context; completion requires validator evidence.",
+		},
 	}
 	blob, err := json.Marshal(payload)
 	if err != nil {
@@ -4364,6 +4497,43 @@ func buildStructuredCommandCapabilityMemoryMessage(memories []SessionMemory) str
 		return ""
 	}
 	return string(blob)
+}
+
+func compactStructuredPrepMemories(memories []SessionMemory, limit int) []SessionMemory {
+	if limit <= 0 {
+		limit = 8
+	}
+	allowed := map[string]bool{
+		"codebase_route_brief":   true,
+		"documentation_brief":    true,
+		"web_research_brief":     true,
+		"expertise_research":     true,
+		"documentation_research": true,
+	}
+	out := []SessionMemory{}
+	for i := len(memories) - 1; i >= 0; i-- {
+		memory := memories[i]
+		if !allowed[strings.TrimSpace(memory.Kind)] {
+			continue
+		}
+		content := strings.TrimSpace(memory.Content)
+		if content == "" {
+			continue
+		}
+		if len(content) > 1800 {
+			content = content[:1800] + "\n...[truncated]"
+		}
+		memory.Content = content
+		memory.Tags = limitStrings(cleanMemoryTags(memory.Tags), 10)
+		out = append(out, memory)
+		if len(out) >= limit {
+			break
+		}
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
 }
 
 func buildStructuredCommandHistoryMessage(history []Message) string {
@@ -4595,6 +4765,36 @@ func recentStructuredCapabilityMemories(memories []SessionMemory) []SessionMemor
 		kind := strings.TrimSpace(memory.Kind)
 		if kind == "" {
 			kind = "capability"
+		}
+		if kind != "capability" {
+			continue
+		}
+		out = append(out, SessionMemory{
+			Kind:      kind,
+			Content:   truncateStructuredObservation(memory.Content),
+			Tags:      sortedCopy(memory.Tags),
+			CreatedAt: memory.CreatedAt,
+		})
+	}
+	return out
+}
+
+func recentStructuredSessionMemories(memories []SessionMemory) []SessionMemory {
+	if len(memories) == 0 {
+		return nil
+	}
+	start := 0
+	if len(memories) > maxConversationHistoryMessages {
+		start = len(memories) - maxConversationHistoryMessages
+	}
+	out := []SessionMemory{}
+	for _, memory := range memories[start:] {
+		if strings.TrimSpace(memory.Content) == "" {
+			continue
+		}
+		kind := strings.TrimSpace(memory.Kind)
+		if kind == "" {
+			kind = "episodic"
 		}
 		out = append(out, SessionMemory{
 			Kind:      kind,

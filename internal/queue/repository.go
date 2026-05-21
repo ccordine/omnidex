@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/artifacts"
@@ -25,6 +26,8 @@ type stepSeed struct {
 }
 
 const inferredMemoryCorrectionDistance = 0.08
+
+var channelIDSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_.:-]+`)
 
 func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
@@ -1799,6 +1802,194 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 	}
 
 	return matches, nil
+}
+
+func (r *Repository) CreateChannel(ctx context.Context, channel model.Channel) (model.Channel, error) {
+	channel.ID = normalizeChannelID(channel.ID, channel.Name)
+	if channel.ID == "" {
+		return model.Channel{}, fmt.Errorf("channel id is required")
+	}
+	channel.Persona = normalizeChannelPersona(channel.Persona)
+	channel.Tags = cleanTags(channel.Tags)
+	if len(channel.Context) == 0 || !json.Valid(channel.Context) {
+		channel.Context = json.RawMessage(`{}`)
+	}
+	var out model.Channel
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO ai_channels (id, name, persona, system, provider, model, context, tags)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			persona = EXCLUDED.persona,
+			system = EXCLUDED.system,
+			provider = EXCLUDED.provider,
+			model = EXCLUDED.model,
+			context = EXCLUDED.context,
+			tags = EXCLUDED.tags,
+			updated_at = NOW()
+		RETURNING id, name, persona, system, provider, model, context, tags, created_at, updated_at
+	`, channel.ID, strings.TrimSpace(channel.Name), channel.Persona, strings.TrimSpace(channel.System), strings.TrimSpace(channel.Provider), strings.TrimSpace(channel.Model), string(channel.Context), channel.Tags).Scan(
+		&out.ID,
+		&out.Name,
+		&out.Persona,
+		&out.System,
+		&out.Provider,
+		&out.Model,
+		&out.Context,
+		&out.Tags,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	)
+	if err != nil {
+		return model.Channel{}, err
+	}
+	return out, nil
+}
+
+func (r *Repository) GetChannel(ctx context.Context, id string) (model.Channel, error) {
+	var out model.Channel
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, name, persona, system, provider, model, context, tags, created_at, updated_at
+		FROM ai_channels
+		WHERE id = $1
+	`, strings.TrimSpace(id)).Scan(
+		&out.ID,
+		&out.Name,
+		&out.Persona,
+		&out.System,
+		&out.Provider,
+		&out.Model,
+		&out.Context,
+		&out.Tags,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	)
+	if err != nil {
+		return model.Channel{}, err
+	}
+	return out, nil
+}
+
+func (r *Repository) ListChannels(ctx context.Context, limit, offset int) ([]model.Channel, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, name, persona, system, provider, model, context, tags, created_at, updated_at
+		FROM ai_channels
+		ORDER BY updated_at DESC, id ASC
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	channels := []model.Channel{}
+	for rows.Next() {
+		var ch model.Channel
+		if err := rows.Scan(&ch.ID, &ch.Name, &ch.Persona, &ch.System, &ch.Provider, &ch.Model, &ch.Context, &ch.Tags, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+			return nil, err
+		}
+		channels = append(channels, ch)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return channels, nil
+}
+
+func (r *Repository) AddChannelMessage(ctx context.Context, channelID, role, content string) (model.ChannelMessage, error) {
+	role = normalizeChannelMessageRole(role)
+	content = strings.TrimSpace(content)
+	if strings.TrimSpace(channelID) == "" {
+		return model.ChannelMessage{}, fmt.Errorf("channel id is required")
+	}
+	if content == "" {
+		return model.ChannelMessage{}, fmt.Errorf("message content is required")
+	}
+	var msg model.ChannelMessage
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO ai_channel_messages (channel_id, role, content)
+		VALUES ($1, $2, $3)
+		RETURNING id, channel_id, role, content, created_at
+	`, channelID, role, content).Scan(&msg.ID, &msg.ChannelID, &msg.Role, &msg.Content, &msg.CreatedAt)
+	if err != nil {
+		return model.ChannelMessage{}, err
+	}
+	_, _ = r.pool.Exec(ctx, `UPDATE ai_channels SET updated_at = NOW() WHERE id = $1`, channelID)
+	return msg, nil
+}
+
+func (r *Repository) ListChannelMessages(ctx context.Context, channelID string, limit int) ([]model.ChannelMessage, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, channel_id, role, content, created_at
+		FROM (
+			SELECT id, channel_id, role, content, created_at
+			FROM ai_channel_messages
+			WHERE channel_id = $1
+			ORDER BY created_at DESC, id DESC
+			LIMIT $2
+		) recent
+		ORDER BY created_at ASC, id ASC
+	`, channelID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	messages := []model.ChannelMessage{}
+	for rows.Next() {
+		var msg model.ChannelMessage
+		if err := rows.Scan(&msg.ID, &msg.ChannelID, &msg.Role, &msg.Content, &msg.CreatedAt); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func normalizeChannelID(id, fallback string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		id = strings.TrimSpace(fallback)
+	}
+	id = strings.ToLower(id)
+	id = channelIDSanitizer.ReplaceAllString(id, "-")
+	id = strings.Trim(id, "-_.:")
+	if len(id) > 96 {
+		id = strings.Trim(id[:96], "-_.:")
+	}
+	return id
+}
+
+func normalizeChannelPersona(persona string) string {
+	switch strings.ToLower(strings.TrimSpace(persona)) {
+	case "instruct", "assistant", "chat", "":
+		return "assistant"
+	case "roleplay", "rp":
+		return "roleplay"
+	case "narrate", "story":
+		return "narrate"
+	default:
+		return strings.ToLower(strings.TrimSpace(persona))
+	}
+}
+
+func normalizeChannelMessageRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "assistant", "system", "tool":
+		return strings.ToLower(strings.TrimSpace(role))
+	default:
+		return "user"
+	}
 }
 
 func decorateMemoryTags(source string, tags []string) []string {

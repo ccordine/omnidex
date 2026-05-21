@@ -1146,9 +1146,10 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	var stdoutBuf strings.Builder
 	var stderrBuf strings.Builder
 	activeDirectory := a.resolveActiveDirectoryForTurn(session, input, emitEvent)
-	memoryCtx := a.loadInteractiveMemoryContext(signalCtx, input, activeDirectory, emitEvent)
+	prepCtx := a.prepareInteractiveTurnContext(signalCtx, input, activeDirectory, emitEvent)
+	memoryCtx := prepCtx.Memory
 	sessionMemories := append([]SessionMemory(nil), session.Memories...)
-	sessionMemories = append(sessionMemories, memoryCtx.Memories...)
+	sessionMemories = append(sessionMemories, prepCtx.SessionMemories...)
 	result, execErr := runStructuredCommandDecisionWithConfig(
 		signalCtx,
 		input,
@@ -1175,6 +1176,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 		},
 		structuredCommandDecisionRunConfig{
 			SessionMemories:         sessionMemories,
+			PrepContext:             prepCtx.Bundle,
 			CurrentWorkingDirectory: activeDirectory,
 			Recipes:                 a.recipes,
 			PromptInterpreter:       a.promptInterpreter,
@@ -1323,15 +1325,26 @@ func (a *App) handleMicroQueueTurn(session *Session, objective string) (Turn, st
 }
 
 func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, stderr, errText string) string {
+	partialStopped := result.PartialProgress && strings.TrimSpace(errText) != ""
 	statusLabel := "Exit code"
-	if result.PartialProgress && strings.TrimSpace(errText) != "" {
+	if partialStopped {
 		statusLabel = "Last command exit code"
 	}
 	lines := []string{}
-	lines = append(lines, "Result")
-	lines = append(lines, "------")
+	if partialStopped {
+		lines = append(lines, "Partial result")
+		lines = append(lines, "--------------")
+		lines = append(lines, "Completion: not accepted")
+	} else {
+		lines = append(lines, "Result")
+		lines = append(lines, "------")
+	}
 	if strings.TrimSpace(result.Command) != "" {
-		lines = appendFormattedResponseValue(lines, "Command", result.Command)
+		commandLabel := "Command"
+		if partialStopped {
+			commandLabel = "Last attempted command"
+		}
+		lines = appendFormattedResponseValue(lines, commandLabel, result.Command)
 	} else if strings.TrimSpace(errText) != "" {
 		lines = append(lines, "Command: (none accepted)")
 	}
@@ -1341,15 +1354,27 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 	}
 	if strings.TrimSpace(stdout) != "" {
 		lines = append(lines, "")
-		lines = appendFormattedResponseValue(lines, "Stdout", truncateOutput(stdout))
+		stdoutLabel := "Stdout"
+		if partialStopped {
+			stdoutLabel = "Latest captured stdout"
+		}
+		lines = appendFormattedResponseValue(lines, stdoutLabel, truncateOutput(stdout))
 	}
 	if strings.TrimSpace(stderr) != "" {
 		lines = append(lines, "")
-		lines = appendFormattedResponseValue(lines, "Stderr", truncateOutput(stderr))
+		stderrLabel := "Stderr"
+		if partialStopped {
+			stderrLabel = "Latest captured stderr"
+		}
+		lines = appendFormattedResponseValue(lines, stderrLabel, truncateOutput(stderr))
 	}
 	if strings.TrimSpace(result.Answer) != "" {
 		lines = append(lines, "")
-		lines = appendFormattedResponseValue(lines, "Answer", result.Answer)
+		answerLabel := "Answer"
+		if partialStopped {
+			answerLabel = "Latest captured answer"
+		}
+		lines = appendFormattedResponseValue(lines, answerLabel, result.Answer)
 	}
 	blocker := latestStructuredFailureSummary(result.Observations)
 	if strings.TrimSpace(errText) != "" {
@@ -1379,8 +1404,172 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 		if diagnosis := classifyStructuredLLMFailure(errors.New(errText)); diagnosis != "ollama_request_failure" {
 			lines = append(lines, "  Diagnosis: "+diagnosis)
 		}
+	} else if !result.PartialProgress && result.ExitCode == 0 {
+		lines = appendStructuredCompletionRecap(lines, result)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func appendStructuredCompletionRecap(lines []string, result CommandDecisionResult) []string {
+	recap := structuredCompletionRecapLines(result)
+	if len(recap) == 0 {
+		return lines
+	}
+	lines = append(lines, "", "Recap:")
+	for _, line := range recap {
+		lines = append(lines, "  "+line)
+	}
+	return lines
+}
+
+func structuredCompletionRecapLines(result CommandDecisionResult) []string {
+	lines := []string{}
+	if result.Elapsed > 0 {
+		lines = append(lines, "Elapsed: "+formatStructuredElapsed(result.Elapsed))
+	}
+	if completed := completedStructuredObjectiveIDs(result.ObjectiveLedger); completed != "" {
+		lines = append(lines, "Completed objectives: "+completed)
+	}
+	if actions := structuredSuccessfulActionSummary(result.Observations, 4); actions != "" {
+		lines = append(lines, "Actions: "+actions)
+	}
+	if decisions := structuredDecisionSummary(result.ObjectiveLedger, result.Observations, 4); decisions != "" {
+		lines = append(lines, "Decisions: "+decisions)
+	}
+	return lines
+}
+
+func completedStructuredObjectiveIDs(ledger []StructuredObjective) string {
+	ids := []string{}
+	for _, objective := range ledger {
+		if structuredObjectiveSatisfied(objective) {
+			id := strings.TrimSpace(objective.ID)
+			if id == "" {
+				id = strings.TrimSpace(objective.Description)
+			}
+			if id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return strings.Join(ids, ",")
+}
+
+func structuredSuccessfulActionSummary(observations []StructuredCommandObservation, limit int) string {
+	actions := []string{}
+	seen := map[string]bool{}
+	for _, obs := range observations {
+		command := strings.TrimSpace(obs.Command)
+		if command == "" || obs.ExitCode != 0 {
+			continue
+		}
+		key := normalizeStructuredCommandForComparison(command)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		actions = append(actions, truncateStructuredRecapItem(command))
+		if len(actions) >= limit {
+			break
+		}
+	}
+	if len(actions) == 0 {
+		return ""
+	}
+	if more := countAdditionalSuccessfulActions(observations, seen); more > 0 {
+		actions = append(actions, fmt.Sprintf("+%d more", more))
+	}
+	return strings.Join(actions, "; ")
+}
+
+func countAdditionalSuccessfulActions(observations []StructuredCommandObservation, seen map[string]bool) int {
+	count := 0
+	for _, obs := range observations {
+		command := strings.TrimSpace(obs.Command)
+		if command == "" || obs.ExitCode != 0 {
+			continue
+		}
+		key := normalizeStructuredCommandForComparison(command)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		count++
+	}
+	return count
+}
+
+func structuredDecisionSummary(ledger []StructuredObjective, observations []StructuredCommandObservation, limit int) string {
+	decisions := []string{}
+	for _, objective := range ledger {
+		if objective.Source == structuredObjectiveSourceEvidenceRequiredPrerequisite {
+			description := strings.TrimSpace(objective.ID)
+			if description == "" {
+				description = strings.TrimSpace(objective.Description)
+			}
+			if description != "" {
+				decisions = appendUniqueRecapDecision(decisions, "added evidence-required prerequisite "+description, limit)
+			}
+		}
+	}
+	for _, obs := range observations {
+		if obs.Cached {
+			decisions = appendUniqueRecapDecision(decisions, "reused cached command evidence", limit)
+		}
+		if strings.TrimSpace(obs.RejectedCommand) != "" {
+			decisions = appendUniqueRecapDecision(decisions, "rejected proposed command "+structuredCommandNameForRecap(obs.RejectedCommand), limit)
+		}
+		if strings.TrimSpace(obs.EvaluationFeedback) != "" {
+			decisions = appendUniqueRecapDecision(decisions, "revised after evaluator feedback", limit)
+		}
+		if strings.TrimSpace(obs.Question) != "" {
+			decisions = appendUniqueRecapDecision(decisions, "used user input for "+truncateStructuredRecapItem(obs.Question), limit)
+		}
+		if len(decisions) >= limit {
+			break
+		}
+	}
+	return strings.Join(decisions, "; ")
+}
+
+func appendUniqueRecapDecision(decisions []string, decision string, limit int) []string {
+	if strings.TrimSpace(decision) == "" || len(decisions) >= limit {
+		return decisions
+	}
+	for _, existing := range decisions {
+		if existing == decision {
+			return decisions
+		}
+	}
+	return append(decisions, decision)
+}
+
+func truncateStructuredRecapItem(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	const max = 96
+	if len(value) <= max {
+		return value
+	}
+	return value[:max-3] + "..."
+}
+
+func structuredCommandNameForRecap(command string) string {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return ""
+	}
+	name := fields[0]
+	if len(name) > 48 {
+		name = name[:45] + "..."
+	}
+	return name
+}
+
+func formatStructuredElapsed(elapsed time.Duration) string {
+	if elapsed < time.Second {
+		return fmt.Sprintf("%dms", elapsed.Milliseconds())
+	}
+	return elapsed.Round(100 * time.Millisecond).String()
 }
 
 func appendFormattedResponseValue(lines []string, label, value string) []string {
@@ -1704,7 +1893,7 @@ func (a *App) structuredPlannerClient() CommandDecisionClient {
 }
 
 func (a *App) planContextForTurn(ctx context.Context, input string) (ContextToolPlan, []Event) {
-	plan, err := PlanContextTools(ctx, a.ollama, input)
+	plan, err := PlanContextTools(ctx, a.planner, input)
 	events := []Event{a.newEvent("context_plan_created", "Context tool plan created", map[string]string{
 		"tools":  strings.Join(plan.Tools, ","),
 		"reason": plan.Reason,
@@ -1713,6 +1902,195 @@ func (a *App) planContextForTurn(ctx context.Context, input string) (ContextTool
 		events = append(events, a.newEvent("context_plan_failed", "Context tool planner fell back to default", map[string]string{"error": err.Error()}))
 	}
 	return plan, events
+}
+
+type interactivePrepContext struct {
+	Plan            ContextToolPlan
+	Memory          interactiveMemoryContext
+	SessionMemories []SessionMemory
+	Bundle          PrepContextBundle
+	Validation      PrepValidation
+}
+
+func (a *App) prepareInteractiveTurnContext(ctx context.Context, input, activeDirectory string, emitEvent func(string, string, map[string]string)) interactivePrepContext {
+	prep := interactivePrepContext{}
+	emitEvent("prep_started", "Preparing compact task context", map[string]string{
+		"active_directory": activeDirectory,
+	})
+	plan, planEvents := a.planContextForTurn(ctx, input)
+	prep.Plan = plan
+	for _, event := range planEvents {
+		emitEvent(event.Type, event.Summary, event.Details)
+	}
+	var route TaskRoute
+	if routeMemory, preparedRoute, ok := a.prepareCodebaseRouteBrief(activeDirectory, input, emitEvent); ok {
+		route = preparedRoute
+		prep.SessionMemories = append(prep.SessionMemories, routeMemory)
+	}
+	memoryCtx := a.loadInteractiveMemoryContext(ctx, input, activeDirectory, emitEvent)
+	prep.Memory = memoryCtx
+	prep.SessionMemories = append(prep.SessionMemories, memoryCtx.Memories...)
+	if docMemory, ok := a.prepareDocumentationBrief(ctx, input, memoryCtx.Tags, plan, emitEvent); ok {
+		prep.SessionMemories = append(prep.SessionMemories, docMemory)
+	}
+	if webMemory, ok := a.prepareWebResearchBrief(ctx, input, plan, emitEvent); ok {
+		prep.SessionMemories = append(prep.SessionMemories, webMemory)
+	}
+	survey := BuildWorksiteSurvey(activeDirectory)
+	prep.Bundle = CompactPrepContextBundle(NewPrepContextBundle("interactive-turn", activeDirectory, survey, plan, route, prep.SessionMemories), defaultPrepContextBudgetLimit)
+	prep.Validation = ValidatePrepContextBundle(prep.Bundle, plan)
+	emitEvent("prep_context_built", "Preparation context bundle built", map[string]string{
+		"briefs":       fmt.Sprintf("%d", len(allPrepBriefs(prep.Bundle))),
+		"evidence":     fmt.Sprintf("%d", len(prep.Bundle.Evidence)),
+		"budget_used":  fmt.Sprintf("%d", prep.Bundle.ContextBudgetUsed),
+		"budget_limit": fmt.Sprintf("%d", prep.Bundle.ContextBudgetLimit),
+		"compressed":   fmt.Sprintf("%t", prep.Bundle.Compressed),
+	})
+	validationType := "prep_context_validated"
+	validationSummary := "Preparation context bundle validated"
+	if !prep.Validation.Valid {
+		validationType = "prep_context_validation_failed"
+		validationSummary = "Preparation context bundle failed validation"
+	}
+	emitEvent(validationType, validationSummary, map[string]string{
+		"valid":    fmt.Sprintf("%t", prep.Validation.Valid),
+		"failures": strings.Join(prep.Validation.Failures, ","),
+		"warnings": strings.Join(prep.Validation.Warnings, ","),
+	})
+	emitEvent("prep_completed", "Preparation context ready", map[string]string{
+		"tools":              strings.Join(plan.Tools, ","),
+		"memory_records":     fmt.Sprintf("%d", len(memoryCtx.Records)),
+		"handoff_briefs":     fmt.Sprintf("%d", len(prep.SessionMemories)),
+		"evidence_items":     fmt.Sprintf("%d", len(prep.Bundle.Evidence)),
+		"context_policy":     "minimum_necessary_advisory_context",
+		"continuation_ready": "true",
+	})
+	return prep
+}
+
+func (a *App) prepareCodebaseRouteBrief(activeDirectory, input string, emitEvent func(string, string, map[string]string)) (SessionMemory, TaskRoute, bool) {
+	workspace := strings.TrimSpace(activeDirectory)
+	if workspace == "" {
+		return SessionMemory{}, TaskRoute{}, false
+	}
+	emitEvent("prep_workspace_scan_started", "Inspecting workspace for codebase route", map[string]string{
+		"workspace": workspace,
+	})
+	cm, err := UpdateCodebaseMap(workspace, DefaultCodebaseMapPath(workspace), CodebaseMapConfig{MaxFiles: 1200})
+	if err != nil {
+		emitEvent("prep_workspace_scan_failed", "Workspace route preparation failed", map[string]string{
+			"workspace": workspace,
+			"error":     truncateOutput(err.Error()),
+		})
+		return SessionMemory{}, TaskRoute{}, false
+	}
+	if err := WriteCodebaseMap(cm, DefaultCodebaseMapPath(workspace)); err != nil {
+		emitEvent("prep_workspace_scan_failed", "Codebase map write failed", map[string]string{
+			"workspace": workspace,
+			"error":     truncateOutput(err.Error()),
+		})
+		return SessionMemory{}, TaskRoute{}, false
+	}
+	route := RouteTaskWithCodebaseMap(cm, input)
+	emitEvent("prep_workspace_scan_completed", "Codebase route prepared from workspace evidence", map[string]string{
+		"workspace":      workspace,
+		"files":          fmt.Sprintf("%d", len(cm.Files)),
+		"modules":        fmt.Sprintf("%d", len(cm.Modules)),
+		"likely_files":   strings.Join(route.LikelyFiles, ","),
+		"verification":   strings.Join(route.VerificationCommands, ","),
+		"confidence":     fmt.Sprintf("%d", route.Confidence),
+		"evidence_file":  DefaultCodebaseMapPath(workspace),
+		"continuable_by": "codebase-map",
+	})
+	return SessionMemory{
+		Kind:    "codebase_route_brief",
+		Content: formatCodebaseRouteBrief(route),
+		Tags:    []string{"prep-context", "codebase-route", "workspace:" + workspaceHash(workspace)},
+	}, route, true
+}
+
+func (a *App) prepareDocumentationBrief(ctx context.Context, input string, tags []string, plan ContextToolPlan, emitEvent func(string, string, map[string]string)) (SessionMemory, bool) {
+	if !plan.NeedsDocuments || a == nil || a.memory == nil {
+		return SessionMemory{}, false
+	}
+	searchTags := cleanMemoryTags(append([]string{"documentation"}, tags...))
+	emitEvent("documentation_memory_search_started", "Documentation specialist checking documentation memory", map[string]string{
+		"query": input,
+		"tags":  strings.Join(searchTags, ","),
+		"role":  "documentation_specialist",
+	})
+	answer, err := AnswerDocumentationQuestionFromMemory(ctx, input, a.memory, searchTags, 4)
+	if err != nil {
+		emitEvent("documentation_memory_search_failed", "Documentation memory search failed", map[string]string{
+			"error": truncateOutput(err.Error()),
+		})
+		return SessionMemory{}, false
+	}
+	if answer.NeedsScrape {
+		emitEvent("documentation_research_needed", "Documentation specialist found no reusable brief", map[string]string{
+			"query":  input,
+			"reason": "no_matching_documentation_memory",
+		})
+		return SessionMemory{}, false
+	}
+	emitEvent("documentation_brief_loaded", "Documentation specialist loaded reusable guidance", map[string]string{
+		"sources": fmt.Sprintf("%d", len(answer.Brief.Sources)),
+		"role":    "documentation_specialist",
+	})
+	return SessionMemory{
+		Kind:      "documentation_brief",
+		Content:   answer.Answer,
+		Tags:      cleanMemoryTags(append([]string{"prep-context", "documentation"}, tags...)),
+		CreatedAt: nowUTC(),
+	}, true
+}
+
+func (a *App) prepareWebResearchBrief(ctx context.Context, input string, plan ContextToolPlan, emitEvent func(string, string, map[string]string)) (SessionMemory, bool) {
+	if !plan.NeedsWebResearch {
+		return SessionMemory{}, false
+	}
+	events, observation := a.autoResearchForTurn(ctx, input, plan)
+	for _, event := range events {
+		emitEvent(event.Type, event.Summary, event.Details)
+	}
+	if observation == nil || strings.TrimSpace(observation.Stdout) == "" {
+		return SessionMemory{}, false
+	}
+	return SessionMemory{
+		Kind: "web_research_brief",
+		Content: strings.TrimSpace(strings.Join([]string{
+			"WEB_RESEARCH_BRIEF",
+			"query: " + strings.TrimSpace(input),
+			"content:",
+			observation.Stdout,
+		}, "\n")),
+		Tags:      cleanMemoryTags(append([]string{"prep-context", "web-research"}, researchTagsFromQuery(input)...)),
+		CreatedAt: nowUTC(),
+	}, true
+}
+
+func formatCodebaseRouteBrief(route TaskRoute) string {
+	lines := []string{
+		"CODEBASE_ROUTE_BRIEF",
+		"intent: " + strings.TrimSpace(route.Intent),
+		fmt.Sprintf("confidence: %d", route.Confidence),
+	}
+	if len(route.LikelyFiles) > 0 {
+		lines = append(lines, "likely_files: "+strings.Join(route.LikelyFiles, ", "))
+	}
+	if len(route.RelevantModules) > 0 {
+		lines = append(lines, "relevant_modules: "+strings.Join(route.RelevantModules, ", "))
+	}
+	if len(route.VerificationCommands) > 0 {
+		lines = append(lines, "verification_commands: "+strings.Join(route.VerificationCommands, " | "))
+	}
+	if len(route.KnownRisks) > 0 {
+		lines = append(lines, "known_risks: "+strings.Join(route.KnownRisks, " | "))
+	}
+	if len(route.Reasons) > 0 {
+		lines = append(lines, "reasons: "+strings.Join(route.Reasons, " | "))
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func (a *App) autoResearchForTurn(ctx context.Context, input string, plan ContextToolPlan) ([]Event, *CommandObservation) {
@@ -1731,19 +2109,25 @@ func (a *App) autoResearchForTurn(ctx context.Context, input string, plan Contex
 	}
 	searchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
+	events = append(events, a.newEvent("web_search_started", "Web search started", map[string]string{
+		"query": query,
+		"role":  "web_research_specialist",
+	}))
 	results, err := a.web.SearchAll(searchCtx, query)
 	if err != nil {
 		events = append(events, a.newEvent("auto_research_failed", "Automatic web research failed", map[string]string{"error": err.Error()}))
 		return events, nil
 	}
+	events = append(events, a.newEvent("web_search_completed", "Web search completed", webSearchTimelineDetails(query, results)))
 	contextText := websearch.BuildContext(results, 5000)
 	if strings.TrimSpace(contextText) == "" {
 		events = append(events, a.newEvent("auto_research_failed", "Automatic web research returned empty context", nil))
 		return events, nil
 	}
 	events = append(events, a.newEvent("auto_research_completed", "Automatic web research context captured", map[string]string{
-		"query":   query,
-		"results": fmt.Sprintf("%d", len(results)),
+		"query":       query,
+		"results":     fmt.Sprintf("%d", len(results)),
+		"result_urls": strings.Join(webSearchResultURLs(results, 5), "\n"),
 	}))
 
 	if a.memory != nil {
@@ -1773,6 +2157,64 @@ type staticWebSearchResults struct {
 
 func (s staticWebSearchResults) SearchAll(ctx context.Context, query string) ([]websearch.Result, error) {
 	return s.results, nil
+}
+
+func webSearchTimelineDetails(query string, results []websearch.Result) map[string]string {
+	return map[string]string{
+		"query":       strings.TrimSpace(query),
+		"results":     fmt.Sprintf("%d", len(results)),
+		"providers":   strings.Join(webSearchProviders(results), ","),
+		"search_urls": strings.Join(webSearchSearchURLs(results, 5), "\n"),
+		"result_urls": strings.Join(webSearchResultURLs(results, 5), "\n"),
+	}
+}
+
+func webSearchProviders(results []websearch.Result) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, result := range results {
+		provider := strings.TrimSpace(result.Provider)
+		if provider == "" || seen[provider] {
+			continue
+		}
+		seen[provider] = true
+		out = append(out, provider)
+	}
+	return out
+}
+
+func webSearchSearchURLs(results []websearch.Result, limit int) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, result := range results {
+		url := strings.TrimSpace(result.SearchURL)
+		if url == "" || seen[url] {
+			continue
+		}
+		seen[url] = true
+		out = append(out, url)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func webSearchResultURLs(results []websearch.Result, limit int) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, result := range results {
+		url := strings.TrimSpace(result.URL)
+		if url == "" || seen[url] {
+			continue
+		}
+		seen[url] = true
+		out = append(out, url)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 func (a *App) handleManagerTurn(session *Session, objective string) (Turn, string, error) {
@@ -1853,6 +2295,10 @@ func (a *App) handleResearchTurn(session *Session, query string) (Turn, string, 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+	events = append(events, a.newEvent("web_search_started", "Web search started", map[string]string{
+		"query": query,
+		"role":  "web_research_specialist",
+	}))
 	result, err := ResearchWebToMemory(ctx, query, a.web, a.memory, WebResearchMemoryConfig{
 		AgentID: "omni_research_manager",
 		Tags:    researchTagsFromQuery(query),
@@ -1861,11 +2307,13 @@ func (a *App) handleResearchTurn(session *Session, query string) (Turn, string, 
 		events = append(events, a.newEvent("research_failed", "Web research memory job failed", map[string]string{"error": err.Error()}))
 		return Turn{}, "", err
 	}
+	events = append(events, a.newEvent("web_search_completed", "Web search completed", webSearchTimelineDetails(query, result.Results)))
 	events = append(events, a.newEvent("research_completed", "Web research stored in Postgres memory", map[string]string{
 		"query":        query,
 		"results":      fmt.Sprintf("%d", len(result.Results)),
 		"stored":       fmt.Sprintf("%d", result.StoredCount),
 		"stored_agent": "omni_research_manager",
+		"result_urls":  strings.Join(webSearchResultURLs(result.Results, 5), "\n"),
 	}))
 	response := fmt.Sprintf("Stored %d web research memory chunk(s) from %d search result(s) for: %s", result.StoredCount, len(result.Results), query)
 	response = a.reviewFinalResponse(context.Background(), "/research "+query, response, []string{
@@ -2240,8 +2688,8 @@ func (a *App) printTimelineEvent(evt Event) {
 	sort.Strings(keys)
 	for _, k := range keys {
 		value := evt.Details[k]
-		if shouldTruncateTimelineValue(value) {
-			value = value[:400] + "..."
+		if shouldTruncateTimelineValue(k, value) {
+			value = value[:timelineDetailLimit(k)] + "..."
 		}
 		a.printTimelineDetail(k, value)
 	}
@@ -2265,8 +2713,17 @@ func indentTimelineBlock(value, prefix string) string {
 	return strings.Join(lines, "\n")
 }
 
-func shouldTruncateTimelineValue(v string) bool {
-	return len(v) > 400
+func shouldTruncateTimelineValue(key, value string) bool {
+	return len(value) > timelineDetailLimit(key)
+}
+
+func timelineDetailLimit(key string) int {
+	switch strings.TrimSpace(key) {
+	case "stdout", "stderr", "command":
+		return defaultStructuredObservationChars
+	default:
+		return 400
+	}
 }
 
 func (a *App) nextEventID() string {

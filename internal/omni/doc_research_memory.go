@@ -25,10 +25,31 @@ type DocResearchMemoryResult struct {
 
 type DocMemoryAnswerResult struct {
 	Answer       string
+	Brief        DocumentationAuthorityBrief
 	Memories     []MemoryRecord
 	UsedMemory   bool
 	NeedsScrape  bool
 	MemorySource string
+}
+
+type DocumentationAuthorityBrief struct {
+	Question       string                     `json:"question"`
+	Role           string                     `json:"role"`
+	GettingStarted []string                   `json:"getting_started,omitempty"`
+	Conventions    []string                   `json:"conventions,omitempty"`
+	Locations      []string                   `json:"locations,omitempty"`
+	APIs           []string                   `json:"apis,omitempty"`
+	Examples       []string                   `json:"examples,omitempty"`
+	Risks          []string                   `json:"risks,omitempty"`
+	Sources        []DocumentationSourceBrief `json:"sources,omitempty"`
+	NeedsResearch  bool                       `json:"needs_research,omitempty"`
+}
+
+type DocumentationSourceBrief struct {
+	Name     string `json:"name,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Location string `json:"location,omitempty"`
+	Excerpt  string `json:"excerpt,omitempty"`
 }
 
 func ResearchWebDocsToMemory(ctx context.Context, question string, sources []WebDocSource, queries []string, memory *PGMemoryStore, researchCfg WebDocResearchConfig, memoryCfg DocResearchMemoryConfig) (DocResearchMemoryResult, error) {
@@ -89,11 +110,21 @@ func AnswerDocumentationQuestionFromMemory(ctx context.Context, question string,
 		}
 	}
 	if len(memories) == 0 {
-		return DocMemoryAnswerResult{NeedsScrape: true}, nil
+		return DocMemoryAnswerResult{
+			NeedsScrape: true,
+			Brief: DocumentationAuthorityBrief{
+				Question:      question,
+				Role:          "documentation_specialist",
+				NeedsResearch: true,
+				Risks:         []string{"No matching documentation memory was found; scrape authoritative docs before giving implementation guidance."},
+			},
+		}, nil
 	}
-	answer := summarizeDocMemories(question, memories)
+	brief := BuildDocumentationAuthorityBrief(question, memories)
+	answer := FormatDocumentationAuthorityBrief(brief)
 	return DocMemoryAnswerResult{
 		Answer:       answer,
+		Brief:        brief,
 		Memories:     memories,
 		UsedMemory:   true,
 		MemorySource: "pgsql_memory",
@@ -141,26 +172,115 @@ func normalizeDocResearchMemoryConfig(cfg DocResearchMemoryConfig) DocResearchMe
 }
 
 func summarizeDocMemories(question string, memories []MemoryRecord) string {
-	lines := []string{
-		"Answered from pgsql_memory.",
-		"question: " + strings.TrimSpace(question),
+	return FormatDocumentationAuthorityBrief(BuildDocumentationAuthorityBrief(question, memories))
+}
+
+func BuildDocumentationAuthorityBrief(question string, memories []MemoryRecord) DocumentationAuthorityBrief {
+	brief := DocumentationAuthorityBrief{
+		Question: strings.TrimSpace(question),
+		Role:     "documentation_specialist",
 	}
 	for _, memory := range memories {
 		source := extractMemoryField(memory.Content, "source_name")
 		url := extractMemoryField(memory.Content, "url")
 		location := extractMemoryField(memory.Content, "location")
 		excerpt := extractMemoryExcerpt(memory.Content)
-		if source != "" || url != "" {
-			lines = append(lines, "source: "+strings.TrimSpace(strings.Join([]string{source, url}, " ")))
-		}
-		if location != "" {
-			lines = append(lines, "location: "+location)
-		}
-		if excerpt != "" {
-			lines = append(lines, "detail: "+excerpt)
+		brief.Sources = append(brief.Sources, DocumentationSourceBrief{
+			Name:     source,
+			URL:      url,
+			Location: location,
+			Excerpt:  excerpt,
+		})
+		for _, sentence := range docExcerptSentences(excerpt) {
+			classifyDocumentationGuidanceSentence(&brief, sentence)
 		}
 	}
+	brief.GettingStarted = dedupeStrings(brief.GettingStarted)
+	brief.Conventions = dedupeStrings(brief.Conventions)
+	brief.Locations = dedupeStrings(brief.Locations)
+	brief.APIs = dedupeStrings(brief.APIs)
+	brief.Examples = dedupeStrings(brief.Examples)
+	brief.Risks = dedupeStrings(brief.Risks)
+	return brief
+}
+
+func FormatDocumentationAuthorityBrief(brief DocumentationAuthorityBrief) string {
+	lines := []string{
+		"Documentation authority brief",
+		"role: " + firstNonEmpty(brief.Role, "documentation_specialist"),
+		"memory_source: pgsql_memory",
+		"question: " + strings.TrimSpace(brief.Question),
+	}
+	appendSection := func(label string, values []string) {
+		if len(values) == 0 {
+			return
+		}
+		lines = append(lines, label+":")
+		for _, value := range values {
+			lines = append(lines, "- "+value)
+		}
+	}
+	appendSection("getting_started", brief.GettingStarted)
+	appendSection("conventions", brief.Conventions)
+	appendSection("locations", brief.Locations)
+	appendSection("apis", brief.APIs)
+	appendSection("examples", brief.Examples)
+	appendSection("risks", brief.Risks)
+	if len(brief.Sources) > 0 {
+		lines = append(lines, "sources:")
+		for _, source := range brief.Sources {
+			sourceLine := strings.TrimSpace(strings.Join([]string{source.Name, source.URL, source.Location}, " "))
+			if sourceLine != "" {
+				lines = append(lines, "- "+sourceLine)
+			}
+			if source.Excerpt != "" {
+				lines = append(lines, "  detail: "+source.Excerpt)
+			}
+		}
+	}
+	if brief.NeedsResearch {
+		lines = append(lines, "needs_research: true")
+	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func docExcerptSentences(excerpt string) []string {
+	excerpt = strings.TrimSpace(excerpt)
+	if excerpt == "" {
+		return nil
+	}
+	parts := webDocSentenceEnd.Split(excerpt, -1)
+	out := []string{}
+	for _, part := range parts {
+		clean := strings.TrimSpace(part)
+		if clean != "" {
+			out = append(out, clean)
+		}
+	}
+	if len(out) == 0 {
+		return []string{excerpt}
+	}
+	return out
+}
+
+func classifyDocumentationGuidanceSentence(brief *DocumentationAuthorityBrief, sentence string) {
+	lower := strings.ToLower(sentence)
+	switch {
+	case strings.Contains(lower, "deprecated") || strings.Contains(lower, "avoid") || strings.Contains(lower, "warning") || strings.Contains(lower, "security") || strings.Contains(lower, "breaking"):
+		brief.Risks = append(brief.Risks, sentence)
+	case strings.Contains(lower, "file") || strings.Contains(lower, "directory") || strings.Contains(lower, "folder") || strings.Contains(lower, "path") || strings.Contains(lower, "src/") || strings.Contains(lower, "app/"):
+		brief.Locations = append(brief.Locations, sentence)
+	case strings.Contains(lower, "api") || strings.Contains(lower, "function") || strings.Contains(lower, "method") || strings.Contains(lower, "class") || strings.Contains(lower, "component") || strings.Contains(lower, "hook"):
+		brief.APIs = append(brief.APIs, sentence)
+	case strings.Contains(lower, "example") || strings.Contains(lower, "for example") || strings.Contains(lower, "usage"):
+		brief.Examples = append(brief.Examples, sentence)
+	case strings.Contains(lower, "install") || strings.Contains(lower, "create") || strings.Contains(lower, "start") || strings.Contains(lower, "setup") || strings.Contains(lower, "configure"):
+		brief.GettingStarted = append(brief.GettingStarted, sentence)
+	case strings.Contains(lower, "convention") || strings.Contains(lower, "recommend") || strings.Contains(lower, "should") || strings.Contains(lower, "must") || strings.Contains(lower, "idiomatic"):
+		brief.Conventions = append(brief.Conventions, sentence)
+	default:
+		brief.Conventions = append(brief.Conventions, sentence)
+	}
 }
 
 func extractMemoryField(content, field string) string {

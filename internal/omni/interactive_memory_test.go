@@ -74,6 +74,9 @@ func TestInteractiveTurnLoadsTaggedPGMemoryIntoSummaryAndPersistsPromptResponse(
 	if countEventsOfType(turn.Events, "memory_tags_generated") != 1 {
 		t.Fatalf("missing memory_tags_generated event: %#v", turn.Events)
 	}
+	if countEventsOfType(turn.Events, "memory_search_started") != 1 {
+		t.Fatalf("missing memory_search_started event: %#v", turn.Events)
+	}
 	if countEventsOfType(turn.Events, "memory_context_loaded") != 1 {
 		t.Fatalf("missing memory_context_loaded event: %#v", turn.Events)
 	}

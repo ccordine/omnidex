@@ -42,6 +42,10 @@ func TestHandleResearchTurnStoresWebResultsInMemory(t *testing.T) {
 	if turn.ReasonCodes[0] != "web_research_memory" {
 		t.Fatalf("reason codes = %#v", turn.ReasonCodes)
 	}
+	completed := eventOfTypeForTest(turn.Events, "web_search_completed")
+	if completed == nil || !strings.Contains(completed.Details["result_urls"], "https://tailwindcss.com/docs/display") || !strings.Contains(completed.Details["search_urls"], "https://duckduckgo.com/html/?q=tailwind+docs") {
+		t.Fatalf("web search event missing queried/result URLs: %#v", turn.Events)
+	}
 	memories, err := app.memory.SearchMemory(context.Background(), "display box type", []string{"web-research"}, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -114,6 +118,10 @@ func TestAutoResearchForTurnCapturesContextAndStoresMemory(t *testing.T) {
 	}
 	if countEventsOfType(events, "auto_research_completed") != 1 {
 		t.Fatalf("missing auto_research_completed: %#v", events)
+	}
+	completed := eventOfTypeForTest(events, "web_search_completed")
+	if completed == nil || completed.Details["providers"] != "duckduckgo" || !strings.Contains(completed.Details["result_urls"], "https://example.com/weather") {
+		t.Fatalf("missing web search timeline details: %#v", events)
 	}
 	if countEventsOfType(events, "auto_research_memory_stored") != 1 {
 		t.Fatalf("missing auto_research_memory_stored: %#v", events)
@@ -360,7 +368,11 @@ func TestStructuredCommandChatResponseSeparatesPlannerErrorAfterProgress(t *test
 	)
 
 	for _, want := range []string{
+		"Partial result",
+		"Completion: not accepted",
+		"Last attempted command: npm init -y",
 		"Last command exit code: 0",
+		"Latest captured stdout: Wrote to package.json",
 		"Pending objectives: install_webpack",
 		"Stopped: context deadline exceeded",
 	} {
@@ -370,6 +382,46 @@ func TestStructuredCommandChatResponseSeparatesPlannerErrorAfterProgress(t *test
 	}
 	if strings.Contains(response, "Exit code: 1") {
 		t.Fatalf("response should not report the successful command as failed:\n%s", response)
+	}
+}
+
+func TestStructuredCommandChatResponseLabelsPartialAnswerAsCapturedEvidence(t *testing.T) {
+	response := formatStructuredCommandChatResponse(
+		CommandDecisionResult{
+			Command:         "ls -la node_modules",
+			ExitCode:        1,
+			Answer:          "total 64\n-rw-r--r-- 1 gryph gryph 550 package.json",
+			PartialProgress: true,
+			ObjectiveLedger: []StructuredObjective{
+				{ID: "setup_calculator_ui", Status: "pending"},
+				{ID: "style_calculator", Status: "pending"},
+			},
+			Observations: []StructuredCommandObservation{
+				{Step: 1, Command: "ls -la", ExitCode: 0, Stdout: "total 64\n-rw-r--r-- 1 gryph gryph 550 package.json"},
+				{Step: 2, Command: "npm install @hotwired/stimulus recyclr tailwindcss postcss autoprefixer --save-dev", ExitCode: 1, Stderr: "self-evaluation rejected response: repeated command exhausted"},
+			},
+		},
+		"total 64\n-rw-r--r-- 1 gryph gryph 550 package.json",
+		"",
+		"structured command loop exhausted after 6 step(s) without accepted completion",
+	)
+
+	for _, want := range []string{
+		"Partial result",
+		"Completion: not accepted",
+		"Last attempted command: ls -la node_modules",
+		"Latest captured stdout:",
+		"Latest captured answer:",
+		"Pending objectives: setup_calculator_ui,style_calculator",
+		"Last blocker: self-evaluation rejected response: repeated command exhausted",
+		"Stopped: structured command loop exhausted after 6 step(s) without accepted completion",
+	} {
+		if !strings.Contains(response, want) {
+			t.Fatalf("response missing %q:\n%s", want, response)
+		}
+	}
+	if strings.Contains(response, "\nAnswer:") {
+		t.Fatalf("partial stopped response should not present captured evidence as final answer:\n%s", response)
 	}
 }
 
@@ -395,6 +447,38 @@ func TestStructuredCommandSuccessResponseUsesLatestObservationStreams(t *testing
 	}
 	if !strings.Contains(response, `Stdout: "node index.js"`) {
 		t.Fatalf("response missing latest readback stdout:\n%s", response)
+	}
+}
+
+func TestStructuredCommandChatResponseIncludesCompletionRecap(t *testing.T) {
+	result := CommandDecisionResult{
+		Command:  "npm test",
+		ExitCode: 0,
+		Answer:   "Tests passed.",
+		Elapsed:  1500 * time.Millisecond,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "implement_calculator_logic", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit},
+			{ID: "connect_ui_to_logic", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit},
+			{ID: "create_calculator_ui", Status: "satisfied", Source: structuredObjectiveSourceEvidenceRequiredPrerequisite},
+		},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "cat package.json", ExitCode: 0, Stdout: "{}"},
+			{Step: 2, RejectedCommand: "npm install @hotwired/stimulus recyclr tailwindcss postcss autoprefixer --save-dev", ExitCode: 1, Stderr: "anti_loop: command exhausted"},
+			{Step: 3, Command: "npm test", ExitCode: 0, Stdout: "ok"},
+		},
+	}
+	response := formatStructuredCommandChatResponse(result, "ok", "", "")
+
+	for _, want := range []string{
+		"Recap:",
+		"Elapsed: 1.5s",
+		"Completed objectives: implement_calculator_logic,connect_ui_to_logic,create_calculator_ui",
+		"Actions: cat package.json; npm test",
+		"Decisions: added evidence-required prerequisite create_calculator_ui; rejected proposed command npm",
+	} {
+		if !strings.Contains(response, want) {
+			t.Fatalf("response missing %q:\n%s", want, response)
+		}
 	}
 }
 
@@ -430,17 +514,17 @@ func TestHandleTurnFinalResponseReviewerCanReviseResponse(t *testing.T) {
 }
 
 func TestParseContextToolPlanSelectsSkills(t *testing.T) {
-	plan, err := ParseContextToolPlan(`{"tools":["web_research","memory","shell"],"allow_clarify":false,"require_evidence":true,"reason":"external current fact"}`)
+	plan, err := ParseContextToolPlan(`{"tools":["web_research","memory","documentation","shell"],"allow_clarify":false,"require_evidence":true,"reason":"external current fact"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.NeedsWebResearch || !plan.NeedsMemory || !plan.NeedsShell {
+	if !plan.NeedsWebResearch || !plan.NeedsMemory || !plan.NeedsDocuments || !plan.NeedsShell {
 		t.Fatalf("plan did not select expected tools: %#v", plan)
 	}
 	if !plan.RequireEvidence {
 		t.Fatalf("plan should require evidence: %#v", plan)
 	}
-	for _, want := range []string{"web_research", "memory", "shell"} {
+	for _, want := range []string{"web_research", "memory", "documentation", "shell"} {
 		if !containsString(plan.Tools, want) {
 			t.Fatalf("plan tools missing %q: %#v", want, plan.Tools)
 		}
@@ -478,4 +562,13 @@ func extractTranscriptFromTurnForTest(turn Turn) []CommandObservation {
 		}
 	}
 	return out
+}
+
+func eventOfTypeForTest(events []Event, eventType string) *Event {
+	for i := range events {
+		if events[i].Type == eventType {
+			return &events[i]
+		}
+	}
+	return nil
 }

@@ -26,6 +26,7 @@ type EvidenceLedgerTurn struct {
 	Pending          []string                 `json:"pending,omitempty"`
 	Commands         []EvidenceLedgerCommand  `json:"commands,omitempty"`
 	RejectedCommands []EvidenceLedgerRejected `json:"rejected_commands,omitempty"`
+	Prep             []EvidenceLedgerPrep     `json:"prep,omitempty"`
 	Events           []Event                  `json:"events"`
 }
 
@@ -43,10 +44,17 @@ type EvidenceLedgerRejected struct {
 	Reason  string `json:"reason,omitempty"`
 }
 
+type EvidenceLedgerPrep struct {
+	Type    string            `json:"type"`
+	Summary string            `json:"summary"`
+	Details map[string]string `json:"details,omitempty"`
+}
+
 type EvidenceSummary struct {
 	TurnCount            int `json:"turn_count"`
 	CommandCount         int `json:"command_count"`
 	RejectedCommandCount int `json:"rejected_command_count"`
+	PrepEventCount       int `json:"prep_event_count"`
 	FailedTurnCount      int `json:"failed_turn_count"`
 	ModelCallCount       int `json:"model_call_count"`
 	ModelFailureCount    int `json:"model_failure_count"`
@@ -99,6 +107,13 @@ func BuildEvidenceLedger(session *Session) EvidenceLedger {
 			case "structured_loop_exhausted", "structured_command_failed", "structured_planner_failed_after_progress":
 				ledger.Summary.FailedTurnCount++
 			}
+			if isPrepEvidenceEvent(event.Type) {
+				item.Prep = append(item.Prep, EvidenceLedgerPrep{
+					Type:    event.Type,
+					Summary: event.Summary,
+					Details: event.Details,
+				})
+			}
 			updateEvidenceSummaryCounts(event.Type, &ledger.Summary)
 		}
 		ledger.Summary.CommandCount += len(item.Commands)
@@ -123,6 +138,22 @@ func updateEvidenceSummaryCounts(eventType string, summary *EvidenceSummary) {
 	case "structured_loop_exhausted":
 		summary.LoopExhaustionCount++
 	}
+	if isPrepEvidenceEvent(eventType) {
+		summary.PrepEventCount++
+	}
+}
+
+func isPrepEvidenceEvent(eventType string) bool {
+	return strings.HasPrefix(eventType, "prep_") ||
+		strings.HasPrefix(eventType, "memory_") ||
+		strings.HasPrefix(eventType, "documentation_") ||
+		eventType == "context_plan_created" ||
+		eventType == "context_plan_failed" ||
+		eventType == "web_search_started" ||
+		eventType == "web_search_completed" ||
+		eventType == "auto_research_started" ||
+		eventType == "auto_research_completed" ||
+		eventType == "auto_research_memory_stored"
 }
 
 func ExportEvidenceLedger(session *Session, outputPath string) error {

@@ -164,16 +164,37 @@ type ClaimSupportDetail struct {
 }
 
 type JobInspection struct {
-	Job               Job                  `json:"job"`
-	JobID             int64                `json:"job_id"`
-	Artifacts         []artifacts.Envelope `json:"artifacts,omitempty"`
-	Evidence          []evidence.Record    `json:"evidence,omitempty"`
-	Claims            []ClaimRecord        `json:"claims,omitempty"`
-	ClaimSupport      []ClaimSupportDetail `json:"claim_support,omitempty"`
-	MemoryCandidates  []MemoryCandidate    `json:"memory_candidates,omitempty"`
+	Job              Job                  `json:"job"`
+	JobID            int64                `json:"job_id"`
+	Artifacts        []artifacts.Envelope `json:"artifacts,omitempty"`
+	Evidence         []evidence.Record    `json:"evidence,omitempty"`
+	Claims           []ClaimRecord        `json:"claims,omitempty"`
+	ClaimSupport     []ClaimSupportDetail `json:"claim_support,omitempty"`
+	MemoryCandidates []MemoryCandidate    `json:"memory_candidates,omitempty"`
 }
 
 type MemoryCandidatePromotionResult struct {
 	Candidate MemoryCandidate `json:"candidate"`
 	Memory    *MemoryChunk    `json:"memory,omitempty"`
+}
+
+type Channel struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name,omitempty"`
+	Persona   string          `json:"persona"`
+	System    string          `json:"system,omitempty"`
+	Provider  string          `json:"provider,omitempty"`
+	Model     string          `json:"model,omitempty"`
+	Context   json.RawMessage `json:"context,omitempty"`
+	Tags      []string        `json:"tags,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+}
+
+type ChannelMessage struct {
+	ID        int64     `json:"id"`
+	ChannelID string    `json:"channel_id"`
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
 }

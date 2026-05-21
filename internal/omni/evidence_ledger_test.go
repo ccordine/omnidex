@@ -18,6 +18,7 @@ func TestBuildEvidenceLedgerFromSessionTurns(t *testing.T) {
 			CreatedAt: "2026-05-20T00:00:00Z",
 			Events: []Event{
 				{Type: "structured_llm_request_started", Details: map[string]string{"pending_objectives": "install_deps,build_bundle"}},
+				{Type: "prep_workspace_scan_completed", Summary: "Codebase route prepared", Details: map[string]string{"likely_files": "package.json"}},
 				{Type: "structured_command_finished", Details: map[string]string{"step": "1", "command": "npm install", "exit_code": "0", "stdout": "ok"}},
 				{Type: "structured_command_rejected", Details: map[string]string{"step": "2", "command": "npm install", "reason": "repeat"}},
 				{Type: "structured_loop_exhausted"},
@@ -34,6 +35,9 @@ func TestBuildEvidenceLedgerFromSessionTurns(t *testing.T) {
 	}
 	if ledger.Turns[0].RejectedCommands[0].Command != "npm install" {
 		t.Fatalf("rejected command not exported: %#v", ledger.Turns[0].RejectedCommands[0])
+	}
+	if ledger.Summary.PrepEventCount != 1 || len(ledger.Turns[0].Prep) != 1 {
+		t.Fatalf("prep evidence not exported: summary=%#v prep=%#v", ledger.Summary, ledger.Turns[0].Prep)
 	}
 }
 

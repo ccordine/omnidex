@@ -91,6 +91,27 @@ CREATE TABLE IF NOT EXISTS memory_chunk_tags (
     UNIQUE(memory_chunk_id, tag_id)
 );
 
+CREATE TABLE IF NOT EXISTS ai_channels (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    persona TEXT NOT NULL DEFAULT 'assistant',
+    system TEXT NOT NULL DEFAULT '',
+    provider TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    context JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tags TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_channel_messages (
+    id BIGSERIAL PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES ai_channels(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_pipeline_session_id ON jobs(pipeline, (metadata->>'session_id'), id DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_project_id ON jobs(project_id, id DESC);
@@ -101,4 +122,6 @@ CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
 CREATE INDEX IF NOT EXISTS idx_projects_last_seen ON projects(last_seen_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_chunks_kind_created ON memory_chunks(kind, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_chunk_tags_tag_id ON memory_chunk_tags(tag_id, memory_chunk_id);
+CREATE INDEX IF NOT EXISTS idx_ai_channels_updated ON ai_channels(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_channel_messages_channel_created ON ai_channel_messages(channel_id, created_at DESC, id DESC);
 `

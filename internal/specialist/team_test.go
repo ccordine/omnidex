@@ -1,6 +1,9 @@
 package specialist
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDefaultTeamValidatesCohesiveSpecialistSystem(t *testing.T) {
 	team := DefaultTeam()
@@ -12,6 +15,7 @@ func TestDefaultTeamValidatesCohesiveSpecialistSystem(t *testing.T) {
 		RolePlannerSpecialist,
 		RoleShellExecutionSpecialist,
 		RoleWebResearchSpecialist,
+		RoleDocumentationSpecialist,
 		RoleMemorySpecialist,
 		RoleCorrectionSpecialist,
 		RoleExpectationSpecialist,
@@ -23,6 +27,26 @@ func TestDefaultTeamValidatesCohesiveSpecialistSystem(t *testing.T) {
 		if _, ok := ProfileForRole(want); !ok {
 			t.Fatalf("missing specialist profile %s in %#v", want, RoleIDs(team))
 		}
+	}
+}
+
+func TestDocumentationSpecialistResearchesAnyCodeProjectDocs(t *testing.T) {
+	profile, ok := ProfileForRole(RoleDocumentationSpecialist)
+	if !ok {
+		t.Fatal("missing documentation specialist profile")
+	}
+	for _, tool := range []string{"web.search", "web.fetch", "memory.search", "memory.create", "pgsql.query"} {
+		if !ToolAllowed(RoleDocumentationSpecialist, tool) {
+			t.Fatalf("documentation specialist should allow tool %s", tool)
+		}
+	}
+	for _, want := range []string{"documentation authority", "any language", "framework", "toolchain"} {
+		if !strings.Contains(profile.Role.Scope, want) && !strings.Contains(profile.Authority, want) && !strings.Contains(profile.ContextContribution, want) {
+			t.Fatalf("documentation profile missing %q: %#v", want, profile)
+		}
+	}
+	if EnvVarForRoleID(RoleDocumentationSpecialist) != "OLLAMA_MODEL_SPECIALIST_DOCUMENTATION" {
+		t.Fatalf("unexpected documentation specialist env var")
 	}
 }
 

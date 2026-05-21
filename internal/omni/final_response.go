@@ -368,6 +368,9 @@ func finalResponseLooksOffTask(userInput, response, evidence string) bool {
 	if len(userTokens) < 4 || len(response) <= 160 {
 		return false
 	}
+	if strings.TrimSpace(evidence) != "" && structuredFinalResponseContainsExecutionEvidence(response) {
+		return false
+	}
 	responseTokens := finalReviewTokenSet(response + "\n" + evidence)
 	if len(responseTokens) == 0 {
 		return true
@@ -382,6 +385,12 @@ func finalResponseLooksOffTask(userInput, response, evidence string) bool {
 		return true
 	}
 	return (overlap*100)/len(userTokens) < 8
+}
+
+func structuredFinalResponseContainsExecutionEvidence(response string) bool {
+	return (strings.Contains(response, "Result\n------") || strings.Contains(response, "Partial result\n--------------")) &&
+		(strings.Contains(response, "\nCommand:") || strings.Contains(response, "\nLast attempted command:")) &&
+		(strings.Contains(response, "\nStdout:") || strings.Contains(response, "\nLatest captured stdout:") || strings.Contains(response, "\nRecap:"))
 }
 
 func finalReviewSignificantTokens(value string) []string {

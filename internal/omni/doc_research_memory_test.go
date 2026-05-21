@@ -94,10 +94,13 @@ func TestDocumentationResearchCatalogsDocsIntoPGMemoryAndReusesWithoutScrape(t *
 	if requestCount != requestCountAfterCatalog {
 		t.Fatalf("memory answer performed another scrape: before=%d after=%d", requestCountAfterCatalog, requestCount)
 	}
-	for _, want := range []string{"pgsql_memory", "tailwind-width", "w-1/2 utility sets width: 50%", "source:"} {
+	for _, want := range []string{"Documentation authority brief", "documentation_specialist", "pgsql_memory", "tailwind-width", "w-1/2 utility sets width: 50%", "sources:"} {
 		if !strings.Contains(answer.Answer, want) {
 			t.Fatalf("memory answer missing %q:\n%s", want, answer.Answer)
 		}
+	}
+	if answer.Brief.Role != "documentation_specialist" || len(answer.Brief.Sources) == 0 {
+		t.Fatalf("answer missing documentation authority brief: %#v", answer.Brief)
 	}
 	if len(answer.Memories) == 0 {
 		t.Fatal("expected answer to include source memories")
@@ -114,5 +117,37 @@ func TestDocumentationResearchCatalogsDocsIntoPGMemoryAndReusesWithoutScrape(t *
 		if !runner.SawSQL(wantSQL) {
 			t.Fatalf("runner did not execute SQL containing %q\nqueries:\n%s", wantSQL, strings.Join(runner.SQLLog, "\n---\n"))
 		}
+	}
+}
+
+func TestDocumentationAuthorityBriefClassifiesCodingGuidance(t *testing.T) {
+	memories := []MemoryRecord{{
+		Kind: "documentation_research",
+		Content: strings.Join([]string{
+			"DOC_RESEARCH_MEMORY",
+			"source_name: vite-react",
+			"url: https://vite.dev/guide/",
+			"location: line=10 column=1 start_offset=1 end_offset=100",
+			"excerpt:",
+			"Install dependencies with npm install and start the dev server with npm run dev. Place React components in src/ and keep app entrypoints in src/main.jsx. The createRoot API mounts the component tree. Avoid deprecated ReactDOM.render usage. Example usage imports createRoot from react-dom/client.",
+		}, "\n"),
+	}}
+	brief := BuildDocumentationAuthorityBrief("How do I start and structure a Vite React app?", memories)
+	answer := FormatDocumentationAuthorityBrief(brief)
+
+	for _, want := range []string{
+		"getting_started:",
+		"locations:",
+		"apis:",
+		"risks:",
+		"sources:",
+		"https://vite.dev/guide/",
+	} {
+		if !strings.Contains(answer, want) {
+			t.Fatalf("authority brief missing %q:\n%s", want, answer)
+		}
+	}
+	if len(brief.GettingStarted) == 0 || len(brief.Locations) == 0 || len(brief.APIs) == 0 || len(brief.Risks) == 0 {
+		t.Fatalf("brief did not classify guidance: %#v", brief)
 	}
 }
