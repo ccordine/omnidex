@@ -1035,7 +1035,8 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 		}
 		activity.Pause()
 		if !timelineStarted {
-			fmt.Fprintln(a.out, "timeline>")
+			fmt.Fprintln(a.out, "\ntimeline")
+			fmt.Fprintln(a.out, "--------")
 			timelineStarted = true
 		}
 		a.printTimelineEvent(evt)
@@ -1107,9 +1108,10 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	)
 	cancel()
 
-	assistantResponse := formatStructuredCommandChatResponse(result, stdoutBuf.String(), stderrBuf.String(), "")
+	responseStdout, responseStderr := structuredCommandResponseStreams(result, stdoutBuf.String(), stderrBuf.String(), execErr)
+	assistantResponse := formatStructuredCommandChatResponse(result, responseStdout, responseStderr, "")
 	if execErr != nil {
-		assistantResponse = formatStructuredCommandChatResponse(result, stdoutBuf.String(), stderrBuf.String(), execErr.Error())
+		assistantResponse = formatStructuredCommandChatResponse(result, responseStdout, responseStderr, execErr.Error())
 		eventType := "structured_command_failed"
 		eventSummary := "Structured command execution failed"
 		if result.PartialProgress {
@@ -1139,8 +1141,8 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 		emitEvent("structured_command_completed", "Structured command executed", map[string]string{
 			"command":   result.Command,
 			"exit_code": fmt.Sprintf("%d", result.ExitCode),
-			"stdout":    truncateOutput(stdoutBuf.String()),
-			"stderr":    truncateOutput(stderrBuf.String()),
+			"stdout":    truncateOutput(responseStdout),
+			"stderr":    truncateOutput(responseStderr),
 		})
 	}
 	for _, memory := range rememberCapabilityMemoriesFromObservations(session, result.Observations) {
@@ -1149,7 +1151,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			"content": truncateOutput(memory.Content),
 		})
 	}
-	assistantResponse = a.reviewFinalResponse(context.Background(), input, assistantResponse, structuredResponseReviewEvidence(result, stdoutBuf.String(), stderrBuf.String(), execErr), emitEvent)
+	assistantResponse = a.reviewFinalResponse(context.Background(), input, assistantResponse, structuredResponseReviewEvidence(result, responseStdout, responseStderr, execErr), emitEvent)
 	a.persistInteractiveTurnMemory(context.Background(), turnID, input, assistantResponse, memoryCtx.Tags, result.Observations, emitEvent)
 
 	turn := Turn{
@@ -1245,8 +1247,10 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 		statusLabel = "Last command exit code"
 	}
 	lines := []string{}
+	lines = append(lines, "Result")
+	lines = append(lines, "------")
 	if strings.TrimSpace(result.Command) != "" {
-		lines = append(lines, "Command: "+result.Command)
+		lines = appendFormattedResponseValue(lines, "Command", result.Command)
 	} else if strings.TrimSpace(errText) != "" {
 		lines = append(lines, "Command: (none accepted)")
 	}
@@ -1255,43 +1259,70 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 		lines = append(lines, fmt.Sprintf("Attempts: %d", len(result.Observations)))
 	}
 	if strings.TrimSpace(stdout) != "" {
-		lines = append(lines, "Stdout: "+truncateOutput(stdout))
+		lines = append(lines, "")
+		lines = appendFormattedResponseValue(lines, "Stdout", truncateOutput(stdout))
 	}
 	if strings.TrimSpace(stderr) != "" {
-		lines = append(lines, "Stderr: "+truncateOutput(stderr))
+		lines = append(lines, "")
+		lines = appendFormattedResponseValue(lines, "Stderr", truncateOutput(stderr))
 	}
 	if strings.TrimSpace(result.Answer) != "" {
-		lines = append(lines, "Answer: "+result.Answer)
+		lines = append(lines, "")
+		lines = appendFormattedResponseValue(lines, "Answer", result.Answer)
 	}
 	blocker := latestStructuredFailureSummary(result.Observations)
 	if strings.TrimSpace(errText) != "" {
+		lines = append(lines, "", "Status:")
 		if result.PartialProgress {
 			if pending := pendingStructuredObjectiveIDs(result.ObjectiveLedger); pending != "" {
-				lines = append(lines, "Pending objectives: "+pending)
+				lines = append(lines, "  Pending objectives: "+pending)
 			}
 			if blocker != "" {
 				label := "Last blocker"
 				if strings.Contains(blocker, "anti_loop:") {
 					label = "Loop blocker"
 				}
-				lines = append(lines, label+": "+blocker)
+				lines = append(lines, "  "+label+": "+blocker)
 			}
-			lines = append(lines, "Stopped: "+errText)
+			lines = append(lines, "  Stopped: "+errText)
 		} else {
 			if blocker != "" {
 				label := "Last blocker"
 				if strings.Contains(blocker, "anti_loop:") {
 					label = "Loop blocker"
 				}
-				lines = append(lines, label+": "+blocker)
+				lines = append(lines, "  "+label+": "+blocker)
 			}
-			lines = append(lines, "Error: "+errText)
+			lines = append(lines, "  Error: "+errText)
 		}
 		if diagnosis := classifyStructuredLLMFailure(errors.New(errText)); diagnosis != "ollama_request_failure" {
-			lines = append(lines, "Diagnosis: "+diagnosis)
+			lines = append(lines, "  Diagnosis: "+diagnosis)
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func appendFormattedResponseValue(lines []string, label, value string) []string {
+	value = strings.TrimRight(value, "\n")
+	if strings.Contains(value, "\n") {
+		parts := strings.Split(value, "\n")
+		lines = append(lines, label+": "+parts[0])
+		if len(parts) > 1 {
+			lines = append(lines, indentTimelineBlock(strings.Join(parts[1:], "\n"), "  "))
+		}
+		return lines
+	}
+	return append(lines, label+": "+value)
+}
+
+func structuredCommandResponseStreams(result CommandDecisionResult, stdout, stderr string, execErr error) (string, string) {
+	if execErr != nil {
+		return stdout, stderr
+	}
+	if latest, ok := latestSuccessfulCommandObservation(result.Observations); ok {
+		return latest.Stdout, latest.Stderr
+	}
+	return stdout, stderr
 }
 
 func latestStructuredFailureSummary(observations []StructuredCommandObservation) string {
@@ -2108,14 +2139,16 @@ func (a *App) printTimeline(events []Event) {
 	if len(events) == 0 {
 		return
 	}
-	fmt.Fprintln(a.out, "timeline>")
+	fmt.Fprintln(a.out, "\ntimeline")
+	fmt.Fprintln(a.out, "--------")
 	for _, evt := range events {
 		a.printTimelineEvent(evt)
 	}
 }
 
 func (a *App) printTimelineEvent(evt Event) {
-	fmt.Fprintf(a.out, "  - [%s] %s: %s\n", evt.CreatedAt, evt.Type, evt.Summary)
+	fmt.Fprintf(a.out, "\n[%s]\n", evt.CreatedAt)
+	fmt.Fprintf(a.out, "  %-32s %s\n", evt.Type, evt.Summary)
 	if len(evt.Details) == 0 {
 		return
 	}
@@ -2129,8 +2162,26 @@ func (a *App) printTimelineEvent(evt Event) {
 		if shouldTruncateTimelineValue(value) {
 			value = value[:400] + "..."
 		}
-		fmt.Fprintf(a.out, "      %s=%s\n", k, value)
+		a.printTimelineDetail(k, value)
 	}
+}
+
+func (a *App) printTimelineDetail(key, value string) {
+	value = strings.TrimRight(value, "\n")
+	if strings.Contains(value, "\n") {
+		fmt.Fprintf(a.out, "  %-20s |\n", key)
+		fmt.Fprintln(a.out, indentTimelineBlock(value, "    "))
+		return
+	}
+	fmt.Fprintf(a.out, "  %-20s %s\n", key, value)
+}
+
+func indentTimelineBlock(value, prefix string) string {
+	lines := strings.Split(strings.TrimRight(value, "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func shouldTruncateTimelineValue(v string) bool {

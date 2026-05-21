@@ -432,12 +432,24 @@ func finalRequestLikelyNeedsTools(userInput string) bool {
 
 func buildFinalReviewCorrection(userInput, response, evidence string) string {
 	lines := []string{
+		"Self-review",
+		"-----------",
 		"Self-review flagged the draft as weakly aligned with the current request.",
-		"Request: " + truncateOutput(userInput),
+		"",
+		"Request:",
+		indentFinalReviewBlock(truncateOutput(userInput), "  "),
 	}
 	if strings.TrimSpace(evidence) != "" {
-		lines = append(lines, "Evidence: "+truncateOutput(evidence))
+		lines = append(lines, "", "Evidence:", indentFinalReviewBlock(truncateOutput(evidence), "  "))
 	}
-	lines = append(lines, "Draft: "+truncateOutput(response))
+	lines = append(lines, "", "Draft:", indentFinalReviewBlock(truncateOutput(response), "  "))
+	return strings.Join(lines, "\n")
+}
+
+func indentFinalReviewBlock(value, prefix string) string {
+	lines := strings.Split(strings.TrimRight(value, "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
 	return strings.Join(lines, "\n")
 }

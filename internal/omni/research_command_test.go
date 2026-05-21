@@ -145,7 +145,7 @@ func TestHandleTurnUsesStructuredLLMCommandPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(response, "Command: printf 'structured-chat-result\n'") {
+	if !strings.Contains(response, "Command: printf 'structured-chat-result") {
 		t.Fatalf("response = %q", response)
 	}
 	if !strings.Contains(response, "Stdout: structured-chat-result") {
@@ -370,6 +370,31 @@ func TestStructuredCommandChatResponseSeparatesPlannerErrorAfterProgress(t *test
 	}
 	if strings.Contains(response, "Exit code: 1") {
 		t.Fatalf("response should not report the successful command as failed:\n%s", response)
+	}
+}
+
+func TestStructuredCommandSuccessResponseUsesLatestObservationStreams(t *testing.T) {
+	result := CommandDecisionResult{
+		Command:  "npm pkg get scripts.start",
+		ExitCode: 0,
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "npm config set scripts.start 'node index.js'", ExitCode: 1, Stderr: "npm error `scripts.start` is not a valid npm option"},
+			{Step: 2, Command: "npm pkg set scripts.start='node index.js'", ExitCode: 0},
+			{Step: 3, Command: "npm pkg get scripts.start", ExitCode: 0, Stdout: `"node index.js"`},
+		},
+	}
+	stdout, stderr := structuredCommandResponseStreams(result, `"node index.js"`+"\n", "npm error `scripts.start` is not a valid npm option\n", nil)
+	response := formatStructuredCommandChatResponse(result, stdout, stderr, "")
+	evidence := structuredResponseReviewEvidence(result, stdout, stderr, nil)
+
+	if strings.Contains(response, "not a valid npm option") {
+		t.Fatalf("response leaked stale stderr:\n%s", response)
+	}
+	if strings.Contains(strings.Join(evidence, "\n"), "not a valid npm option") {
+		t.Fatalf("review evidence leaked stale stderr: %#v", evidence)
+	}
+	if !strings.Contains(response, `Stdout: "node index.js"`) {
+		t.Fatalf("response missing latest readback stdout:\n%s", response)
 	}
 }
 

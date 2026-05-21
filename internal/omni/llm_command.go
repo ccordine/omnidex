@@ -494,9 +494,10 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		}
 	}
 	if cfg.CompletionChecker != nil && minimalContextHasContent(minimalContext) && len(pendingStructuredObjectives(ledger)) > 0 {
-		ledger = runCompletionCheck(ctx, 0, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, nil, minimalContextAnswer(minimalContext), cfg.CompletionChecker, worksiteSurvey, onEvent)
+		var validatorAccepted bool
+		ledger, validatorAccepted = runCompletionCheck(ctx, 0, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, nil, minimalContextAnswer(minimalContext), cfg.CompletionChecker, worksiteSurvey, onEvent)
 		result.ObjectiveLedger = ledger
-		if len(pendingStructuredObjectives(ledger)) == 0 {
+		if validatorAccepted && len(pendingStructuredObjectives(ledger)) == 0 {
 			result.Command = "MEMORY_CONTEXT"
 			result.ExitCode = 0
 			result.Answer = minimalContextAnswer(minimalContext)
@@ -529,15 +530,18 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				return result, nil
 			}
 			if cfg.CompletionChecker != nil {
-				ledger = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
+				previousLedger := ledger
+				var validatorAccepted bool
+				ledger, validatorAccepted = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
+				ledger = enforcePostWriteValidationBeforeCompletion(step-1, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
 				result.ObjectiveLedger = ledger
-			}
-			if len(pendingStructuredObjectives(ledger)) == 0 {
-				emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_observations", "Done-check specialist accepted observed command evidence", map[string]string{
-					"step":   fmt.Sprintf("%d", step-1),
-					"answer": truncateStructuredTimelineValue(result.Answer),
-				})
-				return result, nil
+				if validatorAccepted && len(pendingStructuredObjectives(ledger)) == 0 {
+					emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_observations", "Done-check specialist accepted observed command evidence", map[string]string{
+						"step":   fmt.Sprintf("%d", step-1),
+						"answer": truncateStructuredTimelineValue(result.Answer),
+					})
+					return result, nil
+				}
 			}
 		}
 		emitStructuredCommandEvent(onEvent, "structured_llm_request_started", "Requesting next structured command decision", map[string]string{
@@ -882,8 +886,33 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if strings.TrimSpace(payload.Command) != "" {
 				if latest, ok := latestSuccessfulCommandObservation(result.Observations); ok && latestRealCommandSucceeded(result.Observations) {
 					result.Answer = finalStructuredAnswer(payload.Answer, latest)
-					ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
+					previousLedger := ledger
+					if cfg.CompletionChecker != nil {
+						var validatorAccepted bool
+						ledger, validatorAccepted = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
+						if !validatorAccepted {
+							result.ObjectiveLedger = ledger
+							rejectDoneForValidator(step, onEvent, &result)
+							continue
+						}
+					} else if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
+						if latestPrematureDoneLoopBlocked(result.Observations) {
+							if hasSuccessfulCommandObservation(result.Observations) {
+								result.PartialProgress = true
+							}
+							if result.ExitCode == 0 {
+								result.ExitCode = 1
+							}
+							return result, CommandDecisionExhaustedError{MaxSteps: step}
+						}
+						continue
+					} else if !deterministicCompletionEnforcerAcceptsDone(prompt, ledger, result.Observations) {
+						result.ObjectiveLedger = ledger
+						rejectDoneForValidator(step, onEvent, &result)
+						continue
+					}
 					ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
+					ledger = enforcePostWriteValidationBeforeCompletion(step, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
 					result.ObjectiveLedger = ledger
 					if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 						if latestPrematureDoneLoopBlocked(result.Observations) {
@@ -971,8 +1000,33 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if len(selectedRecipes) > 0 {
 				ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
 			}
-			ledger = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
+			previousLedger := ledger
+			if cfg.CompletionChecker != nil {
+				var validatorAccepted bool
+				ledger, validatorAccepted = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
+				if !validatorAccepted {
+					result.ObjectiveLedger = ledger
+					rejectDoneForValidator(step, onEvent, &result)
+					continue
+				}
+			} else if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
+				if latestPrematureDoneLoopBlocked(result.Observations) {
+					if hasSuccessfulCommandObservation(result.Observations) {
+						result.PartialProgress = true
+					}
+					if result.ExitCode == 0 {
+						result.ExitCode = 1
+					}
+					return result, CommandDecisionExhaustedError{MaxSteps: step}
+				}
+				continue
+			} else if !deterministicCompletionEnforcerAcceptsDone(prompt, ledger, result.Observations) {
+				result.ObjectiveLedger = ledger
+				rejectDoneForValidator(step, onEvent, &result)
+				continue
+			}
 			ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
+			ledger = enforcePostWriteValidationBeforeCompletion(step, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
 			result.ObjectiveLedger = ledger
 			if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 				if latestPrematureDoneLoopBlocked(result.Observations) {
@@ -3058,6 +3112,169 @@ func latestSuccessfulCommandObservation(observations []StructuredCommandObservat
 	return StructuredCommandObservation{}, false
 }
 
+func enforcePostWriteValidationBeforeCompletion(step int, prompt string, previousLedger, ledger []StructuredObjective, observations []StructuredCommandObservation, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) []StructuredObjective {
+	if len(pendingStructuredObjectives(ledger)) > 0 || !structuredCompletionNeedsPostWriteValidation(prompt, previousLedger, observations) {
+		return ledger
+	}
+	pendingBefore := pendingStructuredObjectives(previousLedger)
+	if len(pendingBefore) == 0 {
+		return ledger
+	}
+	reset := make([]StructuredObjective, 0, len(pendingBefore))
+	for _, objective := range pendingBefore {
+		objective.Status = "pending"
+		objective.Evidence = ""
+		reset = append(reset, objective)
+	}
+	emitStructuredCommandEvent(onEvent, "completion_check_validation_required", "Completion requires readback evidence after a write command", map[string]string{
+		"step":       fmt.Sprintf("%d", step),
+		"objectives": strings.Join(structuredObjectiveIDs(reset), ","),
+	})
+	if result != nil && !latestObservationIsPostWriteValidationRejection(result.Observations) {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:     step,
+			ExitCode: 1,
+			Stderr:   "completion rejected: write/edit/package mutation was observed, but no later readback or verification command proves the requested final state; run cat/sed/rg/grep/ls/test/jq/npm pkg get/npm ls or equivalent evidence before done=true",
+		})
+	}
+	return forceStructuredObjectivesPending(ledger, reset)
+}
+
+func latestObservationIsPostWriteValidationRejection(observations []StructuredCommandObservation) bool {
+	if len(observations) == 0 {
+		return false
+	}
+	return strings.Contains(observations[len(observations)-1].Stderr, "completion rejected: write/edit/package mutation")
+}
+
+func deterministicCompletionEnforcerAcceptsDone(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation) bool {
+	if len(pendingStructuredObjectives(ledger)) > 0 {
+		return false
+	}
+	if !latestRealCommandSucceeded(observations) {
+		return false
+	}
+	return !structuredCompletionNeedsPostWriteValidation(prompt, ledger, observations)
+}
+
+func forceStructuredObjectivesPending(ledger, reset []StructuredObjective) []StructuredObjective {
+	out := mergeStructuredObjectiveLedger(nil, ledger)
+	byID := map[string]StructuredObjective{}
+	for _, objective := range reset {
+		normalized, ok := normalizeStructuredObjective(objective)
+		if ok {
+			byID[normalized.ID] = normalized
+		}
+	}
+	for i, objective := range out {
+		if replacement, ok := byID[objective.ID]; ok {
+			if strings.TrimSpace(replacement.Description) == "" {
+				replacement.Description = objective.Description
+			}
+			if strings.TrimSpace(replacement.Source) == "" || replacement.Source == structuredObjectiveSourceModelInferred {
+				replacement.Source = objective.Source
+			}
+			if !replacement.Required {
+				replacement.Required = objective.Required
+			}
+			out[i] = replacement
+			delete(byID, objective.ID)
+		}
+	}
+	for _, objective := range byID {
+		out = append(out, objective)
+	}
+	return out
+}
+
+func structuredCompletionNeedsPostWriteValidation(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation) bool {
+	if !structuredTaskLooksLikeWriteOrEdit(prompt, ledger) {
+		return false
+	}
+	lastMutation := -1
+	for i, obs := range observations {
+		if obs.ExitCode != 0 || strings.TrimSpace(obs.Command) == "" {
+			continue
+		}
+		if structuredCommandMutatesWorkspace(obs.Command) {
+			if structuredMutatingCommandIncludesValidation(obs.Command) {
+				lastMutation = -1
+				continue
+			}
+			lastMutation = i
+		}
+	}
+	if lastMutation < 0 {
+		return false
+	}
+	for _, obs := range observations[lastMutation+1:] {
+		if obs.ExitCode == 0 && structuredCommandValidatesWorkspace(obs.Command) {
+			return false
+		}
+	}
+	return true
+}
+
+func structuredTaskLooksLikeWriteOrEdit(prompt string, ledger []StructuredObjective) bool {
+	text := strings.ToLower(prompt + " " + structuredLedgerText(ledger))
+	for _, marker := range []string{
+		" add ", " create ", " edit ", " modify ", " update ", " write ", " install ", " initialize ", " set up ", " setup ",
+		"package.json", "script", "dependency", "dependencies", "file", "directory", "project", "build artifact",
+	} {
+		if strings.Contains(" "+text+" ", marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func structuredLedgerText(ledger []StructuredObjective) string {
+	parts := []string{}
+	for _, objective := range ledger {
+		parts = append(parts, objective.ID, objective.Description)
+	}
+	return strings.Join(parts, " ")
+}
+
+func structuredCommandMutatesWorkspace(command string) bool {
+	lower := strings.ToLower(command)
+	for _, marker := range []string{
+		"npm pkg set", "npm set-script", "npm install", "npm add", "npm init", "pnpm add", "yarn add",
+		"sed -i", "perl -pi", "writefile", "writefilesync", "mkdir", "touch ", " tee ", "mv ", "cp ",
+		">", ">>",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func structuredMutatingCommandIncludesValidation(command string) bool {
+	lower := strings.ToLower(command)
+	for _, marker := range []string{
+		"&& cat ", "&& sed -n", "&& rg ", "&& grep ", "&& ls ", "&& test ", "&& jq ", "&& npm pkg get", "&& npm ls", "&& node -e",
+		"\ncat ", "\nsed -n", "\nrg ", "\ngrep ", "\nls ", "\ntest ", "\njq ", "\nnpm pkg get", "\nnpm ls", "\nnode -e",
+		" curl ", "\ncurl ", " go test ", "\ngo test ", " go build ", "\ngo build ", " npm run build", "\nnpm run build",
+		" docker inspect ", "\ndocker inspect ", " docker logs ", "\ndocker logs ",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func structuredCommandValidatesWorkspace(command string) bool {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	for _, marker := range []string{"cat ", "sed -n", "rg ", "grep ", "ls", "test ", "[ -", "jq ", "npm pkg get", "npm ls", "node -e"} {
+		if strings.HasPrefix(lower, marker) || strings.Contains(lower, "&& "+marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func structuredObservationsHavePackageManagerEvidence(observations []StructuredCommandObservation) bool {
 	for _, obs := range observations {
 		if strings.TrimSpace(obs.Command) == "" || obs.ExitCode != 0 {
@@ -3202,6 +3419,21 @@ func rejectDoneForObjectiveLedger(step int, ledger []StructuredObjective, onEven
 	return true
 }
 
+func rejectDoneForValidator(step int, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) {
+	emitStructuredCommandEvent(onEvent, "structured_done_rejected", "Done rejected by completion validator", map[string]string{
+		"step":   fmt.Sprintf("%d", step),
+		"reason": "validator did not accept completion",
+	})
+	if result != nil {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:     step,
+			ExitCode: 1,
+			Stderr:   "done rejected: completion validator did not accept done=true; choose another command, gather missing evidence, or satisfy pending objectives",
+		})
+		result.Answer = ""
+	}
+}
+
 func repeatedPrematureDoneRejectionCount(observations []StructuredCommandObservation, pendingText string) int {
 	pendingText = strings.TrimSpace(pendingText)
 	if pendingText == "" {
@@ -3329,9 +3561,9 @@ func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, o
 	return false
 }
 
-func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDirectory string, ledger []StructuredObjective, minimalContext MinimalContext, observations []StructuredCommandObservation, candidateAnswer string, checker CompletionChecker, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent)) []StructuredObjective {
-	if checker == nil || len(pendingStructuredObjectives(ledger)) == 0 {
-		return ledger
+func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDirectory string, ledger []StructuredObjective, minimalContext MinimalContext, observations []StructuredCommandObservation, candidateAnswer string, checker CompletionChecker, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent)) ([]StructuredObjective, bool) {
+	if checker == nil {
+		return ledger, false
 	}
 	check, err := checker.CheckCompletion(ctx, CompletionCheckInput{
 		UserPrompt:              prompt,
@@ -3349,16 +3581,31 @@ func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDir
 			"step":  fmt.Sprintf("%d", step),
 			"error": truncateStructuredTimelineValue(err.Error()),
 		})
-		return ledger
+		return ledger, false
 	}
 	updated := mergeStructuredObjectiveLedger(ledger, filterObjectiveLedgerForWorksiteSurvey(check.ObjectiveLedger, worksiteSurvey))
+	validatorAccepted := check.Done && len(pendingStructuredObjectives(updated)) == 0
+	if !check.Done && len(pendingStructuredObjectives(updated)) == 0 {
+		updated = keepAtLeastOnePreviouslyPendingObjectiveOpen(ledger, updated)
+	}
 	emitStructuredCommandEvent(onEvent, "completion_check_completed", "Done-check specialist reviewed completion", map[string]string{
 		"step":               fmt.Sprintf("%d", step),
 		"done":               fmt.Sprintf("%t", check.Done),
 		"reason":             truncateStructuredTimelineValue(check.Reason),
 		"pending_objectives": pendingStructuredObjectiveIDs(updated),
 	})
-	return updated
+	return updated, validatorAccepted
+}
+
+func keepAtLeastOnePreviouslyPendingObjectiveOpen(previous, updated []StructuredObjective) []StructuredObjective {
+	pendingBefore := pendingStructuredObjectives(previous)
+	if len(pendingBefore) == 0 {
+		return updated
+	}
+	objective := pendingBefore[0]
+	objective.Status = "pending"
+	objective.Evidence = ""
+	return forceStructuredObjectivesPending(updated, []StructuredObjective{objective})
 }
 
 func runSelectedRecipeCompletionProbes(ctx context.Context, currentWorkingDirectory string, ledger []StructuredObjective, recipes []Recipe, onEvent func(StructuredCommandEvent)) []StructuredObjective {
@@ -3698,7 +3945,7 @@ func buildStructuredCommandSystemContext() string {
 		"Schema: {\"command\":\"shell command to execute\",\"done\":false,\"answer\":\"\"}",
 		"To delegate exact shell command selection, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"tool\":\"shell\",\"tool_task\":\"scoped instruction from planner authority\"}.",
 		"To apply source edits, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"tool\":\"patch.apply\",\"patch\":\"unified diff\"}; patch paths must be relative to current_working_directory.",
-		"To stop, return {\"command\":\"\",\"done\":true,\"answer\":\"brief result from observed evidence\"}.",
+		"To request final validation, return {\"command\":\"\",\"done\":true,\"answer\":\"brief result from observed evidence\"}; planner done=true is never authoritative and only the completion validator may accept completion.",
 		"To ask the user for needed help, return {\"command\":\"\",\"done\":false,\"answer\":\"\",\"ask\":true,\"question\":\"brief specific question\"}.",
 		"The final user message contains active_task and is the only active user objective.",
 		"The active_task.current_prompt field is the command objective.",
@@ -3722,6 +3969,7 @@ func buildStructuredCommandSystemContext() string {
 		"If active_task.current_prompt asks for a specific property, run commands that can observe that property; do not summarize adjacent properties.",
 		"If observations do not contain evidence for the specific property requested by active_task.current_prompt, do not return done=true.",
 		"If active_task.pending_objective_ids is non-empty, done=true is invalid.",
+		"Only the completion validator can accept completion; your done=true is a validation request, not a final decision.",
 		"For create/build/edit/file/app tasks, declare objective_ledger items before or with the first command, then mark them satisfied only after command observations prove completion.",
 		"For simple creation tasks, prefer the smallest working implementation satisfying the current prompt.",
 		"If must_return_command is true, done=true is invalid; return a non-empty command or delegate with tool=shell.",
@@ -3729,6 +3977,7 @@ func buildStructuredCommandSystemContext() string {
 		"If the latest real command succeeded, ask=true is invalid; continue, verify, or finish from evidence.",
 		"Do not return done=true until at least one command has exit_code 0.",
 		"If the latest command failed, return a different command instead of done=true.",
+		"After a command mutates files, package metadata, dependencies, build artifacts, or project structure, run a later readback/verification command such as cat, sed -n, rg, grep, ls, test, jq, npm pkg get, npm ls, or an equivalent tool before done=true.",
 		"Never repeat an exact command that already succeeded; inspect the observation, update objective_ledger, verify, or choose the next action.",
 		"Use shell commands to satisfy requests; do not answer from memory when command evidence is required.",
 		"Planner authority may delegate tool details to specialized tools; when shell syntax or system inspection is the narrow task, prefer tool=shell with a specific tool_task.",

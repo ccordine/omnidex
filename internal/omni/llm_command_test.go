@@ -410,6 +410,7 @@ func TestStructuredCommandDecisionRejectsShellSpecialistScopeDrift(t *testing.T)
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"install dependencies for the React project"}`,
 		`{"command":"touch package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
+		`{"command":"test -f package.json && ls package.json","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"React project started"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -455,6 +456,7 @@ func TestStructuredCommandDecisionRejectsPlannerScopeDriftDependencyCommand(t *t
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"npm install react react-dom vite tailwindcss recyclrjs @hotwired/stimulus","done":false,"answer":""}`,
 		`{"command":"touch package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
+		`{"command":"test -f package.json && ls package.json","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"React project started"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -493,6 +495,7 @@ func TestStructuredCommandDecisionEvaluatorScopeDriftBlocksExecutionAtThreshold(
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"cd /home/gryph/Projects/tmp && npx create-react-app calculator-app","done":false,"answer":""}`,
 		`{"command":"printf 'modified existing app\n'","done":false,"answer":""}`,
+		`{"command":"pwd","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"modified existing app"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -507,12 +510,20 @@ func TestStructuredCommandDecisionEvaluatorScopeDriftBlocksExecutionAtThreshold(
 		{Verdict: "accept", Confidence: 100, Feedback: "on track"},
 		{Verdict: "accept", Confidence: 100, Feedback: "on track"},
 	}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "existing app modification was observed",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "implement_calculator_logic", Description: "Implement calculator logic", Status: "satisfied", Evidence: "modified existing app"},
+		},
+	}}}
 	var stdout strings.Builder
 	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "make this existing React app into a calculator", nil, client, &stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
 		CurrentWorkingDirectory: workspace,
 		PromptInterpreter:       interpreter,
 		Evaluator:               evaluator,
 		EvaluatorThreshold:      70,
+		CompletionChecker:       checker,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2010,6 +2021,7 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsR
 		`{"command":"npm init -y","done":false,"answer":""}`,
 		`{"command":"npm init -y","done":false,"answer":""}`,
 		`{"command":"printf 'webpack stimulus tailwind recyclr done' > setup.txt","done":false,"answer":"","objective_ledger":[{"id":"install_stimulus_js","description":"Install or account for Stimulus JS","status":"satisfied","evidence":"command output"},{"id":"install_recyclr_js","description":"Install or account for Recyclr JS","status":"satisfied","evidence":"command output"},{"id":"install_tailwind_css","description":"Install or account for Tailwind CSS","status":"satisfied","evidence":"command output"},{"id":"setup_webpack","description":"Set up webpack","status":"satisfied","evidence":"command output"}]}`,
+		`{"command":"cat setup.txt","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"Project initialized and dependencies accounted for."}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -2028,13 +2040,31 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsR
 			{ID: "initialize_npm_project", Description: "Initialize npm project", Status: "satisfied", Evidence: "npm init wrote package.json"},
 		},
 	}, {
-		Done:   true,
+		Done:   false,
 		Reason: "all objectives satisfied by command evidence and planner ledger update",
 		ObjectiveLedger: []StructuredObjective{
 			{ID: "install_stimulus_js", Description: "Install or account for Stimulus JS", Status: "satisfied", Evidence: "command output"},
 			{ID: "install_recyclr_js", Description: "Install or account for Recyclr JS", Status: "satisfied", Evidence: "command output"},
 			{ID: "install_tailwind_css", Description: "Install or account for Tailwind CSS", Status: "satisfied", Evidence: "command output"},
 			{ID: "setup_webpack", Description: "Set up webpack", Status: "satisfied", Evidence: "command output"},
+		},
+	}, {
+		Done:   true,
+		Reason: "readback command verified setup.txt contents",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "install_stimulus_js", Description: "Install or account for Stimulus JS", Status: "satisfied", Evidence: "cat setup.txt"},
+			{ID: "install_recyclr_js", Description: "Install or account for Recyclr JS", Status: "satisfied", Evidence: "cat setup.txt"},
+			{ID: "install_tailwind_css", Description: "Install or account for Tailwind CSS", Status: "satisfied", Evidence: "cat setup.txt"},
+			{ID: "setup_webpack", Description: "Set up webpack", Status: "satisfied", Evidence: "cat setup.txt"},
+		},
+	}, {
+		Done:   true,
+		Reason: "readback command verified setup.txt contents",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "install_stimulus_js", Description: "Install or account for Stimulus JS", Status: "satisfied", Evidence: "cat setup.txt"},
+			{ID: "install_recyclr_js", Description: "Install or account for Recyclr JS", Status: "satisfied", Evidence: "cat setup.txt"},
+			{ID: "install_tailwind_css", Description: "Install or account for Tailwind CSS", Status: "satisfied", Evidence: "cat setup.txt"},
+			{ID: "setup_webpack", Description: "Set up webpack", Status: "satisfied", Evidence: "cat setup.txt"},
 		},
 	}}}
 	stdout := &bytes.Buffer{}
@@ -2061,14 +2091,82 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsR
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Command != "npm init -y" {
-		t.Fatalf("command = %q, want original successful command retained", result.Command)
+	if result.Command != "cat setup.txt" {
+		t.Fatalf("command = %q, want readback command retained", result.Command)
 	}
-	if len(checker.inputs) != 2 {
-		t.Fatalf("completion checker calls = %d, want post-command and post-repeat ledger checks", len(checker.inputs))
+	if len(checker.inputs) < 2 {
+		t.Fatalf("completion checker calls = %d, want post-command and readback checks", len(checker.inputs))
 	}
 	if !structuredEventsContain(events, "structured_repeat_success_reconciled") {
 		t.Fatalf("expected repeated command reconciliation; events=%#v", events)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
+	}
+}
+
+func TestStructuredCommandDecisionRequiresReadbackAfterPackageMutation(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"readback-test","version":"1.0.0"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"npm pkg set scripts.start='node index.js'","done":false,"answer":""}`,
+		`{"command":"npm pkg get scripts.start","done":false,"answer":""}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "add_start_script", Description: "Add a start script to package.json", Status: "pending", Source: "user_explicit", Required: true},
+		},
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "npm pkg set succeeded",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "add_start_script", Description: "Add a start script to package.json", Status: "satisfied", Evidence: "npm pkg set exited 0"},
+		},
+	}, {
+		Done:   true,
+		Reason: "npm pkg get read back the configured start script",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "add_start_script", Description: "Add a start script to package.json", Status: "satisfied", Evidence: "npm pkg get scripts.start returned node index.js"},
+		},
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"please add a start script",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			PromptInterpreter:       interpreter,
+			CompletionChecker:       checker,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command != "npm pkg get scripts.start" {
+		t.Fatalf("final command = %q, want readback command", result.Command)
+	}
+	if len(checker.inputs) != 2 {
+		t.Fatalf("completion checker calls = %d, want mutation and readback checks", len(checker.inputs))
+	}
+	if !structuredEventsContain(events, "completion_check_validation_required") {
+		t.Fatalf("missing validation-required event: %#v", events)
+	}
+	if !strings.Contains(stdout.String(), `"node index.js"`) {
+		t.Fatalf("readback stdout missing start script: %q", stdout.String())
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
@@ -2564,6 +2662,7 @@ func TestStructuredCommandDecisionRejectsRecursiveForceDeleteRetry(t *testing.T)
 	client := &fakeCommandDecisionClient{responses: []string{
 		fmt.Sprintf(`{"command":%q,"done":false,"answer":""}`, destructive),
 		fmt.Sprintf(`{"command":%q,"done":false,"answer":""}`, safe),
+		fmt.Sprintf(`{"command":%q,"done":false,"answer":""}`, "test -f "+shellQuote(filepath.Join(projectDir, "safe.txt"))+" && cat "+shellQuote(filepath.Join(projectDir, "safe.txt"))),
 		`{"command":"","done":true,"answer":"Initialized safely without deleting the existing directory."}`,
 	}}
 	stdout := &bytes.Buffer{}
@@ -2586,8 +2685,8 @@ func TestStructuredCommandDecisionRejectsRecursiveForceDeleteRetry(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Command != safe {
-		t.Fatalf("command = %q, want safe command", result.Command)
+	if result.Command != safe && !strings.Contains(result.Command, "safe.txt") {
+		t.Fatalf("command = %q, want safe command or readback command", result.Command)
 	}
 	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "keep me\n" {
 		t.Fatalf("sentinel changed: content=%q err=%v", got, err)
@@ -2776,6 +2875,109 @@ func TestStructuredCommandDecisionDoneCheckSatisfiesSinglePendingObjective(t *te
 	}
 	if !structuredEventsContain(events, "completion_check_completed") {
 		t.Fatalf("missing done-check event: %#v", events)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsPlannerDoneWithoutValidator(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'done evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"done evidence"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "complete_task", Description: "Complete the requested task", Status: "pending", Source: "user_explicit", Required: true},
+		},
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"complete a task",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{PromptInterpreter: interpreter},
+	)
+	if err == nil {
+		t.Fatalf("planner done should not complete without validator; result=%#v", result)
+	}
+	if !structuredEventsContain(events, "structured_done_rejected") {
+		t.Fatalf("missing done rejection event: %#v", events)
+	}
+	if !strings.Contains(result.Observations[len(result.Observations)-1].Stderr, "pending objective") &&
+		!strings.Contains(result.Observations[len(result.Observations)-1].Stderr, "anti_loop: planner returned done=true") {
+		t.Fatalf("missing pending-objective done rejection observation: %#v", result.Observations)
+	}
+}
+
+func TestStructuredCommandDecisionRejectsPlannerDoneWhenValidatorSaysNotDone(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'partial evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"partial evidence"}`,
+		`{"command":"printf 'more evidence\n'","done":false,"answer":""}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "complete_task", Description: "Complete the requested task", Status: "pending", Source: "user_explicit", Required: true},
+		},
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   false,
+		Reason: "partial command evidence is not enough",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "complete_task", Description: "Complete the requested task", Status: "satisfied", Evidence: "planner overclaimed"},
+		},
+	}, {
+		Done:   false,
+		Reason: "planner done is not enough",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "complete_task", Description: "Complete the requested task", Status: "satisfied", Evidence: "planner overclaimed"},
+		},
+	}, {
+		Done:   true,
+		Reason: "more evidence completes the task",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "complete_task", Description: "Complete the requested task", Status: "satisfied", Evidence: "more evidence"},
+		},
+	}}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"complete a task",
+		nil,
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) {
+			events = append(events, evt)
+		},
+		nil,
+		structuredCommandDecisionRunConfig{
+			PromptInterpreter: interpreter,
+			CompletionChecker: checker,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Command != "printf 'more evidence\n'" {
+		t.Fatalf("final command = %q, want command after rejected planner done", result.Command)
+	}
+	if !structuredEventsContain(events, "structured_done_rejected") {
+		t.Fatalf("missing validator done rejection event: %#v", events)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
 	}
 }
 
@@ -3430,6 +3632,7 @@ func TestStructuredCommandExecutesRelativeCommandsInConfiguredDirectory(t *testi
 	activeDir := t.TempDir()
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"pwd; touch app.marker","done":false,"answer":""}`,
+		`{"command":"pwd; test -f app.marker && ls app.marker","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"created marker"}`,
 	}}
 	stdout := &bytes.Buffer{}

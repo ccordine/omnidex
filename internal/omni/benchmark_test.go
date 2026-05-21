@@ -52,6 +52,7 @@ func TestBenchmarkReportFromSessionWarnsOnLoopExhaustion(t *testing.T) {
 func TestRunBenchmarkManifestExecutesInIsolatedWorkspace(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf '{}' > package.json","done":false,"answer":""}`,
+		`{"command":"test -f package.json && cat package.json","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"created package.json"}`,
 	}}
 	result, err := RunBenchmarkManifest(
