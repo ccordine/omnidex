@@ -508,3 +508,31 @@ Verification:
 - `go test ./...`
   - Exit code: `0`
 - Rebuilt installed Omnidex binary by building to `/tmp/omni-new` and replacing `/home/gryph/.omnidex/bin/omni`.
+
+## Omnidex Patch 10
+
+Observed:
+- The hard repeated-command rejection was too brittle for dependency/setup work.
+- A failed install can become valid after package metadata changes, network state changes, or a narrower retry.
+- Omnidex showed useful recovery behavior by switching to direct `package.json` edits when installs were blocked, but the blocker itself was too eager.
+
+Decision:
+- Repeated commands should be diagnostic by default, not hard execution blockers.
+- Keep repeat detection for loop state, progression context, and tests, but stop rejecting a command only because it was previously attempted in the current run.
+- Let the surrounding scaffolding decide when repetition has become a real stall.
+
+Changed Omnidex:
+- `internal/omni/llm_command.go`
+  - Removed repeated failed/successful command checks from `validateStructuredCommandForObservations`.
+  - Permanent command safety, workspace protection, scaffold scope, and dependency scope validation remain active.
+  - Repeat detector helpers remain available for diagnostics and progression state.
+- `internal/omni/llm_command_test.go`
+  - Updated repeated-command tests to assert permissive retry behavior.
+  - Repeated failed commands now execute as retries instead of creating anti-loop rejection observations.
+  - Repeated successful commands now execute instead of forcing completed-evidence recovery.
+
+Verification:
+- Focused repeated-command/progression tests passed.
+- `go test ./...`
+  - Exit code: `0`
+- Rebuilt installed Omnidex binary by building to `/tmp/omni-new` and replacing `/home/gryph/.omnidex/bin/omni`.

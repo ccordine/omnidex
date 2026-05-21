@@ -800,13 +800,16 @@ func TestStructuredReferenceHistoryOmitsPriorOperationalLoopState(t *testing.T) 
 	}
 }
 
-func TestStructuredRuntimeBlockersAreCurrentRunScoped(t *testing.T) {
+func TestStructuredRuntimeRepeatStateIsDiagnosticAndCurrentRunScoped(t *testing.T) {
 	command := "npm install react react-dom tailwindcss"
 	currentRunObservations := []StructuredCommandObservation{
 		{Step: 1, Command: command, ExitCode: 1, Stderr: "npm failed"},
 	}
-	if err := validateStructuredCommandForObservations(command, currentRunObservations); !errors.Is(err, errRepeatedFailedStructuredCommand) {
-		t.Fatalf("same command in current run should be blocked, err=%v", err)
+	if !repeatedFailedStructuredCommand(command, currentRunObservations) {
+		t.Fatal("same command in current run should be visible to loop diagnostics")
+	}
+	if err := validateStructuredCommandForObservations(command, currentRunObservations); err != nil {
+		t.Fatalf("same command in current run should remain executable while repeat state is diagnostic, err=%v", err)
 	}
 	if err := validateStructuredCommandForObservations(command, nil); err != nil {
 		t.Fatalf("same command in a new run should not inherit blockers, err=%v", err)
@@ -2009,23 +2012,23 @@ func TestValidateStructuredCommandRejectsInvalidDateTimezoneSyntax(t *testing.T)
 }
 
 func TestRepeatedFailedStructuredCommandIncludesRejectedCommand(t *testing.T) {
-	command := `curl -s "http://api.openweathermap.org/data/2.5/weather?q=Pattaya&appid=YOUR_API_KEY&units=metric"`
+	command := `printf 'failed\n' >&2; exit 7`
 	observations := []StructuredCommandObservation{{
 		Step:            1,
 		RejectedCommand: command,
 		ExitCode:        1,
-		Stderr:          "shell specialist command rejected: OpenWeatherMap requires an API key",
+		Stderr:          "shell specialist command rejected",
 	}}
 	if !repeatedFailedStructuredCommand(command, observations) {
 		t.Fatal("repeated guard should include rejected_command observations")
 	}
 	err := validateStructuredCommandForObservations(command, observations)
-	if err == nil || !strings.Contains(err.Error(), "command repeats a previous failed command") {
-		t.Fatalf("repeated rejected command should fail as repeat, got %v", err)
+	if err != nil {
+		t.Fatalf("repeated rejected command should be diagnostic, not validation-blocked, got %v", err)
 	}
 }
 
-func TestValidateStructuredCommandRejectsRepeatedSuccessfulCommand(t *testing.T) {
+func TestValidateStructuredCommandAllowsRepeatedSuccessfulCommand(t *testing.T) {
 	observations := []StructuredCommandObservation{{
 		Step:     1,
 		Command:  "npm init -y",
@@ -2033,8 +2036,8 @@ func TestValidateStructuredCommandRejectsRepeatedSuccessfulCommand(t *testing.T)
 		Stdout:   "Wrote to package.json",
 	}}
 	err := validateStructuredCommandForObservations("npm   init   -y", observations)
-	if err == nil || !strings.Contains(err.Error(), "already completed") {
-		t.Fatalf("repeated successful command should fail, got %v", err)
+	if err != nil {
+		t.Fatalf("repeated successful command should be allowed for permissive retry policy, got %v", err)
 	}
 }
 
@@ -2084,7 +2087,7 @@ func TestSuccessfulSetupCommandReconcilesPendingObjectiveBeforeRepeat(t *testing
 	}
 }
 
-func TestRepeatedFailedCommandAddsAntiLoopObservation(t *testing.T) {
+func TestRepeatedFailedCommandExecutesPermissiveRetry(t *testing.T) {
 	workspace := t.TempDir()
 	command := "printf 'install failed\\n' >&2; exit 7"
 	client := &fakeCommandDecisionClient{responses: []string{
@@ -2099,24 +2102,18 @@ func TestRepeatedFailedCommandAddsAntiLoopObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
-	for _, obs := range result.Observations {
-		if strings.Contains(obs.Stderr, "anti_loop") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("missing anti-loop observation: %#v", result.Observations)
+	if len(result.Observations) < 2 || !strings.Contains(result.Observations[1].Command, "install failed") || result.Observations[1].ExitCode != 7 {
+		t.Fatalf("repeated failed command should execute as a retry under permissive policy: %#v", result.Observations)
 	}
 }
 
-func TestRepeatedFailedCommandForcesShellSpecialistRecovery(t *testing.T) {
+func TestRepeatedFailedCommandDoesNotHardForceShellSpecialistRecovery(t *testing.T) {
 	workspace := t.TempDir()
 	command := "false"
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"` + command + `","done":false,"answer":""}`,
 		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"printf 'alternate path\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"alternate path"}`,
 	}}
 	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
@@ -2135,18 +2132,15 @@ func TestRepeatedFailedCommandForcesShellSpecialistRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v observations=%#v shell_inputs=%#v stdout=%q", err, result.Observations, shell.inputs, stdout.String())
 	}
-	if len(shell.inputs) < 1 {
-		t.Fatalf("shell specialist calls = %d, want at least 1", len(shell.inputs))
-	}
-	if !strings.Contains(shell.inputs[0].ToolTask, "Forbidden command(s): false") {
-		t.Fatalf("recovery tool task did not include forbidden command: %q", shell.inputs[0].ToolTask)
+	if len(shell.inputs) != 0 {
+		t.Fatalf("repeated command should not hard-force shell specialist under permissive retry policy: %#v", shell.inputs)
 	}
 	if result.ExitCode != 0 {
 		t.Fatalf("exit code = %d", result.ExitCode)
 	}
 }
 
-func TestRepeatedSuccessfulCommandForcesCompletedEvidenceRecovery(t *testing.T) {
+func TestRepeatedSuccessfulCommandExecutesPermissiveRetry(t *testing.T) {
 	workspace := t.TempDir()
 	command := "ls -la " + workspace
 	client := &fakeCommandDecisionClient{responses: []string{
@@ -2186,13 +2180,17 @@ func TestRepeatedSuccessfulCommandForcesCompletedEvidenceRecovery(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shell.inputs) < 1 {
-		t.Fatalf("shell specialist calls = %d, want at least 1", len(shell.inputs))
+	if len(shell.inputs) != 0 {
+		t.Fatalf("repeated successful command should not hard-force shell specialist under permissive retry policy: %#v", shell.inputs)
 	}
-	for _, want := range []string{"Use the previous command output", command, "Do not return done=true"} {
-		if !strings.Contains(shell.inputs[0].ToolTask, want) {
-			t.Fatalf("recovery task missing %q: %s", want, shell.inputs[0].ToolTask)
+	successCount := 0
+	for _, obs := range result.Observations {
+		if obs.Command == command && obs.ExitCode == 0 {
+			successCount++
 		}
+	}
+	if successCount != 2 {
+		t.Fatalf("expected repeated successful command to execute twice, count=%d observations=%#v", successCount, result.Observations)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("pending = %#v", pending)
@@ -2261,7 +2259,7 @@ func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 	}
 }
 
-func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsRepeat(t *testing.T) {
+func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndAllowsRepeat(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"npm init -y","done":false,"answer":""}`,
 		`{"command":"npm init -y","done":false,"answer":""}`,
@@ -2342,8 +2340,14 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndRejectsR
 	if len(checker.inputs) < 2 {
 		t.Fatalf("completion checker calls = %d, want post-command and readback checks", len(checker.inputs))
 	}
-	if !structuredEventsContain(events, "structured_repeat_success_reconciled") {
-		t.Fatalf("expected repeated command reconciliation; events=%#v", events)
+	repeatedNpmInit := 0
+	for _, obs := range result.Observations {
+		if normalizeStructuredCommandForComparison(obs.Command) == "npm init -y" && obs.ExitCode == 0 {
+			repeatedNpmInit++
+		}
+	}
+	if repeatedNpmInit != 2 {
+		t.Fatalf("expected repeated npm init to execute twice under permissive retry policy, count=%d observations=%#v events=%#v", repeatedNpmInit, result.Observations, events)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
@@ -2804,10 +2808,10 @@ func TestStructuredCommandDecisionRejectsVagueWTTRAndRetries(t *testing.T) {
 	}
 }
 
-func TestStructuredCommandDecisionRejectsRepeatedFailedCommandAndRetries(t *testing.T) {
+func TestStructuredCommandDecisionAllowsRepeatedFailedCommandRetry(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"sh -c 'exit 7'","done":false,"answer":""}`,
-		`{"command":"sh -c 'exit 7'","done":true,"answer":"done"}`,
+		`{"command":"sh -c 'exit 7'","done":false,"answer":""}`,
 		`{"command":"printf 'fallback evidence\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"fallback evidence"}`,
 	}}
@@ -2819,10 +2823,10 @@ func TestStructuredCommandDecisionRejectsRepeatedFailedCommandAndRetries(t *test
 		t.Fatal(err)
 	}
 	if len(result.Observations) != 3 {
-		t.Fatalf("observations = %#v, want failed command + repeated-command rejection + fallback command", result.Observations)
+		t.Fatalf("observations = %#v, want failed command + repeated failed command + fallback command", result.Observations)
 	}
-	if result.Observations[1].Command != "" || !strings.Contains(result.Observations[1].Stderr, "command repeats a previous failed command") {
-		t.Fatalf("second observation should reject repeated failed command: %#v", result.Observations[1])
+	if result.Observations[1].Command != "sh -c 'exit 7'" || result.Observations[1].ExitCode != 7 {
+		t.Fatalf("second observation should execute repeated failed command under permissive retry policy: %#v", result.Observations[1])
 	}
 	if result.Command != "printf 'fallback evidence\n'" {
 		t.Fatalf("command = %q", result.Command)

@@ -2676,12 +2676,6 @@ func structuredLineStartsWithPackageManager(line string) bool {
 }
 
 func validateStructuredCommandForObservations(command string, observations []StructuredCommandObservation) error {
-	if repeatedFailedStructuredCommand(command, observations) {
-		return errRepeatedFailedStructuredCommand
-	}
-	if repeatedSuccessfulStructuredCommand(command, observations) {
-		return errRepeatedSuccessfulStructuredCommand
-	}
 	if err := validateStructuredCommandString(command); err != nil {
 		return err
 	}
