@@ -714,6 +714,65 @@ func TestDeterministicProgressionRecoveryBuildsReactClockViteCommand(t *testing.
 	}
 }
 
+func TestDeterministicProgressionRecoveryBuildsReactJSONFormatterCommand(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"json-test","version":"1.0.0"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decision := ProgressionDecision{
+		Action:           ProgressForceRecovery,
+		Reason:           "repeated command exhausted; deterministic recovery required",
+		RecoveryToolTask: "Required next behavior: create or modify the actual project files now after placeholder-only touch command failed.",
+	}
+
+	command := deterministicProgressionRecoveryCommand("Build this current directory into a React JSON formatter app", decision, workspace)
+	if command == "" {
+		t.Fatal("expected deterministic React JSON formatter recovery command")
+	}
+	for _, want := range []string{"src/jsonFormatter.js", "formatJSON", "minifyJSON", "Invalid JSON", "src/App.jsx", "npm run build", "npm test", "json formatter smoke test passed"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("deterministic command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "touch index.js") {
+		t.Fatalf("deterministic command should not create placeholder files: %s", command)
+	}
+}
+
+func TestDeterministicProgressionRecoveryRepairsReactJSONFormatterSmokeTest(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "jsonFormatter.js"), []byte(`export function formatJSON(){}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "scripts", "smoke-test.js"), []byte("broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decision := ProgressionDecision{
+		Action:           ProgressForceRecovery,
+		Reason:           "repeated command exhausted; deterministic recovery required",
+		RecoveryToolTask: "Fix SyntaxError in scripts/smoke-test.js and run build/test.",
+	}
+
+	command := deterministicProgressionRecoveryCommand("Finish React JSON formatter app; smoke-test.js failed with SyntaxError from malformed newline string", decision, workspace)
+	if command == "" {
+		t.Fatal("expected deterministic smoke-test repair command")
+	}
+	for _, want := range []string{"scripts/smoke-test.js", `\\n  "b": 2`, "npm run build", "npm test", "json formatter smoke test passed"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("repair command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "value.includes('\n") {
+		t.Fatalf("repair command contains literal newline in JS string: %s", command)
+	}
+}
+
 func TestStructuredDependencyScopeAllowsRecipeRequiredPackages(t *testing.T) {
 	workspace := t.TempDir()
 	recipe := Recipe{
