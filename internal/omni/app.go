@@ -191,6 +191,15 @@ func (a *App) Run(args []string) error {
 		if err != nil {
 			return fmt.Errorf("read stdin: %w", err)
 		}
+		timelineStarted := false
+		emitOneShotEvent := func(evt StructuredCommandEvent) {
+			if !timelineStarted {
+				fmt.Fprintln(a.out, "\ntimeline")
+				fmt.Fprintln(a.out, "--------")
+				timelineStarted = true
+			}
+			a.printTimelineEvent(a.newEvent(evt.Type, evt.Summary, evt.Details))
+		}
 		_, err = runStructuredCommandDecisionWithConfig(
 			context.Background(),
 			string(promptBytes),
@@ -198,7 +207,7 @@ func (a *App) Run(args []string) error {
 			a.structuredPlannerClient(),
 			a.out,
 			a.errOut,
-			nil,
+			emitOneShotEvent,
 			nil,
 			structuredCommandDecisionRunConfig{
 				CurrentWorkingDirectory: workspacePathOrCurrentDir(),
@@ -479,7 +488,7 @@ func (a *App) loop(session *Session) error {
 			continue
 		}
 
-		liveTimeline := isInteractiveWriter(a.out)
+		liveTimeline := isLiveTimelineWriter(a.out)
 		activity := a.startTurnActivity(session)
 		turn, assistantMessage, err := a.handleTurn(session, input, activity)
 		activity.Stop()
@@ -1106,7 +1115,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 
 	turnID := fmt.Sprintf("turn_%06d", len(session.Turns)+1)
 	events := []Event{}
-	liveTimeline := isInteractiveWriter(a.out)
+	liveTimeline := isLiveTimelineWriter(a.out)
 	timelineStarted := false
 	emitEvent := func(eventType, summary string, details map[string]string) {
 		evt := a.newEvent(eventType, summary, details)
@@ -2954,4 +2963,9 @@ func isInteractiveWriter(w io.Writer) bool {
 		return false
 	}
 	return (info.Mode() & os.ModeCharDevice) != 0
+}
+
+func isLiveTimelineWriter(w io.Writer) bool {
+	_, ok := w.(*os.File)
+	return ok
 }

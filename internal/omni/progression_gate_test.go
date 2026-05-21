@@ -1,6 +1,8 @@
 package omni
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -118,5 +120,55 @@ func TestProgressionGateBuildsMissingFileRecovery(t *testing.T) {
 		if !strings.Contains(decision.RecoveryToolTask, want) {
 			t.Fatalf("missing-file recovery missing %q: %s", want, decision.RecoveryToolTask)
 		}
+	}
+}
+
+func TestProgressionGateForcesWriteAfterRepeatedInspectionForMissingAppFiles(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt:     "Build a complete calculator app with HTML and JavaScript",
+		WorkingDir: workspace,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "create_calculator_ui", Status: "pending"},
+			{ID: "implement_calculator_logic", Status: "pending"},
+		},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "npm list --depth=0", ExitCode: 0, Stdout: "webpack\n"},
+			{Step: 2, Command: "ls -la", ExitCode: 0, Stdout: "package.json\nsrc\n"},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	for _, want := range []string{"inspected enough", "create or modify", "index.html", "src/index.js", "Forbidden next command(s): npm list --depth=0; ls -la"} {
+		if !strings.Contains(decision.RecoveryToolTask, want) {
+			t.Fatalf("write recovery missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+}
+
+func TestProgressionGateDoesNotForceWriteAfterMutation(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt:          "Build a complete calculator app with HTML and JavaScript",
+		WorkingDir:      workspace,
+		ObjectiveLedger: []StructuredObjective{{ID: "create_calculator_ui", Status: "pending"}},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "ls -la", ExitCode: 0, Stdout: "package.json\nsrc\n"},
+			{Step: 2, Command: "cat > index.html <<'HTML'\n<div></div>\nHTML", ExitCode: 0},
+		},
+	})
+
+	if decision.Action != ProgressAllow {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressAllow)
 	}
 }

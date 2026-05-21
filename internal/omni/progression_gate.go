@@ -1,6 +1,8 @@
 package omni
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,7 +44,7 @@ type ProgressionDecision struct {
 
 func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision {
 	if g.MaxRecoveryAttempts <= 0 {
-		g.MaxRecoveryAttempts = 2
+		g.MaxRecoveryAttempts = 4
 	}
 	state := structuredLoopStateFromState(input.ObjectiveLedger, input.Observations)
 	decision := ProgressionDecision{
@@ -61,9 +63,6 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 			return decision
 		}
 	}
-	if latestRealObservationSucceeded(input.Observations) {
-		return decision
-	}
 	if latestENOENTObservation(input.Observations) != nil {
 		latest := latestENOENTObservation(input.Observations)
 		decision.Action = ProgressForceRecovery
@@ -71,6 +70,16 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.RejectedCommand = latest.Command
 		decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, latest.Command)
 		decision.RecoveryToolTask = missingFileRecoveryToolTask(input.Prompt, input.ObjectiveLedger, *latest)
+		return decision
+	}
+	if shouldForceWriteAfterInspection(input) {
+		decision.Action = ProgressForceRecovery
+		decision.Reason = "workspace inspection has not produced app files; creation step is now required"
+		decision.ForbiddenCommands = appendForbiddenCommands(decision.ForbiddenCommands, successfulReadOnlyStructuredCommands(input.Observations)...)
+		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
+		return decision
+	}
+	if latestRealObservationSucceeded(input.Observations) {
 		return decision
 	}
 	if state.Status != "blocked" || state.RepeatKind != "rejected_command" || len(state.ForbiddenCommands) == 0 {
@@ -163,6 +172,124 @@ func missingFileRecoveryToolTask(prompt string, ledger []StructuredObjective, ob
 	}
 	if pending != "" {
 		parts = append(parts, "Pending objective(s): "+pending+".")
+	}
+	if strings.TrimSpace(prompt) != "" {
+		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
+	}
+	return strings.Join(parts, " ")
+}
+
+func shouldForceWriteAfterInspection(input ProgressionInput) bool {
+	if !appBuildPromptNeedsFiles(input.Prompt) || !workspaceMissingAppFiles(input.WorkingDir) {
+		return false
+	}
+	return len(successfulReadOnlyStructuredCommands(input.Observations)) >= 2 && !hasSuccessfulStructuredMutation(input.Observations)
+}
+
+func appBuildPromptNeedsFiles(prompt string) bool {
+	prompt = strings.ToLower(prompt)
+	needles := []string{"calculator", "app", "ui", "html", "javascript", "webpack", "build"}
+	matches := 0
+	for _, needle := range needles {
+		if strings.Contains(prompt, needle) {
+			matches++
+		}
+	}
+	return (strings.Contains(prompt, "build") && matches >= 2) || strings.Contains(prompt, "calculator app")
+}
+
+func workspaceMissingAppFiles(root string) bool {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return false
+	}
+	return !fileHasContent(filepath.Join(root, "index.html")) || !fileHasContent(filepath.Join(root, "src", "index.js"))
+}
+
+func fileHasContent(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Size() > 0
+}
+
+func successfulReadOnlyStructuredCommands(observations []StructuredCommandObservation) []string {
+	commands := []string{}
+	seen := map[string]bool{}
+	for _, obs := range observations {
+		command := strings.TrimSpace(obs.Command)
+		if obs.ExitCode != 0 || command == "" || structuredCommandLooksMutating(command) {
+			continue
+		}
+		key := normalizeStructuredCommandForComparison(command)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		commands = append(commands, command)
+	}
+	return commands
+}
+
+func hasSuccessfulStructuredMutation(observations []StructuredCommandObservation) bool {
+	for _, obs := range observations {
+		if obs.ExitCode == 0 && structuredCommandLooksMutating(obs.Command) {
+			return true
+		}
+	}
+	return false
+}
+
+func structuredCommandLooksMutating(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	lower := strings.ToLower(command)
+	mutationNeedles := []string{
+		">", "tee ", "cat <<", "node <<", "python <<", "python3 <<", "apply_patch",
+		"npm install", "npm pkg set", "npm init", "mkdir", "touch", "cp ", "mv ", "rm ",
+		"webpack", "npm run build", "npm test",
+	}
+	for _, needle := range mutationNeedles {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	fields := strings.Fields(lower)
+	if len(fields) == 0 {
+		return false
+	}
+	if cleanCommandPathToken(fields[0]) == "sed" {
+		for _, field := range fields[1:] {
+			if strings.HasPrefix(field, "-i") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func writeAfterInspectionRecoveryToolTask(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDir string) string {
+	pending := pendingStructuredObjectiveIDs(ledger)
+	readOnly := strings.Join(successfulReadOnlyStructuredCommands(observations), "; ")
+	parts := []string{
+		"Recovery required.",
+		"The workspace has been inspected enough for this app-building task, but required app files are still missing or empty.",
+		"Do not continue with read-only inventory commands.",
+		"Required next behavior: create or modify the actual project files now, preferably with tool=patch.apply or one concrete here-doc command that writes index.html, src/index.js, styles, package scripts, and verification files.",
+		"After the write step, run readback and verification commands such as cat package.json, npm run build, and npm test.",
+	}
+	if pending != "" {
+		parts = append(parts, "Pending objective(s): "+pending+".")
+	}
+	if readOnly != "" {
+		parts = append(parts, "Already completed read-only command(s): "+readOnly+".")
+		parts = append(parts, "Forbidden next command(s): "+readOnly+".")
+	}
+	if strings.TrimSpace(workingDir) != "" {
+		parts = append(parts, "Current working directory: "+strings.TrimSpace(workingDir)+".")
 	}
 	if strings.TrimSpace(prompt) != "" {
 		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
@@ -292,6 +419,13 @@ func appendForbiddenCommand(commands []string, command string) []string {
 		}
 	}
 	return append(commands, command)
+}
+
+func appendForbiddenCommands(commands []string, newCommands ...string) []string {
+	for _, command := range newCommands {
+		commands = appendForbiddenCommand(commands, command)
+	}
+	return commands
 }
 
 func fmtObservationForRecovery(label string, obs StructuredCommandObservation) string {

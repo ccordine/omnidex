@@ -4202,6 +4202,57 @@ func TestObjectiveLedgerAndMinimalContextDoNotUsePromptPhraseHeuristics(t *testi
 	}
 }
 
+func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsReadOnly(t *testing.T) {
+	err := validateShellProposalAgainstToolTask("ls -la src", "Required next behavior: create or modify the actual project files now. Do not continue with read-only inventory commands.")
+	if err == nil {
+		t.Fatal("expected read-only shell proposal to be rejected for write-required task")
+	}
+	if !strings.Contains(err.Error(), "requires file creation") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateShellProposalAgainstWriteRequiredToolTaskAllowsMutation(t *testing.T) {
+	command := "cat > index.html <<'HTML'\n<div id=\"app\"></div>\nHTML"
+	if err := validateShellProposalAgainstToolTask(command, "create or modify the actual project files now"); err != nil {
+		t.Fatalf("mutation command rejected: %v", err)
+	}
+}
+
+func TestReconcileObjectiveLedgerSatisfiesRemovalObjective(t *testing.T) {
+	ledger := []StructuredObjective{
+		{ID: "remove_calculator_js", Description: "Remove src/calculator.js if it is empty and unused.", Status: "pending"},
+		{ID: "run_npm_test", Description: "Run npm test after cleanup.", Status: "pending"},
+	}
+	events := []StructuredCommandEvent{}
+	updated := reconcileStructuredObjectiveLedgerFromObservation(1, ledger, StructuredCommandObservation{
+		Step:     1,
+		Command:  "rm src/calculator.js && npm test",
+		ExitCode: 0,
+		Stdout:   "calculator smoke test passed",
+	}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	})
+
+	for _, id := range []string{"remove_calculator_js", "run_npm_test"} {
+		found := false
+		for _, objective := range updated {
+			if objective.ID == id {
+				found = true
+				if !structuredObjectiveSatisfied(objective) {
+					t.Fatalf("%s not satisfied: %#v", id, objective)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("missing objective %s in %#v", id, updated)
+		}
+	}
+	if !structuredEventsContain(events, "objective_ledger_reconciled") {
+		t.Fatalf("missing reconciliation event: %#v", events)
+	}
+}
+
 func quoteJSONForTest(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 	return `"` + replacer.Replace(value) + `"`
