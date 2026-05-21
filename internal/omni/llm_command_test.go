@@ -689,6 +689,31 @@ func TestStructuredDependencyScopeAllowsReactClockTailwindObjectives(t *testing.
 	}
 }
 
+func TestDeterministicProgressionRecoveryBuildsReactClockViteCommand(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"^19.0.0","react-dom":"^19.0.0"},"devDependencies":{"tailwindcss":"^4.0.0"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decision := ProgressionDecision{
+		Action:           ProgressForceRecovery,
+		Reason:           "same command/output repeated without satisfying pending objectives; no-progress recovery required",
+		RecoveryToolTask: "Required next behavior: create or modify the actual project files now. Tailwind CSS Vite integration is required.",
+	}
+
+	command := deterministicProgressionRecoveryCommand("Build a React clock app with Tailwind styling and a timezone dropdown", decision, workspace)
+	if command == "" {
+		t.Fatal("expected deterministic React clock recovery command")
+	}
+	for _, want := range []string{"@tailwindcss/vite", `@import "tailwindcss"`, "src/App.jsx", "Timezone", "npm run build", "npm test"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("deterministic command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "npx tailwindcss init") {
+		t.Fatalf("deterministic command should not use legacy Tailwind CLI init: %s", command)
+	}
+}
+
 func TestStructuredDependencyScopeAllowsRecipeRequiredPackages(t *testing.T) {
 	workspace := t.TempDir()
 	recipe := Recipe{
@@ -1489,7 +1514,7 @@ func TestStructuredCommandDecisionEmitsRealtimeEvents(t *testing.T) {
 		"structured_command_finished",
 		"structured_llm_request_started",
 		"structured_llm_payload_received",
-		"structured_done_accepted",
+		"completion_check_accepted_from_done_request",
 	}
 	if len(events) != len(wantOrder) {
 		t.Fatalf("events=%#v want %d", events, len(wantOrder))
@@ -1693,8 +1718,8 @@ func TestStructuredCommandDecisionAcceptsDoneWithRepeatedSuccessfulCommand(t *te
 	if result.Answer != "Pattaya time evidence" {
 		t.Fatalf("answer = %q, want synthesized stdout evidence", result.Answer)
 	}
-	if !structuredEventsContain(events, "structured_done_accepted") {
-		t.Fatalf("missing done accepted event: %#v", events)
+	if !structuredEventsContain(events, "completion_check_accepted_from_done_request") {
+		t.Fatalf("missing validator completion accepted event: %#v", events)
 	}
 }
 
@@ -3210,6 +3235,46 @@ func TestStructuredCommandDecisionDoneCheckSatisfiesSinglePendingObjective(t *te
 	}
 }
 
+func TestCompletionCheckerDoneSatisfiesRemainingPendingObjectives(t *testing.T) {
+	ledger := []StructuredObjective{
+		{ID: "integrate_tailwindcss", Description: "Integrate Tailwind CSS", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		{ID: "configure_tailwindcss_vite", Description: "Configure Tailwind CSS with Vite", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		{ID: "add_package_scripts", Description: "Add package scripts", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+	}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "build output, vite config, Tailwind import, and package scripts prove completion",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "integrate_tailwind_css", Description: "Integrate Tailwind CSS", Status: "satisfied", Evidence: "src/style.css imports Tailwind"},
+			{ID: "configure_tailwind_css_vite", Description: "Configure Tailwind CSS with Vite", Status: "satisfied", Evidence: "vite.config.js uses @tailwindcss/vite"},
+		},
+	}}}
+	events := []StructuredCommandEvent{}
+
+	updated, accepted := runCompletionCheck(
+		context.Background(),
+		3,
+		"Build a React clock app with Tailwind",
+		t.TempDir(),
+		ledger,
+		MinimalContext{},
+		[]StructuredCommandObservation{{Step: 2, Command: "npm run build && npm test", ExitCode: 0, Stdout: "clock smoke test passed"}},
+		"clock smoke test passed",
+		checker,
+		WorksiteSurvey{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+	)
+	if !accepted {
+		t.Fatalf("validator done should be authoritative when it accepts evidence; updated=%#v events=%#v", updated, events)
+	}
+	if pending := pendingStructuredObjectives(updated); len(pending) != 0 {
+		t.Fatalf("pending objectives should be satisfied by validator evidence: %#v", pending)
+	}
+	if !structuredEventsContain(events, "completion_check_satisfied_pending_objectives") {
+		t.Fatalf("missing validator satisfaction event: %#v", events)
+	}
+}
+
 func TestStructuredCommandDecisionRejectsPlannerDoneWithoutValidator(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'done evidence\n'","done":false,"answer":""}`,
@@ -4298,10 +4363,46 @@ func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsReadOnly(t *tes
 	}
 }
 
+func TestValidateShellProposalAllowsInspectionForInspectionObjective(t *testing.T) {
+	toolTask := "Active objective(s): inspect_empty_placeholder_files,remove_empty_placeholder_files,verify_app_with_build,verify_app_with_test. Required next behavior: inspect existing files before removing anything."
+	for _, command := range []string{
+		`find . -name "Clock.js" -empty -print`,
+		`cd /tmp/project && find . -name '*.js' -o -name '*.jsx'`,
+		`ls -la src`,
+	} {
+		if err := validateShellProposalAgainstToolTask(command, toolTask); err != nil {
+			t.Fatalf("inspection command %q should be allowed for inspection objective: %v", command, err)
+		}
+	}
+}
+
+func TestValidateShellProposalDoesNotTreatFindDeleteAsReadOnlyInspection(t *testing.T) {
+	toolTask := "Active objective(s): inspect_empty_placeholder_files. Required next behavior: inspect existing files before removing anything."
+	command := `find . -name "Clock.js" -empty -delete`
+	if err := validateShellProposalAgainstToolTask(command, toolTask); err != nil {
+		t.Fatalf("substantive cleanup command should still be allowed as mutation: %v", err)
+	}
+	if structuredCommandLooksReadOnlyEvidence(command) {
+		t.Fatalf("find -delete should not be classified as read-only evidence")
+	}
+}
+
 func TestValidateShellProposalAgainstWriteRequiredToolTaskAllowsMutation(t *testing.T) {
 	command := "cat > index.html <<'HTML'\n<div id=\"app\"></div>\nHTML"
 	if err := validateShellProposalAgainstToolTask(command, "create or modify the actual project files now"); err != nil {
 		t.Fatalf("mutation command rejected: %v", err)
+	}
+}
+
+func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsPlaceholderMutation(t *testing.T) {
+	for _, command := range []string{"touch Clock.js", "mkdir -p src && touch src/Clock.js"} {
+		err := validateShellProposalAgainstToolTask(command, "Required next behavior: create or modify the actual project files now. Do not continue with read-only inventory commands.")
+		if err == nil {
+			t.Fatalf("expected placeholder mutation %q to be rejected", command)
+		}
+		if !strings.Contains(err.Error(), "placeholder-only") {
+			t.Fatalf("unexpected error for %q: %v", command, err)
+		}
 	}
 }
 

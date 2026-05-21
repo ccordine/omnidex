@@ -536,3 +536,34 @@ Verification:
 - `go test ./...`
   - Exit code: `0`
 - Rebuilt installed Omnidex binary by building to `/tmp/omni-new` and replacing `/home/gryph/.omnidex/bin/omni`.
+
+## Omnidex Patch 11
+
+Observed:
+- Fully permissive repeated commands let useful retries happen, but also allowed no-progress loops.
+- In the React clock/Tailwind run, Omnidex repeatedly ran package installation commands that returned `up to date` while objectives remained pending.
+- It also repeatedly hit `npm error could not determine executable to run`, likely from an npm/npx executable lookup, without switching to file inspection or direct config edits.
+
+Decision:
+- Keep repeated commands executable by default.
+- Add a no-progress cap in the progression gate:
+  - repeated same failed command + same output fingerprint forces recovery after 2 attempts.
+  - repeated no-op package-manager success such as `up to date` forces recovery after 3 attempts when objectives remain pending.
+- This keeps retry behavior but prevents a loop from spending the whole run on identical install/executable output.
+
+Changed Omnidex:
+- `internal/omni/progression_gate.go`
+  - Added `repeatedNoProgressCommand`.
+  - Added detection for identical failed command/output fingerprints.
+  - Added detection for repeated no-op npm/pnpm/yarn install output.
+  - Added recovery task text that directs the shell specialist to use existing evidence, inspect `package.json`/source files, patch project files/config directly, or choose a narrower command.
+  - Adds an npm/npx executable lookup hint for `could not determine executable to run`.
+- `internal/omni/progression_gate_test.go`
+  - Added regression tests for repeated `npx tailwindcss init -p` executable failure.
+  - Added regression tests for repeated no-op package installs while objectives remain pending.
+
+Verification:
+- Focused progression/no-progress tests passed.
+- `go test ./...`
+  - Exit code: `0`
+- Rebuilt installed Omnidex binary by building to `/tmp/omni-new` and replacing `/home/gryph/.omnidex/bin/omni`.

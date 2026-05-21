@@ -79,6 +79,16 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
 		return decision
 	}
+	if len(pendingStructuredObjectives(input.ObjectiveLedger)) > 0 {
+		if command, fingerprint, count, ok := repeatedNoProgressCommand(input.Observations); ok {
+			decision.Action = ProgressForceRecovery
+			decision.Reason = "same command/output repeated without satisfying pending objectives; no-progress recovery required"
+			decision.RejectedCommand = command
+			decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, command)
+			decision.RecoveryToolTask = noProgressCommandRecoveryToolTask(input.Prompt, input.ObjectiveLedger, command, fingerprint, count)
+			return decision
+		}
+	}
 	if latestRealObservationSucceeded(input.Observations) {
 		return decision
 	}
@@ -179,11 +189,52 @@ func missingFileRecoveryToolTask(prompt string, ledger []StructuredObjective, ob
 	return strings.Join(parts, " ")
 }
 
+func noProgressCommandRecoveryToolTask(prompt string, ledger []StructuredObjective, command, fingerprint string, count int) string {
+	pending := pendingStructuredObjectiveIDs(ledger)
+	parts := []string{
+		"Recovery required.",
+		"The same command produced the same result repeatedly without satisfying the pending objectives.",
+		"Repeated command: " + strings.TrimSpace(command) + ".",
+		"Repeat count: " + strconv.Itoa(count) + ".",
+		"Output fingerprint: " + strings.TrimSpace(fingerprint) + ".",
+		"Required next behavior: do not retry the same command. Use the existing evidence, inspect package.json or source files, patch the project files/config directly, choose a narrower command, or run verification that advances a pending objective.",
+	}
+	if strings.Contains(strings.ToLower(fingerprint), "could not determine executable to run") {
+		parts = append(parts, "If this came from an npm/npx executable lookup, inspect package.json and node_modules/.bin, then configure or edit files directly instead of repeating the failing executable command.")
+	}
+	if pending != "" {
+		parts = append(parts, "Pending objective(s): "+pending+".")
+	}
+	if strings.TrimSpace(prompt) != "" {
+		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
+	}
+	return strings.Join(parts, " ")
+}
+
 func shouldForceWriteAfterInspection(input ProgressionInput) bool {
+	if !appBuildObjectiveNeedsFileCreation(input.ObjectiveLedger) {
+		return false
+	}
 	if !appBuildPromptNeedsFiles(input.Prompt) || !workspaceMissingAppFiles(input.WorkingDir) {
 		return false
 	}
 	return len(successfulReadOnlyStructuredCommands(input.Observations)) >= 2 && !hasSuccessfulStructuredMutation(input.Observations)
+}
+
+func appBuildObjectiveNeedsFileCreation(ledger []StructuredObjective) bool {
+	if len(ledger) == 0 {
+		return true
+	}
+	for _, objective := range pendingStructuredObjectives(ledger) {
+		text := strings.ToLower(objective.ID + " " + objective.Description)
+		if strings.Contains(text, "cleanup") || strings.Contains(text, "clean up") || strings.Contains(text, "remove_empty") || strings.Contains(text, "placeholder") {
+			continue
+		}
+		if strings.Contains(text, "create") || strings.Contains(text, "implement") || strings.Contains(text, "build app") || strings.Contains(text, "project files") || strings.Contains(text, "ui") {
+			return true
+		}
+	}
+	return false
 }
 
 func appBuildPromptNeedsFiles(prompt string) bool {
@@ -203,7 +254,11 @@ func workspaceMissingAppFiles(root string) bool {
 	if root == "" {
 		return false
 	}
-	return !fileHasContent(filepath.Join(root, "index.html")) || !fileHasContent(filepath.Join(root, "src", "index.js"))
+	hasEntrypoint := fileHasContent(filepath.Join(root, "src", "index.js")) ||
+		fileHasContent(filepath.Join(root, "src", "main.js")) ||
+		fileHasContent(filepath.Join(root, "src", "index.jsx")) ||
+		fileHasContent(filepath.Join(root, "src", "main.jsx"))
+	return !fileHasContent(filepath.Join(root, "index.html")) || !hasEntrypoint
 }
 
 func fileHasContent(path string) bool {
@@ -250,7 +305,7 @@ func structuredCommandLooksMutating(command string) bool {
 	mutationNeedles := []string{
 		">", "tee ", "cat <<", "node <<", "python <<", "python3 <<", "apply_patch",
 		"npm install", "npm pkg set", "npm init", "mkdir", "touch", "cp ", "mv ", "rm ",
-		"webpack", "npm run build", "npm test",
+		" -delete", "webpack", "npm run build", "npm test",
 	}
 	for _, needle := range mutationNeedles {
 		if strings.Contains(lower, needle) {
@@ -359,6 +414,56 @@ func latestRealObservationSucceeded(observations []StructuredCommandObservation)
 	latest := observations[len(observations)-1]
 	command := strings.TrimSpace(latest.Command)
 	return latest.ExitCode == 0 && command != "" && !strings.HasPrefix(command, "SKIPPED_REPEAT_SUCCESS:")
+}
+
+func repeatedNoProgressCommand(observations []StructuredCommandObservation) (string, string, int, bool) {
+	if len(observations) == 0 {
+		return "", "", 0, false
+	}
+	latest := observations[len(observations)-1]
+	latestCommand := normalizeStructuredCommandForComparison(latest.Command)
+	if latestCommand == "" || strings.HasPrefix(strings.TrimSpace(latest.Command), "SKIPPED_REPEAT_SUCCESS:") {
+		return "", "", 0, false
+	}
+	fingerprint := structuredFailureFingerprint(latest)
+	count := 0
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if strings.TrimSpace(obs.Command) == "" || strings.HasPrefix(strings.TrimSpace(obs.Command), "SKIPPED_REPEAT_SUCCESS:") {
+			continue
+		}
+		if normalizeStructuredCommandForComparison(obs.Command) != latestCommand {
+			continue
+		}
+		if structuredFailureFingerprint(obs) != fingerprint {
+			continue
+		}
+		count++
+	}
+	if latest.ExitCode != 0 && count >= 2 {
+		return strings.TrimSpace(latest.Command), fingerprint, count, true
+	}
+	if latest.ExitCode == 0 && count >= 3 && commandLooksLikeNoProgressPackageManager(latest.Command, latest.Stdout, latest.Stderr) {
+		return strings.TrimSpace(latest.Command), fingerprint, count, true
+	}
+	return "", "", count, false
+}
+
+func commandLooksLikeNoProgressPackageManager(command, stdout, stderr string) bool {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return false
+	}
+	switch cleanCommandPathToken(fields[0]) {
+	case "npm", "pnpm", "yarn":
+	default:
+		return false
+	}
+	text := strings.ToLower(stdout + "\n" + stderr)
+	if strings.Contains(text, "up to date") || strings.Contains(text, "already up to date") || strings.Contains(text, "audited ") {
+		return true
+	}
+	return false
 }
 
 func latestENOENTObservation(observations []StructuredCommandObservation) *StructuredCommandObservation {

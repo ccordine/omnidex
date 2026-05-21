@@ -72,6 +72,50 @@ func TestProgressionGateAllowsDifferentFailureFingerprint(t *testing.T) {
 	}
 }
 
+func TestProgressionGateForcesRecoveryAfterRepeatedSameFailureFingerprint(t *testing.T) {
+	command := "npx tailwindcss init -p"
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt:          "Build a React clock app with Tailwind",
+		ObjectiveLedger: []StructuredObjective{{ID: "install_and_integrate_tailwindcss", Status: "pending"}},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: command, ExitCode: 1, Stderr: "npm error could not determine executable to run"},
+			{Step: 2, Command: command, ExitCode: 1, Stderr: "npm error could not determine executable to run"},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	for _, want := range []string{"same command produced the same result", command, "could not determine executable", "inspect package.json", "directly instead of repeating"} {
+		if !strings.Contains(decision.RecoveryToolTask, want) {
+			t.Fatalf("no-progress recovery missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+}
+
+func TestProgressionGateForcesRecoveryAfterRepeatedNoopPackageInstall(t *testing.T) {
+	command := "npm install -D tailwindcss postcss autoprefixer"
+	output := "up to date, audited 19 packages in 553ms\n\nfound 0 vulnerabilities"
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt:          "Build a React clock app with Tailwind",
+		ObjectiveLedger: []StructuredObjective{{ID: "create_hello_world_component", Status: "pending"}},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: command, ExitCode: 0, Stdout: output},
+			{Step: 2, Command: command, ExitCode: 0, Stdout: output},
+			{Step: 3, Command: command, ExitCode: 0, Stdout: output},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	if !strings.Contains(decision.RecoveryToolTask, "do not retry the same command") {
+		t.Fatalf("recovery task = %s", decision.RecoveryToolTask)
+	}
+}
+
 func TestProgressionGateUsesCompletedEvidenceForRepeatedSuccess(t *testing.T) {
 	command := "ls -la /tmp/demo"
 	gate := ProgressionGate{}
@@ -149,6 +193,39 @@ func TestProgressionGateForcesWriteAfterRepeatedInspectionForMissingAppFiles(t *
 		if !strings.Contains(decision.RecoveryToolTask, want) {
 			t.Fatalf("write recovery missing %q: %s", want, decision.RecoveryToolTask)
 		}
+	}
+}
+
+func TestProgressionGateDoesNotForceWriteForCleanupObjectives(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "index.html"), []byte(`<script type="module" src="/src/main.jsx"></script>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "main.jsx"), []byte(`import App from './App.jsx';`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "Clock.js"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt:     "Finish QA on this existing React clock app. Inspect empty placeholder files, remove them if unused, then verify the app.",
+		WorkingDir: workspace,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "remove_empty_placeholder_files", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			{ID: "verify_app_with_build", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "find . -name 'Clock.js'", ExitCode: 0, Stdout: "./src/Clock.js\n"},
+			{Step: 2, Command: "ls -l src", ExitCode: 0, Stdout: "-rw-r--r-- 0 Clock.js\n"},
+		},
+	})
+
+	if decision.Action != ProgressAllow {
+		t.Fatalf("action = %s, want %s; decision=%#v", decision.Action, ProgressAllow, decision)
 	}
 }
 
