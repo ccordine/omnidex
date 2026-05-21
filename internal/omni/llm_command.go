@@ -538,6 +538,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		if len(result.Observations) != lastCompletionCheckedObservationCount && latestObservationIsSuccessfulCommand(result.Observations) && len(pendingStructuredObjectives(ledger)) > 0 {
 			latest, _ := latestSuccessfulCommandObservation(result.Observations)
 			result.Answer = finalStructuredAnswer(result.Answer, latest)
+			ledgerBeforeProgress := mergeStructuredObjectiveLedger(nil, ledger)
 			ledger = reconcileStructuredObjectiveLedgerFromObservation(step-1, ledger, latest, onEvent)
 			if len(selectedRecipes) > 0 {
 				ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
@@ -561,6 +562,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				ledger, validatorAccepted = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
 				ledger = enforcePostWriteValidationBeforeCompletion(step-1, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
 				result.ObjectiveLedger = ledger
+				acceptPartialCompletionForContinuation(step-1, ledgerBeforeProgress, ledger, latest, onEvent, &result)
 				if validatorAccepted && len(pendingStructuredObjectives(ledger)) == 0 {
 					emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_observations", "Done-check specialist accepted observed command evidence", map[string]string{
 						"step":   fmt.Sprintf("%d", step-1),
@@ -568,6 +570,8 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					})
 					return result, nil
 				}
+			} else {
+				acceptPartialCompletionForContinuation(step-1, ledgerBeforeProgress, ledger, latest, onEvent, &result)
 			}
 		}
 		gateDecision := ProgressionGate{MaxRecoveryAttempts: 4}.ReviewStep(ProgressionInput{
@@ -3971,6 +3975,47 @@ func reconcileStructuredObjectiveLedgerFromObservation(step int, ledger []Struct
 		"objectives": strings.Join(ids, ","),
 	})
 	return mergeStructuredObjectiveLedger(ledger, satisfied)
+}
+
+func acceptPartialCompletionForContinuation(step int, before, after []StructuredObjective, obs StructuredCommandObservation, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) {
+	if result == nil || obs.ExitCode != 0 {
+		return
+	}
+	pendingBefore := pendingStructuredObjectives(before)
+	pendingAfter := pendingStructuredObjectives(after)
+	if len(pendingBefore) == 0 || len(pendingAfter) == 0 || len(pendingAfter) >= len(pendingBefore) {
+		return
+	}
+	completed := newlySatisfiedStructuredObjectiveIDs(before, after)
+	if len(completed) == 0 {
+		return
+	}
+	result.PartialProgress = true
+	emitStructuredCommandEvent(onEvent, "partial_completion_accepted", "Partial completion accepted; continuing remaining objectives", map[string]string{
+		"step":                 fmt.Sprintf("%d", step),
+		"completed_objectives": strings.Join(completed, ","),
+		"pending_objectives":   strings.Join(structuredObjectiveIDs(pendingAfter), ","),
+		"command":              truncateStructuredTimelineValue(obs.Command),
+		"continuation":         "same job must continue before unrelated work or done=true",
+	})
+}
+
+func newlySatisfiedStructuredObjectiveIDs(before, after []StructuredObjective) []string {
+	beforeSatisfied := map[string]bool{}
+	for _, objective := range before {
+		if structuredObjectiveSatisfied(objective) {
+			beforeSatisfied[objective.ID] = true
+		}
+	}
+	ids := []string{}
+	for _, objective := range after {
+		if objective.ID == "" || beforeSatisfied[objective.ID] || !structuredObjectiveSatisfied(objective) {
+			continue
+		}
+		ids = append(ids, objective.ID)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, objective StructuredObjective) bool {

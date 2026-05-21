@@ -4253,6 +4253,72 @@ func TestReconcileObjectiveLedgerSatisfiesRemovalObjective(t *testing.T) {
 	}
 }
 
+func TestStructuredCommandDecisionAcceptsPartialCompletionAndContinues(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'build passed\n'","done":false,"answer":""}`,
+		`{"command":"printf 'test passed\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"build and test passed"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "verify_build", Description: "Verify build", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			{ID: "verify_test", Description: "Verify test", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		},
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   false,
+		Reason: "build passed but tests remain",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "verify_build", Description: "Verify build", Status: "satisfied", Evidence: "npm run build exited 0"},
+			{ID: "verify_test", Description: "Verify test", Status: "pending"},
+		},
+	}, {
+		Done:   true,
+		Reason: "build and test passed",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "verify_build", Description: "Verify build", Status: "satisfied", Evidence: "npm run build exited 0"},
+			{ID: "verify_test", Description: "Verify test", Status: "satisfied", Evidence: "npm test exited 0"},
+		},
+	}}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"verify app",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{
+			PromptInterpreter: interpreter,
+			CompletionChecker: checker,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.PartialProgress {
+		t.Fatal("expected partial progress to be recorded before final completion")
+	}
+	partial := structuredEventOfTypeForTest(events, "partial_completion_accepted")
+	if partial == nil {
+		t.Fatalf("missing partial completion event: %#v", events)
+	}
+	if !strings.Contains(partial.Details["completed_objectives"], "verify_build") {
+		t.Fatalf("partial event missing completed objective: %#v", partial.Details)
+	}
+	if !strings.Contains(partial.Details["pending_objectives"], "verify_test") {
+		t.Fatalf("partial event missing pending objective: %#v", partial.Details)
+	}
+	if result.Command != "printf 'test passed\n'" {
+		t.Fatalf("final command = %q, want continued test command", result.Command)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
+	}
+}
+
 func quoteJSONForTest(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 	return `"` + replacer.Replace(value) + `"`

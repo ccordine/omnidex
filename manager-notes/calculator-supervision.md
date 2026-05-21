@@ -429,3 +429,25 @@ Final fixture verification:
   - Server evidence before timeout: `calculator listening on http://127.0.0.1:4173`
 - Process check:
   - No long-lived `omni run` or calculator server process remained.
+
+## Omnidex Patch 7
+
+Design note:
+- Partial completion should be an accepted continuation state, not a failure state.
+- It is still not final completion.
+- If a command satisfies some objectives while others remain, Omnidex should record that progress, keep the same job active, and require the next loop to complete the remaining objectives before unrelated work or `done=true`.
+
+Changed Omnidex:
+- `internal/omni/llm_command.go`
+  - Added `partial_completion_accepted` event emission.
+  - When the objective ledger moves from more pending objectives to fewer pending objectives after successful command evidence, Omnidex marks `PartialProgress=true`.
+  - The event records completed objectives, remaining pending objectives, the command that earned progress, and the continuation requirement.
+  - Pending objectives remain hard blockers for final completion.
+- `internal/omni/llm_command_test.go`
+  - Added a regression test proving a partially completed build objective is accepted, then the loop continues to the remaining test objective before final completion.
+
+Verification:
+- Focused partial-completion/reconciliation/source-audit tests passed.
+- `go test ./...`
+  - Exit code: `0`
+- Rebuilt installed Omnidex binary by building to `/tmp/omni-new` and atomically replacing `/home/gryph/.omnidex/bin/omni`, because one existing Omnidex process had the prior binary mapped.
