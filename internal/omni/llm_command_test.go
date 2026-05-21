@@ -1994,6 +1994,40 @@ func TestRepeatedFailedCommandAddsAntiLoopObservation(t *testing.T) {
 	}
 }
 
+func TestRepeatedFailedCommandForcesShellSpecialistRecovery(t *testing.T) {
+	workspace := t.TempDir()
+	command := "false"
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"alternate path"}`,
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
+		Command:   "printf 'alternate path\n'",
+		Rationale: "Use a different command after the planner repeated a blocked failure.",
+	}}}
+	stdout := &bytes.Buffer{}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "continue", nil, client, stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		ShellSpecialist:         shell,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shell.inputs) != 1 {
+		t.Fatalf("shell specialist calls = %d, want 1", len(shell.inputs))
+	}
+	if !strings.Contains(shell.inputs[0].ToolTask, "Forbidden command(s): false") {
+		t.Fatalf("recovery tool task did not include forbidden command: %q", shell.inputs[0].ToolTask)
+	}
+	if stdout.String() != "alternate path\n" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if result.Answer != "alternate path" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
 func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "test_project_20260520115716")
@@ -3363,6 +3397,37 @@ func TestStructuredLoopStateFlagsPrematureDoneLoop(t *testing.T) {
 	}
 	if !strings.Contains(state.Instruction, "Stop returning done=true") {
 		t.Fatalf("loop state instruction = %q", state.Instruction)
+	}
+}
+
+func TestStructuredLoopStateCarriesForbiddenRepeatedCommand(t *testing.T) {
+	command := "npm install @hotwired/stimulus recyclr tailwindcss webpack webpack-cli --save-dev"
+	observations := []StructuredCommandObservation{
+		{Step: 1, Command: command, ExitCode: 1, Stderr: "npm failed"},
+		{Step: 2, RejectedCommand: command, ExitCode: 1, Stderr: "anti_loop: command rejected again after prior failure/rejection count=2"},
+	}
+	state := structuredLoopStateFromState([]StructuredObjective{{ID: "implement_calculator_ui", Status: "pending"}}, observations)
+	if state.Status != "blocked" || state.RepeatKind != "rejected_command" || state.RepeatedCommand == "" {
+		t.Fatalf("loop state = %#v", state)
+	}
+	if len(state.ForbiddenCommands) != 1 || state.ForbiddenCommands[0] != command {
+		t.Fatalf("forbidden commands = %#v", state.ForbiddenCommands)
+	}
+	message := buildStructuredCommandUserMessage(
+		"Please finish wiring up the UI and logic behind the calculator app",
+		observations,
+		t.TempDir(),
+		[]StructuredObjective{{ID: "implement_calculator_ui", Status: "pending"}},
+	)
+	for _, want := range []string{
+		`"forbidden_commands"`,
+		command,
+		`"recovery_instruction"`,
+		`"repeated_command"`,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing %q: %s", want, message)
+		}
 	}
 }
 

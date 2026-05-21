@@ -191,6 +191,7 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
 		s.mux.HandleFunc("/v1/admin/migrate-fresh", s.handleAdminMigrateFresh)
 	}
+	s.registerUIRoutes()
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

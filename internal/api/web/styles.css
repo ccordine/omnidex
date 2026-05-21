@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(330%);
+  }
+}
+
+.scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(103, 232, 249, 0.55) rgba(24, 24, 27, 0.7);
+}
+
+.scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scrollbar::-webkit-scrollbar-track {
+  background: rgba(24, 24, 27, 0.7);
+}
+
+.scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(103, 232, 249, 0.55);
+  border: 3px solid rgba(24, 24, 27, 0.7);
+  border-radius: 999px;
+}
+
+.message-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.message-shell {
+  max-width: min(860px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 0.875rem 1rem;
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.18);
+}
+
+.message-user {
+  justify-items: end;
+}
+
+.message-user .message-shell {
+  background: linear-gradient(135deg, rgba(103, 232, 249, 0.22), rgba(14, 165, 233, 0.12));
+  border-color: rgba(103, 232, 249, 0.3);
+}
+
+.message-assistant .message-shell {
+  background: rgba(39, 39, 42, 0.72);
+}
+
+.message-system .message-shell {
+  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(251, 191, 36, 0.22);
+}
+
+.message-error .message-shell {
+  background: rgba(244, 63, 94, 0.08);
+  border-color: rgba(244, 63, 94, 0.28);
+}
+
+.message-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.timeline-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(39, 39, 42, 0.62);
+  padding: 0.75rem;
+}
+
+.timeline-key {
+  display: inline-block;
+  min-width: 5.5rem;
+  color: rgb(161, 161, 170);
+}
