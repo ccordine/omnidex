@@ -965,8 +965,10 @@ func (a *App) runBench(args []string) error {
 		return a.runBenchReport(args[1:])
 	case "run":
 		return a.runBenchRun(args[1:])
+	case "suite":
+		return a.runBenchSuite(args[1:])
 	default:
-		return fmt.Errorf("usage: omni bench <list|report|run>")
+		return fmt.Errorf("usage: omni bench <list|report|run|suite>")
 	}
 }
 
@@ -1092,6 +1094,95 @@ func (a *App) runBenchRun(args []string) error {
 	return nil
 }
 
+func (a *App) runBenchSuite(args []string) error {
+	fs := flag.NewFlagSet("omni bench suite", flag.ContinueOnError)
+	fs.SetOutput(a.errOut)
+	rootFlag := fs.String("root", envOrDefault("OMNI_BENCHMARK_ROOT", "benchmarks"), "benchmark manifest root")
+	sessionRootFlag := fs.String("session-root", "", "override session root directory")
+	runRootFlag := fs.String("run-root", filepath.Join(os.TempDir(), "omni-bench"), "root for isolated benchmark workspaces")
+	jsonFlag := fs.Bool("json", false, "print JSON result")
+	dryRunFlag := fs.Bool("dry-run", false, "prepare and report the benchmark suite without model execution")
+	suiteID := ""
+	parseArgs := args
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		suiteID = args[0]
+		parseArgs = args[1:]
+	}
+	if err := fs.Parse(parseArgs); err != nil {
+		return err
+	}
+	if suiteID == "" && fs.NArg() == 1 {
+		suiteID = fs.Arg(0)
+	} else if fs.NArg() > 0 {
+		return fmt.Errorf("usage: omni bench suite <app-gauntlet> [--root PATH] [--session-root PATH] [--run-root PATH] [--json] [--dry-run]")
+	}
+	if suiteID == "" {
+		return fmt.Errorf("usage: omni bench suite <app-gauntlet> [--root PATH] [--session-root PATH] [--run-root PATH] [--json] [--dry-run]")
+	}
+	manifests, err := LoadBenchmarkManifests(resolveOmniResourceRoot(*rootFlag, "benchmarks"))
+	if err != nil {
+		return err
+	}
+	ids, err := BenchmarkSuiteManifestIDs(suiteID, manifests)
+	if err != nil {
+		return err
+	}
+	client := a.structuredPlannerClient()
+	if client == nil && !*dryRunFlag {
+		return fmt.Errorf("llm client is required")
+	}
+	start := time.Now()
+	suite := BenchmarkSuiteRunResult{
+		ID:        suiteID,
+		StartedAt: start.UTC().Format(time.RFC3339),
+		Success:   true,
+	}
+	var suiteErr error
+	for _, id := range ids {
+		manifest, _ := findBenchmarkManifest(manifests, id)
+		result, runErr := RunBenchmarkManifest(
+			context.Background(),
+			manifest,
+			client,
+			io.Discard,
+			io.Discard,
+			BenchmarkRunOptions{
+				Root:        filepath.Join(*runRootFlag, sanitizeBenchmarkID(suiteID)),
+				SessionRoot: *sessionRootFlag,
+				DryRun:      *dryRunFlag,
+			},
+		)
+		suite.Results = append(suite.Results, result)
+		if runErr != nil && suiteErr == nil {
+			suiteErr = runErr
+		}
+		if !result.Success {
+			suite.Success = false
+		}
+	}
+	suite.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+	suite.Duration = time.Since(start).Round(time.Millisecond).String()
+	if suiteErr != nil {
+		suite.Error = suiteErr.Error()
+	}
+	if *jsonFlag {
+		blob, err := json.MarshalIndent(suite, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode benchmark suite result: %w", err)
+		}
+		fmt.Fprintln(a.out, string(blob))
+	} else {
+		fmt.Fprintln(a.out, formatBenchmarkSuiteRunResultText(suite))
+	}
+	if suiteErr != nil {
+		return suiteErr
+	}
+	if !suite.Success {
+		return fmt.Errorf("benchmark suite %q failed", suiteID)
+	}
+	return nil
+}
+
 func findBenchmarkManifest(manifests []BenchmarkManifest, id string) (BenchmarkManifest, bool) {
 	id = strings.TrimSpace(id)
 	for _, manifest := range manifests {
@@ -1108,6 +1199,20 @@ func formatBenchmarkRunResultText(result BenchmarkRunResult) string {
 		fmt.Sprintf("success=%t duration=%s", result.Success, result.Duration),
 		fmt.Sprintf("workspace=%s", result.Workspace),
 		fmt.Sprintf("model_calls=%d commands=%d rejected_commands=%d loop_exhaustions=%d", result.Report.ModelCalls, result.Report.Commands, result.Report.RejectedCommands, result.Report.LoopExhaustions),
+	}
+	if strings.TrimSpace(result.Error) != "" {
+		lines = append(lines, "error="+result.Error)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatBenchmarkSuiteRunResultText(result BenchmarkSuiteRunResult) string {
+	lines := []string{
+		fmt.Sprintf("suite=%s", result.ID),
+		fmt.Sprintf("success=%t duration=%s benchmarks=%d", result.Success, result.Duration, len(result.Results)),
+	}
+	for _, bench := range result.Results {
+		lines = append(lines, fmt.Sprintf("- %s success=%t workspace=%s", bench.ID, bench.Success, bench.Workspace))
 	}
 	if strings.TrimSpace(result.Error) != "" {
 		lines = append(lines, "error="+result.Error)

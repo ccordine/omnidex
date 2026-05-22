@@ -14,6 +14,12 @@ Run a benchmark:
 omni bench run npm-stimulus-tailwind-calculator
 ```
 
+Run the official app benchmark gauntlet:
+
+```bash
+omni bench suite app-gauntlet
+```
+
 Prepare an isolated workspace and print the run packet without model execution:
 
 ```bash
@@ -65,3 +71,5 @@ The run trace format in `docs/RUN_TRACE.md` is the intended latency/waste summar
 - executes the prompt through the structured command loop when a model client is available
 - records a benchmark session and trace-derived report
 - supports `--dry-run` for manifest/workspace validation without model execution
+
+`omni bench suite app-gauntlet` runs app-oriented manifests from the benchmark root, including frontend, npm, React/Vite, Go, Rust, Zig, and similar application creation tasks.

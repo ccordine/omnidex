@@ -126,3 +126,34 @@ func TestOmniBenchRunDryRunCommand(t *testing.T) {
 		t.Fatalf("bench run output = %q", out.String())
 	}
 }
+
+func TestOmniBenchSuiteAppGauntletDryRunCommand(t *testing.T) {
+	root := t.TempDir()
+	benchDir := filepath.Join(root, "sample")
+	if err := os.MkdirAll(benchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{
+  "id": "sample-react-app",
+  "description": "sample app benchmark",
+  "workspace": "tmp",
+  "prompt": "Create a small React app",
+  "success_criteria": ["dry run"]
+}`
+	if err := os.WriteFile(filepath.Join(benchDir, "benchmark.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	app := NewApp(strings.NewReader(""), &out, &errOut)
+	err := app.Run([]string{"bench", "suite", "app-gauntlet", "--root", root, "--run-root", t.TempDir(), "--session-root", filepath.Join(t.TempDir(), "sessions"), "--dry-run"})
+	if err != nil {
+		t.Fatalf("bench suite dry-run failed: %v\nstderr=%s", err, errOut.String())
+	}
+	for _, want := range []string{"suite=app-gauntlet", "success=true", "benchmarks=1", "sample-react-app"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("bench suite output missing %q: %q", want, out.String())
+		}
+	}
+}

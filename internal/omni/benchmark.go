@@ -50,11 +50,56 @@ type BenchmarkRunResult struct {
 	Report          BenchmarkReport `json:"report"`
 }
 
+type BenchmarkSuiteRunResult struct {
+	ID         string               `json:"id"`
+	StartedAt  string               `json:"started_at"`
+	FinishedAt string               `json:"finished_at"`
+	Duration   string               `json:"duration"`
+	Success    bool                 `json:"success"`
+	Results    []BenchmarkRunResult `json:"results"`
+	Error      string               `json:"error,omitempty"`
+}
+
 type BenchmarkRunOptions struct {
 	Root        string
 	Workspace   string
 	SessionRoot string
 	DryRun      bool
+}
+
+func BenchmarkSuiteManifestIDs(suiteID string, manifests []BenchmarkManifest) ([]string, error) {
+	switch strings.TrimSpace(suiteID) {
+	case "app-gauntlet":
+		ids := []string{}
+		for _, manifest := range manifests {
+			if benchmarkManifestIsAppGauntletCandidate(manifest) {
+				ids = append(ids, manifest.ID)
+			}
+		}
+		sort.Strings(ids)
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("benchmark suite %q has no matching manifests", suiteID)
+		}
+		return ids, nil
+	default:
+		return nil, fmt.Errorf("unknown benchmark suite %q", suiteID)
+	}
+}
+
+func benchmarkManifestIsAppGauntletCandidate(manifest BenchmarkManifest) bool {
+	text := strings.ToLower(strings.Join([]string{
+		manifest.ID,
+		manifest.Description,
+		manifest.Prompt,
+		manifest.Recipe,
+		strings.Join(manifest.SuccessCriteria, " "),
+	}, " "))
+	for _, needle := range []string{"app", "frontend", "calculator", "react", "vite", "npm", "webpack", "go", "rust", "zig"} {
+		if strings.Contains(text, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func BenchmarkReportFromSession(session *Session) BenchmarkReport {
