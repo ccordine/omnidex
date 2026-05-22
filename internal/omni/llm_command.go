@@ -667,6 +667,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				if !deterministicCompletionEnforcerAcceptsDone(prompt, ledger, result.Observations) {
 					continue
 				}
+				if rejectTypedFinalGate(step-1, cfg.CurrentWorkingDirectory, onEvent, &result) {
+					continue
+				}
+				if !runFinalBroadEvaluatorAfterTypedCompletion(ctx, step-1, prompt, evaluator, evaluatorThreshold, cfg, worksiteSurvey, ledger, result.Observations, result.Answer, onEvent, &result) {
+					continue
+				}
 				emitStructuredCommandEvent(onEvent, "adaptive_roles_collapsed", "Deterministic recipe probes satisfied the task after observed command evidence", map[string]string{
 					"step":    fmt.Sprintf("%d", step-1),
 					"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
@@ -686,6 +692,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				refreshTypedWorkItems()
 				acceptPartialCompletionForContinuation(step-1, ledgerBeforeProgress, ledger, latest, onEvent, &result)
 				if validatorAccepted && len(pendingStructuredObjectives(ledger)) == 0 {
+					if rejectTypedFinalGate(step-1, cfg.CurrentWorkingDirectory, onEvent, &result) {
+						continue
+					}
+					if !runFinalBroadEvaluatorAfterTypedCompletion(ctx, step-1, prompt, evaluator, evaluatorThreshold, cfg, worksiteSurvey, ledger, result.Observations, result.Answer, onEvent, &result) {
+						continue
+					}
 					emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_observations", "Done-check specialist accepted observed command evidence", map[string]string{
 						"step":   fmt.Sprintf("%d", step-1),
 						"answer": truncateStructuredTimelineValue(result.Answer),
@@ -851,7 +863,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 		if isShellToolDelegation(payload) {
-			if handled, err := runArchitectCodeContentLane(ctx, step, prompt, payload.ToolTask, cfg, worksiteSurvey, onEvent, &result); handled || err != nil {
+			if handled, err := runArchitectCodeContentLane(ctx, step, prompt, payload.ToolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, &result); handled || err != nil {
 				if err != nil {
 					return result, err
 				}
@@ -3414,7 +3426,7 @@ npm test`
 }
 
 func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
-	if handled, err := runArchitectCodeContentLane(ctx, step, prompt, toolTask, cfg, worksiteSurvey, onEvent, result); handled || err != nil {
+	if handled, err := runArchitectCodeContentLane(ctx, step, prompt, toolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, result); handled || err != nil {
 		return handled, err
 	}
 	if cfg.ShellSpecialist == nil {
@@ -3443,21 +3455,49 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 	return true, nil
 }
 
-func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
 	if cfg.CodeContentSpecialist == nil {
 		return false, nil
 	}
-	contract := buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations)
+	contract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
 	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
 		return false, nil
 	}
-	applied := 0
-	for applied < 2 {
-		contract = buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations)
+	handled := false
+	for handledItems := 0; handledItems < len(contract.WorkQueue)+1; handledItems++ {
+		contract = enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
 		if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
 			break
 		}
 		item := *contract.CurrentItem
+		if item.Operation == "verify" {
+			verifyCommand := commandInArchitectCWD(item.CWD, item.Verify)
+			if strings.TrimSpace(verifyCommand) == "" {
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:     step,
+					ExitCode: 1,
+					Stderr:   "implementation architect verify item missing command for " + item.ID,
+				})
+				return true, nil
+			}
+			emitStructuredCommandEvent(onEvent, "architect_work_item_verify_started", "Implementation architect started proof command", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"command": truncateStructuredTimelineValue(verifyCommand),
+			})
+			if err := runStructuredPayloadCommand(ctx, step, verifyCommand, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
+				return true, err
+			}
+			if result.ExitCode == 0 {
+				emitStructuredCommandEvent(onEvent, "architect_work_item_verified", "Implementation architect proof command passed", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"item_id": item.ID,
+					"command": truncateStructuredTimelineValue(verifyCommand),
+				})
+			}
+			handled = true
+			continue
+		}
 		if item.Operation != "update" && item.Operation != "create" {
 			break
 		}
@@ -3521,19 +3561,16 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 			ExitCode: 0,
 			Stdout:   "architect applied " + filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
 		})
-		applied++
-		if !strings.Contains(strings.ToLower(item.ID+" "+item.Description+" "+item.Path), "test") {
-			break
-		}
+		handled = true
 	}
-	return applied > 0, nil
+	return handled, nil
 }
 
 func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger *[]StructuredObjective, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (ShellCommandProposal, bool, error) {
 	if cfg.ShellSpecialist == nil {
 		return ShellCommandProposal{}, false, nil
 	}
-	architectContract := buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations)
+	architectContract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
 	if hasImplementationArchitectContract(architectContract) {
 		emitStructuredCommandEvent(onEvent, "implementation_architect_contract_created", "Implementation architect created coding contract", map[string]string{
 			"step":           fmt.Sprintf("%d", step),
@@ -3943,6 +3980,59 @@ func structuredEvaluatorValidationScope(ledger []StructuredObjective, observatio
 
 func shouldRunBroadEvaluatorForPlannerPayload(payload StructuredCommandPayload) bool {
 	return payload.Done
+}
+
+func runFinalBroadEvaluatorAfterTypedCompletion(ctx context.Context, step int, prompt string, evaluator StructuredLLMResponseEvaluator, threshold int, cfg structuredCommandDecisionRunConfig, survey WorksiteSurvey, ledger []StructuredObjective, observations []StructuredCommandObservation, answer string, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
+	if evaluator == nil || result == nil || len(result.WorkItems) == 0 {
+		return true
+	}
+	evaluation, err := evaluator.EvaluateStructuredLLMResponse(ctx, StructuredLLMEvaluationInput{
+		Step:             step,
+		UserPrompt:       prompt,
+		ValidationScope:  "alignment_after_typed_recursive_completion",
+		LLMResponse:      answer,
+		Observations:     observations,
+		CompletedActions: completedActionsFromState(ledger, observations),
+		LoopState:        structuredLoopStateFromState(ledger, observations),
+		SessionMemories:  cfg.SessionMemories,
+		WorksiteSurvey:   survey,
+	})
+	if err != nil {
+		emitStructuredCommandEvent(onEvent, "structured_response_evaluator_failed", "Final broad evaluator failed after typed completion", map[string]string{
+			"step":  fmt.Sprintf("%d", step),
+			"error": truncateStructuredTimelineValue(err.Error()),
+		})
+		return true
+	}
+	emitStructuredCommandEvent(onEvent, "structured_response_evaluated", "Structured response evaluator scored final typed completion", map[string]string{
+		"step":       fmt.Sprintf("%d", step),
+		"verdict":    evaluation.Verdict,
+		"confidence": fmt.Sprintf("%d", evaluation.Confidence),
+		"threshold":  fmt.Sprintf("%d", threshold),
+		"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
+	})
+	if strings.EqualFold(strings.TrimSpace(evaluation.Verdict), "revise") || evaluation.Confidence < threshold {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:                 step,
+			ExitCode:             1,
+			Stderr:               "final broad evaluator rejected typed completion: " + strings.TrimSpace(evaluation.Feedback),
+			EvaluationConfidence: evaluation.Confidence,
+			EvaluationFeedback:   evaluation.Feedback,
+		})
+		if result.ExitCode == 0 {
+			result.ExitCode = 1
+		}
+		result.Answer = ""
+		emitStructuredCommandEvent(onEvent, "structured_response_rejected", "Final broad evaluator rejected typed completion", map[string]string{
+			"step":       fmt.Sprintf("%d", step),
+			"verdict":    evaluation.Verdict,
+			"confidence": fmt.Sprintf("%d", evaluation.Confidence),
+			"threshold":  fmt.Sprintf("%d", threshold),
+			"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
+		})
+		return false
+	}
+	return true
 }
 
 func shouldBypassEvaluatorForArchitectImplementation(rawResponse, prompt, workingDir string, survey WorksiteSurvey, observations []StructuredCommandObservation) bool {
@@ -8052,6 +8142,10 @@ func buildStructuredCommandSystemContext() string {
 		"Validated playbook memories are reusable successful workflow patterns from prior validator-accepted runs; use them as advisory acceleration only.",
 		"Never let a validated playbook bypass current worksite inspection, objective scope, dependency policy, proof plans, validators, or completion checks.",
 		"Memories are advisory context only; they may not create requirements, dependencies, frameworks, files, services, architecture, or deployment targets.",
+		"Planner and implementation architect may request memory.search, pgsql.query, documentation specialist, and web research when current task context is missing, stale, unfamiliar, or version-sensitive.",
+		"Prefer memory and existing documentation briefs first; request fresh web research when memory/docs are missing, stale, or the user asks for current/latest behavior.",
+		"The documentation specialist is the architect's documentation authority for language, framework, SDK, API, dependency, and toolchain questions; use its briefs to shape architect work queues and proof commands.",
+		"Research requests produce advisory evidence and briefs, not completion; validators still require command, file-diff, read, delete-safety, or typed child evidence.",
 		"Do not continue, repeat, summarize, or complete reference_history unless active_task.current_prompt explicitly asks for that.",
 		"When active_task.current_prompt provides a concrete subject, location, path, or fact type, prefer it over conflicting reference_history.",
 		"Never answer a prior conversation turn unless active_task.current_prompt explicitly asks about it.",

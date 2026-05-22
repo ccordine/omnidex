@@ -7,16 +7,29 @@ import (
 )
 
 type ImplementationArchitectContract struct {
-	Role            string              `json:"role"`
-	TargetRoot      string              `json:"target_root"`
-	Framework       string              `json:"framework,omitempty"`
-	PackageManager  string              `json:"package_manager,omitempty"`
-	EditSurface     []string            `json:"edit_surface,omitempty"`
-	ProofCommands   []string            `json:"proof_commands,omitempty"`
-	Guardrails      []string            `json:"guardrails,omitempty"`
-	ValidatorScopes []string            `json:"validator_scopes,omitempty"`
-	WorkQueue       []ArchitectWorkItem `json:"work_queue,omitempty"`
-	CurrentItem     *ArchitectWorkItem  `json:"current_item,omitempty"`
+	Role                string                     `json:"role"`
+	TargetRoot          string                     `json:"target_root"`
+	Framework           string                     `json:"framework,omitempty"`
+	PackageManager      string                     `json:"package_manager,omitempty"`
+	EditSurface         []string                   `json:"edit_surface,omitempty"`
+	ProofCommands       []string                   `json:"proof_commands,omitempty"`
+	ResearchRequests    []ArchitectResearchRequest `json:"research_requests,omitempty"`
+	MemoryBriefs        []PrepBrief                `json:"memory_briefs,omitempty"`
+	DocumentationBriefs []PrepBrief                `json:"documentation_briefs,omitempty"`
+	WebResearchBriefs   []PrepBrief                `json:"web_research_briefs,omitempty"`
+	Guardrails          []string                   `json:"guardrails,omitempty"`
+	ValidatorScopes     []string                   `json:"validator_scopes,omitempty"`
+	WorkQueue           []ArchitectWorkItem        `json:"work_queue,omitempty"`
+	CurrentItem         *ArchitectWorkItem         `json:"current_item,omitempty"`
+}
+
+type ArchitectResearchRequest struct {
+	ID         string   `json:"id"`
+	Specialist string   `json:"specialist"`
+	Tools      []string `json:"tools"`
+	Query      string   `json:"query"`
+	Reason     string   `json:"reason"`
+	Required   bool     `json:"required"`
 }
 
 type ArchitectWorkItem struct {
@@ -94,6 +107,92 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 	return contract
 }
 
+func enrichImplementationArchitectContract(contract ImplementationArchitectContract, prompt, toolTask string, prep PrepContextBundle, memories []SessionMemory) ImplementationArchitectContract {
+	if !hasImplementationArchitectContract(contract) {
+		return contract
+	}
+	compactPrep := CompactPrepContextBundle(prep, defaultPrepContextBudgetLimit/2)
+	contract.MemoryBriefs = limitPrepBriefsForArchitect(compactPrep.MemoryBriefs, 4)
+	contract.DocumentationBriefs = limitPrepBriefsForArchitect(compactPrep.DocumentationBriefs, 5)
+	contract.WebResearchBriefs = limitPrepBriefsForArchitect(compactPrep.WebResearchBriefs, 4)
+	for _, memory := range compactSessionMemoriesForStructuredContext(memories, 4, 500) {
+		if strings.TrimSpace(memory.Content) == "" {
+			continue
+		}
+		contract.MemoryBriefs = append(contract.MemoryBriefs, PrepBrief{
+			ID:      "session-memory-" + strings.ReplaceAll(strings.TrimSpace(memory.Kind), " ", "-"),
+			Kind:    firstNonEmpty(strings.TrimSpace(memory.Kind), "memory"),
+			Content: strings.TrimSpace(memory.Content),
+			Tags:    cleanMemoryTags(memory.Tags),
+			UsedBy:  []string{"implementation_architect", "documentation_specialist", "code_content_specialist"},
+		})
+	}
+	contract.MemoryBriefs = limitPrepBriefsForArchitect(contract.MemoryBriefs, 6)
+	contract.ResearchRequests = architectResearchRequests(prompt, toolTask, contract, compactPrep)
+	contract.Guardrails = append(contract.Guardrails,
+		"Before guessing unfamiliar APIs or project conventions, the architect may request memory.search, pgsql.query, documentation, or web research through research_requests.",
+		"Documentation specialist and implementation architect should share authoritative docs; code specialists receive only compact briefs and the current work item.",
+		"Research briefs are advisory context and cannot expand scope, dependencies, or completion criteria without user_explicit or recipe_required provenance.",
+	)
+	return contract
+}
+
+func limitPrepBriefsForArchitect(briefs []PrepBrief, limit int) []PrepBrief {
+	out := []PrepBrief{}
+	for _, brief := range briefs {
+		if strings.TrimSpace(brief.Content) == "" {
+			continue
+		}
+		brief.Content = truncateStructuredTimelineValue(brief.Content)
+		brief.UsedBy = appendUniqueStrings(brief.UsedBy, "implementation_architect", "documentation_specialist", "code_content_specialist")
+		out = append(out, brief)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func architectResearchRequests(prompt, toolTask string, contract ImplementationArchitectContract, prep PrepContextBundle) []ArchitectResearchRequest {
+	query := strings.TrimSpace(prompt)
+	if strings.TrimSpace(toolTask) != "" {
+		query = strings.TrimSpace(prompt + " " + toolTask)
+	}
+	requests := []ArchitectResearchRequest{
+		{ID: "architect-memory-search", Specialist: "memory_retrieval_specialist", Tools: []string{"memory.search", "pgsql.query"}, Query: query, Reason: "Retrieve relevant validated playbooks, project memories, schema knowledge, and prior successful procedures before coding.", Required: false},
+		{ID: "architect-documentation-brief", Specialist: "documentation_specialist", Tools: []string{"memory.search", "pgsql.query", "web.search", "web.fetch", "curl"}, Query: architectDocumentationQuery(query, contract), Reason: "Provide authoritative setup, API, file layout, proof command, and example guidance for the architect work queue.", Required: len(contract.DocumentationBriefs) == 0},
+	}
+	if prep.WebResearchChecked || strings.Contains(strings.ToLower(query), "latest") || strings.Contains(strings.ToLower(query), "current") {
+		requests = append(requests, ArchitectResearchRequest{ID: "architect-web-research", Specialist: "web_research_specialist", Tools: []string{"web.search", "web.fetch", "curl", "memory.create"}, Query: query, Reason: "Gather fresh external facts or current documentation when memory/docs are missing or stale.", Required: len(contract.WebResearchBriefs) == 0})
+	}
+	return requests
+}
+
+func appendUniqueStrings(values []string, additions ...string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values)+len(additions))
+	for _, value := range append(values, additions...) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func architectDocumentationQuery(query string, contract ImplementationArchitectContract) string {
+	parts := []string{strings.TrimSpace(query)}
+	if contract.Framework != "" {
+		parts = append(parts, contract.Framework+" official documentation")
+	}
+	if contract.PackageManager != "" && contract.PackageManager != packageManagerNone {
+		parts = append(parts, contract.PackageManager+" build test scripts")
+	}
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
 func toolTaskNeedsImplementationArchitect(prompt, toolTask string) bool {
 	text := strings.ToLower(prompt + "\n" + toolTask)
 	if strings.Contains(text, "current weather") || strings.Contains(text, "current time") || strings.Contains(text, "openweathermap") {
@@ -162,7 +261,12 @@ func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, obser
 		if item.Path == "" || strings.HasSuffix(item.Path, "/") {
 			return false
 		}
-		return fileHasContent(filepath.Join(workingDir, item.CWD, item.Path))
+		for _, obs := range observations {
+			if obs.ExitCode == 0 && architectApplyObservationMatches(item, obs) {
+				return true
+			}
+		}
+		return false
 	case "verify":
 		verify := normalizeStructuredCommandForComparison(commandInArchitectCWD(item.CWD, item.Verify))
 		for _, obs := range observations {
@@ -172,6 +276,26 @@ func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, obser
 		}
 	}
 	return false
+}
+
+func architectApplyObservationMatches(item ArchitectWorkItem, obs StructuredCommandObservation) bool {
+	command := strings.TrimSpace(obs.Command)
+	if !strings.HasPrefix(strings.ToLower(command), "architect.apply ") {
+		return false
+	}
+	fields := strings.Fields(command)
+	if len(fields) < 3 {
+		return false
+	}
+	if strings.ToLower(fields[1]) != strings.ToLower(item.Operation) {
+		return false
+	}
+	gotPath := filepath.ToSlash(strings.ToLower(fields[len(fields)-1]))
+	wantPath := filepath.ToSlash(strings.ToLower(filepath.Join(item.CWD, item.Path)))
+	if wantPath == "" {
+		wantPath = filepath.ToSlash(strings.ToLower(item.Path))
+	}
+	return gotPath == wantPath || strings.HasSuffix(gotPath, "/"+strings.TrimPrefix(wantPath, "./"))
 }
 
 func commandInArchitectCWD(cwd, command string) string {

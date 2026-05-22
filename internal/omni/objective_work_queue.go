@@ -230,6 +230,8 @@ func pendingAndSatisfiedObjectives(ledger []StructuredObjective) []StructuredObj
 func objectiveWorkItemKind(prompt string, objective StructuredObjective) WorkItemKind {
 	objectiveText := strings.ToLower(objective.ID + " " + objective.Description)
 	switch {
+	case strings.Contains(objectiveText, "weather") || strings.Contains(objectiveText, "time") || strings.Contains(objectiveText, "current") || (strings.Contains(objectiveText, "complete") && !strings.Contains(objectiveText, "app") && !strings.Contains(objectiveText, "ui") && !strings.Contains(objectiveText, "project")):
+		return WorkItemKindVerify
 	case strings.Contains(objectiveText, "operation") || strings.Contains(objectiveText, "function") || strings.Contains(objectiveText, "logic") || strings.Contains(objectiveText, "state") || strings.Contains(objectiveText, "memory"):
 		return WorkItemKindUpdate
 	case strings.Contains(objectiveText, "delete") || strings.Contains(objectiveText, "remove"):
@@ -395,7 +397,7 @@ func workItemContainsEvidence(item ObjectiveWorkItem, evidence WorkItemEvidence)
 
 func commandLooksFileMutation(command string) bool {
 	lower := strings.ToLower(command)
-	return strings.Contains(lower, " > ") || strings.Contains(lower, " >") || strings.Contains(lower, "tee ") || strings.Contains(lower, "apply_patch") || strings.Contains(lower, "sed -i") || strings.Contains(lower, "architect.apply")
+	return strings.Contains(lower, " > ") || strings.Contains(lower, " >") || strings.Contains(lower, "tee ") || strings.Contains(lower, "apply_patch") || strings.Contains(lower, "sed -i") || strings.Contains(lower, "architect.apply") || strings.Contains(lower, "npm pkg set")
 }
 
 func commandLooksVerification(command string) bool {
@@ -421,6 +423,9 @@ func inferredMutationPath(command string) string {
 		}
 	}
 	for i, field := range fields {
+		if strings.ToLower(field) == "npm" && i+2 < len(fields) && strings.ToLower(fields[i+1]) == "pkg" && strings.ToLower(fields[i+2]) == "set" {
+			return "package.json"
+		}
 		if (field == "tee" || strings.HasSuffix(field, "/tee")) && i+1 < len(fields) {
 			return strings.Trim(fields[i+1], `"'`)
 		}

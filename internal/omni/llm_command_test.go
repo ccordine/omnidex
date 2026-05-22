@@ -532,8 +532,8 @@ func TestStructuredCommandDecisionEvaluatorScopeDriftBlocksExecutionAtThreshold(
 	workspace := createReactFixture(t)
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"cd /home/gryph/Projects/tmp && npx create-react-app calculator-app","done":false,"answer":""}`,
-		`{"command":"printf 'modified existing app\n'","done":false,"answer":""}`,
-		`{"command":"pwd","done":false,"answer":""}`,
+		`{"command":"printf 'export default function App(){ return \"calculator\"; }\n' > src/App.js","done":false,"answer":""}`,
+		`{"command":"test -s src/App.js && grep -q calculator src/App.js","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"modified existing app"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -2952,18 +2952,18 @@ func TestBlockedFalseDoneForcesRecoveryBeforeNormalPlanning(t *testing.T) {
 		Rationale: "Recover from missing index.html by discovering files.",
 	}}}
 	stdout := &bytes.Buffer{}
-	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "connect calculator UI to logic", nil, client, stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "inspect project structure", nil, client, stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
 		CurrentWorkingDirectory: workspace,
 		ShellSpecialist:         shell,
 		CompletionChecker: &fakeCompletionChecker{checks: []CompletionCheck{{
 			Done:   true,
 			Reason: "missing-file recovery discovered project structure",
 			ObjectiveLedger: []StructuredObjective{
-				{ID: "create_calculator_ui", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "discovered project structure"},
+				{ID: "inspect_project_structure", Description: "Inspect project structure", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "discovered project structure"},
 			},
 		}}},
 		PromptInterpreter: &fakePromptInterpreter{interpretations: []PromptInterpretation{{
-			ObjectiveLedger: []StructuredObjective{{ID: "create_calculator_ui", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true}},
+			ObjectiveLedger: []StructuredObjective{{ID: "inspect_project_structure", Description: "Inspect project structure", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true}},
 		}}},
 	})
 	if err != nil {
@@ -3172,6 +3172,7 @@ func TestStructuredCommandDecisionRequiresReadbackAfterPackageMutation(t *testin
 func TestStructuredCommandDecisionSeedsLedgerFromSelectedRecipe(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'bundle evidence' > bundle.txt","done":false,"answer":""}`,
+		`{"command":"test -s bundle.txt","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"bundle evidence"}`,
 	}}
 	recipe := Recipe{
@@ -3185,10 +3186,15 @@ func TestStructuredCommandDecisionSeedsLedgerFromSelectedRecipe(t *testing.T) {
 		RecipeIDs: []string{recipe.ID},
 	}}}
 	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done: false,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "verify_build", Description: "Verify webpack bundle", Status: "pending"},
+		},
+	}, {
 		Done:   true,
 		Reason: "bundle evidence satisfies recipe objective",
 		ObjectiveLedger: []StructuredObjective{
-			{ID: "verify_build", Description: "Verify webpack bundle", Status: "satisfied", Evidence: "bundle evidence"},
+			{ID: "verify_build", Description: "Verify webpack bundle", Status: "satisfied", Evidence: "test -s bundle.txt"},
 		},
 	}}}
 	events := []StructuredCommandEvent{}
@@ -3908,7 +3914,7 @@ func TestStructuredCommandDecisionCanFinishFromFreshMinimalContext(t *testing.T)
 
 func TestStructuredCommandDecisionDoneCheckSatisfiesSinglePendingObjective(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"printf 'Partly Cloudy +29C humidity 76%%\n'","done":false,"answer":""}`,
+		`{"command":"test -d . && printf 'Partly Cloudy +29C humidity 76%%\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"Partly Cloudy +29C humidity 76%"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -4038,9 +4044,9 @@ func TestStructuredCommandDecisionRejectsPlannerDoneWithoutValidator(t *testing.
 
 func TestStructuredCommandDecisionRejectsPlannerDoneWhenValidatorSaysNotDone(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"printf 'partial evidence\n'","done":false,"answer":""}`,
+		`{"command":"test -d . && printf 'partial evidence\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"partial evidence"}`,
-		`{"command":"printf 'more evidence\n'","done":false,"answer":""}`,
+		`{"command":"test -d . && printf 'more evidence\n'","done":false,"answer":""}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
 		ObjectiveLedger: []StructuredObjective{
@@ -4089,7 +4095,7 @@ func TestStructuredCommandDecisionRejectsPlannerDoneWhenValidatorSaysNotDone(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Command != "printf 'more evidence\n'" {
+	if result.Command != "test -d . && printf 'more evidence\n'" {
 		t.Fatalf("final command = %q, want command after rejected planner done", result.Command)
 	}
 	if !structuredEventsContain(events, "structured_done_rejected") {
@@ -4158,7 +4164,7 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 	if err := os.MkdirAll(filepath.Join(app, "src"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"build":"react-scripts build"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"build":"test -s src/App.js && test -s src/App.test.js"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	client := &fakeCommandDecisionClient{responses: []string{
@@ -4194,8 +4200,8 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 	if err != nil {
 		t.Fatalf("%v observations=%#v events=%#v", err, result.Observations, events)
 	}
-	if len(code.inputs) != 2 {
-		t.Fatalf("code specialist calls = %d, want test then implementation", len(code.inputs))
+	if len(code.inputs) < 2 {
+		t.Fatalf("code specialist calls = %d, want at least test then implementation", len(code.inputs))
 	}
 	if !code.inputs[0].TestFirst || code.inputs[0].WorkItem.Path != "src/App.test.js" {
 		t.Fatalf("first code item should be test-first App.test.js: %#v", code.inputs[0])
@@ -4223,6 +4229,146 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 	if result.Answer != "React music production app implemented" {
 		t.Fatalf("answer = %q", result.Answer)
 	}
+}
+
+func TestArchitectWorkItemRequiresCurrentRunEvidenceNotExistingFile(t *testing.T) {
+	workspace := t.TempDir()
+	app := filepath.Join(workspace, "react-music-production")
+	if err := os.MkdirAll(filepath.Join(app, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "src", "App.js"), []byte("export default function OldApp(){ return null; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	item := ArchitectWorkItem{ID: "create_react_entrypoint", Operation: "update", CWD: "react-music-production", Path: "src/App.js"}
+	if architectWorkItemSatisfied(item, workspace, nil) {
+		t.Fatal("pre-existing file content must not satisfy an architect update item without current-run evidence")
+	}
+	if !architectWorkItemSatisfied(item, workspace, []StructuredCommandObservation{{
+		Command:  "architect.apply update react-music-production/src/App.js",
+		ExitCode: 0,
+	}}) {
+		t.Fatal("current-run architect.apply evidence should satisfy the architect update item")
+	}
+}
+
+func TestStructuredCommandDecisionArchitectLaneRunsProofBeforeFinalEvaluator(t *testing.T) {
+	workspace := t.TempDir()
+	app := filepath.Join(workspace, "react-music-production")
+	if err := os.MkdirAll(filepath.Join(app, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"build":"test -s src/App.js && test -s src/App.test.js"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Implementation architect target root: react-music-production. Create or modify the actual project files for the React music production app."}`,
+		`{"command":"","done":true,"answer":"React music production app implemented and verified","objective_ledger":[{"id":"react_music_app","description":"Build the React music production app","status":"satisfied","source":"user_explicit","required":true,"evidence":"architect applied test, implementation, style, and npm run build passed"}]}`,
+	}}
+	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
+		{Content: "test('renders transport controls', () => {});\n", Rationale: "proof first"},
+		{Content: "export default function App() { return <main>Transport Tempo Tracks</main>; }\n", Rationale: "implementation"},
+		{Content: "body { font-family: sans-serif; }\n", Rationale: "style"},
+	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Verdict: "accept", Confidence: 100, Feedback: "final alignment"},
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{{
+			ID:          "react_music_app",
+			Description: "Build the React music production app",
+			Status:      "pending",
+			Source:      structuredObjectiveSourceUserExplicit,
+			Required:    true,
+		}},
+	}}}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"build a React music production app",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			PromptInterpreter:       interpreter,
+			CodeContentSpecialist:   code,
+			Evaluator:               evaluator,
+			EvaluatorThreshold:      70,
+		},
+	)
+	if err != nil {
+		t.Fatalf("%v observations=%#v work_items=%#v events=%#v", err, result.Observations, result.WorkItems, events)
+	}
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want only final evaluator after recursive typed completion; result=%#v observations=%#v events=%#v", len(evaluator.inputs), result, result.Observations, events)
+	}
+	if !structuredEventsContain(events, "architect_work_item_verified") {
+		t.Fatalf("missing architect proof verification event: %#v", events)
+	}
+	if !strings.Contains(result.Command, "npm run build") {
+		t.Fatalf("final command = %q, want proof command retained", result.Command)
+	}
+	if gate := EvaluateTypedFinalGate(TypedFinalGateInput{Items: result.WorkItems, CompletionDone: true}); !gate.Passed {
+		t.Fatalf("typed final gate did not pass after architect proof: %#v work_items=%#v", gate, result.WorkItems)
+	}
+}
+
+func TestImplementationArchitectContractCarriesResearchAndDocumentationBriefs(t *testing.T) {
+	workspace := t.TempDir()
+	contract := buildImplementationArchitectContract(
+		"build a React music app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		workspace,
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	prep := PrepContextBundle{
+		MemoryBriefs:        []PrepBrief{{ID: "mem-1", Kind: "validated_playbook", Content: "Prior React app playbook", Tags: []string{"react"}}},
+		DocumentationBriefs: []PrepBrief{{ID: "doc-1", Kind: "documentation_brief", Content: "React components belong under src/.", Tags: []string{"react", "documentation"}}},
+		WebResearchBriefs:   []PrepBrief{{ID: "web-1", Kind: "web_research_brief", Content: "React docs were checked today.", Tags: []string{"react"}}},
+		WebResearchChecked:  true,
+	}
+
+	enriched := enrichImplementationArchitectContract(contract, "build a React music app", "", prep, []SessionMemory{{
+		Kind:    "documentation_research",
+		Content: "Vite build scripts use npm run build.",
+		Tags:    []string{"vite", "documentation"},
+	}})
+
+	if len(enriched.ResearchRequests) < 3 {
+		t.Fatalf("research requests = %#v", enriched.ResearchRequests)
+	}
+	for _, specialist := range []string{"memory_retrieval_specialist", "documentation_specialist", "web_research_specialist"} {
+		if !architectResearchRequestsContainSpecialist(enriched.ResearchRequests, specialist) {
+			t.Fatalf("missing %s request: %#v", specialist, enriched.ResearchRequests)
+		}
+	}
+	if len(enriched.DocumentationBriefs) == 0 || !strings.Contains(enriched.DocumentationBriefs[0].Content, "React components") {
+		t.Fatalf("missing documentation brief: %#v", enriched.DocumentationBriefs)
+	}
+	if len(enriched.MemoryBriefs) < 2 {
+		t.Fatalf("memory briefs should include prep and session memories: %#v", enriched.MemoryBriefs)
+	}
+	for _, brief := range append(append([]PrepBrief{}, enriched.DocumentationBriefs...), enriched.MemoryBriefs...) {
+		if !stringListContains(brief.UsedBy, "implementation_architect") || !stringListContains(brief.UsedBy, "documentation_specialist") {
+			t.Fatalf("brief missing architect/documentation collaboration UsedBy: %#v", brief)
+		}
+	}
+}
+
+func architectResearchRequestsContainSpecialist(requests []ArchitectResearchRequest, specialist string) bool {
+	for _, request := range requests {
+		if request.Specialist == specialist {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStructuredCommandDecisionRejectsShellDelegationWithoutSpecialist(t *testing.T) {
