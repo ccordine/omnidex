@@ -205,6 +205,9 @@ func TestHandleTurnStoresCapabilityMemoryFromEvaluatorRejection(t *testing.T) {
 		`{"command":"printf 'I cannot access real-time information. Check the current time using a time zone app.\n'","done":false,"answer":""}`,
 		`{"command":"TZ=America/New_York date '+%Z'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"Virginia time checked."}`,
+		"Virginia time checked.",
+		"Virginia time checked.",
+		"Virginia time checked.",
 	})
 	defer closeServer()
 	app.ollama = client
@@ -521,7 +524,6 @@ func TestHandleTurnFinalResponseReviewerCanReviseResponse(t *testing.T) {
 	defer closeServer()
 	app.ollama = client
 	app.evaluator = &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
-		{Confidence: 95, Feedback: ""},
 		{Confidence: 95, Feedback: ""},
 		{Confidence: 20, Feedback: "The final response is off task."},
 	}}

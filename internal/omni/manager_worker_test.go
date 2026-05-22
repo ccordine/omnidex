@@ -32,6 +32,7 @@ func TestExecuteManagerWorkerJobUsesSharedCommandKernel(t *testing.T) {
 		`{"tasks":[{"id":"worker_1","role":"workspace_researcher","objective":"Run this exact command: pwd. Then finish from observed stdout.","acceptance":"stdout contains the workspace path"}]}`,
 		"pwd",
 		"DONE: worker observed workspace path",
+		"DONE: worker observed workspace path",
 		"Reducer summary: worker ran pwd and observed the workspace path.",
 	})
 	defer closeServer()

@@ -475,8 +475,8 @@ func TestStructuredCommandDecisionRejectsShellSpecialistScopeDrift(t *testing.T)
 			ShellSpecialist:         shell,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatalf("expected incomplete React project to be rejected by typed final gate")
 	}
 	if len(result.Observations) == 0 || result.Observations[0].RejectedCommand == "" {
 		t.Fatalf("expected rejected shell specialist command: %#v", result.Observations)
@@ -517,8 +517,8 @@ func TestStructuredCommandDecisionRejectsPlannerScopeDriftDependencyCommand(t *t
 			PromptInterpreter:       interpreter,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatalf("expected incomplete React project to be rejected by typed final gate")
 	}
 	if len(result.Observations) == 0 || result.Observations[0].RejectedCommand == "" {
 		t.Fatalf("expected rejected planner command: %#v", result.Observations)
@@ -577,20 +577,17 @@ func TestStructuredCommandDecisionEvaluatorScopeDriftBlocksExecutionAtThreshold(
 	}
 }
 
-func TestStructuredCommandDecisionEvaluatorRejectConfidenceCannotOverride(t *testing.T) {
+func TestStructuredCommandDecisionBroadEvaluatorRunsOnlyForDonePayload(t *testing.T) {
 	workspace := createReactFixture(t)
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"printf 'bad should not run\n'","done":false,"answer":""}`,
-		`{"command":"printf 'corrected\n'","done":false,"answer":""}`,
-		`{"command":"","done":true,"answer":"corrected"}`,
+		`{"command":"printf 'scoped command evidence\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"scoped command evidence"}`,
 	}}
 	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
-		{Verdict: "reject", Confidence: 100, Feedback: "scope drift"},
-		{Verdict: "accept", Confidence: 100, Feedback: "on track"},
-		{Verdict: "accept", Confidence: 100, Feedback: "on track"},
+		{Verdict: "accept", Confidence: 100, Feedback: "final alignment only"},
 	}}
 	var stdout strings.Builder
-	_, err := runStructuredCommandDecisionWithConfig(context.Background(), "modify existing app", nil, client, &stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "modify existing app", nil, client, &stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
 		CurrentWorkingDirectory: workspace,
 		Evaluator:               evaluator,
 		EvaluatorThreshold:      70,
@@ -598,21 +595,26 @@ func TestStructuredCommandDecisionEvaluatorRejectConfidenceCannotOverride(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(stdout.String(), "bad should not run") {
-		t.Fatalf("reject verdict executed despite confidence 100: %q", stdout.String())
+	if !strings.Contains(stdout.String(), "scoped command evidence") {
+		t.Fatalf("non-final command should execute under scoped validators: %q", stdout.String())
+	}
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want final done only", len(evaluator.inputs))
+	}
+	if result.Answer != "scoped command evidence" {
+		t.Fatalf("answer = %q", result.Answer)
 	}
 }
 
-func TestStructuredCommandDecisionRepeatedEvaluatorReviseBypassesEvaluatorLoop(t *testing.T) {
+func TestStructuredCommandDecisionDefersBroadEvaluatorUntilDone(t *testing.T) {
 	workspace := createReactFixture(t)
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'first candidate\n'","done":false,"answer":""}`,
-		`{"command":"printf 'accepted after evaluator loop\n'","done":false,"answer":""}`,
-		`{"command":"","done":true,"answer":"accepted after evaluator loop"}`,
+		`{"command":"printf 'second scoped command\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"second scoped command"}`,
 	}}
 	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
-		{Verdict: "revise", Confidence: 100, Feedback: "install Tailwind manually"},
-		{Verdict: "revise", Confidence: 100, Feedback: "install Tailwind manually"},
+		{Verdict: "accept", Confidence: 100, Feedback: "final alignment only"},
 	}}
 	var stdout strings.Builder
 	events := []StructuredCommandEvent{}
@@ -626,13 +628,16 @@ func TestStructuredCommandDecisionRepeatedEvaluatorReviseBypassesEvaluatorLoop(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "accepted after evaluator loop") {
-		t.Fatalf("second planner command did not execute after evaluator loop bypass: %q", stdout.String())
+	if !strings.Contains(stdout.String(), "second scoped command") {
+		t.Fatalf("second planner command did not execute before final evaluation: %q", stdout.String())
 	}
-	if !structuredEventsContain(events, "structured_evaluator_loop_bypassed") {
-		t.Fatalf("missing evaluator loop bypass event: %#v", events)
+	if structuredEventsContain(events, "structured_response_rejected") {
+		t.Fatalf("broad evaluator should not reject non-final scoped work: %#v", events)
 	}
-	if result.Answer != "accepted after evaluator loop" {
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want final done only", len(evaluator.inputs))
+	}
+	if result.Answer != "second scoped command" {
 		t.Fatalf("answer = %q", result.Answer)
 	}
 }
@@ -1918,15 +1923,13 @@ func TestStructuredCommandDecisionRejectsDeferredEvidenceFinalAnswer(t *testing.
 	}
 }
 
-func TestStructuredCommandDecisionEvaluatorRejectsOffTrackResponseBeforeExecution(t *testing.T) {
+func TestStructuredCommandDecisionScopedValidatorRejectsOffTrackResponseBeforeExecution(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'I do not have access to real-time information. Check the current time with a time zone app.\n'","done":false,"answer":""}`,
 		`{"command":"TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"Virginia is on Eastern Time."}`,
 	}}
 	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
-		{Confidence: 15, Feedback: "The response only prints a false limitation; use a timezone evidence command."},
-		{Confidence: 95, Feedback: ""},
 		{Confidence: 90, Feedback: ""},
 	}}
 	stdout := &bytes.Buffer{}
@@ -1953,32 +1956,26 @@ func TestStructuredCommandDecisionEvaluatorRejectsOffTrackResponseBeforeExecutio
 		t.Fatal(err)
 	}
 	if client.calls != 3 {
-		t.Fatalf("llm calls = %d, want rejected response, local repair command, then done", client.calls)
+		t.Fatalf("llm calls = %d, want rejected command, evidence command, then done", client.calls)
 	}
-	if len(evaluator.inputs) != 3 {
-		t.Fatalf("evaluator calls = %d, want original, repaired command, and done evaluated", len(evaluator.inputs))
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want final done only", len(evaluator.inputs))
 	}
 	if strings.Contains(stdout.String(), "I do not have access") {
 		t.Fatalf("off-track response command should not execute: stdout=%q", stdout.String())
 	}
 	if len(result.Observations) != 2 {
-		t.Fatalf("observations = %#v, want evaluator rejection + command", result.Observations)
+		t.Fatalf("observations = %#v, want scoped validator rejection + command", result.Observations)
 	}
 	first := result.Observations[0]
-	if first.EvaluationConfidence != 15 || !strings.Contains(first.Stderr, "self-evaluation rejected response") {
-		t.Fatalf("first observation should record evaluator rejection: %#v", first)
+	if !strings.Contains(first.Stderr, "print-only false capability limitation") {
+		t.Fatalf("first observation should record scoped validator rejection: %#v", first)
 	}
 	if first.CapabilityMemory != structuredRealtimeCapabilityMemory {
 		t.Fatalf("capability memory = %q", first.CapabilityMemory)
 	}
-	if !structuredEventsContain(events, "structured_response_rejected") {
-		t.Fatalf("missing evaluator rejection event: %#v", events)
-	}
-	if !structuredEventsContain(events, "structured_evaluator_repair_started") || !structuredEventsContain(events, "structured_evaluator_repair_accepted") {
-		t.Fatalf("missing evaluator repair events: %#v", events)
-	}
-	if !strings.Contains(client.prompts[1], "use a timezone evidence command") {
-		t.Fatalf("repair prompt missing evaluator feedback: %s", client.prompts[1])
+	if !structuredEventsContain(events, "structured_evaluator_deferred_for_scoped_validation") {
+		t.Fatalf("missing evaluator defer event: %#v", events)
 	}
 	if result.Command != "TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z'" {
 		t.Fatalf("command = %q", result.Command)
@@ -1988,7 +1985,7 @@ func TestStructuredCommandDecisionEvaluatorRejectsOffTrackResponseBeforeExecutio
 	}
 }
 
-func TestStructuredCommandDecisionEvaluatorRepairEnforcesPatchApplyFeedback(t *testing.T) {
+func TestStructuredCommandDecisionDefersEvaluatorAndUsesScopedPatchValidation(t *testing.T) {
 	workspace := t.TempDir()
 	target := filepath.Join(workspace, "hello.txt")
 	if err := os.WriteFile(target, []byte("one\ntwo\n"), 0o644); err != nil {
@@ -2013,15 +2010,11 @@ func TestStructuredCommandDecisionEvaluatorRepairEnforcesPatchApplyFeedback(t *t
 	}
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"echo 'Step 1: edit hello.txt'","done":false,"answer":""}`,
-		`{"command":"echo \"one\nTWO\" > hello.txt","done":false,"answer":""}`,
 		string(patchPayload),
 		`{"command":"grep -q TWO hello.txt","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"hello.txt now contains TWO."}`,
 	}}
 	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
-		{Verdict: "revise", Confidence: 70, Feedback: "The command only prints a plan. Let's try using patch.apply for source edits."},
-		{Verdict: "accept", Confidence: 95, Feedback: "patch applies the requested source edit"},
-		{Verdict: "accept", Confidence: 95, Feedback: "verification command is on track"},
 		{Verdict: "accept", Confidence: 95, Feedback: "done from evidence"},
 	}}
 	events := []StructuredCommandEvent{}
@@ -2051,14 +2044,14 @@ func TestStructuredCommandDecisionEvaluatorRepairEnforcesPatchApplyFeedback(t *t
 	if string(data) != "one\nTWO\n" {
 		t.Fatalf("patched file = %q", string(data))
 	}
-	if !structuredEventsContain(events, "structured_evaluator_repair_rejected") {
-		t.Fatalf("missing evaluator repair constraint rejection event: %#v", events)
+	if !structuredEventsContain(events, "structured_command_rejected") {
+		t.Fatalf("missing scoped command rejection event: %#v", events)
 	}
 	if !structuredEventsContain(events, "structured_patch_apply_finished") {
 		t.Fatalf("missing patch apply event: %#v", events)
 	}
-	if len(evaluator.inputs) != 4 {
-		t.Fatalf("evaluator calls = %d, want original, patch, verify, done", len(evaluator.inputs))
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want final done only", len(evaluator.inputs))
 	}
 	if result.Answer != "hello.txt now contains TWO." {
 		t.Fatalf("answer = %q", result.Answer)
@@ -2155,6 +2148,19 @@ func TestValidateStructuredCommandRejectsOnlyPureEcho(t *testing.T) {
 	}
 }
 
+func TestValidateStructuredCommandRejectsPrintOnlyForSubstantiveObjectives(t *testing.T) {
+	ledger := []StructuredObjective{{ID: "implement_notes_app", Description: "Implement notes app UI", Status: "pending", Required: true}}
+	if err := validateStructuredCommandForRun("printf 'done\n'", nil, t.TempDir(), ledger); err == nil {
+		t.Fatal("print-only command should not satisfy app implementation objectives")
+	}
+	if err := validateStructuredCommandForRun("printf 'done\n'", nil, t.TempDir(), nil); err != nil {
+		t.Fatalf("generic print evidence should remain allowed: %v", err)
+	}
+	if err := validateStructuredCommandString("printf 'I do not have access to real-time information. Check the current time with a time zone app.\n'"); err == nil {
+		t.Fatal("print-only false capability limitation should be rejected")
+	}
+}
+
 func TestPlannerRepairsEchoOnlyPlanForPendingAppObjectives(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"latest","react-dom":"latest"}}`+"\n"), 0o644); err != nil {
@@ -2165,8 +2171,8 @@ func TestPlannerRepairsEchoOnlyPlanForPendingAppObjectives(t *testing.T) {
 	}
 	substantive := "cat > src/App.js <<'EOF'\nexport default function App(){ return 'notes memory crud'; }\nEOF\n\ntest -s src/App.js"
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"echo 'Step 1: Set up Notes Context' && echo 'Step 2: Update App.js' && echo 'Step 3: Run the Application'","done":false,"answer":"","objective_ledger":[{"id":"setup_note_taking_app","description":"Set up note taking app UI","status":"pending"},{"id":"implement_memory_state_management","description":"Implement memory state management","status":"pending"}]}`,
-		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"setup_note_taking_app","description":"Set up note taking app UI","status":"satisfied","evidence":"src/App.js written"},{"id":"implement_memory_state_management","description":"Implement memory state management","status":"satisfied","evidence":"App contains memory marker"}]}`,
+		`{"command":"echo 'Step 1: Set up Notes Context' && echo 'Step 2: Update App.js' && echo 'Step 3: Run the Application'","done":false,"answer":"","objective_ledger":[{"id":"create_note_taking_component","description":"Create note taking component UI","status":"pending"},{"id":"implement_memory_state_management","description":"Implement memory state management","status":"pending"}]}`,
+		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"create_note_taking_component","description":"Create note taking component UI","status":"satisfied","evidence":"src/App.js written"},{"id":"implement_memory_state_management","description":"Implement memory state management","status":"satisfied","evidence":"App contains memory marker"}]}`,
 		`{"command":"","done":true,"answer":"Notes app source created."}`,
 	}}
 	events := []StructuredCommandEvent{}
@@ -2571,7 +2577,7 @@ export default function NotesList() {
 		},
 	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v observations=%#v work_items=%#v", err, result.Observations, result.WorkItems)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("pending = %#v", pending)
@@ -2609,7 +2615,7 @@ func TestRepeatedFailedCommandExecutesPermissiveRetry(t *testing.T) {
 
 func TestDoneTrueWithNonEmptyDockerCommandExecutesBeforeCompletionValidation(t *testing.T) {
 	workspace := t.TempDir()
-	command := "printf 'docker build ok\\ndocker run ok\\nDOCKER_SMOKE_OK running=true restarting=false restart_count=0\\nDOCKER_LOGS_CLEAR\\n'"
+	command := "test -d . && printf 'docker build ok\\ndocker run ok\\nDOCKER_SMOKE_OK running=true restarting=false restart_count=0\\nDOCKER_LOGS_CLEAR\\n'"
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"` + command + `","done":true,"answer":"docker complete"}`,
 		`{"command":"","done":true,"answer":"docker lifecycle verified"}`,
@@ -2739,8 +2745,8 @@ func TestPlannerAcceptsInitialPlaceholderThenForcesSubstantiveContinuation(t *te
 		"test -s src/components/NoteManager.js",
 	}, " && ")
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"mkdir -p src/components && touch src/components/NoteManager.js","done":false,"answer":"","objective_ledger":[{"id":"setup_notes_app","description":"Set up notes app component structure","status":"pending"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"pending"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"pending"}]}`,
-		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"setup_notes_app","description":"Set up notes app component structure","status":"satisfied","evidence":"NoteManager component file written"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"satisfied","evidence":"NoteManager contains CRUD marker"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"satisfied","evidence":"NoteManager contains memory marker"}]}`,
+		`{"command":"mkdir -p src/components && touch src/components/NoteManager.js","done":false,"answer":"","objective_ledger":[{"id":"create_note_manager_component","description":"Create notes component structure","status":"pending"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"pending"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"pending"}]}`,
+		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"create_note_manager_component","description":"Create notes component structure","status":"satisfied","evidence":"NoteManager component file written"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"satisfied","evidence":"NoteManager contains CRUD marker"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"satisfied","evidence":"NoteManager contains memory marker"}]}`,
 		`{"command":"","done":true,"answer":"Notes component created."}`,
 	}}
 	events := []StructuredCommandEvent{}
@@ -2889,27 +2895,27 @@ func TestRepeatedSuccessfulCommandSkipsAndUsesCompletedEvidence(t *testing.T) {
 		Rationale: "Use prior ls output and inspect a new target.",
 	}}}
 	stdout := &bytes.Buffer{}
-	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "connect calculator UI to logic", nil, client, stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "inspect workspace and verify it exists", nil, client, stdout, &strings.Builder{}, nil, nil, structuredCommandDecisionRunConfig{
 		CurrentWorkingDirectory: workspace,
 		ShellSpecialist:         shell,
 		CompletionChecker: &fakeCompletionChecker{checks: []CompletionCheck{
 			{Done: false, Reason: "objectives still pending", ObjectiveLedger: []StructuredObjective{
-				{ID: "create_calculator_ui", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
-				{ID: "connect_ui_to_logic", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "inspect_workspace", Description: "Inspect workspace", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "verify_workspace_exists", Description: "Verify workspace exists", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
 			}},
 			{Done: false, Reason: "use completed ls evidence first", ObjectiveLedger: []StructuredObjective{
-				{ID: "create_calculator_ui", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
-				{ID: "connect_ui_to_logic", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "inspect_workspace", Description: "Inspect workspace", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "verify_workspace_exists", Description: "Verify workspace exists", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
 			}},
 			{Done: true, Reason: "recovery inspected next target", ObjectiveLedger: []StructuredObjective{
-				{ID: "create_calculator_ui", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "recovery inspected next target"},
-				{ID: "connect_ui_to_logic", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "recovery inspected next target"},
+				{ID: "inspect_workspace", Description: "Inspect workspace", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "ls output"},
+				{ID: "verify_workspace_exists", Description: "Verify workspace exists", Status: "satisfied", Source: structuredObjectiveSourceUserExplicit, Required: true, Evidence: "test -d ."},
 			}},
 		}},
 		PromptInterpreter: &fakePromptInterpreter{interpretations: []PromptInterpretation{{
 			ObjectiveLedger: []StructuredObjective{
-				{ID: "create_calculator_ui", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
-				{ID: "connect_ui_to_logic", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "inspect_workspace", Description: "Inspect workspace", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+				{ID: "verify_workspace_exists", Description: "Verify workspace exists", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
 			},
 		}}},
 	})
@@ -3001,7 +3007,7 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndSkipsRep
 		`{"command":"npm init -y","done":false,"answer":""}`,
 		`{"command":"npm init -y","done":false,"answer":""}`,
 		`{"command":"printf 'webpack stimulus tailwind recyclr done' > setup.txt","done":false,"answer":"","objective_ledger":[{"id":"install_stimulus_js","description":"Install or account for Stimulus JS","status":"satisfied","evidence":"command output"},{"id":"install_recyclr_js","description":"Install or account for Recyclr JS","status":"satisfied","evidence":"command output"},{"id":"install_tailwind_css","description":"Install or account for Tailwind CSS","status":"satisfied","evidence":"command output"},{"id":"setup_webpack","description":"Set up webpack","status":"satisfied","evidence":"command output"}]}`,
-		`{"command":"cat setup.txt","done":false,"answer":""}`,
+		`{"command":"test -s setup.txt && cat setup.txt","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"Project initialized and dependencies accounted for."}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -3071,7 +3077,7 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndSkipsRep
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Command != "cat setup.txt" {
+	if result.Command != "test -s setup.txt && cat setup.txt" {
 		t.Fatalf("command = %q, want readback command retained", result.Command)
 	}
 	if len(checker.inputs) < 2 {
@@ -3951,7 +3957,7 @@ func TestStructuredCommandDecisionDoneCheckSatisfiesSinglePendingObjective(t *te
 	}
 }
 
-func TestCompletionCheckerDoneSatisfiesRemainingPendingObjectives(t *testing.T) {
+func TestCompletionCheckerDoneCannotSatisfyPendingObjectivesFromRationale(t *testing.T) {
 	ledger := []StructuredObjective{
 		{ID: "integrate_tailwindcss", Description: "Integrate Tailwind CSS", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
 		{ID: "configure_tailwindcss_vite", Description: "Configure Tailwind CSS with Vite", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
@@ -3980,14 +3986,14 @@ func TestCompletionCheckerDoneSatisfiesRemainingPendingObjectives(t *testing.T) 
 		WorksiteSurvey{},
 		func(evt StructuredCommandEvent) { events = append(events, evt) },
 	)
-	if !accepted {
-		t.Fatalf("validator done should be authoritative when it accepts evidence; updated=%#v events=%#v", updated, events)
+	if accepted {
+		t.Fatalf("validator rationale should not be accepted as proof; updated=%#v events=%#v", updated, events)
 	}
-	if pending := pendingStructuredObjectives(updated); len(pending) != 0 {
-		t.Fatalf("pending objectives should be satisfied by validator evidence: %#v", pending)
+	if pending := pendingStructuredObjectives(updated); len(pending) != 3 {
+		t.Fatalf("pending objectives should remain open without exact evidence: %#v", pending)
 	}
-	if !structuredEventsContain(events, "completion_check_satisfied_pending_objectives") {
-		t.Fatalf("missing validator satisfaction event: %#v", events)
+	if structuredEventsContain(events, "completion_check_satisfied_pending_objectives") {
+		t.Fatalf("natural-language satisfaction event should not occur: %#v", events)
 	}
 }
 
@@ -5957,8 +5963,8 @@ func TestReconcileObjectiveLedgerRequiresDockerLifecycleEvidence(t *testing.T) {
 
 func TestStructuredCommandDecisionAcceptsPartialCompletionAndContinues(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"printf 'build passed\n'","done":false,"answer":""}`,
-		`{"command":"printf 'test passed\n'","done":false,"answer":""}`,
+		`{"command":"test -d . && printf 'build passed\n'","done":false,"answer":""}`,
+		`{"command":"test -d . && printf 'test passed\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"build and test passed"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -6013,7 +6019,7 @@ func TestStructuredCommandDecisionAcceptsPartialCompletionAndContinues(t *testin
 	if !strings.Contains(partial.Details["pending_objectives"], "verify_test") {
 		t.Fatalf("partial event missing pending objective: %#v", partial.Details)
 	}
-	if result.Command != "printf 'test passed\n'" {
+	if result.Command != "test -d . && printf 'test passed\n'" {
 		t.Fatalf("final command = %q, want continued test command", result.Command)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {

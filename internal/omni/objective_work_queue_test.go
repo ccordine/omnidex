@@ -1,0 +1,216 @@
+package omni
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestObjectiveWorkItemBroadObjectiveCannotPassWithoutEvidence(t *testing.T) {
+	item := ObjectiveWorkItem{
+		ID:               "build_notes_app",
+		Kind:             WorkItemKindCreate,
+		Scope:            WorkItemScope{Root: ".", Paths: []string{"src/App.js"}},
+		Instruction:      "Build the notes app shell",
+		Validator:        ValidatorSpec{RequiredEvidence: []EvidenceKind{EvidenceKindFileDiff}},
+		RequiredEvidence: []EvidenceKind{EvidenceKindFileDiff},
+		Status:           WorkItemStatusPending,
+	}
+
+	result := ValidateObjectiveWorkTree(item)
+	if result.Passed {
+		t.Fatal("broad objective passed without required evidence")
+	}
+	if !strings.Contains(result.Reason, "missing required evidence") {
+		t.Fatalf("reason = %q", result.Reason)
+	}
+}
+
+func TestBuildObjectiveWorkItemsConvertsInputLedgerToTopLevelItems(t *testing.T) {
+	items := BuildObjectiveWorkItemsFromLedger("build a notes app", []StructuredObjective{{
+		ID:          "complete_notes_app",
+		Description: "Implement the notes app UI",
+		Status:      "pending",
+		Required:    true,
+		Source:      structuredObjectiveSourceUserExplicit,
+	}}, t.TempDir(), WorksiteSurvey{})
+
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].ID != "complete_notes_app" || items[0].Kind != WorkItemKindArchitect {
+		t.Fatalf("top-level item = %#v", items[0])
+	}
+	if len(items[0].Children) == 0 {
+		t.Fatalf("architect item should create nested child queue: %#v", items[0])
+	}
+}
+
+func TestObjectiveWorkItemCreateRequiresFileDiffEvidence(t *testing.T) {
+	item := passedWorkItem("create_note_list", WorkItemKindCreate)
+	item.EvidenceRefs = []WorkItemEvidence{{Kind: EvidenceKindCommand, Command: "touch src/components/NoteList.js", ExitCode: 0}}
+
+	result := ValidateObjectiveWorkTree(item)
+	if result.Passed {
+		t.Fatal("create item passed without file-diff evidence")
+	}
+}
+
+func TestObjectiveWorkItemUpdateRequiresFileDiffEvidence(t *testing.T) {
+	item := passedWorkItem("update_app", WorkItemKindUpdate)
+	item.EvidenceRefs = []WorkItemEvidence{{Kind: EvidenceKindCommand, Command: "sed -i s/a/b/ src/App.js", ExitCode: 0}}
+
+	result := ValidateObjectiveWorkTree(item)
+	if result.Passed {
+		t.Fatal("update item passed without file-diff evidence")
+	}
+}
+
+func TestObjectiveWorkItemVerifyRequiresCommandEvidence(t *testing.T) {
+	item := passedWorkItem("verify_build", WorkItemKindVerify)
+	item.EvidenceRefs = []WorkItemEvidence{{Kind: EvidenceKindFileDiff, Path: "src/App.js", Diff: "+app"}}
+
+	result := ValidateObjectiveWorkTree(item)
+	if result.Passed {
+		t.Fatal("verify item passed without command/test evidence")
+	}
+}
+
+func TestObjectiveWorkItemReadRequiresReadEvidence(t *testing.T) {
+	item := passedWorkItem("read_package", WorkItemKindRead)
+	item.EvidenceRefs = []WorkItemEvidence{{Kind: EvidenceKindCommand, Command: "cat package.json", ExitCode: 0}}
+
+	result := ValidateObjectiveWorkTree(item)
+	if result.Passed {
+		t.Fatal("read item passed without read evidence")
+	}
+}
+
+func TestObjectiveWorkItemDeleteRequiresSafetyEvidence(t *testing.T) {
+	item := passedWorkItem("delete_unused_file", WorkItemKindDelete)
+	item.EvidenceRefs = []WorkItemEvidence{{Kind: EvidenceKindFileDiff, Path: "src/unused.js", Diff: "-unused"}}
+
+	result := ValidateObjectiveWorkTree(item)
+	if result.Passed {
+		t.Fatal("delete item passed without delete safety evidence")
+	}
+}
+
+func TestObjectiveWorkItemArchitectRequiresAllChildrenPassed(t *testing.T) {
+	item := ObjectiveWorkItem{
+		ID:          "architect_notes_app",
+		Kind:        WorkItemKindArchitect,
+		Scope:       WorkItemScope{Root: "."},
+		Instruction: "Implement notes app",
+		Status:      WorkItemStatusPending,
+		Children: []ObjectiveWorkItem{
+			passingWorkItem("write_test", WorkItemKindCreate, EvidenceKindFileDiff),
+			passedWorkItem("write_component", WorkItemKindUpdate),
+		},
+	}
+
+	result := ValidateObjectiveWorkTree(item)
+	if result.Passed {
+		t.Fatal("architect item passed with incomplete child")
+	}
+	if !strings.Contains(result.Reason, "child") {
+		t.Fatalf("reason = %q", result.Reason)
+	}
+}
+
+func TestObjectiveWorkItemNestedFailedChildPreventsFinalSuccess(t *testing.T) {
+	items := []ObjectiveWorkItem{{
+		ID:     "architect_notes_app",
+		Kind:   WorkItemKindArchitect,
+		Status: WorkItemStatusPending,
+		Children: []ObjectiveWorkItem{
+			passingWorkItem("write_test", WorkItemKindCreate, EvidenceKindFileDiff),
+			failedWorkItem("write_component", WorkItemKindUpdate),
+		},
+	}}
+
+	result := ValidateObjectiveWorkForest(items)
+	if result.Passed {
+		t.Fatal("final typed completion passed with nested failed child")
+	}
+}
+
+func TestObjectiveWorkItemBlockedItemPreventsFinalSuccess(t *testing.T) {
+	items := []ObjectiveWorkItem{blockedWorkItem("verify_build", WorkItemKindVerify)}
+
+	result := ValidateObjectiveWorkForest(items)
+	if result.Passed {
+		t.Fatal("final typed completion passed with blocked item")
+	}
+}
+
+func TestTypedFinalGateEmptyFileFailurePreventsSuccess(t *testing.T) {
+	gate := EvaluateTypedFinalGate(TypedFinalGateInput{
+		Items:              []ObjectiveWorkItem{passingWorkItem("verify_build", WorkItemKindVerify, EvidenceKindCommand)},
+		BroadEvaluatorDone: true,
+		CompletionDone:     true,
+		EmptyFiles:         []string{"src/components/NoteList.js"},
+	})
+
+	if gate.Passed {
+		t.Fatal("final gate passed with empty files")
+	}
+	if !strings.Contains(gate.Reason, "empty file") {
+		t.Fatalf("reason = %q", gate.Reason)
+	}
+}
+
+func TestTypedFinalGateBroadEvaluatorCannotConvertIncompleteWorkIntoSuccess(t *testing.T) {
+	gate := EvaluateTypedFinalGate(TypedFinalGateInput{
+		Items:              []ObjectiveWorkItem{passedWorkItem("create_notes_app", WorkItemKindCreate)},
+		BroadEvaluatorDone: true,
+		CompletionDone:     true,
+	})
+
+	if gate.Passed {
+		t.Fatal("broad evaluator converted incomplete typed work into success")
+	}
+}
+
+func TestTypedFinalGateCompletionCheckerCannotUseNaturalLanguageAsProof(t *testing.T) {
+	item := passedWorkItem("verify_notes_app", WorkItemKindVerify)
+	item.EvidenceRefs = []WorkItemEvidence{{Kind: EvidenceKindRationale, Summary: "The notes app appears complete because the model says so."}}
+
+	gate := EvaluateTypedFinalGate(TypedFinalGateInput{
+		Items:          []ObjectiveWorkItem{item},
+		CompletionDone: true,
+	})
+
+	if gate.Passed {
+		t.Fatal("completion checker rationale was accepted as proof")
+	}
+}
+
+func passedWorkItem(id string, kind WorkItemKind) ObjectiveWorkItem {
+	return ObjectiveWorkItem{
+		ID:               id,
+		Kind:             kind,
+		Scope:            WorkItemScope{Root: ".", Paths: []string{"src/App.js"}},
+		Instruction:      "test work item",
+		Validator:        ValidatorSpec{RequiredEvidence: RequiredEvidenceForWorkItemKind(kind)},
+		RequiredEvidence: RequiredEvidenceForWorkItemKind(kind),
+		Status:           WorkItemStatusPending,
+	}
+}
+
+func passingWorkItem(id string, kind WorkItemKind, evidence EvidenceKind) ObjectiveWorkItem {
+	item := passedWorkItem(id, kind)
+	item.EvidenceRefs = []WorkItemEvidence{{Kind: evidence, Path: "src/App.js", Diff: "+content", Command: "npm test", ExitCode: 0, SafetyValidated: true}}
+	return item
+}
+
+func failedWorkItem(id string, kind WorkItemKind) ObjectiveWorkItem {
+	item := passedWorkItem(id, kind)
+	item.Status = WorkItemStatusFailed
+	return item
+}
+
+func blockedWorkItem(id string, kind WorkItemKind) ObjectiveWorkItem {
+	item := passedWorkItem(id, kind)
+	item.Status = WorkItemStatusBlocked
+	return item
+}

@@ -56,8 +56,8 @@ func TestStructuredCommandDecisionBuildsGoCLIDemoWithDownloadedLatestGo(t *testi
 	if err != nil {
 		t.Fatalf("Go CLI deterministic chain failed: %v\ncommand=%q\nstdout=%s\nstderr=%s", err, result.Command, stdout.String(), stderr.String())
 	}
-	if len(evaluator.inputs) != 2 {
-		t.Fatalf("evaluator calls = %d, want command and done responses evaluated", len(evaluator.inputs))
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want final done response evaluated", len(evaluator.inputs))
 	}
 	if !structuredEventsContain(events, "structured_response_evaluated") {
 		t.Fatalf("missing evaluator event: %#v", events)

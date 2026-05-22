@@ -58,6 +58,7 @@ type CommandDecisionResult struct {
 	PartialProgress bool
 	Observations    []StructuredCommandObservation
 	ObjectiveLedger []StructuredObjective
+	WorkItems       []ObjectiveWorkItem
 	MinimalContext  MinimalContext
 	StartedAt       time.Time
 	FinishedAt      time.Time
@@ -510,6 +511,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	referenceHistoryAllowed := false
 	worksiteSurvey := BuildWorksiteSurvey(cfg.CurrentWorkingDirectory)
 	result.MinimalContext = minimalContext
+	refreshTypedWorkItems := func() {
+		if len(ledger) == 0 {
+			return
+		}
+		result.WorkItems = ReconcileObjectiveWorkItemsFromObservations(BuildObjectiveWorkItemsFromLedger(prompt, ledger, cfg.CurrentWorkingDirectory, worksiteSurvey), result.Observations)
+	}
 	emitStructuredCommandEvent(onEvent, "worksite_survey_completed", "Worksite survey grounded the active workspace", map[string]string{
 		"workspace":       worksiteSurvey.WorkspacePath,
 		"project_state":   worksiteSurvey.ProjectState,
@@ -562,6 +569,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				}
 			}
 			result.ObjectiveLedger = ledger
+			refreshTypedWorkItems()
 			emitStructuredCommandEvent(onEvent, "prompt_interpreter_completed", "Prompt interpreter produced objective ledger", map[string]string{
 				"objective_count":    fmt.Sprintf("%d", len(ledger)),
 				"pending_objectives": pendingStructuredObjectiveIDs(ledger),
@@ -578,6 +586,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	if len(selectedRecipes) > 0 && len(pendingStructuredObjectives(ledger)) > 0 {
 		ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
 		result.ObjectiveLedger = ledger
+		refreshTypedWorkItems()
 		if len(pendingStructuredObjectives(ledger)) == 0 {
 			result.Command = "RECIPE_COMPLETION_PROBES"
 			result.ExitCode = 0
@@ -621,6 +630,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		var validatorAccepted bool
 		ledger, validatorAccepted = runCompletionCheck(ctx, 0, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, nil, minimalContextAnswer(minimalContext), cfg.CompletionChecker, worksiteSurvey, onEvent)
 		result.ObjectiveLedger = ledger
+		refreshTypedWorkItems()
 		if validatorAccepted && len(pendingStructuredObjectives(ledger)) == 0 {
 			result.Command = "MEMORY_CONTEXT"
 			result.ExitCode = 0
@@ -651,6 +661,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				ledger = runSelectedRecipeCompletionProbes(ctx, cfg.CurrentWorkingDirectory, ledger, selectedRecipes, onEvent)
 			}
 			result.ObjectiveLedger = ledger
+			refreshTypedWorkItems()
 			lastCompletionCheckedObservationCount = len(result.Observations)
 			if len(pendingStructuredObjectives(ledger)) == 0 {
 				if !deterministicCompletionEnforcerAcceptsDone(prompt, ledger, result.Observations) {
@@ -672,6 +683,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				ledger, validatorAccepted = runCompletionCheck(ctx, step-1, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
 				ledger = enforcePostWriteValidationBeforeCompletion(step-1, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
 				result.ObjectiveLedger = ledger
+				refreshTypedWorkItems()
 				acceptPartialCompletionForContinuation(step-1, ledgerBeforeProgress, ledger, latest, onEvent, &result)
 				if validatorAccepted && len(pendingStructuredObjectives(ledger)) == 0 {
 					emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_observations", "Done-check specialist accepted observed command evidence", map[string]string{
@@ -753,12 +765,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			return result, err
 		}
 
-		if evaluator != nil && shouldBypassEvaluatorForArchitectImplementation(resp.Content, prompt, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations) {
-			emitStructuredCommandEvent(onEvent, "structured_evaluator_bypassed_for_architect", "Evaluator bypassed for architect-controlled implementation step", map[string]string{
-				"step":   fmt.Sprintf("%d", step),
-				"reason": "architect contract and deterministic validators own current implementation work item",
-			})
-		} else if evaluator != nil {
+		payload, err := ParseStructuredCommandPayload(resp.Content)
+		if err != nil {
+			return result, err
+		}
+		payload.Command = normalizeStructuredCommand(payload.Command)
+		if evaluator != nil && shouldRunBroadEvaluatorForPlannerPayload(payload) {
 			accepted, repairedResp, disabledEvaluator, err := evaluateAndRepairPlannerResponse(ctx, step, prompt, client, basePlannerReq, resp, evaluator, evaluatorThreshold, cfg, worksiteSurvey, ledger, result.Observations, onEvent, &result)
 			if err != nil {
 				return result, err
@@ -770,15 +782,25 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if !accepted {
 				continue
 			}
+			payload, err = ParseStructuredCommandPayload(resp.Content)
+			if err != nil {
+				return result, err
+			}
+			payload.Command = normalizeStructuredCommand(payload.Command)
+		} else if evaluator != nil && shouldBypassEvaluatorForArchitectImplementation(resp.Content, prompt, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations) {
+			emitStructuredCommandEvent(onEvent, "structured_evaluator_bypassed_for_architect", "Evaluator bypassed for architect-controlled implementation step", map[string]string{
+				"step":   fmt.Sprintf("%d", step),
+				"reason": "architect contract and deterministic validators own current implementation work item",
+			})
+		} else if evaluator != nil {
+			emitStructuredCommandEvent(onEvent, "structured_evaluator_deferred_for_scoped_validation", "Broad evaluator deferred until completion; scoped validators own this step", map[string]string{
+				"step":   fmt.Sprintf("%d", step),
+				"reason": "non-final payload",
+			})
 		}
-
-		payload, err := ParseStructuredCommandPayload(resp.Content)
-		if err != nil {
-			return result, err
-		}
-		payload.Command = normalizeStructuredCommand(payload.Command)
 		ledger = mergeStructuredObjectiveLedger(ledger, payload.ObjectiveLedger)
 		result.ObjectiveLedger = ledger
+		refreshTypedWorkItems()
 		if hasStructuredProofPlan(payload.ProofPlan) {
 			if repaired, reason := repairStructuredProofPlanFromLedger(&payload.ProofPlan, ledger); repaired {
 				emitStructuredCommandEvent(onEvent, "structured_proof_plan_repaired", "Proof plan repaired from objective ledger", map[string]string{
@@ -820,6 +842,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			payload = repairPayload
 			ledger = repairLedger
 			result.ObjectiveLedger = ledger
+			refreshTypedWorkItems()
 		}
 		if isPatchToolDelegation(payload) {
 			if err := runStructuredPatchApply(ctx, step, payload.Patch, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
@@ -1071,6 +1094,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 						ledger = checkResult.Ledger
 						if !checkResult.Accepted {
 							result.ObjectiveLedger = ledger
+							refreshTypedWorkItems()
 							rejectDoneForValidator(step, onEvent, &result)
 							if handled, err := repairRejectedDoneWithPlanner(ctx, step, prompt, client, basePlannerReq, resp, payload, checkResult, cfg, worksiteSurvey, stdout, stderr, onEvent, &ledger, &result); err != nil {
 								return result, err
@@ -1092,6 +1116,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 						continue
 					} else if !deterministicCompletionEnforcerAcceptsDone(prompt, ledger, result.Observations) {
 						result.ObjectiveLedger = ledger
+						refreshTypedWorkItems()
 						rejectDoneForValidator(step, onEvent, &result)
 						continue
 					}
@@ -1099,6 +1124,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					ledger = enforcePostWriteValidationBeforeCompletion(step, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
 					ledger = enforceNoEmptyProjectFilesBeforeCompletion(step, prompt, cfg.CurrentWorkingDirectory, ledger, result.Observations, onEvent, &result)
 					result.ObjectiveLedger = ledger
+					refreshTypedWorkItems()
 					if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 						if latestPrematureDoneLoopBlocked(result.Observations) {
 							if hasSuccessfulCommandObservation(result.Observations) {
@@ -1112,6 +1138,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 						continue
 					}
 					if rejectDoneForFinalAnswer(step, prompt, result.Answer, onEvent, &result) {
+						continue
+					}
+					if rejectTypedFinalGate(step, cfg.CurrentWorkingDirectory, onEvent, &result) {
 						continue
 					}
 					emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_done_request", "Completion validator accepted evidence after planner requested final validation", map[string]string{
@@ -1191,6 +1220,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				ledger = checkResult.Ledger
 				if !checkResult.Accepted {
 					result.ObjectiveLedger = ledger
+					refreshTypedWorkItems()
 					rejectDoneForValidator(step, onEvent, &result)
 					if handled, err := repairRejectedDoneWithPlanner(ctx, step, prompt, client, basePlannerReq, resp, payload, checkResult, cfg, worksiteSurvey, stdout, stderr, onEvent, &ledger, &result); err != nil {
 						return result, err
@@ -1212,6 +1242,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				continue
 			} else if !deterministicCompletionEnforcerAcceptsDone(prompt, ledger, result.Observations) {
 				result.ObjectiveLedger = ledger
+				refreshTypedWorkItems()
 				rejectDoneForValidator(step, onEvent, &result)
 				continue
 			}
@@ -1219,6 +1250,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			ledger = enforcePostWriteValidationBeforeCompletion(step, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
 			ledger = enforceNoEmptyProjectFilesBeforeCompletion(step, prompt, cfg.CurrentWorkingDirectory, ledger, result.Observations, onEvent, &result)
 			result.ObjectiveLedger = ledger
+			refreshTypedWorkItems()
 			if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 				if latestPrematureDoneLoopBlocked(result.Observations) {
 					if hasSuccessfulCommandObservation(result.Observations) {
@@ -1232,6 +1264,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				continue
 			}
 			if rejectDoneForFinalAnswer(step, prompt, result.Answer, onEvent, &result) {
+				continue
+			}
+			if rejectTypedFinalGate(step, cfg.CurrentWorkingDirectory, onEvent, &result) {
 				continue
 			}
 			emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_done_request", "Completion validator accepted evidence after planner requested final validation", map[string]string{
@@ -3906,6 +3941,10 @@ func structuredEvaluatorValidationScope(ledger []StructuredObjective, observatio
 	return "planner_payload_shape_only"
 }
 
+func shouldRunBroadEvaluatorForPlannerPayload(payload StructuredCommandPayload) bool {
+	return payload.Done
+}
+
 func shouldBypassEvaluatorForArchitectImplementation(rawResponse, prompt, workingDir string, survey WorksiteSurvey, observations []StructuredCommandObservation) bool {
 	payload, err := ParseStructuredCommandPayload(rawResponse)
 	if err != nil {
@@ -5032,6 +5071,9 @@ func validateStructuredCommandString(command string) error {
 	if isPureEchoCommand(command) {
 		return fmt.Errorf("pure echo command is not command evidence")
 	}
+	if isPurePrintCommand(command) && commandPrintsFalseCapabilityLimitation(command) {
+		return fmt.Errorf("print-only false capability limitation is not command evidence; gather real tool or public-source evidence instead")
+	}
 	if err := validateWTTRCommand(command); err != nil {
 		return err
 	}
@@ -5269,10 +5311,20 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 	if err := validateRepeatedPlaceholderOnlyAppMutation(command, observations, objectiveLedger); err != nil {
 		return err
 	}
+	if err := validatePrintOnlyCommandForSubstantiveObjectives(command, objectiveLedger); err != nil {
+		return err
+	}
 	if err := validateStructuredDependencyScope(command, objectiveLedger, workingDirectory); err != nil {
 		return err
 	}
 	return nil
+}
+
+func validatePrintOnlyCommandForSubstantiveObjectives(command string, objectiveLedger []StructuredObjective) error {
+	if !objectiveLedgerNeedsSubstantiveAppFiles(objectiveLedger) || !isPurePrintCommand(command) {
+		return nil
+	}
+	return fmt.Errorf("print-only command does not satisfy substantive app objectives; write, patch, build, test, or inspect concrete project evidence instead")
 }
 
 func validateRepeatedPlaceholderOnlyAppMutation(command string, observations []StructuredCommandObservation, objectiveLedger []StructuredObjective) error {
@@ -6596,6 +6648,47 @@ func isPureEchoCommand(command string) bool {
 	return true
 }
 
+func isPurePrintCommand(command string) bool {
+	trimmed := strings.TrimSpace(command)
+	if commandSegmentsContainShellControl(trimmed, "|", ">", "<", "$(", "`") {
+		return false
+	}
+	segments := structuredCommandSegments(trimmed)
+	if len(segments) == 0 {
+		return false
+	}
+	for _, segment := range segments {
+		if len(segment) == 0 {
+			return false
+		}
+		switch cleanCommandPathToken(segment[0]) {
+		case "echo", "printf":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func commandPrintsFalseCapabilityLimitation(command string) bool {
+	lower := strings.ToLower(command)
+	for _, phrase := range []string{
+		"do not have access",
+		"don't have access",
+		"cannot access real-time",
+		"can't access real-time",
+		"cannot check",
+		"can't check",
+		"check a weather website",
+		"check the current time with",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 func commandSegmentsContainShellControl(command string, markers ...string) bool {
 	for _, marker := range markers {
 		if strings.Contains(command, marker) {
@@ -7040,6 +7133,34 @@ func rejectDoneForObjectiveLedger(step int, ledger []StructuredObjective, onEven
 			"pending_objectives": pendingText,
 			"repeat_count":       fmt.Sprintf("%d", repeatedCount),
 		})
+	}
+	result.Answer = ""
+	return true
+}
+
+func rejectTypedFinalGate(step int, workingDir string, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
+	if result == nil || len(result.WorkItems) == 0 {
+		return false
+	}
+	gate := EvaluateTypedFinalGate(TypedFinalGateInput{
+		Items:          result.WorkItems,
+		CompletionDone: true,
+		EmptyFiles:     findEmptyProjectFiles(workingDir, 12),
+	})
+	if gate.Passed {
+		return false
+	}
+	emitStructuredCommandEvent(onEvent, "typed_final_gate_rejected", "Typed recursive work queue rejected completion", map[string]string{
+		"step":   fmt.Sprintf("%d", step),
+		"reason": truncateStructuredTimelineValue(gate.Reason),
+	})
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:     step,
+		ExitCode: 1,
+		Stderr:   "typed final gate rejected completion: " + gate.Reason,
+	})
+	if result.ExitCode == 0 {
+		result.ExitCode = 1
 	}
 	result.Answer = ""
 	return true
@@ -7502,14 +7623,6 @@ func runCompletionCheckDetailed(ctx context.Context, step int, prompt, currentWo
 		return completionCheckRunResult{Ledger: ledger}
 	}
 	updated := mergeStructuredObjectiveLedger(ledger, filterObjectiveLedgerForWorksiteSurvey(check.ObjectiveLedger, worksiteSurvey))
-	if check.Done && len(pendingStructuredObjectives(updated)) > 0 {
-		updated = satisfyPendingObjectivesFromValidator(updated, check.Reason)
-		emitStructuredCommandEvent(onEvent, "completion_check_satisfied_pending_objectives", "Completion validator marked remaining pending objectives satisfied from evidence", map[string]string{
-			"step":       fmt.Sprintf("%d", step),
-			"objectives": pendingStructuredObjectiveIDs(ledger),
-			"reason":     truncateStructuredTimelineValue(check.Reason),
-		})
-	}
 	validatorAccepted := check.Done && len(pendingStructuredObjectives(updated)) == 0
 	if !check.Done && len(pendingStructuredObjectives(updated)) == 0 {
 		updated = keepAtLeastOnePreviouslyPendingObjectiveOpen(ledger, updated)

@@ -175,8 +175,8 @@ func TestStructuredCommandDecisionBuildsNPMReactTypeScriptProjectFromLLMCommands
 	if client.calls != 2 {
 		t.Fatalf("llm calls = %d, want 2", client.calls)
 	}
-	if len(evaluator.inputs) != 2 {
-		t.Fatalf("evaluator calls = %d, want command and done responses evaluated", len(evaluator.inputs))
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want final done response evaluated", len(evaluator.inputs))
 	}
 	if !structuredEventsContain(events, "structured_response_evaluated") {
 		t.Fatalf("missing evaluator event: %#v", events)
