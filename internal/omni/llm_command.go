@@ -896,7 +896,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if !ok {
 				continue
 			}
-			if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
+			if err := runDelegatedShellProposalWithLocalRepair(ctx, step, prompt, payload.ToolTask, proposal, cfg, worksiteSurvey, &ledger, stdout, stderr, onEvent, onAsk, &result); err != nil {
 				return result, err
 			}
 			continue
@@ -3474,10 +3474,37 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 	if err != nil || !ok {
 		return true, err
 	}
-	if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
+	if err := runDelegatedShellProposalWithLocalRepair(ctx, step, prompt, toolTask, proposal, cfg, worksiteSurvey, &result.ObjectiveLedger, stdout, stderr, onEvent, onAsk, result); err != nil {
 		return true, err
 	}
 	return true, nil
+}
+
+func runDelegatedShellProposalWithLocalRepair(ctx context.Context, step int, prompt, toolTask string, proposal ShellCommandProposal, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger *[]StructuredObjective, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, result *CommandDecisionResult) error {
+	if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
+		return err
+	}
+	if !latestDelegatedShellCommandFailed(result) {
+		return nil
+	}
+	emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_started", "Shell specialist received direct execution failure for local repair", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"command": truncateStructuredTimelineValue(proposal.Command),
+		"reason":  truncateStructuredTimelineValue(latestShellRepairFeedback(result.Observations)),
+	})
+	repaired, ok, err := proposeValidatedShellCommand(ctx, step, prompt, toolTask, cfg, worksiteSurvey, ledger, onEvent, onAsk, result)
+	if err != nil || !ok {
+		return err
+	}
+	return runStructuredPayloadCommand(ctx, step, repaired.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result)
+}
+
+func latestDelegatedShellCommandFailed(result *CommandDecisionResult) bool {
+	if result == nil || len(result.Observations) == 0 {
+		return false
+	}
+	latest := result.Observations[len(result.Observations)-1]
+	return strings.TrimSpace(latest.Command) != "" && latest.ExitCode != 0
 }
 
 func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
@@ -3645,6 +3672,26 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			"command":   truncateStructuredTimelineValue(proposal.Command),
 			"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 		})
+		if err := validateShellProposalDoesNotRepeatLatestFailedCommand(proposal.Command, result.Observations); err != nil {
+			appendRejectedShellProposalObservation(step, proposal.Command, err, "use the observed failure as feedback and choose a different concrete command", result)
+			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by execution feedback", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"command": truncateStructuredTimelineValue(proposal.Command),
+				"reason":  err.Error(),
+			})
+			if attempt > 0 && shellProposalRepeatedLatestRejection(proposal.Command, result.Observations) {
+				emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_repeated", "Shell specialist repeated rejected command after direct feedback", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"attempt": fmt.Sprintf("%d", attempt),
+					"command": truncateStructuredTimelineValue(proposal.Command),
+				})
+				return ShellCommandProposal{}, false, nil
+			}
+			if attempt < defaultShellSpecialistRepairAttempts {
+				continue
+			}
+			return ShellCommandProposal{}, false, nil
+		}
 		if err := validateShellProposalAgainstToolTaskWithRationale(proposal.Command, toolTask, proposal.Rationale); err != nil {
 			if approved, askErr := requestDependencyInstallApproval(ctx, step, prompt, proposal.Command, err, cfg.UserAssistanceSpecialist, onAsk, onEvent, result); askErr != nil {
 				return ShellCommandProposal{}, false, askErr
@@ -5575,6 +5622,9 @@ func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, ration
 	if err := validateShellDependencyInstallRationale(command, toolTask, rationale); err != nil {
 		return err
 	}
+	if err := validateShellProposalDoesNotRepeatInvalidMissingFileRead(command, toolTask); err != nil {
+		return err
+	}
 	if !toolTaskRequiresMutation(toolTask) {
 		return nil
 	}
@@ -5603,6 +5653,58 @@ func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, ration
 		return nil
 	}
 	return fmt.Errorf("tool_task requires file creation, modification, build, or test work; read-only command %q does not satisfy it", strings.TrimSpace(command))
+}
+
+func validateShellProposalDoesNotRepeatLatestFailedCommand(command string, observations []StructuredCommandObservation) error {
+	normalized := normalizeStructuredCommandForComparison(command)
+	if normalized == "" {
+		return nil
+	}
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if strings.TrimSpace(obs.Command) == "" {
+			continue
+		}
+		if normalizeStructuredCommandForComparison(obs.Command) != normalized {
+			return nil
+		}
+		if obs.ExitCode == 0 {
+			return nil
+		}
+		return fmt.Errorf("shell command repeats the latest failed execution %q; previous stderr: %s", strings.TrimSpace(command), strings.TrimSpace(obs.Stderr))
+	}
+	return nil
+}
+
+func validateShellProposalDoesNotRepeatInvalidMissingFileRead(command, toolTask string) error {
+	invalid := invalidMissingFileReadCommandFromToolTask(toolTask)
+	if invalid == "" {
+		return nil
+	}
+	if normalizeStructuredCommandForComparison(command) != normalizeStructuredCommandForComparison(invalid) {
+		return nil
+	}
+	return fmt.Errorf("missing-file recovery must not retry invalid read command %q; inspect the parent directory or run bounded file discovery instead", strings.TrimSpace(command))
+}
+
+func invalidMissingFileReadCommandFromToolTask(toolTask string) string {
+	task := strings.TrimSpace(toolTask)
+	if !strings.Contains(strings.ToLower(task), "target path does not exist") {
+		return ""
+	}
+	marker := "Invalid command:"
+	start := strings.Index(task, marker)
+	if start < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(task[start+len(marker):])
+	for _, endMarker := range []string{". Failure:", ". Required next behavior:", "\n"} {
+		if idx := strings.Index(rest, endMarker); idx >= 0 {
+			rest = strings.TrimSpace(rest[:idx])
+			break
+		}
+	}
+	return strings.Trim(strings.TrimSpace(rest), `"'`)
 }
 
 func toolTaskRequiresSubstantiveProofContent(toolTask string) bool {

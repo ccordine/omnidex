@@ -3096,6 +3096,73 @@ func TestBlockedFalseDoneForcesRecoveryBeforeNormalPlanning(t *testing.T) {
 	}
 }
 
+func TestDelegatedShellExecutionFailureRepairsWithResponsibleShellSpecialist(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "App.js"), []byte("export default function App(){ return null; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"inspect existing React source files before editing"}`,
+		`{"command":"","done":true,"answer":"source inspected"}`,
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{
+		{Command: "cat src/components/MyComponent.js", Rationale: "Inspect suspected component."},
+		{Command: "cat src/components/MyComponent.js", Rationale: "Retry suspected component."},
+		{Command: "find src -maxdepth 3 -type f", Rationale: "Discover actual source files after missing path feedback."},
+	}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"inspect this React app",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			ShellSpecialist:         shell,
+			CompletionChecker: &fakeCompletionChecker{checks: []CompletionCheck{{
+				Done:   true,
+				Reason: "bounded source discovery ran after missing-file feedback",
+			}}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("run failed: %v observations=%#v", err, result.Observations)
+	}
+	if len(shell.inputs) != 3 {
+		t.Fatalf("shell calls = %d, want initial plus local repair attempts", len(shell.inputs))
+	}
+	if !observationsContainStderr(shell.inputs[1].Observations, "No such file or directory") {
+		t.Fatalf("responsible shell specialist did not receive execution failure: %#v", shell.inputs[1].Observations)
+	}
+	if !observationsContainStderr(shell.inputs[2].Observations, "repeats the latest failed execution") {
+		t.Fatalf("responsible shell specialist did not receive repeat rejection: %#v", shell.inputs[2].Observations)
+	}
+	if result.Command != "find src -maxdepth 3 -type f" {
+		t.Fatalf("final command = %q", result.Command)
+	}
+	if !structuredEventsContain(events, "structured_command_rejected") {
+		t.Fatalf("missing direct shell rejection event: %#v", events)
+	}
+}
+
+func TestValidateShellProposalRejectsMissingFileRecoveryInvalidReadRepeat(t *testing.T) {
+	toolTask := "Recovery required. A read/inspect command failed because the target path does not exist. Invalid command: cat src/components/MyComponent.js. Failure: step=18 command=cat src/components/MyComponent.js exit_code=1 stderr=cat: src/components/MyComponent.js: No such file or directory Required next behavior: inspect the parent directory, run a bounded file discovery command, inspect package.json if present, update the workspace model, then continue with discovered files. Do not retry the invalid path unless new evidence proves it exists."
+	err := validateShellProposalAgainstToolTask("cat src/components/MyComponent.js", toolTask)
+	if err == nil || !strings.Contains(err.Error(), "must not retry invalid read command") {
+		t.Fatalf("expected invalid read retry rejection, got %v", err)
+	}
+	if err := validateShellProposalAgainstToolTask("find src -maxdepth 3 -type f", toolTask); err != nil {
+		t.Fatalf("bounded discovery should pass missing-file recovery validation: %v", err)
+	}
+}
+
 func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "test_project_20260520115716")
