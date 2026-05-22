@@ -424,7 +424,7 @@ func TestStructuredCommandDecisionRejectsShellSpecialistScopeDrift(t *testing.T)
 	workspace := t.TempDir()
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"install dependencies for the React project"}`,
-		`{"command":"touch package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
+		`{"command":"printf '{\"scripts\":{\"dev\":\"vite\"},\"dependencies\":{\"react\":\"latest\",\"react-dom\":\"latest\",\"vite\":\"latest\"}}\\n' > package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
 		`{"command":"test -f package.json && ls package.json","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"React project started"}`,
 	}}
@@ -470,7 +470,7 @@ func TestStructuredCommandDecisionRejectsPlannerScopeDriftDependencyCommand(t *t
 	workspace := t.TempDir()
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"npm install react react-dom vite tailwindcss recyclrjs @hotwired/stimulus","done":false,"answer":""}`,
-		`{"command":"touch package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
+		`{"command":"printf '{\"scripts\":{\"dev\":\"vite\"},\"dependencies\":{\"react\":\"latest\",\"react-dom\":\"latest\",\"vite\":\"latest\"}}\\n' > package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
 		`{"command":"test -f package.json && ls package.json","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"React project started"}`,
 	}}
@@ -4571,11 +4571,15 @@ func TestParseStructuredCommandPayloadIncludesProofPlan(t *testing.T) {
 
 func TestShellSpecialistRequestIncludesTDDPolicy(t *testing.T) {
 	req := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{
-		UserPrompt: "add note editing to the React app",
-		ToolTask:   "write source files for app component CRUD objectives",
+		UserPrompt:     "add note editing to the React app",
+		ToolTask:       "write source files for app component CRUD objectives",
+		RepairFeedback: "placeholder-only scaffold already exists; expand it",
 	})
 	text := structuredRequestMessagesText(req)
 	for _, want := range []string{
+		"repair_feedback",
+		"placeholder-only scaffold already exists",
+		"direct validator feedback",
 		"For app/code feature tool_tasks, prefer a TDD command",
 		"focused test",
 		"deterministic source-verification probe",
@@ -5374,6 +5378,19 @@ func TestValidateShellProposalAllowsInitialScaffoldSetupStep(t *testing.T) {
 	command := "mkdir -p src/components && touch src/components/Note.js"
 	if err := validateShellProposalAgainstToolTask(command, "setup note app component structure"); err != nil {
 		t.Fatalf("initial scaffold setup step rejected: %v", err)
+	}
+}
+
+func TestValidateShellProposalRejectsTouchForFocusedTDDFile(t *testing.T) {
+	err := validateShellProposalAgainstToolTask(
+		"touch src/App.test.js",
+		"Create a focused failing test for the App component before implementation.",
+	)
+	if err == nil {
+		t.Fatal("expected touch test file to be rejected for focused TDD work")
+	}
+	if !strings.Contains(err.Error(), "substantive source/build/test content") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

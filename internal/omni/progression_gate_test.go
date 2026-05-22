@@ -121,6 +121,44 @@ func TestProgressionGateForcesRecoveryAfterRepeatedNoopPackageInstall(t *testing
 	}
 }
 
+func TestProgressionGateForcesRecoveryForEmptyProjectFiles(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "App.test.js"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt:     "finish this React notes app",
+		WorkingDir: workspace,
+		ObjectiveLedger: []StructuredObjective{{
+			ID:       "create_noteslist_component",
+			Status:   "pending",
+			Source:   structuredObjectiveSourceUserExplicit,
+			Required: true,
+		}},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "touch src/App.test.js", ExitCode: 0},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	for _, want := range []string{
+		"Empty file(s): src/App.test.js",
+		"Do not use touch or mkdir",
+		"fill each with substantive source/build/test/config content",
+	} {
+		if !strings.Contains(decision.RecoveryToolTask, want) {
+			t.Fatalf("recovery task missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+}
+
 func TestProgressionGateContinuesAfterExistingGoReactScaffold(t *testing.T) {
 	command := "mkdir -p backend/calculus-api && cd backend/calculus-api && go mod init calculus-api && cd ../.. && mkdir -p frontend/calculus-frontend && cd frontend/calculus-frontend && npx create-react-app ."
 	gate := ProgressionGate{}

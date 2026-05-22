@@ -183,6 +183,7 @@ type ShellCommandSpecialistInput struct {
 	Step             int
 	UserPrompt       string
 	ToolTask         string
+	RepairFeedback   string
 	RepairAttempt    int
 	Observations     []StructuredCommandObservation
 	CompletedActions []CompletedAction
@@ -1028,6 +1029,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					}
 					ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
 					ledger = enforcePostWriteValidationBeforeCompletion(step, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
+					ledger = enforceNoEmptyProjectFilesBeforeCompletion(step, prompt, cfg.CurrentWorkingDirectory, ledger, result.Observations, onEvent, &result)
 					result.ObjectiveLedger = ledger
 					if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 						if latestPrematureDoneLoopBlocked(result.Observations) {
@@ -1147,6 +1149,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			ledger = reconcileStructuredObjectiveLedgerForDone(step, ledger, latest, onEvent)
 			ledger = enforcePostWriteValidationBeforeCompletion(step, prompt, previousLedger, ledger, result.Observations, onEvent, &result)
+			ledger = enforceNoEmptyProjectFilesBeforeCompletion(step, prompt, cfg.CurrentWorkingDirectory, ledger, result.Observations, onEvent, &result)
 			result.ObjectiveLedger = ledger
 			if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 				if latestPrematureDoneLoopBlocked(result.Observations) {
@@ -3349,6 +3352,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			Step:             step,
 			UserPrompt:       prompt,
 			ToolTask:         toolTask,
+			RepairFeedback:   latestShellRepairFeedback(result.Observations),
 			RepairAttempt:    attempt,
 			Observations:     result.Observations,
 			CompletedActions: completedActionsFromState(*ledger, result.Observations),
@@ -3452,6 +3456,26 @@ func shellProposalRepeatedLatestRejection(command string, observations []Structu
 		break
 	}
 	return false
+}
+
+func latestShellRepairFeedback(observations []StructuredCommandObservation) string {
+	for i := len(observations) - 1; i >= 0; i-- {
+		text := strings.TrimSpace(observations[i].Stderr)
+		if text == "" {
+			text = strings.TrimSpace(observations[i].EvaluationFeedback)
+		}
+		if text == "" {
+			continue
+		}
+		lower := strings.ToLower(text)
+		if strings.Contains(lower, "shell specialist command rejected") ||
+			strings.Contains(lower, "command rejected") ||
+			strings.Contains(lower, "placeholder-only") ||
+			strings.Contains(lower, "empty project file") {
+			return truncateStructuredObservation(text)
+		}
+	}
+	return ""
 }
 
 func appendRejectedShellProposalObservation(step int, command string, err error, guidance string, result *CommandDecisionResult) {
@@ -5022,6 +5046,9 @@ func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, ration
 		return fmt.Errorf("tool_task requires source file implementation; dependency install command %q does not satisfy it", strings.TrimSpace(command))
 	}
 	if shellProposalIsPlaceholderOnlyMutation(command) {
+		if toolTaskRequiresSubstantiveProofContent(toolTask) {
+			return fmt.Errorf("tool_task requires substantive source/build/test content; placeholder-only command %q does not satisfy focused TDD/proof work", strings.TrimSpace(command))
+		}
 		if toolTaskAllowsScaffoldSetupStep(toolTask) {
 			return nil
 		}
@@ -5034,6 +5061,30 @@ func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, ration
 		return nil
 	}
 	return fmt.Errorf("tool_task requires file creation, modification, build, or test work; read-only command %q does not satisfy it", strings.TrimSpace(command))
+}
+
+func toolTaskRequiresSubstantiveProofContent(toolTask string) bool {
+	task := strings.ToLower(strings.TrimSpace(toolTask))
+	for _, needle := range []string{
+		"focused test",
+		"failing test",
+		"smoke test",
+		"tdd",
+		"proof",
+		"verification probe",
+		"source-verification",
+		"source/build/test",
+		"substantive source",
+		"substantive file",
+		"placeholder-only",
+		"scaffold already exists",
+		"empty project file",
+	} {
+		if strings.Contains(task, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func toolTaskAllowsScaffoldSetupStep(toolTask string) bool {
@@ -5296,6 +5347,12 @@ func toolTaskRequiresMutation(toolTask string) bool {
 		"patch existing project files",
 		"substantive source/build/test files",
 		"substantive source, build metadata, tests, and verification files",
+		"focused test",
+		"failing test",
+		"smoke test",
+		"tdd",
+		"proof",
+		"verification probe",
 		"writes index.html, src/index.js, styles, package scripts, and verification files",
 		"npm run build",
 		"npm test",
@@ -7381,6 +7438,7 @@ func buildStructuredCommandSystemContext() string {
 		"Do not return done=true until at least one command has exit_code 0.",
 		"If the latest command failed, return a different command instead of done=true.",
 		"After a command mutates files, package metadata, dependencies, build artifacts, or project structure, run a later readback/verification command such as cat, sed -n, rg, grep, ls, test, jq, npm pkg get, npm ls, or an equivalent tool before done=true.",
+		"Before final completion on code/app/project tasks, empty source, test, or config files must be filled with substantive content or removed if unused; empty placeholders are not completion evidence.",
 		"Never repeat an exact command that already succeeded; inspect the observation, update objective_ledger, verify, or choose the next action.",
 		"Use shell commands to satisfy requests; do not answer from memory when command evidence is required.",
 		"Planner authority may delegate tool details to specialized tools; when shell syntax or system inspection is the narrow task, prefer tool=shell with a specific tool_task.",
@@ -7565,6 +7623,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		Role             string                         `json:"role"`
 		UserPrompt       string                         `json:"user_prompt"`
 		ToolTask         string                         `json:"tool_task"`
+		RepairFeedback   string                         `json:"repair_feedback,omitempty"`
 		Observations     []StructuredCommandObservation `json:"observations"`
 		CompletedActions []CompletedAction              `json:"completed_actions,omitempty"`
 		LoopState        StructuredLoopState            `json:"loop_state,omitempty"`
@@ -7576,6 +7635,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		Role:             "shell_execution_specialist",
 		UserPrompt:       input.UserPrompt,
 		ToolTask:         input.ToolTask,
+		RepairFeedback:   input.RepairFeedback,
 		RepairAttempt:    input.RepairAttempt,
 		Observations:     compactStructuredObservationsForContext(input.Observations, 8, 650),
 		CompletedActions: input.CompletedActions,
@@ -7585,6 +7645,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		ToolRules: []string{
 			"Return JSON only with schema {\"command\":\"...\",\"rationale\":\"...\"}.",
 			"Only choose a shell command that directly satisfies tool_task from the planner authority.",
+			"If repair_feedback is non-empty, treat it as direct validator feedback for this retry; the next command must visibly correct that exact issue.",
 			"Treat completed_actions as authoritative progress; never choose a command that repeats or recreates an already completed action.",
 			"Treat loop_state as authoritative loop-monitor context; if it is stuck or blocked, choose a command that changes the pattern or gathers missing evidence.",
 			"Treat completed_actions as the only deterministic do-not-repeat list.",
@@ -7593,6 +7654,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			"If tool_task or observations mention chunked file editing, choose commands that read, patch, or verify one stated line range at a time; prefer the provided sed -n range over cat for large files.",
 			"If tool_task says read-only inventory commands are forbidden, choose a file mutation, build, test, or patch-related shell command.",
 			"If tool_task names app, component, CRUD, UI, state, storage, or substantive source objectives, choose a command that writes or patches source files; do not choose dependency installs, echo/printf status text, or placeholder-only touch/mkdir scaffolds.",
+			"If tool_task or repair_feedback mentions focused tests, TDD, proof plans, smoke tests, verification probes, source/build/test files, or placeholder-only files, do not use touch or mkdir alone; write substantive file content with a here-doc, tee, node/python script, sed/perl edit, or patch.",
 			"For app/code feature tool_tasks, prefer a TDD command when no test/probe evidence exists yet: create or update a focused test, smoke test, or deterministic source-verification probe before implementation, or write the test/probe and minimal implementation together when one command is required.",
 			"When a proof_plan or validated test/probe is present, implement only enough to satisfy it and do not weaken, delete, skip, or rewrite the test/probe unless tool_task explicitly asks for an approved correction.",
 			"Keep proof commands inside the requested scope; do not add tests or dependencies for memory_suggested, model_inferred, or common-but-unrequested features.",
@@ -7611,6 +7673,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			"For current weather, use wttr.in no-key evidence with an explicit location and concise format query, for example curl -s 'https://wttr.in/Pattaya?format=%l|%C|%t|%f'.",
 			"Do not use OpenWeatherMap or api.openweathermap.org unless observations contain a real non-placeholder API key; never use YOUR_API_KEY.",
 			"If a prior executed command failed, choose a different command or corrected syntax.",
+			"If repair_feedback says placeholder-only or scaffold already exists, expand the existing file with substantive source/build/test content instead of creating another empty file.",
 			"Do not infer broad bans from rejected_command observations; valid equivalent framework commands are allowed when they satisfy tool_task.",
 		},
 	}

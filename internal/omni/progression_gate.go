@@ -96,6 +96,12 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
 		return decision
 	}
+	if workspaceHasEmptyProjectFiles(input.WorkingDir) && shouldScanEmptyProjectFiles(input.Prompt, input.ObjectiveLedger, input.Observations) && !objectiveLedgerHasActiveEmptyFileCleanup(input.ObjectiveLedger) {
+		decision.Action = ProgressForceRecovery
+		decision.Reason = "empty project files remain; fill or remove placeholders before completion"
+		decision.RecoveryToolTask = emptyProjectFilesRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.WorkingDir)
+		return decision
+	}
 	if latest := latestNonAppMutationSuccess(input.Observations); latest != nil && appBuildPromptNeedsFiles(input.Prompt) && workspaceMissingAppFiles(input.WorkingDir) {
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "latest mutation did not create substantive app source/build/test files"
