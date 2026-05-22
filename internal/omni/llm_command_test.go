@@ -4705,6 +4705,29 @@ func TestPromptInterpreterParsesObjectiveLedger(t *testing.T) {
 	}
 }
 
+func TestPromptInterpreterRepairsTruncatedJSON(t *testing.T) {
+	interpretation, err := ParsePromptInterpretation(`{"requires_reference_history":false,"objective_ledger":[{"id":"build_react_app","description":"Build React app","status":"pending"}`)
+	if err != nil {
+		t.Fatalf("expected repaired interpretation: %v", err)
+	}
+	if len(interpretation.ObjectiveLedger) != 1 || interpretation.ObjectiveLedger[0].ID != "build_react_app" {
+		t.Fatalf("ledger = %#v", interpretation.ObjectiveLedger)
+	}
+}
+
+func TestPromptInterpreterFallbackBuildsReactObjective(t *testing.T) {
+	interpretation := fallbackPromptInterpretation("Build a React JS music production app", WorksiteSurvey{ProjectState: projectStateEmptyDirectory})
+	if len(interpretation.ObjectiveLedger) != 1 {
+		t.Fatalf("ledger = %#v", interpretation.ObjectiveLedger)
+	}
+	if interpretation.ObjectiveLedger[0].ID != "build_react_app" {
+		t.Fatalf("objective = %#v", interpretation.ObjectiveLedger[0])
+	}
+	if interpretation.UserOperation != userOperationCreateNewProject {
+		t.Fatalf("operation = %q", interpretation.UserOperation)
+	}
+}
+
 func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.T) {
 	req := buildPromptInterpreterRequest(PromptInterpretationInput{
 		UserPrompt:              "build a calculator app",
@@ -4718,7 +4741,7 @@ func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.
 		}},
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger", "requires_reference_history", "available_recipes", "selected_recipe_ids", "frontend.stimulus-tailwind-recyclr"} {
+	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger", "requires_reference_history", "available_recipes", "selected_recipe_ids", "frontend.stimulus-tailwind-recyclr", "Return one compact JSON object only"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("interpreter request missing %q: %s", want, content)
 		}

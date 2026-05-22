@@ -1,6 +1,7 @@
 package omni
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -116,4 +117,43 @@ func architectCommands(targetRoot, packageManager, fallback string) []string {
 
 func hasImplementationArchitectContract(contract ImplementationArchitectContract) bool {
 	return strings.TrimSpace(contract.TargetRoot) != "" || len(contract.EditSurface) > 0 || len(contract.ProofCommands) > 0
+}
+
+func validateCommandAgainstImplementationArchitectContract(command string, contract ImplementationArchitectContract) error {
+	if !hasImplementationArchitectContract(contract) || strings.TrimSpace(command) == "" {
+		return nil
+	}
+	lower := strings.ToLower(command)
+	if strings.Contains(lower, "/path/to/your/project") || strings.Contains(lower, "<project") || strings.Contains(lower, "your-project") {
+		return errArchitectContract("command contains placeholder project path; use architect target_root %q", contract.TargetRoot)
+	}
+	target := strings.TrimSpace(contract.TargetRoot)
+	if target == "" || target == "." {
+		return nil
+	}
+	if structuredCommandLooksDependencyInstall(command) || structuredCommandLooksReadOnlyEvidence(command) {
+		return nil
+	}
+	cmd := filepath.ToSlash(strings.ToLower(command))
+	target = filepath.ToSlash(strings.ToLower(strings.Trim(target, "/")))
+	if commandChangesIntoProjectRoot(cmd, target) || strings.Contains(cmd, target+"/") {
+		return nil
+	}
+	return errArchitectContract("command must target architect root %q by cd-ing into it or using paths under it", contract.TargetRoot)
+}
+
+func errArchitectContract(format string, args ...interface{}) error {
+	return &implementationArchitectValidationError{message: formatArchitectError(format, args...)}
+}
+
+type implementationArchitectValidationError struct {
+	message string
+}
+
+func (e *implementationArchitectValidationError) Error() string {
+	return e.message
+}
+
+func formatArchitectError(format string, args ...interface{}) string {
+	return "architect contract violation: " + fmt.Sprintf(format, args...)
 }

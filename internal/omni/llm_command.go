@@ -322,7 +322,15 @@ func (i OllamaPromptInterpreter) InterpretPrompt(ctx context.Context, input Prom
 	if err != nil {
 		return PromptInterpretation{}, err
 	}
-	return ParsePromptInterpretation(resp.Content)
+	interpretation, parseErr := ParsePromptInterpretation(resp.Content)
+	if parseErr == nil {
+		return interpretation, nil
+	}
+	fallback := fallbackPromptInterpretation(input.UserPrompt, input.WorksiteSurvey)
+	if len(fallback.ObjectiveLedger) > 0 {
+		return fallback, nil
+	}
+	return PromptInterpretation{}, parseErr
 }
 
 type OllamaShellCommandSpecialist struct {
@@ -3419,6 +3427,26 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			}
 			return ShellCommandProposal{}, false, nil
 		}
+		if err := validateCommandAgainstImplementationArchitectContract(proposal.Command, architectContract); err != nil {
+			appendRejectedShellProposalObservation(step, proposal.Command, err, "choose a command that follows the implementation architect target root, edit surface, and proof commands", result)
+			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by implementation architect contract", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"command": truncateStructuredTimelineValue(proposal.Command),
+				"reason":  err.Error(),
+			})
+			if attempt > 0 && shellProposalRepeatedLatestRejection(proposal.Command, result.Observations) {
+				emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_repeated", "Shell specialist repeated rejected command after direct feedback", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"attempt": fmt.Sprintf("%d", attempt),
+					"command": truncateStructuredTimelineValue(proposal.Command),
+				})
+				return ShellCommandProposal{}, false, nil
+			}
+			if attempt < defaultShellSpecialistRepairAttempts {
+				continue
+			}
+			return ShellCommandProposal{}, false, nil
+		}
 		if err := validateStructuredCommandForRunWithSurvey(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, *ledger, worksiteSurvey); err != nil {
 			if handleStructuredRepeatedCommandValidation(step, proposal.Command, err, ledger, onEvent, result) {
 				return ShellCommandProposal{}, false, nil
@@ -4085,10 +4113,10 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 	}{
 		Role:                    "prompt_interpreter",
 		UserPrompt:              input.UserPrompt,
-		ReferenceHistory:        recentStructuredMemoryRecords(input.History),
+		ReferenceHistory:        compactPromptInterpreterHistory(input.History, 3),
 		CurrentWorkingDirectory: input.CurrentWorkingDirectory,
-		WorksiteSurvey:          input.WorksiteSurvey,
-		AvailableRecipes:        recipePromptCandidates(input.Recipes),
+		WorksiteSurvey:          compactPromptInterpreterSurvey(input.WorksiteSurvey),
+		AvailableRecipes:        compactRecipePromptCandidates(input.Recipes, 4),
 		Instructions: []string{
 			"Interpret the user's words into durable task objectives for downstream planners.",
 			"Classify user_operation as create_new_project, modify_existing_project, fix_existing_project, inspect_existing_project, run_tests, install_deps, or unknown.",
@@ -4123,7 +4151,8 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 					"You are the prompt interpreter specialist for Omni.",
 					"Your only job is translating the user's natural-language request into structured objectives.",
 					"Downstream command planners must use your objective ledger instead of interpreting user wording themselves.",
-					"Return JSON only.",
+					"Return one compact JSON object only. No markdown. No prose.",
+					"Keep objective descriptions short and concrete.",
 				}, " "),
 			},
 			{Role: "user", Content: string(blob)},
@@ -4156,7 +4185,7 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 		},
 		Options: map[string]interface{}{
 			"temperature": 0,
-			"num_predict": 512,
+			"num_predict": 384,
 		},
 	}
 }
@@ -4366,7 +4395,13 @@ func ParsePromptInterpretation(raw string) (PromptInterpretation, error) {
 		ForbiddenRecipeIDs       []string              `json:"forbidden_recipe_ids"`
 	}
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
-		return PromptInterpretation{}, fmt.Errorf("parse prompt interpretation: %w", err)
+		repaired, repairErr := repairPromptInterpretationJSON(raw)
+		if repairErr != nil {
+			return PromptInterpretation{}, fmt.Errorf("parse prompt interpretation: %w", err)
+		}
+		if err := json.Unmarshal([]byte(repaired), &decoded); err != nil {
+			return PromptInterpretation{}, fmt.Errorf("parse prompt interpretation: %w", err)
+		}
 	}
 	for i := range decoded.ObjectiveLedger {
 		if strings.TrimSpace(decoded.ObjectiveLedger[i].Source) == "" {
@@ -4384,6 +4419,122 @@ func ParsePromptInterpretation(raw string) (PromptInterpretation, error) {
 		RecommendedRecipeIDs:     cleanStringList(decoded.RecommendedRecipeIDs),
 		ForbiddenRecipeIDs:       cleanStringList(decoded.ForbiddenRecipeIDs),
 	}, nil
+}
+
+func repairPromptInterpretationJSON(raw string) (string, error) {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return "", fmt.Errorf("empty prompt interpretation")
+	}
+	start := strings.Index(text, "{")
+	if start < 0 {
+		return "", fmt.Errorf("missing object start")
+	}
+	text = text[start:]
+	if end := strings.LastIndex(text, "}"); end >= 0 {
+		candidate := text[:end+1]
+		if json.Valid([]byte(candidate)) {
+			return candidate, nil
+		}
+		text = candidate
+	}
+	if !strings.Contains(text, `"objective_ledger"`) {
+		return "", fmt.Errorf("missing objective ledger")
+	}
+	text = trimPromptInterpretationToLastCompleteObjective(text)
+	openObjects := strings.Count(text, "{") - strings.Count(text, "}")
+	openArrays := strings.Count(text, "[") - strings.Count(text, "]")
+	var b strings.Builder
+	b.WriteString(text)
+	for i := 0; i < openArrays; i++ {
+		b.WriteString("]")
+	}
+	for i := 0; i < openObjects; i++ {
+		b.WriteString("}")
+	}
+	return b.String(), nil
+}
+
+func trimPromptInterpretationToLastCompleteObjective(text string) string {
+	ledgerIdx := strings.Index(text, `"objective_ledger"`)
+	if ledgerIdx < 0 {
+		return text
+	}
+	ledgerStart := strings.Index(text[ledgerIdx:], "[")
+	if ledgerStart < 0 {
+		return text
+	}
+	ledgerStart += ledgerIdx
+	lastComplete := strings.LastIndex(text, "}")
+	if lastComplete <= ledgerStart {
+		return text
+	}
+	if strings.Count(text[:lastComplete+1], "{") > strings.Count(text[:lastComplete+1], "}") {
+		return text[:lastComplete+1]
+	}
+	return text
+}
+
+func fallbackPromptInterpretation(prompt string, survey WorksiteSurvey) PromptInterpretation {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return PromptInterpretation{}
+	}
+	objectiveID := "satisfy_user_request"
+	description := prompt
+	lower := strings.ToLower(prompt)
+	switch {
+	case strings.Contains(lower, "react") && strings.Contains(lower, "app"):
+		objectiveID = "build_react_app"
+		description = "Build the requested React app and verify it runs"
+	case strings.Contains(lower, "cli"):
+		objectiveID = "build_cli_app"
+		description = "Build the requested CLI app and verify it runs"
+	}
+	operation := userOperationUnknown
+	if survey.ProjectState == projectStateEmptyDirectory || strings.Contains(lower, "build") || strings.Contains(lower, "create") {
+		operation = userOperationCreateNewProject
+	}
+	return PromptInterpretation{
+		ObjectiveLedger: []StructuredObjective{{
+			ID:          objectiveID,
+			Description: description,
+			Status:      "pending",
+			Source:      structuredObjectiveSourceUserExplicit,
+			Required:    true,
+		}},
+		RequiresReferenceHistory: false,
+		UserOperation:            operation,
+	}
+}
+
+func compactPromptInterpreterHistory(history []Message, limit int) []StructuredMemoryRecord {
+	records := recentStructuredMemoryRecords(history)
+	if limit <= 0 || len(records) <= limit {
+		return records
+	}
+	return records[len(records)-limit:]
+}
+
+func compactPromptInterpreterSurvey(survey WorksiteSurvey) WorksiteSurvey {
+	if len(survey.Evidence) > 4 {
+		survey.Evidence = survey.Evidence[:4]
+	}
+	if len(survey.Frameworks) > 4 {
+		survey.Frameworks = survey.Frameworks[:4]
+	}
+	if len(survey.Manifests) > 4 {
+		survey.Manifests = survey.Manifests[:4]
+	}
+	return survey
+}
+
+func compactRecipePromptCandidates(recipes []Recipe, limit int) []RecipePromptCandidate {
+	candidates := recipePromptCandidates(recipes)
+	if limit <= 0 || len(candidates) <= limit {
+		return candidates
+	}
+	return candidates[:limit]
 }
 
 func cleanStringList(values []string) []string {
