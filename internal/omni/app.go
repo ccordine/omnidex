@@ -2214,35 +2214,79 @@ func (a *App) autoResearchForTurn(ctx context.Context, input string, plan Contex
 	if !plan.NeedsWebResearch {
 		return nil, nil
 	}
-	query := strings.TrimSpace(input)
-	if query == "" {
+	queries := BuildWebResearchQueries(input, plan, 4)
+	if len(queries) == 0 {
 		return nil, nil
 	}
+	query := queries[0]
 	events := []Event{}
-	events = append(events, a.newEvent("auto_research_started", "Automatic web research started", map[string]string{"query": query}))
+	events = append(events, a.newEvent("auto_research_started", "Automatic web research started", map[string]string{
+		"query":   query,
+		"queries": strings.Join(queries, " | "),
+	}))
+	memoryContext := ""
+	if a.memory != nil {
+		memoryRecords, err := searchAutoResearchMemory(ctx, a.memory, queries, 4)
+		if err != nil {
+			events = append(events, a.newEvent("auto_research_memory_lookup_failed", "Automatic research memory lookup failed", map[string]string{"error": truncateOutput(err.Error())}))
+		} else if len(memoryRecords) > 0 {
+			memoryContext = formatAutoResearchMemoryContext(memoryRecords, 2400)
+			events = append(events, a.newEvent("auto_research_memory_loaded", "Automatic research loaded relevant memory before web search", map[string]string{
+				"records": fmt.Sprintf("%d", len(memoryRecords)),
+				"kinds":   strings.Join(memoryRecordKinds(memoryRecords), ","),
+				"ids":     strings.Join(memoryRecordIDs(memoryRecords), ","),
+			}))
+		}
+	}
 	if a.web == nil {
 		events = append(events, a.newEvent("auto_research_skipped", "Web search service is unavailable", nil))
-		return events, nil
+		if strings.TrimSpace(memoryContext) == "" {
+			return events, nil
+		}
+		return events, &CommandObservation{
+			Step:    0,
+			Command: "AUTO_RESEARCH_MEMORY: " + query,
+			Status:  "success",
+			Stdout:  truncateForObservation(memoryContext, defaultAgentObservationChars),
+		}
 	}
 	searchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	events = append(events, a.newEvent("web_search_started", "Web search started", map[string]string{
-		"query": query,
-		"role":  "web_research_specialist",
-	}))
-	results, err := a.web.SearchAll(searchCtx, query)
-	if err != nil {
-		events = append(events, a.newEvent("auto_research_failed", "Automatic web research failed", map[string]string{"error": err.Error()}))
+	results := []websearch.Result{}
+	searchErrors := []string{}
+	for _, candidate := range queries {
+		events = append(events, a.newEvent("web_search_started", "Web search started", map[string]string{
+			"query": candidate,
+			"role":  "web_research_specialist",
+		}))
+		candidateResults, err := a.web.SearchAll(searchCtx, candidate)
+		if err != nil {
+			searchErrors = append(searchErrors, candidate+": "+err.Error())
+			continue
+		}
+		events = append(events, a.newEvent("web_search_completed", "Web search completed", webSearchTimelineDetails(candidate, candidateResults)))
+		results = append(results, candidateResults...)
+		if len(results) >= 8 {
+			break
+		}
+	}
+	results = dedupeWebSearchResults(results)
+	if len(results) == 0 {
+		detail := "no search results"
+		if len(searchErrors) > 0 {
+			detail = strings.Join(searchErrors, " | ")
+		}
+		events = append(events, a.newEvent("auto_research_failed", "Automatic web research failed", map[string]string{"error": detail}))
 		return events, nil
 	}
-	events = append(events, a.newEvent("web_search_completed", "Web search completed", webSearchTimelineDetails(query, results)))
-	contextText := websearch.BuildContext(results, 5000)
+	contextText := strings.TrimSpace(strings.Join([]string{memoryContext, websearch.BuildContext(results, 5000)}, "\n\n"))
 	if strings.TrimSpace(contextText) == "" {
 		events = append(events, a.newEvent("auto_research_failed", "Automatic web research returned empty context", nil))
 		return events, nil
 	}
 	events = append(events, a.newEvent("auto_research_completed", "Automatic web research context captured", map[string]string{
 		"query":       query,
+		"queries":     strings.Join(queries, " | "),
 		"results":     fmt.Sprintf("%d", len(results)),
 		"result_urls": strings.Join(webSearchResultURLs(results, 5), "\n"),
 	}))
@@ -2266,6 +2310,164 @@ func (a *App) autoResearchForTurn(ctx context.Context, input string, plan Contex
 		Status:  "success",
 		Stdout:  truncateForObservation(contextText, defaultAgentObservationChars),
 	}
+}
+
+func searchAutoResearchMemory(ctx context.Context, memory *PGMemoryStore, queries []string, limit int) ([]MemoryRecord, error) {
+	if memory == nil {
+		return nil, nil
+	}
+	if err := memory.EnsureSchema(ctx); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 4
+	}
+	seen := map[int64]bool{}
+	out := []MemoryRecord{}
+	for _, query := range queries {
+		query = strings.TrimSpace(query)
+		if query == "" {
+			continue
+		}
+		records, err := memory.SearchMemory(ctx, query, []string{"web", "research", "documentation"}, limit)
+		if err != nil {
+			continue
+		}
+		for _, record := range records {
+			if record.ID > 0 && seen[record.ID] {
+				continue
+			}
+			if record.ID > 0 {
+				seen[record.ID] = true
+			}
+			out = append(out, record)
+			if len(out) >= limit {
+				return out, nil
+			}
+		}
+	}
+	return out, nil
+}
+
+func formatAutoResearchMemoryContext(records []MemoryRecord, budget int) string {
+	if len(records) == 0 {
+		return ""
+	}
+	lines := []string{"MEMORY_RESEARCH_CONTEXT"}
+	for _, record := range records {
+		content := strings.TrimSpace(record.Content)
+		if content == "" {
+			continue
+		}
+		segment := strings.Join([]string{
+			fmt.Sprintf("memory_id: %d", record.ID),
+			"kind: " + firstNonEmpty(record.Kind, "memory"),
+			"tags: " + strings.Join(cleanMemoryTags(record.Tags), ","),
+			"content:",
+			truncateForStructuredContext(content, 900),
+		}, "\n")
+		if budget > 0 && len(strings.Join(append(lines, segment), "\n\n")) > budget {
+			break
+		}
+		lines = append(lines, segment)
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n\n"))
+}
+
+func BuildWebResearchQueries(input string, plan ContextToolPlan, limit int) []string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 4
+	}
+	lower := strings.ToLower(input)
+	terms := importantSearchTerms(input)
+	joinedTerms := strings.Join(terms, " ")
+	queries := []string{}
+	add := func(query string) {
+		query = strings.Join(strings.Fields(strings.TrimSpace(query)), " ")
+		if query != "" {
+			queries = append(queries, query)
+		}
+	}
+	switch {
+	case strings.Contains(lower, "weather"):
+		location := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(joinedTerms, "weather", ""), "current", ""))
+		add(strings.TrimSpace(location + " weather forecast current conditions"))
+		add(strings.TrimSpace(location + " hourly weather today"))
+	case strings.Contains(lower, "news") || strings.Contains(lower, "current events"):
+		add(joinedTerms + " latest news")
+		add(joinedTerms + " breaking news today")
+	case plan.NeedsDocuments || technicalSearchLooksLikely(lower):
+		add(joinedTerms + " official documentation")
+		add(joinedTerms + " getting started guide")
+		add(joinedTerms + " examples best practices")
+	default:
+		add(joinedTerms + " official source")
+		add(joinedTerms + " latest reference")
+	}
+	add(input)
+	return limitStrings(dedupeStrings(queries), limit)
+}
+
+func importantSearchTerms(input string) []string {
+	words := strings.Fields(webDocNonWordQuery.ReplaceAllString(input, " "))
+	stop := map[string]bool{
+		"a": true, "an": true, "and": true, "app": true, "application": true, "as": true, "be": true, "build": true,
+		"can": true, "create": true, "for": true, "how": true, "i": true, "in": true, "is": true, "it": true,
+		"make": true, "me": true, "of": true, "on": true, "please": true, "should": true, "the": true, "to": true,
+		"use": true, "using": true, "with": true, "what": true, "right": true, "now": true,
+	}
+	terms := []string{}
+	for _, word := range words {
+		clean := strings.Trim(word, " .,;:!?\"'`()[]{}")
+		if clean == "" {
+			continue
+		}
+		lower := strings.ToLower(clean)
+		if stop[lower] {
+			continue
+		}
+		terms = append(terms, clean)
+		if len(terms) >= 8 {
+			break
+		}
+	}
+	if len(terms) == 0 {
+		return []string{input}
+	}
+	return terms
+}
+
+func technicalSearchLooksLikely(lower string) bool {
+	for _, needle := range []string{"api", "sdk", "react", "vite", "node", "javascript", "typescript", "rust", "go", "golang", "zig", "php", "docker", "postgres", "pgsql", "cli", "library", "framework"} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func dedupeWebSearchResults(results []websearch.Result) []websearch.Result {
+	seen := map[string]struct{}{}
+	out := make([]websearch.Result, 0, len(results))
+	for _, result := range results {
+		key := strings.TrimSpace(result.URL)
+		if key == "" {
+			key = strings.TrimSpace(result.Title + "\n" + result.Snippet)
+		}
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, result)
+	}
+	return out
 }
 
 type staticWebSearchResults struct {

@@ -174,6 +174,21 @@ func TestInferDocumentationResearchTargetForZigBuildTasks(t *testing.T) {
 	}
 }
 
+func TestBuildDocSearchQueriesPrefersInventedDocTermsBeforeRawPrompt(t *testing.T) {
+	queries := BuildDocSearchQueries("Build a CLI calculator application in Zig.")
+	if len(queries) == 0 {
+		t.Fatal("expected queries")
+	}
+	if queries[0] == "Build a CLI calculator application in Zig." {
+		t.Fatalf("first query should not be the raw prompt: %#v", queries)
+	}
+	for _, want := range []string{"getting started", "hello world", "command line"} {
+		if !stringSliceContains(queries, want) {
+			t.Fatalf("missing synthesized query %q: %#v", want, queries)
+		}
+	}
+}
+
 func TestDocResearchHitsAsMemoriesFormatsFetchedDocsForBriefs(t *testing.T) {
 	memories := docResearchHitsAsMemories("Build Zig hello world", []WebDocHit{{
 		Source:  WebDocSource{Name: "zig-getting-started", URL: "https://ziglang.org/learn/getting-started/"},

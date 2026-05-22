@@ -110,7 +110,7 @@ func TestAutoResearchForTurnCapturesContextAndStoresMemory(t *testing.T) {
 	if observation == nil {
 		t.Fatal("expected auto research observation")
 	}
-	if observation.Command != "AUTO_RESEARCH: what is the weather right now in Thailand?" {
+	if observation.Command != "AUTO_RESEARCH: Thailand weather forecast current conditions" {
 		t.Fatalf("command = %q", observation.Command)
 	}
 	if !strings.Contains(observation.Stdout, "Bangkok is hot and humid") {
@@ -132,6 +132,32 @@ func TestAutoResearchForTurnCapturesContextAndStoresMemory(t *testing.T) {
 	}
 	if len(memories) != 1 {
 		t.Fatalf("memories = %d, want 1", len(memories))
+	}
+}
+
+func TestAutoResearchLoadsMemoryBeforeWebSearch(t *testing.T) {
+	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	app.web = fakeWebSearchService{results: []websearch.Result{{
+		Provider: "duckduckgo",
+		URL:      "https://example.com/fresh",
+		Title:    "Fresh corroborating source",
+		Content:  "Fresh web source confirms updated Thailand weather context.",
+	}}}
+	runner := newFakeMemoryRunner()
+	app.memory = NewPGMemoryStore(runner)
+	if _, err := app.memory.AddMemory(context.Background(), "omni_auto_researcher", "web_research", "Thailand weather forecast current conditions memory says Bangkok is humid.", []string{"web", "research", "weather"}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, observation := app.autoResearchForTurn(context.Background(), "what is the weather right now in Thailand?", ContextToolPlan{NeedsWebResearch: true, NeedsMemory: true})
+	if observation == nil {
+		t.Fatal("expected observation")
+	}
+	if !strings.Contains(observation.Stdout, "MEMORY_RESEARCH_CONTEXT") || !strings.Contains(observation.Stdout, "Fresh web source") {
+		t.Fatalf("observation should include memory and fresh web context:\n%s", observation.Stdout)
+	}
+	if countEventsOfType(events, "auto_research_memory_loaded") != 1 {
+		t.Fatalf("missing memory loaded event: %#v", events)
 	}
 }
 

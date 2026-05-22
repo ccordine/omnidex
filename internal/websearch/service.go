@@ -19,6 +19,7 @@ const (
 	defaultPerSourceLimit = 3000
 	defaultTotalLimit     = 6000
 	defaultMaxCandidates  = 4
+	defaultMaxFollowLinks = 2
 	maxBodyBytes          = 2 << 20
 )
 
@@ -69,6 +70,7 @@ type Service struct {
 	perSourceBudget int
 	totalBudget     int
 	maxCandidates   int
+	maxFollowLinks  int
 	httpClient      *http.Client
 }
 
@@ -87,6 +89,7 @@ func New(providerNames []string, timeout time.Duration, perSourceBudget, totalBu
 		perSourceBudget: perSourceBudget,
 		totalBudget:     totalBudget,
 		maxCandidates:   defaultMaxCandidates,
+		maxFollowLinks:  defaultMaxFollowLinks,
 		httpClient:      &http.Client{Timeout: timeout},
 	}
 }
@@ -149,6 +152,33 @@ func (s *Service) SearchAll(ctx context.Context, query string) ([]Result, error)
 				Content:     truncate(doc.Content, s.perSourceBudget),
 				RetrievedAt: time.Now().UTC(),
 			})
+			followed := 0
+			for _, link := range doc.Links {
+				if followed >= s.maxFollowLinks || len(results) >= s.maxCandidates*len(s.providers)+s.maxFollowLinks {
+					break
+				}
+				if _, ok := seen[link]; ok {
+					continue
+				}
+				followDoc, err := s.fetchDocument(ctx, link)
+				if err != nil || strings.TrimSpace(followDoc.Content) == "" {
+					continue
+				}
+				if isLowQualitySearchResult(link, followDoc.Title, followDoc.Snippet, followDoc.Content) {
+					continue
+				}
+				seen[link] = struct{}{}
+				results = append(results, Result{
+					Provider:    provider.Name + ":follow",
+					SearchURL:   candidate.URL,
+					URL:         link,
+					Title:       firstNonEmptyString(followDoc.Title, link),
+					Snippet:     followDoc.Snippet,
+					Content:     truncate(followDoc.Content, s.perSourceBudget),
+					RetrievedAt: time.Now().UTC(),
+				})
+				followed++
+			}
 			fetched++
 			if fetched >= s.maxCandidates {
 				break
@@ -236,6 +266,7 @@ type fetchedDocument struct {
 	Title   string
 	Snippet string
 	Content string
+	Links   []string
 }
 
 func (s *Service) fetchDocument(ctx context.Context, url string) (fetchedDocument, error) {
@@ -247,6 +278,7 @@ func (s *Service) fetchDocument(ctx context.Context, url string) (fetchedDocumen
 		Title:   extractTitle(body),
 		Snippet: extractDescription(body),
 		Content: extractText(body),
+		Links:   extractFollowLinks(url, body, s.maxFollowLinks),
 	}, nil
 }
 
@@ -346,6 +378,50 @@ func providerSpecificCandidates(providerName, searchURL, body, searchHost string
 	return out
 }
 
+func extractFollowLinks(baseURL, body string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	base, err := neturl.Parse(baseURL)
+	if err != nil {
+		return nil
+	}
+	searchHost := strings.ToLower(base.Host)
+	seen := map[string]struct{}{}
+	out := []string{}
+	matches := anchorRE.FindAllStringSubmatch(body, 64)
+	for _, match := range matches {
+		href := strings.TrimSpace(html.UnescapeString(match[1]))
+		if href == "" || strings.HasPrefix(strings.ToLower(href), "mailto:") || strings.HasPrefix(strings.ToLower(href), "javascript:") {
+			continue
+		}
+		parsed, err := neturl.Parse(href)
+		if err != nil {
+			continue
+		}
+		resolved := base.ResolveReference(parsed)
+		if resolved.Scheme != "http" && resolved.Scheme != "https" {
+			continue
+		}
+		cleaned := cleanCandidateURL(resolved.String(), "")
+		if cleaned == "" || isIgnoredCandidateURL(cleaned, "") {
+			continue
+		}
+		if strings.ToLower(resolved.Host) != searchHost && len(out) > 0 {
+			continue
+		}
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		out = append(out, cleaned)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
 func cleanCandidateURL(rawHref, searchHost string) string {
 	rawHref = strings.TrimSpace(rawHref)
 	if rawHref == "" {
@@ -383,6 +459,15 @@ func cleanCandidateURL(rawHref, searchHost string) string {
 		}
 	}
 	return parsed.String()
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func isIgnoredCandidateURL(rawURL, searchHost string) bool {

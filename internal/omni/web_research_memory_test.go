@@ -93,6 +93,28 @@ func TestBuildWebResearchMemoryChunksSkipsEmptyContentAndCaps(t *testing.T) {
 	}
 }
 
+func TestBuildWebResearchQueriesSynthesizesPurposeBuiltTerms(t *testing.T) {
+	queries := BuildWebResearchQueries("Can you build a React JS note app with Vite?", ContextToolPlan{NeedsDocuments: true}, 4)
+	if len(queries) < 2 {
+		t.Fatalf("queries = %#v", queries)
+	}
+	if queries[0] == "Can you build a React JS note app with Vite?" {
+		t.Fatalf("first query should be synthesized, got raw prompt: %#v", queries)
+	}
+	for _, want := range []string{"official documentation", "getting started"} {
+		found := false
+		for _, query := range queries {
+			if strings.Contains(query, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("queries missing %q: %#v", want, queries)
+		}
+	}
+}
+
 type fakeWebSearchService struct {
 	results []websearch.Result
 	err     error

@@ -128,17 +128,30 @@ func BuildDocSearchQueries(question string) []string {
 		return nil
 	}
 	parts := strings.Fields(webDocNonWordQuery.ReplaceAllString(normalized, " "))
-	out := make([]string, 0, 4)
-	if len(parts) > 0 {
-		out = append(out, strings.Join(parts, " "))
+	out := make([]string, 0, 8)
+	lower := strings.ToLower(normalized)
+	if strings.Contains(lower, "hello world") || strings.Contains(lower, "hello-world") || strings.Contains(lower, "start") || strings.Contains(lower, "getting started") || strings.Contains(lower, "build") || strings.Contains(lower, "create") {
+		out = append(out, "getting started", "quick start", "hello world", "project structure")
+	}
+	if strings.Contains(lower, "cli") || strings.Contains(lower, "command line") {
+		out = append(out, "command line", "arguments", "stdin stdout")
+	}
+	if strings.Contains(lower, "test") || strings.Contains(lower, "verify") {
+		out = append(out, "testing", "build", "run")
+	}
+	if strings.Contains(lower, "install") || strings.Contains(lower, "dependency") {
+		out = append(out, "installation", "dependencies")
 	}
 	for _, part := range parts {
 		if len(part) >= 4 {
 			out = append(out, part)
 		}
-		if len(out) >= 4 {
+		if len(out) >= 7 {
 			break
 		}
+	}
+	if len(parts) > 0 {
+		out = append(out, strings.Join(parts, " "))
 	}
 	return dedupeStrings(out)
 }
