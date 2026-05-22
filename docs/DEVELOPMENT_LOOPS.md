@@ -2,17 +2,93 @@
 
 Omnidex uses evidence-led self-correcting development loops instead of one-shot code generation.
 
-For coding tasks, the expected loop is:
+For coding tasks, the default loop is proof-first:
 
 1. Interpret the task and active working directory.
 2. Identify the concrete failure mode or objective.
-3. Turn discovered failures into regression targets where practical.
-4. Make scoped source or configuration changes.
-5. Normalize edited files with project tooling.
-6. Run targeted verification commands.
-7. Preserve command output and failures as evidence.
-8. Continue from the latest observation when verification fails.
-9. Report what changed, what passed, what failed, and what remains.
+3. Create a proof plan that defines what success means.
+4. Validate the proof plan against the user request and objective ledger.
+5. Create or update a focused failing test, smoke test, golden-output check, compiler/lint check, source-verification probe, or evaluator acceptance checklist.
+6. Make the smallest scoped source, configuration, or build change that should satisfy that target.
+7. Run the focused target and use stdout/stderr as the next correction input.
+8. Normalize edited files with project tooling.
+9. Run broader targeted verification commands only after the focused target passes.
+10. Preserve command output and failures as evidence.
+11. Continue from the latest observation when verification fails.
+12. Report what changed, what passed, what failed, and what remains.
+
+## Proof Plan Contract
+
+The planner should express proof work as a small contract when feasible:
+
+```json
+{
+  "objective_id": "create_notes_crud",
+  "proof_type": "smoke_test",
+  "files_to_create": ["src/App.test.jsx"],
+  "commands": ["npm test -- --run"],
+  "acceptance_checks": [
+    "user can create a note",
+    "created note appears in the list",
+    "user can edit an existing note",
+    "user can delete a note"
+  ],
+  "out_of_scope": [
+    "authentication",
+    "database backend",
+    "cloud sync",
+    "routing"
+  ]
+}
+```
+
+Allowed proof objective sources:
+
+- `user_explicit`
+- `recipe_required`
+- `evidence_required_prerequisite`
+
+Disallowed proof objective sources:
+
+- `memory_suggested`
+- `model_inferred`
+
+Memories and model guesses may inform implementation style, but they cannot create tests, dependencies, services, files, or acceptance criteria unless the current user prompt explicitly asks for them.
+
+## Proof Types
+
+Not every task needs a unit test. Omnidex should choose the smallest proof type that gives a clear signal:
+
+- Code behavior: `unit_test` or `integration_test`
+- UI behavior: `smoke_test`, DOM query, and build pass
+- CLI behavior: `golden_output`
+- Build/refactor work: `compiler_check`, `lint_check`, and existing tests
+- Missing toolchain: `source_verification`
+- Docs/research: `manual_evaluator_acceptance`, required sections, source quality, and citation/evidence ledger
+
+## Test Tampering
+
+Validated tests and probes are protected evidence.
+
+Once a proof test/probe is validated, the coder must not weaken, delete, skip, or rewrite it just to make the loop pass.
+
+Allowed test changes:
+
+- The test has a syntax or tooling error.
+- The validator confirms the test itself is invalid.
+- The user changes the request.
+- The project framework requires an equivalent form.
+
+The run trace should track these proof lifecycle events:
+
+- `test_created`
+- `test_validated`
+- `test_failed_as_expected`
+- `implementation_started`
+- `test_passed`
+- `test_modified`
+- `test_modification_approved`
+- `test_modification_rejected`
 
 ## Behavior
 
@@ -25,6 +101,8 @@ Examples:
 - If a command succeeds once, do not repeat it unless state changed.
 - If a command fails, inspect the failure and choose the next smallest useful probe.
 - If verification is ambiguous, keep the objective pending.
+- If no real test runner or compiler is available, write a deterministic probe that checks concrete files, symbols, behavior strings, or command outputs.
+- If implementation code was written but no later test, probe, or readback has passed, keep completion pending.
 
 ## Names
 

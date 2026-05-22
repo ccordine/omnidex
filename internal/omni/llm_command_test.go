@@ -4439,6 +4439,156 @@ func TestStructuredCommandUserMessageIncludesCompletedActions(t *testing.T) {
 	}
 }
 
+func TestStructuredCommandUserMessageIncludesTDDDevelopmentLoop(t *testing.T) {
+	message := buildStructuredCommandUserMessage(
+		"add note editing to the React app",
+		nil,
+		t.TempDir(),
+		[]StructuredObjective{{ID: "implement_note_editing", Description: "Implement note editing", Status: "pending"}},
+	)
+	for _, want := range []string{
+		`"development_loop"`,
+		"test_first",
+		"implement_second",
+		"verify_third",
+		"fallback_probe",
+		"completion_gate",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("active task message missing TDD policy %q: %s", want, message)
+		}
+	}
+}
+
+func TestPromptInterpreterFallbackObjectiveForEmptyExecutionLedger(t *testing.T) {
+	objective, ok := fallbackPromptInterpretationObjective(
+		"fix the existing app",
+		PromptInterpretation{UserOperation: userOperationFixExisting},
+		WorksiteSurvey{},
+	)
+	if !ok {
+		t.Fatal("expected fallback objective")
+	}
+	if objective.ID != "complete_active_task" || objective.Status != "pending" || objective.Source != structuredObjectiveSourceUserExplicit || !objective.Required {
+		t.Fatalf("objective = %#v", objective)
+	}
+}
+
+func TestStructuredCommandSystemContextIncludesTDDPolicy(t *testing.T) {
+	context := buildStructuredCommandSystemContext()
+	for _, want := range []string{
+		"test-driven loop",
+		"focused failing test",
+		"deterministic verification probe",
+		"Do not mark implementation objectives satisfied from a source write alone",
+		"proof_plan contract",
+		"Validated proof tests/probes are protected",
+		"Validated playbook memories",
+		"advisory acceleration only",
+	} {
+		if !strings.Contains(context, want) {
+			t.Fatalf("system context missing %q", want)
+		}
+	}
+}
+
+func TestCompactStructuredPrepMemoriesIncludesValidatedPlaybookSummary(t *testing.T) {
+	memories := []SessionMemory{{
+		Kind: validatedPlaybookKind,
+		Content: `{
+			"name": "react_notes",
+			"task_pattern": "build a React notes app",
+			"command_sequence": ["write source", "npm run build"],
+			"validation_signals": ["npm run build"],
+			"confidence": 91,
+			"scope_policy": "advisory_only"
+		}`,
+		Tags: []string{"validated-playbook", "react"},
+	}}
+	prep := compactStructuredPrepMemories(memories, 1)
+	if len(prep) != 1 {
+		t.Fatalf("prep memories=%d", len(prep))
+	}
+	if !strings.Contains(prep[0].Content, "commands=write source -> npm run build") {
+		t.Fatalf("playbook was not summarized: %s", prep[0].Content)
+	}
+}
+
+func TestStructuredCommandUserMessageIncludesProofPolicy(t *testing.T) {
+	message := buildStructuredCommandUserMessage("build a notes app", nil, t.TempDir(), []StructuredObjective{{
+		ID:       "create_notes_crud",
+		Status:   "pending",
+		Source:   structuredObjectiveSourceUserExplicit,
+		Required: true,
+	}})
+	for _, want := range []string{
+		`"proof_policy"`,
+		"contract_first_tdd_loop",
+		`"proof_plan_allowed_sources"`,
+		structuredObjectiveSourceUserExplicit,
+		structuredObjectiveSourceRecipeRequired,
+		structuredObjectiveSourceEvidenceRequiredPrerequisite,
+		`"proof_lifecycle"`,
+		structuredProofEventTestValidated,
+		structuredProofEventTestModificationRejected,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("active task message missing proof policy %q: %s", want, message)
+		}
+	}
+}
+
+func TestStructuredCommandResponseFormatIncludesProofPlanContract(t *testing.T) {
+	format := buildStructuredCommandResponseFormat(nil)
+	properties, ok := format["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("format properties missing: %#v", format)
+	}
+	if _, ok := properties["proof_plan"]; !ok {
+		t.Fatalf("format missing proof_plan schema: %#v", properties)
+	}
+}
+
+func TestParseStructuredCommandPayloadIncludesProofPlan(t *testing.T) {
+	payload, err := ParseStructuredCommandPayload(`{
+		"command": "npm test -- --run",
+		"done": false,
+		"answer": "",
+		"proof_plan": {
+			"objective_id": "create_notes_crud",
+			"proof_type": "smoke_test",
+			"commands": ["npm test -- --run"],
+			"acceptance_checks": ["user can create a note"]
+		}
+	}`)
+	if err != nil {
+		t.Fatalf("parse payload: %v", err)
+	}
+	if payload.ProofPlan.ObjectiveID != "create_notes_crud" || payload.ProofPlan.ProofType != structuredProofTypeSmokeTest {
+		t.Fatalf("proof plan not parsed: %#v", payload.ProofPlan)
+	}
+}
+
+func TestShellSpecialistRequestIncludesTDDPolicy(t *testing.T) {
+	req := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{
+		UserPrompt: "add note editing to the React app",
+		ToolTask:   "write source files for app component CRUD objectives",
+	})
+	text := structuredRequestMessagesText(req)
+	for _, want := range []string{
+		"For app/code feature tool_tasks, prefer a TDD command",
+		"focused test",
+		"deterministic source-verification probe",
+		"validated test/probe",
+		"memory_suggested",
+		"After implementation writes",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("shell specialist request missing %q: %s", want, text)
+		}
+	}
+}
+
 func TestStructuredLoopStateFlagsPrematureDoneLoop(t *testing.T) {
 	ledger := []StructuredObjective{
 		{ID: "design_calculator_ui", Status: "pending", Required: true, Source: structuredObjectiveSourceUserExplicit},
