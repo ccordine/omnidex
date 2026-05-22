@@ -322,7 +322,7 @@ func TestStructuredCommandDecisionAnswersActivePromptDespiteConflictingMemory(t 
 		},
 	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v observations=%#v", err, result.Observations)
 	}
 	if result.Command != "printf 'Virginia time evidence\n'" {
 		t.Fatalf("command = %q", result.Command)
@@ -4202,7 +4202,7 @@ func TestStructuredCommandDecisionShellSpecialistPivotsFromOpenWeatherMap(t *tes
 	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{
 		{Command: openWeather, Rationale: "Use OpenWeatherMap current weather endpoint."},
 		{Command: openWeather, Rationale: "Retry the same endpoint."},
-		{Command: "printf 'Pattaya weather evidence\n'", Rationale: "Use a local deterministic stand-in for accepted evidence in the unit test."},
+		{Command: "printf 'Pattaya weather evidence\n' | tee weather.txt", Rationale: "Use a local deterministic stand-in for accepted evidence in the unit test."},
 	}}
 	checker := &fakeCompletionChecker{checks: []CompletionCheck{{Done: true, Reason: "unit test accepted fallback weather evidence"}}}
 	stdout := &bytes.Buffer{}
@@ -4220,7 +4220,7 @@ func TestStructuredCommandDecisionShellSpecialistPivotsFromOpenWeatherMap(t *tes
 		structuredCommandDecisionRunConfig{ShellSpecialist: shell, CompletionChecker: checker},
 	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v observations=%#v", err, result.Observations)
 	}
 	if len(shell.inputs) < 3 {
 		t.Fatalf("shell specialist calls = %d, want at least 3", len(shell.inputs))

@@ -45,6 +45,9 @@ func TestBuildImplementationArchitectContractTargetsNestedReactRoot(t *testing.T
 	if !stringSliceContains(contract.ValidatorScopes, "alignment_validator: after implementation evidence exists, check the completed work against user objectives without adding unrequested expectations.") {
 		t.Fatalf("validator scopes = %#v", contract.ValidatorScopes)
 	}
+	if contract.CurrentItem == nil || contract.CurrentItem.ID != "create_react_entrypoint" || contract.CurrentItem.CWD != "react-music-production" || contract.CurrentItem.Path != "src/App.js" {
+		t.Fatalf("current item = %#v", contract.CurrentItem)
+	}
 }
 
 func TestShellSpecialistRequestIncludesArchitectContract(t *testing.T) {
@@ -62,9 +65,11 @@ func TestShellSpecialistRequestIncludesArchitectContract(t *testing.T) {
 	text := structuredRequestMessagesText(req)
 	for _, want := range []string{
 		"architect_contract",
+		"current_item",
 		"implementation_architect",
 		"react-music-production",
 		"the implementation architect's authority",
+		"satisfy only that one queued operation",
 		"coder/shell specialist only chooses the next concrete command",
 	} {
 		if !strings.Contains(text, want) {
@@ -112,5 +117,25 @@ func TestValidateCommandAgainstImplementationArchitectContractRequiresTargetRoot
 	}
 	if err := validateCommandAgainstImplementationArchitectContract("cd react-music-production && npm run build", contract); err != nil {
 		t.Fatalf("expected target-root command to be accepted: %v", err)
+	}
+}
+
+func TestValidateCommandAgainstImplementationArchitectCurrentItem(t *testing.T) {
+	contract := ImplementationArchitectContract{
+		TargetRoot:  "react-music-production",
+		CurrentItem: &ArchitectWorkItem{ID: "create_react_entrypoint", Operation: "update", CWD: "react-music-production", Path: "src/App.js"},
+	}
+	if err := validateCommandAgainstImplementationArchitectContract("cd react-music-production && cat > src/App.css <<'CSS'\nbody{}\nCSS", contract); err == nil {
+		t.Fatal("expected wrong current item path to be rejected")
+	}
+	if err := validateCommandAgainstImplementationArchitectContract("cd react-music-production && cat > src/App.js <<'JS'\nexport default function App() { return null; }\nJS", contract); err != nil {
+		t.Fatalf("expected current item path to be accepted: %v", err)
+	}
+}
+
+func TestBuildImplementationArchitectContractSkipsNonImplementationTask(t *testing.T) {
+	contract := buildImplementationArchitectContract("what is the weather", "Use wttr.in for current weather.", t.TempDir(), WorksiteSurvey{}, nil)
+	if hasImplementationArchitectContract(contract) {
+		t.Fatalf("unexpected contract: %#v", contract)
 	}
 }

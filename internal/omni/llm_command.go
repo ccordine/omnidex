@@ -7996,6 +7996,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			"Return JSON only with schema {\"command\":\"...\",\"rationale\":\"...\"}.",
 			"Only choose a shell command that directly satisfies tool_task from the planner authority.",
 			"If architect_contract is present, treat it as the implementation architect's authority over target_root, edit_surface, proof_commands, and guardrails.",
+			"If architect_contract.current_item is present, satisfy only that one queued operation; use its cwd, path, operation, description, and verify fields literally.",
 			"The architect decides what source area is edited and how it is proven; the coder/shell specialist only chooses the next concrete command inside that contract.",
 			"If repair_feedback is non-empty, treat it as direct validator feedback for this retry; the next command must visibly correct that exact issue.",
 			"Treat completed_actions as authoritative progress; never choose a command that repeats or recreates an already completed action.",
