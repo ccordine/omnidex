@@ -72,6 +72,14 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.RecoveryToolTask = missingFileRecoveryToolTask(input.Prompt, input.ObjectiveLedger, *latest)
 		return decision
 	}
+	if latest := latestExistingScaffoldObservation(input.Observations); latest != nil && appBuildPromptNeedsFiles(input.Prompt) {
+		decision.Action = ProgressForceRecovery
+		decision.Reason = "project scaffold already exists; continue with implementation instead of rerunning scaffold"
+		decision.RejectedCommand = latest.Command
+		decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, latest.Command)
+		decision.RecoveryToolTask = existingScaffoldRecoveryToolTask(input.Prompt, input.ObjectiveLedger, *latest, input.WorkingDir)
+		return decision
+	}
 	if shouldForceWriteAfterInspection(input) {
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "workspace inspection has not produced app files; creation step is now required"
@@ -182,6 +190,30 @@ func missingFileRecoveryToolTask(prompt string, ledger []StructuredObjective, ob
 	}
 	if pending != "" {
 		parts = append(parts, "Pending objective(s): "+pending+".")
+	}
+	if strings.TrimSpace(prompt) != "" {
+		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
+	}
+	return strings.Join(parts, " ")
+}
+
+func existingScaffoldRecoveryToolTask(prompt string, ledger []StructuredObjective, obs StructuredCommandObservation, workingDir string) string {
+	pending := pendingStructuredObjectiveIDs(ledger)
+	parts := []string{
+		"Recovery required.",
+		"The project scaffold already exists, so setup/scaffold commands must not be rerun.",
+		"Failed scaffold command: " + strings.TrimSpace(obs.Command) + ".",
+		fmtObservationForRecovery("Failure", obs),
+		"Do not continue with generic read-only inventory commands such as ls -la.",
+		"Required next behavior: create or modify the actual backend and frontend project files now.",
+		"For a Go plus React app, patch existing Go server/API files, React component/source files, package scripts or Makefile targets, and automated tests/smoke checks.",
+		"After source edits, run targeted verification such as go test ./..., npm test, npm run build, or make test.",
+	}
+	if pending != "" {
+		parts = append(parts, "Pending objective(s): "+pending+".")
+	}
+	if strings.TrimSpace(workingDir) != "" {
+		parts = append(parts, "Current working directory: "+strings.TrimSpace(workingDir)+".")
 	}
 	if strings.TrimSpace(prompt) != "" {
 		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
@@ -482,6 +514,33 @@ func latestENOENTObservation(observations []StructuredCommandObservation) *Struc
 		return nil
 	}
 	return &latest
+}
+
+func latestExistingScaffoldObservation(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	if len(observations) == 0 {
+		return nil
+	}
+	latest := observations[len(observations)-1]
+	if latest.ExitCode == 0 || strings.TrimSpace(latest.Command) == "" {
+		return nil
+	}
+	commandLower := strings.ToLower(latest.Command)
+	if !strings.Contains(commandLower, "go mod init") && !strings.Contains(commandLower, "create-react-app") && !strings.Contains(commandLower, "npm create") {
+		return nil
+	}
+	text := strings.ToLower(latest.Stderr + "\n" + latest.Stdout)
+	alreadyExistsNeedles := []string{
+		"go.mod already exists",
+		"already exists",
+		"contains files that could conflict",
+		"the directory",
+	}
+	for _, needle := range alreadyExistsNeedles {
+		if strings.Contains(text, needle) {
+			return &latest
+		}
+	}
+	return nil
 }
 
 func looksLikeReadCommand(command string) bool {

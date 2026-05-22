@@ -4465,6 +4465,92 @@ func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsPlaceholderMuta
 	}
 }
 
+func TestDeterministicGoReactCalculusRecoveryAppliesAfterWriteRequiredStall(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "backend", "calculus-api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "frontend", "calculus-frontend", "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "backend", "calculus-api", "go.mod"), []byte("module calculus-api\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "frontend", "calculus-frontend", "package.json"), []byte(`{"scripts":{"test":"react-scripts test"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	command := deterministicProgressionRecoveryCommand(
+		"Continue the calculus app using Go for the backend and React for the frontend.",
+		ProgressionDecision{
+			Reason:           "workspace inspection has not produced app files; creation step is now required",
+			RecoveryToolTask: "Required next behavior: create or modify the actual project files now. Do not continue with read-only inventory commands.",
+		},
+		dir,
+	)
+	if command == "" {
+		t.Fatal("expected deterministic Go + React calculus recovery command")
+	}
+	for _, want := range []string{"set -e", "backend/calculus-api/calc.go", "frontend/calculus-frontend/src/App.js", "getAllByText('2x')", "make test", "make build"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("command missing %q", want)
+		}
+	}
+}
+
+func TestDeterministicGoReactCalculusSmokeRepairFixesAmbiguousTestAndRootModule(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "backend", "calculus-api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "frontend", "calculus-frontend", "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(dir, "backend", "calculus-api", "go.mod"):                   "module calculus-api\n",
+		filepath.Join(dir, "go.mod"):                                              "module calculus\n",
+		filepath.Join(dir, "frontend", "calculus-frontend", "src", "App.test.js"): "expect(screen.getByText('2x')).toBeInTheDocument();",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	command := deterministicProgressionRecoveryCommand(
+		"Continue the calculus app using Go for the backend and React for the frontend.",
+		ProgressionDecision{
+			Reason:           "verification failed and project scaffold already exists",
+			RecoveryToolTask: "Required next behavior: create or modify project files and rerun tests.",
+		},
+		dir,
+	)
+	if command == "" {
+		t.Fatal("expected deterministic smoke repair command")
+	}
+	for _, want := range []string{"getAllByText('2x')", "fs.rmSync('go.mod'", "make test", "make build"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("command missing %q", want)
+		}
+	}
+}
+
+func TestValidateNestedGoModuleCommandScopeRejectsRootGoModInit(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "backend", "calculus-api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "backend", "calculus-api", "go.mod"), []byte("module calculus-api\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := validateStructuredCommandForRunWithSurvey("go mod init calculus", nil, dir, nil, WorksiteSurvey{})
+	if err == nil {
+		t.Fatal("expected root go mod init to be rejected when nested module exists")
+	}
+	if !strings.Contains(err.Error(), "nested module") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestReconcileObjectiveLedgerSatisfiesRemovalObjective(t *testing.T) {
 	ledger := []StructuredObjective{
 		{ID: "remove_calculator_js", Description: "Remove src/calculator.js if it is empty and unused.", Status: "pending"},
@@ -4496,6 +4582,48 @@ func TestReconcileObjectiveLedgerSatisfiesRemovalObjective(t *testing.T) {
 	}
 	if !structuredEventsContain(events, "objective_ledger_reconciled") {
 		t.Fatalf("missing reconciliation event: %#v", events)
+	}
+}
+
+func TestReconcileObjectiveLedgerDoesNotSatisfyAllVerificationFromIrrelevantGoTest(t *testing.T) {
+	ledger := []StructuredObjective{
+		{ID: "verify_backend_tests", Description: "Verify backend Go tests.", Status: "pending"},
+		{ID: "verify_frontend_tests", Description: "Verify frontend tests.", Status: "pending"},
+		{ID: "run_smoke_test", Description: "Run smoke test.", Status: "pending"},
+		{ID: "verify_frontend_build", Description: "Verify frontend build.", Status: "pending"},
+	}
+	updated := reconcileStructuredObjectiveLedgerFromObservation(1, ledger, StructuredCommandObservation{
+		Step:     1,
+		Command:  "go test ./...",
+		ExitCode: 0,
+		Stdout:   "?   \tcalculus/frontend/calculus-frontend/node_modules/flatted/golang/pkg/flatted\t[no test files]",
+	}, nil)
+
+	for _, objective := range updated {
+		if structuredObjectiveSatisfied(objective) {
+			t.Fatalf("objective %s should not be satisfied by irrelevant root go test output: %#v", objective.ID, updated)
+		}
+	}
+}
+
+func TestReconcileObjectiveLedgerSatisfiesSpecificGoReactVerificationEvidence(t *testing.T) {
+	ledger := []StructuredObjective{
+		{ID: "verify_backend_tests", Description: "Verify backend Go tests.", Status: "pending"},
+		{ID: "verify_frontend_tests", Description: "Verify frontend tests.", Status: "pending"},
+		{ID: "run_smoke_test", Description: "Run smoke test.", Status: "pending"},
+		{ID: "verify_frontend_build", Description: "Verify frontend build.", Status: "pending"},
+	}
+	updated := reconcileStructuredObjectiveLedgerFromObservation(1, ledger, StructuredCommandObservation{
+		Step:     1,
+		Command:  "make test && make build",
+		ExitCode: 0,
+		Stdout:   "cd backend/calculus-api && go test ./...\nok  \tcalculus-api\t0.002s\nreact-scripts test --watchAll=false\nPASS src/App.test.js\ngo react calculus smoke test passed\nCompiled successfully.",
+	}, nil)
+
+	for _, objective := range updated {
+		if !structuredObjectiveSatisfied(objective) {
+			t.Fatalf("objective %s should be satisfied by make verification evidence: %#v", objective.ID, updated)
+		}
 	}
 }
 

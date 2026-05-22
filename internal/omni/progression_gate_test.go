@@ -116,6 +116,42 @@ func TestProgressionGateForcesRecoveryAfterRepeatedNoopPackageInstall(t *testing
 	}
 }
 
+func TestProgressionGateContinuesAfterExistingGoReactScaffold(t *testing.T) {
+	command := "mkdir -p backend/calculus-api && cd backend/calculus-api && go mod init calculus-api && cd ../.. && mkdir -p frontend/calculus-frontend && cd frontend/calculus-frontend && npx create-react-app ."
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt: "Build a complete calculus learning and solving app using Go for the backend and React JS for the frontend.",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "implement_backend_api", Status: "pending"},
+			{ID: "implement_react_frontend", Status: "pending"},
+			{ID: "verify_tests", Status: "pending"},
+		},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: command, ExitCode: 0, Stdout: "go: creating new go.mod: module calculus-api\nSuccess! Created calculus-frontend"},
+			{Step: 2, Command: command, ExitCode: 1, Stderr: "go: /tmp/demo/backend/calculus-api/go.mod already exists"},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	if decision.RejectedCommand != command {
+		t.Fatalf("rejected command = %q, want scaffold command", decision.RejectedCommand)
+	}
+	for _, want := range []string{
+		"project scaffold already exists",
+		"setup/scaffold commands must not be rerun",
+		"create or modify the actual backend and frontend project files now",
+		"Go plus React",
+		"go test ./...",
+		"npm test",
+	} {
+		if !strings.Contains(decision.RecoveryToolTask, want) {
+			t.Fatalf("recovery task missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+}
+
 func TestProgressionGateUsesCompletedEvidenceForRepeatedSuccess(t *testing.T) {
 	command := "ls -la /tmp/demo"
 	gate := ProgressionGate{}
