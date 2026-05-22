@@ -761,6 +761,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		if err != nil {
 			return result, err
 		}
+		payload.Command = normalizeStructuredCommandLineBreaks(payload.Command)
 		ledger = mergeStructuredObjectiveLedger(ledger, payload.ObjectiveLedger)
 		result.ObjectiveLedger = ledger
 		emitStructuredCommandEvent(onEvent, "structured_llm_payload_received", "Structured command payload received", map[string]string{
@@ -818,6 +819,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				})
 				continue
 			}
+			proposal.Command = normalizeStructuredCommandLineBreaks(proposal.Command)
 			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_finished", "Shell specialist proposed command", map[string]string{
 				"step":      fmt.Sprintf("%d", step),
 				"tool":      "shell",
@@ -3361,6 +3363,7 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 		})
 		return true, nil
 	}
+	proposal.Command = normalizeStructuredCommandLineBreaks(proposal.Command)
 	emitStructuredCommandEvent(onEvent, "structured_tool_delegation_finished", "Shell specialist proposed command", map[string]string{
 		"step":      fmt.Sprintf("%d", step),
 		"command":   truncateStructuredTimelineValue(proposal.Command),
@@ -4124,6 +4127,7 @@ func classifyStructuredLLMFailure(err error) string {
 }
 
 func validateStructuredCommandString(command string) error {
+	command = normalizeStructuredCommandLineBreaks(command)
 	if structuredCommandLooksLikeMultilinePackageManagerScript(command) {
 		return fmt.Errorf("multiline package-manager scripts are blocked; choose one concrete package/build command for the next objective")
 	}
@@ -4177,6 +4181,56 @@ func validateStructuredCommandString(command string) error {
 		return err
 	}
 	return nil
+}
+
+func normalizeStructuredCommandLineBreaks(command string) string {
+	command = strings.TrimSpace(command)
+	if !strings.ContainsAny(command, "\n\r") || strings.Contains(command, "<<") {
+		return command
+	}
+	parts := []string{}
+	var current strings.Builder
+	inSingleQuote := false
+	inDoubleQuote := false
+	escaped := false
+	for _, r := range command {
+		if r == '\r' {
+			continue
+		}
+		if r == '\n' && !inSingleQuote && !inDoubleQuote {
+			part := strings.TrimSpace(current.String())
+			if part != "" {
+				parts = append(parts, part)
+			}
+			current.Reset()
+			escaped = false
+			continue
+		}
+		current.WriteRune(r)
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && !inSingleQuote {
+			escaped = true
+			continue
+		}
+		if r == '\'' && !inDoubleQuote {
+			inSingleQuote = !inSingleQuote
+			continue
+		}
+		if r == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+			continue
+		}
+	}
+	if part := strings.TrimSpace(current.String()); part != "" {
+		parts = append(parts, part)
+	}
+	if len(parts) <= 1 {
+		return command
+	}
+	return strings.Join(parts, " && ")
 }
 
 func structuredCommandUsesRecursiveForceRemove(command string) bool {

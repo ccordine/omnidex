@@ -2030,21 +2030,31 @@ func TestValidateStructuredCommandRejectsOnlyPureEcho(t *testing.T) {
 	}
 }
 
-func TestValidateStructuredCommandRejectsMultilineScript(t *testing.T) {
+func TestValidateStructuredCommandNormalizesMultilineScript(t *testing.T) {
 	command := strings.Join([]string{
 		"cd /tmp/project",
 		"npm install @hotwired/stimulus",
 		"npm install webpack webpack-cli --save-dev",
 	}, "\n")
-	err := validateStructuredCommandString(command)
-	if err == nil || !strings.Contains(err.Error(), "multiline package-manager scripts are blocked") {
-		t.Fatalf("multiline script should be rejected, got %v", err)
+	if err := validateStructuredCommandString(command); err != nil {
+		t.Fatalf("multiline script should normalize and validate: %v", err)
+	}
+	normalized := normalizeStructuredCommandLineBreaks(command)
+	want := "cd /tmp/project && npm install @hotwired/stimulus && npm install webpack webpack-cli --save-dev"
+	if normalized != want {
+		t.Fatalf("normalized command = %q, want %q", normalized, want)
 	}
 	if err := validateStructuredCommandString("printf 'test evidence\n'"); err != nil {
 		t.Fatalf("quoted newline command should be allowed: %v", err)
 	}
+	if got := normalizeStructuredCommandLineBreaks("printf 'test evidence\n'"); got != "printf 'test evidence\n'" {
+		t.Fatalf("quoted newline command was changed: %q", got)
+	}
 	if err := validateStructuredCommandString("set -e\nprintf 'evidence'"); err != nil {
 		t.Fatalf("non-package-manager script should be allowed: %v", err)
+	}
+	if got := normalizeStructuredCommandLineBreaks("set -e\nprintf 'evidence'"); got != "set -e && printf 'evidence'" {
+		t.Fatalf("set -e command normalized to %q", got)
 	}
 }
 
