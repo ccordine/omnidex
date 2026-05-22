@@ -253,6 +253,18 @@ Helpful references:
 
 ### Remote model providers
 
+Omnidex supports these model sources for generation:
+
+| Provider | `LLM_PROVIDER` values | Required credential | Default model |
+| --- | --- | --- | --- |
+| Ollama | `ollama`, `local` | none | `llama3.2` in core, CLI defaults vary by role |
+| OpenAI-compatible OpenAI API | `openai`, `chatgpt`, `chat-gpt` | `OPENAI_API_KEY` | `gpt-4.1-mini` |
+| Google Gemini | `google`, `gemini`, `googleai`, `google-ai` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `gemini-2.0-flash` |
+| Anthropic Claude | `anthropic`, `claude` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
+| Hugging Face Inference Providers | `huggingface`, `hugging-face`, `hf` | `HUGGINGFACE_API_KEY` or `HF_TOKEN` | `openai/gpt-oss-20b:fastest` |
+
+Generation and embeddings are routed separately. `LLM_PROVIDER` controls chat, planning, summarization, specialists, and response generation. `EMBEDDING_PROVIDER` controls memory vectors and retrieval embeddings. Anthropic is generation-only in Omnidex because Anthropic does not expose a native embeddings API; use Ollama, OpenAI, Google, or Hugging Face for embeddings.
+
 To run with OpenAI instead of Ollama:
 - `LLM_PROVIDER=openai`
 - `OPENAI_API_KEY=...`
@@ -279,6 +291,59 @@ To run with Hugging Face Inference Providers:
 
 `EMBEDDING_PROVIDER` can be set independently from `LLM_PROVIDER` when you want one provider for generation and another provider for memory vectors. This is required for Anthropic and useful when you want stable `vector(768)` memory dimensions while testing different generation models.
 
+Common setups:
+
+```env
+# Fully local generation and embeddings.
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen2.5-coder:7b
+EMBEDDING_PROVIDER=ollama
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+```
+
+```env
+# OpenAI for generation, local Ollama embeddings for stable memory dimensions.
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL_REASONING=gpt-4.1
+OPENAI_MODEL_PLANNER=gpt-4.1
+EMBEDDING_PROVIDER=ollama
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+```
+
+```env
+# Claude for generation, OpenAI embeddings.
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_MODEL_FAST=claude-3-5-haiku-latest
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+```env
+# Gemini for generation and embeddings.
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL_REASONING=gemini-2.5-pro
+EMBEDDING_PROVIDER=google
+GEMINI_EMBEDDING_MODEL=text-embedding-004
+```
+
+```env
+# Hugging Face Inference Providers.
+LLM_PROVIDER=hf
+HF_TOKEN=hf_...
+HF_MODEL=openai/gpt-oss-20b:fastest
+HF_MODEL_FAST=meta-llama/Llama-3.1-8B-Instruct:fireworks-ai
+EMBEDDING_PROVIDER=huggingface
+HF_EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2
+```
+
 ### Workspace scan from Docker
 
 By default compose mounts your parent directory read-only into `/workspace` and the core scans from there.
@@ -299,7 +364,45 @@ Environment variables:
 
 ### Model routing and cognition
 
-Environment variables:
+Environment variables use the selected generation provider as a prefix. For example, when `LLM_PROVIDER=openai`, `MODEL_PLANNER` is read from `OPENAI_MODEL_PLANNER`; when `LLM_PROVIDER=google`, it is read from `GOOGLE_MODEL_PLANNER` or `GEMINI_MODEL_PLANNER`; when `LLM_PROVIDER=ollama`, it is read from `OLLAMA_MODEL_PLANNER` or `OMNI_PLANNER_MODEL`.
+
+Routing fallback order:
+- `*_MODEL` is the default generation model.
+- `*_MODEL_FAST` defaults to `*_MODEL`.
+- `*_MODEL_REASONING` defaults to `*_MODEL`.
+- `*_MODEL_TAGGER` defaults to fast.
+- `*_MODEL_SEARCH` defaults to fast.
+- `*_MODEL_MEMORY` defaults to fast.
+- `*_MODEL_ANALYZER`, `*_MODEL_PLANNER`, and `*_MODEL_RESPONDER` default to reasoning.
+- specialist models default to the closest role model unless explicitly configured.
+
+Role-specific model variables let you tune cost, speed, and quality without changing code:
+
+```env
+# Example: cheap fast model, stronger planner, strong shell/code specialist.
+OLLAMA_MODEL=qwen2.5-coder:7b
+OLLAMA_MODEL_FAST=qwen2.5:7b
+OLLAMA_MODEL_REASONING=qwen2.5:14b
+OLLAMA_MODEL_PLANNER=qwen2.5-coder:14b
+OLLAMA_MODEL_EVALUATOR=qwen2.5:7b
+OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION=qwen2.5-coder:14b
+OLLAMA_MODEL_SPECIALIST_WEB_RESEARCH=qwen2.5:7b
+OLLAMA_MODEL_SPECIALIST_MEMORY_RETRIEVAL=qwen2.5:7b
+```
+
+The same suffixes work for hosted providers:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL_FAST=gpt-4.1-mini
+OPENAI_MODEL_REASONING=gpt-4.1
+OPENAI_MODEL_PLANNER=gpt-4.1
+OPENAI_MODEL_SPECIALIST_SHELL_EXECUTION=gpt-4.1
+OPENAI_MODEL_SPECIALIST_WEB_RESEARCH=gpt-4.1-mini
+```
+
+Supported environment variables:
 - `LLM_PROVIDER=ollama|openai|google|anthropic|huggingface`
 - `EMBEDDING_PROVIDER=ollama|openai|google|huggingface`
 - `OPENAI_API_KEY` (required when `LLM_PROVIDER=openai`)

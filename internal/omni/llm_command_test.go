@@ -2058,6 +2058,44 @@ func TestValidateStructuredCommandNormalizesMultilineScript(t *testing.T) {
 	}
 }
 
+func TestNormalizeStructuredCommandAddsMkdirParents(t *testing.T) {
+	command := "mkdir src/components src/pages src/hooks && touch src/App.js src/components/NoteList.js"
+	want := "mkdir -p src/components src/pages src/hooks && touch src/App.js src/components/NoteList.js"
+	if got := normalizeStructuredCommand(command); got != want {
+		t.Fatalf("normalized command = %q, want %q", got, want)
+	}
+	if err := validateStructuredCommandString(command); err != nil {
+		t.Fatalf("bare nested mkdir should normalize before validation: %v", err)
+	}
+	alreadySafe := "mkdir -p src/components && touch src/App.js"
+	if got := normalizeStructuredCommand(alreadySafe); got != alreadySafe {
+		t.Fatalf("mkdir -p command changed to %q", got)
+	}
+	withOption := "mkdir -m 755 src && touch src/App.js"
+	if got := normalizeStructuredCommand(withOption); got != withOption {
+		t.Fatalf("mkdir with explicit option changed to %q", got)
+	}
+}
+
+func TestValidateStructuredCommandRejectsPlaceholderOnlyAppMutation(t *testing.T) {
+	command := "mkdir src/components src/pages src/hooks && touch src/App.js src/components/NoteList.js src/hooks/useNotes.js"
+	ledger := []StructuredObjective{
+		{ID: "setup_note_app", Description: "Set up the note-taking app", Status: "pending"},
+		{ID: "implement_crud_operations", Description: "Implement CRUD operations", Status: "pending"},
+	}
+	err := validateStructuredCommandForRun(command, nil, t.TempDir(), ledger)
+	if err == nil {
+		t.Fatal("expected placeholder-only app mutation to be rejected")
+	}
+	if !strings.Contains(err.Error(), "placeholder-only command") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	substantive := "mkdir src/components && cat > src/App.js <<'JS'\nexport default function App(){ return 'Notes'; }\nJS"
+	if err := validateStructuredCommandForRun(substantive, nil, t.TempDir(), ledger); err != nil {
+		t.Fatalf("substantive app write should be allowed: %v", err)
+	}
+}
+
 func TestValidateStructuredCommandRequiresSpecificWTTRQuery(t *testing.T) {
 	for _, command := range []string{
 		"curl -s wttr.in",
@@ -2204,9 +2242,10 @@ func TestEvidenceRequiredPrerequisiteCanJustifyExecutionScope(t *testing.T) {
 
 func TestSuccessfulSetupCommandReconcilesPendingObjectiveBeforeRepeat(t *testing.T) {
 	workspace := t.TempDir()
+	command := `mkdir -p src/components && printf 'export default function Calculator(){ return null; }\n' > src/components/Calculator.jsx`
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"mkdir -p src/components","done":false,"answer":""}`,
-		`{"command":"mkdir -p src/components","done":false,"answer":""}`,
+		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"` + command + `","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"structure ready"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{

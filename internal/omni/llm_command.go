@@ -761,7 +761,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		if err != nil {
 			return result, err
 		}
-		payload.Command = normalizeStructuredCommandLineBreaks(payload.Command)
+		payload.Command = normalizeStructuredCommand(payload.Command)
 		ledger = mergeStructuredObjectiveLedger(ledger, payload.ObjectiveLedger)
 		result.ObjectiveLedger = ledger
 		emitStructuredCommandEvent(onEvent, "structured_llm_payload_received", "Structured command payload received", map[string]string{
@@ -819,7 +819,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				})
 				continue
 			}
-			proposal.Command = normalizeStructuredCommandLineBreaks(proposal.Command)
+			proposal.Command = normalizeStructuredCommand(proposal.Command)
 			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_finished", "Shell specialist proposed command", map[string]string{
 				"step":      fmt.Sprintf("%d", step),
 				"tool":      "shell",
@@ -3363,7 +3363,7 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 		})
 		return true, nil
 	}
-	proposal.Command = normalizeStructuredCommandLineBreaks(proposal.Command)
+	proposal.Command = normalizeStructuredCommand(proposal.Command)
 	emitStructuredCommandEvent(onEvent, "structured_tool_delegation_finished", "Shell specialist proposed command", map[string]string{
 		"step":      fmt.Sprintf("%d", step),
 		"command":   truncateStructuredTimelineValue(proposal.Command),
@@ -4127,7 +4127,7 @@ func classifyStructuredLLMFailure(err error) string {
 }
 
 func validateStructuredCommandString(command string) error {
-	command = normalizeStructuredCommandLineBreaks(command)
+	command = normalizeStructuredCommand(command)
 	if structuredCommandLooksLikeMultilinePackageManagerScript(command) {
 		return fmt.Errorf("multiline package-manager scripts are blocked; choose one concrete package/build command for the next objective")
 	}
@@ -4183,6 +4183,12 @@ func validateStructuredCommandString(command string) error {
 	return nil
 }
 
+func normalizeStructuredCommand(command string) string {
+	command = normalizeStructuredCommandLineBreaks(command)
+	command = normalizeStructuredMkdirParents(command)
+	return command
+}
+
 func normalizeStructuredCommandLineBreaks(command string) string {
 	command = strings.TrimSpace(command)
 	if !strings.ContainsAny(command, "\n\r") || strings.Contains(command, "<<") {
@@ -4229,6 +4235,34 @@ func normalizeStructuredCommandLineBreaks(command string) string {
 	}
 	if len(parts) <= 1 {
 		return command
+	}
+	return strings.Join(parts, " && ")
+}
+
+func normalizeStructuredMkdirParents(command string) string {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return command
+	}
+	parts := strings.Split(command, "&&")
+	changed := false
+	for i, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if !strings.HasPrefix(trimmed, "mkdir ") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 || fields[0] != "mkdir" || strings.HasPrefix(fields[1], "-") {
+			continue
+		}
+		parts[i] = " mkdir -p " + strings.TrimSpace(strings.TrimPrefix(trimmed, "mkdir "))
+		changed = true
+	}
+	if !changed {
+		return command
+	}
+	for i, part := range parts {
+		parts[i] = strings.TrimSpace(part)
 	}
 	return strings.Join(parts, " && ")
 }
@@ -4371,10 +4405,39 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 	if err := validateStructuredScaffoldScope(command, survey); err != nil {
 		return err
 	}
+	if err := validatePlaceholderOnlyAppMutation(command, objectiveLedger); err != nil {
+		return err
+	}
 	if err := validateStructuredDependencyScope(command, objectiveLedger, workingDirectory); err != nil {
 		return err
 	}
 	return nil
+}
+
+func validatePlaceholderOnlyAppMutation(command string, objectiveLedger []StructuredObjective) error {
+	if !shellProposalIsPlaceholderOnlyMutation(command) || !objectiveLedgerNeedsSubstantiveAppFiles(objectiveLedger) {
+		return nil
+	}
+	return fmt.Errorf("placeholder-only command does not satisfy app objectives; write substantive source/build/test file content instead of only mkdir/touch")
+}
+
+func objectiveLedgerNeedsSubstantiveAppFiles(objectiveLedger []StructuredObjective) bool {
+	for _, objective := range pendingStructuredObjectives(objectiveLedger) {
+		text := strings.ToLower(strings.TrimSpace(objective.ID + " " + objective.Description))
+		if text == "" {
+			continue
+		}
+		if strings.Contains(text, "app") ||
+			strings.Contains(text, "component") ||
+			strings.Contains(text, "crud") ||
+			strings.Contains(text, "entry") ||
+			strings.Contains(text, "implement") ||
+			strings.Contains(text, "source") ||
+			strings.Contains(text, "ui") {
+			return true
+		}
+	}
+	return false
 }
 
 func validateNestedGoModuleCommandScope(command, workingDirectory string) error {
