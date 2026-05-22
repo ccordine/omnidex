@@ -3,6 +3,7 @@ package omni
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,6 +101,41 @@ func TestStructuredCommandUserMessageIncludesCodebaseTaskRoute(t *testing.T) {
 		if !strings.Contains(message, want) {
 			t.Fatalf("message missing %q: %s", want, message)
 		}
+	}
+}
+
+func TestCodebaseRouteIncludesLineAddressableFileChunks(t *testing.T) {
+	workspace := t.TempDir()
+	var b strings.Builder
+	b.WriteString("package omni\n\n")
+	for i := 1; i <= 180; i++ {
+		if i == 135 {
+			b.WriteString("func RepairLoopChunkTarget() {}\n")
+			continue
+		}
+		fmt.Fprintf(&b, "func Helper%03d() {}\n", i)
+	}
+	writeCodebaseTestFile(t, workspace, "internal/omni/llm_command.go", b.String())
+	cm, err := BuildCodebaseMap(workspace, CodebaseMapConfig{MaxFiles: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := RouteTaskWithCodebaseMap(cm, "repair loop chunk target")
+	if len(route.FileChunks) == 0 {
+		t.Fatalf("route missing file chunks: %#v", route)
+	}
+	chunk := route.FileChunks[0]
+	if chunk.Path != "internal/omni/llm_command.go" {
+		t.Fatalf("chunk path = %q", chunk.Path)
+	}
+	if chunk.StartLine <= 0 || chunk.EndLine < chunk.StartLine {
+		t.Fatalf("invalid chunk line range: %#v", chunk)
+	}
+	if !strings.Contains(chunk.SedCommand, "sed -n") || !strings.Contains(chunk.SedCommand, "internal/omni/llm_command.go") {
+		t.Fatalf("chunk missing usable sed command: %#v", chunk)
+	}
+	if !strings.Contains(formatCodebaseRouteBrief(route), "chunk_editing_rules") {
+		t.Fatalf("route brief missing chunk editing rules:\n%s", formatCodebaseRouteBrief(route))
 	}
 }
 

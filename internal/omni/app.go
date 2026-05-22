@@ -1361,10 +1361,16 @@ func formatStructuredCommandChatResponse(result CommandDecisionResult, stdout, s
 	if partialStopped {
 		lines = append(lines, "Partial result")
 		lines = append(lines, "--------------")
+		lines = append(lines, "Outcome: partial progress only; completion was not accepted.")
 		lines = append(lines, "Completion: not accepted")
 	} else {
 		lines = append(lines, "Result")
 		lines = append(lines, "------")
+		if strings.TrimSpace(errText) == "" && result.ExitCode == 0 {
+			lines = append(lines, "Outcome: complete; completion was accepted.")
+		} else if strings.TrimSpace(errText) != "" {
+			lines = append(lines, "Outcome: failed; no completion was accepted.")
+		}
 	}
 	if strings.TrimSpace(result.Command) != "" {
 		commandLabel := "Command"
@@ -1457,6 +1463,9 @@ func structuredCompletionRecapLines(result CommandDecisionResult) []string {
 	if completed := completedStructuredObjectiveIDs(result.ObjectiveLedger); completed != "" {
 		lines = append(lines, "Completed objectives: "+completed)
 	}
+	if evidence := structuredCompletionEvidenceSummary(result.ObjectiveLedger, result.Observations, 4); evidence != "" {
+		lines = append(lines, "Evidence accepted: "+evidence)
+	}
 	if actions := structuredSuccessfulActionSummary(result.Observations, 4); actions != "" {
 		lines = append(lines, "Actions: "+actions)
 	}
@@ -1480,6 +1489,46 @@ func completedStructuredObjectiveIDs(ledger []StructuredObjective) string {
 		}
 	}
 	return strings.Join(ids, ",")
+}
+
+func structuredCompletionEvidenceSummary(ledger []StructuredObjective, observations []StructuredCommandObservation, limit int) string {
+	items := []string{}
+	for _, objective := range ledger {
+		if !structuredObjectiveSatisfied(objective) {
+			continue
+		}
+		id := strings.TrimSpace(objective.ID)
+		if id == "" {
+			id = strings.TrimSpace(objective.Description)
+		}
+		evidence := strings.TrimSpace(objective.Evidence)
+		if id == "" || evidence == "" {
+			continue
+		}
+		items = append(items, truncateStructuredRecapItem(id+"="+evidence))
+		if len(items) >= limit {
+			break
+		}
+	}
+	if len(items) == 0 {
+		for _, obs := range observations {
+			if obs.ExitCode != 0 || strings.TrimSpace(obs.Command) == "" {
+				continue
+			}
+			evidence := strings.TrimSpace(firstNonEmpty(obs.Stdout, obs.Stderr, obs.Command))
+			if evidence == "" {
+				continue
+			}
+			items = append(items, truncateStructuredRecapItem(evidence))
+			if len(items) >= limit {
+				break
+			}
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return strings.Join(items, "; ")
 }
 
 func structuredSuccessfulActionSummary(observations []StructuredCommandObservation, limit int) string {
@@ -1889,7 +1938,7 @@ func (a *App) prepareInteractiveTurnContext(ctx context.Context, input, activeDi
 		emitEvent(event.Type, event.Summary, event.Details)
 	}
 	var route TaskRoute
-	if routeMemory, preparedRoute, ok := a.prepareCodebaseRouteBrief(activeDirectory, input, emitEvent); ok {
+	if routeMemory, preparedRoute, ok := a.prepareCodebaseRouteBrief(ctx, activeDirectory, input, emitEvent); ok {
 		route = preparedRoute
 		prep.SessionMemories = append(prep.SessionMemories, routeMemory)
 	}
@@ -1934,7 +1983,7 @@ func (a *App) prepareInteractiveTurnContext(ctx context.Context, input, activeDi
 	return prep
 }
 
-func (a *App) prepareCodebaseRouteBrief(activeDirectory, input string, emitEvent func(string, string, map[string]string)) (SessionMemory, TaskRoute, bool) {
+func (a *App) prepareCodebaseRouteBrief(ctx context.Context, activeDirectory, input string, emitEvent func(string, string, map[string]string)) (SessionMemory, TaskRoute, bool) {
 	workspace := strings.TrimSpace(activeDirectory)
 	if workspace == "" {
 		return SessionMemory{}, TaskRoute{}, false
@@ -1958,10 +2007,22 @@ func (a *App) prepareCodebaseRouteBrief(activeDirectory, input string, emitEvent
 		return SessionMemory{}, TaskRoute{}, false
 	}
 	route := RouteTaskWithCodebaseMap(cm, input)
+	routeContent := formatCodebaseRouteBrief(route)
+	if a != nil && a.memory != nil && strings.TrimSpace(routeContent) != "" {
+		if err := a.memory.EnsureSchema(ctx); err == nil {
+			if _, err := a.memory.AddMemory(ctx, "codebase_context_manager", "codebase_route_brief", routeContent, []string{"prep-context", "codebase-route", "file-chunks", "workspace:" + workspaceHash(workspace)}); err == nil {
+				emitEvent("prep_codebase_route_memory_stored", "Codebase route and chunk context stored in memory", map[string]string{
+					"workspace": workspace,
+					"chunks":    fmt.Sprintf("%d", len(route.FileChunks)),
+				})
+			}
+		}
+	}
 	emitEvent("prep_workspace_scan_completed", "Codebase route prepared from workspace evidence", map[string]string{
 		"workspace":      workspace,
 		"files":          fmt.Sprintf("%d", len(cm.Files)),
 		"modules":        fmt.Sprintf("%d", len(cm.Modules)),
+		"chunks":         fmt.Sprintf("%d", len(route.FileChunks)),
 		"likely_files":   strings.Join(route.LikelyFiles, ","),
 		"verification":   strings.Join(route.VerificationCommands, ","),
 		"confidence":     fmt.Sprintf("%d", route.Confidence),
@@ -1970,7 +2031,7 @@ func (a *App) prepareCodebaseRouteBrief(activeDirectory, input string, emitEvent
 	})
 	return SessionMemory{
 		Kind:    "codebase_route_brief",
-		Content: formatCodebaseRouteBrief(route),
+		Content: routeContent,
 		Tags:    []string{"prep-context", "codebase-route", "workspace:" + workspaceHash(workspace)},
 	}, route, true
 }
@@ -2117,6 +2178,34 @@ func formatCodebaseRouteBrief(route TaskRoute) string {
 	}
 	if len(route.Reasons) > 0 {
 		lines = append(lines, "reasons: "+strings.Join(route.Reasons, " | "))
+	}
+	if route.ContextPolicy != "" {
+		lines = append(lines, "context_policy: "+route.ContextPolicy)
+	}
+	if len(route.FileChunks) > 0 {
+		lines = append(lines, "file_chunks:")
+		for _, chunk := range route.FileChunks {
+			lines = append(lines,
+				fmt.Sprintf("- id: %s", chunk.ID),
+				fmt.Sprintf("  path: %s", chunk.Path),
+				fmt.Sprintf("  lines: %d-%d", chunk.StartLine, chunk.EndLine),
+				fmt.Sprintf("  sed: %s", chunk.SedCommand),
+				fmt.Sprintf("  reason: %s", chunk.Reason),
+			)
+			if strings.TrimSpace(chunk.Preview) != "" {
+				lines = append(lines, "  preview: |")
+				for _, line := range strings.Split(chunk.Preview, "\n") {
+					lines = append(lines, "    "+line)
+				}
+			}
+		}
+		lines = append(lines,
+			"chunk_editing_rules:",
+			"- never request or load the full file when file_chunks are available",
+			"- edit one chunk or adjacent chunk range at a time using the line anchors",
+			"- use the provided sed command for readback before constructing sed/perl/patch edits",
+			"- after each chunk edit, verify the changed line range and continue to the next needed chunk",
+		)
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }

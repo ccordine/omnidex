@@ -369,6 +369,7 @@ func TestStructuredCommandChatResponseSeparatesPlannerErrorAfterProgress(t *test
 
 	for _, want := range []string{
 		"Partial result",
+		"Outcome: partial progress only; completion was not accepted.",
 		"Completion: not accepted",
 		"Last attempted command: npm init -y",
 		"Last command exit code: 0",
@@ -408,6 +409,7 @@ func TestStructuredCommandChatResponseLabelsPartialAnswerAsCapturedEvidence(t *t
 
 	for _, want := range []string{
 		"Partial result",
+		"Outcome: partial progress only; completion was not accepted.",
 		"Completion: not accepted",
 		"Last attempted command: ls -la node_modules",
 		"Latest captured stdout:",
@@ -470,9 +472,11 @@ func TestStructuredCommandChatResponseIncludesCompletionRecap(t *testing.T) {
 	response := formatStructuredCommandChatResponse(result, "ok", "", "")
 
 	for _, want := range []string{
+		"Outcome: complete; completion was accepted.",
 		"Recap:",
 		"Elapsed: 1.5s",
 		"Completed objectives: implement_calculator_logic,connect_ui_to_logic,create_calculator_ui",
+		"Evidence accepted: {}; ok",
 		"Actions: cat package.json; npm test",
 		"Decisions: added evidence-required prerequisite create_calculator_ui; rejected proposed command npm",
 	} {

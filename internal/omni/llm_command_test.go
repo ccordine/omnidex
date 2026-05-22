@@ -1018,6 +1018,22 @@ func TestStructuredCommandDecisionRetriesTransientOllamaRunnerStop(t *testing.T)
 	if !structuredEventsContain(events, "structured_llm_backend_unstable") {
 		t.Fatalf("missing backend instability event: %#v", events)
 	}
+	unstable := structuredEventOfTypeForTest(events, "structured_llm_backend_unstable")
+	if unstable.Details["backoff"] == "" {
+		t.Fatalf("backend instability event missing backoff: %#v", unstable)
+	}
+}
+
+func TestStructuredLLMRetryBackoffIsExponentialAndBounded(t *testing.T) {
+	if got := structuredLLMRetryBackoff(1); got != 2*time.Second {
+		t.Fatalf("attempt 1 backoff = %s", got)
+	}
+	if got := structuredLLMRetryBackoff(2); got != 4*time.Second {
+		t.Fatalf("attempt 2 backoff = %s", got)
+	}
+	if got := structuredLLMRetryBackoff(10); got != maxStructuredLLMBackoff {
+		t.Fatalf("attempt 10 backoff = %s", got)
+	}
 }
 
 func TestClassifyStructuredLLMFailureIdentifiesRunnerCrash(t *testing.T) {
@@ -4686,6 +4702,70 @@ func TestStructuredCommandRequestIncludesValidatedPrepBundle(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("request missing prep bundle %q:\n%s", want, joined)
 		}
+	}
+}
+
+func TestStructuredCommandRequestBudgetsLargeObservationContext(t *testing.T) {
+	observations := make([]StructuredCommandObservation, 0, 12)
+	for i := 0; i < 12; i++ {
+		stdout := strings.Repeat(fmt.Sprintf("bulk-%02d ", i), 9000)
+		if i == 0 {
+			stdout = "OLD_BULK_MARKER " + stdout
+		}
+		if i == 11 {
+			stdout = "LATEST_OK " + stdout
+		}
+		observations = append(observations, StructuredCommandObservation{
+			Step:     i + 1,
+			Command:  fmt.Sprintf("command-%02d", i),
+			ExitCode: 0,
+			Stdout:   stdout,
+		})
+	}
+	memories := []SessionMemory{{Kind: "documentation_brief", Content: strings.Repeat("large documentation brief ", 8000)}}
+	req := buildStructuredCommandRequestWithContextRecipesSurveyAndPrep(
+		"continue the app",
+		nil,
+		memories,
+		observations,
+		t.TempDir(),
+		[]StructuredObjective{{ID: "implement_app", Description: "implement app", Status: "pending"}},
+		MinimalContext{Summary: strings.Repeat("minimal context ", 4000)},
+		nil,
+		WorksiteSurvey{},
+		PrepContextBundle{},
+	)
+	joined := structuredRequestMessagesText(req)
+	if got := approxOllamaRequestChars(req); got > defaultStructuredPlannerPromptBudgetChars {
+		t.Fatalf("request was not budgeted: got %d want <= %d", got, defaultStructuredPlannerPromptBudgetChars)
+	}
+	if strings.Contains(joined, "OLD_BULK_MARKER") {
+		t.Fatalf("old bulky observation survived budget compaction")
+	}
+	for _, want := range []string{"context_compacted", "command-11", "LATEST_OK"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("budgeted request missing %q", want)
+		}
+	}
+}
+
+func TestShellSpecialistRequestBudgetsObservationContext(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{Step: 1, Command: "old", ExitCode: 0, Stdout: "OLD_SHELL_BULK " + strings.Repeat("x", 20000)},
+		{Step: 2, Command: "latest", ExitCode: 0, Stdout: "LATEST_SHELL_EVIDENCE " + strings.Repeat("y", 20000)},
+	}
+	req := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{
+		UserPrompt:      "continue",
+		ToolTask:        "write source files",
+		Observations:    observations,
+		SessionMemories: []SessionMemory{{Kind: "documentation_brief", Content: strings.Repeat("memory ", 5000)}},
+	})
+	joined := structuredRequestMessagesText(req)
+	if strings.Contains(joined, strings.Repeat("x", 1000)) || strings.Contains(joined, strings.Repeat("y", 1000)) {
+		t.Fatalf("shell specialist request retained huge observation output")
+	}
+	if !strings.Contains(joined, "LATEST_SHELL_EVIDENCE") {
+		t.Fatalf("shell specialist request dropped latest evidence")
 	}
 }
 

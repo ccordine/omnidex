@@ -111,13 +111,27 @@ type RiskSummary struct {
 }
 
 type TaskRoute struct {
-	Intent               string   `json:"intent"`
-	LikelyFiles          []string `json:"likely_files,omitempty"`
-	RelevantModules      []string `json:"relevant_modules,omitempty"`
-	VerificationCommands []string `json:"verification_commands,omitempty"`
-	KnownRisks           []string `json:"known_risks,omitempty"`
-	Reasons              []string `json:"reasons,omitempty"`
-	Confidence           int      `json:"confidence"`
+	Intent               string             `json:"intent"`
+	LikelyFiles          []string           `json:"likely_files,omitempty"`
+	RelevantModules      []string           `json:"relevant_modules,omitempty"`
+	VerificationCommands []string           `json:"verification_commands,omitempty"`
+	KnownRisks           []string           `json:"known_risks,omitempty"`
+	Reasons              []string           `json:"reasons,omitempty"`
+	FileChunks           []FileContextChunk `json:"file_chunks,omitempty"`
+	ContextPolicy        string             `json:"context_policy,omitempty"`
+	Confidence           int                `json:"confidence"`
+}
+
+type FileContextChunk struct {
+	ID         string `json:"id"`
+	Path       string `json:"path"`
+	SHA256     string `json:"sha256,omitempty"`
+	StartLine  int    `json:"start_line"`
+	EndLine    int    `json:"end_line"`
+	LineCount  int    `json:"line_count"`
+	Reason     string `json:"reason,omitempty"`
+	Preview    string `json:"preview,omitempty"`
+	SedCommand string `json:"sed_command"`
 }
 
 type CodebaseMapConfig struct {
@@ -323,7 +337,25 @@ func RouteTaskWithCodebaseMap(cm CodebaseMap, task string) TaskRoute {
 	if len(route.LikelyFiles) > 0 {
 		route.Confidence = minInt(90, 45+len(route.LikelyFiles)*5)
 	}
+	if taskNeedsFileChunkContext(task) {
+		route.ContextPolicy = "chunked_file_context_only"
+		route.FileChunks = BuildRouteFileContextChunks(cm, route, terms, FileContextChunkConfig{})
+	}
 	return route
+}
+
+func taskNeedsFileChunkContext(task string) bool {
+	lower := strings.ToLower(task)
+	for _, term := range []string{
+		"edit", "modify", "change", "update", "patch", "fix", "repair", "refactor", "implement", "add ",
+		"remove", "delete", "rename", "write", "rewrite", "build", "create", "component", "function",
+		"method", "class", "file", "document", "readme", "source", "code", "test",
+	} {
+		if strings.Contains(lower, term) {
+			return true
+		}
+	}
+	return false
 }
 
 func QueryCodebaseMap(cm CodebaseMap, question string) map[string]any {
@@ -364,6 +396,165 @@ func LoadCodebaseTaskRoute(workspace, task string) (TaskRoute, bool) {
 	return RouteTaskWithCodebaseMap(cm, task), true
 }
 
+type FileContextChunkConfig struct {
+	ChunkLines       int
+	OverlapLines     int
+	MaxChunksPerFile int
+	MaxTotalChunks   int
+	PreviewChars     int
+}
+
+func BuildRouteFileContextChunks(cm CodebaseMap, route TaskRoute, terms []string, cfg FileContextChunkConfig) []FileContextChunk {
+	cfg = normalizeFileContextChunkConfig(cfg)
+	if strings.TrimSpace(cm.Root) == "" || len(route.LikelyFiles) == 0 {
+		return nil
+	}
+	fileByPath := map[string]FileSummary{}
+	for _, file := range cm.Files {
+		fileByPath[file.Path] = file
+	}
+	chunks := []FileContextChunk{}
+	for _, rel := range route.LikelyFiles {
+		if len(chunks) >= cfg.MaxTotalChunks {
+			break
+		}
+		file := fileByPath[rel]
+		if strings.TrimSpace(file.Path) == "" || !isCodeContextFile(file.Path) {
+			continue
+		}
+		path := filepath.Join(cm.Root, filepath.FromSlash(file.Path))
+		blob, err := os.ReadFile(path)
+		if err != nil || looksBinary(blob) {
+			continue
+		}
+		fileChunks := chunkFileForContext(file, string(blob), terms, cfg)
+		for _, chunk := range fileChunks {
+			chunks = append(chunks, chunk)
+			if len(chunks) >= cfg.MaxTotalChunks {
+				break
+			}
+		}
+	}
+	return chunks
+}
+
+func normalizeFileContextChunkConfig(cfg FileContextChunkConfig) FileContextChunkConfig {
+	if cfg.ChunkLines <= 0 {
+		cfg.ChunkLines = 120
+	}
+	if cfg.OverlapLines < 0 {
+		cfg.OverlapLines = 0
+	}
+	if cfg.OverlapLines >= cfg.ChunkLines {
+		cfg.OverlapLines = cfg.ChunkLines / 10
+	}
+	if cfg.MaxChunksPerFile <= 0 {
+		cfg.MaxChunksPerFile = 2
+	}
+	if cfg.MaxTotalChunks <= 0 {
+		cfg.MaxTotalChunks = 8
+	}
+	if cfg.PreviewChars <= 0 {
+		cfg.PreviewChars = 700
+	}
+	return cfg
+}
+
+func chunkFileForContext(file FileSummary, content string, terms []string, cfg FileContextChunkConfig) []FileContextChunk {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 {
+		return nil
+	}
+	step := cfg.ChunkLines - cfg.OverlapLines
+	if step <= 0 {
+		step = cfg.ChunkLines
+	}
+	candidates := []FileContextChunk{}
+	for start := 0; start < len(lines); start += step {
+		end := minInt(len(lines), start+cfg.ChunkLines)
+		if start >= end {
+			break
+		}
+		text := strings.Join(lines[start:end], "\n")
+		score := routeScore(strings.ToLower(file.Path+" "+text), terms)
+		if score == 0 && start > 0 {
+			continue
+		}
+		startLine := start + 1
+		endLine := end
+		chunk := FileContextChunk{
+			ID:         fmt.Sprintf("%s:%d-%d", file.Path, startLine, endLine),
+			Path:       file.Path,
+			SHA256:     file.SHA256,
+			StartLine:  startLine,
+			EndLine:    endLine,
+			LineCount:  endLine - startLine + 1,
+			Reason:     fileContextChunkReason(score, startLine),
+			Preview:    truncateForStructuredContext(trimCodePreview(text), cfg.PreviewChars),
+			SedCommand: fmt.Sprintf("sed -n '%d,%dp' %s", startLine, endLine, shellQuoteCodebasePath(file.Path)),
+		}
+		candidates = append(candidates, chunk)
+		if len(candidates) >= cfg.MaxChunksPerFile {
+			break
+		}
+	}
+	return candidates
+}
+
+func fileContextChunkReason(score, startLine int) string {
+	if score > 0 {
+		return "chunk text matched task terms"
+	}
+	if startLine == 1 {
+		return "file header chunk for orientation"
+	}
+	return "route selected file chunk"
+}
+
+func trimCodePreview(text string) string {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, minInt(len(lines), 24))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" && len(out) == 0 {
+			continue
+		}
+		out = append(out, line)
+		if len(out) >= 24 {
+			break
+		}
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func isCodeContextFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".css", ".html", ".md", ".json", ".toml", ".yaml", ".yml", ".zig", ".rs", ".php":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksBinary(blob []byte) bool {
+	if len(blob) == 0 {
+		return false
+	}
+	limit := minInt(len(blob), 4096)
+	for i := 0; i < limit; i++ {
+		if blob[i] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func shellQuoteCodebasePath(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
 func workspaceIndexRevision(index WorkspaceIndex) string {
 	parts := make([]string, 0, len(index.Manifests)+1)
 	parts = append(parts, index.Workspace)
@@ -390,6 +581,12 @@ func languageForPath(path string) string {
 		return "Markdown"
 	case ".json":
 		return "JSON"
+	case ".zig":
+		return "Zig"
+	case ".rs":
+		return "Rust"
+	case ".php":
+		return "PHP"
 	default:
 		return ""
 	}
