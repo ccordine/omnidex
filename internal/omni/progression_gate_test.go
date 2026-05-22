@@ -121,7 +121,7 @@ func TestProgressionGateForcesRecoveryAfterRepeatedNoopPackageInstall(t *testing
 	}
 }
 
-func TestProgressionGateForcesRecoveryForEmptyProjectFiles(t *testing.T) {
+func TestProgressionGateDoesNotForceRecoveryForEmptyProjectFilesMidLoop(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
 		t.Fatal(err)
@@ -145,17 +145,8 @@ func TestProgressionGateForcesRecoveryForEmptyProjectFiles(t *testing.T) {
 		},
 	})
 
-	if decision.Action != ProgressForceRecovery {
-		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
-	}
-	for _, want := range []string{
-		"Empty file(s): src/App.test.js",
-		"Do not use touch or mkdir",
-		"fill each with substantive source/build/test/config content",
-	} {
-		if !strings.Contains(decision.RecoveryToolTask, want) {
-			t.Fatalf("recovery task missing %q: %s", want, decision.RecoveryToolTask)
-		}
+	if decision.Action == ProgressForceRecovery && strings.Contains(decision.Reason, "empty project files") {
+		t.Fatalf("empty files should be a completion gate, not mid-loop progression recovery: %#v", decision)
 	}
 }
 
