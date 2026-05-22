@@ -131,7 +131,9 @@ func (a *App) loadInteractiveMemoryContext(ctx context.Context, prompt, activeDi
 		"limit": fmt.Sprintf("%d", interactiveMemoryLimit),
 		"role":  "memory_retrieval_specialist",
 	})
-	records, err := a.memory.SearchMemory(ctx, "", tags, interactiveMemoryLimit)
+	searchTags := append([]string{}, tags...)
+	searchTags = append(searchTags, "validated-playbook", "procedure-memory")
+	records, err := a.memory.SearchMemory(ctx, "", searchTags, interactiveMemoryLimit)
 	if err != nil {
 		emitEvent("memory_context_skipped", "Interactive memory retrieval skipped", map[string]string{
 			"reason": "search_error",
@@ -196,7 +198,7 @@ func memoryRecordsToSessionMemories(records []MemoryRecord) []SessionMemory {
 	return out
 }
 
-func (a *App) persistInteractiveTurnMemory(ctx context.Context, turnID, prompt, response string, tags []string, observations []StructuredCommandObservation, emitEvent func(string, string, map[string]string)) {
+func (a *App) persistInteractiveTurnMemory(ctx context.Context, turnID, prompt, response string, tags []string, result CommandDecisionResult, emitEvent func(string, string, map[string]string)) {
 	if a == nil || a.memory == nil {
 		return
 	}
@@ -231,7 +233,8 @@ func (a *App) persistInteractiveTurnMemory(ctx context.Context, turnID, prompt, 
 		}
 	}
 	capabilityCount := 0
-	for _, obs := range observations {
+	playbookCount := 0
+	for _, obs := range result.Observations {
 		content := strings.TrimSpace(obs.CapabilityMemory)
 		if content == "" {
 			continue
@@ -240,10 +243,16 @@ func (a *App) persistInteractiveTurnMemory(ctx context.Context, turnID, prompt, 
 			capabilityCount++
 		}
 	}
+	if playbook, ok := extractValidatedPlaybook(prompt, result, "structured_planner"); ok {
+		if _, err := a.memory.AddMemory(ctx, "procedure_memory_specialist", validatedPlaybookKind, playbook.Content, append([]string{"validated-playbook", "procedure-memory", "advisory-only"}, append(persistTags, playbook.Tags...)...)); err == nil {
+			playbookCount++
+		}
+	}
 	emitEvent("memory_turn_persisted", "Interactive turn memory persisted", map[string]string{
 		"turn_id":             turnID,
 		"records":             fmt.Sprintf("%d", count),
 		"capability_records":  fmt.Sprintf("%d", capabilityCount),
+		"playbook_records":    fmt.Sprintf("%d", playbookCount),
 		"tags":                strings.Join(tags, ","),
 		"memory_scope_policy": "advisory_context_only",
 	})

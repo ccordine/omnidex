@@ -1366,8 +1366,16 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			"content": truncateOutput(memory.Content),
 		})
 	}
+	if memory, ok := rememberValidatedPlaybookFromResult(session, input, result, "structured_planner"); ok {
+		emitEvent("validated_playbook_stored", "Stored validated playbook from accepted command evidence", map[string]string{
+			"kind":         memory.Kind,
+			"tags":         strings.Join(memory.Tags, ","),
+			"content":      truncateOutput(validatedPlaybookMemorySummary(memory)),
+			"scope_policy": "advisory_only_validators_still_decide",
+		})
+	}
 	assistantResponse = a.reviewFinalResponse(context.Background(), input, assistantResponse, structuredResponseReviewEvidence(result, responseStdout, responseStderr, execErr), emitEvent)
-	a.persistInteractiveTurnMemory(context.Background(), turnID, input, assistantResponse, memoryCtx.Tags, result.Observations, emitEvent)
+	a.persistInteractiveTurnMemory(context.Background(), turnID, input, assistantResponse, memoryCtx.Tags, result, emitEvent)
 
 	turn := Turn{
 		ID:                   turnID,
