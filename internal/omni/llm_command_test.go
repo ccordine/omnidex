@@ -78,6 +78,29 @@ type fakeCodeContentSpecialist struct {
 	inputs    []CodeContentSpecialistInput
 }
 
+type fakeUserAssistanceSpecialist struct {
+	questions []UserAssistanceQuestion
+	errors    []error
+	inputs    []UserAssistanceInput
+}
+
+func (f *fakeUserAssistanceSpecialist) BuildUserAssistanceQuestion(ctx context.Context, input UserAssistanceInput) (UserAssistanceQuestion, error) {
+	f.inputs = append(f.inputs, input)
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return UserAssistanceQuestion{}, err
+		}
+	}
+	if len(f.questions) == 0 {
+		return UserAssistanceQuestion{}, nil
+	}
+	question := f.questions[0]
+	f.questions = f.questions[1:]
+	return question, nil
+}
+
 func (f *fakeCodeContentSpecialist) GenerateCodeContent(ctx context.Context, input CodeContentSpecialistInput) (CodeContentProposal, error) {
 	f.inputs = append(f.inputs, input)
 	if len(f.errors) > 0 {
@@ -443,22 +466,23 @@ func TestStructuredDependencyScopeRejectsMemorySuggestedPackages(t *testing.T) {
 	}
 }
 
-func TestStructuredCommandDecisionRejectsShellSpecialistScopeDrift(t *testing.T) {
+func TestStructuredCommandDecisionAsksBeforeShellSpecialistDependencyInstallScopeDrift(t *testing.T) {
 	workspace := t.TempDir()
+	writeLocalNPMPackageForApprovalTest(t, workspace)
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"install dependencies for the React project"}`,
-		`{"command":"printf '{\"scripts\":{\"dev\":\"vite\"},\"dependencies\":{\"react\":\"latest\",\"react-dom\":\"latest\",\"vite\":\"latest\"}}\\n' > package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
-		`{"command":"test -f package.json && ls package.json","done":false,"answer":""}`,
+		`{"command":"test -d node_modules/local-test-pkg","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"React project started"}`,
 	}}
-	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
-		ObjectiveLedger: []StructuredObjective{
-			{ID: "react_project", Description: "Create a React project", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true, Packages: []string{"react", "react-dom", "vite"}},
-		},
-	}}}
 	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
-		Command:   "npm install react react-dom vite tailwindcss recyclrjs",
-		Rationale: "install proposed dependencies",
+		Command:   "npm install file:./local-pkg --ignore-scripts --package-lock=false",
+		Rationale: "install the dependency needed by the current React project",
+	}}}
+	userAssistance := &fakeUserAssistanceSpecialist{}
+	asked := []string{}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "local package install and verification evidence passed",
 	}}}
 	result, err := runStructuredCommandDecisionWithConfig(
 		context.Background(),
@@ -468,40 +492,46 @@ func TestStructuredCommandDecisionRejectsShellSpecialistScopeDrift(t *testing.T)
 		&bytes.Buffer{},
 		&bytes.Buffer{},
 		nil,
-		nil,
+		func(ctx context.Context, question string) (string, error) {
+			asked = append(asked, question)
+			return "yes", nil
+		},
 		structuredCommandDecisionRunConfig{
-			CurrentWorkingDirectory: workspace,
-			PromptInterpreter:       interpreter,
-			ShellSpecialist:         shell,
+			CurrentWorkingDirectory:  workspace,
+			ShellSpecialist:          shell,
+			UserAssistanceSpecialist: userAssistance,
+			CompletionChecker:        checker,
 		},
 	)
-	if err == nil {
-		t.Fatalf("expected incomplete React project to be rejected by typed final gate")
+	if err != nil {
+		t.Fatalf("approved shell dependency install should execute: %v observations=%#v", err, result.Observations)
 	}
-	if len(result.Observations) == 0 || result.Observations[0].RejectedCommand == "" {
-		t.Fatalf("expected rejected shell specialist command: %#v", result.Observations)
+	if len(asked) != 1 {
+		t.Fatalf("approval asks = %d, want 1", len(asked))
 	}
-	if !strings.Contains(result.Observations[0].Stderr, "dependency scope drift") {
-		t.Fatalf("expected scope drift rejection: %#v", result.Observations[0])
+	if len(userAssistance.inputs) != 1 || userAssistance.inputs[0].Kind != "dependency_install_approval" {
+		t.Fatalf("user assistance inputs = %#v", userAssistance.inputs)
 	}
-	if result.Observations[0].CapabilityMemory != structuredScopeCapabilityMemory {
-		t.Fatalf("capability memory = %q", result.Observations[0].CapabilityMemory)
+	if !approvalTestStringSliceContains(userAssistance.inputs[0].Packages, "file:./local-pkg") {
+		t.Fatalf("approval packages = %#v", userAssistance.inputs[0].Packages)
+	}
+	if len(result.Observations) < 2 || result.Observations[0].Question == "" || result.Observations[1].Command == "" {
+		t.Fatalf("expected approval observation followed by executed install: %#v", result.Observations)
 	}
 }
 
-func TestStructuredCommandDecisionRejectsPlannerScopeDriftDependencyCommand(t *testing.T) {
+func TestStructuredCommandDecisionAsksBeforePlannerDependencyCommandScopeDrift(t *testing.T) {
 	workspace := t.TempDir()
+	writeLocalNPMPackageForApprovalTest(t, workspace)
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"npm install react react-dom vite tailwindcss recyclrjs @hotwired/stimulus","done":false,"answer":""}`,
-		`{"command":"printf '{\"scripts\":{\"dev\":\"vite\"},\"dependencies\":{\"react\":\"latest\",\"react-dom\":\"latest\",\"vite\":\"latest\"}}\\n' > package.json","done":false,"answer":"","objective_ledger":[{"id":"react_project","description":"Create a React project","status":"satisfied","source":"user_explicit","required":true,"packages":["react","react-dom","vite"],"evidence":"package.json created"}]}`,
-		`{"command":"test -f package.json && ls package.json","done":false,"answer":""}`,
+		`{"command":"npm install file:./local-pkg --ignore-scripts --package-lock=false","done":false,"answer":""}`,
+		`{"command":"test -d node_modules/local-test-pkg","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"React project started"}`,
 	}}
-	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
-		ObjectiveLedger: []StructuredObjective{
-			{ID: "react_project", Description: "Create a React project", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true, Packages: []string{"react", "react-dom", "vite"}},
-			{ID: "usual_stack", Description: "User likes Tailwind, RecyclrJS, and Stimulus", Status: "pending", Source: structuredObjectiveSourceMemorySuggested, Required: false, Packages: []string{"tailwindcss", "recyclrjs", "@hotwired/stimulus"}},
-		},
+	asked := []string{}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "local package install and verification evidence passed",
 	}}}
 	result, err := runStructuredCommandDecisionWithConfig(
 		context.Background(),
@@ -511,20 +541,63 @@ func TestStructuredCommandDecisionRejectsPlannerScopeDriftDependencyCommand(t *t
 		&bytes.Buffer{},
 		&bytes.Buffer{},
 		nil,
-		nil,
+		func(ctx context.Context, question string) (string, error) {
+			asked = append(asked, question)
+			return "approve", nil
+		},
 		structuredCommandDecisionRunConfig{
 			CurrentWorkingDirectory: workspace,
-			PromptInterpreter:       interpreter,
+			CompletionChecker:       checker,
 		},
 	)
-	if err == nil {
-		t.Fatalf("expected incomplete React project to be rejected by typed final gate")
+	if err != nil {
+		t.Fatalf("approved planner dependency install should execute: %v observations=%#v", err, result.Observations)
 	}
-	if len(result.Observations) == 0 || result.Observations[0].RejectedCommand == "" {
-		t.Fatalf("expected rejected planner command: %#v", result.Observations)
+	if len(asked) != 1 {
+		t.Fatalf("approval asks = %d, want 1", len(asked))
 	}
-	if !strings.Contains(result.Observations[0].Stderr, "tailwindcss") || !strings.Contains(result.Observations[0].Stderr, "recyclrjs") {
-		t.Fatalf("scope rejection missing packages: %#v", result.Observations[0])
+	if len(result.Observations) < 2 || result.Observations[0].Question == "" || !strings.Contains(result.Observations[1].Command, "npm install file:./local-pkg") {
+		t.Fatalf("expected approval observation followed by planner install: %#v", result.Observations)
+	}
+}
+
+func TestDependencyInstallApprovalRequiredWhenNoAskHandler(t *testing.T) {
+	workspace := t.TempDir()
+	writeLocalNPMPackageForApprovalTest(t, workspace)
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"npm install file:./local-pkg --ignore-scripts --package-lock=false","done":false,"answer":""}`,
+	}}
+	_, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"create a new React project",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace},
+	)
+	var inputErr UserInputRequiredError
+	if !errors.As(err, &inputErr) {
+		t.Fatalf("error = %v, want UserInputRequiredError", err)
+	}
+	if !strings.Contains(inputErr.Question, "file:./local-pkg") {
+		t.Fatalf("question = %q", inputErr.Question)
+	}
+	if _, statErr := os.Stat(filepath.Join(workspace, "node_modules", "local-test-pkg")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("dependency install should not run before approval, stat err=%v", statErr)
+	}
+}
+
+func TestDependencyInstallApprovalIsRememberedForSameCommand(t *testing.T) {
+	command := "npm install file:./local-pkg --ignore-scripts --package-lock=false"
+	observations := []StructuredCommandObservation{{
+		Question:     "Allow Omnidex to install these dependencies for the current task: file:./local-pkg?\nCommand: " + command,
+		UserResponse: "yes",
+	}}
+	if !dependencyInstallPreviouslyApproved(command, observations) {
+		t.Fatal("expected prior approval to be reused")
 	}
 }
 
@@ -719,6 +792,41 @@ func containsStructuredObjectiveID(objectives []StructuredObjective, id string) 
 		}
 	}
 	return false
+}
+
+func approvalTestStringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func observationsContainStderr(observations []StructuredCommandObservation, want string) bool {
+	for _, observation := range observations {
+		if strings.Contains(observation.Stderr, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func writeLocalNPMPackageForApprovalTest(t *testing.T, workspace string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"approval-test","version":"1.0.0"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgDir := filepath.Join(workspace, "local-pkg")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"local-test-pkg","version":"1.0.0","main":"index.js"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "index.js"), []byte("module.exports = { ok: true };\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestStructuredDependencyScopeAllowsExplicitUsualStackPackages(t *testing.T) {
@@ -2709,7 +2817,7 @@ func TestWriteRecoveryBypassesShellAfterRepeatedInvalidSpecialistProposals(t *te
 		ShellSpecialist:         shell,
 	}, WorksiteSurvey{}, &strings.Builder{}, &strings.Builder{}, func(evt StructuredCommandEvent) {
 		events = append(events, evt)
-	}, result)
+	}, nil, result)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2816,7 +2924,7 @@ func TestShellSpecialistRepairsRejectedDependencyScopeDriftLocally(t *testing.T)
 		&bytes.Buffer{},
 		&bytes.Buffer{},
 		func(evt StructuredCommandEvent) { events = append(events, evt) },
-		nil,
+		func(ctx context.Context, question string) (string, error) { return "no", nil },
 		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace, ShellSpecialist: shell},
 	)
 	if err != nil {
@@ -2825,7 +2933,7 @@ func TestShellSpecialistRepairsRejectedDependencyScopeDriftLocally(t *testing.T)
 	if len(shell.inputs) != 2 {
 		t.Fatalf("shell specialist calls = %d, want local repair call", len(shell.inputs))
 	}
-	if len(shell.inputs[1].Observations) == 0 || !strings.Contains(shell.inputs[1].Observations[0].Stderr, "dependency scope drift") {
+	if len(shell.inputs[1].Observations) == 0 || !observationsContainStderr(shell.inputs[1].Observations, "dependency scope drift") {
 		t.Fatalf("repair input missing validator feedback: %#v", shell.inputs[1].Observations)
 	}
 	if !structuredEventsContain(events, "structured_tool_delegation_repair_started") || !structuredEventsContain(events, "structured_tool_delegation_repair_accepted") {
@@ -2856,6 +2964,7 @@ func TestShellSpecialistStopsLocalRepairAfterRepeatedRejectedCommand(t *testing.
 		WorksiteSurvey{},
 		&[]StructuredObjective{},
 		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		func(ctx context.Context, question string) (string, error) { return "no", nil },
 		result,
 	)
 	if err != nil {

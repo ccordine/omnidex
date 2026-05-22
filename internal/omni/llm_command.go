@@ -450,6 +450,23 @@ func (e UserInputRequiredError) Error() string {
 
 type StructuredCommandAskFunc func(ctx context.Context, question string) (string, error)
 
+type UserAssistanceInput struct {
+	Step       int
+	Kind       string
+	Command    string
+	Reason     string
+	Packages   []string
+	UserPrompt string
+}
+
+type UserAssistanceQuestion struct {
+	Question string
+}
+
+type UserAssistanceSpecialist interface {
+	BuildUserAssistanceQuestion(ctx context.Context, input UserAssistanceInput) (UserAssistanceQuestion, error)
+}
+
 func RunStructuredCommandDecision(ctx context.Context, prompt string, client CommandDecisionClient, stdout, stderr io.Writer) (CommandDecisionResult, error) {
 	return RunStructuredCommandDecisionWithEvents(ctx, prompt, client, stdout, stderr, nil)
 }
@@ -467,19 +484,20 @@ func RunStructuredCommandDecisionWithHistoryEventsAndAsk(ctx context.Context, pr
 }
 
 type structuredCommandDecisionRunConfig struct {
-	SessionMemories         []SessionMemory
-	PrepContext             PrepContextBundle
-	CurrentWorkingDirectory string
-	Recipes                 []Recipe
-	PromptInterpreter       PromptInterpreter
-	ContextSummarizer       ContextSummarizer
-	CompletionChecker       CompletionChecker
-	Evaluator               StructuredLLMResponseEvaluator
-	EvaluatorThreshold      int
-	ShellSpecialist         ShellCommandSpecialist
-	CodeContentSpecialist   CodeContentSpecialist
-	EnableCommandCache      bool
-	CommandCacheRoot        string
+	SessionMemories          []SessionMemory
+	PrepContext              PrepContextBundle
+	CurrentWorkingDirectory  string
+	Recipes                  []Recipe
+	PromptInterpreter        PromptInterpreter
+	ContextSummarizer        ContextSummarizer
+	CompletionChecker        CompletionChecker
+	Evaluator                StructuredLLMResponseEvaluator
+	EvaluatorThreshold       int
+	ShellSpecialist          ShellCommandSpecialist
+	CodeContentSpecialist    CodeContentSpecialist
+	UserAssistanceSpecialist UserAssistanceSpecialist
+	EnableCommandCache       bool
+	CommandCacheRoot         string
 }
 
 func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, history []Message, client CommandDecisionClient, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, cfg structuredCommandDecisionRunConfig) (result CommandDecisionResult, retErr error) {
@@ -710,7 +728,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			return result, CommandDecisionExhaustedError{MaxSteps: step}
 		}
 		if (gateDecision.Action == ProgressForceRecovery || gateDecision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil {
-			handled, err := runProgressionGateRecovery(ctx, step, prompt, gateDecision, cfg, worksiteSurvey, stdout, stderr, onEvent, &result)
+			handled, err := runProgressionGateRecovery(ctx, step, prompt, gateDecision, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result)
 			if err != nil {
 				return result, err
 			}
@@ -870,7 +888,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"role":      "shell_execution_specialist",
 				"tool_task": truncateStructuredTimelineValue(payload.ToolTask),
 			})
-			proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, payload.ToolTask, cfg, worksiteSurvey, &ledger, onEvent, &result)
+			proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, payload.ToolTask, cfg, worksiteSurvey, &ledger, onEvent, onAsk, &result)
 			if err != nil {
 				return result, err
 			}
@@ -1028,6 +1046,14 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			})
 			command := payload.Command
 			if err := validateStructuredCommandForRunWithArchitect(command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+				if approved, askErr := requestDependencyInstallApproval(ctx, step, prompt, command, err, cfg.UserAssistanceSpecialist, onAsk, onEvent, &result); askErr != nil {
+					return result, askErr
+				} else if approved {
+					if err := runStructuredPayloadCommand(ctx, step, command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
+						return result, err
+					}
+					continue
+				}
 				emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 					"step":    fmt.Sprintf("%d", step),
 					"command": truncateStructuredTimelineValue(command),
@@ -1069,7 +1095,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					})
 					result.Answer = ""
 					if (gateDecision.Action == ProgressForceRecovery || gateDecision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil {
-						handled, err := runProgressionGateRecovery(ctx, step, prompt, gateDecision, cfg, worksiteSurvey, stdout, stderr, onEvent, &result)
+						handled, err := runProgressionGateRecovery(ctx, step, prompt, gateDecision, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result)
 						if err != nil {
 							return result, err
 						}
@@ -1134,7 +1160,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 						refreshTypedWorkItems()
 						if !checkResult.Accepted {
 							rejectDoneForValidator(step, onEvent, &result)
-							if handled, err := repairRejectedDoneWithPlanner(ctx, step, prompt, client, basePlannerReq, resp, payload, checkResult, cfg, worksiteSurvey, stdout, stderr, onEvent, &ledger, &result); err != nil {
+							if handled, err := repairRejectedDoneWithPlanner(ctx, step, prompt, client, basePlannerReq, resp, payload, checkResult, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &ledger, &result); err != nil {
 								return result, err
 							} else if handled {
 								continue
@@ -1264,7 +1290,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				refreshTypedWorkItems()
 				if !checkResult.Accepted {
 					rejectDoneForValidator(step, onEvent, &result)
-					if handled, err := repairRejectedDoneWithPlanner(ctx, step, prompt, client, basePlannerReq, resp, payload, checkResult, cfg, worksiteSurvey, stdout, stderr, onEvent, &ledger, &result); err != nil {
+					if handled, err := repairRejectedDoneWithPlanner(ctx, step, prompt, client, basePlannerReq, resp, payload, checkResult, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &ledger, &result); err != nil {
 						return result, err
 					} else if handled {
 						continue
@@ -1284,7 +1310,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				if toolTask == "" {
 					toolTask = prompt
 				}
-				handled, err := runDelegatedShellSpecialist(ctx, step, prompt, toolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, &result)
+				handled, err := runDelegatedShellSpecialist(ctx, step, prompt, toolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result)
 				if err != nil {
 					return result, err
 				}
@@ -1305,6 +1331,14 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		}
 		command := payload.Command
 		if err := validateStructuredCommandForRunWithArchitect(command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+			if approved, askErr := requestDependencyInstallApproval(ctx, step, prompt, command, err, cfg.UserAssistanceSpecialist, onAsk, onEvent, &result); askErr != nil {
+				return result, askErr
+			} else if approved {
+				if err := runStructuredPayloadCommand(ctx, step, command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
+					return result, err
+				}
+				continue
+			}
 			if handleStructuredRepeatedCommandValidation(step, command, err, &ledger, onEvent, &result) {
 				gate := ProgressionGate{MaxRecoveryAttempts: 4}
 				decision := gate.ReviewStep(ProgressionInput{
@@ -1326,7 +1360,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					return result, CommandDecisionExhaustedError{MaxSteps: step}
 				}
 				if (decision.Action == ProgressForceRecovery || decision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil {
-					handled, recoverErr := runProgressionGateRecovery(ctx, step, prompt, decision, cfg, worksiteSurvey, stdout, stderr, onEvent, &result)
+					handled, recoverErr := runProgressionGateRecovery(ctx, step, prompt, decision, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result)
 					if recoverErr != nil {
 						return result, recoverErr
 					}
@@ -1624,7 +1658,7 @@ func commandCacheEligible(command string) bool {
 	}
 }
 
-func runProgressionGateRecovery(ctx context.Context, step int, prompt string, decision ProgressionDecision, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+func runProgressionGateRecovery(ctx context.Context, step int, prompt string, decision ProgressionDecision, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, result *CommandDecisionResult) (bool, error) {
 	if cfg.ShellSpecialist == nil {
 		return false, nil
 	}
@@ -1659,7 +1693,7 @@ func runProgressionGateRecovery(ctx context.Context, step int, prompt string, de
 		})
 		return false, nil
 	}
-	return runDelegatedShellSpecialist(ctx, step, prompt, decision.RecoveryToolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, result)
+	return runDelegatedShellSpecialist(ctx, step, prompt, decision.RecoveryToolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, result)
 }
 
 func shouldBypassShellSpecialistForWriteRecovery(toolTask string, observations []StructuredCommandObservation) bool {
@@ -3416,7 +3450,7 @@ npm run build
 npm test`
 }
 
-func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, result *CommandDecisionResult) (bool, error) {
 	if handled, err := runArchitectCodeContentLane(ctx, step, prompt, toolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, result); handled || err != nil {
 		return handled, err
 	}
@@ -3436,7 +3470,7 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 			"route_files": strings.Join(cfg.PrepContext.CodebaseRoute.LikelyFiles, ","),
 		})
 	}
-	proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, toolTask, cfg, worksiteSurvey, &result.ObjectiveLedger, onEvent, result)
+	proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, toolTask, cfg, worksiteSurvey, &result.ObjectiveLedger, onEvent, onAsk, result)
 	if err != nil || !ok {
 		return true, err
 	}
@@ -3557,7 +3591,7 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 	return handled, nil
 }
 
-func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger *[]StructuredObjective, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (ShellCommandProposal, bool, error) {
+func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger *[]StructuredObjective, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, result *CommandDecisionResult) (ShellCommandProposal, bool, error) {
 	if cfg.ShellSpecialist == nil {
 		return ShellCommandProposal{}, false, nil
 	}
@@ -3612,6 +3646,11 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 		})
 		if err := validateShellProposalAgainstToolTaskWithRationale(proposal.Command, toolTask, proposal.Rationale); err != nil {
+			if approved, askErr := requestDependencyInstallApproval(ctx, step, prompt, proposal.Command, err, cfg.UserAssistanceSpecialist, onAsk, onEvent, result); askErr != nil {
+				return ShellCommandProposal{}, false, askErr
+			} else if approved {
+				return proposal, true, nil
+			}
 			appendRejectedShellProposalObservation(step, proposal.Command, err, "choose a write/edit/build/test command that directly satisfies the delegated task", result)
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by tool-task constraints", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
@@ -3652,6 +3691,11 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			return ShellCommandProposal{}, false, nil
 		}
 		if err := validateStructuredCommandForRunWithSurvey(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, *ledger, worksiteSurvey); err != nil {
+			if approved, askErr := requestDependencyInstallApproval(ctx, step, prompt, proposal.Command, err, cfg.UserAssistanceSpecialist, onAsk, onEvent, result); askErr != nil {
+				return ShellCommandProposal{}, false, askErr
+			} else if approved {
+				return proposal, true, nil
+			}
 			if handleStructuredRepeatedCommandValidation(step, proposal.Command, err, ledger, onEvent, result) {
 				return ShellCommandProposal{}, false, nil
 			}
@@ -7336,7 +7380,103 @@ func rejectDoneForValidator(step int, onEvent func(StructuredCommandEvent), resu
 	}
 }
 
-func repairRejectedDoneWithPlanner(ctx context.Context, step int, prompt string, client CommandDecisionClient, baseReq OllamaChatRequest, rejectedResp OllamaChatResponse, rejectedPayload StructuredCommandPayload, checkResult completionCheckRunResult, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), ledger *[]StructuredObjective, result *CommandDecisionResult) (bool, error) {
+func requestDependencyInstallApproval(ctx context.Context, step int, prompt, command string, validationErr error, specialist UserAssistanceSpecialist, onAsk StructuredCommandAskFunc, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+	if validationErr == nil || !structuredTextSuggestsScopeDrift(validationErr.Error()) || len(structuredDependencyInstallRequests(command)) == 0 {
+		return false, nil
+	}
+	if result != nil && dependencyInstallPreviouslyApproved(command, result.Observations) {
+		emitStructuredCommandEvent(onEvent, "structured_user_input_reused", "Reused prior dependency install approval", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"command": truncateStructuredTimelineValue(command),
+		})
+		return true, nil
+	}
+	question, err := buildDependencyInstallApprovalQuestion(ctx, step, prompt, command, validationErr.Error(), specialist)
+	if err != nil {
+		return false, err
+	}
+	emitStructuredCommandEvent(onEvent, "structured_user_input_requested", "Dependency install requires user approval", map[string]string{
+		"step":     fmt.Sprintf("%d", step),
+		"command":  truncateStructuredTimelineValue(command),
+		"question": truncateStructuredTimelineValue(question),
+		"reason":   truncateStructuredTimelineValue(validationErr.Error()),
+	})
+	if onAsk == nil {
+		return false, UserInputRequiredError{Question: question}
+	}
+	answer, err := onAsk(ctx, question)
+	if err != nil {
+		return false, err
+	}
+	answer = strings.TrimSpace(answer)
+	if result != nil {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:         step,
+			ExitCode:     0,
+			Question:     question,
+			UserResponse: truncateStructuredObservation(answer),
+		})
+	}
+	approved := userApprovedDependencyInstall(answer)
+	emitStructuredCommandEvent(onEvent, "structured_user_input_received", "Dependency install approval response received", map[string]string{
+		"step":     fmt.Sprintf("%d", step),
+		"approved": fmt.Sprintf("%t", approved),
+	})
+	return approved, nil
+}
+
+func dependencyInstallPreviouslyApproved(command string, observations []StructuredCommandObservation) bool {
+	command = normalizeStructuredCommandForComparison(command)
+	for _, obs := range observations {
+		if strings.TrimSpace(obs.Question) == "" || !userApprovedDependencyInstall(obs.UserResponse) {
+			continue
+		}
+		question := obs.Question
+		if strings.Contains(question, "Command: "+command) || strings.Contains(normalizeStructuredCommandForComparison(question), command) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildDependencyInstallApprovalQuestion(ctx context.Context, step int, prompt, command, reason string, specialist UserAssistanceSpecialist) (string, error) {
+	packages := []string{}
+	for _, request := range structuredDependencyInstallRequests(command) {
+		packages = append(packages, request.Packages...)
+	}
+	packages = cleanStringList(packages)
+	if specialist != nil {
+		decision, err := specialist.BuildUserAssistanceQuestion(ctx, UserAssistanceInput{
+			Step:       step,
+			Kind:       "dependency_install_approval",
+			Command:    strings.TrimSpace(command),
+			Reason:     strings.TrimSpace(reason),
+			Packages:   packages,
+			UserPrompt: prompt,
+		})
+		if err != nil {
+			return "", err
+		}
+		if question := strings.TrimSpace(decision.Question); question != "" {
+			return question, nil
+		}
+	}
+	if len(packages) == 0 {
+		return fmt.Sprintf("Allow this dependency install command for the current task?\nCommand: %s\nReason: %s", strings.TrimSpace(command), strings.TrimSpace(reason)), nil
+	}
+	return fmt.Sprintf("Allow Omnidex to install these dependencies for the current task: %s?\nCommand: %s\nReason: %s", strings.Join(packages, ", "), strings.TrimSpace(command), strings.TrimSpace(reason)), nil
+}
+
+func userApprovedDependencyInstall(answer string) bool {
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes", "approved", "approve", "allow", "allowed", "ok", "okay", "sure", "do it", "proceed":
+		return true
+	default:
+		return false
+	}
+}
+
+func repairRejectedDoneWithPlanner(ctx context.Context, step int, prompt string, client CommandDecisionClient, baseReq OllamaChatRequest, rejectedResp OllamaChatResponse, rejectedPayload StructuredCommandPayload, checkResult completionCheckRunResult, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, ledger *[]StructuredObjective, result *CommandDecisionResult) (bool, error) {
 	if client == nil || !checkResult.Ran || checkResult.Accepted {
 		return false, nil
 	}
@@ -7373,7 +7513,7 @@ func repairRejectedDoneWithPlanner(ctx context.Context, step int, prompt string,
 		return true, nil
 	}
 	if isShellToolDelegation(nextPayload) {
-		proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, nextPayload.ToolTask, cfg, worksiteSurvey, ledger, onEvent, result)
+		proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, nextPayload.ToolTask, cfg, worksiteSurvey, ledger, onEvent, onAsk, result)
 		if err != nil || !ok {
 			return ok, err
 		}
