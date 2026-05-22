@@ -4722,7 +4722,7 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 	if err := validateStructuredScaffoldScope(command, survey); err != nil {
 		return err
 	}
-	if err := validatePlaceholderOnlyAppMutation(command, objectiveLedger); err != nil {
+	if err := validateRepeatedPlaceholderOnlyAppMutation(command, observations, objectiveLedger); err != nil {
 		return err
 	}
 	if err := validateStructuredDependencyScope(command, objectiveLedger, workingDirectory); err != nil {
@@ -4731,11 +4731,14 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 	return nil
 }
 
-func validatePlaceholderOnlyAppMutation(command string, objectiveLedger []StructuredObjective) error {
+func validateRepeatedPlaceholderOnlyAppMutation(command string, observations []StructuredCommandObservation, objectiveLedger []StructuredObjective) error {
 	if !shellProposalIsPlaceholderOnlyMutation(command) || !objectiveLedgerNeedsSubstantiveAppFiles(objectiveLedger) {
 		return nil
 	}
-	return fmt.Errorf("placeholder-only command does not satisfy app objectives; write substantive source/build/test file content instead of only mkdir/touch")
+	if latestPlaceholderOnlySuccess(observations) == nil {
+		return nil
+	}
+	return fmt.Errorf("placeholder-only scaffold already exists; expand it with substantive source/build/test file content instead of another mkdir/touch")
 }
 
 func objectiveLedgerNeedsSubstantiveAppFiles(objectiveLedger []StructuredObjective) bool {
@@ -4861,6 +4864,9 @@ func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, ration
 		return fmt.Errorf("tool_task requires source file implementation; dependency install command %q does not satisfy it", strings.TrimSpace(command))
 	}
 	if shellProposalIsPlaceholderOnlyMutation(command) {
+		if toolTaskAllowsScaffoldSetupStep(toolTask) {
+			return nil
+		}
 		return fmt.Errorf("tool_task requires substantive file content or verification; placeholder-only command %q does not satisfy it", strings.TrimSpace(command))
 	}
 	if shellProposalWritesOnlyResearchArtifact(command, toolTask) {
@@ -4870,6 +4876,28 @@ func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, ration
 		return nil
 	}
 	return fmt.Errorf("tool_task requires file creation, modification, build, or test work; read-only command %q does not satisfy it", strings.TrimSpace(command))
+}
+
+func toolTaskAllowsScaffoldSetupStep(toolTask string) bool {
+	task := strings.ToLower(toolTask)
+	if strings.Contains(task, "read-only inventory commands are forbidden") {
+		return false
+	}
+	if strings.Contains(task, "do not create placeholder") ||
+		strings.Contains(task, "placeholder-only") ||
+		strings.Contains(task, "substantive source") ||
+		strings.Contains(task, "substantive file") {
+		return false
+	}
+	for _, needle := range []string{
+		"setup", "set up", "structure", "scaffold", "create_note_app_structure", "create project structure",
+		"create or modify", "file creation", "directory", "directories", "component structure",
+	} {
+		if strings.Contains(task, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateShellDependencyInstallRationale(command, toolTask, rationale string) error {

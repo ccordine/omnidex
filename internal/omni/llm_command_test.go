@@ -2146,17 +2146,21 @@ func TestNormalizeStructuredCommandAddsMkdirParents(t *testing.T) {
 	}
 }
 
-func TestValidateStructuredCommandRejectsPlaceholderOnlyAppMutation(t *testing.T) {
+func TestValidateStructuredCommandAllowsInitialPlaceholderButRejectsRepeatedPlaceholder(t *testing.T) {
 	command := "mkdir src/components src/pages src/hooks && touch src/App.js src/components/NoteList.js src/hooks/useNotes.js"
 	ledger := []StructuredObjective{
 		{ID: "setup_note_app", Description: "Set up the note-taking app", Status: "pending"},
 		{ID: "implement_crud_operations", Description: "Implement CRUD operations", Status: "pending"},
 	}
 	err := validateStructuredCommandForRun(command, nil, t.TempDir(), ledger)
-	if err == nil {
-		t.Fatal("expected placeholder-only app mutation to be rejected")
+	if err != nil {
+		t.Fatalf("initial placeholder scaffold should be allowed as setup progress: %v", err)
 	}
-	if !strings.Contains(err.Error(), "placeholder-only command") {
+	err = validateStructuredCommandForRun("touch src/Another.js", []StructuredCommandObservation{{Step: 1, Command: command, ExitCode: 0}}, t.TempDir(), ledger)
+	if err == nil {
+		t.Fatal("expected repeated placeholder-only app mutation to be rejected")
+	}
+	if !strings.Contains(err.Error(), "placeholder-only scaffold already exists") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	substantive := "mkdir src/components && cat > src/App.js <<'JS'\nexport default function App(){ return 'Notes'; }\nJS"
@@ -2487,7 +2491,7 @@ func TestWriteRecoveryBypassesShellAfterRepeatedDocumentationDownloadProposals(t
 	}
 }
 
-func TestPlannerRepairsRejectedPlaceholderCommandInIsolatedLoop(t *testing.T) {
+func TestPlannerAcceptsInitialPlaceholderThenForcesSubstantiveContinuation(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"latest","react-dom":"latest"}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -2520,17 +2524,20 @@ func TestPlannerRepairsRejectedPlaceholderCommandInIsolatedLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run failed: %v observations=%#v", err, result.Observations)
 	}
-	if !structuredEventsContain(events, "structured_planner_repair_started") {
-		t.Fatalf("missing repair start event: %#v", events)
+	if structuredEventsContain(events, "structured_planner_repair_started") {
+		t.Fatalf("initial placeholder scaffold should execute as setup progress, not enter repair: %#v", events)
 	}
-	if !structuredEventsContain(events, "structured_planner_repair_accepted") {
-		t.Fatalf("missing repair accepted event: %#v", events)
+	if !structuredEventsContain(events, "partial_completion_accepted") {
+		t.Fatalf("missing partial completion continuation after placeholder scaffold: %#v", events)
 	}
 	if structuredEventsContain(events, "structured_command_rejected") {
-		t.Fatalf("pre-routing repair should avoid broad rejection loop: %#v", events)
+		t.Fatalf("initial placeholder scaffold should not be rejected: %#v", events)
 	}
-	if client.calls < 2 || !strings.Contains(client.prompts[1], "placeholder-only command does not satisfy app objectives") {
-		t.Fatalf("repair prompt did not receive validator feedback: calls=%d prompts=%#v", client.calls, client.prompts)
+	if len(result.Observations) < 2 || !strings.Contains(result.Observations[0].Command, "touch src/components/NoteManager.js") {
+		t.Fatalf("expected placeholder scaffold then substantive write observations: %#v", result.Observations)
+	}
+	if !strings.Contains(result.Observations[1].Command, "cat > src/components/NoteManager.js") {
+		t.Fatalf("expected second observation to expand placeholder with substantive content: %#v", result.Observations)
 	}
 	if _, err := os.Stat(filepath.Join(workspace, "src/components/NoteManager.js")); err != nil {
 		t.Fatalf("expected component file: %v", err)
@@ -5002,9 +5009,16 @@ func TestValidateShellProposalAgainstWriteRequiredToolTaskAllowsMutation(t *test
 	}
 }
 
+func TestValidateShellProposalAllowsInitialScaffoldSetupStep(t *testing.T) {
+	command := "mkdir -p src/components && touch src/components/Note.js"
+	if err := validateShellProposalAgainstToolTask(command, "setup note app component structure"); err != nil {
+		t.Fatalf("initial scaffold setup step rejected: %v", err)
+	}
+}
+
 func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsPlaceholderMutation(t *testing.T) {
 	for _, command := range []string{"touch Clock.js", "mkdir -p src && touch src/Clock.js"} {
-		err := validateShellProposalAgainstToolTask(command, "Required next behavior: create or modify the actual project files now. Do not continue with read-only inventory commands.")
+		err := validateShellProposalAgainstToolTask(command, "Required next behavior: create or modify the actual project files now. Do not create placeholder-only files with touch or empty mkdir scaffolds.")
 		if err == nil {
 			t.Fatalf("expected placeholder mutation %q to be rejected", command)
 		}
