@@ -22,6 +22,41 @@ func TestPrintStepStatusUpdatesOnlyOnChange(t *testing.T) {
 	}
 }
 
+func TestFormatWorkloadQueueStatusLineShowsActiveAndCounts(t *testing.T) {
+	steps := []model.Step{
+		{ID: 1, Action: "plan", Status: model.StepStatusCompleted},
+		{ID: 2, Action: "assist", Status: model.StepStatusRunning},
+		{ID: 3, Action: "verify", Status: model.StepStatusPending},
+	}
+
+	line := formatWorkloadQueueStatusLine(steps, nil)
+
+	for _, want := range []string{"active=#2 assist", "completed=1", "incomplete=2"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("workload line missing %q: %q", want, line)
+		}
+	}
+}
+
+func TestFormatStepStatusLineMarksActiveCompletedAndPending(t *testing.T) {
+	active := formatStepStatusLine(model.Step{ID: 2, Action: "assist", Status: model.StepStatusRunning}, nil)
+	done := formatStepStatusLine(model.Step{ID: 1, Action: "plan", Status: model.StepStatusCompleted}, nil)
+	todo := formatStepStatusLine(model.Step{ID: 3, Action: "verify", Status: model.StepStatusPending}, nil)
+
+	for _, pair := range []struct {
+		line string
+		want string
+	}{
+		{active, ">> ACTIVE"},
+		{done, "OK DONE"},
+		{todo, ".. TODO"},
+	} {
+		if !strings.Contains(pair.line, pair.want) {
+			t.Fatalf("line %q missing %q", pair.line, pair.want)
+		}
+	}
+}
+
 func TestPrintContextUpdatesProgressMode(t *testing.T) {
 	contexts := []model.StepContext{
 		{ID: 1, StepID: 11, Key: "event", Value: "time=2026-02-15T00:00:00Z event=plan_begin"},

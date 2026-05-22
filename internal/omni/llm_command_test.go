@@ -2409,7 +2409,7 @@ func TestSuccessfulSetupCommandReconcilesPendingObjectiveBeforeRepeat(t *testing
 	command := `mkdir -p src/components && printf 'export default function Calculator(){ return null; }\n' > src/components/Calculator.jsx`
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"` + command + `","done":false,"answer":""}`,
-		`{"command":"` + command + `","done":false,"answer":""}`,
+		`{"command":"test -s src/components/Calculator.jsx && grep -q Calculator src/components/Calculator.jsx && printf 'source verification passed\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"structure ready"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -2427,6 +2427,140 @@ func TestSuccessfulSetupCommandReconcilesPendingObjectiveBeforeRepeat(t *testing
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("pending = %#v", pending)
+	}
+}
+
+func TestSourceWriteCommandReconcilesOnlySatisfiedNotesObjectives(t *testing.T) {
+	command := `echo "import React, { createContext, useState } from 'react';
+
+const NotesContext = createContext();
+
+export const NotesProvider = ({ children }) => {
+  const [notes, setNotes] = useState([]);
+
+  const addNote = (note) => {
+    setNotes([...notes, note]);
+  };
+
+  const deleteNote = (id) => {
+    setNotes(notes.filter(note => note.id !== id));
+  };
+
+  return (
+    <NotesContext.Provider value={{ notes, addNote, deleteNote }}>
+      {children}
+    </NotesContext.Provider>
+  );
+};" > src/hooks/useNotes.js`
+	ledger := []StructuredObjective{
+		{ID: "setup_notes_context", Description: "Set up Notes Context", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		{ID: "update_appjs_with_notescontext", Description: "Update App.js with NotesContext", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		{ID: "create_noteslist_component", Description: "Create NotesList component", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		{ID: "implement_add_and_delete_note_functions", Description: "Implement add and delete note functions", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+	}
+
+	updated := reconcileStructuredObjectiveLedgerFromObservation(1, ledger, StructuredCommandObservation{
+		Step:     1,
+		Command:  command,
+		ExitCode: 0,
+	}, nil)
+
+	satisfied := map[string]bool{}
+	for _, objective := range updated {
+		if structuredObjectiveSatisfied(objective) {
+			satisfied[objective.ID] = true
+		}
+	}
+	for _, want := range []string{"setup_notes_context", "implement_add_and_delete_note_functions"} {
+		if !satisfied[want] {
+			t.Fatalf("%s was not reconciled as satisfied: %#v", want, updated)
+		}
+	}
+	for _, stillPending := range []string{"update_appjs_with_notescontext", "create_noteslist_component"} {
+		if satisfied[stillPending] {
+			t.Fatalf("%s should remain pending without file evidence: %#v", stillPending, updated)
+		}
+	}
+	pendingIDs := strings.Join(structuredObjectiveIDs(pendingStructuredObjectives(updated)), ",")
+	if pendingIDs != "update_appjs_with_notescontext,create_noteslist_component" {
+		t.Fatalf("pending ids = %q", pendingIDs)
+	}
+}
+
+func TestStructuredCommandDecisionCompletesNotesAppAfterLedgerShrinksAcrossWrites(t *testing.T) {
+	workspace := t.TempDir()
+	commands := []string{
+		`mkdir -p src/hooks && printf '%s\n' "import React, { createContext, useState } from 'react';
+const NotesContext = createContext();
+export const NotesProvider = ({ children }) => {
+  const [notes, setNotes] = useState([]);
+  const addNote = (note) => setNotes([...notes, note]);
+  const deleteNote = (id) => setNotes(notes.filter(note => note.id !== id));
+  return <NotesContext.Provider value={{ notes, addNote, deleteNote }}>{children}</NotesContext.Provider>;
+};
+export default NotesContext;" > src/hooks/useNotes.js`,
+		`mkdir -p src && printf '%s\n' "import React from 'react';
+import { NotesProvider } from './hooks/useNotes';
+import NotesList from './components/NotesList';
+export default function App() {
+  return <NotesProvider><NotesList /></NotesProvider>;
+}" > src/App.js`,
+		`mkdir -p src/components && printf '%s\n' "import React from 'react';
+import NotesContext from '../hooks/useNotes';
+export default function NotesList() {
+  return <div>NotesList</div>;
+}" > src/components/NotesList.js`,
+		`test -s src/hooks/useNotes.js && test -s src/App.js && test -s src/components/NotesList.js && grep -q addNote src/hooks/useNotes.js && grep -q deleteNote src/hooks/useNotes.js && grep -q NotesProvider src/App.js && grep -q NotesList src/components/NotesList.js && printf 'notes app verified\n'`,
+	}
+	responses := make([]string, 0, len(commands)+1)
+	for _, command := range commands {
+		payload, err := json.Marshal(StructuredCommandPayload{Command: command, Done: false})
+		if err != nil {
+			t.Fatal(err)
+		}
+		responses = append(responses, string(payload))
+	}
+	responses = append(responses, `{"command":"","done":true,"answer":"Notes app context, App.js integration, NotesList, and add/delete functions are verified."}`)
+	client := &fakeCommandDecisionClient{responses: responses}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		UserOperation: userOperationModifyExisting,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "setup_notes_context", Description: "Set up Notes Context", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			{ID: "update_appjs_with_notescontext", Description: "Update App.js with NotesContext", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			{ID: "create_noteslist_component", Description: "Create NotesList component", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+			{ID: "implement_add_and_delete_note_functions", Description: "Implement add and delete note functions", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+		},
+	}}}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"continue setting up this project as a React notes app",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			PromptInterpreter:       interpreter,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
+		t.Fatalf("pending = %#v", pending)
+	}
+	if result.Answer == "" || !strings.Contains(result.Answer, "verified") {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+	if !structuredEventsContain(events, "partial_completion_accepted") {
+		t.Fatalf("missing partial completion event: %#v", events)
+	}
+	if client.calls != len(responses) {
+		t.Fatalf("client calls = %d, want %d", client.calls, len(responses))
 	}
 }
 

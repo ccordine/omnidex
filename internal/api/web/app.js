@@ -299,7 +299,10 @@ class ChatController extends Controller {
       ${job.result ? `<section class="mt-5"><h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Result</h4><pre class="mt-2 whitespace-pre-wrap rounded-md bg-white/[.04] p-3 text-sm text-zinc-200">${escapeHTML(job.result)}</pre></section>` : ""}
       ${job.error ? `<section class="mt-5"><h4 class="text-xs font-semibold uppercase tracking-[.18em] text-rose-300">Error</h4><pre class="mt-2 whitespace-pre-wrap rounded-md bg-rose-400/10 p-3 text-sm text-rose-100">${escapeHTML(job.error)}</pre></section>` : ""}
       <section class="mt-5">
-        <h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Steps</h4>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Steps</h4>
+          ${renderStepSummary(steps)}
+        </div>
         <div class="mt-3 space-y-3">${steps.map(renderStep).join("") || emptyState("No steps yet.")}</div>
       </section>
       <section class="mt-5">
@@ -783,10 +786,14 @@ function emptyState(text) {
 }
 
 function renderStep(step) {
+  const state = stepVisualState(step.status);
   return `
-    <article class="rounded-md border border-white/10 bg-white/[.035] p-3">
+    <article class="${stepCardClass(state)}">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="font-mono text-xs text-cyan-200">step #${step.id}</div>
+        <div class="flex min-w-0 items-center gap-2">
+          <span class="${stepMarkerClass(state)}">${escapeHTML(stepMarkerText(state))}</span>
+          <div class="font-mono text-xs text-cyan-200">step #${step.id}</div>
+        </div>
         <span class="${statusPillClass(step.status)}">${escapeHTML(step.status || "unknown")}</span>
       </div>
       <div class="mt-2 text-sm font-medium text-zinc-100">${escapeHTML(step.action || "step")}</div>
@@ -794,6 +801,95 @@ function renderStep(step) {
       ${step.error ? `<pre class="mt-3 max-h-44 overflow-auto whitespace-pre-wrap rounded bg-rose-400/10 p-3 text-xs leading-5 text-rose-100">${escapeHTML(step.error)}</pre>` : ""}
     </article>
   `;
+}
+
+function renderStepSummary(steps) {
+  let completed = 0;
+  let incomplete = 0;
+  let failed = 0;
+  const active = steps.find((step) => stepVisualState(step.status) === "active");
+  for (const step of steps) {
+    const state = stepVisualState(step.status);
+    if (state === "done") {
+      completed += 1;
+    } else {
+      incomplete += 1;
+      if (state === "failed") failed += 1;
+    }
+  }
+  const activeText = active ? `active #${active.id}${active.action ? ` ${active.action}` : ""}` : "no active step";
+  return `
+    <div class="flex flex-wrap items-center gap-2 text-[11px] font-medium">
+      <span class="rounded border border-cyan-300/30 bg-cyan-300/10 px-2 py-1 text-cyan-100">${escapeHTML(activeText)}</span>
+      <span class="rounded border border-emerald-300/25 bg-emerald-300/10 px-2 py-1 text-emerald-100">done ${completed}</span>
+      <span class="rounded border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-amber-100">incomplete ${incomplete}</span>
+      ${failed ? `<span class="rounded border border-rose-300/25 bg-rose-300/10 px-2 py-1 text-rose-100">failed ${failed}</span>` : ""}
+    </div>
+  `;
+}
+
+function stepVisualState(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "running":
+    case "waiting_input":
+      return "active";
+    case "completed":
+      return "done";
+    case "failed":
+    case "canceled":
+      return "failed";
+    case "pending":
+      return "pending";
+    default:
+      return "unknown";
+  }
+}
+
+function stepCardClass(state) {
+  const base = "rounded-md border p-3 transition";
+  switch (state) {
+    case "active":
+      return `${base} active-step-card border-cyan-300/60 bg-cyan-300/10`;
+    case "done":
+      return `${base} border-emerald-300/25 bg-emerald-300/[.06]`;
+    case "failed":
+      return `${base} border-rose-300/35 bg-rose-400/[.08]`;
+    case "pending":
+      return `${base} border-white/10 bg-white/[.025] opacity-80`;
+    default:
+      return `${base} border-white/10 bg-white/[.035]`;
+  }
+}
+
+function stepMarkerClass(state) {
+  const base = "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[.14em]";
+  switch (state) {
+    case "active":
+      return `${base} bg-cyan-300 text-zinc-950`;
+    case "done":
+      return `${base} bg-emerald-300/20 text-emerald-100`;
+    case "failed":
+      return `${base} bg-rose-300/20 text-rose-100`;
+    case "pending":
+      return `${base} bg-zinc-300/10 text-zinc-400`;
+    default:
+      return `${base} bg-zinc-300/10 text-zinc-300`;
+  }
+}
+
+function stepMarkerText(state) {
+  switch (state) {
+    case "active":
+      return "active";
+    case "done":
+      return "done";
+    case "failed":
+      return "stop";
+    case "pending":
+      return "todo";
+    default:
+      return "step";
+  }
 }
 
 function renderContext(context) {

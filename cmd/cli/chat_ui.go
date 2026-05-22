@@ -195,6 +195,8 @@ func feedbackPrompt(ui *chatUI) string {
 const (
 	ansiReset   = "\033[0m"
 	ansiBold    = "\033[1m"
+	ansiBlink   = "\033[5m"
+	ansiGreen   = "\033[32m"
 	ansiDim     = "\033[2m"
 	ansiBlue    = "\033[34m"
 	ansiCyan    = "\033[36m"

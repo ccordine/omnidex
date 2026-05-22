@@ -20,9 +20,30 @@ body {
   }
 }
 
+@keyframes active-step-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.18);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(103, 232, 249, 0.08), 0 0 34px rgba(103, 232, 249, 0.18);
+  }
+}
+
 .scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(103, 232, 249, 0.55) rgba(24, 24, 27, 0.7);
+}
+
+.active-step-card {
+  animation: active-step-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .active-step-card {
+    animation: none;
+  }
 }
 
 .scrollbar::-webkit-scrollbar {

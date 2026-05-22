@@ -591,6 +591,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			result.ObjectiveLedger = ledger
 			lastCompletionCheckedObservationCount = len(result.Observations)
 			if len(pendingStructuredObjectives(ledger)) == 0 {
+				if !deterministicCompletionEnforcerAcceptsDone(prompt, ledger, result.Observations) {
+					continue
+				}
 				emitStructuredCommandEvent(onEvent, "adaptive_roles_collapsed", "Deterministic recipe probes satisfied the task after observed command evidence", map[string]string{
 					"step":    fmt.Sprintf("%d", step-1),
 					"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
@@ -6670,7 +6673,10 @@ func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, o
 	if command == "" || target == "" {
 		return false
 	}
-	if strings.Contains(command, "mkdir") && (strings.Contains(target, " setup ") || strings.Contains(target, " structure ") || strings.Contains(target, " component ")) {
+	if strings.Contains(command, "mkdir") && (strings.Contains(target, " setup ") || strings.Contains(target, " structure ")) {
+		return true
+	}
+	if structuredObservationSatisfiesSourceWriteObjective(command, target) {
 		return true
 	}
 	if (strings.Contains(command, "rm ") || strings.Contains(command, "rm -f ")) &&
@@ -6712,6 +6718,57 @@ func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, o
 		return true
 	}
 	return false
+}
+
+func structuredObservationSatisfiesSourceWriteObjective(command, target string) bool {
+	if !structuredCommandLooksAppFileMutation(command) {
+		return false
+	}
+	lower := strings.ToLower(command)
+	identifierText := normalizedIdentifierText(lower)
+	if strings.Contains(target, " context ") {
+		return strings.Contains(identifierText, "createcontext") ||
+			strings.Contains(identifierText, "notescontext") ||
+			strings.Contains(identifierText, "notesprovider") ||
+			strings.Contains(identifierText, "usenotes")
+	}
+	if strings.Contains(target, " appjs ") || strings.Contains(target, " app js ") || strings.Contains(target, " app ") {
+		return (strings.Contains(lower, "app.js") || strings.Contains(lower, "app.jsx") || strings.Contains(lower, "src/app")) &&
+			(strings.Contains(identifierText, "notesprovider") || strings.Contains(identifierText, "notescontext") || strings.Contains(identifierText, "usenotes"))
+	}
+	if strings.Contains(target, " noteslist ") ||
+		strings.Contains(target, " notelist ") ||
+		(strings.Contains(target, " note ") && strings.Contains(target, " list ") && strings.Contains(target, " component ")) {
+		return (strings.Contains(lower, "noteslist.js") || strings.Contains(lower, "noteslist.jsx") || strings.Contains(lower, "notelist.js") || strings.Contains(lower, "notelist.jsx")) &&
+			(strings.Contains(identifierText, "noteslist") || strings.Contains(identifierText, "notelist"))
+	}
+	if (strings.Contains(target, " add ") && strings.Contains(target, " delete ")) ||
+		(strings.Contains(target, " create ") && strings.Contains(target, " delete ")) {
+		return strings.Contains(identifierText, "addnote") && strings.Contains(identifierText, "deletenote")
+	}
+	if strings.Contains(target, " crud ") {
+		matches := 0
+		for _, marker := range []string{"addnote", "createnote", "deletenote", "editnote", "updatenote"} {
+			if strings.Contains(identifierText, marker) {
+				matches++
+			}
+		}
+		return matches >= 2
+	}
+	if strings.Contains(target, " memory ") || strings.Contains(target, " in memory ") || strings.Contains(target, " state ") {
+		return strings.Contains(identifierText, "usestate") && strings.Contains(identifierText, "setnotes")
+	}
+	return false
+}
+
+func normalizedIdentifierText(value string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(value) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func objectiveRequiresBackendTest(target string) bool {

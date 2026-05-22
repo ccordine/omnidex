@@ -2920,7 +2920,15 @@ func printStepStatusUpdatesWithUI(steps []model.Step, lastStepStatus map[int64]s
 			continue
 		}
 		lastStepStatus[step.ID] = status
-		line := fmt.Sprintf("Step %d | phase=%s | action=%s | status=%s", step.ID, phaseForStepAction(step.Action), step.Action, step.Status)
+		if !printed {
+			line := formatWorkloadQueueStatusLine(steps, ui)
+			if ui != nil {
+				emitSystem(ui, line)
+			} else {
+				fmt.Printf("  %s\n", line)
+			}
+		}
+		line := formatStepStatusLine(step, ui)
 		if ui != nil {
 			emitSystem(ui, line)
 		} else {
@@ -2929,6 +2937,89 @@ func printStepStatusUpdatesWithUI(steps []model.Step, lastStepStatus map[int64]s
 		printed = true
 	}
 	return printed
+}
+
+func formatWorkloadQueueStatusLine(steps []model.Step, ui *chatUI) string {
+	completed := 0
+	incomplete := 0
+	failed := 0
+	active := model.Step{}
+	for _, step := range steps {
+		switch strings.ToLower(strings.TrimSpace(step.Status)) {
+		case model.StepStatusCompleted:
+			completed++
+		case model.StepStatusFailed, model.StepStatusCanceled:
+			failed++
+			incomplete++
+		default:
+			incomplete++
+			if active.ID == 0 && stepStatusIsActive(step.Status) {
+				active = step
+			}
+		}
+	}
+	activeText := "none"
+	if active.ID != 0 {
+		activeText = fmt.Sprintf("#%d %s", active.ID, strings.TrimSpace(active.Action))
+		if strings.TrimSpace(active.Action) == "" {
+			activeText = fmt.Sprintf("#%d", active.ID)
+		}
+	}
+	line := fmt.Sprintf("Workload queue | active=%s | completed=%d | incomplete=%d", activeText, completed, incomplete)
+	if failed > 0 {
+		line += fmt.Sprintf(" | failed=%d", failed)
+	}
+	if ui != nil && active.ID != 0 {
+		return ui.paint(line, ansiBold+ansiYellow)
+	}
+	if ui != nil && incomplete == 0 {
+		return ui.paint(line, ansiGreen)
+	}
+	return line
+}
+
+func formatStepStatusLine(step model.Step, ui *chatUI) string {
+	marker := stepStatusMarker(step.Status)
+	line := fmt.Sprintf("%s Step %d | phase=%s | action=%s | status=%s", marker, step.ID, phaseForStepAction(step.Action), step.Action, step.Status)
+	if ui == nil {
+		return line
+	}
+	switch strings.ToLower(strings.TrimSpace(step.Status)) {
+	case model.StepStatusRunning, model.StepStatusWaiting:
+		return ui.paint(line, ansiBold+ansiBlink+ansiYellow)
+	case model.StepStatusCompleted:
+		return ui.paint(line, ansiGreen)
+	case model.StepStatusFailed, model.StepStatusCanceled:
+		return ui.paint(line, ansiBold+ansiRed)
+	case model.StepStatusPending:
+		return ui.paint(line, ansiDim)
+	default:
+		return line
+	}
+}
+
+func stepStatusMarker(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case model.StepStatusRunning, model.StepStatusWaiting:
+		return ">> ACTIVE"
+	case model.StepStatusCompleted:
+		return "OK DONE"
+	case model.StepStatusFailed, model.StepStatusCanceled:
+		return "!! STOP"
+	case model.StepStatusPending:
+		return ".. TODO"
+	default:
+		return "-- STEP"
+	}
+}
+
+func stepStatusIsActive(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case model.StepStatusRunning, model.StepStatusWaiting:
+		return true
+	default:
+		return false
+	}
 }
 
 func phaseForStepAction(action string) string {
