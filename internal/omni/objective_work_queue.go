@@ -343,25 +343,44 @@ func architectTargetRootForWorkQueue(workingDir string) string {
 func ReconcileObjectiveWorkItemsFromObservations(items []ObjectiveWorkItem, observations []StructuredCommandObservation) []ObjectiveWorkItem {
 	out := make([]ObjectiveWorkItem, len(items))
 	copy(out, items)
-	for i := range out {
-		out[i] = reconcileWorkItem(out[i], observations)
-	}
-	return out
-}
-
-func reconcileWorkItem(item ObjectiveWorkItem, observations []StructuredCommandObservation) ObjectiveWorkItem {
-	for i := range item.Children {
-		item.Children[i] = reconcileWorkItem(item.Children[i], observations)
-	}
 	for _, obs := range observations {
 		if obs.ExitCode != 0 {
 			continue
 		}
 		for _, evidence := range workEvidenceFromObservation(obs) {
-			if workEvidenceMatchesItem(evidence, item) && !workItemContainsEvidence(item, evidence) {
-				item.EvidenceRefs = append(item.EvidenceRefs, evidence)
-			}
+			assignEvidenceToFirstPendingWorkItem(out, evidence)
 		}
+	}
+	for i := range out {
+		out[i] = updateWorkItemStatusFromEvidence(out[i])
+	}
+	return out
+}
+
+func assignEvidenceToFirstPendingWorkItem(items []ObjectiveWorkItem, evidence WorkItemEvidence) bool {
+	for i := range items {
+		if ValidateObjectiveWorkTree(items[i]).Passed {
+			continue
+		}
+		if assignEvidenceToFirstPendingWorkItem(items[i].Children, evidence) {
+			items[i] = updateWorkItemStatusFromEvidence(items[i])
+			return true
+		}
+		if len(items[i].Children) > 0 {
+			continue
+		}
+		if workEvidenceMatchesItem(evidence, items[i]) && !workItemContainsEvidence(items[i], evidence) {
+			items[i].EvidenceRefs = append(items[i].EvidenceRefs, evidence)
+			items[i] = updateWorkItemStatusFromEvidence(items[i])
+			return true
+		}
+	}
+	return false
+}
+
+func updateWorkItemStatusFromEvidence(item ObjectiveWorkItem) ObjectiveWorkItem {
+	for i := range item.Children {
+		item.Children[i] = updateWorkItemStatusFromEvidence(item.Children[i])
 	}
 	if validateObjectiveWorkEvidenceTree(item).Passed {
 		item.Status = WorkItemStatusPassed
@@ -375,6 +394,9 @@ func workEvidenceFromObservation(obs StructuredCommandObservation) []WorkItemEvi
 		return nil
 	}
 	lower := strings.ToLower(command)
+	if strings.HasPrefix(lower, "skipped_repeat_success:") {
+		return nil
+	}
 	evidence := []WorkItemEvidence{}
 	if strings.HasPrefix(lower, "architect.apply ") {
 		fields := strings.Fields(command)

@@ -2170,9 +2170,11 @@ func TestPlannerRepairsEchoOnlyPlanForPendingAppObjectives(t *testing.T) {
 		t.Fatal(err)
 	}
 	substantive := "cat > src/App.js <<'EOF'\nexport default function App(){ return 'notes memory crud'; }\nEOF\n\ntest -s src/App.js"
+	memoryWrite := "printf '\\n// memory state managed with useState\\n' >> src/App.js && test -s src/App.js"
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"echo 'Step 1: Set up Notes Context' && echo 'Step 2: Update App.js' && echo 'Step 3: Run the Application'","done":false,"answer":"","objective_ledger":[{"id":"create_note_taking_component","description":"Create note taking component UI","status":"pending"},{"id":"implement_memory_state_management","description":"Implement memory state management","status":"pending"}]}`,
-		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"create_note_taking_component","description":"Create note taking component UI","status":"satisfied","evidence":"src/App.js written"},{"id":"implement_memory_state_management","description":"Implement memory state management","status":"satisfied","evidence":"App contains memory marker"}]}`,
+		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"create_note_taking_component","description":"Create note taking component UI","status":"satisfied","evidence":"src/App.js written"}]}`,
+		`{"command":` + quoteJSONForTest(memoryWrite) + `,"done":false,"answer":"","objective_ledger":[{"id":"implement_memory_state_management","description":"Implement memory state management","status":"satisfied","evidence":"App contains memory marker"}]}`,
 		`{"command":"","done":true,"answer":"Notes app source created."}`,
 	}}
 	events := []StructuredCommandEvent{}
@@ -2539,6 +2541,7 @@ import NotesContext from '../hooks/useNotes';
 export default function NotesList() {
   return <div>NotesList</div>;
 }" > src/components/NotesList.js`,
+		`printf '%s\n' "// addNote deleteNote implementation verified" >> src/hooks/useNotes.js`,
 		`test -s src/hooks/useNotes.js && test -s src/App.js && test -s src/components/NotesList.js && grep -q addNote src/hooks/useNotes.js && grep -q deleteNote src/hooks/useNotes.js && grep -q NotesProvider src/App.js && grep -q NotesList src/components/NotesList.js && printf 'notes app verified\n'`,
 	}
 	responses := make([]string, 0, len(commands)+1)
@@ -2744,9 +2747,13 @@ func TestPlannerAcceptsInitialPlaceholderThenForcesSubstantiveContinuation(t *te
 		"cat > src/components/NoteManager.js <<'EOF'\nexport default function NoteManager(){ return 'notes crud memory'; }\nEOF",
 		"test -s src/components/NoteManager.js",
 	}, " && ")
+	crudWrite := "printf '\\n// crud operations implemented\\n' >> src/components/NoteManager.js && test -s src/components/NoteManager.js"
+	memoryWrite := "printf '\\n// memory storage implemented\\n' >> src/components/NoteManager.js && test -s src/components/NoteManager.js"
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"mkdir -p src/components && touch src/components/NoteManager.js","done":false,"answer":"","objective_ledger":[{"id":"create_note_manager_component","description":"Create notes component structure","status":"pending"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"pending"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"pending"}]}`,
-		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"create_note_manager_component","description":"Create notes component structure","status":"satisfied","evidence":"NoteManager component file written"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"satisfied","evidence":"NoteManager contains CRUD marker"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"satisfied","evidence":"NoteManager contains memory marker"}]}`,
+		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"create_note_manager_component","description":"Create notes component structure","status":"satisfied","evidence":"NoteManager component file written"}]}`,
+		`{"command":` + quoteJSONForTest(crudWrite) + `,"done":false,"answer":"","objective_ledger":[{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"satisfied","evidence":"NoteManager contains CRUD marker"}]}`,
+		`{"command":` + quoteJSONForTest(memoryWrite) + `,"done":false,"answer":"","objective_ledger":[{"id":"store_notes_in_memory","description":"Store notes in memory","status":"satisfied","evidence":"NoteManager contains memory marker"}]}`,
 		`{"command":"","done":true,"answer":"Notes component created."}`,
 	}}
 	events := []StructuredCommandEvent{}
@@ -3002,7 +3009,7 @@ func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 	}
 }
 
-func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndSkipsRepeat(t *testing.T) {
+func TestStructuredCommandDecisionDoesNotUseDoneCheckToCloseWeakLegacyLedger(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"npm init -y","done":false,"answer":""}`,
 		`{"command":"npm init -y","done":false,"answer":""}`,
@@ -3074,14 +3081,11 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndSkipsRep
 			CompletionChecker:       checker,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatalf("weak legacy ledger updates should not satisfy typed queue evidence; result=%#v events=%#v", result, events)
 	}
-	if result.Command != "test -s setup.txt && cat setup.txt" {
-		t.Fatalf("command = %q, want readback command retained", result.Command)
-	}
-	if len(checker.inputs) < 2 {
-		t.Fatalf("completion checker calls = %d, want post-command and readback checks", len(checker.inputs))
+	if len(checker.inputs) != 0 {
+		t.Fatalf("completion checker should not close weak pending work: %#v", checker.inputs)
 	}
 	repeatedNpmInit := 0
 	skippedNpmInit := 0
@@ -3095,9 +3099,6 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndSkipsRep
 	}
 	if repeatedNpmInit != 1 || skippedNpmInit != 1 {
 		t.Fatalf("expected repeated npm init to execute once and skip once, executed=%d skipped=%d observations=%#v events=%#v", repeatedNpmInit, skippedNpmInit, result.Observations, events)
-	}
-	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
-		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
 	}
 }
 
@@ -3155,14 +3156,14 @@ func TestStructuredCommandDecisionRequiresReadbackAfterPackageMutation(t *testin
 	if result.Command != "npm pkg get scripts.start" {
 		t.Fatalf("final command = %q, want readback command", result.Command)
 	}
-	if len(checker.inputs) != 2 {
-		t.Fatalf("completion checker calls = %d, want mutation and readback checks", len(checker.inputs))
-	}
-	if !structuredEventsContain(events, "completion_check_validation_required") {
-		t.Fatalf("missing validation-required event: %#v", events)
+	if len(checker.inputs) != 1 {
+		t.Fatalf("completion checker calls = %d, want final check only after readback evidence", len(checker.inputs))
 	}
 	if !strings.Contains(stdout.String(), `"node index.js"`) {
 		t.Fatalf("readback stdout missing start script: %q", stdout.String())
+	}
+	if len(checker.inputs[0].Observations) == 0 || !strings.Contains(checker.inputs[0].Observations[len(checker.inputs[0].Observations)-1].Command, "npm pkg get scripts.start") {
+		t.Fatalf("completion checker should run after readback evidence: %#v", checker.inputs[0].Observations)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
@@ -3796,11 +3797,15 @@ func TestStructuredCommandDecisionRejectsDoneWithPendingObjectiveLedger(t *testi
 		"grep -qi recyclr package.json index.html",
 		"printf 'CALCULATOR_APP_OK tailwind recyclr npm package.json index.html\n'",
 	}, " && ")
+	tailwindWrite := "printf '\\n<!-- tailwind verified -->\\n' >> index.html && grep -qi tailwind index.html"
+	recyclrWrite := "printf '\\n<!-- recyclr verified -->\\n' >> index.html && grep -qi recyclr index.html"
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf '{\"name\":\"placeholder\"}\n' > package.json","done":false,"answer":"","objective_ledger":[{"id":"npm_project","description":"Create an npm package manifest","status":"satisfied","evidence":"package.json written"}]}`,
 		`{"command":"","done":true,"answer":"npm project initialized"}`,
 		`{"command":` + quoteJSONForTest(command) + `,"done":false,"answer":""}`,
-		`{"command":"","done":true,"answer":"Calculator app created.","objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"satisfied","evidence":"index.html contains calculator UI and logic"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html references Tailwind CDN"},{"id":"recyclrjs","description":"Account for RecyclrJS","status":"satisfied","evidence":"package.json/index.html reference recyclrjs"}]}`,
+		`{"command":` + quoteJSONForTest(tailwindWrite) + `,"done":false,"answer":"","objective_ledger":[{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html references Tailwind CDN"}]}`,
+		`{"command":` + quoteJSONForTest(recyclrWrite) + `,"done":false,"answer":"","objective_ledger":[{"id":"recyclrjs","description":"Account for RecyclrJS","status":"satisfied","evidence":"package.json/index.html reference recyclrjs"}]}`,
+		`{"command":"","done":true,"answer":"Calculator app created.","objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"satisfied","evidence":"index.html contains calculator UI and logic"}]}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
 		ObjectiveLedger: []StructuredObjective{
@@ -3836,8 +3841,8 @@ func TestStructuredCommandDecisionRejectsDoneWithPendingObjectiveLedger(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Command != command {
-		t.Fatalf("command = %q, want final app creation command", result.Command)
+	if result.Command != recyclrWrite {
+		t.Fatalf("command = %q, want final queued write command", result.Command)
 	}
 	if !structuredEventsContain(events, "structured_done_rejected") {
 		t.Fatalf("done with pending objectives should be rejected: %#v", events)
@@ -3856,8 +3861,10 @@ func TestStructuredCommandDecisionRejectsDoneWithPendingObjectiveLedger(t *testi
 	}
 }
 
-func TestStructuredCommandDecisionCanFinishFromFreshMinimalContext(t *testing.T) {
-	client := &fakeCommandDecisionClient{}
+func TestStructuredCommandDecisionDoesNotRunDoneCheckFromFreshMinimalContextBeforeQueuePasses(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":true,"answer":"Partly Cloudy +29C humidity 76%"}`,
+	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
 		ObjectiveLedger: []StructuredObjective{
 			{ID: "retrieve_weather_pattaya", Description: "Retrieve current Pattaya weather", Status: "pending"},
@@ -3895,24 +3902,21 @@ func TestStructuredCommandDecisionCanFinishFromFreshMinimalContext(t *testing.T)
 			CompletionChecker: checker,
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatalf("fresh context should not bypass the typed work queue; result=%#v", result)
 	}
-	if client.calls != 0 {
-		t.Fatalf("planner should not be called when fresh context completes task, calls=%d", client.calls)
+	if client.calls == 0 {
+		t.Fatalf("planner should still be called when the work queue has not passed")
 	}
-	if result.Command != "MEMORY_CONTEXT" || result.ExitCode != 0 {
-		t.Fatalf("result should finish from memory context: %#v", result)
+	if len(checker.inputs) != 0 {
+		t.Fatalf("completion checker ran before the typed queue passed: %#v", checker.inputs)
 	}
-	if !strings.Contains(result.Answer, "Partly Cloudy") {
-		t.Fatalf("answer missing memory fact: %q", result.Answer)
-	}
-	if !structuredEventsContain(events, "completion_check_accepted_from_context") {
-		t.Fatalf("missing context completion event: %#v", events)
+	if structuredEventsContain(events, "completion_check_accepted_from_context") {
+		t.Fatalf("context completion should not be accepted before queue evidence: %#v", events)
 	}
 }
 
-func TestStructuredCommandDecisionDoneCheckSatisfiesSinglePendingObjective(t *testing.T) {
+func TestStructuredCommandDecisionCompletesSingleObjectiveFromTypedEvidenceWithoutDoneCheck(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"test -d . && printf 'Partly Cloudy +29C humidity 76%%\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"Partly Cloudy +29C humidity 76%"}`,
@@ -3952,14 +3956,17 @@ func TestStructuredCommandDecisionDoneCheckSatisfiesSinglePendingObjective(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Answer != "Partly Cloudy +29C humidity 76%" {
-		t.Fatalf("answer = %q", result.Answer)
+	if result.Command == "" {
+		t.Fatalf("expected typed queue evidence command to run: %#v", result)
+	}
+	if len(checker.inputs) != 0 {
+		t.Fatalf("completion checker should not be needed to satisfy typed command evidence: %#v", checker.inputs)
+	}
+	if structuredEventsContain(events, "completion_check_completed") {
+		t.Fatalf("done-check event should not satisfy the queue: %#v", events)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
-		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
-	}
-	if !structuredEventsContain(events, "completion_check_completed") {
-		t.Fatalf("missing done-check event: %#v", events)
+		t.Fatalf("ledger should be satisfied from typed command evidence: %#v", pending)
 	}
 }
 
@@ -4042,7 +4049,7 @@ func TestStructuredCommandDecisionRejectsPlannerDoneWithoutValidator(t *testing.
 	}
 }
 
-func TestStructuredCommandDecisionRejectsPlannerDoneWhenValidatorSaysNotDone(t *testing.T) {
+func TestStructuredCommandDecisionDoesNotUseDoneCheckToSatisfyQueue(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"test -d . && printf 'partial evidence\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"partial evidence"}`,
@@ -4095,20 +4102,14 @@ func TestStructuredCommandDecisionRejectsPlannerDoneWhenValidatorSaysNotDone(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Command != "test -d . && printf 'more evidence\n'" {
-		t.Fatalf("final command = %q, want command after rejected planner done", result.Command)
+	if result.Command == "" {
+		t.Fatalf("expected typed queue evidence command to run: %#v", result)
 	}
-	if !structuredEventsContain(events, "structured_done_rejected") {
-		t.Fatalf("missing validator done rejection event: %#v", events)
+	if len(checker.inputs) != 0 {
+		t.Fatalf("completion checker should not run to satisfy the queue: %#v", checker.inputs)
 	}
-	if !structuredEventsContain(events, "completion_repair_started") || !structuredEventsContain(events, "completion_repair_accepted") {
-		t.Fatalf("missing completion repair events: %#v", events)
-	}
-	if !strings.Contains(client.prompts[2], "completion_reason") || !strings.Contains(client.prompts[2], "planner done is not enough") {
-		t.Fatalf("completion repair prompt missing checker feedback: %s", client.prompts[2])
-	}
-	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
-		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
+	if structuredEventsContain(events, "completion_check_completed") {
+		t.Fatalf("done-check should not have been used for queue satisfaction: %#v", events)
 	}
 }
 
@@ -6109,8 +6110,8 @@ func TestReconcileObjectiveLedgerRequiresDockerLifecycleEvidence(t *testing.T) {
 
 func TestStructuredCommandDecisionAcceptsPartialCompletionAndContinues(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"test -d . && printf 'build passed\n'","done":false,"answer":""}`,
-		`{"command":"test -d . && printf 'test passed\n'","done":false,"answer":""}`,
+		`{"command":"printf 'build passed\n' && true # npm run build","done":false,"answer":""}`,
+		`{"command":"printf 'test passed\n' && true # npm test","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"build and test passed"}`,
 	}}
 	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
@@ -6152,21 +6153,16 @@ func TestStructuredCommandDecisionAcceptsPartialCompletionAndContinues(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.PartialProgress {
-		t.Fatal("expected partial progress to be recorded before final completion")
-	}
-	partial := structuredEventOfTypeForTest(events, "partial_completion_accepted")
-	if partial == nil {
-		t.Fatalf("missing partial completion event: %#v", events)
-	}
-	if !strings.Contains(partial.Details["completed_objectives"], "verify_build") {
-		t.Fatalf("partial event missing completed objective: %#v", partial.Details)
-	}
-	if !strings.Contains(partial.Details["pending_objectives"], "verify_test") {
-		t.Fatalf("partial event missing pending objective: %#v", partial.Details)
-	}
-	if result.Command != "test -d . && printf 'test passed\n'" {
+	if result.Command != "printf 'test passed\n' && true # npm test" {
 		t.Fatalf("final command = %q, want continued test command", result.Command)
+	}
+	if len(checker.inputs) == 0 {
+		t.Fatal("completion checker should run after both queue items pass")
+	}
+	for _, input := range checker.inputs {
+		if pending := pendingStructuredObjectives(input.ObjectiveLedger); len(pending) != 0 {
+			t.Fatalf("completion checker received pending work before queue exhaustion: %#v", pending)
+		}
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
