@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gryph/omnidex/internal/version"
 	"github.com/gryph/omnidex/internal/websearch"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -61,6 +62,18 @@ func NewApp(in io.Reader, out, errOut io.Writer) *App {
 }
 
 func (a *App) Run(args []string) error {
+	if len(args) > 0 && (args[0] == "version" || args[0] == "--version" || args[0] == "-v") {
+		if len(args) > 1 && args[1] == "--json" {
+			encoded, err := json.MarshalIndent(version.JSON(), "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(a.out, string(encoded))
+			return nil
+		}
+		fmt.Fprintln(a.out, version.PrintName("omni"))
+		return nil
+	}
 	if len(args) > 0 && args[0] == "update" {
 		return a.runUpdate(args[1:])
 	}

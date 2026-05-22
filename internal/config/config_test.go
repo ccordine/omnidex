@@ -126,6 +126,41 @@ func TestLoadHuggingFaceProviderUsesHFTokenAndModel(t *testing.T) {
 	}
 }
 
+func TestLoadXAIProviderUsesGrokAliasesAndOllamaEmbeddings(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://agent:agent@localhost:5432/agent?sslmode=disable")
+	t.Setenv("LLM_PROVIDER", "grock")
+	t.Setenv("GROK_API_KEY", "xai-test-key")
+	t.Setenv("GROK_MODEL", "grok-test")
+	t.Setenv("GROK_MODEL_FAST", "grok-fast")
+	t.Setenv("OLLAMA_EMBEDDING_MODEL", "nomic-test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.LLMProvider != "xai" {
+		t.Fatalf("LLMProvider=%q want xai", cfg.LLMProvider)
+	}
+	if cfg.DefaultModel != "grok-test" {
+		t.Fatalf("DefaultModel=%q want grok-test", cfg.DefaultModel)
+	}
+	if cfg.FastModel != "grok-fast" {
+		t.Fatalf("FastModel=%q want grok-fast", cfg.FastModel)
+	}
+	if cfg.XAIAPIKey != "xai-test-key" {
+		t.Fatalf("XAIAPIKey not loaded from GROK_API_KEY")
+	}
+	if cfg.XAIBaseURL != "https://api.x.ai/v1" {
+		t.Fatalf("XAIBaseURL=%q want default", cfg.XAIBaseURL)
+	}
+	if cfg.EmbeddingProvider != "ollama" {
+		t.Fatalf("EmbeddingProvider=%q want ollama", cfg.EmbeddingProvider)
+	}
+	if cfg.EmbeddingModel != "nomic-test" {
+		t.Fatalf("EmbeddingModel=%q want nomic-test", cfg.EmbeddingModel)
+	}
+}
+
 func TestLoadAnthropicCanUseGoogleEmbeddingProvider(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://agent:agent@localhost:5432/agent?sslmode=disable")
 	t.Setenv("LLM_PROVIDER", "anthropic")

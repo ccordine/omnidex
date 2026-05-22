@@ -186,8 +186,76 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 	})
 
 	mustRegisterTool(registry, toolruntime.Spec{
+		Name:        "memory.catalog",
+		Description: "List available memory categories and tags with counts so specialists can choose focused retrieval scopes before querying memory.",
+		Aliases:     []string{"memory_catalog", "memory.facets"},
+		InputSchema: toolruntime.Schema{
+			Type: "object",
+			Properties: map[string]toolruntime.Schema{
+				"limit": {Type: "integer"},
+			},
+		},
+		OutputSchema: toolruntime.Schema{
+			Type:     "object",
+			Required: []string{"summary", "categories", "tags"},
+			Properties: map[string]toolruntime.Schema{
+				"summary": {Type: "string"},
+				"categories": {
+					Type: "array",
+					Items: &toolruntime.Schema{
+						Type:     "object",
+						Required: []string{"name", "count"},
+						Properties: map[string]toolruntime.Schema{
+							"name":  {Type: "string"},
+							"count": {Type: "integer"},
+						},
+					},
+				},
+				"tags": {
+					Type: "array",
+					Items: &toolruntime.Schema{
+						Type:     "object",
+						Required: []string{"name", "count"},
+						Properties: map[string]toolruntime.Schema{
+							"name":  {Type: "string"},
+							"count": {Type: "integer"},
+						},
+					},
+				},
+			},
+		},
+		Examples: []toolruntime.Example{
+			{When: "You need to discover the available memory buckets before retrieval.", Input: map[string]any{"limit": 40}},
+		},
+		RequireEvidence: true,
+	}, func(ctx context.Context, call toolruntime.Call) (toolruntime.Result, error) {
+		limit := toolInputInt(call.Input, "limit", 50)
+		if limit <= 0 {
+			limit = 50
+		}
+		categories, err := s.repo.ListMemoryCategories(ctx, limit)
+		if err != nil {
+			return toolruntime.Result{}, err
+		}
+		tags, err := s.repo.ListMemoryTags(ctx, limit)
+		if err != nil {
+			return toolruntime.Result{}, err
+		}
+		summary := fmt.Sprintf("memory_categories=%d memory_tags=%d", len(categories), len(tags))
+		return toolruntime.Result{
+			Summary: summary,
+			Output: map[string]any{
+				"summary":    summary,
+				"categories": memoryFacetsForTool(categories),
+				"tags":       memoryFacetsForTool(tags),
+			},
+			Warnings: toolWarnings(len(categories) == 0 && len(tags) == 0, "no memory categories or tags are available"),
+		}, nil
+	})
+
+	mustRegisterTool(registry, toolruntime.Spec{
 		Name:        "memory.retrieve",
-		Description: "Retrieve and rank relevant memory for the current job context.",
+		Description: "Retrieve and rank relevant memory for the current job context. Use category:<name> scope tags or the categories input to focus on buckets discovered via memory.catalog.",
 		Aliases:     []string{"memory"},
 		InputSchema: toolruntime.Schema{
 			Type:     "object",
@@ -196,6 +264,7 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 				"query":       {Type: "string"},
 				"limit":       {Type: "integer"},
 				"scope_tags":  {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
+				"categories":  {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
 				"project_tag": {Type: "string"},
 				"session_tag": {Type: "string"},
 			},
@@ -212,11 +281,12 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 						Type:     "object",
 						Required: []string{"id", "kind", "content", "tags", "score"},
 						Properties: map[string]toolruntime.Schema{
-							"id":      {Type: "integer"},
-							"kind":    {Type: "string"},
-							"content": {Type: "string"},
-							"tags":    {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
-							"score":   {Type: "number"},
+							"id":         {Type: "integer"},
+							"kind":       {Type: "string"},
+							"content":    {Type: "string"},
+							"tags":       {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
+							"categories": {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
+							"score":      {Type: "number"},
 						},
 					},
 				},
@@ -239,6 +309,12 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 			limit = maxMemoryRetrievalLimit
 		}
 		scopeTags := parseAnyStringSlice(call.Input["scope_tags"])
+		for _, category := range parseAnyStringSlice(call.Input["categories"]) {
+			category = strings.TrimSpace(category)
+			if category != "" {
+				scopeTags = append(scopeTags, "category:"+category)
+			}
+		}
 		projectScope := strings.TrimSpace(toolInputString(call.Input, "project_tag"))
 		sessionTag := strings.TrimSpace(toolInputString(call.Input, "session_tag"))
 
@@ -299,11 +375,12 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 		items := make([]map[string]any, 0, len(ranked))
 		for _, match := range ranked {
 			items = append(items, map[string]any{
-				"id":      match.ID,
-				"kind":    match.Kind,
-				"content": match.Content,
-				"tags":    append([]string(nil), match.Tags...),
-				"score":   match.Score,
+				"id":         match.ID,
+				"kind":       match.Kind,
+				"content":    match.Content,
+				"tags":       append([]string(nil), match.Tags...),
+				"categories": append([]string(nil), match.Categories...),
+				"score":      match.Score,
 			})
 		}
 		evidenceRecords := memoryRetrievalEvidenceRecords(query, rankingScopeTags, ranked, scopeFallback)
@@ -602,6 +679,7 @@ func memoryRetrievalEvidenceRecords(query string, scopeTags []string, ranked []m
 			Confidence: match.Score,
 			Metadata: map[string]any{
 				"tags":           match.Tags,
+				"categories":     match.Categories,
 				"scope_fallback": fallback,
 			},
 		})
@@ -669,6 +747,17 @@ func toolWarnings(add bool, warning string) []string {
 		return nil
 	}
 	return []string{strings.TrimSpace(warning)}
+}
+
+func memoryFacetsForTool(facets []model.MemoryFacet) []map[string]any {
+	out := make([]map[string]any, 0, len(facets))
+	for _, facet := range facets {
+		out = append(out, map[string]any{
+			"name":  facet.Name,
+			"count": facet.Count,
+		})
+	}
+	return out
 }
 
 func evidenceRecordMap(record evidence.Record) map[string]any {

@@ -259,17 +259,25 @@ Omnidex supports these model sources for generation:
 | --- | --- | --- | --- |
 | Ollama | `ollama`, `local` | none | `llama3.2` in core, CLI defaults vary by role |
 | OpenAI-compatible OpenAI API | `openai`, `chatgpt`, `chat-gpt` | `OPENAI_API_KEY` | `gpt-4.1-mini` |
+| xAI Grok | `xai`, `x-ai`, `grok`, `grock` | `XAI_API_KEY` or `GROK_API_KEY` | `grok-4.3` |
 | Google Gemini | `google`, `gemini`, `googleai`, `google-ai` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `gemini-2.0-flash` |
 | Anthropic Claude | `anthropic`, `claude` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
 | Hugging Face Inference Providers | `huggingface`, `hugging-face`, `hf` | `HUGGINGFACE_API_KEY` or `HF_TOKEN` | `openai/gpt-oss-20b:fastest` |
 
-Generation and embeddings are routed separately. `LLM_PROVIDER` controls chat, planning, summarization, specialists, and response generation. `EMBEDDING_PROVIDER` controls memory vectors and retrieval embeddings. Anthropic is generation-only in Omnidex because Anthropic does not expose a native embeddings API; use Ollama, OpenAI, Google, or Hugging Face for embeddings.
+Generation and embeddings are routed separately. `LLM_PROVIDER` controls chat, planning, summarization, specialists, and response generation. `EMBEDDING_PROVIDER` controls memory vectors and retrieval embeddings. Anthropic and xAI/Grok are generation-only in Omnidex right now; use Ollama, OpenAI, Google, or Hugging Face for embeddings.
 
 To run with OpenAI instead of Ollama:
 - `LLM_PROVIDER=openai`
 - `OPENAI_API_KEY=...`
 - optional `OPENAI_MODEL=gpt-4.1-mini`
 - optional `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
+
+To run with xAI Grok:
+- `LLM_PROVIDER=xai`, `LLM_PROVIDER=grok`, or `LLM_PROVIDER=grock`
+- `XAI_API_KEY=...` or `GROK_API_KEY=...`
+- optional `XAI_BASE_URL=https://api.x.ai/v1`
+- optional `XAI_MODEL=grok-4.3`
+- keep `EMBEDDING_PROVIDER=ollama|openai|google|huggingface`, because Grok generation uses xAI's OpenAI-compatible chat-completions API while Omnidex memory vectors need a configured embedding provider.
 
 To run with Google Gemini:
 - `LLM_PROVIDER=google` or `LLM_PROVIDER=gemini`
@@ -309,6 +317,16 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_MODEL_REASONING=gpt-4.1
 OPENAI_MODEL_PLANNER=gpt-4.1
+EMBEDDING_PROVIDER=ollama
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+```
+
+```env
+# Grok for generation, local Ollama embeddings.
+LLM_PROVIDER=xai
+XAI_API_KEY=xai-...
+XAI_MODEL=grok-4.3
+XAI_MODEL_FAST=grok-4.3
 EMBEDDING_PROVIDER=ollama
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 ```
@@ -403,7 +421,7 @@ OPENAI_MODEL_SPECIALIST_WEB_RESEARCH=gpt-4.1-mini
 ```
 
 Supported environment variables:
-- `LLM_PROVIDER=ollama|openai|google|anthropic|huggingface`
+- `LLM_PROVIDER=ollama|openai|xai|google|anthropic|huggingface`
 - `EMBEDDING_PROVIDER=ollama|openai|google|huggingface`
 - `OPENAI_API_KEY` (required when `LLM_PROVIDER=openai`)
 - `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
@@ -417,6 +435,11 @@ Supported environment variables:
 - `OPENAI_MODEL_SEARCH`
 - `OPENAI_MODEL_MEMORY`
 - `OPENAI_EMBEDDING_MODEL`
+- `XAI_API_KEY` / `GROK_API_KEY` (required when `LLM_PROVIDER=xai|grok|grock`)
+- `XAI_BASE_URL` / `GROK_BASE_URL` (default `https://api.x.ai/v1`)
+- `XAI_MODEL` / `GROK_MODEL`
+- `XAI_MODEL_FAST`, `XAI_MODEL_REASONING`, `XAI_MODEL_TAGGER`, `XAI_MODEL_PLANNER`, `XAI_MODEL_ANALYZER`, `XAI_MODEL_RESPONDER`, `XAI_MODEL_SEARCH`, `XAI_MODEL_MEMORY`
+- `XAI_EMBEDDING_PROVIDER` / `GROK_EMBEDDING_PROVIDER` (default `ollama` when `LLM_PROVIDER=xai|grok|grock`)
 - `GOOGLE_API_KEY` / `GEMINI_API_KEY` (required when `LLM_PROVIDER=google`)
 - `GOOGLE_BASE_URL` (default `https://generativelanguage.googleapis.com/v1beta`)
 - `GOOGLE_MODEL` / `GEMINI_MODEL`
@@ -532,10 +555,10 @@ The Windows script prefers `winget`, then Scoop, then Chocolatey. Local automati
 Build release archives for macOS and Windows from any host with Go installed:
 
 ```bash
-./scripts/build-release.sh --version dev --target darwin/arm64 --target windows/amd64
+./scripts/build-release.sh --version v0.2.0 --codename Ivysaur --target darwin/arm64 --target windows/amd64
 ```
 
-Default release targets are Linux, macOS, and Windows for `amd64` and `arm64`; outputs are written to `dist/` with `SHA256SUMS`.
+Default release targets are Linux, macOS, and Windows for `amd64` and `arm64`; outputs are written to `dist/` with `SHA256SUMS`. The current release line is `v0.2.0` Ivysaur; the first alpha release was `v0.1.0-alpha` Bulbasaur. Omnidex uses pride release codenames based on National Dex order; the mature "it got really good" release codename is reserved as Venusaur. See [docs/RELEASE_VERSIONING.md](docs/RELEASE_VERSIONING.md).
 
 ## Install to ~/.omnidex
 

@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DIST_DIR="${REPO_ROOT}/dist"
-VERSION="dev"
+VERSION="v0.2.0"
+CODENAME="Ivysaur"
 TARGETS=(
   "linux/amd64"
   "linux/arm64"
@@ -27,13 +28,14 @@ Usage:
 
 Options:
   --dist <path>       Output directory (default: ./dist)
-  --version <value>   Version label used in archive names (default: dev)
+  --version <value>   Version label used in archive names and binary metadata (default: v0.2.0)
+  --codename <value>  Release codename embedded in binary metadata (default: Ivysaur)
   --target <goos/goarch>
                       Build one target. May be repeated. Defaults to linux/darwin/windows amd64+arm64.
   -h, --help          Show this help
 
 Examples:
-  scripts/build-release.sh --version 0.1.0
+  scripts/build-release.sh --version v0.2.0 --codename Ivysaur
   scripts/build-release.sh --target darwin/arm64 --target windows/amd64
 EOF
 }
@@ -59,6 +61,11 @@ parse_args() {
       --version)
         (($# >= 2)) || die "--version requires a value"
         VERSION="$2"
+        shift 2
+        ;;
+      --codename)
+        (($# >= 2)) || die "--codename requires a value"
+        CODENAME="$2"
         shift 2
         ;;
       --target)
@@ -104,6 +111,10 @@ build_target() {
   [[ -n "$goos" && -n "$goarch" && "$goos" != "$goarch" ]] || die "invalid target: $target"
 
   local target_name="omnidex-${VERSION}-${goos}-${goarch}"
+  local commit build_date ldflags
+  commit="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || true)"
+  build_date="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  ldflags="-X github.com/gryph/omnidex/internal/version.Version=${VERSION} -X github.com/gryph/omnidex/internal/version.Codename=${CODENAME} -X github.com/gryph/omnidex/internal/version.Commit=${commit} -X github.com/gryph/omnidex/internal/version.Date=${build_date}"
   local target_dir="${DIST_DIR}/${target_name}"
   rm -rf "$target_dir"
   mkdir -p "${target_dir}/bin"
@@ -119,12 +130,15 @@ build_target() {
     fi
     (
       cd "$REPO_ROOT"
-      CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -o "${target_dir}/bin/${name}${ext}" "$pkg"
+      CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$ldflags" -o "${target_dir}/bin/${name}${ext}" "$pkg"
     )
   done
 
   cp -a "${REPO_ROOT}/README.md" "${target_dir}/README.md"
   cp -a "${REPO_ROOT}/LICENSE" "${target_dir}/LICENSE"
+  if [[ -f "${REPO_ROOT}/CHANGELOG.md" ]]; then
+    cp -a "${REPO_ROOT}/CHANGELOG.md" "${target_dir}/CHANGELOG.md"
+  fi
   if [[ -f "${REPO_ROOT}/agent_aliases.sh" && "$goos" != "windows" ]]; then
     cp -a "${REPO_ROOT}/agent_aliases.sh" "${target_dir}/agent_aliases.sh"
   fi

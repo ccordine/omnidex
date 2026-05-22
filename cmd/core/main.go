@@ -13,6 +13,7 @@ import (
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llmprovider"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/version"
 	"github.com/gryph/omnidex/internal/websearch"
 	"github.com/gryph/omnidex/internal/worker"
 )
@@ -30,6 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+	log.Printf("omnidex core %s", version.Full())
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -118,6 +120,7 @@ func main() {
 
 	ollamaDefaultModel := envOrFallback("OLLAMA_MODEL", "")
 	openAIDefaultModel := envOrFallback("OPENAI_MODEL", "")
+	xAIDefaultModel := envOrFallback("XAI_MODEL", envOrFallback("GROK_MODEL", ""))
 	googleDefaultModel := envOrFallback("GOOGLE_MODEL", envOrFallback("GEMINI_MODEL", ""))
 	anthropicDefaultModel := envOrFallback("ANTHROPIC_MODEL", envOrFallback("CLAUDE_MODEL", ""))
 	huggingFaceDefaultModel := envOrFallback("HUGGINGFACE_MODEL", envOrFallback("HF_MODEL", ""))
@@ -131,6 +134,9 @@ func main() {
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "openai") {
 		openAIDefaultModel = envOrFallback("OPENAI_MODEL", cfg.DefaultModel)
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "xai") {
+		xAIDefaultModel = envOrFallback("XAI_MODEL", envOrFallback("GROK_MODEL", cfg.DefaultModel))
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "google") {
 		googleDefaultModel = envOrFallback("GOOGLE_MODEL", envOrFallback("GEMINI_MODEL", cfg.DefaultModel))
@@ -165,6 +171,9 @@ func main() {
 		OpenAIProject:             cfg.OpenAIProject,
 		OpenAIDefaultModel:        openAIDefaultModel,
 		OpenAIEmbeddingModel:      openAIEmbeddingModel,
+		XAIBaseURL:                cfg.XAIBaseURL,
+		XAIAPIKey:                 cfg.XAIAPIKey,
+		XAIDefaultModel:           xAIDefaultModel,
 		GoogleBaseURL:             cfg.GoogleBaseURL,
 		GoogleAPIKey:              cfg.GoogleAPIKey,
 		GoogleDefaultModel:        googleDefaultModel,

@@ -18,6 +18,7 @@ import (
 	"github.com/gryph/omnidex/internal/llmprovider"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/research"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -39,6 +40,9 @@ type Server struct {
 	openAIProject             string
 	openAIDefaultModel        string
 	openAIEmbeddingModel      string
+	xAIBaseURL                string
+	xAIAPIKey                 string
+	xAIDefaultModel           string
 	googleBaseURL             string
 	googleAPIKey              string
 	googleDefaultModel        string
@@ -67,6 +71,9 @@ type ServerOptions struct {
 	OpenAIProject             string
 	OpenAIDefaultModel        string
 	OpenAIEmbeddingModel      string
+	XAIBaseURL                string
+	XAIAPIKey                 string
+	XAIDefaultModel           string
 	GoogleBaseURL             string
 	GoogleAPIKey              string
 	GoogleDefaultModel        string
@@ -93,6 +100,30 @@ type memoryRequest struct {
 	Kind    string   `json:"kind"`
 	Content string   `json:"content"`
 	Tags    []string `json:"tags"`
+}
+
+type researchIngestRequest struct {
+	Topic                  string   `json:"topic"`
+	Source                 string   `json:"source"`
+	Kind                   string   `json:"kind"`
+	Tags                   []string `json:"tags"`
+	ChunkSize              int      `json:"chunk_size"`
+	Overlap                int      `json:"overlap"`
+	MaxChunks              int      `json:"max_chunks"`
+	IncludeOfficialSources *bool    `json:"include_official_sources,omitempty"`
+}
+
+type researchIngestResponse struct {
+	Topic             string              `json:"topic"`
+	Slug              string              `json:"slug"`
+	SourcePrefix      string              `json:"source_prefix"`
+	StoredChunks      int                 `json:"stored_chunks"`
+	Tags              []string            `json:"tags"`
+	Warnings          []string            `json:"warnings,omitempty"`
+	Dossier           string              `json:"dossier,omitempty"`
+	Sources           []string            `json:"sources,omitempty"`
+	StoredChunkSource []string            `json:"stored_chunk_sources,omitempty"`
+	Documents         []research.Document `json:"documents,omitempty"`
 }
 
 type memoryCandidatePromotionRequest struct {
@@ -202,6 +233,9 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		openAIProject:             strings.TrimSpace(options.OpenAIProject),
 		openAIDefaultModel:        strings.TrimSpace(options.OpenAIDefaultModel),
 		openAIEmbeddingModel:      strings.TrimSpace(options.OpenAIEmbeddingModel),
+		xAIBaseURL:                strings.TrimSpace(options.XAIBaseURL),
+		xAIAPIKey:                 strings.TrimSpace(options.XAIAPIKey),
+		xAIDefaultModel:           strings.TrimSpace(options.XAIDefaultModel),
 		googleBaseURL:             strings.TrimSpace(options.GoogleBaseURL),
 		googleAPIKey:              strings.TrimSpace(options.GoogleAPIKey),
 		googleDefaultModel:        strings.TrimSpace(options.GoogleDefaultModel),
@@ -234,6 +268,9 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/jobs", s.handleJobs)
 		s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
 		s.mux.HandleFunc("/v1/memory", s.handleMemory)
+		s.mux.HandleFunc("/v1/memory/categories", s.handleMemoryCategories)
+		s.mux.HandleFunc("/v1/memory/tags", s.handleMemoryTags)
+		s.mux.HandleFunc("/v1/research/ingest", s.handleResearchIngest)
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
 		s.mux.HandleFunc("/v1/admin/migrate-fresh", s.handleAdminMigrateFresh)
@@ -435,7 +472,7 @@ func (s *Server) resolvePersonaLLM(req personaRequest) (resolvedPersonaLLM, erro
 	if !isSupportedPersonaProvider(requestedProvider) {
 		return resolvedPersonaLLM{}, personaRequestError{
 			StatusCode: http.StatusBadRequest,
-			Message:    fmt.Sprintf("llm.provider %q is unsupported (allowed: ollama, openai, google, anthropic, huggingface)", strings.TrimSpace(req.LLM.Provider)),
+			Message:    fmt.Sprintf("llm.provider %q is unsupported (allowed: ollama, openai, xai, google, anthropic, huggingface)", strings.TrimSpace(req.LLM.Provider)),
 		}
 	}
 	if req.LLM.OpenAI != nil && requestedProvider != "openai" {
@@ -490,6 +527,8 @@ func (s *Server) personaProviderConfig(provider, requestedModel string, openAICo
 		OpenAIAPIKey:       s.openAIAPIKey,
 		OpenAIOrganization: s.openAIOrganization,
 		OpenAIProject:      s.openAIProject,
+		XAIBaseURL:         s.xAIBaseURL,
+		XAIAPIKey:          s.xAIAPIKey,
 		GoogleBaseURL:      s.googleBaseURL,
 		GoogleAPIKey:       s.googleAPIKey,
 		AnthropicBaseURL:   s.anthropicBaseURL,
@@ -523,6 +562,13 @@ func (s *Server) personaProviderConfig(provider, requestedModel string, openAICo
 		cfg.EmbeddingModel = s.openAIEmbeddingModel
 		if strings.TrimSpace(cfg.OpenAIAPIKey) == "" {
 			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "openai provider requested but no API key is available (provide llm.openai.api_key or enable/use server fallback key)"}
+		}
+		return cfg, model, nil
+	case "xai":
+		model := firstNonEmpty(requestedModel, s.xAIDefaultModel)
+		cfg.DefaultModel = model
+		if strings.TrimSpace(cfg.XAIAPIKey) == "" {
+			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "xai provider requested but XAI_API_KEY or GROK_API_KEY is unavailable"}
 		}
 		return cfg, model, nil
 	case "google":
@@ -584,6 +630,8 @@ func normalizePersonaProvider(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "openai", "chatgpt", "chat-gpt":
 		return "openai"
+	case "xai", "x-ai", "grok", "grock":
+		return "xai"
 	case "ollama", "local":
 		return "ollama"
 	case "google", "gemini", "googleai", "google-ai":
@@ -599,7 +647,7 @@ func normalizePersonaProvider(value string) string {
 
 func isSupportedPersonaProvider(provider string) bool {
 	switch normalizePersonaProvider(provider) {
-	case "ollama", "openai", "google", "anthropic", "huggingface":
+	case "ollama", "openai", "xai", "google", "anthropic", "huggingface":
 		return true
 	default:
 		return false
@@ -1187,6 +1235,139 @@ func (s *Server) addMemory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleMemoryCategories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 100)
+	facets, err := s.repo.ListMemoryCategories(r.Context(), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"categories": facets})
+}
+
+func (s *Server) handleMemoryTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 100)
+	facets, err := s.repo.ListMemoryTags(r.Context(), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tags": facets})
+}
+
+func (s *Server) handleResearchIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.repo == nil {
+		writeError(w, http.StatusServiceUnavailable, "repository is not configured")
+		return
+	}
+
+	var req researchIngestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	topic := strings.TrimSpace(req.Topic)
+	if topic == "" {
+		writeError(w, http.StatusBadRequest, "topic is required")
+		return
+	}
+
+	includeOfficial := true
+	if req.IncludeOfficialSources != nil {
+		includeOfficial = *req.IncludeOfficialSources
+	}
+	sourcePrefix := strings.TrimSpace(req.Source)
+	if sourcePrefix == "" {
+		sourcePrefix = research.DefaultSourcePrefix
+	}
+	kind := strings.TrimSpace(req.Kind)
+	if kind == "" {
+		kind = model.MemoryKindReference
+	}
+	slug := research.SanitizeToken(topic)
+	if slug == "" {
+		slug = fmt.Sprintf("topic-%d", time.Now().Unix())
+	}
+
+	documents := []research.Document{}
+	warnings := []string{}
+	if includeOfficial {
+		fetched, fetchWarnings, err := research.FetchOfficialDocuments(r.Context(), topic)
+		warnings = append(warnings, fetchWarnings...)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		documents = append(documents, fetched...)
+	}
+	if len(documents) == 0 {
+		writeError(w, http.StatusBadRequest, "no research documents found for topic")
+		return
+	}
+
+	prepared := research.PrepareChunks(documents, research.PrepareOptions{
+		Topic:        topic,
+		Slug:         slug,
+		SourcePrefix: sourcePrefix,
+		Tags:         req.Tags,
+		ChunkSize:    req.ChunkSize,
+		Overlap:      req.Overlap,
+		MaxChunks:    req.MaxChunks,
+	})
+	if len(prepared) == 0 {
+		writeError(w, http.StatusBadRequest, "no ingestible research chunks produced")
+		return
+	}
+
+	storedSources := make([]string, 0, len(prepared))
+	var storedTags []string
+	for _, chunk := range prepared {
+		embedding, err := s.llmClient.Embedding(r.Context(), chunk.Content)
+		if err != nil {
+			embedding = nil
+		}
+		if _, err := s.repo.AddMemoryChunk(r.Context(), chunk.Source, kind, chunk.Content, chunk.Tags, embedding); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		storedSources = append(storedSources, chunk.Source)
+		if len(storedTags) == 0 {
+			storedTags = chunk.Tags
+		}
+	}
+
+	sources := make([]string, 0, len(documents))
+	for _, doc := range documents {
+		if url := research.DocumentURL(doc.Content); url != "" {
+			sources = append(sources, url)
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, researchIngestResponse{
+		Topic:             topic,
+		Slug:              slug,
+		SourcePrefix:      sourcePrefix,
+		StoredChunks:      len(storedSources),
+		Tags:              storedTags,
+		Warnings:          warnings,
+		Dossier:           research.BuildDossier(topic, 0, time.Now(), documents, storedTags, sourcePrefix, len(storedSources)),
+		Sources:           sources,
+		StoredChunkSource: storedSources,
+	})
+}
+
 func (s *Server) promoteMemoryCandidate(w http.ResponseWriter, r *http.Request, candidateID int64) {
 	var req memoryCandidatePromotionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
@@ -1307,6 +1488,14 @@ func parseInt(v string, fallback int) int {
 	}
 	parsed, err := strconv.Atoi(v)
 	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func parsePositiveInt(v string, fallback int) int {
+	parsed := parseInt(v, fallback)
+	if parsed <= 0 {
 		return fallback
 	}
 	return parsed

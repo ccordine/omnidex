@@ -20,6 +20,7 @@ import (
 	"github.com/gryph/omnidex/internal/media"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/version"
 )
 
 func main() {
@@ -41,6 +42,10 @@ func main() {
 	}
 
 	cmd := os.Args[1]
+	if cmd == "version" || cmd == "--version" || cmd == "-v" {
+		runVersion(os.Args[2:])
+		return
+	}
 	if strings.HasPrefix(cmd, "service:") {
 		runServiceWithPreset(strings.TrimPrefix(cmd, "service:"), os.Args[2:])
 		return
@@ -115,6 +120,24 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+}
+
+func runVersion(args []string) {
+	jsonOut := false
+	for _, arg := range args {
+		if arg == "--json" {
+			jsonOut = true
+		}
+	}
+	if jsonOut {
+		payload, err := json.MarshalIndent(version.JSON(), "", "  ")
+		if err != nil {
+			die("encode version: " + err.Error())
+		}
+		fmt.Println(string(payload))
+		return
+	}
+	fmt.Println(version.PrintName("omni"))
 }
 
 func runEnqueue(c *client.Client, args []string) {
@@ -2825,6 +2848,7 @@ func usage() {
 	fmt.Println("  service:<name> <up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh> [options]")
 	fmt.Println("  --service <name> <up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh> [options]")
 	fmt.Println("  config [--file path] [--editor cmd] [--print]          open Omnidex .env config")
+	fmt.Println("  version [--json]                         print Omnidex release version")
 }
 
 func die(msg string) {

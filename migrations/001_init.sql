@@ -88,6 +88,20 @@ CREATE TABLE IF NOT EXISTS memory_chunk_tags (
     UNIQUE(memory_chunk_id, tag_id)
 );
 
+CREATE TABLE IF NOT EXISTS memory_categories (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS memory_chunk_categories (
+    id BIGSERIAL PRIMARY KEY,
+    memory_chunk_id BIGINT NOT NULL REFERENCES memory_chunks(id) ON DELETE CASCADE,
+    category_id BIGINT NOT NULL REFERENCES memory_categories(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(memory_chunk_id, category_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_pipeline_session_id ON jobs(pipeline, (metadata->>'session_id'), id DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_project_id ON jobs(project_id, id DESC);
@@ -98,3 +112,5 @@ CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
 CREATE INDEX IF NOT EXISTS idx_projects_last_seen ON projects(last_seen_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_chunks_kind_created ON memory_chunks(kind, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_chunk_tags_tag_id ON memory_chunk_tags(tag_id, memory_chunk_id);
+CREATE INDEX IF NOT EXISTS idx_memory_categories_name ON memory_categories(name);
+CREATE INDEX IF NOT EXISTS idx_memory_chunk_categories_category_id ON memory_chunk_categories(category_id, memory_chunk_id);

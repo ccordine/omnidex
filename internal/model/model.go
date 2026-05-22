@@ -109,12 +109,18 @@ type MemoryChunk struct {
 }
 
 type MemoryMatch struct {
-	ID        int64     `json:"id"`
-	Kind      string    `json:"kind"`
-	Content   string    `json:"content"`
-	Tags      []string  `json:"tags,omitempty"`
-	Score     float64   `json:"score"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         int64     `json:"id"`
+	Kind       string    `json:"kind"`
+	Content    string    `json:"content"`
+	Tags       []string  `json:"tags,omitempty"`
+	Categories []string  `json:"categories,omitempty"`
+	Score      float64   `json:"score"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type MemoryFacet struct {
+	Name  string `json:"name"`
+	Count int64  `json:"count"`
 }
 
 type MemoryCandidate struct {

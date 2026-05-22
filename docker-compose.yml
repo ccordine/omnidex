@@ -18,6 +18,11 @@ services:
       OPENAI_PROJECT: ${OPENAI_PROJECT:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      XAI_BASE_URL: ${XAI_BASE_URL:-https://api.x.ai/v1}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      XAI_MODEL: ${XAI_MODEL:-grok-4.3}
+      GROK_MODEL: ${GROK_MODEL:-grok-4.3}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
       OLLAMA_MODEL_FAST: ${OLLAMA_MODEL_FAST:-llama3.2}
       OLLAMA_MODEL_REASONING: ${OLLAMA_MODEL_REASONING:-llama3.2}

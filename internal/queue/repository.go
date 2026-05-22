@@ -40,6 +40,9 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 	if _, err := r.pool.Exec(ctx, v3SchemaSQL); err != nil {
 		return err
 	}
+	if err := r.BackfillMemoryCategories(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1609,7 +1612,7 @@ func (r *Repository) AddMemoryChunk(ctx context.Context, source, kind, content s
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		if kind != model.MemoryKindEpisodic && len(embedding) > 0 {
+		if memoryKindAllowsSemanticCorrection(kind) && len(embedding) > 0 {
 			var existingID int64
 			var distance float64
 			correctionErr := tx.QueryRow(ctx, `
@@ -1657,7 +1660,8 @@ func (r *Repository) AddMemoryChunk(ctx context.Context, source, kind, content s
 		}
 	}
 
-	cleaned := decorateMemoryTags(source, tags)
+	categories := inferMemoryCategories(kind, content, tags)
+	cleaned := decorateMemoryTags(source, appendCleanTags(tags, memoryCategoryTags(categories)...))
 	for _, tag := range cleaned {
 		var tagID int64
 		err := tx.QueryRow(ctx, `
@@ -1678,6 +1682,26 @@ func (r *Repository) AddMemoryChunk(ctx context.Context, source, kind, content s
 		}
 	}
 
+	for _, category := range categories {
+		var categoryID int64
+		err := tx.QueryRow(ctx, `
+			INSERT INTO memory_categories(name) VALUES ($1)
+			ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name
+			RETURNING id
+		`, category).Scan(&categoryID)
+		if err != nil {
+			return model.MemoryChunk{}, err
+		}
+
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO memory_chunk_categories (memory_chunk_id, category_id)
+			VALUES ($1, $2)
+			ON CONFLICT(memory_chunk_id, category_id) DO NOTHING
+		`, chunk.ID, categoryID); err != nil {
+			return model.MemoryChunk{}, err
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return model.MemoryChunk{}, err
 	}
@@ -1685,11 +1709,21 @@ func (r *Repository) AddMemoryChunk(ctx context.Context, source, kind, content s
 	return chunk, nil
 }
 
+func memoryKindAllowsSemanticCorrection(kind string) bool {
+	switch normalizeMemoryKind(kind) {
+	case model.MemoryKindEpisodic, model.MemoryKindReference:
+		return false
+	default:
+		return true
+	}
+}
+
 func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64, tags []string, limit int) ([]model.MemoryMatch, error) {
 	if limit <= 0 {
 		limit = 8
 	}
 	tags = cleanTags(tags)
+	categoryFilters := memoryCategoryFilters(tags)
 	trustOrder := fmt.Sprintf(`
 				COALESCE(MAX(CASE WHEN t.name = '%s' THEN 1 ELSE 0 END), 0) DESC,
 				COALESCE(MAX(CASE WHEN t.name = '%s' THEN 1 ELSE 0 END), 0) DESC,
@@ -1712,10 +1746,13 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 				mc.content,
 				mc.created_at,
 				COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), ARRAY[]::text[]) AS tags,
+				COALESCE(array_remove(array_agg(DISTINCT c.name), NULL), ARRAY[]::text[]) AS categories,
 				COALESCE(1 - (mc.embedding <=> $1::vector), 0) AS score
 			FROM memory_chunks mc
 			LEFT JOIN memory_chunk_tags mct ON mct.memory_chunk_id = mc.id
 			LEFT JOIN tags t ON t.id = mct.tag_id
+			LEFT JOIN memory_chunk_categories mcc ON mcc.memory_chunk_id = mc.id
+			LEFT JOIN memory_categories c ON c.id = mcc.category_id
 			WHERE (
 				$2::text[] IS NULL
 				OR cardinality($2::text[]) = 0
@@ -1725,6 +1762,13 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 					JOIN tags ft ON ft.id = fmct.tag_id
 					WHERE fmct.memory_chunk_id = mc.id
 					  AND ft.name = ANY($2)
+				)
+				OR EXISTS (
+					SELECT 1
+					FROM memory_chunk_categories fmcc
+					JOIN memory_categories fc ON fc.id = fmcc.category_id
+					WHERE fmcc.memory_chunk_id = mc.id
+					  AND fc.name = ANY($4)
 				)
 			)
 			GROUP BY mc.id
@@ -1743,7 +1787,7 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 				mc.id DESC
 			LIMIT $3
 		`, trustOrder)
-		rows, err = r.pool.Query(ctx, query, vectorLiteral(embedding), tags, limit)
+		rows, err = r.pool.Query(ctx, query, vectorLiteral(embedding), tags, limit, categoryFilters)
 	} else {
 		query := fmt.Sprintf(`
 			SELECT
@@ -1752,10 +1796,13 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 				mc.content,
 				mc.created_at,
 				COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), ARRAY[]::text[]) AS tags,
+				COALESCE(array_remove(array_agg(DISTINCT c.name), NULL), ARRAY[]::text[]) AS categories,
 				0.0 AS score
 			FROM memory_chunks mc
 			LEFT JOIN memory_chunk_tags mct ON mct.memory_chunk_id = mc.id
 			LEFT JOIN tags t ON t.id = mct.tag_id
+			LEFT JOIN memory_chunk_categories mcc ON mcc.memory_chunk_id = mc.id
+			LEFT JOIN memory_categories c ON c.id = mcc.category_id
 			WHERE (
 				$1::text[] IS NULL
 				OR cardinality($1::text[]) = 0
@@ -1765,6 +1812,13 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 					JOIN tags ft ON ft.id = fmct.tag_id
 					WHERE fmct.memory_chunk_id = mc.id
 					  AND ft.name = ANY($1)
+				)
+				OR EXISTS (
+					SELECT 1
+					FROM memory_chunk_categories fmcc
+					JOIN memory_categories fc ON fc.id = fmcc.category_id
+					WHERE fmcc.memory_chunk_id = mc.id
+					  AND fc.name = ANY($3)
 				)
 			)
 			GROUP BY mc.id
@@ -1782,7 +1836,7 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 				mc.id DESC
 			LIMIT $2
 		`, trustOrder)
-		rows, err = r.pool.Query(ctx, query, tags, limit)
+		rows, err = r.pool.Query(ctx, query, tags, limit, categoryFilters)
 	}
 	if err != nil {
 		return nil, err
@@ -1792,7 +1846,7 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 	matches := make([]model.MemoryMatch, 0, limit)
 	for rows.Next() {
 		var m model.MemoryMatch
-		if err := rows.Scan(&m.ID, &m.Kind, &m.Content, &m.CreatedAt, &m.Tags, &m.Score); err != nil {
+		if err := rows.Scan(&m.ID, &m.Kind, &m.Content, &m.CreatedAt, &m.Tags, &m.Categories, &m.Score); err != nil {
 			return nil, err
 		}
 		matches = append(matches, m)
@@ -1802,6 +1856,130 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 	}
 
 	return matches, nil
+}
+
+func (r *Repository) ListMemoryCategories(ctx context.Context, limit int) ([]model.MemoryFacet, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT c.name, COUNT(mcc.memory_chunk_id)::bigint AS count
+		FROM memory_categories c
+		JOIN memory_chunk_categories mcc ON mcc.category_id = c.id
+		GROUP BY c.id, c.name
+		ORDER BY count DESC, c.name ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMemoryFacets(rows)
+}
+
+func (r *Repository) ListMemoryTags(ctx context.Context, limit int) ([]model.MemoryFacet, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT t.name, COUNT(mct.memory_chunk_id)::bigint AS count
+		FROM tags t
+		JOIN memory_chunk_tags mct ON mct.tag_id = t.id
+		GROUP BY t.id, t.name
+		ORDER BY count DESC, t.name ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMemoryFacets(rows)
+}
+
+func (r *Repository) BackfillMemoryCategories(ctx context.Context) error {
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			mc.id,
+			mc.kind,
+			mc.content,
+			COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), ARRAY[]::text[]) AS tags
+		FROM memory_chunks mc
+		LEFT JOIN memory_chunk_tags mct ON mct.memory_chunk_id = mc.id
+		LEFT JOIN tags t ON t.id = mct.tag_id
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM memory_chunk_categories existing
+			WHERE existing.memory_chunk_id = mc.id
+		)
+		GROUP BY mc.id
+		ORDER BY mc.id ASC
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type pendingMemoryCategory struct {
+		id         int64
+		categories []string
+	}
+	pending := []pendingMemoryCategory{}
+	for rows.Next() {
+		var id int64
+		var kind, content string
+		var tags []string
+		if err := rows.Scan(&id, &kind, &content, &tags); err != nil {
+			return err
+		}
+		pending = append(pending, pendingMemoryCategory{id: id, categories: inferMemoryCategories(kind, content, tags)})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	for _, item := range pending {
+		for _, category := range item.categories {
+			var categoryID int64
+			if err := tx.QueryRow(ctx, `
+				INSERT INTO memory_categories(name) VALUES ($1)
+				ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name
+				RETURNING id
+			`, category).Scan(&categoryID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO memory_chunk_categories (memory_chunk_id, category_id)
+				VALUES ($1, $2)
+				ON CONFLICT(memory_chunk_id, category_id) DO NOTHING
+			`, item.id, categoryID); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func scanMemoryFacets(rows pgx.Rows) ([]model.MemoryFacet, error) {
+	facets := []model.MemoryFacet{}
+	for rows.Next() {
+		var facet model.MemoryFacet
+		if err := rows.Scan(&facet.Name, &facet.Count); err != nil {
+			return nil, err
+		}
+		facets = append(facets, facet)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return facets, nil
 }
 
 func (r *Repository) CreateChannel(ctx context.Context, channel model.Channel) (model.Channel, error) {
@@ -2008,6 +2186,211 @@ func decorateMemoryTags(source string, tags []string) []string {
 		out = append(out, "scope:session")
 	}
 	return cleanTags(out)
+}
+
+func inferMemoryCategories(kind, content string, tags []string) []string {
+	out := []string{}
+	add := func(category string) {
+		category = normalizeMemoryCategory(category)
+		if category == "" {
+			return
+		}
+		for _, existing := range out {
+			if existing == category {
+				return
+			}
+		}
+		out = append(out, category)
+	}
+
+	switch normalizeMemoryKind(kind) {
+	case model.MemoryKindProcedural:
+		add("strategy")
+	case model.MemoryKindReference:
+		add("reference")
+	case model.MemoryKindPreference:
+		add("preference")
+		add("personal")
+	case model.MemoryKindInstruction:
+		add("instruction")
+	}
+
+	for _, tag := range cleanTags(tags) {
+		if strings.HasPrefix(tag, "category:") {
+			add(strings.TrimPrefix(tag, "category:"))
+			continue
+		}
+		switch {
+		case strings.HasPrefix(tag, "project:"):
+			add("project")
+		case strings.HasPrefix(tag, "session:"), strings.HasPrefix(tag, "channel:"):
+			add("personal")
+		case strings.HasPrefix(tag, "provider:"):
+			add("integration")
+		case strings.HasPrefix(tag, "query:"), tag == "research", tag == "web_search":
+			add("research")
+		case tag == "success-playbook", tag == "learned-skill":
+			add("strategy")
+		case isLanguageMemoryMarker(tag):
+			add("language")
+		case isDatabaseMemoryMarker(tag):
+			add("database")
+		case isInfrastructureMemoryMarker(tag):
+			add("infrastructure")
+		case isFrontendMemoryMarker(tag):
+			add("frontend")
+		}
+	}
+
+	text := strings.ToLower(content)
+	if containsAnyText(text, "user prefers", "i prefer", "my name", "remember that i", "personal") {
+		add("personal")
+	}
+	if containsAnyText(text, "project", "repository", "workspace", "schema", "codebase") {
+		add("project")
+	}
+	if containsAnyText(text, "rust", "golang", "go lang", "javascript", "typescript", "php", "python", "zig", "react", "node", "vite") {
+		add("language")
+	}
+	if containsAnyText(text, "postgres", "postgresql", "pgsql", "sql", "table", "column", "migration") {
+		add("database")
+	}
+	if containsAnyText(text, "docker", "container", "compose", "kubernetes", "ollama", "gpu", "vulkan") {
+		add("infrastructure")
+	}
+	if containsAnyText(text, "react", "vite", "frontend", "ui", "component", "css") {
+		add("frontend")
+	}
+	if containsAnyText(text, "api", "endpoint", "http", "openai", "anthropic", "google", "hugging face") {
+		add("integration")
+	}
+	if containsAnyText(text, "test", "verified", "verification", "build passed", "go test", "cargo test", "npm test") {
+		add("verification")
+	}
+	if containsAnyText(text, "error", "failed", "blocker", "recovery", "fix", "troubleshoot") {
+		add("troubleshooting")
+	}
+	if len(out) == 0 {
+		add("general")
+	}
+	return out
+}
+
+func memoryCategoryTags(categories []string) []string {
+	out := make([]string, 0, len(categories))
+	for _, category := range categories {
+		if normalized := normalizeMemoryCategory(category); normalized != "" {
+			out = append(out, "category:"+normalized)
+		}
+	}
+	return out
+}
+
+func memoryCategoryFilters(tags []string) []string {
+	out := []string{}
+	for _, tag := range cleanTags(tags) {
+		if strings.HasPrefix(tag, "category:") {
+			if category := normalizeMemoryCategory(strings.TrimPrefix(tag, "category:")); category != "" {
+				out = appendCleanTags(out, category)
+			}
+		}
+	}
+	return out
+}
+
+func normalizeMemoryCategory(category string) string {
+	category = strings.ToLower(strings.TrimSpace(category))
+	category = strings.TrimPrefix(category, "category:")
+	category = strings.ReplaceAll(category, "_", "-")
+	category = strings.ReplaceAll(category, " ", "-")
+	switch category {
+	case "personal", "person", "user":
+		return "personal"
+	case "project", "codebase", "workspace", "repo", "repository":
+		return "project"
+	case "language", "languages", "programming-language":
+		return "language"
+	case "database", "db", "sql", "pgsql", "postgres", "postgresql":
+		return "database"
+	case "infrastructure", "infra", "docker", "container", "deployment", "devops":
+		return "infrastructure"
+	case "frontend", "ui", "react", "vite":
+		return "frontend"
+	case "integration", "api", "provider", "model-provider":
+		return "integration"
+	case "strategy", "procedural", "playbook", "skill":
+		return "strategy"
+	case "reference", "research", "documentation", "docs":
+		return "research"
+	case "preference", "instruction", "verification", "troubleshooting", "security", "general":
+		return category
+	default:
+		if category == "" || len(category) > 40 {
+			return ""
+		}
+		return category
+	}
+}
+
+func appendCleanTags(base []string, values ...string) []string {
+	out := append([]string(nil), base...)
+	seen := map[string]struct{}{}
+	for _, existing := range cleanTags(out) {
+		seen[existing] = struct{}{}
+	}
+	for _, value := range cleanTags(values) {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func containsAnyText(text string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(text, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLanguageMemoryMarker(tag string) bool {
+	switch tag {
+	case "go", "golang", "rust", "javascript", "typescript", "php", "python", "zig", "node", "nodejs", "react", "vite":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDatabaseMemoryMarker(tag string) bool {
+	switch tag {
+	case "postgres", "postgresql", "pgsql", "sql", "database", "db", "schema", "migration":
+		return true
+	default:
+		return false
+	}
+}
+
+func isInfrastructureMemoryMarker(tag string) bool {
+	switch tag {
+	case "docker", "compose", "container", "containers", "kubernetes", "ollama", "vulkan", "gpu", "deployment":
+		return true
+	default:
+		return false
+	}
+}
+
+func isFrontendMemoryMarker(tag string) bool {
+	switch tag {
+	case "react", "vite", "frontend", "ui", "css", "component", "components":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizePipeline(pipeline string) string {

@@ -38,6 +38,91 @@ func TestIsLowSignalChatInstruction(t *testing.T) {
 	}
 }
 
+func TestBuildSuccessfulJobPlaybookCapturesReusableSteps(t *testing.T) {
+	details := model.JobDetails{
+		Job: model.Job{
+			ID:          42,
+			Instruction: "Build a React note app with CRUD and in-memory storage",
+			Pipeline:    model.PipelineAssistant,
+			Status:      model.JobStatusCompleted,
+			Result:      "React note app completed and verified.",
+		},
+		Steps: []model.Step{
+			{ID: 1, Action: "v3_planning", Status: model.StepStatusCompleted, Output: "Plan source files and verification."},
+			{ID: 2, Action: "v3_subtask", Status: model.StepStatusCompleted, Output: "Wrote src/App.jsx with note CRUD state."},
+			{ID: 3, Action: "v3_verification", Status: model.StepStatusCompleted, Output: "npm test passed."},
+			{ID: 4, Action: "v3_memory_review", Status: model.StepStatusPending, Output: "not done"},
+		},
+		Contexts: []model.StepContext{
+			{ID: 1, StepID: 2, Key: "tooling", Value: "cat > src/App.jsx wrote component content"},
+			{ID: 2, StepID: 3, Key: "verification", Value: "npm test exited 0"},
+		},
+	}
+
+	got := buildSuccessfulJobPlaybook(details)
+	for _, want := range []string{
+		"Successful execution playbook",
+		"Build a React note app",
+		"v3_subtask: Wrote src/App.jsx",
+		"tooling: cat > src/App.jsx",
+		"v3_verification: npm test passed",
+		"Reuse guidance:",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("playbook missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "not done") {
+		t.Fatalf("pending step leaked into playbook:\n%s", got)
+	}
+}
+
+func TestBuildSuccessfulJobPlaybookOmitsRetrievalDump(t *testing.T) {
+	dump := "Scoped memory lookup found no matches; using unscoped memory fallback.\n\nResearch chunk metadata:\nsource_url=https://vite.dev/config/\nResearch memory topic=https://vite.dev/config/ content: very long docs"
+	details := model.JobDetails{
+		Job: model.Job{
+			ID:          43,
+			Instruction: "Answer a smoke request",
+			Pipeline:    model.PipelineAssistant,
+			Status:      model.JobStatusCompleted,
+			Result:      dump,
+		},
+		Steps: []model.Step{
+			{ID: 1, Action: "v3_response_draft", Status: model.StepStatusCompleted, Output: dump},
+			{ID: 2, Action: "v3_verification", Status: model.StepStatusCompleted, Output: "verdict=pass supported_claims=1 unsupported_claims=0"},
+		},
+	}
+
+	got := buildSuccessfulJobPlaybook(details)
+	if strings.Contains(got, "Research chunk metadata") || strings.Contains(got, "Research memory topic=") {
+		t.Fatalf("retrieval dump leaked into playbook:\n%s", got)
+	}
+	if !strings.Contains(got, "noisy retrieval fallback omitted") {
+		t.Fatalf("missing compact retrieval note:\n%s", got)
+	}
+}
+
+func TestSuccessfulJobPlaybookTagsIncludeTopicsAndTrust(t *testing.T) {
+	tags := successfulJobPlaybookTags(model.Job{
+		Instruction: "Build a React Vite note app",
+		Pipeline:    model.PipelineAssistant,
+		Metadata:    json.RawMessage(`{"session_id":"chat-1"}`),
+	}, map[string]string{"tags": "frontend,react"})
+
+	for _, want := range []string{"frontend", "react", "procedural", "trust:approved", "success-playbook", "learned-skill", "pipeline:assistant", "topic:vite", "topic:note"} {
+		found := false
+		for _, got := range tags {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("tags missing %q: %#v", want, tags)
+		}
+	}
+}
+
 func TestPromptBlockFormatting(t *testing.T) {
 	got := promptBlock("Retrieved Memory", " line one \nline two ")
 	want := "<RETRIEVED_MEMORY>\nline one \nline two\n</RETRIEVED_MEMORY>"

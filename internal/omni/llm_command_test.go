@@ -4727,6 +4727,26 @@ func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsPlaceholderMuta
 	}
 }
 
+func TestValidateShellProposalAgainstSourceImplementationRejectsDependencyInstall(t *testing.T) {
+	toolTask := "Active objective(s): setup_note_app,create_note_app_structure,implement_crud_operations,store_notes_in_memory. Required next behavior: create or modify the actual project files now with substantive source/build/test files."
+	for _, command := range []string{"npm install", "npm install react-router-dom", "pnpm add react-router-dom", "cargo add chess"} {
+		err := validateShellProposalAgainstToolTask(command, toolTask)
+		if err == nil {
+			t.Fatalf("expected dependency install %q to be rejected for source implementation task", command)
+		}
+		if !strings.Contains(err.Error(), "source file implementation") {
+			t.Fatalf("unexpected error for %q: %v", command, err)
+		}
+	}
+}
+
+func TestValidateShellProposalAllowsDependencyInstallWhenToolTaskRequiresDependencies(t *testing.T) {
+	toolTask := "Active objective(s): install_dependencies. Required next behavior: install dependencies for the selected React project."
+	if err := validateShellProposalAgainstToolTask("npm install react react-dom", toolTask); err != nil {
+		t.Fatalf("dependency install should be allowed for dependency objective: %v", err)
+	}
+}
+
 func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsDocumentationDownload(t *testing.T) {
 	err := validateShellProposalAgainstToolTask(
 		"curl -s https://ziglang.org/documentation/master/ > zig_doc.html",

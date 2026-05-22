@@ -9,6 +9,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	urlpkg "net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,8 +17,11 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/ingest"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/ollama"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 const defaultResearchManifestPath = ".omni/research-index.json"
@@ -49,7 +53,39 @@ type researchDocument struct {
 type researchPreparedDocument struct {
 	Document    researchDocument
 	SectionSlug string
+	SourceSlug  string
 	Chunks      []string
+}
+
+type researchMemoryStore interface {
+	Store(ctx context.Context, source, kind, content string, tags []string) error
+}
+
+type apiResearchMemoryStore struct {
+	client *client.Client
+}
+
+func (s apiResearchMemoryStore) Store(ctx context.Context, source, kind, content string, tags []string) error {
+	_, err := s.client.AddMemory(ctx, source, kind, content, tags)
+	return err
+}
+
+type directDBResearchMemoryStore struct {
+	repo     *queue.Repository
+	embedder interface {
+		Embedding(context.Context, string) ([]float64, error)
+	}
+}
+
+func (s directDBResearchMemoryStore) Store(ctx context.Context, source, kind, content string, tags []string) error {
+	var embedding []float64
+	if s.embedder != nil {
+		if vector, err := s.embedder.Embedding(ctx, content); err == nil {
+			embedding = vector
+		}
+	}
+	_, err := s.repo.AddMemoryChunk(ctx, source, kind, content, tags, embedding)
+	return err
 }
 
 func runResearch(c *client.Client, args []string) {
@@ -69,6 +105,10 @@ func runResearch(c *client.Client, args []string) {
 	sessionID := fs.String("session", "", "optional session/thread identifier")
 	manifestPath := fs.String("manifest", defaultResearchManifestPath, "path to local research freshness index")
 	archiveRoot := fs.String("archive-root", defaultResearchArchiveRoot, "directory for full-text research dossiers")
+	storeMode := fs.String("store", "api", "memory storage mode: api|direct-db")
+	databaseURL := fs.String("database-url", getenv("DATABASE_URL", ""), "Postgres URL for --store direct-db")
+	embeddingBaseURL := fs.String("embedding-base-url", getenv("OLLAMA_BASE_URL", "http://localhost:11434"), "Ollama base URL for --store direct-db embeddings")
+	embeddingModel := fs.String("embedding-model", getenv("EMBEDDING_MODEL", "nomic-embed-text"), "embedding model for --store direct-db")
 	interval := fs.Duration("interval", 2*time.Second, "poll interval while waiting for the research job")
 	timeout := fs.Duration("timeout", 20*time.Minute, "max time to wait for research completion")
 	_ = fs.Parse(args)
@@ -81,6 +121,9 @@ func runResearch(c *client.Client, args []string) {
 	normalizedReasoning := normalizeResearchReasoning(*reasoningLevel)
 	if normalizedReasoning == "" {
 		die("invalid --reasoning value (use auto|fast|deep)")
+	}
+	if normalizeResearchStoreMode(*storeMode) == "" {
+		die("invalid --store value (use api|direct-db)")
 	}
 
 	slug := sanitizeMemorySourceToken(topic)
@@ -181,6 +224,11 @@ func runResearch(c *client.Client, args []string) {
 		prefix = "research"
 	}
 	baseTags := mergeTags(splitTags(*tags), inferResearchTags(topic, slug))
+	store, closeStore, err := openResearchMemoryStore(context.Background(), normalizeResearchStoreMode(*storeMode), c, *databaseURL, *embeddingBaseURL, *embeddingModel)
+	if err != nil {
+		die(err.Error())
+	}
+	defer closeStore()
 	stored := 0
 	maxAllowed := *maxChunks
 	if maxAllowed <= 0 {
@@ -188,7 +236,7 @@ func runResearch(c *client.Client, args []string) {
 	}
 
 	preparedDocs := make([]researchPreparedDocument, 0, len(documents))
-	for _, doc := range documents {
+	for docIndex, doc := range documents {
 		chunks := ingest.ChunkText(doc.Content, *chunkSize, *overlap)
 		if len(chunks) == 0 {
 			continue
@@ -198,7 +246,8 @@ func runResearch(c *client.Client, args []string) {
 		if sectionSlug == "" {
 			sectionSlug = "section"
 		}
-		preparedDocs = append(preparedDocs, researchPreparedDocument{Document: doc, SectionSlug: sectionSlug, Chunks: chunks})
+		sourceSlug := researchDocumentSourceSlug(doc, docIndex)
+		preparedDocs = append(preparedDocs, researchPreparedDocument{Document: doc, SectionSlug: sectionSlug, SourceSlug: sourceSlug, Chunks: chunks})
 	}
 
 	for round := 0; stored < maxAllowed; round++ {
@@ -210,9 +259,9 @@ func runResearch(c *client.Client, args []string) {
 			if round >= len(prepared.Chunks) {
 				continue
 			}
-			source := fmt.Sprintf("%s:%s:%s#%03d", prefix, slug, prepared.SectionSlug, round+1)
+			source := fmt.Sprintf("%s:%s:%s:%s#%03d", prefix, slug, prepared.SectionSlug, prepared.SourceSlug, round+1)
 			chunk := prefixResearchChunkMetadata(prepared.Document, prepared.Chunks[round])
-			if _, err := c.AddMemory(context.Background(), source, *kind, chunk, baseTags); err != nil {
+			if err := store.Store(context.Background(), source, *kind, chunk, baseTags); err != nil {
 				fmt.Fprintf(os.Stderr, "warn: failed storing research chunk %s: %v\n", source, err)
 				continue
 			}
@@ -359,6 +408,31 @@ func fetchOfficialResearchDocuments(ctx context.Context, topic string) ([]resear
 func officialResearchSourceURLs(topic string) []string {
 	lower := strings.ToLower(topic)
 	switch {
+	case strings.Contains(lower, "vite"):
+		return []string{
+			"https://vite.dev/guide/",
+			"https://vite.dev/config/",
+			"https://vite.dev/guide/features.html",
+			"https://vite.dev/guide/build.html",
+			"https://vite.dev/guide/dep-pre-bundling.html",
+			"https://vite.dev/guide/troubleshooting.html",
+		}
+	case strings.Contains(lower, "react"):
+		return []string{
+			"https://react.dev/learn",
+			"https://react.dev/reference/react",
+			"https://react.dev/reference/react-dom",
+			"https://react.dev/blog",
+			"https://vite.dev/guide/",
+		}
+	case strings.Contains(lower, "node.js") || strings.Contains(lower, "nodejs") || strings.Contains(lower, "node js"):
+		return []string{
+			"https://nodejs.org/api/",
+			"https://nodejs.org/en/learn",
+			"https://nodejs.org/en/learn/getting-started/introduction-to-nodejs",
+			"https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick",
+			"https://nodejs.org/en/learn/getting-started/security-best-practices",
+		}
 	case strings.Contains(lower, "rust"):
 		return []string{
 			"https://doc.rust-lang.org/book/",
@@ -442,6 +516,29 @@ func prefixResearchChunkMetadata(doc researchDocument, chunk string) string {
 	return strings.Join(lines, "\n") + "\n\n" + cleanChunk
 }
 
+func researchDocumentSourceSlug(doc researchDocument, index int) string {
+	if url := researchDocumentURL(doc.Content); url != "" {
+		if parsed, err := urlpkg.Parse(url); err == nil {
+			parts := []string{parsed.Host}
+			for _, part := range strings.Split(strings.Trim(parsed.Path, "/"), "/") {
+				if clean := strings.TrimSpace(part); clean != "" {
+					parts = append(parts, clean)
+				}
+			}
+			if slug := sanitizeMemorySourceToken(strings.Join(parts, "-")); slug != "" {
+				return slug
+			}
+		}
+		if slug := sanitizeMemorySourceToken(url); slug != "" {
+			return slug
+		}
+	}
+	if slug := sanitizeMemorySourceToken(doc.Section); slug != "" {
+		return fmt.Sprintf("%s-%02d", slug, index+1)
+	}
+	return fmt.Sprintf("doc-%02d", index+1)
+}
+
 func researchDocumentURL(content string) string {
 	for _, line := range strings.Split(content, "\n") {
 		clean := strings.TrimSpace(line)
@@ -520,6 +617,18 @@ func cleanDossierTags(tags []string) []string {
 
 func buildResearchInstruction(topic string, now time.Time) string {
 	today := now.Format("2006-01-02")
+	if researchTopicLooksTechnical(topic) {
+		return strings.TrimSpace(fmt.Sprintf(`Research the topic "%s" comprehensively and produce a durable technical expertise reference.
+
+Requirements:
+1) Prefer primary/official documentation and include source URLs inline.
+2) Cover the current recommended project setup, core concepts, APIs, conventions, file structure, dependency/tooling expectations, testing, debugging, deployment/build notes, and production pitfalls.
+3) Include small canonical examples and explain when to use each pattern.
+4) Call out outdated/deprecated guidance, version-sensitive behavior, uncertainty, or conflicting information explicitly.
+5) Organize output with clear markdown headings and concise bullets that are useful to an implementation planner.
+6) End with a short "Last verified" line using date %s.
+`, topic, today))
+	}
 	return strings.TrimSpace(fmt.Sprintf(`Research the topic "%s" comprehensively and produce a durable technical reference.
 
 Requirements:
@@ -530,6 +639,65 @@ Requirements:
 5) Organize output with clear markdown headings and concise bullet points.
 6) End with a short "Last verified" line using date %s.
 `, topic, today))
+}
+
+func researchTopicLooksTechnical(topic string) bool {
+	lower := strings.ToLower(topic)
+	needles := []string{
+		"api",
+		"docker",
+		"go lang",
+		"golang",
+		"javascript",
+		"node",
+		"php",
+		"postgres",
+		"postgresql",
+		"pgsql",
+		"react",
+		"rust",
+		"software",
+		"typescript",
+		"zig",
+	}
+	for _, needle := range needles {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeResearchStoreMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "api":
+		return "api"
+	case "direct-db", "direct_db", "db":
+		return "direct-db"
+	default:
+		return ""
+	}
+}
+
+func openResearchMemoryStore(ctx context.Context, mode string, apiClient *client.Client, databaseURL, embeddingBaseURL, embeddingModel string) (researchMemoryStore, func(), error) {
+	switch mode {
+	case "api":
+		return apiResearchMemoryStore{client: apiClient}, func() {}, nil
+	case "direct-db":
+		cleanURL := strings.TrimSpace(databaseURL)
+		if cleanURL == "" {
+			return nil, func() {}, fmt.Errorf("--store direct-db requires --database-url or DATABASE_URL")
+		}
+		pool, err := db.Connect(ctx, cleanURL)
+		if err != nil {
+			return nil, func() {}, fmt.Errorf("connect research database: %w", err)
+		}
+		repo := queue.New(pool)
+		embedder := ollama.New(embeddingBaseURL, "", embeddingModel, 2*time.Minute)
+		return directDBResearchMemoryStore{repo: repo, embedder: embedder}, pool.Close, nil
+	default:
+		return nil, func() {}, fmt.Errorf("invalid research memory store mode %q", mode)
+	}
 }
 
 func researchSearchQuery(topic string) string {
@@ -543,6 +711,12 @@ func researchSearchQuery(topic string) string {
 	}
 	lower := strings.ToLower(clean)
 	switch {
+	case strings.Contains(lower, "vite"):
+		return clean + " Vite official documentation guide config build plugins HMR production"
+	case strings.Contains(lower, "react"):
+		return clean + " React official documentation react.dev learn reference hooks components Vite"
+	case strings.Contains(lower, "node.js") || strings.Contains(lower, "nodejs") || strings.Contains(lower, "node js"):
+		return clean + " Node.js official documentation API learn event loop modules streams security"
 	case strings.Contains(lower, "rust"):
 		return clean + " official Rust documentation reference Cargo book Rustonomicon Tokio docs"
 	case strings.Contains(lower, "golang") || strings.Contains(lower, "go "):

@@ -179,6 +179,71 @@ func (c *Client) AddMemory(ctx context.Context, source, kind, content string, ta
 	return resp.Memory, nil
 }
 
+func (c *Client) ListMemoryCategories(ctx context.Context, limit int) ([]model.MemoryFacet, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var resp struct {
+		Categories []model.MemoryFacet `json:"categories"`
+		Error      string              `json:"error"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/v1/memory/categories?limit=%d", limit), nil, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != "" {
+		return nil, errors.New(resp.Error)
+	}
+	return resp.Categories, nil
+}
+
+func (c *Client) ListMemoryTags(ctx context.Context, limit int) ([]model.MemoryFacet, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var resp struct {
+		Tags  []model.MemoryFacet `json:"tags"`
+		Error string              `json:"error"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/v1/memory/tags?limit=%d", limit), nil, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != "" {
+		return nil, errors.New(resp.Error)
+	}
+	return resp.Tags, nil
+}
+
+type ResearchIngestRequest struct {
+	Topic                  string   `json:"topic"`
+	Source                 string   `json:"source,omitempty"`
+	Kind                   string   `json:"kind,omitempty"`
+	Tags                   []string `json:"tags,omitempty"`
+	ChunkSize              int      `json:"chunk_size,omitempty"`
+	Overlap                int      `json:"overlap,omitempty"`
+	MaxChunks              int      `json:"max_chunks,omitempty"`
+	IncludeOfficialSources *bool    `json:"include_official_sources,omitempty"`
+}
+
+type ResearchIngestResponse struct {
+	Topic             string   `json:"topic"`
+	Slug              string   `json:"slug"`
+	SourcePrefix      string   `json:"source_prefix"`
+	StoredChunks      int      `json:"stored_chunks"`
+	Tags              []string `json:"tags"`
+	Warnings          []string `json:"warnings,omitempty"`
+	Dossier           string   `json:"dossier,omitempty"`
+	Sources           []string `json:"sources,omitempty"`
+	StoredChunkSource []string `json:"stored_chunk_sources,omitempty"`
+}
+
+func (c *Client) ResearchIngest(ctx context.Context, req ResearchIngestRequest) (ResearchIngestResponse, error) {
+	var resp ResearchIngestResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/research/ingest", req, &resp); err != nil {
+		return ResearchIngestResponse{}, err
+	}
+	return resp, nil
+}
+
 func (c *Client) ListMemoryCandidates(ctx context.Context, jobID int64, status string, limit int) ([]model.MemoryCandidate, error) {
 	path := fmt.Sprintf("/v1/memory-candidates?limit=%d", limit)
 	if jobID > 0 {

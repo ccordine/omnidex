@@ -150,7 +150,7 @@ func shouldForceStructuredLoopRecovery(ledger []StructuredObjective, observation
 }
 
 func structuredLoopRecoveryToolTask(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation) string {
-	if appBuildPromptNeedsFiles(prompt) {
+	if appBuildPromptNeedsFiles(prompt) || pendingObjectivesNeedSubstantiveAppFiles(ledger) {
 		return writeAfterInspectionRecoveryToolTask(prompt, ledger, observations, "")
 	}
 	state := structuredLoopStateFromState(ledger, observations)
@@ -172,6 +172,39 @@ func structuredLoopRecoveryToolTask(prompt string, ledger []StructuredObjective,
 		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
 	}
 	return strings.Join(parts, " ")
+}
+
+func pendingObjectivesNeedSubstantiveAppFiles(ledger []StructuredObjective) bool {
+	for _, objective := range ledger {
+		if structuredObjectiveSatisfied(objective) {
+			continue
+		}
+		text := strings.ToLower(strings.TrimSpace(objective.ID + " " + objective.Description))
+		if text == "" {
+			continue
+		}
+		needles := []string{
+			"app structure",
+			"component",
+			"crud",
+			"entry",
+			"frontend",
+			"implement",
+			"in-memory",
+			"interface",
+			"source",
+			"state",
+			"store",
+			"storage",
+			"ui",
+		}
+		for _, needle := range needles {
+			if strings.Contains(text, needle) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func completedEvidenceRecoveryToolTask(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation, rejected string, previous StructuredCommandObservation) string {

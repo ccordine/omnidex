@@ -601,7 +601,13 @@ func (r *nativeRuntimeV3) runFinalize() error {
 	if genericNonAnswer(final) {
 		final = bestV3FinalFallback(r.claim.Job, r.contexts, r.collectSubtaskOutputs(), analysisArtifact.Summary, retrievalArtifactText(retrievalArtifact), webArtifact.Summary)
 	}
-	return r.complete("response", final, final)
+	if err := r.complete("response", final, final); err != nil {
+		return err
+	}
+	if err := r.svc.memorizeSuccessfulJob(r.ctx, r.claim.Job.ID); err != nil {
+		r.svc.logger.Printf("job=%d success playbook memory warning: %v", r.claim.Job.ID, err)
+	}
+	return nil
 }
 
 func (r *nativeRuntimeV3) complete(contextKey, output, contextValue string) error {
@@ -795,7 +801,7 @@ func bestNonGenericCandidate(candidates []string) string {
 	best := ""
 	for _, candidate := range candidates {
 		clean := strings.TrimSpace(candidate)
-		if clean == "" || genericNonAnswer(clean) {
+		if clean == "" || genericNonAnswer(clean) || noisyRetrievalDump(clean) {
 			continue
 		}
 		if len(clean) > len(best) {

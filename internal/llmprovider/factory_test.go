@@ -63,6 +63,14 @@ func TestNewProviderSupportsConfiguredRemoteProviders(t *testing.T) {
 				EmbeddingModel:     "sentence-transformers/all-mpnet-base-v2",
 			},
 		},
+		{
+			name:     "xai",
+			provider: "grok",
+			cfg: config.Config{
+				XAIAPIKey:  "xai-key",
+				XAIBaseURL: "https://api.x.ai/v1",
+			},
+		},
 	}
 
 	for _, tc := range tests {

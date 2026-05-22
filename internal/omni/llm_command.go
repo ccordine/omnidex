@@ -3521,6 +3521,9 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 					"Do not solve the user's task.",
 					"Do not penalize a proposed command merely because it has not executed yet; the runtime executes accepted commands.",
 					"For empty-workspace app build tasks with documentation_brief prep, revise any response that only checks compiler availability, fetches documentation, or states that the workspace is empty; the retry should write source/build/test files from prep evidence.",
+					"Revise commands that only print status text such as echo/printf when pending objectives require implementation; they are not command evidence.",
+					"Revise placeholder-only mkdir/touch scaffolds when app, component, CRUD, UI, source, or storage objectives remain; the retry must write substantive source/build/test file content.",
+					"Reject unrequested dependency installs when pending objectives now require implementation work; do not add packages just because they are common.",
 					"Give low confidence when the response ignores the active prompt, answers from memory, refuses a capability that shell/public sources provide, returns done without evidence, or emits a command that only prints an answer/apology.",
 					"Give low confidence when memory or prior preferences expand dependencies, frameworks, files, services, architecture, or deployment targets beyond the current prompt or selected recipe.",
 					"Reject when a command creates or scaffolds a new project but WorksiteSurvey says the operation is modify_existing_project or fix_existing_project.",
@@ -4536,6 +4539,9 @@ func validateShellProposalAgainstToolTask(command, toolTask string) error {
 	if toolTaskAllowsInspectionEvidence(toolTask) && structuredCommandLooksReadOnlyEvidence(command) {
 		return nil
 	}
+	if toolTaskRequiresSourceImplementation(toolTask) && structuredCommandLooksDependencyInstall(command) && !toolTaskAllowsDependencyInstall(toolTask) {
+		return fmt.Errorf("tool_task requires source file implementation; dependency install command %q does not satisfy it", strings.TrimSpace(command))
+	}
 	if shellProposalIsPlaceholderOnlyMutation(command) {
 		return fmt.Errorf("tool_task requires substantive file content or verification; placeholder-only command %q does not satisfy it", strings.TrimSpace(command))
 	}
@@ -4546,6 +4552,82 @@ func validateShellProposalAgainstToolTask(command, toolTask string) error {
 		return nil
 	}
 	return fmt.Errorf("tool_task requires file creation, modification, build, or test work; read-only command %q does not satisfy it", strings.TrimSpace(command))
+}
+
+func toolTaskRequiresSourceImplementation(toolTask string) bool {
+	task := strings.ToLower(toolTask)
+	needles := []string{
+		"actual project files",
+		"component",
+		"crud",
+		"implement",
+		"in-memory",
+		"source/build/test",
+		"source file",
+		"store_notes",
+		"substantive source",
+		"ui",
+	}
+	for _, needle := range needles {
+		if strings.Contains(task, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func toolTaskAllowsDependencyInstall(toolTask string) bool {
+	task := strings.ToLower(toolTask)
+	needles := []string{
+		"install dependencies",
+		"install package",
+		"install required",
+		"dependency install",
+		"package install",
+	}
+	for _, needle := range needles {
+		if strings.Contains(task, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func structuredCommandLooksDependencyInstall(command string) bool {
+	for _, segment := range structuredCommandSegments(command) {
+		if len(segment) < 2 {
+			continue
+		}
+		root := cleanCommandPathToken(segment[0])
+		action := segment[1]
+		switch root {
+		case "npm":
+			if action == "install" || action == "add" || action == "i" {
+				return true
+			}
+		case "pnpm", "yarn", "bun":
+			if action == "add" || action == "install" {
+				return true
+			}
+		case "cargo":
+			if action == "add" {
+				return true
+			}
+		case "go":
+			if action == "get" {
+				return true
+			}
+		case "pip", "pip3":
+			if action == "install" {
+				return true
+			}
+		case "composer":
+			if action == "require" || action == "install" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func shellProposalWritesOnlyResearchArtifact(command, toolTask string) bool {
@@ -6664,6 +6746,8 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			"Rejected_command observations and failed commands are evidence with reasons; use them to correct strategy, not to create forbidden commands or framework/tool bans.",
 			"If tool_task says creation, modification, writing, patching, build, or test is required, do not choose read-only inspection commands such as ls, cat, find, npm ls, sed -n, rg, grep, pwd, or test -f.",
 			"If tool_task says read-only inventory commands are forbidden, choose a file mutation, build, test, or patch-related shell command.",
+			"If tool_task names app, component, CRUD, UI, state, storage, or substantive source objectives, choose a command that writes or patches source files; do not choose dependency installs, echo/printf status text, or placeholder-only touch/mkdir scaffolds.",
+			"Only choose package-manager install/add commands when tool_task explicitly asks to install dependencies or names the exact package as a required prerequisite.",
 			"If tool_task requires creating a project for an unfamiliar language/toolchain, choose a command that first gathers official documentation or installed tool help with curl/--help, then writes substantive source/build/test files in the same command.",
 			"If session_memories or prep_context already include a documentation_brief for the requested language/toolchain, do not fetch the same docs again; write substantive source/build/test files from that guidance.",
 			"If the requested compiler is unavailable and installation is not approved, create substantive source/build/test files and a deterministic source verification fallback; do not choose placeholder-only touch/mkdir commands.",

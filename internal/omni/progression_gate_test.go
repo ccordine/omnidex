@@ -290,6 +290,53 @@ func TestProgressionGateRejectsPlaceholderOnlySuccessForAppBuild(t *testing.T) {
 	}
 }
 
+func TestStructuredLoopRecoveryUsesWriteRecoveryForPendingAppObjectives(t *testing.T) {
+	task := structuredLoopRecoveryToolTask(
+		"please continue setting up this project as a react js note app",
+		[]StructuredObjective{
+			{ID: "install_react_dependencies", Status: "satisfied", Evidence: "npm install exited 0"},
+			{ID: "create_note_app_structure", Description: "Create note app component structure", Status: "pending"},
+			{ID: "implement_crud_operations", Description: "Implement CRUD operations", Status: "pending"},
+			{ID: "store_notes_in_memory", Description: "Store notes in memory", Status: "pending"},
+		},
+		[]StructuredCommandObservation{
+			{Step: 1, Command: "npm install", ExitCode: 0, Stdout: "up to date"},
+			{Step: 2, RejectedCommand: "echo 'Creating components and state management...'", ExitCode: 1, Stderr: "pure echo command is not command evidence"},
+			{Step: 3, RejectedCommand: "npm install react-router-dom", ExitCode: 1, Stderr: "dependency scope drift"},
+		},
+	)
+
+	for _, want := range []string{"create or modify the actual project files now", "substantive source", "Do not create placeholder-only", "Pending objective(s): create_note_app_structure,implement_crud_operations,store_notes_in_memory"} {
+		if !strings.Contains(task, want) {
+			t.Fatalf("recovery task missing %q: %s", want, task)
+		}
+	}
+	if strings.Contains(task, "install_react_dependencies") {
+		t.Fatalf("satisfied install objective should not remain active in recovery task: %s", task)
+	}
+}
+
+func TestStructuredLoopRecoveryDoesNotTreatDockerApplicationObjectiveAsSourceWrite(t *testing.T) {
+	task := structuredLoopRecoveryToolTask(
+		"containerize this existing project",
+		[]StructuredObjective{
+			{ID: "create_dockerfile", Status: "satisfied", Evidence: "Dockerfile written"},
+			{ID: "run_application_in_docker_container", Description: "Run application in Docker container", Status: "pending"},
+		},
+		[]StructuredCommandObservation{
+			{Step: 1, Command: "docker build -t app .", ExitCode: 1, Stderr: "docker daemon unavailable"},
+			{Step: 2, Command: "docker build -t app .", ExitCode: 1, Stderr: "docker daemon unavailable"},
+		},
+	)
+
+	if strings.Contains(task, "substantive source") {
+		t.Fatalf("docker application objective should not force source-write recovery: %s", task)
+	}
+	if !strings.Contains(task, "run_application_in_docker_container") {
+		t.Fatalf("docker pending objective missing from recovery task: %s", task)
+	}
+}
+
 func TestProgressionGateRejectsDocumentationDownloadAsAppMutation(t *testing.T) {
 	workspace := t.TempDir()
 	decision := ProgressionGate{}.ReviewStep(ProgressionInput{

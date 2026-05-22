@@ -21,6 +21,8 @@ type Client struct {
 	embeddingModel string
 	organization   string
 	project        string
+	providerName   string
+	apiKeyName     string
 	httpClient     *http.Client
 }
 
@@ -55,6 +57,18 @@ type embeddingsResponse struct {
 }
 
 func New(baseURL, apiKey, defaultModel, embeddingModel, organization, project string, timeout time.Duration) *Client {
+	return NewCompatible("openai", "OPENAI_API_KEY", baseURL, apiKey, defaultModel, embeddingModel, organization, project, timeout)
+}
+
+func NewCompatible(providerName, apiKeyName, baseURL, apiKey, defaultModel, embeddingModel, organization, project string, timeout time.Duration) *Client {
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		providerName = "openai"
+	}
+	apiKeyName = strings.TrimSpace(apiKeyName)
+	if apiKeyName == "" {
+		apiKeyName = "OPENAI_API_KEY"
+	}
 	return &Client{
 		baseURL:        normalizeBaseURL(baseURL),
 		apiKey:         strings.TrimSpace(apiKey),
@@ -62,6 +76,8 @@ func New(baseURL, apiKey, defaultModel, embeddingModel, organization, project st
 		embeddingModel: strings.TrimSpace(embeddingModel),
 		organization:   strings.TrimSpace(organization),
 		project:        strings.TrimSpace(project),
+		providerName:   providerName,
+		apiKeyName:     apiKeyName,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -132,11 +148,11 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 	}
 
 	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("openai response missing choices")
+		return "", fmt.Errorf("%s response missing choices", c.providerName)
 	}
 	text := strings.TrimSpace(messageContentAsString(resp.Choices[0].Message.Content))
 	if text == "" {
-		return "", fmt.Errorf("openai response missing message content")
+		return "", fmt.Errorf("%s response missing message content", c.providerName)
 	}
 	return text, nil
 }
@@ -198,7 +214,7 @@ func (c *Client) SuggestTagsWithModel(ctx context.Context, model, content string
 
 func (c *Client) doJSON(ctx context.Context, method, path string, payload any, out any) error {
 	if strings.TrimSpace(c.apiKey) == "" {
-		return fmt.Errorf("OPENAI_API_KEY is required")
+		return fmt.Errorf("%s is required", c.apiKeyName)
 	}
 
 	var body io.Reader
@@ -246,9 +262,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 			if strings.TrimSpace(errBody.Error.Type) != "" {
 				msg = fmt.Sprintf("%s (%s)", msg, strings.TrimSpace(errBody.Error.Type))
 			}
-			return fmt.Errorf("openai request failed: %s", msg)
+			return fmt.Errorf("%s request failed: %s", c.providerName, msg)
 		}
-		return fmt.Errorf("openai request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(data)))
+		return fmt.Errorf("%s request failed: status=%d body=%s", c.providerName, resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 
 	if out != nil {

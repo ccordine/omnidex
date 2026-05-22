@@ -1750,6 +1750,9 @@ func (s *Service) runResponseStep(ctx context.Context, claim *model.ClaimedStep,
 		if err := s.repo.CompleteStep(ctx, claim.Step.ID, response, action, response); err != nil {
 			return err
 		}
+		if err := s.memorizeSuccessfulJob(ctx, claim.Job.ID); err != nil {
+			s.logger.Printf("job=%d success playbook memory warning: %v", claim.Job.ID, err)
+		}
 		if err := s.persistMemory(ctx, claim.Job, contexts, response); err != nil {
 			s.logger.Printf("job=%d memory persist warning: %v", claim.Job.ID, err)
 		}
@@ -1835,6 +1838,9 @@ func (s *Service) runResponseStep(ctx context.Context, claim *model.ClaimedStep,
 		return err
 	}
 
+	if err := s.memorizeSuccessfulJob(ctx, claim.Job.ID); err != nil {
+		s.logger.Printf("job=%d success playbook memory warning: %v", claim.Job.ID, err)
+	}
 	if err := s.persistMemory(ctx, claim.Job, contexts, response); err != nil {
 		s.logger.Printf("job=%d memory persist warning: %v", claim.Job.ID, err)
 	}
@@ -4572,7 +4578,7 @@ func (s *Service) runWebSearchStep(ctx context.Context, claim *model.ClaimedStep
 	}
 	s.emitStepStream(claim.Step.ID, "stdout", "web search query: "+strings.TrimSpace(query))
 
-	webContext, err := s.webSearch.Search(ctx, query)
+	results, err := s.webSearch.SearchAll(ctx, query)
 	if err != nil {
 		s.emitStepStream(claim.Step.ID, "stderr", "web search error: "+err.Error())
 		output := fmt.Sprintf("web search failed for query %q: %v", strings.TrimSpace(query), err)
@@ -4588,6 +4594,14 @@ func (s *Service) runWebSearchStep(ctx context.Context, claim *model.ClaimedStep
 		return s.repo.CompleteStep(ctx, claim.Step.ID, output, "web_search", output)
 	}
 
+	if persisted, persistErr := s.persistWebSearchResults(ctx, claim.Job, query, results, contexts); persistErr != nil {
+		s.logger.Printf("job=%d web search memory persist warning: %v", claim.Job.ID, persistErr)
+		s.emitStepEvent(claim.Step.ID, "web_search_memory_warning", "reason="+safeLine(persistErr.Error(), "persist_failed"))
+	} else if persisted > 0 {
+		s.emitStepEvent(claim.Step.ID, "web_search_memory_persisted", fmt.Sprintf("chunks=%d", persisted))
+	}
+
+	webContext := websearch.BuildContext(results, s.contextBudget)
 	webContext = trimForBudget(webContext, s.contextBudget)
 	if strings.TrimSpace(webContext) == "" {
 		webContext = "web search returned no usable content"
@@ -4604,6 +4618,68 @@ func (s *Service) runWebSearchStep(ctx context.Context, claim *model.ClaimedStep
 	s.emitStepEvent(claim.Step.ID, "web_search_ready", fmt.Sprintf("context_chars=%d", len(webContext)))
 
 	return s.repo.CompleteStep(ctx, claim.Step.ID, webContext, "web_search", webContext)
+}
+
+func (s *Service) persistWebSearchResults(ctx context.Context, job model.Job, query string, results []websearch.Result, contexts map[string]string) (int, error) {
+	if s == nil || s.repo == nil || len(results) == 0 {
+		return 0, nil
+	}
+	baseTags := memoryScopeTags(job, parseTagsCSV(contexts["tags"]))
+	tags := appendUnique(baseTags, "reference", "web_search", "research")
+	if normalized := websearch.NormalizeQuery(query); normalized != "" {
+		tags = appendUnique(tags, "query:"+normalized)
+	}
+	persisted := 0
+	for i, result := range results {
+		content := formatWebSearchReferenceMemory(query, result)
+		if strings.TrimSpace(content) == "" {
+			continue
+		}
+		resultTags := appendUnique(tags, "provider:"+strings.ToLower(strings.TrimSpace(result.Provider)))
+		source := webSearchMemorySource(job.ID, i, result)
+		var embed []float64
+		if s.llm != nil {
+			if vector, err := s.llm.Embedding(ctx, content); err == nil {
+				embed = vector
+			}
+		}
+		if _, err := s.repo.AddMemoryChunk(ctx, source, model.MemoryKindReference, content, resultTags, embed); err != nil {
+			return persisted, err
+		}
+		persisted++
+	}
+	return persisted, nil
+}
+
+func formatWebSearchReferenceMemory(query string, result websearch.Result) string {
+	content := strings.TrimSpace(result.Content)
+	if content == "" {
+		return ""
+	}
+	lines := []string{
+		"Web research reference",
+		"Query: " + strings.TrimSpace(query),
+		"Provider: " + strings.TrimSpace(result.Provider),
+		"Title: " + strings.TrimSpace(result.Title),
+		"URL: " + strings.TrimSpace(result.URL),
+		"Search URL: " + strings.TrimSpace(result.SearchURL),
+		"Retrieved at: " + result.RetrievedAt.UTC().Format(time.RFC3339),
+		"Snippet: " + strings.TrimSpace(result.Snippet),
+		"Content:",
+		content,
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func webSearchMemorySource(jobID int64, index int, result websearch.Result) string {
+	key := strings.Join([]string{
+		strconv.FormatInt(jobID, 10),
+		strings.TrimSpace(result.Provider),
+		strings.TrimSpace(result.URL),
+		strings.TrimSpace(result.SearchURL),
+	}, "\x00")
+	sum := sha1.Sum([]byte(key))
+	return fmt.Sprintf("job:%d:web_search:%02d:%s", jobID, index+1, hex.EncodeToString(sum[:6]))
 }
 
 func (s *Service) deriveSearchQuery(ctx context.Context, stepID int64, job model.Job, contexts map[string]string) string {
@@ -7442,6 +7518,241 @@ func (s *Service) persistMemory(ctx context.Context, job model.Job, contexts map
 	return err
 }
 
+func (s *Service) memorizeSuccessfulJob(ctx context.Context, jobID int64) error {
+	if s == nil || s.repo == nil || jobID <= 0 {
+		return nil
+	}
+	details, err := s.repo.GetJobDetails(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if details.Job.Status != model.JobStatusCompleted {
+		return nil
+	}
+	content := buildSuccessfulJobPlaybook(details)
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	memoryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	contexts := contextsToMap(details.Contexts)
+	tags := successfulJobPlaybookTags(details.Job, contexts)
+	embed, err := s.llm.Embedding(memoryCtx, trimForBudget(content, 6000))
+	if err != nil {
+		embed = nil
+	}
+	_, err = s.repo.AddMemoryChunk(memoryCtx, fmt.Sprintf("job:%d:success_playbook", details.Job.ID), model.MemoryKindProcedural, content, tags, embed)
+	return err
+}
+
+func successfulJobPlaybookTags(job model.Job, contexts map[string]string) []string {
+	tags := memoryScopeTags(job, parseTagsCSV(contexts["tags"]))
+	tags = appendUnique(tags,
+		model.MemoryKindProcedural,
+		model.MemoryTrustTagApproved,
+		"success-playbook",
+		"learned-skill",
+		"cross-project",
+		"pipeline:"+strings.ToLower(strings.TrimSpace(job.Pipeline)),
+	)
+	for _, token := range successfulJobKeywordTags(job.Instruction) {
+		tags = appendUnique(tags, token)
+	}
+	if len(tags) == 0 {
+		return []string{"general", "success-playbook", model.MemoryKindProcedural, model.MemoryTrustTagApproved}
+	}
+	return tags
+}
+
+func successfulJobKeywordTags(text string) []string {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	replacer := strings.NewReplacer("_", " ", "-", " ", "/", " ", ".", " ", ",", " ", ":", " ", ";", " ", "(", " ", ")", " ")
+	normalized = replacer.Replace(normalized)
+	out := []string{}
+	for _, token := range strings.Fields(normalized) {
+		if len(token) < 3 || len(token) > 32 {
+			continue
+		}
+		if successfulJobStopword(token) {
+			continue
+		}
+		out = appendUnique(out, "topic:"+token)
+	}
+	if len(out) > 16 {
+		out = out[:16]
+	}
+	return out
+}
+
+func successfulJobStopword(token string) bool {
+	switch token {
+	case "the", "and", "for", "with", "that", "this", "from", "into", "onto", "you", "your", "are", "can", "need", "needs", "make", "build", "create", "please", "using", "use", "app", "project":
+		return true
+	default:
+		return false
+	}
+}
+
+func buildSuccessfulJobPlaybook(details model.JobDetails) string {
+	if details.Job.ID <= 0 || details.Job.Status != model.JobStatusCompleted {
+		return ""
+	}
+	completed := []model.Step{}
+	for _, step := range details.Steps {
+		if step.Status != model.StepStatusCompleted {
+			continue
+		}
+		if strings.TrimSpace(step.Output) == "" {
+			continue
+		}
+		completed = append(completed, step)
+	}
+	if len(completed) == 0 {
+		return ""
+	}
+	contextByStep := map[int64][]model.StepContext{}
+	for _, ctxValue := range details.Contexts {
+		contextByStep[ctxValue.StepID] = append(contextByStep[ctxValue.StepID], ctxValue)
+	}
+	lines := []string{
+		"Successful execution playbook",
+		fmt.Sprintf("job_id=%d", details.Job.ID),
+		"pipeline=" + strings.TrimSpace(details.Job.Pipeline),
+		"status=" + details.Job.Status,
+		"",
+		"Goal:",
+		trimForBudget(details.Job.Instruction, 900),
+		"",
+		"Outcome:",
+		compactPlaybookText(firstNonEmptyString(details.Job.Result, latestContextForKey(details.Contexts, "response"), latestContextForKey(details.Contexts, "assist")), 500),
+		"",
+		"Successful steps:",
+	}
+	included := 0
+	for _, step := range completed {
+		if actionTooNoisyForPlaybook(step.Action) {
+			continue
+		}
+		if included >= 10 {
+			lines = append(lines, "- additional successful steps omitted")
+			break
+		}
+		action := strings.TrimSpace(step.Action)
+		if action == "" {
+			action = "step"
+		}
+		summary := compactPlaybookText(step.Output, 300)
+		lines = append(lines, fmt.Sprintf("- %s: %s", action, singleLineForPlaybook(summary)))
+		included++
+		for _, ctxValue := range contextByStep[step.ID] {
+			key := strings.TrimSpace(ctxValue.Key)
+			if key == "" || !contextKeyUsefulForPlaybook(key) {
+				continue
+			}
+			value := compactPlaybookText(ctxValue.Value, 180)
+			if value == "" {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("  %s: %s", key, singleLineForPlaybook(value)))
+		}
+	}
+	if included == 0 {
+		for i, step := range completed {
+			if i >= 5 {
+				lines = append(lines, "- additional successful steps omitted")
+				break
+			}
+			action := strings.TrimSpace(step.Action)
+			if action == "" {
+				action = "step"
+			}
+			lines = append(lines, fmt.Sprintf("- %s: %s", action, singleLineForPlaybook(compactPlaybookText(step.Output, 300))))
+		}
+	}
+	lines = append(lines,
+		"",
+		"Reuse guidance:",
+		"- For similar future work, retrieve this playbook by topic/tool tags and adapt the successful sequence before planning.",
+		"- Prefer the recorded commands, tool choices, verification outputs, and recovery moves as experience evidence; adapt them to the current project.",
+	)
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func latestContextForKey(contexts []model.StepContext, key string) string {
+	var latest model.StepContext
+	for _, ctxValue := range contexts {
+		if ctxValue.Key != key {
+			continue
+		}
+		if ctxValue.ID >= latest.ID {
+			latest = ctxValue
+		}
+	}
+	return strings.TrimSpace(latest.Value)
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func singleLineForPlaybook(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	return strings.TrimSpace(value)
+}
+
+func compactPlaybookText(value string, maxChars int) string {
+	clean := strings.TrimSpace(value)
+	if clean == "" {
+		return ""
+	}
+	if noisyRetrievalDump(clean) {
+		for _, line := range strings.Split(clean, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || noisyRetrievalDump(line) {
+				continue
+			}
+			return trimForBudget(line, maxChars)
+		}
+		return "completed; noisy retrieval fallback omitted from reusable playbook"
+	}
+	return trimForBudget(clean, maxChars)
+}
+
+func noisyRetrievalDump(value string) bool {
+	clean := strings.ToLower(strings.TrimSpace(value))
+	if clean == "" {
+		return false
+	}
+	return strings.Contains(clean, "scoped memory lookup found no matches") ||
+		strings.Contains(clean, "research chunk metadata:") ||
+		strings.Contains(clean, "research memory topic=") ||
+		strings.HasPrefix(clean, "source_url=") ||
+		strings.HasPrefix(clean, "[1] kind=")
+}
+
+func actionTooNoisyForPlaybook(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "v3_intent_parse", "v3_capability_audit", "v3_workspace_research", "v3_memory_retrieval", "v3_external_research", "v3_memory_review":
+		return true
+	default:
+		return false
+	}
+}
+
+func contextKeyUsefulForPlaybook(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "command", "shell_command", "structured_command", "stdout", "stderr", "exit_code", "tooling", "plan", "plan_selection", "verification", "verify_action_audit", "verify_consensus", "response", "web_search", "recovery", "blocker", "failure", "objective_ledger", "structured_command_evidence":
+		return true
+	default:
+		return false
+	}
+}
+
 func contextsToMap(contexts []model.StepContext) map[string]string {
 	if len(contexts) == 0 {
 		return map[string]string{}
@@ -7967,12 +8278,17 @@ func buildRetrievalContext(matches []model.MemoryMatch, budget int) string {
 		if strings.TrimSpace(tags) == "" {
 			tags = "none"
 		}
+		categories := strings.Join(match.Categories, "|")
+		if strings.TrimSpace(categories) == "" {
+			categories = "none"
+		}
 		segment := fmt.Sprintf(
-			"[%d] kind=%s score=%.4f created_at=%s tags=%s\n%s\n\n",
+			"[%d] kind=%s score=%.4f created_at=%s categories=%s tags=%s\n%s\n\n",
 			i+1,
 			match.Kind,
 			match.Score,
 			created,
+			categories,
 			tags,
 			strings.TrimSpace(match.Content),
 		)

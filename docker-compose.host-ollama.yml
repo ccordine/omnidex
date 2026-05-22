@@ -1,0 +1,13 @@
+services:
+  core:
+    network_mode: host
+    environment:
+      DATABASE_URL: ${CORE_DATABASE_URL:-postgres://agent:agent@127.0.0.1:15432/agent?sslmode=disable}
+      OLLAMA_BASE_URL: ${CORE_OLLAMA_BASE_URL:-http://127.0.0.1:11434}
+    ports: !reset []
+    extra_hosts: !reset []
+    networks: !reset []
+
+  postgres:
+    ports:
+      - "${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-15432}:5432"

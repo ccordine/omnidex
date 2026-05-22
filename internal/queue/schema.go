@@ -92,6 +92,20 @@ CREATE TABLE IF NOT EXISTS memory_chunk_tags (
     UNIQUE(memory_chunk_id, tag_id)
 );
 
+CREATE TABLE IF NOT EXISTS memory_categories (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS memory_chunk_categories (
+    id BIGSERIAL PRIMARY KEY,
+    memory_chunk_id BIGINT NOT NULL REFERENCES memory_chunks(id) ON DELETE CASCADE,
+    category_id BIGINT NOT NULL REFERENCES memory_categories(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(memory_chunk_id, category_id)
+);
+
 CREATE TABLE IF NOT EXISTS ai_channels (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL DEFAULT '',
@@ -125,6 +139,8 @@ CREATE INDEX IF NOT EXISTS idx_memory_chunks_kind_created ON memory_chunks(kind,
 CREATE INDEX IF NOT EXISTS idx_memory_chunks_embedding_hnsw ON memory_chunks USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_memory_chunks_content_trgm ON memory_chunks USING gin (content gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_memory_chunk_tags_tag_id ON memory_chunk_tags(tag_id, memory_chunk_id);
+CREATE INDEX IF NOT EXISTS idx_memory_categories_name ON memory_categories(name);
+CREATE INDEX IF NOT EXISTS idx_memory_chunk_categories_category_id ON memory_chunk_categories(category_id, memory_chunk_id);
 CREATE INDEX IF NOT EXISTS idx_ai_channels_updated ON ai_channels(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_channel_messages_channel_created ON ai_channel_messages(channel_id, created_at DESC, id DESC);
 `
