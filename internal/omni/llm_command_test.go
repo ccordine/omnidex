@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -279,8 +280,15 @@ func TestStructuredCommandRequestUsesTerseInertMemoryRecords(t *testing.T) {
 	if strings.Contains(activeTask, "Pattaya") || strings.Contains(activeTask, "tmp-project") || strings.Contains(activeTask, "wttr.in") {
 		t.Fatalf("active task is polluted by memory: %s", activeTask)
 	}
-	if strings.Count(active, "What time is it in Virginia right now?") != 4 {
-		t.Fatalf("active prompt should appear as open/current/prompt/close anchors: %s", active)
+	for _, want := range []string{
+		`"active_prompt_open":"What time is it in Virginia right now?"`,
+		`"current_prompt":"What time is it in Virginia right now?"`,
+		`"prompt":"What time is it in Virginia right now?"`,
+		`"active_prompt_close":"What time is it in Virginia right now?"`,
+	} {
+		if !strings.Contains(active, want) {
+			t.Fatalf("active prompt missing anchor %q: %s", want, active)
+		}
 	}
 }
 
@@ -332,8 +340,15 @@ func TestStructuredCommandDecisionAnswersActivePromptDespiteConflictingMemory(t 
 			t.Fatalf("active task contains memory %q: %s", polluted, activeTask)
 		}
 	}
-	if strings.Count(active, "What time is it in Virginia right now?") != 4 {
-		t.Fatalf("active prompt not anchored open/current/prompt/close: %s", active)
+	for _, want := range []string{
+		`"active_prompt_open":"What time is it in Virginia right now?"`,
+		`"current_prompt":"What time is it in Virginia right now?"`,
+		`"prompt":"What time is it in Virginia right now?"`,
+		`"active_prompt_close":"What time is it in Virginia right now?"`,
+	} {
+		if !strings.Contains(active, want) {
+			t.Fatalf("active prompt missing anchor %q: %s", want, active)
+		}
 	}
 }
 
@@ -2191,6 +2206,48 @@ func TestRepeatedFailedCommandExecutesPermissiveRetry(t *testing.T) {
 	}
 }
 
+func TestDoneTrueWithNonEmptyDockerCommandExecutesBeforeCompletionValidation(t *testing.T) {
+	workspace := t.TempDir()
+	command := "printf 'docker build ok\\ndocker run ok\\nDOCKER_SMOKE_OK running=true restarting=false restart_count=0\\nDOCKER_LOGS_CLEAR\\n'"
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"` + command + `","done":true,"answer":"docker complete"}`,
+		`{"command":"","done":true,"answer":"docker lifecycle verified"}`,
+	}}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "build_docker_image", Description: "Build Docker image", Status: "pending", Required: true},
+		},
+	}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{
+		{Done: false, Reason: "command evidence should be gathered first"},
+		{Done: true, Reason: "docker build and run evidence observed", ObjectiveLedger: []StructuredObjective{
+			{ID: "build_docker_image", Description: "Build Docker image", Status: "satisfied", Required: true},
+		}},
+	}}
+	stdout := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "Build and run the Docker image.", nil, client, stdout, &strings.Builder{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		PromptInterpreter:       interpreter,
+		CompletionChecker:       checker,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "DOCKER_SMOKE_OK") {
+		t.Fatalf("non-empty done=true command was not executed, stdout=%q observations=%#v", stdout.String(), result.Observations)
+	}
+	if !structuredEventsContain(events, "structured_done_ignored") {
+		t.Fatalf("done=true command should emit done-ignored execution event: %#v", events)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit code = %d", result.ExitCode)
+	}
+}
+
 func TestRepeatedFailedCommandDoesNotHardForceShellSpecialistRecovery(t *testing.T) {
 	workspace := t.TempDir()
 	command := "false"
@@ -2221,6 +2278,49 @@ func TestRepeatedFailedCommandDoesNotHardForceShellSpecialistRecovery(t *testing
 	}
 	if result.ExitCode != 0 {
 		t.Fatalf("exit code = %d", result.ExitCode)
+	}
+}
+
+func TestWriteRecoveryBypassesShellAfterRepeatedInvalidSpecialistProposals(t *testing.T) {
+	decision := ProgressionDecision{
+		Reason:           "workspace inspection has not produced app files; creation step is now required",
+		RecoveryToolTask: "Required next behavior: create or modify the actual project files now. Do not continue with read-only inventory commands.",
+	}
+	result := &CommandDecisionResult{Observations: []StructuredCommandObservation{
+		{Step: 1, RejectedCommand: "touch README.md", ExitCode: 1, Stderr: "shell specialist command rejected: tool_task requires substantive file content or verification; placeholder-only command \"touch README.md\" does not satisfy it"},
+		{Step: 2, RejectedCommand: "touch index.zig", ExitCode: 1, Stderr: "shell specialist command rejected: tool_task requires substantive file content or verification; placeholder-only command \"touch index.zig\" does not satisfy it"},
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
+		Command: "touch src/main.zig",
+	}}}
+	events := []StructuredCommandEvent{}
+	handled, err := runProgressionGateRecovery(context.Background(), 3, "Build a Rust CLI calculator", decision, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: t.TempDir(),
+		ShellSpecialist:         shell,
+	}, WorksiteSurvey{}, &strings.Builder{}, &strings.Builder{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handled {
+		t.Fatal("expected recovery to fall through to planner after repeated invalid shell proposals")
+	}
+	if len(shell.inputs) != 0 {
+		t.Fatalf("shell specialist should be bypassed: %#v", shell.inputs)
+	}
+	if !structuredEventsContain(events, "progression_gate_shell_bypassed") {
+		t.Fatalf("missing shell bypass event: %#v", events)
+	}
+}
+
+func TestWriteRecoveryBypassesShellAfterRepeatedDocumentationDownloadProposals(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{Step: 1, RejectedCommand: "curl -s https://ziglang.org/documentation/master/ > zig_doc.html", ExitCode: 1, Stderr: "shell specialist command rejected: tool_task requires substantive source/build/test files; documentation download command does not satisfy it"},
+		{Step: 2, RejectedCommand: "curl -s https://ziglang.org/documentation/master/ > zig_doc.html", ExitCode: 1, Stderr: "shell specialist command rejected: tool_task requires substantive source/build/test files; documentation download command does not satisfy it"},
+	}
+	if !shouldBypassShellSpecialistForWriteRecovery("Required next behavior: create or modify the actual project files now with substantive source/build/test files.", observations) {
+		t.Fatal("expected repeated documentation-download proposals to bypass shell specialist")
 	}
 }
 
@@ -4001,6 +4101,44 @@ func TestShellSpecialistRequestIncludesCompletedActions(t *testing.T) {
 	}
 }
 
+func TestStructuredPlannerAndShellEncourageDocumentationForUnfamiliarToolchains(t *testing.T) {
+	plannerReq := buildStructuredCommandRequest("Build a Zig CLI calculator.", nil, nil)
+	plannerContent := strings.ToLower(plannerReq.ContextSystem + "\n" + joinOllamaMessageContent(plannerReq.Messages))
+	for _, want := range []string{"unfamiliar language", "official docs", "smallest hello-world project", "source verification fallback", "tool=patch.apply"} {
+		if !strings.Contains(plannerContent, want) {
+			t.Fatalf("planner request missing %q: %s", want, plannerContent)
+		}
+	}
+
+	shellReq := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{
+		UserPrompt: "Build a Zig CLI calculator.",
+		ToolTask:   "Required next behavior: create or modify the actual project files now for an unfamiliar language/toolchain.",
+	})
+	shellContent := strings.ToLower(joinOllamaMessageContent(shellReq.Messages))
+	for _, want := range []string{"official documentation", "installed tool help", "substantive source/build/test files", "deterministic source verification fallback"} {
+		if !strings.Contains(shellContent, want) {
+			t.Fatalf("shell specialist request missing %q: %s", want, shellContent)
+		}
+	}
+}
+
+func TestShellSpecialistUsesExistingDocumentationBriefInsteadOfRefetching(t *testing.T) {
+	req := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{
+		UserPrompt: "Build a Zig CLI calculator.",
+		ToolTask:   "Required next behavior: create or modify the actual project files now with substantive source/build/test files.",
+		SessionMemories: []SessionMemory{{
+			Kind:    "documentation_brief",
+			Content: "Zig docs say zig init creates build.zig and src/main.zig.",
+		}},
+	})
+	content := strings.ToLower(joinOllamaMessageContent(req.Messages))
+	for _, want := range []string{"documentation_brief", "do not fetch the same docs again", "write substantive source/build/test files"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("shell specialist request missing %q: %s", want, content)
+		}
+	}
+}
+
 func TestEvaluatorRequestIncludesCompletedActions(t *testing.T) {
 	req := buildStructuredLLMEvaluationRequest(StructuredLLMEvaluationInput{
 		Step:        2,
@@ -4465,6 +4603,19 @@ func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsPlaceholderMuta
 	}
 }
 
+func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsDocumentationDownload(t *testing.T) {
+	err := validateShellProposalAgainstToolTask(
+		"curl -s https://ziglang.org/documentation/master/ > zig_doc.html",
+		"Required next behavior: create or modify the actual project files now with substantive source/build/test files.",
+	)
+	if err == nil {
+		t.Fatal("expected documentation download to be rejected for source-write recovery")
+	}
+	if !strings.Contains(err.Error(), "documentation download") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDeterministicGoReactCalculusRecoveryAppliesAfterWriteRequiredStall(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "backend", "calculus-api"), 0o755); err != nil {
@@ -4495,6 +4646,53 @@ func TestDeterministicGoReactCalculusRecoveryAppliesAfterWriteRequiredStall(t *t
 		if !strings.Contains(command, want) {
 			t.Fatalf("command missing %q", want)
 		}
+	}
+}
+
+func TestDeterministicZigCLICalculatorRecoveryCommandWritesVerifiedProject(t *testing.T) {
+	dir := t.TempDir()
+	if !deterministicZigCLICalculatorRecoveryApplies(
+		"build a zig cli calculator",
+		"required next behavior: create or modify actual project files with substantive source",
+		dir,
+	) {
+		t.Fatal("expected Zig CLI calculator recovery to apply")
+	}
+	command := deterministicZigCLICalculatorRecoveryCommand()
+	cmd := exec.Command("bash", "-lc", command)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("recovery command failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "ZIG_CALCULATOR_SOURCE_VERIFIED") {
+		t.Fatalf("missing verification marker: %s", output)
+	}
+	for _, rel := range []string{"build.zig", "src/main.zig", "README.md"} {
+		if !fileHasContent(filepath.Join(dir, rel)) {
+			t.Fatalf("missing generated file %s", rel)
+		}
+	}
+}
+
+func TestSourceVerificationCompletionSatisfiedForGeneratedZigProject(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "build.zig"), []byte("const std = @import(\"std\");\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "main.zig"), []byte("pub fn main() void {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	latest := StructuredCommandObservation{
+		Command:  "python3 - <<'PY'",
+		ExitCode: 0,
+		Stdout:   "ZIG_CALCULATOR_SOURCE_VERIFIED build.zig src/main.zig README.md",
+	}
+	if !sourceVerificationCompletionSatisfied("Build a Zig CLI calculator application.", dir, latest) {
+		t.Fatal("expected source verification marker and app files to satisfy completion")
 	}
 }
 
@@ -4623,6 +4821,46 @@ func TestReconcileObjectiveLedgerSatisfiesSpecificGoReactVerificationEvidence(t 
 	for _, objective := range updated {
 		if !structuredObjectiveSatisfied(objective) {
 			t.Fatalf("objective %s should be satisfied by make verification evidence: %#v", objective.ID, updated)
+		}
+	}
+}
+
+func TestReconcileObjectiveLedgerRequiresDockerLifecycleEvidence(t *testing.T) {
+	ledger := []StructuredObjective{
+		{ID: "create_dockerfile", Description: "Create Dockerfile", Status: "pending"},
+		{ID: "build_docker_image", Description: "Build Docker image", Status: "pending"},
+		{ID: "run_application_in_docker_container", Description: "Run application in Docker container", Status: "pending"},
+	}
+	afterDockerfile := reconcileStructuredObjectiveLedgerFromObservation(1, ledger, StructuredCommandObservation{
+		Step:     1,
+		Command:  "echo 'FROM nginx:alpine' > Dockerfile",
+		ExitCode: 0,
+		Stdout:   "Dockerfile created successfully.",
+	}, nil)
+	for _, objective := range afterDockerfile {
+		if objective.ID != "create_dockerfile" && structuredObjectiveSatisfied(objective) {
+			t.Fatalf("Dockerfile-only command should not satisfy lifecycle objective %s: %#v", objective.ID, afterDockerfile)
+		}
+	}
+
+	afterLifecycle := reconcileStructuredObjectiveLedgerFromObservation(2, afterDockerfile, StructuredCommandObservation{
+		Step:     2,
+		Command:  "docker build -t app:test . && docker run -d --name app-test --restart=no -p 127.0.0.1:8080:80 app:test && curl -fsS http://127.0.0.1:8080/health && docker inspect -f '{{.State.Running}} {{.State.Restarting}} {{.RestartCount}}' app-test && docker logs app-test",
+		ExitCode: 0,
+		Stdout:   "Successfully built abc123\nrunning=true restarting=false restart_count=0\nhealth=ok\nDOCKER_LOGS_CLEAR",
+	}, nil)
+	for _, id := range []string{"build_docker_image", "run_application_in_docker_container"} {
+		found := false
+		for _, objective := range afterLifecycle {
+			if objective.ID == id {
+				found = true
+				if !structuredObjectiveSatisfied(objective) {
+					t.Fatalf("%s should be satisfied by lifecycle evidence: %#v", id, afterLifecycle)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("missing objective %s", id)
 		}
 	}
 }

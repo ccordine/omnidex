@@ -52,6 +52,116 @@ type DocumentationSourceBrief struct {
 	Excerpt  string `json:"excerpt,omitempty"`
 }
 
+type DocumentationResearchTarget struct {
+	Sources []WebDocSource
+	Queries []string
+	Tags    []string
+}
+
+func InferDocumentationResearchTarget(question string) DocumentationResearchTarget {
+	lower := strings.ToLower(question)
+	target := DocumentationResearchTarget{}
+	add := func(name, url string) {
+		target.Sources = append(target.Sources, WebDocSource{Name: name, URL: url})
+	}
+	addQuery := func(values ...string) {
+		target.Queries = append(target.Queries, values...)
+	}
+	addTags := func(values ...string) {
+		target.Tags = append(target.Tags, values...)
+	}
+
+	switch {
+	case strings.Contains(lower, "zig"):
+		add("zig-getting-started", "https://ziglang.org/learn/getting-started/")
+		add("zig-language-reference", "https://ziglang.org/documentation/master/")
+		addQuery("Run Hello World", "zig init", "zig build run", "std.debug.print", "zig build-exe", "pub fn main")
+		addTags("zig", "host:ziglang.org")
+	case strings.Contains(lower, "go lang") || strings.Contains(lower, "golang") || strings.Contains(lower, " go ") || strings.HasPrefix(lower, "go "):
+		add("go-tutorial-create-module", "https://go.dev/doc/tutorial/create-module")
+		add("go-effective", "https://go.dev/doc/effective_go")
+		addQuery("create a module", "go mod init", "func main", "go test", "go build")
+		addTags("go", "host:go.dev")
+	case strings.Contains(lower, "rust"):
+		add("rust-book-hello-world", "https://doc.rust-lang.org/book/ch01-02-hello-world.html")
+		add("rust-book-cargo", "https://doc.rust-lang.org/book/ch01-03-hello-cargo.html")
+		addQuery("Hello, world", "cargo new", "fn main", "cargo run", "cargo test")
+		addTags("rust", "host:doc.rust-lang.org")
+	case strings.Contains(lower, "react") || strings.Contains(lower, "vite"):
+		add("react-start-a-new-project", "https://react.dev/learn/start-a-new-react-project")
+		add("vite-guide", "https://vite.dev/guide/")
+		addQuery("Start a New React Project", "Vite", "create vite", "npm run build")
+		addTags("react", "vite", "host:react.dev", "host:vite.dev")
+	case strings.Contains(lower, "docker"):
+		add("dockerfile-reference", "https://docs.docker.com/reference/dockerfile/")
+		add("docker-build-guide", "https://docs.docker.com/build/concepts/dockerfile/")
+		addQuery("Dockerfile", "FROM", "COPY", "RUN", "docker build", "docker run")
+		addTags("docker", "host:docs.docker.com")
+	}
+
+	target.Sources = dedupeWebDocSources(target.Sources)
+	target.Queries = dedupeStrings(append(target.Queries, BuildDocSearchQueries(question)...))
+	target.Tags = cleanMemoryTags(target.Tags)
+	return target
+}
+
+func dedupeWebDocSources(sources []WebDocSource) []WebDocSource {
+	seen := map[string]struct{}{}
+	out := make([]WebDocSource, 0, len(sources))
+	for _, source := range sources {
+		source.Name = strings.TrimSpace(source.Name)
+		source.URL = strings.TrimSpace(source.URL)
+		if source.URL == "" {
+			continue
+		}
+		key := strings.ToLower(source.URL)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, source)
+	}
+	return out
+}
+
+func webDocSourceURLs(sources []WebDocSource) []string {
+	urls := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if strings.TrimSpace(source.URL) != "" {
+			urls = append(urls, source.URL)
+		}
+	}
+	return urls
+}
+
+func docResearchHitsAsMemories(question string, hits []WebDocHit) []MemoryRecord {
+	memories := make([]MemoryRecord, 0, len(hits))
+	for _, hit := range hits {
+		memories = append(memories, MemoryRecord{
+			AgentID: defaultDocResearchMemoryAgent,
+			Kind:    defaultDocResearchMemoryKind,
+			Content: formatDocResearchMemoryContent(question, hit),
+			Tags:    docResearchMemoryTags(question, hit, nil),
+		})
+	}
+	return memories
+}
+
+func storeDocResearchHits(ctx context.Context, memory *PGMemoryStore, question string, hits []WebDocHit, tags []string) error {
+	if memory == nil {
+		return fmt.Errorf("memory store is required")
+	}
+	if err := memory.EnsureSchema(ctx); err != nil {
+		return err
+	}
+	for _, hit := range hits {
+		if _, err := memory.AddMemory(ctx, defaultDocResearchMemoryAgent, defaultDocResearchMemoryKind, formatDocResearchMemoryContent(question, hit), docResearchMemoryTags(question, hit, tags)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func ResearchWebDocsToMemory(ctx context.Context, question string, sources []WebDocSource, queries []string, memory *PGMemoryStore, researchCfg WebDocResearchConfig, memoryCfg DocResearchMemoryConfig) (DocResearchMemoryResult, error) {
 	if memory == nil {
 		return DocResearchMemoryResult{}, fmt.Errorf("memory store is required")

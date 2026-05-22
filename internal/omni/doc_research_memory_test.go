@@ -151,3 +151,62 @@ func TestDocumentationAuthorityBriefClassifiesCodingGuidance(t *testing.T) {
 		t.Fatalf("brief did not classify guidance: %#v", brief)
 	}
 }
+
+func TestInferDocumentationResearchTargetForZigBuildTasks(t *testing.T) {
+	target := InferDocumentationResearchTarget("Build a CLI calculator application in Zig.")
+
+	if len(target.Sources) == 0 {
+		t.Fatal("expected Zig documentation sources")
+	}
+	if !webDocSourcesContain(target.Sources, "https://ziglang.org/learn/getting-started/") {
+		t.Fatalf("missing Zig getting-started source: %#v", target.Sources)
+	}
+	if !webDocSourcesContain(target.Sources, "https://ziglang.org/documentation/master/") {
+		t.Fatalf("missing Zig language reference source: %#v", target.Sources)
+	}
+	for _, want := range []string{"Run Hello World", "zig init", "std.debug.print", "pub fn main"} {
+		if !stringSliceContains(target.Queries, want) {
+			t.Fatalf("missing Zig query %q: %#v", want, target.Queries)
+		}
+	}
+	if !stringSliceContains(target.Tags, "zig") {
+		t.Fatalf("missing Zig tag: %#v", target.Tags)
+	}
+}
+
+func TestDocResearchHitsAsMemoriesFormatsFetchedDocsForBriefs(t *testing.T) {
+	memories := docResearchHitsAsMemories("Build Zig hello world", []WebDocHit{{
+		Source:  WebDocSource{Name: "zig-getting-started", URL: "https://ziglang.org/learn/getting-started/"},
+		Query:   "zig init",
+		Line:    12,
+		Column:  3,
+		Excerpt: "Run Hello World. Navigate to your projects directory and run zig init. Running zig build run should then compile the executable and run it.",
+	}})
+	if len(memories) != 1 {
+		t.Fatalf("memories = %d, want 1", len(memories))
+	}
+	brief := FormatDocumentationAuthorityBrief(BuildDocumentationAuthorityBrief("Build Zig hello world", memories))
+	for _, want := range []string{"documentation_specialist", "zig-getting-started", "ziglang.org", "Run Hello World", "zig build run"} {
+		if !strings.Contains(brief, want) {
+			t.Fatalf("brief missing %q: %s", want, brief)
+		}
+	}
+}
+
+func webDocSourcesContain(sources []WebDocSource, url string) bool {
+	for _, source := range sources {
+		if source.URL == url {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

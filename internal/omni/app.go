@@ -200,6 +200,11 @@ func (a *App) Run(args []string) error {
 			}
 			a.printTimelineEvent(a.newEvent(evt.Type, evt.Summary, evt.Details))
 		}
+		emitOneShotPrepEvent := func(eventType, summary string, details map[string]string) {
+			emitOneShotEvent(StructuredCommandEvent{Type: eventType, Summary: summary, Details: details})
+		}
+		activeDirectory := workspacePathOrCurrentDir()
+		prepCtx := a.prepareInteractiveTurnContext(context.Background(), string(promptBytes), activeDirectory, emitOneShotPrepEvent)
 		_, err = runStructuredCommandDecisionWithConfig(
 			context.Background(),
 			string(promptBytes),
@@ -210,7 +215,9 @@ func (a *App) Run(args []string) error {
 			emitOneShotEvent,
 			nil,
 			structuredCommandDecisionRunConfig{
-				CurrentWorkingDirectory: workspacePathOrCurrentDir(),
+				SessionMemories:         prepCtx.SessionMemories,
+				PrepContext:             prepCtx.Bundle,
+				CurrentWorkingDirectory: activeDirectory,
 				Recipes:                 a.recipes,
 				PromptInterpreter:       a.promptInterpreter,
 				ContextSummarizer:       a.contextSummarizer,
@@ -1903,6 +1910,7 @@ func (a *App) structuredPlannerClient() CommandDecisionClient {
 
 func (a *App) planContextForTurn(ctx context.Context, input string) (ContextToolPlan, []Event) {
 	plan, err := PlanContextTools(ctx, a.planner, input)
+	plan = AugmentContextToolPlan(input, plan)
 	events := []Event{a.newEvent("context_plan_created", "Context tool plan created", map[string]string{
 		"tools":  strings.Join(plan.Tools, ","),
 		"reason": plan.Reason,
@@ -2019,37 +2027,99 @@ func (a *App) prepareCodebaseRouteBrief(activeDirectory, input string, emitEvent
 }
 
 func (a *App) prepareDocumentationBrief(ctx context.Context, input string, tags []string, plan ContextToolPlan, emitEvent func(string, string, map[string]string)) (SessionMemory, bool) {
-	if !plan.NeedsDocuments || a == nil || a.memory == nil {
+	if !plan.NeedsDocuments || a == nil {
 		return SessionMemory{}, false
 	}
 	searchTags := cleanMemoryTags(append([]string{"documentation"}, tags...))
-	emitEvent("documentation_memory_search_started", "Documentation specialist checking documentation memory", map[string]string{
-		"query": input,
-		"tags":  strings.Join(searchTags, ","),
-		"role":  "documentation_specialist",
+	if a.memory != nil {
+		emitEvent("documentation_memory_search_started", "Documentation specialist checking documentation memory", map[string]string{
+			"query": input,
+			"tags":  strings.Join(searchTags, ","),
+			"role":  "documentation_specialist",
+		})
+		answer, err := AnswerDocumentationQuestionFromMemory(ctx, input, a.memory, searchTags, 4)
+		if err != nil {
+			emitEvent("documentation_memory_search_failed", "Documentation memory search failed", map[string]string{
+				"error": truncateOutput(err.Error()),
+			})
+		} else if !answer.NeedsScrape {
+			emitEvent("documentation_brief_loaded", "Documentation specialist loaded reusable guidance", map[string]string{
+				"sources": fmt.Sprintf("%d", len(answer.Brief.Sources)),
+				"role":    "documentation_specialist",
+			})
+			return SessionMemory{
+				Kind:      "documentation_brief",
+				Content:   answer.Answer,
+				Tags:      cleanMemoryTags(append([]string{"prep-context", "documentation"}, tags...)),
+				CreatedAt: nowUTC(),
+			}, true
+		} else {
+			emitEvent("documentation_research_needed", "Documentation specialist found no reusable brief", map[string]string{
+				"query":  input,
+				"reason": "no_matching_documentation_memory",
+			})
+		}
+	} else {
+		emitEvent("documentation_research_needed", "Documentation specialist has no memory store; fetching authoritative docs", map[string]string{
+			"query":  input,
+			"reason": "memory_unavailable",
+		})
+	}
+
+	target := InferDocumentationResearchTarget(input)
+	if len(target.Sources) == 0 {
+		emitEvent("documentation_research_skipped", "Documentation specialist has no authoritative source route", map[string]string{
+			"query": input,
+		})
+		return SessionMemory{}, false
+	}
+
+	emitEvent("documentation_web_research_started", "Documentation specialist fetching authoritative docs", map[string]string{
+		"query":   input,
+		"sources": strings.Join(webDocSourceURLs(target.Sources), "\n"),
+		"role":    "documentation_specialist",
 	})
-	answer, err := AnswerDocumentationQuestionFromMemory(ctx, input, a.memory, searchTags, 4)
+	research, err := ResearchWebDocs(ctx, input, target.Sources, target.Queries, WebDocResearchConfig{
+		FetchTimeout: 20 * time.Second,
+		ChunkConfig:  DocumentSearchConfig{ChunkChars: 2400, ChunkOverlap: 300},
+		MaxHits:      8,
+	})
 	if err != nil {
-		emitEvent("documentation_memory_search_failed", "Documentation memory search failed", map[string]string{
+		emitEvent("documentation_web_research_failed", "Documentation specialist web research failed", map[string]string{
 			"error": truncateOutput(err.Error()),
 		})
 		return SessionMemory{}, false
 	}
-	if answer.NeedsScrape {
-		emitEvent("documentation_research_needed", "Documentation specialist found no reusable brief", map[string]string{
-			"query":  input,
-			"reason": "no_matching_documentation_memory",
+	if len(research.Hits) == 0 {
+		emitEvent("documentation_web_research_empty", "Documentation specialist found no matching excerpts", map[string]string{
+			"sources": fmt.Sprintf("%d", len(research.Sources)),
+			"queries": strings.Join(target.Queries, " | "),
 		})
 		return SessionMemory{}, false
 	}
-	emitEvent("documentation_brief_loaded", "Documentation specialist loaded reusable guidance", map[string]string{
-		"sources": fmt.Sprintf("%d", len(answer.Brief.Sources)),
+
+	if a.memory != nil {
+		if err := storeDocResearchHits(ctx, a.memory, input, research.Hits, append(searchTags, target.Tags...)); err != nil {
+			emitEvent("documentation_memory_store_failed", "Documentation specialist could not store fetched docs", map[string]string{
+				"error": truncateOutput(err.Error()),
+			})
+		} else {
+			emitEvent("documentation_memory_stored", "Documentation specialist stored fetched docs", map[string]string{
+				"hits": fmt.Sprintf("%d", len(research.Hits)),
+			})
+		}
+	}
+
+	content := FormatDocumentationAuthorityBrief(BuildDocumentationAuthorityBrief(input, docResearchHitsAsMemories(input, research.Hits)))
+	emitEvent("documentation_brief_loaded", "Documentation specialist loaded fetched guidance", map[string]string{
+		"sources": fmt.Sprintf("%d", len(research.Sources)),
+		"hits":    fmt.Sprintf("%d", len(research.Hits)),
 		"role":    "documentation_specialist",
 	})
 	return SessionMemory{
 		Kind:      "documentation_brief",
-		Content:   answer.Answer,
-		Tags:      cleanMemoryTags(append([]string{"prep-context", "documentation"}, tags...)),
+		Content:   content,
+		Tags:      cleanMemoryTags(append([]string{"prep-context", "documentation"}, append(tags, target.Tags...)...)),
 		CreatedAt: nowUTC(),
 	}, true
 }

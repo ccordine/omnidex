@@ -80,10 +80,39 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.RecoveryToolTask = existingScaffoldRecoveryToolTask(input.Prompt, input.ObjectiveLedger, *latest, input.WorkingDir)
 		return decision
 	}
+	if latest := latestDockerfileOnlyObservation(input.Observations); latest != nil && pendingDockerObjectivesNeedLifecycle(input.ObjectiveLedger) {
+		decision.Action = ProgressForceRecovery
+		decision.Reason = "Dockerfile exists but Docker lifecycle objectives remain unverified"
+		decision.RejectedCommand = latest.Command
+		decision.RecoveryToolTask = dockerLifecycleRecoveryToolTask(input.Prompt, input.ObjectiveLedger, *latest, input.WorkingDir)
+		return decision
+	}
 	if shouldForceWriteAfterInspection(input) {
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "workspace inspection has not produced app files; creation step is now required"
 		decision.ForbiddenCommands = appendForbiddenCommands(decision.ForbiddenCommands, successfulReadOnlyStructuredCommands(input.Observations)...)
+		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
+		return decision
+	}
+	if latest := latestPlaceholderOnlySuccess(input.Observations); latest != nil && appBuildPromptNeedsFiles(input.Prompt) {
+		decision.Action = ProgressForceRecovery
+		decision.Reason = "placeholder-only scaffold succeeded but substantive app files are still required"
+		decision.RejectedCommand = latest.Command
+		decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, latest.Command)
+		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
+		return decision
+	}
+	if latest := latestNonAppMutationSuccess(input.Observations); latest != nil && appBuildPromptNeedsFiles(input.Prompt) && workspaceMissingAppFiles(input.WorkingDir) {
+		decision.Action = ProgressForceRecovery
+		decision.Reason = "latest mutation did not create substantive app source/build/test files"
+		decision.RejectedCommand = latest.Command
+		decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, latest.Command)
+		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
+		return decision
+	}
+	if repeatedPlannerNoopForMissingAppFiles(input) {
+		decision.Action = ProgressForceRecovery
+		decision.Reason = "planner repeatedly failed to produce source-writing action for empty app workspace"
 		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
 		return decision
 	}
@@ -129,6 +158,9 @@ func shouldForceStructuredLoopRecovery(ledger []StructuredObjective, observation
 }
 
 func structuredLoopRecoveryToolTask(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation) string {
+	if appBuildPromptNeedsFiles(prompt) {
+		return writeAfterInspectionRecoveryToolTask(prompt, ledger, observations, "")
+	}
 	state := structuredLoopStateFromState(ledger, observations)
 	pending := strings.Join(state.PendingObjectiveIDs, ",")
 	if pending == "" {
@@ -166,6 +198,7 @@ func completedEvidenceRecoveryToolTask(prompt string, ledger []StructuredObjecti
 		"Do not return done=true while pending objectives remain.",
 	}
 	if pending != "" {
+		parts = append(parts, "Active objective(s): "+pending+".")
 		parts = append(parts, "Pending objective(s): "+pending+".")
 	}
 	if strings.TrimSpace(prompt) != "" {
@@ -189,6 +222,7 @@ func missingFileRecoveryToolTask(prompt string, ledger []StructuredObjective, ob
 		parts = append(parts, "Suggested discovery: ls -la "+parent+" OR find "+parent+" -maxdepth 3 -type f.")
 	}
 	if pending != "" {
+		parts = append(parts, "Active objective(s): "+pending+".")
 		parts = append(parts, "Pending objective(s): "+pending+".")
 	}
 	if strings.TrimSpace(prompt) != "" {
@@ -208,6 +242,30 @@ func existingScaffoldRecoveryToolTask(prompt string, ledger []StructuredObjectiv
 		"Required next behavior: create or modify the actual backend and frontend project files now.",
 		"For a Go plus React app, patch existing Go server/API files, React component/source files, package scripts or Makefile targets, and automated tests/smoke checks.",
 		"After source edits, run targeted verification such as go test ./..., npm test, npm run build, or make test.",
+	}
+	if pending != "" {
+		parts = append(parts, "Active objective(s): "+pending+".")
+		parts = append(parts, "Pending objective(s): "+pending+".")
+	}
+	if strings.TrimSpace(workingDir) != "" {
+		parts = append(parts, "Current working directory: "+strings.TrimSpace(workingDir)+".")
+	}
+	if strings.TrimSpace(prompt) != "" {
+		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
+	}
+	return strings.Join(parts, " ")
+}
+
+func dockerLifecycleRecoveryToolTask(prompt string, ledger []StructuredObjective, obs StructuredCommandObservation, workingDir string) string {
+	pending := pendingStructuredObjectiveIDs(ledger)
+	parts := []string{
+		"Recovery required.",
+		"A Dockerfile was created, but Docker lifecycle objectives are still pending.",
+		fmtObservationForRecovery("Dockerfile creation", obs),
+		"Do not stop after Dockerfile creation.",
+		"Required next behavior: inspect the current Dockerfile and relevant package/build files, then run Docker lifecycle verification now: docker build, docker run with a named container and no restart policy, live HTTP check with curl when a port is exposed, docker inspect running/restarting/restart count, and docker logs inspection.",
+		"If build or runtime fails, iterate over the Dockerfile and source/config files named in the error output, patch them, and rerun the failing Docker command.",
+		"Do not return done=true until build image, run container, live app check, container state, restart count, and logs have observed success evidence.",
 	}
 	if pending != "" {
 		parts = append(parts, "Pending objective(s): "+pending+".")
@@ -253,6 +311,35 @@ func shouldForceWriteAfterInspection(input ProgressionInput) bool {
 	return len(successfulReadOnlyStructuredCommands(input.Observations)) >= 2 && !hasSuccessfulStructuredMutation(input.Observations)
 }
 
+func pendingDockerObjectivesNeedLifecycle(ledger []StructuredObjective) bool {
+	for _, objective := range pendingStructuredObjectives(ledger) {
+		text := strings.ToLower(objective.ID + " " + objective.Description)
+		if (strings.Contains(text, "docker") || strings.Contains(text, "container")) &&
+			(strings.Contains(text, "build") || strings.Contains(text, "run") || strings.Contains(text, "compatibility") || strings.Contains(text, "dependencies") || strings.Contains(text, "image")) {
+			return true
+		}
+	}
+	return false
+}
+
+func latestDockerfileOnlyObservation(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	if len(observations) == 0 {
+		return nil
+	}
+	latest := observations[len(observations)-1]
+	if latest.ExitCode != 0 || strings.TrimSpace(latest.Command) == "" {
+		return nil
+	}
+	text := strings.ToLower(latest.Command + "\n" + latest.Stdout + "\n" + latest.Stderr)
+	if !strings.Contains(text, "dockerfile") {
+		return nil
+	}
+	if strings.Contains(text, "docker build") || strings.Contains(text, "docker run") || strings.Contains(text, "docker inspect") || strings.Contains(text, "docker logs") {
+		return nil
+	}
+	return &latest
+}
+
 func appBuildObjectiveNeedsFileCreation(ledger []StructuredObjective) bool {
 	if len(ledger) == 0 {
 		return true
@@ -271,7 +358,7 @@ func appBuildObjectiveNeedsFileCreation(ledger []StructuredObjective) bool {
 
 func appBuildPromptNeedsFiles(prompt string) bool {
 	prompt = strings.ToLower(prompt)
-	needles := []string{"calculator", "app", "ui", "html", "javascript", "webpack", "build"}
+	needles := []string{"calculator", "app", "cli", "ui", "html", "javascript", "webpack", "build", "zig", "go", "rust"}
 	matches := 0
 	for _, needle := range needles {
 		if strings.Contains(prompt, needle) {
@@ -286,11 +373,19 @@ func workspaceMissingAppFiles(root string) bool {
 	if root == "" {
 		return false
 	}
-	hasEntrypoint := fileHasContent(filepath.Join(root, "src", "index.js")) ||
+	hasWebEntrypoint := fileHasContent(filepath.Join(root, "src", "index.js")) ||
 		fileHasContent(filepath.Join(root, "src", "main.js")) ||
 		fileHasContent(filepath.Join(root, "src", "index.jsx")) ||
 		fileHasContent(filepath.Join(root, "src", "main.jsx"))
-	return !fileHasContent(filepath.Join(root, "index.html")) || !hasEntrypoint
+	hasZigEntrypoint := fileHasContent(filepath.Join(root, "src", "main.zig"))
+	hasZigBuild := fileHasContent(filepath.Join(root, "build.zig")) || fileHasContent(filepath.Join(root, "build.zig.zon"))
+	if hasZigEntrypoint && hasZigBuild {
+		return false
+	}
+	if fileHasContent(filepath.Join(root, "index.html")) && hasWebEntrypoint {
+		return false
+	}
+	return true
 }
 
 func fileHasContent(path string) bool {
@@ -321,11 +416,66 @@ func successfulReadOnlyStructuredCommands(observations []StructuredCommandObserv
 
 func hasSuccessfulStructuredMutation(observations []StructuredCommandObservation) bool {
 	for _, obs := range observations {
-		if obs.ExitCode == 0 && structuredCommandLooksMutating(obs.Command) {
+		if obs.ExitCode == 0 && structuredCommandLooksAppFileMutation(obs.Command) {
 			return true
 		}
 	}
 	return false
+}
+
+func latestNonAppMutationSuccess(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if obs.ExitCode != 0 || strings.TrimSpace(obs.Command) == "" {
+			continue
+		}
+		if structuredCommandLooksMutating(obs.Command) && !structuredCommandLooksAppFileMutation(obs.Command) {
+			return &obs
+		}
+		return nil
+	}
+	return nil
+}
+
+func repeatedPlannerNoopForMissingAppFiles(input ProgressionInput) bool {
+	if !appBuildPromptNeedsFiles(input.Prompt) || !workspaceMissingAppFiles(input.WorkingDir) {
+		return false
+	}
+	count := 0
+	for _, obs := range input.Observations {
+		text := strings.ToLower(obs.RejectedResponse + "\n" + obs.EvaluationFeedback + "\n" + obs.Stderr)
+		if obs.RejectedResponse != "" && !structuredCommandLooksAppFileMutation(obs.RejectedCommand) && (strings.Contains(text, "empty") || strings.Contains(text, "no meaningful project files") || strings.Contains(text, "initialize") || strings.Contains(text, "项目文件") || strings.Contains(text, "初始化") || strings.Contains(text, "zig")) {
+			count++
+		}
+	}
+	return count >= 2
+}
+
+func structuredCommandLooksAppFileMutation(command string) bool {
+	if shellProposalIsPlaceholderOnlyMutation(command) {
+		return false
+	}
+	lower := strings.ToLower(command)
+	appNeedles := []string{
+		"src/", "build.zig", "build.zig.zon", "package.json", "index.html", "makefile", "go.mod", "cargo.toml",
+		"test", "spec", "zig build", "go test", "cargo test", "npm run build", "npm test",
+	}
+	for _, needle := range appNeedles {
+		if strings.Contains(lower, needle) {
+			return structuredCommandLooksMutating(command)
+		}
+	}
+	return false
+}
+
+func latestPlaceholderOnlySuccess(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if obs.ExitCode == 0 && strings.TrimSpace(obs.Command) != "" && shellProposalIsPlaceholderOnlyMutation(obs.Command) {
+			return &obs
+		}
+	}
+	return nil
 }
 
 func structuredCommandLooksMutating(command string) bool {
@@ -361,19 +511,28 @@ func structuredCommandLooksMutating(command string) bool {
 func writeAfterInspectionRecoveryToolTask(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDir string) string {
 	pending := pendingStructuredObjectiveIDs(ledger)
 	readOnly := strings.Join(successfulReadOnlyStructuredCommands(observations), "; ")
+	forbidden := strings.Join(structuredLoopStateFromState(ledger, observations).ForbiddenCommands, "; ")
 	parts := []string{
 		"Recovery required.",
 		"The workspace has been inspected enough for this app-building task, but required app files are still missing or empty.",
 		"Do not continue with read-only inventory commands.",
-		"Required next behavior: create or modify the actual project files now, preferably with tool=patch.apply or one concrete here-doc command that writes index.html, src/index.js, styles, package scripts, and verification files.",
-		"After the write step, run readback and verification commands such as cat package.json, npm run build, and npm test.",
+		"Use existing inspection evidence; inspect existing files only when needed to target a concrete patch.",
+		"Required next behavior: create or modify the actual project files now, preferably with tool=patch.apply or one concrete here-doc command that writes substantive source, build metadata, tests, and verification files appropriate to the requested language/framework.",
+		"If the language/framework shape is unfamiliar, use official documentation or installed tool help to create the smallest hello-world project first, then iterate from build/test errors into the requested app.",
+		"Do not create placeholder-only files with touch or empty mkdir scaffolds.",
+		"After the write step, run readback and verification commands appropriate to the project, such as compiler build/test commands or a deterministic source verifier when the requested compiler is unavailable.",
 	}
 	if pending != "" {
+		parts = append(parts, "Active objective(s): "+pending+".")
 		parts = append(parts, "Pending objective(s): "+pending+".")
 	}
 	if readOnly != "" {
 		parts = append(parts, "Already completed read-only command(s): "+readOnly+".")
 		parts = append(parts, "Forbidden next command(s): "+readOnly+".")
+	}
+	if forbidden != "" {
+		parts = append(parts, "Blocked command(s): "+forbidden+".")
+		parts = append(parts, "Forbidden command(s): "+forbidden+".")
 	}
 	if strings.TrimSpace(workingDir) != "" {
 		parts = append(parts, "Current working directory: "+strings.TrimSpace(workingDir)+".")

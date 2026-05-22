@@ -153,3 +153,29 @@ Final fixture readback:
 - Frontend files exist under `frontend/calculus-frontend/src`: `App.js`, `App.css`, `App.test.js`.
 - Root `Makefile` and `scripts/smoke-test.js` exist.
 - No long-lived `omni run` process remained.
+
+## Follow-up: Docker Iteration Loop
+
+Observed from user-provided transcript:
+- Omnidex created a Dockerfile and correctly kept Docker lifecycle objectives pending.
+- The planner later proposed `docker build ... && docker run ...` but set `done=true`.
+- Omnidex treated `done=true` as a completion request before executing the non-empty command, so completion validation rejected it and discarded the useful Docker command.
+- It then repeated Dockerfile creation and eventually hit a canceled planner request with a partial result.
+
+Patch:
+- `internal/omni/llm_command.go`
+  - Non-empty commands now execute even when the planner sets `done=true`; `done=true` is only final validation when `command` is empty.
+  - Repeated successful non-empty done commands still reuse prior evidence instead of rerunning.
+  - Docker lifecycle objective reconciliation now requires Docker evidence for build/run/container objectives instead of accepting Dockerfile creation alone.
+- `internal/omni/progression_gate.go`
+  - Dockerfile-only progress with pending Docker objectives now forces Docker lifecycle recovery.
+  - Recovery explicitly asks Omnidex to inspect the Dockerfile and relevant build files, run `docker build`, `docker run`, `curl`, `docker inspect`, and `docker logs`, and iterate over files named in build/runtime errors.
+- Tests added:
+  - `TestDoneTrueWithNonEmptyDockerCommandExecutesBeforeCompletionValidation`
+  - `TestProgressionGateForcesDockerLifecycleAfterDockerfileOnlyProgress`
+  - `TestReconcileObjectiveLedgerRequiresDockerLifecycleEvidence`
+
+Verification:
+- Focused Docker/regression tests passed.
+- `go test ./...` passed.
+- Rebuilt `/home/gryph/.omnidex/bin/omni`.

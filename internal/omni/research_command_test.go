@@ -539,6 +539,19 @@ func TestParseContextToolPlanSelectsSkills(t *testing.T) {
 	}
 }
 
+func TestAugmentContextToolPlanAddsDocumentationForRecognizedToolchainBuilds(t *testing.T) {
+	plan := AugmentContextToolPlan("Build a Zig CLI calculator app.", DefaultContextToolPlan())
+
+	if !plan.NeedsDocuments || !plan.NeedsShell {
+		t.Fatalf("expected documentation and shell prep: %#v", plan)
+	}
+	for _, want := range []string{"documentation", "shell"} {
+		if !stringSliceContains(plan.Tools, want) {
+			t.Fatalf("missing tool %q: %#v", want, plan.Tools)
+		}
+	}
+}
+
 func TestPlanContextToolsUsesLLMStructuredDecision(t *testing.T) {
 	client, closeServer := fakeOllamaClient(t, []string{
 		`{"tools":["web_research","memory","shell"],"allow_clarify":false,"require_evidence":true,"reason":"external current fact"}`,

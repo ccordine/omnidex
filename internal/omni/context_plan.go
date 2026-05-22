@@ -29,6 +29,24 @@ func DefaultContextToolPlan() ContextToolPlan {
 	}
 }
 
+func AugmentContextToolPlan(input string, plan ContextToolPlan) ContextToolPlan {
+	if len(InferDocumentationResearchTarget(input).Sources) > 0 {
+		if !plan.NeedsDocuments {
+			plan.NeedsDocuments = true
+			plan.Tools = append(plan.Tools, "documentation")
+		}
+		if !plan.NeedsShell {
+			plan.NeedsShell = true
+			plan.Tools = append(plan.Tools, "shell")
+		}
+		if strings.TrimSpace(plan.Reason) == "" || plan.Reason == "default shell evidence" {
+			plan.Reason = "language/toolchain build task needs documentation and shell evidence"
+		}
+	}
+	plan.Tools = dedupeStrings(plan.Tools)
+	return plan
+}
+
 func PlanContextTools(ctx context.Context, client *OllamaClient, input string) (ContextToolPlan, error) {
 	if client == nil {
 		return DefaultContextToolPlan(), nil

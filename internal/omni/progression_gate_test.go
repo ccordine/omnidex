@@ -152,6 +152,33 @@ func TestProgressionGateContinuesAfterExistingGoReactScaffold(t *testing.T) {
 	}
 }
 
+func TestProgressionGateForcesDockerLifecycleAfterDockerfileOnlyProgress(t *testing.T) {
+	command := "echo 'Creating Dockerfile...' && echo 'FROM nginx:alpine' > Dockerfile && echo 'Dockerfile created successfully.'"
+	gate := ProgressionGate{}
+	decision := gate.ReviewStep(ProgressionInput{
+		Prompt: "Dockerize this app, build the Docker image, and run it in a container.",
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "create_dockerfile", Status: "satisfied"},
+			{ID: "determine_docker_compatibility", Status: "pending"},
+			{ID: "include_dependencies_in_docker_image", Status: "pending"},
+			{ID: "build_docker_image", Status: "pending"},
+			{ID: "run_application_in_docker_container", Status: "pending"},
+		},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: command, ExitCode: 0, Stdout: "Creating Dockerfile...\nDockerfile created successfully."},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	for _, want := range []string{"Dockerfile was created", "inspect the current Dockerfile", "docker build", "docker run", "curl", "docker inspect", "docker logs", "iterate over the Dockerfile", "Do not return done=true"} {
+		if !strings.Contains(decision.RecoveryToolTask, want) {
+			t.Fatalf("recovery task missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+}
+
 func TestProgressionGateUsesCompletedEvidenceForRepeatedSuccess(t *testing.T) {
 	command := "ls -la /tmp/demo"
 	gate := ProgressionGate{}
@@ -225,10 +252,88 @@ func TestProgressionGateForcesWriteAfterRepeatedInspectionForMissingAppFiles(t *
 	if decision.Action != ProgressForceRecovery {
 		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
 	}
-	for _, want := range []string{"inspected enough", "create or modify", "index.html", "src/index.js", "Forbidden next command(s): npm list --depth=0; ls -la"} {
+	for _, want := range []string{"inspected enough", "create or modify", "substantive source", "smallest hello-world project", "compiler build/test", "Forbidden next command(s): npm list --depth=0; ls -la"} {
 		if !strings.Contains(decision.RecoveryToolTask, want) {
 			t.Fatalf("write recovery missing %q: %s", want, decision.RecoveryToolTask)
 		}
+	}
+}
+
+func TestProgressionGateRejectsPlaceholderOnlySuccessForAppBuild(t *testing.T) {
+	decision := ProgressionGate{}.ReviewStep(ProgressionInput{
+		Prompt:     "Build a Zig CLI calculator application.",
+		WorkingDir: t.TempDir(),
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "mkdir -p src", ExitCode: 0},
+			{Step: 2, Command: "touch src/main.zig", ExitCode: 0},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	if decision.RejectedCommand != "touch src/main.zig" {
+		t.Fatalf("rejected command = %q", decision.RejectedCommand)
+	}
+	for _, want := range []string{"substantive source", "smallest hello-world project", "Do not create placeholder-only"} {
+		if !strings.Contains(decision.RecoveryToolTask, want) {
+			t.Fatalf("recovery task missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+}
+
+func TestProgressionGateRejectsDocumentationDownloadAsAppMutation(t *testing.T) {
+	workspace := t.TempDir()
+	decision := ProgressionGate{}.ReviewStep(ProgressionInput{
+		Prompt:     "Build a Zig CLI calculator application.",
+		WorkingDir: workspace,
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "curl -s https://ziglang.org/documentation/master/ > zig_doc.html", ExitCode: 0},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	if !strings.Contains(decision.Reason, "substantive app source") {
+		t.Fatalf("unexpected reason: %s", decision.Reason)
+	}
+	if !strings.Contains(decision.RecoveryToolTask, "substantive source") {
+		t.Fatalf("recovery task should require source writes: %s", decision.RecoveryToolTask)
+	}
+}
+
+func TestProgressionGateForcesRecoveryAfterRepeatedPlannerNoopsForEmptyApp(t *testing.T) {
+	decision := ProgressionGate{}.ReviewStep(ProgressionInput{
+		Prompt:     "Build a Zig CLI calculator application.",
+		WorkingDir: t.TempDir(),
+		Observations: []StructuredCommandObservation{
+			{Step: 1, RejectedResponse: `{"command":"","done":false,"answer":"workspace is empty"}`, ExitCode: 1, EvaluationFeedback: "workspace is empty and has no meaningful project files"},
+			{Step: 2, RejectedResponse: `{"command":"","done":false,"answer":"initialize project"}`, ExitCode: 1, EvaluationFeedback: "initialize a new Zig project"},
+		},
+	})
+
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
+	}
+	if !strings.Contains(decision.Reason, "planner repeatedly failed") {
+		t.Fatalf("unexpected reason: %s", decision.Reason)
+	}
+}
+
+func TestWorkspaceMissingAppFilesAcceptsZigProjectFiles(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "build.zig"), []byte("const std = @import(\"std\");\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "main.zig"), []byte("pub fn main() void {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if workspaceMissingAppFiles(workspace) {
+		t.Fatal("complete Zig project files should satisfy app-file presence")
 	}
 }
 
