@@ -1914,10 +1914,10 @@ func TestStructuredCommandDecisionEvaluatorRejectsOffTrackResponseBeforeExecutio
 		t.Fatal(err)
 	}
 	if client.calls != 3 {
-		t.Fatalf("llm calls = %d, want rejected response then command then done", client.calls)
+		t.Fatalf("llm calls = %d, want rejected response, local repair command, then done", client.calls)
 	}
 	if len(evaluator.inputs) != 3 {
-		t.Fatalf("evaluator calls = %d, want every llm response evaluated", len(evaluator.inputs))
+		t.Fatalf("evaluator calls = %d, want original, repaired command, and done evaluated", len(evaluator.inputs))
 	}
 	if strings.Contains(stdout.String(), "I do not have access") {
 		t.Fatalf("off-track response command should not execute: stdout=%q", stdout.String())
@@ -1934,6 +1934,12 @@ func TestStructuredCommandDecisionEvaluatorRejectsOffTrackResponseBeforeExecutio
 	}
 	if !structuredEventsContain(events, "structured_response_rejected") {
 		t.Fatalf("missing evaluator rejection event: %#v", events)
+	}
+	if !structuredEventsContain(events, "structured_evaluator_repair_started") || !structuredEventsContain(events, "structured_evaluator_repair_accepted") {
+		t.Fatalf("missing evaluator repair events: %#v", events)
+	}
+	if !strings.Contains(client.prompts[1], "use a timezone evidence command") {
+		t.Fatalf("repair prompt missing evaluator feedback: %s", client.prompts[1])
 	}
 	if result.Command != "TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z'" {
 		t.Fatalf("command = %q", result.Command)
@@ -2415,6 +2421,104 @@ func TestWriteRecoveryBypassesShellAfterRepeatedDocumentationDownloadProposals(t
 	}
 	if !shouldBypassShellSpecialistForWriteRecovery("Required next behavior: create or modify the actual project files now with substantive source/build/test files.", observations) {
 		t.Fatal("expected repeated documentation-download proposals to bypass shell specialist")
+	}
+}
+
+func TestPlannerRepairsRejectedPlaceholderCommandInIsolatedLoop(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"latest","react-dom":"latest"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	substantive := strings.Join([]string{
+		"mkdir -p src/components",
+		"cat > src/components/NoteManager.js <<'EOF'\nexport default function NoteManager(){ return 'notes crud memory'; }\nEOF",
+		"test -s src/components/NoteManager.js",
+	}, " && ")
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"mkdir -p src/components && touch src/components/NoteManager.js","done":false,"answer":"","objective_ledger":[{"id":"setup_notes_app","description":"Set up notes app component structure","status":"pending"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"pending"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"pending"}]}`,
+		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"setup_notes_app","description":"Set up notes app component structure","status":"satisfied","evidence":"NoteManager component file written"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"satisfied","evidence":"NoteManager contains CRUD marker"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"satisfied","evidence":"NoteManager contains memory marker"}]}`,
+		`{"command":"","done":true,"answer":"Notes component created."}`,
+	}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"please continue setting up this project as a react js note app",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace},
+	)
+	if err != nil {
+		t.Fatalf("run failed: %v observations=%#v", err, result.Observations)
+	}
+	if !structuredEventsContain(events, "structured_planner_repair_started") {
+		t.Fatalf("missing repair start event: %#v", events)
+	}
+	if !structuredEventsContain(events, "structured_planner_repair_accepted") {
+		t.Fatalf("missing repair accepted event: %#v", events)
+	}
+	if structuredEventsContain(events, "structured_command_rejected") {
+		t.Fatalf("pre-routing repair should avoid broad rejection loop: %#v", events)
+	}
+	if client.calls < 2 || !strings.Contains(client.prompts[1], "placeholder-only command does not satisfy app objectives") {
+		t.Fatalf("repair prompt did not receive validator feedback: calls=%d prompts=%#v", client.calls, client.prompts)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "src/components/NoteManager.js")); err != nil {
+		t.Fatalf("expected component file: %v", err)
+	}
+}
+
+func TestShellSpecialistRepairsRejectedDependencyScopeDriftLocally(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"latest","react-dom":"latest"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"create the notes UI component and in-memory CRUD behavior using existing React dependencies"}`,
+		`{"command":"","done":true,"answer":"Notes UI created."}`,
+	}}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{
+		{Command: "npm install react-router-dom", Rationale: "Add routing."},
+		{Command: "cat > src/NoteManager.jsx <<'EOF'\nexport default function NoteManager(){ return 'notes crud memory'; }\nEOF\n\ntest -s src/NoteManager.jsx", Rationale: "Write the requested component using existing dependencies."},
+	}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"continue setting up this existing React project as a note app",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace, ShellSpecialist: shell},
+	)
+	if err != nil {
+		t.Fatalf("run failed: %v observations=%#v", err, result.Observations)
+	}
+	if len(shell.inputs) != 2 {
+		t.Fatalf("shell specialist calls = %d, want local repair call", len(shell.inputs))
+	}
+	if len(shell.inputs[1].Observations) == 0 || !strings.Contains(shell.inputs[1].Observations[0].Stderr, "dependency scope drift") {
+		t.Fatalf("repair input missing validator feedback: %#v", shell.inputs[1].Observations)
+	}
+	if !structuredEventsContain(events, "structured_tool_delegation_repair_started") || !structuredEventsContain(events, "structured_tool_delegation_repair_accepted") {
+		t.Fatalf("missing shell repair events: %#v", events)
+	}
+	if result.Command != "cat > src/NoteManager.jsx <<'EOF'\nexport default function NoteManager(){ return 'notes crud memory'; }\nEOF\n\ntest -s src/NoteManager.jsx" {
+		t.Fatalf("command = %q", result.Command)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "src/NoteManager.jsx")); err != nil {
+		t.Fatalf("expected notes component: %v", err)
 	}
 }
 
@@ -3630,6 +3734,12 @@ func TestStructuredCommandDecisionRejectsPlannerDoneWhenValidatorSaysNotDone(t *
 	}
 	if !structuredEventsContain(events, "structured_done_rejected") {
 		t.Fatalf("missing validator done rejection event: %#v", events)
+	}
+	if !structuredEventsContain(events, "completion_repair_started") || !structuredEventsContain(events, "completion_repair_accepted") {
+		t.Fatalf("missing completion repair events: %#v", events)
+	}
+	if !strings.Contains(client.prompts[2], "completion_reason") || !strings.Contains(client.prompts[2], "planner done is not enough") {
+		t.Fatalf("completion repair prompt missing checker feedback: %s", client.prompts[2])
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)

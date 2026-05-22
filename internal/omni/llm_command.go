@@ -22,6 +22,9 @@ const defaultCommandDecisionTimeout = 6 * time.Hour
 const defaultCommandDecisionMaxSteps = 40
 const defaultStructuredObservationChars = 2400
 const defaultStructuredLLMRequestAttempts = 3
+const defaultStructuredPlannerRepairAttempts = 2
+const defaultShellSpecialistRepairAttempts = 2
+const defaultEvaluatorPlannerRepairAttempts = 2
 const defaultStructuredEvaluatorTimeout = defaultOllamaRequestTimeout
 const maxRepeatedPrematureDoneRejections = 3
 
@@ -636,6 +639,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				continue
 			}
 		}
+		basePlannerReq := buildStructuredCommandRequestWithContextRecipesSurveyAndPrep(prompt, referenceHistory, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext, cfg.Recipes, worksiteSurvey, cfg.PrepContext)
 		emitStructuredCommandEvent(onEvent, "structured_llm_request_started", "Requesting next structured command decision", map[string]string{
 			"step":               fmt.Sprintf("%d", step),
 			"pending_objectives": pendingStructuredObjectiveIDs(ledger),
@@ -648,7 +652,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			return result, fmt.Errorf("llm client is required for planner step")
 		}
-		resp, err := requestStructuredCommandPayload(ctx, client, buildStructuredCommandRequestWithContextRecipesSurveyAndPrep(prompt, referenceHistory, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext, cfg.Recipes, worksiteSurvey, cfg.PrepContext), step, onEvent)
+		resp, err := requestStructuredCommandPayload(ctx, client, basePlannerReq, step, onEvent)
 		if err != nil {
 			if hasSuccessfulCommandObservation(result.Observations) {
 				result.PartialProgress = true
@@ -664,96 +668,16 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		}
 
 		if evaluator != nil {
-			if len(allPrepBriefs(cfg.PrepContext)) > 0 || len(cfg.PrepContext.Evidence) > 0 {
-				emitStructuredCommandEvent(onEvent, "prep_context_attached_to_specialist", "Preparation context attached to evaluator", map[string]string{
-					"step":     fmt.Sprintf("%d", step),
-					"role":     "evaluator",
-					"briefs":   fmt.Sprintf("%d", len(allPrepBriefs(cfg.PrepContext))),
-					"evidence": fmt.Sprintf("%d", len(cfg.PrepContext.Evidence)),
-				})
+			accepted, repairedResp, disabledEvaluator, err := evaluateAndRepairPlannerResponse(ctx, step, prompt, client, basePlannerReq, resp, evaluator, evaluatorThreshold, cfg, worksiteSurvey, ledger, result.Observations, onEvent, &result)
+			if err != nil {
+				return result, err
 			}
-			evaluation, evalErr := evaluator.EvaluateStructuredLLMResponse(ctx, StructuredLLMEvaluationInput{
-				Step:             step,
-				UserPrompt:       prompt,
-				PlannerJob:       structuredCommandPlannerJobSummary(),
-				LLMResponse:      resp.Content,
-				Observations:     result.Observations,
-				CompletedActions: completedActionsFromState(ledger, result.Observations),
-				LoopState:        structuredLoopStateFromState(ledger, result.Observations),
-				SessionMemories:  cfg.SessionMemories,
-				WorksiteSurvey:   worksiteSurvey,
-			})
-			if evalErr != nil {
-				emitStructuredCommandEvent(onEvent, "structured_response_evaluator_failed", "Structured response evaluator failed; continuing with deterministic validation", map[string]string{
-					"step":  fmt.Sprintf("%d", step),
-					"error": truncateStructuredTimelineValue(evalErr.Error()),
-				})
+			resp = repairedResp
+			if disabledEvaluator {
 				evaluator = nil
-			} else if consistencyErr := validateStructuredEvaluationConsistency(evaluation); consistencyErr != nil {
-				emitStructuredCommandEvent(onEvent, "structured_response_evaluator_failed", "Structured response evaluator returned inconsistent scoring; continuing with deterministic validation", map[string]string{
-					"step":       fmt.Sprintf("%d", step),
-					"confidence": fmt.Sprintf("%d", evaluation.Confidence),
-					"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
-					"error":      truncateStructuredTimelineValue(consistencyErr.Error()),
-				})
-				evaluator = nil
-			} else {
-				if normalizeStructuredEvaluationVerdict(evaluation.Verdict) == "accept" && structuredEvaluationFeedbackSuggestsHardReject(evaluation.Feedback+" "+evaluation.BlockingReason) {
-					evaluation.Verdict = "reject"
-				}
-				emitStructuredCommandEvent(onEvent, "structured_response_evaluated", "Structured response evaluator scored planner output", map[string]string{
-					"step":       fmt.Sprintf("%d", step),
-					"confidence": fmt.Sprintf("%d", evaluation.Confidence),
-					"threshold":  fmt.Sprintf("%d", evaluatorThreshold),
-					"verdict":    normalizeStructuredEvaluationVerdict(evaluation.Verdict),
-					"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
-				})
-				verdict := normalizeStructuredEvaluationVerdict(evaluation.Verdict)
-				if verdict == "reject" || verdict == "revise" || evaluation.Confidence < evaluatorThreshold {
-					if verdict == "revise" && repeatedStructuredEvaluationFeedback(evaluation, result.Observations) {
-						emitStructuredCommandEvent(onEvent, "structured_evaluator_loop_bypassed", "Repeated evaluator revise feedback bypassed for deterministic validation", map[string]string{
-							"step":     fmt.Sprintf("%d", step),
-							"feedback": truncateStructuredTimelineValue(evaluation.Feedback),
-						})
-						result.Observations = append(result.Observations, StructuredCommandObservation{
-							Step:                 step,
-							RejectedResponse:     truncateStructuredObservation(resp.Content),
-							EvaluationConfidence: evaluation.Confidence,
-							EvaluationFeedback:   truncateStructuredObservation(evaluation.Feedback),
-							ExitCode:             1,
-							Stderr:               "anti_loop: evaluator repeated the same revise feedback; evaluator bypassed for this planner output. Continue with deterministic command validation, objective ledger, worksite survey, and observed command evidence.",
-						})
-						evaluator = nil
-					} else {
-						memory := structuredCapabilityMemoryForRejectedResponse(resp.Content, evaluation.Feedback)
-						emitStructuredCommandEvent(onEvent, "structured_response_rejected", "Structured response rejected by evaluator", map[string]string{
-							"step":       fmt.Sprintf("%d", step),
-							"confidence": fmt.Sprintf("%d", evaluation.Confidence),
-							"threshold":  fmt.Sprintf("%d", evaluatorThreshold),
-							"verdict":    verdict,
-							"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
-						})
-						reason := structuredEvaluationRetryMessage(evaluation, evaluatorThreshold)
-						if verdict == "reject" {
-							reason = "scope_drift: evaluator rejected planner output; " + reason
-						}
-						rejectedCommand := ""
-						if rejectedPayload, parseErr := ParseStructuredCommandPayload(resp.Content); parseErr == nil {
-							rejectedCommand = truncateStructuredObservation(rejectedPayload.Command)
-						}
-						result.Observations = append(result.Observations, StructuredCommandObservation{
-							Step:                 step,
-							RejectedResponse:     truncateStructuredObservation(resp.Content),
-							RejectedCommand:      rejectedCommand,
-							EvaluationConfidence: evaluation.Confidence,
-							EvaluationFeedback:   truncateStructuredObservation(evaluation.Feedback),
-							CapabilityMemory:     memory,
-							ExitCode:             1,
-							Stderr:               reason,
-						})
-						continue
-					}
-				}
+			}
+			if !accepted {
+				continue
 			}
 		}
 
@@ -772,6 +696,14 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			"command":            truncateStructuredTimelineValue(payload.Command),
 			"pending_objectives": pendingStructuredObjectiveIDs(ledger),
 		})
+		if repaired, repairResp, repairPayload, repairLedger, repairErr := repairStructuredPayloadBeforeRouting(ctx, step, prompt, client, basePlannerReq, resp, payload, ledger, result.Observations, cfg.CurrentWorkingDirectory, worksiteSurvey, onEvent); repairErr != nil {
+			return result, repairErr
+		} else if repaired {
+			resp = repairResp
+			payload = repairPayload
+			ledger = repairLedger
+			result.ObjectiveLedger = ledger
+		}
 		if isPatchToolDelegation(payload) {
 			if err := runStructuredPatchApply(ctx, step, payload.Patch, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
 				return result, err
@@ -797,67 +729,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"role":      "shell_execution_specialist",
 				"tool_task": truncateStructuredTimelineValue(payload.ToolTask),
 			})
-			proposal, err := cfg.ShellSpecialist.ProposeShellCommand(ctx, ShellCommandSpecialistInput{
-				Step:             step,
-				UserPrompt:       prompt,
-				ToolTask:         payload.ToolTask,
-				Observations:     result.Observations,
-				CompletedActions: completedActionsFromState(ledger, result.Observations),
-				LoopState:        structuredLoopStateFromState(ledger, result.Observations),
-				SessionMemories:  cfg.SessionMemories,
-				WorksiteSurvey:   worksiteSurvey,
-			})
+			proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, payload.ToolTask, cfg, worksiteSurvey, &ledger, onEvent, &result)
 			if err != nil {
-				emitStructuredCommandEvent(onEvent, "structured_tool_delegation_failed", "Shell specialist failed", map[string]string{
-					"step":  fmt.Sprintf("%d", step),
-					"error": truncateStructuredTimelineValue(err.Error()),
-				})
-				result.Observations = append(result.Observations, StructuredCommandObservation{
-					Step:     step,
-					ExitCode: 1,
-					Stderr:   "shell specialist failed: " + err.Error(),
-				})
-				continue
+				return result, err
 			}
-			proposal.Command = normalizeStructuredCommand(proposal.Command)
-			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_finished", "Shell specialist proposed command", map[string]string{
-				"step":      fmt.Sprintf("%d", step),
-				"tool":      "shell",
-				"role":      "shell_execution_specialist",
-				"command":   truncateStructuredTimelineValue(proposal.Command),
-				"rationale": truncateStructuredTimelineValue(proposal.Rationale),
-			})
-			if err := validateShellProposalAgainstToolTask(proposal.Command, payload.ToolTask); err != nil {
-				emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by tool-task constraints", map[string]string{
-					"step":    fmt.Sprintf("%d", step),
-					"command": truncateStructuredTimelineValue(proposal.Command),
-					"reason":  err.Error(),
-				})
-				result.Observations = append(result.Observations, StructuredCommandObservation{
-					Step:             step,
-					RejectedCommand:  truncateStructuredObservation(proposal.Command),
-					CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(proposal.Command, err.Error()),
-					ExitCode:         1,
-					Stderr:           "shell specialist command rejected: " + err.Error() + "; choose a write/edit/build/test command that directly satisfies the delegated task",
-				})
-				continue
-			}
-			if err := validateStructuredCommandForRunWithSurvey(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
-				if handleStructuredRepeatedCommandValidation(step, proposal.Command, err, &ledger, onEvent, &result) {
-					continue
-				}
-				emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-					"step":    fmt.Sprintf("%d", step),
-					"command": truncateStructuredTimelineValue(proposal.Command),
-					"reason":  err.Error(),
-				})
-				result.Observations = append(result.Observations, StructuredCommandObservation{
-					Step:             step,
-					RejectedCommand:  truncateStructuredObservation(proposal.Command),
-					CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(proposal.Command, err.Error()),
-					ExitCode:         1,
-					Stderr:           "shell specialist command rejected: " + err.Error() + "; planner should delegate a narrower shell task or choose a different tool",
-				})
+			result.ObjectiveLedger = ledger
+			if !ok {
 				continue
 			}
 			if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
@@ -1067,11 +944,16 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					result.Answer = finalStructuredAnswer(payload.Answer, latest)
 					previousLedger := ledger
 					if cfg.CompletionChecker != nil {
-						var validatorAccepted bool
-						ledger, validatorAccepted = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
-						if !validatorAccepted {
+						checkResult := runCompletionCheckDetailed(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
+						ledger = checkResult.Ledger
+						if !checkResult.Accepted {
 							result.ObjectiveLedger = ledger
 							rejectDoneForValidator(step, onEvent, &result)
+							if handled, err := repairRejectedDoneWithPlanner(ctx, step, prompt, client, basePlannerReq, resp, payload, checkResult, cfg, worksiteSurvey, stdout, stderr, onEvent, &ledger, &result); err != nil {
+								return result, err
+							} else if handled {
+								continue
+							}
 							continue
 						}
 					} else if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
@@ -1181,11 +1063,16 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			previousLedger := ledger
 			if cfg.CompletionChecker != nil {
-				var validatorAccepted bool
-				ledger, validatorAccepted = runCompletionCheck(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
-				if !validatorAccepted {
+				checkResult := runCompletionCheckDetailed(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
+				ledger = checkResult.Ledger
+				if !checkResult.Accepted {
 					result.ObjectiveLedger = ledger
 					rejectDoneForValidator(step, onEvent, &result)
+					if handled, err := repairRejectedDoneWithPlanner(ctx, step, prompt, client, basePlannerReq, resp, payload, checkResult, cfg, worksiteSurvey, stdout, stderr, onEvent, &ledger, &result); err != nil {
+						return result, err
+					} else if handled {
+						continue
+					}
 					continue
 				}
 			} else if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
@@ -3341,71 +3228,109 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 			"route_files": strings.Join(cfg.PrepContext.CodebaseRoute.LikelyFiles, ","),
 		})
 	}
-	proposal, err := cfg.ShellSpecialist.ProposeShellCommand(ctx, ShellCommandSpecialistInput{
-		Step:             step,
-		UserPrompt:       prompt,
-		ToolTask:         toolTask,
-		Observations:     result.Observations,
-		CompletedActions: completedActionsFromState(result.ObjectiveLedger, result.Observations),
-		LoopState:        structuredLoopStateFromState(result.ObjectiveLedger, result.Observations),
-		SessionMemories:  cfg.SessionMemories,
-		WorksiteSurvey:   worksiteSurvey,
-	})
-	if err != nil {
-		emitStructuredCommandEvent(onEvent, "structured_tool_delegation_failed", "Shell specialist failed", map[string]string{
-			"step":  fmt.Sprintf("%d", step),
-			"error": truncateStructuredTimelineValue(err.Error()),
-		})
-		result.Observations = append(result.Observations, StructuredCommandObservation{
-			Step:     step,
-			ExitCode: 1,
-			Stderr:   "shell specialist failed: " + err.Error(),
-		})
-		return true, nil
-	}
-	proposal.Command = normalizeStructuredCommand(proposal.Command)
-	emitStructuredCommandEvent(onEvent, "structured_tool_delegation_finished", "Shell specialist proposed command", map[string]string{
-		"step":      fmt.Sprintf("%d", step),
-		"command":   truncateStructuredTimelineValue(proposal.Command),
-		"rationale": truncateStructuredTimelineValue(proposal.Rationale),
-	})
-	if err := validateShellProposalAgainstToolTask(proposal.Command, toolTask); err != nil {
-		emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by tool-task constraints", map[string]string{
-			"step":    fmt.Sprintf("%d", step),
-			"command": truncateStructuredTimelineValue(proposal.Command),
-			"reason":  err.Error(),
-		})
-		result.Observations = append(result.Observations, StructuredCommandObservation{
-			Step:             step,
-			RejectedCommand:  truncateStructuredObservation(proposal.Command),
-			CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(proposal.Command, err.Error()),
-			ExitCode:         1,
-			Stderr:           "shell specialist command rejected: " + err.Error() + "; choose a write/edit/build/test command that directly satisfies the delegated task",
-		})
-		return true, nil
-	}
-	if err := validateStructuredCommandForRunWithSurvey(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, result.ObjectiveLedger, worksiteSurvey); err != nil {
-		if handleStructuredRepeatedCommandValidation(step, proposal.Command, err, &result.ObjectiveLedger, onEvent, result) {
-			return true, nil
-		}
-		emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-			"step":    fmt.Sprintf("%d", step),
-			"command": truncateStructuredTimelineValue(proposal.Command),
-			"reason":  err.Error(),
-		})
-		result.Observations = append(result.Observations, StructuredCommandObservation{
-			Step:             step,
-			RejectedCommand:  truncateStructuredObservation(proposal.Command),
-			CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(proposal.Command, err.Error()),
-			ExitCode:         1,
-			Stderr:           "shell specialist command rejected: " + err.Error() + "; planner should delegate a narrower shell task or choose a different tool",
-		})
-		return true, nil
+	proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, toolTask, cfg, worksiteSurvey, &result.ObjectiveLedger, onEvent, result)
+	if err != nil || !ok {
+		return true, err
 	}
 	if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
 		return true, err
 	}
 	return true, nil
+}
+
+func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger *[]StructuredObjective, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (ShellCommandProposal, bool, error) {
+	if cfg.ShellSpecialist == nil {
+		return ShellCommandProposal{}, false, nil
+	}
+	for attempt := 0; attempt <= defaultShellSpecialistRepairAttempts; attempt++ {
+		if attempt > 0 {
+			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_started", "Shell specialist received direct validator feedback for local repair", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"attempt": fmt.Sprintf("%d", attempt),
+			})
+		}
+		proposal, err := cfg.ShellSpecialist.ProposeShellCommand(ctx, ShellCommandSpecialistInput{
+			Step:             step,
+			UserPrompt:       prompt,
+			ToolTask:         toolTask,
+			Observations:     result.Observations,
+			CompletedActions: completedActionsFromState(*ledger, result.Observations),
+			LoopState:        structuredLoopStateFromState(*ledger, result.Observations),
+			SessionMemories:  cfg.SessionMemories,
+			WorksiteSurvey:   worksiteSurvey,
+		})
+		if err != nil {
+			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_failed", "Shell specialist failed", map[string]string{
+				"step":  fmt.Sprintf("%d", step),
+				"error": truncateStructuredTimelineValue(err.Error()),
+			})
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:     step,
+				ExitCode: 1,
+				Stderr:   "shell specialist failed: " + err.Error(),
+			})
+			return ShellCommandProposal{}, false, nil
+		}
+		proposal.Command = normalizeStructuredCommand(proposal.Command)
+		emitStructuredCommandEvent(onEvent, "structured_tool_delegation_finished", "Shell specialist proposed command", map[string]string{
+			"step":      fmt.Sprintf("%d", step),
+			"tool":      "shell",
+			"role":      "shell_execution_specialist",
+			"attempt":   fmt.Sprintf("%d", attempt+1),
+			"command":   truncateStructuredTimelineValue(proposal.Command),
+			"rationale": truncateStructuredTimelineValue(proposal.Rationale),
+		})
+		if err := validateShellProposalAgainstToolTask(proposal.Command, toolTask); err != nil {
+			appendRejectedShellProposalObservation(step, proposal.Command, err, "choose a write/edit/build/test command that directly satisfies the delegated task", result)
+			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by tool-task constraints", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"command": truncateStructuredTimelineValue(proposal.Command),
+				"reason":  err.Error(),
+			})
+			if attempt < defaultShellSpecialistRepairAttempts {
+				continue
+			}
+			return ShellCommandProposal{}, false, nil
+		}
+		if err := validateStructuredCommandForRunWithSurvey(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, *ledger, worksiteSurvey); err != nil {
+			if handleStructuredRepeatedCommandValidation(step, proposal.Command, err, ledger, onEvent, result) {
+				return ShellCommandProposal{}, false, nil
+			}
+			appendRejectedShellProposalObservation(step, proposal.Command, err, "planner should delegate a narrower shell task or choose a different tool", result)
+			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"command": truncateStructuredTimelineValue(proposal.Command),
+				"reason":  err.Error(),
+			})
+			if attempt < defaultShellSpecialistRepairAttempts {
+				continue
+			}
+			return ShellCommandProposal{}, false, nil
+		}
+		if attempt > 0 {
+			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_accepted", "Shell specialist repaired proposal accepted by deterministic validation", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"attempt": fmt.Sprintf("%d", attempt),
+				"command": truncateStructuredTimelineValue(proposal.Command),
+			})
+		}
+		return proposal, true, nil
+	}
+	return ShellCommandProposal{}, false, nil
+}
+
+func appendRejectedShellProposalObservation(step int, command string, err error, guidance string, result *CommandDecisionResult) {
+	reason := ""
+	if err != nil {
+		reason = err.Error()
+	}
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:             step,
+		RejectedCommand:  truncateStructuredObservation(command),
+		CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(command, reason),
+		ExitCode:         1,
+		Stderr:           "shell specialist command rejected: " + reason + "; " + guidance,
+	})
 }
 
 func requestStructuredCommandPayload(ctx context.Context, client CommandDecisionClient, req OllamaChatRequest, step int, onEvent func(StructuredCommandEvent)) (OllamaChatResponse, error) {
@@ -3445,6 +3370,135 @@ func requestStructuredCommandPayload(ctx context.Context, client CommandDecision
 	return OllamaChatResponse{}, lastErr
 }
 
+func repairStructuredPayloadBeforeRouting(ctx context.Context, step int, prompt string, client CommandDecisionClient, baseReq OllamaChatRequest, resp OllamaChatResponse, payload StructuredCommandPayload, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDirectory string, survey WorksiteSurvey, onEvent func(StructuredCommandEvent)) (bool, OllamaChatResponse, StructuredCommandPayload, []StructuredObjective, error) {
+	if client == nil || !structuredPayloadNeedsImmediateRepair(payload, observations) {
+		return false, resp, payload, ledger, nil
+	}
+	initialValidationErr := immediateStructuredPayloadValidationError(payload, observations, workingDirectory, ledger, survey)
+	if initialValidationErr == nil || !isImmediatePlannerRepairValidation(initialValidationErr) {
+		return false, resp, payload, ledger, nil
+	}
+	currentResp := resp
+	currentPayload := payload
+	currentLedger := ledger
+	for attempt := 1; attempt <= defaultStructuredPlannerRepairAttempts; attempt++ {
+		validationErr := immediateStructuredPayloadValidationError(currentPayload, observations, workingDirectory, currentLedger, survey)
+		if validationErr == nil {
+			return attempt > 1, currentResp, currentPayload, currentLedger, nil
+		}
+		if !isImmediatePlannerRepairValidation(validationErr) {
+			return true, currentResp, currentPayload, currentLedger, nil
+		}
+		emitStructuredCommandEvent(onEvent, "structured_planner_repair_started", "Planner received immediate validation feedback for isolated repair", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"attempt": fmt.Sprintf("%d", attempt),
+			"command": truncateStructuredTimelineValue(currentPayload.Command),
+			"reason":  truncateStructuredTimelineValue(validationErr.Error()),
+		})
+		repairReq := buildStructuredPlannerRepairRequest(baseReq, prompt, currentResp.Content, currentPayload.Command, validationErr.Error(), currentLedger, observations, workingDirectory)
+		nextResp, err := requestStructuredCommandPayload(ctx, client, repairReq, step, onEvent)
+		if err != nil {
+			return true, currentResp, currentPayload, currentLedger, err
+		}
+		nextPayload, err := ParseStructuredCommandPayload(nextResp.Content)
+		if err != nil {
+			return true, currentResp, currentPayload, currentLedger, err
+		}
+		nextPayload.Command = normalizeStructuredCommand(nextPayload.Command)
+		nextLedger := mergeStructuredObjectiveLedger(currentLedger, nextPayload.ObjectiveLedger)
+		emitStructuredCommandEvent(onEvent, "structured_planner_repair_payload_received", "Planner returned repaired structured payload", map[string]string{
+			"step":               fmt.Sprintf("%d", step),
+			"attempt":            fmt.Sprintf("%d", attempt),
+			"done":               fmt.Sprintf("%t", nextPayload.Done),
+			"ask":                fmt.Sprintf("%t", nextPayload.Ask),
+			"tool":               truncateStructuredTimelineValue(nextPayload.Tool),
+			"command":            truncateStructuredTimelineValue(nextPayload.Command),
+			"pending_objectives": pendingStructuredObjectiveIDs(nextLedger),
+		})
+		currentResp = nextResp
+		currentPayload = nextPayload
+		currentLedger = nextLedger
+		if immediateStructuredPayloadValidationError(currentPayload, observations, workingDirectory, currentLedger, survey) == nil {
+			emitStructuredCommandEvent(onEvent, "structured_planner_repair_accepted", "Planner repaired payload accepted by deterministic pre-validation", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"attempt": fmt.Sprintf("%d", attempt),
+			})
+			return true, currentResp, currentPayload, currentLedger, nil
+		}
+	}
+	return true, currentResp, currentPayload, currentLedger, nil
+}
+
+func structuredPayloadNeedsImmediateRepair(payload StructuredCommandPayload, observations []StructuredCommandObservation) bool {
+	if isPatchToolDelegation(payload) || isShellToolDelegation(payload) || payload.Done {
+		return false
+	}
+	if payload.Ask && strings.TrimSpace(payload.Command) == "" {
+		return false
+	}
+	if strings.TrimSpace(payload.Command) == "" {
+		return false
+	}
+	return true
+}
+
+func immediateStructuredPayloadValidationError(payload StructuredCommandPayload, observations []StructuredCommandObservation, workingDirectory string, ledger []StructuredObjective, survey WorksiteSurvey) error {
+	if !structuredPayloadNeedsImmediateRepair(payload, observations) {
+		return nil
+	}
+	return validateStructuredCommandForRunWithSurvey(payload.Command, observations, workingDirectory, ledger, survey)
+}
+
+func isImmediatePlannerRepairValidation(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "placeholder-only command does not satisfy app objectives")
+}
+
+func buildStructuredPlannerRepairRequest(baseReq OllamaChatRequest, prompt, rejectedPayload, rejectedCommand, reason string, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDirectory string) OllamaChatRequest {
+	req := baseReq
+	req.Messages = append([]OllamaMessage(nil), baseReq.Messages...)
+	payload := struct {
+		CurrentPrompt           string                         `json:"current_prompt"`
+		RejectedPayload         string                         `json:"rejected_payload"`
+		RejectedCommand         string                         `json:"rejected_command"`
+		ValidationFeedback      string                         `json:"validation_feedback"`
+		CurrentWorkingDirectory string                         `json:"current_working_directory"`
+		ObjectiveLedger         []StructuredObjective          `json:"objective_ledger,omitempty"`
+		PendingObjectiveIDs     []string                       `json:"pending_objective_ids,omitempty"`
+		Observations            []StructuredCommandObservation `json:"observations,omitempty"`
+		RepairRules             []string                       `json:"repair_rules"`
+	}{
+		CurrentPrompt:           prompt,
+		RejectedPayload:         truncateStructuredObservation(rejectedPayload),
+		RejectedCommand:         truncateStructuredObservation(rejectedCommand),
+		ValidationFeedback:      reason,
+		CurrentWorkingDirectory: structuredPromptWorkingDirectory(workingDirectory),
+		ObjectiveLedger:         mergeStructuredObjectiveLedger(nil, ledger),
+		PendingObjectiveIDs:     structuredObjectiveIDs(pendingStructuredObjectives(ledger)),
+		Observations:            observations,
+		RepairRules: []string{
+			"Return JSON only with the same structured command schema.",
+			"Repair the rejected payload directly; do not ask another specialist and do not restate the feedback.",
+			"The validator feedback is authoritative.",
+			"Choose a command, tool, or patch that satisfies pending objectives and avoids the rejected pattern.",
+			"If feedback says placeholder-only, write substantive source/build/test file content now.",
+			"If feedback says dependency scope drift, write requested source files or use existing dependencies instead of installing optional packages.",
+			"If feedback says repeated command, inspect completed_actions/observations and choose the next required action.",
+		},
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		blob = []byte(`{"validation_feedback":"repair rejected structured payload"}`)
+	}
+	req.Messages = append(req.Messages,
+		OllamaMessage{Role: "assistant", Content: strings.TrimSpace(rejectedPayload)},
+		OllamaMessage{Role: "user", Content: string(blob)},
+	)
+	return req
+}
+
 func normalizeStructuredEvaluatorThreshold(value int) int {
 	if value <= 0 {
 		return defaultEvaluatorThreshold
@@ -3462,6 +3516,183 @@ func structuredEvaluationRetryMessage(evaluation StructuredLLMEvaluation, thresh
 	}
 	verdict := normalizeStructuredEvaluationVerdict(evaluation.Verdict)
 	return fmt.Sprintf("self-evaluation rejected response: verdict=%s confidence=%d threshold=%d; feedback=%s; try again using the active prompt, planner job, observations, worksite survey, and capability memory", verdict, evaluation.Confidence, threshold, feedback)
+}
+
+func evaluateAndRepairPlannerResponse(ctx context.Context, step int, prompt string, client CommandDecisionClient, baseReq OllamaChatRequest, resp OllamaChatResponse, evaluator StructuredLLMResponseEvaluator, evaluatorThreshold int, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger []StructuredObjective, observations []StructuredCommandObservation, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, OllamaChatResponse, bool, error) {
+	if evaluator == nil {
+		return true, resp, false, nil
+	}
+	currentResp := resp
+	for attempt := 0; attempt <= defaultEvaluatorPlannerRepairAttempts; attempt++ {
+		if len(allPrepBriefs(cfg.PrepContext)) > 0 || len(cfg.PrepContext.Evidence) > 0 {
+			emitStructuredCommandEvent(onEvent, "prep_context_attached_to_specialist", "Preparation context attached to evaluator", map[string]string{
+				"step":     fmt.Sprintf("%d", step),
+				"role":     "evaluator",
+				"briefs":   fmt.Sprintf("%d", len(allPrepBriefs(cfg.PrepContext))),
+				"evidence": fmt.Sprintf("%d", len(cfg.PrepContext.Evidence)),
+			})
+		}
+		evaluation, evalErr := evaluator.EvaluateStructuredLLMResponse(ctx, StructuredLLMEvaluationInput{
+			Step:             step,
+			UserPrompt:       prompt,
+			PlannerJob:       structuredCommandPlannerJobSummary(),
+			LLMResponse:      currentResp.Content,
+			Observations:     result.Observations,
+			CompletedActions: completedActionsFromState(ledger, result.Observations),
+			LoopState:        structuredLoopStateFromState(ledger, result.Observations),
+			SessionMemories:  cfg.SessionMemories,
+			WorksiteSurvey:   worksiteSurvey,
+		})
+		if evalErr != nil {
+			emitStructuredCommandEvent(onEvent, "structured_response_evaluator_failed", "Structured response evaluator failed; continuing with deterministic validation", map[string]string{
+				"step":  fmt.Sprintf("%d", step),
+				"error": truncateStructuredTimelineValue(evalErr.Error()),
+			})
+			return true, currentResp, true, nil
+		}
+		if consistencyErr := validateStructuredEvaluationConsistency(evaluation); consistencyErr != nil {
+			emitStructuredCommandEvent(onEvent, "structured_response_evaluator_failed", "Structured response evaluator returned inconsistent scoring; continuing with deterministic validation", map[string]string{
+				"step":       fmt.Sprintf("%d", step),
+				"confidence": fmt.Sprintf("%d", evaluation.Confidence),
+				"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
+				"error":      truncateStructuredTimelineValue(consistencyErr.Error()),
+			})
+			return true, currentResp, true, nil
+		}
+		if normalizeStructuredEvaluationVerdict(evaluation.Verdict) == "accept" && structuredEvaluationFeedbackSuggestsHardReject(evaluation.Feedback+" "+evaluation.BlockingReason) {
+			evaluation.Verdict = "reject"
+		}
+		verdict := normalizeStructuredEvaluationVerdict(evaluation.Verdict)
+		emitStructuredCommandEvent(onEvent, "structured_response_evaluated", "Structured response evaluator scored planner output", map[string]string{
+			"step":       fmt.Sprintf("%d", step),
+			"confidence": fmt.Sprintf("%d", evaluation.Confidence),
+			"threshold":  fmt.Sprintf("%d", evaluatorThreshold),
+			"verdict":    verdict,
+			"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
+		})
+		if verdict != "reject" && verdict != "revise" && evaluation.Confidence >= evaluatorThreshold {
+			if attempt > 0 {
+				emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_accepted", "Planner repair accepted by evaluator", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"attempt": fmt.Sprintf("%d", attempt),
+				})
+			}
+			return true, currentResp, false, nil
+		}
+		if verdict == "revise" && repeatedStructuredEvaluationFeedback(evaluation, result.Observations) {
+			emitStructuredCommandEvent(onEvent, "structured_evaluator_loop_bypassed", "Repeated evaluator revise feedback bypassed for deterministic validation", map[string]string{
+				"step":     fmt.Sprintf("%d", step),
+				"feedback": truncateStructuredTimelineValue(evaluation.Feedback),
+			})
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:                 step,
+				RejectedResponse:     truncateStructuredObservation(currentResp.Content),
+				EvaluationConfidence: evaluation.Confidence,
+				EvaluationFeedback:   truncateStructuredObservation(evaluation.Feedback),
+				ExitCode:             1,
+				Stderr:               "anti_loop: evaluator repeated the same revise feedback; evaluator bypassed for this planner output. Continue with deterministic command validation, objective ledger, worksite survey, and observed command evidence.",
+			})
+			return true, currentResp, true, nil
+		}
+		appendEvaluatorRejectionObservation(step, currentResp.Content, evaluation, evaluatorThreshold, result)
+		emitStructuredCommandEvent(onEvent, "structured_response_rejected", "Structured response rejected by evaluator", map[string]string{
+			"step":       fmt.Sprintf("%d", step),
+			"confidence": fmt.Sprintf("%d", evaluation.Confidence),
+			"threshold":  fmt.Sprintf("%d", evaluatorThreshold),
+			"verdict":    verdict,
+			"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
+		})
+		if attempt >= defaultEvaluatorPlannerRepairAttempts || client == nil {
+			return false, currentResp, false, nil
+		}
+		emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_started", "Planner received evaluator feedback for local repair", map[string]string{
+			"step":     fmt.Sprintf("%d", step),
+			"attempt":  fmt.Sprintf("%d", attempt+1),
+			"verdict":  verdict,
+			"feedback": truncateStructuredTimelineValue(evaluation.Feedback),
+		})
+		repairReq := buildStructuredPlannerEvaluatorRepairRequest(baseReq, prompt, currentResp.Content, evaluation, evaluatorThreshold, ledger, result.Observations, cfg.CurrentWorkingDirectory)
+		nextResp, err := requestStructuredCommandPayload(ctx, client, repairReq, step, onEvent)
+		if err != nil {
+			return false, currentResp, false, err
+		}
+		emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_payload_received", "Planner returned evaluator-repaired payload", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"attempt": fmt.Sprintf("%d", attempt+1),
+			"payload": truncateStructuredTimelineValue(nextResp.Content),
+		})
+		currentResp = nextResp
+	}
+	return false, currentResp, false, nil
+}
+
+func appendEvaluatorRejectionObservation(step int, rawResponse string, evaluation StructuredLLMEvaluation, threshold int, result *CommandDecisionResult) {
+	verdict := normalizeStructuredEvaluationVerdict(evaluation.Verdict)
+	reason := structuredEvaluationRetryMessage(evaluation, threshold)
+	if verdict == "reject" {
+		reason = "scope_drift: evaluator rejected planner output; " + reason
+	}
+	rejectedCommand := ""
+	if rejectedPayload, parseErr := ParseStructuredCommandPayload(rawResponse); parseErr == nil {
+		rejectedCommand = truncateStructuredObservation(rejectedPayload.Command)
+	}
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:                 step,
+		RejectedResponse:     truncateStructuredObservation(rawResponse),
+		RejectedCommand:      rejectedCommand,
+		EvaluationConfidence: evaluation.Confidence,
+		EvaluationFeedback:   truncateStructuredObservation(evaluation.Feedback),
+		CapabilityMemory:     structuredCapabilityMemoryForRejectedResponse(rawResponse, evaluation.Feedback),
+		ExitCode:             1,
+		Stderr:               reason,
+	})
+}
+
+func buildStructuredPlannerEvaluatorRepairRequest(baseReq OllamaChatRequest, prompt, rejectedPayload string, evaluation StructuredLLMEvaluation, threshold int, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDirectory string) OllamaChatRequest {
+	req := baseReq
+	req.Messages = append([]OllamaMessage(nil), baseReq.Messages...)
+	payload := struct {
+		CurrentPrompt           string                         `json:"current_prompt"`
+		RejectedPayload         string                         `json:"rejected_payload"`
+		EvaluatorVerdict        string                         `json:"evaluator_verdict"`
+		EvaluatorConfidence     int                            `json:"evaluator_confidence"`
+		EvaluatorThreshold      int                            `json:"evaluator_threshold"`
+		EvaluatorFeedback       string                         `json:"evaluator_feedback"`
+		BlockingReason          string                         `json:"blocking_reason,omitempty"`
+		CurrentWorkingDirectory string                         `json:"current_working_directory"`
+		ObjectiveLedger         []StructuredObjective          `json:"objective_ledger,omitempty"`
+		PendingObjectiveIDs     []string                       `json:"pending_objective_ids,omitempty"`
+		Observations            []StructuredCommandObservation `json:"observations,omitempty"`
+		RepairRules             []string                       `json:"repair_rules"`
+	}{
+		CurrentPrompt:           prompt,
+		RejectedPayload:         truncateStructuredObservation(rejectedPayload),
+		EvaluatorVerdict:        normalizeStructuredEvaluationVerdict(evaluation.Verdict),
+		EvaluatorConfidence:     evaluation.Confidence,
+		EvaluatorThreshold:      threshold,
+		EvaluatorFeedback:       evaluation.Feedback,
+		BlockingReason:          evaluation.BlockingReason,
+		CurrentWorkingDirectory: structuredPromptWorkingDirectory(workingDirectory),
+		ObjectiveLedger:         mergeStructuredObjectiveLedger(nil, ledger),
+		PendingObjectiveIDs:     structuredObjectiveIDs(pendingStructuredObjectives(ledger)),
+		Observations:            observations,
+		RepairRules: []string{
+			"Return JSON only with the same structured command schema.",
+			"The evaluator feedback is authoritative for this repair attempt.",
+			"Repair the rejected planner payload directly; do not restate or argue with the feedback.",
+			"Choose the next concrete command, tool delegation, or patch that aligns with the active prompt and observed evidence.",
+			"Do not return the same rejected response.",
+		},
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		blob = []byte(`{"evaluator_feedback":"repair rejected planner payload"}`)
+	}
+	req.Messages = append(req.Messages,
+		OllamaMessage{Role: "assistant", Content: strings.TrimSpace(rejectedPayload)},
+		OllamaMessage{Role: "user", Content: string(blob)},
+	)
+	return req
 }
 
 func structuredCommandPlannerJobSummary() string {
@@ -5882,6 +6113,126 @@ func rejectDoneForValidator(step int, onEvent func(StructuredCommandEvent), resu
 	}
 }
 
+func repairRejectedDoneWithPlanner(ctx context.Context, step int, prompt string, client CommandDecisionClient, baseReq OllamaChatRequest, rejectedResp OllamaChatResponse, rejectedPayload StructuredCommandPayload, checkResult completionCheckRunResult, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), ledger *[]StructuredObjective, result *CommandDecisionResult) (bool, error) {
+	if client == nil || !checkResult.Ran || checkResult.Accepted {
+		return false, nil
+	}
+	emitStructuredCommandEvent(onEvent, "completion_repair_started", "Planner received completion-check feedback for local repair", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"reason":  truncateStructuredTimelineValue(checkResult.Check.Reason),
+		"command": truncateStructuredTimelineValue(rejectedPayload.Command),
+	})
+	repairReq := buildCompletionRejectedPlannerRepairRequest(baseReq, prompt, rejectedResp.Content, rejectedPayload, checkResult, *ledger, result.Observations, cfg.CurrentWorkingDirectory)
+	nextResp, err := requestStructuredCommandPayload(ctx, client, repairReq, step, onEvent)
+	if err != nil {
+		return false, err
+	}
+	nextPayload, err := ParseStructuredCommandPayload(nextResp.Content)
+	if err != nil {
+		return false, err
+	}
+	nextPayload.Command = normalizeStructuredCommand(nextPayload.Command)
+	*ledger = mergeStructuredObjectiveLedger(*ledger, nextPayload.ObjectiveLedger)
+	result.ObjectiveLedger = *ledger
+	emitStructuredCommandEvent(onEvent, "completion_repair_payload_received", "Planner returned completion-repair payload", map[string]string{
+		"step":               fmt.Sprintf("%d", step),
+		"done":               fmt.Sprintf("%t", nextPayload.Done),
+		"ask":                fmt.Sprintf("%t", nextPayload.Ask),
+		"tool":               truncateStructuredTimelineValue(nextPayload.Tool),
+		"command":            truncateStructuredTimelineValue(nextPayload.Command),
+		"pending_objectives": pendingStructuredObjectiveIDs(*ledger),
+	})
+	if isPatchToolDelegation(nextPayload) {
+		if err := runStructuredPatchApply(ctx, step, nextPayload.Patch, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, result); err != nil {
+			return false, err
+		}
+		emitStructuredCommandEvent(onEvent, "completion_repair_accepted", "Completion repair executed patched action", map[string]string{"step": fmt.Sprintf("%d", step)})
+		return true, nil
+	}
+	if isShellToolDelegation(nextPayload) {
+		proposal, ok, err := proposeValidatedShellCommand(ctx, step, prompt, nextPayload.ToolTask, cfg, worksiteSurvey, ledger, onEvent, result)
+		if err != nil || !ok {
+			return ok, err
+		}
+		if err := runStructuredPayloadCommand(ctx, step, proposal.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
+			return false, err
+		}
+		emitStructuredCommandEvent(onEvent, "completion_repair_accepted", "Completion repair executed delegated shell action", map[string]string{"step": fmt.Sprintf("%d", step)})
+		return true, nil
+	}
+	if nextPayload.Done || strings.TrimSpace(nextPayload.Command) == "" {
+		return false, nil
+	}
+	if err := validateStructuredCommandForRunWithSurvey(nextPayload.Command, result.Observations, cfg.CurrentWorkingDirectory, *ledger, worksiteSurvey); err != nil {
+		emitStructuredCommandEvent(onEvent, "completion_repair_rejected", "Completion repair payload rejected by command validation", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"command": truncateStructuredTimelineValue(nextPayload.Command),
+			"reason":  err.Error(),
+		})
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:             step,
+			RejectedCommand:  truncateStructuredObservation(nextPayload.Command),
+			CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(nextPayload.Command, err.Error()),
+			ExitCode:         1,
+			Stderr:           "completion repair command rejected: " + err.Error(),
+		})
+		return false, nil
+	}
+	if err := runStructuredPayloadCommand(ctx, step, nextPayload.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
+		return false, err
+	}
+	emitStructuredCommandEvent(onEvent, "completion_repair_accepted", "Completion repair executed planner command", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"command": truncateStructuredTimelineValue(nextPayload.Command),
+	})
+	return true, nil
+}
+
+func buildCompletionRejectedPlannerRepairRequest(baseReq OllamaChatRequest, prompt, rejectedResponse string, rejectedPayload StructuredCommandPayload, checkResult completionCheckRunResult, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDirectory string) OllamaChatRequest {
+	req := baseReq
+	req.Messages = append([]OllamaMessage(nil), baseReq.Messages...)
+	payload := struct {
+		CurrentPrompt           string                         `json:"current_prompt"`
+		RejectedPayload         string                         `json:"rejected_payload"`
+		RejectedDone            bool                           `json:"rejected_done"`
+		CandidateAnswer         string                         `json:"candidate_answer"`
+		CompletionDone          bool                           `json:"completion_done"`
+		CompletionReason        string                         `json:"completion_reason"`
+		CurrentWorkingDirectory string                         `json:"current_working_directory"`
+		ObjectiveLedger         []StructuredObjective          `json:"objective_ledger,omitempty"`
+		PendingObjectiveIDs     []string                       `json:"pending_objective_ids,omitempty"`
+		Observations            []StructuredCommandObservation `json:"observations,omitempty"`
+		RepairRules             []string                       `json:"repair_rules"`
+	}{
+		CurrentPrompt:           prompt,
+		RejectedPayload:         truncateStructuredObservation(rejectedResponse),
+		RejectedDone:            rejectedPayload.Done,
+		CandidateAnswer:         rejectedPayload.Answer,
+		CompletionDone:          checkResult.Check.Done,
+		CompletionReason:        checkResult.Check.Reason,
+		CurrentWorkingDirectory: structuredPromptWorkingDirectory(workingDirectory),
+		ObjectiveLedger:         mergeStructuredObjectiveLedger(nil, ledger),
+		PendingObjectiveIDs:     structuredObjectiveIDs(pendingStructuredObjectives(ledger)),
+		Observations:            observations,
+		RepairRules: []string{
+			"Return JSON only with the same structured command schema.",
+			"The completion checker rejected done=true; do not return done=true again unless new command evidence is added first.",
+			"Use completion_reason and pending_objective_ids to choose the next concrete command, tool delegation, or patch.",
+			"Gather missing evidence, satisfy pending objectives, or verify the latest mutation.",
+			"Do not repeat the rejected done payload.",
+		},
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		blob = []byte(`{"completion_reason":"repair rejected done=true"}`)
+	}
+	req.Messages = append(req.Messages,
+		OllamaMessage{Role: "assistant", Content: strings.TrimSpace(rejectedResponse)},
+		OllamaMessage{Role: "user", Content: string(blob)},
+	)
+	return req
+}
+
 func repeatedPrematureDoneRejectionCount(observations []StructuredCommandObservation, pendingText string) int {
 	pendingText = strings.TrimSpace(pendingText)
 	if pendingText == "" {
@@ -6115,9 +6466,21 @@ func dockerLifecycleEvidenceSatisfiesObjective(command, output, target string) b
 	return false
 }
 
+type completionCheckRunResult struct {
+	Ledger   []StructuredObjective
+	Accepted bool
+	Check    CompletionCheck
+	Ran      bool
+}
+
 func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDirectory string, ledger []StructuredObjective, minimalContext MinimalContext, observations []StructuredCommandObservation, candidateAnswer string, checker CompletionChecker, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent)) ([]StructuredObjective, bool) {
+	result := runCompletionCheckDetailed(ctx, step, prompt, currentWorkingDirectory, ledger, minimalContext, observations, candidateAnswer, checker, worksiteSurvey, onEvent)
+	return result.Ledger, result.Accepted
+}
+
+func runCompletionCheckDetailed(ctx context.Context, step int, prompt, currentWorkingDirectory string, ledger []StructuredObjective, minimalContext MinimalContext, observations []StructuredCommandObservation, candidateAnswer string, checker CompletionChecker, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent)) completionCheckRunResult {
 	if checker == nil {
-		return ledger, false
+		return completionCheckRunResult{Ledger: ledger}
 	}
 	check, err := checker.CheckCompletion(ctx, CompletionCheckInput{
 		UserPrompt:              prompt,
@@ -6135,7 +6498,7 @@ func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDir
 			"step":  fmt.Sprintf("%d", step),
 			"error": truncateStructuredTimelineValue(err.Error()),
 		})
-		return ledger, false
+		return completionCheckRunResult{Ledger: ledger}
 	}
 	updated := mergeStructuredObjectiveLedger(ledger, filterObjectiveLedgerForWorksiteSurvey(check.ObjectiveLedger, worksiteSurvey))
 	if check.Done && len(pendingStructuredObjectives(updated)) > 0 {
@@ -6156,7 +6519,7 @@ func runCompletionCheck(ctx context.Context, step int, prompt, currentWorkingDir
 		"reason":             truncateStructuredTimelineValue(check.Reason),
 		"pending_objectives": pendingStructuredObjectiveIDs(updated),
 	})
-	return updated, validatorAccepted
+	return completionCheckRunResult{Ledger: updated, Accepted: validatorAccepted, Check: check, Ran: true}
 }
 
 func satisfyPendingObjectivesFromValidator(ledger []StructuredObjective, reason string) []StructuredObjective {
