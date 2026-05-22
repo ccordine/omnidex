@@ -3600,7 +3600,9 @@ func evaluateAndRepairPlannerResponse(ctx context.Context, step int, prompt stri
 		return true, resp, false, nil
 	}
 	currentResp := resp
-	for attempt := 0; attempt <= defaultEvaluatorPlannerRepairAttempts; attempt++ {
+	evaluationAttempts := 0
+	repairAttempts := 0
+	for {
 		if len(allPrepBriefs(cfg.PrepContext)) > 0 || len(cfg.PrepContext.Evidence) > 0 {
 			emitStructuredCommandEvent(onEvent, "prep_context_attached_to_specialist", "Preparation context attached to evaluator", map[string]string{
 				"step":     fmt.Sprintf("%d", step),
@@ -3609,6 +3611,7 @@ func evaluateAndRepairPlannerResponse(ctx context.Context, step int, prompt stri
 				"evidence": fmt.Sprintf("%d", len(cfg.PrepContext.Evidence)),
 			})
 		}
+		evaluationAttempts++
 		evaluation, evalErr := evaluator.EvaluateStructuredLLMResponse(ctx, StructuredLLMEvaluationInput{
 			Step:             step,
 			UserPrompt:       prompt,
@@ -3648,10 +3651,10 @@ func evaluateAndRepairPlannerResponse(ctx context.Context, step int, prompt stri
 			"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
 		})
 		if verdict != "reject" && verdict != "revise" && evaluation.Confidence >= evaluatorThreshold {
-			if attempt > 0 {
+			if repairAttempts > 0 {
 				emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_accepted", "Planner repair accepted by evaluator", map[string]string{
 					"step":    fmt.Sprintf("%d", step),
-					"attempt": fmt.Sprintf("%d", attempt),
+					"attempt": fmt.Sprintf("%d", repairAttempts),
 				})
 			}
 			return true, currentResp, false, nil
@@ -3679,28 +3682,54 @@ func evaluateAndRepairPlannerResponse(ctx context.Context, step int, prompt stri
 			"verdict":    verdict,
 			"feedback":   truncateStructuredTimelineValue(evaluation.Feedback),
 		})
-		if attempt >= defaultEvaluatorPlannerRepairAttempts || client == nil {
+		if repairAttempts >= defaultEvaluatorPlannerRepairAttempts || client == nil {
 			return false, currentResp, false, nil
 		}
-		emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_started", "Planner received evaluator feedback for local repair", map[string]string{
-			"step":     fmt.Sprintf("%d", step),
-			"attempt":  fmt.Sprintf("%d", attempt+1),
-			"verdict":  verdict,
-			"feedback": truncateStructuredTimelineValue(evaluation.Feedback),
-		})
-		repairReq := buildStructuredPlannerEvaluatorRepairRequest(baseReq, prompt, currentResp.Content, evaluation, evaluatorThreshold, ledger, result.Observations, cfg.CurrentWorkingDirectory)
-		nextResp, err := requestStructuredCommandPayload(ctx, client, repairReq, step, onEvent)
-		if err != nil {
-			return false, currentResp, false, err
+		repaired := false
+		for repairAttempts < defaultEvaluatorPlannerRepairAttempts {
+			repairAttempts++
+			emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_started", "Planner received evaluator feedback for local repair", map[string]string{
+				"step":     fmt.Sprintf("%d", step),
+				"attempt":  fmt.Sprintf("%d", repairAttempts),
+				"verdict":  verdict,
+				"feedback": truncateStructuredTimelineValue(evaluation.Feedback),
+			})
+			repairReq := buildStructuredPlannerEvaluatorRepairRequest(baseReq, prompt, currentResp.Content, evaluation, evaluatorThreshold, ledger, result.Observations, cfg.CurrentWorkingDirectory)
+			nextResp, err := requestStructuredCommandPayload(ctx, client, repairReq, step, onEvent)
+			if err != nil {
+				return false, currentResp, false, err
+			}
+			emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_payload_received", "Planner returned evaluator-repaired payload", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"attempt": fmt.Sprintf("%d", repairAttempts),
+				"payload": truncateStructuredTimelineValue(nextResp.Content),
+			})
+			if constraintErr := validateStructuredEvaluatorRepairPayload(nextResp.Content, evaluation, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); constraintErr != nil {
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:             step,
+					RejectedResponse: truncateStructuredObservation(nextResp.Content),
+					CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(nextResp.Content, constraintErr.Error()),
+					ExitCode:         1,
+					Stderr:           "evaluator repair rejected: " + constraintErr.Error(),
+				})
+				emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_rejected", "Planner repair ignored evaluator constraints", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"attempt": fmt.Sprintf("%d", repairAttempts),
+					"reason":  truncateStructuredTimelineValue(constraintErr.Error()),
+				})
+				continue
+			}
+			currentResp = nextResp
+			repaired = true
+			break
 		}
-		emitStructuredCommandEvent(onEvent, "structured_evaluator_repair_payload_received", "Planner returned evaluator-repaired payload", map[string]string{
-			"step":    fmt.Sprintf("%d", step),
-			"attempt": fmt.Sprintf("%d", attempt+1),
-			"payload": truncateStructuredTimelineValue(nextResp.Content),
-		})
-		currentResp = nextResp
+		if !repaired {
+			return false, currentResp, false, nil
+		}
+		if evaluationAttempts > defaultEvaluatorPlannerRepairAttempts+1 {
+			return false, currentResp, false, nil
+		}
 	}
-	return false, currentResp, false, nil
 }
 
 func appendEvaluatorRejectionObservation(step int, rawResponse string, evaluation StructuredLLMEvaluation, threshold int, result *CommandDecisionResult) {
@@ -3728,6 +3757,7 @@ func appendEvaluatorRejectionObservation(step int, rawResponse string, evaluatio
 func buildStructuredPlannerEvaluatorRepairRequest(baseReq OllamaChatRequest, prompt, rejectedPayload string, evaluation StructuredLLMEvaluation, threshold int, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDirectory string) OllamaChatRequest {
 	req := baseReq
 	req.Messages = append([]OllamaMessage(nil), baseReq.Messages...)
+	hardConstraints := structuredEvaluatorRepairHardConstraints(evaluation)
 	payload := struct {
 		CurrentPrompt           string                         `json:"current_prompt"`
 		RejectedPayload         string                         `json:"rejected_payload"`
@@ -3740,6 +3770,7 @@ func buildStructuredPlannerEvaluatorRepairRequest(baseReq OllamaChatRequest, pro
 		ObjectiveLedger         []StructuredObjective          `json:"objective_ledger,omitempty"`
 		PendingObjectiveIDs     []string                       `json:"pending_objective_ids,omitempty"`
 		Observations            []StructuredCommandObservation `json:"observations,omitempty"`
+		HardConstraints         []string                       `json:"hard_constraints,omitempty"`
 		RepairRules             []string                       `json:"repair_rules"`
 	}{
 		CurrentPrompt:           prompt,
@@ -3753,11 +3784,13 @@ func buildStructuredPlannerEvaluatorRepairRequest(baseReq OllamaChatRequest, pro
 		ObjectiveLedger:         mergeStructuredObjectiveLedger(nil, ledger),
 		PendingObjectiveIDs:     structuredObjectiveIDs(pendingStructuredObjectives(ledger)),
 		Observations:            compactStructuredObservationsForContext(observations, 6, 600),
+		HardConstraints:         hardConstraints,
 		RepairRules: []string{
 			"Return JSON only with the same structured command schema.",
 			"The evaluator feedback is authoritative for this repair attempt.",
 			"Repair the rejected planner payload directly; do not restate or argue with the feedback.",
 			"Choose the next concrete command, tool delegation, or patch that aligns with the active prompt and observed evidence.",
+			"Hard constraints are deterministic validation rules; violating them rejects the repair without another evaluator pass.",
 			"Do not return the same rejected response.",
 		},
 	}
@@ -3770,6 +3803,52 @@ func buildStructuredPlannerEvaluatorRepairRequest(baseReq OllamaChatRequest, pro
 		OllamaMessage{Role: "user", Content: string(blob)},
 	)
 	return req
+}
+
+func structuredEvaluatorRepairHardConstraints(evaluation StructuredLLMEvaluation) []string {
+	text := strings.ToLower(evaluation.Feedback + " " + evaluation.BlockingReason)
+	constraints := []string{}
+	if strings.Contains(text, "patch.apply") || strings.Contains(text, "patch apply") {
+		constraints = append(constraints, `Return tool="patch.apply", command="", and a non-empty unified diff in patch.`)
+	}
+	if strings.Contains(text, "create or update a file") ||
+		strings.Contains(text, "source edit") ||
+		strings.Contains(text, "source edits") ||
+		strings.Contains(text, "substantive source") ||
+		strings.Contains(text, "write substantive") {
+		constraints = append(constraints, "The payload must create or modify substantive source/build/test file content, not print a plan, install optional dependencies, or create placeholder-only files.")
+	}
+	return constraints
+}
+
+func validateStructuredEvaluatorRepairPayload(raw string, evaluation StructuredLLMEvaluation, observations []StructuredCommandObservation, workingDirectory string, ledger []StructuredObjective, survey WorksiteSurvey) error {
+	payload, err := ParseStructuredCommandPayload(raw)
+	if err != nil {
+		return fmt.Errorf("repair payload is not valid structured command JSON: %w", err)
+	}
+	text := strings.ToLower(evaluation.Feedback + " " + evaluation.BlockingReason)
+	if strings.Contains(text, "patch.apply") || strings.Contains(text, "patch apply") {
+		if !isPatchToolDelegation(payload) {
+			return fmt.Errorf("evaluator required patch.apply; repair must return tool=patch.apply with command empty and a non-empty unified diff patch")
+		}
+		return nil
+	}
+	if strings.Contains(text, "create or update a file") ||
+		strings.Contains(text, "source edit") ||
+		strings.Contains(text, "source edits") ||
+		strings.Contains(text, "substantive source") ||
+		strings.Contains(text, "write substantive") {
+		if payload.Done || payload.Ask {
+			return fmt.Errorf("evaluator required substantive file work; repair cannot ask or request completion")
+		}
+		if isShellToolDelegation(payload) || isPatchToolDelegation(payload) {
+			return nil
+		}
+		if err := validateStructuredCommandForRunWithSurvey(payload.Command, observations, workingDirectory, ledger, survey); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func structuredCommandPlannerJobSummary() string {

@@ -1965,6 +1965,83 @@ func TestStructuredCommandDecisionEvaluatorRejectsOffTrackResponseBeforeExecutio
 	}
 }
 
+func TestStructuredCommandDecisionEvaluatorRepairEnforcesPatchApplyFeedback(t *testing.T) {
+	workspace := t.TempDir()
+	target := filepath.Join(workspace, "hello.txt")
+	if err := os.WriteFile(target, []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	patch := `diff --git a/hello.txt b/hello.txt
+--- a/hello.txt
++++ b/hello.txt
+@@ -1,2 +1,2 @@
+ one
+-two
++TWO
+`
+	patchPayload, err := json.Marshal(StructuredCommandPayload{
+		Command: "",
+		Done:    false,
+		Tool:    "patch.apply",
+		Patch:   patch,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"echo 'Step 1: edit hello.txt'","done":false,"answer":""}`,
+		`{"command":"echo \"one\nTWO\" > hello.txt","done":false,"answer":""}`,
+		string(patchPayload),
+		`{"command":"grep -q TWO hello.txt","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"hello.txt now contains TWO."}`,
+	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Verdict: "revise", Confidence: 70, Feedback: "The command only prints a plan. Let's try using patch.apply for source edits."},
+		{Verdict: "accept", Confidence: 95, Feedback: "patch applies the requested source edit"},
+		{Verdict: "accept", Confidence: 95, Feedback: "verification command is on track"},
+		{Verdict: "accept", Confidence: 95, Feedback: "done from evidence"},
+	}}
+	events := []StructuredCommandEvent{}
+
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"update hello.txt to say TWO",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			Evaluator:               evaluator,
+			EvaluatorThreshold:      70,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "one\nTWO\n" {
+		t.Fatalf("patched file = %q", string(data))
+	}
+	if !structuredEventsContain(events, "structured_evaluator_repair_rejected") {
+		t.Fatalf("missing evaluator repair constraint rejection event: %#v", events)
+	}
+	if !structuredEventsContain(events, "structured_patch_apply_finished") {
+		t.Fatalf("missing patch apply event: %#v", events)
+	}
+	if len(evaluator.inputs) != 4 {
+		t.Fatalf("evaluator calls = %d, want original, patch, verify, done", len(evaluator.inputs))
+	}
+	if result.Answer != "hello.txt now contains TWO." {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
 func TestStructuredCommandDecisionDisablesUnavailableEvaluatorForTurn(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'evidence\n'","done":false,"answer":""}`,
