@@ -68,6 +68,8 @@ func NewProvider(cfg config.Config, opts Options) (llm.Client, error) {
 		return ollama.New(cfg.OllamaBaseURL, model, embeddingModel, timeout), nil
 	case "openai":
 		return openai.New(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, model, embeddingModel, cfg.OpenAIOrganization, cfg.OpenAIProject, timeout), nil
+	case "azure":
+		return openai.NewAzureAI(cfg.AzureAIBaseURL, cfg.AzureAIAPIKey, model, embeddingModel, cfg.AzureAIAPIVersion, cfg.AzureAIAPIStyle, timeout), nil
 	case "xai":
 		return openai.NewCompatible("xai", "XAI_API_KEY", cfg.XAIBaseURL, cfg.XAIAPIKey, model, "", "", "", timeout), nil
 	case "google":
@@ -85,6 +87,8 @@ func normalizeProvider(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "openai", "chatgpt", "chat-gpt":
 		return "openai"
+	case "azure", "azureai", "azure-ai", "azure-openai", "azure_openai", "microsoft", "msai", "windows", "windowsai", "windows-ai":
+		return "azure"
 	case "xai", "x-ai", "grok", "grock":
 		return "xai"
 	case "google", "gemini", "googleai", "google-ai":

@@ -161,6 +161,38 @@ func TestLoadXAIProviderUsesGrokAliasesAndOllamaEmbeddings(t *testing.T) {
 	}
 }
 
+func TestLoadAzureProviderUsesMicrosoftAliases(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://agent:agent@localhost:5432/agent?sslmode=disable")
+	t.Setenv("LLM_PROVIDER", "windows-ai")
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://example.openai.azure.com")
+	t.Setenv("AZURE_OPENAI_API_KEY", "azure-test-key")
+	t.Setenv("AZURE_OPENAI_DEPLOYMENT", "chat-deployment")
+	t.Setenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "embed-deployment")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.LLMProvider != "azure" {
+		t.Fatalf("LLMProvider=%q want azure", cfg.LLMProvider)
+	}
+	if cfg.AzureAIBaseURL != "https://example.openai.azure.com" {
+		t.Fatalf("AzureAIBaseURL=%q", cfg.AzureAIBaseURL)
+	}
+	if cfg.AzureAIAPIKey != "azure-test-key" {
+		t.Fatalf("AzureAIAPIKey not loaded from AZURE_OPENAI_API_KEY")
+	}
+	if cfg.DefaultModel != "chat-deployment" {
+		t.Fatalf("DefaultModel=%q want chat-deployment", cfg.DefaultModel)
+	}
+	if cfg.EmbeddingProvider != "azure" {
+		t.Fatalf("EmbeddingProvider=%q want azure", cfg.EmbeddingProvider)
+	}
+	if cfg.EmbeddingModel != "embed-deployment" {
+		t.Fatalf("EmbeddingModel=%q want embed-deployment", cfg.EmbeddingModel)
+	}
+}
+
 func TestLoadAnthropicCanUseGoogleEmbeddingProvider(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://agent:agent@localhost:5432/agent?sslmode=disable")
 	t.Setenv("LLM_PROVIDER", "anthropic")

@@ -22,6 +22,10 @@ type Config struct {
 	OpenAIAPIKey             string
 	OpenAIOrganization       string
 	OpenAIProject            string
+	AzureAIBaseURL           string
+	AzureAIAPIKey            string
+	AzureAIAPIVersion        string
+	AzureAIAPIStyle          string
 	XAIBaseURL               string
 	XAIAPIKey                string
 	GoogleBaseURL            string
@@ -80,7 +84,7 @@ func Load() (Config, error) {
 		provider = "ollama"
 	}
 	if !isSupportedLLMProvider(provider) {
-		return Config{}, fmt.Errorf("LLM_PROVIDER must be one of: ollama, openai, xai, google, anthropic, huggingface")
+		return Config{}, fmt.Errorf("LLM_PROVIDER must be one of: ollama, openai, azure, xai, google, anthropic, huggingface")
 	}
 	embeddingProvider := normalizeLLMProvider(getenv("EMBEDDING_PROVIDER", provider))
 	if embeddingProvider == "anthropic" {
@@ -105,6 +109,10 @@ func Load() (Config, error) {
 		OpenAIAPIKey:             strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		OpenAIOrganization:       getenv("OPENAI_ORGANIZATION", ""),
 		OpenAIProject:            getenv("OPENAI_PROJECT", ""),
+		AzureAIBaseURL:           firstNonEmptyEnv([]string{"AZURE_AI_BASE_URL", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_BASE_URL"}, ""),
+		AzureAIAPIKey:            firstEnv("AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY"),
+		AzureAIAPIVersion:        getenv("AZURE_AI_API_VERSION", getenv("AZURE_OPENAI_API_VERSION", "")),
+		AzureAIAPIStyle:          getenv("AZURE_AI_API_STYLE", getenv("AZURE_OPENAI_API_STYLE", "")),
 		XAIBaseURL:               getenv("XAI_BASE_URL", getenv("GROK_BASE_URL", "https://api.x.ai/v1")),
 		XAIAPIKey:                firstEnv("XAI_API_KEY", "GROK_API_KEY"),
 		GoogleBaseURL:            getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
@@ -323,6 +331,8 @@ func normalizeLLMProvider(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "openai", "chatgpt", "chat-gpt":
 		return "openai"
+	case "azure", "azureai", "azure-ai", "azure-openai", "azure_openai", "microsoft", "msai", "windows", "windowsai", "windows-ai":
+		return "azure"
 	case "xai", "x-ai", "grok", "grock":
 		return "xai"
 	case "google", "gemini", "googleai", "google-ai":
@@ -342,6 +352,8 @@ func defaultModelForProvider(provider string) string {
 	switch normalizeLLMProvider(provider) {
 	case "openai":
 		return "gpt-4.1-mini"
+	case "azure":
+		return "gpt-4.1-mini"
 	case "xai":
 		return "grok-4.3"
 	case "google":
@@ -359,6 +371,8 @@ func embeddingModelForProvider(provider string) string {
 	switch normalizeLLMProvider(provider) {
 	case "openai":
 		return getenv("OPENAI_EMBEDDING_MODEL", getenv("EMBEDDING_MODEL", "text-embedding-3-small"))
+	case "azure":
+		return firstNonEmptyEnv([]string{"AZURE_AI_EMBEDDING_MODEL", "AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "EMBEDDING_MODEL"}, "")
 	case "google":
 		return firstNonEmptyEnv([]string{"GOOGLE_EMBEDDING_MODEL", "GEMINI_EMBEDDING_MODEL", "EMBEDDING_MODEL"}, "text-embedding-004")
 	case "huggingface":
@@ -396,6 +410,11 @@ func providerEnvKeys(provider, suffix string) []string {
 	switch normalizeLLMProvider(provider) {
 	case "openai":
 		return []string{"OPENAI_" + suffix}
+	case "azure":
+		if suffix == "MODEL" {
+			return []string{"AZURE_AI_MODEL", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_DEPLOYMENT"}
+		}
+		return []string{"AZURE_AI_" + suffix, "AZURE_OPENAI_" + suffix}
 	case "xai":
 		return []string{"XAI_" + suffix, "GROK_" + suffix, "GROCK_" + suffix}
 	case "google":
@@ -411,7 +430,7 @@ func providerEnvKeys(provider, suffix string) []string {
 
 func isSupportedLLMProvider(provider string) bool {
 	switch normalizeLLMProvider(provider) {
-	case "ollama", "openai", "xai", "google", "anthropic", "huggingface":
+	case "ollama", "openai", "azure", "xai", "google", "anthropic", "huggingface":
 		return true
 	default:
 		return false
@@ -420,7 +439,7 @@ func isSupportedLLMProvider(provider string) bool {
 
 func isSupportedEmbeddingProvider(provider string) bool {
 	switch normalizeLLMProvider(provider) {
-	case "ollama", "openai", "google", "huggingface":
+	case "ollama", "openai", "azure", "google", "huggingface":
 		return true
 	default:
 		return false
@@ -432,6 +451,13 @@ func validateProviderCredentials(provider string, cfg Config, label string) erro
 	case "openai":
 		if cfg.OpenAIAPIKey == "" {
 			return fmt.Errorf("OPENAI_API_KEY is required when %s=openai", label)
+		}
+	case "azure":
+		if cfg.AzureAIAPIKey == "" {
+			return fmt.Errorf("AZURE_AI_API_KEY or AZURE_OPENAI_API_KEY is required when %s=azure", label)
+		}
+		if strings.TrimSpace(cfg.AzureAIBaseURL) == "" {
+			return fmt.Errorf("AZURE_AI_BASE_URL or AZURE_OPENAI_ENDPOINT is required when %s=azure", label)
 		}
 	case "xai":
 		if cfg.XAIAPIKey == "" {

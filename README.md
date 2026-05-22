@@ -60,7 +60,7 @@ omni fingerprint --text "npm error code E404"
 omni ollama prewarm --json
 ```
 
-See `docs/DEVELOPMENT_LOOPS.md`, `docs/EVIDENCE_LEDGER.md`, `docs/RUN_TRACE.md`, `docs/FAST_PATHS.md`, `docs/WORKSPACE_INDEX.md`, `docs/COMMAND_CACHE.md`, `docs/PATCH_MODE.md`, `docs/FAILURE_FINGERPRINTS.md`, `docs/OLLAMA_PREWARM.md`, `docs/COMMAND_POLICY.md`, `docs/RECIPES.md`, `docs/BENCHMARKS.md`, `docs/ROADMAP.md`, and `SECURITY.md`.
+See `docs/DEVELOPMENT_LOOPS.md`, `docs/VALIDATED_PLAYBOOKS.md`, `docs/EVIDENCE_LEDGER.md`, `docs/RUN_TRACE.md`, `docs/FAST_PATHS.md`, `docs/WORKSPACE_INDEX.md`, `docs/COMMAND_CACHE.md`, `docs/PATCH_MODE.md`, `docs/FAILURE_FINGERPRINTS.md`, `docs/OLLAMA_PREWARM.md`, `docs/COMMAND_POLICY.md`, `docs/RECIPES.md`, `docs/BENCHMARKS.md`, `docs/ROADMAP.md`, and `SECURITY.md`.
 
 For embedding Omnidex into other apps as a local memory-backed chat/RP/support service, see `docs/LOCAL_SERVICE_CHANNELS.md`.
 
@@ -259,6 +259,7 @@ Omnidex supports these model sources for generation:
 | --- | --- | --- | --- |
 | Ollama | `ollama`, `local` | none | `llama3.2` in core, CLI defaults vary by role |
 | OpenAI-compatible OpenAI API | `openai`, `chatgpt`, `chat-gpt` | `OPENAI_API_KEY` | `gpt-4.1-mini` |
+| Microsoft Azure AI / Azure OpenAI | `azure`, `azureai`, `azure-openai`, `microsoft`, `windows-ai` | `AZURE_AI_API_KEY` or `AZURE_OPENAI_API_KEY` | deployment/model from `AZURE_AI_MODEL` or `AZURE_OPENAI_DEPLOYMENT` |
 | xAI Grok | `xai`, `x-ai`, `grok`, `grock` | `XAI_API_KEY` or `GROK_API_KEY` | `grok-4.3` |
 | Google Gemini | `google`, `gemini`, `googleai`, `google-ai` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `gemini-2.0-flash` |
 | Anthropic Claude | `anthropic`, `claude` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
@@ -271,6 +272,15 @@ To run with OpenAI instead of Ollama:
 - `OPENAI_API_KEY=...`
 - optional `OPENAI_MODEL=gpt-4.1-mini`
 - optional `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
+
+To run with Microsoft Azure AI / Azure OpenAI:
+- `LLM_PROVIDER=azure`, `LLM_PROVIDER=azure-openai`, `LLM_PROVIDER=microsoft`, or `LLM_PROVIDER=windows-ai`
+- `AZURE_AI_API_KEY=...` or `AZURE_OPENAI_API_KEY=...`
+- for the current Azure OpenAI v1-compatible API, set `AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com`, `AZURE_AI_API_STYLE=v1`, and `AZURE_OPENAI_DEPLOYMENT=<chat-deployment>`
+- for older Azure OpenAI deployment routes, set `AZURE_AI_API_STYLE=azure_openai`, `AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com`, and `AZURE_OPENAI_DEPLOYMENT=<chat-deployment>`
+- optional `AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<embedding-deployment>` when using Azure for memory vectors
+- optional `AZURE_AI_API_VERSION=2024-10-21` for deployment routes
+- for Azure AI Foundry model inference, set `AZURE_AI_BASE_URL=https://<resource>.services.ai.azure.com`, `AZURE_AI_API_STYLE=foundry`, and `AZURE_AI_MODEL=<model-or-deployment>`
 
 To run with xAI Grok:
 - `LLM_PROVIDER=xai`, `LLM_PROVIDER=grok`, or `LLM_PROVIDER=grock`
@@ -421,8 +431,8 @@ OPENAI_MODEL_SPECIALIST_WEB_RESEARCH=gpt-4.1-mini
 ```
 
 Supported environment variables:
-- `LLM_PROVIDER=ollama|openai|xai|google|anthropic|huggingface`
-- `EMBEDDING_PROVIDER=ollama|openai|google|huggingface`
+- `LLM_PROVIDER=ollama|openai|azure|xai|google|anthropic|huggingface`
+- `EMBEDDING_PROVIDER=ollama|openai|azure|google|huggingface`
 - `OPENAI_API_KEY` (required when `LLM_PROVIDER=openai`)
 - `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
 - `OPENAI_MODEL` (default fallback when provider is OpenAI)
@@ -435,6 +445,13 @@ Supported environment variables:
 - `OPENAI_MODEL_SEARCH`
 - `OPENAI_MODEL_MEMORY`
 - `OPENAI_EMBEDDING_MODEL`
+- `AZURE_AI_API_KEY` / `AZURE_OPENAI_API_KEY` (required when `LLM_PROVIDER=azure`)
+- `AZURE_AI_BASE_URL` / `AZURE_OPENAI_ENDPOINT` (required when `LLM_PROVIDER=azure`)
+- `AZURE_AI_API_VERSION` / `AZURE_OPENAI_API_VERSION` (defaults to `2024-10-21` for Azure OpenAI deployment routes and `2024-05-01-preview` for Foundry)
+- `AZURE_AI_API_STYLE` / `AZURE_OPENAI_API_STYLE` (`v1`, `azure_openai`, or `foundry`; defaults to `foundry` for `*.services.ai.azure.com`, to `v1` when the base URL contains `/openai/v1`, otherwise Azure OpenAI deployment routes)
+- `AZURE_AI_MODEL` / `AZURE_OPENAI_DEPLOYMENT`
+- `AZURE_AI_MODEL_FAST`, `AZURE_AI_MODEL_REASONING`, `AZURE_AI_MODEL_TAGGER`, `AZURE_AI_MODEL_PLANNER`, `AZURE_AI_MODEL_ANALYZER`, `AZURE_AI_MODEL_RESPONDER`, `AZURE_AI_MODEL_SEARCH`, `AZURE_AI_MODEL_MEMORY`
+- `AZURE_AI_EMBEDDING_MODEL` / `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`
 - `XAI_API_KEY` / `GROK_API_KEY` (required when `LLM_PROVIDER=xai|grok|grock`)
 - `XAI_BASE_URL` / `GROK_BASE_URL` (default `https://api.x.ai/v1`)
 - `XAI_MODEL` / `GROK_MODEL`

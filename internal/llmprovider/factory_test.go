@@ -71,6 +71,15 @@ func TestNewProviderSupportsConfiguredRemoteProviders(t *testing.T) {
 				XAIBaseURL: "https://api.x.ai/v1",
 			},
 		},
+		{
+			name:     "azure",
+			provider: "windows-ai",
+			cfg: config.Config{
+				AzureAIAPIKey:     "azure-key",
+				AzureAIBaseURL:    "https://example.openai.azure.com",
+				AzureAIAPIVersion: "2024-10-21",
+			},
+		},
 	}
 
 	for _, tc := range tests {

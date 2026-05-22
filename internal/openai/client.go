@@ -23,6 +23,8 @@ type Client struct {
 	project        string
 	providerName   string
 	apiKeyName     string
+	apiStyle       string
+	apiVersion     string
 	httpClient     *http.Client
 }
 
@@ -78,6 +80,34 @@ func NewCompatible(providerName, apiKeyName, baseURL, apiKey, defaultModel, embe
 		project:        strings.TrimSpace(project),
 		providerName:   providerName,
 		apiKeyName:     apiKeyName,
+		apiStyle:       "openai",
+		httpClient: &http.Client{
+			Timeout: timeout,
+		},
+	}
+}
+
+func NewAzureAI(baseURL, apiKey, defaultModel, embeddingModel, apiVersion, apiStyle string, timeout time.Duration) *Client {
+	apiStyle = normalizeAzureAIStyle(apiStyle, baseURL)
+	if strings.TrimSpace(apiVersion) == "" {
+		switch apiStyle {
+		case "foundry":
+			apiVersion = "2024-05-01-preview"
+		case "azure_v1":
+			apiVersion = ""
+		default:
+			apiVersion = "2024-10-21"
+		}
+	}
+	return &Client{
+		baseURL:        normalizeAzureBaseURLForStyle(baseURL, apiStyle),
+		apiKey:         strings.TrimSpace(apiKey),
+		defaultModel:   strings.TrimSpace(defaultModel),
+		embeddingModel: strings.TrimSpace(embeddingModel),
+		providerName:   "azure",
+		apiKeyName:     "AZURE_AI_API_KEY",
+		apiStyle:       apiStyle,
+		apiVersion:     strings.TrimSpace(apiVersion),
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -135,7 +165,7 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 	}
 
 	var resp chatCompletionResponse
-	err := c.doJSON(ctx, http.MethodPost, "/chat/completions", chatCompletionRequest{
+	err := c.doJSON(ctx, http.MethodPost, c.chatCompletionsPath(model), chatCompletionRequest{
 		Model: model,
 		Messages: []chatMessage{
 			{Role: "system", Content: prompt},
@@ -166,7 +196,7 @@ func (c *Client) Embedding(ctx context.Context, content string) ([]float64, erro
 	}
 
 	var resp embeddingsResponse
-	err := c.doJSON(ctx, http.MethodPost, "/embeddings", embeddingsRequest{
+	err := c.doJSON(ctx, http.MethodPost, c.embeddingsPath(model), embeddingsRequest{
 		Model: model,
 		Input: content,
 	}, &resp)
@@ -231,7 +261,11 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if c.apiStyle == "azure_openai" || c.apiStyle == "foundry" {
+		req.Header.Set("api-key", c.apiKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 	if c.organization != "" {
 		req.Header.Set("OpenAI-Organization", c.organization)
 	}
@@ -275,6 +309,44 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 	return nil
 }
 
+func (c *Client) chatCompletionsPath(model string) string {
+	switch c.apiStyle {
+	case "azure_openai":
+		return c.withAPIVersion("/openai/deployments/" + url.PathEscape(strings.TrimSpace(model)) + "/chat/completions")
+	case "foundry":
+		return c.withAPIVersion("/models/chat/completions")
+	case "azure_v1":
+		return "/chat/completions"
+	default:
+		return "/chat/completions"
+	}
+}
+
+func (c *Client) embeddingsPath(model string) string {
+	switch c.apiStyle {
+	case "azure_openai":
+		return c.withAPIVersion("/openai/deployments/" + url.PathEscape(strings.TrimSpace(model)) + "/embeddings")
+	case "foundry":
+		return c.withAPIVersion("/models/embeddings")
+	case "azure_v1":
+		return "/embeddings"
+	default:
+		return "/embeddings"
+	}
+}
+
+func (c *Client) withAPIVersion(path string) string {
+	version := strings.TrimSpace(c.apiVersion)
+	if version == "" {
+		return path
+	}
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	return path + separator + "api-version=" + url.QueryEscape(version)
+}
+
 func normalizeBaseURL(baseURL string) string {
 	value := strings.TrimSpace(baseURL)
 	if value == "" {
@@ -289,6 +361,46 @@ func normalizeBaseURL(baseURL string) string {
 		value = parsed.String()
 	}
 	return strings.TrimRight(value, "/")
+}
+
+func normalizeAzureBaseURL(baseURL string) string {
+	return normalizeAzureBaseURLForStyle(baseURL, "")
+}
+
+func normalizeAzureBaseURLForStyle(baseURL, style string) string {
+	value := strings.TrimSpace(baseURL)
+	if value == "" {
+		return ""
+	}
+	if !strings.Contains(value, "://") {
+		value = "https://" + value
+	}
+	if normalizeAzureAIStyle(style, value) == "azure_v1" {
+		parsed, err := url.Parse(value)
+		if err == nil && (parsed.Path == "" || parsed.Path == "/") {
+			parsed.Path = "/openai/v1"
+			value = parsed.String()
+		}
+	}
+	return strings.TrimRight(value, "/")
+}
+
+func normalizeAzureAIStyle(style, baseURL string) string {
+	switch strings.ToLower(strings.TrimSpace(style)) {
+	case "foundry", "ai-foundry", "azure-foundry", "models", "model-inference":
+		return "foundry"
+	case "v1", "openai-v1", "azure-v1", "azure_v1", "azure_openai_v1":
+		return "azure_v1"
+	case "openai", "azure-openai", "azure_openai", "deployments", "deployment":
+		return "azure_openai"
+	}
+	if strings.Contains(strings.ToLower(baseURL), "/openai/v1") {
+		return "azure_v1"
+	}
+	if strings.Contains(strings.ToLower(baseURL), ".services.ai.azure.com") {
+		return "foundry"
+	}
+	return "azure_openai"
 }
 
 func messageContentAsString(value any) string {

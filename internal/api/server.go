@@ -40,6 +40,12 @@ type Server struct {
 	openAIProject             string
 	openAIDefaultModel        string
 	openAIEmbeddingModel      string
+	azureAIBaseURL            string
+	azureAIAPIKey             string
+	azureAIAPIVersion         string
+	azureAIAPIStyle           string
+	azureAIDefaultModel       string
+	azureAIEmbeddingModel     string
 	xAIBaseURL                string
 	xAIAPIKey                 string
 	xAIDefaultModel           string
@@ -71,6 +77,12 @@ type ServerOptions struct {
 	OpenAIProject             string
 	OpenAIDefaultModel        string
 	OpenAIEmbeddingModel      string
+	AzureAIBaseURL            string
+	AzureAIAPIKey             string
+	AzureAIAPIVersion         string
+	AzureAIAPIStyle           string
+	AzureAIDefaultModel       string
+	AzureAIEmbeddingModel     string
 	XAIBaseURL                string
 	XAIAPIKey                 string
 	XAIDefaultModel           string
@@ -233,6 +245,12 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		openAIProject:             strings.TrimSpace(options.OpenAIProject),
 		openAIDefaultModel:        strings.TrimSpace(options.OpenAIDefaultModel),
 		openAIEmbeddingModel:      strings.TrimSpace(options.OpenAIEmbeddingModel),
+		azureAIBaseURL:            strings.TrimSpace(options.AzureAIBaseURL),
+		azureAIAPIKey:             strings.TrimSpace(options.AzureAIAPIKey),
+		azureAIAPIVersion:         strings.TrimSpace(options.AzureAIAPIVersion),
+		azureAIAPIStyle:           strings.TrimSpace(options.AzureAIAPIStyle),
+		azureAIDefaultModel:       strings.TrimSpace(options.AzureAIDefaultModel),
+		azureAIEmbeddingModel:     strings.TrimSpace(options.AzureAIEmbeddingModel),
 		xAIBaseURL:                strings.TrimSpace(options.XAIBaseURL),
 		xAIAPIKey:                 strings.TrimSpace(options.XAIAPIKey),
 		xAIDefaultModel:           strings.TrimSpace(options.XAIDefaultModel),
@@ -472,7 +490,7 @@ func (s *Server) resolvePersonaLLM(req personaRequest) (resolvedPersonaLLM, erro
 	if !isSupportedPersonaProvider(requestedProvider) {
 		return resolvedPersonaLLM{}, personaRequestError{
 			StatusCode: http.StatusBadRequest,
-			Message:    fmt.Sprintf("llm.provider %q is unsupported (allowed: ollama, openai, xai, google, anthropic, huggingface)", strings.TrimSpace(req.LLM.Provider)),
+			Message:    fmt.Sprintf("llm.provider %q is unsupported (allowed: ollama, openai, azure, xai, google, anthropic, huggingface)", strings.TrimSpace(req.LLM.Provider)),
 		}
 	}
 	if req.LLM.OpenAI != nil && requestedProvider != "openai" {
@@ -527,6 +545,10 @@ func (s *Server) personaProviderConfig(provider, requestedModel string, openAICo
 		OpenAIAPIKey:       s.openAIAPIKey,
 		OpenAIOrganization: s.openAIOrganization,
 		OpenAIProject:      s.openAIProject,
+		AzureAIBaseURL:     s.azureAIBaseURL,
+		AzureAIAPIKey:      s.azureAIAPIKey,
+		AzureAIAPIVersion:  s.azureAIAPIVersion,
+		AzureAIAPIStyle:    s.azureAIAPIStyle,
 		XAIBaseURL:         s.xAIBaseURL,
 		XAIAPIKey:          s.xAIAPIKey,
 		GoogleBaseURL:      s.googleBaseURL,
@@ -562,6 +584,17 @@ func (s *Server) personaProviderConfig(provider, requestedModel string, openAICo
 		cfg.EmbeddingModel = s.openAIEmbeddingModel
 		if strings.TrimSpace(cfg.OpenAIAPIKey) == "" {
 			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "openai provider requested but no API key is available (provide llm.openai.api_key or enable/use server fallback key)"}
+		}
+		return cfg, model, nil
+	case "azure":
+		model := firstNonEmpty(requestedModel, s.azureAIDefaultModel)
+		cfg.DefaultModel = model
+		cfg.EmbeddingModel = s.azureAIEmbeddingModel
+		if strings.TrimSpace(cfg.AzureAIAPIKey) == "" {
+			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "azure provider requested but AZURE_AI_API_KEY or AZURE_OPENAI_API_KEY is unavailable"}
+		}
+		if strings.TrimSpace(cfg.AzureAIBaseURL) == "" {
+			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "azure provider requested but AZURE_AI_BASE_URL or AZURE_OPENAI_ENDPOINT is unavailable"}
 		}
 		return cfg, model, nil
 	case "xai":
@@ -630,6 +663,8 @@ func normalizePersonaProvider(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "openai", "chatgpt", "chat-gpt":
 		return "openai"
+	case "azure", "azureai", "azure-ai", "azure-openai", "azure_openai", "microsoft", "msai", "windows", "windowsai", "windows-ai":
+		return "azure"
 	case "xai", "x-ai", "grok", "grock":
 		return "xai"
 	case "ollama", "local":
@@ -647,7 +682,7 @@ func normalizePersonaProvider(value string) string {
 
 func isSupportedPersonaProvider(provider string) bool {
 	switch normalizePersonaProvider(provider) {
-	case "ollama", "openai", "xai", "google", "anthropic", "huggingface":
+	case "ollama", "openai", "azure", "xai", "google", "anthropic", "huggingface":
 		return true
 	default:
 		return false

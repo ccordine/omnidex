@@ -120,12 +120,14 @@ func main() {
 
 	ollamaDefaultModel := envOrFallback("OLLAMA_MODEL", "")
 	openAIDefaultModel := envOrFallback("OPENAI_MODEL", "")
+	azureAIDefaultModel := envOrFallback("AZURE_AI_MODEL", envOrFallback("AZURE_OPENAI_DEPLOYMENT", ""))
 	xAIDefaultModel := envOrFallback("XAI_MODEL", envOrFallback("GROK_MODEL", ""))
 	googleDefaultModel := envOrFallback("GOOGLE_MODEL", envOrFallback("GEMINI_MODEL", ""))
 	anthropicDefaultModel := envOrFallback("ANTHROPIC_MODEL", envOrFallback("CLAUDE_MODEL", ""))
 	huggingFaceDefaultModel := envOrFallback("HUGGINGFACE_MODEL", envOrFallback("HF_MODEL", ""))
 	ollamaEmbeddingModel := envOrFallback("OLLAMA_EMBEDDING_MODEL", "")
 	openAIEmbeddingModel := envOrFallback("OPENAI_EMBEDDING_MODEL", "")
+	azureAIEmbeddingModel := envOrFallback("AZURE_AI_EMBEDDING_MODEL", envOrFallback("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", ""))
 	googleEmbeddingModel := envOrFallback("GOOGLE_EMBEDDING_MODEL", envOrFallback("GEMINI_EMBEDDING_MODEL", ""))
 	huggingFaceEmbeddingModel := envOrFallback("HUGGINGFACE_EMBEDDING_MODEL", envOrFallback("HF_EMBEDDING_MODEL", ""))
 
@@ -134,6 +136,9 @@ func main() {
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "openai") {
 		openAIDefaultModel = envOrFallback("OPENAI_MODEL", cfg.DefaultModel)
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "azure") {
+		azureAIDefaultModel = envOrFallback("AZURE_AI_MODEL", envOrFallback("AZURE_OPENAI_DEPLOYMENT", cfg.DefaultModel))
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "xai") {
 		xAIDefaultModel = envOrFallback("XAI_MODEL", envOrFallback("GROK_MODEL", cfg.DefaultModel))
@@ -152,6 +157,8 @@ func main() {
 		ollamaEmbeddingModel = envOrFallback("OLLAMA_EMBEDDING_MODEL", cfg.EmbeddingModel)
 	case "openai":
 		openAIEmbeddingModel = envOrFallback("OPENAI_EMBEDDING_MODEL", cfg.EmbeddingModel)
+	case "azure":
+		azureAIEmbeddingModel = envOrFallback("AZURE_AI_EMBEDDING_MODEL", envOrFallback("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", cfg.EmbeddingModel))
 	case "google":
 		googleEmbeddingModel = envOrFallback("GOOGLE_EMBEDDING_MODEL", envOrFallback("GEMINI_EMBEDDING_MODEL", cfg.EmbeddingModel))
 	case "huggingface":
@@ -171,6 +178,12 @@ func main() {
 		OpenAIProject:             cfg.OpenAIProject,
 		OpenAIDefaultModel:        openAIDefaultModel,
 		OpenAIEmbeddingModel:      openAIEmbeddingModel,
+		AzureAIBaseURL:            cfg.AzureAIBaseURL,
+		AzureAIAPIKey:             cfg.AzureAIAPIKey,
+		AzureAIAPIVersion:         cfg.AzureAIAPIVersion,
+		AzureAIAPIStyle:           cfg.AzureAIAPIStyle,
+		AzureAIDefaultModel:       azureAIDefaultModel,
+		AzureAIEmbeddingModel:     azureAIEmbeddingModel,
 		XAIBaseURL:                cfg.XAIBaseURL,
 		XAIAPIKey:                 cfg.XAIAPIKey,
 		XAIDefaultModel:           xAIDefaultModel,
