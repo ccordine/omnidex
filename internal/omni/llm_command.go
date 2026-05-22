@@ -160,6 +160,7 @@ type StructuredLLMEvaluationInput struct {
 	Step             int
 	UserPrompt       string
 	PlannerJob       string
+	ValidationScope  string
 	LLMResponse      string
 	Observations     []StructuredCommandObservation
 	CompletedActions []CompletedAction
@@ -180,16 +181,17 @@ type StructuredLLMResponseEvaluator interface {
 }
 
 type ShellCommandSpecialistInput struct {
-	Step             int
-	UserPrompt       string
-	ToolTask         string
-	RepairFeedback   string
-	RepairAttempt    int
-	Observations     []StructuredCommandObservation
-	CompletedActions []CompletedAction
-	LoopState        StructuredLoopState
-	SessionMemories  []SessionMemory
-	WorksiteSurvey   WorksiteSurvey
+	Step              int
+	UserPrompt        string
+	ToolTask          string
+	ArchitectContract ImplementationArchitectContract
+	RepairFeedback    string
+	RepairAttempt     int
+	Observations      []StructuredCommandObservation
+	CompletedActions  []CompletedAction
+	LoopState         StructuredLoopState
+	SessionMemories   []SessionMemory
+	WorksiteSurvey    WorksiteSurvey
 }
 
 type ShellCommandProposal struct {
@@ -724,6 +726,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		ledger = mergeStructuredObjectiveLedger(ledger, payload.ObjectiveLedger)
 		result.ObjectiveLedger = ledger
 		if hasStructuredProofPlan(payload.ProofPlan) {
+			if repaired, reason := repairStructuredProofPlanFromLedger(&payload.ProofPlan, ledger); repaired {
+				emitStructuredCommandEvent(onEvent, "structured_proof_plan_repaired", "Proof plan repaired from objective ledger", map[string]string{
+					"step":   fmt.Sprintf("%d", step),
+					"reason": truncateStructuredTimelineValue(reason),
+				})
+			}
 			if err := validateStructuredProofPlan(payload.ProofPlan, ledger); err != nil {
 				result.Observations = append(result.Observations, StructuredCommandObservation{
 					Step:             step,
@@ -3341,6 +3349,15 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 	if cfg.ShellSpecialist == nil {
 		return ShellCommandProposal{}, false, nil
 	}
+	architectContract := buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations)
+	if hasImplementationArchitectContract(architectContract) {
+		emitStructuredCommandEvent(onEvent, "implementation_architect_contract_created", "Implementation architect created coding contract", map[string]string{
+			"step":           fmt.Sprintf("%d", step),
+			"target_root":    architectContract.TargetRoot,
+			"framework":      architectContract.Framework,
+			"proof_commands": strings.Join(architectContract.ProofCommands, ","),
+		})
+	}
 	for attempt := 0; attempt <= defaultShellSpecialistRepairAttempts; attempt++ {
 		if attempt > 0 {
 			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_started", "Shell specialist received direct validator feedback for local repair", map[string]string{
@@ -3349,16 +3366,17 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			})
 		}
 		proposal, err := cfg.ShellSpecialist.ProposeShellCommand(ctx, ShellCommandSpecialistInput{
-			Step:             step,
-			UserPrompt:       prompt,
-			ToolTask:         toolTask,
-			RepairFeedback:   latestShellRepairFeedback(result.Observations),
-			RepairAttempt:    attempt,
-			Observations:     result.Observations,
-			CompletedActions: completedActionsFromState(*ledger, result.Observations),
-			LoopState:        structuredLoopStateFromState(*ledger, result.Observations),
-			SessionMemories:  cfg.SessionMemories,
-			WorksiteSurvey:   worksiteSurvey,
+			Step:              step,
+			UserPrompt:        prompt,
+			ToolTask:          toolTask,
+			ArchitectContract: architectContract,
+			RepairFeedback:    latestShellRepairFeedback(result.Observations),
+			RepairAttempt:     attempt,
+			Observations:      result.Observations,
+			CompletedActions:  completedActionsFromState(*ledger, result.Observations),
+			LoopState:         structuredLoopStateFromState(*ledger, result.Observations),
+			SessionMemories:   cfg.SessionMemories,
+			WorksiteSurvey:    worksiteSurvey,
 		})
 		if err != nil {
 			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_failed", "Shell specialist failed", map[string]string{
@@ -3694,6 +3712,16 @@ func structuredEvaluationRetryMessage(evaluation StructuredLLMEvaluation, thresh
 	return fmt.Sprintf("self-evaluation rejected response: verdict=%s confidence=%d threshold=%d; feedback=%s; try again using the active prompt, planner job, observations, worksite survey, and capability memory", verdict, evaluation.Confidence, threshold, feedback)
 }
 
+func structuredEvaluatorValidationScope(ledger []StructuredObjective, observations []StructuredCommandObservation) string {
+	if hasSuccessfulStructuredMutation(observations) {
+		return "alignment_after_evidence"
+	}
+	if len(pendingStructuredObjectives(ledger)) > 0 {
+		return "current_objective_and_payload_shape"
+	}
+	return "planner_payload_shape_only"
+}
+
 func evaluateAndRepairPlannerResponse(ctx context.Context, step int, prompt string, client CommandDecisionClient, baseReq OllamaChatRequest, resp OllamaChatResponse, evaluator StructuredLLMResponseEvaluator, evaluatorThreshold int, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger []StructuredObjective, observations []StructuredCommandObservation, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, OllamaChatResponse, bool, error) {
 	if evaluator == nil {
 		return true, resp, false, nil
@@ -3715,6 +3743,7 @@ func evaluateAndRepairPlannerResponse(ctx context.Context, step int, prompt stri
 			Step:             step,
 			UserPrompt:       prompt,
 			PlannerJob:       structuredCommandPlannerJobSummary(),
+			ValidationScope:  structuredEvaluatorValidationScope(ledger, result.Observations),
 			LLMResponse:      currentResp.Content,
 			Observations:     result.Observations,
 			CompletedActions: completedActionsFromState(ledger, result.Observations),
@@ -3965,6 +3994,7 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 	payload := struct {
 		Step             int                            `json:"step"`
 		Job              string                         `json:"planner_job"`
+		ValidationScope  string                         `json:"validation_scope"`
 		UserPrompt       string                         `json:"user_prompt"`
 		LLMResponse      string                         `json:"llm_response"`
 		Observations     []StructuredCommandObservation `json:"observations"`
@@ -3975,6 +4005,7 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 	}{
 		Step:             input.Step,
 		Job:              input.PlannerJob,
+		ValidationScope:  input.ValidationScope,
 		UserPrompt:       input.UserPrompt,
 		LLMResponse:      input.LLMResponse,
 		Observations:     compactStructuredObservationsForContext(input.Observations, 8, 650),
@@ -3996,6 +4027,8 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 					"Return JSON only with schema {\"verdict\":\"accept|revise|reject\",\"confidence\":0,\"blocking_reason\":\"\",\"feedback\":\"\"}.",
 					"confidence must be an integer from 0 to 100.",
 					"Score whether llm_response is on track for planner_job and user_prompt.",
+					"Validation scope is authoritative: planner_payload_shape_only checks whether the next payload is executable and in scope; current_objective_and_payload_shape checks only the current objective and payload; alignment_after_evidence checks final fit after implementation evidence exists.",
+					"Do not act as a broad product critic during planner_payload_shape_only or current_objective_and_payload_shape; do not add new feature expectations beyond user_explicit, recipe_required, detected_project, or evidence_required_prerequisite objectives.",
 					"Treat completed_actions as authoritative progress; reject planner output that repeats completed work instead of advancing pending objectives.",
 					"Treat loop_state as the loop monitor output; reject or revise responses that keep repeating its blocked action pattern.",
 					"Do not treat loop_state.repeated_command as a ban; it is evidence that prior validation disliked a proposal or that a failed command needs correction.",
@@ -4007,7 +4040,7 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 					"Do not solve the user's task.",
 					"Do not penalize a proposed command merely because it has not executed yet; the runtime executes accepted commands.",
 					"For empty-workspace app build tasks with documentation_brief prep, revise any response that only checks compiler availability, fetches documentation, or states that the workspace is empty; the retry should write source/build/test files from prep evidence.",
-					"For code or app feature work without prior test/probe evidence, prefer revise when the planner jumps straight to implementation without creating or updating a focused test, smoke test, or deterministic verification probe.",
+					"For proof-first tasks, prefer revise when the planner jumps straight to implementation without creating or updating a focused test, smoke test, or deterministic verification probe, but accept a command that creates the proof and minimal implementation together.",
 					"For proof-first tasks, revise proof plans that expand beyond user_explicit, recipe_required, or evidence_required_prerequisite objectives.",
 					"Revise attempts to weaken, delete, skip, or rewrite a validated test/probe unless the payload gives validator-approved syntax/tooling correction, user-request change, or equivalent framework migration evidence.",
 					"Prefer the lightest proof type that gives a clear signal: unit/integration test, smoke test, golden output, compiler check, lint check, source verification, or manual evaluator acceptance.",
@@ -5045,6 +5078,9 @@ func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, ration
 	if toolTaskRequiresSourceImplementation(toolTask) && structuredCommandLooksDependencyInstall(command) && !toolTaskAllowsDependencyInstall(toolTask) {
 		return fmt.Errorf("tool_task requires source file implementation; dependency install command %q does not satisfy it", strings.TrimSpace(command))
 	}
+	if err := validateShellProposalMatchesToolTaskTarget(command, toolTask); err != nil {
+		return err
+	}
 	if shellProposalIsPlaceholderOnlyMutation(command) {
 		if toolTaskRequiresSubstantiveProofContent(toolTask) {
 			return fmt.Errorf("tool_task requires substantive source/build/test content; placeholder-only command %q does not satisfy focused TDD/proof work", strings.TrimSpace(command))
@@ -5081,6 +5117,164 @@ func toolTaskRequiresSubstantiveProofContent(toolTask string) bool {
 		"empty project file",
 	} {
 		if strings.Contains(task, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateShellProposalMatchesToolTaskTarget(command, toolTask string) error {
+	if err := validateShellProposalMatchesArchitectTarget(command, toolTask); err != nil {
+		return err
+	}
+	emptyFiles := emptyProjectFilesFromToolTask(toolTask)
+	if len(emptyFiles) == 0 {
+		return validateShellProposalLanguageScope(command, toolTask)
+	}
+	if err := validateShellProposalLanguageScope(command, toolTask); err != nil {
+		return err
+	}
+	if structuredCommandLooksReadOnlyEvidence(command) || structuredCommandLooksDependencyInstall(command) {
+		return nil
+	}
+	if commandTargetsAnyEmptyProjectFile(command, emptyFiles) {
+		return nil
+	}
+	root := commonProjectRootForListedFiles(emptyFiles)
+	if root != "" {
+		return fmt.Errorf("empty-file recovery targets nested project %q; command %q must cd into that project or write one of the listed files with its full path", root, strings.TrimSpace(command))
+	}
+	return fmt.Errorf("empty-file recovery must fill or remove one of the listed empty file(s): %s", strings.Join(emptyFiles, ","))
+}
+
+func validateShellProposalMatchesArchitectTarget(command, toolTask string) error {
+	target := implementationArchitectTargetRootFromToolTask(toolTask)
+	if target == "" {
+		return nil
+	}
+	if structuredCommandLooksReadOnlyEvidence(command) || structuredCommandLooksDependencyInstall(command) {
+		return nil
+	}
+	cmd := filepath.ToSlash(strings.ToLower(command))
+	target = filepath.ToSlash(strings.ToLower(strings.Trim(target, "/")))
+	if commandChangesIntoProjectRoot(cmd, target) || strings.Contains(cmd, target+"/") {
+		return nil
+	}
+	return fmt.Errorf("tool_task target root is %q; command %q must cd into that root or use paths under it", target, strings.TrimSpace(command))
+}
+
+func implementationArchitectTargetRootFromToolTask(toolTask string) string {
+	const marker = "Implementation architect target root:"
+	idx := strings.Index(toolTask, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(toolTask[idx+len(marker):])
+	if end := strings.Index(rest, "."); end >= 0 {
+		rest = rest[:end]
+	}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Trim(fields[0], `"'`)
+}
+
+func validateShellProposalLanguageScope(command, toolTask string) error {
+	task := strings.ToLower(toolTask)
+	cmd := strings.ToLower(command)
+	if (strings.Contains(task, "react") || strings.Contains(task, "javascript") || strings.Contains(task, "frontend")) &&
+		(strings.Contains(cmd, ".py") || strings.Contains(cmd, "python -") || strings.Contains(cmd, "python3 -")) {
+		return fmt.Errorf("tool_task is for a React/JavaScript frontend; command %q drifts into Python instead of project source/build/test files", strings.TrimSpace(command))
+	}
+	return nil
+}
+
+func emptyProjectFilesFromToolTask(toolTask string) []string {
+	const marker = "Empty file(s):"
+	idx := strings.Index(toolTask, marker)
+	if idx < 0 {
+		return nil
+	}
+	rest := toolTask[idx+len(marker):]
+	for _, boundary := range []string{". Active task:", ". Pending objective", ". Required next", ". Do not", ". After fixing", "\n"} {
+		if end := strings.Index(rest, boundary); end >= 0 {
+			rest = rest[:end]
+			break
+		}
+	}
+	files := []string{}
+	for _, part := range strings.Split(rest, ",") {
+		file := strings.TrimSpace(part)
+		file = strings.Trim(file, `"'`)
+		if file != "" {
+			files = append(files, filepath.ToSlash(file))
+		}
+	}
+	return files
+}
+
+func commandTargetsAnyEmptyProjectFile(command string, files []string) bool {
+	cmd := filepath.ToSlash(strings.ToLower(command))
+	for _, file := range files {
+		file = filepath.ToSlash(strings.TrimSpace(file))
+		if file == "" {
+			continue
+		}
+		lowerFile := strings.ToLower(file)
+		if strings.Contains(cmd, lowerFile) {
+			return true
+		}
+		root := commonProjectRootForListedFiles([]string{file})
+		if root == "" {
+			continue
+		}
+		rel := strings.TrimPrefix(file, root+"/")
+		if rel != file && commandChangesIntoProjectRoot(cmd, root) && strings.Contains(cmd, strings.ToLower(rel)) {
+			return true
+		}
+	}
+	return false
+}
+
+func commonProjectRootForListedFiles(files []string) string {
+	root := ""
+	for _, file := range files {
+		file = strings.Trim(filepath.ToSlash(strings.TrimSpace(file)), "/")
+		parts := strings.Split(file, "/")
+		if len(parts) < 2 {
+			return ""
+		}
+		candidate := parts[0]
+		if candidate == "src" || candidate == "tests" || candidate == "test" {
+			return ""
+		}
+		if root == "" {
+			root = candidate
+			continue
+		}
+		if root != candidate {
+			return ""
+		}
+	}
+	return root
+}
+
+func commandChangesIntoProjectRoot(command, root string) bool {
+	root = strings.ToLower(strings.Trim(filepath.ToSlash(root), "/"))
+	if root == "" {
+		return false
+	}
+	for _, needle := range []string{
+		"cd " + root,
+		"cd ./" + root,
+		"cd '" + root + "'",
+		"cd \"" + root + "\"",
+		"--prefix " + root,
+		"--prefix=./" + root,
+		"--prefix=" + root,
+	} {
+		if strings.Contains(command, needle) {
 			return true
 		}
 	}
@@ -5353,6 +5547,9 @@ func toolTaskRequiresMutation(toolTask string) bool {
 		"tdd",
 		"proof",
 		"verification probe",
+		"implementation architect target root:",
+		"completion is blocked because empty project files remain",
+		"empty file(s):",
 		"writes index.html, src/index.js, styles, package scripts, and verification files",
 		"npm run build",
 		"npm test",
@@ -7620,31 +7817,35 @@ func structuredObjectiveLedgerSchema() map[string]interface{} {
 
 func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) OllamaChatRequest {
 	payload := struct {
-		Role             string                         `json:"role"`
-		UserPrompt       string                         `json:"user_prompt"`
-		ToolTask         string                         `json:"tool_task"`
-		RepairFeedback   string                         `json:"repair_feedback,omitempty"`
-		Observations     []StructuredCommandObservation `json:"observations"`
-		CompletedActions []CompletedAction              `json:"completed_actions,omitempty"`
-		LoopState        StructuredLoopState            `json:"loop_state,omitempty"`
-		SessionMemories  []SessionMemory                `json:"session_memories,omitempty"`
-		WorksiteSurvey   WorksiteSurvey                 `json:"worksite_survey"`
-		ToolRules        []string                       `json:"tool_rules"`
-		RepairAttempt    int                            `json:"repair_attempt,omitempty"`
+		Role              string                          `json:"role"`
+		UserPrompt        string                          `json:"user_prompt"`
+		ToolTask          string                          `json:"tool_task"`
+		ArchitectContract ImplementationArchitectContract `json:"architect_contract,omitempty"`
+		RepairFeedback    string                          `json:"repair_feedback,omitempty"`
+		Observations      []StructuredCommandObservation  `json:"observations"`
+		CompletedActions  []CompletedAction               `json:"completed_actions,omitempty"`
+		LoopState         StructuredLoopState             `json:"loop_state,omitempty"`
+		SessionMemories   []SessionMemory                 `json:"session_memories,omitempty"`
+		WorksiteSurvey    WorksiteSurvey                  `json:"worksite_survey"`
+		ToolRules         []string                        `json:"tool_rules"`
+		RepairAttempt     int                             `json:"repair_attempt,omitempty"`
 	}{
-		Role:             "shell_execution_specialist",
-		UserPrompt:       input.UserPrompt,
-		ToolTask:         input.ToolTask,
-		RepairFeedback:   input.RepairFeedback,
-		RepairAttempt:    input.RepairAttempt,
-		Observations:     compactStructuredObservationsForContext(input.Observations, 8, 650),
-		CompletedActions: input.CompletedActions,
-		LoopState:        input.LoopState,
-		SessionMemories:  compactSessionMemoriesForStructuredContext(input.SessionMemories, 6, 600),
-		WorksiteSurvey:   input.WorksiteSurvey,
+		Role:              "shell_execution_specialist",
+		UserPrompt:        input.UserPrompt,
+		ToolTask:          input.ToolTask,
+		ArchitectContract: input.ArchitectContract,
+		RepairFeedback:    input.RepairFeedback,
+		RepairAttempt:     input.RepairAttempt,
+		Observations:      compactStructuredObservationsForContext(input.Observations, 8, 650),
+		CompletedActions:  input.CompletedActions,
+		LoopState:         input.LoopState,
+		SessionMemories:   compactSessionMemoriesForStructuredContext(input.SessionMemories, 6, 600),
+		WorksiteSurvey:    input.WorksiteSurvey,
 		ToolRules: []string{
 			"Return JSON only with schema {\"command\":\"...\",\"rationale\":\"...\"}.",
 			"Only choose a shell command that directly satisfies tool_task from the planner authority.",
+			"If architect_contract is present, treat it as the implementation architect's authority over target_root, edit_surface, proof_commands, and guardrails.",
+			"The architect decides what source area is edited and how it is proven; the coder/shell specialist only chooses the next concrete command inside that contract.",
 			"If repair_feedback is non-empty, treat it as direct validator feedback for this retry; the next command must visibly correct that exact issue.",
 			"Treat completed_actions as authoritative progress; never choose a command that repeats or recreates an already completed action.",
 			"Treat loop_state as authoritative loop-monitor context; if it is stuck or blocked, choose a command that changes the pattern or gathers missing evidence.",
@@ -7653,6 +7854,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			"If tool_task says creation, modification, writing, patching, build, or test is required, do not choose read-only inspection commands such as ls, cat, find, npm ls, sed -n, rg, grep, pwd, or test -f.",
 			"If tool_task or observations mention chunked file editing, choose commands that read, patch, or verify one stated line range at a time; prefer the provided sed -n range over cat for large files.",
 			"If tool_task says read-only inventory commands are forbidden, choose a file mutation, build, test, or patch-related shell command.",
+			"If tool_task contains 'Implementation architect target root:', treat that target root as authoritative; cd into it or prefix all source/build/test paths with it.",
 			"If tool_task names app, component, CRUD, UI, state, storage, or substantive source objectives, choose a command that writes or patches source files; do not choose dependency installs, echo/printf status text, or placeholder-only touch/mkdir scaffolds.",
 			"If tool_task or repair_feedback mentions focused tests, TDD, proof plans, smoke tests, verification probes, source/build/test files, or placeholder-only files, do not use touch or mkdir alone; write substantive file content with a here-doc, tee, node/python script, sed/perl edit, or patch.",
 			"For app/code feature tool_tasks, prefer a TDD command when no test/probe evidence exists yet: create or update a focused test, smoke test, or deterministic source-verification probe before implementation, or write the test/probe and minimal implementation together when one command is required.",

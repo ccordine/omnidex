@@ -260,6 +260,7 @@ func missingFileRecoveryToolTask(prompt string, ledger []StructuredObjective, ob
 
 func existingScaffoldRecoveryToolTask(prompt string, ledger []StructuredObjective, obs StructuredCommandObservation, workingDir string) string {
 	pending := pendingStructuredObjectiveIDs(ledger)
+	targetRoot := scaffoldRootFromObservation(obs, workingDir)
 	parts := []string{
 		"Recovery required.",
 		"The project scaffold already exists, so setup/scaffold commands must not be rerun.",
@@ -269,6 +270,9 @@ func existingScaffoldRecoveryToolTask(prompt string, ledger []StructuredObjectiv
 		"Required next behavior: create or modify the actual backend and frontend project files now.",
 		"For a Go plus React app, patch existing Go server/API files, React component/source files, package scripts or Makefile targets, and automated tests/smoke checks.",
 		"After source edits, run targeted verification such as go test ./..., npm test, npm run build, or make test.",
+	}
+	if targetRoot != "" {
+		parts = append(parts, "Implementation architect target root: "+targetRoot+". All source edits, package scripts, and verification commands for this app must run inside "+targetRoot+" or use paths under "+targetRoot+"/.")
 	}
 	if pending != "" {
 		parts = append(parts, "Active objective(s): "+pending+".")
@@ -281,6 +285,27 @@ func existingScaffoldRecoveryToolTask(prompt string, ledger []StructuredObjectiv
 		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
 	}
 	return strings.Join(parts, " ")
+}
+
+func scaffoldRootFromObservation(obs StructuredCommandObservation, workingDir string) string {
+	text := obs.Command + "\n" + obs.Stdout + "\n" + obs.Stderr
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Success! Created ") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 3 {
+			name := strings.Trim(parts[2], `"'`)
+			if name != "" {
+				return name
+			}
+		}
+	}
+	if nested := firstNestedAppRootWithFiles(workingDir); nested != "" {
+		return nested
+	}
+	return ""
 }
 
 func dockerLifecycleRecoveryToolTask(prompt string, ledger []StructuredObjective, obs StructuredCommandObservation, workingDir string) string {
@@ -400,6 +425,9 @@ func workspaceMissingAppFiles(root string) bool {
 	if root == "" {
 		return false
 	}
+	if nested := firstNestedAppRootWithFiles(root); nested != "" {
+		return false
+	}
 	hasWebEntrypoint := fileHasContent(filepath.Join(root, "src", "index.js")) ||
 		fileHasContent(filepath.Join(root, "src", "main.js")) ||
 		fileHasContent(filepath.Join(root, "src", "index.jsx")) ||
@@ -418,6 +446,68 @@ func workspaceMissingAppFiles(root string) bool {
 		return false
 	}
 	return true
+}
+
+func firstNestedAppRootWithFiles(root string) string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || shouldSkipEmptyFileScanDir(entry.Name()) {
+			continue
+		}
+		candidate := filepath.Join(root, entry.Name())
+		if !fileHasContent(filepath.Join(candidate, "package.json")) &&
+			!fileHasContent(filepath.Join(candidate, "Cargo.toml")) &&
+			!fileHasContent(filepath.Join(candidate, "go.mod")) &&
+			!fileHasContent(filepath.Join(candidate, "build.zig")) {
+			continue
+		}
+		if !workspaceMissingAppFilesShallow(candidate) {
+			return entry.Name()
+		}
+	}
+	return ""
+}
+
+func workspaceMissingAppFilesShallow(root string) bool {
+	hasWebEntrypoint := fileHasContent(filepath.Join(root, "src", "index.js")) ||
+		fileHasContent(filepath.Join(root, "src", "main.js")) ||
+		fileHasContent(filepath.Join(root, "src", "index.jsx")) ||
+		fileHasContent(filepath.Join(root, "src", "main.jsx"))
+	if fileHasContent(filepath.Join(root, "index.html")) && hasWebEntrypoint {
+		return false
+	}
+	if fileHasContent(filepath.Join(root, "public", "index.html")) && hasWebEntrypoint && fileHasContent(filepath.Join(root, "package.json")) {
+		return false
+	}
+	if (fileHasContent(filepath.Join(root, "Cargo.toml")) && (fileHasContent(filepath.Join(root, "src", "main.rs")) || fileHasContent(filepath.Join(root, "src", "lib.rs")))) ||
+		(fileHasContent(filepath.Join(root, "go.mod")) && hasAnyFileWithExt(filepath.Join(root), ".go")) ||
+		((fileHasContent(filepath.Join(root, "build.zig")) || fileHasContent(filepath.Join(root, "build.zig.zon"))) && fileHasContent(filepath.Join(root, "src", "main.zig"))) {
+		return false
+	}
+	return true
+}
+
+func hasAnyFileWithExt(root, ext string) bool {
+	found := false
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if entry.IsDir() {
+			if shouldSkipEmptyFileScanDir(entry.Name()) && path != root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ext) && fileHasContent(path) {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 func fileHasContent(path string) bool {

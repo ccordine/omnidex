@@ -138,6 +138,7 @@ func emptyProjectFilesRecoveryToolTask(prompt string, ledger []StructuredObjecti
 		"Recovery required.",
 		"Completion is blocked because empty project files remain.",
 		"Required next behavior: inspect only the listed empty files if needed, then fill each with substantive source/build/test/config content or remove it if unused.",
+		"Commands must target the listed paths exactly; if the listed paths are under a nested project directory, cd into that directory first or write using the full listed path.",
 		"Do not use touch or mkdir.",
 		"After fixing empty files, run the focused build/test/source-verification command.",
 	}

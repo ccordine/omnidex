@@ -115,6 +115,23 @@ func validateStructuredProofPlan(plan StructuredProofPlan, ledger []StructuredOb
 	return nil
 }
 
+func repairStructuredProofPlanFromLedger(plan *StructuredProofPlan, ledger []StructuredObjective) (bool, string) {
+	if plan == nil || strings.TrimSpace(plan.ObjectiveID) != "" {
+		return false, ""
+	}
+	pending := pendingStructuredObjectives(ledger)
+	if len(pending) != 1 {
+		return false, ""
+	}
+	objective := pending[0]
+	source := normalizeStructuredObjectiveSource(objective.Source)
+	if !structuredProofObjectiveSourceAllowed(source, plan.AllowedObjectiveSources) {
+		return false, ""
+	}
+	plan.ObjectiveID = objective.ID
+	return true, "filled missing proof_plan objective_id from the single pending objective " + objective.ID
+}
+
 func hasStructuredProofPlan(plan StructuredProofPlan) bool {
 	return strings.TrimSpace(plan.ObjectiveID) != "" ||
 		strings.TrimSpace(plan.ProofType) != "" ||

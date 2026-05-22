@@ -70,6 +70,31 @@ func TestValidateStructuredProofPlanRequiresExecutableSignal(t *testing.T) {
 	}
 }
 
+func TestRepairStructuredProofPlanFromSinglePendingObjective(t *testing.T) {
+	ledger := []StructuredObjective{{
+		ID:       "resolve_empty_project_files",
+		Status:   "pending",
+		Source:   structuredObjectiveSourceEvidenceRequiredPrerequisite,
+		Required: true,
+	}}
+	plan := StructuredProofPlan{
+		ProofType:        structuredProofTypeSmokeTest,
+		Commands:         []string{"npm run build"},
+		AcceptanceChecks: []string{"build passes"},
+	}
+
+	repaired, reason := repairStructuredProofPlanFromLedger(&plan, ledger)
+	if !repaired {
+		t.Fatalf("expected repair, reason=%q plan=%#v", reason, plan)
+	}
+	if plan.ObjectiveID != "resolve_empty_project_files" {
+		t.Fatalf("objective_id = %q", plan.ObjectiveID)
+	}
+	if err := validateStructuredProofPlan(plan, ledger); err != nil {
+		t.Fatalf("repaired proof plan should validate: %v", err)
+	}
+}
+
 func TestStructuredProofPolicyContainsTamperAndScopeRules(t *testing.T) {
 	policy := strings.Join(structuredProofPolicy(), "\n")
 	for _, want := range []string{

@@ -5394,6 +5394,58 @@ func TestValidateShellProposalRejectsTouchForFocusedTDDFile(t *testing.T) {
 	}
 }
 
+func TestValidateShellProposalRequiresNestedEmptyFileTarget(t *testing.T) {
+	toolTask := "Recovery required. Completion is blocked because empty project files remain. Empty file(s): music-production-app/src/components/Sequencer.js,music-production-app/src/components/Track.js. Active task: build a React app."
+	for _, command := range []string{
+		`echo 'console.log("Hello")' > index.js`,
+		`echo 'export default function App() { return null }' > src/App.js`,
+		`echo 'import unittest' > tests/test_example.py`,
+	} {
+		err := validateShellProposalAgainstToolTask(command, toolTask)
+		if err == nil {
+			t.Fatalf("expected wrong-target command to be rejected: %s", command)
+		}
+	}
+}
+
+func TestValidateShellProposalAllowsNestedEmptyFileTarget(t *testing.T) {
+	toolTask := "Recovery required. Completion is blocked because empty project files remain. Empty file(s): music-production-app/src/components/Sequencer.js,music-production-app/src/components/Track.js. Active task: build a React app."
+	commands := []string{
+		`cat > music-production-app/src/components/Sequencer.js <<'JS'
+export default function Sequencer() { return null; }
+JS`,
+		`cd music-production-app && cat > src/components/Track.js <<'JS'
+export default function Track() { return null; }
+JS`,
+	}
+	for _, command := range commands {
+		if err := validateShellProposalAgainstToolTask(command, toolTask); err != nil {
+			t.Fatalf("expected nested-target command to be allowed: %v\n%s", err, command)
+		}
+	}
+}
+
+func TestValidateShellProposalRequiresArchitectTargetRoot(t *testing.T) {
+	toolTask := "Recovery required. Implementation architect target root: react-music-production. All source edits, package scripts, and verification commands for this app must run inside react-music-production or use paths under react-music-production/."
+	if err := validateShellProposalAgainstToolTask(`cat > src/App.js <<'JS'
+export default function App() { return null; }
+JS`, toolTask); err == nil {
+		t.Fatal("expected root-relative source edit to be rejected")
+	}
+	for _, command := range []string{
+		`cd react-music-production && cat > src/App.js <<'JS'
+export default function App() { return null; }
+JS`,
+		`cat > react-music-production/src/App.js <<'JS'
+export default function App() { return null; }
+JS`,
+	} {
+		if err := validateShellProposalAgainstToolTask(command, toolTask); err != nil {
+			t.Fatalf("expected architect-targeted command to be allowed: %v", err)
+		}
+	}
+}
+
 func TestValidateShellProposalAgainstWriteRequiredToolTaskRejectsPlaceholderMutation(t *testing.T) {
 	for _, command := range []string{"touch Clock.js", "mkdir -p src && touch src/Clock.js"} {
 		err := validateShellProposalAgainstToolTask(command, "Required next behavior: create or modify the actual project files now. Do not create placeholder-only files with touch or empty mkdir scaffolds.")

@@ -195,6 +195,34 @@ func TestProgressionGateContinuesAfterExistingGoReactScaffold(t *testing.T) {
 	}
 }
 
+func TestExistingScaffoldRecoveryIncludesNestedTargetRoot(t *testing.T) {
+	workspace := t.TempDir()
+	app := filepath.Join(workspace, "react-music-production")
+	if err := os.MkdirAll(filepath.Join(app, "public"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(app, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"build":"react-scripts build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "public", "index.html"), []byte(`<div id="root"></div>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "src", "index.js"), []byte(`import './App';`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	task := existingScaffoldRecoveryToolTask("build a React app", nil, StructuredCommandObservation{
+		Command: "npx create-react-app react-music-production",
+		Stdout:  "Success! Created react-music-production at /tmp/demo/react-music-production",
+	}, workspace)
+	if !strings.Contains(task, "Implementation architect target root: react-music-production") {
+		t.Fatalf("recovery task missing target root: %s", task)
+	}
+}
+
 func TestProgressionGateForcesDockerLifecycleAfterDockerfileOnlyProgress(t *testing.T) {
 	command := "echo 'Creating Dockerfile...' && echo 'FROM nginx:alpine' > Dockerfile && echo 'Dockerfile created successfully.'"
 	gate := ProgressionGate{}
@@ -443,6 +471,33 @@ func TestWorkspaceMissingAppFilesAcceptsRustCargoProjectFiles(t *testing.T) {
 	}
 	if workspaceMissingAppFiles(workspace) {
 		t.Fatal("complete Rust Cargo project files should satisfy app-file presence")
+	}
+}
+
+func TestWorkspaceMissingAppFilesAcceptsNestedReactProjectFiles(t *testing.T) {
+	workspace := t.TempDir()
+	app := filepath.Join(workspace, "react-music-production")
+	if err := os.MkdirAll(filepath.Join(app, "public"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(app, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"build":"react-scripts build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "public", "index.html"), []byte(`<div id="root"></div>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "src", "index.js"), []byte(`import './App';`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if workspaceMissingAppFiles(workspace) {
+		t.Fatal("nested React project files should satisfy app-file presence for parent workspace")
+	}
+	if got := firstNestedAppRootWithFiles(workspace); got != "react-music-production" {
+		t.Fatalf("nested app root = %q", got)
 	}
 }
 
