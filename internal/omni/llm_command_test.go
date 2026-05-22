@@ -2025,6 +2025,9 @@ func TestValidateStructuredCommandRejectsOnlyPureEcho(t *testing.T) {
 	if err := validateStructuredCommandString("echo 'fake final answer'"); err == nil {
 		t.Fatal("pure echo should be rejected")
 	}
+	if err := validateStructuredCommandString("echo 'Step 1: Plan' && echo 'Step 2: Still planning'"); err == nil {
+		t.Fatal("echo-only chains should be rejected")
+	}
 	for _, command := range []string{
 		"echo 'hello' > README.md",
 		"echo 'hello' | sed 's/h/H/'",
@@ -2033,6 +2036,50 @@ func TestValidateStructuredCommandRejectsOnlyPureEcho(t *testing.T) {
 		if err := validateStructuredCommandString(command); err != nil {
 			t.Fatalf("command %q rejected: %v", command, err)
 		}
+	}
+}
+
+func TestPlannerRepairsEchoOnlyPlanForPendingAppObjectives(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"latest","react-dom":"latest"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	substantive := "cat > src/App.js <<'EOF'\nexport default function App(){ return 'notes memory crud'; }\nEOF\n\ntest -s src/App.js"
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"echo 'Step 1: Set up Notes Context' && echo 'Step 2: Update App.js' && echo 'Step 3: Run the Application'","done":false,"answer":"","objective_ledger":[{"id":"setup_note_taking_app","description":"Set up note taking app UI","status":"pending"},{"id":"implement_memory_state_management","description":"Implement memory state management","status":"pending"}]}`,
+		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"setup_note_taking_app","description":"Set up note taking app UI","status":"satisfied","evidence":"src/App.js written"},{"id":"implement_memory_state_management","description":"Implement memory state management","status":"satisfied","evidence":"App contains memory marker"}]}`,
+		`{"command":"","done":true,"answer":"Notes app source created."}`,
+	}}
+	events := []StructuredCommandEvent{}
+	stdout := &bytes.Buffer{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"continue setting up this existing React project as a note app",
+		nil,
+		client,
+		stdout,
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace},
+	)
+	if err != nil {
+		t.Fatalf("run failed: %v observations=%#v", err, result.Observations)
+	}
+	if strings.Contains(stdout.String(), "Step 1:") {
+		t.Fatalf("echo-only plan should not execute: stdout=%q", stdout.String())
+	}
+	if !structuredEventsContain(events, "structured_planner_repair_started") || !structuredEventsContain(events, "structured_planner_repair_accepted") {
+		t.Fatalf("missing planner repair events: %#v", events)
+	}
+	if client.calls < 2 || !strings.Contains(client.prompts[1], "pure echo command is not command evidence") {
+		t.Fatalf("repair prompt missing echo feedback: calls=%d prompts=%#v", client.calls, client.prompts)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "src/App.js")); err != nil {
+		t.Fatalf("expected repaired source file: %v", err)
 	}
 }
 
@@ -2519,6 +2566,56 @@ func TestShellSpecialistRepairsRejectedDependencyScopeDriftLocally(t *testing.T)
 	}
 	if _, err := os.Stat(filepath.Join(workspace, "src/NoteManager.jsx")); err != nil {
 		t.Fatalf("expected notes component: %v", err)
+	}
+}
+
+func TestShellSpecialistStopsLocalRepairAfterRepeatedRejectedCommand(t *testing.T) {
+	result := &CommandDecisionResult{}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{
+		{Command: "npm install react-router-dom", Rationale: "Add routing."},
+		{Command: "npm install react-router-dom", Rationale: "Retry routing."},
+		{Command: "cat > src/NoteManager.jsx <<'EOF'\nexport default function NoteManager(){ return 'notes'; }\nEOF", Rationale: "Too late."},
+	}}
+	events := []StructuredCommandEvent{}
+	_, ok, err := proposeValidatedShellCommand(
+		context.Background(),
+		4,
+		"continue notes app",
+		"create the notes UI component and in-memory CRUD behavior using existing React dependencies",
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: t.TempDir(), ShellSpecialist: shell},
+		WorksiteSurvey{},
+		&[]StructuredObjective{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("expected repeated rejected proposal to stop local shell repair")
+	}
+	if len(shell.inputs) != 2 {
+		t.Fatalf("shell calls = %d, want stop after repeated rejection", len(shell.inputs))
+	}
+	if shell.inputs[0].RepairAttempt != 0 || shell.inputs[1].RepairAttempt != 1 {
+		t.Fatalf("repair attempts = %#v", shell.inputs)
+	}
+	if !structuredEventsContain(events, "structured_tool_delegation_repair_repeated") {
+		t.Fatalf("missing repeated repair event: %#v", events)
+	}
+}
+
+func TestShellSpecialistRequestRaisesTemperatureOnlyForRepairAttempt(t *testing.T) {
+	initial := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{ToolTask: "inspect"})
+	if got := initial.Options["temperature"]; got != 0 {
+		t.Fatalf("initial temperature = %#v, want 0", got)
+	}
+	repair := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{ToolTask: "inspect", RepairAttempt: 1})
+	if got := repair.Options["temperature"]; got != defaultShellSpecialistRepairTemperature {
+		t.Fatalf("repair temperature = %#v, want %#v", got, defaultShellSpecialistRepairTemperature)
+	}
+	if !strings.Contains(repair.Messages[1].Content, `"repair_attempt":1`) {
+		t.Fatalf("repair prompt missing repair_attempt: %s", repair.Messages[1].Content)
 	}
 }
 
@@ -4854,6 +4951,35 @@ func TestValidateShellProposalAllowsDependencyInstallWhenToolTaskRequiresDepende
 	toolTask := "Active objective(s): install_dependencies. Required next behavior: install dependencies for the selected React project."
 	if err := validateShellProposalAgainstToolTask("npm install react react-dom", toolTask); err != nil {
 		t.Fatalf("dependency install should be allowed for dependency objective: %v", err)
+	}
+}
+
+func TestValidateShellProposalPolicesDependencyInstallRationale(t *testing.T) {
+	toolTask := "Active objective(s): install_dependencies. Required next behavior: install dependencies for the selected React project."
+	err := validateShellProposalAgainstToolTaskWithRationale(
+		"npm install react-router-dom",
+		toolTask,
+		"Installing react-router-dom will allow navigation between components, which is a common requirement in many React applications.",
+	)
+	if err == nil {
+		t.Fatal("expected weak common-requirement rationale to be rejected")
+	}
+	if !strings.Contains(err.Error(), "without tool_task or evidence-backed rationale") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := validateShellProposalAgainstToolTaskWithRationale(
+		"npm install react-router-dom",
+		"Install dependency react-router-dom for the requested routed React app.",
+		"User requested routed navigation.",
+	); err != nil {
+		t.Fatalf("explicit tool task package should be allowed: %v", err)
+	}
+	if err := validateShellProposalAgainstToolTaskWithRationale(
+		"npm install react-router-dom",
+		toolTask,
+		"Observed build error: Cannot find module react-router-dom imported by src/App.js.",
+	); err != nil {
+		t.Fatalf("evidence-backed rationale should be allowed: %v", err)
 	}
 }
 

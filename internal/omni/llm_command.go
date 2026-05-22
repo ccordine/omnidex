@@ -24,6 +24,7 @@ const defaultStructuredObservationChars = 2400
 const defaultStructuredLLMRequestAttempts = 3
 const defaultStructuredPlannerRepairAttempts = 2
 const defaultShellSpecialistRepairAttempts = 2
+const defaultShellSpecialistRepairTemperature = 0.25
 const defaultEvaluatorPlannerRepairAttempts = 2
 const defaultStructuredEvaluatorTimeout = defaultOllamaRequestTimeout
 const maxRepeatedPrematureDoneRejections = 3
@@ -176,6 +177,7 @@ type ShellCommandSpecialistInput struct {
 	Step             int
 	UserPrompt       string
 	ToolTask         string
+	RepairAttempt    int
 	Observations     []StructuredCommandObservation
 	CompletedActions []CompletedAction
 	LoopState        StructuredLoopState
@@ -3253,6 +3255,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			Step:             step,
 			UserPrompt:       prompt,
 			ToolTask:         toolTask,
+			RepairAttempt:    attempt,
 			Observations:     result.Observations,
 			CompletedActions: completedActionsFromState(*ledger, result.Observations),
 			LoopState:        structuredLoopStateFromState(*ledger, result.Observations),
@@ -3280,13 +3283,21 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			"command":   truncateStructuredTimelineValue(proposal.Command),
 			"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 		})
-		if err := validateShellProposalAgainstToolTask(proposal.Command, toolTask); err != nil {
+		if err := validateShellProposalAgainstToolTaskWithRationale(proposal.Command, toolTask, proposal.Rationale); err != nil {
 			appendRejectedShellProposalObservation(step, proposal.Command, err, "choose a write/edit/build/test command that directly satisfies the delegated task", result)
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by tool-task constraints", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
 				"command": truncateStructuredTimelineValue(proposal.Command),
 				"reason":  err.Error(),
 			})
+			if attempt > 0 && shellProposalRepeatedLatestRejection(proposal.Command, result.Observations) {
+				emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_repeated", "Shell specialist repeated rejected command after direct feedback", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"attempt": fmt.Sprintf("%d", attempt),
+					"command": truncateStructuredTimelineValue(proposal.Command),
+				})
+				return ShellCommandProposal{}, false, nil
+			}
 			if attempt < defaultShellSpecialistRepairAttempts {
 				continue
 			}
@@ -3302,6 +3313,14 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 				"command": truncateStructuredTimelineValue(proposal.Command),
 				"reason":  err.Error(),
 			})
+			if attempt > 0 && shellProposalRepeatedLatestRejection(proposal.Command, result.Observations) {
+				emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_repeated", "Shell specialist repeated rejected command after direct feedback", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"attempt": fmt.Sprintf("%d", attempt),
+					"command": truncateStructuredTimelineValue(proposal.Command),
+				})
+				return ShellCommandProposal{}, false, nil
+			}
 			if attempt < defaultShellSpecialistRepairAttempts {
 				continue
 			}
@@ -3317,6 +3336,28 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 		return proposal, true, nil
 	}
 	return ShellCommandProposal{}, false, nil
+}
+
+func shellProposalRepeatedLatestRejection(command string, observations []StructuredCommandObservation) bool {
+	normalized := normalizeStructuredCommandForComparison(command)
+	if normalized == "" {
+		return false
+	}
+	count := 0
+	for i := len(observations) - 1; i >= 0; i-- {
+		if observations[i].RejectedCommand == "" {
+			continue
+		}
+		if normalizeStructuredCommandForComparison(observations[i].RejectedCommand) == normalized {
+			count++
+			if count >= 2 {
+				return true
+			}
+			continue
+		}
+		break
+	}
+	return false
 }
 
 func appendRejectedShellProposalObservation(step int, command string, err error, guidance string, result *CommandDecisionResult) {
@@ -3375,7 +3416,7 @@ func repairStructuredPayloadBeforeRouting(ctx context.Context, step int, prompt 
 		return false, resp, payload, ledger, nil
 	}
 	initialValidationErr := immediateStructuredPayloadValidationError(payload, observations, workingDirectory, ledger, survey)
-	if initialValidationErr == nil || !isImmediatePlannerRepairValidation(initialValidationErr) {
+	if initialValidationErr == nil || !isImmediatePlannerRepairValidation(initialValidationErr, ledger) {
 		return false, resp, payload, ledger, nil
 	}
 	currentResp := resp
@@ -3386,7 +3427,7 @@ func repairStructuredPayloadBeforeRouting(ctx context.Context, step int, prompt 
 		if validationErr == nil {
 			return attempt > 1, currentResp, currentPayload, currentLedger, nil
 		}
-		if !isImmediatePlannerRepairValidation(validationErr) {
+		if !isImmediatePlannerRepairValidation(validationErr, currentLedger) {
 			return true, currentResp, currentPayload, currentLedger, nil
 		}
 		emitStructuredCommandEvent(onEvent, "structured_planner_repair_started", "Planner received immediate validation feedback for isolated repair", map[string]string{
@@ -3449,11 +3490,15 @@ func immediateStructuredPayloadValidationError(payload StructuredCommandPayload,
 	return validateStructuredCommandForRunWithSurvey(payload.Command, observations, workingDirectory, ledger, survey)
 }
 
-func isImmediatePlannerRepairValidation(err error) bool {
+func isImmediatePlannerRepairValidation(err error, ledger []StructuredObjective) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "placeholder-only command does not satisfy app objectives")
+	text := err.Error()
+	if strings.Contains(text, "placeholder-only command does not satisfy app objectives") {
+		return true
+	}
+	return strings.Contains(text, "pure echo command is not command evidence") && pendingObjectivesNeedSubstantiveAppFiles(ledger)
 }
 
 func buildStructuredPlannerRepairRequest(baseReq OllamaChatRequest, prompt, rejectedPayload, rejectedCommand, reason string, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDirectory string) OllamaChatRequest {
@@ -3484,6 +3529,7 @@ func buildStructuredPlannerRepairRequest(baseReq OllamaChatRequest, prompt, reje
 			"The validator feedback is authoritative.",
 			"Choose a command, tool, or patch that satisfies pending objectives and avoids the rejected pattern.",
 			"If feedback says placeholder-only, write substantive source/build/test file content now.",
+			"If feedback says pure echo command, do not print a plan; write or verify substantive files for the pending objectives.",
 			"If feedback says dependency scope drift, write requested source files or use existing dependencies instead of installing optional packages.",
 			"If feedback says repeated command, inspect completed_actions/observations and choose the next required action.",
 		},
@@ -4764,7 +4810,17 @@ func validateCargoScaffoldUsesActiveWorkspace(command, workingDirectory string) 
 }
 
 func validateShellProposalAgainstToolTask(command, toolTask string) error {
-	if strings.TrimSpace(command) == "" || !toolTaskRequiresMutation(toolTask) {
+	return validateShellProposalAgainstToolTaskWithRationale(command, toolTask, "")
+}
+
+func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, rationale string) error {
+	if strings.TrimSpace(command) == "" {
+		return nil
+	}
+	if err := validateShellDependencyInstallRationale(command, toolTask, rationale); err != nil {
+		return err
+	}
+	if !toolTaskRequiresMutation(toolTask) {
 		return nil
 	}
 	if toolTaskAllowsInspectionEvidence(toolTask) && structuredCommandLooksReadOnlyEvidence(command) {
@@ -4783,6 +4839,81 @@ func validateShellProposalAgainstToolTask(command, toolTask string) error {
 		return nil
 	}
 	return fmt.Errorf("tool_task requires file creation, modification, build, or test work; read-only command %q does not satisfy it", strings.TrimSpace(command))
+}
+
+func validateShellDependencyInstallRationale(command, toolTask, rationale string) error {
+	requests := structuredDependencyInstallRequests(command)
+	if len(requests) == 0 {
+		return nil
+	}
+	if strings.TrimSpace(rationale) == "" {
+		return nil
+	}
+	namedPackages := []string{}
+	for _, request := range requests {
+		namedPackages = append(namedPackages, request.Packages...)
+	}
+	namedPackages = cleanStringList(namedPackages)
+	if len(namedPackages) == 0 {
+		return nil
+	}
+	taskText := normalizedDependencyText(toolTask)
+	rationaleText := normalizedDependencyText(rationale)
+	for _, pkg := range namedPackages {
+		normalized := normalizeDependencyPackageName(pkg)
+		if normalized == "" {
+			continue
+		}
+		if dependencyPackageMentioned(normalized, taskText) {
+			continue
+		}
+		if dependencyRationaleIsEvidenceAnchored(normalized, rationaleText) {
+			continue
+		}
+		return fmt.Errorf("dependency scope drift: dependency install command %q adds package %q without tool_task or evidence-backed rationale; do not add packages because they are merely common requirements", strings.TrimSpace(command), pkg)
+	}
+	return nil
+}
+
+func dependencyRationaleIsEvidenceAnchored(pkg, rationaleText string) bool {
+	if pkg == "" || !dependencyPackageMentioned(pkg, rationaleText) {
+		return false
+	}
+	evidenceNeedles := []string{
+		"package json",
+		"package lock",
+		"lockfile",
+		"cannot find module",
+		"module not found",
+		"missing module",
+		"build error",
+		"test error",
+		"compiler error",
+		"user asked",
+		"user requested",
+		"recipe required",
+		"required prerequisite",
+		"observed",
+		"evidence",
+	}
+	for _, needle := range evidenceNeedles {
+		if strings.Contains(rationaleText, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func dependencyPackageMentioned(pkg, normalizedText string) bool {
+	pkg = normalizeDependencyPackageName(pkg)
+	if pkg == "" || normalizedText == "" {
+		return false
+	}
+	if strings.Contains(normalizedText, " "+pkg+" ") {
+		return true
+	}
+	tokenized := normalizedDependencyText(pkg)
+	return strings.TrimSpace(tokenized) != "" && strings.Contains(normalizedText, tokenized)
 }
 
 func toolTaskRequiresSourceImplementation(toolTask string) bool {
@@ -5646,16 +5777,32 @@ func startsWithShellRedirectionToken(command string) bool {
 
 func isPureEchoCommand(command string) bool {
 	trimmed := strings.TrimSpace(command)
-	lower := strings.ToLower(trimmed)
-	if lower != "echo" && !strings.HasPrefix(lower, "echo ") {
+	if commandSegmentsContainShellControl(trimmed, "|", ">", "<", "$(", "`") {
 		return false
 	}
-	for _, marker := range []string{"|", ">", "<", "$(", "`", "&&", "||", ";"} {
-		if strings.Contains(trimmed, marker) {
+	segments := structuredCommandSegments(trimmed)
+	if len(segments) == 0 {
+		return false
+	}
+	for _, segment := range segments {
+		if len(segment) == 0 {
+			return false
+		}
+		root := cleanCommandPathToken(segment[0])
+		if root != "echo" {
 			return false
 		}
 	}
 	return true
+}
+
+func commandSegmentsContainShellControl(command string, markers ...string) bool {
+	for _, marker := range markers {
+		if strings.Contains(command, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func isNonEvidenceShellCommand(command string) bool {
@@ -7091,10 +7238,12 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		SessionMemories  []SessionMemory                `json:"session_memories,omitempty"`
 		WorksiteSurvey   WorksiteSurvey                 `json:"worksite_survey"`
 		ToolRules        []string                       `json:"tool_rules"`
+		RepairAttempt    int                            `json:"repair_attempt,omitempty"`
 	}{
 		Role:             "shell_execution_specialist",
 		UserPrompt:       input.UserPrompt,
 		ToolTask:         input.ToolTask,
+		RepairAttempt:    input.RepairAttempt,
 		Observations:     input.Observations,
 		CompletedActions: input.CompletedActions,
 		LoopState:        input.LoopState,
@@ -7131,6 +7280,13 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 	if err != nil {
 		blob = []byte(`{"role":"shell_execution_specialist","tool_task":""}`)
 	}
+	options := map[string]interface{}{
+		"temperature": 0,
+		"num_predict": 256,
+	}
+	if input.RepairAttempt > 0 {
+		options["temperature"] = defaultShellSpecialistRepairTemperature
+	}
 	return OllamaChatRequest{
 		Messages: []OllamaMessage{
 			{
@@ -7151,10 +7307,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			},
 			"required": []string{"command", "rationale"},
 		},
-		Options: map[string]interface{}{
-			"temperature": 0,
-			"num_predict": 256,
-		},
+		Options: options,
 	}
 }
 
