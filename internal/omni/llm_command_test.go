@@ -2219,6 +2219,20 @@ func TestValidateStructuredCommandAllowsRepeatedSuccessfulCommand(t *testing.T) 
 	}
 }
 
+func TestValidateStructuredCommandForRunFlagsRepeatedSuccessfulInstall(t *testing.T) {
+	command := "npm install react react-dom"
+	observations := []StructuredCommandObservation{{
+		Step:     15,
+		Command:  command,
+		ExitCode: 0,
+		Stdout:   "up to date, audited 4 packages",
+	}}
+	err := validateStructuredCommandForRun(command, observations, t.TempDir(), nil)
+	if !errors.Is(err, errRepeatedSuccessfulStructuredCommand) {
+		t.Fatalf("err = %v, want repeated successful command signal", err)
+	}
+}
+
 func TestEvidenceRequiredPrerequisiteCanJustifyExecutionScope(t *testing.T) {
 	workspace := t.TempDir()
 	ledger := []StructuredObjective{{
@@ -2404,7 +2418,7 @@ func TestWriteRecoveryBypassesShellAfterRepeatedDocumentationDownloadProposals(t
 	}
 }
 
-func TestRepeatedSuccessfulCommandExecutesPermissiveRetry(t *testing.T) {
+func TestRepeatedSuccessfulCommandSkipsAndUsesCompletedEvidence(t *testing.T) {
 	workspace := t.TempDir()
 	command := "ls -la " + workspace
 	client := &fakeCommandDecisionClient{responses: []string{
@@ -2444,17 +2458,18 @@ func TestRepeatedSuccessfulCommandExecutesPermissiveRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shell.inputs) != 0 {
-		t.Fatalf("repeated successful command should not hard-force shell specialist under permissive retry policy: %#v", shell.inputs)
-	}
 	successCount := 0
+	skipCount := 0
 	for _, obs := range result.Observations {
 		if obs.Command == command && obs.ExitCode == 0 {
 			successCount++
 		}
+		if strings.HasPrefix(obs.Command, "SKIPPED_REPEAT_SUCCESS:") && obs.RejectedCommand == command {
+			skipCount++
+		}
 	}
-	if successCount != 2 {
-		t.Fatalf("expected repeated successful command to execute twice, count=%d observations=%#v", successCount, result.Observations)
+	if successCount != 1 || skipCount != 1 {
+		t.Fatalf("expected repeated successful command to execute once and skip once, success=%d skip=%d observations=%#v", successCount, skipCount, result.Observations)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("pending = %#v", pending)
@@ -2523,7 +2538,7 @@ func TestValidateStructuredCommandProtectsActiveWorkingDirectory(t *testing.T) {
 	}
 }
 
-func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndAllowsRepeat(t *testing.T) {
+func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndSkipsRepeat(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"npm init -y","done":false,"answer":""}`,
 		`{"command":"npm init -y","done":false,"answer":""}`,
@@ -2605,13 +2620,17 @@ func TestStructuredCommandDecisionUpdatesLedgerAfterSuccessfulCommandAndAllowsRe
 		t.Fatalf("completion checker calls = %d, want post-command and readback checks", len(checker.inputs))
 	}
 	repeatedNpmInit := 0
+	skippedNpmInit := 0
 	for _, obs := range result.Observations {
 		if normalizeStructuredCommandForComparison(obs.Command) == "npm init -y" && obs.ExitCode == 0 {
 			repeatedNpmInit++
 		}
+		if strings.HasPrefix(obs.Command, "SKIPPED_REPEAT_SUCCESS:") && normalizeStructuredCommandForComparison(obs.RejectedCommand) == "npm init -y" {
+			skippedNpmInit++
+		}
 	}
-	if repeatedNpmInit != 2 {
-		t.Fatalf("expected repeated npm init to execute twice under permissive retry policy, count=%d observations=%#v events=%#v", repeatedNpmInit, result.Observations, events)
+	if repeatedNpmInit != 1 || skippedNpmInit != 1 {
+		t.Fatalf("expected repeated npm init to execute once and skip once, executed=%d skipped=%d observations=%#v events=%#v", repeatedNpmInit, skippedNpmInit, result.Observations, events)
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)

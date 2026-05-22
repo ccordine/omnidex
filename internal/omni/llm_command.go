@@ -3385,6 +3385,9 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 		return true, nil
 	}
 	if err := validateStructuredCommandForRunWithSurvey(proposal.Command, result.Observations, cfg.CurrentWorkingDirectory, result.ObjectiveLedger, worksiteSurvey); err != nil {
+		if handleStructuredRepeatedCommandValidation(step, proposal.Command, err, &result.ObjectiveLedger, onEvent, result) {
+			return true, nil
+		}
 		emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 			"step":    fmt.Sprintf("%d", step),
 			"command": truncateStructuredTimelineValue(proposal.Command),
@@ -4392,6 +4395,9 @@ func validateStructuredCommandForRun(command string, observations []StructuredCo
 func validateStructuredCommandForRunWithSurvey(command string, observations []StructuredCommandObservation, workingDirectory string, objectiveLedger []StructuredObjective, survey WorksiteSurvey) error {
 	if err := validateStructuredCommandForObservations(command, observations); err != nil {
 		return err
+	}
+	if repeatedSuccessfulStructuredCommand(command, observations) {
+		return errRepeatedSuccessfulStructuredCommand
 	}
 	if err := validateStructuredCommandWorkspaceProtection(command, workingDirectory); err != nil {
 		return err
