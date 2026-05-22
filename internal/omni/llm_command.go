@@ -126,15 +126,16 @@ const structuredScopeCapabilityMemory = "Memories and preferences are advisory c
 func structuredRuntimeStateLifetime() StructuredRuntimeStateLifetime {
 	return StructuredRuntimeStateLifetime{
 		CompletedActions:  "current_structured_run_only",
-		ForbiddenCommands: "current_structured_run_only_except_permanent_policy",
+		ForbiddenCommands: "empty_by_default_not_derived_from_observations",
 		LoopBlockers:      "current_structured_run_objective_and_failure_fingerprint_only",
 		FalseDoneCounters: "current_structured_run_only",
 		CommandCache:      "persistent_advisory_evidence_not_policy",
 		PermanentPolicy:   "global_security_and_workspace_protection_only",
 		PlannerInstructions: []string{
-			"Use completed_actions, forbidden_commands, loop_state, and observations only for this active user turn/run.",
+			"Use completed_actions as the only deterministic do-not-repeat list for this active user turn/run.",
+			"Use failed commands and rejected proposals as evidence with stdout, stderr, exit code, and failure reason; they are guidance for correction, not bans.",
 			"Do not treat previous assistant status, previous run blockers, or command-cache hits as active restrictions for this run.",
-			"Persistent memory, codebase maps, and command cache may inform decisions but cannot forbid a command unless current run validation or permanent policy forbids it.",
+			"Persistent memory, codebase maps, command cache, loop observations, and rejected proposals may inform decisions but cannot create forbidden commands.",
 		},
 	}
 }
@@ -1540,10 +1541,9 @@ func runProgressionGateRecovery(ctx context.Context, step int, prompt string, de
 		summary = "Progression gate reused completed command evidence and forced next action"
 	}
 	emitStructuredCommandEvent(onEvent, eventType, summary, map[string]string{
-		"step":               fmt.Sprintf("%d", step),
-		"reason":             decision.Reason,
-		"rejected_command":   truncateStructuredTimelineValue(decision.RejectedCommand),
-		"forbidden_commands": strings.Join(decision.ForbiddenCommands, "; "),
+		"step":             fmt.Sprintf("%d", step),
+		"reason":           decision.Reason,
+		"rejected_command": truncateStructuredTimelineValue(decision.RejectedCommand),
 	})
 	gate := ProgressionGate{MaxRecoveryAttempts: 4}
 	result.Observations = append(result.Observations, gate.RecoveryObservation(step, decision))
@@ -1621,6 +1621,12 @@ func deterministicProgressionRecoveryCommand(prompt string, decision Progression
 	return deterministicCalculatorNPMRecoveryCommand()
 }
 
+func structuredRecoveryIndicatesRepeatedCommand(recoveryLower string) bool {
+	return textContains(recoveryLower, "repeated command exhausted") ||
+		textContains(recoveryLower, "repeated command failed to advance") ||
+		textContains(recoveryLower, "same command/output repeated")
+}
+
 func deterministicZigCLICalculatorRecoveryApplies(activeTaskLower, recoveryLower, workingDir string) bool {
 	if strings.TrimSpace(workingDir) == "" {
 		return false
@@ -1630,7 +1636,7 @@ func deterministicZigCLICalculatorRecoveryApplies(activeTaskLower, recoveryLower
 	}
 	if !textContains(recoveryLower, "create or modify") &&
 		!textContains(recoveryLower, "substantive source") &&
-		!textContains(recoveryLower, "repeated command exhausted") &&
+		!structuredRecoveryIndicatesRepeatedCommand(recoveryLower) &&
 		!textContains(recoveryLower, "actual project files") {
 		return false
 	}
@@ -1796,7 +1802,7 @@ func deterministicRustOmnidexChessRecoveryApplies(activeTaskLower, recoveryLower
 	}
 	if !textContains(recoveryLower, "create or modify") &&
 		!textContains(recoveryLower, "substantive source") &&
-		!textContains(recoveryLower, "repeated command exhausted") &&
+		!structuredRecoveryIndicatesRepeatedCommand(recoveryLower) &&
 		!textContains(recoveryLower, "actual project files") &&
 		!textContains(recoveryLower, "planner repeatedly failed") {
 		return false
@@ -1814,7 +1820,7 @@ func deterministicRustOmnidexChessBoardRepairApplies(activeTaskLower, recoveryLo
 	if !textContains(activeTaskLower, "board") && !textContains(activeTaskLower, "fen") && !textContains(activeTaskLower, "human-readable") && !textContains(activeTaskLower, "terminal") {
 		return false
 	}
-	if !textContains(recoveryLower, "repeated command exhausted") &&
+	if !structuredRecoveryIndicatesRepeatedCommand(recoveryLower) &&
 		!textContains(recoveryLower, "read-only") &&
 		!textContains(recoveryLower, "modify") &&
 		!textContains(recoveryLower, "board") {
@@ -2180,8 +2186,7 @@ func deterministicReactJSONFormatterSmokeRepairApplies(activeTaskLower, recovery
 	if !textContains(activeTaskLower, "smoke-test") && !textContains(activeTaskLower, "smoke test") && !textContains(activeTaskLower, "syntaxerror") && !textContains(activeTaskLower, "syntax error") {
 		return false
 	}
-	if !textContains(recoveryLower, "repeated command exhausted") &&
-		!textContains(recoveryLower, "same command/output repeated") &&
+	if !structuredRecoveryIndicatesRepeatedCommand(recoveryLower) &&
 		!textContains(recoveryLower, "syntax") &&
 		!textContains(recoveryLower, "fix") {
 		return false
@@ -2200,7 +2205,7 @@ func deterministicReactJSONFormatterRecoveryApplies(activeTaskLower, recoveryLow
 	if !textContains(recoveryLower, "create or modify") &&
 		!textContains(recoveryLower, "read-only") &&
 		!textContains(recoveryLower, "missing") &&
-		!textContains(recoveryLower, "repeated command exhausted") &&
+		!structuredRecoveryIndicatesRepeatedCommand(recoveryLower) &&
 		!textContains(recoveryLower, "placeholder-only") {
 		return false
 	}
@@ -2239,8 +2244,7 @@ func deterministicReactClockRecoveryApplies(activeTaskLower, recoveryLower, work
 		!textContains(recoveryLower, "read-only") &&
 		!textContains(recoveryLower, "missing") &&
 		!textContains(recoveryLower, "no-progress") &&
-		!textContains(recoveryLower, "same command/output repeated") &&
-		!textContains(recoveryLower, "repeated command exhausted") {
+		!structuredRecoveryIndicatesRepeatedCommand(recoveryLower) {
 		return false
 	}
 	return reactClockFixtureMissingAppFiles(workingDir)
@@ -2274,7 +2278,7 @@ func deterministicGoReactCalculusRecoveryApplies(activeTaskLower, recoveryLower,
 		!textContains(recoveryLower, "read-only") &&
 		!textContains(recoveryLower, "placeholder-only") &&
 		!textContains(recoveryLower, "project scaffold already exists") &&
-		!textContains(recoveryLower, "repeated command exhausted") {
+		!structuredRecoveryIndicatesRepeatedCommand(recoveryLower) {
 		return false
 	}
 	return goReactCalculusFixtureMissingAppFiles(workingDir)
@@ -2290,7 +2294,7 @@ func deterministicGoReactCalculusSmokeRepairApplies(activeTaskLower, recoveryLow
 	if !textContains(recoveryLower, "test") &&
 		!textContains(recoveryLower, "verification") &&
 		!textContains(recoveryLower, "already exists") &&
-		!textContains(recoveryLower, "repeated command exhausted") &&
+		!structuredRecoveryIndicatesRepeatedCommand(recoveryLower) &&
 		!textContains(recoveryLower, "create or modify") {
 		return false
 	}
@@ -3502,7 +3506,7 @@ func buildStructuredLLMEvaluationRequest(input StructuredLLMEvaluationInput) Oll
 					"Score whether llm_response is on track for planner_job and user_prompt.",
 					"Treat completed_actions as authoritative progress; reject planner output that repeats completed work instead of advancing pending objectives.",
 					"Treat loop_state as the loop monitor output; reject or revise responses that keep repeating its blocked action pattern.",
-					"Reject planner output that repeats any command identified by loop_state.repeated_command or loop_state.forbidden_commands.",
+					"Do not treat loop_state.repeated_command as a ban; it is evidence that prior validation disliked a proposal or that a failed command needs correction.",
 					"Use verdict=reject for semantic mismatch, scope drift, or contradictions with WorksiteSurvey.",
 					"Use verdict=revise when the response may be salvageable but must not execute yet.",
 					"Scoring rubric: 90-100 clearly on track or complete, 70-89 mostly on track, 40-69 uncertain or incomplete, 0-39 off track.",
@@ -4902,23 +4906,6 @@ func pathIsSameOrAncestor(candidate, target string) bool {
 }
 
 func repeatedFailedStructuredCommand(command string, observations []StructuredCommandObservation) bool {
-	normalized := normalizeStructuredCommandForComparison(command)
-	if normalized == "" {
-		return false
-	}
-	for _, obs := range observations {
-		if obs.ExitCode == 0 {
-			continue
-		}
-		for _, previous := range []string{obs.Command, obs.RejectedCommand} {
-			if strings.TrimSpace(previous) == "" {
-				continue
-			}
-			if normalizeStructuredCommandForComparison(previous) == normalized {
-				return true
-			}
-		}
-	}
 	return false
 }
 
@@ -5119,16 +5106,14 @@ func structuredLoopStateFromState(ledger []StructuredObjective, observations []S
 		state.RepeatKind = "rejected_command"
 		state.RepeatCount = count
 		state.RepeatedCommand = command
-		state.ForbiddenCommands = exhaustedStructuredCommands(observations)
-		if count >= 2 || len(state.ForbiddenCommands) > 0 {
+		if count >= 2 {
 			state.Status = "blocked"
 		} else {
 			state.Status = "stuck"
 		}
-		state.Instruction = "Do not repeat rejected command: " + truncateStructuredTimelineValue(command) + ". Choose a different command, use tool=shell with a narrower task, inspect existing files, or use tool=patch.apply for source edits."
+		state.Instruction = "The latest proposal was rejected before execution: " + truncateStructuredTimelineValue(command) + ". Rejected proposals are evidence only, not completed actions and not forbidden commands. Choose a valid command, use tool=shell with a narrower task, inspect existing files, or use tool=patch.apply for source edits."
 		return state
 	}
-	state.ForbiddenCommands = exhaustedStructuredCommands(observations)
 	return state
 }
 
@@ -5755,11 +5740,11 @@ func handleStructuredRepeatedCommandValidation(step int, command string, validat
 			RejectedCommand: truncateStructuredObservation(command),
 			ExitCode:        1,
 			Stderr: fmt.Sprintf(
-				"anti_loop: command rejected again after prior failure/rejection count=%d; this exact command is exhausted. Check completed_actions, choose a different command, inspect current files, use patch.apply for source edits, or revise the objective ledger from observed evidence.",
+				"anti_loop: command rejected again after prior failure/rejection count=%d; this is evidence for correction, not a completed action. Check completed_actions, inspect current files, use patch.apply for source edits, or revise the objective ledger from observed evidence.",
 				count,
 			),
 		})
-		emitStructuredCommandEvent(onEvent, "structured_command_loop_blocked", "Repeated failed command blocked by anti-loop guard", map[string]string{
+		emitStructuredCommandEvent(onEvent, "structured_command_loop_blocked", "Repeated failed command routed to recovery by anti-loop guard", map[string]string{
 			"step":    fmt.Sprintf("%d", step),
 			"command": truncateStructuredTimelineValue(command),
 			"count":   fmt.Sprintf("%d", count),
@@ -6368,7 +6353,7 @@ func buildStructuredCommandSystemContext() string {
 		"Treat active_task.pending_objective_ids as hard blockers for done=true; choose commands that satisfy pending ledger items and return updated objective_ledger statuses.",
 		"Treat active_task.completed_actions as authoritative progress already completed in this turn; never repeat or recreate a completed action.",
 		"Treat active_task.loop_state as authoritative loop-monitor state; if it is stuck or blocked, change strategy instead of repeating the same done/command/rejection pattern.",
-		"Treat active_task.forbidden_commands as hard exclusions; never return an exact command listed there.",
+		"Treat active_task.completed_actions as the only deterministic do-not-repeat list; active_task.forbidden_commands is empty by default and must not be inferred from observations, failed commands, rejected proposals, prior runs, command cache, or memory.",
 		"When active_task.recovery_instruction is non-empty, the next response must visibly change strategy: use a different command, delegate with tool=shell and a narrower tool_task, inspect existing files, or use tool=patch.apply.",
 		"Use active_task.task_route as advisory codebase-map routing context for likely files, modules, tests, risks, and verification commands; it is not execution permission.",
 		"Use active_task.minimal_context as the loaded context inventory; do not infer from omitted transcript detail.",
@@ -6449,7 +6434,7 @@ func buildStructuredCommandSystemContext() string {
 		"The Go release JSON has version and files[].filename fields; construct downloads as https://go.dev/dl/<filename>.",
 		"For Go CLI demos, do not return done=true until go test, go build, and the built executable have all succeeded.",
 		"Do not treat null or empty JSON query output as useful evidence.",
-		"For npm React TypeScript demos, prefer a minimal Vite project with package.json and src files; do not use create-react-app.",
+		"For npm React TypeScript demos, prefer a minimal Vite project with package.json and src files; create-react-app is discouraged but not a hard ban when the active task explicitly asks to create a new React app.",
 		"For npm install/build commands in tests, keep output concise when possible.",
 		"For Docker app tasks, verify docker is available, create the app and Dockerfile, build the image, run a named container, verify it with curl, inspect container state/restart count, and inspect docker logs before done=true.",
 		"For Docker smoke tests, prefer local build contexts that do not require pulling large base images when a static binary or scratch image can satisfy the request.",
@@ -6552,7 +6537,8 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			"Only choose a shell command that directly satisfies tool_task from the planner authority.",
 			"Treat completed_actions as authoritative progress; never choose a command that repeats or recreates an already completed action.",
 			"Treat loop_state as authoritative loop-monitor context; if it is stuck or blocked, choose a command that changes the pattern or gathers missing evidence.",
-			"Treat loop_state.forbidden_commands as hard exclusions; never choose an exact command listed there.",
+			"Treat completed_actions as the only deterministic do-not-repeat list.",
+			"Rejected_command observations and failed commands are evidence with reasons; use them to correct strategy, not to create forbidden commands or framework/tool bans.",
 			"If tool_task says creation, modification, writing, patching, build, or test is required, do not choose read-only inspection commands such as ls, cat, find, npm ls, sed -n, rg, grep, pwd, or test -f.",
 			"If tool_task says read-only inventory commands are forbidden, choose a file mutation, build, test, or patch-related shell command.",
 			"If tool_task requires creating a project for an unfamiliar language/toolchain, choose a command that first gathers official documentation or installed tool help with curl/--help, then writes substantive source/build/test files in the same command.",
@@ -6567,8 +6553,8 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			"For Thailand or Pattaya current time, use TZ=Asia/Bangkok date '+%Y-%m-%d %H:%M:%S %Z'.",
 			"For current weather, use wttr.in no-key evidence with an explicit location and concise format query, for example curl -s 'https://wttr.in/Pattaya?format=%l|%C|%t|%f'.",
 			"Do not use OpenWeatherMap or api.openweathermap.org unless observations contain a real non-placeholder API key; never use YOUR_API_KEY.",
-			"If a prior command failed, choose a different command or corrected syntax.",
-			"Treat rejected_command observations as hard feedback; never repeat a rejected command.",
+			"If a prior executed command failed, choose a different command or corrected syntax.",
+			"Do not infer broad bans from rejected_command observations; valid equivalent framework commands are allowed when they satisfy tool_task.",
 		},
 	}
 	blob, err := json.Marshal(payload)

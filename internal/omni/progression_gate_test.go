@@ -18,6 +18,7 @@ func TestProgressionGateForcesRecoveryForExhaustedCommand(t *testing.T) {
 		Observations: []StructuredCommandObservation{
 			{Step: 1, Command: command, ExitCode: 1, Stderr: "install failed"},
 			{Step: 2, RejectedCommand: command, ExitCode: 1, Stderr: "anti_loop: command rejected again after prior failure/rejection count=2"},
+			{Step: 3, RejectedCommand: command, ExitCode: 1, Stderr: "anti_loop: command rejected again after prior failure/rejection count=3"},
 		},
 	})
 
@@ -26,13 +27,16 @@ func TestProgressionGateForcesRecoveryForExhaustedCommand(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Recovery required.",
-		"Blocked command(s): " + command,
-		"Forbidden command(s): " + command,
 		"Active objective(s): implement_calculator_ui",
-		"inspect existing files",
+		"actual project files",
 	} {
 		if !strings.Contains(decision.RecoveryToolTask, want) {
 			t.Fatalf("recovery task missing %q: %s", want, decision.RecoveryToolTask)
+		}
+	}
+	for _, forbidden := range []string{"Blocked command(s):", "Forbidden command(s):"} {
+		if strings.Contains(decision.RecoveryToolTask, forbidden) {
+			t.Fatalf("recovery task should not contain %q: %s", forbidden, decision.RecoveryToolTask)
 		}
 	}
 }
@@ -45,7 +49,8 @@ func TestProgressionGateFailsCleanlyWhenRecoveryIsExhausted(t *testing.T) {
 		Observations: []StructuredCommandObservation{
 			{Step: 1, Command: command, ExitCode: 1, Stderr: "install failed"},
 			{Step: 2, RejectedCommand: command, ExitCode: 1, Stderr: "anti_loop: command rejected again after prior failure/rejection count=2"},
-			{Step: 2, ExitCode: 1, Stderr: "progression_gate: forced recovery required; repeated command exhausted; deterministic recovery required"},
+			{Step: 3, RejectedCommand: command, ExitCode: 1, Stderr: "anti_loop: command rejected again after prior failure/rejection count=3"},
+			{Step: 4, ExitCode: 1, Stderr: "progression_gate: forced recovery required; repeated command failed to advance; deterministic recovery required"},
 		},
 	})
 
@@ -252,10 +257,13 @@ func TestProgressionGateForcesWriteAfterRepeatedInspectionForMissingAppFiles(t *
 	if decision.Action != ProgressForceRecovery {
 		t.Fatalf("action = %s, want %s", decision.Action, ProgressForceRecovery)
 	}
-	for _, want := range []string{"inspected enough", "create or modify", "substantive source", "smallest hello-world project", "compiler build/test", "Forbidden next command(s): npm list --depth=0; ls -la"} {
+	for _, want := range []string{"inspected enough", "create or modify", "substantive source", "smallest hello-world project", "compiler build/test", "Already completed read-only command(s): npm list --depth=0; ls -la"} {
 		if !strings.Contains(decision.RecoveryToolTask, want) {
 			t.Fatalf("write recovery missing %q: %s", want, decision.RecoveryToolTask)
 		}
+	}
+	if strings.Contains(decision.RecoveryToolTask, "Forbidden next command(s):") {
+		t.Fatalf("write recovery should not label inspection evidence as forbidden: %s", decision.RecoveryToolTask)
 	}
 }
 

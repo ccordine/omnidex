@@ -763,7 +763,7 @@ func TestDeterministicProgressionRecoveryBuildsReactJSONFormatterCommand(t *test
 	}
 	decision := ProgressionDecision{
 		Action:           ProgressForceRecovery,
-		Reason:           "repeated command exhausted; deterministic recovery required",
+		Reason:           "repeated command failed to advance; deterministic recovery required",
 		RecoveryToolTask: "Required next behavior: create or modify the actual project files now after placeholder-only touch command failed.",
 	}
 
@@ -797,7 +797,7 @@ func TestDeterministicProgressionRecoveryRepairsReactJSONFormatterSmokeTest(t *t
 	}
 	decision := ProgressionDecision{
 		Action:           ProgressForceRecovery,
-		Reason:           "repeated command exhausted; deterministic recovery required",
+		Reason:           "repeated command failed to advance; deterministic recovery required",
 		RecoveryToolTask: "Fix SyntaxError in scripts/smoke-test.js and run build/test.",
 	}
 
@@ -931,8 +931,8 @@ func TestStructuredRuntimeRepeatStateIsDiagnosticAndCurrentRunScoped(t *testing.
 	currentRunObservations := []StructuredCommandObservation{
 		{Step: 1, Command: command, ExitCode: 1, Stderr: "npm failed"},
 	}
-	if !repeatedFailedStructuredCommand(command, currentRunObservations) {
-		t.Fatal("same command in current run should be visible to loop diagnostics")
+	if repeatedFailedStructuredCommand(command, currentRunObservations) {
+		t.Fatal("failed commands are evidence for correction, not deterministic repeat bans")
 	}
 	if err := validateStructuredCommandForObservations(command, currentRunObservations); err != nil {
 		t.Fatalf("same command in current run should remain executable while repeat state is diagnostic, err=%v", err)
@@ -945,7 +945,7 @@ func TestStructuredRuntimeRepeatStateIsDiagnosticAndCurrentRunScoped(t *testing.
 	for _, want := range []string{
 		`"runtime_state_lifetime"`,
 		`"completed_actions":"current_structured_run_only"`,
-		`"forbidden_commands":"current_structured_run_only_except_permanent_policy"`,
+		`"forbidden_commands":"empty_by_default_not_derived_from_observations"`,
 		`"command_cache":"persistent_advisory_evidence_not_policy"`,
 	} {
 		if !strings.Contains(message, want) {
@@ -2137,7 +2137,7 @@ func TestValidateStructuredCommandRejectsInvalidDateTimezoneSyntax(t *testing.T)
 	}
 }
 
-func TestRepeatedFailedStructuredCommandIncludesRejectedCommand(t *testing.T) {
+func TestRejectedCommandDoesNotBecomeRepeatBan(t *testing.T) {
 	command := `printf 'failed\n' >&2; exit 7`
 	observations := []StructuredCommandObservation{{
 		Step:            1,
@@ -2145,12 +2145,16 @@ func TestRepeatedFailedStructuredCommandIncludesRejectedCommand(t *testing.T) {
 		ExitCode:        1,
 		Stderr:          "shell specialist command rejected",
 	}}
-	if !repeatedFailedStructuredCommand(command, observations) {
-		t.Fatal("repeated guard should include rejected_command observations")
+	if repeatedFailedStructuredCommand(command, observations) {
+		t.Fatal("rejected command observation should not create a repeat ban")
 	}
 	err := validateStructuredCommandForObservations(command, observations)
 	if err != nil {
 		t.Fatalf("repeated rejected command should be diagnostic, not validation-blocked, got %v", err)
+	}
+	state := structuredLoopStateFromState([]StructuredObjective{{ID: "create_project", Status: "pending"}}, observations)
+	if len(state.ForbiddenCommands) != 0 {
+		t.Fatalf("forbidden commands = %#v, want none", state.ForbiddenCommands)
 	}
 }
 
@@ -3691,6 +3695,7 @@ func TestStructuredCommandDecisionShellSpecialistPivotsFromOpenWeatherMap(t *tes
 		{Command: openWeather, Rationale: "Retry the same endpoint."},
 		{Command: "printf 'Pattaya weather evidence\n'", Rationale: "Use a local deterministic stand-in for accepted evidence in the unit test."},
 	}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{Done: true, Reason: "unit test accepted fallback weather evidence"}}}
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
@@ -3703,7 +3708,7 @@ func TestStructuredCommandDecisionShellSpecialistPivotsFromOpenWeatherMap(t *tes
 		stderr,
 		nil,
 		nil,
-		structuredCommandDecisionRunConfig{ShellSpecialist: shell},
+		structuredCommandDecisionRunConfig{ShellSpecialist: shell, CompletionChecker: checker},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -3723,8 +3728,8 @@ func TestStructuredCommandDecisionShellSpecialistPivotsFromOpenWeatherMap(t *tes
 	if result.Observations[0].CapabilityMemory != structuredWeatherCapabilityMemory {
 		t.Fatalf("weather memory missing from first rejection: %#v", result.Observations[0])
 	}
-	if !structuredObservationsContainStderr(result.Observations, "repeated command exhausted") {
-		t.Fatalf("observations should block repeated delegated command: %#v", result.Observations)
+	if structuredObservationsContainStderr(result.Observations, "forbidden") {
+		t.Fatalf("observations should not turn rejected delegated commands into forbidden commands: %#v", result.Observations)
 	}
 	if result.Answer != "Pattaya weather evidence" {
 		t.Fatalf("answer = %q", result.Answer)
@@ -3812,7 +3817,7 @@ func TestStructuredCommandDecisionPromptForbidsPlaceholderCredentials(t *testing
 		"The Go release JSON has version and files[].filename fields; construct downloads as https://go.dev/dl/<filename>.",
 		"For Go CLI demos, do not return done=true until go test, go build, and the built executable have all succeeded.",
 		"Do not treat null or empty JSON query output as useful evidence.",
-		"For npm React TypeScript demos, prefer a minimal Vite project with package.json and src files; do not use create-react-app.",
+		"For npm React TypeScript demos, prefer a minimal Vite project with package.json and src files; create-react-app is discouraged but not a hard ban when the active task explicitly asks to create a new React app.",
 		"For npm install/build commands in tests, keep output concise when possible.",
 		"When starting a background server, use nohup or equivalent and write the background process PID with $! if a PID file is requested.",
 		"When starting a background server, redirect stdout and stderr away from the command pipe.",
@@ -3945,18 +3950,18 @@ func TestStructuredLoopStateFlagsPrematureDoneLoop(t *testing.T) {
 	}
 }
 
-func TestStructuredLoopStateCarriesForbiddenRepeatedCommand(t *testing.T) {
+func TestStructuredLoopStateCarriesRepeatedCommandAsEvidenceOnly(t *testing.T) {
 	command := "npm install @hotwired/stimulus recyclr tailwindcss webpack webpack-cli --save-dev"
 	observations := []StructuredCommandObservation{
 		{Step: 1, Command: command, ExitCode: 1, Stderr: "npm failed"},
 		{Step: 2, RejectedCommand: command, ExitCode: 1, Stderr: "anti_loop: command rejected again after prior failure/rejection count=2"},
 	}
 	state := structuredLoopStateFromState([]StructuredObjective{{ID: "implement_calculator_ui", Status: "pending"}}, observations)
-	if state.Status != "blocked" || state.RepeatKind != "rejected_command" || state.RepeatedCommand == "" {
+	if state.Status != "stuck" || state.RepeatKind != "rejected_command" || state.RepeatedCommand == "" {
 		t.Fatalf("loop state = %#v", state)
 	}
-	if len(state.ForbiddenCommands) != 1 || state.ForbiddenCommands[0] != command {
-		t.Fatalf("forbidden commands = %#v", state.ForbiddenCommands)
+	if len(state.ForbiddenCommands) != 0 {
+		t.Fatalf("forbidden commands = %#v, want none", state.ForbiddenCommands)
 	}
 	message := buildStructuredCommandUserMessage(
 		"Please finish wiring up the UI and logic behind the calculator app",
@@ -3965,13 +3970,37 @@ func TestStructuredLoopStateCarriesForbiddenRepeatedCommand(t *testing.T) {
 		[]StructuredObjective{{ID: "implement_calculator_ui", Status: "pending"}},
 	)
 	for _, want := range []string{
-		`"forbidden_commands"`,
 		command,
 		`"recovery_instruction"`,
 		`"repeated_command"`,
 	} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("message missing %q: %s", want, message)
+		}
+	}
+	if strings.Contains(message, `"forbidden_commands":[`) {
+		t.Fatalf("message should not carry observation-derived forbidden commands: %s", message)
+	}
+}
+
+func TestRejectedReactScaffoldDoesNotCreateForbiddenCommand(t *testing.T) {
+	rejected := "npx create-react-app notes-app"
+	observations := []StructuredCommandObservation{{
+		Step:            1,
+		RejectedCommand: rejected,
+		ExitCode:        1,
+		Stderr:          "validator rejected before execution",
+	}}
+	state := structuredLoopStateFromState([]StructuredObjective{{ID: "initialize_new_react_project", Status: "pending"}}, observations)
+	if len(state.ForbiddenCommands) != 0 {
+		t.Fatalf("forbidden commands = %#v, want none", state.ForbiddenCommands)
+	}
+	for _, command := range []string{
+		rejected,
+		"npm create vite@latest notes-app -- --template react",
+	} {
+		if err := validateStructuredCommandForObservations(command, observations); err != nil {
+			t.Fatalf("command %q should remain valid because rejected proposals are not completed actions: %v", command, err)
 		}
 	}
 }
@@ -4772,7 +4801,7 @@ func TestDeterministicRustOmnidexChessBoardRepairAppliesToFenOnlyProject(t *test
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		"Cargo.toml":   "[package]\nname = \"omnidex_chess_cli\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nchess = \"3.2\"\n",
+		"Cargo.toml":  "[package]\nname = \"omnidex_chess_cli\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nchess = \"3.2\"\n",
 		"src/lib.rs":  "use chess::Board;\npub struct OmnidexProvider;\n",
 		"src/main.rs": "fn main() { println!(\"{}\", chess::Board::default()); }\n",
 	}
@@ -4783,7 +4812,7 @@ func TestDeterministicRustOmnidexChessBoardRepairAppliesToFenOnlyProject(t *test
 	}
 	if !deterministicRustOmnidexChessBoardRepairApplies(
 		"improve this rust omnidex chess cli because fen is not human-readable; add a terminal board",
-		"repeated command exhausted after read-only inspection; modify board rendering",
+		"repeated command failed to advance after read-only inspection; modify board rendering",
 		dir,
 	) {
 		t.Fatal("expected Rust chess board repair recovery to apply")

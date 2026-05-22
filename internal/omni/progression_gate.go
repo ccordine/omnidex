@@ -3,7 +3,6 @@ package omni
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -58,7 +57,6 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 			decision.Reason = "command already completed earlier; use prior output as evidence and choose the next unread target"
 			decision.RejectedCommand = command
 			decision.PreviousResult = &previous
-			decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, command)
 			decision.RecoveryToolTask = completedEvidenceRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, command, previous)
 			return decision
 		}
@@ -68,7 +66,6 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "file path was invalid; deterministic missing-file recovery required"
 		decision.RejectedCommand = latest.Command
-		decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, latest.Command)
 		decision.RecoveryToolTask = missingFileRecoveryToolTask(input.Prompt, input.ObjectiveLedger, *latest)
 		return decision
 	}
@@ -76,7 +73,6 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "project scaffold already exists; continue with implementation instead of rerunning scaffold"
 		decision.RejectedCommand = latest.Command
-		decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, latest.Command)
 		decision.RecoveryToolTask = existingScaffoldRecoveryToolTask(input.Prompt, input.ObjectiveLedger, *latest, input.WorkingDir)
 		return decision
 	}
@@ -90,7 +86,6 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 	if shouldForceWriteAfterInspection(input) {
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "workspace inspection has not produced app files; creation step is now required"
-		decision.ForbiddenCommands = appendForbiddenCommands(decision.ForbiddenCommands, successfulReadOnlyStructuredCommands(input.Observations)...)
 		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
 		return decision
 	}
@@ -98,7 +93,6 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "placeholder-only scaffold succeeded but substantive app files are still required"
 		decision.RejectedCommand = latest.Command
-		decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, latest.Command)
 		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
 		return decision
 	}
@@ -106,7 +100,6 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "latest mutation did not create substantive app source/build/test files"
 		decision.RejectedCommand = latest.Command
-		decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, latest.Command)
 		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
 		return decision
 	}
@@ -121,7 +114,6 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 			decision.Action = ProgressForceRecovery
 			decision.Reason = "same command/output repeated without satisfying pending objectives; no-progress recovery required"
 			decision.RejectedCommand = command
-			decision.ForbiddenCommands = appendForbiddenCommand(decision.ForbiddenCommands, command)
 			decision.RecoveryToolTask = noProgressCommandRecoveryToolTask(input.Prompt, input.ObjectiveLedger, command, fingerprint, count)
 			return decision
 		}
@@ -129,7 +121,7 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 	if latestRealObservationSucceeded(input.Observations) {
 		return decision
 	}
-	if state.Status != "blocked" || state.RepeatKind != "rejected_command" || len(state.ForbiddenCommands) == 0 {
+	if state.Status != "blocked" || state.RepeatKind != "rejected_command" {
 		return decision
 	}
 	if forcedRecoveryAttemptCount(input.Observations) >= g.MaxRecoveryAttempts {
@@ -138,7 +130,7 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		return decision
 	}
 	decision.Action = ProgressForceRecovery
-	decision.Reason = "repeated command exhausted; deterministic recovery required"
+	decision.Reason = "repeated command failed to advance; deterministic recovery required"
 	decision.RecoveryToolTask = structuredLoopRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations)
 	return decision
 }
@@ -166,20 +158,16 @@ func structuredLoopRecoveryToolTask(prompt string, ledger []StructuredObjective,
 	if pending == "" {
 		pending = pendingStructuredObjectiveIDs(ledger)
 	}
-	forbidden := strings.Join(state.ForbiddenCommands, "; ")
 	parts := []string{
 		"Recovery required.",
-		"The previous command is exhausted and must not be repeated.",
-		"Choose one concrete shell command that changes strategy and advances the active task.",
+		"A previous proposal or command did not advance the task.",
+		"Choose one concrete shell command that advances the active task.",
+		"Rejected proposals that did not execute are feedback only, not forbidden commands and not class bans.",
 	}
 	if pending != "" {
 		parts = append(parts, "Active objective(s): "+pending+".")
 	}
-	if forbidden != "" {
-		parts = append(parts, "Blocked command(s): "+forbidden+".")
-		parts = append(parts, "Forbidden command(s): "+forbidden+".")
-	}
-	parts = append(parts, "Required next behavior: inspect existing files, patch existing project files, narrow verification, or use a different command strategy.")
+	parts = append(parts, "Required next behavior: use the observed failure reason to choose a corrected command, a different source, narrower verification, or a different command strategy appropriate to the active task.")
 	if strings.TrimSpace(prompt) != "" {
 		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
 	}
@@ -516,7 +504,6 @@ func structuredCommandLooksMutating(command string) bool {
 func writeAfterInspectionRecoveryToolTask(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation, workingDir string) string {
 	pending := pendingStructuredObjectiveIDs(ledger)
 	readOnly := strings.Join(successfulReadOnlyStructuredCommands(observations), "; ")
-	forbidden := strings.Join(structuredLoopStateFromState(ledger, observations).ForbiddenCommands, "; ")
 	parts := []string{
 		"Recovery required.",
 		"The workspace has been inspected enough for this app-building task, but required app files are still missing or empty.",
@@ -533,11 +520,6 @@ func writeAfterInspectionRecoveryToolTask(prompt string, ledger []StructuredObje
 	}
 	if readOnly != "" {
 		parts = append(parts, "Already completed read-only command(s): "+readOnly+".")
-		parts = append(parts, "Forbidden next command(s): "+readOnly+".")
-	}
-	if forbidden != "" {
-		parts = append(parts, "Blocked command(s): "+forbidden+".")
-		parts = append(parts, "Forbidden command(s): "+forbidden+".")
 	}
 	if strings.TrimSpace(workingDir) != "" {
 		parts = append(parts, "Current working directory: "+strings.TrimSpace(workingDir)+".")
@@ -546,49 +528,6 @@ func writeAfterInspectionRecoveryToolTask(prompt string, ledger []StructuredObje
 		parts = append(parts, "Active task: "+strings.TrimSpace(prompt)+".")
 	}
 	return strings.Join(parts, " ")
-}
-
-func exhaustedStructuredCommands(observations []StructuredCommandObservation) []string {
-	rejected := map[string]struct{}{}
-	failedFingerprints := map[string]int{}
-	original := map[string]string{}
-	for _, obs := range observations {
-		if obs.ExitCode == 0 {
-			continue
-		}
-		if normalized := normalizeStructuredCommandForComparison(obs.RejectedCommand); normalized != "" {
-			rejected[normalized] = struct{}{}
-			if _, ok := original[normalized]; !ok {
-				original[normalized] = strings.TrimSpace(obs.RejectedCommand)
-			}
-		}
-		normalized := normalizeStructuredCommandForComparison(obs.Command)
-		if normalized == "" {
-			continue
-		}
-		key := normalized + "\x00" + structuredFailureFingerprint(obs)
-		failedFingerprints[key]++
-		if _, ok := original[normalized]; !ok {
-			original[normalized] = strings.TrimSpace(obs.Command)
-		}
-	}
-	exhausted := map[string]struct{}{}
-	for normalized := range rejected {
-		exhausted[normalized] = struct{}{}
-	}
-	for key, count := range failedFingerprints {
-		if count < 2 {
-			continue
-		}
-		normalized, _, _ := strings.Cut(key, "\x00")
-		exhausted[normalized] = struct{}{}
-	}
-	commands := []string{}
-	for normalized := range exhausted {
-		commands = append(commands, original[normalized])
-	}
-	sort.Strings(commands)
-	return commands
 }
 
 func latestRepeatedSuccessEvidence(observations []StructuredCommandObservation) (string, StructuredCommandObservation, bool) {
@@ -734,26 +673,6 @@ func parentDirFromReadCommand(command string) string {
 		}
 	}
 	return ""
-}
-
-func appendForbiddenCommand(commands []string, command string) []string {
-	command = strings.TrimSpace(command)
-	if command == "" {
-		return commands
-	}
-	for _, existing := range commands {
-		if normalizeStructuredCommandForComparison(existing) == normalizeStructuredCommandForComparison(command) {
-			return commands
-		}
-	}
-	return append(commands, command)
-}
-
-func appendForbiddenCommands(commands []string, newCommands ...string) []string {
-	for _, command := range newCommands {
-		commands = appendForbiddenCommand(commands, command)
-	}
-	return commands
 }
 
 func fmtObservationForRecovery(label string, obs StructuredCommandObservation) string {
