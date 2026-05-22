@@ -43,3 +43,27 @@ node_modules/
 dist/
 build/
 .cache/
+
+# Proof-of-concept test projects: keep source/manifests, ignore generated state.
+test-projects/**/.git/
+test-projects/**/.omni/
+test-projects/**/node_modules/
+test-projects/**/dist/
+test-projects/**/build/
+test-projects/**/target/
+test-projects/**/zig-cache/
+test-projects/**/zig-out/
+test-projects/**/.zig-cache/
+test-projects/**/.cache/
+test-projects/**/.vite/
+test-projects/**/.next/
+test-projects/**/.nuxt/
+test-projects/**/coverage/
+test-projects/**/*.log
+test-projects/**/*.tmp
+test-projects/**/*.db
+test-projects/**/*.sqlite
+test-projects/**/*.sqlite3
+test-projects/**/*.prof
+test-projects/**/*.test
+test-projects/**/*.exe

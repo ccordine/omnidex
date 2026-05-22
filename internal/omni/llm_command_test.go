@@ -670,6 +670,20 @@ func TestValidateStructuredScaffoldScopeAllowsCreateMode(t *testing.T) {
 	}
 }
 
+func TestValidateCargoScaffoldRejectsNestedCurrentWorkspaceProject(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "rust-chess")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := validateStructuredCommandForRun("cargo new rust-chess --bin", nil, workspace, nil)
+	if err == nil || !strings.Contains(err.Error(), "nested project") {
+		t.Fatalf("expected nested cargo new rejection, got %v", err)
+	}
+	if err := validateStructuredCommandForRun("cargo init --bin", nil, workspace, nil); err != nil {
+		t.Fatalf("cargo init should be allowed in active workspace: %v", err)
+	}
+}
+
 func containsStructuredObjectiveID(objectives []StructuredObjective, id string) bool {
 	for _, objective := range objectives {
 		if objective.ID == id {
@@ -701,6 +715,19 @@ func TestStructuredDependencyScopeAllowsReactClockTailwindObjectives(t *testing.
 	}
 	if err := validateStructuredCommandForRun("npm install -D postcss autoprefixer", nil, workspace, ledger); err != nil {
 		t.Fatalf("tailwind support dependency install should be allowed: %v", err)
+	}
+}
+
+func TestStructuredDependencyScopeAllowsRustChessRulesLibraryObjective(t *testing.T) {
+	workspace := t.TempDir()
+	ledger := []StructuredObjective{
+		{ID: "legal_chess_rules", Description: "Use a proven Rust chess rules library for legal move enforcement", Status: "pending", Source: structuredObjectiveSourceUserExplicit, Required: true},
+	}
+	if err := validateStructuredCommandForRun("cargo add shakmaty", nil, workspace, ledger); err != nil {
+		t.Fatalf("rust chess rules dependency should be allowed: %v", err)
+	}
+	if err := validateStructuredCommandForRun("cargo add chess", nil, workspace, ledger); err != nil {
+		t.Fatalf("rust chess dependency should be allowed: %v", err)
 	}
 }
 
@@ -4693,6 +4720,73 @@ func TestSourceVerificationCompletionSatisfiedForGeneratedZigProject(t *testing.
 	}
 	if !sourceVerificationCompletionSatisfied("Build a Zig CLI calculator application.", dir, latest) {
 		t.Fatal("expected source verification marker and app files to satisfy completion")
+	}
+}
+
+func TestDeterministicRustOmnidexChessRecoveryCommandWritesVerifiedProject(t *testing.T) {
+	dir := t.TempDir()
+	if !deterministicRustOmnidexChessRecoveryApplies(
+		"build a rust cli chess game against omnidex",
+		"planner repeatedly failed to produce source-writing action for empty app workspace",
+		dir,
+	) {
+		t.Fatal("expected Rust Omnidex chess recovery to apply")
+	}
+	command := deterministicRustOmnidexChessRecoveryCommand()
+	cmd := exec.Command("bash", "-lc", command)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("recovery command failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "RUST_OMNIDEX_CHESS_SOURCE_VERIFIED") {
+		t.Fatalf("missing verification marker: %s", output)
+	}
+	if !strings.Contains(string(output), "running 7 tests") {
+		t.Fatalf("expected generated Rust tests to include board rendering coverage: %s", output)
+	}
+	for _, rel := range []string{"Cargo.toml", "src/lib.rs", "src/main.rs", "README.md"} {
+		if !fileHasContent(filepath.Join(dir, rel)) {
+			t.Fatalf("missing generated file %s", rel)
+		}
+	}
+	lib, err := os.ReadFile(filepath.Join(dir, "src", "lib.rs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(lib), "pub fn render_board") || !strings.Contains(string(lib), "Side to move") {
+		t.Fatalf("generated chess app missing human-readable board renderer")
+	}
+	mainSource, err := os.ReadFile(filepath.Join(dir, "src", "main.rs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainSource), "render_board(&state.board)") {
+		t.Fatalf("generated CLI still does not render the board")
+	}
+}
+
+func TestDeterministicRustOmnidexChessBoardRepairAppliesToFenOnlyProject(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"Cargo.toml":   "[package]\nname = \"omnidex_chess_cli\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nchess = \"3.2\"\n",
+		"src/lib.rs":  "use chess::Board;\npub struct OmnidexProvider;\n",
+		"src/main.rs": "fn main() { println!(\"{}\", chess::Board::default()); }\n",
+	}
+	for rel, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !deterministicRustOmnidexChessBoardRepairApplies(
+		"improve this rust omnidex chess cli because fen is not human-readable; add a terminal board",
+		"repeated command exhausted after read-only inspection; modify board rendering",
+		dir,
+	) {
+		t.Fatal("expected Rust chess board repair recovery to apply")
 	}
 }
 

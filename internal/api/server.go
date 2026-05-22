@@ -13,47 +13,73 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/llmprovider"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/ollama"
-	"github.com/gryph/omnidex/internal/openai"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/jackc/pgx/v5"
 )
 
 type Server struct {
-	repo                 *queue.Repository
-	channelStore         channelStore
-	llmClient            llm.Client
-	mux                  *http.ServeMux
-	instructIntegration  *instructIntegrationService
-	defaultProvider      string
-	requestTimeout       time.Duration
-	v3Enabled            bool
-	ollamaBaseURL        string
-	ollamaDefaultModel   string
-	ollamaEmbeddingModel string
-	openAIBaseURL        string
-	openAIAPIKey         string
-	openAIOrganization   string
-	openAIProject        string
-	openAIDefaultModel   string
-	openAIEmbeddingModel string
+	repo                      *queue.Repository
+	channelStore              channelStore
+	llmClient                 llm.Client
+	mux                       *http.ServeMux
+	instructIntegration       *instructIntegrationService
+	defaultProvider           string
+	requestTimeout            time.Duration
+	v3Enabled                 bool
+	ollamaBaseURL             string
+	ollamaDefaultModel        string
+	ollamaEmbeddingModel      string
+	openAIBaseURL             string
+	openAIAPIKey              string
+	openAIOrganization        string
+	openAIProject             string
+	openAIDefaultModel        string
+	openAIEmbeddingModel      string
+	googleBaseURL             string
+	googleAPIKey              string
+	googleDefaultModel        string
+	googleEmbeddingModel      string
+	anthropicBaseURL          string
+	anthropicAPIKey           string
+	anthropicVersion          string
+	anthropicMaxTokens        int
+	anthropicDefaultModel     string
+	huggingFaceBaseURL        string
+	huggingFaceAPIKey         string
+	huggingFaceDefaultModel   string
+	huggingFaceEmbeddingModel string
 }
 
 type ServerOptions struct {
-	DefaultProvider      string
-	RequestTimeout       time.Duration
-	V3Enabled            bool
-	OllamaBaseURL        string
-	OllamaDefaultModel   string
-	OllamaEmbeddingModel string
-	OpenAIBaseURL        string
-	OpenAIAPIKey         string
-	OpenAIOrganization   string
-	OpenAIProject        string
-	OpenAIDefaultModel   string
-	OpenAIEmbeddingModel string
+	DefaultProvider           string
+	RequestTimeout            time.Duration
+	V3Enabled                 bool
+	OllamaBaseURL             string
+	OllamaDefaultModel        string
+	OllamaEmbeddingModel      string
+	OpenAIBaseURL             string
+	OpenAIAPIKey              string
+	OpenAIOrganization        string
+	OpenAIProject             string
+	OpenAIDefaultModel        string
+	OpenAIEmbeddingModel      string
+	GoogleBaseURL             string
+	GoogleAPIKey              string
+	GoogleDefaultModel        string
+	GoogleEmbeddingModel      string
+	AnthropicBaseURL          string
+	AnthropicAPIKey           string
+	AnthropicVersion          string
+	AnthropicMaxTokens        int
+	AnthropicDefaultModel     string
+	HuggingFaceBaseURL        string
+	HuggingFaceAPIKey         string
+	HuggingFaceDefaultModel   string
+	HuggingFaceEmbeddingModel string
 }
 
 type enqueueRequest struct {
@@ -159,23 +185,36 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		channels = newInMemoryChannelStore()
 	}
 	s := &Server{
-		repo:                 repo,
-		channelStore:         channels,
-		llmClient:            llmClient,
-		mux:                  http.NewServeMux(),
-		instructIntegration:  newInstructIntegrationService(repo),
-		defaultProvider:      defaultProvider,
-		requestTimeout:       options.RequestTimeout,
-		v3Enabled:            options.V3Enabled,
-		ollamaBaseURL:        strings.TrimSpace(options.OllamaBaseURL),
-		ollamaDefaultModel:   strings.TrimSpace(options.OllamaDefaultModel),
-		ollamaEmbeddingModel: strings.TrimSpace(options.OllamaEmbeddingModel),
-		openAIBaseURL:        strings.TrimSpace(options.OpenAIBaseURL),
-		openAIAPIKey:         strings.TrimSpace(options.OpenAIAPIKey),
-		openAIOrganization:   strings.TrimSpace(options.OpenAIOrganization),
-		openAIProject:        strings.TrimSpace(options.OpenAIProject),
-		openAIDefaultModel:   strings.TrimSpace(options.OpenAIDefaultModel),
-		openAIEmbeddingModel: strings.TrimSpace(options.OpenAIEmbeddingModel),
+		repo:                      repo,
+		channelStore:              channels,
+		llmClient:                 llmClient,
+		mux:                       http.NewServeMux(),
+		instructIntegration:       newInstructIntegrationService(repo),
+		defaultProvider:           defaultProvider,
+		requestTimeout:            options.RequestTimeout,
+		v3Enabled:                 options.V3Enabled,
+		ollamaBaseURL:             strings.TrimSpace(options.OllamaBaseURL),
+		ollamaDefaultModel:        strings.TrimSpace(options.OllamaDefaultModel),
+		ollamaEmbeddingModel:      strings.TrimSpace(options.OllamaEmbeddingModel),
+		openAIBaseURL:             strings.TrimSpace(options.OpenAIBaseURL),
+		openAIAPIKey:              strings.TrimSpace(options.OpenAIAPIKey),
+		openAIOrganization:        strings.TrimSpace(options.OpenAIOrganization),
+		openAIProject:             strings.TrimSpace(options.OpenAIProject),
+		openAIDefaultModel:        strings.TrimSpace(options.OpenAIDefaultModel),
+		openAIEmbeddingModel:      strings.TrimSpace(options.OpenAIEmbeddingModel),
+		googleBaseURL:             strings.TrimSpace(options.GoogleBaseURL),
+		googleAPIKey:              strings.TrimSpace(options.GoogleAPIKey),
+		googleDefaultModel:        strings.TrimSpace(options.GoogleDefaultModel),
+		googleEmbeddingModel:      strings.TrimSpace(options.GoogleEmbeddingModel),
+		anthropicBaseURL:          strings.TrimSpace(options.AnthropicBaseURL),
+		anthropicAPIKey:           strings.TrimSpace(options.AnthropicAPIKey),
+		anthropicVersion:          strings.TrimSpace(options.AnthropicVersion),
+		anthropicMaxTokens:        options.AnthropicMaxTokens,
+		anthropicDefaultModel:     strings.TrimSpace(options.AnthropicDefaultModel),
+		huggingFaceBaseURL:        strings.TrimSpace(options.HuggingFaceBaseURL),
+		huggingFaceAPIKey:         strings.TrimSpace(options.HuggingFaceAPIKey),
+		huggingFaceDefaultModel:   strings.TrimSpace(options.HuggingFaceDefaultModel),
+		huggingFaceEmbeddingModel: strings.TrimSpace(options.HuggingFaceEmbeddingModel),
 	}
 	s.routes()
 	return s
@@ -393,10 +432,10 @@ func (s *Server) resolvePersonaLLM(req personaRequest) (resolvedPersonaLLM, erro
 	if requestedProvider == "" {
 		requestedProvider = s.defaultProvider
 	}
-	if requestedProvider != "ollama" && requestedProvider != "openai" {
+	if !isSupportedPersonaProvider(requestedProvider) {
 		return resolvedPersonaLLM{}, personaRequestError{
 			StatusCode: http.StatusBadRequest,
-			Message:    fmt.Sprintf("llm.provider %q is unsupported (allowed: ollama, openai)", strings.TrimSpace(req.LLM.Provider)),
+			Message:    fmt.Sprintf("llm.provider %q is unsupported (allowed: ollama, openai, google, anthropic, huggingface)", strings.TrimSpace(req.LLM.Provider)),
 		}
 	}
 	if req.LLM.OpenAI != nil && requestedProvider != "openai" {
@@ -415,82 +454,103 @@ func (s *Server) resolvePersonaLLM(req personaRequest) (resolvedPersonaLLM, erro
 		}, nil
 	}
 
-	if requestedProvider == "ollama" {
-		baseURL := strings.TrimSpace(s.ollamaBaseURL)
-		if baseURL == "" {
-			return resolvedPersonaLLM{}, personaRequestError{
-				StatusCode: http.StatusBadRequest,
-				Message:    "ollama provider requested but OLLAMA_BASE_URL is unavailable",
-			}
-		}
-
-		resolvedModel := firstNonEmpty(requestedModel, strings.TrimSpace(s.ollamaDefaultModel))
-		if strings.TrimSpace(resolvedModel) == "" {
-			return resolvedPersonaLLM{}, personaRequestError{
-				StatusCode: http.StatusBadRequest,
-				Message:    "ollama provider requested but no model is available (set llm.model or OLLAMA_MODEL)",
-			}
-		}
-
-		return resolvedPersonaLLM{
-			Client: ollama.New(
-				baseURL,
-				resolvedModel,
-				strings.TrimSpace(s.ollamaEmbeddingModel),
-				s.requestTimeout,
-			),
-			Provider: requestedProvider,
-			Model:    resolvedModel,
-		}, nil
+	cfg, resolvedModel, err := s.personaProviderConfig(requestedProvider, requestedModel, req.LLM.OpenAI)
+	if err != nil {
+		return resolvedPersonaLLM{}, err
 	}
-
-	openAIConfig := req.LLM.OpenAI
-	key := ""
-	if openAIConfig != nil {
-		key = strings.TrimSpace(openAIConfig.APIKey)
-	}
-	if key == "" {
-		allowFallback := openAIConfig == nil || openAIConfig.UseServerFallback
-		if allowFallback {
-			key = strings.TrimSpace(s.openAIAPIKey)
-		}
-		if key == "" {
-			return resolvedPersonaLLM{}, personaRequestError{
-				StatusCode: http.StatusBadRequest,
-				Message:    "openai provider requested but no API key is available (provide llm.openai.api_key or enable/use server fallback key)",
-			}
-		}
-	}
-
-	baseURL := strings.TrimSpace(s.openAIBaseURL)
-	organization := strings.TrimSpace(s.openAIOrganization)
-	project := strings.TrimSpace(s.openAIProject)
-	if openAIConfig != nil {
-		baseURL = firstNonEmpty(strings.TrimSpace(openAIConfig.BaseURL), baseURL)
-		organization = firstNonEmpty(strings.TrimSpace(openAIConfig.Organization), organization)
-		project = firstNonEmpty(strings.TrimSpace(openAIConfig.Project), project)
-	}
-	resolvedModel := firstNonEmpty(requestedModel, strings.TrimSpace(s.openAIDefaultModel))
 	if strings.TrimSpace(resolvedModel) == "" {
 		return resolvedPersonaLLM{}, personaRequestError{
 			StatusCode: http.StatusBadRequest,
-			Message:    "openai provider requested but no model is available (set llm.model or OPENAI_MODEL)",
+			Message:    fmt.Sprintf("%s provider requested but no model is available", requestedProvider),
 		}
+	}
+	client, buildErr := llmprovider.NewProvider(cfg, llmprovider.Options{
+		Provider: requestedProvider,
+		Model:    resolvedModel,
+		Timeout:  s.requestTimeout,
+	})
+	if buildErr != nil {
+		return resolvedPersonaLLM{}, buildErr
 	}
 
 	return resolvedPersonaLLM{
-		Client: openai.New(
-			baseURL,
-			key,
-			resolvedModel,
-			strings.TrimSpace(s.openAIEmbeddingModel),
-			organization,
-			project,
-			s.requestTimeout,
-		),
+		Client:   client,
 		Provider: requestedProvider,
 		Model:    resolvedModel,
 	}, nil
+}
+
+func (s *Server) personaProviderConfig(provider, requestedModel string, openAIConfig *personaOpenAIConfig) (config.Config, string, error) {
+	cfg := config.Config{
+		LLMProvider:        provider,
+		EmbeddingProvider:  provider,
+		RequestTimeout:     s.requestTimeout,
+		OllamaBaseURL:      s.ollamaBaseURL,
+		OpenAIBaseURL:      s.openAIBaseURL,
+		OpenAIAPIKey:       s.openAIAPIKey,
+		OpenAIOrganization: s.openAIOrganization,
+		OpenAIProject:      s.openAIProject,
+		GoogleBaseURL:      s.googleBaseURL,
+		GoogleAPIKey:       s.googleAPIKey,
+		AnthropicBaseURL:   s.anthropicBaseURL,
+		AnthropicAPIKey:    s.anthropicAPIKey,
+		AnthropicVersion:   s.anthropicVersion,
+		AnthropicMaxTokens: s.anthropicMaxTokens,
+		HuggingFaceBaseURL: s.huggingFaceBaseURL,
+		HuggingFaceAPIKey:  s.huggingFaceAPIKey,
+	}
+	switch provider {
+	case "ollama":
+		model := firstNonEmpty(requestedModel, s.ollamaDefaultModel)
+		cfg.DefaultModel = model
+		cfg.EmbeddingModel = s.ollamaEmbeddingModel
+		if strings.TrimSpace(s.ollamaBaseURL) == "" {
+			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "ollama provider requested but OLLAMA_BASE_URL is unavailable"}
+		}
+		return cfg, model, nil
+	case "openai":
+		if openAIConfig != nil {
+			cfg.OpenAIAPIKey = firstNonEmpty(openAIConfig.APIKey, cfg.OpenAIAPIKey)
+			cfg.OpenAIBaseURL = firstNonEmpty(openAIConfig.BaseURL, cfg.OpenAIBaseURL)
+			cfg.OpenAIOrganization = firstNonEmpty(openAIConfig.Organization, cfg.OpenAIOrganization)
+			cfg.OpenAIProject = firstNonEmpty(openAIConfig.Project, cfg.OpenAIProject)
+			if strings.TrimSpace(openAIConfig.APIKey) == "" && !openAIConfig.UseServerFallback {
+				cfg.OpenAIAPIKey = ""
+			}
+		}
+		model := firstNonEmpty(requestedModel, s.openAIDefaultModel)
+		cfg.DefaultModel = model
+		cfg.EmbeddingModel = s.openAIEmbeddingModel
+		if strings.TrimSpace(cfg.OpenAIAPIKey) == "" {
+			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "openai provider requested but no API key is available (provide llm.openai.api_key or enable/use server fallback key)"}
+		}
+		return cfg, model, nil
+	case "google":
+		model := firstNonEmpty(requestedModel, s.googleDefaultModel)
+		cfg.DefaultModel = model
+		cfg.EmbeddingModel = s.googleEmbeddingModel
+		if strings.TrimSpace(cfg.GoogleAPIKey) == "" {
+			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "google provider requested but GOOGLE_API_KEY or GEMINI_API_KEY is unavailable"}
+		}
+		return cfg, model, nil
+	case "anthropic":
+		model := firstNonEmpty(requestedModel, s.anthropicDefaultModel)
+		cfg.DefaultModel = model
+		if strings.TrimSpace(cfg.AnthropicAPIKey) == "" {
+			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "anthropic provider requested but ANTHROPIC_API_KEY is unavailable"}
+		}
+		return cfg, model, nil
+	case "huggingface":
+		model := firstNonEmpty(requestedModel, s.huggingFaceDefaultModel)
+		cfg.DefaultModel = model
+		cfg.EmbeddingModel = s.huggingFaceEmbeddingModel
+		if strings.TrimSpace(cfg.HuggingFaceAPIKey) == "" {
+			return cfg, model, personaRequestError{StatusCode: http.StatusBadRequest, Message: "huggingface provider requested but HUGGINGFACE_API_KEY or HF_TOKEN is unavailable"}
+		}
+		return cfg, model, nil
+	default:
+		return cfg, "", personaRequestError{StatusCode: http.StatusBadRequest, Message: "unsupported provider"}
+	}
 }
 
 func personaLLMRequiresDedicatedClient(req *personaLLMRequest) bool {
@@ -526,8 +586,23 @@ func normalizePersonaProvider(value string) string {
 		return "openai"
 	case "ollama", "local":
 		return "ollama"
+	case "google", "gemini", "googleai", "google-ai":
+		return "google"
+	case "anthropic", "claude":
+		return "anthropic"
+	case "huggingface", "hugging-face", "hf":
+		return "huggingface"
 	default:
 		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func isSupportedPersonaProvider(provider string) bool {
+	switch normalizePersonaProvider(provider) {
+	case "ollama", "openai", "google", "anthropic", "huggingface":
+		return true
+	default:
+		return false
 	}
 }
 

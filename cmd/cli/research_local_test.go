@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,6 +43,113 @@ func TestCollectResearchDocuments(t *testing.T) {
 	docs = collectResearchDocuments("Cyberpunk 2077", details, false, false)
 	if len(docs) != 1 {
 		t.Fatalf("expected 1 doc when contexts excluded, got %d", len(docs))
+	}
+}
+
+func TestBuildResearchDossierPreservesFullTextSources(t *testing.T) {
+	captured := time.Date(2026, 5, 22, 6, 0, 0, 0, time.UTC)
+	dossier := buildResearchDossier("Rust", 42, captured, []researchDocument{
+		{Section: "report", Content: "Synthesized report with https://doc.rust-lang.org/book/"},
+		{Section: "web-context", Content: "Fetched source text and excerpts"},
+	}, []string{"expertise", "rust", "rust"}, "research", 7)
+
+	for _, want := range []string{
+		"# Research Dossier",
+		"topic: Rust",
+		"job_id: 42",
+		"stored_memory_chunks: 7",
+		"tags: expertise,rust",
+		"## report",
+		"https://doc.rust-lang.org/book/",
+		"## web-context",
+		"Fetched source text and excerpts",
+	} {
+		if !strings.Contains(dossier, want) {
+			t.Fatalf("dossier missing %q:\n%s", want, dossier)
+		}
+	}
+}
+
+func TestResearchSearchQueryFocusesTechnicalDocs(t *testing.T) {
+	tests := map[string]string{
+		"Rust expert reference":       "official Rust documentation",
+		"Go lang backend services":    "go.dev official documentation",
+		"PHP production applications": "php.net manual",
+		"Docker compose builds":       "Docker official documentation",
+		"pgsql indexing and tuning":   "PostgreSQL official documentation",
+		"JavaScript async runtime":    "MDN JavaScript reference",
+	}
+	for topic, want := range tests {
+		if got := researchSearchQuery(topic); !strings.Contains(got, want) {
+			t.Fatalf("researchSearchQuery(%q)=%q, want containing %q", topic, got, want)
+		}
+	}
+}
+
+func TestOfficialResearchSourceURLsCoversRequestedExpertiseTopics(t *testing.T) {
+	tests := map[string]string{
+		"Rust expert reference":       "https://doc.rust-lang.org/book/",
+		"Go lang backend services":    "https://go.dev/doc/",
+		"PHP production applications": "https://www.php.net/manual/en/",
+		"Docker compose builds":       "https://docs.docker.com/get-started/",
+		"pgsql indexing and tuning":   "https://www.postgresql.org/docs/current/",
+		"JavaScript async runtime":    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference",
+	}
+	for topic, want := range tests {
+		urls := officialResearchSourceURLs(topic)
+		found := false
+		for _, url := range urls {
+			if url == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("officialResearchSourceURLs(%q)=%v, missing %q", topic, urls, want)
+		}
+	}
+}
+
+func TestResearchHTMLToTextExtractsReadableText(t *testing.T) {
+	got := researchHTMLToText("<html><body><h1>Rust &amp; Cargo</h1><p>Ownership</p></body></html>")
+	if got != "Rust & Cargo Ownership" {
+		t.Fatalf("text=%q", got)
+	}
+}
+
+func TestPrefixResearchChunkMetadataIncludesSourceURL(t *testing.T) {
+	got := prefixResearchChunkMetadata(researchDocument{
+		Section: "official-source",
+		Content: "Research memory\nurl: https://example.test/docs\ncontent:\nbody",
+	}, "chunk body")
+	if !strings.Contains(got, "section=official-source") {
+		t.Fatalf("metadata missing section: %q", got)
+	}
+	if !strings.Contains(got, "source_url=https://example.test/docs") {
+		t.Fatalf("metadata missing source url: %q", got)
+	}
+	if !strings.Contains(got, "chunk body") {
+		t.Fatalf("metadata missing chunk body: %q", got)
+	}
+}
+
+func TestWriteResearchDossierCreatesStableMarkdownFile(t *testing.T) {
+	dir := t.TempDir()
+	path, err := writeResearchDossier(dir, "rust-expert", "Rust", 99, time.Date(2026, 5, 22, 6, 0, 0, 0, time.UTC), []researchDocument{
+		{Section: "report", Content: "full report"},
+	}, []string{"expertise"}, "research", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(path) != "rust-expert-job-99.md" {
+		t.Fatalf("path=%q", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "full report") {
+		t.Fatalf("dossier did not preserve document body:\n%s", data)
 	}
 }
 

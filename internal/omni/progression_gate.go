@@ -382,6 +382,11 @@ func workspaceMissingAppFiles(root string) bool {
 	if hasZigEntrypoint && hasZigBuild {
 		return false
 	}
+	hasRustManifest := fileHasContent(filepath.Join(root, "Cargo.toml"))
+	hasRustEntrypoint := fileHasContent(filepath.Join(root, "src", "main.rs")) || fileHasContent(filepath.Join(root, "src", "lib.rs"))
+	if hasRustManifest && hasRustEntrypoint {
+		return false
+	}
 	if fileHasContent(filepath.Join(root, "index.html")) && hasWebEntrypoint {
 		return false
 	}

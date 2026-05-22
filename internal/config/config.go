@@ -16,11 +16,20 @@ type Config struct {
 	WrapperOnly              bool
 	DatabaseURL              string
 	LLMProvider              string
+	EmbeddingProvider        string
 	OllamaBaseURL            string
 	OpenAIBaseURL            string
 	OpenAIAPIKey             string
 	OpenAIOrganization       string
 	OpenAIProject            string
+	GoogleBaseURL            string
+	GoogleAPIKey             string
+	AnthropicBaseURL         string
+	AnthropicAPIKey          string
+	AnthropicVersion         string
+	AnthropicMaxTokens       int
+	HuggingFaceBaseURL       string
+	HuggingFaceAPIKey        string
 	OllamaRestartCommand     string
 	OllamaRestartTimeout     time.Duration
 	DefaultModel             string
@@ -64,12 +73,19 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	provider := strings.ToLower(strings.TrimSpace(getenv("LLM_PROVIDER", "ollama")))
+	provider := normalizeLLMProvider(getenv("LLM_PROVIDER", "ollama"))
 	if provider == "" {
 		provider = "ollama"
 	}
-	if provider != "ollama" && provider != "openai" {
-		return Config{}, fmt.Errorf("LLM_PROVIDER must be one of: ollama, openai")
+	if !isSupportedLLMProvider(provider) {
+		return Config{}, fmt.Errorf("LLM_PROVIDER must be one of: ollama, openai, google, anthropic, huggingface")
+	}
+	embeddingProvider := normalizeLLMProvider(getenv("EMBEDDING_PROVIDER", provider))
+	if embeddingProvider == "anthropic" {
+		embeddingProvider = normalizeLLMProvider(getenv("ANTHROPIC_EMBEDDING_PROVIDER", "ollama"))
+	}
+	if !isSupportedEmbeddingProvider(embeddingProvider) {
+		return Config{}, fmt.Errorf("EMBEDDING_PROVIDER must be one of: ollama, openai, google, huggingface")
 	}
 
 	cfg := Config{
@@ -78,23 +94,32 @@ func Load() (Config, error) {
 		WrapperOnly:              getenvBool("WRAPPER_ONLY", false),
 		DatabaseURL:              os.Getenv("DATABASE_URL"),
 		LLMProvider:              provider,
+		EmbeddingProvider:        embeddingProvider,
 		OllamaBaseURL:            getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
 		OpenAIBaseURL:            getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAIAPIKey:             strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		OpenAIOrganization:       getenv("OPENAI_ORGANIZATION", ""),
 		OpenAIProject:            getenv("OPENAI_PROJECT", ""),
+		GoogleBaseURL:            getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
+		GoogleAPIKey:             firstEnv("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+		AnthropicBaseURL:         getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1"),
+		AnthropicAPIKey:          strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
+		AnthropicVersion:         getenv("ANTHROPIC_VERSION", "2023-06-01"),
+		AnthropicMaxTokens:       getenvInt("ANTHROPIC_MAX_TOKENS", 4096),
+		HuggingFaceBaseURL:       getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
+		HuggingFaceAPIKey:        firstEnv("HUGGINGFACE_API_KEY", "HF_TOKEN"),
 		OllamaRestartCommand:     getenv("OLLAMA_RESTART_COMMAND", ""),
 		OllamaRestartTimeout:     getenvDuration("OLLAMA_RESTART_TIMEOUT", 20*time.Second),
-		DefaultModel:             getenvProvider(provider, "OPENAI_MODEL", "OLLAMA_MODEL", defaultModelForProvider(provider)),
-		FastModel:                getenvProvider(provider, "OPENAI_MODEL_FAST", "OLLAMA_MODEL_FAST", ""),
-		ReasoningModel:           getenvProvider(provider, "OPENAI_MODEL_REASONING", "OLLAMA_MODEL_REASONING", ""),
-		TaggingModel:             getenvProvider(provider, "OPENAI_MODEL_TAGGER", "OLLAMA_MODEL_TAGGER", ""),
-		PlanModel:                getenvProvider(provider, "OPENAI_MODEL_PLANNER", "OLLAMA_MODEL_PLANNER", ""),
-		AnalyzeModel:             getenvProvider(provider, "OPENAI_MODEL_ANALYZER", "OLLAMA_MODEL_ANALYZER", ""),
-		ResponseModel:            getenvProvider(provider, "OPENAI_MODEL_RESPONDER", "OLLAMA_MODEL_RESPONDER", ""),
-		SearchModel:              getenvProvider(provider, "OPENAI_MODEL_SEARCH", "OLLAMA_MODEL_SEARCH", ""),
-		MemoryModel:              getenvProvider(provider, "OPENAI_MODEL_MEMORY", "OLLAMA_MODEL_MEMORY", ""),
-		EmbeddingModel:           embeddingModelForProvider(provider),
+		DefaultModel:             getenvProvider(provider, "MODEL", defaultModelForProvider(provider)),
+		FastModel:                getenvProvider(provider, "MODEL_FAST", ""),
+		ReasoningModel:           getenvProvider(provider, "MODEL_REASONING", ""),
+		TaggingModel:             getenvProvider(provider, "MODEL_TAGGER", ""),
+		PlanModel:                getenvProvider(provider, "MODEL_PLANNER", ""),
+		AnalyzeModel:             getenvProvider(provider, "MODEL_ANALYZER", ""),
+		ResponseModel:            getenvProvider(provider, "MODEL_RESPONDER", ""),
+		SearchModel:              getenvProvider(provider, "MODEL_SEARCH", ""),
+		MemoryModel:              getenvProvider(provider, "MODEL_MEMORY", ""),
+		EmbeddingModel:           embeddingModelForProvider(embeddingProvider),
 		WebSearchEnabled:         getenvBool("WEB_SEARCH_ENABLED", true),
 		WebSearchProviders:       getenvCSV("WEB_SEARCH_PROVIDERS", []string{"yahoo", "google", "reddit"}),
 		WebSearchTimeout:         getenvDuration("WEB_SEARCH_TIMEOUT", 15*time.Second),
@@ -127,8 +152,11 @@ func Load() (Config, error) {
 	if !cfg.WrapperOnly && cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
-	if cfg.LLMProvider == "openai" && cfg.OpenAIAPIKey == "" {
-		return Config{}, fmt.Errorf("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
+	if err := validateProviderCredentials(cfg.LLMProvider, cfg, "LLM_PROVIDER"); err != nil {
+		return Config{}, err
+	}
+	if err := validateProviderCredentials(cfg.EmbeddingProvider, cfg, "EMBEDDING_PROVIDER"); err != nil {
+		return Config{}, err
 	}
 
 	if cfg.WorkerCount < 1 {
@@ -195,8 +223,7 @@ func Load() (Config, error) {
 
 	roleEnv := func(roleID string, fallback string) string {
 		legacy := specialist.EnvVarForRoleID(roleID)
-		openAIKey := openAIEnvAlias(legacy)
-		return getenvProvider(cfg.LLMProvider, openAIKey, legacy, fallback)
+		return getenvProvider(cfg.LLMProvider, strings.TrimPrefix(legacy, "OLLAMA_"), fallback)
 	}
 	cfg.SpecialistModels = map[string]string{
 		specialist.RolePlannerSpecialist:            roleEnv(specialist.RolePlannerSpecialist, cfg.PlanModel),
@@ -223,6 +250,15 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func getenvInt(key string, fallback int) int {
@@ -278,41 +314,124 @@ func getenvCSV(key string, fallback []string) []string {
 
 func normalizeLLMProvider(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "openai":
+	case "openai", "chatgpt", "chat-gpt":
 		return "openai"
-	default:
+	case "google", "gemini", "googleai", "google-ai":
+		return "google"
+	case "anthropic", "claude":
+		return "anthropic"
+	case "huggingface", "hugging-face", "hf":
+		return "huggingface"
+	case "ollama", "local":
 		return "ollama"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
 	}
 }
 
 func defaultModelForProvider(provider string) string {
-	if normalizeLLMProvider(provider) == "openai" {
+	switch normalizeLLMProvider(provider) {
+	case "openai":
 		return "gpt-4.1-mini"
+	case "google":
+		return "gemini-2.0-flash"
+	case "anthropic":
+		return "claude-sonnet-4-20250514"
+	case "huggingface":
+		return "openai/gpt-oss-20b:fastest"
+	default:
+		return "llama3.2"
 	}
-	return "llama3.2"
 }
 
 func embeddingModelForProvider(provider string) string {
-	if normalizeLLMProvider(provider) == "openai" {
+	switch normalizeLLMProvider(provider) {
+	case "openai":
 		return getenv("OPENAI_EMBEDDING_MODEL", getenv("EMBEDDING_MODEL", "text-embedding-3-small"))
+	case "google":
+		return firstNonEmptyEnv([]string{"GOOGLE_EMBEDDING_MODEL", "GEMINI_EMBEDDING_MODEL", "EMBEDDING_MODEL"}, "text-embedding-004")
+	case "huggingface":
+		return firstNonEmptyEnv([]string{"HUGGINGFACE_EMBEDDING_MODEL", "HF_EMBEDDING_MODEL", "EMBEDDING_MODEL"}, "sentence-transformers/all-mpnet-base-v2")
+	default:
+		return getenv("OLLAMA_EMBEDDING_MODEL", getenv("EMBEDDING_MODEL", "nomic-embed-text"))
 	}
-	return getenv("EMBEDDING_MODEL", "nomic-embed-text")
 }
 
-func getenvProvider(provider string, openaiKey, legacyKey, fallback string) string {
-	if normalizeLLMProvider(provider) == "openai" {
-		return getenv(openaiKey, fallback)
+func firstNonEmptyEnv(keys []string, fallback string) string {
+	for _, key := range keys {
+		if value := os.Getenv(key); strings.TrimSpace(value) != "" {
+			return value
+		}
 	}
-	return getenv(legacyKey, fallback)
+	return fallback
 }
 
-func openAIEnvAlias(legacy string) string {
-	legacy = strings.TrimSpace(legacy)
-	if legacy == "" {
-		return ""
+func getenvProvider(provider string, suffix string, fallback string) string {
+	suffix = strings.TrimPrefix(strings.TrimSpace(suffix), "_")
+	if suffix == "" {
+		return fallback
 	}
-	if strings.HasPrefix(legacy, "OLLAMA_") {
-		return "OPENAI_" + strings.TrimPrefix(legacy, "OLLAMA_")
+	provider = normalizeLLMProvider(provider)
+	keys := providerEnvKeys(provider, suffix)
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
 	}
-	return "OPENAI_" + legacy
+	return fallback
+}
+
+func providerEnvKeys(provider, suffix string) []string {
+	switch normalizeLLMProvider(provider) {
+	case "openai":
+		return []string{"OPENAI_" + suffix}
+	case "google":
+		return []string{"GOOGLE_" + suffix, "GEMINI_" + suffix}
+	case "anthropic":
+		return []string{"ANTHROPIC_" + suffix, "CLAUDE_" + suffix}
+	case "huggingface":
+		return []string{"HUGGINGFACE_" + suffix, "HF_" + suffix}
+	default:
+		return []string{"OLLAMA_" + suffix, "OMNI_" + suffix}
+	}
+}
+
+func isSupportedLLMProvider(provider string) bool {
+	switch normalizeLLMProvider(provider) {
+	case "ollama", "openai", "google", "anthropic", "huggingface":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedEmbeddingProvider(provider string) bool {
+	switch normalizeLLMProvider(provider) {
+	case "ollama", "openai", "google", "huggingface":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateProviderCredentials(provider string, cfg Config, label string) error {
+	switch normalizeLLMProvider(provider) {
+	case "openai":
+		if cfg.OpenAIAPIKey == "" {
+			return fmt.Errorf("OPENAI_API_KEY is required when %s=openai", label)
+		}
+	case "google":
+		if cfg.GoogleAPIKey == "" {
+			return fmt.Errorf("GOOGLE_API_KEY or GEMINI_API_KEY is required when %s=google", label)
+		}
+	case "anthropic":
+		if cfg.AnthropicAPIKey == "" {
+			return fmt.Errorf("ANTHROPIC_API_KEY is required when %s=anthropic", label)
+		}
+	case "huggingface":
+		if cfg.HuggingFaceAPIKey == "" {
+			return fmt.Errorf("HUGGINGFACE_API_KEY or HF_TOKEN is required when %s=huggingface", label)
+		}
+	}
+	return nil
 }

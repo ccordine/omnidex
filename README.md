@@ -154,13 +154,130 @@ ollama pull qwen2.5:7b
 ollama pull nomic-embed-text
 ```
 
-### OpenAI connectivity from Docker
+### Ollama GPU setup and stress testing
+
+Omnidex can drive many sequential specialist calls. A weak or half-configured Ollama setup may look fine for one chat request, then fail during long planning, research, verification, or memory-indexing runs. Before using Omnidex for serious agent loops, verify Ollama under sustained load.
+
+Recommended checks:
+
+```bash
+ollama --version
+ollama list
+ollama pull qwen2.5-coder:7b
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+omni ollama prewarm --json
+```
+
+For memory retrieval, use an embedding model whose output dimension matches the database schema. The default local vector column is `vector(768)`, so `nomic-embed-text` is a good Ollama default:
+
+```bash
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+```
+
+On Linux AMD systems, confirm the server is actually using the GPU instead of silently falling back to CPU. Useful tools include:
+
+```bash
+ollama ps
+journalctl -u ollama -f
+ls -l /dev/dri /dev/kfd
+groups
+```
+
+During a long generation, watch GPU utilization with one of:
+
+```bash
+amdgpu_top
+radeontop
+watch -n 1 rocm-smi
+```
+
+The exact AMD path depends on GPU generation, kernel, Mesa, ROCm, and Ollama build. Official Ollama docs currently describe AMD ROCm support on Linux and note additional AMD coverage through Vulkan. On Arch Linux, the most practical paths are usually:
+
+- `ollama-rocm` when the GPU is supported by ROCm and `/dev/kfd` access is working.
+- a Vulkan-enabled Ollama build/package when ROCm does not fully support the device or does not use the whole GPU.
+- CPU fallback only as a last resort for small models or debugging.
+
+For Arch Linux AMD laptops/desktops, including Framework Laptop 16 GPU configurations, check:
+
+```bash
+pacman -Qs 'ollama|rocm|vulkan|mesa|amdgpu'
+vulkaninfo --summary
+rocminfo
+```
+
+If Ollama runs as a systemd service, put GPU and networking settings in an override:
+
+```bash
+sudo systemctl edit ollama
+```
+
+Example override:
+
+```ini
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+Environment="OLLAMA_KEEP_ALIVE=30m"
+Environment="OLLAMA_EMBEDDING_MODEL=nomic-embed-text"
+```
+
+Then reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+journalctl -u ollama -f
+```
+
+If you use a Vulkan-enabled Ollama build, set the Vulkan flag required by that build/package in the same override. Some builds use:
+
+```ini
+[Service]
+Environment="OLLAMA_VULKAN=1"
+```
+
+Do not assume Vulkan or ROCm is active because the model runs. Prove it with utilization during generation and by checking Ollama logs for the selected backend. For Omnidex stress testing, run several long prompts or research jobs back to back and watch for:
+
+- `context canceled`
+- HTTP 500/connection reset errors from Ollama
+- model pulls during active jobs
+- repeated CPU fallback
+- thermal throttling
+- VRAM exhaustion or partial offload warnings
+
+Helpful references:
+- Ollama GPU docs: `https://docs.ollama.com/gpu`
+- Ollama Linux docs: `https://docs.ollama.com/linux`
+- Ollama troubleshooting: `https://docs.ollama.com/troubleshooting`
+- Arch package notes for Ollama/ROCm/Vulkan from your distribution packages
+
+### Remote model providers
 
 To run with OpenAI instead of Ollama:
 - `LLM_PROVIDER=openai`
 - `OPENAI_API_KEY=...`
 - optional `OPENAI_MODEL=gpt-4.1-mini`
 - optional `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
+
+To run with Google Gemini:
+- `LLM_PROVIDER=google` or `LLM_PROVIDER=gemini`
+- `GOOGLE_API_KEY=...` or `GEMINI_API_KEY=...`
+- optional `GOOGLE_MODEL=gemini-2.0-flash`
+- optional `GOOGLE_EMBEDDING_MODEL=text-embedding-004`
+
+To run with Anthropic Claude:
+- `LLM_PROVIDER=anthropic` or `LLM_PROVIDER=claude`
+- `ANTHROPIC_API_KEY=...`
+- optional `ANTHROPIC_MODEL=claude-sonnet-4-20250514`
+- keep `EMBEDDING_PROVIDER=ollama|openai|google|huggingface`, because Anthropic does not provide a native embeddings API.
+
+To run with Hugging Face Inference Providers:
+- `LLM_PROVIDER=huggingface` or `LLM_PROVIDER=hf`
+- `HUGGINGFACE_API_KEY=...` or `HF_TOKEN=...`
+- optional `HUGGINGFACE_MODEL=openai/gpt-oss-20b:fastest`
+- optional `HUGGINGFACE_EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2`
+
+`EMBEDDING_PROVIDER` can be set independently from `LLM_PROVIDER` when you want one provider for generation and another provider for memory vectors. This is required for Anthropic and useful when you want stable `vector(768)` memory dimensions while testing different generation models.
 
 ### Workspace scan from Docker
 
@@ -183,7 +300,8 @@ Environment variables:
 ### Model routing and cognition
 
 Environment variables:
-- `LLM_PROVIDER=ollama|openai`
+- `LLM_PROVIDER=ollama|openai|google|anthropic|huggingface`
+- `EMBEDDING_PROVIDER=ollama|openai|google|huggingface`
 - `OPENAI_API_KEY` (required when `LLM_PROVIDER=openai`)
 - `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
 - `OPENAI_MODEL` (default fallback when provider is OpenAI)
@@ -196,6 +314,23 @@ Environment variables:
 - `OPENAI_MODEL_SEARCH`
 - `OPENAI_MODEL_MEMORY`
 - `OPENAI_EMBEDDING_MODEL`
+- `GOOGLE_API_KEY` / `GEMINI_API_KEY` (required when `LLM_PROVIDER=google`)
+- `GOOGLE_BASE_URL` (default `https://generativelanguage.googleapis.com/v1beta`)
+- `GOOGLE_MODEL` / `GEMINI_MODEL`
+- `GOOGLE_MODEL_FAST`, `GOOGLE_MODEL_REASONING`, `GOOGLE_MODEL_TAGGER`, `GOOGLE_MODEL_PLANNER`, `GOOGLE_MODEL_ANALYZER`, `GOOGLE_MODEL_RESPONDER`, `GOOGLE_MODEL_SEARCH`, `GOOGLE_MODEL_MEMORY`
+- `GOOGLE_EMBEDDING_MODEL` / `GEMINI_EMBEDDING_MODEL`
+- `ANTHROPIC_API_KEY` (required when `LLM_PROVIDER=anthropic`)
+- `ANTHROPIC_BASE_URL` (default `https://api.anthropic.com/v1`)
+- `ANTHROPIC_VERSION` (default `2023-06-01`)
+- `ANTHROPIC_MAX_TOKENS` (default `4096`)
+- `ANTHROPIC_MODEL` / `CLAUDE_MODEL`
+- `ANTHROPIC_MODEL_FAST`, `ANTHROPIC_MODEL_REASONING`, `ANTHROPIC_MODEL_TAGGER`, `ANTHROPIC_MODEL_PLANNER`, `ANTHROPIC_MODEL_ANALYZER`, `ANTHROPIC_MODEL_RESPONDER`, `ANTHROPIC_MODEL_SEARCH`, `ANTHROPIC_MODEL_MEMORY`
+- `ANTHROPIC_EMBEDDING_PROVIDER` (default `ollama` when `LLM_PROVIDER=anthropic`)
+- `HUGGINGFACE_API_KEY` / `HF_TOKEN` (required when `LLM_PROVIDER=huggingface`)
+- `HUGGINGFACE_BASE_URL` (default `https://router.huggingface.co`)
+- `HUGGINGFACE_MODEL` / `HF_MODEL`
+- `HUGGINGFACE_MODEL_FAST`, `HUGGINGFACE_MODEL_REASONING`, `HUGGINGFACE_MODEL_TAGGER`, `HUGGINGFACE_MODEL_PLANNER`, `HUGGINGFACE_MODEL_ANALYZER`, `HUGGINGFACE_MODEL_RESPONDER`, `HUGGINGFACE_MODEL_SEARCH`, `HUGGINGFACE_MODEL_MEMORY`
+- `HUGGINGFACE_EMBEDDING_MODEL` / `HF_EMBEDDING_MODEL`
 - `OLLAMA_MODEL` / `OMNI_MODEL` / `OMNI_CONVERSATION_MODEL` (default conversation fallback; CLI default `qwen2.5-coder:7b`)
 - `OLLAMA_MODEL_FAST`
 - `OLLAMA_MODEL_REASONING`
@@ -271,6 +406,33 @@ Preview only (no changes):
 ```bash
 ./scripts/setup-host-deps.sh --dry-run --profile all --with-whisper
 ```
+
+macOS uses the same shell script through Homebrew:
+
+```bash
+brew install git go make curl jq ripgrep node docker docker-compose
+./scripts/setup-host-deps.sh --profile core -y
+```
+
+Docker on macOS still requires Docker Desktop or another running Docker engine; the Homebrew `docker` package only installs the client tools. Start Docker Desktop before running compose-backed core workflows.
+
+Windows has a native PowerShell dependency bootstrap for Git, Go, Node, Docker Desktop, jq, ripgrep, ffmpeg, VLC, Tesseract, Python, and optional Whisper:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\setup-host-deps.ps1 -Profile core -Yes
+.\scripts\setup-host-deps.ps1 -Profile all -WithWhisper -Yes
+```
+
+The Windows script prefers `winget`, then Scoop, then Chocolatey. Local automation support on Windows is partial because Linux desktop tools such as `pactl`, `playerctl`, `iproute`, `nmcli`, and screenshot utilities do not map directly.
+
+Build release archives for macOS and Windows from any host with Go installed:
+
+```bash
+./scripts/build-release.sh --version dev --target darwin/arm64 --target windows/amd64
+```
+
+Default release targets are Linux, macOS, and Windows for `amd64` and `arm64`; outputs are written to `dist/` with `SHA256SUMS`.
 
 ## Install to ~/.omnidex
 

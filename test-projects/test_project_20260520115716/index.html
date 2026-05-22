@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Omnidex Calculator</title>
+</head>
+<body>
+  <main class="app-shell" data-controller="calculator" data-action="keydown@window->calculator#handleKey">
+    <section class="calculator" aria-label="Calculator">
+      <header><p>Omnidex Test</p><h1>Calculator</h1></header>
+      <output class="display" data-calculator-target="display" aria-live="polite">0</output>
+      <div class="status" data-calculator-target="status">Ready</div>
+      <div class="keys" data-calculator-target="keys"></div>
+    </section>
+  </main>
+  <script src="dist/bundle.js"></script>
+</body>
+</html>

@@ -2,6 +2,8 @@ package omni
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -11,6 +13,10 @@ import (
 
 type DBManagerLLMClient interface {
 	ChatRaw(ctx context.Context, req OllamaChatRequest) (OllamaChatResponse, error)
+}
+
+type DBManagerMemoryWriter interface {
+	AddMemory(ctx context.Context, agentID, kind, content string, tags []string) (MemoryRecord, error)
 }
 
 type DBSchemaTable struct {
@@ -26,11 +32,20 @@ type DBSchemaColumn struct {
 }
 
 type DBManagerQueryResult struct {
-	Question string
-	SQL      string
-	Rows     []MemorySQLRow
-	Schema   []DBSchemaTable
-	Answer   string
+	Question          string
+	SQL               string
+	Rows              []MemorySQLRow
+	Schema            []DBSchemaTable
+	SchemaFingerprint string
+	Answer            string
+}
+
+type DBSchemaMemorySnapshot struct {
+	Label       string
+	Fingerprint string
+	Tables      []DBSchemaTable
+	Content     string
+	Tags        []string
 }
 
 type dbManagerSQLPayload struct {
@@ -56,7 +71,8 @@ func RunDBManagerQuery(ctx context.Context, question string, runner MemorySQLRun
 	if err != nil {
 		return DBManagerQueryResult{}, err
 	}
-	resp, err := llm.ChatRaw(ctx, buildDBManagerRequest(question, schema))
+	snapshot := BuildDBSchemaMemorySnapshot("postgres", schema)
+	resp, err := llm.ChatRaw(ctx, buildDBManagerRequest(question, snapshot))
 	if err != nil {
 		return DBManagerQueryResult{}, err
 	}
@@ -73,11 +89,12 @@ func RunDBManagerQuery(ctx context.Context, question string, runner MemorySQLRun
 		return DBManagerQueryResult{}, err
 	}
 	return DBManagerQueryResult{
-		Question: question,
-		SQL:      sql,
-		Rows:     rows,
-		Schema:   schema,
-		Answer:   strings.TrimSpace(payload.Answer),
+		Question:          question,
+		SQL:               sql,
+		Rows:              rows,
+		Schema:            schema,
+		SchemaFingerprint: snapshot.Fingerprint,
+		Answer:            strings.TrimSpace(payload.Answer),
 	}, nil
 }
 
@@ -123,13 +140,150 @@ func InspectPostgresSchema(ctx context.Context, runner MemorySQLRunner) ([]DBSch
 	return tables, nil
 }
 
-func buildDBManagerRequest(question string, schema []DBSchemaTable) OllamaChatRequest {
+func BuildDBSchemaMemorySnapshot(label string, schema []DBSchemaTable) DBSchemaMemorySnapshot {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = "postgres"
+	}
+	normalized := normalizeDBSchemaTables(schema)
+	fingerprint := fingerprintDBSchema(normalized)
+	content := formatDBSchemaMemoryContent(label, fingerprint, normalized)
+	return DBSchemaMemorySnapshot{
+		Label:       label,
+		Fingerprint: fingerprint,
+		Tables:      normalized,
+		Content:     content,
+		Tags:        dbSchemaMemoryTags(label, fingerprint, normalized),
+	}
+}
+
+func StoreDBSchemaMemorySnapshot(ctx context.Context, writer DBManagerMemoryWriter, label string, schema []DBSchemaTable) (MemoryRecord, DBSchemaMemorySnapshot, error) {
+	if writer == nil {
+		return MemoryRecord{}, DBSchemaMemorySnapshot{}, fmt.Errorf("memory writer is required")
+	}
+	snapshot := BuildDBSchemaMemorySnapshot(label, schema)
+	record, err := writer.AddMemory(ctx, "db_schema_specialist", "reference", snapshot.Content, snapshot.Tags)
+	if err != nil {
+		return MemoryRecord{}, snapshot, err
+	}
+	return record, snapshot, nil
+}
+
+func normalizeDBSchemaTables(schema []DBSchemaTable) []DBSchemaTable {
+	out := make([]DBSchemaTable, 0, len(schema))
+	for _, table := range schema {
+		clean := DBSchemaTable{
+			Schema:  strings.TrimSpace(table.Schema),
+			Name:    strings.TrimSpace(table.Name),
+			Columns: make([]DBSchemaColumn, 0, len(table.Columns)),
+		}
+		if clean.Schema == "" || clean.Name == "" {
+			continue
+		}
+		for _, column := range table.Columns {
+			name := strings.TrimSpace(column.Name)
+			dataType := strings.TrimSpace(column.DataType)
+			if name == "" {
+				continue
+			}
+			clean.Columns = append(clean.Columns, DBSchemaColumn{Name: name, DataType: dataType, Nullable: column.Nullable})
+		}
+		sort.SliceStable(clean.Columns, func(i, j int) bool {
+			return clean.Columns[i].Name < clean.Columns[j].Name
+		})
+		out = append(out, clean)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		left := out[i].Schema + "." + out[i].Name
+		right := out[j].Schema + "." + out[j].Name
+		return left < right
+	})
+	return out
+}
+
+func fingerprintDBSchema(schema []DBSchemaTable) string {
+	raw, _ := json.Marshal(schema)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func formatDBSchemaMemoryContent(label, fingerprint string, schema []DBSchemaTable) string {
+	lines := []string{
+		"Database schema memory",
+		"label=" + strings.TrimSpace(label),
+		"schema_fingerprint=" + strings.TrimSpace(fingerprint),
+		fmt.Sprintf("table_count=%d", len(schema)),
+		"",
+		"Use this schema only for read-only SQL unless a task explicitly asks for migration design.",
+		"Re-inspect information_schema before relying on this memory; if the fingerprint differs, treat this memory as stale.",
+		"",
+		"Tables:",
+	}
+	for _, table := range schema {
+		lines = append(lines, fmt.Sprintf("- %s.%s", table.Schema, table.Name))
+		for _, column := range table.Columns {
+			nullable := "not null"
+			if column.Nullable {
+				nullable = "nullable"
+			}
+			lines = append(lines, fmt.Sprintf("  - %s %s %s", column.Name, defaultString(column.DataType, "unknown"), nullable))
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func defaultString(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func dbSchemaTagToken(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	clean := strings.Trim(b.String(), "-")
+	if clean == "" {
+		return "unknown"
+	}
+	return clean
+}
+
+func dbSchemaMemoryTags(label, fingerprint string, schema []DBSchemaTable) []string {
+	tags := []string{"db-schema", "schema-memory", "pgsql", "postgresql", "schema:" + dbSchemaTagToken(label)}
+	if len(fingerprint) >= 12 {
+		tags = append(tags, "schema-fingerprint:"+fingerprint[:12])
+	}
+	for _, table := range schema {
+		tags = append(tags, "table:"+dbSchemaTagToken(table.Schema+"-"+table.Name))
+	}
+	return cleanMemoryTags(tags)
+}
+
+func buildDBManagerRequest(question string, snapshot DBSchemaMemorySnapshot) OllamaChatRequest {
 	blob, _ := json.Marshal(struct {
-		Question string          `json:"question"`
-		Schema   []DBSchemaTable `json:"schema"`
+		Question          string          `json:"question"`
+		SchemaFingerprint string          `json:"schema_fingerprint"`
+		SchemaSummary     string          `json:"schema_summary"`
+		Schema            []DBSchemaTable `json:"schema"`
 	}{
-		Question: question,
-		Schema:   schema,
+		Question:          question,
+		SchemaFingerprint: snapshot.Fingerprint,
+		SchemaSummary:     snapshot.Content,
+		Schema:            snapshot.Tables,
 	})
 	return OllamaChatRequest{
 		Messages: []OllamaMessage{

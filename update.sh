@@ -99,6 +99,14 @@ expand_home_path() {
   esac
 }
 
+absolute_existing_path() {
+  local raw="$1"
+  (
+    cd "$raw"
+    pwd -P
+  )
+}
+
 resolve_compose_cmd() {
   if command_exists docker && docker compose version >/dev/null 2>&1; then
     printf '%s\n' "docker compose"
@@ -289,7 +297,9 @@ refresh_installed_payload_permissions() {
     "${repo_dir}/install.sh" \
     "${repo_dir}/update.sh" \
     "${repo_dir}/uninstall.sh" \
+    "${repo_dir}/scripts/build-release.sh" \
     "${repo_dir}/scripts/setup-host-deps.sh" \
+    "${repo_dir}/scripts/setup-host-deps.ps1" \
     "${repo_dir}/up.sh" \
     "${repo_dir}/down.sh"; do
     [[ -f "${path}" ]] || continue
@@ -301,10 +311,8 @@ main() {
   parse_args "$@"
 
   PREFIX="$(expand_home_path "${PREFIX}")"
-  if command_exists realpath; then
-    PREFIX="$(realpath -m "${PREFIX}")"
-  fi
   [[ -d "${PREFIX}" ]] || die "prefix path does not exist: ${PREFIX}"
+  PREFIX="$(absolute_existing_path "${PREFIX}")"
 
   local compose_cmd=""
   if needs_compose_work; then

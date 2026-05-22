@@ -1737,10 +1737,10 @@ func (r *Repository) FindRelevantMemory(ctx context.Context, embedding []float64
 					WHEN 'preference' THEN 3
 					ELSE 4
 				END ASC,
-				mc.created_at DESC,
-				mc.id DESC,
 				CASE WHEN mc.embedding IS NULL THEN 1 ELSE 0 END,
-				mc.embedding <=> $1::vector ASC
+				mc.embedding <=> $1::vector ASC,
+				mc.created_at DESC,
+				mc.id DESC
 			LIMIT $3
 		`, trustOrder)
 		rows, err = r.pool.Query(ctx, query, vectorLiteral(embedding), tags, limit)

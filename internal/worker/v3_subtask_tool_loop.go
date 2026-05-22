@@ -68,6 +68,9 @@ func (r *nativeRuntimeV3) runSubtaskWithTools() (string, []string, error) {
 		}
 		decision, ok := parseSubtaskToolDecision(raw)
 		if !ok {
+			if final := strings.TrimSpace(raw); final != "" && !genericNonAnswer(final) {
+				return final, r.inferSubtaskContextSources(), nil
+			}
 			return "", nil, fmt.Errorf("tool decision parse failed")
 		}
 		if len(decision.ToolCalls) == 0 {
@@ -194,6 +197,23 @@ func (r *nativeRuntimeV3) subtaskToolContext(objective string) string {
 		sections = append(sections, promptBlock("Existing Web Evidence", trimForBudget(webArtifact.Summary, 1400)))
 	}
 	return strings.Join(sections, "\n\n")
+}
+
+func (r *nativeRuntimeV3) inferSubtaskContextSources() []string {
+	sources := map[string]struct{}{}
+	workspaceArtifact, _ := r.readWorkspaceArtifact()
+	retrievalArtifact, _ := r.readRetrievalArtifact()
+	webArtifact, _ := r.readWebArtifact()
+	if strings.TrimSpace(workspaceArtifact.Summary) != "" {
+		sources["workspace"] = struct{}{}
+	}
+	if strings.TrimSpace(retrievalArtifact.Summary) != "" {
+		sources["memory"] = struct{}{}
+	}
+	if strings.TrimSpace(webArtifact.Summary) != "" && !strings.EqualFold(strings.TrimSpace(webArtifact.Summary), "external research skipped") {
+		sources["web_search"] = struct{}{}
+	}
+	return sortedSourceKeys(sources)
 }
 
 func (r *nativeRuntimeV3) availableToolSpecs(skillID string) []toolruntime.Spec {

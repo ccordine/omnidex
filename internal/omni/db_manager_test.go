@@ -37,6 +37,9 @@ func TestDBManagerScansSchemaAndRunsLLMGeneratedMemoryQuery(t *testing.T) {
 	if len(result.Schema) != 3 {
 		t.Fatalf("schema tables = %#v", result.Schema)
 	}
+	if result.SchemaFingerprint == "" {
+		t.Fatalf("schema fingerprint was not returned")
+	}
 	if len(result.Rows) != 1 || !strings.Contains(stringFromAny(result.Rows[0]["content"]), "PostgreSQL required validation") {
 		t.Fatalf("unexpected query rows: %#v", result.Rows)
 	}
@@ -48,6 +51,76 @@ func TestDBManagerScansSchemaAndRunsLLMGeneratedMemoryQuery(t *testing.T) {
 	}
 	if len(client.requests) != 1 || !strings.Contains(client.requests[0].Messages[1].Content, "memory_chunks") {
 		t.Fatalf("LLM request did not include schema context: %#v", client.requests)
+	}
+	if !strings.Contains(client.requests[0].Messages[1].Content, "schema_fingerprint") {
+		t.Fatalf("LLM request did not include schema fingerprint: %s", client.requests[0].Messages[1].Content)
+	}
+}
+
+func TestBuildDBSchemaMemorySnapshotSummarizesAndFingerprintsSchema(t *testing.T) {
+	schema := []DBSchemaTable{{
+		Schema: "public",
+		Name:   "memory_chunks",
+		Columns: []DBSchemaColumn{
+			{Name: "content", DataType: "text", Nullable: false},
+			{Name: "id", DataType: "bigint", Nullable: false},
+		},
+	}}
+	snapshot := BuildDBSchemaMemorySnapshot("omnidex", schema)
+	if snapshot.Fingerprint == "" {
+		t.Fatal("expected fingerprint")
+	}
+	for _, want := range []string{
+		"Database schema memory",
+		"schema_fingerprint=" + snapshot.Fingerprint,
+		"- public.memory_chunks",
+		"  - content text not null",
+		"schema-fingerprint:" + snapshot.Fingerprint[:12],
+		"table:public-memory-chunks",
+	} {
+		if !strings.Contains(snapshot.Content+"\n"+strings.Join(snapshot.Tags, "\n"), want) {
+			t.Fatalf("snapshot missing %q\ncontent:\n%s\ntags=%v", want, snapshot.Content, snapshot.Tags)
+		}
+	}
+
+	changed := BuildDBSchemaMemorySnapshot("omnidex", []DBSchemaTable{{
+		Schema: "public",
+		Name:   "memory_chunks",
+		Columns: []DBSchemaColumn{
+			{Name: "content", DataType: "text", Nullable: false},
+			{Name: "id", DataType: "bigint", Nullable: false},
+			{Name: "source", DataType: "text", Nullable: true},
+		},
+	}})
+	if changed.Fingerprint == snapshot.Fingerprint {
+		t.Fatalf("fingerprint did not change after schema changed: %s", snapshot.Fingerprint)
+	}
+}
+
+func TestStoreDBSchemaMemorySnapshotWritesReferenceMemory(t *testing.T) {
+	writer := &fakeDBSchemaMemoryWriter{}
+	record, snapshot, err := StoreDBSchemaMemorySnapshot(context.Background(), writer, "omnidex", []DBSchemaTable{{
+		Schema: "public",
+		Name:   "jobs",
+		Columns: []DBSchemaColumn{
+			{Name: "id", DataType: "bigint"},
+			{Name: "status", DataType: "text"},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.ID != 1 {
+		t.Fatalf("record=%#v", record)
+	}
+	if writer.agentID != "db_schema_specialist" || writer.kind != "reference" {
+		t.Fatalf("unexpected write identity kind=%q agent=%q", writer.kind, writer.agentID)
+	}
+	if !strings.Contains(writer.content, snapshot.Fingerprint) || !strings.Contains(writer.content, "public.jobs") {
+		t.Fatalf("memory content did not include schema summary:\n%s", writer.content)
+	}
+	if !hasString(writer.tags, "db-schema") || !hasString(writer.tags, "table:public-jobs") {
+		t.Fatalf("memory tags missing schema tags: %v", writer.tags)
 	}
 }
 
@@ -139,6 +212,21 @@ type fakeDBManagerRunner struct {
 	SQLLog       []string
 }
 
+type fakeDBSchemaMemoryWriter struct {
+	agentID string
+	kind    string
+	content string
+	tags    []string
+}
+
+func (w *fakeDBSchemaMemoryWriter) AddMemory(ctx context.Context, agentID, kind, content string, tags []string) (MemoryRecord, error) {
+	w.agentID = agentID
+	w.kind = kind
+	w.content = content
+	w.tags = append([]string(nil), tags...)
+	return MemoryRecord{ID: 1, AgentID: agentID, Kind: kind, Content: content, Tags: tags}, nil
+}
+
 func newFakeDBManagerRunner() *fakeDBManagerRunner {
 	return &fakeDBManagerRunner{queryResults: map[string][]MemorySQLRow{}}
 }
@@ -177,6 +265,15 @@ func schemaRow(schema, table, column, dataType, nullable string) MemorySQLRow {
 		"data_type":    dataType,
 		"is_nullable":  nullable,
 	}
+}
+
+func hasString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func osReadFileForDBManagerAudit(path string) (string, error) {

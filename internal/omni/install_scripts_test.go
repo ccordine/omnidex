@@ -52,6 +52,27 @@ func TestInstallScriptCopiesPublicRuntimeResources(t *testing.T) {
 	}
 }
 
+func TestCrossPlatformBootstrapScriptsArePackaged(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	installBody := readRepoScript(t, root, "install.sh")
+	updateBody := readRepoScript(t, root, "update.sh")
+
+	for _, scriptName := range []string{
+		"scripts/build-release.sh",
+		"scripts/setup-host-deps.ps1",
+	} {
+		if _, err := os.Stat(filepath.Join(root, scriptName)); err != nil {
+			t.Fatalf("cross-platform helper %s must exist in repo: %v", scriptName, err)
+		}
+		if !strings.Contains(installBody, scriptName) {
+			t.Fatalf("install.sh must refresh permissions for %s", scriptName)
+		}
+		if !strings.Contains(updateBody, scriptName) {
+			t.Fatalf("update.sh must refresh permissions for %s", scriptName)
+		}
+	}
+}
+
 func TestUpdateScriptSupportsHostOnlyInstalledUpdate(t *testing.T) {
 	root := repoRootFromOmniTest(t)
 	body := readRepoScript(t, root, "update.sh")

@@ -68,6 +68,15 @@ expand_home_path() {
   esac
 }
 
+absolute_existing_path() {
+  local raw="$1"
+  mkdir -p "$raw"
+  (
+    cd "$raw"
+    pwd -P
+  )
+}
+
 confirm() {
   local prompt="$1"
   if ((ASSUME_YES)); then
@@ -202,6 +211,8 @@ copy_runtime_payload() {
   chmod +x "${PREFIX}/update.sh"
   chmod +x "${PREFIX}/uninstall.sh"
   chmod +x "${PREFIX}/scripts/setup-host-deps.sh"
+  [[ -f "${PREFIX}/scripts/build-release.sh" ]] && chmod +x "${PREFIX}/scripts/build-release.sh"
+  [[ -f "${PREFIX}/scripts/setup-host-deps.ps1" ]] && chmod +x "${PREFIX}/scripts/setup-host-deps.ps1"
   [[ -f "${PREFIX}/up.sh" ]] && chmod +x "${PREFIX}/up.sh"
   [[ -f "${PREFIX}/down.sh" ]] && chmod +x "${PREFIX}/down.sh"
 
@@ -299,10 +310,7 @@ main() {
   parse_args "$@"
 
   PREFIX="$(expand_home_path "${PREFIX}")"
-  mkdir -p "$PREFIX"
-  if command_exists realpath; then
-    PREFIX="$(realpath -m "$PREFIX")"
-  fi
+  PREFIX="$(absolute_existing_path "${PREFIX}")"
   case "$PREFIX" in
     ""|"/"|"$HOME")
       die "refusing to install into unsafe prefix: ${PREFIX}"

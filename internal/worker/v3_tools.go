@@ -204,7 +204,8 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 			Type:     "object",
 			Required: []string{"summary", "items"},
 			Properties: map[string]toolruntime.Schema{
-				"summary": {Type: "string"},
+				"summary":        {Type: "string"},
+				"scope_fallback": {Type: "boolean"},
 				"items": {
 					Type: "array",
 					Items: &toolruntime.Schema{
@@ -253,15 +254,50 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 		if err != nil {
 			return toolruntime.Result{}, err
 		}
-		ranked := rankMemoryOmnibusMatches(matches, query, scopeTags, projectScope, sessionTag, limit, nowUTC())
+		scopeFallback := false
+		rankingScopeTags := append([]string(nil), scopeTags...)
+		if len(matches) == 0 && len(scopeTags) > 0 {
+			if inferredTags := inferredMemoryScopeTags(query, scopeTags); len(inferredTags) > 0 {
+				fallbackMatches, fallbackErr := s.repo.FindRelevantMemory(ctx, embedding, inferredTags, limit)
+				if fallbackErr != nil && len(embedding) > 0 {
+					fallbackMatches, fallbackErr = s.repo.FindRelevantMemory(ctx, nil, inferredTags, limit)
+				}
+				if fallbackErr == nil && len(fallbackMatches) > 0 {
+					matches = fallbackMatches
+					scopeFallback = true
+					rankingScopeTags = appendUnique(rankingScopeTags, inferredTags...)
+				}
+			}
+		}
+		if len(matches) == 0 && len(scopeTags) > 0 {
+			fallbackLimit := maxMemoryRetrievalLimit
+			if limit > fallbackLimit {
+				fallbackLimit = limit
+			}
+			fallbackMatches, fallbackErr := s.repo.FindRelevantMemory(ctx, embedding, nil, fallbackLimit)
+			if fallbackErr != nil && len(embedding) > 0 {
+				fallbackMatches, fallbackErr = s.repo.FindRelevantMemory(ctx, nil, nil, fallbackLimit)
+			}
+			if fallbackErr == nil && len(fallbackMatches) > 0 {
+				matches = fallbackMatches
+				scopeFallback = true
+			}
+		}
+		rankLimit := limit
+		if scopeFallback {
+			rankLimit = maxMemoryRetrievalLimit
+		}
+		ranked := rankMemoryOmnibusMatches(matches, query, rankingScopeTags, projectScope, sessionTag, rankLimit, nowUTC())
+		ranked = diversifyMemoryMatchesBySourceURL(ranked, limit)
 		summary := strings.TrimSpace(buildRetrievalContext(ranked, s.contextBudget))
 		if summary == "" {
 			summary = "No relevant memory matched for this step."
+		} else if scopeFallback {
+			summary = "Scoped memory lookup found no matches; using unscoped memory fallback.\n\n" + summary
 		}
 
 		items := make([]map[string]any, 0, len(ranked))
-		evidenceRecords := make([]evidence.Record, 0, minInt(len(ranked), 8))
-		for idx, match := range ranked {
+		for _, match := range ranked {
 			items = append(items, map[string]any{
 				"id":      match.ID,
 				"kind":    match.Kind,
@@ -269,28 +305,16 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 				"tags":    append([]string(nil), match.Tags...),
 				"score":   match.Score,
 			})
-			if idx >= 8 {
-				continue
-			}
-			evidenceRecords = append(evidenceRecords, evidence.Record{
-				Kind:       evidence.KindMemoryExcerpt,
-				SourceType: "memory",
-				SourceRef:  fmt.Sprintf("memory:%d", match.ID),
-				Excerpt:    trimForBudget(match.Content, 800),
-				Summary:    match.Kind,
-				Confidence: match.Score,
-				Metadata: map[string]any{
-					"tags": match.Tags,
-				},
-			})
 		}
+		evidenceRecords := memoryRetrievalEvidenceRecords(query, rankingScopeTags, ranked, scopeFallback)
 		return toolruntime.Result{
 			Summary: summary,
 			Output: map[string]any{
-				"summary": summary,
-				"items":   items,
+				"summary":        summary,
+				"items":          items,
+				"scope_fallback": scopeFallback,
 			},
-			Warnings: toolWarnings(len(items) == 0, "no relevant memory matched the query"),
+			Warnings: append(toolWarnings(len(items) == 0, "no relevant memory matched the query"), toolWarnings(scopeFallback, "scoped memory lookup found no matches; used unscoped fallback")...),
 			Evidence: evidenceRecords,
 		}, nil
 	})
@@ -455,6 +479,134 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 	})
 
 	return registry
+}
+
+func inferredMemoryScopeTags(query string, existing []string) []string {
+	lower := strings.ToLower(query)
+	candidates := []struct {
+		needle string
+		tags   []string
+	}{
+		{"rust", []string{"rust", "expertise"}},
+		{"tokio", []string{"rust", "tokio", "expertise"}},
+		{"golang", []string{"go", "golang", "expertise"}},
+		{"go ", []string{"go", "golang", "expertise"}},
+		{"php", []string{"php", "expertise"}},
+		{"docker", []string{"docker", "expertise"}},
+		{"postgres", []string{"postgresql", "pgsql", "expertise"}},
+		{"pgsql", []string{"postgresql", "pgsql", "expertise"}},
+		{"javascript", []string{"javascript", "js", "expertise"}},
+		{"node", []string{"javascript", "node", "expertise"}},
+	}
+	seen := map[string]struct{}{}
+	for _, tag := range existing {
+		if clean := strings.ToLower(strings.TrimSpace(tag)); clean != "" {
+			seen[clean] = struct{}{}
+		}
+	}
+	out := make([]string, 0, 6)
+	for _, candidate := range candidates {
+		if !strings.Contains(lower, candidate.needle) {
+			continue
+		}
+		for _, tag := range candidate.tags {
+			clean := strings.ToLower(strings.TrimSpace(tag))
+			if clean == "" {
+				continue
+			}
+			if _, ok := seen[clean]; ok {
+				continue
+			}
+			seen[clean] = struct{}{}
+			out = append(out, clean)
+		}
+	}
+	return out
+}
+
+func diversifyMemoryMatchesBySourceURL(matches []model.MemoryMatch, limit int) []model.MemoryMatch {
+	if len(matches) == 0 {
+		return nil
+	}
+	if limit <= 0 || limit > len(matches) {
+		limit = len(matches)
+	}
+	selected := make([]model.MemoryMatch, 0, limit)
+	selectedIDs := map[int64]struct{}{}
+	seenURLs := map[string]struct{}{}
+	for _, match := range matches {
+		url := memoryMatchSourceURL(match.Content)
+		if url == "" {
+			continue
+		}
+		if _, ok := seenURLs[url]; ok {
+			continue
+		}
+		selected = append(selected, match)
+		selectedIDs[match.ID] = struct{}{}
+		seenURLs[url] = struct{}{}
+		if len(selected) >= limit {
+			return selected
+		}
+	}
+	for _, match := range matches {
+		if _, ok := selectedIDs[match.ID]; ok {
+			continue
+		}
+		selected = append(selected, match)
+		if len(selected) >= limit {
+			break
+		}
+	}
+	return selected
+}
+
+func memoryMatchSourceURL(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		clean := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(clean), "source_url=") {
+			return strings.TrimSpace(clean[len("source_url="):])
+		}
+	}
+	return ""
+}
+
+func memoryRetrievalEvidenceRecords(query string, scopeTags []string, ranked []model.MemoryMatch, scopeFallback ...bool) []evidence.Record {
+	fallback := len(scopeFallback) > 0 && scopeFallback[0]
+	if len(ranked) == 0 {
+		return []evidence.Record{{
+			Kind:       evidence.KindModelJudgment,
+			SourceType: "memory",
+			SourceRef:  "memory.retrieve:no_matches",
+			Summary:    "Memory retrieval completed with no relevant matches.",
+			Confidence: 1,
+			Metadata: map[string]any{
+				"query":          trimForBudget(query, 500),
+				"scope_tags":     append([]string(nil), scopeTags...),
+				"matches":        0,
+				"scope_fallback": fallback,
+			},
+		}}
+	}
+	evidenceRecords := make([]evidence.Record, 0, minInt(len(ranked), 8))
+	for idx, match := range ranked {
+		if idx >= 8 {
+			continue
+		}
+		evidenceRecords = append(evidenceRecords, evidence.Record{
+			Kind:       evidence.KindMemoryExcerpt,
+			SourceType: "memory",
+			SourceRef:  fmt.Sprintf("memory:%d", match.ID),
+			Excerpt:    trimForBudget(match.Content, 800),
+			Summary:    match.Kind,
+			Confidence: match.Score,
+			Metadata: map[string]any{
+				"tags":           match.Tags,
+				"scope_fallback": fallback,
+			},
+		})
+	}
+	return evidenceRecords
 }
 
 func mustRegisterTool(registry *toolruntime.Registry, spec toolruntime.Spec, handler toolruntime.Handler) {

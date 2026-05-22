@@ -337,6 +337,22 @@ func TestWorkspaceMissingAppFilesAcceptsZigProjectFiles(t *testing.T) {
 	}
 }
 
+func TestWorkspaceMissingAppFilesAcceptsRustCargoProjectFiles(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "Cargo.toml"), []byte("[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2024\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "main.rs"), []byte("fn main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if workspaceMissingAppFiles(workspace) {
+		t.Fatal("complete Rust Cargo project files should satisfy app-file presence")
+	}
+}
+
 func TestProgressionGateDoesNotForceWriteForCleanupObjectives(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {

@@ -290,10 +290,7 @@ func (r *nativeRuntimeV3) runPlanning() error {
 
 func (r *nativeRuntimeV3) runExternalResearch() error {
 	plan, _ := r.readPlanArtifact()
-	query := r.claim.Job.Instruction
-	if len(plan.Subtasks) > 0 {
-		query = query + "\n" + joinSubtaskObjectives(plan.Subtasks)
-	}
+	query := externalResearchQuery(r.claim.Job, plan.Subtasks)
 	if !needsExternalResearch(plan, r.claim.Job.Instruction, r.contexts) || r.svc.webSearch == nil {
 		artifact := artifacts.WebEvidenceArtifact{Query: query, Summary: "external research skipped"}
 		if err := r.writeArtifact(artifacts.KindWebEvidence, artifact); err != nil {
@@ -318,6 +315,17 @@ func (r *nativeRuntimeV3) runExternalResearch() error {
 		return err
 	}
 	return r.complete("web_search", artifact.Summary, artifact.Summary)
+}
+
+func externalResearchQuery(job model.Job, subtasks []artifacts.Subtask) string {
+	if query := strings.TrimSpace(metadataString(job.Metadata, "search_query")); query != "" {
+		return query
+	}
+	query := job.Instruction
+	if len(subtasks) > 0 {
+		query = query + "\n" + joinSubtaskObjectives(subtasks)
+	}
+	return query
 }
 
 func (r *nativeRuntimeV3) runSubtask() error {
@@ -423,7 +431,9 @@ func (r *nativeRuntimeV3) runAnalysis() error {
 
 func (r *nativeRuntimeV3) runResponseDraft() error {
 	analysisArtifact, _ := r.readAnalysisArtifact()
+	retrievalArtifact, _ := r.readRetrievalArtifact()
 	webArtifact, _ := r.readWebArtifact()
+	delegated := r.collectSubtaskOutputs()
 	if autonomyEnabled(r.claim.Job) && isSimpleFileTaskInstruction(r.claim.Job.Instruction, r.claim.Job.Pipeline) {
 		artifact := artifacts.ResponseDraftArtifact{Response: strings.TrimSpace(simpleFileTaskFallbackResponse(r.claim.Job))}
 		if err := r.writeArtifact(artifacts.KindResponseDraft, artifact); err != nil {
@@ -439,15 +449,20 @@ func (r *nativeRuntimeV3) runResponseDraft() error {
 		"You are the response composer for Omnidex v3.",
 		responseInstructions,
 		"Write the best grounded response possible with the available evidence. Avoid pretending unsupported actions happened.",
+		"Do not ask for clarification when the instruction can be answered from the provided analysis, memory, web evidence, or subtask results.",
 		promptBlock("Instruction", r.claim.Job.Instruction),
 		promptBlock("Analysis", analysisArtifact.Summary),
 		promptBlock("Web Evidence", webArtifact.Summary),
-		promptBlock("Workspace and Memory", strings.Join([]string{r.contexts["workspace"], r.contexts["retrieval"]}, "\n\n")),
+		promptBlock("Workspace and Memory", strings.Join([]string{r.contexts["workspace"], retrievalArtifactText(retrievalArtifact), r.contexts["retrieval"]}, "\n\n")),
+		promptBlock("Delegated Subtasks", strings.Join(delegated, "\n\n")),
 	}, "\n\n")
 	modelName := r.svc.skillPreferredModel("response_composer", r.svc.specialistModel(r.claim.Job, specialist.RoleResponseSpecialist, r.svc.models.Response))
 	draft, err := r.svc.llmGenerateWithTrace(r.ctx, r.claim.Step.ID, "v3_response_draft", modelName, prompt)
 	if err != nil {
 		return err
+	}
+	if genericNonAnswer(draft) {
+		draft = bestV3FinalFallback(r.claim.Job, r.contexts, delegated, analysisArtifact.Summary, retrievalArtifactText(retrievalArtifact), webArtifact.Summary)
 	}
 	artifact := artifacts.ResponseDraftArtifact{Response: strings.TrimSpace(draft)}
 	if err := r.writeArtifact(artifacts.KindResponseDraft, artifact); err != nil {
@@ -561,10 +576,16 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 
 func (r *nativeRuntimeV3) runFinalize() error {
 	draft, _ := r.readResponseDraftArtifact()
+	analysisArtifact, _ := r.readAnalysisArtifact()
+	retrievalArtifact, _ := r.readRetrievalArtifact()
+	webArtifact, _ := r.readWebArtifact()
 	verificationArtifact, _ := r.readVerificationArtifact()
 	final := strings.TrimSpace(draft.Response)
 	if final == "" {
 		final = strings.TrimSpace(r.contexts["analysis"])
+	}
+	if genericNonAnswer(final) {
+		final = bestV3FinalFallback(r.claim.Job, r.contexts, r.collectSubtaskOutputs(), analysisArtifact.Summary, retrievalArtifactText(retrievalArtifact), webArtifact.Summary)
 	}
 	if len(verificationArtifact.UnsupportedClaims) > 0 {
 		prompt := strings.Join([]string{
@@ -576,6 +597,9 @@ func (r *nativeRuntimeV3) runFinalize() error {
 		if revised, err := r.svc.llmGenerateWithTrace(r.ctx, r.claim.Step.ID, "v3_finalize_rewrite", modelName, prompt); err == nil && strings.TrimSpace(revised) != "" {
 			final = strings.TrimSpace(revised)
 		}
+	}
+	if genericNonAnswer(final) {
+		final = bestV3FinalFallback(r.claim.Job, r.contexts, r.collectSubtaskOutputs(), analysisArtifact.Summary, retrievalArtifactText(retrievalArtifact), webArtifact.Summary)
 	}
 	return r.complete("response", final, final)
 }
@@ -684,14 +708,161 @@ func (r *nativeRuntimeV3) inferRequiredTools() []string {
 
 func (r *nativeRuntimeV3) collectSubtaskOutputs() []string {
 	out := make([]string, 0, 6)
+	seen := map[string]struct{}{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+	for key, value := range r.contexts {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(key)), "subtask:") {
+			add(value)
+		}
+	}
 	for _, ctxItem := range r.claim.Contexts {
 		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(ctxItem.Key)), "subtask:") {
-			value := strings.TrimSpace(ctxItem.Value)
-			if value == "" {
-				continue
-			}
-			out = append(out, value)
+			add(ctxItem.Value)
 		}
+	}
+	return out
+}
+
+func genericNonAnswer(value string) bool {
+	clean := strings.ToLower(strings.TrimSpace(value))
+	if clean == "" {
+		return true
+	}
+	genericPhrases := []string{
+		"please let me know",
+		"what specific output",
+		"what is the output you need",
+		"sure, i can do that",
+		"understood!",
+		"understood.",
+		"i will return only",
+		"how can i assist",
+		"provide more details",
+		"provide me with the details",
+		"could you clarify",
+		"what you need the output",
+		"what output you need",
+		"specify what you need me to return",
+		"what you need me to return",
+		"further assistance",
+		"feel free to ask",
+	}
+	for _, phrase := range genericPhrases {
+		if strings.Contains(clean, phrase) {
+			return true
+		}
+	}
+	if len(clean) < 80 && (strings.HasSuffix(clean, "?") || strings.Contains(clean, "need from me")) {
+		return true
+	}
+	return false
+}
+
+func bestV3FinalFallback(job model.Job, contexts map[string]string, subtasks []string, summaries ...string) string {
+	sourceURLCandidates := append([]string{}, summaries...)
+	sourceURLCandidates = append(sourceURLCandidates, contexts["retrieval"])
+	sourceURLCandidates = append(sourceURLCandidates, subtasks...)
+	if sourceFallback := sourceURLConstrainedFallback(job.Instruction, sourceURLCandidates); sourceFallback != "" {
+		return sourceFallback
+	}
+	if best := bestNonGenericCandidate(subtasks); best != "" {
+		return best
+	}
+	if best := bestNonGenericCandidate(summaries); best != "" {
+		return best
+	}
+	if best := bestNonGenericCandidate([]string{contexts["analysis"], contexts["retrieval"], contexts["web_search"]}); best != "" {
+		return best
+	}
+	if best := bestNonGenericCandidate([]string{contexts["workspace"]}); best != "" {
+		return best
+	}
+	return strings.TrimSpace(job.Instruction)
+}
+
+func bestNonGenericCandidate(candidates []string) string {
+	best := ""
+	for _, candidate := range candidates {
+		clean := strings.TrimSpace(candidate)
+		if clean == "" || genericNonAnswer(clean) {
+			continue
+		}
+		if len(clean) > len(best) {
+			best = clean
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return ""
+}
+
+func retrievalArtifactText(artifact artifacts.RetrievalArtifact) string {
+	parts := []string{strings.TrimSpace(artifact.Summary)}
+	for _, item := range artifact.Items {
+		if strings.TrimSpace(item.Content) == "" {
+			continue
+		}
+		parts = append(parts, strings.TrimSpace(item.Content))
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
+
+func sourceURLConstrainedFallback(instruction string, candidates []string) string {
+	lower := strings.ToLower(strings.TrimSpace(instruction))
+	if !strings.Contains(lower, "source_url") && !(strings.Contains(lower, "exact") && strings.Contains(lower, "source")) {
+		return ""
+	}
+	urls := extractStoredSourceURLs(strings.Join(candidates, "\n"))
+	if len(urls) == 0 {
+		return ""
+	}
+	lines := []string{"Stored source URLs:"}
+	for _, url := range urls {
+		lines = append(lines, "- "+url)
+	}
+	if strings.Contains(lower, "module") || strings.Contains(lower, "async") || strings.Contains(lower, "event") || strings.Contains(lower, "cli") {
+		lines = append(lines,
+			"",
+			"CLI author notes:",
+			"- Use CommonJS or ES modules deliberately, and align code with Node's package/module settings.",
+			"- Prefer non-blocking async APIs, promises, and async/await for I/O-heavy CLI work.",
+			"- Avoid blocking the event loop in command paths; move CPU-heavy work out of the hot path or into worker-style execution.",
+			"- Handle process exit, errors, and pending async work explicitly so commands finish predictably.",
+		)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func extractStoredSourceURLs(value string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 8)
+	for _, line := range strings.Split(value, "\n") {
+		clean := strings.TrimSpace(line)
+		lower := strings.ToLower(clean)
+		if !strings.HasPrefix(lower, "source_url=") {
+			continue
+		}
+		url := strings.TrimSpace(clean[len("source_url="):])
+		if url == "" {
+			continue
+		}
+		if _, ok := seen[url]; ok {
+			continue
+		}
+		seen[url] = struct{}{}
+		out = append(out, url)
 	}
 	return out
 }

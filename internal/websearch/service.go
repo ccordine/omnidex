@@ -128,6 +128,9 @@ func (s *Service) SearchAll(ctx context.Context, query string) ([]Result, error)
 			if err != nil || strings.TrimSpace(doc.Content) == "" {
 				continue
 			}
+			if isLowQualitySearchResult(candidate.URL, doc.Title, doc.Snippet, doc.Content) {
+				continue
+			}
 			seen[candidate.URL] = struct{}{}
 			title := strings.TrimSpace(candidate.Title)
 			if title == "" {
@@ -155,7 +158,7 @@ func (s *Service) SearchAll(ctx context.Context, query string) ([]Result, error)
 			continue
 		}
 		fallback := truncate(extractText(body), s.perSourceBudget)
-		if strings.TrimSpace(fallback) == "" {
+		if strings.TrimSpace(fallback) == "" || isLowQualitySearchResult(searchURL, provider.Name+" search results", "", fallback) {
 			continue
 		}
 		results = append(results, Result{
@@ -397,6 +400,35 @@ func isIgnoredCandidateURL(rawURL, searchHost string) bool {
 	if strings.HasPrefix(strings.ToLower(parsed.Path), "/search") || strings.HasPrefix(strings.ToLower(parsed.Path), "/preferences") || strings.HasPrefix(strings.ToLower(parsed.Path), "/settings") {
 		return true
 	}
+	if strings.Contains(host, "support.google.") && strings.Contains(strings.ToLower(parsed.Path), "/websearch") {
+		return true
+	}
+	return false
+}
+
+func isLowQualitySearchResult(rawURL, title, snippet, content string) bool {
+	joined := strings.ToLower(strings.TrimSpace(rawURL + "\n" + title + "\n" + snippet + "\n" + content))
+	if joined == "" {
+		return true
+	}
+	if strings.Contains(joined, "%!") {
+		return true
+	}
+	if strings.Contains(joined, "support.google.com/websearch") {
+		return true
+	}
+	if strings.Contains(joined, "google search help") && strings.Contains(joined, "submit feedback") {
+		return true
+	}
+	if strings.Contains(joined, "if you're having trouble accessing google search") || strings.Contains(joined, "if you’re having trouble accessing google search") {
+		return true
+	}
+	if strings.Contains(joined, "yahoo has ceased search operations") {
+		return true
+	}
+	if strings.TrimSpace(strings.ToLower(title)) == "feedback" && strings.Contains(joined, "google") {
+		return true
+	}
 	return false
 }
 
@@ -433,7 +465,7 @@ func resolveProviders(providerNames []string) []Provider {
 	known := map[string]Provider{
 		"google":     {Name: "google", URLTemplate: "https://www.google.com/search?q=%s"},
 		"yahoo":      {Name: "yahoo", URLTemplate: "https://search.yahoo.com/search?p=%s"},
-		"reddit":     {Name: "reddit", URLTemplate: "https://www.google.com/search?q=site%3Areddit.com+%s"},
+		"reddit":     {Name: "reddit", URLTemplate: "https://www.google.com/search?q=site%%3Areddit.com+%s"},
 		"duckduckgo": {Name: "duckduckgo", URLTemplate: "https://duckduckgo.com/html/?q=%s"},
 	}
 	if len(providerNames) == 0 {

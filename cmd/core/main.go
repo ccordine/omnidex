@@ -11,9 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/api"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/db"
-	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/ollama"
-	"github.com/gryph/omnidex/internal/openai"
+	"github.com/gryph/omnidex/internal/llmprovider"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/websearch"
 	"github.com/gryph/omnidex/internal/worker"
@@ -52,20 +50,9 @@ func main() {
 		}
 	}
 
-	var llmClient llm.Client
-	switch strings.ToLower(strings.TrimSpace(cfg.LLMProvider)) {
-	case "openai":
-		llmClient = openai.New(
-			cfg.OpenAIBaseURL,
-			cfg.OpenAIAPIKey,
-			cfg.DefaultModel,
-			cfg.EmbeddingModel,
-			cfg.OpenAIOrganization,
-			cfg.OpenAIProject,
-			cfg.RequestTimeout,
-		)
-	default:
-		llmClient = ollama.New(cfg.OllamaBaseURL, cfg.DefaultModel, cfg.EmbeddingModel, cfg.RequestTimeout)
+	llmClient, err := llmprovider.NewFromConfig(cfg)
+	if err != nil {
+		log.Fatalf("llm provider error: %v", err)
 	}
 	var webSearchService *websearch.Service
 	if cfg.WebSearchEnabled {
@@ -131,31 +118,66 @@ func main() {
 
 	ollamaDefaultModel := envOrFallback("OLLAMA_MODEL", "")
 	openAIDefaultModel := envOrFallback("OPENAI_MODEL", "")
+	googleDefaultModel := envOrFallback("GOOGLE_MODEL", envOrFallback("GEMINI_MODEL", ""))
+	anthropicDefaultModel := envOrFallback("ANTHROPIC_MODEL", envOrFallback("CLAUDE_MODEL", ""))
+	huggingFaceDefaultModel := envOrFallback("HUGGINGFACE_MODEL", envOrFallback("HF_MODEL", ""))
 	ollamaEmbeddingModel := envOrFallback("OLLAMA_EMBEDDING_MODEL", "")
 	openAIEmbeddingModel := envOrFallback("OPENAI_EMBEDDING_MODEL", "")
+	googleEmbeddingModel := envOrFallback("GOOGLE_EMBEDDING_MODEL", envOrFallback("GEMINI_EMBEDDING_MODEL", ""))
+	huggingFaceEmbeddingModel := envOrFallback("HUGGINGFACE_EMBEDDING_MODEL", envOrFallback("HF_EMBEDDING_MODEL", ""))
 
 	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "ollama") {
 		ollamaDefaultModel = envOrFallback("OLLAMA_MODEL", cfg.DefaultModel)
-		ollamaEmbeddingModel = envOrFallback("OLLAMA_EMBEDDING_MODEL", cfg.EmbeddingModel)
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "openai") {
 		openAIDefaultModel = envOrFallback("OPENAI_MODEL", cfg.DefaultModel)
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "google") {
+		googleDefaultModel = envOrFallback("GOOGLE_MODEL", envOrFallback("GEMINI_MODEL", cfg.DefaultModel))
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "anthropic") {
+		anthropicDefaultModel = envOrFallback("ANTHROPIC_MODEL", envOrFallback("CLAUDE_MODEL", cfg.DefaultModel))
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "huggingface") {
+		huggingFaceDefaultModel = envOrFallback("HUGGINGFACE_MODEL", envOrFallback("HF_MODEL", cfg.DefaultModel))
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider)) {
+	case "ollama":
+		ollamaEmbeddingModel = envOrFallback("OLLAMA_EMBEDDING_MODEL", cfg.EmbeddingModel)
+	case "openai":
 		openAIEmbeddingModel = envOrFallback("OPENAI_EMBEDDING_MODEL", cfg.EmbeddingModel)
+	case "google":
+		googleEmbeddingModel = envOrFallback("GOOGLE_EMBEDDING_MODEL", envOrFallback("GEMINI_EMBEDDING_MODEL", cfg.EmbeddingModel))
+	case "huggingface":
+		huggingFaceEmbeddingModel = envOrFallback("HUGGINGFACE_EMBEDDING_MODEL", envOrFallback("HF_EMBEDDING_MODEL", cfg.EmbeddingModel))
 	}
 
 	httpServer := api.NewServerWithOptions(repo, llmClient, api.ServerOptions{
-		DefaultProvider:      cfg.LLMProvider,
-		RequestTimeout:       cfg.RequestTimeout,
-		V3Enabled:            cfg.V3Enabled,
-		OllamaBaseURL:        cfg.OllamaBaseURL,
-		OllamaDefaultModel:   ollamaDefaultModel,
-		OllamaEmbeddingModel: ollamaEmbeddingModel,
-		OpenAIBaseURL:        cfg.OpenAIBaseURL,
-		OpenAIAPIKey:         cfg.OpenAIAPIKey,
-		OpenAIOrganization:   cfg.OpenAIOrganization,
-		OpenAIProject:        cfg.OpenAIProject,
-		OpenAIDefaultModel:   openAIDefaultModel,
-		OpenAIEmbeddingModel: openAIEmbeddingModel,
+		DefaultProvider:           cfg.LLMProvider,
+		RequestTimeout:            cfg.RequestTimeout,
+		V3Enabled:                 cfg.V3Enabled,
+		OllamaBaseURL:             cfg.OllamaBaseURL,
+		OllamaDefaultModel:        ollamaDefaultModel,
+		OllamaEmbeddingModel:      ollamaEmbeddingModel,
+		OpenAIBaseURL:             cfg.OpenAIBaseURL,
+		OpenAIAPIKey:              cfg.OpenAIAPIKey,
+		OpenAIOrganization:        cfg.OpenAIOrganization,
+		OpenAIProject:             cfg.OpenAIProject,
+		OpenAIDefaultModel:        openAIDefaultModel,
+		OpenAIEmbeddingModel:      openAIEmbeddingModel,
+		GoogleBaseURL:             cfg.GoogleBaseURL,
+		GoogleAPIKey:              cfg.GoogleAPIKey,
+		GoogleDefaultModel:        googleDefaultModel,
+		GoogleEmbeddingModel:      googleEmbeddingModel,
+		AnthropicBaseURL:          cfg.AnthropicBaseURL,
+		AnthropicAPIKey:           cfg.AnthropicAPIKey,
+		AnthropicVersion:          cfg.AnthropicVersion,
+		AnthropicMaxTokens:        cfg.AnthropicMaxTokens,
+		AnthropicDefaultModel:     anthropicDefaultModel,
+		HuggingFaceBaseURL:        cfg.HuggingFaceBaseURL,
+		HuggingFaceAPIKey:         cfg.HuggingFaceAPIKey,
+		HuggingFaceDefaultModel:   huggingFaceDefaultModel,
+		HuggingFaceEmbeddingModel: huggingFaceEmbeddingModel,
 	})
 	log.Printf("core listening on %s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.LLMProvider, cfg.WrapperOnly)
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {

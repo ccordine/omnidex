@@ -2,6 +2,7 @@ package queue
 
 const schemaSQL = `
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE IF NOT EXISTS projects (
     id BIGSERIAL PRIMARY KEY,
@@ -121,6 +122,8 @@ CREATE INDEX IF NOT EXISTS idx_step_contexts_step_id ON step_contexts(step_id, i
 CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
 CREATE INDEX IF NOT EXISTS idx_projects_last_seen ON projects(last_seen_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_chunks_kind_created ON memory_chunks(kind, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_chunks_embedding_hnsw ON memory_chunks USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_memory_chunks_content_trgm ON memory_chunks USING gin (content gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_memory_chunk_tags_tag_id ON memory_chunk_tags(tag_id, memory_chunk_id);
 CREATE INDEX IF NOT EXISTS idx_ai_channels_updated ON ai_channels(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_channel_messages_channel_created ON ai_channel_messages(channel_id, created_at DESC, id DESC);
