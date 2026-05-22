@@ -13,7 +13,7 @@ func TestObjectiveWorkItemBroadObjectiveCannotPassWithoutEvidence(t *testing.T) 
 		Instruction:      "Build the notes app shell",
 		Validator:        ValidatorSpec{RequiredEvidence: []EvidenceKind{EvidenceKindFileDiff}},
 		RequiredEvidence: []EvidenceKind{EvidenceKindFileDiff},
-		Status:           WorkItemStatusPending,
+		Status:           WorkItemStatusPassed,
 	}
 
 	result := ValidateObjectiveWorkTree(item)
@@ -22,6 +22,34 @@ func TestObjectiveWorkItemBroadObjectiveCannotPassWithoutEvidence(t *testing.T) 
 	}
 	if !strings.Contains(result.Reason, "missing required evidence") {
 		t.Fatalf("reason = %q", result.Reason)
+	}
+}
+
+func TestObjectiveWorkItemCannotPassWhileStatusPendingEvenWithEvidence(t *testing.T) {
+	item := passingWorkItem("verify_build", WorkItemKindVerify, EvidenceKindCommand)
+	item.Status = WorkItemStatusPending
+
+	result := ValidateObjectiveWorkTree(item)
+	if result.Passed {
+		t.Fatal("pending item passed final validation because evidence existed")
+	}
+	if !strings.Contains(result.Reason, "not passed") {
+		t.Fatalf("reason = %q", result.Reason)
+	}
+}
+
+func TestObjectiveWorkItemReconciliationPromotesEvidenceBackedItemToPassed(t *testing.T) {
+	items := []ObjectiveWorkItem{passedWorkItem("verify_build", WorkItemKindVerify)}
+	reconciled := ReconcileObjectiveWorkItemsFromObservations(items, []StructuredCommandObservation{{
+		Command:  "npm run build",
+		ExitCode: 0,
+	}})
+
+	if len(reconciled) != 1 || reconciled[0].Status != WorkItemStatusPassed {
+		t.Fatalf("reconciled item was not promoted to passed: %#v", reconciled)
+	}
+	if result := ValidateObjectiveWorkTree(reconciled[0]); !result.Passed {
+		t.Fatalf("promoted item failed final validation: %#v", result)
 	}
 }
 
@@ -101,7 +129,7 @@ func TestObjectiveWorkItemArchitectRequiresAllChildrenPassed(t *testing.T) {
 		Kind:        WorkItemKindArchitect,
 		Scope:       WorkItemScope{Root: "."},
 		Instruction: "Implement notes app",
-		Status:      WorkItemStatusPending,
+		Status:      WorkItemStatusPassed,
 		Children: []ObjectiveWorkItem{
 			passingWorkItem("write_test", WorkItemKindCreate, EvidenceKindFileDiff),
 			passedWorkItem("write_component", WorkItemKindUpdate),
@@ -121,7 +149,7 @@ func TestObjectiveWorkItemNestedFailedChildPreventsFinalSuccess(t *testing.T) {
 	items := []ObjectiveWorkItem{{
 		ID:     "architect_notes_app",
 		Kind:   WorkItemKindArchitect,
-		Status: WorkItemStatusPending,
+		Status: WorkItemStatusPassed,
 		Children: []ObjectiveWorkItem{
 			passingWorkItem("write_test", WorkItemKindCreate, EvidenceKindFileDiff),
 			failedWorkItem("write_component", WorkItemKindUpdate),
@@ -160,8 +188,10 @@ func TestTypedFinalGateEmptyFileFailurePreventsSuccess(t *testing.T) {
 }
 
 func TestTypedFinalGateBroadEvaluatorCannotConvertIncompleteWorkIntoSuccess(t *testing.T) {
+	item := passedWorkItem("create_notes_app", WorkItemKindCreate)
+	item.Status = WorkItemStatusPassed
 	gate := EvaluateTypedFinalGate(TypedFinalGateInput{
-		Items:              []ObjectiveWorkItem{passedWorkItem("create_notes_app", WorkItemKindCreate)},
+		Items:              []ObjectiveWorkItem{item},
 		BroadEvaluatorDone: true,
 		CompletionDone:     true,
 	})
@@ -173,6 +203,7 @@ func TestTypedFinalGateBroadEvaluatorCannotConvertIncompleteWorkIntoSuccess(t *t
 
 func TestTypedFinalGateCompletionCheckerCannotUseNaturalLanguageAsProof(t *testing.T) {
 	item := passedWorkItem("verify_notes_app", WorkItemKindVerify)
+	item.Status = WorkItemStatusPassed
 	item.EvidenceRefs = []WorkItemEvidence{{Kind: EvidenceKindRationale, Summary: "The notes app appears complete because the model says so."}}
 
 	gate := EvaluateTypedFinalGate(TypedFinalGateInput{
@@ -199,6 +230,7 @@ func passedWorkItem(id string, kind WorkItemKind) ObjectiveWorkItem {
 
 func passingWorkItem(id string, kind WorkItemKind, evidence EvidenceKind) ObjectiveWorkItem {
 	item := passedWorkItem(id, kind)
+	item.Status = WorkItemStatusPassed
 	item.EvidenceRefs = []WorkItemEvidence{{Kind: evidence, Path: "src/App.js", Diff: "+content", Command: "npm test", ExitCode: 0, SafetyValidated: true}}
 	return item
 }

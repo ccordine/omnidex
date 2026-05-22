@@ -122,6 +122,9 @@ func ValidateObjectiveWorkTree(item ObjectiveWorkItem) WorkValidationResult {
 	if item.Status == WorkItemStatusFailed || item.Status == WorkItemStatusBlocked {
 		return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("work item %q is %s", item.ID, item.Status)}
 	}
+	if item.Status != WorkItemStatusPassed {
+		return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("work item %q is %s, not passed", item.ID, firstNonEmpty(string(item.Status), string(WorkItemStatusPending)))}
+	}
 	if item.Kind == WorkItemKindArchitect {
 		if len(item.Children) == 0 {
 			return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("architect item %q has no child work items", item.ID)}
@@ -151,6 +154,43 @@ func ValidateObjectiveWorkTree(item ObjectiveWorkItem) WorkValidationResult {
 		}
 	}
 	return WorkValidationResult{Passed: true, ItemID: item.ID, Reason: fmt.Sprintf("work item %q passed required evidence", item.ID)}
+}
+
+func validateObjectiveWorkEvidenceTree(item ObjectiveWorkItem) WorkValidationResult {
+	if strings.TrimSpace(item.ID) == "" {
+		return WorkValidationResult{Passed: false, Reason: "work item missing id"}
+	}
+	if item.Status == WorkItemStatusFailed || item.Status == WorkItemStatusBlocked {
+		return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("work item %q is %s", item.ID, item.Status)}
+	}
+	if item.Kind == WorkItemKindArchitect {
+		if len(item.Children) == 0 {
+			return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("architect item %q has no child work items", item.ID)}
+		}
+		for _, child := range item.Children {
+			if child.Status != WorkItemStatusPassed {
+				return WorkValidationResult{Passed: false, ItemID: child.ID, Reason: fmt.Sprintf("architect item %q cannot pass because child %q is %s", item.ID, child.ID, child.Status)}
+			}
+			if result := ValidateObjectiveWorkTree(child); !result.Passed {
+				result.Reason = fmt.Sprintf("architect item %q cannot pass because child failed: %s", item.ID, result.Reason)
+				return result
+			}
+		}
+		return WorkValidationResult{Passed: true, ItemID: item.ID, Reason: fmt.Sprintf("architect item %q evidence supports passed status", item.ID)}
+	}
+	required := item.RequiredEvidence
+	if len(required) == 0 {
+		required = item.Validator.RequiredEvidence
+	}
+	if len(required) == 0 {
+		required = RequiredEvidenceForWorkItemKind(item.Kind)
+	}
+	for _, evidenceKind := range required {
+		if !workItemHasRequiredEvidence(item, evidenceKind) {
+			return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("work item %q missing required evidence %q", item.ID, evidenceKind)}
+		}
+	}
+	return WorkValidationResult{Passed: true, ItemID: item.ID, Reason: fmt.Sprintf("work item %q evidence supports passed status", item.ID)}
 }
 
 func workItemHasRequiredEvidence(item ObjectiveWorkItem, required EvidenceKind) bool {
@@ -323,7 +363,7 @@ func reconcileWorkItem(item ObjectiveWorkItem, observations []StructuredCommandO
 			}
 		}
 	}
-	if ValidateObjectiveWorkTree(item).Passed {
+	if validateObjectiveWorkEvidenceTree(item).Passed {
 		item.Status = WorkItemStatusPassed
 	}
 	return item
