@@ -72,6 +72,9 @@ type OllamaPrewarmResult struct {
 var omniContextModelCounter uint64
 
 const defaultOllamaRequestTimeout = 10 * time.Minute
+const defaultOllamaContextCharsPerToken = 24
+const minOllamaContextBudgetChars = 24000
+const defaultOllamaContextBudgetChars = 100000
 
 func NewOllamaClient(endpoint, model string) *OllamaClient {
 	ep := strings.TrimSpace(endpoint)
@@ -133,6 +136,7 @@ func (c *OllamaClient) ChatRaw(ctx context.Context, req OllamaChatRequest) (Olla
 	if len(req.Messages) == 0 {
 		return OllamaChatResponse{}, fmt.Errorf("ollama request requires at least one message")
 	}
+	req = budgetOllamaChatRequest(req, c.effectivePromptBudgetChars(req))
 	model := c.Model
 	messages := req.Messages
 	if strings.TrimSpace(req.ContextSystem) != "" {
@@ -260,6 +264,140 @@ func nonSystemMessages(messages []OllamaMessage) []OllamaMessage {
 		out = append(out, message)
 	}
 	return out
+}
+
+func (c *OllamaClient) effectivePromptBudgetChars(req OllamaChatRequest) int {
+	numCtx := c.DefaultNumCtx
+	if value, ok := req.Options["num_ctx"]; ok {
+		switch typed := value.(type) {
+		case int:
+			numCtx = typed
+		case int64:
+			numCtx = int(typed)
+		case float64:
+			numCtx = int(typed)
+		case json.Number:
+			if parsed, err := typed.Int64(); err == nil {
+				numCtx = int(parsed)
+			}
+		}
+	}
+	if numCtx <= 0 {
+		return defaultOllamaContextBudgetChars
+	}
+	return maxInt(minOllamaContextBudgetChars, numCtx*defaultOllamaContextCharsPerToken)
+}
+
+func budgetOllamaChatRequest(req OllamaChatRequest, budget int) OllamaChatRequest {
+	if budget <= 0 {
+		budget = defaultOllamaContextBudgetChars
+	}
+	for attempt := 0; attempt < 8 && approxOllamaRequestChars(req) > budget; attempt++ {
+		index := largestBudgetableOllamaMessage(req.Messages)
+		if index < 0 {
+			if len(req.ContextSystem) > budget/2 {
+				req.ContextSystem = truncateOllamaBudgetString(req.ContextSystem, budget/2)
+				continue
+			}
+			break
+		}
+		current := req.Messages[index].Content
+		target := maxInt(1200, len(current)/2)
+		req.Messages[index].Content = compactOllamaMessageContent(current, target)
+		if req.Messages[index].Content == current {
+			req.Messages[index].Content = truncateOllamaBudgetString(current, target)
+		}
+	}
+	return req
+}
+
+func largestBudgetableOllamaMessage(messages []OllamaMessage) int {
+	index := -1
+	size := 0
+	for i, message := range messages {
+		if strings.TrimSpace(message.Content) == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(message.Role), "system") && len(message.Content) < 4000 {
+			continue
+		}
+		if len(message.Content) > size {
+			index = i
+			size = len(message.Content)
+		}
+	}
+	return index
+}
+
+func compactOllamaMessageContent(content string, target int) string {
+	trimmed := strings.TrimSpace(content)
+	if len(trimmed) <= target {
+		return trimmed
+	}
+	var decoded interface{}
+	if json.Unmarshal([]byte(trimmed), &decoded) == nil {
+		compacted := compactJSONValueForOllamaBudget(decoded, target, 0)
+		if blob, err := json.Marshal(compacted); err == nil && len(blob) < len(trimmed) {
+			if len(blob) <= target {
+				return string(blob)
+			}
+			return truncateOllamaBudgetString(string(blob), target)
+		}
+	}
+	return truncateOllamaBudgetString(trimmed, target)
+}
+
+func compactJSONValueForOllamaBudget(value interface{}, target int, depth int) interface{} {
+	if depth > 8 {
+		return "[context truncated]"
+	}
+	switch typed := value.(type) {
+	case string:
+		return truncateOllamaBudgetString(typed, maxInt(240, target/6))
+	case []interface{}:
+		if len(typed) == 0 {
+			return typed
+		}
+		limit := maxInt(1, minInt(len(typed), maxInt(2, target/1800)))
+		out := make([]interface{}, 0, limit+1)
+		start := 0
+		if len(typed) > limit {
+			start = len(typed) - limit
+			out = append(out, fmt.Sprintf("[context compacted: omitted %d earlier items]", start))
+		}
+		for _, item := range typed[start:] {
+			out = append(out, compactJSONValueForOllamaBudget(item, target/maxInt(1, limit), depth+1))
+		}
+		return out
+	case map[string]interface{}:
+		out := map[string]interface{}{}
+		for key, item := range typed {
+			lower := strings.ToLower(key)
+			nextTarget := target / 4
+			if lower == "current_prompt" || lower == "prompt" || lower == "objective_ledger" || lower == "completed_actions" || lower == "loop_state" || lower == "pending_objective_ids" {
+				nextTarget = target
+			}
+			out[key] = compactJSONValueForOllamaBudget(item, maxInt(400, nextTarget), depth+1)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func truncateOllamaBudgetString(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if limit <= 0 || value == "" {
+		return ""
+	}
+	if len(value) <= limit {
+		return value
+	}
+	marker := "\n[context truncated by request budget guard]"
+	if limit <= len(marker)+32 {
+		return value[:limit]
+	}
+	return value[:limit-len(marker)] + marker
 }
 
 func (c *OllamaClient) createChatContextModel(ctx context.Context, systemPrompt string) (string, error) {
