@@ -78,6 +78,7 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 		)
 		contract.ProofCommands = architectCommands(targetRoot, packageManager, "npm run build")
 		contract.WorkQueue = []ArchitectWorkItem{
+			{ID: "write_react_acceptance_test", Operation: "update", CWD: targetRoot, Path: "src/App.test.js", Description: "Create a focused acceptance test or deterministic source probe for the requested React app behavior before implementation", Verify: "npm test -- --watchAll=false"},
 			{ID: "create_react_entrypoint", Operation: "update", CWD: targetRoot, Path: "src/App.js", Description: "Create the primary React app UI and state for the requested feature set", Verify: "npm run build"},
 			{ID: "style_react_app", Operation: "update", CWD: targetRoot, Path: "src/App.css", Description: "Style the React app so the requested UI is usable and readable", Verify: "npm run build"},
 			{ID: "verify_react_build", Operation: "verify", CWD: targetRoot, Description: "Run the React build proof command", Verify: "npm run build"},

@@ -39,6 +39,7 @@ type App struct {
 	evaluator          StructuredLLMResponseEvaluator
 	evaluatorThreshold int
 	shellSpecialist    ShellCommandSpecialist
+	codeSpecialist     CodeContentSpecialist
 	recipes            []Recipe
 	enableCommandCache bool
 	commandCacheRoot   string
@@ -194,6 +195,7 @@ func (a *App) Run(args []string) error {
 			shellClient := NewOllamaClient(*endpointFlag, *shellSpecialistModel)
 			shellClient.ConfigureRuntime(*ollamaKeepAlive, *shellSpecialistNumCtx)
 			a.shellSpecialist = NewOllamaShellCommandSpecialist(shellClient)
+			a.codeSpecialist = NewOllamaCodeContentSpecialist(shellClient)
 		}
 	}
 
@@ -236,6 +238,7 @@ func (a *App) Run(args []string) error {
 				Evaluator:               a.evaluator,
 				EvaluatorThreshold:      a.evaluatorThreshold,
 				ShellSpecialist:         a.shellSpecialist,
+				CodeContentSpecialist:   a.codeSpecialist,
 				EnableCommandCache:      *enableCommandCache,
 				CommandCacheRoot:        *commandCacheRoot,
 			},
@@ -1317,6 +1320,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			Evaluator:               a.evaluator,
 			EvaluatorThreshold:      a.evaluatorThreshold,
 			ShellSpecialist:         a.shellSpecialist,
+			CodeContentSpecialist:   a.codeSpecialist,
 			EnableCommandCache:      a.enableCommandCache,
 			CommandCacheRoot:        a.commandCacheRoot,
 		},

@@ -45,7 +45,7 @@ func TestBuildImplementationArchitectContractTargetsNestedReactRoot(t *testing.T
 	if !stringSliceContains(contract.ValidatorScopes, "alignment_validator: after implementation evidence exists, check the completed work against user objectives without adding unrequested expectations.") {
 		t.Fatalf("validator scopes = %#v", contract.ValidatorScopes)
 	}
-	if contract.CurrentItem == nil || contract.CurrentItem.ID != "create_react_entrypoint" || contract.CurrentItem.CWD != "react-music-production" || contract.CurrentItem.Path != "src/App.js" {
+	if contract.CurrentItem == nil || contract.CurrentItem.ID != "write_react_acceptance_test" || contract.CurrentItem.CWD != "react-music-production" || contract.CurrentItem.Path != "src/App.test.js" {
 		t.Fatalf("current item = %#v", contract.CurrentItem)
 	}
 }
@@ -125,6 +125,9 @@ func TestValidateCommandAgainstImplementationArchitectCurrentItem(t *testing.T) 
 		TargetRoot:  "react-music-production",
 		CurrentItem: &ArchitectWorkItem{ID: "create_react_entrypoint", Operation: "update", CWD: "react-music-production", Path: "src/App.js"},
 	}
+	if err := validateCommandAgainstImplementationArchitectContract("cd react-music-production && sed -n '1,160p' src/App.css", contract); err != nil {
+		t.Fatalf("read-only inspection should remain allowed during architect work: %v", err)
+	}
 	if err := validateCommandAgainstImplementationArchitectContract("cd react-music-production && cat > src/App.css <<'CSS'\nbody{}\nCSS", contract); err == nil {
 		t.Fatal("expected wrong current item path to be rejected")
 	}
@@ -137,5 +140,43 @@ func TestBuildImplementationArchitectContractSkipsNonImplementationTask(t *testi
 	contract := buildImplementationArchitectContract("what is the weather", "Use wttr.in for current weather.", t.TempDir(), WorksiteSurvey{}, nil)
 	if hasImplementationArchitectContract(contract) {
 		t.Fatalf("unexpected contract: %#v", contract)
+	}
+}
+
+func TestValidateStructuredCommandForRunWithArchitectRejectsDirectWrongEdit(t *testing.T) {
+	workspace := t.TempDir()
+	app := filepath.Join(workspace, "react-music-production")
+	if err := os.MkdirAll(filepath.Join(app, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"build":"react-scripts build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	toolTask := "Implementation architect target root: react-music-production. Create or modify the actual project files."
+	err := validateStructuredCommandForRunWithArchitect("cd react-music-production && cat > src/App.css <<'CSS'\nbody{}\nCSS", "build a React music production app", toolTask, "", nil, workspace, []StructuredObjective{{ID: "implement_ui", Description: "implement UI", Status: "pending", Required: true}}, WorksiteSurvey{})
+	if err == nil {
+		t.Fatal("expected direct edit outside current test-first item to be rejected")
+	}
+	if !strings.Contains(err.Error(), "write_react_acceptance_test") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestShouldBypassEvaluatorForArchitectImplementationButNotReads(t *testing.T) {
+	workspace := t.TempDir()
+	app := filepath.Join(workspace, "react-music-production")
+	if err := os.MkdirAll(filepath.Join(app, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"build":"react-scripts build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writePayload := `{"command":"cd react-music-production && printf '%s\\n' \"test('music app',()=>{});\" > src/App.test.js","done":false,"answer":"","tool_task":"Implementation architect target root: react-music-production. Create or modify the actual project files."}`
+	if !shouldBypassEvaluatorForArchitectImplementation(writePayload, "build a React music production app", workspace, WorksiteSurvey{}, nil) {
+		t.Fatal("expected evaluator bypass for architect-owned write")
+	}
+	readPayload := `{"command":"pwd && find . -maxdepth 2 -type f","done":false,"answer":"","tool_task":"Inspect the workspace before implementation."}`
+	if shouldBypassEvaluatorForArchitectImplementation(readPayload, "build a React music production app", workspace, WorksiteSurvey{}, nil) {
+		t.Fatal("read-only inspection should not enter architect evaluator bypass")
 	}
 }

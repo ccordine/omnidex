@@ -203,6 +203,27 @@ type ShellCommandSpecialist interface {
 	ProposeShellCommand(ctx context.Context, input ShellCommandSpecialistInput) (ShellCommandProposal, error)
 }
 
+type CodeContentSpecialistInput struct {
+	Step              int
+	UserPrompt        string
+	ArchitectContract ImplementationArchitectContract
+	WorkItem          ArchitectWorkItem
+	ExistingContent   string
+	TestFirst         bool
+	Observations      []StructuredCommandObservation
+	SessionMemories   []SessionMemory
+	WorksiteSurvey    WorksiteSurvey
+}
+
+type CodeContentProposal struct {
+	Content   string `json:"content"`
+	Rationale string `json:"rationale"`
+}
+
+type CodeContentSpecialist interface {
+	GenerateCodeContent(ctx context.Context, input CodeContentSpecialistInput) (CodeContentProposal, error)
+}
+
 type PromptInterpretationInput struct {
 	UserPrompt              string
 	History                 []Message
@@ -352,6 +373,25 @@ func (s OllamaShellCommandSpecialist) ProposeShellCommand(ctx context.Context, i
 	return ParseShellCommandProposal(resp.Content)
 }
 
+type OllamaCodeContentSpecialist struct {
+	Client CommandDecisionClient
+}
+
+func NewOllamaCodeContentSpecialist(client CommandDecisionClient) OllamaCodeContentSpecialist {
+	return OllamaCodeContentSpecialist{Client: client}
+}
+
+func (s OllamaCodeContentSpecialist) GenerateCodeContent(ctx context.Context, input CodeContentSpecialistInput) (CodeContentProposal, error) {
+	if s.Client == nil {
+		return CodeContentProposal{}, fmt.Errorf("code content specialist client is required")
+	}
+	resp, err := s.Client.ChatRaw(ctx, buildCodeContentSpecialistRequest(input))
+	if err != nil {
+		return CodeContentProposal{}, err
+	}
+	return ParseCodeContentProposal(resp.Content)
+}
+
 type OllamaStructuredResponseEvaluator struct {
 	Client CommandDecisionClient
 }
@@ -436,6 +476,7 @@ type structuredCommandDecisionRunConfig struct {
 	Evaluator               StructuredLLMResponseEvaluator
 	EvaluatorThreshold      int
 	ShellSpecialist         ShellCommandSpecialist
+	CodeContentSpecialist   CodeContentSpecialist
 	EnableCommandCache      bool
 	CommandCacheRoot        string
 }
@@ -712,7 +753,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			return result, err
 		}
 
-		if evaluator != nil {
+		if evaluator != nil && shouldBypassEvaluatorForArchitectImplementation(resp.Content, prompt, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations) {
+			emitStructuredCommandEvent(onEvent, "structured_evaluator_bypassed_for_architect", "Evaluator bypassed for architect-controlled implementation step", map[string]string{
+				"step":   fmt.Sprintf("%d", step),
+				"reason": "architect contract and deterministic validators own current implementation work item",
+			})
+		} else if evaluator != nil {
 			accepted, repairedResp, disabledEvaluator, err := evaluateAndRepairPlannerResponse(ctx, step, prompt, client, basePlannerReq, resp, evaluator, evaluatorThreshold, cfg, worksiteSurvey, ledger, result.Observations, onEvent, &result)
 			if err != nil {
 				return result, err
@@ -782,6 +828,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 		if isShellToolDelegation(payload) {
+			if handled, err := runArchitectCodeContentLane(ctx, step, prompt, payload.ToolTask, cfg, worksiteSurvey, onEvent, &result); handled || err != nil {
+				if err != nil {
+					return result, err
+				}
+				continue
+			}
 			if cfg.ShellSpecialist == nil {
 				emitStructuredCommandEvent(onEvent, "structured_tool_delegation_rejected", "Shell tool delegation rejected", map[string]string{
 					"step":   fmt.Sprintf("%d", step),
@@ -843,7 +895,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					"step":   fmt.Sprintf("%d", step),
 					"reason": "empty question with ask=true; executing non-empty command",
 				})
-				if err := validateStructuredCommandForRunWithSurvey(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+				if err := validateStructuredCommandForRunWithArchitect(payload.Command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":    fmt.Sprintf("%d", step),
 						"command": truncateStructuredTimelineValue(payload.Command),
@@ -876,7 +928,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					UserResponse: previousAnswer,
 				})
 				if command != "" {
-					if err := validateStructuredCommandForRunWithSurvey(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+					if err := validateStructuredCommandForRunWithArchitect(payload.Command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 						emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 							"step":    fmt.Sprintf("%d", step),
 							"command": truncateStructuredTimelineValue(payload.Command),
@@ -930,7 +982,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"step": fmt.Sprintf("%d", step),
 			})
 			if command != "" {
-				if err := validateStructuredCommandForRunWithSurvey(payload.Command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+				if err := validateStructuredCommandForRunWithArchitect(payload.Command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":    fmt.Sprintf("%d", step),
 						"command": truncateStructuredTimelineValue(payload.Command),
@@ -957,7 +1009,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"reason": "done=true is only a final validation request when command is empty; executing non-empty command first",
 			})
 			command := payload.Command
-			if err := validateStructuredCommandForRunWithSurvey(command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+			if err := validateStructuredCommandForRunWithArchitect(command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 				emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 					"step":    fmt.Sprintf("%d", step),
 					"command": truncateStructuredTimelineValue(command),
@@ -1075,7 +1127,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					"reason": "done=true requires an empty command; validating non-empty command instead",
 				})
 				command := payload.Command
-				if err := validateStructuredCommandForRunWithSurvey(command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+				if err := validateStructuredCommandForRunWithArchitect(command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 						"step":    fmt.Sprintf("%d", step),
 						"command": truncateStructuredTimelineValue(command),
@@ -1214,7 +1266,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 		command := payload.Command
-		if err := validateStructuredCommandForRunWithSurvey(command, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
+		if err := validateStructuredCommandForRunWithArchitect(command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 			if handleStructuredRepeatedCommandValidation(step, command, err, &ledger, onEvent, &result) {
 				gate := ProgressionGate{MaxRecoveryAttempts: 4}
 				decision := gate.ReviewStep(ProgressionInput{
@@ -3327,6 +3379,9 @@ npm test`
 }
 
 func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+	if handled, err := runArchitectCodeContentLane(ctx, step, prompt, toolTask, cfg, worksiteSurvey, onEvent, result); handled || err != nil {
+		return handled, err
+	}
 	if cfg.ShellSpecialist == nil {
 		return false, nil
 	}
@@ -3351,6 +3406,92 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 		return true, err
 	}
 	return true, nil
+}
+
+func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+	if cfg.CodeContentSpecialist == nil {
+		return false, nil
+	}
+	contract := buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations)
+	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
+		return false, nil
+	}
+	applied := 0
+	for applied < 2 {
+		contract = buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations)
+		if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
+			break
+		}
+		item := *contract.CurrentItem
+		if item.Operation != "update" && item.Operation != "create" {
+			break
+		}
+		if item.Path == "" || strings.HasSuffix(item.Path, "/") {
+			break
+		}
+		emitStructuredCommandEvent(onEvent, "architect_work_item_started", "Implementation architect started queued code work item", map[string]string{
+			"step":      fmt.Sprintf("%d", step),
+			"item_id":   item.ID,
+			"operation": item.Operation,
+			"cwd":       item.CWD,
+			"path":      item.Path,
+		})
+		targetPath := filepath.Join(cfg.CurrentWorkingDirectory, item.CWD, item.Path)
+		existing, _ := os.ReadFile(targetPath)
+		proposal, err := cfg.CodeContentSpecialist.GenerateCodeContent(ctx, CodeContentSpecialistInput{
+			Step:              step,
+			UserPrompt:        prompt,
+			ArchitectContract: contract,
+			WorkItem:          item,
+			ExistingContent:   string(existing),
+			TestFirst:         strings.Contains(strings.ToLower(item.ID+" "+item.Description+" "+item.Path), "test"),
+			Observations:      result.Observations,
+			SessionMemories:   cfg.SessionMemories,
+			WorksiteSurvey:    worksiteSurvey,
+		})
+		if err != nil {
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:     step,
+				ExitCode: 1,
+				Stderr:   "code content specialist failed: " + err.Error(),
+			})
+			return true, nil
+		}
+		if strings.TrimSpace(proposal.Content) == "" {
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:     step,
+				ExitCode: 1,
+				Stderr:   "code content specialist returned empty content for architect work item " + item.ID,
+			})
+			return true, nil
+		}
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			return true, err
+		}
+		if err := os.WriteFile(targetPath, []byte(proposal.Content), 0o644); err != nil {
+			return true, err
+		}
+		command := fmt.Sprintf("architect.apply %s %s", item.Operation, filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+		emitStructuredCommandEvent(onEvent, "architect_work_item_applied", "Implementation architect applied generated code content", map[string]string{
+			"step":      fmt.Sprintf("%d", step),
+			"item_id":   item.ID,
+			"path":      filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			"rationale": truncateStructuredTimelineValue(proposal.Rationale),
+		})
+		result.Command = command
+		result.ExitCode = 0
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:     step,
+			Command:  command,
+			ExitCode: 0,
+			Stdout:   "architect applied " + filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+		})
+		applied++
+		if !strings.Contains(strings.ToLower(item.ID+" "+item.Description+" "+item.Path), "test") {
+			break
+		}
+	}
+	return applied > 0, nil
 }
 
 func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger *[]StructuredObjective, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (ShellCommandProposal, bool, error) {
@@ -3666,6 +3807,21 @@ func immediateStructuredPayloadValidationError(payload StructuredCommandPayload,
 	return validateStructuredCommandForRunWithSurvey(payload.Command, observations, workingDirectory, ledger, survey)
 }
 
+func validateStructuredCommandForRunWithArchitect(command, prompt, toolTask, patch string, observations []StructuredCommandObservation, workingDirectory string, objectiveLedger []StructuredObjective, survey WorksiteSurvey) error {
+	if err := validateStructuredCommandForRunWithSurvey(command, observations, workingDirectory, objectiveLedger, survey); err != nil {
+		return err
+	}
+	if !strings.Contains(strings.ToLower(toolTask), "implementation architect target root:") {
+		return nil
+	}
+	signal := strings.TrimSpace(toolTask + "\n" + command + "\n" + patch)
+	contract := buildImplementationArchitectContract(prompt, signal, workingDirectory, survey, observations)
+	if err := validateCommandAgainstImplementationArchitectContract(command, contract); err != nil {
+		return err
+	}
+	return nil
+}
+
 func isImmediatePlannerRepairValidation(err error, ledger []StructuredObjective) bool {
 	if err == nil {
 		return false
@@ -3748,6 +3904,28 @@ func structuredEvaluatorValidationScope(ledger []StructuredObjective, observatio
 		return "current_objective_and_payload_shape"
 	}
 	return "planner_payload_shape_only"
+}
+
+func shouldBypassEvaluatorForArchitectImplementation(rawResponse, prompt, workingDir string, survey WorksiteSurvey, observations []StructuredCommandObservation) bool {
+	payload, err := ParseStructuredCommandPayload(rawResponse)
+	if err != nil {
+		return false
+	}
+	if payload.Done || payload.Ask {
+		return false
+	}
+	if structuredCommandLooksReadOnlyEvidence(payload.Command) {
+		return false
+	}
+	if !strings.Contains(strings.ToLower(payload.ToolTask), "implementation architect target root:") {
+		return false
+	}
+	signal := strings.TrimSpace(payload.ToolTask + "\n" + payload.Command + "\n" + payload.Patch)
+	if signal == "" {
+		return false
+	}
+	contract := buildImplementationArchitectContract(prompt, signal, workingDir, survey, observations)
+	return hasImplementationArchitectContract(contract) && contract.CurrentItem != nil
 }
 
 func evaluateAndRepairPlannerResponse(ctx context.Context, step int, prompt string, client CommandDecisionClient, baseReq OllamaChatRequest, resp OllamaChatResponse, evaluator StructuredLLMResponseEvaluator, evaluatorThreshold int, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, ledger []StructuredObjective, observations []StructuredCommandObservation, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, OllamaChatResponse, bool, error) {
@@ -8066,6 +8244,70 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 	}
 }
 
+func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaChatRequest {
+	payload := struct {
+		Role              string                          `json:"role"`
+		UserPrompt        string                          `json:"user_prompt"`
+		ArchitectContract ImplementationArchitectContract `json:"architect_contract"`
+		WorkItem          ArchitectWorkItem               `json:"work_item"`
+		ExistingContent   string                          `json:"existing_content,omitempty"`
+		TestFirst         bool                            `json:"test_first"`
+		Observations      []StructuredCommandObservation  `json:"observations,omitempty"`
+		SessionMemories   []SessionMemory                 `json:"session_memories,omitempty"`
+		WorksiteSurvey    WorksiteSurvey                  `json:"worksite_survey"`
+		Rules             []string                        `json:"rules"`
+	}{
+		Role:              "code_content_specialist",
+		UserPrompt:        input.UserPrompt,
+		ArchitectContract: input.ArchitectContract,
+		WorkItem:          input.WorkItem,
+		ExistingContent:   truncateStructuredTimelineValue(input.ExistingContent),
+		TestFirst:         input.TestFirst,
+		Observations:      compactStructuredObservationsForContext(input.Observations, 6, 500),
+		SessionMemories:   compactSessionMemoriesForStructuredContext(input.SessionMemories, 6, 600),
+		WorksiteSurvey:    input.WorksiteSurvey,
+		Rules: []string{
+			"Return JSON only with schema {\"content\":\"full file content\",\"rationale\":\"brief reason\"}.",
+			"Generate only the complete content for work_item.path; do not include shell commands, markdown fences, explanations outside JSON, or alternate paths.",
+			"The architect owns cwd/path/operation. Use work_item literally and do not invent a different file.",
+			"If test_first is true, write a focused acceptance test, smoke test, or deterministic source probe for user_explicit behavior only.",
+			"If test_first is false, implement only enough source code to satisfy the validated test/probe and the current work item.",
+			"Do not add unrequested dependencies, routing, authentication, cloud sync, databases, or framework changes.",
+			"Do not weaken, skip, delete, or rewrite an existing validated test unless the work item explicitly says it is a test correction.",
+		},
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		blob = []byte(`{"role":"code_content_specialist"}`)
+	}
+	return OllamaChatRequest{
+		Messages: []OllamaMessage{
+			{
+				Role: "system",
+				Content: strings.Join([]string{
+					"You are a narrowly scoped coding specialist.",
+					"The implementation architect has already chosen the exact file and operation.",
+					"Your only job is to produce complete file content for that one work item.",
+					"Return JSON only.",
+				}, " "),
+			},
+			{Role: "user", Content: string(blob)},
+		},
+		Format: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"content":   map[string]interface{}{"type": "string"},
+				"rationale": map[string]interface{}{"type": "string"},
+			},
+			"required": []string{"content", "rationale"},
+		},
+		Options: map[string]interface{}{
+			"temperature": 0,
+			"num_predict": 4096,
+		},
+	}
+}
+
 func buildStructuredCommandMessages(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, surveys ...WorksiteSurvey) []OllamaMessage {
 	survey := WorksiteSurvey{}
 	if len(surveys) > 0 {
@@ -8780,6 +9022,23 @@ func ParseShellCommandProposal(raw string) (ShellCommandProposal, error) {
 	}
 	return ShellCommandProposal{
 		Command:   command,
+		Rationale: strings.TrimSpace(decoded.Rationale),
+	}, nil
+}
+
+func ParseCodeContentProposal(raw string) (CodeContentProposal, error) {
+	var decoded struct {
+		Content   *string `json:"content"`
+		Rationale string  `json:"rationale"`
+	}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return CodeContentProposal{}, fmt.Errorf("parse code content specialist response: %w", err)
+	}
+	if decoded.Content == nil || strings.TrimSpace(*decoded.Content) == "" {
+		return CodeContentProposal{}, fmt.Errorf("code content specialist response missing substantive content")
+	}
+	return CodeContentProposal{
+		Content:   *decoded.Content,
 		Rationale: strings.TrimSpace(decoded.Rationale),
 	}, nil
 }

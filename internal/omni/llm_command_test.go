@@ -72,6 +72,29 @@ type fakeShellCommandSpecialist struct {
 	inputs    []ShellCommandSpecialistInput
 }
 
+type fakeCodeContentSpecialist struct {
+	proposals []CodeContentProposal
+	errors    []error
+	inputs    []CodeContentSpecialistInput
+}
+
+func (f *fakeCodeContentSpecialist) GenerateCodeContent(ctx context.Context, input CodeContentSpecialistInput) (CodeContentProposal, error) {
+	f.inputs = append(f.inputs, input)
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return CodeContentProposal{}, err
+		}
+	}
+	if len(f.proposals) == 0 {
+		return CodeContentProposal{Content: "export default function App() { return null; }\n", Rationale: "default fake content"}, nil
+	}
+	proposal := f.proposals[0]
+	f.proposals = f.proposals[1:]
+	return proposal, nil
+}
+
 type fakePromptInterpreter struct {
 	interpretations []PromptInterpretation
 	errors          []error
@@ -4120,6 +4143,79 @@ func TestStructuredCommandDecisionDelegatesShellTaskToSpecialist(t *testing.T) {
 	}
 	if !structuredEventsContain(events, "structured_tool_delegation_started") || !structuredEventsContain(events, "structured_tool_delegation_finished") {
 		t.Fatalf("missing delegation events: %#v", events)
+	}
+}
+
+func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBeforeEvaluator(t *testing.T) {
+	workspace := t.TempDir()
+	app := filepath.Join(workspace, "react-music-production")
+	if err := os.MkdirAll(filepath.Join(app, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "package.json"), []byte(`{"scripts":{"build":"react-scripts build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"Implementation architect target root: react-music-production. Create or modify the actual project files for the React music production app."}`,
+		`{"command":"","done":true,"answer":"React music production app implemented"}`,
+	}}
+	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
+		{Content: "test('renders sequencer controls', () => {});\n", Rationale: "test first"},
+		{Content: "export default function App() { return <main>Sequencer Transport Tempo Tracks</main>; }\n", Rationale: "implementation after test"},
+	}}
+	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
+		{Verdict: "accept", Confidence: 100, Feedback: "final alignment"},
+	}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{Done: true, Reason: "architect test and implementation files were applied"}}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"build a React music production app",
+		nil,
+		client,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			CodeContentSpecialist:   code,
+			Evaluator:               evaluator,
+			EvaluatorThreshold:      70,
+			CompletionChecker:       checker,
+		},
+	)
+	if err != nil {
+		t.Fatalf("%v observations=%#v events=%#v", err, result.Observations, events)
+	}
+	if len(code.inputs) != 2 {
+		t.Fatalf("code specialist calls = %d, want test then implementation", len(code.inputs))
+	}
+	if !code.inputs[0].TestFirst || code.inputs[0].WorkItem.Path != "src/App.test.js" {
+		t.Fatalf("first code item should be test-first App.test.js: %#v", code.inputs[0])
+	}
+	if code.inputs[1].TestFirst || code.inputs[1].WorkItem.Path != "src/App.js" {
+		t.Fatalf("second code item should be implementation App.js: %#v", code.inputs[1])
+	}
+	if len(evaluator.inputs) != 1 {
+		t.Fatalf("evaluator calls = %d, want only final done evaluation after architect work", len(evaluator.inputs))
+	}
+	if !structuredEventsContain(events, "structured_evaluator_bypassed_for_architect") {
+		t.Fatalf("missing architect evaluator bypass event: %#v", events)
+	}
+	appTest, err := os.ReadFile(filepath.Join(app, "src", "App.test.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	appJS, err := os.ReadFile(filepath.Join(app, "src", "App.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(appTest), "sequencer") || !strings.Contains(string(appJS), "Tempo") {
+		t.Fatalf("unexpected files: test=%q app=%q", string(appTest), string(appJS))
+	}
+	if result.Answer != "React music production app implemented" {
+		t.Fatalf("answer = %q", result.Answer)
 	}
 }
 
