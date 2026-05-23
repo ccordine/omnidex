@@ -188,6 +188,73 @@ func TestNPMInstallMustRunAfterPackageJSONMutation(t *testing.T) {
 	}
 }
 
+func TestReactContractRunsAcceptanceTestBeforeBuild(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React app.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	if !architectReadImmediatelyPrecedesItem(contract.WorkQueue, "install_react_dependencies", "run_react_acceptance_test") {
+		t.Fatalf("acceptance test should run after install: %#v", contract.WorkQueue)
+	}
+	if !architectReadImmediatelyPrecedesItem(contract.WorkQueue, "run_react_acceptance_test", "verify_react_build") {
+		t.Fatalf("build should run after acceptance test: %#v", contract.WorkQueue)
+	}
+}
+
+func TestReactSmokeTestValidationRejectsCommonJSMJSProbe(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React app with channel rack, transport controls, tempo control, piano roll, and sample pads.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	item := ArchitectWorkItem{Operation: "create", CWD: ".", Path: "scripts/smoke-test.mjs"}
+	content := "const { readFileSync } = require('fs');\nconst app = readFileSync('src/App.js', 'utf8');\nif (!app.includes('channel rack') || !app.includes('transport controls') || !app.includes('tempo control') || !app.includes('piano roll') || !app.includes('sample pads')) process.exit(1);\n"
+	err := validateCodeContentProposalForArchitectItem(content, contract, item)
+	if err == nil || !strings.Contains(err.Error(), "ESM import") {
+		t.Fatalf("CommonJS .mjs probe was accepted: %v", err)
+	}
+}
+
+func TestArchitectRepairRoutesESMSmokeFailureToSmokeTest(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React app.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		[]StructuredCommandObservation{{
+			Command:  "npm test",
+			ExitCode: 1,
+			Stderr:   "ReferenceError: require is not defined in ES module scope",
+		}},
+	)
+	if contract.CurrentItem == nil {
+		t.Fatal("expected repair work item")
+	}
+	if contract.CurrentItem.Operation != "update" || contract.CurrentItem.Path != "scripts/smoke-test.mjs" {
+		t.Fatalf("repair item = %#v", contract.CurrentItem)
+	}
+}
+
+func TestNPMTestMustRunAfterSmokeRelevantMutation(t *testing.T) {
+	item := ArchitectWorkItem{ID: "run_react_acceptance_test", Operation: "verify", CWD: ".", Verify: "npm test"}
+	observations := []StructuredCommandObservation{
+		{Command: "npm test", ExitCode: 0},
+		{Command: "architect.apply update src/App.js", ExitCode: 0},
+	}
+	if architectWorkItemSatisfied(item, t.TempDir(), observations) {
+		t.Fatal("npm test before App.js update should not satisfy acceptance test work item")
+	}
+	observations = append(observations, StructuredCommandObservation{Command: "npm test", ExitCode: 0})
+	if !architectWorkItemSatisfied(item, t.TempDir(), observations) {
+		t.Fatal("npm test after App.js update should satisfy acceptance test work item")
+	}
+}
+
 func TestArchitectApplyObservationMatchesCreateUpdateWriteEvidence(t *testing.T) {
 	item := ArchitectWorkItem{Operation: "update", CWD: ".", Path: "package.json"}
 	obs := StructuredCommandObservation{Command: "architect.apply create package.json", ExitCode: 0}

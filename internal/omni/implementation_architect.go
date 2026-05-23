@@ -108,6 +108,7 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 			reactFileItem("create_react_entrypoint", "src/App.js", "Create or update the primary React app UI and state for the requested feature set", "npm run build"),
 			reactFileItem("style_react_app", "src/App.css", "Create or update the React app stylesheet so the requested UI is usable and readable", "npm run build"),
 			{ID: "install_react_dependencies", Operation: "verify", CWD: targetRoot, Description: "Install package dependencies after package metadata is written", Verify: "npm install"},
+			{ID: "run_react_acceptance_test", Operation: "verify", CWD: targetRoot, Description: "Run the focused acceptance smoke test after implementation", Verify: "npm test"},
 			{ID: "verify_react_build", Operation: "verify", CWD: targetRoot, Description: "Run the React build proof command", Verify: "npm run build"},
 		}
 		contract.WorkQueue = insertReadItemsBeforeUpdates(contract.WorkQueue)
@@ -203,6 +204,9 @@ func architectRepairWorkItemFromObservations(targetRoot string, observations []S
 		}
 		if path == "" && strings.Contains(obs.Stderr+"\n"+obs.Stdout, "Cannot find module '@vitejs/plugin-react'") {
 			path = "package.json"
+		}
+		if path == "" && strings.Contains(obs.Stderr+"\n"+obs.Stdout, "require is not defined in ES module scope") {
+			path = "scripts/smoke-test.mjs"
 		}
 		if path == "" {
 			continue
@@ -509,9 +513,13 @@ func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, obser
 	case "verify":
 		verify := normalizeStructuredCommandForComparison(commandInArchitectCWD(item.CWD, item.Verify))
 		latestPackageMutation := latestArchitectApplyObservationIndex(item.CWD, "package.json", observations)
+		latestSmokeRelevantMutation := latestArchitectApplyObservationIndexForPaths(item.CWD, []string{"package.json", "scripts/smoke-test.mjs", "src/App.js", "src/App.css"}, observations)
 		for i, obs := range observations {
 			if obs.ExitCode == 0 && normalizeStructuredCommandForComparison(obs.Command) == verify {
 				if normalizeStructuredCommandForComparison(item.Verify) == "npm install" && latestPackageMutation >= 0 && i < latestPackageMutation {
+					continue
+				}
+				if normalizeStructuredCommandForComparison(item.Verify) == "npm test" && latestSmokeRelevantMutation >= 0 && i < latestSmokeRelevantMutation {
 					continue
 				}
 				return true
@@ -529,6 +537,16 @@ func latestArchitectApplyObservationIndex(cwd, path string, observations []Struc
 		}
 	}
 	return -1
+}
+
+func latestArchitectApplyObservationIndexForPaths(cwd string, paths []string, observations []StructuredCommandObservation) int {
+	latest := -1
+	for _, path := range paths {
+		if idx := latestArchitectApplyObservationIndex(cwd, path, observations); idx > latest {
+			latest = idx
+		}
+	}
+	return latest
 }
 
 func architectWorkItemIsTestFirst(item ArchitectWorkItem) bool {
@@ -587,8 +605,14 @@ func validateCodeContentProposalForArchitectItem(content string, contract Implem
 		if strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html") {
 			return fmt.Errorf("smoke-test.mjs must be JavaScript, not HTML")
 		}
+		if strings.Contains(lower, "require(") || strings.Contains(lower, "require('") || strings.Contains(lower, "require(\"") {
+			return fmt.Errorf("smoke-test.mjs must use ESM import syntax because package.json sets type=module")
+		}
 		if !strings.Contains(lower, "readfilesync") || !strings.Contains(lower, "process.exit") {
 			return fmt.Errorf("smoke-test.mjs must be an executable deterministic source probe")
+		}
+		if !strings.Contains(lower, "src/app.js") {
+			return fmt.Errorf("smoke-test.mjs must inspect src/App.js rather than only index.html")
 		}
 		if missing := missingAcceptanceSignals(trimmed, contract.AcceptanceCriteria); len(missing) > 0 {
 			return fmt.Errorf("smoke-test.mjs must check requested UI signal(s): %s", strings.Join(missing, ", "))
