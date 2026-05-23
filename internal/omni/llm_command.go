@@ -9727,6 +9727,8 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			MinimalContext              MinimalContext                 `json:"minimal_context,omitempty"`
 			Recipes                     []RecipeRuntimeConstraint      `json:"recipes,omitempty"`
 			ObjectiveLedger             []StructuredObjective          `json:"objective_ledger,omitempty"`
+			WorkItems                   []ObjectiveWorkItem            `json:"work_items,omitempty"`
+			CurrentWorkItem             *ObjectiveWorkItem             `json:"current_work_item,omitempty"`
 			CompletedActions            []CompletedAction              `json:"completed_actions,omitempty"`
 			LoopState                   StructuredLoopState            `json:"loop_state,omitempty"`
 			ForbiddenCommands           []string                       `json:"forbidden_commands,omitempty"`
@@ -9756,6 +9758,8 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 	payload.ActiveTask.MinimalContext = minimalContext
 	payload.ActiveTask.Recipes = recipeRuntimeConstraints(recipes)
 	payload.ActiveTask.ObjectiveLedger = mergeStructuredObjectiveLedger(nil, objectiveLedger)
+	payload.ActiveTask.WorkItems = ReconcileObjectiveWorkItemsFromObservations(BuildObjectiveWorkItemsFromLedger(prompt, payload.ActiveTask.ObjectiveLedger, workingDirectory, worksiteSurvey), observations)
+	payload.ActiveTask.CurrentWorkItem = firstPendingObjectiveWorkItem(payload.ActiveTask.WorkItems)
 	payload.ActiveTask.CompletedActions = completedActionsFromState(payload.ActiveTask.ObjectiveLedger, observations)
 	payload.ActiveTask.LoopState = structuredLoopStateFromState(payload.ActiveTask.ObjectiveLedger, observations)
 	payload.ActiveTask.ForbiddenCommands = payload.ActiveTask.LoopState.ForbiddenCommands

@@ -388,6 +388,19 @@ func ReconcileObjectiveWorkItemsFromObservations(items []ObjectiveWorkItem, obse
 	return out
 }
 
+func firstPendingObjectiveWorkItem(items []ObjectiveWorkItem) *ObjectiveWorkItem {
+	for i := range items {
+		if ValidateObjectiveWorkTree(items[i]).Passed {
+			continue
+		}
+		if child := firstPendingObjectiveWorkItem(items[i].Children); child != nil {
+			return child
+		}
+		return &items[i]
+	}
+	return nil
+}
+
 func assignEvidenceToFirstPendingWorkItem(items []ObjectiveWorkItem, evidence WorkItemEvidence) bool {
 	for i := range items {
 		if ValidateObjectiveWorkTree(items[i]).Passed {

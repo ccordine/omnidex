@@ -6704,6 +6704,34 @@ func quoteJSONForTest(value string) string {
 	return `"` + replacer.Replace(value) + `"`
 }
 
+func TestStructuredCommandRequestIncludesTypedWorkQueue(t *testing.T) {
+	req := buildStructuredCommandRequestWithContextRecipesSurveyAndPrepRaw(
+		"build a React notes app",
+		nil,
+		nil,
+		nil,
+		t.TempDir(),
+		[]StructuredObjective{{
+			ID:          "complete_notes_app",
+			Description: "Complete notes app implementation",
+			Status:      "pending",
+			Kind:        string(WorkItemKindArchitect),
+			Source:      structuredObjectiveSourceUserExplicit,
+			Required:    true,
+		}},
+		MinimalContext{},
+		nil,
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		PrepContextBundle{},
+	)
+	activeTask := activeTaskJSONForTest(t, req.Messages[len(req.Messages)-1].Content)
+	for _, want := range []string{`"work_items"`, `"current_work_item"`, `"kind":"architect"`, `"kind":"create"`, `"scope"`, `"paths":["package.json"]`} {
+		if !strings.Contains(activeTask, want) {
+			t.Fatalf("active task missing %q: %s", want, activeTask)
+		}
+	}
+}
+
 func structuredEventsContain(events []StructuredCommandEvent, eventType string) bool {
 	for _, event := range events {
 		if event.Type == eventType {
