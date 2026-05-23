@@ -23,6 +23,7 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	runtimecoding "github.com/gryph/omnidex/internal/runtime/coding"
 	runtimev3 "github.com/gryph/omnidex/internal/runtime/v3"
 	"github.com/gryph/omnidex/internal/specialist"
 	"github.com/gryph/omnidex/internal/specialists"
@@ -240,6 +241,10 @@ type Service struct {
 	v3Registry              *specialists.Registry
 	v3Tools                 *tools.Registry
 	v3Engine                *runtimev3.Engine
+	codingEngine            codingWorkflowRunner
+	completeStep            stepCompleteFunc
+	nativeV3Runner          nativeV3StepRunner
+	agentRuntimeRunner      agentRuntimeStepRunner
 	logger                  *log.Logger
 }
 
@@ -346,6 +351,11 @@ func New(
 	if repo != nil {
 		v3Engine = &runtimev3.Engine{Writer: repo}
 	}
+	codingEngine := runtimecoding.NewDeterministicEngine()
+	var completeStep stepCompleteFunc
+	if repo != nil {
+		completeStep = repo.CompleteStep
+	}
 	svc := &Service{
 		repo:                    repo,
 		llm:                     llmClient,
@@ -365,8 +375,12 @@ func New(
 		v3SkillsRoot:            opts.SkillsRoot,
 		v3Registry:              skillRegistry,
 		v3Engine:                v3Engine,
+		codingEngine:            codingEngine,
+		completeStep:            completeStep,
 		logger:                  opts.Logger,
 	}
+	svc.nativeV3Runner = svc.runNativeV3Step
+	svc.agentRuntimeRunner = svc.runAgentRuntimeStep
 	if svc.v3Enabled {
 		svc.v3Tools = newV3ToolRegistry(svc)
 	}
@@ -498,11 +512,18 @@ func (s *Service) run(ctx context.Context, workerID string) {
 }
 
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
+	action := strings.ToLower(strings.TrimSpace(claim.Step.Action))
+	contexts := contextsToMap(claim.Contexts)
+	if isCodingJob(claim.Job) {
+		if action != "coding_workflow" {
+			return fmt.Errorf("coding pipeline cannot run non-coding action %q", action)
+		}
+		return s.runCodingWorkflowStep(ctx, claim, contexts)
+	}
+
 	stepCtx, stop := s.watchStepControl(ctx, claim.Job.ID, claim.Step.ID)
 	defer stop()
 
-	action := strings.ToLower(strings.TrimSpace(claim.Step.Action))
-	contexts := contextsToMap(claim.Contexts)
 	freshContextOnly := shouldBypassHistoricalContext(claim.Job.Instruction, contexts["user_feedback"])
 	if shouldAttachRecentConversation(claim.Job, action) {
 		if freshContextOnly {
@@ -514,10 +535,16 @@ func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) err
 	}
 
 	if strings.HasPrefix(action, "v3_") {
+		if s.nativeV3Runner != nil {
+			return s.nativeV3Runner(stepCtx, claim, contexts, action)
+		}
 		return s.runNativeV3Step(stepCtx, claim, contexts, action)
 	}
 	// Runtime v2: keep the queue contract/action names stable while executing
 	// through a simpler, stage-driven orchestrator.
+	if s.agentRuntimeRunner != nil {
+		return s.agentRuntimeRunner(stepCtx, claim, contexts, action)
+	}
 	return s.runAgentRuntimeStep(stepCtx, claim, contexts, action)
 }
 

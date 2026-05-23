@@ -110,10 +110,12 @@ func normalizeIntegrationPipeline(pipeline string) (string, error) {
 		return model.PipelineAssistant, nil
 	case model.PipelineChat:
 		return model.PipelineChat, nil
+	case model.PipelineCoding:
+		return model.PipelineCoding, nil
 	case model.PipelineStory:
 		return model.PipelineStory, nil
 	default:
-		return "", fmt.Errorf("integration.pipeline must be assistant|chat|story")
+		return "", fmt.Errorf("integration.pipeline must be assistant|chat|coding|story")
 	}
 }
 

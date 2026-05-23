@@ -2399,6 +2399,8 @@ func normalizePipeline(pipeline string) string {
 		return model.PipelineAssistant
 	case model.PipelineChat:
 		return model.PipelineChat
+	case model.PipelineCoding:
+		return model.PipelineCoding
 	case model.PipelineStory:
 		return model.PipelineStory
 	default:
@@ -2408,6 +2410,10 @@ func normalizePipeline(pipeline string) string {
 
 func stepsForPipeline(pipeline string) []stepSeed {
 	switch normalizePipeline(pipeline) {
+	case model.PipelineCoding:
+		return []stepSeed{
+			{action: "coding_workflow", sortIndex: 5},
+		}
 	case model.PipelineChat:
 		return []stepSeed{
 			{action: "tooling", sortIndex: 5},

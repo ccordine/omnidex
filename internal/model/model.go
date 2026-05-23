@@ -29,6 +29,7 @@ const (
 const (
 	PipelineAssistant = "assistant"
 	PipelineChat      = "chat"
+	PipelineCoding    = "coding"
 	PipelineStory     = "story"
 )
 

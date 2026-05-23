@@ -44,6 +44,13 @@ func TestStepsForPipelineResearchBeforePlan(t *testing.T) {
 			},
 		},
 		{
+			name:     "coding",
+			pipeline: model.PipelineCoding,
+			want: []string{
+				"coding_workflow",
+			},
+		},
+		{
 			name:     "story",
 			pipeline: model.PipelineStory,
 			want: []string{
@@ -71,6 +78,31 @@ func TestStepsForPipelineResearchBeforePlan(t *testing.T) {
 				t.Fatalf("stepsForPipeline(%q) sort indexes must be strictly increasing: %+v", tc.pipeline, got)
 			}
 		})
+	}
+}
+
+func TestCodingPipelineHasOnlyCodingWorkflowStep(t *testing.T) {
+	got := stepsForPipeline(model.PipelineCoding)
+	want := []stepSeed{{action: "coding_workflow", sortIndex: 5}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("coding pipeline steps=%+v want %+v", got, want)
+	}
+	forbidden := map[string]struct{}{
+		"tooling":              {},
+		"workspace_scan":       {},
+		"plan":                 {},
+		"analyze":              {},
+		"assist":               {},
+		"verify":               {},
+		"v3_verification":      {},
+		"v3_response_draft":    {},
+		"v3_memory_review":     {},
+		"v3_external_research": {},
+	}
+	for _, step := range got {
+		if _, ok := forbidden[step.action]; ok {
+			t.Fatalf("coding pipeline must not seed old assistant/v3 action %q", step.action)
+		}
 	}
 }
 
