@@ -221,6 +221,15 @@ type CodeContentProposal struct {
 	Rationale string `json:"rationale"`
 }
 
+type CodeContentFileContract struct {
+	Path        string   `json:"path"`
+	Operation   string   `json:"operation"`
+	Role        string   `json:"role"`
+	Language    string   `json:"language"`
+	MustInclude []string `json:"must_include,omitempty"`
+	MustAvoid   []string `json:"must_avoid,omitempty"`
+}
+
 type CodeContentSpecialist interface {
 	GenerateCodeContent(ctx context.Context, input CodeContentSpecialistInput) (CodeContentProposal, error)
 }
@@ -9332,6 +9341,7 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 		UserPrompt        string                          `json:"user_prompt"`
 		ArchitectContract ImplementationArchitectContract `json:"architect_contract"`
 		WorkItem          ArchitectWorkItem               `json:"work_item"`
+		FileContract      CodeContentFileContract         `json:"file_contract"`
 		ExistingContent   string                          `json:"existing_content,omitempty"`
 		TestFirst         bool                            `json:"test_first"`
 		Observations      []StructuredCommandObservation  `json:"observations,omitempty"`
@@ -9343,6 +9353,7 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 		UserPrompt:        input.UserPrompt,
 		ArchitectContract: input.ArchitectContract,
 		WorkItem:          input.WorkItem,
+		FileContract:      codeContentFileContract(input.ArchitectContract, input.WorkItem),
 		ExistingContent:   truncateStructuredTimelineValue(input.ExistingContent),
 		TestFirst:         input.TestFirst,
 		Observations:      compactStructuredObservationsForContext(input.Observations, 6, 500),
@@ -9352,6 +9363,8 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 			"Return JSON only with schema {\"content\":\"full file content\",\"rationale\":\"brief reason\"}.",
 			"Generate only the complete content for work_item.path; do not include shell commands, markdown fences, explanations outside JSON, or alternate paths.",
 			"The architect owns cwd/path/operation. Use work_item literally and do not invent a different file.",
+			"file_contract is authoritative. content must match file_contract.language and file_contract.role exactly.",
+			"file_contract.must_include entries are required signals for this one file. file_contract.must_avoid entries are forbidden content classes for this one file.",
 			"If architect_contract.acceptance_criteria is non-empty, the generated file must directly support those criteria within the current file's responsibility.",
 			"If test_first is true, write a focused acceptance test, smoke test, or deterministic source probe for user_explicit behavior only; it must assert the relevant architect_contract.acceptance_criteria and must not be a render-only placeholder.",
 			"If test_first is false, implement enough source code to satisfy the validated test/probe, the current work item, and the architect_contract.acceptance_criteria.",
@@ -9389,6 +9402,78 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 			"num_predict": 4096,
 		},
 	}
+}
+
+func codeContentFileContract(contract ImplementationArchitectContract, item ArchitectWorkItem) CodeContentFileContract {
+	path := filepath.ToSlash(strings.TrimSpace(item.Path))
+	lower := strings.ToLower(path)
+	out := CodeContentFileContract{
+		Path:      path,
+		Operation: strings.TrimSpace(item.Operation),
+		Role:      "project_source_file",
+		Language:  "text",
+	}
+	switch {
+	case lower == "package.json":
+		out.Role = "npm_package_manifest"
+		out.Language = "json"
+		out.MustInclude = []string{`"scripts"`, `"build"`, `"test"`}
+		out.MustAvoid = []string{"comments", "markdown", "html", "javascript module source"}
+	case lower == "vite.config.js":
+		out.Role = "vite_react_config"
+		out.Language = "javascript_module"
+		out.MustInclude = []string{"defineConfig", "@vitejs/plugin-react"}
+		out.MustAvoid = []string{"html document", "react component", "css stylesheet"}
+	case lower == "index.html":
+		out.Role = "vite_html_shell"
+		out.Language = "html"
+		out.MustInclude = []string{`id="root"`, "/src/main.jsx"}
+		out.MustAvoid = []string{"react component implementation", "css stylesheet", "node script"}
+	case lower == "src/main.jsx" || lower == "src/main.js" || lower == "src/index.js":
+		out.Role = "react_dom_mount_entry"
+		out.Language = "javascript_or_jsx_module"
+		out.MustInclude = []string{"createRoot", "App", "render"}
+		out.MustAvoid = []string{"html document", "css stylesheet", "application UI implementation"}
+	case lower == "scripts/smoke-test.mjs":
+		out.Role = "deterministic_acceptance_probe"
+		out.Language = "node_javascript_module"
+		out.MustInclude = []string{"readFileSync", "process.exit"}
+		out.MustAvoid = []string{"html document", "react component", "css stylesheet"}
+	case lower == "src/app.js" || lower == "src/app.jsx":
+		out.Role = "react_application_component"
+		out.Language = "javascript_or_jsx_module"
+		out.MustInclude = acceptanceSignalsForFileContract(contract)
+		out.MustAvoid = []string{"html document", "css stylesheet", "react dom mount entry"}
+	case lower == "src/app.css" || strings.HasSuffix(lower, ".css"):
+		out.Role = "css_stylesheet"
+		out.Language = "css"
+		out.MustInclude = []string{".studio-shell"}
+		out.MustAvoid = []string{"html document", "javascript", "react component"}
+	case strings.HasSuffix(lower, ".json"):
+		out.Role = "json_data_or_config"
+		out.Language = "json"
+		out.MustAvoid = []string{"comments", "markdown", "html", "javascript"}
+	case strings.HasSuffix(lower, ".html"):
+		out.Role = "html_document"
+		out.Language = "html"
+		out.MustAvoid = []string{"react component implementation", "css stylesheet"}
+	case strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".jsx") || strings.HasSuffix(lower, ".mjs"):
+		out.Role = "javascript_module"
+		out.Language = "javascript_or_jsx_module"
+		out.MustAvoid = []string{"html document", "css stylesheet"}
+	}
+	return out
+}
+
+func acceptanceSignalsForFileContract(contract ImplementationArchitectContract) []string {
+	signals := []string{}
+	for _, criterion := range contract.AcceptanceCriteria {
+		signals = append(signals, acceptanceCriterionSignals(criterion)...)
+	}
+	if len(signals) == 0 {
+		return nil
+	}
+	return uniqueNonEmptyStrings(signals)
 }
 
 func buildStructuredCommandMessages(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, surveys ...WorksiteSurvey) []OllamaMessage {

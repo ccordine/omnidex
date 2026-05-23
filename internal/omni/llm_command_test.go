@@ -6091,7 +6091,7 @@ func TestPlannerCommandPreemptedByArchitectCurrentItem(t *testing.T) {
 	}
 	appliedPackage := false
 	for _, obs := range result.Observations {
-		if obs.Command == "architect.apply update package.json" {
+		if obs.Command == "architect.apply create package.json" || obs.Command == "architect.apply update package.json" {
 			appliedPackage = true
 		}
 		if obs.Command == "close" || obs.RejectedCommand == "close" {
@@ -6103,6 +6103,56 @@ func TestPlannerCommandPreemptedByArchitectCurrentItem(t *testing.T) {
 	}
 	if len(code.inputs) == 0 || code.inputs[0].WorkItem.Path != "package.json" {
 		t.Fatalf("code specialist was not first grounded to package.json current item: %#v", code.inputs)
+	}
+}
+
+func TestBuildCodeContentSpecialistRequestIncludesAuthoritativeFileContract(t *testing.T) {
+	contract := ImplementationArchitectContract{
+		AcceptanceCriteria: []string{"channel rack", "mixer controls", "visual timeline"},
+	}
+	cases := []struct {
+		name string
+		item ArchitectWorkItem
+		want []string
+	}{
+		{
+			name: "package_json",
+			item: ArchitectWorkItem{Operation: "update", Path: "package.json"},
+			want: []string{`"role":"npm_package_manifest"`, `"language":"json"`, "comments", "javascript module source"},
+		},
+		{
+			name: "smoke_test",
+			item: ArchitectWorkItem{Operation: "update", Path: "scripts/smoke-test.mjs"},
+			want: []string{`"role":"deterministic_acceptance_probe"`, `"language":"node_javascript_module"`, "readFileSync", "process.exit"},
+		},
+		{
+			name: "app_component",
+			item: ArchitectWorkItem{Operation: "update", Path: "src/App.js"},
+			want: []string{`"role":"react_application_component"`, `"language":"javascript_or_jsx_module"`, "channel rack", "mixer", "timeline"},
+		},
+		{
+			name: "stylesheet",
+			item: ArchitectWorkItem{Operation: "update", Path: "src/App.css"},
+			want: []string{`"role":"css_stylesheet"`, `"language":"css"`, ".studio-shell", "react component"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := buildCodeContentSpecialistRequest(CodeContentSpecialistInput{
+				UserPrompt:        "build a music studio",
+				ArchitectContract: contract,
+				WorkItem:          tc.item,
+			})
+			text := structuredRequestMessagesText(req)
+			for _, want := range tc.want {
+				if !strings.Contains(text, want) {
+					t.Fatalf("request missing %q:\n%s", want, text)
+				}
+			}
+			if !strings.Contains(text, "file_contract is authoritative") {
+				t.Fatalf("request missing authoritative file contract rule:\n%s", text)
+			}
+		})
 	}
 }
 

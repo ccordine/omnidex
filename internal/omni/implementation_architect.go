@@ -3,6 +3,7 @@ package omni
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -83,6 +84,9 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 		},
 	}
 	if framework == "react" {
+		reactFileItem := func(id, path, description, verify string) ArchitectWorkItem {
+			return ArchitectWorkItem{ID: id, Operation: architectWriteOperationForPath(workingDir, targetRoot, path), CWD: targetRoot, Path: path, Description: description, Verify: verify}
+		}
 		contract.EditSurface = architectPaths(targetRoot,
 			"src/App.js",
 			"src/App.jsx",
@@ -96,13 +100,13 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 		)
 		contract.ProofCommands = architectCommands(targetRoot, packageManager, "npm run build")
 		contract.WorkQueue = []ArchitectWorkItem{
-			{ID: "setup_react_package_metadata", Operation: "update", CWD: targetRoot, Path: "package.json", Description: "Create package metadata with executable Vite build, test, preview, and dev scripts plus only required React/Vite dependencies", Verify: "npm test"},
-			{ID: "create_vite_react_config", Operation: "update", CWD: targetRoot, Path: "vite.config.js", Description: "Create the Vite React config so JSX source files build correctly", Verify: "npm test"},
-			{ID: "create_react_html_shell", Operation: "update", CWD: targetRoot, Path: "index.html", Description: "Create the Vite HTML shell with a root mount for the React app", Verify: "npm test"},
-			{ID: "create_react_mount_entry", Operation: "update", CWD: targetRoot, Path: "src/main.jsx", Description: "Create the React DOM mount entrypoint that renders the app", Verify: "npm test"},
-			{ID: "write_react_acceptance_test", Operation: "update", CWD: targetRoot, Path: "scripts/smoke-test.mjs", Description: "Create a focused deterministic source probe for the requested React app behavior before implementation; it must check the requested UI signals and fail if the app is only a placeholder", Verify: "npm test"},
-			{ID: "create_react_entrypoint", Operation: "update", CWD: targetRoot, Path: "src/App.js", Description: "Create the primary React app UI and state for the requested feature set", Verify: "npm run build"},
-			{ID: "style_react_app", Operation: "update", CWD: targetRoot, Path: "src/App.css", Description: "Style the React app so the requested UI is usable and readable", Verify: "npm run build"},
+			reactFileItem("setup_react_package_metadata", "package.json", "Create or update package metadata with executable Vite build, test, preview, and dev scripts plus only required React/Vite dependencies", "npm test"),
+			reactFileItem("create_vite_react_config", "vite.config.js", "Create or update the Vite React config so JSX source files build correctly", "npm test"),
+			reactFileItem("create_react_html_shell", "index.html", "Create or update the Vite HTML shell with a root mount for the React app", "npm test"),
+			reactFileItem("create_react_mount_entry", "src/main.jsx", "Create or update the React DOM mount entrypoint that renders the app", "npm test"),
+			reactFileItem("write_react_acceptance_test", "scripts/smoke-test.mjs", "Create or update a focused deterministic source probe for the requested React app behavior before implementation; it must check the requested UI signals and fail if the app is only a placeholder", "npm test"),
+			reactFileItem("create_react_entrypoint", "src/App.js", "Create or update the primary React app UI and state for the requested feature set", "npm run build"),
+			reactFileItem("style_react_app", "src/App.css", "Create or update the React app stylesheet so the requested UI is usable and readable", "npm run build"),
 			{ID: "install_react_dependencies", Operation: "verify", CWD: targetRoot, Description: "Install package dependencies after package metadata is written", Verify: "npm install"},
 			{ID: "verify_react_build", Operation: "verify", CWD: targetRoot, Description: "Run the React build proof command", Verify: "npm run build"},
 		}
@@ -119,6 +123,14 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 	}
 	contract.CurrentItem = firstIncompleteArchitectWorkItem(contract.WorkQueue, workingDir, observations)
 	return contract
+}
+
+func architectWriteOperationForPath(workingDir, cwd, path string) string {
+	targetPath := filepath.Join(workingDir, cwd, path)
+	if info, err := os.Stat(targetPath); err == nil && !info.IsDir() {
+		return "update"
+	}
+	return "create"
 }
 
 func architectRepairWorkItemFromObservations(targetRoot string, observations []StructuredCommandObservation) *ArchitectWorkItem {
@@ -1084,7 +1096,9 @@ func architectApplyObservationMatches(item ArchitectWorkItem, obs StructuredComm
 	if len(fields) < 3 {
 		return false
 	}
-	if strings.ToLower(fields[1]) != strings.ToLower(item.Operation) {
+	gotOperation := strings.ToLower(fields[1])
+	wantOperation := strings.ToLower(item.Operation)
+	if gotOperation != wantOperation && !architectWriteOperationsEquivalent(gotOperation, wantOperation) {
 		return false
 	}
 	gotPath := filepath.ToSlash(strings.ToLower(fields[len(fields)-1]))
@@ -1093,6 +1107,10 @@ func architectApplyObservationMatches(item ArchitectWorkItem, obs StructuredComm
 		wantPath = filepath.ToSlash(strings.ToLower(item.Path))
 	}
 	return gotPath == wantPath || strings.HasSuffix(gotPath, "/"+strings.TrimPrefix(wantPath, "./"))
+}
+
+func architectWriteOperationsEquivalent(a, b string) bool {
+	return (a == "create" || a == "update") && (b == "create" || b == "update")
 }
 
 func commandInArchitectCWD(cwd, command string) string {

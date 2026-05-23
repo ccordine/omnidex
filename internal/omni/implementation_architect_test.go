@@ -81,6 +81,50 @@ func TestBuildImplementationArchitectContractIncludesReactBuildPrerequisites(t *
 	}
 }
 
+func TestBuildImplementationArchitectContractTypesWritesFromFilesystemEvidence(t *testing.T) {
+	root := t.TempDir()
+	contract := buildImplementationArchitectContract(
+		"Build a React app.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		root,
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	if got := architectWorkQueueItemOperation(contract.WorkQueue, "setup_react_package_metadata"); got != "create" {
+		t.Fatalf("empty project package operation = %q, want create", got)
+	}
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"scripts":{"test":"node scripts/smoke-test.mjs","build":"vite build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	contract = buildImplementationArchitectContract(
+		"Build a React app.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		root,
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	if got := architectWorkQueueItemOperation(contract.WorkQueue, "setup_react_package_metadata"); got != "update" {
+		t.Fatalf("existing package operation = %q, want update", got)
+	}
+}
+
+func TestArchitectApplyObservationMatchesCreateUpdateWriteEvidence(t *testing.T) {
+	item := ArchitectWorkItem{Operation: "update", CWD: ".", Path: "package.json"}
+	obs := StructuredCommandObservation{Command: "architect.apply create package.json", ExitCode: 0}
+	if !architectApplyObservationMatches(item, obs) {
+		t.Fatal("create evidence should satisfy update-class write item for same path")
+	}
+}
+
+func architectWorkQueueItemOperation(queue []ArchitectWorkItem, id string) string {
+	for _, item := range queue {
+		if item.ID == id {
+			return item.Operation
+		}
+	}
+	return ""
+}
+
 func TestValidateReactStylesheetRejectsUnmatchedPlaceholderCSS(t *testing.T) {
 	contract := buildImplementationArchitectContract(
 		"Build a React JS browser-based music production studio with channel rack, mixer controls, visual timeline, piano roll, and sample/instrument pads.",
