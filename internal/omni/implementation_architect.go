@@ -110,12 +110,14 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 			{ID: "install_react_dependencies", Operation: "verify", CWD: targetRoot, Description: "Install package dependencies after package metadata is written", Verify: "npm install"},
 			{ID: "verify_react_build", Operation: "verify", CWD: targetRoot, Description: "Run the React build proof command", Verify: "npm run build"},
 		}
+		contract.WorkQueue = insertReadItemsBeforeUpdates(contract.WorkQueue)
 	} else {
 		contract.EditSurface = architectPaths(targetRoot, "src/", "package.json", "Cargo.toml", "go.mod", "build.zig")
 		contract.ProofCommands = architectCommands(targetRoot, packageManager, "test -n \"$(find . -maxdepth 3 -type f | head -1)\"")
 		contract.WorkQueue = []ArchitectWorkItem{
 			{ID: "write_project_source", Operation: "update", CWD: targetRoot, Path: "src/", Description: "Write substantive project source for the current objective", Verify: contract.ProofCommands[0]},
 		}
+		contract.WorkQueue = insertReadItemsBeforeUpdates(contract.WorkQueue)
 	}
 	if repair := architectRepairWorkItemFromObservations(targetRoot, observations); repair != nil {
 		contract.CurrentItem = repair
@@ -131,6 +133,24 @@ func architectWriteOperationForPath(workingDir, cwd, path string) string {
 		return "update"
 	}
 	return "create"
+}
+
+func insertReadItemsBeforeUpdates(queue []ArchitectWorkItem) []ArchitectWorkItem {
+	out := make([]ArchitectWorkItem, 0, len(queue)*2)
+	for _, item := range queue {
+		if item.Operation == "update" && strings.TrimSpace(item.Path) != "" && !strings.HasSuffix(strings.TrimSpace(item.Path), "/") {
+			read := ArchitectWorkItem{
+				ID:          "read_before_" + item.ID,
+				Operation:   "read",
+				CWD:         item.CWD,
+				Path:        item.Path,
+				Description: "Read current file content before updating " + item.Path,
+			}
+			out = append(out, read)
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func architectRepairWorkItemFromObservations(targetRoot string, observations []StructuredCommandObservation) *ArchitectWorkItem {

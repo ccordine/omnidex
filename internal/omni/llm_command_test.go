@@ -6106,6 +6106,48 @@ func TestPlannerCommandPreemptedByArchitectCurrentItem(t *testing.T) {
 	}
 }
 
+func TestArchitectLaneReadsExistingFileBeforeUpdatingIt(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"scripts":{"test":"old","build":"old"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{{
+		Content:   `{"name":"music-studio","version":"0.1.0","type":"module","scripts":{"dev":"vite","build":"vite build","test":"node scripts/smoke-test.mjs","preview":"vite preview"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}`,
+		Rationale: "valid package metadata update",
+	}}}
+	result := CommandDecisionResult{}
+	handled, err := runArchitectCodeContentLane(
+		context.Background(),
+		2,
+		"Build a React app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			CodeContentSpecialist:   code,
+		},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		nil,
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected architect lane to handle read/update queue")
+	}
+	if len(result.Observations) < 2 || result.Observations[0].Command != "architect.read package.json" || result.Observations[1].Command != "architect.apply update package.json" {
+		t.Fatalf("expected read then update observations, got %#v", result.Observations)
+	}
+	if len(code.inputs) == 0 {
+		t.Fatal("expected code specialist input")
+	}
+	if !strings.Contains(code.inputs[0].ExistingContent, `"test":"old"`) {
+		t.Fatalf("code specialist did not receive existing file content: %#v", code.inputs[0])
+	}
+}
+
 func TestBuildCodeContentSpecialistRequestIncludesAuthoritativeFileContract(t *testing.T) {
 	contract := ImplementationArchitectContract{
 		AcceptanceCriteria: []string{"channel rack", "mixer controls", "visual timeline"},

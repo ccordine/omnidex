@@ -45,7 +45,7 @@ func TestBuildImplementationArchitectContractTargetsNestedReactRoot(t *testing.T
 	if !stringSliceContains(contract.ValidatorScopes, "alignment_validator: after implementation evidence exists, check the completed work against user objectives without adding unrequested expectations.") {
 		t.Fatalf("validator scopes = %#v", contract.ValidatorScopes)
 	}
-	if contract.CurrentItem == nil || contract.CurrentItem.ID != "setup_react_package_metadata" || contract.CurrentItem.CWD != "react-music-production" || contract.CurrentItem.Path != "package.json" {
+	if contract.CurrentItem == nil || contract.CurrentItem.ID != "read_before_setup_react_package_metadata" || contract.CurrentItem.Operation != "read" || contract.CurrentItem.CWD != "react-music-production" || contract.CurrentItem.Path != "package.json" {
 		t.Fatalf("current item = %#v", contract.CurrentItem)
 	}
 }
@@ -93,6 +93,9 @@ func TestBuildImplementationArchitectContractTypesWritesFromFilesystemEvidence(t
 	if got := architectWorkQueueItemOperation(contract.WorkQueue, "setup_react_package_metadata"); got != "create" {
 		t.Fatalf("empty project package operation = %q, want create", got)
 	}
+	if architectWorkQueueContainsID(contract.WorkQueue, "read_before_setup_react_package_metadata") {
+		t.Fatalf("empty project should not read package.json before create: %#v", contract.WorkQueue)
+	}
 	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"scripts":{"test":"node scripts/smoke-test.mjs","build":"vite build"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +108,12 @@ func TestBuildImplementationArchitectContractTypesWritesFromFilesystemEvidence(t
 	)
 	if got := architectWorkQueueItemOperation(contract.WorkQueue, "setup_react_package_metadata"); got != "update" {
 		t.Fatalf("existing package operation = %q, want update", got)
+	}
+	if !architectReadImmediatelyPrecedesItem(contract.WorkQueue, "read_before_setup_react_package_metadata", "setup_react_package_metadata") {
+		t.Fatalf("existing package update should have read immediately before update: %#v", contract.WorkQueue)
+	}
+	if contract.CurrentItem == nil || contract.CurrentItem.ID != "read_before_setup_react_package_metadata" || contract.CurrentItem.Operation != "read" {
+		t.Fatalf("current item should be read before update, got %#v", contract.CurrentItem)
 	}
 }
 
@@ -123,6 +132,24 @@ func architectWorkQueueItemOperation(queue []ArchitectWorkItem, id string) strin
 		}
 	}
 	return ""
+}
+
+func architectWorkQueueContainsID(queue []ArchitectWorkItem, id string) bool {
+	for _, item := range queue {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func architectReadImmediatelyPrecedesItem(queue []ArchitectWorkItem, readID, itemID string) bool {
+	for i := 1; i < len(queue); i++ {
+		if queue[i-1].ID == readID && queue[i].ID == itemID {
+			return true
+		}
+	}
+	return false
 }
 
 func TestValidateReactStylesheetRejectsUnmatchedPlaceholderCSS(t *testing.T) {
