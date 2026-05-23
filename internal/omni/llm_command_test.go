@@ -5958,6 +5958,58 @@ JS`,
 	}
 }
 
+func TestProgressionGateEmptyFileRecoveryWritesCodeOwnedPathWithoutShell(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(workspace, "src", "Clock.js")
+	if err := os.WriteFile(target, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decision := ProgressionDecision{
+		Action:           ProgressForceRecovery,
+		Reason:           "empty project files remain; deterministic empty-file recovery required",
+		RecoveryToolTask: emptyProjectFilesRecoveryToolTask("Finish QA on this React app", nil, workspace),
+	}
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	handled, err := runProgressionGateRecovery(
+		context.Background(),
+		4,
+		"Finish QA on this React app",
+		decision,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected deterministic empty-file recovery to handle without shell specialist")
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(content)) == "" {
+		t.Fatal("empty-file recovery left target empty")
+	}
+	for _, obs := range result.Observations {
+		if strings.Contains(obs.Command, "MyComponent") || strings.Contains(obs.Command, "/path/to/your") || strings.Contains(obs.Stderr, "MyComponent") || strings.Contains(obs.Stderr, "/path/to/your") {
+			t.Fatalf("recovery leaked model-selected path into observations: %#v", result.Observations)
+		}
+	}
+	if !structuredEventsContain(events, "empty_file_recovery_applied") {
+		t.Fatalf("missing deterministic empty-file apply event: %#v", events)
+	}
+}
+
 func TestValidateShellProposalRequiresArchitectTargetRoot(t *testing.T) {
 	toolTask := "Recovery required. Implementation architect target root: react-music-production. All source edits, package scripts, and verification commands for this app must run inside react-music-production or use paths under react-music-production/."
 	if err := validateShellProposalAgainstToolTask(`cat > src/App.js <<'JS'

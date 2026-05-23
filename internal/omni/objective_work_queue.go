@@ -402,7 +402,7 @@ func workEvidenceFromObservation(obs StructuredCommandObservation) []WorkItemEvi
 		return nil
 	}
 	evidence := []WorkItemEvidence{}
-	if strings.HasPrefix(lower, "architect.apply ") {
+	if strings.HasPrefix(lower, "architect.apply ") || strings.HasPrefix(lower, "empty_file.apply ") {
 		fields := strings.Fields(command)
 		if len(fields) >= 3 {
 			evidence = append(evidence, WorkItemEvidence{Kind: EvidenceKindFileDiff, Path: fields[len(fields)-1], Diff: "runtime applied generated content"})
@@ -463,7 +463,7 @@ func workItemContainsEvidence(item ObjectiveWorkItem, evidence WorkItemEvidence)
 
 func commandLooksFileMutation(command string) bool {
 	lower := strings.ToLower(command)
-	return strings.Contains(lower, " > ") || strings.Contains(lower, " >") || strings.Contains(lower, "tee ") || strings.Contains(lower, "apply_patch") || strings.Contains(lower, "sed -i") || strings.Contains(lower, "architect.apply") || strings.Contains(lower, "npm pkg set")
+	return strings.Contains(lower, " > ") || strings.Contains(lower, " >") || strings.Contains(lower, "tee ") || strings.Contains(lower, "apply_patch") || strings.Contains(lower, "sed -i") || strings.Contains(lower, "architect.apply") || strings.Contains(lower, "empty_file.apply") || strings.Contains(lower, "npm pkg set")
 }
 
 func commandLooksVerification(command string) bool {

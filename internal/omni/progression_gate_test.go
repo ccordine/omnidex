@@ -520,8 +520,11 @@ func TestProgressionGateDoesNotForceWriteForCleanupObjectives(t *testing.T) {
 		},
 	})
 
-	if decision.Action != ProgressAllow {
-		t.Fatalf("action = %s, want %s; decision=%#v", decision.Action, ProgressAllow, decision)
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("action = %s, want %s; decision=%#v", decision.Action, ProgressForceRecovery, decision)
+	}
+	if !strings.Contains(decision.RecoveryToolTask, "Empty file(s): src/Clock.js") {
+		t.Fatalf("recovery task did not preserve exact empty-file target: %q", decision.RecoveryToolTask)
 	}
 }
 

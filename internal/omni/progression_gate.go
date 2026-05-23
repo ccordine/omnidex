@@ -61,6 +61,12 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 			return decision
 		}
 	}
+	if objectiveLedgerHasActiveEmptyFileCleanup(input.ObjectiveLedger) && workspaceHasEmptyProjectFiles(input.WorkingDir) {
+		decision.Action = ProgressForceRecovery
+		decision.Reason = "empty project files remain; deterministic empty-file recovery required"
+		decision.RecoveryToolTask = emptyProjectFilesRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.WorkingDir)
+		return decision
+	}
 	if latestENOENTObservation(input.Observations) != nil {
 		latest := latestENOENTObservation(input.Observations)
 		decision.Action = ProgressForceRecovery
@@ -602,7 +608,7 @@ func structuredCommandLooksMutating(command string) bool {
 	lower := strings.ToLower(command)
 	mutationNeedles := []string{
 		">", "tee ", "cat <<", "node <<", "python <<", "python3 <<", "apply_patch",
-		"architect.apply",
+		"architect.apply", "empty_file.apply",
 		"npm install", "npm pkg set", "npm init", "mkdir", "touch", "cp ", "mv ", "rm ",
 		" -delete", "webpack", "npm run build", "npm test",
 	}
