@@ -85,7 +85,7 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 	}
 	if framework == "react" {
 		reactFileItem := func(id, path, description, verify string) ArchitectWorkItem {
-			return ArchitectWorkItem{ID: id, Operation: architectWriteOperationForPath(workingDir, targetRoot, path), CWD: targetRoot, Path: path, Description: description, Verify: verify}
+			return ArchitectWorkItem{ID: id, Operation: architectWriteOperationForPath(workingDir, targetRoot, path, observations), CWD: targetRoot, Path: path, Description: description, Verify: verify}
 		}
 		contract.EditSurface = architectPaths(targetRoot,
 			"src/App.js",
@@ -127,12 +127,41 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 	return contract
 }
 
-func architectWriteOperationForPath(workingDir, cwd, path string) string {
+func architectWriteOperationForPath(workingDir, cwd, path string, observations []StructuredCommandObservation) string {
+	if operation := observedArchitectWriteOperationForPath(cwd, path, observations); operation != "" {
+		return operation
+	}
 	targetPath := filepath.Join(workingDir, cwd, path)
 	if info, err := os.Stat(targetPath); err == nil && !info.IsDir() {
 		return "update"
 	}
 	return "create"
+}
+
+func observedArchitectWriteOperationForPath(cwd, path string, observations []StructuredCommandObservation) string {
+	wantPath := filepath.ToSlash(strings.ToLower(filepath.Join(cwd, path)))
+	if wantPath == "" || strings.TrimSpace(path) == "" {
+		return ""
+	}
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if obs.ExitCode != 0 {
+			continue
+		}
+		fields := strings.Fields(strings.TrimSpace(obs.Command))
+		if len(fields) < 3 || strings.ToLower(fields[0]) != "architect.apply" {
+			continue
+		}
+		operation := strings.ToLower(fields[1])
+		if operation != "create" && operation != "update" {
+			continue
+		}
+		gotPath := filepath.ToSlash(strings.ToLower(fields[len(fields)-1]))
+		if gotPath == wantPath || strings.HasSuffix(gotPath, "/"+strings.TrimPrefix(wantPath, "./")) {
+			return operation
+		}
+	}
+	return ""
 }
 
 func insertReadItemsBeforeUpdates(queue []ArchitectWorkItem) []ArchitectWorkItem {

@@ -117,6 +117,26 @@ func TestBuildImplementationArchitectContractTypesWritesFromFilesystemEvidence(t
 	}
 }
 
+func TestArchitectWriteOperationStaysStableAfterObservedCreate(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"generated"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	contract := buildImplementationArchitectContract(
+		"Build a React app.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		root,
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		[]StructuredCommandObservation{{Command: "architect.apply create package.json", ExitCode: 0}},
+	)
+	if got := architectWorkQueueItemOperation(contract.WorkQueue, "setup_react_package_metadata"); got != "create" {
+		t.Fatalf("observed create should keep operation stable, got %q", got)
+	}
+	if architectWorkQueueContainsID(contract.WorkQueue, "read_before_setup_react_package_metadata") {
+		t.Fatalf("observed create should not become update/read-before work: %#v", contract.WorkQueue)
+	}
+}
+
 func TestArchitectApplyObservationMatchesCreateUpdateWriteEvidence(t *testing.T) {
 	item := ArchitectWorkItem{Operation: "update", CWD: ".", Path: "package.json"}
 	obs := StructuredCommandObservation{Command: "architect.apply create package.json", ExitCode: 0}
