@@ -4351,7 +4351,7 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
 		{Content: `{"scripts":{"test":"node scripts/smoke-test.mjs","build":"test -s src/App.js && test -s scripts/smoke-test.mjs"},"dependencies":{},"devDependencies":{}}` + "\n", Rationale: "package metadata"},
 		{Content: "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()] });\n", Rationale: "vite config"},
-		{Content: `<div id="root"></div><script type="module" src="/src/index.js"></script>` + "\n", Rationale: "html shell"},
+		{Content: `<div id="root"></div><script type="module" src="/src/main.jsx"></script>` + "\n", Rationale: "html shell"},
 		{Content: "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.js';\ncreateRoot(document.getElementById('root')).render(<App />);\n", Rationale: "mount entry"},
 		{Content: "import fs from 'node:fs';\nconst app = fs.readFileSync('src/App.js','utf8');\nif (!app.includes('Sequencer') || !app.includes('Tempo') || !app.includes('Studio')) process.exit(1);\n", Rationale: "test first"},
 		{Content: "import React, { useState } from 'react';\nexport default function App() { const [tempo,setTempo]=useState(128); return React.createElement('main', { className: 'studio' }, React.createElement('button', { type: 'button' }, 'Transport'), React.createElement('input', { type: 'range', value: tempo, onChange: e=>setTempo(e.target.value) }), React.createElement('section', null, 'Music Studio Sequencer Channel Rack Mixer Tempo Tracks')); }\n", Rationale: "implementation after test"},
@@ -4527,7 +4527,7 @@ func TestStructuredCommandDecisionArchitectLaneRunsProofBeforeFinalEvaluator(t *
 	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
 		{Content: `{"scripts":{"test":"node scripts/smoke-test.mjs","build":"test -s src/App.js && test -s scripts/smoke-test.mjs"},"dependencies":{},"devDependencies":{}}` + "\n", Rationale: "package metadata"},
 		{Content: "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()] });\n", Rationale: "vite config"},
-		{Content: `<div id="root"></div><script type="module" src="/src/index.js"></script>` + "\n", Rationale: "html shell"},
+		{Content: `<div id="root"></div><script type="module" src="/src/main.jsx"></script>` + "\n", Rationale: "html shell"},
 		{Content: "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.js';\ncreateRoot(document.getElementById('root')).render(<App />);\n", Rationale: "mount entry"},
 		{Content: "import fs from 'node:fs';\nconst app = fs.readFileSync('src/App.js','utf8');\nif (!app.includes('Transport') || !app.includes('Tempo') || !app.includes('Studio')) process.exit(1);\n", Rationale: "proof first"},
 		{Content: "import React, { useState } from 'react';\nexport default function App() { const [tempo,setTempo]=useState(128); return React.createElement('main', { className: 'studio' }, React.createElement('button', { type: 'button' }, 'Transport'), React.createElement('input', { type: 'range', value: tempo, onChange: e=>setTempo(e.target.value) }), React.createElement('section', null, 'Music Studio Sequencer Channel Rack Mixer Tempo Tracks')); }\n", Rationale: "implementation"},

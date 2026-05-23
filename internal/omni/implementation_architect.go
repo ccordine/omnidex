@@ -87,7 +87,6 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 			"src/App.js",
 			"src/App.jsx",
 			"src/App.css",
-			"src/index.js",
 			"src/main.jsx",
 			"index.html",
 			"vite.config.js",
@@ -100,7 +99,7 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 			{ID: "setup_react_package_metadata", Operation: "update", CWD: targetRoot, Path: "package.json", Description: "Create package metadata with executable Vite build, test, preview, and dev scripts plus only required React/Vite dependencies", Verify: "npm test"},
 			{ID: "create_vite_react_config", Operation: "update", CWD: targetRoot, Path: "vite.config.js", Description: "Create the Vite React config so JSX source files build correctly", Verify: "npm test"},
 			{ID: "create_react_html_shell", Operation: "update", CWD: targetRoot, Path: "index.html", Description: "Create the Vite HTML shell with a root mount for the React app", Verify: "npm test"},
-			{ID: "create_react_mount_entry", Operation: "update", CWD: targetRoot, Path: "src/index.js", Description: "Create the React DOM mount entrypoint that renders the app", Verify: "npm test"},
+			{ID: "create_react_mount_entry", Operation: "update", CWD: targetRoot, Path: "src/main.jsx", Description: "Create the React DOM mount entrypoint that renders the app", Verify: "npm test"},
 			{ID: "write_react_acceptance_test", Operation: "update", CWD: targetRoot, Path: "scripts/smoke-test.mjs", Description: "Create a focused deterministic source probe for the requested React app behavior before implementation; it must check the requested UI signals and fail if the app is only a placeholder", Verify: "npm test"},
 			{ID: "create_react_entrypoint", Operation: "update", CWD: targetRoot, Path: "src/App.js", Description: "Create the primary React app UI and state for the requested feature set", Verify: "npm run build"},
 			{ID: "style_react_app", Operation: "update", CWD: targetRoot, Path: "src/App.css", Description: "Style the React app so the requested UI is usable and readable", Verify: "npm run build"},
@@ -560,9 +559,9 @@ func deterministicArchitectContentProposal(contract ImplementationArchitectContr
 	case "vite.config.js":
 		return CodeContentProposal{Content: deterministicViteReactConfig(), Rationale: "deterministic Vite React config fallback"}, true
 	case "index.html":
-		entry := "src/index.js"
+		entry := "src/main.jsx"
 		if strings.Contains(strings.ToLower(item.ID), "main") {
-			entry = "src/main.js"
+			entry = "src/main.jsx"
 		}
 		return CodeContentProposal{Content: deterministicReactIndexHTML(entry), Rationale: "deterministic Vite HTML shell fallback"}, true
 	case "src/index.js", "src/main.js", "src/main.jsx":
@@ -620,7 +619,7 @@ export default defineConfig({
 func deterministicReactIndexHTML(entry string) string {
 	entry = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(entry)), "/")
 	if entry == "" {
-		entry = "src/index.js"
+		entry = "src/main.jsx"
 	}
 	return fmt.Sprintf(`<!doctype html>
 <html lang="en">

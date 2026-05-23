@@ -65,7 +65,7 @@ func TestBuildImplementationArchitectContractIncludesReactBuildPrerequisites(t *
 	for _, want := range []string{
 		"setup_react_package_metadata:package.json:npm test",
 		"create_react_html_shell:index.html:npm test",
-		"create_react_mount_entry:src/index.js:npm test",
+		"create_react_mount_entry:src/main.jsx:npm test",
 		"write_react_acceptance_test:scripts/smoke-test.mjs:npm test",
 		"install_react_dependencies::npm install",
 		"verify_react_build::npm run build",
