@@ -232,17 +232,6 @@ func TestStructuredEvaluationRequestCarriesValidationScope(t *testing.T) {
 	}
 }
 
-func TestValidateCommandAgainstImplementationArchitectContractRejectsPlaceholderPath(t *testing.T) {
-	contract := ImplementationArchitectContract{TargetRoot: "react-music-production"}
-	err := validateCommandAgainstImplementationArchitectContract("cd /path/to/your/project && npm test", contract)
-	if err == nil {
-		t.Fatal("expected placeholder path to be rejected")
-	}
-	if !strings.Contains(err.Error(), "placeholder project path") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestValidateCommandAgainstImplementationArchitectContractRequiresTargetRoot(t *testing.T) {
 	contract := ImplementationArchitectContract{TargetRoot: "react-music-production"}
 	if err := validateCommandAgainstImplementationArchitectContract("cat > src/App.js <<'JS'\nexport default function App() { return null; }\nJS", contract); err == nil {

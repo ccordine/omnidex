@@ -317,8 +317,12 @@ func architectChildrenFromContract(parentID string, contract ImplementationArchi
 	for _, archItem := range contract.WorkQueue {
 		kind := WorkItemKindUpdate
 		switch archItem.Operation {
+		case "read":
+			kind = WorkItemKindRead
 		case "create":
 			kind = WorkItemKindCreate
+		case "delete":
+			kind = WorkItemKindDelete
 		case "verify":
 			kind = WorkItemKindVerify
 		}
@@ -408,6 +412,18 @@ func workEvidenceFromObservation(obs StructuredCommandObservation) []WorkItemEvi
 			evidence = append(evidence, WorkItemEvidence{Kind: EvidenceKindFileDiff, Path: fields[len(fields)-1], Diff: "runtime applied generated content"})
 		}
 	}
+	if strings.HasPrefix(lower, "architect.read ") {
+		fields := strings.Fields(command)
+		if len(fields) >= 2 {
+			evidence = append(evidence, WorkItemEvidence{Kind: EvidenceKindRead, Path: fields[len(fields)-1], Command: command, ExitCode: obs.ExitCode, Stdout: obs.Stdout, Summary: "architect read exact queued file"})
+		}
+	}
+	if strings.HasPrefix(lower, "architect.delete ") {
+		fields := strings.Fields(command)
+		if len(fields) >= 2 {
+			evidence = append(evidence, WorkItemEvidence{Kind: EvidenceKindDeleteSafety, Path: fields[len(fields)-1], Command: command, ExitCode: obs.ExitCode, SafetyValidated: true})
+		}
+	}
 	if structuredCommandLooksReadOnlyEvidence(command) {
 		evidence = append(evidence, WorkItemEvidence{Kind: EvidenceKindRead, Command: command, ExitCode: obs.ExitCode, Stdout: obs.Stdout, Summary: "read command completed"})
 	}
@@ -478,7 +494,7 @@ func commandLooksVerification(command string) bool {
 
 func commandLooksDelete(command string) bool {
 	lower := strings.ToLower(strings.TrimSpace(command))
-	return strings.HasPrefix(lower, "rm ") || strings.Contains(lower, " rm ") || strings.HasPrefix(lower, "git rm ")
+	return strings.HasPrefix(lower, "rm ") || strings.Contains(lower, " rm ") || strings.HasPrefix(lower, "git rm ") || strings.HasPrefix(lower, "architect.delete ")
 }
 
 func inferredMutationPath(command string) string {

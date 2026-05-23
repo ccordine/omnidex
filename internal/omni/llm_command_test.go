@@ -3109,8 +3109,8 @@ func TestDelegatedShellExecutionFailureRepairsWithResponsibleShellSpecialist(t *
 		`{"command":"","done":true,"answer":"source inspected"}`,
 	}}
 	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{
-		{Command: "cat src/components/MyComponent.js", Rationale: "Inspect suspected component."},
-		{Command: "cat src/components/MyComponent.js", Rationale: "Retry suspected component."},
+		{Command: "cat src/components/ActualButMissing.js", Rationale: "Inspect suspected component."},
+		{Command: "cat src/components/ActualButMissing.js", Rationale: "Retry suspected component."},
 		{Command: "find src -maxdepth 3 -type f", Rationale: "Discover actual source files after missing path feedback."},
 	}}
 	events := []StructuredCommandEvent{}
@@ -3153,8 +3153,8 @@ func TestDelegatedShellExecutionFailureRepairsWithResponsibleShellSpecialist(t *
 }
 
 func TestValidateShellProposalRejectsMissingFileRecoveryInvalidReadRepeat(t *testing.T) {
-	toolTask := "Recovery required. A read/inspect command failed because the target path does not exist. Invalid command: cat src/components/MyComponent.js. Failure: step=18 command=cat src/components/MyComponent.js exit_code=1 stderr=cat: src/components/MyComponent.js: No such file or directory Required next behavior: inspect the parent directory, run a bounded file discovery command, inspect package.json if present, update the workspace model, then continue with discovered files. Do not retry the invalid path unless new evidence proves it exists."
-	err := validateShellProposalAgainstToolTask("cat src/components/MyComponent.js", toolTask)
+	toolTask := "Recovery required. A read/inspect command failed because the target path does not exist. Invalid command: cat src/components/ActualButMissing.js. Failure: step=18 command=cat src/components/ActualButMissing.js exit_code=1 stderr=cat: src/components/ActualButMissing.js: No such file or directory Required next behavior: inspect the parent directory, run a bounded file discovery command, inspect package.json if present, update the workspace model, then continue with discovered files. Do not retry the invalid path unless new evidence proves it exists."
+	err := validateShellProposalAgainstToolTask("cat src/components/ActualButMissing.js", toolTask)
 	if err == nil || !strings.Contains(err.Error(), "must not retry invalid read command") {
 		t.Fatalf("expected invalid read retry rejection, got %v", err)
 	}
@@ -6000,13 +6000,56 @@ func TestProgressionGateEmptyFileRecoveryWritesCodeOwnedPathWithoutShell(t *test
 	if strings.TrimSpace(string(content)) == "" {
 		t.Fatal("empty-file recovery left target empty")
 	}
+	appliedExactPath := false
 	for _, obs := range result.Observations {
-		if strings.Contains(obs.Command, "MyComponent") || strings.Contains(obs.Command, "/path/to/your") || strings.Contains(obs.Stderr, "MyComponent") || strings.Contains(obs.Stderr, "/path/to/your") {
-			t.Fatalf("recovery leaked model-selected path into observations: %#v", result.Observations)
+		if strings.HasPrefix(obs.Command, "empty_file.apply update src/Clock.js") {
+			appliedExactPath = true
+			break
 		}
+	}
+	if !appliedExactPath {
+		t.Fatalf("empty-file recovery did not apply exact queued file path: %#v", result.Observations)
 	}
 	if !structuredEventsContain(events, "empty_file_recovery_applied") {
 		t.Fatalf("missing deterministic empty-file apply event: %#v", events)
+	}
+}
+
+func TestArchitectFileWorkDoesNotFallThroughToShellPathSelection(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"scripts":{"test":"node scripts/smoke-test.mjs","build":"vite build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
+		Command:   "cat src/components/UnqueuedPath.js",
+		Rationale: "This should never be consulted for architect file work.",
+	}}}
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	handled, err := runDelegatedShellSpecialist(
+		context.Background(),
+		3,
+		"Build a React notes app",
+		"Recovery required. Implementation architect target root: . Create or modify the actual project files.",
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace, ShellSpecialist: shell},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		nil,
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected architect file work to be handled before shell delegation")
+	}
+	if len(shell.inputs) != 0 {
+		t.Fatalf("shell specialist was called for code-owned file work: %#v", shell.inputs)
+	}
+	if !structuredEventsContain(events, "architect_work_item_blocked") && !structuredEventsContain(events, "structured_tool_delegation_blocked_for_code_owned_file") {
+		t.Fatalf("missing code-owned file work block event: %#v", events)
 	}
 }
 

@@ -3680,6 +3680,9 @@ func runDelegatedShellSpecialist(ctx context.Context, step int, prompt, toolTask
 	if handled, err := runArchitectCodeContentLane(ctx, step, prompt, toolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, result); handled || err != nil {
 		return handled, err
 	}
+	if handled := blockShellFallbackForArchitectFileWork(step, prompt, toolTask, cfg, worksiteSurvey, onEvent, result); handled {
+		return true, nil
+	}
 	if cfg.ShellSpecialist == nil {
 		return false, nil
 	}
@@ -3734,9 +3737,6 @@ func latestDelegatedShellCommandFailed(result *CommandDecisionResult) bool {
 }
 
 func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
-	if cfg.CodeContentSpecialist == nil {
-		return false, nil
-	}
 	contract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
 	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
 		return false, nil
@@ -3748,6 +3748,86 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 			break
 		}
 		item := *contract.CurrentItem
+		if item.Operation == "read" {
+			if item.Path == "" || strings.HasSuffix(item.Path, "/") {
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:     step,
+					ExitCode: 1,
+					Stderr:   "implementation architect read item missing exact file path for " + item.ID,
+				})
+				return true, nil
+			}
+			targetPath := filepath.Join(cfg.CurrentWorkingDirectory, item.CWD, item.Path)
+			content, err := os.ReadFile(targetPath)
+			command := fmt.Sprintf("architect.read %s", filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+			if err != nil {
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:     step,
+					Command:  command,
+					ExitCode: 1,
+					Stderr:   err.Error(),
+				})
+				return true, nil
+			}
+			emitStructuredCommandEvent(onEvent, "architect_work_item_read", "Implementation architect read exact queued file", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			})
+			result.Command = command
+			result.ExitCode = 0
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:     step,
+				Command:  command,
+				ExitCode: 0,
+				Stdout:   string(content),
+			})
+			handled = true
+			continue
+		}
+		if item.Operation == "delete" {
+			if item.Path == "" || strings.HasSuffix(item.Path, "/") {
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:     step,
+					ExitCode: 1,
+					Stderr:   "implementation architect delete item missing exact file path for " + item.ID,
+				})
+				return true, nil
+			}
+			targetPath := filepath.Join(cfg.CurrentWorkingDirectory, item.CWD, item.Path)
+			if err := validateArchitectDeleteTarget(cfg.CurrentWorkingDirectory, item, targetPath); err != nil {
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:     step,
+					ExitCode: 1,
+					Stderr:   err.Error(),
+				})
+				return true, nil
+			}
+			if err := os.Remove(targetPath); err != nil {
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:     step,
+					ExitCode: 1,
+					Stderr:   err.Error(),
+				})
+				return true, nil
+			}
+			command := fmt.Sprintf("architect.delete %s", filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+			emitStructuredCommandEvent(onEvent, "architect_work_item_deleted", "Implementation architect deleted exact queued file after safety validation", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			})
+			result.Command = command
+			result.ExitCode = 0
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:     step,
+				Command:  command,
+				ExitCode: 0,
+				Stdout:   "architect safety-validated delete " + filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			})
+			handled = true
+			continue
+		}
 		if item.Operation == "verify" {
 			verifyCommand := commandInArchitectCWD(item.CWD, item.Verify)
 			if strings.TrimSpace(verifyCommand) == "" {
@@ -3790,6 +3870,20 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 		}
 		if item.Path == "" || strings.HasSuffix(item.Path, "/") {
 			break
+		}
+		if cfg.CodeContentSpecialist == nil {
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:     step,
+				ExitCode: 1,
+				Stderr:   "implementation architect code content specialist unavailable for code-owned file work item " + item.ID,
+			})
+			emitStructuredCommandEvent(onEvent, "architect_work_item_blocked", "Code-owned architect file work cannot fall through to shell path selection", map[string]string{
+				"step":      fmt.Sprintf("%d", step),
+				"item_id":   item.ID,
+				"operation": item.Operation,
+				"path":      filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			})
+			return true, nil
 		}
 		emitStructuredCommandEvent(onEvent, "architect_work_item_started", "Implementation architect started queued code work item", map[string]string{
 			"step":      fmt.Sprintf("%d", step),
@@ -3841,6 +3935,60 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 		handled = true
 	}
 	return handled, nil
+}
+
+func blockShellFallbackForArchitectFileWork(step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
+	contract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
+	if !hasImplementationArchitectContract(contract) || !architectItemRequiresCodeOwnedFileWork(contract.CurrentItem) {
+		return false
+	}
+	item := *contract.CurrentItem
+	path := filepath.ToSlash(filepath.Join(item.CWD, item.Path))
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:     step,
+		ExitCode: 1,
+		Stderr:   "code-owned architect file work item " + item.ID + " requires deterministic architect/coder execution for exact path " + path + "; shell specialist path selection is disabled",
+	})
+	emitStructuredCommandEvent(onEvent, "structured_tool_delegation_blocked_for_code_owned_file", "Shell specialist bypassed for code-owned architect file work", map[string]string{
+		"step":      fmt.Sprintf("%d", step),
+		"item_id":   item.ID,
+		"operation": item.Operation,
+		"path":      path,
+	})
+	return true
+}
+
+func architectItemRequiresCodeOwnedFileWork(item *ArchitectWorkItem) bool {
+	if item == nil || strings.TrimSpace(item.Path) == "" || strings.HasSuffix(strings.TrimSpace(item.Path), "/") {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(item.Operation)) {
+	case "create", "update", "delete", "read":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateArchitectDeleteTarget(workingDir string, item ArchitectWorkItem, targetPath string) error {
+	if strings.TrimSpace(item.Path) == "" {
+		return fmt.Errorf("delete work item missing target path")
+	}
+	root := filepath.Clean(filepath.Join(workingDir, item.CWD))
+	target := filepath.Clean(targetPath)
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return fmt.Errorf("delete target safety validation failed: %w", err)
+	}
+	if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
+		return fmt.Errorf("delete target %q escapes architect root %q", target, root)
+	}
+	if info, err := os.Stat(target); err != nil {
+		return fmt.Errorf("delete target %q is not accessible: %w", target, err)
+	} else if info.IsDir() {
+		return fmt.Errorf("delete target %q is a directory; queued delete requires an exact file target", target)
+	}
+	return nil
 }
 
 func generateValidatedCodeContent(ctx context.Context, step int, prompt string, contract ImplementationArchitectContract, item ArchitectWorkItem, existing string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (CodeContentProposal, error) {

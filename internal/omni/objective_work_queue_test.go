@@ -216,6 +216,60 @@ func TestTypedFinalGateCompletionCheckerCannotUseNaturalLanguageAsProof(t *testi
 	}
 }
 
+func TestArchitectChildrenPreservePerFileActionKinds(t *testing.T) {
+	contract := ImplementationArchitectContract{WorkQueue: []ArchitectWorkItem{
+		{ID: "read_app", Operation: "read", CWD: ".", Path: "src/App.js", Description: "Read App source"},
+		{ID: "create_list", Operation: "create", CWD: ".", Path: "src/NotesList.js", Description: "Create notes list"},
+		{ID: "update_app", Operation: "update", CWD: ".", Path: "src/App.js", Description: "Update App"},
+		{ID: "delete_empty", Operation: "delete", CWD: ".", Path: "src/empty.js", Description: "Delete empty placeholder"},
+		{ID: "verify_build", Operation: "verify", CWD: ".", Description: "Verify build", Verify: "npm run build"},
+	}}
+	children := architectChildrenFromContract("complete_app", contract, "/repo/app")
+	if len(children) != 5 {
+		t.Fatalf("children = %d, want 5", len(children))
+	}
+	want := []struct {
+		kind     WorkItemKind
+		evidence EvidenceKind
+	}{
+		{WorkItemKindRead, EvidenceKindRead},
+		{WorkItemKindCreate, EvidenceKindFileDiff},
+		{WorkItemKindUpdate, EvidenceKindFileDiff},
+		{WorkItemKindDelete, EvidenceKindDeleteSafety},
+		{WorkItemKindVerify, EvidenceKindCommand},
+	}
+	for i, expectation := range want {
+		if children[i].Kind != expectation.kind {
+			t.Fatalf("child %d kind = %q, want %q", i, children[i].Kind, expectation.kind)
+		}
+		if len(children[i].RequiredEvidence) != 1 || children[i].RequiredEvidence[0] != expectation.evidence {
+			t.Fatalf("child %d required evidence = %#v, want %q", i, children[i].RequiredEvidence, expectation.evidence)
+		}
+	}
+}
+
+func TestArchitectReadAndDeleteObservationsSatisfyScopedItems(t *testing.T) {
+	items := []ObjectiveWorkItem{{
+		ID:          "architect_parent",
+		Kind:        WorkItemKindArchitect,
+		Instruction: "own file-scoped work",
+		Status:      WorkItemStatusPending,
+		Children: architectChildrenFromContract("architect_parent", ImplementationArchitectContract{WorkQueue: []ArchitectWorkItem{
+			{ID: "read_app", Operation: "read", CWD: ".", Path: "src/App.js", Description: "Read App source"},
+			{ID: "delete_empty", Operation: "delete", CWD: ".", Path: "src/empty.js", Description: "Delete empty placeholder"},
+		}}, "/repo/app"),
+		RequiredEvidence: RequiredEvidenceForWorkItemKind(WorkItemKindArchitect),
+	}}
+	reconciled := ReconcileObjectiveWorkItemsFromObservations(items, []StructuredCommandObservation{
+		{Command: "architect.read src/App.js", ExitCode: 0, Stdout: "export default function App() {}"},
+		{Command: "architect.delete src/empty.js", ExitCode: 0, Stdout: "safety validated"},
+	})
+	result := ValidateObjectiveWorkForest(reconciled)
+	if !result.Passed {
+		t.Fatalf("architect read/delete evidence did not satisfy scoped queue: %v", result)
+	}
+}
+
 func passedWorkItem(id string, kind WorkItemKind) ObjectiveWorkItem {
 	return ObjectiveWorkItem{
 		ID:               id,

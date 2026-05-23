@@ -413,12 +413,28 @@ func firstIncompleteArchitectWorkItem(queue []ArchitectWorkItem, workingDir stri
 
 func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, observations []StructuredCommandObservation) bool {
 	switch item.Operation {
+	case "read":
+		command := normalizeStructuredCommandForComparison("architect.read " + filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+		for _, obs := range observations {
+			if obs.ExitCode == 0 && normalizeStructuredCommandForComparison(obs.Command) == command {
+				return true
+			}
+		}
+		return false
 	case "update", "create":
 		if item.Path == "" || strings.HasSuffix(item.Path, "/") {
 			return false
 		}
 		for _, obs := range observations {
 			if obs.ExitCode == 0 && architectApplyObservationMatches(item, obs) {
+				return true
+			}
+		}
+		return false
+	case "delete":
+		command := normalizeStructuredCommandForComparison("architect.delete " + filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+		for _, obs := range observations {
+			if obs.ExitCode == 0 && normalizeStructuredCommandForComparison(obs.Command) == command {
 				return true
 			}
 		}
@@ -1141,10 +1157,6 @@ func hasImplementationArchitectContract(contract ImplementationArchitectContract
 func validateCommandAgainstImplementationArchitectContract(command string, contract ImplementationArchitectContract) error {
 	if !hasImplementationArchitectContract(contract) || strings.TrimSpace(command) == "" {
 		return nil
-	}
-	lower := strings.ToLower(command)
-	if strings.Contains(lower, "/path/to/your/project") || strings.Contains(lower, "<project") || strings.Contains(lower, "your-project") {
-		return errArchitectContract("command contains placeholder project path; use architect target_root %q", contract.TargetRoot)
 	}
 	target := strings.TrimSpace(contract.TargetRoot)
 	if target == "" || target == "." {
