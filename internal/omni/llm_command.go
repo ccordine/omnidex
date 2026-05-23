@@ -85,6 +85,7 @@ type StructuredObjective struct {
 	ID              string   `json:"id"`
 	Description     string   `json:"description"`
 	Status          string   `json:"status"`
+	Kind            string   `json:"kind,omitempty"`
 	Evidence        string   `json:"evidence,omitempty"`
 	Source          string   `json:"source,omitempty"`
 	ParentObjective string   `json:"parent_objective,omitempty"`
@@ -1475,6 +1476,7 @@ func fallbackPromptInterpretationObjective(prompt string, interpretation PromptI
 			ID:          "complete_active_task",
 			Description: "Complete the active user task with command evidence",
 			Status:      "pending",
+			Kind:        string(workItemKindForUserOperation(operation)),
 			Source:      structuredObjectiveSourceUserExplicit,
 			Required:    true,
 			Evidence:    "fallback objective because prompt interpreter returned no concrete objective ledger",
@@ -5035,6 +5037,7 @@ func buildPromptInterpreterRequest(input PromptInterpretationInput) OllamaChatRe
 			"Return objectives only when the request has concrete criteria, outputs, constraints, or verification needs.",
 			"Use stable snake_case ids.",
 			"Return the objectives in the objective_ledger JSON field.",
+			"Every objective_ledger item must include kind=read|create|update|delete|verify|architect; use architect for code/app/project implementation that needs a nested per-file work queue.",
 			"Set objective source to user_explicit only for requirements directly stated in the current user prompt.",
 			"Set objective source to evidence_required_prerequisite only when command/workspace evidence proves the user-explicit objective cannot be completed without that prerequisite; include parent_objective and evidence.",
 			"Set objective source to memory_suggested for preferences or prior-history items that are not explicitly requested now.",
@@ -5408,11 +5411,25 @@ func fallbackPromptInterpretation(prompt string, survey WorksiteSurvey) PromptIn
 			ID:          objectiveID,
 			Description: description,
 			Status:      "pending",
+			Kind:        string(workItemKindForUserOperation(operation)),
 			Source:      structuredObjectiveSourceUserExplicit,
 			Required:    true,
 		}},
 		RequiresReferenceHistory: false,
 		UserOperation:            operation,
+	}
+}
+
+func workItemKindForUserOperation(operation string) WorkItemKind {
+	switch operation {
+	case userOperationInspectExisting:
+		return WorkItemKindRead
+	case userOperationRunTests, userOperationInstallDeps:
+		return WorkItemKindVerify
+	case userOperationFixExisting, userOperationModifyExisting, userOperationCreateNewProject:
+		return WorkItemKindArchitect
+	default:
+		return WorkItemKindArchitect
 	}
 }
 
@@ -7972,7 +7989,7 @@ func structuredObjectiveLedgersEqual(a, b []StructuredObjective) bool {
 		return false
 	}
 	for i := range a {
-		if a[i].ID != b[i].ID || a[i].Status != b[i].Status || a[i].Evidence != b[i].Evidence {
+		if a[i].ID != b[i].ID || a[i].Status != b[i].Status || a[i].Kind != b[i].Kind || a[i].Evidence != b[i].Evidence {
 			return false
 		}
 	}
@@ -8832,6 +8849,7 @@ func normalizeStructuredObjective(objective StructuredObjective) (StructuredObje
 		ID:              id,
 		Description:     strings.TrimSpace(objective.Description),
 		Status:          status,
+		Kind:            string(objectiveWorkItemKindFromStructuredObjective(objective)),
 		Evidence:        strings.TrimSpace(objective.Evidence),
 		Source:          normalizeStructuredObjectiveSource(source),
 		ParentObjective: strings.TrimSpace(objective.ParentObjective),
@@ -8855,6 +8873,9 @@ func mergeStructuredObjective(existing, update StructuredObjective) StructuredOb
 	}
 	if strings.TrimSpace(update.Evidence) != "" {
 		existing.Evidence = update.Evidence
+	}
+	if strings.TrimSpace(update.Kind) != "" {
+		existing.Kind = update.Kind
 	}
 	if strings.TrimSpace(update.Source) != "" && update.Source != structuredObjectiveSourceModelInferred {
 		existing.Source = update.Source
@@ -9006,7 +9027,7 @@ func buildStructuredCommandSystemContext() string {
 		"The final user message contains active_task and is the only active user objective.",
 		"The active_task.current_prompt field is the command objective.",
 		"Use objective_ledger to declare and update durable task objectives for multi-step or multi-criterion requests.",
-		"Each objective_ledger item uses {\"id\":\"stable_snake_case\",\"description\":\"criterion\",\"status\":\"pending|satisfied\",\"evidence\":\"observed proof\"}.",
+		"Each objective_ledger item uses {\"id\":\"stable_snake_case\",\"description\":\"criterion\",\"status\":\"pending|satisfied\",\"kind\":\"read|create|update|delete|verify|architect\",\"evidence\":\"observed proof\"}.",
 		"Each objective_ledger item may include source=user_explicit|recipe_required|detected_project|evidence_required_prerequisite|memory_suggested|model_inferred, parent_objective, required=true|false, and packages=[dependency names].",
 		"Strict execution scope: only user_explicit, recipe_required, detected_project, and evidence_required_prerequisite objectives may justify executable dependencies or files.",
 		"Use evidence_required_prerequisite only for necessary prerequisites discovered from command/workspace evidence, not for optional scope expansion.",
@@ -9224,13 +9245,14 @@ func structuredObjectiveLedgerSchema() map[string]interface{} {
 				"id":               map[string]interface{}{"type": "string"},
 				"description":      map[string]interface{}{"type": "string"},
 				"status":           map[string]interface{}{"type": "string", "enum": []string{"pending", "satisfied"}},
+				"kind":             map[string]interface{}{"type": "string", "enum": []string{string(WorkItemKindRead), string(WorkItemKindCreate), string(WorkItemKindUpdate), string(WorkItemKindDelete), string(WorkItemKindVerify), string(WorkItemKindArchitect)}},
 				"evidence":         map[string]interface{}{"type": "string"},
 				"source":           map[string]interface{}{"type": "string", "enum": []string{structuredObjectiveSourceUserExplicit, structuredObjectiveSourceRecipeRequired, structuredObjectiveSourceDetectedProject, structuredObjectiveSourceEvidenceRequiredPrerequisite, structuredObjectiveSourceMemorySuggested, structuredObjectiveSourceModelInferred}},
 				"parent_objective": map[string]interface{}{"type": "string"},
 				"required":         map[string]interface{}{"type": "boolean"},
 				"packages":         map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
 			},
-			"required": []string{"id", "description", "status"},
+			"required": []string{"id", "description", "status", "kind"},
 		},
 	}
 }

@@ -5200,7 +5200,7 @@ func TestStructuredObjectiveLedgerMergesPlannerDeclaredCriteria(t *testing.T) {
 }
 
 func TestPromptInterpreterParsesObjectiveLedger(t *testing.T) {
-	interpretation, err := ParsePromptInterpretation(`{"requires_reference_history":true,"selected_recipe_ids":["frontend.stimulus-tailwind-recyclr"],"objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"pending"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","evidence":"index.html links Tailwind"}]}`)
+	interpretation, err := ParsePromptInterpretation(`{"requires_reference_history":true,"selected_recipe_ids":["frontend.stimulus-tailwind-recyclr"],"objective_ledger":[{"id":"calculator","description":"Implement calculator UI and logic","status":"pending","kind":"architect"},{"id":"tailwind_css","description":"Include Tailwind CSS","status":"satisfied","kind":"verify","evidence":"index.html links Tailwind"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5212,6 +5212,32 @@ func TestPromptInterpreterParsesObjectiveLedger(t *testing.T) {
 	}
 	if !interpretation.RequiresReferenceHistory {
 		t.Fatal("requires_reference_history was not parsed")
+	}
+	if interpretation.ObjectiveLedger[0].Kind != string(WorkItemKindArchitect) {
+		t.Fatalf("objective kind = %q", interpretation.ObjectiveLedger[0].Kind)
+	}
+}
+
+func TestStructuredObjectiveMergePreservesKind(t *testing.T) {
+	ledger := mergeStructuredObjectiveLedger(nil, []StructuredObjective{{
+		ID:          "build_react_app",
+		Description: "Build React app",
+		Status:      "pending",
+		Kind:        string(WorkItemKindArchitect),
+		Source:      structuredObjectiveSourceUserExplicit,
+		Required:    true,
+	}})
+	ledger = mergeStructuredObjectiveLedger(ledger, []StructuredObjective{{
+		ID:       "build_react_app",
+		Status:   "satisfied",
+		Evidence: "architect queue passed",
+	}})
+
+	if len(ledger) != 1 {
+		t.Fatalf("ledger = %#v", ledger)
+	}
+	if ledger[0].Kind != string(WorkItemKindArchitect) {
+		t.Fatalf("kind was not preserved after merge: %#v", ledger[0])
 	}
 }
 
@@ -5233,6 +5259,9 @@ func TestPromptInterpreterFallbackBuildsReactObjective(t *testing.T) {
 	if interpretation.ObjectiveLedger[0].ID != "build_react_app" {
 		t.Fatalf("objective = %#v", interpretation.ObjectiveLedger[0])
 	}
+	if interpretation.ObjectiveLedger[0].Kind != string(WorkItemKindArchitect) {
+		t.Fatalf("objective kind = %q", interpretation.ObjectiveLedger[0].Kind)
+	}
 	if interpretation.UserOperation != userOperationCreateNewProject {
 		t.Fatalf("operation = %q", interpretation.UserOperation)
 	}
@@ -5251,7 +5280,7 @@ func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.
 		}},
 	})
 	content := joinOllamaMessageContent(req.Messages)
-	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger", "requires_reference_history", "available_recipes", "selected_recipe_ids", "frontend.stimulus-tailwind-recyclr", "Return one compact JSON object only"} {
+	for _, want := range []string{"prompt interpreter specialist", "structured objectives", "Do not choose shell commands", "objective_ledger", "kind=read|create|update|delete|verify|architect", "requires_reference_history", "available_recipes", "selected_recipe_ids", "frontend.stimulus-tailwind-recyclr", "Return one compact JSON object only"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("interpreter request missing %q: %s", want, content)
 		}
@@ -5260,7 +5289,7 @@ func TestPromptInterpreterRequestHasNoCommandsAndReturnsLedgerSchema(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(formatBlob), "objective_ledger") || !strings.Contains(string(formatBlob), "requires_reference_history") || !strings.Contains(string(formatBlob), "selected_recipe_ids") || strings.Contains(string(formatBlob), "command") {
+	if !strings.Contains(string(formatBlob), "objective_ledger") || !strings.Contains(string(formatBlob), `"kind"`) || !strings.Contains(string(formatBlob), "requires_reference_history") || !strings.Contains(string(formatBlob), "selected_recipe_ids") || strings.Contains(string(formatBlob), "command") {
 		t.Fatalf("interpreter format should only require objective ledger: %s", string(formatBlob))
 	}
 }

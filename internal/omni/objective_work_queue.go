@@ -240,9 +240,13 @@ func BuildObjectiveWorkItemsFromLedger(prompt string, ledger []StructuredObjecti
 		if strings.TrimSpace(objective.ID) == "" || !structuredObjectiveBlocksCompletion(objective) {
 			continue
 		}
+		kind := objectiveWorkItemKindFromStructuredObjective(objective)
+		if kind == "" {
+			kind = objectiveWorkItemKind(prompt, objective)
+		}
 		item := ObjectiveWorkItem{
 			ID:          objective.ID,
-			Kind:        objectiveWorkItemKind(prompt, objective),
+			Kind:        kind,
 			Scope:       WorkItemScope{Root: workingDir},
 			Instruction: strings.TrimSpace(objective.Description),
 			Status:      WorkItemStatusPending,
@@ -265,6 +269,25 @@ func pendingAndSatisfiedObjectives(ledger []StructuredObjective) []StructuredObj
 		}
 	}
 	return out
+}
+
+func objectiveWorkItemKindFromStructuredObjective(objective StructuredObjective) WorkItemKind {
+	switch WorkItemKind(strings.TrimSpace(strings.ToLower(objective.Kind))) {
+	case WorkItemKindRead:
+		return WorkItemKindRead
+	case WorkItemKindCreate:
+		return WorkItemKindCreate
+	case WorkItemKindUpdate:
+		return WorkItemKindUpdate
+	case WorkItemKindDelete:
+		return WorkItemKindDelete
+	case WorkItemKindVerify:
+		return WorkItemKindVerify
+	case WorkItemKindArchitect:
+		return WorkItemKindArchitect
+	default:
+		return ""
+	}
 }
 
 func objectiveWorkItemKind(prompt string, objective StructuredObjective) WorkItemKind {

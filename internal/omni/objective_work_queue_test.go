@@ -58,6 +58,7 @@ func TestBuildObjectiveWorkItemsConvertsInputLedgerToTopLevelItems(t *testing.T)
 		ID:          "complete_notes_app",
 		Description: "Implement the notes app UI",
 		Status:      "pending",
+		Kind:        string(WorkItemKindArchitect),
 		Required:    true,
 		Source:      structuredObjectiveSourceUserExplicit,
 	}}, t.TempDir(), WorksiteSurvey{})
@@ -70,6 +71,27 @@ func TestBuildObjectiveWorkItemsConvertsInputLedgerToTopLevelItems(t *testing.T)
 	}
 	if len(items[0].Children) == 0 {
 		t.Fatalf("architect item should create nested child queue: %#v", items[0])
+	}
+}
+
+func TestBuildObjectiveWorkItemsUsesExplicitObjectiveKind(t *testing.T) {
+	items := BuildObjectiveWorkItemsFromLedger("build a notes app", []StructuredObjective{{
+		ID:          "inspect_notes_source",
+		Description: "Build wording should not override typed read intent",
+		Status:      "pending",
+		Kind:        string(WorkItemKindRead),
+		Required:    true,
+		Source:      structuredObjectiveSourceUserExplicit,
+	}}, t.TempDir(), WorksiteSurvey{})
+
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].Kind != WorkItemKindRead {
+		t.Fatalf("explicit objective kind was not preserved: %#v", items[0])
+	}
+	if len(items[0].Children) != 0 {
+		t.Fatalf("read objective should not be expanded into architect children: %#v", items[0])
 	}
 }
 
