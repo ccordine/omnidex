@@ -201,18 +201,25 @@ func architectRepairWorkItemFromObservations(targetRoot string, observations []S
 		if path == "" && viteCSSPostError(obs.Stderr+"\n"+obs.Stdout) {
 			path = "src/App.css"
 		}
+		if path == "" && strings.Contains(obs.Stderr+"\n"+obs.Stdout, "Cannot find module '@vitejs/plugin-react'") {
+			path = "package.json"
+		}
 		if path == "" {
 			continue
 		}
 		if architectMissingEntryResolvedAfter(path, targetRoot, observations[i+1:]) {
 			return nil
 		}
+		description := "Repair missing Vite entry module referenced by index.html/build output"
+		if path == "package.json" {
+			description = "Repair package metadata for dependency imported by Vite config/build output"
+		}
 		return &ArchitectWorkItem{
 			ID:          "repair_missing_vite_entry_" + sanitizeArchitectWorkItemID(path),
 			Operation:   "update",
 			CWD:         targetRoot,
 			Path:        path,
-			Description: "Repair missing Vite entry module referenced by index.html/build output",
+			Description: description,
 			Verify:      "npm run build",
 		}
 	}
@@ -501,13 +508,27 @@ func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, obser
 		return false
 	case "verify":
 		verify := normalizeStructuredCommandForComparison(commandInArchitectCWD(item.CWD, item.Verify))
-		for _, obs := range observations {
+		latestPackageMutation := latestArchitectApplyObservationIndex(item.CWD, "package.json", observations)
+		for i, obs := range observations {
 			if obs.ExitCode == 0 && normalizeStructuredCommandForComparison(obs.Command) == verify {
+				if normalizeStructuredCommandForComparison(item.Verify) == "npm install" && latestPackageMutation >= 0 && i < latestPackageMutation {
+					continue
+				}
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func latestArchitectApplyObservationIndex(cwd, path string, observations []StructuredCommandObservation) int {
+	item := ArchitectWorkItem{Operation: "update", CWD: cwd, Path: path}
+	for i := len(observations) - 1; i >= 0; i-- {
+		if observations[i].ExitCode == 0 && architectApplyObservationMatches(item, observations[i]) {
+			return i
+		}
+	}
+	return -1
 }
 
 func architectWorkItemIsTestFirst(item ArchitectWorkItem) bool {
@@ -525,7 +546,9 @@ func validateCodeContentProposalForArchitectItem(content string, contract Implem
 	switch path {
 	case "package.json":
 		var pkg struct {
-			Scripts map[string]string `json:"scripts"`
+			Scripts         map[string]string `json:"scripts"`
+			Dependencies    map[string]string `json:"dependencies"`
+			DevDependencies map[string]string `json:"devDependencies"`
 		}
 		if err := json.Unmarshal([]byte(trimmed), &pkg); err != nil {
 			return fmt.Errorf("package.json content must be valid JSON: %w", err)
@@ -538,6 +561,9 @@ func validateCodeContentProposalForArchitectItem(content string, contract Implem
 		}
 		if workQueueContainsPath(contract.WorkQueue, "scripts/smoke-test.mjs") && !strings.Contains(pkg.Scripts["test"], "scripts/smoke-test.mjs") {
 			return fmt.Errorf("package.json test script must run scripts/smoke-test.mjs")
+		}
+		if workQueueContainsPath(contract.WorkQueue, "vite.config.js") && pkg.Dependencies["@vitejs/plugin-react"] == "" && pkg.DevDependencies["@vitejs/plugin-react"] == "" {
+			return fmt.Errorf("package.json must include @vitejs/plugin-react because vite.config.js imports it")
 		}
 	case "vite.config.js":
 		if !strings.Contains(lower, "defineconfig") || !strings.Contains(lower, "@vitejs/plugin-react") {

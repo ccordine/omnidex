@@ -4349,7 +4349,7 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 		`{"command":"","done":true,"answer":"React music production app implemented"}`,
 	}}
 	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
-		{Content: `{"scripts":{"test":"node scripts/smoke-test.mjs","build":"test -s src/App.js && test -s scripts/smoke-test.mjs"},"dependencies":{},"devDependencies":{}}` + "\n", Rationale: "package metadata"},
+		{Content: `{"scripts":{"test":"node scripts/smoke-test.mjs","build":"test -s src/App.js && test -s scripts/smoke-test.mjs"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}` + "\n", Rationale: "package metadata"},
 		{Content: "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()] });\n", Rationale: "vite config"},
 		{Content: `<div id="root"></div><script type="module" src="/src/main.jsx"></script>` + "\n", Rationale: "html shell"},
 		{Content: "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.js';\ncreateRoot(document.getElementById('root')).render(<App />);\n", Rationale: "mount entry"},

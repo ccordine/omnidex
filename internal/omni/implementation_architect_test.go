@@ -137,6 +137,57 @@ func TestArchitectWriteOperationStaysStableAfterObservedCreate(t *testing.T) {
 	}
 }
 
+func TestReactPackageValidationRequiresImportedVitePluginDependency(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React app.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	item := ArchitectWorkItem{Operation: "create", CWD: ".", Path: "package.json"}
+	content := `{"scripts":{"build":"vite build","test":"node scripts/smoke-test.mjs"},"dependencies":{"react":"latest","react-dom":"latest","vite":"latest"}}`
+	err := validateCodeContentProposalForArchitectItem(content, contract, item)
+	if err == nil || !strings.Contains(err.Error(), "@vitejs/plugin-react") {
+		t.Fatalf("package without plugin dependency was accepted: %v", err)
+	}
+}
+
+func TestArchitectRepairRoutesMissingVitePluginToPackageJSON(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React app.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		[]StructuredCommandObservation{{
+			Command:  "npm run build",
+			ExitCode: 1,
+			Stderr:   "error during build: Error: Cannot find module '@vitejs/plugin-react'",
+		}},
+	)
+	if contract.CurrentItem == nil {
+		t.Fatal("expected repair work item")
+	}
+	if contract.CurrentItem.Operation != "update" || contract.CurrentItem.Path != "package.json" {
+		t.Fatalf("repair item = %#v", contract.CurrentItem)
+	}
+}
+
+func TestNPMInstallMustRunAfterPackageJSONMutation(t *testing.T) {
+	item := ArchitectWorkItem{ID: "install_react_dependencies", Operation: "verify", CWD: ".", Verify: "npm install"}
+	observations := []StructuredCommandObservation{
+		{Command: "npm install", ExitCode: 0},
+		{Command: "architect.apply update package.json", ExitCode: 0},
+	}
+	if architectWorkItemSatisfied(item, t.TempDir(), observations) {
+		t.Fatal("npm install before package.json update should not satisfy install work item")
+	}
+	observations = append(observations, StructuredCommandObservation{Command: "npm install", ExitCode: 0})
+	if !architectWorkItemSatisfied(item, t.TempDir(), observations) {
+		t.Fatal("npm install after package.json update should satisfy install work item")
+	}
+}
+
 func TestArchitectApplyObservationMatchesCreateUpdateWriteEvidence(t *testing.T) {
 	item := ArchitectWorkItem{Operation: "update", CWD: ".", Path: "package.json"}
 	obs := StructuredCommandObservation{Command: "architect.apply create package.json", ExitCode: 0}
