@@ -4349,13 +4349,18 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 		`{"command":"","done":true,"answer":"React music production app implemented"}`,
 	}}
 	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
-		{Content: "test('renders sequencer controls', () => {});\n", Rationale: "test first"},
-		{Content: "export default function App() { return <main>Sequencer Transport Tempo Tracks</main>; }\n", Rationale: "implementation after test"},
+		{Content: `{"scripts":{"test":"node scripts/smoke-test.mjs","build":"test -s src/App.js && test -s scripts/smoke-test.mjs"},"dependencies":{},"devDependencies":{}}` + "\n", Rationale: "package metadata"},
+		{Content: "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()] });\n", Rationale: "vite config"},
+		{Content: `<div id="root"></div><script type="module" src="/src/index.js"></script>` + "\n", Rationale: "html shell"},
+		{Content: "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.js';\ncreateRoot(document.getElementById('root')).render(<App />);\n", Rationale: "mount entry"},
+		{Content: "import fs from 'node:fs';\nconst app = fs.readFileSync('src/App.js','utf8');\nif (!app.includes('Sequencer') || !app.includes('Tempo') || !app.includes('Studio')) process.exit(1);\n", Rationale: "test first"},
+		{Content: "import React, { useState } from 'react';\nexport default function App() { const [tempo,setTempo]=useState(128); return React.createElement('main', { className: 'studio' }, React.createElement('button', { type: 'button' }, 'Transport'), React.createElement('input', { type: 'range', value: tempo, onChange: e=>setTempo(e.target.value) }), React.createElement('section', null, 'Music Studio Sequencer Channel Rack Mixer Tempo Tracks')); }\n", Rationale: "implementation after test"},
+		{Content: ".studio { display: grid; } .channel-rack { color: white; } .mixer { color: white; } .timeline { color: white; }\n", Rationale: "style"},
 	}}
 	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
 		{Verdict: "accept", Confidence: 100, Feedback: "final alignment"},
 	}}
-	checker := &fakeCompletionChecker{checks: []CompletionCheck{{Done: true, Reason: "architect test and implementation files were applied"}}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{Done: false, Reason: "stale completion checker should not override typed architect evidence"}}}
 	events := []StructuredCommandEvent{}
 	result, err := runStructuredCommandDecisionWithConfig(
 		context.Background(),
@@ -4380,19 +4385,31 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 	if len(code.inputs) < 2 {
 		t.Fatalf("code specialist calls = %d, want at least test then implementation", len(code.inputs))
 	}
-	if !code.inputs[0].TestFirst || code.inputs[0].WorkItem.Path != "src/App.test.js" {
-		t.Fatalf("first code item should be test-first App.test.js: %#v", code.inputs[0])
+	if code.inputs[0].TestFirst || code.inputs[0].WorkItem.Path != "package.json" {
+		t.Fatalf("first code item should be package metadata: %#v", code.inputs[0])
 	}
-	if code.inputs[1].TestFirst || code.inputs[1].WorkItem.Path != "src/App.js" {
-		t.Fatalf("second code item should be implementation App.js: %#v", code.inputs[1])
+	if !code.inputs[4].TestFirst || code.inputs[4].WorkItem.Path != "scripts/smoke-test.mjs" {
+		t.Fatalf("fifth code item should be test-first smoke probe: %#v", code.inputs[4])
+	}
+	if code.inputs[5].TestFirst || code.inputs[5].WorkItem.Path != "src/App.js" {
+		t.Fatalf("sixth code item should be implementation App.js: %#v", code.inputs[5])
 	}
 	if len(evaluator.inputs) != 1 {
-		t.Fatalf("evaluator calls = %d, want only final done evaluation after architect work", len(evaluator.inputs))
+		t.Fatalf("evaluator calls = %d, want only final broad evaluator after architect-scoped validators pass", len(evaluator.inputs))
+	}
+	if evaluator.inputs[0].ValidationScope != "alignment_after_typed_recursive_completion" {
+		t.Fatalf("evaluator scope = %q, want final typed-completion alignment", evaluator.inputs[0].ValidationScope)
+	}
+	if len(checker.inputs) != 0 {
+		t.Fatalf("completion checker calls = %d, want typed final gate to avoid stale LLM done veto", len(checker.inputs))
 	}
 	if !structuredEventsContain(events, "structured_evaluator_bypassed_for_architect") {
 		t.Fatalf("missing architect evaluator bypass event: %#v", events)
 	}
-	appTest, err := os.ReadFile(filepath.Join(app, "src", "App.test.js"))
+	if !structuredEventsContain(events, "completion_check_accepted_from_typed_final_gate") {
+		t.Fatalf("missing typed final gate acceptance event: %#v", events)
+	}
+	appTest, err := os.ReadFile(filepath.Join(app, "scripts", "smoke-test.mjs"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4400,7 +4417,7 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(appTest), "sequencer") || !strings.Contains(string(appJS), "Tempo") {
+	if !strings.Contains(string(appTest), "Sequencer") || !strings.Contains(string(appJS), "Tempo") {
 		t.Fatalf("unexpected files: test=%q app=%q", string(appTest), string(appJS))
 	}
 	if result.Answer != "React music production app implemented" {
@@ -4430,6 +4447,70 @@ func TestArchitectWorkItemRequiresCurrentRunEvidenceNotExistingFile(t *testing.T
 	}
 }
 
+func TestLatestFailedCommandOutputTargetsFailedProofCommand(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{Command: "reject placeholder", ExitCode: 1, Stderr: "placeholder-only command does not satisfy app objectives"},
+		{Command: "cd react-music-production && npm run build", ExitCode: 1, Stderr: "Failed to resolve /src/main.js from /tmp/index.html"},
+	}
+	got := latestFailedCommandOutput(observations, "cd react-music-production && npm run build")
+	if !strings.Contains(got, "Failed to resolve /src/main.js") {
+		t.Fatalf("latest failed command output = %q", got)
+	}
+	if strings.Contains(got, "placeholder-only") {
+		t.Fatalf("proof feedback should not use stale validator text: %q", got)
+	}
+}
+
+func TestReactUIBuildEvidenceSatisfiesStudioObjectives(t *testing.T) {
+	obs := StructuredCommandObservation{
+		Command:  "npm run build",
+		ExitCode: 0,
+		Stdout:   "dist/index.html\n✓ built in 80ms",
+	}
+	for _, objective := range []StructuredObjective{
+		{ID: "create_entrypoint", Description: "Create the React entrypoint"},
+		{ID: "setup_pattern_step_sequencer", Description: "Set up the pattern step sequencer"},
+		{ID: "create_channel_rack", Description: "Create the channel rack"},
+		{ID: "implement_mixer_controls", Description: "Implement mixer controls"},
+		{ID: "develop_transport_controls", Description: "Develop transport controls"},
+	} {
+		if !structuredObservationSatisfiesObjective(obs, objective) {
+			t.Fatalf("build evidence did not satisfy %#v", objective)
+		}
+	}
+}
+
+func TestNPMBuildCountsAsPostWriteValidation(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{Command: "npm install", ExitCode: 0},
+		{Command: "npm run build", ExitCode: 0, Stdout: "✓ built in 78ms"},
+	}
+	ledger := []StructuredObjective{{
+		ID:          "react_music_app",
+		Description: "Build the React music production app",
+		Status:      "satisfied",
+		Source:      structuredObjectiveSourceUserExplicit,
+		Required:    true,
+	}}
+	if structuredCompletionNeedsPostWriteValidation("build a React music production app", ledger, observations) {
+		t.Fatal("npm run build after npm install should satisfy post-write validation")
+	}
+	if !deterministicCompletionEnforcerAcceptsDone("build a React music production app", ledger, observations) {
+		t.Fatal("deterministic completion enforcer should accept done after a passing npm build")
+	}
+}
+
+func TestShouldDeferBroadEvaluatorForArchitectCompletionWhileRepairPending(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{Command: "architect.apply update package.json", ExitCode: 0},
+		{Command: "cd . && npm run build", ExitCode: 1, Stderr: "Failed to resolve /src/main.jsx from /tmp/index.html"},
+	}
+	payload := StructuredCommandPayload{Done: true, Answer: "done"}
+	if !shouldDeferBroadEvaluatorForArchitectCompletion(payload, "build a React music production app", t.TempDir(), WorksiteSurvey{PackageManager: packageManagerNPM}, observations) {
+		t.Fatal("expected broad evaluator to defer while architect repair item is pending")
+	}
+}
+
 func TestStructuredCommandDecisionArchitectLaneRunsProofBeforeFinalEvaluator(t *testing.T) {
 	workspace := t.TempDir()
 	app := filepath.Join(workspace, "react-music-production")
@@ -4444,9 +4525,13 @@ func TestStructuredCommandDecisionArchitectLaneRunsProofBeforeFinalEvaluator(t *
 		`{"command":"","done":true,"answer":"React music production app implemented and verified","objective_ledger":[{"id":"react_music_app","description":"Build the React music production app","status":"satisfied","source":"user_explicit","required":true,"evidence":"architect applied test, implementation, style, and npm run build passed"}]}`,
 	}}
 	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
-		{Content: "test('renders transport controls', () => {});\n", Rationale: "proof first"},
-		{Content: "export default function App() { return <main>Transport Tempo Tracks</main>; }\n", Rationale: "implementation"},
-		{Content: "body { font-family: sans-serif; }\n", Rationale: "style"},
+		{Content: `{"scripts":{"test":"node scripts/smoke-test.mjs","build":"test -s src/App.js && test -s scripts/smoke-test.mjs"},"dependencies":{},"devDependencies":{}}` + "\n", Rationale: "package metadata"},
+		{Content: "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()] });\n", Rationale: "vite config"},
+		{Content: `<div id="root"></div><script type="module" src="/src/index.js"></script>` + "\n", Rationale: "html shell"},
+		{Content: "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.js';\ncreateRoot(document.getElementById('root')).render(<App />);\n", Rationale: "mount entry"},
+		{Content: "import fs from 'node:fs';\nconst app = fs.readFileSync('src/App.js','utf8');\nif (!app.includes('Transport') || !app.includes('Tempo') || !app.includes('Studio')) process.exit(1);\n", Rationale: "proof first"},
+		{Content: "import React, { useState } from 'react';\nexport default function App() { const [tempo,setTempo]=useState(128); return React.createElement('main', { className: 'studio' }, React.createElement('button', { type: 'button' }, 'Transport'), React.createElement('input', { type: 'range', value: tempo, onChange: e=>setTempo(e.target.value) }), React.createElement('section', null, 'Music Studio Sequencer Channel Rack Mixer Tempo Tracks')); }\n", Rationale: "implementation"},
+		{Content: ".studio { display: grid; } .channel-rack { color: white; } .mixer { color: white; } .timeline { color: white; }\n", Rationale: "style"},
 	}}
 	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
 		{Verdict: "accept", Confidence: 100, Feedback: "final alignment"},

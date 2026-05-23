@@ -45,8 +45,141 @@ func TestBuildImplementationArchitectContractTargetsNestedReactRoot(t *testing.T
 	if !stringSliceContains(contract.ValidatorScopes, "alignment_validator: after implementation evidence exists, check the completed work against user objectives without adding unrequested expectations.") {
 		t.Fatalf("validator scopes = %#v", contract.ValidatorScopes)
 	}
-	if contract.CurrentItem == nil || contract.CurrentItem.ID != "write_react_acceptance_test" || contract.CurrentItem.CWD != "react-music-production" || contract.CurrentItem.Path != "src/App.test.js" {
+	if contract.CurrentItem == nil || contract.CurrentItem.ID != "setup_react_package_metadata" || contract.CurrentItem.CWD != "react-music-production" || contract.CurrentItem.Path != "package.json" {
 		t.Fatalf("current item = %#v", contract.CurrentItem)
+	}
+}
+
+func TestBuildImplementationArchitectContractIncludesReactBuildPrerequisites(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React JS browser-based music production studio with pattern step sequencer, channel rack, mixer controls, transport controls, tempo control, piano roll or note grid, sample/instrument pads, visual timeline, and a polished production-studio UI.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	got := []string{}
+	for _, item := range contract.WorkQueue {
+		got = append(got, item.ID+":"+item.Path+":"+item.Verify)
+	}
+	for _, want := range []string{
+		"setup_react_package_metadata:package.json:npm test",
+		"create_react_html_shell:index.html:npm test",
+		"create_react_mount_entry:src/index.js:npm test",
+		"write_react_acceptance_test:scripts/smoke-test.mjs:npm test",
+		"install_react_dependencies::npm install",
+		"verify_react_build::npm run build",
+	} {
+		if !stringSliceContains(got, want) {
+			t.Fatalf("work queue missing %q: %#v", want, got)
+		}
+	}
+	for _, want := range []string{"pattern step sequencer", "channel rack", "mixer controls", "transport controls", "tempo control", "piano roll", "note grid", "sample/instrument pads", "visual timeline", "production-studio ui"} {
+		if !stringSliceContains(contract.AcceptanceCriteria, want) {
+			t.Fatalf("acceptance criteria missing %q: %#v", want, contract.AcceptanceCriteria)
+		}
+	}
+}
+
+func TestValidateReactStylesheetRejectsUnmatchedPlaceholderCSS(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React JS browser-based music production studio with channel rack, mixer controls, visual timeline, piano roll, and sample/instrument pads.",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	item := ArchitectWorkItem{ID: "style_react_app", Operation: "update", CWD: ".", Path: "src/App.css"}
+	content := `body { color: white; }
+.studio-surface { padding: 20px; }
+.channel-rack, .mixer-controls, .transport-controls, .piano-roll, .sample-pads, .visual-timeline { display: flex; }
+/* Add more styles as needed */
+`
+	if err := validateCodeContentProposalForArchitectItem(content, contract, item); err == nil {
+		t.Fatal("expected unmatched placeholder CSS to be rejected")
+	}
+	if err := validateCodeContentProposalForArchitectItem(deterministicReactMusicStudioCSS(), contract, item); err != nil {
+		t.Fatalf("deterministic CSS should pass tightened selector validation: %v", err)
+	}
+}
+
+func TestBuildImplementationArchitectContractRepairsMissingViteEntry(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{
+			Command:  "cd react-music-production && npm run build",
+			ExitCode: 1,
+			Stderr:   "[vite]: Rollup failed to resolve import \"/src/main.js\" from \"/tmp/index.html\".",
+		},
+		{
+			Command:  "cd react-music-production && sed -n '1,120p' index.html",
+			ExitCode: 0,
+			Stdout:   "<script type=\"module\" src=\"/src/main.js\"></script>",
+		},
+	}
+	contract := buildImplementationArchitectContract("build a React music app", "Implementation architect target root: react-music-production. Continue implementation.", t.TempDir(), WorksiteSurvey{PackageManager: packageManagerNPM}, observations)
+	if contract.CurrentItem == nil {
+		t.Fatal("expected missing Vite entry repair item")
+	}
+	if contract.CurrentItem.ID != "repair_missing_vite_entry_src_main_js" {
+		t.Fatalf("repair id = %q", contract.CurrentItem.ID)
+	}
+	if contract.CurrentItem.Operation != "update" || contract.CurrentItem.CWD != "react-music-production" || contract.CurrentItem.Path != "src/main.js" || contract.CurrentItem.Verify != "npm run build" {
+		t.Fatalf("repair item = %#v", contract.CurrentItem)
+	}
+}
+
+func TestBuildImplementationArchitectContractRepairsViteSyntaxErrorFile(t *testing.T) {
+	observations := []StructuredCommandObservation{{
+		Command:  "npm run build",
+		ExitCode: 1,
+		Stderr:   "[builtin:vite-transform] Unexpected token\n  ╭─[ src/App.js:40:5 ]\n",
+	}}
+	contract := buildImplementationArchitectContract("build a React music app", "Implementation architect target root: . Continue implementation.", t.TempDir(), WorksiteSurvey{PackageManager: packageManagerNPM}, observations)
+	if contract.CurrentItem == nil {
+		t.Fatal("expected syntax error repair item")
+	}
+	if contract.CurrentItem.Path != "src/App.js" || contract.CurrentItem.Operation != "update" || contract.CurrentItem.Verify != "npm run build" {
+		t.Fatalf("repair item = %#v", contract.CurrentItem)
+	}
+}
+
+func TestBuildImplementationArchitectContractRepairsCSSPostFailure(t *testing.T) {
+	observations := []StructuredCommandObservation{{
+		Command:  "npm run build",
+		ExitCode: 1,
+		Stderr:   "[plugin vite:css-post]\nSyntaxError: [lightningcss minify] Invalid dangling combinator in selector\n1  |  /* App.js */\n2  |  import React from 'react';",
+	}}
+	contract := buildImplementationArchitectContract("build a React music app", "Implementation architect target root: . Continue implementation.", t.TempDir(), WorksiteSurvey{PackageManager: packageManagerNPM}, observations)
+	if contract.CurrentItem == nil {
+		t.Fatal("expected css repair item")
+	}
+	if contract.CurrentItem.Path != "src/App.css" || contract.CurrentItem.Operation != "update" || contract.CurrentItem.Verify != "npm run build" {
+		t.Fatalf("repair item = %#v", contract.CurrentItem)
+	}
+}
+
+func TestBuildImplementationArchitectContractClearsMissingViteEntryAfterRepairOrPassingBuild(t *testing.T) {
+	failedBuild := StructuredCommandObservation{
+		Command:  "cd react-music-production && npm run build",
+		ExitCode: 1,
+		Stderr:   "Failed to resolve /src/main.js from /tmp/index.html",
+	}
+	afterApply := []StructuredCommandObservation{
+		failedBuild,
+		{Command: "architect.apply update react-music-production/src/main.js", ExitCode: 0, Stdout: "wrote src/main.js"},
+	}
+	contract := buildImplementationArchitectContract("build a React music app", "Implementation architect target root: react-music-production. Continue implementation.", t.TempDir(), WorksiteSurvey{PackageManager: packageManagerNPM}, afterApply)
+	if contract.CurrentItem != nil && contract.CurrentItem.ID == "repair_missing_vite_entry_src_main_js" {
+		t.Fatalf("repair should clear after matching apply: %#v", contract.CurrentItem)
+	}
+
+	afterPassingBuild := []StructuredCommandObservation{
+		failedBuild,
+		{Command: "cd react-music-production && npm run build", ExitCode: 0, Stdout: "built"},
+	}
+	contract = buildImplementationArchitectContract("build a React music app", "Implementation architect target root: react-music-production. Continue implementation.", t.TempDir(), WorksiteSurvey{PackageManager: packageManagerNPM}, afterPassingBuild)
+	if contract.CurrentItem != nil && contract.CurrentItem.ID == "repair_missing_vite_entry_src_main_js" {
+		t.Fatalf("repair should clear after passing build: %#v", contract.CurrentItem)
 	}
 }
 
@@ -157,7 +290,21 @@ func TestValidateStructuredCommandForRunWithArchitectRejectsDirectWrongEdit(t *t
 	if err == nil {
 		t.Fatal("expected direct edit outside current test-first item to be rejected")
 	}
-	if !strings.Contains(err.Error(), "write_react_acceptance_test") {
+	if !strings.Contains(err.Error(), "setup_react_package_metadata") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateStructuredCommandForRunWithArchitectRejectsDirectBuildDuringRepair(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{Command: "architect.apply update package.json", ExitCode: 0},
+		{Command: "cd . && npm run build", ExitCode: 1, Stderr: "Error: Failed to resolve /src/main.jsx from /tmp/index.html"},
+	}
+	err := validateStructuredCommandForRunWithArchitect("npm run build", "build a React music production app", "", "", observations, t.TempDir(), []StructuredObjective{{ID: "build_app", Status: "pending", Required: true}}, WorksiteSurvey{PackageManager: packageManagerNPM})
+	if err == nil {
+		t.Fatal("expected direct build retry to be rejected while missing-entry repair is current")
+	}
+	if !strings.Contains(err.Error(), "repair_missing_vite_entry_src_main_jsx") || !strings.Contains(err.Error(), "src/main.jsx") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

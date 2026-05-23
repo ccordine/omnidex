@@ -602,6 +602,7 @@ func structuredCommandLooksMutating(command string) bool {
 	lower := strings.ToLower(command)
 	mutationNeedles := []string{
 		">", "tee ", "cat <<", "node <<", "python <<", "python3 <<", "apply_patch",
+		"architect.apply",
 		"npm install", "npm pkg set", "npm init", "mkdir", "touch", "cp ", "mv ", "rm ",
 		" -delete", "webpack", "npm run build", "npm test",
 	}

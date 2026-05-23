@@ -309,6 +309,10 @@ func objectiveWorkItemKind(prompt string, objective StructuredObjective) WorkIte
 
 func architectChildrenForObjective(prompt string, objective StructuredObjective, workingDir string, survey WorksiteSurvey) []ObjectiveWorkItem {
 	contract := buildImplementationArchitectContract(prompt, "Implementation architect target root: "+architectTargetRootForWorkQueue(workingDir)+". Create or modify the actual project files.", workingDir, survey, nil)
+	return architectChildrenFromContract(objective.ID, contract, workingDir)
+}
+
+func architectChildrenFromContract(parentID string, contract ImplementationArchitectContract, workingDir string) []ObjectiveWorkItem {
 	children := []ObjectiveWorkItem{}
 	for _, archItem := range contract.WorkQueue {
 		kind := WorkItemKindUpdate
@@ -319,8 +323,8 @@ func architectChildrenForObjective(prompt string, objective StructuredObjective,
 			kind = WorkItemKindVerify
 		}
 		child := ObjectiveWorkItem{
-			ID:          objective.ID + "." + archItem.ID,
-			ParentID:    objective.ID,
+			ID:          parentID + "." + archItem.ID,
+			ParentID:    parentID,
 			Kind:        kind,
 			Scope:       WorkItemScope{Root: filepath.Join(workingDir, archItem.CWD), Paths: []string{archItem.Path}},
 			Instruction: archItem.Description,
