@@ -6053,6 +6053,59 @@ func TestArchitectFileWorkDoesNotFallThroughToShellPathSelection(t *testing.T) {
 	}
 }
 
+func TestPlannerCommandPreemptedByArchitectCurrentItem(t *testing.T) {
+	workspace := t.TempDir()
+	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{{
+		Content:   `{"name":"music-studio","version":"0.1.0","type":"module","scripts":{"dev":"vite","build":"vite build","test":"node scripts/smoke-test.mjs","preview":"vite preview"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}`,
+		Rationale: "valid package metadata",
+	}}}
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	handled, err := runArchitectLaneForCurrentItemBeforePlannerCommand(
+		context.Background(),
+		4,
+		"Build a React music production studio app",
+		"",
+		"close",
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			CodeContentSpecialist:   code,
+		},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected architect current item to preempt planner command")
+	}
+	if !structuredEventsContain(events, "planner_command_preempted_for_architect_item") {
+		t.Fatalf("missing preemption event: %#v", events)
+	}
+	if !structuredEventsContain(events, "architect_work_item_applied") {
+		t.Fatalf("architect lane did not apply current item: %#v", events)
+	}
+	appliedPackage := false
+	for _, obs := range result.Observations {
+		if obs.Command == "architect.apply update package.json" {
+			appliedPackage = true
+		}
+		if obs.Command == "close" || obs.RejectedCommand == "close" {
+			t.Fatalf("preempted planner command was executed or rejected instead of bypassed: %#v", result.Observations)
+		}
+	}
+	if !appliedPackage {
+		t.Fatalf("architect lane did not apply package.json current item: %#v", result.Observations)
+	}
+	if len(code.inputs) == 0 || code.inputs[0].WorkItem.Path != "package.json" {
+		t.Fatalf("code specialist was not first grounded to package.json current item: %#v", code.inputs)
+	}
+}
+
 func TestValidateShellProposalRequiresArchitectTargetRoot(t *testing.T) {
 	toolTask := "Recovery required. Implementation architect target root: react-music-production. All source edits, package scripts, and verification commands for this app must run inside react-music-production or use paths under react-music-production/."
 	if err := validateShellProposalAgainstToolTask(`cat > src/App.js <<'JS'

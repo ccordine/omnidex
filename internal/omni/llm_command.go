@@ -1060,6 +1060,14 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			continue
 		}
+		if strings.TrimSpace(payload.Command) != "" {
+			if handled, err := runArchitectLaneForCurrentItemBeforePlannerCommand(ctx, step, prompt, payload.ToolTask, payload.Command, cfg, worksiteSurvey, stdout, stderr, onEvent, &result); handled || err != nil {
+				if err != nil {
+					return result, err
+				}
+				continue
+			}
+		}
 		if payload.Done && strings.TrimSpace(payload.Command) != "" && len(pendingStructuredObjectives(ledger)) > 0 && !repeatedSuccessfulStructuredCommand(payload.Command, result.Observations) {
 			emitStructuredCommandEvent(onEvent, "structured_done_ignored", "Done flag ignored for non-empty command", map[string]string{
 				"step":   fmt.Sprintf("%d", step),
@@ -3937,6 +3945,17 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 	return handled, nil
 }
 
+func runArchitectLaneForCurrentItemBeforePlannerCommand(ctx context.Context, step int, prompt, toolTask, command string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+	if strings.TrimSpace(command) == "" || cfg.CodeContentSpecialist == nil || !architectCurrentItemPending(prompt, toolTask, cfg, worksiteSurvey, result.Observations) {
+		return false, nil
+	}
+	emitStructuredCommandEvent(onEvent, "planner_command_preempted_for_architect_item", "Planner command deferred because architect current item owns the next action", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"command": truncateStructuredTimelineValue(command),
+	})
+	return runArchitectCodeContentLane(ctx, step, prompt, toolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, result)
+}
+
 func blockShellFallbackForArchitectFileWork(step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
 	contract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
 	if !hasImplementationArchitectContract(contract) || !architectItemRequiresCodeOwnedFileWork(contract.CurrentItem) {
@@ -3956,6 +3975,11 @@ func blockShellFallbackForArchitectFileWork(step int, prompt, toolTask string, c
 		"path":      path,
 	})
 	return true
+}
+
+func architectCurrentItemPending(prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, observations []StructuredCommandObservation) bool {
+	contract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
+	return hasImplementationArchitectContract(contract) && contract.CurrentItem != nil
 }
 
 func architectItemRequiresCodeOwnedFileWork(item *ArchitectWorkItem) bool {
