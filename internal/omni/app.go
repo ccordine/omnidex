@@ -40,6 +40,7 @@ type App struct {
 	evaluatorThreshold int
 	shellSpecialist    ShellCommandSpecialist
 	codeSpecialist     CodeContentSpecialist
+	cursorArchitect    CursorArchitectAgent
 	recipes            []Recipe
 	enableCommandCache bool
 	commandCacheRoot   string
@@ -175,6 +176,7 @@ func (a *App) Run(args []string) error {
 	a.recipes = loadOptionalRecipes(*recipeRoot)
 	a.enableCommandCache = *enableCommandCache
 	a.commandCacheRoot = *commandCacheRoot
+	a.cursorArchitect = NewCursorSDKArchitectAgentFromEnv()
 
 	if !*noOllama {
 		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)
@@ -239,6 +241,7 @@ func (a *App) Run(args []string) error {
 				EvaluatorThreshold:      a.evaluatorThreshold,
 				ShellSpecialist:         a.shellSpecialist,
 				CodeContentSpecialist:   a.codeSpecialist,
+				CursorArchitectAgent:    a.cursorArchitect,
 				EnableCommandCache:      *enableCommandCache,
 				CommandCacheRoot:        *commandCacheRoot,
 			},
@@ -1321,6 +1324,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			EvaluatorThreshold:      a.evaluatorThreshold,
 			ShellSpecialist:         a.shellSpecialist,
 			CodeContentSpecialist:   a.codeSpecialist,
+			CursorArchitectAgent:    a.cursorArchitect,
 			EnableCommandCache:      a.enableCommandCache,
 			CommandCacheRoot:        a.commandCacheRoot,
 		},

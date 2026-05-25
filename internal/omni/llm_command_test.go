@@ -78,6 +78,13 @@ type fakeCodeContentSpecialist struct {
 	inputs    []CodeContentSpecialistInput
 }
 
+type fakeCursorArchitectAgent struct {
+	results []CursorArchitectAgentResult
+	errors  []error
+	inputs  []CursorArchitectAgentInput
+	run     func(CursorArchitectAgentInput) error
+}
+
 type fakeUserAssistanceSpecialist struct {
 	questions []UserAssistanceQuestion
 	errors    []error
@@ -116,6 +123,28 @@ func (f *fakeCodeContentSpecialist) GenerateCodeContent(ctx context.Context, inp
 	proposal := f.proposals[0]
 	f.proposals = f.proposals[1:]
 	return proposal, nil
+}
+
+func (f *fakeCursorArchitectAgent) RunArchitectTask(ctx context.Context, input CursorArchitectAgentInput) (CursorArchitectAgentResult, error) {
+	f.inputs = append(f.inputs, input)
+	if f.run != nil {
+		if err := f.run(input); err != nil {
+			return CursorArchitectAgentResult{}, err
+		}
+	}
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return CursorArchitectAgentResult{}, err
+		}
+	}
+	if len(f.results) == 0 {
+		return CursorArchitectAgentResult{Summary: "cursor completed"}, nil
+	}
+	result := f.results[0]
+	f.results = f.results[1:]
+	return result, nil
 }
 
 type fakePromptInterpreter struct {
@@ -6174,6 +6203,73 @@ func TestArchitectLaneReadsExistingFileBeforeUpdatingIt(t *testing.T) {
 	}
 	if !strings.Contains(code.inputs[0].ExistingContent, `"test":"old"`) {
 		t.Fatalf("code specialist did not receive existing file content: %#v", code.inputs[0])
+	}
+}
+
+func TestCursorArchitectAgentOwnsCodingTestingAndValidationDelegation(t *testing.T) {
+	workspace := t.TempDir()
+	cursor := &fakeCursorArchitectAgent{
+		results: []CursorArchitectAgentResult{{Summary: "changed files and validated proofs", AgentID: "agent_1", RunID: "run_1"}},
+		run: func(input CursorArchitectAgentInput) error {
+			if input.ArchitectContract.TargetRoot != "." {
+				t.Fatalf("unexpected target root: %#v", input.ArchitectContract)
+			}
+			return os.WriteFile(filepath.Join(input.Workspace, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
+		},
+	}
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	contract := ImplementationArchitectContract{
+		Role:       "implementation_architect",
+		TargetRoot: ".",
+		EditSurface: []string{
+			"main.go",
+		},
+		WorkQueue: []ArchitectWorkItem{{
+			ID:          "write_main",
+			Operation:   "create",
+			CWD:         ".",
+			Path:        "main.go",
+			Description: "Create the CLI entrypoint",
+		}},
+		CurrentItem: &ArchitectWorkItem{
+			ID:          "write_main",
+			Operation:   "create",
+			CWD:         ".",
+			Path:        "main.go",
+			Description: "Create the CLI entrypoint",
+		},
+	}
+	handled, err := runCursorArchitectAgentLane(
+		context.Background(),
+		2,
+		"Create a Go CLI",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		contract,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			CursorArchitectAgent:    cursor,
+		},
+		WorksiteSurvey{},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected cursor architect lane to handle the task")
+	}
+	if len(cursor.inputs) != 1 {
+		t.Fatalf("cursor agent calls = %d, want 1", len(cursor.inputs))
+	}
+	if !structuredEventsContain(events, "cursor_architect_agent_started") || !structuredEventsContain(events, "cursor_architect_agent_completed") || !structuredEventsContain(events, "cursor_architect_validation_passed") {
+		t.Fatalf("missing cursor architect events: %#v", events)
+	}
+	if !hasImplementationArchitectProgress(result.Observations) {
+		t.Fatalf("cursor architect result did not record architect progress: %#v", result.Observations)
 	}
 }
 
