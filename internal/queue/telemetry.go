@@ -1,0 +1,290 @@
+package queue
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
+type TelemetryRunSummary struct {
+	ID                 string          `json:"id"`
+	SessionID          string          `json:"session_id,omitempty"`
+	WorkspaceID        string          `json:"workspace_id,omitempty"`
+	TaskKind           string          `json:"task_kind,omitempty"`
+	ProjectType        string          `json:"project_type,omitempty"`
+	RecipeID           string          `json:"recipe_id,omitempty"`
+	PlaybookID         string          `json:"playbook_id,omitempty"`
+	Status             string          `json:"status"`
+	StartedAt          time.Time       `json:"started_at"`
+	FinishedAt         *time.Time      `json:"finished_at,omitempty"`
+	DurationMS         *int64          `json:"duration_ms,omitempty"`
+	LocalOnly          bool            `json:"local_only"`
+	ExternalAgentsUsed []string        `json:"external_agents_used,omitempty"`
+	Summary            json.RawMessage `json:"summary,omitempty"`
+}
+
+type TelemetryEventSummary struct {
+	ID        string          `json:"id"`
+	RunID     string          `json:"run_id"`
+	Step      *int            `json:"step,omitempty"`
+	EventType string          `json:"event_type"`
+	CreatedAt time.Time       `json:"created_at"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+type TelemetryDashboardSummary struct {
+	LiveRuns       []TelemetryRunSummary   `json:"live_runs"`
+	RecentRuns     []TelemetryRunSummary   `json:"recent_runs,omitempty"`
+	StatusCounts   map[string]int          `json:"status_counts,omitempty"`
+	CommonBlockers []TelemetryCountSummary `json:"common_blockers,omitempty"`
+}
+
+type TelemetryCountSummary struct {
+	Key   string `json:"key"`
+	Count int    `json:"count"`
+}
+
+type TelemetryModelSummary struct {
+	Role          string  `json:"role"`
+	Provider      string  `json:"provider"`
+	Model         string  `json:"model"`
+	Calls         int     `json:"calls"`
+	Successes     int     `json:"successes"`
+	Failures      int     `json:"failures"`
+	Malformed     int     `json:"malformed"`
+	Repaired      int     `json:"repaired"`
+	AvgLatencyMS  float64 `json:"avg_latency_ms"`
+	InputTokens   int     `json:"input_tokens"`
+	OutputTokens  int     `json:"output_tokens"`
+	EstimatedCost string  `json:"estimated_cost_usd,omitempty"`
+}
+
+type TelemetryPlaybookSummary struct {
+	PlaybookID string `json:"playbook_id"`
+	Uses       int    `json:"uses"`
+	Reused     int    `json:"reused"`
+	Successes  int    `json:"successes"`
+	Failures   int    `json:"failures"`
+}
+
+type TelemetryBenchmarkSummary struct {
+	BenchmarkID string  `json:"benchmark_id"`
+	SuiteID     string  `json:"suite_id,omitempty"`
+	Runs        int     `json:"runs"`
+	Successes   int     `json:"successes"`
+	Failures    int     `json:"failures"`
+	AvgDuration float64 `json:"avg_duration_ms"`
+}
+
+func (r *Repository) ListTelemetryRuns(ctx context.Context, limit int) ([]TelemetryRunSummary, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, COALESCE(session_id,''), COALESCE(workspace_id,''), COALESCE(task_kind,''), COALESCE(project_type,''), COALESCE(recipe_id,''), COALESCE(playbook_id,''), status, started_at, finished_at, duration_ms, local_only, external_agents_used, summary
+		FROM omni_runs
+		ORDER BY started_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TelemetryRunSummary{}
+	for rows.Next() {
+		var item TelemetryRunSummary
+		if err := rows.Scan(&item.ID, &item.SessionID, &item.WorkspaceID, &item.TaskKind, &item.ProjectType, &item.RecipeID, &item.PlaybookID, &item.Status, &item.StartedAt, &item.FinishedAt, &item.DurationMS, &item.LocalOnly, &item.ExternalAgentsUsed, &item.Summary); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) GetTelemetryRun(ctx context.Context, id string) (TelemetryRunSummary, []TelemetryEventSummary, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return TelemetryRunSummary{}, nil, fmt.Errorf("run id is required")
+	}
+	var run TelemetryRunSummary
+	err := r.pool.QueryRow(ctx, `
+		SELECT id::text, COALESCE(session_id,''), COALESCE(workspace_id,''), COALESCE(task_kind,''), COALESCE(project_type,''), COALESCE(recipe_id,''), COALESCE(playbook_id,''), status, started_at, finished_at, duration_ms, local_only, external_agents_used, summary
+		FROM omni_runs
+		WHERE id = $1
+	`, id).Scan(&run.ID, &run.SessionID, &run.WorkspaceID, &run.TaskKind, &run.ProjectType, &run.RecipeID, &run.PlaybookID, &run.Status, &run.StartedAt, &run.FinishedAt, &run.DurationMS, &run.LocalOnly, &run.ExternalAgentsUsed, &run.Summary)
+	if err != nil {
+		return TelemetryRunSummary{}, nil, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, run_id::text, step, event_type, created_at, payload
+		FROM omni_run_events
+		WHERE run_id = $1
+		ORDER BY created_at ASC, id ASC
+	`, id)
+	if err != nil {
+		return TelemetryRunSummary{}, nil, err
+	}
+	defer rows.Close()
+	events := []TelemetryEventSummary{}
+	for rows.Next() {
+		var event TelemetryEventSummary
+		if err := rows.Scan(&event.ID, &event.RunID, &event.Step, &event.EventType, &event.CreatedAt, &event.Payload); err != nil {
+			return TelemetryRunSummary{}, nil, err
+		}
+		events = append(events, event)
+	}
+	return run, events, rows.Err()
+}
+
+func (r *Repository) TelemetryLive(ctx context.Context) (TelemetryDashboardSummary, error) {
+	live, err := r.telemetryRunsByStatus(ctx, []string{"running", "pending"}, 20)
+	if err != nil {
+		return TelemetryDashboardSummary{}, err
+	}
+	recent, err := r.ListTelemetryRuns(ctx, 20)
+	if err != nil {
+		return TelemetryDashboardSummary{}, err
+	}
+	counts, err := r.telemetryStatusCounts(ctx)
+	if err != nil {
+		return TelemetryDashboardSummary{}, err
+	}
+	blockers, err := r.telemetryEventCounts(ctx, []string{"progression_gate_failed", "structured_payload_rejected_mixed_ask_command", "structured_user_input_cancelled", "artifact_validation_failed", "pathfinder_strategy_selected"}, 10)
+	if err != nil {
+		return TelemetryDashboardSummary{}, err
+	}
+	return TelemetryDashboardSummary{LiveRuns: live, RecentRuns: recent, StatusCounts: counts, CommonBlockers: blockers}, nil
+}
+
+func (r *Repository) TelemetryModelSummaries(ctx context.Context) ([]TelemetryModelSummary, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT COALESCE(role,''), COALESCE(provider,''), COALESCE(model,''), COUNT(*), COUNT(*) FILTER (WHERE success IS TRUE), COUNT(*) FILTER (WHERE success IS FALSE), COUNT(*) FILTER (WHERE malformed), COUNT(*) FILTER (WHERE repaired), COALESCE(AVG(latency_ms),0), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(estimated_cost_usd),0)::text
+		FROM omni_model_calls
+		GROUP BY role, provider, model
+		ORDER BY COUNT(*) DESC, role ASC, model ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TelemetryModelSummary{}
+	for rows.Next() {
+		var item TelemetryModelSummary
+		if err := rows.Scan(&item.Role, &item.Provider, &item.Model, &item.Calls, &item.Successes, &item.Failures, &item.Malformed, &item.Repaired, &item.AvgLatencyMS, &item.InputTokens, &item.OutputTokens, &item.EstimatedCost); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) TelemetryPlaybookSummaries(ctx context.Context) ([]TelemetryPlaybookSummary, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT playbook_id, COUNT(*), COUNT(*) FILTER (WHERE reused), COUNT(*) FILTER (WHERE success IS TRUE), COUNT(*) FILTER (WHERE success IS FALSE)
+		FROM omni_playbook_usage
+		GROUP BY playbook_id
+		ORDER BY COUNT(*) DESC, playbook_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TelemetryPlaybookSummary{}
+	for rows.Next() {
+		var item TelemetryPlaybookSummary
+		if err := rows.Scan(&item.PlaybookID, &item.Uses, &item.Reused, &item.Successes, &item.Failures); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) TelemetryBenchmarkSummaries(ctx context.Context) ([]TelemetryBenchmarkSummary, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT benchmark_id, COALESCE(suite_id,''), COUNT(*), COUNT(*) FILTER (WHERE status = 'success'), COUNT(*) FILTER (WHERE status <> 'success'), COALESCE(AVG(duration_ms),0)
+		FROM omni_benchmark_results
+		GROUP BY benchmark_id, suite_id
+		ORDER BY benchmark_id ASC, suite_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TelemetryBenchmarkSummary{}
+	for rows.Next() {
+		var item TelemetryBenchmarkSummary
+		if err := rows.Scan(&item.BenchmarkID, &item.SuiteID, &item.Runs, &item.Successes, &item.Failures, &item.AvgDuration); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) telemetryRunsByStatus(ctx context.Context, statuses []string, limit int) ([]TelemetryRunSummary, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, COALESCE(session_id,''), COALESCE(workspace_id,''), COALESCE(task_kind,''), COALESCE(project_type,''), COALESCE(recipe_id,''), COALESCE(playbook_id,''), status, started_at, finished_at, duration_ms, local_only, external_agents_used, summary
+		FROM omni_runs
+		WHERE status = ANY($1)
+		ORDER BY started_at DESC
+		LIMIT $2
+	`, statuses, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TelemetryRunSummary{}
+	for rows.Next() {
+		var item TelemetryRunSummary
+		if err := rows.Scan(&item.ID, &item.SessionID, &item.WorkspaceID, &item.TaskKind, &item.ProjectType, &item.RecipeID, &item.PlaybookID, &item.Status, &item.StartedAt, &item.FinishedAt, &item.DurationMS, &item.LocalOnly, &item.ExternalAgentsUsed, &item.Summary); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) telemetryStatusCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := r.pool.Query(ctx, `SELECT status, COUNT(*) FROM omni_runs GROUP BY status`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		out[status] = count
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) telemetryEventCounts(ctx context.Context, eventTypes []string, limit int) ([]TelemetryCountSummary, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT event_type, COUNT(*)
+		FROM omni_run_events
+		WHERE event_type = ANY($1)
+		GROUP BY event_type
+		ORDER BY COUNT(*) DESC, event_type ASC
+		LIMIT $2
+	`, eventTypes, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TelemetryCountSummary{}
+	for rows.Next() {
+		var item TelemetryCountSummary
+		if err := rows.Scan(&item.Key, &item.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}

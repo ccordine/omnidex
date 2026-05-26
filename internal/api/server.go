@@ -292,6 +292,12 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
 		s.mux.HandleFunc("/v1/admin/migrate-fresh", s.handleAdminMigrateFresh)
+		s.mux.HandleFunc("/v1/metrics/live", s.handleMetricsLive)
+		s.mux.HandleFunc("/v1/metrics/runs", s.handleMetricsRuns)
+		s.mux.HandleFunc("/v1/metrics/runs/", s.handleMetricsRunByID)
+		s.mux.HandleFunc("/v1/metrics/models", s.handleMetricsModels)
+		s.mux.HandleFunc("/v1/metrics/playbooks", s.handleMetricsPlaybooks)
+		s.mux.HandleFunc("/v1/metrics/benchmarks", s.handleMetricsBenchmarks)
 	}
 	if s.channelStore != nil {
 		s.mux.HandleFunc("/v1/channels", s.handleChannels)

@@ -104,6 +104,8 @@ func main() {
 		runMigrateFresh(apiClient, os.Args[2:])
 	case "status":
 		runStatus(apiClient, os.Args[2:])
+	case "metrics":
+		runMetrics(apiClient, os.Args[2:])
 	case "core:status":
 		runCoreStatus(os.Args[2:])
 	case "queue:status":
@@ -2839,6 +2841,7 @@ func usage() {
 	fmt.Println("  stash [stash flags]                 git stash helper for Omnidex repo")
 	fmt.Println("  uninstall [uninstall.sh flags]      run uninstall.sh")
 	fmt.Println("  migrate:fresh [--yes]  wipe Omnidex tables and re-run schema migrations via core")
+	fmt.Println("  metrics <live|runs|models|playbooks|benchmarks|export>  query telemetry/benchmark metrics")
 	fmt.Println("  status [--timeout 5s] [--queue-limit N] [--web-probe]  combined service status")
 	fmt.Println("  core:status [--timeout 5s] [--core-url url]            core API health")
 	fmt.Println("  queue:status [--timeout 5s] [--limit N] [--core-url url] queue sample counts")

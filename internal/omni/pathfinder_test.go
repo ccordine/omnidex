@@ -156,6 +156,12 @@ func TestPathfinderActionDispatchesThroughRuntimeAndReturnsToLoopEvidence(t *tes
 		ObjectiveLedger: []StructuredObjective{{ID: "implement_app", Status: "pending"}},
 		Observations: []StructuredCommandObservation{{
 			Step:     1,
+			Command:  "npm install",
+			ExitCode: 1,
+			Stdout:   "added 19 packages\n",
+			Stderr:   "npm warning old lockfile\n",
+		}, {
+			Step:     2,
 			Command:  "cat index.html",
 			ExitCode: 1,
 			Stderr:   "cat: index.html: No such file or directory",
@@ -192,5 +198,12 @@ func TestPathfinderActionDispatchesThroughRuntimeAndReturnsToLoopEvidence(t *tes
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Command, "find . -maxdepth") {
 		t.Fatalf("pathfinder command did not execute successfully: command=%q exit=%d", result.Command, result.ExitCode)
+	}
+	latest := result.Observations[len(result.Observations)-1]
+	if !strings.Contains(latest.Command, "find . -maxdepth") {
+		t.Fatalf("latest observation is not pathfinder find command: %#v", latest)
+	}
+	if strings.Contains(latest.Stdout, "added 19 packages") || strings.Contains(latest.Stderr, "old lockfile") {
+		t.Fatalf("pathfinder action result mixed prior command output: %#v", latest)
 	}
 }

@@ -40,6 +40,9 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 	if _, err := r.pool.Exec(ctx, v3SchemaSQL); err != nil {
 		return err
 	}
+	if _, err := r.pool.Exec(ctx, telemetrySchemaSQL); err != nil {
+		return err
+	}
 	if err := r.BackfillMemoryCategories(ctx); err != nil {
 		return err
 	}

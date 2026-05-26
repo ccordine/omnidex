@@ -68,6 +68,7 @@ type CommandDecisionResult struct {
 
 type StructuredCommandObservation struct {
 	Step                 int      `json:"step"`
+	CommandID            string   `json:"command_id,omitempty"`
 	Command              string   `json:"command"`
 	RejectedCommand      string   `json:"rejected_command,omitempty"`
 	RejectedResponse     string   `json:"rejected_response,omitempty"`
@@ -83,6 +84,10 @@ type StructuredCommandObservation struct {
 	Stdout               string   `json:"stdout"`
 	Stderr               string   `json:"stderr"`
 	Cached               bool     `json:"cached,omitempty"`
+	CWD                  string   `json:"cwd,omitempty"`
+	Attempt              int      `json:"attempt,omitempty"`
+	StartedAt            string   `json:"started_at,omitempty"`
+	FinishedAt           string   `json:"finished_at,omitempty"`
 	Question             string   `json:"question,omitempty"`
 	UserResponse         string   `json:"user_response,omitempty"`
 }
@@ -951,6 +956,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			result.ObjectiveLedger = ledger
 			refreshTypedWorkItems()
 		}
+		if rejectMixedAskCommandPayload(step, payload, onEvent, &result) {
+			continue
+		}
 		if isPatchToolDelegation(payload) {
 			if err := runStructuredPatchApply(ctx, step, payload.Patch, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
 				return result, err
@@ -998,6 +1006,18 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		if payload.Ask {
 			question := strings.TrimSpace(payload.Question)
 			command := strings.TrimSpace(payload.Command)
+			if structuredQuestionAsksUserToRunCommand(question) {
+				emitStructuredCommandEvent(onEvent, "structured_ask_rejected_manual_command", "Ask rejected because it asks the user to run an agent command manually", map[string]string{
+					"step":     fmt.Sprintf("%d", step),
+					"question": truncateStructuredTimelineValue(question),
+				})
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:     step,
+					ExitCode: 1,
+					Stderr:   "ask rejected: models may not ask the user to run normal agent commands manually; return a command for Omnidex to validate or ask a real clarification question",
+				})
+				continue
+			}
 			if !hasRealCommandObservation(result.Observations) && command == "" {
 				emitStructuredCommandEvent(onEvent, "structured_ask_rejected", "Ask rejected before real command evidence", map[string]string{
 					"step": fmt.Sprintf("%d", step),
@@ -1020,31 +1040,6 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				})
 				continue
 			}
-			if question == "" && command != "" {
-				emitStructuredCommandEvent(onEvent, "structured_ask_ignored", "Ask flag ignored for non-empty command", map[string]string{
-					"step":   fmt.Sprintf("%d", step),
-					"reason": "empty question with ask=true; executing non-empty command",
-				})
-				if err := validateStructuredCommandForRunWithArchitect(payload.Command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
-					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-						"step":    fmt.Sprintf("%d", step),
-						"command": truncateStructuredTimelineValue(payload.Command),
-						"reason":  err.Error(),
-					})
-					result.Observations = append(result.Observations, StructuredCommandObservation{
-						Step:             step,
-						RejectedCommand:  truncateStructuredObservation(payload.Command),
-						CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(payload.Command, err.Error()),
-						ExitCode:         1,
-						Stderr:           "command rejected: " + err.Error() + "; choose a different evidence-gathering command from tool_inventory",
-					})
-					continue
-				}
-				if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
-					return result, err
-				}
-				continue
-			}
 			previousAnswer, alreadyAnswered := previousUserResponseForQuestion(result.Observations, question)
 			if alreadyAnswered {
 				emitStructuredCommandEvent(onEvent, "structured_user_input_reused", "Structured loop reused prior user input", map[string]string{
@@ -1057,26 +1052,6 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					Question:     question,
 					UserResponse: previousAnswer,
 				})
-				if command != "" {
-					if err := validateStructuredCommandForRunWithArchitect(payload.Command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
-						emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-							"step":    fmt.Sprintf("%d", step),
-							"command": truncateStructuredTimelineValue(payload.Command),
-							"reason":  err.Error(),
-						})
-						result.Observations = append(result.Observations, StructuredCommandObservation{
-							Step:             step,
-							RejectedCommand:  truncateStructuredObservation(payload.Command),
-							CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(payload.Command, err.Error()),
-							ExitCode:         1,
-							Stderr:           "command rejected: " + err.Error() + "; choose a different evidence-gathering command from tool_inventory",
-						})
-						continue
-					}
-					if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
-						return result, err
-					}
-				}
 				continue
 			}
 			if question == "" {
@@ -1100,6 +1075,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			})
 			answer, err := onAsk(ctx, question)
 			if err != nil {
+				if isStructuredUserInputCancelled(ctx, err) {
+					markStructuredUserInputCancelled(step, question, onEvent, &result)
+				}
 				return result, err
 			}
 			result.Observations = append(result.Observations, StructuredCommandObservation{
@@ -1111,26 +1089,6 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			emitStructuredCommandEvent(onEvent, "structured_user_input_received", "Structured loop received user input", map[string]string{
 				"step": fmt.Sprintf("%d", step),
 			})
-			if command != "" {
-				if err := validateStructuredCommandForRunWithArchitect(payload.Command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
-					emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
-						"step":    fmt.Sprintf("%d", step),
-						"command": truncateStructuredTimelineValue(payload.Command),
-						"reason":  err.Error(),
-					})
-					result.Observations = append(result.Observations, StructuredCommandObservation{
-						Step:             step,
-						RejectedCommand:  truncateStructuredObservation(payload.Command),
-						CapabilityMemory: structuredCapabilityMemoryForRejectedResponse(payload.Command, err.Error()),
-						ExitCode:         1,
-						Stderr:           "command rejected: " + err.Error() + "; choose a different evidence-gathering command from tool_inventory",
-					})
-					continue
-				}
-				if err := runStructuredPayloadCommand(ctx, step, payload.Command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, &result); err != nil {
-					return result, err
-				}
-			}
 			continue
 		}
 		if strings.TrimSpace(payload.Command) != "" {
@@ -1560,11 +1518,36 @@ func fallbackPromptInterpretationObjective(prompt string, interpretation PromptI
 	}
 }
 
+func structuredCommandAttemptNumber(result *CommandDecisionResult, command string) int {
+	attempt := 1
+	if result == nil {
+		return attempt
+	}
+	normalized := normalizeStructuredCommandForComparison(command)
+	for _, obs := range result.Observations {
+		if strings.TrimSpace(obs.Command) == "" {
+			continue
+		}
+		if normalizeStructuredCommandForComparison(obs.Command) == normalized {
+			attempt++
+		}
+	}
+	return attempt
+}
+
+func structuredCommandID(step, attempt int, command, workingDirectory string) string {
+	cwd := structuredPromptWorkingDirectory(workingDirectory)
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\x00%d\x00%s\x00%s", step, attempt, cwd, strings.TrimSpace(command))))
+	return fmt.Sprintf("cmd_%d_%d_%x", step, attempt, sum[:6])
+}
+
 func runStructuredPayloadCommand(ctx context.Context, step int, command, workingDirectory string, enableCommandCache bool, commandCacheRoot string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
+	attempt := structuredCommandAttemptNumber(result, command)
+	commandID := structuredCommandID(step, attempt, command, workingDirectory)
 	if enableCommandCache {
-		hit, err := appendCachedStructuredCommandObservation(step, command, workingDirectory, commandCacheRoot, stdout, stderr, onEvent, result)
+		hit, err := appendCachedStructuredCommandObservation(step, attempt, commandID, command, workingDirectory, commandCacheRoot, stdout, stderr, onEvent, result)
 		if err != nil {
 			emitStructuredCommandEvent(onEvent, "command_cache_miss", "Command cache lookup failed; executing command", map[string]string{
 				"step":   fmt.Sprintf("%d", step),
@@ -1575,21 +1558,30 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 		}
 	}
 	emitStructuredCommandEvent(onEvent, "structured_command_started", "Executing structured command", map[string]string{
-		"step":    fmt.Sprintf("%d", step),
-		"tool":    "shell",
-		"command": truncateStructuredTimelineValue(command),
-		"cwd":     structuredPromptWorkingDirectory(workingDirectory),
+		"step":       fmt.Sprintf("%d", step),
+		"command_id": commandID,
+		"attempt":    fmt.Sprintf("%d", attempt),
+		"tool":       "shell",
+		"command":    truncateStructuredTimelineValue(command),
+		"cwd":        structuredPromptWorkingDirectory(workingDirectory),
 	})
+	started := nowUTC()
 	exitCode, err := ExecuteStructuredCommandInDir(ctx, command, workingDirectory, io.MultiWriter(stdout, &stdoutBuf), io.MultiWriter(stderr, &stderrBuf))
+	finished := nowUTC()
 	result.Command = command
 	result.ExitCode = exitCode
 	feedback := ClassifyToolchainFeedback(command, stdoutBuf.String(), stderrBuf.String())
 	observation := StructuredCommandObservation{
-		Step:     step,
-		Command:  command,
-		ExitCode: exitCode,
-		Stdout:   truncateStructuredObservation(stdoutBuf.String()),
-		Stderr:   truncateStructuredObservation(stderrBuf.String()),
+		Step:       step,
+		CommandID:  commandID,
+		Command:    command,
+		ExitCode:   exitCode,
+		Stdout:     truncateStructuredObservation(stdoutBuf.String()),
+		Stderr:     truncateStructuredObservation(stderrBuf.String()),
+		CWD:        structuredPromptWorkingDirectory(workingDirectory),
+		Attempt:    attempt,
+		StartedAt:  started,
+		FinishedAt: finished,
 	}
 	if feedback.Kind != "" {
 		observation.CapabilityMemory = strings.Join(append([]string{
@@ -1601,13 +1593,17 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 	}
 	result.Observations = append(result.Observations, observation)
 	emitStructuredCommandEvent(onEvent, "structured_command_finished", "Structured command finished", map[string]string{
-		"step":      fmt.Sprintf("%d", step),
-		"tool":      "shell",
-		"command":   truncateStructuredTimelineValue(command),
-		"cwd":       structuredPromptWorkingDirectory(workingDirectory),
-		"exit_code": fmt.Sprintf("%d", exitCode),
-		"stdout":    structuredTimelineCommandOutput(stdoutBuf.String()),
-		"stderr":    structuredTimelineCommandOutput(stderrBuf.String()),
+		"step":        fmt.Sprintf("%d", step),
+		"command_id":  commandID,
+		"attempt":     fmt.Sprintf("%d", attempt),
+		"tool":        "shell",
+		"command":     truncateStructuredTimelineValue(command),
+		"cwd":         structuredPromptWorkingDirectory(workingDirectory),
+		"exit_code":   fmt.Sprintf("%d", exitCode),
+		"stdout":      structuredTimelineCommandOutput(stdoutBuf.String()),
+		"stderr":      structuredTimelineCommandOutput(stderrBuf.String()),
+		"started_at":  started,
+		"finished_at": finished,
 	})
 	if feedback.Kind != "" {
 		emitStructuredCommandEvent(onEvent, "toolchain_feedback_classified", "Typed compiler/test feedback classified", map[string]string{
@@ -1676,7 +1672,7 @@ func runStructuredPatchApply(ctx context.Context, step int, patch, workingDirect
 	return nil
 }
 
-func appendCachedStructuredCommandObservation(step int, command, workingDirectory, root string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+func appendCachedStructuredCommandObservation(step, attempt int, commandID, command, workingDirectory, root string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
 	if !commandCacheEligible(command) {
 		return false, nil
 	}
@@ -1702,21 +1698,28 @@ func appendCachedStructuredCommandObservation(step int, command, workingDirector
 	result.Command = command
 	result.ExitCode = entry.ExitCode
 	result.Observations = append(result.Observations, StructuredCommandObservation{
-		Step:     step,
-		Command:  command,
-		ExitCode: entry.ExitCode,
-		Stdout:   truncateStructuredObservation(entry.Stdout),
-		Stderr:   truncateStructuredObservation(entry.Stderr),
-		Cached:   true,
+		Step:       step,
+		CommandID:  commandID,
+		Command:    command,
+		ExitCode:   entry.ExitCode,
+		Stdout:     truncateStructuredObservation(entry.Stdout),
+		Stderr:     truncateStructuredObservation(entry.Stderr),
+		Cached:     true,
+		CWD:        structuredPromptWorkingDirectory(workingDirectory),
+		Attempt:    attempt,
+		StartedAt:  entry.CreatedAt,
+		FinishedAt: entry.CreatedAt,
 	})
 	emitStructuredCommandEvent(onEvent, "command_cache_hit", "Reused cached command observation for unchanged workspace inputs", map[string]string{
-		"step":      fmt.Sprintf("%d", step),
-		"command":   truncateStructuredTimelineValue(command),
-		"cwd":       structuredPromptWorkingDirectory(workingDirectory),
-		"exit_code": fmt.Sprintf("%d", entry.ExitCode),
-		"stdout":    structuredTimelineCommandOutput(entry.Stdout),
-		"stderr":    structuredTimelineCommandOutput(entry.Stderr),
-		"cached":    "true",
+		"step":       fmt.Sprintf("%d", step),
+		"command_id": commandID,
+		"attempt":    fmt.Sprintf("%d", attempt),
+		"command":    truncateStructuredTimelineValue(command),
+		"cwd":        structuredPromptWorkingDirectory(workingDirectory),
+		"exit_code":  fmt.Sprintf("%d", entry.ExitCode),
+		"stdout":     structuredTimelineCommandOutput(entry.Stdout),
+		"stderr":     structuredTimelineCommandOutput(entry.Stderr),
+		"cached":     "true",
 	})
 	return true, nil
 }
@@ -5182,6 +5185,9 @@ func validateStructuredCommandForRunWithArchitect(command, prompt, toolTask, pat
 	if err := validateStructuredCommandForRunWithSurvey(command, observations, workingDirectory, objectiveLedger, survey); err != nil {
 		return err
 	}
+	if err := validateViteCommandUsesNpmScript(command, workingDirectory, survey); err != nil {
+		return err
+	}
 	architectTargetedTask := strings.Contains(strings.ToLower(toolTask), "implementation architect target root:")
 	if !architectTargetedTask && !hasImplementationArchitectProgress(observations) {
 		return nil
@@ -5204,6 +5210,26 @@ func hasImplementationArchitectProgress(observations []StructuredCommandObservat
 		}
 	}
 	return false
+}
+
+func validateViteCommandUsesNpmScript(command, workingDirectory string, survey WorksiteSurvey) error {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return nil
+	}
+	if fields[0] != "vite" {
+		return nil
+	}
+	if survey.PackageManager != packageManagerNPM && survey.PackageManager != packageManagerUnknown && survey.PackageManager != "" {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(structuredPromptWorkingDirectory(workingDirectory), "package.json")); err != nil {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(structuredPromptWorkingDirectory(workingDirectory), "node_modules", ".bin", "vite")); err == nil {
+		return nil
+	}
+	return fmt.Errorf("bare vite command rejected: for npm/Vite projects prefer npm scripts such as npm run build, or intentionally use npx vite after verifying node_modules/.bin/vite exists")
 }
 
 func isImmediatePlannerRepairValidation(err error, ledger []StructuredObjective) bool {
@@ -8348,6 +8374,77 @@ func emitStructuredCommandEvent(onEvent func(StructuredCommandEvent), eventType,
 	onEvent(StructuredCommandEvent{Type: eventType, Summary: summary, Details: details})
 }
 
+func rejectMixedAskCommandPayload(step int, payload StructuredCommandPayload, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
+	if !payload.Ask {
+		return false
+	}
+	command := strings.TrimSpace(payload.Command)
+	tool := strings.TrimSpace(payload.Tool)
+	if command == "" && tool == "" && !payload.Done {
+		return false
+	}
+	emitStructuredCommandEvent(onEvent, "structured_payload_rejected_mixed_ask_command", "Structured payload rejected for mixed ask and executable intent", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"command": truncateStructuredTimelineValue(command),
+		"tool":    truncateStructuredTimelineValue(tool),
+		"done":    fmt.Sprintf("%t", payload.Done),
+	})
+	if result != nil {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:            step,
+			RejectedCommand: truncateStructuredObservation(command),
+			ExitCode:        1,
+			Stderr:          "payload rejected: ask=true cannot be combined with command, tool, or done=true; ask mode may only carry a clarification question",
+		})
+	}
+	return true
+}
+
+func structuredQuestionAsksUserToRunCommand(question string) bool {
+	lower := strings.ToLower(strings.TrimSpace(question))
+	if lower == "" {
+		return false
+	}
+	manualRun := strings.Contains(lower, "please run") ||
+		strings.Contains(lower, "run this command") ||
+		strings.Contains(lower, "run the command") ||
+		strings.Contains(lower, "you run") ||
+		strings.Contains(lower, "execute this command") ||
+		strings.Contains(lower, "execute the command")
+	if !manualRun {
+		return false
+	}
+	return strings.Contains(lower, "npm ") ||
+		strings.Contains(lower, "npx ") ||
+		strings.Contains(lower, "go ") ||
+		strings.Contains(lower, "cargo ") ||
+		strings.Contains(lower, "python") ||
+		strings.Contains(lower, "bash") ||
+		strings.Contains(lower, "sh ") ||
+		strings.Contains(lower, "vite")
+}
+
+func isStructuredUserInputCancelled(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)
+}
+
+func markStructuredUserInputCancelled(step int, question string, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) {
+	emitStructuredCommandEvent(onEvent, "structured_user_input_cancelled", "Structured user input request was cancelled", map[string]string{
+		"step":     fmt.Sprintf("%d", step),
+		"question": truncateStructuredTimelineValue(question),
+	})
+	if result == nil {
+		return
+	}
+	result.ExitCode = 1
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:     step,
+		ExitCode: 1,
+		Question: question,
+		Stderr:   "user input cancelled: no pending command was approved or dispatched",
+	})
+}
+
 func hasRealCommandObservation(observations []StructuredCommandObservation) bool {
 	for _, obs := range observations {
 		if strings.TrimSpace(obs.Command) != "" {
@@ -8844,6 +8941,9 @@ func requestDependencyInstallApproval(ctx context.Context, step int, prompt, com
 	}
 	answer, err := onAsk(ctx, question)
 	if err != nil {
+		if isStructuredUserInputCancelled(ctx, err) {
+			markStructuredUserInputCancelled(step, question, onEvent, result)
+		}
 		return false, err
 	}
 	answer = strings.TrimSpace(answer)
@@ -10003,7 +10103,8 @@ func buildStructuredCommandSystemContext() string {
 		"Never return an empty command when done=false unless delegating with tool=shell and a non-empty tool_task.",
 		"If a command fails, the failure is recorded in observations; use that context to pivot to a different command, source, or tool.",
 		"If the user already answered a question, do not ask the same question again; use the observed user_response.",
-		"If you ask for approval and include an approval-gated command, that command may run after the user answers.",
+		"Never combine ask=true with a command, tool, or done=true. Ask mode is only for a clarification, approval, correction, or cancel response.",
+		"Do not ask the user to run normal agent commands manually; return the command for Omnidex to validate and execute, or ask a real question.",
 		"Use reference_history to resolve follow-up references before asking the user.",
 		"If reference_history contains the missing subject, location, file, project, or preference, use it in the command instead of asking.",
 		"Ask the user only when progress requires permission, credentials, sudo, destructive approval, or a choice that cannot be inferred from evidence.",

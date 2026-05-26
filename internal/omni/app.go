@@ -1791,13 +1791,30 @@ func appendFormattedResponseValue(lines []string, label, value string) []string 
 }
 
 func structuredCommandResponseStreams(result CommandDecisionResult, stdout, stderr string, execErr error) (string, string) {
-	if execErr != nil {
-		return stdout, stderr
+	if latest, ok := latestCommandObservationForResponse(result.Observations, result.Command); ok {
+		return latest.Stdout, latest.Stderr
 	}
 	if latest, ok := latestSuccessfulCommandObservation(result.Observations); ok {
 		return latest.Stdout, latest.Stderr
 	}
 	return stdout, stderr
+}
+
+func latestCommandObservationForResponse(observations []StructuredCommandObservation, command string) (StructuredCommandObservation, bool) {
+	if strings.TrimSpace(command) != "" {
+		normalized := normalizeStructuredCommandForComparison(command)
+		for i := len(observations) - 1; i >= 0; i-- {
+			if normalizeStructuredCommandForComparison(observations[i].Command) == normalized {
+				return observations[i], true
+			}
+		}
+	}
+	for i := len(observations) - 1; i >= 0; i-- {
+		if strings.TrimSpace(observations[i].Command) != "" {
+			return observations[i], true
+		}
+	}
+	return StructuredCommandObservation{}, false
 }
 
 func latestStructuredFailureSummary(observations []StructuredCommandObservation) string {

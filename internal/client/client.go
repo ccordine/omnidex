@@ -302,6 +302,21 @@ func (c *Client) MigrateFresh(ctx context.Context) error {
 	return nil
 }
 
+func (c *Client) MetricsRaw(ctx context.Context, path string) (json.RawMessage, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "/v1/metrics/live"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	var raw json.RawMessage
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, payload any, out any) error {
 	var body io.Reader
 	if payload != nil {

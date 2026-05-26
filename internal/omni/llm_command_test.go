@@ -1483,15 +1483,93 @@ func TestStructuredCommandDecisionCanAskUserAndContinue(t *testing.T) {
 	}
 }
 
-func TestStructuredCommandDecisionAskWithCommandRunsAfterApproval(t *testing.T) {
+func TestStructuredCommandDecisionCancelWhileWaitingForUserInputStopsRun(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf 'before ask\n' >&2; exit 1","done":false,"answer":""}`,
+		`{"command":"","done":false,"answer":"","ask":true,"question":"Need approval to continue."}`,
+		`{"command":"printf 'after cancel should not run\n'","done":false,"answer":""}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := RunStructuredCommandDecisionWithEventsAndAsk(
+		context.Background(),
+		"Run a command that needs approval.",
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		func(ctx context.Context, question string) (string, error) {
+			return "", context.Canceled
+		},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if strings.Contains(stdout.String(), "after cancel should not run") {
+		t.Fatalf("command ran after cancel: stdout=%q stderr=%q result=%#v", stdout.String(), stderr.String(), result)
+	}
+	if !structuredEventsContain(events, "structured_user_input_cancelled") {
+		t.Fatalf("events = %#v, want structured_user_input_cancelled", events)
+	}
+	if got := result.Observations[len(result.Observations)-1]; !strings.Contains(got.Stderr, "user input cancelled") || got.Command != "" {
+		t.Fatalf("cancel observation should not dispatch command: %#v", got)
+	}
+}
+
+func TestStructuredCommandDecisionEmptyApprovalInputDoesNotApproveDependencyInstall(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"approval-test"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"npm install react-router-dom","done":false,"answer":""}`,
+		`{"command":"printf 'continued without dependency\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"continued without dependency"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	asks := 0
+	result, err := runStructuredCommandDecisionWithConfig(
+		context.Background(),
+		"Build a single-page notes app without adding routing.",
+		nil,
+		client,
+		stdout,
+		stderr,
+		nil,
+		func(ctx context.Context, question string) (string, error) {
+			asks++
+			return "", nil
+		},
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asks != 1 {
+		t.Fatalf("asks = %d, want dependency approval ask", asks)
+	}
+	if strings.Contains(stdout.String(), "react-router-dom") {
+		t.Fatalf("empty approval input should not run dependency install: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if result.Answer != "continued without dependency" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandDecisionAskWithCommandIsRejectedAndDoesNotExecute(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'blocked first\n' >&2; exit 1","done":false,"answer":""}`,
 		`{"command":"printf 'ran approved command\n'","done":false,"answer":"","ask":true,"question":"Proceed with creating the requested project directory?"}`,
-		`{"command":"","done":true,"answer":"ran approved command"}`,
+		`{"command":"printf 'safe followup\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"safe followup"}`,
 	}}
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	asked := []string{}
+	events := []StructuredCommandEvent{}
 
 	result, err := RunStructuredCommandDecisionWithEventsAndAsk(
 		context.Background(),
@@ -1499,7 +1577,7 @@ func TestStructuredCommandDecisionAskWithCommandRunsAfterApproval(t *testing.T) 
 		client,
 		stdout,
 		stderr,
-		nil,
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
 		func(ctx context.Context, question string) (string, error) {
 			asked = append(asked, question)
 			return "yes", nil
@@ -1508,23 +1586,27 @@ func TestStructuredCommandDecisionAskWithCommandRunsAfterApproval(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(asked) != 1 {
-		t.Fatalf("asked = %#v, want one approval", asked)
+	if len(asked) != 0 {
+		t.Fatalf("mixed ask+command should not ask user: %#v", asked)
 	}
-	if !strings.Contains(stdout.String(), "ran approved command") {
-		t.Fatalf("approval-gated command did not run: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	if strings.Contains(stdout.String(), "ran approved command") {
+		t.Fatalf("mixed ask+command executed unexpectedly: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
-	if len(result.Observations) != 3 {
-		t.Fatalf("observations = %#v, want failed command + user answer + approved command", result.Observations)
+	if !strings.Contains(stdout.String(), "safe followup") {
+		t.Fatalf("safe followup did not run: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
-	if result.Observations[1].Question == "" || result.Observations[2].Command == "" {
-		t.Fatalf("expected user answer followed by command observation: %#v", result.Observations)
+	if !structuredEventsContain(events, "structured_payload_rejected_mixed_ask_command") {
+		t.Fatalf("events = %#v, want structured_payload_rejected_mixed_ask_command", events)
+	}
+	if result.Observations[1].RejectedCommand == "" || !strings.Contains(result.Observations[1].Stderr, "ask=true cannot be combined") {
+		t.Fatalf("mixed ask+command should be rejected observation: %#v", result.Observations)
 	}
 }
 
-func TestStructuredCommandDecisionIgnoresMalformedAskWhenCommandIsPresent(t *testing.T) {
+func TestStructuredCommandDecisionRejectsMalformedAskWhenCommandIsPresent(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'weather evidence\n'","done":false,"answer":"","ask":true,"question":""}`,
+		`{"command":"printf 'weather evidence\n'","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"weather evidence"}`,
 	}}
 	stdout := &bytes.Buffer{}
@@ -1548,8 +1630,8 @@ func TestStructuredCommandDecisionIgnoresMalformedAskWhenCommandIsPresent(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "weather evidence") {
-		t.Fatalf("command did not run: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	if strings.Count(stdout.String(), "weather evidence") != 1 {
+		t.Fatalf("mixed ask command should be rejected before later safe command: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 	if !strings.Contains(result.Command, "weather evidence") {
 		t.Fatalf("command = %q", result.Command)
@@ -1557,17 +1639,18 @@ func TestStructuredCommandDecisionIgnoresMalformedAskWhenCommandIsPresent(t *tes
 	if result.Answer != "weather evidence" {
 		t.Fatalf("answer = %q", result.Answer)
 	}
-	if !structuredEventsContain(events, "structured_ask_ignored") {
-		t.Fatalf("events = %#v, want structured_ask_ignored", events)
+	if !structuredEventsContain(events, "structured_payload_rejected_mixed_ask_command") {
+		t.Fatalf("events = %#v, want structured_payload_rejected_mixed_ask_command", events)
 	}
 }
 
-func TestStructuredCommandDecisionReusesRepeatedApprovalQuestionWithCommand(t *testing.T) {
+func TestStructuredCommandDecisionRepeatedApprovalQuestionWithCommandIsRejected(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"printf 'blocked first\n' >&2; exit 1","done":false,"answer":""}`,
 		`{"command":"","done":false,"answer":"","ask":true,"question":"Proceed with creating the requested project directory?"}`,
 		`{"command":"printf 'created after reused approval\n'","done":false,"answer":"","ask":true,"question":"Proceed with creating the requested project directory?"}`,
-		`{"command":"","done":true,"answer":"created after reused approval"}`,
+		`{"command":"printf 'created after correction\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"created after correction"}`,
 	}}
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -1591,11 +1674,74 @@ func TestStructuredCommandDecisionReusesRepeatedApprovalQuestionWithCommand(t *t
 	if askCount != 1 {
 		t.Fatalf("askCount = %d, want repeated question reused", askCount)
 	}
-	if !strings.Contains(stdout.String(), "created after reused approval") {
-		t.Fatalf("reused approval command did not run: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	if strings.Contains(stdout.String(), "created after reused approval") {
+		t.Fatalf("mixed ask+command executed unexpectedly: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
-	if result.Answer != "created after reused approval" {
+	if result.Answer != "created after correction" {
 		t.Fatalf("answer = %q", result.Answer)
+	}
+}
+
+func TestStructuredCommandObservationsKeepCommandOutputIsolated(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, "printf 'npm install output\n'", workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	if err := runStructuredPayloadCommand(context.Background(), 2, "find . -maxdepth 1 -type f", workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) < 2 {
+		t.Fatalf("observations = %#v", result.Observations)
+	}
+	installObs := result.Observations[0]
+	findObs := result.Observations[1]
+	if installObs.CommandID == "" || findObs.CommandID == "" || installObs.CommandID == findObs.CommandID {
+		t.Fatalf("command ids not unique/stable: install=%#v find=%#v", installObs, findObs)
+	}
+	if !strings.Contains(installObs.Stdout, "npm install output") {
+		t.Fatalf("install output missing from first observation: %#v", installObs)
+	}
+	if strings.Contains(findObs.Stdout, "npm install output") {
+		t.Fatalf("find observation contains prior command output: %#v", findObs)
+	}
+	if !strings.Contains(findObs.Stdout, "package.json") {
+		t.Fatalf("find observation missing find output: %#v", findObs)
+	}
+}
+
+func TestStructuredCommandResponseStreamsUseCurrentCommandObservationOnFailure(t *testing.T) {
+	result := CommandDecisionResult{
+		Command:  "find . -maxdepth 1 -type f",
+		ExitCode: 0,
+		Observations: []StructuredCommandObservation{
+			{CommandID: "cmd_install", Command: "npm install", ExitCode: 0, Stdout: "added 15 packages\n"},
+			{CommandID: "cmd_find", Command: "find . -maxdepth 1 -type f", ExitCode: 0, Stdout: "./package.json\n"},
+		},
+	}
+	stdout, stderr := structuredCommandResponseStreams(result, "added 15 packages\n./package.json\n", "vite: command not found\n", context.Canceled)
+	if strings.Contains(stdout, "added 15 packages") || strings.Contains(stderr, "vite: command not found") {
+		t.Fatalf("response streams used aggregate output: stdout=%q stderr=%q", stdout, stderr)
+	}
+	if stdout != "./package.json\n" {
+		t.Fatalf("stdout = %q, want current find output", stdout)
+	}
+}
+
+func TestValidateStructuredCommandRejectsBareViteWhenNpmScriptShouldBeUsed(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"scripts":{"build":"vite build"},"devDependencies":{"vite":"latest"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := validateStructuredCommandForRunWithArchitect("vite build", "build the Vite app", "", "", nil, workspace, nil, WorksiteSurvey{PackageManager: packageManagerNPM})
+	if err == nil || !strings.Contains(err.Error(), "prefer npm scripts") {
+		t.Fatalf("err = %v, want bare vite rejection", err)
+	}
+	if err := validateStructuredCommandForRunWithArchitect("npm run build", "build the Vite app", "", "", nil, workspace, nil, WorksiteSurvey{PackageManager: packageManagerNPM}); err != nil {
+		t.Fatalf("npm run build should be allowed: %v", err)
 	}
 }
 
