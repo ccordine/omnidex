@@ -66,31 +66,37 @@ type CommandDecisionResult struct {
 }
 
 type StructuredCommandObservation struct {
-	Step                 int    `json:"step"`
-	Command              string `json:"command"`
-	RejectedCommand      string `json:"rejected_command,omitempty"`
-	RejectedResponse     string `json:"rejected_response,omitempty"`
-	EvaluationConfidence int    `json:"evaluation_confidence,omitempty"`
-	EvaluationFeedback   string `json:"evaluation_feedback,omitempty"`
-	CapabilityMemory     string `json:"capability_memory,omitempty"`
-	ExitCode             int    `json:"exit_code"`
-	Stdout               string `json:"stdout"`
-	Stderr               string `json:"stderr"`
-	Cached               bool   `json:"cached,omitempty"`
-	Question             string `json:"question,omitempty"`
-	UserResponse         string `json:"user_response,omitempty"`
+	Step                 int      `json:"step"`
+	Command              string   `json:"command"`
+	RejectedCommand      string   `json:"rejected_command,omitempty"`
+	RejectedResponse     string   `json:"rejected_response,omitempty"`
+	EvidenceKind         string   `json:"evidence_kind,omitempty"`
+	VerifierID           string   `json:"verifier_id,omitempty"`
+	GeneratedBy          string   `json:"generated_by,omitempty"`
+	CheckedFiles         []string `json:"checked_files,omitempty"`
+	CheckedPredicates    []string `json:"checked_predicates,omitempty"`
+	EvaluationConfidence int      `json:"evaluation_confidence,omitempty"`
+	EvaluationFeedback   string   `json:"evaluation_feedback,omitempty"`
+	CapabilityMemory     string   `json:"capability_memory,omitempty"`
+	ExitCode             int      `json:"exit_code"`
+	Stdout               string   `json:"stdout"`
+	Stderr               string   `json:"stderr"`
+	Cached               bool     `json:"cached,omitempty"`
+	Question             string   `json:"question,omitempty"`
+	UserResponse         string   `json:"user_response,omitempty"`
 }
 
 type StructuredObjective struct {
-	ID              string   `json:"id"`
-	Description     string   `json:"description"`
-	Status          string   `json:"status"`
-	Kind            string   `json:"kind,omitempty"`
-	Evidence        string   `json:"evidence,omitempty"`
-	Source          string   `json:"source,omitempty"`
-	ParentObjective string   `json:"parent_objective,omitempty"`
-	Required        bool     `json:"required,omitempty"`
-	Packages        []string `json:"packages,omitempty"`
+	ID               string   `json:"id"`
+	Description      string   `json:"description"`
+	Status           string   `json:"status"`
+	Kind             string   `json:"kind,omitempty"`
+	Evidence         string   `json:"evidence,omitempty"`
+	RequiredEvidence []string `json:"required_evidence,omitempty"`
+	Source           string   `json:"source,omitempty"`
+	ParentObjective  string   `json:"parent_objective,omitempty"`
+	Required         bool     `json:"required,omitempty"`
+	Packages         []string `json:"packages,omitempty"`
 }
 
 type CompletedAction struct {
@@ -1174,6 +1180,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					ledger = enforceNoEmptyProjectFilesBeforeCompletion(step, prompt, cfg.CurrentWorkingDirectory, ledger, result.Observations, onEvent, &result)
 					result.ObjectiveLedger = ledger
 					refreshTypedWorkItems()
+					if rejectArtifactValidationGate(step, prompt, cfg.CurrentWorkingDirectory, ledger, result.Observations, onEvent, &result) {
+						continue
+					}
 					if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 						if latestPrematureDoneLoopBlocked(result.Observations) {
 							if hasSuccessfulCommandObservation(result.Observations) {
@@ -1315,6 +1324,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			ledger = enforceNoEmptyProjectFilesBeforeCompletion(step, prompt, cfg.CurrentWorkingDirectory, ledger, result.Observations, onEvent, &result)
 			result.ObjectiveLedger = ledger
 			refreshTypedWorkItems()
+			if rejectArtifactValidationGate(step, prompt, cfg.CurrentWorkingDirectory, ledger, result.Observations, onEvent, &result) {
+				continue
+			}
 			if rejectDoneForObjectiveLedger(step, ledger, onEvent, &result) {
 				if latestPrematureDoneLoopBlocked(result.Observations) {
 					if hasSuccessfulCommandObservation(result.Observations) {
@@ -6001,9 +6013,6 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 	if err := validateStructuredCommandForObservations(command, observations); err != nil {
 		return err
 	}
-	if repeatedSuccessfulStructuredCommand(command, observations) {
-		return errRepeatedSuccessfulStructuredCommand
-	}
 	if err := validateStructuredCommandWorkspaceProtection(command, workingDirectory); err != nil {
 		return err
 	}
@@ -8399,6 +8408,9 @@ func newlySatisfiedStructuredObjectiveIDs(before, after []StructuredObjective) [
 }
 
 func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, objective StructuredObjective) bool {
+	if len(objective.RequiredEvidence) > 0 {
+		return structuredObjectiveRequiredEvidenceSatisfied(objective, []StructuredCommandObservation{obs}, "")
+	}
 	command := strings.ToLower(strings.TrimSpace(obs.Command))
 	output := strings.ToLower(obs.Stdout + "\n" + obs.Stderr)
 	target := normalizedDependencyText(objective.ID + " " + objective.Description)
@@ -8464,6 +8476,89 @@ func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, o
 	}
 	if strings.Contains(command, "go test") && (strings.Contains(target, " verify ") || strings.Contains(target, " test ")) && !strings.Contains(target, "frontend") {
 		return true
+	}
+	return false
+}
+
+func structuredObjectiveRequiredEvidenceSatisfied(objective StructuredObjective, observations []StructuredCommandObservation, workingDir string) bool {
+	if len(objective.RequiredEvidence) == 0 {
+		return false
+	}
+	for _, predicate := range objective.RequiredEvidence {
+		if !structuredEvidencePredicateSatisfied(predicate, observations, workingDir) {
+			return false
+		}
+	}
+	return true
+}
+
+func structuredEvidencePredicateSatisfied(predicate string, observations []StructuredCommandObservation, workingDir string) bool {
+	predicate = strings.TrimSpace(predicate)
+	if predicate == "" {
+		return true
+	}
+	kind, rest, ok := strings.Cut(predicate, ":")
+	if !ok {
+		kind = predicate
+		rest = ""
+	}
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	rest = strings.TrimSpace(rest)
+	switch kind {
+	case "command_passed":
+		want := normalizeStructuredCommandForComparison(rest)
+		for _, obs := range observations {
+			if obs.ExitCode != 0 || strings.TrimSpace(obs.Command) == "" {
+				continue
+			}
+			got := normalizeStructuredCommandForComparison(obs.Command)
+			if got == want || (want != "" && strings.Contains(got, want)) || (want != "" && strings.Contains(strings.ToLower(obs.Stdout+"\n"+obs.Stderr), strings.ToLower(rest))) {
+				return true
+			}
+		}
+	case "file_exists":
+		return workingDir != "" && fileExists(filepath.Join(workingDir, filepath.Clean(rest)))
+	case "file_nonempty":
+		return workingDir != "" && fileHasContent(filepath.Join(workingDir, filepath.Clean(rest)))
+	case "file_contains":
+		path, needle, ok := strings.Cut(rest, ":")
+		if !ok || workingDir == "" {
+			return false
+		}
+		content, err := os.ReadFile(filepath.Join(workingDir, filepath.Clean(strings.TrimSpace(path))))
+		return err == nil && strings.Contains(string(content), needle)
+	case "package_script_exists":
+		if workingDir == "" {
+			return false
+		}
+		content, err := os.ReadFile(filepath.Join(workingDir, "package.json"))
+		if err != nil {
+			return false
+		}
+		var pkg struct {
+			Scripts map[string]string `json:"scripts"`
+		}
+		return json.Unmarshal(content, &pkg) == nil && strings.TrimSpace(pkg.Scripts[rest]) != ""
+	case "source_verification", "source_verification_passed":
+		for _, obs := range observations {
+			if runtimeSourceVerificationObservation(obs) {
+				return true
+			}
+		}
+	case "artifact_validation_passed":
+		for _, obs := range observations {
+			if obs.ExitCode == 0 && strings.EqualFold(strings.TrimSpace(obs.EvidenceKind), "artifact_validation") && strings.EqualFold(strings.TrimSpace(obs.GeneratedBy), "runtime") {
+				return true
+			}
+		}
+	case "tdd_contract_passed", "smoke_check_passed":
+		for _, obs := range observations {
+			if obs.ExitCode == 0 && strings.EqualFold(strings.TrimSpace(obs.EvidenceKind), kind) {
+				if rest == "" || strings.Contains(strings.ToLower(obs.Command+" "+obs.Stdout+" "+obs.Stderr), strings.ToLower(rest)) {
+					return true
+				}
+			}
+		}
 	}
 	return false
 }
@@ -8613,7 +8708,8 @@ func runCompletionCheckDetailed(ctx context.Context, step int, prompt, currentWo
 		})
 		return completionCheckRunResult{Ledger: ledger}
 	}
-	updated := mergeStructuredObjectiveLedger(ledger, filterObjectiveLedgerForWorksiteSurvey(check.ObjectiveLedger, worksiteSurvey))
+	filteredClaims := filterCompletionCheckerObjectiveClaims(step, ledger, filterObjectiveLedgerForWorksiteSurvey(check.ObjectiveLedger, worksiteSurvey), observations, currentWorkingDirectory, onEvent)
+	updated := mergeStructuredObjectiveLedger(ledger, filteredClaims)
 	validatorAccepted := check.Done && len(pendingStructuredObjectives(updated)) == 0
 	if !check.Done && len(pendingStructuredObjectives(updated)) == 0 {
 		updated = keepAtLeastOnePreviouslyPendingObjectiveOpen(ledger, updated)
@@ -8627,23 +8723,56 @@ func runCompletionCheckDetailed(ctx context.Context, step int, prompt, currentWo
 	return completionCheckRunResult{Ledger: updated, Accepted: validatorAccepted, Check: check, Ran: true}
 }
 
-func satisfyPendingObjectivesFromValidator(ledger []StructuredObjective, reason string) []StructuredObjective {
-	evidence := strings.TrimSpace(reason)
-	if evidence == "" {
-		evidence = "completion validator accepted observed evidence"
+func filterCompletionCheckerObjectiveClaims(step int, current, claims []StructuredObjective, observations []StructuredCommandObservation, workingDir string, onEvent func(StructuredCommandEvent)) []StructuredObjective {
+	out := []StructuredObjective{}
+	currentByID := map[string]StructuredObjective{}
+	for _, objective := range current {
+		currentByID[objective.ID] = objective
 	}
-	out := mergeStructuredObjectiveLedger(nil, ledger)
-	for i := range out {
-		if structuredObjectiveSatisfied(out[i]) || !structuredObjectiveBlocksCompletion(out[i]) {
+	for _, claim := range claims {
+		existing, known := currentByID[claim.ID]
+		if !known {
+			out = append(out, claim)
 			continue
 		}
-		out[i].Status = "satisfied"
-		out[i].Evidence = evidence
-		if strings.TrimSpace(out[i].Source) == "" {
-			out[i].Source = structuredObjectiveSourceDetectedProject
+		if !structuredObjectiveSatisfied(claim) || structuredObjectiveSatisfied(existing) || !structuredObjectiveBlocksCompletion(existing) {
+			out = append(out, claim)
+			continue
 		}
+		merged := existing
+		merged.Status = claim.Status
+		merged.Evidence = claim.Evidence
+		if len(claim.RequiredEvidence) > 0 {
+			merged.RequiredEvidence = claim.RequiredEvidence
+		}
+		if completionClaimHasDeterministicEvidence(merged, observations, workingDir) {
+			out = append(out, merged)
+			continue
+		}
+		emitStructuredCommandEvent(onEvent, "completion_check_claim_rejected_for_missing_evidence", "Completion-check objective claim rejected because deterministic evidence is missing", map[string]string{
+			"step":      fmt.Sprintf("%d", step),
+			"objective": claim.ID,
+			"evidence":  truncateStructuredTimelineValue(claim.Evidence),
+		})
+		out = append(out, existing)
 	}
 	return out
+}
+
+func completionClaimHasDeterministicEvidence(objective StructuredObjective, observations []StructuredCommandObservation, workingDir string) bool {
+	if len(objective.RequiredEvidence) > 0 {
+		return structuredObjectiveRequiredEvidenceSatisfied(objective, observations, workingDir)
+	}
+	for _, obs := range observations {
+		if obs.ExitCode == 0 && structuredObservationSatisfiesObjective(obs, objective) {
+			return true
+		}
+	}
+	return false
+}
+
+func satisfyPendingObjectivesFromValidator(ledger []StructuredObjective, reason string) []StructuredObjective {
+	return mergeStructuredObjectiveLedger(nil, ledger)
 }
 
 func keepAtLeastOnePreviouslyPendingObjectiveOpen(previous, updated []StructuredObjective) []StructuredObjective {
@@ -8950,8 +9079,20 @@ func sourceVerificationCompletionSatisfied(prompt, workingDir string, latest Str
 	if !appBuildPromptNeedsFiles(prompt) || workspaceMissingAppFiles(workingDir) {
 		return false
 	}
-	text := strings.ToLower(latest.Stdout + "\n" + latest.Stderr)
-	return strings.Contains(text, "source_verified") || strings.Contains(text, "source verification passed")
+	return runtimeSourceVerificationObservation(latest)
+}
+
+func runtimeSourceVerificationObservation(obs StructuredCommandObservation) bool {
+	if obs.ExitCode != 0 {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(obs.EvidenceKind), "source_verification") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(obs.GeneratedBy), "runtime") {
+		return false
+	}
+	return strings.TrimSpace(obs.VerifierID) != "" && len(obs.CheckedFiles) > 0 && len(obs.CheckedPredicates) > 0
 }
 
 func isShellToolDelegation(payload StructuredCommandPayload) bool {

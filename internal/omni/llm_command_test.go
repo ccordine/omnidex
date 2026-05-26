@@ -2509,16 +2509,16 @@ func TestValidateStructuredCommandAllowsRepeatedSuccessfulCommand(t *testing.T) 
 }
 
 func TestValidateStructuredCommandForRunFlagsRepeatedSuccessfulInstall(t *testing.T) {
-	command := "npm install react react-dom"
+	command := "npm run build"
 	observations := []StructuredCommandObservation{{
 		Step:     15,
 		Command:  command,
 		ExitCode: 0,
-		Stdout:   "up to date, audited 4 packages",
+		Stdout:   "built in 1s",
 	}}
 	err := validateStructuredCommandForRun(command, observations, t.TempDir(), nil)
-	if !errors.Is(err, errRepeatedSuccessfulStructuredCommand) {
-		t.Fatalf("err = %v, want repeated successful command signal", err)
+	if err != nil {
+		t.Fatalf("repeated successful command should not be rejected by string-only validation: %v", err)
 	}
 }
 
@@ -6397,8 +6397,20 @@ func TestSourceVerificationCompletionSatisfiedForGeneratedZigProject(t *testing.
 		ExitCode: 0,
 		Stdout:   "ZIG_CALCULATOR_SOURCE_VERIFIED build.zig src/main.zig README.md",
 	}
-	if !sourceVerificationCompletionSatisfied("Build a Zig CLI calculator application.", dir, latest) {
-		t.Fatal("expected source verification marker and app files to satisfy completion")
+	if sourceVerificationCompletionSatisfied("Build a Zig CLI calculator application.", dir, latest) {
+		t.Fatal("arbitrary stdout marker must not satisfy source verification completion")
+	}
+	runtimeOwned := StructuredCommandObservation{
+		Command:           "runtime.source_verify zig",
+		ExitCode:          0,
+		EvidenceKind:      "source_verification",
+		GeneratedBy:       "runtime",
+		VerifierID:        "zig-source-verifier",
+		CheckedFiles:      []string{"build.zig", "src/main.zig"},
+		CheckedPredicates: []string{"file_nonempty:build.zig", "file_nonempty:src/main.zig"},
+	}
+	if !sourceVerificationCompletionSatisfied("Build a Zig CLI calculator application.", dir, runtimeOwned) {
+		t.Fatal("expected runtime-owned structured source verification evidence to satisfy completion")
 	}
 }
 
@@ -6696,6 +6708,85 @@ func TestStructuredCommandDecisionAcceptsPartialCompletionAndContinues(t *testin
 	}
 	if pending := pendingStructuredObjectives(result.ObjectiveLedger); len(pending) != 0 {
 		t.Fatalf("ledger still pending: %#v", result.ObjectiveLedger)
+	}
+}
+
+func TestCompletionCheckerCannotSatisfyObjectiveWithoutDeterministicEvidence(t *testing.T) {
+	ledger := []StructuredObjective{{
+		ID:               "verify_build",
+		Description:      "Verify build",
+		Status:           "pending",
+		Source:           structuredObjectiveSourceUserExplicit,
+		Required:         true,
+		RequiredEvidence: []string{"command_passed:npm run build"},
+	}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "looks complete",
+		ObjectiveLedger: []StructuredObjective{{
+			ID:       "verify_build",
+			Status:   "satisfied",
+			Evidence: "validator said build passed",
+		}},
+	}}}
+	events := []StructuredCommandEvent{}
+	result := runCompletionCheckDetailed(
+		context.Background(),
+		3,
+		"build the app",
+		t.TempDir(),
+		ledger,
+		MinimalContext{},
+		nil,
+		"done",
+		checker,
+		WorksiteSurvey{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+	)
+	if result.Accepted {
+		t.Fatal("completion checker must not accept objective claims without deterministic evidence")
+	}
+	if pending := pendingStructuredObjectives(result.Ledger); len(pending) != 1 {
+		t.Fatalf("objective should remain pending, got %#v", result.Ledger)
+	}
+	if !structuredEventsContain(events, "completion_check_claim_rejected_for_missing_evidence") {
+		t.Fatalf("missing claim rejection event: %#v", events)
+	}
+}
+
+func TestCompletionCheckerClaimAcceptedWhenRequiredEvidencePassed(t *testing.T) {
+	ledger := []StructuredObjective{{
+		ID:               "verify_build",
+		Description:      "Verify build",
+		Status:           "pending",
+		Source:           structuredObjectiveSourceUserExplicit,
+		Required:         true,
+		RequiredEvidence: []string{"command_passed:npm run build"},
+	}}
+	checker := &fakeCompletionChecker{checks: []CompletionCheck{{
+		Done:   true,
+		Reason: "build evidence exists",
+		ObjectiveLedger: []StructuredObjective{{
+			ID:       "verify_build",
+			Status:   "satisfied",
+			Evidence: "npm run build exited 0",
+		}},
+	}}}
+	result := runCompletionCheckDetailed(
+		context.Background(),
+		3,
+		"build the app",
+		t.TempDir(),
+		ledger,
+		MinimalContext{},
+		[]StructuredCommandObservation{{Command: "npm run build", ExitCode: 0, Stdout: "built in 1s"}},
+		"done",
+		checker,
+		WorksiteSurvey{},
+		nil,
+	)
+	if !result.Accepted {
+		t.Fatalf("completion checker claim should be accepted after required evidence passed: %#v", result.Ledger)
 	}
 }
 

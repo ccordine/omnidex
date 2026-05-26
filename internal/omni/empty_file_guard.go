@@ -40,6 +40,50 @@ func enforceNoEmptyProjectFilesBeforeCompletion(step int, prompt, workingDir str
 	}})
 }
 
+func rejectArtifactValidationGate(step int, prompt, workingDir string, ledger []StructuredObjective, observations []StructuredCommandObservation, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
+	if result == nil || !shouldScanEmptyProjectFiles(prompt, ledger, observations) {
+		return false
+	}
+	invalid := findInvalidProjectArtifacts(workingDir, 12)
+	if len(invalid) == 0 {
+		if !latestObservationIsRuntimeArtifactValidation(result.Observations) {
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:              step,
+				Command:           "runtime.artifact_validate",
+				EvidenceKind:      "artifact_validation",
+				GeneratedBy:       "runtime",
+				VerifierID:        "artifact_validation_gate",
+				CheckedPredicates: []string{"created source/test/config files exist", "non-empty", "not placeholder-only"},
+				ExitCode:          0,
+				Stdout:            "artifact_validation_passed",
+			})
+		}
+		emitStructuredCommandEvent(onEvent, "artifact_validation_passed", "Runtime artifact validation passed", map[string]string{
+			"step": fmt.Sprintf("%d", step),
+		})
+		return false
+	}
+	emitStructuredCommandEvent(onEvent, "artifact_validation_failed", "Runtime artifact validation blocked completion", map[string]string{
+		"step":  fmt.Sprintf("%d", step),
+		"files": strings.Join(invalid, ","),
+	})
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:              step,
+		Command:           "runtime.artifact_validate",
+		EvidenceKind:      "artifact_validation",
+		GeneratedBy:       "runtime",
+		VerifierID:        "artifact_validation_gate",
+		CheckedPredicates: []string{"created source/test/config files exist", "non-empty", "not placeholder-only"},
+		ExitCode:          1,
+		Stderr:            "artifact_validation_failed: " + strings.Join(invalid, ","),
+	})
+	if result.ExitCode == 0 {
+		result.ExitCode = 1
+	}
+	result.Answer = ""
+	return true
+}
+
 func shouldScanEmptyProjectFiles(prompt string, ledger []StructuredObjective, observations []StructuredCommandObservation) bool {
 	if appBuildPromptNeedsFiles(prompt) || objectiveLedgerNeedsSubstantiveAppFiles(ledger) {
 		return true
@@ -50,6 +94,76 @@ func shouldScanEmptyProjectFiles(prompt string, ledger []StructuredObjective, ob
 		}
 	}
 	return false
+}
+
+func latestObservationIsRuntimeArtifactValidation(observations []StructuredCommandObservation) bool {
+	if len(observations) == 0 {
+		return false
+	}
+	latest := observations[len(observations)-1]
+	return latest.ExitCode == 0 && latest.Command == "runtime.artifact_validate" && latest.EvidenceKind == "artifact_validation" && latest.GeneratedBy == "runtime"
+}
+
+func findInvalidProjectArtifacts(root string, limit int) []string {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 12
+	}
+	out := []string{}
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || len(out) >= limit {
+			return nil
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			if shouldSkipEmptyFileScanDir(name) && path != root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !emptyFileGuardRelevant(path, name) {
+			return nil
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		reason := invalidProjectArtifactReason(name, string(content))
+		if reason == "" {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			rel = path
+		}
+		out = append(out, filepath.ToSlash(rel)+"("+reason+")")
+		return nil
+	})
+	return out
+}
+
+func invalidProjectArtifactReason(name, content string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return "empty"
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "placeholder", "todo", "// todo", "/* todo */", "coming soon":
+		return "placeholder_only"
+	}
+	if strings.Contains(lower, "add more styles") || strings.Contains(lower, "placeholder-only") {
+		return "placeholder_only"
+	}
+	if strings.HasSuffix(name, ".test.js") || strings.HasSuffix(name, ".test.jsx") || strings.HasSuffix(name, "_test.go") {
+		if !strings.Contains(lower, "assert") && !strings.Contains(lower, "expect") && !strings.Contains(lower, "test(") && !strings.Contains(lower, "it(") && !strings.Contains(lower, "t.") {
+			return "test_without_assertion"
+		}
+	}
+	return ""
 }
 
 func objectiveLedgerHasActiveEmptyFileCleanup(ledger []StructuredObjective) bool {
