@@ -1301,6 +1301,9 @@ func validateCommandAgainstArchitectCurrentItem(command string, contract Impleme
 		}
 		return errArchitectContract("current work item %q requires verification command %q", item.ID, commandInArchitectCWD(item.CWD, item.Verify))
 	}
+	if architectItemIsPackageMetadataUpdate(item) && structuredCommandLooksPackageMetadataOperation(command) {
+		return nil
+	}
 	if item.Path == "" {
 		return nil
 	}

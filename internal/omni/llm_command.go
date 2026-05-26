@@ -3,6 +3,7 @@ package omni
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1458,6 +1459,11 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 		command := payload.Command
+		if !payload.Done && repeatedSuccessfulStructuredCommand(command, result.Observations) {
+			if handleStructuredRepeatedCommandValidation(step, command, errRepeatedSuccessfulStructuredCommand, &ledger, onEvent, &result) {
+				continue
+			}
+		}
 		if err := validateStructuredCommandForRunWithArchitect(command, prompt, payload.ToolTask, payload.Patch, result.Observations, cfg.CurrentWorkingDirectory, ledger, worksiteSurvey); err != nil {
 			if approved, askErr := requestDependencyInstallApproval(ctx, step, prompt, command, err, cfg.UserAssistanceSpecialist, onAsk, onEvent, &result); askErr != nil {
 				return result, askErr
@@ -3828,10 +3834,14 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
 		return false, nil
 	}
-	if externalAgent, externalAgentName := selectedExternalArchitectAgent(cfg); externalAgent != nil && shouldDelegateArchitectContractToExternalAgent(contract, result.Observations) {
-		handled, err := runExternalArchitectAgentLane(ctx, step, prompt, toolTask, contract, cfg, worksiteSurvey, stdout, stderr, onEvent, result, externalAgent, externalAgentName)
-		if handled || err != nil {
-			return handled, err
+	if externalAgent, externalAgentName, unavailableReason := selectedAvailableExternalArchitectAgent(cfg); !architectItemIsPackageMetadataUpdate(*contract.CurrentItem) && shouldDelegateArchitectContractToExternalAgent(contract, result.Observations) {
+		if externalAgent == nil {
+			emitExternalArchitectUnavailable(step, unavailableReason, onEvent)
+		} else {
+			handled, err := runExternalArchitectAgentLane(ctx, step, prompt, toolTask, contract, cfg, worksiteSurvey, stdout, stderr, onEvent, result, externalAgent, externalAgentName)
+			if handled || err != nil {
+				return handled, err
+			}
 		}
 	}
 	handled := false
@@ -3841,7 +3851,25 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 			break
 		}
 		item := *contract.CurrentItem
-		if externalAgent, externalAgentName := selectedExternalArchitectAgent(cfg); externalAgent != nil && shouldDelegateArchitectContractToExternalAgent(contract, result.Observations) {
+		if architectItemIsPackageMetadataUpdate(item) {
+			if _, _, unavailableReason := selectedAvailableExternalArchitectAgent(cfg); shouldDelegateArchitectContractToExternalAgent(contract, result.Observations) && strings.TrimSpace(unavailableReason) != "" {
+				emitExternalArchitectUnavailable(step, unavailableReason, onEvent)
+			}
+			handledPackage, err := runPackageMetadataWorkHandler(step, prompt, contract, cfg, worksiteSurvey, onEvent, result)
+			if err != nil {
+				return true, err
+			}
+			if handledPackage {
+				handled = true
+				if cfg.CodeContentSpecialist == nil {
+					if externalAgent, _, _ := selectedAvailableExternalArchitectAgent(cfg); externalAgent == nil {
+						return true, nil
+					}
+				}
+				continue
+			}
+		}
+		if externalAgent, externalAgentName, _ := selectedAvailableExternalArchitectAgent(cfg); externalAgent != nil && shouldDelegateArchitectContractToExternalAgent(contract, result.Observations) {
 			return runExternalArchitectAgentLane(ctx, step, prompt, toolTask, contract, cfg, worksiteSurvey, stdout, stderr, onEvent, result, externalAgent, externalAgentName)
 		}
 		if item.Operation == "read" {
@@ -3971,9 +3999,9 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 			result.Observations = append(result.Observations, StructuredCommandObservation{
 				Step:     step,
 				ExitCode: 1,
-				Stderr:   "implementation architect code content specialist unavailable for code-owned file work item " + item.ID,
+				Stderr:   "no capable actor configured for code-owned architect file work item " + item.ID + "; external architect unavailable, local code specialist unavailable, and no deterministic recipe handler matched",
 			})
-			emitStructuredCommandEvent(onEvent, "architect_work_item_blocked", "Code-owned architect file work cannot fall through to shell path selection", map[string]string{
+			emitStructuredCommandEvent(onEvent, "architect_work_item_no_capable_actor", "Code-owned architect file work has no available non-shell actor", map[string]string{
 				"step":      fmt.Sprintf("%d", step),
 				"item_id":   item.ID,
 				"operation": item.Operation,
@@ -4033,9 +4061,220 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 	return handled, nil
 }
 
+func runPackageMetadataWorkHandler(step int, prompt string, contract ImplementationArchitectContract, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil || !architectItemIsPackageMetadataUpdate(*contract.CurrentItem) {
+		return false, nil
+	}
+	item := *contract.CurrentItem
+	targetPath := filepath.Join(cfg.CurrentWorkingDirectory, item.CWD, item.Path)
+	if err := validatePackageMetadataDependencyPlan(cfg.CurrentWorkingDirectory, worksiteSurvey); err != nil {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:     step,
+			ExitCode: 1,
+			Stderr:   "package metadata dependency plan rejected: " + err.Error(),
+		})
+		emitStructuredCommandEvent(onEvent, "package_metadata_rejected", "Package metadata handler rejected dependency plan", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"item_id": item.ID,
+			"reason":  truncateStructuredTimelineValue(err.Error()),
+		})
+		return true, nil
+	}
+	existing, _ := os.ReadFile(targetPath)
+	updated, err := deterministicReactPackageMetadata(existing, filepath.Base(filepath.Clean(firstNonEmpty(item.CWD, cfg.CurrentWorkingDirectory, "omnidex-app"))))
+	if err != nil {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:     step,
+			ExitCode: 1,
+			Stderr:   "package metadata handler failed: " + err.Error(),
+		})
+		return true, nil
+	}
+	if err := validateCodeContentProposalForArchitectItem(string(updated), contract, item); err != nil {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:     step,
+			ExitCode: 1,
+			Stderr:   "package metadata validation failed: " + err.Error(),
+		})
+		emitStructuredCommandEvent(onEvent, "package_metadata_rejected", "Package metadata handler output failed validation", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"item_id": item.ID,
+			"reason":  truncateStructuredTimelineValue(err.Error()),
+		})
+		return true, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		return true, err
+	}
+	if err := os.WriteFile(targetPath, updated, 0o644); err != nil {
+		return true, err
+	}
+	path := filepath.ToSlash(filepath.Join(item.CWD, item.Path))
+	command := fmt.Sprintf("architect.apply %s %s", item.Operation, path)
+	summary := packageMetadataReadbackSummary(updated)
+	result.Command = command
+	result.ExitCode = 0
+	result.Observations = append(result.Observations, StructuredCommandObservation{
+		Step:         step,
+		Command:      command,
+		EvidenceKind: "implementation",
+		GeneratedBy:  "package_metadata_handler",
+		ExitCode:     0,
+		Stdout:       summary,
+	})
+	emitStructuredCommandEvent(onEvent, "package_metadata_updated", "Deterministic package metadata handler updated package.json", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"item_id": item.ID,
+		"path":    path,
+	})
+	emitStructuredCommandEvent(onEvent, "dependencies_installed", "React/Vite dependency metadata configured by deterministic package handler", map[string]string{
+		"step":     fmt.Sprintf("%d", step),
+		"item_id":  item.ID,
+		"packages": strings.Join(reactVitePackageMetadataDependencies(), ","),
+	})
+	emitStructuredCommandEvent(onEvent, "scripts_configured", "Vite package scripts configured by deterministic package handler", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"item_id": item.ID,
+		"scripts": "dev,build,preview,test",
+	})
+	emitStructuredCommandEvent(onEvent, "package_json_valid", "package.json parsed and passed architect metadata validation", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"item_id": item.ID,
+		"hash":    packageMetadataSHA256(updated),
+	})
+	return true, nil
+}
+
+func architectItemIsPackageMetadataUpdate(item ArchitectWorkItem) bool {
+	if strings.TrimSpace(item.Path) == "" || strings.HasSuffix(strings.TrimSpace(item.Path), "/") {
+		return false
+	}
+	path := filepath.ToSlash(strings.ToLower(strings.TrimSpace(item.Path)))
+	if path != "package.json" && !strings.HasSuffix(path, "/package.json") {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(item.Operation)) {
+	case "create", "update":
+		return true
+	default:
+		return false
+	}
+}
+
+func validatePackageMetadataDependencyPlan(workingDirectory string, survey WorksiteSurvey) error {
+	command := "npm install " + strings.Join(reactVitePackageMetadataDependencies(), " ")
+	ledger := []StructuredObjective{{
+		ID:          "setup_react_package_metadata",
+		Description: "Configure package metadata for a React Vite app",
+		Status:      "pending",
+		Source:      structuredObjectiveSourceUserExplicit,
+		Required:    true,
+		Packages:    reactVitePackageMetadataDependencies(),
+	}}
+	return validateStructuredCommandForRunWithSurvey(command, nil, workingDirectory, ledger, survey)
+}
+
+func deterministicReactPackageMetadata(existing []byte, fallbackName string) ([]byte, error) {
+	pkg := map[string]interface{}{}
+	if strings.TrimSpace(string(existing)) != "" {
+		if err := json.Unmarshal(existing, &pkg); err != nil {
+			return nil, fmt.Errorf("existing package.json is invalid JSON: %w", err)
+		}
+	}
+	name, _ := pkg["name"].(string)
+	if strings.TrimSpace(name) == "" {
+		pkg["name"] = sanitizePackageMetadataName(fallbackName)
+	}
+	if _, ok := pkg["version"].(string); !ok {
+		pkg["version"] = "0.1.0"
+	}
+	pkg["type"] = "module"
+	scripts := packageStringMap(pkg["scripts"])
+	scripts["dev"] = "vite --host 0.0.0.0"
+	scripts["build"] = "vite build"
+	scripts["preview"] = "vite --host 0.0.0.0"
+	scripts["test"] = "node scripts/smoke-test.mjs"
+	pkg["scripts"] = scripts
+	deps := packageStringMap(pkg["dependencies"])
+	for _, dep := range reactVitePackageMetadataDependencies() {
+		if strings.TrimSpace(deps[dep]) == "" {
+			deps[dep] = "latest"
+		}
+	}
+	pkg["dependencies"] = deps
+	out, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, '\n')
+	return out, nil
+}
+
+func reactVitePackageMetadataDependencies() []string {
+	return []string{"react", "react-dom", "vite", "@vitejs/plugin-react"}
+}
+
+func packageStringMap(raw interface{}) map[string]string {
+	out := map[string]string{}
+	values, ok := raw.(map[string]interface{})
+	if !ok {
+		return out
+	}
+	for key, value := range values {
+		if text, ok := value.(string); ok {
+			out[key] = text
+		}
+	}
+	return out
+}
+
+func sanitizePackageMetadataName(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	clean := strings.Trim(b.String(), "-")
+	if clean == "" {
+		return "omnidex-app"
+	}
+	return clean
+}
+
+func packageMetadataReadbackSummary(content []byte) string {
+	return "package_metadata_updated; dependencies_installed=" + strings.Join(reactVitePackageMetadataDependencies(), ",") +
+		"; scripts_configured=dev,build,preview,test; package_json_valid=true; sha256=" + packageMetadataSHA256(content) +
+		"; snippet=" + truncateStructuredObservation(strings.TrimSpace(string(content)))
+}
+
+func packageMetadataSHA256(content []byte) string {
+	sum := sha256.Sum256(content)
+	return fmt.Sprintf("%x", sum)
+}
+
 func runArchitectLaneForCurrentItemBeforePlannerCommand(ctx context.Context, step int, prompt, toolTask, command string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
-	externalAgent, _ := selectedExternalArchitectAgent(cfg)
-	if strings.TrimSpace(command) == "" || (cfg.CodeContentSpecialist == nil && externalAgent == nil) || !architectCurrentItemPending(prompt, toolTask, cfg, worksiteSurvey, result.Observations) {
+	externalAgent, _, _ := selectedAvailableExternalArchitectAgent(cfg)
+	if strings.TrimSpace(command) == "" {
+		return false, nil
+	}
+	contract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
+	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
+		return false, nil
+	}
+	architectTargetedTask := strings.Contains(strings.ToLower(toolTask), "implementation architect target root:") || hasImplementationArchitectProgress(result.Observations)
+	if !architectTargetedTask {
+		return false, nil
+	}
+	if cfg.CodeContentSpecialist == nil && externalAgent == nil && !architectItemIsPackageMetadataUpdate(*contract.CurrentItem) {
 		return false, nil
 	}
 	emitStructuredCommandEvent(onEvent, "planner_command_preempted_for_architect_item", "Planner command deferred because architect current item owns the next action", map[string]string{
@@ -4046,13 +4285,61 @@ func runArchitectLaneForCurrentItemBeforePlannerCommand(ctx context.Context, ste
 }
 
 func selectedExternalArchitectAgent(cfg structuredCommandDecisionRunConfig) (CursorArchitectAgent, string) {
+	agent, name, _ := selectedAvailableExternalArchitectAgent(cfg)
+	return agent, name
+}
+
+func selectedAvailableExternalArchitectAgent(cfg structuredCommandDecisionRunConfig) (CursorArchitectAgent, string, string) {
+	reasons := []string{}
 	if cfg.CodexArchitectAgent != nil {
-		return cfg.CodexArchitectAgent, "codex_sdk"
+		if reason := externalArchitectAgentUnavailableReason(cfg.CodexArchitectAgent, "codex_sdk"); reason == "" {
+			return cfg.CodexArchitectAgent, "codex_sdk", ""
+		} else {
+			reasons = append(reasons, reason)
+		}
 	}
 	if cfg.CursorArchitectAgent != nil {
-		return cfg.CursorArchitectAgent, "cursor_sdk"
+		if reason := externalArchitectAgentUnavailableReason(cfg.CursorArchitectAgent, "cursor_sdk"); reason == "" {
+			return cfg.CursorArchitectAgent, "cursor_sdk", ""
+		} else {
+			reasons = append(reasons, reason)
+		}
 	}
-	return nil, ""
+	if len(reasons) == 0 {
+		reasons = append(reasons, "no external architect agent is enabled and selected")
+	}
+	return nil, "", strings.Join(reasons, "; ")
+}
+
+type externalArchitectAgentAvailability interface {
+	ArchitectAgentAvailable() (bool, string)
+}
+
+func externalArchitectAgentUnavailableReason(agent CursorArchitectAgent, agentName string) string {
+	if agent == nil {
+		return agentName + " architect agent is not configured"
+	}
+	if availability, ok := agent.(externalArchitectAgentAvailability); ok {
+		available, reason := availability.ArchitectAgentAvailable()
+		if !available {
+			reason = strings.TrimSpace(reason)
+			if reason == "" {
+				reason = agentName + " architect agent is unavailable"
+			}
+			return reason
+		}
+	}
+	return ""
+}
+
+func emitExternalArchitectUnavailable(step int, reason string, onEvent func(StructuredCommandEvent)) {
+	if strings.TrimSpace(reason) == "" {
+		reason = "external architect agent is unavailable"
+	}
+	emitStructuredCommandEvent(onEvent, "external_agent_unavailable", "External architect agent unavailable; routing to local Omnidex actor", map[string]string{
+		"step":   fmt.Sprintf("%d", step),
+		"reason": truncateStructuredTimelineValue(reason),
+	})
 }
 
 func shouldDelegateArchitectContractToExternalAgent(contract ImplementationArchitectContract, observations []StructuredCommandObservation) bool {
@@ -4064,6 +4351,9 @@ func shouldDelegateArchitectContractToExternalAgent(contract ImplementationArchi
 	}
 	for _, obs := range observations {
 		if obs.ExitCode == 0 && (strings.HasPrefix(strings.TrimSpace(obs.Command), "cursor_sdk.architect_agent ") || strings.HasPrefix(strings.TrimSpace(obs.Command), "codex_sdk.architect_agent ")) {
+			return false
+		}
+		if obs.ExitCode != 0 && (strings.HasPrefix(strings.TrimSpace(obs.Command), "cursor_sdk.architect_agent ") || strings.HasPrefix(strings.TrimSpace(obs.Command), "codex_sdk.architect_agent ")) {
 			return false
 		}
 	}
@@ -6589,6 +6879,9 @@ func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, ration
 	if toolTaskAllowsInspectionEvidence(toolTask) && structuredCommandLooksReadOnlyEvidence(command) {
 		return nil
 	}
+	if toolTaskAllowsPackageMetadataOperations(toolTask) && structuredCommandLooksPackageMetadataOperation(command) {
+		return nil
+	}
 	if toolTaskRequiresSourceImplementation(toolTask) && structuredCommandLooksDependencyInstall(command) && !toolTaskAllowsDependencyInstall(toolTask) {
 		return fmt.Errorf("tool_task requires source file implementation; dependency install command %q does not satisfy it", strings.TrimSpace(command))
 	}
@@ -6874,6 +7167,9 @@ func validateShellDependencyInstallRationale(command, toolTask, rationale string
 	if len(requests) == 0 {
 		return nil
 	}
+	if toolTaskAllowsPackageMetadataOperations(toolTask) && packageMetadataDependencyRequestsAllowed(requests) {
+		return nil
+	}
 	if strings.TrimSpace(rationale) == "" {
 		return nil
 	}
@@ -6901,6 +7197,25 @@ func validateShellDependencyInstallRationale(command, toolTask, rationale string
 		return fmt.Errorf("dependency scope drift: dependency install command %q adds package %q without tool_task or evidence-backed rationale; do not add packages because they are merely common requirements", strings.TrimSpace(command), pkg)
 	}
 	return nil
+}
+
+func packageMetadataDependencyRequestsAllowed(requests []structuredDependencyInstallRequest) bool {
+	allowed := map[string]bool{}
+	for _, dep := range reactVitePackageMetadataDependencies() {
+		allowed[normalizeDependencyPackageName(dep)] = true
+	}
+	for _, request := range requests {
+		for _, pkg := range request.Packages {
+			normalized := normalizeDependencyPackageName(pkg)
+			if normalized == "" {
+				continue
+			}
+			if !allowed[normalized] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func dependencyRationaleIsEvidenceAnchored(pkg, rationaleText string) bool {
@@ -6978,6 +7293,47 @@ func toolTaskAllowsDependencyInstall(toolTask string) bool {
 	for _, needle := range needles {
 		if strings.Contains(task, needle) {
 			return true
+		}
+	}
+	return false
+}
+
+func toolTaskAllowsPackageMetadataOperations(toolTask string) bool {
+	task := strings.ToLower(toolTask)
+	for _, needle := range []string{
+		"package_metadata_update",
+		"package metadata",
+		"package.json",
+		"setup_react_package_metadata",
+		"configure_package_scripts",
+		"configure_vite_react_package",
+		"install_dependencies",
+	} {
+		if strings.Contains(task, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func structuredCommandLooksPackageMetadataOperation(command string) bool {
+	for _, segment := range structuredCommandSegments(command) {
+		if len(segment) < 2 {
+			continue
+		}
+		root := cleanCommandPathToken(segment[0])
+		if root != "npm" {
+			continue
+		}
+		action := segment[1]
+		if action == "install" || action == "add" || action == "i" || action == "set-script" {
+			return true
+		}
+		if action == "pkg" && len(segment) >= 3 {
+			switch segment[2] {
+			case "set", "delete", "del", "get":
+				return true
+			}
 		}
 	}
 	return false

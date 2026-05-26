@@ -22,7 +22,7 @@ type CodexSDKArchitectAgent struct {
 }
 
 func NewCodexSDKArchitectAgentFromEnv() *CodexSDKArchitectAgent {
-	if !envBoolOrDefault("OMNI_ENABLE_CODEX_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CODEX_ARCHITECT", false) {
+	if !externalArchitectAgentSelectedFromEnv("codex") || !envBoolOrDefault("OMNI_ENABLE_CODEX_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CODEX_ARCHITECT", false) {
 		return nil
 	}
 	runnerDir := strings.TrimSpace(os.Getenv("OMNI_CODEX_SDK_RUNNER_DIR"))
@@ -41,6 +41,21 @@ func NewCodexSDKArchitectAgentFromEnv() *CodexSDKArchitectAgent {
 		NPMBin:    firstNonEmpty(os.Getenv("OMNI_CODEX_NPM_BIN"), "npm"),
 		CodexBin:  firstNonEmpty(os.Getenv("OMNI_CODEX_BIN"), "codex"),
 	}
+}
+
+func externalArchitectAgentSelectedFromEnv(agent string) bool {
+	selected := strings.ToLower(strings.TrimSpace(os.Getenv("OMNI_ARCHITECT_AGENT")))
+	if selected == "" || selected == "none" || selected == "local" || selected == "omnidex" {
+		return false
+	}
+	return selected == strings.ToLower(strings.TrimSpace(agent))
+}
+
+func (a *CodexSDKArchitectAgent) ArchitectAgentAvailable() (bool, string) {
+	if a == nil {
+		return false, "codex sdk architect agent is not configured"
+	}
+	return true, ""
 }
 
 func (a *CodexSDKArchitectAgent) RunArchitectTask(ctx context.Context, input CursorArchitectAgentInput) (CursorArchitectAgentResult, error) {

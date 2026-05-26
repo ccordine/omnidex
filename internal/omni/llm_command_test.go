@@ -4429,7 +4429,6 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 		`{"command":"","done":true,"answer":"React music production app implemented"}`,
 	}}
 	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
-		{Content: `{"scripts":{"test":"node scripts/smoke-test.mjs","build":"test -s src/App.js && test -s scripts/smoke-test.mjs"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}` + "\n", Rationale: "package metadata"},
 		{Content: "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()] });\n", Rationale: "vite config"},
 		{Content: `<div id="root"></div><script type="module" src="/src/main.jsx"></script>` + "\n", Rationale: "html shell"},
 		{Content: "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport App from './App.js';\ncreateRoot(document.getElementById('root')).render(<App />);\n", Rationale: "mount entry"},
@@ -4465,14 +4464,14 @@ func TestStructuredCommandDecisionArchitectLaneWritesTestThenImplementationBefor
 	if len(code.inputs) < 2 {
 		t.Fatalf("code specialist calls = %d, want at least test then implementation", len(code.inputs))
 	}
-	if code.inputs[0].TestFirst || code.inputs[0].WorkItem.Path != "package.json" {
-		t.Fatalf("first code item should be package metadata: %#v", code.inputs[0])
+	if code.inputs[0].TestFirst || code.inputs[0].WorkItem.Path != "vite.config.js" {
+		t.Fatalf("first code item should be Vite config after deterministic package metadata: %#v", code.inputs[0])
 	}
-	if !code.inputs[4].TestFirst || code.inputs[4].WorkItem.Path != "scripts/smoke-test.mjs" {
-		t.Fatalf("fifth code item should be test-first smoke probe: %#v", code.inputs[4])
+	if !code.inputs[3].TestFirst || code.inputs[3].WorkItem.Path != "scripts/smoke-test.mjs" {
+		t.Fatalf("fourth code item should be test-first smoke probe: %#v", code.inputs[3])
 	}
-	if code.inputs[5].TestFirst || code.inputs[5].WorkItem.Path != "src/App.js" {
-		t.Fatalf("sixth code item should be implementation App.js: %#v", code.inputs[5])
+	if code.inputs[4].TestFirst || code.inputs[4].WorkItem.Path != "src/App.js" {
+		t.Fatalf("fifth code item should be implementation App.js: %#v", code.inputs[4])
 	}
 	if len(evaluator.inputs) != 1 {
 		t.Fatalf("evaluator calls = %d, want only final broad evaluator after architect-scoped validators pass", len(evaluator.inputs))
@@ -6126,14 +6125,17 @@ func TestProgressionGateEmptyFileRecoveryWritesCodeOwnedPathWithoutShell(t *test
 
 func TestArchitectFileWorkDoesNotFallThroughToShellPathSelection(t *testing.T) {
 	workspace := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"scripts":{"test":"node scripts/smoke-test.mjs","build":"vite build"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{{
 		Command:   "cat src/components/UnqueuedPath.js",
 		Rationale: "This should never be consulted for architect file work.",
 	}}}
-	result := CommandDecisionResult{}
+	result := CommandDecisionResult{Observations: []StructuredCommandObservation{
+		{Command: "architect.apply create package.json", ExitCode: 0},
+		{Command: "architect.apply create vite.config.js", ExitCode: 0},
+		{Command: "architect.apply create index.html", ExitCode: 0},
+		{Command: "architect.apply create src/main.jsx", ExitCode: 0},
+		{Command: "architect.apply create scripts/smoke-test.mjs", ExitCode: 0},
+	}}
 	events := []StructuredCommandEvent{}
 	handled, err := runDelegatedShellSpecialist(
 		context.Background(),
@@ -6157,7 +6159,7 @@ func TestArchitectFileWorkDoesNotFallThroughToShellPathSelection(t *testing.T) {
 	if len(shell.inputs) != 0 {
 		t.Fatalf("shell specialist was called for code-owned file work: %#v", shell.inputs)
 	}
-	if !structuredEventsContain(events, "architect_work_item_blocked") && !structuredEventsContain(events, "structured_tool_delegation_blocked_for_code_owned_file") {
+	if !structuredEventsContain(events, "architect_work_item_no_capable_actor") && !structuredEventsContain(events, "structured_tool_delegation_blocked_for_code_owned_file") {
 		t.Fatalf("missing code-owned file work block event: %#v", events)
 	}
 }
@@ -6174,7 +6176,7 @@ func TestPlannerCommandPreemptedByArchitectCurrentItem(t *testing.T) {
 		context.Background(),
 		4,
 		"Build a React music production studio app",
-		"",
+		"Implementation architect target root: . Create or modify the actual project files.",
 		"close",
 		structuredCommandDecisionRunConfig{
 			CurrentWorkingDirectory: workspace,
@@ -6195,8 +6197,8 @@ func TestPlannerCommandPreemptedByArchitectCurrentItem(t *testing.T) {
 	if !structuredEventsContain(events, "planner_command_preempted_for_architect_item") {
 		t.Fatalf("missing preemption event: %#v", events)
 	}
-	if !structuredEventsContain(events, "architect_work_item_applied") {
-		t.Fatalf("architect lane did not apply current item: %#v", events)
+	if !structuredEventsContain(events, "package_metadata_updated") {
+		t.Fatalf("architect lane did not apply package metadata current item: %#v", events)
 	}
 	appliedPackage := false
 	for _, obs := range result.Observations {
@@ -6210,8 +6212,8 @@ func TestPlannerCommandPreemptedByArchitectCurrentItem(t *testing.T) {
 	if !appliedPackage {
 		t.Fatalf("architect lane did not apply package.json current item: %#v", result.Observations)
 	}
-	if len(code.inputs) == 0 || code.inputs[0].WorkItem.Path != "package.json" {
-		t.Fatalf("code specialist was not first grounded to package.json current item: %#v", code.inputs)
+	if len(code.inputs) > 0 && code.inputs[0].WorkItem.Path == "package.json" {
+		t.Fatalf("deterministic package metadata handler should handle package.json before code specialist: %#v", code.inputs)
 	}
 }
 
@@ -6249,11 +6251,183 @@ func TestArchitectLaneReadsExistingFileBeforeUpdatingIt(t *testing.T) {
 	if len(result.Observations) < 2 || result.Observations[0].Command != "architect.read package.json" || result.Observations[1].Command != "architect.apply update package.json" {
 		t.Fatalf("expected read then update observations, got %#v", result.Observations)
 	}
-	if len(code.inputs) == 0 {
-		t.Fatal("expected code specialist input")
+	if len(code.inputs) > 0 && code.inputs[0].WorkItem.Path == "package.json" {
+		t.Fatalf("deterministic package metadata handler should handle package.json before code specialist: %#v", code.inputs)
 	}
-	if !strings.Contains(code.inputs[0].ExistingContent, `"test":"old"`) {
-		t.Fatalf("code specialist did not receive existing file content: %#v", code.inputs[0])
+	updated, err := os.ReadFile(filepath.Join(workspace, "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), `"test": "node scripts/smoke-test.mjs"`) {
+		t.Fatalf("package metadata handler did not replace fake test script: %s", string(updated))
+	}
+}
+
+func TestCodexNotConfiguredPackageMetadataRoutesToLocalHandler(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"notes","version":"1.0.0","scripts":{"test":"echo \"Error: no test specified\" && exit 1"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var nilCodex *CodexSDKArchitectAgent
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	handled, err := runArchitectCodeContentLane(
+		context.Background(),
+		5,
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			CodexArchitectAgent:     nilCodex,
+		},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected package metadata handler to handle package.json work")
+	}
+	if !structuredEventsContain(events, "external_agent_unavailable") {
+		t.Fatalf("missing external_agent_unavailable event: %#v", events)
+	}
+	if structuredEventsContain(events, "external_agent_started") || structuredEventsContain(events, "codex_sdk_architect_agent_started") {
+		t.Fatalf("unconfigured external agent should not start: %#v", events)
+	}
+	if !structuredEventsContain(events, "package_metadata_updated") || !structuredEventsContain(events, "scripts_configured") || !structuredEventsContain(events, "package_json_valid") {
+		t.Fatalf("missing package metadata evidence events: %#v", events)
+	}
+	content, err := os.ReadFile(filepath.Join(workspace, "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"type": "module"`, `"dev": "vite --host 0.0.0.0"`, `"build": "vite build"`, `"preview": "vite --host 0.0.0.0"`, `"@vitejs/plugin-react": "latest"`} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("package.json missing %q:\n%s", want, string(content))
+		}
+	}
+}
+
+func TestCodexNotConfiguredSourceFileWorkRoutesToLocalCodeSpecialist(t *testing.T) {
+	workspace := t.TempDir()
+	var nilCodex *CodexSDKArchitectAgent
+	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{{
+		Content:   "import React, { useState } from 'react';\n\nexport default function App() {\n  const [level, setLevel] = useState(1);\n  return React.createElement('main', null,\n    React.createElement('h1', null, 'Notes'),\n    React.createElement('button', { type: 'button', onClick: () => setLevel(level + 1) }, 'Add note'),\n    React.createElement('input', { type: 'range', value: level, onChange: (event) => setLevel(Number(event.target.value)) })\n  );\n}\n",
+		Rationale: "local source implementation",
+	}}}
+	result := CommandDecisionResult{Observations: []StructuredCommandObservation{
+		{Command: "architect.apply create package.json", ExitCode: 0},
+		{Command: "architect.apply create vite.config.js", ExitCode: 0},
+		{Command: "architect.apply create index.html", ExitCode: 0},
+		{Command: "architect.apply create src/main.jsx", ExitCode: 0},
+		{Command: "architect.apply create scripts/smoke-test.mjs", ExitCode: 0},
+	}}
+	events := []StructuredCommandEvent{}
+	handled, err := runArchitectCodeContentLane(
+		context.Background(),
+		6,
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			CodexArchitectAgent:     nilCodex,
+			CodeContentSpecialist:   code,
+		},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected local code specialist to handle source file work")
+	}
+	if len(code.inputs) == 0 || code.inputs[0].WorkItem.Path != "src/App.js" {
+		t.Fatalf("source file work did not route to local code specialist: %#v", code.inputs)
+	}
+	if structuredEventsContain(events, "external_agent_started") || structuredEventsContain(events, "codex_sdk_architect_agent_started") {
+		t.Fatalf("unconfigured external agent should not start: %#v", events)
+	}
+}
+
+func TestPackageMetadataCommandsAllowedForPackageWork(t *testing.T) {
+	toolTask := "work_kind: package_metadata_update setup_react_package_metadata configure_package_scripts install_dependencies"
+	for _, command := range []string{
+		`npm install react react-dom vite @vitejs/plugin-react`,
+		`npm pkg set scripts.dev="vite --host 0.0.0.0"`,
+		`npm pkg set scripts.build="vite build"`,
+		`npm pkg set scripts.preview="vite --host 0.0.0.0"`,
+		`npm pkg set type=module`,
+		`npm pkg delete scripts.test`,
+	} {
+		if err := validateShellProposalAgainstToolTask(command, toolTask); err != nil {
+			t.Fatalf("package metadata command %q should be allowed: %v", command, err)
+		}
+	}
+}
+
+func TestPackageMetadataDependencyScopeRejectsUnrequestedDependency(t *testing.T) {
+	toolTask := "work_kind: package_metadata_update setup_react_package_metadata install_dependencies"
+	err := validateShellProposalAgainstToolTaskWithRationale(
+		"npm install react-router-dom",
+		toolTask,
+		"Add routing because many React apps commonly need navigation.",
+	)
+	if err == nil {
+		t.Fatal("expected react-router-dom to be rejected for package metadata work")
+	}
+	ledger := []StructuredObjective{{
+		ID:       "setup_react_package_metadata",
+		Status:   "pending",
+		Source:   structuredObjectiveSourceUserExplicit,
+		Required: true,
+		Packages: reactVitePackageMetadataDependencies(),
+	}}
+	if err := validateStructuredCommandForRun("npm install react-router-dom", nil, t.TempDir(), ledger); err == nil {
+		t.Fatal("dependency scope validation allowed unrequested react-router-dom")
+	}
+}
+
+func TestSourceFileWorkFailsWithCapabilityEvidenceWhenAllActorsUnavailable(t *testing.T) {
+	workspace := t.TempDir()
+	result := CommandDecisionResult{Observations: []StructuredCommandObservation{
+		{Command: "architect.apply create package.json", ExitCode: 0},
+		{Command: "architect.apply create vite.config.js", ExitCode: 0},
+		{Command: "architect.apply create index.html", ExitCode: 0},
+		{Command: "architect.apply create src/main.jsx", ExitCode: 0},
+		{Command: "architect.apply create scripts/smoke-test.mjs", ExitCode: 0},
+	}}
+	events := []StructuredCommandEvent{}
+	handled, err := runArchitectCodeContentLane(
+		context.Background(),
+		7,
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected source work to fail with capability evidence")
+	}
+	if !structuredEventsContain(events, "architect_work_item_no_capable_actor") {
+		t.Fatalf("missing no-capable-actor event: %#v", events)
+	}
+	if got := result.Observations[len(result.Observations)-1].Stderr; !strings.Contains(got, "no capable actor configured") {
+		t.Fatalf("missing capability evidence stderr: %q", got)
 	}
 }
 
@@ -6415,6 +6589,34 @@ func TestSelectedExternalArchitectAgentPrefersCodexWhenConfigured(t *testing.T) 
 	})
 	if agent != codex || name != "codex_sdk" {
 		t.Fatalf("selected agent = %#v %q, want codex", agent, name)
+	}
+}
+
+func TestExternalArchitectAgentsRequireExplicitEnvSelection(t *testing.T) {
+	t.Setenv("CURSOR_API_KEY", "cursor-key")
+	t.Setenv("CODEX_API_KEY", "codex-key")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OMNI_ENABLE_CURSOR_ARCHITECT", "true")
+	t.Setenv("OMNI_ENABLE_CODEX_ARCHITECT", "true")
+	t.Setenv("OMNI_DISABLE_CURSOR_ARCHITECT", "false")
+	t.Setenv("OMNI_DISABLE_CODEX_ARCHITECT", "false")
+	t.Setenv("OMNI_ARCHITECT_AGENT", "")
+	if NewCursorSDKArchitectAgentFromEnv() != nil || NewCodexSDKArchitectAgentFromEnv() != nil {
+		t.Fatal("external architect agents should stay disabled unless OMNI_ARCHITECT_AGENT selects one")
+	}
+	t.Setenv("OMNI_ARCHITECT_AGENT", "cursor")
+	if NewCursorSDKArchitectAgentFromEnv() == nil {
+		t.Fatal("cursor architect should be configured when selected and enabled")
+	}
+	if NewCodexSDKArchitectAgentFromEnv() != nil {
+		t.Fatal("codex architect should not be configured when cursor is selected")
+	}
+	t.Setenv("OMNI_ARCHITECT_AGENT", "codex")
+	if NewCodexSDKArchitectAgentFromEnv() == nil {
+		t.Fatal("codex architect should be configured when selected and enabled")
+	}
+	if NewCursorSDKArchitectAgentFromEnv() != nil {
+		t.Fatal("cursor architect should not be configured when codex is selected")
 	}
 }
 

@@ -449,9 +449,13 @@ Omnidex prepares a mission packet
 
 External agent output is recorded as implementation evidence only. A streamed `completed` event means the worker claims its implementation is ready for validation; it does not mean the Omnidex objective is done.
 
-Cursor delegation is enabled when `CURSOR_API_KEY` is present unless explicitly disabled:
+External agent delegation is opt-in. If no agent is explicitly enabled and selected, Omnidex uses its local coding system and deterministic handlers.
+
+Cursor delegation requires both selection and enablement:
 
 ```env
+OMNI_ARCHITECT_AGENT=cursor
+OMNI_ENABLE_CURSOR_ARCHITECT=true
 CURSOR_API_KEY=...
 OMNI_CURSOR_MODEL=composer-2
 OMNI_CURSOR_TIMEOUT=90m
@@ -462,9 +466,10 @@ OMNI_CURSOR_NPM_BIN=npm
 OMNI_DISABLE_CURSOR_ARCHITECT=false
 ```
 
-Codex delegation is opt-in:
+Codex delegation also requires both selection and enablement:
 
 ```env
+OMNI_ARCHITECT_AGENT=codex
 OMNI_ENABLE_CODEX_ARCHITECT=true
 CODEX_API_KEY=...
 # OPENAI_API_KEY is also accepted when CODEX_API_KEY is unset.
@@ -478,7 +483,7 @@ OMNI_CODEX_BIN=codex
 OMNI_DISABLE_CODEX_ARCHITECT=false
 ```
 
-When both Cursor and Codex are configured, Omnidex currently prefers Codex for architect delegation. Cursor remains available as the fallback external implementation pilot when Codex is not enabled.
+Set `OMNI_ARCHITECT_AGENT=none` or leave it unset to force local Omnidex execution even when SDK credentials are present.
 
 Mission packets are compact by design. They include:
 

@@ -177,8 +177,12 @@ func (a *App) Run(args []string) error {
 	a.recipes = loadOptionalRecipes(*recipeRoot)
 	a.enableCommandCache = *enableCommandCache
 	a.commandCacheRoot = *commandCacheRoot
-	a.cursorArchitect = NewCursorSDKArchitectAgentFromEnv()
-	a.codexArchitect = NewCodexSDKArchitectAgentFromEnv()
+	if cursorArchitect := NewCursorSDKArchitectAgentFromEnv(); cursorArchitect != nil {
+		a.cursorArchitect = cursorArchitect
+	}
+	if codexArchitect := NewCodexSDKArchitectAgentFromEnv(); codexArchitect != nil {
+		a.codexArchitect = codexArchitect
+	}
 
 	if !*noOllama {
 		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)

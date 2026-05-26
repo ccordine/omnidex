@@ -89,7 +89,7 @@ func shouldScanEmptyProjectFiles(prompt string, ledger []StructuredObjective, ob
 		return true
 	}
 	for _, obs := range observations {
-		if obs.ExitCode == 0 && structuredCommandLooksMutating(obs.Command) {
+		if obs.ExitCode == 0 && structuredCommandLooksAppFileMutation(obs.Command) {
 			return true
 		}
 	}

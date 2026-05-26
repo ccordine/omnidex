@@ -21,7 +21,7 @@ type CursorSDKArchitectAgent struct {
 }
 
 func NewCursorSDKArchitectAgentFromEnv() *CursorSDKArchitectAgent {
-	if envBoolOrDefault("OMNI_DISABLE_CURSOR_ARCHITECT", false) {
+	if !externalArchitectAgentSelectedFromEnv("cursor") || !envBoolOrDefault("OMNI_ENABLE_CURSOR_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CURSOR_ARCHITECT", false) {
 		return nil
 	}
 	apiKey := strings.TrimSpace(os.Getenv("CURSOR_API_KEY"))
@@ -43,6 +43,16 @@ func NewCursorSDKArchitectAgentFromEnv() *CursorSDKArchitectAgent {
 		NodeBin:   firstNonEmpty(os.Getenv("OMNI_CURSOR_NODE_BIN"), "node"),
 		NPMBin:    firstNonEmpty(os.Getenv("OMNI_CURSOR_NPM_BIN"), "npm"),
 	}
+}
+
+func (a *CursorSDKArchitectAgent) ArchitectAgentAvailable() (bool, string) {
+	if a == nil {
+		return false, "cursor sdk architect agent is not configured"
+	}
+	if strings.TrimSpace(a.APIKey) == "" {
+		return false, "CURSOR_API_KEY is required for cursor sdk architect delegation"
+	}
+	return true, ""
 }
 
 func (a *CursorSDKArchitectAgent) RunArchitectTask(ctx context.Context, input CursorArchitectAgentInput) (CursorArchitectAgentResult, error) {
