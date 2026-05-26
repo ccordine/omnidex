@@ -46,57 +46,51 @@ func NewCursorSDKArchitectAgentFromEnv() *CursorSDKArchitectAgent {
 }
 
 func (a *CursorSDKArchitectAgent) RunArchitectTask(ctx context.Context, input CursorArchitectAgentInput) (CursorArchitectAgentResult, error) {
-	if a == nil {
-		return CursorArchitectAgentResult{}, fmt.Errorf("cursor sdk architect agent is not configured")
-	}
-	if strings.TrimSpace(a.APIKey) == "" {
-		return CursorArchitectAgentResult{}, fmt.Errorf("CURSOR_API_KEY is required for cursor sdk architect delegation")
-	}
-	workspace := strings.TrimSpace(input.Workspace)
-	if workspace == "" {
-		workspace = "."
-	}
-	if err := a.ensureRunner(ctx); err != nil {
+	session, err := a.NewExternalAgentSession(input)
+	if err != nil {
 		return CursorArchitectAgentResult{}, err
 	}
-	request := cursorSDKRunnerRequest{
-		APIKey:    a.APIKey,
-		Model:     firstNonEmpty(a.Model, "composer-2"),
-		Workspace: workspace,
-		Prompt:    buildCursorArchitectPrompt(input),
-	}
-	blob, err := json.Marshal(request)
-	if err != nil {
-		return CursorArchitectAgentResult{}, fmt.Errorf("marshal cursor sdk request: %w", err)
-	}
-	reqFile, err := os.CreateTemp("", "omnidex-cursor-sdk-request-*.json")
-	if err != nil {
-		return CursorArchitectAgentResult{}, fmt.Errorf("create cursor sdk request: %w", err)
-	}
-	reqPath := reqFile.Name()
-	defer os.Remove(reqPath)
-	if _, err := reqFile.Write(blob); err != nil {
-		reqFile.Close()
-		return CursorArchitectAgentResult{}, fmt.Errorf("write cursor sdk request: %w", err)
-	}
-	if err := reqFile.Close(); err != nil {
-		return CursorArchitectAgentResult{}, fmt.Errorf("close cursor sdk request: %w", err)
-	}
-	runCtx, cancel := context.WithTimeout(ctx, envDurationOrDefault("OMNI_CURSOR_TIMEOUT", 90*time.Minute))
+	ctx, cancel := context.WithTimeout(ctx, envDurationOrDefault("OMNI_CURSOR_TIMEOUT", 90*time.Minute))
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, firstNonEmpty(a.NodeBin, "node"), filepath.Join(a.RunnerDir, "runner.mjs"), reqPath)
-	cmd.Dir = a.RunnerDir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return CursorArchitectAgentResult{}, fmt.Errorf("run cursor sdk architect agent: %w: %s", err, strings.TrimSpace(stderr.String()))
+	events, err := session.Start(ctx, ExternalAgentJob{SessionID: "cursor-sdk", Agent: "cursor", Mode: "implementation", Packet: input.Packet, Prompt: buildCursorArchitectPrompt(input), Workspace: input.Workspace})
+	if err != nil {
+		return CursorArchitectAgentResult{}, err
 	}
-	var result CursorArchitectAgentResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		return CursorArchitectAgentResult{Output: stdout.String()}, nil
+	return resultFromExternalAgentEvents(events), nil
+}
+
+func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAgentInput) (ExternalAgentSession, error) {
+	if a == nil {
+		return nil, fmt.Errorf("cursor sdk architect agent is not configured")
 	}
-	return result, nil
+	if strings.TrimSpace(a.APIKey) == "" {
+		return nil, fmt.Errorf("CURSOR_API_KEY is required for cursor sdk architect delegation")
+	}
+	if err := a.ensureRunner(context.Background()); err != nil {
+		return nil, err
+	}
+	return &externalAgentCommandSession{
+		agent: "cursor",
+		command: func(ctx context.Context, job ExternalAgentJob) (*exec.Cmd, error) {
+			workspace := strings.TrimSpace(job.Workspace)
+			if workspace == "" {
+				workspace = "."
+			}
+			request := cursorSDKRunnerRequest{
+				APIKey:    a.APIKey,
+				Model:     firstNonEmpty(a.Model, "composer-2"),
+				Workspace: workspace,
+				Prompt:    job.Prompt,
+			}
+			reqPath, err := writeExternalAgentRequest("omnidex-cursor-sdk-request-*.json", request)
+			if err != nil {
+				return nil, err
+			}
+			cmd := exec.CommandContext(ctx, firstNonEmpty(a.NodeBin, "node"), filepath.Join(a.RunnerDir, "runner.mjs"), reqPath)
+			cmd.Dir = a.RunnerDir
+			return cmd, nil
+		},
+	}, nil
 }
 
 type cursorSDKRunnerRequest struct {
@@ -137,29 +131,22 @@ func (a *CursorSDKArchitectAgent) ensureRunner(ctx context.Context) error {
 
 func buildCursorArchitectPrompt(input CursorArchitectAgentInput) string {
 	payload := struct {
-		Role              string                          `json:"role"`
-		UserPrompt        string                          `json:"user_prompt"`
-		ToolTask          string                          `json:"tool_task"`
-		ArchitectContract ImplementationArchitectContract `json:"architect_contract"`
-		Observations      []StructuredCommandObservation  `json:"observations,omitempty"`
-		SessionMemories   []SessionMemory                 `json:"session_memories,omitempty"`
-		WorksiteSurvey    WorksiteSurvey                  `json:"worksite_survey"`
-		Rules             []string                        `json:"rules"`
+		Role         string                         `json:"role"`
+		Packet       CursorImplementationPacket     `json:"cursor_packet"`
+		Observations []StructuredCommandObservation `json:"recent_observations,omitempty"`
+		Rules        []string                       `json:"rules"`
 	}{
-		Role:              "cursor_sdk_implementation_architect_agent",
-		UserPrompt:        input.UserPrompt,
-		ToolTask:          input.ToolTask,
-		ArchitectContract: input.ArchitectContract,
-		Observations:      input.Observations,
-		SessionMemories:   input.SessionMemories,
-		WorksiteSurvey:    input.WorksiteSurvey,
+		Role:         "cursor_sdk_external_coder",
+		Packet:       input.Packet,
+		Observations: input.Observations,
 		Rules: []string{
-			"You are the delegated Cursor coding agent for the implementation architect.",
-			"Modify files only under architect_contract.target_root and the architect_contract.edit_surface unless a proof command requires generated dependency output.",
-			"Complete the architect_contract.work_queue end to end: read existing files, write substantive source/tests, install dependencies only when queued or necessary for the package metadata, run proof commands, and validate the result.",
-			"Do not create placeholder-only files, sibling projects, unrequested features, or unrelated refactors.",
-			"Run the configured proof commands from target_root and fix failures before finishing.",
-			"Finish with a concise summary of changed files and proof command results.",
+			"Act only as the bounded implementation pilot for Omnidex.",
+			"Use cursor_packet as the authoritative mission packet; do not reinterpret the user's task beyond it.",
+			"Edit only files in cursor_packet.edit_surface under cursor_packet.target_root.",
+			"Treat cursor_packet.read_only_context as read-only.",
+			"Respect cursor_packet.forbidden exactly.",
+			"You may run proof commands if useful, but your output is implementation evidence only; Omnidex decides completion after independent validation.",
+			"Return the requested summary fields only: files changed, implementation summary, commands run if any, and known risks.",
 		},
 	}
 	blob, err := json.MarshalIndent(payload, "", "  ")
@@ -187,6 +174,10 @@ const cursorSDKRunnerPackageJSON = `{"type":"module","private":true,"dependencie
 const cursorSDKRunnerScript = `import { Agent } from "@cursor/sdk";
 import fs from "node:fs/promises";
 
+function emit(event) {
+  console.log(JSON.stringify(event));
+}
+
 const requestPath = process.argv[2];
 if (!requestPath) {
   throw new Error("request path is required");
@@ -205,6 +196,8 @@ let summary = "";
 let agentID = "";
 let runID = "";
 
+emit({ agent: "cursor", type: "started", message: "Cursor external implementation session started" });
+
 for await (const event of run.stream()) {
   events.push(event);
   const text = typeof event === "string" ? event : JSON.stringify(event);
@@ -215,12 +208,14 @@ for await (const event of run.stream()) {
     agentID = agentID || event.agent_id || event.agentId || event.agent?.id || "";
     runID = runID || event.run_id || event.runId || event.run?.id || "";
   }
+  emit({ agent: "cursor", type: "message", message: text, raw: event });
 }
 
-console.log(JSON.stringify({
-  summary,
-  agent_id: agentID,
-  run_id: runID,
-  output: events.map((event) => typeof event === "string" ? event : JSON.stringify(event)).join("\n"),
-}));
+emit({
+  agent: "cursor",
+  type: "completed",
+  message: summary || "Cursor external implementation session completed",
+  evidence: events.map((event) => typeof event === "string" ? event : JSON.stringify(event)),
+  raw: { agent_id: agentID, run_id: runID }
+});
 `

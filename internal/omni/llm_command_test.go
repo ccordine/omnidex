@@ -85,6 +85,18 @@ type fakeCursorArchitectAgent struct {
 	run     func(CursorArchitectAgentInput) error
 }
 
+type fakeStreamingArchitectAgent struct {
+	events []AgentEvent
+	inputs []CursorArchitectAgentInput
+}
+
+type fakeExternalAgentSession struct {
+	events       []AgentEvent
+	startedJobs  []ExternalAgentJob
+	cancelCount  int
+	cleanupCount int
+}
+
 type fakeUserAssistanceSpecialist struct {
 	questions []UserAssistanceQuestion
 	errors    []error
@@ -145,6 +157,45 @@ func (f *fakeCursorArchitectAgent) RunArchitectTask(ctx context.Context, input C
 	result := f.results[0]
 	f.results = f.results[1:]
 	return result, nil
+}
+
+func (f *fakeStreamingArchitectAgent) RunArchitectTask(ctx context.Context, input CursorArchitectAgentInput) (CursorArchitectAgentResult, error) {
+	return CursorArchitectAgentResult{Summary: "fallback should not run"}, nil
+}
+
+func (f *fakeStreamingArchitectAgent) NewExternalAgentSession(input CursorArchitectAgentInput) (ExternalAgentSession, error) {
+	f.inputs = append(f.inputs, input)
+	return &fakeExternalAgentSession{events: f.events}, nil
+}
+
+func (s *fakeExternalAgentSession) Start(ctx context.Context, job ExternalAgentJob) (<-chan AgentEvent, error) {
+	s.startedJobs = append(s.startedJobs, job)
+	ch := make(chan AgentEvent, len(s.events))
+	for _, event := range s.events {
+		if event.SessionID == "" {
+			event.SessionID = job.SessionID
+		}
+		if event.Agent == "" {
+			event.Agent = job.Agent
+		}
+		ch <- event
+	}
+	close(ch)
+	return ch, nil
+}
+
+func (s *fakeExternalAgentSession) Interrupt(ctx context.Context, correction HumanCorrection) error {
+	return nil
+}
+func (s *fakeExternalAgentSession) Cancel(ctx context.Context, reason string) error {
+	s.cancelCount++
+	return nil
+}
+func (s *fakeExternalAgentSession) Pause(ctx context.Context) error  { return nil }
+func (s *fakeExternalAgentSession) Resume(ctx context.Context) error { return nil }
+func (s *fakeExternalAgentSession) Cleanup(ctx context.Context) error {
+	s.cleanupCount++
+	return nil
 }
 
 type fakePromptInterpreter struct {
@@ -6214,6 +6265,15 @@ func TestCursorArchitectAgentOwnsCodingTestingAndValidationDelegation(t *testing
 			if input.ArchitectContract.TargetRoot != "." {
 				t.Fatalf("unexpected target root: %#v", input.ArchitectContract)
 			}
+			if input.Packet.Mode != "implementation_only" {
+				t.Fatalf("cursor packet mode = %q", input.Packet.Mode)
+			}
+			if len(input.Packet.EditSurface) == 0 || input.Packet.EditSurface[0] != "main.go" {
+				t.Fatalf("cursor packet edit surface = %#v", input.Packet.EditSurface)
+			}
+			if !stringListContains(input.Packet.Forbidden, "do not claim objective completion; Omnidex will run proof commands and decide completion") {
+				t.Fatalf("cursor packet missing completion authority guardrail: %#v", input.Packet.Forbidden)
+			}
 			return os.WriteFile(filepath.Join(input.Workspace, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
 		},
 	}
@@ -6265,12 +6325,195 @@ func TestCursorArchitectAgentOwnsCodingTestingAndValidationDelegation(t *testing
 	if len(cursor.inputs) != 1 {
 		t.Fatalf("cursor agent calls = %d, want 1", len(cursor.inputs))
 	}
-	if !structuredEventsContain(events, "cursor_architect_agent_started") || !structuredEventsContain(events, "cursor_architect_agent_completed") || !structuredEventsContain(events, "cursor_architect_validation_passed") {
+	if !structuredEventsContain(events, "cursor_sdk_architect_agent_started") || !structuredEventsContain(events, "cursor_sdk_architect_agent_completed") || !structuredEventsContain(events, "cursor_sdk_architect_validation_passed") {
 		t.Fatalf("missing cursor architect events: %#v", events)
 	}
 	if !hasImplementationArchitectProgress(result.Observations) {
 		t.Fatalf("cursor architect result did not record architect progress: %#v", result.Observations)
 	}
+	if result.Observations[0].EvidenceKind != "implementation" || result.Observations[0].GeneratedBy != "cursor_sdk" {
+		t.Fatalf("cursor result should be implementation evidence only: %#v", result.Observations[0])
+	}
+}
+
+func TestBuildCursorArchitectPromptUsesMissionPacket(t *testing.T) {
+	input := CursorArchitectAgentInput{
+		UserPrompt: "build a notes app",
+		Packet: CursorImplementationPacket{
+			Task:        "Implement CRUD notes behavior",
+			Mode:        "implementation_only",
+			Workspace:   "/tmp/project",
+			TargetRoot:  ".",
+			EditSurface: []string{"src/App.jsx"},
+			Objectives:  []string{"create note", "delete note"},
+			ProofContract: CursorPacketProofContract{
+				Commands:           []string{"npm run build"},
+				EvidencePredicates: []string{"command_passed:npm run build"},
+			},
+			Forbidden: []string{"do not add react-router-dom"},
+		},
+	}
+	prompt := buildCursorArchitectPrompt(input)
+	for _, want := range []string{
+		`"cursor_packet"`,
+		`"mode": "implementation_only"`,
+		`"edit_surface"`,
+		`"proof_contract"`,
+		"implementation evidence only",
+		"Omnidex decides completion",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("cursor prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, `"architect_contract"`) {
+		t.Fatalf("cursor prompt should use mission packet instead of raw architect contract:\n%s", prompt)
+	}
+}
+
+func TestBuildCodexArchitectPromptUsesMissionPacketAndNoCompletionAuthority(t *testing.T) {
+	input := CursorArchitectAgentInput{
+		UserPrompt: "build a notes app",
+		Packet: CursorImplementationPacket{
+			Task:        "Implement CRUD notes behavior",
+			Mode:        "implementation_only",
+			Workspace:   "/tmp/project",
+			TargetRoot:  ".",
+			EditSurface: []string{"src/App.jsx"},
+			Objectives:  []string{"create note", "delete note"},
+			ProofContract: CursorPacketProofContract{
+				Commands:           []string{"npm run build"},
+				EvidencePredicates: []string{"command_passed:npm run build"},
+			},
+			Forbidden: []string{"do not add react-router-dom"},
+		},
+	}
+	prompt := buildCodexArchitectPrompt(input)
+	for _, want := range []string{
+		`"codex_packet"`,
+		`"mode": "implementation_only"`,
+		`"edit_surface"`,
+		`"proof_contract"`,
+		"implementation evidence only",
+		"Omnidex will run proof commands",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("codex prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, `"architect_contract"`) {
+		t.Fatalf("codex prompt should use mission packet instead of raw architect contract:\n%s", prompt)
+	}
+}
+
+func TestSelectedExternalArchitectAgentPrefersCodexWhenConfigured(t *testing.T) {
+	cursor := &fakeCursorArchitectAgent{}
+	codex := &fakeCursorArchitectAgent{}
+	agent, name := selectedExternalArchitectAgent(structuredCommandDecisionRunConfig{
+		CursorArchitectAgent: cursor,
+		CodexArchitectAgent:  codex,
+	})
+	if agent != codex || name != "codex_sdk" {
+		t.Fatalf("selected agent = %#v %q, want codex", agent, name)
+	}
+}
+
+func TestExternalArchitectAgentStreamsNormalizedEvents(t *testing.T) {
+	agent := &fakeStreamingArchitectAgent{events: []AgentEvent{
+		{Type: "started", Message: "started"},
+		{Type: "command", Message: "running build", Command: "npm run build"},
+		{Type: "file_change", Message: "changed files", Files: []string{"src/App.jsx"}},
+		{Type: "completed", Message: "finished"},
+	}}
+	events := []StructuredCommandEvent{}
+	result, err := runExternalArchitectAgentTask(
+		context.Background(),
+		agent,
+		"codex_sdk",
+		CursorArchitectAgentInput{
+			Workspace: t.TempDir(),
+			Packet: CursorImplementationPacket{
+				Mode:        "implementation_only",
+				EditSurface: []string{"src/App.jsx"},
+			},
+		},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Summary != "finished" {
+		t.Fatalf("summary = %q", result.Summary)
+	}
+	for _, want := range []string{"external_agent_started", "external_agent_command", "external_agent_file_change", "external_agent_completed"} {
+		if !structuredEventsContain(events, want) {
+			t.Fatalf("missing %s in %#v", want, events)
+		}
+	}
+	commandEvent := structuredEventOfTypeForTest(events, "external_agent_command")
+	if commandEvent == nil || commandEvent.Details["command"] != "npm run build" {
+		t.Fatalf("command event missing command detail: %#v", commandEvent)
+	}
+}
+
+func TestHumanCorrectionCancelsAndRestartsExternalAgentWithRevisedPacket(t *testing.T) {
+	active := &fakeExternalAgentSession{}
+	provider := &fakeStreamingArchitectAgent{events: []AgentEvent{{Type: "started", Message: "restarted"}}}
+	input := CursorArchitectAgentInput{
+		Workspace: t.TempDir(),
+		Packet: CursorImplementationPacket{
+			Mode:            "implementation_only",
+			EditSurface:     []string{"src/App.jsx", "src/App.css"},
+			Forbidden:       []string{"do not create a sibling project"},
+			PreparedContext: []string{"repo summary"},
+		},
+	}
+	events, revised, err := restartExternalAgentSessionWithCorrection(context.Background(), active, provider, "codex_sdk", input, HumanCorrection{
+		Message:               "Do not add routing. Keep it single-page.",
+		Authority:             "user",
+		ForbiddenDependencies: []string{"react-router-dom"},
+		AllowedFiles:          []string{"src/App.jsx"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.cancelCount != 1 || active.cleanupCount != 1 {
+		t.Fatalf("active session cancel/cleanup = %d/%d, want 1/1", active.cancelCount, active.cleanupCount)
+	}
+	if len(provider.inputs) != 1 {
+		t.Fatalf("provider inputs = %d, want 1", len(provider.inputs))
+	}
+	if got := revised.Packet.EditSurface; len(got) != 1 || got[0] != "src/App.jsx" {
+		t.Fatalf("edit surface = %#v, want corrected allowed files", got)
+	}
+	if !testStringSliceContains(revised.Packet.Forbidden, "do not add dependency: react-router-dom") {
+		t.Fatalf("forbidden missing dependency correction: %#v", revised.Packet.Forbidden)
+	}
+	if !testStringSliceContainsSubstring(revised.Packet.PreparedContext, "human_correction[user]: Do not add routing. Keep it single-page.") {
+		t.Fatalf("prepared context missing human correction: %#v", revised.Packet.PreparedContext)
+	}
+	got := resultFromExternalAgentEvents(events)
+	if got.Summary != "restarted" {
+		t.Fatalf("summary = %q, want restarted", got.Summary)
+	}
+}
+
+func testStringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func testStringSliceContainsSubstring(values []string, want string) bool {
+	for _, value := range values {
+		if strings.Contains(value, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildCodeContentSpecialistRequestIncludesAuthoritativeFileContract(t *testing.T) {

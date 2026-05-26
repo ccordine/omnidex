@@ -41,6 +41,7 @@ type App struct {
 	shellSpecialist    ShellCommandSpecialist
 	codeSpecialist     CodeContentSpecialist
 	cursorArchitect    CursorArchitectAgent
+	codexArchitect     CursorArchitectAgent
 	recipes            []Recipe
 	enableCommandCache bool
 	commandCacheRoot   string
@@ -177,6 +178,7 @@ func (a *App) Run(args []string) error {
 	a.enableCommandCache = *enableCommandCache
 	a.commandCacheRoot = *commandCacheRoot
 	a.cursorArchitect = NewCursorSDKArchitectAgentFromEnv()
+	a.codexArchitect = NewCodexSDKArchitectAgentFromEnv()
 
 	if !*noOllama {
 		a.ollama = NewOllamaClient(*endpointFlag, *modelFlag)
@@ -242,6 +244,7 @@ func (a *App) Run(args []string) error {
 				ShellSpecialist:         a.shellSpecialist,
 				CodeContentSpecialist:   a.codeSpecialist,
 				CursorArchitectAgent:    a.cursorArchitect,
+				CodexArchitectAgent:     a.codexArchitect,
 				EnableCommandCache:      *enableCommandCache,
 				CommandCacheRoot:        *commandCacheRoot,
 			},
@@ -1325,6 +1328,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			ShellSpecialist:         a.shellSpecialist,
 			CodeContentSpecialist:   a.codeSpecialist,
 			CursorArchitectAgent:    a.cursorArchitect,
+			CodexArchitectAgent:     a.codexArchitect,
 			EnableCommandCache:      a.enableCommandCache,
 			CommandCacheRoot:        a.commandCacheRoot,
 		},

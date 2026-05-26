@@ -246,10 +246,38 @@ type CursorArchitectAgentInput struct {
 	UserPrompt        string
 	ToolTask          string
 	ArchitectContract ImplementationArchitectContract
+	Packet            CursorImplementationPacket
 	Observations      []StructuredCommandObservation
 	SessionMemories   []SessionMemory
 	WorksiteSurvey    WorksiteSurvey
 	Workspace         string
+}
+
+type CursorImplementationPacket struct {
+	Task               string                    `json:"task"`
+	Mode               string                    `json:"mode"`
+	Workspace          string                    `json:"workspace"`
+	TargetRoot         string                    `json:"target_root"`
+	Worksite           CursorPacketWorksite      `json:"worksite"`
+	EditSurface        []string                  `json:"edit_surface"`
+	ReadOnlyContext    []string                  `json:"read_only_context,omitempty"`
+	Objectives         []string                  `json:"objectives"`
+	ProofContract      CursorPacketProofContract `json:"proof_contract"`
+	Forbidden          []string                  `json:"forbidden"`
+	ReturnRequirements []string                  `json:"return"`
+	PreparedContext    []string                  `json:"prepared_context,omitempty"`
+}
+
+type CursorPacketWorksite struct {
+	ProjectState   string   `json:"project_state,omitempty"`
+	PackageManager string   `json:"package_manager,omitempty"`
+	Frameworks     []string `json:"frameworks,omitempty"`
+}
+
+type CursorPacketProofContract struct {
+	Commands           []string `json:"commands,omitempty"`
+	ArtifactChecks     []string `json:"artifact_checks,omitempty"`
+	EvidencePredicates []string `json:"evidence_predicates,omitempty"`
 }
 
 type CursorArchitectAgentResult struct {
@@ -261,6 +289,10 @@ type CursorArchitectAgentResult struct {
 
 type CursorArchitectAgent interface {
 	RunArchitectTask(ctx context.Context, input CursorArchitectAgentInput) (CursorArchitectAgentResult, error)
+}
+
+type ExternalAgentSessionProvider interface {
+	NewExternalAgentSession(input CursorArchitectAgentInput) (ExternalAgentSession, error)
 }
 
 type PromptInterpretationInput struct {
@@ -534,6 +566,7 @@ type structuredCommandDecisionRunConfig struct {
 	ShellSpecialist          ShellCommandSpecialist
 	CodeContentSpecialist    CodeContentSpecialist
 	CursorArchitectAgent     CursorArchitectAgent
+	CodexArchitectAgent      CursorArchitectAgent
 	UserAssistanceSpecialist UserAssistanceSpecialist
 	EnableCommandCache       bool
 	CommandCacheRoot         string
@@ -3795,8 +3828,8 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
 		return false, nil
 	}
-	if cfg.CursorArchitectAgent != nil && shouldDelegateArchitectContractToCursor(contract, result.Observations) {
-		handled, err := runCursorArchitectAgentLane(ctx, step, prompt, toolTask, contract, cfg, worksiteSurvey, stdout, stderr, onEvent, result)
+	if externalAgent, externalAgentName := selectedExternalArchitectAgent(cfg); externalAgent != nil && shouldDelegateArchitectContractToExternalAgent(contract, result.Observations) {
+		handled, err := runExternalArchitectAgentLane(ctx, step, prompt, toolTask, contract, cfg, worksiteSurvey, stdout, stderr, onEvent, result, externalAgent, externalAgentName)
 		if handled || err != nil {
 			return handled, err
 		}
@@ -3808,8 +3841,8 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 			break
 		}
 		item := *contract.CurrentItem
-		if cfg.CursorArchitectAgent != nil && shouldDelegateArchitectContractToCursor(contract, result.Observations) {
-			return runCursorArchitectAgentLane(ctx, step, prompt, toolTask, contract, cfg, worksiteSurvey, stdout, stderr, onEvent, result)
+		if externalAgent, externalAgentName := selectedExternalArchitectAgent(cfg); externalAgent != nil && shouldDelegateArchitectContractToExternalAgent(contract, result.Observations) {
+			return runExternalArchitectAgentLane(ctx, step, prompt, toolTask, contract, cfg, worksiteSurvey, stdout, stderr, onEvent, result, externalAgent, externalAgentName)
 		}
 		if item.Operation == "read" {
 			if item.Path == "" || strings.HasSuffix(item.Path, "/") {
@@ -4001,7 +4034,8 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 }
 
 func runArchitectLaneForCurrentItemBeforePlannerCommand(ctx context.Context, step int, prompt, toolTask, command string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
-	if strings.TrimSpace(command) == "" || (cfg.CodeContentSpecialist == nil && cfg.CursorArchitectAgent == nil) || !architectCurrentItemPending(prompt, toolTask, cfg, worksiteSurvey, result.Observations) {
+	externalAgent, _ := selectedExternalArchitectAgent(cfg)
+	if strings.TrimSpace(command) == "" || (cfg.CodeContentSpecialist == nil && externalAgent == nil) || !architectCurrentItemPending(prompt, toolTask, cfg, worksiteSurvey, result.Observations) {
 		return false, nil
 	}
 	emitStructuredCommandEvent(onEvent, "planner_command_preempted_for_architect_item", "Planner command deferred because architect current item owns the next action", map[string]string{
@@ -4011,7 +4045,17 @@ func runArchitectLaneForCurrentItemBeforePlannerCommand(ctx context.Context, ste
 	return runArchitectCodeContentLane(ctx, step, prompt, toolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, result)
 }
 
-func shouldDelegateArchitectContractToCursor(contract ImplementationArchitectContract, observations []StructuredCommandObservation) bool {
+func selectedExternalArchitectAgent(cfg structuredCommandDecisionRunConfig) (CursorArchitectAgent, string) {
+	if cfg.CodexArchitectAgent != nil {
+		return cfg.CodexArchitectAgent, "codex_sdk"
+	}
+	if cfg.CursorArchitectAgent != nil {
+		return cfg.CursorArchitectAgent, "cursor_sdk"
+	}
+	return nil, ""
+}
+
+func shouldDelegateArchitectContractToExternalAgent(contract ImplementationArchitectContract, observations []StructuredCommandObservation) bool {
 	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
 		return false
 	}
@@ -4019,56 +4063,63 @@ func shouldDelegateArchitectContractToCursor(contract ImplementationArchitectCon
 		return false
 	}
 	for _, obs := range observations {
-		if obs.ExitCode == 0 && strings.HasPrefix(strings.TrimSpace(obs.Command), "cursor_sdk.architect_agent ") {
+		if obs.ExitCode == 0 && (strings.HasPrefix(strings.TrimSpace(obs.Command), "cursor_sdk.architect_agent ") || strings.HasPrefix(strings.TrimSpace(obs.Command), "codex_sdk.architect_agent ")) {
 			return false
 		}
 	}
 	return true
 }
 
-func runCursorArchitectAgentLane(ctx context.Context, step int, prompt, toolTask string, contract ImplementationArchitectContract, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
-	emitStructuredCommandEvent(onEvent, "cursor_architect_agent_started", "Implementation architect delegated coding, tests, and validation to Cursor SDK agent", map[string]string{
+func runExternalArchitectAgentLane(ctx context.Context, step int, prompt, toolTask string, contract ImplementationArchitectContract, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult, agent CursorArchitectAgent, agentName string) (bool, error) {
+	if agentName == "" {
+		agentName = "external_sdk"
+	}
+	emitStructuredCommandEvent(onEvent, agentName+"_architect_agent_started", "Implementation architect delegated bounded implementation packet to external coding agent", map[string]string{
 		"step":        fmt.Sprintf("%d", step),
 		"target_root": contract.TargetRoot,
 		"current":     contract.CurrentItem.ID,
 	})
-	cursorResult, err := cfg.CursorArchitectAgent.RunArchitectTask(ctx, CursorArchitectAgentInput{
+	agentInput := CursorArchitectAgentInput{
 		Step:              step,
 		UserPrompt:        prompt,
 		ToolTask:          toolTask,
 		ArchitectContract: contract,
+		Packet:            buildCursorImplementationPacket(prompt, toolTask, contract, cfg, worksiteSurvey),
 		Observations:      compactStructuredObservationsForContext(result.Observations, 8, 800),
 		SessionMemories:   compactSessionMemoriesForStructuredContext(cfg.SessionMemories, 6, 600),
 		WorksiteSurvey:    worksiteSurvey,
 		Workspace:         cfg.CurrentWorkingDirectory,
-	})
+	}
+	agentResult, err := runExternalArchitectAgentTask(ctx, agent, agentName, agentInput, onEvent)
 	if err != nil {
 		result.Observations = append(result.Observations, StructuredCommandObservation{
 			Step:     step,
-			Command:  "cursor_sdk.architect_agent " + contract.TargetRoot,
+			Command:  agentName + ".architect_agent " + contract.TargetRoot,
 			ExitCode: 1,
 			Stderr:   err.Error(),
 		})
-		emitStructuredCommandEvent(onEvent, "cursor_architect_agent_failed", "Cursor SDK architect agent failed; falling back to local code specialist", map[string]string{
+		emitStructuredCommandEvent(onEvent, agentName+"_architect_agent_failed", "External coding agent failed; falling back to local code specialist", map[string]string{
 			"step":  fmt.Sprintf("%d", step),
 			"error": truncateStructuredTimelineValue(err.Error()),
 		})
 		return false, nil
 	}
-	command := "cursor_sdk.architect_agent " + contract.TargetRoot
+	command := agentName + ".architect_agent " + contract.TargetRoot
 	result.Command = command
 	result.ExitCode = 0
 	result.Observations = append(result.Observations, StructuredCommandObservation{
-		Step:     step,
-		Command:  command,
-		ExitCode: 0,
-		Stdout:   truncateStructuredTimelineValue(firstNonEmpty(cursorResult.Summary, cursorResult.Output, "Cursor SDK architect agent completed")),
+		Step:         step,
+		Command:      command,
+		EvidenceKind: "implementation",
+		GeneratedBy:  agentName,
+		ExitCode:     0,
+		Stdout:       truncateStructuredTimelineValue(firstNonEmpty(agentResult.Summary, agentResult.Output, "external coding agent completed")),
 	})
-	emitStructuredCommandEvent(onEvent, "cursor_architect_agent_completed", "Cursor SDK architect agent completed delegated implementation", map[string]string{
+	emitStructuredCommandEvent(onEvent, agentName+"_architect_agent_completed", "External coding agent completed delegated implementation", map[string]string{
 		"step":     fmt.Sprintf("%d", step),
-		"agent_id": cursorResult.AgentID,
-		"run_id":   cursorResult.RunID,
-		"summary":  truncateStructuredTimelineValue(firstNonEmpty(cursorResult.Summary, cursorResult.Output)),
+		"agent_id": agentResult.AgentID,
+		"run_id":   agentResult.RunID,
+		"summary":  truncateStructuredTimelineValue(firstNonEmpty(agentResult.Summary, agentResult.Output)),
 	})
 	appendCursorArchitectFileObservations(step, contract, cfg.CurrentWorkingDirectory, result)
 	for _, proof := range contract.ProofCommands {
@@ -4076,7 +4127,7 @@ func runCursorArchitectAgentLane(ctx context.Context, step int, prompt, toolTask
 		if strings.TrimSpace(verifyCommand) == "" {
 			continue
 		}
-		emitStructuredCommandEvent(onEvent, "cursor_architect_validation_started", "Running proof command after Cursor SDK architect agent", map[string]string{
+		emitStructuredCommandEvent(onEvent, agentName+"_architect_validation_started", "Running proof command after external coding agent", map[string]string{
 			"step":    fmt.Sprintf("%d", step),
 			"command": truncateStructuredTimelineValue(verifyCommand),
 		})
@@ -4084,7 +4135,7 @@ func runCursorArchitectAgentLane(ctx context.Context, step int, prompt, toolTask
 			return true, err
 		}
 		if result.ExitCode != 0 {
-			emitStructuredCommandEvent(onEvent, "cursor_architect_validation_failed", "Proof command failed after Cursor SDK architect agent", map[string]string{
+			emitStructuredCommandEvent(onEvent, agentName+"_architect_validation_failed", "Proof command failed after external coding agent", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
 				"command": truncateStructuredTimelineValue(verifyCommand),
 				"stderr":  truncateStructuredTimelineValue(latestFailedCommandOutput(result.Observations, verifyCommand)),
@@ -4092,10 +4143,211 @@ func runCursorArchitectAgentLane(ctx context.Context, step int, prompt, toolTask
 			return true, nil
 		}
 	}
-	emitStructuredCommandEvent(onEvent, "cursor_architect_validation_passed", "Cursor SDK architect output passed configured proof commands", map[string]string{
+	emitStructuredCommandEvent(onEvent, agentName+"_architect_validation_passed", "External coding agent output passed configured proof commands", map[string]string{
 		"step": fmt.Sprintf("%d", step),
 	})
 	return true, nil
+}
+
+func runExternalArchitectAgentTask(ctx context.Context, agent CursorArchitectAgent, agentName string, input CursorArchitectAgentInput, onEvent func(StructuredCommandEvent)) (CursorArchitectAgentResult, error) {
+	if provider, ok := agent.(ExternalAgentSessionProvider); ok {
+		session, err := provider.NewExternalAgentSession(input)
+		if err != nil {
+			return CursorArchitectAgentResult{}, err
+		}
+		job := ExternalAgentJob{
+			SessionID: agentName + "-architect",
+			Agent:     strings.TrimSuffix(agentName, "_sdk"),
+			Mode:      "implementation",
+			Packet:    input.Packet,
+			Prompt:    externalAgentPromptForName(agentName, input),
+			Workspace: input.Workspace,
+		}
+		events, err := session.Start(ctx, job)
+		if err != nil {
+			return CursorArchitectAgentResult{}, err
+		}
+		collected := make(chan AgentEvent, 32)
+		go func() {
+			defer close(collected)
+			for event := range events {
+				structured := structuredEventFromExternalAgentEvent(event)
+				emitStructuredCommandEvent(onEvent, structured.Type, structured.Summary, structured.Details)
+				collected <- event
+			}
+			_ = session.Cleanup(context.Background())
+		}()
+		return resultFromExternalAgentEvents(collected), nil
+	}
+	return agent.RunArchitectTask(ctx, input)
+}
+
+func externalAgentPromptForName(agentName string, input CursorArchitectAgentInput) string {
+	if strings.HasPrefix(agentName, "codex") {
+		return buildCodexArchitectPrompt(input)
+	}
+	return buildCursorArchitectPrompt(input)
+}
+
+func runCursorArchitectAgentLane(ctx context.Context, step int, prompt, toolTask string, contract ImplementationArchitectContract, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+	return runExternalArchitectAgentLane(ctx, step, prompt, toolTask, contract, cfg, worksiteSurvey, stdout, stderr, onEvent, result, cfg.CursorArchitectAgent, "cursor_sdk")
+}
+
+func buildCursorImplementationPacket(prompt, toolTask string, contract ImplementationArchitectContract, cfg structuredCommandDecisionRunConfig, survey WorksiteSurvey) CursorImplementationPacket {
+	targetRoot := firstNonEmpty(strings.TrimSpace(contract.TargetRoot), ".")
+	packet := CursorImplementationPacket{
+		Task:       strings.TrimSpace(prompt),
+		Mode:       "implementation_only",
+		Workspace:  strings.TrimSpace(cfg.CurrentWorkingDirectory),
+		TargetRoot: targetRoot,
+		Worksite: CursorPacketWorksite{
+			ProjectState:   survey.ProjectState,
+			PackageManager: firstNonEmpty(contract.PackageManager, survey.PackageManager),
+			Frameworks:     survey.Frameworks,
+		},
+		EditSurface:     cursorPacketEditSurface(contract),
+		ReadOnlyContext: cursorPacketReadOnlyContext(contract),
+		Objectives:      cursorPacketObjectives(prompt, toolTask, contract),
+		ProofContract: CursorPacketProofContract{
+			Commands:           cursorPacketProofCommands(contract),
+			ArtifactChecks:     cursorPacketArtifactChecks(contract),
+			EvidencePredicates: cursorPacketEvidencePredicates(contract),
+		},
+		Forbidden: cursorPacketForbiddenActions(contract),
+		ReturnRequirements: []string{
+			"files changed",
+			"implementation summary",
+			"commands run if any",
+			"known risks",
+		},
+		PreparedContext: cursorPacketPreparedContext(cfg.PrepContext, cfg.SessionMemories),
+	}
+	if packet.Task == "" {
+		packet.Task = strings.TrimSpace(toolTask)
+	}
+	return packet
+}
+
+func cursorPacketEditSurface(contract ImplementationArchitectContract) []string {
+	out := []string{}
+	for _, path := range contract.EditSurface {
+		if strings.TrimSpace(path) != "" {
+			out = append(out, filepath.ToSlash(path))
+		}
+	}
+	for _, item := range contract.WorkQueue {
+		if (item.Operation == "create" || item.Operation == "update" || item.Operation == "delete") && strings.TrimSpace(item.Path) != "" {
+			out = append(out, filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+		}
+	}
+	return appendUniqueStrings(nil, out...)
+}
+
+func cursorPacketReadOnlyContext(contract ImplementationArchitectContract) []string {
+	out := []string{}
+	for _, item := range contract.WorkQueue {
+		if item.Operation == "read" && strings.TrimSpace(item.Path) != "" {
+			out = append(out, filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+		}
+	}
+	for _, path := range []string{"package.json", "src/main.jsx", "src/main.js", "src/index.js", "vite.config.js"} {
+		out = append(out, filepath.ToSlash(filepath.Join(contract.TargetRoot, path)))
+	}
+	edit := map[string]bool{}
+	for _, path := range cursorPacketEditSurface(contract) {
+		edit[path] = true
+	}
+	filtered := []string{}
+	for _, path := range appendUniqueStrings(nil, out...) {
+		if !edit[path] {
+			filtered = append(filtered, path)
+		}
+	}
+	return filtered
+}
+
+func cursorPacketObjectives(prompt, toolTask string, contract ImplementationArchitectContract) []string {
+	out := []string{}
+	out = append(out, contract.AcceptanceCriteria...)
+	for _, item := range contract.WorkQueue {
+		if strings.TrimSpace(item.Description) != "" && (item.Operation == "create" || item.Operation == "update") {
+			out = append(out, item.Description)
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, strings.TrimSpace(firstNonEmpty(prompt, toolTask)))
+	}
+	return appendUniqueStrings(nil, out...)
+}
+
+func cursorPacketProofCommands(contract ImplementationArchitectContract) []string {
+	out := []string{}
+	for _, command := range contract.ProofCommands {
+		if strings.TrimSpace(command) != "" {
+			out = append(out, commandInArchitectCWD(contract.TargetRoot, command))
+		}
+	}
+	for _, item := range contract.WorkQueue {
+		if item.Operation == "verify" && strings.TrimSpace(item.Verify) != "" {
+			out = append(out, commandInArchitectCWD(item.CWD, item.Verify))
+		}
+	}
+	return appendUniqueStrings(nil, out...)
+}
+
+func cursorPacketArtifactChecks(contract ImplementationArchitectContract) []string {
+	checks := []string{
+		"created source/test/config files are non-empty",
+		"created source/test/config files are not placeholder-only",
+		"package scripts remain valid if package.json is changed",
+		"do not delete or weaken validated tests",
+	}
+	for _, path := range cursorPacketEditSurface(contract) {
+		checks = append(checks, "edited file remains within edit surface: "+path)
+	}
+	return appendUniqueStrings(nil, checks...)
+}
+
+func cursorPacketEvidencePredicates(contract ImplementationArchitectContract) []string {
+	out := []string{"artifact_validation_passed"}
+	for _, command := range cursorPacketProofCommands(contract) {
+		out = append(out, "command_passed:"+command)
+	}
+	for _, item := range contract.WorkQueue {
+		if (item.Operation == "create" || item.Operation == "update") && strings.TrimSpace(item.Path) != "" {
+			out = append(out, "file_nonempty:"+filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+		}
+	}
+	return appendUniqueStrings(nil, out...)
+}
+
+func cursorPacketForbiddenActions(contract ImplementationArchitectContract) []string {
+	out := append([]string{}, contract.Guardrails...)
+	out = append(out,
+		"do not create a sibling project",
+		"do not push to git or perform release actions",
+		"do not add unrequested dependencies",
+		"do not add backend, database, auth, routing, or cloud sync unless explicitly requested",
+		"do not delete, skip, or weaken validated tests",
+		"do not claim objective completion; Omnidex will run proof commands and decide completion",
+	)
+	return appendUniqueStrings(nil, out...)
+}
+
+func cursorPacketPreparedContext(prep PrepContextBundle, memories []SessionMemory) []string {
+	out := []string{}
+	for _, file := range prep.CodebaseRoute.LikelyFiles {
+		if strings.TrimSpace(file) != "" {
+			out = append(out, "likely_file:"+file)
+		}
+	}
+	for _, brief := range limitPrepBriefsForArchitect(allPrepBriefs(prep), 6) {
+		out = append(out, brief.Kind+": "+truncateStructuredTimelineValue(brief.Content))
+	}
+	for _, memory := range compactSessionMemoriesForStructuredContext(memories, 4, 500) {
+		out = append(out, "memory:"+truncateStructuredTimelineValue(memory.Content))
+	}
+	return appendUniqueStrings(nil, out...)
 }
 
 func appendCursorArchitectFileObservations(step int, contract ImplementationArchitectContract, workingDir string, result *CommandDecisionResult) {
