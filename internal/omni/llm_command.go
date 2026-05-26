@@ -1810,6 +1810,9 @@ func runProgressionGateRecovery(ctx context.Context, step int, prompt string, de
 	if handled, err := runDeterministicEmptyFileRecovery(ctx, step, prompt, decision, cfg, worksiteSurvey, onEvent, result); handled || err != nil {
 		return handled, err
 	}
+	if handled, err := runPathfinderForProgression(ctx, step, prompt, decision, cfg, worksiteSurvey, stdout, stderr, onEvent, result); handled || err != nil {
+		return handled, err
+	}
 	if cfg.ShellSpecialist == nil {
 		return false, nil
 	}

@@ -11,6 +11,7 @@ It turns model output into permissioned, evidence-checked work: plan, patch, ver
 - Evidence ledgers record objectives, commands, rejected commands, observed output, pending work, and final responses.
 - Run traces summarize model calls, command counts, rejections, loop exhaustion, and completion-check pressure from existing session events.
 - Development loops convert discovered failures into regression targets, make scoped changes, run targeted verification, and continue from concrete observations instead of starting over.
+- Pathfinder is the high-reward problem-solving layer for stalled runs: it diagnoses the real blocker, scores candidate strategies, and hands one validated next action back to the normal runtime.
 - `agent-core`: API + Postgres queue + worker pipeline for service-backed workflows.
 - `agent-cli`: queue/API CLI for enqueueing and inspecting core jobs; helper aliases expose it for advanced workflows.
 
@@ -83,6 +84,23 @@ Worker runtime uses a stage-driven orchestrator with stable per-stage context co
 - `verify` -> writes `verification`
 
 This keeps queue/API compatibility while making execution flow linear and easier to reason about/extend.
+
+## Pathfinder
+
+Pathfinder is Omnidex's meta-problem-solving specialist. It is invoked when the normal routine stalls, loops, hits repeated false completion, encounters invalid file assumptions, or needs a better strategy than asking the generic planner for another command.
+
+Pathfinder receives a `ProblemCase` built from current evidence: the user goal, phase, pending objectives, objective ledger, worksite survey, prep context, codebase route, recent observations, failed/rejected commands, false-done count, loop state, available tools, constraints, and success condition.
+
+It returns a `BreakthroughPacket`:
+
+- diagnosis and real blocker
+- assumptions and evidence used
+- at least three candidate strategies with practical scores
+- selected strategy and expected progress
+- next action such as inspect, research, proof-contract update, patch, verification, external-agent delegation, objective/context adjustment, ask-user, or fail-with-evidence
+- forbidden paths and proof needed after the action
+
+Pathfinder cannot mark objectives complete. Its output must pass deterministic packet validation, then any action is dispatched through normal Omnidex policy. Completion still requires machine-checkable evidence from proof commands, artifact validation, scope checks, and objective predicates.
 
 Live progress reports these pipeline phases explicitly:
 - `planning`: `plan`
