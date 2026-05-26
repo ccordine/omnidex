@@ -90,3 +90,36 @@ func TestValidatedPlaybookMemorySummaryIsCompactAdvisoryContext(t *testing.T) {
 		}
 	}
 }
+
+func TestValidatedPlaybookNormalizesProjectIdentity(t *testing.T) {
+	result := CommandDecisionResult{
+		ExitCode: 0,
+		Elapsed:  time.Second,
+		ObjectiveLedger: []StructuredObjective{{
+			ID:          "create_react_vite_crud",
+			Description: "Create React Vite CRUD app",
+			Status:      "satisfied",
+			Evidence:    "npm run build passed",
+			Required:    true,
+			Source:      structuredObjectiveSourceUserExplicit,
+		}},
+		Observations: []StructuredCommandObservation{
+			{Step: 1, Command: "cat <<'EOF' > src/App.jsx\nfruityloops\nEOF", ExitCode: 0},
+			{Step: 2, Command: "npm run build", ExitCode: 0, Stdout: "built"},
+		},
+	}
+	memory, ok := extractValidatedPlaybook("Build Fruityloops React Vite notes CRUD app", result, "test")
+	if !ok {
+		t.Fatal("expected playbook")
+	}
+	if strings.Contains(strings.ToLower(memory.Content), "fruityloops") {
+		t.Fatalf("playbook leaked project identity: %s", memory.Content)
+	}
+	summary := validatedPlaybookMemorySummary(memory)
+	if strings.Contains(strings.ToLower(summary), "fruityloops") {
+		t.Fatalf("summary leaked project identity: %s", summary)
+	}
+	if !strings.Contains(summary, "Vite React notes CRUD app") {
+		t.Fatalf("summary missing abstract pattern: %s", summary)
+	}
+}

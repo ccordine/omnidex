@@ -1737,6 +1737,8 @@ func TestValidateStructuredCommandRejectsSemicolonMutationChains(t *testing.T) {
 		"mv src/App.js src/App.jsx; mv src/main.js src/main.jsx",
 		"npm install vite; npm run build",
 		"cat > src/App.jsx; npm run build",
+		"node -e \"require('fs').writeFileSync('src/App.jsx', 'x')\"; npm run build",
+		"python -c \"from pathlib import Path; Path('src/App.jsx').write_text('x')\"; npm run build",
 		"cd app; npm run build",
 	} {
 		if err := validateStructuredCommandForRun(command, nil, workspace, nil); err == nil {
@@ -1750,6 +1752,59 @@ func TestValidateStructuredCommandRejectsWildcardMutationLoops(t *testing.T) {
 	command := "for f in src/*.js; do mv \"$f\" \"${f%.js}.jsx\"; done"
 	if err := validateStructuredCommandForRun(command, nil, workspace, nil); err == nil {
 		t.Fatalf("wildcard mutation loop should be rejected")
+	}
+}
+
+func TestStructuredCommandClassifiesFirstMoveFailureWhenSecondMutationSucceeds(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := "sh -lc 'mv src/Missing.js src/Missing.jsx; printf ok > src/App.jsx; true'"
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode == 0 || len(result.Observations) == 0 || result.Observations[0].ExitCode == 0 {
+		t.Fatalf("partial failure was not converted to failed evidence: %#v", result)
+	}
+	if !fileExists(filepath.Join(workspace, "src", "App.jsx")) {
+		t.Fatalf("second mutation did not run; test setup invalid")
+	}
+	if !strings.Contains(result.Observations[0].Stderr, "partial_failure") {
+		t.Fatalf("stderr missing partial failure marker: %#v", result.Observations[0])
+	}
+	if !structuredEventsContain(events, "structured_command_partial_failure_classified") {
+		t.Fatalf("missing partial failure event: %#v", events)
+	}
+}
+
+func TestCannotStatPreventsObjectiveSatisfaction(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "App.jsx"), []byte("export default function App(){ return <main /> }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ledger := []StructuredObjective{{
+		ID:               "rename_app_js_to_jsx",
+		Description:      "Rename App.js to App.jsx",
+		Status:           "pending",
+		RequiredEvidence: []string{"file_exists:src/App.jsx", "file_absent:src/App.js"},
+	}}
+	updated := reconcileStructuredObjectiveLedgerFromObservation(1, ledger, StructuredCommandObservation{
+		Step:     1,
+		Command:  "mv src/App.js src/App.jsx",
+		ExitCode: 1,
+		Stderr:   "mv: cannot stat 'src/App.js': No such file or directory",
+		CWD:      workspace,
+	}, nil)
+	if structuredObjectiveSatisfied(updated[0]) {
+		t.Fatalf("cannot stat failure should not satisfy objective: %#v", updated)
 	}
 }
 
@@ -5372,6 +5427,32 @@ func TestCompactStructuredPrepMemoriesIncludesValidatedPlaybookSummary(t *testin
 	}
 }
 
+func TestAbstractReactPlaybookUsedWithoutProjectIdentityLeak(t *testing.T) {
+	memories := []SessionMemory{{
+		Kind: validatedPlaybookKind,
+		Content: `{
+			"name": "fruityloops_react",
+			"task_pattern": "Vite React notes CRUD app",
+			"command_sequence": ["cat <<'EOF' > src/App.jsx\nprior app\nEOF", "npm run build"],
+			"validation_signals": ["npm run build"],
+			"confidence": 90,
+			"scope_policy": "advisory_only"
+		}`,
+		Tags: []string{"validated-playbook", "procedure-memory", "advisory-only", "react", "vite"},
+	}}
+	req := buildStructuredCommandRequestWithMemoriesAndCWD("build an unrelated React notes app", nil, memories, nil, t.TempDir())
+	joined := joinOllamaMessageContent(req.Messages)
+	if strings.Contains(strings.ToLower(joined), "fruityloops") {
+		t.Fatalf("playbook leaked old project identity: %s", joined)
+	}
+	if !strings.Contains(joined, "Vite React notes CRUD app") {
+		t.Fatalf("abstract playbook pattern missing: %s", joined)
+	}
+	if !strings.Contains(joined, "may-create-scope:false") || !strings.Contains(joined, "advisory-only") {
+		t.Fatalf("memory authority labels missing: %s", joined)
+	}
+}
+
 func TestStructuredCommandUserMessageIncludesProofPolicy(t *testing.T) {
 	message := buildStructuredCommandUserMessage("build a notes app", nil, t.TempDir(), []StructuredObjective{{
 		ID:       "create_notes_crud",
@@ -7591,6 +7672,113 @@ func TestReconcileObjectiveLedgerSatisfiesRenameWithFileEvidence(t *testing.T) {
 	}
 }
 
+func TestMutationReconciliationGateSuccessfulMoveMarksObjectiveComplete(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "App.js"), []byte("export default function App(){ return <main /> }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{ObjectiveLedger: []StructuredObjective{{
+		ID:               "rename_app_js_to_jsx",
+		Description:      "Rename App.js to App.jsx after Vite reported JSX in a .js file.",
+		Status:           "pending",
+		RequiredEvidence: []string{"file_exists:src/App.jsx", "file_absent:src/App.js"},
+	}}}
+	events := []StructuredCommandEvent{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, "mv src/App.js src/App.jsx", workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("move failed: %#v", result.Observations)
+	}
+	if !structuredObjectiveSatisfied(result.ObjectiveLedger[0]) {
+		t.Fatalf("objective not completed by mutation gate: %#v", result.ObjectiveLedger)
+	}
+	if fileExists(filepath.Join(workspace, "src", "App.js")) || !fileExists(filepath.Join(workspace, "src", "App.jsx")) {
+		t.Fatalf("move state not reconciled")
+	}
+	for _, want := range []string{"file_move_verified", "workspace_route_refreshed_after_mutation"} {
+		if !structuredEventsContain(events, want) {
+			t.Fatalf("missing %s event: %#v", want, events)
+		}
+	}
+}
+
+func TestMutationReconciliationGateAlreadyMovedMarksObjectiveCompleteWithoutCommand(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "App.jsx"), []byte("export default function App(){ return <main /> }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{ObjectiveLedger: []StructuredObjective{{
+		ID:               "rename_app_js_to_jsx",
+		Description:      "Rename App.js to App.jsx",
+		Status:           "pending",
+		RequiredEvidence: []string{"file_exists:src/App.jsx", "file_absent:src/App.js"},
+	}}}
+	events := []StructuredCommandEvent{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, "mv src/App.js src/App.jsx", workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("already reconciled move should be skipped as success: %#v", result.Observations)
+	}
+	if !strings.Contains(result.Observations[0].Stdout, "file_move_already_reconciled") {
+		t.Fatalf("expected already reconciled evidence: %#v", result.Observations[0])
+	}
+	if !structuredObjectiveSatisfied(result.ObjectiveLedger[0]) {
+		t.Fatalf("objective not completed by already reconciled move: %#v", result.ObjectiveLedger)
+	}
+	if !structuredEventsContain(events, "file_move_already_reconciled") {
+		t.Fatalf("missing already reconciled event: %#v", events)
+	}
+}
+
+func TestMutationReconciliationGateRefreshesRouteFilesAfterMove(t *testing.T) {
+	route := taskRouteAfterMutationMove(TaskRoute{LikelyFiles: []string{"src/App.js", "src/main.jsx"}}, "src/App.js", "src/App.jsx")
+	if containsString(route.LikelyFiles, "src/App.js") {
+		t.Fatalf("route files still include old path: %#v", route.LikelyFiles)
+	}
+	if !containsString(route.LikelyFiles, "src/App.jsx") {
+		t.Fatalf("route files missing new path: %#v", route.LikelyFiles)
+	}
+}
+
+func TestMutationReconciliationGateRepeatedMoveSkippedAfterReconciliation(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "src", "App.js"), []byte("export default function App(){ return <main /> }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, "mv src/App.js src/App.jsx", workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("initial move failed: %#v", result.Observations)
+	}
+	if err := runStructuredPayloadCommand(context.Background(), 2, "mv src/App.js src/App.jsx", workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("repeated move should be skipped as already reconciled: %#v", result.Observations)
+	}
+	latest := result.Observations[len(result.Observations)-1]
+	if !strings.Contains(latest.Stdout, "file_move_already_reconciled") {
+		t.Fatalf("repeated move was not skipped: %#v", latest)
+	}
+}
+
 func TestNoJSFilesWithJSXPredicate(t *testing.T) {
 	workspace := t.TempDir()
 	srcDir := filepath.Join(workspace, "src")
@@ -7653,6 +7841,216 @@ func TestViteJSXFeedbackCreatesRepairChildJobEvents(t *testing.T) {
 	}
 	if !structuredEventsContain(events, "toolchain_repair_focus_locked") {
 		t.Fatalf("missing repair focus lock event: %#v", events)
+	}
+}
+
+func TestToolchainFeedbackCreatesActiveRepairChildJob(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	npmPath := filepath.Join(binDir, "npm")
+	if err := os.WriteFile(npmPath, []byte("#!/bin/sh\necho '[vite]: Rollup failed to resolve import \"react\" from src/App.jsx' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	command := "PATH=" + shellQuote(binDir) + ":$PATH npm run build"
+	if err := runStructuredPayloadCommand(context.Background(), 1, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ChildJobs) != 1 || result.ChildJobs[0].Status != ChildJobStatusRepairing {
+		t.Fatalf("toolchain feedback did not create active repair child job: %#v", result.ChildJobs)
+	}
+	if result.ChildJobs[0].LatestFailurePacket == nil || result.ChildJobs[0].LatestFailurePacket.FailureKind != "toolchain_failure" {
+		t.Fatalf("missing toolchain failure packet: %#v", result.ChildJobs[0])
+	}
+	for _, want := range []string{"toolchain_feedback_classified", "toolchain_repair_child_job_created", "toolchain_repair_focus_locked"} {
+		if !structuredEventsContain(events, want) {
+			t.Fatalf("missing %s event: %#v", want, events)
+		}
+	}
+}
+
+func TestToolchainRepairFocusBlocksUnrelatedPlannerObjective(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	npmPath := filepath.Join(binDir, "npm")
+	if err := os.WriteFile(npmPath, []byte("#!/bin/sh\necho '[vite]: Rollup failed to resolve import \"react\" from src/App.jsx' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	buildCommand := "PATH=" + shellQuote(binDir) + ":$PATH npm run build"
+	client := &fakeCommandDecisionClient{responses: []string{
+		fmt.Sprintf(`{"command":%q,"done":false,"answer":""}`, buildCommand),
+		`{"command":"printf unrelated > unrelated.txt","done":false,"answer":""}`,
+	}}
+	events := []StructuredCommandEvent{}
+	result, _ := runStructuredCommandDecisionWithConfig(context.Background(), "fix build then update docs", nil, client, &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, nil, structuredCommandDecisionRunConfig{
+		CurrentWorkingDirectory: workspace,
+		PromptInterpreter: &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+			ObjectiveLedger: []StructuredObjective{
+				{ID: "repair_build", Description: "Repair frontend build", Status: "pending", Required: true},
+				{ID: "update_docs", Description: "Update unrelated docs", Status: "pending", Required: true},
+			},
+		}}},
+	})
+	if client.calls != 1 {
+		t.Fatalf("generic planner should not be called while repair child is active; calls=%d result=%#v", client.calls, result)
+	}
+	if fileExists(filepath.Join(workspace, "unrelated.txt")) {
+		t.Fatalf("unrelated objective command ran while repair child active")
+	}
+	if !structuredEventsContain(events, "toolchain_repair_focus_lock_active") {
+		t.Fatalf("missing active focus lock event: %#v", events)
+	}
+}
+
+func TestFailingBuildFeedsFailurePacketIntoSameChildLoop(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	npmPath := filepath.Join(binDir, "npm")
+	if err := os.WriteFile(npmPath, []byte("#!/bin/sh\necho '[vite]: Rollup failed to resolve import \"react\" from src/App.jsx' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{}
+	command := "PATH=" + shellQuote(binDir) + ":$PATH npm run build"
+	if err := runStructuredPayloadCommand(context.Background(), 1, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	if err := runStructuredPayloadCommand(context.Background(), 2, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ChildJobs) != 1 {
+		t.Fatalf("failing build should update same child job: %#v", result.ChildJobs)
+	}
+	job := result.ChildJobs[0]
+	if len(job.AttemptLedger) == 0 {
+		t.Fatalf("failure attempt not fed into child loop: %#v", job.AttemptLedger)
+	}
+	if job.LatestFailurePacket == nil || job.LatestFailurePacket.FailureKind != "toolchain_failure" {
+		t.Fatalf("latest failure packet not retained from failing build: packet=%#v observations=%#v", job.LatestFailurePacket, result.Observations)
+	}
+}
+
+func TestResearchOnlyReactPromptDoesNotMutateProjectFiles(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"research-app","dependencies":{"react":"latest","react-dom":"latest"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	appPath := filepath.Join(workspace, "src", "App.jsx")
+	original := "export default function App(){ return <main>original</main> }\n"
+	if err := os.WriteFile(appPath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"printf changed > src/App.jsx","done":false,"answer":""}`,
+		`{"command":"cat package.json","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"researched React project metadata"}`,
+	}}
+	events := []StructuredCommandEvent{}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "research React JS patterns in this project", nil, client, &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, nil, structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(appPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != original {
+		t.Fatalf("research-only command mutated source file: %q", string(content))
+	}
+	if result.TaskMode != TaskModeResearchOnly {
+		t.Fatalf("task mode = %q, want research_only", result.TaskMode)
+	}
+	if !structuredEventsContain(events, "research_only_mutation_rejected") {
+		t.Fatalf("missing research-only rejection event: %#v", events)
+	}
+}
+
+func TestResearchOnlyModeCanStoreExpertiseMemory(t *testing.T) {
+	runner := newFakeMemoryRunner()
+	store := NewPGMemoryStore(runner)
+	record, err := store.AddMemory(context.Background(), "research", MemoryKindExpertise, "React research note: hooks must run unconditionally.", []string{"react", "expertise-memory", string(TaskModeResearchOnly)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Kind != MemoryKindExpertise {
+		t.Fatalf("stored memory kind = %q", record.Kind)
+	}
+	if len(runner.memories) != 1 {
+		t.Fatalf("expertise memory was not stored: %#v", runner.memories)
+	}
+}
+
+func TestToolchainErrorDuringResearchRecordedButNotRepaired(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	nodePath := filepath.Join(binDir, "node")
+	if err := os.WriteFile(nodePath, []byte("#!/bin/sh\necho '[vite]: Rollup failed to resolve import \"react\" from src/App.jsx' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{TaskMode: TaskModeResearchOnly}
+	events := []StructuredCommandEvent{}
+	command := "PATH=" + shellQuote(binDir) + ":$PATH node -e \"console.error('vite failure'); process.exit(1)\""
+	if err := runStructuredPayloadCommand(context.Background(), 1, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !structuredEventsContain(events, "toolchain_feedback_classified") {
+		t.Fatalf("missing classified feedback event: %#v", events)
+	}
+	if !structuredEventsContain(events, "toolchain_feedback_recorded_research_only") {
+		t.Fatalf("missing research-only feedback recording event: %#v", events)
+	}
+	if len(result.ChildJobs) != 0 {
+		t.Fatalf("research-only toolchain feedback created repair child jobs: %#v", result.ChildJobs)
+	}
+}
+
+func TestStaleRepairChildJobsDoNotLeakIntoResearchOnlyTask(t *testing.T) {
+	result := CommandDecisionResult{
+		TaskMode: TaskModeResearchOnly,
+		ChildJobs: []ChildJob{{
+			ID:                "repair_vite_module_error",
+			ParentObjectiveID: "toolchain_feedback_repair",
+			Status:            ChildJobStatusRepairing,
+		}},
+	}
+	events := []StructuredCommandEvent{}
+	handled, err := routeActiveToolchainRepairChildBeforePlanner(context.Background(), 1, "research React JS", structuredCommandDecisionRunConfig{}, WorksiteSurvey{TaskMode: TaskModeResearchOnly}, &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, nil, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handled {
+		t.Fatalf("research-only task should not route into stale repair child")
+	}
+	if len(result.ChildJobs) != 0 {
+		t.Fatalf("stale repair child job leaked into research-only task: %#v", result.ChildJobs)
+	}
+	if !structuredEventsContain(events, "research_only_repair_jobs_suppressed") {
+		t.Fatalf("missing stale repair suppression event: %#v", events)
 	}
 }
 

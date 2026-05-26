@@ -146,8 +146,51 @@ func TestInteractiveMemoryUsesPromptQueryAndFiltersForeignProjectMemory(t *testi
 	if strings.TrimSpace(search.Details["query"]) == "" {
 		t.Fatalf("execution memory search used empty query: %#v", search)
 	}
+	for _, args := range runner.QueryArgs {
+		if len(args) >= 3 && strings.TrimSpace(stringFromAny(args[0])) == "" {
+			t.Fatalf("execution memory search used empty query args: %#v", runner.QueryArgs)
+		}
+	}
 	if countEventsOfType(events, "memory_context_filtered") != 1 {
 		t.Fatalf("expected memory_context_filtered event: %#v", events)
+	}
+}
+
+func TestExecutionSessionMemoryFiltersForeignProjectAndKeepsCurrentPackageIdentity(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"fresh-notes"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memories := []SessionMemory{
+		{Kind: MemoryKindProject, Content: "Fruityloops project had a FruitMixer component.", Tags: []string{"project-memory", "workspace:old"}},
+		{Kind: MemoryKindProject, Content: "fresh-notes package name and project identity.", Tags: []string{"project-memory", "workspace:" + workspaceHash(workspace)}},
+		{Kind: "episodic", Content: "old prompt said use Fruityloops", Tags: []string{"prompt"}},
+	}
+	filtered := filterExecutionSessionMemories(memories, "build this package", workspace, 10)
+	if !sessionMemoriesContain(filtered, "fresh-notes") {
+		t.Fatalf("current package identity memory should be retained: %#v", filtered)
+	}
+	if sessionMemoriesContain(filtered, "Fruityloops") || sessionMemoriesContain(filtered, "FruitMixer") {
+		t.Fatalf("foreign project memory leaked: %#v", filtered)
+	}
+	for _, memory := range filtered {
+		if !containsString(memory.Tags, "advisory-only") || !containsString(memory.Tags, "may-create-scope:false") {
+			t.Fatalf("memory authority labels missing: %#v", memory)
+		}
+	}
+}
+
+func TestMemorySuggestedComponentsCannotBecomeObjectives(t *testing.T) {
+	objectives := []StructuredObjective{{
+		ID:          "add_fruit_mixer",
+		Description: "Add FruitMixer component remembered from Fruityloops",
+		Status:      "pending",
+		Source:      structuredObjectiveSourceMemorySuggested,
+		Required:    true,
+	}}
+	normalized := mergeStructuredObjectiveLedger(nil, filterObjectiveLedgerForWorksiteSurvey(objectives, WorksiteSurvey{}))
+	if len(pendingStructuredObjectives(normalized)) != 0 {
+		t.Fatalf("memory suggested component became blocking objective: %#v", normalized)
 	}
 }
 

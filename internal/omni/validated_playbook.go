@@ -91,7 +91,7 @@ func successfulMutatingOrVerifyingCommands(observations []StructuredCommandObser
 		if !structuredCommandLooksMutating(command) && !commandLooksLikeValidation(command) {
 			continue
 		}
-		out = append(out, command)
+		out = append(out, sanitizeProjectIdentityFromPlaybookText(command))
 	}
 	return limitStrings(out, 12)
 }
@@ -116,7 +116,7 @@ func validationSignalsFromObservations(observations []StructuredCommandObservati
 		if command == "" || !commandLooksLikeValidation(command) {
 			continue
 		}
-		signals = append(signals, compactPlaybookLine(command))
+		signals = append(signals, sanitizeProjectIdentityFromPlaybookText(compactPlaybookLine(command)))
 	}
 	return limitStrings(signals, 8)
 }
@@ -131,7 +131,7 @@ func knownFailuresFromObservations(observations []StructuredCommandObservation) 
 		if text == "" {
 			continue
 		}
-		failures = append(failures, compactPlaybookLine(text))
+		failures = append(failures, sanitizeProjectIdentityFromPlaybookText(compactPlaybookLine(text)))
 	}
 	return limitStrings(failures, 6)
 }
@@ -147,7 +147,7 @@ func recoveryStepsFromObservations(observations []StructuredCommandObservation) 
 			continue
 		}
 		if len(steps) == 0 || steps[len(steps)-1] != command {
-			steps = append(steps, command)
+			steps = append(steps, sanitizeProjectIdentityFromPlaybookText(command))
 		}
 	}
 	return limitStrings(steps, 8)
@@ -163,7 +163,7 @@ func successEvidenceFromLedger(ledger []StructuredObjective) []string {
 		if strings.TrimSpace(objective.Evidence) != "" {
 			line += ": " + strings.TrimSpace(objective.Evidence)
 		}
-		evidence = append(evidence, compactPlaybookLine(line))
+		evidence = append(evidence, sanitizeProjectIdentityFromPlaybookText(compactPlaybookLine(line)))
 	}
 	return limitStrings(evidence, 10)
 }
@@ -190,16 +190,64 @@ func validatedPlaybookName(prompt string, ledger []StructuredObjective) string {
 }
 
 func compactTaskPattern(prompt string, ledger []StructuredObjective) string {
+	tags := validatedPlaybookTags(prompt, ledger)
+	if pattern := abstractValidatedPlaybookPattern(tags); pattern != "" {
+		return pattern
+	}
 	parts := []string{}
 	if strings.TrimSpace(prompt) != "" {
-		parts = append(parts, compactPlaybookLine(prompt))
+		parts = append(parts, sanitizeProjectIdentityFromPlaybookText(compactPlaybookLine(prompt)))
 	}
 	for _, objective := range ledger {
 		if strings.TrimSpace(objective.Description) != "" {
-			parts = append(parts, compactPlaybookLine(objective.Description))
+			parts = append(parts, sanitizeProjectIdentityFromPlaybookText(compactPlaybookLine(objective.Description)))
 		}
 	}
 	return strings.Join(limitStrings(parts, 6), " | ")
+}
+
+func abstractValidatedPlaybookPattern(tags []string) string {
+	tagSet := map[string]bool{}
+	for _, tag := range cleanMemoryTags(tags) {
+		tagSet[tag] = true
+	}
+	parts := []string{}
+	if tagSet["vite"] {
+		parts = append(parts, "Vite")
+	}
+	if tagSet["react"] {
+		parts = append(parts, "React")
+	}
+	if tagSet["notes"] {
+		parts = append(parts, "notes")
+	}
+	if tagSet["crud"] {
+		parts = append(parts, "CRUD")
+	}
+	switch {
+	case tagSet["frontend"]:
+		parts = append(parts, "frontend app")
+	case tagSet["backend"]:
+		parts = append(parts, "backend app")
+	case tagSet["cli"]:
+		parts = append(parts, "CLI app")
+	case len(parts) > 0:
+		parts = append(parts, "app")
+	}
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+func sanitizeProjectIdentityFromPlaybookText(value string) string {
+	replacements := map[string]string{
+		"Fruityloops": "prior app",
+		"fruityloops": "prior app",
+		"FruitMixer":  "component",
+		"fruitmixer":  "component",
+	}
+	for old, replacement := range replacements {
+		value = strings.ReplaceAll(value, old, replacement)
+	}
+	return value
 }
 
 func validatedPlaybookTags(prompt string, ledger []StructuredObjective) []string {
@@ -263,18 +311,26 @@ func validatedPlaybookMemorySummary(memory SessionMemory) string {
 		return compactPlaybookLine(content)
 	}
 	parts := []string{
-		fmt.Sprintf("name=%s", playbook.Name),
+		fmt.Sprintf("name=%s", sanitizeProjectIdentityFromPlaybookText(playbook.Name)),
 		fmt.Sprintf("confidence=%d", playbook.Confidence),
 	}
 	if playbook.TaskPattern != "" {
-		parts = append(parts, "task_pattern="+playbook.TaskPattern)
+		parts = append(parts, "task_pattern="+sanitizeProjectIdentityFromPlaybookText(playbook.TaskPattern))
 	}
 	if len(playbook.CommandSequence) > 0 {
-		parts = append(parts, "commands="+strings.Join(limitStrings(playbook.CommandSequence, 5), " -> "))
+		parts = append(parts, "commands="+strings.Join(limitStrings(sanitizePlaybookLines(playbook.CommandSequence), 5), " -> "))
 	}
 	if len(playbook.ValidationSignals) > 0 {
-		parts = append(parts, "validation="+strings.Join(limitStrings(playbook.ValidationSignals, 3), " | "))
+		parts = append(parts, "validation="+strings.Join(limitStrings(sanitizePlaybookLines(playbook.ValidationSignals), 3), " | "))
 	}
 	parts = append(parts, "scope_policy="+playbook.ScopePolicy)
 	return strings.Join(parts, "\n")
+}
+
+func sanitizePlaybookLines(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, sanitizeProjectIdentityFromPlaybookText(line))
+	}
+	return out
 }

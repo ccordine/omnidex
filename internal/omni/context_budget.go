@@ -26,6 +26,7 @@ type structuredContextBudgetReport struct {
 }
 
 func budgetStructuredPlannerContext(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, survey WorksiteSurvey, prep PrepContextBundle) ([]Message, []SessionMemory, []StructuredCommandObservation, MinimalContext, PrepContextBundle, structuredContextBudgetReport) {
+	memories = filterExecutionSessionMemories(memories, prompt, currentWorkingDirectory, len(memories))
 	report := structuredContextBudgetReport{
 		ObservationsBefore: len(observations),
 		ObservationsAfter:  len(observations),
@@ -143,7 +144,7 @@ func compactSessionMemoriesForStructuredContext(memories []SessionMemory, maxCou
 	if len(memories) > maxCount {
 		start = len(memories) - maxCount
 	}
-	out := make([]SessionMemory, 0, len(memories[start:]))
+	out := make([]SessionMemory, 0, minInt(maxCount, len(memories[start:])))
 	for _, memory := range memories[start:] {
 		if strings.TrimSpace(memory.Content) == "" {
 			continue

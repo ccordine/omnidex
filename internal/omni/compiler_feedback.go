@@ -54,6 +54,10 @@ func detectToolchainFromCommand(command string) string {
 	if len(fields) == 0 {
 		return ""
 	}
+	fields = stripCommandEnvironmentPrefix(fields)
+	if len(fields) == 0 {
+		return ""
+	}
 	switch cleanCommandPathToken(fields[0]) {
 	case "go":
 		return "go"
@@ -75,6 +79,23 @@ func detectToolchainFromCommand(command string) string {
 		}
 		return ""
 	}
+}
+
+func stripCommandEnvironmentPrefix(fields []string) []string {
+	out := fields
+	for len(out) > 0 {
+		token := cleanCommandPathToken(out[0])
+		if token == "env" {
+			out = out[1:]
+			continue
+		}
+		if strings.Contains(token, "=") && !strings.HasPrefix(token, "-") {
+			out = out[1:]
+			continue
+		}
+		break
+	}
+	return out
 }
 
 func classifyGoFeedback(text string) (string, string, []string) {

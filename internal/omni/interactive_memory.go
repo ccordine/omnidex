@@ -156,7 +156,7 @@ func (a *App) loadInteractiveMemoryContext(ctx context.Context, prompt, activeDi
 			"reason":         "execution_authority_or_foreign_project",
 		})
 	}
-	memories := memoryRecordsToSessionMemories(records)
+	memories := memoryRecordsToSessionMemoriesWithScope(records, prompt, activeDirectory)
 	emitEvent("memory_context_loaded", "Interactive memory context loaded", map[string]string{
 		"matches": fmt.Sprintf("%d", len(records)),
 		"ids":     strings.Join(memoryRecordIDs(records), ","),
@@ -244,10 +244,13 @@ func executionMemoryRecordAllowed(record MemoryRecord, workspaceScopedTag string
 		return false
 	}
 	switch kind {
-	case MemoryKindCapability, MemoryKindExpertise, MemoryKindSource, MemoryKindResearchIndex,
+	case MemoryKindCapability, "capability", MemoryKindExpertise, MemoryKindSource, MemoryKindResearchIndex,
 		"documentation_brief", "documentation_research", "web_research_brief", "expertise_research":
 		return true
 	case validatedPlaybookKind, MemoryKindProcedural:
+		if kind == validatedPlaybookKind && !validatedPlaybookRecordIsNormalizedAdvisory(record) {
+			return false
+		}
 		return tagSet["advisory-only"] || tagSet["validated-playbook"] || tagSet["procedure-memory"]
 	case MemoryKindProject, "codebase_route", "codebase_route_brief", "worksite_survey":
 		return workspaceScopedTag != "" && tagSet[workspaceScopedTag]
@@ -269,12 +272,30 @@ func memoryRecordLooksForeignProject(record MemoryRecord, identities map[string]
 		}
 	}
 	text := strings.ToLower(record.Content + " " + strings.Join(tags, " "))
-	for _, marker := range []string{"fruityloops"} {
+	if strings.TrimSpace(record.Kind) == validatedPlaybookKind && validatedPlaybookRecordIsNormalizedAdvisory(record) {
+		return false
+	}
+	for _, marker := range []string{"fruityloops", "fruitmixer"} {
 		if strings.Contains(text, marker) && !identities[marker] {
 			return true
 		}
 	}
+	if strings.Contains(text, "foreign_project_memory") || strings.Contains(text, "foreign-project-memory") {
+		return true
+	}
 	return false
+}
+
+func validatedPlaybookRecordIsNormalizedAdvisory(record MemoryRecord) bool {
+	var playbook ValidatedPlaybook
+	if json.Unmarshal([]byte(strings.TrimSpace(record.Content)), &playbook) != nil {
+		return false
+	}
+	if !strings.Contains(strings.ToLower(playbook.ScopePolicy), "advisory") {
+		return false
+	}
+	task := strings.ToLower(playbook.TaskPattern)
+	return !strings.Contains(task, "fruityloops") && !strings.Contains(task, "fruitmixer")
 }
 
 func currentProjectIdentityTokens(activeDirectory, prompt string) map[string]bool {
@@ -289,6 +310,14 @@ func currentProjectIdentityTokens(activeDirectory, prompt string) map[string]boo
 		}
 	}
 	if strings.TrimSpace(activeDirectory) != "" {
+		for token := range packageNameTokens(activeDirectory) {
+			out[token] = true
+		}
+		if gitTop, err := gitRepoTopLevel(activeDirectory); err == nil {
+			for _, token := range projectIdentityTokensFromText(filepath.Base(gitTop)) {
+				out[token] = true
+			}
+		}
 		blob, err := os.ReadFile(filepath.Join(activeDirectory, "package.json"))
 		if err == nil {
 			var pkg struct {
@@ -333,9 +362,18 @@ func memoryRecordKinds(records []MemoryRecord) []string {
 }
 
 func memoryRecordsToSessionMemories(records []MemoryRecord) []SessionMemory {
+	return memoryRecordsToSessionMemoriesWithScope(records, "", "")
+}
+
+func memoryRecordsToSessionMemoriesWithScope(records []MemoryRecord, prompt, activeDirectory string) []SessionMemory {
 	if len(records) == 0 {
 		return nil
 	}
+	workspaceScopedTag := ""
+	if strings.TrimSpace(activeDirectory) != "" {
+		workspaceScopedTag = "workspace:" + workspaceHash(activeDirectory)
+	}
+	identities := currentProjectIdentityTokens(activeDirectory, prompt)
 	out := make([]SessionMemory, 0, len(records))
 	for _, record := range records {
 		content := strings.TrimSpace(record.Content)
@@ -349,7 +387,7 @@ func memoryRecordsToSessionMemories(records []MemoryRecord) []SessionMemory {
 		out = append(out, SessionMemory{
 			Kind:      firstNonEmpty(record.Kind, "episodic"),
 			Content:   content,
-			Tags:      cleanMemoryTags(record.Tags),
+			Tags:      memoryAuthorityTags(SessionMemory{Kind: record.Kind, Content: content, Tags: record.Tags}, identities, workspaceScopedTag),
 			CreatedAt: createdAt,
 		})
 	}

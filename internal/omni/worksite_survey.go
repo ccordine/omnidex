@@ -33,6 +33,7 @@ const (
 type WorksiteSurvey struct {
 	WorkspacePath         string   `json:"workspace_path"`
 	UserOperation         string   `json:"user_operation"`
+	TaskMode              TaskMode `json:"task_mode,omitempty"`
 	ProjectState          string   `json:"project_state"`
 	PackageManager        string   `json:"package_manager,omitempty"`
 	Manifests             []string `json:"manifests,omitempty"`

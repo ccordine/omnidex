@@ -611,6 +611,9 @@ func structuredCommandLooksMutating(command string) bool {
 		"architect.apply", "empty_file.apply",
 		"npm install", "npm pkg set", "npm init", "mkdir", "touch", "cp ", "mv ", "rm ",
 		" -delete", "webpack", "npm run build", "npm test",
+		"writefile", "writefilesync", "appendfile", "appendfilesync", "renamesync", "copyfilesync",
+		"unlinksync", "rmsync", "mkdirsync",
+		"write_text", "write_bytes",
 	}
 	for _, needle := range mutationNeedles {
 		if strings.Contains(lower, needle) {

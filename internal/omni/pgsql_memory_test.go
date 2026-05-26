@@ -202,6 +202,7 @@ type fakeMemoryRunner struct {
 	memories     []MemoryRecord
 	tagIDs       map[string]int64
 	SQLLog       []string
+	QueryArgs    [][]any
 }
 
 func newFakeMemoryRunner() *fakeMemoryRunner {
@@ -236,6 +237,7 @@ func (r *fakeMemoryRunner) Exec(ctx context.Context, sql string, args ...any) er
 
 func (r *fakeMemoryRunner) Query(ctx context.Context, sql string, args ...any) ([]MemorySQLRow, error) {
 	r.SQLLog = append(r.SQLLog, normalizeSQLForTest(sql))
+	r.QueryArgs = append(r.QueryArgs, append([]any{}, args...))
 	clean := strings.ToUpper(sql)
 
 	switch {

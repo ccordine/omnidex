@@ -360,7 +360,7 @@ func failurePacketFromObservation(job ChildJob, obs StructuredCommandObservation
 }
 
 func classifyChildJobFailureKind(obs StructuredCommandObservation) string {
-	text := strings.ToLower(obs.Stderr + "\n" + obs.Stdout + "\n" + obs.RejectedCommand)
+	text := strings.ToLower(obs.Stderr + "\n" + obs.Stdout + "\n" + obs.RejectedCommand + "\n" + obs.CapabilityMemory)
 	switch {
 	case strings.TrimSpace(obs.RejectedCommand) != "" && strings.Contains(text, "placeholder"):
 		return "placeholder_path_rejection"

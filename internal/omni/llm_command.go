@@ -57,6 +57,7 @@ type CommandDecisionResult struct {
 	ExitCode        int
 	Answer          string
 	PartialProgress bool
+	TaskMode        TaskMode
 	Observations    []StructuredCommandObservation
 	ObjectiveLedger []StructuredObjective
 	WorkItems       []ObjectiveWorkItem
@@ -577,6 +578,7 @@ type structuredCommandDecisionRunConfig struct {
 	UserAssistanceSpecialist UserAssistanceSpecialist
 	EnableCommandCache       bool
 	CommandCacheRoot         string
+	TaskMode                 TaskMode
 }
 
 func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, history []Message, client CommandDecisionClient, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, cfg structuredCommandDecisionRunConfig) (result CommandDecisionResult, retErr error) {
@@ -607,6 +609,13 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	selectedRecipes := []Recipe{}
 	referenceHistoryAllowed := false
 	worksiteSurvey := BuildWorksiteSurvey(cfg.CurrentWorkingDirectory)
+	if mode := normalizeTaskMode(cfg.TaskMode); mode != "" {
+		worksiteSurvey.TaskMode = mode
+	} else {
+		worksiteSurvey.TaskMode = inferTaskMode(prompt, worksiteSurvey)
+	}
+	result.TaskMode = worksiteSurvey.TaskMode
+	cfg.SessionMemories = filterExecutionSessionMemories(cfg.SessionMemories, prompt, cfg.CurrentWorkingDirectory, len(cfg.SessionMemories))
 	result.MinimalContext = minimalContext
 	refreshTypedWorkItems := func() {
 		if len(ledger) == 0 {
@@ -655,6 +664,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	}
 	emitStructuredCommandEvent(onEvent, "worksite_survey_completed", "Worksite survey grounded the active workspace", map[string]string{
 		"workspace":       worksiteSurvey.WorkspacePath,
+		"task_mode":       string(worksiteSurvey.TaskMode),
 		"project_state":   worksiteSurvey.ProjectState,
 		"package_manager": worksiteSurvey.PackageManager,
 		"frameworks":      strings.Join(worksiteSurvey.Frameworks, ","),
@@ -683,6 +693,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		} else {
 			referenceHistoryAllowed = interpretation.RequiresReferenceHistory
 			worksiteSurvey = worksiteSurvey.WithOperation(interpretation.UserOperation)
+			if mode := normalizeTaskMode(cfg.TaskMode); mode != "" {
+				worksiteSurvey.TaskMode = mode
+			} else {
+				worksiteSurvey.TaskMode = inferTaskMode(prompt, worksiteSurvey)
+			}
+			result.TaskMode = worksiteSurvey.TaskMode
 			worksiteSurvey.RecommendedRecipeIDs = cleanStringList(append(interpretation.RecommendedRecipeIDs, interpretation.RecipeIDs...))
 			worksiteSurvey.ForbiddenRecipeIDs = cleanStringList(append(worksiteSurvey.ForbiddenRecipeIDs, interpretation.ForbiddenRecipeIDs...))
 			selectedRecipes = FilterRecipesForWorksiteSurvey(SelectRecipesByID(cfg.Recipes, interpretation.RecipeIDs), worksiteSurvey)
@@ -848,7 +864,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 			return result, CommandDecisionExhaustedError{MaxSteps: step}
 		}
-		if (gateDecision.Action == ProgressForceRecovery || gateDecision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil {
+		if (gateDecision.Action == ProgressForceRecovery || gateDecision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil && worksiteSurvey.TaskMode != TaskModeResearchOnly {
 			handled, err := runProgressionGateRecovery(ctx, step, prompt, gateDecision, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result)
 			if err != nil {
 				return result, err
@@ -856,6 +872,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			if handled {
 				continue
 			}
+		}
+		if handled, err := routeActiveToolchainRepairChildBeforePlanner(ctx, step, prompt, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result); handled || err != nil {
+			if err != nil {
+				return result, err
+			}
+			continue
 		}
 		budgetedHistory, budgetedMemories, budgetedObservations, budgetedMinimalContext, budgetedPrep, budgetReport := budgetStructuredPlannerContext(prompt, referenceHistory, cfg.SessionMemories, result.Observations, cfg.CurrentWorkingDirectory, ledger, minimalContext, cfg.Recipes, worksiteSurvey, cfg.PrepContext)
 		if budgetReport.Applied {
@@ -994,6 +1016,19 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 		if isPatchToolDelegation(payload) {
+			if err := validateStructuredCommandForTaskMode(payload.Command, payload.Patch, worksiteSurvey.TaskMode); err != nil {
+				emitStructuredCommandEvent(onEvent, "research_only_mutation_rejected", "Patch delegation rejected by research-only mode", map[string]string{
+					"step":   fmt.Sprintf("%d", step),
+					"reason": err.Error(),
+				})
+				result.Observations = append(result.Observations, StructuredCommandObservation{
+					Step:             step,
+					RejectedResponse: truncateStructuredObservation(resp.Content),
+					ExitCode:         1,
+					Stderr:           "command rejected: " + err.Error(),
+				})
+				continue
+			}
 			if err := runStructuredPatchApply(ctx, step, payload.Patch, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, &result); err != nil {
 				return result, err
 			}
@@ -1188,7 +1223,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 						Stderr:   "progression_gate: done=true rejected before completion validation; blocked recovery or pending objectives require a different action first",
 					})
 					result.Answer = ""
-					if (gateDecision.Action == ProgressForceRecovery || gateDecision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil {
+					if (gateDecision.Action == ProgressForceRecovery || gateDecision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil && worksiteSurvey.TaskMode != TaskModeResearchOnly {
 						handled, err := runProgressionGateRecovery(ctx, step, prompt, gateDecision, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result)
 						if err != nil {
 							return result, err
@@ -1510,7 +1545,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					}
 					return result, CommandDecisionExhaustedError{MaxSteps: step}
 				}
-				if (decision.Action == ProgressForceRecovery || decision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil {
+				if (decision.Action == ProgressForceRecovery || decision.Action == ProgressUseCompletedEvidence) && cfg.ShellSpecialist != nil && worksiteSurvey.TaskMode != TaskModeResearchOnly {
 					handled, recoverErr := runProgressionGateRecovery(ctx, step, prompt, decision, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result)
 					if recoverErr != nil {
 						return result, recoverErr
@@ -1612,6 +1647,34 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 	var stderrBuf bytes.Buffer
 	attempt := structuredCommandAttemptNumber(result, command)
 	commandID := structuredCommandID(step, attempt, command, workingDirectory)
+	if result != nil && result.TaskMode == TaskModeResearchOnly {
+		if err := validateStructuredCommandForTaskMode(command, "", result.TaskMode); err != nil {
+			result.Command = command
+			result.ExitCode = 1
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:            step,
+				CommandID:       commandID,
+				RejectedCommand: truncateStructuredObservation(command),
+				ExitCode:        1,
+				Stderr:          "command rejected: " + err.Error(),
+				CWD:             structuredPromptWorkingDirectory(workingDirectory),
+				Attempt:         attempt,
+			})
+			emitStructuredCommandEvent(onEvent, "research_only_mutation_rejected", "Command rejected by research-only mode", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"command": truncateStructuredTimelineValue(command),
+				"reason":  err.Error(),
+			})
+			return nil
+		}
+	}
+	moveSpec, hasMoveSpec := mutationReconciliationMoveSpec(command, workingDirectory)
+	if hasMoveSpec {
+		handled, gateErr := applyMutationReconciliationGateBeforeMove(step, command, commandID, workingDirectory, moveSpec, onEvent, result)
+		if handled || gateErr != nil {
+			return gateErr
+		}
+	}
 	if enableCommandCache {
 		hit, err := appendCachedStructuredCommandObservation(step, attempt, commandID, command, workingDirectory, commandCacheRoot, stdout, stderr, onEvent, result)
 		if err != nil {
@@ -1644,6 +1707,11 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 			"step":    fmt.Sprintf("%d", step),
 			"command": truncateStructuredTimelineValue(command),
 		})
+	}
+	if exitCode == 0 && hasMoveSpec {
+		if !verifyMutationReconciliationGateAfterMove(step, command, workingDirectory, moveSpec, &stdoutBuf, &stderrBuf, onEvent, result) {
+			exitCode = 1
+		}
 	}
 	result.Command = command
 	result.ExitCode = exitCode
@@ -1697,21 +1765,22 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 			"summary":   feedback.Summary,
 			"hints":     strings.Join(feedback.Hints, "; "),
 		})
-		if path := viteJSXSyntaxDisabledPath(stdoutBuf.String() + "\n" + stderrBuf.String()); path != "" {
-			emitStructuredCommandEvent(onEvent, "toolchain_repair_child_job_created", "Vite JSX feedback created focused repair child job", map[string]string{
-				"step":              fmt.Sprintf("%d", step),
-				"repair_child_job":  "ensure_all_components_are_jsx",
-				"blocked_objective": "npm_build_proof",
-				"path":              path,
+		if result != nil && exitCode != 0 && result.TaskMode == TaskModeResearchOnly {
+			emitStructuredCommandEvent(onEvent, "toolchain_feedback_recorded_research_only", "Toolchain feedback recorded as incidental research finding without repair", map[string]string{
+				"step":      fmt.Sprintf("%d", step),
+				"toolchain": feedback.Toolchain,
+				"kind":      feedback.Kind,
 			})
-			emitStructuredCommandEvent(onEvent, "toolchain_repair_focus_locked", "Toolchain repair focus locked until JSX file extension evidence and build proof pass", map[string]string{
-				"step":             fmt.Sprintf("%d", step),
-				"active_child_job": "ensure_all_components_are_jsx",
-				"required_evidence": strings.Join([]string{
-					"no_js_files_with_jsx:src",
-					"command_passed:npm run build",
-				}, ","),
-			})
+		} else if result != nil && exitCode != 0 {
+			result.ChildJobs, _ = upsertToolchainRepairChildJob(result.ChildJobs, feedback, result.Observations[len(result.Observations)-1], workingDirectory)
+			job := result.ChildJobs[len(result.ChildJobs)-1]
+			for _, candidate := range result.ChildJobs {
+				if candidate.ID == toolchainRepairChildJobID(feedback) {
+					job = candidate
+					break
+				}
+			}
+			emitToolchainRepairControlFlowEvents(step, feedback, job, onEvent)
 		}
 	}
 	if enableCommandCache {
@@ -1737,6 +1806,22 @@ func structuredCommandIsDependencyInstall(command string) bool {
 }
 
 func runStructuredPatchApply(ctx context.Context, step int, patch, workingDirectory string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
+	if result != nil && result.TaskMode == TaskModeResearchOnly {
+		err := fmt.Errorf("research_only mode forbids code patches and source writes; record project issues as incidental findings unless the user explicitly asks for repair")
+		result.Command = "PATCH_APPLY_REJECTED"
+		result.ExitCode = 1
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:             step,
+			RejectedResponse: truncateStructuredObservation(patch),
+			ExitCode:         1,
+			Stderr:           "command rejected: " + err.Error(),
+		})
+		emitStructuredCommandEvent(onEvent, "research_only_mutation_rejected", "Patch apply rejected by research-only mode", map[string]string{
+			"step":   fmt.Sprintf("%d", step),
+			"reason": err.Error(),
+		})
+		return nil
+	}
 	emitStructuredCommandEvent(onEvent, "structured_patch_apply_started", "Applying structured patch artifact", map[string]string{
 		"step": fmt.Sprintf("%d", step),
 		"tool": "patch.apply",
@@ -7066,6 +7151,9 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 	if err := validateStructuredCommandWorkspaceProtection(command, workingDirectory); err != nil {
 		return err
 	}
+	if err := validateStructuredCommandForTaskMode(command, "", survey.TaskMode); err != nil {
+		return err
+	}
 	if err := validateUnsafeMutationCommandShape(command); err != nil {
 		return err
 	}
@@ -7088,6 +7176,67 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 		return err
 	}
 	return nil
+}
+
+func validateStructuredCommandForTaskMode(command, patch string, mode TaskMode) error {
+	if normalizeTaskMode(mode) != TaskModeResearchOnly {
+		return nil
+	}
+	if strings.TrimSpace(patch) != "" {
+		return fmt.Errorf("research_only mode forbids code patches and source writes; record project issues as incidental findings unless the user explicitly asks for repair")
+	}
+	if researchOnlyCommandForbidden(command) {
+		return fmt.Errorf("research_only mode forbids mutation, dependency changes, package installs, build repair, and verification commands that may change project state; record project issues as incidental findings unless the user explicitly asks for repair")
+	}
+	return nil
+}
+
+func researchOnlyCommandForbidden(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	lower := strings.ToLower(command)
+	if structuredCommandLooksMutating(command) || structuredCommandLooksVerifier(command) {
+		return true
+	}
+	for _, needle := range []string{
+		"npm pkg set", "npm install", "pnpm add", "yarn add", "bun add",
+		"cat >", "tee ", "apply_patch", "architect.apply", "empty_file.apply",
+		"writefile", "writefilesync", "appendfile", "appendfilesync", ".write(",
+		"pip install", "go get", "cargo add",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	if scriptOpenLooksWritable(lower) {
+		return true
+	}
+	for _, segment := range structuredCommandSegments(command) {
+		if len(segment) == 0 {
+			continue
+		}
+		switch cleanCommandPathToken(segment[0]) {
+		case "mv", "cp", "rm":
+			return true
+		case "mkdir":
+			return true
+		}
+	}
+	return false
+}
+
+func scriptOpenLooksWritable(lower string) bool {
+	if !strings.Contains(lower, "open(") {
+		return false
+	}
+	for _, marker := range []string{",\"w\"", ", \"w\"", ",'w'", ", 'w'", ",\"a\"", ", \"a\"", ",'a'", ", 'a'", ",\"wb\"", ", \"wb\"", ",'wb'", ", 'wb'"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateUnsafeMutationCommandShape(command string) error {
@@ -9515,6 +9664,14 @@ func repairRejectedDoneWithPlanner(ctx context.Context, step int, prompt string,
 		"pending_objectives": pendingStructuredObjectiveIDs(*ledger),
 	})
 	if isPatchToolDelegation(nextPayload) {
+		if err := validateStructuredCommandForTaskMode(nextPayload.Command, nextPayload.Patch, worksiteSurvey.TaskMode); err != nil {
+			appendRejectedShellProposalObservation(step, "patch.apply", err, "record incidental findings without repair in research-only mode", result)
+			emitStructuredCommandEvent(onEvent, "research_only_mutation_rejected", "Completion repair patch rejected by research-only mode", map[string]string{
+				"step":   fmt.Sprintf("%d", step),
+				"reason": err.Error(),
+			})
+			return false, nil
+		}
 		if err := runStructuredPatchApply(ctx, step, nextPayload.Patch, cfg.CurrentWorkingDirectory, stdout, stderr, onEvent, result); err != nil {
 			return false, err
 		}
@@ -10430,6 +10587,10 @@ func normalizeStructuredObjective(objective StructuredObjective) (StructuredObje
 	if source == "" {
 		required = true
 	}
+	normalizedSource := normalizeStructuredObjectiveSource(source)
+	if normalizedSource == structuredObjectiveSourceMemorySuggested || normalizedSource == structuredObjectiveSourceModelInferred {
+		required = false
+	}
 	return StructuredObjective{
 		ID:               id,
 		Description:      strings.TrimSpace(objective.Description),
@@ -10437,7 +10598,7 @@ func normalizeStructuredObjective(objective StructuredObjective) (StructuredObje
 		Kind:             string(objectiveWorkItemKindFromStructuredObjective(objective)),
 		Evidence:         strings.TrimSpace(objective.Evidence),
 		RequiredEvidence: cleanStringList(objective.RequiredEvidence),
-		Source:           normalizeStructuredObjectiveSource(source),
+		Source:           normalizedSource,
 		ParentObjective:  strings.TrimSpace(objective.ParentObjective),
 		Required:         required,
 		Packages:         cleanStringList(objective.Packages),
@@ -10633,6 +10794,7 @@ func buildStructuredCommandSystemContext() string {
 		"Treat active_task.pending_objective_ids as hard blockers for done=true; choose commands that satisfy pending ledger items and return updated objective_ledger statuses.",
 		"Treat active_task.completed_actions as authoritative progress already completed in this turn; never repeat or recreate a completed action.",
 		"Treat active_task.loop_state as authoritative loop-monitor state; if it is stuck or blocked, change strategy instead of repeating the same done/command/rejection pattern.",
+		"When active_task.task_mode is research_only, use only read-only inspection, package metadata reads, memory/docs/web research, and codebase-map reads; do not mutate files, install packages, patch code, run build repair, or convert incidental project issues into repair objectives.",
 		"Treat active_task.completed_actions as the only deterministic do-not-repeat list; active_task.forbidden_commands is empty by default and must not be inferred from observations, failed commands, rejected proposals, prior runs, command cache, or memory.",
 		"When active_task.recovery_instruction is non-empty, the next response must visibly change strategy: use a different command, delegate with tool=shell and a narrower tool_task, inspect existing files, or use tool=patch.apply.",
 		"Use active_task.task_route as advisory codebase-map routing context for likely files, modules, tests, risks, and verification commands; it is not execution permission.",
@@ -10857,6 +11019,7 @@ func structuredObjectiveLedgerSchema() map[string]interface{} {
 }
 
 func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) OllamaChatRequest {
+	sessionMemories := filterExecutionSessionMemories(input.SessionMemories, input.UserPrompt+" "+input.ToolTask, "", len(input.SessionMemories))
 	payload := struct {
 		Role              string                          `json:"role"`
 		UserPrompt        string                          `json:"user_prompt"`
@@ -10880,7 +11043,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		Observations:      compactStructuredObservationsForContext(input.Observations, 8, 650),
 		CompletedActions:  input.CompletedActions,
 		LoopState:         input.LoopState,
-		SessionMemories:   compactSessionMemoriesForStructuredContext(input.SessionMemories, 6, 600),
+		SessionMemories:   compactSessionMemoriesForStructuredContext(sessionMemories, 6, 600),
 		WorksiteSurvey:    input.WorksiteSurvey,
 		ToolRules: []string{
 			"Return JSON only with schema {\"command\":\"...\",\"rationale\":\"...\"}.",
@@ -10957,6 +11120,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 }
 
 func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaChatRequest {
+	sessionMemories := filterExecutionSessionMemories(input.SessionMemories, input.UserPrompt+" "+input.WorkItem.Description, "", len(input.SessionMemories))
 	payload := struct {
 		Role              string                          `json:"role"`
 		UserPrompt        string                          `json:"user_prompt"`
@@ -10978,7 +11142,7 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 		ExistingContent:   truncateStructuredTimelineValue(input.ExistingContent),
 		TestFirst:         input.TestFirst,
 		Observations:      compactStructuredObservationsForContext(input.Observations, 6, 500),
-		SessionMemories:   compactSessionMemoriesForStructuredContext(input.SessionMemories, 6, 600),
+		SessionMemories:   compactSessionMemoriesForStructuredContext(sessionMemories, 6, 600),
 		WorksiteSurvey:    input.WorksiteSurvey,
 		Rules: []string{
 			"Return JSON only with schema {\"content\":\"full file content\",\"rationale\":\"brief reason\"}.",
@@ -11106,6 +11270,7 @@ func buildStructuredCommandMessages(prompt string, history []Message, memories [
 }
 
 func buildStructuredCommandMessagesWithPrep(prompt string, history []Message, memories []SessionMemory, observations []StructuredCommandObservation, currentWorkingDirectory string, objectiveLedger []StructuredObjective, minimalContext MinimalContext, recipes []Recipe, survey WorksiteSurvey, prep PrepContextBundle) []OllamaMessage {
+	memories = filterExecutionSessionMemories(memories, prompt, currentWorkingDirectory, len(memories))
 	messages := []OllamaMessage{}
 	if memoryMessage := buildStructuredCommandCapabilityMemoryMessage(memories); memoryMessage != "" {
 		messages = append(messages,
@@ -11314,12 +11479,16 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			worksiteSurvey = value
 		}
 	}
+	if worksiteSurvey.TaskMode == "" {
+		worksiteSurvey.TaskMode = inferTaskMode(prompt, worksiteSurvey)
+	}
 	payload := struct {
 		ActivePromptOpen string                  `json:"active_prompt_open"`
 		ToolInventory    StructuredToolInventory `json:"tool_inventory"`
 		ActiveTask       struct {
 			CurrentPrompt               string                         `json:"current_prompt"`
 			Prompt                      string                         `json:"prompt"`
+			TaskMode                    TaskMode                       `json:"task_mode,omitempty"`
 			CurrentWorkingDirectory     string                         `json:"current_working_directory"`
 			WorksiteSurvey              WorksiteSurvey                 `json:"worksite_survey"`
 			RuntimeStateLifetime        StructuredRuntimeStateLifetime `json:"runtime_state_lifetime"`
@@ -11354,6 +11523,7 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 	payload.ToolInventory = buildStructuredToolInventory()
 	payload.ActiveTask.CurrentPrompt = prompt
 	payload.ActiveTask.Prompt = prompt
+	payload.ActiveTask.TaskMode = worksiteSurvey.TaskMode
 	payload.ActiveTask.CurrentWorkingDirectory = structuredPromptWorkingDirectory(workingDirectory)
 	payload.ActiveTask.WorksiteSurvey = worksiteSurvey
 	payload.ActiveTask.RuntimeStateLifetime = structuredRuntimeStateLifetime()
