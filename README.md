@@ -119,6 +119,54 @@ docker compose up --build
 Core API is exposed on `http://localhost:8090`.
 Postgres stays on an internal Docker network (`omnidex-internal`) and is not published to the host by default.
 
+### Isolated CLI/toolbox container
+
+For safer agent work, you can run the core service in Docker and run the CLI from a separate disposable container on the same Docker network. In that setup, Omnidex sees only the files and tools mounted into the CLI container. Your host source tree, host package managers, and host system dependencies are not touched unless you explicitly mount them writable.
+
+Start the core:
+
+```bash
+docker compose up --build -d core
+```
+
+Then run a CLI/toolbox container on the compose network. The exact network name is usually `<repo>_omnidex-internal`; from this repo it is commonly `omnidex_omnidex-internal`:
+
+```bash
+docker network ls --filter name=omnidex-internal
+```
+
+Example service-backed CLI run:
+
+```bash
+mkdir -p "$HOME/omnidex-sandbox"
+
+docker run --rm -it \
+  --network omnidex_omnidex-internal \
+  -e CORE_URL=http://core:8090 \
+  -v "$PWD":/src/omnidex:ro \
+  -v "$HOME/omnidex-sandbox":/workspace \
+  -w /src/omnidex \
+  golang:1.24.1-bookworm \
+  go run ./cmd/cli enqueue --pipeline assistant --workspace on --approval auto --verify auto \
+    "Inspect /workspace and suggest the next safe development task."
+```
+
+For local deterministic `omni` work inside the same kind of isolated container:
+
+```bash
+docker run --rm -it \
+  --network omnidex_omnidex-internal \
+  -e CORE_URL=http://core:8090 \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  -v "$PWD":/src/omnidex:ro \
+  -v "$HOME/omnidex-sandbox":/workspace \
+  -w /workspace \
+  golang:1.24.1-bookworm \
+  bash -lc 'cd /src/omnidex && go run ./cmd/omni chat'
+```
+
+Use a writable mount only for the project you want Omnidex to edit. Mount the Omnidex source read-only, mount throwaway dependency caches if you want repeatable installs, and avoid mounting `/`, `$HOME`, Docker sockets, SSH keys, cloud credentials, or production repositories into the toolbox container.
+
 ### Local service channels
 
 Core exposes non-agent channel routes for applications that need a local assistant, support bot, roleplay participant, narrator, or instruction-following model with memory:
