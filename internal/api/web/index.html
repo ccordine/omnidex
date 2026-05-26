@@ -165,10 +165,22 @@
             <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Knowledge</p>
             <h2 class="text-xl font-semibold tracking-tight">Memory</h2>
           </div>
-          <button data-action="chat#loadMemoryCandidates" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200">Load candidates</button>
+          <div class="flex flex-wrap gap-2">
+            <button data-action="chat#loadGlobalActivity" class="rounded-md border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">Sync activity</button>
+            <button data-action="chat#loadMemoryCandidates" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200">Load memory</button>
+          </div>
         </header>
         <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_360px] md:p-6">
-          <div data-chat-target="memoryCandidates" data-recyclr-sink="memory-candidates" class="scrollbar min-h-0 space-y-3 overflow-y-auto"></div>
+          <div class="scrollbar min-h-0 space-y-4 overflow-y-auto">
+            <section>
+              <h3 class="mb-3 text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Durable memory</h3>
+              <div data-chat-target="memoryList" data-recyclr-sink="memory-list" class="space-y-3"></div>
+            </section>
+            <section>
+              <h3 class="mb-3 text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Candidates</h3>
+              <div data-chat-target="memoryCandidates" data-recyclr-sink="memory-candidates" class="space-y-3"></div>
+            </section>
+          </div>
           <form data-action="submit->chat#addMemory" class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
             <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Add memory</h3>
             <label class="mt-4 block text-xs text-zinc-500">Kind</label>

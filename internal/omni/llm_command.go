@@ -60,6 +60,7 @@ type CommandDecisionResult struct {
 	Observations    []StructuredCommandObservation
 	ObjectiveLedger []StructuredObjective
 	WorkItems       []ObjectiveWorkItem
+	ChildJobs       []ChildJob
 	MinimalContext  MinimalContext
 	StartedAt       time.Time
 	FinishedAt      time.Time
@@ -611,6 +612,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		if len(ledger) == 0 {
 			if hasImplementationArchitectProgress(result.Observations) {
 				result.WorkItems = architectObjectiveWorkItemsFromObservations(prompt, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations)
+				result.ChildJobs = BuildChildJobsFromObjectiveWorkItems(result.WorkItems)
 			}
 			return
 		}
@@ -627,6 +629,29 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				result.WorkItems = architectItems
 			}
 		}
+		var latest *StructuredCommandObservation
+		if len(result.Observations) > 0 {
+			latest = &result.Observations[len(result.Observations)-1]
+		}
+		childJobs := result.ChildJobs
+		if len(childJobs) == 0 {
+			childJobs = BuildChildJobsFromObjectiveWorkItems(result.WorkItems)
+		}
+		reconciledSuccess := RunSuccessReconciliation(SuccessReconciliationInput{
+			LatestObservation: latest,
+			ObjectiveLedger:   ledger,
+			WorkQueue:         result.WorkItems,
+			ChildJobs:         childJobs,
+			WorkingDirectory:  cfg.CurrentWorkingDirectory,
+			Observations:      result.Observations,
+		})
+		result.WorkItems = reconciledSuccess.WorkQueue
+		result.ChildJobs = reconciledSuccess.ChildJobs
+		if !structuredObjectiveLedgersEqual(ledger, reconciledSuccess.ObjectiveLedger) {
+			ledger = reconciledSuccess.ObjectiveLedger
+			result.ObjectiveLedger = ledger
+		}
+		emitSuccessReconciliationEvents(onEvent, reconciledSuccess.Events)
 	}
 	emitStructuredCommandEvent(onEvent, "worksite_survey_completed", "Worksite survey grounded the active workspace", map[string]string{
 		"workspace":       worksiteSurvey.WorkspacePath,
@@ -688,6 +713,15 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				"user_operation":     worksiteSurvey.UserOperation,
 				"project_state":      worksiteSurvey.ProjectState,
 			})
+			if len(ledger) > 0 && len(pendingStructuredObjectives(ledger)) == 0 {
+				result.Command = "SUCCESS_RECONCILIATION"
+				result.ExitCode = 0
+				result.Answer = "Requested objective already has deterministic evidence."
+				emitStructuredCommandEvent(onEvent, "adaptive_roles_collapsed", "Success reconciliation satisfied the task before planner call", map[string]string{
+					"skipped": "planner",
+				})
+				return result, nil
+			}
 		}
 	}
 	referenceHistory := []Message(nil)
@@ -1417,7 +1451,32 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			continue
 		}
 		command := payload.Command
+		if rejectedByChild, updatedJobs := rejectCommandRepeatedByActiveChildJob(step, command, result.ChildJobs, onEvent, &result); rejectedByChild {
+			result.ChildJobs = updatedJobs
+			refreshTypedWorkItems()
+			continue
+		}
 		if !payload.Done && repeatedSuccessfulStructuredCommand(command, result.Observations) {
+			var latest *StructuredCommandObservation
+			if len(result.Observations) > 0 {
+				latest = &result.Observations[len(result.Observations)-1]
+			}
+			reconciledSuccess := RunSuccessReconciliation(SuccessReconciliationInput{
+				LatestObservation: latest,
+				ObjectiveLedger:   ledger,
+				WorkQueue:         result.WorkItems,
+				ChildJobs:         result.ChildJobs,
+				WorkingDirectory:  cfg.CurrentWorkingDirectory,
+				Observations:      result.Observations,
+			})
+			ledger = reconciledSuccess.ObjectiveLedger
+			result.ObjectiveLedger = ledger
+			result.WorkItems = reconciledSuccess.WorkQueue
+			result.ChildJobs = reconciledSuccess.ChildJobs
+			emitSuccessReconciliationEvents(onEvent, reconciledSuccess.Events)
+			if len(reconciledSuccess.SatisfiedObjectives) > 0 {
+				continue
+			}
 			if handleStructuredRepeatedCommandValidation(step, command, errRepeatedSuccessfulStructuredCommand, &ledger, onEvent, &result) {
 				continue
 			}
@@ -1575,6 +1634,17 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 	started := nowUTC()
 	exitCode, err := ExecuteStructuredCommandInDir(ctx, command, workingDirectory, io.MultiWriter(stdout, &stdoutBuf), io.MultiWriter(stderr, &stderrBuf))
 	finished := nowUTC()
+	if exitCode == 0 && structuredCommandHasPartialFailure(command, stdoutBuf.String(), stderrBuf.String()) {
+		exitCode = 1
+		if strings.TrimSpace(stderrBuf.String()) != "" {
+			stderrBuf.WriteString("\n")
+		}
+		stderrBuf.WriteString("partial_failure: compound mutation command reported a failed sub-command")
+		emitStructuredCommandEvent(onEvent, "structured_command_partial_failure_classified", "Compound command reported a failed mutation sub-command", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"command": truncateStructuredTimelineValue(command),
+		})
+	}
 	result.Command = command
 	result.ExitCode = exitCode
 	feedback := ClassifyToolchainFeedback(command, stdoutBuf.String(), stderrBuf.String())
@@ -1627,6 +1697,22 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 			"summary":   feedback.Summary,
 			"hints":     strings.Join(feedback.Hints, "; "),
 		})
+		if path := viteJSXSyntaxDisabledPath(stdoutBuf.String() + "\n" + stderrBuf.String()); path != "" {
+			emitStructuredCommandEvent(onEvent, "toolchain_repair_child_job_created", "Vite JSX feedback created focused repair child job", map[string]string{
+				"step":              fmt.Sprintf("%d", step),
+				"repair_child_job":  "ensure_all_components_are_jsx",
+				"blocked_objective": "npm_build_proof",
+				"path":              path,
+			})
+			emitStructuredCommandEvent(onEvent, "toolchain_repair_focus_locked", "Toolchain repair focus locked until JSX file extension evidence and build proof pass", map[string]string{
+				"step":             fmt.Sprintf("%d", step),
+				"active_child_job": "ensure_all_components_are_jsx",
+				"required_evidence": strings.Join([]string{
+					"no_js_files_with_jsx:src",
+					"command_passed:npm run build",
+				}, ","),
+			})
+		}
 	}
 	if enableCommandCache {
 		if err := saveStructuredCommandCache(command, workingDirectory, commandCacheRoot, exitCode, stdoutBuf.String(), stderrBuf.String(), onEvent); err != nil {
@@ -2065,6 +2151,9 @@ func shouldBypassShellSpecialistForWriteRecovery(toolTask string, observations [
 func deterministicProgressionRecoveryCommand(prompt string, decision ProgressionDecision, workingDir string) string {
 	activeTaskLower := strings.ToLower(prompt)
 	recoveryLower := strings.ToLower(decision.RecoveryToolTask + " " + decision.Reason)
+	if deterministicViteJSXRepairApplies(recoveryLower, workingDir) {
+		return deterministicViteJSXRepairCommand()
+	}
 	if deterministicReactJSONFormatterSmokeRepairApplies(activeTaskLower, recoveryLower, workingDir) {
 		return deterministicReactJSONFormatterSmokeRepairCommand()
 	}
@@ -4368,6 +4457,83 @@ func externalArchitectAgentUnavailableReason(agent CursorArchitectAgent, agentNa
 		}
 	}
 	return ""
+}
+
+func deterministicViteJSXRepairApplies(recoveryLower, workingDir string) bool {
+	if strings.TrimSpace(workingDir) == "" {
+		return false
+	}
+	if !(strings.Contains(recoveryLower, "jsx syntax") ||
+		strings.Contains(recoveryLower, "unexpected jsx") ||
+		strings.Contains(recoveryLower, "not currently enabled") ||
+		strings.Contains(recoveryLower, "ensure_all_components_are_jsx")) {
+		return false
+	}
+	return len(jsFilesWithJSX(filepath.Join(workingDir, "src"), 1)) > 0
+}
+
+func deterministicViteJSXRepairCommand() string {
+	return `node <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const srcRoot = path.join(process.cwd(), 'src');
+const sourceExts = new Set(['.js', '.jsx', '.ts', '.tsx']);
+
+function walk(dir, out = []) {
+  if (!fs.existsSync(dir)) return out;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (['node_modules', '.git', 'dist', 'build', 'coverage'].includes(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(full, out);
+    else out.push(full);
+  }
+  return out;
+}
+
+function containsJSX(file) {
+  const text = fs.readFileSync(file, 'utf8');
+  return text.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) return false;
+    if (!trimmed.includes('<') || !trimmed.includes('>')) return false;
+    return !trimmed.includes('=>') && !trimmed.includes('<=') && !trimmed.includes('>=') && !trimmed.includes('!==') && !trimmed.includes('===');
+  });
+}
+
+const jsFilesWithJSX = walk(srcRoot).filter((file) => path.extname(file) === '.js' && containsJSX(file));
+const renames = new Map();
+for (const oldPath of jsFilesWithJSX) {
+  const newPath = oldPath.slice(0, -3) + '.jsx';
+  if (fs.existsSync(newPath)) throw new Error('cannot rename ' + path.relative(process.cwd(), oldPath) + ': target exists ' + path.relative(process.cwd(), newPath));
+  fs.renameSync(oldPath, newPath);
+  renames.set(path.relative(srcRoot, oldPath).replace(/\\/g, '/'), path.relative(srcRoot, newPath).replace(/\\/g, '/'));
+  console.log('file_move_verified ' + path.relative(process.cwd(), oldPath) + ' -> ' + path.relative(process.cwd(), newPath));
+}
+
+const sourceFiles = walk(srcRoot).filter((file) => sourceExts.has(path.extname(file)));
+for (const file of sourceFiles) {
+  let text = fs.readFileSync(file, 'utf8');
+  let next = text;
+  for (const [oldRel, newRel] of renames.entries()) {
+    const oldNoExt = oldRel.slice(0, -3);
+    const newNoExt = newRel.slice(0, -4);
+    const oldBase = './' + oldRel;
+    const newBase = './' + newRel;
+    next = next.split(oldBase).join(newBase);
+    next = next.split('./' + oldNoExt + '.js').join('./' + newNoExt + '.jsx');
+  }
+  if (next !== text) fs.writeFileSync(file, next);
+}
+
+const remaining = walk(srcRoot).filter((file) => path.extname(file) === '.js' && containsJSX(file));
+if (remaining.length) {
+  throw new Error('remaining .js files containing JSX: ' + remaining.map((file) => path.relative(process.cwd(), file)).join(', '));
+}
+console.log('no_js_files_with_jsx src');
+console.log('workspace_route_refreshed_after_mutation');
+NODE
+npm run build`
 }
 
 func emitExternalArchitectUnavailable(step int, reason string, onEvent func(StructuredCommandEvent)) {
@@ -6900,6 +7066,9 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 	if err := validateStructuredCommandWorkspaceProtection(command, workingDirectory); err != nil {
 		return err
 	}
+	if err := validateUnsafeMutationCommandShape(command); err != nil {
+		return err
+	}
 	if err := validateCargoScaffoldUsesActiveWorkspace(command, workingDirectory); err != nil {
 		return err
 	}
@@ -6919,6 +7088,95 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 		return err
 	}
 	return nil
+}
+
+func validateUnsafeMutationCommandShape(command string) error {
+	if strings.TrimSpace(command) == "" {
+		return nil
+	}
+	if semicolonMutationChain(command) {
+		return fmt.Errorf("unsafe mutation command shape: semicolon-chained mutation commands are not allowed; split mutation, install, build, and verification into separate evidence-producing steps")
+	}
+	if wildcardMutationLoop(command) {
+		return fmt.Errorf("unsafe mutation command shape: wildcard mutation loops are not allowed; enumerate concrete files and validate each mutation")
+	}
+	return nil
+}
+
+func semicolonMutationChain(command string) bool {
+	if !strings.Contains(command, ";") {
+		return false
+	}
+	parts := strings.Split(command, ";")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if structuredCommandLooksMutating(part) || structuredCommandLooksVerifier(part) {
+			return true
+		}
+	}
+	return false
+}
+
+func wildcardMutationLoop(command string) bool {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	if strings.Contains(lower, "for ") && strings.Contains(lower, " in ") && strings.Contains(lower, "*") {
+		for _, needle := range []string{" mv ", " cp ", " rm ", " mkdir ", " npm install", " npm pkg set", " cat >", " tee "} {
+			if strings.Contains(" "+lower+" ", needle) {
+				return true
+			}
+		}
+	}
+	for _, segment := range structuredCommandSegments(command) {
+		if len(segment) == 0 {
+			continue
+		}
+		root := cleanCommandPathToken(segment[0])
+		switch root {
+		case "mv", "cp", "rm":
+			for _, arg := range segment[1:] {
+				clean := cleanCommandPathToken(arg)
+				if strings.Contains(clean, "*") || strings.Contains(clean, "?") || strings.Contains(clean, "[") {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func structuredCommandLooksVerifier(command string) bool {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	return strings.Contains(lower, "npm run build") ||
+		strings.Contains(lower, "npm test") ||
+		strings.Contains(lower, "pnpm test") ||
+		strings.Contains(lower, "yarn test") ||
+		strings.Contains(lower, "go test") ||
+		strings.Contains(lower, "cargo test") ||
+		strings.Contains(lower, "cargo build") ||
+		strings.Contains(lower, "zig build") ||
+		strings.Contains(lower, "pytest")
+}
+
+func structuredCommandHasPartialFailure(command, stdoutText, stderrText string) bool {
+	if !structuredCommandLooksMutating(command) && !strings.Contains(command, ";") && !strings.Contains(command, "&&") {
+		return false
+	}
+	output := strings.ToLower(stdoutText + "\n" + stderrText)
+	for _, needle := range []string{
+		"cannot stat",
+		"no such file or directory",
+		"command not found",
+		"permission denied",
+		"failed to",
+	} {
+		if strings.Contains(output, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func validatePrintOnlyCommandForSubstantiveObjectives(command string, objectiveLedger []StructuredObjective) error {
@@ -9424,6 +9682,31 @@ func handleStructuredRepeatedCommandValidation(step int, command string, validat
 	return false
 }
 
+func rejectCommandRepeatedByActiveChildJob(step int, command string, childJobs []ChildJob, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, []ChildJob) {
+	index := activeChildJobIndex(childJobs)
+	if index < 0 {
+		index = firstNonTerminalChildJobIndex(childJobs)
+	}
+	if index < 0 || !ChildJobShouldRejectRepeat(childJobs[index], command) {
+		return false, childJobs
+	}
+	updated := cloneChildJobs(childJobs)
+	obs := StructuredCommandObservation{
+		Step:            step,
+		RejectedCommand: truncateStructuredObservation(command),
+		ExitCode:        1,
+		Stderr:          "child_job_attempt_rejected: command repeats a failed/rejected attempt for active child job " + updated[index].ID + "; choose a different action that addresses the failure packet",
+	}
+	updated[index] = AppendChildJobAttemptWithContext(updated[index], obs, "runtime", "child_job_loop", "", "")
+	result.Observations = append(result.Observations, obs)
+	emitStructuredCommandEvent(onEvent, "child_job_attempt_repeat_rejected", "Child job attempt ledger rejected repeated failed action", map[string]string{
+		"step":         fmt.Sprintf("%d", step),
+		"child_job_id": updated[index].ID,
+		"command":      truncateStructuredTimelineValue(command),
+	})
+	return true, updated
+}
+
 func reconcileStructuredObjectiveLedgerFromObservation(step int, ledger []StructuredObjective, obs StructuredCommandObservation, onEvent func(StructuredCommandEvent)) []StructuredObjective {
 	if strings.TrimSpace(obs.Command) == "" || obs.ExitCode != 0 {
 		return ledger
@@ -9494,7 +9777,7 @@ func newlySatisfiedStructuredObjectiveIDs(before, after []StructuredObjective) [
 
 func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, objective StructuredObjective) bool {
 	if len(objective.RequiredEvidence) > 0 {
-		return structuredObjectiveRequiredEvidenceSatisfied(objective, []StructuredCommandObservation{obs}, "")
+		return structuredObjectiveRequiredEvidenceSatisfied(objective, []StructuredCommandObservation{obs}, obs.CWD)
 	}
 	command := strings.ToLower(strings.TrimSpace(obs.Command))
 	output := strings.ToLower(obs.Stdout + "\n" + obs.Stderr)
@@ -9603,6 +9886,8 @@ func structuredEvidencePredicateSatisfied(predicate string, observations []Struc
 		}
 	case "file_exists":
 		return workingDir != "" && fileExists(filepath.Join(workingDir, filepath.Clean(rest)))
+	case "file_absent":
+		return workingDir != "" && !fileExists(filepath.Join(workingDir, filepath.Clean(rest)))
 	case "file_nonempty":
 		return workingDir != "" && fileHasContent(filepath.Join(workingDir, filepath.Clean(rest)))
 	case "file_contains":
@@ -9612,6 +9897,8 @@ func structuredEvidencePredicateSatisfied(predicate string, observations []Struc
 		}
 		content, err := os.ReadFile(filepath.Join(workingDir, filepath.Clean(strings.TrimSpace(path))))
 		return err == nil && strings.Contains(string(content), needle)
+	case "no_js_files_with_jsx":
+		return workingDir != "" && noJSFilesContainJSX(filepath.Join(workingDir, filepath.Clean(firstNonEmpty(rest, "."))))
 	case "package_script_exists":
 		if workingDir == "" {
 			return false
@@ -9643,6 +9930,90 @@ func structuredEvidencePredicateSatisfied(predicate string, observations []Struc
 					return true
 				}
 			}
+		}
+	}
+	return false
+}
+
+func viteJSXSyntaxDisabledPath(output string) string {
+	lower := strings.ToLower(output)
+	if !(strings.Contains(lower, "jsx syntax") && (strings.Contains(lower, "not currently enabled") || strings.Contains(lower, "disabled")) ||
+		strings.Contains(lower, "unexpected jsx expression")) {
+		return ""
+	}
+	for _, token := range strings.Fields(strings.NewReplacer("\n", " ", "\r", " ", "\t", " ", "(", " ", ")", " ", "[", " ", "]", " ", "\"", " ", "'", " ").Replace(output)) {
+		clean := strings.Trim(token, ":,;")
+		slash := filepath.ToSlash(clean)
+		idx := strings.Index(slash, "src/")
+		if idx >= 0 {
+			slash = slash[idx:]
+		}
+		if jsIdx := strings.Index(strings.ToLower(slash), ".js"); jsIdx >= 0 {
+			slash = slash[:jsIdx+len(".js")]
+		}
+		if strings.HasPrefix(slash, "src/") && strings.HasSuffix(strings.ToLower(slash), ".js") {
+			return slash
+		}
+		if strings.HasPrefix(slash, "/") && strings.HasSuffix(strings.ToLower(slash), ".js") {
+			if srcIdx := strings.Index(slash, "/src/"); srcIdx >= 0 {
+				return strings.TrimPrefix(slash[srcIdx:], "/")
+			}
+		}
+	}
+	return ""
+}
+
+func noJSFilesContainJSX(root string) bool {
+	return len(jsFilesWithJSX(root, 1)) == 0
+}
+
+func jsFilesWithJSX(root string, limit int) []string {
+	root = filepath.Clean(root)
+	matches := []string{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case "node_modules", ".git", "dist", "build", "coverage":
+				return filepath.SkipDir
+			default:
+				return nil
+			}
+		}
+		if !strings.EqualFold(filepath.Ext(path), ".js") {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		if jsSourceLooksLikeJSX(string(content)) {
+			matches = append(matches, path)
+			if limit > 0 && len(matches) >= limit {
+				return filepath.SkipAll
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil
+	}
+	return matches
+}
+
+func jsSourceLooksLikeJSX(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") || strings.HasPrefix(trimmed, "*") {
+			continue
+		}
+		if strings.Contains(trimmed, "<") && strings.Contains(trimmed, ">") {
+			if strings.Contains(trimmed, "=>") || strings.Contains(trimmed, "<=") || strings.Contains(trimmed, ">=") || strings.Contains(trimmed, "!==") || strings.Contains(trimmed, "===") {
+				continue
+			}
+			return true
 		}
 	}
 	return false
@@ -10060,15 +10431,16 @@ func normalizeStructuredObjective(objective StructuredObjective) (StructuredObje
 		required = true
 	}
 	return StructuredObjective{
-		ID:              id,
-		Description:     strings.TrimSpace(objective.Description),
-		Status:          status,
-		Kind:            string(objectiveWorkItemKindFromStructuredObjective(objective)),
-		Evidence:        strings.TrimSpace(objective.Evidence),
-		Source:          normalizeStructuredObjectiveSource(source),
-		ParentObjective: strings.TrimSpace(objective.ParentObjective),
-		Required:        required,
-		Packages:        cleanStringList(objective.Packages),
+		ID:               id,
+		Description:      strings.TrimSpace(objective.Description),
+		Status:           status,
+		Kind:             string(objectiveWorkItemKindFromStructuredObjective(objective)),
+		Evidence:         strings.TrimSpace(objective.Evidence),
+		RequiredEvidence: cleanStringList(objective.RequiredEvidence),
+		Source:           normalizeStructuredObjectiveSource(source),
+		ParentObjective:  strings.TrimSpace(objective.ParentObjective),
+		Required:         required,
+		Packages:         cleanStringList(objective.Packages),
 	}, true
 }
 
@@ -10956,6 +11328,9 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			ObjectiveLedger             []StructuredObjective          `json:"objective_ledger,omitempty"`
 			WorkItems                   []ObjectiveWorkItem            `json:"work_items,omitempty"`
 			CurrentWorkItem             *ObjectiveWorkItem             `json:"current_work_item,omitempty"`
+			ChildJobs                   []ChildJob                     `json:"child_jobs,omitempty"`
+			CurrentChildJob             *ChildJob                      `json:"current_child_job,omitempty"`
+			ChildJobNextAction          *ChildJobAction                `json:"child_job_next_action,omitempty"`
 			CompletedActions            []CompletedAction              `json:"completed_actions,omitempty"`
 			LoopState                   StructuredLoopState            `json:"loop_state,omitempty"`
 			ForbiddenCommands           []string                       `json:"forbidden_commands,omitempty"`
@@ -10987,6 +11362,23 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 	payload.ActiveTask.ObjectiveLedger = mergeStructuredObjectiveLedger(nil, objectiveLedger)
 	payload.ActiveTask.WorkItems = ReconcileObjectiveWorkItemsFromObservations(BuildObjectiveWorkItemsFromLedger(prompt, payload.ActiveTask.ObjectiveLedger, workingDirectory, worksiteSurvey), observations)
 	payload.ActiveTask.CurrentWorkItem = firstPendingObjectiveWorkItem(payload.ActiveTask.WorkItems)
+	var latest *StructuredCommandObservation
+	if len(observations) > 0 {
+		latest = &observations[len(observations)-1]
+	}
+	successReconciliation := RunSuccessReconciliation(SuccessReconciliationInput{
+		LatestObservation: latest,
+		ObjectiveLedger:   payload.ActiveTask.ObjectiveLedger,
+		WorkQueue:         payload.ActiveTask.WorkItems,
+		ChildJobs:         BuildChildJobsFromObjectiveWorkItems(payload.ActiveTask.WorkItems),
+		WorkingDirectory:  workingDirectory,
+		Observations:      observations,
+	})
+	payload.ActiveTask.ObjectiveLedger = successReconciliation.ObjectiveLedger
+	payload.ActiveTask.WorkItems = successReconciliation.WorkQueue
+	payload.ActiveTask.ChildJobs = successReconciliation.ChildJobs
+	payload.ActiveTask.CurrentChildJob = successReconciliation.NextRequiredChildJob
+	payload.ActiveTask.ChildJobNextAction = successReconciliation.NextAction
 	payload.ActiveTask.CompletedActions = completedActionsFromState(payload.ActiveTask.ObjectiveLedger, observations)
 	payload.ActiveTask.LoopState = structuredLoopStateFromState(payload.ActiveTask.ObjectiveLedger, observations)
 	payload.ActiveTask.ForbiddenCommands = payload.ActiveTask.LoopState.ForbiddenCommands

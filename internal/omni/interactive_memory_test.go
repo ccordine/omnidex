@@ -3,6 +3,8 @@ package omni
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -44,7 +46,7 @@ func TestInteractiveTurnLoadsTaggedPGMemoryIntoSummaryAndPersistsPromptResponse(
 	app.runLogger, _ = NewRunLogger(t.TempDir(), "interactive-memory-test")
 	defer app.runLogger.Close()
 
-	if _, err := app.memory.AddMemory(context.Background(), "memory_specialist", "preference", "Existing memory: prefer minimal React scaffolds unless asked otherwise.", []string{"react", "project"}); err != nil {
+	if _, err := app.memory.AddMemory(context.Background(), "memory_specialist", MemoryKindCapability, "Existing memory: prefer minimal React scaffolds unless asked otherwise.", []string{"react", "capability-memory"}); err != nil {
 		t.Fatal(err)
 	}
 	app.plannerClient = &fakeCommandDecisionClient{responses: []string{
@@ -103,6 +105,52 @@ func TestInteractiveTurnLoadsTaggedPGMemoryIntoSummaryAndPersistsPromptResponse(
 	}
 }
 
+func TestInteractiveMemoryUsesPromptQueryAndFiltersForeignProjectMemory(t *testing.T) {
+	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	runner := newFakeMemoryRunner()
+	app.memory = NewPGMemoryStore(runner)
+	app.promptTagger = &fakePromptTagger{results: []PromptTagResult{{Tags: []string{"React", "Vite"}}}}
+
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"fresh-notes"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := app.memory.AddMemory(ctx, "old_project", MemoryKindProject, "Fruityloops React project used a FruitMixer component.", []string{"react", "project-memory", "workspace:old-workspace"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.memory.AddMemory(ctx, "old_turn", "episodic", "React prompt response from Fruityloops should not define a new project.", []string{"react", "prompt"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.memory.AddMemory(ctx, "research", MemoryKindExpertise, "Vite React expertise: prefer npm run build and a root mount in index.html.", []string{"react", "vite", "expertise-memory"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.memory.AddMemory(ctx, "current_project", MemoryKindProject, "fresh-notes React package name comes from this workspace only.", []string{"react", "project-memory", "workspace:" + workspaceHash(workspace)}); err != nil {
+		t.Fatal(err)
+	}
+
+	events := []Event{}
+	memCtx := app.loadInteractiveMemoryContext(ctx, "build a React Vite notes app", workspace, func(eventType, summary string, details map[string]string) {
+		events = append(events, Event{Type: eventType, Summary: summary, Details: details})
+	})
+	if !sessionMemoriesContain(memCtx.Memories, "Vite React expertise") {
+		t.Fatalf("expected expertise memory, got %#v", memCtx.Memories)
+	}
+	if !sessionMemoriesContain(memCtx.Memories, "fresh-notes React package name") {
+		t.Fatalf("expected current workspace project memory, got %#v", memCtx.Memories)
+	}
+	if sessionMemoriesContain(memCtx.Memories, "Fruityloops") || sessionMemoriesContain(memCtx.Memories, "FruitMixer") {
+		t.Fatalf("foreign project memory leaked into execution context: %#v", memCtx.Memories)
+	}
+	search := firstEventOfType(events, "memory_search_started")
+	if strings.TrimSpace(search.Details["query"]) == "" {
+		t.Fatalf("execution memory search used empty query: %#v", search)
+	}
+	if countEventsOfType(events, "memory_context_filtered") != 1 {
+		t.Fatalf("expected memory_context_filtered event: %#v", events)
+	}
+}
+
 func TestInteractiveMemorySkipsRetrievalWithoutSpecialistTags(t *testing.T) {
 	app := NewApp(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	app.memory = NewPGMemoryStore(newFakeMemoryRunner())
@@ -127,4 +175,13 @@ func sessionMemoriesContain(memories []SessionMemory, needle string) bool {
 		}
 	}
 	return false
+}
+
+func firstEventOfType(events []Event, eventType string) Event {
+	for _, event := range events {
+		if event.Type == eventType {
+			return event
+		}
+	}
+	return Event{}
 }

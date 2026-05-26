@@ -70,6 +70,7 @@ class ChatController extends Controller {
     "jobsList",
     "jobDetails",
     "memoryCandidates",
+    "memoryList",
     "memoryKind",
     "memoryTags",
     "memoryContent",
@@ -108,9 +109,15 @@ class ChatController extends Controller {
     this.renderTimeline();
     await this.detectTransport();
     await this.loadStatus();
+    await this.loadGlobalActivity();
+    this.activityTimer = window.setInterval(() => this.loadGlobalActivity({ quiet: true }), 5000);
     if (this.messages.length === 0) {
       this.addMessage("system", "Omni UI is ready. Queue mode uses the Go job API; direct mode uses /v1/instruct.");
     }
+  }
+
+  disconnect() {
+    if (this.activityTimer) window.clearInterval(this.activityTimer);
   }
 
   async detectTransport() {
@@ -343,11 +350,84 @@ class ChatController extends Controller {
   async loadMemoryCandidates() {
     if (!this.queueEnabled) {
       this.recycle("memory-candidates", emptyState("Memory routes require repository mode."));
+      if (this.hasMemoryListTarget) this.recycle("memory-list", emptyState("Memory routes require repository mode."));
       return;
     }
-    const payload = await readJSON(await fetch("/v1/memory-candidates?limit=50"));
+    const [payload, memoryPayload] = await Promise.all([
+      readJSON(await fetch("/v1/memory-candidates?limit=50")),
+      readJSON(await fetch("/v1/memory?limit=50")),
+    ]);
+    this.renderMemoryList(memoryPayload.memories || []);
     this.renderMemoryCandidates(payload.memory_candidates || []);
-    this.addEvent("memory_candidates_loaded", { count: (payload.memory_candidates || []).length });
+    this.addEvent("memory_loaded", {
+      memories: (memoryPayload.memories || []).length,
+      candidates: (payload.memory_candidates || []).length,
+    }, { memories: memoryPayload, candidates: payload });
+  }
+
+  renderMemoryList(items) {
+    if (!this.hasMemoryListTarget) return;
+    if (items.length === 0) {
+      this.recycle("memory-list", emptyState("No durable memory chunks found."));
+      return;
+    }
+    this.recycle(
+      "memory-list",
+      items
+        .map(
+        (item) => `
+          <article class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="font-mono text-xs text-cyan-200">memory #${item.id}</div>
+              <span class="${statusPillClass(item.kind || "memory")}">${escapeHTML(item.kind || "memory")}</span>
+            </div>
+            <div class="mt-2 text-xs text-zinc-500">${escapeHTML(item.source || "unknown")} · ${formatDateTime(item.created_at)}</div>
+            <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">${escapeHTML(trimText(item.content || "", 900))}</p>
+            ${(item.tags || []).length ? `<div class="mt-3 flex flex-wrap gap-1">${(item.tags || []).slice(0, 12).map((tag) => `<span class="rounded bg-white/[.06] px-2 py-1 font-mono text-[11px] text-zinc-400">${escapeHTML(tag)}</span>`).join("")}</div>` : ""}
+          </article>
+        `,
+        )
+        .join(""),
+    );
+  }
+
+  async loadGlobalActivity(options = {}) {
+    if (!this.queueEnabled) return;
+    try {
+      const payload = await readJSON(await fetch("/v1/activity?limit=60"));
+      for (const job of payload.jobs || []) {
+        this.addObservedEvent(`global-job:${job.id}:${job.status}:${job.updated_at}`, "global_job", {
+          id: job.id,
+          status: job.status,
+          pipeline: job.pipeline || "job",
+          updated: formatTime(job.updated_at),
+        }, { job });
+      }
+      for (const event of payload.telemetry_events || []) {
+        this.addObservedEvent(`telemetry:${event.id}`, `run:${event.event_type}`, {
+          run: trimText(event.run_id || "", 8),
+          step: event.step ?? "",
+          at: formatTime(event.created_at),
+        }, { telemetry_event: event });
+      }
+      for (const memory of payload.memories || []) {
+        this.addObservedEvent(`memory:${memory.id}`, "memory_chunk", {
+          id: memory.id,
+          kind: memory.kind || "memory",
+          source: trimText(memory.source || "", 40),
+        }, { memory });
+      }
+      if (this.hasMemoryListTarget) this.renderMemoryList(payload.memories || []);
+      if (!options.quiet) {
+        this.addObservedEvent(`activity-sync:${Date.now()}`, "global_activity_synced", {
+          jobs: (payload.jobs || []).length,
+          events: (payload.telemetry_events || []).length,
+          memories: (payload.memories || []).length,
+        }, payload);
+      }
+    } catch (error) {
+      if (!options.quiet) this.addEvent("global_activity_failed", { error: error.message || String(error) });
+    }
   }
 
   renderMemoryCandidates(items) {
@@ -591,6 +671,12 @@ class ChatController extends Controller {
       if (!this.events.some((item) => item.id === oldID)) this.eventIndex.delete(oldID);
     }
     this.renderTimeline();
+  }
+
+  addObservedEvent(key, type, details = {}, full = null) {
+    if (!key || this.seenProgress.has(key)) return;
+    this.seenProgress.add(key);
+    this.addEvent(type, details, full);
   }
 
   renderMessages() {

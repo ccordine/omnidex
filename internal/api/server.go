@@ -295,6 +295,7 @@ func (s *Server) routes() {
 	if s.repo != nil {
 		s.mux.HandleFunc("/v1/jobs", s.handleJobs)
 		s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
+		s.mux.HandleFunc("/v1/activity", s.handleActivity)
 		s.mux.HandleFunc("/v1/memory", s.handleMemory)
 		s.mux.HandleFunc("/v1/memory/categories", s.handleMemoryCategories)
 		s.mux.HandleFunc("/v1/memory/tags", s.handleMemoryTags)
@@ -1208,6 +1209,8 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 
 func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
+	case http.MethodGet:
+		s.listMemory(w, r)
 	case http.MethodPost:
 		s.addMemory(w, r)
 	default:

@@ -29,3 +29,13 @@ func TestClassifyToolchainFeedbackNPMViteImportFailure(t *testing.T) {
 		t.Fatalf("feedback = %#v", feedback)
 	}
 }
+
+func TestClassifyToolchainFeedbackViteJSXDisabled(t *testing.T) {
+	feedback := ClassifyToolchainFeedback("npm run build", "", "[plugin:vite:esbuild] src/App.js:10:4: ERROR: The JSX syntax extension is not currently enabled")
+	if feedback.Toolchain != "vite" || feedback.Kind != ToolchainFeedbackCompileError || feedback.Summary == "" {
+		t.Fatalf("feedback = %#v", feedback)
+	}
+	if !containsString(feedback.Hints, "rename concrete .js files containing JSX to .jsx") {
+		t.Fatalf("feedback missing JSX repair hint: %#v", feedback)
+	}
+}

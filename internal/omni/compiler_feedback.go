@@ -49,7 +49,8 @@ func ClassifyToolchainFeedback(command, stdout, stderr string) ToolchainFeedback
 }
 
 func detectToolchainFromCommand(command string) string {
-	fields := strings.Fields(strings.ToLower(strings.TrimSpace(command)))
+	lowerCommand := strings.ToLower(strings.TrimSpace(command))
+	fields := strings.Fields(lowerCommand)
 	if len(fields) == 0 {
 		return ""
 	}
@@ -66,8 +67,11 @@ func detectToolchainFromCommand(command string) string {
 		}
 		return "npm"
 	default:
-		if strings.Contains(strings.ToLower(command), "npm run") && strings.Contains(strings.ToLower(command), "vite") {
+		if strings.Contains(lowerCommand, "npm run") && strings.Contains(lowerCommand, "vite") {
 			return "vite"
+		}
+		if strings.Contains(lowerCommand, "npm") && strings.Contains(lowerCommand, " run ") {
+			return "npm"
 		}
 		return ""
 	}
@@ -118,6 +122,9 @@ func classifyZigFeedback(text string) (string, string, []string) {
 
 func classifyNPMFeedback(text string) (string, string, []string) {
 	switch {
+	case strings.Contains(text, "jsx syntax") && (strings.Contains(text, "not currently enabled") || strings.Contains(text, "disabled")) ||
+		strings.Contains(text, "unexpected jsx expression"):
+		return ToolchainFeedbackCompileError, "Vite build failed because JSX was parsed from a .js file", []string{"rename concrete .js files containing JSX to .jsx", "update imports", "rerun npm run build"}
 	case strings.Contains(text, "cannot find module") || strings.Contains(text, "module not found") || strings.Contains(text, "failed to resolve import"):
 		return ToolchainFeedbackDependencyMissing, "JavaScript dependency or import resolution failed", []string{"inspect package.json and import path", "install only requested/required packages"}
 	case strings.Contains(text, "syntaxerror") || strings.Contains(text, "unexpected token"):

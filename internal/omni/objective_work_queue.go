@@ -60,16 +60,17 @@ type WorkItemEvidence struct {
 }
 
 type ObjectiveWorkItem struct {
-	ID               string              `json:"id"`
-	ParentID         string              `json:"parent_id,omitempty"`
-	Kind             WorkItemKind        `json:"kind"`
-	Scope            WorkItemScope       `json:"scope"`
-	Instruction      string              `json:"instruction"`
-	Validator        ValidatorSpec       `json:"validator_spec"`
-	RequiredEvidence []EvidenceKind      `json:"required_evidence"`
-	EvidenceRefs     []WorkItemEvidence  `json:"evidence_refs"`
-	Status           WorkItemStatus      `json:"status"`
-	Children         []ObjectiveWorkItem `json:"children,omitempty"`
+	ID                 string              `json:"id"`
+	ParentID           string              `json:"parent_id,omitempty"`
+	Kind               WorkItemKind        `json:"kind"`
+	Scope              WorkItemScope       `json:"scope"`
+	Instruction        string              `json:"instruction"`
+	Validator          ValidatorSpec       `json:"validator_spec"`
+	RequiredEvidence   []EvidenceKind      `json:"required_evidence"`
+	EvidencePredicates []string            `json:"evidence_predicates,omitempty"`
+	EvidenceRefs       []WorkItemEvidence  `json:"evidence_refs"`
+	Status             WorkItemStatus      `json:"status"`
+	Children           []ObjectiveWorkItem `json:"children,omitempty"`
 }
 
 type WorkValidationResult struct {
@@ -245,11 +246,12 @@ func BuildObjectiveWorkItemsFromLedger(prompt string, ledger []StructuredObjecti
 			kind = objectiveWorkItemKind(prompt, objective)
 		}
 		item := ObjectiveWorkItem{
-			ID:          objective.ID,
-			Kind:        kind,
-			Scope:       WorkItemScope{Root: workingDir},
-			Instruction: strings.TrimSpace(objective.Description),
-			Status:      WorkItemStatusPending,
+			ID:                 objective.ID,
+			Kind:               kind,
+			Scope:              WorkItemScope{Root: workingDir},
+			Instruction:        strings.TrimSpace(objective.Description),
+			EvidencePredicates: cleanStringList(objective.RequiredEvidence),
+			Status:             WorkItemStatusPending,
 		}
 		item.RequiredEvidence = RequiredEvidenceForWorkItemKind(item.Kind)
 		item.Validator = ValidatorSpec{Name: string(item.Kind) + "_validator", RequiredEvidence: item.RequiredEvidence}

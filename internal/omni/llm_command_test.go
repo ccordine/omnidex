@@ -1731,6 +1731,49 @@ func TestStructuredCommandResponseStreamsUseCurrentCommandObservationOnFailure(t
 	}
 }
 
+func TestValidateStructuredCommandRejectsSemicolonMutationChains(t *testing.T) {
+	workspace := t.TempDir()
+	for _, command := range []string{
+		"mv src/App.js src/App.jsx; mv src/main.js src/main.jsx",
+		"npm install vite; npm run build",
+		"cat > src/App.jsx; npm run build",
+		"cd app; npm run build",
+	} {
+		if err := validateStructuredCommandForRun(command, nil, workspace, nil); err == nil {
+			t.Fatalf("command %q should be rejected", command)
+		}
+	}
+}
+
+func TestValidateStructuredCommandRejectsWildcardMutationLoops(t *testing.T) {
+	workspace := t.TempDir()
+	command := "for f in src/*.js; do mv \"$f\" \"${f%.js}.jsx\"; done"
+	if err := validateStructuredCommandForRun(command, nil, workspace, nil); err == nil {
+		t.Fatalf("wildcard mutation loop should be rejected")
+	}
+}
+
+func TestStructuredCommandClassifiesPartialFailureEvenWithZeroExit(t *testing.T) {
+	workspace := t.TempDir()
+	command := "sh -lc 'echo \"mv: cannot stat src/App.js: No such file or directory\" >&2; true'"
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode == 0 || len(result.Observations) == 0 || result.Observations[0].ExitCode == 0 {
+		t.Fatalf("partial failure was not converted to failed evidence: %#v", result)
+	}
+	if !strings.Contains(result.Observations[0].Stderr, "partial_failure") {
+		t.Fatalf("stderr missing partial failure marker: %#v", result.Observations[0])
+	}
+	if !structuredEventsContain(events, "structured_command_partial_failure_classified") {
+		t.Fatalf("missing partial failure event: %#v", events)
+	}
+}
+
 func TestValidateStructuredCommandRejectsBareViteWhenNpmScriptShouldBeUsed(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"scripts":{"build":"vite build"},"devDependencies":{"vite":"latest"}}`), 0o644); err != nil {
@@ -7519,6 +7562,124 @@ func TestReconcileObjectiveLedgerSatisfiesRemovalObjective(t *testing.T) {
 	}
 	if !structuredEventsContain(events, "objective_ledger_reconciled") {
 		t.Fatalf("missing reconciliation event: %#v", events)
+	}
+}
+
+func TestReconcileObjectiveLedgerSatisfiesRenameWithFileEvidence(t *testing.T) {
+	workspace := t.TempDir()
+	srcDir := filepath.Join(workspace, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := filepath.Join(srcDir, "App.js")
+	if err := os.WriteFile(oldPath, []byte("export default function App(){ return <main /> }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, "mv src/App.js src/App.jsx", workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	ledger := []StructuredObjective{{
+		ID:               "rename_app_js_to_jsx",
+		Description:      "Rename App.js to App.jsx after Vite reported JSX in a .js file.",
+		Status:           "pending",
+		RequiredEvidence: []string{"file_exists:src/App.jsx", "file_absent:src/App.js"},
+	}}
+	updated := reconcileStructuredObjectiveLedgerFromObservation(1, ledger, result.Observations[0], nil)
+	if !structuredObjectiveSatisfied(updated[0]) {
+		t.Fatalf("rename objective not satisfied from file evidence: %#v", updated)
+	}
+}
+
+func TestNoJSFilesWithJSXPredicate(t *testing.T) {
+	workspace := t.TempDir()
+	srcDir := filepath.Join(workspace, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "App.jsx"), []byte("export default function App(){ return <main /> }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ledger := []StructuredObjective{{
+		ID:               "ensure_all_components_are_jsx",
+		Description:      "Ensure .js files do not contain JSX.",
+		Status:           "pending",
+		RequiredEvidence: []string{"no_js_files_with_jsx:src"},
+	}}
+	updated := reconcileStructuredObjectiveLedgerFromObservation(1, ledger, StructuredCommandObservation{
+		Step:     1,
+		Command:  "grep -R \"<[A-Za-z]\" -n src --include=\"*.js\" || true",
+		ExitCode: 0,
+		CWD:      workspace,
+	}, nil)
+	if !structuredObjectiveSatisfied(updated[0]) {
+		t.Fatalf("jsx extension objective not satisfied when no .js files contain JSX: %#v", updated)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "Widget.js"), []byte("export default function Widget(){ return <section /> }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	updated = reconcileStructuredObjectiveLedgerFromObservation(2, ledger, StructuredCommandObservation{
+		Step:     2,
+		Command:  "grep -R \"<[A-Za-z]\" -n src --include=\"*.js\" || true",
+		ExitCode: 0,
+		CWD:      workspace,
+	}, nil)
+	if structuredObjectiveSatisfied(updated[0]) {
+		t.Fatalf("jsx extension objective should remain pending when .js contains JSX: %#v", updated)
+	}
+}
+
+func TestViteJSXFeedbackCreatesRepairChildJobEvents(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	npmPath := filepath.Join(binDir, "npm")
+	if err := os.WriteFile(npmPath, []byte("#!/bin/sh\necho '[plugin:vite:esbuild] src/App.js:10:4: ERROR: The JSX syntax extension is not currently enabled' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	command := shellQuote(npmPath) + " run build"
+	_ = runStructuredPayloadCommand(context.Background(), 1, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result)
+	if !structuredEventsContain(events, "toolchain_feedback_classified") {
+		t.Fatalf("missing toolchain feedback event: %#v", events)
+	}
+	if !structuredEventsContain(events, "toolchain_repair_child_job_created") {
+		t.Fatalf("missing repair child job event: %#v", events)
+	}
+	if !structuredEventsContain(events, "toolchain_repair_focus_locked") {
+		t.Fatalf("missing repair focus lock event: %#v", events)
+	}
+}
+
+func TestDeterministicViteJSXRepairCommandAppliesOnlyWhenJSFilesContainJSX(t *testing.T) {
+	workspace := t.TempDir()
+	srcDir := filepath.Join(workspace, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "App.js"), []byte("export default function App(){ return <main>Hi</main>; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decision := ProgressionDecision{
+		Reason:           "Vite build failed because JSX syntax extension is not currently enabled in src/App.js",
+		RecoveryToolTask: "Create repair child job ensure_all_components_are_jsx, rename .js files containing JSX, update imports, rerun npm run build",
+	}
+	command := deterministicProgressionRecoveryCommand("build a Vite React app", decision, workspace)
+	if command == "" {
+		t.Fatal("expected deterministic Vite JSX repair command")
+	}
+	for _, want := range []string{"file_move_verified", "no_js_files_with_jsx", "npm run build"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("repair command missing %q:\n%s", want, command)
+		}
+	}
+	if strings.Contains(command, "for f in src/*.js") {
+		t.Fatalf("repair command should not use wildcard shell mutation loop:\n%s", command)
 	}
 }
 

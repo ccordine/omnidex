@@ -2,7 +2,10 @@ package omni
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -125,21 +128,33 @@ func (a *App) loadInteractiveMemoryContext(ctx context.Context, prompt, activeDi
 		"tags": strings.Join(tags, ","),
 	})
 
+	query := executionMemorySearchQuery(prompt, tags)
+	workspaceScopedTag := ""
+	if strings.TrimSpace(activeDirectory) != "" {
+		workspaceScopedTag = "workspace:" + workspaceHash(activeDirectory)
+	}
+	searchTags := executionMemorySearchTags(tags, workspaceScopedTag)
 	emitEvent("memory_search_started", "Searching Postgres memory for relevant context", map[string]string{
-		"query": "",
-		"tags":  strings.Join(tags, ","),
+		"query": query,
+		"tags":  strings.Join(searchTags, ","),
 		"limit": fmt.Sprintf("%d", interactiveMemoryLimit),
 		"role":  "memory_retrieval_specialist",
 	})
-	searchTags := append([]string{}, tags...)
-	searchTags = append(searchTags, "validated-playbook", "procedure-memory")
-	records, err := a.memory.SearchMemory(ctx, "", searchTags, interactiveMemoryLimit)
+	records, err := a.memory.SearchMemory(ctx, query, searchTags, interactiveMemoryLimit*4)
 	if err != nil {
 		emitEvent("memory_context_skipped", "Interactive memory retrieval skipped", map[string]string{
 			"reason": "search_error",
 			"error":  truncateOutput(err.Error()),
 		})
 		return interactiveMemoryContext{Tags: tags}
+	}
+	records, excluded := filterExecutionMemoryRecords(records, prompt, activeDirectory, interactiveMemoryLimit)
+	if excluded > 0 {
+		emitEvent("memory_context_filtered", "Execution memory context filtered", map[string]string{
+			"excluded":       fmt.Sprintf("%d", excluded),
+			"workspace_hash": workspaceHash(activeDirectory),
+			"reason":         "execution_authority_or_foreign_project",
+		})
 	}
 	memories := memoryRecordsToSessionMemories(records)
 	emitEvent("memory_context_loaded", "Interactive memory context loaded", map[string]string{
@@ -148,6 +163,149 @@ func (a *App) loadInteractiveMemoryContext(ctx context.Context, prompt, activeDi
 		"kinds":   strings.Join(memoryRecordKinds(records), ","),
 	})
 	return interactiveMemoryContext{Tags: tags, Records: records, Memories: memories}
+}
+
+func executionMemorySearchTags(promptTags []string, workspaceScopedTag string) []string {
+	tags := append([]string{}, cleanMemoryTags(promptTags)...)
+	tags = append(tags,
+		"capability",
+		"capability-memory",
+		"expertise-memory",
+		"documentation",
+		"documentation-brief",
+		"doc-research",
+		"research-index-memory",
+		"source-memory",
+		"validated-playbook",
+		"procedure-memory",
+	)
+	if strings.TrimSpace(workspaceScopedTag) != "" {
+		tags = append(tags, workspaceScopedTag)
+	}
+	return cleanMemoryTags(tags)
+}
+
+func executionMemorySearchQuery(prompt string, tags []string) string {
+	lowerPrompt := strings.ToLower(prompt)
+	preferred := []string{"react", "vite", "node", "npm", "docker", "ollama", "go", "rust", "cargo", "zig", "python", "research", "memory"}
+	for _, candidate := range preferred {
+		if strings.Contains(lowerPrompt, candidate) {
+			return candidate
+		}
+	}
+	for _, tag := range cleanMemoryTags(tags) {
+		if len(tag) >= 3 && !strings.HasPrefix(tag, "workspace:") {
+			return tag
+		}
+	}
+	for _, token := range strings.FieldsFunc(lowerPrompt, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	}) {
+		if len(token) >= 4 {
+			return token
+		}
+	}
+	return "task"
+}
+
+func filterExecutionMemoryRecords(records []MemoryRecord, prompt, activeDirectory string, limit int) ([]MemoryRecord, int) {
+	if limit <= 0 {
+		limit = interactiveMemoryLimit
+	}
+	workspaceScopedTag := ""
+	if strings.TrimSpace(activeDirectory) != "" {
+		workspaceScopedTag = "workspace:" + workspaceHash(activeDirectory)
+	}
+	identities := currentProjectIdentityTokens(activeDirectory, prompt)
+	out := make([]MemoryRecord, 0, minInt(limit, len(records)))
+	excluded := 0
+	for _, record := range records {
+		if !executionMemoryRecordAllowed(record, workspaceScopedTag) || memoryRecordLooksForeignProject(record, identities, workspaceScopedTag) {
+			excluded++
+			continue
+		}
+		out = append(out, record)
+		if len(out) >= limit {
+			excluded += len(records) - len(out) - excluded
+			break
+		}
+	}
+	return out, excluded
+}
+
+func executionMemoryRecordAllowed(record MemoryRecord, workspaceScopedTag string) bool {
+	kind := strings.ToLower(strings.TrimSpace(record.Kind))
+	tags := cleanMemoryTags(record.Tags)
+	tagSet := map[string]bool{}
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+	if tagSet["prompt"] || tagSet["response"] || kind == "episodic" {
+		return false
+	}
+	switch kind {
+	case MemoryKindCapability, MemoryKindExpertise, MemoryKindSource, MemoryKindResearchIndex,
+		"documentation_brief", "documentation_research", "web_research_brief", "expertise_research":
+		return true
+	case validatedPlaybookKind, MemoryKindProcedural:
+		return tagSet["advisory-only"] || tagSet["validated-playbook"] || tagSet["procedure-memory"]
+	case MemoryKindProject, "codebase_route", "codebase_route_brief", "worksite_survey":
+		return workspaceScopedTag != "" && tagSet[workspaceScopedTag]
+	default:
+		return tagSet["capability-memory"] ||
+			tagSet["expertise-memory"] ||
+			tagSet["documentation-brief"] ||
+			tagSet["doc-research"] ||
+			tagSet["research-index-memory"] ||
+			tagSet["source-memory"]
+	}
+}
+
+func memoryRecordLooksForeignProject(record MemoryRecord, identities map[string]bool, workspaceScopedTag string) bool {
+	tags := cleanMemoryTags(record.Tags)
+	for _, tag := range tags {
+		if strings.HasPrefix(tag, "workspace:") && workspaceScopedTag != "" && tag != workspaceScopedTag {
+			return true
+		}
+	}
+	text := strings.ToLower(record.Content + " " + strings.Join(tags, " "))
+	for _, marker := range []string{"fruityloops"} {
+		if strings.Contains(text, marker) && !identities[marker] {
+			return true
+		}
+	}
+	return false
+}
+
+func currentProjectIdentityTokens(activeDirectory, prompt string) map[string]bool {
+	out := map[string]bool{}
+	for _, source := range []string{prompt, filepath.Base(strings.TrimSpace(activeDirectory))} {
+		for _, token := range strings.FieldsFunc(strings.ToLower(source), func(r rune) bool {
+			return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+		}) {
+			if len(token) >= 3 {
+				out[token] = true
+			}
+		}
+	}
+	if strings.TrimSpace(activeDirectory) != "" {
+		blob, err := os.ReadFile(filepath.Join(activeDirectory, "package.json"))
+		if err == nil {
+			var pkg struct {
+				Name string `json:"name"`
+			}
+			if json.Unmarshal(blob, &pkg) == nil {
+				for _, token := range strings.FieldsFunc(strings.ToLower(pkg.Name), func(r rune) bool {
+					return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+				}) {
+					if len(token) >= 3 {
+						out[token] = true
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 func memoryRecordIDs(records []MemoryRecord) []string {

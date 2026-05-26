@@ -26,6 +26,7 @@ func TestUIServesChatShell(t *testing.T) {
 		`data-chat-target="progress"`,
 		`data-chat-target="researchStatusOutput"`,
 		`data-chat-target="metricsOutput"`,
+		`data-chat-target="memoryList"`,
 		`data-recyclr-sink="modal"`,
 		"/ui/app.js",
 	} {
@@ -55,6 +56,9 @@ func TestUIServesStaticAssets(t *testing.T) {
 		"renderProgress",
 		"renderResearchStatus",
 		"renderMetricsDashboard",
+		"loadGlobalActivity",
+		"addObservedEvent",
+		"renderMemoryList",
 		"evt_",
 	} {
 		if !strings.Contains(body, want) {
