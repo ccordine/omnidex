@@ -52,11 +52,40 @@ func RunSuccessReconciliation(input SuccessReconciliationInput) SuccessReconcili
 	if latestCommandID == "" && input.LatestObservation != nil {
 		latestCommandID = input.LatestObservation.CommandID
 	}
+	childJobID := strings.TrimSpace(input.ChildJobID)
+	objectiveID := strings.TrimSpace(input.ObjectiveID)
+	if input.LatestObservation != nil {
+		if childJobID == "" {
+			childJobID = input.LatestObservation.ChildJobID
+		}
+		if objectiveID == "" {
+			objectiveID = input.LatestObservation.ObjectiveID
+		}
+	}
 	out.Events = append(out.Events, successReconciliationEvent("success_reconciliation_started", "Deterministic success reconciliation started", map[string]string{
 		"command_id":   latestCommandID,
-		"child_job_id": input.ChildJobID,
-		"objective_id": input.ObjectiveID,
+		"child_job_id": childJobID,
+		"active_child_job_id": firstNonEmpty(childJobID, firstChildJobID(out.ChildJobs)),
+		"command_child_job_id": childJobID,
+		"objective_id": objectiveID,
+		"target_root":  input.WorkingDirectory,
+		"child_queue_before": strings.Join(childJobIDs(out.ChildJobs), ","),
 	}))
+	if len(out.ChildJobs) > 0 && input.LatestObservation != nil && strings.TrimSpace(input.LatestObservation.Command) != "" && childJobID == "" {
+		out.Events = append(out.Events,
+			successReconciliationEvent("command_observation_missing_child_job", "Command observation missing child job owner", map[string]string{
+				"command_id": latestCommandID,
+				"command":    truncateStructuredTimelineValue(input.LatestObservation.Command),
+			}),
+			successReconciliationEvent("reconciliation_skipped_missing_owner", "Child queue reconciliation skipped because command ownership is missing", map[string]string{
+				"command_id": latestCommandID,
+			}),
+		)
+		out.Events = append(out.Events, successReconciliationEvent("success_reconciliation_completed", "Deterministic success reconciliation completed without child queue mutation", map[string]string{
+			"child_queue_after": strings.Join(childJobIDs(out.ChildJobs), ","),
+		}))
+		return out
+	}
 
 	for i := range out.ObjectiveLedger {
 		objective := normalizeStructuredObjectiveOrOriginal(out.ObjectiveLedger[i])
@@ -99,28 +128,35 @@ func RunSuccessReconciliation(input SuccessReconciliationInput) SuccessReconcili
 	if len(out.WorkQueue) > 0 {
 		out.WorkQueue = ReconcileObjectiveWorkItemsFromObservations(out.WorkQueue, input.Observations)
 	}
+	out.ChildJobs = SyncChildJobsWithObjectiveLedger(out.ChildJobs, out.ObjectiveLedger)
 	if len(out.ChildJobs) == 0 && len(out.WorkQueue) > 0 {
 		out.ChildJobs = BuildChildJobsFromObjectiveWorkItems(out.WorkQueue)
 	}
 	if input.LatestObservation != nil && childJobObservationShouldCreateFailureAttempt(*input.LatestObservation) {
-		if index := focusedChildJobIndexForAttempt(out.ChildJobs, input.ChildJobID); index >= 0 {
+		if index := focusedChildJobIndexForAttempt(out.ChildJobs, childJobID); index >= 0 {
 			if !childJobAttemptAlreadyRecorded(out.ChildJobs[index], *input.LatestObservation) {
 				out.ChildJobs[index] = AppendChildJobAttemptWithContext(out.ChildJobs[index], *input.LatestObservation, "runtime", "child_job_loop", "", input.WorkingDirectory)
 			}
 		}
 	}
-	childLoop := RunChildJobLoopOnce(ChildJobLoopInput{
-		Jobs:             out.ChildJobs,
-		WorkingDirectory: input.WorkingDirectory,
-		Observations:     input.Observations,
-		ObjectiveLedger:  out.ObjectiveLedger,
-	})
-	out.ChildJobs = childLoop.Jobs
-	out.ObjectiveLedger = childLoop.ObjectiveLedger
-	out.NextRequiredChildJob = childLoop.ActiveJob
-	out.NextAction = childLoop.NextAction
-	out.Events = append(out.Events, successEventsFromChildEvents(childLoop.Events)...)
-	for _, job := range childLoop.Jobs {
+	for pass := 0; pass < maxInt(1, len(out.ChildJobs)); pass++ {
+		beforeComplete := completedChildJobCount(out.ChildJobs)
+		childLoop := RunChildJobLoopOnce(ChildJobLoopInput{
+			Jobs:             out.ChildJobs,
+			WorkingDirectory: input.WorkingDirectory,
+			Observations:     input.Observations,
+			ObjectiveLedger:  out.ObjectiveLedger,
+		})
+		out.ChildJobs = childLoop.Jobs
+		out.ObjectiveLedger = childLoop.ObjectiveLedger
+		out.NextRequiredChildJob = childLoop.ActiveJob
+		out.NextAction = childLoop.NextAction
+		out.Events = append(out.Events, successEventsFromChildEvents(childLoop.Events)...)
+		if completedChildJobCount(out.ChildJobs) == beforeComplete {
+			break
+		}
+	}
+	for _, job := range out.ChildJobs {
 		if job.Status != ChildJobStatusComplete {
 			continue
 		}
@@ -138,6 +174,13 @@ func RunSuccessReconciliation(input SuccessReconciliationInput) SuccessReconcili
 			out.RouteFiles = nextRoute
 		}
 	}
+	out.ChildJobs = SyncChildJobsWithObjectiveLedger(out.ChildJobs, out.ObjectiveLedger)
+	out.NextRequiredChildJob = nil
+	if index := activeChildJobIndex(out.ChildJobs); index >= 0 {
+		out.NextRequiredChildJob = &out.ChildJobs[index]
+	} else if index := firstNonTerminalChildJobIndex(out.ChildJobs); index >= 0 {
+		out.NextRequiredChildJob = &out.ChildJobs[index]
+	}
 	if out.NextRequiredChildJob != nil && out.NextRequiredChildJob.Status != ChildJobStatusComplete {
 		out.Events = append(out.Events, successReconciliationEvent("next_child_job_selected", "Next required child job selected from reconciliation", map[string]string{
 			"child_job_id": out.NextRequiredChildJob.ID,
@@ -149,6 +192,7 @@ func RunSuccessReconciliation(input SuccessReconciliationInput) SuccessReconcili
 		"passed_predicates":    fmt.Sprintf("%d", len(out.PassedEvidencePredicates)),
 		"failed_predicates":    fmt.Sprintf("%d", len(out.FailedEvidencePredicates)),
 		"unresolved_blockers":  fmt.Sprintf("%d", len(out.UnresolvedBlockers)),
+		"child_queue_after":    strings.Join(childJobIDs(out.ChildJobs), ","),
 	}))
 	return out
 }
@@ -185,6 +229,92 @@ func focusedChildJobIndexForAttempt(jobs []ChildJob, requestedID string) int {
 		return i
 	}
 	return firstNonTerminalChildJobIndex(jobs)
+}
+
+func activeCommandOwner(result *CommandDecisionResult) (string, string) {
+	if result == nil {
+		return "", ""
+	}
+	jobs := SyncChildJobsWithObjectiveLedger(result.ChildJobs, result.ObjectiveLedger)
+	index := activeChildJobIndex(jobs)
+	if index < 0 {
+		index = firstNonTerminalChildJobIndex(jobs)
+	}
+	if index >= 0 {
+		job := jobs[index]
+		return job.ID, firstNonEmpty(job.ParentObjectiveID, job.ID)
+	}
+	for _, objective := range pendingStructuredObjectives(result.ObjectiveLedger) {
+		if strings.TrimSpace(objective.ID) != "" {
+			return objective.ID, objective.ID
+		}
+	}
+	return "", ""
+}
+
+func reconciliationOwnerFromObservation(obs *StructuredCommandObservation, jobs []ChildJob, ledger []StructuredObjective) (string, string) {
+	if obs != nil {
+		childJobID := strings.TrimSpace(obs.ChildJobID)
+		objectiveID := strings.TrimSpace(obs.ObjectiveID)
+		return childJobID, objectiveID
+	}
+	temp := CommandDecisionResult{ChildJobs: jobs, ObjectiveLedger: ledger}
+	return activeCommandOwner(&temp)
+}
+
+func SyncChildJobsWithObjectiveLedger(jobs []ChildJob, ledger []StructuredObjective) []ChildJob {
+	if len(jobs) == 0 {
+		return jobs
+	}
+	activeObjectives := map[string]StructuredObjective{}
+	for _, objective := range ledger {
+		if strings.TrimSpace(objective.ID) == "" || !structuredObjectiveBlocksCompletion(objective) || structuredObjectiveSatisfied(objective) {
+			continue
+		}
+		activeObjectives[objective.ID] = objective
+	}
+	filtered := []ChildJob{}
+	for _, job := range jobs {
+		if childJobTerminal(job) {
+			continue
+		}
+		owner := firstNonEmpty(job.ParentObjectiveID, job.ID)
+		if _, ok := activeObjectives[owner]; !ok {
+			continue
+		}
+		filtered = append(filtered, job)
+	}
+	return filtered
+}
+
+func childJobIDs(jobs []ChildJob) []string {
+	ids := []string{}
+	for _, job := range jobs {
+		if strings.TrimSpace(job.ID) != "" {
+			ids = append(ids, job.ID)
+		}
+	}
+	return ids
+}
+
+func firstChildJobID(jobs []ChildJob) string {
+	if index := activeChildJobIndex(jobs); index >= 0 {
+		return jobs[index].ID
+	}
+	if index := firstNonTerminalChildJobIndex(jobs); index >= 0 {
+		return jobs[index].ID
+	}
+	return ""
+}
+
+func completedChildJobCount(jobs []ChildJob) int {
+	count := 0
+	for _, job := range jobs {
+		if job.Status == ChildJobStatusComplete {
+			count++
+		}
+	}
+	return count
 }
 
 func objectiveEvidenceStatus(objective StructuredObjective, observations []StructuredCommandObservation, workingDir string) (bool, []string, []string) {

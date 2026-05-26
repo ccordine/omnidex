@@ -8054,6 +8054,210 @@ func TestStaleRepairChildJobsDoNotLeakIntoResearchOnlyTask(t *testing.T) {
 	}
 }
 
+func TestCommandObservationCarriesActiveChildJobOwner(t *testing.T) {
+	workspace := t.TempDir()
+	result := CommandDecisionResult{
+		ObjectiveLedger: []StructuredObjective{{ID: "install_dependencies", Description: "Install dependencies", Status: "pending", Required: true}},
+		ChildJobs: []ChildJob{{
+			ID:                         "install_dependencies",
+			Goal:                       "Install dependencies",
+			Status:                     ChildJobStatusActive,
+			RequiredEvidencePredicates: []string{"command_passed:true"},
+		}},
+	}
+	events := []StructuredCommandEvent{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, "true", workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) == 0 || result.Observations[0].ChildJobID != "install_dependencies" || result.Observations[0].ObjectiveID != "install_dependencies" {
+		t.Fatalf("observation missing child ownership: %#v", result.Observations)
+	}
+	if !structuredEventsContain(events, "command_bound_to_child_job") {
+		t.Fatalf("missing command binding event: %#v", events)
+	}
+}
+
+func TestReconciliationUsesObservationChildJobNotDefaultInitializeNPM(t *testing.T) {
+	workspace := t.TempDir()
+	obs := StructuredCommandObservation{Step: 1, CommandID: "cmd_install", Command: "true", ChildJobID: "install_dependencies", ObjectiveID: "install_dependencies", ExitCode: 0, CWD: workspace}
+	reconciled := RunSuccessReconciliation(SuccessReconciliationInput{
+		LatestObservation: &obs,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "install_dependencies", Description: "Install dependencies", Status: "pending", Required: true},
+		},
+		ChildJobs: []ChildJob{
+			{ID: "initialize_npm", Goal: "Initialize npm", Status: ChildJobStatusActive, RequiredEvidencePredicates: []string{"package_json_exists"}},
+			{ID: "install_dependencies", Goal: "Install dependencies", Status: ChildJobStatusPending, RequiredEvidencePredicates: []string{"command_passed:true"}},
+		},
+		WorkingDirectory: workspace,
+		Observations:     []StructuredCommandObservation{obs},
+	})
+	for _, job := range reconciled.ChildJobs {
+		if job.ID == "initialize_npm" {
+			t.Fatalf("stale initialize_npm remained selectable: %#v", reconciled.ChildJobs)
+		}
+	}
+	if !successReconciliationEventsContain(reconciled.Events, "child_job_completed") {
+		t.Fatalf("owned child job was not reconciled: %#v", reconciled.Events)
+	}
+}
+
+func TestCompletedInitializeNPMRemovedFromChildQueue(t *testing.T) {
+	jobs := SyncChildJobsWithObjectiveLedger([]ChildJob{
+		{ID: "initialize_npm", Goal: "Initialize npm", Status: ChildJobStatusComplete},
+		{ID: "install_dependencies", Goal: "Install dependencies", Status: ChildJobStatusPending},
+	}, []StructuredObjective{
+		{ID: "initialize_npm", Description: "Initialize npm", Status: "satisfied", Required: true},
+		{ID: "install_dependencies", Description: "Install dependencies", Status: "pending", Required: true},
+	})
+	if len(jobs) != 1 || jobs[0].ID != "install_dependencies" {
+		t.Fatalf("completed initialize_npm not removed from active queue: %#v", jobs)
+	}
+}
+
+func TestReconciliationSkipsChildQueueMutationWhenOwnerMissing(t *testing.T) {
+	workspace := t.TempDir()
+	obs := StructuredCommandObservation{Step: 1, CommandID: "cmd", Command: "true", ExitCode: 0, CWD: workspace}
+	reconciled := RunSuccessReconciliation(SuccessReconciliationInput{
+		LatestObservation: &obs,
+		ObjectiveLedger:   []StructuredObjective{{ID: "install_dependencies", Description: "Install dependencies", Status: "pending", Required: true}},
+		ChildJobs:         []ChildJob{{ID: "install_dependencies", Goal: "Install dependencies", Status: ChildJobStatusActive, RequiredEvidencePredicates: []string{"command_passed:true"}}},
+		WorkingDirectory:  workspace,
+		Observations:      []StructuredCommandObservation{obs},
+	})
+	if !successReconciliationEventsContain(reconciled.Events, "reconciliation_skipped_missing_owner") {
+		t.Fatalf("missing skipped reconciliation event: %#v", reconciled.Events)
+	}
+	if len(reconciled.ChildJobs) != 1 || reconciled.ChildJobs[0].Status != ChildJobStatusActive {
+		t.Fatalf("missing-owner reconciliation mutated child queue: %#v", reconciled.ChildJobs)
+	}
+}
+
+func TestScaffoldTargetRootPromotionAfterCreateReactApp(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	npxPath := filepath.Join(binDir, "npx")
+	if err := os.WriteFile(npxPath, []byte("#!/bin/sh\nname=\"$2\"\nmkdir -p \"$name/src\" \"$name/node_modules\"\nprintf '{\"scripts\":{\"start\":\"react-scripts start\"}}' > \"$name/package.json\"\nprintf 'import App from \"./App\"\\n' > \"$name/src/index.js\"\nprintf 'export default function App(){return null}\\n' > \"$name/src/App.js\"\nprintf 'created %s\\n' \"$name\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := CommandDecisionResult{}
+	events := []StructuredCommandEvent{}
+	command := "PATH=" + shellQuote(binDir) + ":$PATH npx create-react-app note-app && cd note-app"
+	if err := runStructuredPayloadCommand(context.Background(), 1, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	wantRoot := filepath.Join(workspace, "note-app")
+	if result.TargetRoot != wantRoot {
+		t.Fatalf("target root = %q, want %q", result.TargetRoot, wantRoot)
+	}
+	if result.Command != "PATH="+shellQuote(binDir)+":$PATH npx create-react-app note-app" {
+		t.Fatalf("trailing cd was not normalized out: %q", result.Command)
+	}
+	for _, rel := range []string{"package.json", "src/index.js", "src/App.js"} {
+		if !fileExists(filepath.Join(wantRoot, rel)) {
+			t.Fatalf("missing scaffold file %s", rel)
+		}
+	}
+	for _, want := range []string{"scaffold_project_detected", "target_root_promoted_after_scaffold", "workspace_route_refreshed_after_mutation"} {
+		if !structuredEventsContain(events, want) {
+			t.Fatalf("missing %s event: %#v", want, events)
+		}
+	}
+}
+
+func TestCreateReactAppScaffoldEvidenceSatisfiesInitialChildJobs(t *testing.T) {
+	workspace := t.TempDir()
+	root := filepath.Join(workspace, "note-app")
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, body := range map[string]string{
+		"package.json": `{"scripts":{"start":"react-scripts start"}}`,
+		"package-lock.json": "{}",
+		"src/index.js": "import App from './App'\n",
+		"src/App.js": "export default function App(){ return null }\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	command := "npx create-react-app note-app"
+	obs := StructuredCommandObservation{
+		Step:        1,
+		CommandID:   "cmd_cra",
+		ChildJobID:  "initialize_npm",
+		ObjectiveID: "initialize_npm",
+		Command:     command,
+		ExitCode:    0,
+		Stdout:      "new_target_root: " + root,
+		CWD:         workspace,
+	}
+	reconciled := RunSuccessReconciliation(SuccessReconciliationInput{
+		LatestObservation: &obs,
+		ObjectiveLedger: []StructuredObjective{
+			{ID: "initialize_npm", Description: "Initialize npm", Status: "pending", Required: true},
+			{ID: "install_dependencies", Description: "Install dependencies", Status: "pending", Required: true},
+			{ID: "create_entrypoint", Description: "Create entrypoint", Status: "pending", Required: true},
+			{ID: "setup_note_component", Description: "Set up note component", Status: "pending", Required: true},
+		},
+		ChildJobs: []ChildJob{
+			{ID: "initialize_npm", Goal: "Initialize npm", Status: ChildJobStatusActive, RequiredEvidencePredicates: []string{"package_json_exists"}},
+			{ID: "install_dependencies", Goal: "Install dependencies", Status: ChildJobStatusPending, RequiredEvidencePredicates: []string{"dependencies_declared_or_installed"}},
+			{ID: "create_entrypoint", Goal: "Create entrypoint", Status: ChildJobStatusPending, RequiredEvidencePredicates: []string{"entrypoint_exists"}},
+			{ID: "setup_note_component", Goal: "Set up note component", Status: ChildJobStatusPending, RequiredEvidencePredicates: []string{"file_exists:src/Note.jsx"}},
+		},
+		WorkingDirectory: root,
+		Observations:     []StructuredCommandObservation{obs},
+	})
+	for _, stale := range []string{"initialize_npm", "install_dependencies", "create_entrypoint"} {
+		for _, job := range reconciled.ChildJobs {
+			if job.ID == stale {
+				t.Fatalf("%s should have been satisfied and removed: %#v", stale, reconciled.ChildJobs)
+			}
+		}
+	}
+	if reconciled.NextRequiredChildJob == nil || reconciled.NextRequiredChildJob.ID != "setup_note_component" {
+		t.Fatalf("next child job = %#v, want setup_note_component", reconciled.NextRequiredChildJob)
+	}
+}
+
+func TestFutureCommandRunsInsidePromotedScaffoldRoot(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	npxPath := filepath.Join(binDir, "npx")
+	if err := os.WriteFile(npxPath, []byte("#!/bin/sh\nname=\"$2\"\nmkdir -p \"$name/src\"\nprintf '{}' > \"$name/package.json\"\nprintf 'x' > \"$name/src/App.js\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	createCommand := "PATH=" + shellQuote(binDir) + ":$PATH npx create-react-app note-app && cd note-app"
+	client := &fakeCommandDecisionClient{responses: []string{
+		fmt.Sprintf(`{"command":%q,"done":false,"answer":""}`, createCommand),
+		`{"command":"pwd","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"done"}`,
+	}}
+	result, err := runStructuredCommandDecisionWithConfig(context.Background(), "create a React note app", nil, client, &bytes.Buffer{}, &bytes.Buffer{}, nil, nil, structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Observations) < 2 {
+		t.Fatalf("missing observations: %#v", result.Observations)
+	}
+	second := result.Observations[1]
+	wantRoot := filepath.Join(workspace, "note-app")
+	if second.CWD != wantRoot || !strings.Contains(second.Stdout, wantRoot) {
+		t.Fatalf("future command did not run in promoted root: obs=%#v want=%q", second, wantRoot)
+	}
+}
+
 func TestDeterministicViteJSXRepairCommandAppliesOnlyWhenJSFilesContainJSX(t *testing.T) {
 	workspace := t.TempDir()
 	srcDir := filepath.Join(workspace, "src")

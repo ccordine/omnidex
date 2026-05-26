@@ -58,6 +58,7 @@ type CommandDecisionResult struct {
 	Answer          string
 	PartialProgress bool
 	TaskMode        TaskMode
+	TargetRoot      string
 	Observations    []StructuredCommandObservation
 	ObjectiveLedger []StructuredObjective
 	WorkItems       []ObjectiveWorkItem
@@ -71,6 +72,8 @@ type CommandDecisionResult struct {
 type StructuredCommandObservation struct {
 	Step                 int      `json:"step"`
 	CommandID            string   `json:"command_id,omitempty"`
+	ChildJobID           string   `json:"child_job_id,omitempty"`
+	ObjectiveID          string   `json:"objective_id,omitempty"`
 	Command              string   `json:"command"`
 	RejectedCommand      string   `json:"rejected_command,omitempty"`
 	RejectedResponse     string   `json:"rejected_response,omitempty"`
@@ -615,6 +618,7 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		worksiteSurvey.TaskMode = inferTaskMode(prompt, worksiteSurvey)
 	}
 	result.TaskMode = worksiteSurvey.TaskMode
+	result.TargetRoot = structuredPromptWorkingDirectory(cfg.CurrentWorkingDirectory)
 	cfg.SessionMemories = filterExecutionSessionMemories(cfg.SessionMemories, prompt, cfg.CurrentWorkingDirectory, len(cfg.SessionMemories))
 	result.MinimalContext = minimalContext
 	refreshTypedWorkItems := func() {
@@ -646,8 +650,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		if len(childJobs) == 0 {
 			childJobs = BuildChildJobsFromObjectiveWorkItems(result.WorkItems)
 		}
+		childJobs = SyncChildJobsWithObjectiveLedger(childJobs, ledger)
+		commandChildJobID, commandObjectiveID := reconciliationOwnerFromObservation(latest, childJobs, ledger)
 		reconciledSuccess := RunSuccessReconciliation(SuccessReconciliationInput{
 			LatestObservation: latest,
+			ChildJobID:        commandChildJobID,
+			ObjectiveID:       commandObjectiveID,
 			ObjectiveLedger:   ledger,
 			WorkQueue:         result.WorkItems,
 			ChildJobs:         childJobs,
@@ -804,6 +812,17 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	}
 	lastCompletionCheckedObservationCount := 0
 	for step := 1; step <= defaultCommandDecisionMaxSteps; step++ {
+		if strings.TrimSpace(result.TargetRoot) != "" && structuredPromptWorkingDirectory(cfg.CurrentWorkingDirectory) != structuredPromptWorkingDirectory(result.TargetRoot) {
+			cfg.CurrentWorkingDirectory = result.TargetRoot
+			previousMode := worksiteSurvey.TaskMode
+			previousOperation := worksiteSurvey.UserOperation
+			worksiteSurvey = BuildWorksiteSurvey(cfg.CurrentWorkingDirectory).WithOperation(previousOperation)
+			worksiteSurvey.TaskMode = previousMode
+			emitStructuredCommandEvent(onEvent, "active_worksite_target_root_applied", "Runtime applied promoted target root for subsequent commands", map[string]string{
+				"step":        fmt.Sprintf("%d", step),
+				"target_root": structuredPromptWorkingDirectory(cfg.CurrentWorkingDirectory),
+			})
+		}
 		if latest, ok := latestSuccessfulCommandObservation(result.Observations); ok && sourceVerificationCompletionSatisfied(prompt, cfg.CurrentWorkingDirectory, latest) {
 			result.Answer = finalStructuredAnswer(result.Answer, latest)
 			result.ExitCode = latest.ExitCode
@@ -1645,8 +1664,23 @@ func structuredCommandID(step, attempt int, command, workingDirectory string) st
 func runStructuredPayloadCommand(ctx context.Context, step int, command, workingDirectory string, enableCommandCache bool, commandCacheRoot string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
+	command = normalizeStructuredCommand(command)
 	attempt := structuredCommandAttemptNumber(result, command)
 	commandID := structuredCommandID(step, attempt, command, workingDirectory)
+	childJobID, objectiveID := activeCommandOwner(result)
+	if result != nil && len(result.ChildJobs) > 0 && strings.TrimSpace(childJobID) == "" {
+		emitStructuredCommandEvent(onEvent, "command_observation_missing_child_job", "Command observation has no active child job owner", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"command": truncateStructuredTimelineValue(command),
+		})
+	} else if strings.TrimSpace(childJobID) != "" {
+		emitStructuredCommandEvent(onEvent, "command_bound_to_child_job", "Command bound to active child job", map[string]string{
+			"step":         fmt.Sprintf("%d", step),
+			"command_id":   commandID,
+			"child_job_id": childJobID,
+			"objective_id": objectiveID,
+		})
+	}
 	if result != nil && result.TaskMode == TaskModeResearchOnly {
 		if err := validateStructuredCommandForTaskMode(command, "", result.TaskMode); err != nil {
 			result.Command = command
@@ -1654,6 +1688,8 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 			result.Observations = append(result.Observations, StructuredCommandObservation{
 				Step:            step,
 				CommandID:       commandID,
+				ChildJobID:      childJobID,
+				ObjectiveID:     objectiveID,
 				RejectedCommand: truncateStructuredObservation(command),
 				ExitCode:        1,
 				Stderr:          "command rejected: " + err.Error(),
@@ -1713,12 +1749,17 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 			exitCode = 1
 		}
 	}
+	if exitCode == 0 {
+		applyScaffoldTargetRootPromotion(step, command, workingDirectory, &stdoutBuf, onEvent, result)
+	}
 	result.Command = command
 	result.ExitCode = exitCode
 	feedback := ClassifyToolchainFeedback(command, stdoutBuf.String(), stderrBuf.String())
 	observation := StructuredCommandObservation{
 		Step:       step,
 		CommandID:  commandID,
+		ChildJobID: childJobID,
+		ObjectiveID: objectiveID,
 		Command:    command,
 		ExitCode:   exitCode,
 		Stdout:     truncateStructuredObservation(stdoutBuf.String()),
@@ -1806,12 +1847,15 @@ func structuredCommandIsDependencyInstall(command string) bool {
 }
 
 func runStructuredPatchApply(ctx context.Context, step int, patch, workingDirectory string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
+	childJobID, objectiveID := activeCommandOwner(result)
 	if result != nil && result.TaskMode == TaskModeResearchOnly {
 		err := fmt.Errorf("research_only mode forbids code patches and source writes; record project issues as incidental findings unless the user explicitly asks for repair")
 		result.Command = "PATCH_APPLY_REJECTED"
 		result.ExitCode = 1
 		result.Observations = append(result.Observations, StructuredCommandObservation{
 			Step:             step,
+			ChildJobID:       childJobID,
+			ObjectiveID:      objectiveID,
 			RejectedResponse: truncateStructuredObservation(patch),
 			ExitCode:         1,
 			Stderr:           "command rejected: " + err.Error(),
@@ -1845,6 +1889,8 @@ func runStructuredPatchApply(ctx context.Context, step int, patch, workingDirect
 	result.ExitCode = exitCode
 	result.Observations = append(result.Observations, StructuredCommandObservation{
 		Step:     step,
+		ChildJobID: childJobID,
+		ObjectiveID: objectiveID,
 		Command:  "PATCH_APPLY",
 		ExitCode: exitCode,
 		Stdout:   truncateStructuredObservation(stdoutText),
@@ -6941,7 +6987,16 @@ func isPlaceholderPathValidationError(err error) bool {
 func normalizeStructuredCommand(command string) string {
 	command = normalizeStructuredCommandLineBreaks(command)
 	command = normalizeStructuredMkdirParents(command)
+	command = normalizePersistentCDScaffoldCommand(command)
 	return command
+}
+
+func normalizePersistentCDScaffoldCommand(command string) string {
+	spec, ok := scaffoldCommandSpec(command, "")
+	if !ok || strings.TrimSpace(spec.TrailingCD) == "" {
+		return command
+	}
+	return spec.Command
 }
 
 func normalizeStructuredCommandLineBreaks(command string) string {
@@ -9802,10 +9857,25 @@ func handleStructuredRepeatedCommandValidation(step int, command string, validat
 		before := pendingStructuredObjectiveIDs(*ledger)
 		*ledger = reconcileStructuredObjectiveLedgerFromObservation(step, *ledger, previous, onEvent)
 		result.ObjectiveLedger = *ledger
+		workingDir := firstNonEmpty(result.TargetRoot, previous.CWD)
+		reconciled := RunSuccessReconciliation(SuccessReconciliationInput{
+			LatestObservation: &previous,
+			ChildJobID:        previous.ChildJobID,
+			ObjectiveID:       previous.ObjectiveID,
+			ObjectiveLedger:   *ledger,
+			ChildJobs:         result.ChildJobs,
+			WorkingDirectory:  workingDir,
+			Observations:      result.Observations,
+		})
+		result.ChildJobs = reconciled.ChildJobs
+		*ledger = reconciled.ObjectiveLedger
+		result.ObjectiveLedger = *ledger
+		emitSuccessReconciliationEvents(onEvent, reconciled.Events)
 		after := pendingStructuredObjectiveIDs(*ledger)
 		emitStructuredCommandEvent(onEvent, "structured_repeat_success_reconciled", "Repeated successful command skipped and used as completion evidence", map[string]string{
 			"step":               fmt.Sprintf("%d", step),
 			"command":            truncateStructuredTimelineValue(command),
+			"child_job_id":       previous.ChildJobID,
 			"pending_before":     before,
 			"pending_objectives": after,
 		})
@@ -9953,6 +10023,9 @@ func structuredObservationSatisfiesObjective(obs StructuredCommandObservation, o
 	if strings.Contains(command, "mkdir") && (strings.Contains(target, " setup ") || strings.Contains(target, " structure ")) {
 		return true
 	}
+	if scaffoldObservationSatisfiesObjective(command, output, target, obs.CWD) {
+		return true
+	}
 	if structuredObservationSatisfiesSourceWriteObjective(command, target) {
 		return true
 	}
@@ -10043,6 +10116,51 @@ func structuredEvidencePredicateSatisfied(predicate string, observations []Struc
 		}
 	case "file_exists":
 		return workingDir != "" && fileExists(filepath.Join(workingDir, filepath.Clean(rest)))
+	case "project_directory_exists":
+		if rest == "" {
+			return workingDir != "" && dirExists(workingDir)
+		}
+		return workingDir != "" && dirExists(filepath.Join(workingDir, filepath.Clean(rest)))
+	case "package_json_exists":
+		root := workingDir
+		if rest != "" {
+			root = filepath.Join(workingDir, filepath.Clean(rest))
+		}
+		return root != "" && fileExists(filepath.Join(root, "package.json"))
+	case "src_directory_exists":
+		root := workingDir
+		if rest != "" {
+			root = filepath.Join(workingDir, filepath.Clean(rest))
+		}
+		return root != "" && dirExists(filepath.Join(root, "src"))
+	case "entrypoint_exists":
+		root := workingDir
+		if rest != "" {
+			root = filepath.Join(workingDir, filepath.Clean(rest))
+		}
+		for _, rel := range []string{"src/index.js", "src/index.jsx", "src/main.jsx", "src/main.tsx"} {
+			if root != "" && fileExists(filepath.Join(root, rel)) {
+				return true
+			}
+		}
+		return false
+	case "app_component_exists":
+		root := workingDir
+		if rest != "" {
+			root = filepath.Join(workingDir, filepath.Clean(rest))
+		}
+		for _, rel := range []string{"src/App.js", "src/App.jsx", "src/App.tsx"} {
+			if root != "" && fileExists(filepath.Join(root, rel)) {
+				return true
+			}
+		}
+		return false
+	case "dependencies_declared_or_installed":
+		root := workingDir
+		if rest != "" {
+			root = filepath.Join(workingDir, filepath.Clean(rest))
+		}
+		return root != "" && (fileExists(filepath.Join(root, "package.json")) || dirExists(filepath.Join(root, "node_modules")))
 	case "file_absent":
 		return workingDir != "" && !fileExists(filepath.Join(workingDir, filepath.Clean(rest)))
 	case "file_nonempty":

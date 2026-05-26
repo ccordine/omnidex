@@ -514,12 +514,13 @@ func normalizeChildJob(job ChildJob, defaultStatus ChildJobStatus) ChildJob {
 }
 
 func reconcileObjectiveLedgerFromCompletedChildJob(ledger []StructuredObjective, job ChildJob) []StructuredObjective {
-	if strings.TrimSpace(job.ParentObjectiveID) == "" {
+	targetID := firstNonEmpty(job.ParentObjectiveID, job.ID)
+	if strings.TrimSpace(targetID) == "" {
 		return ledger
 	}
 	out := cloneStructuredObjectiveLedger(ledger)
 	for i := range out {
-		if out[i].ID != job.ParentObjectiveID {
+		if out[i].ID != targetID {
 			continue
 		}
 		out[i].Status = "satisfied"
@@ -529,13 +530,13 @@ func reconcileObjectiveLedgerFromCompletedChildJob(ledger []StructuredObjective,
 }
 
 func childJobParentComplete(jobs []ChildJob, completed ChildJob) bool {
-	parentID := strings.TrimSpace(completed.ParentObjectiveID)
+	parentID := strings.TrimSpace(firstNonEmpty(completed.ParentObjectiveID, completed.ID))
 	if parentID == "" {
 		return false
 	}
 	sawSibling := false
 	for _, job := range jobs {
-		if strings.TrimSpace(job.ParentObjectiveID) != parentID {
+		if strings.TrimSpace(firstNonEmpty(job.ParentObjectiveID, job.ID)) != parentID {
 			continue
 		}
 		sawSibling = true
@@ -590,7 +591,9 @@ func ChildJobFromObjectiveWorkItem(item ObjectiveWorkItem) ChildJob {
 	for _, evidence := range item.RequiredEvidence {
 		switch evidence {
 		case EvidenceKindCommand:
-			predicates = append(predicates, "command_passed:"+firstNonEmpty(firstWorkItemCommand(item), ""))
+			if command := strings.TrimSpace(firstWorkItemCommand(item)); command != "" {
+				predicates = append(predicates, "command_passed:"+command)
+			}
 		case EvidenceKindFileDiff:
 			for _, path := range item.Scope.Paths {
 				if strings.TrimSpace(path) != "" {
@@ -611,6 +614,9 @@ func ChildJobFromObjectiveWorkItem(item ObjectiveWorkItem) ChildJob {
 			}
 		}
 	}
+	if len(cleanStringList(predicates)) == 0 {
+		predicates = inferredChildJobEvidencePredicates(item)
+	}
 	return ChildJob{
 		ID:                         item.ID,
 		ParentObjectiveID:          item.ParentID,
@@ -618,6 +624,22 @@ func ChildJobFromObjectiveWorkItem(item ObjectiveWorkItem) ChildJob {
 		Status:                     childJobStatusFromWorkItemStatus(item.Status),
 		ScopeFiles:                 append([]string{}, item.Scope.Paths...),
 		RequiredEvidencePredicates: cleanStringList(predicates),
+	}
+}
+
+func inferredChildJobEvidencePredicates(item ObjectiveWorkItem) []string {
+	text := strings.ToLower(item.ID + " " + item.Instruction)
+	switch {
+	case strings.Contains(text, "initialize") || strings.Contains(text, "scaffold") || strings.Contains(text, "npm"):
+		return []string{"package_json_exists"}
+	case strings.Contains(text, "install") || strings.Contains(text, "dependencies"):
+		return []string{"dependencies_declared_or_installed"}
+	case strings.Contains(text, "entrypoint") || strings.Contains(text, "entry point"):
+		return []string{"entrypoint_exists"}
+	case strings.Contains(text, "initial app"):
+		return []string{"app_component_exists"}
+	default:
+		return nil
 	}
 }
 
