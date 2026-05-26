@@ -123,6 +123,18 @@ Postgres stays on an internal Docker network (`omnidex-internal`) and is not pub
 
 For safer agent work, you can run the core service in Docker and run the CLI from a separate disposable container on the same Docker network. In that setup, Omnidex sees only the files and tools mounted into the CLI container. Your host source tree, host package managers, and host system dependencies are not touched unless you explicitly mount them writable.
 
+The recommended local topology is:
+
+```text
+native host Ollama
+  <- reached through host.docker.internal:11434
+Docker core container
+  <- reached through http://core:8090 on the compose network
+disposable CLI/toolbox container
+```
+
+Keep Ollama running natively on the system when possible, especially for GPU access, driver stability, and model cache reuse. The core container should connect outward to that host Ollama instance with `OLLAMA_BASE_URL=http://host.docker.internal:11434`; Ollama does not need to run inside the Docker network.
+
 Start the core:
 
 ```bash
@@ -182,7 +194,7 @@ See `docs/LOCAL_SERVICE_CHANNELS.md` for install steps and JavaScript, Python, G
 
 ### Ollama connectivity from Docker
 
-If Ollama runs on the host, keep:
+Recommended: run Ollama natively on the host and let the Dockerized core connect to it through Docker's host gateway. Keep:
 - `OLLAMA_BASE_URL=http://host.docker.internal:11434`
 
 If Ollama runs in another container, set `OLLAMA_BASE_URL` to that service URL.
