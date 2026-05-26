@@ -6625,6 +6625,151 @@ func TestCodexNotConfiguredSourceFileWorkRoutesToLocalCodeSpecialist(t *testing.
 	}
 }
 
+func TestArchitectWorkItemInvalidIndexHTMLUsesValidatedFallbackBeforeAdvancing(t *testing.T) {
+	workspace := t.TempDir()
+	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
+		{Content: "<!doctype html><html><body><main>No root</main><script type=\"module\" src=\"/src/main.jsx\"></script></body></html>", Rationale: "missing root"},
+		{Content: "<!doctype html><html><body><main>No root</main><script type=\"module\" src=\"/src/main.jsx\"></script></body></html>", Rationale: "same missing root"},
+		{Content: "<!doctype html><html><body><main>No root</main><script type=\"module\" src=\"/src/main.jsx\"></script></body></html>", Rationale: "same missing root"},
+	}}
+	result := CommandDecisionResult{Observations: []StructuredCommandObservation{
+		{Command: "architect.apply create package.json", ExitCode: 0},
+		{Command: "architect.apply create vite.config.js", ExitCode: 0},
+	}}
+	events := []StructuredCommandEvent{}
+	handled, err := runArchitectCodeContentLane(
+		context.Background(),
+		8,
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			CodeContentSpecialist:   code,
+		},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected architect lane to handle index.html work")
+	}
+	content, err := os.ReadFile(filepath.Join(workspace, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`<div id="root"></div>`, `src="/src/main.jsx"`} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("deterministic index.html fallback missing %q:\n%s", want, string(content))
+		}
+	}
+	for _, wantEvent := range []string{
+		"architect_work_item_repair_started",
+		"architect_work_item_repair_rejected",
+		"architect_work_item_repair_repeated_content_rejected",
+		"architect_work_item_fallback_selected",
+		"architect_work_item_fallback_validated",
+		"architect_work_item_content_fallback_used",
+		"architect_work_item_applied",
+	} {
+		if !structuredEventsContain(events, wantEvent) {
+			t.Fatalf("missing %s event: %#v", wantEvent, events)
+		}
+	}
+	if len(code.inputs) < 3 {
+		t.Fatalf("expected focused retries for index.html, got inputs=%#v", code.inputs)
+	}
+	for i := 0; i < 3; i++ {
+		if code.inputs[i].WorkItem.Path != "index.html" {
+			t.Fatalf("architect advanced before resolving index.html; input %d = %#v", i, code.inputs[i].WorkItem)
+		}
+	}
+}
+
+func TestArchitectWorkItemInvalidViteConfigUsesValidatedFallback(t *testing.T) {
+	workspace := t.TempDir()
+	code := &fakeCodeContentSpecialist{proposals: []CodeContentProposal{
+		{Content: "export default {}", Rationale: "missing plugin"},
+		{Content: "export default {}", Rationale: "same missing plugin"},
+		{Content: "export default {}", Rationale: "same missing plugin"},
+	}}
+	result := CommandDecisionResult{Observations: []StructuredCommandObservation{{Command: "architect.apply create package.json", ExitCode: 0}}}
+	events := []StructuredCommandEvent{}
+	handled, err := runArchitectCodeContentLane(
+		context.Background(),
+		9,
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			CodeContentSpecialist:   code,
+		},
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled {
+		t.Fatal("expected architect lane to handle vite.config.js work")
+	}
+	content, err := os.ReadFile(filepath.Join(workspace, "vite.config.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"import { defineConfig } from 'vite'", "import react from '@vitejs/plugin-react'", "plugins: [react()]"} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("deterministic vite config fallback missing %q:\n%s", want, string(content))
+		}
+	}
+	if !structuredEventsContain(events, "architect_work_item_fallback_validated") {
+		t.Fatalf("missing fallback validation event: %#v", events)
+	}
+}
+
+func TestArchitectContentKindRejectsCSSForJavaScriptPath(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	item := ArchitectWorkItem{ID: "create_react_entrypoint", Operation: "create", CWD: ".", Path: "src/main.jsx"}
+	err := validateCodeContentProposalForArchitectItem("body { color: red; background: white; }\n.app { display: grid; }\n", contract, item)
+	if err == nil {
+		t.Fatal("expected CSS content to be rejected for JS/JSX path")
+	}
+	if !isArchitectContentKindValidationError(err) {
+		t.Fatalf("expected content-kind rejection, got %v", err)
+	}
+}
+
+func TestArchitectContentKindRejectsJavaScriptForCSSPath(t *testing.T) {
+	contract := buildImplementationArchitectContract(
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		t.TempDir(),
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		nil,
+	)
+	item := ArchitectWorkItem{ID: "style_react_app", Operation: "create", CWD: ".", Path: "src/App.css"}
+	err := validateCodeContentProposalForArchitectItem("import React from 'react';\nexport default function App() { return null }\n", contract, item)
+	if err == nil {
+		t.Fatal("expected JavaScript content to be rejected for CSS path")
+	}
+	if !isArchitectContentKindValidationError(err) {
+		t.Fatalf("expected content-kind rejection, got %v", err)
+	}
+}
+
 func TestPackageMetadataCommandsAllowedForPackageWork(t *testing.T) {
 	toolTask := "work_kind: package_metadata_update setup_react_package_metadata configure_package_scripts install_dependencies"
 	for _, command := range []string{

@@ -561,6 +561,9 @@ func validateCodeContentProposalForArchitectItem(content string, contract Implem
 	}
 	path := filepath.ToSlash(strings.ToLower(item.Path))
 	lower := strings.ToLower(trimmed)
+	if err := validateArchitectContentKindForPath(path, trimmed); err != nil {
+		return err
+	}
 	switch path {
 	case "package.json":
 		var pkg struct {
@@ -660,6 +663,71 @@ func validateCodeContentProposalForArchitectItem(content string, contract Implem
 		}
 	}
 	return nil
+}
+
+func validateArchitectContentKindForPath(path, content string) error {
+	path = filepath.ToSlash(strings.ToLower(strings.TrimSpace(path)))
+	trimmed := strings.TrimSpace(content)
+	lower := strings.ToLower(trimmed)
+	switch {
+	case path == "vite.config.js":
+		if strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html") || looksLikeCSSContent(trimmed) {
+			return fmt.Errorf("architect work item content kind rejected: vite.config.js must be JavaScript config, not HTML or CSS")
+		}
+	case strings.HasSuffix(path, ".html"):
+		if !strings.Contains(lower, "<html") && !strings.Contains(lower, "<!doctype html") {
+			return fmt.Errorf("architect work item content kind rejected: .html path requires HTML content")
+		}
+		if strings.Contains(lower, "export default") || strings.Contains(lower, "react.createelement") {
+			return fmt.Errorf("architect work item content kind rejected: .html path received React/JavaScript module content")
+		}
+	case strings.HasSuffix(path, ".css"):
+		if strings.Contains(lower, "import react") ||
+			strings.Contains(lower, "from 'react'") ||
+			strings.Contains(lower, `from "react"`) ||
+			strings.Contains(lower, "export default") ||
+			strings.Contains(lower, "react.createelement") ||
+			strings.Contains(lower, "createroot(") {
+			return fmt.Errorf("architect work item content kind rejected: .css path requires CSS, not JavaScript or React source")
+		}
+		if strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html") {
+			return fmt.Errorf("architect work item content kind rejected: .css path requires CSS, not HTML")
+		}
+	case strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".jsx") || strings.HasSuffix(path, ".mjs"):
+		if strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html") {
+			return fmt.Errorf("architect work item content kind rejected: JavaScript path requires JS/JSX, not HTML")
+		}
+		if looksLikeCSSContent(trimmed) && !strings.Contains(lower, "export ") && !strings.Contains(lower, "import ") && !strings.Contains(lower, "function ") && !strings.Contains(lower, "const ") {
+			return fmt.Errorf("architect work item content kind rejected: JavaScript path requires JS/JSX, not raw CSS")
+		}
+	case strings.HasSuffix(path, ".json"):
+		if strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html") || strings.Contains(lower, "export default") {
+			return fmt.Errorf("architect work item content kind rejected: JSON path requires JSON content")
+		}
+	}
+	return nil
+}
+
+func looksLikeCSSContent(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	if strings.HasPrefix(lower, ".") || strings.HasPrefix(lower, "#") || strings.HasPrefix(lower, "body ") || strings.HasPrefix(lower, ":root") {
+		return strings.Contains(lower, "{") && strings.Contains(lower, "}")
+	}
+	cssNeedles := []string{"display:", "color:", "background:", "padding:", "margin:", "grid-template", "font-family:", "border-radius:"}
+	matches := 0
+	for _, needle := range cssNeedles {
+		if strings.Contains(lower, needle) {
+			matches++
+		}
+	}
+	return matches >= 2 && strings.Contains(lower, "{") && strings.Contains(lower, "}")
+}
+
+func isArchitectContentKindValidationError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "content kind rejected")
 }
 
 func deterministicArchitectContentProposal(contract ImplementationArchitectContract, item ArchitectWorkItem) (CodeContentProposal, bool) {

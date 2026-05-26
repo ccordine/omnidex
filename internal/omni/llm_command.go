@@ -4782,7 +4782,21 @@ func validateArchitectDeleteTarget(workingDir string, item ArchitectWorkItem, ta
 func generateValidatedCodeContent(ctx context.Context, step int, prompt string, contract ImplementationArchitectContract, item ArchitectWorkItem, existing string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (CodeContentProposal, error) {
 	var proposal CodeContentProposal
 	var err error
+	rejectedContent := map[string]struct{}{}
+	emitStructuredCommandEvent(onEvent, "architect_work_item_repair_started", "Implementation architect entered focused work-item repair loop", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"item_id": item.ID,
+		"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+		"status":  "generating",
+	})
 	for attempt := 0; attempt <= defaultShellSpecialistRepairAttempts; attempt++ {
+		emitStructuredCommandEvent(onEvent, "architect_work_item_repair_attempted", "Implementation architect attempted code content for focused work item", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"item_id": item.ID,
+			"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			"attempt": fmt.Sprintf("%d", attempt+1),
+			"status":  "generating",
+		})
 		proposal, err = cfg.CodeContentSpecialist.GenerateCodeContent(ctx, CodeContentSpecialistInput{
 			Step:              step,
 			UserPrompt:        prompt,
@@ -4797,7 +4811,24 @@ func generateValidatedCodeContent(ctx context.Context, step int, prompt string, 
 		if err != nil {
 			return proposal, err
 		}
+		contentFingerprint := sha256String(strings.TrimSpace(proposal.Content))
+		if _, repeated := rejectedContent[contentFingerprint]; repeated {
+			err := fmt.Errorf("repeated rejected content for architect work item %s", item.ID)
+			appendRejectedCodeContentObservation(step, item, err, result)
+			emitStructuredCommandEvent(onEvent, "architect_work_item_repair_repeated_content_rejected", "Implementation architect rejected repeated invalid content for focused work item", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"attempt": fmt.Sprintf("%d", attempt+1),
+				"status":  "rejected",
+			})
+			if attempt < defaultShellSpecialistRepairAttempts {
+				continue
+			}
+			return deterministicFallbackForRejectedArchitectItem(step, contract, item, err, onEvent)
+		}
 		if err := validateCodeContentProposalForArchitectItem(proposal.Content, contract, item); err != nil {
+			rejectedContent[contentFingerprint] = struct{}{}
 			appendRejectedCodeContentObservation(step, item, err, result)
 			emitStructuredCommandEvent(onEvent, "architect_work_item_content_rejected", "Code content rejected by architect-scoped validator", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
@@ -4805,25 +4836,79 @@ func generateValidatedCodeContent(ctx context.Context, step int, prompt string, 
 				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
 				"reason":  truncateStructuredTimelineValue(err.Error()),
 			})
+			if isArchitectContentKindValidationError(err) {
+				emitStructuredCommandEvent(onEvent, "architect_work_item_content_kind_rejected", "Code content rejected because it did not match the target file kind", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"item_id": item.ID,
+					"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+					"reason":  truncateStructuredTimelineValue(err.Error()),
+				})
+			}
+			emitStructuredCommandEvent(onEvent, "architect_work_item_repair_rejected", "Implementation architect repair attempt failed validation for focused work item", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"attempt": fmt.Sprintf("%d", attempt+1),
+				"reason":  truncateStructuredTimelineValue(err.Error()),
+				"status":  "rejected",
+			})
 			if attempt < defaultShellSpecialistRepairAttempts {
 				continue
 			}
-			if fallback, ok := deterministicArchitectContentProposal(contract, item); ok {
-				if fallbackErr := validateCodeContentProposalForArchitectItem(fallback.Content, contract, item); fallbackErr == nil {
-					emitStructuredCommandEvent(onEvent, "architect_work_item_content_fallback_used", "Implementation architect used deterministic content fallback after specialist repair failed", map[string]string{
-						"step":    fmt.Sprintf("%d", step),
-						"item_id": item.ID,
-						"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
-						"reason":  truncateStructuredTimelineValue(err.Error()),
-					})
-					return fallback, nil
-				}
-			}
-			return proposal, err
+			return deterministicFallbackForRejectedArchitectItem(step, contract, item, err, onEvent)
 		}
 		return proposal, nil
 	}
 	return proposal, nil
+}
+
+func deterministicFallbackForRejectedArchitectItem(step int, contract ImplementationArchitectContract, item ArchitectWorkItem, rejection error, onEvent func(StructuredCommandEvent)) (CodeContentProposal, error) {
+	if fallback, ok := deterministicArchitectContentProposal(contract, item); ok {
+		emitStructuredCommandEvent(onEvent, "architect_work_item_fallback_selected", "Implementation architect selected deterministic fallback for focused work item", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"item_id": item.ID,
+			"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			"reason":  truncateStructuredTimelineValue(rejection.Error()),
+			"status":  "fallback",
+		})
+		if fallbackErr := validateCodeContentProposalForArchitectItem(fallback.Content, contract, item); fallbackErr == nil {
+			emitStructuredCommandEvent(onEvent, "architect_work_item_fallback_validated", "Implementation architect deterministic fallback passed file validator", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"status":  "fallback",
+			})
+			emitStructuredCommandEvent(onEvent, "architect_work_item_content_fallback_used", "Implementation architect used deterministic content fallback after specialist repair failed", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"reason":  truncateStructuredTimelineValue(rejection.Error()),
+			})
+			return fallback, nil
+		} else {
+			emitStructuredCommandEvent(onEvent, "architect_work_item_failed_with_evidence", "Implementation architect fallback failed validation for focused work item", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"reason":  truncateStructuredTimelineValue(fallbackErr.Error()),
+				"status":  "failed",
+			})
+			return fallback, fallbackErr
+		}
+	}
+	emitStructuredCommandEvent(onEvent, "architect_work_item_failed_with_evidence", "Implementation architect repair failed and no deterministic fallback exists", map[string]string{
+		"step":    fmt.Sprintf("%d", step),
+		"item_id": item.ID,
+		"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+		"reason":  truncateStructuredTimelineValue(rejection.Error()),
+		"status":  "failed",
+	})
+	return CodeContentProposal{}, rejection
+}
+
+func sha256String(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum)
 }
 
 func appendRejectedCodeContentObservation(step int, item ArchitectWorkItem, err error, result *CommandDecisionResult) {
