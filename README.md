@@ -372,6 +372,73 @@ EMBEDDING_PROVIDER=huggingface
 HF_EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2
 ```
 
+### External coding agents: Cursor and Codex
+
+Omnidex can delegate implementation work to Cursor or Codex as bounded external coding agents. These agents are not the planner, validator, or completion authority. Omnidex still owns workspace survey, memory lookup, context compaction, objective evidence, proof commands, artifact validation, scope validation, and final completion decisions.
+
+The external-agent flow is:
+
+```text
+Omnidex prepares a mission packet
+  -> Cursor/Codex receives exact task, edit surface, read-only context, forbidden actions, and proof contract
+  -> Cursor/Codex edits files as an implementation worker
+  -> Omnidex streams agent events into the timeline
+  -> Omnidex runs local proof commands and artifact checks
+  -> Omnidex accepts, rejects, or repairs from deterministic evidence
+```
+
+External agent output is recorded as implementation evidence only. A streamed `completed` event means the worker claims its implementation is ready for validation; it does not mean the Omnidex objective is done.
+
+Cursor delegation is enabled when `CURSOR_API_KEY` is present unless explicitly disabled:
+
+```env
+CURSOR_API_KEY=...
+OMNI_CURSOR_MODEL=composer-2
+OMNI_CURSOR_TIMEOUT=90m
+OMNI_CURSOR_INSTALL_TIMEOUT=10m
+OMNI_CURSOR_SDK_RUNNER_DIR=
+OMNI_CURSOR_NODE_BIN=node
+OMNI_CURSOR_NPM_BIN=npm
+OMNI_DISABLE_CURSOR_ARCHITECT=false
+```
+
+Codex delegation is opt-in:
+
+```env
+OMNI_ENABLE_CODEX_ARCHITECT=true
+CODEX_API_KEY=...
+# OPENAI_API_KEY is also accepted when CODEX_API_KEY is unset.
+OMNI_CODEX_MODEL=gpt-5.3-codex
+OMNI_CODEX_TIMEOUT=90m
+OMNI_CODEX_INSTALL_TIMEOUT=10m
+OMNI_CODEX_SDK_RUNNER_DIR=
+OMNI_CODEX_NODE_BIN=node
+OMNI_CODEX_NPM_BIN=npm
+OMNI_CODEX_BIN=codex
+OMNI_DISABLE_CODEX_ARCHITECT=false
+```
+
+When both Cursor and Codex are configured, Omnidex currently prefers Codex for architect delegation. Cursor remains available as the fallback external implementation pilot when Codex is not enabled.
+
+Mission packets are compact by design. They include:
+
+- `task`, `mode`, `workspace`, and `target_root`
+- detected worksite state, package manager, and frameworks
+- exact edit surface and read-only context files
+- requested objectives
+- proof commands, artifact checks, and evidence predicates
+- forbidden actions such as sibling project creation, unrequested dependencies, backend/routing additions, test weakening, and completion claims
+- prepared context from route planning, documentation briefs, and relevant memories
+
+Human correction is treated as higher-authority current-run context. The safe baseline behavior is cancel and restart: Omnidex cancels the active external session, runs cleanup, revises the mission packet with the correction, refreshes the allowed/forbidden scope, and starts a new external session. Same-session interrupt/resume can be added per adapter when the underlying SDK supports it reliably.
+
+Operational rules:
+
+- Do not expose external-agent execution in untrusted/public environments.
+- External agents must not push git, create sibling projects, or install unrequested dependencies.
+- Shell/process cleanup matters after cancel, failure, or completion.
+- Local proof gates remain mandatory: build/test/smoke commands, artifact validation, scope/dependency checks, and objective evidence predicates.
+
 ### Workspace scan from Docker
 
 By default compose mounts your parent directory read-only into `/workspace` and the core scans from there.
