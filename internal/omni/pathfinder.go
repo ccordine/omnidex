@@ -301,7 +301,7 @@ func pathfinderNextAction(problem ProblemCase, selected CandidateStrategy) Pathf
 	case string(PathfinderActionInspect):
 		return PathfinderNextAction{
 			Kind:      selected.ActionKind,
-			Command:   `find . -maxdepth 3 -type f \( -name 'package.json' -o -path './src/*' -o -name 'go.mod' -o -name 'Cargo.toml' \) | sort | head -80`,
+			Command:   `find . -maxdepth 3 \( -path './node_modules' -o -path './.git' -o -path './dist' -o -path './build' -o -path './coverage' -o -path './.omni' \) -prune -o -type f \( -name 'package.json' -o -path './src/*' -o -name 'go.mod' -o -name 'Cargo.toml' \) -print | sort | head -80`,
 			ToolTask:  "Inspect package metadata and source files to replace stale file assumptions with current workspace evidence.",
 			Rationale: "A bounded read-only inventory changes the state of the problem without mutating the workspace.",
 		}

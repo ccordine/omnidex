@@ -404,7 +404,7 @@ func parseStatusProviders(override string) []string {
 	if values := parseStatusCSV(os.Getenv("WEB_SEARCH_PROVIDERS")); len(values) > 0 {
 		return values
 	}
-	return []string{"yahoo", "google", "reddit"}
+	return []string{"duckduckgo", "google", "reddit"}
 }
 
 func parseStatusCSV(value string) []string {

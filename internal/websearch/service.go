@@ -65,6 +65,20 @@ type Result struct {
 	RetrievedAt time.Time `json:"retrieved_at,omitempty"`
 }
 
+type ProviderDiagnostic struct {
+	Provider    string `json:"provider"`
+	SearchURL   string `json:"search_url,omitempty"`
+	Succeeded   bool   `json:"succeeded"`
+	ResultCount int    `json:"result_count,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+type SearchReport struct {
+	Query       string               `json:"query"`
+	Results     []Result             `json:"results"`
+	Diagnostics []ProviderDiagnostic `json:"diagnostics,omitempty"`
+}
+
 type Service struct {
 	providers       []Provider
 	perSourceBudget int
@@ -103,22 +117,34 @@ func (s *Service) Search(ctx context.Context, query string) (string, error) {
 }
 
 func (s *Service) SearchAll(ctx context.Context, query string) ([]Result, error) {
+	report, err := s.SearchAllDetailed(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return report.Results, nil
+}
+
+func (s *Service) SearchAllDetailed(ctx context.Context, query string) (SearchReport, error) {
 	query = NormalizeQuery(query)
 	if query == "" {
-		return nil, errors.New("search query is empty after normalization")
+		return SearchReport{}, errors.New("search query is empty after normalization")
 	}
 	if len(s.providers) == 0 {
-		return nil, errors.New("no web search providers configured")
+		return SearchReport{Query: query}, errors.New("no web search providers configured")
 	}
 
 	seen := map[string]struct{}{}
 	results := make([]Result, 0, len(s.providers)*s.maxCandidates)
+	diagnostics := make([]ProviderDiagnostic, 0, len(s.providers))
 	var lastErr error
 	for _, provider := range s.providers {
 		searchURL := fmt.Sprintf(provider.URLTemplate, query)
+		diagnostic := ProviderDiagnostic{Provider: provider.Name, SearchURL: searchURL}
 		body, err := s.fetchBody(ctx, searchURL)
 		if err != nil {
 			lastErr = fmt.Errorf("%s: %w", provider.Name, err)
+			diagnostic.Error = err.Error()
+			diagnostics = append(diagnostics, diagnostic)
 			continue
 		}
 		candidates := extractCandidates(provider, searchURL, body, s.maxCandidates)
@@ -185,10 +211,15 @@ func (s *Service) SearchAll(ctx context.Context, query string) ([]Result, error)
 			}
 		}
 		if fetched > 0 {
+			diagnostic.Succeeded = true
+			diagnostic.ResultCount = fetched
+			diagnostics = append(diagnostics, diagnostic)
 			continue
 		}
 		fallback := truncate(extractText(body), s.perSourceBudget)
 		if strings.TrimSpace(fallback) == "" || isLowQualitySearchResult(searchURL, provider.Name+" search results", "", fallback) {
+			diagnostic.Error = "provider returned no usable results"
+			diagnostics = append(diagnostics, diagnostic)
 			continue
 		}
 		results = append(results, Result{
@@ -199,12 +230,15 @@ func (s *Service) SearchAll(ctx context.Context, query string) ([]Result, error)
 			Content:     fallback,
 			RetrievedAt: time.Now().UTC(),
 		})
+		diagnostic.Succeeded = true
+		diagnostic.ResultCount = 1
+		diagnostics = append(diagnostics, diagnostic)
 	}
 	if len(results) == 0 {
 		if lastErr == nil {
 			lastErr = errors.New("all providers returned empty results")
 		}
-		return nil, lastErr
+		return SearchReport{Query: query, Diagnostics: diagnostics}, lastErr
 	}
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Provider == results[j].Provider {
@@ -212,7 +246,7 @@ func (s *Service) SearchAll(ctx context.Context, query string) ([]Result, error)
 		}
 		return results[i].Provider < results[j].Provider
 	})
-	return results, nil
+	return SearchReport{Query: query, Results: results, Diagnostics: diagnostics}, nil
 }
 
 func NormalizeQuery(value string) string {
@@ -554,7 +588,7 @@ func resolveProviders(providerNames []string) []Provider {
 		"duckduckgo": {Name: "duckduckgo", URLTemplate: "https://duckduckgo.com/html/?q=%s"},
 	}
 	if len(providerNames) == 0 {
-		return []Provider{known["duckduckgo"], known["yahoo"], known["google"], known["reddit"]}
+		return []Provider{known["duckduckgo"], known["google"], known["reddit"]}
 	}
 	seen := map[string]struct{}{}
 	out := make([]Provider, 0, len(providerNames))
@@ -572,7 +606,7 @@ func resolveProviders(providerNames []string) []Provider {
 		}
 	}
 	if len(out) == 0 {
-		return []Provider{known["duckduckgo"], known["yahoo"], known["google"], known["reddit"]}
+		return []Provider{known["duckduckgo"], known["google"], known["reddit"]}
 	}
 	return out
 }

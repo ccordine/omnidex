@@ -136,7 +136,7 @@ func Load() (Config, error) {
 		MemoryModel:              getenvProvider(provider, "MODEL_MEMORY", ""),
 		EmbeddingModel:           embeddingModelForProvider(embeddingProvider),
 		WebSearchEnabled:         getenvBool("WEB_SEARCH_ENABLED", true),
-		WebSearchProviders:       getenvCSV("WEB_SEARCH_PROVIDERS", []string{"yahoo", "google", "reddit"}),
+		WebSearchProviders:       getenvCSV("WEB_SEARCH_PROVIDERS", []string{"duckduckgo", "google", "reddit"}),
 		WebSearchTimeout:         getenvDuration("WEB_SEARCH_TIMEOUT", 15*time.Second),
 		WebSearchPerSourceBudget: getenvInt("WEB_SEARCH_PER_SOURCE_BUDGET", 3000),
 		WebSearchTotalBudget:     getenvInt("WEB_SEARCH_TOTAL_BUDGET", 6000),

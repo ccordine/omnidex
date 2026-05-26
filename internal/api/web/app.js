@@ -79,6 +79,8 @@ class ChatController extends Controller {
     "personaPrompt",
     "personaOutput",
     "statusOutput",
+    "researchStatusOutput",
+    "metricsOutput",
     "progress",
     "progressState",
     "spinner",
@@ -142,6 +144,7 @@ class ChatController extends Controller {
     }
     if (name === "jobs") this.loadJobs();
     if (name === "memory") this.loadMemoryCandidates();
+    if (name === "metrics") this.loadMetrics();
     if (name === "admin") this.loadStatus();
   }
 
@@ -434,6 +437,51 @@ class ChatController extends Controller {
     this.queueEnabled = Boolean(payload.queue_enabled);
     this.transportTarget.textContent = this.queueEnabled ? "queue jobs" : "direct instruct";
     this.addEvent("status_loaded", payload);
+    await this.loadResearchStatus();
+  }
+
+  async loadResearchStatus() {
+    if (!this.hasResearchStatusOutputTarget) return;
+    try {
+      const payload = await readJSON(await fetch("/v1/status/research"));
+      this.recycle("research-status-output", renderResearchStatus(payload));
+      this.addEvent("research_status_loaded", {
+        provider: payload.generation_provider?.provider || "unknown",
+        runnable: Boolean(payload.research_runnable),
+        ollama_reachable: Boolean(payload.ollama?.reachable),
+        web_reachable: Boolean(payload.web_search?.reachable_provider),
+      }, payload);
+    } catch (error) {
+      this.recycle("research-status-output", `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
+      this.addEvent("research_status_failed", { error: error.message || String(error) });
+    }
+  }
+
+  async loadMetrics() {
+    if (!this.queueEnabled) {
+      this.recycle("metrics-output", emptyState("Metrics require repository mode."));
+      return;
+    }
+    if (this.hasMetricsOutputTarget) this.recycle("metrics-output", emptyState("Loading metrics..."));
+    try {
+      const [live, models, playbooks, benchmarks] = await Promise.all([
+        readJSON(await fetch("/v1/metrics/live")),
+        readJSON(await fetch("/v1/metrics/models")),
+        readJSON(await fetch("/v1/metrics/playbooks")),
+        readJSON(await fetch("/v1/metrics/benchmarks")),
+      ]);
+      this.recycle("metrics-output", renderMetricsDashboard(live, models.models || [], playbooks.playbooks || [], benchmarks.benchmarks || []));
+      this.addEvent("metrics_loaded", {
+        live_runs: (live.live_runs || []).length,
+        recent_runs: (live.recent_runs || []).length,
+        models: (models.models || []).length,
+        playbooks: (playbooks.playbooks || []).length,
+        benchmarks: (benchmarks.benchmarks || []).length,
+      }, { live, models, playbooks, benchmarks });
+    } catch (error) {
+      this.recycle("metrics-output", `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
+      this.addEvent("metrics_failed", { error: error.message || String(error) });
+    }
   }
 
   async migrateFresh() {
@@ -974,6 +1022,199 @@ function renderContextPayload(context) {
       <pre class="scrollbar mt-3 max-h-[44vh] overflow-auto whitespace-pre-wrap text-xs leading-5 text-zinc-200">${escapeHTML(context.value || "")}</pre>
     </div>
   `;
+}
+
+function renderResearchStatus(payload) {
+  const generation = payload.generation_provider || {};
+  const ollama = payload.ollama || {};
+  const web = payload.web_search || {};
+  const warnings = payload.warnings || [];
+  const probes = web.probes || [];
+  return `
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        ${metricTile("Runnable", payload.research_runnable ? "yes" : "no", payload.research_runnable ? "ok" : "bad")}
+        ${metricTile("Provider", generation.provider || "unknown", generation.reachable ? "ok" : "bad")}
+        ${metricTile("Ollama", ollama.reachable ? "reachable" : "down", ollama.reachable ? "ok" : "bad")}
+        ${metricTile("Web", web.enabled ? (web.reachable_provider ? "reachable" : "degraded") : "disabled", web.enabled && web.reachable_provider ? "ok" : "warn")}
+      </div>
+      <div class="rounded border border-white/10 bg-white/[.03] p-3">
+        <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Ollama</div>
+        <dl class="mt-2 space-y-1 font-mono text-xs text-zinc-300">
+          <div><span class="text-zinc-500">base_url</span> ${escapeHTML(ollama.base_url || "n/a")}</div>
+          <div><span class="text-zinc-500">configured</span> ${escapeHTML((ollama.configured_models || []).join(", ") || "none")}</div>
+          <div><span class="text-zinc-500">missing</span> ${escapeHTML((ollama.missing_models || []).join(", ") || "none")}</div>
+          <div><span class="text-zinc-500">embedding</span> ${escapeHTML(ollama.embedding_model || "n/a")} ${ollama.embedding_available ? "(available)" : "(not found)"}</div>
+          ${ollama.last_provider_error ? `<div class="text-rose-200"><span class="text-rose-300">error</span> ${escapeHTML(ollama.last_provider_error)}</div>` : ""}
+        </dl>
+      </div>
+      <div class="rounded border border-white/10 bg-white/[.03] p-3">
+        <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Web Providers</div>
+        <div class="mt-2 space-y-2">
+          ${probes.map((probe) => `
+            <div class="rounded border border-white/10 bg-zinc-950/40 p-2 font-mono text-xs">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-zinc-200">${escapeHTML(probe.provider || "provider")}</span>
+                <span class="${probe.reachable ? "text-emerald-200" : "text-rose-200"}">${probe.reachable ? "ok" : "failed"}</span>
+              </div>
+              <div class="mt-1 truncate text-zinc-500">${escapeHTML(probe.target_url || "")}</div>
+              ${probe.error ? `<div class="mt-1 text-rose-200">${escapeHTML(probe.error)}</div>` : `<div class="mt-1 text-zinc-400">status=${escapeHTML(probe.status_code || "")}</div>`}
+            </div>
+          `).join("") || `<div class="text-zinc-500">No provider probes.</div>`}
+        </div>
+      </div>
+      ${warnings.length ? `<div class="rounded border border-amber-300/30 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">${warnings.map(escapeHTML).join("<br>")}</div>` : ""}
+    </div>
+  `;
+}
+
+function renderMetricsDashboard(live, models, playbooks, benchmarks) {
+  const statusCounts = live.status_counts || {};
+  const liveRuns = live.live_runs || [];
+  const recentRuns = live.recent_runs || [];
+  const blockers = live.common_blockers || [];
+  const completed = Number(statusCounts.completed || 0);
+  const failed = Number(statusCounts.failed || 0);
+  const cancelled = Number(statusCounts.canceled || statusCounts.cancelled || 0);
+  const totalTerminal = completed + failed + cancelled;
+  const successRate = totalTerminal > 0 ? `${Math.round((completed / totalTerminal) * 100)}%` : "n/a";
+  return `
+    <div class="grid gap-4 xl:grid-cols-4">
+      ${metricTile("Live Runs", String(liveRuns.length), liveRuns.length ? "warn" : "ok")}
+      ${metricTile("Recent Runs", String(recentRuns.length), "ok")}
+      ${metricTile("Success Rate", successRate, completed >= failed ? "ok" : "warn")}
+      ${metricTile("Blocker Types", String(blockers.length), blockers.length ? "warn" : "ok")}
+    </div>
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Live Run Timeline</h3>
+          <span class="font-mono text-xs text-zinc-500">${escapeHTML(liveRuns.length)} active</span>
+        </div>
+        <div class="mt-3 space-y-3">${liveRuns.map(renderMetricRun).join("") || emptyState("No active telemetry runs.")}</div>
+      </section>
+      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Run Health</h3>
+        <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+          ${Object.entries(statusCounts).map(([key, value]) => metricTile(key, String(value), key === "completed" ? "ok" : key === "failed" ? "bad" : "warn")).join("") || emptyState("No status counts yet.")}
+        </div>
+      </section>
+    </div>
+    <div class="grid gap-4 xl:grid-cols-3">
+      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Recent Outcomes</h3>
+        <div class="mt-3 space-y-2">${recentRuns.slice(0, 8).map(renderMetricRun).join("") || emptyState("No telemetry runs yet.")}</div>
+      </section>
+      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Common Blockers</h3>
+        <div class="mt-3 space-y-2">${blockers.map(renderMetricCount).join("") || emptyState("No blocker metrics yet.")}</div>
+      </section>
+      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Model Performance</h3>
+        <div class="mt-3 space-y-2">${models.slice(0, 8).map(renderMetricModel).join("") || emptyState("No model metrics yet.")}</div>
+      </section>
+    </div>
+    <div class="grid gap-4 xl:grid-cols-2">
+      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Playbook Leverage</h3>
+        <div class="mt-3 space-y-2">${playbooks.slice(0, 8).map(renderMetricPlaybook).join("") || emptyState("No playbook usage metrics yet.")}</div>
+      </section>
+      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Benchmarks</h3>
+        <div class="mt-3 space-y-2">${benchmarks.slice(0, 8).map(renderMetricBenchmark).join("") || emptyState("No benchmark metrics yet.")}</div>
+      </section>
+    </div>
+  `;
+}
+
+function renderMetricRun(run) {
+  return `
+    <div class="rounded border border-white/10 bg-white/[.03] p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="font-mono text-xs text-cyan-200">${escapeHTML((run.id || "").slice(0, 8) || "run")}</span>
+        <span class="${statusPillClass(run.status)}">${escapeHTML(run.status || "unknown")}</span>
+      </div>
+      <div class="mt-2 text-sm text-zinc-200">${escapeHTML(run.task_kind || run.project_type || "unclassified task")}</div>
+      <div class="mt-1 font-mono text-xs text-zinc-500">${escapeHTML(run.workspace_id || "workspace n/a")} · ${escapeHTML(formatDurationMS(run.duration_ms))}</div>
+    </div>
+  `;
+}
+
+function renderMetricCount(item) {
+  return `
+    <div class="flex items-center justify-between gap-3 rounded border border-white/10 bg-white/[.03] p-3">
+      <span class="font-mono text-xs text-zinc-300">${escapeHTML(item.key || "unknown")}</span>
+      <span class="font-mono text-xs text-amber-200">${escapeHTML(item.count || 0)}</span>
+    </div>
+  `;
+}
+
+function renderMetricModel(model) {
+  const calls = Number(model.calls || 0);
+  const successes = Number(model.successes || 0);
+  const rate = calls > 0 ? `${Math.round((successes / calls) * 100)}%` : "n/a";
+  return `
+    <div class="rounded border border-white/10 bg-white/[.03] p-3">
+      <div class="flex items-center justify-between gap-2">
+        <span class="truncate text-sm text-zinc-200">${escapeHTML(model.role || "role")}</span>
+        <span class="font-mono text-xs text-emerald-200">${escapeHTML(rate)}</span>
+      </div>
+      <div class="mt-1 truncate font-mono text-xs text-zinc-500">${escapeHTML(model.provider || "provider")} / ${escapeHTML(model.model || "model")}</div>
+      <div class="mt-2 grid grid-cols-3 gap-2 text-center font-mono text-xs text-zinc-300">
+        <span>calls ${escapeHTML(calls)}</span>
+        <span>bad ${escapeHTML(model.failures || 0)}</span>
+        <span>${escapeHTML(Math.round(model.avg_latency_ms || 0))}ms</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderMetricPlaybook(playbook) {
+  return `
+    <div class="rounded border border-white/10 bg-white/[.03] p-3">
+      <div class="truncate font-mono text-xs text-cyan-200">${escapeHTML(playbook.playbook_id || "playbook")}</div>
+      <div class="mt-2 grid grid-cols-4 gap-2 text-center font-mono text-xs text-zinc-300">
+        <span>uses ${escapeHTML(playbook.uses || 0)}</span>
+        <span>reused ${escapeHTML(playbook.reused || 0)}</span>
+        <span>ok ${escapeHTML(playbook.successes || 0)}</span>
+        <span>bad ${escapeHTML(playbook.failures || 0)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderMetricBenchmark(item) {
+  return `
+    <div class="rounded border border-white/10 bg-white/[.03] p-3">
+      <div class="flex items-center justify-between gap-2">
+        <span class="truncate font-mono text-xs text-cyan-200">${escapeHTML(item.benchmark_id || "benchmark")}</span>
+        <span class="font-mono text-xs text-zinc-500">${escapeHTML(item.runs || 0)} runs</span>
+      </div>
+      <div class="mt-2 grid grid-cols-3 gap-2 text-center font-mono text-xs text-zinc-300">
+        <span>ok ${escapeHTML(item.successes || 0)}</span>
+        <span>bad ${escapeHTML(item.failures || 0)}</span>
+        <span>${escapeHTML(formatDurationMS(item.avg_duration_ms))}</span>
+      </div>
+    </div>
+  `;
+}
+
+function metricTile(label, value, mode) {
+  const tone = mode === "ok" ? "text-emerald-200" : mode === "bad" ? "text-rose-200" : "text-amber-200";
+  return `
+    <div class="rounded border border-white/10 bg-white/[.03] p-3">
+      <div class="text-[11px] uppercase tracking-[.16em] text-zinc-500">${escapeHTML(label)}</div>
+      <div class="mt-1 truncate font-mono text-xs ${tone}">${escapeHTML(value)}</div>
+    </div>
+  `;
+}
+
+function formatDurationMS(value) {
+  const ms = Number(value || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return "n/a";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60000) return `${Math.round(ms / 1000)}s`;
+  return `${Math.round(ms / 60000)}m`;
 }
 
 function renderDetailRows(details) {

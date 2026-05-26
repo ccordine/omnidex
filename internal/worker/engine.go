@@ -4605,10 +4605,16 @@ func (s *Service) runWebSearchStep(ctx context.Context, claim *model.ClaimedStep
 	}
 	s.emitStepStream(claim.Step.ID, "stdout", "web search query: "+strings.TrimSpace(query))
 
-	results, err := s.webSearch.SearchAll(ctx, query)
+	report, err := s.webSearch.SearchAllDetailed(ctx, query)
+	emitWebSearchProviderDiagnostics(s, claim.Step.ID, report.Diagnostics)
 	if err != nil {
 		s.emitStepStream(claim.Step.ID, "stderr", "web search error: "+err.Error())
 		output := fmt.Sprintf("web search failed for query %q: %v", strings.TrimSpace(query), err)
+		if hasLocalResearchFallbackContext(contexts) {
+			degraded := output + "\n\nResearch degraded mode: web search failed, but local retrieval/workspace/documentation context is available. Downstream steps must treat external freshness as insufficient and cite only captured local evidence."
+			s.emitStepEvent(claim.Step.ID, "web_search_degraded", "reason=provider_failure local_context=available")
+			return s.repo.CompleteStep(ctx, claim.Step.ID, degraded, "web_search", degraded)
+		}
 		if planNeedsExternal && !persistent {
 			question := "Web search failed but fresh context is required. Provide a better query/source hints (or disable web requirement) and submit feedback."
 			s.emitStepEvent(claim.Step.ID, "web_search_waiting_input", "reason=search_failed")
@@ -4620,6 +4626,7 @@ func (s *Service) runWebSearchStep(ctx context.Context, claim *model.ClaimedStep
 		s.emitStepEvent(claim.Step.ID, "web_search_skipped", "reason=search_failed")
 		return s.repo.CompleteStep(ctx, claim.Step.ID, output, "web_search", output)
 	}
+	results := report.Results
 
 	if persisted, persistErr := s.persistWebSearchResults(ctx, claim.Job, query, results, contexts); persistErr != nil {
 		s.logger.Printf("job=%d web search memory persist warning: %v", claim.Job.ID, persistErr)
@@ -4645,6 +4652,34 @@ func (s *Service) runWebSearchStep(ctx context.Context, claim *model.ClaimedStep
 	s.emitStepEvent(claim.Step.ID, "web_search_ready", fmt.Sprintf("context_chars=%d", len(webContext)))
 
 	return s.repo.CompleteStep(ctx, claim.Step.ID, webContext, "web_search", webContext)
+}
+
+func hasLocalResearchFallbackContext(contexts map[string]string) bool {
+	for _, key := range []string{"retrieval", "workspace_scan", "workspace_research", "documentation", "documentation_research", "memory", "prep_context"} {
+		if strings.TrimSpace(contexts[key]) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func emitWebSearchProviderDiagnostics(s *Service, stepID int64, diagnostics []websearch.ProviderDiagnostic) {
+	if s == nil || len(diagnostics) == 0 {
+		return
+	}
+	for _, diagnostic := range diagnostics {
+		provider := strings.TrimSpace(diagnostic.Provider)
+		if provider == "" {
+			provider = "unknown"
+		}
+		if strings.TrimSpace(diagnostic.Error) != "" {
+			s.emitStepEvent(stepID, "web_search_provider_failed", fmt.Sprintf("provider=%s error=%s", provider, safeLine(diagnostic.Error, "failed")))
+			continue
+		}
+		if diagnostic.Succeeded {
+			s.emitStepEvent(stepID, "web_search_provider_succeeded", fmt.Sprintf("provider=%s results=%d", provider, diagnostic.ResultCount))
+		}
+	}
 }
 
 func (s *Service) persistWebSearchResults(ctx context.Context, job model.Job, query string, results []websearch.Result, contexts map[string]string) (int, error) {

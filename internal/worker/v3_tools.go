@@ -442,10 +442,11 @@ func newV3ToolRegistry(s *Service) *toolruntime.Registry {
 		if query == "" {
 			return toolruntime.Result{}, fmt.Errorf("web.search query is required")
 		}
-		results, err := s.webSearch.SearchAll(ctx, query)
+		report, err := s.webSearch.SearchAllDetailed(ctx, query)
 		if err != nil {
 			return toolruntime.Result{}, err
 		}
+		results := report.Results
 		documents := make([]map[string]any, 0, len(results))
 		evidenceRecords := make([]evidence.Record, 0, len(results))
 		for _, result := range results {

@@ -24,6 +24,8 @@ func TestUIServesChatShell(t *testing.T) {
 		`data-controller="gx chat"`,
 		`id="gx-global-loading-indicator"`,
 		`data-chat-target="progress"`,
+		`data-chat-target="researchStatusOutput"`,
+		`data-chat-target="metricsOutput"`,
 		`data-recyclr-sink="modal"`,
 		"/ui/app.js",
 	} {
@@ -51,6 +53,8 @@ func TestUIServesStaticAssets(t *testing.T) {
 		"data-recyclr-target",
 		"openTimelineItem",
 		"renderProgress",
+		"renderResearchStatus",
+		"renderMetricsDashboard",
 		"evt_",
 	} {
 		if !strings.Contains(body, want) {

@@ -62,6 +62,9 @@ type Server struct {
 	huggingFaceAPIKey         string
 	huggingFaceDefaultModel   string
 	huggingFaceEmbeddingModel string
+	webSearchEnabled          bool
+	webSearchProviders        []string
+	webSearchTimeout          time.Duration
 }
 
 type ServerOptions struct {
@@ -99,6 +102,9 @@ type ServerOptions struct {
 	HuggingFaceAPIKey         string
 	HuggingFaceDefaultModel   string
 	HuggingFaceEmbeddingModel string
+	WebSearchEnabled          bool
+	WebSearchProviders        []string
+	WebSearchTimeout          time.Duration
 }
 
 type enqueueRequest struct {
@@ -267,6 +273,9 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		huggingFaceAPIKey:         strings.TrimSpace(options.HuggingFaceAPIKey),
 		huggingFaceDefaultModel:   strings.TrimSpace(options.HuggingFaceDefaultModel),
 		huggingFaceEmbeddingModel: strings.TrimSpace(options.HuggingFaceEmbeddingModel),
+		webSearchEnabled:          options.WebSearchEnabled,
+		webSearchProviders:        append([]string(nil), options.WebSearchProviders...),
+		webSearchTimeout:          options.WebSearchTimeout,
 	}
 	s.routes()
 	return s
@@ -278,6 +287,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
+	s.mux.HandleFunc("/v1/status/research", s.handleResearchStatus)
 	s.mux.HandleFunc("/v1/instruct", s.handleInstruct)
 	s.mux.HandleFunc("/v1/roleplay", s.handleRoleplay)
 	s.mux.HandleFunc("/v1/narrate", s.handleNarrate)
@@ -853,6 +863,15 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 	if len(req.Metadata) == 0 {
 		req.Metadata = []byte(`{}`)
 	}
+	if s.researchJobNeedsGeneration(req) {
+		ctx, cancel := context.WithTimeout(r.Context(), researchStatusTimeout)
+		status := s.collectResearchStatus(ctx)
+		cancel()
+		if !status.GenerationProvider.Reachable {
+			writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("research job rejected: generation provider %s is unreachable from core: %s", status.GenerationProvider.Provider, safeStatusError(status.GenerationProvider.Error)))
+			return
+		}
+	}
 	if s.v3Enabled {
 		var payload map[string]any
 		if err := json.Unmarshal(req.Metadata, &payload); err != nil {
@@ -882,6 +901,37 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"job": job,
 	})
+}
+
+func (s *Server) researchJobNeedsGeneration(req enqueueRequest) bool {
+	pipeline := strings.ToLower(strings.TrimSpace(req.Pipeline))
+	if strings.Contains(pipeline, "research") {
+		return true
+	}
+	instruction := strings.ToLower(strings.TrimSpace(req.Instruction))
+	if strings.Contains(instruction, "research") || strings.Contains(instruction, "look up") || strings.Contains(instruction, "search online") || strings.Contains(instruction, "search the web") {
+		return true
+	}
+	var metadata map[string]any
+	if len(req.Metadata) > 0 && json.Unmarshal(req.Metadata, &metadata) == nil {
+		for _, key := range []string{"research_topic", "research_slug", "search_query", "web_search"} {
+			if value, ok := metadata[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func safeStatusError(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unavailable"
+	}
+	if len(value) > 300 {
+		return value[:300] + "...[truncated]"
+	}
+	return value
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {

@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultExpertiseAgentID = "omni_expertise_manager"
-	defaultExpertiseKind    = "expertise_research"
+	defaultExpertiseKind    = MemoryKindExpertise
 )
 
 type ExpertiseResearchPlan struct {
@@ -254,6 +254,7 @@ func formatExpertiseSourceMemory(plan ExpertiseResearchPlan, query string, resul
 	}
 	return strings.TrimSpace(strings.Join([]string{
 		"EXPERTISE_SOURCE_MEMORY",
+		"memory_kind: " + MemoryKindSource,
 		"subject: " + plan.Subject,
 		"query: " + strings.TrimSpace(query),
 		"title: " + strings.TrimSpace(result.Title),
@@ -268,6 +269,7 @@ func formatExpertiseSourceMemory(plan ExpertiseResearchPlan, query string, resul
 func formatExpertiseOmnibusMemory(plan ExpertiseResearchPlan, queryResults map[string][]websearch.Result) string {
 	lines := []string{
 		"EXPERTISE_OMNIBUS_MEMORY",
+		"memory_kind: " + MemoryKindExpertise,
 		"subject: " + plan.Subject,
 		"adjacent_topics: " + strings.Join(plan.AdjacentTopics, ", "),
 		"success_criteria: " + strings.Join(plan.SuccessCriteria, "; "),

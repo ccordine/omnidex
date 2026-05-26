@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -123,6 +124,28 @@ func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline strin
 	job.Result = stringOrEmpty(result)
 	job.Error = stringOrEmpty(errText)
 
+	telemetryRunID, err := createTelemetryRunForJob(ctx, tx, job, projectID)
+	if err != nil {
+		return model.Job{}, err
+	}
+	if telemetryRunID != "" {
+		if err := tx.QueryRow(ctx, `
+			UPDATE jobs
+			SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{telemetry_run_id}', to_jsonb($2::text), true)
+			WHERE id = $1
+			RETURNING metadata
+		`, job.ID, telemetryRunID).Scan(&job.Metadata); err != nil {
+			return model.Job{}, err
+		}
+		if err := recordTelemetryJobEvent(ctx, tx, job.ID, "run_started", map[string]any{
+			"job_id":   job.ID,
+			"pipeline": job.Pipeline,
+			"status":   job.Status,
+		}); err != nil {
+			return model.Job{}, err
+		}
+	}
+
 	steps := stepsForJob(pipeline, metadataJSON)
 	for _, step := range steps {
 		if _, err := tx.Exec(ctx, `
@@ -161,6 +184,161 @@ func resolveProjectID(ctx context.Context, tx pgx.Tx, metadataJSON []byte) (*int
 		return nil, err
 	}
 	return &projectID, nil
+}
+
+func createTelemetryRunForJob(ctx context.Context, tx pgx.Tx, job model.Job, projectID *int64) (string, error) {
+	if job.ID <= 0 {
+		return "", nil
+	}
+	metadata := decodeMetadataObject(job.Metadata)
+	workspaceID := strings.TrimSpace(firstMetadataString(metadata, "workspace_id", "workspace", "workspace_root", "project_location"))
+	if workspaceID == "" {
+		workspaceID = projectLocationFromMetadata(job.Metadata)
+	}
+	projectType := strings.TrimSpace(firstMetadataString(metadata, "project_type", "framework", "stack"))
+	taskKind := strings.TrimSpace(firstMetadataString(metadata, "task_kind", "kind"))
+	if taskKind == "" {
+		taskKind = inferTelemetryTaskKind(job.Pipeline, job.Instruction, metadata)
+	}
+	promptHash := telemetryPromptHash(job.Instruction)
+	promptSummary := telemetryPromptSummary(job.Instruction, 240)
+	summary := map[string]any{
+		"job_id":         job.ID,
+		"pipeline":       job.Pipeline,
+		"project_id":     projectID,
+		"prompt_summary": promptSummary,
+	}
+	var id string
+	err := tx.QueryRow(ctx, `
+		INSERT INTO omni_runs (session_id, workspace_id, task_kind, prompt_hash, prompt_summary, project_type, recipe_id, playbook_id, status, started_at, local_only, external_agents_used, model_roles, summary)
+		VALUES (NULLIF($1,''), NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14)
+		RETURNING id::text
+	`, firstMetadataString(metadata, "session_id"), workspaceID, taskKind, promptHash, promptSummary, projectType, firstMetadataString(metadata, "recipe_id"), firstMetadataString(metadata, "playbook_id"), "pending", job.CreatedAt, len(metadataStringSlice(metadata, "external_agents_used")) == 0, metadataStringSlice(metadata, "external_agents_used"), jsonParam(metadataValue(metadata, "model_roles")), jsonParam(summary)).Scan(&id)
+	return id, err
+}
+
+func completeTelemetryRunForJob(ctx context.Context, tx pgx.Tx, jobID int64, status string, summary any, completionEvidence any) error {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "completed"
+	}
+	_, err := tx.Exec(ctx, `
+		UPDATE omni_runs
+		SET status = $2,
+		    finished_at = NOW(),
+		    duration_ms = GREATEST(0, (EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000)::bigint),
+		    summary = $3,
+		    completion_evidence = $4,
+		    updated_at = NOW()
+		WHERE id = NULLIF((SELECT metadata->>'telemetry_run_id' FROM jobs WHERE id = $1), '')::uuid
+	`, jobID, status, jsonParam(summary), jsonParam(completionEvidence))
+	return err
+}
+
+func recordTelemetryJobEvent(ctx context.Context, tx pgx.Tx, jobID int64, eventType string, payload any) error {
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "" {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO omni_run_events (run_id, event_type, payload)
+		SELECT NULLIF(metadata->>'telemetry_run_id', '')::uuid, $2, $3
+		FROM jobs
+		WHERE id = $1 AND NULLIF(metadata->>'telemetry_run_id', '') IS NOT NULL
+	`, jobID, eventType, jsonParam(payload))
+	return err
+}
+
+func decodeMetadataObject(raw json.RawMessage) map[string]any {
+	out := map[string]any{}
+	if len(raw) == 0 {
+		return out
+	}
+	_ = json.Unmarshal(raw, &out)
+	return out
+}
+
+func firstMetadataString(metadata map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(fmt.Sprint(metadata[key])); value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	return ""
+}
+
+func metadataValue(metadata map[string]any, key string) any {
+	if value, ok := metadata[key]; ok && value != nil {
+		return value
+	}
+	return map[string]any{}
+}
+
+func metadataStringSlice(metadata map[string]any, key string) []string {
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" && text != "<nil>" {
+				out = append(out, text)
+			}
+		}
+		return out
+	case string:
+		parts := strings.Split(typed, ",")
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if item := strings.TrimSpace(part); item != "" {
+				out = append(out, item)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func inferTelemetryTaskKind(pipeline, instruction string, metadata map[string]any) string {
+	if kind := strings.TrimSpace(firstMetadataString(metadata, "research_topic")); kind != "" {
+		return "research"
+	}
+	pipeline = strings.ToLower(strings.TrimSpace(pipeline))
+	switch pipeline {
+	case model.PipelineCoding:
+		return "coding"
+	case model.PipelineStory:
+		return "story"
+	case model.PipelineChat:
+		return "chat"
+	}
+	lower := strings.ToLower(instruction)
+	switch {
+	case strings.Contains(lower, "research"), strings.Contains(lower, "look up"), strings.Contains(lower, "search"):
+		return "research"
+	case strings.Contains(lower, "build"), strings.Contains(lower, "code"), strings.Contains(lower, "test"), strings.Contains(lower, "fix"):
+		return "coding"
+	default:
+		return pipeline
+	}
+}
+
+func telemetryPromptHash(instruction string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(instruction)))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func telemetryPromptSummary(instruction string, max int) string {
+	text := strings.Join(strings.Fields(strings.TrimSpace(instruction)), " ")
+	if max > 0 && len(text) > max {
+		return text[:max] + "...[redacted]"
+	}
+	return text
 }
 
 func projectLocationFromMetadata(metadataJSON []byte) string {
@@ -1010,6 +1188,12 @@ func (r *Repository) CompleteStep(ctx context.Context, stepID int64, output, con
 		`, jobID, model.JobStatusCompleted, output, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting); err != nil {
 			return err
 		}
+		if err := completeTelemetryRunForJob(ctx, tx, jobID, model.JobStatusCompleted, map[string]any{"job_id": jobID, "result": output}, map[string]any{"terminal_step_id": stepID, "context_key": contextKey}); err != nil {
+			return err
+		}
+		if err := recordTelemetryJobEvent(ctx, tx, jobID, "run_completed", map[string]any{"job_id": jobID, "step_id": stepID}); err != nil {
+			return err
+		}
 	} else {
 		if _, err := tx.Exec(ctx, `
 			UPDATE jobs
@@ -1060,6 +1244,12 @@ func (r *Repository) FailStep(ctx context.Context, stepID int64, errMsg string) 
 		SET status = $2, error = $3, completed_at = NOW(), updated_at = NOW()
 		WHERE id = $1 AND status IN ($4, $5, $6)
 	`, jobID, model.JobStatusFailed, errMsg, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting); err != nil {
+		return err
+	}
+	if err := completeTelemetryRunForJob(ctx, tx, jobID, model.JobStatusFailed, map[string]any{"job_id": jobID, "error": errMsg}, map[string]any{"failed_step_id": stepID}); err != nil {
+		return err
+	}
+	if err := recordTelemetryJobEvent(ctx, tx, jobID, "run_failed", map[string]any{"job_id": jobID, "step_id": stepID, "error": errMsg}); err != nil {
 		return err
 	}
 
@@ -1211,6 +1401,12 @@ func (r *Repository) SubmitJobFeedback(ctx context.Context, jobID int64, feedbac
 			SET status = $2, result = COALESCE(NULLIF($3, ''), result), completed_at = NOW(), updated_at = NOW(), error = NULL
 			WHERE id = $1 AND status IN ($4, $5, $6)
 		`, jobID, model.JobStatusCompleted, feedback, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting); err != nil {
+			return model.Job{}, err
+		}
+		if err := completeTelemetryRunForJob(ctx, tx, jobID, model.JobStatusCompleted, map[string]any{"job_id": jobID, "result": feedback}, map[string]any{"user_feedback_step_id": stepID}); err != nil {
+			return model.Job{}, err
+		}
+		if err := recordTelemetryJobEvent(ctx, tx, jobID, "run_completed", map[string]any{"job_id": jobID, "step_id": stepID, "source": "user_feedback"}); err != nil {
 			return model.Job{}, err
 		}
 	} else {
@@ -1411,6 +1607,12 @@ func (r *Repository) InterruptJob(ctx context.Context, jobID int64, feedback str
 		`, jobID, model.JobStatusCompleted, feedback, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting); err != nil {
 			return model.Job{}, err
 		}
+		if err := completeTelemetryRunForJob(ctx, tx, jobID, model.JobStatusCompleted, map[string]any{"job_id": jobID, "result": feedback}, map[string]any{"interrupt_step_id": stepID}); err != nil {
+			return model.Job{}, err
+		}
+		if err := recordTelemetryJobEvent(ctx, tx, jobID, "run_completed", map[string]any{"job_id": jobID, "step_id": stepID, "source": "interrupt"}); err != nil {
+			return model.Job{}, err
+		}
 	} else {
 		if _, err := tx.Exec(ctx, `
 			UPDATE jobs
@@ -1487,6 +1689,12 @@ func (r *Repository) CancelJob(ctx context.Context, jobID int64, reason string) 
 		SET status = $2, error = $3, completed_at = NOW(), updated_at = NOW()
 		WHERE id = $1
 	`, jobID, model.JobStatusCanceled, reason); err != nil {
+		return model.Job{}, err
+	}
+	if err := completeTelemetryRunForJob(ctx, tx, jobID, model.JobStatusCanceled, map[string]any{"job_id": jobID, "error": reason}, map[string]any{"cancel_reason": reason}); err != nil {
+		return model.Job{}, err
+	}
+	if err := recordTelemetryJobEvent(ctx, tx, jobID, "run_cancelled", map[string]any{"job_id": jobID, "reason": reason}); err != nil {
 		return model.Job{}, err
 	}
 

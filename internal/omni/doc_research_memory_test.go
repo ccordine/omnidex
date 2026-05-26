@@ -67,16 +67,22 @@ func TestDocumentationResearchCatalogsDocsIntoPGMemoryAndReusesWithoutScrape(t *
 	if !result.Research.Found || result.Research.WorkerCount < 2 || result.Research.ChunkCount < 2 {
 		t.Fatalf("research did not use chunked worker search: %#v", result.Research)
 	}
-	if result.StoredCount != 2 {
-		t.Fatalf("stored memories = %d, want 2", result.StoredCount)
+	if result.StoredCount != 4 {
+		t.Fatalf("stored memories = %d, want source, expertise, and index memories", result.StoredCount)
+	}
+	if !result.Completed || result.Degraded || !result.RecallVerified {
+		t.Fatalf("research should complete with verified recall and no degradation: %#v", result)
 	}
 	if !memoryRecordsContain(result.StoredMemories, "DOC_RESEARCH_MEMORY") {
 		t.Fatalf("stored memories missing documentation header: %#v", result.StoredMemories)
 	}
+	if !memoryRecordsContain(result.StoredMemories, "DOC_EXPERTISE_MEMORY") || !memoryRecordsContain(result.StoredMemories, "RESEARCH_INDEX_MEMORY") {
+		t.Fatalf("stored memories missing expertise/index receipt: %#v", result.StoredMemories)
+	}
 	if !memoryRecordsContain(result.StoredMemories, "line=") || !memoryRecordsContain(result.StoredMemories, "start_offset=") {
 		t.Fatalf("stored memories missing exact location metadata: %#v", result.StoredMemories)
 	}
-	for _, wantTag := range []string{"documentation", "doc-research", "tailwind", "postgres", "project-patterns", "source:tailwind-width", "source:postgres-validation"} {
+	for _, wantTag := range []string{"documentation", "doc-research", "tailwind", "postgres", "project-patterns", "source:tailwind-width", "source:postgres-validation", "expertise-memory", "research-index-memory"} {
 		if !memoryRecordHasTag(result.StoredMemories, wantTag) {
 			t.Fatalf("stored memories missing tag %q: %#v", wantTag, result.StoredMemories)
 		}
@@ -117,6 +123,60 @@ func TestDocumentationResearchCatalogsDocsIntoPGMemoryAndReusesWithoutScrape(t *
 		if !runner.SawSQL(wantSQL) {
 			t.Fatalf("runner did not execute SQL containing %q\nqueries:\n%s", wantSQL, strings.Join(runner.SQLLog, "\n---\n"))
 		}
+	}
+}
+
+func TestDocumentationResearchDegradesOnFailedFetchAndStillVerifiesStoredMemory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/vite/guide" {
+			w.Write([]byte(`<!doctype html><html><body><main>
+<h1>Vite Guide</h1>
+<p>Vite supports React projects with create-vite and development server hot module replacement.</p>
+<p>Build production assets with npm run build after configuring package scripts.</p>
+</main></body></html>`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	store := NewPGMemoryStore(newFakeMemoryRunner())
+	result, err := ResearchWebDocsToMemory(
+		context.Background(),
+		"Vite React build and HMR guidance",
+		[]WebDocSource{
+			{Name: "missing-vite-doc", URL: server.URL + "/missing"},
+			{Name: "vite-guide", URL: server.URL + "/vite/guide"},
+		},
+		[]string{"React projects", "npm run build", "hot module replacement"},
+		store,
+		WebDocResearchConfig{FetchTimeout: 2 * time.Second, ChunkConfig: DocumentSearchConfig{ChunkChars: 180, ChunkOverlap: 20}},
+		DocResearchMemoryConfig{Tags: []string{"vite", "react"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Degraded || result.Research.SourcesFailed != 1 || result.Research.SourcesSucceeded != 1 {
+		t.Fatalf("expected partial degraded research receipt: %#v", result)
+	}
+	if !result.RecallVerified || !result.Completed {
+		t.Fatalf("partial research with stored source should still verify recall: %#v", result)
+	}
+	if !researchEventsContain(result.Research.Events, "source_fetch_failed") || !researchEventsContain(result.Research.Events, "research_degraded") {
+		t.Fatalf("missing failed/degraded research events: %#v", result.Research.Events)
+	}
+	if result.ResearchIndex == nil || !strings.Contains(result.ResearchIndex.Content, "degraded: true") || !strings.Contains(result.ResearchIndex.Content, "sources_failed: 1") {
+		t.Fatalf("research index receipt missing degraded evidence: %#v", result.ResearchIndex)
+	}
+}
+
+func TestDocumentationResearchRecallVerificationFailsWhenMemoryNotIndexed(t *testing.T) {
+	result := VerifyDocResearchRecall(context.Background(), NewPGMemoryStore(newFakeMemoryRunner()), "React Vite HMR", []string{"react", "vite"}, 5)
+	if result.Verified {
+		t.Fatalf("empty memory store should not verify recall: %#v", result)
+	}
+	if len(result.Queries) == 0 {
+		t.Fatalf("verification should produce representative recall queries: %#v", result)
 	}
 }
 
@@ -220,6 +280,15 @@ func webDocSourcesContain(sources []WebDocSource, url string) bool {
 func stringSliceContains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func researchEventsContain(events []ResearchPipelineEvent, want string) bool {
+	for _, event := range events {
+		if event.Type == want {
 			return true
 		}
 	}

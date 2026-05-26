@@ -48,13 +48,25 @@ type WebDocHit struct {
 }
 
 type WebDocResearchResult struct {
-	Question    string
-	Sources     []WebDocSource
-	Hits        []WebDocHit
-	Found       bool
-	SourceCount int
-	ChunkCount  int
-	WorkerCount int
+	Question         string
+	Sources          []WebDocSource
+	Hits             []WebDocHit
+	Found            bool
+	SourceCount      int
+	SourcesAttempted int
+	SourcesSucceeded int
+	SourcesFailed    int
+	ChunkCount       int
+	WorkerCount      int
+	Degraded         bool
+	FailureReasons   []string
+	Events           []ResearchPipelineEvent
+}
+
+type ResearchPipelineEvent struct {
+	Type    string            `json:"type"`
+	Message string            `json:"message,omitempty"`
+	Fields  map[string]string `json:"fields,omitempty"`
 }
 
 func ResearchWebDocs(ctx context.Context, question string, sources []WebDocSource, queries []string, cfg WebDocResearchConfig) (WebDocResearchResult, error) {
@@ -71,15 +83,38 @@ func ResearchWebDocs(ctx context.Context, question string, sources []WebDocSourc
 	}
 
 	result := WebDocResearchResult{Question: question, Sources: sources, SourceCount: len(sources)}
+	appendResearchEvent(&result, "research_started", "documentation research started", map[string]string{"question": question})
+	appendResearchEvent(&result, "source_plan_created", "documentation source plan created", map[string]string{"sources": fmt.Sprintf("%d", len(sources))})
 	for _, source := range sources {
+		result.SourcesAttempted++
+		appendResearchEvent(&result, "source_fetch_started", "fetching documentation source", map[string]string{"url": source.URL, "source": source.Name})
 		raw, err := fetchWebDoc(ctx, source.URL, cfg)
 		if err != nil {
-			return result, fmt.Errorf("fetch %s: %w", source.URL, err)
+			result.SourcesFailed++
+			result.Degraded = true
+			reason := fmt.Sprintf("source_fetch_failed url=%s error=%v", source.URL, err)
+			result.FailureReasons = append(result.FailureReasons, reason)
+			appendResearchEvent(&result, "source_fetch_failed", "documentation source fetch failed", map[string]string{"url": source.URL, "source": source.Name, "error": err.Error()})
+			continue
 		}
+		result.SourcesSucceeded++
+		appendResearchEvent(&result, "source_fetch_succeeded", "documentation source fetched", map[string]string{"url": source.URL, "source": source.Name})
+		appendResearchEvent(&result, "document_parse_started", "parsing documentation source", map[string]string{"url": source.URL, "source": source.Name})
 		text := HTMLToSearchableText(raw)
+		if len(strings.TrimSpace(text)) < 80 {
+			result.SourcesFailed++
+			result.SourcesSucceeded--
+			result.Degraded = true
+			reason := fmt.Sprintf("document_parse_failed url=%s reason=minimum useful text not met", source.URL)
+			result.FailureReasons = append(result.FailureReasons, reason)
+			appendResearchEvent(&result, "document_parse_failed", "documentation source did not contain enough useful text", map[string]string{"url": source.URL, "source": source.Name})
+			continue
+		}
+		appendResearchEvent(&result, "document_parse_succeeded", "documentation source parsed", map[string]string{"url": source.URL, "source": source.Name})
 		sourceChunks := ChunkDocument(text, cfg.ChunkConfig)
 		result.ChunkCount += len(sourceChunks)
 		result.WorkerCount += len(sourceChunks)
+		appendResearchEvent(&result, "chunks_created", "documentation chunks created", map[string]string{"url": source.URL, "source": source.Name, "chunks": fmt.Sprintf("%d", len(sourceChunks))})
 		for _, query := range queries {
 			query = strings.TrimSpace(query)
 			if query == "" {
@@ -119,7 +154,22 @@ func ResearchWebDocs(ctx context.Context, question string, sources []WebDocSourc
 		result.Hits = result.Hits[:cfg.MaxHits]
 	}
 	result.Found = len(result.Hits) > 0
+	if result.SourcesSucceeded == 0 {
+		result.Degraded = true
+		appendResearchEvent(&result, "research_degraded", "no documentation source could be fetched and parsed", map[string]string{"sources_failed": fmt.Sprintf("%d", result.SourcesFailed)})
+	} else if result.Degraded {
+		appendResearchEvent(&result, "research_degraded", "documentation research completed with failed sources", map[string]string{"sources_failed": fmt.Sprintf("%d", result.SourcesFailed), "sources_succeeded": fmt.Sprintf("%d", result.SourcesSucceeded)})
+	} else {
+		appendResearchEvent(&result, "research_completed", "documentation research completed", map[string]string{"sources_succeeded": fmt.Sprintf("%d", result.SourcesSucceeded), "hits": fmt.Sprintf("%d", len(result.Hits))})
+	}
 	return result, nil
+}
+
+func appendResearchEvent(result *WebDocResearchResult, eventType, message string, fields map[string]string) {
+	if result == nil {
+		return
+	}
+	result.Events = append(result.Events, ResearchPipelineEvent{Type: eventType, Message: message, Fields: fields})
 }
 
 func BuildDocSearchQueries(question string) []string {

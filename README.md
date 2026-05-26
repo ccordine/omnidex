@@ -225,6 +225,8 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 
 If you run Ollama as a systemd service, set `OLLAMA_HOST=0.0.0.0:11434` in the service environment override, then restart the service.
 
+The web UI Status panel includes a Research Health card backed by `GET /v1/status/research`. It checks whether the core can reach Ollama at `OLLAMA_BASE_URL`, reports configured/missing generation and embedding models, probes configured web search providers, and marks research unrunnable when the generation provider is unreachable.
+
 If a configured Ollama generation model is missing, Omnidex pulls it through Ollama's `/api/pull` endpoint and retries the request. First use can take as long as the model download. You can avoid that delay by pre-pulling:
 
 ```bash
@@ -531,7 +533,7 @@ Set `HOST_WORKSPACE_PATH` to control what gets mounted.
 
 Environment variables:
 - `WEB_SEARCH_ENABLED=true|false`
-- `WEB_SEARCH_PROVIDERS=yahoo,google,reddit`
+- `WEB_SEARCH_PROVIDERS=duckduckgo,google,reddit`
 - `WEB_SEARCH_TIMEOUT=15s`
 - `WEB_SEARCH_PER_SOURCE_BUDGET=3000`
 - `WEB_SEARCH_TOTAL_BUDGET=6000`

@@ -444,11 +444,17 @@ func (r *agentRuntime) runWebSearch() error {
 		return r.complete("web_search", output, output)
 	}
 
-	results, err := r.svc.webSearch.SearchAll(r.ctx, query)
+	report, err := r.svc.webSearch.SearchAllDetailed(r.ctx, query)
+	emitWebSearchProviderDiagnostics(r.svc, r.claim.Step.ID, report.Diagnostics)
 	if err != nil {
 		output := "web search unavailable: " + trimForBudget(err.Error(), 240)
+		if hasLocalResearchFallbackContext(r.contexts) {
+			output += "\n\nResearch degraded mode: web search failed, but local retrieval/workspace/documentation context is available. Treat external freshness as insufficient."
+			r.svc.emitStepEvent(r.claim.Step.ID, "web_search_degraded", "reason=provider_failure local_context=available")
+		}
 		return r.complete("web_search", output, output)
 	}
+	results := report.Results
 	webCtx := strings.TrimSpace(websearch.BuildContext(results, r.svc.contextBudget))
 	if webCtx == "" {
 		webCtx = "web search returned empty context"

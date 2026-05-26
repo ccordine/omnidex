@@ -200,6 +200,9 @@ func main() {
 		HuggingFaceAPIKey:         cfg.HuggingFaceAPIKey,
 		HuggingFaceDefaultModel:   huggingFaceDefaultModel,
 		HuggingFaceEmbeddingModel: huggingFaceEmbeddingModel,
+		WebSearchEnabled:          cfg.WebSearchEnabled,
+		WebSearchProviders:        cfg.WebSearchProviders,
+		WebSearchTimeout:          cfg.WebSearchTimeout,
 	})
 	log.Printf("core listening on %s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.LLMProvider, cfg.WrapperOnly)
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {

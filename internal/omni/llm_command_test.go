@@ -1863,6 +1863,44 @@ func TestStructuredCommandDecisionRejectsPlaceholderAngleBracketCommand(t *testi
 	}
 }
 
+func TestStructuredCommandRejectsLiteralPlaceholderProjectPath(t *testing.T) {
+	client := &fakeCommandDecisionClient{responses: []string{
+		`{"command":"cd /path/to/project && printf 'bad\n' > src/App.js","done":false,"answer":""}`,
+		`{"command":"printf 'used real workspace\n'","done":false,"answer":""}`,
+		`{"command":"","done":true,"answer":"used real workspace"}`,
+	}}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	events := []StructuredCommandEvent{}
+
+	result, err := RunStructuredCommandDecisionWithEvents(
+		context.Background(),
+		"Update the app source file",
+		client,
+		stdout,
+		stderr,
+		func(evt StructuredCommandEvent) { events = append(events, evt) },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 3 {
+		t.Fatalf("llm calls = %d, want placeholder rejection and retry", client.calls)
+	}
+	if len(result.Observations) < 2 || !strings.Contains(result.Observations[0].Stderr, "placeholder project path") {
+		t.Fatalf("first observation should reject literal placeholder path: %#v", result.Observations)
+	}
+	if !structuredEventsContain(events, "structured_command_rejected_placeholder_path") {
+		t.Fatalf("missing placeholder path rejection event: %#v", events)
+	}
+	if strings.Contains(stderr.String(), "/path/to/project") {
+		t.Fatalf("placeholder command reached shell: stderr=%q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "used real workspace") {
+		t.Fatalf("retry command did not run: stdout=%q", stdout.String())
+	}
+}
+
 func TestStructuredCommandDecisionRejectsAskBeforeCommandObservation(t *testing.T) {
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"command":"","done":false,"answer":"","ask":true,"question":"Should I inspect this system?"}`,
@@ -2745,6 +2783,48 @@ func TestValidateStructuredCommandForRunFlagsRepeatedSuccessfulInstall(t *testin
 	err := validateStructuredCommandForRun(command, observations, t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("repeated successful command should not be rejected by string-only validation: %v", err)
+	}
+}
+
+func TestRepeatedSuccessfulBuildAllowedAfterMutation(t *testing.T) {
+	command := "npm run build"
+	observations := []StructuredCommandObservation{
+		{Step: 1, Command: command, ExitCode: 0, Stdout: "built in 1s"},
+		{Step: 2, Command: "architect.apply update src/App.jsx", EvidenceKind: "implementation", ExitCode: 0, Stdout: "updated source"},
+	}
+	if repeatedSuccessfulStructuredCommand(command, observations) {
+		t.Fatal("build verifier rerun should be allowed after workspace mutation")
+	}
+}
+
+func TestRepeatedReadOnlyCommandWithNoStateChangeUsesPriorEvidence(t *testing.T) {
+	command := "find . -maxdepth 1 -type f"
+	observations := []StructuredCommandObservation{{Step: 1, Command: command, ExitCode: 0, Stdout: "./package.json\n"}}
+	if !repeatedSuccessfulStructuredCommand(command, observations) {
+		t.Fatal("read-only repeated command without state change should use prior evidence")
+	}
+}
+
+func TestDependencyInstallEventEmittedOnlyAfterInstallCommandRuns(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	npmPath := filepath.Join(binDir, "npm")
+	if err := os.WriteFile(npmPath, []byte("#!/bin/sh\necho fake npm install \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := fmt.Sprintf("PATH=%s:$PATH npm install react", shellQuote(binDir))
+	events := []StructuredCommandEvent{}
+	result := CommandDecisionResult{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, command, workspace, false, "", &bytes.Buffer{}, &bytes.Buffer{}, func(evt StructuredCommandEvent) {
+		events = append(events, evt)
+	}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !structuredEventsContain(events, "dependencies_installed") {
+		t.Fatalf("missing dependencies_installed after successful npm install command: %#v", events)
 	}
 }
 
@@ -5381,6 +5461,42 @@ func TestStructuredLoopStateCarriesRepeatedCommandAsEvidenceOnly(t *testing.T) {
 	}
 }
 
+func TestStructuredLoopStateResetsAfterSuccessfulCommand(t *testing.T) {
+	command := "npm install @hotwired/stimulus recyclr tailwindcss webpack webpack-cli --save-dev"
+	observations := []StructuredCommandObservation{
+		{Step: 1, Command: command, ExitCode: 1, Stderr: "npm failed"},
+		{Step: 2, RejectedCommand: command, ExitCode: 1, Stderr: "anti_loop: command rejected again after prior failure/rejection count=2"},
+		{Step: 3, Command: "find . -maxdepth 2 -type f | sort", ExitCode: 0, Stdout: "./package.json\n./src/App.jsx\n"},
+	}
+
+	state := structuredLoopStateFromState([]StructuredObjective{{ID: "implement_calculator_ui", Status: "pending"}}, observations)
+	if state.Status != "progressing" {
+		t.Fatalf("status = %q, want progressing; state=%#v", state.Status, state)
+	}
+	if state.RepeatKind != "" || state.RepeatedCommand != "" || state.LastBlocker != "" {
+		t.Fatalf("successful latest command should clear stale loop context: %#v", state)
+	}
+	if !strings.Contains(state.Instruction, "Latest command completed successfully") {
+		t.Fatalf("instruction = %q", state.Instruction)
+	}
+}
+
+func TestStructuredLoopStateResetsAfterSuccessfulCommandFollowingDoneRejection(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{Step: 1, ExitCode: 1, Stderr: "done rejected: pending objective(s) remain: implement_calculator_logic; run command(s) that satisfy the objective ledger before finishing"},
+		{Step: 2, ExitCode: 1, Stderr: "done rejected: pending objective(s) remain: implement_calculator_logic; run command(s) that satisfy the objective ledger before finishing"},
+		{Step: 3, Command: "npm run build", ExitCode: 0, Stdout: "built"},
+	}
+
+	state := structuredLoopStateFromState([]StructuredObjective{{ID: "implement_calculator_logic", Status: "pending"}}, observations)
+	if state.Status != "progressing" {
+		t.Fatalf("status = %q, want progressing; state=%#v", state.Status, state)
+	}
+	if state.RepeatKind != "" || state.LastBlocker != "" {
+		t.Fatalf("successful latest command should clear stale done rejection context: %#v", state)
+	}
+}
+
 func TestRejectedReactScaffoldDoesNotCreateForbiddenCommand(t *testing.T) {
 	rejected := "npx create-react-app notes-app"
 	observations := []StructuredCommandObservation{{
@@ -6444,8 +6560,14 @@ func TestCodexNotConfiguredPackageMetadataRoutesToLocalHandler(t *testing.T) {
 	if structuredEventsContain(events, "external_agent_started") || structuredEventsContain(events, "codex_sdk_architect_agent_started") {
 		t.Fatalf("unconfigured external agent should not start: %#v", events)
 	}
-	if !structuredEventsContain(events, "package_metadata_updated") || !structuredEventsContain(events, "scripts_configured") || !structuredEventsContain(events, "package_json_valid") {
+	if !structuredEventsContain(events, "package_metadata_updated") || !structuredEventsContain(events, "dependency_metadata_configured") || !structuredEventsContain(events, "package_dependencies_declared") || !structuredEventsContain(events, "scripts_configured") || !structuredEventsContain(events, "package_json_valid") {
 		t.Fatalf("missing package metadata evidence events: %#v", events)
+	}
+	if structuredEventsContain(events, "dependencies_installed") {
+		t.Fatalf("package metadata handler must not claim npm install ran: %#v", events)
+	}
+	if len(result.Observations) == 0 || strings.Contains(result.Observations[len(result.Observations)-1].Stdout, "dependencies_installed") {
+		t.Fatalf("package metadata observation used install evidence wording: %#v", result.Observations)
 	}
 	content, err := os.ReadFile(filepath.Join(workspace, "package.json"))
 	if err != nil {

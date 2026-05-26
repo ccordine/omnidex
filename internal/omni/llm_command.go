@@ -1462,6 +1462,13 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				}
 				continue
 			}
+			if isPlaceholderPathValidationError(err) {
+				emitStructuredCommandEvent(onEvent, "structured_command_rejected_placeholder_path", "Command rejected because it used a literal placeholder project path", map[string]string{
+					"step":    fmt.Sprintf("%d", step),
+					"command": truncateStructuredTimelineValue(command),
+					"reason":  err.Error(),
+				})
+			}
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
 				"command": truncateStructuredTimelineValue(command),
@@ -1605,6 +1612,13 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 		"started_at":  started,
 		"finished_at": finished,
 	})
+	if exitCode == 0 && structuredCommandIsDependencyInstall(command) {
+		emitStructuredCommandEvent(onEvent, "dependencies_installed", "Dependency install command completed successfully", map[string]string{
+			"step":       fmt.Sprintf("%d", step),
+			"command_id": commandID,
+			"command":    truncateStructuredTimelineValue(command),
+		})
+	}
 	if feedback.Kind != "" {
 		emitStructuredCommandEvent(onEvent, "toolchain_feedback_classified", "Typed compiler/test feedback classified", map[string]string{
 			"step":      fmt.Sprintf("%d", step),
@@ -1623,6 +1637,17 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 		}
 	}
 	return err
+}
+
+func structuredCommandIsDependencyInstall(command string) bool {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	return strings.HasPrefix(lower, "npm install") ||
+		strings.Contains(lower, " npm install ") ||
+		strings.HasPrefix(lower, "pnpm install") ||
+		strings.Contains(lower, " pnpm install ") ||
+		strings.HasPrefix(lower, "yarn install") ||
+		strings.HasPrefix(lower, "yarn add") ||
+		strings.Contains(lower, " yarn add ")
 }
 
 func runStructuredPatchApply(ctx context.Context, step int, patch, workingDirectory string, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) error {
@@ -1813,31 +1838,33 @@ func runProgressionGateRecovery(ctx context.Context, step int, prompt string, de
 	if handled, err := runDeterministicEmptyFileRecovery(ctx, step, prompt, decision, cfg, worksiteSurvey, onEvent, result); handled || err != nil {
 		return handled, err
 	}
+	if cfg.ShellSpecialist != nil {
+		if command := deterministicProgressionRecoveryCommand(prompt, decision, cfg.CurrentWorkingDirectory); command != "" {
+			emitStructuredCommandEvent(onEvent, "progression_gate_deterministic_recovery", "Progression gate selected deterministic recovery command", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"command": truncateStructuredTimelineValue(command),
+				"reason":  "llm recovery repeatedly failed to choose required file mutation",
+			})
+			if err := runStructuredPayloadCommand(ctx, step, command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
+				return true, err
+			}
+			return true, nil
+		}
+		if shouldBypassShellSpecialistForWriteRecovery(decision.RecoveryToolTask, result.Observations) {
+			emitStructuredCommandEvent(onEvent, "progression_gate_shell_bypassed", "Shell specialist bypassed after repeated invalid write-recovery proposals", map[string]string{
+				"step":   fmt.Sprintf("%d", step),
+				"reason": "planner must choose a substantive write/patch/build/test command from observed evidence",
+			})
+			return false, nil
+		}
+		if handled, err := runDelegatedShellSpecialist(ctx, step, prompt, decision.RecoveryToolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, result); handled || err != nil {
+			return handled, err
+		}
+	}
 	if handled, err := runPathfinderForProgression(ctx, step, prompt, decision, cfg, worksiteSurvey, stdout, stderr, onEvent, result); handled || err != nil {
 		return handled, err
 	}
-	if cfg.ShellSpecialist == nil {
-		return false, nil
-	}
-	if command := deterministicProgressionRecoveryCommand(prompt, decision, cfg.CurrentWorkingDirectory); command != "" {
-		emitStructuredCommandEvent(onEvent, "progression_gate_deterministic_recovery", "Progression gate selected deterministic recovery command", map[string]string{
-			"step":    fmt.Sprintf("%d", step),
-			"command": truncateStructuredTimelineValue(command),
-			"reason":  "llm recovery repeatedly failed to choose required file mutation",
-		})
-		if err := runStructuredPayloadCommand(ctx, step, command, cfg.CurrentWorkingDirectory, cfg.EnableCommandCache, cfg.CommandCacheRoot, stdout, stderr, onEvent, result); err != nil {
-			return true, err
-		}
-		return true, nil
-	}
-	if shouldBypassShellSpecialistForWriteRecovery(decision.RecoveryToolTask, result.Observations) {
-		emitStructuredCommandEvent(onEvent, "progression_gate_shell_bypassed", "Shell specialist bypassed after repeated invalid write-recovery proposals", map[string]string{
-			"step":   fmt.Sprintf("%d", step),
-			"reason": "planner must choose a substantive write/patch/build/test command from observed evidence",
-		})
-		return false, nil
-	}
-	return runDelegatedShellSpecialist(ctx, step, prompt, decision.RecoveryToolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, result)
+	return false, nil
 }
 
 func runDeterministicEmptyFileRecovery(ctx context.Context, step int, prompt string, decision ProgressionDecision, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
@@ -4133,7 +4160,12 @@ func runPackageMetadataWorkHandler(step int, prompt string, contract Implementat
 		"item_id": item.ID,
 		"path":    path,
 	})
-	emitStructuredCommandEvent(onEvent, "dependencies_installed", "React/Vite dependency metadata configured by deterministic package handler", map[string]string{
+	emitStructuredCommandEvent(onEvent, "dependency_metadata_configured", "React/Vite dependency metadata declared by deterministic package handler", map[string]string{
+		"step":     fmt.Sprintf("%d", step),
+		"item_id":  item.ID,
+		"packages": strings.Join(reactVitePackageMetadataDependencies(), ","),
+	})
+	emitStructuredCommandEvent(onEvent, "package_dependencies_declared", "package.json dependency declarations were configured without claiming npm install ran", map[string]string{
 		"step":     fmt.Sprintf("%d", step),
 		"item_id":  item.ID,
 		"packages": strings.Join(reactVitePackageMetadataDependencies(), ","),
@@ -4257,7 +4289,7 @@ func sanitizePackageMetadataName(name string) string {
 }
 
 func packageMetadataReadbackSummary(content []byte) string {
-	return "package_metadata_updated; dependencies_installed=" + strings.Join(reactVitePackageMetadataDependencies(), ",") +
+	return "package_metadata_updated; package_dependencies_declared=" + strings.Join(reactVitePackageMetadataDependencies(), ",") +
 		"; scripts_configured=dev,build,preview,test; package_json_valid=true; sha256=" + packageMetadataSHA256(content) +
 		"; snippet=" + truncateStructuredObservation(strings.TrimSpace(string(content)))
 }
@@ -6517,6 +6549,9 @@ func validateStructuredCommandString(command string) error {
 			return fmt.Errorf("placeholder angle-bracket value in command")
 		}
 	}
+	if containsLiteralPlaceholderProjectPath(command) {
+		return fmt.Errorf("literal placeholder project path in command")
+	}
 	if strings.Contains(lower, "your_api_key") || strings.Contains(lower, "api_key_here") {
 		return fmt.Errorf("placeholder angle-bracket value in command")
 	}
@@ -6533,6 +6568,38 @@ func validateStructuredCommandString(command string) error {
 		return err
 	}
 	return nil
+}
+
+func containsLiteralPlaceholderProjectPath(command string) bool {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	if lower == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"/path/to/project",
+		"/your/project",
+		"/path/to/",
+		"your_project",
+		"todo_path",
+		"replace_me",
+		"{project}",
+		"${project}",
+		"$project",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	for _, marker := range []string{"YOUR_PROJECT", "TODO_PATH", "REPLACE_ME"} {
+		if strings.Contains(command, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPlaceholderPathValidationError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "placeholder project path")
 }
 
 func normalizeStructuredCommand(command string) string {
@@ -7903,15 +7970,72 @@ func repeatedSuccessfulStructuredCommand(command string, observations []Structur
 	if normalized == "" {
 		return false
 	}
-	for _, obs := range observations {
+	if structuredCommandIsVerifierRerunCandidate(command) {
+		return false
+	}
+	for i, obs := range observations {
 		if obs.ExitCode != 0 || strings.TrimSpace(obs.Command) == "" {
 			continue
 		}
 		if normalizeStructuredCommandForComparison(obs.Command) == normalized {
+			if structuredObservationsContainMutationAfter(observations, i) {
+				return false
+			}
 			return true
 		}
 	}
 	return false
+}
+
+func structuredCommandIsVerifierRerunCandidate(command string) bool {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "npm run build") ||
+		strings.Contains(lower, "npm test") ||
+		strings.Contains(lower, "go test") ||
+		strings.Contains(lower, "cargo test") ||
+		strings.Contains(lower, "cargo build") ||
+		strings.Contains(lower, "zig build") ||
+		strings.Contains(lower, "pytest") ||
+		strings.Contains(lower, "pnpm test") ||
+		strings.Contains(lower, "yarn test")
+}
+
+func structuredObservationsContainMutationAfter(observations []StructuredCommandObservation, index int) bool {
+	for _, obs := range observations[index+1:] {
+		if structuredObservationMutatedWorkspace(obs) {
+			return true
+		}
+	}
+	return false
+}
+
+func structuredObservationMutatedWorkspace(obs StructuredCommandObservation) bool {
+	if obs.ExitCode != 0 {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(obs.EvidenceKind), "implementation") {
+		return true
+	}
+	if strings.TrimSpace(obs.GeneratedBy) == "package_metadata_handler" {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(obs.Command))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "architect.apply") ||
+		strings.Contains(lower, "npm install") ||
+		strings.Contains(lower, "pnpm install") ||
+		strings.Contains(lower, "yarn add") ||
+		strings.Contains(lower, "go mod tidy") ||
+		strings.Contains(lower, "cargo add") ||
+		strings.Contains(lower, "cat >") ||
+		strings.Contains(lower, "tee ") ||
+		strings.Contains(lower, "apply_patch") ||
+		strings.Contains(lower, " > ")
 }
 
 func previousSuccessfulStructuredCommandObservation(command string, observations []StructuredCommandObservation) (StructuredCommandObservation, bool) {
@@ -8071,6 +8195,10 @@ func structuredLoopStateFromState(ledger []StructuredObjective, observations []S
 	if len(observations) == 0 {
 		state.Status = "not_started"
 		state.Instruction = "Start with a command or patch that gathers evidence or satisfies the first objective."
+		return state
+	}
+	if latestRealObservationSucceeded(observations) {
+		state.Instruction = "Latest command completed successfully; choose the next evidence-producing command, patch, verification, or completion check from the current objective ledger."
 		return state
 	}
 	if blocker := latestStructuredObservationBlocker(observations); blocker != "" {

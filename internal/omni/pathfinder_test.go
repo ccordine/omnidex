@@ -36,6 +36,43 @@ func TestPathfinderMissingFileAssumptionSelectsInspectSourceTree(t *testing.T) {
 	if packet.NextAction.Kind != string(PathfinderActionInspect) || !strings.Contains(packet.NextAction.Command, "package.json") || !strings.Contains(packet.NextAction.Command, "./src/*") {
 		t.Fatalf("unexpected next action: %#v", packet.NextAction)
 	}
+	for _, forbidden := range []string{"./node_modules", "./.git", "./dist", "./build", "./coverage"} {
+		if !strings.Contains(packet.NextAction.Command, forbidden) {
+			t.Fatalf("inspect command should prune %s: %s", forbidden, packet.NextAction.Command)
+		}
+	}
+}
+
+func TestPathfinderInspectCommandPrunesDependencyDirectories(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{"package.json", "src/App.jsx", "node_modules/vite/package.json", "dist/package.json"} {
+		full := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("{}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	packet := Pathfinder{}.Solve(ProblemCase{
+		Problem:            "missing file assumption",
+		CurrentGoal:        "inspect project",
+		RecentObservations: []StructuredCommandObservation{{Command: "cat index.html", ExitCode: 1, Stderr: "No such file"}},
+		WorksiteSurvey:     WorksiteSurvey{Evidence: []string{"package.json exists"}},
+	})
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	result := CommandDecisionResult{}
+	if err := runStructuredPayloadCommand(context.Background(), 1, packet.NextAction.Command, root, false, "", stdout, stderr, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	if strings.Contains(output, "node_modules") || strings.Contains(output, "dist/package.json") {
+		t.Fatalf("inspect output included dependency/build files:\n%s", output)
+	}
+	if !strings.Contains(output, "./package.json") || !strings.Contains(output, "./src/App.jsx") {
+		t.Fatalf("inspect output missing project files:\n%s", output)
+	}
 }
 
 func TestPathfinderFalseDoneTightensCompletionProofWithoutCompleting(t *testing.T) {

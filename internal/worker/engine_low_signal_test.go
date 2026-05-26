@@ -483,6 +483,15 @@ func TestShouldForceFreshWebSearch(t *testing.T) {
 	}
 }
 
+func TestHasLocalResearchFallbackContext(t *testing.T) {
+	if !hasLocalResearchFallbackContext(map[string]string{"retrieval": "captured memory context"}) {
+		t.Fatal("expected retrieval context to allow degraded research fallback")
+	}
+	if hasLocalResearchFallbackContext(map[string]string{"web_search": "failed", "retrieval": "   "}) {
+		t.Fatal("empty local context should not allow degraded fallback")
+	}
+}
+
 func TestShouldBypassHistoricalContext(t *testing.T) {
 	tests := []struct {
 		name        string
