@@ -179,11 +179,11 @@ func TestNPMInstallMustRunAfterPackageJSONMutation(t *testing.T) {
 		{Command: "npm install", ExitCode: 0},
 		{Command: "architect.apply update package.json", ExitCode: 0},
 	}
-	if architectWorkItemSatisfied(item, t.TempDir(), observations) {
+	if architectWorkItemSatisfied(item, t.TempDir(), ImplementationArchitectContract{}, observations) {
 		t.Fatal("npm install before package.json update should not satisfy install work item")
 	}
 	observations = append(observations, StructuredCommandObservation{Command: "npm install", ExitCode: 0})
-	if !architectWorkItemSatisfied(item, t.TempDir(), observations) {
+	if !architectWorkItemSatisfied(item, t.TempDir(), ImplementationArchitectContract{}, observations) {
 		t.Fatal("npm install after package.json update should satisfy install work item")
 	}
 }
@@ -246,11 +246,11 @@ func TestNPMTestMustRunAfterSmokeRelevantMutation(t *testing.T) {
 		{Command: "npm test", ExitCode: 0},
 		{Command: "architect.apply update src/App.js", ExitCode: 0},
 	}
-	if architectWorkItemSatisfied(item, t.TempDir(), observations) {
+	if architectWorkItemSatisfied(item, t.TempDir(), ImplementationArchitectContract{}, observations) {
 		t.Fatal("npm test before App.js update should not satisfy acceptance test work item")
 	}
 	observations = append(observations, StructuredCommandObservation{Command: "npm test", ExitCode: 0})
-	if !architectWorkItemSatisfied(item, t.TempDir(), observations) {
+	if !architectWorkItemSatisfied(item, t.TempDir(), ImplementationArchitectContract{}, observations) {
 		t.Fatal("npm test after App.js update should satisfy acceptance test work item")
 	}
 }

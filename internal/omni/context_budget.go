@@ -163,13 +163,22 @@ func compactStructuredObservationsForContext(observations []StructuredCommandObs
 	if maxCount <= 0 {
 		maxCount = 1
 	}
+	pinned := StructuredCommandObservation{}
+	hasPinned := false
+	for i := len(observations) - 1; i >= 0; i-- {
+		if _, ok := structuredRepairContextFromObservation(observations[i]); ok {
+			pinned = observations[i]
+			hasPinned = true
+			break
+		}
+	}
 	start := 0
 	dropped := 0
 	if len(observations) > maxCount {
 		start = len(observations) - maxCount
 		dropped = start
 	}
-	out := make([]StructuredCommandObservation, 0, len(observations[start:])+1)
+	out := make([]StructuredCommandObservation, 0, len(observations[start:])+2)
 	if dropped > 0 {
 		out = append(out, StructuredCommandObservation{
 			Step:   observations[0].Step,
@@ -178,6 +187,22 @@ func compactStructuredObservationsForContext(observations []StructuredCommandObs
 	}
 	for _, observation := range observations[start:] {
 		out = append(out, compactStructuredObservationForContext(observation, textChars))
+	}
+	if hasPinned && start > 0 {
+		pinnedCompact := compactStructuredObservationForContext(pinned, textChars)
+		alreadyPresent := false
+		for _, observation := range observations[start:] {
+			if observation.Step == pinned.Step &&
+				observation.RejectedCommand == pinned.RejectedCommand &&
+				observation.RejectedResponse == pinned.RejectedResponse &&
+				observation.Stderr == pinned.Stderr {
+				alreadyPresent = true
+				break
+			}
+		}
+		if !alreadyPresent {
+			out = append(out, pinnedCompact)
+		}
 	}
 	return out
 }

@@ -206,6 +206,7 @@ type ShellCommandSpecialistInput struct {
 	ArchitectContract ImplementationArchitectContract
 	RepairFeedback    string
 	RepairAttempt     int
+	RejectedCommand   string
 	Observations      []StructuredCommandObservation
 	CompletedActions  []CompletedAction
 	LoopState         StructuredLoopState
@@ -229,6 +230,9 @@ type CodeContentSpecialistInput struct {
 	WorkItem          ArchitectWorkItem
 	ExistingContent   string
 	TestFirst         bool
+	RepairFeedback    string
+	RepairAttempt     int
+	RejectedContent   string
 	Observations      []StructuredCommandObservation
 	SessionMemories   []SessionMemory
 	WorksiteSurvey    WorksiteSurvey
@@ -4158,6 +4162,21 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 			content, err := os.ReadFile(targetPath)
 			command := fmt.Sprintf("architect.read %s", filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
 			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					emitStructuredCommandEvent(onEvent, "architect_work_item_read_absent", "Implementation architect confirmed target file is absent before create/update", map[string]string{
+						"step":    fmt.Sprintf("%d", step),
+						"item_id": item.ID,
+						"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+					})
+					result.Observations = append(result.Observations, StructuredCommandObservation{
+						Step:     step,
+						Command:  command,
+						ExitCode: 0,
+						Stdout:   "(file absent)",
+					})
+					handled = true
+					continue
+				}
 				result.Observations = append(result.Observations, StructuredCommandObservation{
 					Step:     step,
 					Command:  command,
@@ -4289,6 +4308,21 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 			"cwd":       item.CWD,
 			"path":      item.Path,
 		})
+		if err := architectImplementationBlockedByMissingTestProbe(contract.WorkQueue, item, cfg.CurrentWorkingDirectory, contract, prompt, result.Observations); err != nil {
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:            step,
+				RejectedCommand: fmt.Sprintf("architect.apply %s %s", item.Operation, filepath.ToSlash(filepath.Join(item.CWD, item.Path))),
+				ExitCode:        1,
+				Stderr:          err.Error(),
+			})
+			emitStructuredCommandEvent(onEvent, "architect_work_item_test_first_blocked", "Implementation architect blocked implementation until acceptance probe exists", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"reason":  truncateStructuredTimelineValue(err.Error()),
+			})
+			return true, nil
+		}
 		targetPath := filepath.Join(cfg.CurrentWorkingDirectory, item.CWD, item.Path)
 		existing, _ := os.ReadFile(targetPath)
 		proposal, err := generateValidatedCodeContent(ctx, step, prompt, contract, item, string(existing), cfg, worksiteSurvey, onEvent, result)
@@ -4313,6 +4347,34 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 		}
 		if err := os.WriteFile(targetPath, []byte(proposal.Content), 0o644); err != nil {
 			return true, err
+		}
+		if _, err := architectWorkItemFileEvidenceValid(item, cfg.CurrentWorkingDirectory, contract, prompt); err != nil {
+			result.Observations = append(result.Observations, StructuredCommandObservation{
+				Step:            step,
+				RejectedCommand: fmt.Sprintf("architect.apply %s %s", item.Operation, filepath.ToSlash(filepath.Join(item.CWD, item.Path))),
+				ExitCode:        1,
+				Stderr:          "architect work item evidence rejected after apply: " + err.Error(),
+			})
+			emitStructuredCommandEvent(onEvent, "architect_work_item_evidence_rejected", "Implementation architect rejected applied file because on-disk evidence failed validation", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"reason":  truncateStructuredTimelineValue(err.Error()),
+			})
+			return true, nil
+		}
+		if architectWorkItemIsTestFirst(item) {
+			emitStructuredCommandEvent(onEvent, structuredProofEventAcceptanceProbeCreated, "Implementation architect created or updated a focused acceptance probe", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			})
+		} else {
+			emitStructuredCommandEvent(onEvent, structuredProofEventImplementationStarted, "Implementation architect wrote source after validated acceptance probe", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			})
 		}
 		command := fmt.Sprintf("architect.apply %s %s", item.Operation, filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
 		emitStructuredCommandEvent(onEvent, "architect_work_item_applied", "Implementation architect applied generated code content", map[string]string{
@@ -5099,6 +5161,7 @@ func validateArchitectDeleteTarget(workingDir string, item ArchitectWorkItem, ta
 func generateValidatedCodeContent(ctx context.Context, step int, prompt string, contract ImplementationArchitectContract, item ArchitectWorkItem, existing string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (CodeContentProposal, error) {
 	var proposal CodeContentProposal
 	var err error
+	var lastRejectedProposal CodeContentProposal
 	rejectedContent := map[string]struct{}{}
 	emitStructuredCommandEvent(onEvent, "architect_work_item_repair_started", "Implementation architect entered focused work-item repair loop", map[string]string{
 		"step":    fmt.Sprintf("%d", step),
@@ -5107,6 +5170,15 @@ func generateValidatedCodeContent(ctx context.Context, step int, prompt string, 
 		"status":  "generating",
 	})
 	for attempt := 0; attempt <= defaultShellSpecialistRepairAttempts; attempt++ {
+		if attempt > 0 {
+			emitStructuredCommandEvent(onEvent, "architect_work_item_repair_feedback", "Code content specialist received direct validator feedback for focused work item", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"attempt": fmt.Sprintf("%d", attempt),
+				"reason":  truncateStructuredTimelineValue(latestCodeContentRepairFeedback(result.Observations)),
+			})
+		}
 		emitStructuredCommandEvent(onEvent, "architect_work_item_repair_attempted", "Implementation architect attempted code content for focused work item", map[string]string{
 			"step":    fmt.Sprintf("%d", step),
 			"item_id": item.ID,
@@ -5121,6 +5193,9 @@ func generateValidatedCodeContent(ctx context.Context, step int, prompt string, 
 			WorkItem:          item,
 			ExistingContent:   existing,
 			TestFirst:         architectWorkItemIsTestFirst(item),
+			RepairFeedback:    latestCodeContentRepairFeedback(result.Observations),
+			RepairAttempt:     attempt,
+			RejectedContent:   lastRejectedProposal.Content,
 			Observations:      result.Observations,
 			SessionMemories:   cfg.SessionMemories,
 			WorksiteSurvey:    worksiteSurvey,
@@ -5146,6 +5221,7 @@ func generateValidatedCodeContent(ctx context.Context, step int, prompt string, 
 		}
 		if err := validateCodeContentProposalForArchitectItem(proposal.Content, contract, item); err != nil {
 			rejectedContent[contentFingerprint] = struct{}{}
+			lastRejectedProposal = proposal
 			appendRejectedCodeContentObservation(step, item, err, result)
 			emitStructuredCommandEvent(onEvent, "architect_work_item_content_rejected", "Code content rejected by architect-scoped validator", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
@@ -5161,6 +5237,29 @@ func generateValidatedCodeContent(ctx context.Context, step int, prompt string, 
 					"reason":  truncateStructuredTimelineValue(err.Error()),
 				})
 			}
+			emitStructuredCommandEvent(onEvent, "architect_work_item_repair_rejected", "Implementation architect repair attempt failed validation for focused work item", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"attempt": fmt.Sprintf("%d", attempt+1),
+				"reason":  truncateStructuredTimelineValue(err.Error()),
+				"status":  "rejected",
+			})
+			if attempt < defaultShellSpecialistRepairAttempts {
+				continue
+			}
+			return deterministicFallbackForRejectedArchitectItem(step, contract, item, err, onEvent)
+		}
+		if err := validateArchitectContentAlignsWithPrompt(proposal.Content, item, prompt, contract); err != nil {
+			rejectedContent[contentFingerprint] = struct{}{}
+			lastRejectedProposal = proposal
+			appendRejectedCodeContentObservation(step, item, err, result)
+			emitStructuredCommandEvent(onEvent, "architect_work_item_alignment_rejected", "Code content rejected because it did not align with the active prompt", map[string]string{
+				"step":    fmt.Sprintf("%d", step),
+				"item_id": item.ID,
+				"path":    filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+				"reason":  truncateStructuredTimelineValue(err.Error()),
+			})
 			emitStructuredCommandEvent(onEvent, "architect_work_item_repair_rejected", "Implementation architect repair attempt failed validation for focused work item", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
 				"item_id": item.ID,
@@ -5228,15 +5327,35 @@ func sha256String(value string) string {
 	return fmt.Sprintf("%x", sum)
 }
 
+func latestCodeContentRepairFeedback(observations []StructuredCommandObservation) string {
+	return latestStructuredRepairFeedback(observations)
+}
+
+func guidanceForRejectedCodeContent(err error) string {
+	if err == nil {
+		return "repair the generated file content to satisfy file_contract and validator feedback"
+	}
+	text := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(text, "content kind rejected"):
+		return "rewrite the file to match file_contract.language exactly; remove every forbidden content class listed in file_contract.must_avoid"
+	case strings.Contains(text, "repeated rejected content"):
+		return "previous content was identical and rejected again; produce materially different file content that satisfies file_contract"
+	default:
+		return "repair the generated file content to satisfy the validator feedback and file_contract"
+	}
+}
+
 func appendRejectedCodeContentObservation(step int, item ArchitectWorkItem, err error, result *CommandDecisionResult) {
 	if result == nil || err == nil {
 		return
 	}
+	reason := err.Error()
 	result.Observations = append(result.Observations, StructuredCommandObservation{
 		Step:            step,
 		RejectedCommand: "architect.apply " + item.Operation + " " + filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
 		ExitCode:        1,
-		Stderr:          "code content rejected for architect work item " + item.ID + ": " + err.Error(),
+		Stderr:          "code content specialist content rejected: " + reason + "; " + guidanceForRejectedCodeContent(err),
 	})
 }
 
@@ -5253,6 +5372,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			"proof_commands": strings.Join(architectContract.ProofCommands, ","),
 		})
 	}
+	var lastRejectedCommand string
 	for attempt := 0; attempt <= defaultShellSpecialistRepairAttempts; attempt++ {
 		if attempt > 0 {
 			emitStructuredCommandEvent(onEvent, "structured_tool_delegation_repair_started", "Shell specialist received direct validator feedback for local repair", map[string]string{
@@ -5267,6 +5387,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			ArchitectContract: architectContract,
 			RepairFeedback:    latestShellRepairFeedback(result.Observations),
 			RepairAttempt:     attempt,
+			RejectedCommand:   lastRejectedCommand,
 			Observations:      result.Observations,
 			CompletedActions:  completedActionsFromState(*ledger, result.Observations),
 			LoopState:         structuredLoopStateFromState(*ledger, result.Observations),
@@ -5295,6 +5416,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			"rationale": truncateStructuredTimelineValue(proposal.Rationale),
 		})
 		if err := validateShellProposalDoesNotRepeatLatestFailedCommand(proposal.Command, result.Observations); err != nil {
+			lastRejectedCommand = proposal.Command
 			appendRejectedShellProposalObservation(step, proposal.Command, err, "use the observed failure as feedback and choose a different concrete command", result)
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by execution feedback", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
@@ -5321,6 +5443,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 				return proposal, true, nil
 			}
 			appendRejectedShellProposalObservation(step, proposal.Command, err, "choose a write/edit/build/test command that directly satisfies the delegated task", result)
+			lastRejectedCommand = proposal.Command
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by tool-task constraints", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
 				"command": truncateStructuredTimelineValue(proposal.Command),
@@ -5340,6 +5463,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			return ShellCommandProposal{}, false, nil
 		}
 		if err := validateCommandAgainstImplementationArchitectContract(proposal.Command, architectContract); err != nil {
+			lastRejectedCommand = proposal.Command
 			appendRejectedShellProposalObservation(step, proposal.Command, err, "choose a command that follows the implementation architect target root, edit surface, and proof commands", result)
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Shell command rejected by implementation architect contract", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
@@ -5369,6 +5493,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 				return ShellCommandProposal{}, false, nil
 			}
 			appendRejectedShellProposalObservation(step, proposal.Command, err, "planner should delegate a narrower shell task or choose a different tool", result)
+			lastRejectedCommand = proposal.Command
 			emitStructuredCommandEvent(onEvent, "structured_command_rejected", "Command rejected by structured payload validation", map[string]string{
 				"step":    fmt.Sprintf("%d", step),
 				"command": truncateStructuredTimelineValue(proposal.Command),
@@ -5422,23 +5547,7 @@ func shellProposalRepeatedLatestRejection(command string, observations []Structu
 }
 
 func latestShellRepairFeedback(observations []StructuredCommandObservation) string {
-	for i := len(observations) - 1; i >= 0; i-- {
-		text := strings.TrimSpace(observations[i].Stderr)
-		if text == "" {
-			text = strings.TrimSpace(observations[i].EvaluationFeedback)
-		}
-		if text == "" {
-			continue
-		}
-		lower := strings.ToLower(text)
-		if strings.Contains(lower, "shell specialist command rejected") ||
-			strings.Contains(lower, "command rejected") ||
-			strings.Contains(lower, "placeholder-only") ||
-			strings.Contains(lower, "empty project file") {
-			return truncateStructuredObservation(text)
-		}
-	}
-	return ""
+	return latestStructuredRepairFeedback(observations)
 }
 
 func latestFailedCommandOutput(observations []StructuredCommandObservation, command string) string {
@@ -10957,6 +11066,8 @@ func buildStructuredCommandSystemContext() string {
 		"When active_task.task_mode is research_only, use only read-only inspection, package metadata reads, memory/docs/web research, and codebase-map reads; do not mutate files, install packages, patch code, run build repair, or convert incidental project issues into repair objectives.",
 		"Treat active_task.completed_actions as the only deterministic do-not-repeat list; active_task.forbidden_commands is empty by default and must not be inferred from observations, failed commands, rejected proposals, prior runs, command cache, or memory.",
 		"When active_task.recovery_instruction is non-empty, the next response must visibly change strategy: use a different command, delegate with tool=shell and a narrower tool_task, inspect existing files, or use tool=patch.apply.",
+		"When active_task.latest_rejection_feedback is non-empty, treat it as authoritative validator feedback for the immediately previous rejected output; repair that rejection directly and do not repeat the rejected command or response.",
+		"When active_task.rejected_response_preview or active_task.rejected_command_preview is present, replace that exact rejected output with a corrected command, tool delegation, or patch.",
 		"Use active_task.task_route as advisory codebase-map routing context for likely files, modules, tests, risks, and verification commands; it is not execution permission.",
 		"When active_task.task_route.file_chunks is present, treat it as the maximum necessary source context. Inspect and edit one chunk or adjacent chunk range at a time using the provided line ranges and sed commands; do not load the full file.",
 		"For files that exceed context or have file_chunks, continue chunk-by-chunk: read the targeted range, make the smallest source edit for that range, verify the same range, update objectives from evidence, then move to the next chunk if needed.",
@@ -11186,6 +11297,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		ToolTask          string                          `json:"tool_task"`
 		ArchitectContract ImplementationArchitectContract `json:"architect_contract,omitempty"`
 		RepairFeedback    string                          `json:"repair_feedback,omitempty"`
+		RejectedCommand   string                          `json:"rejected_command_preview,omitempty"`
 		Observations      []StructuredCommandObservation  `json:"observations"`
 		CompletedActions  []CompletedAction               `json:"completed_actions,omitempty"`
 		LoopState         StructuredLoopState             `json:"loop_state,omitempty"`
@@ -11200,6 +11312,7 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		ArchitectContract: input.ArchitectContract,
 		RepairFeedback:    input.RepairFeedback,
 		RepairAttempt:     input.RepairAttempt,
+		RejectedCommand:   truncateStructuredTimelineValue(input.RejectedCommand),
 		Observations:      compactStructuredObservationsForContext(input.Observations, 8, 650),
 		CompletedActions:  input.CompletedActions,
 		LoopState:         input.LoopState,
@@ -11255,18 +11368,22 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 	if input.RepairAttempt > 0 {
 		options["temperature"] = defaultShellSpecialistRepairTemperature
 	}
-	return OllamaChatRequest{
-		Messages: []OllamaMessage{
-			{
-				Role: "system",
-				Content: strings.Join([]string{
-					"You are a shell execution specialist subordinate to a planner authority.",
-					"You receive a scoped tool_task and return the safest concrete shell command for evidence gathering or requested system interaction.",
-					"Return JSON only.",
-				}, " "),
-			},
-			{Role: "user", Content: string(blob)},
+	messages := []OllamaMessage{
+		{
+			Role: "system",
+			Content: strings.Join([]string{
+				"You are a shell execution specialist subordinate to a planner authority.",
+				"You receive a scoped tool_task and return the safest concrete shell command for evidence gathering or requested system interaction.",
+				"Return JSON only.",
+			}, " "),
 		},
+		{Role: "user", Content: string(blob)},
+	}
+	if input.RepairAttempt > 0 && strings.TrimSpace(input.RejectedCommand) != "" {
+		messages = append(messages, buildShellRepairFollowUpMessages(input.RepairFeedback, input.RejectedCommand)...)
+	}
+	return OllamaChatRequest{
+		Messages: messages,
 		Format: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -11281,59 +11398,92 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 
 func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaChatRequest {
 	sessionMemories := filterExecutionSessionMemories(input.SessionMemories, input.UserPrompt+" "+input.WorkItem.Description, "", len(input.SessionMemories))
+	fileContract := codeContentFileContract(input.ArchitectContract, input.WorkItem)
+	rules := []string{
+		"Return JSON only with schema {\"content\":\"full file content\",\"rationale\":\"brief reason\"}.",
+		"Generate only the complete content for work_item.path; do not include shell commands, markdown fences, explanations outside JSON, or alternate paths.",
+		"The architect owns cwd/path/operation. Use work_item literally and do not invent a different file.",
+		"file_contract is authoritative. content must match file_contract.language and file_contract.role exactly.",
+		"file_contract.must_include entries are required signals for this one file. file_contract.must_avoid entries are forbidden content classes for this one file.",
+		"If architect_contract.acceptance_criteria is non-empty, the generated file must directly support those criteria within the current file's responsibility.",
+		"If test_first is true, write a focused acceptance test, smoke test, or deterministic source probe for user_explicit behavior only; it must assert the relevant architect_contract.acceptance_criteria and must not be a render-only placeholder.",
+		"If test_first is false, implement enough source code to satisfy the validated test/probe, the current work item, and the architect_contract.acceptance_criteria.",
+		"Do not add unrequested dependencies, routing, authentication, cloud sync, databases, or framework changes.",
+		"Do not weaken, skip, delete, or rewrite an existing validated test unless the work item explicitly says it is a test correction.",
+	}
+	if strings.TrimSpace(input.RepairFeedback) != "" {
+		rules = append(rules,
+			"repair_feedback is direct validator feedback for this retry; it is authoritative over prior assumptions.",
+			"Repair the rejected file content directly; do not return the same rejected content or another forbidden file kind.",
+			"If repair_feedback says content kind rejected, rewrite the file as pure file_contract.language and remove every file_contract.must_avoid class.",
+			"If rejected_content_preview is present, treat it as the exact invalid output to replace; do not repeat it.",
+		)
+	}
 	payload := struct {
-		Role              string                          `json:"role"`
-		UserPrompt        string                          `json:"user_prompt"`
-		ArchitectContract ImplementationArchitectContract `json:"architect_contract"`
-		WorkItem          ArchitectWorkItem               `json:"work_item"`
-		FileContract      CodeContentFileContract         `json:"file_contract"`
-		ExistingContent   string                          `json:"existing_content,omitempty"`
-		TestFirst         bool                            `json:"test_first"`
-		Observations      []StructuredCommandObservation  `json:"observations,omitempty"`
-		SessionMemories   []SessionMemory                 `json:"session_memories,omitempty"`
-		WorksiteSurvey    WorksiteSurvey                  `json:"worksite_survey"`
-		Rules             []string                        `json:"rules"`
+		Role                   string                          `json:"role"`
+		UserPrompt             string                          `json:"user_prompt"`
+		ArchitectContract      ImplementationArchitectContract `json:"architect_contract"`
+		WorkItem               ArchitectWorkItem               `json:"work_item"`
+		FileContract           CodeContentFileContract         `json:"file_contract"`
+		ExistingContent        string                          `json:"existing_content,omitempty"`
+		TestFirst              bool                            `json:"test_first"`
+		RepairFeedback         string                          `json:"repair_feedback,omitempty"`
+		RepairAttempt          int                             `json:"repair_attempt,omitempty"`
+		RejectedContentPreview string                          `json:"rejected_content_preview,omitempty"`
+		Observations           []StructuredCommandObservation  `json:"observations,omitempty"`
+		SessionMemories        []SessionMemory                 `json:"session_memories,omitempty"`
+		WorksiteSurvey         WorksiteSurvey                  `json:"worksite_survey"`
+		Rules                  []string                        `json:"rules"`
 	}{
-		Role:              "code_content_specialist",
-		UserPrompt:        input.UserPrompt,
-		ArchitectContract: input.ArchitectContract,
-		WorkItem:          input.WorkItem,
-		FileContract:      codeContentFileContract(input.ArchitectContract, input.WorkItem),
-		ExistingContent:   truncateStructuredTimelineValue(input.ExistingContent),
-		TestFirst:         input.TestFirst,
-		Observations:      compactStructuredObservationsForContext(input.Observations, 6, 500),
-		SessionMemories:   compactSessionMemoriesForStructuredContext(sessionMemories, 6, 600),
-		WorksiteSurvey:    input.WorksiteSurvey,
-		Rules: []string{
-			"Return JSON only with schema {\"content\":\"full file content\",\"rationale\":\"brief reason\"}.",
-			"Generate only the complete content for work_item.path; do not include shell commands, markdown fences, explanations outside JSON, or alternate paths.",
-			"The architect owns cwd/path/operation. Use work_item literally and do not invent a different file.",
-			"file_contract is authoritative. content must match file_contract.language and file_contract.role exactly.",
-			"file_contract.must_include entries are required signals for this one file. file_contract.must_avoid entries are forbidden content classes for this one file.",
-			"If architect_contract.acceptance_criteria is non-empty, the generated file must directly support those criteria within the current file's responsibility.",
-			"If test_first is true, write a focused acceptance test, smoke test, or deterministic source probe for user_explicit behavior only; it must assert the relevant architect_contract.acceptance_criteria and must not be a render-only placeholder.",
-			"If test_first is false, implement enough source code to satisfy the validated test/probe, the current work item, and the architect_contract.acceptance_criteria.",
-			"Do not add unrequested dependencies, routing, authentication, cloud sync, databases, or framework changes.",
-			"Do not weaken, skip, delete, or rewrite an existing validated test unless the work item explicitly says it is a test correction.",
-		},
+		Role:                   "code_content_specialist",
+		UserPrompt:             input.UserPrompt,
+		ArchitectContract:      input.ArchitectContract,
+		WorkItem:               input.WorkItem,
+		FileContract:           fileContract,
+		ExistingContent:        truncateStructuredTimelineValue(input.ExistingContent),
+		TestFirst:              input.TestFirst,
+		RepairFeedback:         input.RepairFeedback,
+		RepairAttempt:          input.RepairAttempt,
+		RejectedContentPreview: truncateStructuredTimelineValue(input.RejectedContent),
+		Observations:           compactStructuredObservationsForContext(input.Observations, 6, 500),
+		SessionMemories:        compactSessionMemoriesForStructuredContext(sessionMemories, 6, 600),
+		WorksiteSurvey:         input.WorksiteSurvey,
+		Rules:                  rules,
 	}
 	blob, err := json.Marshal(payload)
 	if err != nil {
 		blob = []byte(`{"role":"code_content_specialist"}`)
 	}
-	return OllamaChatRequest{
-		Messages: []OllamaMessage{
-			{
-				Role: "system",
-				Content: strings.Join([]string{
-					"You are a narrowly scoped coding specialist.",
-					"The implementation architect has already chosen the exact file and operation.",
-					"Your only job is to produce complete file content for that one work item.",
-					"Return JSON only.",
-				}, " "),
-			},
-			{Role: "user", Content: string(blob)},
+	messages := []OllamaMessage{
+		{
+			Role: "system",
+			Content: strings.Join([]string{
+				"You are a narrowly scoped coding specialist.",
+				"The implementation architect has already chosen the exact file and operation.",
+				"Your only job is to produce complete file content for that one work item.",
+				"Return JSON only.",
+			}, " "),
 		},
+		{Role: "user", Content: string(blob)},
+	}
+	if input.RepairAttempt > 0 && strings.TrimSpace(input.RejectedContent) != "" {
+		messages = append(messages, buildSpecialistRepairFollowUpMessages(input.RepairFeedback, input.RejectedContent, []string{
+			"Return JSON only with schema {\"content\":\"full file content\",\"rationale\":\"brief reason\"}.",
+			"The validator feedback is authoritative for this repair attempt.",
+			"Repair the rejected file content directly; do not restate or argue with the feedback.",
+			"content must match file_contract.language and file_contract.role exactly.",
+			"Do not return the same rejected content or another forbidden file kind.",
+		})...)
+	}
+	options := map[string]interface{}{
+		"temperature": 0,
+		"num_predict": 4096,
+	}
+	if input.RepairAttempt > 0 {
+		options["temperature"] = defaultShellSpecialistRepairTemperature
+	}
+	return OllamaChatRequest{
+		Messages: messages,
 		Format: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -11342,10 +11492,7 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 			},
 			"required": []string{"content", "rationale"},
 		},
-		Options: map[string]interface{}{
-			"temperature": 0,
-			"num_predict": 4096,
-		},
+		Options: options,
 	}
 }
 
@@ -11392,7 +11539,11 @@ func codeContentFileContract(contract ImplementationArchitectContract, item Arch
 	case lower == "src/app.css" || strings.HasSuffix(lower, ".css"):
 		out.Role = "css_stylesheet"
 		out.Language = "css"
-		out.MustInclude = []string{".studio-shell"}
+		if includes := cssMustIncludeForContract(contract); len(includes) > 0 {
+			out.MustInclude = includes
+		} else {
+			out.MustInclude = []string{"body", ".app"}
+		}
 		out.MustAvoid = []string{"html document", "javascript", "react component"}
 	case strings.HasSuffix(lower, ".json"):
 		out.Role = "json_data_or_config"
@@ -11462,6 +11613,11 @@ func buildStructuredCommandMessagesWithPrep(prompt string, history []Message, me
 		)
 	}
 	messages = append(messages, OllamaMessage{Role: "user", Content: buildStructuredCommandUserMessage(prompt, observations, currentWorkingDirectory, objectiveLedger, minimalContext, recipes, survey)})
+	if len(observations) > 0 {
+		if repair, ok := structuredRepairContextFromObservation(observations[len(observations)-1]); ok {
+			messages = append(messages, buildStructuredPlannerRepairFollowUpMessages(repair)...)
+		}
+	}
 	return messages
 }
 
@@ -11664,6 +11820,10 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			LoopState                   StructuredLoopState            `json:"loop_state,omitempty"`
 			ForbiddenCommands           []string                       `json:"forbidden_commands,omitempty"`
 			RecoveryInstruction         string                         `json:"recovery_instruction,omitempty"`
+			LatestRejectionFeedback     string                         `json:"latest_rejection_feedback,omitempty"`
+			RejectedCommandPreview      string                         `json:"rejected_command_preview,omitempty"`
+			RejectedResponsePreview     string                         `json:"rejected_response_preview,omitempty"`
+			RejectionRepairGuidance     string                         `json:"rejection_repair_guidance,omitempty"`
 			DevelopmentLoop             []string                       `json:"development_loop,omitempty"`
 			ProofPolicy                 []string                       `json:"proof_policy,omitempty"`
 			ProofPlanAllowedSources     []string                       `json:"proof_plan_allowed_sources,omitempty"`
@@ -11713,6 +11873,14 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 	payload.ActiveTask.LoopState = structuredLoopStateFromState(payload.ActiveTask.ObjectiveLedger, observations)
 	payload.ActiveTask.ForbiddenCommands = payload.ActiveTask.LoopState.ForbiddenCommands
 	payload.ActiveTask.RecoveryInstruction = payload.ActiveTask.LoopState.Instruction
+	if len(observations) > 0 {
+		if repair, ok := structuredRepairContextFromObservation(observations[len(observations)-1]); ok {
+			payload.ActiveTask.LatestRejectionFeedback = repair.Feedback
+			payload.ActiveTask.RejectedCommandPreview = repair.RejectedCommand
+			payload.ActiveTask.RejectedResponsePreview = repair.RejectedResponse
+			payload.ActiveTask.RejectionRepairGuidance = repair.Guidance
+		}
+	}
 	payload.ActiveTask.DevelopmentLoop = structuredDevelopmentLoopPolicy()
 	payload.ActiveTask.ProofPolicy = structuredProofPolicy()
 	payload.ActiveTask.ProofPlanAllowedSources = defaultStructuredProofPlanAllowedSources()

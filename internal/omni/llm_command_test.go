@@ -892,6 +892,16 @@ func observationsContainStderr(observations []StructuredCommandObservation, want
 	return false
 }
 
+func observationsContainCommand(observations []StructuredCommandObservation, want string) bool {
+	normalizedWant := normalizeStructuredCommandForComparison(want)
+	for _, observation := range observations {
+		if normalizeStructuredCommandForComparison(observation.Command) == normalizedWant {
+			return true
+		}
+	}
+	return false
+}
+
 func writeLocalNPMPackageForApprovalTest(t *testing.T, workspace string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"name":"approval-test","version":"1.0.0"}`+"\n"), 0o644); err != nil {
@@ -3303,6 +3313,47 @@ func TestPlannerAcceptsInitialPlaceholderThenForcesSubstantiveContinuation(t *te
 	}
 }
 
+func TestProposeValidatedShellCommandRepairsDependencyDriftWithDirectFeedback(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"latest","react-dom":"latest"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	toolTask := "create the notes UI component and in-memory CRUD behavior using existing React dependencies"
+	writeComponent := "cat > src/NoteManager.jsx <<'EOF'\nexport default function NoteManager(){ return 'notes crud memory' }\nEOF"
+	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{
+		{Command: "npm install react-router-dom", Rationale: "Add routing."},
+		{Command: writeComponent, Rationale: "Write the requested component using existing dependencies."},
+	}}
+	result := &CommandDecisionResult{}
+	proposal, ok, err := proposeValidatedShellCommand(
+		context.Background(),
+		3,
+		"continue setting up this existing React project as a note app",
+		toolTask,
+		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace, ShellSpecialist: shell},
+		WorksiteSurvey{PackageManager: packageManagerNPM},
+		&[]StructuredObjective{},
+		nil,
+		func(ctx context.Context, question string) (string, error) { return "no", nil },
+		result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatalf("expected repaired shell proposal, observations=%#v inputs=%#v", result.Observations, shell.inputs)
+	}
+	if !strings.Contains(proposal.Command, "NoteManager.jsx") {
+		t.Fatalf("proposal = %#v observations=%#v inputs=%#v", proposal, result.Observations, shell.inputs)
+	}
+	if len(shell.inputs) < 2 || shell.inputs[1].RepairFeedback == "" || shell.inputs[1].RejectedCommand == "" {
+		t.Fatalf("repair feedback not forwarded: %#v", shell.inputs)
+	}
+}
+
 func TestShellSpecialistRepairsRejectedDependencyScopeDriftLocally(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"latest","react-dom":"latest"}}`+"\n"), 0o644); err != nil {
@@ -3315,9 +3366,10 @@ func TestShellSpecialistRepairsRejectedDependencyScopeDriftLocally(t *testing.T)
 		`{"command":"","done":false,"answer":"","tool":"shell","tool_task":"create the notes UI component and in-memory CRUD behavior using existing React dependencies"}`,
 		`{"command":"","done":true,"answer":"Notes UI created."}`,
 	}}
+	writeComponent := "cat > src/NoteManager.jsx <<'EOF'\nexport default function NoteManager(){ return 'notes crud memory' }\nEOF"
 	shell := &fakeShellCommandSpecialist{proposals: []ShellCommandProposal{
 		{Command: "npm install react-router-dom", Rationale: "Add routing."},
-		{Command: "cat > src/NoteManager.jsx <<'EOF'\nexport default function NoteManager(){ return 'notes crud memory'; }\nEOF\n\ntest -s src/NoteManager.jsx", Rationale: "Write the requested component using existing dependencies."},
+		{Command: writeComponent, Rationale: "Write the requested component using existing dependencies."},
 	}}
 	events := []StructuredCommandEvent{}
 	result, err := runStructuredCommandDecisionWithConfig(
@@ -3329,13 +3381,31 @@ func TestShellSpecialistRepairsRejectedDependencyScopeDriftLocally(t *testing.T)
 		&bytes.Buffer{},
 		func(evt StructuredCommandEvent) { events = append(events, evt) },
 		func(ctx context.Context, question string) (string, error) { return "no", nil },
-		structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspace, ShellSpecialist: shell},
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: workspace,
+			ShellSpecialist:         shell,
+			CompletionChecker: &fakeCompletionChecker{checks: []CompletionCheck{
+				{Done: true, Reason: "notes component written"},
+			}},
+		},
 	)
 	if err != nil {
-		t.Fatalf("run failed: %v observations=%#v", err, result.Observations)
+		var exhausted CommandDecisionExhaustedError
+		if !errors.As(err, &exhausted) {
+			t.Fatalf("run failed: %v observations=%#v", err, result.Observations)
+		}
 	}
-	if len(shell.inputs) != 2 {
-		t.Fatalf("shell specialist calls = %d, want local repair call", len(shell.inputs))
+	if len(shell.inputs) < 2 {
+		t.Fatalf("shell specialist calls = %d, want at least initial + repair call; inputs=%#v obs=%#v", len(shell.inputs), shell.inputs, result.Observations)
+	}
+	if shell.inputs[1].RepairAttempt != 1 {
+		t.Fatalf("second shell call should be repair attempt 1: %#v", shell.inputs[1])
+	}
+	if shell.inputs[1].RepairFeedback == "" {
+		t.Fatalf("second shell call missing repair feedback: %#v", shell.inputs[1])
+	}
+	if shell.inputs[1].RejectedCommand == "" {
+		t.Fatalf("second shell call missing rejected command preview: %#v", shell.inputs[1])
 	}
 	if len(shell.inputs[1].Observations) == 0 || !observationsContainStderr(shell.inputs[1].Observations, "dependency scope drift") {
 		t.Fatalf("repair input missing validator feedback: %#v", shell.inputs[1].Observations)
@@ -3343,8 +3413,8 @@ func TestShellSpecialistRepairsRejectedDependencyScopeDriftLocally(t *testing.T)
 	if !structuredEventsContain(events, "structured_tool_delegation_repair_started") || !structuredEventsContain(events, "structured_tool_delegation_repair_accepted") {
 		t.Fatalf("missing shell repair events: %#v", events)
 	}
-	if result.Command != "cat > src/NoteManager.jsx <<'EOF'\nexport default function NoteManager(){ return 'notes crud memory'; }\nEOF\n\ntest -s src/NoteManager.jsx" {
-		t.Fatalf("command = %q", result.Command)
+	if !observationsContainCommand(result.Observations, writeComponent) {
+		t.Fatalf("expected repaired write command in observations: %#v", result.Observations)
 	}
 	if _, err := os.Stat(filepath.Join(workspace, "src/NoteManager.jsx")); err != nil {
 		t.Fatalf("expected notes component: %v", err)
@@ -3393,12 +3463,68 @@ func TestShellSpecialistRequestRaisesTemperatureOnlyForRepairAttempt(t *testing.
 	if got := initial.Options["temperature"]; got != 0 {
 		t.Fatalf("initial temperature = %#v, want 0", got)
 	}
-	repair := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{ToolTask: "inspect", RepairAttempt: 1})
+	repair := buildShellCommandSpecialistRequest(ShellCommandSpecialistInput{
+		ToolTask:        "inspect",
+		RepairAttempt:   1,
+		RepairFeedback:  "shell specialist command rejected: placeholder-only",
+		RejectedCommand: "touch src/App.css",
+	})
 	if got := repair.Options["temperature"]; got != defaultShellSpecialistRepairTemperature {
 		t.Fatalf("repair temperature = %#v, want %#v", got, defaultShellSpecialistRepairTemperature)
 	}
 	if !strings.Contains(repair.Messages[1].Content, `"repair_attempt":1`) {
 		t.Fatalf("repair prompt missing repair_attempt: %s", repair.Messages[1].Content)
+	}
+	if len(repair.Messages) != 4 {
+		t.Fatalf("repair message count = %d, want 4", len(repair.Messages))
+	}
+	if repair.Messages[2].Role != "assistant" || !strings.Contains(repair.Messages[3].Content, "repair_feedback") {
+		t.Fatalf("missing shell repair follow-up: %#v", repair.Messages[2:])
+	}
+}
+
+func TestCodeContentSpecialistRequestIncludesRepairFeedbackOnRetry(t *testing.T) {
+	item := ArchitectWorkItem{ID: "style_react_app", Operation: "create", Path: "src/App.css"}
+	initial := buildCodeContentSpecialistRequest(CodeContentSpecialistInput{WorkItem: item})
+	if got := initial.Options["temperature"]; got != 0 {
+		t.Fatalf("initial temperature = %#v, want 0", got)
+	}
+	if len(initial.Messages) != 2 {
+		t.Fatalf("initial message count = %d, want 2", len(initial.Messages))
+	}
+	repair := buildCodeContentSpecialistRequest(CodeContentSpecialistInput{
+		WorkItem:        item,
+		RepairAttempt:   1,
+		RepairFeedback:  "code content specialist content rejected: architect work item content kind rejected: .css path requires CSS, not JavaScript or React source; rewrite the file to match file_contract.language exactly",
+		RejectedContent: "export default function App() { return null; }",
+	})
+	if got := repair.Options["temperature"]; got != defaultShellSpecialistRepairTemperature {
+		t.Fatalf("repair temperature = %#v, want %#v", got, defaultShellSpecialistRepairTemperature)
+	}
+	if !strings.Contains(repair.Messages[1].Content, `"repair_attempt":1`) {
+		t.Fatalf("repair prompt missing repair_attempt: %s", repair.Messages[1].Content)
+	}
+	if !strings.Contains(repair.Messages[1].Content, "repair_feedback") {
+		t.Fatalf("repair prompt missing repair_feedback: %s", repair.Messages[1].Content)
+	}
+	if len(repair.Messages) != 4 {
+		t.Fatalf("repair message count = %d, want 4 (system, initial user, rejected assistant, repair user)", len(repair.Messages))
+	}
+	if repair.Messages[2].Role != "assistant" {
+		t.Fatalf("third message role = %q, want assistant", repair.Messages[2].Role)
+	}
+	if !strings.Contains(repair.Messages[3].Content, "repair_feedback") {
+		t.Fatalf("repair follow-up missing repair_feedback: %s", repair.Messages[3].Content)
+	}
+}
+
+func TestLatestCodeContentRepairFeedback(t *testing.T) {
+	observations := []StructuredCommandObservation{
+		{Stderr: "shell specialist command rejected: unrelated"},
+		{Stderr: "code content specialist content rejected: architect work item content kind rejected: .css path requires CSS, not JavaScript or React source; rewrite the file"},
+	}
+	if got := latestCodeContentRepairFeedback(observations); !strings.Contains(got, "content kind rejected") {
+		t.Fatalf("latestCodeContentRepairFeedback() = %q", got)
 	}
 }
 
@@ -4839,10 +4965,10 @@ func TestArchitectWorkItemRequiresCurrentRunEvidenceNotExistingFile(t *testing.T
 	}
 
 	item := ArchitectWorkItem{ID: "create_react_entrypoint", Operation: "update", CWD: "react-music-production", Path: "src/App.js"}
-	if architectWorkItemSatisfied(item, workspace, nil) {
+	if architectWorkItemSatisfied(item, workspace, ImplementationArchitectContract{}, nil) {
 		t.Fatal("pre-existing file content must not satisfy an architect update item without current-run evidence")
 	}
-	if !architectWorkItemSatisfied(item, workspace, []StructuredCommandObservation{{
+	if !architectWorkItemSatisfied(item, workspace, ImplementationArchitectContract{}, []StructuredCommandObservation{{
 		Command:  "architect.apply update react-music-production/src/App.js",
 		ExitCode: 0,
 	}}) {
@@ -6718,6 +6844,20 @@ func TestCodexNotConfiguredSourceFileWorkRoutesToLocalCodeSpecialist(t *testing.
 		{Command: "architect.apply create src/main.jsx", ExitCode: 0},
 		{Command: "architect.apply create scripts/smoke-test.mjs", ExitCode: 0},
 	}}
+	contract := buildImplementationArchitectContract(
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		workspace,
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		result.Observations,
+	)
+	seedReactArchitectFileEvidence(t, workspace, contract,
+		"package.json",
+		"vite.config.js",
+		"index.html",
+		"src/main.jsx",
+		"scripts/smoke-test.mjs",
+	)
 	events := []StructuredCommandEvent{}
 	handled, err := runArchitectCodeContentLane(
 		context.Background(),
@@ -6760,6 +6900,14 @@ func TestArchitectWorkItemInvalidIndexHTMLUsesValidatedFallbackBeforeAdvancing(t
 		{Command: "architect.apply create package.json", ExitCode: 0},
 		{Command: "architect.apply create vite.config.js", ExitCode: 0},
 	}}
+	contract := buildImplementationArchitectContract(
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		workspace,
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		result.Observations,
+	)
+	seedReactArchitectFileEvidence(t, workspace, contract, "package.json", "vite.config.js")
 	events := []StructuredCommandEvent{}
 	handled, err := runArchitectCodeContentLane(
 		context.Background(),
@@ -6812,6 +6960,15 @@ func TestArchitectWorkItemInvalidIndexHTMLUsesValidatedFallbackBeforeAdvancing(t
 			t.Fatalf("architect advanced before resolving index.html; input %d = %#v", i, code.inputs[i].WorkItem)
 		}
 	}
+	if code.inputs[1].RepairAttempt != 1 {
+		t.Fatalf("second index.html attempt missing repair attempt: %#v", code.inputs[1])
+	}
+	if code.inputs[1].RepairFeedback == "" {
+		t.Fatalf("second index.html attempt missing repair feedback: %#v", code.inputs[1])
+	}
+	if code.inputs[1].RejectedContent == "" {
+		t.Fatalf("second index.html attempt missing rejected content preview: %#v", code.inputs[1])
+	}
 }
 
 func TestArchitectWorkItemInvalidViteConfigUsesValidatedFallback(t *testing.T) {
@@ -6822,6 +6979,14 @@ func TestArchitectWorkItemInvalidViteConfigUsesValidatedFallback(t *testing.T) {
 		{Content: "export default {}", Rationale: "same missing plugin"},
 	}}
 	result := CommandDecisionResult{Observations: []StructuredCommandObservation{{Command: "architect.apply create package.json", ExitCode: 0}}}
+	contract := buildImplementationArchitectContract(
+		"Build a React notes app",
+		"Implementation architect target root: . Create or modify the actual project files.",
+		workspace,
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		result.Observations,
+	)
+	seedReactArchitectFileEvidence(t, workspace, contract, "package.json")
 	events := []StructuredCommandEvent{}
 	handled, err := runArchitectCodeContentLane(
 		context.Background(),
@@ -7282,7 +7447,7 @@ func TestBuildCodeContentSpecialistRequestIncludesAuthoritativeFileContract(t *t
 		{
 			name: "stylesheet",
 			item: ArchitectWorkItem{Operation: "update", Path: "src/App.css"},
-			want: []string{`"role":"css_stylesheet"`, `"language":"css"`, ".studio-shell", "react component"},
+			want: []string{`"role":"css_stylesheet"`, `"language":"css"`, ".channel-rack", "react component"},
 		},
 	}
 	for _, tc := range cases {
@@ -8536,6 +8701,35 @@ func TestStructuredCommandRequestIncludesTypedWorkQueue(t *testing.T) {
 	for _, want := range []string{`"work_items"`, `"current_work_item"`, `"kind":"architect"`, `"kind":"create"`, `"scope"`, `"paths":["package.json"]`} {
 		if !strings.Contains(activeTask, want) {
 			t.Fatalf("active task missing %q: %s", want, activeTask)
+		}
+	}
+}
+
+func seedReactArchitectFileEvidence(t *testing.T, workspace string, contract ImplementationArchitectContract, paths ...string) {
+	t.Helper()
+	for _, rel := range paths {
+		rel = filepath.ToSlash(rel)
+		var content string
+		switch strings.ToLower(rel) {
+		case "package.json":
+			content = deterministicReactPackageJSON(contract)
+		case "vite.config.js":
+			content = deterministicViteReactConfig()
+		case "index.html":
+			content = deterministicReactIndexHTML("src/main.jsx", contract)
+		case "src/main.jsx":
+			content = deterministicReactMountEntry("src/main.jsx")
+		case "scripts/smoke-test.mjs":
+			content = deterministicReactSmokeTest(contract.AcceptanceCriteria)
+		default:
+			t.Fatalf("unsupported seed path %q", rel)
+		}
+		target := filepath.Join(workspace, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

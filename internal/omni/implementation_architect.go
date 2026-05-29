@@ -10,6 +10,8 @@ import (
 
 type ImplementationArchitectContract struct {
 	Role                string                     `json:"role"`
+	SourcePrompt        string                     `json:"source_prompt,omitempty"`
+	SourceToolTask      string                     `json:"source_tool_task,omitempty"`
 	TargetRoot          string                     `json:"target_root"`
 	Framework           string                     `json:"framework,omitempty"`
 	PackageManager      string                     `json:"package_manager,omitempty"`
@@ -66,6 +68,8 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 	}
 	contract := ImplementationArchitectContract{
 		Role:               "implementation_architect",
+		SourcePrompt:       strings.TrimSpace(prompt),
+		SourceToolTask:     strings.TrimSpace(toolTask),
 		TargetRoot:         targetRoot,
 		Framework:          framework,
 		PackageManager:     packageManager,
@@ -124,8 +128,12 @@ func buildImplementationArchitectContract(prompt, toolTask, workingDir string, s
 		contract.CurrentItem = repair
 		return contract
 	}
-	contract.CurrentItem = firstIncompleteArchitectWorkItem(contract.WorkQueue, workingDir, observations)
+	contract.CurrentItem = firstIncompleteArchitectWorkItem(contract.WorkQueue, workingDir, contract, observations)
 	return contract
+}
+
+func architectContractPrompt(contract ImplementationArchitectContract) string {
+	return strings.TrimSpace(contract.SourcePrompt)
 }
 
 func architectWriteOperationForPath(workingDir, cwd, path string, observations []StructuredCommandObservation) string {
@@ -321,6 +329,13 @@ func explicitReactAppAcceptanceCriteria(prompt, toolTask string) []string {
 		"visual timeline",
 		"production-studio ui",
 		"usable app, not a landing page",
+		"note capture",
+		"note list",
+		"in-memory notes",
+		"create notes",
+		"update notes",
+		"delete notes",
+		"todo list",
 	}
 	out := []string{}
 	for _, candidate := range candidates {
@@ -330,6 +345,9 @@ func explicitReactAppAcceptanceCriteria(prompt, toolTask string) []string {
 	}
 	if len(out) == 0 && strings.Contains(text, "music production") {
 		out = append(out, "music production interface")
+	}
+	if len(out) == 0 && promptRequestsNoteApp(prompt, toolTask) {
+		out = append(out, "note capture", "note list", "in-memory notes")
 	}
 	return out
 }
@@ -344,6 +362,9 @@ func enrichImplementationArchitectContract(contract ImplementationArchitectContr
 	contract.WebResearchBriefs = limitPrepBriefsForArchitect(compactPrep.WebResearchBriefs, 4)
 	for _, memory := range compactSessionMemoriesForStructuredContext(memories, 4, 500) {
 		if strings.TrimSpace(memory.Content) == "" {
+			continue
+		}
+		if memoryBriefLooksForeignToPrompt(memory, prompt, toolTask) {
 			continue
 		}
 		contract.MemoryBriefs = append(contract.MemoryBriefs, PrepBrief{
@@ -471,10 +492,13 @@ func promptRequestsImplementationArchitecture(prompt string) bool {
 	return false
 }
 
-func firstIncompleteArchitectWorkItem(queue []ArchitectWorkItem, workingDir string, observations []StructuredCommandObservation) *ArchitectWorkItem {
+func firstIncompleteArchitectWorkItem(queue []ArchitectWorkItem, workingDir string, contract ImplementationArchitectContract, observations []StructuredCommandObservation) *ArchitectWorkItem {
 	for i := range queue {
 		item := queue[i]
-		if architectWorkItemSatisfied(item, workingDir, observations) {
+		if architectWorkItemSatisfied(item, workingDir, contract, observations) {
+			continue
+		}
+		if err := architectImplementationBlockedByMissingTestProbe(queue, item, workingDir, contract, architectContractPrompt(contract), observations); err != nil {
 			continue
 		}
 		return &queue[i]
@@ -482,7 +506,7 @@ func firstIncompleteArchitectWorkItem(queue []ArchitectWorkItem, workingDir stri
 	return nil
 }
 
-func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, observations []StructuredCommandObservation) bool {
+func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, contract ImplementationArchitectContract, observations []StructuredCommandObservation) bool {
 	switch item.Operation {
 	case "read":
 		command := normalizeStructuredCommandForComparison("architect.read " + filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
@@ -498,6 +522,11 @@ func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, obser
 		}
 		for _, obs := range observations {
 			if obs.ExitCode == 0 && architectApplyObservationMatches(item, obs) {
+				if hasImplementationArchitectContract(contract) {
+					if _, err := architectWorkItemFileEvidenceValid(item, workingDir, contract, architectContractPrompt(contract)); err != nil {
+						return false
+					}
+				}
 				return true
 			}
 		}
@@ -627,18 +656,21 @@ func validateCodeContentProposalForArchitectItem(content string, contract Implem
 		if path == "src/app.js" && (strings.Contains(lower, "return (") || strings.Contains(lower, "<main") || strings.Contains(lower, "<section") || strings.Contains(lower, "<button")) {
 			return fmt.Errorf("App.js must avoid JSX syntax; use React.createElement-compatible JavaScript")
 		}
-		if strings.Contains(lower, "placeholder") {
+		if strings.Contains(lower, "placeholder-only") || strings.Contains(lower, "placeholder ui") || strings.Contains(lower, "render-only placeholder") {
+			return fmt.Errorf("App component must implement substantive UI instead of placeholders")
+		}
+		if strings.Contains(lower, "return null") && !strings.Contains(lower, "usestate") && !strings.Contains(lower, "button") {
 			return fmt.Errorf("App component must implement substantive UI instead of placeholders")
 		}
 		if !strings.Contains(lower, "export default") {
 			return fmt.Errorf("App component must export a default component")
 		}
-		rangeControl := strings.Contains(lower, "type=\"range\"") || strings.Contains(lower, "type: 'range'") || strings.Contains(lower, "type: \"range\"")
-		if !strings.Contains(lower, "usestate") || !strings.Contains(lower, "button") || !rangeControl {
-			return fmt.Errorf("App component must include interactive React controls")
-		}
-		if missing := missingAcceptanceSignals(trimmed, contract.AcceptanceCriteria); len(missing) > 0 {
-			return fmt.Errorf("App component must include requested UI signal(s): %s", strings.Join(missing, ", "))
+		if len(contract.AcceptanceCriteria) > 0 {
+			if missing := missingAcceptanceSignals(trimmed, contract.AcceptanceCriteria); len(missing) > 0 {
+				return fmt.Errorf("App component must include requested UI signal(s): %s", strings.Join(missing, ", "))
+			}
+		} else if !strings.Contains(lower, "usestate") && !strings.Contains(lower, "button") && !strings.Contains(lower, "input") && !strings.Contains(lower, "textarea") {
+			return fmt.Errorf("App component must include substantive interactive UI, not an empty shell")
 		}
 	case "src/app.css":
 		if strings.Contains(lower, "import react") ||
@@ -651,14 +683,9 @@ func validateCodeContentProposalForArchitectItem(content string, contract Implem
 		if strings.Contains(lower, "placeholder") || strings.Contains(lower, "todo") || strings.Contains(lower, "add more styles") {
 			return fmt.Errorf("App stylesheet must style substantive UI instead of placeholders or unfinished notes")
 		}
-		for _, required := range []string{"studio", "channel", "mixer", "timeline"} {
-			if !strings.Contains(lower, required) {
-				return fmt.Errorf("App stylesheet must style requested studio surface: missing %s", required)
-			}
-		}
-		for _, selector := range []string{".studio-shell", ".transport-panel", ".channel-rack", ".mixer", ".piano-roll", ".pads", ".timeline"} {
-			if !strings.Contains(lower, selector) {
-				return fmt.Errorf("App stylesheet must target actual React app selector %s", selector)
+		if len(contract.AcceptanceCriteria) > 0 {
+			if missing := missingCSSAcceptanceSignals(trimmed, contract.AcceptanceCriteria); len(missing) > 0 {
+				return fmt.Errorf("App stylesheet must style requested UI signal(s): %s", strings.Join(missing, ", "))
 			}
 		}
 	}
@@ -742,15 +769,21 @@ func deterministicArchitectContentProposal(contract ImplementationArchitectContr
 		if strings.Contains(strings.ToLower(item.ID), "main") {
 			entry = "src/main.jsx"
 		}
-		return CodeContentProposal{Content: deterministicReactIndexHTML(entry), Rationale: "deterministic Vite HTML shell fallback"}, true
+		return CodeContentProposal{Content: deterministicReactIndexHTML(entry, contract), Rationale: "deterministic Vite HTML shell fallback"}, true
 	case "src/index.js", "src/main.js", "src/main.jsx":
 		return CodeContentProposal{Content: deterministicReactMountEntry(path), Rationale: "deterministic React mount entry fallback"}, true
 	case "scripts/smoke-test.mjs":
 		return CodeContentProposal{Content: deterministicReactSmokeTest(contract.AcceptanceCriteria), Rationale: "deterministic acceptance smoke probe fallback"}, true
 	case "src/app.js", "src/app.jsx":
-		return CodeContentProposal{Content: deterministicReactMusicStudioApp(), Rationale: "deterministic React music studio implementation fallback"}, true
+		if promptRequestsMusicStudio(architectContractPrompt(contract), contract.SourceToolTask) {
+			return CodeContentProposal{Content: deterministicReactMusicStudioApp(), Rationale: "deterministic React music studio implementation fallback"}, true
+		}
+		return CodeContentProposal{Content: deterministicGenericReactApp(contract), Rationale: "deterministic React app implementation fallback for current prompt"}, true
 	case "src/app.css":
-		return CodeContentProposal{Content: deterministicReactMusicStudioCSS(), Rationale: "deterministic React music studio stylesheet fallback"}, true
+		if promptRequestsMusicStudio(architectContractPrompt(contract), contract.SourceToolTask) {
+			return CodeContentProposal{Content: deterministicReactMusicStudioCSS(), Rationale: "deterministic React music studio stylesheet fallback"}, true
+		}
+		return CodeContentProposal{Content: deterministicGenericReactAppCSS(contract), Rationale: "deterministic React app stylesheet fallback for current prompt"}, true
 	default:
 		return CodeContentProposal{}, false
 	}
@@ -795,24 +828,30 @@ export default defineConfig({
 `
 }
 
-func deterministicReactIndexHTML(entry string) string {
+func deterministicReactIndexHTML(entry string, contract ImplementationArchitectContract) string {
 	entry = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(entry)), "/")
 	if entry == "" {
 		entry = "src/main.jsx"
+	}
+	title := "Omnidex React App"
+	if promptRequestsNoteApp(architectContractPrompt(contract), contract.SourceToolTask) {
+		title = "Notes App"
+	} else if promptRequestsMusicStudio(architectContractPrompt(contract), contract.SourceToolTask) {
+		title = "Omnidex Beat Studio"
 	}
 	return fmt.Sprintf(`<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Omnidex Beat Studio</title>
+    <title>%s</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/%s"></script>
   </body>
 </html>
-`, entry)
+`, title, entry)
 }
 
 func deterministicReactMountEntry(path string) string {
@@ -1180,6 +1219,117 @@ h1 {
 `
 }
 
+func deterministicGenericReactApp(contract ImplementationArchitectContract) string {
+	title := "Omnidex React App"
+	if promptRequestsNoteApp(architectContractPrompt(contract), contract.SourceToolTask) {
+		title = "Notes App"
+	}
+	return fmt.Sprintf(`import React, { useState } from 'react';
+
+const initialNotes = [
+  { id: 1, title: 'Welcome note', body: 'Capture ideas in memory for this session.' },
+];
+
+export default function App() {
+  const [notes, setNotes] = useState(initialNotes);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+
+  const addNote = () => {
+    const trimmedTitle = title.trim();
+    const trimmedBody = body.trim();
+    if (!trimmedTitle && !trimmedBody) {
+      return;
+    }
+    setNotes((current) => [...current, { id: Date.now(), title: trimmedTitle || 'Untitled', body: trimmedBody }]);
+    setTitle('');
+    setBody('');
+  };
+
+  const deleteNote = (id) => {
+    setNotes((current) => current.filter((note) => note.id !== id));
+  };
+
+  return React.createElement('main', { className: 'app-shell notes-app' },
+    React.createElement('header', { className: 'app-header' },
+      React.createElement('h1', null, %q),
+      React.createElement('p', null, 'In-memory notes with create and delete actions.')
+    ),
+    React.createElement('section', { className: 'note-form', 'aria-label': 'Note capture' },
+      React.createElement('input', {
+        type: 'text',
+        placeholder: 'Note title',
+        value: title,
+        onChange: (event) => setTitle(event.target.value),
+      }),
+      React.createElement('textarea', {
+        placeholder: 'Note body',
+        value: body,
+        onChange: (event) => setBody(event.target.value),
+      }),
+      React.createElement('button', { type: 'button', onClick: addNote }, 'Add note')
+    ),
+    React.createElement('section', { className: 'note-list', 'aria-label': 'Note list' },
+      notes.map((note) => React.createElement('article', { key: note.id, className: 'note-card' },
+        React.createElement('h2', null, note.title),
+        React.createElement('p', null, note.body),
+        React.createElement('button', { type: 'button', onClick: () => deleteNote(note.id) }, 'Delete note')
+      ))
+    )
+  );
+}
+`, title)
+}
+
+func deterministicGenericReactAppCSS(contract ImplementationArchitectContract) string {
+	return `:root {
+  color: #0f172a;
+  background: #f8fafc;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.notes-app .app-header,
+.note-form,
+.note-list,
+.note-card {
+  display: grid;
+  gap: 12px;
+}
+
+.note-form input,
+.note-form textarea,
+.note-card button,
+.note-form button {
+  font: inherit;
+}
+
+.note-form textarea {
+  min-height: 120px;
+}
+
+.note-list {
+  margin-top: 24px;
+}
+
+.note-card {
+  padding: 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+}
+`
+}
+
 func uniqueNonEmptyStrings(values []string) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -1223,6 +1373,29 @@ func missingAcceptanceSignals(content string, criteria []string) []string {
 	return missing
 }
 
+func missingCSSAcceptanceSignals(content string, criteria []string) []string {
+	lower := strings.ToLower(content)
+	missing := []string{}
+	for _, criterion := range criteria {
+		found := false
+		for _, signal := range acceptanceCriterionSignals(criterion) {
+			if strings.Contains(lower, signal) {
+				found = true
+				break
+			}
+			className := "." + strings.ReplaceAll(strings.ToLower(strings.TrimSpace(signal)), " ", "-")
+			if strings.Contains(lower, className) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, criterion)
+		}
+	}
+	return missing
+}
+
 func acceptanceCriterionSignals(criterion string) []string {
 	switch strings.ToLower(strings.TrimSpace(criterion)) {
 	case "pattern step sequencer":
@@ -1246,9 +1419,11 @@ func acceptanceCriterionSignals(criterion string) []string {
 	case "production-studio ui":
 		return []string{"studio"}
 	case "usable app, not a landing page":
-		return []string{"sequencer", "mixer", "transport", "timeline"}
+		return []string{"sequencer", "mixer", "transport", "timeline", "note", "todo", "button"}
 	case "music production interface":
 		return []string{"music", "studio"}
+	case "note capture", "note list", "in-memory notes", "create notes", "update notes", "delete notes", "todo list":
+		return []string{"note", "todo", "title", "body", "list"}
 	default:
 		return []string{strings.ToLower(strings.TrimSpace(criterion))}
 	}
