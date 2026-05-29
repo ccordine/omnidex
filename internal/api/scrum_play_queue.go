@@ -217,28 +217,33 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 			continue
 		}
 		updated := card
-		statusLine := fmt.Sprintf("job status: %s\n", job.Job.Status)
-		if !strings.Contains(updated.ConsoleLog, statusLine) {
-			updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, statusLine)
-		}
 		cardChanged := false
 		switch job.Job.Status {
-		case model.JobStatusCompleted:
-			updated.Column = "review"
-			updated.PlayState = ""
+		case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
+			outcome := resolveScrumManagerOutcome(job)
+			if job.Job.Status == model.JobStatusCompleted && outcome == ScrumOutcomeInProgress {
+				outcome = ScrumOutcomeSuccess
+			}
+			transition := scrumColumnForOutcome(outcome)
+			if agentOutput := strings.TrimSpace(collectScrumAgentOutput(job)); agentOutput != "" {
+				summary := agentOutput
+				if len(summary) > 4000 {
+					summary = summary[len(summary)-4000:]
+				}
+				if len(summary) > 0 && !strings.Contains(updated.ConsoleLog, summary[:min(120, len(summary))]) {
+					updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, "agent output:\n"+summary)
+				}
+			}
+			updated.Column = transition.Column
+			updated.PlayState = transition.PlayState
 			updated.QueueOrder = 0
+			updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, transition.ConsoleNote)
 			cardChanged = true
-		case model.JobStatusFailed:
-			updated.Column = "assigned"
-			updated.PlayState = scrumPlayPaused
-			updated.QueueOrder = 0
-			updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, "job failed\n")
-			cardChanged = true
-		case model.JobStatusCanceled:
-			updated.Column = "assigned"
-			updated.PlayState = scrumPlayPaused
-			updated.QueueOrder = 0
-			cardChanged = true
+		default:
+			statusLine := fmt.Sprintf("job status: %s", job.Job.Status)
+			if !strings.Contains(updated.ConsoleLog, statusLine) {
+				updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, statusLine)
+			}
 		}
 		if cardChanged {
 			if saved, err := s.persistScrumCard(r, projectID, updated); err == nil {

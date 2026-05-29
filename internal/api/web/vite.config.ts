@@ -1,5 +1,8 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import { resolve } from "node:path";
+
+const env = loadEnv("", resolve(__dirname, "../../.."), "");
+const coreProxy = env.CORE_URL || env.VITE_CORE_URL || "http://127.0.0.1:8090";
 
 export default defineConfig({
   root: resolve(__dirname),
@@ -13,9 +16,10 @@ export default defineConfig({
     },
   },
   server: {
+    host: true,
     proxy: {
-      "/healthz": "http://localhost:8090",
-      "/v1": "http://localhost:8090",
+      "/healthz": coreProxy,
+      "/v1": coreProxy,
     },
   },
 });

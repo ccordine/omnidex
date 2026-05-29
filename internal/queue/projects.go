@@ -276,7 +276,15 @@ type DBScrumCard struct {
 	Chat        json.RawMessage
 	ModelConfig json.RawMessage
 	AgentConfig json.RawMessage
-	JobID       string
+	JiraTicket   string
+	JiraPrompt   string
+	RecipeID     string
+	Recipe       json.RawMessage
+	Tags         json.RawMessage
+	PlanningChat json.RawMessage
+	CoachConfig  json.RawMessage
+	TestCriteria json.RawMessage
+	JobID        string
 	ConsoleLog  string
 	PlayState   string
 	QueueOrder  int
@@ -287,7 +295,9 @@ type DBScrumCard struct {
 func (r *Repository) ListScrumCards(ctx context.Context, projectID int64) ([]DBScrumCard, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
-		       model_config, agent_config, job_id, console_log, play_state, queue_order, created_at, updated_at
+		       model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
+		       tags, planning_chat, coach_config, test_criteria,
+		       job_id, console_log, play_state, queue_order, created_at, updated_at
 		FROM scrum_cards
 		WHERE project_id = $1
 		ORDER BY updated_at DESC, id ASC
@@ -311,6 +321,14 @@ func (r *Repository) ListScrumCards(ctx context.Context, projectID int64) ([]DBS
 			&card.Chat,
 			&card.ModelConfig,
 			&card.AgentConfig,
+			&card.JiraTicket,
+			&card.JiraPrompt,
+			&card.RecipeID,
+			&card.Recipe,
+			&card.Tags,
+			&card.PlanningChat,
+			&card.CoachConfig,
+			&card.TestCriteria,
 			&card.JobID,
 			&card.ConsoleLog,
 			&card.PlayState,
@@ -329,7 +347,9 @@ func (r *Repository) GetScrumCard(ctx context.Context, projectID int64, cardID s
 	var card DBScrumCard
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
-		       model_config, agent_config, job_id, console_log, play_state, queue_order, created_at, updated_at
+		       model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
+		       tags, planning_chat, coach_config, test_criteria,
+		       job_id, console_log, play_state, queue_order, created_at, updated_at
 		FROM scrum_cards
 		WHERE project_id = $1 AND id = $2
 	`, projectID, strings.TrimSpace(cardID)).Scan(
@@ -343,6 +363,14 @@ func (r *Repository) GetScrumCard(ctx context.Context, projectID int64, cardID s
 		&card.Chat,
 		&card.ModelConfig,
 		&card.AgentConfig,
+		&card.JiraTicket,
+		&card.JiraPrompt,
+		&card.RecipeID,
+		&card.Recipe,
+		&card.Tags,
+		&card.PlanningChat,
+		&card.CoachConfig,
+		&card.TestCriteria,
 		&card.JobID,
 		&card.ConsoleLog,
 		&card.PlayState,
@@ -385,7 +413,9 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 		INSERT INTO scrum_cards (id, project_id, title, description, column_name, checklist, ref_files, chat)
 		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb)
 		RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
-		          model_config, agent_config, job_id, console_log, play_state, queue_order, created_at, updated_at
+		          model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
+		          tags, planning_chat, coach_config, test_criteria,
+		          job_id, console_log, play_state, queue_order, created_at, updated_at
 	`, cardID, projectID, title, strings.TrimSpace(description), column, string(checklist), string(refFiles), string(chat)).Scan(
 		&card.ID,
 		&card.ProjectID,
@@ -397,6 +427,14 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 		&card.Chat,
 		&card.ModelConfig,
 		&card.AgentConfig,
+		&card.JiraTicket,
+		&card.JiraPrompt,
+		&card.RecipeID,
+		&card.Recipe,
+		&card.Tags,
+		&card.PlanningChat,
+		&card.CoachConfig,
+		&card.TestCriteria,
 		&card.JobID,
 		&card.ConsoleLog,
 		&card.PlayState,
@@ -457,6 +495,30 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 			current.QueueOrder = int(v)
 		}
 	}
+	if jiraTicket, ok := patch["jira_ticket"].(string); ok {
+		current.JiraTicket = jiraTicket
+	}
+	if recipeID, ok := patch["recipe_id"].(string); ok {
+		current.RecipeID = strings.TrimSpace(recipeID)
+	}
+	if recipe, ok := patch["recipe"].(json.RawMessage); ok {
+		current.Recipe = recipe
+	}
+	if jiraPrompt, ok := patch["jira_prompt"].(string); ok {
+		current.JiraPrompt = jiraPrompt
+	}
+	if tags, ok := patch["tags"].(json.RawMessage); ok {
+		current.Tags = tags
+	}
+	if planningChat, ok := patch["planning_chat"].(json.RawMessage); ok {
+		current.PlanningChat = planningChat
+	}
+	if coachConfig, ok := patch["coach_config"].(json.RawMessage); ok {
+		current.CoachConfig = coachConfig
+	}
+	if testCriteria, ok := patch["test_criteria"].(json.RawMessage); ok {
+		current.TestCriteria = testCriteria
+	}
 
 	var card DBScrumCard
 	err = r.pool.QueryRow(ctx, `
@@ -469,15 +531,25 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		    chat = $8::jsonb,
 		    model_config = $9::jsonb,
 		    agent_config = $10::jsonb,
-		    job_id = $11,
-		    console_log = $12,
-		    play_state = $13,
-		    queue_order = $14,
+		    jira_ticket = $11,
+		    jira_prompt = $12,
+		    recipe_id = $13,
+		    recipe = $14::jsonb,
+		    tags = $15::jsonb,
+		    planning_chat = $16::jsonb,
+		    coach_config = $17::jsonb,
+		    test_criteria = $18::jsonb,
+		    job_id = $19,
+		    console_log = $20,
+		    play_state = $21,
+		    queue_order = $22,
 		    updated_at = NOW()
 		WHERE project_id = $1 AND id = $2
 		RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
-		          model_config, agent_config, job_id, console_log, play_state, queue_order, created_at, updated_at
-	`, projectID, cardID, current.Title, current.Description, current.Column, string(current.Checklist), string(current.RefFiles), string(current.Chat), string(current.ModelConfig), string(current.AgentConfig), current.JobID, current.ConsoleLog, current.PlayState, current.QueueOrder).Scan(
+		          model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
+		          tags, planning_chat, coach_config, test_criteria,
+		          job_id, console_log, play_state, queue_order, created_at, updated_at
+	`, projectID, cardID, current.Title, current.Description, current.Column, string(current.Checklist), string(current.RefFiles), string(current.Chat), string(current.ModelConfig), string(current.AgentConfig), current.JiraTicket, current.JiraPrompt, current.RecipeID, string(current.Recipe), string(defaultJSON(current.Tags, `[]`)), string(defaultJSON(current.PlanningChat, `[]`)), string(defaultJSON(current.CoachConfig, `{}`)), string(defaultJSON(current.TestCriteria, `[]`)), current.JobID, current.ConsoleLog, current.PlayState, current.QueueOrder).Scan(
 		&card.ID,
 		&card.ProjectID,
 		&card.Title,
@@ -488,6 +560,14 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		&card.Chat,
 		&card.ModelConfig,
 		&card.AgentConfig,
+		&card.JiraTicket,
+		&card.JiraPrompt,
+		&card.RecipeID,
+		&card.Recipe,
+		&card.Tags,
+		&card.PlanningChat,
+		&card.CoachConfig,
+		&card.TestCriteria,
 		&card.JobID,
 		&card.ConsoleLog,
 		&card.PlayState,
@@ -512,6 +592,13 @@ func (r *Repository) DeleteScrumCard(ctx context.Context, projectID int64, cardI
 	}
 	_ = r.TouchProject(ctx, projectID)
 	return nil
+}
+
+func defaultJSON(raw json.RawMessage, fallback string) json.RawMessage {
+	if len(raw) > 0 {
+		return raw
+	}
+	return json.RawMessage(fallback)
 }
 
 func ProjectNameFromLocation(location string) string {

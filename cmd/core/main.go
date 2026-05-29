@@ -207,8 +207,10 @@ func main() {
 		WebSearchEnabled:          cfg.WebSearchEnabled,
 		WebSearchProviders:        cfg.WebSearchProviders,
 		WebSearchTimeout:          cfg.WebSearchTimeout,
+		CoreURL:                   cfg.CoreURL,
+		ListenAddr:                cfg.ListenAddr,
 	})
-	log.Printf("core listening on %s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.LLMProvider, cfg.WrapperOnly)
+	log.Printf("core listening on %s core_url=%s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.CoreURL, cfg.LLMProvider, cfg.WrapperOnly)
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

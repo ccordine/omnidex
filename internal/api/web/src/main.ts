@@ -4,6 +4,7 @@ import ChatController from "./controllers/chat_controller";
 import ScrumController from "./controllers/scrum_controller";
 import ProjectsController from "./controllers/projects_controller";
 import AdminController from "./controllers/admin_controller";
+import ShellController from "./controllers/shell_controller";
 import "../styles.css";
 
 const application = Application.start();
@@ -12,5 +13,6 @@ application.register("chat", ChatController);
 application.register("scrum", ScrumController);
 application.register("projects", ProjectsController);
 application.register("admin", AdminController);
+application.register("shell", ShellController);
 
 export default application;

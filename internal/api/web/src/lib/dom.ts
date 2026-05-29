@@ -87,6 +87,7 @@ export function statusPillClass(status?: string): string {
     case "failed":
     case "canceled":
     case "rejected":
+    case "blocked":
       return `${base} bg-rose-300/15 text-rose-200`;
     default:
       return `${base} bg-zinc-300/10 text-zinc-300`;

@@ -9,6 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
+	"github.com/gryph/omnidex/internal/scrum"
 )
 
 func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string) error {
@@ -19,7 +20,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		if msg == "" {
 			msg = cfg.System() + " agent is not configured"
 		}
-		if cfg.IsStrict() {
+		if cfg.IsStrict() || scrum.IsStrictScrumExternal(claim.Job.Metadata) {
 			return fmt.Errorf("strict external agent required: %s", msg)
 		}
 		s.emitStepEvent(claim.Step.ID, "external_agent_unavailable", msg)
@@ -46,7 +47,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	s.emitStepEvent(claim.Step.ID, "external_agent_started", agentName)
 	result, err := agent.RunArchitectTask(ctx, input)
 	if err != nil {
-		if cfg.IsStrict() {
+		if cfg.IsStrict() || scrum.IsStrictScrumExternal(claim.Job.Metadata) {
 			return fmt.Errorf("%s failed: %w", agentName, err)
 		}
 		s.emitStepEvent(claim.Step.ID, "external_agent_failed", err.Error())
@@ -94,25 +95,17 @@ func selectExternalAgent(cfg agentconfig.Config) (omni.CursorArchitectAgent, str
 
 func buildExternalAgentPrompt(job model.Job, contexts map[string]string) string {
 	lines := []string{
-		"You are executing a bounded task inside an Omnidex-managed project workspace.",
-		"Use the project context below. Do not ask the user to run Omnidex commands manually.",
+		"You are executing a bounded scrum card task inside an Omnidex-managed project workspace.",
+		"Use the card context below. Do not ask the user to run Omnidex commands manually.",
 	}
-	if title := metadataString(job.Metadata, "scrum_card_title"); title != "" {
-		lines = append(lines, "Scrum card: "+title)
-	}
-	if cardID := metadataString(job.Metadata, "scrum_card_id"); cardID != "" {
-		lines = append(lines, "Card ID: "+cardID)
-	}
-	if dir := metadataString(job.Metadata, "project_directory"); dir != "" {
-		lines = append(lines, "Project directory: "+dir)
-	}
-	if refs := metadataStringSlice(job.Metadata, "ref_files"); len(refs) > 0 {
-		lines = append(lines, "Reference files:", strings.Join(refs, "\n"))
+	lines = append(lines, scrum.ContextLinesFromMetadata(job.Metadata)...)
+	if executionAgent := metadataString(job.Metadata, "execution_agent"); executionAgent != "" {
+		lines = append(lines, "Execution agent: "+executionAgent)
 	}
 	if feedback := strings.TrimSpace(contexts["user_feedback"]); feedback != "" {
 		lines = append(lines, "Feedback:", feedback)
 	}
-	lines = append(lines, "", "Task:", strings.TrimSpace(job.Instruction))
+	lines = append(lines, "", "Task:", strings.TrimSpace(job.Instruction), "", scrum.AgentStatusFooter)
 	return strings.Join(lines, "\n")
 }
 func metadataStringSlice(metadata json.RawMessage, key string) []string {

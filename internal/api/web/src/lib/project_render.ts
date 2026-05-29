@@ -1,10 +1,32 @@
 import { escapeHTML, formatDateTime, statusPillClass } from "./dom";
 import { renderModelConfigSection } from "./model_config_render";
 import { renderAgentConfigSection } from "./agent_config_render";
+import { renderProjectScrumShell } from "./scrum_render";
 import type { ModelFieldDefinition } from "./model_config_types";
 import type { AgentFieldDefinition } from "./agent_config_types";
 import type { BrowseResponse } from "./project_types";
 import type { ProjectRecord, ProjectMapSummary, RecipeCatalogItem } from "./project_types";
+
+const PROJECT_TABS = [
+  { id: "scrum", label: "Scrum" },
+  { id: "settings", label: "Settings" },
+  { id: "map", label: "Codebase map" },
+  { id: "recipe", label: "Recipe" },
+] as const;
+
+function renderProjectTabNav(activeTab: string): string {
+  return PROJECT_TABS.map((tab) => {
+    const active = tab.id === activeTab;
+    const classes = active
+      ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100"
+      : "border-white/10 text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200";
+    return `<button type="button" data-action="projects#showTab" data-project-tab="${tab.id}" class="rounded-md border px-3 py-2 text-sm font-medium transition ${classes}">${escapeHTML(tab.label)}</button>`;
+  }).join("");
+}
+
+function tabPanelClass(tab: string, activeTab: string): string {
+  return tab === activeTab ? "" : " hidden";
+}
 
 export function renderProjectList(projects: ProjectRecord[]): string {
   if (!projects.length) {
@@ -12,9 +34,6 @@ export function renderProjectList(projects: ProjectRecord[]): string {
   }
   return projects
     .map((project) => {
-      const active = project.is_active
-        ? `<span class="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-200">Active</span>`
-        : "";
       return `
         <button
           type="button"
@@ -24,10 +43,7 @@ export function renderProjectList(projects: ProjectRecord[]): string {
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="truncate text-base font-semibold text-zinc-100">${escapeHTML(project.name)}</h3>
-                ${active}
-              </div>
+              <h3 class="truncate text-base font-semibold text-zinc-100">${escapeHTML(project.name)}</h3>
               <p class="mt-1 truncate font-mono text-xs text-zinc-500">${escapeHTML(project.location)}</p>
             </div>
             <div class="shrink-0 text-right text-[11px] text-zinc-500">
@@ -55,6 +71,7 @@ export function renderProjectDetail(
   resolvedAgentSource = "env",
   resolvedAgentSystem = "omnidex",
   projectMap: ProjectMapSummary | null = null,
+  activeTab = "scrum",
 ): string {
   const recipeOptions = recipes
     .map((recipe) => {
@@ -65,20 +82,8 @@ export function renderProjectDetail(
 
   const recipeJSON = JSON.stringify(project.recipe ?? {}, null, 2);
 
-  return `
-    <div class="space-y-4">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" data-action="projects#backToList" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">← All projects</button>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" data-action="projects#rescanProject" data-project-id="${project.id}" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-200 hover:border-cyan-300/40 hover:bg-cyan-300/10">Detect stack</button>
-          ${
-            project.is_active
-              ? `<span class="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm font-semibold text-cyan-200">Active project</span>`
-              : `<button type="button" data-action="projects#activateProject" data-project-id="${project.id}" class="rounded-md bg-cyan-300 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Set active</button>`
-          }
-        </div>
-      </div>
-
+  const settingsTab = `
+    <div data-project-tab-panel="settings" class="space-y-4${tabPanelClass("settings", activeTab)}">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
         <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Project</h3>
         <div class="mt-4 grid gap-4 lg:grid-cols-2">
@@ -104,11 +109,10 @@ export function renderProjectDetail(
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <button type="button" data-action="projects#saveProject" data-project-id="${project.id}" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Save project</button>
+          <button type="button" data-action="projects#rescanProject" data-project-id="${project.id}" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-200 hover:border-cyan-300/40 hover:bg-cyan-300/10">Detect stack</button>
           <button type="button" data-action="projects#deleteProject" data-project-id="${project.id}" class="rounded-md border border-rose-400/30 px-4 py-2 text-sm text-rose-300 hover:bg-rose-400/10">Delete</button>
         </div>
       </section>
-
-      ${renderProjectMapSection(project.id, projectMap)}
 
       ${
         modelFields.length
@@ -128,7 +132,13 @@ export function renderProjectDetail(
             )
           : ""
       }
+    </div>
+  `;
 
+  const mapTab = `<div data-project-tab-panel="map" class="space-y-4${tabPanelClass("map", activeTab)}">${renderProjectMapSection(project.id, projectMap)}</div>`;
+
+  const recipeTab = `
+    <div data-project-tab-panel="recipe" class="space-y-4${tabPanelClass("recipe", activeTab)}">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -146,6 +156,25 @@ export function renderProjectDetail(
           <button type="button" data-action="projects#saveRecipe" data-project-id="${project.id}" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Save recipe</button>
         </div>
       </section>
+    </div>
+  `;
+
+  return `
+    <div class="space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <button type="button" data-action="projects#backToList" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">← All projects</button>
+          <h3 class="mt-3 truncate text-2xl font-semibold tracking-tight text-zinc-100">${escapeHTML(project.name)}</h3>
+          <p class="mt-1 truncate font-mono text-xs text-zinc-500">${escapeHTML(project.location)}</p>
+        </div>
+      </div>
+
+      <nav class="flex flex-wrap gap-2" aria-label="Project sections">${renderProjectTabNav(activeTab)}</nav>
+
+      ${renderProjectScrumShell(project.location)}
+      ${settingsTab}
+      ${mapTab}
+      ${recipeTab}
     </div>
   `;
 }
@@ -308,5 +337,51 @@ export function renderBrowseModal(data: BrowseResponse, selectedPath: string, mo
         >Use this directory</button>
       </aside>
     </div>
+  `;
+}
+
+export function renderProjectCreateModal(recipes: RecipeCatalogItem[]): string {
+  const recipeOptions = recipes
+    .map((recipe) => `<option value="${escapeHTML(recipe.id)}">${escapeHTML(recipe.id)}</option>`)
+    .join("");
+  return `
+    <div class="border-b border-white/10 p-4 md:p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Projects</p>
+          <h2 class="mt-1 text-2xl font-semibold tracking-tight text-zinc-100">New project</h2>
+          <p class="mt-1 text-sm text-zinc-500">Pick a working directory on this machine.</p>
+        </div>
+        <button type="button" data-action="projects#closeCreateModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Cancel</button>
+      </div>
+    </div>
+    <form data-action="submit->projects#submitCreate" class="space-y-4 p-4 md:p-5">
+      <label class="block">
+        <span class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Working directory</span>
+        <div class="mt-2 flex gap-2">
+          <input data-projects-field="selectedPath" type="text" readonly placeholder="Browse to choose a directory…" class="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100" />
+          <button data-action="projects#openBrowse" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-100 hover:border-cyan-300/40 hover:bg-cyan-300/10">Browse…</button>
+        </div>
+      </label>
+      <label class="block">
+        <span class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Name</span>
+        <input data-projects-field="createName" type="text" class="mt-2 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40" placeholder="Project name" />
+      </label>
+      <label class="block">
+        <span class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Catalog recipe</span>
+        <select data-projects-field="createRecipe" class="mt-2 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none">
+          <option value="">No catalog recipe</option>
+          ${recipeOptions}
+        </select>
+      </label>
+      <label class="block">
+        <span class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Description</span>
+        <textarea data-projects-field="createDesc" rows="3" class="mt-2 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40"></textarea>
+      </label>
+      <div class="flex justify-end gap-2 border-t border-white/10 pt-4">
+        <button type="button" data-action="projects#closeCreateModal" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-300">Cancel</button>
+        <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Create project</button>
+      </div>
+    </form>
   `;
 }

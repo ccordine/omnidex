@@ -202,4 +202,28 @@ ALTER TABLE scrum_cards
 
 CREATE INDEX IF NOT EXISTS idx_scrum_cards_project_play
     ON scrum_cards(project_id, play_state, queue_order);
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS jira_ticket TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS recipe_id TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS recipe JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS planning_chat JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS coach_config JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS jira_prompt TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS test_criteria JSONB NOT NULL DEFAULT '[]'::jsonb;
 `

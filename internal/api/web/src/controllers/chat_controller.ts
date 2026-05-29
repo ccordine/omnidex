@@ -12,16 +12,18 @@ import {
   renderMetricsDashboard,
   contextEventType,
 } from "../lib/render";
-import type { ChatMessage, TimelineEvent, JobDetails, JobContext, MemoryRecord, MemoryCandidate } from "../lib/types";
-import { fetchWorkspace } from "../lib/project_api";
+import type { ChatMessage, TimelineEvent, JobDetails, JobContext, MemoryRecord, MemoryCandidate, UserChannel } from "../lib/types";
+import { createUserChannel, fetchChannelMessages, fetchUserChannels, isUserChannel, sendChannelMessage } from "../lib/channel_api";
 import type GxController from "./gx_controller";
+
+const SELECTED_CHANNEL_KEY = "omni.chat.selected-channel.v1";
 
 export default class ChatController extends Controller {
   static targets = [
-    "messages","timeline","input","send","status","transport","job","liveBadge","eventCount","panel",
+    "messages","timeline","input","send","status","transport","networkUrl","job","liveBadge","eventCount","panel",
     "jobFilter","jobsList","jobDetails","memoryCandidates","memoryList","memoryKind","memoryKindFilter","memoryTags","memoryContent",
     "personaMode","personaModel","personaSystem","personaPrompt","personaOutput","statusOutput","researchStatusOutput",
-    "metricsOutput","progress","progressState","spinner","modal","modalPanel",
+    "metricsOutput","progress","progressState","spinner","modal","modalPanel","channelSelect",
   ];
   static values = { pollMs: Number };
 
@@ -31,6 +33,7 @@ export default class ChatController extends Controller {
   declare readonly sendTarget: HTMLButtonElement;
   declare readonly statusTarget: HTMLElement;
   declare readonly transportTarget: HTMLElement;
+  declare readonly networkUrlTarget: HTMLElement;
   declare readonly jobTarget: HTMLElement;
   declare readonly liveBadgeTarget: HTMLElement;
   declare readonly eventCountTarget: HTMLElement;
@@ -63,6 +66,9 @@ export default class ChatController extends Controller {
   declare readonly hasProgressStateTarget: boolean;
   declare readonly hasModalTarget: boolean;
   declare readonly hasSpinnerTarget: boolean;
+  declare readonly hasNetworkUrlTarget: boolean;
+  declare readonly hasChannelSelectTarget: boolean;
+  declare readonly channelSelectTarget: HTMLSelectElement;
   declare readonly pollMsValue: number;
 
   gxController: GxController | null = null;
@@ -78,6 +84,13 @@ export default class ChatController extends Controller {
   queueEnabled = false;
   activityTimer: number | null = null;
   memoryChangedHandler: ((event: Event) => void) | null = null;
+  networkSettingsHandler: ((event: Event) => void) | null = null;
+  openedProjectID: number | null = null;
+  openedProjectLocation: string | null = null;
+  projectOpenedHandler: ((event: Event) => void) | null = null;
+  projectClosedHandler: ((event: Event) => void) | null = null;
+  userChannels: UserChannel[] = [];
+  selectedChannelId = "";
 
   
 
@@ -99,10 +112,27 @@ export default class ChatController extends Controller {
     this.renderTimeline();
     await this.detectTransport();
     await this.loadStatus();
+    await this.loadUserChannels();
     await this.loadGlobalActivity();
     this.activityTimer = window.setInterval(() => this.loadGlobalActivity({ quiet: true }), 5000);
     this.memoryChangedHandler = () => void this.loadMemoryCandidates();
     document.addEventListener("omni:memory-changed", this.memoryChangedHandler);
+    this.networkSettingsHandler = (event: Event) => {
+      const detail = (event as CustomEvent<{ core_url?: string }>).detail;
+      if (detail?.core_url) this.setNetworkUrl(detail.core_url);
+    };
+    document.addEventListener("omni:network-settings", this.networkSettingsHandler);
+    this.projectOpenedHandler = (event: Event) => {
+      const detail = (event as CustomEvent<{ project_id?: number; location?: string }>).detail;
+      this.openedProjectID = detail?.project_id && detail.project_id > 0 ? detail.project_id : null;
+      this.openedProjectLocation = detail?.location?.trim() || null;
+    };
+    document.addEventListener("omni:project-opened", this.projectOpenedHandler);
+    this.projectClosedHandler = () => {
+      this.openedProjectID = null;
+      this.openedProjectLocation = null;
+    };
+    document.addEventListener("omni:project-closed", this.projectClosedHandler);
     if (this.messages.length === 0) {
       this.addMessage("system", "Omni UI is ready. Queue mode uses the Go job API; direct mode uses /v1/instruct.");
     }
@@ -111,6 +141,19 @@ export default class ChatController extends Controller {
   disconnect() {
     if (this.activityTimer) window.clearInterval(this.activityTimer);
     if (this.memoryChangedHandler) document.removeEventListener("omni:memory-changed", this.memoryChangedHandler);
+    if (this.networkSettingsHandler) document.removeEventListener("omni:network-settings", this.networkSettingsHandler);
+    if (this.projectOpenedHandler) document.removeEventListener("omni:project-opened", this.projectOpenedHandler);
+    if (this.projectClosedHandler) document.removeEventListener("omni:project-closed", this.projectClosedHandler);
+  }
+
+  setNetworkUrl(url: string) {
+    if (!this.hasNetworkUrlTarget) return;
+    const normalized = url.trim();
+    if (!normalized) {
+      this.networkUrlTarget.textContent = "not set";
+      return;
+    }
+    this.networkUrlTarget.innerHTML = `<a href="${escapeHTML(normalized)}" class="text-cyan-200 hover:text-cyan-100">${escapeHTML(normalized)}</a>`;
   }
 
   async detectTransport() {
@@ -118,7 +161,8 @@ export default class ChatController extends Controller {
       const response = await fetch("/healthz");
       const health = await response.json();
       this.queueEnabled = Boolean(health.queue_enabled);
-      this.transportTarget.textContent = this.queueEnabled ? "queue jobs" : "direct instruct";
+      this.updateTransportLabel();
+      if (health.core_url) this.setNetworkUrl(String(health.core_url));
       this.setStatus("ready", "ready");
       this.addEvent("health", health);
     } catch (error) {
@@ -126,6 +170,139 @@ export default class ChatController extends Controller {
       this.transportTarget.textContent = "offline";
       this.setStatus("offline", "error");
     }
+  }
+
+  isChannelMode(): boolean {
+    return Boolean(this.selectedChannelId?.trim());
+  }
+
+  updateTransportLabel() {
+    if (this.isChannelMode()) {
+      const channel = this.userChannels.find((item) => item.id === this.selectedChannelId);
+      const label = channel?.name?.trim() || this.selectedChannelId;
+      this.transportTarget.textContent = `channel · ${label}`;
+      return;
+    }
+    this.transportTarget.textContent = this.queueEnabled ? "queue jobs" : "direct instruct";
+  }
+
+  async loadUserChannels() {
+    if (!this.hasChannelSelectTarget) return;
+    try {
+      const channels = await fetchUserChannels();
+      this.userChannels = channels.filter(isUserChannel);
+      this.renderChannelOptions();
+      const saved = localStorage.getItem(SELECTED_CHANNEL_KEY) || "";
+      if (saved && this.userChannels.some((channel) => channel.id === saved)) {
+        this.selectedChannelId = saved;
+        this.channelSelectTarget.value = saved;
+        await this.loadChannelTranscript(saved);
+      } else {
+        this.selectedChannelId = "";
+        this.channelSelectTarget.value = "";
+      }
+      this.updateTransportLabel();
+    } catch {
+      this.userChannels = [];
+      this.renderChannelOptions();
+    }
+  }
+
+  renderChannelOptions() {
+    if (!this.hasChannelSelectTarget) return;
+    const options = [
+      `<option value="">Agent pipeline</option>`,
+      ...this.userChannels.map((channel) => {
+        const label = channel.name?.trim() || channel.id;
+        const meta = channel.persona && channel.persona !== "assistant" ? ` (${channel.persona})` : "";
+        return `<option value="${escapeHTML(channel.id)}"${channel.id === this.selectedChannelId ? " selected" : ""}>${escapeHTML(label + meta)}</option>`;
+      }),
+    ];
+    this.channelSelectTarget.innerHTML = options.join("");
+  }
+
+  async selectChannel(event: Event) {
+    const select = event.currentTarget as HTMLSelectElement;
+    this.selectedChannelId = select.value.trim();
+    if (this.selectedChannelId) {
+      localStorage.setItem(SELECTED_CHANNEL_KEY, this.selectedChannelId);
+      await this.loadChannelTranscript(this.selectedChannelId);
+    } else {
+      localStorage.removeItem(SELECTED_CHANNEL_KEY);
+      this.messages = this.store.load();
+      this.renderMessages();
+      if (this.messages.length === 0) {
+        this.addMessage("system", "Agent pipeline — queue jobs or direct instruct.");
+      }
+    }
+    this.updateTransportLabel();
+  }
+
+  async loadChannelTranscript(channelID: string) {
+    const channel = this.userChannels.find((item) => item.id === channelID);
+    try {
+      const rows = await fetchChannelMessages(channelID);
+      this.messages = rows.map((row) => ({
+        role: row.role === "assistant" || row.role === "user" || row.role === "system" || row.role === "error"
+          ? row.role
+          : "assistant",
+        content: row.content,
+        at: row.created_at || new Date().toISOString(),
+      }));
+      if (this.messages.length === 0) {
+        this.messages = [{
+          role: "system",
+          content: `User channel "${channel?.name || channelID}" — scoped memory and persona, no agent tools.`,
+          at: new Date().toISOString(),
+        }];
+      }
+      this.renderMessages();
+    } catch (error) {
+      this.messages = [{
+        role: "error",
+        content: error instanceof Error ? error.message : String(error),
+        at: new Date().toISOString(),
+      }];
+      this.renderMessages();
+    }
+  }
+
+  async createChannel(event: Event) {
+    event.preventDefault();
+    const id = window.prompt("Channel id (e.g. support-user-123)", `chat-${Date.now()}`)?.trim();
+    if (!id) return;
+    const name = window.prompt("Display name", id)?.trim() || id;
+    this.setStatus("creating channel", "active");
+    try {
+      const channel = await createUserChannel({ id, name, tags: ["user-channel"] });
+      if (!this.userChannels.some((item) => item.id === channel.id)) {
+        this.userChannels.unshift(channel);
+      }
+      this.selectedChannelId = channel.id;
+      localStorage.setItem(SELECTED_CHANNEL_KEY, channel.id);
+      this.renderChannelOptions();
+      if (this.hasChannelSelectTarget) this.channelSelectTarget.value = channel.id;
+      await this.loadChannelTranscript(channel.id);
+      this.updateTransportLabel();
+      this.setStatus("ready", "ready");
+    } catch (error) {
+      this.setStatus("failed", "error");
+      this.addMessage("error", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async submitChannel(prompt: string) {
+    const channelID = this.selectedChannelId;
+    this.setStatus("thinking", "active");
+    const payload = await sendChannelMessage(channelID, prompt);
+    this.addEvent("channel_message", {
+      channel_id: channelID,
+      model: payload.model,
+      latency_ms: payload.latency_ms,
+    }, payload);
+    this.addMessage("assistant", payload.output || "(empty response)");
+    this.setStatus("ready", "ready");
+    this.setBusy(false);
   }
 
   showPanel(event) {
@@ -169,7 +346,9 @@ export default class ChatController extends Controller {
     this.setBusy(true);
 
     try {
-      if (this.queueEnabled) {
+      if (this.isChannelMode()) {
+        await this.submitChannel(prompt);
+      } else if (this.queueEnabled) {
         await this.submitJob(prompt);
       } else {
         await this.submitDirect(prompt);
@@ -188,17 +367,12 @@ export default class ChatController extends Controller {
       source: "omni-web-chat",
       ui: "stimulus-tailwind-recyclr",
     };
-    try {
-      const workspace = await fetchWorkspace();
-      if (workspace.active_project_id > 0) {
-        metadata.project_id = workspace.active_project_id;
-      }
-      if (workspace.project?.location) {
-        metadata.client_cwd = workspace.project.location;
-        metadata.project_directory = workspace.project.location;
-      }
-    } catch {
-      // workspace API unavailable without database
+    if (this.openedProjectID && this.openedProjectID > 0) {
+      metadata.project_id = this.openedProjectID;
+    }
+    if (this.openedProjectLocation) {
+      metadata.client_cwd = this.openedProjectLocation;
+      metadata.project_directory = this.openedProjectLocation;
     }
     const requestBody = {
       instruction: prompt,
@@ -554,7 +728,7 @@ export default class ChatController extends Controller {
     const payload = await readJSON(await fetch("/healthz"));
     this.recycle("status-output", escapeHTML(JSON.stringify(payload, null, 2)));
     this.queueEnabled = Boolean(payload.queue_enabled);
-    this.transportTarget.textContent = this.queueEnabled ? "queue jobs" : "direct instruct";
+    this.updateTransportLabel();
     this.addEvent("status_loaded", payload);
     await this.loadResearchStatus();
   }
@@ -673,6 +847,11 @@ export default class ChatController extends Controller {
   }
 
   newThread() {
+    if (this.isChannelMode()) {
+      void this.loadChannelTranscript(this.selectedChannelId);
+      this.addMessage("system", "Reloaded channel transcript from server.");
+      return;
+    }
     this.currentJobID = null;
     this.jobTarget.textContent = "none";
     this.events = [];
@@ -696,7 +875,9 @@ export default class ChatController extends Controller {
 
   addMessage(role, content) {
     this.messages.push({ role, content, at: new Date().toISOString() });
-    this.store.save(this.messages);
+    if (!this.isChannelMode()) {
+      this.store.save(this.messages);
+    }
     this.renderMessages();
   }
 
@@ -724,11 +905,11 @@ export default class ChatController extends Controller {
         (message) => `
       <article class="message-grid message-${message.role}">
         <div class="message-shell">
-          <div class="mb-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
-            <span class="font-semibold uppercase tracking-[.16em]">${escapeHTML(message.role)}</span>
+          <div class="message-meta">
+            <span>${escapeHTML(message.role)}</span>
             <time>${formatTime(message.at)}</time>
           </div>
-          <div class="message-body text-sm leading-6 text-zinc-100">${escapeHTML(message.content)}</div>
+          <div class="message-body text-zinc-100">${escapeHTML(message.content)}</div>
         </div>
       </article>
     `,

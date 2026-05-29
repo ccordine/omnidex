@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -63,7 +64,7 @@ func (s *Server) scrumCreateCard(r *http.Request, title, description, column str
 	return s.scrumStore.CreateCard(title, description, column)
 }
 
-func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard) (ScrumCard, error) {
+func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard, raw map[string]json.RawMessage) (ScrumCard, error) {
 	if s.repo != nil {
 		projectID, err := s.resolveProjectID(r)
 		if err == nil {
@@ -87,11 +88,42 @@ func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard
 			if patch.RefFiles != nil {
 				merged.RefFiles = patch.RefFiles
 			}
+			if patch.Chat != nil {
+				merged.Chat = patch.Chat
+			}
 			if len(patch.ModelConfig) > 0 {
 				merged.ModelConfig = patch.ModelConfig
 			}
 			if len(patch.AgentConfig) > 0 {
 				merged.AgentConfig = patch.AgentConfig
+			}
+			if _, ok := raw["jira_ticket"]; ok {
+				merged.JiraTicket = patch.JiraTicket
+			}
+			if _, ok := raw["recipe_id"]; ok {
+				merged.RecipeID = strings.TrimSpace(patch.RecipeID)
+			}
+			if _, ok := raw["recipe"]; ok {
+				if len(patch.Recipe) > 0 {
+					merged.Recipe = patch.Recipe
+				} else {
+					merged.Recipe = json.RawMessage(`{}`)
+				}
+			}
+			if _, ok := raw["jira_prompt"]; ok {
+				merged.JiraPrompt = patch.JiraPrompt
+			}
+			if patch.PlanningChat != nil {
+				merged.PlanningChat = patch.PlanningChat
+			}
+			if patch.Tags != nil {
+				merged.Tags = patch.Tags
+			}
+			if patch.TestCriteria != nil {
+				merged.TestCriteria = patch.TestCriteria
+			}
+			if len(patch.CoachConfig) > 0 {
+				merged.CoachConfig = patch.CoachConfig
 			}
 			if patch.ConsoleLog != "" {
 				merged.ConsoleLog = patch.ConsoleLog
@@ -101,7 +133,17 @@ func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard
 			}
 			merged.PlayState = strings.TrimSpace(patch.PlayState)
 			merged.QueueOrder = patch.QueueOrder
-			updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, apiScrumCardToPatch(merged))
+			patchMap := apiScrumCardToPatch(merged)
+			if _, ok := raw["jira_ticket"]; ok {
+				patchMap["jira_ticket"] = merged.JiraTicket
+			}
+			if _, ok := raw["recipe_id"]; ok {
+				patchMap["recipe_id"] = merged.RecipeID
+			}
+			if _, ok := raw["recipe"]; ok {
+				patchMap["recipe"] = merged.Recipe
+			}
+			updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patchMap)
 			if err != nil {
 				return ScrumCard{}, err
 			}
@@ -234,13 +276,39 @@ func (s *Server) scrumUpdateBoard(r *http.Request, name, projectDirectory string
 }
 
 func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card ScrumCard, projectID int64) ([]byte, []string, error) {
+	checklistLines := make([]string, 0, len(card.Checklist))
+	for _, item := range card.Checklist {
+		if strings.TrimSpace(item.Text) == "" {
+			continue
+		}
+		state := "[ ]"
+		if item.Done {
+			state = "[x]"
+		}
+		checklistLines = append(checklistLines, state+" "+item.Text)
+	}
+	testLines := make([]string, 0, len(card.TestCriteria))
+	for _, item := range card.TestCriteria {
+		if strings.TrimSpace(item.Text) == "" {
+			continue
+		}
+		state := "[ ]"
+		if item.Done {
+			state = "[x]"
+		}
+		testLines = append(testLines, state+" "+item.Text)
+	}
 	payload := map[string]any{
-		"source":            "omni-scrum",
-		"scrum_card_id":     card.ID,
-		"scrum_card_title":  card.Title,
-		"project_directory": board.ProjectDirectory,
-		"client_cwd":        board.ProjectDirectory,
-		"runtime":           "v3",
+		"source":                 "omni-scrum",
+		"scrum_card_id":          card.ID,
+		"scrum_card_title":       card.Title,
+		"scrum_card_description": card.Description,
+		"scrum_jira_ticket":      card.JiraTicket,
+		"scrum_checklist":        strings.Join(checklistLines, "\n"),
+		"scrum_test_criteria":    strings.Join(testLines, "\n"),
+		"project_directory":      board.ProjectDirectory,
+		"client_cwd":             board.ProjectDirectory,
+		"runtime":                "v3",
 	}
 	if projectID > 0 {
 		payload["project_id"] = projectID
@@ -248,11 +316,42 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 	if len(card.RefFiles) > 0 {
 		payload["ref_files"] = card.RefFiles
 	}
+	if len(card.Tags) > 0 {
+		payload["scrum_card_tags"] = card.Tags
+	}
+	if strings.TrimSpace(card.RecipeID) != "" || len(card.Recipe) > 2 {
+		payload["recipe_id"] = strings.TrimSpace(card.RecipeID)
+		if len(card.Recipe) > 2 {
+			var recipe map[string]any
+			if err := json.Unmarshal(card.Recipe, &recipe); err == nil && len(recipe) > 0 {
+				payload["recipe"] = recipe
+			}
+		}
+	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.enrichJobMetadata(ctx, raw, card)
+	enriched, pulled, err := s.enrichJobMetadata(ctx, raw, card)
+	if err != nil {
+		return nil, nil, err
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(enriched, &meta); err != nil {
+		return enriched, pulled, nil
+	}
+	if executionAgent, _ := meta["execution_agent"].(string); executionAgent == agentconfig.SystemOmnidex {
+		meta["omnidex_no_delegate"] = true
+	} else if executionAgent == agentconfig.SystemCursor || executionAgent == agentconfig.SystemCodex {
+		if _, ok := meta["agent_strict"]; !ok {
+			meta["agent_strict"] = true
+		}
+	}
+	out, err := json.Marshal(meta)
+	if err != nil {
+		return enriched, pulled, nil
+	}
+	return out, pulled, nil
 }
 
 func (s *Server) scrumProjectDirectory(r *http.Request) (string, error) {

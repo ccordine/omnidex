@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -88,6 +89,14 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 			s.handleScrumCardPause(w, r, cardID)
 		case "chat":
 			s.handleScrumCardChat(w, r, cardID)
+		case "jira":
+			s.handleScrumCardJira(w, r, cardID)
+		case "coach":
+			s.handleScrumCardCoach(w, r, cardID)
+		case "coach-config":
+			s.handleScrumCardCoachConfig(w, r, cardID)
+		case "tags-suggest":
+			s.handleScrumCardTagsSuggest(w, r, cardID)
 		case "move":
 			s.handleScrumCardMove(w, r, cardID)
 		case "done":
@@ -101,12 +110,22 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodPatch:
-		var patch ScrumCard
-		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		raw := map[string]json.RawMessage{}
+		if err := json.Unmarshal(body, &raw); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		card, err := s.scrumUpdateCard(r, cardID, patch)
+		var patch ScrumCard
+		if err := json.Unmarshal(body, &patch); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		card, err := s.scrumUpdateCard(r, cardID, patch, raw)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -248,6 +267,78 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"card": updated, "reply": reply})
+}
+
+func (s *Server) handleScrumCardJira(w http.ResponseWriter, r *http.Request, cardID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Prompt string `json:"prompt"`
+		Ticket string `json:"ticket"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	card, board, _, err := s.scrumGetCard(r, cardID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "card not found")
+		return
+	}
+	ticket := strings.TrimSpace(req.Ticket)
+	if ticket == "" {
+		prompt := strings.TrimSpace(req.Prompt)
+		if prompt == "" {
+			prompt = "Draft a Jira ticket for this scrum card."
+		}
+		contextLines := []string{
+			"Scrum card: " + card.Title,
+			"Column: " + card.Column,
+			"Project directory: " + board.ProjectDirectory,
+			"Description: " + card.Description,
+			"Reference files: " + strings.Join(card.RefFiles, ", "),
+		}
+		for _, item := range card.Checklist {
+			state := "[ ]"
+			if item.Done {
+				state = "[x]"
+			}
+			contextLines = append(contextLines, fmt.Sprintf("%s %s", state, item.Text))
+		}
+		for _, item := range card.TestCriteria {
+			if strings.TrimSpace(item.Text) == "" {
+				continue
+			}
+			contextLines = append(contextLines, "Test: "+item.Text)
+		}
+		if len(card.Tags) > 0 {
+			contextLines = append(contextLines, "Tags: "+strings.Join(card.Tags, ", "))
+		}
+		contextLines = append(contextLines, "Author prompt: "+prompt)
+		system := strings.Join([]string{
+			"You are a technical project manager drafting Jira tickets.",
+			"Return markdown with sections: Summary, Description, Acceptance Criteria (checklist), Test Criteria, Technical Notes.",
+			"Test Criteria should list verifiable tests the implementer must satisfy.",
+			"Be concise and actionable. Do not wrap the response in code fences.",
+		}, "\n")
+		generated, err := s.scrumLLMGenerate(r.Context(), system, strings.Join(contextLines, "\n"))
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		ticket = strings.TrimSpace(generated)
+	}
+	ticketRaw, _ := json.Marshal(ticket)
+	raw := map[string]json.RawMessage{"jira_ticket": ticketRaw}
+	patch := ScrumCard{JiraTicket: ticket}
+	updated, err := s.scrumUpdateCard(r, cardID, patch, raw)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"card": updated, "ticket": ticket})
 }
 
 func (s *Server) handleScrumFiles(w http.ResponseWriter, r *http.Request) {

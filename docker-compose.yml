@@ -7,7 +7,8 @@ services:
       - .env
     environment:
       APP_ENV: ${APP_ENV:-production}
-      LISTEN_ADDR: ${LISTEN_ADDR:-:8090}
+      LISTEN_ADDR: ${LISTEN_ADDR:-0.0.0.0:8090}
+      CORE_URL: ${CORE_URL:-http://192.168.1.102:8090}
       WRAPPER_ONLY: ${WRAPPER_ONLY:-false}
       DATABASE_URL: ${DATABASE_URL:-postgres://agent:agent@postgres:5432/agent?sslmode=disable}
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}

@@ -1,5 +1,25 @@
 import { readJSON, jsonRequest } from "./api";
 
+export type NetworkSettings = {
+  core_url: string;
+  source: "database" | "environment" | "default" | string;
+  host: string;
+  port: number;
+  listen_addr: string;
+  request_url?: string;
+  default_url: string;
+};
+
+export async function fetchNetworkSettings(): Promise<NetworkSettings> {
+  const response = await fetch("/v1/settings/network");
+  return readJSON(response);
+}
+
+export async function saveNetworkSettings(values: { host: string; port: number; url?: string }): Promise<NetworkSettings> {
+  const response = await fetch("/v1/settings/network", jsonRequest(values));
+  return readJSON(response);
+}
+
 export type MindStats = {
   memory_chunks: number;
   memory_candidates: number;

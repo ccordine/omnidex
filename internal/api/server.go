@@ -68,6 +68,8 @@ type Server struct {
 	webSearchProviders        []string
 	webSearchTimeout          time.Duration
 	secretsResolver           *secrets.Resolver
+	coreURLDefault            string
+	listenAddr                string
 }
 
 type ServerOptions struct {
@@ -108,6 +110,8 @@ type ServerOptions struct {
 	WebSearchEnabled          bool
 	WebSearchProviders        []string
 	WebSearchTimeout          time.Duration
+	CoreURL                   string
+	ListenAddr                string
 }
 
 type enqueueRequest struct {
@@ -279,6 +283,8 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		webSearchEnabled:          options.WebSearchEnabled,
 		webSearchProviders:        append([]string(nil), options.WebSearchProviders...),
 		webSearchTimeout:          options.WebSearchTimeout,
+		coreURLDefault:            strings.TrimSpace(options.CoreURL),
+		listenAddr:                strings.TrimSpace(options.ListenAddr),
 	}
 	if repo != nil {
 		s.secretsResolver = secrets.NewResolver(repo)
@@ -308,11 +314,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/scrum/cards/sync", s.handleScrumCardSync)
 	s.mux.HandleFunc("/v1/scrum/cards/", s.handleScrumCardByID)
 	s.mux.HandleFunc("/v1/scrum/files", s.handleScrumFiles)
+	s.mux.HandleFunc("/v1/scrum/tags", s.handleScrumTags)
 	s.mux.HandleFunc("/v1/settings/models", s.handleModelSettings)
 	s.mux.HandleFunc("/v1/models/resolved", s.handleResolvedModels)
 	s.mux.HandleFunc("/v1/agents/resolved", s.handleResolvedAgents)
 	s.mux.HandleFunc("/v1/settings/agents", s.handleAgentSettings)
 	s.mux.HandleFunc("/v1/settings/secrets", s.handleAPISecrets)
+	s.mux.HandleFunc("/v1/settings/network", s.handleNetworkSettings)
 	s.mux.HandleFunc("/v1/browse", s.handleBrowse)
 	s.mux.HandleFunc("/v1/recipes", s.handleRecipes)
 	s.mux.HandleFunc("/v1/recipes/", s.handleRecipeByID)
@@ -349,11 +357,15 @@ func (s *Server) routes() {
 	s.registerUIRoutes()
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	coreURL, source := s.resolveCoreURL(r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":        "ok",
 		"time":          time.Now().UTC(),
 		"queue_enabled": s.repo != nil,
+		"core_url":      coreURL,
+		"core_url_source": source,
+		"listen_addr":   strings.TrimSpace(s.listenAddr),
 	})
 }
 

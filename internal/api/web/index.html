@@ -23,12 +23,17 @@
     <link rel="stylesheet" href="/ui/styles.css" />
     <script type="module" src="/src/main.ts"></script>
   </head>
-  <body data-controller="gx chat scrum projects admin" data-chat-poll-ms-value="1600" class="h-full overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(6,182,212,.20),transparent_30%),radial-gradient(circle_at_80%_15%,rgba(244,63,94,.12),transparent_28%),linear-gradient(135deg,#09090b_0%,#111827_45%,#18181b_100%)] text-zinc-100">
+  <body data-controller="shell gx chat scrum projects admin" data-chat-poll-ms-value="1600" class="h-full overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(6,182,212,.20),transparent_30%),radial-gradient(circle_at_80%_15%,rgba(244,63,94,.12),transparent_28%),linear-gradient(135deg,#09090b_0%,#111827_45%,#18181b_100%)] text-zinc-100">
     <div id="gx-global-loading-indicator" data-chat-target="spinner" class="pointer-events-none fixed inset-x-0 top-0 z-50 hidden h-1 overflow-hidden bg-zinc-800">
       <div class="h-full w-1/3 animate-[loading-bar_1.1s_ease-in-out_infinite] bg-cyan-300 shadow-[0_0_24px_rgba(103,232,249,.75)]"></div>
     </div>
-    <main class="grid h-full grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_360px]">
-      <aside class="hidden min-h-0 border-r border-white/10 bg-zinc-950/60 p-5 backdrop-blur-xl lg:flex lg:flex-col">
+    <div class="omni-shell">
+      <div data-shell-target="leftDrawer" class="slide-drawer slide-drawer-left">
+        <button type="button" data-action="shell#toggleLeft" class="slide-drawer-rail slide-drawer-rail-left" aria-label="Show navigation">
+          <span class="slide-drawer-glyph" aria-hidden="true">Nav</span>
+        </button>
+        <aside class="slide-drawer-panel slide-drawer-panel-left">
+          <div class="slide-drawer-panel-inner scrollbar flex flex-col p-5">
         <div class="flex items-center gap-3">
           <div class="grid h-10 w-10 place-items-center rounded-lg bg-cyan-400 text-sm font-black text-zinc-950 shadow-glow">O</div>
           <div>
@@ -38,6 +43,10 @@
         </div>
 
         <nav class="mt-6 grid gap-2 text-sm" aria-label="Omni sections">
+          <button data-action="chat#newThread" class="flex items-center justify-between rounded-md border border-white/10 bg-white/[.06] px-3 py-2 text-left text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
+            <span>New thread</span>
+            <span class="text-cyan-300">⌘N</span>
+          </button>
           <button data-action="chat#showPanel" data-panel="chat" class="nav-button is-active flex items-center justify-between rounded-md border border-white/10 bg-white/[.06] px-3 py-2 text-left text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
             <span>Chat</span>
             <span class="text-cyan-300">01</span>
@@ -50,33 +59,21 @@
             <span>Jobs</span>
             <span class="text-zinc-500">03</span>
           </button>
-          <button data-action="chat#showPanel" data-panel="scrum" class="nav-button flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
-            <span>Scrum</span>
-            <span class="text-zinc-500">04</span>
-          </button>
           <button data-action="chat#showPanel" data-panel="memory" class="nav-button flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
             <span>Memory</span>
-            <span class="text-zinc-500">05</span>
-          </button>
-          <button data-action="chat#showPanel" data-panel="personas" class="nav-button flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
-            <span>Personas</span>
-            <span class="text-zinc-500">06</span>
+            <span class="text-zinc-500">04</span>
           </button>
           <button data-action="chat#showPanel" data-panel="metrics" class="nav-button flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
             <span>Metrics</span>
-            <span class="text-zinc-500">07</span>
+            <span class="text-zinc-500">05</span>
           </button>
           <button data-action="chat#showPanel" data-panel="admin" class="nav-button flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
             <span>Status</span>
-            <span class="text-zinc-500">08</span>
+            <span class="text-zinc-500">06</span>
           </button>
         </nav>
 
         <div class="mt-5 grid gap-2 text-sm">
-          <button data-action="chat#newThread" class="flex items-center justify-between rounded-md border border-white/10 bg-white/[.06] px-3 py-2 text-left text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
-            <span>New thread</span>
-            <span class="text-cyan-300">⌘N</span>
-          </button>
           <button data-action="chat#clearTranscript" class="flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-rose-300/40 hover:bg-rose-400/10">
             <span>Clear local log</span>
             <span class="text-rose-300">⌫</span>
@@ -87,8 +84,12 @@
           <h2 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Session</h2>
           <dl class="mt-3 grid gap-3 text-sm">
             <div class="rounded-md border border-white/10 bg-white/[.04] p-3">
-              <dt class="text-zinc-500">Active project</dt>
-              <dd data-projects-target="activeBadge" class="mt-1 truncate text-sm font-medium text-zinc-100">None selected</dd>
+              <dt class="text-zinc-500">Open project</dt>
+              <dd data-projects-target="openBadge" class="mt-1 truncate text-sm font-medium text-zinc-100">None open</dd>
+            </div>
+            <div class="rounded-md border border-white/10 bg-white/[.04] p-3">
+              <dt class="text-zinc-500">LAN URL</dt>
+              <dd data-chat-target="networkUrl" class="mt-1 truncate font-mono text-xs text-cyan-200">loading…</dd>
             </div>
             <div class="rounded-md border border-white/10 bg-white/[.04] p-3">
               <dt class="text-zinc-500">Transport</dt>
@@ -114,30 +115,40 @@
             <span class="rounded bg-rose-300/15 px-2 py-1 text-rose-200">Recyclr</span>
           </div>
         </section>
-      </aside>
-
-      <section data-chat-target="panel" data-panel-name="chat" class="flex min-h-0 flex-col">
-        <header class="flex items-center justify-between border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
-          <div>
-            <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Omni</p>
-            <h2 class="text-xl font-semibold tracking-tight">Chat Console</h2>
           </div>
-          <div class="flex items-center gap-2">
+        </aside>
+      </div>
+
+      <main class="omni-main" data-action="click->shell#dismissDrawers">
+      <section data-chat-target="panel" data-panel-name="chat" class="flex h-full min-h-0 flex-col">
+        <header class="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-zinc-950/45 px-3 py-2 backdrop-blur-xl md:px-4">
+          <div>
+            <p class="text-[10px] uppercase tracking-[.18em] text-cyan-200/80">Omni</p>
+            <h2 class="text-lg font-semibold tracking-tight">Chat Console</h2>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="flex items-center gap-2 text-xs text-zinc-500">
+              <span class="hidden sm:inline">Channel</span>
+              <select data-chat-target="channelSelect" data-action="change->chat#selectChannel" class="max-w-[14rem] rounded-md border border-white/10 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
+                <option value="">Agent pipeline</option>
+              </select>
+            </label>
+            <button type="button" data-action="chat#createChannel" class="rounded-md border border-white/10 px-2.5 py-1.5 text-xs font-semibold text-zinc-200 transition hover:border-cyan-300/40 hover:bg-cyan-300/10" title="Create user channel">+</button>
             <span data-chat-target="liveBadge" class="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-medium text-amber-100">idle</span>
           </div>
         </header>
 
-        <div data-chat-target="messages" data-recyclr-sink="messages" class="scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6"></div>
+        <div data-chat-target="messages" data-recyclr-sink="messages" class="scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3 md:px-4"></div>
 
-        <form data-action="submit->chat#submit keydown->chat#composerKeydown" class="border-t border-white/10 bg-zinc-950/70 p-4 backdrop-blur-xl md:p-5">
-          <div class="rounded-lg border border-white/10 bg-zinc-900/90 p-3 shadow-glow">
-            <textarea data-chat-target="input" rows="3" placeholder="Ask Omni to inspect, build, research, or explain..." class="scrollbar max-h-40 min-h-24 w-full resize-none bg-transparent text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500"></textarea>
-            <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3">
-              <div class="flex items-center gap-2 text-xs text-zinc-500">
-                <span class="rounded border border-white/10 px-2 py-1">Enter newline</span>
-                <span class="rounded border border-white/10 px-2 py-1">⌘/Ctrl + Enter send</span>
+        <form data-action="submit->chat#submit keydown->chat#composerKeydown" class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl md:px-4">
+          <div class="rounded-md border border-white/10 bg-zinc-900/90 p-2">
+            <textarea data-chat-target="input" rows="2" placeholder="Ask Omni to inspect, build, research, or explain..." class="scrollbar max-h-32 min-h-[3.25rem] w-full resize-none bg-transparent text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-500"></textarea>
+            <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">
+              <div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                <span class="rounded border border-white/10 px-1.5 py-0.5">Enter newline</span>
+                <span class="rounded border border-white/10 px-1.5 py-0.5">⌘/Ctrl+Enter send</span>
               </div>
-              <button data-chat-target="send" type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400">
+              <button data-chat-target="send" type="submit" class="rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400">
                 Send
               </button>
             </div>
@@ -145,56 +156,27 @@
         </form>
       </section>
 
-      <section data-chat-target="panel" data-panel-name="projects" class="hidden min-h-0 flex-col">
+      <section data-chat-target="panel" data-panel-name="projects" data-controller="projects scrum" class="hidden h-full min-h-0 flex-col">
         <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
           <div>
             <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Codex</p>
             <h2 class="text-xl font-semibold tracking-tight">Projects</h2>
-            <p class="mt-1 text-xs text-zinc-500">Working directories, recipes, and Omnidex initialization — stored in Postgres.</p>
+            <p class="mt-1 text-xs text-zinc-500">Open a project for its scrum board, settings, codebase map, and recipe.</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <span data-projects-target="status" class="text-xs text-zinc-400">Open to load</span>
-            <button data-action="projects#showCreatePanel" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">New project</button>
+            <button data-action="projects#showCreateModal" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">+ Project</button>
             <button data-action="projects#load" type="button" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200">Refresh</button>
           </div>
         </header>
 
         <div class="scrollbar min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
-          <div data-projects-target="createPanel" class="hidden mb-6 rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-5">
-            <h3 class="text-sm font-semibold text-cyan-100">Create project</h3>
-            <p class="mt-1 text-xs text-zinc-400">Pick a folder on this machine. Omnidex will use it as the working directory for jobs, scrum, and recipe execution.</p>
-            <form data-projects-target="createForm" data-action="submit->projects#submitCreate" class="mt-4 grid gap-3 lg:grid-cols-2">
-              <label class="block lg:col-span-2">
-                <span class="text-xs text-zinc-500">Working directory</span>
-                <div class="mt-1 flex gap-2">
-                  <input data-projects-target="selectedPath" type="text" readonly placeholder="Browse to choose a directory…" class="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100" />
-                  <button data-action="projects#openBrowse" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-100 hover:border-cyan-300/40 hover:bg-cyan-300/10">Browse…</button>
-                </div>
-              </label>
-              <label class="block">
-                <span class="text-xs text-zinc-500">Name</span>
-                <input data-projects-target="createName" type="text" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40" placeholder="Project name" />
-              </label>
-              <label class="block">
-                <span class="text-xs text-zinc-500">Catalog recipe</span>
-                <select data-projects-target="createRecipe" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none"></select>
-              </label>
-              <label class="block lg:col-span-2">
-                <span class="text-xs text-zinc-500">Description</span>
-                <textarea data-projects-target="createDesc" rows="2" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40"></textarea>
-              </label>
-              <div class="lg:col-span-2">
-                <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Create and activate</button>
-              </div>
-            </form>
-          </div>
-
           <div data-projects-target="list" class="space-y-3"></div>
           <div data-projects-target="detail" class="hidden"></div>
         </div>
       </section>
 
-      <section data-chat-target="panel" data-panel-name="jobs" class="hidden min-h-0 flex-col">
+      <section data-chat-target="panel" data-panel-name="jobs" class="hidden h-full min-h-0 flex-col">
         <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
           <div>
             <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Queue</p>
@@ -220,77 +202,7 @@
         </div>
       </section>
 
-      <section data-chat-target="panel" data-panel-name="scrum" class="hidden min-h-0 flex-col">
-        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
-          <div>
-            <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Workflow</p>
-            <h2 class="text-xl font-semibold tracking-tight">Scrum Board</h2>
-            <p data-scrum-target="boardName" class="mt-1 text-xs text-zinc-500">Uses the active project working directory</p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <span data-scrum-target="status" class="text-xs text-zinc-400">Open to load board</span>
-            <button data-action="scrum#refresh" type="button" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200">Refresh</button>
-          </div>
-        </header>
-
-        <div class="border-b border-white/10 bg-zinc-950/35 px-4 py-4 backdrop-blur-xl md:px-6">
-          <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-            <form data-action="submit->scrum#saveProjectDir" class="rounded-lg border border-white/10 bg-zinc-950/60 p-4">
-              <label class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Project directory</label>
-              <p class="mt-1 text-xs text-zinc-500">Set the active project in Projects. This field overrides only when no DB project is selected.</p>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <input
-                  data-scrum-target="projectDir"
-                  type="text"
-                  placeholder="/path/to/project"
-                  class="min-w-[16rem] flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-cyan-300/40"
-                />
-                <button type="submit" class="rounded-md border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">Save</button>
-              </div>
-            </form>
-
-            <form data-scrum-target="createForm" data-action="submit->scrum#createCard" class="rounded-lg border border-white/10 bg-zinc-950/60 p-4">
-              <label class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">New card</label>
-              <div class="mt-3 grid gap-2">
-                <input
-                  data-scrum-target="newTitle"
-                  type="text"
-                  required
-                  placeholder="Card title"
-                  class="w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-cyan-300/40"
-                />
-                <textarea
-                  data-scrum-target="newDesc"
-                  rows="2"
-                  placeholder="Description (optional)"
-                  class="scrollbar w-full resize-none rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-cyan-300/40"
-                ></textarea>
-                <div class="flex flex-wrap items-center gap-2">
-                  <select data-scrum-target="newColumn" class="rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none">
-                    <option value="backlog">Backlog</option>
-                    <option value="ready">Ready</option>
-                    <option value="assigned">Assigned</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="review">Review</option>
-                    <option value="done">Done</option>
-                  </select>
-                  <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200">Add card</button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <div class="scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-4 md:p-6">
-          <div data-scrum-target="board" class="scrum-kanban h-full min-h-[420px]">
-            <div class="flex h-full min-h-[240px] w-full items-center justify-center rounded-xl border border-dashed border-white/10 p-8 text-sm text-zinc-500">
-              Select Scrum in the sidebar to load the board.
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section data-chat-target="panel" data-panel-name="memory" class="hidden min-h-0 flex-col">
+      <section data-chat-target="panel" data-panel-name="memory" class="hidden h-full min-h-0 flex-col">
         <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
           <div>
             <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Knowledge</p>
@@ -339,33 +251,7 @@
         </div>
       </section>
 
-      <section data-chat-target="panel" data-panel-name="personas" class="hidden min-h-0 flex-col">
-        <header class="border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
-          <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Direct tools</p>
-          <h2 class="text-xl font-semibold tracking-tight">Persona Lab</h2>
-        </header>
-        <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 xl:grid-cols-[420px_minmax(0,1fr)] md:p-6">
-          <form data-action="submit->chat#runPersona" class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-            <label class="block text-xs text-zinc-500">Mode</label>
-            <select data-chat-target="personaMode" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none">
-              <option value="instruct">instruct</option>
-              <option value="reasoning">reasoning</option>
-              <option value="roleplay">roleplay</option>
-              <option value="narrate">narrate</option>
-            </select>
-            <label class="mt-4 block text-xs text-zinc-500">Model override</label>
-            <input data-chat-target="personaModel" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="optional" />
-            <label class="mt-4 block text-xs text-zinc-500">System/context</label>
-            <textarea data-chat-target="personaSystem" rows="4" class="scrollbar mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="Persona constraints or scene/system context"></textarea>
-            <label class="mt-4 block text-xs text-zinc-500">Prompt</label>
-            <textarea data-chat-target="personaPrompt" rows="7" class="scrollbar mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="Run a direct LLM tool call..."></textarea>
-            <button class="mt-4 w-full rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200">Run persona</button>
-          </form>
-          <pre data-chat-target="personaOutput" data-recyclr-sink="persona-output" class="scrollbar min-h-0 overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-950/50 p-4 text-sm leading-6 text-zinc-200">No run yet.</pre>
-        </div>
-      </section>
-
-      <section data-chat-target="panel" data-panel-name="admin" class="hidden min-h-0 flex-col">
+      <section data-chat-target="panel" data-panel-name="admin" class="hidden h-full min-h-0 flex-col">
         <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
           <div>
             <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">System</p>
@@ -377,6 +263,11 @@
           </div>
         </header>
         <div class="scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
+          <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+            <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Network access</h3>
+            <div data-admin-target="networkAccess" class="mt-3">Loading…</div>
+          </section>
+
           <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
             <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Mind overview</h3>
             <div data-admin-target="mindStats" class="mt-3">Loading…</div>
@@ -445,10 +336,37 @@
               </section>
             </div>
           </div>
+
+          <details class="debug-panel rounded-lg border border-dashed border-zinc-700/80 bg-zinc-950/30 p-4">
+            <summary class="cursor-pointer text-sm font-semibold uppercase tracking-[.18em] text-zinc-500 select-none hover:text-zinc-300">Debug tools</summary>
+            <div class="mt-4 space-y-3">
+              <p class="text-xs leading-5 text-zinc-500">Low-level LLM wrappers for testing providers and prompts. Not part of the agent pipeline.</p>
+              <div class="grid gap-4 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+                <form data-action="submit->chat#runPersona" class="rounded-lg border border-white/10 bg-zinc-950/50 p-3">
+                  <h4 class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-400">Persona Lab</h4>
+                  <label class="mt-3 block text-xs text-zinc-500">Mode</label>
+                  <select data-chat-target="personaMode" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none">
+                    <option value="instruct">instruct</option>
+                    <option value="reasoning">reasoning</option>
+                    <option value="roleplay">roleplay</option>
+                    <option value="narrate">narrate</option>
+                  </select>
+                  <label class="mt-3 block text-xs text-zinc-500">Model override</label>
+                  <input data-chat-target="personaModel" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="optional" />
+                  <label class="mt-3 block text-xs text-zinc-500">System/context</label>
+                  <textarea data-chat-target="personaSystem" rows="3" class="scrollbar mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="Persona constraints or scene/system context"></textarea>
+                  <label class="mt-3 block text-xs text-zinc-500">Prompt</label>
+                  <textarea data-chat-target="personaPrompt" rows="4" class="scrollbar mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="Run a direct LLM tool call…"></textarea>
+                  <button type="submit" class="mt-3 w-full rounded-md bg-cyan-300 px-3 py-2 text-xs font-semibold text-zinc-950 transition hover:bg-cyan-200">Run persona</button>
+                </form>
+                <pre data-chat-target="personaOutput" data-recyclr-sink="persona-output" class="scrollbar max-h-80 min-h-[12rem] overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-950/50 p-3 text-xs leading-5 text-zinc-200">No run yet.</pre>
+              </div>
+            </div>
+          </details>
         </div>
       </section>
 
-      <section data-chat-target="panel" data-panel-name="metrics" class="hidden min-h-0 flex-col">
+      <section data-chat-target="panel" data-panel-name="metrics" class="hidden h-full min-h-0 flex-col">
         <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
           <div>
             <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Telemetry</p>
@@ -460,8 +378,11 @@
           <div data-chat-target="metricsOutput" data-recyclr-sink="metrics-output" class="space-y-4 text-sm text-zinc-400">Loading...</div>
         </div>
       </section>
+      </main>
 
-      <aside class="hidden min-h-0 border-l border-white/10 bg-zinc-950/55 p-5 backdrop-blur-xl xl:flex xl:flex-col">
+      <div data-shell-target="rightDrawer" class="slide-drawer slide-drawer-right">
+        <aside class="slide-drawer-panel slide-drawer-panel-right">
+          <div class="slide-drawer-panel-inner scrollbar flex flex-col p-5">
         <section class="mb-5 rounded-lg border border-white/10 bg-zinc-950/60 p-4">
           <div class="flex items-center justify-between gap-3">
             <h2 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Progress</h2>
@@ -477,8 +398,13 @@
           <span data-chat-target="eventCount" class="font-mono text-xs text-zinc-500">0 events</span>
         </div>
         <div data-chat-target="timeline" data-recyclr-sink="timeline" class="scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto"></div>
-      </aside>
-    </main>
+          </div>
+        </aside>
+        <button type="button" data-action="shell#toggleRight" class="slide-drawer-rail slide-drawer-rail-right" aria-label="Show timeline">
+          <span class="slide-drawer-glyph" aria-hidden="true">Log</span>
+        </button>
+      </div>
+    </div>
     <section data-chat-target="modal" data-action="click->chat#closeModalBackdrop" class="fixed inset-0 z-40 hidden place-items-center bg-zinc-950/80 p-4 backdrop-blur-sm">
       <div data-chat-target="modalPanel" data-recyclr-sink="modal" data-action="click->scrum#stopCardClick" class="scrollbar max-h-[88vh] w-full max-w-5xl overflow-y-auto rounded-lg border border-white/10 bg-zinc-950 shadow-glow"></div>
     </section>

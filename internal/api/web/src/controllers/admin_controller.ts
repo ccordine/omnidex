@@ -5,18 +5,21 @@ import {
   fetchModelSettings,
   fetchOllamaModels,
   fetchAPISecrets,
+  fetchNetworkSettings,
   ingestDocuments,
   pullOllamaModel,
   saveModelSettings,
   saveAPISecrets,
+  saveNetworkSettings,
 } from "../lib/admin_api";
 import { fetchGlobalAgentSettings, saveGlobalAgentSettings } from "../lib/agent_config_api";
 import { renderGlobalAgentSettings } from "../lib/agent_config_render";
-import { renderAPISecretsSettings, renderGlobalModelSettings, renderMindStats, renderOllamaModels } from "../lib/admin_render";
+import { renderAPISecretsSettings, renderGlobalModelSettings, renderMindStats, renderNetworkSettings, renderOllamaModels } from "../lib/admin_render";
 
 export default class AdminController extends Controller {
   static targets = [
     "mindStats",
+    "networkAccess",
     "ollamaModels",
     "pullModel",
     "pullStatus",
@@ -30,6 +33,7 @@ export default class AdminController extends Controller {
   ];
 
   declare readonly mindStatsTarget: HTMLElement;
+  declare readonly networkAccessTarget: HTMLElement;
   declare readonly ollamaModelsTarget: HTMLElement;
   declare readonly pullModelTarget: HTMLInputElement;
   declare readonly pullStatusTarget: HTMLElement;
@@ -70,7 +74,36 @@ export default class AdminController extends Controller {
   }
 
   async load() {
-    await Promise.all([this.loadMind(), this.loadOllama(), this.loadAPISecrets(), this.loadGlobalModels(), this.loadGlobalAgents()]);
+    await Promise.all([this.loadNetwork(), this.loadMind(), this.loadOllama(), this.loadAPISecrets(), this.loadGlobalModels(), this.loadGlobalAgents()]);
+  }
+
+  async loadNetwork() {
+    try {
+      const payload = await fetchNetworkSettings();
+      this.networkAccessTarget.innerHTML = renderNetworkSettings(payload);
+      document.dispatchEvent(new CustomEvent("omni:network-settings", { detail: payload }));
+    } catch (error) {
+      this.networkAccessTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
+    }
+  }
+
+  async saveNetwork(event: Event) {
+    event.preventDefault();
+    const host = (this.networkAccessTarget.querySelector("[data-admin-field='networkHost']") as HTMLInputElement | null)?.value.trim() ?? "";
+    const portRaw = (this.networkAccessTarget.querySelector("[data-admin-field='networkPort']") as HTMLInputElement | null)?.value.trim() ?? "";
+    const port = Number.parseInt(portRaw, 10);
+    if (!host || !Number.isFinite(port) || port <= 0) {
+      this.setPullStatus("Enter a valid host and port", "error");
+      return;
+    }
+    this.setPullStatus("Saving network URL…", "busy");
+    try {
+      await saveNetworkSettings({ host, port });
+      await this.loadNetwork();
+      this.setPullStatus("Network URL saved", "ok");
+    } catch (error) {
+      this.setPullStatus(error instanceof Error ? error.message : String(error), "error");
+    }
   }
 
   async loadMind() {

@@ -62,3 +62,23 @@ export interface MemoryCandidate {
   candidate_kind?: string;
   content?: string;
 }
+
+export interface UserChannel {
+  id: string;
+  name?: string;
+  persona?: string;
+  system?: string;
+  provider?: string;
+  model?: string;
+  tags?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ChannelMessage {
+  id?: number | string;
+  channel_id?: string;
+  role: string;
+  content: string;
+  created_at?: string;
+}

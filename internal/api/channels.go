@@ -280,12 +280,36 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 	limit := parseInt(r.URL.Query().Get("limit"), 50)
 	offset := parseInt(r.URL.Query().Get("offset"), 0)
+	userOnly := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scope")), "user")
 	channels, err := s.channelStore.ListChannels(r.Context(), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if userOnly {
+		filtered := make([]model.Channel, 0, len(channels))
+		for _, channel := range channels {
+			if isUserFacingChannel(channel) {
+				filtered = append(filtered, channel)
+			}
+		}
+		channels = filtered
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"channels": channels})
+}
+
+func isUserFacingChannel(channel model.Channel) bool {
+	id := strings.ToLower(strings.TrimSpace(channel.ID))
+	if strings.HasPrefix(id, "thought_") || strings.HasPrefix(id, "internal-") {
+		return false
+	}
+	for _, tag := range channel.Tags {
+		switch strings.ToLower(strings.TrimSpace(tag)) {
+		case "thought-channel", "internal:thought":
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {

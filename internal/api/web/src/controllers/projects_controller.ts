@@ -1,6 +1,5 @@
 import { Controller } from "@hotwired/stimulus";
 import {
-  activateProject,
   browseDirectory,
   createProject,
   deleteProject,
@@ -8,12 +7,11 @@ import {
   fetchProject,
   fetchProjectMap,
   fetchRecipes,
-  fetchWorkspace,
   scanProjectMap,
   surveyProject,
   updateProject,
 } from "../lib/project_api";
-import { renderBrowseModal, renderProjectDetail, renderProjectList } from "../lib/project_render";
+import { renderBrowseModal, renderProjectCreateModal, renderProjectDetail, renderProjectList } from "../lib/project_render";
 import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_config_render";
 import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_config_render";
 import { fetchAgentDefaults } from "../lib/agent_config_api";
@@ -24,37 +22,23 @@ import type { ProjectRecord, ProjectMapSummary, RecipeCatalogItem } from "../lib
 import type GxController from "./gx_controller";
 
 export default class ProjectsController extends Controller {
-  static targets = [
-    "list",
-    "detail",
-    "status",
-    "activeBadge",
-    "createPanel",
-    "createName",
-    "createDesc",
-    "createRecipe",
-    "selectedPath",
-    "createForm",
-  ];
+  static targets = ["list", "detail", "status", "openBadge"];
 
   declare readonly listTarget: HTMLElement;
   declare readonly detailTarget: HTMLElement;
   declare readonly statusTarget: HTMLElement;
-  declare readonly activeBadgeTarget: HTMLElement;
-  declare readonly createPanelTarget: HTMLElement;
-  declare readonly createNameTarget: HTMLInputElement;
-  declare readonly createDescTarget: HTMLTextAreaElement;
-  declare readonly createRecipeTarget: HTMLSelectElement;
-  declare readonly selectedPathTarget: HTMLInputElement;
-  declare readonly createFormTarget: HTMLFormElement;
+  declare readonly openBadgeTarget: HTMLElement;
 
   private projects: ProjectRecord[] = [];
   private recipes: RecipeCatalogItem[] = [];
   private selectedProjectID: number | null = null;
+  private activeTab = "scrum";
   private browsePath = "";
   private browseSelected = "";
   private browseMode: "create" | "edit" = "create";
   private browseProjectID: number | null = null;
+  private pendingCreatePath = "";
+  private pendingCreateName = "";
   private panelShownHandler: ((event: Event) => void) | null = null;
   private currentModelConfig: ResolvedModelConfig | null = null;
   private currentAgentConfig: ResolvedAgentConfig | null = null;
@@ -101,24 +85,63 @@ export default class ProjectsController extends Controller {
     modal?.classList.remove("grid");
   }
 
+  closeCreateModal() {
+    this.closeBrowse();
+  }
+
+  private modalPanel(): HTMLElement | null {
+    return document.querySelector('[data-chat-target="modalPanel"]');
+  }
+
+  private modalField(name: string): string {
+    const field = this.modalPanel()?.querySelector(`[data-projects-field="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+    return field?.value?.trim() ?? "";
+  }
+
+  private setModalField(name: string, value: string) {
+    const field = this.modalPanel()?.querySelector(`[data-projects-field="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (field) field.value = value;
+  }
+
+  updateOpenBadge(name: string | null) {
+    this.openBadgeTarget.textContent = name?.trim() || "None open";
+  }
+
+  private dispatchProjectOpened(project: ProjectRecord) {
+    document.dispatchEvent(
+      new CustomEvent("omni:project-opened", {
+        detail: {
+          project_id: project.id,
+          name: project.name,
+          location: project.location,
+        },
+      }),
+    );
+    this.updateOpenBadge(project.name);
+  }
+
+  private dispatchProjectClosed() {
+    document.dispatchEvent(new CustomEvent("omni:project-closed"));
+    this.updateOpenBadge(null);
+  }
+
   async load() {
     this.setStatus("Loading projects…", "busy");
     try {
-      const [projectsPayload, recipesPayload, workspace] = await Promise.all([
+      const [projectsPayload, recipesPayload] = await Promise.all([
         fetchProjects(),
         fetchRecipes().catch(() => ({ recipes: [], root: "" })),
-        fetchWorkspace().catch(() => ({ active_project_id: 0 })),
       ]);
       this.projects = projectsPayload.projects ?? [];
       this.recipes = recipesPayload.recipes ?? [];
       this.listTarget.innerHTML = renderProjectList(this.projects);
-      this.updateActiveBadge(workspace.active_project_id);
       if (this.selectedProjectID) {
         await this.renderDetail(this.selectedProjectID);
       } else {
         this.detailTarget.innerHTML = "";
         this.detailTarget.classList.add("hidden");
         this.listTarget.classList.remove("hidden");
+        this.dispatchProjectClosed();
       }
       this.setStatus(`${this.projects.length} projects`, "ok");
     } catch (error) {
@@ -127,25 +150,8 @@ export default class ProjectsController extends Controller {
     }
   }
 
-  updateActiveBadge(activeID: number) {
-    const active = this.projects.find((project) => project.id === activeID);
-    this.activeBadgeTarget.textContent = active ? active.name : "None selected";
-  }
-
-  showCreatePanel() {
-    this.selectedProjectID = null;
-    this.createPanelTarget.classList.remove("hidden");
-    this.detailTarget.classList.add("hidden");
-    this.listTarget.classList.remove("hidden");
-    this.selectedPathTarget.value = "";
-    this.createFormTarget.reset();
-    this.populateRecipeSelect(this.createRecipeTarget);
-  }
-
-  populateRecipeSelect(select: HTMLSelectElement) {
-    select.innerHTML = `<option value="">No catalog recipe</option>${this.recipes
-      .map((recipe) => `<option value="${recipe.id}">${recipe.id}</option>`)
-      .join("")}`;
+  showCreateModal() {
+    this.openModal(renderProjectCreateModal(this.recipes));
   }
 
   async openBrowse(event: Event) {
@@ -191,10 +197,12 @@ export default class ProjectsController extends Controller {
     event.preventDefault();
     const path = (event.currentTarget as HTMLElement).dataset.path || this.browseSelected || this.browsePath;
     if (this.browseMode === "create") {
-      this.selectedPathTarget.value = path;
-      if (!this.createNameTarget.value.trim()) {
-        this.createNameTarget.value = path.split("/").filter(Boolean).pop() || "project";
-      }
+      this.pendingCreatePath = path;
+      this.pendingCreateName = path.split("/").filter(Boolean).pop() || "project";
+      this.openModal(renderProjectCreateModal(this.recipes));
+      this.setModalField("selectedPath", this.pendingCreatePath);
+      this.setModalField("createName", this.pendingCreateName);
+      return;
     } else if (this.browseProjectID) {
       const input = this.detailTarget.querySelector('[data-projects-field="location"]') as HTMLInputElement | null;
       if (input) input.value = path;
@@ -204,8 +212,8 @@ export default class ProjectsController extends Controller {
 
   async submitCreate(event: Event) {
     event.preventDefault();
-    const location = this.selectedPathTarget.value.trim();
-    const name = this.createNameTarget.value.trim();
+    const location = this.modalField("selectedPath");
+    const name = this.modalField("createName");
     if (!location) {
       this.setStatus("Choose a working directory first", "error");
       return;
@@ -215,14 +223,14 @@ export default class ProjectsController extends Controller {
       const payload = await createProject({
         name: name || location.split("/").filter(Boolean).pop() || "project",
         location,
-        description: this.createDescTarget.value.trim(),
-        recipe_id: this.createRecipeTarget.value,
-        activate: true,
+        description: this.modalField("createDesc"),
+        recipe_id: this.modalField("createRecipe"),
+        activate: false,
       });
       this.selectedProjectID = payload.project.id;
-      this.createPanelTarget.classList.add("hidden");
+      this.activeTab = "scrum";
+      this.closeCreateModal();
       await this.load();
-      document.dispatchEvent(new CustomEvent("omni:project-activated", { detail: { project_id: payload.active_project_id } }));
       this.setStatus("Project created", "ok");
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
@@ -234,8 +242,29 @@ export default class ProjectsController extends Controller {
     const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
     if (!id) return;
     this.selectedProjectID = id;
-    this.createPanelTarget.classList.add("hidden");
+    this.activeTab = "scrum";
     await this.renderDetail(id);
+  }
+
+  private applyTabState() {
+    const tab = this.activeTab;
+    this.detailTarget.querySelectorAll("[data-project-tab-panel]").forEach((panel) => {
+      panel.classList.toggle("hidden", panel.getAttribute("data-project-tab-panel") !== tab);
+    });
+    this.detailTarget.querySelectorAll("[data-project-tab]").forEach((button) => {
+      const active = button.getAttribute("data-project-tab") === tab;
+      button.classList.toggle("border-cyan-300/40", active);
+      button.classList.toggle("bg-cyan-300/10", active);
+      button.classList.toggle("text-cyan-100", active);
+      button.classList.toggle("border-white/10", !active);
+      button.classList.toggle("text-zinc-400", !active);
+    });
+  }
+
+  showTab(event: Event) {
+    event.preventDefault();
+    this.activeTab = (event.currentTarget as HTMLElement).dataset.projectTab || "scrum";
+    this.applyTabState();
   }
 
   async renderDetail(id: number) {
@@ -258,9 +287,12 @@ export default class ProjectsController extends Controller {
         agentPayload?.resolved?.source ?? "env",
         agentPayload?.resolved?.system ?? "omnidex",
         projectMap,
+        this.activeTab,
       );
+      this.applyTabState();
       this.detailTarget.classList.remove("hidden");
       this.listTarget.classList.add("hidden");
+      this.dispatchProjectOpened(project);
       this.setStatus(project.name, "ok");
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
@@ -269,8 +301,10 @@ export default class ProjectsController extends Controller {
 
   backToList() {
     this.selectedProjectID = null;
+    this.activeTab = "scrum";
     this.detailTarget.classList.add("hidden");
     this.listTarget.classList.remove("hidden");
+    this.dispatchProjectClosed();
   }
 
   fieldValue(name: string): string {
@@ -382,23 +416,6 @@ export default class ProjectsController extends Controller {
       await updateProject(id, { agent_config: {} });
       await this.renderDetail(id);
       this.setStatus("Agent overrides cleared", "ok");
-    } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
-    }
-  }
-
-  async activateProject(event: Event) {
-    event.preventDefault();
-    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
-    if (!id) return;
-    this.setStatus("Activating…", "busy");
-    try {
-      const payload = await activateProject(id);
-      document.dispatchEvent(new CustomEvent("omni:project-activated", { detail: { project_id: payload.active_project_id } }));
-      await this.load();
-      this.selectedProjectID = id;
-      await this.renderDetail(id);
-      this.setStatus("Active project updated", "ok");
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
     }

@@ -475,17 +475,28 @@ func dbScrumCardToAPI(card queue.DBScrumCard) ScrumCard {
 		ConsoleLog:  card.ConsoleLog,
 		PlayState:   card.PlayState,
 		QueueOrder:  card.QueueOrder,
-		ModelConfig: card.ModelConfig,
-		AgentConfig: card.AgentConfig,
-		CreatedAt:   card.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:   card.UpdatedAt.UTC().Format(time.RFC3339),
-		Checklist:   []ScrumChecklistItem{},
-		RefFiles:    []string{},
-		Chat:        []ScrumChatMessage{},
+		JiraTicket:   card.JiraTicket,
+		JiraPrompt:   card.JiraPrompt,
+		RecipeID:     card.RecipeID,
+		Recipe:       card.Recipe,
+		CoachConfig:  card.CoachConfig,
+		ModelConfig:  card.ModelConfig,
+		AgentConfig:  card.AgentConfig,
+		CreatedAt:    card.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:    card.UpdatedAt.UTC().Format(time.RFC3339),
+		Checklist:    []ScrumChecklistItem{},
+		RefFiles:     []string{},
+		Chat:         []ScrumChatMessage{},
+		PlanningChat: []ScrumChatMessage{},
+		Tags:         []string{},
+		TestCriteria: []ScrumChecklistItem{},
 	}
 	_ = json.Unmarshal(card.Checklist, &out.Checklist)
 	_ = json.Unmarshal(card.RefFiles, &out.RefFiles)
 	_ = json.Unmarshal(card.Chat, &out.Chat)
+	_ = json.Unmarshal(card.PlanningChat, &out.PlanningChat)
+	_ = json.Unmarshal(card.Tags, &out.Tags)
+	_ = json.Unmarshal(card.TestCriteria, &out.TestCriteria)
 	return out
 }
 
@@ -501,18 +512,37 @@ func apiScrumCardToPatch(card ScrumCard) map[string]any {
 	if len(agentConfig) == 0 {
 		agentConfig = json.RawMessage(`{}`)
 	}
+	recipe := card.Recipe
+	if len(recipe) == 0 {
+		recipe = json.RawMessage(`{}`)
+	}
+	tags, _ := json.Marshal(card.Tags)
+	planningChat, _ := json.Marshal(card.PlanningChat)
+	testCriteria, _ := json.Marshal(card.TestCriteria)
+	coachConfig := card.CoachConfig
+	if len(coachConfig) == 0 {
+		coachConfig = json.RawMessage(`{}`)
+	}
 	return map[string]any{
-		"title":        card.Title,
-		"description":  card.Description,
-		"column":       card.Column,
-		"checklist":    json.RawMessage(checklist),
-		"ref_files":    json.RawMessage(refFiles),
-		"chat":         json.RawMessage(chat),
-		"model_config": modelConfig,
-		"agent_config": agentConfig,
-		"job_id":       card.JobID,
-		"console_log":  card.ConsoleLog,
-		"play_state":   card.PlayState,
-		"queue_order":  card.QueueOrder,
+		"title":          card.Title,
+		"description":    card.Description,
+		"column":         card.Column,
+		"checklist":      json.RawMessage(checklist),
+		"ref_files":      json.RawMessage(refFiles),
+		"chat":           json.RawMessage(chat),
+		"planning_chat":  json.RawMessage(planningChat),
+		"tags":           json.RawMessage(tags),
+		"test_criteria":  json.RawMessage(testCriteria),
+		"coach_config":   coachConfig,
+		"model_config":   modelConfig,
+		"agent_config":   agentConfig,
+		"jira_ticket":    card.JiraTicket,
+		"jira_prompt":    card.JiraPrompt,
+		"recipe_id":      card.RecipeID,
+		"recipe":         recipe,
+		"job_id":         card.JobID,
+		"console_log":    card.ConsoleLog,
+		"play_state":     card.PlayState,
+		"queue_order":    card.QueueOrder,
 	}
 }

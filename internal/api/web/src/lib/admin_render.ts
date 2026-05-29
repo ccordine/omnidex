@@ -1,5 +1,38 @@
 import { escapeHTML, formatDateTime, statusPillClass } from "./dom";
-import type { MindStats, OllamaModelInfo, APISecretField } from "./admin_api";
+import type { MindStats, OllamaModelInfo, APISecretField, NetworkSettings } from "./admin_api";
+
+export function renderNetworkSettings(settings: NetworkSettings): string {
+  const sourceLabel =
+    settings.source === "database"
+      ? "Saved in database"
+      : settings.source === "environment"
+        ? "From CORE_URL env"
+        : "Default";
+  const requestHint = settings.request_url
+    ? `<p class="mt-2 text-xs text-zinc-500">This browser session: <span class="font-mono text-zinc-300">${escapeHTML(settings.request_url)}</span></p>`
+    : "";
+  return `
+    <p class="text-sm text-zinc-400">Use this URL on iPad, phone, or other devices on your LAN — not localhost.</p>
+    <div class="mt-3 rounded-md border border-cyan-300/20 bg-cyan-300/5 px-3 py-2">
+      <a href="${escapeHTML(settings.core_url)}" target="_blank" rel="noopener noreferrer" class="font-mono text-sm text-cyan-200 hover:text-cyan-100">${escapeHTML(settings.core_url)}</a>
+      <div class="mt-1 text-[11px] uppercase tracking-wide text-zinc-500">${escapeHTML(sourceLabel)} · listen ${escapeHTML(settings.listen_addr || "n/a")}</div>
+    </div>
+    ${requestHint}
+    <form data-action="submit->admin#saveNetwork" class="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_120px_auto]">
+      <label class="block">
+        <span class="text-xs text-zinc-500">Host / IP</span>
+        <input data-admin-field="networkHost" value="${escapeHTML(settings.host)}" placeholder="192.168.1.102" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
+      </label>
+      <label class="block">
+        <span class="text-xs text-zinc-500">Port</span>
+        <input data-admin-field="networkPort" type="number" min="1" max="65535" value="${settings.port}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
+      </label>
+      <div class="self-end">
+        <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Save URL</button>
+      </div>
+    </form>
+  `;
+}
 
 export function renderMindStats(stats: MindStats | null): string {
   if (!stats) return `<p class="text-sm text-zinc-500">Mind stats unavailable.</p>`;

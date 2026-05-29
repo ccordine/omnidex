@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var scrumColumns = []string{"backlog", "ready", "assigned", "in_progress", "review", "done"}
+var scrumColumns = []string{"backlog", "ready", "assigned", "in_progress", "review", "blocked", "done"}
 
 type ScrumChecklistItem struct {
 	ID   string `json:"id"`
@@ -34,6 +34,14 @@ type ScrumCard struct {
 	Chat        []ScrumChatMessage   `json:"chat"`
 	ModelConfig json.RawMessage      `json:"model_config,omitempty"`
 	AgentConfig json.RawMessage      `json:"agent_config,omitempty"`
+	JiraTicket  string               `json:"jira_ticket,omitempty"`
+	JiraPrompt  string               `json:"jira_prompt,omitempty"`
+	RecipeID    string               `json:"recipe_id,omitempty"`
+	Recipe      json.RawMessage      `json:"recipe,omitempty"`
+	Tags        []string             `json:"tags"`
+	PlanningChat []ScrumChatMessage  `json:"planning_chat"`
+	CoachConfig json.RawMessage      `json:"coach_config,omitempty"`
+	TestCriteria []ScrumChecklistItem `json:"test_criteria"`
 	JobID       string               `json:"job_id,omitempty"`
 	ConsoleLog  string               `json:"console_log,omitempty"`
 	PlayState   string               `json:"play_state,omitempty"`
@@ -212,6 +220,30 @@ func (s *ScrumStore) UpdateCard(cardID string, patch ScrumCard) (ScrumCard, erro
 	if len(patch.AgentConfig) > 0 {
 		current.AgentConfig = patch.AgentConfig
 	}
+	if patch.JiraTicket != "" {
+		current.JiraTicket = patch.JiraTicket
+	}
+	if strings.TrimSpace(patch.RecipeID) != "" {
+		current.RecipeID = strings.TrimSpace(patch.RecipeID)
+	}
+	if len(patch.Recipe) > 0 {
+		current.Recipe = patch.Recipe
+	}
+	if len(patch.CoachConfig) > 0 {
+		current.CoachConfig = patch.CoachConfig
+	}
+	if patch.Tags != nil {
+		current.Tags = patch.Tags
+	}
+	if patch.PlanningChat != nil {
+		current.PlanningChat = patch.PlanningChat
+	}
+	if patch.JiraPrompt != "" {
+		current.JiraPrompt = patch.JiraPrompt
+	}
+	if patch.TestCriteria != nil {
+		current.TestCriteria = patch.TestCriteria
+	}
 	if patch.ConsoleLog != "" {
 		current.ConsoleLog = patch.ConsoleLog
 	}
@@ -371,23 +403,8 @@ func buildScrumPlayInstruction(board ScrumBoard, card ScrumCard) string {
 	if strings.TrimSpace(board.ProjectDirectory) != "" {
 		lines = append(lines, "Project directory: "+board.ProjectDirectory)
 	}
-	if strings.TrimSpace(card.Description) != "" {
-		lines = append(lines, "Description:", card.Description)
-	}
-	if len(card.RefFiles) > 0 {
-		lines = append(lines, "Reference files:", strings.Join(card.RefFiles, "\n"))
-	}
-	pending := []string{}
-	for _, item := range card.Checklist {
-		if strings.TrimSpace(item.Text) == "" || item.Done {
-			continue
-		}
-		pending = append(pending, "- [ ] "+item.Text)
-	}
-	if len(pending) > 0 {
-		lines = append(lines, "Checklist (complete all):", strings.Join(pending, "\n"))
-	}
-	lines = append(lines, "Use the thinking pilot and execution layers. Produce evidence for each checklist item. Stop in review-ready state with summary of changes.")
+	lines = appendScrumCardContextLines(lines, card)
+	lines = append(lines, "Use the configured execution agent. Produce evidence for each checklist item.", scrumAgentStatusFooter)
 	return strings.Join(lines, "\n\n")
 }
 
