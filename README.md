@@ -251,7 +251,16 @@ docker compose exec core wget -qO- --timeout=5 http://host.docker.internal:11434
 
 If your compose project uses a different container name, substitute it (for example `docker exec omni-nxt-core-1 ...`).
 
-5. **Read the startup logs**
+6. **Arch Linux + UFW** — If probes **time out** (not `connection refused`) from inside the container while `curl http://127.0.0.1:11434/api/tags` works on the host, UFW is usually blocking Docker bridge traffic. Allow host ports from Docker networks:
+
+```bash
+scripts/ufw-docker-host.sh
+# or manually:
+sudo ufw allow from 172.16.0.0/12 to any port 11434,8091 proto tcp
+docker compose up -d core
+```
+
+7. **Read the startup logs**
 
 - If **all candidates failed**, Ollama is not reachable from Docker at all — that is a host networking/binding issue, not the UI.
 - If logs show a **successful resolved URL**, chat should queue immediately even when Status briefly still shows Ollama as down.

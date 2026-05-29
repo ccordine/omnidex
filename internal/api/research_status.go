@@ -120,7 +120,7 @@ func (s *Server) collectOllamaRuntimeStatus(ctx context.Context) ollamaRuntimeSt
 		BaseURL:             s.ollamaEndpoint(),
 		ConfiguredModels:    s.configuredOllamaModels(),
 		EmbeddingModel:      strings.TrimSpace(s.ollamaEmbeddingModel),
-		RecommendedHostHint: "If core runs in Docker, prefer OLLAMA_BASE_URL=http://host.docker.internal:11434 or the docker-compose.host-ollama.yml override; host Ollama must listen beyond loopback when using bridge networking.",
+		RecommendedHostHint: "If core runs in Docker, use OLLAMA_BASE_URL=http://host.docker.internal:11434; Ollama must listen on 0.0.0.0:11434. On Arch with UFW, run scripts/ufw-docker-host.sh if probes time out from the container.",
 	}
 	models, err := s.probeOllamaTags(ctx)
 	if err != nil {

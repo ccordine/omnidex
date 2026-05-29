@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/gryph/omnidex/internal/hostbridge"
 )
 
 type hostBridgeStatusResponse struct {
@@ -42,8 +45,18 @@ func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusRe
 		}
 	}
 
+	resolvedURL, resolveErr := hostbridge.ResolveReachableURL(ctx, url, s.hostAgentToken, 4*time.Second)
+	if resolveErr == nil && resolvedURL != "" {
+		url = resolvedURL
+		client = hostbridge.NewClient(resolvedURL, s.hostAgentToken, 4*time.Second)
+	}
+
 	payload, err := client.Health(ctx)
 	if err != nil {
+		suggestions := hostBridgeSuggestions(true, false, url)
+		if hint := hostbridge.LinuxDockerFirewallHint(err); hint != "" {
+			suggestions = append(suggestions, hint)
+		}
 		return hostBridgeStatusResponse{
 			Configured:  true,
 			Reachable:   false,
@@ -51,7 +64,7 @@ func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusRe
 			Error:       err.Error(),
 			PickerReady: false,
 			Message:     "Core cannot reach the host bridge.",
-			Suggestions: hostBridgeSuggestions(true, false, url),
+			Suggestions: suggestions,
 		}
 	}
 
@@ -95,6 +108,7 @@ func hostBridgeSuggestions(configured, reachable bool, url string) []string {
 	out = append(out,
 		"If HOST_AGENT_TOKEN is set on core, pass the same token to omni host serve --token …",
 		"From inside core: docker compose exec core wget -qO- --timeout=5 http://host.docker.internal:8091/healthz",
+		"Arch Linux + UFW: if probes time out (not refused), run scripts/ufw-docker-host.sh on the host",
 	)
 	return out
 }
