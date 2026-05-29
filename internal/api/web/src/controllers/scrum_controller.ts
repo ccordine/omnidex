@@ -20,6 +20,7 @@ import {
 import { fetchProject, fetchRecipes } from "../lib/project_api";
 import type { RecipeCatalogItem } from "../lib/project_types";
 import { renderRecyclrBundle } from "../lib/recyclr";
+import { closeModalShell, openModalShell, resetModalPanelWidth } from "../lib/modal";
 import { fetchModelDefaults } from "../lib/model_config_api";
 import { fetchAgentDefaults } from "../lib/agent_config_api";
 import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_config_render";
@@ -162,9 +163,7 @@ export default class ScrumController extends Controller {
   private resetModalShell() {
     this.activeCardID = null;
     this.activeCardTab = "card";
-    const panel = document.querySelector('[data-chat-target="modalPanel"]') as HTMLElement | null;
-    panel?.classList.remove("max-w-6xl");
-    panel?.classList.add("max-w-5xl");
+    resetModalPanelWidth();
   }
 
   showCardTab(event: Event) {
@@ -244,20 +243,12 @@ export default class ScrumController extends Controller {
 
   openModal(html: string): void {
     this.recycle("modal", html);
-    const modal = document.querySelector('[data-chat-target="modal"]') as HTMLElement | null;
-    modal?.classList.remove("hidden");
-    modal?.classList.add("grid");
-    const panel = document.querySelector('[data-chat-target="modalPanel"]') as HTMLElement | null;
-    panel?.classList.remove("max-w-5xl");
-    panel?.classList.add("max-w-6xl");
+    openModalShell({ wide: true });
   }
 
   closeModal() {
     this.activeCardID = null;
-    const modal = document.querySelector('[data-chat-target="modal"]') as HTMLElement | null;
-    modal?.classList.add("hidden");
-    modal?.classList.remove("grid");
-    document.dispatchEvent(new CustomEvent("omni:modal-closed"));
+    closeModalShell();
   }
 
   private upsertCard(card: ScrumCard) {

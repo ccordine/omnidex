@@ -15,6 +15,7 @@ import {
 } from "../lib/render";
 import type { ChatMessage, TimelineEvent, JobDetails, JobContext, MemoryRecord, MemoryCandidate, UserChannel } from "../lib/types";
 import { createUserChannel, fetchChannelMessages, fetchUserChannels, isUserChannel, sendChannelMessage } from "../lib/channel_api";
+import { closeModalShell, openModalShell } from "../lib/modal";
 import type GxController from "./gx_controller";
 
 const SELECTED_CHANNEL_KEY = "omni.chat.selected-channel.v1";
@@ -1062,9 +1063,7 @@ export default class ChatController extends Controller {
 
   closeModal() {
     if (!this.hasModalTarget) return;
-    this.modalTarget.classList.add("hidden");
-    this.modalTarget.classList.remove("grid");
-    document.dispatchEvent(new CustomEvent("omni:modal-closed"));
+    closeModalShell();
   }
 
   closeModalBackdrop(event) {
@@ -1073,8 +1072,7 @@ export default class ChatController extends Controller {
 
   openModal(html) {
     this.recycle("modal", html);
-    this.modalTarget.classList.remove("hidden");
-    this.modalTarget.classList.add("grid");
+    openModalShell();
   }
 
   setBusy(value) {

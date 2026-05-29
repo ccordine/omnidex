@@ -305,3 +305,51 @@ body {
     transition: none;
   }
 }
+
+.omni-modal {
+  background-color: rgba(9, 9, 11, 0);
+  transition: background-color 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.omni-modal.is-open {
+  background-color: rgba(9, 9, 11, 0.82);
+}
+
+.omni-modal.is-closing {
+  pointer-events: none;
+}
+
+.omni-modal-panel {
+  transform: scale(0.96) translateY(18px);
+  opacity: 0;
+  filter: blur(6px);
+  transition:
+    transform 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    filter 360ms ease;
+  will-change: transform, opacity, filter;
+}
+
+.omni-modal.is-open .omni-modal-panel {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omni-modal,
+  .omni-modal-panel {
+    transition: none;
+  }
+
+  .omni-modal.is-open {
+    background-color: rgba(9, 9, 11, 0.82);
+  }
+
+  .omni-modal-panel,
+  .omni-modal.is-open .omni-modal-panel {
+    transform: none;
+    opacity: 1;
+    filter: none;
+  }
+}

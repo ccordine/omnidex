@@ -19,6 +19,7 @@ import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_con
 import { fetchAgentDefaults } from "../lib/agent_config_api";
 import type { ResolvedAgentConfig } from "../lib/agent_config_types";
 import { renderRecyclrBundle } from "../lib/recyclr";
+import { closeModalShell, openModalShell } from "../lib/modal";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
 import type { ProjectRecord, ProjectMapSummary, RecipeCatalogItem } from "../lib/project_types";
 import type GxController from "./gx_controller";
@@ -73,19 +74,11 @@ export default class ProjectsController extends Controller {
 
   openModal(html: string) {
     renderRecyclrBundle(this.gxHost(), "modal", html);
-    const modal = document.querySelector('[data-chat-target="modal"]') as HTMLElement | null;
-    modal?.classList.remove("hidden");
-    modal?.classList.add("grid");
-    const panel = document.querySelector('[data-chat-target="modalPanel"]') as HTMLElement | null;
-    panel?.classList.remove("max-w-5xl");
-    panel?.classList.add("max-w-6xl");
+    openModalShell({ wide: true });
   }
 
   closeBrowse() {
-    document.dispatchEvent(new CustomEvent("omni:modal-closed"));
-    const modal = document.querySelector('[data-chat-target="modal"]') as HTMLElement | null;
-    modal?.classList.add("hidden");
-    modal?.classList.remove("grid");
+    closeModalShell();
   }
 
   closeCreateModal() {

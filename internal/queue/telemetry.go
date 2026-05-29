@@ -229,7 +229,7 @@ func (r *Repository) RecordTelemetryRun(ctx context.Context, record TelemetryRun
 			summary = EXCLUDED.summary,
 			updated_at = NOW()
 		RETURNING id::text
-	`, record.ID, record.SessionID, record.WorkspaceID, record.TaskKind, record.PromptHash, record.PromptSummary, record.ProjectType, record.RecipeID, record.PlaybookID, status, started, record.FinishedAt, record.DurationMS, localOnly, record.ExternalAgentsUsed, jsonParam(record.ModelRoles), jsonParam(record.CompletionEvidence), jsonParam(record.Summary)).Scan(&id)
+	`, record.ID, record.SessionID, record.WorkspaceID, record.TaskKind, record.PromptHash, record.PromptSummary, record.ProjectType, record.RecipeID, record.PlaybookID, status, started, record.FinishedAt, record.DurationMS, localOnly, pgTextArray(record.ExternalAgentsUsed), jsonParam(record.ModelRoles), jsonParam(record.CompletionEvidence), jsonParam(record.Summary)).Scan(&id)
 	return id, err
 }
 

@@ -212,12 +212,13 @@ func createTelemetryRunForJob(ctx context.Context, tx pgx.Tx, job model.Job, pro
 		"project_id":     projectID,
 		"prompt_summary": promptSummary,
 	}
+	externalAgents := pgTextArray(metadataStringSlice(metadata, "external_agents_used"))
 	var id string
 	err := tx.QueryRow(ctx, `
 		INSERT INTO omni_runs (session_id, workspace_id, task_kind, prompt_hash, prompt_summary, project_type, recipe_id, playbook_id, status, started_at, local_only, external_agents_used, model_roles, summary)
 		VALUES (NULLIF($1,''), NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14)
 		RETURNING id::text
-	`, firstMetadataString(metadata, "session_id"), workspaceID, taskKind, promptHash, promptSummary, projectType, firstMetadataString(metadata, "recipe_id"), firstMetadataString(metadata, "playbook_id"), "pending", job.CreatedAt, len(metadataStringSlice(metadata, "external_agents_used")) == 0, metadataStringSlice(metadata, "external_agents_used"), jsonParam(metadataValue(metadata, "model_roles")), jsonParam(summary)).Scan(&id)
+	`, firstMetadataString(metadata, "session_id"), workspaceID, taskKind, promptHash, promptSummary, projectType, firstMetadataString(metadata, "recipe_id"), firstMetadataString(metadata, "playbook_id"), "pending", job.CreatedAt, len(externalAgents) == 0, externalAgents, jsonParam(metadataValue(metadata, "model_roles")), jsonParam(summary)).Scan(&id)
 	return id, err
 }
 
@@ -294,11 +295,11 @@ func metadataValue(metadata map[string]any, key string) any {
 func metadataStringSlice(metadata map[string]any, key string) []string {
 	value, ok := metadata[key]
 	if !ok || value == nil {
-		return nil
+		return []string{}
 	}
 	switch typed := value.(type) {
 	case []string:
-		return typed
+		return pgTextArray(typed)
 	case []any:
 		out := make([]string, 0, len(typed))
 		for _, item := range typed {
@@ -317,8 +318,16 @@ func metadataStringSlice(metadata map[string]any, key string) []string {
 		}
 		return out
 	default:
-		return nil
+		return []string{}
 	}
+}
+
+// pgTextArray ensures pgx sends an empty Postgres text[] instead of NULL.
+func pgTextArray(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 func inferTelemetryTaskKind(pipeline, instruction string, metadata map[string]any) string {

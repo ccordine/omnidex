@@ -128,7 +128,7 @@ func (c *Client) HasModel(ctx context.Context, model string) (bool, error) {
 		return false, err
 	}
 	for _, tag := range tags {
-		if tag == model {
+		if MatchesOllamaModel(model, tag) {
 			return true, nil
 		}
 	}

@@ -9,6 +9,44 @@ import (
 	"time"
 )
 
+func TestResearchStatusRecognizesEmbeddingModelWithLatestTag(t *testing.T) {
+	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"models": []map[string]string{
+				{"name": "qwen2.5-coder:7b"},
+				{"name": "nomic-embed-text:latest"},
+			},
+		})
+	}))
+	defer ollamaServer.Close()
+
+	server := NewServerWithOptions(nil, &fakeLLMClient{}, ServerOptions{
+		DefaultProvider:      "ollama",
+		OllamaBaseURL:        ollamaServer.URL,
+		OllamaDefaultModel:   "qwen2.5-coder:7b",
+		OllamaEmbeddingModel: "nomic-embed-text",
+		WebSearchEnabled:     false,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/status/research", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	var payload researchStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Ollama.EmbeddingAvailable {
+		t.Fatalf("embedding should be available when installed as nomic-embed-text:latest: %#v", payload.Ollama)
+	}
+	if len(payload.Ollama.MissingModels) != 0 {
+		t.Fatalf("missing models=%v", payload.Ollama.MissingModels)
+	}
+}
+
 func TestResearchStatusReportsOllamaReachableAndMissingModels(t *testing.T) {
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/tags" {

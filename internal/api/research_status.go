@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/ollama"
 )
 
 const (
@@ -129,17 +131,13 @@ func (s *Server) collectOllamaRuntimeStatus(ctx context.Context) ollamaRuntimeSt
 	}
 	status.Reachable = true
 	status.AvailableModels = models
-	available := make(map[string]struct{}, len(models))
-	for _, model := range models {
-		available[strings.TrimSpace(model)] = struct{}{}
-	}
 	for _, model := range status.ConfiguredModels {
-		if _, ok := available[model]; !ok {
+		if !ollama.ModelIsAvailable(models, model) {
 			status.MissingModels = append(status.MissingModels, model)
 		}
 	}
 	if status.EmbeddingModel != "" {
-		_, status.EmbeddingAvailable = available[status.EmbeddingModel]
+		status.EmbeddingAvailable = ollama.ModelIsAvailable(models, status.EmbeddingModel)
 	}
 	return status
 }
