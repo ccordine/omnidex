@@ -110,6 +110,20 @@ export async function browseDirectory(path = ""): Promise<BrowseResponse> {
   return readJSON(response);
 }
 
+export async function pickHostDirectory(startPath = ""): Promise<{ path?: string; canceled?: boolean }> {
+  const response = await fetch("/v1/host/pick-directory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ start_path: startPath }),
+  });
+  return readJSON(response);
+}
+
+export async function fetchHostBridgeStatus(): Promise<Record<string, unknown>> {
+  const response = await fetch("/v1/host/status");
+  return readJSON(response);
+}
+
 export function projectQuery(projectID?: number | null): string {
   if (projectID && projectID > 0) return `?project_id=${projectID}`;
   return "";

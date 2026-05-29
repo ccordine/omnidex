@@ -99,7 +99,7 @@ export function renderProjectDetail(
             <span class="text-xs text-zinc-500">Working directory</span>
             <div class="mt-1 flex gap-2">
               <input data-projects-field="location" value="${escapeHTML(project.location)}" class="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40" />
-              <button type="button" data-action="projects#browseForEdit" data-project-id="${project.id}" class="rounded-md border border-white/10 px-3 py-2 text-xs text-zinc-200 hover:border-cyan-300/40 hover:bg-cyan-300/10">Browse…</button>
+              <button type="button" data-action="projects#browseForEdit" data-project-id="${project.id}" class="rounded-md border border-white/10 px-3 py-2 text-xs text-zinc-200 hover:border-cyan-300/40 hover:bg-cyan-300/10">Choose folder…</button>
             </div>
           </label>
           <label class="block lg:col-span-2">
@@ -350,7 +350,7 @@ export function renderProjectCreateModal(recipes: RecipeCatalogItem[]): string {
         <div>
           <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Projects</p>
           <h2 class="mt-1 text-2xl font-semibold tracking-tight text-zinc-100">New project</h2>
-          <p class="mt-1 text-sm text-zinc-500">Pick a working directory on this machine.</p>
+          <p class="mt-1 text-sm text-zinc-500">Pick a working directory on this machine via the host bridge (native folder picker).</p>
         </div>
         <button type="button" data-action="projects#closeCreateModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Cancel</button>
       </div>
@@ -360,7 +360,7 @@ export function renderProjectCreateModal(recipes: RecipeCatalogItem[]): string {
         <span class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Working directory</span>
         <div class="mt-2 flex gap-2">
           <input data-projects-field="selectedPath" type="text" readonly placeholder="Browse to choose a directory…" class="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100" />
-          <button data-action="projects#openBrowse" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-100 hover:border-cyan-300/40 hover:bg-cyan-300/10">Browse…</button>
+          <button data-action="projects#openBrowse" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-100 hover:border-cyan-300/40 hover:bg-cyan-300/10">Choose folder…</button>
         </div>
       </label>
       <label class="block">

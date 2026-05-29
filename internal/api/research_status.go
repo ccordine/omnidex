@@ -10,8 +10,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/gryph/omnidex/internal/ollama"
 )
 
 const (
@@ -119,7 +117,7 @@ func (s *Server) collectResearchStatus(ctx context.Context) researchStatusRespon
 
 func (s *Server) collectOllamaRuntimeStatus(ctx context.Context) ollamaRuntimeStatus {
 	status := ollamaRuntimeStatus{
-		BaseURL:             normalizeURL(firstNonEmpty(s.ollamaBaseURL, "http://host.docker.internal:11434")),
+		BaseURL:             s.ollamaEndpoint(),
 		ConfiguredModels:    s.configuredOllamaModels(),
 		EmbeddingModel:      strings.TrimSpace(s.ollamaEmbeddingModel),
 		RecommendedHostHint: "If core runs in Docker, prefer OLLAMA_BASE_URL=http://host.docker.internal:11434 or the docker-compose.host-ollama.yml override; host Ollama must listen beyond loopback when using bridge networking.",
@@ -206,20 +204,25 @@ func (s *Server) collectWebSearchStatus(ctx context.Context) webSearchRuntimeSta
 }
 
 func (s *Server) probeOllamaTags(ctx context.Context) ([]string, error) {
-	baseURL := normalizeURL(firstNonEmpty(s.ollamaBaseURL, "http://host.docker.internal:11434"))
-	client := ollama.New(baseURL, "", "", s.ollamaProbeTimeout())
+	client := s.ollamaClientWithTimeout(s.ollamaProbeTimeout())
 	var lastErr error
 	for attempt := 0; attempt < ollamaProbeAttempts; attempt++ {
 		if attempt > 0 {
 			if err := sleepContext(ctx, ollamaProbeRetryDelay); err != nil {
 				return nil, err
 			}
+			s.refreshOllamaEndpoint(ctx)
+			client = s.ollamaClientWithTimeout(s.ollamaProbeTimeout())
 		}
 		models, err := client.ListTags(ctx)
 		if err == nil {
 			return models, nil
 		}
 		lastErr = err
+		if isOllamaConnectivityError(err) {
+			s.refreshOllamaEndpoint(ctx)
+			client = s.ollamaClientWithTimeout(s.ollamaProbeTimeout())
+		}
 	}
 	return nil, lastErr
 }

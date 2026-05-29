@@ -7,11 +7,13 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gryph/omnidex/internal/api"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llmprovider"
+	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/gryph/omnidex/internal/version"
@@ -54,6 +56,20 @@ func main() {
 		secretResolver := secrets.NewResolver(repo)
 		secrets.SetGlobal(secretResolver)
 		secrets.OverlayConfig(&cfg, secretResolver)
+	}
+
+	if shouldResolveOllamaEndpoint(cfg) {
+		resolveCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		resolved, err := ollama.ResolveReachableBaseURL(resolveCtx, cfg.OllamaBaseURL, 4*time.Second)
+		cancel()
+		if err != nil {
+			log.Printf("ollama startup probe failed (jobs may fail until OLLAMA_BASE_URL is reachable): %v", err)
+		} else if resolved != strings.TrimSpace(cfg.OllamaBaseURL) {
+			log.Printf("ollama endpoint resolved %s -> %s", cfg.OllamaBaseURL, resolved)
+			cfg.OllamaBaseURL = resolved
+		} else {
+			log.Printf("ollama endpoint reachable at %s", resolved)
+		}
 	}
 
 	llmClient, err := llmprovider.NewFromConfig(cfg)
@@ -209,9 +225,17 @@ func main() {
 		WebSearchTimeout:          cfg.WebSearchTimeout,
 		CoreURL:                   cfg.CoreURL,
 		ListenAddr:                cfg.ListenAddr,
+		HostAgentURL:              cfg.HostAgentURL,
+		HostAgentToken:            cfg.HostAgentToken,
 	})
 	log.Printf("core listening on %s core_url=%s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.CoreURL, cfg.LLMProvider, cfg.WrapperOnly)
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func shouldResolveOllamaEndpoint(cfg config.Config) bool {
+	provider := strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
+	embedding := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
+	return provider == "ollama" || embedding == "ollama"
 }

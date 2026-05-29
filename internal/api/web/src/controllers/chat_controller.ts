@@ -9,6 +9,7 @@ import {
   renderEventModal,
   renderContextModal,
   renderResearchStatus,
+  renderHostBridgeStatus,
   renderMetricsDashboard,
   contextEventType,
 } from "../lib/render";
@@ -22,7 +23,7 @@ export default class ChatController extends Controller {
   static targets = [
     "messages","timeline","input","send","status","transport","networkUrl","job","liveBadge","eventCount","panel",
     "jobFilter","jobsList","jobDetails","memoryCandidates","memoryList","memoryKind","memoryKindFilter","memoryTags","memoryContent",
-    "personaMode","personaModel","personaSystem","personaPrompt","personaOutput","statusOutput","researchStatusOutput",
+    "personaMode","personaModel","personaSystem","personaPrompt","personaOutput","statusOutput","researchStatusOutput","hostBridgeStatusOutput",
     "metricsOutput","progress","progressState","spinner","modal","modalPanel","channelSelect",
   ];
   static values = { pollMs: Number };
@@ -54,6 +55,7 @@ export default class ChatController extends Controller {
   declare readonly personaOutputTarget: HTMLElement;
   declare readonly statusOutputTarget: HTMLElement;
   declare readonly researchStatusOutputTarget: HTMLElement;
+  declare readonly hostBridgeStatusOutputTarget: HTMLElement;
   declare readonly metricsOutputTarget: HTMLElement;
   declare readonly progressTarget: HTMLElement;
   declare readonly progressStateTarget: HTMLElement;
@@ -62,6 +64,7 @@ export default class ChatController extends Controller {
   declare readonly modalPanelTarget: HTMLElement;
   declare readonly hasMemoryListTarget: boolean;
   declare readonly hasResearchStatusOutputTarget: boolean;
+  declare readonly hasHostBridgeStatusOutputTarget: boolean;
   declare readonly hasMetricsOutputTarget: boolean;
   declare readonly hasProgressStateTarget: boolean;
   declare readonly hasModalTarget: boolean;
@@ -326,6 +329,7 @@ export default class ChatController extends Controller {
     if (name === "admin") {
       this.loadStatus();
       this.loadResearchStatus();
+      this.loadHostBridgeStatus();
     }
     document.dispatchEvent(new CustomEvent("omni:panel-shown", { detail: { panel: name } }));
   }
@@ -740,6 +744,27 @@ export default class ChatController extends Controller {
     this.updateTransportLabel();
     this.addEvent("status_loaded", payload);
     await this.loadResearchStatus();
+    await this.loadHostBridgeStatus();
+  }
+
+  async loadHostBridgeStatus() {
+    if (!this.hasHostBridgeStatusOutputTarget) return;
+    try {
+      const payload = await readJSON(await fetch("/v1/host/status"));
+      this.recycle("host-bridge-status-output", renderHostBridgeStatus(payload));
+      this.addEvent("host_bridge_status_loaded", {
+        configured: Boolean(payload.configured),
+        reachable: Boolean(payload.reachable),
+        picker_ready: Boolean(payload.picker_ready),
+      }, payload);
+      document.dispatchEvent(new CustomEvent("omni:host-bridge-status", { detail: payload }));
+    } catch (error) {
+      this.recycle(
+        "host-bridge-status-output",
+        `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`,
+      );
+      this.addEvent("host_bridge_status_failed", { error: error.message || String(error) });
+    }
   }
 
   async loadResearchStatus() {

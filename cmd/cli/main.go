@@ -118,6 +118,8 @@ func main() {
 		runService(os.Args[2:])
 	case "config":
 		runConfig(os.Args[2:])
+	case "host":
+		runHost(os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
@@ -2832,6 +2834,7 @@ func usage() {
 	fmt.Println("  media-index [--root dir] [--source media] [--kind reference] [--tags a,b,c] [--episode-limit N] [--lines-per-chunk N] [--include-no-subs] [--dry-run]")
 	fmt.Println("  media-search [--root dir] [--context N] [--limit N] <query>")
 	fmt.Println("  browser-scan [--console] [--email-watch] [--seconds N] [--limit N] [--ports csv] [--json]")
+	fmt.Println("  host serve [--listen addr] [--token value]   host bridge for native directory picker + browse")
 	fmt.Println("  screen-read [--ocr] [--vision] [--prompt text] [--model name] [--base-url url] [--keep] [--json]")
 	fmt.Println("  research [--source research] [--kind reference] [--tags a,b,c] [--refresh-days N] [--force] [--include-web-context] [--include-analyze-context] [--chunk-size N] [--overlap N] [--max-chunks N] [--interval 2s] [--timeout 20m] [--session id] <topic>")
 	fmt.Println("  audio-notes [doctor|start|stop|status|list|search] ...")

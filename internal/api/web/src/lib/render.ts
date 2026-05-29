@@ -235,6 +235,38 @@ export function renderResearchStatus(payload) {
   `;
 }
 
+export function renderHostBridgeStatus(payload) {
+  const suggestions = payload.suggestions || [];
+  const tone = payload.reachable ? "ok" : payload.configured ? "bad" : "warn";
+  return `
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        ${metricTile("Bridge", payload.reachable ? "reachable" : "down", payload.reachable ? "ok" : "bad")}
+        ${metricTile("Configured", payload.configured ? "yes" : "no", payload.configured ? "ok" : "warn")}
+        ${metricTile("Picker", payload.picker_ready ? "ready" : "unavailable", payload.picker_ready ? "ok" : "warn")}
+        ${metricTile("Native UI", payload.native_picker ? "yes" : "n/a", payload.native_picker ? "ok" : "warn")}
+      </div>
+      <div class="rounded border border-white/10 bg-white/[.03] p-3">
+        <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Host bridge</div>
+        <dl class="mt-2 space-y-1 font-mono text-xs text-zinc-300">
+          <div><span class="text-zinc-500">url</span> ${escapeHTML(payload.url || "not set")}</div>
+          <div><span class="text-zinc-500">service</span> ${escapeHTML(payload.service || "n/a")}</div>
+          ${payload.error ? `<div class="text-rose-200"><span class="text-rose-300">error</span> ${escapeHTML(payload.error)}</div>` : ""}
+        </dl>
+        <p class="mt-3 text-sm leading-6 ${tone === "ok" ? "text-emerald-100" : "text-zinc-300"}">${escapeHTML(payload.message || "")}</p>
+      </div>
+      ${suggestions.length ? `
+        <div class="rounded border border-amber-300/30 bg-amber-300/10 p-3">
+          <div class="text-xs font-semibold uppercase tracking-[.16em] text-amber-200">How to fix</div>
+          <ol class="mt-2 list-decimal space-y-2 pl-5 text-sm leading-6 text-amber-50">
+            ${suggestions.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}
+          </ol>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
 export function renderMetricsDashboard(live, models, playbooks, benchmarks) {
   const statusCounts = live.status_counts || {};
   const liveRuns = live.live_runs || [];

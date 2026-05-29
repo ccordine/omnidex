@@ -72,15 +72,18 @@ func (s *Server) ensureOllamaModels(ctx context.Context, cfg modelconfig.Config)
 	if len(models) == 0 {
 		return nil, nil
 	}
-	endpoint := cfg.OllamaEndpoint(firstNonEmpty(s.ollamaBaseURL, "http://127.0.0.1:11434"))
-	client := ollama.New(endpoint, "", "", 10*time.Minute)
-	return client.EnsureModels(ctx, models)
+	client := s.ollamaClientWithTimeout(30 * time.Second)
+	pulled, err := client.EnsureModels(ctx, models)
+	if err != nil && isOllamaConnectivityError(err) {
+		endpoint := s.refreshOllamaEndpoint(ctx)
+		client = ollama.New(endpoint, "", "", 30*time.Second)
+		return client.EnsureModels(ctx, models)
+	}
+	return pulled, err
 }
 
-func (s *Server) modelConfigJobMetadata(project model.Project, card ScrumCard) (map[string]any, []string, error) {
+func (s *Server) modelConfigJobMetadata(ctx context.Context, project model.Project, card ScrumCard) (map[string]any, []string, error) {
 	resolved, source := s.resolveModelConfig(project, card)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
 	pulled, err := s.ensureOllamaModels(ctx, resolved)
 	if err != nil {
 		return nil, pulled, err
@@ -173,14 +176,19 @@ func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card Sc
 
 	var pulled []string
 	if _, ok := payload["model_config"]; !ok {
-		extra, modelPulled, err := s.modelConfigJobMetadata(project, card)
+		extra, modelPulled, err := s.modelConfigJobMetadata(ctx, project, card)
 		if err != nil {
-			return metadata, modelPulled, err
+			if webChatJobMetadata(payload) {
+				payload["ollama_model_check_error"] = err.Error()
+			} else {
+				return metadata, modelPulled, err
+			}
+		} else {
+			for key, value := range extra {
+				payload[key] = value
+			}
+			pulled = modelPulled
 		}
-		for key, value := range extra {
-			payload[key] = value
-		}
-		pulled = modelPulled
 	}
 	if _, ok := payload["agent_config"]; !ok {
 		for key, value := range s.agentConfigJobMetadata(project, card) {

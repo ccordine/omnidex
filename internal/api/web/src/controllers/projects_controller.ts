@@ -1,6 +1,8 @@
 import { Controller } from "@hotwired/stimulus";
 import {
   browseDirectory,
+  pickHostDirectory,
+  fetchHostBridgeStatus,
   createProject,
   deleteProject,
   fetchProjects,
@@ -160,7 +162,7 @@ export default class ProjectsController extends Controller {
     event.preventDefault();
     this.browseMode = "create";
     this.browseProjectID = null;
-    await this.openBrowseAt("");
+    await this.startDirectorySelection("");
   }
 
   async browseForEdit(event: Event) {
@@ -168,7 +170,57 @@ export default class ProjectsController extends Controller {
     this.browseMode = "edit";
     this.browseProjectID = Number((event.currentTarget as HTMLElement).dataset.projectId || 0) || null;
     const location = (this.detailTarget.querySelector('[data-projects-field="location"]') as HTMLInputElement | null)?.value;
-    await this.openBrowseAt(location || "");
+    await this.startDirectorySelection(location || "");
+  }
+
+  private async showHostBridgeHint() {
+    try {
+      const payload = await fetchHostBridgeStatus();
+      if (payload.reachable) return;
+      const tips = Array.isArray(payload.suggestions) ? payload.suggestions.filter((item) => typeof item === "string") : [];
+      if (tips.length > 0) {
+        this.setStatus(`Host bridge unavailable — ${tips[0]}`, "error");
+      } else if (typeof payload.message === "string" && payload.message.trim()) {
+        this.setStatus(payload.message, "error");
+      }
+    } catch {
+      // ignore secondary status failures
+    }
+  }
+
+  private async startDirectorySelection(startPath: string) {
+    this.setStatus("Opening directory picker…", "busy");
+    try {
+      const picked = await pickHostDirectory(startPath);
+      if (picked.canceled) {
+        this.setStatus("Picker canceled", "idle");
+        return;
+      }
+      if (picked.path) {
+        await this.applySelectedDirectory(picked.path);
+        return;
+      }
+    } catch {
+      await this.showHostBridgeHint();
+    }
+    await this.openBrowseAt(startPath);
+  }
+
+  private async applySelectedDirectory(path: string) {
+    if (this.browseMode === "create") {
+      this.pendingCreatePath = path;
+      this.pendingCreateName = path.split("/").filter(Boolean).pop() || "project";
+      this.openModal(renderProjectCreateModal(this.recipes));
+      this.setModalField("selectedPath", this.pendingCreatePath);
+      this.setModalField("createName", this.pendingCreateName);
+      this.setStatus("Directory selected", "ok");
+      return;
+    }
+    if (this.browseProjectID) {
+      const input = this.detailTarget.querySelector('[data-projects-field="location"]') as HTMLInputElement | null;
+      if (input) input.value = path;
+      this.setStatus("Directory updated", "ok");
+    }
   }
 
   async openBrowseAt(path: string) {
@@ -180,6 +232,7 @@ export default class ProjectsController extends Controller {
       this.openModal(renderBrowseModal(data, this.browseSelected, this.browseMode));
       this.setStatus("Browse open", "idle");
     } catch (error) {
+      await this.showHostBridgeHint();
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
     }
   }

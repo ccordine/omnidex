@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -182,12 +183,25 @@ func truncatePromptHint(value string, maxChars int) string {
 }
 
 func New(baseURL, defaultModel, embeddingModel string, timeout time.Duration) *Client {
+	if timeout <= 0 {
+		timeout = 90 * time.Second
+	}
+	dialTimeout := 5 * time.Second
+	if timeout < dialTimeout {
+		dialTimeout = timeout
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{
+		Timeout:   dialTimeout,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
 	return &Client{
-		baseURL:        strings.TrimSuffix(baseURL, "/"),
+		baseURL:        strings.TrimSuffix(NormalizeBaseURL(baseURL), "/"),
 		defaultModel:   defaultModel,
 		embeddingModel: embeddingModel,
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
 		},
 	}
 }

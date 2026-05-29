@@ -14,6 +14,8 @@ type Config struct {
 	AppEnv                   string
 	ListenAddr               string
 	CoreURL                  string
+	HostAgentURL             string
+	HostAgentToken           string
 	WrapperOnly              bool
 	DatabaseURL              string
 	LLMProvider              string
@@ -101,6 +103,8 @@ func Load() (Config, error) {
 	cfg := Config{
 		AppEnv:                   getenv("APP_ENV", "development"),
 		ListenAddr:               getenv("LISTEN_ADDR", "0.0.0.0:8090"),
+		HostAgentURL:             getenv("HOST_AGENT_URL", ""),
+		HostAgentToken:           getenv("HOST_AGENT_TOKEN", ""),
 		CoreURL:                  getenv("CORE_URL", "http://192.168.1.102:8090"),
 		WrapperOnly:              getenvBool("WRAPPER_ONLY", false),
 		DatabaseURL:              os.Getenv("DATABASE_URL"),

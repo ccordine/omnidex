@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gryph/omnidex/internal/config"
@@ -70,6 +71,9 @@ type Server struct {
 	secretsResolver           *secrets.Resolver
 	coreURLDefault            string
 	listenAddr                string
+	ollamaURLMu               sync.RWMutex
+	hostAgentURL              string
+	hostAgentToken            string
 }
 
 type ServerOptions struct {
@@ -112,6 +116,8 @@ type ServerOptions struct {
 	WebSearchTimeout          time.Duration
 	CoreURL                   string
 	ListenAddr                string
+	HostAgentURL              string
+	HostAgentToken            string
 }
 
 type enqueueRequest struct {
@@ -285,6 +291,8 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		webSearchTimeout:          options.WebSearchTimeout,
 		coreURLDefault:            strings.TrimSpace(options.CoreURL),
 		listenAddr:                strings.TrimSpace(options.ListenAddr),
+		hostAgentURL:              strings.TrimSpace(options.HostAgentURL),
+		hostAgentToken:            strings.TrimSpace(options.HostAgentToken),
 	}
 	if repo != nil {
 		s.secretsResolver = secrets.NewResolver(repo)
@@ -322,6 +330,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/settings/secrets", s.handleAPISecrets)
 	s.mux.HandleFunc("/v1/settings/network", s.handleNetworkSettings)
 	s.mux.HandleFunc("/v1/browse", s.handleBrowse)
+	s.mux.HandleFunc("/v1/host/status", s.handleHostBridgeStatus)
+	s.mux.HandleFunc("/v1/host/pick-directory", s.handleHostPickDirectory)
 	s.mux.HandleFunc("/v1/recipes", s.handleRecipes)
 	s.mux.HandleFunc("/v1/recipes/", s.handleRecipeByID)
 	s.mux.HandleFunc("/v1/projects", s.handleProjects)

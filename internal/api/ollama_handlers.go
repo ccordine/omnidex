@@ -11,8 +11,7 @@ import (
 )
 
 func (s *Server) ollamaClient() *ollama.Client {
-	endpoint := firstNonEmpty(s.ollamaBaseURL, "http://127.0.0.1:11434")
-	return ollama.New(endpoint, s.ollamaDefaultModel, "", 15*time.Minute)
+	return s.ollamaClientWithTimeout(15 * time.Minute)
 }
 
 func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +70,7 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"endpoint":          firstNonEmpty(s.ollamaBaseURL, "http://127.0.0.1:11434"),
+		"endpoint":          s.ollamaEndpoint(),
 		"models":            items,
 		"configured_models": configured,
 	})

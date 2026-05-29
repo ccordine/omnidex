@@ -225,7 +225,38 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 
 If you run Ollama as a systemd service, set `OLLAMA_HOST=0.0.0.0:11434` in the service environment override, then restart the service.
 
-The web UI Status panel includes a Research Health card backed by `GET /v1/status/research`. It checks whether the core can reach Ollama at `OLLAMA_BASE_URL`, reports configured/missing generation and embedding models, probes configured web search providers, and marks research unrunnable when the generation provider is unreachable.
+#### Troubleshooting tips
+
+If chat or research jobs fail with Ollama timeouts, `/api/tags` errors, or `generation provider ollama is unreachable from core`:
+
+1. **Rebuild and restart core**
+
+```bash
+docker compose up --build -d core
+```
+
+2. **Check `.env`** — If you still have `OLLAMA_BASE_URL=http://172.20.0.1:11434` and that gateway is wrong, either remove it (use the default `http://host.docker.internal:11434`) or fix the IP. Core also auto-probes fallbacks at startup (`host.docker.internal`, the Docker bridge gateway, then localhost); check core logs for `ollama endpoint resolved`.
+
+3. **Ensure Ollama listens on all interfaces on the host**
+
+```bash
+OLLAMA_HOST=0.0.0.0:11434 ollama serve
+```
+
+4. **Verify from inside the core container**
+
+```bash
+docker compose exec core wget -qO- --timeout=5 http://host.docker.internal:11434/api/tags
+```
+
+If your compose project uses a different container name, substitute it (for example `docker exec omni-nxt-core-1 ...`).
+
+5. **Read the startup logs**
+
+- If **all candidates failed**, Ollama is not reachable from Docker at all — that is a host networking/binding issue, not the UI.
+- If logs show a **successful resolved URL**, chat should queue immediately even when Status briefly still shows Ollama as down.
+
+The web UI Status panel includes a Research Health card backed by `GET /v1/status/research`. It checks whether the core can reach Ollama at `OLLAMA_BASE_URL`, reports configured/missing generation and embedding models, probes configured web search providers, and surfaces Ollama reachability warnings.
 
 If a configured Ollama generation model is missing, Omnidex pulls it through Ollama's `/api/pull` endpoint and retries the request. First use can take as long as the model download. You can avoid that delay by pre-pulling:
 
