@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gryph/omnidex/internal/chat"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -60,18 +61,6 @@ var codeOnlyPreferencePattern = regexp.MustCompile(`(?i)\b(code[-\s]?only|only (
 var executionClaimPattern = regexp.MustCompile(`(?i)\b(i|we)\s+(ran|executed|installed|deployed|committed|merged|modified|edited|deleted|removed|updated|applied)\b`)
 var webExecutionClaimPattern = regexp.MustCompile(`(?i)\b(i|we)\s+(searched|looked up|browsed|checked)\s+(the\s+)?(web|internet|online)\b`)
 var webEvidenceClaimPattern = regexp.MustCompile(`(?i)\b(according to|based on)\s+(the\s+)?(web|internet|online|search results?)\b`)
-var lowSignalChatTokens = map[string]struct{}{
-	"hi":       {},
-	"hello":    {},
-	"hey":      {},
-	"yo":       {},
-	"sup":      {},
-	"ping":     {},
-	"test":     {},
-	"testing":  {},
-	"check":    {},
-	"checking": {},
-}
 
 const stepControlPollInterval = 300 * time.Millisecond
 const stepEventWriteTimeout = 2 * time.Second
@@ -1747,7 +1736,7 @@ func (s *Service) runResponseStep(ctx context.Context, claim *model.ClaimedStep,
 		return nil
 	}
 	if lowSignalChat && strings.TrimSpace(contexts["user_feedback"]) == "" {
-		response := "Hi, I'm here. Tell me what you'd like to do."
+		response := chat.LowSignalResponse(claim.Job.Instruction)
 		response = ensureResponseHasSources(response, claim.Job, contexts, nil)
 		s.emitStepEvent(claim.Step.ID, "response_ready", "strategy=low_signal")
 		if err := s.repo.CompleteStep(ctx, claim.Step.ID, response, action, response); err != nil {
@@ -5539,32 +5528,7 @@ func isDeterministicLocalActionReviewInstruction(instruction string) bool {
 }
 
 func isLowSignalChatInstruction(instruction string, pipeline string) bool {
-	if strings.ToLower(strings.TrimSpace(pipeline)) != model.PipelineChat {
-		return false
-	}
-
-	value := strings.ToLower(strings.TrimSpace(instruction))
-	if value == "" {
-		return false
-	}
-	value = strings.Trim(value, "\"'`.,!?;:()[]{}")
-	if value == "" {
-		return false
-	}
-
-	words := strings.Fields(value)
-	if len(words) == 0 || len(words) > 3 {
-		return false
-	}
-
-	if _, ok := lowSignalChatTokens[value]; ok {
-		return true
-	}
-	if _, ok := lowSignalChatTokens[words[0]]; ok {
-		return true
-	}
-
-	return false
+	return chat.IsLowSignal(instruction, pipeline)
 }
 
 func webSearchMode(metadata json.RawMessage) string {
@@ -7804,6 +7768,10 @@ func noisyRetrievalDump(value string) bool {
 		return false
 	}
 	return strings.Contains(clean, "scoped memory lookup found no matches") ||
+		strings.Contains(clean, "historical memory retrieval skipped") ||
+		strings.Contains(clean, "memory retrieval skipped") ||
+		strings.Contains(clean, "no relevant memory needed") ||
+		strings.Contains(clean, "light chat mode") ||
 		strings.Contains(clean, "research chunk metadata:") ||
 		strings.Contains(clean, "research memory topic=") ||
 		strings.HasPrefix(clean, "source_url=") ||

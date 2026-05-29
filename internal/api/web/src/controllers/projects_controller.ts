@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus";
 import {
   browseDirectory,
-  pickHostDirectory,
+  createBrowseDirectory,
   fetchHostBridgeStatus,
   createProject,
   deleteProject,
@@ -20,8 +20,9 @@ import { fetchAgentDefaults } from "../lib/agent_config_api";
 import type { ResolvedAgentConfig } from "../lib/agent_config_types";
 import { renderRecyclrBundle } from "../lib/recyclr";
 import { closeModalShell, openModalShell } from "../lib/modal";
+import { showToast } from "../lib/toast";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
-import type { ProjectRecord, ProjectMapSummary, RecipeCatalogItem } from "../lib/project_types";
+import type { BrowseResponse, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
 import type GxController from "./gx_controller";
 
 export default class ProjectsController extends Controller {
@@ -39,6 +40,7 @@ export default class ProjectsController extends Controller {
   private activeTab = "scrum";
   private browsePath = "";
   private browseSelected = "";
+  private browseData: BrowseResponse | null = null;
   private browseMode: "create" | "edit" = "create";
   private browseProjectID: number | null = null;
   private pendingCreatePath = "";
@@ -66,6 +68,42 @@ export default class ProjectsController extends Controller {
     const classes = { idle: "text-zinc-400", busy: "text-cyan-200", error: "text-rose-300", ok: "text-emerald-300" };
     this.statusTarget.textContent = message;
     this.statusTarget.className = `text-xs ${classes[tone] ?? classes.idle}`;
+  }
+
+  private setModalFeedback(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
+    const toneClasses: Record<string, string[]> = {
+      idle: ["border-white/10", "bg-zinc-900/80", "text-zinc-300"],
+      busy: ["border-cyan-300/30", "bg-cyan-300/10", "text-cyan-100"],
+      error: ["border-rose-400/30", "bg-rose-400/10", "text-rose-100"],
+      ok: ["border-emerald-400/30", "bg-emerald-400/10", "text-emerald-100"],
+    };
+    const allToneClasses = Object.values(toneClasses).flat();
+    const slots = this.modalPanel()?.querySelectorAll("[data-projects-modal-feedback]") ?? [];
+    if (slots.length === 0) {
+      if (message) this.setStatus(message, tone);
+      return;
+    }
+    slots.forEach((slot) => {
+      const node = slot as HTMLElement;
+      node.classList.remove(...allToneClasses);
+      if (!message) {
+        node.classList.add("hidden");
+        node.textContent = "";
+        return;
+      }
+      node.classList.remove("hidden");
+      node.classList.add(...(toneClasses[tone] ?? toneClasses.idle));
+      node.setAttribute("role", tone === "error" ? "alert" : "status");
+      node.textContent = message;
+    });
+    if (message) this.setStatus(message, tone);
+  }
+
+  private setCreateSubmitting(submitting: boolean) {
+    const button = this.modalPanel()?.querySelector("[data-projects-create-submit]") as HTMLButtonElement | null;
+    if (!button) return;
+    button.disabled = submitting;
+    button.textContent = submitting ? "Creating project…" : "Create project";
   }
 
   private gxHost(): GxController | null {
@@ -149,13 +187,15 @@ export default class ProjectsController extends Controller {
 
   showCreateModal() {
     this.openModal(renderProjectCreateModal(this.recipes));
+    this.setModalFeedback("", "idle");
+    this.setCreateSubmitting(false);
   }
 
   async openBrowse(event: Event) {
     event.preventDefault();
     this.browseMode = "create";
     this.browseProjectID = null;
-    await this.startDirectorySelection("");
+    await this.openBrowseAt(this.pendingCreatePath || "");
   }
 
   async browseForEdit(event: Event) {
@@ -163,7 +203,18 @@ export default class ProjectsController extends Controller {
     this.browseMode = "edit";
     this.browseProjectID = Number((event.currentTarget as HTMLElement).dataset.projectId || 0) || null;
     const location = (this.detailTarget.querySelector('[data-projects-field="location"]') as HTMLInputElement | null)?.value;
-    await this.startDirectorySelection(location || "");
+    await this.openBrowseAt(location || "");
+  }
+
+  private browseField(name: string): string {
+    const field = this.modalPanel()?.querySelector(`[data-browse-field="${name}"]`) as HTMLInputElement | null;
+    return field?.value?.trim() ?? "";
+  }
+
+  private renderBrowseView() {
+    if (!this.browseData) return;
+    renderRecyclrBundle(this.gxHost(), "modal", renderBrowseModal(this.browseData, this.browseSelected, this.browseMode));
+    openModalShell({ wide: true });
   }
 
   private async showHostBridgeHint() {
@@ -181,52 +232,21 @@ export default class ProjectsController extends Controller {
     }
   }
 
-  private async startDirectorySelection(startPath: string) {
-    this.setStatus("Opening directory picker…", "busy");
-    try {
-      const picked = await pickHostDirectory(startPath);
-      if (picked.canceled) {
-        this.setStatus("Picker canceled", "idle");
-        return;
-      }
-      if (picked.path) {
-        await this.applySelectedDirectory(picked.path);
-        return;
-      }
-    } catch {
-      await this.showHostBridgeHint();
-    }
-    await this.openBrowseAt(startPath);
-  }
-
-  private async applySelectedDirectory(path: string) {
-    if (this.browseMode === "create") {
-      this.pendingCreatePath = path;
-      this.pendingCreateName = path.split("/").filter(Boolean).pop() || "project";
-      this.openModal(renderProjectCreateModal(this.recipes));
-      this.setModalField("selectedPath", this.pendingCreatePath);
-      this.setModalField("createName", this.pendingCreateName);
-      this.setStatus("Directory selected", "ok");
-      return;
-    }
-    if (this.browseProjectID) {
-      const input = this.detailTarget.querySelector('[data-projects-field="location"]') as HTMLInputElement | null;
-      if (input) input.value = path;
-      this.setStatus("Directory updated", "ok");
-    }
-  }
-
   async openBrowseAt(path: string) {
     this.setStatus("Browsing directories…", "busy");
     try {
       const data = await browseDirectory(path);
+      this.browseData = data;
       this.browsePath = data.path;
       this.browseSelected = data.path;
-      this.openModal(renderBrowseModal(data, this.browseSelected, this.browseMode));
+      this.renderBrowseView();
+      this.setModalFeedback("", "idle");
       this.setStatus("Browse open", "idle");
     } catch (error) {
       await this.showHostBridgeHint();
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      const message = error instanceof Error ? error.message : String(error);
+      this.setModalFeedback(message, "error");
+      this.setStatus(message, "error");
     }
   }
 
@@ -236,9 +256,33 @@ export default class ProjectsController extends Controller {
     await this.openBrowseAt(path);
   }
 
-  selectBrowseFile(event: Event) {
+  selectBrowseDir(event: Event) {
     event.preventDefault();
     this.browseSelected = (event.currentTarget as HTMLElement).dataset.path || this.browseSelected;
+    this.renderBrowseView();
+  }
+
+  async createBrowseFolder(event: Event) {
+    event.preventDefault();
+    const name = this.browseField("newFolderName");
+    if (!name) {
+      this.setModalFeedback("Enter a folder name.", "error");
+      return;
+    }
+    this.setModalFeedback("Creating folder…", "busy");
+    this.setStatus("Creating folder…", "busy");
+    try {
+      const payload = await createBrowseDirectory(this.browsePath, name);
+      await this.openBrowseAt(payload.path);
+      this.browseSelected = payload.path;
+      this.renderBrowseView();
+      this.setModalFeedback(`Created folder “${name}”.`, "ok");
+      this.setStatus("Folder created", "ok");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setModalFeedback(message, "error");
+      this.setStatus(message, "error");
+    }
   }
 
   confirmBrowse(event: Event) {
@@ -250,6 +294,8 @@ export default class ProjectsController extends Controller {
       this.openModal(renderProjectCreateModal(this.recipes));
       this.setModalField("selectedPath", this.pendingCreatePath);
       this.setModalField("createName", this.pendingCreateName);
+      this.setModalFeedback("", "idle");
+      this.setCreateSubmitting(false);
       return;
     } else if (this.browseProjectID) {
       const input = this.detailTarget.querySelector('[data-projects-field="location"]') as HTMLInputElement | null;
@@ -263,10 +309,11 @@ export default class ProjectsController extends Controller {
     const location = this.modalField("selectedPath");
     const name = this.modalField("createName");
     if (!location) {
-      this.setStatus("Choose a working directory first", "error");
+      this.setModalFeedback("Choose a working directory first.", "error");
       return;
     }
-    this.setStatus("Creating project…", "busy");
+    this.setModalFeedback("Creating project…", "busy");
+    this.setCreateSubmitting(true);
     try {
       const payload = await createProject({
         name: name || location.split("/").filter(Boolean).pop() || "project",
@@ -277,11 +324,15 @@ export default class ProjectsController extends Controller {
       });
       this.selectedProjectID = payload.project.id;
       this.activeTab = "scrum";
+      const createdName = payload.project.name || name || "project";
       this.closeCreateModal();
+      showToast(`Project “${createdName}” created.`, "ok");
       await this.load();
       this.setStatus("Project created", "ok");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      const message = error instanceof Error ? error.message : String(error);
+      this.setModalFeedback(message, "error");
+      this.setCreateSubmitting(false);
     }
   }
 

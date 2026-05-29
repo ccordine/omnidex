@@ -76,7 +76,7 @@ func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusRe
 		NativePicker: nativePicker,
 		Service:      mapString(payload, "service"),
 		PickerReady:  true,
-		Message:      "Host bridge is reachable. Native folder picker and host filesystem browse are available.",
+		Message:      "Host bridge is reachable. In-app filesystem browse is available.",
 	}
 }
 
@@ -91,7 +91,6 @@ func hostBridgeSuggestions(configured, reachable bool, url string) []string {
 			"Or run manually: omni host serve --listen 0.0.0.0:8091",
 			"In core .env set HOST_AGENT_URL=http://host.docker.internal:8091 (or http://127.0.0.1:8091 when core runs on the host)",
 			"Rebuild/restart core: docker compose up --build -d core",
-			"Linux native picker requires zenity or kdialog installed on the host",
 		)
 		return out
 	}

@@ -64,6 +64,43 @@ func (c *Client) Browse(ctx context.Context, path string) (*BrowseResult, error)
 	return result, nil
 }
 
+func (c *Client) Mkdir(ctx context.Context, parent, name string) (string, error) {
+	body, err := json.Marshal(map[string]string{
+		"parent": strings.TrimSpace(parent),
+		"name":   strings.TrimSpace(name),
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/mkdir", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.applyAuth(req)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("%s", stringField(payload, "error"))
+	}
+	path := stringField(payload, "path")
+	if path == "" {
+		return "", fmt.Errorf("mkdir returned empty path")
+	}
+	return path, nil
+}
+
 type PickResult struct {
 	Path     string
 	Canceled bool

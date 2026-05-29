@@ -353,3 +353,24 @@ body {
     filter: none;
   }
 }
+
+.omni-toast {
+  transform: translateY(12px);
+  opacity: 0;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms ease;
+}
+
+.omni-toast.is-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omni-toast {
+    transition: none;
+    transform: none;
+    opacity: 1;
+  }
+}

@@ -330,6 +330,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/settings/secrets", s.handleAPISecrets)
 	s.mux.HandleFunc("/v1/settings/network", s.handleNetworkSettings)
 	s.mux.HandleFunc("/v1/browse", s.handleBrowse)
+	s.mux.HandleFunc("/v1/browse/mkdir", s.handleBrowseMkdir)
 	s.mux.HandleFunc("/v1/host/status", s.handleHostBridgeStatus)
 	s.mux.HandleFunc("/v1/host/pick-directory", s.handleHostPickDirectory)
 	s.mux.HandleFunc("/v1/recipes", s.handleRecipes)

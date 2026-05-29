@@ -12,6 +12,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/artifacts"
+	"github.com/gryph/omnidex/internal/chat"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -150,7 +151,7 @@ func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline strin
 		}
 	}
 
-	steps := stepsForJob(pipeline, metadataJSON)
+	steps := stepsForJob(pipeline, instruction, metadataJSON)
 	for _, step := range steps {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO job_steps (job_id, action, sort_index, status)
@@ -435,7 +436,7 @@ func usesV3NativeSteps(metadataJSON []byte) bool {
 	return false
 }
 
-func stepsForJob(pipeline string, metadataJSON []byte) []stepSeed {
+func stepsForJob(pipeline, instruction string, metadataJSON []byte) []stepSeed {
 	if agentconfig.FromJobMetadata(metadataJSON).IsExternal() {
 		return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}
 	}
@@ -443,6 +444,9 @@ func stepsForJob(pipeline string, metadataJSON []byte) []stepSeed {
 		return stepsForPipeline(model.PipelineCoding)
 	}
 	if usesV3NativeSteps(metadataJSON) || strings.EqualFold(strings.TrimSpace(pipeline), "v3") {
+		if chat.IsLowSignal(instruction, pipeline) {
+			return []stepSeed{{action: "v3_chat_fastpath", sortIndex: 1}}
+		}
 		return []stepSeed{
 			{action: "v3_intent_parse", sortIndex: 5},
 			{action: "v3_capability_audit", sortIndex: 10},

@@ -15,6 +15,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/v1/browse", s.handleBrowse)
+	mux.HandleFunc("/v1/mkdir", s.handleMkdir)
 	mux.HandleFunc("/v1/pick-directory", s.handlePickDirectory)
 	return mux
 }
@@ -55,6 +56,31 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		"parent":  result.Parent,
 		"entries": result.Entries,
 	})
+}
+
+func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorize(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Parent string `json:"parent"`
+		Name   string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	path, err := CreateDirectory(req.Parent, req.Name, BrowseOptions{})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"path": path})
 }
 
 func (s *Server) handlePickDirectory(w http.ResponseWriter, r *http.Request) {

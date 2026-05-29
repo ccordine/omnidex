@@ -89,9 +89,18 @@ func TestCodingPipelineIsOnlyCodingWorkflow(t *testing.T) {
 	}
 }
 
+func TestV3LowSignalChatUsesFastPath(t *testing.T) {
+	v3Metadata := []byte(`{"runtime":"v3","v3_enabled":true}`)
+	got := stepsForJob(model.PipelineChat, "hello", v3Metadata)
+	want := []stepSeed{{action: "v3_chat_fastpath", sortIndex: 1}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stepsForJob(chat hello,v3)=%+v want %+v", got, want)
+	}
+}
+
 func TestCodingJobStepsIgnoreV3Metadata(t *testing.T) {
 	v3Metadata := []byte(`{"runtime":"v3","v3_enabled":true,"engine":"native_v3"}`)
-	got := stepsForJob(model.PipelineCoding, v3Metadata)
+	got := stepsForJob(model.PipelineCoding, "build app", v3Metadata)
 	want := []stepSeed{{action: "coding_workflow", sortIndex: 5}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("stepsForJob(coding,v3_metadata)=%+v want %+v", got, want)

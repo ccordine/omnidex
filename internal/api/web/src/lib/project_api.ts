@@ -110,11 +110,11 @@ export async function browseDirectory(path = ""): Promise<BrowseResponse> {
   return readJSON(response);
 }
 
-export async function pickHostDirectory(startPath = ""): Promise<{ path?: string; canceled?: boolean }> {
-  const response = await fetch("/v1/host/pick-directory", {
+export async function createBrowseDirectory(parent: string, name: string): Promise<{ path: string }> {
+  const response = await fetch("/v1/browse/mkdir", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ start_path: startPath }),
+    body: JSON.stringify({ parent, name }),
   });
   return readJSON(response);
 }

@@ -408,7 +408,7 @@ export default class ChatController extends Controller {
     this.setStatus("running", "active");
     let lastSignature = "";
     for (;;) {
-      await sleep(this.pollMsValue || 1600);
+      await sleep(this.pollMsValue || 800);
       const response = await fetch(`/v1/jobs/${jobID}`);
       const details = await readJSON(response);
       const signature = JSON.stringify({
@@ -419,9 +419,11 @@ export default class ChatController extends Controller {
         contexts: (details.contexts || []).length,
       });
       if (signature !== lastSignature) {
-        this.activityLabel = `Running job #${jobID} · ${details.job?.status || "running"}…`;
+        const stepLabel = this.describeJobProgress(details);
+        this.activityLabel = stepLabel || `Running job #${jobID} · ${details.job?.status || "running"}…`;
         this.renderProgressActivity(this.activityLabel);
         this.renderJobProgress(details);
+        this.renderMessages();
         lastSignature = signature;
       }
       const status = details.job?.status;
@@ -823,6 +825,37 @@ export default class ChatController extends Controller {
     await this.loadStatus();
   }
 
+  describeJobProgress(details) {
+    const steps = details?.steps || [];
+    const running = steps.find((step) => step.status === "running");
+    const pending = steps.find((step) => step.status === "pending");
+    const current = running || pending;
+    if (!current?.action) {
+      return "";
+    }
+    const labels = {
+      v3_chat_fastpath: "Replying…",
+      v3_intent_parse: "Understanding request…",
+      v3_capability_audit: "Checking tools…",
+      v3_workspace_research: "Scanning workspace…",
+      v3_memory_retrieval: "Checking memory…",
+      v3_planning: "Planning…",
+      v3_external_research: "Searching…",
+      v3_analysis: "Analyzing…",
+      v3_response_draft: "Drafting reply…",
+      v3_verification: "Verifying…",
+      v3_finalize: "Finishing…",
+      retrieve: "Checking memory…",
+      analyze: "Analyzing…",
+      roleplay: "Composing reply…",
+      verify: "Verifying…",
+      plan: "Planning…",
+      web_search: "Searching web…",
+    };
+    const label = labels[current.action] || `${current.action.replace(/_/g, " ")}…`;
+    return `${label} (#${details?.job?.id || "?"})`;
+  }
+
   renderJobProgress(details) {
     this.renderProgress(details);
     this.indexContexts(details.contexts || []);
@@ -1016,6 +1049,7 @@ export default class ChatController extends Controller {
     const steps = details.steps || [];
     const contexts = details.contexts || [];
     const latestStep = [...steps].reverse().find((step) => step.status) || steps[steps.length - 1] || {};
+    const runningStep = steps.find((step) => step.status === "running") || latestStep;
     const latestContext = contexts[contexts.length - 1] || {};
     if (this.hasProgressStateTarget) this.progressStateTarget.textContent = job.status || "running";
     this.recycle("progress", `
@@ -1031,7 +1065,8 @@ export default class ChatController extends Controller {
         </div>
         <div class="rounded border border-white/10 bg-white/[.03] p-3">
           <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Current step</div>
-          <div class="mt-1 text-sm text-zinc-200">${escapeHTML(latestStep.action || latestStep.status || "waiting for updates")}</div>
+          <div class="mt-1 text-sm text-zinc-200">${escapeHTML(runningStep.action || runningStep.status || "waiting for updates")}</div>
+          ${runningStep.status ? `<div class="mt-1 text-xs text-zinc-500">${escapeHTML(runningStep.status)}</div>` : ""}
         </div>
         <button type="button" data-action="chat#openContextItem" data-context-id="${escapeHTML(latestContext.id || "")}" class="w-full rounded border border-white/10 bg-white/[.03] p-3 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/10 ${latestContext.id ? "" : "pointer-events-none opacity-60"}">
           <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Latest context</div>

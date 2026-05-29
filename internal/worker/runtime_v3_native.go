@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/artifacts"
+	"github.com/gryph/omnidex/internal/chat"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -82,6 +83,8 @@ func (r *nativeRuntimeV3) run() error {
 		return r.runMemoryReview()
 	case "v3_finalize":
 		return r.runFinalize()
+	case "v3_chat_fastpath":
+		return r.runChatFastPath()
 	default:
 		return r.complete(r.action, "unsupported native v3 action: "+r.action, "unsupported native v3 action: "+r.action)
 	}
@@ -430,6 +433,15 @@ func (r *nativeRuntimeV3) runAnalysis() error {
 }
 
 func (r *nativeRuntimeV3) runResponseDraft() error {
+	if isLowSignalChatInstruction(r.claim.Job.Instruction, r.claim.Job.Pipeline) && strings.TrimSpace(r.contexts["user_feedback"]) == "" {
+		response := chat.LowSignalResponse(r.claim.Job.Instruction)
+		artifact := artifacts.ResponseDraftArtifact{Response: response}
+		if err := r.writeArtifact(artifacts.KindResponseDraft, artifact); err != nil {
+			return err
+		}
+		r.svc.emitStepEvent(r.claim.Step.ID, "response_ready", "strategy=low_signal")
+		return r.complete("response_draft", response, response)
+	}
 	analysisArtifact, _ := r.readAnalysisArtifact()
 	retrievalArtifact, _ := r.readRetrievalArtifact()
 	webArtifact, _ := r.readWebArtifact()
@@ -572,6 +584,16 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 	}
 	summary := strings.Join([]string{fmt.Sprintf("promoted=%d", len(promoted)), fmt.Sprintf("rejected=%d", len(rejected))}, "\n")
 	return r.complete("memory_review", summary, summary)
+}
+
+func (r *nativeRuntimeV3) runChatFastPath() error {
+	response := chat.LowSignalResponse(r.claim.Job.Instruction)
+	artifact := artifacts.ResponseDraftArtifact{Response: response}
+	if err := r.writeArtifact(artifacts.KindResponseDraft, artifact); err != nil {
+		return err
+	}
+	r.svc.emitStepEvent(r.claim.Step.ID, "response_ready", "strategy=low_signal_fastpath")
+	return r.complete("response", response, response)
 }
 
 func (r *nativeRuntimeV3) runFinalize() error {
@@ -793,6 +815,9 @@ func bestV3FinalFallback(job model.Job, contexts map[string]string, subtasks []s
 	}
 	if best := bestNonGenericCandidate([]string{contexts["workspace"]}); best != "" {
 		return best
+	}
+	if chat.IsLowSignal(job.Instruction, job.Pipeline) {
+		return chat.LowSignalResponse(job.Instruction)
 	}
 	return strings.TrimSpace(job.Instruction)
 }

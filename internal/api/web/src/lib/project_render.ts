@@ -287,54 +287,83 @@ export function renderProjectMapSection(projectID: number, map: ProjectMapSummar
 }
 
 export function renderBrowseModal(data: BrowseResponse, selectedPath: string, mode: string): string {
-  const rows = data.entries
+  const dirs = data.entries.filter((entry) => entry.is_dir);
+  const rows = dirs
     .map((entry) => {
-      const icon = entry.is_dir ? "📁" : "📄";
-      const action = entry.is_dir ? "projects#enterBrowseDir" : "projects#selectBrowseFile";
       const selected = selectedPath === entry.path ? " border-cyan-300/40 bg-cyan-300/10" : " border-white/10";
       return `
-        <button
-          type="button"
-          data-action="${action}"
-          data-path="${escapeHTML(entry.path)}"
-          class="flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm text-zinc-200 transition hover:border-cyan-300/30${selected}"
-        >
-          <span aria-hidden="true">${icon}</span>
-          <span class="truncate">${escapeHTML(entry.name)}</span>
-        </button>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            data-action="projects#selectBrowseDir"
+            data-path="${escapeHTML(entry.path)}"
+            class="flex min-w-0 flex-1 items-center gap-3 rounded-md border px-3 py-2 text-left text-sm text-zinc-200 transition hover:border-cyan-300/30${selected}"
+          >
+            <span aria-hidden="true">📁</span>
+            <span class="truncate">${escapeHTML(entry.name)}</span>
+          </button>
+          <button
+            type="button"
+            data-action="projects#enterBrowseDir"
+            data-path="${escapeHTML(entry.path)}"
+            title="Open folder"
+            class="shrink-0 rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10"
+          >Open</button>
+        </div>
       `;
     })
     .join("");
+
+  const currentSelected = selectedPath || data.path;
 
   return `
     <div class="border-b border-white/10 p-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 class="text-xl font-semibold text-zinc-100">Choose working directory</h2>
-          <p class="mt-1 font-mono text-xs text-zinc-500">${escapeHTML(data.path)}</p>
+          <p class="mt-1 text-sm text-zinc-500">Browse folders on the host via the bridge. Select a folder, or create a new one below.</p>
+          <p class="mt-2 font-mono text-xs text-zinc-500">${escapeHTML(data.path)}</p>
         </div>
         <button type="button" data-action="projects#closeBrowse" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">Close</button>
       </div>
     </div>
-    <div class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+    <div class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div data-projects-modal-feedback class="hidden lg:col-span-2 rounded-md border px-3 py-2 text-sm" role="status"></div>
       <div class="space-y-2">
         ${
           data.parent
             ? `<button type="button" data-action="projects#enterBrowseDir" data-path="${escapeHTML(data.parent)}" class="w-full rounded-md border border-white/10 px-3 py-2 text-left text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">↑ Parent directory</button>`
             : ""
         }
-        <div class="scrollbar max-h-[50vh] space-y-2 overflow-y-auto">${rows || `<p class="text-sm text-zinc-500">This folder is empty.</p>`}</div>
+        <div class="scrollbar max-h-[50vh] space-y-2 overflow-y-auto">${rows || `<p class="text-sm text-zinc-500">No subfolders here — you can use this directory or create a new folder.</p>`}</div>
       </div>
-      <aside class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Selection</h3>
-        <p class="mt-3 break-all font-mono text-xs text-zinc-300">${escapeHTML(selectedPath || data.path)}</p>
-        <input type="hidden" data-browse-mode="${escapeHTML(mode)}" value="${escapeHTML(mode)}" />
-        <button
-          type="button"
-          data-action="projects#confirmBrowse"
-          data-path="${escapeHTML(selectedPath || data.path)}"
-          class="mt-4 w-full rounded-md bg-cyan-300 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200"
-        >Use this directory</button>
+      <aside class="space-y-4">
+        <div class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Selected directory</h3>
+          <p class="mt-3 break-all font-mono text-xs text-zinc-300">${escapeHTML(currentSelected)}</p>
+          <input type="hidden" data-browse-mode="${escapeHTML(mode)}" value="${escapeHTML(mode)}" />
+          <button
+            type="button"
+            data-action="projects#confirmBrowse"
+            data-path="${escapeHTML(currentSelected)}"
+            class="mt-4 w-full rounded-md bg-cyan-300 px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200"
+          >Use this directory</button>
+        </div>
+        <div class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">New folder</h3>
+          <p class="mt-2 text-xs leading-5 text-zinc-500">Create inside <span class="font-mono text-zinc-400">${escapeHTML(data.path)}</span></p>
+          <input
+            data-browse-field="newFolderName"
+            type="text"
+            placeholder="my-project"
+            class="mt-3 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40"
+          />
+          <button
+            type="button"
+            data-action="projects#createBrowseFolder"
+            class="mt-3 w-full rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-200 hover:border-cyan-300/40 hover:bg-cyan-300/10"
+          >Create folder</button>
+        </div>
       </aside>
     </div>
   `;
@@ -350,12 +379,13 @@ export function renderProjectCreateModal(recipes: RecipeCatalogItem[]): string {
         <div>
           <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Projects</p>
           <h2 class="mt-1 text-2xl font-semibold tracking-tight text-zinc-100">New project</h2>
-          <p class="mt-1 text-sm text-zinc-500">Pick a working directory on this machine via the host bridge (native folder picker).</p>
+          <p class="mt-1 text-sm text-zinc-500">Browse and choose a working directory on the host via the bridge.</p>
         </div>
         <button type="button" data-action="projects#closeCreateModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Cancel</button>
       </div>
     </div>
     <form data-action="submit->projects#submitCreate" class="space-y-4 p-4 md:p-5">
+      <div data-projects-modal-feedback class="hidden rounded-md border px-3 py-2 text-sm" role="status"></div>
       <label class="block">
         <span class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Working directory</span>
         <div class="mt-2 flex gap-2">
@@ -380,7 +410,7 @@ export function renderProjectCreateModal(recipes: RecipeCatalogItem[]): string {
       </label>
       <div class="flex justify-end gap-2 border-t border-white/10 pt-4">
         <button type="button" data-action="projects#closeCreateModal" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-300">Cancel</button>
-        <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Create project</button>
+        <button type="submit" data-projects-create-submit class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60">Create project</button>
       </div>
     </form>
   `;
