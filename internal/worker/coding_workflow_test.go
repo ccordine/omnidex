@@ -10,6 +10,63 @@ import (
 	runtimecoding "github.com/gryph/omnidex/internal/runtime/coding"
 )
 
+func TestCodingWorkflowProcessStepCannotUseAssistantRuntime(t *testing.T) {
+	svc := newServiceWithPanickingAssistantRuntime(t)
+	claim := &model.ClaimedStep{
+		Job: model.Job{
+			ID:          10,
+			Instruction: "change this code correctly",
+			Pipeline:    model.PipelineCoding,
+		},
+		Step: model.Step{
+			ID:     20,
+			Action: "coding_workflow",
+		},
+	}
+
+	if err := svc.processStep(context.Background(), claim); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCodingWorkflowCannotUseAssistantRuntime(t *testing.T) {
+	svc := newServiceWithPanickingAssistantRuntime(t)
+	claim := &model.ClaimedStep{
+		Job: model.Job{
+			ID:          10,
+			Instruction: "change this code correctly",
+			Pipeline:    model.PipelineCoding,
+		},
+		Step: model.Step{
+			ID:     20,
+			Action: "coding_workflow",
+		},
+	}
+
+	if err := svc.runCodingWorkflowStep(context.Background(), claim, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newServiceWithPanickingAssistantRuntime(t *testing.T) Service {
+	t.Helper()
+	panicIfCalled := func(label string) func(context.Context, *model.ClaimedStep, map[string]string, string) error {
+		return func(context.Context, *model.ClaimedStep, map[string]string, string) error {
+			panic("coding workflow must not call " + label)
+		}
+	}
+	return Service{
+		codingEngine: &recordingCodingEngine{
+			result: runtimecoding.Result{Summary: "coding complete"},
+		},
+		completeStep: func(context.Context, int64, string, string, string) error {
+			return nil
+		},
+		nativeV3Runner:     panicIfCalled("native v3 runtime"),
+		agentRuntimeRunner: panicIfCalled("assistant runtime"),
+	}
+}
+
 func TestCodingWorkflowUsesCodingEngineOnly(t *testing.T) {
 	engine := &recordingCodingEngine{
 		result: runtimecoding.Result{Summary: "coding complete"},
@@ -73,10 +130,19 @@ func TestCodingJobRejectsAssistantRuntimeActions(t *testing.T) {
 	for _, action := range []string{
 		"tooling",
 		"workspace_scan",
+		"tag",
+		"retrieve",
 		"plan",
+		"planning",
+		"web_search",
 		"analyze",
 		"assist",
+		"roleplay",
+		"narrate",
 		"verify",
+		"v3_intent_parse",
+		"v3_planning",
+		"v3_analysis",
 		"v3_verification",
 		"v3_response_draft",
 		"v3_memory_review",

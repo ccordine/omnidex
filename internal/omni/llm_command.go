@@ -757,17 +757,19 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 		result.ObjectiveLedger = ledger
 		refreshTypedWorkItems()
 		if len(pendingStructuredObjectives(ledger)) == 0 {
-			result.Command = "RECIPE_COMPLETION_PROBES"
-			result.ExitCode = 0
-			result.Answer = "Recipe completion probes passed."
-			emitStructuredCommandEvent(onEvent, "adaptive_roles_collapsed", "Deterministic recipe probes satisfied the task before additional specialist calls", map[string]string{
-				"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
-				"skipped": "context_summarizer,completion_checker,planner",
-			})
-			emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_recipe_probes", "Deterministic recipe probes satisfied objective ledger", map[string]string{
-				"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
-			})
-			return result, nil
+			if !rejectTypedFinalGate(0, cfg.CurrentWorkingDirectory, onEvent, &result) {
+				result.Command = "RECIPE_COMPLETION_PROBES"
+				result.ExitCode = 0
+				result.Answer = "Recipe completion probes passed."
+				emitStructuredCommandEvent(onEvent, "adaptive_roles_collapsed", "Deterministic recipe probes satisfied the task before additional specialist calls", map[string]string{
+					"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
+					"skipped": "context_summarizer,completion_checker,planner",
+				})
+				emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_recipe_probes", "Deterministic recipe probes satisfied objective ledger", map[string]string{
+					"recipes": strings.Join(recipeIDs(selectedRecipes), ","),
+				})
+				return result, nil
+			}
 		}
 	}
 	if cfg.ContextSummarizer != nil {
@@ -824,13 +826,15 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			})
 		}
 		if latest, ok := latestSuccessfulCommandObservation(result.Observations); ok && sourceVerificationCompletionSatisfied(prompt, cfg.CurrentWorkingDirectory, latest) {
-			result.Answer = finalStructuredAnswer(result.Answer, latest)
-			result.ExitCode = latest.ExitCode
-			emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_source_verification", "Deterministic source verification satisfied app creation", map[string]string{
-				"step":   fmt.Sprintf("%d", step-1),
-				"stdout": truncateStructuredTimelineValue(latest.Stdout),
-			})
-			return result, nil
+			if !rejectTypedFinalGate(step-1, cfg.CurrentWorkingDirectory, onEvent, &result) {
+				result.Answer = finalStructuredAnswer(result.Answer, latest)
+				result.ExitCode = latest.ExitCode
+				emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_source_verification", "Deterministic source verification satisfied app creation", map[string]string{
+					"step":   fmt.Sprintf("%d", step-1),
+					"stdout": truncateStructuredTimelineValue(latest.Stdout),
+				})
+				return result, nil
+			}
 		}
 		if len(result.Observations) != lastCompletionCheckedObservationCount && latestObservationIsSuccessfulCommand(result.Observations) && len(pendingStructuredObjectives(ledger)) > 0 {
 			latest, _ := latestSuccessfulCommandObservation(result.Observations)
@@ -950,6 +954,10 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				emitStructuredCommandEvent(onEvent, "structured_evaluator_deferred_for_objective_queue", "Broad evaluator deferred until top-level objective queue completes", map[string]string{
 					"step":               fmt.Sprintf("%d", step),
 					"pending_objectives": pendingStructuredObjectiveIDs(ledger),
+				})
+			} else if requiresTypedWorkQueueCompletion(&result) && !typedWorkQueuePassedForCompletion(&result) {
+				emitStructuredCommandEvent(onEvent, "structured_evaluator_deferred_for_typed_queue", "Broad evaluator deferred until typed work queue passes", map[string]string{
+					"step": fmt.Sprintf("%d", step),
 				})
 			} else if shouldDeferBroadEvaluatorForArchitectCompletion(payload, prompt, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations) {
 				emitStructuredCommandEvent(onEvent, "structured_evaluator_deferred_for_architect_queue", "Broad evaluator deferred until architect repair queue completes", map[string]string{
@@ -1316,6 +1324,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 						return result, nil
 					}
 					if cfg.CompletionChecker != nil {
+						if rejectCompletionCheckerWithoutTypedWorkQueue(step, onEvent, &result) {
+							continue
+						}
 						checkResult := runCompletionCheckDetailed(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
 						ledger = checkResult.Ledger
 						result.ObjectiveLedger = ledger
@@ -1329,6 +1340,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 							}
 							continue
 						}
+					}
+					if rejectCompletionCheckerWithoutTypedWorkQueue(step, onEvent, &result) {
+						continue
 					}
 					emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_done_request", "Completion validator accepted evidence after planner requested final validation", map[string]string{
 						"step":    fmt.Sprintf("%d", step),
@@ -1459,6 +1473,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 				return result, nil
 			}
 			if cfg.CompletionChecker != nil {
+				if rejectCompletionCheckerWithoutTypedWorkQueue(step, onEvent, &result) {
+					continue
+				}
 				checkResult := runCompletionCheckDetailed(ctx, step, prompt, cfg.CurrentWorkingDirectory, ledger, minimalContext, result.Observations, result.Answer, cfg.CompletionChecker, worksiteSurvey, onEvent)
 				ledger = checkResult.Ledger
 				result.ObjectiveLedger = ledger
@@ -1472,6 +1489,9 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 					}
 					continue
 				}
+			}
+			if rejectCompletionCheckerWithoutTypedWorkQueue(step, onEvent, &result) {
+				continue
 			}
 			emitStructuredCommandEvent(onEvent, "completion_check_accepted_from_done_request", "Completion validator accepted evidence after planner requested final validation", map[string]string{
 				"step":   fmt.Sprintf("%d", step),
@@ -9553,7 +9573,29 @@ func typedWorkQueuePassedForCompletion(result *CommandDecisionResult) bool {
 	if result == nil || len(result.WorkItems) == 0 {
 		return false
 	}
-	return ValidateObjectiveWorkForest(result.WorkItems).Passed
+	return CanDeclareGoalAchieved(result.WorkItems, true)
+}
+
+func requiresTypedWorkQueueCompletion(result *CommandDecisionResult) bool {
+	return result != nil && len(result.WorkItems) > 0
+}
+
+func rejectCompletionCheckerWithoutTypedWorkQueue(step int, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) bool {
+	if !requiresTypedWorkQueueCompletion(result) || typedWorkQueuePassedForCompletion(result) {
+		return false
+	}
+	emitStructuredCommandEvent(onEvent, "completion_check_rejected_for_incomplete_typed_queue", "Completion checker cannot accept done while typed work queue is incomplete", map[string]string{
+		"step": fmt.Sprintf("%d", step),
+	})
+	if result != nil {
+		result.Observations = append(result.Observations, StructuredCommandObservation{
+			Step:     step,
+			ExitCode: 1,
+			Stderr:   "done rejected: typed objective work queue is incomplete; natural-language completion claims cannot override missing evidence",
+		})
+		result.Answer = ""
+	}
+	return true
 }
 
 func architectObjectiveWorkItemsFromObservations(prompt, workingDir string, survey WorksiteSurvey, observations []StructuredCommandObservation) []ObjectiveWorkItem {

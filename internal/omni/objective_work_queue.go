@@ -103,6 +103,25 @@ func RequiredEvidenceForWorkItemKind(kind WorkItemKind) []EvidenceKind {
 	}
 }
 
+func HasPassingEvidence(evidence []WorkItemEvidence, required EvidenceKind) bool {
+	return workItemHasRequiredEvidence(ObjectiveWorkItem{EvidenceRefs: evidence}, required)
+}
+
+// CanPassWorkItem is the deterministic completion gate for a single work item.
+// Natural-language rationale evidence never satisfies required evidence kinds.
+func CanPassWorkItem(item ObjectiveWorkItem) bool {
+	return ValidateObjectiveWorkTree(item).Passed
+}
+
+// CanDeclareGoalAchieved returns true only when every top-level and nested work
+// item passed with required typed evidence and the empty-file guard passed.
+func CanDeclareGoalAchieved(items []ObjectiveWorkItem, emptyFileGuardPassed bool) bool {
+	if !emptyFileGuardPassed {
+		return false
+	}
+	return ValidateObjectiveWorkForest(items).Passed
+}
+
 func ValidateObjectiveWorkForest(items []ObjectiveWorkItem) WorkValidationResult {
 	if len(items) == 0 {
 		return WorkValidationResult{Passed: false, Reason: "typed objective work queue is empty"}
@@ -195,8 +214,14 @@ func validateObjectiveWorkEvidenceTree(item ObjectiveWorkItem) WorkValidationRes
 }
 
 func workItemHasRequiredEvidence(item ObjectiveWorkItem, required EvidenceKind) bool {
+	if required == EvidenceKindRationale {
+		return false
+	}
 	for _, evidence := range item.EvidenceRefs {
 		if evidence.Kind != required {
+			continue
+		}
+		if evidence.Kind == EvidenceKindRationale {
 			continue
 		}
 		switch required {
@@ -222,12 +247,12 @@ func workItemHasRequiredEvidence(item ObjectiveWorkItem, required EvidenceKind) 
 }
 
 func EvaluateTypedFinalGate(input TypedFinalGateInput) WorkValidationResult {
-	if len(input.EmptyFiles) > 0 {
+	emptyGuardPassed := len(input.EmptyFiles) == 0
+	if !emptyGuardPassed {
 		return WorkValidationResult{Passed: false, Reason: "empty file(s) block final success: " + strings.Join(input.EmptyFiles, ",")}
 	}
-	result := ValidateObjectiveWorkForest(input.Items)
-	if !result.Passed {
-		return result
+	if !CanDeclareGoalAchieved(input.Items, emptyGuardPassed) {
+		return ValidateObjectiveWorkForest(input.Items)
 	}
 	if input.CompletionDone || input.BroadEvaluatorDone {
 		return WorkValidationResult{Passed: true, Reason: "typed recursive work passed before final acceptance"}

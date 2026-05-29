@@ -5,6 +5,41 @@ import (
 	"testing"
 )
 
+func TestCanPassWorkItemRequiresStatusAndEvidence(t *testing.T) {
+	if CanPassWorkItem(passingWorkItem("create_note", WorkItemKindCreate, EvidenceKindFileDiff)) != true {
+		t.Fatal("evidence-backed passed item should pass")
+	}
+	pending := passingWorkItem("create_note", WorkItemKindCreate, EvidenceKindFileDiff)
+	pending.Status = WorkItemStatusPending
+	if CanPassWorkItem(pending) {
+		t.Fatal("pending item must not pass")
+	}
+}
+
+func TestCanDeclareGoalAchievedRequiresRecursivePass(t *testing.T) {
+	items := []ObjectiveWorkItem{{
+		ID:     "architect_parent",
+		Kind:   WorkItemKindArchitect,
+		Status: WorkItemStatusPassed,
+		Children: []ObjectiveWorkItem{
+			passingWorkItem("write_test", WorkItemKindCreate, EvidenceKindFileDiff),
+			failedWorkItem("write_component", WorkItemKindUpdate),
+		},
+	}}
+	if CanDeclareGoalAchieved(items, true) {
+		t.Fatal("goal cannot be declared with failed nested child")
+	}
+	if CanDeclareGoalAchieved([]ObjectiveWorkItem{passingWorkItem("verify_build", WorkItemKindVerify, EvidenceKindCommand)}, false) {
+		t.Fatal("empty-file guard failure must block goal declaration")
+	}
+}
+
+func TestHasPassingEvidenceRejectsRationale(t *testing.T) {
+	if HasPassingEvidence([]WorkItemEvidence{{Kind: EvidenceKindRationale, Summary: "looks done"}}, EvidenceKindCommand) {
+		t.Fatal("rationale evidence must never satisfy command proof")
+	}
+}
+
 func TestObjectiveWorkItemBroadObjectiveCannotPassWithoutEvidence(t *testing.T) {
 	item := ObjectiveWorkItem{
 		ID:               "build_notes_app",

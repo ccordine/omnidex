@@ -410,6 +410,9 @@ func usesV3NativeSteps(metadataJSON []byte) bool {
 }
 
 func stepsForJob(pipeline string, metadataJSON []byte) []stepSeed {
+	if normalizePipeline(pipeline) == model.PipelineCoding {
+		return stepsForPipeline(model.PipelineCoding)
+	}
 	if usesV3NativeSteps(metadataJSON) || strings.EqualFold(strings.TrimSpace(pipeline), "v3") {
 		return []stepSeed{
 			{action: "v3_intent_parse", sortIndex: 5},

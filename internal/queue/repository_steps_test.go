@@ -81,28 +81,20 @@ func TestStepsForPipelineResearchBeforePlan(t *testing.T) {
 	}
 }
 
-func TestCodingPipelineHasOnlyCodingWorkflowStep(t *testing.T) {
+func TestCodingPipelineIsOnlyCodingWorkflow(t *testing.T) {
 	got := stepsForPipeline(model.PipelineCoding)
 	want := []stepSeed{{action: "coding_workflow", sortIndex: 5}}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("coding pipeline steps=%+v want %+v", got, want)
+		t.Fatalf("stepsForPipeline(coding)=%+v want %+v", got, want)
 	}
-	forbidden := map[string]struct{}{
-		"tooling":              {},
-		"workspace_scan":       {},
-		"plan":                 {},
-		"analyze":              {},
-		"assist":               {},
-		"verify":               {},
-		"v3_verification":      {},
-		"v3_response_draft":    {},
-		"v3_memory_review":     {},
-		"v3_external_research": {},
-	}
-	for _, step := range got {
-		if _, ok := forbidden[step.action]; ok {
-			t.Fatalf("coding pipeline must not seed old assistant/v3 action %q", step.action)
-		}
+}
+
+func TestCodingJobStepsIgnoreV3Metadata(t *testing.T) {
+	v3Metadata := []byte(`{"runtime":"v3","v3_enabled":true,"engine":"native_v3"}`)
+	got := stepsForJob(model.PipelineCoding, v3Metadata)
+	want := []stepSeed{{action: "coding_workflow", sortIndex: 5}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stepsForJob(coding,v3_metadata)=%+v want %+v", got, want)
 	}
 }
 
