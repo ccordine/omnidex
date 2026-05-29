@@ -367,6 +367,11 @@ export default class ProjectsController extends Controller {
     event.preventDefault();
     this.activeTab = (event.currentTarget as HTMLElement).dataset.projectTab || "scrum";
     this.applyTabState();
+    document.dispatchEvent(
+      new CustomEvent("omni:project-tab", {
+        detail: { tab: this.activeTab, project_id: this.selectedProjectID },
+      }),
+    );
   }
 
   async renderDetail(id: number) {
@@ -392,6 +397,11 @@ export default class ProjectsController extends Controller {
         this.activeTab,
       );
       this.applyTabState();
+      document.dispatchEvent(
+        new CustomEvent("omni:project-tab", {
+          detail: { tab: this.activeTab, project_id: this.selectedProjectID },
+        }),
+      );
       this.detailTarget.classList.remove("hidden");
       this.listTarget.classList.add("hidden");
       this.dispatchProjectOpened(project);

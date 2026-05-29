@@ -156,33 +156,6 @@ func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard
 	return s.scrumStore.UpdateCard(cardID, patch)
 }
 
-func (s *Server) scrumMoveCard(r *http.Request, cardID, column string) (ScrumCard, error) {
-	column = normalizeScrumColumn(column)
-	if column == "" {
-		return ScrumCard{}, fmt.Errorf("invalid column")
-	}
-	if s.repo != nil {
-		projectID, err := s.resolveProjectID(r)
-		if err == nil {
-			card, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
-			if err != nil {
-				return ScrumCard{}, err
-			}
-			merged := dbScrumCardToAPI(card)
-			merged.Column = column
-			updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, apiScrumCardToPatch(merged))
-			if err != nil {
-				return ScrumCard{}, err
-			}
-			return dbScrumCardToAPI(updated), nil
-		}
-	}
-	if s.scrumStore == nil {
-		return ScrumCard{}, fmt.Errorf("scrum store unavailable")
-	}
-	return s.scrumStore.MoveCard(cardID, column)
-}
-
 func (s *Server) scrumDeleteCard(r *http.Request, cardID string) error {
 	if s.repo != nil {
 		projectID, err := s.resolveProjectID(r)

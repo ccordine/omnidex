@@ -64,6 +64,7 @@ export type ScrumCard = {
   console_log?: string;
   play_state?: "" | "queued" | "running" | "paused";
   queue_order?: number;
+  board_order?: number;
   jira_ticket?: string;
   jira_prompt?: string;
   recipe_id?: string;

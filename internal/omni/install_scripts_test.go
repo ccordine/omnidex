@@ -79,8 +79,10 @@ func TestUpdateScriptSupportsHostOnlyInstalledUpdate(t *testing.T) {
 
 	for _, want := range []string{
 		"--host-only",
+		"--no-host-restart",
 		"needs_compose_work",
 		"refresh_installed_payload_permissions",
+		"restart_host_bridge",
 		"go build -o bin/omni ./cmd/omni",
 	} {
 		if !strings.Contains(body, want) {

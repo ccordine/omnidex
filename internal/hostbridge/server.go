@@ -17,6 +17,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/browse", s.handleBrowse)
 	mux.HandleFunc("/v1/mkdir", s.handleMkdir)
 	mux.HandleFunc("/v1/pick-directory", s.handlePickDirectory)
+	mux.HandleFunc("/v1/terminal/ws", s.handleTerminalWS)
 	return mux
 }
 
@@ -35,6 +36,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"native_picker": true,
 		"mkdir":         true,
 		"browse":        true,
+		"terminal":      true,
 	})
 }
 

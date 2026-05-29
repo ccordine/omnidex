@@ -172,7 +172,7 @@ export function renderProjectScrumShell(projectLocation: string): string {
         </div>
       </div>
 
-      <div class="relative scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+      <div class="relative scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-hidden" data-scrum-board-scroll>
         ${renderScrumBoardLoadingOverlay()}
         <div data-scrum-target="board" class="scrum-kanban h-full min-h-[420px]">
           ${renderScrumEmptyState("Loading scrum board…")}

@@ -483,10 +483,13 @@ func sortCardsForColumn(column string, cards []ScrumCard) {
 				return !aQueued
 			}
 			if aQueued && bQueued {
-				if cards[i].QueueOrder == cards[j].QueueOrder {
-					return cards[i].UpdatedAt < cards[j].UpdatedAt
+				if cards[i].QueueOrder != cards[j].QueueOrder {
+					return cards[i].QueueOrder < cards[j].QueueOrder
 				}
-				return cards[i].QueueOrder < cards[j].QueueOrder
+				return cards[i].BoardOrder < cards[j].BoardOrder
+			}
+			if cards[i].BoardOrder != cards[j].BoardOrder {
+				return cards[i].BoardOrder < cards[j].BoardOrder
 			}
 			return cards[i].UpdatedAt > cards[j].UpdatedAt
 		})
@@ -498,10 +501,16 @@ func sortCardsForColumn(column string, cards []ScrumCard) {
 			if cards[j].PlayState == scrumPlayRunning {
 				return false
 			}
+			if cards[i].BoardOrder != cards[j].BoardOrder {
+				return cards[i].BoardOrder < cards[j].BoardOrder
+			}
 			return cards[i].UpdatedAt > cards[j].UpdatedAt
 		})
 	default:
-		sort.Slice(cards, func(i, j int) bool {
+		sort.SliceStable(cards, func(i, j int) bool {
+			if cards[i].BoardOrder != cards[j].BoardOrder {
+				return cards[i].BoardOrder < cards[j].BoardOrder
+			}
 			return cards[i].UpdatedAt > cards[j].UpdatedAt
 		})
 	}

@@ -40,11 +40,20 @@ function cardURL(cardID: string, suffix: string, projectID?: number | null): str
   return `/v1/scrum/cards/${encodeURIComponent(cardID)}/${suffix}${projectQuery(projectID)}`;
 }
 
-export async function moveScrumCard(cardID: string, column: string, projectID?: number | null): Promise<ScrumCard> {
+export async function moveScrumCard(
+  cardID: string,
+  column: string,
+  projectID?: number | null,
+  options: { before_card_id?: string | null } = {},
+): Promise<ScrumCard> {
+  const body: Record<string, string> = { column };
+  if (options.before_card_id) {
+    body.before_card_id = options.before_card_id;
+  }
   const response = await fetch(cardURL(cardID, "move", projectID), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ column }),
+    body: JSON.stringify(body),
   });
   const payload = await readJSON<{ card: ScrumCard }>(response);
   return payload.card;

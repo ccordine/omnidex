@@ -13,6 +13,7 @@ NO_BUILD=0
 NO_RESTART=0
 NO_CACHE=0
 HOST_ONLY=0
+NO_HOST_RESTART=0
 
 usage() {
   cat <<EOF
@@ -29,13 +30,15 @@ Options:
   --no-build              Skip docker compose build
   --no-restart            Skip docker compose up -d
   --host-only             Only pull latest source and rebuild installed host binaries
+  --no-host-restart       Skip restarting the host bridge systemd user service
   -h, --help              Show this help
 
 What this updater does:
   1) Fetches latest git refs and fast-forward pulls to latest
   2) Rebuilds host binaries, including bin/omni
-  3) Rebuilds the Docker image for the selected service
-  4) Restarts the selected service with docker compose
+  3) Restarts the host bridge user service when installed (omni-host-bridge)
+  4) Rebuilds the Docker image for the selected service
+  5) Restarts the selected service with docker compose
 EOF
 }
 
@@ -164,6 +167,10 @@ parse_args() {
         NO_RESTART=1
         shift
         ;;
+      --no-host-restart)
+        NO_HOST_RESTART=1
+        shift
+        ;;
       -h|--help)
         usage
         exit 0
@@ -289,6 +296,41 @@ rebuild_host_binaries() {
   )
 }
 
+host_bridge_unit_file() {
+  printf '%s\n' "${HOME}/.config/systemd/user/omni-host-bridge.service"
+}
+
+restart_host_bridge() {
+  local repo_dir="$1"
+  local omni="${repo_dir}/bin/omni"
+  local unit
+
+  if ((NO_HOST_RESTART)); then
+    log "skipping host bridge restart (--no-host-restart)"
+    return 0
+  fi
+
+  if [[ ! -x "${omni}" ]]; then
+    warn "bin/omni not found; skipping host bridge restart"
+    return 0
+  fi
+
+  unit="$(host_bridge_unit_file)"
+  if [[ ! -f "${unit}" ]]; then
+    log "host bridge service not installed; skipping restart (run: ${omni} host service install)"
+    return 0
+  fi
+
+  log "restarting host bridge (omni-host-bridge)"
+  if "${omni}" host service restart; then
+    log "host bridge restarted"
+    return 0
+  fi
+
+  warn "host bridge restart failed; check: ${omni} host service status"
+  return 0
+}
+
 refresh_installed_payload_permissions() {
   local repo_dir="$1"
 
@@ -337,6 +379,7 @@ main() {
   git_update_repo "${PREFIX}" "${BRANCH}"
   refresh_installed_payload_permissions "${PREFIX}"
   rebuild_host_binaries "${PREFIX}"
+  restart_host_bridge "${PREFIX}"
   if needs_compose_work; then
     compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
     compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"

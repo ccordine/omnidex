@@ -467,6 +467,7 @@ func dbScrumCardToAPI(card queue.DBScrumCard) ScrumCard {
 		ConsoleLog:  card.ConsoleLog,
 		PlayState:   card.PlayState,
 		QueueOrder:  card.QueueOrder,
+		BoardOrder:  card.BoardOrder,
 		JiraTicket:   card.JiraTicket,
 		JiraPrompt:   card.JiraPrompt,
 		RecipeID:     card.RecipeID,
@@ -536,6 +537,7 @@ func apiScrumCardToPatch(card ScrumCard) map[string]any {
 		"console_log":    card.ConsoleLog,
 		"play_state":     card.PlayState,
 		"queue_order":    card.QueueOrder,
+		"board_order":    card.BoardOrder,
 	}
 }
 

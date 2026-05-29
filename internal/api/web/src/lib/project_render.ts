@@ -2,6 +2,7 @@ import { escapeHTML, formatDateTime, statusPillClass } from "./dom";
 import { renderModelConfigSection } from "./model_config_render";
 import { renderAgentConfigSection } from "./agent_config_render";
 import { renderProjectScrumShell } from "./scrum_render";
+import { renderProjectTerminalShell } from "./terminal_render";
 import type { ModelFieldDefinition } from "./model_config_types";
 import type { AgentFieldDefinition } from "./agent_config_types";
 import type { BrowseResponse } from "./project_types";
@@ -9,6 +10,7 @@ import type { ProjectRecord, ProjectMapSummary, RecipeCatalogItem } from "./proj
 
 const PROJECT_TABS = [
   { id: "scrum", label: "Scrum" },
+  { id: "terminal", label: "Terminal" },
   { id: "settings", label: "Settings" },
   { id: "map", label: "Codebase map" },
   { id: "recipe", label: "Recipe" },
@@ -160,7 +162,7 @@ export function renderProjectDetail(
   `;
 
   return `
-    <div class="space-y-4">
+    <div data-controller="terminal" class="space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
           <button type="button" data-action="projects#backToList" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">← All projects</button>
@@ -172,6 +174,7 @@ export function renderProjectDetail(
       <nav class="flex flex-wrap gap-2" aria-label="Project sections">${renderProjectTabNav(activeTab)}</nav>
 
       ${renderProjectScrumShell(project.location)}
+      ${renderProjectTerminalShell(project.location, activeTab)}
       ${settingsTab}
       ${mapTab}
       ${recipeTab}

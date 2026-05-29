@@ -823,7 +823,7 @@ Notes:
 - Installer adds a managed shell-init block to existing `~/.bashrc`, `~/.bash_profile`, `~/.profile`, and `~/.zshrc` files (or creates one fallback file if none exist).
 - Shell-init block exports `OMNIDEX_DIR`, prepends `~/.omnidex/bin` to `PATH`, and sources `agent_aliases.sh`; this exposes the global `omni` binary plus `agent-cli` helper aliases.
 - `aupdate` runs `~/.omnidex/update.sh` through your loaded aliases.
-- `update.sh` expects `.git` in the install path; installer copies `.git` when installing from a git checkout. It pulls latest refs, refreshes installed script permissions, and rebuilds host binaries.
+- `update.sh` expects `.git` in the install path; installer copies `.git` when installing from a git checkout. It pulls latest refs, refreshes installed script permissions, rebuilds host binaries, and restarts the host bridge user service when installed (`omni-host-bridge`).
 - Skip dependency install with `--skip-deps`.
 - Include whisper CLI bootstrap with `--with-whisper`.
 

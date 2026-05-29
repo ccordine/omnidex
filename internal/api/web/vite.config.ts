@@ -19,7 +19,7 @@ export default defineConfig({
     host: true,
     proxy: {
       "/healthz": coreProxy,
-      "/v1": coreProxy,
+      "/v1": { target: coreProxy, ws: true },
     },
   },
 });

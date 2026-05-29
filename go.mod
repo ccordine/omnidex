@@ -3,6 +3,8 @@ module github.com/gryph/omnidex
 go 1.24.1
 
 require (
+	github.com/creack/pty v1.1.24
+	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 )

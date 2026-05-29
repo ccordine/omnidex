@@ -5,6 +5,7 @@ import ScrumController from "./controllers/scrum_controller";
 import ProjectsController from "./controllers/projects_controller";
 import AdminController from "./controllers/admin_controller";
 import ShellController from "./controllers/shell_controller";
+import TerminalController from "./controllers/terminal_controller";
 import "../styles.css";
 
 const application = Application.start();
@@ -14,5 +15,6 @@ application.register("scrum", ScrumController);
 application.register("projects", ProjectsController);
 application.register("admin", AdminController);
 application.register("shell", ShellController);
+application.register("terminal", TerminalController);
 
 export default application;

@@ -161,13 +161,14 @@ func (s *Server) handleScrumCardMove(w http.ResponseWriter, r *http.Request, car
 		return
 	}
 	var req struct {
-		Column string `json:"column"`
+		Column       string `json:"column"`
+		BeforeCardID string `json:"before_card_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	card, err := s.scrumMoveCard(r, cardID, req.Column)
+	card, err := s.scrumMoveCard(r, cardID, req.Column, req.BeforeCardID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -180,7 +181,7 @@ func (s *Server) handleScrumCardDone(w http.ResponseWriter, r *http.Request, car
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	card, err := s.scrumMoveCard(r, cardID, "done")
+	card, err := s.scrumMoveCard(r, cardID, "done", "")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

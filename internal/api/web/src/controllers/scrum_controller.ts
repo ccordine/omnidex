@@ -45,7 +45,7 @@ import {
   type ScrumCardTab,
 } from "../lib/scrum_modal_render";
 import { nextColumn, prevColumn, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumChecklistItem, type ScrumTestCriterion } from "../lib/scrum_types";
-import { ScrumBoardDrag } from "../lib/scrum_drag";
+import { ScrumBoardDrag, type ScrumDragDropResult } from "../lib/scrum_drag";
 import type GxController from "./gx_controller";
 
 export default class ScrumController extends Controller {
@@ -176,9 +176,31 @@ export default class ScrumController extends Controller {
 
   private wireBoardDragDrop() {
     if (!this.hasBoardTarget) return;
-    this.boardDrag.wire(this.boardTarget, (cardID, column) => {
-      void this.withCardAction(cardID, () => moveScrumCard(cardID, column, this.projectID), "Moving card");
+    this.boardDrag.wire(this.boardTarget, (result) => {
+      this.applyDragResult(result);
+      void this.persistCardPlacement(result);
     });
+  }
+
+  private applyDragResult(result: ScrumDragDropResult) {
+    const card = this.findCard(result.cardID);
+    if (card) {
+      card.column = result.column;
+    }
+  }
+
+  private async persistCardPlacement(result: ScrumDragDropResult) {
+    try {
+      const card = await moveScrumCard(result.cardID, result.column, this.projectID, {
+        before_card_id: result.beforeCardID,
+      });
+      this.upsertCard(card);
+      const payload = await fetchScrumBoard(this.projectID);
+      this.applyBoardPayload(payload, false);
+    } catch (error) {
+      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      await this.load();
+    }
   }
 
   private resetModalShell() {

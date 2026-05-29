@@ -49,6 +49,7 @@ type ScrumCard struct {
 	ConsoleLog  string               `json:"console_log,omitempty"`
 	PlayState   string               `json:"play_state,omitempty"`
 	QueueOrder  int                  `json:"queue_order,omitempty"`
+	BoardOrder  int                  `json:"board_order,omitempty"`
 	CreatedAt   string               `json:"created_at"`
 	UpdatedAt   string               `json:"updated_at"`
 }
@@ -255,6 +256,7 @@ func (s *ScrumStore) UpdateCard(cardID string, patch ScrumCard) (ScrumCard, erro
 	}
 	current.PlayState = strings.TrimSpace(patch.PlayState)
 	current.QueueOrder = patch.QueueOrder
+	current.BoardOrder = patch.BoardOrder
 	current.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	s.board.Cards[idx] = current
 	if err := s.saveLocked(); err != nil {
