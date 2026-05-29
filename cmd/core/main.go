@@ -13,6 +13,7 @@ import (
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llmprovider"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/gryph/omnidex/internal/version"
 	"github.com/gryph/omnidex/internal/websearch"
 	"github.com/gryph/omnidex/internal/worker"
@@ -50,6 +51,9 @@ func main() {
 				log.Fatalf("schema migration error: %v", err)
 			}
 		}
+		secretResolver := secrets.NewResolver(repo)
+		secrets.SetGlobal(secretResolver)
+		secrets.OverlayConfig(&cfg, secretResolver)
 	}
 
 	llmClient, err := llmprovider.NewFromConfig(cfg)

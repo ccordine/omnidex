@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/secrets"
 )
 
 type CursorSDKArchitectAgent struct {
@@ -21,10 +23,25 @@ type CursorSDKArchitectAgent struct {
 }
 
 func NewCursorSDKArchitectAgentFromEnv() *CursorSDKArchitectAgent {
-	if !externalArchitectAgentSelectedFromEnv("cursor") || !envBoolOrDefault("OMNI_ENABLE_CURSOR_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CURSOR_ARCHITECT", false) {
+	return newCursorSDKArchitectAgent(false)
+}
+
+// NewCursorSDKArchitectAgent returns the Cursor SDK agent when enabled, regardless of OMNI_ARCHITECT_AGENT.
+func NewCursorSDKArchitectAgent() *CursorSDKArchitectAgent {
+	return newCursorSDKArchitectAgent(true)
+}
+
+func newCursorSDKArchitectAgent(force bool) *CursorSDKArchitectAgent {
+	if !force && !externalArchitectAgentSelectedFromEnv("cursor") {
 		return nil
 	}
-	apiKey := strings.TrimSpace(os.Getenv("CURSOR_API_KEY"))
+	if !envBoolOrDefault("OMNI_ENABLE_CURSOR_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CURSOR_ARCHITECT", false) {
+		return nil
+	}
+	apiKey := strings.TrimSpace(secrets.Lookup("cursor_api_key"))
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("CURSOR_API_KEY"))
+	}
 	if apiKey == "" {
 		return nil
 	}

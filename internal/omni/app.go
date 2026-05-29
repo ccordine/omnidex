@@ -553,64 +553,114 @@ func (a *App) loop(session *Session) error {
 			_ = a.runLogger.Log("session", "permission_mode_changed", map[string]interface{}{"mode": session.Permission})
 			continue
 		}
-		if query, ok := researchCommandQuery(input); ok {
-			activity := a.startTurnActivity(session)
-			turn, assistantMessage, turnErr := a.handleResearchTurn(session, query)
-			activity.Stop()
-			if turnErr != nil {
-				fmt.Fprintf(a.out, "[error] %v\n", turnErr)
-				_ = a.runLogger.Log("runtime", "research_error", map[string]interface{}{"error": turnErr.Error()})
+
+		if cmd, ok := parseChatSlashCommand(input); ok {
+			switch cmd.Kind {
+			case chatSlashUsageError:
+				fmt.Fprintln(a.out, cmd.Args)
+				continue
+			case chatSlashThoughts:
+				text, thoughtsErr := a.handleThoughtsCommand(session, cmd.Args)
+				if thoughtsErr != nil {
+					fmt.Fprintf(a.out, "[error] %v\n", thoughtsErr)
+					continue
+				}
+				fmt.Fprintf(a.out, "\n%s\n", text)
+				continue
+			case chatSlashResearch:
+				if err := a.completeSlashTurn(session, input, func() (Turn, string, error) {
+					return a.handleResearchTurn(session, cmd.Args)
+				}); err != nil {
+					fmt.Fprintf(a.out, "[error] %v\n", err)
+				}
+				continue
+			case chatSlashSearch:
+				if err := a.completeSlashTurn(session, input, func() (Turn, string, error) {
+					return a.handleSearchTurn(session, cmd.Args)
+				}); err != nil {
+					fmt.Fprintf(a.out, "[error] %v\n", err)
+				}
+				continue
+			case chatSlashManage:
+				if err := a.completeSlashTurn(session, input, func() (Turn, string, error) {
+					return a.handleManagerTurn(session, cmd.Args)
+				}); err != nil {
+					fmt.Fprintf(a.out, "[error] %v\n", err)
+				}
+				continue
+			case chatSlashMicro:
+				if err := a.completeSlashTurn(session, input, func() (Turn, string, error) {
+					return a.handleMicroQueueTurn(session, cmd.Args)
+				}); err != nil {
+					fmt.Fprintf(a.out, "[error] %v\n", err)
+				}
+				continue
+			case chatSlashTurn:
+				liveTimeline := isLiveTimelineWriter(a.out)
+				activity := a.startTurnActivity(session)
+				turn, assistantMessage, turnErr := a.handleTurn(session, input, activity, cmd.Turn)
+				activity.Stop()
+				if turnErr != nil {
+					fmt.Fprintf(a.out, "[error] %v\n", turnErr)
+					_ = a.runLogger.Log("runtime", "turn_error", map[string]interface{}{"error": turnErr.Error()})
+					continue
+				}
+				if err := a.persistChatTurn(session, input, turn, assistantMessage, liveTimeline); err != nil {
+					return err
+				}
 				continue
 			}
-			session.Turns = append(session.Turns, turn)
-			session.Messages = append(session.Messages,
-				Message{Role: "user", Content: input, CreatedAt: nowUTC()},
-				Message{Role: "assistant", Content: assistantMessage, CreatedAt: nowUTC()},
-			)
-			if err := a.store.Save(session); err != nil {
-				return err
-			}
-			a.printTimeline(turn.Events)
-			fmt.Fprintf(a.out, "\nassistant> %s\n", assistantMessage)
-			continue
 		}
 
 		liveTimeline := isLiveTimelineWriter(a.out)
 		activity := a.startTurnActivity(session)
-		turn, assistantMessage, err := a.handleTurn(session, input, activity)
+		turn, assistantMessage, err := a.handleTurn(session, input, activity, turnRouteOptions{})
 		activity.Stop()
 		if err != nil {
 			fmt.Fprintf(a.out, "[error] %v\n", err)
 			_ = a.runLogger.Log("runtime", "turn_error", map[string]interface{}{"error": err.Error()})
 			continue
 		}
-
-		session.Turns = append(session.Turns, turn)
-		session.Messages = append(session.Messages,
-			Message{Role: "user", Content: input, CreatedAt: nowUTC()},
-			Message{Role: "assistant", Content: assistantMessage, CreatedAt: nowUTC()},
-		)
-
-		if err := a.store.Save(session); err != nil {
+		if err := a.persistChatTurn(session, input, turn, assistantMessage, liveTimeline); err != nil {
 			return err
 		}
-
-		if !liveTimeline {
-			a.printTimeline(turn.Events)
-		}
-		fmt.Fprintf(a.out, "\nassistant> %s\n", assistantMessage)
-
-		_ = a.runLogger.Log("turn", "turn_completed", map[string]interface{}{
-			"turn_id":     turn.ID,
-			"intent":      turn.IntentClassification,
-			"confidence":  turn.Confidence,
-			"event_count": len(turn.Events),
-		})
 
 		if err == io.EOF {
 			return nil
 		}
 	}
+}
+
+func (a *App) completeSlashTurn(session *Session, input string, run func() (Turn, string, error)) error {
+	activity := a.startTurnActivity(session)
+	turn, assistantMessage, err := run()
+	activity.Stop()
+	if err != nil {
+		return err
+	}
+	return a.persistChatTurn(session, input, turn, assistantMessage, false)
+}
+
+func (a *App) persistChatTurn(session *Session, input string, turn Turn, assistantMessage string, liveTimeline bool) error {
+	session.Turns = append(session.Turns, turn)
+	session.Messages = append(session.Messages,
+		Message{Role: "user", Content: input, CreatedAt: nowUTC()},
+		Message{Role: "assistant", Content: assistantMessage, CreatedAt: nowUTC()},
+	)
+	if err := a.store.Save(session); err != nil {
+		return err
+	}
+	if !liveTimeline {
+		a.printTimeline(turn.Events)
+	}
+	fmt.Fprintf(a.out, "\nassistant> %s\n", assistantMessage)
+	_ = a.runLogger.Log("turn", "turn_completed", map[string]interface{}{
+		"turn_id":     turn.ID,
+		"intent":      turn.IntentClassification,
+		"confidence":  turn.Confidence,
+		"event_count": len(turn.Events),
+	})
+	return nil
 }
 
 func (a *App) runUpdate(args []string) error {
@@ -1297,13 +1347,12 @@ func loadOptionalRecipes(root string) []Recipe {
 	return nil
 }
 
-func (a *App) handleTurn(session *Session, input string, activity *activityIndicator) (Turn, string, error) {
-	if objective, ok := microQueueObjective(input); ok {
-		return a.handleMicroQueueTurn(session, objective)
+func (a *App) handleTurn(session *Session, input string, activity *activityIndicator, opts turnRouteOptions) (Turn, string, error) {
+	objective := strings.TrimSpace(opts.Objective)
+	if objective == "" {
+		objective = input
 	}
-	if objective, ok := managerObjective(input); ok {
-		return a.handleManagerTurn(session, objective)
-	}
+	execSeed := execPromptForTurnRoute(objective, opts)
 
 	turnID := fmt.Sprintf("turn_%06d", len(session.Turns)+1)
 	events := []Event{}
@@ -1343,8 +1392,8 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	defer func() { stopEsc() }()
 	var stdoutBuf strings.Builder
 	var stderrBuf strings.Builder
-	activeDirectory := a.resolveActiveDirectoryForTurn(session, input, emitEvent)
-	prepCtx := a.prepareInteractiveTurnContext(signalCtx, input, activeDirectory, emitEvent)
+	activeDirectory := a.resolveActiveDirectoryForTurn(session, objective, emitEvent)
+	prepCtx := a.prepareInteractiveTurnContext(signalCtx, objective, activeDirectory, emitEvent)
 	memoryCtx := prepCtx.Memory
 	sessionMemories := append([]SessionMemory(nil), session.Memories...)
 	sessionMemories = append(sessionMemories, prepCtx.SessionMemories...)
@@ -1360,19 +1409,21 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 
 	emitEvent("thinking_pilot_started", "Thinking pilot is the turn entry point", map[string]string{
 		"turn_id": turnID,
+		"route":   firstNonEmpty(opts.ReasonCode, "default"),
 	})
-	execPrompt := input
+	execPrompt := execSeed
 	pilotToolTask := ""
+	pilotTrigger := firstNonEmpty(strings.TrimSpace(opts.PilotTrigger), "turn_entry")
 	if thinkingService != nil {
 		pilotOutcome, pilotErr := thinkingService.OrchestrateTurn(signalCtx, ThinkingInput{
 			TurnID:          turnID,
 			Step:            0,
-			Trigger:         "turn_entry",
-			UserPrompt:      input,
+			Trigger:         pilotTrigger,
+			UserPrompt:      objective,
 			WorkingDir:      activeDirectory,
 			SessionMemories: sessionMemories,
 			PrepContext:     prepCtx.Bundle,
-			ActivePrompt:    NewActivePromptContext(input, "", explicitReactAppAcceptanceCriteria(input, "")),
+			ActivePrompt:    NewActivePromptContext(objective, "", explicitReactAppAcceptanceCriteria(objective, "")),
 		}, func(evt StructuredCommandEvent) {
 			emitEvent(evt.Type, evt.Summary, evt.Details)
 		})
@@ -1387,7 +1438,39 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 				"execution_prompt":    truncateOutput(pilotOutcome.ExecutionPrompt),
 				"execution_tool_task": truncateOutput(pilotOutcome.ExecutionToolTask),
 			})
-			if pilotOutcome.Action == ThinkingActionDirectAnswer {
+			if opts.ThinkOnly {
+				assistantResponse := strings.TrimSpace(firstNonEmpty(pilotOutcome.DirectAnswer, pilotOutcome.Conclusion))
+				if assistantResponse == "" && pilotOutcome.Action == ThinkingActionInvokeExecution {
+					assistantResponse = "Thinking concluded that execution would help, but /think is reasoning-only. Refine the question or use /build for implementation."
+					if task := strings.TrimSpace(pilotOutcome.ExecutionToolTask); task != "" {
+						assistantResponse += "\n\nSuggested next work: " + task
+					}
+				}
+				if assistantResponse == "" {
+					assistantResponse = "I could not produce a direct answer from the thinking channel."
+				}
+				assistantResponse = a.reviewFinalResponse(context.Background(), input, assistantResponse, []string{
+					"pilot_action=think_only",
+					"channel_id=" + pilotOutcome.ChannelID,
+				}, emitEvent)
+				a.persistInteractiveTurnMemory(context.Background(), turnID, input, assistantResponse, memoryCtx.Tags, CommandDecisionResult{Answer: assistantResponse}, emitEvent)
+				emitEvent("thinking_pilot_direct_answer", "Thinking pilot answered via /think", map[string]string{
+					"channel_id": pilotOutcome.ChannelID,
+				})
+				reason := firstNonEmpty(opts.ReasonCode, "slash_think")
+				turn := Turn{
+					ID:                   turnID,
+					UserInput:            input,
+					IntentClassification: IntentExecution,
+					Confidence:           1.0,
+					ReasonCodes:          []string{reason},
+					Response:             assistantResponse,
+					Events:               events,
+					CreatedAt:            nowUTC(),
+				}
+				return turn, assistantResponse, nil
+			}
+			if pilotOutcome.Action == ThinkingActionDirectAnswer && !opts.ForceExecution {
 				assistantResponse := strings.TrimSpace(pilotOutcome.DirectAnswer)
 				assistantResponse = a.reviewFinalResponse(context.Background(), input, assistantResponse, []string{
 					"pilot_action=direct_answer",
@@ -1411,9 +1494,24 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			}
 			if strings.TrimSpace(pilotOutcome.ExecutionPrompt) != "" {
 				execPrompt = strings.TrimSpace(pilotOutcome.ExecutionPrompt)
+			} else if opts.ForceExecution {
+				execPrompt = execSeed
 			}
 			pilotToolTask = strings.TrimSpace(pilotOutcome.ExecutionToolTask)
 		}
+	} else if opts.ThinkOnly {
+		assistantResponse := a.reviewFinalResponse(context.Background(), input, "Thinking is disabled (OMNI_DISABLE_THINKING). Re-enable thinking or ask without /think.", nil, emitEvent)
+		turn := Turn{
+			ID:                   turnID,
+			UserInput:            input,
+			IntentClassification: IntentExecution,
+			Confidence:           1.0,
+			ReasonCodes:          []string{firstNonEmpty(opts.ReasonCode, "slash_think")},
+			Response:             assistantResponse,
+			Events:               events,
+			CreatedAt:            nowUTC(),
+		}
+		return turn, assistantResponse, nil
 	}
 	if pilotToolTask != "" {
 		execPrompt = strings.TrimSpace(execPrompt + "\n\nPilot execution scope: " + pilotToolTask)
@@ -1465,6 +1563,7 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			CommandCacheRoot:        a.commandCacheRoot,
 			ThinkingService:         thinkingService,
 			ThoughtTurnID:           turnID,
+			TaskMode:                opts.TaskMode,
 		},
 	)
 	cancel()
@@ -1523,12 +1622,13 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	assistantResponse = a.reviewFinalResponse(context.Background(), input, assistantResponse, structuredResponseReviewEvidence(result, responseStdout, responseStderr, execErr), emitEvent)
 	a.persistInteractiveTurnMemory(context.Background(), turnID, input, assistantResponse, memoryCtx.Tags, result, emitEvent)
 
+	reasonCode := firstNonEmpty(opts.ReasonCode, "structured_llm_command")
 	turn := Turn{
 		ID:                   turnID,
 		UserInput:            input,
 		IntentClassification: IntentExecution,
 		Confidence:           1.0,
-		ReasonCodes:          []string{"structured_llm_command"},
+		ReasonCodes:          []string{reasonCode},
 		Response:             assistantResponse,
 		Events:               events,
 		CreatedAt:            nowUTC(),
@@ -2967,14 +3067,27 @@ func (a *App) handleResearchTurn(session *Session, query string) (Turn, string, 
 }
 
 func researchCommandQuery(input string) (string, bool) {
-	trimmed := strings.TrimSpace(input)
-	for _, prefix := range []string{"/research "} {
-		if strings.HasPrefix(strings.ToLower(trimmed), prefix) {
-			query := strings.TrimSpace(trimmed[len(prefix):])
-			return query, query != ""
-		}
+	cmd, ok := parseChatSlashCommand(input)
+	if !ok || cmd.Kind != chatSlashResearch {
+		return "", false
 	}
-	return "", false
+	return cmd.Args, cmd.Args != ""
+}
+
+func managerObjective(input string) (string, bool) {
+	cmd, ok := parseChatSlashCommand(input)
+	if !ok || cmd.Kind != chatSlashManage {
+		return "", false
+	}
+	return cmd.Args, cmd.Args != ""
+}
+
+func microQueueObjective(input string) (string, bool) {
+	cmd, ok := parseChatSlashCommand(input)
+	if !ok || cmd.Kind != chatSlashMicro {
+		return "", false
+	}
+	return cmd.Args, cmd.Args != ""
 }
 
 func researchTagsFromQuery(query string) []string {
@@ -2990,28 +3103,6 @@ func researchTagsFromQuery(query string) []string {
 		}
 	}
 	return cleanMemoryTags(tags)
-}
-
-func managerObjective(input string) (string, bool) {
-	trimmed := strings.TrimSpace(input)
-	for _, prefix := range []string{"/manage ", "/job "} {
-		if strings.HasPrefix(strings.ToLower(trimmed), prefix) {
-			objective := strings.TrimSpace(trimmed[len(prefix):])
-			return objective, objective != ""
-		}
-	}
-	return "", false
-}
-
-func microQueueObjective(input string) (string, bool) {
-	trimmed := strings.TrimSpace(input)
-	for _, prefix := range []string{"/micro ", "/queue "} {
-		if strings.HasPrefix(strings.ToLower(trimmed), prefix) {
-			objective := strings.TrimSpace(trimmed[len(prefix):])
-			return objective, objective != ""
-		}
-	}
-	return "", false
 }
 
 func formatMicroQueueResponse(result MicroJobQueueResult, stdout, stderr, errText string) string {
@@ -3124,17 +3215,25 @@ func (a *App) printBanner(session *Session, loaded bool, noOllama bool) {
 func (a *App) printHelp() {
 	fmt.Fprintln(a.out, "")
 	fmt.Fprintln(a.out, "Commands:")
-	fmt.Fprintln(a.out, "  /help      show commands")
-	fmt.Fprintln(a.out, "  /status    show current workspace/session status")
-	fmt.Fprintln(a.out, "  /history   show recent turns")
-	fmt.Fprintln(a.out, "  /mode      change permission mode")
-	fmt.Fprintln(a.out, "  /clear     clear workspace session history")
-	fmt.Fprintln(a.out, "  /research X search web, fetch pages, store chunks in Postgres memory")
-	fmt.Fprintln(a.out, "  /manage X  run X through manager-worker orchestration")
-	fmt.Fprintln(a.out, "  /job X     alias for /manage X")
-	fmt.Fprintln(a.out, "  /micro X   run X through project-profiled micro job queue")
-	fmt.Fprintln(a.out, "  /queue X   alias for /micro X")
-	fmt.Fprintln(a.out, "  /exit      exit")
+	fmt.Fprintln(a.out, "  /help         show commands")
+	fmt.Fprintln(a.out, "  /status       show current workspace/session status")
+	fmt.Fprintln(a.out, "  /history      show recent turns")
+	fmt.Fprintln(a.out, "  /mode         change permission mode")
+	fmt.Fprintln(a.out, "  /clear        clear workspace session history")
+	fmt.Fprintln(a.out, "  /thoughts     list internal thought logs for this workspace")
+	fmt.Fprintln(a.out, "  /thoughts ID  inspect one turn's thought channels")
+	fmt.Fprintln(a.out, "  /think X      reasoning only via thinking pilot (no execution)")
+	fmt.Fprintln(a.out, "  /search X     quick memory + web search answer (no Postgres store)")
+	fmt.Fprintln(a.out, "  /research X   web research stored in Postgres memory")
+	fmt.Fprintln(a.out, "  /plan X       planning/read-only inspection (no writes)")
+	fmt.Fprintln(a.out, "  /build X      force implementation/build execution path")
+	fmt.Fprintln(a.out, "  /manage X     run X through manager-worker orchestration")
+	fmt.Fprintln(a.out, "  /job X        alias for /manage X")
+	fmt.Fprintln(a.out, "  /micro X      run X through project-profiled micro job queue")
+	fmt.Fprintln(a.out, "  /queue X      alias for /micro X")
+	fmt.Fprintln(a.out, "  /exit         exit")
+	fmt.Fprintln(a.out, "")
+	fmt.Fprintln(a.out, "Plain messages go through the thinking pilot first, then execution when needed.")
 }
 
 func (a *App) printStatus(session *Session) {

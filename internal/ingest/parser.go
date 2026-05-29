@@ -49,6 +49,90 @@ func ParseFile(path string) (ParsedFile, error) {
 	}
 }
 
+// ParseUpload parses uploaded document bytes using the original filename extension.
+func ParseUpload(filename string, data []byte) (ParsedFile, error) {
+	filename = strings.TrimSpace(filename)
+	if filename == "" {
+		return ParsedFile{}, fmt.Errorf("filename is required")
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".txt", ".md", ".markdown", ".log", ".json", ".yaml", ".yml", ".csv":
+		return ParsedFile{
+			Path:    filename,
+			Format:  strings.TrimPrefix(ext, "."),
+			Content: normalizeWhitespace(string(data)),
+		}, nil
+	case ".srt":
+		return parseSRTBytes(filename, data)
+	case ".vtt":
+		return parseVTTBytes(filename, data)
+	case ".docx", ".pdf":
+		tmp, err := os.CreateTemp("", "omni-ingest-*"+ext)
+		if err != nil {
+			return ParsedFile{}, err
+		}
+		path := tmp.Name()
+		defer os.Remove(path)
+		if _, err := tmp.Write(data); err != nil {
+			tmp.Close()
+			return ParsedFile{}, err
+		}
+		if err := tmp.Close(); err != nil {
+			return ParsedFile{}, err
+		}
+		parsed, err := ParseFile(path)
+		if err != nil {
+			return ParsedFile{}, err
+		}
+		parsed.Path = filename
+		return parsed, nil
+	default:
+		return ParsedFile{}, fmt.Errorf("unsupported file type %q", ext)
+	}
+}
+
+func parseSRTBytes(path string, data []byte) (ParsedFile, error) {
+	lines := strings.Split(string(data), "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if line == "" || numberOnlyLineRE.MatchString(line) || srtTimecodeRE.MatchString(line) {
+			continue
+		}
+		line = subtitleStyleRE.ReplaceAllString(line, "")
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return ParsedFile{Path: path, Format: "srt", Content: normalizeWhitespace(strings.Join(out, " "))}, nil
+}
+
+func parseVTTBytes(path string, data []byte) (ParsedFile, error) {
+	lines := strings.Split(string(data), "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if lower == "webvtt" || strings.HasPrefix(lower, "kind:") || strings.HasPrefix(lower, "language:") || strings.HasPrefix(lower, "note") {
+			continue
+		}
+		if numberOnlyLineRE.MatchString(line) || vttTimecodeRE.MatchString(line) {
+			continue
+		}
+		line = subtitleStyleRE.ReplaceAllString(line, "")
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return ParsedFile{Path: path, Format: "vtt", Content: normalizeWhitespace(strings.Join(out, " "))}, nil
+}
+
 func ChunkText(content string, chunkSize, overlap int) []string {
 	content = normalizeWhitespace(content)
 	if content == "" {

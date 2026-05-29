@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
@@ -42,6 +43,9 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 		return err
 	}
 	if _, err := r.pool.Exec(ctx, telemetrySchemaSQL); err != nil {
+		return err
+	}
+	if _, err := r.pool.Exec(ctx, projectsUISchemaSQL); err != nil {
 		return err
 	}
 	if err := r.BackfillMemoryCategories(ctx); err != nil {
@@ -410,6 +414,9 @@ func usesV3NativeSteps(metadataJSON []byte) bool {
 }
 
 func stepsForJob(pipeline string, metadataJSON []byte) []stepSeed {
+	if agentconfig.FromJobMetadata(metadataJSON).IsExternal() {
+		return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}
+	}
 	if normalizePipeline(pipeline) == model.PipelineCoding {
 		return stepsForPipeline(model.PipelineCoding)
 	}
@@ -654,6 +661,9 @@ func (r *Repository) ListMemoryCandidates(ctx context.Context, jobID int64, stat
 	if limit <= 0 {
 		limit = 20
 	}
+	if limit > 500 {
+		limit = 500
+	}
 	rows, err := r.pool.Query(ctx, `
         SELECT id, job_id, source_memory_id, candidate_kind, content, provenance, confidence, status, created_at, updated_at
         FROM memory_candidates
@@ -742,6 +752,53 @@ func (r *Repository) UpdateMemoryCandidateStatus(ctx context.Context, id int64, 
         WHERE id = $1
     `, id, strings.TrimSpace(status))
 	return err
+}
+
+func (r *Repository) DeleteMemoryChunk(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid memory id")
+	}
+	tag, err := r.pool.Exec(ctx, `DELETE FROM memory_chunks WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repository) DeleteMemoryCandidate(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid candidate id")
+	}
+	tag, err := r.pool.Exec(ctx, `DELETE FROM memory_candidates WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repository) MindStats(ctx context.Context) (map[string]int64, error) {
+	out := map[string]int64{}
+	queries := map[string]string{
+		"memory_chunks":      `SELECT COUNT(*) FROM memory_chunks`,
+		"memory_candidates":  `SELECT COUNT(*) FROM memory_candidates`,
+		"candidate_pending":  `SELECT COUNT(*) FROM memory_candidates WHERE status = 'candidate'`,
+		"jobs":               `SELECT COUNT(*) FROM jobs`,
+		"telemetry_events":   `SELECT COUNT(*) FROM omni_run_events`,
+	}
+	for key, query := range queries {
+		var count int64
+		if err := r.pool.QueryRow(ctx, query).Scan(&count); err != nil {
+			return nil, err
+		}
+		out[key] = count
+	}
+	return out, nil
 }
 
 func (r *Repository) CountStepsByAction(ctx context.Context, jobID int64, action string) (int, error) {

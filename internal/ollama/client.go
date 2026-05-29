@@ -56,6 +56,106 @@ type pullModelRequest struct {
 	Stream bool   `json:"stream"`
 }
 
+type tagsResponse struct {
+	Models []ModelInfo `json:"models"`
+}
+
+type ModelInfo struct {
+	Name       string    `json:"name"`
+	Model      string    `json:"model"`
+	Size       int64     `json:"size"`
+	ModifiedAt time.Time `json:"modified_at"`
+}
+
+func (c *Client) ListTags(ctx context.Context) ([]string, error) {
+	models, err := c.ListModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(models))
+	for _, item := range models {
+		if name := strings.TrimSpace(item.Name); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
+func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/tags", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, c.wrapConnectivityError(err, "/api/tags")
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("ollama tags failed: status=%d body=%s", resp.StatusCode, string(body))
+	}
+	var payload tagsResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	out := make([]ModelInfo, 0, len(payload.Models))
+	for _, item := range payload.Models {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			name = strings.TrimSpace(item.Model)
+		}
+		if name == "" {
+			continue
+		}
+		item.Name = name
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (c *Client) HasModel(ctx context.Context, model string) (bool, error) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return false, nil
+	}
+	tags, err := c.ListTags(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, tag := range tags {
+		if tag == model {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *Client) EnsureModels(ctx context.Context, models []string) ([]string, error) {
+	pulled := []string{}
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		ok, err := c.HasModel(ctx, model)
+		if err != nil {
+			return pulled, err
+		}
+		if ok {
+			continue
+		}
+		if err := c.PullModel(ctx, model); err != nil {
+			return pulled, fmt.Errorf("pull %s: %w", model, err)
+		}
+		pulled = append(pulled, model)
+	}
+	return pulled, nil
+}
+
 type embeddingsRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
@@ -268,6 +368,35 @@ func isOllamaMissingModelResponse(body string) bool {
 		strings.Contains(lower, "try pulling")
 }
 
+func (c *Client) DeleteModel(ctx context.Context, model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return fmt.Errorf("model name is required")
+	}
+	payload, err := json.Marshal(deleteModelRequest{Name: model, Model: model})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+"/api/delete", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return c.wrapConnectivityError(err, "/api/delete")
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("ollama delete failed: status=%d body=%s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 func (c *Client) bestEffortDeleteContextModel(contextModel string) {
 	contextModel = strings.TrimSpace(contextModel)
 	if contextModel == "" {
@@ -275,27 +404,7 @@ func (c *Client) bestEffortDeleteContextModel(contextModel string) {
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-
-	payload, err := json.Marshal(deleteModelRequest{
-		Name:  contextModel,
-		Model: contextModel,
-	})
-	if err != nil {
-		return
-	}
-
-	req, err := http.NewRequestWithContext(cleanupCtx, http.MethodDelete, c.baseURL+"/api/delete", bytes.NewReader(payload))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return
-	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_ = c.DeleteModel(cleanupCtx, contextModel)
 }
 
 func buildContextModelName(baseModel string, prompt string) string {

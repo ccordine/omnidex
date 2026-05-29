@@ -19,12 +19,14 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/research"
+	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/jackc/pgx/v5"
 )
 
 type Server struct {
 	repo                      *queue.Repository
 	channelStore              channelStore
+	scrumStore                *ScrumStore
 	llmClient                 llm.Client
 	mux                       *http.ServeMux
 	instructIntegration       *instructIntegrationService
@@ -65,6 +67,7 @@ type Server struct {
 	webSearchEnabled          bool
 	webSearchProviders        []string
 	webSearchTimeout          time.Duration
+	secretsResolver           *secrets.Resolver
 }
 
 type ServerOptions struct {
@@ -277,6 +280,14 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		webSearchProviders:        append([]string(nil), options.WebSearchProviders...),
 		webSearchTimeout:          options.WebSearchTimeout,
 	}
+	if repo != nil {
+		s.secretsResolver = secrets.NewResolver(repo)
+		secrets.SetGlobal(s.secretsResolver)
+		s.applyStoredSecrets(context.Background())
+	}
+	if store, err := NewScrumStore(); err == nil {
+		s.scrumStore = store
+	}
 	s.routes()
 	return s
 }
@@ -292,13 +303,34 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/roleplay", s.handleRoleplay)
 	s.mux.HandleFunc("/v1/narrate", s.handleNarrate)
 	s.mux.HandleFunc("/v1/reasoning", s.handleReasoning)
+	s.mux.HandleFunc("/v1/scrum", s.handleScrum)
+	s.mux.HandleFunc("/v1/scrum/cards", s.handleScrumCards)
+	s.mux.HandleFunc("/v1/scrum/cards/sync", s.handleScrumCardSync)
+	s.mux.HandleFunc("/v1/scrum/cards/", s.handleScrumCardByID)
+	s.mux.HandleFunc("/v1/scrum/files", s.handleScrumFiles)
+	s.mux.HandleFunc("/v1/settings/models", s.handleModelSettings)
+	s.mux.HandleFunc("/v1/models/resolved", s.handleResolvedModels)
+	s.mux.HandleFunc("/v1/agents/resolved", s.handleResolvedAgents)
+	s.mux.HandleFunc("/v1/settings/agents", s.handleAgentSettings)
+	s.mux.HandleFunc("/v1/settings/secrets", s.handleAPISecrets)
+	s.mux.HandleFunc("/v1/browse", s.handleBrowse)
+	s.mux.HandleFunc("/v1/recipes", s.handleRecipes)
+	s.mux.HandleFunc("/v1/recipes/", s.handleRecipeByID)
+	s.mux.HandleFunc("/v1/projects", s.handleProjects)
+	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
+	s.mux.HandleFunc("/v1/workspace", s.handleWorkspace)
 	if s.repo != nil {
 		s.mux.HandleFunc("/v1/jobs", s.handleJobs)
 		s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
 		s.mux.HandleFunc("/v1/activity", s.handleActivity)
 		s.mux.HandleFunc("/v1/memory", s.handleMemory)
+		s.mux.HandleFunc("/v1/memory/", s.handleMemoryByID)
 		s.mux.HandleFunc("/v1/memory/categories", s.handleMemoryCategories)
 		s.mux.HandleFunc("/v1/memory/tags", s.handleMemoryTags)
+		s.mux.HandleFunc("/v1/ingest/documents", s.handleIngestDocuments)
+		s.mux.HandleFunc("/v1/admin/mind/stats", s.handleMindStats)
+		s.mux.HandleFunc("/v1/ollama/models", s.handleOllamaModels)
+		s.mux.HandleFunc("/v1/ollama/models/", s.handleOllamaModelByName)
 		s.mux.HandleFunc("/v1/research/ingest", s.handleResearchIngest)
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
@@ -893,6 +925,13 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 		req.Metadata = updated
 	}
 
+	enriched, _, enrichErr := s.enrichJobMetadata(r.Context(), req.Metadata, ScrumCard{})
+	if enrichErr != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("model setup failed: %v", enrichErr))
+		return
+	}
+	req.Metadata = enriched
+
 	job, err := s.repo.EnqueueJob(r.Context(), req.Instruction, req.Pipeline, req.Metadata)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -1273,6 +1312,24 @@ func (s *Server) handleMemoryCandidateByID(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		s.rejectMemoryCandidate(w, r, id)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		id, err := strconv.ParseInt(idText, 10, 64)
+		if err != nil || id <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid candidate id")
+			return
+		}
+		if err := s.repo.DeleteMemoryCandidate(r.Context(), id); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "memory candidate not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
 		return
 	}
 

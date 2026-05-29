@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/secrets"
 )
 
 type CodexSDKArchitectAgent struct {
@@ -22,7 +24,19 @@ type CodexSDKArchitectAgent struct {
 }
 
 func NewCodexSDKArchitectAgentFromEnv() *CodexSDKArchitectAgent {
-	if !externalArchitectAgentSelectedFromEnv("codex") || !envBoolOrDefault("OMNI_ENABLE_CODEX_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CODEX_ARCHITECT", false) {
+	return newCodexSDKArchitectAgent(false)
+}
+
+// NewCodexSDKArchitectAgent returns the Codex SDK agent when enabled, regardless of OMNI_ARCHITECT_AGENT.
+func NewCodexSDKArchitectAgent() *CodexSDKArchitectAgent {
+	return newCodexSDKArchitectAgent(true)
+}
+
+func newCodexSDKArchitectAgent(force bool) *CodexSDKArchitectAgent {
+	if !force && !externalArchitectAgentSelectedFromEnv("codex") {
+		return nil
+	}
+	if !envBoolOrDefault("OMNI_ENABLE_CODEX_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CODEX_ARCHITECT", false) {
 		return nil
 	}
 	runnerDir := strings.TrimSpace(os.Getenv("OMNI_CODEX_SDK_RUNNER_DIR"))
@@ -34,7 +48,7 @@ func NewCodexSDKArchitectAgentFromEnv() *CodexSDKArchitectAgent {
 		}
 	}
 	return &CodexSDKArchitectAgent{
-		APIKey:    firstNonEmpty(os.Getenv("CODEX_API_KEY"), os.Getenv("OPENAI_API_KEY")),
+		APIKey:    secrets.CodexAPIKey(),
 		Model:     firstNonEmpty(os.Getenv("OMNI_CODEX_MODEL"), "gpt-5.3-codex"),
 		RunnerDir: runnerDir,
 		NodeBin:   firstNonEmpty(os.Getenv("OMNI_CODEX_NODE_BIN"), "node"),

@@ -512,6 +512,9 @@ func (s *Service) run(ctx context.Context, workerID string) {
 }
 
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
+	restoreModels := withJobModelRouting(s, claim.Job)
+	defer restoreModels()
+
 	action := strings.ToLower(strings.TrimSpace(claim.Step.Action))
 	contexts := contextsToMap(claim.Contexts)
 	if isCodingJob(claim.Job) {
@@ -539,6 +542,9 @@ func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) err
 			return s.nativeV3Runner(stepCtx, claim, contexts, action)
 		}
 		return s.runNativeV3Step(stepCtx, claim, contexts, action)
+	}
+	if action == "external_agent_execute" {
+		return s.runExternalAgentStep(stepCtx, claim, contexts)
 	}
 	// Runtime v2: keep the queue contract/action names stable while executing
 	// through a simpler, stage-driven orchestrator.

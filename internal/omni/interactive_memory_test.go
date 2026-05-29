@@ -60,7 +60,7 @@ func TestInteractiveTurnLoadsTaggedPGMemoryIntoSummaryAndPersistsPromptResponse(
 		ActiveDirectoryPath: t.TempDir(),
 		Permission:          PermissionFull,
 	}
-	turn, response, err := app.handleTurn(session, "create a new React project", &activityIndicator{})
+	turn, response, err := app.handleTurn(session, "create a new React project", &activityIndicator{}, turnRouteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

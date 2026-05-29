@@ -1,100 +1,90 @@
-import { Application, Controller } from "https://unpkg.com/@hotwired/stimulus@3.2.2/dist/stimulus.js";
-import RecyclrModule from "https://esm.sh/recyclrjs@1.0.1?bundle";
+import { Controller } from "@hotwired/stimulus";
+import { readJSON, jsonRequest } from "../lib/api";
+import { TranscriptStore } from "../lib/transcript_store";
+import { escapeHTML, trimText, hashText, formatTime, formatDateTime, badgeClass, statusPillClass, emptyState, sleep } from "../lib/dom";
+import {
+  renderStep,
+  renderStepSummary,
+  renderContext,
+  renderEventModal,
+  renderContextModal,
+  renderResearchStatus,
+  renderMetricsDashboard,
+  contextEventType,
+} from "../lib/render";
+import type { ChatMessage, TimelineEvent, JobDetails, JobContext, MemoryRecord, MemoryCandidate } from "../lib/types";
+import { fetchWorkspace } from "../lib/project_api";
+import type GxController from "./gx_controller";
 
-const RecyclrGX = RecyclrModule?.GX || RecyclrModule?.default || RecyclrModule;
-
-class GXController extends Controller {
-  connect() {
-    if (this.gx) return;
-    this.gx = new RecyclrGX({
-      url: location.href,
-      method: "get",
-      selection: "[data-recyclr-target]",
-      history: false,
-      dispatch: true,
-      debug: false,
-    });
-    window.omniRecyclr = this;
-  }
-
-  renderBundle(html) {
-    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
-    const events = [...doc.querySelectorAll("[data-recyclr-target]")].map((node) => ({
-      selector: `[data-recyclr-sink="${cssEscape(node.dataset.recyclrTarget)}"]`,
-      location: "innerHTML",
-      selection: node.innerHTML,
-    }));
-    if (events.length > 0) {
-      this.gx.render(events);
-      this.element.dispatchEvent(new CustomEvent("omni:recycled", { detail: { events: events.length } }));
-    }
-  }
-}
-
-class TranscriptStore {
-  constructor() {
-    this.key = "omni.chat.transcript.v1";
-  }
-
-  load() {
-    try {
-      return JSON.parse(localStorage.getItem(this.key) || "[]");
-    } catch (_) {
-      return [];
-    }
-  }
-
-  save(messages) {
-    const compact = messages.slice(-80);
-    localStorage.setItem(this.key, JSON.stringify(compact));
-  }
-
-  clear() {
-    localStorage.removeItem(this.key);
-  }
-}
-
-class ChatController extends Controller {
+export default class ChatController extends Controller {
   static targets = [
-    "messages",
-    "timeline",
-    "input",
-    "send",
-    "status",
-    "transport",
-    "job",
-    "liveBadge",
-    "eventCount",
-    "panel",
-    "jobFilter",
-    "jobsList",
-    "jobDetails",
-    "memoryCandidates",
-    "memoryList",
-    "memoryKind",
-    "memoryTags",
-    "memoryContent",
-    "personaMode",
-    "personaModel",
-    "personaSystem",
-    "personaPrompt",
-    "personaOutput",
-    "statusOutput",
-    "researchStatusOutput",
-    "metricsOutput",
-    "progress",
-    "progressState",
-    "spinner",
-    "modal",
-    "modalPanel",
+    "messages","timeline","input","send","status","transport","job","liveBadge","eventCount","panel",
+    "jobFilter","jobsList","jobDetails","memoryCandidates","memoryList","memoryKind","memoryKindFilter","memoryTags","memoryContent",
+    "personaMode","personaModel","personaSystem","personaPrompt","personaOutput","statusOutput","researchStatusOutput",
+    "metricsOutput","progress","progressState","spinner","modal","modalPanel",
   ];
+  static values = { pollMs: Number };
 
-  static values = {
-    pollMs: Number,
-  };
+  declare readonly messagesTarget: HTMLElement;
+  declare readonly timelineTarget: HTMLElement;
+  declare readonly inputTarget: HTMLTextAreaElement;
+  declare readonly sendTarget: HTMLButtonElement;
+  declare readonly statusTarget: HTMLElement;
+  declare readonly transportTarget: HTMLElement;
+  declare readonly jobTarget: HTMLElement;
+  declare readonly liveBadgeTarget: HTMLElement;
+  declare readonly eventCountTarget: HTMLElement;
+  declare readonly panelTargets: HTMLElement[];
+  declare readonly jobFilterTarget: HTMLSelectElement;
+  declare readonly jobsListTarget: HTMLElement;
+  declare readonly jobDetailsTarget: HTMLElement;
+  declare readonly memoryCandidatesTarget: HTMLElement;
+  declare readonly memoryListTarget: HTMLElement;
+  declare readonly memoryKindTarget: HTMLSelectElement;
+  declare readonly memoryKindFilterTarget: HTMLSelectElement;
+  declare readonly memoryTagsTarget: HTMLInputElement;
+  declare readonly memoryContentTarget: HTMLTextAreaElement;
+  declare readonly personaModeTarget: HTMLSelectElement;
+  declare readonly personaModelTarget: HTMLInputElement;
+  declare readonly personaSystemTarget: HTMLTextAreaElement;
+  declare readonly personaPromptTarget: HTMLTextAreaElement;
+  declare readonly personaOutputTarget: HTMLElement;
+  declare readonly statusOutputTarget: HTMLElement;
+  declare readonly researchStatusOutputTarget: HTMLElement;
+  declare readonly metricsOutputTarget: HTMLElement;
+  declare readonly progressTarget: HTMLElement;
+  declare readonly progressStateTarget: HTMLElement;
+  declare readonly spinnerTarget: HTMLElement;
+  declare readonly modalTarget: HTMLElement;
+  declare readonly modalPanelTarget: HTMLElement;
+  declare readonly hasMemoryListTarget: boolean;
+  declare readonly hasResearchStatusOutputTarget: boolean;
+  declare readonly hasMetricsOutputTarget: boolean;
+  declare readonly hasProgressStateTarget: boolean;
+  declare readonly hasModalTarget: boolean;
+  declare readonly hasSpinnerTarget: boolean;
+  declare readonly pollMsValue: number;
+
+  gxController: GxController | null = null;
+  store!: TranscriptStore;
+  messages: ChatMessage[] = [];
+  events: TimelineEvent[] = [];
+  eventSequence = 0;
+  eventIndex = new Map<string, TimelineEvent>();
+  contextIndex = new Map<string, JobContext>();
+  seenProgress = new Set<string>();
+  currentJobID: number | string | null = null;
+  busy = false;
+  queueEnabled = false;
+  activityTimer: number | null = null;
+  memoryChangedHandler: ((event: Event) => void) | null = null;
+
+  
+
+  
 
   async connect() {
-    this.gxController = this.application.getControllerForElementAndIdentifier(this.element, "gx");
+    this.gxController = this.application.getControllerForElementAndIdentifier(this.element, "gx") as GxController | null;
     this.store = new TranscriptStore();
     this.messages = this.store.load();
     this.events = [];
@@ -111,6 +101,8 @@ class ChatController extends Controller {
     await this.loadStatus();
     await this.loadGlobalActivity();
     this.activityTimer = window.setInterval(() => this.loadGlobalActivity({ quiet: true }), 5000);
+    this.memoryChangedHandler = () => void this.loadMemoryCandidates();
+    document.addEventListener("omni:memory-changed", this.memoryChangedHandler);
     if (this.messages.length === 0) {
       this.addMessage("system", "Omni UI is ready. Queue mode uses the Go job API; direct mode uses /v1/instruct.");
     }
@@ -118,6 +110,7 @@ class ChatController extends Controller {
 
   disconnect() {
     if (this.activityTimer) window.clearInterval(this.activityTimer);
+    if (this.memoryChangedHandler) document.removeEventListener("omni:memory-changed", this.memoryChangedHandler);
   }
 
   async detectTransport() {
@@ -152,7 +145,11 @@ class ChatController extends Controller {
     if (name === "jobs") this.loadJobs();
     if (name === "memory") this.loadMemoryCandidates();
     if (name === "metrics") this.loadMetrics();
-    if (name === "admin") this.loadStatus();
+    if (name === "admin") {
+      this.loadStatus();
+      this.loadResearchStatus();
+    }
+    document.dispatchEvent(new CustomEvent("omni:panel-shown", { detail: { panel: name } }));
   }
 
   composerKeydown(event) {
@@ -187,10 +184,26 @@ class ChatController extends Controller {
 
   async submitJob(prompt) {
     this.setStatus("queued", "active");
+    const metadata: Record<string, unknown> = {
+      source: "omni-web-chat",
+      ui: "stimulus-tailwind-recyclr",
+    };
+    try {
+      const workspace = await fetchWorkspace();
+      if (workspace.active_project_id > 0) {
+        metadata.project_id = workspace.active_project_id;
+      }
+      if (workspace.project?.location) {
+        metadata.client_cwd = workspace.project.location;
+        metadata.project_directory = workspace.project.location;
+      }
+    } catch {
+      // workspace API unavailable without database
+    }
     const requestBody = {
       instruction: prompt,
       pipeline: "chat",
-      metadata: { source: "omni-web-chat", ui: "stimulus-tailwind-recyclr" },
+      metadata,
     };
     const response = await fetch("/v1/jobs", {
       method: "POST",
@@ -353,9 +366,12 @@ class ChatController extends Controller {
       if (this.hasMemoryListTarget) this.recycle("memory-list", emptyState("Memory routes require repository mode."));
       return;
     }
+    const kind = this.memoryKindFilterTarget?.value?.trim() ?? "";
+    const memoryQuery = new URLSearchParams({ limit: "200" });
+    if (kind) memoryQuery.set("kind", kind);
     const [payload, memoryPayload] = await Promise.all([
-      readJSON(await fetch("/v1/memory-candidates?limit=50")),
-      readJSON(await fetch("/v1/memory?limit=50")),
+      readJSON(await fetch("/v1/memory-candidates?limit=200")),
+      readJSON(await fetch(`/v1/memory?${memoryQuery.toString()}`)),
     ]);
     this.renderMemoryList(memoryPayload.memories || []);
     this.renderMemoryCandidates(payload.memory_candidates || []);
@@ -363,6 +379,24 @@ class ChatController extends Controller {
       memories: (memoryPayload.memories || []).length,
       candidates: (payload.memory_candidates || []).length,
     }, { memories: memoryPayload, candidates: payload });
+  }
+
+  async deleteMemory(event) {
+    event.preventDefault();
+    const id = Number(event.currentTarget.dataset.memoryId || 0);
+    if (!id || !window.confirm(`Delete memory #${id}?`)) return;
+    await readJSON(await fetch(`/v1/memory/${id}`, { method: "DELETE" }));
+    await this.loadMemoryCandidates();
+    this.addEvent("memory_deleted", { id });
+  }
+
+  async deleteMemoryCandidate(event) {
+    event.preventDefault();
+    const id = Number(event.currentTarget.dataset.candidateId || 0);
+    if (!id || !window.confirm(`Delete candidate #${id}?`)) return;
+    await readJSON(await fetch(`/v1/memory-candidates/${id}`, { method: "DELETE" }));
+    await this.loadMemoryCandidates();
+    this.addEvent("memory_candidate_deleted", { id });
   }
 
   renderMemoryList(items) {
@@ -384,6 +418,9 @@ class ChatController extends Controller {
             <div class="mt-2 text-xs text-zinc-500">${escapeHTML(item.source || "unknown")} · ${formatDateTime(item.created_at)}</div>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">${escapeHTML(trimText(item.content || "", 900))}</p>
             ${(item.tags || []).length ? `<div class="mt-3 flex flex-wrap gap-1">${(item.tags || []).slice(0, 12).map((tag) => `<span class="rounded bg-white/[.06] px-2 py-1 font-mono text-[11px] text-zinc-400">${escapeHTML(tag)}</span>`).join("")}</div>` : ""}
+            <div class="mt-4">
+              <button data-action="chat#deleteMemory" data-memory-id="${item.id}" class="rounded-md border border-rose-300/30 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-400/10">Remove</button>
+            </div>
           </article>
         `,
         )
@@ -451,6 +488,7 @@ class ChatController extends Controller {
               <button data-action="chat#promoteMemory" data-candidate-id="${item.id}" data-tier="approved" class="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100">Approve</button>
               <button data-action="chat#promoteMemory" data-candidate-id="${item.id}" data-tier="durable" class="rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-xs font-semibold text-emerald-100">Durable</button>
               <button data-action="chat#rejectMemory" data-candidate-id="${item.id}" class="rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-xs font-semibold text-rose-100">Reject</button>
+              <button data-action="chat#deleteMemoryCandidate" data-candidate-id="${item.id}" class="rounded-md border border-white/10 px-3 py-2 text-xs text-zinc-300 hover:bg-white/[.04]">Delete</button>
             </div>
           </article>
         `,
@@ -491,6 +529,7 @@ class ChatController extends Controller {
     );
     this.memoryContentTarget.value = "";
     this.memoryTagsTarget.value = "";
+    await this.loadMemoryCandidates();
     this.addEvent("memory_added", { kind: this.memoryKindTarget.value, tags: tags.join(",") || "none" });
   }
 
@@ -784,6 +823,7 @@ class ChatController extends Controller {
     if (!this.hasModalTarget) return;
     this.modalTarget.classList.add("hidden");
     this.modalTarget.classList.remove("grid");
+    document.dispatchEvent(new CustomEvent("omni:modal-closed"));
   }
 
   closeModalBackdrop(event) {
@@ -809,9 +849,9 @@ class ChatController extends Controller {
     this.liveBadgeTarget.className = badgeClass(mode);
   }
 
-  recycle(target, html) {
+  recycle(target: string, html: string): void {
     const bundle = `<template data-recyclr-target="${escapeHTML(target)}">${html}</template>`;
-    const controller = this.gxController || window.omniRecyclr;
+    const controller = this.gxController ?? (window as Window & { omniRecyclr?: GxController }).omniRecyclr ?? null;
     if (controller && typeof controller.renderBundle === "function") {
       controller.renderBundle(bundle);
       return;
@@ -820,502 +860,3 @@ class ChatController extends Controller {
     if (sink) sink.innerHTML = html;
   }
 }
-
-async function readJSON(response) {
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || payload.message || `HTTP ${response.status}`);
-  }
-  return payload;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function trimText(value, max) {
-  value = String(value || "").trim();
-  return value.length > max ? `${value.slice(0, max)}...` : value;
-}
-
-function hashText(value) {
-  value = String(value || "");
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
-  }
-  return hash.toString(36);
-}
-
-function formatTime(value) {
-  if (!value) return "";
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
-}
-
-function formatDateTime(value) {
-  if (!value) return "";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function escapeHTML(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function cssEscape(value) {
-  if (window.CSS && typeof window.CSS.escape === "function") {
-    return window.CSS.escape(String(value));
-  }
-  return String(value).replaceAll('"', '\\"');
-}
-
-function badgeClass(mode) {
-  const base = "rounded-full border px-3 py-1 text-xs font-medium";
-  if (mode === "error") return `${base} border-rose-300/35 bg-rose-400/10 text-rose-100`;
-  if (mode === "active") return `${base} border-cyan-300/35 bg-cyan-300/10 text-cyan-100`;
-  return `${base} border-emerald-300/35 bg-emerald-300/10 text-emerald-100`;
-}
-
-function statusPillClass(status) {
-  const base = "rounded px-2 py-1 text-[11px] font-semibold uppercase tracking-[.14em]";
-  switch (status) {
-    case "completed":
-    case "approved":
-    case "durable":
-      return `${base} bg-emerald-300/15 text-emerald-200`;
-    case "running":
-      return `${base} bg-cyan-300/15 text-cyan-200`;
-    case "waiting_input":
-    case "pending":
-    case "candidate":
-      return `${base} bg-amber-300/15 text-amber-200`;
-    case "failed":
-    case "canceled":
-    case "rejected":
-      return `${base} bg-rose-300/15 text-rose-200`;
-    default:
-      return `${base} bg-zinc-300/10 text-zinc-300`;
-  }
-}
-
-function jsonRequest(body) {
-  return {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body || {}),
-  };
-}
-
-function emptyState(text) {
-  return `<div class="rounded-lg border border-dashed border-white/10 bg-white/[.03] p-5 text-sm leading-6 text-zinc-500">${escapeHTML(text)}</div>`;
-}
-
-function renderStep(step) {
-  const state = stepVisualState(step.status);
-  return `
-    <article class="${stepCardClass(state)}">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="flex min-w-0 items-center gap-2">
-          <span class="${stepMarkerClass(state)}">${escapeHTML(stepMarkerText(state))}</span>
-          <div class="font-mono text-xs text-cyan-200">step #${step.id}</div>
-        </div>
-        <span class="${statusPillClass(step.status)}">${escapeHTML(step.status || "unknown")}</span>
-      </div>
-      <div class="mt-2 text-sm font-medium text-zinc-100">${escapeHTML(step.action || "step")}</div>
-      ${step.output ? `<pre class="mt-3 max-h-44 overflow-auto whitespace-pre-wrap rounded bg-zinc-950/70 p-3 text-xs leading-5 text-zinc-300">${escapeHTML(step.output)}</pre>` : ""}
-      ${step.error ? `<pre class="mt-3 max-h-44 overflow-auto whitespace-pre-wrap rounded bg-rose-400/10 p-3 text-xs leading-5 text-rose-100">${escapeHTML(step.error)}</pre>` : ""}
-    </article>
-  `;
-}
-
-function renderStepSummary(steps) {
-  let completed = 0;
-  let incomplete = 0;
-  let failed = 0;
-  const active = steps.find((step) => stepVisualState(step.status) === "active");
-  for (const step of steps) {
-    const state = stepVisualState(step.status);
-    if (state === "done") {
-      completed += 1;
-    } else {
-      incomplete += 1;
-      if (state === "failed") failed += 1;
-    }
-  }
-  const activeText = active ? `active #${active.id}${active.action ? ` ${active.action}` : ""}` : "no active step";
-  return `
-    <div class="flex flex-wrap items-center gap-2 text-[11px] font-medium">
-      <span class="rounded border border-cyan-300/30 bg-cyan-300/10 px-2 py-1 text-cyan-100">${escapeHTML(activeText)}</span>
-      <span class="rounded border border-emerald-300/25 bg-emerald-300/10 px-2 py-1 text-emerald-100">done ${completed}</span>
-      <span class="rounded border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-amber-100">incomplete ${incomplete}</span>
-      ${failed ? `<span class="rounded border border-rose-300/25 bg-rose-300/10 px-2 py-1 text-rose-100">failed ${failed}</span>` : ""}
-    </div>
-  `;
-}
-
-function stepVisualState(status) {
-  switch (String(status || "").toLowerCase()) {
-    case "running":
-    case "waiting_input":
-      return "active";
-    case "completed":
-      return "done";
-    case "failed":
-    case "canceled":
-      return "failed";
-    case "pending":
-      return "pending";
-    default:
-      return "unknown";
-  }
-}
-
-function stepCardClass(state) {
-  const base = "rounded-md border p-3 transition";
-  switch (state) {
-    case "active":
-      return `${base} active-step-card border-cyan-300/60 bg-cyan-300/10`;
-    case "done":
-      return `${base} border-emerald-300/25 bg-emerald-300/[.06]`;
-    case "failed":
-      return `${base} border-rose-300/35 bg-rose-400/[.08]`;
-    case "pending":
-      return `${base} border-white/10 bg-white/[.025] opacity-80`;
-    default:
-      return `${base} border-white/10 bg-white/[.035]`;
-  }
-}
-
-function stepMarkerClass(state) {
-  const base = "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[.14em]";
-  switch (state) {
-    case "active":
-      return `${base} bg-cyan-300 text-zinc-950`;
-    case "done":
-      return `${base} bg-emerald-300/20 text-emerald-100`;
-    case "failed":
-      return `${base} bg-rose-300/20 text-rose-100`;
-    case "pending":
-      return `${base} bg-zinc-300/10 text-zinc-400`;
-    default:
-      return `${base} bg-zinc-300/10 text-zinc-300`;
-  }
-}
-
-function stepMarkerText(state) {
-  switch (state) {
-    case "active":
-      return "active";
-    case "done":
-      return "done";
-    case "failed":
-      return "stop";
-    case "pending":
-      return "todo";
-    default:
-      return "step";
-  }
-}
-
-function renderContext(context) {
-  return `
-    <button type="button" data-action="chat#openContextItem" data-context-id="${escapeHTML(context.id || "")}" class="block w-full rounded-md border border-white/10 bg-white/[.03] p-3 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <span class="font-mono text-xs text-zinc-400">${escapeHTML(context.key || "context")}</span>
-        <span class="font-mono text-[11px] text-zinc-600">ctx ${escapeHTML(context.id || "")} · step ${escapeHTML(context.step_id || "")}</span>
-      </div>
-      <pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-xs leading-5 text-zinc-300">${escapeHTML(trimText(context.value || "", 1200))}</pre>
-    </button>
-  `;
-}
-
-function contextEventType(key) {
-  key = String(key || "").toLowerCase();
-  if (key.includes("prompt")) return "llm_prompt";
-  if (key.includes("response") || key.includes("completion")) return "llm_response";
-  if (key.includes("context")) return "llm_context";
-  return "context_recorded";
-}
-
-function renderEventModal(event) {
-  const full = event.full || {};
-  const context = full.context;
-  const step = full.step;
-  const job = full.job || full.job_snapshot;
-  return `
-    <div class="border-b border-white/10 p-4">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div class="font-mono text-xs text-cyan-200">${escapeHTML(event.id)}</div>
-          <h2 class="mt-1 text-xl font-semibold text-zinc-100">${escapeHTML(event.type)}</h2>
-          <p class="mt-1 text-xs text-zinc-500">${formatDateTime(event.at)}</p>
-        </div>
-        <button type="button" data-action="chat#closeModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">Close</button>
-      </div>
-    </div>
-    <div class="grid gap-4 p-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <section class="rounded-md border border-white/10 bg-white/[.03] p-4">
-        <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Details</h3>
-        <div class="mt-3 space-y-2 font-mono text-xs text-zinc-300">${renderDetailRows(event.details)}</div>
-        ${job ? `<div class="mt-4 rounded border border-white/10 bg-zinc-950/60 p-3"><div class="text-xs uppercase tracking-[.16em] text-zinc-500">Job</div><div class="mt-1 font-mono text-xs text-cyan-200">#${escapeHTML(job.id || "")}</div><div class="mt-1 text-xs text-zinc-300">${escapeHTML(job.status || "")}</div></div>` : ""}
-        ${step ? `<div class="mt-4 rounded border border-white/10 bg-zinc-950/60 p-3"><div class="text-xs uppercase tracking-[.16em] text-zinc-500">Step</div><div class="mt-1 font-mono text-xs text-cyan-200">#${escapeHTML(step.id || "")}</div><div class="mt-1 text-xs text-zinc-300">${escapeHTML(step.action || step.status || "")}</div></div>` : ""}
-      </section>
-      <section class="min-w-0 rounded-md border border-white/10 bg-white/[.03] p-4">
-        ${context ? renderContextPayload(context) : ""}
-        <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Full payload</h3>
-        <pre class="scrollbar mt-3 max-h-[58vh] overflow-auto whitespace-pre-wrap rounded bg-zinc-950/70 p-3 text-xs leading-5 text-zinc-300">${escapeHTML(JSON.stringify(full, null, 2))}</pre>
-      </section>
-    </div>
-  `;
-}
-
-function renderContextModal(context) {
-  return `
-    <div class="border-b border-white/10 p-4">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div class="font-mono text-xs text-cyan-200">ctx ${escapeHTML(context.id || "")}</div>
-          <h2 class="mt-1 text-xl font-semibold text-zinc-100">${escapeHTML(context.key || "context")}</h2>
-          <p class="mt-1 text-xs text-zinc-500">step ${escapeHTML(context.step_id || "")}</p>
-        </div>
-        <button type="button" data-action="chat#closeModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">Close</button>
-      </div>
-    </div>
-    <div class="p-4">
-      ${renderContextPayload(context)}
-      <h3 class="mt-4 text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Raw context</h3>
-      <pre class="scrollbar mt-3 max-h-[58vh] overflow-auto whitespace-pre-wrap rounded bg-zinc-950/70 p-3 text-xs leading-5 text-zinc-300">${escapeHTML(JSON.stringify(context, null, 2))}</pre>
-    </div>
-  `;
-}
-
-function renderContextPayload(context) {
-  return `
-    <div class="mb-4 rounded-md border border-cyan-300/20 bg-cyan-300/5 p-4">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-cyan-200">Captured context</h3>
-        <span class="font-mono text-[11px] text-zinc-500">step ${escapeHTML(context.step_id || "")}</span>
-      </div>
-      <pre class="scrollbar mt-3 max-h-[44vh] overflow-auto whitespace-pre-wrap text-xs leading-5 text-zinc-200">${escapeHTML(context.value || "")}</pre>
-    </div>
-  `;
-}
-
-function renderResearchStatus(payload) {
-  const generation = payload.generation_provider || {};
-  const ollama = payload.ollama || {};
-  const web = payload.web_search || {};
-  const warnings = payload.warnings || [];
-  const probes = web.probes || [];
-  return `
-    <div class="space-y-3">
-      <div class="grid grid-cols-2 gap-2 text-xs">
-        ${metricTile("Runnable", payload.research_runnable ? "yes" : "no", payload.research_runnable ? "ok" : "bad")}
-        ${metricTile("Provider", generation.provider || "unknown", generation.reachable ? "ok" : "bad")}
-        ${metricTile("Ollama", ollama.reachable ? "reachable" : "down", ollama.reachable ? "ok" : "bad")}
-        ${metricTile("Web", web.enabled ? (web.reachable_provider ? "reachable" : "degraded") : "disabled", web.enabled && web.reachable_provider ? "ok" : "warn")}
-      </div>
-      <div class="rounded border border-white/10 bg-white/[.03] p-3">
-        <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Ollama</div>
-        <dl class="mt-2 space-y-1 font-mono text-xs text-zinc-300">
-          <div><span class="text-zinc-500">base_url</span> ${escapeHTML(ollama.base_url || "n/a")}</div>
-          <div><span class="text-zinc-500">configured</span> ${escapeHTML((ollama.configured_models || []).join(", ") || "none")}</div>
-          <div><span class="text-zinc-500">missing</span> ${escapeHTML((ollama.missing_models || []).join(", ") || "none")}</div>
-          <div><span class="text-zinc-500">embedding</span> ${escapeHTML(ollama.embedding_model || "n/a")} ${ollama.embedding_available ? "(available)" : "(not found)"}</div>
-          ${ollama.last_provider_error ? `<div class="text-rose-200"><span class="text-rose-300">error</span> ${escapeHTML(ollama.last_provider_error)}</div>` : ""}
-        </dl>
-      </div>
-      <div class="rounded border border-white/10 bg-white/[.03] p-3">
-        <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Web Providers</div>
-        <div class="mt-2 space-y-2">
-          ${probes.map((probe) => `
-            <div class="rounded border border-white/10 bg-zinc-950/40 p-2 font-mono text-xs">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-zinc-200">${escapeHTML(probe.provider || "provider")}</span>
-                <span class="${probe.reachable ? "text-emerald-200" : "text-rose-200"}">${probe.reachable ? "ok" : "failed"}</span>
-              </div>
-              <div class="mt-1 truncate text-zinc-500">${escapeHTML(probe.target_url || "")}</div>
-              ${probe.error ? `<div class="mt-1 text-rose-200">${escapeHTML(probe.error)}</div>` : `<div class="mt-1 text-zinc-400">status=${escapeHTML(probe.status_code || "")}</div>`}
-            </div>
-          `).join("") || `<div class="text-zinc-500">No provider probes.</div>`}
-        </div>
-      </div>
-      ${warnings.length ? `<div class="rounded border border-amber-300/30 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">${warnings.map(escapeHTML).join("<br>")}</div>` : ""}
-    </div>
-  `;
-}
-
-function renderMetricsDashboard(live, models, playbooks, benchmarks) {
-  const statusCounts = live.status_counts || {};
-  const liveRuns = live.live_runs || [];
-  const recentRuns = live.recent_runs || [];
-  const blockers = live.common_blockers || [];
-  const completed = Number(statusCounts.completed || 0);
-  const failed = Number(statusCounts.failed || 0);
-  const cancelled = Number(statusCounts.canceled || statusCounts.cancelled || 0);
-  const totalTerminal = completed + failed + cancelled;
-  const successRate = totalTerminal > 0 ? `${Math.round((completed / totalTerminal) * 100)}%` : "n/a";
-  return `
-    <div class="grid gap-4 xl:grid-cols-4">
-      ${metricTile("Live Runs", String(liveRuns.length), liveRuns.length ? "warn" : "ok")}
-      ${metricTile("Recent Runs", String(recentRuns.length), "ok")}
-      ${metricTile("Success Rate", successRate, completed >= failed ? "ok" : "warn")}
-      ${metricTile("Blocker Types", String(blockers.length), blockers.length ? "warn" : "ok")}
-    </div>
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <div class="flex items-center justify-between gap-3">
-          <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Live Run Timeline</h3>
-          <span class="font-mono text-xs text-zinc-500">${escapeHTML(liveRuns.length)} active</span>
-        </div>
-        <div class="mt-3 space-y-3">${liveRuns.map(renderMetricRun).join("") || emptyState("No active telemetry runs.")}</div>
-      </section>
-      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Run Health</h3>
-        <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
-          ${Object.entries(statusCounts).map(([key, value]) => metricTile(key, String(value), key === "completed" ? "ok" : key === "failed" ? "bad" : "warn")).join("") || emptyState("No status counts yet.")}
-        </div>
-      </section>
-    </div>
-    <div class="grid gap-4 xl:grid-cols-3">
-      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Recent Outcomes</h3>
-        <div class="mt-3 space-y-2">${recentRuns.slice(0, 8).map(renderMetricRun).join("") || emptyState("No telemetry runs yet.")}</div>
-      </section>
-      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Common Blockers</h3>
-        <div class="mt-3 space-y-2">${blockers.map(renderMetricCount).join("") || emptyState("No blocker metrics yet.")}</div>
-      </section>
-      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Model Performance</h3>
-        <div class="mt-3 space-y-2">${models.slice(0, 8).map(renderMetricModel).join("") || emptyState("No model metrics yet.")}</div>
-      </section>
-    </div>
-    <div class="grid gap-4 xl:grid-cols-2">
-      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Playbook Leverage</h3>
-        <div class="mt-3 space-y-2">${playbooks.slice(0, 8).map(renderMetricPlaybook).join("") || emptyState("No playbook usage metrics yet.")}</div>
-      </section>
-      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Benchmarks</h3>
-        <div class="mt-3 space-y-2">${benchmarks.slice(0, 8).map(renderMetricBenchmark).join("") || emptyState("No benchmark metrics yet.")}</div>
-      </section>
-    </div>
-  `;
-}
-
-function renderMetricRun(run) {
-  return `
-    <div class="rounded border border-white/10 bg-white/[.03] p-3">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <span class="font-mono text-xs text-cyan-200">${escapeHTML((run.id || "").slice(0, 8) || "run")}</span>
-        <span class="${statusPillClass(run.status)}">${escapeHTML(run.status || "unknown")}</span>
-      </div>
-      <div class="mt-2 text-sm text-zinc-200">${escapeHTML(run.task_kind || run.project_type || "unclassified task")}</div>
-      <div class="mt-1 font-mono text-xs text-zinc-500">${escapeHTML(run.workspace_id || "workspace n/a")} · ${escapeHTML(formatDurationMS(run.duration_ms))}</div>
-    </div>
-  `;
-}
-
-function renderMetricCount(item) {
-  return `
-    <div class="flex items-center justify-between gap-3 rounded border border-white/10 bg-white/[.03] p-3">
-      <span class="font-mono text-xs text-zinc-300">${escapeHTML(item.key || "unknown")}</span>
-      <span class="font-mono text-xs text-amber-200">${escapeHTML(item.count || 0)}</span>
-    </div>
-  `;
-}
-
-function renderMetricModel(model) {
-  const calls = Number(model.calls || 0);
-  const successes = Number(model.successes || 0);
-  const rate = calls > 0 ? `${Math.round((successes / calls) * 100)}%` : "n/a";
-  return `
-    <div class="rounded border border-white/10 bg-white/[.03] p-3">
-      <div class="flex items-center justify-between gap-2">
-        <span class="truncate text-sm text-zinc-200">${escapeHTML(model.role || "role")}</span>
-        <span class="font-mono text-xs text-emerald-200">${escapeHTML(rate)}</span>
-      </div>
-      <div class="mt-1 truncate font-mono text-xs text-zinc-500">${escapeHTML(model.provider || "provider")} / ${escapeHTML(model.model || "model")}</div>
-      <div class="mt-2 grid grid-cols-3 gap-2 text-center font-mono text-xs text-zinc-300">
-        <span>calls ${escapeHTML(calls)}</span>
-        <span>bad ${escapeHTML(model.failures || 0)}</span>
-        <span>${escapeHTML(Math.round(model.avg_latency_ms || 0))}ms</span>
-      </div>
-    </div>
-  `;
-}
-
-function renderMetricPlaybook(playbook) {
-  return `
-    <div class="rounded border border-white/10 bg-white/[.03] p-3">
-      <div class="truncate font-mono text-xs text-cyan-200">${escapeHTML(playbook.playbook_id || "playbook")}</div>
-      <div class="mt-2 grid grid-cols-4 gap-2 text-center font-mono text-xs text-zinc-300">
-        <span>uses ${escapeHTML(playbook.uses || 0)}</span>
-        <span>reused ${escapeHTML(playbook.reused || 0)}</span>
-        <span>ok ${escapeHTML(playbook.successes || 0)}</span>
-        <span>bad ${escapeHTML(playbook.failures || 0)}</span>
-      </div>
-    </div>
-  `;
-}
-
-function renderMetricBenchmark(item) {
-  return `
-    <div class="rounded border border-white/10 bg-white/[.03] p-3">
-      <div class="flex items-center justify-between gap-2">
-        <span class="truncate font-mono text-xs text-cyan-200">${escapeHTML(item.benchmark_id || "benchmark")}</span>
-        <span class="font-mono text-xs text-zinc-500">${escapeHTML(item.runs || 0)} runs</span>
-      </div>
-      <div class="mt-2 grid grid-cols-3 gap-2 text-center font-mono text-xs text-zinc-300">
-        <span>ok ${escapeHTML(item.successes || 0)}</span>
-        <span>bad ${escapeHTML(item.failures || 0)}</span>
-        <span>${escapeHTML(formatDurationMS(item.avg_duration_ms))}</span>
-      </div>
-    </div>
-  `;
-}
-
-function metricTile(label, value, mode) {
-  const tone = mode === "ok" ? "text-emerald-200" : mode === "bad" ? "text-rose-200" : "text-amber-200";
-  return `
-    <div class="rounded border border-white/10 bg-white/[.03] p-3">
-      <div class="text-[11px] uppercase tracking-[.16em] text-zinc-500">${escapeHTML(label)}</div>
-      <div class="mt-1 truncate font-mono text-xs ${tone}">${escapeHTML(value)}</div>
-    </div>
-  `;
-}
-
-function formatDurationMS(value) {
-  const ms = Number(value || 0);
-  if (!Number.isFinite(ms) || ms <= 0) return "n/a";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60000) return `${Math.round(ms / 1000)}s`;
-  return `${Math.round(ms / 60000)}m`;
-}
-
-function renderDetailRows(details) {
-  const entries = Object.entries(details || {});
-  if (entries.length === 0) return `<div class="text-zinc-500">No details.</div>`;
-  return entries
-    .map(([key, value]) => `
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3">
-        <span class="text-zinc-500">${escapeHTML(key)}</span>
-        <span class="break-words text-zinc-200">${escapeHTML(String(value))}</span>
-      </div>
-    `)
-    .join("");
-}
-
-const application = Application.start();
-application.register("gx", GXController);
-application.register("chat", ChatController);

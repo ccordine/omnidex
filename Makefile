@@ -1,9 +1,15 @@
-.PHONY: tidy build core cli omni run fmt
+.PHONY: tidy build core cli omni run fmt ui ui-dev
 
 tidy:
 	go mod tidy
 
-build: core cli omni
+ui:
+	cd internal/api/web && npm install && npm run build
+
+ui-dev:
+	cd internal/api/web && npm install && npm run dev
+
+build: ui core cli omni
 
 core:
 	./scripts/build-core.sh

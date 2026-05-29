@@ -113,3 +113,18 @@ body {
   min-width: 5.5rem;
   color: rgb(161, 161, 170);
 }
+
+.scrum-kanban {
+  display: flex;
+  gap: 0.875rem;
+  min-height: 0;
+  min-width: min-content;
+}
+
+.scrum-column {
+  max-height: 100%;
+}
+
+.scrum-card {
+  backdrop-filter: blur(8px);
+}

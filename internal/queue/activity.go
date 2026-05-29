@@ -19,7 +19,7 @@ type MemoryChunkSummary struct {
 }
 
 func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []string, limit int) ([]MemoryChunkSummary, error) {
-	if limit <= 0 || limit > 200 {
+	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
 	kind = strings.TrimSpace(kind)

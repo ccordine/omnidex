@@ -1,0 +1,2 @@
+-- API secrets are stored in workspace_settings under key 'api_secrets'.
+-- No schema change required; this migration documents the storage location.

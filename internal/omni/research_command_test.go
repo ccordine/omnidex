@@ -174,7 +174,7 @@ func TestHandleTurnUsesStructuredLLMCommandPath(t *testing.T) {
 	defer app.runLogger.Close()
 
 	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "structured-chat-turn-test", Permission: PermissionFull}
-	turn, response, err := app.handleTurn(session, "what is the weather right now in Thailand?", &activityIndicator{})
+	turn, response, err := app.handleTurn(session, "what is the weather right now in Thailand?", &activityIndicator{}, turnRouteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestHandleTurnStoresCapabilityMemoryFromEvaluatorRejection(t *testing.T) {
 	defer app.runLogger.Close()
 
 	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "structured-memory-test", Permission: PermissionFull}
-	turn, response, err := app.handleTurn(session, "what time is it in Virginia right now?", &activityIndicator{})
+	turn, response, err := app.handleTurn(session, "what time is it in Virginia right now?", &activityIndicator{}, turnRouteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestHandleTurnStoresCapabilityMemoryFromDeterministicRejection(t *testing.T
 	defer app.runLogger.Close()
 
 	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "structured-validator-memory-test", Permission: PermissionFull}
-	turn, _, err := app.handleTurn(session, "what time is it in Virginia right now?", &activityIndicator{})
+	turn, _, err := app.handleTurn(session, "what time is it in Virginia right now?", &activityIndicator{}, turnRouteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestHandleTurnStoresWeatherCapabilityMemoryFromOpenWeatherMapRejection(t *t
 	defer app.runLogger.Close()
 
 	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "structured-weather-memory-test", Permission: PermissionFull}
-	turn, _, err := app.handleTurn(session, "Okay, what is the weather in Pattaya right now?", &activityIndicator{})
+	turn, _, err := app.handleTurn(session, "Okay, what is the weather in Pattaya right now?", &activityIndicator{}, turnRouteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestHandleTurnPassesSessionHistoryToStructuredCommandPath(t *testing.T) {
 			{Role: "assistant", Content: "The weather in Pattaya, Thailand today is Partly Cloudy with temperatures ranging from +31°C to +36°C."},
 		},
 	}
-	_, response, err := app.handleTurn(session, "The weather where will be sunny?", &activityIndicator{})
+	_, response, err := app.handleTurn(session, "The weather where will be sunny?", &activityIndicator{}, turnRouteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +532,7 @@ func TestHandleTurnFinalResponseReviewerCanReviseResponse(t *testing.T) {
 	defer app.runLogger.Close()
 
 	session := &Session{WorkspacePath: t.TempDir(), WorkspaceHash: "final-review-revision-test", Permission: PermissionFull}
-	turn, response, err := app.handleTurn(session, "summarize the structured result", &activityIndicator{})
+	turn, response, err := app.handleTurn(session, "summarize the structured result", &activityIndicator{}, turnRouteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
