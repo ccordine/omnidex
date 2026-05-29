@@ -72,13 +72,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		location, err := queue.NormalizeProjectLocation(req.Location)
+		location, err := s.validateProjectLocation(r.Context(), req.Location)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if stat, err := os.Stat(location); err != nil || !stat.IsDir() {
-			writeError(w, http.StatusBadRequest, "location must be an existing directory")
 			return
 		}
 		recipe := req.Recipe
@@ -213,13 +209,9 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 			patch.Settings = &settings
 		}
 		if patch.Location != nil {
-			location, err := queue.NormalizeProjectLocation(*patch.Location)
+			location, err := s.validateProjectLocation(r.Context(), *patch.Location)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			if stat, err := os.Stat(location); err != nil || !stat.IsDir() {
-				writeError(w, http.StatusBadRequest, "location must be an existing directory")
 				return
 			}
 			patch.Location = &location
@@ -545,4 +537,31 @@ func apiScrumCardToPatch(card ScrumCard) map[string]any {
 		"play_state":     card.PlayState,
 		"queue_order":    card.QueueOrder,
 	}
+}
+
+func (s *Server) validateProjectLocation(ctx context.Context, raw string) (string, error) {
+	location, err := queue.NormalizeProjectLocation(raw)
+	if err != nil {
+		return "", err
+	}
+	if stat, err := os.Stat(location); err == nil {
+		if stat.IsDir() {
+			return location, nil
+		}
+		return "", fmt.Errorf("location must be an existing directory")
+	}
+	client := s.hostBridgeClient()
+	if client == nil {
+		return "", fmt.Errorf("location must be an existing directory")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	result, err := client.Browse(ctx, location)
+	if err != nil {
+		return "", fmt.Errorf("location must be an existing directory")
+	}
+	if result == nil || strings.TrimSpace(result.Path) == "" {
+		return "", fmt.Errorf("location must be an existing directory")
+	}
+	return filepath.Clean(result.Path), nil
 }
