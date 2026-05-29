@@ -27,6 +27,7 @@ export default class ProjectsController extends Controller {
   declare readonly listTarget: HTMLElement;
   declare readonly detailTarget: HTMLElement;
   declare readonly statusTarget: HTMLElement;
+  declare readonly hasOpenBadgeTarget: boolean;
   declare readonly openBadgeTarget: HTMLElement;
 
   private projects: ProjectRecord[] = [];
@@ -104,6 +105,7 @@ export default class ProjectsController extends Controller {
   }
 
   updateOpenBadge(name: string | null) {
+    if (!this.hasOpenBadgeTarget) return;
     this.openBadgeTarget.textContent = name?.trim() || "None open";
   }
 

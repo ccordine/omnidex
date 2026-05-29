@@ -2,17 +2,24 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/ollama"
 )
 
-const researchStatusTimeout = 3 * time.Second
+const (
+	minOllamaProbeTimeout = 10 * time.Second
+	maxOllamaProbeTimeout = 15 * time.Second
+	ollamaProbeAttempts   = 2
+	ollamaProbeRetryDelay = 400 * time.Millisecond
+)
 
 type researchStatusResponse struct {
 	GenerationProvider generationProviderStatus `json:"generation_provider"`
@@ -56,12 +63,28 @@ type webSearchProbeStatus struct {
 	Error      string `json:"error,omitempty"`
 }
 
+func (s *Server) ollamaProbeTimeout() time.Duration {
+	timeout := minOllamaProbeTimeout
+	if s.requestTimeout > 0 && s.requestTimeout < timeout {
+		timeout = s.requestTimeout
+	}
+	if timeout > maxOllamaProbeTimeout {
+		timeout = maxOllamaProbeTimeout
+	}
+	return timeout
+}
+
+func (s *Server) ollamaReachabilityBudget() time.Duration {
+	attempts := time.Duration(ollamaProbeAttempts)
+	return s.ollamaProbeTimeout()*attempts + ollamaProbeRetryDelay*(attempts-1) + 500*time.Millisecond
+}
+
 func (s *Server) handleResearchStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), researchStatusTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.ollamaReachabilityBudget())
 	defer cancel()
 	writeJSON(w, http.StatusOK, s.collectResearchStatus(ctx))
 }
@@ -82,7 +105,7 @@ func (s *Server) collectResearchStatus(ctx context.Context) researchStatusRespon
 		status.GenerationProvider.Error = status.Ollama.LastProviderError
 		if !status.Ollama.Reachable {
 			status.ResearchRunnable = false
-			status.Warnings = append(status.Warnings, "ollama is unreachable from the core process; research jobs that need generation should not be queued")
+			status.Warnings = append(status.Warnings, "ollama is unreachable from the core process; queued jobs may fail until OLLAMA_BASE_URL is reachable from the core container")
 		}
 		if len(status.Ollama.MissingModels) > 0 {
 			status.Warnings = append(status.Warnings, "one or more configured Ollama models are missing")
@@ -101,7 +124,7 @@ func (s *Server) collectOllamaRuntimeStatus(ctx context.Context) ollamaRuntimeSt
 		EmbeddingModel:      strings.TrimSpace(s.ollamaEmbeddingModel),
 		RecommendedHostHint: "If core runs in Docker, prefer OLLAMA_BASE_URL=http://host.docker.internal:11434 or the docker-compose.host-ollama.yml override; host Ollama must listen beyond loopback when using bridge networking.",
 	}
-	models, err := fetchOllamaTags(ctx, status.BaseURL)
+	models, err := s.probeOllamaTags(ctx)
 	if err != nil {
 		status.LastProviderError = err.Error()
 		return status
@@ -154,8 +177,8 @@ func (s *Server) collectWebSearchStatus(ctx context.Context) webSearchRuntimeSta
 		return status
 	}
 	timeout := s.webSearchTimeout
-	if timeout <= 0 || timeout > researchStatusTimeout {
-		timeout = researchStatusTimeout
+	if timeout <= 0 || timeout > maxOllamaProbeTimeout {
+		timeout = maxOllamaProbeTimeout
 	}
 	for _, provider := range status.Providers {
 		target := webSearchProbeURL(provider)
@@ -182,41 +205,37 @@ func (s *Server) collectWebSearchStatus(ctx context.Context) webSearchRuntimeSta
 	return status
 }
 
-func fetchOllamaTags(ctx context.Context, baseURL string) ([]string, error) {
-	endpoint := strings.TrimRight(baseURL, "/") + "/api/tags"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ollama /api/tags status=%d body=%s", resp.StatusCode, truncateStatusText(string(body), 240))
-	}
-	var payload struct {
-		Models []struct {
-			Name string `json:"name"`
-		} `json:"models"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-	models := make([]string, 0, len(payload.Models))
-	for _, item := range payload.Models {
-		name := strings.TrimSpace(item.Name)
-		if name != "" {
-			models = append(models, name)
+func (s *Server) probeOllamaTags(ctx context.Context) ([]string, error) {
+	baseURL := normalizeURL(firstNonEmpty(s.ollamaBaseURL, "http://host.docker.internal:11434"))
+	client := ollama.New(baseURL, "", "", s.ollamaProbeTimeout())
+	var lastErr error
+	for attempt := 0; attempt < ollamaProbeAttempts; attempt++ {
+		if attempt > 0 {
+			if err := sleepContext(ctx, ollamaProbeRetryDelay); err != nil {
+				return nil, err
+			}
 		}
+		models, err := client.ListTags(ctx)
+		if err == nil {
+			return models, nil
+		}
+		lastErr = err
 	}
-	sort.Strings(models)
-	return models, nil
+	return nil, lastErr
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func configuredWebSearchProviders(values []string) []string {
@@ -290,7 +309,19 @@ func normalizeURL(raw string) string {
 	if err != nil {
 		return strings.TrimRight(value, "/")
 	}
+	parsed.Host = normalizeURLHost(parsed.Host)
 	return strings.TrimRight(parsed.String(), "/")
+}
+
+func normalizeURLHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return host
+	}
+	if hostname, port, err := net.SplitHostPort(host); err == nil {
+		return net.JoinHostPort(strings.TrimSuffix(hostname, "."), port)
+	}
+	return strings.TrimSuffix(host, ".")
 }
 
 func truncateStatusText(value string, max int) string {

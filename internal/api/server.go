@@ -908,15 +908,6 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 	if len(req.Metadata) == 0 {
 		req.Metadata = []byte(`{}`)
 	}
-	if s.researchJobNeedsGeneration(req) {
-		ctx, cancel := context.WithTimeout(r.Context(), researchStatusTimeout)
-		status := s.collectResearchStatus(ctx)
-		cancel()
-		if !status.GenerationProvider.Reachable {
-			writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("research job rejected: generation provider %s is unreachable from core: %s", status.GenerationProvider.Provider, safeStatusError(status.GenerationProvider.Error)))
-			return
-		}
-	}
 	if s.v3Enabled {
 		var payload map[string]any
 		if err := json.Unmarshal(req.Metadata, &payload); err != nil {
@@ -953,26 +944,6 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"job": job,
 	})
-}
-
-func (s *Server) researchJobNeedsGeneration(req enqueueRequest) bool {
-	pipeline := strings.ToLower(strings.TrimSpace(req.Pipeline))
-	if strings.Contains(pipeline, "research") {
-		return true
-	}
-	instruction := strings.ToLower(strings.TrimSpace(req.Instruction))
-	if strings.Contains(instruction, "research") || strings.Contains(instruction, "look up") || strings.Contains(instruction, "search online") || strings.Contains(instruction, "search the web") {
-		return true
-	}
-	var metadata map[string]any
-	if len(req.Metadata) > 0 && json.Unmarshal(req.Metadata, &metadata) == nil {
-		for _, key := range []string{"research_topic", "research_slug", "search_query", "web_search"} {
-			if value, ok := metadata[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func safeStatusError(value string) string {

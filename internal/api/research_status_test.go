@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +58,7 @@ func TestResearchStatusReportsOllamaUnreachable(t *testing.T) {
 		OllamaDefaultModel: "qwen2.5-coder:7b",
 		WebSearchEnabled:   false,
 		WebSearchTimeout:   time.Millisecond,
+		RequestTimeout:     2 * time.Second,
 	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/status/research", nil)
 	rec := httptest.NewRecorder()
@@ -78,5 +80,45 @@ func TestResearchStatusReportsOllamaUnreachable(t *testing.T) {
 	}
 	if payload.Ollama.LastProviderError == "" {
 		t.Fatal("expected clear provider error")
+	}
+}
+
+func TestNormalizeURLStripsTrailingDotHost(t *testing.T) {
+	got := normalizeURL("http://172.20.0.1.:11434")
+	want := "http://172.20.0.1:11434"
+	if got != want {
+		t.Fatalf("normalizeURL()=%q want %q", got, want)
+	}
+}
+
+func TestProbeOllamaTagsAllowsSlowTagsResponse(t *testing.T) {
+	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			http.NotFound(w, r)
+			return
+		}
+		time.Sleep(4 * time.Second)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"models": []map[string]string{{"name": "qwen2.5-coder:7b"}},
+		})
+	}))
+	defer ollama.Close()
+
+	server := NewServerWithOptions(nil, &fakeLLMClient{}, ServerOptions{
+		DefaultProvider:    "ollama",
+		OllamaBaseURL:      ollama.URL,
+		OllamaDefaultModel: "qwen2.5-coder:7b",
+		RequestTimeout:     10 * time.Second,
+		WebSearchEnabled:   false,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	models, err := server.probeOllamaTags(ctx)
+	if err != nil {
+		t.Fatalf("probeOllamaTags() error=%v", err)
+	}
+	if len(models) != 1 || models[0] != "qwen2.5-coder:7b" {
+		t.Fatalf("models=%v", models)
 	}
 }

@@ -91,8 +91,7 @@ export default class ChatController extends Controller {
   projectClosedHandler: ((event: Event) => void) | null = null;
   userChannels: UserChannel[] = [];
   selectedChannelId = "";
-
-  
+  activityLabel = "";
 
   
 
@@ -293,7 +292,9 @@ export default class ChatController extends Controller {
 
   async submitChannel(prompt: string) {
     const channelID = this.selectedChannelId;
+    this.activityLabel = "Thinking…";
     this.setStatus("thinking", "active");
+    this.renderProgressActivity(this.activityLabel);
     const payload = await sendChannelMessage(channelID, prompt);
     this.addEvent("channel_message", {
       channel_id: channelID,
@@ -343,7 +344,9 @@ export default class ChatController extends Controller {
 
     this.inputTarget.value = "";
     this.addMessage("user", prompt);
+    this.activityLabel = "Sending…";
     this.setBusy(true);
+    this.renderProgressActivity(this.activityLabel);
 
     try {
       if (this.isChannelMode()) {
@@ -362,7 +365,9 @@ export default class ChatController extends Controller {
   }
 
   async submitJob(prompt) {
-    this.setStatus("queued", "active");
+    this.activityLabel = "Queuing job…";
+    this.setStatus("queuing", "active");
+    this.renderProgressActivity(this.activityLabel);
     const metadata: Record<string, unknown> = {
       source: "omni-web-chat",
       ui: "stimulus-tailwind-recyclr",
@@ -388,6 +393,8 @@ export default class ChatController extends Controller {
     const job = payload.job;
     this.currentJobID = job.id;
     this.jobTarget.textContent = `#${job.id}`;
+    this.activityLabel = `Running job #${job.id}…`;
+    this.renderProgressActivity(this.activityLabel);
     this.addEvent("job_created", { id: job.id, status: job.status }, { request: requestBody, response: payload, job });
     await this.pollJob(job.id);
   }
@@ -407,6 +414,8 @@ export default class ChatController extends Controller {
         contexts: (details.contexts || []).length,
       });
       if (signature !== lastSignature) {
+        this.activityLabel = `Running job #${jobID} · ${details.job?.status || "running"}…`;
+        this.renderProgressActivity(this.activityLabel);
         this.renderJobProgress(details);
         lastSignature = signature;
       }
@@ -824,7 +833,9 @@ export default class ChatController extends Controller {
   }
 
   async submitDirect(prompt) {
+    this.activityLabel = "Thinking…";
     this.setStatus("thinking", "active");
+    this.renderProgressActivity(this.activityLabel);
     const requestBody = {
       prompt,
       system: "You are Omni chat. Be concise, useful, and grounded.",
@@ -915,7 +926,22 @@ export default class ChatController extends Controller {
     `,
       )
       .join("");
-    this.recycle("messages", html);
+    const pending = this.busy
+      ? `
+      <article class="message-grid message-assistant message-pending" aria-live="polite">
+        <div class="message-shell border border-cyan-300/20 bg-cyan-300/5">
+          <div class="message-meta">
+            <span>assistant</span>
+            <time>${formatTime(new Date().toISOString())}</time>
+          </div>
+          <div class="message-body flex items-center gap-2 text-sm text-cyan-100">
+            <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-300"></span>
+            <span>${escapeHTML(this.activityLabel || "Working…")}</span>
+          </div>
+        </div>
+      </article>`
+      : "";
+    this.recycle("messages", html + pending);
     this.messagesTarget.scrollTop = this.messagesTarget.scrollHeight;
   }
 
@@ -943,6 +969,15 @@ export default class ChatController extends Controller {
       })
       .join("");
     this.recycle("timeline", html);
+  }
+
+  renderProgressActivity(label: string) {
+    const text = label.trim() || "Working…";
+    if (this.hasProgressStateTarget) this.progressStateTarget.textContent = text;
+    this.recycle(
+      "progress",
+      `<div class="flex items-center gap-2 text-sm text-cyan-100"><span class="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-300"></span><span>${escapeHTML(text)}</span></div>`,
+    );
   }
 
   renderProgress(details = null) {
@@ -1022,6 +1057,8 @@ export default class ChatController extends Controller {
     this.sendTarget.disabled = value;
     this.sendTarget.textContent = value ? "Working" : "Send";
     if (this.hasSpinnerTarget) this.spinnerTarget.classList.toggle("hidden", !value);
+    if (!value) this.activityLabel = "";
+    this.renderMessages();
   }
 
   setStatus(text, mode) {
