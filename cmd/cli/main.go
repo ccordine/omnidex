@@ -2835,6 +2835,7 @@ func usage() {
 	fmt.Println("  media-search [--root dir] [--context N] [--limit N] <query>")
 	fmt.Println("  browser-scan [--console] [--email-watch] [--seconds N] [--limit N] [--ports csv] [--json]")
 	fmt.Println("  host serve [--listen addr] [--token value]   host bridge for native directory picker + browse")
+	fmt.Println("  host service install|uninstall|start|stop|restart|status|logs   systemd user service (Linux)")
 	fmt.Println("  screen-read [--ocr] [--vision] [--prompt text] [--model name] [--base-url url] [--keep] [--json]")
 	fmt.Println("  research [--source research] [--kind reference] [--tags a,b,c] [--refresh-days N] [--force] [--include-web-context] [--include-analyze-context] [--chunk-size N] [--overlap N] [--max-chunks N] [--interval 2s] [--timeout 20m] [--session id] <topic>")
 	fmt.Println("  audio-notes [doctor|start|stop|status|list|search] ...")

@@ -74,7 +74,8 @@ func hostBridgeSuggestions(configured, reachable bool, url string) []string {
 	out := []string{}
 	if !configured {
 		out = append(out,
-			"On the host machine, start the bridge: omni host serve --listen 0.0.0.0:8091",
+			"On the host machine, install the bridge as a service: omni host service install",
+			"Or run manually: omni host serve --listen 0.0.0.0:8091",
 			"In core .env set HOST_AGENT_URL=http://host.docker.internal:8091 (or http://127.0.0.1:8091 when core runs on the host)",
 			"Rebuild/restart core: docker compose up --build -d core",
 			"Linux native picker requires zenity or kdialog installed on the host",
@@ -82,7 +83,8 @@ func hostBridgeSuggestions(configured, reachable bool, url string) []string {
 		return out
 	}
 	out = append(out,
-		"Verify the bridge is running on the host: curl http://127.0.0.1:8091/healthz",
+		"Verify the bridge is running: omni host service status (or curl http://127.0.0.1:8091/healthz)",
+		"If not installed as a service: omni host service install",
 		"If core runs in Docker, start the bridge with --listen 0.0.0.0:8091 (not 127.0.0.1 only)",
 	)
 	if url != "" {
