@@ -45,10 +45,11 @@ import {
   type ScrumCardTab,
 } from "../lib/scrum_modal_render";
 import { nextColumn, prevColumn, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumChecklistItem, type ScrumTestCriterion } from "../lib/scrum_types";
+import { ScrumBoardDrag } from "../lib/scrum_drag";
 import type GxController from "./gx_controller";
 
 export default class ScrumController extends Controller {
-  static targets = ["board", "status", "focus"];
+  static targets = ["board", "status", "focus", "boardOverlay", "boardOverlayMessage"];
 
   declare readonly boardTarget: HTMLElement;
   declare readonly statusTarget: HTMLElement;
@@ -56,9 +57,14 @@ export default class ScrumController extends Controller {
   declare readonly focusTarget: HTMLElement;
   declare readonly hasBoardTarget: boolean;
   declare readonly hasStatusTarget: boolean;
+  declare readonly hasBoardOverlayTarget: boolean;
+  declare readonly boardOverlayTarget: HTMLElement;
+  declare readonly hasBoardOverlayMessageTarget: boolean;
+  declare readonly boardOverlayMessageTarget: HTMLElement;
 
   private board: ScrumBoard | null = null;
   private busy = false;
+  private boardLoadingDepth = 0;
   private activeCardID: string | null = null;
   private projectFiles: string[] = [];
   private projectID: number | null = null;
@@ -75,6 +81,7 @@ export default class ScrumController extends Controller {
   private projectRecipe: Record<string, unknown> = {};
   private coachScanTimer: number | null = null;
   private tagSearchTimer: number | null = null;
+  private boardDrag = new ScrumBoardDrag();
 
   connect() {
     this.modalClosedHandler = () => this.resetModalShell();
@@ -118,6 +125,7 @@ export default class ScrumController extends Controller {
       window.clearTimeout(this.tagSearchTimer);
       this.tagSearchTimer = null;
     }
+    this.boardDrag.unwire();
   }
 
   private startPolling() {
@@ -163,6 +171,14 @@ export default class ScrumController extends Controller {
       const running = payload.play_queue?.running_card_id ? "running" : "idle";
       this.setStatus(`Play queue: ${running}${queued ? `, ${queued} queued` : ""}`, "ok");
     }
+    this.wireBoardDragDrop();
+  }
+
+  private wireBoardDragDrop() {
+    if (!this.hasBoardTarget) return;
+    this.boardDrag.wire(this.boardTarget, (cardID, column) => {
+      void this.withCardAction(cardID, () => moveScrumCard(cardID, column, this.projectID), "Moving card");
+    });
   }
 
   private resetModalShell() {
@@ -236,6 +252,68 @@ export default class ScrumController extends Controller {
     };
     this.statusTarget.textContent = message;
     this.statusTarget.className = `text-xs ${classes[tone] ?? classes.idle}`;
+  }
+
+  private setGlobalLoading(loading: boolean) {
+    const spinner = document.querySelector('[data-chat-target="spinner"]');
+    if (spinner) spinner.classList.toggle("hidden", !loading);
+  }
+
+  private setBoardLoading(loading: boolean, message = "Working…") {
+    if (loading) {
+      this.boardLoadingDepth += 1;
+    } else {
+      this.boardLoadingDepth = Math.max(0, this.boardLoadingDepth - 1);
+    }
+    const active = this.boardLoadingDepth > 0;
+    this.setGlobalLoading(active);
+    const overlay = this.hasBoardOverlayTarget
+      ? this.boardOverlayTarget
+      : (this.element.querySelector('[data-scrum-target="boardOverlay"]') as HTMLElement | null);
+    const overlayMessage = this.hasBoardOverlayMessageTarget
+      ? this.boardOverlayMessageTarget
+      : (this.element.querySelector('[data-scrum-target="boardOverlayMessage"]') as HTMLElement | null);
+    if (overlay) {
+      overlay.classList.toggle("hidden", !active);
+      overlay.classList.toggle("flex", active);
+    }
+    if (overlayMessage && message) {
+      overlayMessage.textContent = message;
+    }
+  }
+
+  private setModalSubmitting(submitting: boolean, label = "Create card") {
+    const panel = document.querySelector('[data-chat-target="modalPanel"]');
+    const button = panel?.querySelector('[data-scrum-submit="create"]') as HTMLButtonElement | null;
+    if (!button) return;
+    button.disabled = submitting;
+    button.textContent = submitting ? `${label}…` : label;
+  }
+
+  private async withBoardRefresh<T>(
+    message: string,
+    action: () => Promise<T>,
+    options: { closeModal?: boolean; refreshCardID?: string | null } = {},
+  ): Promise<T | undefined> {
+    this.setBoardLoading(true, message.endsWith("…") ? message : `${message}…`);
+    this.setStatus(message, "busy");
+    try {
+      const result = await action();
+      if (this.projectID) {
+        await this.reloadBoard(options.refreshCardID);
+        if (options.refreshCardID) await this.refreshModalSections(options.refreshCardID);
+        if (this.shouldPoll()) this.startPolling();
+      }
+      if (options.closeModal) this.closeModal();
+      const doneLabel = message.endsWith("…") ? message.slice(0, -1) : message;
+      this.setStatus(`${doneLabel} complete`, "ok");
+      return result;
+    } catch (error) {
+      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      return undefined;
+    } finally {
+      this.setBoardLoading(false);
+    }
   }
 
   private gxHost(): GxController | null {
@@ -424,6 +502,7 @@ export default class ScrumController extends Controller {
   }
 
   async openCard(event: Event) {
+    if (this.boardDrag.shouldSuppressClick()) return;
     const target = event.target as HTMLElement;
     if (target.closest("button, select, option, a, textarea, input, label")) return;
 
@@ -461,6 +540,7 @@ export default class ScrumController extends Controller {
   async load() {
     if (this.busy || !this.projectID || !this.hasBoardTarget) return;
     this.busy = true;
+    this.setBoardLoading(true, "Loading board…");
     this.setStatus("Loading board…", "busy");
     try {
       const payload = await fetchScrumBoard(this.projectID);
@@ -473,6 +553,7 @@ export default class ScrumController extends Controller {
       this.boardTarget.innerHTML = renderScrumEmptyState(`Failed to load scrum board: ${message}`);
       this.setStatus(message, "error");
     } finally {
+      this.setBoardLoading(false);
       this.busy = false;
     }
   }
@@ -490,29 +571,25 @@ export default class ScrumController extends Controller {
     const description = this.modalField(event, "newDesc") || this.modalPanelField("newDesc");
     const column = this.modalField(event, "newColumn") || this.modalPanelField("newColumn") || "backlog";
 
-    this.setStatus("Creating card…", "busy");
+    this.setModalSubmitting(true, "Creating card");
     try {
-      await createScrumCard(title, description, column, this.projectID);
-      this.closeModal();
-      await this.load();
-      this.setStatus("Card created", "ok");
-    } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      await this.withBoardRefresh(
+        "Creating card…",
+        () => createScrumCard(title, description, column, this.projectID),
+        { closeModal: true },
+      );
+    } finally {
+      this.setModalSubmitting(false);
     }
   }
 
   async withCardAction(cardID: string, action: () => Promise<ScrumCard>, label: string) {
     if (!cardID) return;
-    this.setStatus(`${label}…`, "busy");
-    try {
+    await this.withBoardRefresh(label, async () => {
       const card = await action();
       this.upsertCard(card);
-      await this.reloadBoard(cardID);
-      if (this.activeCardID === cardID) await this.refreshModalSections(cardID);
-      this.setStatus(`${label} complete`, "ok");
-    } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
-    }
+      return card;
+    }, { refreshCardID: cardID });
   }
 
   play(event: Event) {
@@ -538,31 +615,21 @@ export default class ScrumController extends Controller {
 
   async withPlayAction(cardID: string, pivot: boolean) {
     if (!cardID) return;
-    this.setStatus(pivot ? "Pivoting play…" : "Queueing play…", "busy");
-    try {
-      const result = await playScrumCard(cardID, this.projectID, { pivot });
-      this.upsertCard(result);
-      await this.reloadBoard(cardID);
-      if (this.activeCardID === cardID) await this.refreshModalSections(cardID);
-      this.startPolling();
-      this.setStatus(result.message || (pivot ? "Pivoted" : "Play updated"), "ok");
-    } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
-    }
+    await this.withBoardRefresh(
+      pivot ? "Pivoting play…" : "Queueing play…",
+      async () => {
+        const result = await playScrumCard(cardID, this.projectID, { pivot });
+        this.upsertCard(result);
+        return result;
+      },
+      { refreshCardID: cardID },
+    );
   }
 
   syncJob(event: Event) {
     event.preventDefault();
     event.stopPropagation();
-    this.setStatus("Refreshing play queue…", "busy");
-    void syncScrumBoard(this.projectID)
-      .then((payload) => {
-        this.applyBoardPayload(payload);
-        this.setStatus("Play queue refreshed", "ok");
-      })
-      .catch((error) => {
-        this.setStatus(error instanceof Error ? error.message : String(error), "error");
-      });
+    void this.withBoardRefresh("Refreshing play queue", () => syncScrumBoard(this.projectID));
   }
 
   markDone(event: Event) {
@@ -1005,15 +1072,12 @@ export default class ScrumController extends Controller {
     const cardID = this.cardID(event);
     if (!cardID) return;
     if (!window.confirm("Delete this scrum card?")) return;
-    this.setStatus("Deleting card…", "busy");
-    try {
-      await deleteScrumCard(cardID, this.projectID);
-      if (this.activeCardID === cardID) this.closeModal();
-      await this.load();
-      this.setStatus("Card deleted", "ok");
-    } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
-    }
+    const closeModal = this.activeCardID === cardID;
+    await this.withBoardRefresh(
+      "Deleting card…",
+      () => deleteScrumCard(cardID, this.projectID),
+      { closeModal },
+    );
   }
 
   async saveModelConfig(event: Event) {

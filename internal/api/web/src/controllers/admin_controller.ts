@@ -188,6 +188,11 @@ export default class AdminController extends Controller {
     event.preventDefault();
     const values: Record<string, string> = {};
     for (const input of this.globalAgentsTarget.querySelectorAll("[data-admin-field^='agent_']")) {
+      if (input instanceof HTMLInputElement && input.type === "radio") {
+        const key = input.dataset.adminField?.replace(/^agent_/, "") ?? "";
+        if (key && input.checked) values[key] = input.value.trim();
+        continue;
+      }
       if (input instanceof HTMLInputElement && input.type === "checkbox") {
         const key = input.dataset.adminField?.replace(/^agent_/, "") ?? "";
         if (key && input.checked) values[key] = "true";

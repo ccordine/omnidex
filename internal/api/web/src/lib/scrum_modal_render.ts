@@ -1,6 +1,6 @@
 import { escapeHTML, formatDateTime, statusPillClass } from "./dom";
 import { renderModelConfigSection } from "./model_config_render";
-import { renderAgentConfigSection } from "./agent_config_render";
+import { renderAgentConfigSection, renderPreAlphaBadge } from "./agent_config_render";
 import type { ModelFieldDefinition } from "./model_config_types";
 import type { AgentFieldDefinition } from "./agent_config_types";
 import type { RecipeCatalogItem } from "./project_types";
@@ -393,15 +393,16 @@ export function renderScrumModalConfigTab(
   resolvedAgentSystem = "omnidex",
 ): string {
   const usingCursor = resolvedAgentSystem === "cursor" || card.agent_config?.agent_system === "cursor";
+  const usingOmnidex = resolvedAgentSystem === "omnidex" || card.agent_config?.agent_system === "omnidex";
   return `
     <div class="space-y-4">
       <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
         <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Execution layer</h3>
         <p class="mt-2 text-sm leading-6 text-zinc-400">Play runs the resolved agent (card → project → env) with full card context: title, description, checklist, Jira draft, ref files, and recipe. A programmatic manager reads <span class="font-mono text-zinc-300">SCRUM_STATUS:</span> from agent output to move the card to review, blocked, or back to assigned.</p>
-        <div class="mt-3 flex flex-wrap gap-2">
+        <div class="mt-3 flex flex-wrap items-center gap-2">
           <button type="button" data-action="scrum#quickSetAgent" data-card-id="${escapeHTML(card.id)}" data-agent-system="cursor" class="rounded-md border ${usingCursor ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-200 hover:border-cyan-300/40"} px-3 py-1.5 text-xs font-semibold">Use Cursor</button>
           <button type="button" data-action="scrum#quickSetAgent" data-card-id="${escapeHTML(card.id)}" data-agent-system="codex" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40">Use Codex</button>
-          <button type="button" data-action="scrum#quickSetAgent" data-card-id="${escapeHTML(card.id)}" data-agent-system="omnidex" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40">Use Omnidex</button>
+          <button type="button" data-action="scrum#quickSetAgent" data-card-id="${escapeHTML(card.id)}" data-agent-system="omnidex" class="inline-flex items-center gap-2 rounded-md border ${usingOmnidex ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-200 hover:border-cyan-300/40"} px-3 py-1.5 text-xs font-semibold">Use Omnidex ${renderPreAlphaBadge()}</button>
         </div>
         <p class="mt-3 text-[11px] leading-5 text-zinc-600">Cursor/Codex need <span class="font-mono">OMNI_ENABLE_CURSOR_ARCHITECT</span> + <span class="font-mono">CURSOR_API_KEY</span> in env (see default.env). Scrum jobs default to strict external mode — no silent Omnidex fallback.</p>
       </section>
@@ -555,7 +556,7 @@ export function renderScrumCreateCardModal(defaultColumn = "backlog"): string {
       </label>
       <div class="flex justify-end gap-2 border-t border-white/10 pt-4">
         <button type="button" data-action="scrum#closeModal" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-300">Cancel</button>
-        <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Create card</button>
+        <button type="submit" data-scrum-submit="create" class="inline-flex items-center justify-center gap-2 rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60">Create card</button>
       </div>
     </form>
   `;

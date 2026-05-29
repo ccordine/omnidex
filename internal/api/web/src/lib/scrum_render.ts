@@ -45,7 +45,7 @@ function renderCard(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"
   const chatCount = card.chat?.length ?? 0;
 
   return `
-    <article class="scrum-card group cursor-pointer rounded-lg border border-white/10 bg-zinc-950/70 p-3 shadow-[0_10px_30px_rgba(0,0,0,.22)] transition hover:border-cyan-300/30" data-card-id="${escapeHTML(card.id)}" data-action="click->scrum#openCard">
+    <article class="scrum-card scrum-card-draggable group cursor-grab rounded-lg border border-white/10 bg-zinc-950/70 p-3 shadow-[0_10px_30px_rgba(0,0,0,.22)] transition hover:border-cyan-300/30 active:cursor-grabbing" data-card-id="${escapeHTML(card.id)}" data-scrum-column="${escapeHTML(card.column)}" data-action="click->scrum#openCard">
       <div class="flex items-start justify-between gap-2">
         <h4 class="text-sm font-semibold leading-snug text-zinc-100">${escapeHTML(card.title)}</h4>
         <div class="flex shrink-0 flex-col items-end gap-1">
@@ -66,9 +66,9 @@ function renderCard(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"
 function renderColumn(column: string, cards: ScrumCard[], playQueue?: ScrumBoardResponse["play_queue"]): string {
   const label = COLUMN_LABELS[column] ?? column;
   const accent = COLUMN_ACCENT[column] ?? "border-white/10 bg-zinc-900/40";
-  const items = cards.length ? cards.map((card) => renderCard(card, playQueue)).join("") : `<p class="rounded-md border border-dashed border-white/10 px-3 py-6 text-center text-xs text-zinc-500">No cards</p>`;
+  const items = cards.length ? cards.map((card) => renderCard(card, playQueue)).join("") : `<p class="scrum-column-empty rounded-md border border-dashed border-white/10 px-3 py-6 text-center text-xs text-zinc-500">Drop cards here</p>`;
   return `
-    <div class="scrum-column flex min-h-0 min-w-[280px] flex-1 flex-col rounded-xl border ${accent} p-3" data-column="${escapeHTML(column)}">
+    <div class="scrum-column flex min-h-0 min-w-[280px] flex-1 flex-col rounded-xl border ${accent} p-3" data-column="${escapeHTML(column)}" data-scrum-dropzone="${escapeHTML(column)}">
       <header class="mb-3 flex items-center justify-between gap-2">
         <div class="flex items-center gap-2 min-w-0">
           <h3 class="truncate text-xs font-semibold uppercase tracking-[.16em] text-zinc-200">${escapeHTML(label)}</h3>
@@ -76,7 +76,7 @@ function renderColumn(column: string, cards: ScrumCard[], playQueue?: ScrumBoard
         </div>
         <button type="button" data-action="click->scrum#stopCardClick scrum#openCreateCardModal" data-column="${escapeHTML(column)}" class="shrink-0 rounded border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400 transition hover:border-cyan-300/40 hover:text-cyan-200" title="Add card">+</button>
       </header>
-      <div class="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">${items}</div>
+      <div class="scrum-column-dropzone scrollbar min-h-[120px] flex-1 space-y-3 overflow-y-auto pr-1">${items}</div>
     </div>
   `;
 }
@@ -146,6 +146,17 @@ export function renderScrumEmptyState(message: string): string {
   return `<div class="flex h-full min-h-[240px] items-center justify-center rounded-xl border border-dashed border-white/10 p-8 text-sm text-zinc-500">${escapeHTML(message)}</div>`;
 }
 
+export function renderScrumBoardLoadingOverlay(message = "Working…"): string {
+  return `
+    <div data-scrum-target="boardOverlay" class="pointer-events-none absolute inset-0 z-10 hidden items-center justify-center rounded-xl border border-white/10 bg-zinc-950/80 backdrop-blur-sm">
+      <div class="flex flex-col items-center gap-3 px-6 text-center">
+        <div class="h-9 w-9 animate-spin rounded-full border-2 border-cyan-300/25 border-t-cyan-300 shadow-[0_0_24px_rgba(103,232,249,.35)]"></div>
+        <p data-scrum-target="boardOverlayMessage" class="text-sm font-medium text-cyan-100">${escapeHTML(message)}</p>
+      </div>
+    </div>
+  `;
+}
+
 export function renderProjectScrumShell(projectLocation: string): string {
   return `
     <div data-project-tab-panel="scrum" class="flex min-h-[520px] flex-col gap-3">
@@ -161,7 +172,8 @@ export function renderProjectScrumShell(projectLocation: string): string {
         </div>
       </div>
 
-      <div class="scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+      <div class="relative scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+        ${renderScrumBoardLoadingOverlay()}
         <div data-scrum-target="board" class="scrum-kanban h-full min-h-[420px]">
           ${renderScrumEmptyState("Loading scrum board…")}
         </div>
