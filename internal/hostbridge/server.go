@@ -18,6 +18,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mkdir", s.handleMkdir)
 	mux.HandleFunc("/v1/pick-directory", s.handlePickDirectory)
 	mux.HandleFunc("/v1/terminal/ws", s.handleTerminalWS)
+	mux.HandleFunc("/v1/project-map", s.handleProjectMap)
+	mux.HandleFunc("/v1/project-map/scan", s.handleProjectMapScan)
 	return mux
 }
 
@@ -37,6 +39,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"mkdir":         true,
 		"browse":        true,
 		"terminal":      true,
+		"project_map":   true,
 	})
 }
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
@@ -31,7 +32,7 @@ func (s *Server) handleProjectMap(w http.ResponseWriter, r *http.Request, id int
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		payload, err := loadProjectCodebaseMapPayload(location)
+		payload, err := s.loadProjectCodebaseMapPayload(r.Context(), location)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
@@ -42,7 +43,7 @@ func (s *Server) handleProjectMap(w http.ResponseWriter, r *http.Request, id int
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		payload, err := scanProjectCodebaseMap(r.Context(), project)
+		payload, err := s.scanProjectCodebaseMap(r.Context(), project)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
@@ -53,7 +54,20 @@ func (s *Server) handleProjectMap(w http.ResponseWriter, r *http.Request, id int
 	}
 }
 
-func loadProjectCodebaseMapPayload(location string) (map[string]any, error) {
+func (s *Server) loadProjectCodebaseMapPayload(ctx context.Context, location string) (map[string]any, error) {
+	if client := s.hostBridgeClient(); client != nil && !projectPathAccessibleLocally(location) {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		cm, mapPath, exists, err := s.loadProjectMapViaBridge(ctx, location)
+		if err != nil {
+			return nil, err
+		}
+		return codebaseMapPayload(cm, mapPath, exists), nil
+	}
+	return loadProjectCodebaseMapPayloadLocal(location)
+}
+
+func loadProjectCodebaseMapPayloadLocal(location string) (map[string]any, error) {
 	mapPath := omni.DefaultCodebaseMapPath(location)
 	if _, err := os.Stat(mapPath); err != nil {
 		if os.IsNotExist(err) {
@@ -68,12 +82,25 @@ func loadProjectCodebaseMapPayload(location string) (map[string]any, error) {
 	return codebaseMapPayload(cm, mapPath, true), nil
 }
 
-func scanProjectCodebaseMap(ctx context.Context, project model.Project) (map[string]any, error) {
-	_ = ctx
+func (s *Server) scanProjectCodebaseMap(ctx context.Context, project model.Project) (map[string]any, error) {
 	location := strings.TrimSpace(project.Location)
 	if location == "" {
 		return nil, errProjectLocationMissing
 	}
+
+	if client := s.hostBridgeClient(); client != nil && !projectPathAccessibleLocally(location) {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		cm, mapPath, err := s.scanProjectMapViaBridge(ctx, location, defaultProjectMapMaxFiles)
+		if err != nil {
+			return nil, err
+		}
+		payload := codebaseMapPayload(cm, mapPath, true)
+		payload["message"] = "codebase map updated"
+		payload["source"] = "host-bridge"
+		return payload, nil
+	}
+
 	mapPath := omni.DefaultCodebaseMapPath(location)
 	cm, err := omni.UpdateCodebaseMap(location, mapPath, omni.CodebaseMapConfig{MaxFiles: defaultProjectMapMaxFiles})
 	if err != nil {
@@ -84,7 +111,13 @@ func scanProjectCodebaseMap(ctx context.Context, project model.Project) (map[str
 	}
 	payload := codebaseMapPayload(cm, mapPath, true)
 	payload["message"] = "codebase map updated"
+	payload["source"] = "core-local"
 	return payload, nil
+}
+
+func projectPathAccessibleLocally(location string) bool {
+	info, err := os.Stat(strings.TrimSpace(location))
+	return err == nil && info.IsDir()
 }
 
 var errProjectLocationMissing = &projectLocationError{}
@@ -116,9 +149,7 @@ func codebaseMapPayload(cm omni.CodebaseMap, mapPath string, exists bool) map[st
 
 	modules := make([]map[string]any, 0, minInt(16, len(cm.Modules)))
 	moduleItems := append([]omni.ModuleSummary(nil), cm.Modules...)
-	sort.Slice(moduleItems, func(i, j int) bool {
-		return moduleItems[i].Path < moduleItems[j].Path
-	})
+	sort.Slice(moduleItems, func(i, j int) bool { return moduleItems[i].Path < moduleItems[j].Path })
 	for i, mod := range moduleItems {
 		if i >= 16 {
 			break
@@ -186,26 +217,26 @@ func codebaseMapPayload(cm omni.CodebaseMap, mapPath string, exists bool) map[st
 	sort.Strings(manifests)
 
 	return map[string]any{
-		"exists":           exists,
-		"map_path":         mapPath,
+		"exists":            exists,
+		"map_path":          mapPath,
 		"relative_map_path": relativeProjectPath(cm.Root, mapPath),
-		"generated_at":     cm.GeneratedAt,
-		"revision":         cm.Revision,
-		"workspace_id":     cm.WorkspaceID,
-		"root":             cm.Root,
-		"file_count":       len(cm.Files),
-		"module_count":     len(cm.Modules),
-		"stale_file_count": staleCount,
-		"languages":        languages,
-		"modules":          modules,
-		"entrypoints":      entrypoints,
-		"commands":         commands,
-		"tests":            tests,
-		"risks":            risks,
-		"manifests":        manifests,
-		"open_questions":   cm.OpenQuestions,
-		"files_preview":    codebaseMapFilesPreview(cm.Files, 48),
-		"tree_preview":     codebaseMapTreePreview(cm.Files, 48),
+		"generated_at":      cm.GeneratedAt,
+		"revision":          cm.Revision,
+		"workspace_id":      cm.WorkspaceID,
+		"root":              cm.Root,
+		"file_count":        len(cm.Files),
+		"module_count":      len(cm.Modules),
+		"stale_file_count":  staleCount,
+		"languages":         languages,
+		"modules":           modules,
+		"entrypoints":       entrypoints,
+		"commands":          commands,
+		"tests":             tests,
+		"risks":             risks,
+		"manifests":         manifests,
+		"open_questions":    cm.OpenQuestions,
+		"files_preview":     codebaseMapFilesPreview(cm.Files, 48),
+		"tree_preview":      codebaseMapTreePreview(cm.Files, 48),
 	}
 }
 

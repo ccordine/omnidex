@@ -599,6 +599,32 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 	return card, nil
 }
 
+func (r *Repository) BackfillScrumBoardOrder(ctx context.Context) error {
+	_, err := r.pool.Exec(ctx, `
+		WITH need_backfill AS (
+			SELECT project_id, column_name
+			FROM scrum_cards
+			GROUP BY project_id, column_name
+			HAVING COUNT(*) > 1 AND bool_and(board_order = 0)
+		),
+		ranked AS (
+			SELECT c.id,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY c.project_id, c.column_name
+			           ORDER BY c.updated_at DESC, c.id ASC
+			       ) - 1 AS rn
+			FROM scrum_cards c
+			INNER JOIN need_backfill nb
+				ON nb.project_id = c.project_id AND nb.column_name = c.column_name
+		)
+		UPDATE scrum_cards AS c
+		SET board_order = r.rn
+		FROM ranked AS r
+		WHERE c.id = r.id
+	`)
+	return err
+}
+
 func (r *Repository) DeleteScrumCard(ctx context.Context, projectID int64, cardID string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM scrum_cards WHERE project_id = $1 AND id = $2`, projectID, cardID)
 	if err != nil {

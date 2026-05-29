@@ -53,6 +53,9 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 	if err := r.BackfillMemoryCategories(ctx); err != nil {
 		return err
 	}
+	if err := r.BackfillScrumBoardOrder(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 

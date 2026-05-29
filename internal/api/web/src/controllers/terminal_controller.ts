@@ -17,6 +17,7 @@ export default class TerminalController extends Controller {
   private projectID: number | null = null;
   private activeTab = "";
   private connected = false;
+  private connecting = false;
   private resizeObserver: ResizeObserver | null = null;
   private onProjectOpened = (event: Event) => this.handleProjectOpened(event);
   private onProjectClosed = () => this.handleProjectClosed();
@@ -87,17 +88,20 @@ export default class TerminalController extends Controller {
 
   private async connectTerminal(force: boolean) {
     if (!this.projectID) return;
-    if (this.connected && !force) return;
+    if ((this.connected || this.connecting) && !force) return;
 
     this.disconnectSocket();
     this.ensureTerminal();
+    this.connecting = true;
     this.setStatus("Connecting…", "busy");
     this.term?.reset();
     this.term?.focus();
+
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     this.fitTerminal();
 
-    const cols = this.term?.cols ?? 120;
-    const rows = this.term?.rows ?? 32;
+    const cols = Math.max(this.term?.cols ?? 0, 80);
+    const rows = Math.max(this.term?.rows ?? 0, 24);
     const params = new URLSearchParams({
       project_id: String(this.projectID),
       cols: String(cols),
@@ -110,8 +114,10 @@ export default class TerminalController extends Controller {
     this.socket = socket;
 
     socket.onopen = () => {
+      this.connecting = false;
       this.connected = true;
       this.setStatus("Connected", "ok");
+      this.fitTerminal();
       this.sendResize();
       this.term?.focus();
     };
@@ -126,21 +132,23 @@ export default class TerminalController extends Controller {
     };
 
     socket.onerror = () => {
+      this.connecting = false;
       this.setStatus("Connection error", "error");
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      this.connecting = false;
       this.connected = false;
       if (this.socket === socket) {
         this.socket = null;
-        this.setStatus("Disconnected", "idle");
       }
+      if (event.code === 1000) {
+        this.setStatus("Shell exited", "idle");
+        return;
+      }
+      const reason = event.reason?.trim();
+      this.setStatus(reason ? `Disconnected: ${reason}` : `Disconnected (${event.code})`, "error");
     };
-
-    this.term?.onData((data) => {
-      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-      this.socket.send(data);
-    });
   }
 
   private ensureTerminal() {
@@ -179,6 +187,10 @@ export default class TerminalController extends Controller {
     this.fitAddon = new FitAddon();
     this.term.loadAddon(this.fitAddon);
     this.term.open(this.mountTarget);
+    this.term.onData((data) => {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+      this.socket.send(data);
+    });
 
     this.resizeObserver = new ResizeObserver(() => {
       this.fitTerminal();
@@ -209,6 +221,7 @@ export default class TerminalController extends Controller {
 
   private disconnectSocket() {
     this.connected = false;
+    this.connecting = false;
     if (this.socket) {
       this.socket.onopen = null;
       this.socket.onmessage = null;

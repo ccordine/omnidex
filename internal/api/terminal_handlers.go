@@ -34,29 +34,34 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-	defer cancel()
+	setupCtx, setupCancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer setupCancel()
 
-	project, err := s.repo.GetProject(ctx, projectID)
+	project, err := s.repo.GetProject(setupCtx, projectID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
 
-	cwd, err := s.validateProjectLocation(ctx, project.Location)
+	cwd, err := s.validateProjectLocation(setupCtx, project.Location)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	bridgeBase := strings.TrimRight(strings.TrimSpace(s.hostAgentURL), "/")
-	if resolved, resolveErr := hostbridge.ResolveReachableURL(ctx, bridgeBase, s.hostAgentToken, 4*time.Second); resolveErr == nil && resolved != "" {
+	if resolved, resolveErr := hostbridge.ResolveReachableURL(setupCtx, bridgeBase, s.hostAgentToken, 4*time.Second); resolveErr == nil && resolved != "" {
 		bridgeBase = resolved
 	}
 
 	bridgeURL, err := buildBridgeTerminalWSURL(bridgeBase, cwd, r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	clientConn, err := terminalProxyUpgrader.Upgrade(w, r, nil)
+	if err != nil {
 		return
 	}
 
@@ -71,13 +76,8 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 		if resp != nil {
 			message = fmt.Sprintf("bridge terminal dial failed (%d): %s", resp.StatusCode, err.Error())
 		}
-		writeError(w, http.StatusBadGateway, message)
-		return
-	}
-
-	clientConn, err := terminalProxyUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		_ = bridgeConn.Close()
+		_ = clientConn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31m"+message+"\x1b[0m\r\n"))
+		_ = clientConn.Close()
 		return
 	}
 

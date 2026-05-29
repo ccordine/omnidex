@@ -1,20 +1,11 @@
 package api
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/omni"
 )
-
-func TestCodebaseMapPayloadEmpty(t *testing.T) {
-	payload := codebaseMapPayload(omni.CodebaseMap{}, "/tmp/.omni/codebase-map.json", false)
-	if payload["exists"] != false {
-		t.Fatalf("expected exists=false, got %#v", payload["exists"])
-	}
-	if payload["file_count"] != 0 {
-		t.Fatalf("expected file_count=0, got %#v", payload["file_count"])
-	}
-}
 
 func TestCodebaseMapPayloadSummarizesFiles(t *testing.T) {
 	cm := omni.CodebaseMap{
@@ -40,5 +31,25 @@ func TestCodebaseMapPayloadSummarizesFiles(t *testing.T) {
 	preview, ok := payload["files_preview"].([]map[string]any)
 	if !ok || len(preview) != 2 {
 		t.Fatalf("files_preview=%#v", payload["files_preview"])
+	}
+}
+
+func TestCodebaseMapPayloadEmpty(t *testing.T) {
+	payload := codebaseMapPayload(omni.CodebaseMap{}, "/tmp/.omni/codebase-map.json", false)
+	if payload["exists"] != false {
+		t.Fatalf("expected exists=false, got %#v", payload["exists"])
+	}
+	if payload["file_count"] != 0 {
+		t.Fatalf("expected file_count=0, got %#v", payload["file_count"])
+	}
+}
+
+func TestProjectPathAccessibleLocally(t *testing.T) {
+	dir := t.TempDir()
+	if !projectPathAccessibleLocally(dir) {
+		t.Fatalf("expected temp dir to be accessible locally")
+	}
+	if projectPathAccessibleLocally(filepath.Join(dir, "missing")) {
+		t.Fatalf("expected missing path to be inaccessible")
 	}
 }

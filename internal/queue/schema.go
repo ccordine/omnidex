@@ -226,4 +226,10 @@ ALTER TABLE scrum_cards
 
 ALTER TABLE scrum_cards
     ADD COLUMN IF NOT EXISTS test_criteria JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS board_order INT NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_scrum_cards_project_column_order
+    ON scrum_cards(project_id, column_name, board_order ASC);
 `

@@ -19,3 +19,14 @@ func TestSchemaCreatesSemanticMemoryIndexes(t *testing.T) {
 		}
 	}
 }
+
+func TestSchemaIncludesScrumBoardOrder(t *testing.T) {
+	for _, want := range []string{
+		"board_order INT NOT NULL DEFAULT 0",
+		"idx_scrum_cards_project_column_order",
+	} {
+		if !strings.Contains(projectsUISchemaSQL, want) {
+			t.Fatalf("projectsUISchemaSQL missing %q", want)
+		}
+	}
+}

@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -52,31 +54,91 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	cols := parseTerminalSize(r.URL.Query().Get("cols"), 120)
 	rows := parseTerminalSize(r.URL.Query().Get("rows"), 32)
 
-	shell := strings.TrimSpace(os.Getenv("SHELL"))
-	if shell == "" {
-		shell = "/bin/bash"
-	}
-
-	cmd := exec.Command(shell, "-l")
-	cmd.Dir = abs
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
-
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	conn, err := terminalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	conn, err := terminalUpgrader.Upgrade(w, r, nil)
+	shell := resolveShell()
+	cmd := buildShellCommand(shell, abs)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
-		_ = ptmx.Close()
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31mfailed to start shell:\x1b[0m "+err.Error()+"\r\n"))
+		_ = conn.Close()
 		return
 	}
 
 	runTerminalSession(conn, cmd, ptmx)
+}
+
+func resolveShell() string {
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		return "/bin/bash"
+	}
+	return shell
+}
+
+func buildShellCommand(shell, cwd string) *exec.Cmd {
+	shell = strings.TrimSpace(shell)
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+
+	args := shellInvocationArgs(filepath.Base(shell))
+	cmd := exec.Command(shell, args...)
+	cmd.Dir = cwd
+	cmd.Env = terminalEnv(cwd, shell)
+	return cmd
+}
+
+func shellInvocationArgs(baseName string) []string {
+	switch strings.ToLower(strings.TrimSpace(baseName)) {
+	case "fish":
+		return []string{"-i"}
+	case "zsh":
+		return []string{"-il"}
+	case "bash", "sh", "dash", "ksh", "nu", "nushell":
+		return []string{"-il"}
+	default:
+		return []string{"-i"}
+	}
+}
+
+func terminalEnv(cwd, shell string) []string {
+	pairs := map[string]string{}
+	for _, kv := range os.Environ() {
+		if i := strings.IndexByte(kv, '='); i > 0 {
+			pairs[kv[:i]] = kv[i+1:]
+		}
+	}
+
+	if u, err := user.Current(); err == nil {
+		if u.Username != "" {
+			pairs["USER"] = u.Username
+			pairs["LOGNAME"] = u.Username
+		}
+		if u.HomeDir != "" {
+			pairs["HOME"] = u.HomeDir
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		pairs["HOME"] = home
+	}
+
+	pairs["SHELL"] = shell
+	pairs["PWD"] = cwd
+	pairs["TERM"] = "xterm-256color"
+	pairs["COLORTERM"] = "truecolor"
+	pairs["OMNI_TERMINAL"] = "1"
+
+	out := make([]string, 0, len(pairs))
+	for key, value := range pairs {
+		out = append(out, key+"="+value)
+	}
+	return out
 }
 
 func parseTerminalSize(raw string, fallback int) int {
@@ -101,7 +163,7 @@ func runTerminalSession(conn *websocket.Conn, cmd *exec.Cmd, ptmx *os.File) {
 	}()
 
 	var writeMu sync.Mutex
-	done := make(chan struct{})
+	errc := make(chan error, 2)
 
 	go func() {
 		buf := make([]byte, 32*1024)
@@ -112,46 +174,46 @@ func runTerminalSession(conn *websocket.Conn, cmd *exec.Cmd, ptmx *os.File) {
 				werr := conn.WriteMessage(websocket.BinaryMessage, buf[:n])
 				writeMu.Unlock()
 				if werr != nil {
-					close(done)
+					errc <- werr
 					return
 				}
 			}
 			if err != nil {
-				close(done)
+				errc <- err
 				return
 			}
 		}
 	}()
 
-	for {
-		select {
-		case <-done:
-			return
-		default:
-		}
-
-		msgType, data, err := conn.ReadMessage()
-		if err != nil {
-			return
-		}
-
-		if msgType == websocket.TextMessage && len(data) > 0 && data[0] == '{' {
-			var ctrl struct {
-				Type string `json:"type"`
-				Cols int    `json:"cols"`
-				Rows int    `json:"rows"`
+	go func() {
+		for {
+			msgType, data, err := conn.ReadMessage()
+			if err != nil {
+				errc <- err
+				return
 			}
-			if json.Unmarshal(data, &ctrl) == nil && ctrl.Type == "resize" && ctrl.Cols > 0 && ctrl.Rows > 0 {
-				_ = pty.Setsize(ptmx, &pty.Winsize{
-					Cols: uint16(ctrl.Cols),
-					Rows: uint16(ctrl.Rows),
-				})
-				continue
+
+			if msgType == websocket.TextMessage && len(data) > 0 && data[0] == '{' {
+				var ctrl struct {
+					Type string `json:"type"`
+					Cols int    `json:"cols"`
+					Rows int    `json:"rows"`
+				}
+				if json.Unmarshal(data, &ctrl) == nil && ctrl.Type == "resize" && ctrl.Cols > 0 && ctrl.Rows > 0 {
+					_ = pty.Setsize(ptmx, &pty.Winsize{
+						Cols: uint16(ctrl.Cols),
+						Rows: uint16(ctrl.Rows),
+					})
+					continue
+				}
+			}
+
+			if _, err := ptmx.Write(data); err != nil {
+				errc <- err
+				return
 			}
 		}
+	}()
 
-		if _, err := ptmx.Write(data); err != nil {
-			return
-		}
-	}
+	<-errc
 }

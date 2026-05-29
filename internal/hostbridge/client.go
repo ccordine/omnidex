@@ -137,11 +137,90 @@ func (c *Client) PickDirectory(ctx context.Context, startPath string) (PickResul
 	return PickResult{Path: path}, nil
 }
 
+func (c *Client) ScanProjectTree(ctx context.Context, path string, maxFiles int) (ProjectWalkResult, error) {
+	body, err := json.Marshal(map[string]any{
+		"path":      strings.TrimSpace(path),
+		"max_files": maxFiles,
+	})
+	if err != nil {
+		return ProjectWalkResult{}, err
+	}
+	payload, err := c.postJSON(ctx, "/v1/project-map/scan", body)
+	if err != nil {
+		return ProjectWalkResult{}, err
+	}
+	return decodeProjectWalkResult(payload["walk"])
+}
+
+func (c *Client) PersistProjectMap(ctx context.Context, path string, indexJSON, mapJSON []byte) (string, string, error) {
+	body, err := json.Marshal(map[string]any{
+		"path":       strings.TrimSpace(path),
+		"index_json": json.RawMessage(indexJSON),
+		"map_json":   json.RawMessage(mapJSON),
+	})
+	if err != nil {
+		return "", "", err
+	}
+	payload, err := c.postJSON(ctx, "/v1/project-map/scan", body)
+	if err != nil {
+		return "", "", err
+	}
+	return stringField(payload, "index_path"), stringField(payload, "map_path"), nil
+}
+
+func (c *Client) ReadProjectMap(ctx context.Context, path string) (map[string]any, string, bool, error) {
+	query := url.Values{}
+	query.Set("path", strings.TrimSpace(path))
+	payload, err := c.getJSON(ctx, "/v1/project-map?"+query.Encode())
+	if err != nil {
+		return nil, "", false, err
+	}
+	rawMap, _ := payload["map"].(map[string]any)
+	if rawMap == nil {
+		rawMap = map[string]any{}
+	}
+	return rawMap, stringField(payload, "map_path"), boolField(payload, "exists"), nil
+}
+
+func decodeProjectWalkResult(raw any) (ProjectWalkResult, error) {
+	if raw == nil {
+		return ProjectWalkResult{}, fmt.Errorf("missing walk payload")
+	}
+	blob, err := json.Marshal(raw)
+	if err != nil {
+		return ProjectWalkResult{}, err
+	}
+	var walk ProjectWalkResult
+	if err := json.Unmarshal(blob, &walk); err != nil {
+		return ProjectWalkResult{}, err
+	}
+	return walk, nil
+}
+
 func (c *Client) getJSON(ctx context.Context, path string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
+	c.applyAuth(req)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := readResponseBody(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return decodeResponseBody(raw, resp.StatusCode)
+}
+
+func (c *Client) postJSON(ctx context.Context, path string, body []byte) (map[string]any, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
 	c.applyAuth(req)
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
