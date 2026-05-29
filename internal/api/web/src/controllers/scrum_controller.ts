@@ -27,7 +27,7 @@ import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_con
 import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_config_render";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
 import type { ResolvedAgentConfig } from "../lib/agent_config_types";
-import { renderScrumBoard, renderScrumEmptyState } from "../lib/scrum_render";
+import { renderScrumBoard, renderScrumEmptyState, renderScrumFocusBar } from "../lib/scrum_render";
 import {
   renderScrumCardModal,
   renderScrumModalCardTab,
@@ -48,10 +48,12 @@ import { nextColumn, prevColumn, type ScrumBoard, type ScrumBoardResponse, type 
 import type GxController from "./gx_controller";
 
 export default class ScrumController extends Controller {
-  static targets = ["board", "status"];
+  static targets = ["board", "status", "focus"];
 
   declare readonly boardTarget: HTMLElement;
   declare readonly statusTarget: HTMLElement;
+  declare readonly hasFocusTarget: boolean;
+  declare readonly focusTarget: HTMLElement;
   declare readonly hasBoardTarget: boolean;
   declare readonly hasStatusTarget: boolean;
 
@@ -153,6 +155,9 @@ export default class ScrumController extends Controller {
     this.board = payload.board;
     this.playQueue = payload.play_queue ?? null;
     this.boardTarget.innerHTML = renderScrumBoard(payload.board, payload.cards_by_col, payload.play_queue);
+    if (this.hasFocusTarget) {
+      this.focusTarget.innerHTML = renderScrumFocusBar(payload.board, payload.cards_by_col, payload.play_queue);
+    }
     if (updateStatus && this.shouldPoll()) {
       const queued = payload.play_queue?.queued_count ?? 0;
       const running = payload.play_queue?.running_card_id ? "running" : "idle";

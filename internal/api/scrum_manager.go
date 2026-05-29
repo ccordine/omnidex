@@ -9,8 +9,6 @@ import (
 	"github.com/gryph/omnidex/internal/scrum"
 )
 
-const scrumAgentStatusFooter = scrum.AgentStatusFooter
-
 type ScrumManagerOutcome string
 
 const (
@@ -67,6 +65,18 @@ func resolveScrumManagerOutcome(details model.JobDetails) ScrumManagerOutcome {
 	if outcome, ok := parseScrumManagerOutcome(combined); ok {
 		return outcome
 	}
+	if scrum.IsScrumRawPlay(details.Job.Metadata) || scrum.IsScrumJob(details.Job.Metadata) {
+		switch details.Job.Status {
+		case model.JobStatusCompleted:
+			return ScrumOutcomeSuccess
+		case model.JobStatusFailed:
+			return ScrumOutcomeBlocked
+		case model.JobStatusCanceled:
+			return ScrumOutcomePaused
+		default:
+			return ScrumOutcomeInProgress
+		}
+	}
 	switch details.Job.Status {
 	case model.JobStatusCompleted:
 		return ScrumOutcomeSuccess
@@ -82,17 +92,17 @@ func resolveScrumManagerOutcome(details model.JobDetails) ScrumManagerOutcome {
 func scrumColumnForOutcome(outcome ScrumManagerOutcome) scrumColumnTransition {
 	switch outcome {
 	case ScrumOutcomeSuccess:
-		return scrumColumnTransition{Column: "review", PlayState: "", ConsoleNote: "manager: moved to review (success)"}
+		return scrumColumnTransition{Column: "review", PlayState: "", ConsoleNote: "play: moved to review"}
 	case ScrumOutcomeBlocked:
-		return scrumColumnTransition{Column: "blocked", PlayState: "", ConsoleNote: "manager: moved to blocked"}
+		return scrumColumnTransition{Column: "blocked", PlayState: "", ConsoleNote: "play: moved to blocked"}
 	case ScrumOutcomeFailed:
-		return scrumColumnTransition{Column: "assigned", PlayState: scrumPlayPaused, ConsoleNote: "manager: returned to assigned (failed)"}
+		return scrumColumnTransition{Column: "blocked", PlayState: "", ConsoleNote: "play: moved to blocked (failed)"}
 	case ScrumOutcomePaused:
-		return scrumColumnTransition{Column: "assigned", PlayState: scrumPlayPaused, ConsoleNote: "manager: returned to assigned (paused)"}
+		return scrumColumnTransition{Column: "assigned", PlayState: scrumPlayPaused, ConsoleNote: "play: returned to assigned (paused)"}
 	case ScrumOutcomeInProgress:
-		return scrumColumnTransition{Column: "in_progress", PlayState: scrumPlayRunning, ConsoleNote: "manager: still in progress"}
+		return scrumColumnTransition{Column: "in_progress", PlayState: scrumPlayRunning, ConsoleNote: "play: still in progress"}
 	default:
-		return scrumColumnTransition{Column: "review", PlayState: "", ConsoleNote: "manager: moved to review"}
+		return scrumColumnTransition{Column: "review", PlayState: "", ConsoleNote: "play: moved to review"}
 	}
 }
 

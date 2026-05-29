@@ -2,6 +2,7 @@ import { escapeHTML, trimText } from "./dom";
 import {
   COLUMN_LABELS,
   SCRUM_COLUMNS,
+  pickScrumFocusCard,
   type ScrumBoard,
   type ScrumBoardResponse,
   type ScrumCard,
@@ -80,13 +81,65 @@ function renderColumn(column: string, cards: ScrumCard[], playQueue?: ScrumBoard
   `;
 }
 
+export function renderScrumFocusBar(
+  board: ScrumBoard,
+  cardsByCol: Record<string, ScrumCard[]>,
+  playQueue?: ScrumBoardResponse["play_queue"],
+): string {
+  const focus = pickScrumFocusCard(board, cardsByCol, playQueue);
+  if (!focus) {
+    return `
+      <div class="flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 bg-zinc-950/40 px-4 py-2.5 text-center">
+        <span class="text-xs text-zinc-500">Nothing in Assigned or In Progress</span>
+      </div>
+    `;
+  }
+
+  const columnLabel = COLUMN_LABELS[focus.column] ?? focus.column;
+  const isRunning = focus.play_state === "running";
+  const isQueued = focus.play_state === "queued";
+  const hasActiveRunner = Boolean(playQueue?.running_card_id);
+  const playLabel = hasActiveRunner && !isRunning ? "Queue" : "Play";
+
+  const stateBadge = isRunning
+    ? `<span class="rounded-full border border-amber-300/40 bg-amber-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Running</span>`
+    : isQueued
+      ? `<span class="rounded-full border border-violet-300/40 bg-violet-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-200">Queued${focus.queue_order ? ` #${focus.queue_order}` : ""}</span>`
+      : `<span class="rounded-full border border-white/10 bg-zinc-900/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">${escapeHTML(columnLabel)}</span>`;
+
+  const playButton =
+    isRunning || isQueued
+      ? ""
+      : `<button type="button" data-action="scrum#play" data-card-id="${escapeHTML(focus.id)}" class="rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-cyan-200" title="Play this card">▶ ${escapeHTML(playLabel)}</button>`;
+
+  const pauseButton = isRunning
+    ? `<button type="button" data-action="scrum#pausePlay" data-card-id="${escapeHTML(focus.id)}" class="rounded-md border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:bg-amber-300/20" title="Pause play">⏸ Pause</button>`
+    : "";
+
+  const pivotButton =
+    hasActiveRunner && !isRunning && !isQueued
+      ? `<button type="button" data-action="scrum#pivotPlay" data-card-id="${escapeHTML(focus.id)}" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-xs font-semibold text-violet-100 transition hover:bg-violet-300/20" title="Play this card now">Play now</button>`
+      : "";
+
+  return `
+    <div class="flex max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/70 px-4 py-2.5 shadow-[0_10px_30px_rgba(0,0,0,.18)]">
+      <div class="min-w-0 flex-1">
+        <p class="text-[10px] font-semibold uppercase tracking-[.18em] text-zinc-500">Now playing</p>
+        <button type="button" data-action="scrum#openCard" data-card-id="${escapeHTML(focus.id)}" class="mt-0.5 block max-w-full truncate text-left text-sm font-semibold text-zinc-100 transition hover:text-cyan-200" title="${escapeHTML(focus.title)}">${escapeHTML(focus.title)}</button>
+      </div>
+      <div class="flex shrink-0 items-center gap-2">
+        ${stateBadge}
+        ${playButton}
+        ${pivotButton}
+        ${pauseButton}
+      </div>
+    </div>
+  `;
+}
+
 export function renderScrumBoard(board: ScrumBoard, cardsByCol: Record<string, ScrumCard[]>, playQueue?: ScrumBoardResponse["play_queue"]): string {
   const columns = board.columns?.length ? board.columns : [...SCRUM_COLUMNS];
-  const queueHint =
-    playQueue?.running_card_id || (playQueue?.queued_count ?? 0) > 0
-      ? `<div class="mb-3 rounded-lg border border-violet-300/20 bg-violet-950/20 px-3 py-2 text-xs text-violet-100">${playQueue?.running_card_id ? "Omnidex is running a card" : "Play queue idle"}${(playQueue?.queued_count ?? 0) > 0 ? ` · ${playQueue?.queued_count} queued` : ""}</div>`
-      : "";
-  return `${queueHint}<div class="flex min-h-0 gap-3 overflow-x-auto pb-1">${columns.map((column) => renderColumn(column, cardsByCol[column] ?? [], playQueue)).join("")}</div>`;
+  return `<div class="flex min-h-0 gap-3 overflow-x-auto pb-1">${columns.map((column) => renderColumn(column, cardsByCol[column] ?? [], playQueue)).join("")}</div>`;
 }
 
 export function renderScrumEmptyState(message: string): string {
@@ -96,9 +149,12 @@ export function renderScrumEmptyState(message: string): string {
 export function renderProjectScrumShell(projectLocation: string): string {
   return `
     <div data-project-tab-panel="scrum" class="flex min-h-[520px] flex-col gap-3">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <p class="truncate font-mono text-[11px] text-zinc-500">${escapeHTML(projectLocation)}</p>
-        <div class="flex flex-wrap items-center gap-2">
+      <div class="grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <p class="truncate font-mono text-[11px] text-zinc-500 lg:justify-self-start">${escapeHTML(projectLocation)}</p>
+        <div data-scrum-target="focus" class="flex justify-center lg:justify-self-center">
+          ${renderScrumFocusBar({ id: "", name: "", project_directory: projectLocation, columns: [...SCRUM_COLUMNS], cards: [], updated_at: "" }, {}, undefined)}
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2 lg:justify-self-end">
           <span data-scrum-target="status" class="text-xs text-zinc-500"></span>
           <button type="button" data-action="scrum#openCreateCardModal" class="rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-cyan-200">+ Card</button>
           <button type="button" data-action="scrum#refresh" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-cyan-300/40 hover:text-zinc-100">Refresh</button>

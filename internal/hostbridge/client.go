@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -45,8 +44,9 @@ func (c *Client) Browse(ctx context.Context, path string) (*BrowseResult, error)
 		return nil, err
 	}
 	result := &BrowseResult{
-		Path:   stringField(payload, "path"),
-		Parent: stringField(payload, "parent"),
+		Path:    stringField(payload, "path"),
+		Parent:  stringField(payload, "parent"),
+		Entries: []Entry{},
 	}
 	if rawEntries, ok := payload["entries"].([]any); ok {
 		for _, item := range rawEntries {
@@ -83,16 +83,13 @@ func (c *Client) Mkdir(ctx context.Context, parent, name string) (string, error)
 		return "", err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := readResponseBody(resp.Body)
 	if err != nil {
 		return "", err
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	payload, err := decodeResponseBody(raw, resp.StatusCode)
+	if err != nil {
 		return "", err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("%s", stringField(payload, "error"))
 	}
 	path := stringField(payload, "path")
 	if path == "" {
@@ -122,16 +119,13 @@ func (c *Client) PickDirectory(ctx context.Context, startPath string) (PickResul
 		return PickResult{}, err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := readResponseBody(resp.Body)
 	if err != nil {
 		return PickResult{}, err
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	payload, err := decodeResponseBody(raw, resp.StatusCode)
+	if err != nil {
 		return PickResult{}, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return PickResult{}, fmt.Errorf("%s", stringField(payload, "error"))
 	}
 	if boolField(payload, "canceled") {
 		return PickResult{Canceled: true}, nil
@@ -154,18 +148,11 @@ func (c *Client) getJSON(ctx context.Context, path string) (map[string]any, erro
 		return nil, err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := readResponseBody(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("%s", stringField(payload, "error"))
-	}
-	return payload, nil
+	return decodeResponseBody(raw, resp.StatusCode)
 }
 
 func (c *Client) applyAuth(req *http.Request) {

@@ -13,6 +13,7 @@ import (
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/scrum"
 	"github.com/gryph/omnidex/internal/specialist"
 	toolruntime "github.com/gryph/omnidex/internal/tools"
 	"github.com/gryph/omnidex/internal/verification"
@@ -487,6 +488,10 @@ func (r *nativeRuntimeV3) runResponseDraft() error {
 }
 
 func (r *nativeRuntimeV3) runVerification() error {
+	if scrum.IsScrumJob(r.claim.Job.Metadata) {
+		summary := "verification skipped: scrum play uses direct job outcome"
+		return r.complete("verification", summary, summary)
+	}
 	draft, _ := r.readResponseDraftArtifact()
 	result, err := r.svc.executeV3Tool(r.ctx, r.claim, "verifier", toolruntime.Call{
 		Name: "evidence.inspect",

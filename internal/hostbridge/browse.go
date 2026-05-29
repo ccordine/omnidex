@@ -92,6 +92,13 @@ func ListDirectory(target string, opts BrowseOptions) (*BrowseResult, error) {
 	}, nil
 }
 
+func NonEmptyEntries(entries []Entry) []Entry {
+	if entries == nil {
+		return []Entry{}
+	}
+	return entries
+}
+
 func ensureBrowseAllowed(abs string, opts BrowseOptions) error {
 	roots := make([]string, 0, 4+len(opts.ExtraRoots))
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {

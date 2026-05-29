@@ -34,3 +34,59 @@ func TestScrumPlayQueueSummary(t *testing.T) {
 		t.Fatalf("queued order=%#v", queued)
 	}
 }
+
+func TestScrumManagerAutoAdvance(t *testing.T) {
+	if !scrumManagerAutoAdvance(ScrumOutcomeSuccess) {
+		t.Fatal("success should auto-advance")
+	}
+	if !scrumManagerAutoAdvance(ScrumOutcomeBlocked) {
+		t.Fatal("blocked should auto-advance")
+	}
+	if scrumManagerAutoAdvance(ScrumOutcomePaused) {
+		t.Fatal("paused should not auto-advance")
+	}
+}
+
+func TestNextAutoPlayScrumCardPriority(t *testing.T) {
+	s := &Server{}
+	board := ScrumBoard{
+		Cards: []ScrumCard{
+			{ID: "queued", Column: "assigned", PlayState: scrumPlayQueued, QueueOrder: 1},
+			{ID: "paused", Column: "assigned", PlayState: scrumPlayPaused, UpdatedAt: "2026-05-29T10:00:00Z"},
+			{ID: "idle-assigned", Column: "assigned", UpdatedAt: "2026-05-29T12:00:00Z"},
+			{ID: "idle-progress", Column: "in_progress", UpdatedAt: "2026-05-29T11:00:00Z"},
+		},
+	}
+	if got := s.nextAutoPlayScrumCard(board); got == nil || got.ID != "queued" {
+		t.Fatalf("expected queued card, got %#v", got)
+	}
+
+	board.Cards = board.Cards[1:]
+	if got := s.nextAutoPlayScrumCard(board); got == nil || got.ID != "paused" {
+		t.Fatalf("expected paused card, got %#v", got)
+	}
+
+	board.Cards = board.Cards[1:]
+	if got := s.nextAutoPlayScrumCard(board); got == nil || got.ID != "idle-progress" {
+		t.Fatalf("expected idle in_progress card, got %#v", got)
+	}
+
+	board.Cards = board.Cards[:1]
+	if got := s.nextAutoPlayScrumCard(board); got == nil || got.ID != "idle-assigned" {
+		t.Fatalf("expected idle assigned card, got %#v", got)
+	}
+}
+
+func TestNextPausedScrumCardFIFO(t *testing.T) {
+	s := &Server{}
+	board := ScrumBoard{
+		Cards: []ScrumCard{
+			{ID: "newer", Column: "assigned", PlayState: scrumPlayPaused, UpdatedAt: "2026-05-29T12:00:00Z"},
+			{ID: "older", Column: "assigned", PlayState: scrumPlayPaused, UpdatedAt: "2026-05-29T10:00:00Z"},
+		},
+	}
+	got := s.nextPausedScrumCard(board)
+	if got == nil || got.ID != "older" {
+		t.Fatalf("expected oldest paused card first, got %#v", got)
+	}
+}

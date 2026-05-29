@@ -23,15 +23,15 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		result, err := client.Browse(ctx, target)
 		if err != nil {
-			writeError(w, http.StatusBadGateway, err.Error())
+			writeError(w, http.StatusBadGateway, hostBridgeAPIError(err))
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"path":    result.Path,
-			"parent":  result.Parent,
-			"entries": result.Entries,
-			"source":  "host-bridge",
-		})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"path":    result.Path,
+		"parent":  result.Parent,
+		"entries": hostbridge.NonEmptyEntries(result.Entries),
+		"source":  "host-bridge",
+	})
 		return
 	}
 
@@ -59,7 +59,7 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"path":    result.Path,
 		"parent":  result.Parent,
-		"entries": result.Entries,
+		"entries": hostbridge.NonEmptyEntries(result.Entries),
 		"source":  "core-local",
 	})
 }
@@ -82,7 +82,7 @@ func (s *Server) handleBrowseMkdir(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		path, err := client.Mkdir(ctx, req.Parent, req.Name)
 		if err != nil {
-			writeError(w, http.StatusBadGateway, err.Error())
+			writeError(w, http.StatusBadGateway, hostBridgeAPIError(err))
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"path": path, "source": "host-bridge"})
@@ -111,4 +111,20 @@ func (s *Server) handleBrowseMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"path": path, "source": "core-local"})
+}
+
+func hostBridgeAPIError(err error) string {
+	if err == nil {
+		return "host bridge request failed"
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		return "host bridge request failed"
+	}
+	if strings.Contains(message, "invalid host bridge JSON") ||
+		strings.Contains(message, "404 page not found") ||
+		strings.Contains(message, "method not allowed") {
+		return message + " — rebuild/restart the host bridge (`omni host service install` or `omni host serve --listen 0.0.0.0:8091`)"
+	}
+	return message
 }

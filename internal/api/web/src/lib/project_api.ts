@@ -104,10 +104,18 @@ export async function fetchRecipes(): Promise<{ recipes: RecipeCatalogItem[]; ro
   return readJSON(response);
 }
 
+export function normalizeBrowseResponse(payload: BrowseResponse): BrowseResponse {
+  return {
+    path: payload.path ?? "",
+    parent: payload.parent ?? "",
+    entries: Array.isArray(payload.entries) ? payload.entries : [],
+  };
+}
+
 export async function browseDirectory(path = ""): Promise<BrowseResponse> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   const response = await fetch(`/v1/browse${query}`);
-  return readJSON(response);
+  return normalizeBrowseResponse(await readJSON(response));
 }
 
 export async function createBrowseDirectory(parent: string, name: string): Promise<{ path: string }> {

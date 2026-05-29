@@ -15,6 +15,7 @@ import (
 	"github.com/gryph/omnidex/internal/chat"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/scrum"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -439,6 +440,15 @@ func usesV3NativeSteps(metadataJSON []byte) bool {
 func stepsForJob(pipeline, instruction string, metadataJSON []byte) []stepSeed {
 	if agentconfig.FromJobMetadata(metadataJSON).IsExternal() {
 		return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}
+	}
+	if scrum.IsScrumJob(metadataJSON) {
+		return []stepSeed{
+			{action: "v3_intent_parse", sortIndex: 5},
+			{action: "v3_workspace_research", sortIndex: 20},
+			{action: "v3_planning", sortIndex: 40},
+			{action: "v3_response_draft", sortIndex: 90},
+			{action: "v3_finalize", sortIndex: 120},
+		}
 	}
 	if normalizePipeline(pipeline) == model.PipelineCoding {
 		return stepsForPipeline(model.PipelineCoding)

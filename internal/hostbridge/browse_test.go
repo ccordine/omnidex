@@ -20,6 +20,16 @@ func TestListDirectoryHome(t *testing.T) {
 	}
 }
 
+func TestNonEmptyEntries(t *testing.T) {
+	if got := NonEmptyEntries(nil); got == nil || len(got) != 0 {
+		t.Fatalf("NonEmptyEntries(nil)=%#v want empty slice", got)
+	}
+	items := []Entry{{Name: "a", Path: "/a", IsDir: true}}
+	if got := NonEmptyEntries(items); len(got) != 1 {
+		t.Fatalf("NonEmptyEntries(items)=%#v", got)
+	}
+}
+
 func TestListDirectoryRejectsOutsideRoots(t *testing.T) {
 	_, err := ListDirectory("/etc", BrowseOptions{})
 	if err == nil {

@@ -127,3 +127,27 @@ export function prevColumn(current: string): string | null {
   if (index <= 0) return null;
   return SCRUM_COLUMNS[index - 1];
 }
+
+/** Top play focus: running in-progress, else first in-progress, else first assigned. */
+export function pickScrumFocusCard(
+  board: ScrumBoard,
+  cardsByCol: Record<string, ScrumCard[]>,
+  playQueue?: ScrumBoardResponse["play_queue"],
+): ScrumCard | null {
+  const inProgress = cardsByCol.in_progress ?? [];
+  const assigned = cardsByCol.assigned ?? [];
+
+  if (playQueue?.running_card_id) {
+    const running = board.cards.find((card) => card.id === playQueue.running_card_id);
+    if (running) return running;
+  }
+
+  const runningInColumn = inProgress.find((card) => card.play_state === "running");
+  if (runningInColumn) return runningInColumn;
+
+  if (inProgress.length > 0) return inProgress[0];
+
+  if (assigned.length > 0) return assigned[0];
+
+  return null;
+}

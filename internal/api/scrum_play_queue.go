@@ -199,11 +199,20 @@ func (s *Server) pauseScrumCardPlay(r *http.Request, cardID string) (ScrumCard, 
 	return s.persistScrumCard(r, projectID, card)
 }
 
+func scrumManagerAutoAdvance(outcome ScrumManagerOutcome) bool {
+	switch outcome {
+	case ScrumOutcomeSuccess, ScrumOutcomeFailed, ScrumOutcomeBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board ScrumBoard) (ScrumBoard, error) {
 	if s.repo == nil {
 		return board, nil
 	}
-	changed := false
+	shouldAutoAdvance := false
 	for i, card := range board.Cards {
 		if card.PlayState != scrumPlayRunning || strings.TrimSpace(card.JobID) == "" {
 			continue
@@ -218,9 +227,10 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		}
 		updated := card
 		cardChanged := false
+		var outcome ScrumManagerOutcome
 		switch job.Job.Status {
 		case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
-			outcome := resolveScrumManagerOutcome(job)
+			outcome = resolveScrumManagerOutcome(job)
 			if job.Job.Status == model.JobStatusCompleted && outcome == ScrumOutcomeInProgress {
 				outcome = ScrumOutcomeSuccess
 			}
@@ -248,7 +258,9 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		if cardChanged {
 			if saved, err := s.persistScrumCard(r, projectID, updated); err == nil {
 				board.Cards[i] = saved
-				changed = true
+				if scrumManagerAutoAdvance(outcome) {
+					shouldAutoAdvance = true
+				}
 			}
 		} else if updated.ConsoleLog != card.ConsoleLog {
 			if saved, err := s.persistScrumCard(r, projectID, updated); err == nil {
@@ -257,19 +269,19 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		}
 	}
 
-	if !changed {
-		if running := s.findRunningScrumCard(board); running != nil {
-			return board, nil
-		}
-	} else if s.findRunningScrumCard(board) != nil {
+	if s.findRunningScrumCard(board) != nil {
 		return board, nil
 	}
-	next := s.nextQueuedScrumCard(board)
+	if !shouldAutoAdvance {
+		return board, nil
+	}
+	next := s.nextAutoPlayScrumCard(board)
 	if next == nil {
 		return board, nil
 	}
 	if _, err := s.startScrumCardPlay(r, board, projectID, next.ID); err != nil {
-		return board, err
+		// Stop the chain on enqueue failure (rate limits, token budget, etc.).
+		return board, nil
 	}
 	if projectID > 0 {
 		return s.scrumBoardFromProject(r.Context(), projectID)
@@ -311,13 +323,75 @@ func (s *Server) nextQueuedScrumCard(board ScrumBoard) *ScrumCard {
 	if len(queued) == 0 {
 		return nil
 	}
-	sort.Slice(queued, func(i, j int) bool {
-		if queued[i].QueueOrder == queued[j].QueueOrder {
-			return queued[i].UpdatedAt < queued[j].UpdatedAt
-		}
-		return queued[i].QueueOrder < queued[j].QueueOrder
-	})
+	sortQueuedScrumCards(queued)
 	return &queued[0]
+}
+
+// nextAutoPlayScrumCard picks the next card to run after a play finishes (review/blocked).
+// Priority: explicit queue, paused work, idle in-progress, then idle assigned.
+func (s *Server) nextAutoPlayScrumCard(board ScrumBoard) *ScrumCard {
+	if next := s.nextQueuedScrumCard(board); next != nil {
+		return next
+	}
+	if next := s.nextPausedScrumCard(board); next != nil {
+		return next
+	}
+	if next := s.nextIdleScrumCardInColumn(board, "in_progress"); next != nil {
+		return next
+	}
+	return s.nextIdleScrumCardInColumn(board, "assigned")
+}
+
+func sortQueuedScrumCards(cards []ScrumCard) {
+	sort.Slice(cards, func(i, j int) bool {
+		if cards[i].QueueOrder == cards[j].QueueOrder {
+			return cards[i].UpdatedAt < cards[j].UpdatedAt
+		}
+		return cards[i].QueueOrder < cards[j].QueueOrder
+	})
+}
+
+func (s *Server) nextPausedScrumCard(board ScrumBoard) *ScrumCard {
+	paused := make([]ScrumCard, 0)
+	for _, card := range board.Cards {
+		if card.PlayState != scrumPlayPaused {
+			continue
+		}
+		col := strings.TrimSpace(strings.ToLower(card.Column))
+		if col == "assigned" || col == "in_progress" {
+			paused = append(paused, card)
+		}
+	}
+	if len(paused) == 0 {
+		return nil
+	}
+	sort.Slice(paused, func(i, j int) bool {
+		return paused[i].UpdatedAt < paused[j].UpdatedAt
+	})
+	return &paused[0]
+}
+
+func (s *Server) nextIdleScrumCardInColumn(board ScrumBoard, column string) *ScrumCard {
+	column = strings.TrimSpace(strings.ToLower(column))
+	idle := make([]ScrumCard, 0)
+	for _, card := range board.Cards {
+		if strings.TrimSpace(strings.ToLower(card.Column)) != column {
+			continue
+		}
+		switch card.PlayState {
+		case "", scrumPlayPaused:
+			// paused in assigned is handled earlier; skip paused here
+			if card.PlayState == scrumPlayPaused {
+				continue
+			}
+			idle = append(idle, card)
+		}
+	}
+	if len(idle) == 0 {
+		return nil
+	}
+	sortCardsForColumn(column, idle)
+	return &idle[0]
 }
 
 func maxQueueOrder(board ScrumBoard) int {

@@ -340,12 +340,15 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 	if err := json.Unmarshal(enriched, &meta); err != nil {
 		return enriched, pulled, nil
 	}
+	meta["review_always"] = "off"
 	if executionAgent, _ := meta["execution_agent"].(string); executionAgent == agentconfig.SystemOmnidex {
 		meta["omnidex_no_delegate"] = true
 	} else if executionAgent == agentconfig.SystemCursor || executionAgent == agentconfig.SystemCodex {
 		if _, ok := meta["agent_strict"]; !ok {
 			meta["agent_strict"] = true
 		}
+		meta["scrum_raw_play"] = true
+		delete(meta, "runtime")
 	}
 	out, err := json.Marshal(meta)
 	if err != nil {

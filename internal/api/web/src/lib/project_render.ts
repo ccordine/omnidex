@@ -287,7 +287,7 @@ export function renderProjectMapSection(projectID: number, map: ProjectMapSummar
 }
 
 export function renderBrowseModal(data: BrowseResponse, selectedPath: string, mode: string): string {
-  const dirs = data.entries.filter((entry) => entry.is_dir);
+  const dirs = (data.entries ?? []).filter((entry) => entry.is_dir);
   const rows = dirs
     .map((entry) => {
       const selected = selectedPath === entry.path ? " border-cyan-300/40 bg-cyan-300/10" : " border-white/10";

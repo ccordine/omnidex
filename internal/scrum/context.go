@@ -173,3 +173,15 @@ func IsStrictScrumExternal(raw json.RawMessage) bool {
 	agent := metadataString(raw, "execution_agent")
 	return agent == "cursor" || agent == "codex"
 }
+
+// IsScrumRawPlay marks scrum card jobs that should complete from agent/job status
+// without an Omnidex verification or manager validator pass.
+func IsScrumRawPlay(raw json.RawMessage) bool {
+	if !IsScrumJob(raw) {
+		return false
+	}
+	if metadataString(raw, "scrum_raw_play") == "true" {
+		return true
+	}
+	return IsStrictScrumExternal(raw)
+}

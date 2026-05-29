@@ -33,6 +33,8 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"status":        "ok",
 		"service":       "omni-host-bridge",
 		"native_picker": true,
+		"mkdir":         true,
+		"browse":        true,
 	})
 }
 
@@ -54,7 +56,7 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"path":    result.Path,
 		"parent":  result.Parent,
-		"entries": result.Entries,
+		"entries": NonEmptyEntries(result.Entries),
 	})
 }
 

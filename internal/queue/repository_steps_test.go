@@ -107,12 +107,40 @@ func TestCodingJobStepsIgnoreV3Metadata(t *testing.T) {
 	}
 }
 
+func TestScrumExternalJobUsesSingleExternalStep(t *testing.T) {
+	meta := []byte(`{"source":"omni-scrum","execution_agent":"codex","agent_config":{"agent_system":"codex"}}`)
+	got := stepsForJob("scrum", "implement card", meta)
+	want := []stepSeed{{action: "external_agent_execute", sortIndex: 1}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stepsForJob(scrum external)=%+v want %+v", got, want)
+	}
+}
+
+func TestScrumOmnidexJobSkipsVerificationSteps(t *testing.T) {
+	meta := []byte(`{"source":"omni-scrum","execution_agent":"omnidex","runtime":"v3"}`)
+	got := stepActions(stepsForJob("scrum", "implement card", meta))
+	for _, skip := range []string{"v3_verification", "v3_memory_review", "v3_capability_audit", "v3_external_research"} {
+		if containsString(got, skip) {
+			t.Fatalf("stepsForJob(scrum omnidex) should skip %s, got %#v", skip, got)
+		}
+	}
+}
+
 func stepActions(steps []stepSeed) []string {
 	out := make([]string, 0, len(steps))
 	for _, step := range steps {
 		out = append(out, step.action)
 	}
 	return out
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 func strictlyIncreasingSortIndex(steps []stepSeed) bool {

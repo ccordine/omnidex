@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -36,7 +37,20 @@ func TestResolveScrumManagerOutcomeFromJob(t *testing.T) {
 
 func TestScrumColumnForOutcomeFailed(t *testing.T) {
 	transition := scrumColumnForOutcome(ScrumOutcomeFailed)
-	if transition.Column != "assigned" || transition.PlayState != scrumPlayPaused {
+	if transition.Column != "blocked" || transition.PlayState != "" {
 		t.Fatalf("failed transition = %+v", transition)
+	}
+}
+
+func TestResolveScrumPlayOutcomeFailedJob(t *testing.T) {
+	details := model.JobDetails{
+		Job: model.Job{
+			Status:   model.JobStatusFailed,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"codex","scrum_raw_play":true}`),
+		},
+	}
+	outcome := resolveScrumManagerOutcome(details)
+	if outcome != ScrumOutcomeBlocked {
+		t.Fatalf("outcome=%q want blocked", outcome)
 	}
 }

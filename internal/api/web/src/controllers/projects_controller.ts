@@ -269,13 +269,16 @@ export default class ProjectsController extends Controller {
       this.setModalFeedback("Enter a folder name.", "error");
       return;
     }
+    const parent = this.browsePath;
     this.setModalFeedback("Creating folder…", "busy");
     this.setStatus("Creating folder…", "busy");
     try {
-      const payload = await createBrowseDirectory(this.browsePath, name);
-      await this.openBrowseAt(payload.path);
+      const payload = await createBrowseDirectory(parent, name);
+      await this.openBrowseAt(parent);
       this.browseSelected = payload.path;
       this.renderBrowseView();
+      const field = this.modalPanel()?.querySelector('[data-browse-field="newFolderName"]') as HTMLInputElement | null;
+      if (field) field.value = "";
       this.setModalFeedback(`Created folder “${name}”.`, "ok");
       this.setStatus("Folder created", "ok");
     } catch (error) {

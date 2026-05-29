@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gryph/omnidex/internal/agentconfig"
+	"github.com/gryph/omnidex/internal/scrum"
 )
 
 var scrumColumns = []string{"backlog", "ready", "assigned", "in_progress", "review", "blocked", "done"}
@@ -404,8 +407,16 @@ func buildScrumPlayInstruction(board ScrumBoard, card ScrumCard) string {
 		lines = append(lines, "Project directory: "+board.ProjectDirectory)
 	}
 	lines = appendScrumCardContextLines(lines, card)
-	lines = append(lines, "Use the configured execution agent. Produce evidence for each checklist item.", scrumAgentStatusFooter)
+	if isScrumExternalCard(card) {
+		lines = append(lines, "Execute the task directly in the project workspace.", scrum.AgentStatusFooter)
+	} else {
+		lines = append(lines, "Use the configured execution agent.", scrum.AgentStatusFooter)
+	}
 	return strings.Join(lines, "\n\n")
+}
+
+func isScrumExternalCard(card ScrumCard) bool {
+	return agentconfig.FromJSON(card.AgentConfig).IsExternal()
 }
 
 func cardsByColumn(board ScrumBoard) map[string][]ScrumCard {
