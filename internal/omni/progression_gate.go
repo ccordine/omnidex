@@ -95,7 +95,7 @@ func (g ProgressionGate) ReviewStep(input ProgressionInput) ProgressionDecision 
 		decision.RecoveryToolTask = writeAfterInspectionRecoveryToolTask(input.Prompt, input.ObjectiveLedger, input.Observations, input.WorkingDir)
 		return decision
 	}
-	if latest := latestPlaceholderOnlySuccess(input.Observations); latest != nil && appBuildPromptNeedsFiles(input.Prompt) {
+	if latest := latestPlaceholderOnlySuccess(input.Observations); latest != nil && placeholderOnlySuccessNeedsRecovery(input) {
 		decision.Action = ProgressForceRecovery
 		decision.Reason = "placeholder-only scaffold succeeded but substantive app files are still required"
 		decision.RejectedCommand = latest.Command
@@ -409,15 +409,43 @@ func appBuildObjectiveNeedsFileCreation(ledger []StructuredObjective) bool {
 }
 
 func appBuildPromptNeedsFiles(prompt string) bool {
-	prompt = strings.ToLower(prompt)
-	needles := []string{"calculator", "app", "cli", "ui", "html", "javascript", "webpack", "build", "zig", "go", "rust"}
-	matches := 0
-	for _, needle := range needles {
+	prompt = strings.ToLower(strings.TrimSpace(prompt))
+	if strings.Contains(prompt, "calculator app") {
+		return true
+	}
+	buildVerbs := []string{"build", "create", "implement", "scaffold", "make", "develop", "write"}
+	fileTargets := []string{"app", "project", "javascript", "react", "html", "ui", "website", "cli", "frontend", "component"}
+	hasBuildVerb := false
+	hasFileTarget := false
+	for _, needle := range buildVerbs {
 		if strings.Contains(prompt, needle) {
-			matches++
+			hasBuildVerb = true
+			break
 		}
 	}
-	return (strings.Contains(prompt, "build") && matches >= 2) || strings.Contains(prompt, "calculator app")
+	for _, needle := range fileTargets {
+		if strings.Contains(prompt, needle) {
+			hasFileTarget = true
+			break
+		}
+	}
+	return hasBuildVerb && hasFileTarget
+}
+
+func placeholderOnlySuccessNeedsRecovery(input ProgressionInput) bool {
+	if appBuildPromptNeedsFiles(input.Prompt) {
+		return true
+	}
+	if objectiveLedgerNeedsSubstantiveAppFiles(input.ObjectiveLedger) {
+		return true
+	}
+	if shouldScanEmptyProjectFiles(input.Prompt, input.ObjectiveLedger, input.Observations) {
+		return true
+	}
+	if workspaceHasEmptyProjectFiles(input.WorkingDir) {
+		return true
+	}
+	return workspaceMissingAppFiles(input.WorkingDir)
 }
 
 func workspaceMissingAppFiles(root string) bool {

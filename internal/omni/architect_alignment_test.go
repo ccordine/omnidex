@@ -22,8 +22,22 @@ func TestValidateArchitectContentAlignsWithPromptRejectsStudioInNoteApp(t *testi
 }
 `
 	err := validateArchitectContentAlignsWithPrompt(studioContent, item, "Build a React note-taking app with CRUD notes", contract)
-	if err == nil || !strings.Contains(err.Error(), "notes app") {
-		t.Fatalf("expected note-app alignment rejection, got %v", err)
+	if err == nil || (!strings.Contains(err.Error(), "notes app") && !strings.Contains(err.Error(), "music studio")) {
+		t.Fatalf("expected note-app or music-studio alignment rejection, got %v", err)
+	}
+}
+
+func TestValidateArchitectContentAlignsWithPromptRejectsStudioForGraphingCalculator(t *testing.T) {
+	contract := ImplementationArchitectContract{
+		AcceptanceCriteria: []string{"graphing calculator", "function plot", "equation input"},
+	}
+	item := ArchitectWorkItem{Operation: "create", CWD: ".", Path: "src/App.js"}
+	studioContent := `export default function App() {
+  return React.createElement('main', { className: 'studio-shell' }, 'Fruity Loops Inspired Music Production Studio');
+}`
+	err := validateArchitectContentAlignsWithPrompt(studioContent, item, "Build a React JS graphing calculator app", contract)
+	if err == nil || (!strings.Contains(err.Error(), "graphing calculator") && !strings.Contains(err.Error(), "music studio")) {
+		t.Fatalf("expected graphing calculator alignment rejection, got %v", err)
 	}
 }
 

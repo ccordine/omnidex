@@ -40,6 +40,7 @@ type App struct {
 	evaluatorThreshold int
 	shellSpecialist    ShellCommandSpecialist
 	codeSpecialist     CodeContentSpecialist
+	thinkingService    ThinkingService
 	cursorArchitect    CursorArchitectAgent
 	codexArchitect     CursorArchitectAgent
 	recipes            []Recipe
@@ -136,6 +137,10 @@ func (a *App) Run(args []string) error {
 	shellSpecialistModel := fs.String("shell-specialist-model", firstNonEmpty(os.Getenv("OMNI_SHELL_SPECIALIST_MODEL"), os.Getenv("OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION"), os.Getenv("OLLAMA_MODEL_SHELL"), defaultOllamaModel), "ollama model for shell execution specialist")
 	shellSpecialistNumCtx := fs.Int("shell-specialist-num-ctx", envIntOrDefault("OMNI_SHELL_SPECIALIST_NUM_CTX", 2048), "Ollama num_ctx option for shell specialist requests; set 0 to use Ollama default")
 	disableShellSpecialist := fs.Bool("disable-shell-specialist", envBoolOrDefault("OMNI_DISABLE_SHELL_SPECIALIST", false), "disable delegated shell execution specialist")
+	thinkingModel := fs.String("thinking-model", thinkingModelFromEnv(), "ollama model for internal thinking/pilot channel")
+	thinkingNumCtx := fs.Int("thinking-num-ctx", thinkingNumCtxFromEnv(), "Ollama num_ctx for thinking channel; set 0 to use Ollama default")
+	thinkingMaxSteps := fs.Int("thinking-max-steps", thinkingMaxStepsFromEnv(), "maximum internal reasoning steps per thought channel")
+	disableThinking := fs.Bool("disable-thinking", envBoolOrDefault("OMNI_DISABLE_THINKING", false), "disable internal thinking/pilot channel")
 	noOllama := fs.Bool("no-ollama", false, "disable ollama calls")
 	sessionRoot := fs.String("session-root", "", "override session root directory")
 	runLogRoot := fs.String("run-log-root", "", "override run log root directory")
@@ -205,6 +210,24 @@ func (a *App) Run(args []string) error {
 			a.shellSpecialist = NewOllamaShellCommandSpecialist(shellClient)
 			a.codeSpecialist = NewOllamaCodeContentSpecialist(shellClient)
 		}
+		if !*disableThinking {
+			thinkingClient := NewOllamaClient(*endpointFlag, *thinkingModel)
+			thinkingClient.ConfigureRuntime(*ollamaKeepAlive, *thinkingNumCtx)
+			a.thinkingService = NewOllamaThinkingService(thinkingClient, nil, *thinkingMaxSteps)
+		}
+	}
+
+	a.web = websearch.New([]string{"duckduckgo", "yahoo", "google"}, 20*time.Second, 3000, 7000)
+	if dbURL := firstNonEmpty(*memoryDatabaseURL, os.Getenv("OMNI_MEMORY_DATABASE_URL"), os.Getenv("DATABASE_URL")); dbURL != "" {
+		poolCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		pool, poolErr := pgxpool.New(poolCtx, dbURL)
+		cancel()
+		if poolErr != nil {
+			return fmt.Errorf("connect memory database: %w", poolErr)
+		}
+		a.pgPool = pool
+		a.memory = NewPGMemoryStore(NewPgxMemoryRunner(pool))
+		defer a.pgPool.Close()
 	}
 
 	if strictOneShot || !isInteractive(a.in) {
@@ -226,9 +249,53 @@ func (a *App) Run(args []string) error {
 		}
 		activeDirectory := workspacePathOrCurrentDir()
 		prepCtx := a.prepareInteractiveTurnContext(context.Background(), string(promptBytes), activeDirectory, emitOneShotPrepEvent)
+		input := string(promptBytes)
+		turnID := "oneshot_001"
+		execPrompt := input
+		thinkingService := a.thinkingService
+		if thinkingService != nil {
+			if thoughtStore, _ := NewThoughtChannelStore("", workspaceHash(activeDirectory), turnID); thoughtStore != nil {
+				if svc, ok := thinkingService.(OllamaThinkingService); ok {
+					svc.Store = thoughtStore
+					svc.Deps = a.buildThinkingToolDeps()
+					thinkingService = svc
+				}
+			}
+			emitOneShotEvent(StructuredCommandEvent{Type: "thinking_pilot_started", Summary: "Thinking pilot is the turn entry point", Details: map[string]string{"turn_id": turnID}})
+			pilotOutcome, pilotErr := thinkingService.OrchestrateTurn(context.Background(), ThinkingInput{
+				TurnID:          turnID,
+				Trigger:         "turn_entry",
+				UserPrompt:      input,
+				WorkingDir:      activeDirectory,
+				SessionMemories: prepCtx.SessionMemories,
+				PrepContext:     prepCtx.Bundle,
+				ActivePrompt:    NewActivePromptContext(input, "", explicitReactAppAcceptanceCriteria(input, "")),
+			}, emitOneShotEvent)
+			if pilotErr != nil {
+				emitOneShotEvent(StructuredCommandEvent{Type: "thinking_pilot_failed", Summary: "Thinking pilot failed; falling back to execution layer", Details: map[string]string{"error": truncateOutput(pilotErr.Error())}})
+			} else {
+				emitOneShotEvent(StructuredCommandEvent{Type: "thinking_pilot_decision", Summary: "Thinking pilot decided next action", Details: map[string]string{
+					"action":              string(pilotOutcome.Action),
+					"channel_id":          pilotOutcome.ChannelID,
+					"execution_prompt":    truncateOutput(pilotOutcome.ExecutionPrompt),
+					"execution_tool_task": truncateOutput(pilotOutcome.ExecutionToolTask),
+				}})
+				if pilotOutcome.Action == ThinkingActionDirectAnswer {
+					answer := strings.TrimSpace(pilotOutcome.DirectAnswer)
+					fmt.Fprintln(a.out, answer)
+					return nil
+				}
+				if strings.TrimSpace(pilotOutcome.ExecutionPrompt) != "" {
+					execPrompt = strings.TrimSpace(pilotOutcome.ExecutionPrompt)
+				}
+				if task := strings.TrimSpace(pilotOutcome.ExecutionToolTask); task != "" {
+					execPrompt = strings.TrimSpace(execPrompt + "\n\nPilot execution scope: " + task)
+				}
+			}
+		}
 		_, err = runStructuredCommandDecisionWithConfig(
 			context.Background(),
-			string(promptBytes),
+			execPrompt,
 			nil,
 			a.structuredPlannerClient(),
 			a.out,
@@ -251,6 +318,8 @@ func (a *App) Run(args []string) error {
 				CodexArchitectAgent:     a.codexArchitect,
 				EnableCommandCache:      *enableCommandCache,
 				CommandCacheRoot:        *commandCacheRoot,
+				ThinkingService:         thinkingService,
+				ThoughtTurnID:           turnID,
 			},
 		)
 		return err
@@ -287,19 +356,6 @@ func (a *App) Run(args []string) error {
 
 	if err := a.store.Save(session); err != nil {
 		return err
-	}
-
-	a.web = websearch.New([]string{"duckduckgo", "yahoo", "google"}, 20*time.Second, 3000, 7000)
-	if dbURL := firstNonEmpty(*memoryDatabaseURL, os.Getenv("OMNI_MEMORY_DATABASE_URL"), os.Getenv("DATABASE_URL")); dbURL != "" {
-		poolCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		pool, poolErr := pgxpool.New(poolCtx, dbURL)
-		cancel()
-		if poolErr != nil {
-			return fmt.Errorf("connect memory database: %w", poolErr)
-		}
-		a.pgPool = pool
-		a.memory = NewPGMemoryStore(NewPgxMemoryRunner(pool))
-		defer a.pgPool.Close()
 	}
 
 	a.runLogger, err = NewRunLogger(*runLogRoot, session.WorkspaceHash)
@@ -1268,16 +1324,13 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 		a.printTimelineEvent(evt)
 		activity.Resume()
 	}
-	emitEvent("structured_command_started", "LLM structured command decision started", map[string]string{
-		"permission_mode": string(session.Permission),
-	})
 
 	_ = a.runLogger.Log("structured_command", "turn_started", map[string]interface{}{
 		"user_input":       input,
 		"permission_mode":  session.Permission,
 		"workspace":        session.WorkspacePath,
 		"active_directory": session.ActiveDirectoryPath,
-		"execution_policy": "stdin_prompt_llm_json_command_execute",
+		"execution_policy": "thinking_pilot_entry_then_execution",
 	})
 
 	if activity == nil {
@@ -1295,9 +1348,84 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 	memoryCtx := prepCtx.Memory
 	sessionMemories := append([]SessionMemory(nil), session.Memories...)
 	sessionMemories = append(sessionMemories, prepCtx.SessionMemories...)
+	thoughtStore, _ := NewThoughtChannelStore("", session.WorkspaceHash, turnID)
+	thinkingService := a.thinkingService
+	if thinkingService != nil && thoughtStore != nil {
+		if svc, ok := thinkingService.(OllamaThinkingService); ok {
+			svc.Store = thoughtStore
+			svc.Deps = a.buildThinkingToolDeps()
+			thinkingService = svc
+		}
+	}
+
+	emitEvent("thinking_pilot_started", "Thinking pilot is the turn entry point", map[string]string{
+		"turn_id": turnID,
+	})
+	execPrompt := input
+	pilotToolTask := ""
+	if thinkingService != nil {
+		pilotOutcome, pilotErr := thinkingService.OrchestrateTurn(signalCtx, ThinkingInput{
+			TurnID:          turnID,
+			Step:            0,
+			Trigger:         "turn_entry",
+			UserPrompt:      input,
+			WorkingDir:      activeDirectory,
+			SessionMemories: sessionMemories,
+			PrepContext:     prepCtx.Bundle,
+			ActivePrompt:    NewActivePromptContext(input, "", explicitReactAppAcceptanceCriteria(input, "")),
+		}, func(evt StructuredCommandEvent) {
+			emitEvent(evt.Type, evt.Summary, evt.Details)
+		})
+		if pilotErr != nil {
+			emitEvent("thinking_pilot_failed", "Thinking pilot failed; falling back to execution layer", map[string]string{
+				"error": truncateOutput(pilotErr.Error()),
+			})
+		} else {
+			emitEvent("thinking_pilot_decision", "Thinking pilot decided next action", map[string]string{
+				"action":              string(pilotOutcome.Action),
+				"channel_id":          pilotOutcome.ChannelID,
+				"execution_prompt":    truncateOutput(pilotOutcome.ExecutionPrompt),
+				"execution_tool_task": truncateOutput(pilotOutcome.ExecutionToolTask),
+			})
+			if pilotOutcome.Action == ThinkingActionDirectAnswer {
+				assistantResponse := strings.TrimSpace(pilotOutcome.DirectAnswer)
+				assistantResponse = a.reviewFinalResponse(context.Background(), input, assistantResponse, []string{
+					"pilot_action=direct_answer",
+					"channel_id=" + pilotOutcome.ChannelID,
+				}, emitEvent)
+				a.persistInteractiveTurnMemory(context.Background(), turnID, input, assistantResponse, memoryCtx.Tags, CommandDecisionResult{Answer: assistantResponse}, emitEvent)
+				emitEvent("thinking_pilot_direct_answer", "Thinking pilot answered user directly", map[string]string{
+					"channel_id": pilotOutcome.ChannelID,
+				})
+				turn := Turn{
+					ID:                   turnID,
+					UserInput:            input,
+					IntentClassification: IntentExecution,
+					Confidence:           1.0,
+					ReasonCodes:          []string{"thinking_pilot_direct_answer"},
+					Response:             assistantResponse,
+					Events:               events,
+					CreatedAt:            nowUTC(),
+				}
+				return turn, assistantResponse, nil
+			}
+			if strings.TrimSpace(pilotOutcome.ExecutionPrompt) != "" {
+				execPrompt = strings.TrimSpace(pilotOutcome.ExecutionPrompt)
+			}
+			pilotToolTask = strings.TrimSpace(pilotOutcome.ExecutionToolTask)
+		}
+	}
+	if pilotToolTask != "" {
+		execPrompt = strings.TrimSpace(execPrompt + "\n\nPilot execution scope: " + pilotToolTask)
+	}
+	emitEvent("structured_command_started", "Execution layer invoked by thinking pilot", map[string]string{
+		"permission_mode": string(session.Permission),
+		"exec_prompt":     truncateOutput(execPrompt),
+	})
+
 	result, execErr := runStructuredCommandDecisionWithConfig(
 		signalCtx,
-		input,
+		execPrompt,
 		session.Messages,
 		a.structuredPlannerClient(),
 		&stdoutBuf,
@@ -1335,6 +1463,8 @@ func (a *App) handleTurn(session *Session, input string, activity *activityIndic
 			CodexArchitectAgent:     a.codexArchitect,
 			EnableCommandCache:      a.enableCommandCache,
 			CommandCacheRoot:        a.commandCacheRoot,
+			ThinkingService:         thinkingService,
+			ThoughtTurnID:           turnID,
 		},
 	)
 	cancel()
@@ -2495,6 +2625,43 @@ func searchAutoResearchMemory(ctx context.Context, memory *PGMemoryStore, querie
 	return out, nil
 }
 
+func (a *App) buildThinkingToolDeps() ThinkingToolDeps {
+	deps := ThinkingToolDeps{WebSearch: a.web}
+	if a.memory == nil {
+		return deps
+	}
+	memory := a.memory
+	deps.MemorySearch = func(searchCtx context.Context, query string) (string, error) {
+		query = strings.TrimSpace(query)
+		if query == "" {
+			return "memory_search requires a query", nil
+		}
+		if err := memory.EnsureSchema(searchCtx); err != nil {
+			return "", err
+		}
+		queries := BuildWebResearchQueries(query, ContextToolPlan{NeedsWebResearch: true}, 3)
+		if len(queries) == 0 {
+			queries = []string{query}
+		}
+		records, err := searchAutoResearchMemory(searchCtx, memory, queries, 6)
+		if err != nil {
+			return "", err
+		}
+		if len(records) == 0 {
+			records, err = memory.SearchMemory(searchCtx, query, nil, 6)
+			if err != nil {
+				return "", err
+			}
+		}
+		text := formatAutoResearchMemoryContext(records, 4000)
+		if strings.TrimSpace(text) == "" {
+			return "no memory matches for: " + query, nil
+		}
+		return text, nil
+	}
+	return deps
+}
+
 func formatAutoResearchMemoryContext(records []MemoryRecord, budget int) string {
 	if len(records) == 0 {
 		return ""
@@ -3141,8 +3308,12 @@ func (a *App) printTimeline(events []Event) {
 }
 
 func (a *App) printTimelineEvent(evt Event) {
+	prefix := "  "
+	if isThinkingTimelineEvent(evt.Type) {
+		prefix = "  THK> "
+	}
 	fmt.Fprintf(a.out, "\n[%s]\n", evt.CreatedAt)
-	fmt.Fprintf(a.out, "  %-32s %s\n", evt.Type, evt.Summary)
+	fmt.Fprintf(a.out, "%s%-32s %s\n", prefix, evt.Type, evt.Summary)
 	if len(evt.Details) == 0 {
 		return
 	}
@@ -3186,6 +3357,8 @@ func timelineDetailLimit(key string) int {
 	switch strings.TrimSpace(key) {
 	case "stdout", "stderr", "command":
 		return defaultStructuredObservationChars
+	case "thought", "conclusion", "thinking", "result", "recovery_tool_task":
+		return thoughtTimelineDetailLimit
 	default:
 		return 400
 	}

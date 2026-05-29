@@ -73,14 +73,23 @@ func validateArchitectContentAlignsWithPrompt(content string, item ArchitectWork
 	toolTask := strings.Join(contract.Guardrails, " ")
 	wantsMusic := promptRequestsMusicStudio(prompt, toolTask) || len(musicStudioAcceptanceCriteria(contract.AcceptanceCriteria)) > 0
 	wantsNotes := promptRequestsNoteApp(prompt, toolTask) || len(noteAppAcceptanceCriteria(contract.AcceptanceCriteria)) > 0
+	wantsGraphing := promptRequestsGraphingCalculator(prompt, toolTask)
 	hasMusic := contentContainsAnySignal(trimmed, musicStudioDomainSignals)
 	hasNotes := contentContainsAnySignal(trimmed, noteAppDomainSignals)
 
 	switch {
+	case !wantsMusic && hasMusic:
+		return fmt.Errorf("alignment_validator rejected: content implements a music studio app but the active prompt does not request music production")
 	case wantsNotes && hasMusic && !wantsMusic:
 		return fmt.Errorf("alignment_validator rejected: content implements a music studio app but the active prompt requests a notes app")
 	case wantsMusic && hasNotes && !wantsNotes:
 		return fmt.Errorf("alignment_validator rejected: content implements a notes app but the active prompt requests a music production app")
+	case wantsGraphing && hasMusic:
+		return fmt.Errorf("alignment_validator rejected: content implements a music studio app but the active prompt requests a graphing calculator")
+	case wantsGraphing && hasNotes && !strings.Contains(strings.ToLower(prompt), "note"):
+		return fmt.Errorf("alignment_validator rejected: content implements a notes app but the active prompt requests a graphing calculator")
+	case !wantsNotes && !wantsMusic && !wantsGraphing && hasMusic:
+		return fmt.Errorf("alignment_validator rejected: content implements a music studio app but the active prompt requests a different application")
 	}
 	path := filepath.ToSlash(strings.ToLower(strings.TrimSpace(item.Path)))
 	if architectAlignmentChecksAcceptanceCriteria(path) && len(contract.AcceptanceCriteria) > 0 {
@@ -139,13 +148,19 @@ func noteAppAcceptanceCriteria(criteria []string) []string {
 }
 
 func foreignDomainSignalsForPrompt(prompt, toolTask string, criteria []string) []string {
-	if promptRequestsMusicStudio(prompt, toolTask) {
-		return noteAppDomainSignals
+	if promptRequestsMusicStudio(prompt, toolTask) || len(musicStudioAcceptanceCriteria(criteria)) > 0 {
+		out := append([]string(nil), noteAppDomainSignals...)
+		out = append(out, graphingCalculatorDomainSignals...)
+		return out
 	}
+	out := append([]string(nil), musicStudioDomainSignals...)
 	if promptRequestsNoteApp(prompt, toolTask) || len(noteAppAcceptanceCriteria(criteria)) > 0 {
-		return musicStudioDomainSignals
+		return out
 	}
-	return nil
+	if promptRequestsGraphingCalculator(prompt, toolTask) {
+		out = append(out, noteAppDomainSignals...)
+	}
+	return out
 }
 
 func cssMustIncludeForContract(contract ImplementationArchitectContract) []string {
@@ -231,8 +246,14 @@ func memoryBriefLooksForeignToPrompt(memory SessionMemory, prompt, toolTask stri
 	if content == "" {
 		return false
 	}
-	if promptRequestsNoteApp(prompt, toolTask) {
-		return contentContainsAnySignal(content, musicStudioDomainSignals)
+	if !promptRequestsMusicStudio(prompt, toolTask) && contentContainsAnySignal(content, musicStudioDomainSignals) {
+		return true
+	}
+	if promptRequestsNoteApp(prompt, toolTask) && contentContainsAnySignal(content, musicStudioDomainSignals) {
+		return true
+	}
+	if promptRequestsGraphingCalculator(prompt, toolTask) && (contentContainsAnySignal(content, musicStudioDomainSignals) || contentContainsAnySignal(content, noteAppDomainSignals)) {
+		return true
 	}
 	if promptRequestsMusicStudio(prompt, toolTask) {
 		return contentContainsAnySignal(content, noteAppDomainSignals)

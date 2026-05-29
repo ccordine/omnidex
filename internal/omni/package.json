@@ -1,0 +1,17 @@
+{
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest"
+  },
+  "name": "omnidex-app",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 0.0.0.0",
+    "preview": "vite --host 0.0.0.0",
+    "test": "node scripts/smoke-test.mjs"
+  },
+  "type": "module",
+  "version": "0.1.0"
+}

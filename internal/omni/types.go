@@ -10,6 +10,7 @@ const (
 	defaultOllamaModel             = "qwen2.5-coder:7b"
 	defaultOllamaPlannerModel      = "qwen2.5-coder:14b"
 	defaultOllamaEvaluatorModel    = "qwen2.5:7b"
+	defaultOllamaThinkingModel     = "qwen2.5:7b"
 	defaultEvaluatorThreshold      = 70
 	maxConversationHistoryMessages = 16
 )

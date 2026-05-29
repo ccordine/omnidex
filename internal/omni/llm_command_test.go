@@ -2735,23 +2735,23 @@ func TestNormalizeStructuredCommandAddsMkdirParents(t *testing.T) {
 }
 
 func TestValidateStructuredCommandAllowsInitialPlaceholderButRejectsRepeatedPlaceholder(t *testing.T) {
-	command := "mkdir src/components src/pages src/hooks && touch src/App.js src/components/NoteList.js src/hooks/useNotes.js"
+	command := "mkdir -p src/components src/pages src/hooks"
+	err := validateStructuredCommandForRun(command, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("initial directory scaffold should be allowed: %v", err)
+	}
 	ledger := []StructuredObjective{
 		{ID: "setup_note_app", Description: "Set up the note-taking app", Status: "pending"},
 		{ID: "implement_crud_operations", Description: "Implement CRUD operations", Status: "pending"},
 	}
-	err := validateStructuredCommandForRun(command, nil, t.TempDir(), ledger)
-	if err != nil {
-		t.Fatalf("initial placeholder scaffold should be allowed as setup progress: %v", err)
-	}
 	err = validateStructuredCommandForRun("touch src/Another.js", []StructuredCommandObservation{{Step: 1, Command: command, ExitCode: 0}}, t.TempDir(), ledger)
 	if err == nil {
-		t.Fatal("expected repeated placeholder-only app mutation to be rejected")
+		t.Fatal("expected touch of source file to be rejected")
 	}
-	if !strings.Contains(err.Error(), "placeholder-only scaffold already exists") {
-		t.Fatalf("unexpected error: %v", err)
+	if !strings.Contains(err.Error(), "empty source files") && !strings.Contains(err.Error(), "placeholder-only") {
+		t.Fatalf("expected touch rejection, got %v", err)
 	}
-	substantive := "mkdir src/components && cat > src/App.js <<'JS'\nexport default function App(){ return 'Notes'; }\nJS"
+	substantive := "mkdir -p src/components && cat > src/App.js <<'JS'\nexport default function App(){ return 'Notes'; }\nJS"
 	if err := validateStructuredCommandForRun(substantive, nil, t.TempDir(), ledger); err != nil {
 		t.Fatalf("substantive app write should be allowed: %v", err)
 	}
@@ -3256,12 +3256,20 @@ func TestWriteRecoveryBypassesShellAfterRepeatedDocumentationDownloadProposals(t
 	}
 }
 
-func TestPlannerAcceptsInitialPlaceholderThenForcesSubstantiveContinuation(t *testing.T) {
+func TestPlannerAcceptsSubstantiveWriteThenContinuesObjectives(t *testing.T) {
 	workspace := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"react":"latest","react-dom":"latest"}}`+"\n"), 0o644); err != nil {
+	contract := buildImplementationArchitectContract(
+		"please continue setting up this project as a react js note app",
+		"",
+		workspace,
+		WorksiteSurvey{Frameworks: []string{"react"}, PackageManager: packageManagerNPM},
+		nil,
+	)
+	seedReactArchitectFileEvidence(t, workspace, contract, "package.json", "vite.config.js", "index.html", "src/main.jsx", "scripts/smoke-test.mjs")
+	if err := os.WriteFile(filepath.Join(workspace, "src", "App.js"), []byte(deterministicGenericReactApp(contract)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(workspace, "src"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, "src", "App.css"), []byte(deterministicGenericReactAppCSS(contract)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	substantive := strings.Join([]string{
@@ -3272,8 +3280,7 @@ func TestPlannerAcceptsInitialPlaceholderThenForcesSubstantiveContinuation(t *te
 	crudWrite := "printf '\\n// crud operations implemented\\n' >> src/components/NoteManager.js && test -s src/components/NoteManager.js"
 	memoryWrite := "printf '\\n// memory storage implemented\\n' >> src/components/NoteManager.js && test -s src/components/NoteManager.js"
 	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":"mkdir -p src/components && touch src/components/NoteManager.js","done":false,"answer":"","objective_ledger":[{"id":"create_note_manager_component","description":"Create notes component structure","status":"pending"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"pending"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"pending"}]}`,
-		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"create_note_manager_component","description":"Create notes component structure","status":"satisfied","evidence":"NoteManager component file written"}]}`,
+		`{"command":` + quoteJSONForTest(substantive) + `,"done":false,"answer":"","objective_ledger":[{"id":"create_note_manager_component","description":"Create notes component structure","status":"pending"},{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"pending"},{"id":"store_notes_in_memory","description":"Store notes in memory","status":"pending"}]}`,
 		`{"command":` + quoteJSONForTest(crudWrite) + `,"done":false,"answer":"","objective_ledger":[{"id":"implement_crud_operations","description":"Implement CRUD operations","status":"satisfied","evidence":"NoteManager contains CRUD marker"}]}`,
 		`{"command":` + quoteJSONForTest(memoryWrite) + `,"done":false,"answer":"","objective_ledger":[{"id":"store_notes_in_memory","description":"Store notes in memory","status":"satisfied","evidence":"NoteManager contains memory marker"}]}`,
 		`{"command":"","done":true,"answer":"Notes component created."}`,
@@ -3294,19 +3301,16 @@ func TestPlannerAcceptsInitialPlaceholderThenForcesSubstantiveContinuation(t *te
 		t.Fatalf("run failed: %v observations=%#v", err, result.Observations)
 	}
 	if structuredEventsContain(events, "structured_planner_repair_started") {
-		t.Fatalf("initial placeholder scaffold should execute as setup progress, not enter repair: %#v", events)
+		t.Fatalf("substantive scaffold should execute as setup progress, not enter repair: %#v", events)
 	}
 	if !structuredEventsContain(events, "partial_completion_accepted") {
-		t.Fatalf("missing partial completion continuation after placeholder scaffold: %#v", events)
+		t.Fatalf("missing partial completion continuation after substantive scaffold: %#v", events)
 	}
 	if structuredEventsContain(events, "structured_command_rejected") {
-		t.Fatalf("initial placeholder scaffold should not be rejected: %#v", events)
+		t.Fatalf("substantive scaffold should not be rejected: %#v", events)
 	}
-	if len(result.Observations) < 2 || !strings.Contains(result.Observations[0].Command, "touch src/components/NoteManager.js") {
-		t.Fatalf("expected placeholder scaffold then substantive write observations: %#v", result.Observations)
-	}
-	if !strings.Contains(result.Observations[1].Command, "cat > src/components/NoteManager.js") {
-		t.Fatalf("expected second observation to expand placeholder with substantive content: %#v", result.Observations)
+	if len(result.Observations) < 1 || !strings.Contains(result.Observations[0].Command, "cat > src/components/NoteManager.js") {
+		t.Fatalf("expected substantive write observation first: %#v", result.Observations)
 	}
 	if _, err := os.Stat(filepath.Join(workspace, "src/components/NoteManager.js")); err != nil {
 		t.Fatalf("expected component file: %v", err)
@@ -6528,9 +6532,12 @@ func TestValidateShellProposalAgainstWriteRequiredToolTaskAllowsMutation(t *test
 }
 
 func TestValidateShellProposalAllowsInitialScaffoldSetupStep(t *testing.T) {
-	command := "mkdir -p src/components && touch src/components/Note.js"
+	command := "mkdir -p src/components"
 	if err := validateShellProposalAgainstToolTask(command, "setup note app component structure"); err != nil {
 		t.Fatalf("initial scaffold setup step rejected: %v", err)
+	}
+	if err := validateShellProposalAgainstToolTask("touch src/components/Note.js", "setup note app component structure"); err == nil {
+		t.Fatal("touch source file should be rejected even during scaffold setup")
 	}
 }
 
@@ -6542,7 +6549,7 @@ func TestValidateShellProposalRejectsTouchForFocusedTDDFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected touch test file to be rejected for focused TDD work")
 	}
-	if !strings.Contains(err.Error(), "substantive source/build/test content") {
+	if !strings.Contains(err.Error(), "empty source files") && !strings.Contains(err.Error(), "substantive source/build/test content") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -8143,7 +8150,7 @@ func TestResearchOnlyReactPromptDoesNotMutateProjectFiles(t *testing.T) {
 	if result.TaskMode != TaskModeResearchOnly {
 		t.Fatalf("task mode = %q, want research_only", result.TaskMode)
 	}
-	if !structuredEventsContain(events, "research_only_mutation_rejected") {
+	if !structuredEventsContain(events, "structured_command_rejected") && !structuredEventsContain(events, "research_only_mutation_rejected") {
 		t.Fatalf("missing research-only rejection event: %#v", events)
 	}
 }
@@ -8720,7 +8727,7 @@ func seedReactArchitectFileEvidence(t *testing.T, workspace string, contract Imp
 		case "src/main.jsx":
 			content = deterministicReactMountEntry("src/main.jsx")
 		case "scripts/smoke-test.mjs":
-			content = deterministicReactSmokeTest(contract.AcceptanceCriteria)
+			content = deterministicReactSmokeTest(contract)
 		default:
 			t.Fatalf("unsupported seed path %q", rel)
 		}

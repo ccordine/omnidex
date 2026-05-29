@@ -210,6 +210,7 @@ type ShellCommandSpecialistInput struct {
 	Observations      []StructuredCommandObservation
 	CompletedActions  []CompletedAction
 	LoopState         StructuredLoopState
+	ProjectFileMap    ProjectFileMap
 	SessionMemories   []SessionMemory
 	WorksiteSurvey    WorksiteSurvey
 }
@@ -232,8 +233,10 @@ type CodeContentSpecialistInput struct {
 	TestFirst         bool
 	RepairFeedback    string
 	RepairAttempt     int
-	RejectedContent   string
-	Observations      []StructuredCommandObservation
+	RejectedContent    string
+	IntegrationContext string
+	ProjectFileMap     ProjectFileMap
+	Observations       []StructuredCommandObservation
 	SessionMemories   []SessionMemory
 	WorksiteSurvey    WorksiteSurvey
 }
@@ -586,6 +589,8 @@ type structuredCommandDecisionRunConfig struct {
 	EnableCommandCache       bool
 	CommandCacheRoot         string
 	TaskMode                 TaskMode
+	ThinkingService          ThinkingService
+	ThoughtTurnID            string
 }
 
 func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, history []Message, client CommandDecisionClient, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), onAsk StructuredCommandAskFunc, cfg structuredCommandDecisionRunConfig) (result CommandDecisionResult, retErr error) {
@@ -901,6 +906,12 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 			}
 		}
 		if handled, err := routeActiveToolchainRepairChildBeforePlanner(ctx, step, prompt, cfg, worksiteSurvey, stdout, stderr, onEvent, onAsk, &result); handled || err != nil {
+			if err != nil {
+				return result, err
+			}
+			continue
+		}
+		if handled, err := runMapDrivenArchitectLane(ctx, step, prompt, cfg, worksiteSurvey, stdout, stderr, onEvent, &result); handled || err != nil {
 			if err != nil {
 				return result, err
 			}
@@ -1629,6 +1640,24 @@ func runStructuredCommandDecisionWithConfig(ctx context.Context, prompt string, 
 	emitStructuredCommandEvent(onEvent, "structured_loop_exhausted", "Structured command loop exhausted attempts", map[string]string{
 		"max_steps": fmt.Sprintf("%d", defaultCommandDecisionMaxSteps),
 	})
+	if cfg.ThinkingService != nil {
+		active := NewActivePromptContext(prompt, "", explicitReactAppAcceptanceCriteria(prompt, ""))
+		_, _ = cfg.ThinkingService.Reason(ctx, ThinkingInput{
+			TurnID:       cfg.ThoughtTurnID,
+			Step:         defaultCommandDecisionMaxSteps,
+			Trigger:      "loop_exhausted",
+			UserPrompt:   prompt,
+			WorkingDir:   cfg.CurrentWorkingDirectory,
+			GateReason:   fmt.Sprintf("structured command loop exhausted after %d steps", defaultCommandDecisionMaxSteps),
+			Observations: result.Observations,
+			LoopState:    structuredLoopStateFromState(ledger, result.Observations),
+			ObjectiveLedger: ledger,
+			SessionMemories: cfg.SessionMemories,
+			PrepContext:     cfg.PrepContext,
+			ProjectFileMap: activeProjectFileMapFromResult(prompt, mapDrivenArchitectToolTask(cfg.CurrentWorkingDirectory, worksiteSurvey), cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations),
+			ActivePrompt: active,
+		}, onEvent)
+	}
 	if hasSuccessfulCommandObservation(result.Observations) || len(result.Observations) > 0 {
 		result.PartialProgress = true
 	}
@@ -1766,6 +1795,18 @@ func runStructuredPayloadCommand(ctx context.Context, step int, command, working
 		emitStructuredCommandEvent(onEvent, "structured_command_partial_failure_classified", "Compound command reported a failed mutation sub-command", map[string]string{
 			"step":    fmt.Sprintf("%d", step),
 			"command": truncateStructuredTimelineValue(command),
+		})
+	}
+	if classifiedExit, partialReason := classifyPlaceholderOnlyMutationAsFailure(command, workingDirectory, exitCode); partialReason != "" {
+		exitCode = classifiedExit
+		if strings.TrimSpace(stderrBuf.String()) != "" {
+			stderrBuf.WriteString("\n")
+		}
+		stderrBuf.WriteString(partialReason)
+		emitStructuredCommandEvent(onEvent, "structured_command_placeholder_mutation_rejected", "Placeholder-only mutation did not produce substantive project evidence", map[string]string{
+			"step":    fmt.Sprintf("%d", step),
+			"command": truncateStructuredTimelineValue(command),
+			"reason":  truncateStructuredTimelineValue(partialReason),
 		})
 	}
 	if exitCode == 0 && hasMoveSpec {
@@ -2074,6 +2115,13 @@ func runProgressionGateRecovery(ctx context.Context, step int, prompt string, de
 		"reason":           decision.Reason,
 		"rejected_command": truncateStructuredTimelineValue(decision.RejectedCommand),
 	})
+	if recoveryTask, ok := runThinkingForRecovery(ctx, step, prompt, decision, cfg, worksiteSurvey, result, onEvent); ok {
+		decision.RecoveryToolTask = recoveryTask
+		emitStructuredCommandEvent(onEvent, "thinking_recovery_adopted", "Execution layer adopting thinking layer recovery plan", map[string]string{
+			"step":               fmt.Sprintf("%d", step),
+			"recovery_tool_task": truncateStructuredTimelineValue(recoveryTask),
+		})
+	}
 	gate := ProgressionGate{MaxRecoveryAttempts: 4}
 	result.Observations = append(result.Observations, gate.RecoveryObservation(step, decision))
 	if handled, err := runDeterministicEmptyFileRecovery(ctx, step, prompt, decision, cfg, worksiteSurvey, onEvent, result); handled || err != nil {
@@ -4106,8 +4154,32 @@ func latestDelegatedShellCommandFailed(result *CommandDecisionResult) bool {
 	return strings.TrimSpace(latest.Command) != "" && latest.ExitCode != 0
 }
 
+func runMapDrivenArchitectLane(ctx context.Context, step int, prompt string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+	if worksiteSurvey.TaskMode == TaskModeResearchOnly {
+		return false, nil
+	}
+	toolTask := mapDrivenArchitectToolTask(cfg.CurrentWorkingDirectory, worksiteSurvey)
+	projectMap := activeProjectFileMapFromResult(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations)
+	if !projectFileMapHasPendingFiles(projectMap) {
+		return false, nil
+	}
+	emitStructuredCommandEvent(onEvent, "project_file_map_active", "Project file map has pending mapped files; routing to architect code lane", map[string]string{
+		"step":         fmt.Sprintf("%d", step),
+		"active_file":  projectMap.ActiveFile.Path,
+		"open_changes": strings.Join(projectMap.OpenChanges, ","),
+		"revision":     fmt.Sprintf("%d", projectMap.Revision),
+	})
+	return runArchitectCodeContentLane(ctx, step, prompt, toolTask, cfg, worksiteSurvey, stdout, stderr, onEvent, result)
+}
+
+func mapDrivenArchitectToolTask(workingDir string, survey WorksiteSurvey) string {
+	root := architectTargetRootForWorkQueue(workingDir)
+	return "Implementation architect target root: " + root + ". Create or modify the actual project files listed in project_file_map.active_file."
+}
+
 func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask string, cfg structuredCommandDecisionRunConfig, worksiteSurvey WorksiteSurvey, stdout, stderr io.Writer, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
 	contract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
+	contract = enrichImplementationArchitectContractWithProjectMap(contract, cfg.CurrentWorkingDirectory, result.Observations)
 	if !hasImplementationArchitectContract(contract) || contract.CurrentItem == nil {
 		return false, nil
 	}
@@ -4377,6 +4449,13 @@ func runArchitectCodeContentLane(ctx context.Context, step int, prompt, toolTask
 			})
 		}
 		command := fmt.Sprintf("architect.apply %s %s", item.Operation, filepath.ToSlash(filepath.Join(item.CWD, item.Path)))
+		contract.ProjectFileMap = markProjectFileMapEntryDone(contract.ProjectFileMap, item.Path)
+		emitStructuredCommandEvent(onEvent, "project_file_map_updated", "Project file map marked mapped file complete after validated apply", map[string]string{
+			"step":         fmt.Sprintf("%d", step),
+			"path":         filepath.ToSlash(filepath.Join(item.CWD, item.Path)),
+			"revision":     fmt.Sprintf("%d", contract.ProjectFileMap.Revision),
+			"open_changes": strings.Join(contract.ProjectFileMap.OpenChanges, ","),
+		})
 		emitStructuredCommandEvent(onEvent, "architect_work_item_applied", "Implementation architect applied generated code content", map[string]string{
 			"step":      fmt.Sprintf("%d", step),
 			"item_id":   item.ID,
@@ -5187,18 +5266,20 @@ func generateValidatedCodeContent(ctx context.Context, step int, prompt string, 
 			"status":  "generating",
 		})
 		proposal, err = cfg.CodeContentSpecialist.GenerateCodeContent(ctx, CodeContentSpecialistInput{
-			Step:              step,
-			UserPrompt:        prompt,
-			ArchitectContract: contract,
-			WorkItem:          item,
-			ExistingContent:   existing,
-			TestFirst:         architectWorkItemIsTestFirst(item),
-			RepairFeedback:    latestCodeContentRepairFeedback(result.Observations),
-			RepairAttempt:     attempt,
-			RejectedContent:   lastRejectedProposal.Content,
-			Observations:      result.Observations,
-			SessionMemories:   cfg.SessionMemories,
-			WorksiteSurvey:    worksiteSurvey,
+			Step:               step,
+			UserPrompt:         prompt,
+			ArchitectContract:  contract,
+			WorkItem:           item,
+			ExistingContent:    existing,
+			TestFirst:          architectWorkItemIsTestFirst(item),
+			RepairFeedback:     latestCodeContentRepairFeedback(result.Observations),
+			RepairAttempt:      attempt,
+			RejectedContent:    lastRejectedProposal.Content,
+			IntegrationContext: integrationContextForProjectFileEntry(contract.ProjectFileMap, item.Path),
+			ProjectFileMap:     contract.ProjectFileMap,
+			Observations:       result.Observations,
+			SessionMemories:    cfg.SessionMemories,
+			WorksiteSurvey:     worksiteSurvey,
 		})
 		if err != nil {
 			return proposal, err
@@ -5364,6 +5445,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 		return ShellCommandProposal{}, false, nil
 	}
 	architectContract := enrichImplementationArchitectContract(buildImplementationArchitectContract(prompt, toolTask, cfg.CurrentWorkingDirectory, worksiteSurvey, result.Observations), prompt, toolTask, cfg.PrepContext, cfg.SessionMemories)
+	architectContract = enrichImplementationArchitectContractWithProjectMap(architectContract, cfg.CurrentWorkingDirectory, result.Observations)
 	if hasImplementationArchitectContract(architectContract) {
 		emitStructuredCommandEvent(onEvent, "implementation_architect_contract_created", "Implementation architect created coding contract", map[string]string{
 			"step":           fmt.Sprintf("%d", step),
@@ -5371,6 +5453,18 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			"framework":      architectContract.Framework,
 			"proof_commands": strings.Join(architectContract.ProofCommands, ","),
 		})
+		if len(architectContract.ProjectFileMap.Files) > 0 {
+			activePath := ""
+			if architectContract.ProjectFileMap.ActiveFile != nil {
+				activePath = architectContract.ProjectFileMap.ActiveFile.Path
+			}
+			emitStructuredCommandEvent(onEvent, "project_file_map_built", "Implementation architect built project file map from work queue", map[string]string{
+				"step":         fmt.Sprintf("%d", step),
+				"file_count":   fmt.Sprintf("%d", len(architectContract.ProjectFileMap.Files)),
+				"active_file":  activePath,
+				"tree_summary": truncateStructuredTimelineValue(architectContract.ProjectFileMap.TreeSummary),
+			})
+		}
 	}
 	var lastRejectedCommand string
 	for attempt := 0; attempt <= defaultShellSpecialistRepairAttempts; attempt++ {
@@ -5391,6 +5485,7 @@ func proposeValidatedShellCommand(ctx context.Context, step int, prompt, toolTas
 			Observations:      result.Observations,
 			CompletedActions:  completedActionsFromState(*ledger, result.Observations),
 			LoopState:         structuredLoopStateFromState(*ledger, result.Observations),
+			ProjectFileMap:    architectContract.ProjectFileMap,
 			SessionMemories:   cfg.SessionMemories,
 			WorksiteSurvey:    worksiteSurvey,
 		})
@@ -7328,6 +7423,16 @@ func validateStructuredCommandForRun(command string, observations []StructuredCo
 	return validateStructuredCommandForRunWithSurvey(command, observations, workingDirectory, objectiveLedger, WorksiteSurvey{})
 }
 
+func projectFileMapForCommandValidation(workingDir string, observations []StructuredCommandObservation) ProjectFileMap {
+	return activeProjectFileMapFromResult(
+		"Build the application.",
+		mapDrivenArchitectToolTask(workingDir, WorksiteSurvey{}),
+		workingDir,
+		WorksiteSurvey{},
+		observations,
+	)
+}
+
 func validateStructuredCommandForRunWithSurvey(command string, observations []StructuredCommandObservation, workingDirectory string, objectiveLedger []StructuredObjective, survey WorksiteSurvey) error {
 	if err := validateStructuredCommandForObservations(command, observations); err != nil {
 		return err
@@ -7354,6 +7459,15 @@ func validateStructuredCommandForRunWithSurvey(command string, observations []St
 		return err
 	}
 	if err := validatePrintOnlyCommandForSubstantiveObjectives(command, objectiveLedger); err != nil {
+		return err
+	}
+	if err := validatePlaceholderOnlySourceMutation(command, objectiveLedger, observations); err != nil {
+		return err
+	}
+	if err := validateConflictingEntrypointMutation(command, workingDirectory); err != nil {
+		return err
+	}
+	if err := validateCommandAgainstProjectFileMap(command, workingDirectory, projectFileMapForCommandValidation(workingDirectory, observations)); err != nil {
 		return err
 	}
 	if err := validateStructuredDependencyScope(command, objectiveLedger, workingDirectory); err != nil {
@@ -7638,6 +7752,9 @@ func validateShellProposalAgainstToolTask(command, toolTask string) error {
 func validateShellProposalAgainstToolTaskWithRationale(command, toolTask, rationale string) error {
 	if strings.TrimSpace(command) == "" {
 		return nil
+	}
+	if touchTargetsProjectSourceArtifact(command) {
+		return fmt.Errorf("placeholder-only touch creates empty source files; write substantive content with a here-doc, tee, patch.apply, or code specialist instead of touch")
 	}
 	if err := validateShellDependencyInstallRationale(command, toolTask, rationale); err != nil {
 		return err
@@ -11066,6 +11183,9 @@ func buildStructuredCommandSystemContext() string {
 		"When active_task.task_mode is research_only, use only read-only inspection, package metadata reads, memory/docs/web research, and codebase-map reads; do not mutate files, install packages, patch code, run build repair, or convert incidental project issues into repair objectives.",
 		"Treat active_task.completed_actions as the only deterministic do-not-repeat list; active_task.forbidden_commands is empty by default and must not be inferred from observations, failed commands, rejected proposals, prior runs, command cache, or memory.",
 		"When active_task.recovery_instruction is non-empty, the next response must visibly change strategy: use a different command, delegate with tool=shell and a narrower tool_task, inspect existing files, or use tool=patch.apply.",
+		"Treat active_task.project_file_map as the authoritative planned file tree; every source mutation must target a mapped path and respect project_file_map.active_file.",
+		"Use active_task.project_map_policy as hard rules for map updates: do not create, touch, or edit unmapped source files without first updating the map through scope or objective changes.",
+		"When project_file_map.open_changes is non-empty, the next command must advance one mapped file toward status done with validated on-disk evidence.",
 		"When active_task.latest_rejection_feedback is non-empty, treat it as authoritative validator feedback for the immediately previous rejected output; repair that rejection directly and do not repeat the rejected command or response.",
 		"When active_task.rejected_response_preview or active_task.rejected_command_preview is present, replace that exact rejected output with a corrected command, tool delegation, or patch.",
 		"Use active_task.task_route as advisory codebase-map routing context for likely files, modules, tests, risks, and verification commands; it is not execution permission.",
@@ -11296,6 +11416,8 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		UserPrompt        string                          `json:"user_prompt"`
 		ToolTask          string                          `json:"tool_task"`
 		ArchitectContract ImplementationArchitectContract `json:"architect_contract,omitempty"`
+		ProjectFileMap    ProjectFileMap                  `json:"project_file_map,omitempty"`
+		ProjectMapPolicy  []string                        `json:"project_map_policy,omitempty"`
 		RepairFeedback    string                          `json:"repair_feedback,omitempty"`
 		RejectedCommand   string                          `json:"rejected_command_preview,omitempty"`
 		Observations      []StructuredCommandObservation  `json:"observations"`
@@ -11310,6 +11432,8 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 		UserPrompt:        input.UserPrompt,
 		ToolTask:          input.ToolTask,
 		ArchitectContract: input.ArchitectContract,
+		ProjectFileMap:    input.ProjectFileMap,
+		ProjectMapPolicy:  projectFileMapPolicyLines(),
 		RepairFeedback:    input.RepairFeedback,
 		RepairAttempt:     input.RepairAttempt,
 		RejectedCommand:   truncateStructuredTimelineValue(input.RejectedCommand),
@@ -11323,6 +11447,8 @@ func buildShellCommandSpecialistRequest(input ShellCommandSpecialistInput) Ollam
 			"Only choose a shell command that directly satisfies tool_task from the planner authority.",
 			"If architect_contract is present, treat it as the implementation architect's authority over target_root, edit_surface, proof_commands, and guardrails.",
 			"If architect_contract.current_item is present, satisfy only that one queued operation; use its cwd, path, operation, description, and verify fields literally.",
+			"If project_file_map is present, treat it as authoritative; only mutate project_file_map.active_file and never touch unmapped source paths.",
+			"Follow project_map_policy: shell must not use touch for mapped source files; write substantive content or delegate to architect.apply/code specialist.",
 			"The architect decides what source area is edited and how it is proven; the coder/shell specialist only chooses the next concrete command inside that contract.",
 			"If repair_feedback is non-empty, treat it as direct validator feedback for this retry; the next command must visibly correct that exact issue.",
 			"Treat completed_actions as authoritative progress; never choose a command that repeats or recreates an already completed action.",
@@ -11410,6 +11536,10 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 		"If test_first is false, implement enough source code to satisfy the validated test/probe, the current work item, and the architect_contract.acceptance_criteria.",
 		"Do not add unrequested dependencies, routing, authentication, cloud sync, databases, or framework changes.",
 		"Do not weaken, skip, delete, or rewrite an existing validated test unless the work item explicitly says it is a test correction.",
+		"The project_file_map is authoritative; generate content only for work_item.path and integrate with integration_context.",
+	}
+	if strings.TrimSpace(input.IntegrationContext) != "" {
+		rules = append(rules, "integration_context describes how this file connects to other mapped files; honor those links in imports, mounts, and acceptance checks.")
 	}
 	if strings.TrimSpace(input.RepairFeedback) != "" {
 		rules = append(rules,
@@ -11430,6 +11560,8 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 		RepairFeedback         string                          `json:"repair_feedback,omitempty"`
 		RepairAttempt          int                             `json:"repair_attempt,omitempty"`
 		RejectedContentPreview string                          `json:"rejected_content_preview,omitempty"`
+		IntegrationContext     string                          `json:"integration_context,omitempty"`
+		ProjectFileMap         ProjectFileMap                  `json:"project_file_map,omitempty"`
 		Observations           []StructuredCommandObservation  `json:"observations,omitempty"`
 		SessionMemories        []SessionMemory                 `json:"session_memories,omitempty"`
 		WorksiteSurvey         WorksiteSurvey                  `json:"worksite_survey"`
@@ -11445,6 +11577,8 @@ func buildCodeContentSpecialistRequest(input CodeContentSpecialistInput) OllamaC
 		RepairFeedback:         input.RepairFeedback,
 		RepairAttempt:          input.RepairAttempt,
 		RejectedContentPreview: truncateStructuredTimelineValue(input.RejectedContent),
+		IntegrationContext:     input.IntegrationContext,
+		ProjectFileMap:         input.ProjectFileMap,
 		Observations:           compactStructuredObservationsForContext(input.Observations, 6, 500),
 		SessionMemories:        compactSessionMemoriesForStructuredContext(sessionMemories, 6, 600),
 		WorksiteSurvey:         input.WorksiteSurvey,
@@ -11813,6 +11947,8 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 			ObjectiveLedger             []StructuredObjective          `json:"objective_ledger,omitempty"`
 			WorkItems                   []ObjectiveWorkItem            `json:"work_items,omitempty"`
 			CurrentWorkItem             *ObjectiveWorkItem             `json:"current_work_item,omitempty"`
+			ProjectFileMap              ProjectFileMap                 `json:"project_file_map,omitempty"`
+			ProjectMapPolicy            []string                       `json:"project_map_policy,omitempty"`
 			ChildJobs                   []ChildJob                     `json:"child_jobs,omitempty"`
 			CurrentChildJob             *ChildJob                      `json:"current_child_job,omitempty"`
 			ChildJobNextAction          *ChildJobAction                `json:"child_job_next_action,omitempty"`
@@ -11866,6 +12002,8 @@ func buildStructuredCommandUserMessage(prompt string, observations []StructuredC
 	})
 	payload.ActiveTask.ObjectiveLedger = successReconciliation.ObjectiveLedger
 	payload.ActiveTask.WorkItems = successReconciliation.WorkQueue
+	payload.ActiveTask.ProjectFileMap = activeProjectFileMapFromResult(prompt, mapDrivenArchitectToolTask(workingDirectory, worksiteSurvey), workingDirectory, worksiteSurvey, observations)
+	payload.ActiveTask.ProjectMapPolicy = projectFileMapPolicyLines()
 	payload.ActiveTask.ChildJobs = successReconciliation.ChildJobs
 	payload.ActiveTask.CurrentChildJob = successReconciliation.NextRequiredChildJob
 	payload.ActiveTask.ChildJobNextAction = successReconciliation.NextAction

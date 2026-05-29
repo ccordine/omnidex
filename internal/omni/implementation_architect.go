@@ -26,6 +26,7 @@ type ImplementationArchitectContract struct {
 	ValidatorScopes     []string                   `json:"validator_scopes,omitempty"`
 	WorkQueue           []ArchitectWorkItem        `json:"work_queue,omitempty"`
 	CurrentItem         *ArchitectWorkItem         `json:"current_item,omitempty"`
+	ProjectFileMap      ProjectFileMap             `json:"project_file_map,omitempty"`
 }
 
 type ArchitectResearchRequest struct {
@@ -336,6 +337,12 @@ func explicitReactAppAcceptanceCriteria(prompt, toolTask string) []string {
 		"update notes",
 		"delete notes",
 		"todo list",
+		"graphing calculator",
+		"function plot",
+		"equation input",
+		"graph canvas",
+		"coordinate plane",
+		"plot graph",
 	}
 	out := []string{}
 	for _, candidate := range candidates {
@@ -348,6 +355,9 @@ func explicitReactAppAcceptanceCriteria(prompt, toolTask string) []string {
 	}
 	if len(out) == 0 && promptRequestsNoteApp(prompt, toolTask) {
 		out = append(out, "note capture", "note list", "in-memory notes")
+	}
+	if len(out) == 0 && promptRequestsGraphingCalculator(prompt, toolTask) {
+		out = append(out, "graphing calculator", "function plot", "equation input", "graph canvas")
 	}
 	return out
 }
@@ -527,6 +537,11 @@ func architectWorkItemSatisfied(item ArchitectWorkItem, workingDir string, contr
 						return false
 					}
 				}
+				return true
+			}
+		}
+		if hasImplementationArchitectContract(contract) {
+			if _, err := architectWorkItemFileEvidenceValid(item, workingDir, contract, architectContractPrompt(contract)); err == nil {
 				return true
 			}
 		}
@@ -773,15 +788,21 @@ func deterministicArchitectContentProposal(contract ImplementationArchitectContr
 	case "src/index.js", "src/main.js", "src/main.jsx":
 		return CodeContentProposal{Content: deterministicReactMountEntry(path), Rationale: "deterministic React mount entry fallback"}, true
 	case "scripts/smoke-test.mjs":
-		return CodeContentProposal{Content: deterministicReactSmokeTest(contract.AcceptanceCriteria), Rationale: "deterministic acceptance smoke probe fallback"}, true
+		return CodeContentProposal{Content: deterministicReactSmokeTest(contract), Rationale: "deterministic acceptance smoke probe fallback for active prompt"}, true
 	case "src/app.js", "src/app.jsx":
 		if promptRequestsMusicStudio(architectContractPrompt(contract), contract.SourceToolTask) {
 			return CodeContentProposal{Content: deterministicReactMusicStudioApp(), Rationale: "deterministic React music studio implementation fallback"}, true
+		}
+		if promptRequestsGraphingCalculator(architectContractPrompt(contract), contract.SourceToolTask) {
+			return CodeContentProposal{Content: deterministicGraphingCalculatorApp(), Rationale: "deterministic React graphing calculator implementation fallback"}, true
 		}
 		return CodeContentProposal{Content: deterministicGenericReactApp(contract), Rationale: "deterministic React app implementation fallback for current prompt"}, true
 	case "src/app.css":
 		if promptRequestsMusicStudio(architectContractPrompt(contract), contract.SourceToolTask) {
 			return CodeContentProposal{Content: deterministicReactMusicStudioCSS(), Rationale: "deterministic React music studio stylesheet fallback"}, true
+		}
+		if promptRequestsGraphingCalculator(architectContractPrompt(contract), contract.SourceToolTask) {
+			return CodeContentProposal{Content: deterministicGraphingCalculatorCSS(), Rationale: "deterministic React graphing calculator stylesheet fallback"}, true
 		}
 		return CodeContentProposal{Content: deterministicGenericReactAppCSS(contract), Rationale: "deterministic React app stylesheet fallback for current prompt"}, true
 	default:
@@ -792,7 +813,7 @@ func deterministicArchitectContentProposal(contract ImplementationArchitectContr
 func deterministicReactPackageJSON(contract ImplementationArchitectContract) string {
 	name := strings.Trim(contract.TargetRoot, "./ ")
 	if name == "" || name == "." {
-		name = "omnidex-react-studio"
+		name = "omnidex-app"
 	}
 	name = strings.ToLower(strings.NewReplacer("/", "-", "_", "-", " ", "-").Replace(name))
 	return fmt.Sprintf(`{
@@ -838,6 +859,8 @@ func deterministicReactIndexHTML(entry string, contract ImplementationArchitectC
 		title = "Notes App"
 	} else if promptRequestsMusicStudio(architectContractPrompt(contract), contract.SourceToolTask) {
 		title = "Omnidex Beat Studio"
+	} else if promptRequestsGraphingCalculator(architectContractPrompt(contract), contract.SourceToolTask) {
+		title = "Graphing Calculator"
 	}
 	return fmt.Sprintf(`<!doctype html>
 <html lang="en">
@@ -868,14 +891,19 @@ createRoot(document.getElementById('root')).render(
 `
 }
 
-func deterministicReactSmokeTest(criteria []string) string {
-	signals := []string{"Studio", "Sequencer", "Channel Rack", "Mixer", "Transport", "Tempo"}
+func deterministicReactSmokeTest(contract ImplementationArchitectContract) string {
+	prompt := architectContractPrompt(contract)
+	criteria := contract.AcceptanceCriteria
+	signals := []string{}
 	for _, criterion := range criteria {
 		for _, signal := range acceptanceCriterionSignals(criterion) {
 			signals = append(signals, signal)
 		}
 	}
 	signals = uniqueNonEmptyStrings(signals)
+	if len(signals) == 0 {
+		return deterministicGenericReactSmokeTest(prompt)
+	}
 	lines := []string{
 		"import { readFileSync } from 'node:fs';",
 		"",
@@ -891,18 +919,158 @@ func deterministicReactSmokeTest(criteria []string) string {
 		"];",
 		"const missing = required.filter((term) => !combined.includes(term));",
 		"if (missing.length > 0) {",
-		"  console.error(`Missing required studio signals: ${missing.join(', ')}`);",
+		"  console.error(`Missing required acceptance signal(s): ${missing.join(', ')}`);",
 		"  process.exit(1);",
 		"}",
-		"const hasRange = combined.includes('type=\"range\"') || combined.includes(\"type: 'range'\") || combined.includes('type: \"range\"');",
-		"if (!combined.includes('usestate') || !hasRange || !combined.includes('button')) {",
-		"  console.error('Studio implementation must include interactive React controls.');",
-		"  process.exit(1);",
-		"}",
-		"console.log('music studio smoke test passed');",
-		"",
 	)
+	if promptRequestsMusicStudio(prompt, contract.SourceToolTask) {
+		lines = append(lines,
+			"const hasRange = combined.includes('type=\"range\"') || combined.includes(\"type: 'range'\") || combined.includes('type: \"range\"');",
+			"if (!combined.includes('usestate') || !hasRange || !combined.includes('button')) {",
+			"  console.error('Studio implementation must include interactive React controls.');",
+			"  process.exit(1);",
+			"}",
+			"console.log('music studio smoke test passed');",
+			"",
+		)
+	} else {
+		lines = append(lines,
+			"if (!combined.includes('export default')) {",
+			"  console.error('App.js must export a React component');",
+			"  process.exit(1);",
+			"}",
+			"console.log('react acceptance smoke test passed');",
+			"",
+		)
+	}
 	return strings.Join(lines, "\n")
+}
+
+func deterministicGenericReactSmokeTest(prompt string) string {
+	forbiddenBlock := ""
+	if !promptRequestsMusicStudio(prompt, "") {
+		forbiddenBlock = `
+const forbidden = ["studio-shell", "channel-rack", "piano-roll", "omnidex beat studio", "pattern step sequencer", "channel rack", "beat studio", "sequencer"];
+const hit = forbidden.filter((term) => combined.includes(term));
+if (hit.length > 0) {
+  console.error("App implements foreign music-studio domain: " + hit.join(", "));
+  process.exit(1);
+}`
+	}
+	return "import { readFileSync } from 'node:fs';\n\n" +
+		"const app = readFileSync('src/App.js', 'utf8');\n" +
+		"const css = readFileSync('src/App.css', 'utf8');\n" +
+		"const combined = (app + '\\n' + css).toLowerCase();\n" +
+		"if (!combined.includes('export default')) {\n" +
+		"  console.error('App.js must export a React component');\n" +
+		"  process.exit(1);\n" +
+		"}\n" +
+		forbiddenBlock +
+		"console.log('react smoke test passed');\n"
+}
+
+func deterministicGraphingCalculatorApp() string {
+	return `import React, { useMemo, useState } from 'react';
+
+function parseExpression(raw) {
+  const text = String(raw || '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!text) return null;
+  const match = text.match(/^y=(-?\d*\.?\d*)x(?:\^2|\*\*2)?(?:\+(-?\d*\.?\d*)x)?(?:\+(-?\d*\.?\d*))?$/);
+  if (!match) return null;
+  const a = match[1] === '' || match[1] === '-' ? (match[1] === '-' ? -1 : 1) : Number(match[1]);
+  const b = match[2] ? Number(match[2]) : 0;
+  const c = match[3] ? Number(match[3]) : 0;
+  return (x) => a * x * x + b * x + c;
+}
+
+export default function App() {
+  const [equation, setEquation] = useState('y=x^2');
+  const fn = useMemo(() => parseExpression(equation), [equation]);
+  const points = useMemo(() => {
+    if (!fn) return [];
+    const out = [];
+    for (let x = -10; x <= 10; x += 0.5) {
+      const y = fn(x);
+      if (Number.isFinite(y)) out.push({ x, y });
+    }
+    return out;
+  }, [fn]);
+
+  return React.createElement('main', { className: 'graphing-calculator' },
+    React.createElement('header', { className: 'calculator-header' },
+      React.createElement('h1', null, 'Graphing Calculator'),
+      React.createElement('p', null, 'Plot functions on a coordinate plane.')
+    ),
+    React.createElement('section', { className: 'equation-input', 'aria-label': 'Equation input' },
+      React.createElement('label', null, 'Equation'),
+      React.createElement('input', {
+        type: 'text',
+        value: equation,
+        placeholder: 'y=x^2',
+        onChange: (event) => setEquation(event.target.value),
+      }),
+      React.createElement('button', { type: 'button', onClick: () => setEquation('y=x^2') }, 'Plot function')
+    ),
+    React.createElement('section', { className: 'graph-canvas', 'aria-label': 'Graph canvas' },
+      React.createElement('svg', { viewBox: '-10 -10 20 20', role: 'img', 'aria-label': 'Coordinate plane graph' },
+        React.createElement('line', { x1: -10, y1: 0, x2: 10, y2: 0, stroke: '#94a3b8' }),
+        React.createElement('line', { x1: 0, y1: -10, x2: 0, y2: 10, stroke: '#94a3b8' }),
+        fn && points.length > 1
+          ? React.createElement('polyline', {
+              fill: 'none',
+              stroke: '#2563eb',
+              strokeWidth: 0.15,
+              points: points.map((point) => point.x + ',' + (-point.y)).join(' '),
+            })
+          : React.createElement('text', { x: -8, y: -7, fontSize: 1.2 }, 'Enter y=x^2 style equation')
+      )
+    )
+  );
+}
+`
+}
+
+func deterministicGraphingCalculatorCSS() string {
+	return `:root {
+  color: #0f172a;
+  background: #f8fafc;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.graphing-calculator {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+}
+
+.calculator-header,
+.equation-input,
+.graph-canvas {
+  display: grid;
+  gap: 12px;
+}
+
+.equation-input input {
+  font: inherit;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+}
+
+.graph-canvas svg {
+  width: 100%;
+  height: 420px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+}
+`
 }
 
 func deterministicReactMusicStudioApp() string {
@@ -1424,6 +1592,8 @@ func acceptanceCriterionSignals(criterion string) []string {
 		return []string{"music", "studio"}
 	case "note capture", "note list", "in-memory notes", "create notes", "update notes", "delete notes", "todo list":
 		return []string{"note", "todo", "title", "body", "list"}
+	case "graphing calculator", "graph canvas", "function plot", "equation input", "coordinate plane", "plot graph":
+		return []string{"graph", "calculator", "equation", "plot", "function", "coordinate"}
 	default:
 		return []string{strings.ToLower(strings.TrimSpace(criterion))}
 	}

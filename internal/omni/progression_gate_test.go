@@ -121,7 +121,7 @@ func TestProgressionGateForcesRecoveryAfterRepeatedNoopPackageInstall(t *testing
 	}
 }
 
-func TestProgressionGateDoesNotForceRecoveryForEmptyProjectFilesMidLoop(t *testing.T) {
+func TestProgressionGateForcesRecoveryAfterPlaceholderTouchOnSourceFile(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {
 		t.Fatal(err)
@@ -145,8 +145,11 @@ func TestProgressionGateDoesNotForceRecoveryForEmptyProjectFilesMidLoop(t *testi
 		},
 	})
 
-	if decision.Action == ProgressForceRecovery && strings.Contains(decision.Reason, "empty project files") {
-		t.Fatalf("empty files should be a completion gate, not mid-loop progression recovery: %#v", decision)
+	if decision.Action != ProgressForceRecovery {
+		t.Fatalf("placeholder touch on source file should force recovery: %#v", decision)
+	}
+	if !strings.Contains(decision.Reason, "empty project files") && !strings.Contains(decision.Reason, "placeholder") {
+		t.Fatalf("expected recovery reason about empty/placeholder files: %#v", decision)
 	}
 }
 
