@@ -633,6 +633,13 @@ func (s *Service) emitStepEvent(stepID int64, eventType, message string) {
 		strings.TrimSpace(message),
 	}, " "))
 	s.emitStepContext(stepID, "event", payload)
+	if s.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := s.repo.RecordTelemetryStepEvent(ctx, stepID, eventType, message); err != nil {
+			s.logger.Printf("step=%d telemetry event=%s write error: %v", stepID, eventType, err)
+		}
+	}
 }
 
 func (s *Service) emitStepStream(stepID int64, stream, message string) {

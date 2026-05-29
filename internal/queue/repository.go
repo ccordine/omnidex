@@ -253,6 +253,19 @@ func recordTelemetryJobEvent(ctx context.Context, tx pgx.Tx, jobID int64, eventT
 	return err
 }
 
+func markTelemetryRunRunningForJob(ctx context.Context, tx pgx.Tx, jobID int64) error {
+	if jobID <= 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		UPDATE omni_runs
+		SET status = 'running', updated_at = NOW()
+		WHERE id = NULLIF((SELECT metadata->>'telemetry_run_id' FROM jobs WHERE id = $1), '')::uuid
+		  AND status = 'pending'
+	`, jobID)
+	return err
+}
+
 func decodeMetadataObject(raw json.RawMessage) map[string]any {
 	out := map[string]any{}
 	if len(raw) == 0 {
@@ -1157,6 +1170,17 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		return nil, err
 	}
 	job.Status = model.JobStatusRunning
+
+	if err := markTelemetryRunRunningForJob(ctx, tx, job.ID); err != nil {
+		return nil, err
+	}
+	if err := recordTelemetryJobEvent(ctx, tx, job.ID, "run_running", map[string]any{
+		"job_id":  job.ID,
+		"step_id": step.ID,
+		"action":  step.Action,
+	}); err != nil {
+		return nil, err
+	}
 
 	ctxRows, err := tx.Query(ctx, `
 		SELECT c.id, c.step_id, c.key, c.value, c.created_at

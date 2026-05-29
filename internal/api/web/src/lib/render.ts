@@ -240,18 +240,44 @@ export function renderMetricsDashboard(live, models, playbooks, benchmarks) {
   const liveRuns = live.live_runs || [];
   const recentRuns = live.recent_runs || [];
   const blockers = live.common_blockers || [];
+  const struggle = live.struggle || {};
+  const struggleEvents = struggle.struggle_events || [];
+  const acceptEvents = struggle.accept_events || [];
+  const recoveryAttempts = Number(struggle.recovery_attempts || 0);
+  const recoverySuccesses = Number(struggle.recovery_successes || 0);
+  const recentStruggleRuns = Number(struggle.recent_struggle_runs || 0);
   const completed = Number(statusCounts.completed || 0);
   const failed = Number(statusCounts.failed || 0);
   const cancelled = Number(statusCounts.canceled || statusCounts.cancelled || 0);
   const totalTerminal = completed + failed + cancelled;
   const successRate = totalTerminal > 0 ? `${Math.round((completed / totalTerminal) * 100)}%` : "n/a";
+  const struggleTotal = struggleEvents.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const acceptTotal = acceptEvents.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const struggling = struggleTotal > acceptTotal || recentStruggleRuns > 0;
   return `
-    <div class="grid gap-4 xl:grid-cols-4">
+    <div class="grid gap-4 xl:grid-cols-5">
       ${metricTile("Live Runs", String(liveRuns.length), liveRuns.length ? "warn" : "ok")}
-      ${metricTile("Recent Runs", String(recentRuns.length), "ok")}
       ${metricTile("Success Rate", successRate, completed >= failed ? "ok" : "warn")}
-      ${metricTile("Blocker Types", String(blockers.length), blockers.length ? "warn" : "ok")}
+      ${metricTile("Struggle Signals", String(struggleTotal), struggling ? "warn" : "ok")}
+      ${metricTile("Accepted", String(acceptTotal), acceptTotal > 0 ? "ok" : "warn")}
+      ${metricTile("Recovery", recoveryAttempts ? `${recoverySuccesses}/${recoveryAttempts}` : "n/a", recoverySuccesses >= recoveryAttempts / 2 ? "ok" : "warn")}
     </div>
+    <section class="rounded-lg border ${struggling ? "border-amber-300/25 bg-amber-300/5" : "border-white/10 bg-zinc-950/50"} p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Operational health (7d)</h3>
+        <span class="font-mono text-xs ${struggling ? "text-amber-200" : "text-emerald-200"}">${recentStruggleRuns} runs with struggle signals</span>
+      </div>
+      <div class="mt-3 grid gap-4 md:grid-cols-2">
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-rose-300/80">Stuck / rejected / replanning</h4>
+          <div class="mt-2 space-y-2">${struggleEvents.map(renderMetricCount).join("") || emptyState("No struggle signals yet — good sign.")}</div>
+        </div>
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-emerald-300/80">Accepted / passing</h4>
+          <div class="mt-2 space-y-2">${acceptEvents.map(renderMetricCount).join("") || emptyState("No acceptance signals recorded yet.")}</div>
+        </div>
+      </div>
+    </section>
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
       <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
         <div class="flex items-center justify-between gap-3">

@@ -39,6 +39,7 @@ type TelemetryDashboardSummary struct {
 	RecentRuns     []TelemetryRunSummary   `json:"recent_runs,omitempty"`
 	StatusCounts   map[string]int          `json:"status_counts,omitempty"`
 	CommonBlockers []TelemetryCountSummary `json:"common_blockers,omitempty"`
+	Struggle       TelemetryStruggleSummary `json:"struggle,omitempty"`
 }
 
 type TelemetryCountSummary struct {
@@ -436,11 +437,19 @@ func (r *Repository) TelemetryLive(ctx context.Context) (TelemetryDashboardSumma
 	if err != nil {
 		return TelemetryDashboardSummary{}, err
 	}
-	blockers, err := r.telemetryEventCounts(ctx, []string{"progression_gate_failed", "structured_payload_rejected_mixed_ask_command", "structured_user_input_cancelled", "artifact_validation_failed", "pathfinder_strategy_selected"}, 10)
+	blockers, err := r.telemetryEventCounts(ctx, append(telemetryStruggleEventTypes, []string{
+		"structured_payload_rejected_mixed_ask_command",
+		"structured_user_input_cancelled",
+		"pathfinder_strategy_selected",
+	}...), 12)
 	if err != nil {
 		return TelemetryDashboardSummary{}, err
 	}
-	return TelemetryDashboardSummary{LiveRuns: live, RecentRuns: recent, StatusCounts: counts, CommonBlockers: blockers}, nil
+	struggle, err := r.TelemetryStruggleSummary(ctx)
+	if err != nil {
+		return TelemetryDashboardSummary{}, err
+	}
+	return TelemetryDashboardSummary{LiveRuns: live, RecentRuns: recent, StatusCounts: counts, CommonBlockers: blockers, Struggle: struggle}, nil
 }
 
 func (r *Repository) TelemetryModelSummaries(ctx context.Context) ([]TelemetryModelSummary, error) {
