@@ -64,13 +64,15 @@ func (s *Server) recordScrumPilotContextShrink(
 		return
 	}
 	raw := measureScrumPilotRawContext(board, card, userMessage)
+	shrunkChars := len(strings.TrimSpace(shrunkPrompt))
+	savedPct := contextShrinkSavedPct(raw.RawChars, shrunkChars)
 	timeline := buildPilotChannelTimeline(card.Chat)
 	_ = s.repo.RecordContextShrinkMetric(ctx, queue.ContextShrinkMetricRecord{
 		Source:         scrumPilotContextShrinkSource,
 		CardID:         card.ID,
 		ProjectID:      projectID,
 		RawChars:       raw.RawChars,
-		ShrunkChars:    len(strings.TrimSpace(shrunkPrompt)),
+		ShrunkChars:    shrunkChars,
 		ChatMessages:   raw.ChatMessages,
 		SelectedChunks: pilotContext.SelectedChunks,
 		Metadata: map[string]any{
@@ -82,4 +84,27 @@ func (s *Server) recordScrumPilotContextShrink(
 			"card_title":        strings.TrimSpace(card.Title),
 		},
 	})
+	modelName := firstNonEmpty(s.ollamaDefaultModel, "llama3.2")
+	s.recordLLMContextUsage(ctx, llmContextSourceScrumPilot, modelName, s.llmProviderName(), llmContextTelemetryMeta{
+		ProjectID: projectID,
+		CardID:    card.ID,
+		Metadata: map[string]any{
+			"card_title": strings.TrimSpace(card.Title),
+			"shrunk":     true,
+		},
+	}, raw.RawChars, shrunkChars, true, savedPct, nil)
+}
+
+func contextShrinkSavedPct(raw, shrunk int) float64 {
+	if raw <= 0 {
+		return 0
+	}
+	saved := float64(raw-shrunk) / float64(raw) * 100
+	if saved < 0 {
+		return 0
+	}
+	if saved > 100 {
+		return 100
+	}
+	return saved
 }

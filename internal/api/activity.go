@@ -26,10 +26,12 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	llmActivity, _ := s.repo.ListRecentLLMActivity(r.Context(), minInt(limit, 30))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"jobs":             jobs,
 		"telemetry_events": events,
 		"memories":         memories,
+		"llm_activity":     llmActivity,
 	})
 }
 

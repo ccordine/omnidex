@@ -33,7 +33,7 @@ type ScrumCoachLLMResponse struct {
 	Suggestions  []ScrumCoachSuggestion   `json:"suggestions"`
 	CardTags     []string               `json:"card_tags"`
 	ProjectTags  []string               `json:"project_tags"`
-	JiraPrompt   string                 `json:"jira_prompt"`
+	CardPrompt   string                 `json:"card_prompt"`
 	MemoryNotes  []ScrumCoachMemoryNote `json:"memory_notes"`
 }
 
@@ -75,7 +75,7 @@ func coachConfigToRaw(cfg ScrumCoachConfig) json.RawMessage {
 	return out
 }
 
-func (s *Server) scrumCoachLLMGenerate(ctx context.Context, modelName, system, user string) (string, error) {
+func (s *Server) scrumCoachLLMGenerate(ctx context.Context, source, modelName, system, user string, meta llmContextTelemetryMeta) (string, error) {
 	if s.llmClient == nil {
 		return "", fmt.Errorf("no llm client configured")
 	}
@@ -84,16 +84,19 @@ func (s *Server) scrumCoachLLMGenerate(ctx context.Context, modelName, system, u
 		modelName = firstNonEmpty(s.ollamaDefaultModel, "qwen3:4b-thinking")
 	}
 	prompt := strings.TrimSpace(system + "\n\n" + user)
-	return s.llmClient.Generate(ctx, modelName, prompt)
+	promptChars := llmPromptCharCount(system, user)
+	generated, err := s.llmClient.Generate(ctx, modelName, prompt)
+	s.recordLLMContextUsage(ctx, source, modelName, s.llmProviderName(), meta, promptChars, len(prompt), false, 0, err)
+	return generated, err
 }
 
 func coachModeSystem(mode string) string {
 	base := strings.Join([]string{
 		"You are the Omni card coach — a meta-planning assistant for a single scrum card.",
-		"You help refine scope, break work down, draft Jira prompts, and tag work for memory.",
+		"You help refine scope, break work down, draft card ticket prompts, and tag work for memory.",
 		"You never execute code or modify the project directly.",
 		"Respond with JSON only (no markdown fences):",
-		`{"reply":"markdown conversation","suggestions":[{"level":"info|warn|tip","text":"..."}],"card_tags":["tag"],"project_tags":["tag"],"jira_prompt":"optional prompt for jira generation","memory_notes":[{"content":"...","tags":["tag"]}]}`,
+		`{"reply":"markdown conversation","suggestions":[{"level":"info|warn|tip","text":"..."}],"card_tags":["tag"],"project_tags":["tag"],"card_prompt":"optional prompt for card ticket generation","memory_notes":[{"content":"...","tags":["tag"]}]}`,
 	}, "\n")
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "scan":
@@ -102,8 +105,8 @@ func coachModeSystem(mode string) string {
 		return base + "\nMode: plan — help structure the card: milestones, checklist items, risks, and what to defer to other cards."
 	case "research":
 		return base + "\nMode: research — suggest what to look up, which files to attach, questions to answer before execution. No code changes."
-	case "jira":
-		return base + "\nMode: jira — craft a strong jira_prompt the user can review before generating a ticket. Populate jira_prompt field richly."
+	case "card-ticket":
+		return base + "\nMode: card-ticket — craft a strong card_prompt the user can review before generating a ticket. Populate card_prompt field richly."
 	default:
 		return base + "\nMode: chat — collaborative card planning dialogue."
 	}
@@ -160,11 +163,11 @@ func buildCoachUserPrompt(card ScrumCard, board ScrumBoard, project model.Projec
 			lines = append(lines, "Checklist:", formatted)
 		}
 	}
-	if strings.TrimSpace(card.JiraTicket) != "" {
-		lines = append(lines, "Jira ticket draft:", card.JiraTicket)
+	if strings.TrimSpace(card.CardTicket) != "" {
+		lines = append(lines, "Card ticket draft:", card.CardTicket)
 	}
-	if strings.TrimSpace(card.JiraPrompt) != "" {
-		lines = append(lines, "Jira prompt draft:", card.JiraPrompt)
+	if strings.TrimSpace(card.CardPrompt) != "" {
+		lines = append(lines, "Card prompt draft:", card.CardPrompt)
 	}
 	lines = appendScrumCardContextLines(lines, card)
 	if len(memoryLines) > 0 {
@@ -252,7 +255,11 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 	system := coachModeSystem(req.Mode)
 	userPrompt := buildCoachUserPrompt(card, board, project, req.Mode, req.Message, req.Snapshot, memoryLines)
 
-	rawReply, err := s.scrumCoachLLMGenerate(r.Context(), cfg.Model, system, userPrompt)
+	rawReply, err := s.scrumCoachLLMGenerate(r.Context(), llmContextSourceScrumCoach, cfg.Model, system, userPrompt, llmContextTelemetryMeta{
+		ProjectID: projectID,
+		CardID:    card.ID,
+		Metadata:  map[string]any{"mode": req.Mode},
+	})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -276,8 +283,8 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 	if len(parsed.CardTags) > 0 {
 		card.Tags = mergeTags(card.Tags, parsed.CardTags)
 	}
-	if strings.TrimSpace(parsed.JiraPrompt) != "" {
-		card.JiraPrompt = strings.TrimSpace(parsed.JiraPrompt)
+	if strings.TrimSpace(parsed.CardPrompt) != "" {
+		card.CardPrompt = strings.TrimSpace(parsed.CardPrompt)
 	}
 	card.CoachConfig = coachConfigToRaw(cfg)
 
@@ -309,7 +316,7 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 		"card":          updated,
 		"reply":         parsed.Reply,
 		"suggestions":   parsed.Suggestions,
-		"jira_prompt":   updated.JiraPrompt,
+		"card_prompt":   updated.CardPrompt,
 		"memory_stored": memoryStored,
 		"mode":          req.Mode,
 		"model":         cfg.Model,
@@ -358,8 +365,8 @@ func normalizeCoachMode(message, mode string) string {
 			return "plan"
 		case "/research", "/researching":
 			return "research"
-		case "/jira":
-			return "jira"
+		case "/card-ticket", "/card":
+			return "card-ticket"
 		case "/scan":
 			return "scan"
 		}

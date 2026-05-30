@@ -381,6 +381,8 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/metrics/playbooks", s.handleMetricsPlaybooks)
 		s.mux.HandleFunc("/v1/metrics/benchmarks", s.handleMetricsBenchmarks)
 		s.mux.HandleFunc("/v1/metrics/context-shrink", s.handleMetricsContextShrink)
+		s.mux.HandleFunc("/v1/metrics/context-usage", s.handleMetricsContextUsage)
+		s.mux.HandleFunc("/v1/metrics/operations", s.handleMetricsOperations)
 		s.mux.HandleFunc("/v1/metrics/scrum", s.handleMetricsScrum)
 		s.mux.HandleFunc("/v1/metrics/glance", s.handleMetricsGlance)
 		s.mux.HandleFunc("/v1/realtime/ws", s.handleRealtimeWS)

@@ -2,6 +2,23 @@ import { readJSON } from "./api";
 import { projectQuery } from "./project_api";
 import type { ScrumBoard, ScrumBoardResponse, ScrumCard } from "./scrum_types";
 
+export type ScrumCardLlmJob = {
+  id: number;
+  status?: string;
+  result?: string;
+  error?: string;
+};
+
+export type ScrumCardLlmQueuedResponse = {
+  queued?: boolean;
+  job?: ScrumCardLlmJob;
+  card?: ScrumCard;
+  message?: string;
+  tags?: string[];
+  notes?: string;
+  ticket?: string;
+};
+
 export async function fetchScrumBoard(projectID?: number | null): Promise<ScrumBoardResponse> {
   const response = await fetch(`/v1/scrum${projectQuery(projectID)}`);
   return readJSON<ScrumBoardResponse>(response);
@@ -157,7 +174,10 @@ export async function patchScrumCard(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
-  const payload = await readJSON<{ card: ScrumCard }>(response);
+  const payload = await readJSON<{ card?: ScrumCard | null }>(response);
+  if (!payload.card?.id) {
+    throw new Error("Card update did not return a card");
+  }
   return payload.card;
 }
 
@@ -174,17 +194,79 @@ export async function chatScrumCard(
   return readJSON(response);
 }
 
-export async function jiraScrumCard(
+export async function cardTicketScrumCard(
   cardID: string,
-  payload: { prompt?: string; ticket?: string },
+  payload: {
+    prompt?: string;
+    card_prompt?: string;
+    ticket?: string;
+    iterate?: boolean;
+    iterate_notes?: string;
+    stream?: boolean;
+  },
   projectID?: number | null,
-): Promise<{ card: ScrumCard; ticket: string }> {
-  const response = await fetch(cardURL(cardID, "jira", projectID), {
+): Promise<ScrumCardLlmQueuedResponse> {
+  const response = await fetch(cardURL(cardID, "card-ticket", projectID), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   return readJSON(response);
+}
+
+export async function streamCardTicketScrumCard(
+  cardID: string,
+  payload: {
+    prompt?: string;
+    card_prompt?: string;
+    ticket?: string;
+    iterate?: boolean;
+    iterate_notes?: string;
+  },
+  handlers: { onDelta: (text: string) => void; onStart?: () => void },
+  projectID?: number | null,
+): Promise<{ card: ScrumCard; ticket: string }> {
+  const response = await fetch(cardURL(cardID, "card-ticket", projectID), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, stream: true }),
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `card ticket stream failed (${response.status})`);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("card ticket stream unavailable");
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: { card: ScrumCard; ticket: string } | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line) as {
+        type: string;
+        text?: string;
+        message?: string;
+        card?: ScrumCard;
+        ticket?: string;
+      };
+      if (event.type === "start") handlers.onStart?.();
+      if (event.type === "delta" && event.text) handlers.onDelta(event.text);
+      if (event.type === "error") throw new Error(event.message || "card ticket stream failed");
+      if (event.type === "done" && event.card) {
+        result = { card: event.card, ticket: event.ticket ?? "" };
+      }
+    }
+  }
+  if (!result) throw new Error("card ticket stream ended without result");
+  return result;
 }
 
 export async function coachScrumCard(
@@ -232,7 +314,7 @@ export async function fetchScrumTags(
 export async function suggestScrumTags(
   cardID: string,
   projectID?: number | null,
-): Promise<{ card: ScrumCard; tags: string[]; notes?: string }> {
+): Promise<ScrumCardLlmQueuedResponse> {
   const response = await fetch(cardURL(cardID, "tags-suggest", projectID), {
     method: "POST",
     headers: { "Content-Type": "application/json" },

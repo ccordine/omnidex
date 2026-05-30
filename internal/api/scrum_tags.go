@@ -3,9 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
 func (s *Server) handleScrumTags(w http.ResponseWriter, r *http.Request) {
@@ -29,74 +32,75 @@ func (s *Server) handleScrumCardTagsSuggest(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "card not found")
 		return
 	}
-	cfg := parseScrumCoachConfig(card.CoachConfig)
-	modelName := cfg.Model
-	if modelName == "" {
-		modelName = "qwen3:4b-thinking"
-	}
-
-	existing := s.collectScrumTagCatalog(r.Context(), r, "", 80)
-	existingLine := "Known tags: " + strings.Join(existing, ", ")
-	contextLines := []string{
-		"Scrum card: " + card.Title,
-		"Description: " + card.Description,
-		"Project: " + board.Name,
-		existingLine,
-		"Current card tags: " + strings.Join(card.Tags, ", "),
-	}
-	for _, item := range card.TestCriteria {
-		if strings.TrimSpace(item.Text) != "" {
-			contextLines = append(contextLines, "Test: "+item.Text)
+	if s.repo != nil && projectID > 0 {
+		cfg := parseScrumCoachConfig(card.CoachConfig)
+		job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionTagsSuggest, cfg.Model, "", scrumcardllm.TicketRequest{})
+		if err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
 		}
+		writeScrumCardLLMQueued(w, job, updated, fmt.Sprintf("Queued tag suggestion job #%d for %s", job.ID, board.Name))
+		return
 	}
-	system := strings.Join([]string{
-		"You suggest concise lowercase tags for scrum cards and project memory.",
-		"Tags should describe domain, tech stack, feature area, and work type.",
-		"Respond with JSON only (no markdown fences):",
-		`{"tags":["tag-one","tag-two"],"notes":"brief rationale"}`,
-	}, "\n")
-	raw, err := s.scrumCoachLLMGenerate(r.Context(), modelName, system, strings.Join(contextLines, "\n"))
+	updated, suggested, notes, err := s.runScrumCardTagsSuggestSync(r, board, projectID, card)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
-	}
-	suggested := []string{}
-	notes := ""
-	raw = strings.TrimSpace(raw)
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start >= 0 && end > start {
-		var payload struct {
-			Tags  []string `json:"tags"`
-			Notes string   `json:"notes"`
-		}
-		if err := json.Unmarshal([]byte(raw[start:end+1]), &payload); err == nil {
-			suggested = payload.Tags
-			notes = payload.Notes
-		}
-	}
-	if len(suggested) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"card":  card,
-			"tags":  []string{},
-			"notes": notes,
-		})
-		return
-	}
-	card.Tags = mergeTags(card.Tags, suggested)
-	updated, err := s.persistScrumCard(r, projectID, card)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if s.repo != nil && projectID > 0 {
-		_ = s.mergeProjectTags(r.Context(), projectID, suggested)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"card":  updated,
 		"tags":  suggested,
 		"notes": notes,
 	})
+}
+
+func (s *Server) runScrumCardTagsSuggestSync(r *http.Request, board ScrumBoard, projectID int64, card ScrumCard) (ScrumCard, []string, string, error) {
+	cfg := parseScrumCoachConfig(card.CoachConfig)
+	knownTags := s.collectScrumTagCatalog(r.Context(), r, "", 80)
+	system, user := scrumcardllm.TagsSuggestPrompts(scrumBoardContext(board), scrumCardContext(card), knownTags)
+	result, err := scrumcardllm.RunTagsSuggest(r.Context(), s.llmClient, cfg.Model, system, user)
+	if err != nil {
+		return ScrumCard{}, nil, "", err
+	}
+	if len(result.Suggested) == 0 {
+		return card, []string{}, result.Notes, nil
+	}
+	card.Tags = mergeTags(card.Tags, result.Suggested)
+	updated, err := s.persistScrumCard(r, projectID, card)
+	if err != nil {
+		return ScrumCard{}, nil, "", err
+	}
+	if s.repo != nil && projectID > 0 {
+		_ = s.mergeProjectTags(r.Context(), projectID, result.Suggested)
+	}
+	return updated, result.Suggested, result.Notes, nil
+}
+
+func scrumBoardContext(board ScrumBoard) scrumcardllm.BoardContext {
+	return scrumcardllm.BoardContext{
+		Name:             board.Name,
+		ProjectDirectory: board.ProjectDirectory,
+	}
+}
+
+func scrumCardContext(card ScrumCard) scrumcardllm.CardContext {
+	out := scrumcardllm.CardContext{
+		ID:          card.ID,
+		Title:       card.Title,
+		Description: card.Description,
+		Column:      card.Column,
+		RefFiles:    append([]string(nil), card.RefFiles...),
+		Tags:        append([]string(nil), card.Tags...),
+		CardPrompt:  card.CardPrompt,
+		CardTicket:  card.CardTicket,
+	}
+	for _, item := range card.Checklist {
+		out.Checklist = append(out.Checklist, scrumcardllm.ChecklistItem{Text: item.Text, Done: item.Done})
+	}
+	for _, item := range card.TestCriteria {
+		out.TestCriteria = append(out.TestCriteria, scrumcardllm.ChecklistItem{Text: item.Text, Done: item.Done})
+	}
+	return out
 }
 
 func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, query string, limit int) []string {

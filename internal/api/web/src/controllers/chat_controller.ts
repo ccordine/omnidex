@@ -11,13 +11,15 @@ import {
   renderResearchStatus,
   renderHostBridgeStatus,
   renderMetricsDashboard,
+  renderJobsPanel,
   contextEventType,
 } from "../lib/render";
 import type { ChatMessage, TimelineEvent, JobDetails, JobContext, MemoryRecord, MemoryCandidate, UserChannel } from "../lib/types";
 import { createUserChannel, fetchChannelMessages, fetchUserChannels, isUserChannel, sendChannelMessage } from "../lib/channel_api";
 import { closeModalShell, openModalShell } from "../lib/modal";
 import type GxController from "./gx_controller";
-import { toastError, toastFromError, toastOk } from "../lib/feedback";
+import { errorMessage, toastError, toastFromError, toastOk } from "../lib/feedback";
+import { applyRecyclrSink, buildRecyclrBundle, type RecyclrSinkMode } from "../lib/recyclr";
 import { applyI18n, t } from "../lib/i18n";
 import { isOmniPanel, panelHref, parseAdminTabFromLocation, parsePanelFromLocation, type OmniPanel } from "../lib/panel_routing";
 
@@ -67,6 +69,7 @@ export default class ChatController extends Controller {
   declare readonly modalTarget: HTMLElement;
   declare readonly modalPanelTarget: HTMLElement;
   declare readonly hasMemoryListTarget: boolean;
+  declare readonly hasStatusOutputTarget: boolean;
   declare readonly hasResearchStatusOutputTarget: boolean;
   declare readonly hasHostBridgeStatusOutputTarget: boolean;
   declare readonly hasMetricsOutputTarget: boolean;
@@ -90,6 +93,7 @@ export default class ChatController extends Controller {
   busy = false;
   queueEnabled = false;
   activityTimer: number | null = null;
+  jobsTimer: number | null = null;
   memoryChangedHandler: ((event: Event) => void) | null = null;
   networkSettingsHandler: ((event: Event) => void) | null = null;
   openedProjectID: number | null = null;
@@ -101,6 +105,9 @@ export default class ChatController extends Controller {
   activityLabel = "";
   private metricsGlanceHandler: ((event: Event) => void) | null = null;
   private localeChangedHandler: ((event: Event) => void) | null = null;
+  private panelShownHandler: ((event: Event) => void) | null = null;
+  private scrumRefreshHandler: ((event: Event) => void) | null = null;
+  private llmActivityHandler: ((event: Event) => void) | null = null;
 
   
 
@@ -159,6 +166,21 @@ export default class ChatController extends Controller {
       this.updateTransportLabel();
     };
     document.addEventListener("omni:locale-changed", this.localeChangedHandler);
+    this.panelShownHandler = (event: Event) => {
+      const panel = (event as CustomEvent<{ panel?: string }>).detail?.panel;
+      if (panel === "jobs") void this.loadJobs();
+    };
+    document.addEventListener("omni:panel-shown", this.panelShownHandler);
+    this.scrumRefreshHandler = () => {
+      const active = this.panelTargets.find((panel) => !panel.classList.contains("hidden"));
+      if (active?.dataset.panelName === "jobs") void this.loadJobs({ quiet: true });
+    };
+    document.addEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
+    this.llmActivityHandler = () => {
+      const active = this.panelTargets.find((panel) => !panel.classList.contains("hidden"));
+      if (active?.dataset.panelName === "jobs") void this.loadJobs({ quiet: true });
+    };
+    document.addEventListener("omni:llm-activity", this.llmActivityHandler);
   }
 
   disconnect() {
@@ -169,6 +191,20 @@ export default class ChatController extends Controller {
     if (this.projectClosedHandler) document.removeEventListener("omni:project-closed", this.projectClosedHandler);
     if (this.metricsGlanceHandler) document.removeEventListener("omni:metrics-glance", this.metricsGlanceHandler);
     if (this.localeChangedHandler) document.removeEventListener("omni:locale-changed", this.localeChangedHandler);
+    if (this.panelShownHandler) document.removeEventListener("omni:panel-shown", this.panelShownHandler);
+    if (this.scrumRefreshHandler) document.removeEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
+    if (this.llmActivityHandler) document.removeEventListener("omni:llm-activity", this.llmActivityHandler);
+    this.stopJobsPolling();
+  }
+
+  startJobsPolling() {
+    this.stopJobsPolling();
+    this.jobsTimer = window.setInterval(() => void this.loadJobs({ quiet: true }), 5000);
+  }
+
+  stopJobsPolling() {
+    if (this.jobsTimer) window.clearInterval(this.jobsTimer);
+    this.jobsTimer = null;
   }
 
   setNetworkUrl(url: string) {
@@ -352,7 +388,12 @@ export default class ChatController extends Controller {
       button.classList.toggle("text-zinc-100", active);
       button.classList.toggle("text-zinc-300", !active);
     }
-    if (name === "jobs") this.loadJobs();
+    if (name === "jobs") {
+      void this.loadJobs();
+      this.startJobsPolling();
+    } else {
+      this.stopJobsPolling();
+    }
     if (name === "memory") this.loadMemoryCandidates();
     if (name === "metrics") this.loadMetrics();
     if (name === "admin") {
@@ -474,44 +515,38 @@ export default class ChatController extends Controller {
     }
   }
 
-  async loadJobs() {
+  async loadJobs(options: { quiet?: boolean } = {}) {
     if (!this.queueEnabled) {
-      this.jobsListTarget.innerHTML = emptyState("Queue routes are disabled in wrapper-only mode.");
-      this.jobDetailsTarget.textContent = "Start the core server with DATABASE_URL and WRAPPER_ONLY=false to use job controls.";
+      this.setJobsListOutput(emptyState("Queue routes are disabled in wrapper-only mode."));
+      if (this.hasJobDetailsTarget) this.jobDetailsTarget.textContent = "Start the core server with DATABASE_URL and WRAPPER_ONLY=false to use job controls.";
       return;
     }
-    const status = this.jobFilterTarget.value;
-    const query = new URLSearchParams({ limit: "30" });
-    if (status) query.set("status", status);
-    const payload = await readJSON(await fetch(`/v1/jobs?${query}`));
-    this.renderJobs(payload.jobs || []);
-    this.addEvent("jobs_loaded", { count: (payload.jobs || []).length, status: status || "all" });
+    if (!options.quiet) this.setJobsListOutput(emptyState("Loading jobs…"));
+    try {
+      const status = this.jobFilterTarget.value;
+      const query = new URLSearchParams({ limit: "30" });
+      if (status) query.set("status", status);
+      const [jobsPayload, activityPayload] = await Promise.all([
+        readJSON(await fetch(`/v1/jobs?${query}`)),
+        readJSON(await fetch("/v1/activity?limit=30")).catch(() => ({ llm_activity: [] })),
+      ]);
+      const jobs = jobsPayload.jobs || [];
+      const llmActivity = activityPayload.llm_activity || [];
+      this.setJobsListOutput(renderJobsPanel(jobs, llmActivity));
+      this.addEvent("jobs_loaded", { count: jobs.length, llm_activity: llmActivity.length, status: status || "all" });
+    } catch (error) {
+      this.setJobsListOutput(`<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
+      if (!options.quiet) this.addEvent("jobs_failed", { error: error.message || String(error) });
+    }
+  }
+
+  setJobsListOutput(html: string): void {
+    if (this.hasJobsListTarget) this.jobsListTarget.innerHTML = html;
+    this.recycle("jobs-list", html);
   }
 
   renderJobs(jobs) {
-    if (jobs.length === 0) {
-      this.recycle("jobs-list", emptyState("No jobs matched this filter."));
-      return;
-    }
-    this.recycle(
-      "jobs-list",
-      jobs
-        .map(
-        (job) => `
-          <button data-action="chat#selectJob" data-job-id="${job.id}" class="w-full rounded-lg border border-white/10 bg-zinc-950/50 p-3 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <div class="font-mono text-xs text-cyan-200">#${job.id}</div>
-                <div class="mt-1 line-clamp-2 text-sm font-medium text-zinc-100">${escapeHTML(job.instruction)}</div>
-              </div>
-              <span class="${statusPillClass(job.status)}">${escapeHTML(job.status)}</span>
-            </div>
-            <div class="mt-2 text-xs text-zinc-500">${escapeHTML(job.pipeline || "assistant")} · ${formatDateTime(job.updated_at)}</div>
-          </button>
-        `,
-        )
-        .join(""),
-    );
+    this.setJobsListOutput(renderJobsPanel(jobs, []));
   }
 
   async selectJob(event) {
@@ -676,6 +711,14 @@ export default class ChatController extends Controller {
           source: trimText(memory.source || "", 40),
         }, { memory });
       }
+      for (const entry of payload.llm_activity || []) {
+        this.addObservedEvent(`llm:${entry.id}`, `llm:${entry.source}`, {
+          source: entry.source || "llm",
+          chars: entry.sent_chars || 0,
+          ok: entry.success !== false,
+          at: formatTime(entry.created_at),
+        }, { llm_activity: entry });
+      }
       if (this.hasMemoryListTarget) this.renderMemoryList(payload.memories || []);
       if (!options.quiet) {
         this.addObservedEvent(`activity-sync:${Date.now()}`, "global_activity_synced", {
@@ -800,20 +843,43 @@ export default class ChatController extends Controller {
   }
 
   async loadStatus() {
-    const payload = await readJSON(await fetch("/healthz"));
-    this.recycle("status-output", escapeHTML(JSON.stringify(payload, null, 2)));
-    this.queueEnabled = Boolean(payload.queue_enabled);
-    this.updateTransportLabel();
-    this.addEvent("status_loaded", payload);
-    await this.loadResearchStatus();
-    await this.loadHostBridgeStatus();
+    try {
+      const payload = await readJSON(await fetch("/healthz"));
+      this.setStatusOutput(JSON.stringify(payload, null, 2));
+      this.queueEnabled = Boolean(payload.queue_enabled);
+      this.updateTransportLabel();
+      this.addEvent("status_loaded", payload);
+    } catch (error) {
+      const message = errorMessage(error);
+      this.setStatusOutput(`Error loading /healthz: ${message}`);
+      this.addEvent("status_load_failed", { error: message });
+    }
+    await Promise.all([
+      this.loadResearchStatus(),
+      this.loadHostBridgeStatus(),
+    ]);
+  }
+
+  setStatusOutput(text: string): void {
+    if (this.hasStatusOutputTarget) this.statusOutputTarget.textContent = text;
+    this.recycle("status-output", text, "text");
+  }
+
+  setResearchStatusOutput(html: string): void {
+    if (this.hasResearchStatusOutputTarget) this.researchStatusOutputTarget.innerHTML = html;
+    this.recycle("research-status-output", html);
+  }
+
+  setHostBridgeStatusOutput(html: string): void {
+    if (this.hasHostBridgeStatusOutputTarget) this.hostBridgeStatusOutputTarget.innerHTML = html;
+    this.recycle("host-bridge-status-output", html);
   }
 
   async loadHostBridgeStatus() {
     if (!this.hasHostBridgeStatusOutputTarget) return;
     try {
       const payload = await readJSON(await fetch("/v1/host/status"));
-      this.recycle("host-bridge-status-output", renderHostBridgeStatus(payload));
+      this.setHostBridgeStatusOutput(renderHostBridgeStatus(payload));
       this.addEvent("host_bridge_status_loaded", {
         configured: Boolean(payload.configured),
         reachable: Boolean(payload.reachable),
@@ -821,11 +887,11 @@ export default class ChatController extends Controller {
       }, payload);
       document.dispatchEvent(new CustomEvent("omni:host-bridge-status", { detail: payload }));
     } catch (error) {
-      this.recycle(
-        "host-bridge-status-output",
-        `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`,
+      const message = errorMessage(error);
+      this.setHostBridgeStatusOutput(
+        `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(message)}</div>`,
       );
-      this.addEvent("host_bridge_status_failed", { error: error.message || String(error) });
+      this.addEvent("host_bridge_status_failed", { error: message });
     }
   }
 
@@ -833,7 +899,7 @@ export default class ChatController extends Controller {
     if (!this.hasResearchStatusOutputTarget) return;
     try {
       const payload = await readJSON(await fetch("/v1/status/research"));
-      this.recycle("research-status-output", renderResearchStatus(payload));
+      this.setResearchStatusOutput(renderResearchStatus(payload));
       this.addEvent("research_status_loaded", {
         provider: payload.generation_provider?.provider || "unknown",
         runnable: Boolean(payload.research_runnable),
@@ -841,26 +907,52 @@ export default class ChatController extends Controller {
         web_reachable: Boolean(payload.web_search?.reachable_provider),
       }, payload);
     } catch (error) {
-      this.recycle("research-status-output", `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
-      this.addEvent("research_status_failed", { error: error.message || String(error) });
+      const message = errorMessage(error);
+      this.setResearchStatusOutput(
+        `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(message)}</div>`,
+      );
+      this.addEvent("research_status_failed", { error: message });
     }
   }
 
   async loadMetrics() {
     if (!this.queueEnabled) {
-      this.recycle("metrics-output", emptyState("Metrics require repository mode."));
+      this.setMetricsOutput(emptyState("Metrics require repository mode."));
       return;
     }
-    if (this.hasMetricsOutputTarget) this.recycle("metrics-output", emptyState("Loading metrics..."));
+    this.setMetricsOutput(emptyState("Loading metrics..."));
+    const fetchMetric = async (path: string, fallback: Record<string, unknown> | null = null) => {
+      try {
+        const response = await fetch(path);
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `${response.status} ${response.statusText}`);
+        }
+        return await readJSON(response);
+      } catch (error) {
+        if (fallback) return fallback;
+        throw error;
+      }
+    };
     try {
-      const [live, models, playbooks, benchmarks, contextShrink] = await Promise.all([
-        readJSON(await fetch("/v1/metrics/live")),
-        readJSON(await fetch("/v1/metrics/models")),
-        readJSON(await fetch("/v1/metrics/playbooks")),
-        readJSON(await fetch("/v1/metrics/benchmarks")),
-        readJSON(await fetch("/v1/metrics/context-shrink?limit=100")).catch(() => ({ summary: {}, history: [], daily: [] })),
+      const [live, models, playbooks, benchmarks, contextShrink, contextUsage, operations] = await Promise.all([
+        fetchMetric("/v1/metrics/live"),
+        fetchMetric("/v1/metrics/models"),
+        fetchMetric("/v1/metrics/playbooks"),
+        fetchMetric("/v1/metrics/benchmarks"),
+        fetchMetric("/v1/metrics/context-shrink?limit=100", { summary: {}, history: [], daily: [] }),
+        fetchMetric("/v1/metrics/context-usage?limit=100", { summary: {}, by_source: [], overloads: [], history: [], daily: [] }),
+        fetchMetric("/v1/metrics/operations", { failure_counts: [], recent_failures: [], loop_stats: [], context_floods: [], run_diagnostics: [] }),
       ]);
-      this.recycle("metrics-output", renderMetricsDashboard(live, models.models || [], playbooks.playbooks || [], benchmarks.benchmarks || [], contextShrink));
+      this.setMetricsOutput(renderMetricsDashboard(
+        live,
+        models.models || [],
+        playbooks.playbooks || [],
+        benchmarks.benchmarks || [],
+        contextShrink,
+        contextUsage,
+        operations,
+      ));
       this.addEvent("metrics_loaded", {
         live_runs: (live.live_runs || []).length,
         recent_runs: (live.recent_runs || []).length,
@@ -869,11 +961,20 @@ export default class ChatController extends Controller {
         benchmarks: (benchmarks.benchmarks || []).length,
         context_shrink_events: Number(contextShrink?.summary?.requests || 0),
         context_shrink_avg_saved_pct: Number(contextShrink?.summary?.avg_saved_pct || 0),
-      }, { live, models, playbooks, benchmarks, contextShrink });
+        context_usage_events: Number(contextUsage?.summary?.requests || 0),
+        context_overloads: Number(contextUsage?.summary?.overload_events || 0),
+        llm_failures: Number(contextUsage?.summary?.failure_events || operations?.llm_failures || 0),
+        failure_events: (operations?.failure_counts || []).reduce((sum, item) => sum + Number(item.count || 0), 0),
+      }, { live, models, playbooks, benchmarks, contextShrink, contextUsage, operations });
     } catch (error) {
-      this.recycle("metrics-output", `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
+      this.setMetricsOutput(`<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
       this.addEvent("metrics_failed", { error: error.message || String(error) });
     }
+  }
+
+  setMetricsOutput(html: string): void {
+    if (this.hasMetricsOutputTarget) this.metricsOutputTarget.innerHTML = html;
+    this.recycle("metrics-output", html);
   }
 
   async migrateFresh() {
@@ -1167,14 +1268,16 @@ export default class ChatController extends Controller {
     this.liveBadgeTarget.className = badgeClass(mode);
   }
 
-  recycle(target: string, html: string): void {
-    const bundle = `<template data-recyclr-target="${escapeHTML(target)}">${html}</template>`;
+  recycle(target: string, html: string, mode: RecyclrSinkMode = "html"): void {
+    const bundle = buildRecyclrBundle(target, html);
     const controller = this.gxController ?? (window as Window & { omniRecyclr?: GxController }).omniRecyclr ?? null;
     if (controller && typeof controller.renderBundle === "function") {
-      controller.renderBundle(bundle);
-      return;
+      try {
+        controller.renderBundle(bundle);
+      } catch {
+        /* Recyclr may be unavailable; direct sink update below still applies. */
+      }
     }
-    const sink = this.element.querySelector(`[data-recyclr-sink="${target}"]`);
-    if (sink) sink.innerHTML = html;
+    applyRecyclrSink(this.element, target, html, mode);
   }
 }

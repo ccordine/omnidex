@@ -97,8 +97,8 @@ func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard
 			if len(patch.AgentConfig) > 0 {
 				merged.AgentConfig = patch.AgentConfig
 			}
-			if _, ok := raw["jira_ticket"]; ok {
-				merged.JiraTicket = patch.JiraTicket
+			if _, ok := raw["card_ticket"]; ok {
+				merged.CardTicket = patch.CardTicket
 			}
 			if _, ok := raw["recipe_id"]; ok {
 				merged.RecipeID = strings.TrimSpace(patch.RecipeID)
@@ -110,8 +110,8 @@ func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard
 					merged.Recipe = json.RawMessage(`{}`)
 				}
 			}
-			if _, ok := raw["jira_prompt"]; ok {
-				merged.JiraPrompt = patch.JiraPrompt
+			if _, ok := raw["card_prompt"]; ok {
+				merged.CardPrompt = patch.CardPrompt
 			}
 			if patch.PlanningChat != nil {
 				merged.PlanningChat = patch.PlanningChat
@@ -134,8 +134,8 @@ func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard
 			merged.PlayState = strings.TrimSpace(patch.PlayState)
 			merged.QueueOrder = patch.QueueOrder
 			patchMap := apiScrumCardToPatch(merged)
-			if _, ok := raw["jira_ticket"]; ok {
-				patchMap["jira_ticket"] = merged.JiraTicket
+			if _, ok := raw["card_ticket"]; ok {
+				patchMap["card_ticket"] = merged.CardTicket
 			}
 			if _, ok := raw["recipe_id"]; ok {
 				patchMap["recipe_id"] = merged.RecipeID
@@ -278,7 +278,7 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 		"scrum_card_id":          card.ID,
 		"scrum_card_title":       card.Title,
 		"scrum_card_description": card.Description,
-		"scrum_jira_ticket":      card.JiraTicket,
+		"scrum_card_ticket":      card.CardTicket,
 		"scrum_checklist":        strings.Join(checklistLines, "\n"),
 		"scrum_test_criteria":    strings.Join(testLines, "\n"),
 		"project_directory":      board.ProjectDirectory,

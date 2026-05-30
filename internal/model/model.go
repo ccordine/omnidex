@@ -34,6 +34,7 @@ const (
 	PipelineDataQuery       = "data_query"
 	PipelineDataExplore     = "data_explore"
 	PipelineProjectDebugger = "project_debugger"
+	PipelineScrumCardLLM    = "scrum_card_llm"
 )
 
 const (

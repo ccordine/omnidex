@@ -43,7 +43,7 @@ export type ScrumCoachResponse = {
   card: ScrumCard;
   reply: string;
   suggestions?: ScrumCoachSuggestion[];
-  jira_prompt?: string;
+  card_prompt?: string;
   memory_stored?: number;
   mode?: string;
   model?: string;
@@ -86,12 +86,14 @@ export type ScrumCard = {
   model_config?: Record<string, string>;
   agent_config?: Record<string, string>;
   job_id?: string;
+  tags_job_id?: string;
+  ticket_job_id?: string;
   console_log?: string;
   play_state?: "" | "queued" | "running" | "paused" | "reviewing";
   queue_order?: number;
   board_order?: number;
-  jira_ticket?: string;
-  jira_prompt?: string;
+  card_ticket?: string;
+  card_prompt?: string;
   recipe_id?: string;
   recipe?: Record<string, unknown>;
   tags?: string[];

@@ -187,7 +187,10 @@ func (s *Server) handleProjectPlanningChat(w http.ResponseWriter, r *http.Reques
 		userPrompt := buildProjectPlanningUserPrompt(project, board, cfg, req.Mode, req.Message, memoryLines, mapLines, researchLines, chat)
 
 		modelName := s.projectPlanningModel(project, cfg)
-		rawReply, err := s.scrumCoachLLMGenerate(r.Context(), modelName, system, userPrompt)
+		rawReply, err := s.scrumCoachLLMGenerate(r.Context(), llmContextSourceProjectPlanning, modelName, system, userPrompt, llmContextTelemetryMeta{
+			ProjectID: projectID,
+			Metadata:  map[string]any{"mode": req.Mode},
+		})
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return

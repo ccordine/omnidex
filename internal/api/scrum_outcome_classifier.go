@@ -137,18 +137,24 @@ func (s *Server) scrumOutcomeClassifierModel() string {
 	return firstNonEmpty(s.ollamaTaggingModel, s.ollamaDefaultModel, "qwen3:4b-thinking")
 }
 
-func (s *Server) scrumOutcomeLLMChat(ctx context.Context, system, user string) (string, error) {
+func (s *Server) scrumOutcomeLLMChat(ctx context.Context, system, user string, meta llmContextTelemetryMeta) (string, error) {
 	if s.llmClient == nil {
 		return "", fmt.Errorf("no llm client configured")
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), scrumOutcomeClassifierTimeout)
 	defer cancel()
 	modelName := s.scrumOutcomeClassifierModel()
+	promptChars := llmPromptCharCount(system, user)
 	client := s.ollamaClientWithTimeout(scrumOutcomeClassifierTimeout)
 	if client != nil {
-		return client.Chat(ctx, modelName, strings.TrimSpace(system), strings.TrimSpace(user))
+		generated, err := client.Chat(ctx, modelName, strings.TrimSpace(system), strings.TrimSpace(user))
+		s.recordLLMContextUsage(ctx, llmContextSourceOutcomeClassifier, modelName, "ollama", meta, promptChars, promptChars, false, 0, err)
+		return generated, err
 	}
-	return s.llmClient.Generate(ctx, modelName, strings.TrimSpace(system+"\n\n"+user))
+	prompt := strings.TrimSpace(system + "\n\n" + user)
+	generated, err := s.llmClient.Generate(ctx, modelName, prompt)
+	s.recordLLMContextUsage(ctx, llmContextSourceOutcomeClassifier, modelName, s.llmProviderName(), meta, promptChars, len(prompt), false, 0, err)
+	return generated, err
 }
 
 func (s *Server) classifyScrumAgentOutcome(ctx context.Context, job model.JobDetails, baseline ScrumManagerOutcome) (scrumOutcomeClassification, bool) {
@@ -161,7 +167,13 @@ func (s *Server) classifyScrumAgentOutcome(ctx context.Context, job model.JobDet
 	if strings.TrimSpace(collectScrumAgentOutput(job)) == "" {
 		return scrumOutcomeClassification{}, false
 	}
-	raw, err := s.scrumOutcomeLLMChat(ctx, scrumOutcomeClassifierSystemPrompt(), buildScrumOutcomeClassifierUserPrompt(job, baseline))
+	raw, err := s.scrumOutcomeLLMChat(ctx, scrumOutcomeClassifierSystemPrompt(), buildScrumOutcomeClassifierUserPrompt(job, baseline), llmContextTelemetryMeta{
+		CardID: scrumCardTitleFromMetadata(job.Job.Metadata),
+		Metadata: map[string]any{
+			"job_id":   job.Job.ID,
+			"baseline": string(baseline),
+		},
+	})
 	if err != nil {
 		return scrumOutcomeClassification{}, false
 	}

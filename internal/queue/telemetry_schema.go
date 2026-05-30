@@ -170,4 +170,42 @@ CREATE INDEX IF NOT EXISTS idx_omni_playbook_success ON omni_playbook_usage(play
 CREATE INDEX IF NOT EXISTS idx_omni_benchmark_status_created ON omni_benchmark_results(benchmark_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_context_shrink_source_created ON omni_context_shrink_metrics(source, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_context_shrink_saved_pct ON omni_context_shrink_metrics(saved_pct DESC);
+
+CREATE TABLE IF NOT EXISTS omni_llm_context_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    provider TEXT NOT NULL DEFAULT '',
+    project_id BIGINT,
+    card_id TEXT,
+    prompt_chars INT NOT NULL DEFAULT 0,
+    sent_chars INT NOT NULL DEFAULT 0,
+    context_limit_chars INT NOT NULL DEFAULT 0,
+    utilization_pct NUMERIC NOT NULL DEFAULT 0,
+    overloaded BOOLEAN NOT NULL DEFAULT FALSE,
+    shrunk BOOLEAN NOT NULL DEFAULT FALSE,
+    saved_pct NUMERIC NOT NULL DEFAULT 0,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_source_created ON omni_llm_context_usage(source, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_overloaded ON omni_llm_context_usage(overloaded, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_model ON omni_llm_context_usage(model, created_at DESC);
+
+ALTER TABLE omni_llm_context_usage
+    ADD COLUMN IF NOT EXISTS success BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS error_class TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS latency_ms BIGINT,
+    ADD COLUMN IF NOT EXISTS run_id UUID,
+    ADD COLUMN IF NOT EXISTS job_id BIGINT,
+    ADD COLUMN IF NOT EXISTS step_id BIGINT,
+    ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS attempt INT NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS delta_chars INT NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_success ON omni_llm_context_usage(success, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_run ON omni_llm_context_usage(run_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_scope ON omni_llm_context_usage(scope, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_delta ON omni_llm_context_usage(delta_chars DESC, created_at DESC);
 `

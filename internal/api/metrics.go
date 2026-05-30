@@ -114,10 +114,48 @@ func (s *Server) handleMetricsContextShrink(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	source := strings.TrimSpace(r.URL.Query().Get("source"))
-	if source == "" {
-		source = scrumPilotContextShrinkSource
-	}
 	metrics, err := s.repo.ContextShrinkMetrics(r.Context(), source, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, metrics)
+}
+
+func (s *Server) handleMetricsContextUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.repo == nil {
+		writeError(w, http.StatusServiceUnavailable, "repository mode required for context usage metrics")
+		return
+	}
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			limit = parsed
+		}
+	}
+	source := strings.TrimSpace(r.URL.Query().Get("source"))
+	metrics, err := s.repo.LLMContextUsageMetrics(r.Context(), source, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, metrics)
+}
+
+func (s *Server) handleMetricsOperations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.repo == nil {
+		writeError(w, http.StatusServiceUnavailable, "repository mode required for operations metrics")
+		return
+	}
+	metrics, err := s.repo.OperationsMetrics(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

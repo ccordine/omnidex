@@ -32,7 +32,7 @@ Continue research → more drafts queue up
 | **Draft queue** | Persistent queue of suggested cards (`planning_draft_queue` on the project). Survives refresh. |
 | **Scrum board** | Kanban columns (backlog → ready → assigned → … → done). Drag, reorder, play. |
 | **Card Channel** | Thinking pilot for a single card — minified channel context + memory retrieval. |
-| **Card Coach** | Per-card refinement, Jira drafts, memory notes. |
+| **Card Coach** | Per-card refinement, card ticket drafts, memory notes. |
 | **Flow metrics** | Churn / incomplete-work signals on cards and board summary. |
 
 ## Project Chat modes

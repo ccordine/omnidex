@@ -23,7 +23,7 @@ type CardContext struct {
 	ID           string
 	Title        string
 	Description  string
-	JiraTicket   string
+	CardTicket   string
 	Checklist    []ChecklistItem
 	TestCriteria []ChecklistItem
 	Tags         []string
@@ -51,8 +51,8 @@ func AppendCardContextLines(lines []string, card CardContext) []string {
 	if strings.TrimSpace(card.Description) != "" {
 		lines = append(lines, "Description:", card.Description)
 	}
-	if strings.TrimSpace(card.JiraTicket) != "" {
-		lines = append(lines, "Jira ticket draft:", card.JiraTicket)
+	if strings.TrimSpace(card.CardTicket) != "" {
+		lines = append(lines, "Card ticket draft:", card.CardTicket)
 	}
 	if checklist := FormatChecklist(card.Checklist); checklist != "" {
 		lines = append(lines, "Checklist:", checklist)
@@ -89,8 +89,8 @@ func ContextLinesFromMetadata(raw json.RawMessage) []string {
 	if desc := metadataString(raw, "scrum_card_description"); desc != "" {
 		lines = append(lines, "Description:", desc)
 	}
-	if ticket := metadataString(raw, "scrum_jira_ticket"); ticket != "" {
-		lines = append(lines, "Jira ticket draft:", ticket)
+	if ticket := metadataString(raw, "scrum_card_ticket"); ticket != "" {
+		lines = append(lines, "Card ticket draft:", ticket)
 	}
 	if checklist := metadataString(raw, "scrum_checklist"); checklist != "" {
 		lines = append(lines, "Checklist:", checklist)

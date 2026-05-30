@@ -182,7 +182,7 @@ func appendScrumCardContextLines(lines []string, card ScrumCard) []string {
 	}
 	return scrum.AppendCardContextLines(lines, scrum.CardContext{
 		Description:  card.Description,
-		JiraTicket:   card.JiraTicket,
+		CardTicket:   card.CardTicket,
 		Checklist:    items,
 		TestCriteria: tests,
 		Tags:         card.Tags,

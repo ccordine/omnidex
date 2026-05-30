@@ -55,6 +55,13 @@ type TelemetryStruggleSummary struct {
 }
 
 func shouldRecordTelemetryStepEvent(eventType, message string) bool {
+	if shouldRecordTelemetrySignalEvent(eventType, message) {
+		return true
+	}
+	return isTelemetryOpsEvent(eventType)
+}
+
+func shouldRecordTelemetrySignalEvent(eventType, message string) bool {
 	eventType = strings.TrimSpace(eventType)
 	if eventType == "" {
 		return false
@@ -80,6 +87,36 @@ func shouldRecordTelemetryStepEvent(eventType, message string) bool {
 		}
 	}
 	return false
+}
+
+func isTelemetryOpsEvent(eventType string) bool {
+	e := strings.ToLower(strings.TrimSpace(eventType))
+	if e == "" {
+		return false
+	}
+	markers := []string{
+		"error", "fail", "failed", "retry", "replan", "loop", "reject",
+		"exhaust", "waiting", "degraded", "blocked", "interrupt", "cancel",
+		"unavailable", "skipped",
+	}
+	for _, marker := range markers {
+		if strings.Contains(e, marker) {
+			return true
+		}
+	}
+	switch e {
+	case "llm_prompt", "llm_response", "llm_model_prepared", "verification_retry",
+		"verify_consensus", "verify_test_start", "verify_test_pass", "verify_test_fail",
+		"step_complete", "run_completed", "tool_call_begin", "tool_call_complete",
+		"plan_candidate_ready", "plan_selected", "external_agent_started", "external_agent_completed":
+		return true
+	}
+	return false
+}
+
+func shouldRecordTelemetryRecovery(eventType string) bool {
+	_, ok := telemetryRecoveryTriggers[eventType]
+	return ok
 }
 
 func (r *Repository) MarkTelemetryRunRunningForJob(ctx context.Context, jobID int64) error {
@@ -123,7 +160,7 @@ func (r *Repository) RecordTelemetryStepEvent(ctx context.Context, stepID int64,
 	}); err != nil {
 		return err
 	}
-	if strategy, ok := telemetryRecoveryTriggers[eventType]; ok {
+	if strategy, ok := telemetryRecoveryTriggers[eventType]; ok && shouldRecordTelemetryRecovery(eventType) {
 		success := false
 		_ = r.RecordTelemetryRecovery(ctx, TelemetryRecoveryRecord{
 			RunID:        run,

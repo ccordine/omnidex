@@ -69,7 +69,7 @@ function tabBadge(card: ScrumCard, tab: ScrumCardTab): string {
       if ((card.planning_chat ?? []).length > 0) return countBadge((card.planning_chat ?? []).length, "violet");
       if (pending > 0) return countBadge(pending, "amber");
       if (refs > 0) return countBadge(refs, "cyan");
-      if (card.jira_ticket?.trim()) return dotBadge("emerald");
+      if (card.card_ticket?.trim()) return dotBadge("emerald");
       return "";
     case "tests": {
       const tests = card.test_criteria ?? [];
@@ -229,22 +229,31 @@ export function renderScrumModalRefFiles(card: ScrumCard, files: string[] = []):
   `;
 }
 
-export function renderScrumModalJira(card: ScrumCard): string {
+export function renderScrumModalCardTicket(card: ScrumCard): string {
+  const savedBadge = card.card_ticket?.trim()
+    ? `<span class="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">Saved</span>`
+    : "";
   return `
-    <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+    <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4" data-scrum-card-ticket-section>
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Jira ticket draft</h3>
-          <p class="mt-1 text-xs text-zinc-500">Generate a ticket from a prompt. Test criteria and tags are included automatically.</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Card ticket draft</h3>
+            ${savedBadge}
+          </div>
+          <p class="mt-1 text-xs text-zinc-500">Generate a work ticket from a prompt. Edits auto-save when you generate or iterate.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <button type="button" data-action="scrum#generateJira" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="jira-generate" data-scrum-pending-label="Generate" class="rounded-md bg-violet-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-60">Generate</button>
-          <button type="button" data-action="scrum#saveJira" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40">Save draft</button>
-          <span data-scrum-pending-status="jira-generate" class="hidden text-[11px] text-zinc-500" aria-live="polite"></span>
+          <button type="button" data-action="scrum#generateCardTicket" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="card-ticket-generate" data-scrum-pending-label="Generate" class="rounded-md bg-violet-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-60">Generate</button>
+          <button type="button" data-action="scrum#iterateCardTicket" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="card-ticket-iterate" data-scrum-pending-label="Iterate" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-300/20 disabled:cursor-not-allowed disabled:opacity-60">Iterate</button>
+          <button type="button" data-action="scrum#saveCardTicket" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40">Save draft</button>
+          <span data-scrum-pending-status="card-ticket-generate" class="hidden inline-flex items-center gap-1.5 text-[11px] text-zinc-500" aria-live="polite"><span class="hidden inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-violet-300/25 border-t-violet-200" data-scrum-pending-spinner></span><span data-scrum-pending-text></span></span>
+          <span data-scrum-pending-status="card-ticket-iterate" class="hidden inline-flex items-center gap-1.5 text-[11px] text-zinc-500" aria-live="polite"><span class="hidden inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-violet-300/25 border-t-violet-200" data-scrum-pending-spinner></span><span data-scrum-pending-text></span></span>
         </div>
       </div>
-      <textarea data-scrum-field="jiraPromptDraft" rows="3" placeholder="Coach-generated Jira prompt (editable before Generate)" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-violet-300/40">${escapeHTML(card.jira_prompt || "")}</textarea>
-      <textarea data-scrum-field="jiraTicket" rows="12" placeholder="Generated Jira ticket markdown appears here…" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-violet-300/40">${escapeHTML(card.jira_ticket || "")}</textarea>
+      <textarea data-scrum-field="cardPromptDraft" rows="3" placeholder="Card prompt — what should the ticket cover?" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-violet-300/40">${escapeHTML(card.card_prompt || "")}</textarea>
+      <textarea data-scrum-field="cardIterateNotes" rows="2" placeholder="Iterate notes — what to change in the draft below?" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-violet-300/40"></textarea>
+      <textarea data-scrum-field="cardTicket" rows="12" placeholder="Generated card ticket markdown streams here…" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-violet-300/40">${escapeHTML(card.card_ticket || "")}</textarea>
     </section>
   `;
 }
@@ -279,7 +288,7 @@ export function renderScrumModalTagsPanel(card: ScrumCard): string {
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" data-action="scrum#suggestCardTags" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="tags-suggest" data-scrum-pending-label="Suggest" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-300/20 disabled:cursor-not-allowed disabled:opacity-60">Suggest</button>
-          <span data-scrum-pending-status="tags-suggest" class="hidden text-[11px] text-zinc-500" aria-live="polite"></span>
+          <span data-scrum-pending-status="tags-suggest" class="hidden inline-flex items-center gap-1.5 text-[11px] text-zinc-500" aria-live="polite"><span class="hidden inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-violet-300/25 border-t-violet-200" data-scrum-pending-spinner></span><span data-scrum-pending-text></span></span>
         </div>
       </div>
       <div class="mt-3" data-recyclr-sink="scrum-card-tags">${renderScrumTagPills(card)}</div>
@@ -353,7 +362,7 @@ export function renderScrumCoachChat(card: ScrumCard): string {
     const shell = msg.role === "user" ? "border-cyan-300/25 bg-cyan-300/10" : "border-white/10 bg-zinc-900/70";
     return `<div class="rounded-md border ${shell} px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-zinc-500">${escapeHTML(msg.role)}</div><div class="mt-1 whitespace-pre-wrap text-xs leading-5 text-zinc-200">${escapeHTML(msg.content)}</div></div>`;
   }).join("");
-  return messages || `<p class="text-xs text-zinc-500">Ask the coach to refine scope, split work, or draft a Jira prompt.</p>`;
+  return messages || `<p class="text-xs text-zinc-500">Ask the coach to refine scope, split work, or draft a card ticket prompt.</p>`;
 }
 
 export function renderScrumCoachPanel(card: ScrumCard): string {
@@ -363,7 +372,7 @@ export function renderScrumCoachPanel(card: ScrumCard): string {
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Card coach</h3>
-          <p class="mt-1 text-[11px] leading-5 text-zinc-500">Meta-planning for this card only. Try <span class="font-mono text-zinc-400">/plan</span> <span class="font-mono text-zinc-400">/research</span> <span class="font-mono text-zinc-400">/jira</span> <span class="font-mono text-zinc-400">/scan</span></p>
+          <p class="mt-1 text-[11px] leading-5 text-zinc-500">Meta-planning for this card only. Try <span class="font-mono text-zinc-400">/plan</span> <span class="font-mono text-zinc-400">/research</span> <span class="font-mono text-zinc-400">/card</span> <span class="font-mono text-zinc-400">/scan</span></p>
         </div>
         <label class="flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" data-scrum-field="coachEnabled" class="rounded border-white/20 bg-zinc-900 text-cyan-300"${cfg.enabled ? " checked" : ""} /> On</label>
       </div>
@@ -375,7 +384,7 @@ export function renderScrumCoachPanel(card: ScrumCard): string {
       <div class="scrollbar mt-3 max-h-36 space-y-2 overflow-y-auto pr-1" data-recyclr-sink="scrum-coach-toasts"><p class="text-xs text-zinc-600">Coach suggestions appear here as you edit.</p></div>
       <div class="scrollbar mt-3 max-h-52 space-y-2 overflow-y-auto pr-1" data-recyclr-sink="scrum-coach-chat">${renderScrumCoachChat(card)}</div>
       <form data-action="submit->scrum#sendCoach" data-card-id="${escapeHTML(card.id)}" class="mt-3 flex gap-2">
-        <textarea data-scrum-field="coachMessage" rows="2" placeholder="Talk to the coach… /plan /research /jira" class="scrollbar min-w-0 flex-1 resize-none rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40"></textarea>
+        <textarea data-scrum-field="coachMessage" rows="2" placeholder="Talk to the coach… /plan /research /card" class="scrollbar min-w-0 flex-1 resize-none rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40"></textarea>
         <button type="submit" class="self-end rounded-md bg-cyan-300 px-3 py-2 text-xs font-semibold text-zinc-950 hover:bg-cyan-200">Send</button>
       </form>
     </section>
@@ -398,7 +407,7 @@ export function renderScrumModalCardTab(card: ScrumCard, files: string[] = []): 
         ${renderScrumModalDetails(card)}
         ${renderScrumModalChecklist(card)}
         ${renderScrumModalRefFiles(card, files)}
-        ${renderScrumModalJira(card)}
+        <div data-recyclr-sink="scrum-card-ticket">${renderScrumModalCardTicket(card)}</div>
       </div>
       <div class="space-y-4 xl:sticky xl:top-0 xl:self-start">
         ${renderScrumModalTagsPanel(card)}
@@ -422,7 +431,7 @@ export function renderScrumModalConfigTab(
     <div class="space-y-4">
       <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
         <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Execution layer</h3>
-        <p class="mt-2 text-sm leading-6 text-zinc-400">Play runs the resolved agent (card → project → env) with full card context: title, description, checklist, Jira draft, ref files, and recipe. A programmatic manager reads <span class="font-mono text-zinc-300">SCRUM_STATUS:</span> from agent output to move the card to review, blocked, or back to assigned.</p>
+        <p class="mt-2 text-sm leading-6 text-zinc-400">Play runs the resolved agent (card → project → env) with full card context: title, description, checklist, card ticket draft, ref files, and recipe. A programmatic manager reads <span class="font-mono text-zinc-300">SCRUM_STATUS:</span> from agent output to move the card to review, blocked, or back to assigned.</p>
         <div class="mt-3 flex flex-wrap items-center gap-2">
           <button type="button" data-action="scrum#quickSetAgent" data-card-id="${escapeHTML(card.id)}" data-agent-system="cursor" class="rounded-md border ${usingCursor ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-200 hover:border-cyan-300/40"} px-3 py-1.5 text-xs font-semibold">Use Cursor</button>
           <button type="button" data-action="scrum#quickSetAgent" data-card-id="${escapeHTML(card.id)}" data-agent-system="codex" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40">Use Codex</button>
@@ -590,6 +599,7 @@ export function renderScrumCardModal(
         </div>
         <button type="button" data-action="scrum#closeModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Close</button>
       </div>
+      <p data-scrum-modal-feedback class="mt-3 hidden rounded-md border px-3 py-2 text-xs leading-5" role="status" aria-live="polite"></p>
     </div>
     <div class="shrink-0" data-recyclr-sink="scrum-modal-toolbar">${renderScrumModalToolbar(card, board, playQueue)}</div>
     <div class="shrink-0 border-b border-white/10 px-4 py-3 md:px-5" data-recyclr-sink="scrum-modal-tabs">

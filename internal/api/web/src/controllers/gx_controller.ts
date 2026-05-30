@@ -51,14 +51,26 @@ export default class GxController extends Controller {
 
   renderBundle(html: string): void {
     const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
-    const events = [...doc.querySelectorAll("[data-recyclr-target]")].map((node) => ({
-      selector: `[data-recyclr-sink="${cssEscape((node as HTMLElement).dataset.recyclrTarget || "")}"]`,
-      location: "innerHTML",
-      selection: node.innerHTML,
-    }));
+    const events = [...doc.querySelectorAll("[data-recyclr-target]")].map((node) => {
+      const target = (node as HTMLElement).dataset.recyclrTarget || "";
+      let selection = node.innerHTML;
+      if (!selection && node instanceof HTMLTemplateElement) {
+        selection = node.content?.innerHTML ?? "";
+      }
+      return {
+        selector: `[data-recyclr-sink="${cssEscape(target)}"]`,
+        location: "innerHTML",
+        selection,
+      };
+    });
     if (events.length > 0 && this.gx) {
       this.gx.render(events);
       this.element.dispatchEvent(new CustomEvent("omni:recycled", { detail: { events: events.length } }));
+      return;
+    }
+    for (const event of events) {
+      const sink = document.querySelector(event.selector);
+      if (sink) sink.innerHTML = event.selection;
     }
   }
 }

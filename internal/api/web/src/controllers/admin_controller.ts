@@ -166,6 +166,7 @@ export default class AdminController extends Controller {
 
   async load() {
     this.setAdminStatus("Loading admin settings…", "busy");
+    let failed: unknown = null;
     try {
       await Promise.all([
         this.loadNetwork(),
@@ -176,13 +177,21 @@ export default class AdminController extends Controller {
         this.loadGlobalAgents(),
         this.loadDataSources(),
       ]);
-      if (this.activeTab === "health") {
-        await this.chatController()?.loadStatus();
-      }
-      this.setAdminStatus("Ready", "idle");
     } catch (error) {
-      this.actionFail(error);
+      failed = error;
     }
+    if (this.activeTab === "health") {
+      try {
+        await this.chatController()?.loadStatus();
+      } catch (error) {
+        if (!failed) failed = error;
+      }
+    }
+    if (failed) {
+      this.actionFail(failed);
+      return;
+    }
+    this.setAdminStatus("Ready", "idle");
   }
 
   async loadNetwork() {

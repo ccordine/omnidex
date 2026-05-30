@@ -1,6 +1,7 @@
 package ollama
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha1"
@@ -107,6 +108,86 @@ func (c *Client) Chat(ctx context.Context, model, system, user string) (string, 
 		return "", err
 	}
 	return strings.TrimSpace(parsed.Message.Content), nil
+}
+
+type chatStreamChunk struct {
+	Message chatMessage `json:"message"`
+	Done    bool        `json:"done"`
+}
+
+// ChatStream streams /api/chat tokens to onChunk and returns the full assembled reply.
+func (c *Client) ChatStream(ctx context.Context, model, system, user string, onChunk func(string) error) (string, error) {
+	if strings.TrimSpace(model) == "" {
+		model = c.defaultModel
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "", fmt.Errorf("model is required")
+	}
+	messages := make([]chatMessage, 0, 2)
+	if strings.TrimSpace(system) != "" {
+		messages = append(messages, chatMessage{Role: "system", Content: strings.TrimSpace(system)})
+	}
+	user = strings.TrimSpace(user)
+	if user == "" {
+		user = "(empty)"
+	}
+	messages = append(messages, chatMessage{Role: "user", Content: user})
+
+	payload, err := json.Marshal(chatRequest{
+		Model:    model,
+		Messages: messages,
+		Stream:   true,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/chat", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", c.wrapConnectivityError(err, "/api/chat")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("ollama chat failed: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var full strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var chunk chatStreamChunk
+		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			continue
+		}
+		if text := chunk.Message.Content; text != "" {
+			full.WriteString(text)
+			if onChunk != nil {
+				if err := onChunk(text); err != nil {
+					return full.String(), err
+				}
+			}
+		}
+		if chunk.Done {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return full.String(), err
+	}
+	return strings.TrimSpace(full.String()), nil
 }
 
 type createModelRequest struct {

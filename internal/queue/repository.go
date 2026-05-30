@@ -18,6 +18,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectdebugger"
 	"github.com/gryph/omnidex/internal/scrum"
+	"github.com/gryph/omnidex/internal/scrumcardllm"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -449,6 +450,9 @@ func stepsForJob(pipeline, instruction string, metadataJSON []byte) []stepSeed {
 	}
 	if projectdebugger.IsJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineProjectDebugger {
 		return []stepSeed{{action: "project_debugger", sortIndex: 1}}
+	}
+	if scrumcardllm.IsJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineScrumCardLLM {
+		return []stepSeed{{action: "scrum_card_llm", sortIndex: 1}}
 	}
 	if isDataSourceQueryJob(metadataJSON) || normalizePipeline(pipeline) == model.PipelineDataQuery {
 		return []stepSeed{{action: "data_source_query", sortIndex: 1}}

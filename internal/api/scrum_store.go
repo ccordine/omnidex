@@ -37,8 +37,8 @@ type ScrumCard struct {
 	Chat        []ScrumChatMessage   `json:"chat"`
 	ModelConfig json.RawMessage      `json:"model_config,omitempty"`
 	AgentConfig json.RawMessage      `json:"agent_config,omitempty"`
-	JiraTicket  string               `json:"jira_ticket,omitempty"`
-	JiraPrompt  string               `json:"jira_prompt,omitempty"`
+	CardTicket  string               `json:"card_ticket,omitempty"`
+	CardPrompt  string               `json:"card_prompt,omitempty"`
 	RecipeID    string               `json:"recipe_id,omitempty"`
 	Recipe      json.RawMessage      `json:"recipe,omitempty"`
 	Tags        []string             `json:"tags"`
@@ -47,12 +47,34 @@ type ScrumCard struct {
 	TestCriteria []ScrumChecklistItem `json:"test_criteria"`
 	FlowMetrics  json.RawMessage      `json:"flow_metrics,omitempty"`
 	JobID       string               `json:"job_id,omitempty"`
+	TagsJobID   string               `json:"tags_job_id,omitempty"`
+	TicketJobID string               `json:"ticket_job_id,omitempty"`
 	ConsoleLog  string               `json:"console_log,omitempty"`
 	PlayState   string               `json:"play_state,omitempty"`
 	QueueOrder  int                  `json:"queue_order,omitempty"`
 	BoardOrder  int                  `json:"board_order,omitempty"`
 	CreatedAt   string               `json:"created_at"`
 	UpdatedAt   string               `json:"updated_at"`
+}
+
+func (c *ScrumCard) UnmarshalJSON(data []byte) error {
+	type cardAlias ScrumCard
+	aux := struct {
+		cardAlias
+		LegacyTicket string `json:"jira_ticket,omitempty"`
+		LegacyPrompt string `json:"jira_prompt,omitempty"`
+	}{}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*c = ScrumCard(aux.cardAlias)
+	if strings.TrimSpace(c.CardTicket) == "" && strings.TrimSpace(aux.LegacyTicket) != "" {
+		c.CardTicket = aux.LegacyTicket
+	}
+	if strings.TrimSpace(c.CardPrompt) == "" && strings.TrimSpace(aux.LegacyPrompt) != "" {
+		c.CardPrompt = aux.LegacyPrompt
+	}
+	return nil
 }
 
 type ScrumBoard struct {
@@ -225,8 +247,8 @@ func (s *ScrumStore) UpdateCard(cardID string, patch ScrumCard) (ScrumCard, erro
 	if len(patch.AgentConfig) > 0 {
 		current.AgentConfig = patch.AgentConfig
 	}
-	if patch.JiraTicket != "" {
-		current.JiraTicket = patch.JiraTicket
+	if patch.CardTicket != "" {
+		current.CardTicket = patch.CardTicket
 	}
 	if strings.TrimSpace(patch.RecipeID) != "" {
 		current.RecipeID = strings.TrimSpace(patch.RecipeID)
@@ -243,8 +265,8 @@ func (s *ScrumStore) UpdateCard(cardID string, patch ScrumCard) (ScrumCard, erro
 	if patch.PlanningChat != nil {
 		current.PlanningChat = patch.PlanningChat
 	}
-	if patch.JiraPrompt != "" {
-		current.JiraPrompt = patch.JiraPrompt
+	if patch.CardPrompt != "" {
+		current.CardPrompt = patch.CardPrompt
 	}
 	if patch.TestCriteria != nil {
 		current.TestCriteria = patch.TestCriteria

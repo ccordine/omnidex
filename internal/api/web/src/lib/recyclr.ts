@@ -48,12 +48,44 @@ export function createRecyclrRealtimeStream(
   });
 }
 
-export function renderRecyclrBundle(host: { renderBundle: (html: string) => void } | null, target: string, html: string): void {
-  const bundle = `<template data-recyclr-target="${cssEscape(target)}">${html}</template>`;
-  if (host && typeof host.renderBundle === "function") {
-    host.renderBundle(bundle);
+export type RecyclrSinkMode = "html" | "text";
+
+/** Build a Recyclr bundle without string-concatenating untrusted HTML into a template literal. */
+export function buildRecyclrBundle(target: string, html: string): string {
+  const template = document.createElement("template");
+  template.dataset.recyclrTarget = target;
+  template.innerHTML = html;
+  return template.outerHTML;
+}
+
+export function applyRecyclrSink(
+  root: ParentNode,
+  target: string,
+  html: string,
+  mode: RecyclrSinkMode = "html",
+): void {
+  const sink = root.querySelector(`[data-recyclr-sink="${cssEscape(target)}"]`);
+  if (!sink) return;
+  if (mode === "text") {
+    sink.textContent = html;
     return;
   }
-  const sink = document.querySelector(`[data-recyclr-sink="${cssEscape(target)}"]`);
-  if (sink) sink.innerHTML = html;
+  sink.innerHTML = html;
+}
+
+export function renderRecyclrBundle(
+  host: { renderBundle: (html: string) => void } | null,
+  target: string,
+  html: string,
+  mode: RecyclrSinkMode = "html",
+): void {
+  const bundle = buildRecyclrBundle(target, html);
+  if (host && typeof host.renderBundle === "function") {
+    try {
+      host.renderBundle(bundle);
+    } catch {
+      /* Recyclr may be unavailable; direct sink update below still applies. */
+    }
+  }
+  applyRecyclrSink(document, target, html, mode);
 }

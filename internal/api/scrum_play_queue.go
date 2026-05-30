@@ -181,6 +181,12 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		return board, nil
 	}
 	for i, card := range board.Cards {
+		if reconciled, ok := s.reconcileScrumCardLlmJobs(r.Context(), projectID, card); ok {
+			if saved, err := s.persistScrumCardFromContext(r.Context(), projectID, reconciled); err == nil {
+				board.Cards[i] = saved
+				card = saved
+			}
+		}
 		if reconciled, ok := s.reconcileScrumCardJobState(r.Context(), projectID, card); ok {
 			if saved, err := s.persistScrumCardFromContext(r.Context(), projectID, reconciled); err == nil {
 				board.Cards[i] = saved

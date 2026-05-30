@@ -18,7 +18,7 @@ Venusaur is the **augmented planner release**: research and architect at project
 
 - **Flow metrics** — column churn, conversation depth, incomplete-work signals on cards and board summary.
 - **Card Channel pilot** — minified channel context (LLM summary + memory lookup) instead of raw agent transcript truncation.
-- **Card Coach** — per-card planning, Jira drafts, memory notes.
+- **Card Coach** — per-card planning, card ticket drafts, memory notes.
 - Channel scroll UX — open at bottom; live updates only when pinned.
 
 ### Docs

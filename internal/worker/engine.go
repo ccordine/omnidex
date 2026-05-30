@@ -593,6 +593,9 @@ func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) err
 	if action == "project_debugger" {
 		return s.runProjectDebuggerStep(stepCtx, claim)
 	}
+	if action == "scrum_card_llm" {
+		return s.runScrumCardLLMStep(stepCtx, claim)
+	}
 	// Runtime v2: keep the queue contract/action names stable while executing
 	// through a simpler, stage-driven orchestrator.
 	if s.agentRuntimeRunner != nil {
@@ -734,11 +737,12 @@ func (s *Service) llmGenerateWithTrace(ctx context.Context, stepID int64, scope 
 	retriedPrimaryCreateEOF := false
 
 	for idx, candidateModel := range attemptModels {
+		attemptNum := idx + 1
 		if idx > 0 {
 			s.emitStepEvent(stepID, "llm_retry_model", fmt.Sprintf("scope=%s from=%s to=%s", scope, modelName, candidateModel))
 		}
 
-		raw, err := s.llmGenerateSingleAttempt(ctx, stepID, scope, candidateModel, prompt)
+		raw, err := s.llmGenerateSingleAttempt(ctx, stepID, scope, candidateModel, prompt, attemptNum)
 		if err == nil {
 			return raw, nil
 		}
@@ -747,7 +751,7 @@ func (s *Service) llmGenerateWithTrace(ctx context.Context, stepID int64, scope 
 		if !retriedPrimaryCreateEOF && idx == 0 && shouldRetrySameModelAfterCreateEOF(err) {
 			retriedPrimaryCreateEOF = true
 			s.emitStepEvent(stepID, "llm_retry_same_model", fmt.Sprintf("scope=%s model=%s reason=create_eof", scope, candidateModel))
-			raw, retryErr := s.llmGenerateSingleAttempt(ctx, stepID, scope, candidateModel, prompt)
+			raw, retryErr := s.llmGenerateSingleAttempt(ctx, stepID, scope, candidateModel, prompt, attemptNum+1)
 			if retryErr == nil {
 				return raw, nil
 			}
@@ -773,9 +777,11 @@ func (s *Service) llmGenerateWithTrace(ctx context.Context, stepID int64, scope 
 	return "", finalErr
 }
 
-func (s *Service) llmGenerateSingleAttempt(ctx context.Context, stepID int64, scope string, modelName string, prompt string) (string, error) {
+func (s *Service) llmGenerateSingleAttempt(ctx context.Context, stepID int64, scope string, modelName string, prompt string, attempt int) (string, error) {
+	started := time.Now()
 	prepared, err := s.llm.PrepareContextModel(ctx, modelName, prompt)
 	if err != nil {
+		s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, false, err, time.Since(started))
 		return "", err
 	}
 	defer s.llm.CleanupPreparedModel(prepared)
@@ -790,11 +796,14 @@ func (s *Service) llmGenerateSingleAttempt(ctx context.Context, stepID int64, sc
 	}, "\n"), 3200)
 
 	raw, err := s.llm.GeneratePrepared(ctx, prepared)
+	latency := time.Since(started)
 	if err != nil {
+		s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, false, err, latency)
 		return "", err
 	}
 
 	response := strings.TrimSpace(raw)
+	s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, true, nil, latency)
 	s.emitStepEvent(stepID, "llm_response", fmt.Sprintf("scope=%s model=%s chars=%d", scope, modelName, len(response)))
 	s.emitStepContextWithBudget(stepID, "llm_response", strings.Join([]string{
 		"scope=" + scope,

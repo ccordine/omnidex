@@ -8,7 +8,7 @@ import {
   fetchScrumBoard,
   fetchScrumFiles,
   fetchScrumTags,
-  jiraScrumCard,
+  cardTicketScrumCard,
   moveScrumCard,
   pauseScrumCard,
   patchScrumCard,
@@ -33,6 +33,7 @@ import { renderScrumBoard, renderScrumEmptyState, renderScrumFocusBar, renderScr
 import {
   renderScrumCardModal,
   renderScrumModalCardTab,
+  renderScrumModalCardTicket,
   renderScrumTagPills,
   renderScrumTagSuggestions,
   renderScrumCoachChat,
@@ -47,11 +48,27 @@ import {
   renderScrumCreateCardModal,
   type ScrumCardTab,
 } from "../lib/scrum_modal_render";
+import { revealTagsProgressively } from "../lib/scrum_modal_live";
 import { COLUMN_LABELS, nextColumn, prevColumn, groupCardsByColumn, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumChecklistItem, type ScrumTestCriterion } from "../lib/scrum_types";
 import { ScrumBoardDrag, type ScrumDragDropResult } from "../lib/scrum_drag";
 import type GxController from "./gx_controller";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
+import { sleep } from "../lib/dom";
 import { showToast } from "../lib/toast";
+
+type CardActionPendingState = {
+  pending: boolean;
+  busyLabel?: string;
+  statusMessage?: string;
+  tone?: "idle" | "busy" | "error" | "ok";
+};
+
+type CardLlmJobTracker = {
+  cardID: string;
+  kind: "tags" | "ticket";
+  pendingKey: string;
+  cardTitle: string;
+};
 
 export default class ScrumController extends Controller {
   static targets = ["board", "status", "focus", "boardOverlay", "boardOverlayMessage", "flowSummary"];
@@ -94,6 +111,9 @@ export default class ScrumController extends Controller {
   private flowSummary: ScrumBoardResponse["flow_summary"] | null = null;
   private activeCardTab: ScrumCardTab = "card";
   private channelPilotPendingCardID: string | null = null;
+  private cardActionPending: Record<string, CardActionPendingState> = {};
+  private scrumModalFeedback: { message: string; tone: "busy" | "error" | "ok" } | null = null;
+  private cardGeneratorLoadingDepth = 0;
   private recipes: RecipeCatalogItem[] = [];
   private projectRecipeId = "";
   private projectRecipe: Record<string, unknown> = {};
@@ -104,6 +124,9 @@ export default class ScrumController extends Controller {
   private cardColumnSnapshot = new Map<string, string>();
   /** User drag / manual column changes — skip duplicate move toasts. */
   private skipMoveToastFor = new Set<string>();
+  private cardLlmJobs = new Map<number, CardLlmJobTracker>();
+  private finishedCardLlmJobs = new Set<number>();
+  private cardLlmJobPollers = new Set<number>();
   private scrumRefreshHandler = () => {
     if (this.projectID) void this.load();
   };
@@ -125,6 +148,9 @@ export default class ScrumController extends Controller {
       this.lastBoardUpdatedAt = "";
       this.cardColumnSnapshot.clear();
       this.skipMoveToastFor.clear();
+      this.cardLlmJobs.clear();
+      this.finishedCardLlmJobs.clear();
+      this.cardLlmJobPollers.clear();
       this.scrumTabActive = true;
       this.stopPolling();
       if (this.hasBoardTarget) {
@@ -197,7 +223,15 @@ export default class ScrumController extends Controller {
     return card?.play_state === "running" || card?.play_state === "queued";
   }
 
+  private hasCardLlmJobs(): boolean {
+    if (this.cardLlmJobs.size > 0) return true;
+    return (
+      this.board?.cards.some((card) => Boolean(card.tags_job_id?.trim() || card.ticket_job_id?.trim())) ?? false
+    );
+  }
+
   private desiredPollIntervalMs(): number {
+    if (this.hasCardLlmJobs()) return 900;
     if (this.isChannelLive()) return 500;
     if (this.isModalPlayLive()) return 800;
     if (this.isPlayActive()) return 1000;
@@ -235,7 +269,7 @@ export default class ScrumController extends Controller {
       ? payload.board.cards.find((card) => card.id === this.activeCardID)
       : null;
     const activeSlice = active
-      ? `${active.id}:${active.updated_at}:${active.column}:${active.play_state}:${(active.chat ?? []).length}:${active.chat?.reduce((sum, msg) => sum + (msg.content?.length ?? 0), 0) ?? 0}`
+      ? `${active.id}:${active.updated_at}:${active.column}:${active.play_state}:${active.tags_job_id ?? ""}:${active.ticket_job_id ?? ""}:${(active.chat ?? []).length}:${active.chat?.reduce((sum, msg) => sum + (msg.content?.length ?? 0), 0) ?? 0}`
       : "";
     return `${payload.board.updated_at}|${payload.play_queue?.running_card_id ?? ""}|${payload.play_queue?.queued_count ?? 0}|${activeSlice}`;
   }
@@ -297,6 +331,7 @@ export default class ScrumController extends Controller {
     this.autoPlayThrough = Boolean(payload.auto_play_through);
     this.autoReviewEnabled = Boolean(payload.auto_review?.enabled);
     this.flowSummary = payload.flow_summary ?? null;
+    this.syncCardLlmJobsFromBoard(payload.board.cards);
     if (!this.pollInFlight) {
       this.lastBoardUpdatedAt = this.boardLiveFingerprint(payload);
     }
@@ -478,6 +513,7 @@ export default class ScrumController extends Controller {
     this.applyCardTabState();
     requestAnimationFrame(() => {
       this.applyCardTabState();
+      this.reapplyModalChrome();
     });
   }
 
@@ -500,6 +536,184 @@ export default class ScrumController extends Controller {
     const panel = document.querySelector('[data-chat-target="modalPanel"]');
     const field = panel?.querySelector(`[data-scrum-field="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
     return field?.value?.trim() ?? "";
+  }
+
+  private refreshCardDraftPanels(card: ScrumCard) {
+    this.upsertCard(card);
+    this.recycle("scrum-card-ticket", renderScrumModalCardTicket(card));
+    this.recycle("scrum-card-tags", renderScrumTagPills(card));
+    this.recycle(
+      "scrum-modal-tabs",
+      `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`,
+    );
+    this.scheduleApplyCardTabState();
+    this.reapplyModalChrome();
+  }
+
+  private async runCardTicketJob(
+    cardID: string,
+    payload: {
+      prompt?: string;
+      card_prompt?: string;
+      ticket?: string;
+      iterate?: boolean;
+      iterate_notes?: string;
+    },
+    pendingKey: string,
+    statusMessage: string,
+    doneMessage: string,
+  ) {
+    this.setScrumModalFeedback(statusMessage, "busy");
+    this.setCardActionPending(pendingKey, true, {
+      busyLabel: payload.iterate ? "Iterating…" : "Generating…",
+      statusMessage,
+      tone: "busy",
+    });
+    this.setCardGeneratorLoading(true);
+    try {
+      const result = await cardTicketScrumCard(cardID, payload, this.projectID);
+      if (result.queued && result.job?.id) {
+        const card = result.card ?? this.findCard(cardID);
+        if (card) this.upsertCard(card);
+        this.watchCardLlmJob(result.job.id, {
+          cardID,
+          kind: "ticket",
+          pendingKey,
+          cardTitle: card?.title ?? cardID,
+        });
+        const queuedMessage = result.message || `Queued job #${result.job.id}`;
+        this.setScrumModalFeedback(`${queuedMessage} — you can keep editing or close this card`, "busy");
+        this.actionOk(queuedMessage);
+        return;
+      }
+      if (result.card) {
+        this.refreshCardDraftPanels(result.card);
+        await this.reloadBoard(cardID);
+      }
+      this.setScrumModalFeedback(`${doneMessage} — saved to card`, "ok");
+      this.setCardActionPending(pendingKey, false);
+      this.actionOk(doneMessage);
+      this.notifyLLMActivity();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setScrumModalFeedback(message, "error");
+      this.setCardActionPending(pendingKey, false, {
+        statusMessage: message,
+        tone: "error",
+      });
+      this.actionFail(error);
+    } finally {
+      this.setCardGeneratorLoading(false);
+      this.reapplyModalChrome();
+    }
+  }
+
+  private syncCardLlmJobsFromBoard(cards: ScrumCard[]) {
+    for (const card of cards) {
+      const tagsJobID = Number(card.tags_job_id);
+      if (Number.isFinite(tagsJobID) && tagsJobID > 0) {
+        this.watchCardLlmJob(tagsJobID, {
+          cardID: card.id,
+          kind: "tags",
+          pendingKey: "tags-suggest",
+          cardTitle: card.title,
+        });
+      }
+      const ticketJobID = Number(card.ticket_job_id);
+      if (Number.isFinite(ticketJobID) && ticketJobID > 0) {
+        this.watchCardLlmJob(ticketJobID, {
+          cardID: card.id,
+          kind: "ticket",
+          pendingKey: "card-ticket-generate",
+          cardTitle: card.title,
+        });
+      }
+    }
+    this.syncPollInterval();
+  }
+
+  private watchCardLlmJob(jobID: number, tracker: CardLlmJobTracker) {
+    if (!Number.isFinite(jobID) || jobID <= 0) return;
+    if (this.finishedCardLlmJobs.has(jobID)) return;
+    const existing = this.cardLlmJobs.get(jobID);
+    if (existing) return;
+    this.cardLlmJobs.set(jobID, tracker);
+    const busyLabel = tracker.kind === "tags" ? "Suggesting…" : tracker.pendingKey.includes("iterate") ? "Iterating…" : "Generating…";
+    const statusMessage =
+      tracker.kind === "tags"
+        ? "Tag suggestion running in background…"
+        : tracker.pendingKey.includes("iterate")
+          ? "Card ticket iteration running in background…"
+          : "Card ticket generation running in background…";
+    if (this.activeCardID === tracker.cardID) {
+      this.setCardActionPending(tracker.pendingKey, true, { busyLabel, statusMessage, tone: "busy" });
+    }
+    if (this.cardLlmJobPollers.has(jobID)) return;
+    this.cardLlmJobPollers.add(jobID);
+    void this.pollCardLlmJob(jobID);
+    this.syncPollInterval();
+  }
+
+  private async pollCardLlmJob(jobID: number) {
+    try {
+      for (;;) {
+        await sleep(900);
+        const response = await fetch(`/v1/jobs/${jobID}`);
+        const details = await response.json();
+        const status = details?.job?.status as string | undefined;
+        if (status === "completed") {
+          const summary =
+            (typeof details.job?.result === "string" && details.job.result.trim()) ||
+            this.defaultCardLlmDoneMessage(jobID);
+          await this.finishCardLlmJob(jobID, "ok", summary);
+          return;
+        }
+        if (status === "failed" || status === "canceled") {
+          const message =
+            (typeof details.job?.error === "string" && details.job.error.trim()) || `Job #${jobID} ${status}`;
+          await this.finishCardLlmJob(jobID, "error", message);
+          return;
+        }
+      }
+    } finally {
+      this.cardLlmJobPollers.delete(jobID);
+    }
+  }
+
+  private defaultCardLlmDoneMessage(jobID: number): string {
+    const tracker = this.cardLlmJobs.get(jobID);
+    if (!tracker) return `Job #${jobID} completed`;
+    if (tracker.kind === "tags") return `Tags updated for ${tracker.cardTitle}`;
+    return `Card ticket updated for ${tracker.cardTitle}`;
+  }
+
+  private async finishCardLlmJob(jobID: number, tone: "ok" | "error", message: string) {
+    if (this.finishedCardLlmJobs.has(jobID)) return;
+    this.finishedCardLlmJobs.add(jobID);
+    const tracker = this.cardLlmJobs.get(jobID);
+    this.cardLlmJobs.delete(jobID);
+    if (tracker && this.activeCardID === tracker.cardID) {
+      this.setCardActionPending(tracker.pendingKey, false);
+      if (tone === "ok") {
+        this.setScrumModalFeedback(`${message} — saved to card`, "ok");
+      } else {
+        this.setScrumModalFeedback(message, "error");
+      }
+    }
+    if (this.projectID) {
+      try {
+        const payload = await fetchScrumBoard(this.projectID);
+        this.applyBoardPayload(payload, false);
+        if (tracker && this.activeCardID === tracker.cardID) {
+          await this.refreshActiveModal(tracker.cardID);
+        }
+      } catch {
+        // board refresh is best-effort after background job completion
+      }
+    }
+    showToast(message, tone);
+    if (tone === "ok") this.notifyLLMActivity();
+    this.syncPollInterval();
   }
 
   openCreateCardModal(event?: Event) {
@@ -526,6 +740,10 @@ export default class ScrumController extends Controller {
     reportOk(this.setStatus.bind(this), message);
   }
 
+  private notifyLLMActivity() {
+    document.dispatchEvent(new CustomEvent("omni:llm-activity"));
+  }
+
   private actionFail(error: unknown) {
     reportError(this.setStatus.bind(this), error);
   }
@@ -537,6 +755,57 @@ export default class ScrumController extends Controller {
   private setGlobalLoading(loading: boolean) {
     const spinner = document.querySelector('[data-chat-target="spinner"]');
     if (spinner) spinner.classList.toggle("hidden", !loading);
+  }
+
+  private setCardGeneratorLoading(loading: boolean) {
+    if (loading) {
+      this.cardGeneratorLoadingDepth += 1;
+    } else {
+      this.cardGeneratorLoadingDepth = Math.max(0, this.cardGeneratorLoadingDepth - 1);
+    }
+    this.setGlobalLoading(this.cardGeneratorLoadingDepth > 0);
+  }
+
+  private setScrumModalFeedback(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
+    if (!message || tone === "idle") {
+      this.scrumModalFeedback = null;
+    } else {
+      this.scrumModalFeedback = { message, tone };
+    }
+    this.applyScrumModalFeedback();
+    if (message && this.hasStatusTarget) {
+      this.setStatus(message, tone);
+    }
+  }
+
+  private applyScrumModalFeedback() {
+    const toneClasses: Record<string, string[]> = {
+      idle: ["border-white/10", "bg-zinc-900/80", "text-zinc-300"],
+      busy: ["border-cyan-300/30", "bg-cyan-300/10", "text-cyan-100"],
+      error: ["border-rose-400/30", "bg-rose-400/10", "text-rose-100"],
+      ok: ["border-emerald-400/30", "bg-emerald-400/10", "text-emerald-100"],
+    };
+    const allToneClasses = Object.values(toneClasses).flat();
+    const slots = this.modalPanel()?.querySelectorAll("[data-scrum-modal-feedback]") ?? [];
+    const feedback = this.scrumModalFeedback;
+    slots.forEach((slot) => {
+      const node = slot as HTMLElement;
+      node.classList.remove(...allToneClasses);
+      if (!feedback) {
+        node.classList.add("hidden");
+        node.textContent = "";
+        return;
+      }
+      node.classList.remove("hidden");
+      node.classList.add(...(toneClasses[feedback.tone] ?? toneClasses.busy));
+      node.setAttribute("role", feedback.tone === "error" ? "alert" : "status");
+      node.textContent = feedback.message;
+    });
+  }
+
+  private reapplyModalChrome() {
+    this.reapplyCardActionPending();
+    this.applyScrumModalFeedback();
   }
 
   private setBoardLoading(loading: boolean, message = "Working…") {
@@ -583,11 +852,36 @@ export default class ScrumController extends Controller {
       tone?: "idle" | "busy" | "error" | "ok";
     } = {},
   ): void {
+    const tone = options.tone ?? (pending ? "busy" : "idle");
+    const message = options.statusMessage ?? "";
+    if (pending || message) {
+      this.cardActionPending[key] = { pending, busyLabel: options.busyLabel, statusMessage: message, tone };
+    } else {
+      delete this.cardActionPending[key];
+    }
+    this.applyCardActionPendingToDOM(key, pending, options);
+  }
+
+  private reapplyCardActionPending(): void {
+    for (const [key, state] of Object.entries(this.cardActionPending)) {
+      this.applyCardActionPendingToDOM(key, state.pending, state);
+    }
+  }
+
+  private applyCardActionPendingToDOM(
+    key: string,
+    pending: boolean,
+    options: {
+      busyLabel?: string;
+      statusMessage?: string;
+      tone?: "idle" | "busy" | "error" | "ok";
+    } = {},
+  ): void {
     const panel = this.modalPanel();
     if (!panel) return;
     const button = panel.querySelector(`[data-scrum-pending="${key}"]`) as HTMLButtonElement | null;
     const status = panel.querySelector(`[data-scrum-pending-status="${key}"]`) as HTMLElement | null;
-    const idleLabel = button?.dataset.scrumPendingLabel?.trim() || button?.textContent?.trim() || "";
+    const idleLabel = button?.dataset.scrumPendingLabel?.trim() || "Run";
     if (button) {
       button.disabled = pending;
       button.textContent = pending ? (options.busyLabel ?? `${idleLabel}…`) : idleLabel;
@@ -601,9 +895,13 @@ export default class ScrumController extends Controller {
       };
       const tone = options.tone ?? (pending ? "busy" : "idle");
       const message = options.statusMessage ?? "";
-      status.textContent = message;
-      status.className = `text-[11px] ${toneClasses[tone] ?? toneClasses.idle}`;
+      const text = status.querySelector("[data-scrum-pending-text]") as HTMLElement | null;
+      const spinner = status.querySelector("[data-scrum-pending-spinner]") as HTMLElement | null;
+      if (text) text.textContent = message;
+      else status.textContent = message;
+      status.className = `inline-flex items-center gap-1.5 text-[11px] ${toneClasses[tone] ?? toneClasses.idle}`;
       status.classList.toggle("hidden", !pending && !message);
+      if (spinner) spinner.classList.toggle("hidden", !pending);
     }
   }
 
@@ -648,12 +946,16 @@ export default class ScrumController extends Controller {
 
   closeModal() {
     this.activeCardID = null;
+    this.cardActionPending = {};
+    this.scrumModalFeedback = null;
+    this.cardGeneratorLoadingDepth = 0;
+    this.setGlobalLoading(false);
     this.syncScrumModalRoute();
     closeModalShell();
   }
 
-  private upsertCard(card: ScrumCard) {
-    if (!this.board) return;
+  private upsertCard(card: ScrumCard | null | undefined) {
+    if (!this.board || !card?.id) return;
     const index = this.board.cards.findIndex((entry) => entry.id === card.id);
     const previous = index >= 0 ? this.board.cards[index] : null;
     if (index >= 0) this.board.cards[index] = card;
@@ -853,13 +1155,10 @@ export default class ScrumController extends Controller {
     if (!card || card.coach_config?.enabled === false) return;
     try {
       const payload = await coachScrumCard(cardID, { mode: "scan", snapshot: this.coachSnapshot() }, this.projectID);
-      this.upsertCard(payload.card);
-      this.recycle("scrum-coach-toasts", renderScrumCoachToasts(payload.suggestions ?? []));
-      this.recycle("scrum-card-tags", renderScrumTagPills(payload.card));
-      if (payload.jira_prompt) {
-        const draft = document.querySelector('[data-scrum-field="jiraPromptDraft"]') as HTMLTextAreaElement | null;
-        if (draft) draft.value = payload.jira_prompt;
+      if (payload.card) {
+        this.refreshCardDraftPanels(payload.card);
       }
+      this.recycle("scrum-coach-toasts", renderScrumCoachToasts(payload.suggestions ?? []));
       this.recycle("scrum-coach-chat", renderScrumCoachChat(payload.card));
     } catch {
       // ignore transient coach scan failures
@@ -894,18 +1193,16 @@ export default class ScrumController extends Controller {
     this.setStatus("Coach thinking…", "busy");
     try {
       const payload = await coachScrumCard(cardID, { message, snapshot: this.coachSnapshot() }, this.projectID);
-      this.upsertCard(payload.card);
-      this.recycle("scrum-coach-toasts", renderScrumCoachToasts(payload.suggestions ?? []));
-      this.recycle("scrum-card-tags", renderScrumTagPills(payload.card));
-      this.recycle("scrum-coach-chat", renderScrumCoachChat(payload.card));
-      if (payload.jira_prompt) {
-        const draft = document.querySelector('[data-scrum-field="jiraPromptDraft"]') as HTMLTextAreaElement | null;
-        if (draft) draft.value = payload.jira_prompt;
+      if (payload.card) {
+        this.refreshCardDraftPanels(payload.card);
       }
+      this.recycle("scrum-coach-toasts", renderScrumCoachToasts(payload.suggestions ?? []));
+      this.recycle("scrum-coach-chat", renderScrumCoachChat(payload.card));
       const input = form.querySelector('[data-scrum-field="coachMessage"]') as HTMLTextAreaElement | null;
       if (input) input.value = "";
       await this.reloadBoard(cardID);
       this.actionOk("Coach replied");
+      this.notifyLLMActivity();
     } catch (error) {
       this.actionFail(error);
     }
@@ -1292,7 +1589,7 @@ export default class ScrumController extends Controller {
       throw new Error("Tag update did not return a card");
     }
     this.upsertCard(updated);
-    this.recycle("scrum-card-tags", renderScrumTagPills(updated));
+    this.refreshCardDraftPanels(updated);
     await this.reloadBoard(cardID);
     return updated;
   }
@@ -1341,35 +1638,67 @@ export default class ScrumController extends Controller {
     event.preventDefault();
     const cardID = this.cardID(event);
     if (!cardID) return;
+    const previousTags = [...(this.findCard(cardID)?.tags ?? [])];
 
-    this.setStatus("Suggesting tags…", "busy");
+    this.setScrumModalFeedback("Analyzing card with AI…", "busy");
     this.setCardActionPending("tags-suggest", true, {
       busyLabel: "Suggesting…",
       statusMessage: "Analyzing card with AI…",
       tone: "busy",
     });
+    this.setCardGeneratorLoading(true);
     try {
       const payload = await suggestScrumTags(cardID, this.projectID);
+      if (payload.queued && payload.job?.id) {
+        const card = payload.card ?? this.findCard(cardID);
+        if (card) this.upsertCard(card);
+        this.watchCardLlmJob(payload.job.id, {
+          cardID,
+          kind: "tags",
+          pendingKey: "tags-suggest",
+          cardTitle: card?.title ?? cardID,
+        });
+        const queuedMessage = payload.message || `Queued job #${payload.job.id}`;
+        this.setScrumModalFeedback(`${queuedMessage} — you can keep editing or close this card`, "busy");
+        this.actionOk(queuedMessage);
+        return;
+      }
       const card = payload.card ?? this.findCard(cardID);
       if (card) {
-        if (payload.card) this.upsertCard(payload.card);
-        this.recycle("scrum-card-tags", renderScrumTagPills(card));
+        await revealTagsProgressively(
+          (tags) => renderScrumTagPills({ ...card, tags }),
+          (html) => this.recycle("scrum-card-tags", html),
+          card.tags ?? [],
+          previousTags,
+        );
+        this.refreshCardDraftPanels(card);
       }
       await this.reloadBoard(cardID);
       const notes = payload.notes?.trim();
       const tagCount = payload.tags?.length ?? 0;
-      if (tagCount === 0) {
-        this.actionOk(notes ? `No new tags — ${notes}` : "No new tags suggested");
-      } else {
-        this.actionOk(notes ? `Tags suggested — ${notes}` : "Tags suggested");
-      }
+      const doneMessage =
+        tagCount === 0
+          ? notes
+            ? `No new tags — ${notes}`
+            : "No new tags suggested"
+          : notes
+            ? `Tags suggested — ${notes}`
+            : "Tags suggested";
+      this.setScrumModalFeedback(`${doneMessage} — saved to card`, "ok");
       this.setCardActionPending("tags-suggest", false);
+      this.actionOk(doneMessage);
+      this.notifyLLMActivity();
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setScrumModalFeedback(message, "error");
       this.setCardActionPending("tags-suggest", false, {
-        statusMessage: error instanceof Error ? error.message : String(error),
+        statusMessage: message,
         tone: "error",
       });
       this.actionFail(error);
+    } finally {
+      this.setCardGeneratorLoading(false);
+      this.reapplyModalChrome();
     }
   }
 
@@ -1563,43 +1892,54 @@ export default class ScrumController extends Controller {
     }
   }
 
-  async generateJira(event: Event) {
+  async generateCardTicket(event: Event) {
     event.preventDefault();
     const cardID = this.cardID(event);
     if (!cardID) return;
-    const prompt = this.modalField(event, "jiraPromptDraft") || this.modalPanelField("jiraPromptDraft");
-    this.setStatus("Generating Jira ticket…", "busy");
-    this.setCardActionPending("jira-generate", true, {
-      busyLabel: "Generating…",
-      statusMessage: "Drafting Jira ticket…",
-      tone: "busy",
-    });
-    try {
-      const payload = await jiraScrumCard(cardID, { prompt }, this.projectID);
-      this.upsertCard(payload.card);
-      await this.refreshModalSections(cardID);
-      await this.reloadBoard(cardID);
-      this.actionOk("Jira draft generated");
-    } catch (error) {
-      this.setCardActionPending("jira-generate", false, {
-        statusMessage: error instanceof Error ? error.message : String(error),
-        tone: "error",
-      });
-      this.actionFail(error);
-    }
+    const card_prompt = this.modalField(event, "cardPromptDraft") || this.modalPanelField("cardPromptDraft");
+    await this.runCardTicketJob(
+      cardID,
+      { prompt: card_prompt, card_prompt },
+      "card-ticket-generate",
+      "Drafting card ticket…",
+      "Card ticket draft generated",
+    );
   }
 
-  async saveJira(event: Event) {
+  async iterateCardTicket(event: Event) {
     event.preventDefault();
     const cardID = this.cardID(event);
     if (!cardID) return;
-    const ticket = this.modalField(event, "jiraTicket") || this.modalPanelField("jiraTicket");
-    this.setStatus("Saving Jira draft…", "busy");
+    const card_prompt = this.modalField(event, "cardPromptDraft") || this.modalPanelField("cardPromptDraft");
+    const ticket = this.modalField(event, "cardTicket") || this.modalPanelField("cardTicket");
+    const iterate_notes = this.modalField(event, "cardIterateNotes") || this.modalPanelField("cardIterateNotes");
+    if (!ticket.trim()) {
+      this.actionFailMessage("Add a ticket draft to iterate on first");
+      return;
+    }
+    await this.runCardTicketJob(
+      cardID,
+      { card_prompt, ticket, iterate: true, iterate_notes },
+      "card-ticket-iterate",
+      "Iterating on card ticket…",
+      "Card ticket draft updated",
+    );
+  }
+
+  async saveCardTicket(event: Event) {
+    event.preventDefault();
+    const cardID = this.cardID(event);
+    if (!cardID) return;
+    const card_prompt = this.modalField(event, "cardPromptDraft") || this.modalPanelField("cardPromptDraft");
+    const ticket = this.modalField(event, "cardTicket") || this.modalPanelField("cardTicket");
+    this.setStatus("Saving card ticket draft…", "busy");
     try {
-      const payload = await jiraScrumCard(cardID, { ticket }, this.projectID);
-      this.upsertCard(payload.card);
-      await this.refreshModalSections(cardID);
-      this.actionOk("Jira draft saved");
+      const payload = await cardTicketScrumCard(cardID, { card_prompt, ticket }, this.projectID);
+      if (payload.card) {
+        this.refreshCardDraftPanels(payload.card);
+        await this.reloadBoard(cardID);
+      }
+      this.actionOk("Card ticket draft saved");
     } catch (error) {
       this.actionFail(error);
     }

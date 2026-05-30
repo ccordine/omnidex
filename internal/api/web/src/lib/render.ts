@@ -297,7 +297,7 @@ export function renderMetricsNavBadges(glance: MetricsGlance): string {
   return `<span class="flex items-center gap-1.5">${parts.join("")}</span>`;
 }
 
-export function renderMetricsDashboard(live, models, playbooks, benchmarks, contextShrink) {
+export function renderMetricsDashboard(live, models, playbooks, benchmarks, contextShrink, contextUsage, operations) {
   const statusCounts = live.status_counts || {};
   const liveRuns = live.live_runs || [];
   const recentRuns = live.recent_runs || [];
@@ -306,6 +306,11 @@ export function renderMetricsDashboard(live, models, playbooks, benchmarks, cont
   const shrinkSummary = contextShrink?.summary || {};
   const shrinkHistory = contextShrink?.history || [];
   const shrinkDaily = contextShrink?.daily || [];
+  const usageSummary = contextUsage?.summary || {};
+  const usageBySource = contextUsage?.by_source || [];
+  const usageOverloads = contextUsage?.overloads || [];
+  const usageHistory = contextUsage?.history || [];
+  const usageDaily = contextUsage?.daily || [];
   const struggleEvents = struggle.struggle_events || [];
   const acceptEvents = struggle.accept_events || [];
   const recoveryAttempts = Number(struggle.recovery_attempts || 0);
@@ -321,15 +326,56 @@ export function renderMetricsDashboard(live, models, playbooks, benchmarks, cont
   const struggling = struggleTotal > acceptTotal || recentStruggleRuns > 0;
   const shrinkRequests = Number(shrinkSummary.requests || 0);
   const shrinkSaved = Number(shrinkSummary.avg_saved_pct || 0);
+  const usageRequests = Number(usageSummary.requests || 0);
+  const llmFailures = Number(usageSummary.failure_events || operations?.llm_failures || 0);
+  const overloadEvents = Number(usageSummary.overload_events || 0);
+  const avgUtilization = Number(usageSummary.avg_utilization_pct || 0);
+  const avgContextDelta = Number(usageSummary.avg_delta_chars || operations?.avg_context_delta_chars || 0);
+  const contextLimit = Number(usageSummary.context_limit_chars || 0);
+  const contextOverloaded = overloadEvents > 0 || avgUtilization >= 95 || llmFailures > 0;
   return `
     <div class="grid gap-4 xl:grid-cols-6">
       ${metricTile("Live Runs", String(liveRuns.length), liveRuns.length ? "warn" : "ok")}
       ${metricTile("Success Rate", successRate, completed >= failed ? "ok" : "warn")}
-      ${metricTile("Context Saved", shrinkRequests ? `${shrinkSaved.toFixed(1)}% avg` : "n/a", shrinkSaved >= 90 ? "ok" : shrinkSaved >= 70 ? "warn" : "bad")}
-      ${metricTile("Shrink Events", String(shrinkRequests), shrinkRequests > 0 ? "ok" : "warn")}
-      ${metricTile("Struggle Signals", String(struggleTotal), struggling ? "warn" : "ok")}
-      ${metricTile("Recovery", recoveryAttempts ? `${recoverySuccesses}/${recoveryAttempts}` : "n/a", recoverySuccesses >= recoveryAttempts / 2 ? "ok" : "warn")}
+      ${metricTile("LLM Failures", String(llmFailures), llmFailures > 0 ? "bad" : "ok")}
+      ${metricTile("LLM Context", usageRequests ? `${avgUtilization.toFixed(1)}% avg` : "n/a", contextOverloaded ? "bad" : avgUtilization >= 80 ? "warn" : "ok")}
+      ${metricTile("Context Δ", avgContextDelta ? `+${formatCompactChars(avgContextDelta)} avg` : "n/a", avgContextDelta >= 2000 ? "bad" : avgContextDelta >= 800 ? "warn" : "ok")}
+      ${metricTile("Overloads", String(overloadEvents), overloadEvents > 0 ? "bad" : "ok")}
     </div>
+    ${renderOperationsSection(operations)}
+    <section class="rounded-lg border ${contextOverloaded ? "border-rose-300/25 bg-rose-300/5" : "border-violet-300/20 bg-violet-300/5"} p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-violet-200/90">LLM context usage</h3>
+          <p class="mt-1 text-xs text-zinc-400">Tracks prompt size vs model window across coach, card ticket, tags, pilot, and agent paths.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-right font-mono text-xs sm:grid-cols-4">
+          <div><span class="text-zinc-500">limit</span><div class="text-violet-200">${escapeHTML(formatCompactChars(contextLimit))}</div></div>
+          <div><span class="text-zinc-500">avg sent</span><div class="text-cyan-200">${escapeHTML(formatCompactChars(usageSummary.avg_sent_chars))}</div></div>
+          <div><span class="text-zinc-500">peak sent</span><div class="text-rose-200/90">${escapeHTML(formatCompactChars(usageSummary.max_sent_chars))}</div></div>
+          <div><span class="text-zinc-500">failures</span><div class="${llmFailures ? "text-rose-200" : "text-emerald-200"}">${escapeHTML(String(llmFailures))}</div></div>
+          <div><span class="text-zinc-500">avg Δ</span><div class="text-amber-200">${escapeHTML(formatCompactChars(avgContextDelta))}</div></div>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-500">By source</h4>
+          <div class="mt-2 space-y-2">${usageBySource.map(renderContextUsageBySource).join("") || emptyState("No LLM context telemetry yet.")}</div>
+        </div>
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-rose-300/80">Recent overloads (≥95% window)</h4>
+          <div class="mt-2 max-h-[28rem] space-y-2 overflow-y-auto pr-1">${usageOverloads.slice(0, 16).map(renderContextUsageEntry).join("") || emptyState("No context overload events — prompts are within model limits.")}</div>
+        </div>
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-500">30-day utilization</h4>
+          <div class="mt-2 space-y-2">${usageDaily.slice(-14).map(renderContextUsageDaily).join("") || emptyState("Daily context averages appear after LLM calls are recorded.")}</div>
+        </div>
+      </div>
+      <div class="mt-4">
+        <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-500">Recent LLM calls</h4>
+        <div class="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">${usageHistory.slice(0, 12).map(renderContextUsageEntry).join("") || emptyState("Run coach, card ticket, or channel pilot to populate context telemetry.")}</div>
+      </div>
+    </section>
     <section class="rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -509,6 +555,64 @@ export function formatCompactChars(value) {
   return String(Math.round(n));
 }
 
+const llmSourceLabels = {
+  scrum_coach: "Card coach",
+  scrum_card_ticket: "Card ticket",
+  scrum_tags_suggest: "Tag suggest",
+  scrum_pilot: "Channel pilot",
+  scrum_outcome_classifier: "Outcome classifier",
+  project_planning_chat: "Project planning",
+  scrum_llm: "Scrum LLM",
+};
+
+export function llmActivityLabel(source) {
+  const key = String(source || "").replace(/^worker:/, "");
+  return llmSourceLabels[key] || String(source || "LLM").replace(/^worker:/, "Worker · ");
+}
+
+export function renderJobsPanel(jobs, llmActivity) {
+  const jobItems = (jobs || []).map(
+    (job) => `
+      <button data-action="chat#selectJob" data-job-id="${job.id}" class="w-full rounded-lg border border-white/10 bg-zinc-950/50 p-3 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="font-mono text-xs text-cyan-200">#${job.id}</div>
+            <div class="mt-1 line-clamp-2 text-sm font-medium text-zinc-100">${escapeHTML(job.instruction)}</div>
+          </div>
+          <span class="${statusPillClass(job.status)}">${escapeHTML(job.status)}</span>
+        </div>
+        <div class="mt-2 text-xs text-zinc-500">${escapeHTML(job.pipeline || "assistant")} · ${formatDateTime(job.updated_at)}</div>
+      </button>
+    `,
+  ).join("");
+
+  const llmItems = (llmActivity || []).map(
+    (entry) => `
+      <div class="rounded-lg border border-violet-300/15 bg-violet-300/5 p-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="text-sm font-medium text-violet-100">${escapeHTML(llmActivityLabel(entry.source))}</span>
+          <span class="font-mono text-[11px] ${entry.success === false ? "text-rose-200" : "text-emerald-200"}">${entry.success === false ? escapeHTML(entry.error_class || "failed") : "ok"}</span>
+        </div>
+        <div class="mt-1 font-mono text-xs text-zinc-400">${escapeHTML(formatCompactChars(entry.sent_chars))} chars · ${Number(entry.utilization_pct || 0).toFixed(0)}% window</div>
+        <div class="mt-1 text-[11px] text-zinc-500">${formatDateTime(entry.created_at)}${entry.card_id ? ` · card ${escapeHTML(String(entry.card_id).slice(0, 12))}` : ""}${entry.job_id ? ` · linked job #${escapeHTML(String(entry.job_id))}` : ""}</div>
+      </div>
+    `,
+  ).join("");
+
+  return `
+    <section>
+      <h3 class="text-[11px] font-semibold uppercase tracking-[.14em] text-cyan-200/80">Queue jobs</h3>
+      <p class="mt-1 text-[11px] text-zinc-500">Agent runs from Play, channel messages, and chat queue. Filter above applies here.</p>
+      <div class="mt-3 space-y-3">${jobItems || emptyState("No queue jobs matched this filter.")}</div>
+    </section>
+    <section class="mt-6 border-t border-white/10 pt-5">
+      <h3 class="text-[11px] font-semibold uppercase tracking-[.14em] text-violet-200/80">Instant LLM actions</h3>
+      <p class="mt-1 text-[11px] text-zinc-500">Coach, tag suggest, and ticket generate run inline — they do not create queue jobs.</p>
+      <div class="mt-3 space-y-2">${llmItems || emptyState("No recent coach, tag, or ticket LLM calls yet.")}</div>
+    </section>
+  `;
+}
+
 export function renderContextShrinkEntry(entry) {
   const saved = Number(entry.saved_pct || 0);
   const meta = entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
@@ -542,6 +646,177 @@ export function renderContextShrinkDaily(point) {
         <div class="h-full rounded bg-gradient-to-r from-cyan-400/70 to-emerald-400/70" style="width:${width}%"></div>
       </div>
       <div class="mt-1 font-mono text-[11px] text-zinc-500">${escapeHTML(formatCompactChars(point.avg_raw_chars))} → ${escapeHTML(formatCompactChars(point.avg_shrunk_chars))}</div>
+    </div>
+  `;
+}
+
+export function renderContextUsageBySource(row) {
+  const utilization = Number(row.avg_utilization_pct || 0);
+  const overloads = Number(row.overload_events || 0);
+  const tone = overloads > 0 ? "border-rose-300/20 bg-rose-400/5" : utilization >= 80 ? "border-amber-300/20 bg-amber-300/5" : "border-white/10 bg-white/[.03]";
+  return `
+    <div class="rounded border ${tone} p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="font-mono text-xs text-zinc-200">${escapeHTML(row.source || "unknown")}</span>
+        <span class="font-mono text-xs ${overloads ? "text-rose-200" : "text-emerald-200"}">${escapeHTML(String(row.requests || 0))} req · ${overloads} overload</span>
+      </div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500">avg ${escapeHTML(formatCompactChars(row.avg_sent_chars))} · ${utilization.toFixed(1)}% util · peak ${escapeHTML(formatCompactChars(row.max_sent_chars))}</div>
+    </div>
+  `;
+}
+
+export function renderContextUsageEntry(entry) {
+  const utilization = Number(entry.utilization_pct || 0);
+  const meta = entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
+  const title = meta.card_title || entry.card_id || entry.scope || entry.source || "llm";
+  const limit = Number(entry.context_limit_chars || 0);
+  const failed = entry.success === false;
+  const delta = Number(entry.delta_chars || 0);
+  const borderTone = failed ? "border-rose-300/30 bg-rose-400/8" : entry.overloaded ? "border-rose-300/25 bg-rose-400/5" : entry.shrunk ? "border-cyan-300/20 bg-cyan-300/5" : "border-white/10 bg-white/[.03]";
+  return `
+    <div class="rounded border ${borderTone} p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="truncate text-sm text-zinc-200">${escapeHTML(String(title))}</span>
+        <span class="font-mono text-xs ${failed ? "text-rose-200" : entry.overloaded ? "text-rose-200" : "text-violet-200"}">${failed ? escapeHTML(entry.error_class || "failed") : `${utilization.toFixed(1)}%${entry.overloaded ? " overload" : ""}`}</span>
+      </div>
+      <div class="mt-2 flex flex-wrap items-baseline gap-2 font-mono text-sm">
+        <span class="text-cyan-200">${escapeHTML(formatCompactChars(entry.sent_chars))}</span>
+        <span class="text-zinc-500">/</span>
+        <span class="text-zinc-400">${escapeHTML(formatCompactChars(limit))}</span>
+        ${delta > 0 ? `<span class="text-[11px] text-amber-200">+${escapeHTML(formatCompactChars(delta))}</span>` : ""}
+        ${entry.shrunk ? `<span class="text-[11px] text-emerald-300/90">shrunk ${Number(entry.saved_pct || 0).toFixed(0)}%</span>` : ""}
+      </div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500">${escapeHTML(formatDateTime(entry.created_at))} · ${escapeHTML(entry.source || "")}${entry.model ? ` · ${escapeHTML(entry.model)}` : ""}${entry.run_id ? ` · run ${escapeHTML(String(entry.run_id).slice(0, 8))}` : ""}</div>
+    </div>
+  `;
+}
+
+export function renderOperationsSection(operations) {
+  if (!operations) return "";
+  const failureCounts = operations.failure_counts || [];
+  const recentFailures = operations.recent_failures || [];
+  const loopStats = operations.loop_stats || [];
+  const contextFloods = operations.context_floods || [];
+  const runDiagnostics = operations.run_diagnostics || [];
+  const llmFailureRate = Number(operations.llm_failure_rate_pct || 0);
+  const totalFailureEvents = failureCounts.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const hotLoops = loopStats.filter((row) => Number(row.avg_per_run || 0) > 0 || Number(row.total_events || 0) > 0);
+  return `
+    <section class="rounded-lg border border-rose-300/20 bg-rose-300/5 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-rose-200/90">Under the hood (7d)</h3>
+          <p class="mt-1 text-xs text-zinc-400">Failures, retry loops, context spikes, and per-run diagnostics from worker + API telemetry.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-right font-mono text-xs sm:grid-cols-3">
+          <div><span class="text-zinc-500">failure events</span><div class="text-rose-200">${escapeHTML(String(totalFailureEvents))}</div></div>
+          <div><span class="text-zinc-500">LLM fail rate</span><div class="text-rose-200/90">${llmFailureRate.toFixed(1)}%</div></div>
+          <div><span class="text-zinc-500">context floods</span><div class="text-amber-200">${escapeHTML(String(contextFloods.length))}</div></div>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-500">Failure breakdown</h4>
+          <div class="mt-2 space-y-2">${failureCounts.map(renderMetricCount).join("") || emptyState("No failure telemetry yet.")}</div>
+        </div>
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-rose-300/80">Recent failures</h4>
+          <div class="mt-2 max-h-[28rem] space-y-2 overflow-y-auto pr-1">${recentFailures.slice(0, 20).map(renderOperationsFailure).join("") || emptyState("No recent failure events recorded.")}</div>
+        </div>
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-500">Loop / retry averages</h4>
+          <div class="mt-2 space-y-2">${hotLoops.map(renderOperationsLoopStat).join("") || emptyState("Loop counters appear after agent runs with retries.")}</div>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-4 xl:grid-cols-2">
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-amber-300/80">Context flood spikes</h4>
+          <div class="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">${contextFloods.slice(0, 12).map(renderOperationsContextFlood).join("") || emptyState("No large context deltas detected.")}</div>
+        </div>
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-500">Recent run diagnostics</h4>
+          <div class="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">${runDiagnostics.map(renderOperationsRunDiagnostic).join("") || emptyState("Run diagnostics populate after queue jobs execute.")}</div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+export function renderOperationsFailure(entry) {
+  return `
+    <div class="rounded border border-rose-300/20 bg-rose-400/5 p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="font-mono text-xs text-rose-200">${escapeHTML(entry.event_type || "event")}</span>
+        <span class="font-mono text-[11px] text-zinc-500">${escapeHTML(formatDateTime(entry.created_at))}</span>
+      </div>
+      <div class="mt-1 truncate text-sm text-zinc-300">${escapeHTML(entry.message || "no message")}</div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500">${entry.run_id ? `run ${escapeHTML(String(entry.run_id).slice(0, 8))}` : "no run"}${entry.job_id ? ` · job #${escapeHTML(String(entry.job_id))}` : ""}${entry.step_id ? ` · step ${escapeHTML(String(entry.step_id))}` : ""}</div>
+    </div>
+  `;
+}
+
+export function renderOperationsLoopStat(row) {
+  const avg = Number(row.avg_per_run || 0);
+  const delta = Number(row.delta_pct || 0);
+  const deltaLabel = delta > 0 ? `+${delta.toFixed(1)}% vs prior week` : delta < 0 ? `${delta.toFixed(1)}% vs prior week` : "flat vs prior week";
+  const tone = avg >= 2 ? "border-amber-300/20 bg-amber-300/5" : "border-white/10 bg-white/[.03]";
+  return `
+    <div class="rounded border ${tone} p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="text-sm text-zinc-200">${escapeHTML(row.label || row.key || "loop")}</span>
+        <span class="font-mono text-xs text-cyan-200">${avg.toFixed(2)} avg/run · max ${escapeHTML(String(row.max_per_run || 0))}</span>
+      </div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500">${escapeHTML(String(row.total_events || 0))} events · ${escapeHTML(String(row.runs_affected || 0))} runs · ${escapeHTML(deltaLabel)}</div>
+    </div>
+  `;
+}
+
+export function renderOperationsContextFlood(entry) {
+  return `
+    <div class="rounded border border-amber-300/20 bg-amber-300/5 p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="font-mono text-xs text-zinc-200">${escapeHTML(entry.source || "llm")}${entry.scope ? ` · ${escapeHTML(entry.scope)}` : ""}</span>
+        <span class="font-mono text-xs text-amber-200">+${escapeHTML(formatCompactChars(entry.delta_chars))}</span>
+      </div>
+      <div class="mt-1 font-mono text-sm text-zinc-300">${escapeHTML(formatCompactChars(entry.sent_chars))} sent · ${Number(entry.utilization_pct || 0).toFixed(1)}% util${entry.success === false ? ` · ${escapeHTML(entry.error_class || "failed")}` : ""}</div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500">${escapeHTML(formatDateTime(entry.created_at))}${entry.model ? ` · ${escapeHTML(entry.model)}` : ""}</div>
+    </div>
+  `;
+}
+
+export function renderOperationsRunDiagnostic(run) {
+  const tone = Number(run.failure_events || 0) > 0 ? "border-rose-300/20 bg-rose-400/5" : Number(run.loop_events || 0) > 2 ? "border-amber-300/20 bg-amber-300/5" : "border-white/10 bg-white/[.03]";
+  return `
+    <div class="rounded border ${tone} p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="font-mono text-xs text-zinc-200">${escapeHTML(run.task_kind || "run")} · ${escapeHTML(run.status || "unknown")}</span>
+        <span class="font-mono text-[11px] text-zinc-500">${escapeHTML(formatDateTime(run.started_at))}</span>
+      </div>
+      <div class="mt-2 grid grid-cols-2 gap-2 font-mono text-[11px] text-zinc-400 sm:grid-cols-4">
+        <div>loops <span class="text-amber-200">${escapeHTML(String(run.loop_events || 0))}</span></div>
+        <div>fails <span class="text-rose-200">${escapeHTML(String(run.failure_events || 0))}</span></div>
+        <div>llm <span class="text-cyan-200">${escapeHTML(String(run.llm_calls || 0))}</span></div>
+        <div>peak <span class="text-violet-200">${escapeHTML(formatCompactChars(run.max_prompt_chars))}</span></div>
+      </div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-600">run ${escapeHTML(String(run.run_id || "").slice(0, 8))}${run.duration_ms != null ? ` · ${escapeHTML(formatDurationMS(Number(run.duration_ms)))}` : ""}</div>
+    </div>
+  `;
+}
+
+export function renderContextUsageDaily(point) {
+  const utilization = Number(point.avg_utilization_pct || 0);
+  const width = Math.max(4, Math.min(100, utilization));
+  const overloads = Number(point.overload_events || 0);
+  return `
+    <div class="rounded border border-white/10 bg-white/[.03] p-3">
+      <div class="flex items-center justify-between gap-2 font-mono text-xs">
+        <span class="text-zinc-400">${escapeHTML(point.day || "day")}</span>
+        <span class="${overloads ? "text-rose-200" : "text-violet-200"}">${utilization.toFixed(1)}% · ${escapeHTML(String(point.requests || 0))} req${overloads ? ` · ${overloads} overload` : ""}</span>
+      </div>
+      <div class="mt-2 h-2 overflow-hidden rounded bg-zinc-900">
+        <div class="h-full rounded bg-gradient-to-r from-violet-400/70 to-rose-400/70" style="width:${width}%"></div>
+      </div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500">avg sent ${escapeHTML(formatCompactChars(point.avg_sent_chars))}</div>
     </div>
   `;
 }
