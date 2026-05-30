@@ -225,7 +225,7 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		writeError(w, http.StatusBadRequest, "message is required")
 		return
 	}
-	card, board, _, err := s.scrumGetCard(r, cardID)
+	card, board, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "card not found")
 		return
@@ -235,28 +235,26 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		return
 	}
 	reply := ""
+	var genErr error
 	if s.llmClient != nil {
-		contextLines := []string{
-			"Scrum card: " + card.Title,
-			"Column: " + card.Column,
-			"Project directory: " + board.ProjectDirectory,
-			"Description: " + card.Description,
-			"Reference files: " + strings.Join(card.RefFiles, ", "),
-		}
-		for _, item := range card.Checklist {
-			state := "[ ]"
-			if item.Done {
-				state = "[x]"
+		llmCtx, cancel := scrumCardChatLLMContext(r.Context())
+		defer cancel()
+		memoryLines := s.scrumPilotMemoryContext(llmCtx, card, projectID, req.Message)
+		pilotContext := s.summarizeScrumPilotChannel(llmCtx, board, card, req.Message, memoryLines)
+		userPrompt := buildScrumPilotChatPrompt(board, card, req.Message, pilotContext)
+		reply, genErr = s.scrumLLMGenerate(llmCtx, "You are the Omni thinking pilot for a scrum card. Reason about the task and suggest concrete actions. Be concise.", userPrompt)
+		if genErr != nil {
+			errText := formatScrumPilotChatError(genErr)
+			updated, appendErr := s.scrumAppendChat(r, cardID, "error", errText)
+			if appendErr != nil {
+				writeError(w, http.StatusBadGateway, genErr.Error())
+				return
 			}
-			contextLines = append(contextLines, fmt.Sprintf("%s %s", state, item.Text))
-		}
-		for _, msg := range card.Chat {
-			contextLines = append(contextLines, msg.Role+": "+msg.Content)
-		}
-		contextLines = append(contextLines, "user: "+req.Message)
-		reply, err = s.scrumLLMGenerate(r.Context(), "You are the Omni thinking pilot for a scrum card. Reason about the task and suggest concrete actions.", strings.Join(contextLines, "\n"))
-		if err != nil {
-			writeError(w, http.StatusBadGateway, err.Error())
+			writeJSON(w, http.StatusOK, map[string]any{
+				"card":  updated,
+				"reply": "",
+				"error": errText,
+			})
 			return
 		}
 	} else {
@@ -267,6 +265,7 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.persistScrumPilotMemory(r.Context(), updated, projectID, req.Message, reply)
 	writeJSON(w, http.StatusOK, map[string]any{"card": updated, "reply": reply})
 }
 

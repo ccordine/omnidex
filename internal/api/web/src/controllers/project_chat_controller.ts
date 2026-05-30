@@ -1,12 +1,12 @@
 import { Controller } from "@hotwired/stimulus";
-import { createScrumCard } from "../lib/scrum_api";
 import {
   fetchOllamaModels,
   fetchProjectPlanningChat,
+  mutateProjectPlanningDrafts,
   sendProjectPlanningChat,
   updateProjectPlanningChatConfig,
-  type ProjectPlanningCardDraft,
   type ProjectPlanningChatConfig,
+  type ProjectPlanningStoredDraft,
   type ProjectPlanningSuggestion,
 } from "../lib/project_chat_api";
 import {
@@ -32,7 +32,8 @@ export default class ProjectChatController extends Controller {
   private busy = false;
   private chat: ScrumChatMessage[] = [];
   private config: ProjectPlanningChatConfig = { reasoning_mode: "instant" };
-  private cardDrafts: ProjectPlanningCardDraft[] = [];
+  private draftQueue: ProjectPlanningStoredDraft[] = [];
+  private pendingCount = 0;
   private modelOptions: string[] = [];
   private onProjectOpened = (event: Event) => this.handleProjectOpened(event);
   private onProjectClosed = () => this.handleProjectClosed();
@@ -61,7 +62,8 @@ export default class ProjectChatController extends Controller {
   private handleProjectClosed() {
     this.projectID = null;
     this.chat = [];
-    this.cardDrafts = [];
+    this.draftQueue = [];
+    this.pendingCount = 0;
     this.renderMessages();
     this.renderSidePanels([], []);
   }
@@ -90,6 +92,11 @@ export default class ProjectChatController extends Controller {
     };
   }
 
+  private applyDraftQueue(queue?: ProjectPlanningStoredDraft[], pendingCount?: number) {
+    this.draftQueue = queue ?? [];
+    this.pendingCount = pendingCount ?? this.draftQueue.filter((draft) => draft.status === "pending").length;
+  }
+
   private async loadChat() {
     if (!this.projectID || this.busy) return;
     this.setStatus("Loading chat…", "busy");
@@ -98,9 +105,11 @@ export default class ProjectChatController extends Controller {
       const payload = await fetchProjectPlanningChat(this.projectID);
       this.chat = payload.chat ?? [];
       this.config = payload.config ?? { reasoning_mode: "instant" };
+      this.applyDraftQueue(payload.draft_queue, payload.pending_count);
       this.syncModelSelect();
       this.renderMessages();
-      this.setStatus("Ready", "ok");
+      this.renderSidePanels([], this.draftQueue);
+      this.setStatus(this.pendingCount ? `${this.pendingCount} drafts pending` : "Ready", "ok");
     } catch (error) {
       reportError(this.setStatus.bind(this), error);
     }
@@ -135,12 +144,15 @@ export default class ProjectChatController extends Controller {
     this.messagesTarget.scrollTop = this.messagesTarget.scrollHeight;
   }
 
-  private renderSidePanels(suggestions: ProjectPlanningSuggestion[], drafts: ProjectPlanningCardDraft[]) {
-    this.cardDrafts = drafts;
+  private renderSidePanels(suggestions: ProjectPlanningSuggestion[], drafts: ProjectPlanningStoredDraft[]) {
+    if (drafts.length) {
+      this.applyDraftQueue(drafts);
+    }
     this.suggestionsTarget.innerHTML =
       renderProjectPlanningSuggestions(suggestions) || `<p class="text-xs text-zinc-600">Tips from the planner appear here.</p>`;
     this.draftsTarget.innerHTML =
-      renderProjectPlanningCardDrafts(drafts) || `<p class="text-xs text-zinc-600">Draft cards suggested by the planner.</p>`;
+      renderProjectPlanningCardDrafts(this.draftQueue, { pendingCount: this.pendingCount }) ||
+      `<p class="text-xs text-zinc-600">Draft cards from research and planning accumulate here.</p>`;
   }
 
   async changeModel() {
@@ -185,6 +197,17 @@ export default class ProjectChatController extends Controller {
     await this.postChat({ mode: "research", message: query });
   }
 
+  async runBatch(event: Event) {
+    event.preventDefault();
+    const query = this.inputTarget.value.trim();
+    if (!query) {
+      this.setStatus("Enter a topic to research and draft cards", "error");
+      this.inputTarget.focus();
+      return;
+    }
+    await this.postChat({ mode: "batch", message: query });
+  }
+
   async sendMessage(event: Event) {
     event.preventDefault();
     const message = this.inputTarget.value.trim();
@@ -197,7 +220,9 @@ export default class ProjectChatController extends Controller {
     this.busy = true;
     this.config = this.currentConfig();
     this.renderMessages();
-    this.setStatus(input.mode === "research" ? "Researching…" : "Planning…", "busy");
+    const busyLabel =
+      input.mode === "batch" ? "Researching & drafting…" : input.mode === "research" ? "Researching…" : "Planning…";
+    this.setStatus(busyLabel, "busy");
     try {
       const payload = await sendProjectPlanningChat(this.projectID, {
         ...input,
@@ -206,13 +231,14 @@ export default class ProjectChatController extends Controller {
       this.chat = payload.chat ?? this.chat;
       this.config = payload.config ?? this.config;
       this.renderMessages();
-      this.renderSidePanels(payload.suggestions ?? [], payload.card_drafts ?? []);
+      this.renderSidePanels(payload.suggestions ?? [], payload.draft_queue ?? this.draftQueue);
       if (input.message && input.mode !== "scan") {
         this.inputTarget.value = "";
       }
       const modelLabel = payload.model ? ` · ${payload.model}` : "";
       const researchLabel = payload.research_used ? " · research" : "";
-      this.setStatus(`Ready${modelLabel}${researchLabel}`, "ok");
+      const draftLabel = payload.pending_count ? ` · ${payload.pending_count} pending` : "";
+      this.setStatus(`Ready${modelLabel}${researchLabel}${draftLabel}`, "ok");
     } catch (error) {
       this.busy = false;
       this.renderMessages();
@@ -223,23 +249,69 @@ export default class ProjectChatController extends Controller {
     this.renderMessages();
   }
 
-  async createDraftCard(event: Event) {
-    event.preventDefault();
-    if (!this.projectID) return;
-    const button = event.currentTarget as HTMLElement;
-    const index = Number(button.dataset.draftIndex);
-    const draft = this.cardDrafts[index];
-    if (!draft?.title?.trim()) return;
-    this.setStatus("Creating card…", "busy");
+  private async mutateDrafts(input: Parameters<typeof mutateProjectPlanningDrafts>[1], statusMessage: string) {
+    if (!this.projectID || this.busy) return;
+    this.busy = true;
+    this.setStatus(statusMessage, "busy");
     try {
-      const description = [draft.description?.trim(), draft.checklist?.length ? `Checklist:\n${draft.checklist.map((item) => `- ${item}`).join("\n")}` : ""]
-        .filter(Boolean)
-        .join("\n\n");
-      await createScrumCard(draft.title.trim(), description, draft.column?.trim() || "backlog", this.projectID);
-      this.setStatus(`Added “${draft.title.trim()}” to board`, "ok");
-      document.dispatchEvent(new CustomEvent("omni:scrum-refresh"));
+      const payload = await mutateProjectPlanningDrafts(this.projectID, input);
+      this.applyDraftQueue(payload.draft_queue, payload.pending_count);
+      this.renderSidePanels([], this.draftQueue);
+      if (payload.created_count > 0) {
+        document.dispatchEvent(new CustomEvent("omni:scrum-refresh"));
+      }
+      this.setStatus(
+        payload.created_count
+          ? `Added ${payload.created_count} card${payload.created_count === 1 ? "" : "s"} to board · ${payload.pending_count} pending`
+          : `${payload.pending_count} drafts pending`,
+        "ok",
+      );
     } catch (error) {
       reportError(this.setStatus.bind(this), error);
+    } finally {
+      this.busy = false;
     }
+  }
+
+  async createDraftCard(event: Event) {
+    event.preventDefault();
+    const button = event.currentTarget as HTMLElement;
+    const draftID = button.dataset.draftId?.trim();
+    if (!draftID) return;
+    await this.mutateDrafts({ action: "add", draft_id: draftID }, "Adding card…");
+  }
+
+  async addAllDrafts(event: Event) {
+    event.preventDefault();
+    if (!this.pendingCount) {
+      this.setStatus("No pending drafts", "error");
+      return;
+    }
+    await this.mutateDrafts({ action: "add_all" }, `Adding ${this.pendingCount} cards…`);
+  }
+
+  async dismissDraft(event: Event) {
+    event.preventDefault();
+    const button = event.currentTarget as HTMLElement;
+    const draftID = button.dataset.draftId?.trim();
+    if (!draftID) return;
+    await this.mutateDrafts({ action: "dismiss", draft_id: draftID }, "Skipping draft…");
+  }
+
+  async dismissAllDrafts(event: Event) {
+    event.preventDefault();
+    if (!this.pendingCount) {
+      this.setStatus("No pending drafts", "error");
+      return;
+    }
+    await this.mutateDrafts({ action: "dismiss_all" }, "Skipping pending drafts…");
+  }
+
+  async clearDraftHistory(event: Event) {
+    event.preventDefault();
+    const button = event.currentTarget as HTMLElement;
+    const status = button.dataset.clearStatus as "added" | "dismissed" | undefined;
+    if (!status) return;
+    await this.mutateDrafts({ action: "clear", status }, "Clearing history…");
   }
 }

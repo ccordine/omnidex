@@ -1,5 +1,5 @@
 import { escapeHTML, formatDateTime, statusPillClass } from "./dom";
-import { renderChatComposer, renderChatMessages, scrumMessagesToChat } from "./chat_render";
+import { renderChannelChatMessages, renderChatComposer, scrumMessagesToChat } from "./chat_render";
 import { renderModelConfigSection } from "./model_config_render";
 import { renderAgentConfigSection, renderPreAlphaBadge } from "./agent_config_render";
 import type { ModelFieldDefinition } from "./model_config_types";
@@ -467,10 +467,15 @@ function channelLiveBadge(card: ScrumCard): { label: string; tone: string } {
   return { label: "idle", tone: "border-white/10 bg-white/[.04] text-zinc-400" };
 }
 
-export function renderScrumModalChannelTab(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
+export function renderScrumModalChannelTab(
+  card: ScrumCard,
+  playQueue?: ScrumBoardResponse["play_queue"],
+  options?: { pilotPending?: boolean },
+): string {
   const messages = scrumMessagesToChat(card.chat ?? []);
   const isLive = card.play_state === "running" || card.play_state === "queued";
   const isRunning = card.play_state === "running";
+  const pilotPending = Boolean(options?.pilotPending);
   const status = channelSessionStatus(card, playQueue);
   const liveBadge = channelLiveBadge(card);
   const interrupt = isRunning
@@ -483,8 +488,11 @@ export function renderScrumModalChannelTab(card: ScrumCard, playQueue?: ScrumBoa
     ? `<span class="font-mono text-[11px] text-cyan-200/90">Job #${escapeHTML(card.job_id)}</span>`
     : "";
   const messageHtml =
-    messages.length > 0 || isRunning
-      ? renderChatMessages(messages, { pending: isRunning, pendingLabel: "Agent working…" })
+    messages.length > 0 || isRunning || pilotPending
+      ? renderChannelChatMessages(messages, {
+          pending: isRunning || pilotPending,
+          pendingLabel: isRunning ? "Agent working…" : "Thinking…",
+        })
       : `<div class="flex h-full min-h-[12rem] items-center justify-center px-4 py-8 text-center text-sm text-zinc-500">Play this card to watch the agent work live — tool calls, edits, and recap appear here.</div>`;
 
   return `
@@ -502,11 +510,13 @@ export function renderScrumModalChannelTab(card: ScrumCard, playQueue?: ScrumBoa
           <span class="rounded-full border px-3 py-1 text-xs font-medium ${liveBadge.tone}">${escapeHTML(liveBadge.label)}</span>
         </div>
       </header>
-      <div data-scrum-channel-messages class="scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3 md:px-4">${messageHtml}</div>
+      <div data-scrum-channel-messages class="scrum-channel-scroll scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col-reverse gap-1.5 px-3 py-3 md:px-4">${messageHtml}</div>
       ${renderChatComposer({
         formAction: "submit->scrum#sendChat",
         cardId: card.id,
         placeholder: isLive ? "Steer the task or ask a question…" : "Discuss this card with the thinking pilot…",
+        disabled: pilotPending || isRunning,
+        submitLabel: pilotPending ? "Thinking…" : "Send",
       })}
     </div>
   `;

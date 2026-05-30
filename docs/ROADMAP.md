@@ -27,6 +27,23 @@ This roadmap tracks the work needed to make Omnidex faster, more deterministic, 
 | done | Incremental index updates | Update an existing workspace index by rehashing changed files only. |
 | done | Roadmap foundation | Current optimization track has concrete CLI surfaces, docs, and tests for each listed item. |
 
+## Planner & Scrum Track (Venusaur)
+
+| Status | Item | Target |
+| --- | --- | --- |
+| done | Project Chat | Research, plan, scan, instant/thinking modes, memory-backed planning dialogue. |
+| done | Draft queue | Persistent `planning_draft_queue`, add one / add all / dismiss / clear. |
+| done | Research & draft batch | `/batch` mode — web research + card draft batch in one pass. |
+| done | Scrum board + play queue | Kanban columns, drag reorder, play/pause build agents. |
+| done | Flow metrics | Churn and incomplete-work signals on cards and board. |
+| done | Channel context minification | LLM summary + memory for card pilot chat. |
+| done | Card coach | Per-card planning, Jira drafts, memory notes. |
+| planned | Epic / parent-child cards | Hierarchy beyond flat cards + checklists. |
+| planned | Draft batch grouping UI | Visual batches from same research pass. |
+| planned | Auto-tag drafts from research topic | Tag cards when promoted from queue. |
+
+See [SCRUM_PLANNER.md](SCRUM_PLANNER.md).
+
 ## Completion Criteria
 
 The track is complete when Omnidex can:

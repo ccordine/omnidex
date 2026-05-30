@@ -2,6 +2,16 @@
 
 TypeScript + [Hotwired Stimulus](https://stimulus.hotwired.dev/) frontend for the Omni cockpit.
 
+**Release:** Venusaur (`v0.3.0`) — project planner, draft queue, scrum board, flow metrics.
+
+Primary surfaces:
+
+- **Projects** — project list, settings, codebase map, model config
+- **Project Chat** — planner/research (`project_chat_controller.ts`)
+- **Scrum** — kanban board, card modal, channel, coach, play queue (`scrum_controller.ts`)
+
+Planner docs: [../../docs/SCRUM_PLANNER.md](../../docs/SCRUM_PLANNER.md)
+
 ## Layout
 
 ```
@@ -13,8 +23,14 @@ internal/api/web/
     controllers/
       gx_controller.ts
       chat_controller.ts
+      project_chat_controller.ts
+      scrum_controller.ts
+      projects_controller.ts
     lib/
-      api.ts          # fetch helpers
+      project_chat_api.ts
+      project_chat_render.ts
+      scrum_api.ts
+      scrum_render.ts
       dom.ts          # HTML/formatting utilities
       recyclr.ts      # Recyclr partial updates
       render.ts       # View render helpers

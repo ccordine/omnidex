@@ -117,6 +117,7 @@ func (s *Server) handleProjectPlanningChat(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	chat, cfg := loadProjectPlanningChat(project.Settings)
+	draftQueue := loadPlanningDraftQueue(project.Settings)
 
 	switch r.Method {
 	case http.MethodGet:
@@ -124,6 +125,8 @@ func (s *Server) handleProjectPlanningChat(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, map[string]any{
 			"chat":               chat,
 			"config":             cfg,
+			"draft_queue":        draftQueue,
+			"pending_count":      len(pendingPlanningDrafts(draftQueue)),
 			"resolved_models":    resolved,
 			"web_search_enabled": s.webSearchEnabled,
 		})
@@ -190,7 +193,13 @@ func (s *Server) handleProjectPlanningChat(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		parsed := parseProjectPlanningLLMResponse(rawReply)
-		parsed.ResearchUsed = researchUsed
+		parsed.ResearchUsed = researchUsed || req.Mode == "batch"
+
+		batchID := ""
+		if len(parsed.CardDrafts) > 0 {
+			batchID = fmt.Sprintf("batch_%d", time.Now().UnixNano())
+			draftQueue = appendPlanningDrafts(draftQueue, parsed.CardDrafts, req.Mode, batchID)
+		}
 
 		if req.Message != "" && req.Mode != "scan" {
 			chat = append(chat, ScrumChatMessage{
@@ -210,6 +219,12 @@ func (s *Server) handleProjectPlanningChat(w http.ResponseWriter, r *http.Reques
 		if err := s.saveProjectPlanningChat(r.Context(), projectID, chat, cfg); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		if len(parsed.CardDrafts) > 0 {
+			if err := s.savePlanningDraftQueue(r.Context(), projectID, draftQueue); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
 
 		memoryStored := 0
@@ -233,6 +248,9 @@ func (s *Server) handleProjectPlanningChat(w http.ResponseWriter, r *http.Reques
 			"reply":          parsed.Reply,
 			"suggestions":    parsed.Suggestions,
 			"card_drafts":    parsed.CardDrafts,
+			"draft_queue":    draftQueue,
+			"pending_count":  len(pendingPlanningDrafts(draftQueue)),
+			"batch_id":       batchID,
 			"memory_stored":  memoryStored,
 			"research_used":  parsed.ResearchUsed,
 			"mode":           req.Mode,
@@ -281,6 +299,8 @@ func normalizeProjectPlanningMode(message, mode string) string {
 			return "scan"
 		case "/cards":
 			return "cards"
+		case "/batch":
+			return "batch"
 		}
 	}
 	if mode == "" {
@@ -307,6 +327,8 @@ func projectPlanningModeSystem(mode string) string {
 		return base + "\nMode: research — synthesize web research snippets and memory into actionable planning guidance. Cite uncertainties."
 	case "cards":
 		return base + "\nMode: cards — focus on drafting well-scoped scrum cards. Populate card_drafts richly."
+	case "batch":
+		return base + "\nMode: batch — research the topic, synthesize findings, then emit a batch of reviewable card_drafts (typically 3-8 items). Break work into setup, research, implementation, and verification cards when relevant. Prefer backlog unless the user asked to queue execution-ready work."
 	default:
 		return base + "\nMode: chat — collaborative project planning dialogue."
 	}
@@ -503,13 +525,16 @@ func (s *Server) projectPlanningResearchContext(ctx context.Context, message, mo
 	if !s.webSearchEnabled || s.llmClient == nil {
 		return nil, false
 	}
-	if mode != "research" && !strings.HasPrefix(strings.ToLower(message), "/research") {
+	if mode != "research" && mode != "batch" && !strings.HasPrefix(strings.ToLower(message), "/research") && !strings.HasPrefix(strings.ToLower(message), "/batch") {
 		return nil, false
 	}
 	query := strings.TrimSpace(message)
-	query = strings.TrimPrefix(strings.ToLower(query), "/research")
-	query = strings.TrimPrefix(query, "ing")
-	query = strings.TrimSpace(query)
+	for _, prefix := range []string{"/batch", "/research", "/researching"} {
+		if strings.HasPrefix(strings.ToLower(query), prefix) {
+			query = strings.TrimSpace(query[len(prefix):])
+			break
+		}
+	}
 	if query == "" {
 		query = strings.TrimSpace(message)
 	}

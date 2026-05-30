@@ -138,6 +138,10 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		s.handleProjectPlanningChat(w, r, id)
 		return
 	}
+	if action == "planning-chat/drafts" {
+		s.handleProjectPlanningDrafts(w, r, id)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		project, err := s.repo.GetProject(r.Context(), id)

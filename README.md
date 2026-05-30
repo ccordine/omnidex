@@ -1,34 +1,74 @@
 # Omnidex
 
-Omnidex is a local-first agent runtime for evidence-led self-correcting development loops.
+**Current release:** `v0.3.0` Venusaur
 
-It turns model output into permissioned, evidence-checked work: plan, patch, verify, observe, and continue until the evidence says the task is done.
+Omnidex is a local-first platform for **evidence-led development** and **human-in-the-loop project planning**.
 
-- `omni`: deterministic local CLI for chat, command execution, research, install/update, and workspace-aware automation.
-- Specialist roles handle bounded jobs such as prompt interpretation, planning, shell command selection, summarization, done checks, retrieval, analysis, and verification.
+At the Venusaur layer, it works as an augmented planner and research tool: you explore topics, review AI-generated task cards, promote the work you want done, and let build agents execute approved cards — while deterministic code still owns policy, evidence, and completion.
+
+Under the hood it remains an agent runtime: plan, patch, verify, observe, and continue until evidence says the task is done.
+
+## Two layers
+
+| Layer | What it does |
+| --- | --- |
+| **Project planner** (web UI) | Research, architect, draft backlog cards, scan the board. You review before anything hits Ready. |
+| **Agent runtime** (`omni`, workers) | Execute approved work with specialists, memory, recipes, evidence ledgers, and Pathfinder recovery. |
+
+Core pieces:
+
+- **`omni`**: deterministic local CLI for chat, command execution, research, install/update, and workspace-aware automation.
+- **Web cockpit**: projects, scrum board, Project Chat, draft queue, card channel pilot, flow metrics.
+- **`agent-core`**: API + Postgres queue + worker pipeline for service-backed workflows.
+- **`agent-cli`**: queue/API CLI for enqueueing and inspecting core jobs.
+
+License: MIT.
+
+## Venusaur workflow (start here)
+
+```bash
+cd omnidex
+cp default.env .env
+docker compose up --build -d core
+# open http://localhost:8090 → Projects → pick/create a project
+```
+
+1. **Project Chat** — research a topic (`Research` or **Research & draft** / `/batch`).
+2. **Draft queue** — review suggested cards; **Add** or **Add all** to the backlog.
+3. **Scrum board** — edit cards, drag approved work to **Ready**, **Play** to run the agent.
+4. **Card Channel** — steer running work without replaying full agent logs.
+5. Keep chatting — *"continue research on …"* — more drafts accumulate for review.
+
+Full guide: [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md)
+
+Example prompts:
+
+- *Research login systems for our Go app and draft backlog cards for each approach.*
+- *Research music theory intervals — draft study cards, not implementation.*
+- *Break the auth epic into setup / middleware / tests / docs cards.*
+
+## Why this design
+
+- **Human gates execution**: the planner generates work; you curate the queue; agents run what you promoted.
+- **Deterministic control plane**: models propose structured outputs; code validates, gates, executes, and records evidence.
+- **Hot-swappable model roles**: each specialist can use the model best suited to its job (instant vs thinking in Project Chat too).
+- **Minimal context by default**: channel pilot and structured commands use summary/minification instead of raw transcript replay.
+- **Evidence ledger by default**: work is explainable after the fact, including rejected commands and remaining objectives.
+- **Relevance-first retrieval**: tags + pgvector similarity (`memory_chunks.embedding`) before analysis/response.
+- **Queue-native processing**: workers lease steps with `FOR UPDATE SKIP LOCKED`.
+
+## Agent runtime (CLI)
+
+Specialist roles handle bounded jobs such as prompt interpretation, planning, shell command selection, summarization, done checks, retrieval, analysis, and verification.
+
 - Model routing is configurable per role, so fast utility models and deeper reasoning models can be swapped independently.
 - Skills and tools extend what Omnidex can do while deterministic code owns policy, execution, evidence, and state transitions.
 - Evidence ledgers record objectives, commands, rejected commands, observed output, pending work, and final responses.
 - Run traces summarize model calls, command counts, rejections, loop exhaustion, and completion-check pressure from existing session events.
 - Development loops convert discovered failures into regression targets, make scoped changes, run targeted verification, and continue from concrete observations instead of starting over.
 - Pathfinder is the high-reward problem-solving layer for stalled runs: it diagnoses the real blocker, scores candidate strategies, and hands one validated next action back to the normal runtime.
-- `agent-core`: API + Postgres queue + worker pipeline for service-backed workflows.
-- `agent-cli`: queue/API CLI for enqueueing and inspecting core jobs; helper aliases expose it for advanced workflows.
 
-License: MIT.
-
-## Why This Design
-
-- Deterministic control plane: models propose structured outputs; code validates, gates, executes, and records evidence.
-- Hot-swappable model roles: each specialist can use the model best suited to its job.
-- Minimal context by default: specialists receive the narrow slice of memory, history, and artifacts they need.
-- Evidence ledger by default: work is explainable after the fact, including rejected commands and remaining objectives.
-- Declarative recipes: repeatable task patterns can define objectives, command classes, and evidence requirements without hardcoding task logic into the command loop.
-- Relevance-first retrieval: tags + pgvector similarity (`memory_chunks.embedding`) before analysis/response.
-- Queue-native processing: workers lease steps with `FOR UPDATE SKIP LOCKED`.
-- Cognition routing in-core: fast models handle high-frequency utility steps; reasoning models are used for deeper synthesis.
-
-## Try This: Frontend Project
+## Try This: Frontend Project (CLI)
 
 ```bash
 mkdir demo-calculator && cd demo-calculator
@@ -61,7 +101,7 @@ omni fingerprint --text "npm error code E404"
 omni ollama prewarm --json
 ```
 
-See `docs/DEVELOPMENT_LOOPS.md`, `docs/VALIDATED_PLAYBOOKS.md`, `docs/EVIDENCE_LEDGER.md`, `docs/RUN_TRACE.md`, `docs/FAST_PATHS.md`, `docs/WORKSPACE_INDEX.md`, `docs/COMMAND_CACHE.md`, `docs/PATCH_MODE.md`, `docs/FAILURE_FINGERPRINTS.md`, `docs/OLLAMA_PREWARM.md`, `docs/COMMAND_POLICY.md`, `docs/RECIPES.md`, `docs/BENCHMARKS.md`, `docs/ROADMAP.md`, and `SECURITY.md`.
+See `docs/SCRUM_PLANNER.md`, `docs/DEVELOPMENT_LOOPS.md`, `docs/VALIDATED_PLAYBOOKS.md`, `docs/EVIDENCE_LEDGER.md`, `docs/RUN_TRACE.md`, `docs/FAST_PATHS.md`, `docs/WORKSPACE_INDEX.md`, `docs/COMMAND_CACHE.md`, `docs/PATCH_MODE.md`, `docs/FAILURE_FINGERPRINTS.md`, `docs/OLLAMA_PREWARM.md`, `docs/COMMAND_POLICY.md`, `docs/RECIPES.md`, `docs/BENCHMARKS.md`, `docs/ROADMAP.md`, and `SECURITY.md`.
 
 For embedding Omnidex into other apps as a local memory-backed chat/RP/support service, see `docs/LOCAL_SERVICE_CHANNELS.md`.
 
@@ -845,10 +885,10 @@ The Windows script prefers `winget`, then Scoop, then Chocolatey. Local automati
 Build release archives for macOS and Windows from any host with Go installed:
 
 ```bash
-./scripts/build-release.sh --version v0.2.0 --codename Ivysaur --target darwin/arm64 --target windows/amd64
+./scripts/build-release.sh --version v0.3.0 --codename Venusaur --target darwin/arm64 --target windows/amd64
 ```
 
-Default release targets are Linux, macOS, and Windows for `amd64` and `arm64`; outputs are written to `dist/` with `SHA256SUMS`. The current release line is `v0.2.0` Ivysaur; the first alpha release was `v0.1.0-alpha` Bulbasaur. Omnidex uses pride release codenames based on National Dex order; the mature "it got really good" release codename is reserved as Venusaur. See [docs/RELEASE_VERSIONING.md](docs/RELEASE_VERSIONING.md).
+Default release targets are Linux, macOS, and Windows for `amd64` and `arm64`; outputs are written to `dist/` with `SHA256SUMS`. The current release line is **`v0.3.0` Venusaur** (augmented planner & scrum). Previous releases: `v0.2.0` Ivysaur, `v0.1.0-alpha` Bulbasaur. Omnidex uses pride release codenames based on National Dex order. See [docs/RELEASE_VERSIONING.md](docs/RELEASE_VERSIONING.md).
 
 ## Install to ~/.omnidex
 
@@ -1385,6 +1425,21 @@ go run ./cmd/cli research --force "Cyberpunk 2077"
 This stores chunked research memories with topic tags and writes freshness metadata to `.omni/research-index.json`.
 
 ## API endpoints
+
+### Project planner & scrum (Venusaur)
+
+- `GET /v1/projects/{id}/planning-chat`
+- `POST /v1/projects/{id}/planning-chat`
+- `PATCH /v1/projects/{id}/planning-chat`
+- `POST /v1/projects/{id}/planning-chat/drafts`
+- `GET/PUT /v1/scrum`
+- `POST /v1/scrum/cards`
+- `POST /v1/scrum/cards/{id}/play|pause|move|chat|coach|…`
+- `GET /v1/scrum/flow-metrics`
+
+See [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md).
+
+### Core jobs & wrappers
 
 - `GET /healthz`
 - `POST /v1/instruct` (stateless prompt wrapper)

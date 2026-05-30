@@ -87,6 +87,7 @@ export default class ScrumController extends Controller {
   private playQueue: ScrumBoardResponse["play_queue"] | null = null;
   private flowSummary: ScrumBoardResponse["flow_summary"] | null = null;
   private activeCardTab: ScrumCardTab = "card";
+  private channelPilotPendingCardID: string | null = null;
   private recipes: RecipeCatalogItem[] = [];
   private projectRecipeId = "";
   private projectRecipe: Record<string, unknown> = {};
@@ -368,7 +369,7 @@ export default class ScrumController extends Controller {
     this.applyCardTabState();
     this.syncPollInterval();
     if (tab === "channel" && this.activeCardID) {
-      void this.refreshLiveChannel(this.activeCardID);
+      void this.refreshLiveChannel(this.activeCardID, true);
     }
   }
 
@@ -388,6 +389,9 @@ export default class ScrumController extends Controller {
       button.classList.toggle("border-white/10", !active);
       button.classList.toggle("text-zinc-400", !active);
     });
+    if (this.activeCardTab === "channel") {
+      this.scrollChannelToLatest(true);
+    }
   }
 
   stopCardClick(event: Event) {
@@ -532,10 +536,14 @@ export default class ScrumController extends Controller {
 
   private async reloadBoard(cardID?: string | null): Promise<ScrumCard | null> {
     const payload = await fetchScrumBoard(this.projectID);
-    this.applyBoardPayload(payload);
+    this.applyBoardPayload(payload, false);
     const id = cardID ?? this.activeCardID;
     if (!id) return null;
-    return this.findCard(id);
+    const card = this.findCard(id);
+    if (card && this.activeCardID === id) {
+      await this.refreshModalSections(id);
+    }
+    return card;
   }
 
   private async loadProjectFiles(): Promise<string[]> {
@@ -580,6 +588,21 @@ export default class ScrumController extends Controller {
     }
   }
 
+  private channelRenderOptions(cardID?: string | null) {
+    const id = cardID ?? this.activeCardID;
+    return { pilotPending: Boolean(id && this.channelPilotPendingCardID === id) };
+  }
+
+  private refreshChannelUI(cardID?: string | null) {
+    const id = cardID ?? this.activeCardID;
+    if (!id) return;
+    const card = this.findCard(id);
+    if (!card || !this.board) return;
+    this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(id)));
+    this.applyCardTabState();
+    this.scrollChannelToLatest(true);
+  }
+
   async refreshModalSections(cardID: string) {
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
@@ -597,26 +620,48 @@ export default class ScrumController extends Controller {
       this.cardAgentConfig?.system ?? "omnidex",
     ));
     this.recycle("scrum-modal-recipe", renderScrumModalRecipeTab(card, this.recipes, this.projectRecipeId, this.projectRecipe));
-    this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined));
+    this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(cardID)));
     this.applyCardTabState();
+    if (this.activeCardTab === "channel") {
+      this.scrollChannelToLatest(true);
+    }
     this.wireCoachAutoScan();
   }
 
-  private async refreshLiveChannel(cardID: string) {
+  private async refreshLiveChannel(cardID: string, pinScroll = false) {
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
     this.recycle("scrum-modal-toolbar", renderScrumModalToolbar(card, this.board, this.playQueue ?? undefined));
     this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`);
-    this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined));
+    this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(cardID)));
     this.applyCardTabState();
-    this.scrollChannelToBottom();
+    this.scrollChannelToLatest(pinScroll);
   }
 
-  private scrollChannelToBottom() {
-    const stream = document.querySelector("[data-scrum-channel-messages]");
-    if (stream instanceof HTMLElement) {
-      stream.scrollTop = stream.scrollHeight;
-    }
+  private channelStreamElement(): HTMLElement | null {
+    const panel = document.querySelector('[data-chat-target="modalPanel"]');
+    const stream = panel?.querySelector("[data-scrum-channel-messages]");
+    return stream instanceof HTMLElement ? stream : null;
+  }
+
+  private shouldStickChannelScroll(stream: HTMLElement): boolean {
+    // flex-col-reverse: scrollTop 0 = pinned to newest at the bottom
+    return stream.scrollTop <= 64;
+  }
+
+  private scrollChannelToLatest(force = false) {
+    const run = () => {
+      const stream = this.channelStreamElement();
+      if (!stream) return;
+      if (!force && !this.shouldStickChannelScroll(stream)) return;
+      stream.scrollTop = 0;
+      stream.querySelector("[data-scrum-channel-anchor]")?.scrollIntoView({ block: "end" });
+    };
+    run();
+    requestAnimationFrame(() => {
+      run();
+      requestAnimationFrame(run);
+    });
   }
 
   private wireCoachAutoScan() {
@@ -1188,18 +1233,46 @@ export default class ScrumController extends Controller {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
     const cardID = form.dataset.cardId || "";
-    const message = (form.querySelector('[data-scrum-field="chatMessage"]') as HTMLTextAreaElement | null)?.value.trim();
-    if (!cardID || !message) return;
+    const input = form.querySelector('[data-scrum-field="chatMessage"]') as HTMLTextAreaElement | null;
+    const message = input?.value.trim();
+    if (!cardID || !message || this.channelPilotPendingCardID) return;
 
+    this.activeCardTab = "channel";
+    this.applyCardTabState();
+
+    const card = this.findCard(cardID);
+    if (card) {
+      const optimistic: ScrumCard = {
+        ...card,
+        chat: [...(card.chat ?? []), { role: "user", content: message, created_at: new Date().toISOString() }],
+      };
+      this.upsertCard(optimistic);
+    }
+    if (input) input.value = "";
+
+    this.channelPilotPendingCardID = cardID;
+    this.refreshChannelUI(cardID);
     this.setStatus("Thinking…", "busy");
+
     try {
       const payload = await chatScrumCard(cardID, message, this.projectID);
+      this.channelPilotPendingCardID = null;
       this.upsertCard(payload.card);
-      this.recycle("scrum-modal-channel", renderScrumModalChannelTab(payload.card, this.playQueue ?? undefined));
-      this.scrollChannelToBottom();
+      this.refreshChannelUI(cardID);
       await this.reloadBoard(cardID);
-      this.actionOk("Reply received");
+      if (payload.error) {
+        this.actionFailMessage(String(payload.error));
+      } else {
+        this.actionOk("Reply received");
+      }
     } catch (error) {
+      this.channelPilotPendingCardID = null;
+      try {
+        const refreshed = await this.reloadBoard(cardID);
+        if (refreshed) this.refreshChannelUI(cardID);
+      } catch {
+        // keep optimistic state if reload fails
+      }
       this.actionFail(error);
     }
   }

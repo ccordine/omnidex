@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DIST_DIR="${REPO_ROOT}/dist"
-VERSION="v0.2.0"
-CODENAME="Ivysaur"
+VERSION="v0.3.0"
+CODENAME="Venusaur"
 TARGETS=(
   "linux/amd64"
   "linux/arm64"
@@ -28,14 +28,14 @@ Usage:
 
 Options:
   --dist <path>       Output directory (default: ./dist)
-  --version <value>   Version label used in archive names and binary metadata (default: v0.2.0)
-  --codename <value>  Release codename embedded in binary metadata (default: Ivysaur)
+  --version <value>   Version label used in archive names and binary metadata (default: v0.3.0)
+  --codename <value>  Release codename embedded in binary metadata (default: Venusaur)
   --target <goos/goarch>
                       Build one target. May be repeated. Defaults to linux/darwin/windows amd64+arm64.
   -h, --help          Show this help
 
 Examples:
-  scripts/build-release.sh --version v0.2.0 --codename Ivysaur
+  scripts/build-release.sh --version v0.3.0 --codename Venusaur
   scripts/build-release.sh --target darwin/arm64 --target windows/amd64
 EOF
 }

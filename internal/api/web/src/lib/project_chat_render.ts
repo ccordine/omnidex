@@ -1,6 +1,6 @@
 import { escapeHTML } from "./dom";
 import { renderChatMessages } from "./chat_render";
-import type { ProjectPlanningCardDraft, ProjectPlanningChatConfig, ProjectPlanningSuggestion } from "./project_chat_api";
+import type { ProjectPlanningCardDraft, ProjectPlanningChatConfig, ProjectPlanningStoredDraft, ProjectPlanningSuggestion } from "./project_chat_api";
 import type { ScrumChatMessage } from "./scrum_types";
 
 function tabPanelClass(tab: string, activeTab: string): string {
@@ -29,7 +29,108 @@ export function renderProjectPlanningSuggestions(suggestions: ProjectPlanningSug
     .join("");
 }
 
-export function renderProjectPlanningCardDrafts(drafts: ProjectPlanningCardDraft[]): string {
+function draftStatusTone(status: ProjectPlanningStoredDraft["status"]): string {
+  switch (status) {
+    case "added":
+      return "border-emerald-300/25 bg-emerald-300/5";
+    case "dismissed":
+      return "border-zinc-700/60 bg-zinc-900/40 opacity-60";
+    default:
+      return "border-violet-300/25 bg-violet-300/5";
+  }
+}
+
+function renderDraftChecklist(checklist?: string[]): string {
+  if (!checklist?.length) return "";
+  return `<ul class="mt-2 space-y-1">${checklist.map((item) => `<li class="text-[11px] text-zinc-400">• ${escapeHTML(item)}</li>`).join("")}</ul>`;
+}
+
+function renderDraftMeta(draft: ProjectPlanningStoredDraft): string {
+  const parts = [escapeHTML(draft.column || "backlog")];
+  if (draft.source) parts.push(escapeHTML(draft.source));
+  if (draft.status !== "pending") parts.push(escapeHTML(draft.status));
+  return parts.join(" · ");
+}
+
+export function renderProjectPlanningCardDrafts(
+  drafts: ProjectPlanningStoredDraft[],
+  options?: { pendingCount?: number },
+): string {
+  const pendingEntries = drafts
+    .map((draft, queueIndex) => ({ draft, queueIndex }))
+    .filter(({ draft }) => draft.status === "pending");
+  const recent = drafts
+    .map((draft, queueIndex) => ({ draft, queueIndex }))
+    .filter(({ draft }) => draft.status !== "pending")
+    .slice(-6)
+    .reverse();
+  const pendingCount = options?.pendingCount ?? pendingEntries.length;
+
+  if (!drafts.length) {
+    return "";
+  }
+
+  const header = `
+    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <p class="text-[11px] text-zinc-500">${pendingCount} pending · ${drafts.length} total</p>
+      <div class="flex flex-wrap gap-1.5">
+        ${
+          pendingCount
+            ? `<button type="button" data-action="project-chat#addAllDrafts" class="rounded border border-emerald-300/30 px-2 py-1 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-300/10">Add all</button>
+               <button type="button" data-action="project-chat#dismissAllDrafts" class="rounded border border-zinc-600 px-2 py-1 text-[10px] text-zinc-400 hover:text-zinc-200">Dismiss all</button>`
+            : ""
+        }
+        ${
+          drafts.some((draft) => draft.status === "added")
+            ? `<button type="button" data-action="project-chat#clearDraftHistory" data-clear-status="added" class="rounded border border-zinc-700 px-2 py-1 text-[10px] text-zinc-500 hover:text-zinc-300">Clear added</button>`
+            : ""
+        }
+      </div>
+    </div>`;
+
+  const renderItem = (draft: ProjectPlanningStoredDraft, index: number, queueIndex: number) => {
+    const pendingAction =
+      draft.status === "pending"
+        ? `<div class="flex shrink-0 flex-col gap-1">
+            <button type="button" data-action="project-chat#createDraftCard" data-draft-id="${escapeHTML(draft.id)}" class="rounded-md border border-violet-300/30 px-2.5 py-1 text-[11px] text-violet-100 hover:bg-violet-300/10">Add</button>
+            <button type="button" data-action="project-chat#dismissDraft" data-draft-id="${escapeHTML(draft.id)}" class="rounded-md border border-zinc-700 px-2.5 py-1 text-[10px] text-zinc-500 hover:text-zinc-300">Skip</button>
+          </div>`
+        : draft.card_id
+          ? `<span class="shrink-0 text-[10px] text-emerald-300/80">→ board</span>`
+          : "";
+
+    return `
+    <article class="rounded-md border p-3 ${draftStatusTone(draft.status)}" data-draft-index="${index}" data-draft-queue-index="${queueIndex}">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div class="min-w-0">
+          <h4 class="text-sm font-semibold text-violet-100">${escapeHTML(draft.title)}</h4>
+          ${draft.description ? `<p class="mt-1 text-xs leading-5 text-zinc-400">${escapeHTML(draft.description)}</p>` : ""}
+          <p class="mt-2 text-[10px] uppercase tracking-wide text-zinc-500">${renderDraftMeta(draft)}</p>
+        </div>
+        ${pendingAction}
+      </div>
+      ${renderDraftChecklist(draft.checklist)}
+    </article>`;
+  };
+
+  const pendingSection =
+    pendingEntries.length > 0
+      ? `<div class="space-y-2">${pendingEntries.map(({ draft, queueIndex }, index) => renderItem(draft, index, queueIndex)).join("")}</div>`
+      : `<p class="text-xs text-zinc-600">No pending drafts. Run research or ask for card drafts.</p>`;
+
+  const recentSection =
+    recent.length > 0
+      ? `<div class="mt-3 border-t border-white/10 pt-3">
+          <p class="mb-2 text-[10px] font-semibold uppercase tracking-[.14em] text-zinc-600">Recent</p>
+          <div class="space-y-2">${recent.map(({ draft, queueIndex }) => renderItem(draft, -1, queueIndex)).join("")}</div>
+        </div>`
+      : "";
+
+  return header + pendingSection + recentSection;
+}
+
+/** @deprecated use renderProjectPlanningCardDrafts with stored drafts */
+export function renderProjectPlanningLatestDrafts(drafts: ProjectPlanningCardDraft[]): string {
   if (!drafts.length) return "";
   return drafts
     .map(
@@ -39,20 +140,10 @@ export function renderProjectPlanningCardDrafts(drafts: ProjectPlanningCardDraft
         <div class="min-w-0">
           <h4 class="text-sm font-semibold text-violet-100">${escapeHTML(draft.title)}</h4>
           ${draft.description ? `<p class="mt-1 text-xs leading-5 text-zinc-400">${escapeHTML(draft.description)}</p>` : ""}
-          <p class="mt-2 text-[10px] uppercase tracking-wide text-zinc-500">${escapeHTML(draft.column || "backlog")}</p>
+          <p class="mt-2 text-[10px] uppercase tracking-wide text-zinc-500">${escapeHTML(draft.column || "backlog")} · latest</p>
         </div>
-        <button
-          type="button"
-          data-action="project-chat#createDraftCard"
-          data-draft-index="${index}"
-          class="shrink-0 rounded-md border border-violet-300/30 px-2.5 py-1 text-[11px] text-violet-100 hover:bg-violet-300/10"
-        >Add card</button>
       </div>
-      ${
-        draft.checklist?.length
-          ? `<ul class="mt-2 space-y-1">${draft.checklist.map((item) => `<li class="text-[11px] text-zinc-400">• ${escapeHTML(item)}</li>`).join("")}</ul>`
-          : ""
-      }
+      ${renderDraftChecklist(draft.checklist)}
     </article>
   `,
     )
@@ -90,7 +181,7 @@ export function renderProjectChatShell(
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-zinc-100">Project chat</h3>
-          <p class="mt-1 text-xs text-zinc-500">Planning assistant for <span class="text-zinc-300">${escapeHTML(projectName)}</span> — backlog, ideas, research, and card drafts. Not a build agent.</p>
+          <p class="mt-1 text-xs text-zinc-500">Planning assistant for <span class="text-zinc-300">${escapeHTML(projectName)}</span> — research topics, queue draft cards for review, then promote approved work to the board. Not a build agent.</p>
         </div>
         <span data-project-chat-target="status" class="text-xs text-zinc-500">Ready</span>
       </div>
@@ -108,6 +199,7 @@ export function renderProjectChatShell(
         </div>
         <button type="button" data-action="project-chat#scanBoard" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40 hover:bg-cyan-300/10">Scan board</button>
         <button type="button" data-action="project-chat#runResearch" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40 hover:bg-cyan-300/10">Research</button>
+        <button type="button" data-action="project-chat#runBatch" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-300/15" title="Research a topic and draft a batch of backlog cards">Research &amp; draft</button>
       </div>
 
       <div class="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -120,7 +212,7 @@ export function renderProjectChatShell(
               <textarea
                 data-project-chat-target="input"
                 rows="2"
-                placeholder="Talk about the project… /plan /research /scan /cards"
+                placeholder="Talk about the project… /batch /research /plan /cards /scan"
                 class="scrollbar max-h-32 min-h-[3.25rem] w-full resize-none bg-transparent text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-500"
               ></textarea>
               <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">
@@ -139,9 +231,10 @@ export function renderProjectChatShell(
             </div>
           </section>
           <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-3">
-            <h4 class="text-[11px] font-semibold uppercase tracking-[.16em] text-zinc-500">Card drafts</h4>
-            <div data-project-chat-target="drafts" class="scrollbar mt-2 max-h-64 space-y-2 overflow-y-auto">
-              <p class="text-xs text-zinc-600">Draft cards suggested by the planner.</p>
+            <h4 class="text-[11px] font-semibold uppercase tracking-[.16em] text-zinc-500">Draft queue</h4>
+            <p class="mt-1 text-[10px] leading-4 text-zinc-600">Review planner output here. Add cards to the board when ready.</p>
+            <div data-project-chat-target="drafts" class="scrollbar mt-2 max-h-72 space-y-2 overflow-y-auto">
+              <p class="text-xs text-zinc-600">Draft cards from research and planning accumulate here.</p>
             </div>
           </section>
         </aside>
