@@ -56,6 +56,9 @@ export function renderProjectScreenShell(projectLocation: string, activeTab = "s
         <div data-screen-target="placeholder" class="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center text-sm text-zinc-500">
           Open this tab to start the monitor stream.
         </div>
+        <div class="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-3 opacity-0 transition-opacity duration-150 screen-fullscreen-controls">
+          <button type="button" data-action="screen#toggleFullscreen" class="pointer-events-auto rounded-md border border-white/15 bg-zinc-950/80 px-3 py-1.5 text-xs font-semibold text-zinc-100 backdrop-blur hover:border-cyan-300/40 hover:bg-zinc-900/90">Exit fullscreen</button>
+        </div>
       </div>
     </div>
   `;

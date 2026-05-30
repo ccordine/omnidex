@@ -14,11 +14,22 @@ import (
 const PackageJSON = `{"type":"module","private":true,"dependencies":{"@cursor/sdk":"latest"}}
 `
 
-const RunnerScript = `import { Agent } from "@cursor/sdk";
+const RunnerScript = `import { Agent, CursorAgentError } from "@cursor/sdk";
 import fs from "node:fs/promises";
 
 function emit(event) {
   console.log(JSON.stringify(event));
+}
+
+async function disposeAgent(agent) {
+  if (!agent) return;
+  if (typeof agent[Symbol.asyncDispose] === "function") {
+    await agent[Symbol.asyncDispose]();
+    return;
+  }
+  if (typeof agent.close === "function") {
+    await agent.close();
+  }
 }
 
 const requestPath = process.argv[2];
@@ -33,34 +44,73 @@ const agent = await Agent.create({
   local: { cwd: request.workspace || process.cwd() },
 });
 
-const run = await agent.send(request.prompt);
-const events = [];
-let summary = "";
-let agentID = "";
-let runID = "";
+try {
+  const run = await agent.send(request.prompt);
+  const events = [];
+  let lastErrorDetail = "";
 
-emit({ agent: "cursor", type: "started", message: "Cursor external implementation session started" });
+  emit({ agent: "cursor", type: "started", message: "Cursor external implementation session started" });
 
-for await (const event of run.stream()) {
-  events.push(event);
-  const text = typeof event === "string" ? event : JSON.stringify(event);
-  if (text) {
-    summary = text;
+  for await (const event of run.stream()) {
+    events.push(event);
+    if (event && typeof event === "object" && event.type === "status") {
+      const status = String(event.status || "").toUpperCase();
+      emit({ agent: "cursor", type: "status", message: JSON.stringify(event), raw: event });
+      if (status === "ERROR") {
+        lastErrorDetail = JSON.stringify(event);
+      }
+      continue;
+    }
+    const text = typeof event === "string" ? event : JSON.stringify(event);
+    emit({ agent: "cursor", type: "message", message: text, raw: event });
   }
-  if (event && typeof event === "object") {
-    agentID = agentID || event.agent_id || event.agentId || event.agent?.id || "";
-    runID = runID || event.run_id || event.runId || event.run?.id || "";
+
+  const result = await run.wait();
+  const runStatus = String(result?.status || "").toLowerCase();
+  if (runStatus === "error" || runStatus === "failed" || runStatus === "cancelled") {
+    const detail =
+      result?.error?.message ||
+      result?.error ||
+      result?.summary ||
+      lastErrorDetail ||
+      "Cursor run ended with status " + (result?.status || "error");
+    emit({
+      agent: "cursor",
+      type: "error",
+      message: String(detail),
+      raw: { status: result?.status, run_id: result?.id, error: result?.error },
+    });
+    console.error(String(detail));
+    process.exit(2);
   }
-  emit({ agent: "cursor", type: "message", message: text, raw: event });
+
+  let summary = "";
+  if (result?.result != null) {
+    summary = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
+  }
+
+  emit({
+    agent: "cursor",
+    type: "completed",
+    message: summary || "Cursor external implementation session completed",
+    evidence: events.map((event) => (typeof event === "string" ? event : JSON.stringify(event))),
+    raw: {
+      agent_id: agent?.id || "",
+      run_id: result?.id || "",
+      status: result?.status || "completed",
+    },
+  });
+} catch (err) {
+  const message =
+    err instanceof CursorAgentError
+      ? "Cursor startup failed: " + err.message + " (retryable=" + Boolean(err.isRetryable) + ")"
+      : err?.message || String(err);
+  emit({ agent: "cursor", type: "error", message });
+  console.error(message);
+  process.exit(err instanceof CursorAgentError ? 1 : 2);
+} finally {
+  await disposeAgent(agent);
 }
-
-emit({
-  agent: "cursor",
-  type: "completed",
-  message: summary || "Cursor external implementation session completed",
-  evidence: events.map((event) => typeof event === "string" ? event : JSON.stringify(event)),
-  raw: { agent_id: agentID, run_id: runID }
-});
 `
 
 type Request struct {

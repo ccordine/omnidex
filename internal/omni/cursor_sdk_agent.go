@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/cursorrunner"
 	"github.com/gryph/omnidex/internal/secrets"
 )
 
@@ -88,7 +89,11 @@ func (a *CursorSDKArchitectAgent) RunArchitectTask(ctx context.Context, input Cu
 	if err != nil {
 		return CursorArchitectAgentResult{}, err
 	}
-	return resultFromExternalAgentEvents(events), nil
+	result := resultFromExternalAgentEvents(events)
+	if err := externalAgentResultError(result); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAgentInput) (ExternalAgentSession, error) {
@@ -141,12 +146,12 @@ func (a *CursorSDKArchitectAgent) ensureRunner(ctx context.Context) error {
 	}
 	packageJSON := filepath.Join(a.RunnerDir, "package.json")
 	if _, err := os.Stat(packageJSON); os.IsNotExist(err) {
-		if err := os.WriteFile(packageJSON, []byte(cursorSDKRunnerPackageJSON), 0o644); err != nil {
+		if err := os.WriteFile(packageJSON, []byte(cursorrunner.PackageJSON), 0o644); err != nil {
 			return fmt.Errorf("write cursor sdk runner package.json: %w", err)
 		}
 	}
 	runnerPath := filepath.Join(a.RunnerDir, "runner.mjs")
-	if err := os.WriteFile(runnerPath, []byte(cursorSDKRunnerScript), 0o644); err != nil {
+	if err := os.WriteFile(runnerPath, []byte(cursorrunner.RunnerScript), 0o644); err != nil {
 		return fmt.Errorf("write cursor sdk runner script: %w", err)
 	}
 	if _, err := os.Stat(filepath.Join(a.RunnerDir, "node_modules", "@cursor", "sdk")); err == nil {
@@ -203,54 +208,3 @@ func envDurationOrDefault(key string, fallback time.Duration) time.Duration {
 	return parsed
 }
 
-const cursorSDKRunnerPackageJSON = `{"type":"module","private":true,"dependencies":{"@cursor/sdk":"latest"}}
-`
-
-const cursorSDKRunnerScript = `import { Agent } from "@cursor/sdk";
-import fs from "node:fs/promises";
-
-function emit(event) {
-  console.log(JSON.stringify(event));
-}
-
-const requestPath = process.argv[2];
-if (!requestPath) {
-  throw new Error("request path is required");
-}
-
-const request = JSON.parse(await fs.readFile(requestPath, "utf8"));
-const agent = await Agent.create({
-  apiKey: request.api_key,
-  model: { id: request.model || "composer-2" },
-  local: { cwd: request.workspace || process.cwd() },
-});
-
-const run = await agent.send(request.prompt);
-const events = [];
-let summary = "";
-let agentID = "";
-let runID = "";
-
-emit({ agent: "cursor", type: "started", message: "Cursor external implementation session started" });
-
-for await (const event of run.stream()) {
-  events.push(event);
-  const text = typeof event === "string" ? event : JSON.stringify(event);
-  if (text) {
-    summary = text;
-  }
-  if (event && typeof event === "object") {
-    agentID = agentID || event.agent_id || event.agentId || event.agent?.id || "";
-    runID = runID || event.run_id || event.runId || event.run?.id || "";
-  }
-  emit({ agent: "cursor", type: "message", message: text, raw: event });
-}
-
-emit({
-  agent: "cursor",
-  type: "completed",
-  message: summary || "Cursor external implementation session completed",
-  evidence: events.map((event) => typeof event === "string" ? event : JSON.stringify(event)),
-  raw: { agent_id: agentID, run_id: runID }
-});
-`

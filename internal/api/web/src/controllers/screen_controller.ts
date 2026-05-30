@@ -28,7 +28,7 @@ export default class ScreenController extends Controller {
   private onProjectOpened = (event: Event) => this.handleProjectOpened(event);
   private onProjectClosed = () => this.handleProjectClosed();
   private onProjectTab = (event: Event) => this.handleProjectTab(event);
-  private onFullscreenChange = () => this.syncFullscreenButton();
+  private onFullscreenChange = () => this.handleFullscreenChange();
 
   connect() {
     document.addEventListener("omni:project-opened", this.onProjectOpened);
@@ -42,6 +42,7 @@ export default class ScreenController extends Controller {
     document.removeEventListener("omni:project-closed", this.onProjectClosed);
     document.removeEventListener("omni:project-tab", this.onProjectTab);
     document.removeEventListener("fullscreenchange", this.onFullscreenChange);
+    void this.exitImmersive();
     this.stopStream();
   }
 
@@ -62,11 +63,92 @@ export default class ScreenController extends Controller {
 
   toggleFullscreen(event: Event) {
     event.preventDefault();
-    if (document.fullscreenElement === this.frameTarget) {
-      void document.exitFullscreen();
+    if (this.isImmersive()) {
+      void this.exitImmersive();
       return;
     }
-    void this.frameTarget.requestFullscreen();
+    void this.enterImmersive();
+  }
+
+  private immersive = false;
+  private immersiveKeydown: ((event: KeyboardEvent) => void) | null = null;
+  private immersiveRestore: { parent: HTMLElement; next: ChildNode | null } | null = null;
+
+  private isImmersive(): boolean {
+    return document.fullscreenElement === this.frameTarget || this.immersive;
+  }
+
+  private canUseNativeFullscreen(): boolean {
+    if (!window.isSecureContext) return false;
+    const enabled = document.fullscreenEnabled ?? (document as Document & { webkitFullscreenEnabled?: boolean }).webkitFullscreenEnabled;
+    return enabled !== false;
+  }
+
+  private async enterImmersive() {
+    if (this.canUseNativeFullscreen()) {
+      try {
+        await this.frameTarget.requestFullscreen();
+        this.syncFullscreenButton();
+        return;
+      } catch {
+        // Fall back to fixed overlay on LAN http:// or blocked API.
+      }
+    }
+    this.enableImmersiveFallback();
+  }
+
+  private async exitImmersive() {
+    if (document.fullscreenElement === this.frameTarget) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // ignore
+      }
+    }
+    this.disableImmersiveFallback();
+  }
+
+  private enableImmersiveFallback() {
+    this.immersive = true;
+    const frame = this.frameTarget;
+    const parent = frame.parentElement;
+    if (parent) {
+      this.immersiveRestore = { parent, next: frame.nextSibling };
+      document.body.appendChild(frame);
+    }
+    frame.classList.add("screen-fullscreen-fallback");
+    document.body.classList.add("screen-fullscreen-active");
+    this.immersiveKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") void this.exitImmersive();
+    };
+    document.addEventListener("keydown", this.immersiveKeydown);
+    this.syncFullscreenButton();
+  }
+
+  private disableImmersiveFallback() {
+    this.immersive = false;
+    const frame = this.frameTarget;
+    frame.classList.remove("screen-fullscreen-fallback");
+    document.body.classList.remove("screen-fullscreen-active");
+    if (this.immersiveRestore) {
+      const { parent, next } = this.immersiveRestore;
+      if (next && next.parentElement === parent) parent.insertBefore(frame, next);
+      else parent.appendChild(frame);
+      this.immersiveRestore = null;
+    }
+    if (this.immersiveKeydown) {
+      document.removeEventListener("keydown", this.immersiveKeydown);
+      this.immersiveKeydown = null;
+    }
+    this.syncFullscreenButton();
+  }
+
+  private handleFullscreenChange() {
+    if (document.fullscreenElement !== this.frameTarget && this.immersive) {
+      this.disableImmersiveFallback();
+      return;
+    }
+    this.syncFullscreenButton();
   }
 
   private handleProjectOpened(event: Event) {
@@ -200,7 +282,8 @@ export default class ScreenController extends Controller {
   }
 
   private syncFullscreenButton() {
-    const active = document.fullscreenElement === this.frameTarget;
+    const active = this.isImmersive();
     this.fullscreenButtonTarget.textContent = active ? "Exit fullscreen" : "Fullscreen";
+    this.frameTarget.classList.toggle("screen-fullscreen-active", active);
   }
 }

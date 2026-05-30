@@ -91,7 +91,11 @@ func (a *CodexSDKArchitectAgent) RunArchitectTask(ctx context.Context, input Cur
 	if err != nil {
 		return CursorArchitectAgentResult{}, err
 	}
-	return resultFromExternalAgentEvents(events), nil
+	result := resultFromExternalAgentEvents(events)
+	if err := externalAgentResultError(result); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAgentInput) (ExternalAgentSession, error) {

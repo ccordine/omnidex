@@ -47,6 +47,9 @@ func scrumAgentConfigErrorNote(output string) string {
 	if strings.Contains(lower, "npm") || strings.Contains(lower, "host bridge") || strings.Contains(lower, "host_agent") {
 		return "play: Cursor/Codex run on your host machine via the bridge — install node/npm on the laptop, run `omni host serve --listen 0.0.0.0:8091`, and keep HOST_AGENT_URL set in core"
 	}
+	if strings.Contains(lower, "cursor startup failed") || strings.Contains(lower, "cursor agent run failed") || strings.Contains(lower, `"status":"error"`) {
+		return "play: Cursor agent run failed — verify the API key in Admin → API secrets, that Cursor CLI/SDK can run on the host, and retry the card"
+	}
 	if strings.Contains(lower, "cursor sdk") || strings.Contains(lower, "cursor api key") {
 		return "play: Cursor API key missing — set it in Admin → API secrets (DB) or CURSOR_API_KEY in env"
 	}

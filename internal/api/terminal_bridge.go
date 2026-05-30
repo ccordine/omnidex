@@ -10,11 +10,53 @@ import (
 
 const defaultHostBridgePort = "8091"
 
-func terminalUseDirectBridge(coreURL string) bool {
+func terminalUseDirectBridge(r *http.Request, coreURL string) bool {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("OMNI_TERMINAL_VIA_CORE")), "true") {
 		return false
 	}
-	return publicBridgeWSBase(coreURL) != ""
+	if strings.TrimSpace(os.Getenv("HOST_BRIDGE_PUBLIC_WS_URL")) != "" ||
+		strings.TrimSpace(os.Getenv("HOST_BRIDGE_PUBLIC_URL")) != "" {
+		return browserBridgeWSBase(r, coreURL) != ""
+	}
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("OMNI_TERMINAL_DIRECT")), "true") &&
+		browserBridgeWSBase(r, coreURL) != ""
+}
+
+// browserBridgeWSBase returns a ws:// URL the browser can reach for direct bridge access.
+// Prefer the host the user already used to load the UI (r.Host), not CORE_URL inside Docker.
+func browserBridgeWSBase(r *http.Request, coreURL string) string {
+	if explicit := strings.TrimSpace(os.Getenv("HOST_BRIDGE_PUBLIC_WS_URL")); explicit != "" {
+		return normalizeWSBase(explicit)
+	}
+	if explicit := strings.TrimSpace(os.Getenv("HOST_BRIDGE_PUBLIC_URL")); explicit != "" {
+		return httpBaseToWS(explicit)
+	}
+	host := requestHost(r)
+	if host == "" {
+		return publicBridgeWSBase(coreURL)
+	}
+	if host == "host.docker.internal" || host == "localhost" || host == "127.0.0.1" {
+		return ""
+	}
+	port := strings.TrimSpace(os.Getenv("HOST_AGENT_PORT"))
+	if port == "" {
+		port = defaultHostBridgePort
+	}
+	return "ws://" + net.JoinHostPort(host, port)
+}
+
+func requestHost(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host := strings.TrimSpace(r.Host)
+	if host == "" {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
 }
 
 func publicBridgeWSBase(coreURL string) string {

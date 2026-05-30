@@ -109,9 +109,16 @@ export default class TerminalController extends Controller {
     });
 
     let wsURL: string;
+    let mode = "proxy";
     try {
-      const preflight = await fetch(`/v1/host/terminal/preflight?${params.toString()}`);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 20000);
+      const preflight = await fetch(`/v1/host/terminal/preflight?${params.toString()}`, {
+        signal: controller.signal,
+      });
+      window.clearTimeout(timeout);
       const payload = (await preflight.json()) as {
+        mode?: string;
         ws_url?: string;
         hint?: string;
         error?: string;
@@ -120,6 +127,7 @@ export default class TerminalController extends Controller {
         throw new Error(payload.error?.trim() || `Preflight failed (${preflight.status})`);
       }
       wsURL = payload.ws_url?.trim() ?? "";
+      mode = payload.mode?.trim() || "proxy";
       if (!wsURL) {
         throw new Error("Preflight did not return a terminal websocket URL");
       }
@@ -128,16 +136,34 @@ export default class TerminalController extends Controller {
       }
     } catch (error) {
       this.connecting = false;
-      const message = error instanceof Error ? error.message : "Preflight failed";
+      const message =
+        error instanceof DOMException && error.name === "AbortError"
+          ? "Preflight timed out — is core reachable?"
+          : error instanceof Error
+            ? error.message
+            : "Preflight failed";
       this.setStatus(message, "error");
       return;
     }
+
+    const connectTimeout = window.setTimeout(() => {
+      if (!this.connecting || this.socket?.readyState === WebSocket.OPEN) return;
+      this.connecting = false;
+      this.socket?.close();
+      this.socket = null;
+      const hint =
+        mode === "direct"
+          ? "Timed out connecting to host bridge (port 8091). Open port 8091 or unset OMNI_TERMINAL_DIRECT / HOST_BRIDGE_PUBLIC_WS_URL to proxy via core."
+          : "Timed out connecting to terminal — check host bridge is running (`omni host serve --listen 0.0.0.0:8091`)";
+      this.setStatus(hint, "error");
+    }, 15000);
 
     const socket = new WebSocket(wsURL);
     socket.binaryType = "arraybuffer";
     this.socket = socket;
 
     socket.onopen = () => {
+      window.clearTimeout(connectTimeout);
       this.connecting = false;
       this.connected = true;
       this.setStatus("Connected", "ok");
@@ -156,11 +182,14 @@ export default class TerminalController extends Controller {
     };
 
     socket.onerror = () => {
+      window.clearTimeout(connectTimeout);
       this.connecting = false;
+      if (this.connected) return;
       this.setStatus("Connection error", "error");
     };
 
     socket.onclose = (event) => {
+      window.clearTimeout(connectTimeout);
       this.connecting = false;
       this.connected = false;
       if (this.socket === socket) {

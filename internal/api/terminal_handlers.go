@@ -24,7 +24,7 @@ func (s *Server) handleHostTerminalPreflight(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	payload, err := s.prepareTerminalConnection(r)
+	payload, err := s.prepareTerminalConnection(r, false)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -50,7 +50,7 @@ type terminalConnectionPayload struct {
 	bridgeURL string
 }
 
-func (s *Server) prepareTerminalConnection(r *http.Request) (terminalConnectionPayload, error) {
+func (s *Server) prepareTerminalConnection(r *http.Request, probe bool) (terminalConnectionPayload, error) {
 	client := s.hostBridgeClient()
 	if client == nil {
 		return terminalConnectionPayload{}, fmt.Errorf("host bridge unavailable: run `omni host serve --listen 0.0.0.0:8091` and set HOST_AGENT_URL in core")
@@ -84,13 +84,15 @@ func (s *Server) prepareTerminalConnection(r *http.Request) (terminalConnectionP
 		return terminalConnectionPayload{}, err
 	}
 
-	if err := probeBridgeTerminal(setupCtx, bridgeURL, s.hostAgentToken); err != nil {
-		return terminalConnectionPayload{}, err
+	if probe {
+		if err := probeBridgeTerminal(setupCtx, bridgeURL, s.hostAgentToken); err != nil {
+			return terminalConnectionPayload{}, err
+		}
 	}
 
 	query := r.URL.Query()
-	if terminalUseDirectBridge(s.coreURLDefault) {
-		publicBase := publicBridgeWSBase(s.coreURLDefault)
+	if terminalUseDirectBridge(r, s.coreURLDefault) {
+		publicBase := browserBridgeWSBase(r, s.coreURLDefault)
 		directURL, err := buildDirectTerminalWSURL(publicBase, cwd, query, strings.TrimSpace(s.hostAgentToken))
 		if err != nil {
 			return terminalConnectionPayload{}, err
@@ -132,7 +134,7 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := s.prepareTerminalConnection(r)
+	payload, err := s.prepareTerminalConnection(r, true)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -152,7 +154,10 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 		header.Set("Authorization", "Bearer "+token)
 	}
 
-	bridgeConn, resp, err := websocket.DefaultDialer.DialContext(r.Context(), payload.bridgeURL, header)
+	dialCtx, dialCancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer dialCancel()
+
+	bridgeConn, resp, err := websocket.DefaultDialer.DialContext(dialCtx, payload.bridgeURL, header)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, terminalBridgeDialError(err, resp))
 		return
@@ -175,8 +180,8 @@ func (s *Server) handleUIRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"core_url":              strings.TrimSpace(s.coreURLDefault),
 		"ws_base":               coreWSBase(r, s.coreURLDefault),
-		"terminal_direct":       terminalUseDirectBridge(s.coreURLDefault),
-		"host_bridge_public_ws": publicBridgeWSBase(s.coreURLDefault),
+		"terminal_direct":       terminalUseDirectBridge(r, s.coreURLDefault),
+		"host_bridge_public_ws": browserBridgeWSBase(r, s.coreURLDefault),
 		"plain_http_ok":         true,
 	})
 }
