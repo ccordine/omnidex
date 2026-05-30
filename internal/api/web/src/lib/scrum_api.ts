@@ -141,7 +141,7 @@ export async function chatScrumCard(
   cardID: string,
   message: string,
   projectID?: number | null,
-): Promise<{ card: ScrumCard; reply: string; error?: string }> {
+): Promise<{ card: ScrumCard; reply: string; error?: string; agent?: string; action?: string }> {
   const response = await fetch(cardURL(cardID, "chat", projectID), {
     method: "POST",
     headers: { "Content-Type": "application/json" },

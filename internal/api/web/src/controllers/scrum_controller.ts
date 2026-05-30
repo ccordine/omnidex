@@ -230,6 +230,7 @@ export default class ScrumController extends Controller {
 
   private async pollBoard() {
     if (!this.projectID || this.pollInFlight || this.boardDrag.isActive()) return;
+    if (this.channelPilotPendingCardID) return;
     this.pollInFlight = true;
     try {
       const payload = await fetchScrumBoard(this.projectID);
@@ -358,7 +359,25 @@ export default class ScrumController extends Controller {
   private resetModalShell() {
     this.activeCardID = null;
     this.activeCardTab = "card";
+    this.channelPilotPendingCardID = null;
     resetModalPanelWidth();
+  }
+
+  private cardTabStorageKey(cardID: string): string {
+    return `omni.scrum.card-tab.${cardID}`;
+  }
+
+  private restoreCardTab(cardID: string): ScrumCardTab {
+    const saved = sessionStorage.getItem(this.cardTabStorageKey(cardID));
+    if (saved === "card" || saved === "config" || saved === "recipe" || saved === "channel") {
+      return saved;
+    }
+    return "card";
+  }
+
+  private persistCardTab(tab: ScrumCardTab) {
+    if (!this.activeCardID) return;
+    sessionStorage.setItem(this.cardTabStorageKey(this.activeCardID), tab);
   }
 
   showCardTab(event: Event) {
@@ -366,6 +385,7 @@ export default class ScrumController extends Controller {
     const tab = (event.currentTarget as HTMLElement).dataset.scrumTab as ScrumCardTab | undefined;
     if (!tab) return;
     this.activeCardTab = tab;
+    this.persistCardTab(tab);
     this.applyCardTabState();
     this.syncPollInterval();
     if (tab === "channel" && this.activeCardID) {
@@ -590,7 +610,11 @@ export default class ScrumController extends Controller {
 
   private channelRenderOptions(cardID?: string | null) {
     const id = cardID ?? this.activeCardID;
-    return { pilotPending: Boolean(id && this.channelPilotPendingCardID === id) };
+    const card = id ? this.findCard(id) : null;
+    return {
+      pilotPending: Boolean(id && this.channelPilotPendingCardID === id),
+      agentRunning: card?.play_state === "running",
+    };
   }
 
   private refreshChannelUI(cardID?: string | null) {
@@ -765,7 +789,7 @@ export default class ScrumController extends Controller {
     if (!card || !this.board) return;
 
     this.activeCardID = cardID;
-    this.activeCardTab = "card";
+    this.activeCardTab = this.restoreCardTab(cardID);
     const files = await this.loadProjectFiles();
     await Promise.all([this.loadCardConfigs(cardID), this.loadCardContext()]);
     this.openModal(
@@ -1229,15 +1253,28 @@ export default class ScrumController extends Controller {
     }
   }
 
+  channelComposerKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      void this.sendChat(event);
+    }
+  }
+
   async sendChat(event: Event) {
     event.preventDefault();
-    const form = event.currentTarget as HTMLFormElement;
+    const form = (event.currentTarget as HTMLElement | null)?.closest("form") ?? (event.currentTarget as HTMLFormElement | null);
+    if (!form) return;
     const cardID = form.dataset.cardId || "";
     const input = form.querySelector('[data-scrum-field="chatMessage"]') as HTMLTextAreaElement | null;
     const message = input?.value.trim();
-    if (!cardID || !message || this.channelPilotPendingCardID) return;
+    if (!cardID || !message) return;
+    if (this.channelPilotPendingCardID === cardID) {
+      this.setStatus("Already sending…", "busy");
+      return;
+    }
 
     this.activeCardTab = "channel";
+    this.persistCardTab("channel");
     this.applyCardTabState();
 
     const card = this.findCard(cardID);
@@ -1252,27 +1289,26 @@ export default class ScrumController extends Controller {
 
     this.channelPilotPendingCardID = cardID;
     this.refreshChannelUI(cardID);
-    this.setStatus("Thinking…", "busy");
+    this.setStatus("Sending…", "busy");
 
     try {
       const payload = await chatScrumCard(cardID, message, this.projectID);
-      this.channelPilotPendingCardID = null;
       this.upsertCard(payload.card);
+      this.channelPilotPendingCardID = null;
       this.refreshChannelUI(cardID);
-      await this.reloadBoard(cardID);
+      this.applyCardTabState();
       if (payload.error) {
         this.actionFailMessage(String(payload.error));
+      } else if (payload.action === "steered" || payload.action === "feedback") {
+        this.actionOk(`Sent to agent${payload.agent ? ` (${payload.agent})` : ""}`);
+      } else if (payload.action === "started") {
+        this.actionOk(`Agent started${payload.agent ? ` (${payload.agent})` : ""}`);
       } else {
-        this.actionOk("Reply received");
+        this.actionOk(payload.action === "saved" ? "Message saved" : "Message sent");
       }
     } catch (error) {
       this.channelPilotPendingCardID = null;
-      try {
-        const refreshed = await this.reloadBoard(cardID);
-        if (refreshed) this.refreshChannelUI(cardID);
-      } catch {
-        // keep optimistic state if reload fails
-      }
+      this.refreshChannelUI(cardID);
       this.actionFail(error);
     }
   }

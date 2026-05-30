@@ -470,12 +470,13 @@ function channelLiveBadge(card: ScrumCard): { label: string; tone: string } {
 export function renderScrumModalChannelTab(
   card: ScrumCard,
   playQueue?: ScrumBoardResponse["play_queue"],
-  options?: { pilotPending?: boolean },
+  options?: { pilotPending?: boolean; agentRunning?: boolean },
 ): string {
   const messages = scrumMessagesToChat(card.chat ?? []);
   const isLive = card.play_state === "running" || card.play_state === "queued";
   const isRunning = card.play_state === "running";
   const pilotPending = Boolean(options?.pilotPending);
+  const agentRunning = Boolean(options?.agentRunning ?? isRunning);
   const status = channelSessionStatus(card, playQueue);
   const liveBadge = channelLiveBadge(card);
   const interrupt = isRunning
@@ -487,11 +488,12 @@ export function renderScrumModalChannelTab(
   const jobLine = card.job_id?.trim()
     ? `<span class="font-mono text-[11px] text-cyan-200/90">Job #${escapeHTML(card.job_id)}</span>`
     : "";
+  const pendingLabel = pilotPending ? "Sending…" : agentRunning ? "Agent working…" : "Working…";
   const messageHtml =
-    messages.length > 0 || isRunning || pilotPending
+    messages.length > 0 || pilotPending || agentRunning
       ? renderChannelChatMessages(messages, {
-          pending: isRunning || pilotPending,
-          pendingLabel: isRunning ? "Agent working…" : "Thinking…",
+          pending: pilotPending || agentRunning,
+          pendingLabel,
         })
       : `<div class="flex h-full min-h-[12rem] items-center justify-center px-4 py-8 text-center text-sm text-zinc-500">Play this card to watch the agent work live — tool calls, edits, and recap appear here.</div>`;
 
@@ -513,10 +515,11 @@ export function renderScrumModalChannelTab(
       <div data-scrum-channel-messages class="scrum-channel-scroll scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col-reverse gap-1.5 px-3 py-3 md:px-4">${messageHtml}</div>
       ${renderChatComposer({
         formAction: "submit->scrum#sendChat",
+        keydownAction: "scrum#channelComposerKeydown",
         cardId: card.id,
-        placeholder: isLive ? "Steer the task or ask a question…" : "Discuss this card with the thinking pilot…",
-        disabled: pilotPending || isRunning,
-        submitLabel: pilotPending ? "Thinking…" : "Send",
+        placeholder: isLive ? "Steer the running agent…" : "Message uses this card's Config tab agent and models…",
+        disabled: pilotPending,
+        submitLabel: pilotPending ? "Sending…" : "Send",
       })}
     </div>
   `;

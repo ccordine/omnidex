@@ -225,51 +225,27 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		writeError(w, http.StatusBadRequest, "message is required")
 		return
 	}
-	card, board, projectID, err := s.scrumGetCard(r, cardID)
+	_, board, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "card not found")
 		return
 	}
-	if _, err := s.scrumAppendChat(r, cardID, "user", req.Message); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	reply := ""
-	var genErr error
-	if s.llmClient != nil {
-		llmCtx, cancel := scrumCardChatLLMContext(r.Context())
-		defer cancel()
-		memoryLines := s.scrumPilotMemoryContext(llmCtx, card, projectID, req.Message)
-		pilotContext := s.summarizeScrumPilotChannel(llmCtx, board, card, req.Message, memoryLines)
-		userPrompt := buildScrumPilotChatPrompt(board, card, req.Message, pilotContext)
-		s.recordScrumPilotContextShrink(r.Context(), projectID, card, board, req.Message, pilotContext, userPrompt)
-		reply, genErr = s.scrumPilotLLMChat(llmCtx,
-			"You are the Omni thinking pilot for a scrum card. Reason about the task and suggest concrete actions. Be concise.",
-			userPrompt)
-		if genErr != nil {
-			errText := formatScrumPilotChatError(genErr)
-			updated, appendErr := s.scrumAppendChat(r, cardID, "error", errText)
-			if appendErr != nil {
-				writeError(w, http.StatusBadGateway, genErr.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, map[string]any{
-				"card":  updated,
-				"reply": "",
-				"error": errText,
-			})
-			return
-		}
-	} else {
-		reply = "LLM client unavailable. Configure Ollama or another provider in Settings."
-	}
-	updated, err := s.scrumAppendChat(r, cardID, "assistant", reply)
+	updated, err := s.scrumAppendChat(r, cardID, "user", req.Message)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.persistScrumPilotMemory(r.Context(), updated, projectID, req.Message, reply)
-	writeJSON(w, http.StatusOK, map[string]any{"card": updated, "reply": reply})
+	result, err := s.dispatchScrumChannelMessage(r, board, projectID, updated, req.Message)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"card":   result.Card,
+		"reply":  "",
+		"agent":  result.Agent,
+		"action": result.Action,
+	})
 }
 
 func (s *Server) handleScrumCardJira(w http.ResponseWriter, r *http.Request, cardID string) {

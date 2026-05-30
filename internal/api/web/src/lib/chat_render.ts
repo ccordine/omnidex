@@ -76,12 +76,14 @@ export function renderChatComposer(options: {
   inputTarget?: string;
   submitLabel?: string;
   disabled?: boolean;
+  keydownAction?: string;
 }): string {
   const cardAttr = options.cardId ? ` data-card-id="${escapeHTML(options.cardId)}"` : "";
   const inputTarget = options.inputTarget ? ` data-scrum-field="${escapeHTML(options.inputTarget)}"` : ' data-scrum-field="chatMessage"';
   const disabled = options.disabled ? " disabled" : "";
+  const keydownAction = options.keydownAction ? ` keydown->${escapeHTML(options.keydownAction)}` : "";
   return `
-    <form data-action="${escapeHTML(options.formAction)}"${cardAttr} class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl md:px-4">
+    <form data-action="${escapeHTML(options.formAction)}${keydownAction}"${cardAttr} class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl md:px-4">
       <div class="rounded-md border border-white/10 bg-zinc-900/90 p-2">
         <textarea${inputTarget}${disabled} rows="2" placeholder="${escapeHTML(options.placeholder || "Ask Omni to inspect, build, research, or explain…")}" class="scrollbar max-h-32 min-h-[3.25rem] w-full resize-none bg-transparent text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-500 disabled:opacity-60"></textarea>
         <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">

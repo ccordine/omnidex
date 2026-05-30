@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -137,61 +136,13 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 	if err != nil {
 		return ScrumCard{}, err
 	}
-	instruction := buildScrumPlayInstruction(board, card)
-	metadata, pulled, metaErr := s.scrumPlayMetadata(r.Context(), board, card, projectID, instance)
-	if metaErr != nil {
-		return ScrumCard{}, metaErr
+	instruction := s.buildScrumPlayInstructionWithHistory(r.Context(), board, card)
+	if len(card.Chat) > 0 {
+		query := scrumChannelResumeQuery(card)
+		pilotContext := s.summarizeScrumPilotChannel(r.Context(), board, card, query, nil)
+		s.recordScrumPilotContextShrink(r.Context(), projectID, card, board, query, pilotContext, instruction)
 	}
-
-	if s.repo != nil && projectID > 0 {
-		project, err := s.repo.GetProject(r.Context(), projectID)
-		if err != nil {
-			return ScrumCard{}, err
-		}
-		if err := s.validateScrumPlayAgent(r.Context(), project, card, instance); err != nil {
-			return ScrumCard{}, err
-		}
-	}
-
-	var job model.Job
-	if s.repo != nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-		job, err = s.repo.EnqueueJob(ctx, instruction, "scrum", metadata)
-		cancel()
-		if err != nil {
-			return ScrumCard{}, err
-		}
-		card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Job #%d queued", job.ID))
-		card = appendScrumChannelEvent(card, "user", instruction)
-		if len(pulled) > 0 {
-			card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Models: %s", strings.Join(pulled, ", ")))
-		}
-		var meta map[string]any
-		if err := json.Unmarshal(metadata, &meta); err == nil {
-			if agent, _ := meta["execution_agent"].(string); strings.TrimSpace(agent) != "" {
-				card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Execution agent: %s", strings.TrimSpace(agent)))
-			}
-			if source, _ := meta["agent_config_source"].(string); strings.TrimSpace(source) != "" {
-				card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Agent config source: %s", strings.TrimSpace(source)))
-			}
-		}
-	} else {
-		output, directErr := s.runScrumDirectInstruct(r.Context(), instruction, board, card)
-		if directErr != nil {
-			return ScrumCard{}, directErr
-		}
-		card = appendScrumChannelEvent(card, "assistant", output)
-		card.Column = "review"
-		card.PlayState = ""
-		card.QueueOrder = 0
-		return s.persistScrumCard(r, projectID, card)
-	}
-
-	card.JobID = fmt.Sprintf("%d", job.ID)
-	card.Column = "in_progress"
-	card.PlayState = scrumPlayRunning
-	card.QueueOrder = 0
-	return s.persistScrumCard(r, projectID, card)
+	return s.enqueueScrumCardAgentRun(r, board, projectID, card, instance, instruction, false)
 }
 
 func (s *Server) pauseScrumCardPlay(r *http.Request, cardID string) (ScrumCard, error) {

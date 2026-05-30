@@ -37,28 +37,9 @@ type pilotChannelChunk struct {
 	Index     int
 }
 
-func (s *Server) scrumPilotMemoryContext(ctx context.Context, card ScrumCard, projectID int64, query string) []string {
-	if s.repo == nil || s.llmClient == nil {
-		return nil
-	}
-	tags := scrumPilotMemoryTags(card, projectID)
-	var embedding []float64
-	if value, err := s.llmClient.Embedding(ctx, query); err == nil {
-		embedding = value
-	}
-	matches, err := s.repo.FindRelevantMemory(ctx, embedding, tags, scrumPilotMemoryMaxChunks)
-	if err != nil {
-		return nil
-	}
-	lines := make([]string, 0, len(matches))
-	for _, match := range matches {
-		content := cavemanPilotText(match.Content, scrumPilotMemoryMaxChars)
-		if content == "" {
-			continue
-		}
-		lines = append(lines, content)
-	}
-	return lines
+func (s *Server) scrumPilotMemoryContext(_ context.Context, _ ScrumCard, _ int64, _ string) []string {
+	// Memory embeddings disabled on hot path — they spun up Ollama during channel chat.
+	return nil
 }
 
 func scrumPilotMemoryTags(card ScrumCard, projectID int64) []string {
@@ -163,32 +144,6 @@ func (s *Server) selectRelevantPilotChunks(ctx context.Context, query string, ch
 		}
 		return candidates[i].score > candidates[j].score
 	})
-
-	if s.llmClient != nil && query != "" {
-		var queryEmbedding []float64
-		if emb, err := s.llmClient.Embedding(ctx, query); err == nil && len(emb) > 0 {
-			queryEmbedding = emb
-		}
-		if len(queryEmbedding) > 0 {
-			limit := scrumPilotEmbedCandidateMax
-			if limit > len(candidates) {
-				limit = len(candidates)
-			}
-			for i := 0; i < limit; i++ {
-				emb, err := s.llmClient.Embedding(ctx, candidates[i].chunk.Text)
-				if err != nil || len(emb) == 0 {
-					continue
-				}
-				candidates[i].score += pilotEmbeddingSimilarity(queryEmbedding, emb)
-			}
-			sort.SliceStable(candidates, func(i, j int) bool {
-				if candidates[i].score == candidates[j].score {
-					return candidates[i].chunk.Index > candidates[j].chunk.Index
-				}
-				return candidates[i].score > candidates[j].score
-			})
-		}
-	}
 
 	for _, item := range candidates {
 		if remaining <= 0 {

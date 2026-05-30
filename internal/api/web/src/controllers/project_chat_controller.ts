@@ -215,8 +215,20 @@ export default class ProjectChatController extends Controller {
     await this.postChat({ message });
   }
 
+  composerKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      void this.sendMessage(event);
+    }
+  }
+
   private async postChat(input: { message?: string; mode?: string }) {
     if (!this.projectID || this.busy) return;
+    const userMessage = (input.message ?? "").trim();
+    if (userMessage && input.mode !== "scan") {
+      this.chat = [...this.chat, { role: "user", content: userMessage, created_at: new Date().toISOString() }];
+      this.inputTarget.value = "";
+    }
     this.busy = true;
     this.config = this.currentConfig();
     this.renderMessages();

@@ -207,7 +207,7 @@ export function renderProjectChatShell(
           <div data-project-chat-target="messages" class="scrollbar min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
             ${renderProjectPlanningChatMessages([])}
           </div>
-          <form data-action="submit->project-chat#sendMessage" class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl">
+          <form data-action="submit->project-chat#sendMessage keydown->project-chat#composerKeydown" class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl">
             <div class="rounded-md border border-white/10 bg-zinc-900/90 p-2">
               <textarea
                 data-project-chat-target="input"
