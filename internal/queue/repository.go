@@ -53,6 +53,9 @@ func (r *Repository) EnsureSchema(ctx context.Context) error {
 	if _, err := r.pool.Exec(ctx, projectsUISchemaSQL); err != nil {
 		return err
 	}
+	if err := r.ApplyFileMigrations(ctx, ResolveMigrationsDir()); err != nil {
+		return err
+	}
 	if err := r.BackfillMemoryCategories(ctx); err != nil {
 		return err
 	}

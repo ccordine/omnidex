@@ -76,6 +76,7 @@ services:
       OLLAMA_RESTART_COMMAND: ${OLLAMA_RESTART_COMMAND:-}
       OLLAMA_RESTART_TIMEOUT: ${OLLAMA_RESTART_TIMEOUT:-20s}
       MIGRATE_ON_STARTUP: ${MIGRATE_ON_STARTUP:-true}
+      MIGRATIONS_DIR: ${MIGRATIONS_DIR:-/app/migrations}
     ports:
       - "8090:8090"
     depends_on:

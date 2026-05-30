@@ -255,6 +255,12 @@ CREATE INDEX IF NOT EXISTS idx_scrum_flow_events_project_type
 ALTER TABLE scrum_cards
     ADD COLUMN IF NOT EXISTS flow_metrics JSONB NOT NULL DEFAULT '{}'::jsonb;
 
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS tags_job_id TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE scrum_cards
+    ADD COLUMN IF NOT EXISTS ticket_job_id TEXT NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS data_source_channels (
     id TEXT PRIMARY KEY,
     data_source_id TEXT NOT NULL,
