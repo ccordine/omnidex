@@ -301,6 +301,71 @@ host_bridge_unit_file() {
   printf '%s\n' "${HOME}/.config/systemd/user/omni-host-bridge.service"
 }
 
+host_bridge_exec_start() {
+  local unit="$1"
+  sed -n 's/^ExecStart=//p' "${unit}" | head -n 1
+}
+
+host_bridge_omni_from_exec_start() {
+  local exec_start="$1"
+  case "${exec_start}" in
+    *" host serve")
+      printf '%s\n' "${exec_start% host serve}"
+      ;;
+    *)
+      printf '%s\n' ""
+      ;;
+  esac
+}
+
+refresh_host_bridge_binary_for_unit() {
+  local repo_dir="$1"
+  local unit="$2"
+  local built_omni="${repo_dir}/bin/omni"
+  local exec_start service_omni service_dir tmp
+
+  exec_start="$(host_bridge_exec_start "${unit}")"
+  service_omni="$(host_bridge_omni_from_exec_start "${exec_start}")"
+  if [[ -z "${service_omni}" ]]; then
+    warn "could not parse host bridge ExecStart: ${exec_start}"
+    return 0
+  fi
+  if [[ "${service_omni}" == "${built_omni}" ]]; then
+    return 0
+  fi
+
+  warn "host bridge unit uses a different binary: ${exec_start}"
+  case "${service_omni}" in
+    "${HOME}"/*)
+      ;;
+    *)
+      warn "not refreshing ${service_omni}; it is outside ${HOME}"
+      warn "reinstall the bridge with: ${built_omni} host service install --omni ${built_omni}"
+      return 0
+      ;;
+  esac
+
+  service_dir="$(dirname "${service_omni}")"
+  mkdir -p "${service_dir}"
+  log "refreshing host bridge binary at ${service_omni}"
+
+  tmp="${service_omni}.new.$$"
+  install -m 0755 "${built_omni}" "${tmp}"
+  mv -f "${tmp}" "${service_omni}"
+
+  if [[ -x "${repo_dir}/bin/agent-core" ]]; then
+    tmp="${service_dir}/agent-core.new.$$"
+    install -m 0755 "${repo_dir}/bin/agent-core" "${tmp}"
+    mv -f "${tmp}" "${service_dir}/agent-core"
+  fi
+  if [[ -x "${repo_dir}/bin/agent-cli" ]]; then
+    tmp="${service_dir}/agent-cli.new.$$"
+    install -m 0755 "${repo_dir}/bin/agent-cli" "${tmp}"
+    mv -f "${tmp}" "${service_dir}/agent-cli"
+    ln -sfn agent-cli "${service_dir}/acli"
+  fi
+}
+
 restart_host_bridge() {
   local repo_dir="$1"
   local omni="${repo_dir}/bin/omni"
@@ -322,12 +387,7 @@ restart_host_bridge() {
     return 0
   fi
 
-  local exec_start
-  exec_start="$(sed -n 's/^ExecStart=//p' "${unit}" | head -n 1)"
-  if [[ -n "${exec_start}" && "${exec_start}" != "${omni} host serve" ]]; then
-    warn "host bridge unit uses a different binary: ${exec_start}"
-    warn "this update rebuilt ${omni}; reinstall the bridge with: ${omni} host service install --omni ${omni}"
-  fi
+  refresh_host_bridge_binary_for_unit "${repo_dir}" "${unit}"
 
   log "restarting host bridge (omni-host-bridge)"
   if "${omni}" host service restart; then
