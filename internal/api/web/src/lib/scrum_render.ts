@@ -157,9 +157,10 @@ export function renderScrumBoardLoadingOverlay(message = "Working…"): string {
   `;
 }
 
-export function renderProjectScrumShell(projectLocation: string): string {
+export function renderProjectScrumShell(projectLocation: string, activeTab = "scrum"): string {
+  const hidden = activeTab !== "scrum" ? " hidden" : "";
   return `
-    <div data-project-tab-panel="scrum" class="flex min-h-[520px] flex-col gap-3">
+    <div data-project-tab-panel="scrum" class="flex min-h-[480px] flex-col gap-3${hidden}">
       <div class="grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <p class="truncate font-mono text-[11px] text-zinc-500 lg:justify-self-start">${escapeHTML(projectLocation)}</p>
         <div data-scrum-target="focus" class="flex justify-center lg:justify-self-center">

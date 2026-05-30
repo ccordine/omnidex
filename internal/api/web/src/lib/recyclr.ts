@@ -9,9 +9,17 @@ type RecyclrEvent = {
 
 type RecyclrGX = {
   render: (events: RecyclrEvent[]) => void;
+  history?: boolean;
+  consumeRealtime?: (message: Record<string, unknown>) => void | Promise<void>;
+};
+
+type RecyclrStream = {
+  start: () => void;
+  stop: () => void;
 };
 
 const RecyclrGXCtor = (RecyclrModule as { GX?: new (options: Record<string, unknown>) => RecyclrGX }).GX;
+const createRecyclrStreamFn = (RecyclrModule as { createRecyclrStream?: (options: Record<string, unknown>) => RecyclrStream }).createRecyclrStream;
 
 export function createRecyclrGX(): RecyclrGX | null {
   if (!RecyclrGXCtor) return null;
@@ -19,9 +27,24 @@ export function createRecyclrGX(): RecyclrGX | null {
     url: location.href,
     method: "get",
     selection: "[data-recyclr-target]",
-    history: false,
+    history: true,
     dispatch: true,
     debug: false,
+  });
+}
+
+export function createRecyclrRealtimeStream(
+  gx: RecyclrGX,
+  onMessage?: (message: Record<string, unknown>) => void,
+): RecyclrStream | null {
+  if (!createRecyclrStreamFn) return null;
+  return createRecyclrStreamFn({
+    wsUrl: "/v1/realtime/ws",
+    sseUrl: "/v1/realtime/sse",
+    topics: ["ui", "metrics"],
+    gx,
+    debug: false,
+    onMessage,
   });
 }
 

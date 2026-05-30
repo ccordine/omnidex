@@ -14,7 +14,7 @@ import (
 
 func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string) error {
 	cfg := agentconfig.FromJobMetadata(claim.Job.Metadata)
-	agent, agentName, unavailable := selectExternalAgent(cfg)
+	agent, agentName, unavailable := selectExternalAgent(cfg, claim.Job.Metadata)
 	if agent == nil {
 		msg := unavailable
 		if msg == "" {
@@ -74,18 +74,27 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	return completeStep(ctx, claim.Step.ID, output, "external_agent_execute", string(summary))
 }
 
-func selectExternalAgent(cfg agentconfig.Config) (omni.CursorArchitectAgent, string, string) {
+func selectExternalAgent(cfg agentconfig.Config, metadata json.RawMessage) (omni.CursorArchitectAgent, string, string) {
+	explicit := cfg.IsExternal()
 	switch cfg.System() {
 	case agentconfig.SystemCursor:
-		agent := omni.NewCursorSDKArchitectAgent()
+		agent := omni.NewCursorSDKArchitectAgent(explicit)
 		if agent == nil {
-			return nil, "cursor_sdk", "Cursor SDK agent is not enabled (set OMNI_ENABLE_CURSOR_ARCHITECT=true and CURSOR_API_KEY)"
+			reason := omni.CursorSDKUnavailableReason(explicit)
+			if reason == "" {
+				reason = "Cursor SDK agent is not available"
+			}
+			return nil, "cursor_sdk", reason
 		}
 		return agent, "cursor_sdk", ""
 	case agentconfig.SystemCodex:
-		agent := omni.NewCodexSDKArchitectAgent()
+		agent := omni.NewCodexSDKArchitectAgent(explicit)
 		if agent == nil {
-			return nil, "codex_sdk", "Codex SDK agent is not enabled (set OMNI_ENABLE_CODEX_ARCHITECT=true and CODEX_API_KEY/OPENAI_API_KEY)"
+			reason := omni.CodexSDKUnavailableReason(explicit)
+			if reason == "" {
+				reason = "Codex SDK agent is not available"
+			}
+			return nil, "codex_sdk", reason
 		}
 		return agent, "codex_sdk", ""
 	default:

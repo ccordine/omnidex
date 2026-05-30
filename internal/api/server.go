@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gryph/omnidex/internal/config"
@@ -74,6 +75,8 @@ type Server struct {
 	ollamaURLMu               sync.RWMutex
 	hostAgentURL              string
 	hostAgentToken            string
+	realtimeHub               *RealtimeHub
+	realtimeSeq               atomic.Uint64
 }
 
 type ServerOptions struct {
@@ -302,7 +305,11 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 	if store, err := NewScrumStore(); err == nil {
 		s.scrumStore = store
 	}
+	s.realtimeHub = NewRealtimeHub()
 	s.routes()
+	if repo != nil {
+		s.startRealtimeTelemetryListener(context.Background())
+	}
 	return s
 }
 
@@ -361,6 +368,9 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/metrics/models", s.handleMetricsModels)
 		s.mux.HandleFunc("/v1/metrics/playbooks", s.handleMetricsPlaybooks)
 		s.mux.HandleFunc("/v1/metrics/benchmarks", s.handleMetricsBenchmarks)
+		s.mux.HandleFunc("/v1/metrics/glance", s.handleMetricsGlance)
+		s.mux.HandleFunc("/v1/realtime/ws", s.handleRealtimeWS)
+		s.mux.HandleFunc("/v1/realtime/sse", s.handleRealtimeSSE)
 	}
 	if s.channelStore != nil {
 		s.mux.HandleFunc("/v1/channels", s.handleChannels)

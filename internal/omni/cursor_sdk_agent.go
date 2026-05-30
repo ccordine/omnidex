@@ -22,20 +22,22 @@ type CursorSDKArchitectAgent struct {
 	NPMBin    string
 }
 
+// NewCursorSDKArchitectAgent returns the Cursor SDK agent when enabled.
+// Pass explicit=true when a card/project/workspace chose Cursor — only an API key is required.
+func NewCursorSDKArchitectAgent(explicit ...bool) *CursorSDKArchitectAgent {
+	explicitRequest := len(explicit) > 0 && explicit[0]
+	return newCursorSDKArchitectAgent(true, explicitRequest)
+}
+
 func NewCursorSDKArchitectAgentFromEnv() *CursorSDKArchitectAgent {
-	return newCursorSDKArchitectAgent(false)
+	return newCursorSDKArchitectAgent(false, false)
 }
 
-// NewCursorSDKArchitectAgent returns the Cursor SDK agent when enabled, regardless of OMNI_ARCHITECT_AGENT.
-func NewCursorSDKArchitectAgent() *CursorSDKArchitectAgent {
-	return newCursorSDKArchitectAgent(true)
-}
-
-func newCursorSDKArchitectAgent(force bool) *CursorSDKArchitectAgent {
+func newCursorSDKArchitectAgent(force, explicitRequest bool) *CursorSDKArchitectAgent {
 	if !force && !externalArchitectAgentSelectedFromEnv("cursor") {
 		return nil
 	}
-	if !envBoolOrDefault("OMNI_ENABLE_CURSOR_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CURSOR_ARCHITECT", false) {
+	if !CursorSDKEnabled(explicitRequest) {
 		return nil
 	}
 	apiKey := strings.TrimSpace(secrets.Lookup("cursor_api_key"))

@@ -259,7 +259,20 @@ func (r *Repository) RecordTelemetryEvent(ctx context.Context, record TelemetryE
 		INSERT INTO omni_run_events (run_id, step, event_type, created_at, payload)
 		VALUES ($1, $2, $3, $4, $5)
 	`, strings.TrimSpace(record.RunID), record.Step, eventType, created, jsonParam(record.Payload))
-	return err
+	if err != nil {
+		return err
+	}
+	notifyPayload := map[string]any{
+		"event_type": eventType,
+		"run_id":     strings.TrimSpace(record.RunID),
+	}
+	if record.Payload != nil {
+		notifyPayload["payload"] = record.Payload
+	}
+	if encoded, encErr := json.Marshal(notifyPayload); encErr == nil {
+		_, _ = r.pool.Exec(ctx, `SELECT pg_notify('omni_telemetry', $1)`, string(encoded))
+	}
+	return nil
 }
 
 func (r *Repository) RecordTelemetryModelCall(ctx context.Context, record TelemetryModelCallRecord) error {

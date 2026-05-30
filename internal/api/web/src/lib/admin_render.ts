@@ -1,5 +1,44 @@
-import { escapeHTML, formatDateTime, statusPillClass } from "./dom";
+import { escapeHTML, formatDateTime } from "./dom";
 import type { MindStats, OllamaModelInfo, APISecretField, NetworkSettings } from "./admin_api";
+
+const ADMIN_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "ai", label: "Models & agents" },
+  { id: "health", label: "Health" },
+  { id: "advanced", label: "Advanced" },
+] as const;
+
+export type AdminTab = (typeof ADMIN_TABS)[number]["id"];
+
+export function renderAdminTabNav(activeTab: AdminTab): string {
+  return ADMIN_TABS.map((tab) => {
+    const active = tab.id === activeTab;
+    const classes = active
+      ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100"
+      : "border-white/10 text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200";
+    return `<button type="button" data-action="admin#showTab" data-admin-tab="${tab.id}" class="rounded-md border px-3 py-2 text-sm font-medium transition ${classes}">${escapeHTML(tab.label)}</button>`;
+  }).join("");
+}
+
+export function adminTabPanelClass(tab: AdminTab, activeTab: AdminTab): string {
+  return tab === activeTab ? "" : " hidden";
+}
+
+function adminSection(title: string, description: string, body: string): string {
+  return `
+    <section class="rounded-xl border border-white/10 bg-zinc-950/50 p-5">
+      <div class="mb-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">${escapeHTML(title)}</h3>
+        ${description ? `<p class="mt-1 text-xs leading-5 text-zinc-500">${escapeHTML(description)}</p>` : ""}
+      </div>
+      ${body}
+    </section>
+  `;
+}
+
+export function renderAdminSection(title: string, description: string, body: string): string {
+  return adminSection(title, description, body);
+}
 
 export function renderNetworkSettings(settings: NetworkSettings): string {
   const sourceLabel =

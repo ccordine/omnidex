@@ -62,12 +62,16 @@ export async function moveScrumCard(
 export async function playScrumCard(
   cardID: string,
   projectID?: number | null,
-  options: { pivot?: boolean } = {},
+  options: { pivot?: boolean; agentConfig?: Record<string, string> } = {},
 ): Promise<ScrumCard & { message?: string }> {
+  const body: Record<string, unknown> = { pivot: Boolean(options.pivot) };
+  if (options.agentConfig && Object.keys(options.agentConfig).length > 0) {
+    body.agent_config = options.agentConfig;
+  }
   const response = await fetch(cardURL(cardID, "play", projectID), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pivot: Boolean(options.pivot) }),
+    body: JSON.stringify(body),
   });
   const payload = await readJSON<{ card: ScrumCard; message?: string }>(response);
   return { ...payload.card, message: payload.message };

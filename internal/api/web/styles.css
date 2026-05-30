@@ -6,6 +6,11 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
 }
@@ -179,6 +184,8 @@ body {
 }
 
 .omni-main {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   width: 100%;
   min-height: 0;
@@ -292,11 +299,18 @@ body {
   box-shadow: -8px 0 40px rgba(0, 0, 0, 0.35);
 }
 
+.omni-main > [data-panel-name] {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
 .slide-drawer-panel-inner {
   min-height: 0;
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -313,6 +327,7 @@ body {
 
 .omni-modal.is-open {
   background-color: rgba(9, 9, 11, 0.82);
+  overflow: hidden;
 }
 
 .omni-modal.is-closing {
@@ -320,6 +335,11 @@ body {
 }
 
 .omni-modal-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(88vh, 900px);
+  overflow: hidden;
   transform: scale(0.96) translateY(18px);
   opacity: 0;
   filter: blur(6px);
@@ -328,6 +348,13 @@ body {
     opacity 320ms cubic-bezier(0.4, 0, 0.2, 1),
     filter 360ms ease;
   will-change: transform, opacity, filter;
+}
+
+.omni-modal-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .omni-modal.is-open .omni-modal-panel {
@@ -373,6 +400,39 @@ body {
     transform: none;
     opacity: 1;
   }
+}
+
+html[dir="rtl"] .slide-drawer-left {
+  left: auto;
+  right: 0;
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .slide-drawer-right {
+  right: auto;
+  left: 0;
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .slide-drawer-panel-left {
+  transform: translateX(calc(100% + 14px));
+  border-right: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+html[dir="rtl"] .slide-drawer-panel-right {
+  transform: translateX(calc(-100% - 14px));
+  border-left: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+html[dir="rtl"] .slide-drawer-left:hover .slide-drawer-panel-left,
+html[dir="rtl"] .slide-drawer-left:focus-within .slide-drawer-panel-left,
+html[dir="rtl"] .slide-drawer-left.is-open .slide-drawer-panel-left,
+html[dir="rtl"] .slide-drawer-right:hover .slide-drawer-panel-right,
+html[dir="rtl"] .slide-drawer-right:focus-within .slide-drawer-panel-right,
+html[dir="rtl"] .slide-drawer-right.is-open .slide-drawer-panel-right {
+  transform: translateX(0);
 }
 
 .scrum-card-draggable {

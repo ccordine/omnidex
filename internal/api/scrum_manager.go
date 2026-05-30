@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -21,6 +23,8 @@ const (
 
 var scrumStatusLinePattern = regexp.MustCompile(`(?im)^SCRUM_STATUS:\s*(success|failed|blocked|in_progress)\s*$`)
 var scrumStatusJSONPattern = regexp.MustCompile(`(?i)"scrum_status"\s*:\s*"(success|failed|blocked|in_progress)"`)
+var agentStreamLenPattern = regexp.MustCompile(`(?m)^\[\[agent-stream-len:\d+\]\]\s*$`)
+var agentStreamLenValuePattern = regexp.MustCompile(`\[\[agent-stream-len:(\d+)\]\]`)
 
 type scrumColumnTransition struct {
 	Column      string
@@ -39,12 +43,49 @@ func parseScrumManagerOutcome(text string) (ScrumManagerOutcome, bool) {
 	if match := scrumStatusJSONPattern.FindStringSubmatch(text); len(match) > 1 {
 		return ScrumManagerOutcome(strings.ToLower(match[1])), true
 	}
-	lower := strings.ToLower(text)
-	switch {
-	case strings.Contains(lower, "scrum status: blocked"):
-		return ScrumOutcomeBlocked, true
-	}
 	return "", false
+}
+
+// StripAgentStreamMarker removes internal sync markers from card console_log for display.
+func StripAgentStreamMarker(consoleLog string) string {
+	return strings.TrimSpace(agentStreamLenPattern.ReplaceAllString(consoleLog, ""))
+}
+
+func syncedAgentStreamLen(consoleLog string) int {
+	match := agentStreamLenValuePattern.FindStringSubmatch(consoleLog)
+	if len(match) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(match[1])
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+func syncRunningJobConsoleLog(card ScrumCard, job model.JobDetails) (ScrumCard, bool) {
+	output := collectScrumAgentOutput(job)
+	if strings.TrimSpace(output) == "" {
+		return card, false
+	}
+	syncedLen := syncedAgentStreamLen(card.ConsoleLog)
+	if syncedLen >= len(output) {
+		return card, false
+	}
+	delta := output[syncedLen:]
+	if strings.TrimSpace(delta) == "" {
+		return card, false
+	}
+
+	baseLog := StripAgentStreamMarker(card.ConsoleLog)
+	updated := card
+	if syncedLen == 0 {
+		updated.ConsoleLog = appendScrumConsole(baseLog, "agent stream:\n"+delta)
+	} else {
+		updated.ConsoleLog = appendScrumConsole(baseLog, delta)
+	}
+	updated.ConsoleLog = strings.TrimRight(updated.ConsoleLog, "\n") + fmt.Sprintf("\n[[agent-stream-len:%d]]\n", len(output))
+	return updated, true
 }
 
 func collectScrumAgentOutput(details model.JobDetails) string {
@@ -69,9 +110,8 @@ func resolveScrumManagerOutcome(details model.JobDetails) ScrumManagerOutcome {
 		switch details.Job.Status {
 		case model.JobStatusCompleted:
 			return ScrumOutcomeSuccess
-		case model.JobStatusFailed:
-			return ScrumOutcomeBlocked
-		case model.JobStatusCanceled:
+		case model.JobStatusFailed, model.JobStatusCanceled:
+			// Return to assigned so the user can inspect output and retry; blocked only when SCRUM_STATUS says so.
 			return ScrumOutcomePaused
 		default:
 			return ScrumOutcomeInProgress

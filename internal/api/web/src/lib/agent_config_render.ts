@@ -2,9 +2,11 @@ import { escapeHTML } from "./dom";
 import type { AgentFieldDefinition } from "./agent_config_types";
 
 const SOURCE_LABELS: Record<string, string> = {
-  env: "Environment default",
-  project: "Project override",
+  instance: "This run",
   card: "Card override",
+  project: "Project override",
+  workspace: "Workspace default",
+  env: "Environment fallback",
 };
 
 const SYSTEM_LABELS: Record<string, string> = {
@@ -103,7 +105,7 @@ export function renderAgentConfigSection(
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Execution agent</h3>
-          <p class="mt-1 text-xs text-zinc-500">${scopeLabel} override for who runs work. Project context, files, and card details still apply.</p>
+          <p class="mt-1 text-xs text-zinc-500">${scopeLabel} override for who runs work. Priority: this run → card → project → workspace → environment.</p>
         </div>
         <div class="space-y-1 text-right">
           <span class="block rounded-full border border-white/10 bg-zinc-900/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Effective: ${escapeHTML(sourceLabel)}</span>
@@ -162,7 +164,7 @@ export function clearAgentFieldInputs(root: ParentNode, scope: "project" | "card
   }
 }
 
-export function renderGlobalAgentSettings(fields: AgentFieldDefinition[], envFile: string): string {
+export function renderGlobalAgentSettings(fields: AgentFieldDefinition[]): string {
   const rows = fields
     .map((field) => {
       if (field.key === "agent_system") {
@@ -198,8 +200,8 @@ export function renderGlobalAgentSettings(fields: AgentFieldDefinition[], envFil
     })
     .join("");
   return `
-    <p class="mb-3 font-mono text-xs text-zinc-500">Env file: ${escapeHTML(envFile)}</p>
+    <p class="mb-3 text-xs text-zinc-500">Workspace defaults stored in the database. Lower layers only apply when a higher layer does not set a value. Priority: this run → card → project → workspace → environment.</p>
     <div class="grid gap-4">${rows}</div>
-    <button type="button" data-action="admin#saveGlobalAgents" class="mt-4 rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Save global agent settings</button>
+    <button type="button" data-action="admin#saveGlobalAgents" class="mt-4 rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Save workspace agent settings</button>
   `;
 }

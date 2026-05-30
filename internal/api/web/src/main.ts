@@ -7,6 +7,9 @@ import AdminController from "./controllers/admin_controller";
 import ShellController from "./controllers/shell_controller";
 import TerminalController from "./controllers/terminal_controller";
 import "../styles.css";
+import { initI18n } from "./lib/i18n";
+
+initI18n();
 
 const application = Application.start();
 application.register("gx", GxController);

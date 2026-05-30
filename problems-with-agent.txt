@@ -1,0 +1,53 @@
+job 1 queued at 2026-05-30T03:50:17Z
+instruction:
+Scrum task execution for card: Npm setup
+
+Project directory: /home/gryph/Projects/test-projects/new-test-project-2026-06-28
+
+Description:
+
+React, tailwind, react router dom, etc
+
+Recipe JSON:
+
+{}
+
+Use the configured execution agent.
+
+When you finish (or must stop), include exactly one status line in your final output:
+SCRUM_STATUS: success|failed|blocked|in_progress
+
+- success: work is complete and ready for human review
+- failed: could not complete; explain what blocked you
+- blocked: waiting on an external dependency or decision
+- in_progress: meaningful partial progress; more work remains
+execution agent: cursor
+job status: pending
+agent output:
+strict external agent required: Cursor SDK agent is not enabled (set OMNI_ENABLE_CURSOR_ARCHITECT=true and CURSOR_API_KEY)
+play: moved to blocked
+job 2 queued at 2026-05-30T03:52:18Z
+instruction:
+Scrum task execution for card: Npm setup
+
+Project directory: /home/gryph/Projects/test-projects/new-test-project-2026-06-28
+
+Description:
+
+React, tailwind, react router dom, etc
+
+Recipe JSON:
+
+{}
+
+Use the configured execution agent.
+
+When you finish (or must stop), include exactly one status line in your final output:
+SCRUM_STATUS: success|failed|blocked|in_progress
+
+- success: work is complete and ready for human review
+- failed: could not complete; explain what blocked you
+- blocked: waiting on an external dependency or decision
+- in_progress: meaningful partial progress; more work remains
+execution agent: cursor
+play: moved to blocked

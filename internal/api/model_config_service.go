@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/ollama"
@@ -174,6 +175,14 @@ func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card Sc
 		}
 	}
 
+	var instance agentconfig.Config
+	if raw, ok := payload["instance_agent_config"]; ok && raw != nil {
+		bytes, err := json.Marshal(raw)
+		if err == nil {
+			instance = agentconfig.FromJSON(bytes)
+		}
+	}
+
 	var pulled []string
 	if _, ok := payload["model_config"]; !ok {
 		extra, modelPulled, err := s.modelConfigJobMetadata(ctx, project, card)
@@ -191,7 +200,7 @@ func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card Sc
 		}
 	}
 	if _, ok := payload["agent_config"]; !ok {
-		for key, value := range s.agentConfigJobMetadata(project, card) {
+		for key, value := range s.agentConfigJobMetadata(ctx, project, card, instance) {
 			payload[key] = value
 		}
 	}

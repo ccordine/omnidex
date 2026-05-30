@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -19,7 +20,8 @@ const (
 )
 
 type scrumPlayRequest struct {
-	Pivot bool `json:"pivot"`
+	Pivot       bool            `json:"pivot"`
+	AgentConfig json.RawMessage `json:"agent_config,omitempty"`
 }
 
 func (s *Server) handleScrumCardPlay(w http.ResponseWriter, r *http.Request, cardID string) {
@@ -29,6 +31,10 @@ func (s *Server) handleScrumCardPlay(w http.ResponseWriter, r *http.Request, car
 	}
 	var req scrumPlayRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
+	instance := agentconfig.Config{}
+	if len(req.AgentConfig) > 0 {
+		instance = agentconfig.FromJSON(req.AgentConfig)
+	}
 
 	card, board, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
@@ -43,9 +49,9 @@ func (s *Server) handleScrumCardPlay(w http.ResponseWriter, r *http.Request, car
 	var updated ScrumCard
 	var message string
 	if req.Pivot {
-		updated, message, err = s.pivotScrumCardPlay(r, board, projectID, cardID)
+		updated, message, err = s.pivotScrumCardPlay(r, board, projectID, cardID, instance)
 	} else {
-		updated, message, err = s.enqueueOrStartScrumPlay(r, board, projectID, card)
+		updated, message, err = s.enqueueOrStartScrumPlay(r, board, projectID, card, instance)
 	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -72,7 +78,7 @@ func (s *Server) handleScrumCardPause(w http.ResponseWriter, r *http.Request, ca
 	writeJSON(w, http.StatusOK, map[string]any{"card": updated, "message": "play paused"})
 }
 
-func (s *Server) enqueueOrStartScrumPlay(r *http.Request, board ScrumBoard, projectID int64, card ScrumCard) (ScrumCard, string, error) {
+func (s *Server) enqueueOrStartScrumPlay(r *http.Request, board ScrumBoard, projectID int64, card ScrumCard, instance agentconfig.Config) (ScrumCard, string, error) {
 	if running := s.findRunningScrumCard(board); running != nil && running.ID != card.ID {
 		queued, err := s.queueScrumCardForPlay(r, projectID, card.ID, board)
 		if err != nil {
@@ -85,14 +91,14 @@ func (s *Server) enqueueOrStartScrumPlay(r *http.Request, board ScrumBoard, proj
 	if card.PlayState == scrumPlayQueued {
 		return card, "already queued for play", nil
 	}
-	started, err := s.startScrumCardPlay(r, board, projectID, card.ID)
+	started, err := s.startScrumCardPlay(r, board, projectID, card.ID, instance)
 	if err != nil {
 		return ScrumCard{}, "", err
 	}
 	return started, "scrum play started", nil
 }
 
-func (s *Server) pivotScrumCardPlay(r *http.Request, board ScrumBoard, projectID int64, cardID string) (ScrumCard, string, error) {
+func (s *Server) pivotScrumCardPlay(r *http.Request, board ScrumBoard, projectID int64, cardID string, instance agentconfig.Config) (ScrumCard, string, error) {
 	if running := s.findRunningScrumCard(board); running != nil {
 		if _, err := s.pauseScrumCardPlay(r, running.ID); err != nil {
 			return ScrumCard{}, "", err
@@ -106,7 +112,7 @@ func (s *Server) pivotScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 		card.PlayState = ""
 		card.QueueOrder = 0
 	}
-	started, err := s.startScrumCardPlay(r, board, projectID, card.ID)
+	started, err := s.startScrumCardPlay(r, board, projectID, card.ID, instance)
 	if err != nil {
 		return ScrumCard{}, "", err
 	}
@@ -126,15 +132,25 @@ func (s *Server) queueScrumCardForPlay(r *http.Request, projectID int64, cardID 
 	return s.persistScrumCard(r, projectID, card)
 }
 
-func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID int64, cardID string) (ScrumCard, error) {
+func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID int64, cardID string, instance agentconfig.Config) (ScrumCard, error) {
 	card, board, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
 		return ScrumCard{}, err
 	}
 	instruction := buildScrumPlayInstruction(board, card)
-	metadata, pulled, metaErr := s.scrumPlayMetadata(r.Context(), board, card, projectID)
+	metadata, pulled, metaErr := s.scrumPlayMetadata(r.Context(), board, card, projectID, instance)
 	if metaErr != nil {
 		return ScrumCard{}, metaErr
+	}
+
+	if s.repo != nil && projectID > 0 {
+		project, err := s.repo.GetProject(r.Context(), projectID)
+		if err != nil {
+			return ScrumCard{}, err
+		}
+		if err := s.validateScrumPlayAgent(r.Context(), project, card, instance); err != nil {
+			return ScrumCard{}, err
+		}
 	}
 
 	var job model.Job
@@ -154,6 +170,9 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 		if err := json.Unmarshal(metadata, &meta); err == nil {
 			if agent, _ := meta["execution_agent"].(string); strings.TrimSpace(agent) != "" {
 				consoleLog = appendScrumConsole(consoleLog, fmt.Sprintf("execution agent: %s\n", strings.TrimSpace(agent)))
+			}
+			if source, _ := meta["agent_config_source"].(string); strings.TrimSpace(source) != "" {
+				consoleLog = appendScrumConsole(consoleLog, fmt.Sprintf("agent config source: %s\n", strings.TrimSpace(source)))
 			}
 		}
 	} else {
@@ -243,6 +262,9 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 				if len(summary) > 0 && !strings.Contains(updated.ConsoleLog, summary[:min(120, len(summary))]) {
 					updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, "agent output:\n"+summary)
 				}
+				if note := scrumAgentConfigErrorNote(agentOutput); note != "" {
+					transition.ConsoleNote = note
+				}
 			}
 			updated.Column = transition.Column
 			updated.PlayState = transition.PlayState
@@ -250,6 +272,9 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 			updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, transition.ConsoleNote)
 			cardChanged = true
 		default:
+			if synced, ok := syncRunningJobConsoleLog(updated, job); ok {
+				updated = synced
+			}
 			statusLine := fmt.Sprintf("job status: %s", job.Job.Status)
 			if !strings.Contains(updated.ConsoleLog, statusLine) {
 				updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, statusLine)
@@ -279,7 +304,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 	if next == nil {
 		return board, nil
 	}
-	if _, err := s.startScrumCardPlay(r, board, projectID, next.ID); err != nil {
+	if _, err := s.startScrumCardPlay(r, board, projectID, next.ID, agentconfig.Config{}); err != nil {
 		// Stop the chain on enqueue failure (rate limits, token budget, etc.).
 		return board, nil
 	}

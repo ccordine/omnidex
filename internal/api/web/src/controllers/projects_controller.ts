@@ -20,6 +20,8 @@ import { fetchAgentDefaults } from "../lib/agent_config_api";
 import type { ResolvedAgentConfig } from "../lib/agent_config_types";
 import { renderRecyclrBundle } from "../lib/recyclr";
 import { closeModalShell, openModalShell } from "../lib/modal";
+import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
+import { t } from "../lib/i18n";
 import { showToast } from "../lib/toast";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
 import type { BrowseResponse, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
@@ -70,6 +72,18 @@ export default class ProjectsController extends Controller {
     this.statusTarget.className = `text-xs ${classes[tone] ?? classes.idle}`;
   }
 
+  private actionOk(message: string) {
+    reportOk(this.setStatus.bind(this), message);
+  }
+
+  private actionFail(error: unknown) {
+    reportError(this.setStatus.bind(this), error);
+  }
+
+  private actionFailMessage(message: string) {
+    reportErrorMessage(this.setStatus.bind(this), message);
+  }
+
   private setModalFeedback(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
     const toneClasses: Record<string, string[]> = {
       idle: ["border-white/10", "bg-zinc-900/80", "text-zinc-300"],
@@ -97,6 +111,9 @@ export default class ProjectsController extends Controller {
       node.textContent = message;
     });
     if (message) this.setStatus(message, tone);
+    if (message && (tone === "ok" || tone === "error")) {
+      showToast(message, tone);
+    }
   }
 
   private setCreateSubmitting(submitting: boolean) {
@@ -139,7 +156,7 @@ export default class ProjectsController extends Controller {
 
   updateOpenBadge(name: string | null) {
     if (!this.hasOpenBadgeTarget) return;
-    this.openBadgeTarget.textContent = name?.trim() || "None open";
+    this.openBadgeTarget.textContent = name?.trim() || t("session.noneOpen");
   }
 
   private dispatchProjectOpened(project: ProjectRecord) {
@@ -329,9 +346,8 @@ export default class ProjectsController extends Controller {
       this.activeTab = "scrum";
       const createdName = payload.project.name || name || "project";
       this.closeCreateModal();
-      showToast(`Project “${createdName}” created.`, "ok");
       await this.load();
-      this.setStatus("Project created", "ok");
+      this.actionOk(`Project “${createdName}” created`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.setModalFeedback(message, "error");
@@ -403,6 +419,7 @@ export default class ProjectsController extends Controller {
         }),
       );
       this.detailTarget.classList.remove("hidden");
+      this.detailTarget.classList.add("flex");
       this.listTarget.classList.add("hidden");
       this.dispatchProjectOpened(project);
       this.setStatus(project.name, "ok");
@@ -415,6 +432,7 @@ export default class ProjectsController extends Controller {
     this.selectedProjectID = null;
     this.activeTab = "scrum";
     this.detailTarget.classList.add("hidden");
+    this.detailTarget.classList.remove("flex");
     this.listTarget.classList.remove("hidden");
     this.dispatchProjectClosed();
   }
@@ -439,9 +457,9 @@ export default class ProjectsController extends Controller {
       await this.load();
       this.selectedProjectID = id;
       await this.renderDetail(id);
-      this.setStatus("Project saved", "ok");
+      this.actionOk("Project saved");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -454,16 +472,16 @@ export default class ProjectsController extends Controller {
     try {
       recipe = JSON.parse(raw) as Record<string, unknown>;
     } catch {
-      this.setStatus("Recipe JSON is invalid", "error");
+      this.actionFailMessage("Recipe JSON is invalid");
       return;
     }
     this.setStatus("Saving recipe…", "busy");
     try {
       await updateProject(id, { recipe_id: this.fieldValue("recipeId"), recipe });
       await this.renderDetail(id);
-      this.setStatus("Recipe saved", "ok");
+      this.actionOk("Recipe saved");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -483,9 +501,9 @@ export default class ProjectsController extends Controller {
     try {
       await updateProject(id, { model_config: collectModelFieldValues(this.detailTarget, "project") });
       await this.renderDetail(id);
-      this.setStatus("Model settings saved", "ok");
+      this.actionOk("Model settings saved");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -498,9 +516,9 @@ export default class ProjectsController extends Controller {
     try {
       await updateProject(id, { model_config: {} });
       await this.renderDetail(id);
-      this.setStatus("Model overrides cleared", "ok");
+      this.actionOk("Model overrides cleared");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -512,9 +530,9 @@ export default class ProjectsController extends Controller {
     try {
       await updateProject(id, { agent_config: collectAgentFieldValues(this.detailTarget, "project") });
       await this.renderDetail(id);
-      this.setStatus("Agent settings saved", "ok");
+      this.actionOk("Agent settings saved");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -527,9 +545,9 @@ export default class ProjectsController extends Controller {
     try {
       await updateProject(id, { agent_config: {} });
       await this.renderDetail(id);
-      this.setStatus("Agent overrides cleared", "ok");
+      this.actionOk("Agent overrides cleared");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -541,9 +559,9 @@ export default class ProjectsController extends Controller {
     try {
       await surveyProject(id);
       await this.renderDetail(id);
-      this.setStatus("Project stack detected", "ok");
+      this.actionOk("Project stack detected");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -555,9 +573,9 @@ export default class ProjectsController extends Controller {
     try {
       this.currentProjectMap = await scanProjectMap(id);
       await this.renderDetail(id);
-      this.setStatus(this.currentProjectMap.message || "Codebase map updated", "ok");
+      this.actionOk(this.currentProjectMap.message || "Codebase map updated");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -570,9 +588,9 @@ export default class ProjectsController extends Controller {
       await deleteProject(id);
       this.selectedProjectID = null;
       await this.load();
-      this.setStatus("Project deleted", "ok");
+      this.actionOk("Project deleted");
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 }

@@ -1,14 +1,52 @@
 import { Controller } from "@hotwired/stimulus";
-import { createRecyclrGX } from "../lib/recyclr";
+import { createRecyclrGX, createRecyclrRealtimeStream } from "../lib/recyclr";
 import { cssEscape } from "../lib/dom";
+import { showToast, type ToastTone } from "../lib/toast";
 
 export default class GxController extends Controller {
   gx: ReturnType<typeof createRecyclrGX> | null = null;
+  private stream: ReturnType<typeof createRecyclrRealtimeStream> | null = null;
+  private metricsGlanceHandler: ((event: Event) => void) | null = null;
 
   connect(): void {
     if (this.gx) return;
     this.gx = createRecyclrGX();
     (window as Window & { omniRecyclr?: GxController }).omniRecyclr = this;
+    this.startRealtimeStream();
+  }
+
+  disconnect(): void {
+    this.stream?.stop();
+    this.stream = null;
+    if (this.metricsGlanceHandler) {
+      document.removeEventListener("omni:metrics-glance", this.metricsGlanceHandler);
+      this.metricsGlanceHandler = null;
+    }
+  }
+
+  private startRealtimeStream(): void {
+    if (!this.gx || this.stream) return;
+    this.stream = createRecyclrRealtimeStream(this.gx, (message) => {
+      const toast = String(message.toast ?? "").trim();
+      if (toast) {
+        const tone = String(message.toastTone ?? "info").trim() as ToastTone;
+        showToast(toast, tone === "error" || tone === "ok" || tone === "busy" ? tone : "info");
+      }
+      if (message.eventName === "metrics-glance") {
+        document.dispatchEvent(new CustomEvent("omni:metrics-glance", { detail: message }));
+      }
+    });
+    this.stream?.start();
+  }
+
+  /** Push a URL into browser history when GX history is enabled (same behavior as Recyclr fetch navigations). */
+  pushRoute(url: string): void {
+    if (!this.gx?.history) return;
+    try {
+      history.pushState(null, document.title, url);
+    } catch {
+      /* ignore invalid URLs in exotic environments */
+    }
   }
 
   renderBundle(html: string): void {

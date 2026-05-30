@@ -162,7 +162,7 @@ export function renderProjectDetail(
   `;
 
   return `
-    <div data-controller="terminal" class="space-y-4">
+    <div data-controller="terminal" class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
           <button type="button" data-action="projects#backToList" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">← All projects</button>
@@ -171,13 +171,15 @@ export function renderProjectDetail(
         </div>
       </div>
 
-      <nav class="flex flex-wrap gap-2" aria-label="Project sections">${renderProjectTabNav(activeTab)}</nav>
+      <nav class="flex shrink-0 flex-wrap gap-2" aria-label="Project sections">${renderProjectTabNav(activeTab)}</nav>
 
-      ${renderProjectScrumShell(project.location)}
+      <div class="scrollbar min-h-0 flex-1 overflow-y-auto">
+      ${renderProjectScrumShell(project.location, activeTab)}
       ${renderProjectTerminalShell(project.location, activeTab)}
       ${settingsTab}
       ${mapTab}
       ${recipeTab}
+      </div>
     </div>
   `;
 }
@@ -330,7 +332,7 @@ export function renderBrowseModal(data: BrowseResponse, selectedPath: string, mo
         <button type="button" data-action="projects#closeBrowse" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">Close</button>
       </div>
     </div>
-    <div class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+    <div class="omni-modal-body scrollbar grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div data-projects-modal-feedback class="hidden lg:col-span-2 rounded-md border px-3 py-2 text-sm" role="status"></div>
       <div class="space-y-2">
         ${
@@ -338,7 +340,7 @@ export function renderBrowseModal(data: BrowseResponse, selectedPath: string, mo
             ? `<button type="button" data-action="projects#enterBrowseDir" data-path="${escapeHTML(data.parent)}" class="w-full rounded-md border border-white/10 px-3 py-2 text-left text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">↑ Parent directory</button>`
             : ""
         }
-        <div class="scrollbar max-h-[50vh] space-y-2 overflow-y-auto">${rows || `<p class="text-sm text-zinc-500">No subfolders here — you can use this directory or create a new folder.</p>`}</div>
+        <div class="scrollbar space-y-2">${rows || `<p class="text-sm text-zinc-500">No subfolders here — you can use this directory or create a new folder.</p>`}</div>
       </div>
       <aside class="space-y-4">
         <div class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
@@ -387,7 +389,7 @@ export function renderProjectCreateModal(recipes: RecipeCatalogItem[]): string {
         <button type="button" data-action="projects#closeCreateModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Cancel</button>
       </div>
     </div>
-    <form data-action="submit->projects#submitCreate" class="space-y-4 p-4 md:p-5">
+    <form data-action="submit->projects#submitCreate" class="omni-modal-body scrollbar space-y-4 p-4 md:p-5">
       <div data-projects-modal-feedback class="hidden rounded-md border px-3 py-2 text-sm" role="status"></div>
       <label class="block">
         <span class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Working directory</span>

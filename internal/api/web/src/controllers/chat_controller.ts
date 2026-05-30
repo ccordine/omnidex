@@ -17,6 +17,9 @@ import type { ChatMessage, TimelineEvent, JobDetails, JobContext, MemoryRecord, 
 import { createUserChannel, fetchChannelMessages, fetchUserChannels, isUserChannel, sendChannelMessage } from "../lib/channel_api";
 import { closeModalShell, openModalShell } from "../lib/modal";
 import type GxController from "./gx_controller";
+import { toastError, toastFromError, toastOk } from "../lib/feedback";
+import { applyI18n, t } from "../lib/i18n";
+import { isOmniPanel, panelHref, parseAdminTabFromLocation, parsePanelFromLocation, type OmniPanel } from "../lib/panel_routing";
 
 const SELECTED_CHANNEL_KEY = "omni.chat.selected-channel.v1";
 
@@ -96,6 +99,8 @@ export default class ChatController extends Controller {
   userChannels: UserChannel[] = [];
   selectedChannelId = "";
   activityLabel = "";
+  private metricsGlanceHandler: ((event: Event) => void) | null = null;
+  private localeChangedHandler: ((event: Event) => void) | null = null;
 
   
 
@@ -137,8 +142,23 @@ export default class ChatController extends Controller {
     };
     document.addEventListener("omni:project-closed", this.projectClosedHandler);
     if (this.messages.length === 0) {
-      this.addMessage("system", "Omni UI is ready. Queue mode uses the Go job API; direct mode uses /v1/instruct.");
+      this.addMessage("system", t("panel.chat.ready"));
     }
+    const initialPanel = parsePanelFromLocation();
+    if (initialPanel !== "chat") {
+      this.activatePanel(initialPanel, { pushHistory: false });
+    }
+    this.metricsGlanceHandler = () => {
+      const active = this.panelTargets.find((panel) => !panel.classList.contains("hidden"));
+      if (active?.dataset.panelName === "metrics") void this.loadMetrics();
+    };
+    document.addEventListener("omni:metrics-glance", this.metricsGlanceHandler);
+    this.localeChangedHandler = () => {
+      applyI18n(document);
+      this.renderChannelOptions();
+      this.updateTransportLabel();
+    };
+    document.addEventListener("omni:locale-changed", this.localeChangedHandler);
   }
 
   disconnect() {
@@ -147,6 +167,8 @@ export default class ChatController extends Controller {
     if (this.networkSettingsHandler) document.removeEventListener("omni:network-settings", this.networkSettingsHandler);
     if (this.projectOpenedHandler) document.removeEventListener("omni:project-opened", this.projectOpenedHandler);
     if (this.projectClosedHandler) document.removeEventListener("omni:project-closed", this.projectClosedHandler);
+    if (this.metricsGlanceHandler) document.removeEventListener("omni:metrics-glance", this.metricsGlanceHandler);
+    if (this.localeChangedHandler) document.removeEventListener("omni:locale-changed", this.localeChangedHandler);
   }
 
   setNetworkUrl(url: string) {
@@ -183,10 +205,10 @@ export default class ChatController extends Controller {
     if (this.isChannelMode()) {
       const channel = this.userChannels.find((item) => item.id === this.selectedChannelId);
       const label = channel?.name?.trim() || this.selectedChannelId;
-      this.transportTarget.textContent = `channel · ${label}`;
+      this.transportTarget.textContent = `${t("transport.channel")} · ${label}`;
       return;
     }
-    this.transportTarget.textContent = this.queueEnabled ? "queue jobs" : "direct instruct";
+    this.transportTarget.textContent = this.queueEnabled ? t("transport.queue") : t("transport.direct");
   }
 
   async loadUserChannels() {
@@ -214,7 +236,7 @@ export default class ChatController extends Controller {
   renderChannelOptions() {
     if (!this.hasChannelSelectTarget) return;
     const options = [
-      `<option value="">Agent pipeline</option>`,
+      `<option value="">${escapeHTML(t("panel.chat.agentPipeline"))}</option>`,
       ...this.userChannels.map((channel) => {
         const label = channel.name?.trim() || channel.id;
         const meta = channel.persona && channel.persona !== "assistant" ? ` (${channel.persona})` : "";
@@ -310,15 +332,21 @@ export default class ChatController extends Controller {
     this.setBusy(false);
   }
 
-  showPanel(event) {
-    const name = event.currentTarget?.dataset?.panel || "chat";
+  showPanel(event: Event) {
+    event.preventDefault();
+    const target = event.currentTarget as HTMLElement | null;
+    const name = target?.dataset?.panel || "chat";
+    this.activatePanel(isOmniPanel(name) ? name : "chat", { pushHistory: true });
+  }
+
+  activatePanel(name: OmniPanel, options: { pushHistory?: boolean } = {}) {
     for (const panel of this.panelTargets) {
       const active = panel.dataset.panelName === name;
       panel.classList.toggle("hidden", !active);
       panel.classList.toggle("flex", active);
     }
     for (const button of this.element.querySelectorAll(".nav-button")) {
-      const active = button.dataset.panel === name;
+      const active = (button as HTMLElement).dataset.panel === name;
       button.classList.toggle("is-active", active);
       button.classList.toggle("bg-white/[.06]", active);
       button.classList.toggle("text-zinc-100", active);
@@ -333,6 +361,10 @@ export default class ChatController extends Controller {
       this.loadHostBridgeStatus();
     }
     document.dispatchEvent(new CustomEvent("omni:panel-shown", { detail: { panel: name } }));
+    if (options.pushHistory) {
+      const extra = name === "admin" ? { admin_tab: parseAdminTabFromLocation() } : {};
+      this.gxController?.pushRoute(panelHref(name, window.location, extra));
+    }
   }
 
   composerKeydown(event) {
@@ -690,54 +722,81 @@ export default class ChatController extends Controller {
   async promoteMemory(event) {
     const id = event.currentTarget.dataset.candidateId;
     const tier = event.currentTarget.dataset.tier || "approved";
-    await readJSON(await fetch(`/v1/memory-candidates/${id}/promote`, jsonRequest({ tier })));
-    await this.loadMemoryCandidates();
-    this.addEvent("memory_promoted", { id, tier });
+    try {
+      await readJSON(await fetch(`/v1/memory-candidates/${id}/promote`, jsonRequest({ tier })));
+      await this.loadMemoryCandidates();
+      this.addEvent("memory_promoted", { id, tier });
+      toastOk("Memory promoted");
+    } catch (error) {
+      toastFromError(error);
+    }
   }
 
   async rejectMemory(event) {
     const id = event.currentTarget.dataset.candidateId;
-    await readJSON(await fetch(`/v1/memory-candidates/${id}/reject`, jsonRequest({})));
-    await this.loadMemoryCandidates();
-    this.addEvent("memory_rejected", { id });
+    try {
+      await readJSON(await fetch(`/v1/memory-candidates/${id}/reject`, jsonRequest({})));
+      await this.loadMemoryCandidates();
+      this.addEvent("memory_rejected", { id });
+      toastOk("Memory candidate rejected");
+    } catch (error) {
+      toastFromError(error);
+    }
   }
 
   async addMemory(event) {
     event.preventDefault();
     if (!this.queueEnabled) {
+      toastError("Memory requires repository mode");
       this.addEvent("memory_unavailable", { reason: "repository disabled" });
       return;
     }
     const content = this.memoryContentTarget.value.trim();
-    if (!content) return;
+    if (!content) {
+      toastError("Memory content is required");
+      return;
+    }
     const tags = this.memoryTagsTarget.value.split(",").map((tag) => tag.trim()).filter(Boolean);
-    await readJSON(
-      await fetch(
-        "/v1/memory",
-        jsonRequest({ source: "omni-web-ui", kind: this.memoryKindTarget.value, content, tags }),
-      ),
-    );
-    this.memoryContentTarget.value = "";
-    this.memoryTagsTarget.value = "";
-    await this.loadMemoryCandidates();
-    this.addEvent("memory_added", { kind: this.memoryKindTarget.value, tags: tags.join(",") || "none" });
+    try {
+      await readJSON(
+        await fetch(
+          "/v1/memory",
+          jsonRequest({ source: "omni-web-ui", kind: this.memoryKindTarget.value, content, tags }),
+        ),
+      );
+      this.memoryContentTarget.value = "";
+      this.memoryTagsTarget.value = "";
+      await this.loadMemoryCandidates();
+      this.addEvent("memory_added", { kind: this.memoryKindTarget.value, tags: tags.join(",") || "none" });
+      toastOk("Memory saved");
+    } catch (error) {
+      toastFromError(error);
+    }
   }
 
   async runPersona(event) {
     event.preventDefault();
     const mode = this.personaModeTarget.value;
     const prompt = this.personaPromptTarget.value.trim();
-    if (!prompt) return;
+    if (!prompt) {
+      toastError("Enter a prompt first");
+      return;
+    }
     this.recycle("persona-output", escapeHTML("Running..."));
-    const body = {
-      prompt,
-      model: this.personaModelTarget.value.trim(),
-      system: this.personaSystemTarget.value.trim(),
-      context: { source: "omni-web-ui", mode },
-    };
-    const payload = await readJSON(await fetch(`/v1/${mode}`, jsonRequest(body)));
-    this.recycle("persona-output", escapeHTML(JSON.stringify(payload, null, 2)));
-    this.addEvent("persona_run", { mode, model: payload.model || "default", latency_ms: payload.latency_ms });
+    try {
+      const body = {
+        prompt,
+        model: this.personaModelTarget.value.trim(),
+        system: this.personaSystemTarget.value.trim(),
+        context: { source: "omni-web-ui", mode },
+      };
+      const payload = await readJSON(await fetch(`/v1/${mode}`, jsonRequest(body)));
+      this.recycle("persona-output", escapeHTML(JSON.stringify(payload, null, 2)));
+      this.addEvent("persona_run", { mode, model: payload.model || "default", latency_ms: payload.latency_ms });
+      toastOk("Persona run completed");
+    } catch (error) {
+      toastFromError(error);
+    }
   }
 
   async loadStatus() {
@@ -816,13 +875,19 @@ export default class ChatController extends Controller {
 
   async migrateFresh() {
     if (!this.queueEnabled) {
+      toastError("Migrate fresh requires repository mode");
       this.addEvent("admin_unavailable", { reason: "repository disabled" });
       return;
     }
     if (!window.confirm("This will reset repository data. Continue?")) return;
-    await readJSON(await fetch("/v1/admin/migrate-fresh", { method: "POST" }));
-    this.addEvent("admin_migrate_fresh", { status: "ok" });
-    await this.loadStatus();
+    try {
+      await readJSON(await fetch("/v1/admin/migrate-fresh", { method: "POST" }));
+      this.addEvent("admin_migrate_fresh", { status: "ok" });
+      toastOk("Database migrated fresh");
+      await this.loadStatus();
+    } catch (error) {
+      toastFromError(error);
+    }
   }
 
   describeJobProgress(details) {

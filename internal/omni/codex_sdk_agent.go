@@ -23,20 +23,22 @@ type CodexSDKArchitectAgent struct {
 	CodexBin  string
 }
 
+// NewCodexSDKArchitectAgent returns the Codex SDK agent when enabled.
+// Pass explicit=true when a card/project/workspace chose Codex — only an API key is required.
+func NewCodexSDKArchitectAgent(explicit ...bool) *CodexSDKArchitectAgent {
+	explicitRequest := len(explicit) > 0 && explicit[0]
+	return newCodexSDKArchitectAgent(true, explicitRequest)
+}
+
 func NewCodexSDKArchitectAgentFromEnv() *CodexSDKArchitectAgent {
-	return newCodexSDKArchitectAgent(false)
+	return newCodexSDKArchitectAgent(false, false)
 }
 
-// NewCodexSDKArchitectAgent returns the Codex SDK agent when enabled, regardless of OMNI_ARCHITECT_AGENT.
-func NewCodexSDKArchitectAgent() *CodexSDKArchitectAgent {
-	return newCodexSDKArchitectAgent(true)
-}
-
-func newCodexSDKArchitectAgent(force bool) *CodexSDKArchitectAgent {
+func newCodexSDKArchitectAgent(force, explicitRequest bool) *CodexSDKArchitectAgent {
 	if !force && !externalArchitectAgentSelectedFromEnv("codex") {
 		return nil
 	}
-	if !envBoolOrDefault("OMNI_ENABLE_CODEX_ARCHITECT", false) || envBoolOrDefault("OMNI_DISABLE_CODEX_ARCHITECT", false) {
+	if !CodexSDKEnabled(explicitRequest) {
 		return nil
 	}
 	runnerDir := strings.TrimSpace(os.Getenv("OMNI_CODEX_SDK_RUNNER_DIR"))

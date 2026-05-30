@@ -14,45 +14,63 @@ import {
 } from "../lib/admin_api";
 import { fetchGlobalAgentSettings, saveGlobalAgentSettings } from "../lib/agent_config_api";
 import { renderGlobalAgentSettings } from "../lib/agent_config_render";
-import { renderAPISecretsSettings, renderGlobalModelSettings, renderMindStats, renderNetworkSettings, renderOllamaModels } from "../lib/admin_render";
+import {
+  renderAPISecretsSettings,
+  renderGlobalModelSettings,
+  renderMindStats,
+  renderNetworkSettings,
+  renderOllamaModels,
+  type AdminTab,
+} from "../lib/admin_render";
+import type ChatController from "./chat_controller";
+import type GxController from "./gx_controller";
+import { panelHref, parseAdminTabFromLocation } from "../lib/panel_routing";
+import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 
 export default class AdminController extends Controller {
   static targets = [
+    "tabNav",
+    "adminStatus",
     "mindStats",
     "networkAccess",
     "ollamaModels",
     "pullModel",
-    "pullStatus",
     "globalModels",
     "globalAgents",
     "apiSecrets",
-    "ingestStatus",
     "ingestFiles",
     "ingestStage",
     "ingestTags",
   ];
 
+  declare readonly tabNavTarget: HTMLElement;
+  declare readonly adminStatusTarget: HTMLElement;
   declare readonly mindStatsTarget: HTMLElement;
   declare readonly networkAccessTarget: HTMLElement;
   declare readonly ollamaModelsTarget: HTMLElement;
   declare readonly pullModelTarget: HTMLInputElement;
-  declare readonly pullStatusTarget: HTMLElement;
   declare readonly globalModelsTarget: HTMLElement;
   declare readonly globalAgentsTarget: HTMLElement;
   declare readonly apiSecretsTarget: HTMLElement;
-  declare readonly ingestStatusTarget: HTMLElement;
   declare readonly ingestFilesTarget: HTMLInputElement;
   declare readonly ingestStageTarget: HTMLSelectElement;
   declare readonly ingestTagsTarget: HTMLInputElement;
 
   private panelShownHandler: ((event: Event) => void) | null = null;
+  private activeTab: AdminTab = "overview";
 
   connect() {
+    const fromURL = parseAdminTabFromLocation();
+    if (fromURL === "overview" || fromURL === "ai" || fromURL === "health" || fromURL === "advanced") {
+      this.activeTab = fromURL;
+    }
     this.panelShownHandler = (event: Event) => {
       const detail = (event as CustomEvent<{ panel?: string }>).detail;
       if (detail?.panel === "admin") void this.load();
     };
     document.addEventListener("omni:panel-shown", this.panelShownHandler);
+    this.applyTabState();
+    if (this.activeTab === "health") void this.loadHealth();
   }
 
   disconnect() {
@@ -61,20 +79,86 @@ export default class AdminController extends Controller {
     }
   }
 
-  setPullStatus(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
+  setAdminStatus(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
     const classes = { idle: "text-zinc-400", busy: "text-cyan-200", error: "text-rose-300", ok: "text-emerald-300" };
-    this.pullStatusTarget.textContent = message;
-    this.pullStatusTarget.className = `text-xs ${classes[tone] ?? classes.idle}`;
+    this.adminStatusTarget.textContent = message;
+    this.adminStatusTarget.className = `text-xs ${classes[tone] ?? classes.idle}`;
   }
 
-  setIngestStatus(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
-    const classes = { idle: "text-zinc-400", busy: "text-cyan-200", error: "text-rose-300", ok: "text-emerald-300" };
-    this.ingestStatusTarget.textContent = message;
-    this.ingestStatusTarget.className = `text-xs ${classes[tone] ?? classes.idle}`;
+  private actionOk(message: string) {
+    reportOk(this.setAdminStatus.bind(this), message);
+  }
+
+  private actionFail(error: unknown) {
+    reportError(this.setAdminStatus.bind(this), error);
+  }
+
+  private actionFailMessage(message: string) {
+    reportErrorMessage(this.setAdminStatus.bind(this), message);
+  }
+
+  showTab(event: Event) {
+    event.preventDefault();
+    this.activeTab = ((event.currentTarget as HTMLElement).dataset.adminTab as AdminTab) || "overview";
+    this.applyTabState();
+    this.pushAdminTabHistory();
+    if (this.activeTab === "health") void this.loadHealth();
+  }
+
+  private gxController(): GxController | null {
+    return this.application.getControllerForElementAndIdentifier(this.element, "gx") as GxController | null;
+  }
+
+  private pushAdminTabHistory() {
+    this.gxController()?.pushRoute(panelHref("admin", window.location, { admin_tab: this.activeTab }));
+  }
+
+  private applyTabState() {
+    this.element.querySelectorAll("[data-admin-tab-panel]").forEach((panel) => {
+      panel.classList.toggle("hidden", panel.getAttribute("data-admin-tab-panel") !== this.activeTab);
+    });
+    this.tabNavTarget.querySelectorAll("[data-admin-tab]").forEach((button) => {
+      const active = button.getAttribute("data-admin-tab") === this.activeTab;
+      button.classList.toggle("border-cyan-300/40", active);
+      button.classList.toggle("bg-cyan-300/10", active);
+      button.classList.toggle("text-cyan-100", active);
+      button.classList.toggle("border-white/10", !active);
+      button.classList.toggle("text-zinc-400", !active);
+    });
+  }
+
+  private chatController(): ChatController | null {
+    return this.application.getControllerForElementAndIdentifier(this.element, "chat") as ChatController | null;
+  }
+
+  async loadHealth() {
+    this.setAdminStatus("Refreshing health checks…", "busy");
+    try {
+      await this.chatController()?.loadStatus();
+      this.actionOk("Health checks updated");
+    } catch (error) {
+      this.actionFail(error);
+    }
   }
 
   async load() {
-    await Promise.all([this.loadNetwork(), this.loadMind(), this.loadOllama(), this.loadAPISecrets(), this.loadGlobalModels(), this.loadGlobalAgents()]);
+    this.setAdminStatus("Loading admin settings…", "busy");
+    try {
+      await Promise.all([
+        this.loadNetwork(),
+        this.loadMind(),
+        this.loadOllama(),
+        this.loadAPISecrets(),
+        this.loadGlobalModels(),
+        this.loadGlobalAgents(),
+      ]);
+      if (this.activeTab === "health") {
+        await this.chatController()?.loadStatus();
+      }
+      this.setAdminStatus("Ready", "idle");
+    } catch (error) {
+      this.actionFail(error);
+    }
   }
 
   async loadNetwork() {
@@ -93,16 +177,16 @@ export default class AdminController extends Controller {
     const portRaw = (this.networkAccessTarget.querySelector("[data-admin-field='networkPort']") as HTMLInputElement | null)?.value.trim() ?? "";
     const port = Number.parseInt(portRaw, 10);
     if (!host || !Number.isFinite(port) || port <= 0) {
-      this.setPullStatus("Enter a valid host and port", "error");
+      this.actionFailMessage("Enter a valid host and port");
       return;
     }
-    this.setPullStatus("Saving network URL…", "busy");
+    this.setAdminStatus("Saving network URL…", "busy");
     try {
       await saveNetworkSettings({ host, port });
       await this.loadNetwork();
-      this.setPullStatus("Network URL saved", "ok");
+      this.actionOk("Network URL saved");
     } catch (error) {
-      this.setPullStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -151,13 +235,13 @@ export default class AdminController extends Controller {
       const value = element.value.trim();
       if (key && value) values[key] = value;
     }
-    this.setPullStatus("Saving API keys…", "busy");
+    this.setAdminStatus("Saving API keys…", "busy");
     try {
       await saveAPISecrets(values);
       await this.loadAPISecrets();
-      this.setPullStatus("API keys saved", "ok");
+      this.actionOk("API keys saved");
     } catch (error) {
-      this.setPullStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -165,20 +249,20 @@ export default class AdminController extends Controller {
     event.preventDefault();
     const key = (event.currentTarget as HTMLElement).dataset.secretKey || "";
     if (!key || !window.confirm(`Clear stored value for ${key}?`)) return;
-    this.setPullStatus("Clearing stored API key…", "busy");
+    this.setAdminStatus("Clearing stored API key…", "busy");
     try {
       await saveAPISecrets({}, [key]);
       await this.loadAPISecrets();
-      this.setPullStatus("Stored API key cleared", "ok");
+      this.actionOk("Stored API key cleared");
     } catch (error) {
-      this.setPullStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
   async loadGlobalAgents() {
     try {
       const payload = await fetchGlobalAgentSettings();
-      this.globalAgentsTarget.innerHTML = renderGlobalAgentSettings(payload.fields, payload.env_file);
+      this.globalAgentsTarget.innerHTML = renderGlobalAgentSettings(payload.fields);
     } catch (error) {
       this.globalAgentsTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
     }
@@ -202,13 +286,13 @@ export default class AdminController extends Controller {
       const key = element.dataset.adminField?.replace(/^agent_/, "") ?? "";
       if (key) values[key] = element.value.trim();
     }
-    this.setPullStatus("Saving global agent settings…", "busy");
+    this.setAdminStatus("Saving workspace agent settings…", "busy");
     try {
       await saveGlobalAgentSettings(values);
       await this.loadGlobalAgents();
-      this.setPullStatus("Global agent settings saved", "ok");
+      this.actionOk("Workspace agent settings saved");
     } catch (error) {
-      this.setPullStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -216,14 +300,14 @@ export default class AdminController extends Controller {
     event.preventDefault();
     const model = this.pullModelTarget.value.trim();
     if (!model) return;
-    this.setPullStatus(`Pulling ${model}…`, "busy");
+    this.setAdminStatus(`Pulling ${model}…`, "busy");
     try {
       await pullOllamaModel(model);
       this.pullModelTarget.value = "";
       await this.loadOllama();
-      this.setPullStatus(`Pulled ${model}`, "ok");
+      this.actionOk(`Pulled ${model}`);
     } catch (error) {
-      this.setPullStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -231,13 +315,13 @@ export default class AdminController extends Controller {
     event.preventDefault();
     const name = (event.currentTarget as HTMLElement).dataset.modelName || "";
     if (!name || !window.confirm(`Remove Ollama model ${name}?`)) return;
-    this.setPullStatus(`Removing ${name}…`, "busy");
+    this.setAdminStatus(`Removing ${name}…`, "busy");
     try {
       await deleteOllamaModel(name);
       await this.loadOllama();
-      this.setPullStatus(`Removed ${name}`, "ok");
+      this.actionOk(`Removed ${name}`);
     } catch (error) {
-      this.setPullStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -250,13 +334,13 @@ export default class AdminController extends Controller {
       const value = element.value.trim();
       if (key) values[key] = value;
     }
-    this.setPullStatus("Saving global model settings…", "busy");
+    this.setAdminStatus("Saving global model settings…", "busy");
     try {
       await saveModelSettings(values);
       await this.loadGlobalModels();
-      this.setPullStatus("Global model settings saved", "ok");
+      this.actionOk("Global model settings saved");
     } catch (error) {
-      this.setPullStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 
@@ -264,10 +348,10 @@ export default class AdminController extends Controller {
     event.preventDefault();
     const files = this.ingestFilesTarget.files;
     if (!files?.length) {
-      this.setIngestStatus("Choose one or more files first", "error");
+      this.actionFailMessage("Choose one or more files first");
       return;
     }
-    this.setIngestStatus("Uploading and parsing documents…", "busy");
+    this.setAdminStatus("Uploading and parsing documents…", "busy");
     try {
       const payload = await ingestDocuments(files, {
         stage: this.ingestStageTarget.value || "candidate",
@@ -275,11 +359,11 @@ export default class AdminController extends Controller {
         tags: this.ingestTagsTarget.value.trim(),
       });
       this.ingestFilesTarget.value = "";
-      this.setIngestStatus(payload.message, "ok");
+      this.actionOk(payload.message);
       await this.loadMind();
       document.dispatchEvent(new CustomEvent("omni:memory-changed"));
     } catch (error) {
-      this.setIngestStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
     }
   }
 }

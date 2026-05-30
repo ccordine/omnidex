@@ -248,7 +248,7 @@ func (s *Server) scrumUpdateBoard(r *http.Request, name, projectDirectory string
 	return s.scrumStore.UpdateBoard(name, projectDirectory)
 }
 
-func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card ScrumCard, projectID int64) ([]byte, []string, error) {
+func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card ScrumCard, projectID int64, instance agentconfig.Config) ([]byte, []string, error) {
 	checklistLines := make([]string, 0, len(card.Checklist))
 	for _, item := range card.Checklist {
 		if strings.TrimSpace(item.Text) == "" {
@@ -292,6 +292,9 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 	if len(card.Tags) > 0 {
 		payload["scrum_card_tags"] = card.Tags
 	}
+	if len(instance) > 0 {
+		payload["instance_agent_config"] = instance.ToMap()
+	}
 	if strings.TrimSpace(card.RecipeID) != "" || len(card.Recipe) > 2 {
 		payload["recipe_id"] = strings.TrimSpace(card.RecipeID)
 		if len(card.Recipe) > 2 {
@@ -317,9 +320,6 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 	if executionAgent, _ := meta["execution_agent"].(string); executionAgent == agentconfig.SystemOmnidex {
 		meta["omnidex_no_delegate"] = true
 	} else if executionAgent == agentconfig.SystemCursor || executionAgent == agentconfig.SystemCodex {
-		if _, ok := meta["agent_strict"]; !ok {
-			meta["agent_strict"] = true
-		}
 		meta["scrum_raw_play"] = true
 		delete(meta, "runtime")
 	}

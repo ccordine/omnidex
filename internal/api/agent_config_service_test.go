@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -17,7 +18,7 @@ func TestResolveAgentConfigPriority(t *testing.T) {
 		AgentConfig: json.RawMessage(`{"agent_strict":"true"}`),
 	}
 
-	resolved, source := s.resolveAgentConfig(project, card)
+	resolved, source := s.resolveAgentConfig(context.Background(), project, card)
 	if source != "card" {
 		t.Fatalf("expected card source, got %q", source)
 	}
@@ -34,7 +35,7 @@ func TestAgentConfigJobMetadataExternal(t *testing.T) {
 	project := model.Project{
 		Settings: json.RawMessage(`{"agent_config":{"agent_system":"codex","agent_strict":"true"}}`),
 	}
-	payload := s.agentConfigJobMetadata(project, ScrumCard{})
+	payload := s.agentConfigJobMetadata(context.Background(), project, ScrumCard{})
 	if payload["execution_agent"] != agentconfig.SystemCodex {
 		t.Fatalf("expected codex execution agent, got %#v", payload["execution_agent"])
 	}
@@ -44,6 +45,25 @@ func TestAgentConfigJobMetadataExternal(t *testing.T) {
 	agents, ok := payload["external_agents_used"].([]string)
 	if !ok || len(agents) != 1 || agents[0] != "codex_sdk" {
 		t.Fatalf("expected external_agents_used, got %#v", payload["external_agents_used"])
+	}
+}
+
+func TestResolveAgentConfigInstancePriority(t *testing.T) {
+	s := &Server{}
+	project := model.Project{
+		Settings: json.RawMessage(`{"agent_config":{"agent_system":"cursor"}}`),
+	}
+	card := ScrumCard{
+		AgentConfig: json.RawMessage(`{"agent_system":"codex"}`),
+	}
+	instance := agentconfig.Config{"agent_system": "cursor"}
+
+	resolved, source := s.resolveAgentConfig(context.Background(), project, card, instance)
+	if source != agentconfig.SourceInstance {
+		t.Fatalf("expected instance source, got %q", source)
+	}
+	if resolved.System() != agentconfig.SystemCursor {
+		t.Fatalf("expected cursor from instance, got %q", resolved.System())
 	}
 }
 

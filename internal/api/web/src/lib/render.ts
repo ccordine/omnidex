@@ -267,6 +267,36 @@ export function renderHostBridgeStatus(payload) {
   `;
 }
 
+export type MetricsGlance = {
+  live_runs?: number;
+  recent_errors?: number;
+  struggle_signals?: number;
+  failed_runs?: number;
+  struggling?: boolean;
+  tone?: string;
+};
+
+export function renderMetricsNavBadges(glance: MetricsGlance): string {
+  const parts: string[] = [];
+  const liveRuns = Number(glance.live_runs || 0);
+  const recentErrors = Number(glance.recent_errors || 0);
+  const struggleSignals = Number(glance.struggle_signals || 0);
+  const struggling = Boolean(glance.struggling);
+
+  if (liveRuns > 0) {
+    parts.push(`<span class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-300/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-100" title="Live runs">${liveRuns}</span>`);
+  }
+  if (recentErrors > 0) {
+    parts.push(`<span class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full border border-rose-400/35 bg-rose-950/80 px-1.5 py-0.5 text-[10px] font-semibold text-rose-100" title="Errors in the last hour">${recentErrors}</span>`);
+  } else if (struggling && struggleSignals > 0) {
+    parts.push(`<span class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-100" title="Struggle signals (7d)">${struggleSignals}</span>`);
+  }
+  if (parts.length === 0) {
+    return `<span class="text-zinc-500">05</span>`;
+  }
+  return `<span class="flex items-center gap-1.5">${parts.join("")}</span>`;
+}
+
 export function renderMetricsDashboard(live, models, playbooks, benchmarks) {
   const statusCounts = live.status_counts || {};
   const liveRuns = live.live_runs || [];

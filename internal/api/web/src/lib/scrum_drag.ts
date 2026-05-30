@@ -74,6 +74,10 @@ export class ScrumBoardDrag {
     return Date.now() < this.suppressClickUntil;
   }
 
+  isActive(): boolean {
+    return this.session?.dragging === true;
+  }
+
   private onPointerDown(event: PointerEvent) {
     if (!this.board || event.button !== 0) return;
     const target = event.target as HTMLElement;

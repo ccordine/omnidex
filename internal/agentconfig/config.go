@@ -12,6 +12,9 @@ const (
 	SystemCodex   = "codex"
 )
 
+// WorkspaceSettingsKey is the workspace_settings row for global agent defaults (DB overrides env file).
+const WorkspaceSettingsKey = "workspace_agent_config"
+
 type Field struct {
 	Key         string   `json:"key"`
 	Label       string   `json:"label"`
@@ -46,6 +49,30 @@ func FromEnv() Config {
 			out[field.Key] = value
 		}
 	}
+	return normalizeAgentConfig(out)
+}
+
+func FromEnvFileValues(values map[string]string) Config {
+	out := Config{}
+	for _, field := range Fields {
+		if value := lookupMap(values, field.EnvKeys); value != "" {
+			out[field.Key] = value
+		}
+	}
+	return normalizeAgentConfig(out)
+}
+
+func FromStringMap(values map[string]string) Config {
+	out := Config{}
+	for key, value := range values {
+		if strings.TrimSpace(value) != "" {
+			out[key] = strings.TrimSpace(value)
+		}
+	}
+	return normalizeAgentConfig(out)
+}
+
+func normalizeAgentConfig(out Config) Config {
 	if sys := normalizeSystem(out.Get("agent_system")); sys != "" {
 		out["agent_system"] = sys
 	}

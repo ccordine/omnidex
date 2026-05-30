@@ -404,7 +404,7 @@ export function renderScrumModalConfigTab(
           <button type="button" data-action="scrum#quickSetAgent" data-card-id="${escapeHTML(card.id)}" data-agent-system="codex" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40">Use Codex</button>
           <button type="button" data-action="scrum#quickSetAgent" data-card-id="${escapeHTML(card.id)}" data-agent-system="omnidex" class="inline-flex items-center gap-2 rounded-md border ${usingOmnidex ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-200 hover:border-cyan-300/40"} px-3 py-1.5 text-xs font-semibold">Use Omnidex ${renderPreAlphaBadge()}</button>
         </div>
-        <p class="mt-3 text-[11px] leading-5 text-zinc-600">Cursor/Codex need <span class="font-mono">OMNI_ENABLE_CURSOR_ARCHITECT</span> + <span class="font-mono">CURSOR_API_KEY</span> in env (see default.env). Scrum jobs default to strict external mode — no silent Omnidex fallback.</p>
+        <p class="mt-3 text-[11px] leading-5 text-zinc-600">Cursor/Codex also need an API key — set under <span class="font-semibold text-zinc-500">Admin → API secrets</span> (DB, preferred) or <span class="font-mono">CURSOR_API_KEY</span> / <span class="font-mono">CODEX_API_KEY</span> in env. Project agent choice overrides env defaults.</p>
       </section>
       <p class="text-xs text-zinc-500">Overrides inherit project → environment.</p>
       ${modelFields.length ? renderModelConfigSection(modelFields, card.model_config ?? {}, resolvedModelSource, "card", card.id) : `<p class="text-sm text-zinc-500">Model config unavailable.</p>`}
@@ -450,42 +450,96 @@ export function renderScrumModalRecipeTab(
   `;
 }
 
-export function renderScrumModalChat(card: ScrumCard): string {
+function stripAgentStreamMarker(consoleLog: string): string {
+  return consoleLog.replace(/^\[\[agent-stream-len:\d+\]\]\s*$/gm, "").trimEnd();
+}
+
+function channelSessionStatus(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
+  if (card.play_state === "running") {
+    return `<span class="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Live</span>`;
+  }
+  if (card.play_state === "queued") {
+    const position = playQueue?.queued_card_ids?.indexOf(card.id);
+    const label = position != null && position >= 0 ? `#${position + 1} in queue` : "Queued";
+    return `<span class="rounded-full border border-violet-300/30 bg-violet-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-100">${escapeHTML(label)}</span>`;
+  }
+  if (card.play_state === "paused") {
+    return `<span class="rounded-full border border-zinc-400/30 bg-zinc-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">Paused</span>`;
+  }
+  if (card.job_id?.trim()) {
+    return `<span class="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100">Has job</span>`;
+  }
+  return "";
+}
+
+function renderChannelSessionBar(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
+  const status = channelSessionStatus(card, playQueue);
+  const jobLine = card.job_id?.trim()
+    ? `<span class="font-mono text-[11px] text-cyan-200/90">Job #${escapeHTML(card.job_id)}</span>`
+    : `<span class="text-[11px] text-zinc-500">No active job</span>`;
+  const interrupt = card.play_state === "running"
+    ? `<button type="button" data-action="scrum#pausePlay" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-rose-400/35 bg-rose-400/10 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-400/20">Interrupt</button>`
+    : "";
+  const sync = card.job_id?.trim() && card.play_state !== "running"
+    ? `<button type="button" data-action="scrum#syncJob" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 transition hover:border-cyan-300/40">Sync job</button>`
+    : "";
+  return `
+    <section class="rounded-lg border border-white/10 bg-zinc-950/60 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Agent session</h3>
+          ${status}
+          ${jobLine}
+        </div>
+        <div class="flex flex-wrap items-center gap-2">${interrupt}${sync}</div>
+      </div>
+      <p class="mt-2 text-xs leading-5 text-zinc-500">Watch Omnidex work on this card in real time — same stream you would see in the CLI. Use Interrupt to stop the running agent.</p>
+    </section>
+  `;
+}
+
+export function renderScrumModalChat(card: ScrumCard, live = false): string {
   const messages = (card.chat ?? []).map((msg) => {
     const shell = msg.role === "user" ? "border-cyan-300/25 bg-cyan-300/10" : "border-white/10 bg-zinc-900/70";
     return `<div class="rounded-md border ${shell} px-3 py-2"><div class="text-[11px] uppercase tracking-wide text-zinc-500">${escapeHTML(msg.role)} · ${escapeHTML(formatDateTime(msg.created_at))}</div><div class="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">${escapeHTML(msg.content)}</div></div>`;
   }).join("");
+  const heading = live ? "Steer & discuss" : "Card chat";
+  const hint = live
+    ? "Discuss the task while the agent runs. Messages go to the card thinking pilot (not injected into the live job yet)."
+    : "Discuss the card with the thinking pilot before or between play runs.";
   return `
     <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-      <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Thinking pilot</h3>
-      <p class="mt-1 text-xs text-zinc-500">Discuss the card with the LLM before or during Omnidex execution.</p>
-      <div class="scrollbar mt-3 max-h-[320px] space-y-2 overflow-y-auto pr-1">${messages || `<p class="text-sm text-zinc-500">No messages yet.</p>`}</div>
+      <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">${heading}</h3>
+      <p class="mt-1 text-xs text-zinc-500">${hint}</p>
+      <div class="scrollbar mt-3 max-h-[280px] space-y-2 overflow-y-auto pr-1">${messages || `<p class="text-sm text-zinc-500">No messages yet.</p>`}</div>
       <form data-action="submit->scrum#sendChat" data-card-id="${escapeHTML(card.id)}" class="mt-3 flex gap-2">
-        <textarea data-scrum-field="chatMessage" rows="2" placeholder="Ask the thinking pilot…" class="scrollbar min-w-0 flex-1 resize-none rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40"></textarea>
+        <textarea data-scrum-field="chatMessage" rows="2" placeholder="${live ? "Ask a question or steer the task…" : "Ask the thinking pilot…"}" class="scrollbar min-w-0 flex-1 resize-none rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40"></textarea>
         <button type="submit" class="self-end rounded-md bg-cyan-300 px-3 py-2 text-xs font-semibold text-zinc-950 hover:bg-cyan-200">Send</button>
       </form>
     </section>
   `;
 }
 
-export function renderScrumModalChannelTab(card: ScrumCard): string {
-  const consoleBlock = card.console_log?.trim()
+export function renderScrumModalChannelTab(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
+  const displayLog = stripAgentStreamMarker(card.console_log ?? "");
+  const isLive = card.play_state === "running" || card.play_state === "queued";
+  const consoleBlock = displayLog.trim()
     ? `
       <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
         <div class="flex items-center justify-between gap-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Agent output</h3>
-          ${card.play_state === "running" ? `<span class="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Live</span>` : ""}
+          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Live output</h3>
+          ${card.play_state === "running" ? `<span class="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200"><span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300"></span>Streaming</span>` : ""}
         </div>
-        <pre class="scrollbar mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap rounded bg-black/40 p-3 font-mono text-[11px] leading-5 text-zinc-300">${escapeHTML(card.console_log)}</pre>
+        <pre data-scrum-channel-stream class="scrollbar mt-3 max-h-[min(48vh,520px)] overflow-auto whitespace-pre-wrap rounded bg-black/40 p-3 font-mono text-[11px] leading-5 text-zinc-300">${escapeHTML(displayLog)}</pre>
       </section>
     `
     : `
       <section class="rounded-lg border border-dashed border-white/10 bg-zinc-950/30 p-4">
-        <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Agent output</h3>
-        <p class="mt-2 text-sm text-zinc-500">Play this card to stream Omnidex console output here.</p>
+        <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Live output</h3>
+        <p class="mt-2 text-sm text-zinc-500">${isLive ? "Waiting for agent output…" : "Play this card to stream Omnidex console output here."}</p>
       </section>
     `;
-  return `<div class="space-y-4">${consoleBlock}${renderScrumModalChat(card)}</div>`;
+  return `<div class="space-y-4">${renderChannelSessionBar(card, playQueue)}${consoleBlock}${renderScrumModalChat(card, isLive)}</div>`;
 }
 
 export function renderScrumCardModal(
@@ -504,7 +558,7 @@ export function renderScrumCardModal(
   projectRecipe: Record<string, unknown> = {},
 ): string {
   return `
-    <div class="border-b border-white/10 p-4 md:p-5">
+    <div class="shrink-0 border-b border-white/10 p-4 md:p-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div class="font-mono text-xs text-cyan-200">${escapeHTML(card.id)}</div>
@@ -513,15 +567,15 @@ export function renderScrumCardModal(
         <button type="button" data-action="scrum#closeModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Close</button>
       </div>
     </div>
-    <div data-recyclr-sink="scrum-modal-toolbar">${renderScrumModalToolbar(card, board, playQueue)}</div>
-    <div class="border-b border-white/10 px-4 py-3 md:px-5" data-recyclr-sink="scrum-modal-tabs">
+    <div class="shrink-0" data-recyclr-sink="scrum-modal-toolbar">${renderScrumModalToolbar(card, board, playQueue)}</div>
+    <div class="shrink-0 border-b border-white/10 px-4 py-3 md:px-5" data-recyclr-sink="scrum-modal-tabs">
       <nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, activeTab)}</nav>
     </div>
-    <div class="scrollbar max-h-[min(70vh,720px)] overflow-y-auto p-4 md:p-5">
+    <div class="omni-modal-body scrollbar p-4 md:p-5">
       <div data-scrum-tab-panel="card" class="${tabPanelClass("card", activeTab)}" data-recyclr-sink="scrum-modal-card">${renderScrumModalCardTab(card, files)}</div>
       <div data-scrum-tab-panel="config" class="${tabPanelClass("config", activeTab)}" data-recyclr-sink="scrum-modal-config">${renderScrumModalConfigTab(card, modelFields, resolvedModelSource, agentFields, resolvedAgentSource, resolvedAgentSystem)}</div>
       <div data-scrum-tab-panel="recipe" class="${tabPanelClass("recipe", activeTab)}" data-recyclr-sink="scrum-modal-recipe">${renderScrumModalRecipeTab(card, recipes, projectRecipeId, projectRecipe)}</div>
-      <div data-scrum-tab-panel="channel" class="${tabPanelClass("channel", activeTab)}" data-recyclr-sink="scrum-modal-channel">${renderScrumModalChannelTab(card)}</div>
+      <div data-scrum-tab-panel="channel" class="${tabPanelClass("channel", activeTab)}" data-recyclr-sink="scrum-modal-channel">${renderScrumModalChannelTab(card, playQueue)}</div>
     </div>
   `;
 }
@@ -541,7 +595,7 @@ export function renderScrumCreateCardModal(defaultColumn = "backlog"): string {
         <button type="button" data-action="scrum#closeModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Cancel</button>
       </div>
     </div>
-    <form data-action="submit->scrum#createCard" class="space-y-4 p-4 md:p-5">
+    <form data-action="submit->scrum#createCard" class="omni-modal-body scrollbar space-y-4 p-4 md:p-5">
       <label class="block">
         <span class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Title</span>
         <input data-scrum-field="newTitle" type="text" required autofocus placeholder="What needs doing?" class="mt-2 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
