@@ -1,7 +1,6 @@
 package omni
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -58,7 +57,7 @@ func newCursorSDKArchitectAgent(force, explicitRequest bool) *CursorSDKArchitect
 	}
 	return &CursorSDKArchitectAgent{
 		APIKey:    apiKey,
-		Model:     firstNonEmpty(os.Getenv("OMNI_CURSOR_MODEL"), "composer-2"),
+		Model:     cursorrunner.DefaultModel(),
 		RunnerDir: runnerDir,
 		NodeBin:   firstNonEmpty(os.Getenv("OMNI_CURSOR_NODE_BIN"), "node"),
 		NPMBin:    firstNonEmpty(os.Getenv("OMNI_CURSOR_NPM_BIN"), "npm"),
@@ -104,9 +103,9 @@ func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectA
 		return nil, fmt.Errorf("CURSOR_API_KEY is required for cursor sdk architect delegation")
 	}
 	if UseHostBridgeExternalAgents() {
-		return newHostBridgeExternalAgentSession("cursor", a.APIKey, firstNonEmpty(a.Model, "composer-2"), "")
+		return newHostBridgeExternalAgentSession("cursor", a.APIKey, firstNonEmpty(a.Model, cursorrunner.DefaultModel()), "")
 	}
-	if err := a.ensureRunner(context.Background()); err != nil {
+	if err := cursorrunner.Ensure(context.Background(), a.RunnerDir); err != nil {
 		return nil, err
 	}
 	return &externalAgentCommandSession{
@@ -118,7 +117,7 @@ func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectA
 			}
 			request := cursorSDKRunnerRequest{
 				APIKey:    a.APIKey,
-				Model:     firstNonEmpty(a.Model, "composer-2"),
+				Model:     firstNonEmpty(a.Model, cursorrunner.DefaultModel()),
 				Workspace: workspace,
 				Prompt:    job.Prompt,
 			}
@@ -128,6 +127,7 @@ func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectA
 			}
 			cmd := exec.CommandContext(ctx, firstNonEmpty(a.NodeBin, "node"), filepath.Join(a.RunnerDir, "runner.mjs"), reqPath)
 			cmd.Dir = a.RunnerDir
+			cmd.Env = cursorrunner.CommandEnv()
 			return cmd, nil
 		},
 	}, nil
@@ -138,35 +138,6 @@ type cursorSDKRunnerRequest struct {
 	Model     string `json:"model"`
 	Workspace string `json:"workspace"`
 	Prompt    string `json:"prompt"`
-}
-
-func (a *CursorSDKArchitectAgent) ensureRunner(ctx context.Context) error {
-	if err := os.MkdirAll(a.RunnerDir, 0o755); err != nil {
-		return fmt.Errorf("create cursor sdk runner dir: %w", err)
-	}
-	packageJSON := filepath.Join(a.RunnerDir, "package.json")
-	if _, err := os.Stat(packageJSON); os.IsNotExist(err) {
-		if err := os.WriteFile(packageJSON, []byte(cursorrunner.PackageJSON), 0o644); err != nil {
-			return fmt.Errorf("write cursor sdk runner package.json: %w", err)
-		}
-	}
-	runnerPath := filepath.Join(a.RunnerDir, "runner.mjs")
-	if err := os.WriteFile(runnerPath, []byte(cursorrunner.RunnerScript), 0o644); err != nil {
-		return fmt.Errorf("write cursor sdk runner script: %w", err)
-	}
-	if _, err := os.Stat(filepath.Join(a.RunnerDir, "node_modules", "@cursor", "sdk")); err == nil {
-		return nil
-	}
-	installCtx, cancel := context.WithTimeout(ctx, envDurationOrDefault("OMNI_CURSOR_INSTALL_TIMEOUT", 10*time.Minute))
-	defer cancel()
-	cmd := exec.CommandContext(installCtx, firstNonEmpty(a.NPMBin, "npm"), "install", "--silent", "--no-audit", "--no-fund")
-	cmd.Dir = a.RunnerDir
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("install @cursor/sdk runner dependency: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return nil
 }
 
 func buildCursorArchitectPrompt(input CursorArchitectAgentInput) string {

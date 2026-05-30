@@ -57,11 +57,16 @@ func streamCommandNDJSON(w http.ResponseWriter, cmd *exec.Cmd, agent string) {
 		}
 	}
 	waitErr := cmd.Wait()
-	if errBlob := <-errCh; len(errBlob) > 0 {
+	stderrBlob := <-errCh
+	if len(stderrBlob) > 0 {
+		message := strings.TrimSpace(string(stderrBlob))
+		if waitErr != nil && !strings.Contains(message, waitErr.Error()) {
+			message = message + " (" + waitErr.Error() + ")"
+		}
 		payload, _ := json.Marshal(map[string]string{
 			"agent":   agent,
 			"type":    "error",
-			"message": strings.TrimSpace(string(errBlob)),
+			"message": message,
 		})
 		_, _ = w.Write(payload)
 		_, _ = io.WriteString(w, "\n")

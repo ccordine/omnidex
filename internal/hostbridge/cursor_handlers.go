@@ -50,6 +50,10 @@ func (s *Server) handleCursorRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	runnerDir := cursorrunner.DefaultRunnerDir()
+	if err := cursorrunner.PreflightError(cursorrunner.Preflight()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	setupCtx, cancel := context.WithTimeout(r.Context(), cursorInstallTimeout())
 	defer cancel()
 	if err := cursorrunner.Ensure(setupCtx, runnerDir); err != nil {
@@ -59,7 +63,7 @@ func (s *Server) handleCursorRun(w http.ResponseWriter, r *http.Request) {
 
 	request := cursorrunner.Request{
 		APIKey:    strings.TrimSpace(req.APIKey),
-		Model:     firstNonEmpty(req.Model, "composer-2"),
+		Model:     firstNonEmpty(req.Model, cursorrunner.DefaultModel()),
 		Workspace: workspace,
 		Prompt:    strings.TrimSpace(req.Prompt),
 	}

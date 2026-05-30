@@ -20,6 +20,15 @@ func TestExternalAgentResultErrorDetectsTypedErrorEvent(t *testing.T) {
 	}
 }
 
+func TestExternalAgentResultErrorDetectsLaunchFailure(t *testing.T) {
+	result := CursorArchitectAgentResult{
+		Output: `{"agent":"cursor","type":"error","message":"Cursor agent failed to launch: code=unauthenticated"}`,
+	}
+	if err := externalAgentResultError(result); err == nil {
+		t.Fatal("expected launch failure to fail")
+	}
+}
+
 func TestExternalAgentResultErrorIgnoresSuccess(t *testing.T) {
 	result := CursorArchitectAgentResult{
 		Output: `{"agent":"cursor","type":"completed","message":"done"}`,

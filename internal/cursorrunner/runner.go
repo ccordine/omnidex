@@ -21,6 +21,30 @@ function emit(event) {
   console.log(JSON.stringify(event));
 }
 
+function formatError(err) {
+  if (err == null) {
+    return "unknown error (check CURSOR_API_KEY and host PATH includes node, npm, base64, and cursor CLI)";
+  }
+  const parts = [];
+  const push = (value) => {
+    const text = String(value ?? "").trim();
+    if (text && text !== "Error" && text !== "undefined" && text !== "null") {
+      parts.push(text);
+    }
+  };
+  push(err.message);
+  if (err.cause) {
+    push(err.cause.message);
+    push(err.cause.code);
+  }
+  push(err.code);
+  push(err.rawMessage);
+  if (parts.length === 0) {
+    return "unknown error (verify CURSOR_API_KEY in Admin → API secrets and host PATH for node/npm/base64)";
+  }
+  return parts.join("; ");
+}
+
 async function disposeAgent(agent) {
   if (!agent) return;
   if (typeof agent[Symbol.asyncDispose] === "function") {
@@ -38,11 +62,22 @@ if (!requestPath) {
 }
 
 const request = JSON.parse(await fs.readFile(requestPath, "utf8"));
-const agent = await Agent.create({
-  apiKey: request.api_key,
-  model: { id: request.model || "composer-2" },
-  local: { cwd: request.workspace || process.cwd() },
-});
+let agent;
+try {
+  agent = await Agent.create({
+    apiKey: request.api_key,
+    model: { id: request.model || "composer-2.5" },
+    local: {
+      cwd: request.workspace || process.cwd(),
+      settingSources: [],
+    },
+  });
+} catch (err) {
+  const message = "Cursor agent failed to launch: " + formatError(err);
+  emit({ agent: "cursor", type: "error", message });
+  console.error(message);
+  process.exit(err instanceof CursorAgentError ? 1 : 2);
+}
 
 try {
   const run = await agent.send(request.prompt);
@@ -51,18 +86,25 @@ try {
 
   emit({ agent: "cursor", type: "started", message: "Cursor external implementation session started" });
 
-  for await (const event of run.stream()) {
-    events.push(event);
-    if (event && typeof event === "object" && event.type === "status") {
-      const status = String(event.status || "").toUpperCase();
-      emit({ agent: "cursor", type: "status", message: JSON.stringify(event), raw: event });
-      if (status === "ERROR") {
-        lastErrorDetail = JSON.stringify(event);
+  try {
+    for await (const event of run.stream()) {
+      events.push(event);
+      if (event && typeof event === "object" && event.type === "status") {
+        const status = String(event.status || "").toUpperCase();
+        emit({ agent: "cursor", type: "status", message: JSON.stringify(event), raw: event });
+        if (status === "ERROR") {
+          lastErrorDetail = JSON.stringify(event);
+        }
+        continue;
       }
-      continue;
+      const text = typeof event === "string" ? event : JSON.stringify(event);
+      emit({ agent: "cursor", type: "message", message: text, raw: event });
     }
-    const text = typeof event === "string" ? event : JSON.stringify(event);
-    emit({ agent: "cursor", type: "message", message: text, raw: event });
+  } catch (err) {
+    const message = "Cursor agent stream failed: " + formatError(err);
+    emit({ agent: "cursor", type: "error", message });
+    console.error(message);
+    process.exit(2);
   }
 
   const result = await run.wait();
@@ -103,8 +145,8 @@ try {
 } catch (err) {
   const message =
     err instanceof CursorAgentError
-      ? "Cursor startup failed: " + err.message + " (retryable=" + Boolean(err.isRetryable) + ")"
-      : err?.message || String(err);
+      ? "Cursor startup failed: " + formatError(err) + " (retryable=" + Boolean(err.isRetryable) + ")"
+      : "Cursor agent failed: " + formatError(err);
   emit({ agent: "cursor", type: "error", message });
   console.error(message);
   process.exit(err instanceof CursorAgentError ? 1 : 2);
@@ -166,6 +208,7 @@ func Ensure(ctx context.Context, runnerDir string) error {
 	defer cancel()
 	cmd := exec.CommandContext(installCtx, NPMBin(), "install", "--silent", "--no-audit", "--no-fund")
 	cmd.Dir = runnerDir
+	cmd.Env = CommandEnv()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -184,6 +227,7 @@ func Command(ctx context.Context, runnerDir, requestPath string) (*exec.Cmd, err
 	}
 	cmd := exec.CommandContext(ctx, NodeBin(), filepath.Join(runnerDir, "runner.mjs"), requestPath)
 	cmd.Dir = runnerDir
+	cmd.Env = CommandEnv()
 	return cmd, nil
 }
 

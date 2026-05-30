@@ -88,6 +88,10 @@ func RenderServiceEnvFile(listen, token string) string {
 	b.WriteString("# Optional GUI overrides if native folder picker fails under systemd:\n")
 	b.WriteString("# DISPLAY=:0\n")
 	b.WriteString("# WAYLAND_DISPLAY=wayland-0\n")
+	b.WriteString("# Cursor SDK on host (required when systemd PATH lacks node/npm):\n")
+	b.WriteString("# OMNI_CURSOR_NODE_BIN=/home/you/.local/share/mise/installs/node/VERSION/bin/node\n")
+	b.WriteString("# OMNI_CURSOR_NPM_BIN=/home/you/.local/share/mise/installs/node/VERSION/bin/npm\n")
+	b.WriteString("# PATH=/home/you/.local/share/mise/shims:/usr/bin:/bin\n")
 	return b.String()
 }
 
