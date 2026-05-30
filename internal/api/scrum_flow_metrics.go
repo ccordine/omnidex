@@ -12,11 +12,13 @@ import (
 )
 
 const (
-	scrumFlowEventColumnMove   = "column_move"
-	scrumFlowEventPlayStarted  = "play_started"
-	scrumFlowEventPlayFinished = "play_finished"
-	scrumFlowEventPlayPaused   = "play_paused"
-	scrumFlowEventConversation = "conversation"
+	scrumFlowEventColumnMove       = "column_move"
+	scrumFlowEventPlayStarted      = "play_started"
+	scrumFlowEventPlayFinished     = "play_finished"
+	scrumFlowEventPlayPaused       = "play_paused"
+	scrumFlowEventConversation     = "conversation"
+	scrumFlowEventReviewGatePassed = "review_gate_passed"
+	scrumFlowEventReviewGateFailed = "review_gate_failed"
 )
 
 type ScrumFlowMetrics struct {
@@ -31,6 +33,7 @@ type ScrumFlowMetrics struct {
 	CompletionStatus    string   `json:"completion_status"`
 	Signals             []string `json:"signals"`
 	LastPlayOutcome     string   `json:"last_play_outcome,omitempty"`
+	ReviewGate          string   `json:"review_gate,omitempty"`
 	Column              string   `json:"column,omitempty"`
 	UpdatedAt           string   `json:"updated_at,omitempty"`
 }
@@ -148,6 +151,10 @@ func computeScrumFlowMetrics(card ScrumCard, events []queue.ScrumFlowEvent) Scru
 					metrics.LastPlayOutcome = strings.TrimSpace(outcome)
 				}
 			}
+		case scrumFlowEventReviewGatePassed:
+			metrics.ReviewGate = "passed"
+		case scrumFlowEventReviewGateFailed:
+			metrics.ReviewGate = "failed"
 		}
 	}
 

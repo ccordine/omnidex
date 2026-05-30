@@ -34,6 +34,58 @@ function tabPanelClass(tab: string, activeTab: string): string {
   return tab === activeTab ? "" : " hidden";
 }
 
+function scrumAutoReviewFromProject(project: ProjectRecord): { enabled: boolean; bounce_column: string } {
+  const raw = project.settings?.scrum_auto_review;
+  if (!raw || typeof raw !== "object") {
+    return { enabled: false, bounce_column: "assigned" };
+  }
+  const cfg = raw as Record<string, unknown>;
+  const bounce = typeof cfg.bounce_column === "string" && cfg.bounce_column.trim() ? cfg.bounce_column.trim() : "assigned";
+  return { enabled: Boolean(cfg.enabled), bounce_column: bounce };
+}
+
+function renderScrumAutomationSettings(project: ProjectRecord): string {
+  const autoReview = scrumAutoReviewFromProject(project);
+  const bounceOptions = ["assigned", "in_progress", "ready"]
+    .map((column) => {
+      const selected = autoReview.bounce_column === column ? " selected" : "";
+      const label = column === "in_progress" ? "In Progress" : column.charAt(0).toUpperCase() + column.slice(1);
+      return `<option value="${escapeHTML(column)}"${selected}>${escapeHTML(label)}</option>`;
+    })
+    .join("");
+  return `
+    <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Scrum automation</h3>
+          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-zinc-500">
+            When a card first lands in Review, queue an independent agent pass over the changes — checklist, test criteria, and recipe guide included.
+            Cards that fail bounce back for another implementation pass.
+          </p>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-4 lg:grid-cols-2">
+        <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-zinc-900/50 px-3 py-3 transition hover:border-cyan-300/30">
+          <input type="checkbox" data-projects-field="autoReviewEnabled" class="mt-1 rounded border-white/20 bg-zinc-900 text-cyan-300"${autoReview.enabled ? " checked" : ""} />
+          <span>
+            <span class="block text-sm font-medium text-zinc-100">Auto-review on Review</span>
+            <span class="mt-1 block text-xs text-zinc-500">Fresh agent eyes verify the work before humans see it.</span>
+          </span>
+        </label>
+        <label class="block">
+          <span class="text-xs text-zinc-500">Bounce failed reviews to</span>
+          <select data-projects-field="autoReviewBounce" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
+            ${bounceOptions}
+          </select>
+        </label>
+      </div>
+      <div class="mt-4">
+        <button type="button" data-action="projects#saveScrumAutomation" data-project-id="${project.id}" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Save scrum automation</button>
+      </div>
+    </section>
+  `;
+}
+
 export function renderProjectList(projects: ProjectRecord[]): string {
   if (!projects.length) {
     return `<div class="rounded-xl border border-dashed border-white/10 p-8 text-sm text-zinc-500">No projects yet. Create one by choosing a working directory on your machine.</div>`;
@@ -89,7 +141,7 @@ export function renderProjectDetail(
   const recipeJSON = JSON.stringify(project.recipe ?? {}, null, 2);
 
   const settingsTab = `
-    <div data-project-tab-panel="settings" class="scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto${tabPanelClass("settings", activeTab)}">
+    <div data-project-tab-panel="settings" class="scrollbar space-y-4${tabPanelClass("settings", activeTab)}">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
         <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Project</h3>
         <div class="mt-4 grid gap-4 lg:grid-cols-2">
@@ -138,13 +190,15 @@ export function renderProjectDetail(
             )
           : ""
       }
+
+      ${renderScrumAutomationSettings(project)}
     </div>
   `;
 
-  const mapTab = `<div data-project-tab-panel="map" class="scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto${tabPanelClass("map", activeTab)}">${renderProjectMapSection(project.id, projectMap)}</div>`;
+  const mapTab = `<div data-project-tab-panel="map" class="scrollbar space-y-4${tabPanelClass("map", activeTab)}">${renderProjectMapSection(project.id, projectMap)}</div>`;
 
   const recipeTab = `
-    <div data-project-tab-panel="recipe" class="scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto${tabPanelClass("recipe", activeTab)}">
+    <div data-project-tab-panel="recipe" class="scrollbar space-y-4${tabPanelClass("recipe", activeTab)}">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -167,7 +221,7 @@ export function renderProjectDetail(
 
   return `
     <div data-controller="terminal screen project-chat" class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-      <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
           <button type="button" data-action="projects#backToList" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">← All projects</button>
           <h3 class="mt-3 truncate text-2xl font-semibold tracking-tight text-zinc-100">${escapeHTML(project.name)}</h3>
@@ -185,7 +239,7 @@ export function renderProjectDetail(
 
       <nav class="flex shrink-0 flex-wrap gap-2" aria-label="Project sections">${renderProjectTabNav(activeTab)}</nav>
 
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div class="project-tab-stack">
       ${renderProjectScrumShell(project.location, activeTab)}
       ${renderProjectChatShell(project.name, { reasoning_mode: "instant" }, [], activeTab)}
       ${renderProjectTerminalShell(project.location, activeTab)}

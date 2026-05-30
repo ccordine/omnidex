@@ -85,12 +85,9 @@ func syncRunningJobChannelChat(card ScrumCard, job model.JobDetails) (ScrumCard,
 	if strings.TrimSpace(output) != "" && syncedLen < len(output) {
 		delta := output[syncedLen:]
 		if strings.TrimSpace(delta) != "" {
-			beforeLen := len(updated.Chat)
 			updated.Chat = appendParsedAgentStreamLines(updated.Chat, delta)
-			if len(updated.Chat) != beforeLen {
-				updated.Chat = setChannelSyncMarker(updated.Chat, len(output))
-				changed = true
-			}
+			updated.Chat = setChannelSyncMarker(updated.Chat, len(output))
+			changed = true
 		}
 	}
 

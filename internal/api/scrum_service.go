@@ -358,6 +358,8 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 	}
 	if projectID > 0 {
 		payload["project_id"] = projectID
+		payload["auto_play_through"] = s.scrumAutoPlayThroughEnabled(r.Context(), projectID)
+		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
 	}
 	return payload, nil
 }

@@ -40,6 +40,52 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"board": board})
+	case http.MethodPatch:
+		if s.repo == nil {
+			writeError(w, http.StatusServiceUnavailable, "patch requires queue mode")
+			return
+		}
+		var req struct {
+			AutoPlayThrough *bool                `json:"auto_play_through"`
+			AutoReview      *ScrumAutoReviewConfig `json:"auto_review"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		if req.AutoPlayThrough == nil && req.AutoReview == nil {
+			writeError(w, http.StatusBadRequest, "auto_play_through or auto_review is required")
+			return
+		}
+		projectID, err := s.resolveProjectID(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		project, err := s.repo.GetProject(r.Context(), projectID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		if req.AutoPlayThrough != nil {
+			if err := s.saveScrumAutoPlayThrough(r.Context(), project, *req.AutoPlayThrough); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			project, _ = s.repo.GetProject(r.Context(), projectID)
+		}
+		if req.AutoReview != nil {
+			if err := s.saveScrumAutoReviewConfig(r.Context(), project, *req.AutoReview); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+		payload, err := s.scrumBoardResponse(r)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, payload)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -403,11 +449,16 @@ func (s *Server) handleScrumCardSync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	payload := map[string]any{
 		"board":        board,
 		"cards_by_col": cardsByColumn(board),
 		"play_queue":   scrumPlayQueueSummary(board),
-	})
+	}
+	if projectID > 0 {
+		payload["auto_play_through"] = s.scrumAutoPlayThroughEnabled(r.Context(), projectID)
+		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func parseJobID(raw string) (int64, error) {

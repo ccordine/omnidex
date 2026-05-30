@@ -2,6 +2,8 @@ import { escapeHTML, trimText } from "./dom";
 import {
   COLUMN_LABELS,
   SCRUM_COLUMNS,
+  autoPlayThroughComplete,
+  pickScrumAutoPlayFocusCard,
   pickScrumFocusCard,
   type ScrumBoard,
   type ScrumBoardResponse,
@@ -33,6 +35,8 @@ function playStateBadge(card: ScrumCard): string {
       return `<span class="rounded-full border border-violet-300/40 bg-violet-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-200">Queued${card.queue_order ? ` #${card.queue_order}` : ""}</span>`;
     case "paused":
       return `<span class="rounded-full border border-zinc-400/40 bg-zinc-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">Paused</span>`;
+    case "reviewing":
+      return `<span class="rounded-full border border-cyan-300/40 bg-cyan-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100">Auto-review</span>`;
     default:
       return "";
   }
@@ -88,7 +92,7 @@ function renderColumn(column: string, cards: ScrumCard[], playQueue?: ScrumBoard
   const accent = COLUMN_ACCENT[column] ?? "border-white/10 bg-zinc-900/40";
   const items = cards.length ? cards.map((card) => renderCard(card, playQueue)).join("") : `<p class="scrum-column-empty rounded-md border border-dashed border-white/10 px-3 py-6 text-center text-xs text-zinc-500">Drop cards here</p>`;
   return `
-    <div class="scrum-column flex h-full min-h-0 min-w-[280px] flex-1 flex-col rounded-xl border ${accent} p-3" data-column="${escapeHTML(column)}" data-scrum-dropzone="${escapeHTML(column)}">
+    <div class="scrum-column min-w-[280px] rounded-xl border ${accent} p-3" data-column="${escapeHTML(column)}" data-scrum-dropzone="${escapeHTML(column)}">
       <header class="mb-3 flex shrink-0 items-center justify-between gap-2">
         <div class="flex items-center gap-2 min-w-0">
           <h3 class="truncate text-xs font-semibold uppercase tracking-[.16em] text-zinc-200">${escapeHTML(label)}</h3>
@@ -96,8 +100,26 @@ function renderColumn(column: string, cards: ScrumCard[], playQueue?: ScrumBoard
         </div>
         <button type="button" data-action="click->scrum#stopCardClick scrum#openCreateCardModal" data-column="${escapeHTML(column)}" class="shrink-0 rounded border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400 transition hover:border-cyan-300/40 hover:text-cyan-200" title="Add card">+</button>
       </header>
-      <div class="scrum-column-dropzone scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">${items}</div>
+      <div class="scrum-column-dropzone scrollbar space-y-3 pr-1">${items}</div>
     </div>
+  `;
+}
+
+function renderAutoPlayToggle(enabled: boolean, complete: boolean): string {
+  const checked = enabled ? " checked" : "";
+  const completeNote = complete && enabled
+    ? `<span class="rounded-full border border-emerald-300/35 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">All in review</span>`
+    : "";
+  return `
+    <label class="group flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-zinc-900/80 px-2.5 py-1.5 transition hover:border-cyan-300/30" title="Auto-play cards top to bottom until everything reaches Review">
+      <span class="relative inline-flex h-5 w-9 shrink-0 items-center">
+        <input type="checkbox" data-action="change->scrum#toggleAutoPlay" class="peer sr-only"${checked} />
+        <span class="absolute inset-0 rounded-full bg-zinc-700 shadow-inner transition peer-checked:bg-gradient-to-r peer-checked:from-cyan-400 peer-checked:to-emerald-400 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-300/50"></span>
+        <span class="absolute left-0.5 h-4 w-4 rounded-full bg-zinc-100 shadow transition peer-checked:translate-x-4 peer-checked:bg-white"></span>
+      </span>
+      <span class="text-[10px] font-semibold uppercase tracking-[.14em] ${enabled ? "text-cyan-100" : "text-zinc-400"} transition group-hover:text-zinc-200">Auto</span>
+      ${completeNote}
+    </label>
   `;
 }
 
@@ -105,24 +127,32 @@ export function renderScrumFocusBar(
   board: ScrumBoard,
   cardsByCol: Record<string, ScrumCard[]>,
   playQueue?: ScrumBoardResponse["play_queue"],
+  autoPlayThrough = false,
+  autoReviewEnabled = false,
 ): string {
-  const focus = pickScrumFocusCard(board, cardsByCol, playQueue);
+  const autoToggle = renderAutoPlayToggle(autoPlayThrough, autoPlayThroughComplete(cardsByCol, autoReviewEnabled));
+  const focus = autoPlayThrough
+    ? pickScrumAutoPlayFocusCard(board, cardsByCol, playQueue)
+    : pickScrumFocusCard(board, cardsByCol, playQueue);
   if (!focus) {
     return `
-      <div class="flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 bg-zinc-950/40 px-4 py-2.5 text-center">
-        <span class="text-xs text-zinc-500">Nothing in Assigned or In Progress</span>
+      <div class="flex items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 bg-zinc-950/40 px-4 py-2.5 text-center">
+        ${autoToggle}
+        <span class="text-xs text-zinc-500">${autoPlayThrough ? "Auto-play complete — every card is in Review" : "Nothing in Assigned or In Progress"}</span>
       </div>
     `;
   }
 
   const columnLabel = COLUMN_LABELS[focus.column] ?? focus.column;
-  const isRunning = focus.play_state === "running";
+  const isRunning = focus.play_state === "running" || focus.play_state === "reviewing";
   const isQueued = focus.play_state === "queued";
   const hasActiveRunner = Boolean(playQueue?.running_card_id);
   const playLabel = hasActiveRunner && !isRunning ? "Queue" : "Play";
 
   const stateBadge = isRunning
-    ? `<span class="rounded-full border border-amber-300/40 bg-amber-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Running</span>`
+    ? focus.play_state === "reviewing"
+      ? `<span class="rounded-full border border-cyan-300/40 bg-cyan-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100">Auto-review</span>`
+      : `<span class="rounded-full border border-amber-300/40 bg-amber-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Running</span>`
     : isQueued
       ? `<span class="rounded-full border border-violet-300/40 bg-violet-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-200">Queued${focus.queue_order ? ` #${focus.queue_order}` : ""}</span>`
       : `<span class="rounded-full border border-white/10 bg-zinc-900/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">${escapeHTML(columnLabel)}</span>`;
@@ -141,10 +171,15 @@ export function renderScrumFocusBar(
       ? `<button type="button" data-action="scrum#pivotPlay" data-card-id="${escapeHTML(focus.id)}" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-xs font-semibold text-violet-100 transition hover:bg-violet-300/20" title="Play this card now">Play now</button>`
       : "";
 
+  const nowPlayingLabel = autoPlayThrough && !isRunning && !isQueued
+    ? "Up next"
+    : "Now playing";
+
   return `
     <div class="flex max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/70 px-4 py-2.5 shadow-[0_10px_30px_rgba(0,0,0,.18)]">
+      ${autoToggle}
       <div class="min-w-0 flex-1">
-        <p class="text-[10px] font-semibold uppercase tracking-[.18em] text-zinc-500">Now playing</p>
+        <p class="text-[10px] font-semibold uppercase tracking-[.18em] text-zinc-500">${nowPlayingLabel}</p>
         <button type="button" data-action="scrum#openCard" data-card-id="${escapeHTML(focus.id)}" class="mt-0.5 block max-w-full truncate text-left text-sm font-semibold text-zinc-100 transition hover:text-cyan-200" title="${escapeHTML(focus.title)}">${escapeHTML(focus.title)}</button>
       </div>
       <div class="flex shrink-0 items-center gap-2">
@@ -159,7 +194,7 @@ export function renderScrumFocusBar(
 
 export function renderScrumBoard(board: ScrumBoard, cardsByCol: Record<string, ScrumCard[]>, playQueue?: ScrumBoardResponse["play_queue"]): string {
   const columns = board.columns?.length ? board.columns : [...SCRUM_COLUMNS];
-  return `<div class="flex h-full min-h-0 items-stretch gap-3 pb-1">${columns.map((column) => renderColumn(column, cardsByCol[column] ?? [], playQueue)).join("")}</div>`;
+  return columns.map((column) => renderColumn(column, cardsByCol[column] ?? [], playQueue)).join("");
 }
 
 export function renderScrumEmptyState(message: string): string {
@@ -209,7 +244,7 @@ export function renderScrumFlowSummary(summary?: ScrumFlowSummary | null): strin
 export function renderProjectScrumShell(projectLocation: string, activeTab = "scrum"): string {
   const hidden = activeTab !== "scrum" ? " hidden" : "";
   return `
-    <div data-project-tab-panel="scrum" class="flex min-h-0 flex-1 flex-col gap-3${hidden}">
+    <div data-project-tab-panel="scrum" class="flex min-h-0 flex-col gap-3${hidden}">
       <div class="grid shrink-0 grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <p class="truncate font-mono text-[11px] text-zinc-500 lg:justify-self-start">${escapeHTML(projectLocation)}</p>
         <div data-scrum-target="focus" class="flex justify-center lg:justify-self-center">
@@ -224,9 +259,9 @@ export function renderProjectScrumShell(projectLocation: string, activeTab = "sc
 
       <div data-scrum-target="flowSummary" class="hidden shrink-0"></div>
 
-      <div class="relative scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-hidden" data-scrum-board-scroll>
+      <div class="relative scrollbar flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden" data-scrum-board-scroll>
         ${renderScrumBoardLoadingOverlay()}
-        <div data-scrum-target="board" class="scrum-kanban h-full min-h-0">
+        <div data-scrum-target="board" class="scrum-kanban min-h-0">
           ${renderScrumEmptyState("Loading scrum board…")}
         </div>
       </div>

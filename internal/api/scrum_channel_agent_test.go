@@ -11,7 +11,9 @@ func TestScrumChannelPlayColumn(t *testing.T) {
 		channelOrigin bool
 		want          string
 	}{
-		{"review", true, "review"},
+		{"review", true, "in_progress"},
+		{"backlog", true, "in_progress"},
+		{"blocked", true, "in_progress"},
 		{"review", false, "in_progress"},
 		{"assigned", true, "in_progress"},
 		{"ready", true, "in_progress"},
@@ -22,6 +24,13 @@ func TestScrumChannelPlayColumn(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("scrumChannelPlayColumn(%q, %v)=%q want %q", tc.current, tc.channelOrigin, got, tc.want)
 		}
+	}
+}
+
+func TestMoveScrumCardToInProgress(t *testing.T) {
+	card := moveScrumCardToInProgress(ScrumCard{Column: "backlog", PlayState: scrumPlayQueued, QueueOrder: 3})
+	if card.Column != "in_progress" || card.PlayState != "" || card.QueueOrder != 0 {
+		t.Fatalf("card=%+v", card)
 	}
 }
 

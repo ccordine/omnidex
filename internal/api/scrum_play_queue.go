@@ -180,12 +180,18 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 	if s.repo == nil {
 		return board, nil
 	}
-	shouldAutoAdvance := false
 	for i, card := range board.Cards {
+		if reconciled, ok := s.reconcileScrumCardJobState(r.Context(), projectID, card); ok {
+			if saved, err := s.persistScrumCardFromContext(r.Context(), projectID, reconciled); err == nil {
+				board.Cards[i] = saved
+				card = saved
+			}
+		}
 		if strings.TrimSpace(card.JobID) == "" {
 			continue
 		}
-		watching := card.PlayState == scrumPlayRunning || normalizeScrumColumn(card.Column) == "in_progress"
+		autoReviewJob := card.PlayState == scrumPlayReviewing
+		watching := card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing || normalizeScrumColumn(card.Column) == "in_progress"
 		if !watching {
 			continue
 		}
@@ -197,43 +203,54 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		if err != nil {
 			continue
 		}
+		if autoReviewJob && !isScrumAutoReviewJob(job.Job.Metadata) {
+			autoReviewJob = false
+		}
 		updated := card
 		cardChanged := false
-		var outcome ScrumManagerOutcome
+		fromColumn := card.Column
 		switch job.Job.Status {
 		case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
-			outcome, scanNote := s.resolveScrumPlayOutcome(r.Context(), job)
-			transition := scrumColumnForOutcome(outcome)
-			transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)
-			if scanNote != "" {
-				transition.ConsoleNote = transition.ConsoleNote + " · " + scanNote
-			}
-			if agentOutput := strings.TrimSpace(collectScrumAgentOutput(job)); agentOutput != "" {
-				summary := agentOutput
-				if len(summary) > 4000 {
-					summary = summary[len(summary)-4000:]
+			if autoReviewJob {
+				if finished, ok := s.finishScrumAutoReview(r, projectID, updated, job); ok {
+					updated = finished
+					cardChanged = true
 				}
-				if len(summary) > 0 && !strings.Contains(updated.ConsoleLog, summary[:min(120, len(summary))]) {
-					updated = appendScrumChannelEvent(updated, "assistant", summary)
+			} else {
+				outcome, scanNote := s.resolveScrumPlayOutcome(r.Context(), job)
+				transition := scrumColumnForOutcome(outcome)
+				transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)
+				if scanNote != "" {
+					transition.ConsoleNote = transition.ConsoleNote + " · " + scanNote
 				}
-				if note := scrumAgentConfigErrorNote(agentOutput); note != "" {
-					transition.ConsoleNote = note
+				if agentOutput := strings.TrimSpace(collectScrumAgentOutput(job)); agentOutput != "" {
+					summary := agentOutput
+					if len(summary) > 4000 {
+						summary = summary[len(summary)-4000:]
+					}
+					if len(summary) > 0 && !strings.Contains(updated.ConsoleLog, summary[:min(120, len(summary))]) {
+						updated = appendScrumChannelEvent(updated, "assistant", summary)
+					}
+					if note := scrumAgentConfigErrorNote(agentOutput); note != "" {
+						transition.ConsoleNote = note
+					}
 				}
-			}
-			updated.Column = transition.Column
-			updated.PlayState = transition.PlayState
-			updated.QueueOrder = 0
-			updated = appendScrumChannelEvent(updated, "system", transition.ConsoleNote)
-			cardChanged = true
-			if s.repo != nil && projectID > 0 {
-				payload, _ := json.Marshal(map[string]any{
-					"outcome": string(outcome),
-					"job_id":  strings.TrimSpace(card.JobID),
-				})
-				_ = s.repo.RecordScrumFlowEvent(
-					r.Context(), projectID, card.ID, scrumFlowEventPlayFinished,
-					card.Column, transition.Column, card.PlayState, transition.PlayState, payload,
-				)
+				fromColumn = card.Column
+				updated.Column = transition.Column
+				updated.PlayState = transition.PlayState
+				updated.QueueOrder = 0
+				updated = appendScrumChannelEvent(updated, "system", transition.ConsoleNote)
+				cardChanged = true
+				if s.repo != nil && projectID > 0 {
+					payload, _ := json.Marshal(map[string]any{
+						"outcome": string(outcome),
+						"job_id":  strings.TrimSpace(card.JobID),
+					})
+					_ = s.repo.RecordScrumFlowEvent(
+						r.Context(), projectID, card.ID, scrumFlowEventPlayFinished,
+						card.Column, transition.Column, card.PlayState, transition.PlayState, payload,
+					)
+				}
 			}
 		default:
 			if synced, ok := syncRunningJobConsoleLog(updated, job); ok {
@@ -247,8 +264,10 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		if cardChanged {
 			if saved, err := s.persistScrumCard(r, projectID, updated); err == nil {
 				board.Cards[i] = saved
-				if scrumManagerAutoAdvance(outcome) {
-					shouldAutoAdvance = true
+				if normalizeScrumColumn(saved.Column) == "review" && normalizeScrumColumn(fromColumn) != "review" {
+					if reviewed, err := s.maybeStartScrumAutoReview(r, projectID, board, saved, fromColumn); err == nil {
+						board.Cards[i] = reviewed
+					}
 				}
 			}
 		} else if scrumCardChannelChanged(card, updated) {
@@ -261,21 +280,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 	if s.findRunningScrumCard(board) != nil {
 		return board, nil
 	}
-	if !shouldAutoAdvance {
-		return board, nil
-	}
-	next := s.nextAutoPlayScrumCard(board)
-	if next == nil {
-		return board, nil
-	}
-	if _, err := s.startScrumCardPlay(r, board, projectID, next.ID, agentconfig.Config{}); err != nil {
-		// Stop the chain on enqueue failure (rate limits, token budget, etc.).
-		return board, nil
-	}
-	if projectID > 0 {
-		return s.scrumBoardFromProject(r.Context(), projectID)
-	}
-	return s.scrumStore.Board(), nil
+	return s.kickoffAutoPlayThrough(r, projectID, board)
 }
 
 func (s *Server) persistScrumCard(r *http.Request, projectID int64, card ScrumCard) (ScrumCard, error) {
@@ -301,7 +306,7 @@ func (s *Server) persistScrumCard(r *http.Request, projectID int64, card ScrumCa
 
 func (s *Server) findRunningScrumCard(board ScrumBoard) *ScrumCard {
 	for i, card := range board.Cards {
-		if card.PlayState == scrumPlayRunning {
+		if card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing {
 			return &board.Cards[i]
 		}
 	}

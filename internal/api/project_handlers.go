@@ -506,7 +506,6 @@ func dbScrumCardToAPI(card queue.DBScrumCard) ScrumCard {
 	_ = json.Unmarshal(card.PlanningChat, &out.PlanningChat)
 	_ = json.Unmarshal(card.Tags, &out.Tags)
 	_ = json.Unmarshal(card.TestCriteria, &out.TestCriteria)
-	out.Chat = displayScrumChannelMessages(out)
 	return out
 }
 

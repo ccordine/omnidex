@@ -62,6 +62,7 @@ export type ScrumFlowMetrics = {
   completion_status?: "likely_complete" | "likely_incomplete" | "uncertain" | string;
   signals?: string[];
   last_play_outcome?: string;
+  review_gate?: "" | "passed" | "failed" | "pending" | "running" | string;
   column?: string;
 };
 
@@ -86,7 +87,7 @@ export type ScrumCard = {
   agent_config?: Record<string, string>;
   job_id?: string;
   console_log?: string;
-  play_state?: "" | "queued" | "running" | "paused";
+  play_state?: "" | "queued" | "running" | "paused" | "reviewing";
   queue_order?: number;
   board_order?: number;
   jira_ticket?: string;
@@ -111,10 +112,17 @@ export type ScrumBoard = {
   updated_at: string;
 };
 
+export type ScrumAutoReviewConfig = {
+  enabled?: boolean;
+  bounce_column?: string;
+};
+
 export type ScrumBoardResponse = {
   board: ScrumBoard;
   cards_by_col: Record<string, ScrumCard[]>;
   project_id?: number;
+  auto_play_through?: boolean;
+  auto_review?: ScrumAutoReviewConfig;
   play_queue?: {
     running_card_id?: string;
     queued_count: number;
@@ -168,6 +176,38 @@ export function groupCardsByColumn(board: ScrumBoard): Record<string, ScrumCard[
     out[col].sort((a, b) => (a.board_order ?? 0) - (b.board_order ?? 0));
   }
   return out;
+}
+
+/** Columns auto-play walks top-to-bottom before stopping at review. */
+export const AUTO_PLAY_WORK_COLUMNS = ["backlog", "ready", "assigned", "in_progress", "blocked"] as const;
+
+export function autoPlayThroughComplete(cardsByCol: Record<string, ScrumCard[]>, autoReviewEnabled = false): boolean {
+  const cards = Object.values(cardsByCol).flat();
+  if (!cards.length) return false;
+  return cards.every((card) => {
+    if (card.column === "done") return true;
+    if (card.column === "review") {
+      return !autoReviewEnabled || card.play_state !== "reviewing";
+    }
+    return false;
+  });
+}
+
+export function pickScrumAutoPlayFocusCard(
+  board: ScrumBoard,
+  cardsByCol: Record<string, ScrumCard[]>,
+  playQueue?: ScrumBoardResponse["play_queue"],
+): ScrumCard | null {
+  const running = pickScrumFocusCard(board, cardsByCol, playQueue);
+  if (running?.play_state === "running" || running?.play_state === "queued") {
+    return running;
+  }
+  for (const column of AUTO_PLAY_WORK_COLUMNS) {
+    const cards = [...(cardsByCol[column] ?? [])].sort((a, b) => (a.board_order ?? 0) - (b.board_order ?? 0));
+    const next = cards.find((card) => card.play_state !== "running" && card.play_state !== "queued");
+    if (next) return next;
+  }
+  return running;
 }
 
 export function pickScrumFocusCard(

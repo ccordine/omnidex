@@ -38,6 +38,11 @@ func (s *Server) scrumMoveCard(r *http.Request, cardID, column, beforeCardID str
 					updated.FlowMetrics = metrics
 				}
 			}
+			if normalizeScrumColumn(before[updated.ID].Column) != "review" && normalizeScrumColumn(updated.Column) == "review" {
+				if reviewed, err := s.maybeStartScrumAutoReview(r, projectID, board, updated, before[updated.ID].Column); err == nil {
+					updated = reviewed
+				}
+			}
 			return updated, nil
 		}
 	}

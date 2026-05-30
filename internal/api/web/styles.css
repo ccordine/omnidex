@@ -227,22 +227,79 @@ body {
   color: rgb(161, 161, 170);
 }
 
+[data-scrum-board-scroll] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  touch-action: pan-x pan-y;
+}
+
+/* Project detail: one grid cell constrains height so tab panels can scroll */
+[data-projects-target="detail"] {
+  min-height: 0;
+}
+
+.project-tab-stack {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+}
+
+.project-tab-stack > [data-project-tab-panel] {
+  grid-row: 1;
+  grid-column: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.project-tab-stack > [data-project-tab-panel]:not(.hidden) {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.project-tab-stack > [data-project-tab-panel="scrum"]:not(.hidden),
+.project-tab-stack > [data-project-tab-panel="chat"]:not(.hidden),
+.project-tab-stack > [data-project-tab-panel="terminal"]:not(.hidden),
+.project-tab-stack > [data-project-tab-panel="screen"]:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.project-tab-stack > [data-project-tab-panel="scrum"]:not(.hidden) [data-scrum-board-scroll] {
+  touch-action: pan-x pan-y;
+}
+
 .scrum-kanban {
   display: flex;
+  flex: 1 1 0;
+  align-items: stretch;
   gap: 0.875rem;
   min-height: 0;
   min-width: min-content;
-  height: 100%;
+  padding-bottom: 0.25rem;
 }
 
 .scrum-column {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
   max-height: 100%;
   min-height: 0;
 }
 
 .scrum-column-dropzone {
+  flex: 1 1 0;
   min-height: 0;
+  overflow-y: scroll;
   overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .scrum-card {
@@ -512,7 +569,7 @@ html[dir="rtl"] .slide-drawer-right.is-open .slide-drawer-panel-right {
 }
 
 .scrum-card-draggable {
-  touch-action: none;
+  touch-action: pan-y;
 }
 
 .scrum-card-dragging {

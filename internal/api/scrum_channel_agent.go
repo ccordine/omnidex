@@ -66,10 +66,12 @@ func (s *Server) dispatchScrumChannelMessage(
 	agent := s.scrumCardResolvedAgent(r.Context(), projectID, card).System()
 	out := scrumChannelDispatchResult{Card: card, Agent: agent}
 
-	if card.PlayState == scrumPlayQueued {
-		out.Action = "saved"
-		return out, nil
+	prepared, err := s.prepareScrumCardForChannelDispatch(r.Context(), projectID, card)
+	if err != nil {
+		return scrumChannelDispatchResult{}, err
 	}
+	card = prepared
+	out.Card = card
 
 	if card.PlayState == scrumPlayRunning && strings.TrimSpace(card.JobID) != "" && s.repo != nil {
 		jobID, err := parseJobID(card.JobID)
@@ -77,6 +79,7 @@ func (s *Server) dispatchScrumChannelMessage(
 			return scrumChannelDispatchResult{}, err
 		}
 		if _, err := s.repo.InterruptJob(r.Context(), jobID, instruction); err == nil {
+			card = moveScrumCardToInProgress(card)
 			card = appendScrumChannelEvent(card, "system", "Channel steer sent to running agent")
 			saved, err := s.persistScrumCard(r, projectID, card)
 			if err != nil {
@@ -87,6 +90,7 @@ func (s *Server) dispatchScrumChannelMessage(
 			return out, nil
 		}
 		if _, err := s.repo.SubmitJobFeedback(r.Context(), jobID, instruction); err == nil {
+			card = moveScrumCardToInProgress(card)
 			card = appendScrumChannelEvent(card, "system", "Channel message sent to waiting agent")
 			saved, err := s.persistScrumCard(r, projectID, card)
 			if err != nil {
@@ -96,13 +100,14 @@ func (s *Server) dispatchScrumChannelMessage(
 			out.Action = "feedback"
 			return out, nil
 		}
+		// Running job could not accept steer — cancel and start a fresh channel run.
+		_, _ = s.repo.CancelJob(r.Context(), jobID, "channel message started new run")
+		card.JobID = ""
+		card.PlayState = ""
+		card.QueueOrder = 0
 	}
 
-	if nextPlayColumn(card.Column) == "" && card.PlayState != scrumPlayPaused {
-		out.Action = "saved"
-		return out, nil
-	}
-
+	card = moveScrumCardToInProgress(card)
 	started, err := s.enqueueScrumCardAgentRun(r, board, projectID, card, agentconfig.Config{}, instruction, true)
 	if err != nil {
 		return scrumChannelDispatchResult{}, err
@@ -193,21 +198,21 @@ func (s *Server) enqueueScrumCardAgentRun(
 	return s.persistScrumCard(r, projectID, card)
 }
 
-// scrumChannelPlayColumn keeps review cards in review during channel agent runs;
-// assigned/ready/in_progress cards move to in_progress like Play.
+// scrumChannelPlayColumn moves channel-origin runs to in_progress regardless of prior column.
 func scrumChannelPlayColumn(current string, channelOrigin bool) string {
-	current = normalizeScrumColumn(current)
-	if !channelOrigin {
+	if channelOrigin {
 		return "in_progress"
 	}
-	switch current {
-	case "review":
-		return "review"
-	case "ready", "assigned", "in_progress":
-		return "in_progress"
-	default:
-		return current
+	return "in_progress"
+}
+
+func moveScrumCardToInProgress(card ScrumCard) ScrumCard {
+	card.Column = "in_progress"
+	card.QueueOrder = 0
+	if card.PlayState == scrumPlayQueued || card.PlayState == scrumPlayPaused {
+		card.PlayState = ""
 	}
+	return card
 }
 
 // scrumChannelCompletionColumn returns the column after a channel-origin run finishes.

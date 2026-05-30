@@ -8,6 +8,7 @@ export type ScrumDragDropResult = {
 export type ScrumDragDropHandler = (result: ScrumDragDropResult) => void | Promise<void>;
 
 const DRAG_THRESHOLD_PX = 8;
+const SCROLL_INTENT_PX = 6;
 const EDGE_SCROLL_PX = 56;
 const EDGE_SCROLL_MAX = 18;
 
@@ -16,6 +17,19 @@ type ScrollLockEntry = {
   overflow: string;
   overscrollBehavior: string;
   touchAction: string;
+};
+
+type TouchProbe = {
+  cardID: string;
+  sourceColumn: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  cardEl: HTMLElement;
+  dropzone: HTMLElement;
+  sourceIndex: number;
+  onMove: (event: PointerEvent) => void;
+  onUp: (event: PointerEvent) => void;
 };
 
 type DropTarget = {
@@ -47,7 +61,9 @@ export class ScrumBoardDrag {
   private suppressClickUntil = 0;
   private scrollLockEntries: ScrollLockEntry[] = [];
   private edgeScrollFrame = 0;
+  private touchProbe: TouchProbe | null = null;
   private boundPointerDown = (event: PointerEvent) => this.onPointerDown(event);
+  private boundPendingPointerMove = (event: PointerEvent) => this.onPendingPointerMove(event);
   private boundPointerMove = (event: PointerEvent) => this.onPointerMove(event);
   private boundPointerUp = (event: PointerEvent) => this.onPointerUp(event);
   private boundTouchMove = (event: TouchEvent) => this.onTouchMove(event);
@@ -57,13 +73,14 @@ export class ScrumBoardDrag {
     this.unwire();
     this.board = board;
     this.onDrop = onDrop;
-    board.addEventListener("pointerdown", this.boundPointerDown, { capture: true });
+    board.addEventListener("pointerdown", this.boundPointerDown);
   }
 
   unwire() {
     if (this.board) {
-      this.board.removeEventListener("pointerdown", this.boundPointerDown, { capture: true });
+      this.board.removeEventListener("pointerdown", this.boundPointerDown);
     }
+    this.cancelTouchProbe();
     this.detachDocumentListeners();
     this.cleanupSession(false);
     this.board = null;
@@ -90,6 +107,13 @@ export class ScrumBoardDrag {
     const sourceColumn = cardEl.dataset.scrumColumn?.trim() ?? "";
     if (!cardID || !sourceColumn) return;
 
+    if (event.pointerType === "touch") {
+      this.cancelTouchProbe();
+      this.cancelPendingSession();
+      this.startTouchProbe(event, cardEl, cardID, sourceColumn);
+      return;
+    }
+
     this.session = {
       cardID,
       sourceColumn,
@@ -107,7 +131,119 @@ export class ScrumBoardDrag {
       sourceIndex: this.cardIndex(cardEl),
     };
 
-    this.attachDocumentListeners();
+    this.attachPendingListeners();
+  }
+
+  private onPendingPointerMove(event: PointerEvent) {
+    const session = this.session;
+    if (!session || session.dragging || event.pointerId !== session.pointerId) return;
+
+    session.lastX = event.clientX;
+    session.lastY = event.clientY;
+
+    const dx = event.clientX - session.startX;
+    const dy = event.clientY - session.startY;
+
+    if (session.pointerType === "touch" && this.isVerticalScrollIntent(dx, dy)) {
+      this.cancelPendingSession();
+      return;
+    }
+
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+
+    if (session.pointerType === "touch" && Math.abs(dy) > Math.abs(dx)) {
+      this.cancelPendingSession();
+      return;
+    }
+
+    this.detachPendingListeners();
+    this.beginDrag(session, event);
+    this.attachDragListeners();
+  }
+
+  private isVerticalScrollIntent(dx: number, dy: number): boolean {
+    return Math.abs(dy) >= SCROLL_INTENT_PX && Math.abs(dy) > Math.abs(dx);
+  }
+
+  private cancelPendingSession() {
+    this.detachPendingListeners();
+    this.session = null;
+  }
+
+  private startTouchProbe(event: PointerEvent, cardEl: HTMLElement, cardID: string, sourceColumn: string) {
+    const dropzone = cardEl.closest(".scrum-column-dropzone") as HTMLElement | null;
+    if (!dropzone) return;
+
+    const probe: TouchProbe = {
+      cardID,
+      sourceColumn,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      cardEl,
+      dropzone,
+      sourceIndex: this.cardIndex(cardEl),
+      onMove: () => {},
+      onUp: () => {},
+    };
+
+    probe.onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== probe.pointerId) return;
+
+      const dx = moveEvent.clientX - probe.startX;
+      const dy = moveEvent.clientY - probe.startY;
+
+      if (this.isVerticalScrollIntent(dx, dy)) {
+        this.cancelTouchProbe();
+        return;
+      }
+
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+
+      if (Math.abs(dy) > Math.abs(dx)) {
+        this.cancelTouchProbe();
+        return;
+      }
+
+      this.cancelTouchProbe();
+      this.session = {
+        cardID: probe.cardID,
+        sourceColumn: probe.sourceColumn,
+        pointerId: probe.pointerId,
+        pointerType: "touch",
+        startX: probe.startX,
+        startY: probe.startY,
+        lastX: moveEvent.clientX,
+        lastY: moveEvent.clientY,
+        dragging: false,
+        ghost: null,
+        placeholder: null,
+        cardEl: probe.cardEl,
+        dropTarget: null,
+        sourceIndex: probe.sourceIndex,
+      };
+      this.beginDrag(this.session, moveEvent);
+      this.attachDragListeners();
+    };
+
+    probe.onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== probe.pointerId) return;
+      this.cancelTouchProbe();
+    };
+
+    this.touchProbe = probe;
+    dropzone.addEventListener("pointermove", probe.onMove, { passive: true });
+    dropzone.addEventListener("pointerup", probe.onUp);
+    dropzone.addEventListener("pointercancel", probe.onUp);
+  }
+
+  private cancelTouchProbe() {
+    const probe = this.touchProbe;
+    if (!probe) return;
+    probe.dropzone.removeEventListener("pointermove", probe.onMove);
+    probe.dropzone.removeEventListener("pointerup", probe.onUp);
+    probe.dropzone.removeEventListener("pointercancel", probe.onUp);
+    this.touchProbe = null;
   }
 
   private onPointerMove(event: PointerEvent) {
@@ -120,14 +256,6 @@ export class ScrumBoardDrag {
 
     session.lastX = event.clientX;
     session.lastY = event.clientY;
-
-    if (!session.dragging) {
-      const dx = event.clientX - session.startX;
-      const dy = event.clientY - session.startY;
-      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-      this.beginDrag(session, event);
-      return;
-    }
 
     this.moveGhost(session, event.clientX, event.clientY);
     session.dropTarget = this.dropTargetAt(event.clientX, event.clientY, session);
@@ -169,7 +297,8 @@ export class ScrumBoardDrag {
       // pointer may already be released
     }
     this.cleanupSession(session.dragging);
-    this.detachDocumentListeners();
+    this.detachDragListeners();
+    this.detachPendingListeners();
     this.session = null;
   }
 
@@ -455,6 +584,7 @@ export class ScrumBoardDrag {
     const session = this.session;
     if (!session) return;
 
+    this.cancelTouchProbe();
     this.stopEdgeScroll();
     this.unlockScrolling();
     session.cardEl.classList.remove("scrum-card-dragging");
@@ -475,17 +605,34 @@ export class ScrumBoardDrag {
     }
   }
 
-  private attachDocumentListeners() {
+  private attachPendingListeners() {
+    document.addEventListener("pointermove", this.boundPendingPointerMove, { passive: true });
+    document.addEventListener("pointerup", this.boundPointerUp);
+    document.addEventListener("pointercancel", this.boundPointerUp);
+  }
+
+  private detachPendingListeners() {
+    document.removeEventListener("pointermove", this.boundPendingPointerMove);
+    document.removeEventListener("pointerup", this.boundPointerUp);
+    document.removeEventListener("pointercancel", this.boundPointerUp);
+  }
+
+  private attachDragListeners() {
     document.addEventListener("pointermove", this.boundPointerMove, { passive: false });
     document.addEventListener("pointerup", this.boundPointerUp);
     document.addEventListener("pointercancel", this.boundPointerUp);
     document.addEventListener("touchmove", this.boundTouchMove, { passive: false });
   }
 
-  private detachDocumentListeners() {
+  private detachDragListeners() {
     document.removeEventListener("pointermove", this.boundPointerMove);
     document.removeEventListener("pointerup", this.boundPointerUp);
     document.removeEventListener("pointercancel", this.boundPointerUp);
     document.removeEventListener("touchmove", this.boundTouchMove);
+  }
+
+  private detachDocumentListeners() {
+    this.detachDragListeners();
+    this.detachPendingListeners();
   }
 }

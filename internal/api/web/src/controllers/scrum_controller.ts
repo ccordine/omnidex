@@ -12,6 +12,7 @@ import {
   moveScrumCard,
   pauseScrumCard,
   patchScrumCard,
+  patchScrumAutoPlay,
   playScrumCard,
   syncScrumBoard,
   suggestScrumTags,
@@ -87,6 +88,9 @@ export default class ScrumController extends Controller {
   private lastBoardUpdatedAt = "";
   private scrumTabActive = true;
   private playQueue: ScrumBoardResponse["play_queue"] | null = null;
+  private autoPlayThrough = false;
+  private autoReviewEnabled = false;
+  private autoPlayToggleBusy = false;
   private flowSummary: ScrumBoardResponse["flow_summary"] | null = null;
   private activeCardTab: ScrumCardTab = "card";
   private channelPilotPendingCardID: string | null = null;
@@ -172,7 +176,13 @@ export default class ScrumController extends Controller {
   }
 
   private isPlayActive(): boolean {
-    return this.board?.cards.some((card) => card.play_state === "running" || card.play_state === "queued") ?? false;
+    if (this.autoPlayThrough) return true;
+    return (
+      this.board?.cards.some(
+        (card) =>
+          card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing",
+      ) ?? false
+    );
   }
 
   private isModalPlayLive(): boolean {
@@ -232,7 +242,6 @@ export default class ScrumController extends Controller {
 
   private async pollBoard() {
     if (!this.projectID || this.pollInFlight || this.boardDrag.isActive()) return;
-    if (this.channelPilotPendingCardID) return;
     this.pollInFlight = true;
     try {
       const payload = await fetchScrumBoard(this.projectID);
@@ -270,12 +279,19 @@ export default class ScrumController extends Controller {
     this.boardTarget.innerHTML = renderScrumBoard(this.board, cardsByCol, this.playQueue ?? undefined);
     this.renderFlowSummary();
     if (this.hasFocusTarget) {
-      this.focusTarget.innerHTML = renderScrumFocusBar(this.board, cardsByCol, this.playQueue ?? undefined);
+      this.focusTarget.innerHTML = renderScrumFocusBar(
+        this.board,
+        cardsByCol,
+        this.playQueue ?? undefined,
+        this.autoPlayThrough,
+        this.autoReviewEnabled,
+      );
     }
     if (updateStatus && this.isPlayActive()) {
       const queued = this.playQueue?.queued_count ?? 0;
       const running = this.playQueue?.running_card_id ? "running" : "idle";
-      this.setStatus(`Play queue: ${running}${queued ? `, ${queued} queued` : ""}`, "ok");
+      const autoNote = this.autoPlayThrough ? ", auto-play on" : "";
+      this.setStatus(`Play queue: ${running}${queued ? `, ${queued} queued` : ""}${autoNote}`, "ok");
     }
     this.wireBoardDragDrop();
   }
@@ -285,6 +301,8 @@ export default class ScrumController extends Controller {
     this.toastAgentColumnMoves(payload.board.cards);
     this.board = payload.board;
     this.playQueue = payload.play_queue ?? null;
+    this.autoPlayThrough = Boolean(payload.auto_play_through);
+    this.autoReviewEnabled = Boolean(payload.auto_review?.enabled);
     this.flowSummary = payload.flow_summary ?? null;
     if (!this.pollInFlight) {
       this.lastBoardUpdatedAt = this.boardLiveFingerprint(payload);
@@ -292,12 +310,19 @@ export default class ScrumController extends Controller {
     this.boardTarget.innerHTML = renderScrumBoard(payload.board, payload.cards_by_col, payload.play_queue);
     this.renderFlowSummary();
     if (this.hasFocusTarget) {
-      this.focusTarget.innerHTML = renderScrumFocusBar(payload.board, payload.cards_by_col, payload.play_queue);
+      this.focusTarget.innerHTML = renderScrumFocusBar(
+        payload.board,
+        payload.cards_by_col,
+        payload.play_queue,
+        this.autoPlayThrough,
+        this.autoReviewEnabled,
+      );
     }
     if (updateStatus && this.isPlayActive()) {
       const queued = payload.play_queue?.queued_count ?? 0;
       const running = payload.play_queue?.running_card_id ? "running" : "idle";
-      this.setStatus(`Play queue: ${running}${queued ? `, ${queued} queued` : ""}`, "ok");
+      const autoNote = this.autoPlayThrough ? ", auto-play on" : "";
+      this.setStatus(`Play queue: ${running}${queued ? `, ${queued} queued` : ""}${autoNote}`, "ok");
     }
     this.wireBoardDragDrop();
     this.syncPollInterval();
@@ -1011,6 +1036,35 @@ export default class ScrumController extends Controller {
     void this.withPlayAction(cardID, false);
   }
 
+  toggleAutoPlay(event: Event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.autoPlayToggleBusy || !this.projectID) return;
+    const input = event.currentTarget as HTMLInputElement;
+    const enabled = input.checked;
+    void this.setAutoPlayThrough(enabled, input);
+  }
+
+  private async setAutoPlayThrough(enabled: boolean, input?: HTMLInputElement) {
+    if (this.autoPlayToggleBusy || !this.projectID) return;
+    this.autoPlayToggleBusy = true;
+    this.setStatus(enabled ? "Enabling auto-play…" : "Disabling auto-play…", "busy");
+    try {
+      const payload = await patchScrumAutoPlay(enabled, this.projectID);
+      this.applyBoardPayload(payload, true);
+      this.startPolling();
+      if (enabled) {
+        showToast("Auto-play on — working cards top to bottom until Review", "info");
+      }
+      this.setStatus(`Auto-play ${enabled ? "enabled" : "disabled"}`, "ok");
+    } catch (error) {
+      if (input) input.checked = !enabled;
+      this.actionFail(error);
+    } finally {
+      this.autoPlayToggleBusy = false;
+    }
+  }
+
   pivotPlay(event: Event) {
     event.preventDefault();
     event.stopPropagation();
@@ -1406,9 +1460,16 @@ export default class ScrumController extends Controller {
     this.channelPilotPendingCardID = cardID;
     this.refreshChannelUI(cardID);
     this.setStatus("Sending…", "busy");
+    const pendingTimeout = window.setTimeout(() => {
+      if (this.channelPilotPendingCardID === cardID) {
+        this.channelPilotPendingCardID = null;
+        this.refreshChannelUI(cardID);
+      }
+    }, 45000);
 
     try {
       const payload = await chatScrumCard(cardID, message, this.projectID);
+      window.clearTimeout(pendingTimeout);
       this.upsertCard(payload.card);
       this.channelPilotPendingCardID = null;
       this.refreshChannelUI(cardID);
@@ -1419,11 +1480,14 @@ export default class ScrumController extends Controller {
       } else if (payload.action === "steered" || payload.action === "feedback") {
         this.actionOk(`Sent to agent${payload.agent ? ` (${payload.agent})` : ""}`);
       } else if (payload.action === "started") {
-        this.actionOk(`Agent started${payload.agent ? ` (${payload.agent})` : ""}`);
+        this.actionOk(`Agent started — card moved to in progress${payload.agent ? ` (${payload.agent})` : ""}`);
+      } else if (payload.action === "saved") {
+        this.actionOk("Message saved");
       } else {
-        this.actionOk(payload.action === "saved" ? "Message saved" : "Message sent");
+        this.actionOk("Message sent");
       }
     } catch (error) {
+      window.clearTimeout(pendingTimeout);
       this.channelPilotPendingCardID = null;
       this.refreshChannelUI(cardID);
       this.actionFail(error);

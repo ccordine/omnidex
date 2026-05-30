@@ -21,6 +21,30 @@ export async function updateScrumBoard(
   return payload.board;
 }
 
+export async function patchScrumAutoPlay(
+  enabled: boolean,
+  projectID?: number | null,
+): Promise<ScrumBoardResponse> {
+  const response = await fetch(`/v1/scrum${projectQuery(projectID)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ auto_play_through: enabled }),
+  });
+  return readJSON<ScrumBoardResponse>(response);
+}
+
+export async function patchScrumAutoReview(
+  config: import("./scrum_types").ScrumAutoReviewConfig,
+  projectID?: number | null,
+): Promise<ScrumBoardResponse> {
+  const response = await fetch(`/v1/scrum${projectQuery(projectID)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ auto_review: config }),
+  });
+  return readJSON<ScrumBoardResponse>(response);
+}
+
 export async function createScrumCard(
   title: string,
   description: string,

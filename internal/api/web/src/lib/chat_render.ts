@@ -162,6 +162,7 @@ export function scrumMessagesToChat(messages: ScrumChatMessage[] = []): ChatRend
       const content = (message.content || "").trim();
       if (!content) return false;
       if (content.startsWith("[[context-sync:")) return false;
+      if (content.startsWith("[[agent-stream-len:")) return false;
       if (role === "status") return false;
       if (isScrumChannelNoiseContent(role, content)) return false;
       if (role === "tool") {

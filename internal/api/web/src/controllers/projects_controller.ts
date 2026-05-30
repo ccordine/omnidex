@@ -17,6 +17,7 @@ import {
 } from "../lib/project_api";
 import { renderBrowseModal, renderProjectCreateModal, renderProjectDetail, renderProjectList } from "../lib/project_render";
 import { renderProjectDebuggerModal } from "../lib/project_debugger_render";
+import { patchScrumAutoReview } from "../lib/scrum_api";
 import { fetchJobRecord } from "../lib/data_api";
 import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_config_render";
 import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_config_render";
@@ -556,6 +557,26 @@ export default class ProjectsController extends Controller {
       await updateProject(id, { agent_config: collectAgentFieldValues(this.detailTarget, "project") });
       await this.renderDetail(id);
       this.actionOk("Agent settings saved");
+    } catch (error) {
+      this.actionFail(error);
+    }
+  }
+
+  async saveScrumAutomation(event: Event) {
+    event.preventDefault();
+    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
+    if (!id) return;
+    const enabled = Boolean(
+      (this.detailTarget.querySelector('[data-projects-field="autoReviewEnabled"]') as HTMLInputElement | null)?.checked,
+    );
+    const bounceColumn =
+      (this.detailTarget.querySelector('[data-projects-field="autoReviewBounce"]') as HTMLSelectElement | null)?.value?.trim() ||
+      "assigned";
+    this.setStatus("Saving scrum automation…", "busy");
+    try {
+      await patchScrumAutoReview({ enabled, bounce_column: bounceColumn }, id);
+      await this.renderDetail(id);
+      this.actionOk("Scrum automation saved");
     } catch (error) {
       this.actionFail(error);
     }
