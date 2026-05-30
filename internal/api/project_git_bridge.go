@@ -11,7 +11,11 @@ func (s *Server) loadProjectGitStatusViaBridge(ctx context.Context, location str
 	if client == nil {
 		return nil, fmt.Errorf("project directory is not accessible locally")
 	}
-	payload, err := client.ProjectGitStatus(ctx, location)
+	resolved, err := resolveHostBridgeProjectPath(ctx, client, location)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := client.ProjectGitStatus(ctx, resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +23,10 @@ func (s *Server) loadProjectGitStatusViaBridge(ctx context.Context, location str
 		return nil, fmt.Errorf("host bridge returned empty git status")
 	}
 	if strings.TrimSpace(fmt.Sprint(payload["location"])) == "" {
-		payload["location"] = location
+		payload["location"] = resolved
+	}
+	if strings.TrimSpace(fmt.Sprint(payload["requested_location"])) == "" && resolved != location {
+		payload["requested_location"] = location
 	}
 	return payload, nil
 }

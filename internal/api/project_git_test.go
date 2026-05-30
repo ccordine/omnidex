@@ -53,29 +53,46 @@ func TestCollectProjectGitStatusRepo(t *testing.T) {
 }
 
 func TestLoadProjectGitStatusUsesHostBridgeWhenCoreMissing(t *testing.T) {
-	coreDir := t.TempDir()
-	missingPath := filepath.Join(coreDir, "bridge-only")
+	hostDir := t.TempDir()
+	projectDir := filepath.Join(hostDir, "repo")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/project/git" {
+		switch r.URL.Path {
+		case "/v1/browse":
+			path := r.URL.Query().Get("path")
+			if path != projectDir {
+				t.Fatalf("browse path=%q want %q", path, projectDir)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"path":    projectDir,
+				"parent":  hostDir,
+				"entries": []any{},
+			})
+		case "/v1/project/git":
+			if r.URL.Query().Get("path") != projectDir {
+				t.Fatalf("git path=%q want %q", r.URL.Query().Get("path"), projectDir)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"location": projectDir,
+				"source":   "host-bridge",
+				"is_repo":  true,
+				"clean":    true,
+				"branch":   "main",
+			})
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		if r.URL.Query().Get("path") != missingPath {
-			t.Fatalf("git path=%q want %q", r.URL.Query().Get("path"), missingPath)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"location": missingPath,
-			"source":   "host-bridge",
-			"is_repo":  true,
-			"clean":    true,
-			"branch":   "main",
-		})
 	}))
 	t.Cleanup(host.Close)
 
+	t.Setenv("WORKSPACE_ROOT", "/workspace")
+	t.Setenv("HOST_WORKSPACE_PATH", hostDir)
+
 	server := NewServerWithOptions(nil, &fakeLLMClient{}, ServerOptions{HostAgentURL: host.URL})
-	payload, err := server.loadProjectGitStatus(context.Background(), model.Project{}, missingPath)
+	payload, err := server.loadProjectGitStatus(context.Background(), model.Project{}, "/workspace/repo")
 	if err != nil {
 		t.Fatalf("loadProjectGitStatus: %v", err)
 	}

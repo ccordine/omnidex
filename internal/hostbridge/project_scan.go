@@ -175,24 +175,12 @@ func decodeProjectMapBlob(blob []byte) (map[string]any, error) {
 }
 
 func resolveScannableProjectPath(path string) (string, error) {
-	target := strings.TrimSpace(path)
-	if target == "" {
-		return "", fmt.Errorf("path is required")
-	}
-	abs, err := filepath.Abs(target)
+	workspace, err := resolveHostWorkspace(path)
 	if err != nil {
 		return "", err
 	}
-	abs = filepath.Clean(abs)
-	if err := ensureBrowseAllowed(abs, BrowseOptions{ExtraRoots: []string{abs}}); err != nil {
+	if err := ensureBrowseAllowed(workspace, BrowseOptions{ExtraRoots: []string{workspace}}); err != nil {
 		return "", err
 	}
-	stat, err := os.Stat(abs)
-	if err != nil {
-		return "", fmt.Errorf("path does not exist")
-	}
-	if !stat.IsDir() {
-		return "", fmt.Errorf("path must be a directory")
-	}
-	return abs, nil
+	return workspace, nil
 }
