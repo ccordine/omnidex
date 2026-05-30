@@ -50,6 +50,29 @@ func agentNDJSONLineToChatMessages(line string) []ScrumChatMessage {
 			Files:   event.Files,
 			Raw:     event.Raw,
 		})
+	case "thinking", "reasoning":
+		msg := strings.TrimSpace(event.Message)
+		if msg == "" {
+			msg = textFromRawAgentPayload(event.Raw)
+		}
+		if msg == "" {
+			return parseAgentSDKPayloadBytes(event.Raw)
+		}
+		if msg == "" {
+			return nil
+		}
+		return []ScrumChatMessage{{Role: "thinking", Content: msg}}
+	case "tool", "mcp_tool_call", "web_search":
+		if len(event.Raw) > 0 {
+			if msgs := parseAgentSDKPayloadBytes(event.Raw); len(msgs) > 0 {
+				return msgs
+			}
+		}
+		msg := strings.TrimSpace(event.Message)
+		if msg == "" {
+			return nil
+		}
+		return []ScrumChatMessage{toolCallActivity(msg, "", "completed", "")}
 	case "completed":
 		msg := formatAgentCompletionMessage(event.Message)
 		if msg == "" || isScrumChannelNoiseContent("assistant", msg) {
@@ -57,8 +80,16 @@ func agentNDJSONLineToChatMessages(line string) []ScrumChatMessage {
 		}
 		return []ScrumChatMessage{{Role: "assistant", Content: msg}}
 	case "message":
-		return parseAgentSDKPayload(event.Message)
+		if msgs := parseAgentSDKPayload(event.Message); len(msgs) > 0 {
+			return msgs
+		}
+		return parseAgentSDKPayloadBytes(event.Raw)
 	default:
+		if len(event.Raw) > 0 {
+			if msgs := parseAgentSDKPayloadBytes(event.Raw); len(msgs) > 0 {
+				return msgs
+			}
+		}
 		if msg := strings.TrimSpace(event.Message); msg != "" {
 			return []ScrumChatMessage{{Role: "assistant", Content: msg}}
 		}
@@ -81,6 +112,13 @@ func agentNDJSONLineToChatMessages(line string) []ScrumChatMessage {
 	return nil
 }
 
+func parseAgentSDKPayloadBytes(raw json.RawMessage) []ScrumChatMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	return parseAgentSDKPayload(string(raw))
+}
+
 func parseAgentSDKPayload(raw string) []ScrumChatMessage {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -95,17 +133,44 @@ func parseAgentSDKPayload(raw string) []ScrumChatMessage {
 	}
 	kind := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["type"])))
 	switch kind {
-	case "assistant":
+	case "assistant", "agent_message":
 		if text := extractAssistantText(payload); text != "" {
 			return []ScrumChatMessage{{Role: "assistant", Content: text}}
 		}
-	case "thinking":
-		if text := strings.TrimSpace(fmt.Sprint(payload["text"])); text != "" {
+		if text := textFromAgentPayload(payload); text != "" {
+			return []ScrumChatMessage{{Role: "assistant", Content: text}}
+		}
+	case "thinking", "reasoning":
+		if text := textFromAgentPayload(payload); text != "" {
 			return []ScrumChatMessage{{Role: "thinking", Content: text}}
 		}
-	case "tool_call", "tool", "function_call":
+	case "tool_call", "tool", "function_call", "mcp_tool_call":
 		if msgs := sdkToolCallToActivity(payload); len(msgs) > 0 {
 			return msgs
+		}
+		return nil
+	case "web_search":
+		query := firstNonEmpty(stringFromAnyMap(payload, "query"), stringFromAnyMap(payload, "text"))
+		if query == "" {
+			return nil
+		}
+		return []ScrumChatMessage{toolCallActivity("web_search", "", "completed", query)}
+	case "todo_list":
+		if text := todoListTextFromAgentPayload(payload); text != "" {
+			return []ScrumChatMessage{{Role: "thinking", Content: text}}
+		}
+		return nil
+	case "command_execution":
+		cmd := firstNonEmpty(stringFromAnyMap(payload, "command"), stringFromAnyMap(payload, "cmd"))
+		status := firstNonEmpty(stringFromAnyMap(payload, "status"), stringFromAnyMap(payload, "state"))
+		detail := firstNonEmpty(stringFromAnyMap(payload, "aggregated_output"), stringFromAnyMap(payload, "output"))
+		if cmd == "" && detail == "" {
+			return nil
+		}
+		return []ScrumChatMessage{commandActivity(cmd, status, detail)}
+	case "command_output":
+		if text := textFromAgentPayload(payload); text != "" {
+			return []ScrumChatMessage{outputActivity("Command output", text)}
 		}
 		return nil
 	case "edit", "write", "apply_patch", "replace":
@@ -130,10 +195,52 @@ func parseAgentSDKPayload(raw string) []ScrumChatMessage {
 	case "status":
 		return nil
 	}
-	if text := strings.TrimSpace(fmt.Sprint(payload["text"])); text != "" && text != "<nil>" {
+	if text := textFromAgentPayload(payload); text != "" {
 		return []ScrumChatMessage{{Role: "assistant", Content: text}}
 	}
 	return []ScrumChatMessage{{Role: "assistant", Content: raw}}
+}
+
+func textFromRawAgentPayload(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	return textFromAgentPayload(payload)
+}
+
+func textFromAgentPayload(payload map[string]any) string {
+	for _, key := range []string{"text", "message", "summary", "content", "aggregated_output", "output"} {
+		text := stringFromAnyMap(payload, key)
+		if text != "" && text != "<nil>" {
+			return text
+		}
+	}
+	return ""
+}
+
+func todoListTextFromAgentPayload(payload map[string]any) string {
+	items, _ := payload["items"].([]any)
+	if len(items) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(items))
+	for _, raw := range items {
+		item, _ := raw.(map[string]any)
+		text := stringFromAnyMap(item, "text")
+		if text == "" {
+			continue
+		}
+		prefix := "[ ]"
+		if done, _ := item["completed"].(bool); done {
+			prefix = "[x]"
+		}
+		lines = append(lines, prefix+" "+text)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func extractAssistantText(payload map[string]any) string {

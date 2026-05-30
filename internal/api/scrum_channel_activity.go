@@ -311,7 +311,11 @@ func agentEventToActivity(event struct {
 		if cmd == "" {
 			return nil
 		}
-		return []ScrumChatMessage{commandActivity(cmd, "running", event.Message)}
+		status := strings.TrimSpace(event.Message)
+		if strings.EqualFold(status, cmd) {
+			status = "running"
+		}
+		return []ScrumChatMessage{commandActivity(cmd, status, event.Message)}
 	case "file_change":
 		files := append([]string(nil), event.Files...)
 		extraFiles, diff := extractFileDiffsFromRaw(event.Raw)

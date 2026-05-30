@@ -8,7 +8,7 @@ import {
   fetchScrumBoard,
   fetchScrumFiles,
   fetchScrumTags,
-  cardTicketScrumCard,
+  streamCardTicketScrumCard,
   moveScrumCard,
   pauseScrumCard,
   patchScrumCard,
@@ -638,25 +638,27 @@ export default class ScrumController extends Controller {
     });
     this.setCardGeneratorLoading(true);
     try {
-      const result = await cardTicketScrumCard(cardID, payload, this.projectID);
-      if (result.queued && result.job?.id) {
-        const card = result.card ?? this.findCard(cardID);
-        if (card) this.upsertCard(card);
-        this.watchCardLlmJob(result.job.id, {
-          cardID,
-          kind: "ticket",
-          pendingKey,
-          cardTitle: card?.title ?? cardID,
-        });
-        const queuedMessage = result.message || `Queued job #${result.job.id}`;
-        this.setScrumModalFeedback(`${queuedMessage} — you can keep editing or close this card`, "busy");
-        this.actionOk(queuedMessage);
-        return;
-      }
-      if (result.card) {
-        this.refreshCardDraftPanels(result.card);
-        await this.reloadBoard(cardID);
-      }
+      const panel = this.modalPanel();
+      const ticketField = panel?.querySelector('[data-scrum-field="cardTicket"]') as HTMLTextAreaElement | null;
+      let streamed = "";
+      const result = await streamCardTicketScrumCard(
+        cardID,
+        payload,
+        {
+          onStart: () => {
+            streamed = "";
+            if (ticketField && !payload.iterate) ticketField.value = "";
+          },
+          onDelta: (text) => {
+            streamed += text;
+            const liveField = this.modalPanel()?.querySelector('[data-scrum-field="cardTicket"]') as HTMLTextAreaElement | null;
+            if (liveField) liveField.value = streamed;
+          },
+        },
+        this.projectID,
+      );
+      this.refreshCardDraftPanels(result.card);
+      await this.reloadBoard(cardID);
       this.setScrumModalFeedback(`${doneMessage} — saved to card`, "ok");
       this.setCardActionPending(pendingKey, false);
       this.actionOk(doneMessage);
@@ -1723,6 +1725,7 @@ export default class ScrumController extends Controller {
 
   async saveDetails(event: Event) {
     event.preventDefault();
+    event.stopPropagation();
     const cardID = this.cardID(event);
     if (!cardID) return;
 
@@ -1738,8 +1741,9 @@ export default class ScrumController extends Controller {
         description: description?.value ?? "",
       }, this.projectID);
       this.upsertCard(card);
-      await this.reloadBoard(cardID);
-      await this.refreshModalSections(cardID);
+      this.renderBoardFromLocal(false);
+      const heading = this.modalPanel()?.querySelector("[data-scrum-modal-card-id] h2");
+      if (heading) heading.textContent = card.title;
       this.actionOk("Card saved");
     } catch (error) {
       this.actionFail(error);
@@ -1901,7 +1905,7 @@ export default class ScrumController extends Controller {
     });
     this.setCardGeneratorLoading(true);
     try {
-      const payload = await suggestScrumTags(cardID, this.projectID);
+      const payload = await suggestScrumTags(cardID, this.projectID, { sync: true });
       if (payload.queued && payload.job?.id) {
         const card = payload.card ?? this.findCard(cardID);
         if (card) this.upsertCard(card);
@@ -2190,11 +2194,9 @@ export default class ScrumController extends Controller {
     const ticket = this.modalField(event, "cardTicket") || this.modalPanelField("cardTicket");
     this.setStatus("Saving card ticket draft…", "busy");
     try {
-      const payload = await cardTicketScrumCard(cardID, { card_prompt, ticket }, this.projectID);
-      if (payload.card) {
-        this.refreshCardDraftPanels(payload.card);
-        await this.reloadBoard(cardID);
-      }
+      const card = await patchScrumCard(cardID, { card_prompt, card_ticket: ticket } as Partial<ScrumCard>, this.projectID);
+      this.refreshCardDraftPanels(card);
+      await this.reloadBoard(cardID);
       this.actionOk("Card ticket draft saved");
     } catch (error) {
       this.actionFail(error);

@@ -67,6 +67,9 @@ if (networkAccess !== undefined) {
 const codex = new Codex({
   codexPathOverride: request.codex_path || "codex",
   env,
+  config: {
+    show_raw_agent_reasoning: true,
+  },
 });
 
 const thread = codex.startThread(threadOptions);
@@ -89,22 +92,90 @@ const { events } = await thread.runStreamed(request.prompt, {
 
 const items = [];
 let finalResponse = "";
+const seenItems = new Map();
+
+function itemText(item) {
+  if (!item || typeof item !== "object") return "";
+  for (const key of ["text", "message", "summary", "content", "aggregated_output", "output"]) {
+    const value = item[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function itemFiles(item) {
+  if (!item || typeof item !== "object") return [];
+  if (Array.isArray(item.files)) return item.files.filter(Boolean).map(String);
+  if (Array.isArray(item.changes)) return item.changes.map((change) => change?.path).filter(Boolean).map(String);
+  if (typeof item.path === "string" && item.path.trim()) return [item.path.trim()];
+  return [];
+}
+
+function todoListText(item) {
+  if (!Array.isArray(item?.items)) return "";
+  return item.items
+    .map((entry) => (entry?.completed ? "[x]" : "[ ]") + " " + String(entry?.text || "").trim())
+    .filter((line) => line.trim() !== "[ ]" && line.trim() !== "[x]")
+    .join("\n");
+}
+
+function shouldEmitItem(item, eventType) {
+  if (!item?.id) return true;
+  const current = JSON.stringify(item);
+  const previous = seenItems.get(item.id);
+  if (previous === current && eventType !== "item.completed") return false;
+  seenItems.set(item.id, current);
+  return true;
+}
+
+function emitCodexItem(item, eventType) {
+  if (!item || typeof item !== "object" || !shouldEmitItem(item, eventType)) return;
+  items.push(item);
+  const status = item.status || (eventType === "item.started" ? "in_progress" : eventType === "item.completed" ? "completed" : "in_progress");
+  if (item.type === "command_execution") {
+    emit({ agent: "codex", type: "command", message: status, command: item.command || "", raw: item });
+    if (item.aggregated_output) {
+      emit({ agent: "codex", type: "tool", message: item.aggregated_output, raw: { ...item, type: "command_output" } });
+    }
+    return;
+  }
+  if (item.type === "file_change") {
+    emit({ agent: "codex", type: "file_change", message: status, files: itemFiles(item), raw: item });
+    return;
+  }
+  if (item.type === "mcp_tool_call") {
+    emit({ agent: "codex", type: "tool", message: item.tool || item.server || "mcp tool", raw: item });
+    return;
+  }
+  if (item.type === "web_search") {
+    emit({ agent: "codex", type: "tool", message: item.query || "web search", raw: item });
+    return;
+  }
+  if (item.type === "reasoning") {
+    const text = itemText(item);
+    if (text) emit({ agent: "codex", type: "thinking", message: text, raw: item });
+    return;
+  }
+  if (item.type === "todo_list") {
+    const text = todoListText(item);
+    if (text) emit({ agent: "codex", type: "thinking", message: text, raw: item });
+    return;
+  }
+  if (item.type === "agent_message") {
+    finalResponse = item.text || finalResponse;
+    emit({ agent: "codex", type: "message", message: item.text || "", raw: item });
+    return;
+  }
+  if (item.type === "error") {
+    emit({ agent: "codex", type: "error", message: item.message || "Codex item error", raw: item });
+    return;
+  }
+  emit({ agent: "codex", type: item.type || "message", message: itemText(item) || status || "", raw: item });
+}
+
 for await (const event of events) {
   if (event.type === "item.completed" || event.type === "item.updated" || event.type === "item.started") {
-    const item = event.item || {};
-    items.push(item);
-    if (item.type === "command_execution") {
-      emit({ agent: "codex", type: "command", message: item.status || "command", command: item.command || "", raw: item });
-    } else if (item.type === "file_change") {
-      emit({ agent: "codex", type: "file_change", message: item.status || "file change", files: (item.changes || []).map((change) => change.path), raw: item });
-    } else if (item.type === "agent_message") {
-      finalResponse = item.text || finalResponse;
-      emit({ agent: "codex", type: "message", message: item.text || "", raw: item });
-    } else if (item.type === "error") {
-      emit({ agent: "codex", type: "error", message: item.message || "Codex item error", raw: item });
-    } else {
-      emit({ agent: "codex", type: item.type || "message", message: item.text || item.status || "", raw: item });
-    }
+    emitCodexItem(event.item || {}, event.type);
   } else if (event.type === "turn.completed") {
     emit({ agent: "codex", type: "turn.completed", message: "Codex turn completed", raw: event });
   } else if (event.type === "turn.failed") {
@@ -131,7 +202,7 @@ type Request struct {
 	SandboxMode     string `json:"sandbox_mode,omitempty"`
 	ApprovalPolicy  string `json:"approval_policy,omitempty"`
 	NetworkAccess   string `json:"network_access,omitempty"`
-	WebSearchMode    string `json:"web_search_mode,omitempty"`
+	WebSearchMode   string `json:"web_search_mode,omitempty"`
 }
 
 func DefaultRunnerDir() string {

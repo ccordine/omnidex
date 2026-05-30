@@ -39,6 +39,57 @@ func TestAgentNDJSONLineToChatMessagesCommand(t *testing.T) {
 	}
 }
 
+func TestAgentNDJSONLineToChatMessagesCodexReasoning(t *testing.T) {
+	line := `{"agent":"codex","type":"thinking","message":"Inspecting the failing path","raw":{"type":"reasoning","text":"Inspecting the failing path"}}`
+	msgs := agentNDJSONLineToChatMessages(line)
+	if len(msgs) != 1 || msgs[0].Role != "thinking" || msgs[0].Content != "Inspecting the failing path" {
+		t.Fatalf("unexpected messages: %+v", msgs)
+	}
+}
+
+func TestAgentNDJSONLineToChatMessagesCodexAgentMessageRaw(t *testing.T) {
+	line := `{"agent":"codex","type":"message","message":"","raw":{"type":"agent_message","text":"Implemented the fix"}}`
+	msgs := agentNDJSONLineToChatMessages(line)
+	if len(msgs) != 1 || msgs[0].Role != "assistant" || msgs[0].Content != "Implemented the fix" {
+		t.Fatalf("unexpected messages: %+v", msgs)
+	}
+}
+
+func TestAgentNDJSONLineToChatMessagesCodexCommandExecutionRaw(t *testing.T) {
+	line := `{"agent":"codex","type":"tool","message":"tests passed","raw":{"type":"command_execution","command":"go test ./internal/api","status":"completed","aggregated_output":"ok"}}`
+	msgs := agentNDJSONLineToChatMessages(line)
+	if len(msgs) != 1 || msgs[0].Role != "tool" {
+		t.Fatalf("unexpected messages: %+v", msgs)
+	}
+	activity, ok := parseChannelActivity(msgs[0].Content)
+	if !ok || activity.Activity != "command" || activity.Command != "go test ./internal/api" || activity.Status != "completed" {
+		t.Fatalf("activity=%+v ok=%v", activity, ok)
+	}
+}
+
+func TestAgentNDJSONLineToChatMessagesCodexMCPToolCall(t *testing.T) {
+	line := `{"agent":"codex","type":"tool","message":"read_file","raw":{"type":"mcp_tool_call","tool":"read_file","status":"completed","arguments":{"path":"internal/api/foo.go"}}}`
+	msgs := agentNDJSONLineToChatMessages(line)
+	if len(msgs) != 1 || msgs[0].Role != "tool" {
+		t.Fatalf("unexpected messages: %+v", msgs)
+	}
+	activity, ok := parseChannelActivity(msgs[0].Content)
+	if !ok || activity.Activity != "tool_call" || activity.Tool != "read_file" || activity.Status != "completed" {
+		t.Fatalf("activity=%+v ok=%v", activity, ok)
+	}
+}
+
+func TestAgentNDJSONLineToChatMessagesCodexTodoList(t *testing.T) {
+	line := `{"agent":"codex","type":"thinking","message":"","raw":{"type":"todo_list","items":[{"text":"Read failing code","completed":true},{"text":"Patch parser","completed":false}]}}`
+	msgs := agentNDJSONLineToChatMessages(line)
+	if len(msgs) != 1 || msgs[0].Role != "thinking" {
+		t.Fatalf("unexpected messages: %+v", msgs)
+	}
+	if !strings.Contains(msgs[0].Content, "[x] Read failing code") || !strings.Contains(msgs[0].Content, "[ ] Patch parser") {
+		t.Fatalf("content=%q", msgs[0].Content)
+	}
+}
+
 func TestAgentNDJSONLineToChatMessagesFileChange(t *testing.T) {
 	line := `{"agent":"codex","type":"file_change","message":"completed","files":["internal/api/foo.go"],"raw":{"changes":[{"path":"internal/api/foo.go","diff":"--- a/foo.go\\n+++ b/foo.go\\n@@ -1 +1 @@\\n-old\\n+new"}]}}`
 	msgs := agentNDJSONLineToChatMessages(line)

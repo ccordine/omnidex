@@ -27,12 +27,18 @@ func (s *Server) handleScrumCardTagsSuggest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	var req struct {
+		Sync bool `json:"sync"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
 	card, board, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "card not found")
 		return
 	}
-	if s.repo != nil && projectID > 0 {
+	if s.repo != nil && projectID > 0 && !req.Sync {
 		cfg := parseScrumCoachConfig(card.CoachConfig)
 		job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionTagsSuggest, cfg.Model, "", scrumcardllm.TicketRequest{})
 		if err != nil {

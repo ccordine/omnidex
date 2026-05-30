@@ -329,11 +329,12 @@ export async function fetchScrumTags(
 export async function suggestScrumTags(
   cardID: string,
   projectID?: number | null,
+  options: { sync?: boolean } = {},
 ): Promise<ScrumCardLlmQueuedResponse> {
   const response = await fetch(cardURL(cardID, "tags-suggest", projectID), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ sync: Boolean(options.sync) }),
   });
   return readJSON(response);
 }

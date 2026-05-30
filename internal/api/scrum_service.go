@@ -76,7 +76,7 @@ func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard
 			if strings.TrimSpace(patch.Title) != "" {
 				merged.Title = strings.TrimSpace(patch.Title)
 			}
-			if patch.Description != "" {
+			if _, ok := raw["description"]; ok {
 				merged.Description = patch.Description
 			}
 			if col := normalizeScrumColumn(patch.Column); col != "" {
