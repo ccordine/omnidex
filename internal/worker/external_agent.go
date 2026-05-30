@@ -19,6 +19,11 @@ type externalAgentSessionStarter interface {
 
 func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string) error {
 	cfg := agentconfig.FromJobMetadata(claim.Job.Metadata)
+	workspace := codingWorkspaceForJob(claim.Job)
+	if externalAgentOptionalForGeneralChat(claim.Job, workspace) {
+		s.emitStepEvent(claim.Step.ID, "external_agent_skipped", "general chat has no workspace; using native research agent")
+		return s.runNativeV3Step(ctx, claim, contexts, "v3_intent_parse")
+	}
 	agent, agentName, unavailable := selectExternalAgent(cfg, claim.Job.Metadata)
 	if agent == nil {
 		msg := unavailable
@@ -32,7 +37,6 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		return s.runNativeV3Step(ctx, claim, contexts, "v3_intent_parse")
 	}
 
-	workspace := codingWorkspaceForJob(claim.Job)
 	prompt := buildExternalAgentPrompt(claim.Job, contexts)
 	packet := omni.CursorImplementationPacket{
 		Task:       strings.TrimSpace(claim.Job.Instruction),
@@ -169,4 +173,14 @@ func metadataStringSlice(metadata json.RawMessage, key string) []string {
 		return items
 	}
 	return strings.Split(raw, ",")
+}
+
+func externalAgentOptionalForGeneralChat(job model.Job, workspace string) bool {
+	if !strings.EqualFold(strings.TrimSpace(job.Pipeline), model.PipelineChat) {
+		return false
+	}
+	if strings.TrimSpace(workspace) != "" {
+		return false
+	}
+	return metadataString(job.Metadata, "source") == "omni-web-chat" && metadataString(job.Metadata, "project_directory") == ""
 }

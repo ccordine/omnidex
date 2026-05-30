@@ -200,8 +200,14 @@ func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card Sc
 		}
 	}
 	if _, ok := payload["agent_config"]; !ok {
-		for key, value := range s.agentConfigJobMetadata(ctx, project, card, instance) {
-			payload[key] = value
+		if generalWebChatWithoutWorkspace(payload) {
+			payload["agent_config"] = map[string]any{}
+			payload["agent_config_source"] = "general_chat"
+			payload["execution_agent"] = agentconfig.SystemOmnidex
+		} else {
+			for key, value := range s.agentConfigJobMetadata(ctx, project, card, instance) {
+				payload[key] = value
+			}
 		}
 	}
 	if len(pulled) > 0 {
@@ -238,6 +244,21 @@ func metadataString(payload map[string]any, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(raw))
+}
+
+func generalWebChatWithoutWorkspace(payload map[string]any) bool {
+	if !webChatJobMetadata(payload) {
+		return false
+	}
+	if metadataInt64(payload, "project_id") > 0 {
+		return false
+	}
+	for _, key := range []string{"client_cwd", "project_directory", "workspace"} {
+		if metadataString(payload, key) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) resolvedModelsForProjectCard(ctx context.Context, projectID int64, card ScrumCard) (map[string]any, error) {

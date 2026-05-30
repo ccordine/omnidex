@@ -52,6 +52,37 @@ func TestEnrichJobMetadataSkipsWhenPresent(t *testing.T) {
 	}
 }
 
+func TestEnrichJobMetadataGeneralWebChatUsesNativeAgentWithoutWorkspace(t *testing.T) {
+	s := &Server{}
+	raw := []byte(`{"source":"omni-web-chat","runtime":"v3"}`)
+	out, _, err := s.enrichJobMetadata(context.Background(), raw, ScrumCard{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payload["execution_agent"] != "omnidex" {
+		t.Fatalf("execution_agent=%#v want omnidex", payload["execution_agent"])
+	}
+	if payload["agent_config_source"] != "general_chat" {
+		t.Fatalf("agent_config_source=%#v want general_chat", payload["agent_config_source"])
+	}
+}
+
+func TestGeneralWebChatWithoutWorkspaceRequiresNoProjectContext(t *testing.T) {
+	if !generalWebChatWithoutWorkspace(map[string]any{"source": "omni-web-chat"}) {
+		t.Fatal("expected plain web chat to be workspace-free")
+	}
+	if generalWebChatWithoutWorkspace(map[string]any{"source": "omni-web-chat", "project_id": float64(42)}) {
+		t.Fatal("project chat should keep project agent routing")
+	}
+	if generalWebChatWithoutWorkspace(map[string]any{"source": "omni-web-chat", "client_cwd": "/tmp/project"}) {
+		t.Fatal("chat with cwd should keep workspace agent routing")
+	}
+}
+
 func TestMergeProjectModelConfig(t *testing.T) {
 	settings := json.RawMessage(`{"theme":"dark"}`)
 	override := json.RawMessage(`{"default_model":"project-model"}`)

@@ -172,6 +172,23 @@ func TestCodingWorkspaceForJobPrefersClientCWD(t *testing.T) {
 	}
 }
 
+func TestExternalAgentOptionalForGeneralChatWithoutWorkspace(t *testing.T) {
+	job := model.Job{
+		Pipeline: model.PipelineChat,
+		Metadata: json.RawMessage(`{"source":"omni-web-chat","execution_agent":"codex","agent_strict":true}`),
+	}
+	if !externalAgentOptionalForGeneralChat(job, "") {
+		t.Fatal("expected general chat without workspace to use native fallback")
+	}
+	if externalAgentOptionalForGeneralChat(job, "/tmp/project") {
+		t.Fatal("workspace-backed chat should keep external agent routing")
+	}
+	job.Metadata = json.RawMessage(`{"source":"omni-web-chat","project_directory":"/tmp/project"}`)
+	if externalAgentOptionalForGeneralChat(job, "") {
+		t.Fatal("project chat metadata should keep external agent routing")
+	}
+}
+
 type recordingCodingEngine struct {
 	calls  int
 	input  runtimecoding.Request
