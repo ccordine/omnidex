@@ -1,4 +1,5 @@
 import { escapeHTML, formatDateTime, statusPillClass } from "./dom";
+import { renderChatComposer, renderChatMessages, scrumMessagesToChat } from "./chat_render";
 import { renderModelConfigSection } from "./model_config_render";
 import { renderAgentConfigSection, renderPreAlphaBadge } from "./agent_config_render";
 import type { ModelFieldDefinition } from "./model_config_types";
@@ -450,8 +451,65 @@ export function renderScrumModalRecipeTab(
   `;
 }
 
-function stripAgentStreamMarker(consoleLog: string): string {
-  return consoleLog.replace(/^\[\[agent-stream-len:\d+\]\]\s*$/gm, "").trimEnd();
+function channelLiveBadge(card: ScrumCard): { label: string; tone: string } {
+  if (card.play_state === "running") {
+    return { label: "streaming", tone: "border-amber-300/30 bg-amber-300/10 text-amber-100" };
+  }
+  if (card.play_state === "queued") {
+    return { label: "queued", tone: "border-violet-300/30 bg-violet-300/10 text-violet-100" };
+  }
+  if (card.play_state === "paused") {
+    return { label: "paused", tone: "border-zinc-400/30 bg-zinc-400/10 text-zinc-300" };
+  }
+  if (card.job_id?.trim()) {
+    return { label: "has job", tone: "border-cyan-300/25 bg-cyan-300/10 text-cyan-100" };
+  }
+  return { label: "idle", tone: "border-white/10 bg-white/[.04] text-zinc-400" };
+}
+
+export function renderScrumModalChannelTab(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
+  const messages = scrumMessagesToChat(card.chat ?? []);
+  const isLive = card.play_state === "running" || card.play_state === "queued";
+  const isRunning = card.play_state === "running";
+  const status = channelSessionStatus(card, playQueue);
+  const liveBadge = channelLiveBadge(card);
+  const interrupt = isRunning
+    ? `<button type="button" data-action="scrum#pausePlay" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-rose-400/35 bg-rose-400/10 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-400/20">Interrupt</button>`
+    : "";
+  const sync = card.job_id?.trim() && !isRunning
+    ? `<button type="button" data-action="scrum#syncJob" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 transition hover:border-cyan-300/40">Sync job</button>`
+    : "";
+  const jobLine = card.job_id?.trim()
+    ? `<span class="font-mono text-[11px] text-cyan-200/90">Job #${escapeHTML(card.job_id)}</span>`
+    : "";
+  const messageHtml =
+    messages.length > 0 || isRunning
+      ? renderChatMessages(messages, { pending: isRunning, pendingLabel: "Agent running…" })
+      : `<div class="flex h-full min-h-[12rem] items-center justify-center px-4 py-8 text-center text-sm text-zinc-500">Play this card or send a message to start the channel.</div>`;
+
+  return `
+    <div class="flex min-h-[min(70vh,720px)] flex-col overflow-hidden rounded-lg border border-white/10 bg-zinc-950/50">
+      <header class="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-zinc-950/45 px-3 py-2 backdrop-blur-xl md:px-4">
+        <div class="min-w-0">
+          <p class="text-[10px] uppercase tracking-[.18em] text-cyan-200/80">Card channel</p>
+          <h3 class="truncate text-lg font-semibold tracking-tight text-zinc-100">${escapeHTML(card.title)}</h3>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          ${status}
+          ${jobLine}
+          ${interrupt}
+          ${sync}
+          <span class="rounded-full border px-3 py-1 text-xs font-medium ${liveBadge.tone}">${escapeHTML(liveBadge.label)}</span>
+        </div>
+      </header>
+      <div data-scrum-channel-messages class="scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3 md:px-4">${messageHtml}</div>
+      ${renderChatComposer({
+        formAction: "submit->scrum#sendChat",
+        cardId: card.id,
+        placeholder: isLive ? "Steer the task or ask a question…" : "Discuss this card with the thinking pilot…",
+      })}
+    </div>
+  `;
 }
 
 function channelSessionStatus(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
@@ -470,76 +528,6 @@ function channelSessionStatus(card: ScrumCard, playQueue?: ScrumBoardResponse["p
     return `<span class="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100">Has job</span>`;
   }
   return "";
-}
-
-function renderChannelSessionBar(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
-  const status = channelSessionStatus(card, playQueue);
-  const jobLine = card.job_id?.trim()
-    ? `<span class="font-mono text-[11px] text-cyan-200/90">Job #${escapeHTML(card.job_id)}</span>`
-    : `<span class="text-[11px] text-zinc-500">No active job</span>`;
-  const interrupt = card.play_state === "running"
-    ? `<button type="button" data-action="scrum#pausePlay" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-rose-400/35 bg-rose-400/10 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-400/20">Interrupt</button>`
-    : "";
-  const sync = card.job_id?.trim() && card.play_state !== "running"
-    ? `<button type="button" data-action="scrum#syncJob" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 transition hover:border-cyan-300/40">Sync job</button>`
-    : "";
-  return `
-    <section class="rounded-lg border border-white/10 bg-zinc-950/60 p-4">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Agent session</h3>
-          ${status}
-          ${jobLine}
-        </div>
-        <div class="flex flex-wrap items-center gap-2">${interrupt}${sync}</div>
-      </div>
-      <p class="mt-2 text-xs leading-5 text-zinc-500">Watch Omnidex work on this card in real time — same stream you would see in the CLI. Use Interrupt to stop the running agent.</p>
-    </section>
-  `;
-}
-
-export function renderScrumModalChat(card: ScrumCard, live = false): string {
-  const messages = (card.chat ?? []).map((msg) => {
-    const shell = msg.role === "user" ? "border-cyan-300/25 bg-cyan-300/10" : "border-white/10 bg-zinc-900/70";
-    return `<div class="rounded-md border ${shell} px-3 py-2"><div class="text-[11px] uppercase tracking-wide text-zinc-500">${escapeHTML(msg.role)} · ${escapeHTML(formatDateTime(msg.created_at))}</div><div class="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">${escapeHTML(msg.content)}</div></div>`;
-  }).join("");
-  const heading = live ? "Steer & discuss" : "Card chat";
-  const hint = live
-    ? "Discuss the task while the agent runs. Messages go to the card thinking pilot (not injected into the live job yet)."
-    : "Discuss the card with the thinking pilot before or between play runs.";
-  return `
-    <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-      <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">${heading}</h3>
-      <p class="mt-1 text-xs text-zinc-500">${hint}</p>
-      <div class="scrollbar mt-3 max-h-[280px] space-y-2 overflow-y-auto pr-1">${messages || `<p class="text-sm text-zinc-500">No messages yet.</p>`}</div>
-      <form data-action="submit->scrum#sendChat" data-card-id="${escapeHTML(card.id)}" class="mt-3 flex gap-2">
-        <textarea data-scrum-field="chatMessage" rows="2" placeholder="${live ? "Ask a question or steer the task…" : "Ask the thinking pilot…"}" class="scrollbar min-w-0 flex-1 resize-none rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40"></textarea>
-        <button type="submit" class="self-end rounded-md bg-cyan-300 px-3 py-2 text-xs font-semibold text-zinc-950 hover:bg-cyan-200">Send</button>
-      </form>
-    </section>
-  `;
-}
-
-export function renderScrumModalChannelTab(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
-  const displayLog = stripAgentStreamMarker(card.console_log ?? "");
-  const isLive = card.play_state === "running" || card.play_state === "queued";
-  const consoleBlock = displayLog.trim()
-    ? `
-      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-        <div class="flex items-center justify-between gap-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Live output</h3>
-          ${card.play_state === "running" ? `<span class="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200"><span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300"></span>Streaming</span>` : ""}
-        </div>
-        <pre data-scrum-channel-stream class="scrollbar mt-3 max-h-[min(48vh,520px)] overflow-auto whitespace-pre-wrap rounded bg-black/40 p-3 font-mono text-[11px] leading-5 text-zinc-300">${escapeHTML(displayLog)}</pre>
-      </section>
-    `
-    : `
-      <section class="rounded-lg border border-dashed border-white/10 bg-zinc-950/30 p-4">
-        <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Live output</h3>
-        <p class="mt-2 text-sm text-zinc-500">${isLive ? "Waiting for agent output…" : "Play this card to stream Omnidex console output here."}</p>
-      </section>
-    `;
-  return `<div class="space-y-4">${renderChannelSessionBar(card, playQueue)}${consoleBlock}${renderScrumModalChat(card, isLive)}</div>`;
 }
 
 export function renderScrumCardModal(

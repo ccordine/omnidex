@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus";
 import { readJSON, jsonRequest } from "../lib/api";
 import { TranscriptStore } from "../lib/transcript_store";
-import { escapeHTML, trimText, hashText, formatTime, formatDateTime, badgeClass, statusPillClass, emptyState, sleep } from "../lib/dom";
+import { renderChatMessages } from "../lib/chat_render";
 import {
   renderStep,
   renderStepSummary,
@@ -1035,37 +1035,11 @@ export default class ChatController extends Controller {
   }
 
   renderMessages() {
-    const html = this.messages
-      .map(
-        (message) => `
-      <article class="message-grid message-${message.role}">
-        <div class="message-shell">
-          <div class="message-meta">
-            <span>${escapeHTML(message.role)}</span>
-            <time>${formatTime(message.at)}</time>
-          </div>
-          <div class="message-body text-zinc-100">${escapeHTML(message.content)}</div>
-        </div>
-      </article>
-    `,
-      )
-      .join("");
-    const pending = this.busy
-      ? `
-      <article class="message-grid message-assistant message-pending" aria-live="polite">
-        <div class="message-shell border border-cyan-300/20 bg-cyan-300/5">
-          <div class="message-meta">
-            <span>assistant</span>
-            <time>${formatTime(new Date().toISOString())}</time>
-          </div>
-          <div class="message-body flex items-center gap-2 text-sm text-cyan-100">
-            <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-300"></span>
-            <span>${escapeHTML(this.activityLabel || "Working…")}</span>
-          </div>
-        </div>
-      </article>`
-      : "";
-    this.recycle("messages", html + pending);
+    const html = renderChatMessages(this.messages, {
+      pending: this.busy,
+      pendingLabel: this.activityLabel || "Working…",
+    });
+    this.recycle("messages", html);
     this.messagesTarget.scrollTop = this.messagesTarget.scrollHeight;
   }
 

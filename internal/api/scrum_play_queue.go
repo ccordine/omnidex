@@ -128,7 +128,7 @@ func (s *Server) queueScrumCardForPlay(r *http.Request, projectID int64, cardID 
 	card.Column = "assigned"
 	card.PlayState = scrumPlayQueued
 	card.QueueOrder = nextOrder
-	card.ConsoleLog = appendScrumConsole(card.ConsoleLog, fmt.Sprintf("queued for play at %s (position #%d)", time.Now().UTC().Format(time.RFC3339), nextOrder))
+	card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Queued for play (#%d in assigned column)", nextOrder))
 	return s.persistScrumCard(r, projectID, card)
 }
 
@@ -154,7 +154,6 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 	}
 
 	var job model.Job
-	consoleLog := card.ConsoleLog
 	if s.repo != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		job, err = s.repo.EnqueueJob(ctx, instruction, "scrum", metadata)
@@ -162,17 +161,18 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 		if err != nil {
 			return ScrumCard{}, err
 		}
-		consoleLog = appendScrumConsole(consoleLog, fmt.Sprintf("job %d queued at %s\ninstruction:\n%s\n", job.ID, time.Now().UTC().Format(time.RFC3339), instruction))
+		card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Job #%d queued", job.ID))
+		card = appendScrumChannelEvent(card, "user", instruction)
 		if len(pulled) > 0 {
-			consoleLog = appendScrumConsole(consoleLog, fmt.Sprintf("models pulled: %s\n", strings.Join(pulled, ", ")))
+			card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Models: %s", strings.Join(pulled, ", ")))
 		}
 		var meta map[string]any
 		if err := json.Unmarshal(metadata, &meta); err == nil {
 			if agent, _ := meta["execution_agent"].(string); strings.TrimSpace(agent) != "" {
-				consoleLog = appendScrumConsole(consoleLog, fmt.Sprintf("execution agent: %s\n", strings.TrimSpace(agent)))
+				card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Execution agent: %s", strings.TrimSpace(agent)))
 			}
 			if source, _ := meta["agent_config_source"].(string); strings.TrimSpace(source) != "" {
-				consoleLog = appendScrumConsole(consoleLog, fmt.Sprintf("agent config source: %s\n", strings.TrimSpace(source)))
+				card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Agent config source: %s", strings.TrimSpace(source)))
 			}
 		}
 	} else {
@@ -180,11 +180,10 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 		if directErr != nil {
 			return ScrumCard{}, directErr
 		}
-		consoleLog = appendScrumConsole(consoleLog, output)
+		card = appendScrumChannelEvent(card, "assistant", output)
 		card.Column = "review"
 		card.PlayState = ""
 		card.QueueOrder = 0
-		card.ConsoleLog = consoleLog
 		return s.persistScrumCard(r, projectID, card)
 	}
 
@@ -192,7 +191,6 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 	card.Column = "in_progress"
 	card.PlayState = scrumPlayRunning
 	card.QueueOrder = 0
-	card.ConsoleLog = consoleLog
 	return s.persistScrumCard(r, projectID, card)
 }
 
@@ -214,7 +212,7 @@ func (s *Server) pauseScrumCardPlay(r *http.Request, cardID string) (ScrumCard, 
 	card.Column = "assigned"
 	card.PlayState = scrumPlayPaused
 	card.QueueOrder = 0
-	card.ConsoleLog = appendScrumConsole(card.ConsoleLog, fmt.Sprintf("play paused at %s\n", time.Now().UTC().Format(time.RFC3339)))
+	card = appendScrumChannelEvent(card, "system", "Play paused")
 	return s.persistScrumCard(r, projectID, card)
 }
 
@@ -260,7 +258,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 					summary = summary[len(summary)-4000:]
 				}
 				if len(summary) > 0 && !strings.Contains(updated.ConsoleLog, summary[:min(120, len(summary))]) {
-					updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, "agent output:\n"+summary)
+					updated = appendScrumChannelEvent(updated, "assistant", summary)
 				}
 				if note := scrumAgentConfigErrorNote(agentOutput); note != "" {
 					transition.ConsoleNote = note
@@ -269,15 +267,15 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 			updated.Column = transition.Column
 			updated.PlayState = transition.PlayState
 			updated.QueueOrder = 0
-			updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, transition.ConsoleNote)
+			updated = appendScrumChannelEvent(updated, "system", transition.ConsoleNote)
 			cardChanged = true
 		default:
 			if synced, ok := syncRunningJobConsoleLog(updated, job); ok {
 				updated = synced
 			}
-			statusLine := fmt.Sprintf("job status: %s", job.Job.Status)
+			statusLine := fmt.Sprintf("Job status: %s", job.Job.Status)
 			if !strings.Contains(updated.ConsoleLog, statusLine) {
-				updated.ConsoleLog = appendScrumConsole(updated.ConsoleLog, statusLine)
+				updated = appendScrumChannelEvent(updated, "system", statusLine)
 			}
 		}
 		if cardChanged {
@@ -287,7 +285,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 					shouldAutoAdvance = true
 				}
 			}
-		} else if updated.ConsoleLog != card.ConsoleLog {
+		} else if scrumCardChannelChanged(card, updated) {
 			if saved, err := s.persistScrumCard(r, projectID, updated); err == nil {
 				board.Cards[i] = saved
 			}

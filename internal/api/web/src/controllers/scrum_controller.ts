@@ -206,7 +206,7 @@ export default class ScrumController extends Controller {
       ? payload.board.cards.find((card) => card.id === this.activeCardID)
       : null;
     const activeSlice = active
-      ? `${active.id}:${active.updated_at}:${active.column}:${active.play_state}:${(active.console_log ?? "").length}`
+      ? `${active.id}:${active.updated_at}:${active.column}:${active.play_state}:${(active.chat ?? []).length}:${active.chat?.at(-1)?.content?.length ?? 0}`
       : "";
     return `${payload.board.updated_at}|${payload.play_queue?.running_card_id ?? ""}|${payload.play_queue?.queued_count ?? 0}|${activeSlice}`;
   }
@@ -587,7 +587,7 @@ export default class ScrumController extends Controller {
   }
 
   private scrollChannelToBottom() {
-    const stream = document.querySelector("[data-scrum-channel-stream]");
+    const stream = document.querySelector("[data-scrum-channel-messages]");
     if (stream instanceof HTMLElement) {
       stream.scrollTop = stream.scrollHeight;
     }

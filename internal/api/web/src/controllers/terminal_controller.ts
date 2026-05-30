@@ -108,8 +108,32 @@ export default class TerminalController extends Controller {
       rows: String(rows),
     });
 
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${proto}//${window.location.host}/v1/host/terminal/ws?${params.toString()}`);
+    let wsURL: string;
+    try {
+      const preflight = await fetch(`/v1/host/terminal/preflight?${params.toString()}`);
+      const payload = (await preflight.json()) as {
+        ws_url?: string;
+        hint?: string;
+        error?: string;
+      };
+      if (!preflight.ok) {
+        throw new Error(payload.error?.trim() || `Preflight failed (${preflight.status})`);
+      }
+      wsURL = payload.ws_url?.trim() ?? "";
+      if (!wsURL) {
+        throw new Error("Preflight did not return a terminal websocket URL");
+      }
+      if (payload.hint?.trim()) {
+        console.info("[terminal]", payload.hint);
+      }
+    } catch (error) {
+      this.connecting = false;
+      const message = error instanceof Error ? error.message : "Preflight failed";
+      this.setStatus(message, "error");
+      return;
+    }
+
+    const socket = new WebSocket(wsURL);
     socket.binaryType = "arraybuffer";
     this.socket = socket;
 

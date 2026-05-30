@@ -3,8 +3,8 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -12,26 +12,53 @@ import (
 	"github.com/gryph/omnidex/internal/hostbridge"
 )
 
-var terminalProxyUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+type terminalPreflightResponse struct {
+	Mode      string `json:"mode"`
+	WSURL     string `json:"ws_url"`
+	Workspace string `json:"workspace,omitempty"`
+	Hint      string `json:"hint,omitempty"`
 }
 
-func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHostTerminalPreflight(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	payload, err := s.prepareTerminalConnection(r)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
 
+	resp := terminalPreflightResponse{
+		Mode:      payload.mode,
+		WSURL:     payload.wsURL,
+		Workspace: payload.cwd,
+	}
+	if payload.mode == "direct" {
+		resp.Hint = "Terminal connects directly to the host bridge over plain ws:// (no SSL). Open the UI via http://, not https://."
+	} else {
+		resp.Hint = "Terminal connects through core over plain ws:// when the UI uses http://."
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type terminalConnectionPayload struct {
+	mode     string
+	wsURL    string
+	cwd      string
+	bridgeURL string
+}
+
+func (s *Server) prepareTerminalConnection(r *http.Request) (terminalConnectionPayload, error) {
 	client := s.hostBridgeClient()
 	if client == nil {
-		writeError(w, http.StatusServiceUnavailable, "host bridge unavailable: run `omni host serve` on the host and set HOST_AGENT_URL")
-		return
+		return terminalConnectionPayload{}, fmt.Errorf("host bridge unavailable: run `omni host serve --listen 0.0.0.0:8091` and set HOST_AGENT_URL in core")
 	}
 
 	projectID, err := s.resolveProjectID(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return terminalConnectionPayload{}, err
 	}
 
 	setupCtx, setupCancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -39,14 +66,12 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	project, err := s.repo.GetProject(setupCtx, projectID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "project not found")
-		return
+		return terminalConnectionPayload{}, fmt.Errorf("project not found")
 	}
 
 	cwd, err := s.resolveTerminalCWD(setupCtx, project.Location)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return terminalConnectionPayload{}, err
 	}
 
 	bridgeBase := strings.TrimRight(strings.TrimSpace(s.hostAgentURL), "/")
@@ -56,12 +81,69 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	bridgeURL, err := buildBridgeTerminalWSURL(bridgeBase, cwd, r.URL.Query())
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		return terminalConnectionPayload{}, err
+	}
+
+	if err := probeBridgeTerminal(setupCtx, bridgeURL, s.hostAgentToken); err != nil {
+		return terminalConnectionPayload{}, err
+	}
+
+	query := r.URL.Query()
+	if terminalUseDirectBridge(s.coreURLDefault) {
+		publicBase := publicBridgeWSBase(s.coreURLDefault)
+		directURL, err := buildDirectTerminalWSURL(publicBase, cwd, query, strings.TrimSpace(s.hostAgentToken))
+		if err != nil {
+			return terminalConnectionPayload{}, err
+		}
+		return terminalConnectionPayload{
+			mode:      "direct",
+			wsURL:     directURL,
+			cwd:       cwd,
+			bridgeURL: bridgeURL,
+		}, nil
+	}
+
+	proxyURL := buildProxyTerminalWSURL(coreWSBase(r, s.coreURLDefault), query)
+	return terminalConnectionPayload{
+		mode:      "proxy",
+		wsURL:     proxyURL,
+		cwd:       cwd,
+		bridgeURL: bridgeURL,
+	}, nil
+}
+
+func probeBridgeTerminal(ctx context.Context, bridgeURL, token string) error {
+	header := http.Header{}
+	if strings.TrimSpace(token) != "" {
+		header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	}
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, bridgeURL, header)
+	if err != nil {
+		return fmt.Errorf("host bridge terminal probe failed: %s", terminalBridgeDialError(err, resp))
+	}
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(""))
+	_ = conn.Close()
+	return nil
+}
+
+func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	clientConn, err := terminalProxyUpgrader.Upgrade(w, r, nil)
+	payload, err := s.prepareTerminalConnection(r)
 	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if payload.mode == "direct" {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":   "terminal uses direct host bridge websocket; call /v1/host/terminal/preflight instead",
+			"ws_url":  payload.wsURL,
+			"mode":    "direct",
+			"workspace": payload.cwd,
+		})
 		return
 	}
 
@@ -70,27 +152,44 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 		header.Set("Authorization", "Bearer "+token)
 	}
 
-	bridgeConn, resp, err := websocket.DefaultDialer.DialContext(r.Context(), bridgeURL, header)
+	bridgeConn, resp, err := websocket.DefaultDialer.DialContext(r.Context(), payload.bridgeURL, header)
 	if err != nil {
-		message := terminalBridgeDialError(err, resp)
-		_ = clientConn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31m"+message+"\x1b[0m\r\n"))
-		_ = clientConn.Close()
+		writeError(w, http.StatusBadGateway, terminalBridgeDialError(err, resp))
+		return
+	}
+
+	clientConn, err := terminalProxyUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		_ = bridgeConn.Close()
 		return
 	}
 
 	proxyTerminalWebSocket(clientConn, bridgeConn)
 }
 
-func (s *Server) resolveTerminalCWD(ctx context.Context, raw string) (string, error) {
-	if client := s.hostBridgeClient(); client != nil {
-		return resolveHostBridgeProjectPath(ctx, client, raw)
+func (s *Server) handleUIRuntimeConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	return s.validateProjectLocation(ctx, raw)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"core_url":              strings.TrimSpace(s.coreURLDefault),
+		"ws_base":               coreWSBase(r, s.coreURLDefault),
+		"terminal_direct":       terminalUseDirectBridge(s.coreURLDefault),
+		"host_bridge_public_ws": publicBridgeWSBase(s.coreURLDefault),
+		"plain_http_ok":         true,
+	})
 }
 
 func terminalBridgeDialError(err error, resp *http.Response) string {
 	message := strings.TrimSpace(err.Error())
-	if resp != nil {
+	if resp != nil && resp.Body != nil {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		_ = resp.Body.Close()
+		snippet := strings.TrimSpace(string(body))
+		if snippet != "" && !strings.Contains(message, snippet) {
+			message = strings.TrimSpace(message + ": " + snippet)
+		}
 		switch resp.StatusCode {
 		case http.StatusUnauthorized:
 			return "host bridge rejected the terminal connection (401). Check HOST_AGENT_TOKEN matches on core and omni host serve."
@@ -103,58 +202,7 @@ func terminalBridgeDialError(err error, resp *http.Response) string {
 		}
 	}
 	if strings.Contains(strings.ToLower(message), "bad handshake") {
-		return "host bridge terminal handshake failed. Ensure omni host serve is running, reachable from core, and the project path exists on the host."
+		return "host bridge terminal handshake failed — the bridge is reachable but did not upgrade to websocket. Restart the host bridge (`omni host serve --listen 0.0.0.0:8091`) and rebuild core. This is not an SSL issue; use plain http:// and ws:// on your LAN."
 	}
 	return message
-}
-
-func buildBridgeTerminalWSURL(base, cwd string, query url.Values) (string, error) {
-	parsed, err := url.Parse(base)
-	if err != nil {
-		return "", err
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "http":
-		parsed.Scheme = "ws"
-	case "https":
-		parsed.Scheme = "wss"
-	default:
-		return "", fmt.Errorf("unsupported host bridge URL scheme")
-	}
-
-	params := url.Values{}
-	params.Set("cwd", cwd)
-	if cols := strings.TrimSpace(query.Get("cols")); cols != "" {
-		params.Set("cols", cols)
-	}
-	if rows := strings.TrimSpace(query.Get("rows")); rows != "" {
-		params.Set("rows", rows)
-	}
-	parsed.Path = "/v1/terminal/ws"
-	parsed.RawQuery = params.Encode()
-	return parsed.String(), nil
-}
-
-func proxyTerminalWebSocket(clientConn, bridgeConn *websocket.Conn) {
-	defer clientConn.Close()
-	defer bridgeConn.Close()
-
-	errc := make(chan error, 2)
-	copyMessages := func(dst, src *websocket.Conn) {
-		for {
-			msgType, msg, err := src.ReadMessage()
-			if err != nil {
-				errc <- err
-				return
-			}
-			if err := dst.WriteMessage(msgType, msg); err != nil {
-				errc <- err
-				return
-			}
-		}
-	}
-
-	go copyMessages(bridgeConn, clientConn)
-	go copyMessages(clientConn, bridgeConn)
-	<-errc
 }

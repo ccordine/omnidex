@@ -85,6 +85,9 @@ func syncRunningJobConsoleLog(card ScrumCard, job model.JobDetails) (ScrumCard, 
 		updated.ConsoleLog = appendScrumConsole(baseLog, delta)
 	}
 	updated.ConsoleLog = strings.TrimRight(updated.ConsoleLog, "\n") + fmt.Sprintf("\n[[agent-stream-len:%d]]\n", len(output))
+	if syncedChat, ok := syncRunningJobChannelChat(updated, job); ok {
+		updated = syncedChat
+	}
 	return updated, true
 }
 

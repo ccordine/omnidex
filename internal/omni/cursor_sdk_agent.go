@@ -71,6 +71,9 @@ func (a *CursorSDKArchitectAgent) ArchitectAgentAvailable() (bool, string) {
 	if strings.TrimSpace(a.APIKey) == "" {
 		return false, "CURSOR_API_KEY is required for cursor sdk architect delegation"
 	}
+	if UseHostBridgeExternalAgents() && hostBridgeClientFromEnv() == nil {
+		return false, "HOST_AGENT_URL is not configured; Cursor runs on the host machine via the bridge when core is in Docker"
+	}
 	return true, ""
 }
 
@@ -94,6 +97,9 @@ func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectA
 	}
 	if strings.TrimSpace(a.APIKey) == "" {
 		return nil, fmt.Errorf("CURSOR_API_KEY is required for cursor sdk architect delegation")
+	}
+	if UseHostBridgeExternalAgents() {
+		return newHostBridgeExternalAgentSession("cursor", a.APIKey, firstNonEmpty(a.Model, "composer-2"), "")
 	}
 	if err := a.ensureRunner(context.Background()); err != nil {
 		return nil, err

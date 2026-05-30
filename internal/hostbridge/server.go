@@ -20,6 +20,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/terminal/ws", s.handleTerminalWS)
 	mux.HandleFunc("/v1/screen/monitors", s.handleScreenMonitors)
 	mux.HandleFunc("/v1/screen/mjpeg", s.handleScreenMJPEG)
+	mux.HandleFunc("/v1/cursor/run", s.handleCursorRun)
+	mux.HandleFunc("/v1/codex/run", s.handleCodexRun)
 	mux.HandleFunc("/v1/project-map", s.handleProjectMap)
 	mux.HandleFunc("/v1/project-map/scan", s.handleProjectMapScan)
 	return mux
@@ -42,6 +44,8 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"browse":        true,
 		"terminal":      true,
 		"screen":        true,
+		"cursor":        true,
+		"codex":         true,
 		"project_map":   true,
 	})
 }
@@ -129,6 +133,9 @@ func (s *Server) authorize(r *http.Request) bool {
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
 	if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
 		return strings.TrimSpace(auth[7:]) == token
+	}
+	if queryToken := strings.TrimSpace(r.URL.Query().Get("token")); queryToken != "" {
+		return queryToken == token
 	}
 	return strings.TrimSpace(r.Header.Get("X-Omni-Host-Token")) == token
 }

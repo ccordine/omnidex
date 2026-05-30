@@ -71,6 +71,9 @@ func (a *CodexSDKArchitectAgent) ArchitectAgentAvailable() (bool, string) {
 	if a == nil {
 		return false, "codex sdk architect agent is not configured"
 	}
+	if UseHostBridgeExternalAgents() && hostBridgeClientFromEnv() == nil {
+		return false, "HOST_AGENT_URL is not configured; Codex runs on the host machine via the bridge when core is in Docker"
+	}
 	return true, ""
 }
 
@@ -94,6 +97,9 @@ func (a *CodexSDKArchitectAgent) RunArchitectTask(ctx context.Context, input Cur
 func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAgentInput) (ExternalAgentSession, error) {
 	if a == nil {
 		return nil, fmt.Errorf("codex sdk architect agent is not configured")
+	}
+	if UseHostBridgeExternalAgents() {
+		return newHostBridgeExternalAgentSession("codex", a.APIKey, firstNonEmpty(a.Model, "gpt-5.3-codex"), firstNonEmpty(a.CodexBin, "codex"))
 	}
 	if err := a.ensureRunner(context.Background()); err != nil {
 		return nil, err
