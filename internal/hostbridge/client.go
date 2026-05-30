@@ -168,6 +168,12 @@ func (c *Client) PersistProjectMap(ctx context.Context, path string, indexJSON, 
 	return stringField(payload, "index_path"), stringField(payload, "map_path"), nil
 }
 
+func (c *Client) ProjectGitStatus(ctx context.Context, path string) (map[string]any, error) {
+	query := url.Values{}
+	query.Set("path", strings.TrimSpace(path))
+	return c.getJSON(ctx, "/v1/project/git?"+query.Encode())
+}
+
 func (c *Client) ReadProjectMap(ctx context.Context, path string) (map[string]any, string, bool, error) {
 	query := url.Values{}
 	query.Set("path", strings.TrimSpace(path))

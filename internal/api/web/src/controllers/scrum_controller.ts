@@ -21,8 +21,8 @@ import {
 import { fetchProject, fetchRecipes } from "../lib/project_api";
 import type { RecipeCatalogItem } from "../lib/project_types";
 import { renderRecyclrBundle } from "../lib/recyclr";
-import { closeModalShell, openModalShell, resetModalPanelWidth } from "../lib/modal";
-import { clearScrumModalHref, isScrumCardTab, scrumModalHref } from "../lib/panel_routing";
+import { closeModalShell, getModalElements, openModalShell, resetModalPanelWidth } from "../lib/modal";
+import { clearScrumModalHref, isScrumCardTab, parseScrumCardFromLocation, scrumModalHref } from "../lib/panel_routing";
 import { fetchModelDefaults } from "../lib/model_config_api";
 import { fetchAgentDefaults } from "../lib/agent_config_api";
 import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_config_render";
@@ -457,6 +457,56 @@ export default class ScrumController extends Controller {
     return "card";
   }
 
+  private modalCardID(): string | null {
+    const panel = this.modalPanel();
+    const root = panel?.querySelector<HTMLElement>("[data-scrum-modal-card-id]");
+    return root?.dataset.scrumModalCardId?.trim() || null;
+  }
+
+  private isCardModalOpen(): boolean {
+    const { modal, panel } = getModalElements();
+    if (!modal || modal.classList.contains("hidden")) return false;
+    return Boolean(panel?.querySelector("[data-scrum-tab-panel]"));
+  }
+
+  private visibleCardTabFromDOM(): ScrumCardTab | null {
+    const panel = this.modalPanel();
+    if (!panel) return null;
+    for (const element of panel.querySelectorAll<HTMLElement>("[data-scrum-tab-panel]")) {
+      if (!element.classList.contains("hidden")) {
+        const tab = element.dataset.scrumTabPanel;
+        if (isScrumCardTab(tab)) return tab;
+      }
+    }
+    return null;
+  }
+
+  /** Keep in-memory tab aligned with what the user is actually viewing before live refreshes. */
+  private rememberActiveCardTab(cardID: string) {
+    if (this.activeCardID !== cardID) return;
+    const domTab = this.visibleCardTabFromDOM();
+    if (domTab) {
+      if (this.activeCardTab !== domTab) {
+        this.activeCardTab = domTab;
+        this.persistCardTab(domTab);
+      }
+      return;
+    }
+    const saved = this.restoreCardTab(cardID);
+    if (this.activeCardTab !== saved) {
+      this.activeCardTab = saved;
+    }
+  }
+
+  private syncModalSessionFromLocation() {
+    if (!this.board || !this.isCardModalOpen()) return;
+    const cardID = this.modalCardID() || parseScrumCardFromLocation();
+    if (!cardID || !this.findCard(cardID)) return;
+    this.activeCardID = cardID;
+    this.rememberActiveCardTab(cardID);
+    this.syncScrumModalRoute();
+  }
+
   private persistCardTab(tab: ScrumCardTab) {
     if (!this.activeCardID) return;
     sessionStorage.setItem(this.cardTabStorageKey(this.activeCardID), tab);
@@ -540,8 +590,11 @@ export default class ScrumController extends Controller {
 
   private refreshCardDraftPanels(card: ScrumCard) {
     this.upsertCard(card);
-    this.recycle("scrum-card-ticket", renderScrumModalCardTicket(card));
-    this.recycle("scrum-card-tags", renderScrumTagPills(card));
+    this.rememberActiveCardTab(card.id);
+    if (this.activeCardTab === "card") {
+      this.recycle("scrum-card-ticket", renderScrumModalCardTicket(card));
+      this.recycle("scrum-card-tags", renderScrumTagPills(card));
+    }
     this.recycle(
       "scrum-modal-tabs",
       `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`,
@@ -1044,6 +1097,7 @@ export default class ScrumController extends Controller {
   }
 
   private async refreshActiveModal(cardID: string) {
+    this.rememberActiveCardTab(cardID);
     if (this.activeCardTab === "channel") {
       await this.refreshLiveChannel(cardID);
       return;
@@ -1220,8 +1274,22 @@ export default class ScrumController extends Controller {
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
 
+    if (this.activeCardID === cardID && this.isCardModalOpen()) {
+      this.rememberActiveCardTab(cardID);
+      this.syncScrumModalRoute();
+      this.scheduleApplyCardTabState();
+      void this.refreshActiveModal(cardID);
+      this.wireCoachAutoScan();
+      return;
+    }
+
     this.activeCardID = cardID;
-    this.activeCardTab = this.resolveActiveCardTab(cardID);
+    const modalAlreadyOpen = this.isCardModalOpen() && this.modalCardID() === cardID;
+    if (modalAlreadyOpen) {
+      this.rememberActiveCardTab(cardID);
+    } else {
+      this.activeCardTab = this.resolveActiveCardTab(cardID);
+    }
     const files = await this.loadProjectFiles();
     await Promise.all([this.loadCardConfigs(cardID), this.loadCardContext()]);
     this.openModal(
@@ -1254,6 +1322,7 @@ export default class ScrumController extends Controller {
     try {
       const payload = await fetchScrumBoard(this.projectID);
       this.applyBoardPayload(payload);
+      this.syncModalSessionFromLocation();
       if (this.activeCardID) await this.refreshActiveModal(this.activeCardID);
       this.startPolling();
       this.setStatus(`Updated ${new Date().toLocaleTimeString()}`, "ok");

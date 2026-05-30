@@ -591,7 +591,7 @@ export function renderScrumCardModal(
   projectRecipe: Record<string, unknown> = {},
 ): string {
   return `
-    <div class="shrink-0 border-b border-white/10 p-4 md:p-5">
+    <div class="shrink-0 border-b border-white/10 p-4 md:p-5" data-scrum-modal-card-id="${escapeHTML(card.id)}">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div class="font-mono text-xs text-cyan-200">${escapeHTML(card.id)}</div>

@@ -22,6 +22,17 @@ import { errorMessage, toastError, toastFromError, toastOk } from "../lib/feedba
 import { applyRecyclrSink, buildRecyclrBundle, type RecyclrSinkMode } from "../lib/recyclr";
 import { applyI18n, t } from "../lib/i18n";
 import { isOmniPanel, panelHref, parseAdminTabFromLocation, parsePanelFromLocation, type OmniPanel } from "../lib/panel_routing";
+import {
+  badgeClass,
+  emptyState,
+  escapeHTML,
+  formatDateTime,
+  formatTime,
+  hashText,
+  sleep,
+  statusPillClass,
+  trimText,
+} from "../lib/dom";
 
 const SELECTED_CHANNEL_KEY = "omni.chat.selected-channel.v1";
 
@@ -126,6 +137,10 @@ export default class ChatController extends Controller {
     this.renderMessages();
     this.renderTimeline();
     await this.detectTransport();
+    const initialPanel = parsePanelFromLocation();
+    if (initialPanel !== "chat") {
+      this.activatePanel(initialPanel, { pushHistory: false });
+    }
     await this.loadStatus();
     await this.loadUserChannels();
     await this.loadGlobalActivity();
@@ -151,10 +166,6 @@ export default class ChatController extends Controller {
     if (this.messages.length === 0) {
       this.addMessage("system", t("panel.chat.ready"));
     }
-    const initialPanel = parsePanelFromLocation();
-    if (initialPanel !== "chat") {
-      this.activatePanel(initialPanel, { pushHistory: false });
-    }
     this.metricsGlanceHandler = () => {
       const active = this.panelTargets.find((panel) => !panel.classList.contains("hidden"));
       if (active?.dataset.panelName === "metrics") void this.loadMetrics();
@@ -169,6 +180,7 @@ export default class ChatController extends Controller {
     this.panelShownHandler = (event: Event) => {
       const panel = (event as CustomEvent<{ panel?: string }>).detail?.panel;
       if (panel === "jobs") void this.loadJobs();
+      if (panel === "metrics") void this.loadMetrics();
     };
     document.addEventListener("omni:panel-shown", this.panelShownHandler);
     this.scrumRefreshHandler = () => {

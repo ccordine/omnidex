@@ -24,6 +24,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/codex/run", s.handleCodexRun)
 	mux.HandleFunc("/v1/project-map", s.handleProjectMap)
 	mux.HandleFunc("/v1/project-map/scan", s.handleProjectMapScan)
+	mux.HandleFunc("/v1/project/git", s.handleProjectGit)
 	return mux
 }
 
@@ -47,6 +48,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"cursor":        true,
 		"codex":         true,
 		"project_map":   true,
+		"project_git":   true,
 	})
 }
 
