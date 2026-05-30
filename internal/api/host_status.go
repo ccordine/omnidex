@@ -18,6 +18,7 @@ type hostBridgeStatusResponse struct {
 	NativePicker bool     `json:"native_picker,omitempty"`
 	Service      string   `json:"service,omitempty"`
 	Terminal     bool     `json:"terminal,omitempty"`
+	Screen       bool     `json:"screen,omitempty"`
 	PickerReady  bool     `json:"picker_ready"`
 	Suggestions  []string `json:"suggestions,omitempty"`
 }
@@ -71,20 +72,26 @@ func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusRe
 
 	nativePicker := mapBool(payload, "native_picker")
 	terminalReady := mapBool(payload, "terminal")
+	screenReady := mapBool(payload, "screen")
 	return hostBridgeStatusResponse{
 		Configured:   true,
 		Reachable:    true,
 		URL:          url,
 		NativePicker: nativePicker,
 		Terminal:     terminalReady,
+		Screen:       screenReady,
 		Service:      mapString(payload, "service"),
 		PickerReady:  true,
-		Message:      hostBridgeReadyMessage(nativePicker, terminalReady),
+		Message:      hostBridgeReadyMessage(nativePicker, terminalReady, screenReady),
 	}
 }
 
-func hostBridgeReadyMessage(nativePicker, terminalReady bool) string {
+func hostBridgeReadyMessage(nativePicker, terminalReady, screenReady bool) string {
 	switch {
+	case nativePicker && terminalReady && screenReady:
+		return "Host bridge is reachable. Filesystem browse, terminal, and screen streaming are available."
+	case terminalReady && screenReady:
+		return "Host bridge is reachable. Terminal and screen streaming are available."
 	case nativePicker && terminalReady:
 		return "Host bridge is reachable. Filesystem browse and in-browser terminal are available."
 	case terminalReady:

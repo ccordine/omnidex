@@ -1,4 +1,4 @@
-import { readJSON, jsonRequest } from "./api";
+import { readJSON, jsonPut, jsonRequest } from "./api";
 
 export type NetworkSettings = {
   core_url: string;
@@ -16,7 +16,7 @@ export async function fetchNetworkSettings(): Promise<NetworkSettings> {
 }
 
 export async function saveNetworkSettings(values: { host: string; port: number; url?: string }): Promise<NetworkSettings> {
-  const response = await fetch("/v1/settings/network", jsonRequest(values));
+  const response = await fetch("/v1/settings/network", jsonPut(values));
   return readJSON(response);
 }
 
@@ -89,7 +89,7 @@ export async function fetchAPISecrets(): Promise<{ storage: string; fields: APIS
 }
 
 export async function saveAPISecrets(values: Record<string, string>, clearKeys: string[] = []): Promise<void> {
-  const response = await fetch("/v1/settings/secrets", jsonRequest({ values, clear_keys: clearKeys }));
+  const response = await fetch("/v1/settings/secrets", jsonPut({ values, clear_keys: clearKeys }));
   await readJSON(response);
 }
 

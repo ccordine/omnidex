@@ -341,6 +341,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/host/status", s.handleHostBridgeStatus)
 	s.mux.HandleFunc("/v1/host/pick-directory", s.handleHostPickDirectory)
 	s.mux.HandleFunc("/v1/host/terminal/ws", s.handleHostTerminalWS)
+	s.mux.HandleFunc("/v1/host/screen/monitors", s.handleHostScreenMonitors)
+	s.mux.HandleFunc("/v1/host/screen/mjpeg", s.handleHostScreenMJPEG)
 	s.mux.HandleFunc("/v1/recipes", s.handleRecipes)
 	s.mux.HandleFunc("/v1/recipes/", s.handleRecipeByID)
 	s.mux.HandleFunc("/v1/projects", s.handleProjects)

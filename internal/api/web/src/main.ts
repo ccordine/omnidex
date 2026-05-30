@@ -6,6 +6,7 @@ import ProjectsController from "./controllers/projects_controller";
 import AdminController from "./controllers/admin_controller";
 import ShellController from "./controllers/shell_controller";
 import TerminalController from "./controllers/terminal_controller";
+import ScreenController from "./controllers/screen_controller";
 import "../styles.css";
 import { initI18n } from "./lib/i18n";
 
@@ -19,5 +20,6 @@ application.register("projects", ProjectsController);
 application.register("admin", AdminController);
 application.register("shell", ShellController);
 application.register("terminal", TerminalController);
+application.register("screen", ScreenController);
 
 export default application;

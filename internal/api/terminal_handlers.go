@@ -43,7 +43,7 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cwd, err := s.validateProjectLocation(setupCtx, project.Location)
+	cwd, err := s.resolveTerminalCWD(setupCtx, project.Location)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -72,16 +72,40 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	bridgeConn, resp, err := websocket.DefaultDialer.DialContext(r.Context(), bridgeURL, header)
 	if err != nil {
-		message := err.Error()
-		if resp != nil {
-			message = fmt.Sprintf("bridge terminal dial failed (%d): %s", resp.StatusCode, err.Error())
-		}
+		message := terminalBridgeDialError(err, resp)
 		_ = clientConn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31m"+message+"\x1b[0m\r\n"))
 		_ = clientConn.Close()
 		return
 	}
 
 	proxyTerminalWebSocket(clientConn, bridgeConn)
+}
+
+func (s *Server) resolveTerminalCWD(ctx context.Context, raw string) (string, error) {
+	if client := s.hostBridgeClient(); client != nil {
+		return resolveHostBridgeProjectPath(ctx, client, raw)
+	}
+	return s.validateProjectLocation(ctx, raw)
+}
+
+func terminalBridgeDialError(err error, resp *http.Response) string {
+	message := strings.TrimSpace(err.Error())
+	if resp != nil {
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return "host bridge rejected the terminal connection (401). Check HOST_AGENT_TOKEN matches on core and omni host serve."
+		case http.StatusForbidden:
+			return "host bridge rejected the project directory (403). Confirm the path is under your home directory or HOST_BROWSE_ROOTS."
+		case http.StatusBadRequest:
+			return "host bridge rejected the terminal request (400). The project directory may not exist on the host."
+		default:
+			message = fmt.Sprintf("bridge terminal dial failed (%d): %s", resp.StatusCode, message)
+		}
+	}
+	if strings.Contains(strings.ToLower(message), "bad handshake") {
+		return "host bridge terminal handshake failed. Ensure omni host serve is running, reachable from core, and the project path exists on the host."
+	}
+	return message
 }
 
 func buildBridgeTerminalWSURL(base, cwd string, query url.Values) (string, error) {

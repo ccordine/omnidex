@@ -42,7 +42,7 @@ func RunServe(opts ServeOptions) error {
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("omni host bridge listening on http://%s (native directory picker + browse)", addr)
+	log.Printf("omni host bridge listening on http://%s (browse, terminal, screen stream)", addr)
 	if strings.HasPrefix(addr, "127.0.0.1") || strings.HasPrefix(addr, "localhost") {
 		log.Printf("docker tip: run with --listen 0.0.0.0:8091 and set HOST_AGENT_URL=http://host.docker.internal:8091 in core")
 	}

@@ -1,4 +1,4 @@
-import { readJSON, jsonRequest } from "./api";
+import { readJSON, jsonPut } from "./api";
 import type { ResolvedAgentConfig } from "./agent_config_types";
 
 export async function fetchAgentDefaults(
@@ -23,6 +23,6 @@ export async function fetchGlobalAgentSettings(): Promise<{
 }
 
 export async function saveGlobalAgentSettings(values: Record<string, string>): Promise<void> {
-  const response = await fetch("/v1/settings/agents", jsonRequest({ values }));
+  const response = await fetch("/v1/settings/agents", jsonPut({ values }));
   await readJSON(response);
 }
