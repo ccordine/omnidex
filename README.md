@@ -18,7 +18,7 @@ Under the hood it remains an agent runtime: plan, patch, verify, observe, and co
 Core pieces:
 
 - **`omni`**: deterministic local CLI for chat, command execution, research, install/update, and workspace-aware automation.
-- **Web cockpit**: projects, scrum board, Project Chat, draft queue, card channel pilot, flow metrics.
+- **Web cockpit**: general chat, projects, scrum board, Project Chat, draft queue, card channel pilot, data channels, data-source admin, flow metrics.
 - **`agent-core`**: API + Postgres queue + worker pipeline for service-backed workflows.
 - **`agent-cli`**: queue/API CLI for enqueueing and inspecting core jobs.
 
@@ -46,6 +46,124 @@ Example prompts:
 - *Research login systems for our Go app and draft backlog cards for each approach.*
 - *Research music theory intervals — draft study cards, not implementation.*
 - *Break the auth epic into setup / middleware / tests / docs cards.*
+
+## Dynamic AI agent framework
+
+Omnidex is moving from a single-purpose local assistant into a dynamic AI agent framework with a GUI-first control plane. The web UI is not a thin skin over the CLI; it is where projects, data, agent configuration, memory, tickets, and live human steering meet.
+
+The goal is to let a human describe intent in normal language, then let deterministic services decide what kind of agent run is appropriate:
+
+- **Research assistant** when the user is in general chat and only needs web search, synthesis, memory creation, or lightweight follow-up.
+- **Project planning assistant** when the user is inside a project and wants to turn research into backlog cards.
+- **Build agent** when a card has been promoted and the repository/workspace context matters.
+- **Data analyst** when the user asks questions against configured read-only databases.
+- **Reviewer/debugger** when the user asks the system to analyze a project and generate cleanup/refactor/error cards.
+
+The framework separates those modes instead of forcing every request through a code workspace. General chat can research without a project directory. Project and card agents get project context, repo files, recipes, model settings, and agent settings. Data channels get database schema and read-only query tools. The same job queue, evidence model, memory system, and live UI update layer tie the modes together.
+
+### GUI-first cockpit
+
+The web cockpit is the primary operator interface:
+
+- **Chat** is the general assistant surface. It can answer, research, use web search, store useful memories, and work without a project selected.
+- **Projects** organize real workspaces. A project owns its directory, codebase map, recipe, model config, agent config, scrum board, git status, debugger/analyzer runs, and auto-work settings.
+- **Scrum** is the human-in-the-loop execution board. Cards move through backlog, ready/assigned, in progress, review, blocked, and done.
+- **Data** provides natural-language database channels for configured read-only sources.
+- **Jobs, Memory, Metrics, and Admin** expose the queue, durable knowledge, model/agent defaults, secrets, data sources, host bridge state, and operational health.
+
+The UI is built around live partial updates rather than full-page refreshes. RecyclrJS targets small regions such as a card modal tab, channel stream, toolbar, data result, or board column so the interface can update while preserving the user's current modal, tab, and scroll position.
+
+### Project and scrum interface
+
+The scrum board turns project work into explicit, reviewable units. A card is more than a title:
+
+- title and description
+- checklist and test criteria
+- generated or manually edited ticket body
+- planning/coaching notes
+- tags and suggested tags
+- card channel conversation
+- model and agent overrides
+- recipe JSON
+- reference files and directories from the repo
+- uploaded card-specific files such as PDFs, docs, screenshots, or other context artifacts
+- live job state, console stream, and flow metrics
+
+The intended loop is:
+
+1. Use **Project Chat** to research a topic, inspect direction, or draft a batch of cards.
+2. Review the draft queue and promote only the useful work.
+3. Attach files, folders, recipes, tests, and implementation notes to each card.
+4. Move a card to assigned/in progress and press **Play**, or let auto-work pull from configured columns.
+5. Steer the same running agent from the card channel without losing the card's isolated history.
+6. Let completed work land in **Review**, inspect the output, then mark it done or send it back through the loop.
+
+Cards are intentionally editable. AI-generated tickets are a starting point, not a lock-in. The user can rewrite the ticket, add constraints, attach files, change the agent, and re-run with a clearer scope.
+
+### Live card channels
+
+Each card has an isolated channel used for both planning and execution steering. The channel is designed for long-lived task context:
+
+- messages are attached to the card, not only the browser session
+- running agents can stream status, reasoning summaries, commands, file changes, and final output
+- channel messages can move a card into active work when the user is steering a ticket
+- context minification keeps the useful history without replaying every raw token forever
+- project/card configuration decides whether Omnidex, Codex, Cursor, or another configured agent executes the work
+
+This makes a card feel less like a static Jira ticket and more like a bounded agent workspace with human supervision.
+
+### Data source integration
+
+Omnidex also treats databases as first-class agent surfaces. Admins can configure read-only data sources, currently focused on PostgreSQL-style connections, then explore and query them from the GUI.
+
+Data-source capabilities include:
+
+- read-only connection configuration in **Admin -> Data sources**
+- connection testing
+- raw schema loading
+- AI-assisted schema/catalog exploration
+- direct SQL query execution with SELECT/WITH restrictions
+- natural-language questions that queue a data query job
+- data channels for repeated conversations against the same source
+- rendered answers, SQL, tables, row counts, query evidence, and chartable results
+
+The important design point is that a user can ask human-language questions such as "which accounts had the largest week-over-week drop?" while the system records the SQL and evidence used to answer. This keeps the interaction approachable without hiding the query plan from technical users.
+
+### Human language as the routing layer
+
+The new direction is that users should not need to pick a low-level pipeline for ordinary work. They should be able to ask:
+
+- "Research auth options and draft implementation cards."
+- "Analyze this repo for obvious bugs and refactor candidates."
+- "Why did revenue dip last week?"
+- "Attach this PDF to the ticket and have the agent account for it."
+- "Keep working on this card, but check the migration files first."
+- "Remember the findings from this research topic for next time."
+
+Omnidex then routes the request to the correct bounded context: no workspace for general research, project workspace for build work, card history for ticket steering, database schema for data questions, and memory retrieval when historical context matters.
+
+### Configuration hierarchy
+
+The framework is configurable at multiple scopes:
+
+- **Default/workspace config** for global model and agent defaults.
+- **Project config** for repository-specific models, agents, recipes, and auto-work behavior.
+- **Card config** for per-ticket overrides.
+- **Run config** for one-off decisions like faster mode, deeper reasoning, sandbox behavior, approval policy, network access, or external-agent selection.
+
+This lets lightweight research use a fast native route while a risky project card can use a stricter build agent with stronger reasoning and explicit workspace constraints.
+
+### Memory, evidence, and accountability
+
+Across chat, scrum, data, and CLI runs, Omnidex keeps deterministic systems in charge of state:
+
+- the queue owns job and step lifecycle
+- memories preserve reusable research, preferences, procedures, and project knowledge
+- evidence records commands, web/data findings, outputs, and verification details
+- cards and data channels retain the human-facing conversation
+- deterministic transition logic moves tickets between columns based on job outcomes
+
+The practical result: AI can propose and execute, but Omnidex keeps the audit trail, state transitions, and human approval surfaces explicit.
 
 ## Why this design
 
@@ -1438,6 +1556,24 @@ This stores chunked research memories with topic tags and writes freshness metad
 - `GET /v1/scrum/flow-metrics`
 
 See [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md).
+
+### Data sources and human-language querying
+
+- `GET /v1/data-sources`
+- `GET /v1/data-sources/{id}/channels`
+- `POST /v1/data-sources/{id}/channels`
+- `GET /v1/data-sources/{id}/channels/{channelID}/messages`
+- `POST /v1/data-sources/{id}/channels/{channelID}/messages`
+- `GET /v1/admin/data-sources`
+- `POST /v1/admin/data-sources`
+- `PUT /v1/admin/data-sources/{id}`
+- `DELETE /v1/admin/data-sources/{id}`
+- `POST /v1/admin/data-sources/{id}/test`
+- `GET /v1/admin/data-sources/{id}/schema`
+- `GET /v1/admin/data-sources/{id}/catalog`
+- `POST /v1/admin/data-sources/{id}/explore`
+- `POST /v1/admin/data-sources/{id}/query`
+- `POST /v1/admin/data-sources/{id}/ask`
 
 ### Core jobs & wrappers
 
