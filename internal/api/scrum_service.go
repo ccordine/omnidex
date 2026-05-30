@@ -147,7 +147,9 @@ func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard
 			if err != nil {
 				return ScrumCard{}, err
 			}
-			return dbScrumCardToAPI(updated), nil
+			result := dbScrumCardToAPI(updated)
+			result.FlowMetrics = s.trackScrumCardFlow(r.Context(), projectID, dbScrumCardToAPI(current), result, "update")
+			return result, nil
 		}
 	}
 	if s.scrumStore == nil {
@@ -347,10 +349,12 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board)
 	payload := map[string]any{
 		"board":        board,
 		"cards_by_col": cardsByColumn(board),
 		"play_queue":   scrumPlayQueueSummary(board),
+		"flow_summary": summarizeScrumFlowMetrics(board.Cards),
 	}
 	if projectID > 0 {
 		payload["project_id"] = projectID

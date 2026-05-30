@@ -4,6 +4,7 @@ import { renderAgentConfigSection } from "./agent_config_render";
 import { renderProjectScrumShell } from "./scrum_render";
 import { renderProjectTerminalShell } from "./terminal_render";
 import { renderProjectScreenShell } from "./screen_render";
+import { renderProjectChatShell } from "./project_chat_render";
 import type { ModelFieldDefinition } from "./model_config_types";
 import type { AgentFieldDefinition } from "./agent_config_types";
 import type { BrowseResponse } from "./project_types";
@@ -11,6 +12,7 @@ import type { ProjectRecord, ProjectMapSummary, RecipeCatalogItem } from "./proj
 
 const PROJECT_TABS = [
   { id: "scrum", label: "Scrum" },
+  { id: "chat", label: "Project chat" },
   { id: "terminal", label: "Terminal" },
   { id: "screen", label: "Screen" },
   { id: "settings", label: "Settings" },
@@ -164,7 +166,7 @@ export function renderProjectDetail(
   `;
 
   return `
-    <div data-controller="terminal screen" class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+    <div data-controller="terminal screen project-chat" class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
           <button type="button" data-action="projects#backToList" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:border-cyan-300/40 hover:bg-cyan-300/10">← All projects</button>
@@ -177,6 +179,7 @@ export function renderProjectDetail(
 
       <div class="scrollbar min-h-0 flex-1 overflow-y-auto">
       ${renderProjectScrumShell(project.location, activeTab)}
+      ${renderProjectChatShell(project.name, { reasoning_mode: "instant" }, [], activeTab)}
       ${renderProjectTerminalShell(project.location, activeTab)}
       ${renderProjectScreenShell(project.location, activeTab)}
       ${settingsTab}

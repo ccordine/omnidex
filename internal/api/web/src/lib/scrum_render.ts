@@ -6,6 +6,7 @@ import {
   type ScrumBoard,
   type ScrumBoardResponse,
   type ScrumCard,
+  type ScrumFlowSummary,
 } from "./scrum_types";
 
 const COLUMN_ACCENT: Record<string, string> = {
@@ -37,10 +38,28 @@ function playStateBadge(card: ScrumCard): string {
   }
 }
 
+function flowMetricsBadge(card: ScrumCard): string {
+  const metrics = card.flow_metrics;
+  if (!metrics?.completion_status || metrics.completion_status === "likely_complete") {
+    return "";
+  }
+  const tone =
+    metrics.completion_status === "likely_incomplete"
+      ? "border-amber-300/35 bg-amber-300/10 text-amber-100"
+      : "border-zinc-400/30 bg-zinc-400/10 text-zinc-300";
+  const label =
+    metrics.completion_status === "likely_incomplete"
+      ? `Incomplete${metrics.assigned_returns ? ` · ${metrics.assigned_returns} returns` : ""}`
+      : "Uncertain";
+  const title = (metrics.signals ?? []).slice(0, 3).join(" · ");
+  return `<span class="rounded border px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal ${tone}" title="${escapeHTML(title)}">${escapeHTML(label)}</span>`;
+}
+
 function renderCard(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
   const { done, total } = checklistProgress(card);
   const hasJob = Boolean(card.job_id?.trim());
   const stateBadge = playStateBadge(card);
+  const flowBadge = flowMetricsBadge(card);
   const refCount = card.ref_files?.length ?? 0;
   const chatCount = card.chat?.length ?? 0;
 
@@ -49,6 +68,7 @@ function renderCard(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"
       <div class="flex items-start justify-between gap-2">
         <h4 class="text-sm font-semibold leading-snug text-zinc-100">${escapeHTML(card.title)}</h4>
         <div class="flex shrink-0 flex-col items-end gap-1">
+          ${flowBadge}
           ${stateBadge}
           ${hasJob ? `<span class="rounded bg-cyan-300/15 px-1.5 py-0.5 font-mono text-[10px] text-cyan-200">#${escapeHTML(card.job_id ?? "")}</span>` : ""}
         </div>
@@ -157,6 +177,35 @@ export function renderScrumBoardLoadingOverlay(message = "Working…"): string {
   `;
 }
 
+export function renderScrumFlowSummary(summary?: ScrumFlowSummary | null): string {
+  if (!summary || !summary.total_cards) {
+    return "";
+  }
+  const chips = [
+    summary.likely_incomplete
+      ? `<span class="rounded border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[11px] text-amber-100">${summary.likely_incomplete} likely incomplete</span>`
+      : "",
+    summary.long_conversations
+      ? `<span class="rounded border border-violet-300/25 bg-violet-300/10 px-2 py-1 text-[11px] text-violet-100">${summary.long_conversations} long conversations</span>`
+      : "",
+    summary.assigned_returns_total
+      ? `<span class="rounded border border-rose-300/25 bg-rose-300/10 px-2 py-1 text-[11px] text-rose-100">${summary.assigned_returns_total} assigned returns</span>`
+      : "",
+    summary.likely_complete
+      ? `<span class="rounded border border-emerald-300/25 bg-emerald-300/10 px-2 py-1 text-[11px] text-emerald-100">${summary.likely_complete} likely complete</span>`
+      : "",
+  ].filter(Boolean);
+  if (!chips.length) {
+    return "";
+  }
+  return `
+    <div class="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-zinc-950/50 px-3 py-2">
+      <span class="text-[10px] font-semibold uppercase tracking-[.16em] text-zinc-500">Flow metrics</span>
+      ${chips.join("")}
+    </div>
+  `;
+}
+
 export function renderProjectScrumShell(projectLocation: string, activeTab = "scrum"): string {
   const hidden = activeTab !== "scrum" ? " hidden" : "";
   return `
@@ -172,6 +221,8 @@ export function renderProjectScrumShell(projectLocation: string, activeTab = "sc
           <button type="button" data-action="scrum#refresh" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-cyan-300/40 hover:text-zinc-100">Refresh</button>
         </div>
       </div>
+
+      <div data-scrum-target="flowSummary" class="hidden"></div>
 
       <div class="relative scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-hidden" data-scrum-board-scroll>
         ${renderScrumBoardLoadingOverlay()}

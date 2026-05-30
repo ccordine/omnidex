@@ -484,8 +484,8 @@ export function renderScrumModalChannelTab(card: ScrumCard, playQueue?: ScrumBoa
     : "";
   const messageHtml =
     messages.length > 0 || isRunning
-      ? renderChatMessages(messages, { pending: isRunning, pendingLabel: "Agent running…" })
-      : `<div class="flex h-full min-h-[12rem] items-center justify-center px-4 py-8 text-center text-sm text-zinc-500">Play this card or send a message to start the channel.</div>`;
+      ? renderChatMessages(messages, { pending: isRunning, pendingLabel: "Agent working…" })
+      : `<div class="flex h-full min-h-[12rem] items-center justify-center px-4 py-8 text-center text-sm text-zinc-500">Play this card to watch the agent work live — tool calls, edits, and recap appear here.</div>`;
 
   return `
     <div class="flex min-h-[min(70vh,720px)] flex-col overflow-hidden rounded-lg border border-white/10 bg-zinc-950/50">

@@ -23,7 +23,7 @@ func appendScrumChatMessage(existing []ScrumChatMessage, role, content string) [
 
 func normalizeScrumChannelRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "user", "assistant", "system", "error":
+	case "user", "assistant", "system", "error", "tool", "thinking", "status":
 		return strings.ToLower(strings.TrimSpace(role))
 	default:
 		return "system"
@@ -34,16 +34,6 @@ func appendScrumChannelEvent(card ScrumCard, role, content string) ScrumCard {
 	card.Chat = appendScrumChatMessage(card.Chat, role, content)
 	card.ConsoleLog = appendScrumConsole(card.ConsoleLog, content)
 	return card
-}
-
-func syncedAgentStreamLenFromChat(chat []ScrumChatMessage) int {
-	for i := len(chat) - 1; i >= 0; i-- {
-		if chat[i].Role != "assistant" {
-			continue
-		}
-		return syncedAgentStreamLen(chat[i].Content)
-	}
-	return 0
 }
 
 func stripAssistantStreamMarker(content string) string {
@@ -100,12 +90,12 @@ func syncRunningJobChannelChat(card ScrumCard, job model.JobDetails) (ScrumCard,
 	}
 
 	updated := card
-	if syncedLen == 0 {
-		updated.Chat = appendScrumChatMessage(updated.Chat, "assistant", "agent stream:\n"+delta)
-	} else {
-		updated.Chat = updateLastAssistantChat(updated.Chat, delta)
+	beforeLen := len(updated.Chat)
+	updated.Chat = appendParsedAgentStreamLines(updated.Chat, delta)
+	if len(updated.Chat) == beforeLen {
+		return card, false
 	}
-	updated.Chat = setAssistantStreamMarker(updated.Chat, len(output))
+	updated.Chat = setChannelSyncMarker(updated.Chat, len(output))
 	return updated, true
 }
 
@@ -174,7 +164,7 @@ func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
 	out := make([]ScrumChatMessage, 0, len(card.Chat))
 	for _, msg := range card.Chat {
 		content := strings.TrimSpace(stripAssistantStreamMarker(msg.Content))
-		if content == "" {
+		if content == "" || strings.HasPrefix(content, "[[agent-stream-len:") {
 			continue
 		}
 		out = append(out, ScrumChatMessage{

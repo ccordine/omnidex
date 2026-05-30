@@ -5,12 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
 	"github.com/gryph/omnidex/internal/scrum"
 )
+
+type externalAgentSessionStarter interface {
+	NewExternalAgentSession(input omni.CursorArchitectAgentInput) (omni.ExternalAgentSession, error)
+}
 
 func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string) error {
 	cfg := agentconfig.FromJobMetadata(claim.Job.Metadata)
@@ -45,8 +50,43 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	}
 
 	s.emitStepEvent(claim.Step.ID, "external_agent_started", agentName)
-	result, err := agent.RunArchitectTask(ctx, input)
+
+	var result omni.CursorArchitectAgentResult
+	var err error
+	if starter, ok := agent.(externalAgentSessionStarter); ok && s.repo != nil {
+		session, sessionErr := starter.NewExternalAgentSession(input)
+		if sessionErr != nil {
+			err = sessionErr
+		} else {
+			result, err = omni.StreamExternalAgentSession(ctx, session, omni.ExternalAgentJob{
+				SessionID: agentName,
+				Agent:     strings.TrimSuffix(agentName, "_sdk"),
+				Mode:      "implementation",
+				Packet:    packet,
+				Prompt:    prompt,
+				Workspace: workspace,
+			}, func(event omni.AgentEvent) error {
+				line := omni.AgentEventJSONLine(event)
+				if line == "" {
+					return nil
+				}
+				appendCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				return s.repo.AppendStepOutput(appendCtx, claim.Step.ID, line)
+			})
+		}
+	} else {
+		result, err = agent.RunArchitectTask(ctx, input)
+	}
+
 	if err != nil {
+		if cfg.IsStrict() || scrum.IsStrictScrumExternal(claim.Job.Metadata) {
+			return fmt.Errorf("%s failed: %w", agentName, err)
+		}
+		s.emitStepEvent(claim.Step.ID, "external_agent_failed", err.Error())
+		return s.runNativeV3Step(ctx, claim, contexts, "v3_intent_parse")
+	}
+	if err := omni.ExternalAgentResultError(result); err != nil {
 		if cfg.IsStrict() || scrum.IsStrictScrumExternal(claim.Job.Metadata) {
 			return fmt.Errorf("%s failed: %w", agentName, err)
 		}
@@ -117,6 +157,7 @@ func buildExternalAgentPrompt(job model.Job, contexts map[string]string) string 
 	lines = append(lines, "", "Task:", strings.TrimSpace(job.Instruction), "", scrum.AgentStatusFooter)
 	return strings.Join(lines, "\n")
 }
+
 func metadataStringSlice(metadata json.RawMessage, key string) []string {
 	raw := metadataString(metadata, key)
 	if raw == "" {

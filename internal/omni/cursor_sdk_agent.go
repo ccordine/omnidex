@@ -84,15 +84,15 @@ func (a *CursorSDKArchitectAgent) RunArchitectTask(ctx context.Context, input Cu
 	}
 	ctx, cancel := context.WithTimeout(ctx, envDurationOrDefault("OMNI_CURSOR_TIMEOUT", 90*time.Minute))
 	defer cancel()
-	events, err := session.Start(ctx, ExternalAgentJob{SessionID: "cursor-sdk", Agent: "cursor", Mode: "implementation", Packet: input.Packet, Prompt: buildCursorArchitectPrompt(input), Workspace: input.Workspace})
-	if err != nil {
-		return CursorArchitectAgentResult{}, err
-	}
-	result := resultFromExternalAgentEvents(events)
-	if err := externalAgentResultError(result); err != nil {
-		return result, err
-	}
-	return result, nil
+	result, err := StreamExternalAgentSession(ctx, session, ExternalAgentJob{
+		SessionID: "cursor-sdk",
+		Agent:     "cursor",
+		Mode:      "implementation",
+		Packet:    input.Packet,
+		Prompt:    buildCursorArchitectPrompt(input),
+		Workspace: input.Workspace,
+	}, nil)
+	return result, err
 }
 
 func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAgentInput) (ExternalAgentSession, error) {

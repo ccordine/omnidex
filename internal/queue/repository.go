@@ -1240,6 +1240,23 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 	return &model.ClaimedStep{Job: job, Step: step, Contexts: contexts}, nil
 }
 
+// AppendStepOutput appends text to a running step's output (used for live external-agent streaming).
+func (r *Repository) AppendStepOutput(ctx context.Context, stepID int64, delta string) error {
+	if delta == "" {
+		return nil
+	}
+	if !strings.HasSuffix(delta, "\n") {
+		delta += "\n"
+	}
+	_, err := r.pool.Exec(ctx, `
+		UPDATE job_steps
+		SET output = COALESCE(output, '') || $2,
+		    updated_at = NOW()
+		WHERE id = $1 AND status = $3
+	`, stepID, delta, model.StepStatusRunning)
+	return err
+}
+
 func (r *Repository) CompleteStep(ctx context.Context, stepID int64, output, contextKey, contextValue string) error {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {

@@ -15,14 +15,26 @@ export function chatMessageTimestamp(message: ChatRenderMessage): string {
 export function renderChatMessage(message: ChatRenderMessage): string {
   const role = (message.role || "system").toLowerCase();
   const at = chatMessageTimestamp(message);
+  const bodyClass =
+    role === "thinking"
+      ? "message-body text-sm italic text-zinc-400"
+      : role === "tool"
+        ? "message-body font-mono text-xs text-emerald-100/90"
+        : role === "status"
+          ? "message-body text-xs uppercase tracking-wide text-amber-100/90"
+          : role === "error"
+            ? "message-body text-sm text-rose-200"
+            : "message-body text-zinc-100";
+  const roleLabel =
+    role === "tool" ? "tool" : role === "thinking" ? "thinking" : role === "status" ? "status" : role;
   return `
     <article class="message-grid message-${escapeHTML(role)}">
       <div class="message-shell">
         <div class="message-meta">
-          <span>${escapeHTML(role)}</span>
+          <span>${escapeHTML(roleLabel)}</span>
           <time>${formatTime(at)}</time>
         </div>
-        <div class="message-body text-zinc-100">${escapeHTML(message.content)}</div>
+        <div class="${bodyClass}">${escapeHTML(message.content)}</div>
       </div>
     </article>
   `;

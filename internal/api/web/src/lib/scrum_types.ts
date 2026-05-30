@@ -50,6 +50,30 @@ export type ScrumCoachResponse = {
   enabled?: boolean;
 };
 
+export type ScrumFlowMetrics = {
+  assigned_returns?: number;
+  review_bounces?: number;
+  regression_count?: number;
+  play_runs?: number;
+  channel_messages?: number;
+  planning_messages?: number;
+  conversation_chars?: number;
+  incomplete_score?: number;
+  completion_status?: "likely_complete" | "likely_incomplete" | "uncertain" | string;
+  signals?: string[];
+  last_play_outcome?: string;
+  column?: string;
+};
+
+export type ScrumFlowSummary = {
+  total_cards: number;
+  likely_incomplete: number;
+  uncertain: number;
+  likely_complete: number;
+  assigned_returns_total: number;
+  long_conversations: number;
+};
+
 export type ScrumCard = {
   id: string;
   title: string;
@@ -73,6 +97,7 @@ export type ScrumCard = {
   test_criteria?: ScrumTestCriterion[];
   planning_chat?: ScrumChatMessage[];
   coach_config?: ScrumCoachConfig;
+  flow_metrics?: ScrumFlowMetrics;
   created_at: string;
   updated_at: string;
 };
@@ -95,6 +120,7 @@ export type ScrumBoardResponse = {
     queued_count: number;
     queued_card_ids: string[];
   };
+  flow_summary?: ScrumFlowSummary;
 };
 
 export const COLUMN_LABELS: Record<string, string> = {

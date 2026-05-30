@@ -87,15 +87,15 @@ func (a *CodexSDKArchitectAgent) RunArchitectTask(ctx context.Context, input Cur
 	}
 	ctx, cancel := context.WithTimeout(ctx, envDurationOrDefault("OMNI_CODEX_TIMEOUT", 90*time.Minute))
 	defer cancel()
-	events, err := session.Start(ctx, ExternalAgentJob{SessionID: "codex-sdk", Agent: "codex", Mode: "implementation", Packet: input.Packet, Prompt: buildCodexArchitectPrompt(input), Workspace: input.Workspace})
-	if err != nil {
-		return CursorArchitectAgentResult{}, err
-	}
-	result := resultFromExternalAgentEvents(events)
-	if err := externalAgentResultError(result); err != nil {
-		return result, err
-	}
-	return result, nil
+	result, err := StreamExternalAgentSession(ctx, session, ExternalAgentJob{
+		SessionID: "codex-sdk",
+		Agent:     "codex",
+		Mode:      "implementation",
+		Packet:    input.Packet,
+		Prompt:    buildCodexArchitectPrompt(input),
+		Workspace: input.Workspace,
+	}, nil)
+	return result, err
 }
 
 func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAgentInput) (ExternalAgentSession, error) {

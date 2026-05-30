@@ -134,6 +134,10 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		s.handleProjectMap(w, r, id, action)
 		return
 	}
+	if action == "planning-chat" {
+		s.handleProjectPlanningChat(w, r, id)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		project, err := s.repo.GetProject(r.Context(), id)
@@ -483,6 +487,7 @@ func dbScrumCardToAPI(card queue.DBScrumCard) ScrumCard {
 		PlanningChat: []ScrumChatMessage{},
 		Tags:         []string{},
 		TestCriteria: []ScrumChecklistItem{},
+		FlowMetrics:  card.FlowMetrics,
 	}
 	_ = json.Unmarshal(card.Checklist, &out.Checklist)
 	_ = json.Unmarshal(card.RefFiles, &out.RefFiles)

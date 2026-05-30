@@ -20,13 +20,22 @@ func (s *Server) scrumMoveCard(r *http.Request, cardID, column, beforeCardID str
 			if err != nil {
 				return ScrumCard{}, err
 			}
+			before := map[string]ScrumCard{}
+			for _, card := range board.Cards {
+				before[card.ID] = card
+			}
 			updated, changed, err := placeScrumCard(&board, cardID, column, beforeCardID)
 			if err != nil {
 				return ScrumCard{}, err
 			}
 			for _, card := range changed {
+				prev := before[card.ID]
 				if _, err := s.repo.UpdateScrumCard(r.Context(), projectID, card.ID, apiScrumCardToPatch(card)); err != nil {
 					return ScrumCard{}, err
+				}
+				metrics := s.trackScrumCardFlow(r.Context(), projectID, prev, card, "move")
+				if card.ID == updated.ID {
+					updated.FlowMetrics = metrics
 				}
 			}
 			return updated, nil

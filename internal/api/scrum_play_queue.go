@@ -269,6 +269,16 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 			updated.QueueOrder = 0
 			updated = appendScrumChannelEvent(updated, "system", transition.ConsoleNote)
 			cardChanged = true
+			if s.repo != nil && projectID > 0 {
+				payload, _ := json.Marshal(map[string]any{
+					"outcome": string(outcome),
+					"job_id":  strings.TrimSpace(card.JobID),
+				})
+				_ = s.repo.RecordScrumFlowEvent(
+					r.Context(), projectID, card.ID, scrumFlowEventPlayFinished,
+					card.Column, transition.Column, card.PlayState, transition.PlayState, payload,
+				)
+			}
 		default:
 			if synced, ok := syncRunningJobConsoleLog(updated, job); ok {
 				updated = synced
@@ -315,11 +325,17 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 func (s *Server) persistScrumCard(r *http.Request, projectID int64, card ScrumCard) (ScrumCard, error) {
 	card.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if s.repo != nil && projectID > 0 {
+		var previous ScrumCard
+		if current, err := s.repo.GetScrumCard(r.Context(), projectID, card.ID); err == nil {
+			previous = dbScrumCardToAPI(current)
+		}
 		updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, card.ID, apiScrumCardToPatch(card))
 		if err != nil {
 			return ScrumCard{}, err
 		}
-		return dbScrumCardToAPI(updated), nil
+		result := dbScrumCardToAPI(updated)
+		result.FlowMetrics = s.trackScrumCardFlow(r.Context(), projectID, previous, result, "persist")
+		return result, nil
 	}
 	if s.scrumStore == nil {
 		return ScrumCard{}, fmt.Errorf("scrum store unavailable")

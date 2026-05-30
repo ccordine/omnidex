@@ -27,7 +27,7 @@ import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_con
 import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_config_render";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
 import type { ResolvedAgentConfig } from "../lib/agent_config_types";
-import { renderScrumBoard, renderScrumEmptyState, renderScrumFocusBar } from "../lib/scrum_render";
+import { renderScrumBoard, renderScrumEmptyState, renderScrumFocusBar, renderScrumFlowSummary } from "../lib/scrum_render";
 import {
   renderScrumCardModal,
   renderScrumModalCardTab,
@@ -51,7 +51,10 @@ import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 import { showToast } from "../lib/toast";
 
 export default class ScrumController extends Controller {
-  static targets = ["board", "status", "focus", "boardOverlay", "boardOverlayMessage"];
+  static targets = ["board", "status", "focus", "boardOverlay", "boardOverlayMessage", "flowSummary"];
+
+  declare readonly flowSummaryTarget: HTMLElement;
+  declare readonly hasFlowSummaryTarget: boolean;
 
   declare readonly boardTarget: HTMLElement;
   declare readonly statusTarget: HTMLElement;
@@ -82,6 +85,7 @@ export default class ScrumController extends Controller {
   private lastBoardUpdatedAt = "";
   private scrumTabActive = true;
   private playQueue: ScrumBoardResponse["play_queue"] | null = null;
+  private flowSummary: ScrumBoardResponse["flow_summary"] | null = null;
   private activeCardTab: ScrumCardTab = "card";
   private recipes: RecipeCatalogItem[] = [];
   private projectRecipeId = "";
@@ -93,6 +97,9 @@ export default class ScrumController extends Controller {
   private cardColumnSnapshot = new Map<string, string>();
   /** User drag / manual column changes — skip duplicate move toasts. */
   private skipMoveToastFor = new Set<string>();
+  private scrumRefreshHandler = () => {
+    if (this.projectID) void this.load();
+  };
 
   connect() {
     this.modalClosedHandler = () => this.resetModalShell();
@@ -132,6 +139,7 @@ export default class ScrumController extends Controller {
       }
     };
     document.addEventListener("omni:project-tab", this.projectTabHandler);
+    document.addEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
   }
 
   disconnect() {
@@ -147,6 +155,7 @@ export default class ScrumController extends Controller {
     if (this.projectTabHandler) {
       document.removeEventListener("omni:project-tab", this.projectTabHandler);
     }
+    document.removeEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
     this.stopPolling();
     if (this.coachScanTimer != null) {
       window.clearTimeout(this.coachScanTimer);
@@ -163,6 +172,12 @@ export default class ScrumController extends Controller {
     return this.board?.cards.some((card) => card.play_state === "running" || card.play_state === "queued") ?? false;
   }
 
+  private isModalPlayLive(): boolean {
+    if (!this.activeCardID) return false;
+    const card = this.findCard(this.activeCardID);
+    return card?.play_state === "running" || card?.play_state === "queued";
+  }
+
   private isChannelLive(): boolean {
     if (!this.activeCardID || this.activeCardTab !== "channel") return false;
     const card = this.findCard(this.activeCardID);
@@ -170,7 +185,8 @@ export default class ScrumController extends Controller {
   }
 
   private desiredPollIntervalMs(): number {
-    if (this.isChannelLive()) return 600;
+    if (this.isChannelLive()) return 500;
+    if (this.isModalPlayLive()) return 800;
     if (this.isPlayActive()) return 1000;
     return 1500;
   }
@@ -221,7 +237,7 @@ export default class ScrumController extends Controller {
       this.lastBoardUpdatedAt = fingerprint;
       this.applyBoardPayload(payload, false);
       if (this.activeCardID) {
-        if (this.activeCardTab === "channel") {
+        if (this.activeCardTab === "channel" || this.isModalPlayLive()) {
           await this.refreshLiveChannel(this.activeCardID);
         } else {
           await this.refreshModalSections(this.activeCardID);
@@ -234,10 +250,18 @@ export default class ScrumController extends Controller {
     }
   }
 
+  private renderFlowSummary() {
+    if (!this.hasFlowSummaryTarget) return;
+    const html = renderScrumFlowSummary(this.flowSummary);
+    this.flowSummaryTarget.innerHTML = html;
+    this.flowSummaryTarget.classList.toggle("hidden", !html);
+  }
+
   private renderBoardFromLocal(updateStatus = true) {
     if (!this.board || !this.hasBoardTarget) return;
     const cardsByCol = groupCardsByColumn(this.board);
     this.boardTarget.innerHTML = renderScrumBoard(this.board, cardsByCol, this.playQueue ?? undefined);
+    this.renderFlowSummary();
     if (this.hasFocusTarget) {
       this.focusTarget.innerHTML = renderScrumFocusBar(this.board, cardsByCol, this.playQueue ?? undefined);
     }
@@ -254,10 +278,12 @@ export default class ScrumController extends Controller {
     this.toastAgentColumnMoves(payload.board.cards);
     this.board = payload.board;
     this.playQueue = payload.play_queue ?? null;
+    this.flowSummary = payload.flow_summary ?? null;
     if (!this.pollInFlight) {
       this.lastBoardUpdatedAt = this.boardLiveFingerprint(payload);
     }
     this.boardTarget.innerHTML = renderScrumBoard(payload.board, payload.cards_by_col, payload.play_queue);
+    this.renderFlowSummary();
     if (this.hasFocusTarget) {
       this.focusTarget.innerHTML = renderScrumFocusBar(payload.board, payload.cards_by_col, payload.play_queue);
     }

@@ -45,6 +45,7 @@ type ScrumCard struct {
 	PlanningChat []ScrumChatMessage  `json:"planning_chat"`
 	CoachConfig json.RawMessage      `json:"coach_config,omitempty"`
 	TestCriteria []ScrumChecklistItem `json:"test_criteria"`
+	FlowMetrics  json.RawMessage      `json:"flow_metrics,omitempty"`
 	JobID       string               `json:"job_id,omitempty"`
 	ConsoleLog  string               `json:"console_log,omitempty"`
 	PlayState   string               `json:"play_state,omitempty"`

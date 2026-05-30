@@ -284,6 +284,7 @@ type DBScrumCard struct {
 	PlanningChat json.RawMessage
 	CoachConfig  json.RawMessage
 	TestCriteria json.RawMessage
+	FlowMetrics  json.RawMessage
 	JobID        string
 	ConsoleLog  string
 	PlayState   string
@@ -297,7 +298,7 @@ func (r *Repository) ListScrumCards(ctx context.Context, projectID int64) ([]DBS
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
 		       model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
-		       tags, planning_chat, coach_config, test_criteria,
+		       tags, planning_chat, coach_config, test_criteria, flow_metrics,
 		       job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
 		FROM scrum_cards
 		WHERE project_id = $1
@@ -330,6 +331,7 @@ func (r *Repository) ListScrumCards(ctx context.Context, projectID int64) ([]DBS
 			&card.PlanningChat,
 			&card.CoachConfig,
 			&card.TestCriteria,
+			&card.FlowMetrics,
 			&card.JobID,
 			&card.ConsoleLog,
 			&card.PlayState,
@@ -350,7 +352,7 @@ func (r *Repository) GetScrumCard(ctx context.Context, projectID int64, cardID s
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
 		       model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
-		       tags, planning_chat, coach_config, test_criteria,
+		       tags, planning_chat, coach_config, test_criteria, flow_metrics,
 		       job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
 		FROM scrum_cards
 		WHERE project_id = $1 AND id = $2
@@ -373,6 +375,7 @@ func (r *Repository) GetScrumCard(ctx context.Context, projectID int64, cardID s
 		&card.PlanningChat,
 		&card.CoachConfig,
 		&card.TestCriteria,
+		&card.FlowMetrics,
 		&card.JobID,
 		&card.ConsoleLog,
 		&card.PlayState,
@@ -420,7 +423,7 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 		)
 		RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
 		          model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
-		          tags, planning_chat, coach_config, test_criteria,
+		          tags, planning_chat, coach_config, test_criteria, flow_metrics,
 		          job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
 	`, cardID, projectID, title, strings.TrimSpace(description), column, string(checklist), string(refFiles), string(chat)).Scan(
 		&card.ID,
@@ -441,6 +444,7 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 		&card.PlanningChat,
 		&card.CoachConfig,
 		&card.TestCriteria,
+		&card.FlowMetrics,
 		&card.JobID,
 		&card.ConsoleLog,
 		&card.PlayState,
@@ -563,7 +567,7 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		WHERE project_id = $1 AND id = $2
 		RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
 		          model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
-		          tags, planning_chat, coach_config, test_criteria,
+		          tags, planning_chat, coach_config, test_criteria, flow_metrics,
 		          job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
 	`, projectID, cardID, current.Title, current.Description, current.Column, string(current.Checklist), string(current.RefFiles), string(current.Chat), string(current.ModelConfig), string(current.AgentConfig), current.JiraTicket, current.JiraPrompt, current.RecipeID, string(current.Recipe), string(defaultJSON(current.Tags, `[]`)), string(defaultJSON(current.PlanningChat, `[]`)), string(defaultJSON(current.CoachConfig, `{}`)), string(defaultJSON(current.TestCriteria, `[]`)), current.JobID, current.ConsoleLog, current.PlayState, current.QueueOrder, current.BoardOrder).Scan(
 		&card.ID,
@@ -584,6 +588,7 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		&card.PlanningChat,
 		&card.CoachConfig,
 		&card.TestCriteria,
+		&card.FlowMetrics,
 		&card.JobID,
 		&card.ConsoleLog,
 		&card.PlayState,

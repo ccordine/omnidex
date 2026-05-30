@@ -56,3 +56,8 @@ func externalAgentResultError(result CursorArchitectAgentResult) error {
 	}
 	return nil
 }
+
+// ExternalAgentResultError reports whether an external agent run failed.
+func ExternalAgentResultError(result CursorArchitectAgentResult) error {
+	return externalAgentResultError(result)
+}
