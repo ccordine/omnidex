@@ -21,4 +21,4 @@ COPY --from=build /src/database ./database
 ENV LISTEN_ADDR=:8090
 EXPOSE 8090
 
-CMD ["agent-core"]
+CMD ["/usr/local/bin/agent-core"]

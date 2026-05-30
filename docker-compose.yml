@@ -6,6 +6,8 @@ services:
     env_file:
       - .env
     environment:
+      # Host .env sometimes sets PATH for the bridge; never let that override the container PATH.
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       APP_ENV: ${APP_ENV:-production}
       LISTEN_ADDR: ${LISTEN_ADDR:-0.0.0.0:8090}
       CORE_URL: ${CORE_URL:-http://192.168.1.102:8090}
