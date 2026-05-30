@@ -34,6 +34,31 @@ func TestScrumBaselinePlayOutcomeCompletedInProgress(t *testing.T) {
 	}
 }
 
+func TestResolveScrumPlayOutcomeCompletedRawPlayDefaultsReviewWithoutLLM(t *testing.T) {
+	s := &Server{}
+	job := modelJobDetails(model.JobStatusCompleted, "Codex external implementation session completed")
+	outcome, note := s.resolveScrumPlayOutcome(t.Context(), job)
+	if outcome != ScrumOutcomeSuccess {
+		t.Fatalf("outcome=%q note=%q want success", outcome, note)
+	}
+	transition := scrumColumnForOutcome(outcome)
+	if transition.Column != "review" || transition.PlayState != "" {
+		t.Fatalf("transition=%+v want review with no play state", transition)
+	}
+}
+
+func TestStabilizeCompletedScrumOutcomeIgnoresInProgressScan(t *testing.T) {
+	job := modelJobDetails(model.JobStatusCompleted, "Codex external implementation session completed")
+	outcome, ok := stabilizeCompletedScrumOutcome(job, ScrumOutcomeSuccess, scrumOutcomeClassification{
+		Outcome:    ScrumOutcomeInProgress,
+		Confidence: 0.9,
+		Reason:     "agent mentioned continuing work",
+	})
+	if !ok || outcome != ScrumOutcomeSuccess {
+		t.Fatalf("outcome=%q ok=%v want success stabilization", outcome, ok)
+	}
+}
+
 func TestBuildScrumOutcomeClassifierUserPromptTruncates(t *testing.T) {
 	long := make([]byte, 5000)
 	for i := range long {

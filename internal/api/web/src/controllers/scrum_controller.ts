@@ -17,6 +17,7 @@ import {
   playScrumCard,
   syncScrumBoard,
   suggestScrumTags,
+  uploadScrumCardFiles,
   updateScrumCoachConfig,
 } from "../lib/scrum_api";
 import { fetchProject, fetchRecipes } from "../lib/project_api";
@@ -35,6 +36,7 @@ import {
   renderScrumCardModal,
   renderScrumModalCardTab,
   renderScrumModalCardTicket,
+  renderScrumModalFilesTab,
   renderScrumTagPills,
   renderScrumTagSuggestions,
   renderScrumCoachChat,
@@ -93,6 +95,7 @@ export default class ScrumController extends Controller {
   private boardLoadingDepth = 0;
   private activeCardID: string | null = null;
   private projectFiles: string[] = [];
+  private projectDirs: string[] = [];
   private projectID: number | null = null;
   private cardModelConfig: ResolvedModelConfig | null = null;
   private cardAgentConfig: ResolvedAgentConfig | null = null;
@@ -1182,9 +1185,11 @@ export default class ScrumController extends Controller {
     try {
       const payload = await fetchScrumFiles(this.projectID);
       this.projectFiles = payload.files ?? [];
+      this.projectDirs = payload.dirs ?? [];
       return this.projectFiles;
     } catch {
       this.projectFiles = [];
+      this.projectDirs = [];
       return [];
     }
   }
@@ -1234,9 +1239,10 @@ export default class ScrumController extends Controller {
     if (!id) return;
     const card = this.findCard(id);
     if (!card || !this.board) return;
+    const scroll = this.captureChannelScroll();
     this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(id)));
     this.scheduleApplyCardTabState();
-    this.scrollChannelToLatest(true);
+    this.restoreChannelScroll(scroll, true);
   }
 
   private async refreshActiveModal(cardID: string) {
@@ -1262,7 +1268,7 @@ export default class ScrumController extends Controller {
   async refreshModalSections(cardID: string) {
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
-    const files = this.projectFiles.length ? this.projectFiles : await this.loadProjectFiles();
+    const files = this.projectFiles.length || this.projectDirs.length ? this.projectFiles : await this.loadProjectFiles();
     await this.loadCardConfigs(cardID);
     this.recycle("scrum-modal-toolbar", renderScrumModalToolbar(card, this.board, this.playQueue ?? undefined));
     this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`);
@@ -1270,6 +1276,7 @@ export default class ScrumController extends Controller {
       this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(cardID)));
     } else {
       this.recycle("scrum-modal-card", renderScrumModalCardTab(card, files));
+      this.recycle("scrum-modal-files", renderScrumModalFilesTab(card, files, this.projectDirs));
       this.recycle("scrum-modal-tests", renderScrumModalTestsTab(card));
       this.recycle("scrum-modal-config", renderScrumModalConfigTab(
         card,
@@ -1300,11 +1307,12 @@ export default class ScrumController extends Controller {
   private async refreshLiveChannel(cardID: string, pinScroll = false) {
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
+    const scroll = this.captureChannelScroll();
     this.recycle("scrum-modal-toolbar", renderScrumModalToolbar(card, this.board, this.playQueue ?? undefined));
     this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`);
     this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(cardID)));
     this.scheduleApplyCardTabState();
-    this.scrollChannelToLatest(pinScroll);
+    this.restoreChannelScroll(scroll, pinScroll);
   }
 
   private channelStreamElement(): HTMLElement | null {
@@ -1316,6 +1324,32 @@ export default class ScrumController extends Controller {
   private shouldStickChannelScroll(stream: HTMLElement): boolean {
     // flex-col-reverse: scrollTop 0 = pinned to newest at the bottom
     return stream.scrollTop <= 64;
+  }
+
+  private captureChannelScroll(): { top: number; pinned: boolean } | null {
+    const stream = this.channelStreamElement();
+    if (!stream) return null;
+    return {
+      top: stream.scrollTop,
+      pinned: this.shouldStickChannelScroll(stream),
+    };
+  }
+
+  private restoreChannelScroll(snapshot: { top: number; pinned: boolean } | null, forcePinned = false) {
+    if (forcePinned || !snapshot || snapshot.pinned) {
+      this.scrollChannelToLatest(true);
+      return;
+    }
+    const run = () => {
+      const stream = this.channelStreamElement();
+      if (!stream) return;
+      stream.scrollTop = snapshot.top;
+    };
+    run();
+    requestAnimationFrame(() => {
+      run();
+      requestAnimationFrame(run);
+    });
   }
 
   private scrollChannelToLatest(force = false) {
@@ -1453,6 +1487,7 @@ export default class ScrumController extends Controller {
         card,
         this.board,
         files,
+        this.projectDirs,
         this.cardModelConfig?.fields ?? [],
         this.cardModelConfig?.source ?? "env",
         this.cardAgentConfig?.fields ?? [],
@@ -2123,7 +2158,8 @@ export default class ScrumController extends Controller {
     try {
       const updated = await patchScrumCard(cardID, { ref_files: refFiles }, this.projectID);
       this.upsertCard(updated);
-      await this.refreshModalSections(cardID);
+      this.recycle("scrum-modal-files", renderScrumModalFilesTab(updated, this.projectFiles, this.projectDirs));
+      this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(updated, this.activeCardTab)}</nav>`);
       await this.reloadBoard(cardID);
       this.actionOk("Reference attached");
     } catch (error) {
@@ -2144,9 +2180,32 @@ export default class ScrumController extends Controller {
     try {
       const updated = await patchScrumCard(cardID, { ref_files: refFiles }, this.projectID);
       this.upsertCard(updated);
-      await this.refreshModalSections(cardID);
+      this.recycle("scrum-modal-files", renderScrumModalFilesTab(updated, this.projectFiles, this.projectDirs));
+      this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(updated, this.activeCardTab)}</nav>`);
       await this.reloadBoard(cardID);
       this.actionOk("Reference removed");
+    } catch (error) {
+      this.actionFail(error);
+    }
+  }
+
+  async uploadRefFiles(event: Event) {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const cardID = form.dataset.cardId || "";
+    const input = form.querySelector('[data-scrum-field="uploadFiles"]') as HTMLInputElement | null;
+    const files = input?.files;
+    if (!cardID || !files || files.length === 0) return;
+    this.setStatus("Uploading files...", "busy");
+    try {
+      const payload = await uploadScrumCardFiles(cardID, files, this.projectID);
+      this.upsertCard(payload.card);
+      if (input) input.value = "";
+      await this.loadProjectFiles();
+      this.recycle("scrum-modal-files", renderScrumModalFilesTab(payload.card, this.projectFiles, this.projectDirs));
+      this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(payload.card, this.activeCardTab)}</nav>`);
+      await this.reloadBoard(cardID);
+      this.actionOk(`Uploaded ${payload.uploaded?.length ?? files.length} file(s)`);
     } catch (error) {
       this.actionFail(error);
     }

@@ -339,7 +339,21 @@ export async function suggestScrumTags(
   return readJSON(response);
 }
 
-export async function fetchScrumFiles(projectID?: number | null): Promise<{ files: string[]; root: string }> {
+export async function fetchScrumFiles(projectID?: number | null): Promise<{ files: string[]; dirs?: string[]; root: string }> {
   const response = await fetch(`/v1/scrum/files${projectQuery(projectID)}`);
+  return readJSON(response);
+}
+
+export async function uploadScrumCardFiles(
+  cardID: string,
+  files: FileList | File[],
+  projectID?: number | null,
+): Promise<{ card: ScrumCard; uploaded: string[] }> {
+  const body = new FormData();
+  Array.from(files).forEach((file) => body.append("files", file));
+  const response = await fetch(cardURL(cardID, "files", projectID), {
+    method: "POST",
+    body,
+  });
   return readJSON(response);
 }

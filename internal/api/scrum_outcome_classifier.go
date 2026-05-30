@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	scrumOutcomeClassifierTimeout   = 20 * time.Second
-	scrumOutcomeClassifierMaxChars  = 3500
-	scrumOutcomeClassifierMinConf   = 0.55
+	scrumOutcomeClassifierTimeout  = 20 * time.Second
+	scrumOutcomeClassifierMaxChars = 3500
+	scrumOutcomeClassifierMinConf  = 0.55
 )
 
 type scrumOutcomeClassification struct {
@@ -205,5 +205,15 @@ func (s *Server) resolveScrumPlayOutcome(ctx context.Context, job model.JobDetai
 	if classified.RealError && classified.Outcome != ScrumOutcomeSuccess {
 		note += " (real error)"
 	}
+	if outcome, ok := stabilizeCompletedScrumOutcome(job, baseline, classified); ok {
+		return outcome, note + " (kept completed job ready for review)"
+	}
 	return classified.Outcome, note
+}
+
+func stabilizeCompletedScrumOutcome(job model.JobDetails, baseline ScrumManagerOutcome, classified scrumOutcomeClassification) (ScrumManagerOutcome, bool) {
+	if job.Job.Status == model.JobStatusCompleted && baseline == ScrumOutcomeSuccess && classified.Outcome == ScrumOutcomeInProgress {
+		return baseline, true
+	}
+	return classified.Outcome, false
 }

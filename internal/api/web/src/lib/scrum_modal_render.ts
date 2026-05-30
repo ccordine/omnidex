@@ -8,10 +8,11 @@ import type { AgentFieldDefinition } from "./agent_config_types";
 import type { RecipeCatalogItem } from "./project_types";
 import { COLUMN_LABELS, SCRUM_COLUMNS, isPlayControlUnlocked, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumCoachConfig, type ScrumCoachSuggestion } from "./scrum_types";
 
-export type ScrumCardTab = "card" | "tests" | "config" | "recipe" | "channel";
+export type ScrumCardTab = "card" | "files" | "tests" | "config" | "recipe" | "channel";
 
 const CARD_TABS: Array<{ id: ScrumCardTab; label: string }> = [
   { id: "card", label: "Card" },
+  { id: "files", label: "Files" },
   { id: "tests", label: "Tests" },
   { id: "config", label: "Config" },
   { id: "recipe", label: "Recipe" },
@@ -69,8 +70,10 @@ function tabBadge(card: ScrumCard, tab: ScrumCardTab): string {
     case "card":
       if ((card.planning_chat ?? []).length > 0) return countBadge((card.planning_chat ?? []).length, "violet");
       if (pending > 0) return countBadge(pending, "amber");
-      if (refs > 0) return countBadge(refs, "cyan");
       if (card.card_ticket?.trim()) return dotBadge("emerald");
+      return "";
+    case "files":
+      if (refs > 0) return countBadge(refs, "cyan");
       return "";
     case "tests": {
       const tests = card.test_criteria ?? [];
@@ -212,21 +215,38 @@ export function renderScrumModalChecklist(card: ScrumCard): string {
   `;
 }
 
-export function renderScrumModalRefFiles(card: ScrumCard, files: string[] = []): string {
+export function renderScrumModalRefFiles(card: ScrumCard, files: string[] = [], dirs: string[] = []): string {
   const attached = (card.ref_files ?? []).map((file) => `
     <li class="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-zinc-900/50 px-3 py-2">
       <span class="min-w-0 truncate font-mono text-xs text-zinc-200">${escapeHTML(file)}</span>
       <button type="button" data-action="scrum#removeRefFile" data-card-id="${escapeHTML(card.id)}" data-ref-file="${escapeHTML(file)}" class="shrink-0 text-xs text-rose-300 hover:text-rose-200">Remove</button>
     </li>
   `).join("");
-  const fileOptions = files.filter((file) => !(card.ref_files ?? []).includes(file)).slice(0, 80).map((file) => `<option value="${escapeHTML(file)}">${escapeHTML(file)}</option>`).join("");
+  const dirOptions = dirs.filter((dir) => !(card.ref_files ?? []).includes(dir)).slice(0, 80).map((dir) => `<option value="${escapeHTML(dir)}">dir/${escapeHTML(dir)}</option>`).join("");
+  const fileOptions = files.filter((file) => !(card.ref_files ?? []).includes(file)).slice(0, 160).map((file) => `<option value="${escapeHTML(file)}">${escapeHTML(file)}</option>`).join("");
   return `
     <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
       <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Reference files</h3>
-      <p class="mt-1 text-xs text-zinc-500">Attach project files Omnidex should read when playing this card.</p>
+      <p class="mt-1 text-xs text-zinc-500">Attach project files and directories Omnidex should read when playing this card.</p>
       <ul class="mt-3 space-y-2">${attached || `<li class="text-sm text-zinc-500">No files attached.</li>`}</ul>
-      ${fileOptions ? `<form data-action="submit->scrum#addRefFile" data-card-id="${escapeHTML(card.id)}" class="mt-3 flex flex-wrap gap-2"><select data-scrum-field="refFile" class="min-w-[12rem] flex-1 rounded-md border border-white/10 bg-zinc-900 px-2 py-2 text-xs text-zinc-100 outline-none"><option value="">Pick project file…</option>${fileOptions}</select><button type="submit" class="rounded-md border border-white/10 px-3 py-2 text-xs text-zinc-200 hover:border-cyan-300/40">Attach</button></form>` : ""}
+      ${fileOptions || dirOptions ? `<form data-action="submit->scrum#addRefFile" data-card-id="${escapeHTML(card.id)}" class="mt-3 flex flex-wrap gap-2"><select data-scrum-field="refFile" class="min-w-[12rem] flex-1 rounded-md border border-white/10 bg-zinc-900 px-2 py-2 text-xs text-zinc-100 outline-none"><option value="">Pick project file or directory…</option>${dirOptions}${fileOptions}</select><button type="submit" class="rounded-md border border-white/10 px-3 py-2 text-xs text-zinc-200 hover:border-cyan-300/40">Attach</button></form>` : ""}
     </section>
+  `;
+}
+
+export function renderScrumModalFilesTab(card: ScrumCard, files: string[] = [], dirs: string[] = []): string {
+  return `
+    <div class="mx-auto max-w-4xl space-y-4">
+      ${renderScrumModalRefFiles(card, files, dirs)}
+      <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+        <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Upload context files</h3>
+        <p class="mt-1 text-xs text-zinc-500">Uploads are saved into <span class="font-mono text-zinc-400">.omni/card-files/${escapeHTML(card.id)}</span> and attached to this card.</p>
+        <form data-action="submit->scrum#uploadRefFiles" data-card-id="${escapeHTML(card.id)}" class="mt-3 flex flex-wrap items-center gap-2">
+          <input data-scrum-field="uploadFiles" type="file" multiple class="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-xs text-zinc-100 file:mr-3 file:rounded file:border-0 file:bg-cyan-300 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-zinc-950" />
+          <button type="submit" class="rounded-md bg-cyan-300 px-3 py-2 text-xs font-semibold text-zinc-950 hover:bg-cyan-200">Upload</button>
+        </form>
+      </section>
+    </div>
   `;
 }
 
@@ -410,7 +430,6 @@ export function renderScrumModalCardTab(card: ScrumCard, files: string[] = []): 
       <div class="space-y-4">
         ${renderScrumModalDetails(card)}
         ${renderScrumModalChecklist(card)}
-        ${renderScrumModalRefFiles(card, files)}
         <div data-recyclr-sink="scrum-card-ticket">${renderScrumModalCardTicket(card)}</div>
       </div>
       <div class="space-y-4 xl:sticky xl:top-0 xl:self-start">
@@ -575,6 +594,7 @@ export function renderScrumCardModal(
   card: ScrumCard,
   board: ScrumBoard,
   files: string[] = [],
+  dirs: string[] = [],
   modelFields: ModelFieldDefinition[] = [],
   resolvedModelSource = "env",
   agentFields: AgentFieldDefinition[] = [],
@@ -605,6 +625,7 @@ export function renderScrumCardModal(
     </div>
     <div class="omni-modal-body scrollbar p-4 md:p-5">
       <div data-scrum-tab-panel="card" class="${tabPanelClass("card", activeTab)}" data-recyclr-sink="scrum-modal-card">${renderScrumModalCardTab(card, files)}</div>
+      <div data-scrum-tab-panel="files" class="${tabPanelClass("files", activeTab)}" data-recyclr-sink="scrum-modal-files">${renderScrumModalFilesTab(card, files, dirs)}</div>
       <div data-scrum-tab-panel="tests" class="${tabPanelClass("tests", activeTab)}" data-recyclr-sink="scrum-modal-tests">${renderScrumModalTestsTab(card)}</div>
       <div data-scrum-tab-panel="config" class="${tabPanelClass("config", activeTab)}" data-recyclr-sink="scrum-modal-config">${renderScrumModalConfigTab(card, modelFields, resolvedModelSource, agentFields, resolvedAgentSource, resolvedAgentSystem)}</div>
       <div data-scrum-tab-panel="recipe" class="${tabPanelClass("recipe", activeTab)}" data-recyclr-sink="scrum-modal-recipe">${renderScrumModalRecipeTab(card, recipes, projectRecipeId, projectRecipe)}</div>

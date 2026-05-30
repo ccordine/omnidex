@@ -15,9 +15,9 @@ export function parseAdminTabFromLocation(loc: Pick<Location, "search"> = window
   return new URLSearchParams(loc.search).get("admin_tab")?.trim() || "overview";
 }
 
-export type ScrumCardTab = "card" | "tests" | "config" | "recipe" | "channel";
+export type ScrumCardTab = "card" | "files" | "tests" | "config" | "recipe" | "channel";
 
-const SCRUM_CARD_TABS: ScrumCardTab[] = ["card", "tests", "config", "recipe", "channel"];
+const SCRUM_CARD_TABS: ScrumCardTab[] = ["card", "files", "tests", "config", "recipe", "channel"];
 
 export function isScrumCardTab(value: string | null | undefined): value is ScrumCardTab {
   return Boolean(value && SCRUM_CARD_TABS.includes(value as ScrumCardTab));

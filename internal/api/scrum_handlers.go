@@ -155,6 +155,8 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 			s.handleScrumCardCoachConfig(w, r, cardID)
 		case "tags-suggest":
 			s.handleScrumCardTagsSuggest(w, r, cardID)
+		case "files":
+			s.handleScrumCardFiles(w, r, cardID)
 		case "move":
 			s.handleScrumCardMove(w, r, cardID)
 		case "done":
@@ -344,6 +346,7 @@ func (s *Server) handleScrumFiles(w http.ResponseWriter, r *http.Request) {
 		target = filepath.Join(root, sub)
 	}
 	files := []string{}
+	dirs := []string{}
 	_ = filepath.WalkDir(target, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil
@@ -359,6 +362,7 @@ func (s *Server) handleScrumFiles(w http.ResponseWriter, r *http.Request) {
 			if strings.Count(rel, string(os.PathSeparator)) > 2 {
 				return filepath.SkipDir
 			}
+			dirs = append(dirs, filepath.ToSlash(rel))
 			return nil
 		}
 		if strings.Count(rel, string(os.PathSeparator)) > 3 {
@@ -370,7 +374,117 @@ func (s *Server) handleScrumFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"files": files, "root": root})
+	writeJSON(w, http.StatusOK, map[string]any{"files": files, "dirs": dirs, "root": root})
+}
+
+func (s *Server) handleScrumCardFiles(w http.ResponseWriter, r *http.Request, cardID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	card, _, projectID, err := s.scrumGetCard(r, cardID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "card not found")
+		return
+	}
+	root, err := s.scrumProjectDirectory(r)
+	if err != nil || strings.TrimSpace(root) == "" {
+		writeError(w, http.StatusBadRequest, "project directory is required for file uploads")
+		return
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid multipart upload")
+		return
+	}
+	headers := r.MultipartForm.File["files"]
+	if len(headers) == 0 {
+		writeError(w, http.StatusBadRequest, "upload one or more files in the files field")
+		return
+	}
+	uploadDir := filepath.Join(root, ".omni", "card-files", safeCardFileSegment(cardID))
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	refs := append([]string(nil), card.RefFiles...)
+	uploaded := []string{}
+	for _, header := range headers {
+		name := safeCardFileSegment(header.Filename)
+		if name == "" {
+			continue
+		}
+		src, err := header.Open()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		dstPath := filepath.Join(uploadDir, name)
+		dst, err := os.OpenFile(dstPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+		if err != nil {
+			src.Close()
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_, copyErr := io.Copy(dst, io.LimitReader(src, 64<<20))
+		closeErr := dst.Close()
+		src.Close()
+		if copyErr != nil {
+			writeError(w, http.StatusInternalServerError, copyErr.Error())
+			return
+		}
+		if closeErr != nil {
+			writeError(w, http.StatusInternalServerError, closeErr.Error())
+			return
+		}
+		rel, err := filepath.Rel(root, dstPath)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		ref := filepath.ToSlash(rel)
+		uploaded = append(uploaded, ref)
+		if !stringSliceContains(refs, ref) {
+			refs = append(refs, ref)
+		}
+	}
+	updated, err := s.scrumUpdateCard(r, cardID, ScrumCard{RefFiles: refs}, map[string]json.RawMessage{"ref_files": json.RawMessage(`[]`)})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if projectID > 0 && s.repo != nil {
+		s.publishScrumModalCardRefresh(r.Context(), projectID, updated, "files updated")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"card": updated, "uploaded": uploaded})
+}
+
+func safeCardFileSegment(name string) string {
+	name = filepath.Base(strings.TrimSpace(name))
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return r
+		case r == '.', r == '-', r == '_':
+			return r
+		default:
+			return '-'
+		}
+	}, name)
+	return strings.Trim(name, ".- ")
+}
+
+func stringSliceContains(items []string, value string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleScrumCardSync(w http.ResponseWriter, r *http.Request) {
