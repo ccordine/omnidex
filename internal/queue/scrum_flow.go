@@ -33,6 +33,7 @@ func (r *Repository) RecordScrumFlowEvent(ctx context.Context, projectID int64, 
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
+	payload = SanitizeUTF8Bytes(payload)
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO scrum_flow_events (
 			project_id, card_id, event_type,
@@ -95,6 +96,7 @@ func (r *Repository) UpdateScrumCardFlowMetrics(ctx context.Context, projectID i
 	if len(metrics) == 0 {
 		metrics = json.RawMessage(`{}`)
 	}
+	metrics = SanitizeUTF8Bytes(metrics)
 	_, err := r.pool.Exec(ctx, `
 		UPDATE scrum_cards
 		SET flow_metrics = $3::jsonb, updated_at = NOW()

@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func appendScrumChatMessage(existing []ScrumChatMessage, role, content string) []ScrumChatMessage {
-	content = strings.TrimSpace(content)
+	content = strings.TrimSpace(sanitizeScrumChannelText(content))
 	if content == "" {
 		return existing
 	}
@@ -74,6 +75,14 @@ func setAssistantStreamMarker(chat []ScrumChatMessage, syncedLen int) []ScrumCha
 
 func agentStreamMarker(syncedLen int) string {
 	return fmt.Sprintf("[[agent-stream-len:%d]]", syncedLen)
+}
+
+func sanitizeScrumChannelText(s string) string {
+	return queue.SanitizeUTF8Text(s)
+}
+
+func sanitizeScrumChannelBytes(b []byte) []byte {
+	return queue.SanitizeUTF8Bytes(b)
 }
 
 func syncRunningJobChannelChat(card ScrumCard, job model.JobDetails) (ScrumCard, bool) {

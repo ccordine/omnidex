@@ -8,6 +8,7 @@ import {
   fetchProjects,
   fetchProject,
   fetchProjectDebuggerStatus,
+  fetchProjectGit,
   fetchProjectMap,
   fetchRecipes,
   runProjectDebugger,
@@ -16,6 +17,7 @@ import {
   updateProject,
 } from "../lib/project_api";
 import { renderBrowseModal, renderProjectCreateModal, renderProjectDetail, renderProjectList } from "../lib/project_render";
+import { renderProjectGitSection } from "../lib/project_git_render";
 import { renderProjectDebuggerModal } from "../lib/project_debugger_render";
 import { patchScrumAutoReview } from "../lib/scrum_api";
 import { fetchJobRecord } from "../lib/data_api";
@@ -29,7 +31,7 @@ import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 import { t } from "../lib/i18n";
 import { showToast } from "../lib/toast";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
-import type { BrowseResponse, DebuggerLastRun, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
+import type { BrowseResponse, DebuggerLastRun, ProjectGitStatus, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
 import type GxController from "./gx_controller";
 
 export default class ProjectsController extends Controller {
@@ -56,6 +58,7 @@ export default class ProjectsController extends Controller {
   private currentModelConfig: ResolvedModelConfig | null = null;
   private currentAgentConfig: ResolvedAgentConfig | null = null;
   private currentProjectMap: ProjectMapSummary | null = null;
+  private currentProjectGit: ProjectGitStatus | null = null;
   private debuggerProjectID: number | null = null;
   private debuggerProjectName = "";
   private debuggerLastRun: DebuggerLastRun | null = null;
@@ -408,6 +411,9 @@ export default class ProjectsController extends Controller {
     event.preventDefault();
     this.activeTab = (event.currentTarget as HTMLElement).dataset.projectTab || "scrum";
     this.applyTabState();
+    if (this.activeTab === "git" && this.selectedProjectID) {
+      void this.refreshProjectGitPanel(this.selectedProjectID).catch((error) => this.actionFail(error));
+    }
     document.dispatchEvent(
       new CustomEvent("omni:project-tab", {
         detail: { tab: this.activeTab, project_id: this.selectedProjectID },
@@ -415,17 +421,47 @@ export default class ProjectsController extends Controller {
     );
   }
 
-  async renderDetail(id: number) {
-    this.setStatus("Loading project…", "busy");
+  private async refreshProjectGitPanel(projectID: number) {
+    const panel = this.detailTarget.querySelector('[data-project-tab-panel="git"]');
+    if (!panel) return;
+    this.currentProjectGit = await fetchProjectGit(projectID);
+    panel.innerHTML = renderProjectGitSection(projectID, this.currentProjectGit);
+  }
+
+  async refreshProjectGit(event: Event) {
+    event.preventDefault();
+    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
+    if (!id) return;
+    this.setStatus("Refreshing git status…", "busy");
     try {
-      const [{ project, modelConfig }, agentPayload, projectMap] = await Promise.all([
+      await this.refreshProjectGitPanel(id);
+      this.actionOk("Git status refreshed");
+    } catch (error) {
+      this.actionFail(error);
+    }
+  }
+
+  async renderDetail(id: number, options: { preserveStatus?: boolean } = {}) {
+    if (!options.preserveStatus) {
+      this.setStatus("Loading project…", "busy");
+    }
+    try {
+      const gitPromise =
+        this.activeTab === "git" || this.currentProjectGit
+          ? fetchProjectGit(id).catch(() => null)
+          : Promise.resolve(null);
+      const [{ project, modelConfig }, agentPayload, projectMap, projectGit] = await Promise.all([
         fetchProject(id),
         fetchAgentDefaults(id).catch(() => null),
         fetchProjectMap(id).catch(() => null),
+        gitPromise,
       ]);
       this.currentModelConfig = modelConfig ?? null;
       this.currentAgentConfig = agentPayload?.resolved ?? null;
       this.currentProjectMap = projectMap;
+      if (projectGit) {
+        this.currentProjectGit = projectGit;
+      }
       this.detailTarget.innerHTML = renderProjectDetail(
         project,
         this.recipes,
@@ -435,6 +471,7 @@ export default class ProjectsController extends Controller {
         agentPayload?.resolved?.source ?? "env",
         agentPayload?.resolved?.system ?? "omnidex",
         projectMap,
+        this.currentProjectGit,
         this.activeTab,
       );
       this.applyTabState();
@@ -448,7 +485,9 @@ export default class ProjectsController extends Controller {
       this.listTarget.classList.add("hidden");
       this.dispatchProjectOpened(project);
       void this.refreshProjectMapAfterAutoSync(id);
-      this.setStatus(project.name, "ok");
+      if (!options.preserveStatus) {
+        this.setStatus(project.name, "ok");
+      }
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
     }
@@ -457,6 +496,7 @@ export default class ProjectsController extends Controller {
   backToList() {
     this.selectedProjectID = null;
     this.activeTab = "scrum";
+    this.currentProjectGit = null;
     this.detailTarget.classList.add("hidden");
     this.detailTarget.classList.remove("flex");
     this.listTarget.classList.remove("hidden");

@@ -76,7 +76,11 @@ func (s *Server) handleScrumCardTagsSuggest(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if len(suggested) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"tags": []string{}, "notes": notes})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"card":  card,
+			"tags":  []string{},
+			"notes": notes,
+		})
 		return
 	}
 	card.Tags = mergeTags(card.Tags, suggested)

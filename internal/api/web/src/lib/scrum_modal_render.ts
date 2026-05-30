@@ -249,7 +249,10 @@ export function renderScrumModalJira(card: ScrumCard): string {
   `;
 }
 
-export function renderScrumTagPills(card: ScrumCard, editable = true): string {
+export function renderScrumTagPills(card: ScrumCard | null | undefined, editable = true): string {
+  if (!card) {
+    return `<p class="text-xs text-zinc-600">No tags yet. Add or suggest tags to build project memory.</p>`;
+  }
   const tags = card.tags ?? [];
   if (!tags.length) {
     return `<p class="text-xs text-zinc-600">No tags yet. Add or suggest tags to build project memory.</p>`;

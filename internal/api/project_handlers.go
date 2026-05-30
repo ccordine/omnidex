@@ -134,6 +134,10 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		s.handleProjectMap(w, r, id, action)
 		return
 	}
+	if action == "git" {
+		s.handleProjectGit(w, r, id)
+		return
+	}
 	if action == "planning-chat" {
 		s.handleProjectPlanningChat(w, r, id)
 		return
@@ -533,24 +537,24 @@ func apiScrumCardToPatch(card ScrumCard) map[string]any {
 		coachConfig = json.RawMessage(`{}`)
 	}
 	return map[string]any{
-		"title":          card.Title,
-		"description":    card.Description,
+		"title":          sanitizeScrumChannelText(card.Title),
+		"description":    sanitizeScrumChannelText(card.Description),
 		"column":         card.Column,
-		"checklist":      json.RawMessage(checklist),
-		"ref_files":      json.RawMessage(refFiles),
-		"chat":           json.RawMessage(chat),
-		"planning_chat":  json.RawMessage(planningChat),
-		"tags":           json.RawMessage(tags),
-		"test_criteria":  json.RawMessage(testCriteria),
-		"coach_config":   coachConfig,
-		"model_config":   modelConfig,
-		"agent_config":   agentConfig,
-		"jira_ticket":    card.JiraTicket,
-		"jira_prompt":    card.JiraPrompt,
-		"recipe_id":      card.RecipeID,
-		"recipe":         recipe,
+		"checklist":      json.RawMessage(sanitizeScrumChannelBytes(checklist)),
+		"ref_files":      json.RawMessage(sanitizeScrumChannelBytes(refFiles)),
+		"chat":           json.RawMessage(sanitizeScrumChannelBytes(chat)),
+		"planning_chat":  json.RawMessage(sanitizeScrumChannelBytes(planningChat)),
+		"tags":           json.RawMessage(sanitizeScrumChannelBytes(tags)),
+		"test_criteria":  json.RawMessage(sanitizeScrumChannelBytes(testCriteria)),
+		"coach_config":   json.RawMessage(sanitizeScrumChannelBytes(coachConfig)),
+		"model_config":   json.RawMessage(sanitizeScrumChannelBytes(modelConfig)),
+		"agent_config":   json.RawMessage(sanitizeScrumChannelBytes(agentConfig)),
+		"jira_ticket":    sanitizeScrumChannelText(card.JiraTicket),
+		"jira_prompt":    sanitizeScrumChannelText(card.JiraPrompt),
+		"recipe_id":      sanitizeScrumChannelText(card.RecipeID),
+		"recipe":         json.RawMessage(sanitizeScrumChannelBytes(recipe)),
 		"job_id":         card.JobID,
-		"console_log":    card.ConsoleLog,
+		"console_log":    sanitizeScrumChannelText(card.ConsoleLog),
 		"play_state":     card.PlayState,
 		"queue_order":    card.QueueOrder,
 		"board_order":    card.BoardOrder,

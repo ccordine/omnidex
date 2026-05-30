@@ -126,7 +126,7 @@ func (s *Server) enqueueScrumCardAgentRun(
 	instruction string,
 	channelOrigin bool,
 ) (ScrumCard, error) {
-	instruction = strings.TrimSpace(instruction)
+	instruction = strings.TrimSpace(sanitizeScrumChannelText(instruction))
 	if instruction == "" {
 		return ScrumCard{}, fmt.Errorf("instruction is required")
 	}

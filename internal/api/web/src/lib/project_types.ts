@@ -75,6 +75,47 @@ export type ProjectMapSummary = {
   message?: string;
 };
 
+export type ProjectGitFileStatus = {
+  path: string;
+  status?: string;
+  index_status?: string;
+  worktree_status?: string;
+};
+
+export type ProjectGitCommit = {
+  hash: string;
+  subject: string;
+  author?: string;
+  relative_date?: string;
+};
+
+export type ProjectGitStatus = {
+  location?: string;
+  source?: string;
+  is_repo: boolean;
+  root?: string;
+  branch?: string;
+  detached?: boolean;
+  head_short?: string;
+  clean?: boolean;
+  has_upstream?: boolean;
+  upstream_branch?: string;
+  ahead?: number;
+  behind?: number;
+  remote_url?: string;
+  staged_count?: number;
+  modified_count?: number;
+  untracked_count?: number;
+  deleted_count?: number;
+  conflicted_count?: number;
+  stash_count?: number;
+  changed_files?: ProjectGitFileStatus[];
+  recent_commits?: ProjectGitCommit[];
+  last_commit?: ProjectGitCommit;
+  message?: string;
+  error?: string;
+};
+
 export type DebuggerCreatedCard = {
   id: string;
   title: string;

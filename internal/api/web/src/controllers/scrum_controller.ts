@@ -22,7 +22,7 @@ import { fetchProject, fetchRecipes } from "../lib/project_api";
 import type { RecipeCatalogItem } from "../lib/project_types";
 import { renderRecyclrBundle } from "../lib/recyclr";
 import { closeModalShell, openModalShell, resetModalPanelWidth } from "../lib/modal";
-import { clearScrumModalHref, isScrumCardTab, parseScrumTabFromLocation, scrumModalHref } from "../lib/panel_routing";
+import { clearScrumModalHref, isScrumCardTab, scrumModalHref } from "../lib/panel_routing";
 import { fetchModelDefaults } from "../lib/model_config_api";
 import { fetchAgentDefaults } from "../lib/agent_config_api";
 import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_config_render";
@@ -250,14 +250,7 @@ export default class ScrumController extends Controller {
       this.lastBoardUpdatedAt = fingerprint;
       this.applyBoardPayload(payload, false);
       if (this.activeCardID) {
-        this.resolveActiveCardTab(this.activeCardID);
-        if (this.activeCardTab === "channel") {
-          await this.refreshLiveChannel(this.activeCardID);
-        } else if (this.isModalPlayLive()) {
-          await this.refreshModalToolbarOnly(this.activeCardID);
-        } else {
-          await this.refreshModalSections(this.activeCardID);
-        }
+        await this.refreshActiveModal(this.activeCardID);
       }
     } catch {
       // keep last good board state during transient poll failures
@@ -404,11 +397,17 @@ export default class ScrumController extends Controller {
       this.activeCardTab = "card";
       return "card";
     }
-    const urlCard = new URLSearchParams(window.location.search).get("scrum_card")?.trim();
-    const urlTab = parseScrumTabFromLocation();
-    if (urlCard === id && isScrumCardTab(urlTab)) {
-      this.activeCardTab = urlTab;
-      return urlTab;
+    const params = new URLSearchParams(window.location.search);
+    const urlCard = params.get("scrum_card")?.trim();
+    const urlTabParam = params.get("scrum_tab");
+    if (urlCard === id && isScrumCardTab(urlTabParam)) {
+      this.activeCardTab = urlTabParam;
+      return urlTabParam;
+    }
+    if (urlCard === id) {
+      const saved = this.restoreCardTab(id);
+      this.activeCardTab = saved;
+      return saved;
     }
     const saved = this.restoreCardTab(id);
     this.activeCardTab = saved;
@@ -619,7 +618,7 @@ export default class ScrumController extends Controller {
       const result = await action();
       if (this.projectID) {
         await this.reloadBoard(options.refreshCardID);
-        if (options.refreshCardID) await this.refreshModalSections(options.refreshCardID);
+        if (options.refreshCardID) await this.refreshActiveModal(options.refreshCardID);
         this.startPolling();
       }
       if (options.closeModal) this.closeModal();
@@ -664,7 +663,7 @@ export default class ScrumController extends Controller {
     if (columnChanged || playStateChanged) {
       this.renderBoardFromLocal(false);
       if (this.activeCardID === card.id) {
-        void this.refreshLiveChannel(card.id);
+        void this.refreshActiveModal(card.id);
       }
     }
   }
@@ -676,7 +675,7 @@ export default class ScrumController extends Controller {
     if (!id) return null;
     const card = this.findCard(id);
     if (card && this.activeCardID === id) {
-      await this.refreshModalSections(id);
+      await this.refreshActiveModal(id);
     }
     return card;
   }
@@ -742,10 +741,21 @@ export default class ScrumController extends Controller {
     this.scrollChannelToLatest(true);
   }
 
+  private async refreshActiveModal(cardID: string) {
+    if (this.activeCardTab === "channel") {
+      await this.refreshLiveChannel(cardID);
+      return;
+    }
+    if (this.isModalPlayLive()) {
+      await this.refreshModalToolbarOnly(cardID);
+      return;
+    }
+    await this.refreshModalSections(cardID);
+  }
+
   async refreshModalSections(cardID: string) {
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
-    this.resolveActiveCardTab(cardID);
     const files = this.projectFiles.length ? this.projectFiles : await this.loadProjectFiles();
     await this.loadCardConfigs(cardID);
     this.recycle("scrum-modal-toolbar", renderScrumModalToolbar(card, this.board, this.playQueue ?? undefined));
@@ -772,7 +782,6 @@ export default class ScrumController extends Controller {
   private async refreshModalToolbarOnly(cardID: string) {
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
-    this.resolveActiveCardTab(cardID);
     this.recycle("scrum-modal-toolbar", renderScrumModalToolbar(card, this.board, this.playQueue ?? undefined));
     this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`);
     this.scheduleApplyCardTabState();
@@ -781,7 +790,6 @@ export default class ScrumController extends Controller {
   private async refreshLiveChannel(cardID: string, pinScroll = false) {
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
-    this.resolveActiveCardTab(cardID);
     this.recycle("scrum-modal-toolbar", renderScrumModalToolbar(card, this.board, this.playQueue ?? undefined));
     this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`);
     this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(cardID)));
@@ -949,7 +957,7 @@ export default class ScrumController extends Controller {
     try {
       const payload = await fetchScrumBoard(this.projectID);
       this.applyBoardPayload(payload);
-      if (this.activeCardID) await this.refreshModalSections(this.activeCardID);
+      if (this.activeCardID) await this.refreshActiveModal(this.activeCardID);
       this.startPolling();
       this.setStatus(`Updated ${new Date().toLocaleTimeString()}`, "ok");
     } catch (error) {
@@ -1014,7 +1022,7 @@ export default class ScrumController extends Controller {
       this.upsertCard(updated);
       const payload = await fetchScrumBoard(this.projectID);
       this.applyBoardPayload(payload, false);
-      if (this.activeCardID === cardID) await this.refreshModalSections(cardID);
+      if (this.activeCardID === cardID) await this.refreshActiveModal(cardID);
       this.startPolling();
       this.actionOk(`${label} complete`);
     } catch (error) {
@@ -1082,7 +1090,10 @@ export default class ScrumController extends Controller {
   async withPlayAction(cardID: string, pivot: boolean) {
     if (!cardID) return;
     const modalOpen = this.activeCardID === cardID;
-    if (modalOpen) this.activeCardTab = "channel";
+    if (modalOpen) {
+      this.activeCardTab = "channel";
+      this.persistCardTab("channel");
+    }
     await this.withBoardRefresh(
       pivot ? "Pivoting play…" : "Queueing play…",
       async () => {
@@ -1277,6 +1288,9 @@ export default class ScrumController extends Controller {
   private async patchCardTags(cardID: string, tags: string[]) {
     const normalized = [...new Set(tags.map((tag) => this.normalizeTag(tag)).filter(Boolean))];
     const updated = await patchScrumCard(cardID, { tags: normalized }, this.projectID);
+    if (!updated) {
+      throw new Error("Tag update did not return a card");
+    }
     this.upsertCard(updated);
     this.recycle("scrum-card-tags", renderScrumTagPills(updated));
     await this.reloadBoard(cardID);
@@ -1336,11 +1350,20 @@ export default class ScrumController extends Controller {
     });
     try {
       const payload = await suggestScrumTags(cardID, this.projectID);
-      this.upsertCard(payload.card);
-      this.recycle("scrum-card-tags", renderScrumTagPills(payload.card));
+      const card = payload.card ?? this.findCard(cardID);
+      if (card) {
+        if (payload.card) this.upsertCard(payload.card);
+        this.recycle("scrum-card-tags", renderScrumTagPills(card));
+      }
       await this.reloadBoard(cardID);
       const notes = payload.notes?.trim();
-      this.actionOk(notes ? `Tags suggested — ${notes}` : "Tags suggested");
+      const tagCount = payload.tags?.length ?? 0;
+      if (tagCount === 0) {
+        this.actionOk(notes ? `No new tags — ${notes}` : "No new tags suggested");
+      } else {
+        this.actionOk(notes ? `Tags suggested — ${notes}` : "Tags suggested");
+      }
+      this.setCardActionPending("tags-suggest", false);
     } catch (error) {
       this.setCardActionPending("tags-suggest", false, {
         statusMessage: error instanceof Error ? error.message : String(error),

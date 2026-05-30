@@ -5,10 +5,11 @@ import { renderProjectScrumShell } from "./scrum_render";
 import { renderProjectTerminalShell } from "./terminal_render";
 import { renderProjectScreenShell } from "./screen_render";
 import { renderProjectChatShell } from "./project_chat_render";
+import { renderProjectGitSection } from "./project_git_render";
 import type { ModelFieldDefinition } from "./model_config_types";
 import type { AgentFieldDefinition } from "./agent_config_types";
 import type { BrowseResponse } from "./project_types";
-import type { ProjectRecord, ProjectMapSummary, RecipeCatalogItem } from "./project_types";
+import type { ProjectRecord, ProjectMapSummary, ProjectGitStatus, RecipeCatalogItem } from "./project_types";
 
 const PROJECT_TABS = [
   { id: "scrum", label: "Scrum" },
@@ -17,6 +18,7 @@ const PROJECT_TABS = [
   { id: "screen", label: "Screen" },
   { id: "settings", label: "Settings" },
   { id: "map", label: "Codebase map" },
+  { id: "git", label: "Git" },
   { id: "recipe", label: "Recipe" },
 ] as const;
 
@@ -129,6 +131,7 @@ export function renderProjectDetail(
   resolvedAgentSource = "env",
   resolvedAgentSystem = "omnidex",
   projectMap: ProjectMapSummary | null = null,
+  projectGit: ProjectGitStatus | null = null,
   activeTab = "scrum",
 ): string {
   const recipeOptions = recipes
@@ -197,6 +200,8 @@ export function renderProjectDetail(
 
   const mapTab = `<div data-project-tab-panel="map" class="scrollbar space-y-4${tabPanelClass("map", activeTab)}">${renderProjectMapSection(project.id, projectMap)}</div>`;
 
+  const gitTab = `<div data-project-tab-panel="git" class="scrollbar space-y-4${tabPanelClass("git", activeTab)}">${renderProjectGitSection(project.id, projectGit)}</div>`;
+
   const recipeTab = `
     <div data-project-tab-panel="recipe" class="scrollbar space-y-4${tabPanelClass("recipe", activeTab)}">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
@@ -246,6 +251,7 @@ export function renderProjectDetail(
       ${renderProjectScreenShell(project.location, activeTab)}
       ${settingsTab}
       ${mapTab}
+      ${gitTab}
       ${recipeTab}
       </div>
     </div>

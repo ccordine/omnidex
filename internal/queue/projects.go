@@ -123,6 +123,10 @@ func (r *Repository) CreateProject(ctx context.Context, name, location, descript
 	if len(recipe) == 0 {
 		recipe = json.RawMessage(`{}`)
 	}
+	name = SanitizeUTF8Text(name)
+	description = SanitizeUTF8Text(strings.TrimSpace(description))
+	recipeID = SanitizeUTF8Text(strings.TrimSpace(recipeID))
+	recipe = SanitizeUTF8Bytes(recipe)
 	row := r.pool.QueryRow(ctx, `
 		INSERT INTO projects (location, name, description, recipe_id, recipe, last_seen_at)
 		VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
@@ -163,6 +167,13 @@ func (r *Repository) UpdateProject(ctx context.Context, id int64, patch model.Pr
 	if len(current.Settings) == 0 {
 		current.Settings = json.RawMessage(`{}`)
 	}
+	current.Name = SanitizeUTF8Text(current.Name)
+	current.Location = SanitizeUTF8Text(current.Location)
+	current.Description = SanitizeUTF8Text(current.Description)
+	current.RecipeID = SanitizeUTF8Text(current.RecipeID)
+	current.Recipe = SanitizeUTF8Bytes(current.Recipe)
+	current.ProjectState = SanitizeUTF8Text(current.ProjectState)
+	current.Settings = SanitizeUTF8Bytes(current.Settings)
 
 	row := r.pool.QueryRow(ctx, `
 		UPDATE projects
@@ -393,27 +404,48 @@ func (r *Repository) GetScrumCard(ctx context.Context, projectID int64, cardID s
 	return card, nil
 }
 
+func sanitizeScrumCardFields(card *DBScrumCard) {
+	if card == nil {
+		return
+	}
+	card.Title = SanitizeUTF8Text(card.Title)
+	card.Description = SanitizeUTF8Text(card.Description)
+	card.Column = SanitizeUTF8Text(card.Column)
+	card.Checklist = SanitizeUTF8Bytes(card.Checklist)
+	card.RefFiles = SanitizeUTF8Bytes(card.RefFiles)
+	card.Chat = SanitizeUTF8Bytes(card.Chat)
+	card.ModelConfig = SanitizeUTF8Bytes(card.ModelConfig)
+	card.AgentConfig = SanitizeUTF8Bytes(card.AgentConfig)
+	card.JiraTicket = SanitizeUTF8Text(card.JiraTicket)
+	card.JiraPrompt = SanitizeUTF8Text(card.JiraPrompt)
+	card.RecipeID = SanitizeUTF8Text(card.RecipeID)
+	card.Recipe = SanitizeUTF8Bytes(card.Recipe)
+	card.Tags = SanitizeUTF8Bytes(card.Tags)
+	card.PlanningChat = SanitizeUTF8Bytes(card.PlanningChat)
+	card.CoachConfig = SanitizeUTF8Bytes(card.CoachConfig)
+	card.TestCriteria = SanitizeUTF8Bytes(card.TestCriteria)
+	card.FlowMetrics = SanitizeUTF8Bytes(card.FlowMetrics)
+	card.JobID = SanitizeUTF8Text(card.JobID)
+	card.ConsoleLog = SanitizeUTF8Text(card.ConsoleLog)
+	card.PlayState = SanitizeUTF8Text(card.PlayState)
+}
+
 func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardID, title, description, column string, checklist, refFiles, chat json.RawMessage) (DBScrumCard, error) {
-	title = strings.TrimSpace(title)
+	title = SanitizeUTF8Text(strings.TrimSpace(title))
 	if title == "" {
 		return DBScrumCard{}, fmt.Errorf("title is required")
 	}
 	if strings.TrimSpace(cardID) == "" {
 		cardID = fmt.Sprintf("card_%d", time.Now().UnixNano())
 	}
-	column = strings.TrimSpace(column)
+	column = SanitizeUTF8Text(strings.TrimSpace(column))
 	if column == "" {
 		column = "backlog"
 	}
-	if len(checklist) == 0 {
-		checklist = json.RawMessage(`[]`)
-	}
-	if len(refFiles) == 0 {
-		refFiles = json.RawMessage(`[]`)
-	}
-	if len(chat) == 0 {
-		chat = json.RawMessage(`[]`)
-	}
+	description = SanitizeUTF8Text(description)
+	checklist = SanitizeUTF8Bytes(defaultJSON(checklist, `[]`))
+	refFiles = SanitizeUTF8Bytes(defaultJSON(refFiles, `[]`))
+	chat = SanitizeUTF8Bytes(defaultJSON(chat, `[]`))
 	var card DBScrumCard
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO scrum_cards (id, project_id, title, description, column_name, checklist, ref_files, chat, board_order)
@@ -425,7 +457,7 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 		          model_config, agent_config, jira_ticket, jira_prompt, recipe_id, recipe,
 		          tags, planning_chat, coach_config, test_criteria, flow_metrics,
 		          job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
-	`, cardID, projectID, title, strings.TrimSpace(description), column, string(checklist), string(refFiles), string(chat)).Scan(
+	`, cardID, projectID, title, description, column, string(checklist), string(refFiles), string(chat)).Scan(
 		&card.ID,
 		&card.ProjectID,
 		&card.Title,
@@ -466,34 +498,34 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		return DBScrumCard{}, err
 	}
 	if title, ok := patch["title"].(string); ok && strings.TrimSpace(title) != "" {
-		current.Title = strings.TrimSpace(title)
+		current.Title = SanitizeUTF8Text(strings.TrimSpace(title))
 	}
 	if description, ok := patch["description"].(string); ok {
-		current.Description = description
+		current.Description = SanitizeUTF8Text(description)
 	}
 	if column, ok := patch["column"].(string); ok && strings.TrimSpace(column) != "" {
 		current.Column = strings.TrimSpace(column)
 	}
 	if checklist, ok := patch["checklist"].(json.RawMessage); ok {
-		current.Checklist = checklist
+		current.Checklist = SanitizeUTF8Bytes(checklist)
 	}
 	if refFiles, ok := patch["ref_files"].(json.RawMessage); ok {
-		current.RefFiles = refFiles
+		current.RefFiles = SanitizeUTF8Bytes(refFiles)
 	}
 	if chat, ok := patch["chat"].(json.RawMessage); ok {
-		current.Chat = chat
+		current.Chat = SanitizeUTF8Bytes(chat)
 	}
 	if modelConfig, ok := patch["model_config"].(json.RawMessage); ok {
-		current.ModelConfig = modelConfig
+		current.ModelConfig = SanitizeUTF8Bytes(modelConfig)
 	}
 	if agentConfig, ok := patch["agent_config"].(json.RawMessage); ok {
-		current.AgentConfig = agentConfig
+		current.AgentConfig = SanitizeUTF8Bytes(agentConfig)
 	}
 	if jobID, ok := patch["job_id"].(string); ok {
 		current.JobID = strings.TrimSpace(jobID)
 	}
 	if consoleLog, ok := patch["console_log"].(string); ok {
-		current.ConsoleLog = consoleLog
+		current.ConsoleLog = SanitizeUTF8Text(consoleLog)
 	}
 	if playState, ok := patch["play_state"].(string); ok {
 		current.PlayState = strings.TrimSpace(playState)
@@ -515,29 +547,31 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		}
 	}
 	if jiraTicket, ok := patch["jira_ticket"].(string); ok {
-		current.JiraTicket = jiraTicket
+		current.JiraTicket = SanitizeUTF8Text(jiraTicket)
 	}
 	if recipeID, ok := patch["recipe_id"].(string); ok {
-		current.RecipeID = strings.TrimSpace(recipeID)
+		current.RecipeID = SanitizeUTF8Text(strings.TrimSpace(recipeID))
 	}
 	if recipe, ok := patch["recipe"].(json.RawMessage); ok {
-		current.Recipe = recipe
+		current.Recipe = SanitizeUTF8Bytes(recipe)
 	}
 	if jiraPrompt, ok := patch["jira_prompt"].(string); ok {
-		current.JiraPrompt = jiraPrompt
+		current.JiraPrompt = SanitizeUTF8Text(jiraPrompt)
 	}
 	if tags, ok := patch["tags"].(json.RawMessage); ok {
-		current.Tags = tags
+		current.Tags = SanitizeUTF8Bytes(tags)
 	}
 	if planningChat, ok := patch["planning_chat"].(json.RawMessage); ok {
-		current.PlanningChat = planningChat
+		current.PlanningChat = SanitizeUTF8Bytes(planningChat)
 	}
 	if coachConfig, ok := patch["coach_config"].(json.RawMessage); ok {
-		current.CoachConfig = coachConfig
+		current.CoachConfig = SanitizeUTF8Bytes(coachConfig)
 	}
 	if testCriteria, ok := patch["test_criteria"].(json.RawMessage); ok {
-		current.TestCriteria = testCriteria
+		current.TestCriteria = SanitizeUTF8Bytes(testCriteria)
 	}
+
+	sanitizeScrumCardFields(&current)
 
 	var card DBScrumCard
 	err = r.pool.QueryRow(ctx, `

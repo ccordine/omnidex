@@ -3,6 +3,7 @@ import type {
   BrowseResponse,
   DebuggerLastRun,
   ProjectMapSummary,
+  ProjectGitStatus,
   ProjectRecord,
   RecipeCatalogItem,
   WorkspaceResponse,
@@ -92,6 +93,11 @@ export async function scanProjectMap(id: number): Promise<ProjectMapSummary> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
   });
+  return readJSON(response);
+}
+
+export async function fetchProjectGit(id: number): Promise<ProjectGitStatus> {
+  const response = await fetch(`/v1/projects/${id}/git`);
   return readJSON(response);
 }
 

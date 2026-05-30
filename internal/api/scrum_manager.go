@@ -94,10 +94,10 @@ func syncRunningJobConsoleLog(card ScrumCard, job model.JobDetails) (ScrumCard, 
 func collectScrumAgentOutput(details model.JobDetails) string {
 	parts := []string{}
 	for _, step := range details.Steps {
-		if output := strings.TrimSpace(step.Output); output != "" {
+		if output := strings.TrimSpace(sanitizeScrumChannelText(step.Output)); output != "" {
 			parts = append(parts, output)
 		}
-		if errText := strings.TrimSpace(step.Error); errText != "" {
+		if errText := strings.TrimSpace(sanitizeScrumChannelText(step.Error)); errText != "" {
 			parts = append(parts, errText)
 		}
 	}

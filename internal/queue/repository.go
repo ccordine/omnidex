@@ -113,6 +113,8 @@ func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline strin
 
 	var job model.Job
 	var result, errText *string
+	instruction = SanitizeUTF8Text(instruction)
+	metadataJSON = SanitizeUTF8Bytes(metadataJSON)
 	err = tx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata, project_id)
 		VALUES ($1, $2, $3, $4::jsonb, $5)
@@ -1160,6 +1162,7 @@ func (r *Repository) AddStepContext(ctx context.Context, stepID int64, key, valu
 	if key == "" {
 		return fmt.Errorf("step context key is required")
 	}
+	value = SanitizeUTF8Text(value)
 	if _, err := r.pool.Exec(ctx, `
 		INSERT INTO step_contexts (step_id, key, value)
 		VALUES ($1, $2, $3)
@@ -1276,6 +1279,7 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 
 // AppendStepOutput appends text to a running step's output (used for live external-agent streaming).
 func (r *Repository) AppendStepOutput(ctx context.Context, stepID int64, delta string) error {
+	delta = SanitizeUTF8Text(delta)
 	if delta == "" {
 		return nil
 	}
@@ -1292,6 +1296,9 @@ func (r *Repository) AppendStepOutput(ctx context.Context, stepID int64, delta s
 }
 
 func (r *Repository) CompleteStep(ctx context.Context, stepID int64, output, contextKey, contextValue string) error {
+	output = SanitizeUTF8Text(output)
+	contextKey = SanitizeUTF8Text(strings.TrimSpace(contextKey))
+	contextValue = SanitizeUTF8Text(contextValue)
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -1369,6 +1376,7 @@ func (r *Repository) CompleteStep(ctx context.Context, stepID int64, output, con
 }
 
 func (r *Repository) FailStep(ctx context.Context, stepID int64, errMsg string) error {
+	errMsg = SanitizeUTF8Text(errMsg)
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -1418,6 +1426,8 @@ func (r *Repository) FailStep(ctx context.Context, stepID int64, errMsg string) 
 }
 
 func (r *Repository) PauseStepForInput(ctx context.Context, stepID int64, stepOutput string, question string, extraContexts map[string]string) error {
+	stepOutput = SanitizeUTF8Text(stepOutput)
+	question = SanitizeUTF8Text(question)
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -1459,14 +1469,14 @@ func (r *Repository) PauseStepForInput(ctx context.Context, stepID int64, stepOu
 	}
 
 	for key, value := range extraContexts {
-		k := strings.TrimSpace(key)
+		k := SanitizeUTF8Text(strings.TrimSpace(key))
 		if k == "" {
 			continue
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO step_contexts (step_id, key, value)
 			VALUES ($1, $2, $3)
-		`, stepID, k, value); err != nil {
+		`, stepID, k, SanitizeUTF8Text(value)); err != nil {
 			return err
 		}
 	}
@@ -1489,7 +1499,7 @@ func (r *Repository) SubmitJobFeedback(ctx context.Context, jobID int64, feedbac
 	}
 	defer tx.Rollback(ctx)
 
-	feedback = strings.TrimSpace(feedback)
+	feedback = SanitizeUTF8Text(strings.TrimSpace(feedback))
 	if feedback == "" {
 		return model.Job{}, fmt.Errorf("feedback is required")
 	}
@@ -1704,7 +1714,7 @@ func (r *Repository) InterruptJob(ctx context.Context, jobID int64, feedback str
 	}
 	defer tx.Rollback(ctx)
 
-	feedback = strings.TrimSpace(feedback)
+	feedback = SanitizeUTF8Text(strings.TrimSpace(feedback))
 	if feedback == "" {
 		return model.Job{}, fmt.Errorf("feedback is required")
 	}
@@ -1809,7 +1819,7 @@ func (r *Repository) CancelJob(ctx context.Context, jobID int64, reason string) 
 	}
 	defer tx.Rollback(ctx)
 
-	reason = strings.TrimSpace(reason)
+	reason = SanitizeUTF8Text(strings.TrimSpace(reason))
 	if reason == "" {
 		reason = "canceled by user"
 	}
@@ -2453,7 +2463,7 @@ func (r *Repository) ListChannels(ctx context.Context, limit, offset int) ([]mod
 
 func (r *Repository) AddChannelMessage(ctx context.Context, channelID, role, content string) (model.ChannelMessage, error) {
 	role = normalizeChannelMessageRole(role)
-	content = strings.TrimSpace(content)
+	content = SanitizeUTF8Text(strings.TrimSpace(content))
 	if strings.TrimSpace(channelID) == "" {
 		return model.ChannelMessage{}, fmt.Errorf("channel id is required")
 	}
