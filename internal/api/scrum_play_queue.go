@@ -270,15 +270,18 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		if cardChanged {
 			if saved, err := s.persistScrumCard(r, projectID, updated); err == nil {
 				board.Cards[i] = saved
+				s.publishScrumModalCardRefresh(r.Context(), projectID, saved, "job resolved")
 				if normalizeScrumColumn(saved.Column) == "review" && normalizeScrumColumn(fromColumn) != "review" {
 					if reviewed, err := s.maybeStartScrumAutoReview(r, projectID, board, saved, fromColumn); err == nil {
 						board.Cards[i] = reviewed
+						s.publishScrumModalCardRefresh(r.Context(), projectID, reviewed, "auto-review started")
 					}
 				}
 			}
 		} else if scrumCardChannelChanged(card, updated) {
 			if saved, err := s.persistScrumCard(r, projectID, updated); err == nil {
 				board.Cards[i] = saved
+				s.publishScrumModalCardRefresh(r.Context(), projectID, saved, "job updated")
 			}
 		}
 	}

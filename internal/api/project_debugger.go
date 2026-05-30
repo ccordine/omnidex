@@ -58,7 +58,7 @@ func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	instruction := fmt.Sprintf("Run debugger scan for project %s", project.Name)
+	instruction := fmt.Sprintf("Analyze codebase for project %s", project.Name)
 	job, err := s.repo.EnqueueJob(r.Context(), instruction, projectdebugger.Pipeline(), metadata)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -72,7 +72,7 @@ func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request
 		Model:       modelName,
 		Status:      "running",
 		StartedAt:   startedAt,
-		Summary:     "Scanning project for bugs and quality issues…",
+		Summary:     "Analyzing codebase for bugs, cleanup, refactors, optimization, reliability, and test gaps...",
 	}
 	if err := s.saveDebuggerLastRun(r.Context(), project, lastRun); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -81,7 +81,7 @@ func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"job":      job,
 		"last_run": lastRun,
-		"message":  fmt.Sprintf("Queued debugger job #%d", job.ID),
+		"message":  fmt.Sprintf("Queued analysis job #%d", job.ID),
 	})
 }
 

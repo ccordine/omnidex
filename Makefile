@@ -15,9 +15,11 @@ core:
 	./scripts/build-core.sh
 
 cli:
+	rm -f bin/agent-cli
 	go build -o bin/agent-cli ./cmd/cli
 
 omni:
+	rm -f bin/omni
 	go build -o bin/omni ./cmd/omni
 
 run:

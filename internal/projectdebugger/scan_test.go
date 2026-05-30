@@ -36,7 +36,7 @@ func TestParseScanResponse(t *testing.T) {
 	if ticket.Severity != "high" {
 		t.Fatalf("severity=%q", ticket.Severity)
 	}
-	if ticket.Tags[0] != "security" || ticket.Tags[len(ticket.Tags)-1] != "debugger" {
+	if ticket.Tags[0] != "security" || ticket.Tags[len(ticket.Tags)-1] != "analysis" {
 		t.Fatalf("tags=%v", ticket.Tags)
 	}
 }

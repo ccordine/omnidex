@@ -38,6 +38,47 @@ var Fields = []Field{
 		EnvKeys:     []string{"OMNI_AGENT_STRICT"},
 		Options:     []string{"true", "false"},
 	},
+	{
+		Key:         "codex_model",
+		Label:       "Codex model",
+		Description: "Model passed to the Codex SDK thread when Codex executes the card.",
+		EnvKeys:     []string{"OMNI_CODEX_MODEL"},
+	},
+	{
+		Key:         "codex_reasoning_effort",
+		Label:       "Codex reasoning effort",
+		Description: "Codex SDK modelReasoningEffort. Use minimal/low for fast mode, higher values for deeper coding passes.",
+		EnvKeys:     []string{"OMNI_CODEX_REASONING_EFFORT", "OMNI_CODEX_MODEL_REASONING_EFFORT"},
+		Options:     []string{"minimal", "low", "medium", "high", "xhigh"},
+	},
+	{
+		Key:         "codex_sandbox_mode",
+		Label:       "Codex sandbox",
+		Description: "Codex SDK sandboxMode for filesystem access.",
+		EnvKeys:     []string{"OMNI_CODEX_SANDBOX_MODE"},
+		Options:     []string{"read-only", "workspace-write", "danger-full-access"},
+	},
+	{
+		Key:         "codex_approval_policy",
+		Label:       "Codex approval policy",
+		Description: "Codex SDK approvalPolicy for tool and command approval.",
+		EnvKeys:     []string{"OMNI_CODEX_APPROVAL_POLICY"},
+		Options:     []string{"never", "on-request", "on-failure", "untrusted"},
+	},
+	{
+		Key:         "codex_network_access",
+		Label:       "Codex network access",
+		Description: "Codex SDK networkAccessEnabled for the thread.",
+		EnvKeys:     []string{"OMNI_CODEX_NETWORK_ACCESS"},
+		Options:     []string{"true", "false"},
+	},
+	{
+		Key:         "codex_web_search_mode",
+		Label:       "Codex web search",
+		Description: "Codex SDK webSearchMode for web-search behavior.",
+		EnvKeys:     []string{"OMNI_CODEX_WEB_SEARCH_MODE"},
+		Options:     []string{"disabled", "cached", "live"},
+	},
 }
 
 type Config map[string]string
@@ -181,6 +222,30 @@ func (c Config) IsExternal() bool {
 
 func (c Config) IsStrict() bool {
 	return parseBool(c.Get("agent_strict"))
+}
+
+func (c Config) CodexModel() string {
+	return c.Get("codex_model")
+}
+
+func (c Config) CodexReasoningEffort() string {
+	return c.Get("codex_reasoning_effort")
+}
+
+func (c Config) CodexSandboxMode() string {
+	return c.Get("codex_sandbox_mode")
+}
+
+func (c Config) CodexApprovalPolicy() string {
+	return c.Get("codex_approval_policy")
+}
+
+func (c Config) CodexNetworkAccess() string {
+	return c.Get("codex_network_access")
+}
+
+func (c Config) CodexWebSearchMode() string {
+	return c.Get("codex_web_search_mode")
 }
 
 func (c Config) ExternalAgentName() string {

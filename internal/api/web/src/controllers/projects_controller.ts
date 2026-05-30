@@ -689,7 +689,7 @@ export default class ProjectsController extends Controller {
       this.detailTarget.querySelector("h3")?.textContent?.trim() ||
       this.projects.find((project) => project.id === id)?.name ||
       "Project";
-    this.setStatus("Loading debugger…", "busy");
+    this.setStatus("Loading analysis...", "busy");
     try {
       const payload = await fetchProjectDebuggerStatus(id);
       this.debuggerLastRun = payload.last_run ?? null;
@@ -715,13 +715,13 @@ export default class ProjectsController extends Controller {
     if (!id || this.debuggerRunning) return;
     this.debuggerRunning = true;
     this.refreshDebuggerModal();
-    this.setStatus("Starting debugger scan…", "busy");
+    this.setStatus("Starting codebase analysis...", "busy");
     try {
       const payload = await runProjectDebugger(id);
       this.debuggerLastRun = payload.last_run;
       this.refreshDebuggerModal();
       this.startDebuggerPolling(id, payload.job.id);
-      this.actionOk(payload.message || `Debugger job #${payload.job.id} queued`);
+      this.actionOk(payload.message || `Analysis job #${payload.job.id} queued`);
     } catch (error) {
       this.debuggerRunning = false;
       this.refreshDebuggerModal();
@@ -749,7 +749,7 @@ export default class ProjectsController extends Controller {
       lastRun: this.debuggerLastRun,
       running: this.debuggerRunning,
       statusText: this.debuggerRunning
-        ? "Scanning codebase map and backlog for bugs…"
+        ? "Analyzing codebase map and backlog..."
         : this.debuggerLastRun?.summary || "",
     });
   }
@@ -775,12 +775,12 @@ export default class ProjectsController extends Controller {
           this.refreshDebuggerModal(statusPayload.agent_config);
           this.stopDebuggerPolling();
           if (jobStatus === "completed") {
-            this.actionOk(`Debugger finished — ${this.debuggerLastRun?.cards_created?.length ?? 0} ticket(s) created`);
+            this.actionOk(`Analysis finished - ${this.debuggerLastRun?.cards_created?.length ?? 0} card(s) created`);
             if (this.selectedProjectID === projectID && this.activeTab === "scrum") {
               document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: projectID } }));
             }
           } else {
-            this.setStatus(this.debuggerLastRun?.error || `Debugger ${jobStatus}`, "error");
+            this.setStatus(this.debuggerLastRun?.error || `Analysis ${jobStatus}`, "error");
             this.refreshDebuggerModal(statusPayload.agent_config);
           }
           return;

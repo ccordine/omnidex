@@ -119,11 +119,17 @@ export type ScrumAutoReviewConfig = {
   bounce_column?: string;
 };
 
+export type ScrumAutoWorkConfig = {
+  enabled?: boolean;
+  source_columns?: string[];
+};
+
 export type ScrumBoardResponse = {
   board: ScrumBoard;
   cards_by_col: Record<string, ScrumCard[]>;
   project_id?: number;
   auto_play_through?: boolean;
+  auto_work?: ScrumAutoWorkConfig;
   auto_review?: ScrumAutoReviewConfig;
   play_queue?: {
     running_card_id?: string;
@@ -180,8 +186,9 @@ export function groupCardsByColumn(board: ScrumBoard): Record<string, ScrumCard[
   return out;
 }
 
-/** Columns auto-play walks top-to-bottom before stopping at review. */
+/** Columns auto-play may pull from; project config defaults to Assigned only. */
 export const AUTO_PLAY_WORK_COLUMNS = ["backlog", "ready", "assigned", "in_progress", "blocked"] as const;
+export const DEFAULT_AUTO_WORK_COLUMNS = ["assigned"] as const;
 
 export function autoPlayThroughComplete(cardsByCol: Record<string, ScrumCard[]>, autoReviewEnabled = false): boolean {
   const cards = Object.values(cardsByCol).flat();
@@ -199,12 +206,14 @@ export function pickScrumAutoPlayFocusCard(
   board: ScrumBoard,
   cardsByCol: Record<string, ScrumCard[]>,
   playQueue?: ScrumBoardResponse["play_queue"],
+  sourceColumns: readonly string[] = DEFAULT_AUTO_WORK_COLUMNS,
 ): ScrumCard | null {
   const running = pickScrumFocusCard(board, cardsByCol, playQueue);
   if (running?.play_state === "running" || running?.play_state === "queued") {
     return running;
   }
-  for (const column of AUTO_PLAY_WORK_COLUMNS) {
+  const columns = sourceColumns.length ? sourceColumns : DEFAULT_AUTO_WORK_COLUMNS;
+  for (const column of columns) {
     const cards = [...(cardsByCol[column] ?? [])].sort((a, b) => (a.board_order ?? 0) - (b.board_order ?? 0));
     const next = cards.find((card) => card.play_state !== "running" && card.play_state !== "queued");
     if (next) return next;

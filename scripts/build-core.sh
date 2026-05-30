@@ -101,6 +101,7 @@ if [[ "${OUTPUT}" != /* ]]; then
 fi
 
 mkdir -p "$(dirname "${OUTPUT}")"
+rm -f "${OUTPUT}"
 
 build_cmd=(go build -o "${OUTPUT}")
 if ((WITH_RACE)); then

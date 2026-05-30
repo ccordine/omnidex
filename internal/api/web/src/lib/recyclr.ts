@@ -83,6 +83,7 @@ export function renderRecyclrBundle(
   if (host && typeof host.renderBundle === "function") {
     try {
       host.renderBundle(bundle);
+      return;
     } catch {
       /* Recyclr may be unavailable; direct sink update below still applies. */
     }

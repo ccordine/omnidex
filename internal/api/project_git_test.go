@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -101,6 +102,16 @@ func TestLoadProjectGitStatusUsesHostBridgeWhenCoreMissing(t *testing.T) {
 	}
 	if payload["source"] != "host-bridge" {
 		t.Fatalf("source=%#v want host-bridge", payload["source"])
+	}
+}
+
+func TestProjectGitBridgeErrorForMissingRoute(t *testing.T) {
+	err := projectGitBridgeError(errors.New("host bridge HTTP 404: 404 page not found"))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got, want := err.Error(), "host bridge does not expose project git status yet; restart or update omni-host-bridge"; got != want {
+		t.Fatalf("error=%q want %q", got, want)
 	}
 }
 

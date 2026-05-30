@@ -21,16 +21,25 @@ export function renderModelConfigSection(
     .map((field) => {
       const override = overrides[field.key] ?? "";
       const inherited = field.value;
-      return `
-        <label class="block">
-          <span class="text-xs text-zinc-500">${escapeHTML(field.label)}</span>
-          <input
+      const control = field.options?.length
+        ? `<select
+            data-${fieldPrefix}-field="model_${escapeHTML(field.key)}"
+            class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40"
+          >
+            <option value="">Inherit${inherited ? ` (${escapeHTML(inherited)})` : ""}</option>
+            ${field.options.map((option) => `<option value="${escapeHTML(option)}"${override === option ? " selected" : ""}>${escapeHTML(option)}</option>`).join("")}
+          </select>`
+        : `<input
             type="text"
             data-${fieldPrefix}-field="model_${escapeHTML(field.key)}"
             value="${escapeHTML(override)}"
             placeholder="${escapeHTML(inherited || "Inherit default")}"
             class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40"
-          />
+          />`;
+      return `
+        <label class="block">
+          <span class="text-xs text-zinc-500">${escapeHTML(field.label)}</span>
+          ${control}
           <span class="mt-1 block text-[11px] leading-5 text-zinc-600">${escapeHTML(field.description)}</span>
         </label>
       `;
@@ -69,7 +78,7 @@ export function collectModelFieldValues(root: ParentNode, scope: "project" | "ca
   const prefix = scope === "project" ? "projects" : "scrum";
   const out: Record<string, string> = {};
   for (const input of root.querySelectorAll(`[data-${prefix}-field^="model_"]`)) {
-    const element = input as HTMLInputElement;
+    const element = input as HTMLInputElement | HTMLSelectElement;
     const key = element.dataset[`${prefix}Field`]?.replace(/^model_/, "") ?? "";
     const value = element.value.trim();
     if (key && value) out[key] = value;
@@ -80,6 +89,6 @@ export function collectModelFieldValues(root: ParentNode, scope: "project" | "ca
 export function clearModelFieldInputs(root: ParentNode, scope: "project" | "card"): void {
   const prefix = scope === "project" ? "projects" : "scrum";
   for (const input of root.querySelectorAll(`[data-${prefix}-field^="model_"]`)) {
-    (input as HTMLInputElement).value = "";
+    (input as HTMLInputElement | HTMLSelectElement).value = "";
   }
 }

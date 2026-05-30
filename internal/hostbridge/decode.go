@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 )
 
@@ -28,6 +29,16 @@ func decodeResponseJSON(raw []byte) (map[string]any, error) {
 func decodeResponseBody(raw []byte, statusCode int) (map[string]any, error) {
 	payload, err := decodeResponseJSON(raw)
 	if err != nil {
+		if statusCode < 200 || statusCode >= 300 {
+			snippet := strings.TrimSpace(string(bytes.TrimSpace(raw)))
+			if len(snippet) > 160 {
+				snippet = snippet[:160] + "…"
+			}
+			if snippet == "" {
+				snippet = http.StatusText(statusCode)
+			}
+			return nil, fmt.Errorf("host bridge HTTP %d: %s", statusCode, snippet)
+		}
 		return nil, err
 	}
 	if statusCode < 200 || statusCode >= 300 {

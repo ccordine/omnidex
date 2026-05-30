@@ -1,6 +1,7 @@
 import { escapeHTML, formatDateTime } from "./dom";
 import type { DataSource } from "./admin_api";
 import type { DataSourceChannel, DataSourceChannelMessage, DataSourceChannelPayload, QueryEvidence } from "./data_api";
+import { renderChannelComposer, renderChannelSurface } from "./channel_render";
 
 export type DataPanelState = {
   sources: DataSource[];
@@ -165,19 +166,24 @@ export function renderDataPanel(state: DataPanelState): string {
         <div class="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[.18em] text-zinc-500">Channels</div>
         <div data-data-target="channelList" class="scrollbar p-3 lg:min-h-[320px]">${renderChannelList(state)}</div>
       </aside>
-      <section class="flex min-h-0 flex-col">
-        <div class="border-b border-white/10 px-4 py-3">
-          <h3 class="text-sm font-semibold text-zinc-100">${escapeHTML(selectedChannel?.name || selectedSource?.name || "Data chat")}</h3>
-          <p class="text-xs text-zinc-500">${escapeHTML(state.status)}</p>
-        </div>
-        <div data-data-target="messageList" class="scrollbar flex-1 space-y-3 overflow-y-auto p-4">${renderMessages(state)}</div>
-        <form data-action="submit->data#sendMessage" class="border-t border-white/10 p-4">
-          <div class="flex flex-wrap gap-2">
-            <input data-data-target="promptInput" placeholder="How many appointments are scheduled tomorrow?" class="min-w-[220px] flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40" ${state.selectedChannelId ? "" : "disabled"} />
-            <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200" ${state.selectedChannelId ? "" : "disabled"}>Send</button>
-          </div>
-        </form>
-      </section>
+      ${renderChannelSurface({
+        eyebrow: "Data channel",
+        title: selectedChannel?.name || selectedSource?.name || "Data chat",
+        subtitle: state.status,
+        messagesHtml: renderMessages(state),
+        messagesAttrs: "data-data-target=\"messageList\"",
+        messagesClass: "scrollbar flex-1 space-y-3 overflow-y-auto p-4",
+        shellClass: "flex min-h-0 flex-col",
+        headerClass: "border-b border-white/10 px-4 py-3",
+        composerHtml: renderChannelComposer({
+          formAction: "submit->data#sendMessage",
+          inputType: "input",
+          inputTargetAttr: "data-data-target",
+          inputTarget: "promptInput",
+          placeholder: "How many appointments are scheduled tomorrow?",
+          disabled: !state.selectedChannelId,
+        }),
+      })}
     </div>
   `;
 }

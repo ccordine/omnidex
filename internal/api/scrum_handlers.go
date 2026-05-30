@@ -46,15 +46,16 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			AutoPlayThrough *bool                `json:"auto_play_through"`
+			AutoPlayThrough *bool                  `json:"auto_play_through"`
+			AutoWork        *ScrumAutoWorkConfig   `json:"auto_work"`
 			AutoReview      *ScrumAutoReviewConfig `json:"auto_review"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		if req.AutoPlayThrough == nil && req.AutoReview == nil {
-			writeError(w, http.StatusBadRequest, "auto_play_through or auto_review is required")
+		if req.AutoPlayThrough == nil && req.AutoWork == nil && req.AutoReview == nil {
+			writeError(w, http.StatusBadRequest, "auto_play_through, auto_work, or auto_review is required")
 			return
 		}
 		projectID, err := s.resolveProjectID(r)
@@ -69,6 +70,17 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.AutoPlayThrough != nil {
 			if err := s.saveScrumAutoPlayThrough(r.Context(), project, *req.AutoPlayThrough); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			project, _ = s.repo.GetProject(r.Context(), projectID)
+		}
+		if req.AutoWork != nil {
+			cfg := *req.AutoWork
+			if req.AutoPlayThrough != nil {
+				cfg.Enabled = *req.AutoPlayThrough
+			}
+			if err := s.saveScrumAutoWorkConfig(r.Context(), project, cfg); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -386,7 +398,9 @@ func (s *Server) handleScrumCardSync(w http.ResponseWriter, r *http.Request) {
 		"play_queue":   scrumPlayQueueSummary(board),
 	}
 	if projectID > 0 {
-		payload["auto_play_through"] = s.scrumAutoPlayThroughEnabled(r.Context(), projectID)
+		autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
+		payload["auto_play_through"] = autoWork.Enabled
+		payload["auto_work"] = autoWork
 		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
 	}
 	writeJSON(w, http.StatusOK, payload)

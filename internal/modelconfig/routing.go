@@ -37,6 +37,12 @@ func Apply(base Routing, cfg Config) Routing {
 			out.Fast = value
 		}
 	}
+	if value := cfg.Get("fast_model"); value != "" {
+		out.Fast = value
+	}
+	if value := cfg.Get("reasoning_model"); value != "" {
+		out.Reasoning = value
+	}
 	if value := cfg.Get("planner_model"); value != "" {
 		out.Plan = value
 		out.Specialist[specialist.RolePlannerSpecialist] = value
@@ -44,6 +50,22 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("thinking_model"); value != "" {
 		out.Reasoning = value
+	}
+	if value := cfg.Get("analyzer_model"); value != "" {
+		out.Analyze = value
+		out.Specialist[specialist.RoleReviewVerificationSpecialist] = value
+	}
+	if value := cfg.Get("responder_model"); value != "" {
+		out.Response = value
+	}
+	if value := cfg.Get("tagger_model"); value != "" {
+		out.Tagging = value
+	}
+	if value := cfg.Get("search_model"); value != "" {
+		out.Search = value
+	}
+	if value := cfg.Get("memory_model"); value != "" {
+		out.Memory = value
 	}
 	if value := cfg.Get("evaluator_model"); value != "" {
 		out.Analyze = value

@@ -17,7 +17,7 @@ func (s *Server) loadProjectGitStatusViaBridge(ctx context.Context, location str
 	}
 	payload, err := client.ProjectGitStatus(ctx, resolved)
 	if err != nil {
-		return nil, err
+		return nil, projectGitBridgeError(err)
 	}
 	if payload == nil {
 		return nil, fmt.Errorf("host bridge returned empty git status")
@@ -29,4 +29,14 @@ func (s *Server) loadProjectGitStatusViaBridge(ctx context.Context, location str
 		payload["requested_location"] = location
 	}
 	return payload, nil
+}
+
+func projectGitBridgeError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "host bridge HTTP 404") {
+		return fmt.Errorf("host bridge does not expose project git status yet; restart or update omni-host-bridge")
+	}
+	return err
 }

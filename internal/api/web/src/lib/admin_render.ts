@@ -128,19 +128,25 @@ export function renderOllamaModels(endpoint: string, models: OllamaModelInfo[]):
 }
 
 export function renderGlobalModelSettings(
-  fields: Array<{ key: string; label: string; description: string; value: string }>,
+  fields: Array<{ key: string; label: string; description: string; value: string; options?: string[] }>,
   envFile: string,
 ): string {
   const rows = fields
-    .map(
-      (field) => `
+    .map((field) => {
+      const control = field.options?.length
+        ? `<select data-admin-field="model_${escapeHTML(field.key)}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40">
+            <option value="">Default</option>
+            ${field.options.map((option) => `<option value="${escapeHTML(option)}"${field.value === option ? " selected" : ""}>${escapeHTML(option)}</option>`).join("")}
+          </select>`
+        : `<input data-admin-field="model_${escapeHTML(field.key)}" value="${escapeHTML(field.value)}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40" />`;
+      return `
       <label class="block">
         <span class="text-xs text-zinc-500">${escapeHTML(field.label)}</span>
-        <input data-admin-field="model_${escapeHTML(field.key)}" value="${escapeHTML(field.value)}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40" />
+        ${control}
         <span class="mt-1 block text-[11px] text-zinc-600">${escapeHTML(field.description)}</span>
       </label>
-    `,
-    )
+    `;
+    })
     .join("");
   return `
     <p class="mb-3 font-mono text-xs text-zinc-500">Env file: ${escapeHTML(envFile)}</p>

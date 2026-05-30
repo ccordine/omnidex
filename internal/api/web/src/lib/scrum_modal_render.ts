@@ -1,5 +1,6 @@
 import { escapeHTML, formatDateTime, statusPillClass } from "./dom";
 import { renderChannelChatMessages, renderChatComposer, scrumMessagesToChat } from "./chat_render";
+import { renderChannelSurface } from "./channel_render";
 import { renderModelConfigSection } from "./model_config_render";
 import { renderAgentConfigSection, renderPreAlphaBadge } from "./agent_config_render";
 import type { ModelFieldDefinition } from "./model_config_types";
@@ -529,32 +530,24 @@ export function renderScrumModalChannelTab(
         })
       : `<div class="flex h-full min-h-[12rem] items-center justify-center px-4 py-8 text-center text-sm text-zinc-500">Play this card to watch the agent work — commands, file edits, diffs, thinking, and replies stream here in real time.</div>`;
 
-  return `
-    <div class="flex min-h-[min(70vh,720px)] flex-col overflow-hidden rounded-lg border border-white/10 bg-zinc-950/50">
-      <header class="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-zinc-950/45 px-3 py-2 backdrop-blur-xl md:px-4">
-        <div class="min-w-0">
-          <p class="text-[10px] uppercase tracking-[.18em] text-cyan-200/80">Card channel</p>
-          <h3 class="truncate text-lg font-semibold tracking-tight text-zinc-100">${escapeHTML(card.title)}</h3>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          ${status}
-          ${jobLine}
-          ${interrupt}
-          ${sync}
-          <span class="rounded-full border px-3 py-1 text-xs font-medium ${liveBadge.tone}">${escapeHTML(liveBadge.label)}</span>
-        </div>
-      </header>
-      <div data-scrum-channel-messages class="scrum-channel-scroll scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col-reverse gap-1.5 px-3 py-3 md:px-4">${messageHtml}</div>
-      ${renderChatComposer({
+  return renderChannelSurface({
+    eyebrow: "Card channel",
+    title: card.title,
+    statusHtml: status,
+    actionsHtml: `${jobLine}${interrupt}${sync}`,
+    badgeHtml: `<span class="rounded-full border px-3 py-1 text-xs font-medium ${liveBadge.tone}">${escapeHTML(liveBadge.label)}</span>`,
+    messagesHtml: messageHtml,
+    messagesAttrs: "data-scrum-channel-messages",
+    messagesClass: "scrum-channel-scroll scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col-reverse gap-1.5 px-3 py-3 md:px-4",
+    composerHtml: renderChatComposer({
         formAction: "submit->scrum#sendChat",
         keydownAction: "scrum#channelComposerKeydown",
         cardId: card.id,
         placeholder: isLive ? "Steer the running agent…" : "Message uses this card's Config tab agent and models…",
         disabled: pilotPending,
         submitLabel: pilotPending ? "Sending…" : "Send",
-      })}
-    </div>
-  `;
+      }),
+  });
 }
 
 function channelSessionStatus(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
@@ -590,8 +583,10 @@ export function renderScrumCardModal(
   projectRecipeId = "",
   projectRecipe: Record<string, unknown> = {},
 ): string {
+  const liveTarget = `scrum-modal-card-live-${escapeHTML(card.id)}`;
   return `
     <div class="shrink-0 border-b border-white/10 p-4 md:p-5" data-scrum-modal-card-id="${escapeHTML(card.id)}">
+      <span data-recyclr-sink="${liveTarget}" class="sr-only"></span>
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div class="font-mono text-xs text-cyan-200">${escapeHTML(card.id)}</div>

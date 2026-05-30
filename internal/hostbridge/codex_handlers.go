@@ -13,11 +13,16 @@ import (
 )
 
 type codexRunRequest struct {
-	APIKey    string `json:"api_key,omitempty"`
-	Model     string `json:"model"`
-	Workspace string `json:"workspace"`
-	CodexPath string `json:"codex_path"`
-	Prompt    string `json:"prompt"`
+	APIKey          string `json:"api_key,omitempty"`
+	Model           string `json:"model"`
+	Workspace       string `json:"workspace"`
+	CodexPath       string `json:"codex_path"`
+	Prompt          string `json:"prompt"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	SandboxMode     string `json:"sandbox_mode,omitempty"`
+	ApprovalPolicy  string `json:"approval_policy,omitempty"`
+	NetworkAccess   string `json:"network_access,omitempty"`
+	WebSearchMode   string `json:"web_search_mode,omitempty"`
 }
 
 func (s *Server) handleCodexRun(w http.ResponseWriter, r *http.Request) {
@@ -55,11 +60,16 @@ func (s *Server) handleCodexRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	request := codexrunner.Request{
-		APIKey:    strings.TrimSpace(req.APIKey),
-		Model:     firstNonEmpty(req.Model, "gpt-5.3-codex"),
-		Workspace: workspace,
-		CodexPath: firstNonEmpty(req.CodexPath, codexrunner.CodexBin()),
-		Prompt:    strings.TrimSpace(req.Prompt),
+		APIKey:          strings.TrimSpace(req.APIKey),
+		Model:           firstNonEmpty(req.Model, "gpt-5.3-codex"),
+		Workspace:       workspace,
+		CodexPath:       firstNonEmpty(req.CodexPath, codexrunner.CodexBin()),
+		Prompt:          strings.TrimSpace(req.Prompt),
+		ReasoningEffort: strings.TrimSpace(req.ReasoningEffort),
+		SandboxMode:     strings.TrimSpace(req.SandboxMode),
+		ApprovalPolicy:  strings.TrimSpace(req.ApprovalPolicy),
+		NetworkAccess:   strings.TrimSpace(req.NetworkAccess),
+		WebSearchMode:   strings.TrimSpace(req.WebSearchMode),
 	}
 	reqPath, err := writeTempJSONRequest("omnidex-codex-sdk-request-*.json", request)
 	if err != nil {

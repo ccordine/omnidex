@@ -35,6 +35,9 @@ export default class GxController extends Controller {
       if (message.eventName === "metrics-glance") {
         document.dispatchEvent(new CustomEvent("omni:metrics-glance", { detail: message }));
       }
+      if (message.eventName === "scrum-card-modal-refresh") {
+        document.dispatchEvent(new CustomEvent("omni:scrum-card-modal-refresh", { detail: message }));
+      }
     });
     this.stream?.start();
   }

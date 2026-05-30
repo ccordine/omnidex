@@ -3,6 +3,7 @@ export type ModelFieldDefinition = {
   label: string;
   description: string;
   env_keys: string[];
+  options?: string[];
   value: string;
 };
 

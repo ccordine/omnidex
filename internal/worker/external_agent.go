@@ -136,6 +136,7 @@ func selectExternalAgent(cfg agentconfig.Config, metadata json.RawMessage) (omni
 			}
 			return nil, "codex_sdk", reason
 		}
+		agent.ApplyConfig(cfg)
 		return agent, "codex_sdk", ""
 	default:
 		return nil, "", "not an external agent"

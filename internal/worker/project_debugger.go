@@ -53,14 +53,14 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 
 	result, scanErr := projectdebugger.Run(ctx, llm, scanInput)
 	lastRun := projectdebugger.LastRun{
-		JobID:        claim.Job.ID,
-		ProjectID:    projectID,
-		AgentSystem:  agentSystem,
-		Model:        modelName,
-		StartedAt:    startedAt,
+		JobID:         claim.Job.ID,
+		ProjectID:     projectID,
+		AgentSystem:   agentSystem,
+		Model:         modelName,
+		StartedAt:     startedAt,
 		FindingsCount: len(result.BugTickets),
-		Suggestions:  result.Suggestions,
-		Summary:      result.Summary,
+		Suggestions:   result.Suggestions,
+		Summary:       result.Summary,
 	}
 	if scanErr != nil {
 		lastRun.Status = "failed"
@@ -107,7 +107,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 
 	summary := strings.TrimSpace(result.Summary)
 	if summary == "" {
-		summary = fmt.Sprintf("Debugger created %d bug ticket(s) for %s", len(created), project.Name)
+		summary = fmt.Sprintf("Analysis created %d backlog card(s) for %s", len(created), project.Name)
 	}
 	payloadBytes, err := json.Marshal(map[string]any{
 		"summary":        summary,

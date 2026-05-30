@@ -85,3 +85,17 @@ func TestMergeProjectAgentConfig(t *testing.T) {
 		t.Fatalf("expected agent_config preserved, got %s", string(root["agent_config"]))
 	}
 }
+
+func TestAgentConfigPatchKeepsExplicitOmnidexOverride(t *testing.T) {
+	raw, err := agentConfigPatchFromRequest(json.RawMessage(`{"agent_system":"omnidex"}`))
+	if err != nil {
+		t.Fatalf("patch failed: %v", err)
+	}
+	var values map[string]string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	if values["agent_system"] != "omnidex" {
+		t.Fatalf("expected explicit omnidex override, got %#v", values)
+	}
+}

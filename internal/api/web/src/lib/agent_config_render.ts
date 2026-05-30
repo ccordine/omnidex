@@ -15,6 +15,26 @@ const SYSTEM_LABELS: Record<string, string> = {
   codex: "Codex SDK",
 };
 
+const OPTION_LABELS: Record<string, string> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  "read-only": "Read only",
+  "workspace-write": "Workspace write",
+  "danger-full-access": "Danger full access",
+  never: "Never",
+  "on-request": "On request",
+  "on-failure": "On failure",
+  untrusted: "Untrusted",
+  disabled: "Disabled",
+  cached: "Cached",
+  live: "Live",
+  true: "Enabled",
+  false: "Disabled",
+};
+
 const PRE_ALPHA_AGENTS = new Set(["omnidex"]);
 
 /** Colorful pre-alpha flag for Omnidex agent options. */
@@ -64,6 +84,36 @@ function renderAgentSystemPicker(
   `;
 }
 
+function renderAgentOptionField(
+  field: AgentFieldDefinition,
+  override: string,
+  inherited: string,
+  fieldPrefix: "projects" | "scrum",
+): string {
+  const options = field.options ?? [];
+  const inheritLabel = inherited ? OPTION_LABELS[inherited] ?? inherited : "default";
+  const fieldAttr = `data-${fieldPrefix}-field="agent_${escapeHTML(field.key)}"`;
+  if (options.length) {
+    return `
+      <label class="block">
+        <span class="text-xs text-zinc-500">${escapeHTML(field.label)}</span>
+        <select ${fieldAttr} class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
+          <option value="">Inherit (${escapeHTML(inheritLabel)})</option>
+          ${options.map((option) => `<option value="${escapeHTML(option)}"${override === option ? " selected" : ""}>${escapeHTML(OPTION_LABELS[option] ?? option)}</option>`).join("")}
+        </select>
+        <span class="mt-1 block text-[11px] leading-5 text-zinc-600">${escapeHTML(field.description)}</span>
+      </label>
+    `;
+  }
+  return `
+    <label class="block">
+      <span class="text-xs text-zinc-500">${escapeHTML(field.label)}</span>
+      <input ${fieldAttr} value="${escapeHTML(override)}" placeholder="${escapeHTML(inherited || "Inherit default")}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40" />
+      <span class="mt-1 block text-[11px] leading-5 text-zinc-600">${escapeHTML(field.description)}</span>
+    </label>
+  `;
+}
+
 export function renderAgentConfigSection(
   fields: AgentFieldDefinition[],
   overrides: Record<string, string>,
@@ -96,7 +146,7 @@ export function renderAgentConfigSection(
           </label>
         `;
       }
-      return "";
+      return renderAgentOptionField(field, override, inherited, fieldPrefix);
     })
     .join("");
 
@@ -196,7 +246,23 @@ export function renderGlobalAgentSettings(fields: AgentFieldDefinition[]): strin
           </label>
         `;
       }
-      return "";
+      if (field.options?.length) {
+        return `
+          <label class="block">
+            <span class="text-xs text-zinc-500">${escapeHTML(field.label)}</span>
+            <select data-admin-field="agent_${field.key}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
+              <option value="">Default</option>
+              ${field.options.map((option) => `<option value="${escapeHTML(option)}"${field.value === option ? " selected" : ""}>${escapeHTML(OPTION_LABELS[option] ?? option)}</option>`).join("")}
+            </select>
+          </label>
+        `;
+      }
+      return `
+        <label class="block">
+          <span class="text-xs text-zinc-500">${escapeHTML(field.label)}</span>
+          <input data-admin-field="agent_${field.key}" value="${escapeHTML(field.value ?? "")}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40" />
+        </label>
+      `;
     })
     .join("");
   return `

@@ -250,6 +250,7 @@ build_binaries() {
   mkdir -p "${PREFIX}/bin"
   (
     cd "${PREFIX}"
+    rm -f bin/agent-core bin/agent-cli bin/omni
     go build -o bin/agent-core ./cmd/core
     go build -o bin/agent-cli ./cmd/cli
     go build -o bin/omni ./cmd/omni

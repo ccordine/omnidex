@@ -13,6 +13,7 @@ import {
   pauseScrumCard,
   patchScrumCard,
   patchScrumAutoPlay,
+  patchScrumAutoWork,
   playScrumCard,
   syncScrumBoard,
   suggestScrumTags,
@@ -49,7 +50,7 @@ import {
   type ScrumCardTab,
 } from "../lib/scrum_modal_render";
 import { revealTagsProgressively } from "../lib/scrum_modal_live";
-import { COLUMN_LABELS, nextColumn, prevColumn, groupCardsByColumn, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumChecklistItem, type ScrumTestCriterion } from "../lib/scrum_types";
+import { COLUMN_LABELS, DEFAULT_AUTO_WORK_COLUMNS, nextColumn, prevColumn, groupCardsByColumn, type ScrumAutoWorkConfig, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumChecklistItem, type ScrumTestCriterion } from "../lib/scrum_types";
 import { ScrumBoardDrag, type ScrumDragDropResult } from "../lib/scrum_drag";
 import type GxController from "./gx_controller";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
@@ -106,6 +107,7 @@ export default class ScrumController extends Controller {
   private scrumTabActive = true;
   private playQueue: ScrumBoardResponse["play_queue"] | null = null;
   private autoPlayThrough = false;
+  private autoWorkConfig: ScrumAutoWorkConfig = { enabled: false, source_columns: [...DEFAULT_AUTO_WORK_COLUMNS] };
   private autoReviewEnabled = false;
   private autoPlayToggleBusy = false;
   private flowSummary: ScrumBoardResponse["flow_summary"] | null = null;
@@ -129,6 +131,10 @@ export default class ScrumController extends Controller {
   private cardLlmJobPollers = new Set<number>();
   private scrumRefreshHandler = () => {
     if (this.projectID) void this.load();
+  };
+  private scrumModalRealtimeHandler = (event: Event) => {
+    const detail = (event as CustomEvent<{ cardID?: string; projectID?: number }>).detail;
+    void this.handleScrumModalRealtime(detail);
   };
 
   connect() {
@@ -173,6 +179,7 @@ export default class ScrumController extends Controller {
     };
     document.addEventListener("omni:project-tab", this.projectTabHandler);
     document.addEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
+    document.addEventListener("omni:scrum-card-modal-refresh", this.scrumModalRealtimeHandler);
   }
 
   disconnect() {
@@ -189,6 +196,7 @@ export default class ScrumController extends Controller {
       document.removeEventListener("omni:project-tab", this.projectTabHandler);
     }
     document.removeEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
+    document.removeEventListener("omni:scrum-card-modal-refresh", this.scrumModalRealtimeHandler);
     this.stopPolling();
     if (this.coachScanTimer != null) {
       window.clearTimeout(this.coachScanTimer);
@@ -312,6 +320,7 @@ export default class ScrumController extends Controller {
         this.playQueue ?? undefined,
         this.autoPlayThrough,
         this.autoReviewEnabled,
+        this.autoWorkConfig,
       );
     }
     if (updateStatus && this.isPlayActive()) {
@@ -329,6 +338,10 @@ export default class ScrumController extends Controller {
     this.board = payload.board;
     this.playQueue = payload.play_queue ?? null;
     this.autoPlayThrough = Boolean(payload.auto_play_through);
+    this.autoWorkConfig = {
+      enabled: this.autoPlayThrough,
+      source_columns: payload.auto_work?.source_columns?.length ? payload.auto_work.source_columns : [...DEFAULT_AUTO_WORK_COLUMNS],
+    };
     this.autoReviewEnabled = Boolean(payload.auto_review?.enabled);
     this.flowSummary = payload.flow_summary ?? null;
     this.syncCardLlmJobsFromBoard(payload.board.cards);
@@ -344,6 +357,7 @@ export default class ScrumController extends Controller {
         payload.play_queue,
         this.autoPlayThrough,
         this.autoReviewEnabled,
+        this.autoWorkConfig,
       );
     }
     if (updateStatus && this.isPlayActive()) {
@@ -988,8 +1002,26 @@ export default class ScrumController extends Controller {
     return (window as Window & { omniRecyclr?: GxController }).omniRecyclr ?? null;
   }
 
+  private shouldPreserveCardTabOnRecycle(target: string): boolean {
+    if (!this.activeCardID || !this.isCardModalOpen()) return false;
+    if (this.modalCardID() !== this.activeCardID) return false;
+    return (
+      target === "modal" ||
+      target.startsWith("scrum-modal-") ||
+      target.startsWith("scrum-card-") ||
+      target.startsWith("scrum-coach-")
+    );
+  }
+
   recycle(target: string, html: string): void {
+    const preserveCardTab = this.shouldPreserveCardTabOnRecycle(target);
+    const cardID = preserveCardTab ? this.activeCardID : null;
+    if (cardID) this.rememberActiveCardTab(cardID);
     renderRecyclrBundle(this.gxHost(), target, html);
+    if (cardID && this.activeCardID === cardID && this.isCardModalOpen() && this.modalCardID() === cardID) {
+      this.syncScrumModalRoute();
+      this.scheduleApplyCardTabState();
+    }
   }
 
   openModal(html: string): void {
@@ -1107,6 +1139,13 @@ export default class ScrumController extends Controller {
       return;
     }
     await this.refreshModalSections(cardID);
+  }
+
+  private async handleScrumModalRealtime(detail?: { cardID?: string; projectID?: number }) {
+    const cardID = String(detail?.cardID ?? "").trim();
+    if (!cardID || cardID !== this.activeCardID || !this.isCardModalOpen() || this.modalCardID() !== cardID) return;
+    if (detail?.projectID && this.projectID && detail.projectID !== this.projectID) return;
+    await this.reloadBoard(cardID);
   }
 
   async refreshModalSections(cardID: string) {
@@ -1424,11 +1463,15 @@ export default class ScrumController extends Controller {
     this.autoPlayToggleBusy = true;
     this.setStatus(enabled ? "Enabling auto-play…" : "Disabling auto-play…", "busy");
     try {
-      const payload = await patchScrumAutoPlay(enabled, this.projectID);
+      const payload = await patchScrumAutoPlay(enabled, this.projectID, {
+        ...this.autoWorkConfig,
+        enabled,
+        source_columns: this.autoWorkConfig.source_columns?.length ? this.autoWorkConfig.source_columns : [...DEFAULT_AUTO_WORK_COLUMNS],
+      });
       this.applyBoardPayload(payload, true);
       this.startPolling();
       if (enabled) {
-        showToast("Auto-play on — working cards top to bottom until Review", "info");
+        showToast("Auto-play on — pulling from configured columns into In Progress", "info");
       }
       this.setStatus(`Auto-play ${enabled ? "enabled" : "disabled"}`, "ok");
     } catch (error) {
@@ -1436,6 +1479,30 @@ export default class ScrumController extends Controller {
       this.actionFail(error);
     } finally {
       this.autoPlayToggleBusy = false;
+    }
+  }
+
+  async toggleAutoWorkColumn(event: Event) {
+    event.stopPropagation();
+    const input = event.currentTarget as HTMLInputElement;
+    const column = input.dataset.autoWorkColumn?.trim() || "";
+    if (!column || !this.projectID) return;
+    const current = new Set(this.autoWorkConfig.source_columns?.length ? this.autoWorkConfig.source_columns : [...DEFAULT_AUTO_WORK_COLUMNS]);
+    if (input.checked) {
+      current.add(column);
+    } else {
+      current.delete(column);
+    }
+    const sourceColumns = current.size ? Array.from(current) : [...DEFAULT_AUTO_WORK_COLUMNS];
+    this.autoWorkConfig = { enabled: this.autoPlayThrough, source_columns: sourceColumns };
+    this.setStatus("Saving auto-work sources…", "busy");
+    try {
+      const payload = await patchScrumAutoWork(this.autoWorkConfig, this.projectID);
+      this.applyBoardPayload(payload, true);
+      this.setStatus("Auto-work sources saved", "ok");
+    } catch (error) {
+      input.checked = !input.checked;
+      this.actionFail(error);
     }
   }
 
@@ -1872,6 +1939,9 @@ export default class ScrumController extends Controller {
     if (card) {
       const optimistic: ScrumCard = {
         ...card,
+        column: "in_progress",
+        play_state: "running",
+        queue_order: 0,
         chat: [...(card.chat ?? []), { role: "user", content: message, created_at: new Date().toISOString() }],
       };
       this.upsertCard(optimistic);

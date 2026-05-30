@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,26 @@ func TestDecodeResponseJSONIgnoresTrailingGarbage(t *testing.T) {
 	}
 	if got := stringField(payload, "path"); got != "/tmp/New-project" {
 		t.Fatalf("path=%q", got)
+	}
+}
+
+func TestDecodeResponseBodyReportsPlainTextHTTPError(t *testing.T) {
+	_, err := decodeResponseBody([]byte("404 page not found\n"), http.StatusNotFound)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got, want := err.Error(), "host bridge HTTP 404: 404 page not found"; got != want {
+		t.Fatalf("error=%q want %q", got, want)
+	}
+}
+
+func TestDecodeResponseBodyStillReportsInvalidSuccessJSON(t *testing.T) {
+	_, err := decodeResponseBody([]byte("404 page not found\n"), http.StatusOK)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got, want := err.Error(), "invalid host bridge JSON"; !strings.Contains(got, want) {
+		t.Fatalf("error=%q should contain %q", got, want)
 	}
 }
 

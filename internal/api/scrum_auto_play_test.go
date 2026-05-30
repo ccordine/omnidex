@@ -2,7 +2,7 @@ package api
 
 import "testing"
 
-func TestNextAutoPlayThroughScrumCardTopToBottom(t *testing.T) {
+func TestNextAutoPlayThroughScrumCardDefaultsToAssigned(t *testing.T) {
 	s := &Server{}
 	board := ScrumBoard{
 		Cards: []ScrumCard{
@@ -13,8 +13,8 @@ func TestNextAutoPlayThroughScrumCardTopToBottom(t *testing.T) {
 		},
 	}
 	got := s.nextAutoPlayThroughScrumCard(board)
-	if got == nil || got.ID != "backlog-top" {
-		t.Fatalf("expected top backlog card, got %#v", got)
+	if got == nil || got.ID != "assigned-top" {
+		t.Fatalf("expected assigned card by default, got %#v", got)
 	}
 
 	board.Cards = []ScrumCard{
@@ -25,12 +25,16 @@ func TestNextAutoPlayThroughScrumCardTopToBottom(t *testing.T) {
 	if got == nil || got.ID != "queued" {
 		t.Fatalf("expected queued card first, got %#v", got)
 	}
+}
 
-	board.Cards = []ScrumCard{
+func TestNextAutoWorkScrumCardUsesConfiguredColumns(t *testing.T) {
+	s := &Server{}
+	board := ScrumBoard{Cards: []ScrumCard{
 		{ID: "ready-b", Column: "ready", BoardOrder: 2},
 		{ID: "ready-a", Column: "ready", BoardOrder: 1},
-	}
-	got = s.nextAutoPlayThroughScrumCard(board)
+		{ID: "assigned-a", Column: "assigned", BoardOrder: 1},
+	}}
+	got := s.nextAutoWorkScrumCard(board, ScrumAutoWorkConfig{Enabled: true, SourceColumns: []string{"ready", "assigned"}})
 	if got == nil || got.ID != "ready-a" {
 		t.Fatalf("expected ready-a by board_order, got %#v", got)
 	}
@@ -62,5 +66,19 @@ func TestLoadScrumAutoPlayThrough(t *testing.T) {
 	}
 	if loadScrumAutoPlayThrough(nil) {
 		t.Fatal("expected false for empty settings")
+	}
+}
+
+func TestLoadScrumAutoWorkConfig(t *testing.T) {
+	cfg := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_work":{"enabled":true,"source_columns":["ready","assigned","review","ready"]}}`))
+	if !cfg.Enabled {
+		t.Fatal("expected enabled")
+	}
+	if len(cfg.SourceColumns) != 2 || cfg.SourceColumns[0] != "ready" || cfg.SourceColumns[1] != "assigned" {
+		t.Fatalf("unexpected source columns: %#v", cfg.SourceColumns)
+	}
+	cfg = loadScrumAutoWorkConfig([]byte(`{"scrum_auto_play_through":true}`))
+	if !cfg.Enabled || len(cfg.SourceColumns) != 1 || cfg.SourceColumns[0] != "assigned" {
+		t.Fatalf("expected legacy enabled with assigned default, got %#v", cfg)
 	}
 }

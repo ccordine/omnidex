@@ -124,9 +124,6 @@ func agentConfigPatchFromRequest(raw json.RawMessage) (json.RawMessage, error) {
 		}
 		if key == "agent_system" {
 			value = agentconfig.Config{"agent_system": value}.System()
-			if value == agentconfig.SystemOmnidex {
-				continue
-			}
 		}
 		if key == "agent_strict" && !(agentconfig.Config{"agent_strict": value}).IsStrict() {
 			continue
@@ -202,11 +199,11 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		path, _ := resolveEnvFilePath()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"storage":  "database",
-			"env_file": path,
+			"storage":   "database",
+			"env_file":  path,
 			"workspace": stored,
-			"fields":   cfg.FieldList(map[string]string{}),
-			"resolved": cfg.ToMap(),
+			"fields":    cfg.FieldList(map[string]string{}),
+			"resolved":  cfg.ToMap(),
 		})
 	case http.MethodPut:
 		if s.repo == nil {
@@ -238,11 +235,11 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 		cfg := s.defaultAgentConfig(r.Context())
 		path, _ := resolveEnvFilePath()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"storage":  "database",
-			"env_file": path,
+			"storage":   "database",
+			"env_file":  path,
 			"workspace": stored,
-			"fields":   cfg.FieldList(map[string]string{}),
-			"resolved": cfg.ToMap(),
+			"fields":    cfg.FieldList(map[string]string{}),
+			"resolved":  cfg.ToMap(),
 		})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

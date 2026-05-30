@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/secrets"
 )
 
@@ -21,6 +22,12 @@ type CodexSDKArchitectAgent struct {
 	NodeBin   string
 	NPMBin    string
 	CodexBin  string
+
+	ReasoningEffort string
+	SandboxMode     string
+	ApprovalPolicy  string
+	NetworkAccess   string
+	WebSearchMode   string
 }
 
 // NewCodexSDKArchitectAgent returns the Codex SDK agent when enabled.
@@ -56,6 +63,36 @@ func newCodexSDKArchitectAgent(force, explicitRequest bool) *CodexSDKArchitectAg
 		NodeBin:   firstNonEmpty(os.Getenv("OMNI_CODEX_NODE_BIN"), "node"),
 		NPMBin:    firstNonEmpty(os.Getenv("OMNI_CODEX_NPM_BIN"), "npm"),
 		CodexBin:  firstNonEmpty(os.Getenv("OMNI_CODEX_BIN"), "codex"),
+
+		ReasoningEffort: firstNonEmpty(os.Getenv("OMNI_CODEX_REASONING_EFFORT"), os.Getenv("OMNI_CODEX_MODEL_REASONING_EFFORT")),
+		SandboxMode:     os.Getenv("OMNI_CODEX_SANDBOX_MODE"),
+		ApprovalPolicy:  os.Getenv("OMNI_CODEX_APPROVAL_POLICY"),
+		NetworkAccess:   os.Getenv("OMNI_CODEX_NETWORK_ACCESS"),
+		WebSearchMode:   os.Getenv("OMNI_CODEX_WEB_SEARCH_MODE"),
+	}
+}
+
+func (a *CodexSDKArchitectAgent) ApplyConfig(cfg agentconfig.Config) {
+	if a == nil {
+		return
+	}
+	if value := cfg.CodexModel(); value != "" {
+		a.Model = value
+	}
+	if value := cfg.CodexReasoningEffort(); value != "" {
+		a.ReasoningEffort = value
+	}
+	if value := cfg.CodexSandboxMode(); value != "" {
+		a.SandboxMode = value
+	}
+	if value := cfg.CodexApprovalPolicy(); value != "" {
+		a.ApprovalPolicy = value
+	}
+	if value := cfg.CodexNetworkAccess(); value != "" {
+		a.NetworkAccess = value
+	}
+	if value := cfg.CodexWebSearchMode(); value != "" {
+		a.WebSearchMode = value
 	}
 }
 
@@ -103,7 +140,13 @@ func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAg
 		return nil, fmt.Errorf("codex sdk architect agent is not configured")
 	}
 	if UseHostBridgeExternalAgents() {
-		return newHostBridgeExternalAgentSession("codex", a.APIKey, firstNonEmpty(a.Model, "gpt-5.3-codex"), firstNonEmpty(a.CodexBin, "codex"))
+		return newHostBridgeExternalAgentSessionWithOptions("codex", a.APIKey, firstNonEmpty(a.Model, "gpt-5.3-codex"), firstNonEmpty(a.CodexBin, "codex"), ExternalAgentRuntimeOptions{
+			ReasoningEffort: a.ReasoningEffort,
+			SandboxMode:     a.SandboxMode,
+			ApprovalPolicy:  a.ApprovalPolicy,
+			NetworkAccess:   a.NetworkAccess,
+			WebSearchMode:   a.WebSearchMode,
+		})
 	}
 	if err := a.ensureRunner(context.Background()); err != nil {
 		return nil, err
@@ -116,11 +159,16 @@ func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAg
 				workspace = "."
 			}
 			request := codexSDKRunnerRequest{
-				APIKey:    a.APIKey,
-				Model:     firstNonEmpty(a.Model, "gpt-5.3-codex"),
-				Workspace: workspace,
-				CodexPath: firstNonEmpty(a.CodexBin, "codex"),
-				Prompt:    job.Prompt,
+				APIKey:          a.APIKey,
+				Model:           firstNonEmpty(a.Model, "gpt-5.3-codex"),
+				Workspace:       workspace,
+				CodexPath:       firstNonEmpty(a.CodexBin, "codex"),
+				Prompt:          job.Prompt,
+				ReasoningEffort: a.ReasoningEffort,
+				SandboxMode:     a.SandboxMode,
+				ApprovalPolicy:  a.ApprovalPolicy,
+				NetworkAccess:   a.NetworkAccess,
+				WebSearchMode:   a.WebSearchMode,
 			}
 			reqPath, err := writeExternalAgentRequest("omnidex-codex-sdk-request-*.json", request)
 			if err != nil {
@@ -134,11 +182,16 @@ func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAg
 }
 
 type codexSDKRunnerRequest struct {
-	APIKey    string `json:"api_key,omitempty"`
-	Model     string `json:"model"`
-	Workspace string `json:"workspace"`
-	CodexPath string `json:"codex_path"`
-	Prompt    string `json:"prompt"`
+	APIKey          string `json:"api_key,omitempty"`
+	Model           string `json:"model"`
+	Workspace       string `json:"workspace"`
+	CodexPath       string `json:"codex_path"`
+	Prompt          string `json:"prompt"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	SandboxMode     string `json:"sandbox_mode,omitempty"`
+	ApprovalPolicy  string `json:"approval_policy,omitempty"`
+	NetworkAccess   string `json:"network_access,omitempty"`
+	WebSearchMode   string `json:"web_search_mode,omitempty"`
 }
 
 func (a *CodexSDKArchitectAgent) ensureRunner(ctx context.Context) error {
@@ -219,18 +272,43 @@ if (request.api_key) {
   env.CODEX_API_KEY = request.api_key;
 }
 
+function stringOption(value, fallback) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function booleanOption(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on", "enabled"].includes(normalized)) return true;
+  if (["0", "false", "no", "off", "disabled"].includes(normalized)) return false;
+  return undefined;
+}
+
+const threadOptions = {
+  workingDirectory: request.workspace || process.cwd(),
+  skipGitRepoCheck: true,
+  sandboxMode: stringOption(request.sandbox_mode, "workspace-write"),
+  approvalPolicy: stringOption(request.approval_policy, "never"),
+  model: request.model || "gpt-5.3-codex",
+};
+if (stringOption(request.reasoning_effort, "")) {
+  threadOptions.modelReasoningEffort = stringOption(request.reasoning_effort, "");
+}
+if (stringOption(request.web_search_mode, "")) {
+  threadOptions.webSearchMode = stringOption(request.web_search_mode, "");
+}
+const networkAccess = booleanOption(request.network_access);
+if (networkAccess !== undefined) {
+  threadOptions.networkAccessEnabled = networkAccess;
+}
+
 const codex = new Codex({
   codexPathOverride: request.codex_path || "codex",
   env,
 });
 
-const thread = codex.startThread({
-  workingDirectory: request.workspace || process.cwd(),
-  skipGitRepoCheck: true,
-  sandboxMode: "workspace-write",
-  approvalPolicy: "never",
-  model: request.model || "gpt-5.3-codex",
-});
+const thread = codex.startThread(threadOptions);
 
 emit({ agent: "codex", type: "started", message: "Codex external implementation session started" });
 

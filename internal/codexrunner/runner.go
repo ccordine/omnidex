@@ -33,18 +33,43 @@ if (request.api_key) {
   env.CODEX_API_KEY = request.api_key;
 }
 
+function stringOption(value, fallback) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function booleanOption(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on", "enabled"].includes(normalized)) return true;
+  if (["0", "false", "no", "off", "disabled"].includes(normalized)) return false;
+  return undefined;
+}
+
+const threadOptions = {
+  workingDirectory: request.workspace || process.cwd(),
+  skipGitRepoCheck: true,
+  sandboxMode: stringOption(request.sandbox_mode, "workspace-write"),
+  approvalPolicy: stringOption(request.approval_policy, "never"),
+  model: request.model || "gpt-5.3-codex",
+};
+if (stringOption(request.reasoning_effort, "")) {
+  threadOptions.modelReasoningEffort = stringOption(request.reasoning_effort, "");
+}
+if (stringOption(request.web_search_mode, "")) {
+  threadOptions.webSearchMode = stringOption(request.web_search_mode, "");
+}
+const networkAccess = booleanOption(request.network_access);
+if (networkAccess !== undefined) {
+  threadOptions.networkAccessEnabled = networkAccess;
+}
+
 const codex = new Codex({
   codexPathOverride: request.codex_path || "codex",
   env,
 });
 
-const thread = codex.startThread({
-  workingDirectory: request.workspace || process.cwd(),
-  skipGitRepoCheck: true,
-  sandboxMode: "workspace-write",
-  approvalPolicy: "never",
-  model: request.model || "gpt-5.3-codex",
-});
+const thread = codex.startThread(threadOptions);
 
 emit({ agent: "codex", type: "started", message: "Codex external implementation session started" });
 
@@ -97,11 +122,16 @@ emit({
 `
 
 type Request struct {
-	APIKey    string `json:"api_key,omitempty"`
-	Model     string `json:"model"`
-	Workspace string `json:"workspace"`
-	CodexPath string `json:"codex_path"`
-	Prompt    string `json:"prompt"`
+	APIKey          string `json:"api_key,omitempty"`
+	Model           string `json:"model"`
+	Workspace       string `json:"workspace"`
+	CodexPath       string `json:"codex_path"`
+	Prompt          string `json:"prompt"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	SandboxMode     string `json:"sandbox_mode,omitempty"`
+	ApprovalPolicy  string `json:"approval_policy,omitempty"`
+	NetworkAccess   string `json:"network_access,omitempty"`
+	WebSearchMode    string `json:"web_search_mode,omitempty"`
 }
 
 func DefaultRunnerDir() string {

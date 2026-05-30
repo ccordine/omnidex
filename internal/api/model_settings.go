@@ -17,6 +17,7 @@ type modelSettingField struct {
 	Description string   `json:"description"`
 	EnvKeys     []string `json:"env_keys"`
 	Value       string   `json:"value"`
+	Options     []string `json:"options,omitempty"`
 }
 
 var modelSettingDefinitions = []struct {
@@ -24,10 +25,18 @@ var modelSettingDefinitions = []struct {
 	Label       string
 	Description string
 	EnvKeys     []string
+	Options     []string
 }{
 	{Key: "default_model", Label: "Default model", Description: "Primary conversation/responder model", EnvKeys: []string{"OMNI_MODEL", "OMNI_CONVERSATION_MODEL", "OLLAMA_MODEL_RESPONDER", "OLLAMA_MODEL"}},
+	{Key: "fast_model", Label: "Fast model", Description: "Low-latency utility model for simple routing/tagging/fallbacks", EnvKeys: []string{"OMNI_FAST_MODEL", "OLLAMA_MODEL_FAST"}},
+	{Key: "reasoning_model", Label: "Reasoning model", Description: "Deep reasoning model for analysis and complex planning", EnvKeys: []string{"OMNI_REASONING_MODEL", "OLLAMA_MODEL_REASONING"}},
 	{Key: "planner_model", Label: "Planner model", Description: "Structured command planner", EnvKeys: []string{"OMNI_PLANNER_MODEL", "OMNI_STRUCTURED_PLANNER_MODEL", "OLLAMA_MODEL_PLANNER"}},
 	{Key: "thinking_model", Label: "Thinking model", Description: "Internal thinking pilot channel", EnvKeys: []string{"OMNI_THINKING_MODEL", "OLLAMA_MODEL_THINKING", "OLLAMA_MODEL_REASONING"}},
+	{Key: "analyzer_model", Label: "Analyzer model", Description: "Analysis and verification model", EnvKeys: []string{"OMNI_ANALYZER_MODEL", "OLLAMA_MODEL_ANALYZER"}},
+	{Key: "responder_model", Label: "Responder model", Description: "Final response composition model", EnvKeys: []string{"OMNI_RESPONDER_MODEL", "OLLAMA_MODEL_RESPONDER"}},
+	{Key: "tagger_model", Label: "Tagger model", Description: "Fast model for tags and classification", EnvKeys: []string{"OMNI_TAGGER_MODEL", "OLLAMA_MODEL_TAGGER"}},
+	{Key: "search_model", Label: "Search model", Description: "Model used for search/research synthesis", EnvKeys: []string{"OMNI_SEARCH_MODEL", "OLLAMA_MODEL_SEARCH"}},
+	{Key: "memory_model", Label: "Memory model", Description: "Model used for memory extraction and retrieval tasks", EnvKeys: []string{"OMNI_MEMORY_MODEL", "OLLAMA_MODEL_MEMORY"}},
 	{Key: "evaluator_model", Label: "Evaluator model", Description: "Structured response evaluator", EnvKeys: []string{"OMNI_EVALUATOR_MODEL", "OLLAMA_MODEL_EVALUATOR"}},
 	{Key: "shell_specialist_model", Label: "Shell specialist", Description: "Shell execution specialist", EnvKeys: []string{"OMNI_SHELL_SPECIALIST_MODEL", "OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION", "OLLAMA_MODEL_SHELL"}},
 	{Key: "ollama_endpoint", Label: "Ollama endpoint", Description: "Ollama HTTP base URL", EnvKeys: []string{"OLLAMA_BASE_URL", "OMNI_OLLAMA_ENDPOINT"}},
@@ -144,6 +153,7 @@ func buildModelSettingsResponse() (map[string]any, error) {
 			Description: def.Description,
 			EnvKeys:     def.EnvKeys,
 			Value:       lookupEnvValue(values, def.EnvKeys),
+			Options:     def.Options,
 		})
 	}
 	return map[string]any{

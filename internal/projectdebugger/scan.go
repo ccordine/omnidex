@@ -11,14 +11,14 @@ type LLMClient interface {
 	Generate(ctx context.Context, model, prompt string) (string, error)
 }
 
-const debuggerSystemPrompt = `You are the Omni project debugger — a code-quality analyst for a software project.
-Your job is to scan project context (codebase map, board, risks, tests) and identify concrete bugs, defects, tech debt, and reliability problems.
+const debuggerSystemPrompt = `You are the Omni project analyzer — a code-quality analyst for a software project.
+Your job is to scan project context (codebase map, board, risks, tests) and identify concrete backlog work: bugs, mistakes, cleanup, refactors, optimization points, reliability problems, security risks, and missing tests.
 You never execute code or modify files directly.
-Focus on actionable findings: missing error handling, stale modules, test gaps, security risks, broken flows, inconsistent patterns.
+Focus on actionable findings: obvious errors, subtle broken flows, missing error handling, stale modules, test gaps, security risks, inconsistent patterns, needless duplication, brittle abstractions, and performance issues.
 Avoid duplicating existing open backlog items when their titles clearly match.
 Respond with JSON only (no markdown fences):
-{"summary":"brief scan overview","bug_tickets":[{"title":"...","description":"markdown details with file refs when known","severity":"critical|high|medium|low","column":"backlog","checklist":["verify step"],"ref_files":["path/to/file.go"],"tags":["bug","debugger"]}],"suggestions":["optional process tip"]}
-Emit 3-8 bug_tickets when issues exist; emit fewer if the project looks healthy. Prefer backlog column.`
+{"summary":"brief analysis overview","bug_tickets":[{"title":"...","description":"markdown details with file refs when known","severity":"critical|high|medium|low","column":"backlog","checklist":["verify step"],"ref_files":["path/to/file.go"],"tags":["bug|cleanup|refactor|optimization|reliability|security|test-gap"]}],"suggestions":["optional process tip"]}
+The bug_tickets array is the backlog-card list. Emit 3-8 backlog cards when issues exist; emit fewer if the project looks healthy. Prefer backlog column.`
 
 func MapContextLines(payload map[string]any) []string {
 	if payload == nil {
@@ -138,7 +138,7 @@ func BuildPrompt(in Input) (system, user string) {
 	mapLines := MapContextLines(in.MapPayload)
 	lines = append(lines, "Codebase map:", strings.Join(mapLines, "\n"))
 	lines = append(lines, "Scrum board:", strings.Join(BoardSummaryLines(in.BoardCards), "\n"))
-	lines = append(lines, "Task: scan for bugs, defects, reliability issues, and missing tests. Emit bug_tickets for the backlog.")
+	lines = append(lines, "Task: analyze the codebase and board for bugs, mistakes, cleanup tickets, refactor suggestions, optimization points, reliability issues, security risks, and missing tests. Emit bug_tickets as backlog cards.")
 	return debuggerSystemPrompt, strings.Join(lines, "\n")
 }
 
@@ -172,7 +172,7 @@ func normalizeScanResponse(in ScanResponse) ScanResponse {
 		ticket.Description = strings.TrimSpace(ticket.Description)
 		ticket.Severity = normalizeSeverity(ticket.Severity)
 		ticket.Column = normalizeColumn(ticket.Column)
-		ticket.Tags = mergeTags(ticket.Tags, []string{"bug", "debugger"})
+		ticket.Tags = mergeTags(ticket.Tags, []string{"analysis"})
 		tickets = append(tickets, ticket)
 	}
 	in.BugTickets = tickets
@@ -266,7 +266,7 @@ func FormatTicketDescription(ticket BugTicket) string {
 			parts = append(parts, "Related files:\n"+strings.Join(lines, "\n"))
 		}
 	}
-	parts = append(parts, "_Created by Run Debugger_")
+	parts = append(parts, "_Created by Analyze_")
 	return strings.Join(parts, "\n\n")
 }
 
@@ -293,7 +293,7 @@ func ChecklistJSON(items []string) []byte {
 func TagsJSON(tags []string) []byte {
 	raw, err := json.Marshal(tags)
 	if err != nil {
-		return []byte(`["bug","debugger"]`)
+		return []byte(`["analysis"]`)
 	}
 	return raw
 }

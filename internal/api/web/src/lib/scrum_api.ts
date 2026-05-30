@@ -1,6 +1,6 @@
 import { readJSON } from "./api";
 import { projectQuery } from "./project_api";
-import type { ScrumBoard, ScrumBoardResponse, ScrumCard } from "./scrum_types";
+import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard } from "./scrum_types";
 
 export type ScrumCardLlmJob = {
   id: number;
@@ -41,11 +41,26 @@ export async function updateScrumBoard(
 export async function patchScrumAutoPlay(
   enabled: boolean,
   projectID?: number | null,
+  autoWork?: ScrumAutoWorkConfig,
+): Promise<ScrumBoardResponse> {
+  const body: Record<string, unknown> = { auto_play_through: enabled };
+  if (autoWork) body.auto_work = { ...autoWork, enabled };
+  const response = await fetch(`/v1/scrum${projectQuery(projectID)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readJSON<ScrumBoardResponse>(response);
+}
+
+export async function patchScrumAutoWork(
+  config: ScrumAutoWorkConfig,
+  projectID?: number | null,
 ): Promise<ScrumBoardResponse> {
   const response = await fetch(`/v1/scrum${projectQuery(projectID)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ auto_play_through: enabled }),
+    body: JSON.stringify({ auto_work: config }),
   });
   return readJSON<ScrumBoardResponse>(response);
 }

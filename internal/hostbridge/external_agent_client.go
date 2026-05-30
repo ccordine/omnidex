@@ -12,12 +12,17 @@ import (
 )
 
 type ExternalAgentRunRequest struct {
-	Agent     string
-	APIKey    string
-	Model     string
-	Workspace string
-	Prompt    string
-	CodexPath string
+	Agent           string
+	APIKey          string
+	Model           string
+	Workspace       string
+	Prompt          string
+	CodexPath       string
+	ReasoningEffort string
+	SandboxMode     string
+	ApprovalPolicy  string
+	NetworkAccess   string
+	WebSearchMode   string
 }
 
 func (c *Client) RunExternalAgent(ctx context.Context, req ExternalAgentRunRequest) (io.ReadCloser, error) {
@@ -43,6 +48,11 @@ func (c *Client) RunExternalAgent(ctx context.Context, req ExternalAgentRunReque
 	}
 	if agent == "codex" {
 		body["codex_path"] = strings.TrimSpace(req.CodexPath)
+		body["reasoning_effort"] = strings.TrimSpace(req.ReasoningEffort)
+		body["sandbox_mode"] = strings.TrimSpace(req.SandboxMode)
+		body["approval_policy"] = strings.TrimSpace(req.ApprovalPolicy)
+		body["network_access"] = strings.TrimSpace(req.NetworkAccess)
+		body["web_search_mode"] = strings.TrimSpace(req.WebSearchMode)
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {

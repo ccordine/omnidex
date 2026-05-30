@@ -46,6 +46,8 @@ type realtimeMessage struct {
 	EventName string `json:"eventName,omitempty"`
 	Toast     string `json:"toast,omitempty"`
 	ToastTone string `json:"toastTone,omitempty"`
+	ProjectID int64  `json:"projectID,omitempty"`
+	CardID    string `json:"cardID,omitempty"`
 }
 
 func (s *Server) ensureRealtimeHub() *RealtimeHub {

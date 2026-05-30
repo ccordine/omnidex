@@ -357,8 +357,10 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 		"flow_summary": summarizeScrumFlowMetrics(board.Cards),
 	}
 	if projectID > 0 {
+		autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
 		payload["project_id"] = projectID
-		payload["auto_play_through"] = s.scrumAutoPlayThroughEnabled(r.Context(), projectID)
+		payload["auto_play_through"] = autoWork.Enabled
+		payload["auto_work"] = autoWork
 		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
 	}
 	return payload, nil

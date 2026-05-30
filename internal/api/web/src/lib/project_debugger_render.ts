@@ -40,7 +40,7 @@ function statusTone(status: string): string {
 function renderCardsCreated(lastRun: DebuggerLastRun | null): string {
   const cards = lastRun?.cards_created ?? [];
   if (!cards.length) {
-    return `<p class="text-sm text-zinc-500">No bug tickets created yet.</p>`;
+    return `<p class="text-sm text-zinc-500">No analysis cards created yet.</p>`;
   }
   return cards
     .map((card) => {
@@ -76,8 +76,11 @@ function renderSuggestions(lastRun: DebuggerLastRun | null): string {
 export function renderProjectDebuggerModal(state: DebuggerModalState): string {
   const lastRun = state.lastRun;
   const status = state.running ? "running" : lastRun?.status || "idle";
-  const summary = state.statusText || lastRun?.summary || "Run a scan to have your project agent review the codebase map and backlog for bugs.";
-  const runLabel = state.running ? "Scanning…" : "Run debugger";
+  const summary =
+    state.statusText ||
+    lastRun?.summary ||
+    "Analyze the codebase map and backlog for bugs, cleanup work, refactors, optimization points, reliability issues, and test gaps.";
+  const runLabel = state.running ? "Analyzing..." : "Analyze";
   const completedAt = lastRun?.completed_at ? formatDateTime(lastRun.completed_at) : "";
   const jobLine = lastRun?.job_id ? `Job #${lastRun.job_id}` : "No runs yet";
 
@@ -85,9 +88,9 @@ export function renderProjectDebuggerModal(state: DebuggerModalState): string {
     <div class="border-b border-white/10 p-4 md:p-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Project debugger</p>
+          <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Codebase analysis</p>
           <h2 class="mt-1 text-2xl font-semibold tracking-tight text-zinc-100">${escapeHTML(state.projectName)}</h2>
-          <p class="mt-1 text-sm text-zinc-500">Scan for bugs and quality issues, then auto-create scrum bug tickets on the backlog.</p>
+          <p class="mt-1 text-sm text-zinc-500">Review the project for bugs, cleanup, refactors, optimization points, reliability issues, and test gaps, then create backlog cards.</p>
         </div>
         <button type="button" data-action="projects#closeDebuggerModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Close</button>
       </div>
@@ -112,7 +115,7 @@ export function renderProjectDebuggerModal(state: DebuggerModalState): string {
       </section>
 
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-4">
-        <h3 class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Scan summary</h3>
+        <h3 class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Analysis summary</h3>
         <p data-debugger-summary class="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-300">${escapeHTML(summary)}</p>
         ${completedAt ? `<p class="mt-2 text-xs text-zinc-500">Completed ${escapeHTML(completedAt)}</p>` : ""}
         ${lastRun?.error ? `<p class="mt-2 text-sm text-rose-300">${escapeHTML(lastRun.error)}</p>` : ""}
@@ -122,7 +125,7 @@ export function renderProjectDebuggerModal(state: DebuggerModalState): string {
 
       <section class="space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Created bug tickets</h3>
+          <h3 class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-500">Created backlog cards</h3>
           <button
             type="button"
             data-action="projects#runDebugger"
@@ -135,7 +138,7 @@ export function renderProjectDebuggerModal(state: DebuggerModalState): string {
         <div data-debugger-cards class="space-y-2">${renderCardsCreated(lastRun)}</div>
       </section>
 
-      <p class="text-xs text-zinc-500">Uses the project codebase map, scrum board, and your configured execution agent. New tickets are tagged <span class="font-mono text-zinc-400">bug</span> and <span class="font-mono text-zinc-400">debugger</span>.</p>
+      <p class="text-xs text-zinc-500">Uses the project codebase map, scrum board, and your configured execution agent. New cards are tagged <span class="font-mono text-zinc-400">analysis</span> plus any issue category the agent assigns.</p>
     </div>
   `;
 }

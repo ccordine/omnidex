@@ -289,6 +289,7 @@ rebuild_host_binaries() {
   (
     cd "${repo_dir}"
     mkdir -p bin
+    rm -f bin/agent-core bin/agent-cli bin/omni
     go build -o bin/agent-core ./cmd/core
     go build -o bin/agent-cli ./cmd/cli
     go build -o bin/omni ./cmd/omni
@@ -319,6 +320,13 @@ restart_host_bridge() {
   if [[ ! -f "${unit}" ]]; then
     log "host bridge service not installed; skipping restart (run: ${omni} host service install)"
     return 0
+  fi
+
+  local exec_start
+  exec_start="$(sed -n 's/^ExecStart=//p' "${unit}" | head -n 1)"
+  if [[ -n "${exec_start}" && "${exec_start}" != "${omni} host serve" ]]; then
+    warn "host bridge unit uses a different binary: ${exec_start}"
+    warn "this update rebuilt ${omni}; reinstall the bridge with: ${omni} host service install --omni ${omni}"
   fi
 
   log "restarting host bridge (omni-host-bridge)"

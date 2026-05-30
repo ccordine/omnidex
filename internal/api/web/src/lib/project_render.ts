@@ -238,7 +238,7 @@ export function renderProjectDetail(
             data-action="projects#openDebuggerModal"
             data-project-id="${project.id}"
             class="rounded-md border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-100 hover:border-amber-200/50 hover:bg-amber-300/15"
-          >Run debugger</button>
+          >Analyze</button>
         </div>
       </div>
 

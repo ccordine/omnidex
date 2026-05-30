@@ -5,46 +5,100 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
 )
 
 const scrumAutoPlayThroughKey = "scrum_auto_play_through"
+const scrumAutoWorkConfigKey = "scrum_auto_work"
 
-var scrumAutoPlayWorkColumns = []string{"backlog", "ready", "assigned", "in_progress", "blocked"}
+var defaultScrumAutoWorkColumns = []string{"assigned"}
 
-func loadScrumAutoPlayThrough(settings json.RawMessage) bool {
+type ScrumAutoWorkConfig struct {
+	Enabled       bool     `json:"enabled"`
+	SourceColumns []string `json:"source_columns"`
+}
+
+func defaultScrumAutoWorkConfig() ScrumAutoWorkConfig {
+	return ScrumAutoWorkConfig{
+		Enabled:       false,
+		SourceColumns: append([]string{}, defaultScrumAutoWorkColumns...),
+	}
+}
+
+func normalizeScrumAutoWorkColumns(columns []string) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, raw := range columns {
+		column := normalizeScrumColumn(strings.TrimSpace(raw))
+		switch column {
+		case "backlog", "ready", "assigned", "in_progress", "blocked":
+		default:
+			continue
+		}
+		if _, ok := seen[column]; ok {
+			continue
+		}
+		seen[column] = struct{}{}
+		out = append(out, column)
+	}
+	if len(out) == 0 {
+		return append([]string{}, defaultScrumAutoWorkColumns...)
+	}
+	return out
+}
+
+func loadScrumAutoWorkConfig(settings json.RawMessage) ScrumAutoWorkConfig {
+	cfg := defaultScrumAutoWorkConfig()
 	if len(settings) == 0 {
-		return false
+		return cfg
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(settings, &payload); err != nil {
-		return false
+		return cfg
 	}
-	raw, ok := payload[scrumAutoPlayThroughKey]
-	if !ok || len(raw) == 0 {
-		return false
+	if raw, ok := payload[scrumAutoPlayThroughKey]; ok && len(raw) > 0 {
+		_ = json.Unmarshal(raw, &cfg.Enabled)
 	}
-	var enabled bool
-	if err := json.Unmarshal(raw, &enabled); err != nil {
-		return false
+	if raw, ok := payload[scrumAutoWorkConfigKey]; ok && len(raw) > 0 {
+		var stored ScrumAutoWorkConfig
+		if err := json.Unmarshal(raw, &stored); err == nil {
+			cfg.Enabled = stored.Enabled
+			cfg.SourceColumns = normalizeScrumAutoWorkColumns(stored.SourceColumns)
+		}
 	}
-	return enabled
+	cfg.SourceColumns = normalizeScrumAutoWorkColumns(cfg.SourceColumns)
+	return cfg
+}
+
+func loadScrumAutoPlayThrough(settings json.RawMessage) bool {
+	return loadScrumAutoWorkConfig(settings).Enabled
 }
 
 func (s *Server) scrumAutoPlayThroughEnabled(ctx context.Context, projectID int64) bool {
+	return s.scrumAutoWorkConfig(ctx, projectID).Enabled
+}
+
+func (s *Server) scrumAutoWorkConfig(ctx context.Context, projectID int64) ScrumAutoWorkConfig {
 	if s.repo == nil || projectID <= 0 {
-		return false
+		return defaultScrumAutoWorkConfig()
 	}
 	project, err := s.repo.GetProject(ctx, projectID)
 	if err != nil {
-		return false
+		return defaultScrumAutoWorkConfig()
 	}
-	return loadScrumAutoPlayThrough(project.Settings)
+	return loadScrumAutoWorkConfig(project.Settings)
 }
 
 func (s *Server) saveScrumAutoPlayThrough(ctx context.Context, project model.Project, enabled bool) error {
+	cfg := loadScrumAutoWorkConfig(project.Settings)
+	cfg.Enabled = enabled
+	return s.saveScrumAutoWorkConfig(ctx, project, cfg)
+}
+
+func (s *Server) saveScrumAutoWorkConfig(ctx context.Context, project model.Project, cfg ScrumAutoWorkConfig) error {
 	var settings map[string]any
 	if len(project.Settings) > 0 {
 		_ = json.Unmarshal(project.Settings, &settings)
@@ -52,7 +106,9 @@ func (s *Server) saveScrumAutoPlayThrough(ctx context.Context, project model.Pro
 	if settings == nil {
 		settings = map[string]any{}
 	}
-	settings[scrumAutoPlayThroughKey] = enabled
+	cfg.SourceColumns = normalizeScrumAutoWorkColumns(cfg.SourceColumns)
+	settings[scrumAutoPlayThroughKey] = cfg.Enabled
+	settings[scrumAutoWorkConfigKey] = cfg
 	raw, err := json.Marshal(settings)
 	if err != nil {
 		return err
@@ -68,7 +124,19 @@ func (s *Server) nextAutoPlayThroughScrumCard(board ScrumBoard) *ScrumCard {
 	if next := s.nextQueuedScrumCard(board); next != nil {
 		return next
 	}
-	for _, column := range scrumAutoPlayWorkColumns {
+	for _, column := range normalizeScrumAutoWorkColumns(defaultScrumAutoWorkColumns) {
+		if next := s.nextAutoPlayCardInColumn(board, column); next != nil {
+			return next
+		}
+	}
+	return nil
+}
+
+func (s *Server) nextAutoWorkScrumCard(board ScrumBoard, cfg ScrumAutoWorkConfig) *ScrumCard {
+	if next := s.nextQueuedScrumCard(board); next != nil {
+		return next
+	}
+	for _, column := range normalizeScrumAutoWorkColumns(cfg.SourceColumns) {
 		if next := s.nextAutoPlayCardInColumn(board, column); next != nil {
 			return next
 		}
@@ -121,19 +189,12 @@ func scrumAutoPlayThroughCompleteWithReview(board ScrumBoard, autoReviewEnabled 
 func (s *Server) prepareScrumCardForAutoPlay(r *http.Request, projectID int64, card ScrumCard) (ScrumCard, error) {
 	col := normalizeScrumColumn(card.Column)
 	switch col {
-	case "backlog", "blocked":
-		card.Column = "assigned"
+	case "backlog", "ready", "assigned", "in_progress", "blocked":
 		if card.PlayState == scrumPlayPaused {
 			card.PlayState = ""
 		}
-		card = appendScrumChannelEvent(card, "system", "Auto-play moved card to Assigned")
+		card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Auto-work pulled card from %s", col))
 		return s.persistScrumCard(r, projectID, card)
-	case "ready", "assigned", "in_progress":
-		if card.PlayState == scrumPlayPaused {
-			card.PlayState = ""
-			return s.persistScrumCard(r, projectID, card)
-		}
-		return card, nil
 	default:
 		return card, fmt.Errorf("card %s is not playable for auto-play", card.ID)
 	}
@@ -143,14 +204,15 @@ func (s *Server) kickoffAutoPlayThrough(r *http.Request, projectID int64, board 
 	if s.findRunningScrumCard(board) != nil {
 		return board, nil
 	}
-	if !s.scrumAutoPlayThroughEnabled(r.Context(), projectID) {
+	autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
+	if !autoWork.Enabled {
 		return board, nil
 	}
 	reviewCfg := s.scrumAutoReviewConfig(r.Context(), projectID)
 	if scrumAutoPlayThroughCompleteWithReview(board, reviewCfg.Enabled) {
 		return board, nil
 	}
-	next := s.nextAutoPlayThroughScrumCard(board)
+	next := s.nextAutoWorkScrumCard(board, autoWork)
 	if next == nil {
 		return board, nil
 	}

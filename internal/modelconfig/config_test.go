@@ -47,3 +47,28 @@ func TestLooksLikeOllamaModel(t *testing.T) {
 		t.Fatal("expected cloud model to be rejected")
 	}
 }
+
+func TestApplyExpandedRoutingFields(t *testing.T) {
+	applied := Apply(Routing{
+		Default:   "base-default",
+		Fast:      "base-fast",
+		Reasoning: "base-reasoning",
+		Tagging:   "base-tagging",
+		Plan:      "base-plan",
+		Analyze:   "base-analyze",
+		Response:  "base-response",
+		Search:    "base-search",
+		Memory:    "base-memory",
+	}, Config{
+		"fast_model":      "fast",
+		"reasoning_model": "reasoning",
+		"analyzer_model":  "analyze",
+		"responder_model": "respond",
+		"tagger_model":    "tag",
+		"search_model":    "search",
+		"memory_model":    "memory",
+	})
+	if applied.Fast != "fast" || applied.Reasoning != "reasoning" || applied.Analyze != "analyze" || applied.Response != "respond" || applied.Tagging != "tag" || applied.Search != "search" || applied.Memory != "memory" {
+		t.Fatalf("expanded routing not applied: %#v", applied)
+	}
+}
