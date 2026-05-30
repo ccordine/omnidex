@@ -1,6 +1,16 @@
 package queue
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
 
 func TestProjectLocationFromMetadata(t *testing.T) {
 	tests := []struct {
@@ -57,5 +67,59 @@ func TestProjectNameFromLocation(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("projectNameFromLocation(%q)=%q want %q", tc.location, got, tc.want)
 		}
+	}
+}
+
+func TestEnqueueJobPreservesCustomProjectName(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
+	if databaseURL == "" {
+		t.Skip("set OMNI_TEST_DATABASE_URL to run Postgres project name regression test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		t.Skipf("Postgres unavailable: %v", err)
+	}
+
+	repo := New(pool)
+	if err := repo.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	location := filepath.Join(t.TempDir(), "omni-nxt")
+	customName := "Omnidex"
+	metadata := fmt.Sprintf(`{"client_cwd":%q}`, location)
+
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM projects WHERE location = $1`, location)
+	})
+
+	project, err := repo.CreateProject(ctx, customName, location, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != customName {
+		t.Fatalf("CreateProject name=%q want %q", project.Name, customName)
+	}
+
+	if _, err := repo.EnqueueJob(ctx, "test instruction", "scrum", []byte(metadata)); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repo.GetProject(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != customName {
+		t.Fatalf("after EnqueueJob name=%q want %q", got.Name, customName)
 	}
 }

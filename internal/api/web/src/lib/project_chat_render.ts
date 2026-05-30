@@ -177,7 +177,7 @@ export function renderProjectChatShell(
   ].join("");
 
   return `
-    <div data-project-tab-panel="chat" class="flex min-h-[520px] flex-col gap-3${tabPanelClass("chat", activeTab)}">
+    <div data-project-tab-panel="chat" class="flex min-h-0 flex-1 flex-col gap-3${tabPanelClass("chat", activeTab)}">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-zinc-100">Project chat</h3>

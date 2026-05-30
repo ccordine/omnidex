@@ -186,8 +186,7 @@ func resolveProjectID(ctx context.Context, tx pgx.Tx, metadataJSON []byte) (*int
 		INSERT INTO projects (location, name, last_seen_at)
 		VALUES ($1, $2, NOW())
 		ON CONFLICT (location) DO UPDATE
-		SET name = EXCLUDED.name,
-		    last_seen_at = NOW(),
+		SET last_seen_at = NOW(),
 		    updated_at = NOW()
 		RETURNING id
 	`, location, name).Scan(&projectID)

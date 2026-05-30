@@ -546,6 +546,43 @@ export default class ScrumController extends Controller {
     button.textContent = submitting ? `${label}…` : label;
   }
 
+  private modalPanel(): HTMLElement | null {
+    return document.querySelector('[data-chat-target="modalPanel"]');
+  }
+
+  private setCardActionPending(
+    key: string,
+    pending: boolean,
+    options: {
+      busyLabel?: string;
+      statusMessage?: string;
+      tone?: "idle" | "busy" | "error" | "ok";
+    } = {},
+  ): void {
+    const panel = this.modalPanel();
+    if (!panel) return;
+    const button = panel.querySelector(`[data-scrum-pending="${key}"]`) as HTMLButtonElement | null;
+    const status = panel.querySelector(`[data-scrum-pending-status="${key}"]`) as HTMLElement | null;
+    const idleLabel = button?.dataset.scrumPendingLabel?.trim() || button?.textContent?.trim() || "";
+    if (button) {
+      button.disabled = pending;
+      button.textContent = pending ? (options.busyLabel ?? `${idleLabel}…`) : idleLabel;
+    }
+    if (status) {
+      const toneClasses: Record<string, string> = {
+        idle: "text-zinc-500",
+        busy: "text-cyan-200",
+        error: "text-rose-300",
+        ok: "text-emerald-300",
+      };
+      const tone = options.tone ?? (pending ? "busy" : "idle");
+      const message = options.statusMessage ?? "";
+      status.textContent = message;
+      status.className = `text-[11px] ${toneClasses[tone] ?? toneClasses.idle}`;
+      status.classList.toggle("hidden", !pending && !message);
+    }
+  }
+
   private async withBoardRefresh<T>(
     message: string,
     action: () => Promise<T>,
@@ -1238,13 +1275,23 @@ export default class ScrumController extends Controller {
     if (!cardID) return;
 
     this.setStatus("Suggesting tags…", "busy");
+    this.setCardActionPending("tags-suggest", true, {
+      busyLabel: "Suggesting…",
+      statusMessage: "Analyzing card with AI…",
+      tone: "busy",
+    });
     try {
       const payload = await suggestScrumTags(cardID, this.projectID);
       this.upsertCard(payload.card);
       this.recycle("scrum-card-tags", renderScrumTagPills(payload.card));
       await this.reloadBoard(cardID);
-      this.actionOk(payload.notes ? `Tags suggested — ` : "Tags suggested");
+      const notes = payload.notes?.trim();
+      this.actionOk(notes ? `Tags suggested — ${notes}` : "Tags suggested");
     } catch (error) {
+      this.setCardActionPending("tags-suggest", false, {
+        statusMessage: error instanceof Error ? error.message : String(error),
+        tone: "error",
+      });
       this.actionFail(error);
     }
   }
@@ -1435,6 +1482,11 @@ export default class ScrumController extends Controller {
     if (!cardID) return;
     const prompt = this.modalField(event, "jiraPromptDraft") || this.modalPanelField("jiraPromptDraft");
     this.setStatus("Generating Jira ticket…", "busy");
+    this.setCardActionPending("jira-generate", true, {
+      busyLabel: "Generating…",
+      statusMessage: "Drafting Jira ticket…",
+      tone: "busy",
+    });
     try {
       const payload = await jiraScrumCard(cardID, { prompt }, this.projectID);
       this.upsertCard(payload.card);
@@ -1442,6 +1494,10 @@ export default class ScrumController extends Controller {
       await this.reloadBoard(cardID);
       this.actionOk("Jira draft generated");
     } catch (error) {
+      this.setCardActionPending("jira-generate", false, {
+        statusMessage: error instanceof Error ? error.message : String(error),
+        tone: "error",
+      });
       this.actionFail(error);
     }
   }

@@ -107,12 +107,6 @@ export class ScrumBoardDrag {
       sourceIndex: this.cardIndex(cardEl),
     };
 
-    document.body.classList.add("scrum-drag-pending");
-    if (event.pointerType === "touch") {
-      event.preventDefault();
-    }
-
-    cardEl.setPointerCapture(event.pointerId);
     this.attachDocumentListeners();
   }
 
@@ -120,7 +114,7 @@ export class ScrumBoardDrag {
     const session = this.session;
     if (!session || event.pointerId !== session.pointerId) return;
 
-    if (session.pointerType === "touch" || session.dragging) {
+    if (session.dragging) {
       event.preventDefault();
     }
 
@@ -142,7 +136,7 @@ export class ScrumBoardDrag {
   }
 
   private onTouchMove(event: TouchEvent) {
-    if (!this.session) return;
+    if (!this.session?.dragging) return;
     event.preventDefault();
   }
 
@@ -181,9 +175,13 @@ export class ScrumBoardDrag {
 
   private beginDrag(session: DragSession, event: PointerEvent) {
     session.dragging = true;
-    document.body.classList.remove("scrum-drag-pending");
     document.body.classList.add("scrum-drag-active");
     this.lockScrolling();
+    try {
+      session.cardEl.setPointerCapture(event.pointerId);
+    } catch {
+      // pointer may already be released
+    }
     session.cardEl.classList.add("scrum-card-dragging");
 
     const rect = session.cardEl.getBoundingClientRect();
@@ -466,7 +464,7 @@ export class ScrumBoardDrag {
       session.placeholder.replaceWith(session.cardEl);
     }
     session.placeholder = null;
-    document.body.classList.remove("scrum-drag-active", "scrum-drag-pending");
+    document.body.classList.remove("scrum-drag-active");
     if (this.board) {
       for (const zone of this.board.querySelectorAll("[data-scrum-dropzone]")) {
         zone.classList.remove("scrum-drop-target");

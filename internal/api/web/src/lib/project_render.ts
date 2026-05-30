@@ -89,7 +89,7 @@ export function renderProjectDetail(
   const recipeJSON = JSON.stringify(project.recipe ?? {}, null, 2);
 
   const settingsTab = `
-    <div data-project-tab-panel="settings" class="space-y-4${tabPanelClass("settings", activeTab)}">
+    <div data-project-tab-panel="settings" class="scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto${tabPanelClass("settings", activeTab)}">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
         <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Project</h3>
         <div class="mt-4 grid gap-4 lg:grid-cols-2">
@@ -141,10 +141,10 @@ export function renderProjectDetail(
     </div>
   `;
 
-  const mapTab = `<div data-project-tab-panel="map" class="space-y-4${tabPanelClass("map", activeTab)}">${renderProjectMapSection(project.id, projectMap)}</div>`;
+  const mapTab = `<div data-project-tab-panel="map" class="scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto${tabPanelClass("map", activeTab)}">${renderProjectMapSection(project.id, projectMap)}</div>`;
 
   const recipeTab = `
-    <div data-project-tab-panel="recipe" class="space-y-4${tabPanelClass("recipe", activeTab)}">
+    <div data-project-tab-panel="recipe" class="scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto${tabPanelClass("recipe", activeTab)}">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -185,7 +185,7 @@ export function renderProjectDetail(
 
       <nav class="flex shrink-0 flex-wrap gap-2" aria-label="Project sections">${renderProjectTabNav(activeTab)}</nav>
 
-      <div class="scrollbar min-h-0 flex-1 overflow-y-auto">
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
       ${renderProjectScrumShell(project.location, activeTab)}
       ${renderProjectChatShell(project.name, { reasoning_mode: "instant" }, [], activeTab)}
       ${renderProjectTerminalShell(project.location, activeTab)}

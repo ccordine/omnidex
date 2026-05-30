@@ -6,7 +6,7 @@ function tabPanelClass(tab: string, activeTab: string): string {
 
 export function renderProjectScreenShell(projectLocation: string, activeTab = "scrum"): string {
   return `
-    <div data-project-tab-panel="screen" class="flex min-h-[520px] flex-col gap-3${tabPanelClass("screen", activeTab)}">
+    <div data-project-tab-panel="screen" class="flex min-h-0 flex-1 flex-col gap-3${tabPanelClass("screen", activeTab)}">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
           <p class="truncate font-mono text-[11px] text-zinc-500">${escapeHTML(projectLocation)}</p>

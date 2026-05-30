@@ -237,9 +237,10 @@ export function renderScrumModalJira(card: ScrumCard): string {
           <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Jira ticket draft</h3>
           <p class="mt-1 text-xs text-zinc-500">Generate a ticket from a prompt. Test criteria and tags are included automatically.</p>
         </div>
-        <div class="flex gap-2">
-          <button type="button" data-action="scrum#generateJira" data-card-id="${escapeHTML(card.id)}" class="rounded-md bg-violet-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-violet-200">Generate</button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" data-action="scrum#generateJira" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="jira-generate" data-scrum-pending-label="Generate" class="rounded-md bg-violet-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-60">Generate</button>
           <button type="button" data-action="scrum#saveJira" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40">Save draft</button>
+          <span data-scrum-pending-status="jira-generate" class="hidden text-[11px] text-zinc-500" aria-live="polite"></span>
         </div>
       </div>
       <textarea data-scrum-field="jiraPromptDraft" rows="3" placeholder="Coach-generated Jira prompt (editable before Generate)" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-violet-300/40">${escapeHTML(card.jira_prompt || "")}</textarea>
@@ -273,7 +274,10 @@ export function renderScrumModalTagsPanel(card: ScrumCard): string {
           <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Tags</h3>
           <p class="mt-1 text-[11px] leading-5 text-zinc-500">Stack labels for memory, research, and similar work later.</p>
         </div>
-        <button type="button" data-action="scrum#suggestCardTags" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-300/20">Suggest</button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" data-action="scrum#suggestCardTags" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="tags-suggest" data-scrum-pending-label="Suggest" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-300/20 disabled:cursor-not-allowed disabled:opacity-60">Suggest</button>
+          <span data-scrum-pending-status="tags-suggest" class="hidden text-[11px] text-zinc-500" aria-live="polite"></span>
+        </div>
       </div>
       <div class="mt-3" data-recyclr-sink="scrum-card-tags">${renderScrumTagPills(card)}</div>
       <form data-action="submit->scrum#addCardTag" data-card-id="${escapeHTML(card.id)}" class="mt-3 flex gap-2">
