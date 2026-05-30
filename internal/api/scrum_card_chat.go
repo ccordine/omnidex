@@ -1,23 +1,17 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"strings"
-	"time"
 )
 
 const (
-	scrumPilotChatMaxTotalChars  = 12000
-	scrumPilotChatMaxMessageChars = 900
-	scrumPilotChatMaxMessages    = 16
-	scrumPilotChatLLMTimeout     = 4 * time.Minute
+	scrumPilotChatMaxTotalChars = 4500
+	scrumPilotCardDescMaxChars  = 360
+	scrumPilotChecklistMaxItems = 10
+	scrumPilotChecklistItemMax  = 72
+	scrumPilotRefFilesMax       = 6
 )
-
-func scrumCardChatLLMContext(parent context.Context) (context.Context, context.CancelFunc) {
-	timeout := scrumPilotChatLLMTimeout
-	return context.WithTimeout(context.WithoutCancel(parent), timeout)
-}
 
 func buildScrumPilotChatPrompt(board ScrumBoard, card ScrumCard, userMessage string, ctx scrumPilotPromptContext) string {
 	lines := []string{
@@ -25,117 +19,46 @@ func buildScrumPilotChatPrompt(board ScrumBoard, card ScrumCard, userMessage str
 		"Column: " + normalizeScrumColumn(card.Column),
 		"Project directory: " + strings.TrimSpace(board.ProjectDirectory),
 	}
-	if desc := trimScrumPilotText(card.Description, 1800); desc != "" {
+	if desc := cavemanPilotText(card.Description, scrumPilotCardDescMaxChars); desc != "" {
 		lines = append(lines, "Description: "+desc)
 	}
 	if len(card.RefFiles) > 0 {
 		refs := card.RefFiles
-		if len(refs) > 12 {
-			refs = refs[:12]
+		if len(refs) > scrumPilotRefFilesMax {
+			refs = refs[:scrumPilotRefFilesMax]
 		}
 		lines = append(lines, "Reference files: "+strings.Join(refs, ", "))
 	}
+	checklistCount := 0
 	for _, item := range card.Checklist {
+		if checklistCount >= scrumPilotChecklistMaxItems {
+			break
+		}
 		state := "[ ]"
 		if item.Done {
 			state = "[x]"
 		}
-		lines = append(lines, fmt.Sprintf("%s %s", state, strings.TrimSpace(item.Text)))
+		text := cavemanPilotText(item.Text, scrumPilotChecklistItemMax)
+		if text == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s %s", state, text))
+		checklistCount++
 	}
 	if len(ctx.MemoryLines) > 0 {
-		lines = append(lines, "Relevant memory:")
+		lines = append(lines, "Memory:")
 		for _, line := range ctx.MemoryLines {
 			lines = append(lines, "- "+line)
 		}
 	}
 	if summary := strings.TrimSpace(ctx.ChannelSummary); summary != "" {
 		lines = append(lines, summary)
-	} else if summary := summarizeScrumChannelForPilot(card.Chat); summary != "" {
-		lines = append(lines, summary)
 	}
-	if len(ctx.RecentTurns) > 0 {
-		lines = append(lines, ctx.RecentTurns...)
-	} else {
-		for _, line := range selectScrumPilotChatHistory(card.Chat) {
-			lines = append(lines, line)
-		}
+	if len(ctx.ChannelFacts) > 0 {
+		lines = append(lines, ctx.ChannelFacts...)
 	}
 	lines = append(lines, "user: "+strings.TrimSpace(userMessage))
 	return trimScrumPilotPrompt(strings.Join(lines, "\n"), scrumPilotChatMaxTotalChars)
-}
-
-func selectScrumPilotChatHistory(chat []ScrumChatMessage) []string {
-	if len(chat) == 0 {
-		return nil
-	}
-	selected := make([]string, 0, scrumPilotChatMaxMessages)
-	total := 0
-	for i := len(chat) - 1; i >= 0 && len(selected) < scrumPilotChatMaxMessages; i-- {
-		msg := chat[i]
-		content := strings.TrimSpace(msg.Content)
-		if content == "" || strings.Contains(content, "[[agent-stream-len:") {
-			continue
-		}
-		role := normalizeScrumChannelRole(msg.Role)
-		switch role {
-		case "tool", "thinking":
-			content = trimScrumPilotText(content, 220)
-			if content == "" {
-				continue
-			}
-			content = "[" + role + "] " + content
-		case "status", "system", "error":
-			if len(content) > 240 {
-				content = trimScrumPilotText(content, 240)
-			}
-		default:
-			content = trimScrumPilotText(content, scrumPilotChatMaxMessageChars)
-		}
-		if content == "" {
-			continue
-		}
-		line := role + ": " + content
-		if total+len(line) > scrumPilotChatMaxTotalChars {
-			break
-		}
-		selected = append(selected, line)
-		total += len(line)
-	}
-	for i, j := 0, len(selected)-1; i < j; i, j = i+1, j-1 {
-		selected[i], selected[j] = selected[j], selected[i]
-	}
-	if len(selected) == 0 {
-		return nil
-	}
-	return append([]string{"Recent channel (trimmed for context):"}, selected...)
-}
-
-func summarizeScrumChannelForPilot(chat []ScrumChatMessage) string {
-	if len(chat) == 0 {
-		return ""
-	}
-	roles := map[string]int{}
-	var lastStatus string
-	for _, msg := range chat {
-		role := normalizeScrumChannelRole(msg.Role)
-		if strings.TrimSpace(msg.Content) != "" {
-			roles[role]++
-		}
-		if role == "status" || role == "system" || role == "error" {
-			lastStatus = trimScrumPilotText(msg.Content, 240)
-		}
-	}
-	parts := []string{fmt.Sprintf("Channel transcript: %d messages", len(chat))}
-	if roles["tool"] > 0 {
-		parts = append(parts, fmt.Sprintf("%d tool events", roles["tool"]))
-	}
-	if roles["thinking"] > 0 {
-		parts = append(parts, fmt.Sprintf("%d thinking notes", roles["thinking"]))
-	}
-	if lastStatus != "" {
-		parts = append(parts, "Latest status: "+lastStatus)
-	}
-	return strings.Join(parts, " · ")
 }
 
 func trimScrumPilotText(text string, max int) string {

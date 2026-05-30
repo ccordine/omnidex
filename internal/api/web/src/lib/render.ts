@@ -297,12 +297,15 @@ export function renderMetricsNavBadges(glance: MetricsGlance): string {
   return `<span class="flex items-center gap-1.5">${parts.join("")}</span>`;
 }
 
-export function renderMetricsDashboard(live, models, playbooks, benchmarks) {
+export function renderMetricsDashboard(live, models, playbooks, benchmarks, contextShrink) {
   const statusCounts = live.status_counts || {};
   const liveRuns = live.live_runs || [];
   const recentRuns = live.recent_runs || [];
   const blockers = live.common_blockers || [];
   const struggle = live.struggle || {};
+  const shrinkSummary = contextShrink?.summary || {};
+  const shrinkHistory = contextShrink?.history || [];
+  const shrinkDaily = contextShrink?.daily || [];
   const struggleEvents = struggle.struggle_events || [];
   const acceptEvents = struggle.accept_events || [];
   const recoveryAttempts = Number(struggle.recovery_attempts || 0);
@@ -316,14 +319,41 @@ export function renderMetricsDashboard(live, models, playbooks, benchmarks) {
   const struggleTotal = struggleEvents.reduce((sum, item) => sum + Number(item.count || 0), 0);
   const acceptTotal = acceptEvents.reduce((sum, item) => sum + Number(item.count || 0), 0);
   const struggling = struggleTotal > acceptTotal || recentStruggleRuns > 0;
+  const shrinkRequests = Number(shrinkSummary.requests || 0);
+  const shrinkSaved = Number(shrinkSummary.avg_saved_pct || 0);
   return `
-    <div class="grid gap-4 xl:grid-cols-5">
+    <div class="grid gap-4 xl:grid-cols-6">
       ${metricTile("Live Runs", String(liveRuns.length), liveRuns.length ? "warn" : "ok")}
       ${metricTile("Success Rate", successRate, completed >= failed ? "ok" : "warn")}
+      ${metricTile("Context Saved", shrinkRequests ? `${shrinkSaved.toFixed(1)}% avg` : "n/a", shrinkSaved >= 90 ? "ok" : shrinkSaved >= 70 ? "warn" : "bad")}
+      ${metricTile("Shrink Events", String(shrinkRequests), shrinkRequests > 0 ? "ok" : "warn")}
       ${metricTile("Struggle Signals", String(struggleTotal), struggling ? "warn" : "ok")}
-      ${metricTile("Accepted", String(acceptTotal), acceptTotal > 0 ? "ok" : "warn")}
       ${metricTile("Recovery", recoveryAttempts ? `${recoverySuccesses}/${recoveryAttempts}` : "n/a", recoverySuccesses >= recoveryAttempts / 2 ? "ok" : "warn")}
     </div>
+    <section class="rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-cyan-200/90">Context minification</h3>
+          <p class="mt-1 text-xs text-zinc-400">Scrum pilot raw channel + card metadata vs caveman prompt sent to the LLM.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-right font-mono text-xs sm:grid-cols-4">
+          <div><span class="text-zinc-500">avg raw</span><div class="text-rose-200">${escapeHTML(formatCompactChars(shrinkSummary.avg_raw_chars))}</div></div>
+          <div><span class="text-zinc-500">avg shrunk</span><div class="text-cyan-200">${escapeHTML(formatCompactChars(shrinkSummary.avg_shrunk_chars))}</div></div>
+          <div><span class="text-zinc-500">peak raw</span><div class="text-rose-200/90">${escapeHTML(formatCompactChars(shrinkSummary.max_raw_chars))}</div></div>
+          <div><span class="text-zinc-500">min shrunk</span><div class="text-emerald-200">${escapeHTML(formatCompactChars(shrinkSummary.min_shrunk_chars))}</div></div>
+        </div>
+      </div>
+      <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-500">Recent shrink events</h4>
+          <div class="mt-2 max-h-[28rem] space-y-2 overflow-y-auto pr-1">${shrinkHistory.slice(0, 24).map(renderContextShrinkEntry).join("") || emptyState("No context shrink telemetry yet — send a card channel pilot message.")}</div>
+        </div>
+        <div>
+          <h4 class="text-[11px] font-semibold uppercase tracking-[.14em] text-zinc-500">30-day trend</h4>
+          <div class="mt-2 space-y-2">${shrinkDaily.slice(-14).map(renderContextShrinkDaily).join("") || emptyState("Daily shrink averages will appear after a few pilot requests.")}</div>
+        </div>
+      </div>
+    </section>
     <section class="rounded-lg border ${struggling ? "border-amber-300/25 bg-amber-300/5" : "border-white/10 bg-zinc-950/50"} p-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Operational health (7d)</h3>
@@ -470,6 +500,50 @@ export function formatDurationMS(value) {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${Math.round(ms / 1000)}s`;
   return `${Math.round(ms / 60000)}m`;
+}
+
+export function formatCompactChars(value) {
+  const n = Number(value || 0);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+export function renderContextShrinkEntry(entry) {
+  const saved = Number(entry.saved_pct || 0);
+  const meta = entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
+  const title = meta.card_title || entry.card_id || entry.source || "pilot";
+  return `
+    <div class="rounded border border-white/10 bg-white/[.03] p-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="truncate text-sm text-zinc-200">${escapeHTML(String(title))}</span>
+        <span class="font-mono text-xs text-emerald-200">${saved.toFixed(1)}% saved</span>
+      </div>
+      <div class="mt-2 flex flex-wrap items-baseline gap-2 font-mono text-sm">
+        <span class="text-rose-200/90">${escapeHTML(formatCompactChars(entry.raw_chars))}</span>
+        <span class="text-zinc-500">→</span>
+        <span class="text-cyan-200">${escapeHTML(formatCompactChars(entry.shrunk_chars))}</span>
+      </div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500">${escapeHTML(formatDateTime(entry.created_at))} · ${escapeHTML(String(entry.chat_messages || 0))} msgs · ${escapeHTML(String(entry.selected_chunks || 0))} chunks</div>
+    </div>
+  `;
+}
+
+export function renderContextShrinkDaily(point) {
+  const saved = Number(point.avg_saved_pct || 0);
+  const width = Math.max(4, Math.min(100, saved));
+  return `
+    <div class="rounded border border-white/10 bg-white/[.03] p-3">
+      <div class="flex items-center justify-between gap-2 font-mono text-xs">
+        <span class="text-zinc-400">${escapeHTML(point.day || "day")}</span>
+        <span class="text-emerald-200">${saved.toFixed(1)}% · ${escapeHTML(String(point.requests || 0))} req</span>
+      </div>
+      <div class="mt-2 h-2 overflow-hidden rounded bg-zinc-900">
+        <div class="h-full rounded bg-gradient-to-r from-cyan-400/70 to-emerald-400/70" style="width:${width}%"></div>
+      </div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500">${escapeHTML(formatCompactChars(point.avg_raw_chars))} → ${escapeHTML(formatCompactChars(point.avg_shrunk_chars))}</div>
+    </div>
+  `;
 }
 
 export function renderDetailRows(details) {

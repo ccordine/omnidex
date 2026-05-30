@@ -853,20 +853,23 @@ export default class ChatController extends Controller {
     }
     if (this.hasMetricsOutputTarget) this.recycle("metrics-output", emptyState("Loading metrics..."));
     try {
-      const [live, models, playbooks, benchmarks] = await Promise.all([
+      const [live, models, playbooks, benchmarks, contextShrink] = await Promise.all([
         readJSON(await fetch("/v1/metrics/live")),
         readJSON(await fetch("/v1/metrics/models")),
         readJSON(await fetch("/v1/metrics/playbooks")),
         readJSON(await fetch("/v1/metrics/benchmarks")),
+        readJSON(await fetch("/v1/metrics/context-shrink?limit=100")).catch(() => ({ summary: {}, history: [], daily: [] })),
       ]);
-      this.recycle("metrics-output", renderMetricsDashboard(live, models.models || [], playbooks.playbooks || [], benchmarks.benchmarks || []));
+      this.recycle("metrics-output", renderMetricsDashboard(live, models.models || [], playbooks.playbooks || [], benchmarks.benchmarks || [], contextShrink));
       this.addEvent("metrics_loaded", {
         live_runs: (live.live_runs || []).length,
         recent_runs: (live.recent_runs || []).length,
         models: (models.models || []).length,
         playbooks: (playbooks.playbooks || []).length,
         benchmarks: (benchmarks.benchmarks || []).length,
-      }, { live, models, playbooks, benchmarks });
+        context_shrink_events: Number(contextShrink?.summary?.requests || 0),
+        context_shrink_avg_saved_pct: Number(contextShrink?.summary?.avg_saved_pct || 0),
+      }, { live, models, playbooks, benchmarks, contextShrink });
     } catch (error) {
       this.recycle("metrics-output", `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
       this.addEvent("metrics_failed", { error: error.message || String(error) });

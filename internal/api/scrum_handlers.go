@@ -242,7 +242,10 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		memoryLines := s.scrumPilotMemoryContext(llmCtx, card, projectID, req.Message)
 		pilotContext := s.summarizeScrumPilotChannel(llmCtx, board, card, req.Message, memoryLines)
 		userPrompt := buildScrumPilotChatPrompt(board, card, req.Message, pilotContext)
-		reply, genErr = s.scrumLLMGenerate(llmCtx, "You are the Omni thinking pilot for a scrum card. Reason about the task and suggest concrete actions. Be concise.", userPrompt)
+		s.recordScrumPilotContextShrink(r.Context(), projectID, card, board, req.Message, pilotContext, userPrompt)
+		reply, genErr = s.scrumPilotLLMChat(llmCtx,
+			"You are the Omni thinking pilot for a scrum card. Reason about the task and suggest concrete actions. Be concise.",
+			userPrompt)
 		if genErr != nil {
 			errText := formatScrumPilotChatError(genErr)
 			updated, appendErr := s.scrumAppendChat(r, cardID, "error", errText)

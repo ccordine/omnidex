@@ -2,27 +2,39 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/omni"
 )
 
 const (
-	scrumPilotSummarizeMinMessages   = 6
-	scrumPilotSummarizeMinChars      = 4000
-	scrumPilotTranscriptMaxChars     = 24000
-	scrumPilotRecentTurnsMax         = 6
-	scrumPilotRecentTurnMaxChars     = 700
-	scrumPilotSummarizeTimeout       = scrumPilotChatLLMTimeout / 2
+	scrumPilotMaxRelevantChunks   = 8
+	scrumPilotChunkCavemanChars   = 140
+	scrumPilotThinkingCavemanChars = 96
+	scrumPilotThoughtMergeMax     = 280
+	scrumPilotChannelBudgetChars  = 750
+	scrumPilotMemoryMaxChunks     = 3
+	scrumPilotMemoryMaxChars      = 180
+	scrumPilotEmbedCandidateMax   = 16
 )
 
 type scrumPilotPromptContext struct {
-	ChannelSummary string
-	RecentTurns    []string
-	MemoryLines    []string
+	ChannelSummary  string
+	ChannelFacts    []string
+	MemoryLines     []string
+	SelectedChunks  int
+}
+
+type pilotChannelChunk struct {
+	Role      string
+	Text      string
+	CreatedAt time.Time
+	Index     int
 }
 
 func (s *Server) scrumPilotMemoryContext(ctx context.Context, card ScrumCard, projectID int64, query string) []string {
@@ -34,17 +46,17 @@ func (s *Server) scrumPilotMemoryContext(ctx context.Context, card ScrumCard, pr
 	if value, err := s.llmClient.Embedding(ctx, query); err == nil {
 		embedding = value
 	}
-	matches, err := s.repo.FindRelevantMemory(ctx, embedding, tags, 8)
+	matches, err := s.repo.FindRelevantMemory(ctx, embedding, tags, scrumPilotMemoryMaxChunks)
 	if err != nil {
 		return nil
 	}
 	lines := make([]string, 0, len(matches))
 	for _, match := range matches {
-		content := strings.TrimSpace(match.Content)
+		content := cavemanPilotText(match.Content, scrumPilotMemoryMaxChars)
 		if content == "" {
 			continue
 		}
-		lines = append(lines, trimScrumPilotText(content, 900))
+		lines = append(lines, content)
 	}
 	return lines
 }
@@ -58,216 +70,407 @@ func scrumPilotMemoryTags(card ScrumCard, projectID int64) []string {
 	return mergeTags(nil, tags)
 }
 
-func (s *Server) summarizeScrumPilotChannel(ctx context.Context, board ScrumBoard, card ScrumCard, userMessage string, memoryLines []string) scrumPilotPromptContext {
+// summarizeScrumPilotChannel searches the chronological dialog timeline for query-relevant
+// chunks, then caveman-compresses them. Tool/status/system rows never enter this path.
+func (s *Server) summarizeScrumPilotChannel(ctx context.Context, _ ScrumBoard, card ScrumCard, query string, memoryLines []string) scrumPilotPromptContext {
 	out := scrumPilotPromptContext{MemoryLines: memoryLines}
-	if len(card.Chat) == 0 {
+	timeline := buildPilotChannelTimeline(card.Chat)
+	if len(timeline) == 0 {
 		return out
 	}
-	recent := selectScrumPilotRecentTurns(card.Chat)
-	out.RecentTurns = recent
-
-	transcript := scrumChannelTranscriptForSummarizer(card.Chat)
-	if !shouldSummarizeScrumPilotChannel(card.Chat, transcript) {
-		out.ChannelSummary = summarizeScrumChannelForPilot(card.Chat)
-		if out.ChannelSummary == "" && len(recent) == 0 {
-			out.RecentTurns = selectScrumPilotChatHistory(card.Chat)
-		}
-		return out
-	}
-	if s.llmClient == nil {
-		out.ChannelSummary = summarizeScrumChannelForPilot(card.Chat)
-		if len(out.RecentTurns) == 0 {
-			out.RecentTurns = selectScrumPilotChatHistory(card.Chat)
-		}
-		return out
-	}
-
-	sumCtx, cancel := context.WithTimeout(ctx, scrumPilotSummarizeTimeout)
-	defer cancel()
-	prompt := buildScrumPilotSummarizerPrompt(board, card, userMessage, transcript, memoryLines)
-	raw, err := s.scrumLLMGenerate(sumCtx, scrumPilotSummarizerSystem(), prompt)
-	if err != nil {
-		out.ChannelSummary = summarizeScrumChannelForPilot(card.Chat)
-		if len(out.RecentTurns) == 0 {
-			out.RecentTurns = selectScrumPilotChatHistory(card.Chat)
-		}
-		return out
-	}
-	minimal, err := omni.ParseMinimalContext(extractJSONBlob(raw))
-	if err != nil {
-		out.ChannelSummary = summarizeScrumChannelForPilot(card.Chat)
-		if len(out.RecentTurns) == 0 {
-			out.RecentTurns = selectScrumPilotChatHistory(card.Chat)
-		}
-		return out
-	}
-	out.ChannelSummary = formatScrumMinimalContextForPilot(minimal)
+	chunks := pilotChunksFromTimeline(timeline)
+	selected := s.selectRelevantPilotChunks(ctx, query, chunks)
+	out.ChannelSummary = summarizeScrumChannelForPilot(card.Chat, timeline)
+	out.ChannelFacts = buildPilotCavemanContext(selected, scrumPilotChannelBudgetChars)
+	out.SelectedChunks = len(selected)
 	return out
 }
 
-func shouldSummarizeScrumPilotChannel(chat []ScrumChatMessage, transcript string) bool {
-	if len(chat) >= scrumPilotSummarizeMinMessages {
-		return true
-	}
-	return len(transcript) >= scrumPilotSummarizeMinChars
-}
-
-func scrumPilotSummarizerSystem() string {
-	return strings.Join([]string{
-		"You are the channel context minifier for Omni scrum card pilot chat.",
-		"Compress agent channel transcripts into terse caveman-style minimal context.",
-		"Return JSON only with keys summary, facts, constraints, open_items.",
-		"Do not answer the user. Do not suggest shell commands.",
-	}, " ")
-}
-
-func buildScrumPilotSummarizerPrompt(board ScrumBoard, card ScrumCard, userMessage, transcript string, memoryLines []string) string {
-	payload := map[string]any{
-		"role":               "channel_summary_specialist",
-		"card_title":         strings.TrimSpace(card.Title),
-		"card_column":        normalizeScrumColumn(card.Column),
-		"project_directory":  strings.TrimSpace(board.ProjectDirectory),
-		"user_message":       strings.TrimSpace(userMessage),
-		"channel_transcript": transcript,
-		"instructions": []string{
-			"Load the smallest context inventory needed to steer this card.",
-			"Strip verbose tool dumps, thinking fluff, and duplicate status noise.",
-			"Keep paths, decisions, failures, blockers, and evidence that matter for the user's latest message.",
-			"summary: 1-2 short sentences on current work state.",
-			"facts: terse bullet facts (what happened, files touched, outcomes).",
-			"constraints: limits the pilot must respect.",
-			"open_items: unanswered questions or next steps still pending.",
-			"Return empty arrays when a section has nothing useful.",
-		},
-	}
-	if len(memoryLines) > 0 {
-		payload["relevant_memory"] = memoryLines
-	}
-	if desc := trimScrumPilotText(card.Description, 1200); desc != "" {
-		payload["card_description"] = desc
-	}
-	blob, err := json.Marshal(payload)
-	if err != nil {
-		return transcript
-	}
-	return string(blob)
-}
-
-func scrumChannelTranscriptForSummarizer(chat []ScrumChatMessage) string {
-	if len(chat) == 0 {
-		return ""
-	}
-	lines := make([]string, 0, len(chat))
-	total := 0
-	for _, msg := range chat {
-		content := strings.TrimSpace(msg.Content)
-		if content == "" || strings.Contains(content, "[[agent-stream-len:") {
-			continue
-		}
+func pilotChunksFromTimeline(timeline []ScrumChatMessage) []pilotChannelChunk {
+	out := make([]pilotChannelChunk, 0, len(timeline))
+	for i, msg := range timeline {
 		role := normalizeScrumChannelRole(msg.Role)
-		switch role {
-		case "tool", "thinking":
-			content = trimScrumPilotText(content, 480)
-		case "status", "system", "error":
-			content = trimScrumPilotText(content, 360)
-		default:
-			content = trimScrumPilotText(content, 1200)
-		}
-		if content == "" {
+		text := strings.TrimSpace(msg.Content)
+		if text == "" || (role == "assistant" && isAgentToolLikeAssistant(text)) {
 			continue
 		}
-		line := role + ": " + content
-		if total+len(line) > scrumPilotTranscriptMaxChars {
-			lines = append(lines, "...earlier channel transcript omitted...")
+		out = append(out, pilotChannelChunk{
+			Role:      role,
+			Text:      text,
+			CreatedAt: scrumChatMessageTime(msg),
+			Index:     i,
+		})
+	}
+	return out
+}
+
+func (s *Server) selectRelevantPilotChunks(ctx context.Context, query string, chunks []pilotChannelChunk) []pilotChannelChunk {
+	if len(chunks) == 0 {
+		return nil
+	}
+	if len(chunks) <= scrumPilotMaxRelevantChunks {
+		return sortPilotChunks(chunks)
+	}
+	query = strings.TrimSpace(query)
+	selectedIdx := map[int]struct{}{}
+	selected := make([]pilotChannelChunk, 0, scrumPilotMaxRelevantChunks)
+
+	last := chunks[len(chunks)-1]
+	selected = append(selected, last)
+	selectedIdx[last.Index] = struct{}{}
+
+	for i := len(chunks) - 1; i >= 0 && len(selected) < scrumPilotMaxRelevantChunks; i-- {
+		if chunks[i].Role != "user" {
+			continue
+		}
+		if _, ok := selectedIdx[chunks[i].Index]; ok {
+			break
+		}
+		selected = append(selected, chunks[i])
+		selectedIdx[chunks[i].Index] = struct{}{}
+		break
+	}
+
+	remaining := scrumPilotMaxRelevantChunks - len(selected)
+	if remaining <= 0 {
+		return sortPilotChunks(selected)
+	}
+
+	queryTokens := pilotQueryTokens(query)
+	type scored struct {
+		chunk pilotChannelChunk
+		score float64
+	}
+	candidates := make([]scored, 0, len(chunks))
+	for _, chunk := range chunks {
+		if _, ok := selectedIdx[chunk.Index]; ok {
+			continue
+		}
+		score := pilotKeywordScore(queryTokens, pilotQueryTokens(chunk.Text))
+		if score <= 0 {
+			switch chunk.Role {
+			case "error":
+				score = 0.25
+			case "thinking":
+				score = 0.15
+			}
+		}
+		candidates = append(candidates, scored{chunk: chunk, score: score})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			return candidates[i].chunk.Index > candidates[j].chunk.Index
+		}
+		return candidates[i].score > candidates[j].score
+	})
+
+	if s.llmClient != nil && query != "" {
+		var queryEmbedding []float64
+		if emb, err := s.llmClient.Embedding(ctx, query); err == nil && len(emb) > 0 {
+			queryEmbedding = emb
+		}
+		if len(queryEmbedding) > 0 {
+			limit := scrumPilotEmbedCandidateMax
+			if limit > len(candidates) {
+				limit = len(candidates)
+			}
+			for i := 0; i < limit; i++ {
+				emb, err := s.llmClient.Embedding(ctx, candidates[i].chunk.Text)
+				if err != nil || len(emb) == 0 {
+					continue
+				}
+				candidates[i].score += pilotEmbeddingSimilarity(queryEmbedding, emb)
+			}
+			sort.SliceStable(candidates, func(i, j int) bool {
+				if candidates[i].score == candidates[j].score {
+					return candidates[i].chunk.Index > candidates[j].chunk.Index
+				}
+				return candidates[i].score > candidates[j].score
+			})
+		}
+	}
+
+	for _, item := range candidates {
+		if remaining <= 0 {
+			break
+		}
+		if _, ok := selectedIdx[item.chunk.Index]; ok {
+			continue
+		}
+		selected = append(selected, item.chunk)
+		selectedIdx[item.chunk.Index] = struct{}{}
+		remaining--
+	}
+	return sortPilotChunks(selected)
+}
+
+func sortPilotChunks(chunks []pilotChannelChunk) []pilotChannelChunk {
+	if len(chunks) <= 1 {
+		return chunks
+	}
+	sort.SliceStable(chunks, func(i, j int) bool {
+		left, right := chunks[i], chunks[j]
+		if !left.CreatedAt.Equal(right.CreatedAt) {
+			if left.CreatedAt.IsZero() {
+				return false
+			}
+			if right.CreatedAt.IsZero() {
+				return true
+			}
+			return left.CreatedAt.Before(right.CreatedAt)
+		}
+		return left.Index < right.Index
+	})
+	return chunks
+}
+
+func buildPilotCavemanContext(chunks []pilotChannelChunk, budget int) []string {
+	if len(chunks) == 0 || budget <= 0 {
+		return nil
+	}
+	lines := []string{"Channel timeline (chronological, caveman):"}
+	used := len(lines[0]) + 1
+	for _, chunk := range chunks {
+		prefix := pilotCavemanPrefix(chunk.Role)
+		limit := scrumPilotChunkCavemanChars
+		if chunk.Role == "thinking" {
+			limit = scrumPilotThinkingCavemanChars
+		}
+		body := cavemanPilotText(chunk.Text, limit)
+		if body == "" {
+			continue
+		}
+		line := prefix + body
+		if used+len(line)+1 > budget {
 			break
 		}
 		lines = append(lines, line)
-		total += len(line)
+		used += len(line) + 1
 	}
-	return strings.Join(lines, "\n")
+	if len(lines) == 1 {
+		return nil
+	}
+	return lines
 }
 
-func selectScrumPilotRecentTurns(chat []ScrumChatMessage) []string {
+func pilotCavemanPrefix(role string) string {
+	switch normalizeScrumChannelRole(role) {
+	case "user":
+		return "u: "
+	case "assistant":
+		return "agent: "
+	case "thinking":
+		return "think: "
+	case "error":
+		return "err: "
+	default:
+		return role + ": "
+	}
+}
+
+func cavemanPilotText(raw string, maxChars int) string {
+	text := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if text == "" {
+		return ""
+	}
+	if maxChars <= 0 || len(text) <= maxChars {
+		return text
+	}
+	marker := " … "
+	if maxChars <= len(marker)+12 {
+		return text[:maxChars]
+	}
+	head := (maxChars - len(marker)) * 2 / 3
+	tail := maxChars - len(marker) - head
+	if tail < 0 {
+		tail = 0
+	}
+	if head <= 0 {
+		return text[:maxChars]
+	}
+	return text[:head] + marker + text[len(text)-tail:]
+}
+
+func pilotQueryTokens(text string) map[string]struct{} {
+	text = strings.ToLower(text)
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	out := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		if len(field) < 2 {
+			continue
+		}
+		out[field] = struct{}{}
+	}
+	return out
+}
+
+func pilotKeywordScore(query, doc map[string]struct{}) float64 {
+	if len(query) == 0 || len(doc) == 0 {
+		return 0
+	}
+	matches := 0
+	for token := range query {
+		if _, ok := doc[token]; ok {
+			matches++
+		}
+	}
+	return float64(matches) / float64(len(query))
+}
+
+func pilotEmbeddingSimilarity(a, b []float64) float64 {
+	if len(a) == 0 || len(b) == 0 || len(a) != len(b) {
+		return 0
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		dot += a[i] * b[i]
+		normA += a[i] * a[i]
+		normB += b[i] * b[i]
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+}
+
+// buildPilotChannelTimeline keeps user, thinking, error, and final assistant replies in real
+// event order. Tool/status/system noise is dropped. Consecutive thinking bursts merge into one
+// self-dialogue block; consecutive assistant stream chunks collapse to the last reply.
+func buildPilotChannelTimeline(chat []ScrumChatMessage) []ScrumChatMessage {
 	if len(chat) == 0 {
 		return nil
 	}
-	selected := make([]string, 0, scrumPilotRecentTurnsMax)
-	for i := len(chat) - 1; i >= 0 && len(selected) < scrumPilotRecentTurnsMax; i-- {
-		msg := chat[i]
-		content := strings.TrimSpace(msg.Content)
-		if content == "" || strings.Contains(content, "[[agent-stream-len:") {
+	out := make([]ScrumChatMessage, 0, len(chat))
+	for _, msg := range sortScrumChatChronological(chat) {
+		content := pilotChannelMessageText(msg)
+		if content == "" {
 			continue
 		}
 		role := normalizeScrumChannelRole(msg.Role)
 		switch role {
-		case "user", "assistant":
-			content = trimScrumPilotText(content, scrumPilotRecentTurnMaxChars)
+		case "user", "error", "thinking":
+			entry := ScrumChatMessage{
+				Role:      role,
+				Content:   content,
+				CreatedAt: msg.CreatedAt,
+			}
+			out = mergePilotTimelineEntry(out, entry)
+		case "assistant":
+			if isAgentToolLikeAssistant(content) {
+				continue
+			}
+			entry := ScrumChatMessage{
+				Role:      "assistant",
+				Content:   content,
+				CreatedAt: msg.CreatedAt,
+			}
+			out = mergePilotTimelineEntry(out, entry)
 		default:
-			continue
+			// tool, status, system — never enter pilot context
 		}
+	}
+	return out
+}
+
+func mergePilotTimelineEntry(out []ScrumChatMessage, msg ScrumChatMessage) []ScrumChatMessage {
+	if len(out) == 0 {
+		return append(out, msg)
+	}
+	last := &out[len(out)-1]
+	lastRole := normalizeScrumChannelRole(last.Role)
+	role := normalizeScrumChannelRole(msg.Role)
+	switch {
+	case role == "thinking" && lastRole == "thinking":
+		last.Content = mergePilotThoughtText(last.Content, msg.Content)
+		if strings.TrimSpace(msg.CreatedAt) != "" {
+			last.CreatedAt = msg.CreatedAt
+		}
+	case role == "assistant" && lastRole == "assistant":
+		last.Content = msg.Content
+		last.CreatedAt = msg.CreatedAt
+	default:
+		out = append(out, msg)
+	}
+	return out
+}
+
+func mergePilotThoughtText(existing, next string) string {
+	existing = strings.TrimSpace(existing)
+	next = strings.TrimSpace(next)
+	if existing == "" {
+		return cavemanPilotText(next, scrumPilotThoughtMergeMax)
+	}
+	if next == "" {
+		return existing
+	}
+	return cavemanPilotText(existing+" · "+next, scrumPilotThoughtMergeMax)
+}
+
+func pilotChannelMessageText(msg ScrumChatMessage) string {
+	content := strings.TrimSpace(stripAssistantStreamMarker(msg.Content))
+	if content == "" || strings.Contains(content, "[[agent-stream-len:") {
+		return ""
+	}
+	return content
+}
+
+func isAgentToolLikeAssistant(content string) bool {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return true
+	}
+	lower := strings.ToLower(content)
+	if strings.HasPrefix(content, "{") || strings.HasPrefix(content, "[{") {
+		if strings.Contains(content, `"type"`) || strings.Contains(content, `"tool_call"`) || strings.Contains(content, `"function"`) {
+			return true
+		}
+	}
+	if strings.HasPrefix(lower, "agent stream:") || strings.HasPrefix(lower, "agent output:") {
+		return true
+	}
+	if strings.HasPrefix(lower, "[tool]") {
+		return true
+	}
+	if strings.Contains(lower, "tool_call") || strings.Contains(lower, "function_call") {
+		return true
+	}
+	return false
+}
+
+func summarizeScrumChannelForPilot(fullChat, timeline []ScrumChatMessage) string {
+	if len(timeline) == 0 {
+		return ""
+	}
+	if note := lastAgentOutcomeNote(fullChat); note != "" {
+		return cavemanPilotText(note, 220)
+	}
+	return ""
+}
+
+func lastAgentOutcomeNote(chat []ScrumChatMessage) string {
+	for i := len(chat) - 1; i >= 0; i-- {
+		role := normalizeScrumChannelRole(chat[i].Role)
+		content := cavemanPilotText(pilotChannelMessageText(chat[i]), 180)
 		if content == "" {
 			continue
 		}
-		selected = append(selected, role+": "+content)
-	}
-	for i, j := 0, len(selected)-1; i < j; i, j = i+1, j-1 {
-		selected[i], selected[j] = selected[j], selected[i]
-	}
-	if len(selected) == 0 {
-		return nil
-	}
-	return append([]string{"Recent user/assistant turns:"}, selected...)
-}
-
-func formatScrumMinimalContextForPilot(ctx omni.MinimalContext) string {
-	lines := []string{"Channel context (minified):"}
-	if summary := strings.TrimSpace(ctx.Summary); summary != "" {
-		lines = append(lines, "Summary: "+summary)
-	}
-	if block := formatScrumMinimalList("Facts", ctx.Facts); block != "" {
-		lines = append(lines, block)
-	}
-	if block := formatScrumMinimalList("Constraints", ctx.Constraints); block != "" {
-		lines = append(lines, block)
-	}
-	if block := formatScrumMinimalList("Open", ctx.OpenItems); block != "" {
-		lines = append(lines, block)
-	}
-	if len(lines) == 1 {
-		return ""
-	}
-	return strings.Join(lines, "\n")
-}
-
-func formatScrumMinimalList(label string, values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	lines := []string{label + ":"}
-	for _, value := range values {
-		value = trimScrumPilotText(strings.TrimSpace(value), 320)
-		if value == "" {
-			continue
+		switch role {
+		case "error":
+			return "last err " + content
+		case "status":
+			lower := strings.ToLower(content)
+			if strings.Contains(lower, "finished") || strings.Contains(lower, "running") || strings.Contains(lower, "completed") {
+				return "status " + content
+			}
+		case "assistant":
+			if !isAgentToolLikeAssistant(content) {
+				return "last agent " + content
+			}
 		}
-		lines = append(lines, "- "+value)
 	}
-	if len(lines) == 1 {
-		return ""
-	}
-	return strings.Join(lines, "\n")
-}
-
-func extractJSONBlob(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "{") {
-		return raw
-	}
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start >= 0 && end > start {
-		return raw[start : end+1]
-	}
-	return raw
+	return ""
 }
 
 func (s *Server) persistScrumPilotMemory(ctx context.Context, card ScrumCard, projectID int64, userMessage, reply string) {
@@ -276,14 +479,19 @@ func (s *Server) persistScrumPilotMemory(ctx context.Context, card ScrumCard, pr
 	}
 	tags := scrumPilotMemoryTags(card, projectID)
 	sourceBase := "scrum-pilot:" + card.ID
-	userContent := trimScrumPilotText(strings.TrimSpace(userMessage), 1200)
-	replyContent := trimScrumPilotText(strings.TrimSpace(reply), 1200)
+	userContent := cavemanPilotText(strings.TrimSpace(userMessage), 400)
+	replyContent := cavemanPilotText(strings.TrimSpace(reply), 400)
 	if userContent != "" {
 		embedding, _ := s.llmClient.Embedding(ctx, userContent)
-		_, _ = s.repo.AddMemoryChunk(ctx, sourceBase+":user", model.MemoryKindEpisodic, "user: "+userContent, tags, embedding)
+		_, _ = s.repo.AddMemoryChunk(ctx, sourceBase+":user", model.MemoryKindEpisodic, "u: "+userContent, tags, embedding)
 	}
 	if replyContent != "" {
 		embedding, _ := s.llmClient.Embedding(ctx, replyContent)
-		_, _ = s.repo.AddMemoryChunk(ctx, sourceBase+":assistant", model.MemoryKindEpisodic, "assistant: "+replyContent, tags, embedding)
+		_, _ = s.repo.AddMemoryChunk(ctx, sourceBase+":assistant", model.MemoryKindEpisodic, "agent: "+replyContent, tags, embedding)
 	}
+}
+
+// collapsePilotChannelDialog is kept as an alias for tests and legacy callers.
+func collapsePilotChannelDialog(chat []ScrumChatMessage) []ScrumChatMessage {
+	return buildPilotChannelTimeline(chat)
 }

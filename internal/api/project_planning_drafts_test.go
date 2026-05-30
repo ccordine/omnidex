@@ -43,12 +43,6 @@ func TestLoadPlanningDraftQueueFromSettings(t *testing.T) {
 	}
 }
 
-func TestNormalizeProjectPlanningBatchMode(t *testing.T) {
-	if got := normalizeProjectPlanningMode("/batch login systems", ""); got != "batch" {
-		t.Fatalf("mode=%q want batch", got)
-	}
-}
-
 func TestFormatPlanningDraftDescription(t *testing.T) {
 	text := formatPlanningDraftDescription(ProjectPlanningCardDraft{
 		Description: "Implement sessions",

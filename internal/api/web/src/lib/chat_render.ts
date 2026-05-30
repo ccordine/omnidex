@@ -99,9 +99,11 @@ export function renderChatComposer(options: {
 }
 
 export function scrumMessagesToChat(messages: ScrumChatMessage[] = []): ChatRenderMessage[] {
-  return messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-    created_at: message.created_at,
-  }));
+  return [...messages]
+    .sort((left, right) => chatMessageTimestamp(left).localeCompare(chatMessageTimestamp(right)))
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+      created_at: message.created_at,
+    }));
 }

@@ -3,9 +3,49 @@ package api
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 )
+
+func TestDisplayScrumChannelMessagesSortedByTime(t *testing.T) {
+	card := ScrumCard{
+		Chat: []ScrumChatMessage{
+			{Role: "assistant", Content: "second", CreatedAt: "2026-05-29T12:00:00Z"},
+			{Role: "thinking", Content: "first thought", CreatedAt: "2026-05-29T11:00:00Z"},
+			{Role: "user", Content: "zeroth", CreatedAt: "2026-05-29T10:00:00Z"},
+		},
+	}
+	messages := displayScrumChannelMessages(card)
+	if len(messages) != 3 {
+		t.Fatalf("messages=%v", messages)
+	}
+	if messages[0].Content != "zeroth" || messages[1].Content != "first thought" || messages[2].Content != "second" {
+		t.Fatalf("messages out of order: %+v", messages)
+	}
+}
+
+func TestSortScrumChatChronologicalPreservesIndexWhenTimesMissing(t *testing.T) {
+	chat := []ScrumChatMessage{
+		{Role: "user", Content: "b"},
+		{Role: "assistant", Content: "a"},
+	}
+	sorted := sortScrumChatChronological(chat)
+	if sorted[0].Content != "b" || sorted[1].Content != "a" {
+		t.Fatalf("sorted=%v", sorted)
+	}
+}
+
+func TestSortScrumChatChronologicalParsesNanoTimestamps(t *testing.T) {
+	chat := []ScrumChatMessage{
+		{Role: "assistant", Content: "later", CreatedAt: time.Date(2026, 5, 29, 12, 0, 0, 500, time.UTC).Format(time.RFC3339Nano)},
+		{Role: "user", Content: "earlier", CreatedAt: time.Date(2026, 5, 29, 12, 0, 0, 100, time.UTC).Format(time.RFC3339Nano)},
+	}
+	sorted := sortScrumChatChronological(chat)
+	if sorted[0].Content != "earlier" {
+		t.Fatalf("sorted=%v", sorted)
+	}
+}
 
 func TestSyncRunningJobChannelChatIncremental(t *testing.T) {
 	card := ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job #1 queued"}}}

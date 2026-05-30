@@ -140,6 +140,20 @@ CREATE TABLE IF NOT EXISTS omni_benchmark_results (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS omni_context_shrink_metrics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source TEXT NOT NULL,
+    card_id TEXT,
+    project_id BIGINT,
+    raw_chars INT NOT NULL,
+    shrunk_chars INT NOT NULL,
+    saved_pct NUMERIC NOT NULL DEFAULT 0,
+    chat_messages INT NOT NULL DEFAULT 0,
+    selected_chunks INT NOT NULL DEFAULT 0,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_omni_runs_status_started ON omni_runs(status, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_omni_runs_task_kind ON omni_runs(task_kind);
 CREATE INDEX IF NOT EXISTS idx_omni_runs_workspace_started ON omni_runs(workspace_id, started_at DESC);
@@ -154,4 +168,6 @@ CREATE INDEX IF NOT EXISTS idx_omni_objective_run_status ON omni_objective_metri
 CREATE INDEX IF NOT EXISTS idx_omni_recovery_kind_success ON omni_recovery_metrics(recovery_kind, success);
 CREATE INDEX IF NOT EXISTS idx_omni_playbook_success ON omni_playbook_usage(playbook_id, success);
 CREATE INDEX IF NOT EXISTS idx_omni_benchmark_status_created ON omni_benchmark_results(benchmark_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_context_shrink_source_created ON omni_context_shrink_metrics(source, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_context_shrink_saved_pct ON omni_context_shrink_metrics(saved_pct DESC);
 `

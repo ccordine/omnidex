@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -159,10 +160,58 @@ func scrumCardChannelChanged(before, after ScrumCard) bool {
 	return lastBefore.Content != lastAfter.Content || lastBefore.Role != lastAfter.Role
 }
 
+func scrumChatMessageTime(msg ScrumChatMessage) time.Time {
+	raw := strings.TrimSpace(msg.CreatedAt)
+	if raw == "" {
+		return time.Time{}
+	}
+	if at, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return at.UTC()
+	}
+	if at, err := time.Parse(time.RFC3339, raw); err == nil {
+		return at.UTC()
+	}
+	return time.Time{}
+}
+
+// sortScrumChatChronological orders channel rows by when they happened, not loop/sync order.
+func sortScrumChatChronological(chat []ScrumChatMessage) []ScrumChatMessage {
+	if len(chat) <= 1 {
+		return chat
+	}
+	type indexed struct {
+		msg ScrumChatMessage
+		idx int
+		at  time.Time
+	}
+	items := make([]indexed, len(chat))
+	for i, msg := range chat {
+		items[i] = indexed{msg: msg, idx: i, at: scrumChatMessageTime(msg)}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := items[i], items[j]
+		if !left.at.Equal(right.at) {
+			if left.at.IsZero() {
+				return false
+			}
+			if right.at.IsZero() {
+				return true
+			}
+			return left.at.Before(right.at)
+		}
+		return left.idx < right.idx
+	})
+	out := make([]ScrumChatMessage, len(items))
+	for i, item := range items {
+		out[i] = item.msg
+	}
+	return out
+}
+
 func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
 	card = hydrateCardChannelChat(card)
 	out := make([]ScrumChatMessage, 0, len(card.Chat))
-	for _, msg := range card.Chat {
+	for _, msg := range sortScrumChatChronological(card.Chat) {
 		content := strings.TrimSpace(stripAssistantStreamMarker(msg.Content))
 		if content == "" || strings.HasPrefix(content, "[[agent-stream-len:") {
 			continue
