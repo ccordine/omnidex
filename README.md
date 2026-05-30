@@ -130,12 +130,93 @@ Tables are in `migrations/001_init.sql` and created automatically on startup whe
 
 ```bash
 cd omnidex
-cp .env.example .env
+cp default.env .env
 docker compose up --build
 ```
 
+Do not set `PATH=` in `.env` for compose — see [Docker troubleshooting](#docker-troubleshooting) and `default.env` comments.
+
 Core API is exposed on `http://localhost:8090`.
 Postgres stays on an internal Docker network (`omnidex-internal`) and is not published to the host by default.
+
+### Docker troubleshooting
+
+#### `agent-core`: executable file not found in `$PATH`
+
+This usually means **host `.env` set `PATH=`** (often for Cursor/npm on the host bridge) and Docker Compose injected it into the core container. A host PATH like `/home/you/.local/share/mise/shims:/usr/bin:/bin` does not include `/usr/local/bin`, where the image installs `agent-core`.
+
+Fix:
+
+1. **Remove `PATH=` from `.env`** (recommended). Put host-only PATH in `~/.config/omni/host-bridge.env` instead:
+
+```bash
+# ~/.config/omni/host-bridge.env — host bridge only, not core .env
+OMNI_CURSOR_NODE_BIN=/home/you/.local/share/mise/installs/node/VERSION/bin/node
+OMNI_CURSOR_NPM_BIN=/home/you/.local/share/mise/installs/node/VERSION/bin/npm
+PATH=/home/you/.local/share/mise/shims:/usr/bin:/bin
+```
+
+2. **Rebuild and restart** after pulling a fix or editing `.env`:
+
+```bash
+docker compose up --build -d core
+```
+
+The image runs `/usr/local/bin/agent-core` directly and `docker-compose.yml` pins container `PATH`; either should survive a stray host `PATH` in `.env`.
+
+Verify the binary exists:
+
+```bash
+docker compose run --rm --entrypoint sh core -c 'ls -la /usr/local/bin/agent-core'
+```
+
+#### Cannot connect to the Docker daemon (`unix:///var/run/docker.sock`)
+
+The engine is not running, or your shell user cannot access the socket.
+
+1. **Start Docker** (Arch Linux example):
+
+```bash
+sudo systemctl start docker
+sudo systemctl enable docker
+systemctl is-active docker
+```
+
+2. **Add your user to the `docker` group** (one-time), then open a **new login session** (log out/in, or `newgrp docker`):
+
+```bash
+sudo usermod -aG docker "$USER"
+newgrp docker   # or restart the terminal / re-login
+groups | grep docker
+```
+
+3. **Check the socket**:
+
+```bash
+ls -l /var/run/docker.sock
+```
+
+You want `root docker` ownership and your user in group `docker`.
+
+4. **Temporary workaround**: `sudo docker compose up --build -d core` (not ideal long-term).
+
+5. **Rootless Docker**: if you use rootless, point the client at the user socket:
+
+```bash
+export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
+```
+
+On macOS/Windows, start **Docker Desktop** before `docker compose`; the Homebrew `docker` package is client-only.
+
+#### General rebuild after updates
+
+```bash
+docker compose up --build -d core
+docker compose ps
+docker compose logs -f core --tail 50
+```
+
+Or from an install path: `./update.sh` / `omni update` (requires a working Docker daemon).
 
 ### Isolated CLI/toolbox container
 

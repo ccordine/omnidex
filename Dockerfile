@@ -19,6 +19,10 @@ COPY --from=build /src/migrations ./migrations
 COPY --from=build /src/database ./database
 
 ENV LISTEN_ADDR=:8090
+# docker compose loads .env via env_file; a host PATH (e.g. for mise/node on the
+# bridge) must not replace this — agent-core lives in /usr/local/bin.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EXPOSE 8090
 
+# Absolute path so startup does not depend on PATH (see troubleshooting in README).
 CMD ["/usr/local/bin/agent-core"]
