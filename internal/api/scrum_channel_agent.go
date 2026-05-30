@@ -150,10 +150,14 @@ func (s *Server) enqueueScrumCardAgentRun(
 			card = appendScrumChannelEvent(card, "system", "Agent run completed (direct mode)")
 		}
 		card = appendScrumChannelEvent(card, "assistant", output)
-		card.Column = "review"
+		card.Column = scrumChannelCompletionColumn(card.Column, channelOrigin)
 		card.PlayState = ""
 		card.QueueOrder = 0
 		return s.persistScrumCard(r, projectID, card)
+	}
+
+	if channelOrigin {
+		metadata = scrumChannelJobMetadata(metadata, card.Column)
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -183,8 +187,59 @@ func (s *Server) enqueueScrumCardAgentRun(
 	}
 
 	card.JobID = fmt.Sprintf("%d", job.ID)
-	card.Column = "in_progress"
+	card.Column = scrumChannelPlayColumn(card.Column, channelOrigin)
 	card.PlayState = scrumPlayRunning
 	card.QueueOrder = 0
 	return s.persistScrumCard(r, projectID, card)
+}
+
+// scrumChannelPlayColumn keeps review cards in review during channel agent runs;
+// assigned/ready/in_progress cards move to in_progress like Play.
+func scrumChannelPlayColumn(current string, channelOrigin bool) string {
+	current = normalizeScrumColumn(current)
+	if !channelOrigin {
+		return "in_progress"
+	}
+	switch current {
+	case "review":
+		return "review"
+	case "ready", "assigned", "in_progress":
+		return "in_progress"
+	default:
+		return current
+	}
+}
+
+// scrumChannelCompletionColumn returns the column after a channel-origin run finishes.
+func scrumChannelCompletionColumn(current string, channelOrigin bool) string {
+	current = normalizeScrumColumn(current)
+	if channelOrigin && current == "review" {
+		return "review"
+	}
+	return "review"
+}
+
+func scrumChannelJobMetadata(metadata []byte, priorColumn string) []byte {
+	var meta map[string]any
+	if err := json.Unmarshal(metadata, &meta); err != nil || meta == nil {
+		return metadata
+	}
+	meta["scrum_channel_origin"] = true
+	if col := normalizeScrumColumn(priorColumn); col != "" {
+		meta["scrum_return_column"] = col
+	}
+	out, err := json.Marshal(meta)
+	if err != nil {
+		return metadata
+	}
+	return out
+}
+
+func scrumReturnColumnFromMetadata(raw json.RawMessage) string {
+	var meta map[string]any
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return ""
+	}
+	col, _ := meta["scrum_return_column"].(string)
+	return normalizeScrumColumn(col)
 }

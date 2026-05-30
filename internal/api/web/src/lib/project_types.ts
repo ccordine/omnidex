@@ -74,3 +74,24 @@ export type ProjectMapSummary = {
   tree_preview?: string;
   message?: string;
 };
+
+export type DebuggerCreatedCard = {
+  id: string;
+  title: string;
+  severity?: string;
+};
+
+export type DebuggerLastRun = {
+  job_id?: number;
+  project_id?: number;
+  agent_system?: string;
+  model?: string;
+  status?: string;
+  summary?: string;
+  findings_count?: number;
+  cards_created?: DebuggerCreatedCard[];
+  suggestions?: string[];
+  started_at?: string;
+  completed_at?: string;
+  error?: string;
+};

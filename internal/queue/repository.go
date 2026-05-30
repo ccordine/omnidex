@@ -13,8 +13,10 @@ import (
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/chat"
+	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectdebugger"
 	"github.com/gryph/omnidex/internal/scrum"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -441,6 +443,15 @@ func usesV3NativeSteps(metadataJSON []byte) bool {
 }
 
 func stepsForJob(pipeline, instruction string, metadataJSON []byte) []stepSeed {
+	if datasource.IsExploreJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineDataExplore {
+		return []stepSeed{{action: "data_source_explore", sortIndex: 1}}
+	}
+	if projectdebugger.IsJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineProjectDebugger {
+		return []stepSeed{{action: "project_debugger", sortIndex: 1}}
+	}
+	if isDataSourceQueryJob(metadataJSON) || normalizePipeline(pipeline) == model.PipelineDataQuery {
+		return []stepSeed{{action: "data_source_query", sortIndex: 1}}
+	}
 	if agentconfig.FromJobMetadata(metadataJSON).IsExternal() {
 		return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}
 	}
@@ -1062,6 +1073,30 @@ func (r *Repository) GetJobDetails(ctx context.Context, jobID int64) (model.JobD
 	}
 
 	return model.JobDetails{Job: job, Steps: steps, Contexts: contexts}, nil
+}
+
+func (r *Repository) JobProjectID(ctx context.Context, jobID int64) (int64, error) {
+	if jobID <= 0 {
+		return 0, nil
+	}
+	var projectID *int64
+	err := r.pool.QueryRow(ctx, `SELECT project_id FROM jobs WHERE id = $1`, jobID).Scan(&projectID)
+	if err != nil {
+		return 0, err
+	}
+	if projectID == nil || *projectID <= 0 {
+		return 0, nil
+	}
+	return *projectID, nil
+}
+
+func (r *Repository) JobIDForStep(ctx context.Context, stepID int64) (int64, error) {
+	if stepID <= 0 {
+		return 0, nil
+	}
+	var jobID int64
+	err := r.pool.QueryRow(ctx, `SELECT job_id FROM job_steps WHERE id = $1`, stepID).Scan(&jobID)
+	return jobID, err
 }
 
 func (r *Repository) ListRecentSessionJobs(ctx context.Context, pipeline, sessionID string, beforeJobID int64, limit int) ([]model.Job, error) {
@@ -2741,8 +2776,35 @@ func normalizePipeline(pipeline string) string {
 		return model.PipelineCoding
 	case model.PipelineStory:
 		return model.PipelineStory
+	case model.PipelineDataQuery:
+		return model.PipelineDataQuery
+	case model.PipelineDataExplore:
+		return model.PipelineDataExplore
 	default:
 		return model.PipelineAssistant
+	}
+}
+
+func isDataSourceQueryJob(metadataJSON []byte) bool {
+	if len(metadataJSON) == 0 {
+		return false
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(metadataJSON, &payload); err != nil {
+		return false
+	}
+	return strings.TrimSpace(stringFromMetadata(payload["source"])) == "omni-data-source"
+}
+
+func stringFromMetadata(value any) string {
+	if value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	default:
+		return fmt.Sprint(typed)
 	}
 }
 
@@ -2763,6 +2825,14 @@ func stepsForPipeline(pipeline string) []stepSeed {
 			{action: "analyze", sortIndex: 40},
 			{action: "roleplay", sortIndex: 50},
 			{action: "verify", sortIndex: 60},
+		}
+	case model.PipelineDataQuery:
+		return []stepSeed{
+			{action: "data_source_query", sortIndex: 1},
+		}
+	case model.PipelineDataExplore:
+		return []stepSeed{
+			{action: "data_source_explore", sortIndex: 1},
 		}
 	case model.PipelineStory:
 		return []stepSeed{

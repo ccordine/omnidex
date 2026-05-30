@@ -173,6 +173,14 @@ export function renderProjectDetail(
           <h3 class="mt-3 truncate text-2xl font-semibold tracking-tight text-zinc-100">${escapeHTML(project.name)}</h3>
           <p class="mt-1 truncate font-mono text-xs text-zinc-500">${escapeHTML(project.location)}</p>
         </div>
+        <div class="flex shrink-0 flex-wrap gap-2">
+          <button
+            type="button"
+            data-action="projects#openDebuggerModal"
+            data-project-id="${project.id}"
+            class="rounded-md border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-100 hover:border-amber-200/50 hover:bg-amber-300/15"
+          >Run debugger</button>
+        </div>
       </div>
 
       <nav class="flex shrink-0 flex-wrap gap-2" aria-label="Project sections">${renderProjectTabNav(activeTab)}</nav>

@@ -182,7 +182,11 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 	}
 	shouldAutoAdvance := false
 	for i, card := range board.Cards {
-		if card.PlayState != scrumPlayRunning || strings.TrimSpace(card.JobID) == "" {
+		if strings.TrimSpace(card.JobID) == "" {
+			continue
+		}
+		watching := card.PlayState == scrumPlayRunning || normalizeScrumColumn(card.Column) == "in_progress"
+		if !watching {
 			continue
 		}
 		jobID, err := parseJobID(card.JobID)
@@ -198,11 +202,12 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		var outcome ScrumManagerOutcome
 		switch job.Job.Status {
 		case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
-			outcome = resolveScrumManagerOutcome(job)
-			if job.Job.Status == model.JobStatusCompleted && outcome == ScrumOutcomeInProgress {
-				outcome = ScrumOutcomeSuccess
-			}
+			outcome, scanNote := s.resolveScrumPlayOutcome(r.Context(), job)
 			transition := scrumColumnForOutcome(outcome)
+			transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)
+			if scanNote != "" {
+				transition.ConsoleNote = transition.ConsoleNote + " · " + scanNote
+			}
 			if agentOutput := strings.TrimSpace(collectScrumAgentOutput(job)); agentOutput != "" {
 				summary := agentOutput
 				if len(summary) > 4000 {

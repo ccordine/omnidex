@@ -132,6 +132,19 @@ func resolveScrumManagerOutcome(details model.JobDetails) ScrumManagerOutcome {
 	}
 }
 
+func applyScrumReturnColumn(transition scrumColumnTransition, outcome ScrumManagerOutcome, metadata json.RawMessage) scrumColumnTransition {
+	returnColumn := scrumReturnColumnFromMetadata(metadata)
+	if returnColumn == "" || !scrumManagerAutoAdvance(outcome) {
+		return transition
+	}
+	// Channel-from-review runs should land back in review even if an older build
+	// moved the card to in_progress or the agent emitted SCRUM_STATUS: in_progress.
+	if outcome == ScrumOutcomeSuccess && returnColumn == "review" {
+		transition.Column = "review"
+	}
+	return transition
+}
+
 func scrumColumnForOutcome(outcome ScrumManagerOutcome) scrumColumnTransition {
 	switch outcome {
 	case ScrumOutcomeSuccess:

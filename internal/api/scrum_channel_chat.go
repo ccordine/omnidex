@@ -78,25 +78,59 @@ func agentStreamMarker(syncedLen int) string {
 
 func syncRunningJobChannelChat(card ScrumCard, job model.JobDetails) (ScrumCard, bool) {
 	output := collectScrumAgentOutput(job)
-	if strings.TrimSpace(output) == "" {
-		return card, false
-	}
 	syncedLen := syncedAgentStreamLenFromChat(card.Chat)
-	if syncedLen >= len(output) {
-		return card, false
-	}
-	delta := output[syncedLen:]
-	if strings.TrimSpace(delta) == "" {
-		return card, false
+	updated := card
+	changed := false
+
+	if strings.TrimSpace(output) != "" && syncedLen < len(output) {
+		delta := output[syncedLen:]
+		if strings.TrimSpace(delta) != "" {
+			beforeLen := len(updated.Chat)
+			updated.Chat = appendParsedAgentStreamLines(updated.Chat, delta)
+			if len(updated.Chat) != beforeLen {
+				updated.Chat = setChannelSyncMarker(updated.Chat, len(output))
+				changed = true
+			}
+		}
 	}
 
-	updated := card
-	beforeLen := len(updated.Chat)
-	updated.Chat = appendParsedAgentStreamLines(updated.Chat, delta)
-	if len(updated.Chat) == beforeLen {
+	if syncedCtx, ok := syncRunningJobStepContexts(updated, job); ok {
+		updated = syncedCtx
+		changed = true
+	}
+	if !changed {
 		return card, false
 	}
-	updated.Chat = setChannelSyncMarker(updated.Chat, len(output))
+	return updated, true
+}
+
+func syncRunningJobStepContexts(card ScrumCard, job model.JobDetails) (ScrumCard, bool) {
+	if len(job.Contexts) == 0 {
+		return card, false
+	}
+	syncedID := syncedStepContextID(card.Chat)
+	updated := card
+	changed := false
+	maxID := syncedID
+	for _, ctxValue := range job.Contexts {
+		if ctxValue.ID <= syncedID {
+			continue
+		}
+		for _, msg := range stepContextToActivity(ctxValue) {
+			if shouldSkipDuplicateChannelMessage(updated.Chat, msg) {
+				continue
+			}
+			updated.Chat = appendOrMergeChannelMessage(updated.Chat, msg)
+			changed = true
+		}
+		if ctxValue.ID > maxID {
+			maxID = ctxValue.ID
+		}
+	}
+	if !changed {
+		return card, false
+	}
+	updated.Chat = setStepContextSyncMarker(updated.Chat, maxID)
 	return updated, true
 }
 
@@ -213,14 +247,94 @@ func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
 	out := make([]ScrumChatMessage, 0, len(card.Chat))
 	for _, msg := range sortScrumChatChronological(card.Chat) {
 		content := strings.TrimSpace(stripAssistantStreamMarker(msg.Content))
-		if content == "" || strings.HasPrefix(content, "[[agent-stream-len:") {
+		if content == "" || strings.HasPrefix(content, "[[agent-stream-len:") || strings.HasPrefix(content, "[[context-sync:") {
 			continue
 		}
+		role := normalizeScrumChannelRole(msg.Role)
+		switch role {
+		case "status":
+			continue
+		case "tool":
+			if _, ok := parseChannelActivity(content); !ok && isScrumChannelNoiseContent(role, content) {
+				continue
+			}
+		case "assistant":
+			if isAgentToolLikeAssistant(content) || isScrumChannelNoiseContent(role, content) {
+				continue
+			}
+		case "system":
+			if isScrumChannelNoiseContent(role, content) {
+				continue
+			}
+		}
 		out = append(out, ScrumChatMessage{
-			Role:      normalizeScrumChannelRole(msg.Role),
+			Role:      role,
 			Content:   content,
 			CreatedAt: msg.CreatedAt,
 		})
+	}
+	return collapseScrumChannelDisplayMessages(out)
+}
+
+func isScrumChannelNoiseContent(role, content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	switch lower {
+	case "external agent session completed", "agent finished", "agent running…", "agent running...", "agent running":
+		return true
+	}
+	if strings.HasPrefix(lower, "job status:") {
+		return true
+	}
+	if role == "system" {
+		if strings.HasPrefix(lower, "execution agent:") ||
+			strings.HasPrefix(lower, "agent config source:") ||
+			strings.HasPrefix(lower, "models:") ||
+			strings.HasPrefix(lower, "channel steer sent") ||
+			strings.HasPrefix(lower, "channel message sent") {
+			return true
+		}
+	}
+	return false
+}
+
+func collapseScrumChannelDisplayMessages(messages []ScrumChatMessage) []ScrumChatMessage {
+	if len(messages) == 0 {
+		return messages
+	}
+	out := make([]ScrumChatMessage, 0, len(messages))
+	for _, msg := range messages {
+		if len(out) == 0 {
+			out = append(out, msg)
+			continue
+		}
+		lastIdx := len(out) - 1
+		last := out[lastIdx]
+		role := normalizeScrumChannelRole(msg.Role)
+		lastRole := normalizeScrumChannelRole(last.Role)
+		if role != lastRole {
+			out = append(out, msg)
+			continue
+		}
+		switch role {
+		case "assistant":
+			last.Content = mergeAssistantStreamContent(last.Content, msg.Content)
+		case "thinking":
+			last.Content = mergePilotThoughtText(last.Content, msg.Content)
+		case "tool":
+			if lastActivity, ok := parseChannelActivity(last.Content); ok {
+				if nextActivity, ok := parseChannelActivity(msg.Content); ok && sameChannelActivity(lastActivity, nextActivity) {
+					continue
+				}
+			}
+			out = append(out, msg)
+		default:
+			out = append(out, msg)
+			continue
+		}
+		if strings.TrimSpace(msg.CreatedAt) != "" {
+			last.CreatedAt = msg.CreatedAt
+		}
+		out[lastIdx] = last
 	}
 	return out
 }

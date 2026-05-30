@@ -4,6 +4,7 @@ import type { MindStats, OllamaModelInfo, APISecretField, NetworkSettings } from
 const ADMIN_TABS = [
   { id: "overview", label: "Overview" },
   { id: "ai", label: "Models & agents" },
+  { id: "datasources", label: "Data sources" },
   { id: "health", label: "Health" },
   { id: "advanced", label: "Advanced" },
 ] as const;

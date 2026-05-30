@@ -31,6 +31,9 @@ const (
 	PipelineChat      = "chat"
 	PipelineCoding    = "coding"
 	PipelineStory     = "story"
+	PipelineDataQuery       = "data_query"
+	PipelineDataExplore     = "data_explore"
+	PipelineProjectDebugger = "project_debugger"
 )
 
 const (
@@ -204,4 +207,22 @@ type ChannelMessage struct {
 	Role      string    `json:"role"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type DataSourceChannel struct {
+	ID           string    `json:"id"`
+	DataSourceID string    `json:"data_source_id"`
+	Name         string    `json:"name"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type DataSourceChannelMessage struct {
+	ID        int64           `json:"id"`
+	ChannelID string          `json:"channel_id"`
+	Role      string          `json:"role"`
+	Content   string          `json:"content"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+	JobID     *int64          `json:"job_id,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
 }

@@ -74,6 +74,27 @@ body {
   overscroll-behavior: contain;
 }
 
+.scrum-channel-scroll .message-assistant .message-shell {
+  max-width: 100%;
+  background: rgba(24, 24, 27, 0.85);
+  border-color: rgba(103, 232, 249, 0.18);
+}
+
+.scrum-channel-scroll .channel-agent-reply {
+  font-weight: 450;
+}
+
+.scrum-channel-scroll .message-thinking .message-shell {
+  max-width: min(560px, 92%);
+  opacity: 0.85;
+}
+
+.scrum-channel-scroll .message-system .message-shell {
+  background: transparent;
+  border-color: transparent;
+  padding: 0.125rem 0.25rem;
+}
+
 .message-shell {
   max-width: min(680px, 88%);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -126,6 +147,23 @@ body {
   background: rgba(244, 63, 94, 0.06);
   border-color: rgba(244, 63, 94, 0.2);
   padding: 0.375rem 0.5rem;
+}
+
+.scrum-channel-scroll .message-tool .message-shell {
+  max-width: min(760px, 96%);
+}
+
+.channel-activity-shell {
+  background: rgba(16, 185, 129, 0.04);
+  border-color: rgba(16, 185, 129, 0.16);
+}
+
+.channel-activity-command {
+  tab-size: 2;
+}
+
+.channel-activity-diff {
+  tab-size: 2;
 }
 
 .message-tool .message-shell {

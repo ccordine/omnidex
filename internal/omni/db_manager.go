@@ -81,7 +81,7 @@ func RunDBManagerQuery(ctx context.Context, question string, runner MemorySQLRun
 		return DBManagerQueryResult{}, err
 	}
 	sql := strings.TrimSpace(payload.SQL)
-	if err := validateReadOnlyPostgresQuery(sql); err != nil {
+	if err := ValidateReadOnlyPostgresQuery(sql); err != nil {
 		return DBManagerQueryResult{}, err
 	}
 	rows, err := runner.Query(ctx, sql)
@@ -326,7 +326,7 @@ func parseDBManagerSQLPayload(raw string) (dbManagerSQLPayload, error) {
 	return payload, nil
 }
 
-func validateReadOnlyPostgresQuery(sql string) error {
+func ValidateReadOnlyPostgresQuery(sql string) error {
 	clean := strings.TrimSpace(sql)
 	if clean == "" {
 		return fmt.Errorf("sql is empty")

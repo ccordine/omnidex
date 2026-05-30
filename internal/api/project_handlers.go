@@ -142,6 +142,10 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		s.handleProjectPlanningDrafts(w, r, id)
 		return
 	}
+	if action == "debugger" || action == "debugger/" || action == "debugger/run" {
+		s.handleProjectDebugger(w, r, id, action)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		project, err := s.repo.GetProject(r.Context(), id)
@@ -157,6 +161,7 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		if agentResolved, err := s.resolvedAgentsForProjectCard(r.Context(), id, ScrumCard{}); err == nil {
 			payload["agent_config"] = agentResolved
 		}
+		s.SyncProjectMapAsync(id)
 		writeJSON(w, http.StatusOK, payload)
 	case http.MethodPatch:
 		var req struct {
@@ -256,6 +261,7 @@ func (s *Server) handleProjectActivate(w http.ResponseWriter, r *http.Request, i
 		writeProjectError(w, err)
 		return
 	}
+	s.SyncProjectMapAsync(id)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"active_project_id": id,
 		"project":           s.projectSummary(r.Context(), project, id),
@@ -298,6 +304,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			if project, err := s.repo.GetProject(r.Context(), activeID); err == nil {
 				payload["project"] = s.projectSummary(r.Context(), project, activeID)
 			}
+			s.SyncProjectMapAsync(activeID)
 		}
 		writeJSON(w, http.StatusOK, payload)
 	case http.MethodPut:

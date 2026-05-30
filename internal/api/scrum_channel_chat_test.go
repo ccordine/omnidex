@@ -8,6 +8,38 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
+func TestDisplayScrumChannelMessagesDropsCompletionNoise(t *testing.T) {
+	card := ScrumCard{
+		Chat: []ScrumChatMessage{
+			{Role: "user", Content: "fix it", CreatedAt: "2026-05-29T10:00:00Z"},
+			{Role: "assistant", Content: "Here is the fix.", CreatedAt: "2026-05-29T10:00:01Z"},
+			{Role: "assistant", Content: "External agent session completed", CreatedAt: "2026-05-29T10:00:02Z"},
+			{Role: "system", Content: "Agent finished", CreatedAt: "2026-05-29T10:00:03Z"},
+		},
+	}
+	messages := displayScrumChannelMessages(card)
+	if len(messages) != 2 {
+		t.Fatalf("expected user+assistant only, got %+v", messages)
+	}
+}
+
+func TestDisplayScrumChannelMessagesShowsToolActivity(t *testing.T) {
+	card := ScrumCard{
+		Chat: []ScrumChatMessage{
+			{Role: "user", Content: "fix auth", CreatedAt: "2026-05-29T10:00:00Z"},
+			{Role: "tool", Content: formatChannelActivity(ChannelActivity{Activity: "command", Title: "npm test", Command: "npm test", Status: "running"}), CreatedAt: "2026-05-29T10:00:01Z"},
+			{Role: "status", Content: "Agent running…", CreatedAt: "2026-05-29T10:00:02Z"},
+			{Role: "thinking", Content: "checking middleware", CreatedAt: "2026-05-29T10:00:03Z"},
+			{Role: "tool", Content: formatChannelActivity(ChannelActivity{Activity: "file_change", Title: "src/auth.go", Files: []string{"src/auth.go"}, Status: "completed"}), CreatedAt: "2026-05-29T10:00:04Z"},
+			{Role: "assistant", Content: "Auth middleware wired.", CreatedAt: "2026-05-29T10:00:05Z"},
+		},
+	}
+	messages := displayScrumChannelMessages(card)
+	if len(messages) != 5 {
+		t.Fatalf("expected user/thinking/2 tool/assistant, got %+v", messages)
+	}
+}
+
 func TestDisplayScrumChannelMessagesSortedByTime(t *testing.T) {
 	card := ScrumCard{
 		Chat: []ScrumChatMessage{

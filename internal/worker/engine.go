@@ -205,9 +205,11 @@ type Options struct {
 	HallucinationRetryLimit int
 	OllamaRestartCommand    string
 	OllamaRestartTimeout    time.Duration
+	OllamaBaseURL           string
 	V3Enabled               bool
 	SkillsRoot              string
 	Logger                  *log.Logger
+	OnJobFinished           func(jobID int64)
 }
 
 type Service struct {
@@ -225,6 +227,7 @@ type Service struct {
 	hallucinationRetryLimit int
 	ollamaRestartCommand    string
 	ollamaRestartTimeout    time.Duration
+	ollamaBaseURL           string
 	v3Enabled               bool
 	v3SkillsRoot            string
 	v3Registry              *specialists.Registry
@@ -235,6 +238,7 @@ type Service struct {
 	nativeV3Runner          nativeV3StepRunner
 	agentRuntimeRunner      agentRuntimeStepRunner
 	logger                  *log.Logger
+	onJobFinished           func(jobID int64)
 }
 
 func New(
@@ -360,6 +364,7 @@ func New(
 		hallucinationRetryLimit: opts.HallucinationRetryLimit,
 		ollamaRestartCommand:    strings.TrimSpace(opts.OllamaRestartCommand),
 		ollamaRestartTimeout:    opts.OllamaRestartTimeout,
+		ollamaBaseURL:           strings.TrimSpace(opts.OllamaBaseURL),
 		v3Enabled:               opts.V3Enabled,
 		v3SkillsRoot:            opts.SkillsRoot,
 		v3Registry:              skillRegistry,
@@ -367,6 +372,10 @@ func New(
 		codingEngine:            codingEngine,
 		completeStep:            completeStep,
 		logger:                  opts.Logger,
+		onJobFinished:           opts.OnJobFinished,
+	}
+	if repo != nil && completeStep != nil {
+		svc.completeStep = svc.wrapStepCompleter(completeStep)
 	}
 	svc.nativeV3Runner = svc.runNativeV3Step
 	svc.agentRuntimeRunner = svc.runAgentRuntimeStep
@@ -374,6 +383,44 @@ func New(
 		svc.v3Tools = newV3ToolRegistry(svc)
 	}
 	return svc
+}
+
+func (s *Service) wrapStepCompleter(complete stepCompleteFunc) stepCompleteFunc {
+	if complete == nil {
+		return nil
+	}
+	return func(ctx context.Context, stepID int64, output, contextKey, contextValue string) error {
+		err := complete(ctx, stepID, output, contextKey, contextValue)
+		if err == nil {
+			s.notifyJobFinishedForStep(ctx, stepID)
+		}
+		return err
+	}
+}
+
+func (s *Service) notifyJobFinishedForStep(ctx context.Context, stepID int64) {
+	if s.onJobFinished == nil || s.repo == nil || stepID <= 0 {
+		return
+	}
+	jobID, err := s.repo.JobIDForStep(ctx, stepID)
+	if err != nil || jobID <= 0 {
+		return
+	}
+	s.notifyJobFinishedForJob(ctx, jobID)
+}
+
+func (s *Service) notifyJobFinishedForJob(ctx context.Context, jobID int64) {
+	if s.onJobFinished == nil || s.repo == nil || jobID <= 0 {
+		return
+	}
+	details, err := s.repo.GetJobDetails(ctx, jobID)
+	if err != nil {
+		return
+	}
+	switch details.Job.Status {
+	case model.JobStatusCompleted, model.JobStatusFailed:
+		go s.onJobFinished(jobID)
+	}
 }
 
 func (s *Service) skillSpec(id string) (specialists.Spec, bool) {
@@ -493,6 +540,8 @@ func (s *Service) run(ctx context.Context, workerID string) {
 			failErr := s.repo.FailStep(ctx, claim.Step.ID, err.Error())
 			if failErr != nil {
 				s.logger.Printf("worker=%s job=%d step=%d fail update error: %v", workerID, claim.Job.ID, claim.Step.ID, failErr)
+			} else {
+				s.notifyJobFinishedForJob(ctx, claim.Job.ID)
 			}
 			continue
 		}
@@ -534,6 +583,15 @@ func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) err
 	}
 	if action == "external_agent_execute" {
 		return s.runExternalAgentStep(stepCtx, claim, contexts)
+	}
+	if action == "data_source_query" {
+		return s.runDataSourceQueryStep(stepCtx, claim)
+	}
+	if action == "data_source_explore" {
+		return s.runDataSourceExploreStep(stepCtx, claim)
+	}
+	if action == "project_debugger" {
+		return s.runProjectDebuggerStep(stepCtx, claim)
 	}
 	// Runtime v2: keep the queue contract/action names stable while executing
 	// through a simpler, stage-driven orchestrator.

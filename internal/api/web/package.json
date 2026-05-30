@@ -2,7 +2,7 @@
   "name": "omni-web-ui",
   "private": true,
   "type": "module",
-    "scripts": {
+  "scripts": {
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
@@ -12,9 +12,11 @@
     "@hotwired/stimulus": "^3.2.2",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
+    "d3": "^7.9.0",
     "recyclrjs": "^1.0.1"
   },
   "devDependencies": {
+    "@types/d3": "^7.4.3",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
   }

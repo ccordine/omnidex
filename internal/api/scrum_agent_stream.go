@@ -12,33 +12,47 @@ func agentNDJSONLineToChatMessages(line string) []ScrumChatMessage {
 		return nil
 	}
 	var event struct {
-		Agent   string   `json:"agent"`
-		Type    string   `json:"type"`
-		Message string   `json:"message"`
-		Command string   `json:"command"`
-		Files   []string `json:"files"`
+		Agent   string          `json:"agent"`
+		Type    string          `json:"type"`
+		Message string          `json:"message"`
+		Command string          `json:"command"`
+		Files   []string        `json:"files"`
+		Raw     json.RawMessage `json:"raw,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		if strings.HasPrefix(strings.TrimSpace(line), "{") || strings.HasPrefix(strings.TrimSpace(line), "[") {
+			return nil
+		}
 		return []ScrumChatMessage{{Role: "assistant", Content: line}}
 	}
 	switch strings.ToLower(strings.TrimSpace(event.Type)) {
 	case "started":
-		msg := strings.TrimSpace(event.Message)
-		if msg == "" {
-			msg = "External agent session started"
-		}
-		return []ScrumChatMessage{{Role: "system", Content: msg}}
+		return nil
 	case "status":
-		return parseAgentStatusMessage(event.Message)
+		return nil
 	case "error":
 		msg := strings.TrimSpace(event.Message)
 		if msg == "" {
 			msg = "External agent reported an error"
 		}
 		return []ScrumChatMessage{{Role: "error", Content: msg}}
+	case "command", "file_change":
+		return agentEventToActivity(struct {
+			Type    string
+			Message string
+			Command string
+			Files   []string
+			Raw     json.RawMessage
+		}{
+			Type:    event.Type,
+			Message: event.Message,
+			Command: event.Command,
+			Files:   event.Files,
+			Raw:     event.Raw,
+		})
 	case "completed":
 		msg := formatAgentCompletionMessage(event.Message)
-		if msg == "" {
+		if msg == "" || isScrumChannelNoiseContent("assistant", msg) {
 			return nil
 		}
 		return []ScrumChatMessage{{Role: "assistant", Content: msg}}
@@ -50,40 +64,19 @@ func agentNDJSONLineToChatMessages(line string) []ScrumChatMessage {
 		}
 	}
 	if msg := strings.TrimSpace(event.Command); msg != "" {
-		files := ""
-		if len(event.Files) > 0 {
-			files = " · " + strings.Join(event.Files, ", ")
-		}
-		return []ScrumChatMessage{{Role: "tool", Content: msg + files}}
-	}
-	return nil
-}
-
-func parseAgentStatusMessage(raw string) []ScrumChatMessage {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return []ScrumChatMessage{{Role: "status", Content: raw}}
-	}
-	status := strings.ToUpper(strings.TrimSpace(fmt.Sprint(payload["status"])))
-	switch status {
-	case "RUNNING":
-		return []ScrumChatMessage{{Role: "status", Content: "Agent running…"}}
-	case "FINISHED", "COMPLETED":
-		return []ScrumChatMessage{{Role: "status", Content: "Agent finished"}}
-	case "ERROR", "FAILED", "CANCELLED":
-		detail := strings.TrimSpace(fmt.Sprint(payload["message"]))
-		if detail == "" {
-			detail = "Agent run ended with status " + strings.ToLower(status)
-		}
-		return []ScrumChatMessage{{Role: "error", Content: detail}}
-	default:
-		if status != "" {
-			return []ScrumChatMessage{{Role: "status", Content: "Status: " + strings.ToLower(status)}}
-		}
+		return agentEventToActivity(struct {
+			Type    string
+			Message string
+			Command string
+			Files   []string
+			Raw     json.RawMessage
+		}{
+			Type:    "command",
+			Message: event.Message,
+			Command: event.Command,
+			Files:   event.Files,
+			Raw:     event.Raw,
+		})
 	}
 	return nil
 }
@@ -95,6 +88,9 @@ func parseAgentSDKPayload(raw string) []ScrumChatMessage {
 	}
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		if strings.HasPrefix(raw, "{") || strings.HasPrefix(raw, "[") {
+			return nil
+		}
 		return []ScrumChatMessage{{Role: "assistant", Content: raw}}
 	}
 	kind := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["type"])))
@@ -107,24 +103,32 @@ func parseAgentSDKPayload(raw string) []ScrumChatMessage {
 		if text := strings.TrimSpace(fmt.Sprint(payload["text"])); text != "" {
 			return []ScrumChatMessage{{Role: "thinking", Content: text}}
 		}
-	case "tool_call":
-		name := strings.TrimSpace(fmt.Sprint(payload["name"]))
-		if name == "" {
-			name = "tool"
+	case "tool_call", "tool", "function_call":
+		if msgs := sdkToolCallToActivity(payload); len(msgs) > 0 {
+			return msgs
 		}
-		status := strings.TrimSpace(fmt.Sprint(payload["status"]))
-		line := name
-		if status != "" {
-			line += " (" + status + ")"
+		return nil
+	case "edit", "write", "apply_patch", "replace":
+		path := firstNonEmpty(
+			stringFromAnyMap(payload, "path"),
+			stringFromAnyMap(payload, "file"),
+		)
+		status := firstNonEmpty(stringFromAnyMap(payload, "status"), stringFromAnyMap(payload, "state"))
+		files := []string{}
+		if path != "" {
+			files = append(files, path)
 		}
-		if args, ok := payload["args"]; ok && args != nil {
-			if blob, err := json.Marshal(args); err == nil && len(blob) > 2 && len(blob) < 400 {
-				line += " " + string(blob)
-			}
-		}
-		return []ScrumChatMessage{{Role: "tool", Content: line}}
+		return []ScrumChatMessage{fileChangeActivity(files, status, "", "")}
+	case "shell", "command", "terminal":
+		cmd := firstNonEmpty(
+			stringFromAnyMap(payload, "command"),
+			stringFromAnyMap(payload, "cmd"),
+			stringFromAnyMap(payload, "text"),
+		)
+		status := firstNonEmpty(stringFromAnyMap(payload, "status"), stringFromAnyMap(payload, "state"))
+		return []ScrumChatMessage{commandActivity(cmd, status, "")}
 	case "status":
-		return parseAgentStatusMessage(raw)
+		return nil
 	}
 	if text := strings.TrimSpace(fmt.Sprint(payload["text"])); text != "" && text != "<nil>" {
 		return []ScrumChatMessage{{Role: "assistant", Content: text}}
@@ -181,10 +185,72 @@ func appendParsedAgentStreamLines(chat []ScrumChatMessage, delta string) []Scrum
 			if shouldSkipDuplicateChannelMessage(chat, msg) {
 				continue
 			}
-			chat = appendScrumChatMessage(chat, msg.Role, msg.Content)
+			chat = appendOrMergeChannelMessage(chat, msg)
 		}
 	}
 	return chat
+}
+
+func appendOrMergeChannelMessage(chat []ScrumChatMessage, msg ScrumChatMessage) []ScrumChatMessage {
+	content := strings.TrimSpace(msg.Content)
+	if content == "" {
+		return chat
+	}
+	role := normalizeScrumChannelRole(msg.Role)
+	if len(chat) == 0 {
+		return appendScrumChatMessage(chat, role, content)
+	}
+	lastIdx := len(chat) - 1
+	last := chat[lastIdx]
+	lastRole := normalizeScrumChannelRole(last.Role)
+	if role != lastRole {
+		return appendScrumChatMessage(chat, role, content)
+	}
+	switch role {
+	case "assistant":
+		merged := mergeAssistantStreamContent(stripAssistantStreamMarker(last.Content), content)
+		if merged == strings.TrimSpace(stripAssistantStreamMarker(last.Content)) {
+			return chat
+		}
+		last.Content = merged
+	case "thinking":
+		merged := mergePilotThoughtText(stripAssistantStreamMarker(last.Content), content)
+		if merged == strings.TrimSpace(stripAssistantStreamMarker(last.Content)) {
+			return chat
+		}
+		last.Content = merged
+	default:
+		if strings.TrimSpace(last.Content) == content {
+			return chat
+		}
+		return appendScrumChatMessage(chat, role, content)
+	}
+	if ts := strings.TrimSpace(msg.CreatedAt); ts != "" {
+		last.CreatedAt = ts
+	}
+	chat[lastIdx] = last
+	return chat
+}
+
+func mergeAssistantStreamContent(existing, next string) string {
+	existing = strings.TrimSpace(existing)
+	next = strings.TrimSpace(next)
+	if existing == "" {
+		return next
+	}
+	if next == "" || existing == next {
+		return existing
+	}
+	if strings.HasPrefix(next, existing) {
+		return next
+	}
+	if strings.HasPrefix(existing, next) {
+		return existing
+	}
+	if strings.Contains(existing, next) {
+		return existing
+	}
+	return strings.TrimRight(existing, "\n") + "\n" + next
 }
 
 func shouldSkipDuplicateChannelMessage(chat []ScrumChatMessage, msg ScrumChatMessage) bool {

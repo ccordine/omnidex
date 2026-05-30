@@ -7,13 +7,17 @@ import {
   deleteProject,
   fetchProjects,
   fetchProject,
+  fetchProjectDebuggerStatus,
   fetchProjectMap,
   fetchRecipes,
+  runProjectDebugger,
   scanProjectMap,
   surveyProject,
   updateProject,
 } from "../lib/project_api";
 import { renderBrowseModal, renderProjectCreateModal, renderProjectDetail, renderProjectList } from "../lib/project_render";
+import { renderProjectDebuggerModal } from "../lib/project_debugger_render";
+import { fetchJobRecord } from "../lib/data_api";
 import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_config_render";
 import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_config_render";
 import { fetchAgentDefaults } from "../lib/agent_config_api";
@@ -24,7 +28,7 @@ import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 import { t } from "../lib/i18n";
 import { showToast } from "../lib/toast";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
-import type { BrowseResponse, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
+import type { BrowseResponse, DebuggerLastRun, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
 import type GxController from "./gx_controller";
 
 export default class ProjectsController extends Controller {
@@ -51,6 +55,11 @@ export default class ProjectsController extends Controller {
   private currentModelConfig: ResolvedModelConfig | null = null;
   private currentAgentConfig: ResolvedAgentConfig | null = null;
   private currentProjectMap: ProjectMapSummary | null = null;
+  private debuggerProjectID: number | null = null;
+  private debuggerProjectName = "";
+  private debuggerLastRun: DebuggerLastRun | null = null;
+  private debuggerRunning = false;
+  private debuggerPollTimer: number | null = null;
 
   connect() {
     this.panelShownHandler = (event: Event) => {
@@ -64,6 +73,7 @@ export default class ProjectsController extends Controller {
     if (this.panelShownHandler) {
       document.removeEventListener("omni:panel-shown", this.panelShownHandler);
     }
+    this.stopDebuggerPolling();
   }
 
   setStatus(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
@@ -175,6 +185,20 @@ export default class ProjectsController extends Controller {
   private dispatchProjectClosed() {
     document.dispatchEvent(new CustomEvent("omni:project-closed"));
     this.updateOpenBadge(null);
+  }
+
+  /** Backend auto-sync runs on GET project; refresh map summary once it likely finished. */
+  private async refreshProjectMapAfterAutoSync(projectID: number) {
+    await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    if (this.selectedProjectID !== projectID) return;
+    try {
+      this.currentProjectMap = await fetchProjectMap(projectID);
+      if (this.activeTab === "map") {
+        await this.renderDetail(projectID);
+      }
+    } catch {
+      // map refresh is best-effort after background sync
+    }
   }
 
   async load() {
@@ -422,6 +446,7 @@ export default class ProjectsController extends Controller {
       this.detailTarget.classList.add("flex");
       this.listTarget.classList.add("hidden");
       this.dispatchProjectOpened(project);
+      void this.refreshProjectMapAfterAutoSync(id);
       this.setStatus(project.name, "ok");
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
@@ -591,6 +616,128 @@ export default class ProjectsController extends Controller {
       this.actionOk("Project deleted");
     } catch (error) {
       this.actionFail(error);
+    }
+  }
+
+  async openDebuggerModal(event: Event) {
+    event.preventDefault();
+    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || this.selectedProjectID || 0);
+    if (!id) return;
+    this.debuggerProjectID = id;
+    this.debuggerProjectName =
+      this.detailTarget.querySelector("h3")?.textContent?.trim() ||
+      this.projects.find((project) => project.id === id)?.name ||
+      "Project";
+    this.setStatus("Loading debugger…", "busy");
+    try {
+      const payload = await fetchProjectDebuggerStatus(id);
+      this.debuggerLastRun = payload.last_run ?? null;
+      this.debuggerRunning = payload.last_run?.status === "running";
+      this.openModal(this.debuggerModalHTML(payload.agent_config));
+      if (this.debuggerRunning && payload.last_run?.job_id) {
+        this.startDebuggerPolling(id, payload.last_run.job_id);
+      }
+      this.setStatus(this.debuggerProjectName, "ok");
+    } catch (error) {
+      this.actionFail(error);
+    }
+  }
+
+  closeDebuggerModal() {
+    this.stopDebuggerPolling();
+    this.closeBrowse();
+  }
+
+  async runDebugger(event: Event) {
+    event.preventDefault();
+    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || this.debuggerProjectID || 0);
+    if (!id || this.debuggerRunning) return;
+    this.debuggerRunning = true;
+    this.refreshDebuggerModal();
+    this.setStatus("Starting debugger scan…", "busy");
+    try {
+      const payload = await runProjectDebugger(id);
+      this.debuggerLastRun = payload.last_run;
+      this.refreshDebuggerModal();
+      this.startDebuggerPolling(id, payload.job.id);
+      this.actionOk(payload.message || `Debugger job #${payload.job.id} queued`);
+    } catch (error) {
+      this.debuggerRunning = false;
+      this.refreshDebuggerModal();
+      this.actionFail(error);
+    }
+  }
+
+  private debuggerModalHTML(agentConfig?: Record<string, unknown>): string {
+    if (!this.debuggerProjectID) return "";
+    const resolved = (agentConfig?.resolved as Record<string, unknown> | undefined) ?? {};
+    const system =
+      (typeof agentConfig?.system === "string" && agentConfig.system) ||
+      (typeof resolved.system === "string" && resolved.system) ||
+      this.currentAgentConfig?.system ||
+      "omnidex";
+    const source =
+      (typeof agentConfig?.source === "string" && agentConfig.source) ||
+      this.currentAgentConfig?.source ||
+      "env";
+    return renderProjectDebuggerModal({
+      projectID: this.debuggerProjectID,
+      projectName: this.debuggerProjectName,
+      agentSystem: system,
+      agentSource: source,
+      lastRun: this.debuggerLastRun,
+      running: this.debuggerRunning,
+      statusText: this.debuggerRunning
+        ? "Scanning codebase map and backlog for bugs…"
+        : this.debuggerLastRun?.summary || "",
+    });
+  }
+
+  private refreshDebuggerModal(agentConfig?: Record<string, unknown>) {
+    const panel = this.modalPanel();
+    if (!panel || !this.debuggerProjectID) return;
+    panel.innerHTML = this.debuggerModalHTML(agentConfig);
+  }
+
+  private startDebuggerPolling(projectID: number, jobID: number) {
+    this.stopDebuggerPolling();
+    const tick = async () => {
+      try {
+        const [jobDetails, statusPayload] = await Promise.all([
+          fetchJobRecord(jobID),
+          fetchProjectDebuggerStatus(projectID),
+        ]);
+        const jobStatus = jobDetails.job?.status || "";
+        this.debuggerLastRun = statusPayload.last_run ?? this.debuggerLastRun;
+        if (jobStatus === "completed" || jobStatus === "failed" || jobStatus === "canceled") {
+          this.debuggerRunning = false;
+          this.refreshDebuggerModal(statusPayload.agent_config);
+          this.stopDebuggerPolling();
+          if (jobStatus === "completed") {
+            this.actionOk(`Debugger finished — ${this.debuggerLastRun?.cards_created?.length ?? 0} ticket(s) created`);
+            if (this.selectedProjectID === projectID && this.activeTab === "scrum") {
+              document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: projectID } }));
+            }
+          } else {
+            this.setStatus(this.debuggerLastRun?.error || `Debugger ${jobStatus}`, "error");
+            this.refreshDebuggerModal(statusPayload.agent_config);
+          }
+          return;
+        }
+        this.debuggerRunning = true;
+        this.refreshDebuggerModal(statusPayload.agent_config);
+      } catch {
+        /* keep polling */
+      }
+    };
+    void tick();
+    this.debuggerPollTimer = window.setInterval(() => void tick(), 900);
+  }
+
+  private stopDebuggerPolling() {
+    if (this.debuggerPollTimer != null) {
+      window.clearInterval(this.debuggerPollTimer);
+      this.debuggerPollTimer = null;
     }
   }
 }

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -113,6 +114,18 @@ func TestScrumExternalJobUsesSingleExternalStep(t *testing.T) {
 	want := []stepSeed{{action: "external_agent_execute", sortIndex: 1}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("stepsForJob(scrum external)=%+v want %+v", got, want)
+	}
+}
+
+func TestDataSourceQueryJobUsesSingleQueryStep(t *testing.T) {
+	meta, err := datasource.JobMetadata("ds-abc", "Hospital DB", "How many patients checked in today?", "dsc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := stepsForJob(model.PipelineDataQuery, "How many patients checked in today?", meta)
+	want := []stepSeed{{action: "data_source_query", sortIndex: 1}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stepsForJob(data_query)=%+v want %+v", got, want)
 	}
 }
 

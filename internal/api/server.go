@@ -37,6 +37,7 @@ type Server struct {
 	v3Enabled                 bool
 	ollamaBaseURL             string
 	ollamaDefaultModel        string
+	ollamaTaggingModel        string
 	ollamaEmbeddingModel      string
 	openAIBaseURL             string
 	openAIAPIKey              string
@@ -85,6 +86,7 @@ type ServerOptions struct {
 	V3Enabled                 bool
 	OllamaBaseURL             string
 	OllamaDefaultModel        string
+	OllamaTaggingModel        string
 	OllamaEmbeddingModel      string
 	OpenAIBaseURL             string
 	OpenAIAPIKey              string
@@ -260,6 +262,7 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		v3Enabled:                 options.V3Enabled,
 		ollamaBaseURL:             strings.TrimSpace(options.OllamaBaseURL),
 		ollamaDefaultModel:        strings.TrimSpace(options.OllamaDefaultModel),
+		ollamaTaggingModel:        strings.TrimSpace(options.OllamaTaggingModel),
 		ollamaEmbeddingModel:      strings.TrimSpace(options.OllamaEmbeddingModel),
 		openAIBaseURL:             strings.TrimSpace(options.OpenAIBaseURL),
 		openAIAPIKey:              strings.TrimSpace(options.OpenAIAPIKey),
@@ -361,6 +364,10 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/memory/tags", s.handleMemoryTags)
 		s.mux.HandleFunc("/v1/ingest/documents", s.handleIngestDocuments)
 		s.mux.HandleFunc("/v1/admin/mind/stats", s.handleMindStats)
+		s.mux.HandleFunc("/v1/admin/data-sources", s.handleDataSources)
+		s.mux.HandleFunc("/v1/admin/data-sources/", s.handleDataSourceByID)
+		s.mux.HandleFunc("/v1/data-sources", s.handlePublicDataSources)
+		s.mux.HandleFunc("/v1/data-sources/", s.handlePublicDataSourceByID)
 		s.mux.HandleFunc("/v1/ollama/models", s.handleOllamaModels)
 		s.mux.HandleFunc("/v1/ollama/models/", s.handleOllamaModelByName)
 		s.mux.HandleFunc("/v1/research/ingest", s.handleResearchIngest)

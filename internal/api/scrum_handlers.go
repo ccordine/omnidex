@@ -240,6 +240,12 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	if refreshed, refreshErr := s.refreshScrumPlayQueue(r, projectID, board); refreshErr == nil {
+		board = refreshed
+		if card := findScrumCard(board, result.Card.ID); card != nil {
+			result.Card = *card
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"card":   result.Card,
 		"reply":  "",

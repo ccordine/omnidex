@@ -254,4 +254,28 @@ CREATE INDEX IF NOT EXISTS idx_scrum_flow_events_project_type
 
 ALTER TABLE scrum_cards
     ADD COLUMN IF NOT EXISTS flow_metrics JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+CREATE TABLE IF NOT EXISTS data_source_channels (
+    id TEXT PRIMARY KEY,
+    data_source_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_source_channels_source
+    ON data_source_channels(data_source_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS data_source_channel_messages (
+    id BIGSERIAL PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES data_source_channels(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    job_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_source_channel_messages_channel
+    ON data_source_channel_messages(channel_id, created_at ASC, id ASC);
 `

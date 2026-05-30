@@ -86,58 +86,6 @@ func main() {
 		)
 	}
 
-	if !cfg.WrapperOnly {
-		workerService := worker.New(
-			repo,
-			llmClient,
-			webSearchService,
-			worker.Options{
-				WorkerCount:    cfg.WorkerCount,
-				PollInterval:   cfg.WorkerPollInterval,
-				RetrievalLimit: cfg.RetrievalLimit,
-				ContextBudget:  cfg.ContextCharBudget,
-				Models: worker.ModelRouting{
-					Default:    cfg.DefaultModel,
-					Fast:       cfg.FastModel,
-					Reasoning:  cfg.ReasoningModel,
-					Tagging:    cfg.TaggingModel,
-					Plan:       cfg.PlanModel,
-					Analyze:    cfg.AnalyzeModel,
-					Response:   cfg.ResponseModel,
-					Search:     cfg.SearchModel,
-					Memory:     cfg.MemoryModel,
-					Specialist: cfg.SpecialistModels,
-				},
-				Cognition: worker.CognitionSettings{
-					StopOnSufficientContext: cfg.StopOnSufficientContext,
-					SufficientContextChars:  cfg.SufficientContextChars,
-					MemoryInferenceEnabled:  cfg.MemoryInferenceEnabled,
-					MemoryInferenceMaxItems: cfg.MemoryInferenceMaxItems,
-				},
-				Tournament: worker.TournamentSettings{
-					Enabled:       cfg.TournamentEnabled,
-					ChunkChars:    cfg.TournamentChunkChars,
-					SummaryChars:  cfg.TournamentSummaryChars,
-					MaxRounds:     cfg.TournamentMaxRounds,
-					VerifySupport: cfg.TournamentVerify,
-				},
-				Workspace: worker.WorkspaceSettings{
-					Enabled:       cfg.WorkspaceScanEnabled,
-					Root:          cfg.WorkspaceRoot,
-					MaxFiles:      cfg.WorkspaceMaxFiles,
-					ContextBudget: cfg.WorkspaceContextBudget,
-				},
-				HallucinationRetryLimit: cfg.HallucinationRetryLimit,
-				OllamaRestartCommand:    cfg.OllamaRestartCommand,
-				OllamaRestartTimeout:    cfg.OllamaRestartTimeout,
-				V3Enabled:               cfg.V3Enabled,
-				SkillsRoot:              cfg.SkillsRoot,
-				Logger:                  log.Default(),
-			},
-		)
-		go workerService.Start(ctx)
-	}
-
 	ollamaDefaultModel := envOrFallback("OLLAMA_MODEL", "")
 	openAIDefaultModel := envOrFallback("OPENAI_MODEL", "")
 	azureAIDefaultModel := envOrFallback("AZURE_AI_MODEL", envOrFallback("AZURE_OPENAI_DEPLOYMENT", ""))
@@ -191,6 +139,7 @@ func main() {
 		V3Enabled:                 cfg.V3Enabled,
 		OllamaBaseURL:             cfg.OllamaBaseURL,
 		OllamaDefaultModel:        ollamaDefaultModel,
+		OllamaTaggingModel:        cfg.TaggingModel,
 		OllamaEmbeddingModel:      ollamaEmbeddingModel,
 		OpenAIBaseURL:             cfg.OpenAIBaseURL,
 		OpenAIAPIKey:              cfg.OpenAIAPIKey,
@@ -228,6 +177,59 @@ func main() {
 		HostAgentURL:              cfg.HostAgentURL,
 		HostAgentToken:            cfg.HostAgentToken,
 	})
+	if !cfg.WrapperOnly {
+		workerService := worker.New(
+			repo,
+			llmClient,
+			webSearchService,
+			worker.Options{
+				WorkerCount:    cfg.WorkerCount,
+				PollInterval:   cfg.WorkerPollInterval,
+				RetrievalLimit: cfg.RetrievalLimit,
+				ContextBudget:  cfg.ContextCharBudget,
+				Models: worker.ModelRouting{
+					Default:    cfg.DefaultModel,
+					Fast:       cfg.FastModel,
+					Reasoning:  cfg.ReasoningModel,
+					Tagging:    cfg.TaggingModel,
+					Plan:       cfg.PlanModel,
+					Analyze:    cfg.AnalyzeModel,
+					Response:   cfg.ResponseModel,
+					Search:     cfg.SearchModel,
+					Memory:     cfg.MemoryModel,
+					Specialist: cfg.SpecialistModels,
+				},
+				Cognition: worker.CognitionSettings{
+					StopOnSufficientContext: cfg.StopOnSufficientContext,
+					SufficientContextChars:  cfg.SufficientContextChars,
+					MemoryInferenceEnabled:  cfg.MemoryInferenceEnabled,
+					MemoryInferenceMaxItems: cfg.MemoryInferenceMaxItems,
+				},
+				Tournament: worker.TournamentSettings{
+					Enabled:       cfg.TournamentEnabled,
+					ChunkChars:    cfg.TournamentChunkChars,
+					SummaryChars:  cfg.TournamentSummaryChars,
+					MaxRounds:     cfg.TournamentMaxRounds,
+					VerifySupport: cfg.TournamentVerify,
+				},
+				Workspace: worker.WorkspaceSettings{
+					Enabled:       cfg.WorkspaceScanEnabled,
+					Root:          cfg.WorkspaceRoot,
+					MaxFiles:      cfg.WorkspaceMaxFiles,
+					ContextBudget: cfg.WorkspaceContextBudget,
+				},
+				HallucinationRetryLimit: cfg.HallucinationRetryLimit,
+				OllamaRestartCommand:    cfg.OllamaRestartCommand,
+				OllamaRestartTimeout:    cfg.OllamaRestartTimeout,
+				OllamaBaseURL:           cfg.OllamaBaseURL,
+				V3Enabled:               cfg.V3Enabled,
+				SkillsRoot:              cfg.SkillsRoot,
+				Logger:                  log.Default(),
+				OnJobFinished:           httpServer.SyncProjectMapForJobAsync,
+			},
+		)
+		go workerService.Start(ctx)
+	}
 	log.Printf("core listening on %s core_url=%s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.CoreURL, cfg.LLMProvider, cfg.WrapperOnly)
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {
 		log.Fatalf("server error: %v", err)

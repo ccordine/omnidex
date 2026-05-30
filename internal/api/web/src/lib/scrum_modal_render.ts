@@ -7,10 +7,11 @@ import type { AgentFieldDefinition } from "./agent_config_types";
 import type { RecipeCatalogItem } from "./project_types";
 import { COLUMN_LABELS, SCRUM_COLUMNS, isPlayControlUnlocked, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumCoachConfig, type ScrumCoachSuggestion } from "./scrum_types";
 
-export type ScrumCardTab = "card" | "config" | "recipe" | "channel";
+export type ScrumCardTab = "card" | "tests" | "config" | "recipe" | "channel";
 
 const CARD_TABS: Array<{ id: ScrumCardTab; label: string }> = [
   { id: "card", label: "Card" },
+  { id: "tests", label: "Tests" },
   { id: "config", label: "Config" },
   { id: "recipe", label: "Recipe" },
   { id: "channel", label: "Channel" },
@@ -70,6 +71,13 @@ function tabBadge(card: ScrumCard, tab: ScrumCardTab): string {
       if (refs > 0) return countBadge(refs, "cyan");
       if (card.jira_ticket?.trim()) return dotBadge("emerald");
       return "";
+    case "tests": {
+      const tests = card.test_criteria ?? [];
+      const pendingTests = tests.filter((item) => !item.done).length;
+      if (pendingTests > 0) return countBadge(pendingTests, "amber");
+      if (tests.length > 0) return dotBadge("emerald");
+      return "";
+    }
     case "config":
       if (isLive) return dotBadge("amber");
       if (hasConfigOverrides) return dotBadge("cyan");
@@ -367,6 +375,15 @@ export function renderScrumCoachPanel(card: ScrumCard): string {
   `;
 }
 
+export function renderScrumModalTestsTab(card: ScrumCard): string {
+  return `
+    <div class="mx-auto max-w-3xl space-y-4">
+      <p class="text-sm leading-6 text-zinc-400">Define what “done” means for this card. Play and channel runs include these criteria in agent context; check them off as the agent satisfies each one.</p>
+      ${renderScrumModalTestCriteria(card)}
+    </div>
+  `;
+}
+
 export function renderScrumModalCardTab(card: ScrumCard, files: string[] = []): string {
   return `
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
@@ -374,7 +391,6 @@ export function renderScrumModalCardTab(card: ScrumCard, files: string[] = []): 
         ${renderScrumModalDetails(card)}
         ${renderScrumModalChecklist(card)}
         ${renderScrumModalRefFiles(card, files)}
-        ${renderScrumModalTestCriteria(card)}
         ${renderScrumModalJira(card)}
       </div>
       <div class="space-y-4 xl:sticky xl:top-0 xl:self-start">
@@ -476,7 +492,8 @@ export function renderScrumModalChannelTab(
   const isLive = card.play_state === "running" || card.play_state === "queued";
   const isRunning = card.play_state === "running";
   const pilotPending = Boolean(options?.pilotPending);
-  const agentRunning = Boolean(options?.agentRunning ?? isRunning);
+  const showPending = pilotPending;
+  const pendingLabel = "Sending…";
   const status = channelSessionStatus(card, playQueue);
   const liveBadge = channelLiveBadge(card);
   const interrupt = isRunning
@@ -488,14 +505,13 @@ export function renderScrumModalChannelTab(
   const jobLine = card.job_id?.trim()
     ? `<span class="font-mono text-[11px] text-cyan-200/90">Job #${escapeHTML(card.job_id)}</span>`
     : "";
-  const pendingLabel = pilotPending ? "Sending…" : agentRunning ? "Agent working…" : "Working…";
   const messageHtml =
-    messages.length > 0 || pilotPending || agentRunning
+    messages.length > 0 || showPending
       ? renderChannelChatMessages(messages, {
-          pending: pilotPending || agentRunning,
+          pending: showPending,
           pendingLabel,
         })
-      : `<div class="flex h-full min-h-[12rem] items-center justify-center px-4 py-8 text-center text-sm text-zinc-500">Play this card to watch the agent work live — tool calls, edits, and recap appear here.</div>`;
+      : `<div class="flex h-full min-h-[12rem] items-center justify-center px-4 py-8 text-center text-sm text-zinc-500">Play this card to watch the agent work — commands, file edits, diffs, thinking, and replies stream here in real time.</div>`;
 
   return `
     <div class="flex min-h-[min(70vh,720px)] flex-col overflow-hidden rounded-lg border border-white/10 bg-zinc-950/50">
@@ -574,6 +590,7 @@ export function renderScrumCardModal(
     </div>
     <div class="omni-modal-body scrollbar p-4 md:p-5">
       <div data-scrum-tab-panel="card" class="${tabPanelClass("card", activeTab)}" data-recyclr-sink="scrum-modal-card">${renderScrumModalCardTab(card, files)}</div>
+      <div data-scrum-tab-panel="tests" class="${tabPanelClass("tests", activeTab)}" data-recyclr-sink="scrum-modal-tests">${renderScrumModalTestsTab(card)}</div>
       <div data-scrum-tab-panel="config" class="${tabPanelClass("config", activeTab)}" data-recyclr-sink="scrum-modal-config">${renderScrumModalConfigTab(card, modelFields, resolvedModelSource, agentFields, resolvedAgentSource, resolvedAgentSystem)}</div>
       <div data-scrum-tab-panel="recipe" class="${tabPanelClass("recipe", activeTab)}" data-recyclr-sink="scrum-modal-recipe">${renderScrumModalRecipeTab(card, recipes, projectRecipeId, projectRecipe)}</div>
       <div data-scrum-tab-panel="channel" class="${tabPanelClass("channel", activeTab)}" data-recyclr-sink="scrum-modal-channel">${renderScrumModalChannelTab(card, playQueue)}</div>
