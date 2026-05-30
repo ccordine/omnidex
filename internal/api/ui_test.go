@@ -21,7 +21,7 @@ func TestUIServesChatShell(t *testing.T) {
 	for _, want := range []string{
 		"Omni Chat",
 		"tailwindcss.com",
-		`data-controller="shell gx chat projects admin"`,
+		`data-controller="shell gx chat projects admin scrum"`,
 		`data-panel-name="projects"`,
 		`data-projects-target="list"`,
 		`id="gx-global-loading-indicator"`,
@@ -29,7 +29,7 @@ func TestUIServesChatShell(t *testing.T) {
 		`data-chat-target="researchStatusOutput"`,
 		`data-chat-target="metricsOutput"`,
 		`data-panel-name="data"`,
-		`data-controller="scrum"`,
+		`click->scrum#stopCardClick`,
 		`data-chat-target="memoryList"`,
 		`data-recyclr-sink="modal"`,
 		"/ui/assets/",

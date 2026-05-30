@@ -235,7 +235,7 @@ export function renderScrumModalCardTicket(card: ScrumCard): string {
     ? `<span class="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">Saved</span>`
     : "";
   return `
-    <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4" data-scrum-card-ticket-section>
+    <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4 transition-[box-shadow,opacity] duration-200" data-scrum-card-ticket-section data-scrum-section="card-ticket">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div class="flex flex-wrap items-center gap-2">
@@ -252,6 +252,8 @@ export function renderScrumModalCardTicket(card: ScrumCard): string {
           <span data-scrum-pending-status="card-ticket-iterate" class="hidden inline-flex items-center gap-1.5 text-[11px] text-zinc-500" aria-live="polite"><span class="hidden inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-violet-300/25 border-t-violet-200" data-scrum-pending-spinner></span><span data-scrum-pending-text></span></span>
         </div>
       </div>
+      <p data-scrum-section-feedback="card-ticket-generate" class="mt-2 hidden rounded-md border px-3 py-2 text-xs leading-5" role="status" aria-live="polite"></p>
+      <p data-scrum-section-feedback="card-ticket-iterate" class="mt-2 hidden rounded-md border px-3 py-2 text-xs leading-5" role="status" aria-live="polite"></p>
       <textarea data-scrum-field="cardPromptDraft" rows="3" placeholder="Card prompt — what should the ticket cover?" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-violet-300/40">${escapeHTML(card.card_prompt || "")}</textarea>
       <textarea data-scrum-field="cardIterateNotes" rows="2" placeholder="Iterate notes — what to change in the draft below?" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-violet-300/40"></textarea>
       <textarea data-scrum-field="cardTicket" rows="12" placeholder="Generated card ticket markdown streams here…" class="scrollbar mt-3 w-full resize-y rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs leading-5 text-zinc-100 outline-none focus:border-violet-300/40">${escapeHTML(card.card_ticket || "")}</textarea>
@@ -281,7 +283,7 @@ export function renderScrumTagSuggestions(options: string[] = []): string {
 
 export function renderScrumModalTagsPanel(card: ScrumCard): string {
   return `
-    <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+    <section class="rounded-lg border border-white/10 bg-zinc-950/50 p-4 transition-[box-shadow,opacity] duration-200" data-scrum-section="tags">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Tags</h3>
@@ -292,6 +294,7 @@ export function renderScrumModalTagsPanel(card: ScrumCard): string {
           <span data-scrum-pending-status="tags-suggest" class="hidden inline-flex items-center gap-1.5 text-[11px] text-zinc-500" aria-live="polite"><span class="hidden inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-violet-300/25 border-t-violet-200" data-scrum-pending-spinner></span><span data-scrum-pending-text></span></span>
         </div>
       </div>
+      <p data-scrum-section-feedback="tags-suggest" class="mt-2 hidden rounded-md border px-3 py-2 text-xs leading-5" role="status" aria-live="polite"></p>
       <div class="mt-3" data-recyclr-sink="scrum-card-tags">${renderScrumTagPills(card)}</div>
       <form data-action="submit->scrum#addCardTag" data-card-id="${escapeHTML(card.id)}" class="mt-3 flex gap-2">
         <input data-scrum-field="tagInput" type="text" list="scrum-tag-suggestions" placeholder="Search or add tag…" autocomplete="off" data-action="input->scrum#filterTagSuggestions" class="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />

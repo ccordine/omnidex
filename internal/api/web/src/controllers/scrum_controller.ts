@@ -699,12 +699,7 @@ export default class ScrumController extends Controller {
     this.syncPollInterval();
   }
 
-  private watchCardLlmJob(jobID: number, tracker: CardLlmJobTracker) {
-    if (!Number.isFinite(jobID) || jobID <= 0) return;
-    if (this.finishedCardLlmJobs.has(jobID)) return;
-    const existing = this.cardLlmJobs.get(jobID);
-    if (existing) return;
-    this.cardLlmJobs.set(jobID, tracker);
+  private cardLlmJobPendingOptions(tracker: CardLlmJobTracker): { busyLabel: string; statusMessage: string } {
     const busyLabel = tracker.kind === "tags" ? "Suggesting…" : tracker.pendingKey.includes("iterate") ? "Iterating…" : "Generating…";
     const statusMessage =
       tracker.kind === "tags"
@@ -712,8 +707,53 @@ export default class ScrumController extends Controller {
         : tracker.pendingKey.includes("iterate")
           ? "Card ticket iteration running in background…"
           : "Card ticket generation running in background…";
+    return { busyLabel, statusMessage };
+  }
+
+  private restoreCardLlmJobFeedback(cardID: string) {
+    for (const tracker of this.cardLlmJobs.values()) {
+      if (tracker.cardID !== cardID) continue;
+      const { busyLabel, statusMessage } = this.cardLlmJobPendingOptions(tracker);
+      this.setCardActionPending(tracker.pendingKey, true, { busyLabel, statusMessage, tone: "busy" });
+      this.setScrumModalFeedback(statusMessage, "busy");
+    }
+    const card = this.findCard(cardID);
+    if (!card) return;
+    const tagsJobID = Number(card.tags_job_id);
+    if (Number.isFinite(tagsJobID) && tagsJobID > 0 && !this.cardLlmJobs.has(tagsJobID)) {
+      this.watchCardLlmJob(tagsJobID, {
+        cardID,
+        kind: "tags",
+        pendingKey: "tags-suggest",
+        cardTitle: card.title,
+      });
+    }
+    const ticketJobID = Number(card.ticket_job_id);
+    if (Number.isFinite(ticketJobID) && ticketJobID > 0 && !this.cardLlmJobs.has(ticketJobID)) {
+      this.watchCardLlmJob(ticketJobID, {
+        cardID,
+        kind: "ticket",
+        pendingKey: "card-ticket-generate",
+        cardTitle: card.title,
+      });
+    }
+  }
+
+  private watchCardLlmJob(jobID: number, tracker: CardLlmJobTracker) {
+    if (!Number.isFinite(jobID) || jobID <= 0) return;
+    if (this.finishedCardLlmJobs.has(jobID)) return;
+    const existing = this.cardLlmJobs.get(jobID);
+    if (existing) {
+      if (this.activeCardID === existing.cardID && this.isCardModalOpen()) {
+        this.restoreCardLlmJobFeedback(existing.cardID);
+      }
+      return;
+    }
+    this.cardLlmJobs.set(jobID, tracker);
+    const { busyLabel, statusMessage } = this.cardLlmJobPendingOptions(tracker);
     if (this.activeCardID === tracker.cardID) {
       this.setCardActionPending(tracker.pendingKey, true, { busyLabel, statusMessage, tone: "busy" });
+      this.setScrumModalFeedback(statusMessage, "busy");
     }
     if (this.cardLlmJobPollers.has(jobID)) return;
     this.cardLlmJobPollers.add(jobID);
@@ -873,6 +913,41 @@ export default class ScrumController extends Controller {
   private reapplyModalChrome() {
     this.reapplyCardActionPending();
     this.applyScrumModalFeedback();
+    this.applyCardSectionBusyStates();
+  }
+
+  private applyCardSectionBusyStates() {
+    const panel = this.modalPanel();
+    if (!panel) return;
+    const ticketPending =
+      Boolean(this.cardActionPending["card-ticket-generate"]?.pending) ||
+      Boolean(this.cardActionPending["card-ticket-iterate"]?.pending);
+    const tagsPending = Boolean(this.cardActionPending["tags-suggest"]?.pending);
+    const ticketSection = panel.querySelector('[data-scrum-section="card-ticket"]') as HTMLElement | null;
+    const tagsSection = panel.querySelector('[data-scrum-section="tags"]') as HTMLElement | null;
+    const ticketField = panel.querySelector('[data-scrum-field="cardTicket"]') as HTMLTextAreaElement | null;
+    if (ticketSection) {
+      ticketSection.classList.toggle("ring-2", ticketPending);
+      ticketSection.classList.toggle("ring-violet-300/25", ticketPending);
+      ticketSection.classList.toggle("opacity-90", ticketPending);
+    }
+    if (tagsSection) {
+      tagsSection.classList.toggle("ring-2", tagsPending);
+      tagsSection.classList.toggle("ring-cyan-300/25", tagsPending);
+      tagsSection.classList.toggle("opacity-90", tagsPending);
+    }
+    const tagsSink = panel.querySelector('[data-recyclr-sink="scrum-card-tags"]') as HTMLElement | null;
+    if (tagsSink) {
+      tagsSink.classList.toggle("animate-pulse", tagsPending);
+    }
+    if (ticketField) {
+      ticketField.readOnly = ticketPending;
+      if (ticketPending && !ticketField.value.trim()) {
+        ticketField.placeholder = "Generating card ticket — this may take a moment…";
+      } else if (!ticketPending) {
+        ticketField.placeholder = "Generated card ticket markdown streams here…";
+      }
+    }
   }
 
   private setBoardLoading(loading: boolean, message = "Working…") {
@@ -970,6 +1045,40 @@ export default class ScrumController extends Controller {
       status.classList.toggle("hidden", !pending && !message);
       if (spinner) spinner.classList.toggle("hidden", !pending);
     }
+    this.applySectionFeedbackToDOM(key, pending, options);
+  }
+
+  private applySectionFeedbackToDOM(
+    key: string,
+    pending: boolean,
+    options: {
+      statusMessage?: string;
+      tone?: "idle" | "busy" | "error" | "ok";
+    } = {},
+  ): void {
+    const panel = this.modalPanel();
+    if (!panel) return;
+    const slot = panel.querySelector(`[data-scrum-section-feedback="${key}"]`) as HTMLElement | null;
+    if (!slot) return;
+    const toneClasses: Record<string, string[]> = {
+      idle: ["border-white/10", "bg-zinc-900/80", "text-zinc-300"],
+      busy: ["border-cyan-300/30", "bg-cyan-300/10", "text-cyan-100"],
+      error: ["border-rose-400/30", "bg-rose-400/10", "text-rose-100"],
+      ok: ["border-emerald-400/30", "bg-emerald-400/10", "text-emerald-100"],
+    };
+    const allToneClasses = Object.values(toneClasses).flat();
+    const tone = options.tone ?? (pending ? "busy" : "idle");
+    const message = options.statusMessage ?? "";
+    slot.classList.remove(...allToneClasses);
+    if (!pending && !message) {
+      slot.classList.add("hidden");
+      slot.textContent = "";
+      return;
+    }
+    slot.classList.remove("hidden");
+    slot.classList.add(...(toneClasses[tone] ?? toneClasses.busy));
+    slot.setAttribute("role", tone === "error" ? "alert" : "status");
+    slot.textContent = message;
   }
 
   private async withBoardRefresh<T>(
@@ -1172,6 +1281,10 @@ export default class ScrumController extends Controller {
     }
     this.scheduleApplyCardTabState();
     this.wireCoachAutoScan();
+    if (this.activeCardID === cardID) {
+      this.restoreCardLlmJobFeedback(cardID);
+    }
+    this.reapplyModalChrome();
   }
 
   private async refreshModalToolbarOnly(cardID: string) {
@@ -1317,6 +1430,8 @@ export default class ScrumController extends Controller {
       this.rememberActiveCardTab(cardID);
       this.syncScrumModalRoute();
       this.scheduleApplyCardTabState();
+      this.restoreCardLlmJobFeedback(cardID);
+      this.reapplyModalChrome();
       void this.refreshActiveModal(cardID);
       this.wireCoachAutoScan();
       return;
@@ -1350,6 +1465,8 @@ export default class ScrumController extends Controller {
     );
     this.syncScrumModalRoute();
     this.scheduleApplyCardTabState();
+    this.restoreCardLlmJobFeedback(cardID);
+    this.reapplyModalChrome();
     this.wireCoachAutoScan();
   }
 
