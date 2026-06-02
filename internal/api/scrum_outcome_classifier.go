@@ -187,6 +187,9 @@ func (s *Server) classifyScrumAgentOutcome(ctx context.Context, job model.JobDet
 func scrumBaselinePlayOutcome(job model.JobDetails) ScrumManagerOutcome {
 	outcome := resolveScrumManagerOutcome(job)
 	if job.Job.Status == model.JobStatusCompleted && outcome == ScrumOutcomeInProgress {
+		if scrum.IsStrictScrumExternal(job.Job.Metadata) && !scrumAgentOutputHasSubstantiveContent(collectScrumAgentOutput(job)) {
+			return ScrumOutcomePaused
+		}
 		outcome = ScrumOutcomeSuccess
 	}
 	return outcome

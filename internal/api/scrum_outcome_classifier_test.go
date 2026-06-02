@@ -34,16 +34,12 @@ func TestScrumBaselinePlayOutcomeCompletedInProgress(t *testing.T) {
 	}
 }
 
-func TestResolveScrumPlayOutcomeCompletedRawPlayDefaultsReviewWithoutLLM(t *testing.T) {
+func TestResolveScrumPlayOutcomeCompletedCodexBoilerplateWithoutLLM(t *testing.T) {
 	s := &Server{}
-	job := modelJobDetails(model.JobStatusCompleted, "Codex external implementation session completed")
+	job := codexScrumJob(model.JobStatusCompleted, "Codex external implementation session completed")
 	outcome, note := s.resolveScrumPlayOutcome(t.Context(), job)
-	if outcome != ScrumOutcomeSuccess {
-		t.Fatalf("outcome=%q note=%q want success", outcome, note)
-	}
-	transition := scrumColumnForOutcome(outcome)
-	if transition.Column != "review" || transition.PlayState != "" {
-		t.Fatalf("transition=%+v want review with no play state", transition)
+	if outcome != ScrumOutcomePaused {
+		t.Fatalf("outcome=%q note=%q want paused until substantive codex output", outcome, note)
 	}
 }
 

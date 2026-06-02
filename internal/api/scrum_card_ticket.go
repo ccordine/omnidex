@@ -74,7 +74,7 @@ func (s *Server) handleScrumCardTicket(w http.ResponseWriter, r *http.Request, c
 		}
 		generated, err := s.scrumLLMChat(r.Context(), llmContextSourceCardTicket, system, user, llmContextTelemetryMeta{CardID: cardID})
 		if err != nil {
-			writeError(w, http.StatusBadGateway, err.Error())
+			writeError(w, http.StatusBadGateway, formatScrumCardTicketError(err))
 			return
 		}
 		ticket = strings.TrimSpace(generated)
@@ -109,13 +109,13 @@ func (s *Server) handleScrumCardTicketStream(w http.ResponseWriter, r *http.Requ
 		return nil
 	})
 	if err != nil {
-		emit(map[string]any{"type": "error", "message": err.Error()})
+		emit(map[string]any{"type": "error", "message": formatScrumCardTicketError(err)})
 		return
 	}
 	ticket = strings.TrimSpace(ticket)
 	updated, err := s.persistScrumCardTicketDraft(r, cardID, cardPrompt, ticket)
 	if err != nil {
-		emit(map[string]any{"type": "error", "message": err.Error()})
+		emit(map[string]any{"type": "error", "message": formatScrumCardTicketError(err)})
 		return
 	}
 	emit(map[string]any{"type": "done", "card": updated, "ticket": ticket})
@@ -146,23 +146,33 @@ func (s *Server) persistScrumCardTicketDraft(r *http.Request, cardID, cardPrompt
 func (s *Server) scrumLLMChat(ctx context.Context, source, system, user string, meta llmContextTelemetryMeta) (string, error) {
 	modelName := firstNonEmpty(s.ollamaDefaultModel, "llama3.2")
 	promptChars := llmPromptCharCount(system, user)
+	ctx, cancel := scrumcardllm.TicketLLMContext(ctx)
+	defer cancel()
+	deadline := scrumcardllm.TicketContextDeadline()
 	if client := s.ollamaGenerationClient(); client != nil {
-		generated, err := client.Chat(ctx, modelName, system, user)
+		chatClient := ollama.New(s.ollamaEndpoint(), s.ollamaDefaultModel, "", deadline)
+		generated, err := chatClient.Chat(ctx, modelName, system, user)
 		s.recordLLMContextUsage(ctx, source, modelName, "ollama", meta, promptChars, promptChars, false, 0, err)
 		return generated, err
 	}
-	return s.scrumLLMGenerate(ctx, source, system, user, meta)
+	generated, err := scrumcardllm.RunCardTicket(ctx, s.llmClient, modelName, system, user)
+	s.recordLLMContextUsage(ctx, source, modelName, s.llmProviderName(), meta, promptChars, promptChars, false, 0, err)
+	return generated, err
 }
 
 func (s *Server) scrumLLMChatStream(ctx context.Context, source, system, user string, meta llmContextTelemetryMeta, onChunk func(string) error) (string, error) {
 	modelName := firstNonEmpty(s.ollamaDefaultModel, "llama3.2")
 	promptChars := llmPromptCharCount(system, user)
+	ctx, cancel := scrumcardllm.TicketLLMContext(ctx)
+	defer cancel()
+	deadline := scrumcardllm.TicketContextDeadline()
 	if client := s.ollamaGenerationClient(); client != nil {
-		generated, err := client.ChatStream(ctx, modelName, system, user, onChunk)
+		chatClient := ollama.New(s.ollamaEndpoint(), s.ollamaDefaultModel, "", deadline)
+		generated, err := chatClient.ChatStream(ctx, modelName, system, user, onChunk)
 		s.recordLLMContextUsage(ctx, source, modelName, "ollama", meta, promptChars, promptChars, false, 0, err)
 		return generated, err
 	}
-	generated, err := s.scrumLLMGenerate(ctx, source, system, user, meta)
+	generated, err := scrumcardllm.RunCardTicket(ctx, s.llmClient, modelName, system, user)
 	if err != nil {
 		return "", err
 	}
@@ -171,7 +181,22 @@ func (s *Server) scrumLLMChatStream(ctx context.Context, source, system, user st
 			return generated, err
 		}
 	}
+	s.recordLLMContextUsage(ctx, source, modelName, s.llmProviderName(), meta, promptChars, promptChars, false, 0, err)
 	return generated, nil
+}
+
+func formatScrumCardTicketError(err error) string {
+	if err == nil {
+		return "Card ticket generation failed."
+	}
+	msg := strings.TrimSpace(err.Error())
+	lower := strings.ToLower(msg)
+	switch {
+	case strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "timeout"):
+		return "Card ticket generation timed out. Try a shorter card prompt or increase OMNI_TICKET_CONTEXT_DEADLINE."
+	default:
+		return msg
+	}
 }
 
 func (s *Server) ollamaGenerationClient() *ollama.Client {

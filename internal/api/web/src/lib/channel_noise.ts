@@ -1,4 +1,9 @@
 const CHANNEL_NOISE = new Set([
+  "codex external implementation session started",
+  "codex external implementation session completed",
+  "cursor external implementation session started",
+  "cursor external implementation session completed",
+  "external agent session ended",
   "external agent session completed",
   "agent finished",
   "agent running…",

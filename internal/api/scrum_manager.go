@@ -112,6 +112,9 @@ func resolveScrumManagerOutcome(details model.JobDetails) ScrumManagerOutcome {
 	if scrum.IsScrumRawPlay(details.Job.Metadata) || scrum.IsScrumJob(details.Job.Metadata) {
 		switch details.Job.Status {
 		case model.JobStatusCompleted:
+			if scrum.IsStrictScrumExternal(details.Job.Metadata) {
+				return scrumStrictExternalPlayCompletedOutcome(details, combined)
+			}
 			return ScrumOutcomeSuccess
 		case model.JobStatusFailed, model.JobStatusCanceled:
 			// Return to assigned so the user can inspect output and retry; blocked only when SCRUM_STATUS says so.

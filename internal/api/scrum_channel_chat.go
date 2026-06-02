@@ -285,7 +285,16 @@ func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
 func isScrumChannelNoiseContent(role, content string) bool {
 	lower := strings.ToLower(strings.TrimSpace(content))
 	switch lower {
-	case "external agent session completed", "agent finished", "agent running…", "agent running...", "agent running":
+	case "codex external implementation session started",
+		"codex external implementation session completed",
+		"cursor external implementation session started",
+		"cursor external implementation session completed",
+		"external agent session ended",
+		"external agent session completed",
+		"agent finished",
+		"agent running…",
+		"agent running...",
+		"agent running":
 		return true
 	}
 	if strings.HasPrefix(lower, "job status:") {

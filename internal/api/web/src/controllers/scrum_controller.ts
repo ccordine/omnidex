@@ -132,7 +132,9 @@ export default class ScrumController extends Controller {
   private cardLlmJobs = new Map<number, CardLlmJobTracker>();
   private finishedCardLlmJobs = new Set<number>();
   private cardLlmJobPollers = new Set<number>();
-  private scrumRefreshHandler = () => {
+  private scrumRefreshHandler = (event: Event) => {
+    const detail = (event as CustomEvent<{ project_id?: number }>).detail;
+    if (detail?.project_id && this.projectID && detail.project_id !== this.projectID) return;
     if (this.projectID) void this.load();
   };
   private scrumModalRealtimeHandler = (event: Event) => {
@@ -183,6 +185,7 @@ export default class ScrumController extends Controller {
     document.addEventListener("omni:project-tab", this.projectTabHandler);
     document.addEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
     document.addEventListener("omni:scrum-card-modal-refresh", this.scrumModalRealtimeHandler);
+    this.restoreOpenCardModalSession();
   }
 
   disconnect() {
@@ -213,7 +216,12 @@ export default class ScrumController extends Controller {
   }
 
   private isPlayActive(): boolean {
+    if (this.hasLivePlayRunner()) return true;
     if (this.autoPlayThrough) return true;
+    return false;
+  }
+
+  private hasLivePlayRunner(): boolean {
     return (
       this.board?.cards.some(
         (card) =>
@@ -245,8 +253,9 @@ export default class ScrumController extends Controller {
     if (this.hasCardLlmJobs()) return 900;
     if (this.isChannelLive()) return 500;
     if (this.isModalPlayLive()) return 800;
-    if (this.isPlayActive()) return 1000;
-    return 1500;
+    if (this.hasLivePlayRunner()) return 1000;
+    if (this.autoPlayThrough) return 8000;
+    return 3000;
   }
 
   private startPolling() {
@@ -294,6 +303,10 @@ export default class ScrumController extends Controller {
       if (fingerprint === this.lastBoardUpdatedAt) return;
       this.lastBoardUpdatedAt = fingerprint;
       this.applyBoardPayload(payload, false);
+      if (this.isCardModalOpen()) {
+        const modalCardID = this.modalCardID();
+        if (modalCardID) this.activeCardID = modalCardID;
+      }
       if (this.activeCardID) {
         await this.refreshActiveModal(this.activeCardID);
       }
@@ -449,6 +462,16 @@ export default class ScrumController extends Controller {
       this.activeCardTab = "card";
       return "card";
     }
+    if (this.isCardModalOpen() && this.modalCardID() === id) {
+      this.activeCardID = id;
+      this.rememberActiveCardTab(id);
+      return this.activeCardTab;
+    }
+    const saved = this.restoreCardTab(id);
+    if (saved !== "card") {
+      this.activeCardTab = saved;
+      return saved;
+    }
     const params = new URLSearchParams(window.location.search);
     const urlCard = params.get("scrum_card")?.trim();
     const urlTabParam = params.get("scrum_tab");
@@ -456,12 +479,6 @@ export default class ScrumController extends Controller {
       this.activeCardTab = urlTabParam;
       return urlTabParam;
     }
-    if (urlCard === id) {
-      const saved = this.restoreCardTab(id);
-      this.activeCardTab = saved;
-      return saved;
-    }
-    const saved = this.restoreCardTab(id);
     this.activeCardTab = saved;
     return saved;
   }
@@ -489,6 +506,12 @@ export default class ScrumController extends Controller {
   private visibleCardTabFromDOM(): ScrumCardTab | null {
     const panel = this.modalPanel();
     if (!panel) return null;
+    for (const button of panel.querySelectorAll<HTMLElement>("[data-scrum-tab]")) {
+      if (button.classList.contains("text-cyan-100")) {
+        const tab = button.dataset.scrumTab;
+        if (isScrumCardTab(tab)) return tab;
+      }
+    }
     for (const element of panel.querySelectorAll<HTMLElement>("[data-scrum-tab-panel]")) {
       if (!element.classList.contains("hidden")) {
         const tab = element.dataset.scrumTabPanel;
@@ -498,21 +521,32 @@ export default class ScrumController extends Controller {
     return null;
   }
 
+  private preferredCardTab(cardID: string): ScrumCardTab {
+    const domTab = this.visibleCardTabFromDOM();
+    if (domTab) return domTab;
+    return this.restoreCardTab(cardID);
+  }
+
   /** Keep in-memory tab aligned with what the user is actually viewing before live refreshes. */
   private rememberActiveCardTab(cardID: string) {
+    if (this.isCardModalOpen() && this.modalCardID() === cardID) {
+      this.activeCardID = cardID;
+    }
     if (this.activeCardID !== cardID) return;
-    const domTab = this.visibleCardTabFromDOM();
-    if (domTab) {
-      if (this.activeCardTab !== domTab) {
-        this.activeCardTab = domTab;
-        this.persistCardTab(domTab);
-      }
-      return;
+    const preferred = this.preferredCardTab(cardID);
+    if (this.activeCardTab !== preferred) {
+      this.activeCardTab = preferred;
+      this.persistCardTab(preferred);
     }
-    const saved = this.restoreCardTab(cardID);
-    if (this.activeCardTab !== saved) {
-      this.activeCardTab = saved;
-    }
+  }
+
+  private restoreOpenCardModalSession() {
+    if (!this.isCardModalOpen()) return;
+    const cardID = this.modalCardID();
+    if (!cardID) return;
+    this.activeCardID = cardID;
+    this.rememberActiveCardTab(cardID);
+    this.scheduleApplyCardTabState();
   }
 
   private syncModalSessionFromLocation() {
@@ -1252,6 +1286,11 @@ export default class ScrumController extends Controller {
       return;
     }
     if (this.isModalPlayLive()) {
+      if (this.preferredCardTab(cardID) === "channel") {
+        this.activeCardTab = "channel";
+        await this.refreshLiveChannel(cardID);
+        return;
+      }
       await this.refreshModalToolbarOnly(cardID);
       return;
     }
@@ -1260,34 +1299,37 @@ export default class ScrumController extends Controller {
 
   private async handleScrumModalRealtime(detail?: { cardID?: string; projectID?: number }) {
     const cardID = String(detail?.cardID ?? "").trim();
-    if (!cardID || cardID !== this.activeCardID || !this.isCardModalOpen() || this.modalCardID() !== cardID) return;
+    if (!cardID || !this.isCardModalOpen() || this.modalCardID() !== cardID) return;
     if (detail?.projectID && this.projectID && detail.projectID !== this.projectID) return;
+    this.activeCardID = cardID;
+    this.rememberActiveCardTab(cardID);
     await this.reloadBoard(cardID);
   }
 
   async refreshModalSections(cardID: string) {
+    this.rememberActiveCardTab(cardID);
+    if (this.activeCardTab === "channel") {
+      await this.refreshLiveChannel(cardID);
+      return;
+    }
     const card = this.findCard(cardID);
     if (!card || !this.board) return;
     const files = this.projectFiles.length || this.projectDirs.length ? this.projectFiles : await this.loadProjectFiles();
     await this.loadCardConfigs(cardID);
     this.recycle("scrum-modal-toolbar", renderScrumModalToolbar(card, this.board, this.playQueue ?? undefined));
     this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`);
-    if (this.activeCardTab === "channel") {
-      this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(cardID)));
-    } else {
-      this.recycle("scrum-modal-card", renderScrumModalCardTab(card, files));
-      this.recycle("scrum-modal-files", renderScrumModalFilesTab(card, files, this.projectDirs));
-      this.recycle("scrum-modal-tests", renderScrumModalTestsTab(card));
-      this.recycle("scrum-modal-config", renderScrumModalConfigTab(
-        card,
-        this.cardModelConfig?.fields ?? [],
-        this.cardModelConfig?.source ?? "env",
-        this.cardAgentConfig?.fields ?? [],
-        this.cardAgentConfig?.source ?? "env",
-        this.cardAgentConfig?.system ?? "omnidex",
-      ));
-      this.recycle("scrum-modal-recipe", renderScrumModalRecipeTab(card, this.recipes, this.projectRecipeId, this.projectRecipe));
-    }
+    this.recycle("scrum-modal-card", renderScrumModalCardTab(card, files));
+    this.recycle("scrum-modal-files", renderScrumModalFilesTab(card, files, this.projectDirs));
+    this.recycle("scrum-modal-tests", renderScrumModalTestsTab(card));
+    this.recycle("scrum-modal-config", renderScrumModalConfigTab(
+      card,
+      this.cardModelConfig?.fields ?? [],
+      this.cardModelConfig?.source ?? "env",
+      this.cardAgentConfig?.fields ?? [],
+      this.cardAgentConfig?.source ?? "env",
+      this.cardAgentConfig?.system ?? "omnidex",
+    ));
+    this.recycle("scrum-modal-recipe", renderScrumModalRecipeTab(card, this.recipes, this.projectRecipeId, this.projectRecipe));
     this.scheduleApplyCardTabState();
     this.wireCoachAutoScan();
     if (this.activeCardID === cardID) {

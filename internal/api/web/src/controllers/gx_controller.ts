@@ -38,6 +38,9 @@ export default class GxController extends Controller {
       if (message.eventName === "scrum-card-modal-refresh") {
         document.dispatchEvent(new CustomEvent("omni:scrum-card-modal-refresh", { detail: message }));
       }
+      if (message.eventName === "scrum-board-refresh") {
+        document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: message.projectID } }));
+      }
     });
     this.stream?.start();
   }

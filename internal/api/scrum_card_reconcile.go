@@ -45,18 +45,13 @@ func (s *Server) reconcileScrumCardJobState(ctx context.Context, projectID int64
 			finished, ok := s.finishScrumAutoReviewFromContext(ctx, projectID, card, job)
 			return finished, ok
 		}
+		card = scrumSyncTerminalPlayOutput(card, job)
 		outcome := resolveScrumManagerOutcome(job)
 		transition := scrumColumnForOutcome(outcome)
 		transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)
 		card.Column = transition.Column
 		card.PlayState = transition.PlayState
 		card.QueueOrder = 0
-		if synced, ok := syncRunningJobChannelChat(card, job); ok {
-			card = synced
-		}
-		if synced, ok := syncRunningJobConsoleLog(card, job); ok {
-			card = synced
-		}
 		return card, true
 	case model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting:
 		if card.PlayState == scrumPlayQueued {

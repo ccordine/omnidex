@@ -7,7 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
@@ -77,7 +79,7 @@ func (s *Service) runScrumCardTagsSuggestJob(
 	}
 	knownTags := s.scrumCardLLMTagCatalog(ctx, meta.ProjectID)
 	system, user := scrumcardllm.TagsSuggestPrompts(board, card, knownTags)
-	result, err := scrumcardllm.RunTagsSuggest(ctx, s.llm, coachModel, system, user)
+	result, err := scrumcardllm.RunTagsSuggest(ctx, s.scrumCardTicketLLM(), coachModel, system, user)
 	if err != nil {
 		return nil, "", err
 	}
@@ -124,7 +126,7 @@ func (s *Service) runScrumCardTicketJob(
 		cardPrompt = strings.TrimSpace(card.CardPrompt)
 	}
 	system, user := scrumcardllm.CardTicketPrompts(board, card, req)
-	ticket, err := scrumcardllm.RunCardTicket(ctx, s.llm, ticketModel, system, user)
+	ticket, err := scrumcardllm.RunCardTicket(ctx, s.scrumCardTicketLLM(), ticketModel, system, user)
 	if err != nil {
 		return nil, "", err
 	}
@@ -146,6 +148,17 @@ func (s *Service) runScrumCardTicketJob(
 		"ticket":  ticket,
 		"summary": summary,
 	}, summary, nil
+}
+
+func (s *Service) scrumCardTicketLLM() llm.Client {
+	if scrumcardllm.AsChatClient(s.llm) != nil {
+		return s.llm
+	}
+	baseURL := strings.TrimSpace(s.ollamaBaseURL)
+	if baseURL == "" {
+		return s.llm
+	}
+	return ollama.New(baseURL, s.models.Default, "", scrumcardllm.TicketContextDeadline())
 }
 
 func (s *Service) clearScrumCardLLMJobID(ctx context.Context, projectID int64, cardID, action string) error {

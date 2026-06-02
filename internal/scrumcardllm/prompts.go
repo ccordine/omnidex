@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+const (
+	ticketCardDescMaxChars       = 800
+	ticketChecklistMaxItems      = 20
+	ticketChecklistItemMax       = 500
+	ticketTestCriteriaMaxItems   = 20
+	ticketTestCriteriaItemMax    = 500
+	ticketRefFilesMax            = 10
+	ticketRefFileMax             = 200
+	ticketAuthorPromptMax        = 800
+	ticketExistingDraftMax       = 6000
+	ticketUserPromptMaxTotal     = 12000
+)
+
 type ChecklistItem struct {
 	Text string
 	Done bool
@@ -68,6 +81,7 @@ func CardTicketPrompts(board BoardContext, card CardContext, req TicketRequest) 
 		if current == "" {
 			current = strings.TrimSpace(card.CardTicket)
 		}
+		current = trimTicketText(current, ticketExistingDraftMax)
 		user = strings.Join([]string{
 			"Refine this existing work ticket based on the user's notes.",
 			"Keep the same markdown sections but improve clarity and completeness.",
@@ -92,30 +106,91 @@ func CardTicketPrompts(board BoardContext, card CardContext, req TicketRequest) 
 		prompt = "Draft a work ticket for this scrum card."
 	}
 	contextLines := []string{
-		"Scrum card: " + card.Title,
-		"Column: " + card.Column,
-		"Project directory: " + board.ProjectDirectory,
-		"Description: " + card.Description,
-		"Reference files: " + strings.Join(card.RefFiles, ", "),
+		"Scrum card: " + trimTicketText(card.Title, 200),
+		"Column: " + trimTicketText(card.Column, 80),
+		"Project directory: " + trimTicketText(board.ProjectDirectory, 260),
+		"Description: " + trimTicketText(card.Description, ticketCardDescMaxChars),
+		"Reference files: " + strings.Join(trimTicketRefFiles(card.RefFiles), ", "),
 	}
+	checklistCount := 0
 	for _, item := range card.Checklist {
+		if checklistCount >= ticketChecklistMaxItems {
+			break
+		}
+		text := trimTicketText(item.Text, ticketChecklistItemMax)
+		if text == "" {
+			continue
+		}
 		state := "[ ]"
 		if item.Done {
 			state = "[x]"
 		}
-		contextLines = append(contextLines, fmt.Sprintf("%s %s", state, item.Text))
+		contextLines = append(contextLines, fmt.Sprintf("%s %s", state, text))
+		checklistCount++
 	}
+	testCount := 0
 	for _, item := range card.TestCriteria {
-		if strings.TrimSpace(item.Text) == "" {
+		if testCount >= ticketTestCriteriaMaxItems {
+			break
+		}
+		text := trimTicketText(item.Text, ticketTestCriteriaItemMax)
+		if text == "" {
 			continue
 		}
-		contextLines = append(contextLines, "Test: "+item.Text)
+		contextLines = append(contextLines, "Test: "+text)
+		testCount++
 	}
 	if len(card.Tags) > 0 {
 		contextLines = append(contextLines, "Tags: "+strings.Join(card.Tags, ", "))
 	}
-	contextLines = append(contextLines, "Author prompt: "+prompt)
-	return system, strings.Join(contextLines, "\n")
+	contextLines = append(contextLines, "Author prompt: "+trimTicketText(prompt, ticketAuthorPromptMax))
+	user = trimTicketPrompt(strings.Join(contextLines, "\n"), ticketUserPromptMaxTotal)
+	return system, user
+}
+
+func trimTicketText(text string, max int) string {
+	text = strings.TrimSpace(text)
+	if max <= 0 || len(text) <= max {
+		return text
+	}
+	return strings.TrimSpace(text[:max]) + "…"
+}
+
+func trimTicketRefFiles(files []string) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(files))
+	for _, file := range files {
+		if len(out) >= ticketRefFilesMax {
+			break
+		}
+		trimmed := trimTicketText(file, ticketRefFileMax)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func trimTicketPrompt(text string, max int) string {
+	text = strings.TrimSpace(text)
+	if max <= 0 || len(text) <= max {
+		return text
+	}
+	head := max * 2 / 3
+	tail := max - head - 20
+	if tail < 0 {
+		tail = 0
+	}
+	if head < 0 {
+		head = max
+	}
+	if tail == 0 {
+		return trimTicketText(text, max)
+	}
+	return strings.TrimSpace(text[:head]) + "\n…context trimmed…\n" + strings.TrimSpace(text[len(text)-tail:])
 }
 
 func firstNonEmpty(values ...string) string {

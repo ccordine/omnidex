@@ -223,6 +223,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 					cardChanged = true
 				}
 			} else {
+				updated = scrumSyncTerminalPlayOutput(updated, job)
 				outcome, scanNote := s.resolveScrumPlayOutcome(r.Context(), job)
 				transition := scrumColumnForOutcome(outcome)
 				transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)

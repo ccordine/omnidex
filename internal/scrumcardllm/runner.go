@@ -3,7 +3,6 @@ package scrumcardllm
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -33,12 +32,10 @@ func TicketModelName(raw string, fallback string) string {
 }
 
 func RunTagsSuggest(ctx context.Context, client LLMClient, modelName, system, user string) (TagsSuggestResult, error) {
-	if client == nil {
-		return TagsSuggestResult{}, fmt.Errorf("no llm client configured")
-	}
 	modelName = CoachModelName(modelName, "qwen3:4b-thinking")
-	prompt := strings.TrimSpace(system + "\n\n" + user)
-	raw, err := client.Generate(ctx, modelName, prompt)
+	ctx, cancel := TicketLLMContext(ctx)
+	defer cancel()
+	raw, err := chatOrGenerate(ctx, client, modelName, system, user)
 	if err != nil {
 		return TagsSuggestResult{}, err
 	}
@@ -46,12 +43,10 @@ func RunTagsSuggest(ctx context.Context, client LLMClient, modelName, system, us
 }
 
 func RunCardTicket(ctx context.Context, client LLMClient, modelName, system, user string) (string, error) {
-	if client == nil {
-		return "", fmt.Errorf("no llm client configured")
-	}
 	modelName = TicketModelName(modelName, "llama3.2")
-	prompt := strings.TrimSpace(system + "\n\n" + user)
-	generated, err := client.Generate(ctx, modelName, prompt)
+	ctx, cancel := TicketLLMContext(ctx)
+	defer cancel()
+	generated, err := chatOrGenerate(ctx, client, modelName, system, user)
 	if err != nil {
 		return "", err
 	}

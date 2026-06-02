@@ -225,7 +225,7 @@ func main() {
 				V3Enabled:               cfg.V3Enabled,
 				SkillsRoot:              cfg.SkillsRoot,
 				Logger:                  log.Default(),
-				OnJobFinished:           httpServer.SyncProjectMapForJobAsync,
+				OnJobFinished:           httpServer.OnJobFinishedAsync,
 			},
 		)
 		go workerService.Start(ctx)

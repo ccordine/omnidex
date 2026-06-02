@@ -50,3 +50,37 @@ func (s *Server) publishScrumModalCardRefresh(ctx context.Context, projectID int
 	}
 	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
 }
+
+func (s *Server) publishScrumBoardRefresh(ctx context.Context, projectID int64, reason string, board ScrumBoard) {
+	if projectID <= 0 {
+		return
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "board updated"
+	}
+	summary := scrumPlayQueueSummary(board)
+	msg := realtimeMessage{
+		ID:        s.nextRealtimeID(),
+		EventName: "scrum-board-refresh",
+		ProjectID: projectID,
+		HTML:      renderScrumBoardLiveHTML(projectID, reason, summary),
+	}
+	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
+}
+
+func renderScrumBoardLiveHTML(projectID int64, reason string, summary map[string]any) string {
+	runningID, _ := summary["running_card_id"].(string)
+	queuedCount := 0
+	if raw, ok := summary["queued_count"].(int); ok {
+		queuedCount = raw
+	}
+	return fmt.Sprintf(
+		`<span data-scrum-board-refresh="%d" data-scrum-board-reason="%s" data-scrum-running-card="%s" data-scrum-queued-count="%d" class="sr-only">%s</span>`,
+		projectID,
+		html.EscapeString(reason),
+		html.EscapeString(strings.TrimSpace(runningID)),
+		queuedCount,
+		html.EscapeString(reason),
+	)
+}
