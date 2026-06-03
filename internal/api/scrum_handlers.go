@@ -109,7 +109,7 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.AutoPlayThrough != nil || req.AutoWork != nil {
-			s.RefreshScrumPlayQueueForProjectAsync(projectID)
+			s.ReconcileScrumPlayQueueForProjectAsync(projectID)
 		}
 		writeJSON(w, http.StatusOK, payload)
 	default:
@@ -156,8 +156,8 @@ func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CreateTicket && s.repo != nil {
 		if projectID, err := s.resolveProjectID(r); err == nil && projectID > 0 {
-			ticketModel := firstNonEmpty(s.ollamaDefaultModel, "llama3.2")
-			job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionCardTicket, "", ticketModel, scrumcardllm.TicketRequest{})
+			ticketModel := s.scrumCardTicketModel(r.Context(), projectID)
+			job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionCardTicket, "", ticketModel, scrumcardllm.TicketRequest{PlanningMode: true})
 			if err == nil {
 				card = updated
 				ticketJob = &job
@@ -168,6 +168,9 @@ func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
 	if ticketJob != nil {
 		payload["ticket_job"] = ticketJob
 		payload["message"] = fmt.Sprintf("Queued card ticket job #%d", ticketJob.ID)
+		payload["html"] = map[string]any{
+			"bundle": renderScrumCardLLMSectionBundle(card),
+		}
 	}
 	writeJSON(w, http.StatusCreated, payload)
 }
@@ -206,6 +209,8 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 			s.handleScrumCardDone(w, r, cardID)
 		case "sync":
 			s.handleScrumCardSync(w, r)
+		case "modal":
+			s.handleScrumCardModal(w, r, cardID)
 		default:
 			writeError(w, http.StatusNotFound, "unknown card action")
 		}
@@ -218,7 +223,12 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"card": card})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"card": card,
+			"html": map[string]any{
+				"bundle": renderScrumCardLLMSectionBundle(card),
+			},
+		})
 	case http.MethodPatch:
 		body, err := io.ReadAll(r.Body)
 		if err != nil {

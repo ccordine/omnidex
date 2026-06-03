@@ -22,11 +22,12 @@ const (
 )
 
 type TicketRequest struct {
-	Prompt       string `json:"prompt"`
-	CardPrompt   string `json:"card_prompt"`
-	Ticket       string `json:"ticket"`
-	Iterate      bool   `json:"iterate"`
-	IterateNotes string `json:"iterate_notes"`
+	Prompt        string `json:"prompt"`
+	CardPrompt    string `json:"card_prompt"`
+	Ticket        string `json:"ticket"`
+	Iterate       bool   `json:"iterate"`
+	IterateNotes  string `json:"iterate_notes"`
+	PlanningMode  bool   `json:"planning_mode"`
 }
 
 type ParsedMetadata struct {

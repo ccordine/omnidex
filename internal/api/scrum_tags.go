@@ -27,59 +27,22 @@ func (s *Server) handleScrumCardTagsSuggest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct {
-		Sync bool `json:"sync"`
-	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
-	}
 	card, board, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "card not found")
 		return
 	}
-	if s.repo != nil && projectID > 0 && !req.Sync {
-		cfg := parseScrumCoachConfig(card.CoachConfig)
-		job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionTagsSuggest, cfg.Model, "", scrumcardllm.TicketRequest{})
-		if err != nil {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-		writeScrumCardLLMQueued(w, job, updated, fmt.Sprintf("Queued tag suggestion job #%d for %s", job.ID, board.Name))
+	if s.repo == nil || projectID <= 0 {
+		writeError(w, http.StatusServiceUnavailable, "tag suggestion requires a project database")
 		return
 	}
-	updated, suggested, notes, err := s.runScrumCardTagsSuggestSync(r, board, projectID, card)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"card":  updated,
-		"tags":  suggested,
-		"notes": notes,
-	})
-}
-
-func (s *Server) runScrumCardTagsSuggestSync(r *http.Request, board ScrumBoard, projectID int64, card ScrumCard) (ScrumCard, []string, string, error) {
 	cfg := parseScrumCoachConfig(card.CoachConfig)
-	knownTags := s.collectScrumTagCatalog(r.Context(), r, "", 80)
-	system, user := scrumcardllm.TagsSuggestPrompts(scrumBoardContext(board), scrumCardContext(card), knownTags)
-	result, err := scrumcardllm.RunTagsSuggest(r.Context(), s.llmClient, cfg.Model, system, user)
+	job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionTagsSuggest, cfg.Model, "", scrumcardllm.TicketRequest{})
 	if err != nil {
-		return ScrumCard{}, nil, "", err
+		writeError(w, http.StatusConflict, err.Error())
+		return
 	}
-	if len(result.Suggested) == 0 {
-		return card, []string{}, result.Notes, nil
-	}
-	card.Tags = mergeTags(card.Tags, result.Suggested)
-	updated, err := s.persistScrumCard(r, projectID, card)
-	if err != nil {
-		return ScrumCard{}, nil, "", err
-	}
-	if s.repo != nil && projectID > 0 {
-		_ = s.mergeProjectTags(r.Context(), projectID, result.Suggested)
-	}
-	return updated, result.Suggested, result.Notes, nil
+	writeScrumCardLLMQueued(w, job, updated, fmt.Sprintf("Queued tag suggestion job #%d for %s", job.ID, board.Name))
 }
 
 func scrumBoardContext(board ScrumBoard) scrumcardllm.BoardContext {

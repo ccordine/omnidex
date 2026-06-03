@@ -31,10 +31,15 @@ func TestScrumCardHealthStateStalled(t *testing.T) {
 }
 
 func TestScrumHealthTTL(t *testing.T) {
-	if got := scrumHealthTTL([]scrumCardHealth{{Health: "idle"}}); got != scrumHealthIdleTTLMS {
+	emptyBoard := ScrumBoard{}
+	if got := scrumHealthTTL([]scrumCardHealth{{Health: "idle"}}, emptyBoard); got != scrumHealthIdleTTLMS {
 		t.Fatalf("idle ttl=%d want %d", got, scrumHealthIdleTTLMS)
 	}
-	if got := scrumHealthTTL([]scrumCardHealth{{Health: "idle"}, {Health: "active"}}); got != scrumHealthActiveTTLMS {
+	if got := scrumHealthTTL([]scrumCardHealth{{Health: "idle"}, {Health: "active"}}, emptyBoard); got != scrumHealthActiveTTLMS {
 		t.Fatalf("active ttl=%d want %d", got, scrumHealthActiveTTLMS)
+	}
+	pendingBoard := ScrumBoard{Cards: []ScrumCard{{ID: "c1", TagsJobID: "42"}}}
+	if got := scrumHealthTTL([]scrumCardHealth{{Health: "idle"}}, pendingBoard); got != scrumHealthActiveTTLMS {
+		t.Fatalf("llm pending ttl=%d want %d", got, scrumHealthActiveTTLMS)
 	}
 }

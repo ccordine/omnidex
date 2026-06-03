@@ -65,12 +65,19 @@ func TagsSuggestPrompts(board BoardContext, card CardContext, knownTags []string
 }
 
 func CardTicketPrompts(board BoardContext, card CardContext, req TicketRequest) (system, user string) {
-	system = strings.Join([]string{
+	systemLines := []string{
 		"You are a technical project manager drafting work tickets.",
 		"Return markdown with sections: Summary, Description, Acceptance Criteria (checklist), Test Criteria, Technical Notes.",
 		"Test Criteria should list verifiable tests the implementer must satisfy.",
 		"Be concise and actionable. Do not wrap the response in code fences.",
-	}, "\n")
+	}
+	if req.PlanningMode {
+		systemLines = append(systemLines,
+			"This is planning mode: produce a draft the user will review, coach, and refine before moving the card to ready/assigned or pressing play.",
+			"Ground the plan in the card title and description; call out risks, verification steps, and scope boundaries.",
+		)
+	}
+	system = strings.Join(systemLines, "\n")
 
 	if req.Iterate {
 		notes := strings.TrimSpace(req.IterateNotes)

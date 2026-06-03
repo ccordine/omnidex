@@ -1,12 +1,14 @@
 import { Controller } from "@hotwired/stimulus";
 import { createRecyclrGX, createRecyclrRealtimeStream } from "../lib/recyclr";
 import { cssEscape } from "../lib/dom";
+import { scheduleDomUpdate } from "../lib/main_thread";
 import { showToast, type ToastTone } from "../lib/toast";
 
 export default class GxController extends Controller {
   gx: ReturnType<typeof createRecyclrGX> | null = null;
   private stream: ReturnType<typeof createRecyclrRealtimeStream> | null = null;
   private metricsGlanceHandler: ((event: Event) => void) | null = null;
+  private pendingBundleHTML: string | null = null;
 
   connect(): void {
     if (this.gx) return;
@@ -27,23 +29,11 @@ export default class GxController extends Controller {
   private startRealtimeStream(): void {
     if (!this.gx || this.stream) return;
     this.stream = createRecyclrRealtimeStream(this.gx, (message) => {
-      const toast = String(message.toast ?? "").trim();
-      if (toast) {
-        const tone = String(message.toastTone ?? "info").trim() as ToastTone;
-        showToast(toast, tone === "error" || tone === "ok" || tone === "busy" ? tone : "info");
+      const html = String(message.html ?? "").trim();
+      if (html) {
+        this.queueRenderBundle(html);
       }
-      if (message.eventName === "metrics-glance") {
-        document.dispatchEvent(new CustomEvent("omni:metrics-glance", { detail: message }));
-      }
-      if (message.eventName === "scrum-card-modal-refresh") {
-        document.dispatchEvent(new CustomEvent("omni:scrum-card-modal-refresh", { detail: message }));
-      }
-      if (message.eventName === "chat-component-update") {
-        document.dispatchEvent(new CustomEvent("omni:chat-component-update", { detail: message }));
-      }
-      if (message.eventName === "scrum-board-refresh") {
-        document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: message.projectID } }));
-      }
+      queueMicrotask(() => this.dispatchRealtimeMessage(message));
     });
     this.stream?.start();
   }
@@ -58,7 +48,45 @@ export default class GxController extends Controller {
     }
   }
 
+  private queueRenderBundle(html: string): void {
+    this.pendingBundleHTML = html;
+    scheduleDomUpdate(() => {
+      const pending = this.pendingBundleHTML;
+      this.pendingBundleHTML = null;
+      if (pending) this.renderBundleNow(pending);
+    });
+  }
+
+  private dispatchRealtimeMessage(message: Record<string, unknown>): void {
+    const toast = String(message.toast ?? "").trim();
+    if (toast) {
+      const tone = String(message.toastTone ?? "info").trim() as ToastTone;
+      showToast(toast, tone === "error" || tone === "ok" || tone === "busy" ? tone : "info");
+    }
+    if (message.eventName === "metrics-glance") {
+      document.dispatchEvent(new CustomEvent("omni:metrics-glance", { detail: message }));
+    }
+    if (message.eventName === "scrum-card-modal-refresh") {
+      document.dispatchEvent(new CustomEvent("omni:scrum-card-modal-refresh", { detail: message }));
+    }
+    if (message.eventName === "chat-component-update") {
+      document.dispatchEvent(new CustomEvent("omni:chat-component-update", { detail: message }));
+    }
+    if (message.eventName === "scrum-board-refresh") {
+      const html = String(message.html ?? "").trim();
+      document.dispatchEvent(
+        new CustomEvent("omni:scrum-refresh", {
+          detail: { project_id: message.projectID, skip_poll: html.length > 0 },
+        }),
+      );
+    }
+  }
+
   renderBundle(html: string): void {
+    this.queueRenderBundle(html);
+  }
+
+  private renderBundleNow(html: string): void {
     const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
     const events = [...doc.querySelectorAll("[data-recyclr-target]")].map((node) => {
       const target = (node as HTMLElement).dataset.recyclrTarget || "";

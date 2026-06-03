@@ -17,9 +17,10 @@ type ScanResponse struct {
 }
 
 type CreatedCard struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Severity string `json:"severity,omitempty"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Severity    string `json:"severity,omitempty"`
+	TicketJobID int64  `json:"ticket_job_id,omitempty"`
 }
 
 type LastRun struct {

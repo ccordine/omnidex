@@ -1,6 +1,7 @@
 import RecyclrModule from "recyclrjs";
 import { cssEscape } from "./dom";
 import { setGlobalLoading } from "./loading";
+import { scheduleDomUpdate } from "./main_thread";
 
 type RecyclrEvent = {
   selector: string;
@@ -42,7 +43,7 @@ export function createRecyclrRealtimeStream(
   return createRecyclrStreamFn({
     wsUrl: "/v1/realtime/ws",
     sseUrl: "/v1/realtime/sse",
-    topics: ["ui", "metrics"],
+    topics: ["ui", "metrics", "scrum"],
     gx,
     debug: false,
     onMessage,
@@ -82,18 +83,20 @@ export function renderRecyclrBundle(
   mode: RecyclrSinkMode = "html",
 ): void {
   const bundle = buildRecyclrBundle(target, html);
-  setGlobalLoading(true);
-  try {
-    if (host && typeof host.renderBundle === "function") {
-      try {
-        host.renderBundle(bundle);
-        return;
-      } catch {
-        /* Recyclr may be unavailable; direct sink update below still applies. */
+  scheduleDomUpdate(() => {
+    setGlobalLoading(true);
+    try {
+      if (host && typeof host.renderBundle === "function") {
+        try {
+          host.renderBundle(bundle);
+          return;
+        } catch {
+          /* Recyclr may be unavailable; direct sink update below still applies. */
+        }
       }
+      applyRecyclrSink(document, target, html, mode);
+    } finally {
+      setGlobalLoading(false);
     }
-    applyRecyclrSink(document, target, html, mode);
-  } finally {
-    setGlobalLoading(false);
-  }
+  });
 }

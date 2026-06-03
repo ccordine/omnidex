@@ -11,7 +11,7 @@ import type {
 import type { ResolvedModelConfig } from "./model_config_types";
 import type { ScrumBoard, ScrumCard } from "./scrum_types";
 
-export async function fetchProjects(signal?: AbortSignal): Promise<{ projects: ProjectRecord[]; active_project_id: number }> {
+export async function fetchProjects(signal?: AbortSignal): Promise<{ projects: ProjectRecord[] }> {
   const response = await fetch("/v1/projects", { signal });
   return readJSON(response);
 }
@@ -27,8 +27,7 @@ export async function createProject(input: {
   location: string;
   description?: string;
   recipe_id?: string;
-  activate?: boolean;
-}): Promise<{ project: ProjectRecord; active_project_id: number }> {
+}): Promise<{ project: ProjectRecord }> {
   const response = await fetch("/v1/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -119,11 +118,6 @@ export async function scanProjectMap(id: number): Promise<ProjectMapSummary> {
 
 export async function fetchProjectGit(id: number, signal?: AbortSignal): Promise<ProjectGitStatus> {
   const response = await fetch(`/v1/projects/${id}/git`, { signal });
-  return readJSON(response);
-}
-
-export async function fetchWorkspace(): Promise<WorkspaceResponse> {
-  const response = await fetch("/v1/workspace");
   return readJSON(response);
 }
 

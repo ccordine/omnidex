@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/projectdebugger"
 )
 
@@ -47,13 +48,10 @@ func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request
 		agentSystem = strings.TrimSpace(v)
 	}
 	modelResolved, _ := s.resolveModelConfig(project, ScrumCard{})
-	modelName := firstNonEmpty(
-		modelResolved.Get("planner_model"),
-		modelResolved.Get("default_model"),
-		s.ollamaDefaultModel,
-		"qwen3:4b-thinking",
-	)
-	metadata, err := projectdebugger.JobMetadata(project.ID, agentSystem, modelName)
+	analyzerModel := modelconfig.AnalyzerModel(modelResolved, s.ollamaDefaultModel, "qwen3:4b-thinking")
+	ticketModel := modelconfig.PlannerTicketModel(modelResolved, s.ollamaDefaultModel, "llama3.2")
+	s.SyncProjectMapAsync(project.ID)
+	metadata, err := projectdebugger.JobMetadata(project.ID, agentSystem, analyzerModel, ticketModel)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -69,10 +67,10 @@ func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request
 		JobID:       job.ID,
 		ProjectID:   project.ID,
 		AgentSystem: agentSystem,
-		Model:       modelName,
+		Model:       analyzerModel,
 		Status:      "running",
 		StartedAt:   startedAt,
-		Summary:     "Analyzing codebase for bugs, cleanup, refactors, optimization, reliability, and test gaps...",
+		Summary:     "Scanning project directory and backlog for issues, then creating backlog cards with planning tickets...",
 	}
 	if err := s.saveDebuggerLastRun(r.Context(), project, lastRun); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

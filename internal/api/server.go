@@ -397,7 +397,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/recipes/", s.handleRecipeByID)
 	s.mux.HandleFunc("/v1/projects", s.handleProjects)
 	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
-	s.mux.HandleFunc("/v1/workspace", s.handleWorkspace)
 	if s.repo != nil {
 		s.mux.HandleFunc("/v1/ai/control", s.handleAIControl)
 		s.mux.HandleFunc("/v1/jobs", s.handleJobs)

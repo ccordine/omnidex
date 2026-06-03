@@ -1,0 +1,35 @@
+<section data-chat-target="panel" data-panel-name="chat" class="flex h-full min-h-0 flex-col">
+        <header class="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-zinc-950/45 px-3 py-2 backdrop-blur-xl md:px-4">
+          <div>
+            <p class="text-[10px] uppercase tracking-[.18em] text-cyan-200/80" data-i18n="panel.chat.brand">Omni</p>
+            <h2 class="text-lg font-semibold tracking-tight" data-i18n="panel.chat.title">Chat Console</h2>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="flex items-center gap-2 text-xs text-zinc-500">
+              <span class="hidden sm:inline" data-i18n="panel.chat.channel">Channel</span>
+              <select data-chat-target="channelSelect" data-action="change->chat#selectChannel" class="max-w-[14rem] rounded-md border border-white/10 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
+                <option value="" data-i18n="panel.chat.agentPipeline">Agent pipeline</option>
+              </select>
+            </label>
+            <button type="button" data-action="chat#createChannel" class="rounded-md border border-white/10 px-2.5 py-1.5 text-xs font-semibold text-zinc-200 transition hover:border-cyan-300/40 hover:bg-cyan-300/10" data-i18n-title="panel.chat.createChannel" title="Create user channel">+</button>
+            <span data-chat-target="liveBadge" class="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-medium text-amber-100">idle</span>
+          </div>
+        </header>
+
+        <div data-chat-target="messages" data-recyclr-sink="messages" class="scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3 md:px-4"></div>
+
+        <form data-action="submit->chat#submit keydown->chat#composerKeydown" class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl md:px-4">
+          <div class="rounded-md border border-white/10 bg-zinc-900/90 p-2">
+            <textarea data-chat-target="input" rows="2" data-i18n-placeholder="panel.chat.placeholder" placeholder="Ask Omni to inspect, build, research, or explain..." class="scrollbar max-h-32 min-h-[3.25rem] w-full resize-none bg-transparent text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-500"></textarea>
+            <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">
+              <div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                <span class="rounded border border-white/10 px-1.5 py-0.5" data-i18n="panel.chat.enterNewline">Enter newline</span>
+                <span class="rounded border border-white/10 px-1.5 py-0.5" data-i18n="panel.chat.ctrlEnterSend">⌘/Ctrl+Enter send</span>
+              </div>
+              <button data-chat-target="send" type="submit" class="rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400" data-i18n="panel.chat.send">
+                Send
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>

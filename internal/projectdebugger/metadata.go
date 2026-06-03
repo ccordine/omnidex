@@ -14,9 +14,17 @@ const (
 	MetadataProjectID   = "project_id"
 	MetadataAgentSystem = "agent_system"
 	MetadataModel       = "model"
+	MetadataTicketModel = "ticket_model"
 )
 
-func JobMetadata(projectID int64, agentSystem, modelName string) ([]byte, error) {
+type ParsedMetadata struct {
+	ProjectID     int64
+	AgentSystem   string
+	AnalyzerModel string
+	TicketModel   string
+}
+
+func JobMetadata(projectID int64, agentSystem, analyzerModel, ticketModel string) ([]byte, error) {
 	if projectID <= 0 {
 		return nil, fmt.Errorf("project_id is required")
 	}
@@ -24,7 +32,8 @@ func JobMetadata(projectID int64, agentSystem, modelName string) ([]byte, error)
 		"source":              JobSource,
 		MetadataProjectID:     projectID,
 		MetadataAgentSystem:   strings.TrimSpace(agentSystem),
-		MetadataModel:         strings.TrimSpace(modelName),
+		MetadataModel:         strings.TrimSpace(analyzerModel),
+		MetadataTicketModel:   strings.TrimSpace(ticketModel),
 	}
 	return json.Marshal(payload)
 }
@@ -40,31 +49,34 @@ func IsJobMetadata(raw json.RawMessage) bool {
 	return strings.TrimSpace(stringFromAny(payload["source"])) == JobSource
 }
 
-func ParseMetadata(raw json.RawMessage) (projectID int64, agentSystem, modelName string, err error) {
+func ParseMetadata(raw json.RawMessage) (ParsedMetadata, error) {
 	if len(raw) == 0 {
-		return 0, "", "", fmt.Errorf("job metadata is empty")
+		return ParsedMetadata{}, fmt.Errorf("job metadata is empty")
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return 0, "", "", fmt.Errorf("parse job metadata: %w", err)
+		return ParsedMetadata{}, fmt.Errorf("parse job metadata: %w", err)
 	}
 	if strings.TrimSpace(stringFromAny(payload["source"])) != JobSource {
-		return 0, "", "", fmt.Errorf("not a project debugger job")
+		return ParsedMetadata{}, fmt.Errorf("not a project debugger job")
+	}
+	out := ParsedMetadata{
+		AgentSystem:   strings.TrimSpace(stringFromAny(payload[MetadataAgentSystem])),
+		AnalyzerModel: strings.TrimSpace(stringFromAny(payload[MetadataModel])),
+		TicketModel:   strings.TrimSpace(stringFromAny(payload[MetadataTicketModel])),
 	}
 	switch v := payload[MetadataProjectID].(type) {
 	case float64:
-		projectID = int64(v)
+		out.ProjectID = int64(v)
 	case int64:
-		projectID = v
+		out.ProjectID = v
 	case string:
-		projectID, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		out.ProjectID, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 	}
-	if projectID <= 0 {
-		return 0, "", "", fmt.Errorf("project_id is required")
+	if out.ProjectID <= 0 {
+		return ParsedMetadata{}, fmt.Errorf("project_id is required")
 	}
-	agentSystem = strings.TrimSpace(stringFromAny(payload[MetadataAgentSystem]))
-	modelName = strings.TrimSpace(stringFromAny(payload[MetadataModel]))
-	return projectID, agentSystem, modelName, nil
+	return out, nil
 }
 
 func Pipeline() string {

@@ -142,9 +142,18 @@ export type ScrumCreateTicketConfig = {
   column?: string;
 };
 
+export type ScrumBoardHTML = {
+  board?: string;
+  columns?: string;
+  focus?: string;
+  flow_summary?: string;
+  bundle?: string;
+};
+
 export type ScrumBoardResponse = {
   board: ScrumBoard;
   cards_by_col: Record<string, ScrumCard[]>;
+  html?: ScrumBoardHTML;
   project_id?: number;
   all_columns?: string[];
   visible_column?: string;

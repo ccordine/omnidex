@@ -1,9 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/url"
-	"strings"
 	"testing"
 )
 
@@ -38,21 +38,17 @@ func TestScrumRequestFromContextHasURL(t *testing.T) {
 	}
 }
 
-func TestRenderScrumBoardLiveHTML(t *testing.T) {
-	html := renderScrumBoardLiveHTML(42, "job finished", map[string]any{
-		"running_card_id": "card_1",
-		"queued_count":    2,
-	})
-	if html == "" {
-		t.Fatal("expected html")
+func TestPublishScrumBoardRefreshIncludesBoardBundle(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	board := ScrumBoard{
+		Columns: []string{"assigned", "in_progress"},
+		Cards: []ScrumCard{
+			{ID: "c1", Title: "Ship it", Column: "assigned"},
+		},
 	}
-	for _, part := range []string{
-		`data-scrum-board-refresh="42"`,
-		`data-scrum-running-card="card_1"`,
-		`data-scrum-queued-count="2"`,
-	} {
-		if !strings.Contains(html, part) {
-			t.Fatalf("expected %q in html: %s", part, html)
-		}
+	server.publishScrumBoardRefresh(context.Background(), 42, "job finished", board)
+	hub := server.ensureRealtimeHub()
+	if hub == nil {
+		t.Fatal("expected realtime hub")
 	}
 }

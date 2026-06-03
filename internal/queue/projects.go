@@ -209,22 +209,6 @@ func (r *Repository) TouchProject(ctx context.Context, id int64) error {
 	return err
 }
 
-func (r *Repository) GetActiveProjectID(ctx context.Context) (int64, error) {
-	return 0, nil
-}
-
-func (r *Repository) SetActiveProjectID(ctx context.Context, projectID int64) error {
-	if projectID > 0 {
-		_, err := r.GetProject(ctx, projectID)
-		return err
-	}
-	return nil
-}
-
-func (r *Repository) ClearActiveProjectID(ctx context.Context) error {
-	return r.SetActiveProjectID(ctx, 0)
-}
-
 func (r *Repository) CountProjectJobs(ctx context.Context, projectID int64) (int64, error) {
 	var count int64
 	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM jobs WHERE project_id = $1`, projectID).Scan(&count)

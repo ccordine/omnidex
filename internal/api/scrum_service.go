@@ -350,6 +350,10 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	board, err = s.refreshScrumCardLlmJobs(r.Context(), projectID, board)
+	if err != nil {
+		return nil, err
+	}
 	s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board)
 	fullBoard := board
 	visibleColumn := scrumViewportColumn(r, board.Columns)
@@ -374,6 +378,7 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
 		payload["create_ticket"] = s.scrumCreateTicketConfig(r.Context(), projectID)
 	}
+	scrumBoardFragmentsForPayload(payload, fullBoard)
 	return payload, nil
 }
 

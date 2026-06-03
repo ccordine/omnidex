@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
@@ -119,11 +120,26 @@ func (s *Server) scrumCardLLMJobActive(ctx context.Context, jobIDText string) bo
 	}
 }
 
+func (s *Server) scrumCardTicketModel(ctx context.Context, projectID int64) string {
+	if s.repo == nil || projectID <= 0 {
+		return modelconfig.PlannerTicketModel(modelconfig.Config{}, s.ollamaDefaultModel, "llama3.2")
+	}
+	project, err := s.repo.GetProject(ctx, projectID)
+	if err != nil {
+		return modelconfig.PlannerTicketModel(modelconfig.Config{}, s.ollamaDefaultModel, "llama3.2")
+	}
+	resolved, _ := s.resolveModelConfig(project, ScrumCard{})
+	return modelconfig.PlannerTicketModel(resolved, s.ollamaDefaultModel, "llama3.2")
+}
+
 func writeScrumCardLLMQueued(w http.ResponseWriter, job model.Job, card ScrumCard, message string) {
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"job":     job,
 		"card":    card,
 		"message": message,
 		"queued":  true,
+		"html": map[string]any{
+			"bundle": renderScrumCardLLMSectionBundle(card),
+		},
 	})
 }

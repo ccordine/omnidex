@@ -1,0 +1,19 @@
+<section data-chat-target="panel" data-panel-name="projects" class="hidden h-full min-h-0 flex-col">
+        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
+          <div>
+            <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80" data-i18n="panel.projects.brand">Omnidex</p>
+            <h2 class="text-xl font-semibold tracking-tight" data-i18n="panel.projects.title">Projects</h2>
+            <p class="mt-1 text-xs text-zinc-500" data-i18n="panel.projects.subtitle">Open a project for its scrum board, settings, codebase map, and recipe.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span data-projects-target="status" class="text-xs text-zinc-400">Open to load</span>
+            <button data-action="projects#showCreateModal" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10" data-i18n="panel.projects.new">+ Project</button>
+            <button data-action="projects#load" type="button" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200" data-i18n="common.refresh">Refresh</button>
+          </div>
+        </header>
+
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div data-projects-target="list" class="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-4 md:p-6"></div>
+          <div data-projects-target="detail" class="hidden min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6"></div>
+        </div>
+      </section>

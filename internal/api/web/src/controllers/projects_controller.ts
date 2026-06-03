@@ -41,13 +41,13 @@ import type GxController from "./gx_controller";
 const PROJECT_TABS = new Set(["scrum", "chat", "terminal", "screen", "settings", "map", "git", "recipe"]);
 
 export default class ProjectsController extends Controller {
-  static targets = ["list", "detail", "status", "openBadge"];
+  static targets = ["list", "detail", "status", "viewingBadge"];
 
   declare readonly listTarget: HTMLElement;
   declare readonly detailTarget: HTMLElement;
   declare readonly statusTarget: HTMLElement;
   declare readonly hasOpenBadgeTarget: boolean;
-  declare readonly openBadgeTarget: HTMLElement;
+  declare readonly viewingBadgeTarget: HTMLElement;
 
   private projects: ProjectRecord[] = [];
   private recipes: RecipeCatalogItem[] = [];
@@ -196,9 +196,9 @@ export default class ProjectsController extends Controller {
     if (field) field.value = value;
   }
 
-  updateOpenBadge(name: string | null) {
-    if (!this.hasOpenBadgeTarget) return;
-    this.openBadgeTarget.textContent = name?.trim() || t("session.noneOpen");
+  updateViewingBadge(name: string | null) {
+    if (!this.hasViewingBadgeTarget) return;
+    this.viewingBadgeTarget.textContent = name?.trim() || t("session.noneViewing");
   }
 
   private dispatchProjectOpened(project: ProjectRecord) {
@@ -211,12 +211,12 @@ export default class ProjectsController extends Controller {
         },
       }),
     );
-    this.updateOpenBadge(project.name);
+    this.updateViewingBadge(project.name);
   }
 
   private dispatchProjectClosed() {
     document.dispatchEvent(new CustomEvent("omni:project-closed"));
-    this.updateOpenBadge(null);
+    this.updateViewingBadge(null);
   }
 
   private projectTabSessionKey(projectID?: number | null): string {
@@ -422,7 +422,6 @@ export default class ProjectsController extends Controller {
         location,
         description: this.modalField("createDesc"),
         recipe_id: this.modalField("createRecipe"),
-        activate: false,
       });
       this.selectedProjectID = payload.project.id;
       this.setActiveProjectTab("scrum");
@@ -898,7 +897,9 @@ export default class ProjectsController extends Controller {
           this.refreshDebuggerModal(statusPayload.agent_config);
           this.stopDebuggerPolling();
           if (jobStatus === "completed") {
-            this.actionOk(`Analysis finished - ${this.debuggerLastRun?.cards_created?.length ?? 0} card(s) created`);
+            const cards = this.debuggerLastRun?.cards_created?.length ?? 0;
+            const tickets = this.debuggerLastRun?.cards_created?.filter((c) => c.ticket_job_id).length ?? 0;
+            this.actionOk(`Analysis finished — ${cards} backlog card(s), ${tickets} planning ticket(s) queued`);
             if (this.selectedProjectID === projectID && this.activeTab === "scrum") {
               document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: projectID } }));
             }

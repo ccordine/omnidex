@@ -52,12 +52,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		items := make([]map[string]any, 0, len(projects))
 		for _, project := range projects {
-			items = append(items, s.projectSummary(r.Context(), project, 0))
+			items = append(items, s.projectSummary(r.Context(), project))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"projects":          items,
-			"active_project_id": 0,
-		})
+		writeJSON(w, http.StatusOK, map[string]any{"projects": items})
 	case http.MethodPost:
 		var req struct {
 			Name        string          `json:"name"`
@@ -65,7 +62,6 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			Description string          `json:"description"`
 			RecipeID    string          `json:"recipe_id"`
 			Recipe      json.RawMessage `json:"recipe"`
-			Activate    bool            `json:"activate"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
@@ -98,10 +94,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"project":           s.projectSummary(r.Context(), project, 0),
-			"active_project_id": 0,
-		})
+		writeJSON(w, http.StatusCreated, map[string]any{"project": s.projectSummary(r.Context(), project)})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -115,10 +108,6 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 	id, action := splitProjectPath(r.URL.Path)
 	if id <= 0 {
 		writeError(w, http.StatusNotFound, "project not found")
-		return
-	}
-	if action == "activate" {
-		s.handleProjectActivate(w, r, id)
 		return
 	}
 	if action == "survey" {
@@ -160,7 +149,7 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 			writeProjectError(w, err)
 			return
 		}
-		payload := map[string]any{"project": s.projectSummary(r.Context(), project, 0)}
+		payload := map[string]any{"project": s.projectSummary(r.Context(), project)}
 		if resolved, err := s.resolvedModelsForProjectCard(r.Context(), id, ScrumCard{}); err == nil {
 			payload["model_config"] = resolved
 		}
@@ -239,7 +228,7 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 			writeProjectError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project, 0)})
+		writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project)})
 	case http.MethodDelete:
 		if err := s.repo.DeleteProject(r.Context(), id); err != nil {
 			writeProjectError(w, err)
@@ -249,23 +238,6 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func (s *Server) handleProjectActivate(w http.ResponseWriter, r *http.Request, id int64) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	project, err := s.repo.GetProject(r.Context(), id)
-	if err != nil {
-		writeProjectError(w, err)
-		return
-	}
-	s.SyncProjectMapAsync(id)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"active_project_id": 0,
-		"project":           s.projectSummary(r.Context(), project, 0),
-	})
 }
 
 func (s *Server) handleProjectSurvey(w http.ResponseWriter, r *http.Request, id int64) {
@@ -283,36 +255,7 @@ func (s *Server) handleProjectSurvey(w http.ResponseWriter, r *http.Request, id 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project, 0)})
-}
-
-func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
-	if s.repo == nil {
-		writeError(w, http.StatusServiceUnavailable, "workspace requires database")
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"active_project_id": 0})
-	case http.MethodPut:
-		var req struct {
-			ActiveProjectID int64 `json:"active_project_id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		if req.ActiveProjectID > 0 {
-			if _, err := s.repo.GetProject(r.Context(), req.ActiveProjectID); err != nil {
-				writeProjectError(w, err)
-				return
-			}
-			s.SyncProjectMapAsync(req.ActiveProjectID)
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"active_project_id": 0})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
+	writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project)})
 }
 
 func splitProjectPath(path string) (id int64, action string) {
@@ -345,7 +288,7 @@ func extractSettingsModelConfig(settings json.RawMessage) json.RawMessage {
 	return out
 }
 
-func (s *Server) projectSummary(ctx context.Context, project model.Project, activeID int64) map[string]any {
+func (s *Server) projectSummary(ctx context.Context, project model.Project) map[string]any {
 	jobs, _ := s.repo.CountProjectJobs(ctx, project.ID)
 	cards, _ := s.repo.CountProjectCards(ctx, project.ID)
 	return map[string]any{
@@ -364,7 +307,6 @@ func (s *Server) projectSummary(ctx context.Context, project model.Project, acti
 		"updated_at":    project.UpdatedAt,
 		"job_count":     jobs,
 		"card_count":    cards,
-		"is_active":     activeID > 0 && activeID == project.ID,
 	}
 }
 

@@ -138,8 +138,23 @@ func BuildPrompt(in Input) (system, user string) {
 	mapLines := MapContextLines(in.MapPayload)
 	lines = append(lines, "Codebase map:", strings.Join(mapLines, "\n"))
 	lines = append(lines, "Scrum board:", strings.Join(BoardSummaryLines(in.BoardCards), "\n"))
-	lines = append(lines, "Task: analyze the codebase and board for bugs, mistakes, cleanup tickets, refactor suggestions, optimization points, reliability issues, security risks, and missing tests. Emit bug_tickets as backlog cards.")
+	lines = append(lines, "Task: analyze the project directory (via the codebase map), existing backlog, and board for bugs, mistakes, cleanup tickets, refactor suggestions, optimization points, reliability issues, security risks, and missing tests. Emit bug_tickets as backlog cards the user can review, refine in planning, then move to ready or play.")
 	return debuggerSystemPrompt, strings.Join(lines, "\n")
+}
+
+// CardPlanningPrompt builds the planning-mode author prompt from a backlog card title and body.
+func CardPlanningPrompt(title, description string) string {
+	parts := make([]string, 0, 2)
+	if title = strings.TrimSpace(title); title != "" {
+		parts = append(parts, "Title: "+title)
+	}
+	if description = strings.TrimSpace(description); description != "" {
+		parts = append(parts, "Description:", description)
+	}
+	if len(parts) == 0 {
+		return "Draft a planning ticket and implementation plan for this backlog card."
+	}
+	return strings.Join(parts, "\n")
 }
 
 func ParseScanResponse(raw string) ScanResponse {

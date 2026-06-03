@@ -59,19 +59,30 @@ func (s *Server) RefreshScrumPlayQueueForJobAsync(jobID int64) {
 	}()
 }
 
-// RefreshScrumPlayQueueForProjectAsync reconciles play queue state and kicks auto-work.
+// RefreshScrumPlayQueueForProjectAsync reconciles play queue state and advances global auto-work.
 func (s *Server) RefreshScrumPlayQueueForProjectAsync(projectID int64) {
+	s.refreshScrumPlayQueueForProjectAsync(projectID, "project refresh", true)
+}
+
+// ReconcileScrumPlayQueueForProjectAsync reconciles jobs without starting new auto-work.
+func (s *Server) ReconcileScrumPlayQueueForProjectAsync(projectID int64) {
+	s.refreshScrumPlayQueueForProjectAsync(projectID, "project reconcile", false)
+}
+
+func (s *Server) refreshScrumPlayQueueForProjectAsync(projectID int64, reason string, advanceAutoWork bool) {
 	if s == nil || s.repo == nil || projectID <= 0 {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), scrumPlayAutoRunTimeout)
 		defer cancel()
-		if err := s.refreshScrumPlayQueueForProject(ctx, projectID, "project refresh"); err != nil {
+		if err := s.refreshScrumPlayQueueForProject(ctx, projectID, reason); err != nil {
 			log.Printf("scrum play queue refresh project=%d: %v", projectID, err)
 			return
 		}
-		s.RefreshScrumAutoWorkAsync()
+		if advanceAutoWork {
+			s.RefreshScrumAutoWorkAsync()
+		}
 	}()
 }
 

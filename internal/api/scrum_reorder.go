@@ -43,7 +43,7 @@ func (s *Server) scrumMoveCard(r *http.Request, cardID, column, beforeCardID str
 					updated = reviewed
 				}
 			}
-			s.RefreshScrumPlayQueueForProjectAsync(projectID)
+			s.ReconcileScrumPlayQueueForProjectAsync(projectID)
 			return updated, nil
 		}
 	}

@@ -8,27 +8,34 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/projectdebugger"
+	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
 func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.ClaimedStep) error {
 	if s.repo == nil {
 		return fmt.Errorf("project debugger requires repository")
 	}
-	projectID, agentSystem, modelName, err := projectdebugger.ParseMetadata(claim.Job.Metadata)
+	meta, err := projectdebugger.ParseMetadata(claim.Job.Metadata)
 	if err != nil {
 		return err
 	}
+	projectID := meta.ProjectID
+	agentSystem := meta.AgentSystem
+	modelName := meta.AnalyzerModel
 	project, err := s.repo.GetProject(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("load project: %w", err)
 	}
 	if modelName == "" {
-		modelName = firstNonEmptyString(s.models.Default, s.models.Plan, "qwen3:4b-thinking")
+		cfg := modelconfig.FromSettingsJSON(project.Settings)
+		modelName = modelconfig.AnalyzerModel(cfg, s.models.Analyze, s.models.Plan, s.models.Default, "qwen3:4b-thinking")
 	}
 	if agentSystem == "" {
 		agentSystem = "omnidex"
 	}
+	ticketModel := s.scrumCardTicketModelFromProject(project.Settings, meta.TicketModel)
 
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	s.emitStepEvent(claim.Step.ID, "project_debugger_started", project.Name)
@@ -87,16 +94,35 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 		if err != nil {
 			continue
 		}
+		cardPrompt := projectdebugger.CardPlanningPrompt(ticket.Title, description)
 		tagsJSON := projectdebugger.TagsJSON(ticket.Tags)
-		if _, err := s.repo.UpdateScrumCard(ctx, projectID, card.ID, map[string]any{
-			"tags": json.RawMessage(tagsJSON),
-		}); err == nil {
+		patch := map[string]any{
+			"tags":        json.RawMessage(tagsJSON),
+			"card_prompt": cardPrompt,
+		}
+		if _, err := s.repo.UpdateScrumCard(ctx, projectID, card.ID, patch); err != nil {
+			continue
+		}
+		ticketReq := scrumcardllm.TicketRequest{
+			CardPrompt:   cardPrompt,
+			Prompt:       "Draft a planning ticket and implementation plan from the card title and description.",
+			PlanningMode: true,
+		}
+		ticketJobID, err := s.enqueueScrumCardTicketJob(ctx, projectID, card.ID, ticketModel, ticketReq)
+		if err != nil {
 			created = append(created, projectdebugger.CreatedCard{
 				ID:       card.ID,
 				Title:    card.Title,
 				Severity: ticket.Severity,
 			})
+			continue
 		}
+		created = append(created, projectdebugger.CreatedCard{
+			ID:          card.ID,
+			Title:       card.Title,
+			Severity:    ticket.Severity,
+			TicketJobID: ticketJobID,
+		})
 	}
 
 	lastRun.Status = "completed"

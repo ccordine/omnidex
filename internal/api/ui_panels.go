@@ -1,9 +1,13 @@
 package api
 
 import (
+	"embed"
 	"net/http"
 	"strings"
 )
+
+//go:embed web/panels/*.html
+var uiPanelFS embed.FS
 
 type uiPanelResponse struct {
 	Panel string `json:"panel"`
@@ -32,8 +36,8 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	html, ok := extractUIPanelHTML(panel)
-	if !ok {
+	html, err := loadUIPanelHTML(panel)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "panel template missing")
 		return
 	}
@@ -52,45 +56,13 @@ func normalizeUIPanel(value string) string {
 	}
 }
 
-func extractUIPanelHTML(panel string) (string, bool) {
-	marker := `data-panel-name="` + panel + `"`
-	markerIndex := strings.Index(uiSourceHTML, marker)
-	if markerIndex < 0 {
-		return "", false
+func loadUIPanelHTML(panel string) (string, error) {
+	path := "web/panels/" + panel + ".html"
+	raw, err := uiPanelFS.ReadFile(path)
+	if err != nil {
+		return "", err
 	}
-	start := strings.LastIndex(uiSourceHTML[:markerIndex], "<section")
-	if start < 0 {
-		return "", false
-	}
-	end := findSectionEnd(uiSourceHTML, start)
-	if end < 0 {
-		return "", false
-	}
-	html := uiSourceHTML[start:end]
+	html := strings.TrimSpace(string(raw))
 	html = strings.Replace(html, `class="hidden h-full min-h-0 flex-col"`, `class="flex h-full min-h-0 flex-col"`, 1)
-	html = strings.Replace(html, `class="hidden h-full min-h-0 flex-col"`, `class="flex h-full min-h-0 flex-col"`, 1)
-	return strings.TrimSpace(html), true
-}
-
-func findSectionEnd(html string, start int) int {
-	depth := 0
-	cursor := start
-	for cursor < len(html) {
-		open := strings.Index(html[cursor:], "<section")
-		close := strings.Index(html[cursor:], "</section>")
-		if close < 0 {
-			return -1
-		}
-		if open >= 0 && open < close {
-			depth++
-			cursor += open + len("<section")
-			continue
-		}
-		depth--
-		cursor += close + len("</section>")
-		if depth == 0 {
-			return cursor
-		}
-	}
-	return -1
+	return html, nil
 }

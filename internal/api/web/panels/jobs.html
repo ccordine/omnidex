@@ -1,0 +1,25 @@
+<section data-chat-target="panel" data-panel-name="jobs" class="hidden h-full min-h-0 flex-col">
+        <header class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-zinc-950/45 px-4 py-3 backdrop-blur-xl md:px-6">
+          <div>
+            <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80" data-i18n="panel.jobs.brand">Queue</p>
+            <h2 class="text-xl font-semibold tracking-tight" data-i18n="panel.jobs.title">Jobs</h2>
+          </div>
+          <div class="flex gap-2">
+            <select data-chat-target="jobFilter" class="rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none">
+              <option value="" data-i18n="panel.jobs.filter.all">all</option>
+              <option value="pending" data-i18n="panel.jobs.filter.pending">pending</option>
+              <option value="running" data-i18n="panel.jobs.filter.running">running</option>
+              <option value="waiting_input" data-i18n="panel.jobs.filter.waiting">waiting</option>
+              <option value="completed" data-i18n="panel.jobs.filter.completed">completed</option>
+              <option value="failed" data-i18n="panel.jobs.filter.failed">failed</option>
+            </select>
+            <button data-action="chat#loadJobs" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200" data-i18n="common.refresh">Refresh</button>
+          </div>
+        </header>
+        <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-[340px_minmax(0,1fr)] md:p-6">
+          <div data-chat-target="jobsList" data-recyclr-sink="jobs-list" class="scrollbar min-h-0 space-y-3 overflow-y-auto"></div>
+          <div class="scrollbar min-h-0 overflow-y-auto rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+            <div data-chat-target="jobDetails" data-recyclr-sink="job-details" class="text-sm text-zinc-400">Select a job to inspect steps, contexts, feedback, and controls.</div>
+          </div>
+        </div>
+      </section>

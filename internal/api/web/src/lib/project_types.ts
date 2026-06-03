@@ -14,7 +14,6 @@ export type ProjectRecord = {
   updated_at: string;
   job_count?: number;
   card_count?: number;
-  is_active?: boolean;
 };
 
 export type RecipeCatalogItem = {
@@ -37,11 +36,6 @@ export type BrowseResponse = {
   path: string;
   parent: string;
   entries: BrowseEntry[];
-};
-
-export type WorkspaceResponse = {
-  active_project_id: number;
-  project?: ProjectRecord;
 };
 
 export type ProjectMapSummary = {
@@ -120,6 +114,7 @@ export type DebuggerCreatedCard = {
   id: string;
   title: string;
   severity?: string;
+  ticket_job_id?: number;
 };
 
 export type DebuggerLastRun = {

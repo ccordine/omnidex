@@ -47,11 +47,15 @@ function renderCardsCreated(lastRun: DebuggerLastRun | null): string {
       const severity = card.severity
         ? `<span class="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">${escapeHTML(card.severity)}</span>`
         : "";
+      const ticket = card.ticket_job_id
+        ? `<span class="rounded-full border border-violet-300/30 bg-violet-300/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-violet-100">ticket #${card.ticket_job_id}</span>`
+        : "";
       return `
         <div class="rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2">
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm font-medium text-zinc-100">${escapeHTML(card.title)}</span>
             ${severity}
+            ${ticket}
           </div>
           <p class="mt-1 font-mono text-[11px] text-zinc-500">${escapeHTML(card.id)}</p>
         </div>
@@ -90,7 +94,7 @@ export function renderProjectDebuggerModal(state: DebuggerModalState): string {
         <div>
           <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80">Codebase analysis</p>
           <h2 class="mt-1 text-2xl font-semibold tracking-tight text-zinc-100">${escapeHTML(state.projectName)}</h2>
-          <p class="mt-1 text-sm text-zinc-500">Review the project for bugs, cleanup, refactors, optimization points, reliability issues, and test gaps, then create backlog cards.</p>
+          <p class="mt-1 text-sm text-zinc-500">Scan the project directory and backlog, create reviewable backlog cards (title + body), then queue planning-mode tickets from each card.</p>
         </div>
         <button type="button" data-action="projects#closeDebuggerModal" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300">Close</button>
       </div>
@@ -110,7 +114,7 @@ export function renderProjectDebuggerModal(state: DebuggerModalState): string {
         <div class="rounded-xl border border-white/10 bg-zinc-950/60 p-4">
           <p class="text-[11px] uppercase tracking-[.16em] text-zinc-500">Findings</p>
           <p class="mt-2 text-2xl font-semibold text-zinc-100">${lastRun?.findings_count ?? 0}</p>
-          <p class="mt-1 text-xs text-zinc-500">${lastRun?.cards_created?.length ?? 0} ticket(s) created</p>
+          <p class="mt-1 text-xs text-zinc-500">${lastRun?.cards_created?.length ?? 0} backlog card(s)</p>
         </div>
       </section>
 
@@ -138,7 +142,7 @@ export function renderProjectDebuggerModal(state: DebuggerModalState): string {
         <div data-debugger-cards class="space-y-2">${renderCardsCreated(lastRun)}</div>
       </section>
 
-      <p class="text-xs text-zinc-500">Uses the project codebase map, scrum board, and your configured execution agent. New cards are tagged <span class="font-mono text-zinc-400">analysis</span> plus any issue category the agent assigns.</p>
+      <p class="text-xs text-zinc-500">Uses the analyzer model and execution agent from project settings, refreshes the codebase map, then creates backlog cards tagged <span class="font-mono text-zinc-400">analysis</span>. Each card gets a planning ticket job (planner model) from its title and description — open the card to coach the plan, then move to ready/assigned or play.</p>
     </div>
   `;
 }

@@ -43,6 +43,11 @@ func (s *Server) handleScrumCardHealth(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	board, err = s.refreshScrumCardLlmJobs(r.Context(), projectID, board)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board)
 	fullBoard := board
 	visibleColumn := scrumViewportColumn(r, board.Columns)
@@ -54,7 +59,7 @@ func (s *Server) handleScrumCardHealth(w http.ResponseWriter, r *http.Request) {
 	fingerprint := scrumHealthFingerprint(fullBoard, health)
 	changed := fingerprint != strings.TrimSpace(r.URL.Query().Get("fingerprint"))
 	payload := map[string]any{
-		"ttl_ms":         scrumHealthTTL(health),
+		"ttl_ms":         scrumHealthTTL(health, fullBoard),
 		"fingerprint":    fingerprint,
 		"changed":        changed,
 		"health":         health,
@@ -75,6 +80,7 @@ func (s *Server) handleScrumCardHealth(w http.ResponseWriter, r *http.Request) {
 			payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
 			payload["create_ticket"] = s.scrumCreateTicketConfig(r.Context(), projectID)
 		}
+		scrumBoardFragmentsForPayload(payload, fullBoard)
 	}
 	writeJSON(w, http.StatusOK, payload)
 }
@@ -158,7 +164,12 @@ func cardHealthStalled(updatedAt string) bool {
 	return time.Since(updated) > scrumHealthStalledAge
 }
 
-func scrumHealthTTL(items []scrumCardHealth) int {
+func scrumHealthTTL(items []scrumCardHealth, board ScrumBoard) int {
+	for _, card := range board.Cards {
+		if scrumCardAnyLLMPending(card) {
+			return scrumHealthActiveTTLMS
+		}
+	}
 	for _, item := range items {
 		switch item.Health {
 		case "active", "stalled":
@@ -170,6 +181,14 @@ func scrumHealthTTL(items []scrumCardHealth) int {
 
 func scrumHealthFingerprint(board ScrumBoard, health []scrumCardHealth) string {
 	parts := []string{strings.TrimSpace(board.UpdatedAt)}
+	for _, card := range board.Cards {
+		parts = append(parts, strings.Join([]string{
+			card.ID,
+			strings.TrimSpace(card.TagsJobID),
+			strings.TrimSpace(card.TicketJobID),
+			card.UpdatedAt,
+		}, ":"))
+	}
 	for _, item := range health {
 		parts = append(parts, strings.Join([]string{
 			item.CardID,

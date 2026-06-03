@@ -2,23 +2,31 @@ package projectdebugger
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
 func TestParseMetadata(t *testing.T) {
-	raw, err := JobMetadata(42, "cursor", "qwen3:4b")
+	raw, err := JobMetadata(42, "cursor", "qwen3:4b", "planner:7b")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !IsJobMetadata(raw) {
 		t.Fatal("expected debugger metadata")
 	}
-	projectID, agent, modelName, err := ParseMetadata(raw)
+	meta, err := ParseMetadata(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if projectID != 42 || agent != "cursor" || modelName != "qwen3:4b" {
-		t.Fatalf("unexpected metadata: %d %q %q", projectID, agent, modelName)
+	if meta.ProjectID != 42 || meta.AgentSystem != "cursor" || meta.AnalyzerModel != "qwen3:4b" || meta.TicketModel != "planner:7b" {
+		t.Fatalf("unexpected metadata: %+v", meta)
+	}
+}
+
+func TestCardPlanningPrompt(t *testing.T) {
+	got := CardPlanningPrompt("Fix auth", "Login flow lacks tests")
+	if !strings.Contains(got, "Fix auth") || !strings.Contains(got, "Login flow") {
+		t.Fatalf("prompt=%q", got)
 	}
 }
 

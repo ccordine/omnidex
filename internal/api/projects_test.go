@@ -41,8 +41,8 @@ func TestRecipesList(t *testing.T) {
 }
 
 func TestSplitProjectPath(t *testing.T) {
-	id, action := splitProjectPath("/v1/projects/42/activate")
-	if id != 42 || action != "activate" {
+	id, action := splitProjectPath("/v1/projects/42/play")
+	if id != 42 || action != "play" {
 		t.Fatalf("id=%d action=%q", id, action)
 	}
 	id, action = splitProjectPath("/v1/projects/7/map/scan")

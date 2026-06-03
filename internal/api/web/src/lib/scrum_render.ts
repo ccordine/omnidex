@@ -272,8 +272,7 @@ export function renderProjectScrumShell(projectLocation: string): string {
     <div data-project-tab-panel="scrum" class="flex min-h-0 flex-col gap-3">
       <div class="grid shrink-0 grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <p class="truncate font-mono text-[11px] text-zinc-500 lg:justify-self-start">${escapeHTML(projectLocation)}</p>
-        <div data-scrum-target="focus" class="flex justify-center lg:justify-self-center">
-          ${renderScrumFocusBar({ id: "", name: "", project_directory: projectLocation, columns: [...SCRUM_COLUMNS], cards: [], updated_at: "" }, {}, undefined)}
+        <div data-scrum-target="focus" data-recyclr-sink="scrum-focus" class="flex justify-center lg:justify-self-center">
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2 lg:justify-self-end">
           <span data-scrum-target="status" class="text-xs text-zinc-500"></span>
@@ -282,16 +281,14 @@ export function renderProjectScrumShell(projectLocation: string): string {
         </div>
       </div>
 
-      <div data-scrum-target="flowSummary" class="hidden shrink-0"></div>
+      <div data-scrum-target="flowSummary" data-recyclr-sink="scrum-flow-summary" class="hidden shrink-0"></div>
 
-      <div data-scrum-target="columns" class="shrink-0">
-        ${renderScrumColumnNav([...SCRUM_COLUMNS], "assigned", {})}
+      <div data-scrum-target="columns" data-recyclr-sink="scrum-columns" class="shrink-0">
       </div>
 
       <div class="relative scrollbar flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden" data-scrum-board-scroll>
         ${renderScrumBoardLoadingOverlay()}
-        <div data-scrum-target="board" class="scrum-kanban min-h-0">
-          ${renderScrumEmptyState("Loading scrum board…")}
+        <div data-scrum-target="board" data-recyclr-sink="scrum-board" class="scrum-kanban min-h-0">
         </div>
       </div>
     </div>

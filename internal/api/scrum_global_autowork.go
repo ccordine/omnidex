@@ -90,8 +90,12 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 			return nil
 		}
 		if board, err := s.scrumBoardFromProject(ctx, candidate.projectID); err == nil {
-			if refreshed, err := s.kickoffAutoPlayThrough(r, candidate.projectID, board); err == nil && s.findRunningScrumCard(refreshed) != nil {
-				return nil
+			refreshed, err := s.kickoffAutoPlayThrough(r, candidate.projectID, board)
+			if err == nil {
+				if running := s.findRunningScrumCard(refreshed); running != nil {
+					s.publishScrumBoardRefresh(ctx, candidate.projectID, "global auto-work started", refreshed)
+					return nil
+				}
 			}
 		}
 	}

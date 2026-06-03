@@ -288,10 +288,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		}
 	}
 
-	if s.findRunningScrumCard(board) != nil {
-		return board, nil
-	}
-	return s.kickoffAutoPlayThrough(r, projectID, board)
+	return board, nil
 }
 
 func (s *Server) persistScrumCard(r *http.Request, projectID int64, card ScrumCard) (ScrumCard, error) {
