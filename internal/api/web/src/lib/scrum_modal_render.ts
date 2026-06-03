@@ -3,6 +3,7 @@ import { renderChannelChatMessages, renderChatComposer, scrumMessagesToChat } fr
 import { renderChannelSurface } from "./channel_render";
 import { renderModelConfigSection } from "./model_config_render";
 import { renderAgentConfigSection, renderPreAlphaBadge } from "./agent_config_render";
+import { renderPendingStatus } from "./loading";
 import type { ModelFieldDefinition } from "./model_config_types";
 import type { AgentFieldDefinition } from "./agent_config_types";
 import type { RecipeCatalogItem } from "./project_types";
@@ -268,8 +269,8 @@ export function renderScrumModalCardTicket(card: ScrumCard): string {
           <button type="button" data-action="scrum#generateCardTicket" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="card-ticket-generate" data-scrum-pending-label="Generate" class="rounded-md bg-violet-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-60">Generate</button>
           <button type="button" data-action="scrum#iterateCardTicket" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="card-ticket-iterate" data-scrum-pending-label="Iterate" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-300/20 disabled:cursor-not-allowed disabled:opacity-60">Iterate</button>
           <button type="button" data-action="scrum#saveCardTicket" data-card-id="${escapeHTML(card.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:border-cyan-300/40">Save draft</button>
-          <span data-scrum-pending-status="card-ticket-generate" class="hidden inline-flex items-center gap-1.5 text-[11px] text-zinc-500" aria-live="polite"><span class="hidden inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-violet-300/25 border-t-violet-200" data-scrum-pending-spinner></span><span data-scrum-pending-text></span></span>
-          <span data-scrum-pending-status="card-ticket-iterate" class="hidden inline-flex items-center gap-1.5 text-[11px] text-zinc-500" aria-live="polite"><span class="hidden inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-violet-300/25 border-t-violet-200" data-scrum-pending-spinner></span><span data-scrum-pending-text></span></span>
+          ${renderPendingStatus("card-ticket-generate", "violet")}
+          ${renderPendingStatus("card-ticket-iterate", "violet")}
         </div>
       </div>
       <p data-scrum-section-feedback="card-ticket-generate" class="mt-2 hidden rounded-md border px-3 py-2 text-xs leading-5" role="status" aria-live="polite"></p>
@@ -311,7 +312,7 @@ export function renderScrumModalTagsPanel(card: ScrumCard): string {
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" data-action="scrum#suggestCardTags" data-card-id="${escapeHTML(card.id)}" data-scrum-pending="tags-suggest" data-scrum-pending-label="Suggest" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-300/20 disabled:cursor-not-allowed disabled:opacity-60">Suggest</button>
-          <span data-scrum-pending-status="tags-suggest" class="hidden inline-flex items-center gap-1.5 text-[11px] text-zinc-500" aria-live="polite"><span class="hidden inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-violet-300/25 border-t-violet-200" data-scrum-pending-spinner></span><span data-scrum-pending-text></span></span>
+          ${renderPendingStatus("tags-suggest", "violet")}
         </div>
       </div>
       <p data-scrum-section-feedback="tags-suggest" class="mt-2 hidden rounded-md border px-3 py-2 text-xs leading-5" role="status" aria-live="polite"></p>
@@ -557,14 +558,16 @@ function channelLiveBadge(card: ScrumCard): { label: string; tone: string } {
 export function renderScrumModalChannelTab(
   card: ScrumCard,
   playQueue?: ScrumBoardResponse["play_queue"],
-  options?: { pilotPending?: boolean; agentRunning?: boolean },
+  options?: { pilotPending?: boolean; agentRunning?: boolean; projectID?: number | null },
 ): string {
   const messages = scrumMessagesToChat(card.chat ?? []);
+  const componentID = `scrum-card-${card.id}`;
+  const chatEndpoint = `/v1/scrum/cards/${encodeURIComponent(card.id)}/chat${options?.projectID ? `?project_id=${encodeURIComponent(String(options.projectID))}` : ""}`;
   const isLive = card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing";
   const isRunning = card.play_state === "running" || card.play_state === "reviewing";
   const pilotPending = Boolean(options?.pilotPending);
-  const showPending = pilotPending;
-  const pendingLabel = "Sending…";
+  const showPending = pilotPending || isLive;
+  const pendingLabel = pilotPending ? "Sending..." : "Agent working...";
   const status = channelSessionStatus(card, playQueue);
   const liveBadge = channelLiveBadge(card);
   const interrupt = isRunning
@@ -591,12 +594,14 @@ export function renderScrumModalChannelTab(
     actionsHtml: `${jobLine}${interrupt}${sync}`,
     badgeHtml: `<span class="rounded-full border px-3 py-1 text-xs font-medium ${liveBadge.tone}">${escapeHTML(liveBadge.label)}</span>`,
     messagesHtml: messageHtml,
-    messagesAttrs: "data-scrum-channel-messages",
-    messagesClass: "scrum-channel-scroll scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col-reverse gap-1.5 px-3 py-3 md:px-4",
+    messagesAttrs: `data-controller="chat-component" data-chat-component-id-value="${escapeHTML(componentID)}" data-chat-component-endpoint-value="${escapeHTML(chatEndpoint)}" data-chat-component-target="messages" data-scrum-channel-messages data-recyclr-sink="chat-${escapeHTML(componentID)}-messages"`,
+    messagesClass: "scrum-channel-scroll scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-1.5 px-3 py-3 md:px-4",
     composerHtml: renderChatComposer({
-        formAction: "submit->scrum#sendChat",
-        keydownAction: "scrum#channelComposerKeydown",
+        formAction: "submit->chat-component#send",
+        keydownAction: "chat-component#composerKeydown",
         cardId: card.id,
+        componentId: componentID,
+        endpoint: chatEndpoint,
         placeholder: isLive ? "Steer the running agent…" : "Message uses this card's Config tab agent and models…",
         disabled: pilotPending,
         submitLabel: pilotPending ? "Sending…" : "Send",
@@ -620,6 +625,7 @@ export function renderScrumModalActiveTab(
     projectRecipeId?: string;
     projectRecipe?: Record<string, unknown>;
     channelOptions?: { pilotPending?: boolean; agentRunning?: boolean };
+    projectID?: number | null;
   } = {},
 ): string {
   const files = options.files ?? [];
@@ -652,7 +658,7 @@ export function renderScrumModalActiveTab(
       );
       break;
     case "channel":
-      html = renderScrumModalChannelTab(card, options.playQueue, options.channelOptions);
+      html = renderScrumModalChannelTab(card, options.playQueue, { ...options.channelOptions, projectID: options.projectID });
       break;
     case "card":
     default:
@@ -695,6 +701,7 @@ export function renderScrumCardModal(
   recipes: RecipeCatalogItem[] = [],
   projectRecipeId = "",
   projectRecipe: Record<string, unknown> = {},
+  projectID?: number | null,
 ): string {
   const liveTarget = `scrum-modal-card-live-${escapeHTML(card.id)}`;
   return `
@@ -726,6 +733,7 @@ export function renderScrumCardModal(
         recipes,
         projectRecipeId,
         projectRecipe,
+        projectID,
       })}
     </div>
   `;

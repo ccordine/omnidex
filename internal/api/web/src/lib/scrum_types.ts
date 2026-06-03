@@ -17,9 +17,12 @@ export type ScrumChecklistItem = {
 };
 
 export type ScrumChatMessage = {
+  id?: string;
   role: string;
   content: string;
   created_at: string;
+  status?: "sent" | "working" | "done" | "error" | string;
+  operation_id?: string;
 };
 
 export type ScrumTestCriterion = {

@@ -23,9 +23,12 @@ type ScrumChecklistItem struct {
 }
 
 type ScrumChatMessage struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	CreatedAt string `json:"created_at"`
+	ID          string `json:"id,omitempty"`
+	Role        string `json:"role"`
+	Content     string `json:"content"`
+	CreatedAt   string `json:"created_at"`
+	Status      string `json:"status,omitempty"`
+	OperationID string `json:"operation_id,omitempty"`
 }
 
 type ScrumCard struct {
@@ -336,6 +339,7 @@ func (s *ScrumStore) AppendChat(cardID, role, content string) (ScrumCard, error)
 		return ScrumCard{}, fmt.Errorf("card not found")
 	}
 	msg := ScrumChatMessage{
+		ID:        newScrumChatMessageID(role, content),
 		Role:      strings.TrimSpace(role),
 		Content:   strings.TrimSpace(content),
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),

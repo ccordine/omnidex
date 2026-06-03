@@ -1,4 +1,5 @@
 import { escapeHTML, formatDateTime } from "./dom";
+import { renderLoadingBlock, renderLoadingPre } from "./loading";
 import type { MindStats, OllamaModelInfo, APISecretField, NetworkSettings } from "./admin_api";
 
 const ADMIN_TABS = [
@@ -46,8 +47,8 @@ export function renderAdminTabPanel(activeTab: AdminTab): string {
     case "ai":
       return `
         <div data-admin-tab-panel="ai" class="mx-auto max-w-5xl space-y-4">
-          ${adminSection("API keys", "Stored in the database. Leave a field blank to keep the current value. Environment variables are used only when no database value is set.", `<div data-admin-target="apiSecrets" class="mt-4">Loading...</div>`)}
-          ${adminSection("Workspace agent defaults", "Global execution agent settings. Project and card overrides take precedence.", `<div data-admin-target="globalAgents" class="mt-4">Loading...</div>`)}
+          ${adminSection("API keys", "Stored in the database. Leave a field blank to keep the current value. Environment variables are used only when no database value is set.", `<div data-admin-target="apiSecrets" class="mt-4">${renderLoadingBlock("Loading API keys...")}</div>`)}
+          ${adminSection("Workspace agent defaults", "Global execution agent settings. Project and card overrides take precedence.", `<div data-admin-target="globalAgents" class="mt-4">${renderLoadingBlock("Loading agent settings...")}</div>`)}
           ${adminSection(
             "Ollama models",
             "Pull, inspect, and remove local models used by the stack.",
@@ -55,20 +56,20 @@ export function renderAdminTabPanel(activeTab: AdminTab): string {
               <input data-admin-target="pullModel" placeholder="llama3.2:latest" class="min-w-[220px] flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none" />
               <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Pull model</button>
             </form>
-            <div data-admin-target="ollamaModels" class="scrollbar mt-4 max-h-[420px] overflow-y-auto">Loading...</div>`,
+            <div data-admin-target="ollamaModels" class="scrollbar mt-4 max-h-[420px] overflow-y-auto">${renderLoadingBlock("Loading Ollama models...")}</div>`,
           )}
-          ${adminSection("Global model defaults", "Default Ollama models and generation settings for the workspace.", `<div data-admin-target="globalModels" class="mt-4">Loading...</div>`)}
+          ${adminSection("Global model defaults", "Default Ollama models and generation settings for the workspace.", `<div data-admin-target="globalModels" class="mt-4">${renderLoadingBlock("Loading model defaults...")}</div>`)}
         </div>
       `;
     case "datasources":
-      return `<div data-admin-tab-panel="datasources" class="mx-auto max-w-6xl space-y-4"><div data-admin-target="dataSourcesPanel" class="space-y-4">Loading...</div></div>`;
+      return `<div data-admin-tab-panel="datasources" class="mx-auto max-w-6xl space-y-4"><div data-admin-target="dataSourcesPanel" class="space-y-4">${renderLoadingBlock("Loading data sources...")}</div></div>`;
     case "health":
       return `
         <div data-admin-tab-panel="health" class="mx-auto max-w-6xl space-y-4">
-          ${adminSection("Core health", "Live /healthz payload from the running core service.", `<pre data-chat-target="statusOutput" data-recyclr-sink="status-output" class="scrollbar mt-4 max-h-[360px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-900/60 p-4 text-sm leading-6 text-zinc-200">Loading...</pre>`)}
+          ${adminSection("Core health", "Live /healthz payload from the running core service.", `<pre data-chat-target="statusOutput" data-recyclr-sink="status-output" class="scrollbar mt-4 max-h-[360px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-900/60 p-4 text-sm leading-6 text-zinc-200">${renderLoadingPre("Loading health...")}</pre>`)}
           <div class="grid gap-4 lg:grid-cols-2">
-            ${adminSection("Research stack", "Ollama, embeddings, and web search readiness for research jobs.", `<div data-chat-target="researchStatusOutput" data-recyclr-sink="research-status-output" class="mt-4 text-sm text-zinc-400">Loading...</div>`)}
-            ${adminSection("Host bridge", "In-app folder browser and terminal bridge. Run omni host service install or omni host serve.", `<div data-chat-target="hostBridgeStatusOutput" data-recyclr-sink="host-bridge-status-output" class="mt-4 text-sm text-zinc-400">Loading...</div>`)}
+            ${adminSection("Research stack", "Ollama, embeddings, and web search readiness for research jobs.", `<div data-chat-target="researchStatusOutput" data-recyclr-sink="research-status-output" class="mt-4 text-sm text-zinc-400">${renderLoadingBlock("Loading research health...")}</div>`)}
+            ${adminSection("Host bridge", "In-app folder browser and terminal bridge. Run omni host service install or omni host serve.", `<div data-chat-target="hostBridgeStatusOutput" data-recyclr-sink="host-bridge-status-output" class="mt-4 text-sm text-zinc-400">${renderLoadingBlock("Loading host bridge...")}</div>`)}
           </div>
         </div>
       `;
@@ -110,8 +111,8 @@ export function renderAdminTabPanel(activeTab: AdminTab): string {
     default:
       return `
         <div data-admin-tab-panel="overview" class="mx-auto max-w-5xl space-y-4">
-          ${adminSection("Network access", "LAN URL for phones, tablets, and other devices on your network.", `<div data-admin-target="networkAccess" class="mt-4">Loading...</div>`)}
-          ${adminSection("Mind overview", "Counts for durable memory, candidates, jobs, and telemetry.", `<div data-admin-target="mindStats" class="mt-4">Loading...</div>`)}
+          ${adminSection("Network access", "LAN URL for phones, tablets, and other devices on your network.", `<div data-admin-target="networkAccess" class="mt-4">${renderLoadingBlock("Loading network settings...")}</div>`)}
+          ${adminSection("Mind overview", "Counts for durable memory, candidates, jobs, and telemetry.", `<div data-admin-target="mindStats" class="mt-4">${renderLoadingBlock("Loading mind stats...")}</div>`)}
           ${adminSection(
             "Document ingest",
             "Upload PDFs, DOCX, markdown, and text files. Default staging uses memory candidates so nothing enters durable memory until you approve it.",

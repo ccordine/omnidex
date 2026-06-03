@@ -5,10 +5,13 @@ import { renderChannelComposer, type ChannelComposerOptions } from "./channel_re
 import type { ScrumChatMessage } from "./scrum_types";
 
 export type ChatRenderMessage = {
+  id?: string;
   role: string;
   content: string;
   at?: string;
   created_at?: string;
+  status?: string;
+  operation_id?: string;
 };
 
 export function chatMessageTimestamp(message: ChatRenderMessage): string {
@@ -45,7 +48,7 @@ export function renderChatMessage(message: ChatRenderMessage): string {
 
 export function renderPendingChatMessage(label = "Working…"): string {
   return `
-    <article class="message-grid message-assistant message-pending" aria-live="polite">
+    <article class="message-grid message-assistant message-pending" data-chat-component-working-message aria-live="polite">
       <div class="message-shell border border-cyan-300/20 bg-cyan-300/5">
         <div class="message-meta">
           <span>assistant</span>
@@ -57,6 +60,12 @@ export function renderPendingChatMessage(label = "Working…"): string {
         </div>
       </div>
     </article>`;
+}
+
+function chatMessageDomAttrs(message: ChatRenderMessage): string {
+  const id = (message.id || "").trim();
+  if (!id) return "";
+  return ` data-chat-message-id="${escapeHTML(id)}" data-recyclr-sink="chat-message-${escapeHTML(id)}"`;
 }
 
 export function renderChatMessages(messages: ChatRenderMessage[], options?: { pending?: boolean; pendingLabel?: string }): string {
@@ -75,7 +84,7 @@ export function renderChannelChatMessage(message: ChatRenderMessage): string {
   const content = escapeHTML(message.content || "");
   if (role === "system") {
     return `
-      <article class="message-grid message-system">
+      <article class="message-grid message-system"${chatMessageDomAttrs(message)}>
         <div class="message-shell">
           <div class="message-body text-center text-[11px] leading-5 text-zinc-500">${content}</div>
         </div>
@@ -83,7 +92,7 @@ export function renderChannelChatMessage(message: ChatRenderMessage): string {
   }
   if (role === "thinking") {
     return `
-      <article class="message-grid message-thinking">
+      <article class="message-grid message-thinking"${chatMessageDomAttrs(message)}>
         <div class="message-shell">
           <div class="message-meta"><span>thinking</span><time>${formatTime(at)}</time></div>
           <div class="message-body whitespace-pre-wrap text-xs italic leading-5 text-zinc-500">${content}</div>
@@ -92,7 +101,7 @@ export function renderChannelChatMessage(message: ChatRenderMessage): string {
   }
   if (role === "user") {
     return `
-      <article class="message-grid message-user">
+      <article class="message-grid message-user"${chatMessageDomAttrs(message)}>
         <div class="message-shell">
           <div class="message-meta"><span>you</span><time>${formatTime(at)}</time></div>
           <div class="message-body whitespace-pre-wrap text-sm leading-6 text-cyan-50">${content}</div>
@@ -101,7 +110,7 @@ export function renderChannelChatMessage(message: ChatRenderMessage): string {
   }
   if (role === "error") {
     return `
-      <article class="message-grid message-error">
+      <article class="message-grid message-error"${chatMessageDomAttrs(message)}>
         <div class="message-shell">
           <div class="message-meta"><span>error</span><time>${formatTime(at)}</time></div>
           <div class="message-body whitespace-pre-wrap text-sm leading-6 text-rose-200">${content}</div>
@@ -109,7 +118,7 @@ export function renderChannelChatMessage(message: ChatRenderMessage): string {
       </article>`;
   }
   return `
-    <article class="message-grid message-assistant">
+    <article class="message-grid message-assistant"${chatMessageDomAttrs(message)}>
       <div class="message-shell">
         <div class="message-meta"><span>agent</span><time>${formatTime(at)}</time></div>
         <div class="message-body channel-agent-reply whitespace-pre-wrap text-[0.9375rem] leading-7 text-zinc-50">${content}</div>
@@ -117,11 +126,10 @@ export function renderChannelChatMessage(message: ChatRenderMessage): string {
     </article>`;
 }
 
-/** Channel tab: newest at the visual bottom; DOM order matches flex-col-reverse (pending → newest → oldest). */
 export function renderChannelChatMessages(messages: ChatRenderMessage[], options?: { pending?: boolean; pendingLabel?: string }): string {
-  const reversed = [...messages].reverse().map((message) => renderChannelChatMessage(message)).join("");
+  const ordered = [...messages].map((message) => renderChannelChatMessage(message)).join("");
   const pending = options?.pending ? renderPendingChatMessage(options.pendingLabel) : "";
-  return `${pending}${reversed}<div data-scrum-channel-anchor class="h-px w-full shrink-0" aria-hidden="true"></div>`;
+  return `${ordered}${pending}<div data-scrum-channel-anchor class="h-px w-full shrink-0" aria-hidden="true"></div>`;
 }
 
 export function renderChatComposer(options: ChannelComposerOptions): string {
@@ -151,8 +159,11 @@ export function scrumMessagesToChat(messages: ScrumChatMessage[] = []): ChatRend
       return true;
     })
     .map((message) => ({
+      id: message.id,
       role: message.role,
       content: message.content,
       created_at: message.created_at,
+      status: message.status,
+      operation_id: message.operation_id,
     }));
 }

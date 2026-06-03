@@ -46,6 +46,7 @@ type realtimeMessage struct {
 	ID        uint64 `json:"id"`
 	HTML      string `json:"html"`
 	EventName string `json:"eventName,omitempty"`
+	Reason    string `json:"reason,omitempty"`
 	Toast     string `json:"toast,omitempty"`
 	ToastTone string `json:"toastTone,omitempty"`
 	ProjectID int64  `json:"projectID,omitempty"`

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -17,10 +19,24 @@ func appendScrumChatMessage(existing []ScrumChatMessage, role, content string) [
 	}
 	role = normalizeScrumChannelRole(role)
 	return append(existing, ScrumChatMessage{
+		ID:        newScrumChatMessageID(role, content),
 		Role:      role,
 		Content:   content,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func newScrumChatMessageID(role, content string) string {
+	sum := sha1.Sum([]byte(fmt.Sprintf("%s\n%d\n%s", role, time.Now().UTC().UnixNano(), content)))
+	return "chatmsg_" + hex.EncodeToString(sum[:])[:16]
+}
+
+func scrumChatMessageID(msg ScrumChatMessage) string {
+	if strings.TrimSpace(msg.ID) != "" {
+		return strings.TrimSpace(msg.ID)
+	}
+	sum := sha1.Sum([]byte(fmt.Sprintf("%s\n%s\n%s", msg.Role, msg.CreatedAt, msg.Content)))
+	return "chatmsg_" + hex.EncodeToString(sum[:])[:16]
 }
 
 func normalizeScrumChannelRole(role string) string {
@@ -274,9 +290,12 @@ func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
 			}
 		}
 		out = append(out, ScrumChatMessage{
-			Role:      role,
-			Content:   content,
-			CreatedAt: msg.CreatedAt,
+			ID:          scrumChatMessageID(msg),
+			Role:        role,
+			Content:     content,
+			CreatedAt:   msg.CreatedAt,
+			Status:      msg.Status,
+			OperationID: msg.OperationID,
 		})
 	}
 	return collapseScrumChannelDisplayMessages(out)

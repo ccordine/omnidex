@@ -128,10 +128,14 @@ CREATE TABLE IF NOT EXISTS ai_channel_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_id_desc ON jobs(id DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_status_id_desc ON jobs(status, id DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_pipeline_session_id ON jobs(pipeline, (metadata->>'session_id'), id DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_project_id ON jobs(project_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_job_steps_status_sort ON job_steps(status, sort_index, id);
 CREATE INDEX IF NOT EXISTS idx_job_steps_job_id ON job_steps(job_id, id);
+CREATE INDEX IF NOT EXISTS idx_job_steps_job_sort ON job_steps(job_id, sort_index ASC, id ASC);
+CREATE INDEX IF NOT EXISTS idx_job_steps_job_action ON job_steps(job_id, action);
 CREATE INDEX IF NOT EXISTS idx_step_contexts_step_id ON step_contexts(step_id, id);
 CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
 CREATE INDEX IF NOT EXISTS idx_projects_last_seen ON projects(last_seen_at DESC, id DESC);

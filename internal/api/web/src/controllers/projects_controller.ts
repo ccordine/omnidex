@@ -29,6 +29,7 @@ import { fetchAgentDefaults } from "../lib/agent_config_api";
 import type { ResolvedAgentConfig } from "../lib/agent_config_types";
 import { renderRecyclrBundle } from "../lib/recyclr";
 import { closeModalShell, openModalShell } from "../lib/modal";
+import { setGlobalLoading } from "../lib/loading";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 import { t } from "../lib/i18n";
 import { showToast } from "../lib/toast";
@@ -314,6 +315,7 @@ export default class ProjectsController extends Controller {
 
   async openBrowseAt(path: string) {
     this.setStatus("Browsing directories…", "busy");
+    setGlobalLoading(true);
     try {
       const data = await browseDirectory(path);
       this.browseData = data;
@@ -327,6 +329,8 @@ export default class ProjectsController extends Controller {
       const message = error instanceof Error ? error.message : String(error);
       this.setModalFeedback(message, "error");
       this.setStatus(message, "error");
+    } finally {
+      setGlobalLoading(false);
     }
   }
 
@@ -352,6 +356,7 @@ export default class ProjectsController extends Controller {
     const parent = this.browsePath;
     this.setModalFeedback("Creating folder…", "busy");
     this.setStatus("Creating folder…", "busy");
+    setGlobalLoading(true);
     try {
       const payload = await createBrowseDirectory(parent, name);
       await this.openBrowseAt(parent);
@@ -365,6 +370,8 @@ export default class ProjectsController extends Controller {
       const message = error instanceof Error ? error.message : String(error);
       this.setModalFeedback(message, "error");
       this.setStatus(message, "error");
+    } finally {
+      setGlobalLoading(false);
     }
   }
 

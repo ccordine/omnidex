@@ -155,19 +155,25 @@ CREATE TABLE IF NOT EXISTS omni_context_shrink_metrics (
 );
 
 CREATE INDEX IF NOT EXISTS idx_omni_runs_status_started ON omni_runs(status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_omni_runs_started ON omni_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_omni_runs_task_kind ON omni_runs(task_kind);
 CREATE INDEX IF NOT EXISTS idx_omni_runs_workspace_started ON omni_runs(workspace_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_omni_events_type ON omni_run_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_omni_events_created ON omni_run_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_omni_events_type_created ON omni_run_events(event_type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_omni_events_run_created ON omni_run_events(run_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_omni_events_payload_gin ON omni_run_events USING GIN (payload);
 CREATE INDEX IF NOT EXISTS idx_omni_model_role_model ON omni_model_calls(role, model);
+CREATE INDEX IF NOT EXISTS idx_omni_model_role_provider_model ON omni_model_calls(role, provider, model);
 CREATE INDEX IF NOT EXISTS idx_omni_tool_kind ON omni_tool_calls(tool_kind, tool_name);
 CREATE INDEX IF NOT EXISTS idx_omni_command_run_command_id ON omni_command_observations(run_id, command_id);
 CREATE INDEX IF NOT EXISTS idx_omni_command_source ON omni_command_observations(source);
 CREATE INDEX IF NOT EXISTS idx_omni_objective_run_status ON omni_objective_metrics(run_id, status);
 CREATE INDEX IF NOT EXISTS idx_omni_recovery_kind_success ON omni_recovery_metrics(recovery_kind, success);
 CREATE INDEX IF NOT EXISTS idx_omni_playbook_success ON omni_playbook_usage(playbook_id, success);
+CREATE INDEX IF NOT EXISTS idx_omni_playbook_usage_summary ON omni_playbook_usage(playbook_id, reused, success);
 CREATE INDEX IF NOT EXISTS idx_omni_benchmark_status_created ON omni_benchmark_results(benchmark_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_omni_benchmark_summary ON omni_benchmark_results(benchmark_id, suite_id, status);
 CREATE INDEX IF NOT EXISTS idx_context_shrink_source_created ON omni_context_shrink_metrics(source, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_context_shrink_saved_pct ON omni_context_shrink_metrics(saved_pct DESC);
 
@@ -206,6 +212,9 @@ ALTER TABLE omni_llm_context_usage
 
 CREATE INDEX IF NOT EXISTS idx_llm_context_usage_success ON omni_llm_context_usage(success, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_llm_context_usage_run ON omni_llm_context_usage(run_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_created ON omni_llm_context_usage(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_run_id ON omni_llm_context_usage(run_id);
+CREATE INDEX IF NOT EXISTS idx_llm_context_usage_run_sent ON omni_llm_context_usage(run_id, sent_chars DESC);
 CREATE INDEX IF NOT EXISTS idx_llm_context_usage_scope ON omni_llm_context_usage(scope, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_llm_context_usage_delta ON omni_llm_context_usage(delta_chars DESC, created_at DESC);
 `

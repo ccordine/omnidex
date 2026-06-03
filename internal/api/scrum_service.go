@@ -177,6 +177,7 @@ func (s *Server) scrumAppendChat(r *http.Request, cardID, role, content string) 
 		return ScrumCard{}, err
 	}
 	card.Chat = append(card.Chat, ScrumChatMessage{
+		ID:        newScrumChatMessageID(role, content),
 		Role:      strings.TrimSpace(role),
 		Content:   strings.TrimSpace(content),
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),

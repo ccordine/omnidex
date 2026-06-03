@@ -322,6 +322,21 @@ func (s *Server) runScrumDirectInstruct(ctx context.Context, instruction string,
 }
 
 func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, cardID string) {
+	if r.Method == http.MethodGet {
+		card, _, _, err := s.scrumGetCard(r, cardID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "card not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"component_id": scrumCardChatComponentID(card.ID),
+			"html":         renderScrumCardChatHTML(card),
+			"cursor":       scrumCardChatCursor(card),
+			"busy":         scrumCardChatBusy(card),
+			"card":         card,
+		})
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -359,11 +374,17 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 			result.Card = *card
 		}
 	}
+	s.publishScrumCardChatUpdate(r.Context(), projectID, result.Card, "channel chat")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"card":   result.Card,
-		"reply":  "",
-		"agent":  result.Agent,
-		"action": result.Action,
+		"component_id": scrumCardChatComponentID(result.Card.ID),
+		"html":         renderScrumCardChatHTML(result.Card),
+		"cursor":       scrumCardChatCursor(result.Card),
+		"busy":         scrumCardChatBusy(result.Card),
+		"card":         result.Card,
+		"reply":        "",
+		"agent":        result.Agent,
+		"action":       result.Action,
+		"operation_id": scrumCardChatCursor(result.Card),
 	})
 }
 

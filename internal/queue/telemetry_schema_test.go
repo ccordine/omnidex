@@ -20,10 +20,15 @@ func TestTelemetrySchemaDefinesCoreMetricsTablesAndIndexes(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS omni_llm_context_usage",
 		"UNIQUE(run_id, command_id)",
 		"idx_omni_events_payload_gin",
+		"idx_omni_events_type_created",
 		"idx_omni_model_role_model",
+		"idx_omni_model_role_provider_model",
 		"idx_omni_playbook_success",
+		"idx_omni_playbook_usage_summary",
+		"idx_omni_benchmark_summary",
 		"idx_context_shrink_source_created",
 		"idx_llm_context_usage_overloaded",
+		"idx_llm_context_usage_run_sent",
 	} {
 		if !strings.Contains(telemetrySchemaSQL, want) {
 			t.Fatalf("telemetry schema missing %q", want)

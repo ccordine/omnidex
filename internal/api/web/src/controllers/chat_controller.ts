@@ -20,6 +20,7 @@ import { closeModalShell, openModalShell } from "../lib/modal";
 import type GxController from "./gx_controller";
 import { errorMessage, toastError, toastFromError, toastOk } from "../lib/feedback";
 import { applyRecyclrSink, buildRecyclrBundle, renderRecyclrBundle, type RecyclrSinkMode } from "../lib/recyclr";
+import { setGlobalLoading } from "../lib/loading";
 import { applyI18n, t } from "../lib/i18n";
 import { isOmniPanel, panelHref, parseAdminTabFromLocation, parsePanelFromLocation, type OmniPanel } from "../lib/panel_routing";
 import {
@@ -1320,13 +1321,18 @@ export default class ChatController extends Controller {
   recycle(target: string, html: string, mode: RecyclrSinkMode = "html"): void {
     const bundle = buildRecyclrBundle(target, html);
     const controller = this.gxController ?? (window as Window & { omniRecyclr?: GxController }).omniRecyclr ?? null;
-    if (controller && typeof controller.renderBundle === "function") {
-      try {
-        controller.renderBundle(bundle);
-      } catch {
-        /* Recyclr may be unavailable; direct sink update below still applies. */
+    setGlobalLoading(true);
+    try {
+      if (controller && typeof controller.renderBundle === "function") {
+        try {
+          controller.renderBundle(bundle);
+        } catch {
+          /* Recyclr may be unavailable; direct sink update below still applies. */
+        }
       }
+      applyRecyclrSink(this.element, target, html, mode);
+    } finally {
+      setGlobalLoading(false);
     }
-    applyRecyclrSink(this.element, target, html, mode);
   }
 }

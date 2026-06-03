@@ -38,6 +38,9 @@ export default class GxController extends Controller {
       if (message.eventName === "scrum-card-modal-refresh") {
         document.dispatchEvent(new CustomEvent("omni:scrum-card-modal-refresh", { detail: message }));
       }
+      if (message.eventName === "chat-component-update") {
+        document.dispatchEvent(new CustomEvent("omni:chat-component-update", { detail: message }));
+      }
       if (message.eventName === "scrum-board-refresh") {
         document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: message.projectID } }));
       }
@@ -68,18 +71,28 @@ export default class GxController extends Controller {
       }
       return {
         selector: `[data-recyclr-sink="${cssEscape(target)}"]`,
-        location: "innerHTML",
+        location: (node as HTMLElement).dataset.recyclrLocation || "innerHTML",
         selection,
       };
     });
     if (events.length > 0 && this.gx) {
       this.gx.render(events);
       this.element.dispatchEvent(new CustomEvent("omni:recycled", { detail: { events: events.length } }));
+      document.dispatchEvent(new CustomEvent("omni:recycled", { detail: { events } }));
       return;
     }
     for (const event of events) {
       const sink = document.querySelector(event.selector);
-      if (sink) sink.innerHTML = event.selection;
+      if (!sink) continue;
+      if (event.location === "beforeend") {
+        sink.insertAdjacentHTML("beforeend", event.selection);
+      } else if (event.location === "afterbegin") {
+        sink.insertAdjacentHTML("afterbegin", event.selection);
+      } else if (event.location === "outerHTML" && sink instanceof HTMLElement) {
+        sink.outerHTML = event.selection;
+      } else {
+        sink.innerHTML = event.selection;
+      }
     }
   }
 }

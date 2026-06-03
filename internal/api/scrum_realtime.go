@@ -45,6 +45,22 @@ func (s *Server) publishScrumModalCardRefresh(ctx context.Context, projectID int
 		ID:        s.nextRealtimeID(),
 		HTML:      renderScrumModalCardLiveHTML(card, reason),
 		EventName: "scrum-card-modal-refresh",
+		Reason:    strings.TrimSpace(reason),
+		ProjectID: projectID,
+		CardID:    strings.TrimSpace(card.ID),
+	}
+	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
+}
+
+func (s *Server) publishScrumCardChatUpdate(ctx context.Context, projectID int64, card ScrumCard, reason string) {
+	if strings.TrimSpace(card.ID) == "" {
+		return
+	}
+	msg := realtimeMessage{
+		ID:        s.nextRealtimeID(),
+		HTML:      renderScrumCardChatBundle(card),
+		EventName: "chat-component-update",
+		Reason:    strings.TrimSpace(reason),
 		ProjectID: projectID,
 		CardID:    strings.TrimSpace(card.ID),
 	}

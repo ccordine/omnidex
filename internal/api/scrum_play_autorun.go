@@ -130,7 +130,7 @@ func (s *Server) refreshScrumCardOutputForJob(ctx context.Context, jobID int64, 
 	if err != nil {
 		return err
 	}
-	s.publishScrumModalCardRefresh(ctx, projectID, saved, "agent output")
+	s.publishScrumCardChatUpdate(ctx, projectID, saved, "agent output")
 	return nil
 }
 

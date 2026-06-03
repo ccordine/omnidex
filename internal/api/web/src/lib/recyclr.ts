@@ -1,5 +1,6 @@
 import RecyclrModule from "recyclrjs";
 import { cssEscape } from "./dom";
+import { setGlobalLoading } from "./loading";
 
 type RecyclrEvent = {
   selector: string;
@@ -51,9 +52,10 @@ export function createRecyclrRealtimeStream(
 export type RecyclrSinkMode = "html" | "text";
 
 /** Build a Recyclr bundle without string-concatenating untrusted HTML into a template literal. */
-export function buildRecyclrBundle(target: string, html: string): string {
+export function buildRecyclrBundle(target: string, html: string, location = "innerHTML"): string {
   const template = document.createElement("template");
   template.dataset.recyclrTarget = target;
+  template.dataset.recyclrLocation = location;
   template.innerHTML = html;
   return template.outerHTML;
 }
@@ -80,13 +82,18 @@ export function renderRecyclrBundle(
   mode: RecyclrSinkMode = "html",
 ): void {
   const bundle = buildRecyclrBundle(target, html);
-  if (host && typeof host.renderBundle === "function") {
-    try {
-      host.renderBundle(bundle);
-      return;
-    } catch {
-      /* Recyclr may be unavailable; direct sink update below still applies. */
+  setGlobalLoading(true);
+  try {
+    if (host && typeof host.renderBundle === "function") {
+      try {
+        host.renderBundle(bundle);
+        return;
+      } catch {
+        /* Recyclr may be unavailable; direct sink update below still applies. */
+      }
     }
+    applyRecyclrSink(document, target, html, mode);
+  } finally {
+    setGlobalLoading(false);
   }
-  applyRecyclrSink(document, target, html, mode);
 }

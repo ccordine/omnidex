@@ -72,6 +72,7 @@ export default class AdminController extends Controller {
   declare readonly adminStatusTarget: HTMLElement;
   declare readonly mindStatsTarget: HTMLElement;
   declare readonly networkAccessTarget: HTMLElement;
+  declare readonly hasNetworkAccessTarget: boolean;
   declare readonly ollamaModelsTarget: HTMLElement;
   declare readonly pullModelTarget: HTMLInputElement;
   declare readonly globalModelsTarget: HTMLElement;
@@ -209,17 +210,24 @@ export default class AdminController extends Controller {
   }
 
   async loadNetwork() {
+    if (!this.hasNetworkAccessTarget) return;
     try {
       const payload = await fetchNetworkSettings();
+      if (!this.hasNetworkAccessTarget) return;
       this.networkAccessTarget.innerHTML = renderNetworkSettings(payload);
       document.dispatchEvent(new CustomEvent("omni:network-settings", { detail: payload }));
     } catch (error) {
+      if (!this.hasNetworkAccessTarget) return;
       this.networkAccessTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
   async saveNetwork(event: Event) {
     event.preventDefault();
+    if (!this.hasNetworkAccessTarget) {
+      this.actionFailMessage("Network settings are not available on this tab");
+      return;
+    }
     const host = (this.networkAccessTarget.querySelector("[data-admin-field='networkHost']") as HTMLInputElement | null)?.value.trim() ?? "";
     const portRaw = (this.networkAccessTarget.querySelector("[data-admin-field='networkPort']") as HTMLInputElement | null)?.value.trim() ?? "";
     const port = Number.parseInt(portRaw, 10);

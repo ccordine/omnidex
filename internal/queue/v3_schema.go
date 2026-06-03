@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_candidates_status_created ON memory_candidates(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status);
 
 
 CREATE TABLE IF NOT EXISTS claims (

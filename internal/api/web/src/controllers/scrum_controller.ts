@@ -1,6 +1,5 @@
 import { Controller } from "@hotwired/stimulus";
 import {
-  chatScrumCard,
   coachScrumCard,
   createScrumCard,
   deleteScrumCard,
@@ -61,6 +60,7 @@ import type GxController from "./gx_controller";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 import { cssEscape, sleep } from "../lib/dom";
 import { showToast } from "../lib/toast";
+import { setGlobalLoading as setOmniGlobalLoading } from "../lib/loading";
 
 type CardActionPendingState = {
   pending: boolean;
@@ -98,6 +98,7 @@ export default class ScrumController extends Controller {
   private board: ScrumBoard | null = null;
   private busy = false;
   private boardLoadingDepth = 0;
+  private boardLoadingActive = false;
   private activeCardID: string | null = null;
   private projectFiles: string[] = [];
   private projectDirs: string[] = [];
@@ -130,6 +131,7 @@ export default class ScrumController extends Controller {
   private cardActionPending: Record<string, CardActionPendingState> = {};
   private scrumModalFeedback: { message: string; tone: "busy" | "error" | "ok" } | null = null;
   private cardGeneratorLoadingDepth = 0;
+  private cardGeneratorLoadingActive = false;
   private recipes: RecipeCatalogItem[] = [];
   private projectRecipeId = "";
   private projectRecipe: Record<string, unknown> = {};
@@ -149,8 +151,24 @@ export default class ScrumController extends Controller {
     if (this.projectID) void this.refreshIfChanged();
   };
   private scrumModalRealtimeHandler = (event: Event) => {
-    const detail = (event as CustomEvent<{ cardID?: string; projectID?: number }>).detail;
+    const detail = (event as CustomEvent<{ cardID?: string; projectID?: number; reason?: string; eventName?: string }>).detail;
     void this.handleScrumModalRealtime(detail);
+  };
+  private chatComponentSubmittedHandler = (event: Event) => {
+    const detail = (event as CustomEvent<{ card?: ScrumCard; action?: string; agent?: string; error?: string }>).detail;
+    if (detail?.card?.id) {
+      this.upsertCard(detail.card);
+      void this.pollBoard();
+    }
+    if (detail?.error) {
+      this.actionFailMessage(String(detail.error));
+    } else if (detail?.action === "steered" || detail?.action === "feedback") {
+      this.actionOk(`Sent to agent${detail.agent ? ` (${detail.agent})` : ""}`);
+    } else if (detail?.action === "started") {
+      this.actionOk(`Agent started - card moved to in progress${detail.agent ? ` (${detail.agent})` : ""}`);
+    } else if (detail?.action === "saved") {
+      this.actionOk("Message saved");
+    }
   };
 
   connect() {
@@ -208,6 +226,7 @@ export default class ScrumController extends Controller {
     document.addEventListener("omni:project-tab", this.projectTabHandler);
     document.addEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
     document.addEventListener("omni:scrum-card-modal-refresh", this.scrumModalRealtimeHandler);
+    document.addEventListener("omni:chat-component-submitted", this.chatComponentSubmittedHandler);
     this.restoreOpenCardModalSession();
   }
 
@@ -226,6 +245,7 @@ export default class ScrumController extends Controller {
     }
     document.removeEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
     document.removeEventListener("omni:scrum-card-modal-refresh", this.scrumModalRealtimeHandler);
+    document.removeEventListener("omni:chat-component-submitted", this.chatComponentSubmittedHandler);
     this.stopPolling();
     if (this.coachScanTimer != null) {
       window.clearTimeout(this.coachScanTimer);
@@ -1120,8 +1140,7 @@ export default class ScrumController extends Controller {
   }
 
   private setGlobalLoading(loading: boolean) {
-    const spinner = document.querySelector('[data-chat-target="spinner"]');
-    if (spinner) spinner.classList.toggle("hidden", !loading);
+    setOmniGlobalLoading(loading);
   }
 
   private setCardGeneratorLoading(loading: boolean) {
@@ -1130,7 +1149,11 @@ export default class ScrumController extends Controller {
     } else {
       this.cardGeneratorLoadingDepth = Math.max(0, this.cardGeneratorLoadingDepth - 1);
     }
-    this.setGlobalLoading(this.cardGeneratorLoadingDepth > 0);
+    const active = this.cardGeneratorLoadingDepth > 0;
+    if (active !== this.cardGeneratorLoadingActive) {
+      this.cardGeneratorLoadingActive = active;
+      this.setGlobalLoading(active);
+    }
   }
 
   private setScrumModalFeedback(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
@@ -1217,7 +1240,10 @@ export default class ScrumController extends Controller {
       this.boardLoadingDepth = Math.max(0, this.boardLoadingDepth - 1);
     }
     const active = this.boardLoadingDepth > 0;
-    this.setGlobalLoading(active);
+    if (active !== this.boardLoadingActive) {
+      this.boardLoadingActive = active;
+      this.setGlobalLoading(active);
+    }
     const overlay = this.hasBoardOverlayTarget
       ? this.boardOverlayTarget
       : (this.element.querySelector('[data-scrum-target="boardOverlay"]') as HTMLElement | null);
@@ -1402,8 +1428,11 @@ export default class ScrumController extends Controller {
     this.activeCardID = null;
     this.cardActionPending = {};
     this.scrumModalFeedback = null;
+    if (this.cardGeneratorLoadingActive) {
+      this.cardGeneratorLoadingActive = false;
+      this.setGlobalLoading(false);
+    }
     this.cardGeneratorLoadingDepth = 0;
-    this.setGlobalLoading(false);
     this.syncScrumModalRoute();
     closeModalShell();
   }
@@ -1508,7 +1537,7 @@ export default class ScrumController extends Controller {
     const card = this.findCard(id);
     if (!card || !this.board) return;
     const scroll = this.captureChannelScroll();
-    this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, this.channelRenderOptions(id)));
+    this.recycle("scrum-modal-channel", renderScrumModalChannelTab(card, this.playQueue ?? undefined, { ...this.channelRenderOptions(id), projectID: this.projectID }));
     this.scheduleApplyCardTabState();
     this.restoreChannelScroll(scroll, true);
   }
@@ -1541,6 +1570,7 @@ export default class ScrumController extends Controller {
       projectRecipeId: this.projectRecipeId,
       projectRecipe: this.projectRecipe,
       channelOptions: this.channelRenderOptions(card.id),
+      projectID: this.projectID,
     });
   }
 
@@ -1562,10 +1592,14 @@ export default class ScrumController extends Controller {
     await this.refreshModalSections(cardID);
   }
 
-  private async handleScrumModalRealtime(detail?: { cardID?: string; projectID?: number }) {
+  private async handleScrumModalRealtime(detail?: { cardID?: string; projectID?: number; reason?: string; eventName?: string }) {
     const cardID = String(detail?.cardID ?? "").trim();
     if (!cardID || !this.isCardModalOpen() || this.modalCardID() !== cardID) return;
     if (detail?.projectID && this.projectID && detail.projectID !== this.projectID) return;
+    const reason = String(detail?.reason ?? "").toLowerCase();
+    if (reason.includes("channel") || reason.includes("chat") || detail?.eventName === "chat-component-update") {
+      return;
+    }
     this.activeCardID = cardID;
     this.rememberActiveCardTab(cardID);
     await this.refreshIfChanged(cardID);
@@ -1617,8 +1651,7 @@ export default class ScrumController extends Controller {
   }
 
   private shouldStickChannelScroll(stream: HTMLElement): boolean {
-    // flex-col-reverse: scrollTop 0 = pinned to newest at the bottom
-    return stream.scrollTop <= 64;
+    return stream.scrollHeight - stream.clientHeight - stream.scrollTop <= 80;
   }
 
   private captureChannelScroll(): { top: number; pinned: boolean } | null {
@@ -1652,7 +1685,7 @@ export default class ScrumController extends Controller {
       const stream = this.channelStreamElement();
       if (!stream) return;
       if (!force && !this.shouldStickChannelScroll(stream)) return;
-      stream.scrollTop = 0;
+      stream.scrollTop = stream.scrollHeight;
       stream.querySelector("[data-scrum-channel-anchor]")?.scrollIntoView({ block: "end" });
     };
     run();
@@ -1794,6 +1827,7 @@ export default class ScrumController extends Controller {
         this.recipes,
         this.projectRecipeId,
         this.projectRecipe,
+        this.projectID,
       ),
     );
     this.syncScrumModalRoute();
@@ -2386,75 +2420,11 @@ export default class ScrumController extends Controller {
   channelComposerKeydown(event: KeyboardEvent) {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
-      void this.sendChat(event);
     }
   }
 
   async sendChat(event: Event) {
     event.preventDefault();
-    const form = (event.currentTarget as HTMLElement | null)?.closest("form") ?? (event.currentTarget as HTMLFormElement | null);
-    if (!form) return;
-    const cardID = form.dataset.cardId || "";
-    const input = form.querySelector('[data-scrum-field="chatMessage"]') as HTMLTextAreaElement | null;
-    const message = input?.value.trim();
-    if (!cardID || !message) return;
-    if (this.channelPilotPendingCardID === cardID) {
-      this.setStatus("Already sending…", "busy");
-      return;
-    }
-
-    this.activeCardTab = "channel";
-    this.persistCardTab("channel");
-    this.applyCardTabState();
-
-    const card = this.findCard(cardID);
-    if (card) {
-      const optimistic: ScrumCard = {
-        ...card,
-        column: "in_progress",
-        play_state: "running",
-        queue_order: 0,
-        chat: [...(card.chat ?? []), { role: "user", content: message, created_at: new Date().toISOString() }],
-      };
-      this.upsertCard(optimistic);
-    }
-    if (input) input.value = "";
-
-    this.channelPilotPendingCardID = cardID;
-    this.refreshChannelUI(cardID);
-    this.setStatus("Sending…", "busy");
-    const pendingTimeout = window.setTimeout(() => {
-      if (this.channelPilotPendingCardID === cardID) {
-        this.channelPilotPendingCardID = null;
-        this.refreshChannelUI(cardID);
-      }
-    }, 45000);
-
-    try {
-      const payload = await chatScrumCard(cardID, message, this.projectID);
-      window.clearTimeout(pendingTimeout);
-      this.upsertCard(payload.card);
-      this.channelPilotPendingCardID = null;
-      this.refreshChannelUI(cardID);
-      this.applyCardTabState();
-      void this.pollBoard();
-      if (payload.error) {
-        this.actionFailMessage(String(payload.error));
-      } else if (payload.action === "steered" || payload.action === "feedback") {
-        this.actionOk(`Sent to agent${payload.agent ? ` (${payload.agent})` : ""}`);
-      } else if (payload.action === "started") {
-        this.actionOk(`Agent started — card moved to in progress${payload.agent ? ` (${payload.agent})` : ""}`);
-      } else if (payload.action === "saved") {
-        this.actionOk("Message saved");
-      } else {
-        this.actionOk("Message sent");
-      }
-    } catch (error) {
-      window.clearTimeout(pendingTimeout);
-      this.channelPilotPendingCardID = null;
-      this.refreshChannelUI(cardID);
-      this.actionFail(error);
-    }
   }
 
   async addRefFile(event: Event) {

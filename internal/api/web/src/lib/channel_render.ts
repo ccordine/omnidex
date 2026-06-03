@@ -3,6 +3,8 @@ import { escapeHTML } from "./dom";
 export type ChannelComposerOptions = {
   formAction: string;
   cardId?: string;
+  componentId?: string;
+  endpoint?: string;
   placeholder?: string;
   inputTarget?: string;
   submitLabel?: string;
@@ -30,6 +32,8 @@ export type ChannelSurfaceOptions = {
 
 export function renderChannelComposer(options: ChannelComposerOptions): string {
   const cardAttr = options.cardId ? ` data-card-id="${escapeHTML(options.cardId)}"` : "";
+  const componentAttr = options.componentId ? ` data-chat-component-id="${escapeHTML(options.componentId)}"` : "";
+  const endpointAttr = options.endpoint ? ` data-chat-endpoint="${escapeHTML(options.endpoint)}"` : "";
   const inputTarget = options.inputTargetAttr
     ? ` ${options.inputTargetAttr}="${escapeHTML(options.inputTarget || "")}"`
     : options.inputTarget
@@ -52,7 +56,7 @@ export function renderChannelComposer(options: ChannelComposerOptions): string {
         </div>`;
   const controlLayout = options.inputType === "input" ? "flex flex-wrap items-center gap-2" : "";
   return `
-    <form data-action="${escapeHTML(options.formAction)}${keydownAction}"${cardAttr} class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl md:px-4">
+    <form data-action="${escapeHTML(options.formAction)}${keydownAction}"${cardAttr}${componentAttr}${endpointAttr} class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl md:px-4">
       <div class="rounded-md border border-white/10 bg-zinc-900/90 p-2">
         <div class="${controlLayout}">
           ${control}
