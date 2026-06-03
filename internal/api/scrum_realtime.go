@@ -54,19 +54,57 @@ func (s *Server) publishScrumBoardRefreshWithToast(ctx context.Context, projectI
 	if reason == "" {
 		reason = "board updated"
 	}
-	if toast == "" {
-		toast, toastTone = scrumBoardRefreshToast(ctx, s, projectID, reason, board)
-	}
 	msg := realtimeMessage{
 		ID:        s.nextRealtimeID(),
-		HTML:      s.scrumBoardRealtimeHTML(ctx, projectID, board),
 		EventName: "scrum-board-refresh",
 		Reason:    reason,
 		Toast:     strings.TrimSpace(toast),
 		ToastTone: strings.TrimSpace(toastTone),
 		ProjectID: projectID,
 	}
+	if len(board.Cards) > 0 || board.ID != "" {
+		msg.HTML = s.scrumBoardRealtimeHTML(ctx, projectID, board)
+	} else if board, err := s.scrumBoardFromProject(ctx, projectID); err == nil {
+		msg.HTML = s.scrumBoardRealtimeHTML(ctx, projectID, board)
+	}
 	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
+}
+
+// notifyScrumCardColumnTransition emits a toast (and board bundle) only when a card lands in in_progress or review.
+func (s *Server) notifyScrumCardColumnTransition(ctx context.Context, projectID int64, previous, saved ScrumCard) {
+	if s == nil || projectID <= 0 || strings.TrimSpace(saved.ID) == "" {
+		return
+	}
+	prevCol := normalizeScrumColumn(previous.Column)
+	nextCol := normalizeScrumColumn(saved.Column)
+	if prevCol == nextCol {
+		return
+	}
+	var toast, tone string
+	title := scrumCardShortTitle(saved)
+	switch nextCol {
+	case "in_progress":
+		if prevCol != "in_progress" {
+			toast = fmt.Sprintf("Working on %s", title)
+			tone = "busy"
+		}
+	case "review":
+		if prevCol != "review" {
+			toast = fmt.Sprintf("%s moved to review", title)
+			tone = "ok"
+		}
+	default:
+		return
+	}
+	if toast == "" {
+		return
+	}
+	board, err := s.scrumBoardFromProject(ctx, projectID)
+	if err != nil {
+		s.publishScrumBoardRefreshWithToast(ctx, projectID, "column "+nextCol, ScrumBoard{}, toast, tone)
+		return
+	}
+	s.publishScrumBoardRefreshWithToast(ctx, projectID, "column "+nextCol, board, toast, tone)
 }
 
 func (s *Server) scrumBoardRealtimeHTML(ctx context.Context, projectID int64, board ScrumBoard) string {
@@ -120,63 +158,6 @@ func findRunningScrumCardInBoard(board ScrumBoard) *ScrumCard {
 		}
 	}
 	return nil
-}
-
-func scrumBoardRefreshToast(ctx context.Context, s *Server, projectID int64, reason string, board ScrumBoard) (toast, tone string) {
-	reason = strings.ToLower(strings.TrimSpace(reason))
-	if s == nil {
-		return "", ""
-	}
-	projectName := ""
-	if s.repo != nil && projectID > 0 {
-		if project, err := s.repo.GetProject(ctx, projectID); err == nil {
-			projectName = strings.TrimSpace(project.Name)
-		}
-	}
-	prefix := "Auto-work"
-	if projectName != "" {
-		prefix = fmt.Sprintf("Auto-work (%s)", projectName)
-	}
-	running := findRunningScrumCardInBoard(board)
-	switch {
-	case strings.Contains(reason, "job finished"), strings.Contains(reason, "global running reconcile"):
-		if running != nil {
-			return fmt.Sprintf("%s: working on %s", prefix, scrumCardShortTitle(*running)), "busy"
-		}
-		autoWork := s.scrumAutoWorkConfig(ctx, projectID)
-		if autoWork.Enabled {
-			reviewCfg := s.scrumAutoReviewConfig(ctx, projectID)
-			if scrumAutoPlayThroughCompleteWithReview(board, reviewCfg.Enabled) {
-				return fmt.Sprintf("%s: nothing left to run", prefix), "ok"
-			}
-			if s.nextAutoWorkScrumCard(board, autoWork) != nil {
-				return fmt.Sprintf("%s: card finished; picking up next", prefix), "info"
-			}
-		}
-		return "", ""
-	case strings.Contains(reason, "global auto-work"):
-		if running != nil {
-			return fmt.Sprintf("%s: started %s", prefix, scrumCardShortTitle(*running)), "busy"
-		}
-		return "", ""
-	case strings.Contains(reason, "auto-work started"):
-		if running != nil {
-			return fmt.Sprintf("%s: started %s", prefix, scrumCardShortTitle(*running)), "busy"
-		}
-		if autoWork := s.scrumAutoWorkConfig(ctx, projectID); autoWork.Enabled && s.nextAutoWorkScrumCard(board, autoWork) == nil {
-			return fmt.Sprintf("%s: enabled; no eligible cards", prefix), "info"
-		}
-		return fmt.Sprintf("%s: enabled", prefix), "info"
-	case strings.Contains(reason, "auto-work paused"), strings.Contains(reason, "project auto-work paused"):
-		return fmt.Sprintf("%s: paused", prefix), "info"
-	case strings.Contains(reason, "already running"):
-		if running != nil {
-			return fmt.Sprintf("%s: already running %s", prefix, scrumCardShortTitle(*running)), "info"
-		}
-		return fmt.Sprintf("%s: already running", prefix), "info"
-	default:
-		return "", ""
-	}
 }
 
 func scrumCardShortTitle(card ScrumCard) string {

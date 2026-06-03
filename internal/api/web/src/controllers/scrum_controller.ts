@@ -686,10 +686,12 @@ export default class ScrumController extends Controller {
       if (!previousColumn || previousColumn === card.column) continue;
       if (this.skipMoveToastFor.delete(card.id)) continue;
 
+      if (card.column === "in_progress" || card.column === "review") {
+        continue;
+      }
       const label = COLUMN_LABELS[card.column] ?? card.column.replace(/_/g, " ");
       const title = this.cardMoveTitle(card.title);
-      const verb = card.column === "in_progress" ? "Moving" : "Moved";
-      showToast(`${verb} "${title}" to ${label}`, "info");
+      showToast(`Moved "${title}" to ${label}`, "info");
     }
   }
 

@@ -98,8 +98,11 @@ func scrumOutcomeClassifierSystemPrompt() string {
 	}, "\n")
 }
 
-func buildScrumOutcomeClassifierUserPrompt(job model.JobDetails, baseline ScrumManagerOutcome) string {
-	output := strings.TrimSpace(collectScrumAgentOutput(job))
+func buildScrumOutcomeClassifierUserPromptFromEvidence(job model.JobDetails, baseline ScrumManagerOutcome, evidence string) string {
+	output := strings.TrimSpace(evidence)
+	if output == "" {
+		output = strings.TrimSpace(collectScrumAgentOutput(job))
+	}
 	if len(output) > scrumOutcomeClassifierMaxChars {
 		output = output[len(output)-scrumOutcomeClassifierMaxChars:]
 	}
@@ -119,6 +122,10 @@ func buildScrumOutcomeClassifierUserPrompt(job model.JobDetails, baseline ScrumM
 	}
 	lines = append(lines, "", "agent_output:", output)
 	return strings.Join(lines, "\n")
+}
+
+func buildScrumOutcomeClassifierUserPrompt(job model.JobDetails, baseline ScrumManagerOutcome) string {
+	return buildScrumOutcomeClassifierUserPromptFromEvidence(job, baseline, "")
 }
 
 func scrumCardTitleFromMetadata(raw json.RawMessage) string {
@@ -158,16 +165,23 @@ func (s *Server) scrumOutcomeLLMChat(ctx context.Context, system, user string, m
 }
 
 func (s *Server) classifyScrumAgentOutcome(ctx context.Context, job model.JobDetails, baseline ScrumManagerOutcome) (scrumOutcomeClassification, bool) {
+	return s.classifyScrumAgentOutcomeWithEvidence(ctx, job, baseline, "")
+}
+
+func (s *Server) classifyScrumAgentOutcomeWithEvidence(ctx context.Context, job model.JobDetails, baseline ScrumManagerOutcome, evidence string) (scrumOutcomeClassification, bool) {
 	if s.llmClient == nil {
 		return scrumOutcomeClassification{}, false
 	}
 	if !scrum.IsScrumJob(job.Job.Metadata) && !scrum.IsScrumRawPlay(job.Job.Metadata) {
 		return scrumOutcomeClassification{}, false
 	}
-	if strings.TrimSpace(collectScrumAgentOutput(job)) == "" {
+	if strings.TrimSpace(evidence) == "" {
+		evidence = collectScrumAgentOutput(job)
+	}
+	if strings.TrimSpace(evidence) == "" {
 		return scrumOutcomeClassification{}, false
 	}
-	raw, err := s.scrumOutcomeLLMChat(ctx, scrumOutcomeClassifierSystemPrompt(), buildScrumOutcomeClassifierUserPrompt(job, baseline), llmContextTelemetryMeta{
+	raw, err := s.scrumOutcomeLLMChat(ctx, scrumOutcomeClassifierSystemPrompt(), buildScrumOutcomeClassifierUserPromptFromEvidence(job, baseline, evidence), llmContextTelemetryMeta{
 		CardID: scrumCardTitleFromMetadata(job.Job.Metadata),
 		Metadata: map[string]any{
 			"job_id":   job.Job.ID,
@@ -185,33 +199,11 @@ func (s *Server) classifyScrumAgentOutcome(ctx context.Context, job model.JobDet
 }
 
 func scrumBaselinePlayOutcome(job model.JobDetails) ScrumManagerOutcome {
-	outcome := resolveScrumManagerOutcome(job)
-	if job.Job.Status == model.JobStatusCompleted && outcome == ScrumOutcomeInProgress {
-		if scrum.IsStrictScrumExternal(job.Job.Metadata) && !scrumAgentOutputHasSubstantiveContent(collectScrumAgentOutput(job)) {
-			return ScrumOutcomePaused
-		}
-		outcome = ScrumOutcomeSuccess
-	}
-	return outcome
+	return scrumBaselinePlayOutcomeFromEvidence(job, collectScrumAgentOutput(job))
 }
 
 func (s *Server) resolveScrumPlayOutcome(ctx context.Context, job model.JobDetails) (ScrumManagerOutcome, string) {
-	baseline := scrumBaselinePlayOutcome(job)
-	if !scrumJobStatusTerminal(job.Job.Status) {
-		return baseline, ""
-	}
-	classified, ok := s.classifyScrumAgentOutcome(ctx, job, baseline)
-	if !ok {
-		return baseline, ""
-	}
-	note := fmt.Sprintf("outcome scan (%s): %s", classified.Outcome, classified.Reason)
-	if classified.RealError && classified.Outcome != ScrumOutcomeSuccess {
-		note += " (real error)"
-	}
-	if outcome, ok := stabilizeCompletedScrumOutcome(job, baseline, classified); ok {
-		return outcome, note + " (kept completed job ready for review)"
-	}
-	return classified.Outcome, note
+	return s.resolveScrumPlayOutcomeForCard(ctx, job, ScrumCard{})
 }
 
 func stabilizeCompletedScrumOutcome(job model.JobDetails, baseline ScrumManagerOutcome, classified scrumOutcomeClassification) (ScrumManagerOutcome, bool) {

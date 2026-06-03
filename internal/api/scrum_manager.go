@@ -22,6 +22,7 @@ const (
 )
 
 var scrumStatusLinePattern = regexp.MustCompile(`(?im)^SCRUM_STATUS:\s*(success|failed|blocked|in_progress)\s*$`)
+var scrumStatusAnywherePattern = regexp.MustCompile(`(?i)SCRUM_STATUS:\s*(success|failed|blocked|in_progress)`)
 var scrumStatusJSONPattern = regexp.MustCompile(`(?i)"scrum_status"\s*:\s*"(success|failed|blocked|in_progress)"`)
 var agentStreamLenPattern = regexp.MustCompile(`(?m)^\[\[agent-stream-len:\d+\]\]\s*$`)
 var agentStreamLenValuePattern = regexp.MustCompile(`\[\[agent-stream-len:(\d+)\]\]`)
@@ -41,6 +42,9 @@ func parseScrumManagerOutcome(text string) (ScrumManagerOutcome, bool) {
 		return ScrumManagerOutcome(strings.ToLower(match[1])), true
 	}
 	if match := scrumStatusJSONPattern.FindStringSubmatch(text); len(match) > 1 {
+		return ScrumManagerOutcome(strings.ToLower(match[1])), true
+	}
+	if match := scrumStatusAnywherePattern.FindStringSubmatch(text); len(match) > 1 {
 		return ScrumManagerOutcome(strings.ToLower(match[1])), true
 	}
 	return "", false

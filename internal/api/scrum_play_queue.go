@@ -224,7 +224,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 				}
 			} else {
 				updated = scrumSyncTerminalPlayOutput(updated, job)
-				outcome, scanNote := s.resolveScrumPlayOutcome(r.Context(), job)
+				outcome, scanNote := s.resolveScrumPlayOutcomeForCard(r.Context(), job, updated)
 				transition := scrumColumnForOutcome(outcome)
 				transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)
 				if scanNote != "" {
@@ -304,6 +304,7 @@ func (s *Server) persistScrumCard(r *http.Request, projectID int64, card ScrumCa
 		}
 		result := dbScrumCardToAPI(updated)
 		result.FlowMetrics = s.trackScrumCardFlow(r.Context(), projectID, previous, result, "persist")
+		s.notifyScrumCardColumnTransition(r.Context(), projectID, previous, result)
 		return result, nil
 	}
 	if s.scrumStore == nil {

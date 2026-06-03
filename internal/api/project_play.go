@@ -79,12 +79,10 @@ func (s *Server) startProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 		return ScrumBoard{}, ScrumCard{}, "", err
 	}
 	if running := s.findRunningScrumCard(refreshed); running != nil {
-		s.publishScrumBoardRefresh(r.Context(), projectID, "auto-work already running", refreshed)
 		return refreshed, *running, "auto-work is already running for project", nil
 	}
 	next := s.nextAutoWorkScrumCard(refreshed, cfg)
 	if next == nil {
-		s.publishScrumBoardRefresh(r.Context(), projectID, "auto-work started", refreshed)
 		s.RefreshScrumAutoWorkAsync()
 		return refreshed, ScrumCard{}, "auto-work enabled; no eligible cards found", nil
 	}
@@ -96,7 +94,6 @@ func (s *Server) startProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 	if err != nil {
 		return ScrumBoard{}, ScrumCard{}, "", err
 	}
-	s.publishScrumBoardRefresh(r.Context(), projectID, "auto-work started", refreshed)
 	s.RefreshScrumAutoWorkAsync()
 	return refreshed, started, "auto-work enabled and job queued", nil
 }
@@ -147,7 +144,6 @@ func (s *Server) pauseProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 	if err != nil {
 		return ScrumBoard{}, 0, "", err
 	}
-	s.publishScrumBoardRefresh(r.Context(), projectID, "project auto-work paused", refreshed)
 	if paused > 0 {
 		return refreshed, paused, fmt.Sprintf("auto-work paused; stopped %d active cards", paused), nil
 	}

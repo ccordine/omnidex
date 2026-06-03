@@ -38,7 +38,7 @@ func (s *Server) reconcileScrumCardJobState(ctx context.Context, projectID int64
 
 	switch job.Job.Status {
 	case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
-		if card.PlayState != scrumPlayRunning && card.PlayState != scrumPlayQueued && card.PlayState != scrumPlayReviewing {
+		if !scrumCardNeedsTerminalJobReconcile(card) {
 			return card, false
 		}
 		if isScrumAutoReviewJob(job.Job.Metadata) {
@@ -46,7 +46,7 @@ func (s *Server) reconcileScrumCardJobState(ctx context.Context, projectID int64
 			return finished, ok
 		}
 		card = scrumSyncTerminalPlayOutput(card, job)
-		outcome := resolveScrumManagerOutcome(job)
+		outcome, _ := s.resolveScrumPlayOutcomeForCard(ctx, job, card)
 		transition := scrumColumnForOutcome(outcome)
 		transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)
 		card.Column = transition.Column
@@ -89,9 +89,15 @@ func (s *Server) persistScrumCardFromContext(ctx context.Context, projectID int6
 	if s.repo == nil || projectID <= 0 {
 		return card, nil
 	}
+	var previous ScrumCard
+	if current, err := s.repo.GetScrumCard(ctx, projectID, card.ID); err == nil {
+		previous = dbScrumCardToAPI(current)
+	}
 	updated, err := s.repo.UpdateScrumCard(ctx, projectID, card.ID, apiScrumCardToPatch(card))
 	if err != nil {
 		return ScrumCard{}, err
 	}
-	return dbScrumCardToAPI(updated), nil
+	result := dbScrumCardToAPI(updated)
+	s.notifyScrumCardColumnTransition(ctx, projectID, previous, result)
+	return result, nil
 }

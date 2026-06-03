@@ -151,12 +151,8 @@ func (s *Server) refreshScrumPlayQueueForProject(ctx context.Context, projectID 
 		return err
 	}
 	r := scrumRequestFromContext(ctx)
-	refreshed, err := s.refreshScrumPlayQueue(r, projectID, board)
-	if err != nil {
-		return err
-	}
-	s.publishScrumBoardRefresh(ctx, projectID, reason, refreshed)
-	return nil
+	_, err = s.refreshScrumPlayQueue(r, projectID, board)
+	return err
 }
 
 func isScrumPlayQueueJob(metadataJSON []byte) bool {
