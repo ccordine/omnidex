@@ -176,6 +176,10 @@ func main() {
 		ListenAddr:                cfg.ListenAddr,
 		HostAgentURL:              cfg.HostAgentURL,
 		HostAgentToken:            cfg.HostAgentToken,
+		RealtimeMaxClients:        cfg.RealtimeMaxClients,
+		RealtimeStreamMaxAge:      cfg.RealtimeStreamMaxAge,
+		RealtimeHeartbeat:         cfg.RealtimeHeartbeat,
+		RealtimeWriteTimeout:      cfg.RealtimeWriteTimeout,
 	})
 	if !cfg.WrapperOnly {
 		workerService := worker.New(

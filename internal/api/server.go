@@ -73,6 +73,10 @@ type Server struct {
 	secretsResolver           *secrets.Resolver
 	coreURLDefault            string
 	listenAddr                string
+	realtimeMaxClients        int
+	realtimeStreamMaxAge      time.Duration
+	realtimeHeartbeat         time.Duration
+	realtimeWriteTimeout      time.Duration
 	ollamaURLMu               sync.RWMutex
 	hostAgentURL              string
 	hostAgentToken            string
@@ -124,6 +128,10 @@ type ServerOptions struct {
 	ListenAddr                string
 	HostAgentURL              string
 	HostAgentToken            string
+	RealtimeMaxClients        int
+	RealtimeStreamMaxAge      time.Duration
+	RealtimeHeartbeat         time.Duration
+	RealtimeWriteTimeout      time.Duration
 }
 
 type enqueueRequest struct {
@@ -245,6 +253,18 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 	if options.RequestTimeout <= 0 {
 		options.RequestTimeout = 90 * time.Second
 	}
+	if options.RealtimeMaxClients < 1 {
+		options.RealtimeMaxClients = 512
+	}
+	if options.RealtimeStreamMaxAge < time.Minute {
+		options.RealtimeStreamMaxAge = 30 * time.Minute
+	}
+	if options.RealtimeHeartbeat < 5*time.Second {
+		options.RealtimeHeartbeat = 25 * time.Second
+	}
+	if options.RealtimeWriteTimeout < time.Second {
+		options.RealtimeWriteTimeout = 10 * time.Second
+	}
 
 	var channels channelStore
 	if repo != nil {
@@ -298,6 +318,10 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		webSearchTimeout:          options.WebSearchTimeout,
 		coreURLDefault:            strings.TrimSpace(options.CoreURL),
 		listenAddr:                strings.TrimSpace(options.ListenAddr),
+		realtimeMaxClients:        options.RealtimeMaxClients,
+		realtimeStreamMaxAge:      options.RealtimeStreamMaxAge,
+		realtimeHeartbeat:         options.RealtimeHeartbeat,
+		realtimeWriteTimeout:      options.RealtimeWriteTimeout,
 		hostAgentURL:              strings.TrimSpace(options.HostAgentURL),
 		hostAgentToken:            strings.TrimSpace(options.HostAgentToken),
 	}
@@ -309,7 +333,7 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 	if store, err := NewScrumStore(); err == nil {
 		s.scrumStore = store
 	}
-	s.realtimeHub = NewRealtimeHub()
+	s.realtimeHub = NewRealtimeHub(RealtimeHubOptions{MaxClients: s.realtimeMaxClients})
 	s.routes()
 	if repo != nil {
 		s.startRealtimeTelemetryListener(context.Background())
@@ -1693,6 +1717,8 @@ func Run(ctx context.Context, addr string, handler http.Handler) error {
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       90 * time.Second,
 	}
 
 	errCh := make(chan error, 1)

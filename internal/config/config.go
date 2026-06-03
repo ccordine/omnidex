@@ -73,6 +73,10 @@ type Config struct {
 	WorkerCount              int
 	WorkerPollInterval       time.Duration
 	RequestTimeout           time.Duration
+	RealtimeMaxClients       int
+	RealtimeStreamMaxAge     time.Duration
+	RealtimeHeartbeat        time.Duration
+	RealtimeWriteTimeout     time.Duration
 	RetrievalLimit           int
 	ContextCharBudget        int
 	HallucinationRetryLimit  int
@@ -162,6 +166,10 @@ func Load() (Config, error) {
 		WorkerCount:              getenvInt("WORKER_COUNT", 2),
 		WorkerPollInterval:       getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),
 		RequestTimeout:           getenvDuration("REQUEST_TIMEOUT", 90*time.Second),
+		RealtimeMaxClients:       getenvInt("REALTIME_MAX_CLIENTS", 512),
+		RealtimeStreamMaxAge:     getenvDuration("REALTIME_STREAM_MAX_AGE", 30*time.Minute),
+		RealtimeHeartbeat:        getenvDuration("REALTIME_HEARTBEAT", 25*time.Second),
+		RealtimeWriteTimeout:     getenvDuration("REALTIME_WRITE_TIMEOUT", 10*time.Second),
 		RetrievalLimit:           getenvInt("RETRIEVAL_LIMIT", 8),
 		ContextCharBudget:        getenvInt("CONTEXT_CHAR_BUDGET", 4000),
 		HallucinationRetryLimit:  getenvInt("HALLUCINATION_RETRY_LIMIT", 2),
@@ -215,6 +223,18 @@ func Load() (Config, error) {
 	}
 	if cfg.HallucinationRetryLimit > 6 {
 		cfg.HallucinationRetryLimit = 6
+	}
+	if cfg.RealtimeMaxClients < 1 {
+		cfg.RealtimeMaxClients = 512
+	}
+	if cfg.RealtimeStreamMaxAge < time.Minute {
+		cfg.RealtimeStreamMaxAge = 30 * time.Minute
+	}
+	if cfg.RealtimeHeartbeat < 5*time.Second {
+		cfg.RealtimeHeartbeat = 25 * time.Second
+	}
+	if cfg.RealtimeWriteTimeout < time.Second {
+		cfg.RealtimeWriteTimeout = 10 * time.Second
 	}
 
 	if cfg.FastModel == "" {

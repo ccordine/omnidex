@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -52,7 +54,7 @@ type realtimeMessage struct {
 
 func (s *Server) ensureRealtimeHub() *RealtimeHub {
 	if s.realtimeHub == nil {
-		s.realtimeHub = NewRealtimeHub()
+		s.realtimeHub = NewRealtimeHub(RealtimeHubOptions{MaxClients: s.realtimeMaxClients})
 	}
 	return s.realtimeHub
 }
@@ -185,20 +187,42 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	topics := parseRealtimeTopics(r.URL.Query().Get("topics"))
+	_, outbound, unsubscribe, err := s.ensureRealtimeHub().Subscribe(topics)
+	if err != nil {
+		if errors.Is(err, ErrRealtimeHubFull) {
+			writeError(w, http.StatusServiceUnavailable, "realtime client limit reached")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer unsubscribe()
+
 	conn, err := realtimeUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	defer conn.Close()
+	deadline := time.Now().Add(s.realtimeStreamMaxAge)
+	conn.SetReadLimit(4096)
+	_ = conn.SetReadDeadline(time.Now().Add(s.realtimeHeartbeat * 3))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(s.realtimeHeartbeat * 3))
+	})
 
-	topics := parseRealtimeTopics(r.URL.Query().Get("topics"))
-	_, outbound, unsubscribe := s.ensureRealtimeHub().Subscribe(topics)
-	defer unsubscribe()
+	var writeMu sync.Mutex
+	writeMessage := func(messageType int, payload []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		_ = conn.SetWriteDeadline(time.Now().Add(s.realtimeWriteTimeout))
+		return conn.WriteMessage(messageType, payload)
+	}
 
 	if glance, err := s.repo.TelemetryGlance(r.Context()); err == nil {
 		msg := s.buildMetricsGlanceRealtimeMessage(glance, telemetryNotifyPayload{})
 		if data, err := json.Marshal(msg); err == nil {
-			_ = conn.WriteMessage(websocket.TextMessage, data)
+			_ = writeMessage(websocket.TextMessage, data)
 		}
 	}
 
@@ -211,16 +235,27 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+	ping := time.NewTicker(s.realtimeHeartbeat)
+	defer ping.Stop()
+	expires := time.NewTimer(time.Until(deadline))
+	defer expires.Stop()
 
 	for {
 		select {
 		case <-done:
 			return
+		case <-expires.C:
+			_ = writeMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "stream expired"))
+			return
+		case <-ping.C:
+			if err := writeMessage(websocket.PingMessage, []byte("ping")); err != nil {
+				return
+			}
 		case payload, ok := <-outbound:
 			if !ok {
 				return
 			}
-			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+			if err := writeMessage(websocket.TextMessage, payload); err != nil {
 				return
 			}
 		}
@@ -237,6 +272,18 @@ func (s *Server) handleRealtimeSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	topics := parseRealtimeTopics(r.URL.Query().Get("topics"))
+	_, outbound, unsubscribe, err := s.ensureRealtimeHub().Subscribe(topics)
+	if err != nil {
+		if errors.Is(err, ErrRealtimeHubFull) {
+			writeError(w, http.StatusServiceUnavailable, "realtime client limit reached")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer unsubscribe()
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "streaming unsupported")
@@ -244,32 +291,51 @@ func (s *Server) handleRealtimeSSE(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
-
-	topics := parseRealtimeTopics(r.URL.Query().Get("topics"))
-	_, outbound, unsubscribe := s.ensureRealtimeHub().Subscribe(topics)
-	defer unsubscribe()
+	w.Header().Set("X-Accel-Buffering", "no")
+	responseController := http.NewResponseController(w)
+	writeFrame := func(format string, args ...any) bool {
+		_ = responseController.SetWriteDeadline(time.Now().Add(s.realtimeWriteTimeout))
+		if _, err := fmt.Fprintf(w, format, args...); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
 
 	if glance, err := s.repo.TelemetryGlance(r.Context()); err == nil {
 		msg := s.buildMetricsGlanceRealtimeMessage(glance, telemetryNotifyPayload{})
 		if data, err := json.Marshal(msg); err == nil {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
+			if !writeFrame("data: %s\n\n", data) {
+				return
+			}
 		}
 	}
 
 	ctx := r.Context()
+	heartbeat := time.NewTicker(s.realtimeHeartbeat)
+	defer heartbeat.Stop()
+	maxAge := time.NewTimer(s.realtimeStreamMaxAge)
+	defer maxAge.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-maxAge.C:
+			_ = writeFrame("event: close\ndata: {\"reason\":\"stream_expired\"}\n\n")
+			return
+		case <-heartbeat.C:
+			if !writeFrame(": ping %d\n\n", time.Now().Unix()) {
+				return
+			}
 		case payload, ok := <-outbound:
 			if !ok {
 				return
 			}
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
-			flusher.Flush()
+			if !writeFrame("data: %s\n\n", payload) {
+				return
+			}
 		}
 	}
 }

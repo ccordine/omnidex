@@ -951,6 +951,10 @@ Environment variables:
 - `WORKER_COUNT=3`
 - `WORKER_POLL_INTERVAL=2s`
 - `REQUEST_TIMEOUT=90s`
+- `REALTIME_MAX_CLIENTS=512` (caps live websocket/SSE subscriptions)
+- `REALTIME_STREAM_MAX_AGE=30m` (recycles browser realtime streams; clients reconnect automatically)
+- `REALTIME_HEARTBEAT=25s`
+- `REALTIME_WRITE_TIMEOUT=10s`
 - `RETRIEVAL_LIMIT=8`
 - `CONTEXT_CHAR_BUDGET=4000`
 - `HALLUCINATION_RETRY_LIMIT=2` (verification retries flagged as hallucination before forcing an Ollama restart attempt when provider is Ollama)

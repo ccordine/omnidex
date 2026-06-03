@@ -2,8 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 )
+
+var ErrRealtimeHubFull = errors.New("realtime hub client limit reached")
 
 type RealtimeClient struct {
 	topics map[string]struct{}
@@ -11,18 +14,33 @@ type RealtimeClient struct {
 }
 
 type RealtimeHub struct {
-	mu      sync.RWMutex
-	nextID  uint64
-	clients map[uint64]*RealtimeClient
+	mu         sync.RWMutex
+	nextID     uint64
+	maxClients int
+	clients    map[uint64]*RealtimeClient
 }
 
-func NewRealtimeHub() *RealtimeHub {
-	return &RealtimeHub{clients: make(map[uint64]*RealtimeClient)}
+type RealtimeHubOptions struct {
+	MaxClients int
 }
 
-func (h *RealtimeHub) Subscribe(topics []string) (uint64, <-chan []byte, func()) {
+func NewRealtimeHub(options ...RealtimeHubOptions) *RealtimeHub {
+	maxClients := 512
+	if len(options) > 0 && options[0].MaxClients > 0 {
+		maxClients = options[0].MaxClients
+	}
+	return &RealtimeHub{
+		maxClients: maxClients,
+		clients:    make(map[uint64]*RealtimeClient),
+	}
+}
+
+func (h *RealtimeHub) Subscribe(topics []string) (uint64, <-chan []byte, func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.maxClients > 0 && len(h.clients) >= h.maxClients {
+		return 0, nil, func() {}, ErrRealtimeHubFull
+	}
 	h.nextID++
 	id := h.nextID
 	topicSet := make(map[string]struct{}, len(topics))
@@ -47,7 +65,7 @@ func (h *RealtimeHub) Subscribe(topics []string) (uint64, <-chan []byte, func())
 			close(existing.send)
 		}
 	}
-	return id, client.send, unsubscribe
+	return id, client.send, unsubscribe, nil
 }
 
 func (h *RealtimeHub) Broadcast(topics []string, payload any) {

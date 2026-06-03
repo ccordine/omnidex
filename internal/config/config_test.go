@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadOpenAIRequiresAPIKey(t *testing.T) {
@@ -236,5 +237,31 @@ func TestLoadWrapperOnlyAllowsMissingDatabaseURL(t *testing.T) {
 	}
 	if !cfg.WrapperOnly {
 		t.Fatalf("WrapperOnly=%v want true", cfg.WrapperOnly)
+	}
+}
+
+func TestLoadRealtimeDefaultsAndMinimums(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("WRAPPER_ONLY", "true")
+	t.Setenv("REALTIME_MAX_CLIENTS", "0")
+	t.Setenv("REALTIME_STREAM_MAX_AGE", "10s")
+	t.Setenv("REALTIME_HEARTBEAT", "1s")
+	t.Setenv("REALTIME_WRITE_TIMEOUT", "100ms")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.RealtimeMaxClients != 512 {
+		t.Fatalf("RealtimeMaxClients=%d want 512", cfg.RealtimeMaxClients)
+	}
+	if cfg.RealtimeStreamMaxAge != 30*time.Minute {
+		t.Fatalf("RealtimeStreamMaxAge=%s want 30m", cfg.RealtimeStreamMaxAge)
+	}
+	if cfg.RealtimeHeartbeat != 25*time.Second {
+		t.Fatalf("RealtimeHeartbeat=%s want 25s", cfg.RealtimeHeartbeat)
+	}
+	if cfg.RealtimeWriteTimeout != 10*time.Second {
+		t.Fatalf("RealtimeWriteTimeout=%s want 10s", cfg.RealtimeWriteTimeout)
 	}
 }

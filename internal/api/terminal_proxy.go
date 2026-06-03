@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -52,22 +54,61 @@ func proxyTerminalWebSocket(clientConn, bridgeConn *websocket.Conn) {
 	defer clientConn.Close()
 	defer bridgeConn.Close()
 
+	const (
+		readIdleTimeout = 5 * time.Minute
+		pingInterval    = 30 * time.Second
+		writeTimeout    = 10 * time.Second
+	)
+
+	type guardedConn struct {
+		conn *websocket.Conn
+		mu   sync.Mutex
+	}
+	writeMessage := func(dst *guardedConn, msgType int, msg []byte) error {
+		dst.mu.Lock()
+		defer dst.mu.Unlock()
+		_ = dst.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		return dst.conn.WriteMessage(msgType, msg)
+	}
+	for _, conn := range []*websocket.Conn{clientConn, bridgeConn} {
+		_ = conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
+		conn.SetPongHandler(func(string) error {
+			return conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
+		})
+	}
+
+	client := &guardedConn{conn: clientConn}
+	bridge := &guardedConn{conn: bridgeConn}
 	errc := make(chan error, 2)
-	copyMessages := func(dst, src *websocket.Conn) {
+	copyMessages := func(dst *guardedConn, src *websocket.Conn) {
 		for {
 			msgType, msg, err := src.ReadMessage()
 			if err != nil {
 				errc <- err
 				return
 			}
-			if err := dst.WriteMessage(msgType, msg); err != nil {
+			if err := writeMessage(dst, msgType, msg); err != nil {
 				errc <- err
 				return
 			}
 		}
 	}
 
-	go copyMessages(bridgeConn, clientConn)
-	go copyMessages(clientConn, bridgeConn)
-	<-errc
+	go copyMessages(bridge, clientConn)
+	go copyMessages(client, bridgeConn)
+	ping := time.NewTicker(pingInterval)
+	defer ping.Stop()
+	for {
+		select {
+		case <-ping.C:
+			if err := writeMessage(client, websocket.PingMessage, []byte("ping")); err != nil {
+				return
+			}
+			if err := writeMessage(bridge, websocket.PingMessage, []byte("ping")); err != nil {
+				return
+			}
+		case <-errc:
+			return
+		}
+	}
 }
