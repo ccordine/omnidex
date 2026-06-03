@@ -32,7 +32,7 @@ import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_con
 import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_config_render";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
 import type { ResolvedAgentConfig } from "../lib/agent_config_types";
-import { renderScrumBoard, renderScrumEmptyState, renderScrumFocusBar, renderScrumFlowSummary } from "../lib/scrum_render";
+import { renderScrumBoard, renderScrumColumn, renderScrumEmptyState, renderScrumFocusBar, renderScrumFlowSummary } from "../lib/scrum_render";
 import {
   renderScrumCardModal,
   renderScrumModalCardTab,
@@ -108,6 +108,7 @@ export default class ScrumController extends Controller {
   private pollInFlight = false;
   private pollIntervalMs = 1500;
   private lastBoardUpdatedAt = "";
+  private lastRenderedPayloadFingerprint = "";
   private lastHealthFingerprint = "";
   private scrumTabActive = true;
   private playQueue: ScrumBoardResponse["play_queue"] | null = null;
@@ -138,7 +139,7 @@ export default class ScrumController extends Controller {
   private scrumRefreshHandler = (event: Event) => {
     const detail = (event as CustomEvent<{ project_id?: number }>).detail;
     if (detail?.project_id && this.projectID && detail.project_id !== this.projectID) return;
-    if (this.projectID) void this.load();
+    if (this.projectID) void this.refreshIfChanged();
   };
   private scrumModalRealtimeHandler = (event: Event) => {
     const detail = (event as CustomEvent<{ cardID?: string; projectID?: number }>).detail;
@@ -151,7 +152,14 @@ export default class ScrumController extends Controller {
 
     this.projectOpenedHandler = (event: Event) => {
       const detail = (event as CustomEvent<{ project_id?: number }>).detail;
-      this.projectID = detail?.project_id && detail.project_id > 0 ? detail.project_id : null;
+      const nextProjectID = detail?.project_id && detail.project_id > 0 ? detail.project_id : null;
+      if (nextProjectID !== this.projectID) {
+        this.board = null;
+        this.lastBoardUpdatedAt = "";
+        this.lastRenderedPayloadFingerprint = "";
+        this.lastHealthFingerprint = "";
+      }
+      this.projectID = nextProjectID;
       void this.load();
     };
     document.addEventListener("omni:project-opened", this.projectOpenedHandler);
@@ -160,6 +168,8 @@ export default class ScrumController extends Controller {
       this.projectID = null;
       this.board = null;
       this.lastBoardUpdatedAt = "";
+      this.lastRenderedPayloadFingerprint = "";
+      this.lastHealthFingerprint = "";
       this.cardColumnSnapshot.clear();
       this.skipMoveToastFor.clear();
       this.cardLlmJobs.clear();
@@ -310,30 +320,136 @@ export default class ScrumController extends Controller {
     return `${payload.board.updated_at}|${payload.play_queue?.running_card_id ?? ""}|${payload.play_queue?.queued_count ?? 0}|${activeSlice}`;
   }
 
-  private async pollBoard() {
-    if (!this.projectID || this.pollInFlight || this.boardDrag.isActive()) return;
+  private normalizedTextSymbol(value: unknown): string {
+    const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+    return this.hashSymbol(normalized);
+  }
+
+  private hashSymbol(value: string): string {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  private messagesSymbol(messages?: ScrumCard["chat"]): string {
+    return (messages ?? [])
+      .map((message) => `${message.role}:${message.created_at}:${this.normalizedTextSymbol(message.content)}`)
+      .join(",");
+  }
+
+  private checklistSymbol(items?: ScrumChecklistItem[]): string {
+    return (items ?? [])
+      .map((item) => `${item.id}:${item.done ? "1" : "0"}:${this.normalizedTextSymbol(item.text)}`)
+      .join(",");
+  }
+
+  private cardPayloadSymbol(card: ScrumCard): string {
+    return this.hashSymbol(
+      [
+        card.id,
+        card.column,
+        card.board_order ?? 0,
+        card.queue_order ?? 0,
+        card.play_state ?? "",
+        card.job_id ?? "",
+        card.tags_job_id ?? "",
+        card.ticket_job_id ?? "",
+        card.updated_at ?? "",
+        this.normalizedTextSymbol(card.title),
+        this.normalizedTextSymbol(card.description),
+        this.normalizedTextSymbol(card.card_ticket),
+        this.normalizedTextSymbol(card.card_prompt),
+        this.messagesSymbol(card.chat),
+        this.messagesSymbol(card.planning_chat),
+        card.tags?.map((tag) => this.normalizedTextSymbol(tag)).join(",") ?? "",
+        this.checklistSymbol(card.checklist),
+        this.checklistSymbol(card.test_criteria),
+        this.normalizedTextSymbol(card.console_log),
+        card.ref_files?.join(",") ?? "",
+        card.flow_metrics ? JSON.stringify(card.flow_metrics) : "",
+      ].join("|"),
+    );
+  }
+
+  private boardPayloadFingerprint(payload: ScrumBoardResponse): string {
+    return this.hashSymbol(
+      [
+        payload.board.id,
+        payload.board.columns?.join(",") ?? "",
+        payload.play_queue?.running_card_id ?? "",
+        payload.play_queue?.queued_count ?? 0,
+        payload.play_queue?.queued_card_ids?.join(",") ?? "",
+        payload.auto_play_through ? "1" : "0",
+        payload.auto_work?.source_columns?.join(",") ?? "",
+        payload.auto_review?.enabled ? "1" : "0",
+        payload.create_ticket?.enabled ? "1" : "0",
+        payload.flow_summary ? JSON.stringify(payload.flow_summary) : "",
+        payload.board.cards.map((card) => this.cardPayloadSymbol(card)).join(";"),
+      ].join("||"),
+    );
+  }
+
+  private cardRenderFingerprint(card: ScrumCard): string {
+    return this.hashSymbol(
+      [
+        card.id,
+        this.normalizedTextSymbol(card.title),
+        this.normalizedTextSymbol(card.description),
+        card.column,
+        card.board_order ?? 0,
+        card.queue_order ?? 0,
+        card.play_state ?? "",
+        card.job_id ?? "",
+        card.tags_job_id ?? "",
+        card.ticket_job_id ?? "",
+        card.updated_at,
+        this.checklistSymbol(card.checklist),
+        card.ref_files?.join(",") ?? "",
+        this.messagesSymbol(card.chat),
+        card.flow_metrics?.completion_status ?? "",
+        card.flow_metrics?.assigned_returns ?? 0,
+      ].join("::"),
+    );
+  }
+
+  private columnRenderFingerprint(cards: ScrumCard[]): string {
+    return cards.map((card) => this.cardRenderFingerprint(card)).join("||");
+  }
+
+  private async refreshIfChanged(cardID?: string | null): Promise<ScrumCard | null> {
+    if (!this.projectID || this.pollInFlight || this.boardDrag.isActive()) return null;
     this.pollInFlight = true;
     try {
       const health = await fetchScrumHealth(this.projectID, this.lastHealthFingerprint);
       this.applyHealthTTL(health.ttl_ms);
       this.lastHealthFingerprint = health.fingerprint || this.lastHealthFingerprint;
-      if (!health.changed || !health.board || !health.cards_by_col) return;
+      if (!health.changed || !health.board || !health.cards_by_col) return null;
       const payload = health as ScrumBoardResponse;
-      const fingerprint = this.boardLiveFingerprint(payload);
-      this.lastBoardUpdatedAt = fingerprint;
       this.applyBoardPayload(payload, false);
-      if (this.isCardModalOpen()) {
-        const modalCardID = this.modalCardID();
-        if (modalCardID) this.activeCardID = modalCardID;
+      const id = cardID ?? this.activeCardID;
+      if (!id) return null;
+      const card = this.findCard(id);
+      if (card && this.activeCardID === id) {
+        await this.refreshActiveModal(id);
       }
-      if (this.activeCardID) {
-        await this.refreshActiveModal(this.activeCardID);
-      }
+      return card ?? null;
     } catch {
-      // keep last good board state during transient poll failures
+      return null;
     } finally {
       this.pollInFlight = false;
     }
+  }
+
+  private async pollBoard() {
+    if (!this.projectID || this.pollInFlight || this.boardDrag.isActive()) return;
+    if (this.isCardModalOpen()) {
+      const modalCardID = this.modalCardID();
+      if (modalCardID) this.activeCardID = modalCardID;
+    }
+    await this.refreshIfChanged();
   }
 
   private renderFlowSummary() {
@@ -369,6 +485,13 @@ export default class ScrumController extends Controller {
 
   private applyBoardPayload(payload: ScrumBoardResponse, updateStatus = true) {
     if (!this.hasBoardTarget) return;
+    const payloadFingerprint = this.boardPayloadFingerprint(payload);
+    if (payloadFingerprint === this.lastRenderedPayloadFingerprint) {
+      this.syncPollInterval();
+      return;
+    }
+    const previousBoard = this.board;
+    const previousCardsByCol = previousBoard ? groupCardsByColumn(previousBoard) : null;
     this.toastAgentColumnMoves(payload.board.cards);
     this.board = payload.board;
     this.playQueue = payload.play_queue ?? null;
@@ -387,7 +510,10 @@ export default class ScrumController extends Controller {
     if (!this.pollInFlight) {
       this.lastBoardUpdatedAt = this.boardLiveFingerprint(payload);
     }
-    this.boardTarget.innerHTML = renderScrumBoard(payload.board, payload.cards_by_col, payload.play_queue);
+    const patched = this.patchBoardDOM(previousBoard, previousCardsByCol, payload);
+    if (!patched) {
+      this.boardTarget.innerHTML = renderScrumBoard(payload.board, payload.cards_by_col, payload.play_queue);
+    }
     this.renderFlowSummary();
     if (this.hasFocusTarget) {
       this.focusTarget.innerHTML = renderScrumFocusBar(
@@ -408,6 +534,31 @@ export default class ScrumController extends Controller {
     this.wireBoardDragDrop();
     this.syncPollInterval();
     this.syncCardColumnSnapshot(payload.board.cards);
+    this.lastRenderedPayloadFingerprint = payloadFingerprint;
+  }
+
+  private patchBoardDOM(
+    previousBoard: ScrumBoard | null,
+    previousCardsByCol: Record<string, ScrumCard[]> | null,
+    payload: ScrumBoardResponse,
+  ): boolean {
+    if (!previousBoard || !previousCardsByCol || !this.hasBoardTarget) return false;
+    const previousColumns = previousBoard.columns?.length ? previousBoard.columns : [];
+    const nextColumns = payload.board.columns?.length ? payload.board.columns : [];
+    if (previousColumns.join("|") !== nextColumns.join("|")) return false;
+    if (!this.boardTarget.querySelector("[data-column]")) return false;
+
+    for (const column of nextColumns) {
+      const previousCards = previousCardsByCol[column] ?? [];
+      const nextCards = payload.cards_by_col[column] ?? [];
+      if (this.columnRenderFingerprint(previousCards) === this.columnRenderFingerprint(nextCards)) {
+        continue;
+      }
+      const node = this.boardTarget.querySelector(`[data-column="${CSS.escape(column)}"]`) as HTMLElement | null;
+      if (!node) return false;
+      node.outerHTML = renderScrumColumn(column, nextCards, payload.play_queue);
+    }
+    return true;
   }
 
   private syncCardColumnSnapshot(cards: ScrumCard[]) {
@@ -1327,7 +1478,7 @@ export default class ScrumController extends Controller {
     if (detail?.projectID && this.projectID && detail.projectID !== this.projectID) return;
     this.activeCardID = cardID;
     this.rememberActiveCardTab(cardID);
-    await this.reloadBoard(cardID);
+    await this.refreshIfChanged(cardID);
   }
 
   async refreshModalSections(cardID: string) {

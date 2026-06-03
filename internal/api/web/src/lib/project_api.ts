@@ -79,6 +79,20 @@ export async function startProjectAutoWork(id: number): Promise<{
   return readJSON(response);
 }
 
+export async function pauseProjectAutoWork(id: number): Promise<{
+  project_id: number;
+  board: ScrumBoard;
+  paused?: number;
+  message: string;
+}> {
+  const response = await fetch(`/v1/projects/${id}/pause`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  return readJSON(response);
+}
+
 export async function surveyProject(id: number): Promise<ProjectRecord> {
   const response = await fetch(`/v1/projects/${id}/survey`, {
     method: "POST",

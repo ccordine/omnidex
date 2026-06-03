@@ -61,7 +61,7 @@ function flowMetricsBadge(card: ScrumCard): string {
   return `<span class="rounded border px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal ${tone}" title="${escapeHTML(title)}">${escapeHTML(label)}</span>`;
 }
 
-function renderCard(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
+export function renderScrumCard(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
   const { done, total } = checklistProgress(card);
   const hasJob = Boolean(card.job_id?.trim());
   const stateBadge = playStateBadge(card);
@@ -89,10 +89,10 @@ function renderCard(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"
   `;
 }
 
-function renderColumn(column: string, cards: ScrumCard[], playQueue?: ScrumBoardResponse["play_queue"]): string {
+export function renderScrumColumn(column: string, cards: ScrumCard[], playQueue?: ScrumBoardResponse["play_queue"]): string {
   const label = COLUMN_LABELS[column] ?? column;
   const accent = COLUMN_ACCENT[column] ?? "border-white/10 bg-zinc-900/40";
-  const items = cards.length ? cards.map((card) => renderCard(card, playQueue)).join("") : `<p class="scrum-column-empty rounded-md border border-dashed border-white/10 px-3 py-6 text-center text-xs text-zinc-500">Drop cards here</p>`;
+  const items = cards.length ? cards.map((card) => renderScrumCard(card, playQueue)).join("") : `<p class="scrum-column-empty rounded-md border border-dashed border-white/10 px-3 py-6 text-center text-xs text-zinc-500">Drop cards here</p>`;
   return `
     <div class="scrum-column min-w-[280px] rounded-xl border ${accent} p-3" data-column="${escapeHTML(column)}" data-scrum-dropzone="${escapeHTML(column)}">
       <header class="mb-3 flex shrink-0 items-center justify-between gap-2">
@@ -195,7 +195,7 @@ export function renderScrumFocusBar(
 
 export function renderScrumBoard(board: ScrumBoard, cardsByCol: Record<string, ScrumCard[]>, playQueue?: ScrumBoardResponse["play_queue"]): string {
   const columns = board.columns?.length ? board.columns : [...SCRUM_COLUMNS];
-  return columns.map((column) => renderColumn(column, cardsByCol[column] ?? [], playQueue)).join("");
+  return columns.map((column) => renderScrumColumn(column, cardsByCol[column] ?? [], playQueue)).join("");
 }
 
 export function renderScrumEmptyState(message: string): string {

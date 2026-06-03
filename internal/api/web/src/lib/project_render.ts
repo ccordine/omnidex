@@ -166,6 +166,14 @@ export function renderProjectList(projects: ProjectRecord[]): string {
   }
   return projects
     .map((project) => {
+      const autoWork = scrumAutoWorkFromProject(project);
+      const controlAction = autoWork.enabled ? "projects#pauseAutoWork" : "projects#startAutoWork";
+      const controlTitle = autoWork.enabled ? "Pause auto-work" : "Start auto-work";
+      const controlLabel = `${controlTitle} for ${project.name}`;
+      const controlClasses = autoWork.enabled
+        ? "grid h-9 w-9 shrink-0 place-items-center rounded-md border border-amber-300/30 bg-amber-300/10 text-sm font-semibold text-amber-100 transition hover:bg-amber-300/20"
+        : "grid h-9 w-9 shrink-0 place-items-center rounded-md border border-cyan-300/30 bg-cyan-300/10 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/20";
+      const controlGlyph = autoWork.enabled ? "⏸" : "▶";
       return `
         <div class="rounded-xl border border-white/10 bg-zinc-950/60 p-4 transition hover:border-cyan-300/30 hover:bg-cyan-300/5">
           <div class="flex items-start gap-3">
@@ -184,12 +192,12 @@ export function renderProjectList(projects: ProjectRecord[]): string {
             </div>
             <button
               type="button"
-              data-action="projects#startAutoWork"
+              data-action="${controlAction}"
               data-project-id="${project.id}"
-              class="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-cyan-300/30 bg-cyan-300/10 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/20"
-              title="Start auto-work"
-              aria-label="Start auto-work for ${escapeHTML(project.name)}"
-            >▶</button>
+              class="${controlClasses}"
+              title="${escapeHTML(controlTitle)}"
+              aria-label="${escapeHTML(controlLabel)}"
+            >${controlGlyph}</button>
           </div>
           ${
             project.project_state

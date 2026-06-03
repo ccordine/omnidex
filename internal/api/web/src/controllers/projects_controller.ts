@@ -11,6 +11,7 @@ import {
   fetchProjectGit,
   fetchProjectMap,
   fetchRecipes,
+  pauseProjectAutoWork,
   runProjectDebugger,
   scanProjectMap,
   startProjectAutoWork,
@@ -687,6 +688,25 @@ export default class ProjectsController extends Controller {
       }
       document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: id } }));
       this.actionOk(payload.message || "Auto-work started");
+    } catch (error) {
+      this.actionFail(error);
+    }
+  }
+
+  async pauseAutoWork(event: Event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
+    if (!id) return;
+    this.setStatus("Pausing auto-work…", "busy");
+    try {
+      const payload = await pauseProjectAutoWork(id);
+      await this.load();
+      if (this.selectedProjectID === id) {
+        await this.renderDetail(id, { preserveStatus: true });
+      }
+      document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: id } }));
+      this.actionOk(payload.message || "Auto-work paused");
     } catch (error) {
       this.actionFail(error);
     }

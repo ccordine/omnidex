@@ -129,6 +129,10 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		s.handleProjectPlay(w, r, id)
 		return
 	}
+	if action == "pause" {
+		s.handleProjectPause(w, r, id)
+		return
+	}
 	if action == "map" || action == "map/scan" {
 		s.handleProjectMap(w, r, id, action)
 		return
