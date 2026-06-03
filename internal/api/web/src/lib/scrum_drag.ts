@@ -50,7 +50,6 @@ type DragSession = {
   lastY: number;
   dragging: boolean;
   ghost: HTMLElement | null;
-  placeholder: HTMLElement | null;
   cardEl: HTMLElement;
   dropTarget: DropTarget | null;
   sourceIndex: number;
@@ -127,7 +126,6 @@ export class ScrumBoardDrag {
       lastY: event.clientY,
       dragging: false,
       ghost: null,
-      placeholder: null,
       cardEl,
       dropTarget: null,
       sourceIndex: this.cardIndex(cardEl),
@@ -219,7 +217,6 @@ export class ScrumBoardDrag {
         lastY: moveEvent.clientY,
         dragging: false,
         ghost: null,
-        placeholder: null,
         cardEl: probe.cardEl,
         dropTarget: null,
         sourceIndex: probe.sourceIndex,
@@ -261,7 +258,6 @@ export class ScrumBoardDrag {
 
     this.moveGhost(session, event.clientX, event.clientY);
     session.dropTarget = this.dropTargetAt(event.clientX, event.clientY, session);
-    this.updatePlaceholder(session);
     this.highlightDropTarget(session.dropTarget);
   }
 
@@ -280,7 +276,6 @@ export class ScrumBoardDrag {
       session.ghost = null;
       const target = session.dropTarget ?? this.dropTargetAt(session.lastX, session.lastY, session);
       if (target && this.shouldCommitDrop(session, target)) {
-        this.commitDrop(session, target);
         this.suppressClickUntil = Date.now() + 400;
         void this.onDrop?.({
           cardID: session.cardID,
@@ -288,8 +283,6 @@ export class ScrumBoardDrag {
           beforeCardID: target.beforeCardID,
           sourceColumn: session.sourceColumn,
         });
-      } else if (session.placeholder) {
-        session.placeholder.replaceWith(session.cardEl);
       }
     }
 
@@ -323,14 +316,8 @@ export class ScrumBoardDrag {
     document.body.appendChild(ghost);
     session.ghost = ghost;
 
-    session.placeholder = document.createElement("div");
-    session.placeholder.className = "scrum-drop-placeholder";
-    session.placeholder.style.height = `${rect.height}px`;
-    session.cardEl.replaceWith(session.placeholder);
-
     this.moveGhost(session, event.clientX, event.clientY);
     session.dropTarget = this.dropTargetAt(event.clientX, event.clientY, session);
-    this.updatePlaceholder(session);
     this.highlightDropTarget(session.dropTarget);
     this.startEdgeScroll();
   }
@@ -367,50 +354,6 @@ export class ScrumBoardDrag {
     }
 
     return { column, beforeCardID: null };
-  }
-
-  private updatePlaceholder(session: DragSession) {
-    if (!session.placeholder || !session.dropTarget) return;
-    const dropzone = this.dropzoneForColumn(session.dropTarget.column);
-    if (!dropzone) return;
-
-    dropzone.querySelector(".scrum-column-empty")?.remove();
-
-    const beforeEl = session.dropTarget.beforeCardID
-      ? dropzone.querySelector(`.scrum-card[data-card-id="${cssEscape(session.dropTarget.beforeCardID)}"]`)
-      : null;
-
-    if (beforeEl) {
-      if (session.placeholder.nextElementSibling !== beforeEl) {
-        dropzone.insertBefore(session.placeholder, beforeEl);
-      }
-      return;
-    }
-
-    if (dropzone.lastElementChild !== session.placeholder) {
-      dropzone.appendChild(session.placeholder);
-    }
-  }
-
-  private commitDrop(session: DragSession, target: DropTarget) {
-    const dropzone = this.dropzoneForColumn(target.column);
-    if (!dropzone || !session.placeholder) return;
-
-    dropzone.querySelector(".scrum-column-empty")?.remove();
-    session.cardEl.classList.remove("scrum-card-dragging");
-    session.cardEl.dataset.scrumColumn = target.column;
-
-    const beforeEl = target.beforeCardID
-      ? dropzone.querySelector(`.scrum-card[data-card-id="${cssEscape(target.beforeCardID)}"]`)
-      : null;
-
-    if (beforeEl) {
-      dropzone.insertBefore(session.cardEl, beforeEl);
-    } else {
-      dropzone.appendChild(session.cardEl);
-    }
-    session.placeholder.remove();
-    session.placeholder = null;
   }
 
   private cardIndex(cardEl: HTMLElement): number {
@@ -575,7 +518,6 @@ export class ScrumBoardDrag {
 
     if (scrolled) {
       session.dropTarget = this.dropTargetAt(x, y, session);
-      this.updatePlaceholder(session);
       this.highlightDropTarget(session.dropTarget);
     }
 
@@ -592,10 +534,6 @@ export class ScrumBoardDrag {
     session.cardEl.classList.remove("scrum-card-dragging");
     session.ghost?.remove();
     session.ghost = null;
-    if (session.placeholder?.isConnected && !session.cardEl.isConnected) {
-      session.placeholder.replaceWith(session.cardEl);
-    }
-    session.placeholder = null;
     document.body.classList.remove("scrum-drag-active");
     if (this.board) {
       for (const zone of this.board.querySelectorAll("[data-scrum-dropzone]")) {

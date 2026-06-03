@@ -41,7 +41,22 @@ func renderScrumBoardBundleHTML(fragments scrumBoardFragments) string {
 }
 
 func renderRecyclrTemplateHTML(target string, inner string, location string) string {
+	if strings.TrimSpace(target) == "" {
+		panic("recyclr template target is required")
+	}
+	if !isSupportedRecyclrLocation(location) {
+		panic(fmt.Sprintf("unsupported recyclr template location: %q", location))
+	}
 	return fmt.Sprintf(`<template data-recyclr-target="%s" data-recyclr-location="%s">%s</template>`, html.EscapeString(target), html.EscapeString(location), inner)
+}
+
+func isSupportedRecyclrLocation(location string) bool {
+	switch location {
+	case "innerHTML", "outerHTML", "beforebegin", "afterbegin", "beforeend", "afterend":
+		return true
+	default:
+		return false
+	}
 }
 
 func renderScrumBoardHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard, playQueue map[string]any) string {

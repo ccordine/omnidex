@@ -703,30 +703,24 @@ export default class ScrumController extends Controller {
   private wireBoardDragDrop() {
     if (!this.hasBoardTarget) return;
     this.boardDrag.wire(this.boardTarget, (result) => {
-      this.applyDragResult(result);
       void this.persistCardPlacement(result);
     });
   }
 
-  private applyDragResult(result: ScrumDragDropResult) {
-    this.skipMoveToastFor.add(result.cardID);
-    const card = this.findCard(result.cardID);
-    if (card) {
-      card.column = result.column;
-    }
-  }
-
   private async persistCardPlacement(result: ScrumDragDropResult) {
+    this.skipMoveToastFor.add(result.cardID);
+    this.setBoardLoading(true, "Moving card…");
     try {
-      const card = await moveScrumCard(result.cardID, result.column, this.projectID, {
+      await moveScrumCard(result.cardID, result.column, this.projectID, {
         before_card_id: result.beforeCardID,
       });
-      this.upsertCard(card);
       const payload = await this.fetchBoardViewport();
       this.applyBoardPayload(payload, false);
     } catch (error) {
       this.actionFail(error);
       await this.load();
+    } finally {
+      this.setBoardLoading(false);
     }
   }
 
@@ -1593,11 +1587,11 @@ export default class ScrumController extends Controller {
 
   private async withCardMove(cardID: string, column: string, label: string) {
     if (!cardID || !column) return;
-    this.setActiveColumn(column);
     this.skipMoveToastFor.add(cardID);
     this.setStatus(label, "busy");
     try {
       await moveScrumCard(cardID, column, this.projectID);
+      this.setActiveColumn(column);
       const payload = await this.fetchBoardViewport();
       this.applyBoardPayload(payload, false);
       if (this.activeCardID === cardID) await this.refreshActiveModal(cardID);
