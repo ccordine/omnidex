@@ -255,8 +255,8 @@ func TestLoadRealtimeDefaultsAndMinimums(t *testing.T) {
 	if cfg.RealtimeMaxClients != 512 {
 		t.Fatalf("RealtimeMaxClients=%d want 512", cfg.RealtimeMaxClients)
 	}
-	if cfg.RealtimeStreamMaxAge != 30*time.Minute {
-		t.Fatalf("RealtimeStreamMaxAge=%s want 30m", cfg.RealtimeStreamMaxAge)
+	if cfg.RealtimeStreamMaxAge != 10*time.Minute {
+		t.Fatalf("RealtimeStreamMaxAge=%s want 10m", cfg.RealtimeStreamMaxAge)
 	}
 	if cfg.RealtimeHeartbeat != 25*time.Second {
 		t.Fatalf("RealtimeHeartbeat=%s want 25s", cfg.RealtimeHeartbeat)

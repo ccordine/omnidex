@@ -101,6 +101,15 @@ export type ScrumCard = {
   planning_chat?: ScrumChatMessage[];
   coach_config?: ScrumCoachConfig;
   flow_metrics?: ScrumFlowMetrics;
+  summary?: boolean;
+  checklist_done?: number;
+  checklist_total?: number;
+  ref_file_count?: number;
+  chat_count?: number;
+  planning_chat_count?: number;
+  test_criteria_done?: number;
+  test_criteria_total?: number;
+  has_card_ticket?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -133,6 +142,9 @@ export type ScrumBoardResponse = {
   board: ScrumBoard;
   cards_by_col: Record<string, ScrumCard[]>;
   project_id?: number;
+  all_columns?: string[];
+  visible_column?: string;
+  column_counts?: Record<string, number>;
   auto_play_through?: boolean;
   auto_work?: ScrumAutoWorkConfig;
   auto_review?: ScrumAutoReviewConfig;

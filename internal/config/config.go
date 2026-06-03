@@ -77,6 +77,9 @@ type Config struct {
 	RealtimeStreamMaxAge     time.Duration
 	RealtimeHeartbeat        time.Duration
 	RealtimeWriteTimeout     time.Duration
+	RedisURL                 string
+	UIRedisRequired          bool
+	UISessionTTL             time.Duration
 	RetrievalLimit           int
 	ContextCharBudget        int
 	HallucinationRetryLimit  int
@@ -167,9 +170,12 @@ func Load() (Config, error) {
 		WorkerPollInterval:       getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),
 		RequestTimeout:           getenvDuration("REQUEST_TIMEOUT", 90*time.Second),
 		RealtimeMaxClients:       getenvInt("REALTIME_MAX_CLIENTS", 512),
-		RealtimeStreamMaxAge:     getenvDuration("REALTIME_STREAM_MAX_AGE", 30*time.Minute),
+		RealtimeStreamMaxAge:     getenvDuration("REALTIME_STREAM_MAX_AGE", 10*time.Minute),
 		RealtimeHeartbeat:        getenvDuration("REALTIME_HEARTBEAT", 25*time.Second),
 		RealtimeWriteTimeout:     getenvDuration("REALTIME_WRITE_TIMEOUT", 10*time.Second),
+		RedisURL:                 getenv("REDIS_URL", ""),
+		UIRedisRequired:          getenvBool("UI_REDIS_REQUIRED", false),
+		UISessionTTL:             getenvDuration("UI_SESSION_TTL", 30*time.Minute),
 		RetrievalLimit:           getenvInt("RETRIEVAL_LIMIT", 8),
 		ContextCharBudget:        getenvInt("CONTEXT_CHAR_BUDGET", 4000),
 		HallucinationRetryLimit:  getenvInt("HALLUCINATION_RETRY_LIMIT", 2),
@@ -228,13 +234,16 @@ func Load() (Config, error) {
 		cfg.RealtimeMaxClients = 512
 	}
 	if cfg.RealtimeStreamMaxAge < time.Minute {
-		cfg.RealtimeStreamMaxAge = 30 * time.Minute
+		cfg.RealtimeStreamMaxAge = 10 * time.Minute
 	}
 	if cfg.RealtimeHeartbeat < 5*time.Second {
 		cfg.RealtimeHeartbeat = 25 * time.Second
 	}
 	if cfg.RealtimeWriteTimeout < time.Second {
 		cfg.RealtimeWriteTimeout = 10 * time.Second
+	}
+	if cfg.UISessionTTL < time.Minute {
+		cfg.UISessionTTL = 30 * time.Minute
 	}
 
 	if cfg.FastModel == "" {

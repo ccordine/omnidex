@@ -38,11 +38,54 @@ function testStatusBadge(source: DataSource): string {
   return `<span class="rounded-full border border-zinc-600/50 bg-zinc-800/50 px-2 py-0.5 text-[10px] font-semibold uppercase text-zinc-400">Untested</span>`;
 }
 
-function renderSourceForm(source: Partial<DataSource> | null, editingId: string | null): string {
+export function renderSourceForm(source: Partial<DataSource> | null, editingId: string | null): string {
   const isEdit = Boolean(editingId);
   const useDSN = source?.use_dsn ?? false;
+  const connectionFields = useDSN
+    ? `
+      <div data-ds-panel="dsn" class="grid gap-3">
+        <label class="block">
+          <span class="text-xs text-zinc-500">PostgreSQL DSN</span>
+          <input data-ds-field="dsn" value="" placeholder="${source?.password_set ? "Leave blank to keep current DSN" : "postgres://user:pass@host:5432/db?sslmode=prefer"}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40" />
+          ${source?.password_hint ? `<span class="mt-1 block text-[11px] text-zinc-600">Current: ${escapeHTML(source.password_hint)}</span>` : ""}
+        </label>
+      </div>
+    `
+    : `
+      <div data-ds-panel="fields" class="grid gap-3 md:grid-cols-2">
+        <label class="block md:col-span-2">
+          <span class="text-xs text-zinc-500">Host</span>
+          <input data-ds-field="host" value="${escapeHTML(source?.host || "")}" placeholder="localhost" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-zinc-500">Port</span>
+          <input data-ds-field="port" type="number" min="1" max="65535" value="${source?.port || 5432}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-zinc-500">Database</span>
+          <input data-ds-field="database_name" value="${escapeHTML(source?.database_name || "")}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-zinc-500">Username</span>
+          <input data-ds-field="username" value="${escapeHTML(source?.username || "")}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-zinc-500">Password</span>
+          <input data-ds-field="password" type="password" value="" placeholder="${source?.password_set ? "Leave blank to keep current password" : ""}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
+          ${source?.password_hint ? `<span class="mt-1 block text-[11px] text-zinc-600">Current: ${escapeHTML(source.password_hint)}</span>` : ""}
+        </label>
+        <label class="block md:col-span-2">
+          <span class="text-xs text-zinc-500">SSL mode</span>
+          <select data-ds-field="ssl_mode" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none">
+            ${["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+              .map((mode) => `<option value="${mode}" ${(source?.ssl_mode || "prefer") === mode ? "selected" : ""}>${mode}</option>`)
+              .join("")}
+          </select>
+        </label>
+      </div>
+    `;
   return `
-    <form data-action="submit->admin#saveDataSource" class="mt-4 grid gap-3">
+    <form data-action="submit->admin#saveDataSource" data-ds-source-form class="mt-4 grid gap-3">
       <input type="hidden" data-ds-field="id" value="${escapeHTML(editingId || "")}" />
       <label class="block">
         <span class="text-xs text-zinc-500">Name</span>
@@ -81,44 +124,7 @@ function renderSourceForm(source: Partial<DataSource> | null, editingId: string 
         <input type="checkbox" data-ds-field="use_dsn" ${useDSN ? "checked" : ""} class="rounded border-white/20 bg-zinc-900" />
         Use connection string (DSN)
       </label>
-      <div data-ds-panel="dsn" class="${useDSN ? "" : "hidden"} grid gap-3">
-        <label class="block">
-          <span class="text-xs text-zinc-500">PostgreSQL DSN</span>
-          <input data-ds-field="dsn" value="" placeholder="${source?.password_set ? "Leave blank to keep current DSN" : "postgres://user:pass@host:5432/db?sslmode=prefer"}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40" />
-          ${source?.password_hint ? `<span class="mt-1 block text-[11px] text-zinc-600">Current: ${escapeHTML(source.password_hint)}</span>` : ""}
-        </label>
-      </div>
-      <div data-ds-panel="fields" class="${useDSN ? "hidden" : ""} grid gap-3 md:grid-cols-2">
-        <label class="block md:col-span-2">
-          <span class="text-xs text-zinc-500">Host</span>
-          <input data-ds-field="host" value="${escapeHTML(source?.host || "")}" placeholder="localhost" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-zinc-500">Port</span>
-          <input data-ds-field="port" type="number" min="1" max="65535" value="${source?.port || 5432}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-zinc-500">Database</span>
-          <input data-ds-field="database_name" value="${escapeHTML(source?.database_name || "")}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-zinc-500">Username</span>
-          <input data-ds-field="username" value="${escapeHTML(source?.username || "")}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-zinc-500">Password</span>
-          <input data-ds-field="password" type="password" value="" placeholder="${source?.password_set ? "Leave blank to keep current password" : ""}" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
-          ${source?.password_hint ? `<span class="mt-1 block text-[11px] text-zinc-600">Current: ${escapeHTML(source.password_hint)}</span>` : ""}
-        </label>
-        <label class="block md:col-span-2">
-          <span class="text-xs text-zinc-500">SSL mode</span>
-          <select data-ds-field="ssl_mode" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none">
-            ${["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
-              .map((mode) => `<option value="${mode}" ${(source?.ssl_mode || "prefer") === mode ? "selected" : ""}>${mode}</option>`)
-              .join("")}
-          </select>
-        </label>
-      </div>
+      ${connectionFields}
       <p class="text-xs text-zinc-500">Connections are read-only. Only SELECT / WITH queries are allowed in the query builder.</p>
       <div class="flex flex-wrap gap-2">
         <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">${isEdit ? "Save changes" : "Add data source"}</button>

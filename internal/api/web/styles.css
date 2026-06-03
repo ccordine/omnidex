@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color-scheme: dark;
 }
@@ -255,23 +259,23 @@ body {
   min-width: 0;
 }
 
-.project-tab-stack > [data-project-tab-panel]:not(.hidden) {
+.project-tab-stack > [data-project-tab-panel] {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
-.project-tab-stack > [data-project-tab-panel="scrum"]:not(.hidden),
-.project-tab-stack > [data-project-tab-panel="chat"]:not(.hidden),
-.project-tab-stack > [data-project-tab-panel="terminal"]:not(.hidden),
-.project-tab-stack > [data-project-tab-panel="screen"]:not(.hidden) {
+.project-tab-stack > [data-project-tab-panel="scrum"],
+.project-tab-stack > [data-project-tab-panel="chat"],
+.project-tab-stack > [data-project-tab-panel="terminal"],
+.project-tab-stack > [data-project-tab-panel="screen"] {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.project-tab-stack > [data-project-tab-panel="scrum"]:not(.hidden) [data-scrum-board-scroll] {
+.project-tab-stack > [data-project-tab-panel="scrum"] [data-scrum-board-scroll] {
   touch-action: pan-x pan-y;
 }
 

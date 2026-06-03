@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,33 +29,42 @@ type ScrumChatMessage struct {
 }
 
 type ScrumCard struct {
-	ID          string               `json:"id"`
-	Title       string               `json:"title"`
-	Description string               `json:"description"`
-	Column      string               `json:"column"`
-	Checklist   []ScrumChecklistItem `json:"checklist"`
-	RefFiles    []string             `json:"ref_files"`
-	Chat        []ScrumChatMessage   `json:"chat"`
-	ModelConfig json.RawMessage      `json:"model_config,omitempty"`
-	AgentConfig json.RawMessage      `json:"agent_config,omitempty"`
-	CardTicket  string               `json:"card_ticket,omitempty"`
-	CardPrompt  string               `json:"card_prompt,omitempty"`
-	RecipeID    string               `json:"recipe_id,omitempty"`
-	Recipe      json.RawMessage      `json:"recipe,omitempty"`
-	Tags        []string             `json:"tags"`
-	PlanningChat []ScrumChatMessage  `json:"planning_chat"`
-	CoachConfig json.RawMessage      `json:"coach_config,omitempty"`
-	TestCriteria []ScrumChecklistItem `json:"test_criteria"`
-	FlowMetrics  json.RawMessage      `json:"flow_metrics,omitempty"`
-	JobID       string               `json:"job_id,omitempty"`
-	TagsJobID   string               `json:"tags_job_id,omitempty"`
-	TicketJobID string               `json:"ticket_job_id,omitempty"`
-	ConsoleLog  string               `json:"console_log,omitempty"`
-	PlayState   string               `json:"play_state,omitempty"`
-	QueueOrder  int                  `json:"queue_order,omitempty"`
-	BoardOrder  int                  `json:"board_order,omitempty"`
-	CreatedAt   string               `json:"created_at"`
-	UpdatedAt   string               `json:"updated_at"`
+	ID                string               `json:"id"`
+	Title             string               `json:"title"`
+	Description       string               `json:"description"`
+	Column            string               `json:"column"`
+	Checklist         []ScrumChecklistItem `json:"checklist"`
+	RefFiles          []string             `json:"ref_files"`
+	Chat              []ScrumChatMessage   `json:"chat"`
+	ModelConfig       json.RawMessage      `json:"model_config,omitempty"`
+	AgentConfig       json.RawMessage      `json:"agent_config,omitempty"`
+	CardTicket        string               `json:"card_ticket,omitempty"`
+	CardPrompt        string               `json:"card_prompt,omitempty"`
+	RecipeID          string               `json:"recipe_id,omitempty"`
+	Recipe            json.RawMessage      `json:"recipe,omitempty"`
+	Tags              []string             `json:"tags"`
+	PlanningChat      []ScrumChatMessage   `json:"planning_chat"`
+	CoachConfig       json.RawMessage      `json:"coach_config,omitempty"`
+	TestCriteria      []ScrumChecklistItem `json:"test_criteria"`
+	FlowMetrics       json.RawMessage      `json:"flow_metrics,omitempty"`
+	Summary           bool                 `json:"summary,omitempty"`
+	ChecklistDone     int                  `json:"checklist_done,omitempty"`
+	ChecklistTotal    int                  `json:"checklist_total,omitempty"`
+	RefFileCount      int                  `json:"ref_file_count,omitempty"`
+	ChatCount         int                  `json:"chat_count,omitempty"`
+	PlanningChatCount int                  `json:"planning_chat_count,omitempty"`
+	TestCriteriaDone  int                  `json:"test_criteria_done,omitempty"`
+	TestCriteriaTotal int                  `json:"test_criteria_total,omitempty"`
+	HasCardTicket     bool                 `json:"has_card_ticket,omitempty"`
+	JobID             string               `json:"job_id,omitempty"`
+	TagsJobID         string               `json:"tags_job_id,omitempty"`
+	TicketJobID       string               `json:"ticket_job_id,omitempty"`
+	ConsoleLog        string               `json:"console_log,omitempty"`
+	PlayState         string               `json:"play_state,omitempty"`
+	QueueOrder        int                  `json:"queue_order,omitempty"`
+	BoardOrder        int                  `json:"board_order,omitempty"`
+	CreatedAt         string               `json:"created_at"`
+	UpdatedAt         string               `json:"updated_at"`
 }
 
 func (c *ScrumCard) UnmarshalJSON(data []byte) error {
@@ -124,10 +134,10 @@ func scrumBoardPath() (string, error) {
 func defaultScrumBoard() ScrumBoard {
 	now := time.Now().UTC().Format(time.RFC3339)
 	return ScrumBoard{
-		ID:      "default",
-		Name:    "Omni Scrum",
-		Columns: append([]string(nil), scrumColumns...),
-		Cards:   []ScrumCard{},
+		ID:        "default",
+		Name:      "Omni Scrum",
+		Columns:   append([]string(nil), scrumColumns...),
+		Cards:     []ScrumCard{},
 		UpdatedAt: now,
 	}
 }
@@ -460,4 +470,94 @@ func cardsByColumn(board ScrumBoard) map[string][]ScrumCard {
 		sortCardsForColumn(col, out[col])
 	}
 	return out
+}
+
+func scrumViewportColumn(r *http.Request, columns []string) string {
+	raw := ""
+	if r != nil && r.URL != nil {
+		raw = r.URL.Query().Get("column")
+	}
+	column := normalizeScrumColumn(raw)
+	if column == "" {
+		column = "assigned"
+	}
+	for _, candidate := range columns {
+		if normalizeScrumColumn(candidate) == column {
+			return column
+		}
+	}
+	if len(columns) > 0 {
+		return normalizeScrumColumn(columns[0])
+	}
+	return ""
+}
+
+func scrumBoardColumnViewport(board ScrumBoard, column string) ScrumBoard {
+	column = normalizeScrumColumn(column)
+	if column == "" {
+		return board
+	}
+	cards := make([]ScrumCard, 0)
+	for _, card := range board.Cards {
+		if normalizeScrumColumn(card.Column) == column {
+			cards = append(cards, scrumCardBoardSummary(card))
+		}
+	}
+	sortCardsForColumn(column, cards)
+	board.Columns = []string{column}
+	board.Cards = cards
+	return board
+}
+
+func scrumCardBoardSummary(card ScrumCard) ScrumCard {
+	checklistDone := 0
+	for _, item := range card.Checklist {
+		if item.Done {
+			checklistDone++
+		}
+	}
+	testDone := 0
+	for _, item := range card.TestCriteria {
+		if item.Done {
+			testDone++
+		}
+	}
+	return ScrumCard{
+		ID:                card.ID,
+		Title:             card.Title,
+		Description:       card.Description,
+		Column:            card.Column,
+		Summary:           true,
+		ChecklistDone:     checklistDone,
+		ChecklistTotal:    len(card.Checklist),
+		RefFileCount:      len(card.RefFiles),
+		ChatCount:         len(card.Chat),
+		PlanningChatCount: len(card.PlanningChat),
+		TestCriteriaDone:  testDone,
+		TestCriteriaTotal: len(card.TestCriteria),
+		HasCardTicket:     strings.TrimSpace(card.CardTicket) != "",
+		Tags:              append([]string(nil), card.Tags...),
+		FlowMetrics:       card.FlowMetrics,
+		JobID:             card.JobID,
+		TagsJobID:         card.TagsJobID,
+		TicketJobID:       card.TicketJobID,
+		PlayState:         card.PlayState,
+		QueueOrder:        card.QueueOrder,
+		BoardOrder:        card.BoardOrder,
+		CreatedAt:         card.CreatedAt,
+		UpdatedAt:         card.UpdatedAt,
+		Checklist:         []ScrumChecklistItem{},
+		RefFiles:          []string{},
+		Chat:              []ScrumChatMessage{},
+		PlanningChat:      []ScrumChatMessage{},
+		TestCriteria:      []ScrumChecklistItem{},
+	}
+}
+
+func scrumColumnCounts(cardsByCol map[string][]ScrumCard) map[string]int {
+	counts := make(map[string]int, len(cardsByCol))
+	for column, cards := range cardsByCol {
+		counts[column] = len(cards)
+	}
+	return counts
 }

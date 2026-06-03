@@ -28,14 +28,18 @@ import { renderGlobalAgentSettings } from "../lib/agent_config_render";
 import {
   emptyDataSourcesViewState,
   renderDataSourcesPanel,
+  renderSourceForm,
   type DataSourcesViewState,
 } from "../lib/data_sources_render";
 import {
   renderAPISecretsSettings,
+  isAdminTab,
   renderGlobalModelSettings,
   renderMindStats,
   renderNetworkSettings,
   renderOllamaModels,
+  renderAdminTabNav,
+  renderAdminTabPanel,
   type AdminTab,
 } from "../lib/admin_render";
 import type GxController from "./gx_controller";
@@ -48,6 +52,7 @@ import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 export default class AdminController extends Controller {
   static targets = [
     "tabNav",
+    "tabPanel",
     "adminStatus",
     "mindStats",
     "networkAccess",
@@ -63,6 +68,7 @@ export default class AdminController extends Controller {
   ];
 
   declare readonly tabNavTarget: HTMLElement;
+  declare readonly tabPanelTarget: HTMLElement;
   declare readonly adminStatusTarget: HTMLElement;
   declare readonly mindStatsTarget: HTMLElement;
   declare readonly networkAccessTarget: HTMLElement;
@@ -82,7 +88,7 @@ export default class AdminController extends Controller {
 
   connect() {
     const fromURL = parseAdminTabFromLocation();
-    if (fromURL === "overview" || fromURL === "ai" || fromURL === "datasources" || fromURL === "health" || fromURL === "advanced") {
+    if (isAdminTab(fromURL)) {
       this.activeTab = fromURL;
     }
     this.panelShownHandler = (event: Event) => {
@@ -90,9 +96,8 @@ export default class AdminController extends Controller {
       if (detail?.panel === "admin") void this.load();
     };
     document.addEventListener("omni:panel-shown", this.panelShownHandler);
-    this.applyTabState();
-    if (this.activeTab === "health") void this.loadHealth();
-    if (this.activeTab === "datasources") void this.loadDataSources();
+    this.renderActiveTab();
+    void this.load();
   }
 
   disconnect() {
@@ -121,11 +126,11 @@ export default class AdminController extends Controller {
 
   showTab(event: Event) {
     event.preventDefault();
-    this.activeTab = ((event.currentTarget as HTMLElement).dataset.adminTab as AdminTab) || "overview";
-    this.applyTabState();
+    const tab = (event.currentTarget as HTMLElement).dataset.adminTab;
+    this.activeTab = isAdminTab(tab) ? tab : "overview";
+    this.renderActiveTab();
     this.pushAdminTabHistory();
-    if (this.activeTab === "health") void this.loadHealth();
-    if (this.activeTab === "datasources") void this.loadDataSources();
+    void this.load();
   }
 
   private gxController(): GxController | null {
@@ -137,9 +142,6 @@ export default class AdminController extends Controller {
   }
 
   private applyTabState() {
-    this.element.querySelectorAll("[data-admin-tab-panel]").forEach((panel) => {
-      panel.classList.toggle("hidden", panel.getAttribute("data-admin-tab-panel") !== this.activeTab);
-    });
     this.tabNavTarget.querySelectorAll("[data-admin-tab]").forEach((button) => {
       const active = button.getAttribute("data-admin-tab") === this.activeTab;
       button.classList.toggle("border-cyan-300/40", active);
@@ -150,11 +152,23 @@ export default class AdminController extends Controller {
     });
   }
 
+  private renderActiveTab() {
+    this.tabNavTarget.innerHTML = renderAdminTabNav(this.activeTab);
+    this.tabPanelTarget.innerHTML = renderAdminTabPanel(this.activeTab);
+    this.applyTabState();
+  }
+
   private chatController(): ChatController | null {
     return this.application.getControllerForElementAndIdentifier(this.element, "chat") as ChatController | null;
   }
 
-  async loadHealth() {
+  async loadHealth(event?: Event) {
+    event?.preventDefault();
+    if (this.activeTab !== "health") {
+      this.activeTab = "health";
+      this.renderActiveTab();
+      this.pushAdminTabHistory();
+    }
     this.setAdminStatus("Refreshing health checks…", "busy");
     try {
       await this.chatController()?.loadStatus();
@@ -168,24 +182,24 @@ export default class AdminController extends Controller {
     this.setAdminStatus("Loading admin settings…", "busy");
     let failed: unknown = null;
     try {
-      await Promise.all([
-        this.loadNetwork(),
-        this.loadMind(),
-        this.loadOllama(),
-        this.loadAPISecrets(),
-        this.loadGlobalModels(),
-        this.loadGlobalAgents(),
-        this.loadDataSources(),
-      ]);
+      switch (this.activeTab) {
+        case "overview":
+          await Promise.all([this.loadNetwork(), this.loadMind()]);
+          break;
+        case "ai":
+          await Promise.all([this.loadOllama(), this.loadAPISecrets(), this.loadGlobalModels(), this.loadGlobalAgents()]);
+          break;
+        case "datasources":
+          await this.loadDataSources();
+          break;
+        case "health":
+          await this.loadHealth();
+          break;
+        case "advanced":
+          break;
+      }
     } catch (error) {
       failed = error;
-    }
-    if (this.activeTab === "health") {
-      try {
-        await this.chatController()?.loadStatus();
-      } catch (error) {
-        if (!failed) failed = error;
-      }
     }
     if (failed) {
       this.actionFail(failed);
@@ -424,8 +438,12 @@ export default class AdminController extends Controller {
 
   toggleDataSourceDSNPanel() {
     const useDSN = (this.dataSourcesPanelTarget.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null)?.checked ?? false;
-    this.dataSourcesPanelTarget.querySelector("[data-ds-panel='dsn']")?.classList.toggle("hidden", !useDSN);
-    this.dataSourcesPanelTarget.querySelector("[data-ds-panel='fields']")?.classList.toggle("hidden", useDSN);
+    const form = this.dataSourcesPanelTarget.querySelector("[data-ds-source-form]") as HTMLElement | null;
+    if (!form) return;
+    const current = this.readDataSourceForm();
+    current.use_dsn = useDSN;
+    form.outerHTML = renderSourceForm(current, current.id || this.dataSourcesState.editingId);
+    this.dataSourcesPanelTarget.querySelector("[data-ds-field='use_dsn']")?.addEventListener("change", () => this.toggleDataSourceDSNPanel());
   }
 
   async loadDataSources() {

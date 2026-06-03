@@ -21,8 +21,8 @@ export function renderAdminTabNav(activeTab: AdminTab): string {
   }).join("");
 }
 
-export function adminTabPanelClass(tab: AdminTab, activeTab: AdminTab): string {
-  return tab === activeTab ? "" : " hidden";
+export function isAdminTab(value: string | null | undefined): value is AdminTab {
+  return ADMIN_TABS.some((tab) => tab.id === value);
 }
 
 function adminSection(title: string, description: string, body: string): string {
@@ -39,6 +39,103 @@ function adminSection(title: string, description: string, body: string): string 
 
 export function renderAdminSection(title: string, description: string, body: string): string {
   return adminSection(title, description, body);
+}
+
+export function renderAdminTabPanel(activeTab: AdminTab): string {
+  switch (activeTab) {
+    case "ai":
+      return `
+        <div data-admin-tab-panel="ai" class="mx-auto max-w-5xl space-y-4">
+          ${adminSection("API keys", "Stored in the database. Leave a field blank to keep the current value. Environment variables are used only when no database value is set.", `<div data-admin-target="apiSecrets" class="mt-4">Loading...</div>`)}
+          ${adminSection("Workspace agent defaults", "Global execution agent settings. Project and card overrides take precedence.", `<div data-admin-target="globalAgents" class="mt-4">Loading...</div>`)}
+          ${adminSection(
+            "Ollama models",
+            "Pull, inspect, and remove local models used by the stack.",
+            `<form data-action="submit->admin#pullModel" class="mt-4 flex flex-wrap gap-2">
+              <input data-admin-target="pullModel" placeholder="llama3.2:latest" class="min-w-[220px] flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none" />
+              <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Pull model</button>
+            </form>
+            <div data-admin-target="ollamaModels" class="scrollbar mt-4 max-h-[420px] overflow-y-auto">Loading...</div>`,
+          )}
+          ${adminSection("Global model defaults", "Default Ollama models and generation settings for the workspace.", `<div data-admin-target="globalModels" class="mt-4">Loading...</div>`)}
+        </div>
+      `;
+    case "datasources":
+      return `<div data-admin-tab-panel="datasources" class="mx-auto max-w-6xl space-y-4"><div data-admin-target="dataSourcesPanel" class="space-y-4">Loading...</div></div>`;
+    case "health":
+      return `
+        <div data-admin-tab-panel="health" class="mx-auto max-w-6xl space-y-4">
+          ${adminSection("Core health", "Live /healthz payload from the running core service.", `<pre data-chat-target="statusOutput" data-recyclr-sink="status-output" class="scrollbar mt-4 max-h-[360px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-900/60 p-4 text-sm leading-6 text-zinc-200">Loading...</pre>`)}
+          <div class="grid gap-4 lg:grid-cols-2">
+            ${adminSection("Research stack", "Ollama, embeddings, and web search readiness for research jobs.", `<div data-chat-target="researchStatusOutput" data-recyclr-sink="research-status-output" class="mt-4 text-sm text-zinc-400">Loading...</div>`)}
+            ${adminSection("Host bridge", "In-app folder browser and terminal bridge. Run omni host service install or omni host serve.", `<div data-chat-target="hostBridgeStatusOutput" data-recyclr-sink="host-bridge-status-output" class="mt-4 text-sm text-zinc-400">Loading...</div>`)}
+          </div>
+        </div>
+      `;
+    case "advanced":
+      return `
+        <div data-admin-tab-panel="advanced" class="mx-auto max-w-5xl space-y-4">
+          <section class="rounded-xl border border-rose-300/20 bg-rose-400/5 p-5">
+            <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-rose-200">Destructive maintenance</h3>
+            <p class="mt-1 text-xs text-rose-200/70">Reset the database schema when running with a repository. This cannot be undone.</p>
+            <button data-action="chat#migrateFresh" type="button" class="mt-4 rounded-md border border-rose-300/30 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-400/20">Migrate fresh</button>
+          </section>
+          <section class="rounded-xl border border-dashed border-zinc-700/80 bg-zinc-950/30 p-5">
+            <h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400">Debug tools</h3>
+            <p class="mt-1 text-xs text-zinc-500">Low-level LLM wrappers for testing providers and prompts. Not part of the agent pipeline.</p>
+            <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+              <form data-action="submit->chat#runPersona" class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
+                <h4 class="text-xs font-semibold uppercase tracking-[.16em] text-zinc-400">Persona lab</h4>
+                <label class="mt-3 block text-xs text-zinc-500">Mode</label>
+                <select data-chat-target="personaMode" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none">
+                  <option value="instruct">instruct</option>
+                  <option value="reasoning">reasoning</option>
+                  <option value="roleplay">roleplay</option>
+                  <option value="narrate">narrate</option>
+                </select>
+                <label class="mt-3 block text-xs text-zinc-500">Model override</label>
+                <input data-chat-target="personaModel" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="optional" />
+                <label class="mt-3 block text-xs text-zinc-500">System/context</label>
+                <textarea data-chat-target="personaSystem" rows="3" class="scrollbar mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="Persona constraints or scene/system context"></textarea>
+                <label class="mt-3 block text-xs text-zinc-500">Prompt</label>
+                <textarea data-chat-target="personaPrompt" rows="4" class="scrollbar mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm outline-none" placeholder="Run a direct LLM tool call..."></textarea>
+                <button type="submit" class="mt-3 w-full rounded-md bg-cyan-300 px-3 py-2 text-xs font-semibold text-zinc-950 transition hover:bg-cyan-200">Run persona</button>
+              </form>
+              <pre data-chat-target="personaOutput" data-recyclr-sink="persona-output" class="scrollbar max-h-80 min-h-[12rem] overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-950/50 p-3 text-xs leading-5 text-zinc-200">No run yet.</pre>
+            </div>
+          </section>
+        </div>
+      `;
+    case "overview":
+    default:
+      return `
+        <div data-admin-tab-panel="overview" class="mx-auto max-w-5xl space-y-4">
+          ${adminSection("Network access", "LAN URL for phones, tablets, and other devices on your network.", `<div data-admin-target="networkAccess" class="mt-4">Loading...</div>`)}
+          ${adminSection("Mind overview", "Counts for durable memory, candidates, jobs, and telemetry.", `<div data-admin-target="mindStats" class="mt-4">Loading...</div>`)}
+          ${adminSection(
+            "Document ingest",
+            "Upload PDFs, DOCX, markdown, and text files. Default staging uses memory candidates so nothing enters durable memory until you approve it.",
+            `<form data-action="submit->admin#uploadDocuments" class="mt-4 space-y-3">
+              <input data-admin-target="ingestFiles" type="file" multiple accept=".pdf,.docx,.txt,.md,.markdown,.json,.yaml,.yml,.csv,.log,.srt,.vtt" class="block w-full text-sm text-zinc-300 file:mr-3 file:rounded-md file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950" />
+              <div class="grid gap-3 md:grid-cols-2">
+                <label class="block text-xs text-zinc-500">
+                  Staging
+                  <select data-admin-target="ingestStage" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none">
+                    <option value="candidate" selected>Candidate review (recommended)</option>
+                    <option value="durable">Durable memory (immediate)</option>
+                  </select>
+                </label>
+                <label class="block text-xs text-zinc-500">
+                  Extra tags
+                  <input data-admin-target="ingestTags" placeholder="research,manual" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none" />
+                </label>
+              </div>
+              <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Upload and study</button>
+            </form>`,
+          )}
+        </div>
+      `;
+  }
 }
 
 export function renderNetworkSettings(settings: NetworkSettings): string {

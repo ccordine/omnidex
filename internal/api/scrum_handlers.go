@@ -212,6 +212,13 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodGet:
+		card, _, _, err := s.scrumGetCard(r, cardID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"card": card})
 	case http.MethodPatch:
 		body, err := io.ReadAll(r.Body)
 		if err != nil {

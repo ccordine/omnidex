@@ -9,6 +9,9 @@ import (
 //go:embed web/dist/*
 var uiDistFiles embed.FS
 
+//go:embed web/index.html
+var uiSourceHTML string
+
 //go:embed web/styles.css
 var uiStylesCSS []byte
 

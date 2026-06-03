@@ -77,6 +77,10 @@ type Server struct {
 	realtimeStreamMaxAge      time.Duration
 	realtimeHeartbeat         time.Duration
 	realtimeWriteTimeout      time.Duration
+	redisURL                  string
+	uiRedisRequired           bool
+	uiSessionTTL              time.Duration
+	uiRedis                   *uiRedisClient
 	ollamaURLMu               sync.RWMutex
 	hostAgentURL              string
 	hostAgentToken            string
@@ -132,6 +136,9 @@ type ServerOptions struct {
 	RealtimeStreamMaxAge      time.Duration
 	RealtimeHeartbeat         time.Duration
 	RealtimeWriteTimeout      time.Duration
+	RedisURL                  string
+	UIRedisRequired           bool
+	UISessionTTL              time.Duration
 }
 
 type enqueueRequest struct {
@@ -257,13 +264,16 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		options.RealtimeMaxClients = 512
 	}
 	if options.RealtimeStreamMaxAge < time.Minute {
-		options.RealtimeStreamMaxAge = 30 * time.Minute
+		options.RealtimeStreamMaxAge = 10 * time.Minute
 	}
 	if options.RealtimeHeartbeat < 5*time.Second {
 		options.RealtimeHeartbeat = 25 * time.Second
 	}
 	if options.RealtimeWriteTimeout < time.Second {
 		options.RealtimeWriteTimeout = 10 * time.Second
+	}
+	if options.UISessionTTL < time.Minute {
+		options.UISessionTTL = 30 * time.Minute
 	}
 
 	var channels channelStore
@@ -322,8 +332,14 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		realtimeStreamMaxAge:      options.RealtimeStreamMaxAge,
 		realtimeHeartbeat:         options.RealtimeHeartbeat,
 		realtimeWriteTimeout:      options.RealtimeWriteTimeout,
+		redisURL:                  strings.TrimSpace(options.RedisURL),
+		uiRedisRequired:           options.UIRedisRequired,
+		uiSessionTTL:              options.UISessionTTL,
 		hostAgentURL:              strings.TrimSpace(options.HostAgentURL),
 		hostAgentToken:            strings.TrimSpace(options.HostAgentToken),
+	}
+	if redis, err := newUIRedisClient(s.redisURL); err == nil {
+		s.uiRedis = redis
 	}
 	if repo != nil {
 		s.secretsResolver = secrets.NewResolver(repo)
@@ -373,6 +389,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/host/terminal/preflight", s.handleHostTerminalPreflight)
 	s.mux.HandleFunc("/v1/host/terminal/ws", s.handleHostTerminalWS)
 	s.mux.HandleFunc("/v1/ui/runtime-config", s.handleUIRuntimeConfig)
+	s.mux.HandleFunc("/v1/ui/session", s.handleUISession)
+	s.mux.HandleFunc("/v1/ui/panel", s.handleUIPanel)
 	s.mux.HandleFunc("/v1/host/screen/monitors", s.handleHostScreenMonitors)
 	s.mux.HandleFunc("/v1/host/screen/mjpeg", s.handleHostScreenMJPEG)
 	s.mux.HandleFunc("/v1/recipes", s.handleRecipes)
@@ -1717,8 +1735,9 @@ func Run(ctx context.Context, addr string, handler http.Handler) error {
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		IdleTimeout:       90 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	errCh := make(chan error, 1)

@@ -24,6 +24,9 @@ const COLUMN_ACCENT: Record<string, string> = {
 };
 
 function checklistProgress(card: ScrumCard): { done: number; total: number } {
+  if (card.checklist_total != null || card.checklist_done != null) {
+    return { done: card.checklist_done ?? 0, total: card.checklist_total ?? 0 };
+  }
   const total = card.checklist?.length ?? 0;
   const done = (card.checklist ?? []).filter((item) => item.done).length;
   return { done, total };
@@ -66,8 +69,8 @@ export function renderScrumCard(card: ScrumCard, playQueue?: ScrumBoardResponse[
   const hasJob = Boolean(card.job_id?.trim());
   const stateBadge = playStateBadge(card);
   const flowBadge = flowMetricsBadge(card);
-  const refCount = card.ref_files?.length ?? 0;
-  const chatCount = card.chat?.length ?? 0;
+  const refCount = card.ref_file_count ?? card.ref_files?.length ?? 0;
+  const chatCount = card.chat_count ?? card.chat?.length ?? 0;
 
   return `
     <article class="scrum-card scrum-card-draggable group cursor-grab rounded-lg border border-white/10 bg-zinc-950/70 p-3 shadow-[0_10px_30px_rgba(0,0,0,.22)] transition hover:border-cyan-300/30 active:cursor-grabbing" data-card-id="${escapeHTML(card.id)}" data-scrum-column="${escapeHTML(card.column)}" data-action="click->scrum#openCard">
@@ -198,6 +201,27 @@ export function renderScrumBoard(board: ScrumBoard, cardsByCol: Record<string, S
   return columns.map((column) => renderScrumColumn(column, cardsByCol[column] ?? [], playQueue)).join("");
 }
 
+export function renderScrumColumnNav(
+  columns: string[],
+  activeColumn: string,
+  counts: Record<string, number> = {},
+): string {
+  const items = (columns.length ? columns : [...SCRUM_COLUMNS]).map((column) => {
+    const active = column === activeColumn;
+    const label = COLUMN_LABELS[column] ?? column;
+    const classes = active
+      ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100"
+      : "border-white/10 text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-100";
+    return `
+      <button type="button" data-action="scrum#selectColumn" data-column="${escapeHTML(column)}" class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition ${classes}" aria-pressed="${active ? "true" : "false"}">
+        <span>${escapeHTML(label)}</span>
+        <span class="rounded bg-black/30 px-1.5 py-0.5 font-mono text-[10px]">${counts[column] ?? 0}</span>
+      </button>
+    `;
+  });
+  return `<nav class="scrollbar flex max-w-full gap-2 overflow-x-auto" aria-label="Scrum columns">${items.join("")}</nav>`;
+}
+
 export function renderScrumEmptyState(message: string): string {
   return `<div class="flex h-full min-h-[240px] items-center justify-center rounded-xl border border-dashed border-white/10 p-8 text-sm text-zinc-500">${escapeHTML(message)}</div>`;
 }
@@ -242,10 +266,9 @@ export function renderScrumFlowSummary(summary?: ScrumFlowSummary | null): strin
   `;
 }
 
-export function renderProjectScrumShell(projectLocation: string, activeTab = "scrum"): string {
-  const hidden = activeTab !== "scrum" ? " hidden" : "";
+export function renderProjectScrumShell(projectLocation: string): string {
   return `
-    <div data-project-tab-panel="scrum" class="flex min-h-0 flex-col gap-3${hidden}">
+    <div data-project-tab-panel="scrum" class="flex min-h-0 flex-col gap-3">
       <div class="grid shrink-0 grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <p class="truncate font-mono text-[11px] text-zinc-500 lg:justify-self-start">${escapeHTML(projectLocation)}</p>
         <div data-scrum-target="focus" class="flex justify-center lg:justify-self-center">
@@ -259,6 +282,10 @@ export function renderProjectScrumShell(projectLocation: string, activeTab = "sc
       </div>
 
       <div data-scrum-target="flowSummary" class="hidden shrink-0"></div>
+
+      <div data-scrum-target="columns" class="shrink-0">
+        ${renderScrumColumnNav([...SCRUM_COLUMNS], "assigned", {})}
+      </div>
 
       <div class="relative scrollbar flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden" data-scrum-board-scroll>
         ${renderScrumBoardLoadingOverlay()}

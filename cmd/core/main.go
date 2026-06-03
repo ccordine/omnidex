@@ -180,6 +180,9 @@ func main() {
 		RealtimeStreamMaxAge:      cfg.RealtimeStreamMaxAge,
 		RealtimeHeartbeat:         cfg.RealtimeHeartbeat,
 		RealtimeWriteTimeout:      cfg.RealtimeWriteTimeout,
+		RedisURL:                  cfg.RedisURL,
+		UIRedisRequired:           cfg.UIRedisRequired,
+		UISessionTTL:              cfg.UISessionTTL,
 	})
 	if !cfg.WrapperOnly {
 		workerService := worker.New(

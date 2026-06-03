@@ -13,6 +13,9 @@ services:
       CORE_URL: ${CORE_URL:-http://192.168.1.102:8090}
       WRAPPER_ONLY: ${WRAPPER_ONLY:-false}
       DATABASE_URL: ${DATABASE_URL:-postgres://agent:agent@postgres:5432/agent?sslmode=disable}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      UI_REDIS_REQUIRED: ${UI_REDIS_REQUIRED:-false}
+      UI_SESSION_TTL: ${UI_SESSION_TTL:-30m}
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
@@ -82,12 +85,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ${HOST_WORKSPACE_PATH:-../}:/workspace:ro
     networks:
-      - omnidex-internal
+      - omnidex-edge
+      - omnidex-backend
     restart: unless-stopped
 
   postgres:
@@ -104,12 +110,30 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - omnidex-internal
+      - omnidex-backend
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redisdata:/data
+    networks:
+      - omnidex-backend
     restart: unless-stopped
 
 volumes:
   pgdata:
+  redisdata:
 
 networks:
-  omnidex-internal:
+  omnidex-edge:
     driver: bridge
+  omnidex-backend:
+    driver: bridge
+    internal: true

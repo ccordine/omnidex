@@ -295,7 +295,7 @@ docker compose up --build
 Do not set `PATH=` in `.env` for compose — see [Docker troubleshooting](#docker-troubleshooting) and `default.env` comments.
 
 Core API is exposed on `http://localhost:8090`.
-Postgres stays on an internal Docker network (`omnidex-internal`) and is not published to the host by default.
+Postgres and Redis stay on the internal backend Docker network (`omnidex-backend`) and are not published to the host by default. The core service is the only normal host-facing service.
 
 ### Docker troubleshooting
 
@@ -398,10 +398,10 @@ Start the core:
 docker compose up --build -d core
 ```
 
-Then run a CLI/toolbox container on the compose network. The exact network name is usually `<repo>_omnidex-internal`; from this repo it is commonly `omnidex_omnidex-internal`:
+Then run a CLI/toolbox container on the compose edge network. The exact network name is usually `<repo>_omnidex-edge`; from this repo it is commonly `omnidex_omnidex-edge`:
 
 ```bash
-docker network ls --filter name=omnidex-internal
+docker network ls --filter name=omnidex-edge
 ```
 
 Example service-backed CLI run:
@@ -410,7 +410,7 @@ Example service-backed CLI run:
 mkdir -p "$HOME/omnidex-sandbox"
 
 docker run --rm -it \
-  --network omnidex_omnidex-internal \
+  --network omnidex_omnidex-edge \
   -e CORE_URL=http://core:8090 \
   -v "$PWD":/src/omnidex:ro \
   -v "$HOME/omnidex-sandbox":/workspace \
@@ -424,7 +424,7 @@ For local deterministic `omni` work inside the same kind of isolated container:
 
 ```bash
 docker run --rm -it \
-  --network omnidex_omnidex-internal \
+  --network omnidex_omnidex-edge \
   -e CORE_URL=http://core:8090 \
   -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
   -v "$PWD":/src/omnidex:ro \

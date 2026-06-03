@@ -33,10 +33,6 @@ function renderProjectTabNav(activeTab: string): string {
   }).join("");
 }
 
-function tabPanelClass(tab: string, activeTab: string): string {
-  return tab === activeTab ? "" : " hidden";
-}
-
 function scrumAutoReviewFromProject(project: ProjectRecord): { enabled: boolean; bounce_column: string } {
   const raw = project.settings?.scrum_auto_review;
   if (!raw || typeof raw !== "object") {
@@ -232,7 +228,7 @@ export function renderProjectDetail(
   const recipeJSON = JSON.stringify(project.recipe ?? {}, null, 2);
 
   const settingsTab = `
-    <div data-project-tab-panel="settings" class="scrollbar space-y-4${tabPanelClass("settings", activeTab)}">
+    <div data-project-tab-panel="settings" class="scrollbar space-y-4">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
         <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Project</h3>
         <div class="mt-4 grid gap-4 lg:grid-cols-2">
@@ -286,12 +282,12 @@ export function renderProjectDetail(
     </div>
   `;
 
-  const mapTab = `<div data-project-tab-panel="map" class="scrollbar space-y-4${tabPanelClass("map", activeTab)}">${renderProjectMapSection(project.id, projectMap)}</div>`;
+  const mapTab = `<div data-project-tab-panel="map" class="scrollbar space-y-4">${renderProjectMapSection(project.id, projectMap)}</div>`;
 
-  const gitTab = `<div data-project-tab-panel="git" class="scrollbar space-y-4${tabPanelClass("git", activeTab)}">${renderProjectGitSection(project.id, projectGit)}</div>`;
+  const gitTab = `<div data-project-tab-panel="git" class="scrollbar space-y-4">${renderProjectGitSection(project.id, projectGit)}</div>`;
 
   const recipeTab = `
-    <div data-project-tab-panel="recipe" class="scrollbar space-y-4${tabPanelClass("recipe", activeTab)}">
+    <div data-project-tab-panel="recipe" class="scrollbar space-y-4">
       <section class="rounded-xl border border-white/10 bg-zinc-950/60 p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -311,6 +307,28 @@ export function renderProjectDetail(
       </section>
     </div>
   `;
+
+  const activePanel = (() => {
+    switch (activeTab) {
+      case "chat":
+        return renderProjectChatShell(project.name, { reasoning_mode: "instant" }, []);
+      case "terminal":
+        return renderProjectTerminalShell(project.location);
+      case "screen":
+        return renderProjectScreenShell(project.location);
+      case "settings":
+        return settingsTab;
+      case "map":
+        return mapTab;
+      case "git":
+        return gitTab;
+      case "recipe":
+        return recipeTab;
+      case "scrum":
+      default:
+        return renderProjectScrumShell(project.location);
+    }
+  })();
 
   return `
     <div data-controller="terminal screen project-chat" class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
@@ -333,14 +351,7 @@ export function renderProjectDetail(
       <nav class="flex shrink-0 flex-wrap gap-2" aria-label="Project sections">${renderProjectTabNav(activeTab)}</nav>
 
       <div class="project-tab-stack">
-      ${renderProjectScrumShell(project.location, activeTab)}
-      ${renderProjectChatShell(project.name, { reasoning_mode: "instant" }, [], activeTab)}
-      ${renderProjectTerminalShell(project.location, activeTab)}
-      ${renderProjectScreenShell(project.location, activeTab)}
-      ${settingsTab}
-      ${mapTab}
-      ${gitTab}
-      ${recipeTab}
+      ${activePanel}
       </div>
     </div>
   `;

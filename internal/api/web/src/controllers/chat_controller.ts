@@ -19,7 +19,7 @@ import { createUserChannel, fetchChannelMessages, fetchUserChannels, isUserChann
 import { closeModalShell, openModalShell } from "../lib/modal";
 import type GxController from "./gx_controller";
 import { errorMessage, toastError, toastFromError, toastOk } from "../lib/feedback";
-import { applyRecyclrSink, buildRecyclrBundle, type RecyclrSinkMode } from "../lib/recyclr";
+import { applyRecyclrSink, buildRecyclrBundle, renderRecyclrBundle, type RecyclrSinkMode } from "../lib/recyclr";
 import { applyI18n, t } from "../lib/i18n";
 import { isOmniPanel, panelHref, parseAdminTabFromLocation, parsePanelFromLocation, type OmniPanel } from "../lib/panel_routing";
 import {
@@ -91,6 +91,14 @@ export default class ChatController extends Controller {
   declare readonly hasChannelSelectTarget: boolean;
   declare readonly hasJobsListTarget: boolean;
   declare readonly hasJobDetailsTarget: boolean;
+  declare readonly hasMessagesTarget: boolean;
+  declare readonly hasInputTarget: boolean;
+  declare readonly hasSendTarget: boolean;
+  declare readonly hasStatusTarget: boolean;
+  declare readonly hasLiveBadgeTarget: boolean;
+  declare readonly hasTransportTarget: boolean;
+  declare readonly hasJobTarget: boolean;
+  declare readonly hasEventCountTarget: boolean;
   declare readonly channelSelectTarget: HTMLSelectElement;
   declare readonly pollMsValue: number;
 
@@ -121,6 +129,7 @@ export default class ChatController extends Controller {
   private panelShownHandler: ((event: Event) => void) | null = null;
   private scrumRefreshHandler: ((event: Event) => void) | null = null;
   private llmActivityHandler: ((event: Event) => void) | null = null;
+  private currentPanel: OmniPanel = "chat";
 
   
 
@@ -140,9 +149,7 @@ export default class ChatController extends Controller {
     this.renderTimeline();
     await this.detectTransport();
     const initialPanel = parsePanelFromLocation();
-    if (initialPanel !== "chat") {
-      this.activatePanel(initialPanel, { pushHistory: false });
-    }
+    await this.activatePanel(initialPanel, { pushHistory: false });
     await this.loadStatus();
     await this.loadUserChannels();
     await this.loadGlobalActivity();
@@ -169,8 +176,7 @@ export default class ChatController extends Controller {
       this.addMessage("system", t("panel.chat.ready"));
     }
     this.metricsGlanceHandler = () => {
-      const active = this.panelTargets.find((panel) => !panel.classList.contains("hidden"));
-      if (active?.dataset.panelName === "metrics") void this.loadMetrics();
+      if (this.currentPanel === "metrics") void this.loadMetrics();
     };
     document.addEventListener("omni:metrics-glance", this.metricsGlanceHandler);
     this.localeChangedHandler = () => {
@@ -186,13 +192,11 @@ export default class ChatController extends Controller {
     };
     document.addEventListener("omni:panel-shown", this.panelShownHandler);
     this.scrumRefreshHandler = () => {
-      const active = this.panelTargets.find((panel) => !panel.classList.contains("hidden"));
-      if (active?.dataset.panelName === "jobs") void this.loadJobs({ quiet: true });
+      if (this.currentPanel === "jobs") void this.loadJobs({ quiet: true });
     };
     document.addEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
     this.llmActivityHandler = () => {
-      const active = this.panelTargets.find((panel) => !panel.classList.contains("hidden"));
-      if (active?.dataset.panelName === "jobs") void this.loadJobs({ quiet: true });
+      if (this.currentPanel === "jobs") void this.loadJobs({ quiet: true });
     };
     document.addEventListener("omni:llm-activity", this.llmActivityHandler);
   }
@@ -242,7 +246,7 @@ export default class ChatController extends Controller {
       this.addEvent("health", health);
     } catch (error) {
       this.queueEnabled = false;
-      this.transportTarget.textContent = "offline";
+      if (this.hasTransportTarget) this.transportTarget.textContent = "offline";
       this.setStatus("offline", "error");
     }
   }
@@ -255,10 +259,10 @@ export default class ChatController extends Controller {
     if (this.isChannelMode()) {
       const channel = this.userChannels.find((item) => item.id === this.selectedChannelId);
       const label = channel?.name?.trim() || this.selectedChannelId;
-      this.transportTarget.textContent = `${t("transport.channel")} · ${label}`;
+      if (this.hasTransportTarget) this.transportTarget.textContent = `${t("transport.channel")} · ${label}`;
       return;
     }
-    this.transportTarget.textContent = this.queueEnabled ? t("transport.queue") : t("transport.direct");
+    if (this.hasTransportTarget) this.transportTarget.textContent = this.queueEnabled ? t("transport.queue") : t("transport.direct");
   }
 
   async loadUserChannels() {
@@ -389,11 +393,21 @@ export default class ChatController extends Controller {
     this.activatePanel(isOmniPanel(name) ? name : "chat", { pushHistory: true });
   }
 
-  activatePanel(name: OmniPanel, options: { pushHistory?: boolean } = {}) {
-    for (const panel of this.panelTargets) {
-      const active = panel.dataset.panelName === name;
-      panel.classList.toggle("hidden", !active);
-      panel.classList.toggle("flex", active);
+  async activatePanel(name: OmniPanel, options: { pushHistory?: boolean } = {}) {
+    const previousPanel = this.currentPanel;
+    this.currentPanel = name;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (name === "chat") params.delete("panel");
+      else params.set("panel", name);
+      const payload = await readJSON<{ panel: OmniPanel; html: string }>(await fetch(`/v1/ui/panel?${params.toString()}`));
+      renderRecyclrBundle(this.gxController, "app-panel", payload.html);
+      applyI18n(document);
+    } catch (error) {
+      this.currentPanel = previousPanel;
+      this.addEvent("ui_panel_error", { panel: name, error: errorMessage(error) });
+      toastFromError(error);
+      return;
     }
     for (const button of this.element.querySelectorAll(".nav-button")) {
       const active = (button as HTMLElement).dataset.panel === name;
@@ -410,12 +424,8 @@ export default class ChatController extends Controller {
     }
     if (name === "memory") this.loadMemoryCandidates();
     if (name === "metrics") this.loadMetrics();
-    if (name === "admin") {
-      this.loadStatus();
-      this.loadResearchStatus();
-      this.loadHostBridgeStatus();
-    }
     document.dispatchEvent(new CustomEvent("omni:panel-shown", { detail: { panel: name } }));
+    this.persistUISessionState({ panel: name });
     if (options.pushHistory) {
       const extra = name === "admin" ? { admin_tab: parseAdminTabFromLocation() } : {};
       this.gxController?.pushRoute(panelHref(name, window.location, extra));
@@ -431,6 +441,10 @@ export default class ChatController extends Controller {
 
   async submit(event) {
     event.preventDefault();
+    if (!this.hasInputTarget) {
+      await this.activatePanel("chat", { pushHistory: true });
+      if (!this.hasInputTarget) return;
+    }
     const prompt = this.inputTarget.value.trim();
     if (!prompt || this.busy) return;
 
@@ -484,7 +498,7 @@ export default class ChatController extends Controller {
     const payload = await readJSON(response);
     const job = payload.job;
     this.currentJobID = job.id;
-    this.jobTarget.textContent = `#${job.id}`;
+    if (this.hasJobTarget) this.jobTarget.textContent = `#${job.id}`;
     this.activityLabel = `Running job #${job.id}…`;
     this.renderProgressActivity(this.activityLabel);
     this.addEvent("job_created", { id: job.id, status: job.status }, { request: requestBody, response: payload, job });
@@ -567,7 +581,7 @@ export default class ChatController extends Controller {
     const id = event.currentTarget.dataset.jobId;
     const details = await readJSON(await fetch(`/v1/jobs/${id}`));
     this.currentJobID = details.job?.id;
-    this.jobTarget.textContent = `#${details.job?.id}`;
+    if (this.hasJobTarget) this.jobTarget.textContent = `#${details.job?.id}`;
     this.renderJobDetails(details);
   }
 
@@ -1099,14 +1113,17 @@ export default class ChatController extends Controller {
     this.setBusy(false);
   }
 
-  newThread() {
+  async newThread() {
+    if (this.currentPanel !== "chat" || !this.hasMessagesTarget) {
+      await this.activatePanel("chat", { pushHistory: true });
+    }
     if (this.isChannelMode()) {
       void this.loadChannelTranscript(this.selectedChannelId);
       this.addMessage("system", "Reloaded channel transcript from server.");
       return;
     }
     this.currentJobID = null;
-    this.jobTarget.textContent = "none";
+    if (this.hasJobTarget) this.jobTarget.textContent = "none";
     this.events = [];
     this.eventIndex = new Map();
     this.contextIndex = new Map();
@@ -1153,6 +1170,7 @@ export default class ChatController extends Controller {
   }
 
   renderMessages() {
+    if (!this.hasMessagesTarget) return;
     const html = renderChatMessages(this.messages, {
       pending: this.busy,
       pendingLabel: this.activityLabel || "Working…",
@@ -1162,6 +1180,7 @@ export default class ChatController extends Controller {
   }
 
   renderTimeline() {
+    if (!this.hasEventCountTarget) return;
     this.eventCountTarget.textContent = `${this.events.length} events`;
     const html = this.events
       .slice()
@@ -1269,17 +1288,33 @@ export default class ChatController extends Controller {
 
   setBusy(value) {
     this.busy = value;
-    this.sendTarget.disabled = value;
-    this.sendTarget.textContent = value ? "Working" : "Send";
+    if (this.hasSendTarget) {
+      this.sendTarget.disabled = value;
+      this.sendTarget.textContent = value ? "Working" : "Send";
+    }
     if (this.hasSpinnerTarget) this.spinnerTarget.classList.toggle("hidden", !value);
     if (!value) this.activityLabel = "";
     this.renderMessages();
   }
 
   setStatus(text, mode) {
-    this.statusTarget.textContent = text;
-    this.liveBadgeTarget.textContent = text;
-    this.liveBadgeTarget.className = badgeClass(mode);
+    if (this.hasStatusTarget) this.statusTarget.textContent = text;
+    if (this.hasLiveBadgeTarget) {
+      this.liveBadgeTarget.textContent = text;
+      this.liveBadgeTarget.className = badgeClass(mode);
+    }
+  }
+
+  async persistUISessionState(state: Record<string, unknown>) {
+    try {
+      await readJSON(await fetch("/v1/ui/session", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      }));
+    } catch (error) {
+      this.addEvent("ui_session_error", { error: errorMessage(error) });
+    }
   }
 
   recycle(target: string, html: string, mode: RecyclrSinkMode = "html"): void {

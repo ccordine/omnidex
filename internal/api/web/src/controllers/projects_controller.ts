@@ -37,6 +37,8 @@ import type { ResolvedModelConfig } from "../lib/model_config_types";
 import type { BrowseResponse, DebuggerLastRun, ProjectGitStatus, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
 import type GxController from "./gx_controller";
 
+const PROJECT_TABS = new Set(["scrum", "chat", "terminal", "screen", "settings", "map", "git", "recipe"]);
+
 export default class ProjectsController extends Controller {
   static targets = ["list", "detail", "status", "openBadge"];
 
@@ -194,6 +196,35 @@ export default class ProjectsController extends Controller {
     this.updateOpenBadge(null);
   }
 
+  private projectTabSessionKey(projectID?: number | null): string {
+    return `omni.project.tab.${projectID ?? "global"}`;
+  }
+
+  private normalizeProjectTab(tab?: string | null): string {
+    const next = tab?.trim() || "";
+    return PROJECT_TABS.has(next) ? next : "scrum";
+  }
+
+  private resolveProjectTab(projectID?: number | null): string {
+    const params = new URLSearchParams(window.location.search);
+    const fromURL = params.get("project_tab");
+    if (fromURL) return this.normalizeProjectTab(fromURL);
+    return this.normalizeProjectTab(sessionStorage.getItem(this.projectTabSessionKey(projectID)));
+  }
+
+  private setActiveProjectTab(tab: string, updateURL = true) {
+    this.activeTab = this.normalizeProjectTab(tab);
+    sessionStorage.setItem(this.projectTabSessionKey(this.selectedProjectID), this.activeTab);
+    if (!updateURL) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("project_tab", this.activeTab);
+    try {
+      history.replaceState(null, document.title, `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      /* ignore history failures */
+    }
+  }
+
   /** Backend auto-sync runs on GET project; refresh map summary once it likely finished. */
   private async refreshProjectMapAfterAutoSync(projectID: number) {
     await new Promise((resolve) => window.setTimeout(resolve, 2500));
@@ -219,6 +250,7 @@ export default class ProjectsController extends Controller {
       this.recipes = recipesPayload.recipes ?? [];
       this.listTarget.innerHTML = renderProjectList(this.projects);
       if (this.selectedProjectID) {
+        this.setActiveProjectTab(this.resolveProjectTab(this.selectedProjectID), false);
         await this.renderDetail(this.selectedProjectID);
       } else {
         this.detailTarget.innerHTML = "";
@@ -374,7 +406,7 @@ export default class ProjectsController extends Controller {
         activate: false,
       });
       this.selectedProjectID = payload.project.id;
-      this.activeTab = "scrum";
+      this.setActiveProjectTab("scrum");
       const createdName = payload.project.name || name || "project";
       this.closeCreateModal();
       await this.load();
@@ -391,15 +423,12 @@ export default class ProjectsController extends Controller {
     const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
     if (!id) return;
     this.selectedProjectID = id;
-    this.activeTab = "scrum";
+    this.setActiveProjectTab(this.resolveProjectTab(id));
     await this.renderDetail(id);
   }
 
   private applyTabState() {
     const tab = this.activeTab;
-    this.detailTarget.querySelectorAll("[data-project-tab-panel]").forEach((panel) => {
-      panel.classList.toggle("hidden", panel.getAttribute("data-project-tab-panel") !== tab);
-    });
     this.detailTarget.querySelectorAll("[data-project-tab]").forEach((button) => {
       const active = button.getAttribute("data-project-tab") === tab;
       button.classList.toggle("border-cyan-300/40", active);
@@ -410,12 +439,14 @@ export default class ProjectsController extends Controller {
     });
   }
 
-  showTab(event: Event) {
+  async showTab(event: Event) {
     event.preventDefault();
-    this.activeTab = (event.currentTarget as HTMLElement).dataset.projectTab || "scrum";
-    this.applyTabState();
-    if (this.activeTab === "git" && this.selectedProjectID) {
-      void this.refreshProjectGitPanel(this.selectedProjectID).catch((error) => this.actionFail(error));
+    const tab = (event.currentTarget as HTMLElement).dataset.projectTab || "scrum";
+    this.setActiveProjectTab(tab);
+    if (this.selectedProjectID) {
+      await this.renderDetail(this.selectedProjectID, { preserveStatus: true });
+    } else {
+      this.applyTabState();
     }
     document.dispatchEvent(
       new CustomEvent("omni:project-tab", {
@@ -498,7 +529,7 @@ export default class ProjectsController extends Controller {
 
   backToList() {
     this.selectedProjectID = null;
-    this.activeTab = "scrum";
+    this.setActiveProjectTab("scrum", false);
     this.currentProjectGit = null;
     this.detailTarget.classList.add("hidden");
     this.detailTarget.classList.remove("flex");

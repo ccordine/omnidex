@@ -19,10 +19,6 @@ const CARD_TABS: Array<{ id: ScrumCardTab; label: string }> = [
   { id: "channel", label: "Channel" },
 ];
 
-function tabPanelClass(tab: ScrumCardTab, activeTab: ScrumCardTab): string {
-  return tab === activeTab ? "" : " hidden";
-}
-
 function countBadge(value: number, tone: "cyan" | "violet" | "amber" = "cyan"): string {
   if (value <= 0) return "";
   const tones = {
@@ -58,9 +54,13 @@ function playStateBadge(card: ScrumCard): string {
 
 function tabBadge(card: ScrumCard, tab: ScrumCardTab): string {
   const checklist = card.checklist ?? [];
-  const pending = checklist.filter((item) => !item.done).length;
-  const refs = (card.ref_files ?? []).length;
-  const chatCount = (card.chat ?? []).length;
+  const pending = card.checklist_total != null
+    ? Math.max(0, (card.checklist_total ?? 0) - (card.checklist_done ?? 0))
+    : checklist.filter((item) => !item.done).length;
+  const refs = card.ref_file_count ?? (card.ref_files ?? []).length;
+  const chatCount = card.chat_count ?? (card.chat ?? []).length;
+  const planningCount = card.planning_chat_count ?? (card.planning_chat ?? []).length;
+  const hasCardTicket = card.has_card_ticket ?? Boolean(card.card_ticket?.trim());
   const hasConfigOverrides =
     Object.keys(card.model_config ?? {}).length > 0 || Object.keys(card.agent_config ?? {}).length > 0;
   const hasRecipe = Boolean(card.recipe_id?.trim()) || Object.keys(card.recipe ?? {}).length > 0;
@@ -68,9 +68,9 @@ function tabBadge(card: ScrumCard, tab: ScrumCardTab): string {
 
   switch (tab) {
     case "card":
-      if ((card.planning_chat ?? []).length > 0) return countBadge((card.planning_chat ?? []).length, "violet");
+      if (planningCount > 0) return countBadge(planningCount, "violet");
       if (pending > 0) return countBadge(pending, "amber");
-      if (card.card_ticket?.trim()) return dotBadge("emerald");
+      if (hasCardTicket) return dotBadge("emerald");
       return "";
     case "files":
       if (refs > 0) return countBadge(refs, "cyan");
@@ -604,6 +604,64 @@ export function renderScrumModalChannelTab(
   });
 }
 
+export function renderScrumModalActiveTab(
+  card: ScrumCard,
+  activeTab: ScrumCardTab,
+  options: {
+    files?: string[];
+    dirs?: string[];
+    modelFields?: ModelFieldDefinition[];
+    resolvedModelSource?: string;
+    agentFields?: AgentFieldDefinition[];
+    resolvedAgentSource?: string;
+    resolvedAgentSystem?: string;
+    playQueue?: ScrumBoardResponse["play_queue"];
+    recipes?: RecipeCatalogItem[];
+    projectRecipeId?: string;
+    projectRecipe?: Record<string, unknown>;
+    channelOptions?: { pilotPending?: boolean; agentRunning?: boolean };
+  } = {},
+): string {
+  const files = options.files ?? [];
+  const dirs = options.dirs ?? [];
+  const sink = `scrum-modal-${activeTab}`;
+  let html = "";
+  switch (activeTab) {
+    case "files":
+      html = renderScrumModalFilesTab(card, files, dirs);
+      break;
+    case "tests":
+      html = renderScrumModalTestsTab(card);
+      break;
+    case "config":
+      html = renderScrumModalConfigTab(
+        card,
+        options.modelFields ?? [],
+        options.resolvedModelSource ?? "env",
+        options.agentFields ?? [],
+        options.resolvedAgentSource ?? "env",
+        options.resolvedAgentSystem ?? "omnidex",
+      );
+      break;
+    case "recipe":
+      html = renderScrumModalRecipeTab(
+        card,
+        options.recipes ?? [],
+        options.projectRecipeId ?? "",
+        options.projectRecipe ?? {},
+      );
+      break;
+    case "channel":
+      html = renderScrumModalChannelTab(card, options.playQueue, options.channelOptions);
+      break;
+    case "card":
+    default:
+      html = renderScrumModalCardTab(card, files);
+      break;
+  }
+  return `<div data-scrum-tab-panel="${activeTab}" data-recyclr-sink="${sink}">${html}</div>`;
+}
+
 function channelSessionStatus(card: ScrumCard, playQueue?: ScrumBoardResponse["play_queue"]): string {
   if (card.play_state === "running") {
     return `<span class="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Live</span>`;
@@ -655,13 +713,20 @@ export function renderScrumCardModal(
     <div class="shrink-0 border-b border-white/10 px-4 py-3 md:px-5" data-recyclr-sink="scrum-modal-tabs">
       <nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, activeTab)}</nav>
     </div>
-    <div class="omni-modal-body scrollbar p-4 md:p-5">
-      <div data-scrum-tab-panel="card" class="${tabPanelClass("card", activeTab)}" data-recyclr-sink="scrum-modal-card">${renderScrumModalCardTab(card, files)}</div>
-      <div data-scrum-tab-panel="files" class="${tabPanelClass("files", activeTab)}" data-recyclr-sink="scrum-modal-files">${renderScrumModalFilesTab(card, files, dirs)}</div>
-      <div data-scrum-tab-panel="tests" class="${tabPanelClass("tests", activeTab)}" data-recyclr-sink="scrum-modal-tests">${renderScrumModalTestsTab(card)}</div>
-      <div data-scrum-tab-panel="config" class="${tabPanelClass("config", activeTab)}" data-recyclr-sink="scrum-modal-config">${renderScrumModalConfigTab(card, modelFields, resolvedModelSource, agentFields, resolvedAgentSource, resolvedAgentSystem)}</div>
-      <div data-scrum-tab-panel="recipe" class="${tabPanelClass("recipe", activeTab)}" data-recyclr-sink="scrum-modal-recipe">${renderScrumModalRecipeTab(card, recipes, projectRecipeId, projectRecipe)}</div>
-      <div data-scrum-tab-panel="channel" class="${tabPanelClass("channel", activeTab)}" data-recyclr-sink="scrum-modal-channel">${renderScrumModalChannelTab(card, playQueue)}</div>
+    <div class="omni-modal-body scrollbar p-4 md:p-5" data-recyclr-sink="scrum-modal-active-tab">
+      ${renderScrumModalActiveTab(card, activeTab, {
+        files,
+        dirs,
+        modelFields,
+        resolvedModelSource,
+        agentFields,
+        resolvedAgentSource,
+        resolvedAgentSystem,
+        playQueue,
+        recipes,
+        projectRecipeId,
+        projectRecipe,
+      })}
     </div>
   `;
 }

@@ -350,11 +350,20 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 		return nil, err
 	}
 	s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board)
+	fullBoard := board
+	visibleColumn := scrumViewportColumn(r, board.Columns)
+	columnCounts := scrumColumnCounts(cardsByColumn(fullBoard))
+	if visibleColumn != "" {
+		board = scrumBoardColumnViewport(board, visibleColumn)
+	}
 	payload := map[string]any{
-		"board":        board,
-		"cards_by_col": cardsByColumn(board),
-		"play_queue":   scrumPlayQueueSummary(board),
-		"flow_summary": summarizeScrumFlowMetrics(board.Cards),
+		"board":          board,
+		"cards_by_col":   cardsByColumn(board),
+		"play_queue":     scrumPlayQueueSummary(fullBoard),
+		"flow_summary":   summarizeScrumFlowMetrics(fullBoard.Cards),
+		"all_columns":    append([]string(nil), fullBoard.Columns...),
+		"visible_column": visibleColumn,
+		"column_counts":  columnCounts,
 	}
 	if projectID > 0 {
 		autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)

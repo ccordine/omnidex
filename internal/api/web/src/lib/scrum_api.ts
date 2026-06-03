@@ -19,15 +19,40 @@ export type ScrumCardLlmQueuedResponse = {
   ticket?: string;
 };
 
-export async function fetchScrumBoard(projectID?: number | null): Promise<ScrumBoardResponse> {
-  const response = await fetch(`/v1/scrum${projectQuery(projectID)}`);
+function scrumBoardQuery(projectID?: number | null, options: { column?: string | null } = {}): string {
+  const query = new URLSearchParams();
+  if (projectID != null) query.set("project_id", String(projectID));
+  if (options.column?.trim()) query.set("column", options.column.trim());
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+export async function fetchScrumBoard(
+  projectID?: number | null,
+  options: { column?: string | null } = {},
+): Promise<ScrumBoardResponse> {
+  const response = await fetch(`/v1/scrum${scrumBoardQuery(projectID, options)}`);
   return readJSON<ScrumBoardResponse>(response);
 }
 
-export async function fetchScrumHealth(projectID?: number | null, fingerprint = ""): Promise<ScrumHealthResponse> {
+export async function fetchScrumCard(cardID: string, projectID?: number | null): Promise<ScrumCard> {
+  const response = await fetch(`/v1/scrum/cards/${encodeURIComponent(cardID)}${projectQuery(projectID)}`);
+  const payload = await readJSON<{ card?: ScrumCard | null }>(response);
+  if (!payload.card?.id) {
+    throw new Error("Card load did not return a card");
+  }
+  return payload.card;
+}
+
+export async function fetchScrumHealth(
+  projectID?: number | null,
+  fingerprint = "",
+  options: { column?: string | null } = {},
+): Promise<ScrumHealthResponse> {
   const query = new URLSearchParams();
   if (projectID != null) query.set("project_id", String(projectID));
   if (fingerprint.trim()) query.set("fingerprint", fingerprint.trim());
+  if (options.column?.trim()) query.set("column", options.column.trim());
   const suffix = query.toString() ? `?${query.toString()}` : "";
   const response = await fetch(`/v1/scrum/cards/health${suffix}`);
   return readJSON<ScrumHealthResponse>(response);

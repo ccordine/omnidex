@@ -3,10 +3,6 @@ import { renderChatMessages } from "./chat_render";
 import type { ProjectPlanningCardDraft, ProjectPlanningChatConfig, ProjectPlanningStoredDraft, ProjectPlanningSuggestion } from "./project_chat_api";
 import type { ScrumChatMessage } from "./scrum_types";
 
-function tabPanelClass(tab: string, activeTab: string): string {
-  return tab === activeTab ? "" : " hidden";
-}
-
 function suggestionTone(level?: string): string {
   switch ((level || "info").toLowerCase()) {
     case "warn":
@@ -164,7 +160,6 @@ export function renderProjectChatShell(
   projectName: string,
   config: ProjectPlanningChatConfig,
   modelOptions: string[],
-  activeTab = "scrum",
 ): string {
   const resolvedDefault = config.model || "";
   const reasoningMode = config.reasoning_mode || "instant";
@@ -177,7 +172,7 @@ export function renderProjectChatShell(
   ].join("");
 
   return `
-    <div data-project-tab-panel="chat" class="flex min-h-0 flex-col gap-3${tabPanelClass("chat", activeTab)}">
+    <div data-project-tab-panel="chat" class="flex min-h-0 flex-col gap-3">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-zinc-100">Project chat</h3>

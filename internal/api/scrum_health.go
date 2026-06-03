@@ -44,20 +44,29 @@ func (s *Server) handleScrumCardHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board)
-	health := s.scrumBoardHealth(r, projectID, board)
-	fingerprint := scrumHealthFingerprint(board, health)
+	fullBoard := board
+	visibleColumn := scrumViewportColumn(r, board.Columns)
+	columnCounts := scrumColumnCounts(cardsByColumn(fullBoard))
+	if visibleColumn != "" {
+		board = scrumBoardColumnViewport(board, visibleColumn)
+	}
+	health := s.scrumBoardHealth(r, projectID, fullBoard)
+	fingerprint := scrumHealthFingerprint(fullBoard, health)
 	changed := fingerprint != strings.TrimSpace(r.URL.Query().Get("fingerprint"))
 	payload := map[string]any{
-		"ttl_ms":      scrumHealthTTL(health),
-		"fingerprint": fingerprint,
-		"changed":     changed,
-		"health":      health,
-		"play_queue":  scrumPlayQueueSummary(board),
+		"ttl_ms":         scrumHealthTTL(health),
+		"fingerprint":    fingerprint,
+		"changed":        changed,
+		"health":         health,
+		"play_queue":     scrumPlayQueueSummary(fullBoard),
+		"all_columns":    append([]string(nil), fullBoard.Columns...),
+		"visible_column": visibleColumn,
+		"column_counts":  columnCounts,
 	}
 	if changed {
 		payload["board"] = board
 		payload["cards_by_col"] = cardsByColumn(board)
-		payload["flow_summary"] = summarizeScrumFlowMetrics(board.Cards)
+		payload["flow_summary"] = summarizeScrumFlowMetrics(fullBoard.Cards)
 		if projectID > 0 {
 			autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
 			payload["project_id"] = projectID
