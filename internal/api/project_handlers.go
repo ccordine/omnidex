@@ -410,6 +410,9 @@ func (s *Server) resolveProjectID(r *http.Request) (int64, error) {
 	if s.repo == nil {
 		return 0, fmt.Errorf("database unavailable")
 	}
+	if r == nil || r.URL == nil {
+		return 0, fmt.Errorf("project_id is required")
+	}
 	raw := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	if raw != "" {
 		id, err := strconv.ParseInt(raw, 10, 64)

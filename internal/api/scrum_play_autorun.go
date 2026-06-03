@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -19,7 +20,7 @@ func scrumRequestFromContext(ctx context.Context) *http.Request {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return (&http.Request{}).WithContext(ctx)
+	return (&http.Request{URL: &url.URL{}}).WithContext(ctx)
 }
 
 // OnJobFinishedAsync handles post-job side effects without requiring the web UI.

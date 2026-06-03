@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"log"
-	"net/http"
 	"sort"
 	"time"
 )
@@ -79,7 +78,7 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r := (&http.Request{}).WithContext(ctx)
+	r := scrumRequestFromContext(ctx)
 	for _, candidate := range candidates {
 		if err := s.refreshScrumPlayQueueForProject(ctx, candidate.projectID, "global auto-work"); err != nil {
 			log.Printf("scrum global auto-work project=%d card=%s: %v", candidate.projectID, candidate.cardID, err)

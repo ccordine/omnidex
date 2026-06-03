@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -21,6 +22,19 @@ func TestIsScrumPlayQueueJob(t *testing.T) {
 	}
 	if isScrumPlayQueueJob(nil) {
 		t.Fatal("expected empty metadata to be ignored")
+	}
+}
+
+func TestScrumRequestFromContextHasURL(t *testing.T) {
+	req := scrumRequestFromContext(nil)
+	if req == nil {
+		t.Fatal("expected request")
+	}
+	if req.URL == nil {
+		t.Fatal("expected request URL")
+	}
+	if req.URL.String() != (&url.URL{}).String() {
+		t.Fatalf("unexpected URL: %q", req.URL.String())
 	}
 }
 
