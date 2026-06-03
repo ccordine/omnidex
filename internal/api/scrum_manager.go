@@ -116,7 +116,9 @@ func resolveScrumManagerOutcome(details model.JobDetails) ScrumManagerOutcome {
 				return scrumStrictExternalPlayCompletedOutcome(details, combined)
 			}
 			return ScrumOutcomeSuccess
-		case model.JobStatusFailed, model.JobStatusCanceled:
+		case model.JobStatusFailed:
+			return ScrumOutcomeFailed
+		case model.JobStatusCanceled:
 			// Return to assigned so the user can inspect output and retry; blocked only when SCRUM_STATUS says so.
 			return ScrumOutcomePaused
 		default:
@@ -155,7 +157,7 @@ func scrumColumnForOutcome(outcome ScrumManagerOutcome) scrumColumnTransition {
 	case ScrumOutcomeBlocked:
 		return scrumColumnTransition{Column: "blocked", PlayState: "", ConsoleNote: "play: moved to blocked"}
 	case ScrumOutcomeFailed:
-		return scrumColumnTransition{Column: "blocked", PlayState: "", ConsoleNote: "play: moved to blocked (failed)"}
+		return scrumColumnTransition{Column: "error", PlayState: "", ConsoleNote: "play: moved to error (failed)"}
 	case ScrumOutcomePaused:
 		return scrumColumnTransition{Column: "assigned", PlayState: scrumPlayPaused, ConsoleNote: "play: returned to assigned (paused)"}
 	case ScrumOutcomeInProgress:

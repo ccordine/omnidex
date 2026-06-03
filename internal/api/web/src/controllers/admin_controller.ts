@@ -71,17 +71,27 @@ export default class AdminController extends Controller {
   declare readonly tabPanelTarget: HTMLElement;
   declare readonly adminStatusTarget: HTMLElement;
   declare readonly mindStatsTarget: HTMLElement;
+  declare readonly hasMindStatsTarget: boolean;
   declare readonly networkAccessTarget: HTMLElement;
   declare readonly hasNetworkAccessTarget: boolean;
   declare readonly ollamaModelsTarget: HTMLElement;
+  declare readonly hasOllamaModelsTarget: boolean;
   declare readonly pullModelTarget: HTMLInputElement;
+  declare readonly hasPullModelTarget: boolean;
   declare readonly globalModelsTarget: HTMLElement;
+  declare readonly hasGlobalModelsTarget: boolean;
   declare readonly globalAgentsTarget: HTMLElement;
+  declare readonly hasGlobalAgentsTarget: boolean;
   declare readonly apiSecretsTarget: HTMLElement;
+  declare readonly hasApiSecretsTarget: boolean;
   declare readonly ingestFilesTarget: HTMLInputElement;
+  declare readonly hasIngestFilesTarget: boolean;
   declare readonly ingestStageTarget: HTMLSelectElement;
+  declare readonly hasIngestStageTarget: boolean;
   declare readonly ingestTagsTarget: HTMLInputElement;
+  declare readonly hasIngestTagsTarget: boolean;
   declare readonly dataSourcesPanelTarget: HTMLElement;
+  declare readonly hasDataSourcesPanelTarget: boolean;
 
   private panelShownHandler: ((event: Event) => void) | null = null;
   private activeTab: AdminTab = "overview";
@@ -246,43 +256,59 @@ export default class AdminController extends Controller {
   }
 
   async loadMind() {
+    if (!this.hasMindStatsTarget) return;
     try {
       const stats = await fetchMindStats();
+      if (!this.hasMindStatsTarget) return;
       this.mindStatsTarget.innerHTML = renderMindStats(stats);
     } catch (error) {
+      if (!this.hasMindStatsTarget) return;
       this.mindStatsTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
   async loadOllama() {
+    if (!this.hasOllamaModelsTarget) return;
     try {
       const payload = await fetchOllamaModels();
+      if (!this.hasOllamaModelsTarget) return;
       this.ollamaModelsTarget.innerHTML = renderOllamaModels(payload.endpoint, payload.models);
     } catch (error) {
+      if (!this.hasOllamaModelsTarget) return;
       this.ollamaModelsTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
   async loadGlobalModels() {
+    if (!this.hasGlobalModelsTarget) return;
     try {
       const payload = await fetchModelSettings();
+      if (!this.hasGlobalModelsTarget) return;
       this.globalModelsTarget.innerHTML = renderGlobalModelSettings(payload.fields, payload.env_file);
     } catch (error) {
+      if (!this.hasGlobalModelsTarget) return;
       this.globalModelsTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
   async loadAPISecrets() {
+    if (!this.hasApiSecretsTarget) return;
     try {
       const payload = await fetchAPISecrets();
+      if (!this.hasApiSecretsTarget) return;
       this.apiSecretsTarget.innerHTML = renderAPISecretsSettings(payload.fields);
     } catch (error) {
+      if (!this.hasApiSecretsTarget) return;
       this.apiSecretsTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
   async saveAPISecrets(event: Event) {
     event.preventDefault();
+    if (!this.hasApiSecretsTarget) {
+      this.actionFailMessage("API key settings are not available on this tab");
+      return;
+    }
     const values: Record<string, string> = {};
     for (const input of this.apiSecretsTarget.querySelectorAll("[data-admin-field^='secret_']")) {
       const element = input as HTMLInputElement;
@@ -315,16 +341,23 @@ export default class AdminController extends Controller {
   }
 
   async loadGlobalAgents() {
+    if (!this.hasGlobalAgentsTarget) return;
     try {
       const payload = await fetchGlobalAgentSettings();
+      if (!this.hasGlobalAgentsTarget) return;
       this.globalAgentsTarget.innerHTML = renderGlobalAgentSettings(payload.fields);
     } catch (error) {
+      if (!this.hasGlobalAgentsTarget) return;
       this.globalAgentsTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
     }
   }
 
   async saveGlobalAgents(event: Event) {
     event.preventDefault();
+    if (!this.hasGlobalAgentsTarget) {
+      this.actionFailMessage("Agent settings are not available on this tab");
+      return;
+    }
     const values: Record<string, string> = {};
     for (const input of this.globalAgentsTarget.querySelectorAll("[data-admin-field^='agent_']")) {
       if (input instanceof HTMLInputElement && input.type === "radio") {
@@ -353,12 +386,16 @@ export default class AdminController extends Controller {
 
   async pullModel(event: Event) {
     event.preventDefault();
+    if (!this.hasPullModelTarget) {
+      this.actionFailMessage("Model pull controls are not available on this tab");
+      return;
+    }
     const model = this.pullModelTarget.value.trim();
     if (!model) return;
     this.setAdminStatus(`Pulling ${model}…`, "busy");
     try {
       await pullOllamaModel(model);
-      this.pullModelTarget.value = "";
+      if (this.hasPullModelTarget) this.pullModelTarget.value = "";
       await this.loadOllama();
       this.actionOk(`Pulled ${model}`);
     } catch (error) {
@@ -382,6 +419,10 @@ export default class AdminController extends Controller {
 
   async saveGlobalModels(event: Event) {
     event.preventDefault();
+    if (!this.hasGlobalModelsTarget) {
+      this.actionFailMessage("Model settings are not available on this tab");
+      return;
+    }
     const values: Record<string, string> = {};
     for (const input of this.globalModelsTarget.querySelectorAll("[data-admin-field^='model_']")) {
       const element = input as HTMLInputElement;
@@ -401,6 +442,10 @@ export default class AdminController extends Controller {
 
   async uploadDocuments(event: Event) {
     event.preventDefault();
+    if (!this.hasIngestFilesTarget || !this.hasIngestStageTarget || !this.hasIngestTagsTarget) {
+      this.actionFailMessage("Document ingest is not available on this tab");
+      return;
+    }
     const files = this.ingestFilesTarget.files;
     if (!files?.length) {
       this.actionFailMessage("Choose one or more files first");
@@ -413,7 +458,7 @@ export default class AdminController extends Controller {
         kind: "reference",
         tags: this.ingestTagsTarget.value.trim(),
       });
-      this.ingestFilesTarget.value = "";
+      if (this.hasIngestFilesTarget) this.ingestFilesTarget.value = "";
       this.actionOk(payload.message);
       await this.loadMind();
       document.dispatchEvent(new CustomEvent("omni:memory-changed"));
@@ -423,12 +468,14 @@ export default class AdminController extends Controller {
   }
 
   private preserveDataSourceFormValues(): { sql: string; question: string } {
+    if (!this.hasDataSourcesPanelTarget) return { sql: "", question: "" };
     const sql = (this.dataSourcesPanelTarget.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null)?.value ?? "";
     const question = (this.dataSourcesPanelTarget.querySelector("[data-ds-field='question']") as HTMLInputElement | null)?.value ?? "";
     return { sql, question };
   }
 
   private restoreDataSourceFormValues(values: { sql: string; question: string }) {
+    if (!this.hasDataSourcesPanelTarget) return;
     const sqlField = this.dataSourcesPanelTarget.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null;
     const questionField = this.dataSourcesPanelTarget.querySelector("[data-ds-field='question']") as HTMLInputElement | null;
     if (sqlField) sqlField.value = values.sql;
@@ -436,6 +483,7 @@ export default class AdminController extends Controller {
   }
 
   private renderDataSources(preserveForms = false) {
+    if (!this.hasDataSourcesPanelTarget) return;
     const preserved = preserveForms ? this.preserveDataSourceFormValues() : { sql: "", question: "" };
     this.dataSourcesPanelTarget.innerHTML = renderDataSourcesPanel(this.dataSourcesState);
     if (preserveForms) this.restoreDataSourceFormValues(preserved);
@@ -445,6 +493,7 @@ export default class AdminController extends Controller {
   }
 
   toggleDataSourceDSNPanel() {
+    if (!this.hasDataSourcesPanelTarget) return;
     const useDSN = (this.dataSourcesPanelTarget.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null)?.checked ?? false;
     const form = this.dataSourcesPanelTarget.querySelector("[data-ds-source-form]") as HTMLElement | null;
     if (!form) return;
@@ -455,8 +504,10 @@ export default class AdminController extends Controller {
   }
 
   async loadDataSources() {
+    if (!this.hasDataSourcesPanelTarget) return;
     try {
       const sources = await fetchDataSources();
+      if (!this.hasDataSourcesPanelTarget) return;
       const selectedId = this.dataSourcesState.selectedId && sources.some((s) => s.id === this.dataSourcesState.selectedId)
         ? this.dataSourcesState.selectedId
         : sources[0]?.id ?? null;
@@ -467,6 +518,7 @@ export default class AdminController extends Controller {
       };
       this.renderDataSources(true);
     } catch (error) {
+      if (!this.hasDataSourcesPanelTarget) return;
       this.dataSourcesPanelTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
@@ -487,6 +539,24 @@ export default class AdminController extends Controller {
     password: string;
     ssl_mode: string;
   } {
+    if (!this.hasDataSourcesPanelTarget) {
+      return {
+        id: "",
+        name: "",
+        driver: "postgres",
+        domain: "generic",
+        context_prompt: "",
+        privacy_mode: "strict",
+        use_dsn: false,
+        dsn: "",
+        host: "",
+        port: 5432,
+        database_name: "",
+        username: "",
+        password: "",
+        ssl_mode: "prefer",
+      };
+    }
     const root = this.dataSourcesPanelTarget;
     const read = (field: string) => (root.querySelector(`[data-ds-field='${field}']`) as HTMLInputElement | HTMLSelectElement | null)?.value.trim() ?? "";
     const useDSN = (root.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null)?.checked ?? false;
@@ -511,6 +581,10 @@ export default class AdminController extends Controller {
 
   async saveDataSource(event: Event) {
     event.preventDefault();
+    if (!this.hasDataSourcesPanelTarget) {
+      this.actionFailMessage("Data source settings are not available on this tab");
+      return;
+    }
     const form = this.readDataSourceForm();
     if (!form.name) {
       this.actionFailMessage("Name is required");
@@ -690,6 +764,7 @@ export default class AdminController extends Controller {
 
   insertSchemaQuery(event: Event) {
     event.preventDefault();
+    if (!this.hasDataSourcesPanelTarget) return;
     const table = (event.currentTarget as HTMLElement).dataset.tableName || "";
     if (!table) return;
     const field = this.dataSourcesPanelTarget.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null;
@@ -700,6 +775,10 @@ export default class AdminController extends Controller {
 
   async runDataSourceQuery(event: Event) {
     event.preventDefault();
+    if (!this.hasDataSourcesPanelTarget) {
+      this.actionFailMessage("Data source settings are not available on this tab");
+      return;
+    }
     const id = (event.currentTarget as HTMLElement).dataset.sourceId || this.dataSourcesState.selectedId || "";
     const sql = (this.dataSourcesPanelTarget.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null)?.value.trim() ?? "";
     if (!id || !sql) {
@@ -721,6 +800,10 @@ export default class AdminController extends Controller {
 
   async askDataSource(event: Event) {
     event.preventDefault();
+    if (!this.hasDataSourcesPanelTarget) {
+      this.actionFailMessage("Data source settings are not available on this tab");
+      return;
+    }
     const id = this.dataSourcesState.selectedId || "";
     const question = (this.dataSourcesPanelTarget.querySelector("[data-ds-field='question']") as HTMLInputElement | null)?.value.trim() ?? "";
     if (!id || !question) {
@@ -798,6 +881,7 @@ export default class AdminController extends Controller {
   }
 
   updateDataSourceChart() {
+    if (!this.hasDataSourcesPanelTarget) return;
     const label = (this.dataSourcesPanelTarget.querySelector("[data-ds-field='chart_label']") as HTMLSelectElement | null)?.value ?? "";
     const value = (this.dataSourcesPanelTarget.querySelector("[data-ds-field='chart_value']") as HTMLSelectElement | null)?.value ?? "";
     this.dataSourcesState.chartLabelCol = label;

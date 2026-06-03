@@ -43,3 +43,23 @@ func TestScrumCardChatComponentRendersWorkingMessageWhenBusy(t *testing.T) {
 		t.Fatalf("running card should be busy")
 	}
 }
+
+func TestScrumCardChatComponentSummarizesActivityJSON(t *testing.T) {
+	card := ScrumCard{
+		ID: "card-1",
+		Chat: []ScrumChatMessage{
+			{Role: "tool", Content: `{"activity":"command","title":"npm test","status":"completed","command":"npm test","detail":"all tests passed"}`, CreatedAt: "2026-06-03T12:00:00Z"},
+		},
+	}
+
+	html := renderScrumCardChatHTML(card)
+	if !strings.Contains(html, "npm test") || !strings.Contains(html, "Details") {
+		t.Fatalf("activity summary missing: %s", html)
+	}
+	if !strings.Contains(html, `data-chat-message-detail-card`) || !strings.Contains(html, `template data-chat-message-detail`) {
+		t.Fatalf("activity detail template missing: %s", html)
+	}
+	if strings.Contains(html, `{&quot;activity&quot;`) {
+		t.Fatalf("raw activity json leaked into visible html: %s", html)
+	}
+}

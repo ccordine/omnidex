@@ -11,13 +11,13 @@ import type {
 import type { ResolvedModelConfig } from "./model_config_types";
 import type { ScrumBoard, ScrumCard } from "./scrum_types";
 
-export async function fetchProjects(): Promise<{ projects: ProjectRecord[]; active_project_id: number }> {
-  const response = await fetch("/v1/projects");
+export async function fetchProjects(signal?: AbortSignal): Promise<{ projects: ProjectRecord[]; active_project_id: number }> {
+  const response = await fetch("/v1/projects", { signal });
   return readJSON(response);
 }
 
-export async function fetchProject(id: number): Promise<{ project: ProjectRecord; modelConfig?: ResolvedModelConfig }> {
-  const response = await fetch(`/v1/projects/${id}`);
+export async function fetchProject(id: number, signal?: AbortSignal): Promise<{ project: ProjectRecord; modelConfig?: ResolvedModelConfig }> {
+  const response = await fetch(`/v1/projects/${id}`, { signal });
   const payload = await readJSON<{ project: ProjectRecord; model_config?: ResolvedModelConfig }>(response);
   return { project: payload.project, modelConfig: payload.model_config };
 }
@@ -103,8 +103,8 @@ export async function surveyProject(id: number): Promise<ProjectRecord> {
   return payload.project;
 }
 
-export async function fetchProjectMap(id: number): Promise<ProjectMapSummary> {
-  const response = await fetch(`/v1/projects/${id}/map`);
+export async function fetchProjectMap(id: number, signal?: AbortSignal): Promise<ProjectMapSummary> {
+  const response = await fetch(`/v1/projects/${id}/map`, { signal });
   return readJSON(response);
 }
 
@@ -117,8 +117,8 @@ export async function scanProjectMap(id: number): Promise<ProjectMapSummary> {
   return readJSON(response);
 }
 
-export async function fetchProjectGit(id: number): Promise<ProjectGitStatus> {
-  const response = await fetch(`/v1/projects/${id}/git`);
+export async function fetchProjectGit(id: number, signal?: AbortSignal): Promise<ProjectGitStatus> {
+  const response = await fetch(`/v1/projects/${id}/git`, { signal });
   return readJSON(response);
 }
 

@@ -10,14 +10,14 @@ import (
 // scrumExternalAgentSessionBoilerplate matches default Codex/Cursor lifecycle lines that
 // must not alone trigger a review transition before real agent work is visible.
 var scrumExternalAgentSessionBoilerplate = map[string]struct{}{
-	"codex external implementation session started":     {},
-	"codex external implementation session completed":     {},
-	"cursor external implementation session started":      {},
-	"cursor external implementation session completed":    {},
-	"external agent session ended":                        {},
-	"external agent session completed":                    {},
-	"external agent completed":                            {},
-	"codex turn completed":                                {},
+	"codex external implementation session started":    {},
+	"codex external implementation session completed":  {},
+	"cursor external implementation session started":   {},
+	"cursor external implementation session completed": {},
+	"external agent session ended":                     {},
+	"external agent session completed":                 {},
+	"external agent completed":                         {},
+	"codex turn completed":                             {},
 }
 
 type scrumAgentStreamEvent struct {
@@ -112,7 +112,7 @@ func scrumAgentOutputHasSubstantiveContent(output string) bool {
 
 func scrumStrictExternalPlayCompletedOutcome(details model.JobDetails, combinedOutput string) ScrumManagerOutcome {
 	if scrumAgentOutputIndicatesRunFailure(combinedOutput) {
-		return ScrumOutcomePaused
+		return ScrumOutcomeFailed
 	}
 	if !scrumAgentOutputHasSubstantiveContent(combinedOutput) {
 		return ScrumOutcomePaused

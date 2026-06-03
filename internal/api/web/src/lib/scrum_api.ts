@@ -30,8 +30,9 @@ function scrumBoardQuery(projectID?: number | null, options: { column?: string |
 export async function fetchScrumBoard(
   projectID?: number | null,
   options: { column?: string | null } = {},
+  signal?: AbortSignal,
 ): Promise<ScrumBoardResponse> {
-  const response = await fetch(`/v1/scrum${scrumBoardQuery(projectID, options)}`);
+  const response = await fetch(`/v1/scrum${scrumBoardQuery(projectID, options)}`, { signal });
   return readJSON<ScrumBoardResponse>(response);
 }
 

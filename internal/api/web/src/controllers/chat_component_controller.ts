@@ -1,11 +1,12 @@
 import { Controller } from "@hotwired/stimulus";
 import { readJSON } from "../lib/api";
-import { buildRecyclrBundle } from "../lib/recyclr";
-import type GxController from "./gx_controller";
+import { closeModalShell, getModalElements, openModalShell } from "../lib/modal";
 
 type ChatSnapshot = {
   html?: string;
   cursor?: string;
+  before_cursor?: string;
+  has_more?: boolean;
   busy?: boolean;
   card?: unknown;
 };
@@ -30,11 +31,19 @@ export default class ChatComponentController extends Controller<HTMLElement> {
   declare readonly endpointValue: string;
 
   private cursor = "";
+  private beforeCursor = "";
+  private hasMore = true;
+  private loadingOlder = false;
   private pollTimer: number | null = null;
   private recycledHandler = () => this.afterMessagesChanged();
+  private scrollHandler = () => this.handleScroll();
+  private detailClickHandler = (event: Event) => this.openMessageDetail(event);
 
   connect(): void {
     document.addEventListener("omni:recycled", this.recycledHandler);
+    this.messagesElement().addEventListener("scroll", this.scrollHandler);
+    this.messagesElement().addEventListener("click", this.detailClickHandler);
+    this.restoreCachedMessages();
     this.scrollToBottom(true);
     if (this.messagesElement().querySelector("[data-chat-component-working-message]")) {
       this.startPolling();
@@ -43,6 +52,8 @@ export default class ChatComponentController extends Controller<HTMLElement> {
 
   disconnect(): void {
     document.removeEventListener("omni:recycled", this.recycledHandler);
+    this.messagesElement().removeEventListener("scroll", this.scrollHandler);
+    this.messagesElement().removeEventListener("click", this.detailClickHandler);
     this.stopPolling();
   }
 
@@ -95,6 +106,7 @@ export default class ChatComponentController extends Controller<HTMLElement> {
     try {
       const url = new URL(endpoint, window.location.origin);
       if (this.cursor) url.searchParams.set("cursor", this.cursor);
+      url.searchParams.set("limit", "5");
       const response = await fetch(url);
       const payload = await readJSON<ChatSnapshot>(response);
       this.applySnapshot(payload);
@@ -121,6 +133,8 @@ export default class ChatComponentController extends Controller<HTMLElement> {
   private applySnapshot(payload: ChatSnapshot): void {
     const wasPinned = this.isPinnedToBottom();
     if (typeof payload.cursor === "string") this.cursor = payload.cursor;
+    if (typeof payload.before_cursor === "string") this.beforeCursor = payload.before_cursor;
+    if (typeof payload.has_more === "boolean") this.hasMore = payload.has_more;
     if (payload.html != null) {
       this.renderIntoMessages(payload.html);
     }
@@ -131,17 +145,97 @@ export default class ChatComponentController extends Controller<HTMLElement> {
       this.removeWorkingMessage();
     }
     if (wasPinned) this.scrollToBottom(true);
+    this.cacheMessages();
   }
 
   private renderIntoMessages(html: string): void {
-    const host = (window as Window & { omniRecyclr?: GxController }).omniRecyclr ?? null;
-    const componentID = this.idValue || this.element.dataset.chatComponentId || "";
-    const target = `chat-${componentID}-messages`;
-    if (host?.renderBundle && componentID) {
-      host.renderBundle(buildRecyclrBundle(target, html));
+    this.mergeMessagesHTML(html, "append");
+  }
+
+  private mergeMessagesHTML(html: string, mode: "append" | "prepend"): void {
+    const messages = this.messagesElement();
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const incoming = Array.from(template.content.children) as HTMLElement[];
+    const hasMessageIDs = incoming.some((node) => node.dataset.chatMessageId);
+    if (!hasMessageIDs && messages.querySelectorAll("[data-chat-message-id]").length === 0) {
+      messages.innerHTML = html;
       return;
     }
-    this.messagesElement().innerHTML = html;
+    messages.querySelectorAll("[data-chat-component-working-message], [data-scrum-channel-anchor]").forEach((node) => node.remove());
+    const seen = new Set(Array.from(messages.querySelectorAll<HTMLElement>("[data-chat-message-id]")).map((node) => node.dataset.chatMessageId || ""));
+    const fragment = document.createDocumentFragment();
+    for (const node of incoming) {
+      const id = node.dataset.chatMessageId || "";
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      fragment.appendChild(node);
+    }
+    if (mode === "prepend") {
+      messages.prepend(fragment);
+    } else {
+      messages.append(fragment);
+    }
+  }
+
+  private async loadOlderMessages(): Promise<void> {
+    if (this.loadingOlder || !this.hasMore) return;
+    const endpoint = this.endpointFrom();
+    const first = this.messagesElement().querySelector<HTMLElement>("[data-chat-message-id]");
+    const before = first?.dataset.chatMessageId || this.beforeCursor;
+    if (!endpoint || !before) return;
+    this.loadingOlder = true;
+    const messages = this.messagesElement();
+    const previousHeight = messages.scrollHeight;
+    try {
+      const url = new URL(endpoint, window.location.origin);
+      url.searchParams.set("before", before);
+      url.searchParams.set("limit", "5");
+      const payload = await readJSON<ChatSnapshot>(await fetch(url));
+      if (typeof payload.before_cursor === "string") this.beforeCursor = payload.before_cursor;
+      if (typeof payload.has_more === "boolean") this.hasMore = payload.has_more;
+      if (payload.html) {
+        this.mergeMessagesHTML(payload.html, "prepend");
+        messages.scrollTop += messages.scrollHeight - previousHeight;
+        this.cacheMessages();
+      }
+    } finally {
+      this.loadingOlder = false;
+    }
+  }
+
+  private handleScroll(): void {
+    if (this.messagesElement().scrollTop <= 24) void this.loadOlderMessages();
+  }
+
+  private openMessageDetail(event: Event): void {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    const card = target.closest<HTMLElement>("[data-chat-message-detail-card]");
+    if (!card || !this.messagesElement().contains(card)) return;
+    const explicit = target.closest("[data-chat-message-detail-open]");
+    if (!explicit && target.closest("button,a,input,textarea,select")) return;
+    const detail = card.querySelector<HTMLTemplateElement>("template[data-chat-message-detail]");
+    if (!detail) return;
+    event.preventDefault();
+    const title = card.dataset.chatMessageDetailTitle || "Message details";
+    const { panel } = getModalElements();
+    if (!panel) return;
+    panel.innerHTML = `
+      <div class="flex max-h-[90vh] flex-col">
+        <header class="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 p-4 md:p-5">
+          <div>
+            <p class="text-xs uppercase tracking-[.18em] text-zinc-500">Channel message</p>
+            <h2 class="mt-1 text-lg font-semibold text-zinc-100">${this.escape(title)}</h2>
+          </div>
+          <button type="button" data-chat-detail-close class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">Close</button>
+        </header>
+        <div class="omni-modal-body scrollbar overflow-auto p-4 md:p-5">
+          ${detail.innerHTML}
+        </div>
+      </div>`;
+    panel.querySelector("[data-chat-detail-close]")?.addEventListener("click", () => closeModalShell(), { once: true });
+    openModalShell({ wide: true });
   }
 
   private appendTemporaryMessage(role: string, content: string): void {
@@ -175,7 +269,9 @@ export default class ChatComponentController extends Controller<HTMLElement> {
   }
 
   private afterMessagesChanged(): void {
+    this.restoreCachedMessages(true);
     if (this.isPinnedToBottom()) this.scrollToBottom();
+    this.cacheMessages();
   }
 
   private scrollToBottom(force = false): void {
@@ -196,6 +292,40 @@ export default class ChatComponentController extends Controller<HTMLElement> {
 
   private messagesElement(): HTMLElement {
     return this.hasMessagesTarget ? this.messagesTarget : this.element;
+  }
+
+  private cacheKey(): string {
+    const componentID = this.idValue || this.element.dataset.chatComponentId || "";
+    return componentID ? `omni.chat-component.${componentID}.html.v1` : "";
+  }
+
+  private cacheMessages(): void {
+    const key = this.cacheKey();
+    if (!key) return;
+    try {
+      const copy = this.messagesElement().cloneNode(true) as HTMLElement;
+      copy.querySelectorAll("[data-chat-component-working-message], [data-chat-temporary], [data-scrum-channel-anchor]").forEach((node) => node.remove());
+      localStorage.setItem(key, copy.innerHTML);
+    } catch {
+      /* ignore storage quota/private mode */
+    }
+  }
+
+  private restoreCachedMessages(mergeOnly = false): void {
+    const key = this.cacheKey();
+    if (!key) return;
+    let html = "";
+    try {
+      html = localStorage.getItem(key) || "";
+    } catch {
+      return;
+    }
+    if (!html.trim()) return;
+    if (!mergeOnly && this.messagesElement().querySelectorAll("[data-chat-message-id]").length === 0) {
+      this.messagesElement().innerHTML = html;
+      return;
+    }
+    this.mergeMessagesHTML(html, "prepend");
   }
 
   private endpointFrom(form?: HTMLFormElement): string {

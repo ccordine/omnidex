@@ -5,6 +5,7 @@ export const SCRUM_COLUMNS = [
   "in_progress",
   "review",
   "blocked",
+  "error",
   "done",
 ] as const;
 
@@ -184,6 +185,7 @@ export const COLUMN_LABELS: Record<string, string> = {
   in_progress: "In Progress",
   review: "Review",
   blocked: "Blocked",
+  error: "Error",
   done: "Done",
 };
 

@@ -20,6 +20,7 @@ const COLUMN_ACCENT: Record<string, string> = {
   in_progress: "border-amber-400/35 bg-amber-950/25",
   review: "border-cyan-400/35 bg-cyan-950/25",
   blocked: "border-rose-400/35 bg-rose-950/25",
+  error: "border-red-400/40 bg-red-950/30",
   done: "border-emerald-400/35 bg-emerald-950/25",
 };
 

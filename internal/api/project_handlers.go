@@ -167,7 +167,6 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		if agentResolved, err := s.resolvedAgentsForProjectCard(r.Context(), id, ScrumCard{}); err == nil {
 			payload["agent_config"] = agentResolved
 		}
-		s.SyncProjectMapAsync(id)
 		writeJSON(w, http.StatusOK, payload)
 	case http.MethodPatch:
 		var req struct {

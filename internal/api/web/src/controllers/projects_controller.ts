@@ -70,6 +70,7 @@ export default class ProjectsController extends Controller {
   private debuggerLastRun: DebuggerLastRun | null = null;
   private debuggerRunning = false;
   private debuggerPollTimer: number | null = null;
+  private detailAbortController: AbortController | null = null;
 
   connect() {
     this.panelShownHandler = (event: Event) => {
@@ -83,6 +84,7 @@ export default class ProjectsController extends Controller {
     if (this.panelShownHandler) {
       document.removeEventListener("omni:panel-shown", this.panelShownHandler);
     }
+    this.detailAbortController?.abort();
     this.stopDebuggerPolling();
   }
 
@@ -102,6 +104,26 @@ export default class ProjectsController extends Controller {
 
   private actionFailMessage(message: string) {
     reportErrorMessage(this.setStatus.bind(this), message);
+  }
+
+  private isAbortError(error: unknown): boolean {
+    return error instanceof DOMException && error.name === "AbortError";
+  }
+
+  private nextDetailSignal(): { signal: AbortSignal; cleanup: () => void } {
+    this.detailAbortController?.abort();
+    const controller = new AbortController();
+    this.detailAbortController = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
+    return {
+      signal: controller.signal,
+      cleanup: () => {
+        window.clearTimeout(timeout);
+        if (this.detailAbortController === controller) {
+          this.detailAbortController = null;
+        }
+      },
+    };
   }
 
   private setModalFeedback(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
@@ -226,22 +248,9 @@ export default class ProjectsController extends Controller {
     }
   }
 
-  /** Backend auto-sync runs on GET project; refresh map summary once it likely finished. */
-  private async refreshProjectMapAfterAutoSync(projectID: number) {
-    await new Promise((resolve) => window.setTimeout(resolve, 2500));
-    if (this.selectedProjectID !== projectID) return;
-    try {
-      this.currentProjectMap = await fetchProjectMap(projectID);
-      if (this.activeTab === "map") {
-        await this.renderDetail(projectID);
-      }
-    } catch {
-      // map refresh is best-effort after background sync
-    }
-  }
-
   async load() {
     this.setStatus("Loading projects…", "busy");
+    setGlobalLoading(true);
     try {
       const [projectsPayload, recipesPayload] = await Promise.all([
         fetchProjects(),
@@ -262,7 +271,9 @@ export default class ProjectsController extends Controller {
       this.setStatus(`${this.projects.length} projects`, "ok");
     } catch (error) {
       this.listTarget.innerHTML = `<div class="rounded-xl border border-rose-400/20 bg-rose-400/5 p-6 text-sm text-rose-200">${escapeHTML(error instanceof Error ? error.message : String(error))}</div>`;
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.actionFail(error);
+    } finally {
+      setGlobalLoading(false);
     }
   }
 
@@ -404,6 +415,7 @@ export default class ProjectsController extends Controller {
     }
     this.setModalFeedback("Creating project…", "busy");
     this.setCreateSubmitting(true);
+    setGlobalLoading(true);
     try {
       const payload = await createProject({
         name: name || location.split("/").filter(Boolean).pop() || "project",
@@ -422,6 +434,8 @@ export default class ProjectsController extends Controller {
       const message = error instanceof Error ? error.message : String(error);
       this.setModalFeedback(message, "error");
       this.setCreateSubmitting(false);
+    } finally {
+      setGlobalLoading(false);
     }
   }
 
@@ -429,9 +443,15 @@ export default class ProjectsController extends Controller {
     event.preventDefault();
     const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
     if (!id) return;
+    const previousProjectID = this.selectedProjectID;
+    const previousTab = this.activeTab;
     this.selectedProjectID = id;
     this.setActiveProjectTab(this.resolveProjectTab(id));
-    await this.renderDetail(id);
+    const loaded = await this.renderDetail(id);
+    if (!loaded) {
+      this.selectedProjectID = previousProjectID;
+      this.activeTab = previousTab;
+    }
   }
 
   private applyTabState() {
@@ -482,20 +502,22 @@ export default class ProjectsController extends Controller {
     }
   }
 
-  async renderDetail(id: number, options: { preserveStatus?: boolean } = {}) {
+  async renderDetail(id: number, options: { preserveStatus?: boolean; showLoading?: boolean } = {}): Promise<boolean> {
+    const showLoading = options.showLoading ?? true;
+    const request = this.nextDetailSignal();
     if (!options.preserveStatus) {
       this.setStatus("Loading project…", "busy");
     }
+    if (showLoading) setGlobalLoading(true);
     try {
-      const gitPromise =
-        this.activeTab === "git" || this.currentProjectGit
-          ? fetchProjectGit(id).catch(() => null)
-          : Promise.resolve(null);
+      const needsSettings = this.activeTab === "settings";
+      const needsMap = this.activeTab === "map";
+      const needsGit = this.activeTab === "git";
       const [{ project, modelConfig }, agentPayload, projectMap, projectGit] = await Promise.all([
-        fetchProject(id),
-        fetchAgentDefaults(id).catch(() => null),
-        fetchProjectMap(id).catch(() => null),
-        gitPromise,
+        fetchProject(id, request.signal),
+        needsSettings ? fetchAgentDefaults(id, undefined, request.signal).catch((error) => (this.isAbortError(error) ? Promise.reject(error) : null)) : Promise.resolve(null),
+        needsMap ? fetchProjectMap(id, request.signal).catch((error) => (this.isAbortError(error) ? Promise.reject(error) : null)) : Promise.resolve(this.currentProjectMap),
+        needsGit ? fetchProjectGit(id, request.signal).catch((error) => (this.isAbortError(error) ? Promise.reject(error) : null)) : Promise.resolve(this.currentProjectGit),
       ]);
       this.currentModelConfig = modelConfig ?? null;
       this.currentAgentConfig = agentPayload?.resolved ?? null;
@@ -518,19 +540,26 @@ export default class ProjectsController extends Controller {
       this.applyTabState();
       document.dispatchEvent(
         new CustomEvent("omni:project-tab", {
-          detail: { tab: this.activeTab, project_id: this.selectedProjectID },
+          detail: { tab: this.activeTab, project_id: id },
         }),
       );
       this.detailTarget.classList.remove("hidden");
       this.detailTarget.classList.add("flex");
       this.listTarget.classList.add("hidden");
       this.dispatchProjectOpened(project);
-      void this.refreshProjectMapAfterAutoSync(id);
       if (!options.preserveStatus) {
         this.setStatus(project.name, "ok");
       }
+      return true;
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      if (this.isAbortError(error)) {
+        return false;
+      }
+      this.actionFail(error);
+      return false;
+    } finally {
+      if (showLoading) setGlobalLoading(false);
+      request.cleanup();
     }
   }
 

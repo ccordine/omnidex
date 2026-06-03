@@ -267,6 +267,7 @@ func sortScrumChatChronological(chat []ScrumChatMessage) []ScrumChatMessage {
 func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
 	card = hydrateCardChannelChat(card)
 	out := make([]ScrumChatMessage, 0, len(card.Chat))
+	seenIDs := map[string]int{}
 	for _, msg := range sortScrumChatChronological(card.Chat) {
 		content := strings.TrimSpace(stripAssistantStreamMarker(msg.Content))
 		if content == "" || strings.HasPrefix(content, "[[agent-stream-len:") || strings.HasPrefix(content, "[[context-sync:") {
@@ -289,8 +290,15 @@ func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
 				continue
 			}
 		}
+		id := scrumChatMessageID(msg)
+		if seen := seenIDs[id]; seen > 0 {
+			seenIDs[id] = seen + 1
+			id = fmt.Sprintf("%s_%d", id, seen+1)
+		} else {
+			seenIDs[id] = 1
+		}
 		out = append(out, ScrumChatMessage{
-			ID:          scrumChatMessageID(msg),
+			ID:          id,
 			Role:        role,
 			Content:     content,
 			CreatedAt:   msg.CreatedAt,

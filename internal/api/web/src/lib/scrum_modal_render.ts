@@ -560,7 +560,7 @@ export function renderScrumModalChannelTab(
   playQueue?: ScrumBoardResponse["play_queue"],
   options?: { pilotPending?: boolean; agentRunning?: boolean; projectID?: number | null },
 ): string {
-  const messages = scrumMessagesToChat(card.chat ?? []);
+  const messages = scrumMessagesToChat(card.chat ?? []).slice(-5);
   const componentID = `scrum-card-${card.id}`;
   const chatEndpoint = `/v1/scrum/cards/${encodeURIComponent(card.id)}/chat${options?.projectID ? `?project_id=${encodeURIComponent(String(options.projectID))}` : ""}`;
   const isLive = card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing";

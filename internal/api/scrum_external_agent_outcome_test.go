@@ -42,12 +42,16 @@ func TestResolveScrumManagerOutcomeCodexSubstantiveMessageMovesToReview(t *testi
 	}
 }
 
-func TestResolveScrumManagerOutcomeCodexSpawnFailureStaysPaused(t *testing.T) {
+func TestResolveScrumManagerOutcomeCodexSpawnFailureMovesToError(t *testing.T) {
 	output := "Codex external implementation session started\nError: spawn codex ENOENT\nexternal agent session ended"
 	job := codexScrumJob(model.JobStatusCompleted, output)
 	outcome := resolveScrumManagerOutcome(job)
-	if outcome != ScrumOutcomePaused {
-		t.Fatalf("outcome=%q want paused for spawn failure output", outcome)
+	if outcome != ScrumOutcomeFailed {
+		t.Fatalf("outcome=%q want failed for spawn failure output", outcome)
+	}
+	transition := scrumColumnForOutcome(outcome)
+	if transition.Column != "error" || transition.PlayState != "" {
+		t.Fatalf("transition=%+v want error", transition)
 	}
 }
 

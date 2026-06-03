@@ -328,12 +328,15 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 			writeError(w, http.StatusNotFound, "card not found")
 			return
 		}
+		page := scrumCardChatPageFor(card, scrumCardChatLimit(r.URL.Query().Get("limit")), r.URL.Query().Get("before"))
 		writeJSON(w, http.StatusOK, map[string]any{
-			"component_id": scrumCardChatComponentID(card.ID),
-			"html":         renderScrumCardChatHTML(card),
-			"cursor":       scrumCardChatCursor(card),
-			"busy":         scrumCardChatBusy(card),
-			"card":         card,
+			"component_id":  scrumCardChatComponentID(card.ID),
+			"html":          page.HTML,
+			"cursor":        page.Cursor,
+			"before_cursor": page.BeforeCursor,
+			"has_more":      page.HasMore,
+			"busy":          scrumCardChatBusy(card),
+			"card":          scrumCardChatResponseCard(card),
 		})
 		return
 	}
@@ -375,16 +378,19 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		}
 	}
 	s.publishScrumCardChatUpdate(r.Context(), projectID, result.Card, "channel chat")
+	page := scrumCardChatPageFor(result.Card, scrumCardChatDefaultLimit, "")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"component_id": scrumCardChatComponentID(result.Card.ID),
-		"html":         renderScrumCardChatHTML(result.Card),
-		"cursor":       scrumCardChatCursor(result.Card),
-		"busy":         scrumCardChatBusy(result.Card),
-		"card":         result.Card,
-		"reply":        "",
-		"agent":        result.Agent,
-		"action":       result.Action,
-		"operation_id": scrumCardChatCursor(result.Card),
+		"component_id":  scrumCardChatComponentID(result.Card.ID),
+		"html":          page.HTML,
+		"cursor":        page.Cursor,
+		"before_cursor": page.BeforeCursor,
+		"has_more":      page.HasMore,
+		"busy":          scrumCardChatBusy(result.Card),
+		"card":          scrumCardChatResponseCard(result.Card),
+		"reply":         "",
+		"agent":         result.Agent,
+		"action":        result.Action,
+		"operation_id":  scrumCardChatCursor(result.Card),
 	})
 }
 

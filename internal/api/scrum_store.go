@@ -14,7 +14,7 @@ import (
 	"github.com/gryph/omnidex/internal/scrum"
 )
 
-var scrumColumns = []string{"backlog", "ready", "assigned", "in_progress", "review", "blocked", "done"}
+var scrumColumns = []string{"backlog", "ready", "assigned", "in_progress", "review", "blocked", "error", "done"}
 
 type ScrumChecklistItem struct {
 	ID   string `json:"id"`
@@ -162,6 +162,18 @@ func (s *ScrumStore) load() error {
 	}
 	if len(board.Columns) == 0 {
 		board.Columns = append([]string(nil), scrumColumns...)
+	} else {
+		seen := map[string]struct{}{}
+		for _, column := range board.Columns {
+			if normalized := normalizeScrumColumn(column); normalized != "" {
+				seen[normalized] = struct{}{}
+			}
+		}
+		for _, column := range scrumColumns {
+			if _, ok := seen[column]; !ok {
+				board.Columns = append(board.Columns, column)
+			}
+		}
 	}
 	s.board = board
 	return nil

@@ -145,6 +145,7 @@ export default class ScrumController extends Controller {
   private cardLlmJobs = new Map<number, CardLlmJobTracker>();
   private finishedCardLlmJobs = new Set<number>();
   private cardLlmJobPollers = new Set<number>();
+  private boardAbortController: AbortController | null = null;
   private scrumRefreshHandler = (event: Event) => {
     const detail = (event as CustomEvent<{ project_id?: number }>).detail;
     if (detail?.project_id && this.projectID && detail.project_id !== this.projectID) return;
@@ -179,13 +180,15 @@ export default class ScrumController extends Controller {
       const detail = (event as CustomEvent<{ project_id?: number }>).detail;
       const nextProjectID = detail?.project_id && detail.project_id > 0 ? detail.project_id : null;
       if (nextProjectID !== this.projectID) {
+        this.boardAbortController?.abort();
+        this.busy = false;
         this.board = null;
         this.lastBoardUpdatedAt = "";
         this.lastRenderedPayloadFingerprint = "";
         this.lastHealthFingerprint = "";
       }
       this.projectID = nextProjectID;
-      void this.load();
+      if (this.scrumTabActive) void this.load();
     };
     document.addEventListener("omni:project-opened", this.projectOpenedHandler);
 
@@ -200,6 +203,9 @@ export default class ScrumController extends Controller {
       this.cardLlmJobs.clear();
       this.finishedCardLlmJobs.clear();
       this.cardLlmJobPollers.clear();
+      this.boardAbortController?.abort();
+      this.boardAbortController = null;
+      this.busy = false;
       this.scrumTabActive = true;
       this.activeColumn = "assigned";
       this.allColumns = [];
@@ -353,7 +359,10 @@ export default class ScrumController extends Controller {
   }
 
   private fetchBoardViewport(): Promise<ScrumBoardResponse> {
-    return fetchScrumBoard(this.projectID, { column: this.activeColumn });
+    this.boardAbortController?.abort();
+    const controller = new AbortController();
+    this.boardAbortController = controller;
+    return fetchScrumBoard(this.projectID, { column: this.activeColumn }, controller.signal);
   }
 
   private applyHealthTTL(ttlMS?: number) {
@@ -1441,16 +1450,38 @@ export default class ScrumController extends Controller {
     if (!this.board || !card?.id) return;
     const index = this.board.cards.findIndex((entry) => entry.id === card.id);
     const previous = index >= 0 ? this.board.cards[index] : null;
-    if (index >= 0) this.board.cards[index] = card;
-    else this.board.cards.push(card);
-    const columnChanged = previous?.column !== card.column;
-    const playStateChanged = previous?.play_state !== card.play_state;
+    const incoming = previous && !previous.summary && card.summary ? this.mergeSummaryCard(previous, card) : card;
+    if (index >= 0) this.board.cards[index] = incoming;
+    else this.board.cards.push(incoming);
+    const columnChanged = previous?.column !== incoming.column;
+    const playStateChanged = previous?.play_state !== incoming.play_state;
     if (columnChanged || playStateChanged) {
       this.renderBoardFromLocal(false);
-      if (this.activeCardID === card.id) {
-        void this.refreshActiveModal(card.id);
+      if (this.activeCardID === incoming.id) {
+        void this.refreshActiveModal(incoming.id);
       }
     }
+  }
+
+  private mergeSummaryCard(previous: ScrumCard, summary: ScrumCard): ScrumCard {
+    return {
+      ...previous,
+      ...summary,
+      summary: false,
+      checklist: previous.checklist,
+      ref_files: previous.ref_files,
+      chat: previous.chat,
+      model_config: previous.model_config,
+      agent_config: previous.agent_config,
+      card_ticket: previous.card_ticket,
+      card_prompt: previous.card_prompt,
+      recipe_id: previous.recipe_id,
+      recipe: previous.recipe,
+      planning_chat: previous.planning_chat,
+      coach_config: previous.coach_config,
+      test_criteria: previous.test_criteria,
+      console_log: previous.console_log,
+    };
   }
 
   private async reloadBoard(cardID?: string | null): Promise<ScrumCard | null> {
@@ -1851,12 +1882,14 @@ export default class ScrumController extends Controller {
       this.startPolling();
       this.setStatus(`Updated ${new Date().toLocaleTimeString()}`, "ok");
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       const message = error instanceof Error ? error.message : String(error);
       this.boardTarget.innerHTML = renderScrumEmptyState(`Failed to load scrum board: ${message}`);
       this.actionFailMessage(message);
     } finally {
       this.setBoardLoading(false);
       this.busy = false;
+      this.boardAbortController = null;
     }
   }
 

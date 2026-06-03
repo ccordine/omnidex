@@ -38,7 +38,7 @@ func TestResolveScrumManagerOutcomeFromJob(t *testing.T) {
 
 func TestScrumColumnForOutcomeFailed(t *testing.T) {
 	transition := scrumColumnForOutcome(ScrumOutcomeFailed)
-	if transition.Column != "blocked" || transition.PlayState != "" {
+	if transition.Column != "error" || transition.PlayState != "" {
 		t.Fatalf("failed transition = %+v", transition)
 	}
 }
@@ -85,11 +85,11 @@ func TestResolveScrumPlayOutcomeFailedJob(t *testing.T) {
 		},
 	}
 	outcome := resolveScrumManagerOutcome(details)
-	if outcome != ScrumOutcomePaused {
-		t.Fatalf("outcome=%q want paused", outcome)
+	if outcome != ScrumOutcomeFailed {
+		t.Fatalf("outcome=%q want failed", outcome)
 	}
 	transition := scrumColumnForOutcome(outcome)
-	if transition.Column != "assigned" || transition.PlayState != scrumPlayPaused {
-		t.Fatalf("transition=%+v want assigned/paused", transition)
+	if transition.Column != "error" || transition.PlayState != "" {
+		t.Fatalf("transition=%+v want error", transition)
 	}
 }
