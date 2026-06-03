@@ -81,6 +81,7 @@ type Server struct {
 	uiRedisRequired           bool
 	uiSessionTTL              time.Duration
 	uiRedis                   *uiRedisClient
+	uiRedisInitError          string
 	ollamaURLMu               sync.RWMutex
 	hostAgentURL              string
 	hostAgentToken            string
@@ -340,6 +341,8 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 	}
 	if redis, err := newUIRedisClient(s.redisURL); err == nil {
 		s.uiRedis = redis
+	} else if strings.TrimSpace(s.redisURL) != "" {
+		s.uiRedisInitError = err.Error()
 	}
 	if repo != nil {
 		s.secretsResolver = secrets.NewResolver(repo)
@@ -441,13 +444,15 @@ func (s *Server) routes() {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	coreURL, source := s.resolveCoreURL(r)
+	dependencies := s.collectCoreDependencies(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":          "ok",
+		"status":          coreHealthStatus(dependencies),
 		"time":            time.Now().UTC(),
 		"queue_enabled":   s.repo != nil,
 		"core_url":        coreURL,
 		"core_url_source": source,
 		"listen_addr":     strings.TrimSpace(s.listenAddr),
+		"dependencies":    dependencies,
 	})
 }
 

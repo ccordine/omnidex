@@ -33,18 +33,64 @@ func TestResolveAgentConfigPriority(t *testing.T) {
 func TestAgentConfigJobMetadataExternal(t *testing.T) {
 	s := &Server{}
 	project := model.Project{
-		Settings: json.RawMessage(`{"agent_config":{"agent_system":"codex","agent_strict":"true"}}`),
+		Settings: json.RawMessage(`{"agent_config":{"agent_system":"cursor","cursor_model":"composer-project","agent_strict":"true"}}`),
 	}
 	payload := s.agentConfigJobMetadata(context.Background(), project, ScrumCard{})
-	if payload["execution_agent"] != agentconfig.SystemCodex {
-		t.Fatalf("expected codex execution agent, got %#v", payload["execution_agent"])
+	if payload["execution_agent"] != agentconfig.SystemCursor {
+		t.Fatalf("expected cursor execution agent, got %#v", payload["execution_agent"])
 	}
 	if payload["agent_strict"] != true {
 		t.Fatalf("expected strict flag, got %#v", payload["agent_strict"])
 	}
 	agents, ok := payload["external_agents_used"].([]string)
-	if !ok || len(agents) != 1 || agents[0] != "codex_sdk" {
+	if !ok || len(agents) != 1 || agents[0] != "cursor_sdk" {
 		t.Fatalf("expected external_agents_used, got %#v", payload["external_agents_used"])
+	}
+	cfg, ok := payload["agent_config"].(map[string]string)
+	if !ok {
+		t.Fatalf("expected agent_config map, got %#v", payload["agent_config"])
+	}
+	if cfg["cursor_model"] != "composer-project" {
+		t.Fatalf("expected cursor_model in job metadata, got %#v", cfg)
+	}
+}
+
+func TestAgentConfigJobMetadataCodexExternal(t *testing.T) {
+	s := &Server{}
+	project := model.Project{
+		Settings: json.RawMessage(`{"agent_config":{
+			"agent_system":"codex",
+			"codex_model":"gpt-codex-project",
+			"codex_reasoning_effort":"high",
+			"codex_sandbox_mode":"workspace-write",
+			"codex_approval_policy":"never",
+			"codex_network_access":"false",
+			"codex_web_search_mode":"disabled"
+		}}`),
+	}
+	payload := s.agentConfigJobMetadata(context.Background(), project, ScrumCard{})
+	if payload["execution_agent"] != agentconfig.SystemCodex {
+		t.Fatalf("expected codex execution agent, got %#v", payload["execution_agent"])
+	}
+	agents, ok := payload["external_agents_used"].([]string)
+	if !ok || len(agents) != 1 || agents[0] != "codex_sdk" {
+		t.Fatalf("expected codex external agent, got %#v", payload["external_agents_used"])
+	}
+	cfg, ok := payload["agent_config"].(map[string]string)
+	if !ok {
+		t.Fatalf("expected agent_config map, got %#v", payload["agent_config"])
+	}
+	for key, want := range map[string]string{
+		"codex_model":            "gpt-codex-project",
+		"codex_reasoning_effort": "high",
+		"codex_sandbox_mode":     "workspace-write",
+		"codex_approval_policy":  "never",
+		"codex_network_access":   "false",
+		"codex_web_search_mode":  "disabled",
+	} {
+		if cfg[key] != want {
+			t.Fatalf("expected %s=%q, got %#v", key, want, cfg)
+		}
 	}
 }
 

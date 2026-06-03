@@ -24,6 +24,10 @@ type hostBridgeStatusResponse struct {
 }
 
 func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusResponse {
+	return s.collectHostBridgeStatusWithTimeout(ctx, 4*time.Second)
+}
+
+func (s *Server) collectHostBridgeStatusWithTimeout(ctx context.Context, timeout time.Duration) hostBridgeStatusResponse {
 	url := strings.TrimSpace(s.hostAgentURL)
 	if url == "" {
 		return hostBridgeStatusResponse{
@@ -35,7 +39,10 @@ func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusRe
 		}
 	}
 
-	client := s.hostBridgeClient()
+	if timeout <= 0 {
+		timeout = 4 * time.Second
+	}
+	client := hostbridge.NewClient(url, s.hostAgentToken, timeout)
 	if client == nil {
 		return hostBridgeStatusResponse{
 			Configured:  false,
@@ -47,10 +54,10 @@ func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusRe
 		}
 	}
 
-	resolvedURL, resolveErr := hostbridge.ResolveReachableURL(ctx, url, s.hostAgentToken, 4*time.Second)
+	resolvedURL, resolveErr := hostbridge.ResolveReachableURL(ctx, url, s.hostAgentToken, timeout)
 	if resolveErr == nil && resolvedURL != "" {
 		url = resolvedURL
-		client = hostbridge.NewClient(resolvedURL, s.hostAgentToken, 4*time.Second)
+		client = hostbridge.NewClient(resolvedURL, s.hostAgentToken, timeout)
 	}
 
 	payload, err := client.Health(ctx)

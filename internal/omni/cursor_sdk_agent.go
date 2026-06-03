@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/cursorrunner"
 	"github.com/gryph/omnidex/internal/secrets"
 )
@@ -64,6 +65,15 @@ func newCursorSDKArchitectAgent(force, explicitRequest bool) *CursorSDKArchitect
 	}
 }
 
+func (a *CursorSDKArchitectAgent) ApplyConfig(cfg agentconfig.Config) {
+	if a == nil {
+		return
+	}
+	if value := cfg.CursorModel(); value != "" {
+		a.Model = value
+	}
+}
+
 func (a *CursorSDKArchitectAgent) ArchitectAgentAvailable() (bool, string) {
 	if a == nil {
 		return false, "cursor sdk architect agent is not configured"
@@ -73,6 +83,11 @@ func (a *CursorSDKArchitectAgent) ArchitectAgentAvailable() (bool, string) {
 	}
 	if UseHostBridgeExternalAgents() && hostBridgeClientFromEnv() == nil {
 		return false, "HOST_AGENT_URL is not configured; Cursor runs on the host machine via the bridge when core is in Docker"
+	}
+	if !UseHostBridgeExternalAgents() {
+		if err := cursorrunner.PreflightError(cursorrunner.Preflight()); err != nil {
+			return false, err.Error()
+		}
 	}
 	return true, ""
 }
@@ -105,6 +120,9 @@ func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectA
 	if UseHostBridgeExternalAgents() {
 		return newHostBridgeExternalAgentSession("cursor", a.APIKey, firstNonEmpty(a.Model, cursorrunner.DefaultModel()), "")
 	}
+	if err := cursorrunner.PreflightError(cursorrunner.Preflight()); err != nil {
+		return nil, err
+	}
 	if err := cursorrunner.Ensure(context.Background(), a.RunnerDir); err != nil {
 		return nil, err
 	}
@@ -125,10 +143,7 @@ func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectA
 			if err != nil {
 				return nil, err
 			}
-			cmd := exec.CommandContext(ctx, firstNonEmpty(a.NodeBin, "node"), filepath.Join(a.RunnerDir, "runner.mjs"), reqPath)
-			cmd.Dir = a.RunnerDir
-			cmd.Env = cursorrunner.CommandEnv()
-			return cmd, nil
+			return cursorrunner.Command(ctx, a.RunnerDir, reqPath)
 		},
 	}, nil
 }
@@ -178,4 +193,3 @@ func envDurationOrDefault(key string, fallback time.Duration) time.Duration {
 	}
 	return parsed
 }
-

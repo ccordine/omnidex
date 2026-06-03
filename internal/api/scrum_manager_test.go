@@ -93,3 +93,35 @@ func TestResolveScrumPlayOutcomeFailedJob(t *testing.T) {
 		t.Fatalf("transition=%+v want error", transition)
 	}
 }
+
+func TestResolveScrumPlayOutcomeCanceledJobMovesToError(t *testing.T) {
+	details := model.JobDetails{
+		Job: model.Job{
+			Status:   model.JobStatusCanceled,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"codex","scrum_raw_play":true}`),
+		},
+		Steps: []model.Step{{Output: "connection lost"}},
+	}
+	outcome := resolveScrumManagerOutcome(details)
+	if outcome != ScrumOutcomeFailed {
+		t.Fatalf("outcome=%q want failed", outcome)
+	}
+	transition := scrumColumnForOutcome(outcome)
+	if transition.Column != "error" || transition.PlayState != "" {
+		t.Fatalf("transition=%+v want error", transition)
+	}
+}
+
+func TestResolveScrumPlayOutcomeFailureStatusOverridesSuccessText(t *testing.T) {
+	details := model.JobDetails{
+		Job: model.Job{
+			Status:   model.JobStatusFailed,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"codex","scrum_raw_play":true}`),
+		},
+		Steps: []model.Step{{Output: "SCRUM_STATUS: success"}},
+	}
+	outcome := resolveScrumManagerOutcome(details)
+	if outcome != ScrumOutcomeFailed {
+		t.Fatalf("outcome=%q want failed", outcome)
+	}
+}

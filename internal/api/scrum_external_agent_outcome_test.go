@@ -17,17 +17,17 @@ func codexScrumJob(status, output string) model.JobDetails {
 	}
 }
 
-func TestResolveScrumManagerOutcomeCodexBoilerplateOnlyStaysPaused(t *testing.T) {
+func TestResolveScrumManagerOutcomeCodexCompletedMovesToReview(t *testing.T) {
 	output := `{"agent":"codex","type":"started","message":"Codex external implementation session started"}
 {"agent":"codex","type":"completed","message":"Codex external implementation session completed"}`
 	job := codexScrumJob(model.JobStatusCompleted, output)
 	outcome := resolveScrumManagerOutcome(job)
-	if outcome != ScrumOutcomePaused {
-		t.Fatalf("outcome=%q want paused for boilerplate-only codex run", outcome)
+	if outcome != ScrumOutcomeSuccess {
+		t.Fatalf("outcome=%q want success for completed codex run", outcome)
 	}
 	transition := scrumColumnForOutcome(outcome)
-	if transition.Column != "assigned" || transition.PlayState != scrumPlayPaused {
-		t.Fatalf("transition=%+v want assigned/paused", transition)
+	if transition.Column != "review" || transition.PlayState != "" {
+		t.Fatalf("transition=%+v want review", transition)
 	}
 }
 
@@ -55,12 +55,12 @@ func TestResolveScrumManagerOutcomeCodexSpawnFailureMovesToError(t *testing.T) {
 	}
 }
 
-func TestResolveScrumPlayOutcomeCodexBoilerplateWithoutLLM(t *testing.T) {
+func TestResolveScrumPlayOutcomeCodexCompletedWithoutLLM(t *testing.T) {
 	s := &Server{}
 	job := codexScrumJob(model.JobStatusCompleted, "Codex external implementation session completed")
 	outcome, note := s.resolveScrumPlayOutcome(t.Context(), job)
-	if outcome != ScrumOutcomePaused {
-		t.Fatalf("outcome=%q note=%q want paused", outcome, note)
+	if outcome != ScrumOutcomeSuccess {
+		t.Fatalf("outcome=%q note=%q want success", outcome, note)
 	}
 }
 

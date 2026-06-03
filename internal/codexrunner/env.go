@@ -1,4 +1,4 @@
-package cursorrunner
+package codexrunner
 
 import (
 	"os"
@@ -6,15 +6,8 @@ import (
 	"strings"
 )
 
-const defaultModel = "composer-2.5"
-
-// DefaultModel returns the Cursor model id used when none is configured.
-func DefaultModel() string {
-	return firstNonEmpty(os.Getenv("OMNI_CURSOR_MODEL"), defaultModel)
-}
-
-// CommandEnv returns an environment for Cursor SDK child processes with a PATH
-// that includes common node/npm locations and core Unix utilities (base64, etc.).
+// CommandEnv returns an environment for Codex SDK child processes with a PATH
+// that includes common CLI, node/npm, and shell utility locations.
 func CommandEnv() []string {
 	mergedPath := augmentPath(os.Getenv("PATH"))
 	out := make([]string, 0, len(os.Environ())+1)
@@ -35,7 +28,7 @@ func CommandEnv() []string {
 
 func augmentPath(existing string) string {
 	seen := map[string]struct{}{}
-	ordered := make([]string, 0, 16)
+	ordered := make([]string, 0, 20)
 	add := func(dir string) {
 		dir = strings.TrimSpace(dir)
 		if dir == "" {
@@ -52,15 +45,26 @@ func augmentPath(existing string) string {
 		seen[dir] = struct{}{}
 		ordered = append(ordered, dir)
 	}
+	addBinDir := func(tool string) {
+		tool = strings.TrimSpace(tool)
+		if filepath.IsAbs(tool) || strings.ContainsRune(tool, os.PathSeparator) {
+			add(filepath.Dir(tool))
+		}
+	}
 
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
 		add(filepath.Join(home, ".local/share/mise/shims"))
 		if matches, _ := filepath.Glob(filepath.Join(home, ".local/share/mise/installs/node/*/bin")); len(matches) > 0 {
 			add(matches[len(matches)-1])
 		}
+		add(filepath.Join(home, ".local/bin"))
+		add(filepath.Join(home, ".npm-global/bin"))
+		add(filepath.Join(home, ".bun/bin"))
+		add(filepath.Join(home, ".cargo/bin"))
 	}
-	add(filepath.Dir(NodeBin()))
-	add(filepath.Dir(NPMBin()))
+	addBinDir(NodeBin())
+	addBinDir(NPMBin())
+	addBinDir(CodexBin())
 	for _, dir := range filepath.SplitList(existing) {
 		add(dir)
 	}

@@ -70,6 +70,17 @@ func (c *uiRedisClient) SetEX(ctx context.Context, key, value string, ttl time.D
 	return err
 }
 
+func (c *uiRedisClient) Ping(ctx context.Context) error {
+	reply, err := c.command(ctx, "PING")
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(strings.TrimSpace(reply), "PONG") {
+		return fmt.Errorf("unexpected redis PING reply %q", reply)
+	}
+	return nil
+}
+
 var errRedisNil = errors.New("redis nil")
 
 func (c *uiRedisClient) command(ctx context.Context, args ...string) (string, error) {

@@ -40,6 +40,13 @@ func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+func (r *Repository) Ping(ctx context.Context) error {
+	if r == nil || r.pool == nil {
+		return fmt.Errorf("postgres repository is not configured")
+	}
+	return r.pool.Ping(ctx)
+}
+
 func (r *Repository) EnsureSchema(ctx context.Context) error {
 	if _, err := r.pool.Exec(ctx, schemaSQL); err != nil {
 		return err

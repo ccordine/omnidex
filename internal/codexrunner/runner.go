@@ -27,6 +27,9 @@ if (!requestPath) {
 }
 
 const request = JSON.parse(await fs.readFile(requestPath, "utf8"));
+if (!request.codex_path || !String(request.codex_path).trim()) {
+  throw new Error("codex_path is required; server preflight must resolve OMNI_CODEX_BIN before starting the runner");
+}
 const env = { ...process.env };
 if (request.api_key) {
   env.OPENAI_API_KEY = request.api_key;
@@ -65,7 +68,7 @@ if (networkAccess !== undefined) {
 }
 
 const codex = new Codex({
-  codexPathOverride: request.codex_path || "codex",
+  codexPathOverride: request.codex_path,
   env,
   config: {
     show_raw_agent_reasoning: true,
@@ -228,6 +231,10 @@ func CodexBin() string {
 }
 
 func Ensure(ctx context.Context, runnerDir string) error {
+	return EnsureWithBins(ctx, runnerDir, NPMBin())
+}
+
+func EnsureWithBins(ctx context.Context, runnerDir, npmBin string) error {
 	runnerDir = strings.TrimSpace(runnerDir)
 	if runnerDir == "" {
 		runnerDir = DefaultRunnerDir()
@@ -248,13 +255,17 @@ func Ensure(ctx context.Context, runnerDir string) error {
 	if _, err := os.Stat(filepath.Join(runnerDir, "node_modules", "@openai", "codex-sdk")); err == nil {
 		return nil
 	}
-	if _, err := exec.LookPath(NPMBin()); err != nil {
-		return fmt.Errorf("npm is not available in PATH (%s); install Node.js/npm on the host", NPMBin())
+	npmBin = firstNonEmpty(npmBin, NPMBin())
+	env := CommandEnv()
+	npmPath, err := lookPathInEnv(npmBin, env)
+	if err != nil {
+		return fmt.Errorf("npm is not available in PATH (%s); install Node.js/npm on the host or set OMNI_CODEX_NPM_BIN", npmBin)
 	}
 	installCtx, cancel := context.WithTimeout(ctx, installTimeout())
 	defer cancel()
-	cmd := exec.CommandContext(installCtx, NPMBin(), "install", "--silent", "--no-audit", "--no-fund")
+	cmd := exec.CommandContext(installCtx, npmPath, "install", "--silent", "--no-audit", "--no-fund")
 	cmd.Dir = runnerDir
+	cmd.Env = env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -264,15 +275,23 @@ func Ensure(ctx context.Context, runnerDir string) error {
 }
 
 func Command(ctx context.Context, runnerDir, requestPath string) (*exec.Cmd, error) {
+	return CommandWithBins(ctx, runnerDir, requestPath, NodeBin())
+}
+
+func CommandWithBins(ctx context.Context, runnerDir, requestPath, nodeBin string) (*exec.Cmd, error) {
 	runnerDir = strings.TrimSpace(runnerDir)
 	if runnerDir == "" {
 		runnerDir = DefaultRunnerDir()
 	}
-	if _, err := exec.LookPath(NodeBin()); err != nil {
-		return nil, fmt.Errorf("node is not available in PATH (%s)", NodeBin())
+	nodeBin = firstNonEmpty(nodeBin, NodeBin())
+	env := CommandEnv()
+	nodePath, err := lookPathInEnv(nodeBin, env)
+	if err != nil {
+		return nil, fmt.Errorf("node is not available in PATH (%s)", nodeBin)
 	}
-	cmd := exec.CommandContext(ctx, NodeBin(), filepath.Join(runnerDir, "runner.mjs"), requestPath)
+	cmd := exec.CommandContext(ctx, nodePath, filepath.Join(runnerDir, "runner.mjs"), requestPath)
 	cmd.Dir = runnerDir
+	cmd.Env = env
 	return cmd, nil
 }
 

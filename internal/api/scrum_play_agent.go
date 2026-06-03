@@ -18,20 +18,30 @@ func (s *Server) validateScrumPlayAgent(ctx context.Context, project model.Proje
 	explicit := true
 	switch resolved.System() {
 	case agentconfig.SystemCursor:
-		if omni.NewCursorSDKArchitectAgent(explicit) == nil {
+		agent := omni.NewCursorSDKArchitectAgent(explicit)
+		if agent == nil {
 			reason := omni.CursorSDKUnavailableReason(explicit)
 			if reason == "" {
 				reason = "Cursor SDK is not available"
 			}
 			return fmt.Errorf("%s\nAdd the Cursor API key under Admin → API secrets (DB) or set CURSOR_API_KEY in env.", reason)
 		}
+		agent.ApplyConfig(resolved)
+		if ok, reason := agent.ArchitectAgentAvailable(); !ok {
+			return fmt.Errorf("%s", reason)
+		}
 	case agentconfig.SystemCodex:
-		if omni.NewCodexSDKArchitectAgent(explicit) == nil {
+		agent := omni.NewCodexSDKArchitectAgent(explicit)
+		if agent == nil {
 			reason := omni.CodexSDKUnavailableReason(explicit)
 			if reason == "" {
 				reason = "Codex SDK is not available"
 			}
 			return fmt.Errorf("%s\nAdd the Codex API key under Admin → API secrets (DB) or set CODEX_API_KEY in env.", reason)
+		}
+		agent.ApplyConfig(resolved)
+		if ok, reason := agent.ArchitectAgentAvailable(); !ok {
+			return fmt.Errorf("%s", reason)
 		}
 	default:
 		return nil
@@ -43,6 +53,9 @@ func scrumAgentConfigErrorNote(output string) string {
 	lower := strings.ToLower(output)
 	if !strings.Contains(lower, "strict external agent required") {
 		return ""
+	}
+	if strings.Contains(lower, "codex host preflight failed") || strings.Contains(lower, "codex binary is not available") || strings.Contains(lower, "spawn codex enoent") {
+		return "play: Codex agent run failed — install Codex CLI on the host, set OMNI_CODEX_BIN if needed, run `omni host serve` from that shell when using Docker, and retry the card"
 	}
 	if strings.Contains(lower, "npm") || strings.Contains(lower, "host bridge") || strings.Contains(lower, "host_agent") {
 		return "play: Cursor/Codex run on your host machine via the bridge — install node/npm on the laptop, run `omni host serve --listen 0.0.0.0:8091`, and keep HOST_AGENT_URL set in core"

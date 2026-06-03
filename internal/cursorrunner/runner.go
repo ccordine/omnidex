@@ -94,6 +94,12 @@ try {
         emit({ agent: "cursor", type: "status", message: JSON.stringify(event), raw: event });
         if (status === "ERROR") {
           lastErrorDetail = JSON.stringify(event);
+          emit({
+            agent: "cursor",
+            type: "error",
+            message: "Cursor agent run failed with status ERROR" + (event.run_id ? " (run_id=" + event.run_id + ")" : ""),
+            raw: event,
+          });
         }
         continue;
       }
@@ -201,14 +207,16 @@ func Ensure(ctx context.Context, runnerDir string) error {
 	if _, err := os.Stat(filepath.Join(runnerDir, "node_modules", "@cursor", "sdk")); err == nil {
 		return nil
 	}
-	if _, err := exec.LookPath(NPMBin()); err != nil {
+	env := CommandEnv()
+	npmPath, err := lookPathInEnv(NPMBin(), env)
+	if err != nil {
 		return fmt.Errorf("npm is not available in PATH (%s); install Node.js/npm on this machine or set OMNI_CURSOR_NPM_BIN", NPMBin())
 	}
 	installCtx, cancel := context.WithTimeout(ctx, installTimeout())
 	defer cancel()
-	cmd := exec.CommandContext(installCtx, NPMBin(), "install", "--silent", "--no-audit", "--no-fund")
+	cmd := exec.CommandContext(installCtx, npmPath, "install", "--silent", "--no-audit", "--no-fund")
 	cmd.Dir = runnerDir
-	cmd.Env = CommandEnv()
+	cmd.Env = env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -222,12 +230,14 @@ func Command(ctx context.Context, runnerDir, requestPath string) (*exec.Cmd, err
 	if runnerDir == "" {
 		runnerDir = DefaultRunnerDir()
 	}
-	if _, err := exec.LookPath(NodeBin()); err != nil {
+	env := CommandEnv()
+	nodePath, err := lookPathInEnv(NodeBin(), env)
+	if err != nil {
 		return nil, fmt.Errorf("node is not available in PATH (%s)", NodeBin())
 	}
-	cmd := exec.CommandContext(ctx, NodeBin(), filepath.Join(runnerDir, "runner.mjs"), requestPath)
+	cmd := exec.CommandContext(ctx, nodePath, filepath.Join(runnerDir, "runner.mjs"), requestPath)
 	cmd.Dir = runnerDir
-	cmd.Env = CommandEnv()
+	cmd.Env = env
 	return cmd, nil
 }
 

@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,6 +33,9 @@ func (n *notifyConn) Close(ctx context.Context) error {
 }
 
 func (r *Repository) AcquireNotifyConn(ctx context.Context) (NotifyConn, error) {
+	if r == nil || r.pool == nil {
+		return nil, fmt.Errorf("postgres repository is not configured")
+	}
 	conn, err := r.pool.Acquire(ctx)
 	if err != nil {
 		return nil, err

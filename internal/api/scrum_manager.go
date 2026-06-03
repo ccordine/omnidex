@@ -110,32 +110,24 @@ func collectScrumAgentOutput(details model.JobDetails) string {
 
 func resolveScrumManagerOutcome(details model.JobDetails) ScrumManagerOutcome {
 	combined := collectScrumAgentOutput(details)
-	if outcome, ok := parseScrumManagerOutcome(combined); ok {
-		return outcome
+	return resolveProgrammaticScrumOutcome(details, combined)
+}
+
+func resolveProgrammaticScrumOutcome(details model.JobDetails, evidence string) ScrumManagerOutcome {
+	evidence = strings.TrimSpace(evidence)
+	switch details.Job.Status {
+	case model.JobStatusFailed, model.JobStatusCanceled:
+		return ScrumOutcomeFailed
 	}
-	if scrum.IsScrumRawPlay(details.Job.Metadata) || scrum.IsScrumJob(details.Job.Metadata) {
-		switch details.Job.Status {
-		case model.JobStatusCompleted:
-			if scrum.IsStrictScrumExternal(details.Job.Metadata) {
-				return scrumStrictExternalPlayCompletedOutcome(details, combined)
-			}
-			return ScrumOutcomeSuccess
-		case model.JobStatusFailed:
-			return ScrumOutcomeFailed
-		case model.JobStatusCanceled:
-			// Return to assigned so the user can inspect output and retry; blocked only when SCRUM_STATUS says so.
-			return ScrumOutcomePaused
-		default:
-			return ScrumOutcomeInProgress
-		}
+	if scrumAgentOutputIndicatesRunFailure(evidence) {
+		return ScrumOutcomeFailed
+	}
+	if outcome, ok := parseScrumManagerOutcome(evidence); ok {
+		return outcome
 	}
 	switch details.Job.Status {
 	case model.JobStatusCompleted:
 		return ScrumOutcomeSuccess
-	case model.JobStatusFailed:
-		return ScrumOutcomeFailed
-	case model.JobStatusCanceled:
-		return ScrumOutcomePaused
 	default:
 		return ScrumOutcomeInProgress
 	}

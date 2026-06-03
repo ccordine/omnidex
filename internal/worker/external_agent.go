@@ -30,7 +30,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		if msg == "" {
 			msg = cfg.System() + " agent is not configured"
 		}
-		if cfg.IsStrict() || scrum.IsStrictScrumExternal(claim.Job.Metadata) {
+		if externalAgentFailureIsFatal(cfg, claim.Job.Metadata) {
 			return fmt.Errorf("strict external agent required: %s", msg)
 		}
 		s.emitStepEvent(claim.Step.ID, "external_agent_unavailable", msg)
@@ -92,14 +92,14 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	}
 
 	if err != nil {
-		if cfg.IsStrict() || scrum.IsStrictScrumExternal(claim.Job.Metadata) {
+		if externalAgentFailureIsFatal(cfg, claim.Job.Metadata) {
 			return fmt.Errorf("%s failed: %w", agentName, err)
 		}
 		s.emitStepEvent(claim.Step.ID, "external_agent_failed", err.Error())
 		return s.runNativeV3Step(ctx, claim, contexts, "v3_intent_parse")
 	}
 	if err := omni.ExternalAgentResultError(result); err != nil {
-		if cfg.IsStrict() || scrum.IsStrictScrumExternal(claim.Job.Metadata) {
+		if externalAgentFailureIsFatal(cfg, claim.Job.Metadata) {
 			return fmt.Errorf("%s failed: %w", agentName, err)
 		}
 		s.emitStepEvent(claim.Step.ID, "external_agent_failed", err.Error())
@@ -137,6 +137,10 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	return completeStep(ctx, claim.Step.ID, stepOutput, "external_agent_execute", string(summary))
 }
 
+func externalAgentFailureIsFatal(cfg agentconfig.Config, metadata json.RawMessage) bool {
+	return cfg.IsExternal() || cfg.IsStrict() || scrum.IsStrictScrumExternal(metadata)
+}
+
 func selectExternalAgent(cfg agentconfig.Config, metadata json.RawMessage) (omni.CursorArchitectAgent, string, string) {
 	explicit := cfg.IsExternal()
 	switch cfg.System() {
@@ -149,6 +153,7 @@ func selectExternalAgent(cfg agentconfig.Config, metadata json.RawMessage) (omni
 			}
 			return nil, "cursor_sdk", reason
 		}
+		agent.ApplyConfig(cfg)
 		return agent, "cursor_sdk", ""
 	case agentconfig.SystemCodex:
 		agent := omni.NewCodexSDKArchitectAgent(explicit)

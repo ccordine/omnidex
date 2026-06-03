@@ -2,6 +2,7 @@ package agentconfig
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -37,6 +38,12 @@ var Fields = []Field{
 		Description: "When using Cursor or Codex, do not fall back to Omnidex if the external agent is unavailable or fails.",
 		EnvKeys:     []string{"OMNI_AGENT_STRICT"},
 		Options:     []string{"true", "false"},
+	},
+	{
+		Key:         "cursor_model",
+		Label:       "Cursor model",
+		Description: "Model passed to the Cursor SDK thread when Cursor executes the card.",
+		EnvKeys:     []string{"OMNI_CURSOR_MODEL"},
 	},
 	{
 		Key:         "codex_model",
@@ -132,8 +139,8 @@ func FromJSON(raw json.RawMessage) Config {
 			return out
 		}
 		for key, value := range generic {
-			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
-				out[key] = strings.TrimSpace(text)
+			if text := configValueString(value); text != "" {
+				out[key] = text
 			}
 		}
 	} else {
@@ -178,9 +185,27 @@ func FromJobMetadata(raw json.RawMessage) Config {
 		if err != nil {
 			return Config{}
 		}
-		return FromJSON(bytes)
+		cfg := FromJSON(bytes)
+		if cfg.Get("agent_system") == "" {
+			if value := normalizeSystem(configValueString(payload["execution_agent"])); value != "" {
+				cfg["agent_system"] = value
+			}
+		}
+		if cfg.Get("agent_strict") == "" {
+			if value := configValueString(payload["agent_strict"]); value != "" {
+				cfg["agent_strict"] = value
+			}
+		}
+		return normalizeAgentConfig(cfg)
 	}
-	return Config{}
+	cfg := Config{}
+	if value := normalizeSystem(configValueString(payload["execution_agent"])); value != "" {
+		cfg["agent_system"] = value
+	}
+	if value := configValueString(payload["agent_strict"]); value != "" {
+		cfg["agent_strict"] = value
+	}
+	return normalizeAgentConfig(cfg)
 }
 
 func Merge(layers ...Config) Config {
@@ -226,6 +251,10 @@ func (c Config) IsStrict() bool {
 
 func (c Config) CodexModel() string {
 	return c.Get("codex_model")
+}
+
+func (c Config) CursorModel() string {
+	return c.Get("cursor_model")
 }
 
 func (c Config) CodexReasoningEffort() string {
@@ -316,6 +345,22 @@ func normalizeSystem(value string) string {
 		return SystemCodex
 	default:
 		return value
+	}
+}
+
+func configValueString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
 	}
 }
 

@@ -51,6 +51,17 @@ func (s *Server) handleCodexRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	codexPathValue := firstNonEmpty(req.CodexPath, codexrunner.CodexBin())
+	if err := codexrunner.PreflightError(codexrunner.PreflightFor(codexrunner.NodeBin(), codexrunner.NPMBin(), codexPathValue)); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	codexPath, err := codexrunner.ResolveCodexPath(codexPathValue)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+
 	runnerDir := codexrunner.DefaultRunnerDir()
 	setupCtx, cancel := context.WithTimeout(r.Context(), codexInstallTimeout())
 	defer cancel()
@@ -63,7 +74,7 @@ func (s *Server) handleCodexRun(w http.ResponseWriter, r *http.Request) {
 		APIKey:          strings.TrimSpace(req.APIKey),
 		Model:           firstNonEmpty(req.Model, "gpt-5.3-codex"),
 		Workspace:       workspace,
-		CodexPath:       firstNonEmpty(req.CodexPath, codexrunner.CodexBin()),
+		CodexPath:       codexPath,
 		Prompt:          strings.TrimSpace(req.Prompt),
 		ReasoningEffort: strings.TrimSpace(req.ReasoningEffort),
 		SandboxMode:     strings.TrimSpace(req.SandboxMode),

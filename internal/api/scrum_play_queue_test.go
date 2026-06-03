@@ -42,6 +42,9 @@ func TestScrumManagerAutoAdvance(t *testing.T) {
 	if !scrumManagerAutoAdvance(ScrumOutcomeBlocked) {
 		t.Fatal("blocked should auto-advance")
 	}
+	if !scrumManagerAutoAdvance(ScrumOutcomeFailed) {
+		t.Fatal("failed should auto-advance")
+	}
 	if scrumManagerAutoAdvance(ScrumOutcomePaused) {
 		t.Fatal("paused should not auto-advance")
 	}

@@ -220,21 +220,6 @@ export function prevColumn(current: string): string | null {
   return SCRUM_COLUMNS[index - 1];
 }
 
-/** Top play focus: running in-progress, else first in-progress, else first assigned. */
-export function groupCardsByColumn(board: ScrumBoard): Record<string, ScrumCard[]> {
-  const columns = board.columns?.length ? board.columns : [...SCRUM_COLUMNS];
-  const out: Record<string, ScrumCard[]> = {};
-  for (const col of columns) out[col] = [];
-  for (const card of board.cards) {
-    const col = columns.includes(card.column) ? card.column : "backlog";
-    out[col].push(card);
-  }
-  for (const col of columns) {
-    out[col].sort((a, b) => (a.board_order ?? 0) - (b.board_order ?? 0));
-  }
-  return out;
-}
-
 /** Columns auto-play may pull from; project config defaults to Assigned only. */
 export const AUTO_PLAY_WORK_COLUMNS = ["backlog", "ready", "assigned", "in_progress", "blocked"] as const;
 export const DEFAULT_AUTO_WORK_COLUMNS = ["assigned"] as const;

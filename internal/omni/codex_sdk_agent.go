@@ -1,7 +1,6 @@
 package omni
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
+	"github.com/gryph/omnidex/internal/codexrunner"
 	"github.com/gryph/omnidex/internal/secrets"
 )
 
@@ -111,6 +111,11 @@ func (a *CodexSDKArchitectAgent) ArchitectAgentAvailable() (bool, string) {
 	if UseHostBridgeExternalAgents() && hostBridgeClientFromEnv() == nil {
 		return false, "HOST_AGENT_URL is not configured; Codex runs on the host machine via the bridge when core is in Docker"
 	}
+	if !UseHostBridgeExternalAgents() {
+		if err := codexrunner.PreflightError(codexrunner.PreflightFor(a.NodeBin, a.NPMBin, a.CodexBin)); err != nil {
+			return false, err.Error()
+		}
+	}
 	return true, ""
 }
 
@@ -148,7 +153,15 @@ func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAg
 			WebSearchMode:   a.WebSearchMode,
 		})
 	}
-	if err := a.ensureRunner(context.Background()); err != nil {
+	codexBin := firstNonEmpty(a.CodexBin, "codex")
+	if err := codexrunner.PreflightError(codexrunner.PreflightFor(a.NodeBin, a.NPMBin, codexBin)); err != nil {
+		return nil, err
+	}
+	codexPath, err := codexrunner.ResolveCodexPath(codexBin)
+	if err != nil {
+		return nil, err
+	}
+	if err := codexrunner.EnsureWithBins(context.Background(), a.RunnerDir, a.NPMBin); err != nil {
 		return nil, err
 	}
 	return &externalAgentCommandSession{
@@ -158,11 +171,11 @@ func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAg
 			if workspace == "" {
 				workspace = "."
 			}
-			request := codexSDKRunnerRequest{
+			request := codexrunner.Request{
 				APIKey:          a.APIKey,
 				Model:           firstNonEmpty(a.Model, "gpt-5.3-codex"),
 				Workspace:       workspace,
-				CodexPath:       firstNonEmpty(a.CodexBin, "codex"),
+				CodexPath:       codexPath,
 				Prompt:          job.Prompt,
 				ReasoningEffort: a.ReasoningEffort,
 				SandboxMode:     a.SandboxMode,
@@ -174,53 +187,9 @@ func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAg
 			if err != nil {
 				return nil, err
 			}
-			cmd := exec.CommandContext(ctx, firstNonEmpty(a.NodeBin, "node"), filepath.Join(a.RunnerDir, "runner.mjs"), reqPath)
-			cmd.Dir = a.RunnerDir
-			return cmd, nil
+			return codexrunner.CommandWithBins(ctx, a.RunnerDir, reqPath, a.NodeBin)
 		},
 	}, nil
-}
-
-type codexSDKRunnerRequest struct {
-	APIKey          string `json:"api_key,omitempty"`
-	Model           string `json:"model"`
-	Workspace       string `json:"workspace"`
-	CodexPath       string `json:"codex_path"`
-	Prompt          string `json:"prompt"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	SandboxMode     string `json:"sandbox_mode,omitempty"`
-	ApprovalPolicy  string `json:"approval_policy,omitempty"`
-	NetworkAccess   string `json:"network_access,omitempty"`
-	WebSearchMode   string `json:"web_search_mode,omitempty"`
-}
-
-func (a *CodexSDKArchitectAgent) ensureRunner(ctx context.Context) error {
-	if err := os.MkdirAll(a.RunnerDir, 0o755); err != nil {
-		return fmt.Errorf("create codex sdk runner dir: %w", err)
-	}
-	packageJSON := filepath.Join(a.RunnerDir, "package.json")
-	if _, err := os.Stat(packageJSON); os.IsNotExist(err) {
-		if err := os.WriteFile(packageJSON, []byte(codexSDKRunnerPackageJSON), 0o644); err != nil {
-			return fmt.Errorf("write codex sdk runner package.json: %w", err)
-		}
-	}
-	runnerPath := filepath.Join(a.RunnerDir, "runner.mjs")
-	if err := os.WriteFile(runnerPath, []byte(codexSDKRunnerScript), 0o644); err != nil {
-		return fmt.Errorf("write codex sdk runner script: %w", err)
-	}
-	if _, err := os.Stat(filepath.Join(a.RunnerDir, "node_modules", "@openai", "codex-sdk")); err == nil {
-		return nil
-	}
-	installCtx, cancel := context.WithTimeout(ctx, envDurationOrDefault("OMNI_CODEX_INSTALL_TIMEOUT", 10*time.Minute))
-	defer cancel()
-	cmd := exec.CommandContext(installCtx, firstNonEmpty(a.NPMBin, "npm"), "install", "--silent", "--no-audit", "--no-fund")
-	cmd.Dir = a.RunnerDir
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("install @openai/codex-sdk runner dependency: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return nil
 }
 
 func buildCodexArchitectPrompt(input CursorArchitectAgentInput) string {
@@ -249,113 +218,3 @@ func buildCodexArchitectPrompt(input CursorArchitectAgentInput) string {
 	}
 	return string(blob)
 }
-
-const codexSDKRunnerPackageJSON = `{"type":"module","private":true,"dependencies":{"@openai/codex-sdk":"latest"}}
-`
-
-const codexSDKRunnerScript = `import { Codex } from "@openai/codex-sdk";
-import fs from "node:fs/promises";
-
-function emit(event) {
-  console.log(JSON.stringify(event));
-}
-
-const requestPath = process.argv[2];
-if (!requestPath) {
-  throw new Error("request path is required");
-}
-
-const request = JSON.parse(await fs.readFile(requestPath, "utf8"));
-const env = { ...process.env };
-if (request.api_key) {
-  env.OPENAI_API_KEY = request.api_key;
-  env.CODEX_API_KEY = request.api_key;
-}
-
-function stringOption(value, fallback) {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function booleanOption(value) {
-  if (typeof value === "boolean") return value;
-  if (typeof value !== "string") return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on", "enabled"].includes(normalized)) return true;
-  if (["0", "false", "no", "off", "disabled"].includes(normalized)) return false;
-  return undefined;
-}
-
-const threadOptions = {
-  workingDirectory: request.workspace || process.cwd(),
-  skipGitRepoCheck: true,
-  sandboxMode: stringOption(request.sandbox_mode, "workspace-write"),
-  approvalPolicy: stringOption(request.approval_policy, "never"),
-  model: request.model || "gpt-5.3-codex",
-};
-if (stringOption(request.reasoning_effort, "")) {
-  threadOptions.modelReasoningEffort = stringOption(request.reasoning_effort, "");
-}
-if (stringOption(request.web_search_mode, "")) {
-  threadOptions.webSearchMode = stringOption(request.web_search_mode, "");
-}
-const networkAccess = booleanOption(request.network_access);
-if (networkAccess !== undefined) {
-  threadOptions.networkAccessEnabled = networkAccess;
-}
-
-const codex = new Codex({
-  codexPathOverride: request.codex_path || "codex",
-  env,
-});
-
-const thread = codex.startThread(threadOptions);
-
-emit({ agent: "codex", type: "started", message: "Codex external implementation session started" });
-
-const { events } = await thread.runStreamed(request.prompt, {
-  outputSchema: {
-    type: "object",
-    properties: {
-      changed_files: { type: "array", items: { type: "string" } },
-      summary: { type: "string" },
-      commands_run: { type: "array", items: { type: "string" } },
-      risks: { type: "array", items: { type: "string" } }
-    },
-    required: ["changed_files", "summary", "commands_run", "risks"],
-    additionalProperties: false
-  }
-});
-
-const items = [];
-let finalResponse = "";
-for await (const event of events) {
-  if (event.type === "item.completed" || event.type === "item.updated" || event.type === "item.started") {
-    const item = event.item || {};
-    items.push(item);
-    if (item.type === "command_execution") {
-      emit({ agent: "codex", type: "command", message: item.status || "command", command: item.command || "", raw: item });
-    } else if (item.type === "file_change") {
-      emit({ agent: "codex", type: "file_change", message: item.status || "file change", files: (item.changes || []).map((change) => change.path), raw: item });
-    } else if (item.type === "agent_message") {
-      finalResponse = item.text || finalResponse;
-      emit({ agent: "codex", type: "message", message: item.text || "", raw: item });
-    } else if (item.type === "error") {
-      emit({ agent: "codex", type: "error", message: item.message || "Codex item error", raw: item });
-    } else {
-      emit({ agent: "codex", type: item.type || "message", message: item.text || item.status || "", raw: item });
-    }
-  } else if (event.type === "turn.completed") {
-    emit({ agent: "codex", type: "turn.completed", message: "Codex turn completed", raw: event });
-  } else if (event.type === "turn.failed") {
-    emit({ agent: "codex", type: "error", message: event.error?.message || "Codex turn failed", raw: event });
-  }
-}
-
-emit({
-  agent: "codex",
-  type: "completed",
-  message: finalResponse || "Codex external implementation session completed",
-  evidence: items.map((item) => JSON.stringify(item)),
-  raw: { thread_id: thread.id || "" }
-});
-`

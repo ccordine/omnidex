@@ -1,13 +1,20 @@
 package omni
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestExternalAgentResultErrorDetectsCursorStatusError(t *testing.T) {
 	result := CursorArchitectAgentResult{
 		Output: `{"type":"status","agent_id":"agent-1","run_id":"run-1","status":"ERROR"}`,
 	}
-	if err := externalAgentResultError(result); err == nil {
+	err := externalAgentResultError(result)
+	if err == nil {
 		t.Fatal("expected error for cursor status ERROR")
+	}
+	if !strings.Contains(err.Error(), "run_id=run-1") || !strings.Contains(err.Error(), "agent_id=agent-1") {
+		t.Fatalf("expected run and agent ids in error, got %v", err)
 	}
 }
 
@@ -29,9 +36,22 @@ func TestExternalAgentResultErrorDetectsLaunchFailure(t *testing.T) {
 	}
 }
 
+func TestExternalAgentResultErrorDetectsPlainSpawnFailure(t *testing.T) {
+	result := CursorArchitectAgentResult{
+		Output: "Error: spawn codex ENOENT\nNode.js v25.2.1 (exit status 1)",
+	}
+	err := externalAgentResultError(result)
+	if err == nil {
+		t.Fatal("expected plain spawn failure to fail")
+	}
+	if !strings.Contains(err.Error(), "spawn codex ENOENT") {
+		t.Fatalf("expected spawn detail, got %v", err)
+	}
+}
+
 func TestExternalAgentResultErrorIgnoresSuccess(t *testing.T) {
 	result := CursorArchitectAgentResult{
-		Output: `{"agent":"cursor","type":"completed","message":"done"}`,
+		Output:  `{"agent":"cursor","type":"completed","message":"done"}`,
 		Summary: "done",
 	}
 	if err := externalAgentResultError(result); err != nil {
