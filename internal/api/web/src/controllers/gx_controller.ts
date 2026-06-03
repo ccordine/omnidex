@@ -61,7 +61,10 @@ export default class GxController extends Controller {
       const target = (node as HTMLElement).dataset.recyclrTarget || "";
       let selection = node.innerHTML;
       if (!selection && node instanceof HTMLTemplateElement) {
-        selection = node.content?.innerHTML ?? "";
+        selection = [...node.content.childNodes].map((child) => {
+          if (child instanceof Element) return child.outerHTML;
+          return child.textContent ?? "";
+        }).join("");
       }
       return {
         selector: `[data-recyclr-sink="${cssEscape(target)}"]`,

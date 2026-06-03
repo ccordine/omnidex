@@ -1,3 +1,5 @@
+import { cssEscape } from "./dom";
+
 export type ScrumDragDropResult = {
   cardID: string;
   column: string;
@@ -341,7 +343,7 @@ export class ScrumBoardDrag {
 
   private dropzoneForColumn(column: string): HTMLElement | null {
     if (!this.board) return null;
-    const columnEl = this.board.querySelector(`[data-scrum-dropzone="${CSS.escape(column)}"]`);
+    const columnEl = this.board.querySelector(`[data-scrum-dropzone="${cssEscape(column)}"]`);
     return columnEl?.querySelector(".scrum-column-dropzone") as HTMLElement | null;
   }
 
@@ -375,7 +377,7 @@ export class ScrumBoardDrag {
     dropzone.querySelector(".scrum-column-empty")?.remove();
 
     const beforeEl = session.dropTarget.beforeCardID
-      ? dropzone.querySelector(`.scrum-card[data-card-id="${CSS.escape(session.dropTarget.beforeCardID)}"]`)
+      ? dropzone.querySelector(`.scrum-card[data-card-id="${cssEscape(session.dropTarget.beforeCardID)}"]`)
       : null;
 
     if (beforeEl) {
@@ -399,7 +401,7 @@ export class ScrumBoardDrag {
     session.cardEl.dataset.scrumColumn = target.column;
 
     const beforeEl = target.beforeCardID
-      ? dropzone.querySelector(`.scrum-card[data-card-id="${CSS.escape(target.beforeCardID)}"]`)
+      ? dropzone.querySelector(`.scrum-card[data-card-id="${cssEscape(target.beforeCardID)}"]`)
       : null;
 
     if (beforeEl) {

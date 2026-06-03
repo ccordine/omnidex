@@ -150,8 +150,8 @@ func (s *Server) pauseScrumCardPlay(r *http.Request, cardID string) (ScrumCard, 
 	if err != nil {
 		return ScrumCard{}, err
 	}
-	if card.PlayState != scrumPlayRunning {
-		return ScrumCard{}, fmt.Errorf("only running cards can be paused")
+	if card.PlayState != scrumPlayRunning && card.PlayState != scrumPlayReviewing && card.PlayState != scrumPlayQueued {
+		return ScrumCard{}, fmt.Errorf("only active cards can be paused")
 	}
 	if s.repo != nil && strings.TrimSpace(card.JobID) != "" {
 		if jobID, err := parseJobID(card.JobID); err == nil {

@@ -41,7 +41,7 @@ import {
 import type GxController from "./gx_controller";
 import type ChatController from "./chat_controller";
 import { panelHref, parseAdminTabFromLocation } from "../lib/panel_routing";
-import { sleep } from "../lib/dom";
+import { escapeHTML, sleep } from "../lib/dom";
 
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 
@@ -200,7 +200,7 @@ export default class AdminController extends Controller {
       this.networkAccessTarget.innerHTML = renderNetworkSettings(payload);
       document.dispatchEvent(new CustomEvent("omni:network-settings", { detail: payload }));
     } catch (error) {
-      this.networkAccessTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
+      this.networkAccessTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
@@ -228,7 +228,7 @@ export default class AdminController extends Controller {
       const stats = await fetchMindStats();
       this.mindStatsTarget.innerHTML = renderMindStats(stats);
     } catch (error) {
-      this.mindStatsTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
+      this.mindStatsTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
@@ -237,7 +237,7 @@ export default class AdminController extends Controller {
       const payload = await fetchOllamaModels();
       this.ollamaModelsTarget.innerHTML = renderOllamaModels(payload.endpoint, payload.models);
     } catch (error) {
-      this.ollamaModelsTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
+      this.ollamaModelsTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
@@ -246,7 +246,7 @@ export default class AdminController extends Controller {
       const payload = await fetchModelSettings();
       this.globalModelsTarget.innerHTML = renderGlobalModelSettings(payload.fields, payload.env_file);
     } catch (error) {
-      this.globalModelsTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
+      this.globalModelsTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
@@ -255,7 +255,7 @@ export default class AdminController extends Controller {
       const payload = await fetchAPISecrets();
       this.apiSecretsTarget.innerHTML = renderAPISecretsSettings(payload.fields);
     } catch (error) {
-      this.apiSecretsTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
+      this.apiSecretsTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 
@@ -441,7 +441,7 @@ export default class AdminController extends Controller {
       };
       this.renderDataSources(true);
     } catch (error) {
-      this.dataSourcesPanelTarget.innerHTML = `<p class="text-sm text-rose-300">${error instanceof Error ? error.message : String(error)}</p>`;
+      this.dataSourcesPanelTarget.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(error instanceof Error ? error.message : String(error))}</p>`;
     }
   }
 

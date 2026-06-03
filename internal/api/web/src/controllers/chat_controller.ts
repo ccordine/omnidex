@@ -89,6 +89,8 @@ export default class ChatController extends Controller {
   declare readonly hasSpinnerTarget: boolean;
   declare readonly hasNetworkUrlTarget: boolean;
   declare readonly hasChannelSelectTarget: boolean;
+  declare readonly hasJobsListTarget: boolean;
+  declare readonly hasJobDetailsTarget: boolean;
   declare readonly channelSelectTarget: HTMLSelectElement;
   declare readonly pollMsValue: number;
 
@@ -697,7 +699,7 @@ export default class ChatController extends Controller {
     );
   }
 
-  async loadGlobalActivity(options = {}) {
+  async loadGlobalActivity(options: { quiet?: boolean } = {}) {
     if (!this.queueEnabled) return;
     try {
       const payload = await readJSON(await fetch("/v1/activity?limit=60"));

@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus";
+import { escapeHTML } from "../lib/dom";
 
 type ScreenMonitor = {
   id: string;
@@ -222,7 +223,7 @@ export default class ScreenController extends Controller {
       .map((monitor) => {
         const suffix = monitor.primary ? " · primary" : "";
         const size = monitor.width && monitor.height ? ` (${monitor.width}×${monitor.height})` : "";
-        return `<option value="${monitor.id}">${monitor.name}${size}${suffix}</option>`;
+        return `<option value="${escapeHTML(monitor.id)}">${escapeHTML(`${monitor.name}${size}${suffix}`)}</option>`;
       })
       .join("");
     const primary = this.monitors.find((monitor) => monitor.primary);

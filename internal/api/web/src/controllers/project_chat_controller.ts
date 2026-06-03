@@ -26,6 +26,7 @@ export default class ProjectChatController extends Controller {
   declare readonly modelSelectTarget: HTMLSelectElement;
   declare readonly suggestionsTarget: HTMLElement;
   declare readonly draftsTarget: HTMLElement;
+  declare readonly hasModelSelectTarget: boolean;
 
   private projectID: number | null = null;
   private activeTab = "";
@@ -270,7 +271,7 @@ export default class ProjectChatController extends Controller {
       this.applyDraftQueue(payload.draft_queue, payload.pending_count);
       this.renderSidePanels([], this.draftQueue);
       if (payload.created_count > 0) {
-        document.dispatchEvent(new CustomEvent("omni:scrum-refresh"));
+        document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: this.projectID } }));
       }
       this.setStatus(
         payload.created_count

@@ -1,4 +1,4 @@
-export async function readJSON<T = Record<string, unknown>>(response: Response): Promise<T> {
+export async function readJSON<T = Record<string, any>>(response: Response): Promise<T> {
   const text = await response.text();
   const trimmed = text.trim();
   let payload: Record<string, unknown> = {};

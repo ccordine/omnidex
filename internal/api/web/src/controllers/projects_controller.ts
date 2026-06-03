@@ -32,6 +32,7 @@ import { closeModalShell, openModalShell } from "../lib/modal";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 import { t } from "../lib/i18n";
 import { showToast } from "../lib/toast";
+import { escapeHTML } from "../lib/dom";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
 import type { BrowseResponse, DebuggerLastRun, ProjectGitStatus, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
 import type GxController from "./gx_controller";
@@ -227,7 +228,7 @@ export default class ProjectsController extends Controller {
       }
       this.setStatus(`${this.projects.length} projects`, "ok");
     } catch (error) {
-      this.listTarget.innerHTML = `<div class="rounded-xl border border-rose-400/20 bg-rose-400/5 p-6 text-sm text-rose-200">${error instanceof Error ? error.message : String(error)}</div>`;
+      this.listTarget.innerHTML = `<div class="rounded-xl border border-rose-400/20 bg-rose-400/5 p-6 text-sm text-rose-200">${escapeHTML(error instanceof Error ? error.message : String(error))}</div>`;
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
     }
   }
@@ -683,9 +684,6 @@ export default class ProjectsController extends Controller {
     try {
       const payload = await startProjectAutoWork(id);
       await this.load();
-      if (this.selectedProjectID === id) {
-        await this.renderDetail(id, { preserveStatus: true });
-      }
       document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: id } }));
       this.actionOk(payload.message || "Auto-work started");
     } catch (error) {
@@ -702,9 +700,6 @@ export default class ProjectsController extends Controller {
     try {
       const payload = await pauseProjectAutoWork(id);
       await this.load();
-      if (this.selectedProjectID === id) {
-        await this.renderDetail(id, { preserveStatus: true });
-      }
       document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: id } }));
       this.actionOk(payload.message || "Auto-work paused");
     } catch (error) {

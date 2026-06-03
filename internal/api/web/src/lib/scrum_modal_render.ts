@@ -539,6 +539,9 @@ function channelLiveBadge(card: ScrumCard): { label: string; tone: string } {
   if (card.play_state === "running") {
     return { label: "streaming", tone: "border-amber-300/30 bg-amber-300/10 text-amber-100" };
   }
+  if (card.play_state === "reviewing") {
+    return { label: "reviewing", tone: "border-cyan-300/30 bg-cyan-300/10 text-cyan-100" };
+  }
   if (card.play_state === "queued") {
     return { label: "queued", tone: "border-violet-300/30 bg-violet-300/10 text-violet-100" };
   }
@@ -557,8 +560,8 @@ export function renderScrumModalChannelTab(
   options?: { pilotPending?: boolean; agentRunning?: boolean },
 ): string {
   const messages = scrumMessagesToChat(card.chat ?? []);
-  const isLive = card.play_state === "running" || card.play_state === "queued";
-  const isRunning = card.play_state === "running";
+  const isLive = card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing";
+  const isRunning = card.play_state === "running" || card.play_state === "reviewing";
   const pilotPending = Boolean(options?.pilotPending);
   const showPending = pilotPending;
   const pendingLabel = "Sending…";

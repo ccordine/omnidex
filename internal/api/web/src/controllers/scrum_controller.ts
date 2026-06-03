@@ -57,7 +57,7 @@ import { COLUMN_LABELS, DEFAULT_AUTO_WORK_COLUMNS, nextColumn, prevColumn, group
 import { ScrumBoardDrag, type ScrumDragDropResult } from "../lib/scrum_drag";
 import type GxController from "./gx_controller";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
-import { sleep } from "../lib/dom";
+import { cssEscape, sleep } from "../lib/dom";
 import { showToast } from "../lib/toast";
 
 type CardActionPendingState = {
@@ -554,7 +554,7 @@ export default class ScrumController extends Controller {
       if (this.columnRenderFingerprint(previousCards) === this.columnRenderFingerprint(nextCards)) {
         continue;
       }
-      const node = this.boardTarget.querySelector(`[data-column="${CSS.escape(column)}"]`) as HTMLElement | null;
+      const node = this.boardTarget.querySelector(`[data-column="${cssEscape(column)}"]`) as HTMLElement | null;
       if (!node) return false;
       node.outerHTML = renderScrumColumn(column, nextCards, payload.play_queue);
     }
