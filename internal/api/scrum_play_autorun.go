@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,17 @@ func scrumRequestFromContext(ctx context.Context) *http.Request {
 		ctx = context.Background()
 	}
 	return (&http.Request{URL: &url.URL{}}).WithContext(ctx)
+}
+
+func scrumRequestForProject(ctx context.Context, projectID int64) *http.Request {
+	r := scrumRequestFromContext(ctx)
+	if projectID <= 0 {
+		return r
+	}
+	q := r.URL.Query()
+	q.Set("project_id", strconv.FormatInt(projectID, 10))
+	r.URL.RawQuery = q.Encode()
+	return r
 }
 
 // OnJobFinishedAsync handles post-job side effects without requiring the web UI.
@@ -55,7 +67,9 @@ func (s *Server) RefreshScrumPlayQueueForJobAsync(jobID int64) {
 			log.Printf("scrum play queue refresh job=%d: %v", jobID, err)
 			return
 		}
-		s.RefreshScrumAutoWorkAsync()
+		if err := s.refreshScrumAutoWork(ctx); err != nil {
+			log.Printf("scrum global auto-work refresh after job=%d: %v", jobID, err)
+		}
 	}()
 }
 
@@ -76,12 +90,17 @@ func (s *Server) refreshScrumPlayQueueForProjectAsync(projectID int64, reason st
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), scrumPlayAutoRunTimeout)
 		defer cancel()
+		if !advanceAutoWork {
+			ctx = context.WithValue(ctx, scrumAutoWorkHandoffSuppressedKey{}, true)
+		}
 		if err := s.refreshScrumPlayQueueForProject(ctx, projectID, reason); err != nil {
 			log.Printf("scrum play queue refresh project=%d: %v", projectID, err)
 			return
 		}
 		if advanceAutoWork {
-			s.RefreshScrumAutoWorkAsync()
+			if err := s.refreshScrumAutoWork(ctx); err != nil {
+				log.Printf("scrum global auto-work refresh after project=%d: %v", projectID, err)
+			}
 		}
 	}()
 }
@@ -150,7 +169,7 @@ func (s *Server) refreshScrumPlayQueueForProject(ctx context.Context, projectID 
 	if err != nil {
 		return err
 	}
-	r := scrumRequestFromContext(ctx)
+	r := scrumRequestForProject(ctx, projectID)
 	_, err = s.refreshScrumPlayQueue(r, projectID, board)
 	return err
 }

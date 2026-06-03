@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -132,9 +133,29 @@ func (s *Server) queueScrumCardForPlay(r *http.Request, projectID int64, cardID 
 }
 
 func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID int64, cardID string, instance agentconfig.Config) (ScrumCard, error) {
-	card, board, projectID, err := s.scrumGetCard(r, cardID)
-	if err != nil {
-		return ScrumCard{}, err
+	if r == nil {
+		r = scrumRequestForProject(context.Background(), projectID)
+	}
+	var card ScrumCard
+	if s.repo != nil && projectID > 0 {
+		refreshed, err := s.scrumBoardFromProject(r.Context(), projectID)
+		if err != nil {
+			return ScrumCard{}, err
+		}
+		board = refreshed
+		found, ok := scrumCardFromBoard(board, cardID)
+		if !ok {
+			return ScrumCard{}, fmt.Errorf("card not found")
+		}
+		card = found
+	} else {
+		loadedCard, loadedBoard, loadedProjectID, err := s.scrumGetCard(r, cardID)
+		if err != nil {
+			return ScrumCard{}, err
+		}
+		card = loadedCard
+		board = loadedBoard
+		projectID = loadedProjectID
 	}
 	instruction := s.buildScrumPlayInstructionWithHistory(r.Context(), board, card)
 	if len(card.Chat) > 0 {
@@ -143,6 +164,15 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 		s.recordScrumPilotContextShrink(r.Context(), projectID, card, board, query, pilotContext, instruction)
 	}
 	return s.enqueueScrumCardAgentRun(r, board, projectID, card, instance, instruction, false)
+}
+
+func scrumCardFromBoard(board ScrumBoard, cardID string) (ScrumCard, bool) {
+	for _, card := range board.Cards {
+		if card.ID == cardID {
+			return card, true
+		}
+	}
+	return ScrumCard{}, false
 }
 
 func (s *Server) pauseScrumCardPlay(r *http.Request, cardID string) (ScrumCard, error) {
@@ -288,7 +318,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		}
 	}
 
-	return board, nil
+	return s.kickoffAutoWorkAfterReconcile(r, projectID, board)
 }
 
 func (s *Server) persistScrumCard(r *http.Request, projectID int64, card ScrumCard) (ScrumCard, error) {

@@ -381,7 +381,7 @@ func telemetryPromptHash(instruction string) string {
 func telemetryPromptSummary(instruction string, max int) string {
 	text := strings.Join(strings.Fields(strings.TrimSpace(instruction)), " ")
 	if max > 0 && len(text) > max {
-		return text[:max] + "...[redacted]"
+		return TruncateUTF8Text(text, max, "...[redacted]")
 	}
 	return text
 }

@@ -101,6 +101,10 @@ func sanitizeScrumChannelBytes(b []byte) []byte {
 	return queue.SanitizeUTF8Bytes(b)
 }
 
+func truncateScrumChannelText(s string, maxPrefixBytes int, suffix string) string {
+	return queue.TruncateUTF8Text(s, maxPrefixBytes, suffix)
+}
+
 func syncRunningJobChannelChat(card ScrumCard, job model.JobDetails) (ScrumCard, bool) {
 	output := collectScrumAgentOutput(job)
 	syncedLen := syncedAgentStreamLenFromChat(card.Chat)

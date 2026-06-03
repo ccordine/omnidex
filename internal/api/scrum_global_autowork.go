@@ -9,6 +9,9 @@ import (
 
 const scrumAutoWorkScanInterval = 10 * time.Second
 
+type scrumAutoWorkLockHeldKey struct{}
+type scrumAutoWorkHandoffSuppressedKey struct{}
+
 type scrumAutoWorkCandidate struct {
 	projectID int64
 	cardID    string
@@ -60,6 +63,7 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 	}
 	s.scrumAutoWorkMu.Lock()
 	defer s.scrumAutoWorkMu.Unlock()
+	ctx = context.WithValue(ctx, scrumAutoWorkLockHeldKey{}, true)
 
 	if running, err := s.repo.HasRunningScrumPlay(ctx); err != nil {
 		return err
@@ -78,7 +82,6 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r := scrumRequestFromContext(ctx)
 	for _, candidate := range candidates {
 		if err := s.refreshScrumPlayQueueForProject(ctx, candidate.projectID, "global auto-work"); err != nil {
 			log.Printf("scrum global auto-work project=%d card=%s: %v", candidate.projectID, candidate.cardID, err)
@@ -90,6 +93,7 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 			return nil
 		}
 		if board, err := s.scrumBoardFromProject(ctx, candidate.projectID); err == nil {
+			r := scrumRequestForProject(ctx, candidate.projectID)
 			if refreshed, err := s.kickoffAutoPlayThrough(r, candidate.projectID, board); err == nil && s.findRunningScrumCard(refreshed) != nil {
 				return nil
 			}
@@ -169,6 +173,22 @@ func scrumAutoWorkQueuedAt(card ScrumCard) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+func scrumAutoWorkLockHeld(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	held, _ := ctx.Value(scrumAutoWorkLockHeldKey{}).(bool)
+	return held
+}
+
+func scrumAutoWorkHandoffSuppressed(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	suppressed, _ := ctx.Value(scrumAutoWorkHandoffSuppressedKey{}).(bool)
+	return suppressed
 }
 
 func (s *Server) scrumGlobalPlayActive(ctx context.Context) bool {

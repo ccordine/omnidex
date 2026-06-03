@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 
 const scrumAutoPlayThroughKey = "scrum_auto_play_through"
 const scrumAutoWorkConfigKey = "scrum_auto_work"
+const scrumAutoWorkStartFailureNoteLimit = 1200
 
 var defaultScrumAutoWorkColumns = []string{"assigned"}
 
@@ -200,37 +202,129 @@ func (s *Server) prepareScrumCardForAutoPlay(r *http.Request, projectID int64, c
 	}
 }
 
+func (s *Server) kickoffAutoWorkAfterReconcile(r *http.Request, projectID int64, board ScrumBoard) (ScrumBoard, error) {
+	if s == nil || s.repo == nil || projectID <= 0 {
+		return board, nil
+	}
+	if r == nil {
+		r = scrumRequestForProject(context.Background(), projectID)
+	}
+	if scrumAutoWorkHandoffSuppressed(r.Context()) {
+		return board, nil
+	}
+	if !s.scrumAutoWorkConfig(r.Context(), projectID).Enabled {
+		return board, nil
+	}
+	if scrumAutoWorkLockHeld(r.Context()) {
+		return s.kickoffAutoPlayThrough(r, projectID, board)
+	}
+	s.scrumAutoWorkMu.Lock()
+	defer s.scrumAutoWorkMu.Unlock()
+	ctx := context.WithValue(r.Context(), scrumAutoWorkLockHeldKey{}, true)
+	return s.kickoffAutoPlayThrough(r.WithContext(ctx), projectID, board)
+}
+
 func (s *Server) kickoffAutoPlayThrough(r *http.Request, projectID int64, board ScrumBoard) (ScrumBoard, error) {
-	if s.findRunningScrumCard(board) != nil {
-		return board, nil
+	if r == nil {
+		r = scrumRequestForProject(context.Background(), projectID)
 	}
-	if s.scrumGlobalPlayActive(r.Context()) {
-		return board, nil
+	attempts := len(board.Cards)
+	for attempts > 0 {
+		attempts--
+		if s.findRunningScrumCard(board) != nil {
+			return board, nil
+		}
+		if s.scrumGlobalPlayActive(r.Context()) {
+			return board, nil
+		}
+		autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
+		if !autoWork.Enabled {
+			return board, nil
+		}
+		if paused, err := s.repo.IsAIPaused(r.Context()); err != nil {
+			return board, err
+		} else if paused {
+			return board, nil
+		}
+		reviewCfg := s.scrumAutoReviewConfig(r.Context(), projectID)
+		if scrumAutoPlayThroughCompleteWithReview(board, reviewCfg.Enabled) {
+			return board, nil
+		}
+		next := s.nextAutoWorkScrumCard(board, autoWork)
+		if next == nil {
+			return board, nil
+		}
+		prepared, err := s.prepareScrumCardForAutoPlay(r, projectID, *next)
+		if err != nil {
+			if _, markErr := s.markScrumAutoWorkStartFailure(r, projectID, *next, err); markErr != nil {
+				return board, markErr
+			}
+			board, err = s.reloadScrumBoardAfterAutoWork(r.Context(), projectID, board)
+			if err != nil {
+				return board, err
+			}
+			continue
+		}
+		if _, err := s.startScrumCardPlay(r, board, projectID, prepared.ID, agentconfig.Config{}); err != nil {
+			if scrumAutoWorkStartErrorIsGlobalPause(err) {
+				log.Printf("scrum auto-work start paused project=%d card=%s: %v", projectID, prepared.ID, err)
+				return board, nil
+			}
+			if _, markErr := s.markScrumAutoWorkStartFailure(r, projectID, prepared, err); markErr != nil {
+				return board, markErr
+			}
+			board, err = s.reloadScrumBoardAfterAutoWork(r.Context(), projectID, board)
+			if err != nil {
+				return board, err
+			}
+			continue
+		}
+		return s.reloadScrumBoardAfterAutoWork(r.Context(), projectID, board)
 	}
-	autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
-	if !autoWork.Enabled {
-		return board, nil
-	}
-	reviewCfg := s.scrumAutoReviewConfig(r.Context(), projectID)
-	if scrumAutoPlayThroughCompleteWithReview(board, reviewCfg.Enabled) {
-		return board, nil
-	}
-	next := s.nextAutoWorkScrumCard(board, autoWork)
-	if next == nil {
-		return board, nil
-	}
-	prepared, err := s.prepareScrumCardForAutoPlay(r, projectID, *next)
-	if err != nil {
-		return board, nil
-	}
-	if _, err := s.startScrumCardPlay(r, board, projectID, prepared.ID, agentconfig.Config{}); err != nil {
-		return board, nil
-	}
+	return board, nil
+}
+
+func (s *Server) reloadScrumBoardAfterAutoWork(ctx context.Context, projectID int64, fallback ScrumBoard) (ScrumBoard, error) {
 	if projectID > 0 {
-		return s.scrumBoardFromProject(r.Context(), projectID)
+		return s.scrumBoardFromProject(ctx, projectID)
 	}
 	if s.scrumStore != nil {
 		return s.scrumStore.Board(), nil
 	}
-	return board, nil
+	return fallback, nil
+}
+
+func (s *Server) markScrumAutoWorkStartFailure(r *http.Request, projectID int64, card ScrumCard, cause error) (ScrumCard, error) {
+	reason := "unknown error"
+	if cause != nil {
+		reason = strings.TrimSpace(cause.Error())
+	}
+	if reason == "" {
+		reason = "unknown error"
+	}
+	if len(reason) > scrumAutoWorkStartFailureNoteLimit {
+		reason = truncateScrumChannelText(reason, scrumAutoWorkStartFailureNoteLimit, "...")
+	}
+	log.Printf("scrum auto-work start failed project=%d card=%s moving_to=error: %s", projectID, card.ID, reason)
+	card.Column = "error"
+	card.PlayState = ""
+	card.QueueOrder = 0
+	card = appendScrumChannelEvent(card, "error", "Auto-work failed to start: "+reason)
+	saved, err := s.persistScrumCard(r, projectID, card)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	s.publishScrumCardChatUpdate(r.Context(), projectID, saved, "auto-work start failed")
+	s.publishScrumModalCardRefresh(r.Context(), projectID, saved, "auto-work start failed")
+	if board, err := s.reloadScrumBoardAfterAutoWork(r.Context(), projectID, ScrumBoard{}); err == nil {
+		s.publishScrumBoardRefreshWithToast(r.Context(), projectID, "auto-work start failed", board, "Auto-work moved a failed start to error", "error")
+	}
+	return saved, nil
+}
+
+func scrumAutoWorkStartErrorIsGlobalPause(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "ai is globally paused")
 }
