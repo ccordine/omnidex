@@ -82,3 +82,21 @@ func TestLoadScrumAutoWorkConfig(t *testing.T) {
 		t.Fatalf("expected legacy enabled with assigned default, got %#v", cfg)
 	}
 }
+
+func TestScrumPatchEnablesAutoWork(t *testing.T) {
+	enabled := true
+	disabled := false
+
+	if !scrumPatchEnablesAutoWork(&enabled, nil) {
+		t.Fatal("expected explicit auto-play enable to advance auto-work")
+	}
+	if scrumPatchEnablesAutoWork(&disabled, &ScrumAutoWorkConfig{Enabled: true}) {
+		t.Fatal("expected explicit auto-play disable to avoid advancing auto-work")
+	}
+	if !scrumPatchEnablesAutoWork(nil, &ScrumAutoWorkConfig{Enabled: true, SourceColumns: []string{"ready"}}) {
+		t.Fatal("expected enabled auto-work source patch to advance auto-work")
+	}
+	if scrumPatchEnablesAutoWork(nil, &ScrumAutoWorkConfig{Enabled: false}) {
+		t.Fatal("expected disabled auto-work patch to avoid advancing auto-work")
+	}
+}

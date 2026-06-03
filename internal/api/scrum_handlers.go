@@ -109,12 +109,26 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.AutoPlayThrough != nil || req.AutoWork != nil {
-			s.ReconcileScrumPlayQueueForProjectAsync(projectID)
+			if scrumPatchEnablesAutoWork(req.AutoPlayThrough, req.AutoWork) {
+				s.RefreshScrumPlayQueueForProjectAsync(projectID)
+			} else {
+				s.ReconcileScrumPlayQueueForProjectAsync(projectID)
+			}
 		}
 		writeJSON(w, http.StatusOK, payload)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func scrumPatchEnablesAutoWork(autoPlayThrough *bool, autoWork *ScrumAutoWorkConfig) bool {
+	if autoPlayThrough != nil {
+		return *autoPlayThrough
+	}
+	if autoWork != nil {
+		return autoWork.Enabled
+	}
+	return false
 }
 
 func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
