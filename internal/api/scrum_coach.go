@@ -40,7 +40,7 @@ type ScrumCoachLLMResponse struct {
 func defaultScrumCoachConfig() ScrumCoachConfig {
 	return ScrumCoachConfig{
 		Enabled:  true,
-		AutoScan: true,
+		AutoScan: false,
 		Model:    "qwen3:4b-thinking",
 	}
 }
@@ -232,6 +232,15 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 	cfg := parseScrumCoachConfig(card.CoachConfig)
 	if req.Mode == "config" {
 		writeJSON(w, http.StatusOK, map[string]any{"coach_config": cfg})
+		return
+	}
+	if req.Mode == "scan" && strings.TrimSpace(req.Message) == "" && !cfg.AutoScan {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"card":        card,
+			"suggestions": []ScrumCoachSuggestion{},
+			"mode":        req.Mode,
+			"model":       cfg.Model,
+		})
 		return
 	}
 	if !cfg.Enabled && req.Mode != "scan" {

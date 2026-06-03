@@ -1,6 +1,5 @@
 import { escapeHTML, trimText } from "./dom";
 import {
-  AUTO_PLAY_WORK_COLUMNS,
   COLUMN_LABELS,
   DEFAULT_AUTO_WORK_COLUMNS,
   SCRUM_COLUMNS,
@@ -108,33 +107,17 @@ function renderColumn(column: string, cards: ScrumCard[], playQueue?: ScrumBoard
   `;
 }
 
-function renderAutoPlayToggle(enabled: boolean, complete: boolean, autoWork?: ScrumAutoWorkConfig): string {
-  const checked = enabled ? " checked" : "";
-  const sourceColumns = new Set((autoWork?.source_columns?.length ? autoWork.source_columns : [...DEFAULT_AUTO_WORK_COLUMNS]).map((col) => col.trim()).filter(Boolean));
+function renderAutoPlayStatus(enabled: boolean, complete: boolean): string {
+  if (!enabled) return "";
   const completeNote = complete && enabled
     ? `<span class="rounded-full border border-emerald-300/35 bg-emerald-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">All in review</span>`
     : "";
-  const columnOptions = AUTO_PLAY_WORK_COLUMNS.map((column) => {
-    const isChecked = sourceColumns.has(column) ? " checked" : "";
-    return `
-      <label class="flex cursor-pointer items-center gap-1.5 rounded border border-white/10 bg-zinc-950/70 px-2 py-1 text-[10px] text-zinc-300 hover:border-cyan-300/30">
-        <input type="checkbox" data-action="change->scrum#toggleAutoWorkColumn" data-auto-work-column="${escapeHTML(column)}" class="rounded border-white/20 bg-zinc-900 text-cyan-300"${isChecked} />
-        <span>${escapeHTML(COLUMN_LABELS[column] ?? column)}</span>
-      </label>
-    `;
-  }).join("");
   return `
     <div class="flex flex-wrap items-center gap-2">
-      <label class="group flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-zinc-900/80 px-2.5 py-1.5 transition hover:border-cyan-300/30" title="Auto-work pulls from configured columns into In Progress">
-        <span class="relative inline-flex h-5 w-9 shrink-0 items-center">
-          <input type="checkbox" data-action="change->scrum#toggleAutoPlay" class="peer sr-only"${checked} />
-          <span class="absolute inset-0 rounded-full bg-zinc-700 shadow-inner transition peer-checked:bg-gradient-to-r peer-checked:from-cyan-400 peer-checked:to-emerald-400 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-300/50"></span>
-          <span class="absolute left-0.5 h-4 w-4 rounded-full bg-zinc-100 shadow transition peer-checked:translate-x-4 peer-checked:bg-white"></span>
-        </span>
-        <span class="text-[10px] font-semibold uppercase tracking-[.14em] ${enabled ? "text-cyan-100" : "text-zinc-400"} transition group-hover:text-zinc-200">Auto</span>
+      <span class="rounded-full border border-cyan-300/35 bg-cyan-300/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100">
+        Auto-work on
+      </span>
         ${completeNote}
-      </label>
-      <div class="flex flex-wrap items-center gap-1.5">${columnOptions}</div>
     </div>
   `;
 }
@@ -147,7 +130,7 @@ export function renderScrumFocusBar(
   autoReviewEnabled = false,
   autoWork?: ScrumAutoWorkConfig,
 ): string {
-  const autoToggle = renderAutoPlayToggle(autoPlayThrough, autoPlayThroughComplete(cardsByCol, autoReviewEnabled), autoWork);
+  const autoStatus = renderAutoPlayStatus(autoPlayThrough, autoPlayThroughComplete(cardsByCol, autoReviewEnabled));
   const autoWorkColumns = autoWork?.source_columns?.length ? autoWork.source_columns : [...DEFAULT_AUTO_WORK_COLUMNS];
   const focus = autoPlayThrough
     ? pickScrumAutoPlayFocusCard(board, cardsByCol, playQueue, autoWorkColumns)
@@ -155,7 +138,7 @@ export function renderScrumFocusBar(
   if (!focus) {
     return `
       <div class="flex items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 bg-zinc-950/40 px-4 py-2.5 text-center">
-        ${autoToggle}
+        ${autoStatus}
         <span class="text-xs text-zinc-500">${autoPlayThrough ? "Auto-play complete — every card is in Review" : "Nothing in Assigned or In Progress"}</span>
       </div>
     `;
@@ -195,7 +178,7 @@ export function renderScrumFocusBar(
 
   return `
     <div class="flex max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/70 px-4 py-2.5 shadow-[0_10px_30px_rgba(0,0,0,.18)]">
-      ${autoToggle}
+      ${autoStatus}
       <div class="min-w-0 flex-1">
         <p class="text-[10px] font-semibold uppercase tracking-[.18em] text-zinc-500">${nowPlayingLabel}</p>
         <button type="button" data-action="scrum#openCard" data-card-id="${escapeHTML(focus.id)}" class="mt-0.5 block max-w-full truncate text-left text-sm font-semibold text-zinc-100 transition hover:text-cyan-200" title="${escapeHTML(focus.title)}">${escapeHTML(focus.title)}</button>

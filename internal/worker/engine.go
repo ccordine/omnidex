@@ -210,6 +210,7 @@ type Options struct {
 	SkillsRoot              string
 	Logger                  *log.Logger
 	OnJobFinished           func(jobID int64)
+	OnJobOutput             func(jobID int64, delta string)
 }
 
 type Service struct {
@@ -239,6 +240,7 @@ type Service struct {
 	agentRuntimeRunner      agentRuntimeStepRunner
 	logger                  *log.Logger
 	onJobFinished           func(jobID int64)
+	onJobOutput             func(jobID int64, delta string)
 }
 
 func New(
@@ -373,6 +375,7 @@ func New(
 		completeStep:            completeStep,
 		logger:                  opts.Logger,
 		onJobFinished:           opts.OnJobFinished,
+		onJobOutput:             opts.OnJobOutput,
 	}
 	if repo != nil && completeStep != nil {
 		svc.completeStep = svc.wrapStepCompleter(completeStep)

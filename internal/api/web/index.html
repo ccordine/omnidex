@@ -113,6 +113,20 @@
               <dt class="text-zinc-500" data-i18n="session.status">Status</dt>
               <dd data-chat-target="status" class="mt-1 font-medium text-amber-200">idle</dd>
             </div>
+            <div class="rounded-md border border-white/10 bg-white/[.04] p-3">
+              <dt class="text-zinc-500">AI control</dt>
+              <dd class="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  data-shell-target="aiControlButton"
+                  data-action="shell#toggleAIControl"
+                  class="grid h-9 w-9 place-items-center rounded-md border border-amber-300/30 bg-amber-300/10 text-sm font-semibold text-amber-100 transition hover:bg-amber-300/20"
+                  title="Pause all AI"
+                  aria-label="Pause all AI"
+                >⏸</button>
+                <span data-shell-target="aiControlStatus" class="text-xs text-zinc-400">checking</span>
+              </dd>
+            </div>
           </dl>
         </section>
 

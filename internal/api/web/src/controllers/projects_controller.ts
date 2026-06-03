@@ -13,13 +13,14 @@ import {
   fetchRecipes,
   runProjectDebugger,
   scanProjectMap,
+  startProjectAutoWork,
   surveyProject,
   updateProject,
 } from "../lib/project_api";
 import { renderBrowseModal, renderProjectCreateModal, renderProjectDetail, renderProjectList } from "../lib/project_render";
 import { renderProjectGitSection } from "../lib/project_git_render";
 import { renderProjectDebuggerModal } from "../lib/project_debugger_render";
-import { patchScrumAutoReview } from "../lib/scrum_api";
+import { patchScrumAutomation } from "../lib/scrum_api";
 import { fetchJobRecord } from "../lib/data_api";
 import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_config_render";
 import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_config_render";
@@ -606,16 +607,37 @@ export default class ProjectsController extends Controller {
     event.preventDefault();
     const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
     if (!id) return;
-    const enabled = Boolean(
+    const autoReviewEnabled = Boolean(
       (this.detailTarget.querySelector('[data-projects-field="autoReviewEnabled"]') as HTMLInputElement | null)?.checked,
     );
+    const autoWorkEnabled = Boolean(
+      (this.detailTarget.querySelector('[data-projects-field="autoWorkEnabled"]') as HTMLInputElement | null)?.checked,
+    );
+    const createTicketEnabled = Boolean(
+      (this.detailTarget.querySelector('[data-projects-field="createTicketEnabled"]') as HTMLInputElement | null)?.checked,
+    );
+    const sourceColumns = Array.from(this.detailTarget.querySelectorAll('[data-projects-field="autoWorkColumn"]'))
+      .filter((node): node is HTMLInputElement => node instanceof HTMLInputElement && node.checked)
+      .map((node) => node.dataset.autoWorkColumn?.trim() || "")
+      .filter(Boolean);
     const bounceColumn =
       (this.detailTarget.querySelector('[data-projects-field="autoReviewBounce"]') as HTMLSelectElement | null)?.value?.trim() ||
       "assigned";
+    const createTicketColumn =
+      (this.detailTarget.querySelector('[data-projects-field="createTicketColumn"]') as HTMLSelectElement | null)?.value?.trim() ||
+      "backlog";
     this.setStatus("Saving scrum automation…", "busy");
     try {
-      await patchScrumAutoReview({ enabled, bounce_column: bounceColumn }, id);
+      await patchScrumAutomation(
+        {
+          auto_work: { enabled: autoWorkEnabled, source_columns: sourceColumns },
+          auto_review: { enabled: autoReviewEnabled, bounce_column: bounceColumn },
+          create_ticket: { enabled: createTicketEnabled, column: createTicketColumn },
+        },
+        id,
+      );
       await this.renderDetail(id);
+      document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: id } }));
       this.actionOk("Scrum automation saved");
     } catch (error) {
       this.actionFail(error);
@@ -646,6 +668,25 @@ export default class ProjectsController extends Controller {
       await surveyProject(id);
       await this.renderDetail(id);
       this.actionOk("Project stack detected");
+    } catch (error) {
+      this.actionFail(error);
+    }
+  }
+
+  async startAutoWork(event: Event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || 0);
+    if (!id) return;
+    this.setStatus("Starting auto-work…", "busy");
+    try {
+      const payload = await startProjectAutoWork(id);
+      await this.load();
+      if (this.selectedProjectID === id) {
+        await this.renderDetail(id, { preserveStatus: true });
+      }
+      document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: id } }));
+      this.actionOk(payload.message || "Auto-work started");
     } catch (error) {
       this.actionFail(error);
     }

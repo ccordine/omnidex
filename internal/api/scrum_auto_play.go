@@ -204,6 +204,9 @@ func (s *Server) kickoffAutoPlayThrough(r *http.Request, projectID int64, board 
 	if s.findRunningScrumCard(board) != nil {
 		return board, nil
 	}
+	if s.scrumGlobalPlayActive(r.Context()) {
+		return board, nil
+	}
 	autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
 	if !autoWork.Enabled {
 		return board, nil

@@ -13,8 +13,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const workspaceActiveProjectKey = "active_project_id"
-
 var ErrProjectNotFound = errors.New("project not found")
 
 func scanProject(row pgx.Row) (model.Project, error) {
@@ -199,10 +197,6 @@ func (r *Repository) DeleteProject(ctx context.Context, id int64) error {
 	if tag.RowsAffected() == 0 {
 		return ErrProjectNotFound
 	}
-	active, _ := r.GetActiveProjectID(ctx)
-	if active == id {
-		_ = r.ClearActiveProjectID(ctx)
-	}
 	return nil
 }
 
@@ -216,48 +210,15 @@ func (r *Repository) TouchProject(ctx context.Context, id int64) error {
 }
 
 func (r *Repository) GetActiveProjectID(ctx context.Context) (int64, error) {
-	var raw []byte
-	err := r.pool.QueryRow(ctx, `
-		SELECT value
-		FROM workspace_settings
-		WHERE key = $1
-	`, workspaceActiveProjectKey).Scan(&raw)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	var payload struct {
-		ProjectID int64 `json:"project_id"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return 0, err
-	}
-	return payload.ProjectID, nil
+	return 0, nil
 }
 
 func (r *Repository) SetActiveProjectID(ctx context.Context, projectID int64) error {
 	if projectID > 0 {
-		if _, err := r.GetProject(ctx, projectID); err != nil {
-			return err
-		}
-	}
-	value, err := json.Marshal(map[string]any{"project_id": projectID})
-	if err != nil {
+		_, err := r.GetProject(ctx, projectID)
 		return err
 	}
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO workspace_settings (key, value, updated_at)
-		VALUES ($1, $2::jsonb, NOW())
-		ON CONFLICT (key) DO UPDATE
-		SET value = EXCLUDED.value,
-		    updated_at = NOW()
-	`, workspaceActiveProjectKey, string(value))
-	if err == nil && projectID > 0 {
-		_ = r.TouchProject(ctx, projectID)
-	}
-	return err
+	return nil
 }
 
 func (r *Repository) ClearActiveProjectID(ctx context.Context) error {
@@ -276,17 +237,52 @@ func (r *Repository) CountProjectCards(ctx context.Context, projectID int64) (in
 	return count, err
 }
 
+func (r *Repository) HasRunningScrumPlay(ctx context.Context) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM scrum_cards
+			WHERE play_state IN ('running', 'reviewing')
+			LIMIT 1
+		)
+	`).Scan(&exists)
+	return exists, err
+}
+
+func (r *Repository) ListRunningScrumPlayProjectIDs(ctx context.Context) ([]int64, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT project_id
+		FROM scrum_cards
+		WHERE play_state IN ('running', 'reviewing')
+		ORDER BY project_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 type DBScrumCard struct {
-	ID          string
-	ProjectID   int64
-	Title       string
-	Description string
-	Column      string
-	Checklist   json.RawMessage
-	RefFiles    json.RawMessage
-	Chat        json.RawMessage
-	ModelConfig json.RawMessage
-	AgentConfig json.RawMessage
+	ID           string
+	ProjectID    int64
+	Title        string
+	Description  string
+	Column       string
+	Checklist    json.RawMessage
+	RefFiles     json.RawMessage
+	Chat         json.RawMessage
+	ModelConfig  json.RawMessage
+	AgentConfig  json.RawMessage
 	CardTicket   string
 	CardPrompt   string
 	RecipeID     string
@@ -299,12 +295,12 @@ type DBScrumCard struct {
 	JobID        string
 	TagsJobID    string
 	TicketJobID  string
-	ConsoleLog  string
-	PlayState   string
-	QueueOrder  int
-	BoardOrder  int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ConsoleLog   string
+	PlayState    string
+	QueueOrder   int
+	BoardOrder   int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 func (r *Repository) ListScrumCards(ctx context.Context, projectID int64) ([]DBScrumCard, error) {

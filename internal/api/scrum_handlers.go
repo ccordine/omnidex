@@ -10,6 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
 func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
@@ -46,16 +49,17 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			AutoPlayThrough *bool                  `json:"auto_play_through"`
-			AutoWork        *ScrumAutoWorkConfig   `json:"auto_work"`
-			AutoReview      *ScrumAutoReviewConfig `json:"auto_review"`
+			AutoPlayThrough *bool                    `json:"auto_play_through"`
+			AutoWork        *ScrumAutoWorkConfig     `json:"auto_work"`
+			AutoReview      *ScrumAutoReviewConfig   `json:"auto_review"`
+			CreateTicket    *ScrumCreateTicketConfig `json:"create_ticket"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		if req.AutoPlayThrough == nil && req.AutoWork == nil && req.AutoReview == nil {
-			writeError(w, http.StatusBadRequest, "auto_play_through, auto_work, or auto_review is required")
+		if req.AutoPlayThrough == nil && req.AutoWork == nil && req.AutoReview == nil && req.CreateTicket == nil {
+			writeError(w, http.StatusBadRequest, "auto_play_through, auto_work, auto_review, or create_ticket is required")
 			return
 		}
 		projectID, err := s.resolveProjectID(r)
@@ -91,11 +95,21 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+			project, _ = s.repo.GetProject(r.Context(), projectID)
+		}
+		if req.CreateTicket != nil {
+			if err := s.saveScrumCreateTicketConfig(r.Context(), project, *req.CreateTicket); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
 		payload, err := s.scrumBoardResponse(r)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		if req.AutoPlayThrough != nil || req.AutoWork != nil {
+			s.RefreshScrumPlayQueueForProjectAsync(projectID)
 		}
 		writeJSON(w, http.StatusOK, payload)
 	default:
@@ -113,20 +127,49 @@ func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Column      string `json:"column"`
+		Title              string                   `json:"title"`
+		Description        string                   `json:"description"`
+		Column             string                   `json:"column"`
+		CreateTicket       bool                     `json:"create_ticket"`
+		CreateTicketConfig *ScrumCreateTicketConfig `json:"create_ticket_config"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	card, err := s.scrumCreateCard(r, req.Title, req.Description, req.Column)
+	column := req.Column
+	if req.CreateTicket && req.CreateTicketConfig != nil {
+		column = req.CreateTicketConfig.Column
+	}
+	card, err := s.scrumCreateCard(r, req.Title, req.Description, column)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"card": card})
+	var ticketJob *model.Job
+	if req.CreateTicketConfig != nil && s.repo != nil {
+		if projectID, err := s.resolveProjectID(r); err == nil && projectID > 0 {
+			if project, err := s.repo.GetProject(r.Context(), projectID); err == nil {
+				_ = s.saveScrumCreateTicketConfig(r.Context(), project, *req.CreateTicketConfig)
+			}
+		}
+	}
+	if req.CreateTicket && s.repo != nil {
+		if projectID, err := s.resolveProjectID(r); err == nil && projectID > 0 {
+			ticketModel := firstNonEmpty(s.ollamaDefaultModel, "llama3.2")
+			job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionCardTicket, "", ticketModel, scrumcardllm.TicketRequest{})
+			if err == nil {
+				card = updated
+				ticketJob = &job
+			}
+		}
+	}
+	payload := map[string]any{"card": card}
+	if ticketJob != nil {
+		payload["ticket_job"] = ticketJob
+		payload["message"] = fmt.Sprintf("Queued card ticket job #%d", ticketJob.ID)
+	}
+	writeJSON(w, http.StatusCreated, payload)
 }
 
 func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
@@ -516,6 +559,7 @@ func (s *Server) handleScrumCardSync(w http.ResponseWriter, r *http.Request) {
 		payload["auto_play_through"] = autoWork.Enabled
 		payload["auto_work"] = autoWork
 		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
+		payload["create_ticket"] = s.scrumCreateTicketConfig(r.Context(), projectID)
 	}
 	writeJSON(w, http.StatusOK, payload)
 }

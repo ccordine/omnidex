@@ -362,6 +362,7 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 		payload["auto_play_through"] = autoWork.Enabled
 		payload["auto_work"] = autoWork
 		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
+		payload["create_ticket"] = s.scrumCreateTicketConfig(r.Context(), projectID)
 	}
 	return payload, nil
 }

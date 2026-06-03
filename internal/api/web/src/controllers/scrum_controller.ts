@@ -7,6 +7,7 @@ import {
   doneScrumCard,
   fetchScrumBoard,
   fetchScrumFiles,
+  fetchScrumHealth,
   fetchScrumTags,
   streamCardTicketScrumCard,
   moveScrumCard,
@@ -52,7 +53,7 @@ import {
   type ScrumCardTab,
 } from "../lib/scrum_modal_render";
 import { revealTagsProgressively } from "../lib/scrum_modal_live";
-import { COLUMN_LABELS, DEFAULT_AUTO_WORK_COLUMNS, nextColumn, prevColumn, groupCardsByColumn, type ScrumAutoWorkConfig, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumChecklistItem, type ScrumTestCriterion } from "../lib/scrum_types";
+import { COLUMN_LABELS, DEFAULT_AUTO_WORK_COLUMNS, nextColumn, prevColumn, groupCardsByColumn, type ScrumAutoWorkConfig, type ScrumBoard, type ScrumBoardResponse, type ScrumCard, type ScrumChecklistItem, type ScrumCreateTicketConfig, type ScrumTestCriterion } from "../lib/scrum_types";
 import { ScrumBoardDrag, type ScrumDragDropResult } from "../lib/scrum_drag";
 import type GxController from "./gx_controller";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
@@ -107,11 +108,13 @@ export default class ScrumController extends Controller {
   private pollInFlight = false;
   private pollIntervalMs = 1500;
   private lastBoardUpdatedAt = "";
+  private lastHealthFingerprint = "";
   private scrumTabActive = true;
   private playQueue: ScrumBoardResponse["play_queue"] | null = null;
   private autoPlayThrough = false;
   private autoWorkConfig: ScrumAutoWorkConfig = { enabled: false, source_columns: [...DEFAULT_AUTO_WORK_COLUMNS] };
   private autoReviewEnabled = false;
+  private createTicketConfig: ScrumCreateTicketConfig = { enabled: false, column: "backlog" };
   private autoPlayToggleBusy = false;
   private flowSummary: ScrumBoardResponse["flow_summary"] | null = null;
   private activeCardTab: ScrumCardTab = "card";
@@ -284,6 +287,19 @@ export default class ScrumController extends Controller {
     if (nextMs !== this.pollIntervalMs) this.startPolling();
   }
 
+  private applyHealthTTL(ttlMS?: number) {
+    const ttl = Number(ttlMS || 0);
+    if (!Number.isFinite(ttl) || ttl <= 0) return;
+    const nextMs = Math.max(1000, Math.min(15000, ttl));
+    if (nextMs === this.pollIntervalMs) return;
+    this.pollIntervalMs = nextMs;
+    this.stopPolling();
+    if (!this.shouldPoll()) return;
+    this.pollTimer = window.setInterval(() => {
+      if (this.shouldPoll() && !this.boardDrag.isActive()) void this.pollBoard();
+    }, this.pollIntervalMs);
+  }
+
   private boardLiveFingerprint(payload: ScrumBoardResponse): string {
     const active = this.activeCardID
       ? payload.board.cards.find((card) => card.id === this.activeCardID)
@@ -298,9 +314,12 @@ export default class ScrumController extends Controller {
     if (!this.projectID || this.pollInFlight || this.boardDrag.isActive()) return;
     this.pollInFlight = true;
     try {
-      const payload = await fetchScrumBoard(this.projectID);
+      const health = await fetchScrumHealth(this.projectID, this.lastHealthFingerprint);
+      this.applyHealthTTL(health.ttl_ms);
+      this.lastHealthFingerprint = health.fingerprint || this.lastHealthFingerprint;
+      if (!health.changed || !health.board || !health.cards_by_col) return;
+      const payload = health as ScrumBoardResponse;
       const fingerprint = this.boardLiveFingerprint(payload);
-      if (fingerprint === this.lastBoardUpdatedAt) return;
       this.lastBoardUpdatedAt = fingerprint;
       this.applyBoardPayload(payload, false);
       if (this.isCardModalOpen()) {
@@ -359,6 +378,10 @@ export default class ScrumController extends Controller {
       source_columns: payload.auto_work?.source_columns?.length ? payload.auto_work.source_columns : [...DEFAULT_AUTO_WORK_COLUMNS],
     };
     this.autoReviewEnabled = Boolean(payload.auto_review?.enabled);
+    this.createTicketConfig = {
+      enabled: Boolean(payload.create_ticket?.enabled),
+      column: payload.create_ticket?.column || "backlog",
+    };
     this.flowSummary = payload.flow_summary ?? null;
     this.syncCardLlmJobsFromBoard(payload.board.cards);
     if (!this.pollInFlight) {
@@ -865,9 +888,10 @@ export default class ScrumController extends Controller {
   openCreateCardModal(event?: Event) {
     event?.preventDefault();
     event?.stopPropagation();
-    const column = (event?.currentTarget as HTMLElement | null)?.dataset?.column || "backlog";
+    const clickedColumn = (event?.currentTarget as HTMLElement | null)?.dataset?.column || "";
+    const column = this.createTicketConfig.enabled ? this.createTicketConfig.column || "backlog" : clickedColumn || "backlog";
     this.activeCardID = null;
-    this.openModal(renderScrumCreateCardModal(column));
+    this.openModal(renderScrumCreateCardModal(column, this.createTicketConfig));
   }
 
   setStatus(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
@@ -1413,7 +1437,7 @@ export default class ScrumController extends Controller {
     const panel = document.querySelector('[data-chat-target="modalPanel"]');
     if (!panel) return;
     const card = this.activeCardID ? this.findCard(this.activeCardID) : null;
-    if (!card || card.coach_config?.enabled === false || card.coach_config?.auto_scan === false) return;
+    if (!card || card.coach_config?.enabled === false || card.coach_config?.auto_scan !== true) return;
     const handler = () => {
       if (this.coachScanTimer != null) window.clearTimeout(this.coachScanTimer);
       this.coachScanTimer = window.setTimeout(() => {
@@ -1455,7 +1479,7 @@ export default class ScrumController extends Controller {
     if (!cardID) return;
     const panel = document.querySelector('[data-chat-target="modalPanel"]');
     const enabled = (panel?.querySelector('[data-scrum-field="coachEnabled"]') as HTMLInputElement | null)?.checked ?? true;
-    const autoScan = (panel?.querySelector('[data-scrum-field="coachAutoScan"]') as HTMLInputElement | null)?.checked ?? true;
+    const autoScan = (panel?.querySelector('[data-scrum-field="coachAutoScan"]') as HTMLInputElement | null)?.checked ?? false;
     const model = (panel?.querySelector('[data-scrum-field="coachModel"]') as HTMLInputElement | null)?.value?.trim() || "qwen3:4b-thinking";
     this.setStatus("Saving coach settings…", "busy");
     try {
@@ -1583,12 +1607,18 @@ export default class ScrumController extends Controller {
 
     const description = this.modalField(event, "newDesc") || this.modalPanelField("newDesc");
     const column = this.modalField(event, "newColumn") || this.modalPanelField("newColumn") || "backlog";
+    const createTicket = Boolean((this.modalPanel()?.querySelector('[data-scrum-field="newCreateTicket"]') as HTMLInputElement | null)?.checked);
+    const createTicketColumn = this.modalField(event, "newCreateTicketColumn") || this.modalPanelField("newCreateTicketColumn") || column;
+    const createTicketConfig = { enabled: createTicket, column: createTicketColumn };
 
-    this.setModalSubmitting(true, "Creating card");
+    this.setModalSubmitting(true, createTicket ? "Creating card and queueing ticket" : "Creating card");
     try {
       await this.withBoardRefresh(
-        "Creating card…",
-        () => createScrumCard(title, description, column, this.projectID),
+        createTicket ? "Creating card and queueing ticket…" : "Creating card…",
+        () => createScrumCard(title, description, createTicket ? createTicketColumn : column, this.projectID, {
+          createTicket,
+          createTicketConfig,
+        }),
         { closeModal: true },
       );
     } finally {

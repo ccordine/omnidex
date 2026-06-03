@@ -226,9 +226,11 @@ func main() {
 				SkillsRoot:              cfg.SkillsRoot,
 				Logger:                  log.Default(),
 				OnJobFinished:           httpServer.OnJobFinishedAsync,
+				OnJobOutput:             httpServer.OnJobOutputAsync,
 			},
 		)
 		go workerService.Start(ctx)
+		httpServer.StartScrumAutoWorkLoop(ctx)
 	}
 	log.Printf("core listening on %s core_url=%s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.CoreURL, cfg.LLMProvider, cfg.WrapperOnly)
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {

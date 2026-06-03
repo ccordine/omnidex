@@ -78,6 +78,7 @@ type Server struct {
 	hostAgentToken            string
 	realtimeHub               *RealtimeHub
 	realtimeSeq               atomic.Uint64
+	scrumAutoWorkMu           sync.Mutex
 }
 
 type ServerOptions struct {
@@ -329,6 +330,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/reasoning", s.handleReasoning)
 	s.mux.HandleFunc("/v1/scrum", s.handleScrum)
 	s.mux.HandleFunc("/v1/scrum/cards", s.handleScrumCards)
+	s.mux.HandleFunc("/v1/scrum/cards/health", s.handleScrumCardHealth)
 	s.mux.HandleFunc("/v1/scrum/cards/sync", s.handleScrumCardSync)
 	s.mux.HandleFunc("/v1/scrum/cards/", s.handleScrumCardByID)
 	s.mux.HandleFunc("/v1/scrum/files", s.handleScrumFiles)
@@ -355,6 +357,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
 	s.mux.HandleFunc("/v1/workspace", s.handleWorkspace)
 	if s.repo != nil {
+		s.mux.HandleFunc("/v1/ai/control", s.handleAIControl)
 		s.mux.HandleFunc("/v1/jobs", s.handleJobs)
 		s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
 		s.mux.HandleFunc("/v1/activity", s.handleActivity)
@@ -398,12 +401,12 @@ func (s *Server) routes() {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	coreURL, source := s.resolveCoreURL(r)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":        "ok",
-		"time":          time.Now().UTC(),
-		"queue_enabled": s.repo != nil,
-		"core_url":      coreURL,
+		"status":          "ok",
+		"time":            time.Now().UTC(),
+		"queue_enabled":   s.repo != nil,
+		"core_url":        coreURL,
 		"core_url_source": source,
-		"listen_addr":   strings.TrimSpace(s.listenAddr),
+		"listen_addr":     strings.TrimSpace(s.listenAddr),
 	})
 }
 

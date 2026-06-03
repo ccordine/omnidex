@@ -50,14 +50,13 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		activeID, _ := s.repo.GetActiveProjectID(r.Context())
 		items := make([]map[string]any, 0, len(projects))
 		for _, project := range projects {
-			items = append(items, s.projectSummary(r.Context(), project, activeID))
+			items = append(items, s.projectSummary(r.Context(), project, 0))
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"projects":            items,
-			"active_project_id":   activeID,
+			"projects":          items,
+			"active_project_id": 0,
 		})
 	case http.MethodPost:
 		var req struct {
@@ -99,13 +98,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if req.Activate {
-			_ = s.repo.SetActiveProjectID(r.Context(), project.ID)
-		}
-		activeID, _ := s.repo.GetActiveProjectID(r.Context())
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"project":           s.projectSummary(r.Context(), project, activeID),
-			"active_project_id": activeID,
+			"project":           s.projectSummary(r.Context(), project, 0),
+			"active_project_id": 0,
 		})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -128,6 +123,10 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 	}
 	if action == "survey" {
 		s.handleProjectSurvey(w, r, id)
+		return
+	}
+	if action == "play" {
+		s.handleProjectPlay(w, r, id)
 		return
 	}
 	if action == "map" || action == "map/scan" {
@@ -157,8 +156,7 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 			writeProjectError(w, err)
 			return
 		}
-		activeID, _ := s.repo.GetActiveProjectID(r.Context())
-		payload := map[string]any{"project": s.projectSummary(r.Context(), project, activeID)}
+		payload := map[string]any{"project": s.projectSummary(r.Context(), project, 0)}
 		if resolved, err := s.resolvedModelsForProjectCard(r.Context(), id, ScrumCard{}); err == nil {
 			payload["model_config"] = resolved
 		}
@@ -238,8 +236,7 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 			writeProjectError(w, err)
 			return
 		}
-		activeID, _ := s.repo.GetActiveProjectID(r.Context())
-		writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project, activeID)})
+		writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project, 0)})
 	case http.MethodDelete:
 		if err := s.repo.DeleteProject(r.Context(), id); err != nil {
 			writeProjectError(w, err)
@@ -256,10 +253,6 @@ func (s *Server) handleProjectActivate(w http.ResponseWriter, r *http.Request, i
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := s.repo.SetActiveProjectID(r.Context(), id); err != nil {
-		writeProjectError(w, err)
-		return
-	}
 	project, err := s.repo.GetProject(r.Context(), id)
 	if err != nil {
 		writeProjectError(w, err)
@@ -267,8 +260,8 @@ func (s *Server) handleProjectActivate(w http.ResponseWriter, r *http.Request, i
 	}
 	s.SyncProjectMapAsync(id)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"active_project_id": id,
-		"project":           s.projectSummary(r.Context(), project, id),
+		"active_project_id": 0,
+		"project":           s.projectSummary(r.Context(), project, 0),
 	})
 }
 
@@ -287,8 +280,7 @@ func (s *Server) handleProjectSurvey(w http.ResponseWriter, r *http.Request, id 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	activeID, _ := s.repo.GetActiveProjectID(r.Context())
-	writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project, activeID)})
+	writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project, 0)})
 }
 
 func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -298,19 +290,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		activeID, err := s.repo.GetActiveProjectID(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		payload := map[string]any{"active_project_id": activeID}
-		if activeID > 0 {
-			if project, err := s.repo.GetProject(r.Context(), activeID); err == nil {
-				payload["project"] = s.projectSummary(r.Context(), project, activeID)
-			}
-			s.SyncProjectMapAsync(activeID)
-		}
-		writeJSON(w, http.StatusOK, payload)
+		writeJSON(w, http.StatusOK, map[string]any{"active_project_id": 0})
 	case http.MethodPut:
 		var req struct {
 			ActiveProjectID int64 `json:"active_project_id"`
@@ -319,23 +299,14 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		if req.ActiveProjectID <= 0 {
-			if err := s.repo.ClearActiveProjectID(r.Context()); err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+		if req.ActiveProjectID > 0 {
+			if _, err := s.repo.GetProject(r.Context(), req.ActiveProjectID); err != nil {
+				writeProjectError(w, err)
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"active_project_id": 0})
-			return
+			s.SyncProjectMapAsync(req.ActiveProjectID)
 		}
-		if err := s.repo.SetActiveProjectID(r.Context(), req.ActiveProjectID); err != nil {
-			writeProjectError(w, err)
-			return
-		}
-		project, _ := s.repo.GetProject(r.Context(), req.ActiveProjectID)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"active_project_id": req.ActiveProjectID,
-			"project":           s.projectSummary(r.Context(), project, req.ActiveProjectID),
-		})
+		writeJSON(w, http.StatusOK, map[string]any{"active_project_id": 0})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -375,22 +346,22 @@ func (s *Server) projectSummary(ctx context.Context, project model.Project, acti
 	jobs, _ := s.repo.CountProjectJobs(ctx, project.ID)
 	cards, _ := s.repo.CountProjectCards(ctx, project.ID)
 	return map[string]any{
-		"id":             project.ID,
-		"name":           project.Name,
-		"location":       project.Location,
-		"description":    project.Description,
-		"recipe_id":      project.RecipeID,
-		"recipe":         jsonRawOrObject(project.Recipe),
-		"project_state":  project.ProjectState,
-		"settings":       jsonRawOrObject(project.Settings),
-		"model_config":   jsonRawOrObject(extractSettingsModelConfig(project.Settings)),
-		"agent_config":   jsonRawOrObject(extractSettingsAgentConfig(project.Settings)),
-		"last_seen_at":   project.LastSeenAt,
-		"created_at":     project.CreatedAt,
-		"updated_at":     project.UpdatedAt,
-		"job_count":      jobs,
-		"card_count":     cards,
-		"is_active":      activeID > 0 && activeID == project.ID,
+		"id":            project.ID,
+		"name":          project.Name,
+		"location":      project.Location,
+		"description":   project.Description,
+		"recipe_id":     project.RecipeID,
+		"recipe":        jsonRawOrObject(project.Recipe),
+		"project_state": project.ProjectState,
+		"settings":      jsonRawOrObject(project.Settings),
+		"model_config":  jsonRawOrObject(extractSettingsModelConfig(project.Settings)),
+		"agent_config":  jsonRawOrObject(extractSettingsAgentConfig(project.Settings)),
+		"last_seen_at":  project.LastSeenAt,
+		"created_at":    project.CreatedAt,
+		"updated_at":    project.UpdatedAt,
+		"job_count":     jobs,
+		"card_count":    cards,
+		"is_active":     activeID > 0 && activeID == project.ID,
 	}
 }
 
@@ -443,14 +414,7 @@ func (s *Server) resolveProjectID(r *http.Request) (int64, error) {
 		}
 		return id, nil
 	}
-	id, err := s.repo.GetActiveProjectID(r.Context())
-	if err != nil {
-		return 0, err
-	}
-	if id <= 0 {
-		return 0, fmt.Errorf("no active project selected")
-	}
-	return id, nil
+	return 0, fmt.Errorf("project_id is required")
 }
 
 func (s *Server) scrumBoardFromProject(ctx context.Context, projectID int64) (ScrumBoard, error) {
@@ -478,17 +442,17 @@ func (s *Server) scrumBoardFromProject(ctx context.Context, projectID int64) (Sc
 
 func dbScrumCardToAPI(card queue.DBScrumCard) ScrumCard {
 	out := ScrumCard{
-		ID:          card.ID,
-		Title:       card.Title,
-		Description: card.Description,
-		Column:      card.Column,
-		JobID:       card.JobID,
-		TagsJobID:   card.TagsJobID,
-		TicketJobID: card.TicketJobID,
-		ConsoleLog:  card.ConsoleLog,
-		PlayState:   card.PlayState,
-		QueueOrder:  card.QueueOrder,
-		BoardOrder:  card.BoardOrder,
+		ID:           card.ID,
+		Title:        card.Title,
+		Description:  card.Description,
+		Column:       card.Column,
+		JobID:        card.JobID,
+		TagsJobID:    card.TagsJobID,
+		TicketJobID:  card.TicketJobID,
+		ConsoleLog:   card.ConsoleLog,
+		PlayState:    card.PlayState,
+		QueueOrder:   card.QueueOrder,
+		BoardOrder:   card.BoardOrder,
 		CardTicket:   card.CardTicket,
 		CardPrompt:   card.CardPrompt,
 		RecipeID:     card.RecipeID,
@@ -539,29 +503,29 @@ func apiScrumCardToPatch(card ScrumCard) map[string]any {
 		coachConfig = json.RawMessage(`{}`)
 	}
 	return map[string]any{
-		"title":          sanitizeScrumChannelText(card.Title),
-		"description":    sanitizeScrumChannelText(card.Description),
-		"column":         card.Column,
-		"checklist":      json.RawMessage(sanitizeScrumChannelBytes(checklist)),
-		"ref_files":      json.RawMessage(sanitizeScrumChannelBytes(refFiles)),
-		"chat":           json.RawMessage(sanitizeScrumChannelBytes(chat)),
-		"planning_chat":  json.RawMessage(sanitizeScrumChannelBytes(planningChat)),
-		"tags":           json.RawMessage(sanitizeScrumChannelBytes(tags)),
-		"test_criteria":  json.RawMessage(sanitizeScrumChannelBytes(testCriteria)),
-		"coach_config":   json.RawMessage(sanitizeScrumChannelBytes(coachConfig)),
-		"model_config":   json.RawMessage(sanitizeScrumChannelBytes(modelConfig)),
-		"agent_config":   json.RawMessage(sanitizeScrumChannelBytes(agentConfig)),
-		"card_ticket":    sanitizeScrumChannelText(card.CardTicket),
-		"card_prompt":    sanitizeScrumChannelText(card.CardPrompt),
-		"recipe_id":      sanitizeScrumChannelText(card.RecipeID),
-		"recipe":         json.RawMessage(sanitizeScrumChannelBytes(recipe)),
-		"job_id":         card.JobID,
-		"tags_job_id":    card.TagsJobID,
-		"ticket_job_id":  card.TicketJobID,
-		"console_log":    sanitizeScrumChannelText(card.ConsoleLog),
-		"play_state":     card.PlayState,
-		"queue_order":    card.QueueOrder,
-		"board_order":    card.BoardOrder,
+		"title":         sanitizeScrumChannelText(card.Title),
+		"description":   sanitizeScrumChannelText(card.Description),
+		"column":        card.Column,
+		"checklist":     json.RawMessage(sanitizeScrumChannelBytes(checklist)),
+		"ref_files":     json.RawMessage(sanitizeScrumChannelBytes(refFiles)),
+		"chat":          json.RawMessage(sanitizeScrumChannelBytes(chat)),
+		"planning_chat": json.RawMessage(sanitizeScrumChannelBytes(planningChat)),
+		"tags":          json.RawMessage(sanitizeScrumChannelBytes(tags)),
+		"test_criteria": json.RawMessage(sanitizeScrumChannelBytes(testCriteria)),
+		"coach_config":  json.RawMessage(sanitizeScrumChannelBytes(coachConfig)),
+		"model_config":  json.RawMessage(sanitizeScrumChannelBytes(modelConfig)),
+		"agent_config":  json.RawMessage(sanitizeScrumChannelBytes(agentConfig)),
+		"card_ticket":   sanitizeScrumChannelText(card.CardTicket),
+		"card_prompt":   sanitizeScrumChannelText(card.CardPrompt),
+		"recipe_id":     sanitizeScrumChannelText(card.RecipeID),
+		"recipe":        json.RawMessage(sanitizeScrumChannelBytes(recipe)),
+		"job_id":        card.JobID,
+		"tags_job_id":   card.TagsJobID,
+		"ticket_job_id": card.TicketJobID,
+		"console_log":   sanitizeScrumChannelText(card.ConsoleLog),
+		"play_state":    card.PlayState,
+		"queue_order":   card.QueueOrder,
+		"board_order":   card.BoardOrder,
 	}
 }
 

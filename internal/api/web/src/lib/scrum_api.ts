@@ -1,6 +1,6 @@
 import { readJSON } from "./api";
 import { projectQuery } from "./project_api";
-import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard } from "./scrum_types";
+import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCreateTicketConfig, ScrumHealthResponse } from "./scrum_types";
 
 export type ScrumCardLlmJob = {
   id: number;
@@ -22,6 +22,15 @@ export type ScrumCardLlmQueuedResponse = {
 export async function fetchScrumBoard(projectID?: number | null): Promise<ScrumBoardResponse> {
   const response = await fetch(`/v1/scrum${projectQuery(projectID)}`);
   return readJSON<ScrumBoardResponse>(response);
+}
+
+export async function fetchScrumHealth(projectID?: number | null, fingerprint = ""): Promise<ScrumHealthResponse> {
+  const query = new URLSearchParams();
+  if (projectID != null) query.set("project_id", String(projectID));
+  if (fingerprint.trim()) query.set("fingerprint", fingerprint.trim());
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const response = await fetch(`/v1/scrum/cards/health${suffix}`);
+  return readJSON<ScrumHealthResponse>(response);
 }
 
 export async function updateScrumBoard(
@@ -77,16 +86,43 @@ export async function patchScrumAutoReview(
   return readJSON<ScrumBoardResponse>(response);
 }
 
+export async function patchScrumAutomation(
+  config: {
+    auto_work?: ScrumAutoWorkConfig;
+    auto_review?: import("./scrum_types").ScrumAutoReviewConfig;
+    create_ticket?: ScrumCreateTicketConfig;
+  },
+  projectID?: number | null,
+): Promise<ScrumBoardResponse> {
+  const response = await fetch(`/v1/scrum${projectQuery(projectID)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  return readJSON<ScrumBoardResponse>(response);
+}
+
 export async function createScrumCard(
   title: string,
   description: string,
   column: string,
   projectID?: number | null,
+  options: { createTicket?: boolean; createTicketConfig?: ScrumCreateTicketConfig } = {},
 ): Promise<ScrumCard> {
+  const body: Record<string, unknown> = { title, description, column };
+  if (options.createTicketConfig) {
+    body.create_ticket_config = options.createTicketConfig;
+    if (options.createTicket) {
+      body.column = options.createTicketConfig.column || column;
+    }
+  }
+  if (options.createTicket) {
+    body.create_ticket = true;
+  }
   const response = await fetch(`/v1/scrum/cards${projectQuery(projectID)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, description, column }),
+    body: JSON.stringify(body),
   });
   const payload = await readJSON<{ card: ScrumCard }>(response);
   return payload.card;

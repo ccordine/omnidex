@@ -843,11 +843,11 @@ func (r *Repository) DeleteMemoryCandidate(ctx context.Context, id int64) error 
 func (r *Repository) MindStats(ctx context.Context) (map[string]int64, error) {
 	out := map[string]int64{}
 	queries := map[string]string{
-		"memory_chunks":      `SELECT COUNT(*) FROM memory_chunks`,
-		"memory_candidates":  `SELECT COUNT(*) FROM memory_candidates`,
-		"candidate_pending":  `SELECT COUNT(*) FROM memory_candidates WHERE status = 'candidate'`,
-		"jobs":               `SELECT COUNT(*) FROM jobs`,
-		"telemetry_events":   `SELECT COUNT(*) FROM omni_run_events`,
+		"memory_chunks":     `SELECT COUNT(*) FROM memory_chunks`,
+		"memory_candidates": `SELECT COUNT(*) FROM memory_candidates`,
+		"candidate_pending": `SELECT COUNT(*) FROM memory_candidates WHERE status = 'candidate'`,
+		"jobs":              `SELECT COUNT(*) FROM jobs`,
+		"telemetry_events":  `SELECT COUNT(*) FROM omni_run_events`,
 	}
 	for key, query := range queries {
 		var count int64
@@ -1187,6 +1187,12 @@ func (r *Repository) AddStepContext(ctx context.Context, stepID int64, key, valu
 }
 
 func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model.ClaimedStep, error) {
+	if paused, err := r.IsAIPaused(ctx); err != nil {
+		return nil, err
+	} else if paused {
+		return nil, nil
+	}
+
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err

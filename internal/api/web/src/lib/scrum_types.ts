@@ -124,6 +124,11 @@ export type ScrumAutoWorkConfig = {
   source_columns?: string[];
 };
 
+export type ScrumCreateTicketConfig = {
+  enabled?: boolean;
+  column?: string;
+};
+
 export type ScrumBoardResponse = {
   board: ScrumBoard;
   cards_by_col: Record<string, ScrumCard[]>;
@@ -131,12 +136,30 @@ export type ScrumBoardResponse = {
   auto_play_through?: boolean;
   auto_work?: ScrumAutoWorkConfig;
   auto_review?: ScrumAutoReviewConfig;
+  create_ticket?: ScrumCreateTicketConfig;
   play_queue?: {
     running_card_id?: string;
     queued_count: number;
     queued_card_ids: string[];
   };
   flow_summary?: ScrumFlowSummary;
+};
+
+export type ScrumCardHealth = {
+  card_id: string;
+  column: string;
+  play_state?: string;
+  job_id?: string;
+  job_status?: string;
+  health: "idle" | "active" | "done" | "errored" | "stalled" | "paused" | string;
+  updated_at: string;
+};
+
+export type ScrumHealthResponse = Partial<ScrumBoardResponse> & {
+  ttl_ms: number;
+  fingerprint: string;
+  changed: boolean;
+  health: ScrumCardHealth[];
 };
 
 export const COLUMN_LABELS: Record<string, string> = {

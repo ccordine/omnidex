@@ -166,6 +166,13 @@ func (s *Server) enqueueScrumCardAgentRun(
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	if paused, err := s.repo.IsAIPaused(ctx); err != nil {
+		cancel()
+		return ScrumCard{}, err
+	} else if paused {
+		cancel()
+		return ScrumCard{}, fmt.Errorf("AI is globally paused")
+	}
 	job, err := s.repo.EnqueueJob(ctx, instruction, "scrum", metadata)
 	cancel()
 	if err != nil {

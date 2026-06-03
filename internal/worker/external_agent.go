@@ -57,6 +57,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 
 	var result omni.CursorArchitectAgentResult
 	var err error
+	streamLines := make([]string, 0, 64)
 	if starter, ok := agent.(externalAgentSessionStarter); ok && s.repo != nil {
 		session, sessionErr := starter.NewExternalAgentSession(input)
 		if sessionErr != nil {
@@ -74,9 +75,16 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 				if line == "" {
 					return nil
 				}
+				streamLines = append(streamLines, line)
 				appendCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				return s.repo.AppendStepOutput(appendCtx, claim.Step.ID, line)
+				if appendErr := s.repo.AppendStepOutput(appendCtx, claim.Step.ID, line); appendErr != nil {
+					return appendErr
+				}
+				if s.onJobOutput != nil {
+					s.onJobOutput(claim.Job.ID, line+"\n")
+				}
+				return nil
 			})
 		}
 	} else {
@@ -99,6 +107,17 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	}
 
 	output := strings.TrimSpace(firstNonEmptyString(result.Summary, result.Output, "external agent completed"))
+	stepOutput := output
+	if len(streamLines) > 0 {
+		transcript := strings.TrimSpace(strings.Join(streamLines, "\n"))
+		if transcript != "" {
+			if output != "" && !strings.Contains(transcript, output) {
+				stepOutput = transcript + "\n" + output
+			} else {
+				stepOutput = transcript
+			}
+		}
+	}
 	summary, _ := json.Marshal(map[string]any{
 		"agent":    agentName,
 		"system":   cfg.System(),
@@ -115,7 +134,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		completeStep = s.repo.CompleteStep
 	}
 	s.emitStepEvent(claim.Step.ID, "external_agent_completed", output)
-	return completeStep(ctx, claim.Step.ID, output, "external_agent_execute", string(summary))
+	return completeStep(ctx, claim.Step.ID, stepOutput, "external_agent_execute", string(summary))
 }
 
 func selectExternalAgent(cfg agentconfig.Config, metadata json.RawMessage) (omni.CursorArchitectAgent, string, string) {

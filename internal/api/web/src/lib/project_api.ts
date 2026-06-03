@@ -9,6 +9,7 @@ import type {
   WorkspaceResponse,
 } from "./project_types";
 import type { ResolvedModelConfig } from "./model_config_types";
+import type { ScrumBoard, ScrumCard } from "./scrum_types";
 
 export async function fetchProjects(): Promise<{ projects: ProjectRecord[]; active_project_id: number }> {
   const response = await fetch("/v1/projects");
@@ -63,8 +64,14 @@ export async function deleteProject(id: number): Promise<void> {
   await readJSON(response);
 }
 
-export async function activateProject(id: number): Promise<WorkspaceResponse> {
-  const response = await fetch(`/v1/projects/${id}/activate`, {
+export async function startProjectAutoWork(id: number): Promise<{
+  project_id: number;
+  board: ScrumBoard;
+  card?: ScrumCard;
+  job_id?: string;
+  message: string;
+}> {
+  const response = await fetch(`/v1/projects/${id}/play`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),

@@ -10,6 +10,7 @@ import type { ModelFieldDefinition } from "./model_config_types";
 import type { AgentFieldDefinition } from "./agent_config_types";
 import type { BrowseResponse } from "./project_types";
 import type { ProjectRecord, ProjectMapSummary, ProjectGitStatus, RecipeCatalogItem } from "./project_types";
+import { AUTO_PLAY_WORK_COLUMNS, COLUMN_LABELS, DEFAULT_AUTO_WORK_COLUMNS, type ScrumAutoWorkConfig, type ScrumCreateTicketConfig } from "./scrum_types";
 
 const PROJECT_TABS = [
   { id: "scrum", label: "Scrum" },
@@ -46,13 +47,50 @@ function scrumAutoReviewFromProject(project: ProjectRecord): { enabled: boolean;
   return { enabled: Boolean(cfg.enabled), bounce_column: bounce };
 }
 
+function scrumAutoWorkFromProject(project: ProjectRecord): ScrumAutoWorkConfig {
+  const raw = project.settings?.scrum_auto_work;
+  const legacyEnabled = Boolean(project.settings?.scrum_auto_play_through);
+  if (!raw || typeof raw !== "object") {
+    return { enabled: legacyEnabled, source_columns: [...DEFAULT_AUTO_WORK_COLUMNS] };
+  }
+  const cfg = raw as Record<string, unknown>;
+  const sourceColumns = Array.isArray(cfg.source_columns)
+    ? cfg.source_columns.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [...DEFAULT_AUTO_WORK_COLUMNS];
+  return {
+    enabled: Boolean(cfg.enabled),
+    source_columns: sourceColumns.length ? sourceColumns : [...DEFAULT_AUTO_WORK_COLUMNS],
+  };
+}
+
+function scrumCreateTicketFromProject(project: ProjectRecord): ScrumCreateTicketConfig {
+  const raw = project.settings?.scrum_create_ticket;
+  if (!raw || typeof raw !== "object") {
+    return { enabled: false, column: "backlog" };
+  }
+  const cfg = raw as Record<string, unknown>;
+  const column = typeof cfg.column === "string" && ["backlog", "ready", "assigned"].includes(cfg.column)
+    ? cfg.column
+    : "backlog";
+  return { enabled: Boolean(cfg.enabled), column };
+}
+
 function renderScrumAutomationSettings(project: ProjectRecord): string {
   const autoReview = scrumAutoReviewFromProject(project);
+  const autoWork = scrumAutoWorkFromProject(project);
+  const createTicket = scrumCreateTicketFromProject(project);
+  const sourceColumns = new Set((autoWork.source_columns?.length ? autoWork.source_columns : [...DEFAULT_AUTO_WORK_COLUMNS]).map((col) => col.trim()).filter(Boolean));
   const bounceOptions = ["assigned", "in_progress", "ready"]
     .map((column) => {
       const selected = autoReview.bounce_column === column ? " selected" : "";
       const label = column === "in_progress" ? "In Progress" : column.charAt(0).toUpperCase() + column.slice(1);
       return `<option value="${escapeHTML(column)}"${selected}>${escapeHTML(label)}</option>`;
+    })
+    .join("");
+  const createColumnOptions = ["backlog", "ready", "assigned"]
+    .map((column) => {
+      const selected = createTicket.column === column ? " selected" : "";
+      return `<option value="${escapeHTML(column)}"${selected}>${escapeHTML(COLUMN_LABELS[column] ?? column)}</option>`;
     })
     .join("");
   return `
@@ -68,12 +106,46 @@ function renderScrumAutomationSettings(project: ProjectRecord): string {
       </div>
       <div class="mt-4 grid gap-4 lg:grid-cols-2">
         <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-zinc-900/50 px-3 py-3 transition hover:border-cyan-300/30">
+          <input type="checkbox" data-projects-field="autoWorkEnabled" class="mt-1 rounded border-white/20 bg-zinc-900 text-cyan-300"${autoWork.enabled ? " checked" : ""} />
+          <span>
+            <span class="block text-sm font-medium text-zinc-100">Auto-work queue</span>
+            <span class="mt-1 block text-xs text-zinc-500">Pull cards from selected columns and start play automatically.</span>
+          </span>
+        </label>
+        <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-zinc-900/50 px-3 py-3 transition hover:border-cyan-300/30">
           <input type="checkbox" data-projects-field="autoReviewEnabled" class="mt-1 rounded border-white/20 bg-zinc-900 text-cyan-300"${autoReview.enabled ? " checked" : ""} />
           <span>
             <span class="block text-sm font-medium text-zinc-100">Auto-review on Review</span>
             <span class="mt-1 block text-xs text-zinc-500">Fresh agent eyes verify the work before humans see it.</span>
           </span>
         </label>
+        <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-zinc-900/50 px-3 py-3 transition hover:border-cyan-300/30">
+          <input type="checkbox" data-projects-field="createTicketEnabled" class="mt-1 rounded border-white/20 bg-zinc-900 text-cyan-300"${createTicket.enabled ? " checked" : ""} />
+          <span>
+            <span class="block text-sm font-medium text-zinc-100">Generate ticket on card create</span>
+            <span class="mt-1 block text-xs text-zinc-500">Queue a planning-mode card ticket job from the new card title and description.</span>
+          </span>
+        </label>
+        <label class="block">
+          <span class="text-xs text-zinc-500">Create new ticket cards in</span>
+          <select data-projects-field="createTicketColumn" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
+            ${createColumnOptions}
+          </select>
+        </label>
+        <fieldset class="lg:col-span-2">
+          <legend class="text-xs text-zinc-500">Auto-work source columns</legend>
+          <div class="mt-2 flex flex-wrap gap-2">
+            ${AUTO_PLAY_WORK_COLUMNS.map((column) => {
+              const checked = sourceColumns.has(column) ? " checked" : "";
+              return `
+                <label class="flex cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-300 transition hover:border-cyan-300/30">
+                  <input type="checkbox" data-projects-field="autoWorkColumn" data-auto-work-column="${escapeHTML(column)}" class="rounded border-white/20 bg-zinc-900 text-cyan-300"${checked} />
+                  <span>${escapeHTML(COLUMN_LABELS[column] ?? column)}</span>
+                </label>
+              `;
+            }).join("")}
+          </div>
+        </fieldset>
         <label class="block">
           <span class="text-xs text-zinc-500">Bounce failed reviews to</span>
           <select data-projects-field="autoReviewBounce" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
@@ -95,28 +167,36 @@ export function renderProjectList(projects: ProjectRecord[]): string {
   return projects
     .map((project) => {
       return `
-        <button
-          type="button"
-          data-action="projects#openProject"
-          data-project-id="${project.id}"
-          class="w-full rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left transition hover:border-cyan-300/30 hover:bg-cyan-300/5"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
+        <div class="rounded-xl border border-white/10 bg-zinc-950/60 p-4 transition hover:border-cyan-300/30 hover:bg-cyan-300/5">
+          <div class="flex items-start gap-3">
+            <button
+              type="button"
+              data-action="projects#openProject"
+              data-project-id="${project.id}"
+              class="min-w-0 flex-1 text-left"
+            >
               <h3 class="truncate text-base font-semibold text-zinc-100">${escapeHTML(project.name)}</h3>
               <p class="mt-1 truncate font-mono text-xs text-zinc-500">${escapeHTML(project.location)}</p>
-            </div>
+            </button>
             <div class="shrink-0 text-right text-[11px] text-zinc-500">
               <div>${escapeHTML(formatDateTime(project.updated_at))}</div>
               <div class="mt-1">${project.card_count ?? 0} cards · ${project.job_count ?? 0} jobs</div>
             </div>
+            <button
+              type="button"
+              data-action="projects#startAutoWork"
+              data-project-id="${project.id}"
+              class="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-cyan-300/30 bg-cyan-300/10 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/20"
+              title="Start auto-work"
+              aria-label="Start auto-work for ${escapeHTML(project.name)}"
+            >▶</button>
           </div>
           ${
             project.project_state
               ? `<div class="mt-3"><span class="${statusPillClass(project.project_state)}">${escapeHTML(project.project_state)}</span></div>`
               : ""
           }
-        </button>
+        </div>
       `;
     })
     .join("");
