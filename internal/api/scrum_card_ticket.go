@@ -76,9 +76,6 @@ func (s *Server) handleScrumCardTicket(w http.ResponseWriter, r *http.Request, c
 	writeJSON(w, http.StatusOK, map[string]any{
 		"card":   updated,
 		"ticket": ticket,
-		"html": map[string]any{
-			"bundle": renderScrumCardLLMSectionBundle(updated),
-		},
 	})
 }
 

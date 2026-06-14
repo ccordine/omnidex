@@ -2,9 +2,11 @@ package worker
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
 )
 
@@ -111,5 +113,36 @@ func TestSelectExternalAgentAppliesCodexConfig(t *testing.T) {
 	}
 	if codex.WebSearchMode != "disabled" {
 		t.Fatalf("expected web search disabled, got %q", codex.WebSearchMode)
+	}
+}
+
+func TestExternalAgentJobModeUsesGenericCLIForChat(t *testing.T) {
+	job := model.Job{
+		Pipeline: model.PipelineChat,
+		Metadata: json.RawMessage(`{"client_cwd":"/tmp/project","execution_agent":"codex"}`),
+	}
+	if got := externalAgentJobMode(job); got != "cli_agent_task" {
+		t.Fatalf("externalAgentJobMode()=%q", got)
+	}
+	prompt := buildExternalAgentPrompt(job, map[string]string{"environment": "env summary"})
+	if !strings.Contains(prompt, "bounded CLI agent task") {
+		t.Fatalf("expected generic CLI prompt, got %q", prompt)
+	}
+	if strings.Contains(prompt, "scrum card") {
+		t.Fatalf("generic prompt should not mention scrum cards: %q", prompt)
+	}
+}
+
+func TestExternalAgentJobModeKeepsScrumPrompt(t *testing.T) {
+	job := model.Job{
+		Pipeline: "scrum",
+		Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"cursor"}`),
+	}
+	if got := externalAgentJobMode(job); got != "scrum_task" {
+		t.Fatalf("externalAgentJobMode()=%q", got)
+	}
+	prompt := buildExternalAgentPrompt(job, nil)
+	if !strings.Contains(prompt, "bounded scrum card task") {
+		t.Fatalf("expected scrum prompt, got %q", prompt)
 	}
 }

@@ -142,6 +142,14 @@ export type ScrumCreateTicketConfig = {
   column?: string;
 };
 
+export type ScrumConfigField = {
+  key: string;
+  label: string;
+  description?: string;
+  options?: string[];
+  value?: string;
+};
+
 export type ScrumBoardHTML = {
   board?: string;
   columns?: string;
@@ -168,6 +176,27 @@ export type ScrumBoardResponse = {
     queued_card_ids: string[];
   };
   flow_summary?: ScrumFlowSummary;
+};
+
+export type ScrumCardModalResponse = {
+  card: ScrumCard;
+  board: ScrumBoard;
+  tab: string;
+  project_id?: number;
+  files?: string[];
+  dirs?: string[];
+  play_queue?: ScrumBoardResponse["play_queue"];
+  model_fields?: ScrumConfigField[];
+  model_source?: string;
+  model_overrides?: Record<string, string>;
+  agent_fields?: ScrumConfigField[];
+  agent_source?: string;
+  agent_system?: string;
+  agent_overrides?: Record<string, string>;
+  recipes?: Array<{ id: string; description?: string; [key: string]: unknown }>;
+  project_recipe_id?: string;
+  project_recipe?: Record<string, unknown>;
+  pilot_pending?: boolean;
 };
 
 export type ScrumCardHealth = {

@@ -6,7 +6,6 @@ import type {
   ProjectGitStatus,
   ProjectRecord,
   RecipeCatalogItem,
-  WorkspaceResponse,
 } from "./project_types";
 import type { ResolvedModelConfig } from "./model_config_types";
 import type { ScrumBoard, ScrumCard } from "./scrum_types";

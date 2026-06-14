@@ -164,6 +164,8 @@ The server decides what changed.
 RecyclrJS communicates that change.
 Server-rendered components reflect the new state.
 
+Exception: Scrum card modals are React + TypeScript SPA surfaces mounted through the `card-modal-spa` Stimulus controller. Card modal updates must use typed JSON/server state and must not add Recyclr HTML bundle fallbacks.
+
 ⸻
 
 7. Use Stimulus Correctly

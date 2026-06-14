@@ -46,7 +46,10 @@ export default class ProjectsController extends Controller {
   declare readonly listTarget: HTMLElement;
   declare readonly detailTarget: HTMLElement;
   declare readonly statusTarget: HTMLElement;
-  declare readonly hasOpenBadgeTarget: boolean;
+  declare readonly hasListTarget: boolean;
+  declare readonly hasDetailTarget: boolean;
+  declare readonly hasStatusTarget: boolean;
+  declare readonly hasViewingBadgeTarget: boolean;
   declare readonly viewingBadgeTarget: HTMLElement;
 
   private projects: ProjectRecord[] = [];
@@ -71,11 +74,20 @@ export default class ProjectsController extends Controller {
   private debuggerRunning = false;
   private debuggerPollTimer: number | null = null;
   private detailAbortController: AbortController | null = null;
+  private pendingProjectsLoad = false;
+  private pendingProjectsLoadReason = "";
+  private pendingProjectsLoadTimer: number | null = null;
+  private projectsPanelObserver: MutationObserver | null = null;
+  private loadInFlight = false;
 
   connect() {
     this.panelShownHandler = (event: Event) => {
       const detail = (event as CustomEvent<{ panel?: string }>).detail;
-      if (detail?.panel === "projects") void this.load();
+      if (detail?.panel === "projects") {
+        this.requestProjectsLoad("panel-shown");
+        return;
+      }
+      this.cancelPendingProjectsLoad();
     };
     document.addEventListener("omni:panel-shown", this.panelShownHandler);
   }
@@ -84,8 +96,63 @@ export default class ProjectsController extends Controller {
     if (this.panelShownHandler) {
       document.removeEventListener("omni:panel-shown", this.panelShownHandler);
     }
+    this.cancelPendingProjectsLoad();
+    this.projectsPanelObserver?.disconnect();
+    this.projectsPanelObserver = null;
     this.detailAbortController?.abort();
     this.stopDebuggerPolling();
+  }
+
+  private hasProjectsPanelTargets(): boolean {
+    return this.hasStatusTarget && this.hasListTarget && this.hasDetailTarget;
+  }
+
+  private observePendingProjectsLoad() {
+    if (this.projectsPanelObserver) return;
+    this.projectsPanelObserver = new MutationObserver(() => this.flushPendingProjectsLoad());
+    this.projectsPanelObserver.observe(this.element, { childList: true, subtree: true });
+  }
+
+  private clearPendingProjectsLoadTimer() {
+    if (this.pendingProjectsLoadTimer === null) return;
+    window.clearTimeout(this.pendingProjectsLoadTimer);
+    this.pendingProjectsLoadTimer = null;
+  }
+
+  private cancelPendingProjectsLoad() {
+    this.pendingProjectsLoad = false;
+    this.pendingProjectsLoadReason = "";
+    this.clearPendingProjectsLoadTimer();
+    this.projectsPanelObserver?.disconnect();
+    this.projectsPanelObserver = null;
+  }
+
+  private requestProjectsLoad(reason: string) {
+    this.pendingProjectsLoad = true;
+    this.pendingProjectsLoadReason = reason;
+    this.observePendingProjectsLoad();
+    this.flushPendingProjectsLoad();
+    if (!this.pendingProjectsLoad || this.pendingProjectsLoadTimer !== null) return;
+    this.pendingProjectsLoadTimer = window.setTimeout(() => {
+      this.pendingProjectsLoadTimer = null;
+      if (!this.pendingProjectsLoad) return;
+      this.pendingProjectsLoad = false;
+      const message = "Projects panel failed to load because required DOM targets were not mounted.";
+      console.error(message, {
+        reason: this.pendingProjectsLoadReason,
+        hasStatusTarget: this.hasStatusTarget,
+        hasListTarget: this.hasListTarget,
+        hasDetailTarget: this.hasDetailTarget,
+      });
+      if (this.hasStatusTarget) this.setStatus(message, "error");
+      showToast(message, "error");
+    }, 2000);
+  }
+
+  private flushPendingProjectsLoad() {
+    if (!this.pendingProjectsLoad || !this.hasProjectsPanelTargets()) return;
+    this.cancelPendingProjectsLoad();
+    void this.load();
   }
 
   setStatus(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
@@ -249,6 +316,12 @@ export default class ProjectsController extends Controller {
   }
 
   async load() {
+    if (!this.hasProjectsPanelTargets()) {
+      this.requestProjectsLoad("load-before-targets");
+      return;
+    }
+    if (this.loadInFlight) return;
+    this.loadInFlight = true;
     this.setStatus("Loading projects…", "busy");
     setGlobalLoading(true);
     try {
@@ -274,6 +347,7 @@ export default class ProjectsController extends Controller {
       this.actionFail(error);
     } finally {
       setGlobalLoading(false);
+      this.loadInFlight = false;
     }
   }
 

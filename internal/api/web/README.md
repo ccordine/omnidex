@@ -1,6 +1,6 @@
 # Omni Web UI
 
-TypeScript + [Hotwired Stimulus](https://stimulus.hotwired.dev/) frontend for the Omni cockpit.
+TypeScript frontend for the Omni cockpit. Most existing cockpit surfaces still use [Hotwired Stimulus](https://stimulus.hotwired.dev/); Scrum card modals are React SPA surfaces mounted by a Stimulus controller.
 
 **Release:** Venusaur (`v0.3.0`) — project planner, draft queue, scrum board, flow metrics.
 
@@ -21,18 +21,21 @@ internal/api/web/
   src/
     main.ts           # Stimulus application bootstrap
     controllers/
+      card_modal_spa_controller.tsx
       gx_controller.ts
       chat_controller.ts
       project_chat_controller.ts
       scrum_controller.ts
       projects_controller.ts
+    react/
+      card-modal/     # React card modal SPA
     lib/
       project_chat_api.ts
       project_chat_render.ts
       scrum_api.ts
       scrum_render.ts
       dom.ts          # HTML/formatting utilities
-      recyclr.ts      # Recyclr partial updates
+      recyclr.ts      # Legacy partial updates for unmigrated surfaces
       render.ts       # View render helpers
       transcript_store.ts
       types.ts
@@ -46,6 +49,7 @@ cd internal/api/web
 npm install
 npm run dev      # Vite dev server with API proxy to :8090
 npm run build    # Production bundle → dist/
+npm test
 npm run typecheck
 ```
 
@@ -66,3 +70,9 @@ The Go core embeds `web/dist/*` and serves it at `/` and `/ui/`.
 3. Wire HTML with `data-controller="foo"` and `data-action="foo#method"`.
 
 Do not add inline JavaScript to `index.html` beyond Tailwind config.
+
+## Card modal SPA
+
+Scrum card modals are mounted through `card_modal_spa_controller.tsx`. The existing Scrum controller only inserts a hard-coded React mount wrapper for card modals; React owns the modal tabs, loading/error states, and typed JSON updates from `/v1/scrum/cards/{id}/modal`.
+
+Do not add Recyclr HTML bundle fallbacks to the card modal path. New card-modal behavior should update server state through the existing JSON APIs and reconcile from the returned card/context payload.

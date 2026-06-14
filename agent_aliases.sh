@@ -51,6 +51,10 @@ _omni_cmd() {
 # Canonical deterministic Omnidex CLI
 omni() { _omni_cmd "$@"; }
 omnidex() { _omni_cmd "$@"; }
+oagent() { _omni_cmd agent "$@"; }
+oagentcodex() { _omni_cmd agent --profile architect --agent codex "$@"; }
+oagentcursor() { _omni_cmd agent --profile architect --agent cursor "$@"; }
+oagentomni() { _omni_cmd agent --agent omnidex "$@"; }
 
 # Queue/API CLI passthrough
 acli() { _agent_cli_cmd "$@"; }

@@ -402,7 +402,7 @@ export default class ChatController extends Controller {
       if (name === "chat") params.delete("panel");
       else params.set("panel", name);
       const payload = await readJSON<{ panel: OmniPanel; html: string }>(await fetch(`/v1/ui/panel?${params.toString()}`));
-      renderRecyclrBundle(this.gxController, "app-panel", payload.html);
+      await renderRecyclrBundle(this.gxController, "app-panel", payload.html);
       applyI18n(document);
     } catch (error) {
       this.currentPanel = previousPanel;

@@ -38,9 +38,10 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	}
 
 	prompt := buildExternalAgentPrompt(claim.Job, contexts)
+	mode := externalAgentJobMode(claim.Job)
 	packet := omni.CursorImplementationPacket{
 		Task:       strings.TrimSpace(claim.Job.Instruction),
-		Mode:       "scrum_task",
+		Mode:       mode,
 		Workspace:  workspace,
 		TargetRoot: workspace,
 		Objectives: []string{strings.TrimSpace(claim.Job.Instruction)},
@@ -172,6 +173,9 @@ func selectExternalAgent(cfg agentconfig.Config, metadata json.RawMessage) (omni
 }
 
 func buildExternalAgentPrompt(job model.Job, contexts map[string]string) string {
+	if externalAgentJobMode(job) != "scrum_task" {
+		return buildGenericExternalAgentPrompt(job, contexts)
+	}
 	lines := []string{
 		"You are executing a bounded scrum card task inside an Omnidex-managed project workspace.",
 		"Use the card context below. Do not ask the user to run Omnidex commands manually.",
@@ -184,6 +188,44 @@ func buildExternalAgentPrompt(job model.Job, contexts map[string]string) string 
 		lines = append(lines, "Feedback:", feedback)
 	}
 	lines = append(lines, "", "Task:", strings.TrimSpace(job.Instruction), "", scrum.AgentStatusFooter)
+	return strings.Join(lines, "\n")
+}
+
+func externalAgentJobMode(job model.Job) string {
+	if scrum.IsScrumJob(job.Metadata) || strings.EqualFold(strings.TrimSpace(job.Pipeline), "scrum") {
+		return "scrum_task"
+	}
+	return "cli_agent_task"
+}
+
+func buildGenericExternalAgentPrompt(job model.Job, contexts map[string]string) string {
+	lines := []string{
+		"You are executing a bounded CLI agent task inside an Omnidex-managed workspace.",
+		"Use the job context below. Do not ask the user to run Omnidex commands manually.",
+		"Treat Omnidex as the control plane: perform the implementation work, stream concrete progress, and leave validation to Omnidex when proof commands are configured.",
+	}
+	if executionAgent := metadataString(job.Metadata, "execution_agent"); executionAgent != "" {
+		lines = append(lines, "Execution agent: "+executionAgent)
+	}
+	if workspace := codingWorkspaceForJob(job); workspace != "" {
+		lines = append(lines, "Workspace: "+workspace)
+	}
+	if feedback := strings.TrimSpace(contexts["user_feedback"]); feedback != "" {
+		lines = append(lines, "Feedback:", feedback)
+	}
+	if environment := strings.TrimSpace(contexts["environment"]); environment != "" {
+		lines = append(lines, "Environment:", trimForBudget(environment, 1600))
+	}
+	if tooling := strings.TrimSpace(contexts["tooling"]); tooling != "" {
+		lines = append(lines, "Tooling:", trimForBudget(tooling, 1600))
+	}
+	lines = append(lines,
+		"",
+		"Task:",
+		strings.TrimSpace(job.Instruction),
+		"",
+		"Completion rule: report what changed and what verification you ran or could not run. Do not claim Omnidex accepted the work.",
+	)
 	return strings.Join(lines, "\n")
 }
 

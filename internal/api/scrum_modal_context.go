@@ -15,11 +15,11 @@ import (
 )
 
 type scrumConfigField struct {
-	Key         string
-	Label       string
-	Description string
-	Options     []string
-	Value       string
+	Key         string   `json:"key"`
+	Label       string   `json:"label"`
+	Description string   `json:"description,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	Value       string   `json:"value,omitempty"`
 }
 
 type scrumModalRenderContext struct {

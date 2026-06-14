@@ -16,13 +16,13 @@ func (s *Server) publishScrumModalCardRefreshWithToast(ctx context.Context, proj
 	}
 	msg := realtimeMessage{
 		ID:        s.nextRealtimeID(),
-		HTML:      renderScrumCardLLMSectionBundle(card),
 		EventName: "scrum-card-modal-refresh",
 		Reason:    strings.TrimSpace(reason),
 		Toast:     strings.TrimSpace(toast),
 		ToastTone: strings.TrimSpace(toastTone),
 		ProjectID: projectID,
 		CardID:    strings.TrimSpace(card.ID),
+		Card:      &card,
 	}
 	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
 }
@@ -33,11 +33,11 @@ func (s *Server) publishScrumCardChatUpdate(ctx context.Context, projectID int64
 	}
 	msg := realtimeMessage{
 		ID:        s.nextRealtimeID(),
-		HTML:      renderScrumCardChatBundle(card),
 		EventName: "chat-component-update",
 		Reason:    strings.TrimSpace(reason),
 		ProjectID: projectID,
 		CardID:    strings.TrimSpace(card.ID),
+		Card:      &card,
 	}
 	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
 }

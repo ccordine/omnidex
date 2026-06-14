@@ -94,7 +94,7 @@ func (ui *chatUI) printBanner(session string, architectMode bool) {
 }
 
 func queuedTurnHintText() string {
-	return "queue mode: while assistant is thinking, type TAB + message and press Enter to queue the next turn"
+	return "queue mode: TAB + message queues the next turn; /interrupt, /replan, and /cancel steer the active job"
 }
 
 func (ui *chatUI) printUser(line string) {

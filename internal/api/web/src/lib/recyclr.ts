@@ -15,6 +15,10 @@ type RecyclrGX = {
   consumeRealtime?: (message: Record<string, unknown>) => void | Promise<void>;
 };
 
+type RecyclrBundleHost = {
+  renderBundle: (html: string) => void | Promise<void>;
+};
+
 type RecyclrStream = {
   start: () => void;
   stop: () => void;
@@ -76,27 +80,36 @@ export function applyRecyclrSink(
   sink.innerHTML = html;
 }
 
-export function renderRecyclrBundle(
-  host: { renderBundle: (html: string) => void } | null,
+function isPromiseLike(value: unknown): value is Promise<void> {
+  return Boolean(value && typeof (value as Promise<void>).then === "function");
+}
+
+export async function renderRecyclrBundle(
+  host: RecyclrBundleHost | null,
   target: string,
   html: string,
   mode: RecyclrSinkMode = "html",
-): void {
+): Promise<void> {
   const bundle = buildRecyclrBundle(target, html);
-  scheduleDomUpdate(() => {
+  let renderedWithHost = false;
+  let hostRenderResult: void | Promise<void>;
+  await scheduleDomUpdate(() => {
     setGlobalLoading(true);
     try {
       if (host && typeof host.renderBundle === "function") {
-        try {
-          host.renderBundle(bundle);
-          return;
-        } catch {
-          /* Recyclr may be unavailable; direct sink update below still applies. */
-        }
+        hostRenderResult = host.renderBundle(bundle);
+        renderedWithHost = true;
+        return;
       }
       applyRecyclrSink(document, target, html, mode);
     } finally {
-      setGlobalLoading(false);
+      if (!renderedWithHost) setGlobalLoading(false);
     }
   });
+  if (!renderedWithHost) return;
+  try {
+    if (isPromiseLike(hostRenderResult)) await hostRenderResult;
+  } finally {
+    setGlobalLoading(false);
+  }
 }

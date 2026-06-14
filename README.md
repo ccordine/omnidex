@@ -803,6 +803,40 @@ Operational rules:
 - Shell/process cleanup matters after cancel, failure, or completion.
 - Local proof gates remain mandatory: build/test/smoke commands, artifact validation, scope/dependency checks, and objective evidence predicates.
 
+### CLI agent mode
+
+After install, use the core-backed agent chat from any workspace:
+
+```bash
+omni agent --profile architect
+```
+
+`omni agent` is a bridge to `agent-cli chat`, so it uses the core configuration stack: env, workspace defaults from Admin, project/card config when present, and per-run CLI overrides. The local deterministic `omni chat` command remains available separately.
+
+Useful one-shot starts:
+
+```bash
+omni agent --agent codex --agent-model gpt-5.3-codex --codex-reasoning-effort high
+omni agent --agent cursor --agent-model composer-2
+omni agent --agent omnidex --reasoning deep
+```
+
+Inside the interactive chat:
+
+```text
+/agent codex
+/model gpt-5.3-codex
+/reasoning deep
+/set codex_reasoning_effort high
+/set codex_sandbox workspace-write
+/settings
+/interrupt add this constraint to the active run
+/replan restart with this corrected scope
+/cancel stop this run
+```
+
+The installed aliases also include `oagent`, `oagentcodex`, `oagentcursor`, and `oagentomni`.
+
 ### Workspace scan from Docker
 
 By default compose mounts your parent directory read-only into `/workspace` and the core scans from there.

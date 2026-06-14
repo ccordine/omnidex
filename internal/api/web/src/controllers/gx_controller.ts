@@ -31,7 +31,9 @@ export default class GxController extends Controller {
     this.stream = createRecyclrRealtimeStream(this.gx, (message) => {
       const html = String(message.html ?? "").trim();
       if (html) {
-        this.queueRenderBundle(html);
+        void this.queueRenderBundle(html).catch((error) => {
+          console.error("Realtime Recyclr bundle render failed", error);
+        });
       }
       queueMicrotask(() => this.dispatchRealtimeMessage(message));
     });
@@ -48,9 +50,9 @@ export default class GxController extends Controller {
     }
   }
 
-  private queueRenderBundle(html: string): void {
+  private queueRenderBundle(html: string): Promise<void> {
     this.pendingBundleHTML = html;
-    scheduleDomUpdate(() => {
+    return scheduleDomUpdate(() => {
       const pending = this.pendingBundleHTML;
       this.pendingBundleHTML = null;
       if (pending) this.renderBundleNow(pending);
@@ -82,8 +84,8 @@ export default class GxController extends Controller {
     }
   }
 
-  renderBundle(html: string): void {
-    this.queueRenderBundle(html);
+  renderBundle(html: string): Promise<void> {
+    return this.queueRenderBundle(html);
   }
 
   private renderBundleNow(html: string): void {

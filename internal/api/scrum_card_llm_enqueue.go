@@ -138,8 +138,5 @@ func writeScrumCardLLMQueued(w http.ResponseWriter, job model.Job, card ScrumCar
 		"card":    card,
 		"message": message,
 		"queued":  true,
-		"html": map[string]any{
-			"bundle": renderScrumCardLLMSectionBundle(card),
-		},
 	})
 }

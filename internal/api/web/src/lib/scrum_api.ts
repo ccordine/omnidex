@@ -1,6 +1,6 @@
 import { readJSON } from "./api";
 import { projectQuery } from "./project_api";
-import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCreateTicketConfig, ScrumHealthResponse } from "./scrum_types";
+import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCardModalResponse, ScrumCreateTicketConfig, ScrumHealthResponse } from "./scrum_types";
 
 export type ScrumCardLlmJob = {
   id: number;
@@ -14,7 +14,6 @@ export type ScrumCardLlmQueuedResponse = {
   job?: ScrumCardLlmJob;
   card?: ScrumCard;
   message?: string;
-  html?: { bundle?: string };
   tags?: string[];
   notes?: string;
   ticket?: string;
@@ -39,7 +38,6 @@ export async function fetchScrumBoard(
 
 export type ScrumCardLoadResponse = {
   card: ScrumCard;
-  html?: { bundle?: string };
 };
 
 export async function fetchScrumCard(cardID: string, projectID?: number | null): Promise<ScrumCard> {
@@ -49,18 +47,12 @@ export async function fetchScrumCard(cardID: string, projectID?: number | null):
 
 export async function fetchScrumCardPayload(cardID: string, projectID?: number | null): Promise<ScrumCardLoadResponse> {
   const response = await fetch(`/v1/scrum/cards/${encodeURIComponent(cardID)}${projectQuery(projectID)}`);
-  const payload = await readJSON<{ card?: ScrumCard | null; html?: { bundle?: string } }>(response);
+  const payload = await readJSON<{ card?: ScrumCard | null }>(response);
   if (!payload.card?.id) {
     throw new Error("Card load did not return a card");
   }
-  return { card: payload.card, html: payload.html };
+  return { card: payload.card };
 }
-
-export type ScrumCardModalResponse = {
-  card: ScrumCard;
-  tab: string;
-  html?: { bundle?: string };
-};
 
 export async function fetchScrumCardModal(
   cardID: string,

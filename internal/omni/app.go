@@ -114,6 +114,9 @@ func (a *App) Run(args []string) error {
 	if len(args) > 0 && args[0] == "host" {
 		return a.runHost(args[1:])
 	}
+	if len(args) > 0 && args[0] == "agent" {
+		return a.runAgentMode(args[1:])
+	}
 	strictOneShot := false
 	if len(args) > 0 && args[0] == "run" {
 		strictOneShot = true
@@ -172,6 +175,7 @@ func (a *App) Run(args []string) error {
 		fmt.Fprintln(a.errOut, "  omni patch    inspect or apply unified diffs")
 		fmt.Fprintln(a.errOut, "  omni ollama   prewarm/profile local model calls")
 		fmt.Fprintln(a.errOut, "  omni host     host bridge for native directory picker + browse")
+		fmt.Fprintln(a.errOut, "  omni agent    core-backed interactive agent chat (Cursor/Codex/Omnidex switchable)")
 		fmt.Fprintln(a.errOut, "")
 		fmt.Fprintln(a.errOut, "Flags:")
 		fs.PrintDefaults()

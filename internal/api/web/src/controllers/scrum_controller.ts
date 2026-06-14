@@ -36,16 +36,6 @@ import type { ResolvedModelConfig } from "../lib/model_config_types";
 import type { ResolvedAgentConfig } from "../lib/agent_config_types";
 import { renderScrumBoard, renderScrumColumn, renderScrumColumnNav, renderScrumEmptyState, renderScrumFocusBar, renderScrumFlowSummary } from "../lib/scrum_render";
 import {
-  renderScrumModalCardTab,
-  renderScrumModalFilesTab,
-  renderScrumTagSuggestions,
-  renderScrumCoachChat,
-  renderScrumCoachPanel,
-  renderScrumCoachToasts,
-  renderScrumModalConfigTab,
-  renderScrumModalRecipeTab,
-  renderScrumModalTestsTab,
-  renderScrumModalTabNav,
   renderScrumCreateCardModal,
   type ScrumCardTab,
 } from "../lib/scrum_modal_render";
@@ -54,7 +44,7 @@ import { ScrumBoardDrag, type ScrumDragDropResult } from "../lib/scrum_drag";
 import { debounce, scheduleDomUpdate, yieldToMain } from "../lib/main_thread";
 import type GxController from "./gx_controller";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
-import { cssEscape } from "../lib/dom";
+import { cssEscape, escapeHTML } from "../lib/dom";
 import { showToast } from "../lib/toast";
 import { setGlobalLoading as setOmniGlobalLoading } from "../lib/loading";
 
@@ -139,6 +129,14 @@ export default class ScrumController extends Controller {
     const detail = (event as CustomEvent<{ cardID?: string; projectID?: number; reason?: string; eventName?: string; html?: string }>).detail;
     void this.handleScrumModalRealtime(detail);
   };
+  private reactCardModalTabHandler = (event: Event) => {
+    const detail = (event as CustomEvent<{ card_id?: string; tab?: string }>).detail;
+    if (detail?.card_id && detail.card_id !== this.activeCardID) return;
+    if (detail?.tab && isScrumCardTab(detail.tab)) {
+      this.activeCardTab = detail.tab;
+      if (this.activeCardID) this.rememberActiveCardTab(this.activeCardID);
+    }
+  };
   private chatComponentSubmittedHandler = (event: Event) => {
     const detail = (event as CustomEvent<{ card?: ScrumCard; action?: string; agent?: string; error?: string }>).detail;
     if (detail?.card?.id) {
@@ -216,6 +214,7 @@ export default class ScrumController extends Controller {
     document.addEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
     document.addEventListener("omni:scrum-card-modal-refresh", this.scrumModalRealtimeHandler);
     document.addEventListener("omni:chat-component-submitted", this.chatComponentSubmittedHandler);
+    document.addEventListener("omni:card-modal-tab-changed", this.reactCardModalTabHandler);
     this.restoreOpenCardModalSession();
   }
 
@@ -235,6 +234,7 @@ export default class ScrumController extends Controller {
     document.removeEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
     document.removeEventListener("omni:scrum-card-modal-refresh", this.scrumModalRealtimeHandler);
     document.removeEventListener("omni:chat-component-submitted", this.chatComponentSubmittedHandler);
+    document.removeEventListener("omni:card-modal-tab-changed", this.reactCardModalTabHandler);
     this.stopPolling();
     if (this.coachScanTimer != null) {
       window.clearTimeout(this.coachScanTimer);
@@ -728,6 +728,8 @@ export default class ScrumController extends Controller {
     this.activeCardID = null;
     this.activeCardTab = "card";
     this.channelPilotPendingCardID = null;
+    const { panel } = getModalElements();
+    if (panel) panel.innerHTML = "";
     resetModalPanelWidth();
     this.syncScrumModalRoute();
   }
@@ -773,14 +775,36 @@ export default class ScrumController extends Controller {
 
   private modalCardID(): string | null {
     const panel = this.modalPanel();
-    const root = panel?.querySelector<HTMLElement>("[data-scrum-modal-card-id]");
-    return root?.dataset.scrumModalCardId?.trim() || null;
+    const reactHost = panel?.querySelector<HTMLElement>("[data-card-modal-spa-card-id-value]");
+    if (reactHost?.dataset.cardModalSpaCardIdValue) {
+      return reactHost.dataset.cardModalSpaCardIdValue.trim();
+    }
+    return null;
   }
 
   private isCardModalOpen(): boolean {
     const { modal, panel } = getModalElements();
     if (!modal || modal.classList.contains("hidden")) return false;
-    return Boolean(panel?.querySelector("[data-scrum-tab-panel]"));
+    return Boolean(panel?.querySelector("[data-card-modal-spa-card-id-value], [data-scrum-tab-panel]"));
+  }
+
+  private isReactCardModalOpen(): boolean {
+    const { modal, panel } = getModalElements();
+    if (!modal || modal.classList.contains("hidden")) return false;
+    return Boolean(panel?.querySelector("[data-card-modal-spa-card-id-value]"));
+  }
+
+  private renderReactCardModalHost(cardID: string, tab: string): string {
+    const projectIDAttr = this.projectID && this.projectID > 0
+      ? ` data-card-modal-spa-project-id-value="${this.projectID}"`
+      : "";
+    return `<div data-controller="card-modal-spa" data-card-modal-spa-card-id-value="${escapeHTML(cardID)}"${projectIDAttr} data-card-modal-spa-initial-tab-value="${escapeHTML(tab)}"></div>`;
+  }
+
+  private dispatchReactCardModalRefresh(cardID: string): void {
+    document.dispatchEvent(new CustomEvent("omni:card-modal-spa-refresh", {
+      detail: { cardID, projectID: this.projectID ?? undefined },
+    }));
   }
 
   private visibleCardTabFromDOM(): ScrumCardTab | null {
@@ -908,26 +932,23 @@ export default class ScrumController extends Controller {
     return field?.value?.trim() ?? "";
   }
 
-  private refreshCardDraftPanels(card: ScrumCard, bundle?: string) {
+  private refreshCardDraftPanels(card: ScrumCard) {
     this.rememberActiveCardTab(card.id);
-    if (this.activeCardTab === "card") {
-      this.applyServerBundle(bundle);
+    if (this.isReactCardModalOpen()) {
+      this.dispatchReactCardModalRefresh(card.id);
+      return;
     }
-    this.recycle(
-      "scrum-modal-tabs",
-      `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(card, this.activeCardTab)}</nav>`,
-    );
-    this.scheduleApplyCardTabState();
+    this.dispatchReactCardModalRefresh(card.id);
   }
 
-  private async applyCardLlmSectionsFromServer(cardID: string, bundle?: string) {
-    if (bundle?.trim()) {
-      this.applyServerBundle(bundle);
+  private async applyCardLlmSectionsFromServer(cardID: string) {
+    if (this.isReactCardModalOpen()) {
+      this.dispatchReactCardModalRefresh(cardID);
       return;
     }
     try {
       const payload = await fetchScrumCardPayload(cardID, this.projectID);
-      this.applyServerBundle(payload.html?.bundle);
+      this.refreshCardDraftPanels(payload.card);
     } catch {
       /* sections refresh is best-effort */
     }
@@ -947,12 +968,12 @@ export default class ScrumController extends Controller {
       const result = await cardTicketScrumCard(cardID, payload, this.projectID);
       const card = result.card ?? this.findCard(cardID);
       if (card) {
-        this.refreshCardDraftPanels(card, result.html?.bundle);
+        this.refreshCardDraftPanels(card);
         if (result.queued) {
           this.rememberCardLlmPending([card]);
         }
       } else {
-        await this.applyCardLlmSectionsFromServer(cardID, result.html?.bundle);
+        await this.applyCardLlmSectionsFromServer(cardID);
       }
       void this.refreshIfChanged(cardID);
       const message = result.message?.trim() || (result.queued ? "Queued — you can keep editing" : "Card ticket updated");
@@ -1192,12 +1213,16 @@ export default class ScrumController extends Controller {
   }
 
   private async applyModalFromServer(cardID: string, tab: ScrumCardTab, partial = false): Promise<void> {
+    if (this.isReactCardModalOpen()) {
+      this.dispatchReactCardModalRefresh(cardID);
+      return;
+    }
     const scroll = tab === "channel" ? this.captureChannelScroll() : null;
     try {
       const payload = await fetchScrumCardModal(cardID, this.projectID, { tab, partial });
       await yieldToMain();
       this.lastModalPollSymbol = this.cardModalPollSymbol(payload.card);
-      this.applyServerBundle(payload.html?.bundle);
+      this.applyServerBundle((payload as unknown as { html?: { bundle?: string } }).html?.bundle);
       this.scheduleApplyCardTabState();
       if (tab === "channel") {
         this.restoreChannelScroll(scroll, true);
@@ -1227,13 +1252,17 @@ export default class ScrumController extends Controller {
     const cardID = String(detail?.cardID ?? "").trim();
     if (!cardID || !this.isCardModalOpen() || this.modalCardID() !== cardID) return;
     if (detail?.projectID && this.projectID && detail.projectID !== this.projectID) return;
+    if (this.isReactCardModalOpen()) {
+      this.scheduleBoardRefresh();
+      return;
+    }
     const reason = String(detail?.reason ?? "").toLowerCase();
     if (reason.includes("channel") || reason.includes("chat") || detail?.eventName === "chat-component-update") {
       return;
     }
     this.activeCardID = cardID;
     this.rememberActiveCardTab(cardID);
-    // GX already applied detail.html (LLM section bundles). Avoid stacking health + full modal fetches.
+    // GX already applied detail.html (legacy LLM section bundles). Avoid stacking health + full modal fetches.
     if (detail?.html?.trim()) {
       this.scheduleApplyCardTabState();
       this.scheduleBoardRefresh();
@@ -1364,8 +1393,6 @@ export default class ScrumController extends Controller {
       if (payload.card) {
         this.refreshCardDraftPanels(payload.card);
       }
-      this.recycle("scrum-coach-toasts", renderScrumCoachToasts(payload.suggestions ?? []));
-      this.recycle("scrum-coach-chat", renderScrumCoachChat(payload.card));
     } catch {
       // ignore transient coach scan failures
     }
@@ -1401,8 +1428,6 @@ export default class ScrumController extends Controller {
       if (payload.card) {
         this.refreshCardDraftPanels(payload.card);
       }
-      this.recycle("scrum-coach-toasts", renderScrumCoachToasts(payload.suggestions ?? []));
-      this.recycle("scrum-coach-chat", renderScrumCoachChat(payload.card));
       const input = form.querySelector('[data-scrum-field="coachMessage"]') as HTMLTextAreaElement | null;
       if (input) input.value = "";
       await this.reloadBoard(cardID);
@@ -1428,9 +1453,13 @@ export default class ScrumController extends Controller {
     if (this.activeCardID === cardID && this.isCardModalOpen()) {
       this.rememberActiveCardTab(cardID);
       this.syncScrumModalRoute();
-      this.scheduleApplyCardTabState();
-      void this.refreshActiveModal(cardID);
-      this.wireCoachAutoScan();
+      if (this.isReactCardModalOpen()) {
+        this.dispatchReactCardModalRefresh(cardID);
+      } else {
+        this.scheduleApplyCardTabState();
+        void this.refreshActiveModal(cardID);
+        this.wireCoachAutoScan();
+      }
       return;
     }
 
@@ -1444,14 +1473,15 @@ export default class ScrumController extends Controller {
     card = await this.ensureFullCard(cardID);
     if (!card || !this.board) return;
     try {
-      const payload = await fetchScrumCardModal(cardID, this.projectID, { tab: this.activeCardTab });
       await yieldToMain();
-      this.lastModalPollSymbol = this.cardModalPollSymbol(payload.card);
+      this.lastModalPollSymbol = this.cardModalPollSymbol(card);
       openModalShell({ wide: true });
-      this.applyServerBundle(payload.html?.bundle);
+      const panel = this.modalPanel();
+      if (!panel) {
+        throw new Error("Card modal panel is unavailable");
+      }
+      panel.innerHTML = this.renderReactCardModalHost(cardID, this.activeCardTab);
       this.syncScrumModalRoute();
-      this.scheduleApplyCardTabState();
-      this.wireCoachAutoScan();
     } catch (error) {
       this.actionFail(error);
     }
@@ -1717,8 +1747,7 @@ export default class ScrumController extends Controller {
         await this.reloadBoard(cardID);
       } else {
         this.renderBoardFromLocal(false);
-        const heading = this.modalPanel()?.querySelector("[data-scrum-modal-card-id] h2");
-        if (heading) heading.textContent = card.title;
+        this.dispatchReactCardModalRefresh(cardID);
       }
       this.actionOk("Card saved");
     } catch (error) {
@@ -1740,7 +1769,7 @@ export default class ScrumController extends Controller {
     this.setStatus("Updating checklist…", "busy");
     try {
       const updated = await patchScrumCard(cardID, { checklist }, this.projectID);
-      this.recycle("scrum-modal-card", renderScrumModalCardTab(updated, this.projectFiles));
+      this.dispatchReactCardModalRefresh(updated.id);
       await this.reloadBoard(cardID);
       this.actionOk("Checklist updated");
     } catch (error) {
@@ -1766,7 +1795,7 @@ export default class ScrumController extends Controller {
     this.setStatus("Adding checklist item…", "busy");
     try {
       const updated = await patchScrumCard(cardID, { checklist }, this.projectID);
-      this.recycle("scrum-modal-card", renderScrumModalCardTab(updated, this.projectFiles));
+      this.dispatchReactCardModalRefresh(updated.id);
       await this.reloadBoard(cardID);
       this.actionOk("Checklist item added");
     } catch (error) {
@@ -1800,8 +1829,7 @@ export default class ScrumController extends Controller {
     if (this.tagSearchTimer != null) window.clearTimeout(this.tagSearchTimer);
     this.tagSearchTimer = window.setTimeout(async () => {
       try {
-        const tags = await fetchScrumTags(query, this.projectID);
-        this.recycle("scrum-tag-suggestions", renderScrumTagSuggestions(tags));
+        await fetchScrumTags(query, this.projectID);
       } catch {
         // ignore transient tag search failures
       }
@@ -1871,7 +1899,7 @@ export default class ScrumController extends Controller {
       const payload = await suggestScrumTags(cardID, this.projectID);
       const card = payload.card ?? this.findCard(cardID);
       if (card) {
-        this.refreshCardDraftPanels(card, payload.html?.bundle);
+        this.refreshCardDraftPanels(card);
         this.rememberCardLlmPending([card]);
       }
       void this.refreshIfChanged(cardID);
@@ -1897,8 +1925,7 @@ export default class ScrumController extends Controller {
     this.setStatus("Updating test…", "busy");
     try {
       const updated = await patchScrumCard(cardID, { test_criteria: testCriteria }, this.projectID);
-      this.recycle("scrum-modal-tests", renderScrumModalTestsTab(updated));
-      this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(updated, this.activeCardTab)}</nav>`);
+      this.dispatchReactCardModalRefresh(updated.id);
       await this.reloadBoard(cardID);
       this.actionOk("Test updated");
     } catch (error) {
@@ -1924,8 +1951,7 @@ export default class ScrumController extends Controller {
     this.setStatus("Adding test…", "busy");
     try {
       const updated = await patchScrumCard(cardID, { test_criteria: testCriteria }, this.projectID);
-      this.recycle("scrum-modal-tests", renderScrumModalTestsTab(updated));
-      this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(updated, this.activeCardTab)}</nav>`);
+      this.dispatchReactCardModalRefresh(updated.id);
       await this.reloadBoard(cardID);
       this.actionOk("Test added");
     } catch (error) {
@@ -1979,8 +2005,7 @@ export default class ScrumController extends Controller {
     this.setStatus("Attaching file…", "busy");
     try {
       const updated = await patchScrumCard(cardID, { ref_files: refFiles }, this.projectID);
-      this.recycle("scrum-modal-files", renderScrumModalFilesTab(updated, this.projectFiles, this.projectDirs));
-      this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(updated, this.activeCardTab)}</nav>`);
+      this.dispatchReactCardModalRefresh(updated.id);
       await this.reloadBoard(cardID);
       this.actionOk("Reference attached");
     } catch (error) {
@@ -2000,8 +2025,7 @@ export default class ScrumController extends Controller {
     this.setStatus("Removing reference…", "busy");
     try {
       const updated = await patchScrumCard(cardID, { ref_files: refFiles }, this.projectID);
-      this.recycle("scrum-modal-files", renderScrumModalFilesTab(updated, this.projectFiles, this.projectDirs));
-      this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(updated, this.activeCardTab)}</nav>`);
+      this.dispatchReactCardModalRefresh(updated.id);
       await this.reloadBoard(cardID);
       this.actionOk("Reference removed");
     } catch (error) {
@@ -2021,8 +2045,7 @@ export default class ScrumController extends Controller {
       const payload = await uploadScrumCardFiles(cardID, files, this.projectID);
       if (input) input.value = "";
       await this.loadProjectFiles();
-      this.recycle("scrum-modal-files", renderScrumModalFilesTab(payload.card, this.projectFiles, this.projectDirs));
-      this.recycle("scrum-modal-tabs", `<nav class="flex flex-wrap gap-2" aria-label="Card sections">${renderScrumModalTabNav(payload.card, this.activeCardTab)}</nav>`);
+      this.dispatchReactCardModalRefresh(payload.card.id);
       await this.reloadBoard(cardID);
       this.actionOk(`Uploaded ${payload.uploaded?.length ?? files.length} file(s)`);
     } catch (error) {

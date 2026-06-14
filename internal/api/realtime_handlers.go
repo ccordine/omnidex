@@ -43,14 +43,16 @@ func parseTelemetryNotifyPayload(raw string) telemetryNotifyPayload {
 }
 
 type realtimeMessage struct {
-	ID        uint64 `json:"id"`
-	HTML      string `json:"html"`
-	EventName string `json:"eventName,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-	Toast     string `json:"toast,omitempty"`
-	ToastTone string `json:"toastTone,omitempty"`
-	ProjectID int64  `json:"projectID,omitempty"`
-	CardID    string `json:"cardID,omitempty"`
+	ID        uint64         `json:"id"`
+	HTML      string         `json:"html,omitempty"`
+	EventName string         `json:"eventName,omitempty"`
+	Reason    string         `json:"reason,omitempty"`
+	Toast     string         `json:"toast,omitempty"`
+	ToastTone string         `json:"toastTone,omitempty"`
+	ProjectID int64          `json:"projectID,omitempty"`
+	CardID    string         `json:"cardID,omitempty"`
+	Card      *ScrumCard     `json:"card,omitempty"`
+	PlayQueue map[string]any `json:"playQueue,omitempty"`
 }
 
 func (s *Server) ensureRealtimeHub() *RealtimeHub {

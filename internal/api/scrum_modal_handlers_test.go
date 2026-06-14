@@ -1,13 +1,14 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func TestScrumCardModalReturnsBundle(t *testing.T) {
+func TestScrumCardModalReturnsTypedContextWithoutBundle(t *testing.T) {
 	server := NewServer(nil, &fakeLLMClient{})
 	if server.scrumStore == nil {
 		t.Fatal("expected scrum store")
@@ -23,16 +24,33 @@ func TestScrumCardModalReturnsBundle(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{
-		`"bundle"`,
-		`data-recyclr-target`,
-		`"tab":"card"`,
-		`data-scrum-modal-card-id`,
-		`scrum#closeModal`,
-		`card-ticket`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("missing %q in %s", want, body)
-		}
+	if strings.Contains(body, `"bundle"`) || strings.Contains(body, `data-recyclr-target`) || strings.Contains(body, `data-scrum-modal-card-id`) {
+		t.Fatalf("modal context must not include legacy HTML bundle: %s", body)
+	}
+	var payload struct {
+		Card struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"card"`
+		Board       ScrumBoard         `json:"board"`
+		Tab         string             `json:"tab"`
+		Files       []string           `json:"files"`
+		PlayQueue   map[string]any     `json:"play_queue"`
+		ModelFields []scrumConfigField `json:"model_fields"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if payload.Card.ID != card.ID || payload.Card.Title != "Modal test" {
+		t.Fatalf("unexpected card payload: %#v", payload.Card)
+	}
+	if payload.Tab != "card" {
+		t.Fatalf("tab=%q want card", payload.Tab)
+	}
+	if payload.Board.ID == "" {
+		t.Fatalf("expected board context: %#v", payload.Board)
+	}
+	if payload.PlayQueue == nil {
+		t.Fatal("expected play queue context")
 	}
 }

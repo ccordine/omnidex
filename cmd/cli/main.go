@@ -165,7 +165,12 @@ func runEnqueue(c *client.Client, args []string) {
 	modelPlan := fs.String("model-plan", "", "override planner model for this job")
 	modelVerify := fs.String("model-verify", "", "override verification evaluator model for this job")
 	modelMemory := fs.String("model-memory", "", "override memory-inference model for this job")
+	agentFlagPointers := registerCLIAgentRuntimeFlags(fs)
 	_ = fs.Parse(args)
+	agentOverrides, err := cliAgentRuntimeConfigFromFlags(agentFlagPointers.Values())
+	if err != nil {
+		die(err.Error())
+	}
 	architectMode, err := applyExecutionProfile(
 		args,
 		*profile,
@@ -303,6 +308,7 @@ func runEnqueue(c *client.Client, args []string) {
 	if strings.TrimSpace(*modelMemory) != "" {
 		metadata["model_memory"] = strings.TrimSpace(*modelMemory)
 	}
+	agentOverrides.ApplyToMetadata(metadata)
 	if err := persistHostCapabilityMemory(c, hostSnapshot); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: capability memory sync failed: %v\n", err)
 	}
@@ -344,7 +350,12 @@ func runChat(c *client.Client, args []string) {
 	modelPlan := fs.String("model-plan", "", "override planner model for this chat session")
 	modelVerify := fs.String("model-verify", "", "override verification evaluator model for this chat session")
 	modelMemory := fs.String("model-memory", "", "override memory-inference model for this chat session")
+	agentFlagPointers := registerCLIAgentRuntimeFlags(fs)
 	_ = fs.Parse(args)
+	agentOverrides, err := cliAgentRuntimeConfigFromFlags(agentFlagPointers.Values())
+	if err != nil {
+		die(err.Error())
+	}
 	architectMode, err := applyExecutionProfile(
 		args,
 		*profile,
@@ -468,6 +479,7 @@ func runChat(c *client.Client, args []string) {
 	if strings.TrimSpace(*modelMemory) != "" {
 		baseMetadata["model_memory"] = strings.TrimSpace(*modelMemory)
 	}
+	agentOverrides.ApplyToMetadata(baseMetadata)
 	if err := persistHostCapabilityMemory(c, hostSnapshot); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: capability memory sync failed: %v\n", err)
 	}
@@ -489,6 +501,9 @@ func runChat(c *client.Client, args []string) {
 	})
 	defer restorePermissionPrompt()
 	ui.printBanner(session, architectMode)
+	if len(agentOverrides.ToMap()) > 0 {
+		emitSystem(ui, agentOverrides.Summary())
+	}
 
 	for {
 		var line string
@@ -569,7 +584,7 @@ func runChat(c *client.Client, args []string) {
 		}
 
 		if strings.HasPrefix(line, "/") {
-			handled, quit := handleChatReplCommand(line, &session, &lastJobID, ui)
+			handled, quit := handleChatReplCommand(line, &session, &lastJobID, baseMetadata, agentOverrides, ui)
 			if quit {
 				return
 			}
@@ -1787,6 +1802,8 @@ func parseQueuedTurnInput(raw string) (string, bool) {
 }
 
 func captureQueuedTurnInput(
+	c *client.Client,
+	jobID int64,
 	input *chatInputReader,
 	pendingInputs *[]string,
 	ui *chatUI,
@@ -1820,10 +1837,58 @@ func captureQueuedTurnInput(
 		if command == "exit" || command == "quit" {
 			return true, nil
 		}
+		if strings.HasPrefix(strings.TrimSpace(event.line), "/") {
+			if handled, quit := handleActiveTurnSlashCommand(c, jobID, strings.TrimSpace(event.line), ui); handled {
+				return quit, nil
+			}
+		}
 
 		if strings.TrimSpace(event.line) != "" {
-			emitSystem(ui, "turn in progress: TAB + message + Enter queues a follow-up for the next turn")
+			emitSystem(ui, "turn in progress: TAB + message queues a follow-up; /interrupt, /replan, and /cancel steer the active job")
 		}
+	}
+}
+
+func handleActiveTurnSlashCommand(c *client.Client, jobID int64, line string, ui *chatUI) (bool, bool) {
+	command, body := parseSlashCommand(line)
+	switch command {
+	case "help":
+		printInteractiveInputHelp()
+		return true, false
+	case "cancel":
+		job, err := c.Cancel(context.Background(), jobID, body)
+		if err != nil {
+			emitAssistantError(ui, "error canceling job: "+err.Error())
+			return true, false
+		}
+		emitSystem(ui, fmt.Sprintf("canceled job %d status=%s", job.ID, job.Status))
+		return true, false
+	case "interrupt":
+		if strings.TrimSpace(body) == "" {
+			emitSystem(ui, "usage: /interrupt <context>")
+			return true, false
+		}
+		job, err := c.Interrupt(context.Background(), jobID, body)
+		if err != nil {
+			emitAssistantError(ui, "error interrupting job: "+err.Error())
+			return true, false
+		}
+		emitSystem(ui, fmt.Sprintf("interrupt submitted for job %d status=%s", job.ID, job.Status))
+		return true, false
+	case "replan":
+		if strings.TrimSpace(body) == "" {
+			emitSystem(ui, "usage: /replan <context>")
+			return true, false
+		}
+		job, err := c.Replan(context.Background(), jobID, body)
+		if err != nil {
+			emitAssistantError(ui, "error replanning job: "+err.Error())
+			return true, false
+		}
+		emitSystem(ui, fmt.Sprintf("replan submitted for job %d status=%s", job.ID, job.Status))
+		return true, false
+	default:
+		return false, false
 	}
 }
 
@@ -1841,6 +1906,7 @@ func awaitInteractiveTurn(
 	lastStatus := ""
 	lastStepStatus := map[int64]string{}
 	lastStepDetails := map[int64]string{}
+	lastExternalOutputOffsets := map[int64]int{}
 	seenContextIDs := map[int64]struct{}{}
 
 	for {
@@ -1859,6 +1925,9 @@ func awaitInteractiveTurn(
 		if progress || verbose {
 			printed = printStepStatusUpdatesWithUI(details.Steps, lastStepStatus, ui) || printed
 		}
+		if progress && !verbose {
+			printed = printExternalAgentStreamUpdatesWithUI(details.Steps, lastExternalOutputOffsets, ui, maxChars) || printed
+		}
 		if verbose {
 			printed = printStepDetailUpdates(details.Steps, lastStepDetails, maxChars) || printed
 		}
@@ -1870,7 +1939,7 @@ func awaitInteractiveTurn(
 		}
 
 		if status != model.JobStatusWaiting {
-			quit, err := captureQueuedTurnInput(input, pendingInputs, ui)
+			quit, err := captureQueuedTurnInput(c, jobID, input, pendingInputs, ui)
 			if err != nil {
 				return model.JobDetails{}, false, err
 			}
@@ -1965,7 +2034,7 @@ func awaitInteractiveTurn(
 	}
 }
 
-func handleChatReplCommand(line string, sessionID *string, lastJobID *int64, ui *chatUI) (bool, bool) {
+func handleChatReplCommand(line string, sessionID *string, lastJobID *int64, baseMetadata map[string]any, agentOverrides *cliAgentRuntimeConfig, ui *chatUI) (bool, bool) {
 	command, body := parseSlashCommand(line)
 	switch command {
 	case "exit", "quit":
@@ -1999,10 +2068,107 @@ func handleChatReplCommand(line string, sessionID *string, lastJobID *int64, ui 
 			emitSystem(ui, "no prior turns in this chat session")
 		}
 		return true, false
+	case "agent":
+		if strings.TrimSpace(body) == "" {
+			emitSystem(ui, agentOverrides.Summary())
+			return true, false
+		}
+		if isResetRuntimeValue(body) || strings.EqualFold(strings.TrimSpace(body), "core") || strings.EqualFold(strings.TrimSpace(body), "default") {
+			agentOverrides.Clear()
+			agentOverrides.ApplyToMetadata(baseMetadata)
+			emitSystem(ui, "agent override cleared; core default will be used")
+			return true, false
+		}
+		if err := agentOverrides.Set("agent_system", body); err != nil {
+			emitAssistantError(ui, err.Error())
+			return true, false
+		}
+		agentOverrides.ApplyToMetadata(baseMetadata)
+		emitSystem(ui, agentOverrides.Summary())
+		return true, false
+	case "model":
+		if strings.TrimSpace(body) == "" {
+			emitSystem(ui, "usage: /model <model-name>")
+			return true, false
+		}
+		message, err := setActiveChatModel(baseMetadata, agentOverrides, body)
+		if err != nil {
+			emitAssistantError(ui, err.Error())
+			return true, false
+		}
+		agentOverrides.ApplyToMetadata(baseMetadata)
+		emitSystem(ui, message)
+		return true, false
+	case "reasoning":
+		if strings.TrimSpace(body) == "" {
+			emitSystem(ui, "reasoning_level="+strings.TrimSpace(fmt.Sprint(baseMetadata["reasoning_level"])))
+			return true, false
+		}
+		if _, err := setChatMetadataOverride(baseMetadata, "reasoning_level", body); err != nil {
+			emitAssistantError(ui, err.Error())
+			return true, false
+		}
+		emitSystem(ui, "reasoning_level="+strings.TrimSpace(fmt.Sprint(baseMetadata["reasoning_level"])))
+		return true, false
+	case "set":
+		key, value, ok := parseRuntimeSetBody(body)
+		if !ok {
+			emitSystem(ui, "usage: /set <setting> <value>")
+			return true, false
+		}
+		if normalizeRuntimeConfigKey(key) == "agent_model" || normalizeRuntimeConfigKey(key) == "model" {
+			message, err := setActiveChatModel(baseMetadata, agentOverrides, value)
+			if err != nil {
+				emitAssistantError(ui, err.Error())
+				return true, false
+			}
+			agentOverrides.ApplyToMetadata(baseMetadata)
+			emitSystem(ui, message)
+			return true, false
+		}
+		if err := agentOverrides.Set(key, value); err == nil {
+			agentOverrides.ApplyToMetadata(baseMetadata)
+			emitSystem(ui, agentOverrides.Summary())
+			return true, false
+		} else if !strings.Contains(err.Error(), "unknown agent setting") {
+			emitAssistantError(ui, err.Error())
+			return true, false
+		}
+		handled, err := setChatMetadataOverride(baseMetadata, key, value)
+		if err != nil {
+			emitAssistantError(ui, err.Error())
+			return true, false
+		}
+		if !handled {
+			emitAssistantError(ui, fmt.Sprintf("unknown setting %q", key))
+			return true, false
+		}
+		emitSystem(ui, chatRuntimeSettingsSummary(baseMetadata, agentOverrides))
+		return true, false
+	case "settings":
+		emitSystem(ui, chatRuntimeSettingsSummary(baseMetadata, agentOverrides))
+		return true, false
 	default:
 		emitSystem(ui, "unknown command. type /help")
 		return true, false
 	}
+}
+
+func parseRuntimeSetBody(body string) (string, string, bool) {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return "", "", false
+	}
+	parts := strings.Fields(body)
+	if len(parts) < 2 {
+		return "", "", false
+	}
+	key := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(strings.TrimPrefix(body, parts[0]))
+	if key == "" || value == "" {
+		return "", "", false
+	}
+	return key, value, true
 }
 
 func parseSlashCommand(line string) (string, string) {
@@ -2026,6 +2192,13 @@ func printInteractiveChatHelp() {
 	fmt.Println("  /session <id>      switch to a specific session id")
 	fmt.Println("  /new               start a fresh session id")
 	fmt.Println("  /last              show most recent job id")
+	fmt.Println("  /settings          show active chat/model/agent overrides")
+	fmt.Println("  /agent             show active execution-agent override")
+	fmt.Println("  /agent <name>      switch agent override: omnidex|cursor|codex")
+	fmt.Println("  /agent reset       clear agent override and use core defaults")
+	fmt.Println("  /model <name>      set model for the active agent override")
+	fmt.Println("  /reasoning <mode>  set thinking level: auto|fast|deep")
+	fmt.Println("  /set <key> <value> set an agent/runtime key such as codex_reasoning_effort, codex_sandbox, model_plan, web, verify")
 	fmt.Println("  /exit              quit interactive mode")
 	fmt.Println("  progress note      live stage/event updates are shown by default (disable with --progress=false)")
 	fmt.Println("  phase note         stage lines include phase=planning|execution|review")
@@ -2050,6 +2223,7 @@ func printInteractiveInputHelp() {
 	fmt.Println("  /interrupt <text>  inject context into the active job")
 	fmt.Println("  /replan <text>     restart the job from plan with new context")
 	fmt.Println("  /cancel [reason]   stop the active job")
+	fmt.Println("  note               during a running turn, type these slash commands directly; TAB + text queues a follow-up")
 	fmt.Println("  /exit              quit interactive mode")
 }
 
@@ -2818,8 +2992,8 @@ func usage() {
 	fmt.Println("usage: omni <command> [flags] [args]")
 	fmt.Println("")
 	fmt.Println("commands:")
-	fmt.Println("  enqueue [--profile default|architect] [--pipeline assistant|chat|story] [--web auto|on|off] [--workspace auto|on|off] [--allow-missing-tools] [--search-query text] [--reasoning auto|fast|deep] [--autonomy auto|on|off] [--approval auto|on|off] [--verify auto|on|off] [--verify-iterations 1-4] [--session id] [--model-plan m] [--model-analyze m] [--model-response m] [--model-search m] [--model-tagger m] [--model-verify m] [--model-memory m] <instruction>")
-	fmt.Println("  chat [--profile default|architect] [--session id] [--web auto|on|off] [--workspace auto|on|off] [--local-media] [--local-browser] [--local-screen] [--local-shell] [--local-audio] [--allow-missing-tools] [--reasoning auto|fast|deep] [--autonomy auto|on|off] [--approval auto|on|off] [--verify auto|on|off] [--verify-iterations 1-4] [--confirm-actions] [--interval 2s] [--progress] [--verbose] [--max-chars 1200] [--model-plan m] [--model-analyze m] [--model-response m] [--model-search m] [--model-tagger m] [--model-verify m] [--model-memory m] [initial message]")
+	fmt.Println("  enqueue [--profile default|architect] [--pipeline assistant|chat|story] [--agent omnidex|cursor|codex] [--agent-model m] [--cursor-model m] [--codex-model m] [--codex-reasoning-effort minimal|low|medium|high|xhigh] [--web auto|on|off] [--workspace auto|on|off] [--allow-missing-tools] [--search-query text] [--reasoning auto|fast|deep] [--autonomy auto|on|off] [--approval auto|on|off] [--verify auto|on|off] [--verify-iterations 1-4] [--session id] [--model-plan m] [--model-analyze m] [--model-response m] [--model-search m] [--model-tagger m] [--model-verify m] [--model-memory m] <instruction>")
+	fmt.Println("  chat [--profile default|architect] [--session id] [--agent omnidex|cursor|codex] [--agent-model m] [--cursor-model m] [--codex-model m] [--codex-reasoning-effort minimal|low|medium|high|xhigh] [--web auto|on|off] [--workspace auto|on|off] [--local-media] [--local-browser] [--local-screen] [--local-shell] [--local-audio] [--allow-missing-tools] [--reasoning auto|fast|deep] [--autonomy auto|on|off] [--approval auto|on|off] [--verify auto|on|off] [--verify-iterations 1-4] [--confirm-actions] [--interval 2s] [--progress] [--verbose] [--max-chars 1200] [--model-plan m] [--model-analyze m] [--model-response m] [--model-search m] [--model-tagger m] [--model-verify m] [--model-memory m] [initial message]")
 	fmt.Println("  list [--status status] [--limit N] [--offset N]")
 	fmt.Println("  show [--inspect] <job-id>")
 	fmt.Println("  watch [--interval 2s] [--progress] [--verbose] [--max-chars 1200] <job-id>")

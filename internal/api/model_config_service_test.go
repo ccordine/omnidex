@@ -71,6 +71,39 @@ func TestEnrichJobMetadataGeneralWebChatUsesNativeAgentWithoutWorkspace(t *testi
 	}
 }
 
+func TestEnrichJobMetadataAppliesInstanceAgentConfigForCLIChat(t *testing.T) {
+	s := &Server{}
+	raw := []byte(`{
+		"client_cwd":"/tmp/work",
+		"instance_agent_config":{
+			"agent_system":"codex",
+			"codex_model":"gpt-5.3-codex",
+			"codex_reasoning_effort":"high"
+		}
+	}`)
+	out, _, err := s.enrichJobMetadata(context.Background(), raw, ScrumCard{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payload["execution_agent"] != "codex" {
+		t.Fatalf("execution_agent=%#v want codex", payload["execution_agent"])
+	}
+	if payload["agent_config_source"] != "instance" {
+		t.Fatalf("agent_config_source=%#v want instance", payload["agent_config_source"])
+	}
+	cfg, ok := payload["agent_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected agent_config map, got %#v", payload["agent_config"])
+	}
+	if cfg["codex_model"] != "gpt-5.3-codex" || cfg["codex_reasoning_effort"] != "high" {
+		t.Fatalf("agent_config not preserved: %#v", cfg)
+	}
+}
+
 func TestGeneralWebChatWithoutWorkspaceRequiresNoProjectContext(t *testing.T) {
 	if !generalWebChatWithoutWorkspace(map[string]any{"source": "omni-web-chat"}) {
 		t.Fatal("expected plain web chat to be workspace-free")

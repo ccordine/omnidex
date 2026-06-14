@@ -182,9 +182,6 @@ func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
 	if ticketJob != nil {
 		payload["ticket_job"] = ticketJob
 		payload["message"] = fmt.Sprintf("Queued card ticket job #%d", ticketJob.ID)
-		payload["html"] = map[string]any{
-			"bundle": renderScrumCardLLMSectionBundle(card),
-		}
 	}
 	writeJSON(w, http.StatusCreated, payload)
 }
@@ -239,9 +236,6 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"card": card,
-			"html": map[string]any{
-				"bundle": renderScrumCardLLMSectionBundle(card),
-			},
 		})
 	case http.MethodPatch:
 		body, err := io.ReadAll(r.Body)
