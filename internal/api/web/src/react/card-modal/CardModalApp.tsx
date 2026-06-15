@@ -132,10 +132,13 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
     document.dispatchEvent(new CustomEvent("omni:card-modal-tab-changed", { detail: { card_id: cardID, tab } }));
   }
 
-  async function runHeaderAction(label: string, fn: () => Promise<ScrumCard | void>, options: { close?: boolean; reload?: boolean } = {}) {
+  async function runHeaderAction(label: string, fn: () => Promise<ScrumCard | void>, options: { close?: boolean; reload?: boolean; refreshBoard?: boolean } = {}) {
     const result = await runMutation(label, fn);
-    if (result && "id" in result) {
+    if (result === null) return;
+    if (result && typeof result === "object" && "id" in result) {
       handleCardUpdated(result, { reloadContext: options.reload });
+    } else if (options.refreshBoard) {
+      refreshBoard();
     }
     if (options.close) {
       closeModalShell();
@@ -161,7 +164,7 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
 
   const card = context.card;
   const columns = context.board.columns?.length ? context.board.columns : ["backlog", "ready", "assigned", "in_progress", "review", "blocked", "error", "done"];
-  const playActive = card.play_state === "running" || card.play_state === "queued" || card.play_state === "paused";
+  const canPause = card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing";
 
   return (
     <div data-react-card-modal-card-id={card.id} className="flex max-h-[88vh] min-h-[32rem] flex-col">
@@ -186,7 +189,7 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
                 </option>
               ))}
             </Select>
-            {playActive ? (
+            {canPause ? (
               <ActionButton onClick={() => void runHeaderAction("Pausing play", () => pauseScrumCard(card.id, projectID), { reload: true })}>Pause</ActionButton>
             ) : (
               <ActionButton tone="primary" onClick={() => void runHeaderAction("Queueing play", () => playScrumCard(card.id, projectID), { reload: true })}>Play</ActionButton>
@@ -196,7 +199,7 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
               tone="danger"
               onClick={() => {
                 if (!window.confirm("Delete this scrum card?")) return;
-                void runHeaderAction("Deleting card", () => deleteScrumCard(card.id, projectID), { close: true });
+                void runHeaderAction("Deleting card", () => deleteScrumCard(card.id, projectID), { close: true, refreshBoard: true });
               }}
             >
               Delete

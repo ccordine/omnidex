@@ -6,9 +6,16 @@ import type { CardModalChildProps } from "./types";
 
 function initialValues(fields: ScrumConfigField[] = [], overrides: Record<string, string> = {}) {
   const out: Record<string, string> = {};
-  for (const field of fields) out[field.key] = overrides[field.key] ?? field.value ?? "";
+  for (const field of fields) {
+    if (overrides[field.key] != null) out[field.key] = overrides[field.key];
+  }
   for (const [key, value] of Object.entries(overrides)) out[key] = value;
   return out;
+}
+
+function inheritLabel(field: ScrumConfigField) {
+  const inherited = field.value?.trim();
+  return inherited ? `Inherit (${inherited})` : "Inherit default";
 }
 
 function ConfigFields({ fields, values, onChange }: { fields: ScrumConfigField[]; values: Record<string, string>; onChange: (key: string, value: string) => void }) {
@@ -21,7 +28,7 @@ function ConfigFields({ fields, values, onChange }: { fields: ScrumConfigField[]
           {field.description ? <span className="text-xs text-zinc-500">{field.description}</span> : null}
           {field.options?.length ? (
             <Select value={values[field.key] ?? ""} onChange={(event) => onChange(field.key, event.target.value)}>
-              <option value="">Project/default</option>
+              <option value="">{inheritLabel(field)}</option>
               {field.options.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -29,7 +36,7 @@ function ConfigFields({ fields, values, onChange }: { fields: ScrumConfigField[]
               ))}
             </Select>
           ) : (
-            <TextInput value={values[field.key] ?? ""} onChange={(event) => onChange(field.key, event.target.value)} />
+            <TextInput value={values[field.key] ?? ""} placeholder={field.value || "Inherit default"} onChange={(event) => onChange(field.key, event.target.value)} />
           )}
         </label>
       ))}
@@ -51,7 +58,7 @@ export function ConfigTab({ context, projectID, runMutation, onCardUpdated }: Ca
   useEffect(() => {
     setModelValues(initialValues(modelFields, context.model_overrides));
     setAgentValues(initialValues(agentFields, context.agent_overrides));
-  }, [card.id, card.updated_at, context.model_source, context.agent_source]);
+  }, [card.id, card.updated_at, context.model_overrides, context.agent_overrides]);
 
   async function saveModel(values = modelValues) {
     const updated = await runMutation("Saving model settings", () => patchScrumCard(card.id, { model_config: compact(values) }, projectID));
