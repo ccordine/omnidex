@@ -11,7 +11,10 @@ import (
 )
 
 func (s *Server) validateScrumPlayAgent(ctx context.Context, project model.Project, card ScrumCard, instance agentconfig.Config) error {
-	resolved, _ := s.resolveAgentConfig(ctx, project, card, instance)
+	resolved, _, err := s.resolveAgentConfig(ctx, project, card, instance)
+	if err != nil {
+		return err
+	}
 	if !resolved.IsExternal() {
 		return nil
 	}
@@ -51,7 +54,7 @@ func (s *Server) validateScrumPlayAgent(ctx context.Context, project model.Proje
 
 func scrumAgentConfigErrorNote(output string) string {
 	lower := strings.ToLower(output)
-	if !strings.Contains(lower, "strict external agent required") {
+	if !strings.Contains(lower, "selected external agent required") {
 		return ""
 	}
 	if strings.Contains(lower, "codex host preflight failed") || strings.Contains(lower, "codex binary is not available") || strings.Contains(lower, "spawn codex enoent") {

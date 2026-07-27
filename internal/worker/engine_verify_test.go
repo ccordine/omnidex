@@ -34,21 +34,16 @@ func TestDecodeVerificationOutcomeAcceptsArrayGapsAndStringConfidence(t *testing
 	}
 }
 
-func TestApplyVerificationEvaluatorFallbackPolicyDowngradesPass(t *testing.T) {
-	initial := verificationOutcome{
-		Status:     "pass",
-		Confidence: 0.91,
-		Summary:    "verification completed",
+func TestAggregateVerificationConsensusWithoutOutputsFailsClosed(t *testing.T) {
+	outcome, hasMajority, note := aggregateVerificationConsensus(nil, testReport{})
+	if hasMajority {
+		t.Fatal("expected empty evaluator output to reject consensus")
 	}
-	adjusted := applyVerificationEvaluatorFallbackPolicy(initial, 2)
-	if adjusted.Status != "retry" {
-		t.Fatalf("status=%q, want retry", adjusted.Status)
+	if outcome.Status != "retry" || outcome.Confidence != 0 {
+		t.Fatalf("expected fail-closed retry outcome, got %#v", outcome)
 	}
-	if adjusted.Confidence > 0.25 {
-		t.Fatalf("confidence=%v, want <=0.25", adjusted.Confidence)
-	}
-	if len(adjusted.Gaps) == 0 {
-		t.Fatal("expected fallback policy to add a gap note")
+	if !strings.Contains(note, "passes=0") || len(outcome.Gaps) == 0 {
+		t.Fatalf("expected explicit no-output evidence, note=%q outcome=%#v", note, outcome)
 	}
 }
 

@@ -134,19 +134,7 @@ export function renderAgentConfigSection(
       if (field.key === "agent_system") {
         return renderAgentSystemPicker(field, override, inherited, fieldPrefix);
       }
-      if (field.key === "agent_strict") {
-        const checked = override === "true" || (!override && inherited === "true") ? " checked" : "";
-        return `
-          <label class="flex items-start gap-3 rounded-md border border-white/10 bg-zinc-900/50 px-3 py-3">
-            <input type="checkbox" data-${fieldPrefix}-field="agent_${escapeHTML(field.key)}" class="mt-1 rounded border-white/20 bg-zinc-900 text-cyan-300"${checked} />
-            <span>
-              <span class="block text-sm text-zinc-200">${escapeHTML(field.label)}</span>
-              <span class="mt-1 block text-[11px] leading-5 text-zinc-600">${escapeHTML(field.description)}</span>
-            </span>
-          </label>
-        `;
-      }
-      return renderAgentOptionField(field, override, inherited, fieldPrefix);
+    return renderAgentOptionField(field, override, inherited, fieldPrefix);
     })
     .join("");
 
@@ -238,15 +226,7 @@ export function renderGlobalAgentSettings(fields: AgentFieldDefinition[]): strin
           </fieldset>
         `;
       }
-      if (field.key === "agent_strict") {
-        return `
-          <label class="flex items-center gap-3">
-            <input type="checkbox" data-admin-field="agent_${field.key}" class="rounded border-white/20 bg-zinc-900 text-cyan-300"${field.value === "true" ? " checked" : ""} />
-            <span class="text-sm text-zinc-200">${field.label}</span>
-          </label>
-        `;
-      }
-      if (field.options?.length) {
+    if (field.options?.length) {
         return `
           <label class="block">
             <span class="text-xs text-zinc-500">${escapeHTML(field.label)}</span>

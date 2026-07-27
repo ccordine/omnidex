@@ -17,6 +17,8 @@ const (
 	JobStatusWaiting   = "waiting_input"
 )
 
+const V3MaxAuthorityDirectives = 64
+
 const (
 	StepStatusPending   = "pending"
 	StepStatusRunning   = "running"
@@ -27,14 +29,15 @@ const (
 )
 
 const (
-	PipelineAssistant = "assistant"
-	PipelineChat      = "chat"
-	PipelineCoding    = "coding"
-	PipelineStory     = "story"
+	PipelineAssistant       = "assistant"
+	PipelineChat            = "chat"
+	PipelineCoding          = "coding"
+	PipelineStory           = "story"
 	PipelineDataQuery       = "data_query"
 	PipelineDataExplore     = "data_explore"
 	PipelineProjectDebugger = "project_debugger"
 	PipelineScrumCardLLM    = "scrum_card_llm"
+	PipelineScrum           = "scrum"
 )
 
 const (

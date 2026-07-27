@@ -14,38 +14,47 @@ func ExecuteDeterministicPipeline(ctx context.Context, session *Session, input s
 	summaries := make([]string, 0, 8)
 
 	routeStarted := time.Now().UTC()
-	route := RouteTools(ctx, client, registry, input)
+	route, routeErr := RouteTools(ctx, client, registry, input)
 	routeDuration := time.Since(routeStarted)
+
+	if routeErr != nil {
+		events = append(events, Event{
+			ID:      nextEventID(),
+			Type:    "routing_failed",
+			Summary: "router_llm phase failed",
+			Details: map[string]string{
+				"source":      string(route.Source),
+				"raw_output":  route.RawOutput,
+				"error":       routeErr.Error(),
+				"duration_ms": fmt.Sprintf("%d", routeDuration.Milliseconds()),
+			},
+			CreatedAt: nowUTC(),
+		})
+		_ = runLogger.Log("router", "routing_failed", map[string]interface{}{
+			"source":      route.Source,
+			"raw_output":  route.RawOutput,
+			"error":       routeErr.Error(),
+			"duration_ms": routeDuration.Milliseconds(),
+		})
+		return "", events, fmt.Errorf("route tools: %w", routeErr)
+	}
 
 	events = append(events, Event{
 		ID:      nextEventID(),
 		Type:    "routing_completed",
 		Summary: "router_llm phase completed",
 		Details: map[string]string{
-			"source":         route.Source,
+			"source":         string(route.Source),
 			"raw_output":     route.RawOutput,
 			"selected_tools": strings.Join(route.SelectedTools, ","),
 			"duration_ms":    fmt.Sprintf("%d", routeDuration.Milliseconds()),
 		},
 		CreatedAt: nowUTC(),
 	})
-	if strings.TrimSpace(route.ParseError) != "" {
-		events = append(events, Event{
-			ID:      nextEventID(),
-			Type:    "routing_parse_warning",
-			Summary: "Router output required deterministic fallback",
-			Details: map[string]string{
-				"error": route.ParseError,
-			},
-			CreatedAt: nowUTC(),
-		})
-	}
-
 	logFields := map[string]interface{}{
 		"source":         route.Source,
 		"raw_output":     route.RawOutput,
 		"selected_tools": strings.Join(route.SelectedTools, ","),
-		"parse_error":    route.ParseError,
 		"duration_ms":    routeDuration.Milliseconds(),
 	}
 	if route.LLMResponse != nil {

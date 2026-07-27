@@ -1,1 +1,8 @@
-{"type":"object","required":["response"],"properties":{"response":{"type":"string"},"claim_ids":{"type":"array","items":{"type":"string"}}}}
+{
+  "type": "object",
+  "required": ["response"],
+  "properties": {
+    "response": {"type": "string"}
+  },
+  "additionalProperties": false
+}

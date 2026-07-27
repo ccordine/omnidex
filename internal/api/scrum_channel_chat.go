@@ -5,12 +5,95 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
+
+const (
+	scrumChannelDefaultPageSize  = 50
+	scrumChannelMaxPageSize      = 100
+	scrumRealtimeChannelPageSize = 25
+)
+
+type scrumChannelMessagePage struct {
+	Messages     []ScrumChatMessage
+	BeforeCursor string
+	HasMore      bool
+	Total        int
+}
+
+func parseScrumChannelPageLimit(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return scrumChannelDefaultPageSize, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit <= 0 || limit > scrumChannelMaxPageSize {
+		return 0, fmt.Errorf("channel limit must be between 1 and %d", scrumChannelMaxPageSize)
+	}
+	return limit, nil
+}
+
+func scrumChannelMessagePageFor(card ScrumCard, limit int, before string) (scrumChannelMessagePage, error) {
+	if limit <= 0 || limit > scrumChannelMaxPageSize {
+		return scrumChannelMessagePage{}, fmt.Errorf("channel limit must be between 1 and %d", scrumChannelMaxPageSize)
+	}
+	messages := displayScrumChannelMessages(card)
+	end := len(messages)
+	before = strings.TrimSpace(before)
+	if before != "" {
+		found := false
+		for index, message := range messages {
+			if scrumChatMessageID(message) == before {
+				end = index
+				found = true
+				break
+			}
+		}
+		if !found {
+			return scrumChannelMessagePage{}, fmt.Errorf("channel cursor %q was not found", before)
+		}
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	page := append([]ScrumChatMessage(nil), messages[start:end]...)
+	beforeCursor := ""
+	if len(page) > 0 {
+		beforeCursor = scrumChatMessageID(page[0])
+	}
+	return scrumChannelMessagePage{
+		Messages:     page,
+		BeforeCursor: beforeCursor,
+		HasMore:      start > 0,
+		Total:        len(messages),
+	}, nil
+}
+
+func scrumChannelBusy(card ScrumCard) bool {
+	switch strings.TrimSpace(card.PlayState) {
+	case scrumPlayRunning, scrumPlayQueued, scrumPlayReviewing:
+		return true
+	default:
+		return false
+	}
+}
+
+func scrumCardChannelPayload(card ScrumCard, limit int) ScrumCard {
+	page, err := scrumChannelMessagePageFor(card, limit, "")
+	if err != nil {
+		panic(fmt.Sprintf("build bounded scrum channel payload: %v", err))
+	}
+	card.Chat = page.Messages
+	card.ChatCount = page.Total
+	card.ConsoleLog = ""
+	return card
+}
 
 func appendScrumChatMessage(existing []ScrumChatMessage, role, content string) []ScrumChatMessage {
 	content = strings.TrimSpace(sanitizeScrumChannelText(content))
@@ -369,6 +452,11 @@ func collapseScrumChannelDisplayMessages(messages []ScrumChatMessage) []ScrumCha
 		case "tool":
 			if lastActivity, ok := parseChannelActivity(last.Content); ok {
 				if nextActivity, ok := parseChannelActivity(msg.Content); ok && sameChannelActivity(lastActivity, nextActivity) {
+					last.Content = formatChannelActivity(mergeChannelActivity(lastActivity, nextActivity))
+					if strings.TrimSpace(msg.CreatedAt) != "" {
+						last.CreatedAt = msg.CreatedAt
+					}
+					out[lastIdx] = last
 					continue
 				}
 			}

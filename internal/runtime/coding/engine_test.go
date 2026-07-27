@@ -49,72 +49,14 @@ func TestEngineRunsPlannerArchitectChangeLoopInOrder(t *testing.T) {
 	}
 }
 
-func TestPlannerOnlyCreatesTopLevelCodingTasks(t *testing.T) {
-	planner := deterministicPlanner{}
-	plan, err := planner.Plan(context.Background(), Request{Goal: "change this code correctly"})
-	if err != nil {
-		t.Fatal(err)
+func TestCodingEngineRejectsMissingConcreteRoles(t *testing.T) {
+	_, err := NewEngine(EngineConfig{}).Run(context.Background(), Request{Goal: "change code correctly"})
+	if err == nil {
+		t.Fatal("incomplete coding engine must fail instead of running synthetic roles")
 	}
-	if plan.Goal == "" || len(plan.Tasks) != 1 {
-		t.Fatalf("plan=%+v, want one top-level task", plan)
-	}
-	for _, task := range plan.Tasks {
-		if task.ID == "" || task.Objective == "" {
-			t.Fatalf("task must be concrete: %+v", task)
-		}
-	}
-	taskType := reflect.TypeOf(CodingPlannerTask{})
-	forbidden := []string{"Kind", "Path", "Validator", "Command", "Patch", "Writes", "Deletes", "Tools"}
-	for _, field := range forbidden {
-		if _, ok := taskType.FieldByName(field); ok {
-			t.Fatalf("planner task must not directly create file edits or run tools; found field %q", field)
-		}
-	}
-}
-
-func TestArchitectCreatesConcreteQueues(t *testing.T) {
-	architect := deterministicArchitect{}
-	queue, err := architect.Queue(context.Background(), CodingPlannerTask{ID: "task_1", Objective: "update runtime"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if queue.TaskID != "task_1" {
-		t.Fatalf("TaskID=%q want task_1", queue.TaskID)
-	}
-	if queue.Reads == nil || queue.Tests == nil || queue.Writes == nil || queue.Deletes == nil || queue.Validations == nil {
-		t.Fatalf("architect must emit concrete read/test/write/delete/validation queues: %+v", queue)
-	}
-	if len(queue.Reads) == 0 || len(queue.Writes) == 0 || len(queue.Validations) == 0 {
-		t.Fatalf("architect queue must include concrete read/write/validation queues: %+v", queue)
-	}
-	for _, step := range queue.Writes {
-		if step.Kind == "" || step.Intent == "" || step.Validator == "" {
-			t.Fatalf("write step must be concrete: %+v", step)
-		}
-	}
-}
-
-func TestCodingWorkflowDoesNotUseAssistantStages(t *testing.T) {
-	engine := NewDeterministicEngine()
-	result, err := engine.Run(context.Background(), Request{Goal: "change code correctly"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	forbidden := []string{
-		"analysis",
-		"response_draft",
-		"external_research",
-		"memory_review",
-		"generic_verification",
-		"v3_analysis",
-		"v3_response_draft",
-		"v3_external_research",
-		"v3_memory_review",
-		"v3_verification",
-	}
-	for _, stage := range forbidden {
-		if containsCall(result.Events, stage) {
-			t.Fatalf("coding workflow executed forbidden assistant stage %q in %v", stage, result.Events)
+	for _, role := range []string{"interpreter", "planner", "coder", "change_validator", "final_summarizer"} {
+		if !strings.Contains(err.Error(), role) {
+			t.Fatalf("configuration error %q does not name missing role %q", err, role)
 		}
 	}
 }

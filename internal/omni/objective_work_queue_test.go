@@ -327,6 +327,69 @@ func TestArchitectReadAndDeleteObservationsSatisfyScopedItems(t *testing.T) {
 	}
 }
 
+func TestCommandPassedPredicateCreatesTypedCommandEvidence(t *testing.T) {
+	items := []ObjectiveWorkItem{{
+		ID:                 "verify_go_version",
+		Kind:               WorkItemKindVerify,
+		RequiredEvidence:   []EvidenceKind{EvidenceKindCommand},
+		EvidencePredicates: []string{"command_passed:go version"},
+		Status:             WorkItemStatusPending,
+	}}
+	reconciled := ReconcileObjectiveWorkItemsFromObservations(items, []StructuredCommandObservation{{
+		Command:  "go version",
+		ExitCode: 0,
+		Stdout:   "go version go1.26 linux/amd64",
+	}})
+	if result := ValidateObjectiveWorkForest(reconciled); !result.Passed {
+		t.Fatalf("matching command predicate did not create typed evidence: %#v; %s", reconciled, result.Reason)
+	}
+}
+
+func TestCommandPassedPredicateRejectsUnrelatedCommandEvidence(t *testing.T) {
+	items := []ObjectiveWorkItem{{
+		ID:                 "verify_go_version",
+		Kind:               WorkItemKindVerify,
+		RequiredEvidence:   []EvidenceKind{EvidenceKindCommand},
+		EvidencePredicates: []string{"command_passed:go version"},
+		Status:             WorkItemStatusPending,
+	}}
+	reconciled := ReconcileObjectiveWorkItemsFromObservations(items, []StructuredCommandObservation{{
+		Command:  "go env GOVERSION",
+		ExitCode: 0,
+	}})
+	if result := ValidateObjectiveWorkForest(reconciled); result.Passed {
+		t.Fatalf("unrelated command incorrectly satisfied typed predicate: %#v", reconciled)
+	}
+}
+
+func TestCommandPassedPredicatesRequireEveryCommand(t *testing.T) {
+	items := []ObjectiveWorkItem{{
+		ID:               "verify_recipe",
+		Kind:             WorkItemKindVerify,
+		RequiredEvidence: []EvidenceKind{EvidenceKindCommand},
+		EvidencePredicates: []string{
+			"command_passed:test -f package.json",
+			"command_passed:test -f dist/bundle.js",
+		},
+		Status: WorkItemStatusPending,
+	}}
+	reconciled := ReconcileObjectiveWorkItemsFromObservations(items, []StructuredCommandObservation{{
+		Command:  "test -f package.json",
+		ExitCode: 0,
+	}})
+	if result := ValidateObjectiveWorkForest(reconciled); result.Passed {
+		t.Fatalf("one successful command satisfied a two-command contract: %#v", reconciled)
+	}
+
+	reconciled = ReconcileObjectiveWorkItemsFromObservations(items, []StructuredCommandObservation{
+		{Command: "test -f package.json", ExitCode: 0},
+		{Command: "test -f dist/bundle.js", ExitCode: 0},
+	})
+	if result := ValidateObjectiveWorkForest(reconciled); !result.Passed {
+		t.Fatalf("all required commands should satisfy the contract: %#v; %s", reconciled, result.Reason)
+	}
+}
+
 func passedWorkItem(id string, kind WorkItemKind) ObjectiveWorkItem {
 	return ObjectiveWorkItem{
 		ID:               id,

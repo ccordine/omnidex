@@ -32,8 +32,13 @@ type content struct {
 }
 
 type generateRequest struct {
-	SystemInstruction *content  `json:"systemInstruction,omitempty"`
-	Contents          []content `json:"contents"`
+	SystemInstruction *content          `json:"systemInstruction,omitempty"`
+	Contents          []content         `json:"contents"`
+	GenerationConfig  *generationConfig `json:"generationConfig,omitempty"`
+}
+
+type generationConfig struct {
+	ResponseMIMEType string `json:"responseMimeType"`
 }
 
 type generateResponse struct {
@@ -105,11 +110,18 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 		promptHint = llm.MinimalGeneratePrompt
 	}
 
-	var parsed generateResponse
-	if err := c.doJSON(ctx, modelPath(model)+":generateContent", generateRequest{
+	request := generateRequest{
 		SystemInstruction: &content{Parts: []part{{Text: system}}},
 		Contents:          []content{{Role: "user", Parts: []part{{Text: promptHint}}}},
-	}, &parsed); err != nil {
+	}
+	if prepared.ResponseFormat != "" {
+		if prepared.ResponseFormat != llm.ResponseFormatJSON {
+			return "", fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
+		}
+		request.GenerationConfig = &generationConfig{ResponseMIMEType: "application/json"}
+	}
+	var parsed generateResponse
+	if err := c.doJSON(ctx, modelPath(model)+":generateContent", request, &parsed); err != nil {
 		return "", err
 	}
 	if len(parsed.Candidates) == 0 {

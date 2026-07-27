@@ -7,11 +7,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
-
-	"github.com/gryph/omnidex/internal/ollama"
 )
 
 const (
@@ -20,32 +17,6 @@ const (
 	ollamaProbeAttempts   = 2
 	ollamaProbeRetryDelay = 400 * time.Millisecond
 )
-
-type researchStatusResponse struct {
-	GenerationProvider generationProviderStatus `json:"generation_provider"`
-	Ollama             ollamaRuntimeStatus      `json:"ollama,omitempty"`
-	WebSearch          webSearchRuntimeStatus   `json:"web_search"`
-	ResearchRunnable   bool                     `json:"research_runnable"`
-	Warnings           []string                 `json:"warnings,omitempty"`
-}
-
-type generationProviderStatus struct {
-	Provider  string `json:"provider"`
-	Reachable bool   `json:"reachable"`
-	Error     string `json:"error,omitempty"`
-}
-
-type ollamaRuntimeStatus struct {
-	BaseURL             string   `json:"base_url,omitempty"`
-	Reachable           bool     `json:"reachable"`
-	ConfiguredModels    []string `json:"configured_models,omitempty"`
-	AvailableModels     []string `json:"available_models,omitempty"`
-	MissingModels       []string `json:"missing_models,omitempty"`
-	EmbeddingModel      string   `json:"embedding_model,omitempty"`
-	EmbeddingAvailable  bool     `json:"embedding_available"`
-	LastProviderError   string   `json:"last_provider_error,omitempty"`
-	RecommendedHostHint string   `json:"recommended_host_hint,omitempty"`
-}
 
 type webSearchRuntimeStatus struct {
 	Enabled           bool                   `json:"enabled"`
@@ -86,82 +57,9 @@ func (s *Server) handleResearchStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.ollamaReachabilityBudget())
 	defer cancel()
-	writeJSON(w, http.StatusOK, s.collectResearchStatus(ctx))
-}
-
-func (s *Server) collectResearchStatus(ctx context.Context) researchStatusResponse {
-	provider := strings.ToLower(strings.TrimSpace(s.defaultProvider))
-	if provider == "" {
-		provider = "ollama"
-	}
-	status := researchStatusResponse{
-		GenerationProvider: generationProviderStatus{Provider: provider, Reachable: true},
-		WebSearch:          s.collectWebSearchStatus(ctx),
-		ResearchRunnable:   true,
-	}
-	if provider == "ollama" {
-		status.Ollama = s.collectOllamaRuntimeStatus(ctx)
-		status.GenerationProvider.Reachable = status.Ollama.Reachable
-		status.GenerationProvider.Error = status.Ollama.LastProviderError
-		if !status.Ollama.Reachable {
-			status.ResearchRunnable = false
-			status.Warnings = append(status.Warnings, "ollama is unreachable from the core process; queued jobs may fail until OLLAMA_BASE_URL is reachable from the core container")
-		}
-		if len(status.Ollama.MissingModels) > 0 {
-			status.Warnings = append(status.Warnings, "one or more configured Ollama models are missing")
-		}
-	}
-	if status.WebSearch.Enabled && !status.WebSearch.ReachableProvider {
-		status.Warnings = append(status.Warnings, "no configured web search provider passed the reachability probe; research may run in degraded mode from local/docs/memory context only")
-	}
-	return status
-}
-
-func (s *Server) collectOllamaRuntimeStatus(ctx context.Context) ollamaRuntimeStatus {
-	status := ollamaRuntimeStatus{
-		BaseURL:             s.ollamaEndpoint(),
-		ConfiguredModels:    s.configuredOllamaModels(),
-		EmbeddingModel:      strings.TrimSpace(s.ollamaEmbeddingModel),
-		RecommendedHostHint: "If core runs in Docker, use OLLAMA_BASE_URL=http://host.docker.internal:11434; Ollama must listen on 0.0.0.0:11434. On Arch with UFW, run scripts/ufw-docker-host.sh if probes time out from the container.",
-	}
-	models, err := s.probeOllamaTags(ctx)
-	if err != nil {
-		status.LastProviderError = err.Error()
-		return status
-	}
-	status.Reachable = true
-	status.AvailableModels = models
-	for _, model := range status.ConfiguredModels {
-		if !ollama.ModelIsAvailable(models, model) {
-			status.MissingModels = append(status.MissingModels, model)
-		}
-	}
-	if status.EmbeddingModel != "" {
-		status.EmbeddingAvailable = ollama.ModelIsAvailable(models, status.EmbeddingModel)
-	}
-	return status
-}
-
-func (s *Server) configuredOllamaModels() []string {
-	values := []string{s.ollamaDefaultModel}
-	if s.ollamaEmbeddingModel != "" {
-		values = append(values, s.ollamaEmbeddingModel)
-	}
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		model := strings.TrimSpace(value)
-		if model == "" {
-			continue
-		}
-		if _, ok := seen[model]; ok {
-			continue
-		}
-		seen[model] = struct{}{}
-		out = append(out, model)
-	}
-	sort.Strings(out)
-	return out
+	status := s.collectResearchStatus(ctx)
+	status.HTML = renderResearchStatusHTML(status)
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) collectWebSearchStatus(ctx context.Context) webSearchRuntimeStatus {

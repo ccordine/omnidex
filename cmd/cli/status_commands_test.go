@@ -1,10 +1,31 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
 )
+
+func TestStatusLLMProviderUsesAuthoritativeCatalog(t *testing.T) {
+	t.Setenv("LLM_PROVIDER", "local")
+	provider, err := statusLLMProvider()
+	if err != nil || provider != "ollama" {
+		t.Fatalf("statusLLMProvider()=%q error=%v", provider, err)
+	}
+
+	t.Setenv("LLM_PROVIDER", "dashscope")
+	provider, err = statusLLMProvider()
+	if err != nil || provider != "qwen" {
+		t.Fatalf("statusLLMProvider()=%q error=%v", provider, err)
+	}
+
+	t.Setenv("LLM_PROVIDER", "invented-provider")
+	provider, err = statusLLMProvider()
+	if err == nil || provider != "" || !strings.Contains(err.Error(), "invented-provider") {
+		t.Fatalf("statusLLMProvider()=%q error=%v, want explicit rejection", provider, err)
+	}
+}
 
 func TestParseStatusCSV(t *testing.T) {
 	got := parseStatusCSV(" google,reddit,google, ,yahoo ")

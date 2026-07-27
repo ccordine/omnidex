@@ -63,7 +63,10 @@ func (s *Server) startProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 	if err != nil {
 		return ScrumBoard{}, ScrumCard{}, "", err
 	}
-	cfg := loadScrumAutoWorkConfig(project.Settings)
+	cfg, err := loadScrumAutoWorkConfig(project.Settings)
+	if err != nil {
+		return ScrumBoard{}, ScrumCard{}, "", err
+	}
 	if !cfg.Enabled {
 		cfg.Enabled = true
 		if err := s.saveScrumAutoWorkConfig(r.Context(), project, cfg); err != nil {
@@ -83,7 +86,9 @@ func (s *Server) startProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 	}
 	next := s.nextAutoWorkScrumCard(refreshed, cfg)
 	if next == nil {
-		s.RefreshScrumAutoWorkAsync()
+		if err := s.RefreshScrumAutoWorkAsync(); err != nil {
+			return ScrumBoard{}, ScrumCard{}, "", err
+		}
 		return refreshed, ScrumCard{}, "auto-work enabled; no eligible cards found", nil
 	}
 	started, err := s.startScrumCardPlay(r, refreshed, projectID, next.ID, agentconfig.Config{})
@@ -94,7 +99,9 @@ func (s *Server) startProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 	if err != nil {
 		return ScrumBoard{}, ScrumCard{}, "", err
 	}
-	s.RefreshScrumAutoWorkAsync()
+	if err := s.RefreshScrumAutoWorkAsync(); err != nil {
+		return ScrumBoard{}, ScrumCard{}, "", err
+	}
 	return refreshed, started, "auto-work enabled and job queued", nil
 }
 
@@ -106,7 +113,10 @@ func (s *Server) pauseProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 	if err != nil {
 		return ScrumBoard{}, 0, "", err
 	}
-	cfg := loadScrumAutoWorkConfig(project.Settings)
+	cfg, err := loadScrumAutoWorkConfig(project.Settings)
+	if err != nil {
+		return ScrumBoard{}, 0, "", err
+	}
 	if cfg.Enabled {
 		cfg.Enabled = false
 		if err := s.saveScrumAutoWorkConfig(r.Context(), project, cfg); err != nil {
@@ -124,17 +134,28 @@ func (s *Server) pauseProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 		default:
 			continue
 		}
-		if jobID, err := parseJobID(strings.TrimSpace(card.JobID)); err == nil && jobID > 0 {
-			_, _ = s.repo.CancelJob(r.Context(), jobID, "project auto-work paused")
+		jobIDText := strings.TrimSpace(card.JobID)
+		if jobIDText != "" {
+			jobID, err := parseJobID(jobIDText)
+			if err != nil {
+				return ScrumBoard{}, paused, "", fmt.Errorf("parse job id for Scrum card %q: %w", card.ID, err)
+			}
+			if _, err := s.repo.CancelJob(r.Context(), jobID, "project auto-work paused"); err != nil {
+				return ScrumBoard{}, paused, "", fmt.Errorf("cancel job %d for Scrum card %q: %w", jobID, card.ID, err)
+			}
+		} else if card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing {
+			return ScrumBoard{}, paused, "", fmt.Errorf("active Scrum card %q has no job id", card.ID)
 		}
 		card.Column = "assigned"
 		card.PlayState = scrumPlayPaused
 		card.QueueOrder = 0
 		card = appendScrumChannelEvent(card, "system", "Project auto-work paused")
-		if saved, err := s.persistScrumCard(r, projectID, card); err == nil {
-			s.publishScrumModalCardRefresh(r.Context(), projectID, saved, "project auto-work paused")
-			paused++
+		saved, err := s.persistScrumCard(r, projectID, card)
+		if err != nil {
+			return ScrumBoard{}, paused, "", fmt.Errorf("persist paused Scrum card %q: %w", card.ID, err)
 		}
+		s.publishScrumCardUpdate(r.Context(), projectID, saved, "project auto-work paused")
+		paused++
 	}
 	refreshed, err := s.scrumBoardFromProject(r.Context(), projectID)
 	if err != nil {

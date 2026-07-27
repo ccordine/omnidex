@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -48,6 +49,29 @@ func TestProjectLocationFromMetadata(t *testing.T) {
 				t.Fatalf("projectLocationFromMetadata(%q)=%q want %q", tc.metadata, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestProjectReferenceFromMetadataUsesHardTypedProjectID(t *testing.T) {
+	ref, err := projectReferenceFromMetadata([]byte(`{"project_id":42,"client_cwd":"/repo/app"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ref.HasProjectID || ref.ProjectID != 42 || ref.Location != "/repo/app" {
+		t.Fatalf("unexpected reference: %#v", ref)
+	}
+
+	for _, raw := range []string{
+		`{"project_id":"42"}`,
+		`{"project_id":0}`,
+		`{"project_id":1.5}`,
+		`{"project_id":true}`,
+		`{"project_id":42,"client_cwd":123}`,
+		`{`,
+	} {
+		if _, err := projectReferenceFromMetadata([]byte(raw)); err == nil {
+			t.Fatalf("metadata %q must fail loudly", raw)
+		}
 	}
 }
 
@@ -111,7 +135,7 @@ func TestEnqueueJobPreservesCustomProjectName(t *testing.T) {
 		t.Fatalf("CreateProject name=%q want %q", project.Name, customName)
 	}
 
-	if _, err := repo.EnqueueJob(ctx, "test instruction", "scrum", []byte(metadata)); err != nil {
+	if _, err := repo.EnqueueJob(ctx, "test instruction", model.PipelineAssistant, []byte(metadata)); err != nil {
 		t.Fatal(err)
 	}
 

@@ -3,10 +3,35 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelconfig"
 )
+
+func TestEnvModelConfigProcessEnvironmentOverridesEnvFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("OLLAMA_MODEL_REASONING=file-reasoning\nOLLAMA_MODEL_PLANNER=file-planner\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OMNI_ENV_FILE", path)
+	t.Setenv("OMNI_REASONING_MODEL", "")
+	t.Setenv("OMNI_PLANNER_MODEL", "")
+	t.Setenv("OMNI_STRUCTURED_PLANNER_MODEL", "")
+	t.Setenv("OLLAMA_MODEL_REASONING", "process-reasoning")
+	t.Setenv("OLLAMA_MODEL_PLANNER", "process-planner")
+
+	cfg, err := (&Server{}).envModelConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Get("reasoning_model") != "process-reasoning" || cfg.Get("planner_model") != "process-planner" {
+		t.Fatalf("process environment did not override env file: %#v", cfg)
+	}
+}
 
 func TestResolveModelConfigPriority(t *testing.T) {
 	s := &Server{}
@@ -17,7 +42,10 @@ func TestResolveModelConfigPriority(t *testing.T) {
 		ModelConfig: json.RawMessage(`{"planner_model":"card-planner"}`),
 	}
 
-	resolved, source := s.resolveModelConfig(project, card)
+	resolved, source, err := s.resolveModelConfig(project, card)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if source != "card" {
 		t.Fatalf("expected card source, got %q", source)
 	}
@@ -26,6 +54,43 @@ func TestResolveModelConfigPriority(t *testing.T) {
 	}
 	if resolved.Get("planner_model") != "card-planner" {
 		t.Fatalf("expected card planner_model, got %q", resolved.Get("planner_model"))
+	}
+}
+
+func TestResolveModelConfigRejectsMalformedDurableLayers(t *testing.T) {
+	s := &Server{}
+	for _, project := range []model.Project{
+		{Settings: json.RawMessage(`null`)},
+		{Settings: json.RawMessage(`{"model_config":{"unknown_model":"x"}}`)},
+		{Settings: json.RawMessage(`{"model_config":{"default_model":42}}`)},
+	} {
+		if _, _, err := s.resolveModelConfig(project, ScrumCard{}); err == nil {
+			t.Fatalf("project settings %s must fail", project.Settings)
+		}
+	}
+	if _, _, err := s.resolveModelConfig(model.Project{}, ScrumCard{ModelConfig: json.RawMessage(`{"planner_model":false}`)}); err == nil {
+		t.Fatal("malformed card model config must fail")
+	}
+}
+
+func TestEnsureOllamaModelsDoesNotPullCloudProviderModels(t *testing.T) {
+	server := NewServerWithOptions(nil, &fakeLLMClient{}, ServerOptions{
+		ProviderConfig: config.Config{
+			LLMProvider:  "qwen",
+			DefaultModel: "Qwen/Qwen3-32B",
+		},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	pulled, err := server.ensureOllamaModels(ctx, modelconfig.Config{
+		"default_model": "Qwen/Qwen3-32B",
+	})
+	if err != nil {
+		t.Fatalf("remote provider model preparation attempted an Ollama request: %v", err)
+	}
+	if len(pulled) != 0 {
+		t.Fatalf("remote provider unexpectedly pulled Ollama models: %v", pulled)
 	}
 }
 
@@ -63,8 +128,9 @@ func TestEnrichJobMetadataGeneralWebChatUsesNativeAgentWithoutWorkspace(t *testi
 	if err := json.Unmarshal(out, &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if payload["execution_agent"] != "omnidex" {
-		t.Fatalf("execution_agent=%#v want omnidex", payload["execution_agent"])
+	cfg, ok := payload["agent_config"].(map[string]any)
+	if !ok || cfg["agent_system"] != "omnidex" {
+		t.Fatalf("agent_config=%#v want omnidex", payload["agent_config"])
 	}
 	if payload["agent_config_source"] != "general_chat" {
 		t.Fatalf("agent_config_source=%#v want general_chat", payload["agent_config_source"])
@@ -88,9 +154,6 @@ func TestEnrichJobMetadataAppliesInstanceAgentConfigForCLIChat(t *testing.T) {
 	var payload map[string]any
 	if err := json.Unmarshal(out, &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)
-	}
-	if payload["execution_agent"] != "codex" {
-		t.Fatalf("execution_agent=%#v want codex", payload["execution_agent"])
 	}
 	if payload["agent_config_source"] != "instance" {
 		t.Fatalf("agent_config_source=%#v want instance", payload["agent_config_source"])

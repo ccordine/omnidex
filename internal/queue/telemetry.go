@@ -35,10 +35,10 @@ type TelemetryEventSummary struct {
 }
 
 type TelemetryDashboardSummary struct {
-	LiveRuns       []TelemetryRunSummary   `json:"live_runs"`
-	RecentRuns     []TelemetryRunSummary   `json:"recent_runs,omitempty"`
-	StatusCounts   map[string]int          `json:"status_counts,omitempty"`
-	CommonBlockers []TelemetryCountSummary `json:"common_blockers,omitempty"`
+	LiveRuns       []TelemetryRunSummary    `json:"live_runs"`
+	RecentRuns     []TelemetryRunSummary    `json:"recent_runs,omitempty"`
+	StatusCounts   map[string]int           `json:"status_counts,omitempty"`
+	CommonBlockers []TelemetryCountSummary  `json:"common_blockers,omitempty"`
 	Struggle       TelemetryStruggleSummary `json:"struggle,omitempty"`
 }
 
@@ -255,12 +255,17 @@ func (r *Repository) RecordTelemetryEvent(ctx context.Context, record TelemetryE
 	if created.IsZero() {
 		created = time.Now().UTC()
 	}
-	_, err := r.pool.Exec(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin telemetry event transaction: %w", err)
+	}
+	defer tx.Rollback(context.Background())
+	_, err = tx.Exec(ctx, `
 		INSERT INTO omni_run_events (run_id, step, event_type, created_at, payload)
 		VALUES ($1, $2, $3, $4, $5)
 	`, strings.TrimSpace(record.RunID), record.Step, eventType, created, jsonParam(record.Payload))
 	if err != nil {
-		return err
+		return fmt.Errorf("insert telemetry event: %w", err)
 	}
 	notifyPayload := map[string]any{
 		"event_type": eventType,
@@ -269,8 +274,15 @@ func (r *Repository) RecordTelemetryEvent(ctx context.Context, record TelemetryE
 	if record.Payload != nil {
 		notifyPayload["payload"] = record.Payload
 	}
-	if encoded, encErr := json.Marshal(notifyPayload); encErr == nil {
-		_, _ = r.pool.Exec(ctx, `SELECT pg_notify('omni_telemetry', $1)`, string(encoded))
+	encoded, err := json.Marshal(notifyPayload)
+	if err != nil {
+		return fmt.Errorf("encode telemetry notification: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_notify('omni_telemetry', $1)`, string(encoded)); err != nil {
+		return fmt.Errorf("publish telemetry notification: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit telemetry event: %w", err)
 	}
 	return nil
 }

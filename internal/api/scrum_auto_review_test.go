@@ -23,13 +23,18 @@ func TestParseScrumAutoReviewVerdictStatusLine(t *testing.T) {
 
 func TestLoadScrumAutoReviewConfig(t *testing.T) {
 	settings := []byte(`{"scrum_auto_review":{"enabled":true,"bounce_column":"in_progress"}}`)
-	cfg := loadScrumAutoReviewConfig(settings)
+	cfg, err := loadScrumAutoReviewConfig(settings)
+	if err != nil {
+		t.Fatalf("loadScrumAutoReviewConfig: %v", err)
+	}
 	if !cfg.Enabled || cfg.BounceColumn != "in_progress" {
 		t.Fatalf("cfg=%#v", cfg)
 	}
-	cfg = loadScrumAutoReviewConfig([]byte(`{"scrum_auto_review":{"enabled":true,"bounce_column":"done"}}`))
-	if cfg.BounceColumn != "assigned" {
-		t.Fatalf("invalid bounce should default to assigned, got %q", cfg.BounceColumn)
+	if _, err := loadScrumAutoReviewConfig([]byte(`{"scrum_auto_review":{"enabled":true,"bounce_column":"done"}}`)); err == nil {
+		t.Fatal("invalid auto-review bounce column must fail")
+	}
+	if _, err := loadScrumAutoReviewConfig([]byte(`{"scrum_auto_review":`)); err == nil {
+		t.Fatal("invalid auto-review settings JSON must fail")
 	}
 }
 

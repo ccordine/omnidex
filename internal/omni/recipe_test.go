@@ -30,6 +30,12 @@ func TestLoadFrontendRecipeManifest(t *testing.T) {
 		if objective.Status != "pending" {
 			t.Fatalf("objective %s status = %q", objective.ID, objective.Status)
 		}
+		if objective.Kind != string(WorkItemKindVerify) {
+			t.Fatalf("objective %s kind = %q, want verify", objective.ID, objective.Kind)
+		}
+		if len(objective.RequiredEvidence) != len(recipe.CompletionChecks) {
+			t.Fatalf("objective %s predicates = %#v, want one per completion check", objective.ID, objective.RequiredEvidence)
+		}
 	}
 }
 

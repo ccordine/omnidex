@@ -14,7 +14,7 @@ func TestResolveScrumPlayOutcomeForCardUsesChannelSuccess(t *testing.T) {
 	job := model.JobDetails{
 		Job: model.Job{
 			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"cursor","scrum_raw_play":true}`),
+			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
 		},
 		Steps: []model.Step{{
 			Output: `{"agent":"cursor","type":"started","message":"Cursor external implementation session started"}
@@ -44,7 +44,7 @@ func TestResolveScrumPlayOutcomeCompletedWithoutStatusMovesToSuccess(t *testing.
 	job := model.JobDetails{
 		Job: model.Job{
 			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"cursor","scrum_raw_play":true}`),
+			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
 		},
 		Steps: []model.Step{{
 			Output: `{"agent":"cursor","type":"completed","message":"Cursor external implementation session completed"}`,
@@ -65,7 +65,7 @@ func TestResolveScrumPlayOutcomeCompletedInProgressStatusIsProgrammatic(t *testi
 	job := model.JobDetails{
 		Job: model.Job{
 			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"cursor","scrum_raw_play":true}`),
+			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
 		},
 		Steps: []model.Step{{Output: "SCRUM_STATUS: in_progress"}},
 	}

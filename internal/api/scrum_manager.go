@@ -22,7 +22,6 @@ const (
 )
 
 var scrumStatusLinePattern = regexp.MustCompile(`(?im)^SCRUM_STATUS:\s*(success|failed|blocked|in_progress)\s*$`)
-var scrumStatusAnywherePattern = regexp.MustCompile(`(?i)SCRUM_STATUS:\s*(success|failed|blocked|in_progress)`)
 var scrumStatusJSONPattern = regexp.MustCompile(`(?i)"scrum_status"\s*:\s*"(success|failed|blocked|in_progress)"`)
 var agentStreamLenPattern = regexp.MustCompile(`(?m)^\[\[agent-stream-len:\d+\]\]\s*$`)
 var agentStreamLenValuePattern = regexp.MustCompile(`\[\[agent-stream-len:(\d+)\]\]`)
@@ -38,16 +37,14 @@ func parseScrumManagerOutcome(text string) (ScrumManagerOutcome, bool) {
 	if text == "" {
 		return "", false
 	}
-	if match := scrumStatusLinePattern.FindStringSubmatch(text); len(match) > 1 {
-		return ScrumManagerOutcome(strings.ToLower(match[1])), true
+	matches := append(
+		scrumStatusLinePattern.FindAllStringSubmatch(text, -1),
+		scrumStatusJSONPattern.FindAllStringSubmatch(text, -1)...,
+	)
+	if len(matches) != 1 || len(matches[0]) < 2 {
+		return "", false
 	}
-	if match := scrumStatusJSONPattern.FindStringSubmatch(text); len(match) > 1 {
-		return ScrumManagerOutcome(strings.ToLower(match[1])), true
-	}
-	if match := scrumStatusAnywherePattern.FindStringSubmatch(text); len(match) > 1 {
-		return ScrumManagerOutcome(strings.ToLower(match[1])), true
-	}
-	return "", false
+	return ScrumManagerOutcome(strings.ToLower(matches[0][1])), true
 }
 
 // StripAgentStreamMarker removes internal sync markers from card console_log for display.
@@ -125,6 +122,9 @@ func resolveProgrammaticScrumOutcome(details model.JobDetails, evidence string) 
 	if outcome, ok := parseScrumManagerOutcome(evidence); ok {
 		return outcome
 	}
+	if strings.Contains(strings.ToUpper(evidence), "SCRUM_STATUS:") || scrumStatusJSONPattern.MatchString(evidence) {
+		return ScrumOutcomeFailed
+	}
 	switch details.Job.Status {
 	case model.JobStatusCompleted:
 		return ScrumOutcomeSuccess
@@ -159,7 +159,7 @@ func scrumColumnForOutcome(outcome ScrumManagerOutcome) scrumColumnTransition {
 	case ScrumOutcomeInProgress:
 		return scrumColumnTransition{Column: "in_progress", PlayState: scrumPlayRunning, ConsoleNote: "play: still in progress"}
 	default:
-		return scrumColumnTransition{Column: "review", PlayState: "", ConsoleNote: "play: moved to review"}
+		return scrumColumnTransition{Column: "error", PlayState: "", ConsoleNote: "play: moved to error (invalid outcome)"}
 	}
 }
 

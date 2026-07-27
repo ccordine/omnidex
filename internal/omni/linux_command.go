@@ -3,6 +3,7 @@ package omni
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -46,17 +47,13 @@ func ExecuteLinuxCommandTool(ctx context.Context, client *OllamaClient, userInpu
 			},
 		})
 		if err != nil {
-			fallbackCommands := extractDeterministicCommandLines(userInput)
-			if len(fallbackCommands) == 0 {
-				return CommandRunResult{}, err
+			generationErr := fmt.Errorf("linux_command generation failed: %w", err)
+			if logErr := runLogger.Log("linux_command", "command_generation_failed", map[string]interface{}{
+				"error": err.Error(),
+			}); logErr != nil {
+				return CommandRunResult{}, errors.Join(generationErr, fmt.Errorf("log linux_command generation failure: %w", logErr))
 			}
-			source = "deterministic_after_ollama_error"
-			commands = fallbackCommands
-			generatedOutput = strings.Join(commands, "\n")
-			_ = runLogger.Log("linux_command", "ollama_error_deterministic_fallback", map[string]interface{}{
-				"error":         err.Error(),
-				"command_count": len(commands),
-			})
+			return CommandRunResult{}, generationErr
 		} else {
 			_ = runLogger.Log("linux_command", "llm_call", map[string]interface{}{
 				"request":               resp.RequestJSON,

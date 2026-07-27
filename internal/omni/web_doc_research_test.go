@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,9 @@ func TestHTMLToSearchableTextRemovesScriptAndKeepsText(t *testing.T) {
 }
 
 func TestLiveWebDocResearchTailwindAndPostgreSQL(t *testing.T) {
+	if strings.TrimSpace(os.Getenv("OMNI_RUN_LIVE_WEB_DOCS")) != "1" {
+		t.Skip("set OMNI_RUN_LIVE_WEB_DOCS=1 to run live documentation fetches")
+	}
 	if testing.Short() {
 		t.Skip("skipping live documentation fetch in short mode")
 	}

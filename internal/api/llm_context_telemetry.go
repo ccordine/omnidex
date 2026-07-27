@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -10,7 +11,7 @@ import (
 )
 
 const (
-	llmContextCharsPerToken         = 24
+	llmContextCharsPerToken           = 24
 	llmContextSourceScrumPilot        = "scrum_pilot"
 	llmContextSourceScrumCoach        = "scrum_coach"
 	llmContextSourceCardTicket        = "scrum_card_ticket"
@@ -92,7 +93,7 @@ func (s *Server) recordLLMContextUsage(ctx context.Context, source, model, provi
 	if callErr != nil {
 		metadata["error"] = callErr.Error()
 	}
-	_ = s.repo.RecordLLMContextUsage(ctx, queue.LLMContextUsageRecord{
+	if err := s.repo.RecordLLMContextUsage(ctx, queue.LLMContextUsageRecord{
 		Source:            source,
 		Model:             strings.TrimSpace(model),
 		Provider:          strings.TrimSpace(provider),
@@ -106,7 +107,16 @@ func (s *Server) recordLLMContextUsage(ctx context.Context, source, model, provi
 		Success:           success,
 		ErrorClass:        classifyAPIContextError(callErr),
 		Metadata:          metadata,
-	})
+	}); err != nil {
+		log.Printf(
+			"LLM context telemetry persistence failed source=%q project=%d card=%q model=%q: %v",
+			source,
+			meta.ProjectID,
+			meta.CardID,
+			strings.TrimSpace(model),
+			err,
+		)
+	}
 }
 
 func (s *Server) llmProviderName() string {

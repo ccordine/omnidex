@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/omni"
 )
 
 func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.ClaimedStep) error {
@@ -31,7 +29,10 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 
 	s.emitStepEvent(claim.Step.ID, "data_source_query_started", record.Name)
 
-	catalog, hasCatalog, _ := s.repo.GetDataSourceCatalog(ctx, sourceID)
+	catalog, hasCatalog, err := s.repo.GetDataSourceCatalog(ctx, sourceID)
+	if err != nil {
+		return fmt.Errorf("load data source catalog: %w", err)
+	}
 	store := &repoCatalogStore{svc: s}
 	writer := &dataSourceMemoryWriter{repo: s.repo}
 	result, updatedCatalog, err := datasource.AnalyticalAsk(ctx, datasource.AnalyticalAskInput{
@@ -48,9 +49,15 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 	}
 	if len(updatedCatalog.Tables) > 0 && (!hasCatalog || updatedCatalog.Fingerprint != catalog.Fingerprint) {
 		updatedCatalog.UpdatedAt = time.Now().UTC()
-		_ = store.Save(ctx, updatedCatalog)
-		_ = s.repo.UpdateDataSourceCatalogTimestamp(ctx, record.ID, updatedCatalog.UpdatedAt)
-		_ = datasource.PersistCatalogMemories(ctx, writer, updatedCatalog)
+		if err := store.Save(ctx, updatedCatalog); err != nil {
+			return fmt.Errorf("save updated data source catalog: %w", err)
+		}
+		if err := s.repo.UpdateDataSourceCatalogTimestamp(ctx, record.ID, updatedCatalog.UpdatedAt); err != nil {
+			return fmt.Errorf("update data source catalog timestamp: %w", err)
+		}
+		if err := datasource.PersistCatalogMemories(ctx, writer, updatedCatalog); err != nil {
+			return fmt.Errorf("persist data source catalog memories: %w", err)
+		}
 	}
 	summary, _, err := datasource.FormatJobResult(result)
 	if err != nil {
@@ -63,7 +70,9 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 	}
 	if channelID := datasource.ParseChannelID(claim.Job.Metadata); channelID != "" {
 		jobID := claim.Job.ID
-		_, _ = s.repo.AddDataSourceChannelMessage(ctx, channelID, "assistant", summary, payloadBytes, &jobID)
+		if _, err := s.repo.AddDataSourceChannelMessage(ctx, channelID, "assistant", summary, payloadBytes, &jobID); err != nil {
+			return fmt.Errorf("append data source channel result: %w", err)
+		}
 	}
 	completeStep := s.completeStep
 	if completeStep == nil {
@@ -71,13 +80,4 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 	}
 	s.emitStepEvent(claim.Step.ID, "data_source_query_completed", summary)
 	return completeStep(ctx, claim.Step.ID, string(payloadBytes), "data_source_query", summary)
-}
-
-func (s *Service) dataSourceLLMClient() (omni.DBManagerLLMClient, error) {
-	endpoint := strings.TrimRight(strings.TrimSpace(s.ollamaBaseURL), "/")
-	if endpoint == "" {
-		return nil, fmt.Errorf("ollama endpoint is not configured for data source queries")
-	}
-	modelName := firstNonEmptyString(s.models.Tagging, s.models.Default, "qwen3:4b-thinking")
-	return omni.NewOllamaClient(endpoint+"/api/chat", modelName), nil
 }

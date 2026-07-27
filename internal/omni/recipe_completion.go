@@ -69,3 +69,21 @@ func FormatRecipeProbeEvidence(results []RecipeCompletionProbeResult) string {
 	}
 	return strings.Join(parts, "; ")
 }
+
+func RecipeProbeObservations(results []RecipeCompletionProbeResult, step int, workspace string) []StructuredCommandObservation {
+	observations := make([]StructuredCommandObservation, 0, len(results))
+	for _, result := range results {
+		observations = append(observations, StructuredCommandObservation{
+			Step:         step,
+			Command:      result.Command,
+			EvidenceKind: "recipe_completion_probe",
+			VerifierID:   result.RecipeID,
+			GeneratedBy:  "runtime",
+			ExitCode:     result.ExitCode,
+			Stdout:       result.Stdout,
+			Stderr:       result.Stderr,
+			CWD:          workspace,
+		})
+	}
+	return observations
+}

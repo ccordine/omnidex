@@ -70,11 +70,12 @@ func (s *Server) handleAPISecretsPut(w http.ResponseWriter, r *http.Request) {
 	if s.secretsResolver != nil {
 		s.secretsResolver.Invalidate()
 	}
-	s.applyStoredSecrets(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"storage":  "database",
-		"fields":   secrets.FieldList(stored),
-		"resolved": s.secretsSnapshot(r.Context()),
+		"storage":          "database",
+		"fields":           secrets.FieldList(stored),
+		"resolved":         s.secretsSnapshot(r.Context()),
+		"restart_required": true,
+		"message":          "API keys were stored. Restart the core service to activate provider credential changes consistently across API and workers.",
 	})
 }
 
@@ -98,25 +99,4 @@ func (s *Server) secretValue(ctx context.Context, key string) string {
 		}
 	}
 	return ""
-}
-
-func (s *Server) applyStoredSecrets(ctx context.Context) {
-	if value := s.secretValue(ctx, "openai_api_key"); value != "" {
-		s.openAIAPIKey = value
-	}
-	if value := s.secretValue(ctx, "anthropic_api_key"); value != "" {
-		s.anthropicAPIKey = value
-	}
-	if value := s.secretValue(ctx, "google_api_key"); value != "" {
-		s.googleAPIKey = value
-	}
-	if value := s.secretValue(ctx, "xai_api_key"); value != "" {
-		s.xAIAPIKey = value
-	}
-	if value := s.secretValue(ctx, "azure_ai_api_key"); value != "" {
-		s.azureAIAPIKey = value
-	}
-	if value := s.secretValue(ctx, "huggingface_api_key"); value != "" {
-		s.huggingFaceAPIKey = value
-	}
 }

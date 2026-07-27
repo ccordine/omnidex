@@ -35,9 +35,9 @@ func chatOrGenerate(ctx context.Context, client LLMClient, modelName, system, us
 	}
 	system = strings.TrimSpace(system)
 	user = strings.TrimSpace(user)
-	if chat := AsChatClient(client); chat != nil {
-		return chat.Chat(ctx, modelName, system, user)
+	chat := AsChatClient(client)
+	if chat == nil {
+		return "", fmt.Errorf("Scrum card LLM requires a chat-capable generation client")
 	}
-	prompt := strings.TrimSpace(system + "\n\n" + user)
-	return client.Generate(ctx, modelName, prompt)
+	return chat.Chat(ctx, modelName, system, user)
 }

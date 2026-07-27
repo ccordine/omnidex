@@ -7,31 +7,40 @@ const toneClasses: Record<ToastTone, string> = {
   ok: "border-emerald-400/35 bg-emerald-950/95 text-emerald-100",
 };
 
-function toastRoot(): HTMLElement {
-  let root = document.getElementById("omni-toast-root");
-  if (!root) {
-    root = document.createElement("div");
-    root.id = "omni-toast-root";
-    root.className = "pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex flex-col items-center gap-2 px-4";
-    document.body.appendChild(root);
-  }
-  return root;
+let hideTimer: number | null = null;
+let hideToken = 0;
+
+function requireToastSurface(): { root: HTMLElement; toast: HTMLElement } {
+  const root = document.getElementById("omni-toast-root");
+  const toast = document.getElementById("omni-toast");
+  if (!root || !toast) throw new Error("The server-rendered toast surface is unavailable.");
+  return { root, toast };
 }
 
 export function showToast(message: string, tone: ToastTone = "info", durationMs = 5200): void {
   const text = String(message ?? "").trim();
   if (!text) return;
 
-  const toast = document.createElement("div");
+  const { root, toast } = requireToastSurface();
+  const token = ++hideToken;
+  if (hideTimer != null) window.clearTimeout(hideTimer);
+  hideTimer = null;
+
   toast.className = `omni-toast pointer-events-auto max-w-lg rounded-lg border px-4 py-3 text-sm shadow-lg backdrop-blur ${toneClasses[tone] ?? toneClasses.info}`;
   toast.setAttribute("role", tone === "error" ? "alert" : "status");
+  root.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
   toast.textContent = text;
-
-  toastRoot().appendChild(toast);
+  toast.hidden = false;
   requestAnimationFrame(() => toast.classList.add("is-visible"));
 
-  window.setTimeout(() => {
+  hideTimer = window.setTimeout(() => {
+    if (token !== hideToken) return;
     toast.classList.remove("is-visible");
-    window.setTimeout(() => toast.remove(), 220);
+    window.setTimeout(() => {
+      if (token !== hideToken) return;
+      toast.hidden = true;
+      toast.textContent = "";
+      hideTimer = null;
+    }, 220);
   }, durationMs);
 }

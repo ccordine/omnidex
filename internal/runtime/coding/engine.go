@@ -123,29 +123,11 @@ func NewEngine(config EngineConfig) *Engine {
 	}
 }
 
-func NewDeterministicEngine() *Engine {
-	validator := passValidator{}
-	return &Engine{
-		Interpreter:            identityInterpreter{},
-		Planner:                deterministicPlanner{},
-		PlanValidator:          validator,
-		Architect:              deterministicArchitect{},
-		ArchitectValidator:     validator,
-		TestWriter:             noopTestWriter{},
-		Coder:                  noopCoder{},
-		ChangeValidator:        validator,
-		ArchitectTaskValidator: validator,
-		EmptyFileScanner:       NewEmptyFileScanner("."),
-		FinalSummarizer:        deterministicSummarizer{},
-		MaxDispositionLoops:    2,
-	}
-}
-
 func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 	if e == nil {
 		return Result{}, fmt.Errorf("coding engine is nil")
 	}
-	if err := e.ensureDefaults(); err != nil {
+	if err := e.validateConfiguration(); err != nil {
 		return Result{}, err
 	}
 
@@ -170,9 +152,6 @@ func (e *Engine) Run(ctx context.Context, req Request) (Result, error) {
 	}
 
 	maxLoops := e.MaxDispositionLoops
-	if maxLoops <= 0 {
-		maxLoops = 1
-	}
 	var disposition PlannerDisposition
 	for i := 0; i < maxLoops; i++ {
 		report, err := e.EmptyFileScanner.ScanEmptyFiles(ctx, interpreted.Workspace)
@@ -264,40 +243,46 @@ func (e *Engine) runDispositionActions(ctx context.Context, disposition PlannerD
 	return nil
 }
 
-func (e *Engine) ensureDefaults() error {
-	defaults := NewDeterministicEngine()
+func (e *Engine) validateConfiguration() error {
+	missing := make([]string, 0, 10)
 	if e.Interpreter == nil {
-		e.Interpreter = defaults.Interpreter
+		missing = append(missing, "interpreter")
 	}
 	if e.Planner == nil {
-		e.Planner = defaults.Planner
+		missing = append(missing, "planner")
 	}
 	if e.PlanValidator == nil {
-		e.PlanValidator = defaults.PlanValidator
+		missing = append(missing, "plan_validator")
 	}
 	if e.Architect == nil {
-		e.Architect = defaults.Architect
+		missing = append(missing, "architect")
 	}
 	if e.ArchitectValidator == nil {
-		e.ArchitectValidator = defaults.ArchitectValidator
+		missing = append(missing, "architect_validator")
 	}
 	if e.TestWriter == nil {
-		e.TestWriter = defaults.TestWriter
+		missing = append(missing, "test_writer")
 	}
 	if e.Coder == nil {
-		e.Coder = defaults.Coder
+		missing = append(missing, "coder")
 	}
 	if e.ChangeValidator == nil {
-		e.ChangeValidator = defaults.ChangeValidator
+		missing = append(missing, "change_validator")
 	}
 	if e.ArchitectTaskValidator == nil {
-		e.ArchitectTaskValidator = defaults.ArchitectTaskValidator
+		missing = append(missing, "architect_task_validator")
 	}
 	if e.EmptyFileScanner == nil {
-		e.EmptyFileScanner = defaults.EmptyFileScanner
+		missing = append(missing, "empty_file_scanner")
 	}
 	if e.FinalSummarizer == nil {
-		e.FinalSummarizer = defaults.FinalSummarizer
+		missing = append(missing, "final_summarizer")
+	}
+	if e.MaxDispositionLoops <= 0 {
+		missing = append(missing, "positive_max_disposition_loops")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("coding engine configuration incomplete: %s", strings.Join(missing, ", "))
 	}
 	return nil
 }

@@ -1,21 +1,16 @@
 package projectdebugger
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"io"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
 )
 
-const (
-	JobSource           = "project_debugger"
-	MetadataProjectID   = "project_id"
-	MetadataAgentSystem = "agent_system"
-	MetadataModel       = "model"
-	MetadataTicketModel = "ticket_model"
-)
+const JobSource = "project_debugger"
 
 type ParsedMetadata struct {
 	ProjectID     int64
@@ -24,17 +19,25 @@ type ParsedMetadata struct {
 	TicketModel   string
 }
 
+type metadataPayload struct {
+	Source        string `json:"source"`
+	ProjectID     int64  `json:"project_id"`
+	AgentSystem   string `json:"agent_system"`
+	AnalyzerModel string `json:"model"`
+	TicketModel   string `json:"ticket_model"`
+}
+
 func JobMetadata(projectID int64, agentSystem, analyzerModel, ticketModel string) ([]byte, error) {
 	if projectID <= 0 {
 		return nil, fmt.Errorf("project_id is required")
 	}
-	payload := map[string]any{
-		"source":              JobSource,
-		MetadataProjectID:     projectID,
-		MetadataAgentSystem:   strings.TrimSpace(agentSystem),
-		MetadataModel:         strings.TrimSpace(analyzerModel),
-		MetadataTicketModel:   strings.TrimSpace(ticketModel),
+	agentSystem = strings.TrimSpace(agentSystem)
+	analyzerModel = strings.TrimSpace(analyzerModel)
+	ticketModel = strings.TrimSpace(ticketModel)
+	if agentSystem == "" || analyzerModel == "" || ticketModel == "" {
+		return nil, fmt.Errorf("agent_system, model, and ticket_model are required")
 	}
+	payload := metadataPayload{Source: JobSource, ProjectID: projectID, AgentSystem: agentSystem, AnalyzerModel: analyzerModel, TicketModel: ticketModel}
 	return json.Marshal(payload)
 }
 
@@ -42,55 +45,45 @@ func IsJobMetadata(raw json.RawMessage) bool {
 	if len(raw) == 0 {
 		return false
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return false
-	}
-	return strings.TrimSpace(stringFromAny(payload["source"])) == JobSource
+	metadata, err := ParseMetadata(raw)
+	return err == nil && metadata.ProjectID > 0
 }
 
 func ParseMetadata(raw json.RawMessage) (ParsedMetadata, error) {
 	if len(raw) == 0 {
 		return ParsedMetadata{}, fmt.Errorf("job metadata is empty")
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	var payload metadataPayload
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
 		return ParsedMetadata{}, fmt.Errorf("parse job metadata: %w", err)
 	}
-	if strings.TrimSpace(stringFromAny(payload["source"])) != JobSource {
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return ParsedMetadata{}, fmt.Errorf("project debugger metadata contains trailing JSON")
+		}
+		return ParsedMetadata{}, fmt.Errorf("project debugger metadata contains trailing data: %w", err)
+	}
+	if strings.TrimSpace(payload.Source) != JobSource {
 		return ParsedMetadata{}, fmt.Errorf("not a project debugger job")
 	}
 	out := ParsedMetadata{
-		AgentSystem:   strings.TrimSpace(stringFromAny(payload[MetadataAgentSystem])),
-		AnalyzerModel: strings.TrimSpace(stringFromAny(payload[MetadataModel])),
-		TicketModel:   strings.TrimSpace(stringFromAny(payload[MetadataTicketModel])),
-	}
-	switch v := payload[MetadataProjectID].(type) {
-	case float64:
-		out.ProjectID = int64(v)
-	case int64:
-		out.ProjectID = v
-	case string:
-		out.ProjectID, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		ProjectID:     payload.ProjectID,
+		AgentSystem:   strings.TrimSpace(payload.AgentSystem),
+		AnalyzerModel: strings.TrimSpace(payload.AnalyzerModel),
+		TicketModel:   strings.TrimSpace(payload.TicketModel),
 	}
 	if out.ProjectID <= 0 {
 		return ParsedMetadata{}, fmt.Errorf("project_id is required")
+	}
+	if out.AgentSystem == "" || out.AnalyzerModel == "" || out.TicketModel == "" {
+		return ParsedMetadata{}, fmt.Errorf("agent_system, model, and ticket_model are required")
 	}
 	return out, nil
 }
 
 func Pipeline() string {
 	return model.PipelineProjectDebugger
-}
-
-func stringFromAny(v any) string {
-	if v == nil {
-		return ""
-	}
-	switch typed := v.(type) {
-	case string:
-		return typed
-	default:
-		return fmt.Sprintf("%v", typed)
-	}
 }

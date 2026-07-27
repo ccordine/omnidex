@@ -54,11 +54,32 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	configured := s.envModelConfig().OllamaModelNames()
-	configuredSet := map[string]struct{}{}
-	for _, name := range configured {
-		configuredSet[name] = struct{}{}
+	modelConfig, err := s.envModelConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
+	configured := []string{}
+	if s.defaultProvider == "ollama" {
+		configured = modelConfig.ModelNames()
+	}
+	providerConfig := s.providerConfiguration()
+	if providerConfig.EmbeddingProvider == "ollama" {
+		embeddingModel := configuredProviderModel(providerConfig, "ollama", true)
+		if embeddingModel != "" {
+			configured = append(configured, embeddingModel)
+		}
+	}
+	configuredSet := map[string]struct{}{}
+	uniqueConfigured := make([]string, 0, len(configured))
+	for _, name := range configured {
+		if _, duplicate := configuredSet[name]; duplicate {
+			continue
+		}
+		configuredSet[name] = struct{}{}
+		uniqueConfigured = append(uniqueConfigured, name)
+	}
+	configured = uniqueConfigured
 	items := make([]map[string]any, 0, len(models))
 	for _, model := range models {
 		_, inUse := configuredSet[model.Name]

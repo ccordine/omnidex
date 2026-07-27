@@ -173,6 +173,9 @@ func ValidateObjectiveWorkTree(item ObjectiveWorkItem) WorkValidationResult {
 			return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("work item %q missing required evidence %q", item.ID, evidenceKind)}
 		}
 	}
+	if predicate := firstUnsatisfiedCommandEvidencePredicate(item); predicate != "" {
+		return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("work item %q missing required command predicate %q", item.ID, predicate)}
+	}
 	return WorkValidationResult{Passed: true, ItemID: item.ID, Reason: fmt.Sprintf("work item %q passed required evidence", item.ID)}
 }
 
@@ -210,7 +213,36 @@ func validateObjectiveWorkEvidenceTree(item ObjectiveWorkItem) WorkValidationRes
 			return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("work item %q missing required evidence %q", item.ID, evidenceKind)}
 		}
 	}
+	if predicate := firstUnsatisfiedCommandEvidencePredicate(item); predicate != "" {
+		return WorkValidationResult{Passed: false, ItemID: item.ID, Reason: fmt.Sprintf("work item %q missing required command predicate %q", item.ID, predicate)}
+	}
 	return WorkValidationResult{Passed: true, ItemID: item.ID, Reason: fmt.Sprintf("work item %q evidence supports passed status", item.ID)}
+}
+
+func firstUnsatisfiedCommandEvidencePredicate(item ObjectiveWorkItem) string {
+	observations := make([]StructuredCommandObservation, 0, len(item.EvidenceRefs))
+	for _, evidence := range item.EvidenceRefs {
+		if evidence.Kind != EvidenceKindCommand || strings.TrimSpace(evidence.Command) == "" {
+			continue
+		}
+		observations = append(observations, StructuredCommandObservation{
+			Command:  evidence.Command,
+			ExitCode: evidence.ExitCode,
+			Stdout:   evidence.Stdout,
+			Stderr:   evidence.Stderr,
+			CWD:      item.Scope.Root,
+		})
+	}
+	for _, predicate := range item.EvidencePredicates {
+		kind, _, ok := strings.Cut(strings.TrimSpace(predicate), ":")
+		if !ok || !strings.EqualFold(strings.TrimSpace(kind), "command_passed") {
+			continue
+		}
+		if !structuredEvidencePredicateSatisfied(predicate, observations, item.Scope.Root) {
+			return predicate
+		}
+	}
+	return ""
 }
 
 func workItemHasRequiredEvidence(item ObjectiveWorkItem, required EvidenceKind) bool {
@@ -408,11 +440,45 @@ func ReconcileObjectiveWorkItemsFromObservations(items []ObjectiveWorkItem, obse
 		for _, evidence := range workEvidenceFromObservation(obs) {
 			assignEvidenceToFirstPendingWorkItem(out, evidence)
 		}
+		assignCommandPredicateEvidence(out, obs)
 	}
 	for i := range out {
 		out[i] = updateWorkItemStatusFromEvidence(out[i])
 	}
 	return out
+}
+
+func assignCommandPredicateEvidence(items []ObjectiveWorkItem, observation StructuredCommandObservation) {
+	for i := range items {
+		assignCommandPredicateEvidence(items[i].Children, observation)
+		if items[i].Kind != WorkItemKindVerify || strings.TrimSpace(observation.Command) == "" {
+			continue
+		}
+		matched := false
+		for _, predicate := range items[i].EvidencePredicates {
+			kind, _, ok := strings.Cut(strings.TrimSpace(predicate), ":")
+			if !ok || !strings.EqualFold(strings.TrimSpace(kind), "command_passed") {
+				continue
+			}
+			if structuredEvidencePredicateSatisfied(predicate, []StructuredCommandObservation{observation}, observation.CWD) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		evidence := WorkItemEvidence{
+			Kind:     EvidenceKindCommand,
+			Command:  observation.Command,
+			ExitCode: observation.ExitCode,
+			Stdout:   observation.Stdout,
+			Stderr:   observation.Stderr,
+		}
+		if !workItemContainsEvidence(items[i], evidence) {
+			items[i].EvidenceRefs = append(items[i].EvidenceRefs, evidence)
+		}
+	}
 }
 
 func firstPendingObjectiveWorkItem(items []ObjectiveWorkItem) *ObjectiveWorkItem {

@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSplitProjectPathPlanningChat(t *testing.T) {
@@ -16,22 +18,64 @@ func TestSplitProjectPathPlanningChat(t *testing.T) {
 }
 
 func TestNormalizeProjectPlanningMode(t *testing.T) {
-	if got := normalizeProjectPlanningMode("/research kubernetes patterns", ""); got != "research" {
-		t.Fatalf("mode=%q want research", got)
+	mode, err := normalizeProjectPlanningMode("/research kubernetes patterns", "")
+	if err != nil || mode != "research" {
+		t.Fatalf("mode=%q err=%v want research", mode, err)
 	}
-	if got := normalizeProjectPlanningMode("hello", "plan"); got != "plan" {
-		t.Fatalf("mode=%q want plan", got)
+	mode, err = normalizeProjectPlanningMode("hello", "plan")
+	if err != nil || mode != "plan" {
+		t.Fatalf("mode=%q err=%v want plan", mode, err)
+	}
+	for _, input := range []struct{ message, mode string }{{"/unknown", ""}, {"hello", "legacy"}, {"", "config"}} {
+		if _, err := normalizeProjectPlanningMode(input.message, input.mode); err == nil {
+			t.Fatalf("message=%q mode=%q must fail", input.message, input.mode)
+		}
 	}
 }
 
-func TestParseProjectPlanningLLMResponse(t *testing.T) {
-	raw := `{"reply":"Hello planner","suggestions":[{"level":"tip","text":"Split the epic"}],"card_drafts":[{"title":"Add auth","column":"backlog"}]}`
-	parsed := parseProjectPlanningLLMResponse(raw)
-	if parsed.Reply != "Hello planner" {
-		t.Fatalf("reply=%q", parsed.Reply)
+func TestParseProjectPlanningLLMResponseStrict(t *testing.T) {
+	raw := `{"reply":"Hello planner","suggestions":[{"level":"tip","text":"Split the epic"}],"card_drafts":[{"title":"Add auth","description":"Use sessions","column":"backlog","checklist":["Add tests"]}]}`
+	parsed, err := parseProjectPlanningLLMResponse(raw)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(parsed.Suggestions) != 1 || len(parsed.CardDrafts) != 1 {
-		t.Fatalf("suggestions=%d drafts=%d", len(parsed.Suggestions), len(parsed.CardDrafts))
+	if parsed.Reply != "Hello planner" || len(parsed.Suggestions) != 1 || len(parsed.CardDrafts) != 1 {
+		t.Fatalf("unexpected response: %+v", parsed)
+	}
+	for _, invalid := range []string{
+		`plain text`,
+		`{"reply":"ok","unknown":true}`,
+		`{"reply":"","suggestions":[],"card_drafts":[]}`,
+		`{"reply":"ok","suggestions":[{"level":"maybe","text":"x"}]}`,
+		`{"reply":"ok","card_drafts":[{"title":"x","column":"invented"}]}`,
+		`{"reply":"ok","card_drafts":[{"title":"x","column":"backlog","checklist":[""]}]}`,
+	} {
+		if _, err := parseProjectPlanningLLMResponse(invalid); err == nil {
+			t.Fatalf("response %s must fail loudly", invalid)
+		}
+	}
+}
+
+func TestValidateProjectPlanningChatConfig(t *testing.T) {
+	config, err := validateProjectPlanningChatConfig(ProjectPlanningChatConfig{Model: " qwen ", ReasoningMode: "Thinking"})
+	if err != nil || config.Model != "qwen" || config.ReasoningMode != "thinking" {
+		t.Fatalf("config=%+v err=%v", config, err)
+	}
+	if _, err := validateProjectPlanningChatConfig(ProjectPlanningChatConfig{ReasoningMode: "automatic"}); err == nil {
+		t.Fatal("unknown reasoning mode must fail")
+	}
+}
+
+func TestParseProjectPlanningPage(t *testing.T) {
+	r := &http.Request{URL: &url.URL{RawQuery: "limit=25&before_id=42"}}
+	limit, beforeID, err := parseProjectPlanningPage(r)
+	if err != nil || limit != 25 || beforeID != 42 {
+		t.Fatalf("limit=%d before=%d err=%v", limit, beforeID, err)
+	}
+	for _, query := range []string{"limit=101", "limit=nope", "before_id=0", "before_id=nope"} {
+		if _, _, err := parseProjectPlanningPage(&http.Request{URL: &url.URL{RawQuery: query}}); err == nil {
+			t.Fatalf("query %q must fail", query)
+		}
 	}
 }
 
@@ -43,21 +87,9 @@ func TestSummarizeScrumBoard(t *testing.T) {
 			{Title: "Second", Column: "ready", PlayState: "running"},
 		},
 	}
-	lines := summarizeScrumBoard(board)
-	joined := strings.Join(lines, "\n")
+	joined := strings.Join(summarizeScrumBoard(board), "\n")
 	if !strings.Contains(joined, "First") || !strings.Contains(joined, "Second") {
 		t.Fatalf("summary=%q", joined)
-	}
-}
-
-func TestLoadProjectPlanningChatFromSettings(t *testing.T) {
-	settings := json.RawMessage(`{"planning_chat":[{"role":"user","content":"hi","created_at":"2026-01-01T00:00:00Z"}],"planning_chat_config":{"reasoning_mode":"thinking","model":"qwen3:4b"}}`)
-	chat, cfg := loadProjectPlanningChat(settings)
-	if len(chat) != 1 || chat[0].Content != "hi" {
-		t.Fatalf("chat=%+v", chat)
-	}
-	if cfg.ReasoningMode != "thinking" || cfg.Model != "qwen3:4b" {
-		t.Fatalf("cfg=%+v", cfg)
 	}
 }
 
@@ -68,5 +100,39 @@ func TestProjectPlanningChatRequiresDatabase(t *testing.T) {
 	server.handleProjectPlanningChat(rec, req, 1)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProjectPlanningUpdatePublishesTypedRealtimeEvent(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	subscription, err := server.realtimeHub.Subscribe([]string{realtimeTopicScrum}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Unsubscribe()
+	published, message := server.publishProjectPlanningUpdated(42, "response_committed")
+	if !published || message != "" {
+		t.Fatalf("published=%t message=%q", published, message)
+	}
+	select {
+	case raw := <-subscription.Messages:
+		var event realtimeMessage
+		if err := json.Unmarshal(raw, &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.EventName != "project-planning-updated" || event.ProjectID != 42 || event.Reason != "response_committed" {
+			t.Fatalf("event=%+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for project planning realtime event")
+	}
+}
+
+func TestProjectPlanningUpdateReportsRealtimeDegradation(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	server.realtimeHub = nil
+	published, message := server.publishProjectPlanningUpdated(42, "response_committed")
+	if published || !strings.Contains(message, "not initialized") {
+		t.Fatalf("published=%t message=%q", published, message)
 	}
 }

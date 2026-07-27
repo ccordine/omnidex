@@ -47,7 +47,7 @@ export function setGlobalLoading(loading: boolean): void {
   ref[GLOBAL_LOADING_KEY] = state;
   state.activeCount = loading ? state.activeCount + 1 : Math.max(0, state.activeCount - 1);
 
-  const indicator = document.querySelector("#gx-global-loading-indicator") as HTMLElement | null;
+  const indicator = document.querySelector("#recyclr-global-loading-indicator") as HTMLElement | null;
   if (!indicator) return;
   const active = state.activeCount > 0;
   indicator.classList.toggle("hidden", !active);

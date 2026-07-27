@@ -165,6 +165,9 @@ func (r *Repository) UpdateProject(ctx context.Context, id int64, patch model.Pr
 	if len(current.Settings) == 0 {
 		current.Settings = json.RawMessage(`{}`)
 	}
+	if err := validateProjectSettings(current.Settings); err != nil {
+		return model.Project{}, err
+	}
 	current.Name = SanitizeUTF8Text(current.Name)
 	current.Location = SanitizeUTF8Text(current.Location)
 	current.Description = SanitizeUTF8Text(current.Description)
@@ -436,15 +439,26 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 	chat = SanitizeUTF8Bytes(defaultJSON(chat, `[]`))
 	var card DBScrumCard
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO scrum_cards (id, project_id, title, description, column_name, checklist, ref_files, chat, board_order)
-		VALUES (
-			$1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb,
-			COALESCE((SELECT MAX(board_order) FROM scrum_cards WHERE project_id = $2 AND column_name = $5), -1) + 1
+		WITH inserted_card AS (
+			INSERT INTO scrum_cards (id, project_id, title, description, column_name, checklist, ref_files, chat, board_order)
+			VALUES (
+				$1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb,
+				COALESCE((SELECT MAX(board_order) FROM scrum_cards WHERE project_id = $2 AND column_name = $5), -1) + 1
+			)
+			RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
+			          model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
+			          tags, planning_chat, coach_config, test_criteria, flow_metrics,
+			          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
+		),
+		touched_project AS (
+			UPDATE projects
+			SET last_seen_at = NOW(), updated_at = NOW()
+			WHERE id = $2 AND EXISTS (SELECT 1 FROM inserted_card)
+			RETURNING id
 		)
-		RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
-		          model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
-		          tags, planning_chat, coach_config, test_criteria, flow_metrics,
-		          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
+		SELECT inserted_card.*
+		FROM inserted_card
+		INNER JOIN touched_project ON touched_project.id = inserted_card.project_id
 	`, cardID, projectID, title, description, column, string(checklist), string(refFiles), string(chat)).Scan(
 		&card.ID,
 		&card.ProjectID,
@@ -478,7 +492,6 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 	if err != nil {
 		return DBScrumCard{}, err
 	}
-	_ = r.TouchProject(ctx, projectID)
 	return card, nil
 }
 
@@ -506,10 +519,18 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		current.Chat = SanitizeUTF8Bytes(chat)
 	}
 	if modelConfig, ok := patch["model_config"].(json.RawMessage); ok {
-		current.ModelConfig = SanitizeUTF8Bytes(modelConfig)
+		canonical, err := canonicalModelConfig(SanitizeUTF8Bytes(modelConfig))
+		if err != nil {
+			return DBScrumCard{}, fmt.Errorf("validate Scrum card model configuration: %w", err)
+		}
+		current.ModelConfig = canonical
 	}
 	if agentConfig, ok := patch["agent_config"].(json.RawMessage); ok {
-		current.AgentConfig = SanitizeUTF8Bytes(agentConfig)
+		canonical, err := canonicalAgentConfig(SanitizeUTF8Bytes(agentConfig))
+		if err != nil {
+			return DBScrumCard{}, fmt.Errorf("validate Scrum card agent configuration: %w", err)
+		}
+		current.AgentConfig = canonical
 	}
 	if jobID, ok := patch["job_id"].(string); ok {
 		current.JobID = strings.TrimSpace(jobID)
@@ -571,8 +592,9 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 
 	var card DBScrumCard
 	err = r.pool.QueryRow(ctx, `
-		UPDATE scrum_cards
-		SET title = $3,
+		WITH updated_card AS (
+			UPDATE scrum_cards
+			SET title = $3,
 		    description = $4,
 		    column_name = $5,
 		    checklist = $6::jsonb,
@@ -595,13 +617,23 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		    play_state = $23,
 		    queue_order = $24,
 		    board_order = $25,
-		    updated_at = NOW()
-		WHERE project_id = $1 AND id = $2
-		RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
-		          model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
-		          tags, planning_chat, coach_config, test_criteria, flow_metrics,
-		          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
-	`, projectID, cardID, current.Title, current.Description, current.Column, string(current.Checklist), string(current.RefFiles), string(current.Chat), string(current.ModelConfig), string(current.AgentConfig), current.CardTicket, current.CardPrompt, current.RecipeID, string(current.Recipe), string(defaultJSON(current.Tags, `[]`)), string(defaultJSON(current.PlanningChat, `[]`)), string(defaultJSON(current.CoachConfig, `{}`)), string(defaultJSON(current.TestCriteria, `[]`)), current.JobID, current.TagsJobID, current.TicketJobID, current.ConsoleLog, current.PlayState, current.QueueOrder, current.BoardOrder).Scan(
+			    updated_at = NOW()
+			WHERE project_id = $1 AND id = $2 AND updated_at = $26
+			RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
+			          model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
+			          tags, planning_chat, coach_config, test_criteria, flow_metrics,
+			          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
+		),
+		touched_project AS (
+			UPDATE projects
+			SET last_seen_at = NOW(), updated_at = NOW()
+			WHERE id = $1 AND EXISTS (SELECT 1 FROM updated_card)
+			RETURNING id
+		)
+		SELECT updated_card.*
+		FROM updated_card
+		INNER JOIN touched_project ON touched_project.id = updated_card.project_id
+	`, projectID, cardID, current.Title, current.Description, current.Column, string(current.Checklist), string(current.RefFiles), string(current.Chat), string(current.ModelConfig), string(current.AgentConfig), current.CardTicket, current.CardPrompt, current.RecipeID, string(current.Recipe), string(defaultJSON(current.Tags, `[]`)), string(defaultJSON(current.PlanningChat, `[]`)), string(defaultJSON(current.CoachConfig, `{}`)), string(defaultJSON(current.TestCriteria, `[]`)), current.JobID, current.TagsJobID, current.TicketJobID, current.ConsoleLog, current.PlayState, current.QueueOrder, current.BoardOrder, current.UpdatedAt).Scan(
 		&card.ID,
 		&card.ProjectID,
 		&card.Title,
@@ -632,9 +664,11 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		&card.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DBScrumCard{}, fmt.Errorf("Scrum card %q changed concurrently; reload server state and retry", cardID)
+		}
 		return DBScrumCard{}, err
 	}
-	_ = r.TouchProject(ctx, projectID)
 	return card, nil
 }
 
@@ -665,15 +699,26 @@ func (r *Repository) BackfillScrumBoardOrder(ctx context.Context) error {
 }
 
 func (r *Repository) DeleteScrumCard(ctx context.Context, projectID int64, cardID string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM scrum_cards WHERE project_id = $1 AND id = $2`, projectID, cardID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
+	var touchedProjectID int64
+	err := r.pool.QueryRow(ctx, `
+		WITH deleted_card AS (
+			DELETE FROM scrum_cards
+			WHERE project_id = $1 AND id = $2
+			RETURNING project_id
+		),
+		touched_project AS (
+			UPDATE projects
+			SET last_seen_at = NOW(), updated_at = NOW()
+			FROM deleted_card
+			WHERE projects.id = deleted_card.project_id
+			RETURNING projects.id
+		)
+		SELECT id FROM touched_project
+	`, projectID, cardID).Scan(&touchedProjectID)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("card not found")
 	}
-	_ = r.TouchProject(ctx, projectID)
-	return nil
+	return err
 }
 
 func defaultJSON(raw json.RawMessage, fallback string) json.RawMessage {

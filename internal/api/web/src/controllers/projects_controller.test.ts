@@ -19,7 +19,10 @@ describe("ProjectsController panel loading", () => {
   let consoleError: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    document.body.innerHTML = `<main data-controller="projects"></main>`;
+    document.body.innerHTML = `
+      <main data-controller="projects"></main>
+      <div id="omni-toast-root"><div id="omni-toast" hidden></div></div>
+    `;
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/v1/projects") {

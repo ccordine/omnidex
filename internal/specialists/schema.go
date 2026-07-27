@@ -98,6 +98,21 @@ func validateObjectSchema(schemaMap map[string]any, value map[string]any, path s
 }
 
 func validateArraySchema(schemaMap map[string]any, value []any, path string) error {
+	if minimum, ok := schemaArrayBound(schemaMap["minItems"]); ok && len(value) < minimum {
+		return fmt.Errorf("%s must contain at least %d items", path, minimum)
+	}
+	if maximum, ok := schemaArrayBound(schemaMap["maxItems"]); ok && len(value) > maximum {
+		return fmt.Errorf("%s must contain at most %d items", path, maximum)
+	}
+	if unique, _ := schemaMap["uniqueItems"].(bool); unique {
+		for index := range value {
+			for previous := 0; previous < index; previous++ {
+				if reflect.DeepEqual(value[previous], value[index]) {
+					return fmt.Errorf("%s must contain unique items; indexes %d and %d are equal", path, previous, index)
+				}
+			}
+		}
+	}
 	itemSchema, ok := schemaMap["items"]
 	if !ok {
 		return nil
@@ -108,6 +123,14 @@ func validateArraySchema(schemaMap map[string]any, value []any, path string) err
 		}
 	}
 	return nil
+}
+
+func schemaArrayBound(raw any) (int, bool) {
+	number, ok := raw.(float64)
+	if !ok || number < 0 || math.Mod(number, 1) != 0 || number > float64(math.MaxInt) {
+		return 0, false
+	}
+	return int(number), true
 }
 
 func schemaTypeList(raw any) []string {

@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "required": ["intent", "workspace", "memory_references", "web_evidence", "subtask_results"],
+  "properties": {
+    "intent": {"type": "object", "additionalProperties": true},
+    "workspace": {"type": "object", "additionalProperties": true},
+    "memory_references": {"type": "object", "additionalProperties": true},
+    "web_evidence": {"type": "object", "additionalProperties": true},
+    "subtask_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["subtask_id", "kind", "role_id", "objective_id", "objective", "priority", "required_capabilities", "summary", "sources"],
+        "properties": {
+          "subtask_id": {"type": "string"},
+          "kind": {"type": "string"},
+          "role_id": {"type": "string"},
+          "objective_id": {"type": "string"},
+          "objective": {"type": "string"},
+          "priority": {"type": "integer"},
+          "required_capabilities": {"type": "array", "items": {"type": "string"}},
+          "summary": {"type": "string"},
+          "evidence_ids": {"type": "array", "items": {"type": "integer"}},
+          "sources": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

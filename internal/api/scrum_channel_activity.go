@@ -27,7 +27,7 @@ func formatChannelActivity(activity ChannelActivity) string {
 	}
 	raw, err := json.Marshal(activity)
 	if err != nil {
-		return activity.Title
+		panic(fmt.Sprintf("encode channel activity: %v", err))
 	}
 	return string(raw)
 }
@@ -62,7 +62,7 @@ func commandActivity(command, status, detail string) ScrumChatMessage {
 	status = normalizeActivityStatus(status)
 	title := "Run command"
 	if command != "" {
-		title = command
+		title = "Run · " + summarizeActivityCommand(command)
 	}
 	return activityMessage("tool", ChannelActivity{
 		Activity: "command",
@@ -71,6 +71,16 @@ func commandActivity(command, status, detail string) ScrumChatMessage {
 		Command:  command,
 		Detail:   strings.TrimSpace(detail),
 	})
+}
+
+func summarizeActivityCommand(command string) string {
+	firstLine := strings.TrimSpace(strings.SplitN(command, "\n", 2)[0])
+	firstLine = strings.Join(strings.Fields(firstLine), " ")
+	const max = 86
+	if len(firstLine) <= max {
+		return firstLine
+	}
+	return firstLine[:max-1] + "…"
 }
 
 func fileChangeActivity(files []string, status, detail, diff string) ScrumChatMessage {
@@ -103,7 +113,7 @@ func fileChangeActivity(files []string, status, detail, diff string) ScrumChatMe
 }
 
 func toolCallActivity(name, path, status, detail string) ScrumChatMessage {
-	name = strings.TrimSpace(name)
+	name = normalizeToolLifecycleName(name)
 	if name == "" {
 		name = "tool"
 	}
@@ -119,6 +129,18 @@ func toolCallActivity(name, path, status, detail string) ScrumChatMessage {
 		Status:   normalizeActivityStatus(status),
 		Detail:   strings.TrimSpace(detail),
 	})
+}
+
+func normalizeToolLifecycleName(name string) string {
+	name = strings.TrimSpace(name)
+	for _, suffix := range []string{
+		"_started", "_finished", "_completed", "_complete", "_failed", "_rejected", "_begin", "_done",
+	} {
+		if base := strings.TrimSuffix(name, suffix); base != name && strings.TrimSpace(base) != "" {
+			return base
+		}
+	}
+	return name
 }
 
 func patchActivity(status string, files []string, detail string) ScrumChatMessage {
@@ -418,89 +440,4 @@ func stepContextToActivity(ctx model.StepContext) []ScrumChatMessage {
 	default:
 		return nil
 	}
-}
-
-func isNoisyStepEvent(eventType string) bool {
-	switch eventType {
-	case "tooling_begin", "tooling_complete", "tag_begin", "tag_complete",
-		"retrieve_begin", "retrieve_embedding", "retrieve_embedding_error", "retrieve_complete",
-		"plan_begin", "plan_candidate_error", "plan_complete",
-		"web_search_begin", "web_search_degraded", "web_search_complete",
-		"analyze_begin", "analyze_complete", "response_begin", "response_complete",
-		"verify_begin", "verify_complete", "verify_replan",
-		"workspace_scan_begin", "workspace_scan_complete":
-		return true
-	default:
-		return strings.HasPrefix(eventType, "v3_") && !strings.Contains(eventType, "patch") && !strings.Contains(eventType, "tool")
-	}
-}
-
-func humanizeStepEventType(eventType string) string {
-	eventType = strings.TrimSpace(eventType)
-	if eventType == "" {
-		return "Agent event"
-	}
-	return strings.ReplaceAll(strings.ReplaceAll(eventType, "_", " "), "  ", " ")
-}
-
-func looksLikeDiff(text string) bool {
-	text = strings.TrimSpace(text)
-	return strings.Contains(text, "@@") || strings.Contains(text, "+++ ") || strings.Contains(text, "--- ")
-}
-
-func isLowSignalToolOutput(text string) bool {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return true
-	}
-	if len(text) < 4 {
-		return true
-	}
-	lower := strings.ToLower(text)
-	if lower == "ok" || lower == "done" || lower == "success" {
-		return true
-	}
-	return false
-}
-
-func contextSyncMarker(contextID int64) string {
-	return fmt.Sprintf("[[context-sync:%d]]", contextID)
-}
-
-func syncedStepContextID(chat []ScrumChatMessage) int64 {
-	for i := len(chat) - 1; i >= 0; i-- {
-		content := strings.TrimSpace(chat[i].Content)
-		if !strings.HasPrefix(content, "[[context-sync:") {
-			continue
-		}
-		var id int64
-		if _, err := fmt.Sscanf(content, "[[context-sync:%d]]", &id); err == nil {
-			return id
-		}
-	}
-	return 0
-}
-
-func setStepContextSyncMarker(chat []ScrumChatMessage, contextID int64) []ScrumChatMessage {
-	if contextID <= 0 {
-		return chat
-	}
-	marker := contextSyncMarker(contextID)
-	for i := len(chat) - 1; i >= 0; i-- {
-		if strings.HasPrefix(strings.TrimSpace(chat[i].Content), "[[context-sync:") {
-			chat[i].Content = marker
-			chat[i].Role = "system"
-			return chat
-		}
-	}
-	return appendScrumChatMessage(chat, "system", marker)
-}
-
-func sameChannelActivity(left, right ChannelActivity) bool {
-	return left.Activity == right.Activity &&
-		left.Title == right.Title &&
-		left.Command == right.Command &&
-		left.Path == right.Path &&
-		left.Status == right.Status &&
-		strings.Join(left.Files, "|") == strings.Join(right.Files, "|")
 }

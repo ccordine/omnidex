@@ -3,6 +3,8 @@ package secrets
 import (
 	"os"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 )
 
 const WorkspaceKey = "api_secrets"
@@ -14,15 +16,41 @@ type Field struct {
 	EnvKeys     []string `json:"env_keys"`
 }
 
-var Fields = []Field{
-	{Key: "openai_api_key", Label: "OpenAI API key", Description: "OpenAI-compatible API access. Also used by Codex when no dedicated Codex key is set.", EnvKeys: []string{"OPENAI_API_KEY"}},
-	{Key: "cursor_api_key", Label: "Cursor API key", Description: "Cursor SDK architect delegation.", EnvKeys: []string{"CURSOR_API_KEY"}},
-	{Key: "codex_api_key", Label: "Codex API key", Description: "Codex SDK architect delegation. Falls back to OpenAI key when unset.", EnvKeys: []string{"CODEX_API_KEY"}},
-	{Key: "anthropic_api_key", Label: "Anthropic API key", Description: "Claude models via Anthropic API.", EnvKeys: []string{"ANTHROPIC_API_KEY"}},
-	{Key: "google_api_key", Label: "Google / Gemini API key", Description: "Gemini models via Google AI.", EnvKeys: []string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}},
-	{Key: "xai_api_key", Label: "xAI / Grok API key", Description: "Grok models via xAI.", EnvKeys: []string{"XAI_API_KEY", "GROK_API_KEY"}},
-	{Key: "azure_ai_api_key", Label: "Azure AI API key", Description: "Azure OpenAI / Foundry deployments.", EnvKeys: []string{"AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY"}},
-	{Key: "huggingface_api_key", Label: "Hugging Face API key", Description: "Hugging Face Inference Providers.", EnvKeys: []string{"HUGGINGFACE_API_KEY", "HF_TOKEN"}},
+var Fields = buildFields()
+
+func ProviderSecretKey(provider string) (string, bool) {
+	definition, ok := catalog.Lookup(provider)
+	if !ok || len(definition.APIKeyEnvironmentKeys) == 0 {
+		return "", false
+	}
+	if definition.ID == "azure" {
+		return "azure_ai_api_key", true
+	}
+	return strings.ReplaceAll(definition.ID, "-", "_") + "_api_key", true
+}
+
+func buildFields() []Field {
+	fields := []Field{
+		{Key: "cursor_api_key", Label: "Cursor API key", Description: "Cursor SDK architect delegation.", EnvKeys: []string{"CURSOR_API_KEY"}},
+		{Key: "codex_api_key", Label: "Codex API key", Description: "Codex SDK architect delegation. Falls back to OpenAI key when unset.", EnvKeys: []string{"CODEX_API_KEY"}},
+	}
+	for _, definition := range catalog.Definitions() {
+		key, ok := ProviderSecretKey(definition.ID)
+		if !ok {
+			continue
+		}
+		description := definition.DisplayName + " model API access."
+		if definition.ID == "openai" {
+			description = "OpenAI API access. Also used by Codex when no dedicated Codex key is set."
+		}
+		fields = append(fields, Field{
+			Key:         key,
+			Label:       definition.DisplayName + " API key",
+			Description: description,
+			EnvKeys:     append([]string(nil), definition.APIKeyEnvironmentKeys...),
+		})
+	}
+	return fields
 }
 
 func LookupEnv(keys []string) string {

@@ -127,7 +127,11 @@ func (s *Server) handleDataSourceTest(w http.ResponseWriter, r *http.Request, id
 		status = "failed"
 		message = err.Error()
 	}
-	updated, _ := s.repo.UpdateDataSourceTestResult(r.Context(), id, status, message)
+	updated, err := s.repo.UpdateDataSourceTestResult(r.Context(), id, status, message)
+	if err != nil {
+		writeDataSourceError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"source":  dataSourcePublic(updated),
 		"status":  status,

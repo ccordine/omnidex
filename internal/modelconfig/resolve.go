@@ -1,6 +1,9 @@
 package modelconfig
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
@@ -11,22 +14,32 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// AnalyzerModel returns the configured analysis model with sensible fallbacks.
-func AnalyzerModel(cfg Config, fallbacks ...string) string {
-	return firstNonEmpty(append([]string{
+// AnalyzerModel resolves the configured analysis route and rejects an empty route.
+func AnalyzerModel(cfg Config, runtimeDefault string) (string, error) {
+	model := firstNonEmpty(
 		cfg.Get("analyzer_model"),
 		cfg.Get("reasoning_model"),
 		cfg.Get("planner_model"),
 		cfg.Get("default_model"),
-	}, fallbacks...)...)
+		runtimeDefault,
+	)
+	if model == "" {
+		return "", fmt.Errorf("analyzer model is not configured")
+	}
+	return model, nil
 }
 
-// PlannerTicketModel returns the model used for scrum card planning tickets.
-func PlannerTicketModel(cfg Config, fallbacks ...string) string {
-	return firstNonEmpty(append([]string{
+// PlannerTicketModel resolves the configured planning route and rejects an empty route.
+func PlannerTicketModel(cfg Config, runtimeDefault string) (string, error) {
+	model := firstNonEmpty(
 		cfg.Get("planner_model"),
 		cfg.Get("reasoning_model"),
 		cfg.Get("thinking_model"),
 		cfg.Get("default_model"),
-	}, fallbacks...)...)
+		runtimeDefault,
+	)
+	if model == "" {
+		return "", fmt.Errorf("planner ticket model is not configured")
+	}
+	return model, nil
 }

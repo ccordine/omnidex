@@ -1,111 +1,105 @@
-import { ar } from "./ar";
-import { de } from "./de";
-import { en, type MessageCatalog, type MessageKey } from "./en";
-import { es } from "./es";
-import { hi } from "./hi";
-import { ja } from "./ja";
-import { ru } from "./ru";
-import { th } from "./th";
-import { zhHans } from "./zh-Hans";
+import enMessages from "../../../locales/en.json";
+import esMessages from "../../../locales/es.json";
+import jaMessages from "../../../locales/ja.json";
+import ruMessages from "../../../locales/ru.json";
+import zhHansMessages from "../../../locales/zh-Hans.json";
 
-export type LocaleCode = "en" | "es" | "zh-Hans" | "ja" | "th" | "de" | "ru" | "hi" | "ar";
+export const LOCALE_CODES = ["en", "es", "zh-Hans", "ru", "ja"] as const;
 
-export type LocaleOption = {
+export type LocaleCode = (typeof LOCALE_CODES)[number];
+export type MessageKey = keyof typeof enMessages;
+export type MessageCatalog = Record<MessageKey, string>;
+
+type LocaleOption = {
   code: LocaleCode;
-  label: string;
-  nativeLabel: string;
   dir: "ltr" | "rtl";
 };
 
-export const LOCALE_OPTIONS: LocaleOption[] = [
-  { code: "en", label: "English", nativeLabel: "English", dir: "ltr" },
-  { code: "es", label: "Spanish", nativeLabel: "Español", dir: "ltr" },
-  { code: "zh-Hans", label: "Chinese (Simplified)", nativeLabel: "简体中文", dir: "ltr" },
-  { code: "ja", label: "Japanese", nativeLabel: "日本語", dir: "ltr" },
-  { code: "th", label: "Thai", nativeLabel: "ไทย", dir: "ltr" },
-  { code: "de", label: "German", nativeLabel: "Deutsch", dir: "ltr" },
-  { code: "ru", label: "Russian", nativeLabel: "Русский", dir: "ltr" },
-  { code: "hi", label: "Hindi (India)", nativeLabel: "हिन्दी", dir: "ltr" },
-  { code: "ar", label: "Arabic", nativeLabel: "العربية", dir: "rtl" },
-];
+const localeOptions: Record<LocaleCode, LocaleOption> = {
+  en: { code: "en", dir: "ltr" },
+  es: { code: "es", dir: "ltr" },
+  "zh-Hans": { code: "zh-Hans", dir: "ltr" },
+  ru: { code: "ru", dir: "ltr" },
+  ja: { code: "ja", dir: "ltr" },
+};
 
-const STORAGE_KEY = "omni.locale.v1";
+function validateCatalog(locale: LocaleCode, input: Record<string, unknown>): MessageCatalog {
+  const englishKeys = Object.keys(enMessages).sort();
+  const keys = Object.keys(input).sort();
+  const missing = englishKeys.filter((key) => !Object.prototype.hasOwnProperty.call(input, key));
+  const unknown = keys.filter((key) => !Object.prototype.hasOwnProperty.call(enMessages, key));
+  if (missing.length || unknown.length) {
+    throw new Error(`Locale ${locale} catalog mismatch; missing=[${missing.join(", ")}], unknown=[${unknown.join(", ")}].`);
+  }
+  for (const key of englishKeys) {
+    const message = input[key];
+    if (typeof message !== "string" || !message.trim()) {
+      throw new Error(`Locale ${locale} message ${JSON.stringify(key)} must be a non-empty string.`);
+    }
+  }
+  return input as MessageCatalog;
+}
 
 const catalogs: Record<LocaleCode, MessageCatalog> = {
-  en,
-  es,
-  "zh-Hans": zhHans,
-  ja,
-  th,
-  de,
-  ru,
-  hi,
-  ar,
+  en: validateCatalog("en", enMessages),
+  es: validateCatalog("es", esMessages),
+  "zh-Hans": validateCatalog("zh-Hans", zhHansMessages),
+  ru: validateCatalog("ru", ruMessages),
+  ja: validateCatalog("ja", jaMessages),
 };
 
 let activeLocale: LocaleCode = "en";
 
-function isLocaleCode(value: string): value is LocaleCode {
-  return value in catalogs;
+export function isLocaleCode(value: string): value is LocaleCode {
+  return LOCALE_CODES.includes(value as LocaleCode);
+}
+
+export function initI18n(): LocaleCode {
+  const serverLocale = document.documentElement.lang.trim();
+  if (!isLocaleCode(serverLocale)) {
+    throw new Error(`Server rendered unsupported UI locale ${JSON.stringify(serverLocale)}.`);
+  }
+  const option = localeOptions[serverLocale];
+  if (document.documentElement.dir !== option.dir) {
+    throw new Error(`Server rendered locale ${serverLocale} with invalid direction ${JSON.stringify(document.documentElement.dir)}.`);
+  }
+  activeLocale = serverLocale;
+  return activeLocale;
 }
 
 export function getLocale(): LocaleCode {
   return activeLocale;
 }
 
-export function getLocaleOption(code = activeLocale): LocaleOption {
-  return LOCALE_OPTIONS.find((item) => item.code === code) ?? LOCALE_OPTIONS[0];
-}
-
-export function setLocale(code: LocaleCode): void {
-  activeLocale = code;
-  try {
-    localStorage.setItem(STORAGE_KEY, code);
-  } catch {
-    /* ignore storage failures */
-  }
-}
-
 export function t(key: MessageKey, locale: LocaleCode = activeLocale): string {
-  return catalogs[locale]?.[key] ?? catalogs.en[key] ?? key;
-}
-
-export function initI18n(): LocaleCode {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && isLocaleCode(stored)) activeLocale = stored;
-  } catch {
-    /* ignore */
+  const catalog = catalogs[locale];
+  if (!catalog) throw new Error(`Unsupported UI locale ${JSON.stringify(locale)}.`);
+  if (!Object.prototype.hasOwnProperty.call(catalog, key)) {
+    throw new Error(`Locale ${locale} has no message ${JSON.stringify(key)}.`);
   }
-  applyDocumentLocale();
-  applyI18n(document);
-  return activeLocale;
+  const message = catalog[key];
+  if (typeof message !== "string" || !message.trim()) {
+    throw new Error(`Locale ${locale} message ${JSON.stringify(key)} is blank.`);
+  }
+  return message;
 }
 
-export function applyDocumentLocale(locale: LocaleCode = activeLocale): void {
-  const option = getLocaleOption(locale);
-  document.documentElement.lang = locale;
-  document.documentElement.dir = option.dir;
-  document.title = t("app.pageTitle", locale);
+export function tf(
+  key: MessageKey,
+  parameters: Record<string, string | number>,
+  locale: LocaleCode = activeLocale,
+): string {
+  const message = t(key, locale);
+  const required = new Set(Array.from(message.matchAll(/\{([a-z][a-z0-9_]*)\}/gi), (match) => match[1]));
+  for (const name of required) {
+    if (!Object.prototype.hasOwnProperty.call(parameters, name)) {
+      throw new Error(`Locale ${locale} message ${JSON.stringify(key)} requires parameter ${JSON.stringify(name)}.`);
+    }
+  }
+  for (const name of Object.keys(parameters)) {
+    if (!required.has(name)) {
+      throw new Error(`Locale ${locale} message ${JSON.stringify(key)} does not accept parameter ${JSON.stringify(name)}.`);
+    }
+  }
+  return message.replace(/\{([a-z][a-z0-9_]*)\}/gi, (_placeholder, name: string) => String(parameters[name]));
 }
-
-export function applyI18n(root: ParentNode = document): void {
-  root.querySelectorAll<HTMLElement>("[data-i18n]").forEach((node) => {
-    const key = node.dataset.i18n as MessageKey | undefined;
-    if (key) node.textContent = t(key);
-  });
-  root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[data-i18n-placeholder]").forEach((node) => {
-    const key = node.dataset.i18nPlaceholder as MessageKey | undefined;
-    if (key) node.placeholder = t(key);
-  });
-  root.querySelectorAll<HTMLElement>("[data-i18n-title]").forEach((node) => {
-    const key = node.dataset.i18nTitle as MessageKey | undefined;
-    if (key) node.title = t(key);
-  });
-  root.querySelectorAll<HTMLElement>("[data-i18n-aria]").forEach((node) => {
-    const key = node.dataset.i18nAria as MessageKey | undefined;
-    if (key) node.setAttribute("aria-label", t(key));
-  });
-}
-
-export { type MessageKey, type MessageCatalog };

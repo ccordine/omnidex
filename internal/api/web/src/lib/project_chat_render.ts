@@ -199,6 +199,13 @@ export function renderProjectChatShell(
 
       <div class="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
         <section class="flex min-h-[420px] min-w-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950/60">
+          <button
+            type="button"
+            data-project-chat-target="older"
+            data-action="project-chat#loadOlder"
+            hidden
+            class="mx-auto mt-2 rounded-md border border-white/10 px-3 py-1 text-[11px] text-zinc-400 hover:border-cyan-300/30 hover:text-cyan-100 disabled:cursor-wait disabled:opacity-50"
+          >Load earlier messages</button>
           <div data-project-chat-target="messages" class="scrollbar min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
             ${renderProjectPlanningChatMessages([])}
           </div>

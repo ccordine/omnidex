@@ -97,7 +97,7 @@ func (r *Registry) Execute(ctx context.Context, call Call, opts ExecuteOptions) 
 		call.Input = map[string]any{}
 	}
 	if err := registered.spec.InputSchema.ValidateValue(call.Input); err != nil {
-		return Result{}, fmt.Errorf("tool %s input rejected: %w", registered.spec.Name, err)
+		return Result{}, RejectCall(fmt.Errorf("tool %s input rejected: %w", registered.spec.Name, err))
 	}
 	result, err := registered.handler(ctx, Call{Name: registered.spec.Name, Input: call.Input})
 	if err != nil {

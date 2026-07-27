@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sort"
 	"time"
@@ -19,12 +20,17 @@ type scrumAutoWorkCandidate struct {
 }
 
 // StartScrumAutoWorkLoop keeps server-side auto-work moving even when no board is open.
-func (s *Server) StartScrumAutoWorkLoop(ctx context.Context) {
+func (s *Server) StartScrumAutoWorkLoop(ctx context.Context) error {
 	if s == nil || s.repo == nil {
-		return
+		return fmt.Errorf("postgres repository is required to start the Scrum auto-work loop")
+	}
+	if ctx == nil {
+		return fmt.Errorf("context is required to start the Scrum auto-work loop")
+	}
+	if err := s.refreshScrumAutoWorkAsync(ctx); err != nil {
+		return err
 	}
 	go func() {
-		s.RefreshScrumAutoWorkAsync()
 		ticker := time.NewTicker(scrumAutoWorkScanInterval)
 		defer ticker.Stop()
 		for {
@@ -32,29 +38,73 @@ func (s *Server) StartScrumAutoWorkLoop(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.RefreshScrumAutoWorkAsync()
+				if err := s.refreshScrumAutoWorkAsync(ctx); err != nil && ctx.Err() == nil {
+					log.Printf("scrum auto-work scan rejected: %v", err)
+				}
 			}
 		}
 	}()
+	return nil
 }
 
 // RefreshScrumAutoWorkAsync reconciles all project boards and starts the next global auto-work item.
-func (s *Server) RefreshScrumAutoWorkAsync() {
+func (s *Server) RefreshScrumAutoWorkAsync() error {
 	if s == nil || s.repo == nil {
-		return
+		return fmt.Errorf("postgres repository is required to refresh Scrum auto-work")
 	}
+	if s.lifecycleContext == nil {
+		return ErrRealtimeLifecycleUnavailable
+	}
+	return s.refreshScrumAutoWorkAsync(s.lifecycleContext)
+}
+
+func (s *Server) refreshScrumAutoWorkAsync(parent context.Context) error {
+	if s == nil || s.repo == nil {
+		return fmt.Errorf("postgres repository is required to schedule Scrum auto-work")
+	}
+	if parent == nil {
+		return fmt.Errorf("parent context is required to schedule Scrum auto-work")
+	}
+	if err := parent.Err(); err != nil {
+		return fmt.Errorf("schedule Scrum auto-work: %w", err)
+	}
+	s.scrumAutoWorkAsyncMu.Lock()
+	if s.scrumAutoWorkAsyncRunning {
+		s.scrumAutoWorkAsyncPending = true
+		s.scrumAutoWorkAsyncMu.Unlock()
+		return nil
+	}
+	s.scrumAutoWorkAsyncRunning = true
+	s.scrumAutoWorkAsyncMu.Unlock()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), scrumPlayAutoRunTimeout)
-		defer cancel()
-		if err := s.refreshScrumAutoWork(ctx); err != nil {
-			log.Printf("scrum global auto-work refresh: %v", err)
+		for {
+			ctx, cancel := context.WithTimeout(parent, scrumPlayAutoRunTimeout)
+			if err := s.refreshScrumAutoWork(ctx); err != nil && parent.Err() == nil {
+				log.Printf("scrum global auto-work refresh: %v", err)
+			}
+			cancel()
+
+			s.scrumAutoWorkAsyncMu.Lock()
+			if s.scrumAutoWorkAsyncPending && parent.Err() == nil {
+				s.scrumAutoWorkAsyncPending = false
+				s.scrumAutoWorkAsyncMu.Unlock()
+				continue
+			}
+			s.scrumAutoWorkAsyncPending = false
+			s.scrumAutoWorkAsyncRunning = false
+			s.scrumAutoWorkAsyncMu.Unlock()
+			return
 		}
 	}()
+	return nil
 }
 
 func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 	if s == nil || s.repo == nil {
-		return nil
+		return fmt.Errorf("postgres repository is required to refresh Scrum auto-work")
+	}
+	if ctx == nil {
+		return fmt.Errorf("context is required to refresh Scrum auto-work")
 	}
 	if paused, err := s.repo.IsAIPaused(ctx); err != nil {
 		return err
@@ -84,20 +134,29 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 	}
 	for _, candidate := range candidates {
 		if err := s.refreshScrumPlayQueueForProject(ctx, candidate.projectID, "global auto-work"); err != nil {
-			log.Printf("scrum global auto-work project=%d card=%s: %v", candidate.projectID, candidate.cardID, err)
-			continue
+			return fmt.Errorf("reconcile global auto-work project=%d card=%s: %w", candidate.projectID, candidate.cardID, err)
 		}
 		if running, err := s.repo.HasRunningScrumPlay(ctx); err != nil {
 			return err
 		} else if running {
 			return nil
 		}
-		if board, err := s.scrumBoardFromProject(ctx, candidate.projectID); err == nil {
-			r := scrumRequestForProject(ctx, candidate.projectID)
-			if refreshed, err := s.kickoffAutoPlayThrough(r, candidate.projectID, board); err == nil && s.findRunningScrumCard(refreshed) != nil {
-				return nil
-			}
+		board, err := s.scrumBoardFromProject(ctx, candidate.projectID)
+		if err != nil {
+			return fmt.Errorf("load global auto-work project=%d card=%s: %w", candidate.projectID, candidate.cardID, err)
 		}
+		r := scrumRequestForProject(ctx, candidate.projectID)
+		if _, err := s.startNextScrumAutoWork(r, candidate.projectID, board); err != nil {
+			return fmt.Errorf("start global auto-work project=%d card=%s: %w", candidate.projectID, candidate.cardID, err)
+		}
+		running, err := s.repo.HasRunningScrumPlay(ctx)
+		if err != nil {
+			return err
+		}
+		if !running {
+			return fmt.Errorf("global auto-work candidate project=%d card=%s did not start a job", candidate.projectID, candidate.cardID)
+		}
+		return nil
 	}
 	return nil
 }
@@ -109,7 +168,7 @@ func (s *Server) refreshRunningScrumPlayProjects(ctx context.Context) error {
 	}
 	for _, projectID := range projectIDs {
 		if err := s.refreshScrumPlayQueueForProject(ctx, projectID, "global running reconcile"); err != nil {
-			log.Printf("scrum global running reconcile project=%d: %v", projectID, err)
+			return fmt.Errorf("reconcile running Scrum project %d: %w", projectID, err)
 		}
 	}
 	return nil
@@ -124,20 +183,23 @@ func (s *Server) globalScrumAutoWorkCandidates(ctx context.Context) ([]scrumAuto
 			return nil, err
 		}
 		for _, project := range projects {
-			autoWork := s.scrumAutoWorkConfig(ctx, project.ID)
+			automation, err := loadScrumAutomationSettings(project.Settings)
+			if err != nil {
+				return nil, fmt.Errorf("load Scrum automation settings for project %d: %w", project.ID, err)
+			}
+			autoWork := automation.AutoWork
 			if !autoWork.Enabled {
 				continue
 			}
 			board, err := s.scrumBoardFromProject(ctx, project.ID)
 			if err != nil {
-				log.Printf("scrum global auto-work load project=%d: %v", project.ID, err)
-				continue
+				return nil, fmt.Errorf("load Scrum board for project %d: %w", project.ID, err)
 			}
 			if s.findRunningScrumCard(board) != nil {
 				continue
 			}
-			reviewCfg := s.scrumAutoReviewConfig(ctx, project.ID)
-			if scrumAutoPlayThroughCompleteWithReview(board, reviewCfg.Enabled) {
+			reviewCfg := automation.AutoReview
+			if scrumAutoWorkComplete(board, reviewCfg.Enabled) {
 				continue
 			}
 			next := s.nextAutoWorkScrumCard(board, autoWork)
@@ -191,14 +253,16 @@ func scrumAutoWorkHandoffSuppressed(ctx context.Context) bool {
 	return suppressed
 }
 
-func (s *Server) scrumGlobalPlayActive(ctx context.Context) bool {
+func (s *Server) scrumGlobalPlayActive(ctx context.Context) (bool, error) {
 	if s == nil || s.repo == nil {
-		return false
+		return false, fmt.Errorf("postgres repository is required to check global Scrum play")
+	}
+	if ctx == nil {
+		return false, fmt.Errorf("context is required to check global Scrum play")
 	}
 	running, err := s.repo.HasRunningScrumPlay(ctx)
 	if err != nil {
-		log.Printf("scrum global running check: %v", err)
-		return true
+		return false, err
 	}
-	return running
+	return running, nil
 }

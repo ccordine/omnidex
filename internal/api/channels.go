@@ -55,6 +55,14 @@ type channelMessageRequest struct {
 	HistoryLimit int                `json:"history_limit,omitempty"`
 }
 
+type channelAppendMessageRequest struct {
+	Role         string `json:"role"`
+	Content      string `json:"content"`
+	Remember     *bool  `json:"remember,omitempty"`
+	MemoryKind   string `json:"memory_kind,omitempty"`
+	MemorySource string `json:"memory_source,omitempty"`
+}
+
 type channelMessageResponse struct {
 	Channel      model.Channel        `json:"channel"`
 	UserMessage  model.ChannelMessage `json:"user_message"`
@@ -326,6 +334,18 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) > 1 && parts[1] == "messages" {
+		if len(parts) > 2 {
+			if len(parts) == 3 && parts[2] == "append" {
+				if r.Method != http.MethodPost {
+					http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
+				s.appendChannelMessage(w, r, channelID)
+				return
+			}
+			writeError(w, http.StatusNotFound, "channel route not found")
+			return
+		}
 		switch r.Method {
 		case http.MethodPost:
 			s.postChannelMessage(w, r, channelID)
@@ -364,6 +384,46 @@ func (s *Server) listChannelMessages(w http.ResponseWriter, r *http.Request, cha
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
+}
+
+func (s *Server) appendChannelMessage(w http.ResponseWriter, r *http.Request, channelID string) {
+	var req channelAppendMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	req.Content = strings.TrimSpace(req.Content)
+	if req.Content == "" {
+		writeError(w, http.StatusBadRequest, "content is required")
+		return
+	}
+	channel, err := s.channelStore.GetChannel(r.Context(), channelID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "channel not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	role := normalizeChannelMessageRoleForAPI(req.Role)
+	message, err := s.channelStore.AddChannelMessage(r.Context(), channel.ID, role, req.Content)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if req.Remember != nil && *req.Remember {
+		kind := strings.TrimSpace(req.MemoryKind)
+		if kind == "" {
+			kind = model.MemoryKindEpisodic
+		}
+		source := strings.TrimSpace(req.MemorySource)
+		if source == "" {
+			source = "channel:" + channel.ID + ":append:" + strconv.FormatInt(message.ID, 10)
+		}
+		_, _ = s.channelStore.AddMemoryChunk(r.Context(), source, kind, role+": "+message.Content, channelMemoryTags(channel), nil)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channel": channel, "message": message})
 }
 
 func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, channelID string) {

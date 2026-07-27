@@ -63,13 +63,13 @@ func RunSuccessReconciliation(input SuccessReconciliationInput) SuccessReconcili
 		}
 	}
 	out.Events = append(out.Events, successReconciliationEvent("success_reconciliation_started", "Deterministic success reconciliation started", map[string]string{
-		"command_id":   latestCommandID,
-		"child_job_id": childJobID,
-		"active_child_job_id": firstNonEmpty(childJobID, firstChildJobID(out.ChildJobs)),
+		"command_id":           latestCommandID,
+		"child_job_id":         childJobID,
+		"active_child_job_id":  firstNonEmpty(childJobID, firstChildJobID(out.ChildJobs)),
 		"command_child_job_id": childJobID,
-		"objective_id": objectiveID,
-		"target_root":  input.WorkingDirectory,
-		"child_queue_before": strings.Join(childJobIDs(out.ChildJobs), ","),
+		"objective_id":         objectiveID,
+		"target_root":          input.WorkingDirectory,
+		"child_queue_before":   strings.Join(childJobIDs(out.ChildJobs), ","),
 	}))
 	if len(out.ChildJobs) > 0 && input.LatestObservation != nil && strings.TrimSpace(input.LatestObservation.Command) != "" && childJobID == "" {
 		out.Events = append(out.Events,
@@ -87,6 +87,92 @@ func RunSuccessReconciliation(input SuccessReconciliationInput) SuccessReconcili
 		return out
 	}
 
+	if len(out.WorkQueue) > 0 {
+		out.WorkQueue = ReconcileObjectiveWorkItemsFromObservations(out.WorkQueue, input.Observations)
+	}
+	out.ChildJobs = SyncChildJobsWithObjectiveLedger(out.ChildJobs, out.ObjectiveLedger)
+	if len(out.ChildJobs) == 0 && len(out.WorkQueue) > 0 {
+		out.ChildJobs = BuildChildJobsFromObjectiveWorkItems(out.WorkQueue)
+	}
+	if input.LatestObservation != nil && childJobObservationShouldCreateFailureAttempt(*input.LatestObservation) {
+		if index := focusedChildJobIndexForAttempt(out.ChildJobs, childJobID); index >= 0 {
+			if !childJobAttemptAlreadyRecorded(out.ChildJobs[index], *input.LatestObservation) {
+				out.ChildJobs[index] = AppendChildJobAttemptWithContext(out.ChildJobs[index], *input.LatestObservation, "runtime", "child_job_loop", "", input.WorkingDirectory)
+			}
+		}
+	}
+	for pass := 0; pass < maxInt(1, len(out.ChildJobs)); pass++ {
+		beforeComplete := completedChildJobCount(out.ChildJobs)
+		focusedJobID := ""
+		if pass == 0 {
+			focusedJobID = childJobID
+		}
+		childLoop := RunChildJobLoopOnce(ChildJobLoopInput{
+			Jobs:             out.ChildJobs,
+			WorkingDirectory: input.WorkingDirectory,
+			Observations:     input.Observations,
+			ObjectiveLedger:  out.ObjectiveLedger,
+			FocusedJobID:     focusedJobID,
+		})
+		out.ChildJobs = childLoop.Jobs
+		out.ObjectiveLedger = childLoop.ObjectiveLedger
+		out.NextRequiredChildJob = childLoop.ActiveJob
+		out.NextAction = childLoop.NextAction
+		out.Events = append(out.Events, successEventsFromChildEvents(childLoop.Events)...)
+		if completedChildJobCount(out.ChildJobs) == beforeComplete {
+			break
+		}
+	}
+	for _, objectiveID := range newlySatisfiedStructuredObjectiveIDs(input.ObjectiveLedger, out.ObjectiveLedger) {
+		out.SatisfiedObjectives = append(out.SatisfiedObjectives, objectiveID)
+		out.Events = append(out.Events, successReconciliationEvent("objective_satisfied_from_child_job", "Objective satisfied by its reviewed child job", map[string]string{
+			"objective_id": objectiveID,
+			"command_id":   latestCommandID,
+		}))
+	}
+	for _, job := range out.ChildJobs {
+		if job.Status != ChildJobStatusComplete {
+			continue
+		}
+		out.Events = append(out.Events, successReconciliationEvent("child_job_satisfied_from_evidence", "Child job satisfied from deterministic evidence and scoped review", map[string]string{
+			"child_job_id":        job.ID,
+			"parent_objective_id": job.ParentObjectiveID,
+			"terminal_reason":     job.TerminalReason,
+		}))
+		nextRoute := RouteFilesAfterChildCompletion(out.RouteFiles, job)
+		if !taskRoutesLikelyFilesEqual(out.RouteFiles, nextRoute) {
+			out.StaleRouteInvalidations = append(out.StaleRouteInvalidations, job.ID)
+			out.Events = append(out.Events, successReconciliationEvent("route_context_invalidated", "Route context invalidated after child job mutation evidence", map[string]string{
+				"child_job_id": job.ID,
+			}))
+			out.RouteFiles = nextRoute
+		}
+	}
+	reconcileObjectivesFromEvidence(&out, input, latestCommandID)
+	out.ChildJobs = SyncChildJobsWithObjectiveLedger(out.ChildJobs, out.ObjectiveLedger)
+	out.NextRequiredChildJob = nil
+	if index := activeChildJobIndex(out.ChildJobs); index >= 0 {
+		out.NextRequiredChildJob = &out.ChildJobs[index]
+	} else if index := firstNonTerminalChildJobIndex(out.ChildJobs); index >= 0 {
+		out.NextRequiredChildJob = &out.ChildJobs[index]
+	}
+	if out.NextRequiredChildJob != nil && out.NextRequiredChildJob.Status != ChildJobStatusComplete {
+		out.Events = append(out.Events, successReconciliationEvent("next_child_job_selected", "Next required child job selected from reconciliation", map[string]string{
+			"child_job_id": out.NextRequiredChildJob.ID,
+			"status":       string(out.NextRequiredChildJob.Status),
+		}))
+	}
+	out.Events = append(out.Events, successReconciliationEvent("success_reconciliation_completed", "Deterministic success reconciliation completed", map[string]string{
+		"satisfied_objectives": strings.Join(out.SatisfiedObjectives, ","),
+		"passed_predicates":    fmt.Sprintf("%d", len(out.PassedEvidencePredicates)),
+		"failed_predicates":    fmt.Sprintf("%d", len(out.FailedEvidencePredicates)),
+		"unresolved_blockers":  fmt.Sprintf("%d", len(out.UnresolvedBlockers)),
+		"child_queue_after":    strings.Join(childJobIDs(out.ChildJobs), ","),
+	}))
+	return out
+}
+
+func reconcileObjectivesFromEvidence(out *SuccessReconciliationOutput, input SuccessReconciliationInput, latestCommandID string) {
 	for i := range out.ObjectiveLedger {
 		objective := normalizeStructuredObjectiveOrOriginal(out.ObjectiveLedger[i])
 		if !structuredObjectiveBlocksCompletion(objective) || structuredObjectiveSatisfied(objective) {
@@ -124,77 +210,7 @@ func RunSuccessReconciliation(input SuccessReconciliationInput) SuccessReconcili
 		}
 		out.ObjectiveLedger[i] = objective
 	}
-
-	if len(out.WorkQueue) > 0 {
-		out.WorkQueue = ReconcileObjectiveWorkItemsFromObservations(out.WorkQueue, input.Observations)
-	}
-	out.ChildJobs = SyncChildJobsWithObjectiveLedger(out.ChildJobs, out.ObjectiveLedger)
-	if len(out.ChildJobs) == 0 && len(out.WorkQueue) > 0 {
-		out.ChildJobs = BuildChildJobsFromObjectiveWorkItems(out.WorkQueue)
-	}
-	if input.LatestObservation != nil && childJobObservationShouldCreateFailureAttempt(*input.LatestObservation) {
-		if index := focusedChildJobIndexForAttempt(out.ChildJobs, childJobID); index >= 0 {
-			if !childJobAttemptAlreadyRecorded(out.ChildJobs[index], *input.LatestObservation) {
-				out.ChildJobs[index] = AppendChildJobAttemptWithContext(out.ChildJobs[index], *input.LatestObservation, "runtime", "child_job_loop", "", input.WorkingDirectory)
-			}
-		}
-	}
-	for pass := 0; pass < maxInt(1, len(out.ChildJobs)); pass++ {
-		beforeComplete := completedChildJobCount(out.ChildJobs)
-		childLoop := RunChildJobLoopOnce(ChildJobLoopInput{
-			Jobs:             out.ChildJobs,
-			WorkingDirectory: input.WorkingDirectory,
-			Observations:     input.Observations,
-			ObjectiveLedger:  out.ObjectiveLedger,
-		})
-		out.ChildJobs = childLoop.Jobs
-		out.ObjectiveLedger = childLoop.ObjectiveLedger
-		out.NextRequiredChildJob = childLoop.ActiveJob
-		out.NextAction = childLoop.NextAction
-		out.Events = append(out.Events, successEventsFromChildEvents(childLoop.Events)...)
-		if completedChildJobCount(out.ChildJobs) == beforeComplete {
-			break
-		}
-	}
-	for _, job := range out.ChildJobs {
-		if job.Status != ChildJobStatusComplete {
-			continue
-		}
-		out.Events = append(out.Events, successReconciliationEvent("child_job_satisfied_from_evidence", "Child job satisfied from deterministic evidence and scoped review", map[string]string{
-			"child_job_id":        job.ID,
-			"parent_objective_id": job.ParentObjectiveID,
-			"terminal_reason":     job.TerminalReason,
-		}))
-		nextRoute := RouteFilesAfterChildCompletion(out.RouteFiles, job)
-		if !taskRoutesLikelyFilesEqual(out.RouteFiles, nextRoute) {
-			out.StaleRouteInvalidations = append(out.StaleRouteInvalidations, job.ID)
-			out.Events = append(out.Events, successReconciliationEvent("route_context_invalidated", "Route context invalidated after child job mutation evidence", map[string]string{
-				"child_job_id": job.ID,
-			}))
-			out.RouteFiles = nextRoute
-		}
-	}
-	out.ChildJobs = SyncChildJobsWithObjectiveLedger(out.ChildJobs, out.ObjectiveLedger)
-	out.NextRequiredChildJob = nil
-	if index := activeChildJobIndex(out.ChildJobs); index >= 0 {
-		out.NextRequiredChildJob = &out.ChildJobs[index]
-	} else if index := firstNonTerminalChildJobIndex(out.ChildJobs); index >= 0 {
-		out.NextRequiredChildJob = &out.ChildJobs[index]
-	}
-	if out.NextRequiredChildJob != nil && out.NextRequiredChildJob.Status != ChildJobStatusComplete {
-		out.Events = append(out.Events, successReconciliationEvent("next_child_job_selected", "Next required child job selected from reconciliation", map[string]string{
-			"child_job_id": out.NextRequiredChildJob.ID,
-			"status":       string(out.NextRequiredChildJob.Status),
-		}))
-	}
-	out.Events = append(out.Events, successReconciliationEvent("success_reconciliation_completed", "Deterministic success reconciliation completed", map[string]string{
-		"satisfied_objectives": strings.Join(out.SatisfiedObjectives, ","),
-		"passed_predicates":    fmt.Sprintf("%d", len(out.PassedEvidencePredicates)),
-		"failed_predicates":    fmt.Sprintf("%d", len(out.FailedEvidencePredicates)),
-		"unresolved_blockers":  fmt.Sprintf("%d", len(out.UnresolvedBlockers)),
-		"child_queue_after":    strings.Join(childJobIDs(out.ChildJobs), ","),
-	}))
-	return out
+	out.SatisfiedObjectives = uniqueNonEmptyStrings(out.SatisfiedObjectives)
 }
 
 func childJobObservationShouldCreateFailureAttempt(obs StructuredCommandObservation) bool {

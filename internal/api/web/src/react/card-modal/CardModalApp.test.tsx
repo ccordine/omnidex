@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CardModalSpaController from "../../controllers/card_modal_spa_controller";
 import type { ScrumCardModalResponse } from "../../lib/scrum_types";
+import { requestRealtimeSync } from "../../lib/realtime_sync";
 import { CardModalApp } from "./CardModalApp";
 
 type ModalContextOverrides = Partial<Omit<ScrumCardModalResponse, "card" | "board">> & {
@@ -70,7 +71,9 @@ describe("card modal React SPA", () => {
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    document.querySelector('[data-controller="card-modal-spa"]')?.remove();
+    await Promise.resolve();
     application?.stop();
     application = null;
     cleanup();
@@ -90,6 +93,156 @@ describe("card modal React SPA", () => {
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith("/v1/scrum/cards/card_1/modal?project_id=7&tab=card");
     });
+  });
+
+  it("summarizes structured tool activity and keeps verbose command output in details", async () => {
+    const context = makeModalContext({
+      tab: "channel",
+      card: {
+        chat: [{
+          id: "tool_1",
+          role: "tool",
+          created_at: "2026-06-13T12:00:00Z",
+          content: JSON.stringify({
+            activity: "command",
+            title: "Run · go test ./internal/api",
+            status: "completed",
+            command: "go test ./internal/api -count=1",
+            detail: "all tests passed",
+          }),
+        }],
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(context)));
+
+    render(<CardModalApp cardID="card_1" projectID={7} initialTab="channel" />);
+
+    expect(await screen.findByText("Run · go test ./internal/api")).toBeInTheDocument();
+    expect(screen.queryByText(/"activity":"command"/)).not.toBeInTheDocument();
+    expect(screen.getByText("all tests passed")).not.toBeVisible();
+    expect(screen.getByText("Details")).toBeInTheDocument();
+  });
+
+  it("preserves the reader's channel position when earlier activity is loaded", async () => {
+    const context = makeModalContext({
+      tab: "channel",
+      channel_before_cursor: "cursor_50",
+      channel_has_more: true,
+      card: {
+        chat: [{ id: "current", role: "assistant", content: "current activity", created_at: "2026-06-13T12:00:00Z" }],
+      },
+    });
+    let releasePage!: (response: Response) => void;
+    const pageResponse = new Promise<Response>((resolve) => {
+      releasePage = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/chat?")) return pageResponse;
+      return jsonResponse(context);
+    }));
+
+    render(<CardModalApp cardID="card_1" projectID={7} initialTab="channel" />);
+
+    const current = await screen.findByText("current activity");
+    const stream = current.closest(".scrollbar") as HTMLDivElement;
+    let scrollHeight = 500;
+    Object.defineProperty(stream, "scrollHeight", { configurable: true, get: () => scrollHeight });
+    stream.scrollTop = 200;
+    fireEvent.scroll(stream);
+    fireEvent.click(screen.getByRole("button", { name: "Load earlier activity" }));
+    scrollHeight = 700;
+    releasePage(jsonResponse({
+      messages: [{ id: "earlier", role: "assistant", content: "earlier activity", created_at: "2026-06-13T11:00:00Z" }],
+      before_cursor: "cursor_1",
+      has_more: false,
+    }));
+
+    expect(await screen.findByText("earlier activity")).toBeInTheDocument();
+    await waitFor(() => expect(stream.scrollTop).toBe(400));
+  });
+
+  it("applies the single typed realtime card event without refetching modal context", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(modalContext));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CardModalApp cardID="card_1" projectID={7} />);
+    expect(await screen.findByText("React modal card")).toBeInTheDocument();
+    fetchMock.mockClear();
+    const boardRefresh = vi.fn();
+    document.addEventListener("omni:scrum-refresh", boardRefresh, { once: true });
+
+    document.dispatchEvent(new CustomEvent("omni:scrum-card-updated", {
+      detail: {
+        cardID: "card_1",
+        projectID: 7,
+        reason: "agent output",
+        card: { ...modalContext.card, title: "Live typed card", updated_at: "2026-06-13T12:01:00Z" },
+      },
+    }));
+
+    expect(await screen.findByText("Live typed card")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(boardRefresh).not.toHaveBeenCalled();
+    document.removeEventListener("omni:scrum-refresh", boardRefresh);
+  });
+
+  it("retains visible channel history when a bounded realtime card snapshot arrives", async () => {
+    const context = makeModalContext({
+      tab: "channel",
+      card: {
+        chat: [
+          { id: "older", role: "assistant", content: "older visible activity", created_at: "2026-06-13T11:00:00Z" },
+          { id: "current", role: "assistant", content: "current visible activity", created_at: "2026-06-13T12:00:00Z" },
+        ],
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(context)));
+    render(<CardModalApp cardID="card_1" projectID={7} initialTab="channel" />);
+    expect(await screen.findByText("older visible activity")).toBeInTheDocument();
+
+    document.dispatchEvent(new CustomEvent("omni:scrum-card-updated", {
+      detail: {
+        cardID: "card_1",
+        projectID: 7,
+        reason: "agent output",
+        card: {
+          ...context.card,
+          chat: [
+            { id: "current", role: "assistant", content: "current visible activity", created_at: "2026-06-13T12:00:00Z" },
+            { id: "new", role: "assistant", content: "new live activity", created_at: "2026-06-13T12:01:00Z" },
+          ],
+        },
+      },
+    }));
+
+    expect(await screen.findByText("new live activity")).toBeInTheDocument();
+    expect(screen.getByText("older visible activity")).toBeInTheDocument();
+  });
+
+  it("reloads authoritative modal state when the realtime stream requires synchronization", async () => {
+    const refreshed = makeModalContext({ card: { title: "Server reconciled card" } });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(modalContext))
+      .mockResolvedValueOnce(jsonResponse(refreshed));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CardModalApp cardID="card_1" projectID={7} />);
+    expect(await screen.findByText("React modal card")).toBeInTheDocument();
+
+    await requestRealtimeSync("replay_gap", 42);
+
+    expect(await screen.findByText("Server reconciled card")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects realtime synchronization when authoritative modal state cannot be read", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(modalContext))
+      .mockResolvedValueOnce(jsonResponse({ error: "modal synchronization failed" }, 503));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CardModalApp cardID="card_1" projectID={7} />);
+    expect(await screen.findByText("React modal card")).toBeInTheDocument();
+
+    await expect(requestRealtimeSync("replay_gap", 43)).rejects.toThrow("modal synchronization failed");
+    expect(await screen.findByText("modal synchronization failed")).toBeInTheDocument();
   });
 
   it("saves only explicit model overrides from the config tab", async () => {
@@ -158,7 +311,7 @@ describe("card modal React SPA", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use codex" }));
 
     await waitFor(() => expect(patchBodies).toHaveLength(1));
-    expect(patchBodies[0]).toEqual({ agent_config: { agent_system: "codex", agent_strict: "true" } });
+    expect(patchBodies[0]).toEqual({ agent_config: { agent_system: "codex" } });
   });
 
   it("plays paused cards instead of sending another pause request", async () => {

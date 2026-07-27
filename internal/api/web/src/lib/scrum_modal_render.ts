@@ -1,8 +1,6 @@
 import { escapeHTML } from "./dom";
 import { COLUMN_LABELS, SCRUM_COLUMNS, type ScrumCreateTicketConfig } from "./scrum_types";
 
-export type ScrumCardTab = "card" | "files" | "tests" | "config" | "recipe" | "channel";
-
 export function renderScrumCreateCardModal(defaultColumn = "backlog", createTicket: ScrumCreateTicketConfig = { enabled: false, column: "backlog" }): string {
   const columnOptions = SCRUM_COLUMNS.map((col) => {
     const selected = col === defaultColumn ? " selected" : "";

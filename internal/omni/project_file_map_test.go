@@ -74,6 +74,13 @@ func TestValidateCommandAgainstProjectFileMapRejectsWrongActiveFile(t *testing.T
 	}
 }
 
+func TestProjectFileMapForCommandValidationRequiresArchitectProgress(t *testing.T) {
+	projectMap := projectFileMapForCommandValidation(t.TempDir(), nil)
+	if len(projectMap.Files) != 0 {
+		t.Fatalf("planner-only run received an invented architect file map: %#v", projectMap)
+	}
+}
+
 func TestMarkProjectFileMapEntryDoneUpdatesOpenChanges(t *testing.T) {
 	projectMap := ProjectFileMap{
 		Revision: 1,

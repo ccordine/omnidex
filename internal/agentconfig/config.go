@@ -1,9 +1,6 @@
 package agentconfig
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
 	"strings"
 )
 
@@ -31,13 +28,6 @@ var Fields = []Field{
 		Description: "Which agent executes work: Omnidex (local stack), Cursor SDK, or Codex SDK. Project/card context still applies.",
 		EnvKeys:     []string{"OMNI_ARCHITECT_AGENT", "OMNI_AGENT_SYSTEM"},
 		Options:     []string{"omnidex", "cursor", "codex"},
-	},
-	{
-		Key:         "agent_strict",
-		Label:       "Strict external agent",
-		Description: "When using Cursor or Codex, do not fall back to Omnidex if the external agent is unavailable or fails.",
-		EnvKeys:     []string{"OMNI_AGENT_STRICT"},
-		Options:     []string{"true", "false"},
 	},
 	{
 		Key:         "cursor_model",
@@ -90,124 +80,6 @@ var Fields = []Field{
 
 type Config map[string]string
 
-func FromEnv() Config {
-	out := Config{}
-	for _, field := range Fields {
-		if value := lookupEnv(field.EnvKeys); value != "" {
-			out[field.Key] = value
-		}
-	}
-	return normalizeAgentConfig(out)
-}
-
-func FromEnvFileValues(values map[string]string) Config {
-	out := Config{}
-	for _, field := range Fields {
-		if value := lookupMap(values, field.EnvKeys); value != "" {
-			out[field.Key] = value
-		}
-	}
-	return normalizeAgentConfig(out)
-}
-
-func FromStringMap(values map[string]string) Config {
-	out := Config{}
-	for key, value := range values {
-		if strings.TrimSpace(value) != "" {
-			out[key] = strings.TrimSpace(value)
-		}
-	}
-	return normalizeAgentConfig(out)
-}
-
-func normalizeAgentConfig(out Config) Config {
-	if sys := normalizeSystem(out.Get("agent_system")); sys != "" {
-		out["agent_system"] = sys
-	}
-	return out
-}
-
-func FromJSON(raw json.RawMessage) Config {
-	out := Config{}
-	if len(raw) == 0 {
-		return out
-	}
-	var payload map[string]string
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		var generic map[string]any
-		if err := json.Unmarshal(raw, &generic); err != nil {
-			return out
-		}
-		for key, value := range generic {
-			if text := configValueString(value); text != "" {
-				out[key] = text
-			}
-		}
-	} else {
-		for key, value := range payload {
-			if strings.TrimSpace(value) != "" {
-				out[key] = strings.TrimSpace(value)
-			}
-		}
-	}
-	if _, ok := out["agent_system"]; ok {
-		if sys := normalizeSystem(out.Get("agent_system")); sys != "" {
-			out["agent_system"] = sys
-		}
-	}
-	return out
-}
-
-func FromSettingsJSON(raw json.RawMessage) Config {
-	if len(raw) == 0 {
-		return Config{}
-	}
-	var settings map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &settings); err != nil {
-		return Config{}
-	}
-	if nested, ok := settings["agent_config"]; ok {
-		return FromJSON(nested)
-	}
-	return Config{}
-}
-
-func FromJobMetadata(raw json.RawMessage) Config {
-	if len(raw) == 0 {
-		return Config{}
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return Config{}
-	}
-	if nested, ok := payload["agent_config"]; ok {
-		bytes, err := json.Marshal(nested)
-		if err != nil {
-			return Config{}
-		}
-		cfg := FromJSON(bytes)
-		if cfg.Get("agent_system") == "" {
-			if value := normalizeSystem(configValueString(payload["execution_agent"])); value != "" {
-				cfg["agent_system"] = value
-			}
-		}
-		if cfg.Get("agent_strict") == "" {
-			if value := configValueString(payload["agent_strict"]); value != "" {
-				cfg["agent_strict"] = value
-			}
-		}
-		return normalizeAgentConfig(cfg)
-	}
-	cfg := Config{}
-	if value := normalizeSystem(configValueString(payload["execution_agent"])); value != "" {
-		cfg["agent_system"] = value
-	}
-	if value := configValueString(payload["agent_strict"]); value != "" {
-		cfg["agent_strict"] = value
-	}
-	return normalizeAgentConfig(cfg)
-}
-
 func Merge(layers ...Config) Config {
 	out := Config{}
 	for _, layer := range layers {
@@ -215,11 +87,6 @@ func Merge(layers ...Config) Config {
 			if strings.TrimSpace(value) != "" {
 				out[key] = strings.TrimSpace(value)
 			}
-		}
-	}
-	if _, ok := out["agent_system"]; ok {
-		if sys := normalizeSystem(out.Get("agent_system")); sys != "" {
-			out["agent_system"] = sys
 		}
 	}
 	return out
@@ -233,7 +100,7 @@ func (c Config) Get(key string) string {
 }
 
 func (c Config) System() string {
-	sys := normalizeSystem(c.Get("agent_system"))
+	sys := c.Get("agent_system")
 	if sys == "" {
 		return SystemOmnidex
 	}
@@ -243,10 +110,6 @@ func (c Config) System() string {
 func (c Config) IsExternal() bool {
 	sys := c.System()
 	return sys == SystemCursor || sys == SystemCodex
-}
-
-func (c Config) IsStrict() bool {
-	return parseBool(c.Get("agent_strict"))
 }
 
 func (c Config) CodexModel() string {
@@ -295,11 +158,6 @@ func (c Config) ToMap() map[string]string {
 			out[key] = strings.TrimSpace(value)
 		}
 	}
-	if sys := normalizeSystem(out["agent_system"]); sys != "" {
-		out["agent_system"] = sys
-	} else if _, ok := out["agent_system"]; ok {
-		delete(out, "agent_system")
-	}
 	return out
 }
 
@@ -317,7 +175,6 @@ func (c Config) FieldList(envValues map[string]string) []map[string]any {
 			value = lookupEnv(field.EnvKeys)
 		}
 		if field.Key == "agent_system" {
-			value = normalizeSystem(value)
 			if value == "" {
 				value = SystemOmnidex
 			}
@@ -332,54 +189,6 @@ func (c Config) FieldList(envValues map[string]string) []map[string]any {
 		})
 	}
 	return items
-}
-
-func normalizeSystem(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	switch value {
-	case "", "none", "local", "omnidex", "default":
-		return SystemOmnidex
-	case "cursor", "cursor_sdk":
-		return SystemCursor
-	case "codex", "codex_sdk":
-		return SystemCodex
-	default:
-		return value
-	}
-}
-
-func configValueString(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return strings.TrimSpace(typed)
-	case bool:
-		if typed {
-			return "true"
-		}
-		return "false"
-	default:
-		return strings.TrimSpace(fmt.Sprint(typed))
-	}
-}
-
-func parseBool(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on", "strict":
-		return true
-	default:
-		return false
-	}
-}
-
-func lookupEnv(keys []string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func lookupMap(values map[string]string, keys []string) string {

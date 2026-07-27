@@ -288,8 +288,18 @@ func memoryRecordLooksForeignProject(record MemoryRecord, identities map[string]
 
 func validatedPlaybookRecordIsNormalizedAdvisory(record MemoryRecord) bool {
 	var playbook ValidatedPlaybook
-	if json.Unmarshal([]byte(strings.TrimSpace(record.Content)), &playbook) != nil {
-		return false
+	content := strings.TrimSpace(record.Content)
+	if json.Unmarshal([]byte(content), &playbook) != nil {
+		tags := cleanMemoryTags(record.Tags)
+		if !stringListContains(tags, "validated-playbook") || !stringListContains(tags, "advisory-only") {
+			return false
+		}
+		lower := strings.ToLower(content)
+		return strings.Contains(lower, "task_pattern=") &&
+			strings.Contains(lower, "scope_policy=") &&
+			strings.Contains(lower, "advisory") &&
+			!strings.Contains(lower, "fruityloops") &&
+			!strings.Contains(lower, "fruitmixer")
 	}
 	if !strings.Contains(strings.ToLower(playbook.ScopePolicy), "advisory") {
 		return false

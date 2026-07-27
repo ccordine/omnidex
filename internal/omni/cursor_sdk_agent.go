@@ -3,6 +3,7 @@ package omni
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -128,7 +129,7 @@ func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectA
 	}
 	return &externalAgentCommandSession{
 		agent: "cursor",
-		command: func(ctx context.Context, job ExternalAgentJob) (*exec.Cmd, error) {
+		command: func(ctx context.Context, job ExternalAgentJob) (*exec.Cmd, func() error, error) {
 			workspace := strings.TrimSpace(job.Workspace)
 			if workspace == "" {
 				workspace = "."
@@ -141,9 +142,13 @@ func (a *CursorSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectA
 			}
 			reqPath, err := writeExternalAgentRequest("omnidex-cursor-sdk-request-*.json", request)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			return cursorrunner.Command(ctx, a.RunnerDir, reqPath)
+			cmd, err := cursorrunner.Command(ctx, a.RunnerDir, reqPath)
+			if err != nil {
+				return nil, nil, errors.Join(err, removeExternalAgentRequest(reqPath))
+			}
+			return cmd, func() error { return removeExternalAgentRequest(reqPath) }, nil
 		},
 	}, nil
 }

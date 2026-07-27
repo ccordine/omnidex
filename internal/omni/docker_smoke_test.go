@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ func TestStructuredCommandDecisionBuildsRunsAndVerifiesDockerApp(t *testing.T) {
 		t.Skipf("scratch image smoke test builds linux-amd64 binary; current platform is %s-%s", runtime.GOOS, runtime.GOARCH)
 	}
 
-	root := t.TempDir()
+	appDir := t.TempDir()
 	port := freeTCPPort(t)
 	name := fmt.Sprintf("omni-docker-smoke-%d", time.Now().UnixNano())
 	image := name + ":test"
@@ -28,24 +27,38 @@ func TestStructuredCommandDecisionBuildsRunsAndVerifiesDockerApp(t *testing.T) {
 		_ = exec.Command("docker", "rmi", "-f", image).Run()
 	})
 
-	command := buildDockerSmokeCommand(root, name, image, port)
-	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":` + quoteJSONForGoCLITest(command) + `,"done":false,"answer":""}`,
-		`{"command":"","done":true,"answer":"Docker app built, ran, passed health check, had clear logs, and was not in a restart loop."}`,
-	}}
+	commands := dockerSmokePlannerCommands(name, image, port)
+	client := &fakeCommandDecisionClient{responses: fakePlannerCommandResponses(commands, "Docker app built, ran, passed its health check, and remained stable.")}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: dockerSmokeObjectives(commands),
+	}}}
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	result, err := RunStructuredCommandDecision(ctx, "Build and run a simple Docker application, then prove it is alive and healthy.", client, stdout, stderr)
+	result, err := runStructuredCommandDecisionWithConfig(
+		ctx,
+		"Create, build, and run a simple Docker application, then prove it is alive, stable, and free of error logs.",
+		nil,
+		client,
+		stdout,
+		stderr,
+		nil,
+		nil,
+		structuredCommandDecisionRunConfig{
+			CurrentWorkingDirectory: appDir,
+			PromptInterpreter:       interpreter,
+		},
+	)
 	if err != nil {
 		t.Fatalf("docker smoke failed: %v\ncommand=%q\nstdout=%s\nstderr=%s\nobservations=%#v",
 			err, result.Command, stdout.String(), stderr.String(), result.Observations)
 	}
-	if client.calls != 2 {
-		t.Fatalf("llm calls = %d, want 2", client.calls)
+	if client.calls < len(commands) || client.calls > len(commands)+1 {
+		t.Fatalf("llm calls = %d, want %d command decisions and at most one done request", client.calls, len(commands))
 	}
+	assertSuccessfulPlannerCommandsObserved(t, commands, result.Observations)
 	validateDockerSmokeEvidence(t, name, stdout.String(), stderr.String(), result.Answer)
 }
 
@@ -63,14 +76,8 @@ func requireDockerDaemon(t *testing.T) {
 	}
 }
 
-func buildDockerSmokeCommand(root, name, image string, port int) string {
-	return fmt.Sprintf(`set -e
-root=%[1]q
-name=%[2]q
-image=%[3]q
-port=%[4]d
-mkdir -p "$root/app"
-cat > "$root/app/main.go" <<'GO'
+func dockerSmokePlannerCommands(name, image string, port int) []string {
+	return []string{`cat > main.go <<'GO'
 package main
 
 import (
@@ -94,47 +101,101 @@ func main() {
 	}
 }
 GO
-cat > "$root/app/Dockerfile" <<'DOCKER'
+`, `cat > Dockerfile <<'DOCKER'
 FROM scratch
 COPY app /app
 EXPOSE 8080
 ENTRYPOINT ["/app"]
 DOCKER
-cd "$root/app"
-go mod init example.com/omni-docker-smoke
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o app .
-docker rm -f "$name" >/dev/null 2>&1 || true
-docker rmi -f "$image" >/dev/null 2>&1 || true
-docker build -t "$image" .
-docker run -d --name "$name" --restart=no -p 127.0.0.1:"$port":8080 "$image"
-for i in 1 2 3 4 5 6 7 8 9 10; do
-	curl -fsS "http://127.0.0.1:$port/health" && break
-	sleep 1
-done
-health=$(curl -fsS "http://127.0.0.1:$port/health")
-test "$health" = "omni docker smoke alive"
-running=$(docker inspect -f '{{.State.Running}}' "$name")
-restarting=$(docker inspect -f '{{.State.Restarting}}' "$name")
-restart_count=$(docker inspect -f '{{.RestartCount}}' "$name")
-test "$running" = "true"
-test "$restarting" = "false"
-test "$restart_count" = "0"
-logs=$(docker logs "$name" 2>&1)
-printf '%%s\n' "$logs" | grep -Eiq 'panic|fatal|error|traceback|exception' && { printf 'bad docker logs:\n%%s\n' "$logs" >&2; exit 1; }
-printf 'DOCKER_SMOKE_OK container=%%s image=%%s port=%%s health=%%s running=%%s restarting=%%s restart_count=%%s\n' "$name" "$image" "$port" "$health" "$running" "$restarting" "$restart_count"
-printf 'DOCKER_LOGS_CLEAR\n'`, root, name, image, port)
+`,
+		"go mod init example.com/omni-docker-smoke",
+		"CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags='-s -w' -o app .",
+		fmt.Sprintf("docker build -t %s .", image),
+		fmt.Sprintf("docker run -d --name %s --restart=no -p 127.0.0.1:%d:8080 %s", name, port, image),
+		fmt.Sprintf("curl --retry 10 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:%d/health", port),
+		fmt.Sprintf("docker inspect -f 'running={{.State.Running}} restarting={{.State.Restarting}} restart_count={{.RestartCount}}' %s", name),
+		fmt.Sprintf("docker logs %s", name),
+	}
+}
+
+func dockerSmokeObjectives(commands []string) []StructuredObjective {
+	definitions := []struct {
+		id          string
+		description string
+		kind        WorkItemKind
+	}{
+		{"write_server", "Create the Go HTTP server source", WorkItemKindCreate},
+		{"write_dockerfile", "Create the scratch-image Dockerfile", WorkItemKindCreate},
+		{"initialize_module", "Initialize the Go module", WorkItemKindVerify},
+		{"build_binary", "Build the static Go server binary", WorkItemKindVerify},
+		{"build_image", "Build the Docker image", WorkItemKindVerify},
+		{"run_container", "Run the requested container", WorkItemKindVerify},
+		{"verify_health", "Verify the container health endpoint", WorkItemKindVerify},
+		{"inspect_container", "Inspect running, restarting, and restart-count state", WorkItemKindVerify},
+		{"inspect_logs", "Inspect the container logs", WorkItemKindVerify},
+	}
+	objectives := make([]StructuredObjective, 0, len(definitions))
+	for i, definition := range definitions {
+		objective := StructuredObjective{
+			ID:          definition.id,
+			Description: definition.description,
+			Status:      "pending",
+			Kind:        string(definition.kind),
+			Source:      structuredObjectiveSourceUserExplicit,
+			Required:    true,
+		}
+		if definition.kind == WorkItemKindVerify {
+			objective.RequiredEvidence = []string{"command_passed:" + commands[i]}
+		}
+		objectives = append(objectives, objective)
+	}
+	return objectives
+}
+
+func fakePlannerCommandResponses(commands []string, answer string) []string {
+	responses := make([]string, 0, len(commands)+1)
+	for _, command := range commands {
+		responses = append(responses, `{"command":`+quoteJSONForGoCLITest(command)+`,"done":false,"answer":""}`)
+	}
+	responses = append(responses, `{"command":"","done":true,"answer":`+quoteJSONForGoCLITest(answer)+`}`)
+	return responses
+}
+
+func assertSuccessfulPlannerCommandsObserved(t *testing.T, commands []string, observations []StructuredCommandObservation) {
+	t.Helper()
+	for _, command := range commands {
+		want := normalizeStructuredCommandForComparison(command)
+		found := false
+		for _, observation := range observations {
+			if observation.ExitCode == 0 && normalizeStructuredCommandForComparison(observation.Command) == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("successful planner command was not observed: %q\nobservations=%#v", command, observations)
+		}
+	}
+}
+
+func TestDockerSmokePlannerCommandsAreBoundedPolicyUnits(t *testing.T) {
+	commands := dockerSmokePlannerCommands("omni-docker-contract", "omni-docker-contract:test", 8081)
+	for _, command := range commands {
+		if err := validateUnsafeMutationCommandShape(command); err != nil {
+			t.Fatalf("bounded Docker command rejected: %q: %v", command, err)
+		}
+	}
 }
 
 func validateDockerSmokeEvidence(t *testing.T, name, stdout, stderr, answer string) {
 	t.Helper()
 	combined := stdout + "\n" + stderr + "\n" + answer
 	for _, want := range []string{
-		"DOCKER_SMOKE_OK",
-		"health=omni docker smoke alive",
+		"omni docker smoke alive",
 		"running=true",
 		"restarting=false",
 		"restart_count=0",
-		"DOCKER_LOGS_CLEAR",
+		"omni docker smoke server listening",
 	} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("docker smoke evidence missing %q\nstdout=%s\nstderr=%s\nanswer=%s", want, stdout, stderr, answer)
@@ -207,13 +268,4 @@ func TestLiveOllamaBuildsRunsAndVerifiesDockerApp(t *testing.T) {
 	}
 	assertNoFalseCapabilityLimitation(t, client, result, stdout.String(), stderr.String())
 	validateDockerSmokeEvidence(t, name, stdout.String(), stderr.String(), result.Answer)
-}
-
-func TestBuildDockerSmokeCommandMentionsRequiredLifecycleChecks(t *testing.T) {
-	command := buildDockerSmokeCommand(filepath.Join(t.TempDir(), "x"), "omni-docker-contract", "omni-docker-contract:test", 8081)
-	for _, want := range []string{"docker build", "docker run -d", "curl -fsS", "docker inspect", ".RestartCount", ".State.Restarting", "docker logs", "DOCKER_LOGS_CLEAR"} {
-		if !strings.Contains(command, want) {
-			t.Fatalf("docker smoke command missing %q\n%s", want, command)
-		}
-	}
 }

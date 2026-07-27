@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-const scrumAutoPlayThroughKey = "scrum_auto_play_through"
 const scrumAutoWorkConfigKey = "scrum_auto_work"
 const scrumAutoWorkStartFailureNoteLimit = 1200
 
@@ -52,65 +52,74 @@ func normalizeScrumAutoWorkColumns(columns []string) []string {
 	return out
 }
 
-func loadScrumAutoWorkConfig(settings json.RawMessage) ScrumAutoWorkConfig {
+func validateScrumAutoWorkConfig(cfg ScrumAutoWorkConfig) (ScrumAutoWorkConfig, error) {
+	if len(cfg.SourceColumns) == 0 {
+		cfg.SourceColumns = append([]string{}, defaultScrumAutoWorkColumns...)
+		return cfg, nil
+	}
+	seen := make(map[string]struct{}, len(cfg.SourceColumns))
+	columns := make([]string, 0, len(cfg.SourceColumns))
+	for _, raw := range cfg.SourceColumns {
+		column := normalizeScrumColumn(strings.TrimSpace(raw))
+		switch column {
+		case "backlog", "ready", "assigned", "in_progress", "blocked":
+		default:
+			return ScrumAutoWorkConfig{}, fmt.Errorf("unsupported Scrum auto-work source column %q", raw)
+		}
+		if _, exists := seen[column]; exists {
+			return ScrumAutoWorkConfig{}, fmt.Errorf("duplicate Scrum auto-work source column %q", column)
+		}
+		seen[column] = struct{}{}
+		columns = append(columns, column)
+	}
+	cfg.SourceColumns = columns
+	return cfg, nil
+}
+
+func loadScrumAutoWorkConfig(settings json.RawMessage) (ScrumAutoWorkConfig, error) {
 	cfg := defaultScrumAutoWorkConfig()
-	if len(settings) == 0 {
-		return cfg
+	if len(bytes.TrimSpace(settings)) == 0 {
+		return cfg, nil
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(settings, &payload); err != nil {
-		return cfg
+		return ScrumAutoWorkConfig{}, fmt.Errorf("decode project settings for Scrum auto-work: %w", err)
 	}
-	if raw, ok := payload[scrumAutoPlayThroughKey]; ok && len(raw) > 0 {
-		_ = json.Unmarshal(raw, &cfg.Enabled)
+	if _, legacy := payload["scrum_auto_play_through"]; legacy {
+		return ScrumAutoWorkConfig{}, fmt.Errorf("legacy scrum_auto_play_through setting is unsupported; apply database migrations")
 	}
 	if raw, ok := payload[scrumAutoWorkConfigKey]; ok && len(raw) > 0 {
-		var stored ScrumAutoWorkConfig
-		if err := json.Unmarshal(raw, &stored); err == nil {
-			cfg.Enabled = stored.Enabled
-			cfg.SourceColumns = normalizeScrumAutoWorkColumns(stored.SourceColumns)
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return ScrumAutoWorkConfig{}, fmt.Errorf("Scrum auto-work config must be an object")
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return ScrumAutoWorkConfig{}, fmt.Errorf("decode Scrum auto-work config: %w", err)
 		}
 	}
-	cfg.SourceColumns = normalizeScrumAutoWorkColumns(cfg.SourceColumns)
-	return cfg
-}
-
-func loadScrumAutoPlayThrough(settings json.RawMessage) bool {
-	return loadScrumAutoWorkConfig(settings).Enabled
-}
-
-func (s *Server) scrumAutoPlayThroughEnabled(ctx context.Context, projectID int64) bool {
-	return s.scrumAutoWorkConfig(ctx, projectID).Enabled
-}
-
-func (s *Server) scrumAutoWorkConfig(ctx context.Context, projectID int64) ScrumAutoWorkConfig {
-	if s.repo == nil || projectID <= 0 {
-		return defaultScrumAutoWorkConfig()
-	}
-	project, err := s.repo.GetProject(ctx, projectID)
-	if err != nil {
-		return defaultScrumAutoWorkConfig()
-	}
-	return loadScrumAutoWorkConfig(project.Settings)
-}
-
-func (s *Server) saveScrumAutoPlayThrough(ctx context.Context, project model.Project, enabled bool) error {
-	cfg := loadScrumAutoWorkConfig(project.Settings)
-	cfg.Enabled = enabled
-	return s.saveScrumAutoWorkConfig(ctx, project, cfg)
+	return validateScrumAutoWorkConfig(cfg)
 }
 
 func (s *Server) saveScrumAutoWorkConfig(ctx context.Context, project model.Project, cfg ScrumAutoWorkConfig) error {
+	if s == nil || s.repo == nil || project.ID <= 0 {
+		return fmt.Errorf("postgres repository and project are required to save Scrum auto-work config")
+	}
+	validated, err := validateScrumAutoWorkConfig(cfg)
+	if err != nil {
+		return err
+	}
+	if _, err := loadScrumAutoWorkConfig(project.Settings); err != nil {
+		return err
+	}
 	var settings map[string]any
 	if len(project.Settings) > 0 {
-		_ = json.Unmarshal(project.Settings, &settings)
+		if err := json.Unmarshal(project.Settings, &settings); err != nil {
+			return fmt.Errorf("decode project %d settings: %w", project.ID, err)
+		}
 	}
 	if settings == nil {
 		settings = map[string]any{}
 	}
-	cfg.SourceColumns = normalizeScrumAutoWorkColumns(cfg.SourceColumns)
-	settings[scrumAutoPlayThroughKey] = cfg.Enabled
-	settings[scrumAutoWorkConfigKey] = cfg
+	settings[scrumAutoWorkConfigKey] = validated
 	raw, err := json.Marshal(settings)
 	if err != nil {
 		return err
@@ -121,32 +130,19 @@ func (s *Server) saveScrumAutoWorkConfig(ctx context.Context, project model.Proj
 	return err
 }
 
-// nextAutoPlayThroughScrumCard picks the next card top-to-bottom (column order, then board_order).
-func (s *Server) nextAutoPlayThroughScrumCard(board ScrumBoard) *ScrumCard {
-	if next := s.nextQueuedScrumCard(board); next != nil {
-		return next
-	}
-	for _, column := range normalizeScrumAutoWorkColumns(defaultScrumAutoWorkColumns) {
-		if next := s.nextAutoPlayCardInColumn(board, column); next != nil {
-			return next
-		}
-	}
-	return nil
-}
-
 func (s *Server) nextAutoWorkScrumCard(board ScrumBoard, cfg ScrumAutoWorkConfig) *ScrumCard {
 	if next := s.nextQueuedScrumCard(board); next != nil {
 		return next
 	}
 	for _, column := range normalizeScrumAutoWorkColumns(cfg.SourceColumns) {
-		if next := s.nextAutoPlayCardInColumn(board, column); next != nil {
+		if next := s.nextAutoWorkCardInColumn(board, column); next != nil {
 			return next
 		}
 	}
 	return nil
 }
 
-func (s *Server) nextAutoPlayCardInColumn(board ScrumBoard, column string) *ScrumCard {
+func (s *Server) nextAutoWorkCardInColumn(board ScrumBoard, column string) *ScrumCard {
 	column = normalizeScrumColumn(column)
 	candidates := make([]ScrumCard, 0)
 	for _, card := range board.Cards {
@@ -166,11 +162,7 @@ func (s *Server) nextAutoPlayCardInColumn(board ScrumBoard, column string) *Scru
 	return &candidates[0]
 }
 
-func scrumAutoPlayThroughComplete(board ScrumBoard) bool {
-	return scrumAutoPlayThroughCompleteWithReview(board, false)
-}
-
-func scrumAutoPlayThroughCompleteWithReview(board ScrumBoard, autoReviewEnabled bool) bool {
+func scrumAutoWorkComplete(board ScrumBoard, autoReviewEnabled bool) bool {
 	for _, card := range board.Cards {
 		col := normalizeScrumColumn(card.Column)
 		switch col {
@@ -188,7 +180,7 @@ func scrumAutoPlayThroughCompleteWithReview(board ScrumBoard, autoReviewEnabled 
 	return len(board.Cards) > 0
 }
 
-func (s *Server) prepareScrumCardForAutoPlay(r *http.Request, projectID int64, card ScrumCard) (ScrumCard, error) {
+func (s *Server) prepareScrumCardForAutoWork(r *http.Request, projectID int64, card ScrumCard) (ScrumCard, error) {
 	col := normalizeScrumColumn(card.Column)
 	switch col {
 	case "backlog", "ready", "assigned", "in_progress", "blocked":
@@ -204,29 +196,40 @@ func (s *Server) prepareScrumCardForAutoPlay(r *http.Request, projectID int64, c
 
 func (s *Server) kickoffAutoWorkAfterReconcile(r *http.Request, projectID int64, board ScrumBoard) (ScrumBoard, error) {
 	if s == nil || s.repo == nil || projectID <= 0 {
-		return board, nil
+		return board, fmt.Errorf("postgres repository and project are required for Scrum auto-work")
 	}
 	if r == nil {
-		r = scrumRequestForProject(context.Background(), projectID)
+		if s.lifecycleContext == nil {
+			return board, ErrRealtimeLifecycleUnavailable
+		}
+		r = scrumRequestForProject(s.lifecycleContext, projectID)
 	}
 	if scrumAutoWorkHandoffSuppressed(r.Context()) {
 		return board, nil
 	}
-	if !s.scrumAutoWorkConfig(r.Context(), projectID).Enabled {
-		return board, nil
-	}
 	if scrumAutoWorkLockHeld(r.Context()) {
-		return s.kickoffAutoPlayThrough(r, projectID, board)
+		return s.startNextScrumAutoWork(r, projectID, board)
 	}
 	s.scrumAutoWorkMu.Lock()
 	defer s.scrumAutoWorkMu.Unlock()
 	ctx := context.WithValue(r.Context(), scrumAutoWorkLockHeldKey{}, true)
-	return s.kickoffAutoPlayThrough(r.WithContext(ctx), projectID, board)
+	return s.startNextScrumAutoWork(r.WithContext(ctx), projectID, board)
 }
 
-func (s *Server) kickoffAutoPlayThrough(r *http.Request, projectID int64, board ScrumBoard) (ScrumBoard, error) {
+func (s *Server) startNextScrumAutoWork(r *http.Request, projectID int64, board ScrumBoard) (ScrumBoard, error) {
 	if r == nil {
-		r = scrumRequestForProject(context.Background(), projectID)
+		if s.lifecycleContext == nil {
+			return board, ErrRealtimeLifecycleUnavailable
+		}
+		r = scrumRequestForProject(s.lifecycleContext, projectID)
+	}
+	automation, err := s.scrumAutomationSettings(r.Context(), projectID)
+	if err != nil {
+		return board, err
+	}
+	autoWork := automation.AutoWork
+	if !autoWork.Enabled {
+		return board, nil
 	}
 	attempts := len(board.Cards)
 	for attempts > 0 {
@@ -234,11 +237,11 @@ func (s *Server) kickoffAutoPlayThrough(r *http.Request, projectID int64, board 
 		if s.findRunningScrumCard(board) != nil {
 			return board, nil
 		}
-		if s.scrumGlobalPlayActive(r.Context()) {
-			return board, nil
+		globalPlayActive, err := s.scrumGlobalPlayActive(r.Context())
+		if err != nil {
+			return board, err
 		}
-		autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
-		if !autoWork.Enabled {
+		if globalPlayActive {
 			return board, nil
 		}
 		if paused, err := s.repo.IsAIPaused(r.Context()); err != nil {
@@ -246,15 +249,15 @@ func (s *Server) kickoffAutoPlayThrough(r *http.Request, projectID int64, board 
 		} else if paused {
 			return board, nil
 		}
-		reviewCfg := s.scrumAutoReviewConfig(r.Context(), projectID)
-		if scrumAutoPlayThroughCompleteWithReview(board, reviewCfg.Enabled) {
+		reviewCfg := automation.AutoReview
+		if scrumAutoWorkComplete(board, reviewCfg.Enabled) {
 			return board, nil
 		}
 		next := s.nextAutoWorkScrumCard(board, autoWork)
 		if next == nil {
 			return board, nil
 		}
-		prepared, err := s.prepareScrumCardForAutoPlay(r, projectID, *next)
+		prepared, err := s.prepareScrumCardForAutoWork(r, projectID, *next)
 		if err != nil {
 			if _, markErr := s.markScrumAutoWorkStartFailure(r, projectID, *next, err); markErr != nil {
 				return board, markErr
@@ -284,14 +287,11 @@ func (s *Server) kickoffAutoPlayThrough(r *http.Request, projectID int64, board 
 	return board, nil
 }
 
-func (s *Server) reloadScrumBoardAfterAutoWork(ctx context.Context, projectID int64, fallback ScrumBoard) (ScrumBoard, error) {
-	if projectID > 0 {
-		return s.scrumBoardFromProject(ctx, projectID)
+func (s *Server) reloadScrumBoardAfterAutoWork(ctx context.Context, projectID int64, _ ScrumBoard) (ScrumBoard, error) {
+	if s.repo == nil || projectID <= 0 {
+		return ScrumBoard{}, fmt.Errorf("postgres repository and project are required for Scrum auto-work")
 	}
-	if s.scrumStore != nil {
-		return s.scrumStore.Board(), nil
-	}
-	return fallback, nil
+	return s.scrumBoardFromProject(ctx, projectID)
 }
 
 func (s *Server) markScrumAutoWorkStartFailure(r *http.Request, projectID int64, card ScrumCard, cause error) (ScrumCard, error) {
@@ -314,10 +314,13 @@ func (s *Server) markScrumAutoWorkStartFailure(r *http.Request, projectID int64,
 	if err != nil {
 		return ScrumCard{}, err
 	}
-	s.publishScrumCardChatUpdate(r.Context(), projectID, saved, "auto-work start failed")
-	s.publishScrumModalCardRefresh(r.Context(), projectID, saved, "auto-work start failed")
-	if board, err := s.reloadScrumBoardAfterAutoWork(r.Context(), projectID, ScrumBoard{}); err == nil {
-		s.publishScrumBoardRefreshWithToast(r.Context(), projectID, "auto-work start failed", board, "Auto-work moved a failed start to error", "error")
+	s.publishScrumCardUpdate(r.Context(), projectID, saved, "auto-work start failed")
+	board, err := s.reloadScrumBoardAfterAutoWork(r.Context(), projectID, ScrumBoard{})
+	if err != nil {
+		return ScrumCard{}, fmt.Errorf("reload Scrum board after recording auto-work failure: %w", err)
+	}
+	if err := s.publishScrumBoardRefreshWithToast(r.Context(), projectID, "auto-work start failed", board, "Auto-work moved a failed start to error", "error"); err != nil {
+		return ScrumCard{}, fmt.Errorf("publish auto-work failure board state: %w", err)
 	}
 	return saved, nil
 }

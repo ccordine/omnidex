@@ -10,6 +10,7 @@ import (
 )
 
 func TestExecuteMicroJobQueueRunsTinyJobsSequentiallyWithPriorContext(t *testing.T) {
+	workspace := t.TempDir()
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"jobs":[{"id":"job_1","objective":"create marker file","acceptance":"marker file exists"},{"id":"job_2","objective":"read marker file","acceptance":"stdout contains marker text"}]}`,
 		`{"command":"printf 'marker created\n'","done":false,"answer":""}`,
@@ -20,7 +21,7 @@ func TestExecuteMicroJobQueueRunsTinyJobsSequentiallyWithPriorContext(t *testing
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	result, err := ExecuteMicroJobQueue(context.Background(), "build in tiny steps", "/tmp/workspace", client, stdout, stderr, MicroJobQueueConfig{MaxJobs: 4, DisableProjectProfile: true})
+	result, err := ExecuteMicroJobQueue(context.Background(), "build in tiny steps", workspace, client, stdout, stderr, MicroJobQueueConfig{MaxJobs: 4, DisableProjectProfile: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,9 +43,13 @@ func TestExecuteMicroJobQueueRunsTinyJobsSequentiallyWithPriorContext(t *testing
 }
 
 func TestExecuteMicroJobQueueStopsOnFailedMicroJob(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "fail.sh"), []byte("#!/bin/sh\nprintf 'failed\\n' >&2\nexit 2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	client := &fakeCommandDecisionClient{responses: []string{
 		`{"jobs":[{"id":"job_1","objective":"attempt risky step","acceptance":"command succeeds"},{"id":"job_2","objective":"must not run","acceptance":"should not execute"}]}`,
-		`{"command":"printf 'failed\n' >&2; exit 2","done":false,"answer":""}`,
+		`{"command":"sh fail.sh","done":false,"answer":""}`,
 		`{"command":"","done":true,"answer":"failed anyway"}`,
 		`{"command":"","done":true,"answer":"still failed"}`,
 		`{"command":"","done":true,"answer":"still failed"}`,
@@ -58,7 +63,7 @@ func TestExecuteMicroJobQueueStopsOnFailedMicroJob(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	result, err := ExecuteMicroJobQueue(context.Background(), "stop on failure", "/tmp/workspace", client, stdout, stderr, MicroJobQueueConfig{MaxJobs: 4, DisableProjectProfile: true})
+	result, err := ExecuteMicroJobQueue(context.Background(), "stop on failure", workspace, client, stdout, stderr, MicroJobQueueConfig{MaxJobs: 4, DisableProjectProfile: true})
 	if err != nil {
 		t.Fatal(err)
 	}

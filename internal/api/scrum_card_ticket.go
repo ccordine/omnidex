@@ -54,10 +54,14 @@ func (s *Server) handleScrumCardTicket(w http.ResponseWriter, r *http.Request, c
 			IterateNotes: req.IterateNotes,
 		}
 		ticketReq.PlanningMode = true
-		ticketModel := s.scrumCardTicketModel(r.Context(), projectID)
+		ticketModel, err := s.scrumCardTicketModel(r.Context(), projectID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionCardTicket, "", ticketModel, ticketReq)
 		if err != nil {
-			writeError(w, http.StatusConflict, err.Error())
+			writeScrumCardLLMEnqueueError(w, err)
 			return
 		}
 		message := fmt.Sprintf("Queued card ticket job #%d", job.ID)
@@ -80,8 +84,14 @@ func (s *Server) handleScrumCardTicket(w http.ResponseWriter, r *http.Request, c
 }
 
 func (s *Server) persistScrumCardTicketDraft(r *http.Request, cardID, cardPrompt, ticket string) (ScrumCard, error) {
-	ticketRaw, _ := json.Marshal(ticket)
-	promptRaw, _ := json.Marshal(cardPrompt)
+	ticketRaw, err := json.Marshal(ticket)
+	if err != nil {
+		return ScrumCard{}, fmt.Errorf("encode Scrum card ticket: %w", err)
+	}
+	promptRaw, err := json.Marshal(cardPrompt)
+	if err != nil {
+		return ScrumCard{}, fmt.Errorf("encode Scrum card prompt: %w", err)
+	}
 	raw := map[string]json.RawMessage{
 		"card_ticket": ticketRaw,
 		"card_prompt": promptRaw,

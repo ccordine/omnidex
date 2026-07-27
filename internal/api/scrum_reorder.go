@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (s *Server) scrumMoveCard(r *http.Request, cardID, column, beforeCardID string) (ScrumCard, error) {
@@ -13,52 +15,52 @@ func (s *Server) scrumMoveCard(r *http.Request, cardID, column, beforeCardID str
 	}
 	beforeCardID = strings.TrimSpace(beforeCardID)
 
-	if s.repo != nil {
-		projectID, err := s.resolveProjectID(r)
-		if err == nil {
-			board, err := s.scrumBoardFromProject(r.Context(), projectID)
-			if err != nil {
-				return ScrumCard{}, err
-			}
-			before := map[string]ScrumCard{}
-			for _, card := range board.Cards {
-				before[card.ID] = card
-			}
-			updated, changed, err := placeScrumCard(&board, cardID, column, beforeCardID)
-			if err != nil {
-				return ScrumCard{}, err
-			}
-			for _, card := range changed {
-				prev := before[card.ID]
-				if _, err := s.repo.UpdateScrumCard(r.Context(), projectID, card.ID, apiScrumCardToPatch(card)); err != nil {
-					return ScrumCard{}, err
-				}
-				metrics := s.trackScrumCardFlow(r.Context(), projectID, prev, card, "move")
-				if card.ID == updated.ID {
-					updated.FlowMetrics = metrics
-				}
-			}
-			if normalizeScrumColumn(before[updated.ID].Column) != "review" && normalizeScrumColumn(updated.Column) == "review" {
-				if reviewed, err := s.maybeStartScrumAutoReview(r, projectID, board, updated, before[updated.ID].Column); err == nil {
-					updated = reviewed
-				}
-			}
-			s.ReconcileScrumPlayQueueForProjectAsync(projectID)
-			return updated, nil
-		}
+	if s.repo == nil {
+		return ScrumCard{}, fmt.Errorf("postgres repository is required for Scrum")
 	}
-	if s.scrumStore == nil {
-		return ScrumCard{}, fmt.Errorf("scrum store unavailable")
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		return ScrumCard{}, err
 	}
-	board := s.scrumStore.Board()
+	board, err := s.scrumBoardFromProject(r.Context(), projectID)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	before := map[string]ScrumCard{}
+	for _, card := range board.Cards {
+		before[card.ID] = card
+	}
 	updated, changed, err := placeScrumCard(&board, cardID, column, beforeCardID)
 	if err != nil {
 		return ScrumCard{}, err
 	}
+	placements := make([]queue.ScrumCardPlacement, 0, len(changed))
 	for _, card := range changed {
-		if _, err := s.scrumStore.UpdateCard(card.ID, card); err != nil {
-			return ScrumCard{}, err
+		placements = append(placements, queue.ScrumCardPlacement{
+			CardID:     card.ID,
+			Column:     card.Column,
+			BoardOrder: card.BoardOrder,
+		})
+	}
+	if err := s.repo.PlaceScrumCards(r.Context(), projectID, placements); err != nil {
+		return ScrumCard{}, err
+	}
+	for _, card := range changed {
+		previous := before[card.ID]
+		metrics := s.trackScrumCardFlow(r.Context(), projectID, previous, card, "move")
+		if card.ID == updated.ID {
+			updated.FlowMetrics = metrics
 		}
+	}
+	if normalizeScrumColumn(before[updated.ID].Column) != "review" && normalizeScrumColumn(updated.Column) == "review" {
+		reviewed, reviewErr := s.maybeStartScrumAutoReview(r, projectID, board, updated, before[updated.ID].Column)
+		if reviewErr != nil {
+			return ScrumCard{}, fmt.Errorf("start Scrum auto-review: %w", reviewErr)
+		}
+		updated = reviewed
+	}
+	if err := s.ReconcileScrumPlayQueueForProjectAsync(projectID); err != nil {
+		return ScrumCard{}, err
 	}
 	return updated, nil
 }

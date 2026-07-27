@@ -191,50 +191,6 @@ export function renderContextPayload(context) {
   `;
 }
 
-export function renderResearchStatus(payload) {
-  const generation = payload.generation_provider || {};
-  const ollama = payload.ollama || {};
-  const web = payload.web_search || {};
-  const warnings = payload.warnings || [];
-  const probes = web.probes || [];
-  return `
-    <div class="space-y-3">
-      <div class="grid grid-cols-2 gap-2 text-xs">
-        ${metricTile("Runnable", payload.research_runnable ? "yes" : "no", payload.research_runnable ? "ok" : "bad")}
-        ${metricTile("Provider", generation.provider || "unknown", generation.reachable ? "ok" : "bad")}
-        ${metricTile("Ollama", ollama.reachable ? "reachable" : "down", ollama.reachable ? "ok" : "bad")}
-        ${metricTile("Web", web.enabled ? (web.reachable_provider ? "reachable" : "degraded") : "disabled", web.enabled && web.reachable_provider ? "ok" : "warn")}
-      </div>
-      <div class="rounded border border-white/10 bg-white/[.03] p-3">
-        <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Ollama</div>
-        <dl class="mt-2 space-y-1 font-mono text-xs text-zinc-300">
-          <div><span class="text-zinc-500">base_url</span> ${escapeHTML(ollama.base_url || "n/a")}</div>
-          <div><span class="text-zinc-500">configured</span> ${escapeHTML((ollama.configured_models || []).join(", ") || "none")}</div>
-          <div><span class="text-zinc-500">missing</span> ${escapeHTML((ollama.missing_models || []).join(", ") || "none")}</div>
-          <div><span class="text-zinc-500">embedding</span> ${escapeHTML(ollama.embedding_model || "n/a")} ${ollama.embedding_available ? "(available)" : "(not found)"}</div>
-          ${ollama.last_provider_error ? `<div class="text-rose-200"><span class="text-rose-300">error</span> ${escapeHTML(ollama.last_provider_error)}</div>` : ""}
-        </dl>
-      </div>
-      <div class="rounded border border-white/10 bg-white/[.03] p-3">
-        <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Web Providers</div>
-        <div class="mt-2 space-y-2">
-          ${probes.map((probe) => `
-            <div class="rounded border border-white/10 bg-zinc-950/40 p-2 font-mono text-xs">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-zinc-200">${escapeHTML(probe.provider || "provider")}</span>
-                <span class="${probe.reachable ? "text-emerald-200" : "text-rose-200"}">${probe.reachable ? "ok" : "failed"}</span>
-              </div>
-              <div class="mt-1 truncate text-zinc-500">${escapeHTML(probe.target_url || "")}</div>
-              ${probe.error ? `<div class="mt-1 text-rose-200">${escapeHTML(probe.error)}</div>` : `<div class="mt-1 text-zinc-400">status=${escapeHTML(probe.status_code || "")}</div>`}
-            </div>
-          `).join("") || `<div class="text-zinc-500">No provider probes.</div>`}
-        </div>
-      </div>
-      ${warnings.length ? `<div class="rounded border border-amber-300/30 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">${warnings.map(escapeHTML).join("<br>")}</div>` : ""}
-    </div>
-  `;
-}
-
 export function renderHostBridgeStatus(payload) {
   const suggestions = payload.suggestions || [];
   const tone = payload.reachable ? "ok" : payload.configured ? "bad" : "warn";
@@ -833,4 +789,3 @@ export function renderDetailRows(details) {
     `)
     .join("");
 }
-

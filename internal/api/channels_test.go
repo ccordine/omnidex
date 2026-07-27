@@ -116,3 +116,92 @@ func TestChannelRouteSupportsRoleplayPersonaAndRecentHistory(t *testing.T) {
 		t.Fatalf("remember=false should not persist memories: %#v", store.memories)
 	}
 }
+
+func TestChannelRouteAppendsPassiveMessageWithoutModelCall(t *testing.T) {
+	llmClient := &fakeLLMClient{outputs: []string{"should not be used"}}
+	server := NewServer(nil, llmClient)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/channels", strings.NewReader(`{
+		"id":"sim-scene-1-actor-mara",
+		"persona":"roleplay",
+		"system":"Stay in character.",
+		"model":"rp-model"
+	}`))
+	createRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createRec.Code, createRec.Body.String())
+	}
+
+	appendReq := httptest.NewRequest(http.MethodPost, "/v1/channels/sim-scene-1-actor-mara/messages/append", strings.NewReader(`{
+		"role":"system",
+		"content":"Through the door, someone moves in the hall."
+	}`))
+	appendRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(appendRec, appendReq)
+	if appendRec.Code != http.StatusOK {
+		t.Fatalf("append status=%d body=%s", appendRec.Code, appendRec.Body.String())
+	}
+
+	store := server.channelStore.(*inMemoryChannelStore)
+	messages, err := store.ListChannelMessages(appendReq.Context(), "sim-scene-1-actor-mara", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || messages[0].Role != "system" || !strings.Contains(messages[0].Content, "Through the door") {
+		t.Fatalf("messages=%#v", messages)
+	}
+	if len(llmClient.preparePrompts) != 0 {
+		t.Fatalf("append should not call model, prompts=%#v", llmClient.preparePrompts)
+	}
+	if len(store.memories) != 0 {
+		t.Fatalf("append should default to remember=false, memories=%#v", store.memories)
+	}
+}
+
+func TestChannelRouteAppendCanPersistMemoryWhenRequested(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/channels", strings.NewReader(`{
+		"id":"sim-scene-1-actor-ivo",
+		"persona":"roleplay",
+		"tags":["sim","scene:one"]
+	}`))
+	createRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createRec.Code, createRec.Body.String())
+	}
+
+	appendReq := httptest.NewRequest(http.MethodPost, "/v1/channels/sim-scene-1-actor-ivo/messages/append", strings.NewReader(`{
+		"role":"tool",
+		"content":"Ivo heard the fridge hum.",
+		"remember":true,
+		"memory_kind":"reference",
+		"memory_source":"sim:test"
+	}`))
+	appendRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(appendRec, appendReq)
+	if appendRec.Code != http.StatusOK {
+		t.Fatalf("append status=%d body=%s", appendRec.Code, appendRec.Body.String())
+	}
+
+	store := server.channelStore.(*inMemoryChannelStore)
+	if len(store.memories) != 1 {
+		t.Fatalf("expected one memory, got %#v", store.memories)
+	}
+	if store.memories[0].Kind != "reference" || !strings.Contains(store.memories[0].Content, "tool: Ivo heard") {
+		t.Fatalf("memory=%#v", store.memories[0])
+	}
+	if !containsString(store.memories[0].Tags, "channel:sim-scene-1-actor-ivo") {
+		t.Fatalf("memory tags=%#v", store.memories[0].Tags)
+	}
+}
+
+func containsString(items []string, value string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}

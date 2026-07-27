@@ -45,7 +45,9 @@ func (s *Service) runDataSourceExploreStep(ctx context.Context, claim *model.Cla
 	if err != nil {
 		return err
 	}
-	_ = s.repo.UpdateDataSourceCatalogTimestamp(ctx, record.ID, catalog.UpdatedAt)
+	if err := s.repo.UpdateDataSourceCatalogTimestamp(ctx, record.ID, catalog.UpdatedAt); err != nil {
+		return fmt.Errorf("update data source catalog timestamp: %w", err)
+	}
 
 	summary := fmt.Sprintf("Cataloged %d tables for %s (%s). %s", len(catalog.Tables), record.Name, record.Profile().Domain, catalog.Summary)
 	payloadBytes, err := json.Marshal(map[string]any{

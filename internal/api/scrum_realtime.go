@@ -3,20 +3,23 @@ package api
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 )
 
-func (s *Server) publishScrumModalCardRefresh(ctx context.Context, projectID int64, card ScrumCard, reason string) {
-	s.publishScrumModalCardRefreshWithToast(ctx, projectID, card, reason, "", "")
+func (s *Server) publishScrumCardUpdate(ctx context.Context, projectID int64, card ScrumCard, reason string) {
+	s.publishScrumCardUpdateWithToast(ctx, projectID, card, reason, "", "")
 }
 
-func (s *Server) publishScrumModalCardRefreshWithToast(ctx context.Context, projectID int64, card ScrumCard, reason, toast, toastTone string) {
+func (s *Server) publishScrumCardUpdateWithToast(_ context.Context, projectID int64, card ScrumCard, reason, toast, toastTone string) {
 	if strings.TrimSpace(card.ID) == "" {
+		log.Printf("scrum realtime card update rejected project=%d reason=%q: card id required", projectID, reason)
 		return
 	}
+	card = scrumCardChannelPayload(card, scrumRealtimeChannelPageSize)
 	msg := realtimeMessage{
-		ID:        s.nextRealtimeID(),
-		EventName: "scrum-card-modal-refresh",
+		EventName: "scrum-card-updated",
+		StateKey:  fmt.Sprintf("scrum-card:%d:%s", projectID, strings.TrimSpace(card.ID)),
 		Reason:    strings.TrimSpace(reason),
 		Toast:     strings.TrimSpace(toast),
 		ToastTone: strings.TrimSpace(toastTone),
@@ -24,50 +27,55 @@ func (s *Server) publishScrumModalCardRefreshWithToast(ctx context.Context, proj
 		CardID:    strings.TrimSpace(card.ID),
 		Card:      &card,
 	}
-	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
+	s.broadcastRealtime([]string{realtimeTopicUI, realtimeTopicScrum}, msg)
 }
 
-func (s *Server) publishScrumCardChatUpdate(ctx context.Context, projectID int64, card ScrumCard, reason string) {
-	if strings.TrimSpace(card.ID) == "" {
-		return
-	}
-	msg := realtimeMessage{
-		ID:        s.nextRealtimeID(),
-		EventName: "chat-component-update",
-		Reason:    strings.TrimSpace(reason),
-		ProjectID: projectID,
-		CardID:    strings.TrimSpace(card.ID),
-		Card:      &card,
-	}
-	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
+func (s *Server) publishScrumBoardRefresh(ctx context.Context, projectID int64, reason string, board ScrumBoard) error {
+	return s.publishScrumBoardRefreshWithToast(ctx, projectID, reason, board, "", "")
 }
 
-func (s *Server) publishScrumBoardRefresh(ctx context.Context, projectID int64, reason string, board ScrumBoard) {
-	s.publishScrumBoardRefreshWithToast(ctx, projectID, reason, board, "", "")
-}
-
-func (s *Server) publishScrumBoardRefreshWithToast(ctx context.Context, projectID int64, reason string, board ScrumBoard, toast, toastTone string) {
+func (s *Server) publishScrumBoardRefreshWithToast(ctx context.Context, projectID int64, reason string, board ScrumBoard, toast, toastTone string) error {
 	if projectID <= 0 {
-		return
+		return fmt.Errorf("Scrum realtime board update requires a positive project ID")
 	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "board updated"
 	}
 	msg := realtimeMessage{
-		ID:        s.nextRealtimeID(),
 		EventName: "scrum-board-refresh",
+		StateKey:  fmt.Sprintf("scrum-board:%d", projectID),
 		Reason:    reason,
 		Toast:     strings.TrimSpace(toast),
 		ToastTone: strings.TrimSpace(toastTone),
 		ProjectID: projectID,
 	}
+	var bundle string
+	var err error
 	if len(board.Cards) > 0 || board.ID != "" {
-		msg.HTML = s.scrumBoardRealtimeHTML(ctx, projectID, board)
-	} else if board, err := s.scrumBoardFromProject(ctx, projectID); err == nil {
-		msg.HTML = s.scrumBoardRealtimeHTML(ctx, projectID, board)
+		bundle, err = s.scrumBoardRealtimeHTML(ctx, projectID, board)
+	} else {
+		var loaded ScrumBoard
+		loaded, err = s.scrumBoardFromProject(ctx, projectID)
+		if err == nil {
+			bundle, err = s.scrumBoardRealtimeHTML(ctx, projectID, loaded)
+		}
 	}
-	s.ensureRealtimeHub().Broadcast([]string{"ui", "scrum"}, msg)
+	if err != nil {
+		s.publishScrumRealtimeFailure(projectID, reason, err)
+		return err
+	}
+	msg.HTML = bundle
+	if strings.TrimSpace(msg.HTML) == "" {
+		err := fmt.Errorf("server-rendered Scrum board bundle is empty")
+		s.publishScrumRealtimeFailure(projectID, reason, err)
+		return err
+	}
+	if _, err := s.broadcastRealtimeChecked([]string{realtimeTopicUI, realtimeTopicScrum}, msg); err != nil {
+		s.publishScrumRealtimeFailure(projectID, reason, err)
+		return err
+	}
+	return nil
 }
 
 // notifyScrumCardColumnTransition emits a toast (and board bundle) only when a card lands in in_progress or review.
@@ -101,20 +109,43 @@ func (s *Server) notifyScrumCardColumnTransition(ctx context.Context, projectID 
 	}
 	board, err := s.scrumBoardFromProject(ctx, projectID)
 	if err != nil {
-		s.publishScrumBoardRefreshWithToast(ctx, projectID, "column "+nextCol, ScrumBoard{}, toast, tone)
+		s.publishScrumRealtimeFailure(projectID, "column "+nextCol, err)
 		return
 	}
-	s.publishScrumBoardRefreshWithToast(ctx, projectID, "column "+nextCol, board, toast, tone)
+	if err := s.publishScrumBoardRefreshWithToast(ctx, projectID, "column "+nextCol, board, toast, tone); err != nil {
+		log.Printf("scrum realtime column transition failed project=%d card=%q: %v", projectID, saved.ID, err)
+	}
 }
 
-func (s *Server) scrumBoardRealtimeHTML(ctx context.Context, projectID int64, board ScrumBoard) string {
+func (s *Server) publishScrumRealtimeFailure(projectID int64, reason string, err error) {
+	if err == nil {
+		return
+	}
+	log.Printf("scrum realtime synchronization failed project=%d reason=%q: %v", projectID, reason, err)
+	s.broadcastRealtime([]string{realtimeTopicUI, realtimeTopicScrum}, realtimeMessage{
+		EventName: "scrum-sync-error",
+		StateKey:  fmt.Sprintf("scrum-sync-error:%d", projectID),
+		Reason:    strings.TrimSpace(reason),
+		Toast:     "Live Scrum refresh failed; the last confirmed server state remains visible.",
+		ToastTone: "error",
+		ProjectID: projectID,
+	})
+}
+
+func (s *Server) scrumBoardRealtimeHTML(ctx context.Context, projectID int64, board ScrumBoard) (string, error) {
 	if projectID <= 0 {
-		return ""
+		return "", fmt.Errorf("positive project id is required to render a realtime Scrum board")
 	}
 	fullBoard := board
-	s.refreshScrumFlowMetricsForBoard(ctx, projectID, &fullBoard)
-	autoWork := s.scrumAutoWorkConfig(ctx, projectID)
-	autoReview := s.scrumAutoReviewConfig(ctx, projectID)
+	if err := s.refreshScrumFlowMetricsForBoard(ctx, projectID, &fullBoard); err != nil {
+		return "", err
+	}
+	automation, err := s.scrumAutomationSettings(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+	autoWork := automation.AutoWork
+	autoReview := automation.AutoReview
 	visibleColumn := scrumRealtimeViewportColumn(fullBoard, autoWork)
 	columnCounts := scrumColumnCounts(cardsByColumn(fullBoard))
 	viewportBoard := scrumBoardColumnViewport(fullBoard, visibleColumn)
@@ -133,7 +164,7 @@ func (s *Server) scrumBoardRealtimeHTML(ctx context.Context, projectID int64, bo
 		autoWork,
 		flowSummary,
 	)
-	return fragments.Bundle
+	return fragments.Bundle, nil
 }
 
 func scrumRealtimeViewportColumn(board ScrumBoard, autoWork ScrumAutoWorkConfig) string {

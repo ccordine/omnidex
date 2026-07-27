@@ -10,27 +10,28 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
+	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/ollama"
 )
 
-func (s *Server) envModelConfig() modelconfig.Config {
+func (s *Server) envModelConfig() (modelconfig.Config, error) {
 	path, err := resolveEnvFilePath()
-	if err == nil {
-		if values, err := readEnvFile(path); err == nil {
-			cfg := modelconfig.Config{}
-			for _, field := range modelconfig.Fields {
-				if value := lookupEnvFileValue(values, field.EnvKeys); value != "" {
-					cfg[field.Key] = value
-				}
-			}
-			if len(cfg) > 0 {
-				return cfg
-			}
+	if err != nil {
+		return nil, fmt.Errorf("resolve model environment file: %w", err)
+	}
+	values, err := readEnvFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read model environment file: %w", err)
+	}
+	fileConfig := modelconfig.Config{}
+	for _, field := range modelconfig.Fields {
+		if value := lookupEnvFileValue(values, field.EnvKeys); value != "" {
+			fileConfig[field.Key] = value
 		}
 	}
-	return modelconfig.FromEnv()
+	return modelconfig.Merge(fileConfig, modelconfig.FromEnv()), nil
 }
 
 func lookupEnvFileValue(values map[string]string, keys []string) string {
@@ -42,21 +43,30 @@ func lookupEnvFileValue(values map[string]string, keys []string) string {
 	return ""
 }
 
-func (s *Server) projectModelConfig(project model.Project) modelconfig.Config {
+func (s *Server) projectModelConfig(project model.Project) (modelconfig.Config, error) {
 	return modelconfig.FromSettingsJSON(project.Settings)
 }
 
-func (s *Server) cardModelConfig(card ScrumCard) modelconfig.Config {
+func (s *Server) cardModelConfig(card ScrumCard) (modelconfig.Config, error) {
 	if len(card.ModelConfig) == 0 {
-		return modelconfig.Config{}
+		return modelconfig.Config{}, nil
 	}
 	return modelconfig.FromJSON(card.ModelConfig)
 }
 
-func (s *Server) resolveModelConfig(project model.Project, card ScrumCard) (modelconfig.Config, string) {
-	env := s.envModelConfig()
-	projectCfg := s.projectModelConfig(project)
-	cardCfg := s.cardModelConfig(card)
+func (s *Server) resolveModelConfig(project model.Project, card ScrumCard) (modelconfig.Config, string, error) {
+	env, err := s.envModelConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	projectCfg, err := s.projectModelConfig(project)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse project model config: %w", err)
+	}
+	cardCfg, err := s.cardModelConfig(card)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse Scrum card model config: %w", err)
+	}
 	resolved := modelconfig.Merge(env, projectCfg, cardCfg)
 	source := "env"
 	if len(projectCfg) > 0 {
@@ -65,26 +75,36 @@ func (s *Server) resolveModelConfig(project model.Project, card ScrumCard) (mode
 	if len(cardCfg) > 0 {
 		source = "card"
 	}
-	return resolved, source
+	return resolved, source, nil
 }
 
 func (s *Server) ensureOllamaModels(ctx context.Context, cfg modelconfig.Config) ([]string, error) {
-	models := cfg.OllamaModelNames()
+	models := cfg.ModelNames()
 	if len(models) == 0 {
+		return nil, nil
+	}
+	definition, ok := catalog.Lookup(s.defaultProvider)
+	if !ok {
+		return nil, fmt.Errorf("cannot prepare models for unsupported LLM provider %q", s.defaultProvider)
+	}
+	if definition.ID != "ollama" {
 		return nil, nil
 	}
 	client := s.ollamaClientWithTimeout(30 * time.Second)
 	pulled, err := client.EnsureModels(ctx, models)
 	if err != nil && isOllamaConnectivityError(err) {
 		endpoint := s.refreshOllamaEndpoint(ctx)
-		client = ollama.New(endpoint, "", "", 30*time.Second)
+		client = ollama.New(endpoint, "", "", 30*time.Second, s.providerConfig.InferenceContextTokens)
 		return client.EnsureModels(ctx, models)
 	}
 	return pulled, err
 }
 
 func (s *Server) modelConfigJobMetadata(ctx context.Context, project model.Project, card ScrumCard) (map[string]any, []string, error) {
-	resolved, source := s.resolveModelConfig(project, card)
+	resolved, source, err := s.resolveModelConfig(project, card)
+	if err != nil {
+		return nil, nil, err
+	}
 	pulled, err := s.ensureOllamaModels(ctx, resolved)
 	if err != nil {
 		return nil, pulled, err
@@ -106,7 +126,15 @@ func mergeProjectModelConfig(settings json.RawMessage, modelConfig json.RawMessa
 		root = map[string]json.RawMessage{}
 	}
 	if len(modelConfig) > 0 {
-		root["model_config"] = modelConfig
+		parsed, err := modelconfig.FromJSON(modelConfig)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(parsed.ToMap())
+		if err != nil {
+			return nil, err
+		}
+		root["model_config"] = encoded
 	}
 	out, err := json.Marshal(root)
 	if err != nil {
@@ -120,13 +148,37 @@ func (s *Server) handleResolvedModels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	env := s.envModelConfig()
-	projectID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("project_id")), 10, 64)
+	env, err := s.envModelConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	projectIDText := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	projectID := int64(0)
+	if projectIDText != "" {
+		var err error
+		projectID, err = strconv.ParseInt(projectIDText, 10, 64)
+		if err != nil || projectID <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid project_id")
+			return
+		}
+	}
 	cardID := strings.TrimSpace(r.URL.Query().Get("card_id"))
 	card := ScrumCard{}
-	if cardID != "" && s.repo != nil && projectID > 0 {
-		if dbCard, err := s.repo.GetScrumCard(r.Context(), projectID, cardID); err == nil {
-			card = dbScrumCardToAPI(dbCard)
+	if cardID != "" {
+		if s.repo == nil || projectID <= 0 {
+			writeError(w, http.StatusBadRequest, "card_id requires a project_id and PostgreSQL repository")
+			return
+		}
+		dbCard, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		card, err = dbScrumCardToAPI(dbCard)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
 	}
 	if projectID > 0 {
@@ -162,15 +214,22 @@ func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card Sc
 	project := model.Project{}
 	projectID := metadataInt64(payload, "project_id")
 	if projectID > 0 && s.repo != nil {
-		if loaded, err := s.repo.GetProject(ctx, projectID); err == nil {
-			project = loaded
+		loaded, err := s.repo.GetProject(ctx, projectID)
+		if err != nil {
+			return metadata, nil, fmt.Errorf("load metadata project %d: %w", projectID, err)
 		}
+		project = loaded
 	}
 	if card.ID == "" {
 		cardID := metadataString(payload, "scrum_card_id")
 		if cardID != "" && projectID > 0 && s.repo != nil {
-			if dbCard, err := s.repo.GetScrumCard(ctx, projectID, cardID); err == nil {
-				card = dbScrumCardToAPI(dbCard)
+			dbCard, err := s.repo.GetScrumCard(ctx, projectID, cardID)
+			if err != nil {
+				return metadata, nil, fmt.Errorf("load metadata Scrum card %q: %w", cardID, err)
+			}
+			card, err = dbScrumCardToAPI(dbCard)
+			if err != nil {
+				return metadata, nil, fmt.Errorf("decode metadata Scrum card %q: %w", cardID, err)
 			}
 		}
 	}
@@ -178,8 +237,12 @@ func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card Sc
 	var instance agentconfig.Config
 	if raw, ok := payload["instance_agent_config"]; ok && raw != nil {
 		bytes, err := json.Marshal(raw)
-		if err == nil {
-			instance = agentconfig.FromJSON(bytes)
+		if err != nil {
+			return metadata, nil, fmt.Errorf("encode instance_agent_config: %w", err)
+		}
+		instance, err = agentconfig.FromJSON(bytes)
+		if err != nil {
+			return metadata, nil, fmt.Errorf("parse instance_agent_config: %w", err)
 		}
 	}
 
@@ -187,25 +250,23 @@ func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card Sc
 	if _, ok := payload["model_config"]; !ok {
 		extra, modelPulled, err := s.modelConfigJobMetadata(ctx, project, card)
 		if err != nil {
-			if webChatJobMetadata(payload) {
-				payload["ollama_model_check_error"] = err.Error()
-			} else {
-				return metadata, modelPulled, err
-			}
-		} else {
-			for key, value := range extra {
-				payload[key] = value
-			}
-			pulled = modelPulled
+			return metadata, modelPulled, err
 		}
+		for key, value := range extra {
+			payload[key] = value
+		}
+		pulled = modelPulled
 	}
 	if _, ok := payload["agent_config"]; !ok {
 		if generalWebChatWithoutWorkspace(payload) {
-			payload["agent_config"] = map[string]any{}
+			payload["agent_config"] = map[string]any{"agent_system": agentconfig.SystemOmnidex}
 			payload["agent_config_source"] = "general_chat"
-			payload["execution_agent"] = agentconfig.SystemOmnidex
 		} else {
-			for key, value := range s.agentConfigJobMetadata(ctx, project, card, instance) {
+			extra, err := s.agentConfigJobMetadata(ctx, project, card, instance)
+			if err != nil {
+				return metadata, pulled, err
+			}
+			for key, value := range extra {
 				payload[key] = value
 			}
 		}
@@ -214,7 +275,13 @@ func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card Sc
 		payload["models_pulled"] = pulled
 	}
 	out, err := json.Marshal(payload)
-	return out, pulled, err
+	if err != nil {
+		return metadata, pulled, err
+	}
+	if _, err := agentconfig.FromJobMetadata(out); err != nil {
+		return metadata, pulled, err
+	}
+	return out, pulled, nil
 }
 
 func metadataInt64(payload map[string]any, key string) int64 {
@@ -263,7 +330,10 @@ func generalWebChatWithoutWorkspace(payload map[string]any) bool {
 
 func (s *Server) resolvedModelsForProjectCard(ctx context.Context, projectID int64, card ScrumCard) (map[string]any, error) {
 	if s.repo == nil || projectID <= 0 {
-		resolved, source := s.resolveModelConfig(model.Project{}, card)
+		resolved, source, err := s.resolveModelConfig(model.Project{}, card)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{
 			"resolved": resolved.ToMap(),
 			"source":   source,
@@ -274,7 +344,10 @@ func (s *Server) resolvedModelsForProjectCard(ctx context.Context, projectID int
 	if err != nil {
 		return nil, err
 	}
-	resolved, source := s.resolveModelConfig(project, card)
+	resolved, source, err := s.resolveModelConfig(project, card)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
 		"resolved": resolved.ToMap(),
 		"source":   source,
@@ -286,17 +359,11 @@ func modelConfigPatchFromRequest(raw json.RawMessage) (json.RawMessage, error) {
 	if len(raw) == 0 {
 		return json.RawMessage(`{}`), nil
 	}
-	var payload map[string]string
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("invalid model_config")
+	config, err := modelconfig.FromJSON(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid model_config: %w", err)
 	}
-	clean := map[string]string{}
-	for key, value := range payload {
-		if strings.TrimSpace(value) != "" {
-			clean[key] = strings.TrimSpace(value)
-		}
-	}
-	out, err := json.Marshal(clean)
+	out, err := json.Marshal(config.ToMap())
 	if err != nil {
 		return nil, err
 	}

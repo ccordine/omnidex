@@ -10,55 +10,16 @@ import (
 	"github.com/gryph/omnidex/internal/omni"
 )
 
-func TestExternalAgentFailureIsFatalForConfiguredExternalAgents(t *testing.T) {
-	cases := []struct {
-		name     string
-		cfg      agentconfig.Config
-		metadata json.RawMessage
-		want     bool
-	}{
-		{
-			name:     "nested external agent config",
-			cfg:      agentconfig.FromJobMetadata(json.RawMessage(`{"agent_config":{"agent_system":"codex"}}`)),
-			metadata: json.RawMessage(`{"agent_config":{"agent_system":"codex"}}`),
-			want:     true,
-		},
-		{
-			name:     "strict native config",
-			cfg:      agentconfig.FromStringMap(map[string]string{"agent_strict": "true"}),
-			metadata: json.RawMessage(`{"agent_config":{"agent_strict":"true"}}`),
-			want:     true,
-		},
-		{
-			name:     "scrum execution agent metadata",
-			cfg:      agentconfig.Config{},
-			metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"cursor"}`),
-			want:     true,
-		},
-		{
-			name:     "unconfigured general chat",
-			cfg:      agentconfig.Config{},
-			metadata: json.RawMessage(`{"source":"omni-web-chat"}`),
-			want:     false,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := externalAgentFailureIsFatal(tc.cfg, tc.metadata); got != tc.want {
-				t.Fatalf("externalAgentFailureIsFatal()=%v want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestSelectExternalAgentAppliesCursorConfig(t *testing.T) {
 	t.Setenv("CURSOR_API_KEY", "cursor-key")
-	cfg := agentconfig.FromStringMap(map[string]string{
+	cfg, err := agentconfig.FromStringMap(map[string]string{
 		"agent_system": "cursor",
 		"cursor_model": "composer-project",
 	})
-	agent, name, unavailable := selectExternalAgent(cfg, json.RawMessage(`{"agent_config":{"agent_system":"cursor","cursor_model":"composer-project"}}`))
+	if err != nil {
+		t.Fatalf("parse agent config: %v", err)
+	}
+	agent, name, unavailable := selectExternalAgent(cfg)
 	if unavailable != "" {
 		t.Fatalf("expected cursor available, got %q", unavailable)
 	}
@@ -76,7 +37,7 @@ func TestSelectExternalAgentAppliesCursorConfig(t *testing.T) {
 
 func TestSelectExternalAgentAppliesCodexConfig(t *testing.T) {
 	t.Setenv("CODEX_API_KEY", "codex-key")
-	cfg := agentconfig.FromStringMap(map[string]string{
+	cfg, err := agentconfig.FromStringMap(map[string]string{
 		"agent_system":           "codex",
 		"codex_model":            "gpt-codex-project",
 		"codex_reasoning_effort": "high",
@@ -85,7 +46,10 @@ func TestSelectExternalAgentAppliesCodexConfig(t *testing.T) {
 		"codex_network_access":   "false",
 		"codex_web_search_mode":  "disabled",
 	})
-	agent, name, unavailable := selectExternalAgent(cfg, json.RawMessage(`{"agent_config":{"agent_system":"codex","codex_model":"gpt-codex-project"}}`))
+	if err != nil {
+		t.Fatalf("parse agent config: %v", err)
+	}
+	agent, name, unavailable := selectExternalAgent(cfg)
 	if unavailable != "" {
 		t.Fatalf("expected codex available, got %q", unavailable)
 	}
@@ -119,12 +83,12 @@ func TestSelectExternalAgentAppliesCodexConfig(t *testing.T) {
 func TestExternalAgentJobModeUsesGenericCLIForChat(t *testing.T) {
 	job := model.Job{
 		Pipeline: model.PipelineChat,
-		Metadata: json.RawMessage(`{"client_cwd":"/tmp/project","execution_agent":"codex"}`),
+		Metadata: json.RawMessage(`{"client_cwd":"/tmp/project","agent_config":{"agent_system":"codex"}}`),
 	}
 	if got := externalAgentJobMode(job); got != "cli_agent_task" {
 		t.Fatalf("externalAgentJobMode()=%q", got)
 	}
-	prompt := buildExternalAgentPrompt(job, map[string]string{"environment": "env summary"})
+	prompt := buildExternalAgentPrompt(job, map[string]string{"environment": "env summary"}, agentconfig.SystemCodex)
 	if !strings.Contains(prompt, "bounded CLI agent task") {
 		t.Fatalf("expected generic CLI prompt, got %q", prompt)
 	}
@@ -136,12 +100,12 @@ func TestExternalAgentJobModeUsesGenericCLIForChat(t *testing.T) {
 func TestExternalAgentJobModeKeepsScrumPrompt(t *testing.T) {
 	job := model.Job{
 		Pipeline: "scrum",
-		Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"cursor"}`),
+		Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"}}`),
 	}
 	if got := externalAgentJobMode(job); got != "scrum_task" {
 		t.Fatalf("externalAgentJobMode()=%q", got)
 	}
-	prompt := buildExternalAgentPrompt(job, nil)
+	prompt := buildExternalAgentPrompt(job, nil, agentconfig.SystemCursor)
 	if !strings.Contains(prompt, "bounded scrum card task") {
 		t.Fatalf("expected scrum prompt, got %q", prompt)
 	}

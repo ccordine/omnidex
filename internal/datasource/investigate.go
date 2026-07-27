@@ -138,19 +138,22 @@ func planInvestigationStep(ctx context.Context, llm omni.DBManagerLLMClient, pro
 	if !wantsText && len(textFields) > 12 {
 		textFields = textFields[:12]
 	}
-	payload, _ := json.Marshal(map[string]any{
-		"question":             question,
-		"step":                 stepNum,
-		"max_steps":            MaxInvestigationQueries,
-		"domain":               profile.Domain,
-		"context_prompt":       profile.ContextPrompt,
-		"catalog_summary":      catalog.Summary,
-		"relevant_tables":      relevant,
-		"text_fields":          textFields,
-		"wants_text_analysis":  wantsText,
-		"privacy_mode":         profile.PrivacyMode,
-		"hard_facts":           cavemanFacts,
+	payload, err := json.Marshal(map[string]any{
+		"question":            question,
+		"step":                stepNum,
+		"max_steps":           MaxInvestigationQueries,
+		"domain":              profile.Domain,
+		"context_prompt":      profile.ContextPrompt,
+		"catalog_summary":     catalog.Summary,
+		"relevant_tables":     relevant,
+		"text_fields":         textFields,
+		"wants_text_analysis": wantsText,
+		"privacy_mode":        profile.PrivacyMode,
+		"hard_facts":          cavemanFacts,
 	})
+	if err != nil {
+		return investigationStepPlan{}, fmt.Errorf("encode investigation planning request: %w", err)
+	}
 	extraGuidance := textAnalysisPlannerGuidance(profile, wantsText)
 	resp, err := llm.ChatRaw(ctx, omni.OllamaChatRequest{
 		Messages: []omni.OllamaMessage{
@@ -212,11 +215,14 @@ func synthesizeInvestigationAnswer(ctx context.Context, llm omni.DBManagerLLMCli
 		return "", fmt.Errorf("llm client is required")
 	}
 	cavemanFacts := buildInvestigationCavemanBlock(question, steps, InvestigationFactBudget)
-	payload, _ := json.Marshal(map[string]any{
+	payload, err := json.Marshal(map[string]any{
 		"question":   question,
 		"domain":     profile.Domain,
 		"hard_facts": cavemanFacts,
 	})
+	if err != nil {
+		return "", fmt.Errorf("encode investigation synthesis request: %w", err)
+	}
 	resp, err := llm.ChatRaw(ctx, omni.OllamaChatRequest{
 		Messages: []omni.OllamaMessage{
 			{

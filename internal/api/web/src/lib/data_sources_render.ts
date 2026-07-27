@@ -85,7 +85,7 @@ export function renderSourceForm(source: Partial<DataSource> | null, editingId: 
       </div>
     `;
   return `
-    <form data-action="submit->admin#saveDataSource" data-ds-source-form class="mt-4 grid gap-3">
+    <form data-action="submit->admin-data-sources#saveDataSource" data-ds-source-form class="mt-4 grid gap-3">
       <input type="hidden" data-ds-field="id" value="${escapeHTML(editingId || "")}" />
       <label class="block">
         <span class="text-xs text-zinc-500">Name</span>
@@ -121,14 +121,14 @@ export function renderSourceForm(source: Partial<DataSource> | null, editingId: 
         </select>
       </label>
       <label class="flex items-center gap-2 text-sm text-zinc-300">
-        <input type="checkbox" data-ds-field="use_dsn" ${useDSN ? "checked" : ""} class="rounded border-white/20 bg-zinc-900" />
+        <input type="checkbox" data-ds-field="use_dsn" data-action="change->admin-data-sources#toggleDataSourceDSNPanel" ${useDSN ? "checked" : ""} class="rounded border-white/20 bg-zinc-900" />
         Use connection string (DSN)
       </label>
       ${connectionFields}
       <p class="text-xs text-zinc-500">Connections are read-only. Only SELECT / WITH queries are allowed in the query builder.</p>
       <div class="flex flex-wrap gap-2">
         <button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">${isEdit ? "Save changes" : "Add data source"}</button>
-        ${isEdit ? `<button type="button" data-action="admin#cancelEditDataSource" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:border-cyan-300/30">Cancel</button>` : ""}
+        ${isEdit ? `<button type="button" data-action="admin-data-sources#cancelEditDataSource" class="rounded-md border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:border-cyan-300/30">Cancel</button>` : ""}
       </div>
     </form>
   `;
@@ -150,16 +150,16 @@ function renderSourceList(state: DataSourcesViewState): string {
           return `
             <article class="rounded-md border ${border} px-3 py-3">
               <div class="flex flex-wrap items-start justify-between gap-3">
-                <button type="button" data-action="admin#selectDataSource" data-source-id="${escapeHTML(source.id)}" class="min-w-0 text-left">
+                <button type="button" data-action="admin-data-sources#selectDataSource" data-source-id="${escapeHTML(source.id)}" class="min-w-0 text-left">
                   <div class="font-medium text-zinc-100">${escapeHTML(source.name)}</div>
                   <div class="mt-1 font-mono text-[11px] text-zinc-500">${escapeHTML(source.use_dsn ? "DSN" : `${source.host}:${source.port}/${source.database_name}`)} · ${escapeHTML(source.username || "n/a")}</div>
                   <div class="mt-1 text-[11px] text-zinc-600">${meta}${source.last_test_message ? ` · ${escapeHTML(source.last_test_message)}` : ""}</div>
                 </button>
                 <div class="flex flex-wrap items-center gap-2">
                   ${testStatusBadge(source)}
-                  <button type="button" data-action="admin#testDataSource" data-source-id="${escapeHTML(source.id)}" class="rounded-md border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:border-cyan-300/30">Test</button>
-                  <button type="button" data-action="admin#editDataSource" data-source-id="${escapeHTML(source.id)}" class="rounded-md border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:border-cyan-300/30">Edit</button>
-                  <button type="button" data-action="admin#deleteDataSource" data-source-id="${escapeHTML(source.id)}" class="rounded-md border border-rose-300/30 px-2 py-1 text-xs text-rose-200 hover:bg-rose-400/10">Remove</button>
+                  <button type="button" data-action="admin-data-sources#testDataSource" data-source-id="${escapeHTML(source.id)}" class="rounded-md border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:border-cyan-300/30">Test</button>
+                  <button type="button" data-action="admin-data-sources#editDataSource" data-source-id="${escapeHTML(source.id)}" class="rounded-md border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:border-cyan-300/30">Edit</button>
+                  <button type="button" data-action="admin-data-sources#deleteDataSource" data-source-id="${escapeHTML(source.id)}" class="rounded-md border border-rose-300/30 px-2 py-1 text-xs text-rose-200 hover:bg-rose-400/10">Remove</button>
                 </div>
               </div>
             </article>
@@ -223,7 +223,7 @@ function renderSchemaBrowser(schema: DataSourceSchemaTable[] | null): string {
             <details class="rounded-md border border-white/10 bg-zinc-900/40 px-3 py-2">
               <summary class="cursor-pointer font-mono text-xs text-cyan-200">${escapeHTML(fullName)}</summary>
               <ul class="mt-2 space-y-1 pl-2">${cols || `<li class="text-[11px] text-zinc-600">No columns</li>`}</ul>
-              <button type="button" data-action="admin#insertSchemaQuery" data-table-name="${escapeHTML(fullName)}" class="mt-2 rounded border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400 hover:border-cyan-300/30">Insert SELECT *</button>
+              <button type="button" data-action="admin-data-sources#insertSchemaQuery" data-table-name="${escapeHTML(fullName)}" class="mt-2 rounded border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400 hover:border-cyan-300/30">Insert SELECT *</button>
             </details>
           `;
         })
@@ -336,11 +336,11 @@ function renderChart(state: DataSourcesViewState): string {
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
         <label class="block text-xs text-zinc-500">
           Label column
-          <select data-ds-field="chart_label" data-action="change->admin#updateDataSourceChart" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100">${labelOptions}</select>
+          <select data-ds-field="chart_label" data-action="change->admin-data-sources#updateDataSourceChart" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100">${labelOptions}</select>
         </label>
         <label class="block text-xs text-zinc-500">
           Value column
-          <select data-ds-field="chart_value" data-action="change->admin#updateDataSourceChart" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100">${valueOptions}</select>
+          <select data-ds-field="chart_value" data-action="change->admin-data-sources#updateDataSourceChart" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100">${valueOptions}</select>
         </label>
       </div>
       <div class="mt-4 space-y-2">${bars}</div>
@@ -361,9 +361,9 @@ function renderExplorer(state: DataSourcesViewState): string {
           <p class="text-xs text-zinc-500">${escapeHTML(selected.domain || "generic")} · ${escapeHTML(selected.privacy_mode || "strict")} privacy · Query builder · read-only · max 500 rows · <a href="?panel=data&amp;data_source=${escapeHTML(selected.id)}" class="text-cyan-300 hover:text-cyan-200">Open data chat</a></p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <button type="button" data-action="admin#exploreDataSource" data-source-id="${escapeHTML(selected.id)}" class="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-300/20">Explore database</button>
-          <button type="button" data-action="admin#loadDataSourceCatalog" data-source-id="${escapeHTML(selected.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:border-cyan-300/30">Load schema map</button>
-          <button type="button" data-action="admin#loadDataSourceSchema" data-source-id="${escapeHTML(selected.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:border-cyan-300/30">Load raw schema</button>
+          <button type="button" data-action="admin-data-sources#exploreDataSource" data-source-id="${escapeHTML(selected.id)}" class="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-300/20">Explore database</button>
+          <button type="button" data-action="admin-data-sources#loadDataSourceCatalog" data-source-id="${escapeHTML(selected.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:border-cyan-300/30">Load schema map</button>
+          <button type="button" data-action="admin-data-sources#loadDataSourceSchema" data-source-id="${escapeHTML(selected.id)}" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:border-cyan-300/30">Load raw schema</button>
         </div>
       </div>
 
@@ -383,12 +383,12 @@ function renderExplorer(state: DataSourcesViewState): string {
             <h5 class="text-[11px] font-semibold uppercase tracking-[.18em] text-zinc-500">SQL</h5>
             <textarea data-ds-field="sql" rows="5" placeholder="SELECT * FROM my_table LIMIT 20" class="mt-2 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-cyan-300/40"></textarea>
             <div class="mt-2 flex flex-wrap gap-2">
-              <button type="button" data-action="admin#runDataSourceQuery" data-source-id="${escapeHTML(selected.id)}" class="rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-cyan-200">Run query</button>
+              <button type="button" data-action="admin-data-sources#runDataSourceQuery" data-source-id="${escapeHTML(selected.id)}" class="rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-cyan-200">Run query</button>
             </div>
           </div>
           <div>
             <h5 class="text-[11px] font-semibold uppercase tracking-[.18em] text-zinc-500">Ask in plain language</h5>
-            <form data-action="submit->admin#askDataSource" class="mt-2 flex flex-wrap gap-2">
+            <form data-action="submit->admin-data-sources#askDataSource" class="mt-2 flex flex-wrap gap-2">
               <input type="hidden" name="source_id" value="${escapeHTML(selected.id)}" />
               <input data-ds-field="question" placeholder="What themes show up in patient portal feedback this week?" class="min-w-[220px] flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40" />
               <button type="submit" class="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-300/20">Ask (job)</button>

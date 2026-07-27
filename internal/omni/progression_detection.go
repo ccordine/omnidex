@@ -1,0 +1,501 @@
+package omni
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+func shouldForceWriteAfterInspection(input ProgressionInput) bool {
+	if !appBuildObjectiveNeedsFileCreation(input.ObjectiveLedger) {
+		return false
+	}
+	if !appBuildPromptNeedsFiles(input.Prompt) || !workspaceMissingAppFiles(input.WorkingDir) {
+		return false
+	}
+	return len(successfulReadOnlyStructuredCommands(input.Observations)) >= 2 && !hasSuccessfulStructuredMutation(input.Observations)
+}
+
+func pendingDockerObjectivesNeedLifecycle(ledger []StructuredObjective) bool {
+	for _, objective := range pendingStructuredObjectives(ledger) {
+		text := strings.ToLower(objective.ID + " " + objective.Description)
+		if (strings.Contains(text, "docker") || strings.Contains(text, "container")) &&
+			(strings.Contains(text, "build") || strings.Contains(text, "run") || strings.Contains(text, "compatibility") || strings.Contains(text, "dependencies") || strings.Contains(text, "image")) {
+			return true
+		}
+	}
+	return false
+}
+
+func latestDockerfileOnlyObservation(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	if len(observations) == 0 {
+		return nil
+	}
+	latest := observations[len(observations)-1]
+	if latest.ExitCode != 0 || strings.TrimSpace(latest.Command) == "" {
+		return nil
+	}
+	text := strings.ToLower(latest.Command + "\n" + latest.Stdout + "\n" + latest.Stderr)
+	if !strings.Contains(text, "dockerfile") {
+		return nil
+	}
+	if strings.Contains(text, "docker build") || strings.Contains(text, "docker run") || strings.Contains(text, "docker inspect") || strings.Contains(text, "docker logs") {
+		return nil
+	}
+	return &latest
+}
+
+func appBuildObjectiveNeedsFileCreation(ledger []StructuredObjective) bool {
+	if len(ledger) == 0 {
+		return true
+	}
+	for _, objective := range pendingStructuredObjectives(ledger) {
+		text := strings.ToLower(objective.ID + " " + objective.Description)
+		if strings.Contains(text, "cleanup") || strings.Contains(text, "clean up") || strings.Contains(text, "remove_empty") || strings.Contains(text, "placeholder") {
+			continue
+		}
+		if strings.Contains(text, "create") || strings.Contains(text, "implement") || strings.Contains(text, "build app") || strings.Contains(text, "project files") || strings.Contains(text, "ui") {
+			return true
+		}
+	}
+	return false
+}
+
+func appBuildPromptNeedsFiles(prompt string) bool {
+	prompt = strings.ToLower(strings.TrimSpace(prompt))
+	if strings.Contains(prompt, "calculator app") {
+		return true
+	}
+	buildVerbs := []string{"build", "create", "implement", "scaffold", "make", "develop", "write"}
+	fileTargets := []string{"app", "project", "javascript", "react", "html", "ui", "website", "cli", "frontend", "component"}
+	hasBuildVerb := false
+	hasFileTarget := false
+	for _, needle := range buildVerbs {
+		if strings.Contains(prompt, needle) {
+			hasBuildVerb = true
+			break
+		}
+	}
+	for _, needle := range fileTargets {
+		if strings.Contains(prompt, needle) {
+			hasFileTarget = true
+			break
+		}
+	}
+	return hasBuildVerb && hasFileTarget
+}
+
+func placeholderOnlySuccessNeedsRecovery(input ProgressionInput) bool {
+	if appBuildPromptNeedsFiles(input.Prompt) {
+		return true
+	}
+	if objectiveLedgerNeedsSubstantiveAppFiles(input.ObjectiveLedger) {
+		return true
+	}
+	if shouldScanEmptyProjectFiles(input.Prompt, input.ObjectiveLedger, input.Observations) {
+		return true
+	}
+	if workspaceHasEmptyProjectFiles(input.WorkingDir) {
+		return true
+	}
+	return workspaceMissingAppFiles(input.WorkingDir)
+}
+
+func workspaceMissingAppFiles(root string) bool {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return false
+	}
+	if nested := firstNestedAppRootWithFiles(root); nested != "" {
+		return false
+	}
+	hasWebEntrypoint := fileHasContent(filepath.Join(root, "src", "index.js")) ||
+		fileHasContent(filepath.Join(root, "src", "main.js")) ||
+		fileHasContent(filepath.Join(root, "src", "index.jsx")) ||
+		fileHasContent(filepath.Join(root, "src", "main.jsx"))
+	hasZigEntrypoint := fileHasContent(filepath.Join(root, "src", "main.zig"))
+	hasZigBuild := fileHasContent(filepath.Join(root, "build.zig")) || fileHasContent(filepath.Join(root, "build.zig.zon"))
+	if hasZigEntrypoint && hasZigBuild {
+		return false
+	}
+	hasRustManifest := fileHasContent(filepath.Join(root, "Cargo.toml"))
+	hasRustEntrypoint := fileHasContent(filepath.Join(root, "src", "main.rs")) || fileHasContent(filepath.Join(root, "src", "lib.rs"))
+	if hasRustManifest && hasRustEntrypoint {
+		return false
+	}
+	if fileHasContent(filepath.Join(root, "index.html")) && hasWebEntrypoint {
+		return false
+	}
+	return true
+}
+
+func firstNestedAppRootWithFiles(root string) string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || shouldSkipEmptyFileScanDir(entry.Name()) {
+			continue
+		}
+		candidate := filepath.Join(root, entry.Name())
+		if !fileHasContent(filepath.Join(candidate, "package.json")) &&
+			!fileHasContent(filepath.Join(candidate, "Cargo.toml")) &&
+			!fileHasContent(filepath.Join(candidate, "go.mod")) &&
+			!fileHasContent(filepath.Join(candidate, "build.zig")) {
+			continue
+		}
+		if !workspaceMissingAppFilesShallow(candidate) {
+			return entry.Name()
+		}
+	}
+	return ""
+}
+
+func workspaceMissingAppFilesShallow(root string) bool {
+	hasWebEntrypoint := fileHasContent(filepath.Join(root, "src", "index.js")) ||
+		fileHasContent(filepath.Join(root, "src", "main.js")) ||
+		fileHasContent(filepath.Join(root, "src", "index.jsx")) ||
+		fileHasContent(filepath.Join(root, "src", "main.jsx"))
+	if fileHasContent(filepath.Join(root, "index.html")) && hasWebEntrypoint {
+		return false
+	}
+	if fileHasContent(filepath.Join(root, "public", "index.html")) && hasWebEntrypoint && fileHasContent(filepath.Join(root, "package.json")) {
+		return false
+	}
+	if (fileHasContent(filepath.Join(root, "Cargo.toml")) && (fileHasContent(filepath.Join(root, "src", "main.rs")) || fileHasContent(filepath.Join(root, "src", "lib.rs")))) ||
+		(fileHasContent(filepath.Join(root, "go.mod")) && hasAnyFileWithExt(filepath.Join(root), ".go")) ||
+		((fileHasContent(filepath.Join(root, "build.zig")) || fileHasContent(filepath.Join(root, "build.zig.zon"))) && fileHasContent(filepath.Join(root, "src", "main.zig"))) {
+		return false
+	}
+	return true
+}
+
+func hasAnyFileWithExt(root, ext string) bool {
+	found := false
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if entry.IsDir() {
+			if shouldSkipEmptyFileScanDir(entry.Name()) && path != root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ext) && fileHasContent(path) {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
+func fileHasContent(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Size() > 0
+}
+
+func successfulReadOnlyStructuredCommands(observations []StructuredCommandObservation) []string {
+	commands := []string{}
+	seen := map[string]bool{}
+	for _, obs := range observations {
+		command := strings.TrimSpace(obs.Command)
+		if obs.ExitCode != 0 || command == "" || structuredCommandLooksMutating(command) {
+			continue
+		}
+		key := normalizeStructuredCommandForComparison(command)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		commands = append(commands, command)
+	}
+	return commands
+}
+
+func hasSuccessfulStructuredMutation(observations []StructuredCommandObservation) bool {
+	for _, obs := range observations {
+		if obs.ExitCode == 0 && structuredCommandLooksAppFileMutation(obs.Command) {
+			return true
+		}
+	}
+	return false
+}
+
+func latestNonAppMutationSuccess(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if obs.ExitCode != 0 || strings.TrimSpace(obs.Command) == "" {
+			continue
+		}
+		if structuredCommandLooksMutating(obs.Command) && !structuredCommandLooksAppFileMutation(obs.Command) {
+			return &obs
+		}
+		return nil
+	}
+	return nil
+}
+
+func repeatedPlannerNoopForMissingAppFiles(input ProgressionInput) bool {
+	if !appBuildPromptNeedsFiles(input.Prompt) || !workspaceMissingAppFiles(input.WorkingDir) {
+		return false
+	}
+	count := 0
+	for _, obs := range input.Observations {
+		text := strings.ToLower(obs.RejectedResponse + "\n" + obs.EvaluationFeedback + "\n" + obs.Stderr)
+		if obs.RejectedResponse != "" && !structuredCommandLooksAppFileMutation(obs.RejectedCommand) && (strings.Contains(text, "empty") || strings.Contains(text, "no meaningful project files") || strings.Contains(text, "initialize") || strings.Contains(text, "项目文件") || strings.Contains(text, "初始化") || strings.Contains(text, "zig")) {
+			count++
+		}
+	}
+	return count >= 2
+}
+
+func structuredCommandLooksAppFileMutation(command string) bool {
+	if shellProposalIsPlaceholderOnlyMutation(command) {
+		return false
+	}
+	lower := strings.ToLower(command)
+	appNeedles := []string{
+		"src/", "build.zig", "build.zig.zon", "package.json", "index.html", "makefile", "go.mod", "cargo.toml",
+		"test", "spec", "zig build", "go test", "cargo test", "npm run build", "npm test",
+	}
+	for _, needle := range appNeedles {
+		if strings.Contains(lower, needle) {
+			return structuredCommandLooksMutating(command)
+		}
+	}
+	return false
+}
+
+func latestPlaceholderOnlySuccess(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if obs.ExitCode == 0 && strings.TrimSpace(obs.Command) != "" && shellProposalIsPlaceholderOnlyMutation(obs.Command) {
+			return &obs
+		}
+	}
+	return nil
+}
+
+func structuredCommandLooksMutating(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	lower := strings.ToLower(command)
+	mutationNeedles := []string{
+		">", "tee ", "cat <<", "node <<", "python <<", "python3 <<", "apply_patch",
+		"architect.apply", "empty_file.apply",
+		"npm install", "npm pkg set", "npm init", "mkdir", "touch", "cp ", "mv ", "rm ",
+		" -delete", "webpack", "npm run build", "npm test",
+		"writefile", "writefilesync", "appendfile", "appendfilesync", "renamesync", "copyfilesync",
+		"unlinksync", "rmsync", "mkdirsync",
+		"write_text", "write_bytes",
+	}
+	for _, needle := range mutationNeedles {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	fields := strings.Fields(lower)
+	if len(fields) == 0 {
+		return false
+	}
+	if cleanCommandPathToken(fields[0]) == "sed" {
+		for _, field := range fields[1:] {
+			if strings.HasPrefix(field, "-i") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func latestRepeatedSuccessEvidence(observations []StructuredCommandObservation) (string, StructuredCommandObservation, bool) {
+	if len(observations) == 0 {
+		return "", StructuredCommandObservation{}, false
+	}
+	latest := observations[len(observations)-1]
+	if !strings.HasPrefix(strings.TrimSpace(latest.Command), "SKIPPED_REPEAT_SUCCESS:") || strings.TrimSpace(latest.RejectedCommand) == "" {
+		return "", StructuredCommandObservation{}, false
+	}
+	previous, ok := previousSuccessfulStructuredCommandObservation(latest.RejectedCommand, observations[:len(observations)-1])
+	return latest.RejectedCommand, previous, ok
+}
+
+func latestRealObservationSucceeded(observations []StructuredCommandObservation) bool {
+	if len(observations) == 0 {
+		return false
+	}
+	latest := observations[len(observations)-1]
+	command := strings.TrimSpace(latest.Command)
+	return latest.ExitCode == 0 && command != "" && !strings.HasPrefix(command, "SKIPPED_REPEAT_SUCCESS:")
+}
+
+func repeatedNoProgressCommand(observations []StructuredCommandObservation) (string, string, int, bool) {
+	if len(observations) == 0 {
+		return "", "", 0, false
+	}
+	latest := observations[len(observations)-1]
+	latestCommand := normalizeStructuredCommandForComparison(latest.Command)
+	if latestCommand == "" || strings.HasPrefix(strings.TrimSpace(latest.Command), "SKIPPED_REPEAT_SUCCESS:") {
+		return "", "", 0, false
+	}
+	fingerprint := structuredFailureFingerprint(latest)
+	count := 0
+	for i := len(observations) - 1; i >= 0; i-- {
+		obs := observations[i]
+		if strings.TrimSpace(obs.Command) == "" || strings.HasPrefix(strings.TrimSpace(obs.Command), "SKIPPED_REPEAT_SUCCESS:") {
+			continue
+		}
+		if normalizeStructuredCommandForComparison(obs.Command) != latestCommand {
+			continue
+		}
+		if structuredFailureFingerprint(obs) != fingerprint {
+			continue
+		}
+		count++
+	}
+	if latest.ExitCode != 0 && count >= 2 {
+		return strings.TrimSpace(latest.Command), fingerprint, count, true
+	}
+	if latest.ExitCode == 0 && count >= 3 && commandLooksLikeNoProgressPackageManager(latest.Command, latest.Stdout, latest.Stderr) {
+		return strings.TrimSpace(latest.Command), fingerprint, count, true
+	}
+	return "", "", count, false
+}
+
+func commandLooksLikeNoProgressPackageManager(command, stdout, stderr string) bool {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return false
+	}
+	switch cleanCommandPathToken(fields[0]) {
+	case "npm", "pnpm", "yarn":
+	default:
+		return false
+	}
+	text := strings.ToLower(stdout + "\n" + stderr)
+	if strings.Contains(text, "up to date") || strings.Contains(text, "already up to date") || strings.Contains(text, "audited ") {
+		return true
+	}
+	return false
+}
+
+func latestENOENTObservation(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	if len(observations) == 0 {
+		return nil
+	}
+	latest := observations[len(observations)-1]
+	if latest.ExitCode == 0 || strings.TrimSpace(latest.Command) == "" {
+		return nil
+	}
+	text := strings.ToLower(latest.Stderr + "\n" + latest.Stdout)
+	if !strings.Contains(text, "no such file or directory") && !strings.Contains(text, "cannot access") && !strings.Contains(text, "no such file") {
+		return nil
+	}
+	if !looksLikeReadCommand(latest.Command) {
+		return nil
+	}
+	return &latest
+}
+
+func latestExistingScaffoldObservation(observations []StructuredCommandObservation) *StructuredCommandObservation {
+	if len(observations) == 0 {
+		return nil
+	}
+	latest := observations[len(observations)-1]
+	if latest.ExitCode == 0 || strings.TrimSpace(latest.Command) == "" {
+		return nil
+	}
+	commandLower := strings.ToLower(latest.Command)
+	if !strings.Contains(commandLower, "go mod init") && !strings.Contains(commandLower, "create-react-app") && !strings.Contains(commandLower, "npm create") {
+		return nil
+	}
+	text := strings.ToLower(latest.Stderr + "\n" + latest.Stdout)
+	alreadyExistsNeedles := []string{
+		"go.mod already exists",
+		"already exists",
+		"contains files that could conflict",
+		"the directory",
+	}
+	for _, needle := range alreadyExistsNeedles {
+		if strings.Contains(text, needle) {
+			return &latest
+		}
+	}
+	return nil
+}
+
+func looksLikeReadCommand(command string) bool {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return false
+	}
+	switch cleanCommandPathToken(fields[0]) {
+	case "cat", "sed", "head", "tail", "stat", "ls", "test":
+		return true
+	default:
+		return false
+	}
+}
+
+func parentDirFromReadCommand(command string) string {
+	fields := strings.Fields(strings.TrimSpace(command))
+	for i := len(fields) - 1; i >= 0; i-- {
+		token := strings.Trim(fields[i], `"'`)
+		if strings.HasPrefix(token, "-") || strings.Contains(token, "=") {
+			continue
+		}
+		if strings.Contains(token, "/") {
+			if idx := strings.LastIndex(token, "/"); idx > 0 {
+				return token[:idx]
+			}
+		}
+	}
+	return ""
+}
+
+func fmtObservationForRecovery(label string, obs StructuredCommandObservation) string {
+	parts := []string{label + ":"}
+	if obs.Step > 0 {
+		parts = append(parts, "step="+strconv.Itoa(obs.Step))
+	}
+	if strings.TrimSpace(obs.Command) != "" {
+		parts = append(parts, "command="+strings.TrimSpace(obs.Command))
+	}
+	parts = append(parts, "exit_code="+strconv.Itoa(obs.ExitCode))
+	if strings.TrimSpace(obs.Stdout) != "" {
+		parts = append(parts, "stdout="+truncateStructuredTimelineValue(obs.Stdout))
+	}
+	if strings.TrimSpace(obs.Stderr) != "" {
+		parts = append(parts, "stderr="+truncateStructuredTimelineValue(obs.Stderr))
+	}
+	return strings.Join(parts, " ")
+}
+
+func structuredFailureFingerprint(obs StructuredCommandObservation) string {
+	text := strings.TrimSpace(obs.Stderr)
+	if text == "" {
+		text = strings.TrimSpace(obs.Stdout)
+	}
+	if text == "" {
+		return "exit_code=" + strconv.Itoa(obs.ExitCode)
+	}
+	return truncateStructuredTimelineValue(strings.Join(strings.Fields(text), " "))
+}
+
+func forcedRecoveryAttemptCount(observations []StructuredCommandObservation) int {
+	count := 0
+	for _, obs := range observations {
+		if strings.Contains(obs.Stderr, "progression_gate: forced recovery required") {
+			count++
+		}
+	}
+	return count
+}

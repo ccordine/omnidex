@@ -1,14 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type scrumChannelDispatchResult struct {
@@ -18,7 +21,7 @@ type scrumChannelDispatchResult struct {
 }
 
 // buildScrumChannelAgentInstruction minifies channel history then builds the job instruction.
-// Same card config (models, agent, fallbacks) is applied later via scrumPlayMetadata / enrichJobMetadata.
+// The card's model and agent configuration is applied later via scrumPlayMetadata.
 func buildScrumChannelAgentInstruction(board ScrumBoard, card ScrumCard, userMessage string, ctx scrumPilotPromptContext) string {
 	prompt := buildScrumPilotChatPrompt(board, card, userMessage, ctx)
 	return strings.TrimSpace("Channel message for this card (use the card's configured agent and models):\n\n" + prompt)
@@ -59,11 +62,18 @@ func (s *Server) dispatchScrumChannelMessage(
 	card ScrumCard,
 	userMessage string,
 ) (scrumChannelDispatchResult, error) {
+	if s == nil || s.repo == nil || projectID <= 0 {
+		return scrumChannelDispatchResult{}, fmt.Errorf("postgres repository and project are required for Scrum channel dispatch")
+	}
 	pilotContext := s.summarizeScrumPilotChannel(r.Context(), board, card, userMessage, nil)
 	instruction := buildScrumChannelAgentInstruction(board, card, userMessage, pilotContext)
 	s.recordScrumPilotContextShrink(r.Context(), projectID, card, board, userMessage, pilotContext, instruction)
 
-	agent := s.scrumCardResolvedAgent(r.Context(), projectID, card).System()
+	resolvedAgent, err := s.scrumCardResolvedAgent(r.Context(), projectID, card)
+	if err != nil {
+		return scrumChannelDispatchResult{}, err
+	}
+	agent := resolvedAgent.System()
 	out := scrumChannelDispatchResult{Card: card, Agent: agent}
 
 	prepared, err := s.prepareScrumCardForChannelDispatch(r.Context(), projectID, card)
@@ -73,42 +83,69 @@ func (s *Server) dispatchScrumChannelMessage(
 	card = prepared
 	out.Card = card
 
-	if card.PlayState == scrumPlayRunning && strings.TrimSpace(card.JobID) != "" && s.repo != nil {
+	if card.PlayState == scrumPlayRunning && strings.TrimSpace(card.JobID) != "" {
 		jobID, err := parseJobID(card.JobID)
 		if err != nil {
 			return scrumChannelDispatchResult{}, err
 		}
-		if _, err := s.repo.InterruptJob(r.Context(), jobID, instruction); err == nil {
-			card = moveScrumCardToInProgress(card)
-			card = appendScrumChannelEvent(card, "system", "Channel steer sent to running agent")
-			saved, err := s.persistScrumCard(r, projectID, card)
-			if err != nil {
-				return scrumChannelDispatchResult{}, err
-			}
-			out.Card = saved
-			out.Action = "steered"
-			return out, nil
+		details, err := s.repo.GetJobDetails(r.Context(), jobID)
+		if err != nil {
+			return scrumChannelDispatchResult{}, fmt.Errorf("load running channel job %d: %w", jobID, err)
 		}
-		if _, err := s.repo.SubmitJobFeedback(r.Context(), jobID, instruction); err == nil {
-			card = moveScrumCardToInProgress(card)
-			card = appendScrumChannelEvent(card, "system", "Channel message sent to waiting agent")
-			saved, err := s.persistScrumCard(r, projectID, card)
+		action := ""
+		note := ""
+		var controlledJob model.Job
+		switch details.Job.Status {
+		case model.JobStatusRunning:
+			controlledJob, err = s.repo.InterruptJob(r.Context(), jobID, userMessage)
 			if err != nil {
-				return scrumChannelDispatchResult{}, err
+				return scrumChannelDispatchResult{}, fmt.Errorf("steer running channel job %d: %w", jobID, err)
 			}
-			out.Card = saved
-			out.Action = "feedback"
-			return out, nil
+			action = "steered"
+			note = "Channel steer sent to running agent"
+		case model.JobStatusWaiting:
+			controlledJob, err = s.repo.SubmitJobFeedback(r.Context(), jobID, userMessage)
+			if err != nil {
+				return scrumChannelDispatchResult{}, fmt.Errorf("submit feedback to waiting channel job %d: %w", jobID, err)
+			}
+			action = "feedback"
+			note = "Channel message sent to waiting agent"
+		case model.JobStatusPending:
+			controlledJob, err = s.repo.InterruptJob(r.Context(), jobID, userMessage)
+			if err != nil {
+				return scrumChannelDispatchResult{}, fmt.Errorf("revise pending channel job %d: %w", jobID, err)
+			}
+			action = "revised"
+			note = "Channel revision replaced the pending run"
+		case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
+			return scrumChannelDispatchResult{}, fmt.Errorf("Scrum card %q references terminal channel job %d with status %q", card.ID, jobID, details.Job.Status)
+		default:
+			return scrumChannelDispatchResult{}, fmt.Errorf("channel job %d has unsupported status %q", jobID, details.Job.Status)
 		}
-		// Running job could not accept steer — cancel and start a fresh channel run.
-		_, _ = s.repo.CancelJob(r.Context(), jobID, "channel message started new run")
-		card.JobID = ""
-		card.PlayState = ""
-		card.QueueOrder = 0
+		if controlledJob.ID <= 0 {
+			return scrumChannelDispatchResult{}, fmt.Errorf("channel control for job %d returned no authoritative job", jobID)
+		}
+		if controlledJob.ID != jobID {
+			card.JobID = fmt.Sprintf("%d", controlledJob.ID)
+			action = "revised"
+			note = fmt.Sprintf("Authority revised: job #%d replaced job #%d and restarted intent validation", controlledJob.ID, jobID)
+			s.publishJobProgress(jobID, realtimeJobFinished, "Job superseded by a user authority revision")
+			s.publishJobProgress(controlledJob.ID, realtimeJobQueued, "Revised job queued from current user direction")
+		} else {
+			s.publishJobProgress(jobID, realtimeJobChanged, note)
+		}
+		card = moveScrumCardToInProgress(card)
+		card = appendScrumChannelEvent(card, "system", note)
+		saved, err := s.persistScrumCard(r, projectID, card)
+		if err != nil {
+			return scrumChannelDispatchResult{}, err
+		}
+		out.Card = saved
+		out.Action = action
+		return out, nil
 	}
 
-	card = moveScrumCardToInProgress(card)
-	started, err := s.enqueueScrumCardAgentRun(r, board, projectID, card, agentconfig.Config{}, instruction, true)
+	started, err := s.enqueueScrumCardAgentRun(r, board, projectID, card, agentconfig.Config{}, instruction, true, userMessage)
 	if err != nil {
 		return scrumChannelDispatchResult{}, err
 	}
@@ -125,7 +162,11 @@ func (s *Server) enqueueScrumCardAgentRun(
 	instance agentconfig.Config,
 	instruction string,
 	channelOrigin bool,
+	currentDirective string,
 ) (ScrumCard, error) {
+	if s == nil || s.repo == nil || projectID <= 0 {
+		return ScrumCard{}, fmt.Errorf("postgres repository and project are required to enqueue a Scrum card agent run")
+	}
 	instruction = strings.TrimSpace(sanitizeScrumChannelText(instruction))
 	if instruction == "" {
 		return ScrumCard{}, fmt.Errorf("instruction is required")
@@ -136,35 +177,20 @@ func (s *Server) enqueueScrumCardAgentRun(
 		return ScrumCard{}, metaErr
 	}
 
-	if s.repo != nil && projectID > 0 {
-		project, err := s.repo.GetProject(r.Context(), projectID)
-		if err != nil {
-			return ScrumCard{}, err
-		}
-		if err := s.validateScrumPlayAgent(r.Context(), project, card, instance); err != nil {
-			return ScrumCard{}, err
-		}
+	project, err := s.repo.GetProject(r.Context(), projectID)
+	if err != nil {
+		return ScrumCard{}, err
 	}
-
-	if s.repo == nil {
-		output, directErr := s.runScrumDirectInstruct(r.Context(), instruction, board, card)
-		if directErr != nil {
-			return ScrumCard{}, directErr
-		}
-		if channelOrigin {
-			card = appendScrumChannelEvent(card, "system", "Agent run completed (direct mode)")
-		}
-		card = appendScrumChannelEvent(card, "assistant", output)
-		card.Column = scrumChannelCompletionColumn(card.Column, channelOrigin)
-		card.PlayState = ""
-		card.QueueOrder = 0
-		return s.persistScrumCard(r, projectID, card)
+	if err := s.validateScrumPlayAgent(r.Context(), project, card, instance); err != nil {
+		return ScrumCard{}, err
 	}
 
 	if channelOrigin {
-		metadata = scrumChannelJobMetadata(metadata, card.Column)
+		metadata, err = scrumChannelJobMetadata(metadata, card.Column, currentDirective)
+		if err != nil {
+			return ScrumCard{}, err
+		}
 	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	if paused, err := s.repo.IsAIPaused(ctx); err != nil {
 		cancel()
@@ -173,7 +199,7 @@ func (s *Server) enqueueScrumCardAgentRun(
 		cancel()
 		return ScrumCard{}, fmt.Errorf("AI is globally paused")
 	}
-	job, err := s.repo.EnqueueJob(ctx, instruction, "scrum", metadata)
+	job, err := s.repo.EnqueueJob(ctx, instruction, model.PipelineScrum, metadata)
 	cancel()
 	if err != nil {
 		return ScrumCard{}, err
@@ -188,29 +214,11 @@ func (s *Server) enqueueScrumCardAgentRun(
 	if len(pulled) > 0 {
 		card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Models: %s", strings.Join(pulled, ", ")))
 	}
-	var meta map[string]any
-	if err := json.Unmarshal(metadata, &meta); err == nil {
-		if agent, _ := meta["execution_agent"].(string); strings.TrimSpace(agent) != "" {
-			card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Execution agent: %s", strings.TrimSpace(agent)))
-		}
-		if source, _ := meta["agent_config_source"].(string); strings.TrimSpace(source) != "" {
-			card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Agent config source: %s", strings.TrimSpace(source)))
-		}
-	}
-
 	card.JobID = fmt.Sprintf("%d", job.ID)
-	card.Column = scrumChannelPlayColumn(card.Column, channelOrigin)
+	card.Column = "in_progress"
 	card.PlayState = scrumPlayRunning
 	card.QueueOrder = 0
 	return s.persistScrumCard(r, projectID, card)
-}
-
-// scrumChannelPlayColumn moves channel-origin runs to in_progress regardless of prior column.
-func scrumChannelPlayColumn(current string, channelOrigin bool) string {
-	if channelOrigin {
-		return "in_progress"
-	}
-	return "in_progress"
 }
 
 func moveScrumCardToInProgress(card ScrumCard) ScrumCard {
@@ -222,29 +230,57 @@ func moveScrumCardToInProgress(card ScrumCard) ScrumCard {
 	return card
 }
 
-// scrumChannelCompletionColumn returns the column after a channel-origin run finishes.
-func scrumChannelCompletionColumn(current string, channelOrigin bool) string {
-	current = normalizeScrumColumn(current)
-	if channelOrigin && current == "review" {
-		return "review"
-	}
-	return "review"
-}
-
-func scrumChannelJobMetadata(metadata []byte, priorColumn string) []byte {
+func scrumChannelJobMetadata(metadata []byte, priorColumn, currentDirective string) ([]byte, error) {
 	var meta map[string]any
-	if err := json.Unmarshal(metadata, &meta); err != nil || meta == nil {
-		return metadata
+	decoder := json.NewDecoder(bytes.NewReader(metadata))
+	decoder.UseNumber()
+	if err := decoder.Decode(&meta); err != nil || meta == nil {
+		if err == nil {
+			err = fmt.Errorf("metadata object is required")
+		}
+		return nil, fmt.Errorf("decode Scrum channel job metadata: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
+		return nil, fmt.Errorf("decode Scrum channel job metadata: %w", err)
 	}
 	meta["scrum_channel_origin"] = true
+	currentDirective = strings.TrimSpace(currentDirective)
+	if currentDirective == "" {
+		return nil, fmt.Errorf("Scrum channel job metadata requires the current user directive")
+	}
+	if _, removed := meta["scrum_current_user_instruction"]; removed {
+		return nil, fmt.Errorf("Scrum channel job metadata contains removed key scrum_current_user_instruction")
+	}
+	directives := make([]string, 0, 1)
+	if raw, exists := meta["v3_authority_directives"]; exists {
+		items, ok := raw.([]any)
+		if !ok {
+			return nil, fmt.Errorf("Scrum channel job metadata v3_authority_directives must be an array")
+		}
+		for index, item := range items {
+			text, ok := item.(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				return nil, fmt.Errorf("Scrum channel job metadata v3_authority_directives[%d] must be a non-empty string", index)
+			}
+			directives = append(directives, strings.TrimSpace(text))
+		}
+	}
+	if len(directives) >= model.V3MaxAuthorityDirectives {
+		return nil, fmt.Errorf("Scrum channel job metadata reached the V3 authority directive limit %d", model.V3MaxAuthorityDirectives)
+	}
+	meta["v3_authority_directives"] = append(directives, currentDirective)
 	if col := normalizeScrumColumn(priorColumn); col != "" {
 		meta["scrum_return_column"] = col
 	}
 	out, err := json.Marshal(meta)
 	if err != nil {
-		return metadata
+		return nil, fmt.Errorf("encode Scrum channel job metadata: %w", err)
 	}
-	return out
+	return out, nil
 }
 
 func scrumReturnColumnFromMetadata(raw json.RawMessage) string {

@@ -81,23 +81,21 @@ try {
 
 try {
   const run = await agent.send(request.prompt);
-  const events = [];
   let lastErrorDetail = "";
 
   emit({ agent: "cursor", type: "started", message: "Cursor external implementation session started" });
 
   try {
     for await (const event of run.stream()) {
-      events.push(event);
       if (event && typeof event === "object" && event.type === "status") {
         const status = String(event.status || "").toUpperCase();
         emit({ agent: "cursor", type: "status", message: JSON.stringify(event), raw: event });
-        if (status === "ERROR") {
+        if (["ERROR", "FAILED", "CANCELLED", "CANCELED"].includes(status)) {
           lastErrorDetail = JSON.stringify(event);
           emit({
             agent: "cursor",
             type: "error",
-            message: "Cursor agent run failed with status ERROR" + (event.run_id ? " (run_id=" + event.run_id + ")" : ""),
+            message: "Cursor agent run failed with status " + status + (event.run_id ? " (run_id=" + event.run_id + ")" : ""),
             raw: event,
           });
         }
@@ -115,7 +113,7 @@ try {
 
   const result = await run.wait();
   const runStatus = String(result?.status || "").toLowerCase();
-  if (runStatus === "error" || runStatus === "failed" || runStatus === "cancelled") {
+  if (lastErrorDetail || runStatus === "error" || runStatus === "failed" || runStatus === "cancelled" || runStatus === "canceled") {
     const detail =
       result?.error?.message ||
       result?.error ||
@@ -141,7 +139,6 @@ try {
     agent: "cursor",
     type: "completed",
     message: summary || "Cursor external implementation session completed",
-    evidence: events.map((event) => (typeof event === "string" ? event : JSON.stringify(event))),
     raw: {
       agent_id: agent?.id || "",
       run_id: result?.id || "",

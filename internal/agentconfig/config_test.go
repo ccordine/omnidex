@@ -2,62 +2,87 @@ package agentconfig
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
 func TestMergeAgentPriority(t *testing.T) {
-	env := Config{"agent_system": "omnidex"}
-	project := Config{"agent_system": "cursor"}
-	card := Config{"agent_strict": "true"}
-	merged := Merge(env, project, card)
+	merged := Merge(Config{"agent_system": "omnidex"}, Config{"agent_system": "cursor"})
 	if merged.System() != SystemCursor {
 		t.Fatalf("expected cursor, got %q", merged.System())
-	}
-	if !merged.IsStrict() {
-		t.Fatal("expected strict=true")
 	}
 }
 
 func TestFromSettingsJSON(t *testing.T) {
-	raw := json.RawMessage(`{"agent_config":{"agent_system":"codex"}}`)
-	cfg := FromSettingsJSON(raw)
+	cfg, err := FromSettingsJSON(json.RawMessage(`{"agent_config":{"agent_system":"codex"}}`))
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
 	if cfg.System() != SystemCodex {
 		t.Fatalf("expected codex, got %q", cfg.System())
 	}
 }
 
-func TestFromJobMetadataAcceptsTopLevelExecutionAgent(t *testing.T) {
-	raw := json.RawMessage(`{"source":"omni-scrum","execution_agent":"cursor","agent_strict":true}`)
-	cfg := FromJobMetadata(raw)
+func TestFromJobMetadataRequiresAuthoritativeNestedConfig(t *testing.T) {
+	cfg, err := FromJobMetadata(json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"}}`))
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
 	if cfg.System() != SystemCursor {
 		t.Fatalf("expected cursor, got %q", cfg.System())
 	}
-	if !cfg.IsStrict() {
-		t.Fatal("expected top-level agent_strict=true")
+}
+
+func TestFromJobMetadataDefaultsUnconfiguredJobToOmnidex(t *testing.T) {
+	cfg, err := FromJobMetadata(json.RawMessage(`{"source":"omni-web-chat"}`))
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.System() != SystemOmnidex {
+		t.Fatalf("expected omnidex, got %q", cfg.System())
 	}
 }
 
-func TestFromJobMetadataAcceptsTopLevelCodexExecutionAgent(t *testing.T) {
-	raw := json.RawMessage(`{"source":"omni-scrum","execution_agent":"codex"}`)
-	cfg := FromJobMetadata(raw)
-	if cfg.System() != SystemCodex {
-		t.Fatalf("expected codex, got %q", cfg.System())
+func TestFromJobMetadataRejectsRemovedTopLevelAgentFields(t *testing.T) {
+	for _, raw := range []string{
+		`{"execution_agent":"cursor"}`,
+		`{"agent_strict":true,"agent_config":{"agent_system":"cursor"}}`,
+	} {
+		if _, err := FromJobMetadata(json.RawMessage(raw)); err == nil {
+			t.Fatalf("expected removed metadata field to fail: %s", raw)
+		}
 	}
 }
 
-func TestFromJobMetadataPreservesNestedConfigAndFillsMissingSystem(t *testing.T) {
-	raw := json.RawMessage(`{"execution_agent":"cursor","agent_config":{"cursor_model":"composer-test"}}`)
-	cfg := FromJobMetadata(raw)
-	if cfg.System() != SystemCursor {
-		t.Fatalf("expected cursor from top-level execution_agent, got %q", cfg.System())
+func TestFromJSONRejectsInvalidState(t *testing.T) {
+	cases := []string{
+		`null`,
+		`[]`,
+		`{"agent_system":true}`,
+		`{"agent_system":"local"}`,
+		`{"agent_system":"bogus"}`,
+		`{"agent_strict":"true"}`,
+		`{"unknown":"value"}`,
+		`{"codex_network_access":"yes"}`,
 	}
-	if cfg.CursorModel() != "composer-test" {
-		t.Fatalf("expected cursor model preserved, got %q", cfg.CursorModel())
+	for _, raw := range cases {
+		t.Run(raw, func(t *testing.T) {
+			if _, err := FromJSON(json.RawMessage(raw)); err == nil {
+				t.Fatalf("expected invalid config to fail: %s", raw)
+			}
+		})
+	}
+}
+
+func TestFromSettingsJSONPropagatesMalformedNestedConfig(t *testing.T) {
+	_, err := FromSettingsJSON(json.RawMessage(`{"agent_config":{"agent_system":7}}`))
+	if err == nil || !strings.Contains(err.Error(), "must be a string") {
+		t.Fatalf("expected typed failure, got %v", err)
 	}
 }
 
 func TestCodexModelConfig(t *testing.T) {
-	cfg := FromJSON(json.RawMessage(`{
+	cfg, err := FromJSON(json.RawMessage(`{
 		"agent_system":"codex",
 		"codex_model":"gpt-codex-project",
 		"codex_reasoning_effort":"high",
@@ -66,44 +91,20 @@ func TestCodexModelConfig(t *testing.T) {
 		"codex_network_access":"false",
 		"codex_web_search_mode":"disabled"
 	}`))
-	if cfg.System() != SystemCodex {
-		t.Fatalf("expected codex, got %q", cfg.System())
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
 	}
-	if cfg.CodexModel() != "gpt-codex-project" {
-		t.Fatalf("expected codex model, got %q", cfg.CodexModel())
-	}
-	if cfg.CodexReasoningEffort() != "high" {
-		t.Fatalf("expected reasoning effort, got %q", cfg.CodexReasoningEffort())
-	}
-	if cfg.CodexSandboxMode() != "workspace-write" {
-		t.Fatalf("expected sandbox, got %q", cfg.CodexSandboxMode())
-	}
-	if cfg.CodexApprovalPolicy() != "never" {
-		t.Fatalf("expected approval policy, got %q", cfg.CodexApprovalPolicy())
-	}
-	if cfg.CodexNetworkAccess() != "false" {
-		t.Fatalf("expected network access, got %q", cfg.CodexNetworkAccess())
-	}
-	if cfg.CodexWebSearchMode() != "disabled" {
-		t.Fatalf("expected web search mode, got %q", cfg.CodexWebSearchMode())
+	if cfg.System() != SystemCodex || cfg.CodexModel() != "gpt-codex-project" {
+		t.Fatalf("unexpected config: %#v", cfg)
 	}
 }
 
 func TestCursorModelConfig(t *testing.T) {
-	cfg := FromJSON(json.RawMessage(`{"agent_system":"cursor","cursor_model":"composer-test"}`))
-	if cfg.System() != SystemCursor {
-		t.Fatalf("expected cursor, got %q", cfg.System())
+	cfg, err := FromJSON(json.RawMessage(`{"agent_system":"cursor","cursor_model":"composer-test"}`))
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
 	}
-	if cfg.CursorModel() != "composer-test" {
-		t.Fatalf("expected cursor model, got %q", cfg.CursorModel())
-	}
-}
-
-func TestNormalizeSystem(t *testing.T) {
-	if normalizeSystem("local") != SystemOmnidex {
-		t.Fatal("local should map to omnidex")
-	}
-	if normalizeSystem("cursor_sdk") != SystemCursor {
-		t.Fatal("cursor_sdk should map to cursor")
+	if cfg.System() != SystemCursor || cfg.CursorModel() != "composer-test" {
+		t.Fatalf("unexpected config: %#v", cfg)
 	}
 }

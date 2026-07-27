@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -32,50 +33,59 @@ func defaultScrumAutoReviewConfig() ScrumAutoReviewConfig {
 	}
 }
 
-func loadScrumAutoReviewConfig(settings json.RawMessage) ScrumAutoReviewConfig {
+func validateScrumAutoReviewConfig(cfg ScrumAutoReviewConfig) (ScrumAutoReviewConfig, error) {
+	if strings.TrimSpace(cfg.BounceColumn) == "" {
+		cfg.BounceColumn = "assigned"
+	}
+	cfg.BounceColumn = normalizeScrumColumn(cfg.BounceColumn)
+	switch cfg.BounceColumn {
+	case "assigned", "in_progress", "ready":
+		return cfg, nil
+	default:
+		return ScrumAutoReviewConfig{}, fmt.Errorf("unsupported Scrum auto-review bounce column %q", cfg.BounceColumn)
+	}
+}
+
+func loadScrumAutoReviewConfig(settings json.RawMessage) (ScrumAutoReviewConfig, error) {
 	cfg := defaultScrumAutoReviewConfig()
-	if len(settings) == 0 {
-		return cfg
+	if len(bytes.TrimSpace(settings)) == 0 {
+		return cfg, nil
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(settings, &payload); err != nil {
-		return cfg
+		return ScrumAutoReviewConfig{}, fmt.Errorf("decode project settings for Scrum auto-review: %w", err)
 	}
 	raw, ok := payload[scrumAutoReviewKey]
 	if !ok || len(raw) == 0 {
-		return cfg
+		return cfg, nil
 	}
-	_ = json.Unmarshal(raw, &cfg)
-	cfg.BounceColumn = normalizeScrumColumn(firstNonEmpty(cfg.BounceColumn, "assigned"))
-	if cfg.BounceColumn == "" || cfg.BounceColumn == "review" || cfg.BounceColumn == "done" {
-		cfg.BounceColumn = "assigned"
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return ScrumAutoReviewConfig{}, fmt.Errorf("Scrum auto-review config must be an object")
 	}
-	return cfg
-}
-
-func (s *Server) scrumAutoReviewConfig(ctx context.Context, projectID int64) ScrumAutoReviewConfig {
-	if s.repo == nil || projectID <= 0 {
-		return defaultScrumAutoReviewConfig()
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return ScrumAutoReviewConfig{}, fmt.Errorf("decode Scrum auto-review config: %w", err)
 	}
-	project, err := s.repo.GetProject(ctx, projectID)
-	if err != nil {
-		return defaultScrumAutoReviewConfig()
-	}
-	return loadScrumAutoReviewConfig(project.Settings)
+	return validateScrumAutoReviewConfig(cfg)
 }
 
 func (s *Server) saveScrumAutoReviewConfig(ctx context.Context, project model.Project, cfg ScrumAutoReviewConfig) error {
+	if s == nil || s.repo == nil || project.ID <= 0 {
+		return fmt.Errorf("postgres repository and project are required to save Scrum auto-review config")
+	}
+	validated, err := validateScrumAutoReviewConfig(cfg)
+	if err != nil {
+		return err
+	}
 	var settings map[string]any
 	if len(project.Settings) > 0 {
-		_ = json.Unmarshal(project.Settings, &settings)
+		if err := json.Unmarshal(project.Settings, &settings); err != nil {
+			return fmt.Errorf("decode project %d settings: %w", project.ID, err)
+		}
 	}
 	if settings == nil {
 		settings = map[string]any{}
 	}
-	if cfg.BounceColumn == "" {
-		cfg.BounceColumn = "assigned"
-	}
-	settings[scrumAutoReviewKey] = cfg
+	settings[scrumAutoReviewKey] = validated
 	raw, err := json.Marshal(settings)
 	if err != nil {
 		return err
@@ -195,7 +205,11 @@ func trimText(value string, max int) string {
 func (s *Server) scrumAutoReviewMetadata(ctx context.Context, board ScrumBoard, card ScrumCard, projectID int64) ([]byte, error) {
 	instance := agentconfig.Config{}
 	if len(card.AgentConfig) > 0 {
-		instance = agentconfig.FromJSON(card.AgentConfig)
+		var err error
+		instance, err = agentconfig.FromJSON(card.AgentConfig)
+		if err != nil {
+			return nil, fmt.Errorf("parse Scrum card agent configuration: %w", err)
+		}
 	}
 	raw, _, err := s.scrumPlayMetadata(ctx, board, card, projectID, instance)
 	if err != nil {
@@ -203,7 +217,7 @@ func (s *Server) scrumAutoReviewMetadata(ctx context.Context, board ScrumBoard, 
 	}
 	var meta map[string]any
 	if err := json.Unmarshal(raw, &meta); err != nil {
-		return raw, nil
+		return nil, fmt.Errorf("parse Scrum auto-review metadata: %w", err)
 	}
 	meta["scrum_auto_review"] = true
 	meta["review_always"] = "on"
@@ -229,7 +243,7 @@ func (s *Server) startScrumAutoReview(r *http.Request, board ScrumBoard, project
 		return ScrumCard{}, fmt.Errorf("auto review requires queue mode")
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	job, err := s.repo.EnqueueJob(ctx, instruction, "scrum", metadata)
+	job, err := s.repo.EnqueueJob(ctx, instruction, model.PipelineScrum, metadata)
 	cancel()
 	if err != nil {
 		return ScrumCard{}, err
@@ -243,7 +257,11 @@ func (s *Server) startScrumAutoReview(r *http.Request, board ScrumBoard, project
 }
 
 func (s *Server) maybeStartScrumAutoReview(r *http.Request, projectID int64, board ScrumBoard, card ScrumCard, fromColumn string) (ScrumCard, error) {
-	cfg := s.scrumAutoReviewConfig(r.Context(), projectID)
+	automation, err := s.scrumAutomationSettings(r.Context(), projectID)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	cfg := automation.AutoReview
 	if !cfg.Enabled {
 		return card, nil
 	}
@@ -260,36 +278,47 @@ func (s *Server) maybeStartScrumAutoReview(r *http.Request, projectID int64, boa
 	return s.startScrumAutoReview(r, board, projectID, card)
 }
 
-func (s *Server) finishScrumAutoReview(r *http.Request, projectID int64, card ScrumCard, job model.JobDetails) (ScrumCard, bool) {
+func (s *Server) finishScrumAutoReview(r *http.Request, projectID int64, card ScrumCard, job model.JobDetails) (ScrumCard, bool, error) {
 	return s.finishScrumAutoReviewFromContext(r.Context(), projectID, card, job)
 }
 
-func (s *Server) finishScrumAutoReviewFromContext(ctx context.Context, projectID int64, card ScrumCard, job model.JobDetails) (ScrumCard, bool) {
-	cfg := s.scrumAutoReviewConfig(ctx, projectID)
-	bounceColumn := cfg.BounceColumn
-	if bounceColumn == "" {
-		bounceColumn = "assigned"
+func (s *Server) finishScrumAutoReviewFromContext(ctx context.Context, projectID int64, card ScrumCard, job model.JobDetails) (ScrumCard, bool, error) {
+	automation, err := s.scrumAutomationSettings(ctx, projectID)
+	if err != nil {
+		return card, false, err
 	}
+	cfg := automation.AutoReview
+	bounceColumn := cfg.BounceColumn
 
 	output := collectScrumAgentOutput(job)
 	verdict, ok := parseScrumAutoReviewVerdict(output)
+	jobID := strings.TrimSpace(card.JobID)
 	if !ok {
+		reason := "Auto-review returned no explicit verdict"
 		switch job.Job.Status {
-		case model.JobStatusCompleted:
-			verdict = scrumAutoReviewVerdict{Ready: true, Summary: "Auto-review completed without explicit verdict — keeping in Review"}
 		case model.JobStatusFailed, model.JobStatusCanceled:
-			verdict = scrumAutoReviewVerdict{Ready: false, Summary: "Auto-review job did not complete — bouncing for another pass"}
+			reason = fmt.Sprintf("Auto-review job %s", job.Job.Status)
+			if detail := strings.TrimSpace(job.Job.Error); detail != "" {
+				reason += ": " + detail
+			}
+		case model.JobStatusCompleted:
 		default:
-			return card, false
+			return card, false, nil
 		}
+		card = syncScrumAutoReviewOutput(card, job)
+		card.PlayState = ""
+		card.QueueOrder = 0
+		card.JobID = ""
+		card.Column = "error"
+		card = appendScrumChannelEvent(card, "error", reason)
+		verdict = scrumAutoReviewVerdict{Ready: false, Summary: reason}
+		if err := s.recordScrumAutoReviewFlowEvent(ctx, projectID, card, jobID, verdict); err != nil {
+			return card, false, err
+		}
+		return card, true, nil
 	}
 
-	if synced, syncOK := syncRunningJobChannelChat(card, job); syncOK {
-		card = synced
-	}
-	if synced, syncOK := syncRunningJobConsoleLog(card, job); syncOK {
-		card = synced
-	}
+	card = syncScrumAutoReviewOutput(card, job)
 
 	card.PlayState = ""
 	card.QueueOrder = 0
@@ -317,22 +346,45 @@ func (s *Server) finishScrumAutoReviewFromContext(ctx context.Context, projectID
 		}
 	}
 
-	if s.repo != nil && projectID > 0 {
-		payload, _ := json.Marshal(map[string]any{
-			"ready":   verdict.Ready,
-			"summary": verdict.Summary,
-			"job_id":  strings.TrimSpace(card.JobID),
-		})
-		event := scrumFlowEventReviewGateFailed
-		if verdict.Ready {
-			event = scrumFlowEventReviewGatePassed
-		}
-		_ = s.repo.RecordScrumFlowEvent(
-			ctx, projectID, card.ID, event,
-			"review", card.Column, scrumPlayReviewing, card.PlayState, payload,
-		)
+	if err := s.recordScrumAutoReviewFlowEvent(ctx, projectID, card, jobID, verdict); err != nil {
+		return card, false, err
 	}
-	return card, true
+	return card, true, nil
+}
+
+func syncScrumAutoReviewOutput(card ScrumCard, job model.JobDetails) ScrumCard {
+	if synced, ok := syncRunningJobChannelChat(card, job); ok {
+		card = synced
+	}
+	if synced, ok := syncRunningJobConsoleLog(card, job); ok {
+		card = synced
+	}
+	return card
+}
+
+func (s *Server) recordScrumAutoReviewFlowEvent(ctx context.Context, projectID int64, card ScrumCard, jobID string, verdict scrumAutoReviewVerdict) error {
+	if s == nil || s.repo == nil || projectID <= 0 {
+		return fmt.Errorf("postgres repository and project are required to record Scrum auto-review outcome")
+	}
+	payload, err := json.Marshal(map[string]any{
+		"ready":   verdict.Ready,
+		"summary": verdict.Summary,
+		"job_id":  strings.TrimSpace(jobID),
+	})
+	if err != nil {
+		return fmt.Errorf("encode Scrum auto-review outcome: %w", err)
+	}
+	event := scrumFlowEventReviewGateFailed
+	if verdict.Ready {
+		event = scrumFlowEventReviewGatePassed
+	}
+	if err := s.repo.RecordScrumFlowEvent(
+		ctx, projectID, card.ID, event,
+		"review", card.Column, scrumPlayReviewing, card.PlayState, payload,
+	); err != nil {
+		return fmt.Errorf("record Scrum auto-review outcome for card %q: %w", card.ID, err)
+	}
+	return nil
 }
 
 func scrumReviewColumnLabel(column string) string {

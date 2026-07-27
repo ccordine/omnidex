@@ -1,1 +1,30 @@
-{"type":"object","required":["verdict"],"properties":{"verdict":{"type":"string"},"supported_claims":{"type":"array","items":{"type":"string"}},"unsupported_claims":{"type":"array","items":{"type":"string"}},"recommended_actions":{"type":"array","items":{"type":"string"}}}}
+{
+  "type": "object",
+  "required": ["verdict", "independent_challenge", "supported_claims", "unsupported_claims", "missing_evidence", "contradictions", "role_violations", "objective_coverage", "advice_only", "recommended_actions"],
+  "properties": {
+    "verdict": {"type": "string", "enum": ["pass", "revise", "blocked"]},
+    "independent_challenge": {"type": "boolean"},
+    "supported_claims": {"type": "array", "items": {"type": "string"}},
+    "unsupported_claims": {"type": "array", "items": {"type": "string"}},
+    "missing_evidence": {"type": "array", "items": {"type": "string"}},
+    "contradictions": {"type": "array", "items": {"type": "string"}},
+    "role_violations": {"type": "array", "items": {"type": "string"}},
+    "objective_coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["objective_id", "satisfied", "evidence_ids", "gaps"],
+        "properties": {
+          "objective_id": {"type": "string"},
+          "satisfied": {"type": "boolean"},
+          "evidence_ids": {"type": "array", "items": {"type": "integer"}},
+          "gaps": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "advice_only": {"type": "boolean"},
+    "recommended_actions": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

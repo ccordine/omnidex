@@ -1,36 +1,157 @@
-import { useEffect, useRef, useState } from "react";
-import { chatScrumCard } from "../../lib/scrum_api";
-import { ActionButton, EmptyState, Panel, shortDate, submitForm, TextArea } from "./common";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { chatScrumCard, fetchScrumChannelPage } from "../../lib/scrum_api";
+import type { ScrumChatMessage } from "../../lib/scrum_types";
+import { ActionButton, EmptyState, Panel, submitForm, TextArea } from "./common";
 import type { CardModalChildProps } from "./types";
+import { ChannelMessage } from "./ChannelMessage";
+
+const MAX_RECENT_MESSAGES = 100;
+
+function messageKey(message: ScrumChatMessage, index: number): string {
+  return message.id || `${message.role}:${message.created_at}:${message.content}:${index}`;
+}
+
+function mergeMessages(current: ScrumChatMessage[], incoming: ScrumChatMessage[], limit?: number): ScrumChatMessage[] {
+  const merged = [...current];
+  const indexes = new Map(merged.map((item, index) => [messageKey(item, index), index]));
+  incoming.forEach((item, index) => {
+    const key = messageKey(item, current.length + index);
+    const existing = indexes.get(key);
+    if (existing == null) {
+      indexes.set(key, merged.length);
+      merged.push(item);
+      return;
+    }
+    merged[existing] = item;
+  });
+  return limit && merged.length > limit ? merged.slice(-limit) : merged;
+}
 
 export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: CardModalChildProps) {
   const card = context.card;
+  const agentWorking = card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing";
   const [message, setMessage] = useState("");
+  const [recentMessages, setRecentMessages] = useState<ScrumChatMessage[]>(card.chat ?? []);
+  const [earlierMessages, setEarlierMessages] = useState<ScrumChatMessage[]>([]);
+  const [beforeCursor, setBeforeCursor] = useState(context.channel_before_cursor ?? "");
+  const [hasMore, setHasMore] = useState(Boolean(context.channel_has_more));
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [hasUnseenActivity, setHasUnseenActivity] = useState(false);
   const streamRef = useRef<HTMLDivElement | null>(null);
-  const messages = card.chat ?? [];
+  const activeCardIDRef = useRef(card.id);
+  const pinnedToBottomRef = useRef(true);
+  const previousMessageCountRef = useRef(0);
+  const historyAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const messages = useMemo(() => mergeMessages(earlierMessages, recentMessages), [earlierMessages, recentMessages]);
 
   useEffect(() => {
+    if (activeCardIDRef.current === card.id) {
+      setRecentMessages((current) => mergeMessages(current, card.chat ?? [], MAX_RECENT_MESSAGES));
+      return;
+    }
+    activeCardIDRef.current = card.id;
+    setRecentMessages(card.chat ?? []);
+    setEarlierMessages([]);
+    setBeforeCursor(context.channel_before_cursor ?? "");
+    setHasMore(Boolean(context.channel_has_more));
+    setHistoryError("");
+    setHasUnseenActivity(false);
+    pinnedToBottomRef.current = true;
+    previousMessageCountRef.current = 0;
+    historyAnchorRef.current = null;
+  }, [card.chat, card.id, context.channel_before_cursor, context.channel_has_more]);
+
+  useLayoutEffect(() => {
     const node = streamRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
+    if (!node) return;
+    const anchor = historyAnchorRef.current;
+    if (anchor) {
+      node.scrollTop = anchor.scrollTop + (node.scrollHeight - anchor.scrollHeight);
+      historyAnchorRef.current = null;
+    } else if (pinnedToBottomRef.current || previousMessageCountRef.current === 0) {
+      node.scrollTop = node.scrollHeight;
+      setHasUnseenActivity(false);
+    } else if (messages.length > previousMessageCountRef.current) {
+      setHasUnseenActivity(true);
+    }
+    previousMessageCountRef.current = messages.length;
   }, [messages.length, card.id]);
 
   return (
-    <Panel title="Card Channel" aside={<span className="text-xs text-zinc-500">{card.play_state || "idle"}</span>}>
+    <Panel
+      title="Card Channel"
+      aside={agentWorking ? (
+        <span className="inline-flex items-center gap-2 text-xs font-medium text-cyan-200" role="status" aria-live="polite">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-300" aria-hidden="true" />
+          Agent working
+        </span>
+      ) : <span className="text-xs text-zinc-500">{card.play_state || "idle"}</span>}
+    >
       <div className="flex h-[58vh] min-h-[28rem] flex-col gap-3">
-        <div ref={streamRef} className="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto rounded-md border border-white/10 bg-zinc-950/50 p-3">
+        <div
+          ref={streamRef}
+          aria-label="Card channel activity"
+          onScroll={(event) => {
+            const node = event.currentTarget;
+            const pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= 80;
+            pinnedToBottomRef.current = pinned;
+            if (pinned) setHasUnseenActivity(false);
+          }}
+          className="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto rounded-md border border-white/10 bg-zinc-950/50 p-3"
+        >
+          {hasMore ? (
+            <div className="flex justify-center pb-1">
+              <button
+                type="button"
+                disabled={loadingEarlier}
+                onClick={async () => {
+                  if (loadingEarlier || !beforeCursor) return;
+                  const stream = streamRef.current;
+                  if (!stream) throw new Error("Card channel scroll container is unavailable.");
+                  historyAnchorRef.current = { scrollHeight: stream.scrollHeight, scrollTop: stream.scrollTop };
+                  setLoadingEarlier(true);
+                  setHistoryError("");
+                  try {
+                    const page = await fetchScrumChannelPage(card.id, beforeCursor, projectID);
+                    setEarlierMessages((current) => [...page.messages, ...current]);
+                    setBeforeCursor(page.before_cursor);
+                    setHasMore(page.has_more);
+                  } catch (error) {
+                    historyAnchorRef.current = null;
+                    setHistoryError(error instanceof Error ? error.message : String(error));
+                  } finally {
+                    setLoadingEarlier(false);
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded border border-white/10 px-2.5 py-1 text-xs text-zinc-400 hover:border-cyan-300/30 hover:text-cyan-100 disabled:cursor-wait disabled:opacity-60"
+              >
+                {loadingEarlier ? <span className="h-3 w-3 animate-spin rounded-full border border-cyan-300/30 border-t-cyan-200" aria-hidden="true" /> : null}
+                {loadingEarlier ? "Loading earlier activity…" : "Load earlier activity"}
+              </button>
+            </div>
+          ) : null}
+          {historyError ? <p className="rounded border border-rose-400/30 bg-rose-400/10 p-2 text-xs text-rose-100" role="alert">{historyError}</p> : null}
           {messages.length === 0 ? (
             <EmptyState>No channel messages yet.</EmptyState>
           ) : (
-            messages.map((item, index) => (
-              <article key={item.id || `${item.created_at}-${index}`} className="rounded-md border border-white/10 bg-zinc-900/70 px-3 py-2">
-                <div className="mb-1 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[.14em] text-zinc-500">
-                  <span>{item.role}</span>
-                  <span>{shortDate(item.created_at)}</span>
-                </div>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-200">{item.content}</p>
-              </article>
-            ))
+            messages.map((item, index) => <ChannelMessage key={item.id || `${item.created_at}-${index}`} message={item} />)
           )}
+          {hasUnseenActivity ? (
+            <button
+              type="button"
+              onClick={() => {
+                const stream = streamRef.current;
+                if (!stream) throw new Error("Card channel scroll container is unavailable.");
+                pinnedToBottomRef.current = true;
+                stream.scrollTop = stream.scrollHeight;
+                setHasUnseenActivity(false);
+              }}
+              className="sticky bottom-1 ml-auto block rounded-full border border-cyan-300/30 bg-zinc-950/95 px-3 py-1 text-xs font-medium text-cyan-100 shadow-lg"
+            >
+              New live activity ↓
+            </button>
+          ) : null}
         </div>
         <form
           onSubmit={submitForm(async () => {

@@ -1,6 +1,7 @@
 package omni
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 )
 
 type PatchApplyOptions struct {
+	Context   context.Context
 	Workspace string
 	Patch     string
 	DryRun    bool
@@ -40,6 +42,13 @@ type parsedPatchHunk struct {
 var unifiedHunkHeaderPattern = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+([0-9]+)(?:,[0-9]+)? @@`)
 
 func ApplyUnifiedPatch(options PatchApplyOptions) (PatchApplyResult, error) {
+	ctx := options.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return PatchApplyResult{}, fmt.Errorf("apply patch: %w", err)
+	}
 	workspace := strings.TrimSpace(options.Workspace)
 	if workspace == "" {
 		var err error
@@ -56,41 +65,12 @@ func ApplyUnifiedPatch(options PatchApplyOptions) (PatchApplyResult, error) {
 	if err != nil {
 		return PatchApplyResult{}, err
 	}
-	result := PatchApplyResult{Workspace: absWorkspace, DryRun: options.DryRun}
-	for _, file := range files {
-		targetPath := file.targetPath()
-		if targetPath == "" {
-			return PatchApplyResult{}, fmt.Errorf("patch target is empty")
-		}
-		absTarget, err := safeWorkspacePath(absWorkspace, targetPath)
-		if err != nil {
-			return PatchApplyResult{}, err
-		}
-		action := file.action()
-		if action == "delete" {
-			if _, err := applyParsedPatchFile(absTarget, file); err != nil {
-				return PatchApplyResult{}, err
-			}
-			if !options.DryRun {
-				if err := os.Remove(absTarget); err != nil {
-					return PatchApplyResult{}, fmt.Errorf("delete %s: %w", targetPath, err)
-				}
-			}
-		} else {
-			next, err := applyParsedPatchFile(absTarget, file)
-			if err != nil {
-				return PatchApplyResult{}, err
-			}
-			if !options.DryRun {
-				if err := os.MkdirAll(filepath.Dir(absTarget), 0o755); err != nil {
-					return PatchApplyResult{}, fmt.Errorf("create patch parent: %w", err)
-				}
-				if err := os.WriteFile(absTarget, []byte(next), 0o644); err != nil {
-					return PatchApplyResult{}, fmt.Errorf("write patched file %s: %w", targetPath, err)
-				}
-			}
-		}
-		result.Files = append(result.Files, PatchFileResult{Path: targetPath, Action: action})
+	mutations, result, err := preparePatchMutations(ctx, absWorkspace, files, options.DryRun)
+	if err != nil || options.DryRun {
+		return result, err
+	}
+	if err := commitPatchMutations(ctx, absWorkspace, mutations); err != nil {
+		return PatchApplyResult{}, err
 	}
 	return result, nil
 }
@@ -144,6 +124,8 @@ func parseUnifiedPatch(patch string) ([]parsedPatchFile, error) {
 			currentHunk.lines = append(currentHunk.lines, line)
 		case strings.HasPrefix(line, `\ No newline at end of file`):
 			continue
+		case currentHunk != nil && line != "":
+			return nil, fmt.Errorf("invalid hunk line: expected space, +, or - prefix, received %q", trimPatchDiagnostic(line))
 		}
 	}
 	if current != nil {
@@ -156,18 +138,36 @@ func parseUnifiedPatch(patch string) ([]parsedPatchFile, error) {
 		if file.targetPath() == "" || len(file.hunks) == 0 {
 			return nil, fmt.Errorf("patch file is missing target path or hunks")
 		}
+		if !file.hasChangeLine() {
+			return nil, fmt.Errorf("patch file %s contains no change lines", file.targetPath())
+		}
 	}
 	return files, nil
 }
 
-func applyParsedPatchFile(absTarget string, file parsedPatchFile) (string, error) {
+func (file parsedPatchFile) hasChangeLine() bool {
+	for _, hunk := range file.hunks {
+		for _, line := range hunk.lines {
+			if line != "" && (line[0] == '+' || line[0] == '-') {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func trimPatchDiagnostic(line string) string {
+	const limit = 160
+	if len(line) <= limit {
+		return line
+	}
+	return line[:limit] + "..."
+}
+
+func applyParsedPatchContent(originalContent []byte, file parsedPatchFile) (string, error) {
 	var original []string
 	if file.oldPath != "/dev/null" {
-		data, err := os.ReadFile(absTarget)
-		if err != nil {
-			return "", fmt.Errorf("read patch target %s: %w", file.targetPath(), err)
-		}
-		original = splitPatchText(string(data))
+		original = splitPatchText(string(originalContent))
 	}
 	next := make([]string, 0, len(original))
 	cursor := 0
@@ -263,5 +263,42 @@ func safeWorkspacePath(absWorkspace, relPath string) (string, error) {
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("patch path escapes workspace: %s", relPath)
 	}
+	if err := rejectPatchSymlinkEscape(absWorkspace, absTarget, relPath); err != nil {
+		return "", err
+	}
 	return absTarget, nil
+}
+
+func rejectPatchSymlinkEscape(absWorkspace, absTarget, relPath string) error {
+	resolvedWorkspace, err := filepath.EvalSymlinks(absWorkspace)
+	if err != nil {
+		return fmt.Errorf("resolve workspace symlinks: %w", err)
+	}
+	probe := absTarget
+	remainder := make([]string, 0, 4)
+	for {
+		if _, err := os.Lstat(probe); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("inspect patch target %s: %w", relPath, err)
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return fmt.Errorf("resolve patch target %s: no existing parent", relPath)
+		}
+		remainder = append([]string{filepath.Base(probe)}, remainder...)
+		probe = parent
+	}
+	resolvedProbe, err := filepath.EvalSymlinks(probe)
+	if err != nil {
+		return fmt.Errorf("resolve patch target symlinks %s: %w", relPath, err)
+	}
+	resolvedTarget := resolvedProbe
+	if len(remainder) > 0 {
+		resolvedTarget = filepath.Join(append([]string{resolvedProbe}, remainder...)...)
+	}
+	if !isWithinWorkspace(resolvedWorkspace, resolvedTarget) {
+		return fmt.Errorf("patch path escapes workspace through symlink: %s", relPath)
+	}
+	return nil
 }

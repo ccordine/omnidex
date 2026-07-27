@@ -15,32 +15,38 @@ func TestResolveAgentConfigPriority(t *testing.T) {
 		Settings: json.RawMessage(`{"agent_config":{"agent_system":"cursor"}}`),
 	}
 	card := ScrumCard{
-		AgentConfig: json.RawMessage(`{"agent_strict":"true"}`),
+		AgentConfig: json.RawMessage(`{"cursor_model":"composer-card"}`),
 	}
 
-	resolved, source := s.resolveAgentConfig(context.Background(), project, card)
+	resolved, source, err := s.resolveAgentConfig(context.Background(), project, card)
+	if err != nil {
+		t.Fatalf("resolve config: %v", err)
+	}
 	if source != "card" {
 		t.Fatalf("expected card source, got %q", source)
 	}
 	if resolved.System() != agentconfig.SystemCursor {
 		t.Fatalf("expected cursor, got %q", resolved.System())
 	}
-	if !resolved.IsStrict() {
-		t.Fatal("expected strict=true")
+	if resolved.CursorModel() != "composer-card" {
+		t.Fatalf("expected card model, got %q", resolved.CursorModel())
 	}
 }
 
 func TestAgentConfigJobMetadataExternal(t *testing.T) {
 	s := &Server{}
 	project := model.Project{
-		Settings: json.RawMessage(`{"agent_config":{"agent_system":"cursor","cursor_model":"composer-project","agent_strict":"true"}}`),
+		Settings: json.RawMessage(`{"agent_config":{"agent_system":"cursor","cursor_model":"composer-project"}}`),
 	}
-	payload := s.agentConfigJobMetadata(context.Background(), project, ScrumCard{})
-	if payload["execution_agent"] != agentconfig.SystemCursor {
-		t.Fatalf("expected cursor execution agent, got %#v", payload["execution_agent"])
+	payload, err := s.agentConfigJobMetadata(context.Background(), project, ScrumCard{})
+	if err != nil {
+		t.Fatalf("build metadata: %v", err)
 	}
-	if payload["agent_strict"] != true {
-		t.Fatalf("expected strict flag, got %#v", payload["agent_strict"])
+	if _, ok := payload["execution_agent"]; ok {
+		t.Fatalf("removed execution_agent must be absent: %#v", payload)
+	}
+	if _, ok := payload["agent_strict"]; ok {
+		t.Fatalf("removed agent_strict must be absent: %#v", payload)
 	}
 	agents, ok := payload["external_agents_used"].([]string)
 	if !ok || len(agents) != 1 || agents[0] != "cursor_sdk" {
@@ -68,9 +74,9 @@ func TestAgentConfigJobMetadataCodexExternal(t *testing.T) {
 			"codex_web_search_mode":"disabled"
 		}}`),
 	}
-	payload := s.agentConfigJobMetadata(context.Background(), project, ScrumCard{})
-	if payload["execution_agent"] != agentconfig.SystemCodex {
-		t.Fatalf("expected codex execution agent, got %#v", payload["execution_agent"])
+	payload, err := s.agentConfigJobMetadata(context.Background(), project, ScrumCard{})
+	if err != nil {
+		t.Fatalf("build metadata: %v", err)
 	}
 	agents, ok := payload["external_agents_used"].([]string)
 	if !ok || len(agents) != 1 || agents[0] != "codex_sdk" {
@@ -104,12 +110,29 @@ func TestResolveAgentConfigInstancePriority(t *testing.T) {
 	}
 	instance := agentconfig.Config{"agent_system": "cursor"}
 
-	resolved, source := s.resolveAgentConfig(context.Background(), project, card, instance)
+	resolved, source, err := s.resolveAgentConfig(context.Background(), project, card, instance)
+	if err != nil {
+		t.Fatalf("resolve config: %v", err)
+	}
 	if source != agentconfig.SourceInstance {
 		t.Fatalf("expected instance source, got %q", source)
 	}
 	if resolved.System() != agentconfig.SystemCursor {
 		t.Fatalf("expected cursor from instance, got %q", resolved.System())
+	}
+}
+
+func TestResolveAgentConfigRejectsMalformedProjectState(t *testing.T) {
+	s := &Server{}
+	project := model.Project{Settings: json.RawMessage(`{"agent_config":{"agent_system":true}}`)}
+	if _, _, err := s.resolveAgentConfig(context.Background(), project, ScrumCard{}); err == nil {
+		t.Fatal("expected malformed project agent configuration to fail")
+	}
+}
+
+func TestAgentConfigPatchRejectsRemovedStrictToggle(t *testing.T) {
+	if _, err := agentConfigPatchFromRequest(json.RawMessage(`{"agent_strict":"true"}`)); err == nil {
+		t.Fatal("expected removed agent_strict toggle to fail")
 	}
 }
 

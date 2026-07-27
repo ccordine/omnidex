@@ -12,9 +12,41 @@ var routerToolIDRe = regexp.MustCompile(`^[a-z0-9_]+$`)
 type RouterResult struct {
 	SelectedTools []string
 	RawOutput     string
-	Source        string
-	ParseError    string
+	Source        RouterSource
 	LLMResponse   *OllamaChatResponse
+}
+
+type RouterSource string
+
+const (
+	RouterSourceOllama      RouterSource = "ollama"
+	RouterSourceOllamaRetry RouterSource = "ollama_retry"
+)
+
+type RouterFailureKind string
+
+const (
+	RouterFailureClientUnavailable RouterFailureKind = "client_unavailable"
+	RouterFailureRequest           RouterFailureKind = "request_failed"
+	RouterFailureInvalidOutput     RouterFailureKind = "invalid_output"
+)
+
+type RouterError struct {
+	Kind      RouterFailureKind
+	Attempt   int
+	RawOutput string
+	Err       error
+}
+
+func (e RouterError) Error() string {
+	if e.Err == nil {
+		return fmt.Sprintf("router failed: kind=%s attempt=%d", e.Kind, e.Attempt)
+	}
+	return fmt.Sprintf("router failed: kind=%s attempt=%d: %v", e.Kind, e.Attempt, e.Err)
+}
+
+func (e RouterError) Unwrap() error {
+	return e.Err
 }
 
 func ParseRouterCSV(raw string, registry Registry) ([]string, error) {
@@ -63,57 +95,66 @@ func ParseRouterCSV(raw string, registry Registry) ([]string, error) {
 	return out, nil
 }
 
-func RouteTools(ctx context.Context, client *OllamaClient, registry Registry, userInput string) RouterResult {
+func RouteTools(ctx context.Context, client *OllamaClient, registry Registry, userInput string) (RouterResult, error) {
 	if client == nil {
-		selected := heuristicRoute(userInput)
-		return RouterResult{
-			SelectedTools: selected,
-			RawOutput:     strings.Join(selected, ","),
-			Source:        "heuristic",
+		return RouterResult{}, RouterError{
+			Kind:    RouterFailureClientUnavailable,
+			Attempt: 0,
+			Err:     fmt.Errorf("router LLM client is required"),
 		}
 	}
 
 	first := callRouterLLM(ctx, client, registry, userInput, "")
-	if first.err == nil {
-		parsed, parseErr := ParseRouterCSV(first.raw, registry)
-		if parseErr == nil {
-			return RouterResult{SelectedTools: parsed, RawOutput: first.raw, Source: "ollama", LLMResponse: first.resp}
+	if first.err != nil {
+		return RouterResult{Source: RouterSourceOllama}, RouterError{
+			Kind:    RouterFailureRequest,
+			Attempt: 1,
+			Err:     first.err,
 		}
+	}
 
-		second := callRouterLLM(ctx, client, registry, userInput, parseErr.Error())
-		if second.err == nil {
-			parsed2, parseErr2 := ParseRouterCSV(second.raw, registry)
-			if parseErr2 == nil {
-				return RouterResult{SelectedTools: parsed2, RawOutput: second.raw, Source: "ollama_retry", LLMResponse: second.resp}
-			}
-			fallback := heuristicRoute(userInput)
-			return RouterResult{
-				SelectedTools: fallback,
-				RawOutput:     second.raw,
-				Source:        "heuristic_after_parse_fail",
-				ParseError:    parseErr2.Error(),
-				LLMResponse:   second.resp,
-			}
-		}
-
-		fallback := heuristicRoute(userInput)
+	parsed, parseErr := ParseRouterCSV(first.raw, registry)
+	if parseErr == nil {
 		return RouterResult{
-			SelectedTools: fallback,
+			SelectedTools: parsed,
 			RawOutput:     first.raw,
-			Source:        "heuristic_after_retry_error",
-			ParseError:    parseErr.Error(),
+			Source:        RouterSourceOllama,
 			LLMResponse:   first.resp,
-		}
+		}, nil
 	}
 
-	fallback := heuristicRoute(userInput)
-	return RouterResult{
-		SelectedTools: fallback,
-		RawOutput:     strings.Join(fallback, ","),
-		Source:        "heuristic_after_ollama_error",
-		ParseError:    first.err.Error(),
-		LLMResponse:   first.resp,
+	second := callRouterLLM(ctx, client, registry, userInput, parseErr.Error())
+	if second.err != nil {
+		return RouterResult{
+				RawOutput:   first.raw,
+				Source:      RouterSourceOllamaRetry,
+				LLMResponse: first.resp,
+			}, RouterError{
+				Kind:      RouterFailureRequest,
+				Attempt:   2,
+				RawOutput: first.raw,
+				Err:       fmt.Errorf("router repair request failed after invalid first response: %w", second.err),
+			}
 	}
+	parsed, parseErr = ParseRouterCSV(second.raw, registry)
+	if parseErr != nil {
+		return RouterResult{
+				RawOutput:   second.raw,
+				Source:      RouterSourceOllamaRetry,
+				LLMResponse: second.resp,
+			}, RouterError{
+				Kind:      RouterFailureInvalidOutput,
+				Attempt:   2,
+				RawOutput: second.raw,
+				Err:       parseErr,
+			}
+	}
+	return RouterResult{
+		SelectedTools: parsed,
+		RawOutput:     second.raw,
+		Source:        RouterSourceOllamaRetry,
+		LLMResponse:   second.resp,
+	}, nil
 }
 
 type routerCall struct {
@@ -156,10 +197,6 @@ func callRouterLLM(ctx context.Context, client *OllamaClient, registry Registry,
 	}
 
 	return routerCall{raw: strings.TrimSpace(resp.Content), resp: &resp, err: nil}
-}
-
-func heuristicRoute(userInput string) []string {
-	return nil
 }
 
 func registryToolSummary(registry Registry) []string {

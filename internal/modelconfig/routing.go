@@ -45,15 +45,9 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("planner_model"); value != "" {
 		out.Plan = value
-		out.Specialist[specialist.RolePlannerSpecialist] = value
-		out.Specialist[specialist.RoleShellExecutionSpecialist] = value
-	}
-	if value := cfg.Get("thinking_model"); value != "" {
-		out.Reasoning = value
 	}
 	if value := cfg.Get("analyzer_model"); value != "" {
 		out.Analyze = value
-		out.Specialist[specialist.RoleReviewVerificationSpecialist] = value
 	}
 	if value := cfg.Get("responder_model"); value != "" {
 		out.Response = value
@@ -69,7 +63,9 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("evaluator_model"); value != "" {
 		out.Analyze = value
-		out.Specialist[specialist.RoleReviewVerificationSpecialist] = value
+	}
+	if value := cfg.Get("executor_model"); value != "" {
+		out.Specialist[specialist.RoleSubtaskExecutorSpecialist] = value
 	}
 	if value := cfg.Get("shell_specialist_model"); value != "" {
 		out.Specialist[specialist.RoleShellExecutionSpecialist] = value

@@ -15,7 +15,10 @@ import (
 type fakeLLMClient struct {
 	outputs            []string
 	preparePrompts     []string
+	prepareModels      []string
 	generatePromptHint []string
+	embedding          []float64
+	embeddingErr       error
 }
 
 func (f *fakeLLMClient) Generate(ctx context.Context, model, prompt string) (string, error) {
@@ -28,6 +31,7 @@ func (f *fakeLLMClient) Generate(ctx context.Context, model, prompt string) (str
 }
 
 func (f *fakeLLMClient) PrepareContextModel(_ context.Context, model, prompt string) (llm.PreparedModel, error) {
+	f.prepareModels = append(f.prepareModels, strings.TrimSpace(model))
 	f.preparePrompts = append(f.preparePrompts, prompt)
 	if strings.TrimSpace(model) == "" {
 		model = "fake-default-model"
@@ -52,7 +56,7 @@ func (f *fakeLLMClient) GeneratePrepared(_ context.Context, prepared llm.Prepare
 func (f *fakeLLMClient) CleanupPreparedModel(_ llm.PreparedModel) {}
 
 func (f *fakeLLMClient) Embedding(context.Context, string) ([]float64, error) {
-	return nil, nil
+	return append([]float64(nil), f.embedding...), f.embeddingErr
 }
 
 func (f *fakeLLMClient) SuggestTags(context.Context, string, int) ([]string, error) {

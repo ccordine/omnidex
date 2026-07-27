@@ -11,7 +11,7 @@ func codexScrumJob(status, output string) model.JobDetails {
 	return model.JobDetails{
 		Job: model.Job{
 			Status:   status,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"codex","scrum_raw_play":true}`),
+			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"codex"},"scrum_raw_play":true}`),
 		},
 		Steps: []model.Step{{Output: output}},
 	}
@@ -42,16 +42,25 @@ func TestResolveScrumManagerOutcomeCodexSubstantiveMessageMovesToReview(t *testi
 	}
 }
 
-func TestResolveScrumManagerOutcomeCodexSpawnFailureMovesToError(t *testing.T) {
-	output := "Codex external implementation session started\nError: spawn codex ENOENT\nexternal agent session ended"
+func TestResolveScrumManagerOutcomeTypedAgentErrorMovesToError(t *testing.T) {
+	output := `{"agent":"codex","type":"started","message":"Codex external implementation session started"}
+{"agent":"codex","type":"error","message":"spawn codex ENOENT"}`
 	job := codexScrumJob(model.JobStatusCompleted, output)
 	outcome := resolveScrumManagerOutcome(job)
 	if outcome != ScrumOutcomeFailed {
-		t.Fatalf("outcome=%q want failed for spawn failure output", outcome)
+		t.Fatalf("outcome=%q want failed for typed agent error", outcome)
 	}
 	transition := scrumColumnForOutcome(outcome)
 	if transition.Column != "error" || transition.PlayState != "" {
 		t.Fatalf("transition=%+v want error", transition)
+	}
+}
+
+func TestResolveScrumManagerOutcomeCursorErrorStatusMovesToError(t *testing.T) {
+	output := `{"type":"status","agent_id":"agent-8bf257b3","run_id":"run-67ad2a31","status":"ERROR"}`
+	job := codexScrumJob(model.JobStatusCompleted, output)
+	if outcome := resolveScrumManagerOutcome(job); outcome != ScrumOutcomeFailed {
+		t.Fatalf("outcome=%q want failed for Cursor ERROR status", outcome)
 	}
 }
 

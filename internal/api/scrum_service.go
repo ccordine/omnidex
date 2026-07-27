@@ -13,21 +13,19 @@ import (
 )
 
 func (s *Server) scrumAvailable() bool {
-	return s.repo != nil || s.scrumStore != nil
+	return s.repo != nil
 }
 
 func (s *Server) loadScrumContext(r *http.Request) (ScrumBoard, int64, error) {
-	if s.repo != nil {
-		projectID, err := s.resolveProjectID(r)
-		if err == nil {
-			board, err := s.scrumBoardFromProject(r.Context(), projectID)
-			return board, projectID, err
-		}
+	if s.repo == nil {
+		return ScrumBoard{}, 0, fmt.Errorf("postgres repository is required for Scrum")
 	}
-	if s.scrumStore != nil {
-		return s.scrumStore.Board(), 0, nil
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		return ScrumBoard{}, 0, err
 	}
-	return ScrumBoard{}, 0, fmt.Errorf("scrum store unavailable")
+	board, err := s.scrumBoardFromProject(r.Context(), projectID)
+	return board, projectID, err
 }
 
 func (s *Server) scrumGetCard(r *http.Request, cardID string) (ScrumCard, ScrumBoard, int64, error) {
@@ -44,131 +42,138 @@ func (s *Server) scrumGetCard(r *http.Request, cardID string) (ScrumCard, ScrumB
 }
 
 func (s *Server) scrumCreateCard(r *http.Request, title, description, column string) (ScrumCard, error) {
-	if s.repo != nil {
-		projectID, err := s.resolveProjectID(r)
-		if err == nil {
-			col := normalizeScrumColumn(column)
-			if col == "" {
-				col = "backlog"
-			}
-			card, err := s.repo.CreateScrumCard(r.Context(), projectID, "", title, description, col, nil, nil, nil)
-			if err != nil {
-				return ScrumCard{}, err
-			}
-			return dbScrumCardToAPI(card), nil
-		}
+	if s.repo == nil {
+		return ScrumCard{}, fmt.Errorf("postgres repository is required for Scrum")
 	}
-	if s.scrumStore == nil {
-		return ScrumCard{}, fmt.Errorf("scrum store unavailable")
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		return ScrumCard{}, err
 	}
-	return s.scrumStore.CreateCard(title, description, column)
+	col := normalizeScrumColumn(column)
+	if col == "" {
+		col = "backlog"
+	}
+	card, err := s.repo.CreateScrumCard(r.Context(), projectID, "", title, description, col, nil, nil, nil)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	return dbScrumCardToAPI(card)
 }
 
 func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard, raw map[string]json.RawMessage) (ScrumCard, error) {
-	if s.repo != nil {
-		projectID, err := s.resolveProjectID(r)
-		if err == nil {
-			current, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
-			if err != nil {
-				return ScrumCard{}, err
-			}
-			merged := dbScrumCardToAPI(current)
-			if strings.TrimSpace(patch.Title) != "" {
-				merged.Title = strings.TrimSpace(patch.Title)
-			}
-			if _, ok := raw["description"]; ok {
-				merged.Description = patch.Description
-			}
-			if col := normalizeScrumColumn(patch.Column); col != "" {
-				merged.Column = col
-			}
-			if patch.Checklist != nil {
-				merged.Checklist = patch.Checklist
-			}
-			if patch.RefFiles != nil {
-				merged.RefFiles = patch.RefFiles
-			}
-			if patch.Chat != nil {
-				merged.Chat = patch.Chat
-			}
-			if len(patch.ModelConfig) > 0 {
-				merged.ModelConfig = patch.ModelConfig
-			}
-			if len(patch.AgentConfig) > 0 {
-				merged.AgentConfig = patch.AgentConfig
-			}
-			if _, ok := raw["card_ticket"]; ok {
-				merged.CardTicket = patch.CardTicket
-			}
-			if _, ok := raw["recipe_id"]; ok {
-				merged.RecipeID = strings.TrimSpace(patch.RecipeID)
-			}
-			if _, ok := raw["recipe"]; ok {
-				if len(patch.Recipe) > 0 {
-					merged.Recipe = patch.Recipe
-				} else {
-					merged.Recipe = json.RawMessage(`{}`)
-				}
-			}
-			if _, ok := raw["card_prompt"]; ok {
-				merged.CardPrompt = patch.CardPrompt
-			}
-			if patch.PlanningChat != nil {
-				merged.PlanningChat = patch.PlanningChat
-			}
-			if patch.Tags != nil {
-				merged.Tags = patch.Tags
-			}
-			if patch.TestCriteria != nil {
-				merged.TestCriteria = patch.TestCriteria
-			}
-			if len(patch.CoachConfig) > 0 {
-				merged.CoachConfig = patch.CoachConfig
-			}
-			if patch.ConsoleLog != "" {
-				merged.ConsoleLog = patch.ConsoleLog
-			}
-			if strings.TrimSpace(patch.JobID) != "" {
-				merged.JobID = strings.TrimSpace(patch.JobID)
-			}
-			merged.PlayState = strings.TrimSpace(patch.PlayState)
-			merged.QueueOrder = patch.QueueOrder
-			patchMap := apiScrumCardToPatch(merged)
-			if _, ok := raw["card_ticket"]; ok {
-				patchMap["card_ticket"] = merged.CardTicket
-			}
-			if _, ok := raw["recipe_id"]; ok {
-				patchMap["recipe_id"] = merged.RecipeID
-			}
-			if _, ok := raw["recipe"]; ok {
-				patchMap["recipe"] = merged.Recipe
-			}
-			updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patchMap)
-			if err != nil {
-				return ScrumCard{}, err
-			}
-			result := dbScrumCardToAPI(updated)
-			result.FlowMetrics = s.trackScrumCardFlow(r.Context(), projectID, dbScrumCardToAPI(current), result, "update")
-			return result, nil
+	if s.repo == nil {
+		return ScrumCard{}, fmt.Errorf("postgres repository is required for Scrum")
+	}
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	current, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	merged, err := dbScrumCardToAPI(current)
+	if err != nil {
+		return ScrumCard{}, fmt.Errorf("decode current Scrum card: %w", err)
+	}
+	if strings.TrimSpace(patch.Title) != "" {
+		merged.Title = strings.TrimSpace(patch.Title)
+	}
+	if _, ok := raw["description"]; ok {
+		merged.Description = patch.Description
+	}
+	if col := normalizeScrumColumn(patch.Column); col != "" {
+		merged.Column = col
+	}
+	if patch.Checklist != nil {
+		merged.Checklist = patch.Checklist
+	}
+	if patch.RefFiles != nil {
+		merged.RefFiles = patch.RefFiles
+	}
+	if patch.Chat != nil {
+		merged.Chat = patch.Chat
+	}
+	if len(patch.ModelConfig) > 0 {
+		merged.ModelConfig = patch.ModelConfig
+	}
+	if len(patch.AgentConfig) > 0 {
+		merged.AgentConfig = patch.AgentConfig
+	}
+	if _, ok := raw["card_ticket"]; ok {
+		merged.CardTicket = patch.CardTicket
+	}
+	if _, ok := raw["recipe_id"]; ok {
+		merged.RecipeID = strings.TrimSpace(patch.RecipeID)
+	}
+	if _, ok := raw["recipe"]; ok {
+		if len(patch.Recipe) > 0 {
+			merged.Recipe = patch.Recipe
+		} else {
+			merged.Recipe = json.RawMessage(`{}`)
 		}
 	}
-	if s.scrumStore == nil {
-		return ScrumCard{}, fmt.Errorf("scrum store unavailable")
+	if _, ok := raw["card_prompt"]; ok {
+		merged.CardPrompt = patch.CardPrompt
 	}
-	return s.scrumStore.UpdateCard(cardID, patch)
+	if patch.PlanningChat != nil {
+		merged.PlanningChat = patch.PlanningChat
+	}
+	if patch.Tags != nil {
+		merged.Tags = patch.Tags
+	}
+	if patch.TestCriteria != nil {
+		merged.TestCriteria = patch.TestCriteria
+	}
+	if len(patch.CoachConfig) > 0 {
+		merged.CoachConfig = patch.CoachConfig
+	}
+	if patch.ConsoleLog != "" {
+		merged.ConsoleLog = patch.ConsoleLog
+	}
+	if strings.TrimSpace(patch.JobID) != "" {
+		merged.JobID = strings.TrimSpace(patch.JobID)
+	}
+	merged.PlayState = strings.TrimSpace(patch.PlayState)
+	merged.QueueOrder = patch.QueueOrder
+	patchMap, err := apiScrumCardToPatch(merged)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	if _, ok := raw["card_ticket"]; ok {
+		patchMap["card_ticket"] = merged.CardTicket
+	}
+	if _, ok := raw["recipe_id"]; ok {
+		patchMap["recipe_id"] = merged.RecipeID
+	}
+	if _, ok := raw["recipe"]; ok {
+		patchMap["recipe"] = merged.Recipe
+	}
+	updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patchMap)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	result, err := dbScrumCardToAPI(updated)
+	if err != nil {
+		return ScrumCard{}, fmt.Errorf("decode updated Scrum card: %w", err)
+	}
+	previous, err := dbScrumCardToAPI(current)
+	if err != nil {
+		return ScrumCard{}, fmt.Errorf("decode previous Scrum card: %w", err)
+	}
+	result.FlowMetrics = s.trackScrumCardFlow(r.Context(), projectID, previous, result, "update")
+	return result, nil
 }
 
 func (s *Server) scrumDeleteCard(r *http.Request, cardID string) error {
-	if s.repo != nil {
-		projectID, err := s.resolveProjectID(r)
-		if err == nil {
-			return s.repo.DeleteScrumCard(r.Context(), projectID, cardID)
-		}
+	if s.repo == nil {
+		return fmt.Errorf("postgres repository is required for Scrum")
 	}
-	if s.scrumStore == nil {
-		return fmt.Errorf("scrum store unavailable")
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		return err
 	}
-	return s.scrumStore.DeleteCard(cardID)
+	return s.repo.DeleteScrumCard(r.Context(), projectID, cardID)
 }
 
 func (s *Server) scrumAppendChat(r *http.Request, cardID, role, content string) (ScrumCard, error) {
@@ -183,17 +188,18 @@ func (s *Server) scrumAppendChat(r *http.Request, cardID, role, content string) 
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	card.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if s.repo != nil && projectID > 0 {
-		updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, apiScrumCardToPatch(card))
-		if err != nil {
-			return ScrumCard{}, err
-		}
-		return dbScrumCardToAPI(updated), nil
+	if s.repo == nil || projectID <= 0 {
+		return ScrumCard{}, fmt.Errorf("postgres repository and project are required for Scrum")
 	}
-	if s.scrumStore == nil {
-		return ScrumCard{}, fmt.Errorf("scrum store unavailable")
+	patch, err := apiScrumCardToPatch(card)
+	if err != nil {
+		return ScrumCard{}, err
 	}
-	return s.scrumStore.AppendChat(cardID, role, content)
+	updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patch)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	return dbScrumCardToAPI(updated)
 }
 
 func (s *Server) scrumSetCardJob(r *http.Request, cardID, jobID, column, consoleLog string) (ScrumCard, error) {
@@ -211,44 +217,43 @@ func (s *Server) scrumSetCardJob(r *http.Request, cardID, jobID, column, console
 		card.ConsoleLog = consoleLog
 	}
 	card.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if s.repo != nil && projectID > 0 {
-		updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, apiScrumCardToPatch(card))
-		if err != nil {
-			return ScrumCard{}, err
-		}
-		return dbScrumCardToAPI(updated), nil
+	if s.repo == nil || projectID <= 0 {
+		return ScrumCard{}, fmt.Errorf("postgres repository and project are required for Scrum")
 	}
-	if s.scrumStore == nil {
-		return ScrumCard{}, fmt.Errorf("scrum store unavailable")
+	patch, err := apiScrumCardToPatch(card)
+	if err != nil {
+		return ScrumCard{}, err
 	}
-	return s.scrumStore.SetCardJob(cardID, jobID, column, consoleLog)
+	updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patch)
+	if err != nil {
+		return ScrumCard{}, err
+	}
+	return dbScrumCardToAPI(updated)
 }
 
 func (s *Server) scrumUpdateBoard(r *http.Request, name, projectDirectory string) (ScrumBoard, error) {
-	if s.repo != nil {
-		projectID, err := s.resolveProjectID(r)
-		if err == nil {
-			patch := model.ProjectPatch{}
-			if strings.TrimSpace(name) != "" {
-				v := strings.TrimSpace(name)
-				patch.Name = &v
-			}
-			if strings.TrimSpace(projectDirectory) != "" {
-				v := strings.TrimSpace(projectDirectory)
-				patch.Location = &v
-			}
-			if patch.Name != nil || patch.Location != nil {
-				if _, err := s.repo.UpdateProject(r.Context(), projectID, patch); err != nil {
-					return ScrumBoard{}, err
-				}
-			}
-			return s.scrumBoardFromProject(r.Context(), projectID)
+	if s.repo == nil {
+		return ScrumBoard{}, fmt.Errorf("postgres repository is required for Scrum")
+	}
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		return ScrumBoard{}, err
+	}
+	patch := model.ProjectPatch{}
+	if strings.TrimSpace(name) != "" {
+		v := strings.TrimSpace(name)
+		patch.Name = &v
+	}
+	if strings.TrimSpace(projectDirectory) != "" {
+		v := strings.TrimSpace(projectDirectory)
+		patch.Location = &v
+	}
+	if patch.Name != nil || patch.Location != nil {
+		if _, err := s.repo.UpdateProject(r.Context(), projectID, patch); err != nil {
+			return ScrumBoard{}, err
 		}
 	}
-	if s.scrumStore == nil {
-		return ScrumBoard{}, fmt.Errorf("scrum store unavailable")
-	}
-	return s.scrumStore.UpdateBoard(name, projectDirectory)
+	return s.scrumBoardFromProject(r.Context(), projectID)
 }
 
 func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card ScrumCard, projectID int64, instance agentconfig.Config) ([]byte, []string, error) {
@@ -302,7 +307,13 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 		payload["recipe_id"] = strings.TrimSpace(card.RecipeID)
 		if len(card.Recipe) > 2 {
 			var recipe map[string]any
-			if err := json.Unmarshal(card.Recipe, &recipe); err == nil && len(recipe) > 0 {
+			if err := json.Unmarshal(card.Recipe, &recipe); err != nil {
+				return nil, nil, fmt.Errorf("parse Scrum card recipe: %w", err)
+			}
+			if recipe == nil {
+				return nil, nil, fmt.Errorf("Scrum card recipe must be a JSON object")
+			}
+			if len(recipe) > 0 {
 				payload["recipe"] = recipe
 			}
 		}
@@ -317,18 +328,24 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 	}
 	var meta map[string]any
 	if err := json.Unmarshal(enriched, &meta); err != nil {
-		return enriched, pulled, nil
+		return nil, pulled, fmt.Errorf("parse enriched Scrum metadata: %w", err)
 	}
 	meta["review_always"] = "off"
-	if executionAgent, _ := meta["execution_agent"].(string); executionAgent == agentconfig.SystemOmnidex {
+	resolvedAgent, err := agentconfig.FromJobMetadata(enriched)
+	if err != nil {
+		return nil, pulled, err
+	}
+	if resolvedAgent.System() == agentconfig.SystemOmnidex {
 		meta["omnidex_no_delegate"] = true
-	} else if executionAgent == agentconfig.SystemCursor || executionAgent == agentconfig.SystemCodex {
+	} else if resolvedAgent.IsExternal() {
 		meta["scrum_raw_play"] = true
 		delete(meta, "runtime")
+	} else {
+		return nil, pulled, fmt.Errorf("unsupported resolved agent system %q", resolvedAgent.System())
 	}
 	out, err := json.Marshal(meta)
 	if err != nil {
-		return enriched, pulled, nil
+		return nil, pulled, fmt.Errorf("encode Scrum job metadata: %w", err)
 	}
 	return out, pulled, nil
 }
@@ -354,7 +371,9 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board)
+	if err := s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board); err != nil {
+		return nil, err
+	}
 	fullBoard := board
 	visibleColumn := scrumViewportColumn(r, board.Columns)
 	columnCounts := scrumColumnCounts(cardsByColumn(fullBoard))
@@ -371,24 +390,15 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 		"column_counts":  columnCounts,
 	}
 	if projectID > 0 {
-		autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
+		automation, err := s.scrumAutomationSettings(r.Context(), projectID)
+		if err != nil {
+			return nil, err
+		}
 		payload["project_id"] = projectID
-		payload["auto_play_through"] = autoWork.Enabled
-		payload["auto_work"] = autoWork
-		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
-		payload["create_ticket"] = s.scrumCreateTicketConfig(r.Context(), projectID)
+		payload["auto_work"] = automation.AutoWork
+		payload["auto_review"] = automation.AutoReview
+		payload["create_ticket"] = automation.CreateTicket
 	}
 	scrumBoardFragmentsForPayload(payload, fullBoard)
 	return payload, nil
-}
-
-func (s *Server) initializeProjectIfNeeded(ctx context.Context, projectID int64) {
-	if s.repo == nil || projectID <= 0 {
-		return
-	}
-	project, err := s.repo.GetProject(ctx, projectID)
-	if err != nil {
-		return
-	}
-	_, _ = s.initializeProjectState(ctx, project)
 }

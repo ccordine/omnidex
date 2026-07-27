@@ -2,7 +2,6 @@ package omni
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -98,20 +97,16 @@ func (s *hostBridgeExternalAgentSession) Start(ctx context.Context, job External
 	go func() {
 		defer close(events)
 		defer body.Close()
-		_ = hostbridge.ReadExternalAgentEvents(body, func(stream hostbridge.AgentStreamEvent) error {
-			var event AgentEvent
-			blob, err := json.Marshal(stream.ToOmniEvent(job.SessionID))
-			if err != nil {
-				return err
-			}
-			if err := json.Unmarshal(blob, &event); err != nil {
-				return err
-			}
-			if event.Agent == "" {
-				event.Agent = s.agent
-			}
-			if event.SessionID == "" {
-				event.SessionID = job.SessionID
+		readErr := hostbridge.ReadExternalAgentEvents(body, func(stream hostbridge.AgentStreamEvent) error {
+			event := AgentEvent{
+				SessionID: job.SessionID,
+				Agent:     firstNonEmpty(stream.Agent, s.agent),
+				Type:      AgentEventType(stream.Type),
+				Message:   stream.Message,
+				Command:   stream.Command,
+				Files:     stream.Files,
+				Evidence:  stream.Evidence,
+				Raw:       stream.Raw,
 			}
 			select {
 			case events <- event:
@@ -120,9 +115,13 @@ func (s *hostBridgeExternalAgentSession) Start(ctx context.Context, job External
 				return ctx.Err()
 			}
 		})
-		select {
-		case events <- AgentEvent{SessionID: job.SessionID, Agent: s.agent, Type: "completed", Message: "external agent session ended"}:
-		default:
+		if readErr != nil && ctx.Err() == nil {
+			events <- AgentEvent{
+				SessionID: job.SessionID,
+				Agent:     s.agent,
+				Type:      AgentEventError,
+				Message:   fmt.Sprintf("read host bridge external agent stream: %v", readErr),
+			}
 		}
 	}()
 	return events, nil

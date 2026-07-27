@@ -90,7 +90,7 @@ export function ConfigTab({ context, projectID, runMutation, onCardUpdated }: Ca
                 key={system}
                 tone={system === (agentValues.agent_system || context.agent_system) ? "primary" : "default"}
                 onClick={() => {
-                  const next = { ...agentValues, agent_system: system, ...(system === "codex" || system === "cursor" ? { agent_strict: "true" } : {}) };
+                  const next = { ...agentValues, agent_system: system };
                   setAgentValues(next);
                   void saveAgent(next);
                 }}

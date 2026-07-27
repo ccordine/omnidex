@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/queue"
@@ -10,11 +11,11 @@ import (
 const scrumPilotContextShrinkSource = "scrum_pilot"
 
 type scrumPilotContextShrinkReport struct {
-	RawChars       int
-	ShrunkChars    int
-	ChatMessages   int
-	SelectedChunks int
-	ToolMessages   int
+	RawChars         int
+	ShrunkChars      int
+	ChatMessages     int
+	SelectedChunks   int
+	ToolMessages     int
 	ThinkingMessages int
 }
 
@@ -65,9 +66,8 @@ func (s *Server) recordScrumPilotContextShrink(
 	}
 	raw := measureScrumPilotRawContext(board, card, userMessage)
 	shrunkChars := len(strings.TrimSpace(shrunkPrompt))
-	savedPct := contextShrinkSavedPct(raw.RawChars, shrunkChars)
 	timeline := buildPilotChannelTimeline(card.Chat)
-	_ = s.repo.RecordContextShrinkMetric(ctx, queue.ContextShrinkMetricRecord{
+	if err := s.repo.RecordContextShrinkMetric(ctx, queue.ContextShrinkMetricRecord{
 		Source:         scrumPilotContextShrinkSource,
 		CardID:         card.ID,
 		ProjectID:      projectID,
@@ -83,16 +83,16 @@ func (s *Server) recordScrumPilotContextShrink(
 			"channel_facts":     len(pilotContext.ChannelFacts),
 			"card_title":        strings.TrimSpace(card.Title),
 		},
-	})
-	modelName := firstNonEmpty(s.ollamaDefaultModel, "llama3.2")
-	s.recordLLMContextUsage(ctx, llmContextSourceScrumPilot, modelName, s.llmProviderName(), llmContextTelemetryMeta{
-		ProjectID: projectID,
-		CardID:    card.ID,
-		Metadata: map[string]any{
-			"card_title": strings.TrimSpace(card.Title),
-			"shrunk":     true,
-		},
-	}, raw.RawChars, shrunkChars, true, savedPct, nil)
+	}); err != nil {
+		log.Printf(
+			"Scrum pilot context telemetry persistence failed project=%d card=%q raw_chars=%d shrunk_chars=%d: %v",
+			projectID,
+			card.ID,
+			raw.RawChars,
+			shrunkChars,
+			err,
+		)
+	}
 }
 
 func contextShrinkSavedPct(raw, shrunk int) float64 {

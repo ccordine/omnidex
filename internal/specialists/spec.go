@@ -129,3 +129,7 @@ func (s Spec) ValidateOutputPayload(payload any) error {
 	}
 	return nil
 }
+
+func (s Spec) OutputSchemaDocument() json.RawMessage {
+	return append(json.RawMessage(nil), s.outputSchemaRaw...)
+}

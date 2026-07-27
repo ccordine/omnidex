@@ -22,7 +22,7 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
   const [coachSuggestions, setCoachSuggestions] = useState<ScrumCoachSuggestion[]>([]);
   const [coachEnabled, setCoachEnabled] = useState(card.coach_config?.enabled !== false);
   const [coachAutoScan, setCoachAutoScan] = useState(Boolean(card.coach_config?.auto_scan));
-  const [coachModel, setCoachModel] = useState(card.coach_config?.model || "qwen3:4b-thinking");
+  const [coachModel, setCoachModel] = useState(card.coach_config?.model ?? "");
 
   useEffect(() => {
     setTitle(card.title);
@@ -31,7 +31,7 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
     setTicket(card.card_ticket ?? "");
     setCoachEnabled(card.coach_config?.enabled !== false);
     setCoachAutoScan(Boolean(card.coach_config?.auto_scan));
-    setCoachModel(card.coach_config?.model || "qwen3:4b-thinking");
+    setCoachModel(card.coach_config?.model ?? "");
   }, [card.id, card.updated_at, card.card_ticket, card.card_prompt, card.coach_config]);
 
   useEffect(() => {
@@ -201,12 +201,16 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
               <input type="checkbox" checked={coachAutoScan} onChange={(event) => setCoachAutoScan(event.target.checked)} className="rounded border-white/20 bg-zinc-900 text-cyan-300" />
               Auto-scan
             </label>
-            <TextInput value={coachModel} onChange={(event) => setCoachModel(event.target.value)} className="w-full font-mono text-xs" />
+            <label className="block space-y-1 text-xs text-zinc-400">
+              <span>Coach model</span>
+              <TextInput value={coachModel} onChange={(event) => setCoachModel(event.target.value)} className="w-full font-mono text-xs" />
+            </label>
             <ActionButton
               onClick={async () => {
                 const payload = await runMutation("Saving coach settings", () => updateScrumCoachConfig(card.id, { enabled: coachEnabled, auto_scan: coachAutoScan, model: coachModel }, projectID));
                 if (payload?.card) onCardUpdated(payload.card);
               }}
+              disabled={!coachModel.trim()}
             >
               Save coach
             </ActionButton>

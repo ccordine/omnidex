@@ -47,7 +47,7 @@ export function renderAdminTabPanel(activeTab: AdminTab): string {
     case "ai":
       return `
         <div data-admin-tab-panel="ai" class="mx-auto max-w-5xl space-y-4">
-          ${adminSection("API keys", "Stored in the database. Leave a field blank to keep the current value. Environment variables are used only when no database value is set.", `<div data-admin-target="apiSecrets" class="mt-4">${renderLoadingBlock("Loading API keys...")}</div>`)}
+          ${adminSection("API keys", "Stored in the database. Leave a field blank to keep the current value. Environment variables are used only when no database value is set. Restart core after saving so API and workers activate the same credentials together.", `<div data-admin-target="apiSecrets" class="mt-4">${renderLoadingBlock("Loading API keys...")}</div>`)}
           ${adminSection("Workspace agent defaults", "Global execution agent settings. Project and card overrides take precedence.", `<div data-admin-target="globalAgents" class="mt-4">${renderLoadingBlock("Loading agent settings...")}</div>`)}
           ${adminSection(
             "Ollama models",
@@ -58,17 +58,17 @@ export function renderAdminTabPanel(activeTab: AdminTab): string {
             </form>
             <div data-admin-target="ollamaModels" class="scrollbar mt-4 max-h-[420px] overflow-y-auto">${renderLoadingBlock("Loading Ollama models...")}</div>`,
           )}
-          ${adminSection("Global model defaults", "Default Ollama models and generation settings for the workspace.", `<div data-admin-target="globalModels" class="mt-4">${renderLoadingBlock("Loading model defaults...")}</div>`)}
+          ${adminSection("Global model defaults", "Default models and generation settings for the selected workspace provider.", `<div data-admin-target="globalModels" class="mt-4">${renderLoadingBlock("Loading model defaults...")}</div>`)}
         </div>
       `;
     case "datasources":
-      return `<div data-admin-tab-panel="datasources" class="mx-auto max-w-6xl space-y-4"><div data-admin-target="dataSourcesPanel" class="space-y-4">${renderLoadingBlock("Loading data sources...")}</div></div>`;
+      return `<div data-admin-tab-panel="datasources" class="mx-auto max-w-6xl space-y-4"><div data-controller="admin-data-sources" class="space-y-4">${renderLoadingBlock("Loading data sources...")}</div></div>`;
     case "health":
       return `
         <div data-admin-tab-panel="health" class="mx-auto max-w-6xl space-y-4">
           ${adminSection("Core health", "Live /healthz payload from the running core service.", `<pre data-chat-target="statusOutput" data-recyclr-sink="status-output" class="scrollbar mt-4 max-h-[360px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-900/60 p-4 text-sm leading-6 text-zinc-200">${renderLoadingPre("Loading health...")}</pre>`)}
           <div class="grid gap-4 lg:grid-cols-2">
-            ${adminSection("Research stack", "Ollama, embeddings, and web search readiness for research jobs.", `<div data-chat-target="researchStatusOutput" data-recyclr-sink="research-status-output" class="mt-4 text-sm text-zinc-400">${renderLoadingBlock("Loading research health...")}</div>`)}
+            ${adminSection("Research stack", "Live generation, embedding, local runtime, and web-search readiness for research jobs.", `<div data-chat-target="researchStatusOutput" data-recyclr-sink="research-status-output" class="mt-4 text-sm text-zinc-400">${renderLoadingBlock("Loading research health...")}</div>`)}
             ${adminSection("Host bridge", "In-app folder browser and terminal bridge. Run omni host service install or omni host serve.", `<div data-chat-target="hostBridgeStatusOutput" data-recyclr-sink="host-bridge-status-output" class="mt-4 text-sm text-zinc-400">${renderLoadingBlock("Loading host bridge...")}</div>`)}
           </div>
         </div>

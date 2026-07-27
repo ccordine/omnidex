@@ -97,6 +97,20 @@ func TestSuccessReconciliationCompletedObjectiveRemovedFromPending(t *testing.T)
 	}
 }
 
+func TestNormalizeStructuredObjectiveDoesNotSilentlyDowngradeMissingSource(t *testing.T) {
+	normalized, ok := normalizeStructuredObjective(StructuredObjective{
+		ID:          "repair_build",
+		Description: "Repair the build",
+		Status:      "pending",
+	})
+	if !ok {
+		t.Fatal("objective was rejected")
+	}
+	if normalized.Source != "" || !normalized.Required || !structuredObjectiveBlocksCompletion(normalized) {
+		t.Fatalf("source-less objective was silently downgraded: %#v", normalized)
+	}
+}
+
 func TestStructuredRunDoesNotCallPlannerBeforeSuccessReconciliation(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(workspace, "src"), 0o755); err != nil {

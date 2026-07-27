@@ -36,16 +36,12 @@ func TestExternalAgentResultErrorDetectsLaunchFailure(t *testing.T) {
 	}
 }
 
-func TestExternalAgentResultErrorDetectsPlainSpawnFailure(t *testing.T) {
+func TestExternalAgentResultErrorDoesNotInferStatusFromPlainText(t *testing.T) {
 	result := CursorArchitectAgentResult{
 		Output: "Error: spawn codex ENOENT\nNode.js v25.2.1 (exit status 1)",
 	}
-	err := externalAgentResultError(result)
-	if err == nil {
-		t.Fatal("expected plain spawn failure to fail")
-	}
-	if !strings.Contains(err.Error(), "spawn codex ENOENT") {
-		t.Fatalf("expected spawn detail, got %v", err)
+	if err := externalAgentResultError(result); err != nil {
+		t.Fatalf("plain text is not an authoritative status event: %v", err)
 	}
 }
 

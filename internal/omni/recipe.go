@@ -88,15 +88,25 @@ func RecipeObjectiveLedger(recipe Recipe) []StructuredObjective {
 	ledger := make([]StructuredObjective, 0, len(recipe.Objectives))
 	for _, objective := range recipe.Objectives {
 		ledger = append(ledger, StructuredObjective{
-			ID:          objective.ID,
-			Description: objective.Description,
-			Status:      "pending",
-			Source:      structuredObjectiveSourceRecipeRequired,
-			Required:    true,
-			Packages:    cleanStringList(objective.Packages),
+			ID:               objective.ID,
+			Description:      objective.Description,
+			Status:           "pending",
+			Kind:             string(WorkItemKindVerify),
+			RequiredEvidence: recipeCompletionEvidencePredicates(recipe),
+			Source:           structuredObjectiveSourceRecipeRequired,
+			Required:         true,
+			Packages:         cleanStringList(objective.Packages),
 		})
 	}
 	return ledger
+}
+
+func recipeCompletionEvidencePredicates(recipe Recipe) []string {
+	predicates := make([]string, 0, len(recipe.CompletionChecks))
+	for _, command := range cleanStringList(recipe.CompletionChecks) {
+		predicates = append(predicates, "command_passed:"+command)
+	}
+	return predicates
 }
 
 func SelectRecipesByID(recipes []Recipe, ids []string) []Recipe {

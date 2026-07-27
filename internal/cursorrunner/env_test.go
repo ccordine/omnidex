@@ -84,3 +84,17 @@ func TestDefaultModelUsesComposer25(t *testing.T) {
 		t.Fatalf("DefaultModel() = %q, want composer-2.5", got)
 	}
 }
+
+func TestRunnerScriptFailsClosedAfterStreamedTerminalStatus(t *testing.T) {
+	for _, status := range []string{"ERROR", "FAILED", "CANCELLED", "CANCELED"} {
+		if !strings.Contains(RunnerScript, `"`+status+`"`) {
+			t.Fatalf("runner does not recognize terminal failure status %q", status)
+		}
+	}
+	if !strings.Contains(RunnerScript, "if (lastErrorDetail ||") {
+		t.Fatal("runner must reject a streamed terminal error even if wait() returns a different status")
+	}
+	if strings.Contains(RunnerScript, "evidence: events.map") {
+		t.Fatal("completion event must not duplicate the entire streamed transcript")
+	}
+}

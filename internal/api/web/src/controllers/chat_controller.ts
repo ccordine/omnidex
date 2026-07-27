@@ -1,109 +1,37 @@
-import { Controller } from "@hotwired/stimulus";
-import { readJSON, jsonRequest } from "../lib/api";
+import { readJSON } from "../lib/api";
 import { TranscriptStore } from "../lib/transcript_store";
 import { renderChatMessages } from "../lib/chat_render";
 import {
-  renderStep,
-  renderStepSummary,
-  renderContext,
   renderEventModal,
   renderContextModal,
-  renderResearchStatus,
-  renderHostBridgeStatus,
-  renderMetricsDashboard,
-  renderJobsPanel,
-  contextEventType,
 } from "../lib/render";
-import type { ChatMessage, TimelineEvent, JobDetails, JobContext, MemoryRecord, MemoryCandidate, UserChannel } from "../lib/types";
-import { createUserChannel, fetchChannelMessages, fetchUserChannels, isUserChannel, sendChannelMessage } from "../lib/channel_api";
+import type { ChatMessage, TimelineEvent, JobContext } from "../lib/types";
 import { closeModalShell, openModalShell } from "../lib/modal";
-import type GxController from "./gx_controller";
-import { errorMessage, toastError, toastFromError, toastOk } from "../lib/feedback";
-import { applyRecyclrSink, buildRecyclrBundle, renderRecyclrBundle, type RecyclrSinkMode } from "../lib/recyclr";
-import { setGlobalLoading } from "../lib/loading";
-import { applyI18n, t } from "../lib/i18n";
-import { isOmniPanel, panelHref, parseAdminTabFromLocation, parsePanelFromLocation, type OmniPanel } from "../lib/panel_routing";
+import type RecyclrController from "./recyclr_controller";
+import { toastFromError } from "../lib/feedback";
+import { renderRecyclrBundle, type RecyclrSinkMode } from "../lib/recyclr";
+import { getLocale, t } from "../lib/i18n";
+import { parsePanelFromLocation, type OmniPanel } from "../lib/panel_routing";
+import type { RealtimeSyncDetail } from "../lib/realtime_sync";
 import {
   badgeClass,
-  emptyState,
   escapeHTML,
-  formatDateTime,
   formatTime,
-  hashText,
-  sleep,
   statusPillClass,
-  trimText,
 } from "../lib/dom";
+import { ChatChannelCoordinator } from "../lib/chat_channel_coordinator";
+import { ChatJobsCoordinator } from "../lib/chat_jobs_coordinator";
+import { ChatMemoryCoordinator } from "../lib/chat_memory_coordinator";
+import { ChatSystemCoordinator } from "../lib/chat_system_coordinator";
+import { recordChatJobProgress } from "../lib/chat_job_progress";
+import { renderChatProgress, renderChatProgressActivity } from "../lib/chat_progress_view";
+import { ChatExecutionCoordinator } from "../lib/chat_execution_coordinator";
+import { ChatPanelCoordinator } from "../lib/chat_panel_coordinator";
+import { ChatTargetsController } from "./chat_targets_controller";
 
-const SELECTED_CHANNEL_KEY = "omni.chat.selected-channel.v1";
+export default class ChatController extends ChatTargetsController {
 
-export default class ChatController extends Controller {
-  static targets = [
-    "messages","timeline","input","send","status","transport","networkUrl","job","liveBadge","eventCount","panel",
-    "jobFilter","jobsList","jobDetails","memoryCandidates","memoryList","memoryKind","memoryKindFilter","memoryTags","memoryContent",
-    "personaMode","personaModel","personaSystem","personaPrompt","personaOutput","statusOutput","researchStatusOutput","hostBridgeStatusOutput",
-    "metricsOutput","progress","progressState","spinner","modal","modalPanel","channelSelect",
-  ];
-  static values = { pollMs: Number };
-
-  declare readonly messagesTarget: HTMLElement;
-  declare readonly timelineTarget: HTMLElement;
-  declare readonly inputTarget: HTMLTextAreaElement;
-  declare readonly sendTarget: HTMLButtonElement;
-  declare readonly statusTarget: HTMLElement;
-  declare readonly transportTarget: HTMLElement;
-  declare readonly networkUrlTarget: HTMLElement;
-  declare readonly jobTarget: HTMLElement;
-  declare readonly liveBadgeTarget: HTMLElement;
-  declare readonly eventCountTarget: HTMLElement;
-  declare readonly panelTargets: HTMLElement[];
-  declare readonly jobFilterTarget: HTMLSelectElement;
-  declare readonly jobsListTarget: HTMLElement;
-  declare readonly jobDetailsTarget: HTMLElement;
-  declare readonly memoryCandidatesTarget: HTMLElement;
-  declare readonly memoryListTarget: HTMLElement;
-  declare readonly memoryKindTarget: HTMLSelectElement;
-  declare readonly memoryKindFilterTarget: HTMLSelectElement;
-  declare readonly memoryTagsTarget: HTMLInputElement;
-  declare readonly memoryContentTarget: HTMLTextAreaElement;
-  declare readonly personaModeTarget: HTMLSelectElement;
-  declare readonly personaModelTarget: HTMLInputElement;
-  declare readonly personaSystemTarget: HTMLTextAreaElement;
-  declare readonly personaPromptTarget: HTMLTextAreaElement;
-  declare readonly personaOutputTarget: HTMLElement;
-  declare readonly statusOutputTarget: HTMLElement;
-  declare readonly researchStatusOutputTarget: HTMLElement;
-  declare readonly hostBridgeStatusOutputTarget: HTMLElement;
-  declare readonly metricsOutputTarget: HTMLElement;
-  declare readonly progressTarget: HTMLElement;
-  declare readonly progressStateTarget: HTMLElement;
-  declare readonly spinnerTarget: HTMLElement;
-  declare readonly modalTarget: HTMLElement;
-  declare readonly modalPanelTarget: HTMLElement;
-  declare readonly hasMemoryListTarget: boolean;
-  declare readonly hasStatusOutputTarget: boolean;
-  declare readonly hasResearchStatusOutputTarget: boolean;
-  declare readonly hasHostBridgeStatusOutputTarget: boolean;
-  declare readonly hasMetricsOutputTarget: boolean;
-  declare readonly hasProgressStateTarget: boolean;
-  declare readonly hasModalTarget: boolean;
-  declare readonly hasSpinnerTarget: boolean;
-  declare readonly hasNetworkUrlTarget: boolean;
-  declare readonly hasChannelSelectTarget: boolean;
-  declare readonly hasJobsListTarget: boolean;
-  declare readonly hasJobDetailsTarget: boolean;
-  declare readonly hasMessagesTarget: boolean;
-  declare readonly hasInputTarget: boolean;
-  declare readonly hasSendTarget: boolean;
-  declare readonly hasStatusTarget: boolean;
-  declare readonly hasLiveBadgeTarget: boolean;
-  declare readonly hasTransportTarget: boolean;
-  declare readonly hasJobTarget: boolean;
-  declare readonly hasEventCountTarget: boolean;
-  declare readonly channelSelectTarget: HTMLSelectElement;
-  declare readonly pollMsValue: number;
-
-  gxController: GxController | null = null;
+  recyclrController: RecyclrController | null = null;
   store!: TranscriptStore;
   messages: ChatMessage[] = [];
   events: TimelineEvent[] = [];
@@ -111,31 +39,46 @@ export default class ChatController extends Controller {
   eventIndex = new Map<string, TimelineEvent>();
   contextIndex = new Map<string, JobContext>();
   seenProgress = new Set<string>();
-  currentJobID: number | string | null = null;
   busy = false;
   queueEnabled = false;
-  activityTimer: number | null = null;
-  jobsTimer: number | null = null;
   memoryChangedHandler: ((event: Event) => void) | null = null;
   networkSettingsHandler: ((event: Event) => void) | null = null;
   openedProjectID: number | null = null;
   openedProjectLocation: string | null = null;
   projectOpenedHandler: ((event: Event) => void) | null = null;
   projectClosedHandler: ((event: Event) => void) | null = null;
-  userChannels: UserChannel[] = [];
-  selectedChannelId = "";
+  private channel!: ChatChannelCoordinator;
+  private jobs!: ChatJobsCoordinator;
+  private memory!: ChatMemoryCoordinator;
+  private system!: ChatSystemCoordinator;
+  private execution!: ChatExecutionCoordinator;
+  private panels!: ChatPanelCoordinator;
   activityLabel = "";
   private metricsGlanceHandler: ((event: Event) => void) | null = null;
-  private localeChangedHandler: ((event: Event) => void) | null = null;
-  private panelShownHandler: ((event: Event) => void) | null = null;
-  private scrumRefreshHandler: ((event: Event) => void) | null = null;
-  private llmActivityHandler: ((event: Event) => void) | null = null;
-  private currentPanel: OmniPanel = "chat";
+  private readonly jobProgressHandler = (event: Event) => {
+    this.execution.handleProgress(event);
+  };
+  private readonly realtimeSyncHandler = (event: Event) => {
+    const detail = (event as CustomEvent<RealtimeSyncDetail>).detail;
+    if (!detail || typeof detail.waitUntil !== "function") {
+      throw new Error("Realtime synchronization event is missing waitUntil().");
+    }
+    detail.waitUntil(this.synchronizeRealtimeState());
+  };
+
+  private async synchronizeRealtimeState(): Promise<void> {
+    const tasks: Promise<unknown>[] = [this.loadGlobalActivity({ quiet: true, strict: true })];
+    if (this.execution.currentJobID() !== null) tasks.push(this.execution.refreshCurrent());
+    if (this.panels.isCurrent("jobs")) tasks.push(this.loadJobs({ quiet: true, strict: true }));
+    if (this.panels.isCurrent("metrics")) tasks.push(this.loadMetrics({ strict: true }));
+    await Promise.all(tasks);
+  }
 
   
 
   async connect() {
-    this.gxController = this.application.getControllerForElementAndIdentifier(this.element, "gx") as GxController | null;
+    this.recyclrController = this.application.getControllerForElementAndIdentifier(this.element, "recyclr") as RecyclrController | null;
+    if (!this.recyclrController) throw new Error("The page-scoped Recyclr controller is unavailable.");
     this.store = new TranscriptStore();
     this.messages = this.store.load();
     this.events = [];
@@ -143,23 +86,114 @@ export default class ChatController extends Controller {
     this.eventIndex = new Map();
     this.contextIndex = new Map();
     this.seenProgress = new Set();
-    this.currentJobID = null;
     this.busy = false;
+    this.channel = new ChatChannelCoordinator({
+      hasNetworkURL: () => this.hasNetworkUrlTarget,
+      networkURL: () => this.networkUrlTarget,
+      hasTransport: () => this.hasTransportTarget,
+      transport: () => this.transportTarget,
+      hasChannelSelect: () => this.hasChannelSelectTarget,
+      channelSelect: () => this.channelSelectTarget,
+      queueEnabled: () => this.queueEnabled,
+      setQueueEnabled: (enabled) => { this.queueEnabled = enabled; },
+      setStatus: (text, mode) => this.setStatus(text, mode),
+      addEvent: (type, details, full) => this.addEvent(type, details, full),
+      addMessage: (role, content) => this.addMessage(role, content),
+      replaceMessages: (messages) => {
+        this.messages = messages;
+        this.renderMessages();
+      },
+      restorePipelineTranscript: () => {
+        this.messages = this.store.load();
+        this.renderMessages();
+        if (this.messages.length === 0) this.addMessage("system", "Agent pipeline — queue jobs or direct instruct.");
+      },
+      setActivityLabel: (label) => { this.activityLabel = label; },
+      renderProgressActivity: (label) => this.renderProgressActivity(label),
+      setBusy: (value) => this.setBusy(value),
+    });
+    this.execution = new ChatExecutionCoordinator({
+      openedProjectID: () => this.openedProjectID,
+      openedProjectLocation: () => this.openedProjectLocation,
+      currentPanel: () => this.panels.current(),
+      hasJobBadge: () => this.hasJobTarget,
+      jobBadge: () => this.jobTarget,
+      setActivityLabel: (label) => { this.activityLabel = label; },
+      setStatus: (text, mode) => this.setStatus(text, mode),
+      renderProgressActivity: (label) => this.renderProgressActivity(label),
+      recordJobProgress: (details) => recordChatJobProgress(this, details),
+      renderMessages: () => this.renderMessages(),
+      renderJobDetails: (details) => this.renderJobDetails(details),
+      addEvent: (type, details, full) => this.addEvent(type, details, full),
+      addMessage: (role, content) => this.addMessage(role, content),
+      setBusy: (value) => this.setBusy(value),
+      loadJobs: (options) => this.loadJobs(options),
+      loadGlobalActivity: (options) => this.loadGlobalActivity(options),
+      reportError: (error) => toastFromError(error),
+    });
+    this.jobs = new ChatJobsCoordinator({
+      queueEnabled: () => this.queueEnabled,
+      jobFilter: () => this.jobFilterTarget,
+      hasJobDetails: () => this.hasJobDetailsTarget,
+      jobDetails: () => this.jobDetailsTarget,
+      hasJobBadge: () => this.hasJobTarget,
+      jobBadge: () => this.jobTarget,
+      setCurrentJobID: (id) => this.execution.setCurrentJobID(id),
+      recycle: (target, html) => this.recycle(target, html),
+      indexContexts: (contexts) => this.indexContexts(contexts),
+      addEvent: (type, details, full) => this.addEvent(type, details, full),
+    });
+    this.panels = new ChatPanelCoordinator({
+      root: () => this.element,
+      locale: () => getLocale(),
+      renderPanel: (html) => renderRecyclrBundle(this.recyclrController, "app-panel", html),
+      loadPanelData: (panel) => this.loadPanelData(panel),
+      pushRoute: (path) => {
+        if (!this.recyclrController) throw new Error("The page-scoped Recyclr controller is unavailable.");
+        this.recyclrController.pushRoute(path);
+      },
+      addEvent: (type, details, full) => this.addEvent(type, details, full),
+      reportError: (error) => toastFromError(error),
+    });
+    this.memory = new ChatMemoryCoordinator({
+      queueEnabled: () => this.queueEnabled,
+      hasMemoryList: () => this.hasMemoryListTarget,
+      memoryKind: () => this.memoryKindTarget,
+      memoryKindFilter: () => this.memoryKindFilterTarget,
+      memoryTags: () => this.memoryTagsTarget,
+      memoryContent: () => this.memoryContentTarget,
+      recycle: (target, html) => this.recycle(target, html),
+      addEvent: (type, details, full) => this.addEvent(type, details, full),
+      addObservedEvent: (key, type, details, full) => this.addObservedEvent(key, type, details, full),
+    });
+    this.system = new ChatSystemCoordinator({
+      queueEnabled: () => this.queueEnabled,
+      setQueueEnabled: (enabled) => { this.queueEnabled = enabled; },
+      personaMode: () => this.personaModeTarget,
+      personaModel: () => this.personaModelTarget,
+      personaSystem: () => this.personaSystemTarget,
+      personaPrompt: () => this.personaPromptTarget,
+      hasHostBridgeStatus: () => this.hasHostBridgeStatusOutputTarget,
+      hasResearchStatus: () => this.hasResearchStatusOutputTarget,
+      hasMetrics: () => this.hasMetricsOutputTarget,
+      updateTransportLabel: () => this.channel.updateTransportLabel(),
+      recycle: (target, html, mode) => this.recycle(target, html, mode),
+      addEvent: (type, details, full) => this.addEvent(type, details, full),
+    });
     this.renderProgress();
     this.renderMessages();
     this.renderTimeline();
-    await this.detectTransport();
+    await this.channel.detectTransport();
     const initialPanel = parsePanelFromLocation();
     await this.activatePanel(initialPanel, { pushHistory: false });
     await this.loadStatus();
-    await this.loadUserChannels();
+    await this.channel.loadChannels();
     await this.loadGlobalActivity();
-    this.activityTimer = window.setInterval(() => this.loadGlobalActivity({ quiet: true }), 5000);
     this.memoryChangedHandler = () => void this.loadMemoryCandidates();
     document.addEventListener("omni:memory-changed", this.memoryChangedHandler);
     this.networkSettingsHandler = (event: Event) => {
       const detail = (event as CustomEvent<{ core_url?: string }>).detail;
-      if (detail?.core_url) this.setNetworkUrl(detail.core_url);
+      if (detail?.core_url) this.channel.setNetworkURL(detail.core_url);
     };
     document.addEventListener("omni:network-settings", this.networkSettingsHandler);
     this.projectOpenedHandler = (event: Event) => {
@@ -177,260 +211,54 @@ export default class ChatController extends Controller {
       this.addMessage("system", t("panel.chat.ready"));
     }
     this.metricsGlanceHandler = () => {
-      if (this.currentPanel === "metrics") void this.loadMetrics();
+      if (this.panels.isCurrent("metrics")) void this.loadMetrics();
     };
     document.addEventListener("omni:metrics-glance", this.metricsGlanceHandler);
-    this.localeChangedHandler = () => {
-      applyI18n(document);
-      this.renderChannelOptions();
-      this.updateTransportLabel();
-    };
-    document.addEventListener("omni:locale-changed", this.localeChangedHandler);
-    this.panelShownHandler = (event: Event) => {
-      const panel = (event as CustomEvent<{ panel?: string }>).detail?.panel;
-      if (panel === "jobs") void this.loadJobs();
-      if (panel === "metrics") void this.loadMetrics();
-    };
-    document.addEventListener("omni:panel-shown", this.panelShownHandler);
-    this.scrumRefreshHandler = () => {
-      if (this.currentPanel === "jobs") void this.loadJobs({ quiet: true });
-    };
-    document.addEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
-    this.llmActivityHandler = () => {
-      if (this.currentPanel === "jobs") void this.loadJobs({ quiet: true });
-    };
-    document.addEventListener("omni:llm-activity", this.llmActivityHandler);
+    document.addEventListener("omni:job-progress", this.jobProgressHandler);
+    document.addEventListener("omni:realtime-sync-required", this.realtimeSyncHandler);
   }
 
   disconnect() {
-    if (this.activityTimer) window.clearInterval(this.activityTimer);
     if (this.memoryChangedHandler) document.removeEventListener("omni:memory-changed", this.memoryChangedHandler);
     if (this.networkSettingsHandler) document.removeEventListener("omni:network-settings", this.networkSettingsHandler);
     if (this.projectOpenedHandler) document.removeEventListener("omni:project-opened", this.projectOpenedHandler);
     if (this.projectClosedHandler) document.removeEventListener("omni:project-closed", this.projectClosedHandler);
     if (this.metricsGlanceHandler) document.removeEventListener("omni:metrics-glance", this.metricsGlanceHandler);
-    if (this.localeChangedHandler) document.removeEventListener("omni:locale-changed", this.localeChangedHandler);
-    if (this.panelShownHandler) document.removeEventListener("omni:panel-shown", this.panelShownHandler);
-    if (this.scrumRefreshHandler) document.removeEventListener("omni:scrum-refresh", this.scrumRefreshHandler);
-    if (this.llmActivityHandler) document.removeEventListener("omni:llm-activity", this.llmActivityHandler);
-    this.stopJobsPolling();
-  }
-
-  startJobsPolling() {
-    this.stopJobsPolling();
-    this.jobsTimer = window.setInterval(() => void this.loadJobs({ quiet: true }), 5000);
-  }
-
-  stopJobsPolling() {
-    if (this.jobsTimer) window.clearInterval(this.jobsTimer);
-    this.jobsTimer = null;
-  }
-
-  setNetworkUrl(url: string) {
-    if (!this.hasNetworkUrlTarget) return;
-    const normalized = url.trim();
-    if (!normalized) {
-      this.networkUrlTarget.textContent = "not set";
-      return;
-    }
-    this.networkUrlTarget.innerHTML = `<a href="${escapeHTML(normalized)}" class="text-cyan-200 hover:text-cyan-100">${escapeHTML(normalized)}</a>`;
-  }
-
-  async detectTransport() {
-    try {
-      const response = await fetch("/healthz");
-      const health = await response.json();
-      this.queueEnabled = Boolean(health.queue_enabled);
-      this.updateTransportLabel();
-      if (health.core_url) this.setNetworkUrl(String(health.core_url));
-      this.setStatus("ready", "ready");
-      this.addEvent("health", health);
-    } catch (error) {
-      this.queueEnabled = false;
-      if (this.hasTransportTarget) this.transportTarget.textContent = "offline";
-      this.setStatus("offline", "error");
-    }
-  }
-
-  isChannelMode(): boolean {
-    return Boolean(this.selectedChannelId?.trim());
-  }
-
-  updateTransportLabel() {
-    if (this.isChannelMode()) {
-      const channel = this.userChannels.find((item) => item.id === this.selectedChannelId);
-      const label = channel?.name?.trim() || this.selectedChannelId;
-      if (this.hasTransportTarget) this.transportTarget.textContent = `${t("transport.channel")} · ${label}`;
-      return;
-    }
-    if (this.hasTransportTarget) this.transportTarget.textContent = this.queueEnabled ? t("transport.queue") : t("transport.direct");
-  }
-
-  async loadUserChannels() {
-    if (!this.hasChannelSelectTarget) return;
-    try {
-      const channels = await fetchUserChannels();
-      this.userChannels = channels.filter(isUserChannel);
-      this.renderChannelOptions();
-      const saved = localStorage.getItem(SELECTED_CHANNEL_KEY) || "";
-      if (saved && this.userChannels.some((channel) => channel.id === saved)) {
-        this.selectedChannelId = saved;
-        this.channelSelectTarget.value = saved;
-        await this.loadChannelTranscript(saved);
-      } else {
-        this.selectedChannelId = "";
-        this.channelSelectTarget.value = "";
-      }
-      this.updateTransportLabel();
-    } catch {
-      this.userChannels = [];
-      this.renderChannelOptions();
-    }
-  }
-
-  renderChannelOptions() {
-    if (!this.hasChannelSelectTarget) return;
-    const options = [
-      `<option value="">${escapeHTML(t("panel.chat.agentPipeline"))}</option>`,
-      ...this.userChannels.map((channel) => {
-        const label = channel.name?.trim() || channel.id;
-        const meta = channel.persona && channel.persona !== "assistant" ? ` (${channel.persona})` : "";
-        return `<option value="${escapeHTML(channel.id)}"${channel.id === this.selectedChannelId ? " selected" : ""}>${escapeHTML(label + meta)}</option>`;
-      }),
-    ];
-    this.channelSelectTarget.innerHTML = options.join("");
+    document.removeEventListener("omni:job-progress", this.jobProgressHandler);
+    document.removeEventListener("omni:realtime-sync-required", this.realtimeSyncHandler);
+    this.execution.disconnect();
   }
 
   async selectChannel(event: Event) {
-    const select = event.currentTarget as HTMLSelectElement;
-    this.selectedChannelId = select.value.trim();
-    if (this.selectedChannelId) {
-      localStorage.setItem(SELECTED_CHANNEL_KEY, this.selectedChannelId);
-      await this.loadChannelTranscript(this.selectedChannelId);
-    } else {
-      localStorage.removeItem(SELECTED_CHANNEL_KEY);
-      this.messages = this.store.load();
-      this.renderMessages();
-      if (this.messages.length === 0) {
-        this.addMessage("system", "Agent pipeline — queue jobs or direct instruct.");
-      }
-    }
-    this.updateTransportLabel();
-  }
-
-  async loadChannelTranscript(channelID: string) {
-    const channel = this.userChannels.find((item) => item.id === channelID);
-    try {
-      const rows = await fetchChannelMessages(channelID);
-      this.messages = rows.map((row) => ({
-        role: row.role === "assistant" || row.role === "user" || row.role === "system" || row.role === "error"
-          ? row.role
-          : "assistant",
-        content: row.content,
-        at: row.created_at || new Date().toISOString(),
-      }));
-      if (this.messages.length === 0) {
-        this.messages = [{
-          role: "system",
-          content: `User channel "${channel?.name || channelID}" — scoped memory and persona, no agent tools.`,
-          at: new Date().toISOString(),
-        }];
-      }
-      this.renderMessages();
-    } catch (error) {
-      this.messages = [{
-        role: "error",
-        content: error instanceof Error ? error.message : String(error),
-        at: new Date().toISOString(),
-      }];
-      this.renderMessages();
-    }
+    await this.channel.select(event);
   }
 
   async createChannel(event: Event) {
-    event.preventDefault();
-    const id = window.prompt("Channel id (e.g. support-user-123)", `chat-${Date.now()}`)?.trim();
-    if (!id) return;
-    const name = window.prompt("Display name", id)?.trim() || id;
-    this.setStatus("creating channel", "active");
-    try {
-      const channel = await createUserChannel({ id, name, tags: ["user-channel"] });
-      if (!this.userChannels.some((item) => item.id === channel.id)) {
-        this.userChannels.unshift(channel);
-      }
-      this.selectedChannelId = channel.id;
-      localStorage.setItem(SELECTED_CHANNEL_KEY, channel.id);
-      this.renderChannelOptions();
-      if (this.hasChannelSelectTarget) this.channelSelectTarget.value = channel.id;
-      await this.loadChannelTranscript(channel.id);
-      this.updateTransportLabel();
-      this.setStatus("ready", "ready");
-    } catch (error) {
-      this.setStatus("failed", "error");
-      this.addMessage("error", error instanceof Error ? error.message : String(error));
-    }
+    await this.channel.create(event);
   }
 
   async submitChannel(prompt: string) {
-    const channelID = this.selectedChannelId;
-    this.activityLabel = "Thinking…";
-    this.setStatus("thinking", "active");
-    this.renderProgressActivity(this.activityLabel);
-    const payload = await sendChannelMessage(channelID, prompt);
-    this.addEvent("channel_message", {
-      channel_id: channelID,
-      model: payload.model,
-      latency_ms: payload.latency_ms,
-    }, payload);
-    this.addMessage("assistant", payload.output || "(empty response)");
-    this.setStatus("ready", "ready");
-    this.setBusy(false);
+    await this.channel.submit(prompt);
   }
 
-  showPanel(event: Event) {
-    event.preventDefault();
-    const target = event.currentTarget as HTMLElement | null;
-    const name = target?.dataset?.panel || "chat";
-    this.activatePanel(isOmniPanel(name) ? name : "chat", { pushHistory: true });
+  async showPanel(event: Event) {
+    await this.panels.show(event);
   }
 
   async activatePanel(name: OmniPanel, options: { pushHistory?: boolean } = {}) {
-    const previousPanel = this.currentPanel;
-    this.currentPanel = name;
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (name === "chat") params.delete("panel");
-      else params.set("panel", name);
-      const payload = await readJSON<{ panel: OmniPanel; html: string }>(await fetch(`/v1/ui/panel?${params.toString()}`));
-      await renderRecyclrBundle(this.gxController, "app-panel", payload.html);
-      applyI18n(document);
-    } catch (error) {
-      this.currentPanel = previousPanel;
-      this.addEvent("ui_panel_error", { panel: name, error: errorMessage(error) });
+    await this.panels.activate(name, options);
+  }
+
+  private loadPanelData(panel: OmniPanel): void {
+    let task: Promise<void> | null = null;
+    if (panel === "jobs") task = this.loadJobs({ strict: true });
+    if (panel === "memory") task = this.loadMemoryCandidates();
+    if (panel === "metrics") task = this.loadMetrics({ strict: true });
+    if (!task) return;
+    void task.catch((error) => {
+      this.addEvent("ui_panel_data_error", { panel, error: error instanceof Error ? error.message : String(error) });
       toastFromError(error);
-      return;
-    }
-    for (const button of this.element.querySelectorAll(".nav-button")) {
-      const active = (button as HTMLElement).dataset.panel === name;
-      button.classList.toggle("is-active", active);
-      button.classList.toggle("bg-white/[.06]", active);
-      button.classList.toggle("text-zinc-100", active);
-      button.classList.toggle("text-zinc-300", !active);
-    }
-    if (name === "jobs") {
-      void this.loadJobs();
-      this.startJobsPolling();
-    } else {
-      this.stopJobsPolling();
-    }
-    if (name === "memory") this.loadMemoryCandidates();
-    if (name === "metrics") this.loadMetrics();
-    document.dispatchEvent(new CustomEvent("omni:panel-shown", { detail: { panel: name } }));
-    this.persistUISessionState({ panel: name });
-    if (options.pushHistory) {
-      const extra = name === "admin" ? { admin_tab: parseAdminTabFromLocation() } : {};
-      this.gxController?.pushRoute(panelHref(name, window.location, extra));
-    }
+    });
   }
 
   composerKeydown(event) {
@@ -456,7 +284,7 @@ export default class ChatController extends Controller {
     this.renderProgressActivity(this.activityLabel);
 
     try {
-      if (this.isChannelMode()) {
+      if (this.channel.isChannelMode()) {
         await this.submitChannel(prompt);
       } else if (this.queueEnabled) {
         await this.submitJob(prompt);
@@ -472,621 +300,95 @@ export default class ChatController extends Controller {
   }
 
   async submitJob(prompt) {
-    this.activityLabel = "Queuing job…";
-    this.setStatus("queuing", "active");
-    this.renderProgressActivity(this.activityLabel);
-    const metadata: Record<string, unknown> = {
-      source: "omni-web-chat",
-      ui: "stimulus-tailwind-recyclr",
-    };
-    if (this.openedProjectID && this.openedProjectID > 0) {
-      metadata.project_id = this.openedProjectID;
-    }
-    if (this.openedProjectLocation) {
-      metadata.client_cwd = this.openedProjectLocation;
-      metadata.project_directory = this.openedProjectLocation;
-    }
-    const requestBody = {
-      instruction: prompt,
-      pipeline: "chat",
-      metadata,
-    };
-    const response = await fetch("/v1/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-    });
-    const payload = await readJSON(response);
-    const job = payload.job;
-    this.currentJobID = job.id;
-    if (this.hasJobTarget) this.jobTarget.textContent = `#${job.id}`;
-    this.activityLabel = `Running job #${job.id}…`;
-    this.renderProgressActivity(this.activityLabel);
-    this.addEvent("job_created", { id: job.id, status: job.status }, { request: requestBody, response: payload, job });
-    await this.pollJob(job.id);
+    await this.execution.submit(prompt);
   }
 
-  async pollJob(jobID) {
-    this.setStatus("running", "active");
-    let lastSignature = "";
-    for (;;) {
-      await sleep(this.pollMsValue || 800);
-      const response = await fetch(`/v1/jobs/${jobID}`);
-      const details = await readJSON(response);
-      const signature = JSON.stringify({
-        status: details.job?.status,
-        result: details.job?.result,
-        error: details.job?.error,
-        steps: (details.steps || []).map((step) => [step.id, step.status, step.output, step.error]),
-        contexts: (details.contexts || []).length,
-      });
-      if (signature !== lastSignature) {
-        const stepLabel = this.describeJobProgress(details);
-        this.activityLabel = stepLabel || `Running job #${jobID} · ${details.job?.status || "running"}…`;
-        this.renderProgressActivity(this.activityLabel);
-        this.renderJobProgress(details);
-        this.renderMessages();
-        lastSignature = signature;
-      }
-      const status = details.job?.status;
-      if (status === "completed") {
-        this.addMessage("assistant", details.job.result || "Completed.");
-        this.setStatus("completed", "ready");
-        this.setBusy(false);
-        return;
-      }
-      if (status === "failed" || status === "canceled") {
-        this.addMessage("error", details.job.error || `Job ${status}.`);
-        this.setStatus(status, "error");
-        this.setBusy(false);
-        return;
-      }
-    }
-  }
-
-  async loadJobs(options: { quiet?: boolean } = {}) {
-    if (!this.queueEnabled) {
-      this.setJobsListOutput(emptyState("Queue routes are disabled in wrapper-only mode."));
-      if (this.hasJobDetailsTarget) this.jobDetailsTarget.textContent = "Start the core server with DATABASE_URL and WRAPPER_ONLY=false to use job controls.";
-      return;
-    }
-    if (!options.quiet) this.setJobsListOutput(emptyState("Loading jobs…"));
-    try {
-      const status = this.jobFilterTarget.value;
-      const query = new URLSearchParams({ limit: "30" });
-      if (status) query.set("status", status);
-      const [jobsPayload, activityPayload] = await Promise.all([
-        readJSON(await fetch(`/v1/jobs?${query}`)),
-        readJSON(await fetch("/v1/activity?limit=30")).catch(() => ({ llm_activity: [] })),
-      ]);
-      const jobs = jobsPayload.jobs || [];
-      const llmActivity = activityPayload.llm_activity || [];
-      this.setJobsListOutput(renderJobsPanel(jobs, llmActivity));
-      this.addEvent("jobs_loaded", { count: jobs.length, llm_activity: llmActivity.length, status: status || "all" });
-    } catch (error) {
-      this.setJobsListOutput(`<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
-      if (!options.quiet) this.addEvent("jobs_failed", { error: error.message || String(error) });
-    }
-  }
-
-  setJobsListOutput(html: string): void {
-    if (this.hasJobsListTarget) this.jobsListTarget.innerHTML = html;
-    this.recycle("jobs-list", html);
+  async loadJobs(options: { quiet?: boolean; strict?: boolean } = {}) {
+    await this.jobs.load(options);
   }
 
   renderJobs(jobs) {
-    this.setJobsListOutput(renderJobsPanel(jobs, []));
+    this.jobs.render(jobs);
   }
 
   async selectJob(event) {
-    const id = event.currentTarget.dataset.jobId;
-    const details = await readJSON(await fetch(`/v1/jobs/${id}`));
-    this.currentJobID = details.job?.id;
-    if (this.hasJobTarget) this.jobTarget.textContent = `#${details.job?.id}`;
-    this.renderJobDetails(details);
+    await this.jobs.select(event);
   }
 
   renderJobDetails(details) {
-    const job = details.job || {};
-    const steps = details.steps || [];
-    const contexts = details.contexts || [];
-    this.indexContexts(contexts);
-    this.recycle("job-details", `
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div class="font-mono text-xs text-cyan-200">#${job.id || ""}</div>
-          <h3 class="mt-1 text-lg font-semibold text-zinc-100">${escapeHTML(job.instruction || "Untitled job")}</h3>
-          <p class="mt-1 text-xs text-zinc-500">${escapeHTML(job.pipeline || "")} · ${formatDateTime(job.created_at)}</p>
-        </div>
-        <span class="${statusPillClass(job.status)}">${escapeHTML(job.status || "unknown")}</span>
-      </div>
-      <div class="mt-4 flex flex-wrap gap-2">
-        <button data-action="chat#interruptJob" data-job-id="${job.id}" class="rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100">Interrupt</button>
-        <button data-action="chat#replanJob" data-job-id="${job.id}" class="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100">Replan</button>
-        <button data-action="chat#cancelJob" data-job-id="${job.id}" class="rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-xs font-semibold text-rose-100">Cancel</button>
-      </div>
-      ${job.result ? `<section class="mt-5"><h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Result</h4><pre class="mt-2 whitespace-pre-wrap rounded-md bg-white/[.04] p-3 text-sm text-zinc-200">${escapeHTML(job.result)}</pre></section>` : ""}
-      ${job.error ? `<section class="mt-5"><h4 class="text-xs font-semibold uppercase tracking-[.18em] text-rose-300">Error</h4><pre class="mt-2 whitespace-pre-wrap rounded-md bg-rose-400/10 p-3 text-sm text-rose-100">${escapeHTML(job.error)}</pre></section>` : ""}
-      <section class="mt-5">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Steps</h4>
-          ${renderStepSummary(steps)}
-        </div>
-        <div class="mt-3 space-y-3">${steps.map(renderStep).join("") || emptyState("No steps yet.")}</div>
-      </section>
-      <section class="mt-5">
-        <h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Contexts</h4>
-        <div class="mt-3 space-y-2">${contexts.slice(-12).map(renderContext).join("") || emptyState("No context records yet.")}</div>
-      </section>
-    `);
+    this.jobs.renderDetails(details);
   }
 
   async interruptJob(event) {
-    await this.postJobControl(event.currentTarget.dataset.jobId, "interrupt", "Interrupt with what instruction?");
+    await this.jobs.interrupt(event);
   }
 
   async replanJob(event) {
-    await this.postJobControl(event.currentTarget.dataset.jobId, "replan", "What should Omni change in the plan?");
+    await this.jobs.replan(event);
   }
 
   async cancelJob(event) {
-    const reason = window.prompt("Cancel reason?", "Canceled from Omni UI");
-    if (!reason) return;
-    await readJSON(await fetch(`/v1/jobs/${event.currentTarget.dataset.jobId}/cancel`, jsonRequest({ reason })));
-    await this.loadJobs();
-    this.addEvent("job_canceled", { id: event.currentTarget.dataset.jobId });
-  }
-
-  async postJobControl(id, action, question) {
-    const feedback = window.prompt(question);
-    if (!feedback) return;
-    await readJSON(await fetch(`/v1/jobs/${id}/${action}`, jsonRequest({ feedback })));
-    const details = await readJSON(await fetch(`/v1/jobs/${id}`));
-    this.renderJobDetails(details);
-    this.addEvent(`job_${action}`, { id });
+    await this.jobs.cancel(event);
   }
 
   async loadMemoryCandidates() {
-    if (!this.queueEnabled) {
-      this.recycle("memory-candidates", emptyState("Memory routes require repository mode."));
-      if (this.hasMemoryListTarget) this.recycle("memory-list", emptyState("Memory routes require repository mode."));
-      return;
-    }
-    const kind = this.memoryKindFilterTarget?.value?.trim() ?? "";
-    const memoryQuery = new URLSearchParams({ limit: "200" });
-    if (kind) memoryQuery.set("kind", kind);
-    const [payload, memoryPayload] = await Promise.all([
-      readJSON(await fetch("/v1/memory-candidates?limit=200")),
-      readJSON(await fetch(`/v1/memory?${memoryQuery.toString()}`)),
-    ]);
-    this.renderMemoryList(memoryPayload.memories || []);
-    this.renderMemoryCandidates(payload.memory_candidates || []);
-    this.addEvent("memory_loaded", {
-      memories: (memoryPayload.memories || []).length,
-      candidates: (payload.memory_candidates || []).length,
-    }, { memories: memoryPayload, candidates: payload });
+    await this.memory.load();
   }
 
   async deleteMemory(event) {
-    event.preventDefault();
-    const id = Number(event.currentTarget.dataset.memoryId || 0);
-    if (!id || !window.confirm(`Delete memory #${id}?`)) return;
-    await readJSON(await fetch(`/v1/memory/${id}`, { method: "DELETE" }));
-    await this.loadMemoryCandidates();
-    this.addEvent("memory_deleted", { id });
+    await this.memory.deleteMemory(event);
   }
 
   async deleteMemoryCandidate(event) {
-    event.preventDefault();
-    const id = Number(event.currentTarget.dataset.candidateId || 0);
-    if (!id || !window.confirm(`Delete candidate #${id}?`)) return;
-    await readJSON(await fetch(`/v1/memory-candidates/${id}`, { method: "DELETE" }));
-    await this.loadMemoryCandidates();
-    this.addEvent("memory_candidate_deleted", { id });
+    await this.memory.deleteCandidate(event);
   }
 
   renderMemoryList(items) {
-    if (!this.hasMemoryListTarget) return;
-    if (items.length === 0) {
-      this.recycle("memory-list", emptyState("No durable memory chunks found."));
-      return;
-    }
-    this.recycle(
-      "memory-list",
-      items
-        .map(
-        (item) => `
-          <article class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="font-mono text-xs text-cyan-200">memory #${item.id}</div>
-              <span class="${statusPillClass(item.kind || "memory")}">${escapeHTML(item.kind || "memory")}</span>
-            </div>
-            <div class="mt-2 text-xs text-zinc-500">${escapeHTML(item.source || "unknown")} · ${formatDateTime(item.created_at)}</div>
-            <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">${escapeHTML(trimText(item.content || "", 900))}</p>
-            ${(item.tags || []).length ? `<div class="mt-3 flex flex-wrap gap-1">${(item.tags || []).slice(0, 12).map((tag) => `<span class="rounded bg-white/[.06] px-2 py-1 font-mono text-[11px] text-zinc-400">${escapeHTML(tag)}</span>`).join("")}</div>` : ""}
-            <div class="mt-4">
-              <button data-action="chat#deleteMemory" data-memory-id="${item.id}" class="rounded-md border border-rose-300/30 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-400/10">Remove</button>
-            </div>
-          </article>
-        `,
-        )
-        .join(""),
-    );
+    this.memory.renderList(items);
   }
 
-  async loadGlobalActivity(options: { quiet?: boolean } = {}) {
-    if (!this.queueEnabled) return;
-    try {
-      const payload = await readJSON(await fetch("/v1/activity?limit=60"));
-      for (const job of payload.jobs || []) {
-        this.addObservedEvent(`global-job:${job.id}:${job.status}:${job.updated_at}`, "global_job", {
-          id: job.id,
-          status: job.status,
-          pipeline: job.pipeline || "job",
-          updated: formatTime(job.updated_at),
-        }, { job });
-      }
-      for (const event of payload.telemetry_events || []) {
-        this.addObservedEvent(`telemetry:${event.id}`, `run:${event.event_type}`, {
-          run: trimText(event.run_id || "", 8),
-          step: event.step ?? "",
-          at: formatTime(event.created_at),
-        }, { telemetry_event: event });
-      }
-      for (const memory of payload.memories || []) {
-        this.addObservedEvent(`memory:${memory.id}`, "memory_chunk", {
-          id: memory.id,
-          kind: memory.kind || "memory",
-          source: trimText(memory.source || "", 40),
-        }, { memory });
-      }
-      for (const entry of payload.llm_activity || []) {
-        this.addObservedEvent(`llm:${entry.id}`, `llm:${entry.source}`, {
-          source: entry.source || "llm",
-          chars: entry.sent_chars || 0,
-          ok: entry.success !== false,
-          at: formatTime(entry.created_at),
-        }, { llm_activity: entry });
-      }
-      if (this.hasMemoryListTarget) this.renderMemoryList(payload.memories || []);
-      if (!options.quiet) {
-        this.addObservedEvent(`activity-sync:${Date.now()}`, "global_activity_synced", {
-          jobs: (payload.jobs || []).length,
-          events: (payload.telemetry_events || []).length,
-          memories: (payload.memories || []).length,
-        }, payload);
-      }
-    } catch (error) {
-      if (!options.quiet) this.addEvent("global_activity_failed", { error: error.message || String(error) });
-    }
+  async loadGlobalActivity(options: { quiet?: boolean; strict?: boolean } = {}) {
+    await this.memory.loadGlobalActivity(options);
   }
 
   renderMemoryCandidates(items) {
-    if (items.length === 0) {
-      this.recycle("memory-candidates", emptyState("No memory candidates found."));
-      return;
-    }
-    this.recycle(
-      "memory-candidates",
-      items
-        .map(
-        (item) => `
-          <article class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="font-mono text-xs text-cyan-200">candidate #${item.id}</div>
-              <span class="${statusPillClass(item.status)}">${escapeHTML(item.status || "candidate")}</span>
-            </div>
-            <div class="mt-2 text-xs uppercase tracking-[.16em] text-zinc-500">${escapeHTML(item.candidate_kind || "memory")}</div>
-            <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">${escapeHTML(item.content || "")}</p>
-            <div class="mt-4 flex flex-wrap gap-2">
-              <button data-action="chat#promoteMemory" data-candidate-id="${item.id}" data-tier="approved" class="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100">Approve</button>
-              <button data-action="chat#promoteMemory" data-candidate-id="${item.id}" data-tier="durable" class="rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-xs font-semibold text-emerald-100">Durable</button>
-              <button data-action="chat#rejectMemory" data-candidate-id="${item.id}" class="rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-xs font-semibold text-rose-100">Reject</button>
-              <button data-action="chat#deleteMemoryCandidate" data-candidate-id="${item.id}" class="rounded-md border border-white/10 px-3 py-2 text-xs text-zinc-300 hover:bg-white/[.04]">Delete</button>
-            </div>
-          </article>
-        `,
-        )
-        .join(""),
-    );
+    this.memory.renderCandidates(items);
   }
 
   async promoteMemory(event) {
-    const id = event.currentTarget.dataset.candidateId;
-    const tier = event.currentTarget.dataset.tier || "approved";
-    try {
-      await readJSON(await fetch(`/v1/memory-candidates/${id}/promote`, jsonRequest({ tier })));
-      await this.loadMemoryCandidates();
-      this.addEvent("memory_promoted", { id, tier });
-      toastOk("Memory promoted");
-    } catch (error) {
-      toastFromError(error);
-    }
+    await this.memory.promote(event);
   }
 
   async rejectMemory(event) {
-    const id = event.currentTarget.dataset.candidateId;
-    try {
-      await readJSON(await fetch(`/v1/memory-candidates/${id}/reject`, jsonRequest({})));
-      await this.loadMemoryCandidates();
-      this.addEvent("memory_rejected", { id });
-      toastOk("Memory candidate rejected");
-    } catch (error) {
-      toastFromError(error);
-    }
+    await this.memory.reject(event);
   }
 
   async addMemory(event) {
-    event.preventDefault();
-    if (!this.queueEnabled) {
-      toastError("Memory requires repository mode");
-      this.addEvent("memory_unavailable", { reason: "repository disabled" });
-      return;
-    }
-    const content = this.memoryContentTarget.value.trim();
-    if (!content) {
-      toastError("Memory content is required");
-      return;
-    }
-    const tags = this.memoryTagsTarget.value.split(",").map((tag) => tag.trim()).filter(Boolean);
-    try {
-      await readJSON(
-        await fetch(
-          "/v1/memory",
-          jsonRequest({ source: "omni-web-ui", kind: this.memoryKindTarget.value, content, tags }),
-        ),
-      );
-      this.memoryContentTarget.value = "";
-      this.memoryTagsTarget.value = "";
-      await this.loadMemoryCandidates();
-      this.addEvent("memory_added", { kind: this.memoryKindTarget.value, tags: tags.join(",") || "none" });
-      toastOk("Memory saved");
-    } catch (error) {
-      toastFromError(error);
-    }
+    await this.memory.add(event);
   }
 
   async runPersona(event) {
-    event.preventDefault();
-    const mode = this.personaModeTarget.value;
-    const prompt = this.personaPromptTarget.value.trim();
-    if (!prompt) {
-      toastError("Enter a prompt first");
-      return;
-    }
-    this.recycle("persona-output", escapeHTML("Running..."));
-    try {
-      const body = {
-        prompt,
-        model: this.personaModelTarget.value.trim(),
-        system: this.personaSystemTarget.value.trim(),
-        context: { source: "omni-web-ui", mode },
-      };
-      const payload = await readJSON(await fetch(`/v1/${mode}`, jsonRequest(body)));
-      this.recycle("persona-output", escapeHTML(JSON.stringify(payload, null, 2)));
-      this.addEvent("persona_run", { mode, model: payload.model || "default", latency_ms: payload.latency_ms });
-      toastOk("Persona run completed");
-    } catch (error) {
-      toastFromError(error);
-    }
+    await this.system.runPersona(event);
   }
 
   async loadStatus() {
-    try {
-      const payload = await readJSON(await fetch("/healthz"));
-      this.setStatusOutput(JSON.stringify(payload, null, 2));
-      this.queueEnabled = Boolean(payload.queue_enabled);
-      this.updateTransportLabel();
-      this.addEvent("status_loaded", payload);
-    } catch (error) {
-      const message = errorMessage(error);
-      this.setStatusOutput(`Error loading /healthz: ${message}`);
-      this.addEvent("status_load_failed", { error: message });
-    }
-    await Promise.all([
-      this.loadResearchStatus(),
-      this.loadHostBridgeStatus(),
-    ]);
-  }
-
-  setStatusOutput(text: string): void {
-    if (this.hasStatusOutputTarget) this.statusOutputTarget.textContent = text;
-    this.recycle("status-output", text, "text");
-  }
-
-  setResearchStatusOutput(html: string): void {
-    if (this.hasResearchStatusOutputTarget) this.researchStatusOutputTarget.innerHTML = html;
-    this.recycle("research-status-output", html);
-  }
-
-  setHostBridgeStatusOutput(html: string): void {
-    if (this.hasHostBridgeStatusOutputTarget) this.hostBridgeStatusOutputTarget.innerHTML = html;
-    this.recycle("host-bridge-status-output", html);
+    await this.system.loadStatus();
   }
 
   async loadHostBridgeStatus() {
-    if (!this.hasHostBridgeStatusOutputTarget) return;
-    try {
-      const payload = await readJSON(await fetch("/v1/host/status"));
-      this.setHostBridgeStatusOutput(renderHostBridgeStatus(payload));
-      this.addEvent("host_bridge_status_loaded", {
-        configured: Boolean(payload.configured),
-        reachable: Boolean(payload.reachable),
-        picker_ready: Boolean(payload.picker_ready),
-      }, payload);
-      document.dispatchEvent(new CustomEvent("omni:host-bridge-status", { detail: payload }));
-    } catch (error) {
-      const message = errorMessage(error);
-      this.setHostBridgeStatusOutput(
-        `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(message)}</div>`,
-      );
-      this.addEvent("host_bridge_status_failed", { error: message });
-    }
+    await this.system.loadHostBridgeStatus();
   }
 
   async loadResearchStatus() {
-    if (!this.hasResearchStatusOutputTarget) return;
-    try {
-      const payload = await readJSON(await fetch("/v1/status/research"));
-      this.setResearchStatusOutput(renderResearchStatus(payload));
-      this.addEvent("research_status_loaded", {
-        provider: payload.generation_provider?.provider || "unknown",
-        runnable: Boolean(payload.research_runnable),
-        ollama_reachable: Boolean(payload.ollama?.reachable),
-        web_reachable: Boolean(payload.web_search?.reachable_provider),
-      }, payload);
-    } catch (error) {
-      const message = errorMessage(error);
-      this.setResearchStatusOutput(
-        `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(message)}</div>`,
-      );
-      this.addEvent("research_status_failed", { error: message });
-    }
+    await this.system.loadResearchStatus();
   }
 
-  async loadMetrics() {
-    if (!this.queueEnabled) {
-      this.setMetricsOutput(emptyState("Metrics require repository mode."));
-      return;
-    }
-    this.setMetricsOutput(emptyState("Loading metrics..."));
-    const fetchMetric = async (path: string, fallback: Record<string, unknown> | null = null) => {
-      try {
-        const response = await fetch(path);
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || `${response.status} ${response.statusText}`);
-        }
-        return await readJSON(response);
-      } catch (error) {
-        if (fallback) return fallback;
-        throw error;
-      }
-    };
-    try {
-      const [live, models, playbooks, benchmarks, contextShrink, contextUsage, operations] = await Promise.all([
-        fetchMetric("/v1/metrics/live"),
-        fetchMetric("/v1/metrics/models"),
-        fetchMetric("/v1/metrics/playbooks"),
-        fetchMetric("/v1/metrics/benchmarks"),
-        fetchMetric("/v1/metrics/context-shrink?limit=100", { summary: {}, history: [], daily: [] }),
-        fetchMetric("/v1/metrics/context-usage?limit=100", { summary: {}, by_source: [], overloads: [], history: [], daily: [] }),
-        fetchMetric("/v1/metrics/operations", { failure_counts: [], recent_failures: [], loop_stats: [], context_floods: [], run_diagnostics: [] }),
-      ]);
-      this.setMetricsOutput(renderMetricsDashboard(
-        live,
-        models.models || [],
-        playbooks.playbooks || [],
-        benchmarks.benchmarks || [],
-        contextShrink,
-        contextUsage,
-        operations,
-      ));
-      this.addEvent("metrics_loaded", {
-        live_runs: (live.live_runs || []).length,
-        recent_runs: (live.recent_runs || []).length,
-        models: (models.models || []).length,
-        playbooks: (playbooks.playbooks || []).length,
-        benchmarks: (benchmarks.benchmarks || []).length,
-        context_shrink_events: Number(contextShrink?.summary?.requests || 0),
-        context_shrink_avg_saved_pct: Number(contextShrink?.summary?.avg_saved_pct || 0),
-        context_usage_events: Number(contextUsage?.summary?.requests || 0),
-        context_overloads: Number(contextUsage?.summary?.overload_events || 0),
-        llm_failures: Number(contextUsage?.summary?.failure_events || operations?.llm_failures || 0),
-        failure_events: (operations?.failure_counts || []).reduce((sum, item) => sum + Number(item.count || 0), 0),
-      }, { live, models, playbooks, benchmarks, contextShrink, contextUsage, operations });
-    } catch (error) {
-      this.setMetricsOutput(`<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(error.message || String(error))}</div>`);
-      this.addEvent("metrics_failed", { error: error.message || String(error) });
-    }
-  }
-
-  setMetricsOutput(html: string): void {
-    if (this.hasMetricsOutputTarget) this.metricsOutputTarget.innerHTML = html;
-    this.recycle("metrics-output", html);
+  async loadMetrics(options: { strict?: boolean } = {}) {
+    await this.system.loadMetrics(options);
   }
 
   async migrateFresh() {
-    if (!this.queueEnabled) {
-      toastError("Migrate fresh requires repository mode");
-      this.addEvent("admin_unavailable", { reason: "repository disabled" });
-      return;
-    }
-    if (!window.confirm("This will reset repository data. Continue?")) return;
-    try {
-      await readJSON(await fetch("/v1/admin/migrate-fresh", { method: "POST" }));
-      this.addEvent("admin_migrate_fresh", { status: "ok" });
-      toastOk("Database migrated fresh");
-      await this.loadStatus();
-    } catch (error) {
-      toastFromError(error);
-    }
-  }
-
-  describeJobProgress(details) {
-    const steps = details?.steps || [];
-    const running = steps.find((step) => step.status === "running");
-    const pending = steps.find((step) => step.status === "pending");
-    const current = running || pending;
-    if (!current?.action) {
-      return "";
-    }
-    const labels = {
-      v3_chat_fastpath: "Replying…",
-      v3_intent_parse: "Understanding request…",
-      v3_capability_audit: "Checking tools…",
-      v3_workspace_research: "Scanning workspace…",
-      v3_memory_retrieval: "Checking memory…",
-      v3_planning: "Planning…",
-      v3_external_research: "Searching…",
-      v3_analysis: "Analyzing…",
-      v3_response_draft: "Drafting reply…",
-      v3_verification: "Verifying…",
-      v3_finalize: "Finishing…",
-      retrieve: "Checking memory…",
-      analyze: "Analyzing…",
-      roleplay: "Composing reply…",
-      verify: "Verifying…",
-      plan: "Planning…",
-      web_search: "Searching web…",
-    };
-    const label = labels[current.action] || `${current.action.replace(/_/g, " ")}…`;
-    return `${label} (#${details?.job?.id || "?"})`;
-  }
-
-  renderJobProgress(details) {
-    this.renderProgress(details);
-    this.indexContexts(details.contexts || []);
-    this.addEvent("job_update", {
-      id: details.job?.id,
-      status: details.job?.status,
-      steps: (details.steps || []).length,
-      contexts: (details.contexts || []).length,
-    }, details);
-    for (const step of details.steps || []) {
-      const outputKey = `step-output:${step.id}:${hashText(step.output || "")}`;
-      if (step.output && !this.seenProgress.has(outputKey)) {
-        this.seenProgress.add(outputKey);
-        this.addEvent("step_output", { step: step.id, status: step.status, output: trimText(step.output, 280) }, { step });
-      }
-      const errorKey = `step-error:${step.id}:${hashText(step.error || "")}`;
-      if (step.error && !this.seenProgress.has(errorKey)) {
-        this.seenProgress.add(errorKey);
-        this.addEvent("step_error", { step: step.id, status: step.status, error: trimText(step.error, 280) }, { step });
-      }
-    }
-    for (const context of details.contexts || []) {
-      const key = `context:${context.id || `${context.step_id}:${context.key}`}`;
-      if (this.seenProgress.has(key)) continue;
-      this.seenProgress.add(key);
-      const type = contextEventType(context.key);
-      this.addEvent(type, {
-        context_id: context.id,
-        step: context.step_id,
-        key: context.key || "context",
-        value: trimText(context.value || "", 220),
-      }, { job: details.job, context });
-    }
+    await this.system.migrateFresh();
   }
 
   async submitDirect(prompt) {
@@ -1115,16 +417,15 @@ export default class ChatController extends Controller {
   }
 
   async newThread() {
-    if (this.currentPanel !== "chat" || !this.hasMessagesTarget) {
+    if (!this.panels.isCurrent("chat") || !this.hasMessagesTarget) {
       await this.activatePanel("chat", { pushHistory: true });
     }
-    if (this.isChannelMode()) {
-      void this.loadChannelTranscript(this.selectedChannelId);
+    if (this.channel.isChannelMode()) {
+      void this.channel.loadTranscript(this.channel.selectedID());
       this.addMessage("system", "Reloaded channel transcript from server.");
       return;
     }
-    this.currentJobID = null;
-    if (this.hasJobTarget) this.jobTarget.textContent = "none";
+    this.execution.setCurrentJobID(null);
     this.events = [];
     this.eventIndex = new Map();
     this.contextIndex = new Map();
@@ -1146,7 +447,7 @@ export default class ChatController extends Controller {
 
   addMessage(role, content) {
     this.messages.push({ role, content, at: new Date().toISOString() });
-    if (!this.isChannelMode()) {
+    if (!this.channel.isChannelMode()) {
       this.store.save(this.messages);
     }
     this.renderMessages();
@@ -1208,49 +509,19 @@ export default class ChatController extends Controller {
   }
 
   renderProgressActivity(label: string) {
-    const text = label.trim() || "Working…";
-    if (this.hasProgressStateTarget) this.progressStateTarget.textContent = text;
-    this.recycle(
-      "progress",
-      `<div class="flex items-center gap-2 text-sm text-cyan-100"><span class="inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-300"></span><span>${escapeHTML(text)}</span></div>`,
-    );
+    renderChatProgressActivity(this.progressViewHost(), label);
   }
 
   renderProgress(details = null) {
-    if (!details || !details.job) {
-      if (this.hasProgressStateTarget) this.progressStateTarget.textContent = "idle";
-      this.recycle("progress", `<div class="text-sm text-zinc-500">No active job.</div>`);
-      return;
-    }
-    const job = details.job || {};
-    const steps = details.steps || [];
-    const contexts = details.contexts || [];
-    const latestStep = [...steps].reverse().find((step) => step.status) || steps[steps.length - 1] || {};
-    const runningStep = steps.find((step) => step.status === "running") || latestStep;
-    const latestContext = contexts[contexts.length - 1] || {};
-    if (this.hasProgressStateTarget) this.progressStateTarget.textContent = job.status || "running";
-    this.recycle("progress", `
-      <div class="space-y-3">
-        <div class="flex items-center justify-between gap-3">
-          <span class="font-mono text-xs text-cyan-200">#${escapeHTML(job.id || "")}</span>
-          <span class="${statusPillClass(job.status)}">${escapeHTML(job.status || "running")}</span>
-        </div>
-        <div class="grid grid-cols-3 gap-2 text-center text-xs">
-          <div class="rounded border border-white/10 bg-white/[.03] p-2"><div class="font-mono text-zinc-100">${steps.length}</div><div class="mt-1 text-zinc-500">steps</div></div>
-          <div class="rounded border border-white/10 bg-white/[.03] p-2"><div class="font-mono text-zinc-100">${contexts.length}</div><div class="mt-1 text-zinc-500">contexts</div></div>
-          <div class="rounded border border-white/10 bg-white/[.03] p-2"><div class="font-mono text-zinc-100">${formatTime(job.updated_at || new Date().toISOString())}</div><div class="mt-1 text-zinc-500">updated</div></div>
-        </div>
-        <div class="rounded border border-white/10 bg-white/[.03] p-3">
-          <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Current step</div>
-          <div class="mt-1 text-sm text-zinc-200">${escapeHTML(runningStep.action || runningStep.status || "waiting for updates")}</div>
-          ${runningStep.status ? `<div class="mt-1 text-xs text-zinc-500">${escapeHTML(runningStep.status)}</div>` : ""}
-        </div>
-        <button type="button" data-action="chat#openContextItem" data-context-id="${escapeHTML(latestContext.id || "")}" class="w-full rounded border border-white/10 bg-white/[.03] p-3 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/10 ${latestContext.id ? "" : "pointer-events-none opacity-60"}">
-          <div class="text-xs uppercase tracking-[.16em] text-zinc-500">Latest context</div>
-          <div class="mt-1 font-mono text-xs text-zinc-300">${escapeHTML(latestContext.key || "none")}</div>
-        </button>
-      </div>
-    `);
+    renderChatProgress(this.progressViewHost(), details);
+  }
+
+  private progressViewHost() {
+    return {
+      hasProgressState: () => this.hasProgressStateTarget,
+      progressState: () => this.progressStateTarget,
+      recycle: (target: string, html: string) => this.recycle(target, html),
+    };
   }
 
   indexContexts(contexts) {
@@ -1306,33 +577,12 @@ export default class ChatController extends Controller {
     }
   }
 
-  async persistUISessionState(state: Record<string, unknown>) {
-    try {
-      await readJSON(await fetch("/v1/ui/session", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state }),
-      }));
-    } catch (error) {
-      this.addEvent("ui_session_error", { error: errorMessage(error) });
-    }
-  }
-
   recycle(target: string, html: string, mode: RecyclrSinkMode = "html"): void {
-    const bundle = buildRecyclrBundle(target, html);
-    const controller = this.gxController ?? (window as Window & { omniRecyclr?: GxController }).omniRecyclr ?? null;
-    setGlobalLoading(true);
-    try {
-      if (controller && typeof controller.renderBundle === "function") {
-        try {
-          controller.renderBundle(bundle);
-        } catch {
-          /* Recyclr may be unavailable; direct sink update below still applies. */
-        }
-      }
-      applyRecyclrSink(this.element, target, html, mode);
-    } finally {
-      setGlobalLoading(false);
-    }
+    const controller = this.recyclrController ?? (window as Window & { omniRecyclr?: RecyclrController }).omniRecyclr;
+    if (!controller) throw new Error("The page-scoped Recyclr controller is unavailable.");
+    void renderRecyclrBundle(controller, target, html, mode).catch((error) => {
+      console.error(`Failed to render Recyclr sink ${JSON.stringify(target)}`, error);
+      toastFromError(error);
+    });
   }
 }

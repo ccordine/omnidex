@@ -21,14 +21,6 @@ import (
 	"github.com/gryph/omnidex/internal/worker"
 )
 
-func envOrFallback(key, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value != "" {
-		return value
-	}
-	return strings.TrimSpace(fallback)
-}
-
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -56,6 +48,9 @@ func main() {
 		secretResolver := secrets.NewResolver(repo)
 		secrets.SetGlobal(secretResolver)
 		secrets.OverlayConfig(&cfg, secretResolver)
+	}
+	if err := config.Validate(cfg); err != nil {
+		log.Fatalf("config validation error: %v", err)
 	}
 
 	if shouldResolveOllamaEndpoint(cfg) {
@@ -86,114 +81,37 @@ func main() {
 		)
 	}
 
-	ollamaDefaultModel := envOrFallback("OLLAMA_MODEL", "")
-	openAIDefaultModel := envOrFallback("OPENAI_MODEL", "")
-	azureAIDefaultModel := envOrFallback("AZURE_AI_MODEL", envOrFallback("AZURE_OPENAI_DEPLOYMENT", ""))
-	xAIDefaultModel := envOrFallback("XAI_MODEL", envOrFallback("GROK_MODEL", ""))
-	googleDefaultModel := envOrFallback("GOOGLE_MODEL", envOrFallback("GEMINI_MODEL", ""))
-	anthropicDefaultModel := envOrFallback("ANTHROPIC_MODEL", envOrFallback("CLAUDE_MODEL", ""))
-	huggingFaceDefaultModel := envOrFallback("HUGGINGFACE_MODEL", envOrFallback("HF_MODEL", ""))
-	ollamaEmbeddingModel := envOrFallback("OLLAMA_EMBEDDING_MODEL", "")
-	openAIEmbeddingModel := envOrFallback("OPENAI_EMBEDDING_MODEL", "")
-	azureAIEmbeddingModel := envOrFallback("AZURE_AI_EMBEDDING_MODEL", envOrFallback("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", ""))
-	googleEmbeddingModel := envOrFallback("GOOGLE_EMBEDDING_MODEL", envOrFallback("GEMINI_EMBEDDING_MODEL", ""))
-	huggingFaceEmbeddingModel := envOrFallback("HUGGINGFACE_EMBEDDING_MODEL", envOrFallback("HF_EMBEDDING_MODEL", ""))
-
-	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "ollama") {
-		ollamaDefaultModel = envOrFallback("OLLAMA_MODEL", cfg.DefaultModel)
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "openai") {
-		openAIDefaultModel = envOrFallback("OPENAI_MODEL", cfg.DefaultModel)
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "azure") {
-		azureAIDefaultModel = envOrFallback("AZURE_AI_MODEL", envOrFallback("AZURE_OPENAI_DEPLOYMENT", cfg.DefaultModel))
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "xai") {
-		xAIDefaultModel = envOrFallback("XAI_MODEL", envOrFallback("GROK_MODEL", cfg.DefaultModel))
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "google") {
-		googleDefaultModel = envOrFallback("GOOGLE_MODEL", envOrFallback("GEMINI_MODEL", cfg.DefaultModel))
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "anthropic") {
-		anthropicDefaultModel = envOrFallback("ANTHROPIC_MODEL", envOrFallback("CLAUDE_MODEL", cfg.DefaultModel))
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.LLMProvider), "huggingface") {
-		huggingFaceDefaultModel = envOrFallback("HUGGINGFACE_MODEL", envOrFallback("HF_MODEL", cfg.DefaultModel))
-	}
-	switch strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider)) {
-	case "ollama":
-		ollamaEmbeddingModel = envOrFallback("OLLAMA_EMBEDDING_MODEL", cfg.EmbeddingModel)
-	case "openai":
-		openAIEmbeddingModel = envOrFallback("OPENAI_EMBEDDING_MODEL", cfg.EmbeddingModel)
-	case "azure":
-		azureAIEmbeddingModel = envOrFallback("AZURE_AI_EMBEDDING_MODEL", envOrFallback("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", cfg.EmbeddingModel))
-	case "google":
-		googleEmbeddingModel = envOrFallback("GOOGLE_EMBEDDING_MODEL", envOrFallback("GEMINI_EMBEDDING_MODEL", cfg.EmbeddingModel))
-	case "huggingface":
-		huggingFaceEmbeddingModel = envOrFallback("HUGGINGFACE_EMBEDDING_MODEL", envOrFallback("HF_EMBEDDING_MODEL", cfg.EmbeddingModel))
-	}
-
 	httpServer := api.NewServerWithOptions(repo, llmClient, api.ServerOptions{
-		DefaultProvider:           cfg.LLMProvider,
-		RequestTimeout:            cfg.RequestTimeout,
-		V3Enabled:                 cfg.V3Enabled,
-		OllamaBaseURL:             cfg.OllamaBaseURL,
-		OllamaDefaultModel:        ollamaDefaultModel,
-		OllamaTaggingModel:        cfg.TaggingModel,
-		OllamaEmbeddingModel:      ollamaEmbeddingModel,
-		OpenAIBaseURL:             cfg.OpenAIBaseURL,
-		OpenAIAPIKey:              cfg.OpenAIAPIKey,
-		OpenAIOrganization:        cfg.OpenAIOrganization,
-		OpenAIProject:             cfg.OpenAIProject,
-		OpenAIDefaultModel:        openAIDefaultModel,
-		OpenAIEmbeddingModel:      openAIEmbeddingModel,
-		AzureAIBaseURL:            cfg.AzureAIBaseURL,
-		AzureAIAPIKey:             cfg.AzureAIAPIKey,
-		AzureAIAPIVersion:         cfg.AzureAIAPIVersion,
-		AzureAIAPIStyle:           cfg.AzureAIAPIStyle,
-		AzureAIDefaultModel:       azureAIDefaultModel,
-		AzureAIEmbeddingModel:     azureAIEmbeddingModel,
-		XAIBaseURL:                cfg.XAIBaseURL,
-		XAIAPIKey:                 cfg.XAIAPIKey,
-		XAIDefaultModel:           xAIDefaultModel,
-		GoogleBaseURL:             cfg.GoogleBaseURL,
-		GoogleAPIKey:              cfg.GoogleAPIKey,
-		GoogleDefaultModel:        googleDefaultModel,
-		GoogleEmbeddingModel:      googleEmbeddingModel,
-		AnthropicBaseURL:          cfg.AnthropicBaseURL,
-		AnthropicAPIKey:           cfg.AnthropicAPIKey,
-		AnthropicVersion:          cfg.AnthropicVersion,
-		AnthropicMaxTokens:        cfg.AnthropicMaxTokens,
-		AnthropicDefaultModel:     anthropicDefaultModel,
-		HuggingFaceBaseURL:        cfg.HuggingFaceBaseURL,
-		HuggingFaceAPIKey:         cfg.HuggingFaceAPIKey,
-		HuggingFaceDefaultModel:   huggingFaceDefaultModel,
-		HuggingFaceEmbeddingModel: huggingFaceEmbeddingModel,
-		WebSearchEnabled:          cfg.WebSearchEnabled,
-		WebSearchProviders:        cfg.WebSearchProviders,
-		WebSearchTimeout:          cfg.WebSearchTimeout,
-		CoreURL:                   cfg.CoreURL,
-		ListenAddr:                cfg.ListenAddr,
-		HostAgentURL:              cfg.HostAgentURL,
-		HostAgentToken:            cfg.HostAgentToken,
-		RealtimeMaxClients:        cfg.RealtimeMaxClients,
-		RealtimeStreamMaxAge:      cfg.RealtimeStreamMaxAge,
-		RealtimeHeartbeat:         cfg.RealtimeHeartbeat,
-		RealtimeWriteTimeout:      cfg.RealtimeWriteTimeout,
-		RedisURL:                  cfg.RedisURL,
-		UIRedisRequired:           cfg.UIRedisRequired,
-		UISessionTTL:              cfg.UISessionTTL,
+		LifecycleContext:     ctx,
+		ProviderConfig:       cfg,
+		RequestTimeout:       cfg.RequestTimeout,
+		V3Enabled:            cfg.V3Enabled,
+		WebSearchEnabled:     cfg.WebSearchEnabled,
+		WebSearchProviders:   cfg.WebSearchProviders,
+		WebSearchTimeout:     cfg.WebSearchTimeout,
+		CoreURL:              cfg.CoreURL,
+		ListenAddr:           cfg.ListenAddr,
+		HostAgentURL:         cfg.HostAgentURL,
+		HostAgentToken:       cfg.HostAgentToken,
+		RealtimeMaxClients:   cfg.RealtimeMaxClients,
+		RealtimeStreamMaxAge: cfg.RealtimeStreamMaxAge,
+		RealtimeHeartbeat:    cfg.RealtimeHeartbeat,
+		RealtimeWriteTimeout: cfg.RealtimeWriteTimeout,
+		RedisURL:             cfg.RedisURL,
+		UIRedisRequired:      cfg.UIRedisRequired,
+		UISessionTTL:         cfg.UISessionTTL,
 	})
 	if !cfg.WrapperOnly {
-		workerService := worker.New(
+		workerService, err := worker.New(
 			repo,
 			llmClient,
 			webSearchService,
 			worker.Options{
-				WorkerCount:    cfg.WorkerCount,
-				PollInterval:   cfg.WorkerPollInterval,
-				RetrievalLimit: cfg.RetrievalLimit,
-				ContextBudget:  cfg.ContextCharBudget,
+				WorkerCount:            cfg.WorkerCount,
+				PollInterval:           cfg.WorkerPollInterval,
+				RetrievalLimit:         cfg.RetrievalLimit,
+				ContextBudget:          cfg.ContextCharBudget,
+				InferenceContextTokens: cfg.InferenceContextTokens,
 				Models: worker.ModelRouting{
 					Default:    cfg.DefaultModel,
 					Fast:       cfg.FastModel,
@@ -236,8 +154,13 @@ func main() {
 				OnJobOutput:             httpServer.OnJobOutputAsync,
 			},
 		)
+		if err != nil {
+			log.Fatalf("configure worker: %v", err)
+		}
 		go workerService.Start(ctx)
-		httpServer.StartScrumAutoWorkLoop(ctx)
+		if err := httpServer.StartScrumAutoWorkLoop(ctx); err != nil {
+			log.Fatalf("start Scrum auto-work loop: %v", err)
+		}
 	}
 	log.Printf("core listening on %s core_url=%s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.CoreURL, cfg.LLMProvider, cfg.WrapperOnly)
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {

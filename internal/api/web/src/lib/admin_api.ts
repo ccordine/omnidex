@@ -88,9 +88,9 @@ export async function fetchAPISecrets(): Promise<{ storage: string; fields: APIS
   return readJSON(response);
 }
 
-export async function saveAPISecrets(values: Record<string, string>, clearKeys: string[] = []): Promise<void> {
+export async function saveAPISecrets(values: Record<string, string>, clearKeys: string[] = []): Promise<{ restart_required: boolean; message: string }> {
   const response = await fetch("/v1/settings/secrets", jsonPut({ values, clear_keys: clearKeys }));
-  await readJSON(response);
+  return readJSON(response);
 }
 
 export type DataSource = {

@@ -12,72 +12,103 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func (s *Server) envAgentConfig() agentconfig.Config {
-	return s.defaultAgentConfig(context.Background())
+func (s *Server) defaultAgentConfig(ctx context.Context) (agentconfig.Config, error) {
+	cfg, _, err := s.resolveAgentConfig(ctx, model.Project{}, ScrumCard{})
+	return cfg, err
 }
 
-func (s *Server) defaultAgentConfig(ctx context.Context) agentconfig.Config {
-	cfg, _ := s.resolveAgentConfig(ctx, model.Project{}, ScrumCard{})
-	return cfg
-}
-
-func (s *Server) workspaceAgentConfig(ctx context.Context) agentconfig.Config {
+func (s *Server) workspaceAgentConfig(ctx context.Context) (agentconfig.Config, error) {
 	if s.repo == nil {
-		return agentconfig.Config{}
+		return agentconfig.Config{}, nil
 	}
 	stored, err := s.repo.GetWorkspaceAgentConfig(ctx)
-	if err != nil || len(stored) == 0 {
-		return agentconfig.Config{}
+	if err != nil {
+		return nil, fmt.Errorf("load workspace agent configuration: %w", err)
 	}
-	return agentconfig.FromStringMap(stored)
+	cfg, err := agentconfig.FromStringMap(stored)
+	if err != nil {
+		return nil, fmt.Errorf("parse workspace agent configuration: %w", err)
+	}
+	return cfg, nil
 }
 
-func (s *Server) projectAgentConfig(project model.Project) agentconfig.Config {
-	return agentconfig.FromSettingsJSON(project.Settings)
+func (s *Server) projectAgentConfig(project model.Project) (agentconfig.Config, error) {
+	cfg, err := agentconfig.FromSettingsJSON(project.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("parse project agent configuration: %w", err)
+	}
+	return cfg, nil
 }
 
-func (s *Server) cardAgentConfig(card ScrumCard) agentconfig.Config {
+func (s *Server) cardAgentConfig(card ScrumCard) (agentconfig.Config, error) {
 	if len(card.AgentConfig) == 0 {
-		return agentconfig.Config{}
+		return agentconfig.Config{}, nil
 	}
-	return agentconfig.FromJSON(card.AgentConfig)
+	cfg, err := agentconfig.FromJSON(card.AgentConfig)
+	if err != nil {
+		return nil, fmt.Errorf("parse Scrum card agent configuration: %w", err)
+	}
+	return cfg, nil
 }
 
 // resolveAgentConfig merges: env → workspace (global DB) → project → card → instance.
-func (s *Server) resolveAgentConfig(ctx context.Context, project model.Project, card ScrumCard, instance ...agentconfig.Config) (agentconfig.Config, string) {
-	stack := agentconfig.Stack{
-		Workspace:  s.workspaceAgentConfig(ctx),
-		Project:    s.projectAgentConfig(project),
-		Card:       s.cardAgentConfig(card),
-		ProcessEnv: agentconfig.FromEnv(),
+func (s *Server) resolveAgentConfig(ctx context.Context, project model.Project, card ScrumCard, instance ...agentconfig.Config) (agentconfig.Config, string, error) {
+	workspace, err := s.workspaceAgentConfig(ctx)
+	if err != nil {
+		return nil, "", err
 	}
-	if path, err := resolveEnvFilePath(); err == nil {
-		if values, err := readEnvFile(path); err == nil {
-			stack.EnvFile = agentconfig.FromEnvFileValues(values)
-		}
+	projectCfg, err := s.projectAgentConfig(project)
+	if err != nil {
+		return nil, "", err
+	}
+	cardCfg, err := s.cardAgentConfig(card)
+	if err != nil {
+		return nil, "", err
+	}
+	processEnv, err := agentconfig.FromEnv()
+	if err != nil {
+		return nil, "", err
+	}
+	stack := agentconfig.Stack{
+		Workspace:  workspace,
+		Project:    projectCfg,
+		Card:       cardCfg,
+		ProcessEnv: processEnv,
+	}
+	path, err := resolveEnvFilePath()
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve agent environment file: %w", err)
+	}
+	values, err := readEnvFile(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("read agent environment file: %w", err)
+	}
+	stack.EnvFile, err = agentconfig.FromEnvFileValues(values)
+	if err != nil {
+		return nil, "", err
 	}
 	if len(instance) > 0 && len(instance[0]) > 0 {
+		if err := agentconfig.Validate(instance[0]); err != nil {
+			return nil, "", fmt.Errorf("instance agent configuration: %w", err)
+		}
 		stack.Instance = instance[0]
 	}
 	return stack.Resolve()
 }
 
-func (s *Server) agentConfigJobMetadata(ctx context.Context, project model.Project, card ScrumCard, instance ...agentconfig.Config) map[string]any {
-	resolved, source := s.resolveAgentConfig(ctx, project, card, instance...)
+func (s *Server) agentConfigJobMetadata(ctx context.Context, project model.Project, card ScrumCard, instance ...agentconfig.Config) (map[string]any, error) {
+	resolved, source, err := s.resolveAgentConfig(ctx, project, card, instance...)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]any{
 		"agent_config":        resolved.ToMap(),
 		"agent_config_source": source,
 	}
 	if resolved.IsExternal() {
 		payload["external_agents_used"] = []string{resolved.ExternalAgentName()}
-		payload["execution_agent"] = resolved.System()
-	} else {
-		payload["execution_agent"] = agentconfig.SystemOmnidex
 	}
-	if resolved.IsStrict() {
-		payload["agent_strict"] = true
-	}
-	return payload
+	return payload, nil
 }
 
 func mergeProjectAgentConfig(settings json.RawMessage, agentConfig json.RawMessage) (json.RawMessage, error) {
@@ -100,13 +131,8 @@ func mergeProjectAgentConfig(settings json.RawMessage, agentConfig json.RawMessa
 	return out, nil
 }
 
-func extractSettingsAgentConfig(settings json.RawMessage) json.RawMessage {
-	cfg := agentconfig.FromSettingsJSON(settings)
-	if len(cfg) == 0 {
-		return json.RawMessage(`{}`)
-	}
-	out, _ := json.Marshal(cfg.ToMap())
-	return out
+func extractSettingsAgentConfig(settings json.RawMessage) (json.RawMessage, error) {
+	return extractSettingsJSONObject(settings, "agent_config")
 }
 
 func agentConfigPatchFromRequest(raw json.RawMessage) (json.RawMessage, error) {
@@ -122,15 +148,13 @@ func agentConfigPatchFromRequest(raw json.RawMessage) (json.RawMessage, error) {
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
-		if key == "agent_system" {
-			value = agentconfig.Config{"agent_system": value}.System()
-		}
-		if key == "agent_strict" && !(agentconfig.Config{"agent_strict": value}).IsStrict() {
-			continue
-		}
 		clean[key] = strings.TrimSpace(value)
 	}
-	out, err := json.Marshal(clean)
+	cfg, err := agentconfig.FromStringMap(clean)
+	if err != nil {
+		return nil, err
+	}
+	out, err := json.Marshal(cfg.ToMap())
 	if err != nil {
 		return nil, err
 	}
@@ -158,13 +182,37 @@ func (s *Server) handleResolvedAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	defaults := s.defaultAgentConfig(ctx)
-	projectID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("project_id")), 10, 64)
+	defaults, err := s.defaultAgentConfig(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	projectIDText := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	projectID := int64(0)
+	if projectIDText != "" {
+		var err error
+		projectID, err = strconv.ParseInt(projectIDText, 10, 64)
+		if err != nil || projectID <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid project_id")
+			return
+		}
+	}
 	cardID := strings.TrimSpace(r.URL.Query().Get("card_id"))
 	card := ScrumCard{}
-	if cardID != "" && s.repo != nil && projectID > 0 {
-		if dbCard, err := s.repo.GetScrumCard(ctx, projectID, cardID); err == nil {
-			card = dbScrumCardToAPI(dbCard)
+	if cardID != "" {
+		if s.repo == nil || projectID <= 0 {
+			writeError(w, http.StatusBadRequest, "card_id requires a project_id and PostgreSQL repository")
+			return
+		}
+		dbCard, err := s.repo.GetScrumCard(ctx, projectID, cardID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		card, err = dbScrumCardToAPI(dbCard)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
 	}
 	if projectID > 0 {
@@ -190,14 +238,24 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		ctx := r.Context()
-		cfg := s.defaultAgentConfig(ctx)
+		cfg, err := s.defaultAgentConfig(ctx)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		stored := map[string]string{}
 		if s.repo != nil {
-			if values, err := s.repo.GetWorkspaceAgentConfig(ctx); err == nil {
-				stored = values
+			stored, err = s.repo.GetWorkspaceAgentConfig(ctx)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
 			}
 		}
-		path, _ := resolveEnvFilePath()
+		path, err := resolveEnvFilePath()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"storage":   "database",
 			"env_file":  path,
@@ -232,8 +290,16 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		cfg := s.defaultAgentConfig(r.Context())
-		path, _ := resolveEnvFilePath()
+		cfg, err := s.defaultAgentConfig(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		path, err := resolveEnvFilePath()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"storage":   "database",
 			"env_file":  path,
@@ -248,13 +314,15 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) resolvedAgentsForProjectCard(ctx context.Context, projectID int64, card ScrumCard) (map[string]any, error) {
 	if s.repo == nil || projectID <= 0 {
-		resolved, source := s.resolveAgentConfig(ctx, model.Project{}, card)
+		resolved, source, err := s.resolveAgentConfig(ctx, model.Project{}, card)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{
 			"resolved": resolved.ToMap(),
 			"source":   source,
 			"fields":   resolved.FieldList(map[string]string{}),
 			"system":   resolved.System(),
-			"strict":   resolved.IsStrict(),
 			"external": resolved.IsExternal(),
 		}, nil
 	}
@@ -262,13 +330,15 @@ func (s *Server) resolvedAgentsForProjectCard(ctx context.Context, projectID int
 	if err != nil {
 		return nil, err
 	}
-	resolved, source := s.resolveAgentConfig(ctx, project, card)
+	resolved, source, err := s.resolveAgentConfig(ctx, project, card)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
 		"resolved": resolved.ToMap(),
 		"source":   source,
 		"fields":   resolved.FieldList(map[string]string{}),
 		"system":   resolved.System(),
-		"strict":   resolved.IsStrict(),
 		"external": resolved.IsExternal(),
 	}, nil
 }

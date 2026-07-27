@@ -2,16 +2,27 @@ package api
 
 import (
 	"embed"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 //go:embed web/panels/*.html
 var uiPanelFS embed.FS
 
+var (
+	localizedUIPanelsOnce sync.Once
+	localizedUIPanels     map[string]map[uiLocale]string
+	localizedUIPanelsErr  error
+)
+
+var uiPanelNames = []string{"chat", "data", "projects", "jobs", "memory", "metrics", "admin"}
+
 type uiPanelResponse struct {
-	Panel string `json:"panel"`
-	HTML  string `json:"html"`
+	Panel  string   `json:"panel"`
+	Locale uiLocale `json:"locale"`
+	HTML   string   `json:"html"`
 }
 
 func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
@@ -31,38 +42,80 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state["panel"] = panel
-	mergeUIQueryState(state, r)
+	if err := mergeUIQueryState(state, r); err != nil {
+		logUILocaleRejection(sessionID, "panel", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	locale, err := ensureUIStateLocale(state, r)
+	if err != nil {
+		logUILocaleRejection(sessionID, "panel", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if _, err := s.persistUIState(r.Context(), sessionID, state); err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	html, err := loadUIPanelHTML(panel)
+	html, err := loadUIPanelHTML(panel, locale)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "panel template missing")
+		writeError(w, http.StatusInternalServerError, "panel localization failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, uiPanelResponse{Panel: panel, HTML: html})
+	setUILocaleResponseHeaders(w, locale)
+	writeJSON(w, http.StatusOK, uiPanelResponse{Panel: panel, Locale: locale, HTML: html})
 }
 
 func normalizeUIPanel(value string) string {
 	value = strings.TrimSpace(value)
-	switch value {
-	case "", "chat":
+	if value == "" {
 		return "chat"
-	case "data", "projects", "jobs", "memory", "metrics", "admin":
-		return value
-	default:
-		return ""
 	}
+	for _, panel := range uiPanelNames {
+		if value == panel {
+			return panel
+		}
+	}
+	return ""
 }
 
-func loadUIPanelHTML(panel string) (string, error) {
-	path := "web/panels/" + panel + ".html"
-	raw, err := uiPanelFS.ReadFile(path)
-	if err != nil {
+func loadUIPanelHTML(panel string, locale uiLocale) (string, error) {
+	if err := prepareLocalizedUIPanels(); err != nil {
 		return "", err
 	}
-	html := strings.TrimSpace(string(raw))
-	html = strings.Replace(html, `class="hidden h-full min-h-0 flex-col"`, `class="flex h-full min-h-0 flex-col"`, 1)
+	locales, exists := localizedUIPanels[panel]
+	if !exists {
+		return "", fmt.Errorf("UI panel %q is not configured", panel)
+	}
+	html, exists := locales[locale]
+	if !exists {
+		return "", fmt.Errorf("UI panel %q locale %q is not configured", panel, locale)
+	}
 	return html, nil
+}
+
+func prepareLocalizedUIPanels() error {
+	localizedUIPanelsOnce.Do(func() {
+		localizedUIPanels = make(map[string]map[uiLocale]string, len(uiPanelNames))
+		for _, panel := range uiPanelNames {
+			path := "web/panels/" + panel + ".html"
+			raw, err := uiPanelFS.ReadFile(path)
+			if err != nil {
+				localizedUIPanelsErr = fmt.Errorf("read UI panel %q: %w", panel, err)
+				return
+			}
+			template := strings.TrimSpace(string(raw))
+			template = strings.Replace(template, `class="hidden h-full min-h-0 flex-col"`, `class="flex h-full min-h-0 flex-col"`, 1)
+			localizedUIPanels[panel] = make(map[uiLocale]string, len(supportedUILocaleOptions))
+			for _, option := range supportedUILocaleOptions {
+				rendered, err := renderLocalizedHTML(template, option.Code)
+				if err != nil {
+					localizedUIPanelsErr = fmt.Errorf("render UI panel %q locale %q: %w", panel, option.Code, err)
+					return
+				}
+				localizedUIPanels[panel][option.Code] = rendered
+			}
+		}
+	})
+	return localizedUIPanelsErr
 }

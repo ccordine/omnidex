@@ -343,6 +343,11 @@ func TestHandleTurnPassesSessionHistoryToStructuredCommandPath(t *testing.T) {
 	app.ollama = NewOllamaClient(server.URL, "fake")
 	app.promptInterpreter = &fakePromptInterpreter{interpretations: []PromptInterpretation{{
 		RequiresReferenceHistory: true,
+		ObjectiveLedger: []StructuredObjective{requiredCommandObjectiveForTest(
+			"report_session_history_weather",
+			"Report weather evidence using approved session history",
+			"printf",
+		)},
 	}}}
 	app.runLogger, _ = NewRunLogger(t.TempDir(), "structured-history-test")
 	defer app.runLogger.Close()

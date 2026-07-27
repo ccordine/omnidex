@@ -11,7 +11,6 @@ import (
 type cliAgentRuntimeFlags struct {
 	AgentSystem          string
 	AgentModel           string
-	AgentStrict          bool
 	CursorModel          string
 	CodexModel           string
 	CodexReasoningEffort string
@@ -24,7 +23,6 @@ type cliAgentRuntimeFlags struct {
 type cliAgentRuntimeFlagPointers struct {
 	AgentSystem          *string
 	AgentModel           *string
-	AgentStrict          *bool
 	CursorModel          *string
 	CodexModel           *string
 	CodexReasoningEffort *string
@@ -38,7 +36,6 @@ func registerCLIAgentRuntimeFlags(fs *flag.FlagSet) cliAgentRuntimeFlagPointers 
 	return cliAgentRuntimeFlagPointers{
 		AgentSystem:          fs.String("agent", "", "override execution agent for this run: omnidex|cursor|codex"),
 		AgentModel:           fs.String("agent-model", "", "override model for the selected external agent (requires --agent cursor|codex)"),
-		AgentStrict:          fs.Bool("agent-strict", false, "mark this run as strict external-agent execution"),
 		CursorModel:          fs.String("cursor-model", "", "override Cursor SDK model for this run"),
 		CodexModel:           fs.String("codex-model", "", "override Codex SDK model for this run"),
 		CodexReasoningEffort: fs.String("codex-reasoning-effort", "", "Codex reasoning effort: minimal|low|medium|high|xhigh"),
@@ -56,13 +53,9 @@ func (p cliAgentRuntimeFlagPointers) Values() cliAgentRuntimeFlags {
 		}
 		return strings.TrimSpace(*ptr)
 	}
-	boolValue := func(ptr *bool) bool {
-		return ptr != nil && *ptr
-	}
 	return cliAgentRuntimeFlags{
 		AgentSystem:          value(p.AgentSystem),
 		AgentModel:           value(p.AgentModel),
-		AgentStrict:          boolValue(p.AgentStrict),
 		CursorModel:          value(p.CursorModel),
 		CodexModel:           value(p.CodexModel),
 		CodexReasoningEffort: value(p.CodexReasoningEffort),
@@ -77,11 +70,6 @@ func cliAgentRuntimeConfigFromFlags(flags cliAgentRuntimeFlags) (*cliAgentRuntim
 	cfg := newCLIAgentRuntimeConfig()
 	if strings.TrimSpace(flags.AgentSystem) != "" {
 		if err := cfg.Set("agent_system", flags.AgentSystem); err != nil {
-			return nil, err
-		}
-	}
-	if flags.AgentStrict {
-		if err := cfg.Set("agent_strict", "true"); err != nil {
 			return nil, err
 		}
 	}

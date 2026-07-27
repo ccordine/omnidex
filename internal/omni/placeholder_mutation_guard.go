@@ -104,7 +104,10 @@ func placeholderMutationLeftEmptyArtifacts(command, workingDirectory string) boo
 }
 
 func validateConflictingEntrypointMutation(command, workingDirectory string) error {
-	targets := mutationWriteTargetPaths(command)
+	targets, err := mutationWriteTargetPaths(command)
+	if err != nil {
+		return err
+	}
 	if len(targets) == 0 {
 		return nil
 	}
@@ -117,32 +120,6 @@ func validateConflictingEntrypointMutation(command, workingDirectory string) err
 		}
 	}
 	return nil
-}
-
-func mutationWriteTargetPaths(command string) []string {
-	out := []string{}
-	lower := strings.ToLower(command)
-	if idx := strings.Index(lower, ">"); idx >= 0 {
-		left := strings.TrimSpace(command[:idx])
-		fields := strings.Fields(left)
-		if len(fields) > 0 {
-			out = append(out, fields[len(fields)-1])
-		}
-	}
-	for _, segment := range structuredCommandSegments(command) {
-		if len(segment) == 0 {
-			continue
-		}
-		if cleanCommandPathToken(segment[0]) != "touch" {
-			continue
-		}
-		for _, arg := range segment[1:] {
-			if !strings.HasPrefix(arg, "-") {
-				out = append(out, arg)
-			}
-		}
-	}
-	return uniqueNonEmptyStrings(out)
 }
 
 func conflictingIndexHTMLShell(workingDirectory, target string) error {

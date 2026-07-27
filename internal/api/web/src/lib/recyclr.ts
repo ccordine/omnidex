@@ -1,34 +1,29 @@
 import RecyclrModule from "recyclrjs";
 import { cssEscape } from "./dom";
 import { setGlobalLoading } from "./loading";
-import { scheduleDomUpdate } from "./main_thread";
+import type { RecyclrRenderEvent } from "./recyclr_bundle_queue";
 
-type RecyclrEvent = {
-  selector: string;
-  location: string;
-  selection: string;
-};
-
-type RecyclrGX = {
-  render: (events: RecyclrEvent[]) => void;
+export type RecyclrGX = {
+  render: (events: RecyclrRenderEvent[]) => void;
   history?: boolean;
-  consumeRealtime?: (message: Record<string, unknown>) => void | Promise<void>;
 };
 
-type RecyclrBundleHost = {
+export type RecyclrBundleHost = {
   renderBundle: (html: string) => void | Promise<void>;
 };
 
-type RecyclrStream = {
+export type RecyclrStream = {
   start: () => void;
   stop: () => void;
+  isConnected: () => boolean;
+  transport: () => string | null;
 };
 
 const RecyclrGXCtor = (RecyclrModule as { GX?: new (options: Record<string, unknown>) => RecyclrGX }).GX;
 const createRecyclrStreamFn = (RecyclrModule as { createRecyclrStream?: (options: Record<string, unknown>) => RecyclrStream }).createRecyclrStream;
 
-export function createRecyclrGX(): RecyclrGX | null {
-  if (!RecyclrGXCtor) return null;
+export function createRecyclrGX(): RecyclrGX {
+  if (!RecyclrGXCtor) throw new Error("RecyclrJS GX is unavailable.");
   return new RecyclrGXCtor({
     url: location.href,
     method: "get",
@@ -40,15 +35,15 @@ export function createRecyclrGX(): RecyclrGX | null {
 }
 
 export function createRecyclrRealtimeStream(
-  gx: RecyclrGX,
-  onMessage?: (message: Record<string, unknown>) => void,
-): RecyclrStream | null {
-  if (!createRecyclrStreamFn) return null;
+  onMessage: (message: Record<string, unknown>) => void,
+): RecyclrStream {
+  if (!createRecyclrStreamFn) throw new Error("RecyclrJS realtime transport is unavailable.");
   return createRecyclrStreamFn({
     wsUrl: "/v1/realtime/ws",
-    sseUrl: "/v1/realtime/sse",
-    topics: ["ui", "metrics", "scrum"],
-    gx,
+    topics: ["ui", "metrics", "scrum", "jobs"],
+    heartbeatMs: 10_000,
+    backoffBaseMs: 250,
+    backoffMaxMs: 5_000,
     debug: false,
     onMessage,
   });
@@ -65,51 +60,29 @@ export function buildRecyclrBundle(target: string, html: string, location = "inn
   return template.outerHTML;
 }
 
-export function applyRecyclrSink(
-  root: ParentNode,
-  target: string,
-  html: string,
-  mode: RecyclrSinkMode = "html",
-): void {
-  const sink = root.querySelector(`[data-recyclr-sink="${cssEscape(target)}"]`);
-  if (!sink) return;
-  if (mode === "text") {
-    sink.textContent = html;
-    return;
-  }
-  sink.innerHTML = html;
-}
-
-function isPromiseLike(value: unknown): value is Promise<void> {
-  return Boolean(value && typeof (value as Promise<void>).then === "function");
-}
-
 export async function renderRecyclrBundle(
   host: RecyclrBundleHost | null,
   target: string,
   html: string,
   mode: RecyclrSinkMode = "html",
 ): Promise<void> {
-  const bundle = buildRecyclrBundle(target, html);
-  let renderedWithHost = false;
-  let hostRenderResult: void | Promise<void>;
-  await scheduleDomUpdate(() => {
-    setGlobalLoading(true);
-    try {
-      if (host && typeof host.renderBundle === "function") {
-        hostRenderResult = host.renderBundle(bundle);
-        renderedWithHost = true;
-        return;
-      }
-      applyRecyclrSink(document, target, html, mode);
-    } finally {
-      if (!renderedWithHost) setGlobalLoading(false);
-    }
-  });
-  if (!renderedWithHost) return;
+  if (!host || typeof host.renderBundle !== "function") {
+    throw new Error("The page-scoped Recyclr controller is unavailable.");
+  }
+  if (!document.querySelector(`[data-recyclr-sink="${cssEscape(target)}"]`)) {
+    throw new Error(`Required Recyclr sink ${JSON.stringify(target)} is unavailable.`);
+  }
+  const bundle = buildRecyclrBundle(target, mode === "text" ? escapeText(html) : html);
+  setGlobalLoading(true);
   try {
-    if (isPromiseLike(hostRenderResult)) await hostRenderResult;
+    await host.renderBundle(bundle);
   } finally {
     setGlobalLoading(false);
   }
+}
+
+function escapeText(value: string): string {
+  const node = document.createElement("span");
+  node.textContent = value;
+  return node.innerHTML;
 }

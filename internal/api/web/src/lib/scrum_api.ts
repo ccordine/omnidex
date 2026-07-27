@@ -1,6 +1,6 @@
 import { readJSON } from "./api";
 import { projectQuery } from "./project_api";
-import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCardModalResponse, ScrumCreateTicketConfig, ScrumHealthResponse } from "./scrum_types";
+import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCardModalResponse, ScrumChannelPage, ScrumCreateTicketConfig } from "./scrum_types";
 
 export type ScrumCardLlmJob = {
   id: number;
@@ -57,12 +57,11 @@ export async function fetchScrumCardPayload(cardID: string, projectID?: number |
 export async function fetchScrumCardModal(
   cardID: string,
   projectID?: number | null,
-  options: { tab?: string; partial?: boolean } = {},
+  options: { tab?: string } = {},
 ): Promise<ScrumCardModalResponse> {
   const query = new URLSearchParams();
   if (projectID != null) query.set("project_id", String(projectID));
   if (options.tab?.trim()) query.set("tab", options.tab.trim());
-  if (options.partial) query.set("partial", "true");
   const suffix = query.toString() ? `?${query.toString()}` : "";
   const response = await fetch(`/v1/scrum/cards/${encodeURIComponent(cardID)}/modal${suffix}`);
   const payload = await readJSON<ScrumCardModalResponse>(response);
@@ -70,20 +69,6 @@ export async function fetchScrumCardModal(
     throw new Error("Card modal did not return a card");
   }
   return payload;
-}
-
-export async function fetchScrumHealth(
-  projectID?: number | null,
-  fingerprint = "",
-  options: { column?: string | null } = {},
-): Promise<ScrumHealthResponse> {
-  const query = new URLSearchParams();
-  if (projectID != null) query.set("project_id", String(projectID));
-  if (fingerprint.trim()) query.set("fingerprint", fingerprint.trim());
-  if (options.column?.trim()) query.set("column", options.column.trim());
-  const suffix = query.toString() ? `?${query.toString()}` : "";
-  const response = await fetch(`/v1/scrum/cards/health${suffix}`);
-  return readJSON<ScrumHealthResponse>(response);
 }
 
 export async function updateScrumBoard(
@@ -98,21 +83,6 @@ export async function updateScrumBoard(
   });
   const payload = await readJSON<{ board: ScrumBoard }>(response);
   return payload.board;
-}
-
-export async function patchScrumAutoPlay(
-  enabled: boolean,
-  projectID?: number | null,
-  autoWork?: ScrumAutoWorkConfig,
-): Promise<ScrumBoardResponse> {
-  const body: Record<string, unknown> = { auto_play_through: enabled };
-  if (autoWork) body.auto_work = { ...autoWork, enabled };
-  const response = await fetch(`/v1/scrum${projectQuery(projectID)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return readJSON<ScrumBoardResponse>(response);
 }
 
 export async function patchScrumAutoWork(
@@ -296,6 +266,18 @@ export async function chatScrumCard(
     body: JSON.stringify({ message }),
   });
   return readJSON(response);
+}
+
+export async function fetchScrumChannelPage(
+  cardID: string,
+  before: string,
+  projectID?: number | null,
+): Promise<ScrumChannelPage> {
+  if (!before.trim()) throw new Error("An earlier channel page requires a cursor.");
+  const query = new URLSearchParams({ before: before.trim(), limit: "50" });
+  if (projectID != null) query.set("project_id", String(projectID));
+  const response = await fetch(`/v1/scrum/cards/${encodeURIComponent(cardID)}/chat?${query.toString()}`);
+  return readJSON<ScrumChannelPage>(response);
 }
 
 export async function cardTicketScrumCard(

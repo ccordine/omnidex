@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/omni"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -52,7 +51,12 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		items := make([]map[string]any, 0, len(projects))
 		for _, project := range projects {
-			items = append(items, s.projectSummary(r.Context(), project))
+			summary, err := s.projectSummary(r.Context(), project)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			items = append(items, summary)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"projects": items})
 	case http.MethodPost:
@@ -74,16 +78,17 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		recipe := req.Recipe
 		if len(recipe) == 0 && strings.TrimSpace(req.RecipeID) != "" {
-			recipe, _ = s.loadCatalogRecipeJSON(req.RecipeID)
+			recipe, err = s.loadCatalogRecipeJSON(req.RecipeID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 		}
 		project, err := s.repo.CreateProject(r.Context(), req.Name, location, req.Description, req.RecipeID, recipe)
 		if err != nil {
 			if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-				project, err = s.repo.GetProjectByLocation(r.Context(), location)
-				if err != nil {
-					writeError(w, http.StatusConflict, "project location already exists")
-					return
-				}
+				writeError(w, http.StatusConflict, "project location already exists")
+				return
 			} else {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
@@ -94,7 +99,12 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]any{"project": s.projectSummary(r.Context(), project)})
+		summary, err := s.projectSummary(r.Context(), project)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("project %d was created but its summary failed: %v", project.ID, err))
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"project": summary})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -149,13 +159,22 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 			writeProjectError(w, err)
 			return
 		}
-		payload := map[string]any{"project": s.projectSummary(r.Context(), project)}
-		if resolved, err := s.resolvedModelsForProjectCard(r.Context(), id, ScrumCard{}); err == nil {
-			payload["model_config"] = resolved
+		summary, err := s.projectSummary(r.Context(), project)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
-		if agentResolved, err := s.resolvedAgentsForProjectCard(r.Context(), id, ScrumCard{}); err == nil {
-			payload["agent_config"] = agentResolved
+		resolved, err := s.resolvedModelsForProjectCard(r.Context(), id, ScrumCard{})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
+		agentResolved, err := s.resolvedAgentsForProjectCard(r.Context(), id, ScrumCard{})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		payload := map[string]any{"project": summary, "model_config": resolved, "agent_config": agentResolved}
 		writeJSON(w, http.StatusOK, payload)
 	case http.MethodPatch:
 		var req struct {
@@ -228,7 +247,12 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 			writeProjectError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project)})
+		summary, err := s.projectSummary(r.Context(), project)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("project %d was updated but its summary failed: %v", project.ID, err))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"project": summary})
 	case http.MethodDelete:
 		if err := s.repo.DeleteProject(r.Context(), id); err != nil {
 			writeProjectError(w, err)
@@ -255,7 +279,12 @@ func (s *Server) handleProjectSurvey(w http.ResponseWriter, r *http.Request, id 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"project": s.projectSummary(r.Context(), project)})
+	summary, err := s.projectSummary(r.Context(), project)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("project %d was surveyed but its summary failed: %v", project.ID, err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"project": summary})
 }
 
 func splitProjectPath(path string) (id int64, action string) {
@@ -279,46 +308,93 @@ func writeProjectError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, err.Error())
 }
 
-func extractSettingsModelConfig(settings json.RawMessage) json.RawMessage {
-	cfg := modelconfig.FromSettingsJSON(settings)
-	if len(cfg) == 0 {
-		return json.RawMessage(`{}`)
-	}
-	out, _ := json.Marshal(cfg.ToMap())
-	return out
+func extractSettingsModelConfig(settings json.RawMessage) (json.RawMessage, error) {
+	return extractSettingsJSONObject(settings, "model_config")
 }
 
-func (s *Server) projectSummary(ctx context.Context, project model.Project) map[string]any {
-	jobs, _ := s.repo.CountProjectJobs(ctx, project.ID)
-	cards, _ := s.repo.CountProjectCards(ctx, project.ID)
+func (s *Server) projectSummary(ctx context.Context, project model.Project) (map[string]any, error) {
+	jobs, err := s.repo.CountProjectJobs(ctx, project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("count jobs for project %d: %w", project.ID, err)
+	}
+	cards, err := s.repo.CountProjectCards(ctx, project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("count cards for project %d: %w", project.ID, err)
+	}
+	recipe, err := jsonRawOrObject(project.Recipe)
+	if err != nil {
+		return nil, fmt.Errorf("decode project %d recipe: %w", project.ID, err)
+	}
+	settings, err := jsonRawOrObject(project.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("decode project %d settings: %w", project.ID, err)
+	}
+	modelConfigRaw, err := extractSettingsModelConfig(project.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("decode project %d model config: %w", project.ID, err)
+	}
+	modelConfig, err := jsonRawOrObject(modelConfigRaw)
+	if err != nil {
+		return nil, err
+	}
+	agentConfigRaw, err := extractSettingsAgentConfig(project.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("decode project %d agent config: %w", project.ID, err)
+	}
+	agentConfig, err := jsonRawOrObject(agentConfigRaw)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
 		"id":            project.ID,
 		"name":          project.Name,
 		"location":      project.Location,
 		"description":   project.Description,
 		"recipe_id":     project.RecipeID,
-		"recipe":        jsonRawOrObject(project.Recipe),
+		"recipe":        recipe,
 		"project_state": project.ProjectState,
-		"settings":      jsonRawOrObject(project.Settings),
-		"model_config":  jsonRawOrObject(extractSettingsModelConfig(project.Settings)),
-		"agent_config":  jsonRawOrObject(extractSettingsAgentConfig(project.Settings)),
+		"settings":      settings,
+		"model_config":  modelConfig,
+		"agent_config":  agentConfig,
 		"last_seen_at":  project.LastSeenAt,
 		"created_at":    project.CreatedAt,
 		"updated_at":    project.UpdatedAt,
 		"job_count":     jobs,
 		"card_count":    cards,
-	}
+	}, nil
 }
 
-func jsonRawOrObject(raw json.RawMessage) any {
+func jsonRawOrObject(raw json.RawMessage) (any, error) {
 	if len(raw) == 0 {
-		return map[string]any{}
+		return map[string]any{}, nil
 	}
 	var out any
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return map[string]any{}
+		return nil, err
 	}
-	return out
+	return out, nil
+}
+
+func extractSettingsJSONObject(settings json.RawMessage, key string) (json.RawMessage, error) {
+	if len(settings) == 0 {
+		return json.RawMessage(`{}`), nil
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(settings, &root); err != nil {
+		return nil, err
+	}
+	raw, ok := root[key]
+	if !ok || len(raw) == 0 {
+		return json.RawMessage(`{}`), nil
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, fmt.Errorf("%s must be a JSON object: %w", key, err)
+	}
+	if object == nil {
+		return nil, fmt.Errorf("%s must be a JSON object", key)
+	}
+	return raw, nil
 }
 
 func (s *Server) initializeProjectState(ctx context.Context, project model.Project) (model.Project, error) {
@@ -344,7 +420,7 @@ func (s *Server) loadCatalogRecipeJSON(recipeID string) (json.RawMessage, error)
 			return json.Marshal(recipe)
 		}
 	}
-	return json.RawMessage(`{}`), nil
+	return nil, fmt.Errorf("recipe %q was not found", strings.TrimSpace(recipeID))
 }
 
 func (s *Server) resolveProjectID(r *http.Request) (int64, error) {
@@ -383,12 +459,16 @@ func (s *Server) scrumBoardFromProject(ctx context.Context, projectID int64) (Sc
 		UpdatedAt:        project.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	for _, card := range cards {
-		board.Cards = append(board.Cards, dbScrumCardToAPI(card))
+		apiCard, err := dbScrumCardToAPI(card)
+		if err != nil {
+			return ScrumBoard{}, fmt.Errorf("decode Scrum card %q: %w", card.ID, err)
+		}
+		board.Cards = append(board.Cards, apiCard)
 	}
 	return board, nil
 }
 
-func dbScrumCardToAPI(card queue.DBScrumCard) ScrumCard {
+func dbScrumCardToAPI(card queue.DBScrumCard) (ScrumCard, error) {
 	out := ScrumCard{
 		ID:           card.ID,
 		Title:        card.Title,
@@ -418,19 +498,54 @@ func dbScrumCardToAPI(card queue.DBScrumCard) ScrumCard {
 		TestCriteria: []ScrumChecklistItem{},
 		FlowMetrics:  card.FlowMetrics,
 	}
-	_ = json.Unmarshal(card.Checklist, &out.Checklist)
-	_ = json.Unmarshal(card.RefFiles, &out.RefFiles)
-	_ = json.Unmarshal(card.Chat, &out.Chat)
-	_ = json.Unmarshal(card.PlanningChat, &out.PlanningChat)
-	_ = json.Unmarshal(card.Tags, &out.Tags)
-	_ = json.Unmarshal(card.TestCriteria, &out.TestCriteria)
-	return out
+	fields := []struct {
+		name   string
+		raw    json.RawMessage
+		target any
+	}{
+		{"checklist", card.Checklist, &out.Checklist},
+		{"ref_files", card.RefFiles, &out.RefFiles},
+		{"chat", card.Chat, &out.Chat},
+		{"planning_chat", card.PlanningChat, &out.PlanningChat},
+		{"tags", card.Tags, &out.Tags},
+		{"test_criteria", card.TestCriteria, &out.TestCriteria},
+	}
+	for _, field := range fields {
+		if err := json.Unmarshal(field.raw, field.target); err != nil {
+			return ScrumCard{}, fmt.Errorf("%s must contain valid typed JSON: %w", field.name, err)
+		}
+	}
+	for name, raw := range map[string]json.RawMessage{
+		"model_config": card.ModelConfig,
+		"agent_config": card.AgentConfig,
+		"recipe":       card.Recipe,
+		"coach_config": card.CoachConfig,
+		"flow_metrics": card.FlowMetrics,
+	} {
+		var object map[string]any
+		if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+			if err == nil {
+				err = fmt.Errorf("expected JSON object")
+			}
+			return ScrumCard{}, fmt.Errorf("%s must contain valid typed JSON: %w", name, err)
+		}
+	}
+	return out, nil
 }
 
-func apiScrumCardToPatch(card ScrumCard) map[string]any {
-	checklist, _ := json.Marshal(card.Checklist)
-	refFiles, _ := json.Marshal(card.RefFiles)
-	chat, _ := json.Marshal(card.Chat)
+func apiScrumCardToPatch(card ScrumCard) (map[string]any, error) {
+	checklist, err := json.Marshal(card.Checklist)
+	if err != nil {
+		return nil, fmt.Errorf("encode Scrum card checklist: %w", err)
+	}
+	refFiles, err := json.Marshal(card.RefFiles)
+	if err != nil {
+		return nil, fmt.Errorf("encode Scrum card reference files: %w", err)
+	}
+	chat, err := json.Marshal(card.Chat)
+	if err != nil {
+		return nil, fmt.Errorf("encode Scrum card chat: %w", err)
+	}
 	modelConfig := card.ModelConfig
 	if len(modelConfig) == 0 {
 		modelConfig = json.RawMessage(`{}`)
@@ -443,12 +558,31 @@ func apiScrumCardToPatch(card ScrumCard) map[string]any {
 	if len(recipe) == 0 {
 		recipe = json.RawMessage(`{}`)
 	}
-	tags, _ := json.Marshal(card.Tags)
-	planningChat, _ := json.Marshal(card.PlanningChat)
-	testCriteria, _ := json.Marshal(card.TestCriteria)
+	tags, err := json.Marshal(card.Tags)
+	if err != nil {
+		return nil, fmt.Errorf("encode Scrum card tags: %w", err)
+	}
+	planningChat, err := json.Marshal(card.PlanningChat)
+	if err != nil {
+		return nil, fmt.Errorf("encode Scrum card planning chat: %w", err)
+	}
+	testCriteria, err := json.Marshal(card.TestCriteria)
+	if err != nil {
+		return nil, fmt.Errorf("encode Scrum card test criteria: %w", err)
+	}
 	coachConfig := card.CoachConfig
 	if len(coachConfig) == 0 {
 		coachConfig = json.RawMessage(`{}`)
+	}
+	for name, raw := range map[string]json.RawMessage{
+		"model_config": modelConfig,
+		"agent_config": agentConfig,
+		"recipe":       recipe,
+		"coach_config": coachConfig,
+	} {
+		if !json.Valid(raw) {
+			return nil, fmt.Errorf("Scrum card %s must contain valid JSON", name)
+		}
 	}
 	return map[string]any{
 		"title":         sanitizeScrumChannelText(card.Title),
@@ -474,7 +608,7 @@ func apiScrumCardToPatch(card ScrumCard) map[string]any {
 		"play_state":    card.PlayState,
 		"queue_order":   card.QueueOrder,
 		"board_order":   card.BoardOrder,
-	}
+	}, nil
 }
 
 func (s *Server) validateProjectLocation(ctx context.Context, raw string) (string, error) {

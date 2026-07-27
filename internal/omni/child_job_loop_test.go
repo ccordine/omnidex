@@ -187,9 +187,9 @@ func TestFailedMoveCreatesFailurePacketWithMissingSourceFile(t *testing.T) {
 	obs := StructuredCommandObservation{
 		CommandID: "cmd_mv",
 		Command:   "mv src/App.js src/App.jsx",
-		ExitCode: 1,
-		Stderr:   "mv: cannot stat 'src/App.js': No such file or directory",
-		CWD:      "/repo/app",
+		ExitCode:  1,
+		Stderr:    "mv: cannot stat 'src/App.js': No such file or directory",
+		CWD:       "/repo/app",
 	}
 	job = AppendChildJobAttemptWithContext(job, obs, "shell", "shell_specialist", "qwen", "/repo/app")
 	if len(job.AttemptLedger) != 1 {
@@ -214,10 +214,12 @@ func TestNextSpecialistPromptIncludesChildFailureAttemptHistory(t *testing.T) {
 		RequiredEvidence: []string{"file_exists:src/App.jsx", "file_absent:src/App.js"},
 	}}
 	obs := []StructuredCommandObservation{{
-		CommandID: "cmd_mv",
-		Command:   "mv src/App.js src/App.jsx",
-		ExitCode: 1,
-		Stderr:   "mv: cannot stat 'src/App.js': No such file or directory",
+		CommandID:   "cmd_mv",
+		ChildJobID:  "rename_app_js_to_jsx",
+		ObjectiveID: "rename_app_js_to_jsx",
+		Command:     "mv src/App.js src/App.jsx",
+		ExitCode:    1,
+		Stderr:      "mv: cannot stat 'src/App.js': No such file or directory",
 	}}
 	message := buildStructuredCommandUserMessage("repair Vite JSX", obs, t.TempDir(), ledger, MinimalContext{}, nil, WorksiteSurvey{})
 	if !strings.Contains(message, "attempt_ledger") || !strings.Contains(message, "mv src/App.js src/App.jsx") || !strings.Contains(message, "cannot stat") {
@@ -242,8 +244,8 @@ func TestChildJobLongStderrIsSummarizedWithOutputRef(t *testing.T) {
 	job := AppendChildJobAttempt(ChildJob{ID: "verify_build", Status: ChildJobStatusActive}, StructuredCommandObservation{
 		CommandID: "cmd_build",
 		Command:   "npm run build",
-		ExitCode: 1,
-		Stderr:   long,
+		ExitCode:  1,
+		Stderr:    long,
 	}, "shell", "shell_specialist", "")
 	if job.LatestFailurePacket == nil {
 		t.Fatalf("missing failure packet: %#v", job)
@@ -278,7 +280,7 @@ func TestRepeatedFailedCommandRejectedFromAttemptLedgerInStructuredRun(t *testin
 		events = append(events, evt)
 	}, nil, structuredCommandDecisionRunConfig{
 		CurrentWorkingDirectory: t.TempDir(),
-		PromptInterpreter:      interpreter,
+		PromptInterpreter:       interpreter,
 	})
 	if !structuredEventsContain(events, "child_job_attempt_repeat_rejected") {
 		t.Fatalf("missing repeat rejection event: events=%#v result=%#v", events, result)

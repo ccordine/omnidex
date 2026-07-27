@@ -119,6 +119,7 @@ type ChildJobLoopInput struct {
 	WorkingDirectory  string
 	Observations      []StructuredCommandObservation
 	ObjectiveLedger   []StructuredObjective
+	FocusedJobID      string
 	ProposedParentJob *ChildJob
 	Reviewer          ChildJobReviewer
 }
@@ -143,7 +144,10 @@ func RunChildJobLoopOnce(input ChildJobLoopInput) ChildJobLoopResult {
 		Jobs:            jobs,
 		ObjectiveLedger: cloneStructuredObjectiveLedger(input.ObjectiveLedger),
 	}
-	activeIndex := activeChildJobIndex(jobs)
+	activeIndex := focusChildJobIndex(jobs, input.FocusedJobID, &result.Events)
+	if activeIndex < 0 {
+		activeIndex = activeChildJobIndex(jobs)
+	}
 	if activeIndex >= 0 && !childJobTerminal(jobs[activeIndex]) {
 		result.PlannerBlocked = true
 		if input.ProposedParentJob != nil {
@@ -222,6 +226,38 @@ func RunChildJobLoopOnce(input ChildJobLoopInput) ChildJobLoopResult {
 	result.Jobs = jobs
 	result.ActiveJob = &result.Jobs[activeIndex]
 	return result
+}
+
+func focusChildJobIndex(jobs []ChildJob, requestedID string, events *[]ChildJobEvent) int {
+	requestedID = strings.TrimSpace(requestedID)
+	if requestedID == "" {
+		return -1
+	}
+	focused := -1
+	for i := range jobs {
+		if jobs[i].ID == requestedID && !childJobTerminal(jobs[i]) {
+			focused = i
+			break
+		}
+	}
+	if focused < 0 {
+		return -1
+	}
+	previous := ""
+	for i := range jobs {
+		if i == focused || !childJobActive(jobs[i]) {
+			continue
+		}
+		previous = firstNonEmpty(previous, jobs[i].ID)
+		jobs[i].Status = ChildJobStatusPending
+	}
+	if previous != "" && events != nil {
+		*events = append(*events, childJobEvent("child_job_focus_transferred", "Child job focus transferred to the explicit command owner", map[string]string{
+			"from_child_job_id": previous,
+			"to_child_job_id":   requestedID,
+		}))
+	}
+	return focused
 }
 
 func childJobEvidenceStatus(job ChildJob, observations []StructuredCommandObservation, workingDir string) ([]string, []string) {

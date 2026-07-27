@@ -29,7 +29,12 @@ func (s *Server) handleProjectDebugger(w http.ResponseWriter, r *http.Request, p
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, http.StatusOK, s.projectDebuggerStatus(r.Context(), project))
+		status, err := s.projectDebuggerStatus(r.Context(), project)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
 	case "debugger/run":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -42,15 +47,39 @@ func (s *Server) handleProjectDebugger(w http.ResponseWriter, r *http.Request, p
 }
 
 func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request, project model.Project) {
-	agentResolved, _ := s.resolvedAgentsForProjectCard(r.Context(), project.ID, ScrumCard{})
+	agentResolved, err := s.resolvedAgentsForProjectCard(r.Context(), project.ID, ScrumCard{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("resolve project debugger agent: %v", err))
+		return
+	}
 	agentSystem := "omnidex"
 	if v, ok := agentResolved["system"].(string); ok && strings.TrimSpace(v) != "" {
 		agentSystem = strings.TrimSpace(v)
 	}
-	modelResolved, _ := s.resolveModelConfig(project, ScrumCard{})
-	analyzerModel := modelconfig.AnalyzerModel(modelResolved, s.ollamaDefaultModel, "qwen3:4b-thinking")
-	ticketModel := modelconfig.PlannerTicketModel(modelResolved, s.ollamaDefaultModel, "llama3.2")
-	s.SyncProjectMapAsync(project.ID)
+	modelResolved, _, err := s.resolveModelConfig(project, ScrumCard{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("resolve project debugger model: %v", err))
+		return
+	}
+	runtimeDefault, err := s.requiredDefaultLLMModel()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("resolve default project debugger model: %v", err))
+		return
+	}
+	analyzerModel, err := modelconfig.AnalyzerModel(modelResolved, runtimeDefault)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ticketModel, err := modelconfig.PlannerTicketModel(modelResolved, runtimeDefault)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.syncProjectMapByID(r.Context(), project.ID); err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("synchronize project map before analysis: %v", err))
+		return
+	}
 	metadata, err := projectdebugger.JobMetadata(project.ID, agentSystem, analyzerModel, ticketModel)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -73,7 +102,7 @@ func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request
 		Summary:     "Scanning project directory and backlog for issues, then creating backlog cards with planning tickets...",
 	}
 	if err := s.saveDebuggerLastRun(r.Context(), project, lastRun); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("job %d was queued but debugger status persistence failed: %v", job.ID, err))
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{
@@ -83,50 +112,82 @@ func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func (s *Server) projectDebuggerStatus(ctx context.Context, project model.Project) map[string]any {
-	lastRun := loadDebuggerLastRun(project.Settings)
+func (s *Server) projectDebuggerStatus(ctx context.Context, project model.Project) (map[string]any, error) {
+	lastRun, err := loadDebuggerLastRun(project.Settings)
+	if err != nil {
+		return nil, err
+	}
 	if lastRun.JobID > 0 && (lastRun.Status == "running" || lastRun.Status == "pending") && s.repo != nil {
-		if details, err := s.repo.GetJobDetails(ctx, lastRun.JobID); err == nil {
-			job := details.Job
-			switch job.Status {
-			case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
-				lastRun.Status = job.Status
-			default:
-				lastRun.Status = "running"
-			}
-			if strings.TrimSpace(job.Error) != "" {
-				lastRun.Error = job.Error
-			}
+		jobProjectID, err := s.repo.JobProjectID(ctx, lastRun.JobID)
+		if err != nil {
+			return nil, fmt.Errorf("load debugger job %d project authority: %w", lastRun.JobID, err)
+		}
+		if jobProjectID != project.ID {
+			return nil, fmt.Errorf("debugger job %d belongs to project %d, expected %d", lastRun.JobID, jobProjectID, project.ID)
+		}
+		details, err := s.repo.GetJobDetails(ctx, lastRun.JobID)
+		if err != nil {
+			return nil, fmt.Errorf("load debugger job %d: %w", lastRun.JobID, err)
+		}
+		job := details.Job
+		switch job.Status {
+		case model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting,
+			model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
+			lastRun.Status = job.Status
+		default:
+			return nil, fmt.Errorf("debugger job %d has unsupported status %q", job.ID, job.Status)
+		}
+		if strings.TrimSpace(job.Error) != "" {
+			lastRun.Error = job.Error
 		}
 	}
-	agentResolved, _ := s.resolvedAgentsForProjectCard(ctx, project.ID, ScrumCard{})
+	agentResolved, err := s.resolvedAgentsForProjectCard(ctx, project.ID, ScrumCard{})
+	if err != nil {
+		return nil, fmt.Errorf("resolve project debugger agent: %w", err)
+	}
 	return map[string]any{
 		"last_run":     lastRun,
 		"agent_config": agentResolved,
-	}
+	}, nil
 }
 
-func loadDebuggerLastRun(settings json.RawMessage) projectdebugger.LastRun {
+func loadDebuggerLastRun(settings json.RawMessage) (projectdebugger.LastRun, error) {
 	if len(settings) == 0 {
-		return projectdebugger.LastRun{}
+		return projectdebugger.LastRun{}, nil
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(settings, &payload); err != nil {
-		return projectdebugger.LastRun{}
+		return projectdebugger.LastRun{}, fmt.Errorf("parse project debugger settings: %w", err)
 	}
 	raw, ok := payload[projectdebugger.SettingsKey]
 	if !ok || len(raw) == 0 {
-		return projectdebugger.LastRun{}
+		return projectdebugger.LastRun{}, nil
 	}
 	run := projectdebugger.LastRun{}
-	_ = json.Unmarshal(raw, &run)
-	return run
+	if err := json.Unmarshal(raw, &run); err != nil {
+		return projectdebugger.LastRun{}, fmt.Errorf("parse %s: %w", projectdebugger.SettingsKey, err)
+	}
+	if run.JobID > 0 && run.ProjectID <= 0 {
+		return projectdebugger.LastRun{}, fmt.Errorf("%s.project_id is required when job_id is set", projectdebugger.SettingsKey)
+	}
+	return run, nil
 }
 
 func (s *Server) saveDebuggerLastRun(ctx context.Context, project model.Project, run projectdebugger.LastRun) error {
+	if s == nil || s.repo == nil {
+		return fmt.Errorf("project debugger status requires a PostgreSQL repository")
+	}
+	if ctx == nil {
+		return fmt.Errorf("project debugger status requires a context")
+	}
+	if project.ID <= 0 || run.JobID <= 0 || run.ProjectID != project.ID {
+		return fmt.Errorf("project debugger status has invalid project or job authority")
+	}
 	var settings map[string]any
 	if len(project.Settings) > 0 {
-		_ = json.Unmarshal(project.Settings, &settings)
+		if err := json.Unmarshal(project.Settings, &settings); err != nil {
+			return fmt.Errorf("parse existing project settings: %w", err)
+		}
 	}
 	if settings == nil {
 		settings = map[string]any{}

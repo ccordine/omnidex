@@ -2,14 +2,14 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
+	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
@@ -24,19 +24,11 @@ func (s *Server) enqueueScrumCardLLMJob(
 	if s.repo == nil || projectID <= 0 {
 		return model.Job{}, ScrumCard{}, fmt.Errorf("queue unavailable")
 	}
-	field := "tags_job_id"
+	field := queue.ScrumCardTagsJob
 	if action == scrumcardllm.ActionCardTicket {
-		field = "ticket_job_id"
-	}
-	if existing := strings.TrimSpace(cardFieldJobID(card, field)); existing != "" {
-		if jobID, err := parseJobID(existing); err == nil {
-			if details, err := s.repo.GetJobDetails(ctx, jobID); err == nil {
-				switch details.Job.Status {
-				case model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting:
-					return model.Job{}, ScrumCard{}, fmt.Errorf("a %s job is already running for this card", actionLabel(action))
-				}
-			}
-		}
+		field = queue.ScrumCardTicketJob
+	} else if action != scrumcardllm.ActionTagsSuggest {
+		return model.Job{}, ScrumCard{}, fmt.Errorf("unsupported Scrum card LLM action %q", action)
 	}
 
 	metadata, err := scrumcardllm.JobMetadata(projectID, card.ID, action, coachModel, ticketModel, ticketReq)
@@ -44,19 +36,19 @@ func (s *Server) enqueueScrumCardLLMJob(
 		return model.Job{}, ScrumCard{}, err
 	}
 	instruction := scrumCardLLMInstruction(card, action, ticketReq)
-	enqueueCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	job, err := s.repo.EnqueueJob(enqueueCtx, instruction, scrumcardllm.Pipeline(), metadata)
-	cancel()
+	job, err := s.repo.EnqueueScrumCardJob(ctx, projectID, card.ID, field, instruction, metadata)
 	if err != nil {
 		return model.Job{}, ScrumCard{}, err
 	}
-
-	patch := map[string]any{field: strconv.FormatInt(job.ID, 10)}
-	updated, err := s.repo.UpdateScrumCard(ctx, projectID, card.ID, patch)
+	updated, err := s.repo.GetScrumCard(ctx, projectID, card.ID)
 	if err != nil {
-		return model.Job{}, ScrumCard{}, err
+		return model.Job{}, ScrumCard{}, fmt.Errorf("job %d was queued and linked, but its card could not be reloaded: %w", job.ID, err)
 	}
-	return job, dbScrumCardToAPI(updated), nil
+	apiCard, err := dbScrumCardToAPI(updated)
+	if err != nil {
+		return model.Job{}, ScrumCard{}, fmt.Errorf("decode linked card for job %d: %w", job.ID, err)
+	}
+	return job, apiCard, nil
 }
 
 func scrumCardLLMInstruction(card ScrumCard, action string, ticketReq scrumcardllm.TicketRequest) string {
@@ -88,48 +80,26 @@ func actionLabel(action string) string {
 	}
 }
 
-func cardFieldJobID(card ScrumCard, field string) string {
-	switch field {
-	case "tags_job_id":
-		return card.TagsJobID
-	case "ticket_job_id":
-		return card.TicketJobID
-	default:
-		return ""
+func (s *Server) scrumCardTicketModel(ctx context.Context, projectID int64) (string, error) {
+	if s.repo == nil {
+		return "", fmt.Errorf("PostgreSQL repository is required to resolve the Scrum card ticket model")
 	}
-}
-
-func (s *Server) scrumCardLLMJobActive(ctx context.Context, jobIDText string) bool {
-	jobIDText = strings.TrimSpace(jobIDText)
-	if jobIDText == "" || s.repo == nil {
-		return false
-	}
-	jobID, err := parseJobID(jobIDText)
-	if err != nil {
-		return false
-	}
-	details, err := s.repo.GetJobDetails(ctx, jobID)
-	if err != nil {
-		return false
-	}
-	switch details.Job.Status {
-	case model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting:
-		return true
-	default:
-		return false
-	}
-}
-
-func (s *Server) scrumCardTicketModel(ctx context.Context, projectID int64) string {
-	if s.repo == nil || projectID <= 0 {
-		return modelconfig.PlannerTicketModel(modelconfig.Config{}, s.ollamaDefaultModel, "llama3.2")
+	if projectID <= 0 {
+		return "", fmt.Errorf("project_id is required to resolve the Scrum card ticket model")
 	}
 	project, err := s.repo.GetProject(ctx, projectID)
 	if err != nil {
-		return modelconfig.PlannerTicketModel(modelconfig.Config{}, s.ollamaDefaultModel, "llama3.2")
+		return "", fmt.Errorf("load project %d ticket model: %w", projectID, err)
 	}
-	resolved, _ := s.resolveModelConfig(project, ScrumCard{})
-	return modelconfig.PlannerTicketModel(resolved, s.ollamaDefaultModel, "llama3.2")
+	resolved, _, err := s.resolveModelConfig(project, ScrumCard{})
+	if err != nil {
+		return "", err
+	}
+	runtimeDefault, err := s.requiredDefaultLLMModel()
+	if err != nil {
+		return "", err
+	}
+	return modelconfig.PlannerTicketModel(resolved, runtimeDefault)
 }
 
 func writeScrumCardLLMQueued(w http.ResponseWriter, job model.Job, card ScrumCard, message string) {
@@ -139,4 +109,12 @@ func writeScrumCardLLMQueued(w http.ResponseWriter, job model.Job, card ScrumCar
 		"message": message,
 		"queued":  true,
 	})
+}
+
+func writeScrumCardLLMEnqueueError(w http.ResponseWriter, err error) {
+	status := http.StatusBadGateway
+	if errors.Is(err, queue.ErrScrumCardJobActive) {
+		status = http.StatusConflict
+	}
+	writeError(w, status, err.Error())
 }

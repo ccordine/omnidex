@@ -200,7 +200,7 @@ func TestMessage(t *testing.T) {
 }
 GO
 "$workspace/toolchain/go/bin/go" test ./...
-"$workspace/toolchain/go/bin/go" build -o demo-go-cli .
+"$workspace/toolchain/go/bin/go" build -buildvcs=false -o demo-go-cli .
 ./demo-go-cli
 "$workspace/toolchain/go/bin/go" version
 printf 'RUN_GUIDE cd %%s/demo-go-cli && ./demo-go-cli\n' "$workspace"`, workspace)

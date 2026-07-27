@@ -101,6 +101,120 @@ func TestAutoWorkFailureReasonTruncationKeepsValidUTF8(t *testing.T) {
 	}
 }
 
+func TestGlobalAutoWorkDoesNotSkipAuthoritativeFailures(t *testing.T) {
+	source := readAPISource(t, "scrum_global_autowork.go")
+	for _, forbidden := range []string{
+		"scrum global auto-work load project=%d",
+		"scrum global running reconcile project=%d",
+		"if board, err := s.scrumBoardFromProject(ctx, candidate.projectID); err == nil",
+		"if refreshed, err := s.kickoffAutoPlayThrough",
+		"return true\n\t}\n\treturn running",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("global Scrum auto-work contains a hidden recovery path %q", forbidden)
+		}
+	}
+}
+
+func TestAIControlDoesNotSwallowPauseOrResumeFailures(t *testing.T) {
+	source := readAPISource(t, "ai_control.go")
+	for _, forbidden := range []string{
+		"projectIDs, _ :=",
+		"if _, err := s.repo.CancelJob(ctx, jobID, \"global AI pause\"); err == nil",
+		"_ = s.refreshScrumPlayQueueForProject",
+		"s.RefreshScrumAutoWorkAsync()\n\treturn",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("AI control contains a swallowed orchestration failure %q", forbidden)
+		}
+	}
+}
+
+func TestAutoReviewDoesNotInventAVerdictOrIgnoreTelemetryFailure(t *testing.T) {
+	source := readAPISource(t, "scrum_auto_review.go")
+	for _, forbidden := range []string{
+		"completed without explicit verdict",
+		"job did not complete — bouncing",
+		"_ = s.repo.RecordScrumFlowEvent",
+		"payload, _ := json.Marshal",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("Scrum auto-review contains a hidden fallback %q", forbidden)
+		}
+	}
+}
+
+func TestScrumFlowMetricsLogsEveryPersistenceFailure(t *testing.T) {
+	source := readAPISource(t, "scrum_flow_metrics.go")
+	for _, forbidden := range []string{
+		"_ = s.repo.RecordScrumFlowEvent",
+		"_ = s.repo.UpdateScrumCardFlowMetrics",
+		"payload, _ := json.Marshal",
+		"raw, _ := json.Marshal(metrics)",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("Scrum flow metrics contains a swallowed failure %q", forbidden)
+		}
+	}
+}
+
+func TestScrumCardLLMEnqueueIsAtomicAndHasNoDuplicateFallback(t *testing.T) {
+	source := readAPISource(t, "scrum_card_llm_enqueue.go")
+	if !strings.Contains(source, "s.repo.EnqueueScrumCardJob(") {
+		t.Fatal("Scrum card LLM jobs must use the atomic repository operation")
+	}
+	for _, forbidden := range []string{
+		"s.repo.EnqueueJob(",
+		"s.repo.UpdateScrumCard(",
+		"if jobID, err := parseJobID(existing); err == nil",
+		"if details, err := s.repo.GetJobDetails(ctx, jobID); err == nil",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("Scrum card LLM enqueue contains a non-atomic or swallowed path %q", forbidden)
+		}
+	}
+}
+
+func TestContextTelemetryDoesNotSilentlyDropPersistenceFailures(t *testing.T) {
+	for _, path := range []string{"llm_context_telemetry.go", "scrum_pilot_metrics.go"} {
+		source := readAPISource(t, path)
+		if strings.Contains(source, "_ = s.repo.Record") {
+			t.Errorf("%s silently drops telemetry persistence failures", path)
+		}
+	}
+}
+
+func TestOperationalStatusEndpointsDoNotReturnPartialSuccess(t *testing.T) {
+	checks := map[string][]string{
+		"activity.go":             {"llmActivity, _ :="},
+		"data_sources_service.go": {"updated, _ := s.repo.UpdateDataSourceTestResult"},
+		"network_settings.go":     {"if stored, err := s.repo.GetCoreURL", "writeEnvFile("},
+	}
+	for path, forbidden := range checks {
+		source := readAPISource(t, path)
+		for _, snippet := range forbidden {
+			if strings.Contains(source, snippet) {
+				t.Errorf("%s contains partial-success path %q", path, snippet)
+			}
+		}
+	}
+}
+
+func TestScrumCardDatabaseJSONNeverSilentlyNormalizesCorruption(t *testing.T) {
+	source := readAPISource(t, "project_handlers.go")
+	for _, forbidden := range []string{
+		"_ = json.Unmarshal(card.",
+		"checklist, _ := json.Marshal",
+		"refFiles, _ := json.Marshal",
+		"chat, _ := json.Marshal",
+		"tags, _ := json.Marshal",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("Scrum card conversion silently normalizes invalid state %q", forbidden)
+		}
+	}
+}
+
 func readAPISource(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)

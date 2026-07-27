@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -21,11 +22,12 @@ func TestUIServesChatShell(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"Omni Chat",
-		`href="/ui/styles.css"`,
-		`data-controller="shell gx chat projects admin scrum"`,
+		`data-controller="shell recyclr chat projects scrum"`,
+		`data-recyclr-scope-value="page"`,
+		`data-recyclr-target="status"`,
 		`data-recyclr-sink="app-panel"`,
 		`Loading workspace`,
-		`id="gx-global-loading-indicator"`,
+		`id="recyclr-global-loading-indicator"`,
 		`data-chat-target="progress"`,
 		`click->scrum#stopCardClick`,
 		`data-recyclr-sink="modal"`,
@@ -36,6 +38,117 @@ func TestUIServesChatShell(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("chat shell missing %q", want)
 		}
+	}
+	if strings.Contains(body, `data-controller="shell gx`) {
+		t.Fatal("legacy gx controller remains on the page")
+	}
+	if strings.Contains(body, `href="/ui/styles.css"`) {
+		t.Fatal("legacy unbundled stylesheet remains in the page shell")
+	}
+}
+
+func TestLegacyUnbundledStylesheetRouteIsRemoved(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	req := httptest.NewRequest(http.MethodGet, "/ui/styles.css", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("legacy stylesheet status=%d want=%d", rec.Code, http.StatusNotFound)
+	}
+	source, err := os.ReadFile("ui.go")
+	if err != nil {
+		t.Fatalf("read ui.go: %v", err)
+	}
+	if strings.Contains(string(source), "web/styles.css") || strings.Contains(string(source), `HandleFunc("/ui/styles.css"`) {
+		t.Fatal("legacy unbundled stylesheet embed or route remains")
+	}
+}
+
+func TestAdminPanelOwnsItsDeferredController(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/ui/panel?panel=admin", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		HTML string `json:"html"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !strings.Contains(payload.HTML, `data-controller="admin"`) {
+		t.Fatal("admin panel must own its deferred controller")
+	}
+}
+
+func TestLegacyRealtimeSSERouteIsRemoved(t *testing.T) {
+	for _, name := range []string{"server.go", "realtime_handlers.go"} {
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if strings.Contains(string(source), "realtime/sse") || strings.Contains(string(source), "handleRealtimeSSE") {
+			t.Fatalf("legacy SSE realtime path remains in %s", name)
+		}
+	}
+}
+
+func TestRealtimeFrontendHasNoPollingFallbacks(t *testing.T) {
+	for _, name := range []string{
+		"web/src/controllers/scrum_controller.ts",
+		"web/src/controllers/chat_controller.ts",
+		"web/src/controllers/data_controller.ts",
+		"web/src/controllers/admin_controller.ts",
+		"web/src/controllers/projects_controller.ts",
+	} {
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, forbidden := range []string{
+			"set" + "Interval(",
+			"fetchScrum" + "Health",
+			"poll" + "Job(",
+			"pollDataSource" + "Job",
+			"debugger" + "Poll",
+			"keep " + "polling",
+		} {
+			if strings.Contains(string(source), forbidden) {
+				t.Fatalf("polling fallback %q remains in %s", forbidden, name)
+			}
+		}
+	}
+	if _, err := os.Stat("web/src/controllers/chat_component_controller.ts"); !os.IsNotExist(err) {
+		t.Fatalf("legacy chat component controller still exists: %v", err)
+	}
+}
+
+func TestLegacyScrumModalAndBoardRenderFallbacksAreRemoved(t *testing.T) {
+	controller, err := os.ReadFile("web/src/controllers/scrum_controller.ts")
+	if err != nil {
+		t.Fatalf("read scrum controller: %v", err)
+	}
+	for _, forbidden := range []string{
+		"isReactCardModalOpen",
+		"applyModalFromServer",
+		"card-modal-spa-refresh",
+		"data-scrum-tab-panel",
+		"data-scrum-channel-messages",
+		"renderScrumBoard(",
+		"renderScrumColumn(",
+	} {
+		if strings.Contains(string(controller), forbidden) {
+			t.Fatalf("legacy client-rendered Scrum path %q remains", forbidden)
+		}
+	}
+	if _, err := os.Stat("scrum_config_render.go"); !os.IsNotExist(err) {
+		t.Fatalf("legacy server HTML card-modal renderer still exists: %v", err)
 	}
 }
 

@@ -23,7 +23,7 @@ type agentRuntimeStepRunner func(context.Context, *model.ClaimedStep, map[string
 func (s *Service) runCodingWorkflowStep(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string) error {
 	engine := s.codingEngine
 	if engine == nil {
-		engine = runtimecoding.NewDeterministicEngine()
+		return fmt.Errorf("coding workflow requires a configured concrete coding engine; no coder or validator is available")
 	}
 
 	result, err := engine.Run(ctx, runtimecoding.Request{

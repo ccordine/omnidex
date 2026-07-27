@@ -10,21 +10,25 @@ import (
 // clients only observe server-authoritative card state.
 func (s *Server) refreshScrumCardLlmJobs(ctx context.Context, projectID int64, board ScrumBoard) (ScrumBoard, error) {
 	if s.repo == nil || projectID <= 0 {
-		return board, nil
+		return board, fmt.Errorf("postgres repository and project are required to refresh Scrum card LLM jobs")
 	}
 	for i, card := range board.Cards {
 		prevTags := strings.TrimSpace(card.TagsJobID)
 		prevTicket := strings.TrimSpace(card.TicketJobID)
-		if reconciled, ok := s.reconcileScrumCardLlmJobs(ctx, projectID, card); ok {
-			if saved, err := s.persistScrumCardFromContext(ctx, projectID, reconciled); err == nil {
-				if dbCard, loadErr := s.repo.GetScrumCard(ctx, projectID, saved.ID); loadErr == nil {
-					saved = dbScrumCardToAPI(dbCard)
-				}
-				board.Cards[i] = saved
-				if toast, tone := scrumCardLLMCompletionToast(prevTags, prevTicket, saved); toast != "" {
-					s.publishScrumModalCardRefreshWithToast(ctx, projectID, saved, "llm job finished", toast, tone)
-				}
-			}
+		reconciled, changed, err := s.reconcileScrumCardLlmJobs(ctx, projectID, card)
+		if err != nil {
+			return board, err
+		}
+		if !changed {
+			continue
+		}
+		saved, err := s.persistScrumCardFromContext(ctx, projectID, reconciled)
+		if err != nil {
+			return board, err
+		}
+		board.Cards[i] = saved
+		if toast, tone := scrumCardLLMCompletionToast(prevTags, prevTicket, saved); toast != "" {
+			s.publishScrumCardUpdateWithToast(ctx, projectID, saved, "llm job finished", toast, tone)
 		}
 	}
 	return board, nil

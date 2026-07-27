@@ -80,3 +80,17 @@ func TestRunnerScriptRequiresResolvedCodexPath(t *testing.T) {
 		t.Fatal("runner must fail loudly when codex_path is missing")
 	}
 }
+
+func TestRunnerScriptDoesNotCompleteAfterFailedOrTruncatedTurn(t *testing.T) {
+	failureGate := strings.Index(RunnerScript, "if (turnFailure)")
+	completionEvent := strings.LastIndex(RunnerScript, `type: "completed"`)
+	if failureGate < 0 || completionEvent < 0 || failureGate > completionEvent {
+		t.Fatal("runner must gate the completion event on turn failure")
+	}
+	if !strings.Contains(RunnerScript, "if (!turnCompleted)") {
+		t.Fatal("runner must reject a stream that ends without turn.completed")
+	}
+	if strings.Contains(RunnerScript, "evidence: items.map") {
+		t.Fatal("completion event must not duplicate the entire streamed transcript")
+	}
+}

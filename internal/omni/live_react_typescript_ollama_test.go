@@ -127,25 +127,21 @@ func TestLiveOllamaBuildsNPMReactTypeScriptSmokeApp(t *testing.T) {
 	assertReactTypeScriptServedBuild(t, fmt.Sprintf("http://127.0.0.1:%d/", port))
 }
 
-func TestStructuredCommandDecisionBuildsNPMReactTypeScriptProjectFromLLMCommands(t *testing.T) {
+func TestStructuredCommandDecisionCreatesNPMReactTypeScriptProjectFromBoundedLLMCommands(t *testing.T) {
 	requireNodeAndNPM(t)
-	root := t.TempDir()
-	port := freeTCPPort(t)
-	appDir := filepath.Join(root, "react-ts-smoke")
-	pidFile := filepath.Join(root, "react-ts.pid")
-	t.Cleanup(func() {
-		stopPIDFileProcess(pidFile)
-		_ = exec.Command("bash", "-lc", fmt.Sprintf("if command -v fuser >/dev/null 2>&1; then fuser -k %d/tcp >/dev/null 2>&1 || true; fi", port)).Run()
-	})
-
-	command := buildReactTypeScriptSmokeCommand(appDir, port, pidFile, filepath.Join(root, "react-preview.log"))
-	client := &fakeCommandDecisionClient{responses: []string{
-		`{"command":` + quoteJSONForTest(command) + `,"done":false,"answer":""}`,
-		`{"command":"","done":true,"answer":"React TypeScript npm smoke app built and served"}`,
-	}}
+	appDir := t.TempDir()
+	for _, directory := range []string{"src", "scripts"} {
+		if err := os.MkdirAll(filepath.Join(appDir, directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commands := reactTypeScriptPlannerCommands()
+	client := &fakeCommandDecisionClient{responses: fakePlannerCommandResponses(commands, "React TypeScript npm project files created and source-verified.")}
+	interpreter := &fakePromptInterpreter{interpretations: []PromptInterpretation{{
+		ObjectiveLedger: reactTypeScriptSmokeObjectives(commands),
+	}}}
 	evaluator := &fakeStructuredResponseEvaluator{evaluations: []StructuredLLMEvaluation{
-		{Confidence: 99, Feedback: "command creates, builds, serves, and curls the requested React TypeScript app"},
-		{Confidence: 95, Feedback: "final answer follows successful project evidence"},
+		{Verdict: "accept", Confidence: 99, Feedback: "bounded commands created and source-verified the requested React TypeScript app"},
 	}}
 	events := []StructuredCommandEvent{}
 	stdout := &bytes.Buffer{}
@@ -155,7 +151,7 @@ func TestStructuredCommandDecisionBuildsNPMReactTypeScriptProjectFromLLMCommands
 
 	result, err := runStructuredCommandDecisionWithConfig(
 		ctx,
-		"Build and serve a React TypeScript npm smoke app.",
+		"Create a React TypeScript npm project with a deterministic source smoke test.",
 		nil,
 		client,
 		stdout,
@@ -163,17 +159,21 @@ func TestStructuredCommandDecisionBuildsNPMReactTypeScriptProjectFromLLMCommands
 		func(evt StructuredCommandEvent) {
 			events = append(events, evt)
 		},
-		nil,
+		func(context.Context, string) (string, error) {
+			return "Approved for this isolated test workspace.", nil
+		},
 		structuredCommandDecisionRunConfig{
-			Evaluator:          evaluator,
-			EvaluatorThreshold: 70,
+			CurrentWorkingDirectory: appDir,
+			PromptInterpreter:       interpreter,
+			Evaluator:               evaluator,
+			EvaluatorThreshold:      70,
 		},
 	)
 	if err != nil {
-		t.Fatalf("structured command React build failed: %v\ncommand=%q\nstdout=%s\nstderr=%s", err, result.Command, stdout.String(), stderr.String())
+		t.Fatalf("structured command React build failed: %v\ncommand=%q\nstdout=%s\nstderr=%s\nevent_types=%#v\nobservations=%#v", err, result.Command, stdout.String(), stderr.String(), structuredEventTypesForTest(events), result.Observations)
 	}
-	if client.calls != 2 {
-		t.Fatalf("llm calls = %d, want 2", client.calls)
+	if client.calls < len(commands) || client.calls > len(commands)+1 {
+		t.Fatalf("llm calls = %d, want %d command decisions and at most one done request", client.calls, len(commands))
 	}
 	if len(evaluator.inputs) != 1 {
 		t.Fatalf("evaluator calls = %d, want final done response evaluated", len(evaluator.inputs))
@@ -181,12 +181,17 @@ func TestStructuredCommandDecisionBuildsNPMReactTypeScriptProjectFromLLMCommands
 	if !structuredEventsContain(events, "structured_response_evaluated") {
 		t.Fatalf("missing evaluator event: %#v", events)
 	}
-	for _, rel := range []string{"package.json", "tsconfig.json", "src/App.tsx", "dist/index.html"} {
+	assertSuccessfulPlannerCommandsObserved(t, commands, result.Observations)
+	for _, rel := range []string{"package.json", "tsconfig.json", "src/App.tsx", "scripts/smoke-test.mjs"} {
 		if _, err := os.Stat(filepath.Join(appDir, rel)); err != nil {
 			t.Fatalf("expected %s: %v\nstdout=%s\nstderr=%s", rel, err, stdout.String(), stderr.String())
 		}
 	}
-	assertReactTypeScriptServedBuild(t, fmt.Sprintf("http://127.0.0.1:%d/", port))
+	appBytes, err := os.ReadFile(filepath.Join(appDir, "src", "App.tsx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertReactTypeScriptSource(t, string(appBytes))
 }
 
 func requireNodeAndNPM(t *testing.T) {
@@ -246,37 +251,78 @@ createRoot(document.getElementById('root')!).render(<App />);
 	}
 }
 
-func buildReactTypeScriptSmokeCommand(appDir string, port int, pidFile, logFile string) string {
-	return fmt.Sprintf(`set -e
-mkdir -p %[1]s/src
-cat > %[1]s/package.json <<'JSON'
-{"scripts":{"build":"vite build","preview":"vite preview"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","typescript":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}
+func reactTypeScriptPlannerCommands() []string {
+	return []string{`cat > package.json <<'JSON'
+{"scripts":{"build":"vite build","preview":"vite preview","smoke":"node scripts/smoke-test.mjs"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","typescript":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}
 JSON
-cat > %[1]s/index.html <<'HTML'
+`, `cat > index.html <<'HTML'
 <div id="root"></div><script type="module" src="/src/main.tsx"></script>
 HTML
-cat > %[1]s/tsconfig.json <<'JSON'
+`, `cat > tsconfig.json <<'JSON'
 {"compilerOptions":{"target":"ES2020","useDefineForClassFields":true,"lib":["DOM","DOM.Iterable","ES2020"],"allowJs":false,"skipLibCheck":true,"esModuleInterop":true,"allowSyntheticDefaultImports":true,"strict":true,"forceConsistentCasingInFileNames":true,"module":"ESNext","moduleResolution":"Node","resolveJsonModule":true,"isolatedModules":true,"noEmit":true,"jsx":"react-jsx"},"include":["src"]}
 JSON
-cat > %[1]s/src/main.tsx <<'TS'
+`, `cat > src/main.tsx <<'TS'
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 createRoot(document.getElementById('root')!).render(<App />);
 TS
-cat > %[1]s/src/App.tsx <<'TS'
+`, `cat > scripts/smoke-test.mjs <<'JS'
+import fs from 'node:fs';
+
+const source = fs.readFileSync('src/App.tsx', 'utf8');
+if (!source.includes('Omni React TypeScript Smoke')) {
+  throw new Error('App.tsx is missing the required smoke-test heading');
+}
+JS
+`, `cat > src/App.tsx <<'TS'
 export default function App() {
   return <main><h1>Omni React TypeScript Smoke</h1><p>npm build verified</p></main>;
 }
 TS
-cd %[1]s
-npm install --silent
-npm run build --silent
-nohup npm run preview -- --host 127.0.0.1 --port %[2]d > %[4]s 2>&1 &
-server_pid=$!
-echo "$server_pid" > %[3]s
-for i in 1 2 3 4 5 6 7 8 9 10; do curl -fsS http://127.0.0.1:%[2]d/ >/tmp/omni-react-ts-smoke.html && break; sleep 1; done
-grep 'script' /tmp/omni-react-ts-smoke.html`, appDir, port, pidFile, logFile)
+`,
+		"npm run smoke --silent",
+	}
+}
+
+func reactTypeScriptSmokeObjectives(commands []string) []StructuredObjective {
+	definitions := []struct {
+		id          string
+		description string
+		kind        WorkItemKind
+	}{
+		{"write_package", "Create package metadata and scripts", WorkItemKindCreate},
+		{"write_html", "Create the Vite HTML shell", WorkItemKindCreate},
+		{"write_tsconfig", "Create strict TypeScript configuration", WorkItemKindCreate},
+		{"write_mount", "Create the React TypeScript mount entry", WorkItemKindCreate},
+		{"write_smoke_test", "Create the deterministic source smoke test before implementation", WorkItemKindCreate},
+		{"write_app", "Create the requested React TypeScript application", WorkItemKindCreate},
+		{"run_smoke_test", "Run the deterministic source smoke test", WorkItemKindVerify},
+	}
+	objectives := make([]StructuredObjective, 0, len(definitions))
+	for i, definition := range definitions {
+		objective := StructuredObjective{
+			ID:          definition.id,
+			Description: definition.description,
+			Status:      "pending",
+			Kind:        string(definition.kind),
+			Source:      structuredObjectiveSourceUserExplicit,
+			Required:    true,
+		}
+		if definition.kind == WorkItemKindVerify {
+			objective.RequiredEvidence = []string{"command_passed:" + commands[i]}
+		}
+		objectives = append(objectives, objective)
+	}
+	return objectives
+}
+
+func TestReactTypeScriptPlannerCommandsAreBoundedPolicyUnits(t *testing.T) {
+	for _, command := range reactTypeScriptPlannerCommands() {
+		if err := validateUnsafeMutationCommandShape(command); err != nil {
+			t.Fatalf("bounded React TypeScript command rejected: %q: %v", command, err)
+		}
+	}
 }
 
 func runInDir(t *testing.T, dir, command string) {

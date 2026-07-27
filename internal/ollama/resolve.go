@@ -26,7 +26,7 @@ func ProbeReachable(ctx context.Context, baseURL string, timeout time.Duration) 
 	if timeout <= 0 {
 		timeout = defaultResolveProbeTimeout
 	}
-	client := New(baseURL, "", "", timeout)
+	client := New(baseURL, "", "", timeout, 0)
 	_, err := client.ListTags(ctx)
 	return err
 }

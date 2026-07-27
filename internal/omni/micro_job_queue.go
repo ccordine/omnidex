@@ -84,7 +84,17 @@ func ExecuteMicroJobQueue(ctx context.Context, objective, workspacePath string, 
 	completed := []MicroJobResult{}
 	for _, job := range jobs {
 		jobPrompt := buildMicroJobPrompt(objective, workspacePath, profile, job, completed)
-		commandResult, execErr := RunStructuredCommandDecision(ctx, jobPrompt, client, stdout, stderr)
+		commandResult, execErr := runStructuredCommandDecisionWithConfig(
+			ctx,
+			jobPrompt,
+			nil,
+			client,
+			stdout,
+			stderr,
+			nil,
+			nil,
+			structuredCommandDecisionRunConfig{CurrentWorkingDirectory: workspacePath},
+		)
 		jobResult := MicroJobResult{
 			Job:      job,
 			Done:     execErr == nil,

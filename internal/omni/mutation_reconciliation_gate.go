@@ -14,6 +14,13 @@ type mutationMoveSpec struct {
 	NewAbs string
 }
 
+type mutationCommandContext struct {
+	CommandID   string
+	ChildJobID  string
+	ObjectiveID string
+	Attempt     int
+}
+
 func mutationReconciliationMoveSpec(command, workingDirectory string) (mutationMoveSpec, bool) {
 	segments := structuredCommandSegments(command)
 	if len(segments) == 0 {
@@ -64,7 +71,7 @@ func mutationGateAbsPath(workingDirectory, rel string) string {
 	return filepath.Join(workingDirectory, filepath.FromSlash(rel))
 }
 
-func applyMutationReconciliationGateBeforeMove(step int, command, commandID, workingDirectory string, spec mutationMoveSpec, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
+func applyMutationReconciliationGateBeforeMove(step int, command, workingDirectory string, commandContext mutationCommandContext, spec mutationMoveSpec, onEvent func(StructuredCommandEvent), result *CommandDecisionResult) (bool, error) {
 	oldExists := fileExists(spec.OldAbs)
 	newExists := fileExists(spec.NewAbs)
 	switch {
@@ -79,16 +86,16 @@ func applyMutationReconciliationGateBeforeMove(step int, command, commandID, wor
 			"new_path": spec.NewRel,
 		})
 		stdoutText += refreshWorkspaceRouteAfterMutation(workingDirectory, spec, onEvent)
-		appendMutationGateObservation(step, command, commandID, workingDirectory, 0, stdoutText, "", result)
+		appendMutationGateObservation(step, command, workingDirectory, commandContext, 0, stdoutText, "", result)
 		markMatchingMoveObjectivesComplete(spec, result)
 		return true, nil
 	case oldExists && newExists:
 		stderrText := fmt.Sprintf("mutation_reconciliation_gate: move conflict: both %s and %s exist", spec.OldRel, spec.NewRel)
-		appendMutationGateObservation(step, command, commandID, workingDirectory, 1, "", stderrText, result)
+		appendMutationGateObservation(step, command, workingDirectory, commandContext, 1, "", stderrText, result)
 		return true, nil
 	default:
 		stderrText := fmt.Sprintf("mutation_reconciliation_gate: move cannot run: %s absent and %s absent; no such file or directory: %s", spec.OldRel, spec.NewRel, spec.OldRel)
-		appendMutationGateObservation(step, command, commandID, workingDirectory, 1, "", stderrText, result)
+		appendMutationGateObservation(step, command, workingDirectory, commandContext, 1, "", stderrText, result)
 		return true, nil
 	}
 }
@@ -116,20 +123,23 @@ func verifyMutationReconciliationGateAfterMove(step int, command, workingDirecto
 	return true
 }
 
-func appendMutationGateObservation(step int, command, commandID, workingDirectory string, exitCode int, stdoutText, stderrText string, result *CommandDecisionResult) {
+func appendMutationGateObservation(step int, command, workingDirectory string, commandContext mutationCommandContext, exitCode int, stdoutText, stderrText string, result *CommandDecisionResult) {
 	if result == nil {
 		return
 	}
 	result.Command = command
 	result.ExitCode = exitCode
 	result.Observations = append(result.Observations, StructuredCommandObservation{
-		Step:      step,
-		CommandID: commandID,
-		Command:   command,
-		ExitCode:  exitCode,
-		Stdout:    truncateStructuredObservation(stdoutText),
-		Stderr:    truncateStructuredObservation(stderrText),
-		CWD:       structuredPromptWorkingDirectory(workingDirectory),
+		Step:        step,
+		CommandID:   commandContext.CommandID,
+		ChildJobID:  commandContext.ChildJobID,
+		ObjectiveID: commandContext.ObjectiveID,
+		Command:     command,
+		ExitCode:    exitCode,
+		Stdout:      truncateStructuredObservation(stdoutText),
+		Stderr:      truncateStructuredObservation(stderrText),
+		CWD:         structuredPromptWorkingDirectory(workingDirectory),
+		Attempt:     commandContext.Attempt,
 	})
 }
 

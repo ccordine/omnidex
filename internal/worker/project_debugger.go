@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/projectdebugger"
+	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
@@ -29,13 +31,22 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 		return fmt.Errorf("load project: %w", err)
 	}
 	if modelName == "" {
-		cfg := modelconfig.FromSettingsJSON(project.Settings)
-		modelName = modelconfig.AnalyzerModel(cfg, s.models.Analyze, s.models.Plan, s.models.Default, "qwen3:4b-thinking")
+		cfg, err := modelconfig.FromSettingsJSON(project.Settings)
+		if err != nil {
+			return fmt.Errorf("parse project debugger model config: %w", err)
+		}
+		modelName, err = modelconfig.AnalyzerModel(cfg, firstNonEmpty(s.models.Analyze, s.models.Plan, s.models.Default))
+		if err != nil {
+			return err
+		}
 	}
 	if agentSystem == "" {
-		agentSystem = "omnidex"
+		return fmt.Errorf("project debugger agent system is required")
 	}
-	ticketModel := s.scrumCardTicketModelFromProject(project.Settings, meta.TicketModel)
+	ticketModel, err := s.scrumCardTicketModelFromProject(project.Settings, meta.TicketModel)
+	if err != nil {
+		return err
+	}
 
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	s.emitStepEvent(claim.Step.ID, "project_debugger_started", project.Name)
@@ -44,7 +55,10 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 	if err != nil {
 		return err
 	}
-	mapPayload := projectdebugger.LoadMapPayload(project.Location)
+	mapPayload, err := projectdebugger.LoadMapPayload(project.Location)
+	if err != nil {
+		return err
+	}
 
 	llm := s.debuggerLLMClient()
 	scanInput := projectdebugger.Input{
@@ -73,55 +87,55 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 		lastRun.Status = "failed"
 		lastRun.Error = scanErr.Error()
 		lastRun.CompletedAt = time.Now().UTC().Format(time.RFC3339)
-		_ = s.saveDebuggerLastRun(ctx, project, lastRun)
+		if saveErr := s.saveDebuggerLastRun(ctx, project, lastRun); saveErr != nil {
+			return errors.Join(scanErr, fmt.Errorf("persist failed project debugger run: %w", saveErr))
+		}
 		return scanErr
 	}
 
 	created := make([]projectdebugger.CreatedCard, 0, len(result.BugTickets))
-	for _, ticket := range result.BugTickets {
+	for index, ticket := range result.BugTickets {
 		description := projectdebugger.FormatTicketDescription(ticket)
-		card, err := s.repo.CreateScrumCard(
-			ctx,
-			projectID,
-			"",
-			ticket.Title,
-			description,
-			ticket.Column,
-			projectdebugger.ChecklistJSON(ticket.Checklist),
-			projectdebugger.RefFilesJSON(ticket.RefFiles),
-			nil,
-		)
+		checklist, err := projectdebugger.ChecklistJSON(ticket.Checklist)
 		if err != nil {
-			continue
+			return fmt.Errorf("encode project debugger ticket %d checklist: %w", index, err)
 		}
-		cardPrompt := projectdebugger.CardPlanningPrompt(ticket.Title, description)
-		tagsJSON := projectdebugger.TagsJSON(ticket.Tags)
-		patch := map[string]any{
-			"tags":        json.RawMessage(tagsJSON),
-			"card_prompt": cardPrompt,
+		refFiles, err := projectdebugger.RefFilesJSON(ticket.RefFiles)
+		if err != nil {
+			return fmt.Errorf("encode project debugger ticket %d reference files: %w", index, err)
 		}
-		if _, err := s.repo.UpdateScrumCard(ctx, projectID, card.ID, patch); err != nil {
-			continue
+		cardPrompt, err := projectdebugger.CardPlanningPrompt(ticket.Title, description)
+		if err != nil {
+			return fmt.Errorf("build project debugger card %d prompt: %w", index, err)
+		}
+		tagsJSON, err := projectdebugger.TagsJSON(ticket.Tags)
+		if err != nil {
+			return fmt.Errorf("encode project debugger card %d tags: %w", index, err)
 		}
 		ticketReq := scrumcardllm.TicketRequest{
 			CardPrompt:   cardPrompt,
 			Prompt:       "Draft a planning ticket and implementation plan from the card title and description.",
 			PlanningMode: true,
 		}
-		ticketJobID, err := s.enqueueScrumCardTicketJob(ctx, projectID, card.ID, ticketModel, ticketReq)
+		card, ticketJob, err := s.repo.CreateProjectDebuggerCardJob(ctx, projectID, queue.ProjectDebuggerCardInput{
+			Title:       ticket.Title,
+			Description: description,
+			Column:      ticket.Column,
+			Checklist:   checklist,
+			RefFiles:    refFiles,
+			Tags:        tagsJSON,
+			CardPrompt:  cardPrompt,
+			TicketModel: ticketModel,
+			Ticket:      ticketReq,
+		})
 		if err != nil {
-			created = append(created, projectdebugger.CreatedCard{
-				ID:       card.ID,
-				Title:    card.Title,
-				Severity: ticket.Severity,
-			})
-			continue
+			return fmt.Errorf("create project debugger card %d and planning job: %w", index, err)
 		}
 		created = append(created, projectdebugger.CreatedCard{
 			ID:          card.ID,
 			Title:       card.Title,
 			Severity:    ticket.Severity,
-			TicketJobID: ticketJobID,
+			TicketJobID: ticketJob.ID,
 		})
 	}
 
@@ -129,12 +143,11 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 	lastRun.CardsCreated = created
 	lastRun.FindingsCount = len(result.BugTickets)
 	lastRun.CompletedAt = time.Now().UTC().Format(time.RFC3339)
-	_ = s.saveDebuggerLastRun(ctx, project, lastRun)
+	if err := s.saveDebuggerLastRun(ctx, project, lastRun); err != nil {
+		return fmt.Errorf("persist completed project debugger run: %w", err)
+	}
 
 	summary := strings.TrimSpace(result.Summary)
-	if summary == "" {
-		summary = fmt.Sprintf("Analysis created %d backlog card(s) for %s", len(created), project.Name)
-	}
 	payloadBytes, err := json.Marshal(map[string]any{
 		"summary":        summary,
 		"findings_count": len(result.BugTickets),
@@ -167,7 +180,14 @@ func (s *Service) debuggerBoardCards(ctx context.Context, projectID int64) ([]pr
 			PlayState:   card.PlayState,
 		}
 		if len(card.Tags) > 0 {
-			_ = json.Unmarshal(card.Tags, &item.Tags)
+			if err := json.Unmarshal(card.Tags, &item.Tags); err != nil {
+				return nil, fmt.Errorf("decode project debugger card %q tags: %w", card.ID, err)
+			}
+			for tagIndex, tag := range item.Tags {
+				if strings.TrimSpace(tag) == "" {
+					return nil, fmt.Errorf("project debugger card %q tag %d is empty", card.ID, tagIndex)
+				}
+			}
 		}
 		out = append(out, item)
 	}
@@ -182,20 +202,9 @@ func (s *Service) debuggerLLMClient() projectdebugger.LLMClient {
 }
 
 func (s *Service) saveDebuggerLastRun(ctx context.Context, project model.Project, run projectdebugger.LastRun) error {
-	var settings map[string]any
-	if len(project.Settings) > 0 {
-		_ = json.Unmarshal(project.Settings, &settings)
-	}
-	if settings == nil {
-		settings = map[string]any{}
-	}
-	settings[projectdebugger.SettingsKey] = run
-	raw, err := json.Marshal(settings)
+	raw, err := json.Marshal(run)
 	if err != nil {
 		return err
 	}
-	settingsJSON := json.RawMessage(raw)
-	patch := model.ProjectPatch{Settings: &settingsJSON}
-	_, err = s.repo.UpdateProject(ctx, project.ID, patch)
-	return err
+	return s.repo.UpdateProjectSetting(ctx, project.ID, projectdebugger.SettingsKey, raw)
 }

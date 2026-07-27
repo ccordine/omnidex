@@ -1,1 +1,12 @@
-{"type":"object","required":["goal"],"properties":{"goal":{"type":"string"},"constraints":{"type":"array","items":{"type":"string"}},"available_capabilities":{"type":"array","items":{"type":"string"}}}}
+{
+  "type": "object",
+  "required": ["intent", "capability_audit", "workspace", "memory_references", "web_evidence"],
+  "properties": {
+    "intent": {"type": "object", "additionalProperties": true},
+    "capability_audit": {"type": "object", "additionalProperties": true},
+    "workspace": {"type": "object", "additionalProperties": true},
+    "memory_references": {"type": "object", "additionalProperties": true},
+    "web_evidence": {"type": "object", "additionalProperties": true}
+  },
+  "additionalProperties": false
+}

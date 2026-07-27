@@ -2,7 +2,6 @@ package projectdebugger
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -18,103 +17,133 @@ Focus on actionable findings: obvious errors, subtle broken flows, missing error
 Avoid duplicating existing open backlog items when their titles clearly match.
 Respond with JSON only (no markdown fences):
 {"summary":"brief analysis overview","bug_tickets":[{"title":"...","description":"markdown details with file refs when known","severity":"critical|high|medium|low","column":"backlog","checklist":["verify step"],"ref_files":["path/to/file.go"],"tags":["bug|cleanup|refactor|optimization|reliability|security|test-gap"]}],"suggestions":["optional process tip"]}
-The bug_tickets array is the backlog-card list. Emit 3-8 backlog cards when issues exist; emit fewer if the project looks healthy. Prefer backlog column.`
+The bug_tickets array is the backlog-card list. Emit 3-8 backlog cards when issues exist; emit zero when the available evidence supports no finding.`
 
-func MapContextLines(payload map[string]any) []string {
+func MapContextLines(payload map[string]any) ([]string, error) {
 	if payload == nil {
-		return []string{"(codebase map not available)"}
+		return nil, fmt.Errorf("project debugger codebase map is required")
 	}
-	exists, _ := payload["exists"].(bool)
+	exists, ok := payload["exists"].(bool)
+	if !ok {
+		return nil, fmt.Errorf("project debugger codebase map has invalid exists value")
+	}
 	if !exists {
-		return []string{"(codebase map not scanned yet — infer from board and description only)"}
+		return nil, fmt.Errorf("project debugger codebase map has not been scanned")
 	}
-	lines := []string{}
-	if root, ok := payload["root"].(string); ok && strings.TrimSpace(root) != "" {
-		lines = append(lines, "root: "+root)
+	root, ok := payload["root"].(string)
+	if !ok || strings.TrimSpace(root) == "" {
+		return nil, fmt.Errorf("project debugger codebase map root is required")
 	}
-	if count, ok := payload["file_count"].(float64); ok {
-		lines = append(lines, fmt.Sprintf("files: %d", int(count)))
+	fileCount, ok := payload["file_count"].(int)
+	if !ok || fileCount < 0 {
+		return nil, fmt.Errorf("project debugger codebase map file count is invalid")
 	}
-	if modules, ok := payload["modules"].([]any); ok {
-		for i, raw := range modules {
-			if i >= 8 {
-				break
-			}
-			mod, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			path, _ := mod["path"].(string)
-			purpose, _ := mod["purpose"].(string)
-			if path == "" {
-				continue
-			}
-			line := path
-			if purpose != "" {
-				line += " — " + trimForPrompt(purpose, 100)
-			}
-			lines = append(lines, line)
+	modules, ok := payload["modules"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("project debugger codebase map modules are invalid")
+	}
+	risks, ok := payload["risks"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("project debugger codebase map risks are invalid")
+	}
+	tests, ok := payload["tests"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("project debugger codebase map tests are invalid")
+	}
+	openQuestions, ok := payload["open_questions"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("project debugger codebase map open questions are invalid")
+	}
+	tree, ok := payload["tree_preview"].(string)
+	if !ok {
+		return nil, fmt.Errorf("project debugger codebase map tree preview is invalid")
+	}
+
+	lines := []string{"root: " + strings.TrimSpace(root), fmt.Sprintf("files: %d", fileCount)}
+	for i, raw := range modules {
+		if i >= 8 {
+			break
 		}
+		module, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("project debugger codebase map module %d is invalid", i)
+		}
+		path, pathOK := module["path"].(string)
+		purpose, purposeOK := module["purpose"].(string)
+		if !pathOK || !purposeOK || strings.TrimSpace(path) == "" {
+			return nil, fmt.Errorf("project debugger codebase map module %d fields are invalid", i)
+		}
+		line := strings.TrimSpace(path)
+		if strings.TrimSpace(purpose) != "" {
+			line += " — " + trimForPrompt(purpose, 100)
+		}
+		lines = append(lines, line)
 	}
-	if risks, ok := payload["risks"].([]any); ok && len(risks) > 0 {
+	if len(risks) > 0 {
 		lines = append(lines, "known risks:")
-		for i, raw := range risks {
-			if i >= 6 {
-				break
-			}
-			risk, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			area, _ := risk["area"].(string)
-			text, _ := risk["risk"].(string)
-			if area != "" || text != "" {
-				lines = append(lines, fmt.Sprintf("- %s: %s", area, trimForPrompt(text, 120)))
-			}
+	}
+	for i, raw := range risks {
+		if i >= 6 {
+			break
 		}
+		risk, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("project debugger codebase map risk %d is invalid", i)
+		}
+		area, areaOK := risk["area"].(string)
+		text, riskOK := risk["risk"].(string)
+		if !areaOK || !riskOK || (strings.TrimSpace(area) == "" && strings.TrimSpace(text) == "") {
+			return nil, fmt.Errorf("project debugger codebase map risk %d fields are invalid", i)
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s", strings.TrimSpace(area), trimForPrompt(text, 120)))
 	}
-	if tests, ok := payload["tests"].([]any); ok {
-		lines = append(lines, fmt.Sprintf("test files indexed: %d", len(tests)))
-	}
-	if open, ok := payload["open_questions"].([]any); ok && len(open) > 0 {
+	lines = append(lines, fmt.Sprintf("test files indexed: %d", len(tests)))
+	if len(openQuestions) > 0 {
 		lines = append(lines, "open questions:")
-		for i, raw := range open {
-			if i >= 4 {
-				break
-			}
-			if q, ok := raw.(string); ok && strings.TrimSpace(q) != "" {
-				lines = append(lines, "- "+trimForPrompt(q, 120))
-			}
-		}
 	}
-	if tree, ok := payload["tree_preview"].(string); ok && strings.TrimSpace(tree) != "" {
+	for i, raw := range openQuestions {
+		if i >= 4 {
+			break
+		}
+		question, ok := raw.(string)
+		if !ok || strings.TrimSpace(question) == "" {
+			return nil, fmt.Errorf("project debugger codebase map open question %d is invalid", i)
+		}
+		lines = append(lines, "- "+trimForPrompt(question, 120))
+	}
+	if strings.TrimSpace(tree) != "" {
 		lines = append(lines, "tree preview:", trimForPrompt(tree, 1800))
 	}
-	return lines
+	return lines, nil
 }
 
-func BoardSummaryLines(cards []BoardCard) []string {
+func BoardSummaryLines(cards []BoardCard) ([]string, error) {
 	if len(cards) == 0 {
-		return []string{"(no scrum cards yet)"}
+		return []string{"(no scrum cards yet)"}, nil
 	}
 	byColumn := map[string][]BoardCard{}
-	for _, card := range cards {
-		col := strings.TrimSpace(card.Column)
-		if col == "" {
-			col = "backlog"
+	for i, card := range cards {
+		card.Title = strings.TrimSpace(card.Title)
+		card.Column = strings.ToLower(strings.TrimSpace(card.Column))
+		if card.Title == "" || !validScrumColumn(card.Column) {
+			return nil, fmt.Errorf("project debugger board card %d has invalid title or column", i)
 		}
-		byColumn[col] = append(byColumn[col], card)
+		byColumn[card.Column] = append(byColumn[card.Column], card)
 	}
 	out := make([]string, 0, len(cards)+4)
-	for col, items := range byColumn {
-		out = append(out, fmt.Sprintf("[%s] %d cards", col, len(items)))
+	for _, column := range scrumColumns {
+		items := byColumn[column]
+		if len(items) == 0 {
+			continue
+		}
+		out = append(out, fmt.Sprintf("[%s] %d cards", column, len(items)))
 		for _, card := range items {
-			line := "- " + strings.TrimSpace(card.Title)
+			line := "- " + card.Title
 			if card.PlayState == "running" {
 				line += " (running)"
 			}
-			if desc := strings.TrimSpace(card.Description); desc != "" {
-				line += ": " + trimForPrompt(desc, 120)
+			if description := strings.TrimSpace(card.Description); description != "" {
+				line += ": " + trimForPrompt(description, 120)
 			}
 			if len(card.Tags) > 0 {
 				line += " [" + strings.Join(card.Tags, ", ") + "]"
@@ -122,132 +151,58 @@ func BoardSummaryLines(cards []BoardCard) []string {
 			out = append(out, line)
 		}
 	}
-	return out
+	return out, nil
 }
 
-func BuildPrompt(in Input) (system, user string) {
+func BuildPrompt(input Input) (string, string, error) {
+	input.ProjectName = strings.TrimSpace(input.ProjectName)
+	input.ProjectLocation = strings.TrimSpace(input.ProjectLocation)
+	input.AgentSystem = strings.TrimSpace(input.AgentSystem)
+	if input.ProjectName == "" || input.ProjectLocation == "" || input.AgentSystem == "" {
+		return "", "", fmt.Errorf("project debugger prompt requires project name, location, and execution agent")
+	}
+	mapLines, err := MapContextLines(input.MapPayload)
+	if err != nil {
+		return "", "", err
+	}
+	boardLines, err := BoardSummaryLines(input.BoardCards)
+	if err != nil {
+		return "", "", err
+	}
 	lines := []string{
-		"Project: " + in.ProjectName,
-		"Directory: " + in.ProjectLocation,
-		"State: " + strings.TrimSpace(in.ProjectState),
-		"Execution agent: " + strings.TrimSpace(in.AgentSystem),
+		"Project: " + input.ProjectName,
+		"Directory: " + input.ProjectLocation,
+		"State: " + strings.TrimSpace(input.ProjectState),
+		"Execution agent: " + input.AgentSystem,
 	}
-	if desc := strings.TrimSpace(in.ProjectDescription); desc != "" {
-		lines = append(lines, "Description: "+desc)
+	if description := strings.TrimSpace(input.ProjectDescription); description != "" {
+		lines = append(lines, "Description: "+description)
 	}
-	mapLines := MapContextLines(in.MapPayload)
-	lines = append(lines, "Codebase map:", strings.Join(mapLines, "\n"))
-	lines = append(lines, "Scrum board:", strings.Join(BoardSummaryLines(in.BoardCards), "\n"))
-	lines = append(lines, "Task: analyze the project directory (via the codebase map), existing backlog, and board for bugs, mistakes, cleanup tickets, refactor suggestions, optimization points, reliability issues, security risks, and missing tests. Emit bug_tickets as backlog cards the user can review, refine in planning, then move to ready or play.")
-	return debuggerSystemPrompt, strings.Join(lines, "\n")
+	lines = append(lines,
+		"Codebase map:", strings.Join(mapLines, "\n"),
+		"Scrum board:", strings.Join(boardLines, "\n"),
+		"Task: identify evidence-backed bugs, cleanup, refactors, optimizations, reliability issues, security risks, and missing tests. Emit reviewable backlog cards.",
+	)
+	return debuggerSystemPrompt, strings.Join(lines, "\n"), nil
 }
 
-// CardPlanningPrompt builds the planning-mode author prompt from a backlog card title and body.
-func CardPlanningPrompt(title, description string) string {
-	parts := make([]string, 0, 2)
-	if title = strings.TrimSpace(title); title != "" {
-		parts = append(parts, "Title: "+title)
+func Run(ctx context.Context, llm LLMClient, input Input) (ScanResponse, error) {
+	if ctx == nil || llm == nil {
+		return ScanResponse{}, fmt.Errorf("project debugger requires a context and LLM client")
 	}
-	if description = strings.TrimSpace(description); description != "" {
-		parts = append(parts, "Description:", description)
-	}
-	if len(parts) == 0 {
-		return "Draft a planning ticket and implementation plan for this backlog card."
-	}
-	return strings.Join(parts, "\n")
-}
-
-func ParseScanResponse(raw string) ScanResponse {
-	raw = strings.TrimSpace(raw)
-	out := ScanResponse{Summary: raw}
-	if raw == "" {
-		return out
-	}
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start >= 0 && end > start {
-		var parsed ScanResponse
-		if err := json.Unmarshal([]byte(raw[start:end+1]), &parsed); err == nil {
-			out = normalizeScanResponse(parsed)
-		}
-	}
-	return out
-}
-
-func normalizeScanResponse(in ScanResponse) ScanResponse {
-	in.Summary = strings.TrimSpace(in.Summary)
-	tickets := make([]BugTicket, 0, len(in.BugTickets))
-	seen := map[string]bool{}
-	for _, ticket := range in.BugTickets {
-		ticket.Title = strings.TrimSpace(ticket.Title)
-		if ticket.Title == "" || seen[strings.ToLower(ticket.Title)] {
-			continue
-		}
-		seen[strings.ToLower(ticket.Title)] = true
-		ticket.Description = strings.TrimSpace(ticket.Description)
-		ticket.Severity = normalizeSeverity(ticket.Severity)
-		ticket.Column = normalizeColumn(ticket.Column)
-		ticket.Tags = mergeTags(ticket.Tags, []string{"analysis"})
-		tickets = append(tickets, ticket)
-	}
-	in.BugTickets = tickets
-	suggestions := make([]string, 0, len(in.Suggestions))
-	for _, item := range in.Suggestions {
-		item = strings.TrimSpace(item)
-		if item != "" {
-			suggestions = append(suggestions, item)
-		}
-	}
-	in.Suggestions = suggestions
-	return in
-}
-
-func Run(ctx context.Context, llm LLMClient, in Input) (ScanResponse, error) {
-	if llm == nil {
-		return ScanResponse{}, fmt.Errorf("llm client is required")
-	}
-	system, user := BuildPrompt(in)
-	modelName := strings.TrimSpace(in.Model)
+	modelName := strings.TrimSpace(input.Model)
 	if modelName == "" {
-		modelName = "qwen3:4b-thinking"
+		return ScanResponse{}, fmt.Errorf("project debugger model is required")
 	}
-	prompt := strings.TrimSpace(system + "\n\n" + user)
-	raw, err := llm.Generate(ctx, modelName, prompt)
+	system, user, err := BuildPrompt(input)
 	if err != nil {
 		return ScanResponse{}, err
 	}
-	return ParseScanResponse(raw), nil
-}
-
-func normalizeSeverity(severity string) string {
-	switch strings.ToLower(strings.TrimSpace(severity)) {
-	case "critical", "high", "medium", "low":
-		return strings.ToLower(strings.TrimSpace(severity))
-	default:
-		return "medium"
+	raw, err := llm.Generate(ctx, modelName, strings.TrimSpace(system+"\n\n"+user))
+	if err != nil {
+		return ScanResponse{}, err
 	}
-}
-
-func normalizeColumn(column string) string {
-	column = strings.ToLower(strings.TrimSpace(column))
-	if column == "" {
-		return "backlog"
-	}
-	return column
-}
-
-func mergeTags(base, extra []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(base)+len(extra))
-	for _, tag := range append(base, extra...) {
-		tag = strings.TrimSpace(tag)
-		if tag == "" || seen[strings.ToLower(tag)] {
-			continue
-		}
-		seen[strings.ToLower(tag)] = true
-		out = append(out, tag)
-	}
-	return out
+	return ParseScanResponse(raw)
 }
 
 func trimForPrompt(text string, max int) string {
@@ -259,71 +214,4 @@ func trimForPrompt(text string, max int) string {
 		return text[:max]
 	}
 	return text[:max-3] + "..."
-}
-
-func FormatTicketDescription(ticket BugTicket) string {
-	parts := []string{}
-	if desc := strings.TrimSpace(ticket.Description); desc != "" {
-		parts = append(parts, desc)
-	}
-	if sev := strings.TrimSpace(ticket.Severity); sev != "" {
-		parts = append(parts, "Severity: **"+sev+"**")
-	}
-	if len(ticket.RefFiles) > 0 {
-		lines := make([]string, 0, len(ticket.RefFiles))
-		for _, file := range ticket.RefFiles {
-			file = strings.TrimSpace(file)
-			if file != "" {
-				lines = append(lines, "- `"+file+"`")
-			}
-		}
-		if len(lines) > 0 {
-			parts = append(parts, "Related files:\n"+strings.Join(lines, "\n"))
-		}
-	}
-	parts = append(parts, "_Created by Analyze_")
-	return strings.Join(parts, "\n\n")
-}
-
-func ChecklistJSON(items []string) []byte {
-	type item struct {
-		Text string `json:"text"`
-		Done bool   `json:"done"`
-	}
-	out := make([]item, 0, len(items))
-	for _, text := range items {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			continue
-		}
-		out = append(out, item{Text: text, Done: false})
-	}
-	raw, err := json.Marshal(out)
-	if err != nil {
-		return []byte("[]")
-	}
-	return raw
-}
-
-func TagsJSON(tags []string) []byte {
-	raw, err := json.Marshal(tags)
-	if err != nil {
-		return []byte(`["analysis"]`)
-	}
-	return raw
-}
-
-func RefFilesJSON(files []string) []byte {
-	clean := make([]string, 0, len(files))
-	for _, file := range files {
-		file = strings.TrimSpace(file)
-		if file != "" {
-			clean = append(clean, file)
-		}
-	}
-	raw, err := json.Marshal(clean)
-	if err != nil {
-		return []byte("[]")
-	}
-	return raw
 }

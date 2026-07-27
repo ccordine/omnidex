@@ -45,9 +45,8 @@ function scrumAutoReviewFromProject(project: ProjectRecord): { enabled: boolean;
 
 function scrumAutoWorkFromProject(project: ProjectRecord): ScrumAutoWorkConfig {
   const raw = project.settings?.scrum_auto_work;
-  const legacyEnabled = Boolean(project.settings?.scrum_auto_play_through);
   if (!raw || typeof raw !== "object") {
-    return { enabled: legacyEnabled, source_columns: [...DEFAULT_AUTO_WORK_COLUMNS] };
+    return { enabled: false, source_columns: [...DEFAULT_AUTO_WORK_COLUMNS] };
   }
   const cfg = raw as Record<string, unknown>;
   const sourceColumns = Array.isArray(cfg.source_columns)

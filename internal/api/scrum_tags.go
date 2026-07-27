@@ -18,7 +18,17 @@ func (s *Server) handleScrumTags(w http.ResponseWriter, r *http.Request) {
 	}
 	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	limit := parsePositiveInt(r.URL.Query().Get("limit"), 40)
-	tags := s.collectScrumTagCatalog(r.Context(), r, query, limit)
+	tags, err := s.collectScrumTagCatalog(r.Context(), r, query, limit)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if s.repo == nil {
+			status = http.StatusServiceUnavailable
+		} else if strings.Contains(err.Error(), "project_id") {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"tags": tags})
 }
 
@@ -36,10 +46,14 @@ func (s *Server) handleScrumCardTagsSuggest(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusServiceUnavailable, "tag suggestion requires a project database")
 		return
 	}
-	cfg := parseScrumCoachConfig(card.CoachConfig)
+	cfg, err := s.scrumCoachConfig(card.CoachConfig)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionTagsSuggest, cfg.Model, "", scrumcardllm.TicketRequest{})
 	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeScrumCardLLMEnqueueError(w, err)
 		return
 	}
 	writeScrumCardLLMQueued(w, job, updated, fmt.Sprintf("Queued tag suggestion job #%d for %s", job.ID, board.Name))
@@ -72,9 +86,16 @@ func scrumCardContext(card ScrumCard) scrumcardllm.CardContext {
 	return out
 }
 
-func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, query string, limit int) []string {
+func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, query string, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 40
+	}
+	if s.repo == nil {
+		return nil, fmt.Errorf("postgres repository is required for Scrum tags")
+	}
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		return nil, err
 	}
 	seen := map[string]struct{}{}
 	add := func(values ...string) {
@@ -90,43 +111,42 @@ func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, qu
 		}
 	}
 
-	if s.repo != nil {
-		facets, err := s.repo.ListMemoryTags(ctx, 200)
-		if err == nil {
-			for _, facet := range facets {
-				add(facet.Name)
-			}
+	facets, err := s.repo.ListMemoryTags(ctx, 200)
+	if err != nil {
+		return nil, fmt.Errorf("list memory tags: %w", err)
+	}
+	for _, facet := range facets {
+		add(facet.Name)
+	}
+	project, err := s.repo.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("load Scrum project: %w", err)
+	}
+	var settings map[string]any
+	if len(project.Settings) > 0 {
+		if err := json.Unmarshal(project.Settings, &settings); err != nil {
+			return nil, fmt.Errorf("decode Scrum project settings: %w", err)
 		}
-		projectID, err := s.resolveProjectID(r)
-		if err == nil && projectID > 0 {
-			if project, err := s.repo.GetProject(ctx, projectID); err == nil {
-				var settings map[string]any
-				if len(project.Settings) > 0 {
-					_ = json.Unmarshal(project.Settings, &settings)
-				}
-				if raw, ok := settings["tags"].([]any); ok {
-					for _, item := range raw {
-						if text, ok := item.(string); ok {
-							add(text)
-						}
-					}
-				}
-			}
-			if cards, err := s.repo.ListScrumCards(ctx, projectID); err == nil {
-				for _, card := range cards {
-					var tags []string
-					_ = json.Unmarshal(card.Tags, &tags)
-					add(tags...)
-				}
+	}
+	if raw, ok := settings["tags"].([]any); ok {
+		for _, item := range raw {
+			if text, ok := item.(string); ok {
+				add(text)
 			}
 		}
 	}
-
-	if s.scrumStore != nil {
-		board := s.scrumStore.Board()
-		for _, card := range board.Cards {
-			add(card.Tags...)
+	cards, err := s.repo.ListScrumCards(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list Scrum cards for tags: %w", err)
+	}
+	for _, card := range cards {
+		var tags []string
+		if len(card.Tags) > 0 {
+			if err := json.Unmarshal(card.Tags, &tags); err != nil {
+				return nil, fmt.Errorf("decode Scrum card %s tags: %w", card.ID, err)
+			}
 		}
+		add(tags...)
 	}
 
 	out := make([]string, 0, len(seen))
@@ -137,5 +157,5 @@ func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, qu
 	if len(out) > limit {
 		out = out[:limit]
 	}
-	return out
+	return out, nil
 }

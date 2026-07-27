@@ -38,6 +38,7 @@ var allowedCommandRoots = map[string]struct{}{
 	"gofmt":   {},
 	"git":     {},
 	"npm":     {},
+	"npx":     {},
 	"pnpm":    {},
 	"yarn":    {},
 	"docker":  {},

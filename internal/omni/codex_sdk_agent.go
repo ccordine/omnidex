@@ -3,6 +3,7 @@ package omni
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -166,7 +167,7 @@ func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAg
 	}
 	return &externalAgentCommandSession{
 		agent: "codex",
-		command: func(ctx context.Context, job ExternalAgentJob) (*exec.Cmd, error) {
+		command: func(ctx context.Context, job ExternalAgentJob) (*exec.Cmd, func() error, error) {
 			workspace := strings.TrimSpace(job.Workspace)
 			if workspace == "" {
 				workspace = "."
@@ -185,9 +186,13 @@ func (a *CodexSDKArchitectAgent) NewExternalAgentSession(input CursorArchitectAg
 			}
 			reqPath, err := writeExternalAgentRequest("omnidex-codex-sdk-request-*.json", request)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			return codexrunner.CommandWithBins(ctx, a.RunnerDir, reqPath, a.NodeBin)
+			cmd, err := codexrunner.CommandWithBins(ctx, a.RunnerDir, reqPath, a.NodeBin)
+			if err != nil {
+				return nil, nil, errors.Join(err, removeExternalAgentRequest(reqPath))
+			}
+			return cmd, func() error { return removeExternalAgentRequest(reqPath) }, nil
 		},
 	}, nil
 }

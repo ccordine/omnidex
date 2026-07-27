@@ -93,8 +93,9 @@ const { events } = await thread.runStreamed(request.prompt, {
   }
 });
 
-const items = [];
 let finalResponse = "";
+let turnCompleted = false;
+let turnFailure = "";
 const seenItems = new Map();
 
 function itemText(item) {
@@ -133,7 +134,6 @@ function shouldEmitItem(item, eventType) {
 
 function emitCodexItem(item, eventType) {
   if (!item || typeof item !== "object" || !shouldEmitItem(item, eventType)) return;
-  items.push(item);
   const status = item.status || (eventType === "item.started" ? "in_progress" : eventType === "item.completed" ? "completed" : "in_progress");
   if (item.type === "command_execution") {
     emit({ agent: "codex", type: "command", message: status, command: item.command || "", raw: item });
@@ -170,27 +170,40 @@ function emitCodexItem(item, eventType) {
     return;
   }
   if (item.type === "error") {
-    emit({ agent: "codex", type: "error", message: item.message || "Codex item error", raw: item });
+    turnFailure = item.message || "Codex item error";
+    emit({ agent: "codex", type: "error", message: turnFailure, raw: item });
     return;
   }
-  emit({ agent: "codex", type: item.type || "message", message: itemText(item) || status || "", raw: item });
+  emit({ agent: "codex", type: "message", message: itemText(item) || status || "", raw: item });
 }
 
 for await (const event of events) {
   if (event.type === "item.completed" || event.type === "item.updated" || event.type === "item.started") {
     emitCodexItem(event.item || {}, event.type);
   } else if (event.type === "turn.completed") {
-    emit({ agent: "codex", type: "turn.completed", message: "Codex turn completed", raw: event });
+    turnCompleted = true;
+    emit({ agent: "codex", type: "status", message: "Codex turn completed", raw: event });
   } else if (event.type === "turn.failed") {
-    emit({ agent: "codex", type: "error", message: event.error?.message || "Codex turn failed", raw: event });
+    turnFailure = event.error?.message || "Codex turn failed";
+    emit({ agent: "codex", type: "error", message: turnFailure, raw: event });
   }
+}
+
+if (turnFailure) {
+  console.error(turnFailure);
+  process.exit(2);
+}
+if (!turnCompleted) {
+  const message = "Codex event stream ended without turn.completed";
+  emit({ agent: "codex", type: "error", message });
+  console.error(message);
+  process.exit(2);
 }
 
 emit({
   agent: "codex",
   type: "completed",
   message: finalResponse || "Codex external implementation session completed",
-  evidence: items.map((item) => JSON.stringify(item)),
   raw: { thread_id: thread.id || "" }
 });
 `

@@ -3,6 +3,7 @@ import { deleteScrumCard, doneScrumCard, fetchScrumCardModal, moveScrumCard, pau
 import type { ScrumCard, ScrumCardModalResponse } from "../../lib/scrum_types";
 import { closeModalShell } from "../../lib/modal";
 import { scrumModalHref } from "../../lib/panel_routing";
+import type { RealtimeSyncDetail } from "../../lib/realtime_sync";
 import { ActionButton, Select, SpinnerLabel } from "./common";
 import { CardTab } from "./CardTab";
 import { ChannelTab } from "./ChannelTab";
@@ -25,10 +26,6 @@ type RealtimeDetail = {
   reason?: string;
 };
 
-function cardPollSymbol(card: ScrumCard): string {
-  return [card.updated_at, card.column, card.play_state ?? "", card.job_id ?? "", card.tags_job_id ?? "", card.ticket_job_id ?? "", card.queue_order ?? 0].join("|");
-}
-
 export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardModalAppProps) {
   const [activeTab, setActiveTab] = useState<CardModalTab>(() => normalizeCardModalTab(initialTab));
   const [context, setContext] = useState<ScrumCardModalResponse | null>(null);
@@ -36,10 +33,9 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
   const [busyLabel, setBusyLabel] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [lastSymbol, setLastSymbol] = useState("");
 
   const loadContext = useCallback(
-    async (tab = activeTab, options: { silent?: boolean } = {}) => {
+    async (tab = activeTab, options: { silent?: boolean; strict?: boolean } = {}) => {
       if (!options.silent) {
         setLoading(true);
       }
@@ -47,9 +43,9 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
       try {
         const payload = await fetchScrumCardModal(cardID, projectID, { tab });
         setContext(payload);
-        setLastSymbol(cardPollSymbol(payload.card));
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        if (options.strict) throw err;
       } finally {
         setLoading(false);
       }
@@ -66,18 +62,27 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
       const detail = (event as CustomEvent<RealtimeDetail>).detail ?? {};
       if (detail.projectID && projectID && detail.projectID !== projectID) return;
       if (detail.cardID !== cardID) return;
-      if (detail.card) {
-        handleCardUpdated(detail.card);
+      if (!detail.card) {
+        setError("Live card update did not include typed card state.");
+        return;
       }
-      void loadContext(activeTab, { silent: true });
+      handleCardUpdated(detail.card, {
+        reloadContext: detail.reason === "files updated",
+        refreshBoard: false,
+      });
     };
-    document.addEventListener("omni:scrum-card-modal-refresh", handler);
-    document.addEventListener("omni:chat-component-update", handler);
-    document.addEventListener("omni:card-modal-spa-refresh", handler);
+    const syncHandler = (event: Event) => {
+      const detail = (event as CustomEvent<RealtimeSyncDetail>).detail;
+      if (!detail || typeof detail.waitUntil !== "function") {
+        throw new Error("Realtime synchronization event is missing waitUntil().");
+      }
+      detail.waitUntil(loadContext(activeTab, { silent: true, strict: true }));
+    };
+    document.addEventListener("omni:scrum-card-updated", handler);
+    document.addEventListener("omni:realtime-sync-required", syncHandler);
     return () => {
-      document.removeEventListener("omni:scrum-card-modal-refresh", handler);
-      document.removeEventListener("omni:chat-component-update", handler);
-      document.removeEventListener("omni:card-modal-spa-refresh", handler);
+      document.removeEventListener("omni:scrum-card-updated", handler);
+      document.removeEventListener("omni:realtime-sync-required", syncHandler);
     };
   }, [activeTab, cardID, loadContext, projectID]);
 
@@ -102,14 +107,13 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
   }, [projectID]);
 
   const handleCardUpdated = useCallback(
-    (card: ScrumCard, options: { reloadContext?: boolean } = {}) => {
+    (card: ScrumCard, options: { reloadContext?: boolean; refreshBoard?: boolean } = {}) => {
       setContext((current) => {
         if (!current) return current;
         const cards = current.board.cards.map((entry) => (entry.id === card.id ? card : entry));
         return { ...current, card, board: { ...current.board, cards } };
       });
-      setLastSymbol(cardPollSymbol(card));
-      refreshBoard();
+      if (options.refreshBoard !== false) refreshBoard();
       if (options.reloadContext) {
         void loadContext(activeTab, { silent: true });
       }
@@ -174,7 +178,7 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
             <p className="text-xs uppercase tracking-[.18em] text-zinc-500">Card</p>
             <h2 className="mt-1 truncate text-xl font-semibold text-zinc-100">{card.title}</h2>
             <p className="mt-1 text-xs text-zinc-500">
-              {card.column} {card.play_state ? `· ${card.play_state}` : ""} {lastSymbol ? "" : ""}
+              {card.column} {card.play_state ? `· ${card.play_state}` : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

@@ -13,7 +13,6 @@ var telemetryFailureEventTypes = []string{
 	"step_interrupted",
 	"step_canceled",
 	"llm_error",
-	"llm_retry_model",
 	"llm_retry_same_model",
 	"verify_test_fail",
 	"verify_auto_replan",
@@ -30,13 +29,11 @@ var telemetryFailureEventTypes = []string{
 	"structured_loop_exhausted",
 	"structured_command_rejected",
 	"artifact_validation_failed",
-	"plan_candidate_fallback",
 	"plan_waiting_input",
 	"analyze_waiting_input",
 	"response_waiting_input",
 	"tooling_waiting_input",
 	"web_search_waiting_input",
-	"web_search_degraded",
 	"retrieve_embedding_error",
 	"workspace_scan_waiting_input",
 }
@@ -48,20 +45,19 @@ var telemetryLoopEventTypes = []string{
 	"verify_auto_replan",
 	"verify_replan",
 	"verify_hallucination_loop",
-	"llm_retry_model",
 	"llm_retry_same_model",
 	"structured_loop_exhausted",
 }
 
 type OperationsLoopStat struct {
-	Key           string  `json:"key"`
-	Label         string  `json:"label"`
-	AvgPerRun     float64 `json:"avg_per_run"`
-	MaxPerRun     int     `json:"max_per_run"`
-	TotalEvents   int     `json:"total_events"`
-	RunsAffected  int     `json:"runs_affected"`
+	Key            string  `json:"key"`
+	Label          string  `json:"label"`
+	AvgPerRun      float64 `json:"avg_per_run"`
+	MaxPerRun      int     `json:"max_per_run"`
+	TotalEvents    int     `json:"total_events"`
+	RunsAffected   int     `json:"runs_affected"`
 	PriorAvgPerRun float64 `json:"prior_avg_per_run"`
-	DeltaPct      float64 `json:"delta_pct"`
+	DeltaPct       float64 `json:"delta_pct"`
 }
 
 type OperationsFailureEvent struct {
@@ -76,41 +72,41 @@ type OperationsFailureEvent struct {
 }
 
 type OperationsRunDiagnostic struct {
-	RunID        string          `json:"run_id"`
-	Status       string          `json:"status"`
-	TaskKind     string          `json:"task_kind,omitempty"`
-	DurationMS   *int64          `json:"duration_ms,omitempty"`
-	LoopEvents   int             `json:"loop_events"`
-	FailureEvents int            `json:"failure_events"`
-	LLMCalls     int             `json:"llm_calls"`
-	MaxPromptChars int           `json:"max_prompt_chars"`
-	Summary      json.RawMessage `json:"summary,omitempty"`
-	StartedAt    time.Time       `json:"started_at"`
+	RunID          string          `json:"run_id"`
+	Status         string          `json:"status"`
+	TaskKind       string          `json:"task_kind,omitempty"`
+	DurationMS     *int64          `json:"duration_ms,omitempty"`
+	LoopEvents     int             `json:"loop_events"`
+	FailureEvents  int             `json:"failure_events"`
+	LLMCalls       int             `json:"llm_calls"`
+	MaxPromptChars int             `json:"max_prompt_chars"`
+	Summary        json.RawMessage `json:"summary,omitempty"`
+	StartedAt      time.Time       `json:"started_at"`
 }
 
 type OperationsContextFlood struct {
-	ID           string    `json:"id"`
-	Source       string    `json:"source"`
-	Scope        string    `json:"scope,omitempty"`
-	Model        string    `json:"model,omitempty"`
-	RunID        string    `json:"run_id,omitempty"`
-	SentChars    int       `json:"sent_chars"`
-	DeltaChars   int       `json:"delta_chars"`
-	Utilization  float64   `json:"utilization_pct"`
-	Success      bool      `json:"success"`
-	ErrorClass   string    `json:"error_class,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	Source      string    `json:"source"`
+	Scope       string    `json:"scope,omitempty"`
+	Model       string    `json:"model,omitempty"`
+	RunID       string    `json:"run_id,omitempty"`
+	SentChars   int       `json:"sent_chars"`
+	DeltaChars  int       `json:"delta_chars"`
+	Utilization float64   `json:"utilization_pct"`
+	Success     bool      `json:"success"`
+	ErrorClass  string    `json:"error_class,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type OperationsMetricsResponse struct {
-	FailureCounts   []TelemetryCountSummary  `json:"failure_counts"`
-	RecentFailures  []OperationsFailureEvent `json:"recent_failures"`
-	LoopStats       []OperationsLoopStat     `json:"loop_stats"`
-	ContextFloods   []OperationsContextFlood `json:"context_floods"`
+	FailureCounts   []TelemetryCountSummary   `json:"failure_counts"`
+	RecentFailures  []OperationsFailureEvent  `json:"recent_failures"`
+	LoopStats       []OperationsLoopStat      `json:"loop_stats"`
+	ContextFloods   []OperationsContextFlood  `json:"context_floods"`
 	RunDiagnostics  []OperationsRunDiagnostic `json:"run_diagnostics"`
-	LLMFailures     int                      `json:"llm_failures"`
-	LLMFailureRate  float64                  `json:"llm_failure_rate_pct"`
-	AvgContextDelta float64                  `json:"avg_context_delta_chars"`
+	LLMFailures     int                       `json:"llm_failures"`
+	LLMFailureRate  float64                   `json:"llm_failure_rate_pct"`
+	AvgContextDelta float64                   `json:"avg_context_delta_chars"`
 }
 
 func (r *Repository) TelemetryJobContextForStep(ctx context.Context, stepID int64) (runID string, jobID int64, err error) {
@@ -202,15 +198,14 @@ func (r *Repository) OperationsMetrics(ctx context.Context) (OperationsMetricsRe
 
 func (r *Repository) operationsLoopStats(ctx context.Context) ([]OperationsLoopStat, error) {
 	labels := map[string]string{
-		"verification_retry":       "Verification retries",
+		"verification_retry":         "Verification retries",
 		"verify_hallucination_retry": "Hallucination retries",
-		"verify_grounding_retry":   "Grounding retries",
-		"verify_auto_replan":       "Auto replans",
-		"verify_replan":            "Manual replans",
-		"verify_hallucination_loop": "Hallucination loops",
-		"llm_retry_model":          "LLM model fallbacks",
-		"llm_retry_same_model":     "LLM same-model retries",
-		"structured_loop_exhausted": "Structured loop exhaustions",
+		"verify_grounding_retry":     "Grounding retries",
+		"verify_auto_replan":         "Auto replans",
+		"verify_replan":              "Manual replans",
+		"verify_hallucination_loop":  "Hallucination loops",
+		"llm_retry_same_model":       "LLM same-model retries",
+		"structured_loop_exhausted":  "Structured loop exhaustions",
 	}
 	stats := make([]OperationsLoopStat, 0, len(telemetryLoopEventTypes))
 	for _, eventType := range telemetryLoopEventTypes {

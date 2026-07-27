@@ -4,6 +4,8 @@
   "preferred_model": ["analyze", "reasoning"],
   "allowed_tools": ["memory.retrieve", "workspace.research", "web.search"],
   "context_budget": 12000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
   "retry_policy": "one_repair_pass",
   "require_evidence": true
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestGenerateUsesAuthAndReturnsMessage(t *testing.T) {
@@ -40,7 +42,10 @@ func TestGenerateUsesAuthAndReturnsMessage(t *testing.T) {
 		return jsonResponse(http.StatusOK, `{"choices":[{"message":{"content":"ok"}}]}`), nil
 	})
 
-	client := New("https://api.openai.com/v1", "test-key", "gpt-test", "text-embedding-test", "org-a", "proj-a", time.Second)
+	client, err := New("https://api.openai.com/v1", "test-key", "gpt-test", "text-embedding-test", "org-a", "proj-a", time.Second)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
 	client.httpClient = &http.Client{
 		Timeout:   time.Second,
 		Transport: transport,
@@ -72,6 +77,34 @@ func TestGenerateUsesAuthAndReturnsMessage(t *testing.T) {
 	}
 }
 
+func TestGeneratePreparedRequestsJSONObjectForTypedControlPlane(t *testing.T) {
+	var responseType string
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var req chatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if req.ResponseFormat != nil {
+			responseType = req.ResponseFormat.Type
+		}
+		return jsonResponse(http.StatusOK, `{"choices":[{"message":{"content":"{}"}}]}`), nil
+	})
+	client, err := NewCompatible("deepseek", "DEEPSEEK_API_KEY", "https://api.deepseek.com/v1", "test-key", "deepseek-chat", "", "", "", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.httpClient = &http.Client{Timeout: time.Second, Transport: transport}
+	_, err = client.GeneratePrepared(context.Background(), llm.PreparedModel{
+		BaseModel: "deepseek-chat", Prompt: "Return an object", PromptHint: "Begin", ResponseFormat: llm.ResponseFormatJSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if responseType != "json_object" {
+		t.Fatalf("response_format.type=%q, want json_object", responseType)
+	}
+}
+
 func TestEmbeddingParsesVector(t *testing.T) {
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/v1/embeddings" {
@@ -80,7 +113,10 @@ func TestEmbeddingParsesVector(t *testing.T) {
 		return jsonResponse(http.StatusOK, `{"data":[{"embedding":[0.1,0.2,0.3]}]}`), nil
 	})
 
-	client := New("https://api.openai.com/v1", "test-key", "gpt-test", "text-embedding-test", "", "", time.Second)
+	client, err := New("https://api.openai.com/v1", "test-key", "gpt-test", "text-embedding-test", "", "", time.Second)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
 	client.httpClient = &http.Client{
 		Timeout:   time.Second,
 		Transport: transport,
@@ -174,11 +210,64 @@ func TestAzureV1UsesOpenAICompatiblePathAndBearerAuth(t *testing.T) {
 	}
 }
 
-func TestNormalizeBaseURLAddsSchemeAndVersion(t *testing.T) {
-	got := normalizeBaseURL("api.openai.com")
-	want := "https://api.openai.com/v1"
-	if got != want {
-		t.Fatalf("normalizeBaseURL()=%q want %q", got, want)
+func TestNewCompatibleRejectsSchemelessBaseURL(t *testing.T) {
+	_, err := NewCompatible("custom", "CUSTOM_API_KEY", "api.example.com/v1", "test-key", "test-model", "", "", "", time.Second)
+	if err == nil || !strings.Contains(err.Error(), "absolute HTTP(S) URL") {
+		t.Fatalf("NewCompatible() error=%v, want absolute URL failure", err)
+	}
+}
+
+func TestNewCompatibleRejectsMissingEndpointCredentialAndModel(t *testing.T) {
+	tests := []struct {
+		name      string
+		baseURL   string
+		apiKey    string
+		model     string
+		wantError string
+	}{
+		{name: "endpoint", baseURL: "", apiKey: "key", model: "model", wantError: "base URL is required"},
+		{name: "credential", baseURL: "https://api.example.com/v1", apiKey: "", model: "model", wantError: "CUSTOM_API_KEY is required"},
+		{name: "model", baseURL: "https://api.example.com/v1", apiKey: "key", model: "", wantError: "default model is required"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewCompatible("custom", "CUSTOM_API_KEY", test.baseURL, test.apiKey, test.model, "", "", "", time.Second)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("NewCompatible() error=%v want %q", err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestGenerateRejectsOversizedProviderResponse(t *testing.T) {
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, strings.Repeat("x", maxProviderResponseBytes+1)), nil
+	})
+	client, err := NewCompatible("qwen", "QWEN_API_KEY", "https://provider.example/v1", "key", "model", "", "", "", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.httpClient = &http.Client{Timeout: time.Second, Transport: transport}
+
+	_, err = client.Generate(context.Background(), "", "prompt")
+	if err == nil || !strings.Contains(err.Error(), "response exceeded") {
+		t.Fatalf("Generate() error=%v, want bounded response failure", err)
+	}
+}
+
+func TestMessageContentRejectsMalformedNonTextParts(t *testing.T) {
+	if got := messageContentAsString([]any{map[string]any{"type": "image_url"}}); got != "" {
+		t.Fatalf("messageContentAsString()=%q, want empty malformed content", got)
+	}
+	got := messageContentAsString([]any{
+		map[string]any{"type": "image_url", "image_url": "https://example.invalid/image.png"},
+		map[string]any{"type": "text", "text": "valid text"},
+	})
+	if got != "valid text" {
+		t.Fatalf("messageContentAsString()=%q want valid text", got)
+	}
+	if got := messageContentAsString(map[string]any{"text": "not a supported top-level shape"}); got != "" {
+		t.Fatalf("messageContentAsString()=%q, want unsupported top-level content rejected", got)
 	}
 }
 

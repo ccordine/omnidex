@@ -135,11 +135,14 @@ func enrichCatalogWithLLM(ctx context.Context, llm omni.DBManagerLLMClient, prof
 	if len(limit) > 40 {
 		limit = limit[:40]
 	}
-	payload, _ := json.Marshal(map[string]any{
+	payload, err := json.Marshal(map[string]any{
 		"domain":         profile.Domain,
 		"context_prompt": profile.ContextPrompt,
 		"tables":         limit,
 	})
+	if err != nil {
+		return fmt.Errorf("encode catalog enrichment request: %w", err)
+	}
 	resp, err := llm.ChatRaw(ctx, omni.OllamaChatRequest{
 		Messages: []omni.OllamaMessage{
 			{

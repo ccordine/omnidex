@@ -37,6 +37,8 @@ export type ProjectPlanningChatState = {
   resolved_models?: {
     resolved?: Record<string, string>;
   };
+  has_more?: boolean;
+  next_before_id?: number;
 };
 
 export type ProjectPlanningChatResponse = ProjectPlanningChatState & {
@@ -48,6 +50,8 @@ export type ProjectPlanningChatResponse = ProjectPlanningChatState & {
   research_used?: boolean;
   mode?: string;
   model?: string;
+  realtime_published?: boolean;
+  realtime_error?: string;
 };
 
 export type ProjectPlanningDraftActionResponse = {
@@ -55,17 +59,20 @@ export type ProjectPlanningDraftActionResponse = {
   pending_count: number;
   created_cards?: Array<{ id: string; title: string; column: string }>;
   created_count: number;
+  realtime_published?: boolean;
+  realtime_error?: string;
 };
 
-export async function fetchProjectPlanningChat(projectID: number): Promise<ProjectPlanningChatState> {
-  const response = await fetch(`/v1/projects/${projectID}/planning-chat`);
+export async function fetchProjectPlanningChat(projectID: number, beforeID?: number): Promise<ProjectPlanningChatState> {
+  const query = beforeID ? `?before_id=${encodeURIComponent(String(beforeID))}` : "";
+  const response = await fetch(`/v1/projects/${projectID}/planning-chat${query}`);
   return readJSON<ProjectPlanningChatState>(response);
 }
 
 export async function updateProjectPlanningChatConfig(
   projectID: number,
   config: ProjectPlanningChatConfig,
-): Promise<{ config: ProjectPlanningChatConfig }> {
+): Promise<{ config: ProjectPlanningChatConfig; realtime_published?: boolean; realtime_error?: string }> {
   const response = await fetch(`/v1/projects/${projectID}/planning-chat`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

@@ -17,7 +17,7 @@ import (
 
 func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 	if !s.scrumAvailable() {
-		writeError(w, http.StatusServiceUnavailable, "scrum store unavailable")
+		writeError(w, http.StatusServiceUnavailable, "postgres repository is required for Scrum")
 		return
 	}
 	switch r.Method {
@@ -49,17 +49,16 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			AutoPlayThrough *bool                    `json:"auto_play_through"`
-			AutoWork        *ScrumAutoWorkConfig     `json:"auto_work"`
-			AutoReview      *ScrumAutoReviewConfig   `json:"auto_review"`
-			CreateTicket    *ScrumCreateTicketConfig `json:"create_ticket"`
+			AutoWork     *ScrumAutoWorkConfig     `json:"auto_work"`
+			AutoReview   *ScrumAutoReviewConfig   `json:"auto_review"`
+			CreateTicket *ScrumCreateTicketConfig `json:"create_ticket"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		if req.AutoPlayThrough == nil && req.AutoWork == nil && req.AutoReview == nil && req.CreateTicket == nil {
-			writeError(w, http.StatusBadRequest, "auto_play_through, auto_work, auto_review, or create_ticket is required")
+		if req.AutoWork == nil && req.AutoReview == nil && req.CreateTicket == nil {
+			writeError(w, http.StatusBadRequest, "auto_work, auto_review, or create_ticket is required")
 			return
 		}
 		projectID, err := s.resolveProjectID(r)
@@ -72,30 +71,28 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		if req.AutoPlayThrough != nil {
-			if err := s.saveScrumAutoPlayThrough(r.Context(), project, *req.AutoPlayThrough); err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			project, _ = s.repo.GetProject(r.Context(), projectID)
-		}
 		if req.AutoWork != nil {
 			cfg := *req.AutoWork
-			if req.AutoPlayThrough != nil {
-				cfg.Enabled = *req.AutoPlayThrough
-			}
 			if err := s.saveScrumAutoWorkConfig(r.Context(), project, cfg); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			project, _ = s.repo.GetProject(r.Context(), projectID)
+			project, err = s.repo.GetProject(r.Context(), projectID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
 		if req.AutoReview != nil {
 			if err := s.saveScrumAutoReviewConfig(r.Context(), project, *req.AutoReview); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			project, _ = s.repo.GetProject(r.Context(), projectID)
+			project, err = s.repo.GetProject(r.Context(), projectID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
 		if req.CreateTicket != nil {
 			if err := s.saveScrumCreateTicketConfig(r.Context(), project, *req.CreateTicket); err != nil {
@@ -108,11 +105,15 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if req.AutoPlayThrough != nil || req.AutoWork != nil {
-			if scrumPatchEnablesAutoWork(req.AutoPlayThrough, req.AutoWork) {
-				s.RefreshScrumPlayQueueForProjectAsync(projectID)
+		if req.AutoWork != nil {
+			if req.AutoWork.Enabled {
+				err = s.RefreshScrumPlayQueueForProjectAsync(projectID)
 			} else {
-				s.ReconcileScrumPlayQueueForProjectAsync(projectID)
+				err = s.ReconcileScrumPlayQueueForProjectAsync(projectID)
+			}
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
 			}
 		}
 		writeJSON(w, http.StatusOK, payload)
@@ -121,19 +122,9 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func scrumPatchEnablesAutoWork(autoPlayThrough *bool, autoWork *ScrumAutoWorkConfig) bool {
-	if autoPlayThrough != nil {
-		return *autoPlayThrough
-	}
-	if autoWork != nil {
-		return autoWork.Enabled
-	}
-	return false
-}
-
 func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
 	if !s.scrumAvailable() {
-		writeError(w, http.StatusServiceUnavailable, "scrum store unavailable")
+		writeError(w, http.StatusServiceUnavailable, "postgres repository is required for Scrum")
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -155,28 +146,41 @@ func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
 	if req.CreateTicket && req.CreateTicketConfig != nil {
 		column = req.CreateTicketConfig.Column
 	}
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.CreateTicketConfig != nil {
+		project, err := s.repo.GetProject(r.Context(), projectID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		if err := s.saveScrumCreateTicketConfig(r.Context(), project, *req.CreateTicketConfig); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	card, err := s.scrumCreateCard(r, req.Title, req.Description, column)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var ticketJob *model.Job
-	if req.CreateTicketConfig != nil && s.repo != nil {
-		if projectID, err := s.resolveProjectID(r); err == nil && projectID > 0 {
-			if project, err := s.repo.GetProject(r.Context(), projectID); err == nil {
-				_ = s.saveScrumCreateTicketConfig(r.Context(), project, *req.CreateTicketConfig)
-			}
+	if req.CreateTicket {
+		ticketModel, err := s.scrumCardTicketModel(r.Context(), projectID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("card %s was created but its ticket model could not be resolved: %v", card.ID, err))
+			return
 		}
-	}
-	if req.CreateTicket && s.repo != nil {
-		if projectID, err := s.resolveProjectID(r); err == nil && projectID > 0 {
-			ticketModel := s.scrumCardTicketModel(r.Context(), projectID)
-			job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionCardTicket, "", ticketModel, scrumcardllm.TicketRequest{PlanningMode: true})
-			if err == nil {
-				card = updated
-				ticketJob = &job
-			}
+		job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionCardTicket, "", ticketModel, scrumcardllm.TicketRequest{PlanningMode: true})
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("card %s was created but its ticket job failed: %v", card.ID, err))
+			return
 		}
+		card = updated
+		ticketJob = &job
 	}
 	payload := map[string]any{"card": card}
 	if ticketJob != nil {
@@ -188,7 +192,7 @@ func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 	if !s.scrumAvailable() {
-		writeError(w, http.StatusServiceUnavailable, "scrum store unavailable")
+		writeError(w, http.StatusServiceUnavailable, "postgres repository is required for Scrum")
 		return
 	}
 	cardID, action := splitScrumCardPath(r.URL.Path)
@@ -321,7 +325,10 @@ func (s *Server) scrumLLMGenerate(ctx context.Context, source, system, user stri
 	if s.llmClient == nil {
 		return "", fmt.Errorf("no llm client configured")
 	}
-	modelName := firstNonEmpty(s.ollamaDefaultModel, "llama3.2")
+	modelName, err := s.requiredDefaultLLMModel()
+	if err != nil {
+		return "", err
+	}
 	prompt := strings.TrimSpace(system + "\n\n" + user)
 	promptChars := llmPromptCharCount(system, user)
 	generated, err := s.llmClient.Generate(ctx, modelName, prompt)
@@ -346,20 +353,26 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 			writeError(w, http.StatusNotFound, "card not found")
 			return
 		}
-		page := scrumCardChatPageFor(card, scrumCardChatLimit(r.URL.Query().Get("limit")), r.URL.Query().Get("before"))
+		limit, err := parseScrumChannelPageLimit(r.URL.Query().Get("limit"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		page, err := scrumChannelMessagePageFor(card, limit, r.URL.Query().Get("before"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"component_id":  scrumCardChatComponentID(card.ID),
-			"html":          page.HTML,
-			"cursor":        page.Cursor,
+			"messages":      page.Messages,
 			"before_cursor": page.BeforeCursor,
 			"has_more":      page.HasMore,
-			"busy":          scrumCardChatBusy(card),
-			"card":          scrumCardChatResponseCard(card),
+			"busy":          scrumChannelBusy(card),
 		})
 		return
 	}
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, "card chat only accepts POST")
 		return
 	}
 	var req struct {
@@ -395,20 +408,13 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 			result.Card = *card
 		}
 	}
-	s.publishScrumCardChatUpdate(r.Context(), projectID, result.Card, "channel chat")
-	page := scrumCardChatPageFor(result.Card, scrumCardChatDefaultLimit, "")
+	s.publishScrumCardUpdate(r.Context(), projectID, result.Card, "channel chat")
+	responseCard := scrumCardChannelPayload(result.Card, scrumChannelDefaultPageSize)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"component_id":  scrumCardChatComponentID(result.Card.ID),
-		"html":          page.HTML,
-		"cursor":        page.Cursor,
-		"before_cursor": page.BeforeCursor,
-		"has_more":      page.HasMore,
-		"busy":          scrumCardChatBusy(result.Card),
-		"card":          scrumCardChatResponseCard(result.Card),
-		"reply":         "",
-		"agent":         result.Agent,
-		"action":        result.Action,
-		"operation_id":  scrumCardChatCursor(result.Card),
+		"card":   responseCard,
+		"reply":  "",
+		"agent":  result.Agent,
+		"action": result.Action,
 	})
 }
 
@@ -418,7 +424,7 @@ func (s *Server) handleScrumFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.scrumAvailable() {
-		writeError(w, http.StatusServiceUnavailable, "scrum store unavailable")
+		writeError(w, http.StatusServiceUnavailable, "postgres repository is required for Scrum")
 		return
 	}
 	root, err := s.scrumProjectDirectory(r)
@@ -553,7 +559,7 @@ func (s *Server) handleScrumCardFiles(w http.ResponseWriter, r *http.Request, ca
 		return
 	}
 	if projectID > 0 && s.repo != nil {
-		s.publishScrumModalCardRefresh(r.Context(), projectID, updated, "files updated")
+		s.publishScrumCardUpdate(r.Context(), projectID, updated, "files updated")
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"card": updated, "uploaded": uploaded})
 }
@@ -607,11 +613,14 @@ func (s *Server) handleScrumCardSync(w http.ResponseWriter, r *http.Request) {
 		"play_queue":   scrumPlayQueueSummary(board),
 	}
 	if projectID > 0 {
-		autoWork := s.scrumAutoWorkConfig(r.Context(), projectID)
-		payload["auto_play_through"] = autoWork.Enabled
-		payload["auto_work"] = autoWork
-		payload["auto_review"] = s.scrumAutoReviewConfig(r.Context(), projectID)
-		payload["create_ticket"] = s.scrumCreateTicketConfig(r.Context(), projectID)
+		automation, err := s.scrumAutomationSettings(r.Context(), projectID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		payload["auto_work"] = automation.AutoWork
+		payload["auto_review"] = automation.AutoReview
+		payload["create_ticket"] = automation.CreateTicket
 	}
 	writeJSON(w, http.StatusOK, payload)
 }

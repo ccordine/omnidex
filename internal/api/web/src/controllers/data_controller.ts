@@ -6,11 +6,13 @@ import {
   fetchDataSourcesPublic,
   fetchJobRecord,
   sendDataSourceChannelMessage,
+  type JobRecord,
 } from "../lib/data_api";
 import { mountDataCharts } from "../lib/data_chart";
 import { emptyDataPanelState, renderDataPanel, type DataPanelState } from "../lib/data_render";
 import { panelHref, parseDataChannelFromLocation, parseDataSourceFromLocation } from "../lib/panel_routing";
-import type GxController from "./gx_controller";
+import type RecyclrController from "./recyclr_controller";
+import { observeRealtimeJob, type RealtimeJobObservation } from "../lib/realtime_job_observer";
 
 export default class DataController extends Controller {
   static targets = ["panel"];
@@ -19,7 +21,7 @@ export default class DataController extends Controller {
 
   private state: DataPanelState = emptyDataPanelState();
   private panelShownHandler: ((event: Event) => void) | null = null;
-  private pollTimer: number | null = null;
+  private jobObservation: RealtimeJobObservation<{ job: JobRecord }> | null = null;
 
   connect() {
     const sourceID = parseDataSourceFromLocation();
@@ -36,15 +38,17 @@ export default class DataController extends Controller {
 
   disconnect() {
     if (this.panelShownHandler) document.removeEventListener("omni:panel-shown", this.panelShownHandler);
-    this.stopPolling();
+    this.stopJobObservation("Data controller disconnected.");
   }
 
-  private gxController(): GxController | null {
-    return this.application.getControllerForElementAndIdentifier(document.body, "gx") as GxController | null;
+  private recyclrController(): RecyclrController {
+    const controller = this.application.getControllerForElementAndIdentifier(document.body, "recyclr") as RecyclrController | null;
+    if (!controller) throw new Error("The page-scoped Recyclr controller is unavailable.");
+    return controller;
   }
 
   private pushRoute() {
-    this.gxController()?.pushRoute(
+    this.recyclrController().pushRoute(
       panelHref("data", window.location, {
         data_source: this.state.selectedSourceId || "",
         data_channel: this.state.selectedChannelId || "",
@@ -127,7 +131,7 @@ export default class DataController extends Controller {
     this.state.selectedChannelId = null;
     this.state.messages = [];
     this.state.pendingJobId = null;
-    this.stopPolling();
+    this.stopJobObservation("Data source changed.");
     this.pushRoute();
     void this.loadChannels();
   }
@@ -138,7 +142,7 @@ export default class DataController extends Controller {
     if (!id || id === this.state.selectedChannelId) return;
     this.state.selectedChannelId = id;
     this.state.pendingJobId = null;
-    this.stopPolling();
+    this.stopJobObservation("Data channel changed.");
     this.pushRoute();
     void this.loadMessages();
   }
@@ -169,7 +173,16 @@ export default class DataController extends Controller {
     const sourceID = this.state.selectedSourceId;
     const channelID = this.state.selectedChannelId;
     const prompt = this.preservePrompt().trim();
-    if (!sourceID || !channelID || !prompt) return;
+    if (!sourceID || !channelID) {
+      this.state.status = "Select a data source and channel first.";
+      this.render();
+      return;
+    }
+    if (!prompt) {
+      this.state.status = "Enter a question first.";
+      this.render();
+      return;
+    }
     this.state.status = "Sending…";
     this.render();
     try {
@@ -179,42 +192,54 @@ export default class DataController extends Controller {
       this.restorePrompt("");
       await this.loadMessages(false);
       this.render(true);
-      this.startPolling(result.job.id);
+      this.observeJob(result.job.id);
     } catch (error) {
       this.state.status = error instanceof Error ? error.message : String(error);
       this.render();
     }
   }
 
-  private startPolling(jobID: number) {
-    this.stopPolling();
-    const tick = async () => {
-      try {
+  private observeJob(jobID: number) {
+    this.stopJobObservation("A newer data job replaced this observation.");
+    const observation = observeRealtimeJob({
+      jobID,
+      load: async () => {
         const details = await fetchJobRecord(jobID);
-        const status = details.job?.status || "";
-        if (status === "completed" || status === "failed" || status === "canceled") {
-          this.state.pendingJobId = null;
-          this.state.status = status === "completed" ? "Ready" : details.job?.error || `Job ${status}`;
-          await this.loadMessages(false);
-          this.render(true);
-          this.stopPolling();
-          return;
+        if (!details.job || details.job.id !== jobID) {
+          throw new Error(`Authoritative job response did not include job #${jobID}.`);
         }
-        this.state.status = `Running job #${jobID} · ${status}…`;
+        return { status: details.job.status, error: details.job.error, data: details };
+      },
+      onUpdate: async ({ status }) => {
+        if (this.jobObservation !== observation) return;
+        this.state.status = status === "completed" ? "Finalizing results…" : `Running job #${jobID} · ${status}…`;
         await this.loadMessages(false);
         this.render(true);
-      } catch {
-        /* keep polling */
-      }
-    };
-    void tick();
-    this.pollTimer = window.setInterval(() => void tick(), 900);
+      },
+    });
+    this.jobObservation = observation;
+    void observation.completion
+      .then(async () => {
+        if (this.jobObservation !== observation) return;
+        this.state.pendingJobId = null;
+        this.state.status = "Ready";
+        await this.loadMessages(false);
+        this.render(true);
+      })
+      .catch((error) => {
+        if (this.jobObservation !== observation) return;
+        this.state.pendingJobId = null;
+        this.state.status = error instanceof Error ? error.message : String(error);
+        this.render();
+      })
+      .finally(() => {
+        if (this.jobObservation === observation) this.jobObservation = null;
+      });
   }
 
-  private stopPolling() {
-    if (this.pollTimer != null) {
-      window.clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
+  private stopJobObservation(reason: string) {
+    const observation = this.jobObservation;
+    this.jobObservation = null;
+    observation?.cancel(reason);
   }
 }

@@ -14,6 +14,11 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
+const (
+	maxProviderResponseBytes = 16 << 20
+	maxProviderErrorBytes    = 4 << 10
+)
+
 type Client struct {
 	baseURL        string
 	apiKey         string
@@ -34,9 +39,14 @@ type chatMessage struct {
 }
 
 type chatCompletionRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
+	Model          string                        `json:"model"`
+	Messages       []chatMessage                 `json:"messages"`
+	Stream         bool                          `json:"stream"`
+	ResponseFormat *chatCompletionResponseFormat `json:"response_format,omitempty"`
+}
+
+type chatCompletionResponseFormat struct {
+	Type string `json:"type"`
 }
 
 type chatCompletionResponse struct {
@@ -58,23 +68,38 @@ type embeddingsResponse struct {
 	} `json:"data"`
 }
 
-func New(baseURL, apiKey, defaultModel, embeddingModel, organization, project string, timeout time.Duration) *Client {
+func New(baseURL, apiKey, defaultModel, embeddingModel, organization, project string, timeout time.Duration) (*Client, error) {
 	return NewCompatible("openai", "OPENAI_API_KEY", baseURL, apiKey, defaultModel, embeddingModel, organization, project, timeout)
 }
 
-func NewCompatible(providerName, apiKeyName, baseURL, apiKey, defaultModel, embeddingModel, organization, project string, timeout time.Duration) *Client {
+func NewCompatible(providerName, apiKeyName, baseURL, apiKey, defaultModel, embeddingModel, organization, project string, timeout time.Duration) (*Client, error) {
 	providerName = strings.TrimSpace(providerName)
 	if providerName == "" {
-		providerName = "openai"
+		return nil, fmt.Errorf("provider name is required")
 	}
 	apiKeyName = strings.TrimSpace(apiKeyName)
 	if apiKeyName == "" {
-		apiKeyName = "OPENAI_API_KEY"
+		return nil, fmt.Errorf("API key environment name is required for provider %s", providerName)
+	}
+	baseURL, err := normalizeCompatibleBaseURL(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("%s base URL: %w", providerName, err)
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return nil, fmt.Errorf("%s is required for provider %s", apiKeyName, providerName)
+	}
+	defaultModel = strings.TrimSpace(defaultModel)
+	if defaultModel == "" {
+		return nil, fmt.Errorf("default model is required for provider %s", providerName)
+	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("request timeout must be positive for provider %s", providerName)
 	}
 	return &Client{
-		baseURL:        normalizeBaseURL(baseURL),
-		apiKey:         strings.TrimSpace(apiKey),
-		defaultModel:   strings.TrimSpace(defaultModel),
+		baseURL:        baseURL,
+		apiKey:         apiKey,
+		defaultModel:   defaultModel,
 		embeddingModel: strings.TrimSpace(embeddingModel),
 		organization:   strings.TrimSpace(organization),
 		project:        strings.TrimSpace(project),
@@ -84,7 +109,7 @@ func NewCompatible(providerName, apiKeyName, baseURL, apiKey, defaultModel, embe
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
-	}
+	}, nil
 }
 
 func NewAzureAI(baseURL, apiKey, defaultModel, embeddingModel, apiVersion, apiStyle string, timeout time.Duration) *Client {
@@ -164,15 +189,22 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 		promptHint = llm.MinimalGeneratePrompt
 	}
 
-	var resp chatCompletionResponse
-	err := c.doJSON(ctx, http.MethodPost, c.chatCompletionsPath(model), chatCompletionRequest{
+	request := chatCompletionRequest{
 		Model: model,
 		Messages: []chatMessage{
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: promptHint},
 		},
 		Stream: false,
-	}, &resp)
+	}
+	if prepared.ResponseFormat != "" {
+		if prepared.ResponseFormat != llm.ResponseFormatJSON {
+			return "", fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
+		}
+		request.ResponseFormat = &chatCompletionResponseFormat{Type: "json_object"}
+	}
+	var resp chatCompletionResponse
+	err := c.doJSON(ctx, http.MethodPost, c.chatCompletionsPath(model), request, &resp)
 	if err != nil {
 		return "", err
 	}
@@ -275,13 +307,16 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s request: %w", c.providerName, err)
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
-		return err
+		return fmt.Errorf("read %s response: %w", c.providerName, err)
+	}
+	if len(data) > maxProviderResponseBytes {
+		return fmt.Errorf("%s response exceeded %d bytes", c.providerName, maxProviderResponseBytes)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -298,12 +333,16 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 			}
 			return fmt.Errorf("%s request failed: %s", c.providerName, msg)
 		}
-		return fmt.Errorf("%s request failed: status=%d body=%s", c.providerName, resp.StatusCode, strings.TrimSpace(string(data)))
+		body := strings.TrimSpace(string(data))
+		if len(body) > maxProviderErrorBytes {
+			body = body[:maxProviderErrorBytes] + "...[truncated]"
+		}
+		return fmt.Errorf("%s request failed: status=%d body=%s", c.providerName, resp.StatusCode, body)
 	}
 
 	if out != nil {
 		if err := json.Unmarshal(data, out); err != nil {
-			return err
+			return fmt.Errorf("decode %s response: %w", c.providerName, err)
 		}
 	}
 	return nil
@@ -347,20 +386,19 @@ func (c *Client) withAPIVersion(path string) string {
 	return path + separator + "api-version=" + url.QueryEscape(version)
 }
 
-func normalizeBaseURL(baseURL string) string {
+func normalizeCompatibleBaseURL(baseURL string) (string, error) {
 	value := strings.TrimSpace(baseURL)
 	if value == "" {
-		value = "https://api.openai.com/v1"
-	}
-	if !strings.Contains(value, "://") {
-		value = "https://" + value
+		return "", fmt.Errorf("base URL is required")
 	}
 	parsed, err := url.Parse(value)
-	if err == nil && (parsed.Path == "" || parsed.Path == "/") {
-		parsed.Path = "/v1"
-		value = parsed.String()
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", fmt.Errorf("must be an absolute HTTP(S) URL, received %q", value)
 	}
-	return strings.TrimRight(value, "/")
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("must not contain credentials, query parameters, or fragments, received %q", value)
+	}
+	return strings.TrimRight(value, "/"), nil
 }
 
 func normalizeAzureBaseURL(baseURL string) string {
@@ -414,15 +452,16 @@ func messageContentAsString(value any) string {
 			if !ok {
 				continue
 			}
-			if text := strings.TrimSpace(fmt.Sprintf("%v", entry["text"])); text != "" {
+			textValue, ok := entry["text"].(string)
+			if !ok {
+				continue
+			}
+			if text := strings.TrimSpace(textValue); text != "" {
 				parts = append(parts, text)
 			}
 		}
 		return strings.TrimSpace(strings.Join(parts, "\n"))
 	default:
-		if typed == nil {
-			return ""
-		}
-		return fmt.Sprintf("%v", typed)
+		return ""
 	}
 }

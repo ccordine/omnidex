@@ -4,6 +4,8 @@
   "preferred_model": ["search", "fast"],
   "allowed_tools": ["web.search"],
   "context_budget": 9000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
   "retry_policy": "provider_fallback",
   "require_evidence": true
 }

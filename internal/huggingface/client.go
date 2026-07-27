@@ -28,9 +28,14 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
+	Model          string              `json:"model"`
+	Messages       []chatMessage       `json:"messages"`
+	Stream         bool                `json:"stream"`
+	ResponseFormat *chatResponseFormat `json:"response_format,omitempty"`
+}
+
+type chatResponseFormat struct {
+	Type string `json:"type"`
 }
 
 type chatResponse struct {
@@ -93,15 +98,22 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 		promptHint = llm.MinimalGeneratePrompt
 	}
 
-	var parsed chatResponse
-	if err := c.doRouterJSON(ctx, "/chat/completions", chatRequest{
+	request := chatRequest{
 		Model: model,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: promptHint},
 		},
 		Stream: false,
-	}, &parsed); err != nil {
+	}
+	if prepared.ResponseFormat != "" {
+		if prepared.ResponseFormat != llm.ResponseFormatJSON {
+			return "", fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
+		}
+		request.ResponseFormat = &chatResponseFormat{Type: "json_object"}
+	}
+	var parsed chatResponse
+	if err := c.doRouterJSON(ctx, "/chat/completions", request, &parsed); err != nil {
 		return "", err
 	}
 	if len(parsed.Choices) == 0 {

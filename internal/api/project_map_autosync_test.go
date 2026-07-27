@@ -1,21 +1,24 @@
 package api
 
 import (
-	"encoding/json"
+	"strings"
 	"testing"
 )
 
-func TestJobWorkspaceLocationPrefersProjectDirectory(t *testing.T) {
-	meta := json.RawMessage(`{"project_directory":"/repo/app","client_cwd":"/tmp/other"}`)
-	got := jobWorkspaceLocation(meta)
-	if got != "/repo/app" {
-		t.Fatalf("location=%q want /repo/app", got)
+func TestProjectMapAutosyncUsesDurableJobProjectAuthority(t *testing.T) {
+	source := readAPISource(t, "project_map_autosync.go")
+	if !strings.Contains(source, "s.repo.JobProjectID(ctx, jobID)") {
+		t.Fatal("project map autosync must use jobs.project_id")
 	}
-}
-
-func TestMetadataProjectID(t *testing.T) {
-	meta := json.RawMessage(`{"project_id":42}`)
-	if got := metadataProjectID(meta); got != 42 {
-		t.Fatalf("project_id=%d want 42", got)
+	for _, forbidden := range []string{
+		"context.Background()",
+		"resolveJobProjectRef",
+		"metadataProjectID",
+		"jobWorkspaceLocation",
+		"GetProjectByLocation",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("project map autosync contains detached or metadata fallback %q", forbidden)
+		}
 	}
 }

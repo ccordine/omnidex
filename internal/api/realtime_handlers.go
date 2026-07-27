@@ -1,183 +1,128 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
+	"log"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
-const telemetryNotifyChannel = "omni_telemetry"
-
 var realtimeUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
-type telemetryNotifyPayload struct {
-	EventType string         `json:"event_type"`
-	RunID     string         `json:"run_id"`
-	Message   string         `json:"message"`
-	Payload   map[string]any `json:"payload"`
-}
-
-func parseTelemetryNotifyPayload(raw string) telemetryNotifyPayload {
-	var payload telemetryNotifyPayload
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		payload.EventType = strings.TrimSpace(raw)
-		return payload
-	}
-	if payload.Message == "" && payload.Payload != nil {
-		if msg, ok := payload.Payload["message"].(string); ok {
-			payload.Message = strings.TrimSpace(msg)
-		}
-	}
-	return payload
+	CheckOrigin: realtimeOriginAllowed,
 }
 
 type realtimeMessage struct {
-	ID        uint64         `json:"id"`
-	HTML      string         `json:"html,omitempty"`
-	EventName string         `json:"eventName,omitempty"`
-	Reason    string         `json:"reason,omitempty"`
-	Toast     string         `json:"toast,omitempty"`
-	ToastTone string         `json:"toastTone,omitempty"`
-	ProjectID int64          `json:"projectID,omitempty"`
-	CardID    string         `json:"cardID,omitempty"`
-	Card      *ScrumCard     `json:"card,omitempty"`
-	PlayQueue map[string]any `json:"playQueue,omitempty"`
+	ID           uint64           `json:"id,omitempty"`
+	StateKey     string           `json:"stateKey,omitempty"`
+	OccurredAt   string           `json:"occurredAt,omitempty"`
+	HTML         string           `json:"html,omitempty"`
+	EventName    string           `json:"eventName,omitempty"`
+	Reason       string           `json:"reason,omitempty"`
+	Toast        string           `json:"toast,omitempty"`
+	ToastTone    string           `json:"toastTone,omitempty"`
+	ProjectID    int64            `json:"projectID,omitempty"`
+	CardID       string           `json:"cardID,omitempty"`
+	Card         *ScrumCard       `json:"card,omitempty"`
+	PlayQueue    map[string]any   `json:"playQueue,omitempty"`
+	LatestID     uint64           `json:"latestID,omitempty"`
+	ReplayCount  int              `json:"replayCount,omitempty"`
+	SyncRequired bool             `json:"syncRequired,omitempty"`
+	JobID        int64            `json:"jobID,omitempty"`
+	Phase        realtimeJobPhase `json:"phase,omitempty"`
+	Summary      string           `json:"summary,omitempty"`
+	Snapshot     bool             `json:"snapshot,omitempty"`
+	AIControl    *aiControlState  `json:"aiControl,omitempty"`
 }
 
-func (s *Server) ensureRealtimeHub() *RealtimeHub {
+type realtimeJobPhase string
+
+const (
+	realtimeJobQueued   realtimeJobPhase = "queued"
+	realtimeJobChanged  realtimeJobPhase = "state_changed"
+	realtimeJobOutput   realtimeJobPhase = "output"
+	realtimeJobFinished realtimeJobPhase = "finished"
+)
+
+func realtimeOriginAllowed(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host)
+}
+
+func parseRealtimeLastID(raw string) (uint64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	id, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid realtime last_id %q", raw)
+	}
+	return id, nil
+}
+
+func (s *Server) requireRealtimeHub() (*RealtimeHub, error) {
 	if s.realtimeHub == nil {
-		s.realtimeHub = NewRealtimeHub(RealtimeHubOptions{MaxClients: s.realtimeMaxClients})
+		return nil, ErrRealtimeHubUnavailable
 	}
-	return s.realtimeHub
+	return s.realtimeHub, nil
 }
 
-func (s *Server) startRealtimeTelemetryListener(ctx context.Context) {
-	if s.repo == nil {
-		return
-	}
-	go s.listenTelemetryNotifications(ctx)
-}
-
-func (s *Server) listenTelemetryNotifications(ctx context.Context) {
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		if err := s.runTelemetryListener(ctx); err != nil && ctx.Err() == nil {
-			time.Sleep(2 * time.Second)
-		}
+func (s *Server) broadcastRealtime(topics []string, message realtimeMessage) {
+	if _, err := s.broadcastRealtimeChecked(topics, message); err != nil {
+		log.Printf("realtime broadcast failed event=%q state_key=%q: %v", message.EventName, message.StateKey, err)
 	}
 }
 
-func (s *Server) runTelemetryListener(ctx context.Context) error {
-	conn, err := s.repo.AcquireNotifyConn(ctx)
+func (s *Server) broadcastRealtimeChecked(topics []string, message realtimeMessage) (RealtimeBroadcastResult, error) {
+	hub, err := s.requireRealtimeHub()
 	if err != nil {
-		return err
+		return RealtimeBroadcastResult{}, err
 	}
-	defer conn.Close(context.Background())
-
-	if err := conn.Exec(ctx, "LISTEN "+telemetryNotifyChannel); err != nil {
-		return err
-	}
-
-	for {
-		notification, err := conn.WaitForNotification(ctx)
-		if err != nil {
-			return err
-		}
-		var payload telemetryNotifyPayload
-		payload = parseTelemetryNotifyPayload(notification.Payload)
-		s.publishMetricsGlance(ctx, payload)
-	}
-}
-
-func (s *Server) nextRealtimeID() uint64 {
-	return s.realtimeSeq.Add(1)
-}
-
-func (s *Server) publishMetricsGlance(ctx context.Context, trigger telemetryNotifyPayload) {
-	if s.repo == nil {
-		return
-	}
-	glance, err := s.repo.TelemetryGlance(ctx)
+	result, err := hub.Broadcast(topics, message)
 	if err != nil {
-		return
+		return RealtimeBroadcastResult{}, err
 	}
-	msg := s.buildMetricsGlanceRealtimeMessage(glance, trigger)
-	s.ensureRealtimeHub().Broadcast([]string{"ui", "metrics"}, msg)
+	if result.DisconnectedClients > 0 {
+		log.Printf("realtime broadcast recovered slow clients event=%q message_id=%d disconnected=%d", message.EventName, result.MessageID, result.DisconnectedClients)
+	}
+	return result, nil
 }
 
-func (s *Server) buildMetricsGlanceRealtimeMessage(glance queue.TelemetryGlanceSummary, trigger telemetryNotifyPayload) realtimeMessage {
-	html := renderMetricsNavBadgesHTML(glance)
-	msg := realtimeMessage{
-		ID:        s.nextRealtimeID(),
-		HTML:      html,
-		EventName: "metrics-glance",
-	}
-	if trigger.EventType != "" && queue.IsTelemetryStruggleEvent(trigger.EventType) {
-		label := strings.ReplaceAll(trigger.EventType, "_", " ")
-		if trigger.Message != "" {
-			msg.Toast = fmt.Sprintf("%s — %s", label, strings.TrimSpace(trigger.Message))
-		} else {
-			msg.Toast = label
-		}
-		msg.ToastTone = "error"
-	}
-	return msg
-}
-
-func renderMetricsNavBadgesHTML(glance queue.TelemetryGlanceSummary) string {
-	parts := []string{}
-	if glance.LiveRuns > 0 {
-		parts = append(parts, fmt.Sprintf(
-			`<span class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-300/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-100" title="Live runs">%s</span>`,
-			html.EscapeString(fmt.Sprintf("%d", glance.LiveRuns)),
-		))
-	}
-	if glance.RecentErrors > 0 {
-		parts = append(parts, fmt.Sprintf(
-			`<span class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full border border-rose-400/35 bg-rose-950/80 px-1.5 py-0.5 text-[10px] font-semibold text-rose-100" title="Errors in the last hour">%s</span>`,
-			html.EscapeString(fmt.Sprintf("%d", glance.RecentErrors)),
-		))
-	} else if glance.Struggling && glance.StruggleSignals > 0 {
-		parts = append(parts, fmt.Sprintf(
-			`<span class="inline-flex min-w-[1.25rem] items-center justify-center rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-100" title="Struggle signals (7d)">%s</span>`,
-			html.EscapeString(fmt.Sprintf("%d", glance.StruggleSignals)),
-		))
-	}
-	inner := strings.Join(parts, "")
-	if inner == "" {
-		inner = `<span class="text-zinc-500">05</span>`
-	}
-	return `<template data-recyclr-target="metrics-nav-badges"><span class="flex items-center gap-1.5">` + inner + `</span></template>`
-}
-
-func (s *Server) handleMetricsGlance(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+func (s *Server) publishJobProgress(jobID int64, phase realtimeJobPhase, summary string) {
+	if jobID <= 0 {
+		log.Printf("realtime job progress rejected job=%d phase=%q: positive job id required", jobID, phase)
 		return
 	}
-	if s.repo == nil {
-		writeError(w, http.StatusServiceUnavailable, "repository unavailable")
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		log.Printf("realtime job progress rejected job=%d phase=%q: summary required", jobID, phase)
 		return
 	}
-	glance, err := s.repo.TelemetryGlance(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	message := realtimeMessage{
+		EventName: "job-progress",
+		JobID:     jobID,
+		Phase:     phase,
+		Summary:   summary,
 	}
-	writeJSON(w, http.StatusOK, glance)
+	if phase != realtimeJobOutput {
+		message.StateKey = fmt.Sprintf("job:%d:%s", jobID, phase)
+	}
+	s.broadcastRealtime([]string{realtimeTopicUI, realtimeTopicJobs}, message)
 }
 
 func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
@@ -185,31 +130,53 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if s.repo == nil {
-		writeError(w, http.StatusServiceUnavailable, "repository unavailable")
+	if !realtimeOriginAllowed(r) {
+		log.Printf("realtime websocket rejected remote=%q origin=%q: cross-origin connection is not allowed", r.RemoteAddr, r.Header.Get("Origin"))
+		writeError(w, http.StatusForbidden, "realtime origin is not allowed")
 		return
 	}
 
-	topics := parseRealtimeTopics(r.URL.Query().Get("topics"))
-	_, outbound, unsubscribe, err := s.ensureRealtimeHub().Subscribe(topics)
+	topics, err := parseRealtimeTopics(r.URL.Query().Get("topics"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	lastID, err := parseRealtimeLastID(r.URL.Query().Get("last_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	hub, err := s.requireRealtimeHub()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	subscription, err := hub.Subscribe(topics, lastID)
 	if err != nil {
 		if errors.Is(err, ErrRealtimeHubFull) {
+			log.Printf("realtime websocket rejected remote=%q: client limit reached", r.RemoteAddr)
 			writeError(w, http.StatusServiceUnavailable, "realtime client limit reached")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer unsubscribe()
+	defer subscription.Unsubscribe()
 
 	conn, err := realtimeUpgrader.Upgrade(w, r, nil)
 	if err != nil {
+		log.Printf("realtime websocket upgrade rejected remote=%q origin=%q: %v", r.RemoteAddr, r.Header.Get("Origin"), err)
 		return
 	}
 	defer conn.Close()
+	log.Printf("realtime websocket connected client=%d remote=%q topics=%s last_id=%d replay=%d sync_required=%t", subscription.ID, r.RemoteAddr, strings.Join(topics, ","), lastID, subscription.ReplayCount, subscription.ReplayGap)
+	defer log.Printf("realtime websocket disconnected client=%d remote=%q", subscription.ID, r.RemoteAddr)
 	deadline := time.Now().Add(s.realtimeStreamMaxAge)
 	conn.SetReadLimit(4096)
-	_ = conn.SetReadDeadline(time.Now().Add(s.realtimeHeartbeat * 3))
+	if err := conn.SetReadDeadline(time.Now().Add(s.realtimeHeartbeat * 3)); err != nil {
+		log.Printf("realtime websocket read deadline failed client=%d: %v", subscription.ID, err)
+		return
+	}
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(s.realtimeHeartbeat * 3))
 	})
@@ -218,14 +185,32 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	writeMessage := func(messageType int, payload []byte) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		_ = conn.SetWriteDeadline(time.Now().Add(s.realtimeWriteTimeout))
+		if err := conn.SetWriteDeadline(time.Now().Add(s.realtimeWriteTimeout)); err != nil {
+			return fmt.Errorf("set realtime write deadline: %w", err)
+		}
 		return conn.WriteMessage(messageType, payload)
 	}
 
-	if glance, err := s.repo.TelemetryGlance(r.Context()); err == nil {
-		msg := s.buildMetricsGlanceRealtimeMessage(glance, telemetryNotifyPayload{})
-		if data, err := json.Marshal(msg); err == nil {
-			_ = writeMessage(websocket.TextMessage, data)
+	connected := realtimeMessage{
+		EventName:    "realtime-connected",
+		LatestID:     subscription.LatestID,
+		ReplayCount:  subscription.ReplayCount,
+		SyncRequired: subscription.ReplayGap,
+		OccurredAt:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if data, err := json.Marshal(connected); err != nil || writeMessage(websocket.TextMessage, data) != nil {
+		return
+	}
+	if (lastID == 0 || subscription.ReplayGap) && s.repo != nil {
+		glance, err := s.repo.TelemetryGlance(r.Context())
+		if err != nil {
+			log.Printf("realtime websocket initial metrics failed: %v", err)
+		} else {
+			msg := s.buildMetricsGlanceRealtimeMessage(glance, telemetryNotifyPayload{})
+			msg.Snapshot = true
+			if data, marshalErr := json.Marshal(msg); marshalErr != nil || writeMessage(websocket.TextMessage, data) != nil {
+				return
+			}
 		}
 	}
 
@@ -248,95 +233,19 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		case <-done:
 			return
 		case <-expires.C:
-			_ = writeMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "stream expired"))
+			if err := writeMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "stream expired")); err != nil {
+				log.Printf("realtime websocket expiry close failed client=%d: %v", subscription.ID, err)
+			}
 			return
 		case <-ping.C:
 			if err := writeMessage(websocket.PingMessage, []byte("ping")); err != nil {
 				return
 			}
-		case payload, ok := <-outbound:
+		case payload, ok := <-subscription.Messages:
 			if !ok {
 				return
 			}
 			if err := writeMessage(websocket.TextMessage, payload); err != nil {
-				return
-			}
-		}
-	}
-}
-
-func (s *Server) handleRealtimeSSE(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if s.repo == nil {
-		writeError(w, http.StatusServiceUnavailable, "repository unavailable")
-		return
-	}
-
-	topics := parseRealtimeTopics(r.URL.Query().Get("topics"))
-	_, outbound, unsubscribe, err := s.ensureRealtimeHub().Subscribe(topics)
-	if err != nil {
-		if errors.Is(err, ErrRealtimeHubFull) {
-			writeError(w, http.StatusServiceUnavailable, "realtime client limit reached")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer unsubscribe()
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming unsupported")
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	responseController := http.NewResponseController(w)
-	writeFrame := func(format string, args ...any) bool {
-		_ = responseController.SetWriteDeadline(time.Now().Add(s.realtimeWriteTimeout))
-		if _, err := fmt.Fprintf(w, format, args...); err != nil {
-			return false
-		}
-		flusher.Flush()
-		return true
-	}
-
-	if glance, err := s.repo.TelemetryGlance(r.Context()); err == nil {
-		msg := s.buildMetricsGlanceRealtimeMessage(glance, telemetryNotifyPayload{})
-		if data, err := json.Marshal(msg); err == nil {
-			if !writeFrame("data: %s\n\n", data) {
-				return
-			}
-		}
-	}
-
-	ctx := r.Context()
-	heartbeat := time.NewTicker(s.realtimeHeartbeat)
-	defer heartbeat.Stop()
-	maxAge := time.NewTimer(s.realtimeStreamMaxAge)
-	defer maxAge.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-maxAge.C:
-			_ = writeFrame("event: close\ndata: {\"reason\":\"stream_expired\"}\n\n")
-			return
-		case <-heartbeat.C:
-			if !writeFrame(": ping %d\n\n", time.Now().Unix()) {
-				return
-			}
-		case payload, ok := <-outbound:
-			if !ok {
-				return
-			}
-			if !writeFrame("data: %s\n\n", payload) {
 				return
 			}
 		}

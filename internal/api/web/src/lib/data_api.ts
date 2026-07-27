@@ -92,7 +92,7 @@ export async function fetchDataSourceChannelMessages(sourceID: string, channelID
     `/v1/data-sources/${encodeURIComponent(sourceID)}/channels/${encodeURIComponent(channelID)}/messages?limit=${limit}`,
   );
   const payload = await readJSON<{ messages: DataSourceChannelMessage[] }>(response);
-  return (payload.messages ?? []).map(normalizeChannelMessage);
+  return payload.messages ?? [];
 }
 
 export async function sendDataSourceChannelMessage(
@@ -104,46 +104,10 @@ export async function sendDataSourceChannelMessage(
     `/v1/data-sources/${encodeURIComponent(sourceID)}/channels/${encodeURIComponent(channelID)}/messages`,
     jsonRequest({ prompt }),
   );
-  const payload = await readJSON<{ user_message: DataSourceChannelMessage; job: JobRecord; message: string }>(response);
-  return {
-    ...payload,
-    user_message: normalizeChannelMessage(payload.user_message),
-  };
+  return readJSON<{ user_message: DataSourceChannelMessage; job: JobRecord; message: string }>(response);
 }
 
 export async function fetchJobRecord(id: number): Promise<{ job: JobRecord }> {
   const response = await fetch(`/v1/jobs/${id}`);
   return readJSON(response);
-}
-
-function normalizeChannelMessage(message: DataSourceChannelMessage): DataSourceChannelMessage {
-  if (!message) return message;
-  let payload: DataSourceChannelPayload | undefined;
-  const raw = message.payload as unknown;
-  if (typeof raw === "string") {
-    try {
-      payload = JSON.parse(raw) as DataSourceChannelPayload;
-    } catch {
-      payload = undefined;
-    }
-  } else if (raw && typeof raw === "object") {
-    payload = raw as DataSourceChannelPayload;
-  }
-  return { ...message, payload };
-}
-
-export function parseJobResultPayload(raw: string): DataSourceChannelPayload | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  try {
-    const parsed = JSON.parse(trimmed) as DataSourceChannelPayload;
-    if (parsed?.query) return parsed;
-    const legacy = parsed as unknown as DataSourceChannelPayload["query"];
-    if (legacy && Array.isArray((legacy as { columns?: string[] }).columns)) {
-      return { query: legacy as DataSourceChannelPayload["query"] };
-    }
-    return parsed;
-  } catch {
-    return { query: { answer: trimmed, columns: [], rows: [], count: 0 } };
-  }
 }

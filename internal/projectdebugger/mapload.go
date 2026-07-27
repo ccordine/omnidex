@@ -1,29 +1,30 @@
 package projectdebugger
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/omni"
 )
 
-func LoadMapPayload(location string) map[string]any {
+func LoadMapPayload(location string) (map[string]any, error) {
 	location = strings.TrimSpace(location)
 	if location == "" {
-		return nil
+		return nil, fmt.Errorf("project debugger map requires a project location")
 	}
 	mapPath := omni.DefaultCodebaseMapPath(location)
 	if _, err := os.Stat(mapPath); err != nil {
 		if os.IsNotExist(err) {
-			return map[string]any{"exists": false}
+			return nil, fmt.Errorf("project debugger map %q does not exist; scan the project before analysis", mapPath)
 		}
-		return nil
+		return nil, fmt.Errorf("stat project debugger map: %w", err)
 	}
 	cm, err := omni.ReadCodebaseMap(mapPath)
 	if err != nil {
-		return map[string]any{"exists": false}
+		return nil, fmt.Errorf("read project debugger map: %w", err)
 	}
-	return mapPayloadFromCodebaseMap(cm, true)
+	return mapPayloadFromCodebaseMap(cm, true), nil
 }
 
 func mapPayloadFromCodebaseMap(cm omni.CodebaseMap, exists bool) map[string]any {
@@ -61,14 +62,14 @@ func mapPayloadFromCodebaseMap(cm omni.CodebaseMap, exists bool) map[string]any 
 		}
 	}
 	return map[string]any{
-		"exists":          exists,
-		"root":            cm.Root,
-		"file_count":      len(cm.Files),
-		"modules":         toAnySlice(modules),
-		"risks":           toAnySlice(risks),
-		"tests":           toAnySliceStrings(tests),
-		"open_questions":  toAnySliceStrings(cm.OpenQuestions),
-		"tree_preview":    strings.Join(treePaths, "\n"),
+		"exists":         exists,
+		"root":           cm.Root,
+		"file_count":     len(cm.Files),
+		"modules":        toAnySlice(modules),
+		"risks":          toAnySlice(risks),
+		"tests":          toAnySliceStrings(tests),
+		"open_questions": toAnySliceStrings(cm.OpenQuestions),
+		"tree_preview":   strings.Join(treePaths, "\n"),
 	}
 }
 

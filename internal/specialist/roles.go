@@ -19,6 +19,7 @@ const (
 	RoleIntentTaggingSpecialist      = "intent_tagging_specialist"
 	RoleMemoryRetrievalSpecialist    = "memory_retrieval_specialist"
 	RoleWebResearchSpecialist        = "web_research_specialist"
+	RoleSubtaskExecutorSpecialist    = "subtask_executor"
 	RoleDocumentationSpecialist      = "documentation_specialist"
 	RoleAnalysisSpecialist           = "analysis_specialist"
 	RoleResponseSpecialist           = "response_specialist"
@@ -96,7 +97,7 @@ func ForPipelineAction(action string) Role {
 				"avoid treating stale memory as run evidence",
 			},
 		}
-	case "web_search", "external_research", "subtask":
+	case "web_search", "external_research":
 		return Role{
 			ID:    RoleWebResearchSpecialist,
 			Name:  "Web Research Specialist",
@@ -105,6 +106,17 @@ func ForPipelineAction(action string) Role {
 				"run focused web queries",
 				"return source-grounded context for downstream steps",
 				"skip when freshness/external data is unnecessary",
+			},
+		}
+	case "subtask":
+		return Role{
+			ID:    RoleSubtaskExecutorSpecialist,
+			Name:  "Implementation Coordinator",
+			Scope: "coordinate execution of one typed objective through a server-owned, file-scoped implementation ledger",
+			Responsibilities: []string{
+				"execute bounded file, review, triage, and verification model jobs",
+				"preserve unrelated completed work while routing direct corrections to one owner",
+				"accept completion only after server-observed verification succeeds",
 			},
 		}
 	case "documentation", "docs", "doc_research", "documentation_research":
@@ -302,6 +314,8 @@ func EnvVarForRoleID(roleID string) string {
 		return "OLLAMA_MODEL_SPECIALIST_MEMORY_RETRIEVAL"
 	case RoleWebResearchSpecialist:
 		return "OLLAMA_MODEL_SPECIALIST_WEB_RESEARCH"
+	case RoleSubtaskExecutorSpecialist:
+		return "OLLAMA_MODEL_SPECIALIST_SUBTASK_EXECUTOR"
 	case RoleDocumentationSpecialist:
 		return "OLLAMA_MODEL_SPECIALIST_DOCUMENTATION"
 	case RoleAnalysisSpecialist:

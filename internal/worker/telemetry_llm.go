@@ -2,29 +2,13 @@ package worker
 
 import (
 	"context"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-const workerLLMContextCharsPerToken = 24
-
-func workerDefaultContextLimitChars() int {
-	raw := strings.TrimSpace(os.Getenv("OMNI_OLLAMA_NUM_CTX"))
-	if raw == "" {
-		raw = strings.TrimSpace(os.Getenv("OMNI_PLANNER_NUM_CTX"))
-	}
-	numCtx := 2048
-	if raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			numCtx = parsed
-		}
-	}
-	return numCtx * workerLLMContextCharsPerToken
-}
+const workerLLMContextCharsPerToken = 4
 
 func (s *Service) recordWorkerLLMCall(ctx context.Context, stepID int64, scope, modelName string, promptChars, attempt int, success bool, callErr error, latency time.Duration) {
 	if s.repo == nil || stepID <= 0 {
@@ -35,7 +19,7 @@ func (s *Service) recordWorkerLLMCall(ctx context.Context, stepID int64, scope, 
 	if callErr != nil {
 		errorClass = classifyWorkerLLMError(callErr)
 	}
-	limit := workerDefaultContextLimitChars()
+	limit := s.inferenceContextTokens * workerLLMContextCharsPerToken
 	_ = s.repo.RecordLLMContextUsage(ctx, queue.LLMContextUsageRecord{
 		Source:            "worker:" + strings.TrimSpace(scope),
 		Model:             strings.TrimSpace(modelName),
@@ -53,6 +37,7 @@ func (s *Service) recordWorkerLLMCall(ctx context.Context, stepID int64, scope, 
 		LatencyMS:         latency.Milliseconds(),
 		Metadata: map[string]any{
 			"worker_context_budget": s.contextBudget,
+			"context_tokens":        s.inferenceContextTokens,
 		},
 	})
 	if runID == "" {
@@ -72,11 +57,12 @@ func (s *Service) recordWorkerLLMCall(ctx context.Context, stepID int64, scope, 
 		LatencyMS:  &latencyMS,
 		Success:    &successVal,
 		Metadata: map[string]any{
-			"job_id":        jobID,
-			"step_id":       stepID,
-			"prompt_chars":  promptChars,
-			"error_class":   errorClass,
-			"attempt":       attempt,
+			"job_id":         jobID,
+			"step_id":        stepID,
+			"prompt_chars":   promptChars,
+			"error_class":    errorClass,
+			"attempt":        attempt,
+			"context_tokens": s.inferenceContextTokens,
 		},
 	})
 }

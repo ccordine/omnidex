@@ -79,13 +79,16 @@ func collectTextSamples(rows []map[string]any, column string, max int) []string 
 }
 
 func runTextSentimentAnalysis(ctx context.Context, llm omni.DBManagerLLMClient, profile Profile, purpose, table, field string, samples []string) (textSentimentPayload, error) {
-	payload, _ := json.Marshal(map[string]any{
+	payload, err := json.Marshal(map[string]any{
 		"purpose": purpose,
 		"table":   table,
 		"field":   field,
 		"domain":  profile.Domain,
 		"samples": samples,
 	})
+	if err != nil {
+		return textSentimentPayload{}, fmt.Errorf("encode text sentiment request: %w", err)
+	}
 	resp, err := llm.ChatRaw(ctx, omni.OllamaChatRequest{
 		Messages: []omni.OllamaMessage{
 			{
@@ -131,8 +134,8 @@ func runTextSentimentAnalysis(ctx context.Context, llm omni.DBManagerLLMClient, 
 	if err := json.Unmarshal([]byte(strings.TrimSpace(resp.Content)), &parsed); err != nil {
 		return textSentimentPayload{}, err
 	}
-	if parsed.SampleCount <= 0 {
-		parsed.SampleCount = len(samples)
+	if parsed.SampleCount != len(samples) {
+		return textSentimentPayload{}, fmt.Errorf("text sentiment sample_count=%d does not match requested sample count %d", parsed.SampleCount, len(samples))
 	}
 	return parsed, nil
 }

@@ -1,143 +1,306 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
+	"time"
 )
 
-var ErrRealtimeHubFull = errors.New("realtime hub client limit reached")
+var (
+	ErrRealtimeHubFull          = errors.New("realtime hub client limit reached")
+	ErrRealtimeHubUnavailable   = errors.New("realtime hub is not initialized")
+	ErrRealtimeEventNameMissing = errors.New("realtime event name is required")
+)
+
+const (
+	realtimeTopicUI      = "ui"
+	realtimeTopicMetrics = "metrics"
+	realtimeTopicScrum   = "scrum"
+	realtimeTopicJobs    = "jobs"
+)
+
+var realtimeTopics = map[string]struct{}{
+	realtimeTopicUI:      {},
+	realtimeTopicMetrics: {},
+	realtimeTopicScrum:   {},
+	realtimeTopicJobs:    {},
+}
 
 type RealtimeClient struct {
 	topics map[string]struct{}
 	send   chan []byte
 }
 
+type realtimeFrame struct {
+	id             uint64
+	fingerprintKey string
+	topics         map[string]struct{}
+	data           []byte
+}
+
+type realtimeFingerprint struct {
+	digest    [sha256.Size]byte
+	messageID uint64
+}
+
 type RealtimeHub struct {
-	mu         sync.RWMutex
-	nextID     uint64
-	maxClients int
-	clients    map[uint64]*RealtimeClient
+	mu              sync.Mutex
+	nextClientID    uint64
+	nextMessageID   uint64
+	maxClients      int
+	clientBuffer    int
+	replayCapacity  int
+	clients         map[uint64]*RealtimeClient
+	history         []realtimeFrame
+	lastFingerprint map[string]realtimeFingerprint
 }
 
 type RealtimeHubOptions struct {
-	MaxClients int
+	MaxClients     int
+	ClientBuffer   int
+	ReplayCapacity int
+}
+
+type RealtimeSubscription struct {
+	ID          uint64
+	Messages    <-chan []byte
+	ReplayGap   bool
+	ReplayCount int
+	LatestID    uint64
+	Unsubscribe func()
+}
+
+type RealtimeBroadcastResult struct {
+	MessageID           uint64
+	DeliveredClients    int
+	DisconnectedClients int
+	Duplicate           bool
 }
 
 func NewRealtimeHub(options ...RealtimeHubOptions) *RealtimeHub {
-	maxClients := 512
-	if len(options) > 0 && options[0].MaxClients > 0 {
-		maxClients = options[0].MaxClients
+	config := RealtimeHubOptions{MaxClients: 512, ClientBuffer: 64, ReplayCapacity: 256}
+	if len(options) > 0 {
+		if options[0].MaxClients > 0 {
+			config.MaxClients = options[0].MaxClients
+		}
+		if options[0].ClientBuffer > 0 {
+			config.ClientBuffer = options[0].ClientBuffer
+		}
+		if options[0].ReplayCapacity > 0 {
+			config.ReplayCapacity = options[0].ReplayCapacity
+		}
 	}
 	return &RealtimeHub{
-		maxClients: maxClients,
-		clients:    make(map[uint64]*RealtimeClient),
+		maxClients:      config.MaxClients,
+		clientBuffer:    config.ClientBuffer,
+		replayCapacity:  config.ReplayCapacity,
+		clients:         make(map[uint64]*RealtimeClient),
+		history:         make([]realtimeFrame, 0, config.ReplayCapacity),
+		lastFingerprint: make(map[string]realtimeFingerprint),
 	}
 }
 
-func (h *RealtimeHub) Subscribe(topics []string) (uint64, <-chan []byte, func(), error) {
+func (h *RealtimeHub) Subscribe(topics []string, afterID uint64) (RealtimeSubscription, error) {
+	topicSet, err := normalizeRealtimeTopics(topics)
+	if err != nil {
+		return RealtimeSubscription{}, err
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.maxClients > 0 && len(h.clients) >= h.maxClients {
-		return 0, nil, func() {}, ErrRealtimeHubFull
+		return RealtimeSubscription{}, ErrRealtimeHubFull
 	}
-	h.nextID++
-	id := h.nextID
-	topicSet := make(map[string]struct{}, len(topics))
-	for _, topic := range topics {
-		if topic = trimTopic(topic); topic != "" {
-			topicSet[topic] = struct{}{}
+
+	latestID := h.nextMessageID
+	replayGap := afterID > latestID
+	if afterID > 0 && len(h.history) > 0 && afterID+1 < h.history[0].id {
+		replayGap = true
+	}
+	replay := make([][]byte, 0)
+	if afterID > 0 && !replayGap {
+		for _, frame := range h.history {
+			if frame.id > afterID && topicSetsIntersect(topicSet, frame.topics) {
+				replay = append(replay, frame.data)
+			}
 		}
 	}
-	if len(topicSet) == 0 {
-		topicSet["ui"] = struct{}{}
+	if len(replay) > h.replayCapacity {
+		replayGap = true
+		replay = nil
 	}
+
+	h.nextClientID++
+	id := h.nextClientID
 	client := &RealtimeClient{
 		topics: topicSet,
-		send:   make(chan []byte, 16),
+		send:   make(chan []byte, h.clientBuffer+len(replay)),
+	}
+	for _, data := range replay {
+		client.send <- data
 	}
 	h.clients[id] = client
-	unsubscribe := func() {
-		h.mu.Lock()
-		defer h.mu.Unlock()
-		if existing, ok := h.clients[id]; ok {
-			delete(h.clients, id)
-			close(existing.send)
-		}
-	}
-	return id, client.send, unsubscribe, nil
+	return RealtimeSubscription{
+		ID:          id,
+		Messages:    client.send,
+		ReplayGap:   replayGap,
+		ReplayCount: len(replay),
+		LatestID:    latestID,
+		Unsubscribe: func() { h.unsubscribe(id) },
+	}, nil
 }
 
-func (h *RealtimeHub) Broadcast(topics []string, payload any) {
-	data, err := json.Marshal(payload)
-	if err != nil || len(data) == 0 {
-		return
+func (h *RealtimeHub) unsubscribe(id uint64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if client, ok := h.clients[id]; ok {
+		delete(h.clients, id)
+		close(client.send)
 	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	topicSet := make(map[string]struct{}, len(topics))
-	for _, topic := range topics {
-		if topic = trimTopic(topic); topic != "" {
-			topicSet[topic] = struct{}{}
-		}
+}
+
+func (h *RealtimeHub) Broadcast(topics []string, message realtimeMessage) (RealtimeBroadcastResult, error) {
+	if strings.TrimSpace(message.EventName) == "" {
+		return RealtimeBroadcastResult{}, ErrRealtimeEventNameMissing
 	}
-	if len(topicSet) == 0 {
-		topicSet["ui"] = struct{}{}
+	topicSet, err := normalizeRealtimeTopics(topics)
+	if err != nil {
+		return RealtimeBroadcastResult{}, err
 	}
-	for _, client := range h.clients {
-		if !clientMatchesTopics(client, topicSet) {
+	fingerprint, err := fingerprintRealtimeMessage(message)
+	if err != nil {
+		return RealtimeBroadcastResult{}, fmt.Errorf("fingerprint realtime message: %w", err)
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	stateKey := strings.TrimSpace(message.StateKey)
+	fingerprintKey := realtimeFingerprintKey(stateKey, topicSet)
+	if previous, ok := h.lastFingerprint[fingerprintKey]; fingerprintKey != "" && ok && previous.digest == fingerprint {
+		return RealtimeBroadcastResult{MessageID: previous.messageID, Duplicate: true}, nil
+	}
+	h.nextMessageID++
+	message.ID = h.nextMessageID
+	if strings.TrimSpace(message.OccurredAt) == "" {
+		message.OccurredAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		h.nextMessageID--
+		return RealtimeBroadcastResult{}, fmt.Errorf("marshal realtime message: %w", err)
+	}
+	if fingerprintKey != "" && h.replayCapacity > 0 {
+		h.lastFingerprint[fingerprintKey] = realtimeFingerprint{digest: fingerprint, messageID: message.ID}
+	}
+	h.appendHistory(realtimeFrame{id: message.ID, fingerprintKey: fingerprintKey, topics: topicSet, data: data})
+
+	result := RealtimeBroadcastResult{MessageID: message.ID}
+	for id, client := range h.clients {
+		if !topicSetsIntersect(client.topics, topicSet) {
 			continue
 		}
 		select {
 		case client.send <- data:
+			result.DeliveredClients++
 		default:
+			delete(h.clients, id)
+			close(client.send)
+			result.DisconnectedClients++
 		}
 	}
+	return result, nil
 }
 
-func clientMatchesTopics(client *RealtimeClient, topics map[string]struct{}) bool {
-	for topic := range topics {
-		if _, ok := client.topics[topic]; ok {
+func (h *RealtimeHub) appendHistory(frame realtimeFrame) {
+	if h.replayCapacity <= 0 {
+		return
+	}
+	if len(h.history) == h.replayCapacity {
+		evicted := h.history[0]
+		if fingerprint, ok := h.lastFingerprint[evicted.fingerprintKey]; evicted.fingerprintKey != "" && ok && fingerprint.messageID == evicted.id {
+			delete(h.lastFingerprint, evicted.fingerprintKey)
+		}
+		copy(h.history, h.history[1:])
+		h.history[len(h.history)-1] = frame
+		return
+	}
+	h.history = append(h.history, frame)
+}
+
+func realtimeFingerprintKey(stateKey string, topics map[string]struct{}) string {
+	if stateKey == "" {
+		return ""
+	}
+	names := make([]string, 0, len(topics))
+	for _, topic := range []string{realtimeTopicUI, realtimeTopicMetrics, realtimeTopicScrum, realtimeTopicJobs} {
+		if _, ok := topics[topic]; ok {
+			names = append(names, topic)
+		}
+	}
+	return stateKey + "\x00" + strings.Join(names, ",")
+}
+
+func fingerprintRealtimeMessage(message realtimeMessage) ([sha256.Size]byte, error) {
+	message.ID = 0
+	message.OccurredAt = ""
+	raw, err := json.Marshal(message)
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	return sha256.Sum256(raw), nil
+}
+
+func realtimePayloadID(raw []byte) uint64 {
+	var header struct {
+		ID uint64 `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &header); err != nil {
+		return 0
+	}
+	return header.ID
+}
+
+func normalizeRealtimeTopics(topics []string) (map[string]struct{}, error) {
+	set := make(map[string]struct{}, len(topics))
+	for _, topic := range topics {
+		topic = strings.ToLower(strings.TrimSpace(topic))
+		if _, ok := realtimeTopics[topic]; !ok {
+			return nil, fmt.Errorf("unknown realtime topic %q", topic)
+		}
+		set[topic] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil, errors.New("at least one realtime topic is required")
+	}
+	return set, nil
+}
+
+func topicSetsIntersect(left, right map[string]struct{}) bool {
+	for topic := range left {
+		if _, ok := right[topic]; ok {
 			return true
 		}
 	}
 	return false
 }
 
-func trimTopic(topic string) string {
-	for len(topic) > 0 && (topic[0] == ' ' || topic[0] == ',') {
-		topic = topic[1:]
+func parseRealtimeTopics(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return []string{realtimeTopicUI, realtimeTopicMetrics, realtimeTopicScrum, realtimeTopicJobs}, nil
 	}
-	for len(topic) > 0 && (topic[len(topic)-1] == ' ' || topic[len(topic)-1] == ',') {
-		topic = topic[:len(topic)-1]
+	parts := strings.Split(raw, ",")
+	set, err := normalizeRealtimeTopics(parts)
+	if err != nil {
+		return nil, err
 	}
-	return topic
-}
-
-func parseRealtimeTopics(raw string) []string {
-	if raw == "" {
-		return []string{"ui", "metrics"}
-	}
-	parts := []string{}
-	for _, part := range splitComma(raw) {
-		if trimmed := trimTopic(part); trimmed != "" {
-			parts = append(parts, trimmed)
+	out := make([]string, 0, len(set))
+	for _, topic := range []string{realtimeTopicUI, realtimeTopicMetrics, realtimeTopicScrum, realtimeTopicJobs} {
+		if _, ok := set[topic]; ok {
+			out = append(out, topic)
 		}
 	}
-	if len(parts) == 0 {
-		return []string{"ui", "metrics"}
-	}
-	return parts
-}
-
-func splitComma(raw string) []string {
-	out := []string{}
-	start := 0
-	for i := 0; i <= len(raw); i++ {
-		if i == len(raw) || raw[i] == ',' {
-			out = append(out, raw[start:i])
-			start = i + 1
-		}
-	}
-	return out
+	return out, nil
 }

@@ -48,7 +48,7 @@ func structuredDevelopmentLoopPolicy() []string {
 		"test_first: for code/app feature work, create or update a focused failing test, smoke test, or deterministic verification probe for the requested behavior before implementation when feasible",
 		"implement_second: make the smallest source/build/config change needed to satisfy that test/probe",
 		"verify_third: run the focused test/probe after implementation; if it fails, use stdout/stderr as the next correction target",
-		"fallback_probe: when a real test runner/compiler is unavailable, write and run a deterministic source-verification probe that checks concrete files, symbols, behavior strings, or command outputs",
+		"source_probe_boundary: source-verification may validate concrete files, symbols, behavior strings, or command outputs, but it never substitutes for required compiler, build, or test evidence",
 		"completion_gate: do not request done=true from implementation evidence alone; finish only after post-write test/probe/readback evidence",
 		"scope_gate: proof plans may prove only user_explicit, recipe_required, or evidence_required_prerequisite objectives; memory_suggested and model_inferred items cannot add tests or implementation scope",
 		"test_tamper_gate: after a proof test/probe is validated, do not weaken, delete, skip, or rewrite it unless validator evidence shows syntax/tooling invalidity, the user changes the request, or the framework requires an equivalent form",

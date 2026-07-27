@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -28,12 +29,15 @@ func TestDbScrumCardToAPIPreservesSyncMarkers(t *testing.T) {
 	}
 }
 
-func TestReconcileScrumCardJobStateClearsStaleRunning(t *testing.T) {
+func TestReconcileScrumCardJobStateRejectsActiveCardWithoutJobID(t *testing.T) {
 	s := &Server{repo: nil}
-	card := ScrumCard{PlayState: scrumPlayRunning, JobID: ""}
-	updated, ok := s.reconcileScrumCardJobState(t.Context(), 0, card)
-	if !ok || updated.PlayState != "" {
-		t.Fatalf("updated=%+v ok=%v", updated, ok)
+	card := ScrumCard{ID: "card-1", PlayState: scrumPlayRunning, JobID: ""}
+	updated, changed, err := s.reconcileScrumCardJobState(t.Context(), 1, card)
+	if err == nil || !strings.Contains(err.Error(), "without a job id") {
+		t.Fatalf("error=%v want explicit missing job id failure", err)
+	}
+	if changed || updated.PlayState != scrumPlayRunning {
+		t.Fatalf("invalid state must not be silently rewritten: updated=%+v changed=%v", updated, changed)
 	}
 }
 

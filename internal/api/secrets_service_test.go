@@ -1,10 +1,11 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/secrets"
@@ -42,11 +43,16 @@ func TestHandleAPISecretsGetMasksValues(t *testing.T) {
 	}
 }
 
-func TestApplyStoredSecretsUsesDatabase(t *testing.T) {
-	store := &secrets.MemoryStore{Values: map[string]string{"openai_api_key": "sk-db-key"}}
-	server := &Server{secretsResolver: secrets.NewResolver(store)}
-	server.applyStoredSecrets(context.Background())
-	if server.openAIAPIKey != "sk-db-key" {
-		t.Fatalf("expected server key from database, got %q", server.openAIAPIKey)
+func TestSecretUpdateSourceRequiresRestartInsteadOfPartiallyMutatingRuntime(t *testing.T) {
+	source, err := os.ReadFile("secrets_service.go")
+	if err != nil {
+		t.Fatalf("read secret service source: %v", err)
+	}
+	text := string(source)
+	if strings.Contains(text, "applyStoredSecrets") || strings.Contains(text, "replaceProviderConfiguration") {
+		t.Fatal("secret update still partially mutates the running provider configuration")
+	}
+	if !strings.Contains(text, `"restart_required": true`) {
+		t.Fatal("secret update does not explicitly report its restart requirement")
 	}
 }

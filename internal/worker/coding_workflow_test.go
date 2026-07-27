@@ -48,6 +48,18 @@ func TestCodingWorkflowCannotUseAssistantRuntime(t *testing.T) {
 	}
 }
 
+func TestCodingWorkflowRejectsMissingConcreteEngine(t *testing.T) {
+	svc := Service{}
+	claim := &model.ClaimedStep{
+		Job:  model.Job{ID: 10, Instruction: "change this code correctly", Pipeline: model.PipelineCoding},
+		Step: model.Step{ID: 20, Action: "coding_workflow"},
+	}
+	err := svc.runCodingWorkflowStep(context.Background(), claim, nil)
+	if err == nil || !strings.Contains(err.Error(), "configured concrete coding engine") {
+		t.Fatalf("missing coding engine err=%v", err)
+	}
+}
+
 func newServiceWithPanickingAssistantRuntime(t *testing.T) Service {
 	t.Helper()
 	panicIfCalled := func(label string) func(context.Context, *model.ClaimedStep, map[string]string, string) error {
@@ -169,23 +181,6 @@ func TestCodingWorkspaceForJobPrefersClientCWD(t *testing.T) {
 	}
 	if got := codingWorkspaceForJob(job); got != "/tmp/from-client" {
 		t.Fatalf("codingWorkspaceForJob()=%q want client cwd", got)
-	}
-}
-
-func TestExternalAgentOptionalForGeneralChatWithoutWorkspace(t *testing.T) {
-	job := model.Job{
-		Pipeline: model.PipelineChat,
-		Metadata: json.RawMessage(`{"source":"omni-web-chat","execution_agent":"codex","agent_strict":true}`),
-	}
-	if !externalAgentOptionalForGeneralChat(job, "") {
-		t.Fatal("expected general chat without workspace to use native fallback")
-	}
-	if externalAgentOptionalForGeneralChat(job, "/tmp/project") {
-		t.Fatal("workspace-backed chat should keep external agent routing")
-	}
-	job.Metadata = json.RawMessage(`{"source":"omni-web-chat","project_directory":"/tmp/project"}`)
-	if externalAgentOptionalForGeneralChat(job, "") {
-		t.Fatal("project chat metadata should keep external agent routing")
 	}
 }
 

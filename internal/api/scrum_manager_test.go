@@ -19,6 +19,17 @@ func TestParseScrumManagerOutcome(t *testing.T) {
 	}
 }
 
+func TestParseScrumManagerOutcomeRejectsAmbiguousOrEmbeddedStatus(t *testing.T) {
+	for _, output := range []string{
+		"The prompt said SCRUM_STATUS: success but no result was produced.",
+		"SCRUM_STATUS: success\nSCRUM_STATUS: failed",
+	} {
+		if outcome, ok := parseScrumManagerOutcome(output); ok {
+			t.Fatalf("parsed ambiguous status %q from %q", outcome, output)
+		}
+	}
+}
+
 func TestResolveScrumManagerOutcomeFromJob(t *testing.T) {
 	details := model.JobDetails{
 		Job: model.Job{Status: model.JobStatusCompleted},
@@ -40,6 +51,13 @@ func TestScrumColumnForOutcomeFailed(t *testing.T) {
 	transition := scrumColumnForOutcome(ScrumOutcomeFailed)
 	if transition.Column != "error" || transition.PlayState != "" {
 		t.Fatalf("failed transition = %+v", transition)
+	}
+}
+
+func TestScrumColumnForUnknownOutcomeFailsClosed(t *testing.T) {
+	transition := scrumColumnForOutcome(ScrumManagerOutcome("unknown"))
+	if transition.Column != "error" || !strings.Contains(transition.ConsoleNote, "invalid outcome") {
+		t.Fatalf("transition=%+v want fail-closed error column", transition)
 	}
 }
 
@@ -81,7 +99,7 @@ func TestResolveScrumPlayOutcomeFailedJob(t *testing.T) {
 	details := model.JobDetails{
 		Job: model.Job{
 			Status:   model.JobStatusFailed,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"codex","scrum_raw_play":true}`),
+			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"codex"},"scrum_raw_play":true}`),
 		},
 	}
 	outcome := resolveScrumManagerOutcome(details)
@@ -98,7 +116,7 @@ func TestResolveScrumPlayOutcomeCanceledJobMovesToError(t *testing.T) {
 	details := model.JobDetails{
 		Job: model.Job{
 			Status:   model.JobStatusCanceled,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"codex","scrum_raw_play":true}`),
+			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"codex"},"scrum_raw_play":true}`),
 		},
 		Steps: []model.Step{{Output: "connection lost"}},
 	}
@@ -116,7 +134,7 @@ func TestResolveScrumPlayOutcomeFailureStatusOverridesSuccessText(t *testing.T) 
 	details := model.JobDetails{
 		Job: model.Job{
 			Status:   model.JobStatusFailed,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","execution_agent":"codex","scrum_raw_play":true}`),
+			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"codex"},"scrum_raw_play":true}`),
 		},
 		Steps: []model.Step{{Output: "SCRUM_STATUS: success"}},
 	}

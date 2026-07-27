@@ -12,76 +12,13 @@ import (
 	"github.com/gryph/omnidex/internal/scrum"
 )
 
-type ScrumCoachConfig struct {
-	Enabled  bool   `json:"enabled"`
-	AutoScan bool   `json:"auto_scan"`
-	Model    string `json:"model"`
-}
-
-type ScrumCoachSuggestion struct {
-	Level string `json:"level"`
-	Text  string `json:"text"`
-}
-
-type ScrumCoachMemoryNote struct {
-	Content string   `json:"content"`
-	Tags    []string `json:"tags"`
-}
-
-type ScrumCoachLLMResponse struct {
-	Reply        string                 `json:"reply"`
-	Suggestions  []ScrumCoachSuggestion   `json:"suggestions"`
-	CardTags     []string               `json:"card_tags"`
-	ProjectTags  []string               `json:"project_tags"`
-	CardPrompt   string                 `json:"card_prompt"`
-	MemoryNotes  []ScrumCoachMemoryNote `json:"memory_notes"`
-}
-
-func defaultScrumCoachConfig() ScrumCoachConfig {
-	return ScrumCoachConfig{
-		Enabled:  true,
-		AutoScan: false,
-		Model:    "qwen3:4b-thinking",
-	}
-}
-
-func parseScrumCoachConfig(raw json.RawMessage) ScrumCoachConfig {
-	cfg := defaultScrumCoachConfig()
-	if len(raw) == 0 {
-		return cfg
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return cfg
-	}
-	if v, ok := payload["enabled"].(bool); ok {
-		cfg.Enabled = v
-	}
-	if v, ok := payload["auto_scan"].(bool); ok {
-		cfg.AutoScan = v
-	}
-	if v, ok := payload["model"].(string); ok && strings.TrimSpace(v) != "" {
-		cfg.Model = strings.TrimSpace(v)
-	}
-	return cfg
-}
-
-func coachConfigToRaw(cfg ScrumCoachConfig) json.RawMessage {
-	out, _ := json.Marshal(map[string]any{
-		"enabled":   cfg.Enabled,
-		"auto_scan": cfg.AutoScan,
-		"model":     cfg.Model,
-	})
-	return out
-}
-
 func (s *Server) scrumCoachLLMGenerate(ctx context.Context, source, modelName, system, user string, meta llmContextTelemetryMeta) (string, error) {
 	if s.llmClient == nil {
 		return "", fmt.Errorf("no llm client configured")
 	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
-		modelName = firstNonEmpty(s.ollamaDefaultModel, "qwen3:4b-thinking")
+		return "", fmt.Errorf("Scrum coach model is required")
 	}
 	prompt := strings.TrimSpace(system + "\n\n" + user)
 	promptChars := llmPromptCharCount(system, user)
@@ -90,7 +27,7 @@ func (s *Server) scrumCoachLLMGenerate(ctx context.Context, source, modelName, s
 	return generated, err
 }
 
-func coachModeSystem(mode string) string {
+func coachModeSystem(mode string) (string, error) {
 	base := strings.Join([]string{
 		"You are the Omni card coach — a meta-planning assistant for a single scrum card.",
 		"You help refine scope, break work down, draft card ticket prompts, and tag work for memory.",
@@ -100,38 +37,18 @@ func coachModeSystem(mode string) string {
 	}, "\n")
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "scan":
-		return base + "\nMode: scan — review the draft card fields and emit proactive suggestions (scope, missing acceptance criteria, unclear deps). Keep reply brief."
+		return base + "\nMode: scan — review the draft card fields and emit proactive suggestions (scope, missing acceptance criteria, unclear deps). Keep reply brief.", nil
 	case "plan":
-		return base + "\nMode: plan — help structure the card: milestones, checklist items, risks, and what to defer to other cards."
+		return base + "\nMode: plan — help structure the card: milestones, checklist items, risks, and what to defer to other cards.", nil
 	case "research":
-		return base + "\nMode: research — suggest what to look up, which files to attach, questions to answer before execution. No code changes."
+		return base + "\nMode: research — suggest what to look up, which files to attach, questions to answer before execution. No code changes.", nil
 	case "card-ticket":
-		return base + "\nMode: card-ticket — craft a strong card_prompt the user can review before generating a ticket. Populate card_prompt field richly."
+		return base + "\nMode: card-ticket — craft a strong card_prompt the user can review before generating a ticket. Populate card_prompt field richly.", nil
+	case "chat":
+		return base + "\nMode: chat — collaborative card planning dialogue.", nil
 	default:
-		return base + "\nMode: chat — collaborative card planning dialogue."
+		return "", fmt.Errorf("unsupported Scrum coach mode %q", mode)
 	}
-}
-
-func parseCoachLLMResponse(raw string) ScrumCoachLLMResponse {
-	raw = strings.TrimSpace(raw)
-	out := ScrumCoachLLMResponse{Reply: raw}
-	if raw == "" {
-		return out
-	}
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start >= 0 && end > start {
-		var parsed ScrumCoachLLMResponse
-		if err := json.Unmarshal([]byte(raw[start:end+1]), &parsed); err == nil {
-			if strings.TrimSpace(parsed.Reply) != "" {
-				out = parsed
-			} else if raw != "" {
-				out.Reply = raw
-			}
-			return out
-		}
-	}
-	return out
 }
 
 func buildCoachUserPrompt(card ScrumCard, board ScrumBoard, project model.Project, mode, message string, snapshot map[string]string, memoryLines []string) string {
@@ -183,19 +100,29 @@ func buildCoachUserPrompt(card ScrumCard, board ScrumBoard, project model.Projec
 	return strings.Join(lines, "\n")
 }
 
-func (s *Server) coachMemoryContext(ctx context.Context, card ScrumCard, project model.Project, query string) []string {
-	if s.repo == nil || s.llmClient == nil {
-		return nil
+func (s *Server) coachMemoryContext(ctx context.Context, card ScrumCard, project model.Project, query string) ([]string, error) {
+	if s == nil || s.repo == nil || s.llmClient == nil {
+		return nil, fmt.Errorf("Scrum coach memory requires PostgreSQL and an embedding client")
+	}
+	if ctx == nil {
+		return nil, fmt.Errorf("Scrum coach memory requires a context")
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("Scrum coach memory query is required")
 	}
 	tags := append([]string{}, card.Tags...)
 	tags = append(tags, fmt.Sprintf("project:%d", project.ID), "scrum", "card-coach")
 	embedding, err := s.llmClient.Embedding(ctx, query)
 	if err != nil {
-		embedding = nil
+		return nil, fmt.Errorf("embed Scrum coach memory query: %w", err)
+	}
+	if len(embedding) == 0 {
+		return nil, fmt.Errorf("embed Scrum coach memory query: provider returned an empty vector")
 	}
 	matches, err := s.repo.FindRelevantMemory(ctx, embedding, tags, 6)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("find Scrum coach memory: %w", err)
 	}
 	lines := make([]string, 0, len(matches))
 	for _, match := range matches {
@@ -204,7 +131,7 @@ func (s *Server) coachMemoryContext(ctx context.Context, card ScrumCard, project
 		}
 		lines = append(lines, match.Content)
 	}
-	return lines
+	return lines, nil
 }
 
 func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, cardID string) {
@@ -217,19 +144,34 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 		Mode     string            `json:"mode"`
 		Snapshot map[string]string `json:"snapshot"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	if err := requireJSONEOF(decoder, "Scrum coach request"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	req.Message = strings.TrimSpace(req.Message)
-	req.Mode = normalizeCoachMode(req.Message, req.Mode)
+	mode, err := normalizeCoachMode(req.Message, req.Mode)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Mode = mode
 
 	card, board, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "card not found")
 		return
 	}
-	cfg := parseScrumCoachConfig(card.CoachConfig)
+	cfg, err := s.scrumCoachConfig(card.CoachConfig)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if req.Mode == "config" {
 		writeJSON(w, http.StatusOK, map[string]any{"coach_config": cfg})
 		return
@@ -252,16 +194,27 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 		return
 	}
 
-	project := model.Project{Name: "project"}
-	if s.repo != nil && projectID > 0 {
-		if loaded, err := s.repo.GetProject(r.Context(), projectID); err == nil {
-			project = loaded
-		}
+	if s.repo == nil || projectID <= 0 {
+		writeError(w, http.StatusServiceUnavailable, "Scrum coach requires a project database")
+		return
+	}
+	project, err := s.repo.GetProject(r.Context(), projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("load Scrum coach project: %v", err))
+		return
 	}
 
 	memoryQuery := firstNonEmpty(req.Message, card.Title, card.Description)
-	memoryLines := s.coachMemoryContext(r.Context(), card, project, memoryQuery)
-	system := coachModeSystem(req.Mode)
+	memoryLines, err := s.coachMemoryContext(r.Context(), card, project, memoryQuery)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	system, err := coachModeSystem(req.Mode)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	userPrompt := buildCoachUserPrompt(card, board, project, req.Mode, req.Message, req.Snapshot, memoryLines)
 
 	rawReply, err := s.scrumCoachLLMGenerate(r.Context(), llmContextSourceScrumCoach, cfg.Model, system, userPrompt, llmContextTelemetryMeta{
@@ -273,7 +226,11 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	parsed := parseCoachLLMResponse(rawReply)
+	parsed, err := parseCoachLLMResponse(rawReply)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
 
 	if req.Message != "" && req.Mode != "scan" {
 		card.PlanningChat = append(card.PlanningChat, ScrumChatMessage{
@@ -295,7 +252,11 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 	if strings.TrimSpace(parsed.CardPrompt) != "" {
 		card.CardPrompt = strings.TrimSpace(parsed.CardPrompt)
 	}
-	card.CoachConfig = coachConfigToRaw(cfg)
+	card.CoachConfig, err = coachConfigToRaw(cfg)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	updated, err := s.persistScrumCard(r, projectID, card)
 	if err != nil {
@@ -303,22 +264,16 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 		return
 	}
 
-	memoryStored := 0
-	if s.repo != nil && s.llmClient != nil {
-		for _, note := range parsed.MemoryNotes {
-			content := strings.TrimSpace(note.Content)
-			if content == "" {
-				continue
-			}
-			noteTags := mergeTags(note.Tags, card.Tags, []string{"scrum", card.ID, fmt.Sprintf("project:%d", projectID)})
-			embedding, _ := s.llmClient.Embedding(r.Context(), content)
-			if _, err := s.repo.AddMemoryChunk(r.Context(), "scrum-coach", model.MemoryKindReference, content, noteTags, embedding); err == nil {
-				memoryStored++
-			}
-		}
+	memoryStored, err := s.storeScrumCoachMemoryNotes(r.Context(), projectID, card, parsed.MemoryNotes)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("card %s was updated but coach memory persistence failed: %v", card.ID, err))
+		return
 	}
-	if s.repo != nil && projectID > 0 && len(parsed.ProjectTags) > 0 {
-		_ = s.mergeProjectTags(r.Context(), projectID, parsed.ProjectTags)
+	if len(parsed.ProjectTags) > 0 {
+		if err := s.mergeProjectTags(r.Context(), projectID, parsed.ProjectTags); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("card %s was updated but project tag persistence failed: %v", card.ID, err))
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -332,6 +287,43 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 	})
 }
 
+func (s *Server) storeScrumCoachMemoryNotes(
+	ctx context.Context,
+	projectID int64,
+	card ScrumCard,
+	notes []ScrumCoachMemoryNote,
+) (int, error) {
+	if len(notes) == 0 {
+		return 0, nil
+	}
+	if s == nil || s.repo == nil || s.llmClient == nil {
+		return 0, fmt.Errorf("Scrum coach memory requires PostgreSQL and an embedding client")
+	}
+	if ctx == nil || projectID <= 0 || strings.TrimSpace(card.ID) == "" {
+		return 0, fmt.Errorf("Scrum coach memory requires context, project, and card authority")
+	}
+	stored := 0
+	for i, note := range notes {
+		content := strings.TrimSpace(note.Content)
+		if content == "" {
+			return stored, fmt.Errorf("memory note %d content is required", i)
+		}
+		noteTags := mergeTags(note.Tags, card.Tags, []string{"scrum", card.ID, fmt.Sprintf("project:%d", projectID)})
+		embedding, err := s.llmClient.Embedding(ctx, content)
+		if err != nil {
+			return stored, fmt.Errorf("embed memory note %d: %w", i, err)
+		}
+		if len(embedding) == 0 {
+			return stored, fmt.Errorf("embed memory note %d: provider returned an empty vector", i)
+		}
+		if _, err := s.repo.AddMemoryChunk(ctx, "scrum-coach", model.MemoryKindReference, content, noteTags, embedding); err != nil {
+			return stored, fmt.Errorf("store memory note %d: %w", i, err)
+		}
+		stored++
+	}
+	return stored, nil
+}
+
 func (s *Server) handleScrumCardCoachConfig(w http.ResponseWriter, r *http.Request, cardID string) {
 	card, _, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
@@ -340,17 +332,34 @@ func (s *Server) handleScrumCardCoachConfig(w http.ResponseWriter, r *http.Reque
 	}
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"coach_config": parseScrumCoachConfig(card.CoachConfig)})
+		cfg, err := s.scrumCoachConfig(card.CoachConfig)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"coach_config": cfg})
 	case http.MethodPut:
 		var req ScrumCoachConfig
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		if strings.TrimSpace(req.Model) == "" {
-			req.Model = defaultScrumCoachConfig().Model
+		if err := requireJSONEOF(decoder, "Scrum coach config request"); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
 		}
-		card.CoachConfig = coachConfigToRaw(req)
+		req, err = validateScrumCoachConfig(req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		card.CoachConfig, err = coachConfigToRaw(req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		updated, err := s.persistScrumCard(r, projectID, card)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -360,30 +369,6 @@ func (s *Server) handleScrumCardCoachConfig(w http.ResponseWriter, r *http.Reque
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func normalizeCoachMode(message, mode string) string {
-	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode != "" && mode != "chat" {
-		return mode
-	}
-	if strings.HasPrefix(message, "/") {
-		parts := strings.Fields(message)
-		switch strings.ToLower(parts[0]) {
-		case "/plan":
-			return "plan"
-		case "/research", "/researching":
-			return "research"
-		case "/card-ticket", "/card":
-			return "card-ticket"
-		case "/scan":
-			return "scan"
-		}
-	}
-	if mode == "" {
-		return "chat"
-	}
-	return mode
 }
 
 func mergeTags(existing []string, sets ...[]string) []string {
@@ -407,40 +392,6 @@ func mergeTags(existing []string, sets ...[]string) []string {
 		add(set)
 	}
 	return out
-}
-
-func (s *Server) mergeProjectTags(ctx context.Context, projectID int64, tags []string) error {
-	if s.repo == nil || projectID <= 0 || len(tags) == 0 {
-		return nil
-	}
-	project, err := s.repo.GetProject(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	var settings map[string]any
-	if len(project.Settings) > 0 {
-		_ = json.Unmarshal(project.Settings, &settings)
-	}
-	if settings == nil {
-		settings = map[string]any{}
-	}
-	existing := []string{}
-	if raw, ok := settings["tags"].([]any); ok {
-		for _, item := range raw {
-			if text, ok := item.(string); ok {
-				existing = append(existing, text)
-			}
-		}
-	}
-	settings["tags"] = mergeTags(existing, tags)
-	raw, err := json.Marshal(settings)
-	if err != nil {
-		return err
-	}
-	settingsJSON := json.RawMessage(raw)
-	patch := model.ProjectPatch{Settings: &settingsJSON}
-	_, err = s.repo.UpdateProject(ctx, projectID, patch)
-	return err
 }
 
 func nowRFC3339() string {

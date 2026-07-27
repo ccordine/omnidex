@@ -3,6 +3,9 @@ package secrets
 import (
 	"context"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/config"
+	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 )
 
 func TestMergeStoredKeepsExistingUnlessUpdated(t *testing.T) {
@@ -67,5 +70,41 @@ func TestCodexAPIKeyFallback(t *testing.T) {
 	defer SetGlobal(nil)
 	if got := CodexAPIKey(); got != "sk-openai" {
 		t.Fatalf("expected openai fallback, got %q", got)
+	}
+}
+
+func TestSecretFieldsCoverEveryCatalogProviderCredential(t *testing.T) {
+	fieldsByKey := make(map[string]Field, len(Fields))
+	for _, field := range Fields {
+		fieldsByKey[field.Key] = field
+	}
+	for _, definition := range catalog.Definitions() {
+		if len(definition.APIKeyEnvironmentKeys) == 0 {
+			continue
+		}
+		secretKey, ok := ProviderSecretKey(definition.ID)
+		if !ok {
+			t.Fatalf("ProviderSecretKey(%q) missing", definition.ID)
+		}
+		field, ok := fieldsByKey[secretKey]
+		if !ok {
+			t.Fatalf("secret field %q missing for provider %q", secretKey, definition.ID)
+		}
+		if len(field.EnvKeys) == 0 || field.EnvKeys[0] != definition.APIKeyEnvironmentKeys[0] {
+			t.Fatalf("field %q env keys=%v want catalog keys %v", secretKey, field.EnvKeys, definition.APIKeyEnvironmentKeys)
+		}
+	}
+}
+
+func TestOverlayConfigAppliesChineseProviderDatabaseCredential(t *testing.T) {
+	store := &MemoryStore{Values: map[string]string{"qwen_api_key": "db-qwen-key"}}
+	cfg := config.Config{
+		CompatibleProviders: map[string]config.CompatibleProviderConfig{
+			"qwen": {BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", APIKey: "env-key"},
+		},
+	}
+	OverlayConfig(&cfg, NewResolver(store))
+	if got := cfg.CompatibleProviders["qwen"].APIKey; got != "db-qwen-key" {
+		t.Fatalf("qwen API key=%q want database value", got)
 	}
 }

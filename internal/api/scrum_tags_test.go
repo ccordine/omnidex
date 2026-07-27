@@ -9,18 +9,9 @@ import (
 
 func TestHandleScrumCardTagsSuggestRequiresProjectDB(t *testing.T) {
 	server := NewServer(nil, &fakeLLMClient{outputs: []string{`{"tags":[],"notes":"nothing new"}`}})
-	if server.scrumStore == nil {
-		t.Fatal("expected scrum store")
-	}
-
-	card, err := server.scrumStore.CreateCard("Tag test", "Verify queue-only suggest", "backlog")
-	if err != nil {
-		t.Fatalf("CreateCard: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/scrum/cards/"+card.ID+"/tags-suggest", strings.NewReader("{}"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/scrum/cards/card_1/tags-suggest?project_id=1", strings.NewReader("{}"))
 	rec := httptest.NewRecorder()
-	server.handleScrumCardTagsSuggest(rec, req, card.ID)
+	server.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}

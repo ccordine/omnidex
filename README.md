@@ -73,6 +73,8 @@ The web cockpit is the primary operator interface:
 
 The UI is built around live partial updates rather than full-page refreshes. RecyclrJS targets small regions such as a card modal tab, channel stream, toolbar, data result, or board column so the interface can update while preserving the user's current modal, tab, and scroll position.
 
+The shared shell and server-rendered panels are available in English, Spanish, Simplified Chinese, Russian, and Japanese. Locale selection is validated and stored with the server-side UI session; `Accept-Language` chooses the first visit, and an explicit `?locale=es`, `?locale=zh-Hans`, `?locale=ru`, or `?locale=ja` overrides it. Unsupported explicit locales return a validation error instead of silently falling back to English.
+
 ### Project and scrum interface
 
 The scrum board turns project work into explicit, reviewable units. A card is more than a title:
@@ -504,7 +506,7 @@ docker compose up -d core
 - If **all candidates failed**, Ollama is not reachable from Docker at all — that is a host networking/binding issue, not the UI.
 - If logs show a **successful resolved URL**, chat should queue immediately even when Status briefly still shows Ollama as down.
 
-The web UI Status panel includes a Research Health card backed by `GET /v1/status/research`. It checks whether the core can reach Ollama at `OLLAMA_BASE_URL`, reports configured/missing generation and embedding models, probes configured web search providers, and surfaces Ollama reachability warnings.
+The web UI Status panel includes a server-rendered Research Health card backed by `GET /v1/status/research`. It reports generation and embedding providers separately, distinguishes configuration validation from actual reachability probes, checks Ollama only when an active role uses it, reports required/missing local models, and probes configured web-search providers. Remote hosted services are reported as `configured · not probed`; Omnidex never labels them reachable without making a real probe.
 
 If a configured Ollama generation model is missing, Omnidex pulls it through Ollama's `/api/pull` endpoint and retries the request. First use can take as long as the model download. You can avoid that delay by pre-pulling:
 
@@ -624,7 +626,39 @@ Omnidex supports these model sources for generation:
 | Anthropic Claude | `anthropic`, `claude` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
 | Hugging Face Inference Providers | `huggingface`, `hugging-face`, `hf` | `HUGGINGFACE_API_KEY` or `HF_TOKEN` | `openai/gpt-oss-20b:fastest` |
 
-Generation and embeddings are routed separately. `LLM_PROVIDER` controls chat, planning, summarization, specialists, and response generation. `EMBEDDING_PROVIDER` controls memory vectors and retrieval embeddings. Anthropic and xAI/Grok are generation-only in Omnidex right now; use Ollama, OpenAI, Google, or Hugging Face for embeddings.
+Chinese OpenAI-compatible services have first-class presets:
+
+| Provider ID | Service/model families | Credential | Default API base |
+| --- | --- | --- | --- |
+| `deepseek` | DeepSeek | `DEEPSEEK_API_KEY` | `https://api.deepseek.com` |
+| `qwen` | Alibaba Qwen / Model Studio / DashScope | `QWEN_API_KEY` or `DASHSCOPE_API_KEY` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `moonshot` | Moonshot AI / Kimi | `MOONSHOT_API_KEY` or `KIMI_API_KEY` | `https://api.moonshot.ai/v1` |
+| `zhipu` | Zhipu AI / BigModel / GLM | `ZHIPU_API_KEY`, `BIGMODEL_API_KEY`, or `GLM_API_KEY` | `https://open.bigmodel.cn/api/paas/v4` |
+| `zai` | Z.AI | `ZAI_API_KEY` | `https://api.z.ai/api/paas/v4` |
+| `minimax` | MiniMax | `MINIMAX_API_KEY` | `https://api.minimax.io/v1` |
+| `qianfan` | Baidu Qianfan / ERNIE | `QIANFAN_API_KEY`, `BAIDU_API_KEY`, or `ERNIE_API_KEY` | `https://qianfan.baidubce.com/v2` |
+| `hunyuan` | Tencent Hunyuan | `HUNYUAN_API_KEY` | `https://api.hunyuan.cloud.tencent.com/v1` |
+| `doubao` | ByteDance Doubao / Volcengine Ark | `DOUBAO_API_KEY`, `VOLCENGINE_API_KEY`, or `ARK_API_KEY` | `https://ark.cn-beijing.volces.com/api/v3` |
+| `stepfun` | StepFun | `STEPFUN_API_KEY` or `STEP_API_KEY` | `https://api.stepfun.com/v1` |
+| `yi` | 01.AI Yi | `YI_API_KEY` | `https://api.01.ai/v1` |
+| `baichuan` | Baichuan AI | `BAICHUAN_API_KEY` | `https://api.baichuan-ai.com/v1` |
+| `spark` | iFlytek Spark | `SPARK_API_KEY`, `IFLYTEK_API_KEY`, or `XFYUN_API_KEY` | `https://spark-api-open.xf-yun.com/v1` |
+| `siliconflow` | SiliconFlow model catalog | `SILICONFLOW_API_KEY` | `https://api.siliconflow.cn/v1` |
+| `modelscope` | ModelScope API Inference | `MODELSCOPE_API_KEY` | `https://api-inference.modelscope.cn/v1` |
+| `modelarts` | Huawei ModelArts MaaS | `MODELARTS_API_KEY` or `HUAWEI_MAAS_API_KEY` | `https://api.modelarts-maas.com/openai/v1` |
+| `mimo` | Xiaomi MiMo | `MIMO_API_KEY` | `https://api.xiaomimimo.com/v1` |
+| `longcat` | Meituan LongCat | `LONGCAT_API_KEY` | `https://api.longcat.chat/openai/v1` |
+| `antling` | Ant Ling / InclusionAI | `ANTLING_API_KEY` | `https://api.ant-ling.com/v1` |
+| `tokenhub` | Tencent TokenHub unified model gateway | `TOKENHUB_API_KEY` | `https://tokenhub.tencentmaas.com/v1` |
+| `compatible` | Any other OpenAI-compatible service | `COMPATIBLE_API_KEY` | explicit `COMPATIBLE_BASE_URL` required |
+
+These presets accept arbitrary current text/chat-capable model or endpoint IDs exposed by each service's compatible Chat Completions API through `<PREFIX>_MODEL`; Omnidex intentionally does not freeze fast-changing hosted model catalogs into code. Every hosted Chinese preset requires an explicit model. Regional, workspace, plan, and account-specific endpoints can override the preset through `<PREFIX>_BASE_URL`. The `compatible` provider is strict: base URL, API key, and model are all required, and an unknown provider never falls back to Ollama.
+
+`GET /v1/providers` exposes the authoritative runtime catalog, aliases, capabilities, selected generation/embedding roles, configured model IDs, and configuration readiness without returning credentials. `GET /v1/status/research` adds concise live readiness and a server-rendered Recyclr fragment for the Admin health panel.
+
+Provider API keys may be stored through Admin → Models & agents. At startup, Omnidex loads structural environment configuration, overlays database-stored keys, then performs final credential validation before constructing the shared API/worker clients. Saving or clearing a key reports a required core restart so the API and workers never run with different provider credentials.
+
+Generation and embeddings are routed separately. `LLM_PROVIDER` controls chat, planning, summarization, specialists, and response generation. `EMBEDDING_PROVIDER` controls memory vectors and retrieval embeddings. Supported OpenAI-compatible embedding presets are `qwen`, `zhipu`, `qianfan`, `hunyuan`, and `siliconflow`; the catch-all `compatible` route can also embed when its endpoint supports `/embeddings`. Generation-only providers require an explicit different `EMBEDDING_PROVIDER`; Omnidex does not silently select one.
 
 To run with OpenAI instead of Ollama:
 - `LLM_PROVIDER=openai`
@@ -646,7 +680,7 @@ To run with xAI Grok:
 - `XAI_API_KEY=...` or `GROK_API_KEY=...`
 - optional `XAI_BASE_URL=https://api.x.ai/v1`
 - optional `XAI_MODEL=grok-4.3`
-- keep `EMBEDDING_PROVIDER=ollama|openai|google|huggingface`, because Grok generation uses xAI's OpenAI-compatible chat-completions API while Omnidex memory vectors need a configured embedding provider.
+- set an explicit embedding-capable `EMBEDDING_PROVIDER`, because Grok generation does not expose an embeddings route supported by Omnidex.
 
 To run with Google Gemini:
 - `LLM_PROVIDER=google` or `LLM_PROVIDER=gemini`
@@ -658,7 +692,7 @@ To run with Anthropic Claude:
 - `LLM_PROVIDER=anthropic` or `LLM_PROVIDER=claude`
 - `ANTHROPIC_API_KEY=...`
 - optional `ANTHROPIC_MODEL=claude-sonnet-4-20250514`
-- keep `EMBEDDING_PROVIDER=ollama|openai|google|huggingface`, because Anthropic does not provide a native embeddings API.
+- set an explicit embedding-capable `EMBEDDING_PROVIDER`, because Anthropic does not provide a native embeddings API.
 
 To run with Hugging Face Inference Providers:
 - `LLM_PROVIDER=huggingface` or `LLM_PROVIDER=hf`
@@ -666,7 +700,27 @@ To run with Hugging Face Inference Providers:
 - optional `HUGGINGFACE_MODEL=openai/gpt-oss-20b:fastest`
 - optional `HUGGINGFACE_EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2`
 
-`EMBEDDING_PROVIDER` can be set independently from `LLM_PROVIDER` when you want one provider for generation and another provider for memory vectors. This is required for Anthropic and useful when you want stable `vector(768)` memory dimensions while testing different generation models.
+`EMBEDDING_PROVIDER` can be set independently from `LLM_PROVIDER` when you want one provider for generation and another provider for memory vectors. It is required for every generation-only provider and useful when you want stable vector dimensions while testing different generation models.
+
+Chinese provider examples:
+
+```env
+# Qwen generation and embeddings. Use the model IDs currently enabled in your Model Studio workspace.
+LLM_PROVIDER=qwen
+QWEN_API_KEY=...
+QWEN_MODEL=<chat-model-id>
+EMBEDDING_PROVIDER=qwen
+QWEN_EMBEDDING_MODEL=<embedding-model-id>
+```
+
+```env
+# DeepSeek generation with local embeddings.
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=...
+DEEPSEEK_MODEL=<current-chat-model-id>
+EMBEDDING_PROVIDER=ollama
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+```
 
 Common setups:
 
@@ -896,8 +950,10 @@ OPENAI_MODEL_SPECIALIST_WEB_RESEARCH=gpt-4.1-mini
 ```
 
 Supported environment variables:
-- `LLM_PROVIDER=ollama|openai|azure|xai|google|anthropic|huggingface`
-- `EMBEDDING_PROVIDER=ollama|openai|azure|google|huggingface`
+- `LLM_PROVIDER=ollama|openai|azure|xai|google|anthropic|huggingface|deepseek|qwen|moonshot|zhipu|zai|minimax|qianfan|hunyuan|doubao|stepfun|yi|baichuan|spark|siliconflow|modelscope|modelarts|mimo|longcat|antling|tokenhub|compatible`
+- `EMBEDDING_PROVIDER=ollama|openai|azure|google|huggingface|qwen|zhipu|qianfan|hunyuan|siliconflow|compatible`
+- Chinese compatible presets use `<PREFIX>_API_KEY`, optional `<PREFIX>_BASE_URL`, required `<PREFIX>_MODEL`, role overrides such as `<PREFIX>_MODEL_REASONING`, and `<PREFIX>_EMBEDDING_MODEL` where embeddings are supported. Prefix aliases such as `DASHSCOPE_*`, `KIMI_*`, `GLM_*`, `ARK_*`, and `XFYUN_*` are accepted by the authoritative provider catalog.
+- `COMPATIBLE_BASE_URL`, `COMPATIBLE_API_KEY`, and `COMPATIBLE_MODEL` are all required for the strict custom OpenAI-compatible route.
 - `OPENAI_API_KEY` (required when `LLM_PROVIDER=openai`)
 - `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
 - `OPENAI_MODEL` (default fallback when provider is OpenAI)
@@ -921,7 +977,6 @@ Supported environment variables:
 - `XAI_BASE_URL` / `GROK_BASE_URL` (default `https://api.x.ai/v1`)
 - `XAI_MODEL` / `GROK_MODEL`
 - `XAI_MODEL_FAST`, `XAI_MODEL_REASONING`, `XAI_MODEL_TAGGER`, `XAI_MODEL_PLANNER`, `XAI_MODEL_ANALYZER`, `XAI_MODEL_RESPONDER`, `XAI_MODEL_SEARCH`, `XAI_MODEL_MEMORY`
-- `XAI_EMBEDDING_PROVIDER` / `GROK_EMBEDDING_PROVIDER` (default `ollama` when `LLM_PROVIDER=xai|grok|grock`)
 - `GOOGLE_API_KEY` / `GEMINI_API_KEY` (required when `LLM_PROVIDER=google`)
 - `GOOGLE_BASE_URL` (default `https://generativelanguage.googleapis.com/v1beta`)
 - `GOOGLE_MODEL` / `GEMINI_MODEL`
@@ -933,7 +988,6 @@ Supported environment variables:
 - `ANTHROPIC_MAX_TOKENS` (default `4096`)
 - `ANTHROPIC_MODEL` / `CLAUDE_MODEL`
 - `ANTHROPIC_MODEL_FAST`, `ANTHROPIC_MODEL_REASONING`, `ANTHROPIC_MODEL_TAGGER`, `ANTHROPIC_MODEL_PLANNER`, `ANTHROPIC_MODEL_ANALYZER`, `ANTHROPIC_MODEL_RESPONDER`, `ANTHROPIC_MODEL_SEARCH`, `ANTHROPIC_MODEL_MEMORY`
-- `ANTHROPIC_EMBEDDING_PROVIDER` (default `ollama` when `LLM_PROVIDER=anthropic`)
 - `HUGGINGFACE_API_KEY` / `HF_TOKEN` (required when `LLM_PROVIDER=huggingface`)
 - `HUGGINGFACE_BASE_URL` (default `https://router.huggingface.co`)
 - `HUGGINGFACE_MODEL` / `HF_MODEL`
@@ -981,11 +1035,14 @@ Supported environment variables:
 ### Core runtime tuning
 
 Environment variables:
+
+Explicit malformed or out-of-range runtime values stop startup with the offending key; documented defaults apply only when a value is unset.
+
 - `WRAPPER_ONLY=true|false` (default `false`; when `true`, disables DB/worker/queue routes and exposes only stateless wrapper endpoints)
 - `WORKER_COUNT=3`
 - `WORKER_POLL_INTERVAL=2s`
 - `REQUEST_TIMEOUT=90s`
-- `REALTIME_MAX_CLIENTS=512` (caps live websocket/SSE subscriptions)
+- `REALTIME_MAX_CLIENTS=512` (caps live WebSocket subscriptions)
 - `REALTIME_STREAM_MAX_AGE=30m` (recycles browser realtime streams; clients reconnect automatically)
 - `REALTIME_HEARTBEAT=25s`
 - `REALTIME_WRITE_TIMEOUT=10s`
@@ -1582,6 +1639,12 @@ This stores chunked research memories with topic tags and writes freshness metad
 
 ## API endpoints
 
+### Provider discovery and readiness
+
+- `GET /v1/providers` — authoritative provider catalog and secret-free configuration readiness
+- `GET /v1/status/research` — generation, embeddings, local-runtime, and web-search readiness plus server-rendered health HTML
+- `GET/PUT /v1/settings/secrets` — masked database-backed credentials; mutations explicitly report `restart_required`
+
 ### Project planner & scrum (Venusaur)
 
 - `GET /v1/projects/{id}/planning-chat`
@@ -1629,7 +1692,7 @@ See [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md).
 - `POST /v1/jobs/{id}/cancel`
 - `POST /v1/memory`
 
-When `WRAPPER_ONLY=true`, only `/healthz`, `/v1/instruct`, `/v1/roleplay`, `/v1/narrate`, and `/v1/reasoning` are registered.
+When `WRAPPER_ONLY=true`, repository-backed job, memory, metrics, and admin-data routes are not registered. Stateless wrappers and repository-independent provider, status, UI, and settings routes remain available.
 
 ### Example stateless wrapper body
 

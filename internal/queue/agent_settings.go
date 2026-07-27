@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/jackc/pgx/v5"
@@ -35,29 +34,22 @@ func (r *Repository) GetWorkspaceAgentConfig(ctx context.Context) (map[string]st
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}
-	clean := map[string]string{}
-	for key, value := range out {
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key != "" && value != "" {
-			clean[key] = value
-		}
+	cfg, err := agentconfig.FromStringMap(out)
+	if err != nil {
+		return nil, err
 	}
-	return clean, nil
+	return cfg.ToMap(), nil
 }
 
 func (r *Repository) SetWorkspaceAgentConfig(ctx context.Context, values map[string]string) (map[string]string, error) {
 	if r == nil || r.pool == nil {
 		return nil, errors.New("repository unavailable")
 	}
-	clean := map[string]string{}
-	for key, value := range values {
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key != "" && value != "" {
-			clean[key] = value
-		}
+	cfg, err := agentconfig.FromStringMap(values)
+	if err != nil {
+		return nil, err
 	}
+	clean := cfg.ToMap()
 	payload, err := json.Marshal(clean)
 	if err != nil {
 		return nil, err

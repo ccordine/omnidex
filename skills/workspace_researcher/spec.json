@@ -4,6 +4,8 @@
   "preferred_model": ["fast", "analyze"],
   "allowed_tools": ["workspace.research"],
   "context_budget": 10000,
+  "input_schema": "input.schema.json",
+  "output_schema": "output.schema.json",
   "retry_policy": "single_pass",
   "require_evidence": true
 }

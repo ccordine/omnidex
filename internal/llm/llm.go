@@ -7,12 +7,17 @@ import (
 
 const MinimalGeneratePrompt = "Return only the requested output."
 
+const ResponseFormatJSON = "json"
+
 type PreparedModel struct {
-	BaseModel     string
-	ContextModel  string
-	ModelfilePath string
-	PromptHint    string
-	Prompt        string
+	BaseModel       string
+	ContextModel    string
+	ModelfilePath   string
+	PromptHint      string
+	Prompt          string
+	MaxOutputTokens int
+	ContextTokens   int
+	ResponseFormat  string
 }
 
 type Client interface {

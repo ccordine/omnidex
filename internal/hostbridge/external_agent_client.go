@@ -114,27 +114,3 @@ type AgentStreamEvent struct {
 	Evidence []string        `json:"evidence,omitempty"`
 	Raw      json.RawMessage `json:"raw,omitempty"`
 }
-
-func (event AgentStreamEvent) ToOmniEvent(sessionID string) map[string]any {
-	out := map[string]any{
-		"agent":   firstNonEmpty(event.Agent, "external"),
-		"type":    event.Type,
-		"message": event.Message,
-	}
-	if sessionID != "" {
-		out["session_id"] = sessionID
-	}
-	if event.Command != "" {
-		out["command"] = event.Command
-	}
-	if len(event.Files) > 0 {
-		out["files"] = event.Files
-	}
-	if len(event.Evidence) > 0 {
-		out["evidence"] = event.Evidence
-	}
-	if len(event.Raw) > 0 {
-		out["raw"] = event.Raw
-	}
-	return out
-}

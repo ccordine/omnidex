@@ -18,7 +18,7 @@ import { reportError } from "../lib/feedback";
 import type { ScrumChatMessage } from "../lib/scrum_types";
 
 export default class ProjectChatController extends Controller {
-  static targets = ["messages", "input", "status", "modelSelect", "suggestions", "drafts"];
+  static targets = ["messages", "input", "status", "modelSelect", "suggestions", "drafts", "older"];
 
   declare readonly messagesTarget: HTMLElement;
   declare readonly inputTarget: HTMLTextAreaElement;
@@ -26,6 +26,8 @@ export default class ProjectChatController extends Controller {
   declare readonly modelSelectTarget: HTMLSelectElement;
   declare readonly suggestionsTarget: HTMLElement;
   declare readonly draftsTarget: HTMLElement;
+  declare readonly olderTarget: HTMLButtonElement;
+  declare readonly hasOlderTarget: boolean;
   declare readonly hasModelSelectTarget: boolean;
 
   private projectID: number | null = null;
@@ -35,21 +37,28 @@ export default class ProjectChatController extends Controller {
   private config: ProjectPlanningChatConfig = { reasoning_mode: "instant" };
   private draftQueue: ProjectPlanningStoredDraft[] = [];
   private pendingCount = 0;
+  private hasMore = false;
+  private nextBeforeID = 0;
   private modelOptions: string[] = [];
+  private loading = false;
+  private reloadPending = false;
   private onProjectOpened = (event: Event) => this.handleProjectOpened(event);
   private onProjectClosed = () => this.handleProjectClosed();
   private onProjectTab = (event: Event) => this.handleProjectTab(event);
+  private onPlanningUpdated = (event: Event) => this.handlePlanningUpdated(event);
 
   connect() {
     document.addEventListener("omni:project-opened", this.onProjectOpened);
     document.addEventListener("omni:project-closed", this.onProjectClosed);
     document.addEventListener("omni:project-tab", this.onProjectTab);
+    document.addEventListener("omni:project-planning-updated", this.onPlanningUpdated);
   }
 
   disconnect() {
     document.removeEventListener("omni:project-opened", this.onProjectOpened);
     document.removeEventListener("omni:project-closed", this.onProjectClosed);
     document.removeEventListener("omni:project-tab", this.onProjectTab);
+    document.removeEventListener("omni:project-planning-updated", this.onPlanningUpdated);
   }
 
   private handleProjectOpened(event: Event) {
@@ -65,6 +74,9 @@ export default class ProjectChatController extends Controller {
     this.chat = [];
     this.draftQueue = [];
     this.pendingCount = 0;
+    this.hasMore = false;
+    this.nextBeforeID = 0;
+    this.reloadPending = false;
     this.renderMessages();
     this.renderSidePanels([], []);
   }
@@ -78,6 +90,16 @@ export default class ProjectChatController extends Controller {
     if (this.activeTab === "chat" && this.projectID) {
       void this.loadChat();
     }
+  }
+
+  private handlePlanningUpdated(event: Event) {
+    const detail = (event as CustomEvent<{ projectID?: number }>).detail;
+    if (!this.projectID || detail?.projectID !== this.projectID || this.activeTab !== "chat") return;
+    if (this.busy || this.loading) {
+      this.reloadPending = true;
+      return;
+    }
+    void this.loadChat();
   }
 
   private setStatus(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
@@ -99,32 +121,45 @@ export default class ProjectChatController extends Controller {
   }
 
   private async loadChat() {
-    if (!this.projectID || this.busy) return;
+    if (!this.projectID) return;
+    if (this.busy || this.loading) {
+      this.reloadPending = true;
+      return;
+    }
+    const projectID = this.projectID;
+    this.loading = true;
+    this.reloadPending = false;
     this.setStatus("Loading chat…", "busy");
     try {
       await this.ensureModels();
-      const payload = await fetchProjectPlanningChat(this.projectID);
+      const payload = await fetchProjectPlanningChat(projectID);
+      if (this.projectID !== projectID || this.activeTab !== "chat") return;
       this.chat = payload.chat ?? [];
       this.config = payload.config ?? { reasoning_mode: "instant" };
+      this.hasMore = payload.has_more === true;
+      this.nextBeforeID = payload.next_before_id ?? 0;
       this.applyDraftQueue(payload.draft_queue, payload.pending_count);
       this.syncModelSelect();
       this.renderMessages();
+      this.syncOlderButton();
       this.renderSidePanels([], this.draftQueue);
       this.setStatus(this.pendingCount ? `${this.pendingCount} drafts pending` : "Ready", "ok");
     } catch (error) {
       reportError(this.setStatus.bind(this), error);
+    } finally {
+      this.loading = false;
+      if (this.reloadPending && !this.busy && this.projectID === projectID && this.activeTab === "chat") {
+        this.reloadPending = false;
+        void this.loadChat();
+      }
     }
   }
 
   private async ensureModels() {
     if (this.modelOptions.length) return;
-    try {
-      const payload = await fetchOllamaModels();
-      this.modelOptions = (payload.models ?? []).map((item) => item.name).filter(Boolean);
-      this.syncModelSelect();
-    } catch {
-      this.modelOptions = [];
-    }
+    const payload = await fetchOllamaModels();
+    this.modelOptions = (payload.models ?? []).map((item) => item.name.trim()).filter(Boolean);
+    this.syncModelSelect();
   }
 
   private syncModelSelect() {
@@ -137,12 +172,47 @@ export default class ProjectChatController extends Controller {
     this.modelSelectTarget.innerHTML = options.join("");
   }
 
-  private renderMessages() {
+  private renderMessages(scrollToEnd = true) {
     this.messagesTarget.innerHTML = renderProjectPlanningChatMessages(this.chat, {
       pending: this.busy,
       pendingLabel: "Planning…",
     });
-    this.messagesTarget.scrollTop = this.messagesTarget.scrollHeight;
+    if (scrollToEnd) this.messagesTarget.scrollTop = this.messagesTarget.scrollHeight;
+    this.syncOlderButton();
+  }
+
+  private syncOlderButton() {
+    if (!this.hasOlderTarget) return;
+    this.olderTarget.hidden = !this.hasMore;
+    this.olderTarget.disabled = this.loading || this.busy;
+  }
+
+  async loadOlder(event: Event) {
+    event.preventDefault();
+    if (!this.projectID || !this.hasMore || !this.nextBeforeID || this.busy || this.loading) return;
+    const projectID = this.projectID;
+    this.loading = true;
+    this.syncOlderButton();
+    this.setStatus("Loading earlier messages…", "busy");
+    try {
+      const payload = await fetchProjectPlanningChat(projectID, this.nextBeforeID);
+      if (this.projectID !== projectID || this.activeTab !== "chat") return;
+      const previousHeight = this.messagesTarget.scrollHeight;
+      const seen = new Set(this.chat.map((message) => message.id).filter(Boolean));
+      const earlier = (payload.chat ?? []).filter((message) => !message.id || !seen.has(message.id));
+      this.chat = [...earlier, ...this.chat];
+      this.hasMore = payload.has_more === true;
+      this.nextBeforeID = payload.next_before_id ?? 0;
+      this.renderMessages(false);
+      this.messagesTarget.scrollTop += this.messagesTarget.scrollHeight - previousHeight;
+      this.setStatus(this.hasMore ? "Earlier messages loaded" : "Full history loaded", "ok");
+    } catch (error) {
+      reportError(this.setStatus.bind(this), error);
+    } finally {
+      this.loading = false;
+      this.syncOlderButton();
+      this.flushPendingReload();
+    }
   }
 
   private renderSidePanels(suggestions: ProjectPlanningSuggestion[], drafts: ProjectPlanningStoredDraft[]) {
@@ -160,8 +230,8 @@ export default class ProjectChatController extends Controller {
     if (!this.projectID) return;
     this.config = this.currentConfig();
     try {
-      await updateProjectPlanningChatConfig(this.projectID, this.config);
-      this.setStatus(`Model: ${this.config.model || "auto"}`, "ok");
+      const payload = await updateProjectPlanningChatConfig(this.projectID, this.config);
+      this.setMutationStatus(`Model: ${this.config.model || "auto"}`, payload);
     } catch (error) {
       reportError(this.setStatus.bind(this), error);
     }
@@ -175,8 +245,8 @@ export default class ProjectChatController extends Controller {
     this.config = { ...this.currentConfig(), reasoning_mode: mode };
     this.syncModelSelect();
     try {
-      await updateProjectPlanningChatConfig(this.projectID, this.config);
-      this.setStatus(mode === "thinking" ? "Thinking mode" : "Instant mode", "ok");
+      const payload = await updateProjectPlanningChatConfig(this.projectID, this.config);
+      this.setMutationStatus(mode === "thinking" ? "Thinking mode" : "Instant mode", payload);
     } catch (error) {
       reportError(this.setStatus.bind(this), error);
     }
@@ -225,11 +295,6 @@ export default class ProjectChatController extends Controller {
 
   private async postChat(input: { message?: string; mode?: string }) {
     if (!this.projectID || this.busy) return;
-    const userMessage = (input.message ?? "").trim();
-    if (userMessage && input.mode !== "scan") {
-      this.chat = [...this.chat, { role: "user", content: userMessage, created_at: new Date().toISOString() }];
-      this.inputTarget.value = "";
-    }
     this.busy = true;
     this.config = this.currentConfig();
     this.renderMessages();
@@ -243,6 +308,8 @@ export default class ProjectChatController extends Controller {
       });
       this.chat = payload.chat ?? this.chat;
       this.config = payload.config ?? this.config;
+      this.hasMore = payload.has_more === true;
+      this.nextBeforeID = payload.next_before_id ?? 0;
       this.renderMessages();
       this.renderSidePanels(payload.suggestions ?? [], payload.draft_queue ?? this.draftQueue);
       if (input.message && input.mode !== "scan") {
@@ -251,15 +318,17 @@ export default class ProjectChatController extends Controller {
       const modelLabel = payload.model ? ` · ${payload.model}` : "";
       const researchLabel = payload.research_used ? " · research" : "";
       const draftLabel = payload.pending_count ? ` · ${payload.pending_count} pending` : "";
-      this.setStatus(`Ready${modelLabel}${researchLabel}${draftLabel}`, "ok");
+      this.setMutationStatus(`Ready${modelLabel}${researchLabel}${draftLabel}`, payload);
     } catch (error) {
       this.busy = false;
       this.renderMessages();
       reportError(this.setStatus.bind(this), error);
+      this.flushPendingReload();
       return;
     }
     this.busy = false;
     this.renderMessages();
+    this.flushPendingReload();
   }
 
   private async mutateDrafts(input: Parameters<typeof mutateProjectPlanningDrafts>[1], statusMessage: string) {
@@ -270,20 +339,31 @@ export default class ProjectChatController extends Controller {
       const payload = await mutateProjectPlanningDrafts(this.projectID, input);
       this.applyDraftQueue(payload.draft_queue, payload.pending_count);
       this.renderSidePanels([], this.draftQueue);
-      if (payload.created_count > 0) {
-        document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: this.projectID } }));
-      }
-      this.setStatus(
-        payload.created_count
-          ? `Added ${payload.created_count} card${payload.created_count === 1 ? "" : "s"} to board · ${payload.pending_count} pending`
-          : `${payload.pending_count} drafts pending`,
-        "ok",
-      );
+      const success = payload.created_count
+        ? `Added ${payload.created_count} card${payload.created_count === 1 ? "" : "s"} to board · ${payload.pending_count} pending`
+        : `${payload.pending_count} drafts pending`;
+      this.setMutationStatus(success, payload);
     } catch (error) {
       reportError(this.setStatus.bind(this), error);
     } finally {
       this.busy = false;
+      this.flushPendingReload();
     }
+  }
+
+  private flushPendingReload() {
+    if (!this.reloadPending || this.busy || this.loading || !this.projectID || this.activeTab !== "chat") return;
+    this.reloadPending = false;
+    void this.loadChat();
+  }
+
+  private setMutationStatus(success: string, payload: { realtime_published?: boolean; realtime_error?: string }) {
+    if (payload.realtime_published === false) {
+      this.setStatus("Saved · live sync degraded", "error");
+      this.statusTarget.title = payload.realtime_error || "The server saved the change but could not publish it live.";
+      return;
+    }
+    this.setStatus(success, "ok");
   }
 
   async createDraftCard(event: Event) {

@@ -3,6 +3,10 @@ package omni
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -57,6 +61,41 @@ func TestExecuteLinuxCommandToolWithoutOllamaRunsExplicitCommand(t *testing.T) {
 	}
 }
 
+func TestExecuteLinuxCommandToolDoesNotExecuteFallbackAfterOllamaFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "model unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	workspacePath := t.TempDir()
+	runLogger, err := NewRunLogger(t.TempDir(), "test-workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runLogger.Close()
+
+	result, err := ExecuteLinuxCommandTool(
+		context.Background(),
+		NewOllamaClient(server.URL, "test-model"),
+		"touch should-not-exist",
+		PermissionFull,
+		strings.NewReader(""),
+		&bytes.Buffer{},
+		workspacePath,
+		func() string { return "evt" },
+		runLogger,
+	)
+	if err == nil {
+		t.Fatalf("expected Ollama failure, got result %#v", result)
+	}
+	if !strings.Contains(err.Error(), "linux_command generation failed") {
+		t.Fatalf("error = %q, want explicit generation failure", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(workspacePath, "should-not-exist")); !os.IsNotExist(statErr) {
+		t.Fatalf("fallback command ran after Ollama failure: %v", statErr)
+	}
+}
+
 func TestRunShellCommandUsesPipefail(t *testing.T) {
 	_, stderr, err := runShellCommand(context.Background(), t.TempDir(), "printf 'not-json' | jq -r '.datetime'")
 
@@ -65,5 +104,12 @@ func TestRunShellCommandUsesPipefail(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "parse error") {
 		t.Fatalf("stderr = %q, want jq parse error", stderr)
+	}
+}
+
+func TestEvaluateCommandPolicyAllowsNPXAsDeclaredPackageRunner(t *testing.T) {
+	decision := EvaluateCommandPolicy("npx create-react-app note-app", t.TempDir())
+	if !decision.Allowed {
+		t.Fatalf("npx was advertised by the runtime but rejected by policy: %#v", decision)
 	}
 }

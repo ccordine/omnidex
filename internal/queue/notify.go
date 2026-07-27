@@ -2,11 +2,13 @@ package queue
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrRepositoryNotConfigured = errors.New("postgres repository is not configured")
 
 type NotifyConn interface {
 	Exec(ctx context.Context, sql string, args ...any) error
@@ -34,7 +36,7 @@ func (n *notifyConn) Close(ctx context.Context) error {
 
 func (r *Repository) AcquireNotifyConn(ctx context.Context) (NotifyConn, error) {
 	if r == nil || r.pool == nil {
-		return nil, fmt.Errorf("postgres repository is not configured")
+		return nil, ErrRepositoryNotConfigured
 	}
 	conn, err := r.pool.Acquire(ctx)
 	if err != nil {

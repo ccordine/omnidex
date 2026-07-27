@@ -22,7 +22,7 @@ internal/api/web/
     main.ts           # Stimulus application bootstrap
     controllers/
       card_modal_spa_controller.tsx
-      gx_controller.ts
+      recyclr_controller.ts
       chat_controller.ts
       project_chat_controller.ts
       scrum_controller.ts

@@ -2,31 +2,6 @@ package api
 
 import "testing"
 
-func TestNextAutoPlayThroughScrumCardDefaultsToAssigned(t *testing.T) {
-	s := &Server{}
-	board := ScrumBoard{
-		Cards: []ScrumCard{
-			{ID: "assigned-top", Column: "assigned", BoardOrder: 1, UpdatedAt: "2026-05-29T12:00:00Z"},
-			{ID: "backlog-top", Column: "backlog", BoardOrder: 1, UpdatedAt: "2026-05-29T12:00:00Z"},
-			{ID: "ready-top", Column: "ready", BoardOrder: 1, UpdatedAt: "2026-05-29T12:00:00Z"},
-			{ID: "backlog-second", Column: "backlog", BoardOrder: 2, UpdatedAt: "2026-05-29T12:00:01Z"},
-		},
-	}
-	got := s.nextAutoPlayThroughScrumCard(board)
-	if got == nil || got.ID != "assigned-top" {
-		t.Fatalf("expected assigned card by default, got %#v", got)
-	}
-
-	board.Cards = []ScrumCard{
-		{ID: "queued", Column: "assigned", PlayState: scrumPlayQueued, QueueOrder: 1, BoardOrder: 5},
-		{ID: "backlog-top", Column: "backlog", BoardOrder: 1},
-	}
-	got = s.nextAutoPlayThroughScrumCard(board)
-	if got == nil || got.ID != "queued" {
-		t.Fatalf("expected queued card first, got %#v", got)
-	}
-}
-
 func TestNextAutoWorkScrumCardUsesConfiguredColumns(t *testing.T) {
 	s := &Server{}
 	board := ScrumBoard{Cards: []ScrumCard{
@@ -40,63 +15,46 @@ func TestNextAutoWorkScrumCardUsesConfiguredColumns(t *testing.T) {
 	}
 }
 
-func TestScrumAutoPlayThroughComplete(t *testing.T) {
+func TestScrumAutoWorkComplete(t *testing.T) {
 	board := ScrumBoard{
 		Cards: []ScrumCard{
 			{ID: "a", Column: "review"},
 			{ID: "b", Column: "done"},
 		},
 	}
-	if !scrumAutoPlayThroughComplete(board) {
+	if !scrumAutoWorkComplete(board, false) {
 		t.Fatal("expected complete when all cards are review/done")
 	}
 	board.Cards = append(board.Cards, ScrumCard{ID: "c", Column: "assigned"})
-	if scrumAutoPlayThroughComplete(board) {
+	if scrumAutoWorkComplete(board, false) {
 		t.Fatal("expected incomplete when assigned cards remain")
 	}
 }
 
-func TestLoadScrumAutoPlayThrough(t *testing.T) {
-	settings := []byte(`{"scrum_auto_play_through":true}`)
-	if !loadScrumAutoPlayThrough(settings) {
-		t.Fatal("expected true")
-	}
-	if loadScrumAutoPlayThrough([]byte(`{"scrum_auto_play_through":false}`)) {
-		t.Fatal("expected false")
-	}
-	if loadScrumAutoPlayThrough(nil) {
-		t.Fatal("expected false for empty settings")
-	}
-}
-
 func TestLoadScrumAutoWorkConfig(t *testing.T) {
-	cfg := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_work":{"enabled":true,"source_columns":["ready","assigned","review","ready"]}}`))
+	cfg, err := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_work":{"enabled":true,"source_columns":["ready","assigned"]}}`))
+	if err != nil {
+		t.Fatalf("loadScrumAutoWorkConfig: %v", err)
+	}
 	if !cfg.Enabled {
 		t.Fatal("expected enabled")
 	}
 	if len(cfg.SourceColumns) != 2 || cfg.SourceColumns[0] != "ready" || cfg.SourceColumns[1] != "assigned" {
 		t.Fatalf("unexpected source columns: %#v", cfg.SourceColumns)
 	}
-	cfg = loadScrumAutoWorkConfig([]byte(`{"scrum_auto_play_through":true}`))
-	if !cfg.Enabled || len(cfg.SourceColumns) != 1 || cfg.SourceColumns[0] != "assigned" {
-		t.Fatalf("expected legacy enabled with assigned default, got %#v", cfg)
+	if _, err := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_play_through":true}`)); err == nil {
+		t.Fatal("legacy scrum_auto_play_through must fail after migration")
+	}
+	if _, err := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_work":{"enabled":true,"source_columns":["review"]}}`)); err == nil {
+		t.Fatal("invalid auto-work source column must fail")
+	}
+	if _, err := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_work":`)); err == nil {
+		t.Fatal("invalid project settings JSON must fail")
 	}
 }
 
-func TestScrumPatchEnablesAutoWork(t *testing.T) {
-	enabled := true
-	disabled := false
-
-	if !scrumPatchEnablesAutoWork(&enabled, nil) {
-		t.Fatal("expected explicit auto-play enable to advance auto-work")
-	}
-	if scrumPatchEnablesAutoWork(&disabled, &ScrumAutoWorkConfig{Enabled: true}) {
-		t.Fatal("expected explicit auto-play disable to avoid advancing auto-work")
-	}
-	if !scrumPatchEnablesAutoWork(nil, &ScrumAutoWorkConfig{Enabled: true, SourceColumns: []string{"ready"}}) {
-		t.Fatal("expected enabled auto-work source patch to advance auto-work")
-	}
-	if scrumPatchEnablesAutoWork(nil, &ScrumAutoWorkConfig{Enabled: false}) {
-		t.Fatal("expected disabled auto-work patch to avoid advancing auto-work")
+func TestNormalizeScrumAutoWorkConfigRejectsDuplicates(t *testing.T) {
+	if _, err := validateScrumAutoWorkConfig(ScrumAutoWorkConfig{Enabled: true, SourceColumns: []string{"ready", "ready"}}); err == nil {
+		t.Fatal("duplicate auto-work source columns must fail")
 	}
 }

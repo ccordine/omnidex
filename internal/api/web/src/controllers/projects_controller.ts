@@ -1,28 +1,20 @@
 import { Controller } from "@hotwired/stimulus";
 import {
-  browseDirectory,
-  createBrowseDirectory,
-  fetchHostBridgeStatus,
-  createProject,
   deleteProject,
   fetchProjects,
   fetchProject,
-  fetchProjectDebuggerStatus,
   fetchProjectGit,
   fetchProjectMap,
   fetchRecipes,
   pauseProjectAutoWork,
-  runProjectDebugger,
   scanProjectMap,
   startProjectAutoWork,
   surveyProject,
   updateProject,
 } from "../lib/project_api";
-import { renderBrowseModal, renderProjectCreateModal, renderProjectDetail, renderProjectList } from "../lib/project_render";
+import { renderProjectDetail, renderProjectList } from "../lib/project_render";
 import { renderProjectGitSection } from "../lib/project_git_render";
-import { renderProjectDebuggerModal } from "../lib/project_debugger_render";
 import { patchScrumAutomation } from "../lib/scrum_api";
-import { fetchJobRecord } from "../lib/data_api";
 import { collectModelFieldValues, clearModelFieldInputs } from "../lib/model_config_render";
 import { collectAgentFieldValues, clearAgentFieldInputs } from "../lib/agent_config_render";
 import { fetchAgentDefaults } from "../lib/agent_config_api";
@@ -35,8 +27,10 @@ import { t } from "../lib/i18n";
 import { showToast } from "../lib/toast";
 import { escapeHTML } from "../lib/dom";
 import type { ResolvedModelConfig } from "../lib/model_config_types";
-import type { BrowseResponse, DebuggerLastRun, ProjectGitStatus, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
-import type GxController from "./gx_controller";
+import type { ProjectGitStatus, ProjectMapSummary, ProjectRecord, RecipeCatalogItem } from "../lib/project_types";
+import type RecyclrController from "./recyclr_controller";
+import { ProjectBrowserCoordinator } from "../lib/project_browser_coordinator";
+import { ProjectDebuggerCoordinator } from "../lib/project_debugger_coordinator";
 
 const PROJECT_TABS = new Set(["scrum", "chat", "terminal", "screen", "settings", "map", "git", "recipe"]);
 
@@ -56,23 +50,13 @@ export default class ProjectsController extends Controller {
   private recipes: RecipeCatalogItem[] = [];
   private selectedProjectID: number | null = null;
   private activeTab = "scrum";
-  private browsePath = "";
-  private browseSelected = "";
-  private browseData: BrowseResponse | null = null;
-  private browseMode: "create" | "edit" = "create";
-  private browseProjectID: number | null = null;
-  private pendingCreatePath = "";
-  private pendingCreateName = "";
   private panelShownHandler: ((event: Event) => void) | null = null;
   private currentModelConfig: ResolvedModelConfig | null = null;
   private currentAgentConfig: ResolvedAgentConfig | null = null;
   private currentProjectMap: ProjectMapSummary | null = null;
   private currentProjectGit: ProjectGitStatus | null = null;
-  private debuggerProjectID: number | null = null;
-  private debuggerProjectName = "";
-  private debuggerLastRun: DebuggerLastRun | null = null;
-  private debuggerRunning = false;
-  private debuggerPollTimer: number | null = null;
+  private browser!: ProjectBrowserCoordinator;
+  private debugger!: ProjectDebuggerCoordinator;
   private detailAbortController: AbortController | null = null;
   private pendingProjectsLoad = false;
   private pendingProjectsLoadReason = "";
@@ -81,6 +65,38 @@ export default class ProjectsController extends Controller {
   private loadInFlight = false;
 
   connect() {
+    this.browser = new ProjectBrowserCoordinator({
+      recipes: () => this.recipes,
+      detailRoot: () => this.detailTarget,
+      modalPanel: () => this.modalPanel(),
+      openModal: (html) => this.openModal(html),
+      closeModal: () => this.closeBrowse(),
+      setStatus: (message, tone) => this.setStatus(message, tone),
+      projectCreated: async (project) => {
+        this.selectedProjectID = project.id;
+        this.setActiveProjectTab("scrum");
+        await this.load();
+        this.actionOk(`Project “${project.name || "project"}” created`);
+      },
+    });
+    this.debugger = new ProjectDebuggerCoordinator({
+      selectedProjectID: () => this.selectedProjectID,
+      activeTab: () => this.activeTab,
+      projectName: (projectID) =>
+        this.detailTarget.querySelector("h3")?.textContent?.trim() ||
+        this.projects.find((project) => project.id === projectID)?.name ||
+        "Project",
+      agentConfig: () => this.currentAgentConfig,
+      modalPanel: () => this.modalPanel(),
+      openModal: (html) => this.openModal(html),
+      closeModal: () => this.closeBrowse(),
+      setStatus: (message, tone) => this.setStatus(message, tone),
+      actionOk: (message) => this.actionOk(message),
+      actionFail: (error) => this.actionFail(error),
+      refreshScrum: (projectID) => {
+        document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: projectID } }));
+      },
+    });
     this.panelShownHandler = (event: Event) => {
       const detail = (event as CustomEvent<{ panel?: string }>).detail;
       if (detail?.panel === "projects") {
@@ -100,7 +116,7 @@ export default class ProjectsController extends Controller {
     this.projectsPanelObserver?.disconnect();
     this.projectsPanelObserver = null;
     this.detailAbortController?.abort();
-    this.stopDebuggerPolling();
+    this.debugger?.disconnect();
   }
 
   private hasProjectsPanelTargets(): boolean {
@@ -193,51 +209,14 @@ export default class ProjectsController extends Controller {
     };
   }
 
-  private setModalFeedback(message: string, tone: "idle" | "busy" | "error" | "ok" = "idle") {
-    const toneClasses: Record<string, string[]> = {
-      idle: ["border-white/10", "bg-zinc-900/80", "text-zinc-300"],
-      busy: ["border-cyan-300/30", "bg-cyan-300/10", "text-cyan-100"],
-      error: ["border-rose-400/30", "bg-rose-400/10", "text-rose-100"],
-      ok: ["border-emerald-400/30", "bg-emerald-400/10", "text-emerald-100"],
-    };
-    const allToneClasses = Object.values(toneClasses).flat();
-    const slots = this.modalPanel()?.querySelectorAll("[data-projects-modal-feedback]") ?? [];
-    if (slots.length === 0) {
-      if (message) this.setStatus(message, tone);
-      return;
-    }
-    slots.forEach((slot) => {
-      const node = slot as HTMLElement;
-      node.classList.remove(...allToneClasses);
-      if (!message) {
-        node.classList.add("hidden");
-        node.textContent = "";
-        return;
-      }
-      node.classList.remove("hidden");
-      node.classList.add(...(toneClasses[tone] ?? toneClasses.idle));
-      node.setAttribute("role", tone === "error" ? "alert" : "status");
-      node.textContent = message;
-    });
-    if (message) this.setStatus(message, tone);
-    if (message && (tone === "ok" || tone === "error")) {
-      showToast(message, tone);
-    }
+  private recyclrHost(): RecyclrController {
+    const controller = (window as Window & { omniRecyclr?: RecyclrController }).omniRecyclr;
+    if (!controller) throw new Error("The page-scoped Recyclr controller is unavailable.");
+    return controller;
   }
 
-  private setCreateSubmitting(submitting: boolean) {
-    const button = this.modalPanel()?.querySelector("[data-projects-create-submit]") as HTMLButtonElement | null;
-    if (!button) return;
-    button.disabled = submitting;
-    button.textContent = submitting ? "Creating project…" : "Create project";
-  }
-
-  private gxHost(): GxController | null {
-    return (window as Window & { omniRecyclr?: GxController }).omniRecyclr ?? null;
-  }
-
-  openModal(html: string) {
-    renderRecyclrBundle(this.gxHost(), "modal", html);
+  async openModal(html: string): Promise<void> {
+    await renderRecyclrBundle(this.recyclrHost(), "modal", html);
     openModalShell({ wide: true });
   }
 
@@ -251,16 +230,6 @@ export default class ProjectsController extends Controller {
 
   private modalPanel(): HTMLElement | null {
     return document.querySelector('[data-chat-target="modalPanel"]');
-  }
-
-  private modalField(name: string): string {
-    const field = this.modalPanel()?.querySelector(`[data-projects-field="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
-    return field?.value?.trim() ?? "";
-  }
-
-  private setModalField(name: string, value: string) {
-    const field = this.modalPanel()?.querySelector(`[data-projects-field="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (field) field.value = value;
   }
 
   updateViewingBadge(name: string | null) {
@@ -292,7 +261,9 @@ export default class ProjectsController extends Controller {
 
   private normalizeProjectTab(tab?: string | null): string {
     const next = tab?.trim() || "";
-    return PROJECT_TABS.has(next) ? next : "scrum";
+    if (!next) return "scrum";
+    if (!PROJECT_TABS.has(next)) throw new Error(`Unknown project tab ${JSON.stringify(next)}.`);
+    return next;
   }
 
   private resolveProjectTab(projectID?: number | null): string {
@@ -308,11 +279,7 @@ export default class ProjectsController extends Controller {
     if (!updateURL) return;
     const url = new URL(window.location.href);
     url.searchParams.set("project_tab", this.activeTab);
-    try {
-      history.replaceState(null, document.title, `${url.pathname}${url.search}${url.hash}`);
-    } catch {
-      /* ignore history failures */
-    }
+    history.replaceState(null, document.title, `${url.pathname}${url.search}${url.hash}`);
   }
 
   async load() {
@@ -327,7 +294,7 @@ export default class ProjectsController extends Controller {
     try {
       const [projectsPayload, recipesPayload] = await Promise.all([
         fetchProjects(),
-        fetchRecipes().catch(() => ({ recipes: [], root: "" })),
+        fetchRecipes(),
       ]);
       this.projects = projectsPayload.projects ?? [];
       this.recipes = recipesPayload.recipes ?? [];
@@ -351,164 +318,43 @@ export default class ProjectsController extends Controller {
     }
   }
 
-  showCreateModal() {
-    this.openModal(renderProjectCreateModal(this.recipes));
-    this.setModalFeedback("", "idle");
-    this.setCreateSubmitting(false);
+  async showCreateModal() {
+    await this.runBrowserAction(() => this.browser.showCreateModal());
   }
 
   async openBrowse(event: Event) {
-    event.preventDefault();
-    this.browseMode = "create";
-    this.browseProjectID = null;
-    await this.openBrowseAt(this.pendingCreatePath || "");
+    await this.runBrowserAction(() => this.browser.openBrowse(event));
   }
 
   async browseForEdit(event: Event) {
-    event.preventDefault();
-    this.browseMode = "edit";
-    this.browseProjectID = Number((event.currentTarget as HTMLElement).dataset.projectId || 0) || null;
-    const location = (this.detailTarget.querySelector('[data-projects-field="location"]') as HTMLInputElement | null)?.value;
-    await this.openBrowseAt(location || "");
-  }
-
-  private browseField(name: string): string {
-    const field = this.modalPanel()?.querySelector(`[data-browse-field="${name}"]`) as HTMLInputElement | null;
-    return field?.value?.trim() ?? "";
-  }
-
-  private renderBrowseView() {
-    if (!this.browseData) return;
-    renderRecyclrBundle(this.gxHost(), "modal", renderBrowseModal(this.browseData, this.browseSelected, this.browseMode));
-    openModalShell({ wide: true });
-  }
-
-  private async showHostBridgeHint() {
-    try {
-      const payload = await fetchHostBridgeStatus();
-      if (payload.reachable) return;
-      const tips = Array.isArray(payload.suggestions) ? payload.suggestions.filter((item) => typeof item === "string") : [];
-      if (tips.length > 0) {
-        this.setStatus(`Host bridge unavailable — ${tips[0]}`, "error");
-      } else if (typeof payload.message === "string" && payload.message.trim()) {
-        this.setStatus(payload.message, "error");
-      }
-    } catch {
-      // ignore secondary status failures
-    }
-  }
-
-  async openBrowseAt(path: string) {
-    this.setStatus("Browsing directories…", "busy");
-    setGlobalLoading(true);
-    try {
-      const data = await browseDirectory(path);
-      this.browseData = data;
-      this.browsePath = data.path;
-      this.browseSelected = data.path;
-      this.renderBrowseView();
-      this.setModalFeedback("", "idle");
-      this.setStatus("Browse open", "idle");
-    } catch (error) {
-      await this.showHostBridgeHint();
-      const message = error instanceof Error ? error.message : String(error);
-      this.setModalFeedback(message, "error");
-      this.setStatus(message, "error");
-    } finally {
-      setGlobalLoading(false);
-    }
+    await this.runBrowserAction(() => this.browser.browseForEdit(event));
   }
 
   async enterBrowseDir(event: Event) {
-    event.preventDefault();
-    const path = (event.currentTarget as HTMLElement).dataset.path || "";
-    await this.openBrowseAt(path);
+    await this.runBrowserAction(() => this.browser.enterBrowseDir(event));
   }
 
-  selectBrowseDir(event: Event) {
-    event.preventDefault();
-    this.browseSelected = (event.currentTarget as HTMLElement).dataset.path || this.browseSelected;
-    this.renderBrowseView();
+  async selectBrowseDir(event: Event) {
+    await this.runBrowserAction(() => this.browser.selectBrowseDir(event));
   }
 
   async createBrowseFolder(event: Event) {
-    event.preventDefault();
-    const name = this.browseField("newFolderName");
-    if (!name) {
-      this.setModalFeedback("Enter a folder name.", "error");
-      return;
-    }
-    const parent = this.browsePath;
-    this.setModalFeedback("Creating folder…", "busy");
-    this.setStatus("Creating folder…", "busy");
-    setGlobalLoading(true);
-    try {
-      const payload = await createBrowseDirectory(parent, name);
-      await this.openBrowseAt(parent);
-      this.browseSelected = payload.path;
-      this.renderBrowseView();
-      const field = this.modalPanel()?.querySelector('[data-browse-field="newFolderName"]') as HTMLInputElement | null;
-      if (field) field.value = "";
-      this.setModalFeedback(`Created folder “${name}”.`, "ok");
-      this.setStatus("Folder created", "ok");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.setModalFeedback(message, "error");
-      this.setStatus(message, "error");
-    } finally {
-      setGlobalLoading(false);
-    }
+    await this.runBrowserAction(() => this.browser.createBrowseFolder(event));
   }
 
-  confirmBrowse(event: Event) {
-    event.preventDefault();
-    const path = (event.currentTarget as HTMLElement).dataset.path || this.browseSelected || this.browsePath;
-    if (this.browseMode === "create") {
-      this.pendingCreatePath = path;
-      this.pendingCreateName = path.split("/").filter(Boolean).pop() || "project";
-      this.openModal(renderProjectCreateModal(this.recipes));
-      this.setModalField("selectedPath", this.pendingCreatePath);
-      this.setModalField("createName", this.pendingCreateName);
-      this.setModalFeedback("", "idle");
-      this.setCreateSubmitting(false);
-      return;
-    } else if (this.browseProjectID) {
-      const input = this.detailTarget.querySelector('[data-projects-field="location"]') as HTMLInputElement | null;
-      if (input) input.value = path;
-    }
-    this.closeBrowse();
+  async confirmBrowse(event: Event) {
+    await this.runBrowserAction(() => this.browser.confirmBrowse(event));
   }
 
   async submitCreate(event: Event) {
-    event.preventDefault();
-    const location = this.modalField("selectedPath");
-    const name = this.modalField("createName");
-    if (!location) {
-      this.setModalFeedback("Choose a working directory first.", "error");
-      return;
-    }
-    this.setModalFeedback("Creating project…", "busy");
-    this.setCreateSubmitting(true);
-    setGlobalLoading(true);
+    await this.runBrowserAction(() => this.browser.submitCreate(event));
+  }
+
+  private async runBrowserAction(action: () => Promise<void>): Promise<void> {
     try {
-      const payload = await createProject({
-        name: name || location.split("/").filter(Boolean).pop() || "project",
-        location,
-        description: this.modalField("createDesc"),
-        recipe_id: this.modalField("createRecipe"),
-      });
-      this.selectedProjectID = payload.project.id;
-      this.setActiveProjectTab("scrum");
-      const createdName = payload.project.name || name || "project";
-      this.closeCreateModal();
-      await this.load();
-      this.actionOk(`Project “${createdName}” created`);
+      await action();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.setModalFeedback(message, "error");
-      this.setCreateSubmitting(false);
-    } finally {
-      setGlobalLoading(false);
+      this.actionFail(error);
     }
   }
 
@@ -877,126 +723,14 @@ export default class ProjectsController extends Controller {
   }
 
   async openDebuggerModal(event: Event) {
-    event.preventDefault();
-    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || this.selectedProjectID || 0);
-    if (!id) return;
-    this.debuggerProjectID = id;
-    this.debuggerProjectName =
-      this.detailTarget.querySelector("h3")?.textContent?.trim() ||
-      this.projects.find((project) => project.id === id)?.name ||
-      "Project";
-    this.setStatus("Loading analysis...", "busy");
-    try {
-      const payload = await fetchProjectDebuggerStatus(id);
-      this.debuggerLastRun = payload.last_run ?? null;
-      this.debuggerRunning = payload.last_run?.status === "running";
-      this.openModal(this.debuggerModalHTML(payload.agent_config));
-      if (this.debuggerRunning && payload.last_run?.job_id) {
-        this.startDebuggerPolling(id, payload.last_run.job_id);
-      }
-      this.setStatus(this.debuggerProjectName, "ok");
-    } catch (error) {
-      this.actionFail(error);
-    }
+    await this.debugger.open(event);
   }
 
   closeDebuggerModal() {
-    this.stopDebuggerPolling();
-    this.closeBrowse();
+    this.debugger.close();
   }
 
   async runDebugger(event: Event) {
-    event.preventDefault();
-    const id = Number((event.currentTarget as HTMLElement).dataset.projectId || this.debuggerProjectID || 0);
-    if (!id || this.debuggerRunning) return;
-    this.debuggerRunning = true;
-    this.refreshDebuggerModal();
-    this.setStatus("Starting codebase analysis...", "busy");
-    try {
-      const payload = await runProjectDebugger(id);
-      this.debuggerLastRun = payload.last_run;
-      this.refreshDebuggerModal();
-      this.startDebuggerPolling(id, payload.job.id);
-      this.actionOk(payload.message || `Analysis job #${payload.job.id} queued`);
-    } catch (error) {
-      this.debuggerRunning = false;
-      this.refreshDebuggerModal();
-      this.actionFail(error);
-    }
-  }
-
-  private debuggerModalHTML(agentConfig?: Record<string, unknown>): string {
-    if (!this.debuggerProjectID) return "";
-    const resolved = (agentConfig?.resolved as Record<string, unknown> | undefined) ?? {};
-    const system =
-      (typeof agentConfig?.system === "string" && agentConfig.system) ||
-      (typeof resolved.system === "string" && resolved.system) ||
-      this.currentAgentConfig?.system ||
-      "omnidex";
-    const source =
-      (typeof agentConfig?.source === "string" && agentConfig.source) ||
-      this.currentAgentConfig?.source ||
-      "env";
-    return renderProjectDebuggerModal({
-      projectID: this.debuggerProjectID,
-      projectName: this.debuggerProjectName,
-      agentSystem: system,
-      agentSource: source,
-      lastRun: this.debuggerLastRun,
-      running: this.debuggerRunning,
-      statusText: this.debuggerRunning
-        ? "Analyzing codebase map and backlog..."
-        : this.debuggerLastRun?.summary || "",
-    });
-  }
-
-  private refreshDebuggerModal(agentConfig?: Record<string, unknown>) {
-    const panel = this.modalPanel();
-    if (!panel || !this.debuggerProjectID) return;
-    panel.innerHTML = this.debuggerModalHTML(agentConfig);
-  }
-
-  private startDebuggerPolling(projectID: number, jobID: number) {
-    this.stopDebuggerPolling();
-    const tick = async () => {
-      try {
-        const [jobDetails, statusPayload] = await Promise.all([
-          fetchJobRecord(jobID),
-          fetchProjectDebuggerStatus(projectID),
-        ]);
-        const jobStatus = jobDetails.job?.status || "";
-        this.debuggerLastRun = statusPayload.last_run ?? this.debuggerLastRun;
-        if (jobStatus === "completed" || jobStatus === "failed" || jobStatus === "canceled") {
-          this.debuggerRunning = false;
-          this.refreshDebuggerModal(statusPayload.agent_config);
-          this.stopDebuggerPolling();
-          if (jobStatus === "completed") {
-            const cards = this.debuggerLastRun?.cards_created?.length ?? 0;
-            const tickets = this.debuggerLastRun?.cards_created?.filter((c) => c.ticket_job_id).length ?? 0;
-            this.actionOk(`Analysis finished — ${cards} backlog card(s), ${tickets} planning ticket(s) queued`);
-            if (this.selectedProjectID === projectID && this.activeTab === "scrum") {
-              document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: projectID } }));
-            }
-          } else {
-            this.setStatus(this.debuggerLastRun?.error || `Analysis ${jobStatus}`, "error");
-            this.refreshDebuggerModal(statusPayload.agent_config);
-          }
-          return;
-        }
-        this.debuggerRunning = true;
-        this.refreshDebuggerModal(statusPayload.agent_config);
-      } catch {
-        /* keep polling */
-      }
-    };
-    void tick();
-    this.debuggerPollTimer = window.setInterval(() => void tick(), 900);
-  }
-
-  private stopDebuggerPolling() {
-    if (this.debuggerPollTimer != null) {
-      window.clearInterval(this.debuggerPollTimer);
-      this.debuggerPollTimer = null;
-    }
+    await this.debugger.run(event);
   }
 }

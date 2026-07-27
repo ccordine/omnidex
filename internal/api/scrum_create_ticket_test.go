@@ -3,7 +3,10 @@ package api
 import "testing"
 
 func TestLoadScrumCreateTicketConfigDefaultsOff(t *testing.T) {
-	cfg := loadScrumCreateTicketConfig(nil)
+	cfg, err := loadScrumCreateTicketConfig(nil)
+	if err != nil {
+		t.Fatalf("loadScrumCreateTicketConfig: %v", err)
+	}
 	if cfg.Enabled {
 		t.Fatal("expected create ticket default disabled")
 	}
@@ -13,7 +16,10 @@ func TestLoadScrumCreateTicketConfigDefaultsOff(t *testing.T) {
 }
 
 func TestLoadScrumCreateTicketConfigStored(t *testing.T) {
-	cfg := loadScrumCreateTicketConfig([]byte(`{"scrum_create_ticket":{"enabled":true,"column":"assigned"}}`))
+	cfg, err := loadScrumCreateTicketConfig([]byte(`{"scrum_create_ticket":{"enabled":true,"column":"assigned"}}`))
+	if err != nil {
+		t.Fatalf("loadScrumCreateTicketConfig: %v", err)
+	}
 	if !cfg.Enabled {
 		t.Fatal("expected create ticket enabled")
 	}
@@ -23,8 +29,10 @@ func TestLoadScrumCreateTicketConfigStored(t *testing.T) {
 }
 
 func TestLoadScrumCreateTicketConfigRejectsInvalidColumn(t *testing.T) {
-	cfg := loadScrumCreateTicketConfig([]byte(`{"scrum_create_ticket":{"enabled":true,"column":"done"}}`))
-	if cfg.Column != "backlog" {
-		t.Fatalf("column=%q want backlog", cfg.Column)
+	if _, err := loadScrumCreateTicketConfig([]byte(`{"scrum_create_ticket":{"enabled":true,"column":"done"}}`)); err == nil {
+		t.Fatal("invalid create-ticket column must fail")
+	}
+	if _, err := loadScrumCreateTicketConfig([]byte(`{"scrum_create_ticket":`)); err == nil {
+		t.Fatal("invalid create-ticket settings JSON must fail")
 	}
 }

@@ -1,7 +1,10 @@
 package modelconfig
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -27,6 +30,7 @@ var Fields = []Field{
 	{Key: "search_model", Label: "Search model", Description: "Model used for search/research synthesis", EnvKeys: []string{"OMNI_SEARCH_MODEL", "OLLAMA_MODEL_SEARCH"}},
 	{Key: "memory_model", Label: "Memory model", Description: "Model used for memory extraction and retrieval tasks", EnvKeys: []string{"OMNI_MEMORY_MODEL", "OLLAMA_MODEL_MEMORY"}},
 	{Key: "evaluator_model", Label: "Evaluator model", Description: "Structured response evaluator", EnvKeys: []string{"OMNI_EVALUATOR_MODEL", "OLLAMA_MODEL_EVALUATOR"}},
+	{Key: "executor_model", Label: "Executor model", Description: "Long-horizon code and tool execution specialist", EnvKeys: []string{"OMNI_EXECUTOR_MODEL", "OLLAMA_MODEL_SPECIALIST_SUBTASK_EXECUTOR"}},
 	{Key: "shell_specialist_model", Label: "Shell specialist", Description: "Shell execution specialist", EnvKeys: []string{"OMNI_SHELL_SPECIALIST_MODEL", "OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION", "OLLAMA_MODEL_SHELL"}},
 	{Key: "ollama_endpoint", Label: "Ollama endpoint", Description: "Ollama HTTP base URL", EnvKeys: []string{"OLLAMA_BASE_URL", "OMNI_OLLAMA_ENDPOINT"}},
 }
@@ -43,44 +47,77 @@ func FromEnv() Config {
 	return out
 }
 
-func FromJSON(raw json.RawMessage) Config {
+func FromJSON(raw json.RawMessage) (Config, error) {
 	out := Config{}
-	if len(raw) == 0 {
-		return out
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return out, nil
 	}
-	var payload map[string]string
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		var generic map[string]any
-		if err := json.Unmarshal(raw, &generic); err != nil {
-			return out
-		}
-		for key, value := range generic {
-			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
-				out[key] = strings.TrimSpace(text)
-			}
-		}
-		return out
+	var payload map[string]json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, fmt.Errorf("model config must be a JSON object: %w", err)
 	}
-	for key, value := range payload {
-		if strings.TrimSpace(value) != "" {
-			out[key] = strings.TrimSpace(value)
+	if err := requireEOF(decoder, "model config"); err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		return nil, fmt.Errorf("model config must be a JSON object, received null")
+	}
+	allowed := modelConfigKeys()
+	for key, rawValue := range payload {
+		if _, ok := allowed[key]; !ok {
+			return nil, fmt.Errorf("model config contains unsupported field %q", key)
+		}
+		var value string
+		if err := json.Unmarshal(rawValue, &value); err != nil {
+			return nil, fmt.Errorf("model config field %q must be a string: %w", key, err)
+		}
+		if value = strings.TrimSpace(value); value != "" {
+			out[key] = value
 		}
 	}
-	return out
+	return out, nil
 }
 
-func FromSettingsJSON(raw json.RawMessage) Config {
-	if len(raw) == 0 {
-		return Config{}
+func FromSettingsJSON(raw json.RawMessage) (Config, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return Config{}, nil
 	}
 	var settings map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &settings); err != nil {
-		return Config{}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if err := decoder.Decode(&settings); err != nil {
+		return nil, fmt.Errorf("project settings must be a JSON object: %w", err)
+	}
+	if err := requireEOF(decoder, "project settings"); err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("project settings must be a JSON object, received null")
 	}
 	if nested, ok := settings["model_config"]; ok {
 		return FromJSON(nested)
 	}
-	return Config{}
+	return Config{}, nil
+}
+
+func modelConfigKeys() map[string]struct{} {
+	keys := make(map[string]struct{}, len(Fields))
+	for _, field := range Fields {
+		keys[field.Key] = struct{}{}
+	}
+	return keys
+}
+
+func requireEOF(decoder *json.Decoder, label string) error {
+	var trailing any
+	err := decoder.Decode(&trailing)
+	if err == io.EOF {
+		return nil
+	}
+	if err == nil {
+		return fmt.Errorf("%s contains trailing JSON", label)
+	}
+	return fmt.Errorf("%s contains trailing data: %w", label, err)
 }
 
 func Merge(layers ...Config) Config {
@@ -102,7 +139,7 @@ func (c Config) Get(key string) string {
 	return strings.TrimSpace(c[key])
 }
 
-func (c Config) OllamaModelNames() []string {
+func (c Config) ModelNames() []string {
 	seen := map[string]struct{}{}
 	out := []string{}
 	for _, field := range Fields {
@@ -110,7 +147,7 @@ func (c Config) OllamaModelNames() []string {
 			continue
 		}
 		value := c.Get(field.Key)
-		if value == "" || !looksLikeOllamaModel(value) {
+		if value == "" {
 			continue
 		}
 		if _, ok := seen[value]; ok {
@@ -181,19 +218,4 @@ func lookupMap(values map[string]string, keys []string) string {
 		}
 	}
 	return ""
-}
-
-func looksLikeOllamaModel(value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return false
-	}
-	lower := strings.ToLower(value)
-	if strings.HasPrefix(lower, "gpt-") || strings.HasPrefix(lower, "claude-") || strings.HasPrefix(lower, "gemini-") {
-		return false
-	}
-	if strings.Contains(value, "://") {
-		return false
-	}
-	return strings.Contains(value, ":") || strings.Contains(value, "/")
 }

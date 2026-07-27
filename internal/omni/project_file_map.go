@@ -306,7 +306,10 @@ func validateCommandAgainstProjectFileMap(command, workingDir string, projectMap
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(command)), "architect.") {
 		return nil
 	}
-	targets := mutationWriteTargetPaths(command)
+	targets, err := mutationWriteTargetPaths(command)
+	if err != nil {
+		return fmt.Errorf("project_file_map: invalid mutation redirection: %w", err)
+	}
 	if len(targets) == 0 {
 		if touchTargetsProjectSourceArtifact(command) {
 			return fmt.Errorf("project_file_map: touch is forbidden for mapped implementation; the active mapped file must be written by the code specialist or architect.apply")

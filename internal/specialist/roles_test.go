@@ -15,6 +15,17 @@ func TestForPipelineActionReturnsSpecialistRole(t *testing.T) {
 	}
 }
 
+func TestSubtaskPipelineActionReportsExecutorRole(t *testing.T) {
+	role := ForPipelineAction("v3_subtask")
+	if role.ID != "subtask_executor" {
+		t.Fatalf("ForPipelineAction(v3_subtask).ID=%q, want subtask_executor", role.ID)
+	}
+	joined := strings.ToLower(strings.Join(DetailLines(role), "\n"))
+	if strings.Contains(joined, "web research") || !strings.Contains(joined, "execute") {
+		t.Fatalf("subtask role details misrepresent execution work:\n%s", joined)
+	}
+}
+
 func TestForLocalCapabilityReturnsSpecialistRole(t *testing.T) {
 	role := ForLocalCapability("local_media")
 	if role.ID != "media_control_specialist" {
@@ -52,6 +63,7 @@ func TestEnvVarForRoleID(t *testing.T) {
 		want   string
 	}{
 		{roleID: RolePlannerSpecialist, want: "OLLAMA_MODEL_SPECIALIST_PLANNER"},
+		{roleID: RoleSubtaskExecutorSpecialist, want: "OLLAMA_MODEL_SPECIALIST_SUBTASK_EXECUTOR"},
 		{roleID: RoleBrowserInspectionSpecialist, want: "OLLAMA_MODEL_SPECIALIST_BROWSER_INSPECTION"},
 		{roleID: RoleReviewVerificationSpecialist, want: "OLLAMA_MODEL_SPECIALIST_REVIEW_VERIFICATION"},
 		{roleID: RoleMemorySpecialist, want: "OLLAMA_MODEL_SPECIALIST_MEMORY"},

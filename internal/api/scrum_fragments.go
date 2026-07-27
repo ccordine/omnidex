@@ -14,7 +14,7 @@ type scrumBoardFragments struct {
 	Bundle      string `json:"bundle"`
 }
 
-func renderScrumBoardFragments(board ScrumBoard, cardsByCol map[string][]ScrumCard, fullBoard ScrumBoard, visibleColumn string, columnCounts map[string]int, playQueue map[string]any, autoPlayThrough bool, autoReview ScrumAutoReviewConfig, autoWork ScrumAutoWorkConfig, flowSummary ScrumFlowProjectSummary) scrumBoardFragments {
+func renderScrumBoardFragments(board ScrumBoard, cardsByCol map[string][]ScrumCard, fullBoard ScrumBoard, visibleColumn string, columnCounts map[string]int, playQueue map[string]any, autoWorkEnabled bool, autoReview ScrumAutoReviewConfig, autoWork ScrumAutoWorkConfig, flowSummary ScrumFlowProjectSummary) scrumBoardFragments {
 	columns := fullBoard.Columns
 	if len(columns) == 0 {
 		columns = append([]string(nil), scrumColumns...)
@@ -26,7 +26,7 @@ func renderScrumBoardFragments(board ScrumBoard, cardsByCol map[string][]ScrumCa
 	fragments := scrumBoardFragments{
 		Board:       renderScrumBoardHTML(board, cardsByCol, playQueue),
 		Columns:     renderScrumColumnNavHTML(columns, activeColumn, columnCounts),
-		Focus:       renderScrumFocusBarHTML(fullBoard, cardsByColumn(fullBoard), playQueue, autoPlayThrough, autoReview.Enabled, autoWork),
+		Focus:       renderScrumFocusBarHTML(fullBoard, cardsByColumn(fullBoard), playQueue, autoWorkEnabled, autoReview.Enabled, autoWork),
 		FlowSummary: renderScrumFlowSummaryHTML(flowSummary),
 	}
 	fragments.Bundle = renderScrumBoardBundleHTML(fragments)
@@ -178,12 +178,12 @@ func renderScrumColumnNavHTML(columns []string, activeColumn string, counts map[
 	return fmt.Sprintf(`<nav class="scrollbar flex max-w-full gap-2 overflow-x-auto" aria-label="Scrum columns">%s</nav>`, b.String())
 }
 
-func renderScrumFocusBarHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard, playQueue map[string]any, autoPlayThrough bool, autoReviewEnabled bool, autoWork ScrumAutoWorkConfig) string {
-	autoStatus := renderScrumAutoPlayStatusHTML(autoPlayThrough, scrumAutoPlayComplete(cardsByCol, autoReviewEnabled))
-	focus := pickScrumFocusCardForHTML(board, cardsByCol, playQueue, autoPlayThrough, autoWork)
+func renderScrumFocusBarHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard, playQueue map[string]any, autoWorkEnabled bool, autoReviewEnabled bool, autoWork ScrumAutoWorkConfig) string {
+	autoStatus := renderScrumAutoWorkStatusHTML(autoWorkEnabled, scrumAutoWorkUIComplete(cardsByCol, autoReviewEnabled))
+	focus := pickScrumFocusCardForHTML(board, cardsByCol, playQueue, autoWorkEnabled, autoWork)
 	if focus == nil {
 		message := "Nothing in Assigned or In Progress"
-		if autoPlayThrough {
+		if autoWorkEnabled {
 			message = "Auto-play complete - every card is in Review"
 		}
 		return fmt.Sprintf(`
@@ -213,7 +213,7 @@ func renderScrumFocusBarHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard
 		pivotButton = fmt.Sprintf(`<button type="button" data-action="scrum#pivotPlay" data-card-id="%s" class="rounded-md border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-xs font-semibold text-violet-100 transition hover:bg-violet-300/20" title="Play this card now">Play now</button>`, html.EscapeString(focus.ID))
 	}
 	nowPlayingLabel := "Now playing"
-	if autoPlayThrough && !isRunning && !isQueued {
+	if autoWorkEnabled && !isRunning && !isQueued {
 		nowPlayingLabel = "Up next"
 	}
 	return fmt.Sprintf(`
@@ -300,7 +300,7 @@ func renderScrumFlowBadgeHTML(card ScrumCard) string {
 	return fmt.Sprintf(`<span class="rounded border px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal %s" title="%s">%s</span>`, tone, html.EscapeString(title), html.EscapeString(label))
 }
 
-func renderScrumAutoPlayStatusHTML(enabled bool, complete bool) string {
+func renderScrumAutoWorkStatusHTML(enabled bool, complete bool) string {
 	if !enabled {
 		return ""
 	}
@@ -318,7 +318,7 @@ func renderScrumAutoPlayStatusHTML(enabled bool, complete bool) string {
   `, completeNote)
 }
 
-func pickScrumFocusCardForHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard, playQueue map[string]any, autoPlayThrough bool, autoWork ScrumAutoWorkConfig) *ScrumCard {
+func pickScrumFocusCardForHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard, playQueue map[string]any, autoWorkEnabled bool, autoWork ScrumAutoWorkConfig) *ScrumCard {
 	runningID := playQueueString(playQueue, "running_card_id")
 	if runningID != "" {
 		if card := findScrumCard(board, runningID); card != nil {
@@ -331,11 +331,11 @@ func pickScrumFocusCardForHTML(board ScrumBoard, cardsByCol map[string][]ScrumCa
 				return &cards[i]
 			}
 		}
-		if !autoPlayThrough {
+		if !autoWorkEnabled {
 			return &cards[0]
 		}
 	}
-	if !autoPlayThrough {
+	if !autoWorkEnabled {
 		if cards := cardsByCol["assigned"]; len(cards) > 0 {
 			return &cards[0]
 		}
@@ -363,7 +363,7 @@ func pickScrumFocusCardForHTML(board ScrumBoard, cardsByCol map[string][]ScrumCa
 	return nil
 }
 
-func scrumAutoPlayComplete(cardsByCol map[string][]ScrumCard, autoReviewEnabled bool) bool {
+func scrumAutoWorkUIComplete(cardsByCol map[string][]ScrumCard, autoReviewEnabled bool) bool {
 	total := 0
 	for _, cards := range cardsByCol {
 		for _, card := range cards {
@@ -460,10 +460,9 @@ func scrumBoardFragmentsForPayload(payload map[string]any, fullBoard ScrumBoard)
 	cardsByCol, _ := payload["cards_by_col"].(map[string][]ScrumCard)
 	columnCounts, _ := payload["column_counts"].(map[string]int)
 	playQueue, _ := payload["play_queue"].(map[string]any)
-	autoPlayThrough, _ := payload["auto_play_through"].(bool)
 	autoReview, _ := payload["auto_review"].(ScrumAutoReviewConfig)
 	autoWork, _ := payload["auto_work"].(ScrumAutoWorkConfig)
 	flowSummary, _ := payload["flow_summary"].(ScrumFlowProjectSummary)
 	visibleColumn, _ := payload["visible_column"].(string)
-	payload["html"] = renderScrumBoardFragments(board, cardsByCol, fullBoard, visibleColumn, columnCounts, playQueue, autoPlayThrough, autoReview, autoWork, flowSummary)
+	payload["html"] = renderScrumBoardFragments(board, cardsByCol, fullBoard, visibleColumn, columnCounts, playQueue, autoWork.Enabled, autoReview, autoWork, flowSummary)
 }

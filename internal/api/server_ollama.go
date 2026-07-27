@@ -39,7 +39,7 @@ func (s *Server) refreshOllamaEndpoint(ctx context.Context) string {
 }
 
 func (s *Server) ollamaClientWithTimeout(timeout time.Duration) *ollama.Client {
-	return ollama.New(s.ollamaEndpoint(), s.ollamaDefaultModel, "", timeout)
+	return ollama.New(s.ollamaEndpoint(), s.ollamaDefaultModel, "", timeout, s.providerConfig.InferenceContextTokens)
 }
 
 func isOllamaConnectivityError(err error) bool {

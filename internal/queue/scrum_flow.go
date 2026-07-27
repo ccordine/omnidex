@@ -93,16 +93,31 @@ func (r *Repository) ListScrumFlowEvents(ctx context.Context, projectID int64, c
 }
 
 func (r *Repository) UpdateScrumCardFlowMetrics(ctx context.Context, projectID int64, cardID string, metrics json.RawMessage) error {
+	if r == nil || r.pool == nil {
+		return fmt.Errorf("PostgreSQL repository is required for Scrum flow metrics")
+	}
+	if projectID <= 0 || strings.TrimSpace(cardID) == "" {
+		return fmt.Errorf("project and card are required for Scrum flow metrics")
+	}
 	if len(metrics) == 0 {
 		metrics = json.RawMessage(`{}`)
 	}
 	metrics = SanitizeUTF8Bytes(metrics)
-	_, err := r.pool.Exec(ctx, `
+	if !json.Valid(metrics) {
+		return fmt.Errorf("Scrum flow metrics must be valid JSON")
+	}
+	tag, err := r.pool.Exec(ctx, `
 		UPDATE scrum_cards
-		SET flow_metrics = $3::jsonb, updated_at = NOW()
+		SET flow_metrics = $3::jsonb
 		WHERE project_id = $1 AND id = $2
 	`, projectID, strings.TrimSpace(cardID), string(metrics))
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("Scrum card %q was not found in project %d", strings.TrimSpace(cardID), projectID)
+	}
+	return nil
 }
 
 func (r *Repository) CountScrumFlowEventsByType(ctx context.Context, projectID int64, cardID, eventType string) (int64, error) {

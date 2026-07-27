@@ -40,10 +40,14 @@ func TestCursorSDKDisabledWithoutKeyOrFlag(t *testing.T) {
 
 func TestCursorSDKAgentApplyConfigUsesCursorModel(t *testing.T) {
 	agent := &CursorSDKArchitectAgent{Model: "composer-default"}
-	agent.ApplyConfig(agentconfig.FromStringMap(map[string]string{
+	cfg, err := agentconfig.FromStringMap(map[string]string{
 		"agent_system": "cursor",
 		"cursor_model": "composer-project",
-	}))
+	})
+	if err != nil {
+		t.Fatalf("parse agent config: %v", err)
+	}
+	agent.ApplyConfig(cfg)
 	if agent.Model != "composer-project" {
 		t.Fatalf("expected configured cursor model, got %q", agent.Model)
 	}
@@ -72,7 +76,7 @@ func TestCursorSDKLocalSessionFailsLoudlyOnPreflight(t *testing.T) {
 
 func TestCodexSDKAgentApplyConfigUsesProjectValues(t *testing.T) {
 	agent := &CodexSDKArchitectAgent{Model: "gpt-default"}
-	agent.ApplyConfig(agentconfig.FromStringMap(map[string]string{
+	cfg, err := agentconfig.FromStringMap(map[string]string{
 		"agent_system":           "codex",
 		"codex_model":            "gpt-codex-project",
 		"codex_reasoning_effort": "high",
@@ -80,7 +84,11 @@ func TestCodexSDKAgentApplyConfigUsesProjectValues(t *testing.T) {
 		"codex_approval_policy":  "never",
 		"codex_network_access":   "false",
 		"codex_web_search_mode":  "disabled",
-	}))
+	})
+	if err != nil {
+		t.Fatalf("parse agent config: %v", err)
+	}
+	agent.ApplyConfig(cfg)
 	if agent.Model != "gpt-codex-project" {
 		t.Fatalf("expected configured codex model, got %q", agent.Model)
 	}

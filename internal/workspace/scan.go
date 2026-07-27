@@ -112,6 +112,36 @@ func (s *Service) Root() string {
 	return strings.TrimSpace(s.root)
 }
 
+// Scoped returns an equivalent scanner bound to one explicit workspace root.
+// It never falls back to the service's configured root when the requested root
+// is invalid.
+func (s *Service) Scoped(root string) (*Service, error) {
+	if s == nil || !s.enabled {
+		return nil, fmt.Errorf("workspace scan is disabled")
+	}
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return nil, fmt.Errorf("workspace root is required")
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace root %q: %w", root, err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, fmt.Errorf("inspect workspace root %q: %w", abs, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("workspace root %q is not a directory", abs)
+	}
+	return &Service{
+		enabled:  true,
+		root:     abs,
+		maxFiles: s.maxFiles,
+		budget:   s.budget,
+	}, nil
+}
+
 func (s *Service) Snapshot() (string, error) {
 	if s == nil || !s.enabled {
 		return "workspace scan disabled", nil

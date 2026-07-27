@@ -38,12 +38,6 @@ func (c *cliAgentRuntimeConfig) Set(key, value string) error {
 		c.values[key] = system
 	case "agent_model":
 		return c.SetActiveAgentModel(value)
-	case "agent_strict":
-		normalized, err := normalizeBoolString(value)
-		if err != nil {
-			return fmt.Errorf("agent_strict must be true or false")
-		}
-		c.values[key] = normalized
 	case "cursor_model", "codex_model":
 		if value == "" {
 			return fmt.Errorf("%s requires a non-empty model", key)

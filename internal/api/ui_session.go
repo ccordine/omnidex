@@ -16,6 +16,7 @@ const uiSessionCookieName = "omni_ui_session"
 type uiSessionResponse struct {
 	SessionID string         `json:"session_id"`
 	State     map[string]any `json:"state"`
+	Locale    uiLocale       `json:"locale"`
 	Source    string         `json:"source"`
 	TTLMS     int64          `json:"ttl_ms"`
 }
@@ -38,14 +39,26 @@ func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	mergeUIQueryState(state, r)
+	if err := mergeUIQueryState(state, r); err != nil {
+		logUILocaleRejection(sessionID, "session_read", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	locale, err := ensureUIStateLocale(state, r)
+	if err != nil {
+		logUILocaleRejection(sessionID, "session_read", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if _, err := s.persistUIState(r.Context(), sessionID, state); err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
+	setUILocaleResponseHeaders(w, locale)
 	writeJSON(w, http.StatusOK, uiSessionResponse{
 		SessionID: sessionID,
 		State:     state,
+		Locale:    locale,
 		Source:    source,
 		TTLMS:     s.uiSessionTTL.Milliseconds(),
 	})
@@ -65,17 +78,34 @@ func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	for key, value := range sanitizeUIState(req.State) {
-		state[key] = value
+	previousLocale, _ := state["locale"].(string)
+	if err := applyUIStatePatch(state, req.State); err != nil {
+		logUILocaleRejection(sessionID, "session_patch", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := mergeUIQueryState(state, r); err != nil {
+		logUILocaleRejection(sessionID, "session_patch", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	locale, err := ensureUIStateLocale(state, r)
+	if err != nil {
+		logUILocaleRejection(sessionID, "session_patch", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	source, err := s.persistUIState(r.Context(), sessionID, state)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
+	logUILocaleTransition(sessionID, previousLocale, locale, source)
+	setUILocaleResponseHeaders(w, locale)
 	writeJSON(w, http.StatusOK, uiSessionResponse{
 		SessionID: sessionID,
 		State:     state,
+		Locale:    locale,
 		Source:    source,
 		TTLMS:     s.uiSessionTTL.Milliseconds(),
 	})
@@ -155,15 +185,6 @@ func (s *Server) persistUIState(ctx context.Context, sessionID string, state map
 		return "pgsql", nil
 	}
 	return "memory", nil
-}
-
-func mergeUIQueryState(state map[string]any, r *http.Request) {
-	for _, key := range []string{"panel", "admin_tab", "project_tab", "project_id", "scrum_card", "scrum_tab", "scrum_column", "data_source", "data_channel"} {
-		value := strings.TrimSpace(r.URL.Query().Get(key))
-		if value != "" {
-			state[key] = value
-		}
-	}
 }
 
 func decodeUIState(raw []byte) (map[string]any, error) {

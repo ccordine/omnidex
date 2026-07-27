@@ -2,25 +2,28 @@ package api
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
-	"github.com/gryph/omnidex/internal/model"
 )
 
-func (s *Server) scrumCardResolvedAgent(ctx context.Context, projectID int64, card ScrumCard) agentconfig.Config {
-	if isScrumExternalCard(card) {
-		return agentconfig.FromJSON(card.AgentConfig)
+func (s *Server) scrumCardResolvedAgent(ctx context.Context, projectID int64, card ScrumCard) (agentconfig.Config, error) {
+	if s == nil || s.repo == nil {
+		return nil, fmt.Errorf("Scrum card agent resolution requires a PostgreSQL repository")
 	}
-	project := model.Project{}
-	if s.repo != nil && projectID > 0 {
-		if loaded, err := s.repo.GetProject(ctx, projectID); err == nil {
-			project = loaded
-		}
+	if ctx == nil {
+		return nil, fmt.Errorf("Scrum card agent resolution requires a context")
 	}
-	resolved, _ := s.resolveAgentConfig(ctx, project, card)
-	return resolved
-}
-
-func (s *Server) scrumCardUsesExternalAgent(ctx context.Context, projectID int64, card ScrumCard) bool {
-	return s.scrumCardResolvedAgent(ctx, projectID, card).IsExternal()
+	if projectID <= 0 {
+		return nil, fmt.Errorf("Scrum card agent resolution requires a positive project ID")
+	}
+	project, err := s.repo.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("load project %d agent configuration: %w", projectID, err)
+	}
+	resolved, _, err := s.resolveAgentConfig(ctx, project, card)
+	if err != nil {
+		return nil, err
+	}
+	return resolved, nil
 }

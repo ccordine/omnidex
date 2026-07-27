@@ -2,32 +2,29 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sort"
 	"strings"
 	"time"
 	"unicode"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
 const (
-	scrumPilotMaxRelevantChunks   = 8
-	scrumPilotChunkCavemanChars   = 140
+	scrumPilotMaxRelevantChunks    = 8
+	scrumPilotChunkCavemanChars    = 140
 	scrumPilotThinkingCavemanChars = 96
-	scrumPilotThoughtMergeMax     = 280
-	scrumPilotChannelBudgetChars  = 750
-	scrumPilotMemoryMaxChunks     = 3
-	scrumPilotMemoryMaxChars      = 180
-	scrumPilotEmbedCandidateMax   = 16
+	scrumPilotThoughtMergeMax      = 280
+	scrumPilotChannelBudgetChars   = 750
+	scrumPilotMemoryMaxChunks      = 3
+	scrumPilotMemoryMaxChars       = 180
+	scrumPilotEmbedCandidateMax    = 16
 )
 
 type scrumPilotPromptContext struct {
-	ChannelSummary  string
-	ChannelFacts    []string
-	MemoryLines     []string
-	SelectedChunks  int
+	ChannelSummary string
+	ChannelFacts   []string
+	MemoryLines    []string
+	SelectedChunks int
 }
 
 type pilotChannelChunk struct {
@@ -35,20 +32,6 @@ type pilotChannelChunk struct {
 	Text      string
 	CreatedAt time.Time
 	Index     int
-}
-
-func (s *Server) scrumPilotMemoryContext(_ context.Context, _ ScrumCard, _ int64, _ string) []string {
-	// Memory embeddings disabled on hot path — they spun up Ollama during channel chat.
-	return nil
-}
-
-func scrumPilotMemoryTags(card ScrumCard, projectID int64) []string {
-	tags := append([]string{}, card.Tags...)
-	tags = append(tags, "scrum", "card-channel", card.ID)
-	if projectID > 0 {
-		tags = append(tags, fmt.Sprintf("project:%d", projectID))
-	}
-	return mergeTags(nil, tags)
 }
 
 // summarizeScrumPilotChannel searches the chronological dialog timeline for query-relevant
@@ -426,27 +409,4 @@ func lastAgentOutcomeNote(chat []ScrumChatMessage) string {
 		}
 	}
 	return ""
-}
-
-func (s *Server) persistScrumPilotMemory(ctx context.Context, card ScrumCard, projectID int64, userMessage, reply string) {
-	if s.repo == nil || s.llmClient == nil {
-		return
-	}
-	tags := scrumPilotMemoryTags(card, projectID)
-	sourceBase := "scrum-pilot:" + card.ID
-	userContent := cavemanPilotText(strings.TrimSpace(userMessage), 400)
-	replyContent := cavemanPilotText(strings.TrimSpace(reply), 400)
-	if userContent != "" {
-		embedding, _ := s.llmClient.Embedding(ctx, userContent)
-		_, _ = s.repo.AddMemoryChunk(ctx, sourceBase+":user", model.MemoryKindEpisodic, "u: "+userContent, tags, embedding)
-	}
-	if replyContent != "" {
-		embedding, _ := s.llmClient.Embedding(ctx, replyContent)
-		_, _ = s.repo.AddMemoryChunk(ctx, sourceBase+":assistant", model.MemoryKindEpisodic, "agent: "+replyContent, tags, embedding)
-	}
-}
-
-// collapsePilotChannelDialog is kept as an alias for tests and legacy callers.
-func collapsePilotChannelDialog(chat []ScrumChatMessage) []ScrumChatMessage {
-	return buildPilotChannelTimeline(chat)
 }

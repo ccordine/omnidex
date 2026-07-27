@@ -1,5 +1,7 @@
 package agentconfig
 
+import "fmt"
+
 // Config source labels — highest wins, no blocking gates between layers.
 const (
 	SourceEnv       = "env"
@@ -23,7 +25,7 @@ type Stack struct {
 	Instance   Config
 }
 
-func (s Stack) Resolve() (Config, string) {
+func (s Stack) Resolve() (Config, string, error) {
 	type layer struct {
 		name string
 		cfg  Config
@@ -41,11 +43,20 @@ func (s Stack) Resolve() (Config, string) {
 		if len(layer.cfg) == 0 {
 			continue
 		}
+		if err := Validate(layer.cfg); err != nil {
+			return nil, "", fmt.Errorf("%s agent configuration: %w", layer.name, err)
+		}
 		out = Merge(out, layer.cfg)
 		source = layer.name
 	}
 	if len(out) == 0 {
-		return Config{"agent_system": SystemOmnidex}, SourceEnv
+		return Config{"agent_system": SystemOmnidex}, SourceEnv, nil
 	}
-	return out, source
+	if out.Get("agent_system") == "" {
+		out["agent_system"] = SystemOmnidex
+	}
+	if err := Validate(out); err != nil {
+		return nil, "", fmt.Errorf("resolved agent configuration: %w", err)
+	}
+	return out, source, nil
 }

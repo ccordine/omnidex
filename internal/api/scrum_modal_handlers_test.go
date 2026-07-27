@@ -2,29 +2,23 @@ package api
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func TestScrumCardModalReturnsTypedContextWithoutBundle(t *testing.T) {
-	server := NewServer(nil, &fakeLLMClient{})
-	if server.scrumStore == nil {
-		t.Fatal("expected scrum store")
-	}
-	card, err := server.scrumStore.CreateCard("Modal test", "Verify server modal HTML", "backlog")
+func TestScrumCardModalPayloadIsTypedAndContainsNoHTMLBundle(t *testing.T) {
+	card := ScrumCard{ID: "card_1", Title: "Modal test"}
+	payloadMap := scrumModalPayload(&scrumModalRenderContext{
+		Card:      card,
+		Board:     ScrumBoard{ID: "project_1", Cards: []ScrumCard{}},
+		Tab:       "card",
+		PlayQueue: map[string]any{"queued_count": 0},
+	})
+	body, err := json.Marshal(payloadMap)
 	if err != nil {
-		t.Fatalf("CreateCard: %v", err)
+		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/v1/scrum/cards/"+card.ID+"/modal?tab=card", nil)
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if strings.Contains(body, `"bundle"`) || strings.Contains(body, `data-recyclr-target`) || strings.Contains(body, `data-scrum-modal-card-id`) {
+	if strings.Contains(string(body), `"bundle"`) || strings.Contains(string(body), `data-recyclr-target`) || strings.Contains(string(body), `data-scrum-modal-card-id`) {
 		t.Fatalf("modal context must not include legacy HTML bundle: %s", body)
 	}
 	var payload struct {
@@ -38,7 +32,7 @@ func TestScrumCardModalReturnsTypedContextWithoutBundle(t *testing.T) {
 		PlayQueue   map[string]any     `json:"play_queue"`
 		ModelFields []scrumConfigField `json:"model_fields"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	if payload.Card.ID != card.ID || payload.Card.Title != "Modal test" {
@@ -49,6 +43,9 @@ func TestScrumCardModalReturnsTypedContextWithoutBundle(t *testing.T) {
 	}
 	if payload.Board.ID == "" {
 		t.Fatalf("expected board context: %#v", payload.Board)
+	}
+	if len(payload.Board.Cards) != 0 {
+		t.Fatalf("modal payload must not embed the full board card list: %d cards", len(payload.Board.Cards))
 	}
 	if payload.PlayQueue == nil {
 		t.Fatal("expected play queue context")

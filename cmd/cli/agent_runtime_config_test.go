@@ -59,6 +59,14 @@ func TestCLIAgentRuntimeConfigRejectsConflictingAgentModel(t *testing.T) {
 	}
 }
 
+func TestCLIAgentRuntimeConfigRejectsRemovedStrictToggle(t *testing.T) {
+	cfg := newCLIAgentRuntimeConfig()
+	err := cfg.Set("agent_strict", "true")
+	if err == nil || !strings.Contains(err.Error(), "unknown agent setting") {
+		t.Fatalf("expected removed agent_strict to fail explicitly, got %v", err)
+	}
+}
+
 func TestSetActiveChatModelUsesExternalAgentModel(t *testing.T) {
 	cfg := newCLIAgentRuntimeConfig()
 	if err := cfg.Set("agent_system", "cursor"); err != nil {
