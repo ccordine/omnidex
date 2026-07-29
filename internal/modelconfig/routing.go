@@ -7,6 +7,7 @@ import (
 type Routing struct {
 	Default    string
 	Fast       string
+	Glue       string
 	Reasoning  string
 	Tagging    string
 	Plan       string
@@ -40,6 +41,9 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("fast_model"); value != "" {
 		out.Fast = value
 	}
+	if value := cfg.Get("glue_model"); value != "" {
+		out.Glue = value
+	}
 	if value := cfg.Get("reasoning_model"); value != "" {
 		out.Reasoning = value
 	}
@@ -61,11 +65,38 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("memory_model"); value != "" {
 		out.Memory = value
 	}
-	if value := cfg.Get("evaluator_model"); value != "" {
-		out.Analyze = value
-	}
 	if value := cfg.Get("executor_model"); value != "" {
 		out.Specialist[specialist.RoleSubtaskExecutorSpecialist] = value
+	}
+	if value := cfg.Get("coding_surface_model"); value != "" {
+		out.Specialist[specialist.RoleCodingSurfaceStation] = value
+	}
+	if value := cfg.Get("coding_product_identity_model"); value != "" {
+		out.Specialist[specialist.RoleCodingProductIdentityStation] = value
+	}
+	if value := cfg.Get("coding_requirement_partition_model"); value != "" {
+		out.Specialist[specialist.RoleCodingRequirementPartitionStation] = value
+	}
+	if value := cfg.Get("coding_requirement_split_model"); value != "" {
+		out.Specialist[specialist.RoleCodingRequirementSplitStation] = value
+	}
+	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
+		out.Specialist[specialist.RoleCodingArtifactHandlingStation] = value
+	}
+	if value := cfg.Get("coding_capability_relation_model"); value != "" {
+		out.Specialist[specialist.RoleCodingCapabilityRelationStation] = value
+	}
+	if value := cfg.Get("coding_skill_selection_model"); value != "" {
+		out.Specialist[specialist.RoleCodingSkillSelectionStation] = value
+	}
+	if value := cfg.Get("coding_skill_procedure_model"); value != "" {
+		out.Specialist[specialist.RoleCodingSkillProcedureStation] = value
+	}
+	if value := cfg.Get("coding_fragment_model"); value != "" {
+		out.Specialist[specialist.RoleCodingFragmentStation] = value
+	}
+	if value := cfg.Get("coding_fragment_correction_model"); value != "" {
+		out.Specialist[specialist.RoleCodingFragmentCorrectionStation] = value
 	}
 	if value := cfg.Get("shell_specialist_model"); value != "" {
 		out.Specialist[specialist.RoleShellExecutionSpecialist] = value

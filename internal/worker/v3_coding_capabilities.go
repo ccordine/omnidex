@@ -1,0 +1,214 @@
+package worker
+
+import (
+	"fmt"
+	"sync"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/specialist"
+)
+
+const maxDirectCodingRequirements = 10
+
+type directCodingCapabilityBinding struct {
+	RequirementID string
+	CapabilityID  string
+	Purpose       string
+}
+
+type directCodingCapabilityGraph map[string][]directCodingCapabilityBinding
+
+type directCodingCapabilityPair struct {
+	LeftIndex  int
+	RightIndex int
+	Input      assemblyline.CapabilityRelationInput
+}
+
+type directCodingCapabilityResult struct {
+	Pair     directCodingCapabilityPair
+	Decision assemblyline.CapabilityRelationDecision
+	Err      error
+}
+
+func (s *directCodingSession) deriveRequirementCapabilities(
+	localContext string,
+	requirements []assemblyline.Requirement,
+) (directCodingCapabilityGraph, error) {
+	if err := validateDirectCodingRequirementCount(requirements); err != nil {
+		return nil, err
+	}
+	if len(requirements) == 1 {
+		return directCodingCapabilityGraph{requirements[0].ID: nil}, nil
+	}
+	modelName := s.runtime.svc.v3SpecialistModel(
+		s.runtime.claim.Job,
+		s.runtime.routing,
+		"coding_capability_relation",
+		specialist.RoleCodingCapabilityRelationStation,
+		s.runtime.routing.Glue,
+	)
+	modelName, err := requireDirectCodingModel(specialist.RoleCodingCapabilityRelationStation, modelName)
+	if err != nil {
+		return nil, err
+	}
+	pairs := directCodingCapabilityPairs(localContext, requirements)
+	results := runDirectCodingCapabilityPairs(directCodingWorkerRuntime(s), modelName, pairs)
+	for _, result := range results {
+		if result.Err != nil {
+			return nil, result.Err
+		}
+	}
+	return assembleDirectCodingCapabilityGraph(requirements, results)
+}
+
+func validateDirectCodingRequirementCount(requirements []assemblyline.Requirement) error {
+	if len(requirements) < 1 || len(requirements) > maxDirectCodingRequirements {
+		return fmt.Errorf(
+			"direct coding requirements must be between 1 and %d, received %d",
+			maxDirectCodingRequirements, len(requirements),
+		)
+	}
+	return nil
+}
+
+func directCodingCapabilityPairs(
+	localContext string,
+	requirements []assemblyline.Requirement,
+) []directCodingCapabilityPair {
+	pairs := make([]directCodingCapabilityPair, 0, len(requirements)*(len(requirements)-1)/2)
+	for left := 0; left < len(requirements); left++ {
+		for right := left + 1; right < len(requirements); right++ {
+			pairs = append(pairs, directCodingCapabilityPair{
+				LeftIndex: left, RightIndex: right,
+				Input: assemblyline.CapabilityRelationInput{
+					LocalContext: localContext,
+					LeftNeed:     requirements[left].SourceQuote,
+					RightNeed:    requirements[right].SourceQuote,
+				},
+			})
+		}
+	}
+	return pairs
+}
+
+func runDirectCodingCapabilityPairs(
+	runtime typedWorkerRuntime,
+	modelName string,
+	pairs []directCodingCapabilityPair,
+) []directCodingCapabilityResult {
+	results := make([]directCodingCapabilityResult, len(pairs))
+	run := func(index int, pair directCodingCapabilityPair) {
+		job, err := assemblyline.NewCapabilityRelationJob(pair.Input)
+		if err != nil {
+			results[index] = directCodingCapabilityResult{Pair: pair, Err: err}
+			return
+		}
+		decision, err := runDirectCodingSemanticCall[assemblyline.CapabilityRelationDecision](
+			runtime, modelName, fmt.Sprintf("capability_relation_%03d_%03d", pair.LeftIndex+1, pair.RightIndex+1),
+			job, nil,
+			func(value assemblyline.CapabilityRelationDecision) error { return value.ValidateFor(pair.Input) },
+		)
+		results[index] = directCodingCapabilityResult{Pair: pair, Decision: decision, Err: err}
+	}
+	if runtime.MaxConcurrency <= 1 {
+		for index, pair := range pairs {
+			run(index, pair)
+			if results[index].Err != nil {
+				break
+			}
+		}
+		return results
+	}
+	semaphore := make(chan struct{}, runtime.MaxConcurrency)
+	var wait sync.WaitGroup
+	for index, pair := range pairs {
+		index, pair := index, pair
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			run(index, pair)
+		}()
+	}
+	wait.Wait()
+	return results
+}
+
+func assembleDirectCodingCapabilityGraph(
+	requirements []assemblyline.Requirement,
+	results []directCodingCapabilityResult,
+) (directCodingCapabilityGraph, error) {
+	graph := make(directCodingCapabilityGraph, len(requirements))
+	for _, requirement := range requirements {
+		graph[requirement.ID] = nil
+	}
+	add := func(ownerIndex, dependencyIndex int) {
+		owner := requirements[ownerIndex]
+		dependency := requirements[dependencyIndex]
+		graph[owner.ID] = append(graph[owner.ID], directCodingCapabilityBinding{
+			RequirementID: dependency.ID,
+			CapabilityID:  genericBrowserCapabilityID(dependencyIndex + 1),
+			Purpose:       dependency.SourceQuote,
+		})
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		if err := result.Decision.ValidateFor(result.Pair.Input); err != nil {
+			return nil, err
+		}
+		switch result.Decision.Relation {
+		case assemblyline.CapabilityIndependent:
+		case assemblyline.CapabilityLeftReadsRight:
+			add(result.Pair.LeftIndex, result.Pair.RightIndex)
+		case assemblyline.CapabilityRightReadsLeft:
+			add(result.Pair.RightIndex, result.Pair.LeftIndex)
+		case assemblyline.CapabilityBidirectional:
+			add(result.Pair.LeftIndex, result.Pair.RightIndex)
+			add(result.Pair.RightIndex, result.Pair.LeftIndex)
+		}
+	}
+	if err := validateDirectCodingCapabilityGraph(requirements, graph); err != nil {
+		return nil, err
+	}
+	return graph, nil
+}
+
+func validateDirectCodingCapabilityGraph(
+	requirements []assemblyline.Requirement,
+	graph directCodingCapabilityGraph,
+) error {
+	if len(graph) != len(requirements) {
+		return fmt.Errorf("capability graph=%d does not cover requirements=%d", len(graph), len(requirements))
+	}
+	indices := make(map[string]int, len(requirements))
+	for index, requirement := range requirements {
+		indices[requirement.ID] = index
+	}
+	for _, owner := range requirements {
+		dependencies, exists := graph[owner.ID]
+		if !exists {
+			return fmt.Errorf("capability graph omits requirement %s", owner.ID)
+		}
+		seen := make(map[string]struct{}, len(dependencies))
+		lastIndex := -1
+		for _, dependency := range dependencies {
+			index, exists := indices[dependency.RequirementID]
+			if !exists || dependency.RequirementID == owner.ID {
+				return fmt.Errorf("requirement %s has invalid capability dependency %s", owner.ID, dependency.RequirementID)
+			}
+			if dependency.CapabilityID != genericBrowserCapabilityID(index+1) ||
+				dependency.Purpose != requirements[index].SourceQuote {
+				return fmt.Errorf("requirement %s capability dependency %s is not code-owned", owner.ID, dependency.RequirementID)
+			}
+			if _, duplicate := seen[dependency.RequirementID]; duplicate || index <= lastIndex {
+				return fmt.Errorf("requirement %s capability dependencies are duplicated or unordered", owner.ID)
+			}
+			seen[dependency.RequirementID] = struct{}{}
+			lastIndex = index
+		}
+	}
+	return nil
+}

@@ -13,7 +13,7 @@ const externalAgentCleanupTimeout = 5 * time.Second
 
 // StreamExternalAgentSession runs an external agent session, invoking onEvent for each
 // streamed event before returning the aggregated result.
-func StreamExternalAgentSession(ctx context.Context, session ExternalAgentSession, job ExternalAgentJob, onEvent func(AgentEvent) error) (result CursorArchitectAgentResult, returnErr error) {
+func StreamExternalAgentSession(ctx context.Context, session ExternalAgentSession, job ExternalAgentJob, onEvent func(AgentEvent) error) (result ExternalCodingResult, returnErr error) {
 	if session == nil {
 		return result, fmt.Errorf("external agent session is nil")
 	}
@@ -67,7 +67,7 @@ func StreamExternalAgentSession(ctx context.Context, session ExternalAgentSessio
 	}
 }
 
-func resultFromExternalAgentEventSlice(events []AgentEvent) CursorArchitectAgentResult {
+func resultFromExternalAgentEventSlice(events []AgentEvent) ExternalCodingResult {
 	replay := make(chan AgentEvent, len(events))
 	for _, event := range events {
 		replay <- event

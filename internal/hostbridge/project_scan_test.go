@@ -1,6 +1,9 @@
 package hostbridge
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,16 +33,20 @@ func TestWalkProjectTree(t *testing.T) {
 	}
 }
 
-func TestWriteProjectArtifacts(t *testing.T) {
-	root := t.TempDir()
-	indexPath, mapPath, err := WriteProjectArtifacts(root, []byte(`{"version":"1.0"}`), []byte(`{"version":"1.0","root":"`+root+`"}`))
-	if err != nil {
-		t.Fatalf("WriteProjectArtifacts() error=%v", err)
+func TestProjectMapPersistenceEndpointsAreRemoved(t *testing.T) {
+	server := &Server{}
+	get := httptest.NewRequest(http.MethodGet, "/v1/project-map", nil)
+	getResult := httptest.NewRecorder()
+	server.Handler().ServeHTTP(getResult, get)
+	if getResult.Code != http.StatusNotFound {
+		t.Fatalf("old project-map read status=%d", getResult.Code)
 	}
-	if _, err := os.Stat(indexPath); err != nil {
-		t.Fatalf("index file missing: %v", err)
-	}
-	if _, err := os.Stat(mapPath); err != nil {
-		t.Fatalf("map file missing: %v", err)
+
+	post := httptest.NewRequest(http.MethodPost, "/v1/project-map/scan", bytes.NewBufferString(`{"path":"/tmp","index_json":{},"map_json":{}}`))
+	post.Header.Set("Content-Type", "application/json")
+	postResult := httptest.NewRecorder()
+	server.Handler().ServeHTTP(postResult, post)
+	if postResult.Code != http.StatusBadRequest {
+		t.Fatalf("old persistence payload status=%d body=%s", postResult.Code, postResult.Body.String())
 	}
 }

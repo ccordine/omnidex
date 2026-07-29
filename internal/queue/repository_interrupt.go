@@ -29,21 +29,6 @@ func (r *Repository) InterruptJob(ctx context.Context, jobID int64, feedback str
 	if job.Status == model.JobStatusCanceled || job.Status == model.JobStatusCompleted || job.Status == model.JobStatusFailed {
 		return model.Job{}, fmt.Errorf("job is already %s", job.Status)
 	}
-	v3Authority, err := jobUsesV3AuthorityTx(ctx, tx, jobID)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if v3Authority {
-		successor, err := r.reviseV3AuthorityTx(ctx, tx, job, feedback, "interrupt")
-		if err != nil {
-			return model.Job{}, err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return model.Job{}, err
-		}
-		return successor, nil
-	}
-
 	stepID, stepStatus, err := findInterruptStep(ctx, tx, jobID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

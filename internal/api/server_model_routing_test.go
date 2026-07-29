@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -28,37 +27,6 @@ func TestRequiredDefaultLLMModelRejectsMissingProviderModel(t *testing.T) {
 	_, err := server.requiredDefaultLLMModel()
 	if err == nil || !strings.Contains(err.Error(), "google") {
 		t.Fatalf("requiredDefaultLLMModel() error=%v, want google model failure", err)
-	}
-}
-
-func TestScrumPilotUsesConfiguredNonOllamaModel(t *testing.T) {
-	client := &fakeLLMClient{outputs: []string{"pilot reply"}}
-	server := NewServerWithOptions(nil, client, ServerOptions{
-		ProviderConfig: config.Config{LLMProvider: "openai", DefaultModel: "gpt-pilot"},
-	})
-
-	got, err := server.scrumPilotLLMChat(context.Background(), "system", "user", llmContextTelemetryMeta{})
-	if err != nil {
-		t.Fatalf("scrumPilotLLMChat() error: %v", err)
-	}
-	if got != "pilot reply" {
-		t.Fatalf("scrumPilotLLMChat()=%q", got)
-	}
-	if len(client.prepareModels) != 1 || client.prepareModels[0] != "gpt-pilot" {
-		t.Fatalf("pilot models=%v want [gpt-pilot]", client.prepareModels)
-	}
-}
-
-func TestScrumCardChatContextPreservesParentCancellation(t *testing.T) {
-	parent, cancelParent := context.WithCancel(context.Background())
-	cancelParent()
-	ctx, cancel := scrumCardChatLLMContext(parent)
-	defer cancel()
-
-	select {
-	case <-ctx.Done():
-	default:
-		t.Fatal("Scrum chat context discarded parent cancellation")
 	}
 }
 
@@ -98,7 +66,6 @@ func TestRequiredDefaultLLMModelUsesChineseProviderWithoutProviderSwitch(t *test
 func TestScrumModelRoutingSourceHasNoHardcodedOrDetachedPath(t *testing.T) {
 	source := strings.Join([]string{
 		readAPISource(t, "scrum_handlers.go"),
-		readAPISource(t, "scrum_pilot_llm.go"),
 		readAPISource(t, "scrum_coach_config.go"),
 		readAPISource(t, "scrum_card_llm_enqueue.go"),
 		readAPISource(t, "project_debugger.go"),

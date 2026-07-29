@@ -1,6 +1,6 @@
 import { readJSON } from "./api";
 import { createUserChannel, fetchChannelMessages, fetchUserChannels, isUserChannel, sendChannelMessage } from "./channel_api";
-import { t } from "./i18n";
+import { t, tf } from "./i18n";
 import type { ChatMessage, UserChannel } from "./types";
 
 const SELECTED_CHANNEL_KEY = "omni.chat.selected-channel.v1";
@@ -43,7 +43,7 @@ export class ChatChannelCoordinator {
     const target = this.host.networkURL();
     const normalized = url.trim();
     if (!normalized) {
-      target.textContent = "not set";
+      target.textContent = t("network.notSet");
       return;
     }
     const anchor = document.createElement("a");
@@ -59,12 +59,12 @@ export class ChatChannelCoordinator {
       this.host.setQueueEnabled(Boolean(health.queue_enabled));
       this.updateTransportLabel();
       if (health.core_url) this.setNetworkURL(String(health.core_url));
-      this.host.setStatus("ready", "ready");
+      this.host.setStatus(t("status.ready"), "ready");
       this.host.addEvent("health", health);
     } catch (error) {
       this.host.setQueueEnabled(false);
-      if (this.host.hasTransport()) this.host.transport().textContent = "offline";
-      this.host.setStatus("offline", "error");
+      if (this.host.hasTransport()) this.host.transport().textContent = t("status.offline");
+      this.host.setStatus(t("status.offline"), "error");
       this.host.addEvent("health_failed", { error: errorMessage(error) });
     }
   }
@@ -97,8 +97,8 @@ export class ChatChannelCoordinator {
       this.updateTransportLabel();
     } catch (error) {
       this.host.channelSelect().disabled = true;
-      this.host.channelSelect().replaceChildren(new Option("Channels unavailable", ""));
-      this.host.setStatus("channels unavailable", "error");
+      this.host.channelSelect().replaceChildren(new Option(t("channel.unavailable"), ""));
+      this.host.setStatus(t("channel.statusUnavailable"), "error");
       this.host.addEvent("channels_load_failed", { error: errorMessage(error) });
     }
   }
@@ -137,29 +137,29 @@ export class ChatChannelCoordinator {
       const messages: ChatMessage[] = rows.map((row) => ({
         role: normalizeMessageRole(row.role),
         content: row.content,
-        at: row.created_at || new Date().toISOString(),
+        at: requireChannelMessageTimestamp(row.created_at),
       }));
       if (messages.length === 0) {
         messages.push({
           role: "system",
-          content: `User channel "${channel?.name || channelID}" — scoped memory and persona, no agent tools.`,
+          content: tf("channel.initial", { name: channel?.name || channelID }),
           at: new Date().toISOString(),
         });
       }
       this.host.replaceMessages(messages);
     } catch (error) {
       this.host.replaceMessages([{ role: "error", content: errorMessage(error), at: new Date().toISOString() }]);
-      this.host.setStatus("channel unavailable", "error");
+      this.host.setStatus(t("channel.statusUnavailableOne"), "error");
       this.host.addEvent("channel_transcript_failed", { channel_id: channelID, error: errorMessage(error) });
     }
   }
 
   async create(event: Event): Promise<void> {
     event.preventDefault();
-    const id = window.prompt("Channel id (e.g. support-user-123)", `chat-${Date.now()}`)?.trim();
+    const id = window.prompt(t("channel.idPrompt"), `chat-${Date.now()}`)?.trim();
     if (!id) return;
-    const name = window.prompt("Display name", id)?.trim() || id;
-    this.host.setStatus("creating channel", "active");
+    const name = window.prompt(t("channel.namePrompt"), id)?.trim() || id;
+    this.host.setStatus(t("channel.statusCreating"), "active");
     try {
       const channel = await createUserChannel({ id, name, tags: ["user-channel"] });
       if (!this.channels.some((item) => item.id === channel.id)) this.channels.unshift(channel);
@@ -169,26 +169,26 @@ export class ChatChannelCoordinator {
       if (this.host.hasChannelSelect()) this.host.channelSelect().value = channel.id;
       await this.loadTranscript(channel.id);
       this.updateTransportLabel();
-      this.host.setStatus("ready", "ready");
+      this.host.setStatus(t("status.ready"), "ready");
     } catch (error) {
-      this.host.setStatus("failed", "error");
+      this.host.setStatus(t("status.failed"), "error");
       this.host.addMessage("error", errorMessage(error));
     }
   }
 
   async submit(prompt: string): Promise<void> {
     if (!this.selectedChannelID) throw new Error("A channel must be selected before sending a channel message.");
-    this.host.setActivityLabel("Thinking…");
-    this.host.setStatus("thinking", "active");
-    this.host.renderProgressActivity("Thinking…");
+    this.host.setActivityLabel(t("channel.thinking"));
+    this.host.setStatus(t("status.thinking"), "active");
+    this.host.renderProgressActivity(t("channel.thinking"));
     const payload = await sendChannelMessage(this.selectedChannelID, prompt);
     this.host.addEvent("channel_message", {
       channel_id: this.selectedChannelID,
       model: payload.model,
       latency_ms: payload.latency_ms,
     }, payload);
-    this.host.addMessage("assistant", payload.output || "(empty response)");
-    this.host.setStatus("ready", "ready");
+    this.host.addMessage("assistant", payload.output || t("channel.emptyResponse"));
+    this.host.setStatus(t("status.ready"), "ready");
     this.host.setBusy(false);
   }
 }
@@ -199,4 +199,11 @@ function normalizeMessageRole(role: string): ChatMessage["role"] {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function requireChannelMessageTimestamp(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("Channel message did not include created_at.");
+  }
+  return value;
 }

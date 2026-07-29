@@ -54,7 +54,7 @@ var providerDefinitions = []Definition{
 	compatibleDefinition("doubao", "ByteDance Doubao / Volcengine Ark", []string{"volcengine", "ark", "bytedance", "volcengine-ark"}, []string{"DOUBAO", "VOLCENGINE", "ARK"}, "https://ark.cn-beijing.volces.com/api/v3", false),
 	compatibleDefinition("stepfun", "StepFun", []string{"step", "step-fun"}, []string{"STEPFUN", "STEP"}, "https://api.stepfun.com/v1", false),
 	compatibleDefinition("yi", "01.AI Yi", []string{"01ai", "01-ai", "lingyiwanwu"}, []string{"YI", "LINGYIWANWU"}, "https://api.01.ai/v1", false),
-	compatibleDefinition("baichuan", "Baichuan AI", []string{"baichuan-ai"}, []string{"BAICHUAN"}, "https://api.baichuan-ai.com/v1", false),
+	compatibleDefinition("baichuan", "Baichuan AI", []string{"baichuan-ai"}, []string{"BAICHUAN"}, "https://api.baichuan-ai.com/v1", true),
 	compatibleDefinition("spark", "iFlytek Spark", []string{"iflytek", "xfyun"}, []string{"SPARK", "IFLYTEK", "XFYUN"}, "https://spark-api-open.xf-yun.com/v1", false),
 	compatibleDefinition("siliconflow", "SiliconFlow", []string{"silicon-flow"}, []string{"SILICONFLOW"}, "https://api.siliconflow.cn/v1", true),
 	compatibleDefinition("modelscope", "ModelScope API Inference", []string{"model-scope"}, []string{"MODELSCOPE"}, "https://api-inference.modelscope.cn/v1", false),
@@ -66,7 +66,7 @@ var providerDefinitions = []Definition{
 	{
 		ID: "compatible", DisplayName: "Custom OpenAI-compatible", Aliases: []string{"custom", "custom-openai", "openai-compatible"}, Protocol: ProtocolOpenAICompatible,
 		EnvironmentPrefixes: []string{"COMPATIBLE"}, APIKeyEnvironmentKeys: []string{"COMPATIBLE_API_KEY"}, BaseURLEnvironmentKeys: []string{"COMPATIBLE_BASE_URL"},
-		SupportsGeneration: true, SupportsEmbeddings: true, RequiresBaseURL: true, ChineseService: true,
+		SupportsGeneration: true, SupportsEmbeddings: true, RequiresBaseURL: true,
 	},
 }
 

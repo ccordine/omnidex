@@ -525,7 +525,7 @@ func (s *Server) channelMemory(ctx context.Context, channel model.Channel, promp
 			embedding = value
 		}
 	}
-	matches, err := s.channelStore.FindRelevantMemory(ctx, embedding, channelMemoryTags(channel), limit)
+	matches, err := s.channelStore.FindRelevantMemory(ctx, embedding, channelMemoryScope(channel), limit)
 	if err != nil {
 		return nil
 	}
@@ -632,6 +632,10 @@ func channelMessagesToPersonaHistory(messages []model.ChannelMessage) []personaM
 func channelMemoryTags(channel model.Channel) []string {
 	tags := append([]string{"channel:" + channel.ID}, channel.Tags...)
 	return cleanAPITags(tags)
+}
+
+func channelMemoryScope(channel model.Channel) []string {
+	return []string{"channel:" + channel.ID}
 }
 
 func cleanAPITags(tags []string) []string {

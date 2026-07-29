@@ -39,11 +39,7 @@ func intentObjectiveSummary(intent artifacts.IntentArtifact) string {
 }
 
 func sessionTagForJob(job model.Job) string {
-	sessionID := strings.TrimSpace(metadataString(job.Metadata, "session_id"))
-	if sessionID == "" {
-		return ""
-	}
-	return "session:" + sessionID
+	return sessionTag(job)
 }
 
 func artifactRef(kind string, jobID int64) string {

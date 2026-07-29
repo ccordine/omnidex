@@ -13,7 +13,7 @@ func TestMoveScrumCardToInProgress(t *testing.T) {
 }
 
 func TestScrumChannelJobMetadata(t *testing.T) {
-	raw, err := scrumChannelJobMetadata([]byte(`{"source":"omni-scrum"}`), "review", "Fix routing only")
+	raw, err := scrumChannelJobMetadata([]byte(`{"source":"omni-scrum"}`), "review")
 	if err != nil {
 		t.Fatalf("scrumChannelJobMetadata: %v", err)
 	}
@@ -27,9 +27,8 @@ func TestScrumChannelJobMetadata(t *testing.T) {
 	if meta["scrum_return_column"] != "review" {
 		t.Fatalf("return column=%v", meta["scrum_return_column"])
 	}
-	directives, ok := meta["v3_authority_directives"].([]any)
-	if !ok || len(directives) != 1 || directives[0] != "Fix routing only" {
-		t.Fatalf("authority directives=%#v", meta["v3_authority_directives"])
+	if _, exists := meta["v3_authority_directives"]; exists {
+		t.Fatalf("removed directive history survived: %v", meta)
 	}
 	if _, exists := meta["scrum_current_user_instruction"]; exists {
 		t.Fatalf("removed current-instruction compatibility key survived: %v", meta)
@@ -37,14 +36,14 @@ func TestScrumChannelJobMetadata(t *testing.T) {
 }
 
 func TestScrumChannelJobMetadataRejectsInvalidJSON(t *testing.T) {
-	if _, err := scrumChannelJobMetadata([]byte(`{"source":`), "review", "Fix routing"); err == nil {
+	if _, err := scrumChannelJobMetadata([]byte(`{"source":`), "review"); err == nil {
 		t.Fatal("invalid job metadata must fail instead of returning the original payload")
 	}
 }
 
-func TestScrumChannelJobMetadataRejectsMissingCurrentDirective(t *testing.T) {
-	if _, err := scrumChannelJobMetadata([]byte(`{"source":"omni-scrum"}`), "review", "  "); err == nil {
-		t.Fatal("channel metadata must not synthesize an instruction from history")
+func TestScrumChannelJobMetadataRejectsLegacyDirectiveHistory(t *testing.T) {
+	if _, err := scrumChannelJobMetadata([]byte(`{"source":"omni-scrum","v3_authority_directives":["old"]}`), "review"); err == nil {
+		t.Fatal("legacy directive history must fail loudly")
 	}
 }
 

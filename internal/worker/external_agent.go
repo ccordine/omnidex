@@ -14,7 +14,7 @@ import (
 )
 
 type externalAgentSessionStarter interface {
-	NewExternalAgentSession(input omni.CursorArchitectAgentInput) (omni.ExternalAgentSession, error)
+	PrepareCodingSession(request omni.ExternalCodingRequest) (omni.ExternalAgentSession, omni.ExternalAgentJob, error)
 }
 
 func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string) error {
@@ -41,40 +41,23 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		return fmt.Errorf("selected external agent required: %s", msg)
 	}
 
-	prompt := buildExternalAgentPrompt(claim.Job, contexts, cfg.System())
-	mode := externalAgentJobMode(claim.Job)
-	packet := omni.CursorImplementationPacket{
-		Task:       strings.TrimSpace(claim.Job.Instruction),
-		Mode:       mode,
-		Workspace:  workspace,
-		TargetRoot: workspace,
-		Objectives: []string{strings.TrimSpace(claim.Job.Instruction)},
-	}
-	input := omni.CursorArchitectAgentInput{
-		Step:       1,
-		UserPrompt: prompt,
-		ToolTask:   claim.Job.Instruction,
-		Packet:     packet,
-		Workspace:  workspace,
+	request := omni.ExternalCodingRequest{
+		Instruction: strings.TrimSpace(claim.Job.Instruction),
+		Context:     buildExternalAgentContext(claim.Job, contexts, cfg.System()),
+		Workspace:   workspace,
 	}
 
 	s.emitStepEvent(claim.Step.ID, "external_agent_started", agentName)
 
-	var result omni.CursorArchitectAgentResult
+	var result omni.ExternalCodingResult
 	streamLines := make([]string, 0, 64)
 	if starter, ok := agent.(externalAgentSessionStarter); ok && s.repo != nil {
-		session, sessionErr := starter.NewExternalAgentSession(input)
+		session, externalJob, sessionErr := starter.PrepareCodingSession(request)
 		if sessionErr != nil {
 			err = sessionErr
 		} else {
-			result, err = omni.StreamExternalAgentSession(ctx, session, omni.ExternalAgentJob{
-				SessionID: agentName,
-				Agent:     strings.TrimSuffix(agentName, "_sdk"),
-				Mode:      "implementation",
-				Packet:    packet,
-				Prompt:    prompt,
-				Workspace: workspace,
-			}, func(event omni.AgentEvent) error {
+			externalJob.SessionID = agentName
+			result, err = omni.StreamExternalAgentSession(ctx, session, externalJob, func(event omni.AgentEvent) error {
 				line, encodeErr := omni.AgentEventJSONLine(event)
 				if encodeErr != nil {
 					return encodeErr
@@ -92,7 +75,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 			})
 		}
 	} else {
-		result, err = agent.RunArchitectTask(ctx, input)
+		result, err = agent.RunCodingTask(ctx, request)
 	}
 
 	if err != nil {
@@ -104,7 +87,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		return fmt.Errorf("%s failed: %w", agentName, err)
 	}
 
-	output := strings.TrimSpace(firstNonEmptyString(result.Summary, result.Output))
+	output := firstNonEmpty(result.Summary, result.Output)
 	if output == "" {
 		message := agentName + " returned no summary or output"
 		s.emitStepEvent(claim.Step.ID, "external_agent_failed", message)
@@ -142,13 +125,12 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	return completeStep(ctx, claim.Step.ID, stepOutput, "external_agent_execute", string(summary))
 }
 
-func selectExternalAgent(cfg agentconfig.Config) (omni.CursorArchitectAgent, string, string) {
-	explicit := cfg.IsExternal()
+func selectExternalAgent(cfg agentconfig.Config) (omni.ExternalCodingAgent, string, string) {
 	switch cfg.System() {
 	case agentconfig.SystemCursor:
-		agent := omni.NewCursorSDKArchitectAgent(explicit)
+		agent := omni.NewCursorSDKAgent()
 		if agent == nil {
-			reason := omni.CursorSDKUnavailableReason(explicit)
+			reason := omni.CursorSDKUnavailableReason()
 			if reason == "" {
 				reason = "Cursor SDK agent is not available"
 			}
@@ -157,9 +139,9 @@ func selectExternalAgent(cfg agentconfig.Config) (omni.CursorArchitectAgent, str
 		agent.ApplyConfig(cfg)
 		return agent, "cursor_sdk", ""
 	case agentconfig.SystemCodex:
-		agent := omni.NewCodexSDKArchitectAgent(explicit)
+		agent := omni.NewCodexSDKAgent()
 		if agent == nil {
-			reason := omni.CodexSDKUnavailableReason(explicit)
+			reason := omni.CodexSDKUnavailableReason()
 			if reason == "" {
 				reason = "Codex SDK agent is not available"
 			}
@@ -172,7 +154,7 @@ func selectExternalAgent(cfg agentconfig.Config) (omni.CursorArchitectAgent, str
 	}
 }
 
-func buildExternalAgentPrompt(job model.Job, contexts map[string]string, agentSystem string) string {
+func buildExternalAgentContext(job model.Job, contexts map[string]string, agentSystem string) string {
 	if externalAgentJobMode(job) != "scrum_task" {
 		return buildGenericExternalAgentPrompt(job, contexts, agentSystem)
 	}
@@ -187,7 +169,7 @@ func buildExternalAgentPrompt(job model.Job, contexts map[string]string, agentSy
 	if feedback := strings.TrimSpace(contexts["user_feedback"]); feedback != "" {
 		lines = append(lines, "Feedback:", feedback)
 	}
-	lines = append(lines, "", "Task:", strings.TrimSpace(job.Instruction), "", scrum.AgentStatusFooter)
+	lines = append(lines, "", scrum.AgentStatusFooter)
 	return strings.Join(lines, "\n")
 }
 
@@ -219,13 +201,7 @@ func buildGenericExternalAgentPrompt(job model.Job, contexts map[string]string, 
 	if tooling := strings.TrimSpace(contexts["tooling"]); tooling != "" {
 		lines = append(lines, "Tooling:", trimForBudget(tooling, 1600))
 	}
-	lines = append(lines,
-		"",
-		"Task:",
-		strings.TrimSpace(job.Instruction),
-		"",
-		"Completion rule: report what changed and what verification you ran or could not run. Do not claim Omnidex accepted the work.",
-	)
+	lines = append(lines, "", "Completion rule: report what changed and what verification you ran or could not run. Do not claim Omnidex accepted the work.")
 	return strings.Join(lines, "\n")
 }
 

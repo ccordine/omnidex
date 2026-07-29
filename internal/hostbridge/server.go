@@ -22,7 +22,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/screen/mjpeg", s.handleScreenMJPEG)
 	mux.HandleFunc("/v1/cursor/run", s.handleCursorRun)
 	mux.HandleFunc("/v1/codex/run", s.handleCodexRun)
-	mux.HandleFunc("/v1/project-map", s.handleProjectMap)
 	mux.HandleFunc("/v1/project-map/scan", s.handleProjectMapScan)
 	mux.HandleFunc("/v1/project/git", s.handleProjectGit)
 	return mux

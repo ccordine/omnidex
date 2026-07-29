@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +17,9 @@ func validateRuntimeConfig(cfg Config) error {
 	}
 	if cfg.WorkerCount < 1 {
 		return fmt.Errorf("WORKER_COUNT must be at least 1, received %d", cfg.WorkerCount)
+	}
+	if cfg.CodingFragmentConcurrency < 1 || cfg.CodingFragmentConcurrency > 4 {
+		return fmt.Errorf("CODING_FRAGMENT_CONCURRENCY must be between 1 and 4, received %d", cfg.CodingFragmentConcurrency)
 	}
 	if cfg.WorkerPollInterval <= 0 {
 		return fmt.Errorf("WORKER_POLL_INTERVAL must be positive, received %s", cfg.WorkerPollInterval)
@@ -32,35 +36,14 @@ func validateRuntimeConfig(cfg Config) error {
 	if err := llm.ValidateInferenceContextTokens(cfg.InferenceContextTokens); err != nil {
 		return fmt.Errorf("INFERENCE_CONTEXT_TOKENS is invalid: %w", err)
 	}
-	if cfg.SufficientContextChars < 1 {
-		return fmt.Errorf("SUFFICIENT_CONTEXT_CHARS must be positive, received %d", cfg.SufficientContextChars)
-	}
-	if cfg.MemoryInferenceMaxItems < 0 {
-		return fmt.Errorf("MEMORY_INFERENCE_MAX_ITEMS cannot be negative, received %d", cfg.MemoryInferenceMaxItems)
-	}
-	if cfg.TournamentChunkChars < 500 {
-		return fmt.Errorf("TOURNAMENT_CHUNK_CHARS must be at least 500, received %d", cfg.TournamentChunkChars)
-	}
-	if cfg.TournamentSummaryChars < 120 {
-		return fmt.Errorf("TOURNAMENT_SUMMARY_CHARS must be at least 120, received %d", cfg.TournamentSummaryChars)
-	}
-	if cfg.TournamentSummaryChars > cfg.TournamentChunkChars {
-		return fmt.Errorf("TOURNAMENT_SUMMARY_CHARS cannot exceed TOURNAMENT_CHUNK_CHARS")
-	}
-	if cfg.TournamentMaxRounds < 1 || cfg.TournamentMaxRounds > 8 {
-		return fmt.Errorf("TOURNAMENT_MAX_ROUNDS must be between 1 and 8, received %d", cfg.TournamentMaxRounds)
-	}
 	if cfg.WorkspaceMaxFiles < 1 {
 		return fmt.Errorf("WORKSPACE_MAX_FILES must be positive, received %d", cfg.WorkspaceMaxFiles)
 	}
 	if cfg.WorkspaceContextBudget < 1 {
 		return fmt.Errorf("WORKSPACE_CONTEXT_BUDGET must be positive, received %d", cfg.WorkspaceContextBudget)
 	}
-	if cfg.OllamaRestartTimeout <= 0 {
-		return fmt.Errorf("OLLAMA_RESTART_TIMEOUT must be positive, received %s", cfg.OllamaRestartTimeout)
-	}
-	if cfg.HallucinationRetryLimit < 1 || cfg.HallucinationRetryLimit > 6 {
-		return fmt.Errorf("HALLUCINATION_RETRY_LIMIT must be between 1 and 6, received %d", cfg.HallucinationRetryLimit)
+	if root := strings.TrimSpace(cfg.WorkspaceHostRoot); root != "" && !filepath.IsAbs(root) {
+		return fmt.Errorf("HOST_WORKSPACE_PATH must be absolute when configured, received %q", root)
 	}
 	if cfg.RealtimeMaxClients < 1 {
 		return fmt.Errorf("REALTIME_MAX_CLIENTS must be at least 1, received %d", cfg.RealtimeMaxClients)
@@ -98,8 +81,8 @@ func validateRuntimeConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.EmbeddingModel) == "" {
 		return fmt.Errorf("embedding model is required for EMBEDDING_PROVIDER=%s", cfg.EmbeddingProvider)
 	}
-	if cfg.V3Enabled && strings.TrimSpace(cfg.SkillsRoot) == "" {
-		return fmt.Errorf("OMNIDEX_SKILLS_ROOT is required when OMNIDEX_V3_ENABLED=true")
+	if strings.TrimSpace(cfg.SkillsRoot) == "" {
+		return fmt.Errorf("OMNIDEX_SKILLS_ROOT is required")
 	}
 	return nil
 }

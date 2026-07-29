@@ -9,7 +9,6 @@ func TestChineseProviderCatalogCoversNamedCompatibleServices(t *testing.T) {
 	want := []string{
 		"antling",
 		"baichuan",
-		"compatible",
 		"deepseek",
 		"doubao",
 		"hunyuan",
@@ -126,6 +125,9 @@ func TestProviderCapabilitiesAndEnvironmentKeysAreAuthoritative(t *testing.T) {
 	if !compatible.RequiresBaseURL {
 		t.Fatal("custom compatible provider must require an explicit base URL")
 	}
+	if compatible.ChineseService {
+		t.Fatal("a generic compatible endpoint must not claim a geographic service identity")
+	}
 }
 
 func TestSupportedProviderListsAreSortedAndCapabilityFiltered(t *testing.T) {
@@ -137,7 +139,7 @@ func TestSupportedProviderListsAreSortedAndCapabilityFiltered(t *testing.T) {
 	if contains(embeddings, "deepseek") {
 		t.Fatalf("generation-only provider appeared in embedding providers: %v", embeddings)
 	}
-	for _, providerID := range []string{"qwen", "zhipu", "qianfan", "hunyuan", "siliconflow", "compatible"} {
+	for _, providerID := range []string{"baichuan", "qwen", "zhipu", "qianfan", "hunyuan", "siliconflow", "compatible"} {
 		if !contains(embeddings, providerID) {
 			t.Errorf("embedding providers missing %q: %v", providerID, embeddings)
 		}

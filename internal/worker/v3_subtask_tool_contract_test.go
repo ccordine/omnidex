@@ -194,7 +194,11 @@ func TestLiveSubtaskWorkspaceContextRefreshesFromDisk(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module pocket_tasks\n\ngo 1.26.3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	scanner, err := workspace.New(true, root, 100, 6000).Scoped(root)
+	baseScanner, err := workspace.New(true, root, 100, 6000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := baseScanner.Scoped(root)
 	if err != nil {
 		t.Fatal(err)
 	}

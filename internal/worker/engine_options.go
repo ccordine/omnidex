@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/llm"
@@ -10,6 +11,9 @@ import (
 func validateWorkerOptions(opts Options) error {
 	if opts.WorkerCount < 1 {
 		return fmt.Errorf("worker_count must be at least 1, received %d", opts.WorkerCount)
+	}
+	if opts.FragmentConcurrency < 1 || opts.FragmentConcurrency > maxDirectCodingFragmentConcurrency {
+		return fmt.Errorf("fragment_concurrency must be between 1 and %d, received %d", maxDirectCodingFragmentConcurrency, opts.FragmentConcurrency)
 	}
 	if opts.PollInterval <= 0 {
 		return fmt.Errorf("poll_interval must be positive, received %s", opts.PollInterval)
@@ -23,6 +27,12 @@ func validateWorkerOptions(opts Options) error {
 	if err := llm.ValidateInferenceContextTokens(opts.InferenceContextTokens); err != nil {
 		return fmt.Errorf("inference_context_tokens is invalid: %w", err)
 	}
+	if strings.TrimSpace(opts.EmbeddingProvider) == "" {
+		return fmt.Errorf("embedding_provider is required")
+	}
+	if strings.TrimSpace(opts.EmbeddingModel) == "" {
+		return fmt.Errorf("embedding_model is required")
+	}
 
 	modelRoles := []struct {
 		name  string
@@ -30,6 +40,7 @@ func validateWorkerOptions(opts Options) error {
 	}{
 		{name: "default", value: opts.Models.Default},
 		{name: "fast", value: opts.Models.Fast},
+		{name: "glue", value: opts.Models.Glue},
 		{name: "reasoning", value: opts.Models.Reasoning},
 		{name: "tagging", value: opts.Models.Tagging},
 		{name: "plan", value: opts.Models.Plan},
@@ -55,27 +66,11 @@ func validateWorkerOptions(opts Options) error {
 		}
 	}
 
-	if opts.Cognition.SufficientContextChars < 1 {
-		return fmt.Errorf("sufficient_context_chars must be positive, received %d", opts.Cognition.SufficientContextChars)
-	}
-	if opts.Cognition.MemoryInferenceMaxItems < 0 {
-		return fmt.Errorf("memory_inference_max_items cannot be negative, received %d", opts.Cognition.MemoryInferenceMaxItems)
-	}
-	if opts.Tournament.ChunkChars < 500 {
-		return fmt.Errorf("tournament.chunk_chars must be at least 500, received %d", opts.Tournament.ChunkChars)
-	}
-	if opts.Tournament.SummaryChars < 120 {
-		return fmt.Errorf("tournament.summary_chars must be at least 120, received %d", opts.Tournament.SummaryChars)
-	}
-	if opts.Tournament.SummaryChars > opts.Tournament.ChunkChars {
-		return fmt.Errorf("tournament.summary_chars cannot exceed tournament.chunk_chars")
-	}
-	if opts.Tournament.MaxRounds < 1 || opts.Tournament.MaxRounds > 8 {
-		return fmt.Errorf("tournament.max_rounds must be between 1 and 8, received %d", opts.Tournament.MaxRounds)
-	}
-
 	if opts.Workspace.Enabled && strings.TrimSpace(opts.Workspace.Root) == "" {
 		return fmt.Errorf("workspace.root is required when workspace scanning is enabled")
+	}
+	if root := strings.TrimSpace(opts.Workspace.HostRoot); root != "" && !filepath.IsAbs(root) {
+		return fmt.Errorf("workspace.host_root must be absolute when configured, received %q", root)
 	}
 	if opts.Workspace.MaxFiles < 1 {
 		return fmt.Errorf("workspace.max_files must be positive, received %d", opts.Workspace.MaxFiles)
@@ -83,14 +78,8 @@ func validateWorkerOptions(opts Options) error {
 	if opts.Workspace.ContextBudget < 1 {
 		return fmt.Errorf("workspace.context_budget must be positive, received %d", opts.Workspace.ContextBudget)
 	}
-	if opts.HallucinationRetryLimit < 1 || opts.HallucinationRetryLimit > maxHallucinationRetryLimit {
-		return fmt.Errorf("hallucination_retry_limit must be between 1 and %d, received %d", maxHallucinationRetryLimit, opts.HallucinationRetryLimit)
-	}
-	if opts.OllamaRestartTimeout <= 0 {
-		return fmt.Errorf("ollama_restart_timeout must be positive, received %s", opts.OllamaRestartTimeout)
-	}
-	if opts.V3Enabled && strings.TrimSpace(opts.SkillsRoot) == "" {
-		return fmt.Errorf("skills_root is required when V3 is enabled")
+	if strings.TrimSpace(opts.SkillsRoot) == "" {
+		return fmt.Errorf("skills_root is required")
 	}
 	if opts.Logger == nil {
 		return fmt.Errorf("logger is required")
@@ -101,6 +90,7 @@ func validateWorkerOptions(opts Options) error {
 func normalizeWorkerOptions(opts Options) Options {
 	opts.Models.Default = strings.TrimSpace(opts.Models.Default)
 	opts.Models.Fast = strings.TrimSpace(opts.Models.Fast)
+	opts.Models.Glue = strings.TrimSpace(opts.Models.Glue)
 	opts.Models.Reasoning = strings.TrimSpace(opts.Models.Reasoning)
 	opts.Models.Tagging = strings.TrimSpace(opts.Models.Tagging)
 	opts.Models.Plan = strings.TrimSpace(opts.Models.Plan)
@@ -108,6 +98,8 @@ func normalizeWorkerOptions(opts Options) Options {
 	opts.Models.Response = strings.TrimSpace(opts.Models.Response)
 	opts.Models.Search = strings.TrimSpace(opts.Models.Search)
 	opts.Models.Memory = strings.TrimSpace(opts.Models.Memory)
+	opts.EmbeddingProvider = strings.TrimSpace(opts.EmbeddingProvider)
+	opts.EmbeddingModel = strings.TrimSpace(opts.EmbeddingModel)
 
 	specialistModels := make(map[string]string, len(opts.Models.Specialist))
 	for role, modelName := range opts.Models.Specialist {
@@ -115,8 +107,7 @@ func normalizeWorkerOptions(opts Options) Options {
 	}
 	opts.Models.Specialist = specialistModels
 	opts.Workspace.Root = strings.TrimSpace(opts.Workspace.Root)
-	opts.OllamaRestartCommand = strings.TrimSpace(opts.OllamaRestartCommand)
-	opts.OllamaBaseURL = strings.TrimSpace(opts.OllamaBaseURL)
+	opts.Workspace.HostRoot = strings.TrimSpace(opts.Workspace.HostRoot)
 	opts.SkillsRoot = strings.TrimSpace(opts.SkillsRoot)
 	return opts
 }

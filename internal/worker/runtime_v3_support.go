@@ -55,41 +55,6 @@ func (r *nativeRuntimeV3) collectSubtaskResults() ([]artifacts.SubtaskResultArti
 	return results, nil
 }
 
-func genericNonAnswer(value string) bool {
-	clean := strings.ToLower(strings.TrimSpace(value))
-	if clean == "" {
-		return true
-	}
-	genericPhrases := []string{
-		"please let me know",
-		"what specific output",
-		"what is the output you need",
-		"sure, i can do that",
-		"understood!",
-		"understood.",
-		"i will return only",
-		"how can i assist",
-		"provide more details",
-		"provide me with the details",
-		"could you clarify",
-		"what you need the output",
-		"what output you need",
-		"specify what you need me to return",
-		"what you need me to return",
-		"further assistance",
-		"feel free to ask",
-	}
-	for _, phrase := range genericPhrases {
-		if strings.Contains(clean, phrase) {
-			return true
-		}
-	}
-	if len(clean) < 80 && (strings.HasSuffix(clean, "?") || strings.Contains(clean, "need from me")) {
-		return true
-	}
-	return false
-}
-
 func requireArtifactPayload[T any](ctx context.Context, repo *queue.Repository, jobID int64, kind string) (T, error) {
 	var zero T
 	if repo == nil {
@@ -150,20 +115,12 @@ func filterDelegatedSubtasks(subtasks []artifacts.Subtask) []artifacts.Subtask {
 	return out
 }
 
-func reviewMemoryCandidate(candidate model.MemoryCandidate, job model.Job) string {
+func reviewMemoryCandidate(candidate model.MemoryCandidate) string {
 	content := strings.TrimSpace(candidate.Content)
 	if len(content) < 18 {
 		return model.MemoryCandidateStatusRejected
 	}
-	instruction := strings.ToLower(strings.TrimSpace(job.Instruction))
-	contentLower := strings.ToLower(content)
-	if strings.Contains(contentLower, "maybe") || strings.Contains(contentLower, "might") || strings.Contains(contentLower, "probably") {
-		return model.MemoryCandidateStatusRejected
-	}
 	groundedInInstruction := candidateProvenanceBool(candidate, "grounded_in_instruction")
-	if strings.Contains(instruction, contentLower) {
-		groundedInInstruction = true
-	}
 	switch candidate.CandidateKind {
 	case model.MemoryKindInstruction, model.MemoryKindProcedural:
 		return model.MemoryCandidateStatusRejected

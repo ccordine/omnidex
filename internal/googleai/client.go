@@ -38,7 +38,8 @@ type generateRequest struct {
 }
 
 type generationConfig struct {
-	ResponseMIMEType string `json:"responseMimeType"`
+	ResponseMIMEType string         `json:"responseMimeType"`
+	ResponseSchema   map[string]any `json:"responseSchema,omitempty"`
 }
 
 type generateResponse struct {
@@ -114,11 +115,14 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 		SystemInstruction: &content{Parts: []part{{Text: system}}},
 		Contents:          []content{{Role: "user", Parts: []part{{Text: promptHint}}}},
 	}
+	if err := llm.ValidateResponseContract(prepared); err != nil {
+		return "", err
+	}
 	if prepared.ResponseFormat != "" {
-		if prepared.ResponseFormat != llm.ResponseFormatJSON {
-			return "", fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
+		request.GenerationConfig = &generationConfig{
+			ResponseMIMEType: "application/json",
+			ResponseSchema:   prepared.ResponseSchema,
 		}
-		request.GenerationConfig = &generationConfig{ResponseMIMEType: "application/json"}
 	}
 	var parsed generateResponse
 	if err := c.doJSON(ctx, modelPath(model)+":generateContent", request, &parsed); err != nil {
@@ -158,30 +162,6 @@ func (c *Client) Embedding(ctx context.Context, input string) ([]float64, error)
 		return nil, fmt.Errorf("google embedding response missing values")
 	}
 	return parsed.Embedding.Values, nil
-}
-
-func (c *Client) SuggestTags(ctx context.Context, content string, maxTags int) ([]string, error) {
-	return c.SuggestTagsWithModel(ctx, c.defaultModel, content, maxTags)
-}
-
-func (c *Client) SuggestTagsWithModel(ctx context.Context, model, text string, maxTags int) ([]string, error) {
-	if maxTags <= 0 {
-		maxTags = 8
-	}
-	prompt := strings.Join([]string{
-		"Extract compact relevance tags for retrieval.",
-		"Operational mode: text analysis only. Do not roleplay or invent fictional context.",
-		"Return only comma-separated lowercase tags.",
-		fmt.Sprintf("Maximum tags: %d.", maxTags),
-		"Do not include punctuation-only tokens.",
-		"Text:",
-		text,
-	}, "\n")
-	result, err := c.Generate(ctx, model, prompt)
-	if err != nil {
-		return nil, err
-	}
-	return llm.ParseSuggestedTags(result, text, maxTags), nil
 }
 
 func (c *Client) doJSON(ctx context.Context, path string, payload any, out any) error {

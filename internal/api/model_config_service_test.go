@@ -20,7 +20,6 @@ func TestEnvModelConfigProcessEnvironmentOverridesEnvFile(t *testing.T) {
 	t.Setenv("OMNI_ENV_FILE", path)
 	t.Setenv("OMNI_REASONING_MODEL", "")
 	t.Setenv("OMNI_PLANNER_MODEL", "")
-	t.Setenv("OMNI_STRUCTURED_PLANNER_MODEL", "")
 	t.Setenv("OLLAMA_MODEL_REASONING", "process-reasoning")
 	t.Setenv("OLLAMA_MODEL_PLANNER", "process-planner")
 
@@ -119,7 +118,7 @@ func TestEnrichJobMetadataSkipsWhenPresent(t *testing.T) {
 
 func TestEnrichJobMetadataGeneralWebChatUsesNativeAgentWithoutWorkspace(t *testing.T) {
 	s := &Server{}
-	raw := []byte(`{"source":"omni-web-chat","runtime":"v3"}`)
+	raw := []byte(`{"source":"omni-web-chat"}`)
 	out, _, err := s.enrichJobMetadata(context.Background(), raw, ScrumCard{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

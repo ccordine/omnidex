@@ -82,14 +82,11 @@ func (ui *chatUI) rule() string {
 	return ui.paint(strings.Repeat("-", 72), ansiDim)
 }
 
-func (ui *chatUI) printBanner(session string, architectMode bool) {
+func (ui *chatUI) printBanner(session string) {
 	fmt.Println(ui.rule())
 	ui.printSystem("interactive chat started (session=" + session + ")")
 	ui.printSystem("type /help for commands. type /exit to quit.")
 	ui.printSystem(queuedTurnHintText())
-	if architectMode {
-		ui.printSystem("profile=architect enabled (workspace=on, reasoning=deep, verify=on, approval=on, verbose=on)")
-	}
 	fmt.Println(ui.rule())
 }
 

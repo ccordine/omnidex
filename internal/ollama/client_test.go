@@ -205,6 +205,47 @@ func TestGeneratePreparedUsesRoleSpecificOutputBudget(t *testing.T) {
 	}
 }
 
+func TestGeneratePreparedSendsTheExactJSONSchemaToOllama(t *testing.T) {
+	var format map[string]any
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		format, _ = payload["format"].(map[string]any)
+		return jsonResponse(http.StatusOK, `{"message":{"role":"assistant","content":"{\"content\":\"package main\\n\"}"}}`), nil
+	})
+	client := New("http://ollama.local", "qwen2.5-coder:1.5b", "nomic-embed-text", 5*time.Second, 32768)
+	client.httpClient = &http.Client{Timeout: 5 * time.Second, Transport: transport}
+
+	_, err := client.GeneratePrepared(context.Background(), llm.PreparedModel{
+		BaseModel:       "qwen2.5-coder:1.5b",
+		Prompt:          "Generate one complete file.",
+		PromptHint:      "Begin.",
+		MaxOutputTokens: 1024,
+		ContextTokens:   8192,
+		ResponseFormat:  llm.ResponseFormatJSON,
+		ResponseSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"content": map[string]any{"type": "string"},
+			},
+			"required":             []string{"content"},
+			"additionalProperties": false,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if format["type"] != "object" {
+		t.Fatalf("format=%#v", format)
+	}
+	properties, _ := format["properties"].(map[string]any)
+	if _, ok := properties["content"]; !ok {
+		t.Fatalf("schema omitted content: %#v", format)
+	}
+}
+
 func TestGeneratePreparedRejectsExhaustedContextBeforeRequest(t *testing.T) {
 	requestCount := 0
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {

@@ -289,7 +289,6 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 		"scrum_test_criteria":    strings.Join(testLines, "\n"),
 		"project_directory":      board.ProjectDirectory,
 		"client_cwd":             board.ProjectDirectory,
-		"runtime":                "v3",
 	}
 	if projectID > 0 {
 		payload["project_id"] = projectID
@@ -330,7 +329,6 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 	if err := json.Unmarshal(enriched, &meta); err != nil {
 		return nil, pulled, fmt.Errorf("parse enriched Scrum metadata: %w", err)
 	}
-	meta["review_always"] = "off"
 	resolvedAgent, err := agentconfig.FromJobMetadata(enriched)
 	if err != nil {
 		return nil, pulled, err
@@ -339,7 +337,6 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 		meta["omnidex_no_delegate"] = true
 	} else if resolvedAgent.IsExternal() {
 		meta["scrum_raw_play"] = true
-		delete(meta, "runtime")
 	} else {
 		return nil, pulled, fmt.Errorf("unsupported resolved agent system %q", resolvedAgent.System())
 	}

@@ -12,7 +12,6 @@ import (
 
 const (
 	llmContextCharsPerToken           = 24
-	llmContextSourceScrumPilot        = "scrum_pilot"
 	llmContextSourceScrumCoach        = "scrum_coach"
 	llmContextSourceCardTicket        = "scrum_card_ticket"
 	llmContextSourceTagsSuggest       = "scrum_tags_suggest"

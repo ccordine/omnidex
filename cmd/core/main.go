@@ -85,7 +85,6 @@ func main() {
 		LifecycleContext:     ctx,
 		ProviderConfig:       cfg,
 		RequestTimeout:       cfg.RequestTimeout,
-		V3Enabled:            cfg.V3Enabled,
 		WebSearchEnabled:     cfg.WebSearchEnabled,
 		WebSearchProviders:   cfg.WebSearchProviders,
 		WebSearchTimeout:     cfg.WebSearchTimeout,
@@ -108,13 +107,17 @@ func main() {
 			webSearchService,
 			worker.Options{
 				WorkerCount:            cfg.WorkerCount,
+				FragmentConcurrency:    cfg.CodingFragmentConcurrency,
 				PollInterval:           cfg.WorkerPollInterval,
 				RetrievalLimit:         cfg.RetrievalLimit,
 				ContextBudget:          cfg.ContextCharBudget,
 				InferenceContextTokens: cfg.InferenceContextTokens,
+				EmbeddingProvider:      cfg.EmbeddingProvider,
+				EmbeddingModel:         cfg.EmbeddingModel,
 				Models: worker.ModelRouting{
 					Default:    cfg.DefaultModel,
 					Fast:       cfg.FastModel,
+					Glue:       cfg.GlueModel,
 					Reasoning:  cfg.ReasoningModel,
 					Tagging:    cfg.TaggingModel,
 					Plan:       cfg.PlanModel,
@@ -124,40 +127,28 @@ func main() {
 					Memory:     cfg.MemoryModel,
 					Specialist: cfg.SpecialistModels,
 				},
-				Cognition: worker.CognitionSettings{
-					StopOnSufficientContext: cfg.StopOnSufficientContext,
-					SufficientContextChars:  cfg.SufficientContextChars,
-					MemoryInferenceEnabled:  cfg.MemoryInferenceEnabled,
-					MemoryInferenceMaxItems: cfg.MemoryInferenceMaxItems,
-				},
-				Tournament: worker.TournamentSettings{
-					Enabled:       cfg.TournamentEnabled,
-					ChunkChars:    cfg.TournamentChunkChars,
-					SummaryChars:  cfg.TournamentSummaryChars,
-					MaxRounds:     cfg.TournamentMaxRounds,
-					VerifySupport: cfg.TournamentVerify,
-				},
 				Workspace: worker.WorkspaceSettings{
 					Enabled:       cfg.WorkspaceScanEnabled,
 					Root:          cfg.WorkspaceRoot,
+					HostRoot:      cfg.WorkspaceHostRoot,
 					MaxFiles:      cfg.WorkspaceMaxFiles,
 					ContextBudget: cfg.WorkspaceContextBudget,
 				},
-				HallucinationRetryLimit: cfg.HallucinationRetryLimit,
-				OllamaRestartCommand:    cfg.OllamaRestartCommand,
-				OllamaRestartTimeout:    cfg.OllamaRestartTimeout,
-				OllamaBaseURL:           cfg.OllamaBaseURL,
-				V3Enabled:               cfg.V3Enabled,
-				SkillsRoot:              cfg.SkillsRoot,
-				Logger:                  log.Default(),
-				OnJobFinished:           httpServer.OnJobFinishedAsync,
-				OnJobOutput:             httpServer.OnJobOutputAsync,
+				SkillsRoot:    cfg.SkillsRoot,
+				Logger:        log.Default(),
+				OnJobFinished: httpServer.OnJobFinishedAsync,
+				OnJobOutput:   httpServer.OnJobOutputAsync,
 			},
 		)
 		if err != nil {
 			log.Fatalf("configure worker: %v", err)
 		}
-		go workerService.Start(ctx)
+		go func() {
+			if err := workerService.Start(ctx); err != nil {
+				log.Printf("worker service stopped: %v", err)
+				cancel()
+			}
+		}()
 		if err := httpServer.StartScrumAutoWorkLoop(ctx); err != nil {
 			log.Fatalf("start Scrum auto-work loop: %v", err)
 		}

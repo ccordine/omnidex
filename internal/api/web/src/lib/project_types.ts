@@ -40,22 +40,18 @@ export type BrowseResponse = {
 
 export type ProjectMapSummary = {
   exists: boolean;
-  map_path: string;
-  relative_map_path?: string;
   generated_at?: string;
-  revision?: string;
   workspace_id?: string;
   root?: string;
   file_count: number;
   module_count: number;
-  stale_file_count: number;
+  scan_truncated?: boolean;
   languages: Array<{ language: string; files: number; bytes?: number }>;
   modules: Array<{
     path: string;
     purpose?: string;
     important_files?: string[];
     confidence?: number;
-    stale?: boolean;
     responsibilities?: string[];
   }>;
   entrypoints: Array<{ path: string; kind?: string; reason?: string }>;
@@ -64,7 +60,7 @@ export type ProjectMapSummary = {
   risks: Array<{ area: string; risk: string; reason?: string }>;
   manifests?: string[];
   open_questions?: string[];
-  files_preview?: Array<{ path: string; language?: string; module?: string; purpose?: string; stale?: boolean }>;
+  files_preview?: Array<{ path: string; language?: string; module?: string; purpose?: string }>;
   tree_preview?: string;
   message?: string;
 };

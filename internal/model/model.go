@@ -17,8 +17,6 @@ const (
 	JobStatusWaiting   = "waiting_input"
 )
 
-const V3MaxAuthorityDirectives = 64
-
 const (
 	StepStatusPending   = "pending"
 	StepStatusRunning   = "running"

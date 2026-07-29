@@ -54,17 +54,3 @@ func (c *RoutedClient) Embedding(ctx context.Context, content string) ([]float64
 	}
 	return c.Embeddings.Embedding(ctx, content)
 }
-
-func (c *RoutedClient) SuggestTags(ctx context.Context, content string, maxTags int) ([]string, error) {
-	if c == nil || c.Generation == nil {
-		return nil, fmt.Errorf("generation client is not configured")
-	}
-	return c.Generation.SuggestTags(ctx, content, maxTags)
-}
-
-func (c *RoutedClient) SuggestTagsWithModel(ctx context.Context, model, content string, maxTags int) ([]string, error) {
-	if c == nil || c.Generation == nil {
-		return nil, fmt.Errorf("generation client is not configured")
-	}
-	return c.Generation.SuggestTagsWithModel(ctx, model, content, maxTags)
-}

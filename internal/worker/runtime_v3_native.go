@@ -20,10 +20,18 @@ type nativeRuntimeV3 struct {
 	claim    *model.ClaimedStep
 	action   string
 	contexts map[string]string
+	routing  ModelRouting
 }
 
 func (s *Service) runNativeV3Step(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string, action string) error {
-	runtime := &nativeRuntimeV3{svc: s, ctx: ctx, claim: claim, action: strings.ToLower(strings.TrimSpace(action)), contexts: contexts}
+	routing, err := modelRoutingFromJobMetadata(claim.Job.Metadata, s.models)
+	if err != nil {
+		return err
+	}
+	runtime := &nativeRuntimeV3{
+		svc: s, ctx: ctx, claim: claim,
+		action: strings.ToLower(strings.TrimSpace(action)), contexts: contexts, routing: routing,
+	}
 	return runtime.run()
 }
 
@@ -43,6 +51,8 @@ func (r *nativeRuntimeV3) run() error {
 		return r.runPlanning()
 	case "v3_subtask":
 		return r.runSubtask()
+	case "v3_coding":
+		return r.runDirectCodingAction()
 	case "v3_analysis":
 		return r.runAnalysis()
 	case "v3_response_draft":
@@ -53,8 +63,6 @@ func (r *nativeRuntimeV3) run() error {
 		return r.runMemoryReview()
 	case "v3_finalize":
 		return r.runFinalize()
-	case "v3_chat_fastpath":
-		return r.runChatFastPath()
 	default:
 		return fmt.Errorf("unsupported native v3 action %q", r.action)
 	}
@@ -67,7 +75,6 @@ func (r *nativeRuntimeV3) runIntentParse() error {
 	}
 	payload := map[string]any{
 		"current_user_instruction":   intentInput.CurrentInstruction,
-		"authority_directives":       intentInput.AuthorityDirectives,
 		"pipeline":                   strings.TrimSpace(r.claim.Job.Pipeline),
 		"execution_agent":            intentInput.ExecutionAgent,
 		"operation_kind":             intentInput.OperationKind,
@@ -87,28 +94,34 @@ func (r *nativeRuntimeV3) runIntentParse() error {
 	if err != nil {
 		return err
 	}
-	modelName := r.svc.v3SpecialistModel(r.claim.Job, "prompt_interpreter", specialist.RoleIntentTaggingSpecialist, r.svc.models.Tagging)
+	modelName := r.svc.v3SpecialistModel(r.claim.Job, r.routing, "prompt_interpreter", specialist.RoleIntentTaggingSpecialist, r.routing.Tagging)
+	var authoritativeIntent artifacts.IntentArtifact
 	validateOutput := func(output map[string]any) error {
 		candidate, err := decodeV3TypedOutput[artifacts.IntentArtifact](output)
 		if err != nil {
 			return err
 		}
+		if err := validateV3IntentActionShape(intentInput, candidate); err != nil {
+			return err
+		}
 		if err := validateV3Intent(candidate, knownV3Capabilities()); err != nil {
 			return err
 		}
-		if err := validateV3IntentGrounding(intentInput, candidate); err != nil {
+		if err := validateV3TransportIntent(intentInput, candidate); err != nil {
 			return err
 		}
-		return validateV3TransportIntent(intentInput, candidate)
+		authoritativeIntent = candidate
+		return nil
 	}
-	output, err := r.invokeSpecialist("v3_intent_parse", "prompt_interpreter", modelName, invocation, validateOutput)
+	_, err = r.invokeSpecialist("v3_intent_parse", "prompt_interpreter", modelName, invocation, validateOutput)
 	if err != nil {
 		return err
 	}
-	intent, err := decodeV3TypedOutput[artifacts.IntentArtifact](output)
-	if err != nil {
-		return err
-	}
+	intent := authoritativeIntent
+	r.svc.emitStepEvent(r.claim.Step.ID, "intent_requirements_compiled", fmt.Sprintf(
+		"authority=server objectives=%d constraints=%d completion_criteria=%d",
+		len(intent.Objectives), len(intent.Constraints), len(intent.CompletionCriteria),
+	))
 	if len(intent.UnresolvedReferences) > 0 {
 		return fmt.Errorf("prompt interpreter found unresolved references: %s", strings.Join(intent.UnresolvedReferences, "; "))
 	}

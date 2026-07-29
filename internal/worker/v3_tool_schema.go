@@ -64,6 +64,8 @@ func defaultV3SkillForAction(action string) string {
 		return "capability_auditor"
 	case "subtask":
 		return "subtask_executor"
+	case "coding":
+		return "subtask_executor"
 	default:
 		return ""
 	}

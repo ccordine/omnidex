@@ -99,10 +99,6 @@ func (s *externalAgentCommandSession) collectCommandEvents(
 	}
 }
 
-func (s *externalAgentCommandSession) Interrupt(context.Context, HumanCorrection) error {
-	return fmt.Errorf("%s external agent interruption is not supported by this adapter; cancel and restart with a revised packet", s.agent)
-}
-
 func (s *externalAgentCommandSession) Cancel(context.Context, string) error {
 	if s == nil {
 		return nil
@@ -121,14 +117,6 @@ func (s *externalAgentCommandSession) Cancel(context.Context, string) error {
 		return fmt.Errorf("kill %s external agent process: %w", s.agent, err)
 	}
 	return nil
-}
-
-func (s *externalAgentCommandSession) Pause(context.Context) error {
-	return fmt.Errorf("%s external agent pause is not supported by this adapter", s.agent)
-}
-
-func (s *externalAgentCommandSession) Resume(context.Context) error {
-	return fmt.Errorf("%s external agent resume is not supported by this adapter", s.agent)
 }
 
 func (s *externalAgentCommandSession) Cleanup(ctx context.Context) error {

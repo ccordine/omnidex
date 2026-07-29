@@ -1,9 +1,7 @@
 package worker
 
 import (
-	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/model"
@@ -40,9 +38,8 @@ func projectV3Memory(intent artifacts.IntentArtifact, retrieval artifacts.Retrie
 		}
 		return projection
 	}
-	objectiveTokens := significantMemoryTokens(intentMemoryObjectiveText(intent))
 	for _, item := range retrieval.Items {
-		reason, excerpt := eligibleV3MemoryReference(item, intent.MemoryMode, objectiveTokens, projectScope, sessionScope)
+		reason, excerpt := eligibleV3MemoryReference(item, intent.MemoryMode, projectScope, sessionScope)
 		if reason != "" {
 			projection.Omitted++
 			projection.OmittedByReason[reason]++
@@ -64,7 +61,7 @@ func projectV3Memory(intent artifacts.IntentArtifact, retrieval artifacts.Retrie
 	return projection
 }
 
-func eligibleV3MemoryReference(item artifacts.RetrievalItem, mode string, objectiveTokens map[string]struct{}, projectScope, sessionScope string) (string, string) {
+func eligibleV3MemoryReference(item artifacts.RetrievalItem, mode string, projectScope, sessionScope string) (string, string) {
 	kind := strings.ToLower(strings.TrimSpace(item.Kind))
 	if kind == model.MemoryKindInstruction {
 		return "instruction_kind", ""
@@ -75,7 +72,7 @@ func eligibleV3MemoryReference(item artifacts.RetrievalItem, mode string, object
 	if kind == model.MemoryKindEpisodic && mode != artifacts.MemoryModeExplicitRecall && !containsTag(item.Tags, sessionScope) {
 		return "episodic_outside_session", ""
 	}
-	if item.Score < 0.35 && mode != artifacts.MemoryModeExplicitRecall {
+	if item.Score < 0.35 {
 		return "low_relevance_score", ""
 	}
 	if conflictingProjectScope(item.Tags, projectScope) {
@@ -86,9 +83,9 @@ func eligibleV3MemoryReference(item artifacts.RetrievalItem, mode string, object
 	if !trusted && !currentSession {
 		return "untrusted", ""
 	}
-	excerpt := relevantMemoryExcerpt(item.Content, objectiveTokens, mode == artifacts.MemoryModeExplicitRecall)
+	excerpt := compactMemoryReference(item.Content, 360)
 	if excerpt == "" {
-		return "no_objective_overlap", ""
+		return "empty_content", ""
 	}
 	return "", excerpt
 }
@@ -112,107 +109,17 @@ func conflictingProjectScope(tags []string, projectScope string) bool {
 	return hasProjectTag
 }
 
-func intentMemoryObjectiveText(intent artifacts.IntentArtifact) string {
-	parts := []string{intent.UserGoal}
-	for _, objective := range intent.Objectives {
-		parts = append(parts, objective.Description)
-		parts = append(parts, objective.AcceptanceCriteria...)
+func compactMemoryReference(content string, maxRunes int) string {
+	clean := strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
+	if clean == "" {
+		return ""
 	}
-	return strings.Join(parts, " ")
-}
-
-func relevantMemoryExcerpt(content string, objectiveTokens map[string]struct{}, explicitRecall bool) string {
-	minimumOverlap := 2
-	if explicitRecall || len(objectiveTokens) < 4 {
-		minimumOverlap = 1
+	runes := []rune(clean)
+	if maxRunes <= 0 || len(runes) <= maxRunes {
+		return clean
 	}
-	parts := strings.FieldsFunc(strings.TrimSpace(content), func(r rune) bool {
-		return r == '\n' || r == '.' || r == '!' || r == '?'
-	})
-	selected := make([]string, 0, 2)
-	for _, part := range parts {
-		clean := strings.Join(strings.Fields(part), " ")
-		if clean == "" || tokenOverlap(significantMemoryTokens(clean), objectiveTokens) < minimumOverlap {
-			continue
-		}
-		selected = append(selected, clean)
-		if len(selected) == 2 {
-			break
-		}
+	if maxRunes < 4 {
+		return string(runes[:maxRunes])
 	}
-	excerpt := strings.Join(selected, ". ")
-	if len(excerpt) > 360 {
-		excerpt = strings.TrimSpace(excerpt[:357]) + "..."
-	}
-	return excerpt
-}
-
-func significantMemoryTokens(value string) map[string]struct{} {
-	fields := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
-	out := map[string]struct{}{}
-	for _, field := range fields {
-		if tokens := memoryCJKTokens(field); len(tokens) > 0 {
-			for _, token := range tokens {
-				out[token] = struct{}{}
-			}
-			continue
-		}
-		if len([]rune(field)) < 3 || memoryProjectionStopword(field) {
-			continue
-		}
-		out[field] = struct{}{}
-	}
-	return out
-}
-
-func memoryCJKTokens(value string) []string {
-	runes := []rune(value)
-	containsCJK := false
-	for _, current := range runes {
-		if unicode.In(current, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
-			containsCJK = true
-			break
-		}
-	}
-	if !containsCJK {
-		return nil
-	}
-	out := make([]string, 0, len(runes)*2)
-	for size := 2; size <= 3; size++ {
-		for start := 0; start+size <= len(runes); start++ {
-			valid := true
-			for _, current := range runes[start : start+size] {
-				if !unicode.In(current, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
-					valid = false
-					break
-				}
-			}
-			if valid {
-				out = append(out, string(runes[start:start+size]))
-			}
-		}
-	}
-	return out
-}
-
-func tokenOverlap(left, right map[string]struct{}) int {
-	count := 0
-	for token := range left {
-		if _, ok := right[token]; ok {
-			count++
-		}
-	}
-	return count
-}
-
-func memoryProjectionStopword(token string) bool {
-	stopwords := []string{
-		"about", "after", "again", "also", "application", "before", "build", "change", "create", "current",
-		"from", "have", "implement", "improve", "into", "make", "more", "project", "should", "system", "that",
-		"their", "then", "there", "these", "they", "this", "through", "using", "with", "would", "your",
-	}
-	index := sort.SearchStrings(stopwords, token)
-	return index < len(stopwords) && stopwords[index] == token
+	return strings.TrimSpace(string(runes[:maxRunes-3])) + "..."
 }

@@ -9,38 +9,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/modelconfig"
 )
-
-type modelSettingField struct {
-	Key         string   `json:"key"`
-	Label       string   `json:"label"`
-	Description string   `json:"description"`
-	EnvKeys     []string `json:"env_keys"`
-	Value       string   `json:"value"`
-	Options     []string `json:"options,omitempty"`
-}
-
-var modelSettingDefinitions = []struct {
-	Key         string
-	Label       string
-	Description string
-	EnvKeys     []string
-	Options     []string
-}{
-	{Key: "default_model", Label: "Default model", Description: "Primary conversation/responder model", EnvKeys: []string{"OMNI_MODEL", "OMNI_CONVERSATION_MODEL", "OLLAMA_MODEL_RESPONDER", "OLLAMA_MODEL"}},
-	{Key: "fast_model", Label: "Fast model", Description: "Low-latency utility model for simple routing/tagging/fallbacks", EnvKeys: []string{"OMNI_FAST_MODEL", "OLLAMA_MODEL_FAST"}},
-	{Key: "reasoning_model", Label: "Reasoning model", Description: "Deep reasoning model for analysis and complex planning", EnvKeys: []string{"OMNI_REASONING_MODEL", "OLLAMA_MODEL_REASONING"}},
-	{Key: "planner_model", Label: "Planner model", Description: "Structured command planner", EnvKeys: []string{"OMNI_PLANNER_MODEL", "OMNI_STRUCTURED_PLANNER_MODEL", "OLLAMA_MODEL_PLANNER"}},
-	{Key: "thinking_model", Label: "Thinking model", Description: "Internal thinking pilot channel", EnvKeys: []string{"OMNI_THINKING_MODEL", "OLLAMA_MODEL_THINKING", "OLLAMA_MODEL_REASONING"}},
-	{Key: "analyzer_model", Label: "Analyzer model", Description: "Analysis and verification model", EnvKeys: []string{"OMNI_ANALYZER_MODEL", "OLLAMA_MODEL_ANALYZER"}},
-	{Key: "responder_model", Label: "Responder model", Description: "Final response composition model", EnvKeys: []string{"OMNI_RESPONDER_MODEL", "OLLAMA_MODEL_RESPONDER"}},
-	{Key: "tagger_model", Label: "Tagger model", Description: "Fast model for tags and classification", EnvKeys: []string{"OMNI_TAGGER_MODEL", "OLLAMA_MODEL_TAGGER"}},
-	{Key: "search_model", Label: "Search model", Description: "Model used for search/research synthesis", EnvKeys: []string{"OMNI_SEARCH_MODEL", "OLLAMA_MODEL_SEARCH"}},
-	{Key: "memory_model", Label: "Memory model", Description: "Model used for memory extraction and retrieval tasks", EnvKeys: []string{"OMNI_MEMORY_MODEL", "OLLAMA_MODEL_MEMORY"}},
-	{Key: "evaluator_model", Label: "Evaluator model", Description: "Structured response evaluator", EnvKeys: []string{"OMNI_EVALUATOR_MODEL", "OLLAMA_MODEL_EVALUATOR"}},
-	{Key: "shell_specialist_model", Label: "Shell specialist", Description: "Shell execution specialist", EnvKeys: []string{"OMNI_SHELL_SPECIALIST_MODEL", "OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION", "OLLAMA_MODEL_SHELL"}},
-	{Key: "ollama_endpoint", Label: "Ollama endpoint", Description: "Ollama HTTP base URL", EnvKeys: []string{"OLLAMA_BASE_URL", "OMNI_OLLAMA_ENDPOINT"}},
-}
 
 func resolveEnvFilePath() (string, error) {
 	if explicit := strings.TrimSpace(os.Getenv("OMNI_ENV_FILE")); explicit != "" {
@@ -124,18 +95,6 @@ func writeEnvFile(path string, updates map[string]string) error {
 	return os.Rename(tmp, path)
 }
 
-func lookupEnvValue(values map[string]string, keys []string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(values[key]); value != "" {
-			return value
-		}
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func buildModelSettingsResponse() (map[string]any, error) {
 	path, err := resolveEnvFilePath()
 	if err != nil {
@@ -145,17 +104,7 @@ func buildModelSettingsResponse() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	fields := make([]modelSettingField, 0, len(modelSettingDefinitions))
-	for _, def := range modelSettingDefinitions {
-		fields = append(fields, modelSettingField{
-			Key:         def.Key,
-			Label:       def.Label,
-			Description: def.Description,
-			EnvKeys:     def.EnvKeys,
-			Value:       lookupEnvValue(values, def.EnvKeys),
-			Options:     def.Options,
-		})
-	}
+	fields := (modelconfig.Config{}).FieldList(values)
 	return map[string]any{
 		"env_file": path,
 		"fields":   fields,
@@ -185,7 +134,7 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		updates := map[string]string{}
-		for _, def := range modelSettingDefinitions {
+		for _, def := range modelconfig.Fields {
 			if value, ok := req.Values[def.Key]; ok && len(def.EnvKeys) > 0 {
 				updates[def.EnvKeys[0]] = strings.TrimSpace(value)
 			}

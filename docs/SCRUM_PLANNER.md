@@ -1,6 +1,7 @@
 # Project Planner & Scrum Board
 
-**Release:** `v0.3.0` Venusaur
+**Introduced in:** `v0.3.0` Venusaur
+**Current platform:** `v0.4.0` Charmander
 
 Omnidex is evolving into a **human-in-the-loop planning and execution system**. You research topics, review AI-generated work cards, promote the ones you trust, and let build agents execute approved tasks — without losing deterministic control, evidence, or memory.
 

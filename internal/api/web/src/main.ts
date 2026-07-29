@@ -5,7 +5,7 @@ import ScrumController from "./controllers/scrum_controller";
 import ProjectsController from "./controllers/projects_controller";
 import ShellController from "./controllers/shell_controller";
 import "../styles.css";
-import { initI18n } from "./lib/i18n";
+import { initI18n, t } from "./lib/i18n";
 import { showToast } from "./lib/toast";
 
 initI18n();
@@ -38,7 +38,7 @@ async function registerDeferredControllers(): Promise<void> {
 
 void registerDeferredControllers().catch((error) => {
   console.error("Deferred UI controller loading failed", error);
-  showToast("A workspace feature failed to load. Reload the page to retry.", "error");
+  showToast(t("app.featureLoadFailed"), "error");
 });
 
 export default application;

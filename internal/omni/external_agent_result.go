@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func externalAgentResultError(result CursorArchitectAgentResult) error {
+func externalAgentResultError(result ExternalCodingResult) error {
 	for _, line := range strings.Split(result.Output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -69,6 +69,6 @@ func externalAgentStatusFailureDetail(payload map[string]any, fallback string) s
 }
 
 // ExternalAgentResultError reports whether an external agent run failed.
-func ExternalAgentResultError(result CursorArchitectAgentResult) error {
+func ExternalAgentResultError(result ExternalCodingResult) error {
 	return externalAgentResultError(result)
 }

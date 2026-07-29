@@ -122,7 +122,7 @@ func (s *Server) handlePostProjectPlanningChat(w http.ResponseWriter, r *http.Re
 		return
 	}
 	request.Message = strings.TrimSpace(request.Message)
-	mode, err := normalizeProjectPlanningMode(request.Message, request.Mode)
+	mode, err := normalizeProjectPlanningMode(request.Mode)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

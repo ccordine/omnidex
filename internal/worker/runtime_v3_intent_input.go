@@ -9,6 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/scrum"
 )
 
@@ -28,7 +29,6 @@ type v3IntentCapabilityEntry struct {
 
 type v3IntentInput struct {
 	CurrentInstruction      string
-	AuthorityDirectives     []string
 	TaskContext             map[string]any
 	ExecutionAgent          string
 	OperationKind           string
@@ -51,15 +51,11 @@ func (s *Service) buildV3IntentInput(job model.Job) (v3IntentInput, error) {
 	if err != nil {
 		return v3IntentInput{}, err
 	}
-	if _, removed := metadata["scrum_current_user_instruction"]; removed {
-		return v3IntentInput{}, fmt.Errorf("job metadata key scrum_current_user_instruction was removed; use v3_authority_directives")
-	}
-	input.AuthorityDirectives, err = strictMetadataStringArray(metadata, "v3_authority_directives")
-	if err != nil {
+	if err := queue.ValidateJobMetadataAuthority(metadata); err != nil {
 		return v3IntentInput{}, err
 	}
 	if scrum.IsScrumJob(job.Metadata) {
-		input.CurrentInstruction, input.TaskContext, err = v3ScrumIntentInput(metadata)
+		input.TaskContext, err = v3ScrumTaskContext(metadata)
 		if err != nil {
 			return v3IntentInput{}, err
 		}
@@ -72,6 +68,7 @@ func (s *Service) buildV3IntentInput(job model.Job) (v3IntentInput, error) {
 		} else {
 			input.OperationKind = v3OperationScrumPlay
 			input.TransportRequiresAction = true
+			input.CurrentInstruction = "Execute the authoritative Scrum card task. Use only authoritative_task_context for its scope."
 		}
 	}
 	if input.CurrentInstruction == "" {
@@ -81,7 +78,7 @@ func (s *Service) buildV3IntentInput(job model.Job) (v3IntentInput, error) {
 	return input, nil
 }
 
-func v3ScrumIntentInput(metadata map[string]any) (string, map[string]any, error) {
+func v3ScrumTaskContext(metadata map[string]any) (map[string]any, error) {
 	contextFields := map[string]any{}
 	for _, field := range []string{
 		"scrum_card_id",
@@ -93,7 +90,7 @@ func v3ScrumIntentInput(metadata map[string]any) (string, map[string]any, error)
 	} {
 		value, err := strictMetadataOptionalString(metadata, field)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		if value != "" {
 			contextFields[field] = value
@@ -101,15 +98,15 @@ func v3ScrumIntentInput(metadata map[string]any) (string, map[string]any, error)
 	}
 	refFiles, err := strictMetadataStringArray(metadata, "ref_files")
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	if len(refFiles) > 0 {
 		contextFields["ref_files"] = refFiles
 	}
 	if len(contextFields) == 0 || len(contextFields) == 1 && contextFields["scrum_card_id"] != nil {
-		return "", nil, fmt.Errorf("Scrum prompt interpreter requires authoritative card fields")
+		return nil, fmt.Errorf("Scrum prompt interpreter requires authoritative card fields")
 	}
-	return "Execute the authoritative Scrum card task. Use only authoritative_task_context for its scope.", contextFields, nil
+	return contextFields, nil
 }
 
 func strictMetadataStringArray(metadata map[string]any, key string) ([]string, error) {
@@ -128,9 +125,6 @@ func strictMetadataStringArray(metadata map[string]any, key string) ([]string, e
 			return nil, fmt.Errorf("job metadata %s[%d] must be a non-empty string", key, index)
 		}
 		out = append(out, strings.TrimSpace(text))
-	}
-	if key == "v3_authority_directives" && len(out) > model.V3MaxAuthorityDirectives {
-		return nil, fmt.Errorf("job metadata %s exceeds limit %d", key, model.V3MaxAuthorityDirectives)
 	}
 	return cleanOrderedStrings(out), nil
 }

@@ -14,24 +14,24 @@ func packageJSONCommandSummaries(workspace string) []CommandSummary {
 	if err != nil {
 		return nil
 	}
-	var pkg struct {
+	var manifest struct {
 		Scripts map[string]string `json:"scripts"`
 	}
-	if json.Unmarshal(blob, &pkg) != nil {
+	if json.Unmarshal(blob, &manifest) != nil {
 		return nil
 	}
-	out := []CommandSummary{}
-	for name, command := range pkg.Scripts {
-		out = append(out, CommandSummary{Name: name, Command: "npm run " + name, Source: "package.json: " + command})
+	commands := make([]CommandSummary, 0, len(manifest.Scripts))
+	for name, command := range manifest.Scripts {
+		commands = append(commands, CommandSummary{Name: name, Command: "npm run " + name, Source: "package.json: " + command})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
+	sort.Slice(commands, func(i, j int) bool { return commands[i].Name < commands[j].Name })
+	return commands
 }
 
-var goSymbolRE = regexp.MustCompile(`(?m)^(func|type|const|var)\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)`)
+var goSymbolPattern = regexp.MustCompile(`(?m)^(func|type|const|var)\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)`)
 
 func scanWorkspaceSymbols(index WorkspaceIndex) []SymbolSummary {
-	symbols := []SymbolSummary{}
+	symbols := make([]SymbolSummary, 0, len(index.Files))
 	for _, file := range index.Files {
 		if !strings.HasSuffix(file.Path, ".go") {
 			continue
@@ -40,12 +40,12 @@ func scanWorkspaceSymbols(index WorkspaceIndex) []SymbolSummary {
 		if err != nil {
 			continue
 		}
-		matches := goSymbolRE.FindAllSubmatchIndex(blob, -1)
-		for _, match := range matches {
-			kind := string(blob[match[2]:match[3]])
-			name := string(blob[match[4]:match[5]])
-			line := 1 + strings.Count(string(blob[:match[0]]), "\n")
-			symbols = append(symbols, SymbolSummary{Name: name, Kind: kind, File: file.Path, Line: line, Package: moduleForPath(file.Path), Purpose: filePurpose(file.Path), Tags: tagsForPath(file.Path)})
+		for _, match := range goSymbolPattern.FindAllSubmatchIndex(blob, -1) {
+			symbols = append(symbols, SymbolSummary{
+				Name: string(blob[match[4]:match[5]]), Kind: string(blob[match[2]:match[3]]),
+				File: file.Path, Line: 1 + strings.Count(string(blob[:match[0]]), "\n"),
+				Package: moduleForPath(file.Path), Purpose: filePurpose(file.Path), Tags: tagsForPath(file.Path),
+			})
 		}
 	}
 	sort.Slice(symbols, func(i, j int) bool {
@@ -57,47 +57,27 @@ func scanWorkspaceSymbols(index WorkspaceIndex) []SymbolSummary {
 	return symbols
 }
 
-func (s SymbolSummary) LanguageLike() string {
-	return languageForPath(s.File)
-}
+func (s SymbolSummary) LanguageLike() string { return languageForPath(s.File) }
 
-func exportedSymbol(name, lang string) bool {
-	if name == "" {
-		return false
-	}
-	if lang == "Go" {
-		r := rune(name[0])
-		return r >= 'A' && r <= 'Z'
-	}
-	return true
+func exportedSymbol(name, language string) bool {
+	return name != "" && (language != "Go" || name[0] >= 'A' && name[0] <= 'Z')
 }
 
 func moduleResponsibilities(path string, files []string) []string {
-	resp := []string{}
+	responsibilities := make([]string, 0, 2)
 	for _, file := range files {
-		for _, tag := range tagsForPath(file) {
-			switch tag {
-			case "structured_command_loop":
-				resp = append(resp, "structured command planning and execution")
-			case "worksite":
-				resp = append(resp, "workspace grounding")
-			case "policy":
-				resp = append(resp, "command and scope policy")
-			case "memory":
-				resp = append(resp, "memory persistence and recall")
-			case "tests":
-				resp = append(resp, "test coverage")
-			}
+		if isTestPath(file) {
+			responsibilities = append(responsibilities, "test coverage")
 		}
 	}
-	if len(resp) == 0 {
-		resp = append(resp, "maintain "+path)
+	if len(responsibilities) == 0 {
+		responsibilities = append(responsibilities, "maintain "+path)
 	}
-	return dedupeStrings(resp)
+	return dedupeStrings(responsibilities)
 }
 
 func dependencyEdges(files []FileSummary) []DependencyEdge {
-	edges := []DependencyEdge{}
+	edges := make([]DependencyEdge, 0, len(files))
 	for _, file := range files {
 		if file.Module != "" && file.Module != "." {
 			edges = append(edges, DependencyEdge{From: file.Module, To: file.Path, Kind: "contains"})
@@ -106,116 +86,18 @@ func dependencyEdges(files []FileSummary) []DependencyEdge {
 	return edges
 }
 
-func inferCodebaseRisks(cm CodebaseMap) []RiskSummary {
-	risks := []RiskSummary{}
-	for _, file := range cm.Files {
-		for _, tag := range file.Tags {
-			switch tag {
-			case "structured_command_loop":
-				risks = append(risks, RiskSummary{Area: file.Path, Risk: "Planner loop changes can alter task execution control flow.", Reason: "structured command runtime"})
-			case "policy":
-				risks = append(risks, RiskSummary{Area: file.Path, Risk: "Policy changes can broaden or narrow execution scope.", Reason: "policy-tagged file"})
-			}
-		}
-	}
-	return risks
+func inferCodebaseRisks(CodebaseMap) []RiskSummary { return nil }
+
+func sortCodebaseMap(codebase *CodebaseMap) {
+	sort.Slice(codebase.Languages, func(i, j int) bool { return codebase.Languages[i].Language < codebase.Languages[j].Language })
+	sort.Slice(codebase.Manifests, func(i, j int) bool { return codebase.Manifests[i].Path < codebase.Manifests[j].Path })
+	sort.Slice(codebase.Entrypoints, func(i, j int) bool { return codebase.Entrypoints[i].Path < codebase.Entrypoints[j].Path })
+	sort.Slice(codebase.Modules, func(i, j int) bool { return codebase.Modules[i].Path < codebase.Modules[j].Path })
+	sort.Slice(codebase.Files, func(i, j int) bool { return codebase.Files[i].Path < codebase.Files[j].Path })
+	sort.Slice(codebase.Tests, func(i, j int) bool { return codebase.Tests[i].Path < codebase.Tests[j].Path })
 }
 
-func routeTerms(task string) []string {
-	task = strings.ToLower(task)
-	terms := strings.FieldsFunc(task, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_')
-	})
-	expanded := append([]string{}, terms...)
-	for _, term := range terms {
-		switch term {
-		case "scope":
-			expanded = append(expanded, "worksite", "policy", "drift")
-		case "loop", "repeated", "repeat":
-			expanded = append(expanded, "llm_command", "progression", "progression_gate", "trace")
-		case "recovery", "recover":
-			expanded = append(expanded, "progression", "progression_gate", "failure", "loop")
-		case "memory":
-			expanded = append(expanded, "pgsql_memory", "session_memory", "expertise")
-		case "recipe", "recipes":
-			expanded = append(expanded, "recipe")
-		}
-	}
-	return dedupeStrings(expanded)
-}
-
-func routeScore(haystack string, terms []string) int {
-	score := 0
-	for _, term := range terms {
-		if len(term) < 3 {
-			continue
-		}
-		if strings.Contains(haystack, term) {
-			score++
-		}
-	}
-	return score
-}
-
-func topScoredKeys(scores map[string]int, limit int) []string {
-	keys := make([]string, 0, len(scores))
-	for key, score := range scores {
-		if strings.TrimSpace(key) != "" && score > 0 {
-			keys = append(keys, key)
-		}
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if scores[keys[i]] == scores[keys[j]] {
-			return keys[i] < keys[j]
-		}
-		return scores[keys[i]] > scores[keys[j]]
-	})
-	return limitStrings(keys, limit)
-}
-
-func verificationCommandsForRoute(cm CodebaseMap, route TaskRoute) []string {
-	commands := []string{}
-	for _, file := range route.LikelyFiles {
-		for _, test := range cm.Tests {
-			if test.Module == moduleForPath(file) && test.Command != "" {
-				commands = append(commands, test.Command)
-			}
-		}
-	}
-	for _, command := range cm.Commands {
-		if command.Name == "test" || command.Name == "build" {
-			commands = append(commands, command.Command)
-		}
-	}
-	return limitStrings(dedupeStrings(commands), 5)
-}
-
-func formatCodebaseOmnibusMemory(cm CodebaseMap, subject string) string {
-	route := RouteTaskWithCodebaseMap(cm, subject)
-	return strings.Join([]string{
-		"CODEBASE_EXPERTISE",
-		"subject=" + strings.TrimSpace(subject),
-		"workspace=" + cm.Root,
-		"revision=" + cm.Revision,
-		"likely_files=" + strings.Join(route.LikelyFiles, ","),
-		"modules=" + strings.Join(route.RelevantModules, ","),
-		"verification=" + strings.Join(route.VerificationCommands, ","),
-	}, "\n")
-}
-
-func sortCodebaseMap(cm *CodebaseMap) {
-	sort.Slice(cm.Languages, func(i, j int) bool { return cm.Languages[i].Language < cm.Languages[j].Language })
-	sort.Slice(cm.Manifests, func(i, j int) bool { return cm.Manifests[i].Path < cm.Manifests[j].Path })
-	sort.Slice(cm.Entrypoints, func(i, j int) bool { return cm.Entrypoints[i].Path < cm.Entrypoints[j].Path })
-	sort.Slice(cm.Modules, func(i, j int) bool { return cm.Modules[i].Path < cm.Modules[j].Path })
-	sort.Slice(cm.Files, func(i, j int) bool { return cm.Files[i].Path < cm.Files[j].Path })
-	sort.Slice(cm.Tests, func(i, j int) bool { return cm.Tests[i].Path < cm.Tests[j].Path })
-	sort.Slice(cm.Risks, func(i, j int) bool { return cm.Risks[i].Area < cm.Risks[j].Area })
-}
-
-func hashJoin(values ...string) string {
-	return workspaceHash(strings.Join(values, "|"))
-}
+func hashJoin(values ...string) string { return workspaceHash(strings.Join(values, "|")) }
 
 func limitStrings(values []string, limit int) []string {
 	if limit <= 0 || len(values) <= limit {
@@ -224,8 +106,19 @@ func limitStrings(values []string, limit int) []string {
 	return values[:limit]
 }
 
-func slugTag(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	value = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(value, "-")
-	return strings.Trim(value, "-")
+func dedupeStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }

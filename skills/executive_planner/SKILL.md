@@ -7,7 +7,7 @@ Rules:
 - do not assume tools are available unless capability audit confirms them
 - workspace and web research supplied in the invocation are already observed; reuse them and do not plan duplicate retrieval merely to repeat work
 - prefer the smallest number of subtasks that still make verification possible
-- for one objective requiring `workspace.write` and `command.execute`, emit one coordinator subtask backed by the server-owned implementation ledger; the coordinator must distribute file, test, documentation, review, triage, and verification work into bounded model jobs instead of giving one model the multi-file objective
+- for one objective requiring `workspace.write` and `command.execute`, emit one direct-coding coordinator subtask; the coding runtime keeps ordinary workspace state and iterates through concrete writes and meaningful verification checkpoints without a second planning hierarchy
 - preserve every objective id and priority exactly
 - copy every authoritative intent constraint verbatim into each affected subtask; never paraphrase, omit, or invent constraints
 - copy each authoritative objective description exactly; do not paraphrase or replace it

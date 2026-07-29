@@ -58,23 +58,20 @@ func (r *nativeRuntimeV3) invokeSpecialist(scope, skillID, modelName string, inv
 	if repairLimit == 0 {
 		return nil, contractErr
 	}
-	previousRaw := raw
 	previousErr := contractErr
-	repairModels := r.specialistRepairModels(skillID, modelName, repairLimit)
 	for attempt := 1; attempt <= repairLimit; attempt++ {
 		repairPrompt, promptErr := buildV3SpecialistRepairPrompt(
-			spec.OutputSchemaDocument(), invocation, previousErr, previousRaw,
+			spec.OutputSchemaDocument(), invocation, previousErr,
 		)
 		if promptErr != nil {
 			return nil, promptErr
 		}
-		repairModel := repairModels[attempt-1]
 		r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_repair_started", fmt.Sprintf(
 			"role=%s attempt=%d/%d model=%s",
-			safeLine(skillID, "unknown"), attempt, repairLimit, safeLine(repairModel, "unknown"),
+			safeLine(skillID, "unknown"), attempt, repairLimit, safeLine(modelName, "unknown"),
 		))
 		repaired, generateErr := r.svc.llmGenerateWithTrace(
-			r.ctx, r.claim.Step.ID, fmt.Sprintf("%s_contract_repair_%d", scope, attempt), repairModel, repairPrompt,
+			r.ctx, r.claim.Step.ID, fmt.Sprintf("%s_contract_repair_%d", scope, attempt), modelName, repairPrompt,
 		)
 		if generateErr != nil {
 			return nil, generateErr
@@ -90,7 +87,6 @@ func (r *nativeRuntimeV3) invokeSpecialist(scope, skillID, modelName string, inv
 		if errors.As(err, &outcomeErr) {
 			return nil, outcomeErr
 		}
-		previousRaw = repaired
 		previousErr = err
 		r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_repair_rejected", fmt.Sprintf(
 			"role=%s attempt=%d reason=%s", safeLine(skillID, "unknown"), attempt, safeLine(err.Error(), "invalid repair"),

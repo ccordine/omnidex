@@ -70,9 +70,6 @@ func (s *hostBridgeExternalAgentSession) Start(ctx context.Context, job External
 	}
 	workspace := strings.TrimSpace(job.Workspace)
 	if workspace == "" {
-		workspace = strings.TrimSpace(job.Packet.TargetRoot)
-	}
-	if workspace == "" {
 		return nil, fmt.Errorf("workspace is required for host external agent execution")
 	}
 
@@ -127,20 +124,8 @@ func (s *hostBridgeExternalAgentSession) Start(ctx context.Context, job External
 	return events, nil
 }
 
-func (s *hostBridgeExternalAgentSession) Interrupt(ctx context.Context, correction HumanCorrection) error {
-	return fmt.Errorf("%s host bridge sessions cannot be interrupted mid-run; cancel the job and retry", s.agent)
-}
-
 func (s *hostBridgeExternalAgentSession) Cancel(ctx context.Context, reason string) error {
 	return fmt.Errorf("%s host bridge sessions cancel with the parent job context", s.agent)
-}
-
-func (s *hostBridgeExternalAgentSession) Pause(ctx context.Context) error {
-	return fmt.Errorf("%s host bridge pause is not supported", s.agent)
-}
-
-func (s *hostBridgeExternalAgentSession) Resume(ctx context.Context) error {
-	return fmt.Errorf("%s host bridge resume is not supported", s.agent)
 }
 
 func (s *hostBridgeExternalAgentSession) Cleanup(ctx context.Context) error {

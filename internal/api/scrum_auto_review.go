@@ -220,7 +220,6 @@ func (s *Server) scrumAutoReviewMetadata(ctx context.Context, board ScrumBoard, 
 		return nil, fmt.Errorf("parse Scrum auto-review metadata: %w", err)
 	}
 	meta["scrum_auto_review"] = true
-	meta["review_always"] = "on"
 	meta["scrum_return_column"] = "review"
 	delete(meta, "scrum_raw_play")
 	raw, err = json.Marshal(meta)

@@ -55,9 +55,6 @@ func (s *Server) OnJobFinishedAsync(jobID int64) {
 		coalescer.FlushNow(jobID)
 	}
 	s.publishJobProgress(jobID, realtimeJobFinished, "Job finished; reconciling final server state")
-	if err := s.SyncProjectMapForJobAsync(jobID); err != nil {
-		log.Printf("project map auto-sync scheduling rejected job=%d: %v", jobID, err)
-	}
 	if err := s.RefreshScrumPlayQueueForJobAsync(jobID); err != nil {
 		log.Printf("Scrum play queue scheduling rejected job=%d: %v", jobID, err)
 	}

@@ -14,17 +14,8 @@ import (
 
 func runEnqueue(c *client.Client, args []string) {
 	fs := flag.NewFlagSet("enqueue", flag.ExitOnError)
-	profile := fs.String("profile", "default", "execution profile: default|architect")
 	pipeline := fs.String("pipeline", model.PipelineAssistant, "pipeline type: assistant|chat|story")
-	webMode := fs.String("web", "auto", "web search mode: auto|on|off")
-	workspaceMode := fs.String("workspace", "auto", "workspace scan mode: auto|on|off")
-	allowMissingTools := fs.Bool("allow-missing-tools", false, "continue even if planner-required tools are missing")
 	searchQuery := fs.String("search-query", "", "override web search query for this job")
-	reasoningLevel := fs.String("reasoning", "auto", "thinking level: auto|fast|deep")
-	autonomyMode := fs.String("autonomy", "auto", "autonomy mode: auto|on|off")
-	approvalMode := fs.String("approval", "auto", "risk approval mode: auto|on|off")
-	verificationMode := fs.String("verify", "auto", "verification mode: auto|on|off")
-	verificationIterations := fs.Int("verify-iterations", 2, "verification refinement passes (1-4)")
 	sessionID := fs.String("session", "", "optional session/thread identifier for continuity")
 	modelAnalyze := fs.String("model-analyze", "", "override analyze model for this job")
 	modelResponse := fs.String("model-response", "", "override response model for this job")
@@ -39,35 +30,13 @@ func runEnqueue(c *client.Client, args []string) {
 	if err != nil {
 		die(err.Error())
 	}
-	architectMode, err := applyExecutionProfile(
-		args,
-		*profile,
-		webMode,
-		workspaceMode,
-		allowMissingTools,
-		reasoningLevel,
-		autonomyMode,
-		approvalMode,
-		verificationMode,
-		verificationIterations,
-		nil,
-		nil,
-		nil,
-	)
-	if err != nil {
-		die(err.Error())
-	}
 
 	instruction := strings.TrimSpace(strings.Join(fs.Args(), " "))
 	if instruction == "" {
 		die("instruction is required")
 	}
 
-	normalizedWebMode := strings.ToLower(strings.TrimSpace(*webMode))
 	metadata := map[string]any{}
-	metadata["persistent_execution"] = "on"
-	metadata["planning_passes"] = 3
-	metadata["review_always"] = "on"
 	cwd := ""
 	if dir, err := os.Getwd(); err == nil && strings.TrimSpace(dir) != "" {
 		cwd = strings.TrimSpace(dir)
@@ -81,77 +50,9 @@ func runEnqueue(c *client.Client, args []string) {
 	if cwd != "" {
 		metadata["client_cwd"] = cwd
 	}
-	if architectMode {
-		metadata["architect_mode"] = "on"
-	}
-	switch normalizedWebMode {
-	case "", "auto":
-		metadata["web_search"] = "auto"
-	case "on", "force":
-		metadata["web_search"] = "force"
-	case "off":
-		metadata["web_search"] = "off"
-	default:
-		die("invalid --web value (use auto|on|off)")
-	}
-	switch strings.ToLower(strings.TrimSpace(*workspaceMode)) {
-	case "", "auto":
-		metadata["workspace_scan"] = "auto"
-	case "on", "force":
-		metadata["workspace_scan"] = "on"
-	case "off":
-		metadata["workspace_scan"] = "off"
-	default:
-		die("invalid --workspace value (use auto|on|off)")
-	}
-	metadata["allow_missing_tools"] = *allowMissingTools
 	if strings.TrimSpace(*searchQuery) != "" {
 		metadata["search_query"] = strings.TrimSpace(*searchQuery)
 	}
-	switch strings.ToLower(strings.TrimSpace(*reasoningLevel)) {
-	case "", "auto":
-		metadata["reasoning_level"] = "auto"
-	case "fast":
-		metadata["reasoning_level"] = "fast"
-	case "deep":
-		metadata["reasoning_level"] = "deep"
-	default:
-		die("invalid --reasoning value (use auto|fast|deep)")
-	}
-	switch strings.ToLower(strings.TrimSpace(*autonomyMode)) {
-	case "", "auto":
-		metadata["autonomy_mode"] = "auto"
-	case "on", "true", "enabled":
-		metadata["autonomy_mode"] = "on"
-	case "off", "false", "disabled", "strict":
-		metadata["autonomy_mode"] = "off"
-	default:
-		die("invalid --autonomy value (use auto|on|off)")
-	}
-	switch strings.ToLower(strings.TrimSpace(*approvalMode)) {
-	case "", "auto":
-		metadata["approval_mode"] = "auto"
-	case "on", "force":
-		metadata["approval_mode"] = "force"
-	case "off":
-		metadata["approval_mode"] = "off"
-	default:
-		die("invalid --approval value (use auto|on|off)")
-	}
-	switch strings.ToLower(strings.TrimSpace(*verificationMode)) {
-	case "", "auto":
-		metadata["verification_mode"] = "auto"
-	case "on", "force":
-		metadata["verification_mode"] = "force"
-	case "off":
-		metadata["verification_mode"] = "off"
-	default:
-		die("invalid --verify value (use auto|on|off)")
-	}
-	if *verificationIterations < 1 || *verificationIterations > 4 {
-		die("invalid --verify-iterations value (use 1-4)")
-	}
-	metadata["verification_iterations"] = *verificationIterations
 	if strings.TrimSpace(*sessionID) != "" {
 		metadata["session_id"] = strings.TrimSpace(*sessionID)
 	}

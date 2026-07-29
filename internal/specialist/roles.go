@@ -13,31 +13,41 @@ type Role struct {
 }
 
 const (
-	RolePlannerSpecialist            = "planner_specialist"
-	RoleToolingSpecialist            = "tooling_specialist"
-	RoleFilesystemResearchSpecialist = "filesystem_research_specialist"
-	RoleIntentTaggingSpecialist      = "intent_tagging_specialist"
-	RoleMemoryRetrievalSpecialist    = "memory_retrieval_specialist"
-	RoleWebResearchSpecialist        = "web_research_specialist"
-	RoleSubtaskExecutorSpecialist    = "subtask_executor"
-	RoleDocumentationSpecialist      = "documentation_specialist"
-	RoleAnalysisSpecialist           = "analysis_specialist"
-	RoleResponseSpecialist           = "response_specialist"
-	RoleReviewVerificationSpecialist = "review_verification_specialist"
-	RoleMediaControlSpecialist       = "media_control_specialist"
-	RoleBrowserInspectionSpecialist  = "browser_inspection_specialist"
-	RoleScreenVisionSpecialist       = "screen_vision_specialist"
-	RoleShellExecutionSpecialist     = "shell_execution_specialist"
-	RoleAudioNotesSpecialist         = "audio_notes_specialist"
-	RoleOrchestrationSpecialist      = "orchestration_specialist"
-	RoleMemorySpecialist             = "memory_specialist"
-	RoleCorrectionSpecialist         = "correction_specialist"
-	RoleManagerSpecialist            = "manager_specialist"
-	RoleExpectationSpecialist        = "expectation_specialist"
-	RoleResearchSpecialist           = "research_specialist"
-	RoleCodeSpecialist               = "code_specialist"
-	RoleWorkerSpecialist             = "worker_specialist"
-	RoleSummarySpecialist            = "summary_specialist"
+	RolePlannerSpecialist                 = "planner_specialist"
+	RoleToolingSpecialist                 = "tooling_specialist"
+	RoleFilesystemResearchSpecialist      = "filesystem_research_specialist"
+	RoleIntentTaggingSpecialist           = "intent_tagging_specialist"
+	RoleMemoryRetrievalSpecialist         = "memory_retrieval_specialist"
+	RoleWebResearchSpecialist             = "web_research_specialist"
+	RoleSubtaskExecutorSpecialist         = "subtask_executor"
+	RoleDocumentationSpecialist           = "documentation_specialist"
+	RoleAnalysisSpecialist                = "analysis_specialist"
+	RoleResponseSpecialist                = "response_specialist"
+	RoleReviewVerificationSpecialist      = "review_verification_specialist"
+	RoleMediaControlSpecialist            = "media_control_specialist"
+	RoleBrowserInspectionSpecialist       = "browser_inspection_specialist"
+	RoleScreenVisionSpecialist            = "screen_vision_specialist"
+	RoleShellExecutionSpecialist          = "shell_execution_specialist"
+	RoleAudioNotesSpecialist              = "audio_notes_specialist"
+	RoleOrchestrationSpecialist           = "orchestration_specialist"
+	RoleMemorySpecialist                  = "memory_specialist"
+	RoleCorrectionSpecialist              = "correction_specialist"
+	RoleManagerSpecialist                 = "manager_specialist"
+	RoleExpectationSpecialist             = "expectation_specialist"
+	RoleResearchSpecialist                = "research_specialist"
+	RoleCodeSpecialist                    = "code_specialist"
+	RoleWorkerSpecialist                  = "worker_specialist"
+	RoleSummarySpecialist                 = "summary_specialist"
+	RoleCodingSurfaceStation              = "coding_surface"
+	RoleCodingProductIdentityStation      = "coding_product_identity"
+	RoleCodingRequirementPartitionStation = "coding_requirement_partition"
+	RoleCodingRequirementSplitStation     = "coding_requirement_split"
+	RoleCodingArtifactHandlingStation     = "coding_artifact_handling"
+	RoleCodingCapabilityRelationStation   = "coding_capability_relation"
+	RoleCodingSkillSelectionStation       = "coding_skill_selection"
+	RoleCodingSkillProcedureStation       = "coding_skill_procedure"
+	RoleCodingFragmentStation             = "coding_fragment"
+	RoleCodingFragmentCorrectionStation   = "coding_fragment_correction"
 )
 
 func ForPipelineAction(action string) Role {
@@ -111,11 +121,11 @@ func ForPipelineAction(action string) Role {
 	case "subtask":
 		return Role{
 			ID:    RoleSubtaskExecutorSpecialist,
-			Name:  "Implementation Coordinator",
-			Scope: "coordinate execution of one typed objective through a server-owned, file-scoped implementation ledger",
+			Name:  "Direct Executor",
+			Scope: "execute one typed objective against the current authoritative workspace",
 			Responsibilities: []string{
-				"execute bounded file, review, triage, and verification model jobs",
-				"preserve unrelated completed work while routing direct corrections to one owner",
+				"make coherent workspace changes without placeholder-only handoffs",
+				"continue from accepted files when commands or feedback expose a defect",
 				"accept completion only after server-observed verification succeeds",
 			},
 		}
@@ -350,6 +360,26 @@ func EnvVarForRoleID(roleID string) string {
 		return "OLLAMA_MODEL_SPECIALIST_WORKER"
 	case RoleSummarySpecialist:
 		return "OLLAMA_MODEL_SPECIALIST_SUMMARY"
+	case RoleCodingSurfaceStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_SURFACE"
+	case RoleCodingProductIdentityStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY"
+	case RoleCodingRequirementPartitionStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION"
+	case RoleCodingRequirementSplitStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT"
+	case RoleCodingArtifactHandlingStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING"
+	case RoleCodingCapabilityRelationStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION"
+	case RoleCodingSkillSelectionStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION"
+	case RoleCodingSkillProcedureStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE"
+	case RoleCodingFragmentStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT"
+	case RoleCodingFragmentCorrectionStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION"
 	default:
 		return ""
 	}

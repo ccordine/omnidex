@@ -34,7 +34,6 @@ func PlannerTicketModel(cfg Config, runtimeDefault string) (string, error) {
 	model := firstNonEmpty(
 		cfg.Get("planner_model"),
 		cfg.Get("reasoning_model"),
-		cfg.Get("thinking_model"),
 		cfg.Get("default_model"),
 		runtimeDefault,
 	)

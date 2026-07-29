@@ -16,13 +16,20 @@ export interface ChatJobsHost {
   addEvent(type: string, details?: Record<string, unknown>, full?: unknown): void;
 }
 
-export function authoritativeControlJobID(payload: unknown): string {
+export function authoritativeControlJobID(payload: unknown, expectedJobID: string): string {
+  const expectedID = Number(expectedJobID);
+  if (!Number.isSafeInteger(expectedID) || expectedID <= 0) {
+    throw new Error("Job control requires a valid expected job id.");
+  }
   if (!payload || typeof payload !== "object") throw new Error("Job control response must be an object.");
   const job = (payload as { job?: unknown }).job;
   if (!job || typeof job !== "object") throw new Error("Job control response is missing the authoritative job.");
   const id = (job as { id?: unknown }).id;
   if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) {
     throw new Error("Job control response contains an invalid authoritative job id.");
+  }
+  if (id !== expectedID) {
+    throw new Error(`Job control expected job ${expectedID}, but the server returned job ${id}.`);
   }
   return String(id);
 }
@@ -123,10 +130,10 @@ export class ChatJobsCoordinator {
     const feedback = window.prompt(question);
     if (!feedback) return;
     const control = await readJSON(await fetch(`/v1/jobs/${id}/${action}`, jsonRequest({ feedback })));
-    const authoritativeID = authoritativeControlJobID(control);
+    const authoritativeID = authoritativeControlJobID(control, id);
     const details = await readJSON(await fetch(`/v1/jobs/${authoritativeID}`));
     this.renderDetails(details);
-    this.host.addEvent(`job_${action}`, { id: authoritativeID, superseded_id: authoritativeID === id ? undefined : id });
+    this.host.addEvent(`job_${action}`, { id: authoritativeID });
   }
 
   private setListOutput(html: string): void {

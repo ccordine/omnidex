@@ -1,15 +1,20 @@
 FROM golang:1.24.1-alpine AS build
 
+RUN apk add --no-cache build-base
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/agent-core ./cmd/core
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /out/agent-core ./cmd/core
 
 FROM alpine:3.20
 
-RUN addgroup -S app && adduser -S app -G app
+ARG APP_UID=1000
+ARG APP_GID=1000
+RUN apk add --no-cache git go nodejs npm \
+    && addgroup -S -g "${APP_GID}" app \
+    && adduser -S -D -h /home/app -u "${APP_UID}" -G app app
 USER app
 WORKDIR /app
 
@@ -22,6 +27,7 @@ ENV LISTEN_ADDR=:8090
 # docker compose loads .env via env_file; a host PATH (e.g. for mise/node on the
 # bridge) must not replace this — agent-core lives in /usr/local/bin.
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV HOME=/home/app
 EXPOSE 8090
 
 # Absolute path so startup does not depend on PATH (see troubleshooting in README).

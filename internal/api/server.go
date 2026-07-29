@@ -26,7 +26,6 @@ type Server struct {
 	providerConfig            config.Config
 	defaultProvider           string
 	requestTimeout            time.Duration
-	v3Enabled                 bool
 	ollamaBaseURL             string
 	ollamaDefaultModel        string
 	ollamaEmbeddingModel      string
@@ -63,7 +62,6 @@ type ServerOptions struct {
 	LifecycleContext     context.Context
 	ProviderConfig       config.Config
 	RequestTimeout       time.Duration
-	V3Enabled            bool
 	WebSearchEnabled     bool
 	WebSearchProviders   []string
 	WebSearchTimeout     time.Duration
@@ -254,7 +252,6 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		providerConfig:       providerConfig,
 		defaultProvider:      defaultProvider,
 		requestTimeout:       options.RequestTimeout,
-		v3Enabled:            options.V3Enabled,
 		ollamaBaseURL:        strings.TrimSpace(providerConfig.OllamaBaseURL),
 		ollamaDefaultModel:   ollamaDefaultModel,
 		ollamaEmbeddingModel: ollamaEmbeddingModel,

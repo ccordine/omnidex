@@ -17,18 +17,27 @@ func TestSplitProjectPathPlanningChat(t *testing.T) {
 	}
 }
 
-func TestNormalizeProjectPlanningMode(t *testing.T) {
-	mode, err := normalizeProjectPlanningMode("/research kubernetes patterns", "")
-	if err != nil || mode != "research" {
-		t.Fatalf("mode=%q err=%v want research", mode, err)
+func TestNormalizeProjectPlanningModeUsesExplicitTransport(t *testing.T) {
+	mode, err := normalizeProjectPlanningMode("")
+	if err != nil || mode != "chat" {
+		t.Fatalf("mode=%q err=%v want chat", mode, err)
 	}
-	mode, err = normalizeProjectPlanningMode("hello", "plan")
+	mode, err = normalizeProjectPlanningMode("plan")
 	if err != nil || mode != "plan" {
 		t.Fatalf("mode=%q err=%v want plan", mode, err)
 	}
-	for _, input := range []struct{ message, mode string }{{"/unknown", ""}, {"hello", "legacy"}, {"", "config"}} {
-		if _, err := normalizeProjectPlanningMode(input.message, input.mode); err == nil {
-			t.Fatalf("message=%q mode=%q must fail", input.message, input.mode)
+	for _, invalid := range []string{"legacy", "config"} {
+		if _, err := normalizeProjectPlanningMode(invalid); err == nil {
+			t.Fatalf("mode=%q must fail", invalid)
+		}
+	}
+}
+
+func TestProjectPlanningHasNoMessagePrefixRouter(t *testing.T) {
+	source := readAPISource(t, "project_planning_config.go") + readAPISource(t, "project_planning_context.go")
+	for _, forbidden := range []string{"/researching", `case "/plan":`, `case "/batch":`, "strings.HasPrefix(strings.ToLower(query), prefix)"} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("project planning contains forbidden message prefix router %q", forbidden)
 		}
 	}
 }

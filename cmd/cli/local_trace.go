@@ -48,44 +48,6 @@ func emitLocalExecutionTrace(line string) {
 	}
 }
 
-func formatLocalAutomationTrace(candidate *chatActionCandidate) string {
-	if candidate == nil {
-		return ""
-	}
-	parts := []string{"frontend action"}
-	if kind := strings.TrimSpace(candidate.Kind); kind != "" {
-		parts = append(parts, "kind="+kind)
-	}
-	role := candidateSpecialistRole(candidate)
-	if roleID := strings.TrimSpace(role.ID); roleID != "" {
-		parts = append(parts, "specialist="+roleID)
-	}
-	if summary := strings.TrimSpace(candidate.Summary); summary != "" {
-		parts = append(parts, "summary="+strconv.Quote(summary))
-	}
-	return strings.Join(parts, " | ")
-}
-
-func formatLocalReviewHandoffTrace(candidate *chatActionCandidate, actionOutput string) string {
-	if candidate == nil {
-		return "frontend handoff | target=core | phase=deterministic_local_action_review"
-	}
-	parts := []string{
-		"frontend handoff",
-		"target=core",
-		"phase=deterministic_local_action_review",
-	}
-	if kind := strings.TrimSpace(candidate.Kind); kind != "" {
-		parts = append(parts, "kind="+kind)
-	}
-	role := candidateSpecialistRole(candidate)
-	if roleID := strings.TrimSpace(role.ID); roleID != "" {
-		parts = append(parts, "specialist="+roleID)
-	}
-	parts = append(parts, "output_chars="+strconv.Itoa(len(strings.TrimSpace(actionOutput))))
-	return strings.Join(parts, " | ")
-}
-
 func traceLocalCommandInvocation(args ...string) {
 	if len(args) == 0 {
 		return

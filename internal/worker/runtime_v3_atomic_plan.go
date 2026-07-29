@@ -7,7 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/artifacts"
 )
 
-func buildV3ImplementationCoordinatorPlan(intent artifacts.IntentArtifact) (artifacts.PlanArtifact, bool) {
+func buildV3CodingCoordinatorPlan(intent artifacts.IntentArtifact) (artifacts.PlanArtifact, bool) {
 	if len(intent.Objectives) != 1 {
 		return artifacts.PlanArtifact{}, false
 	}

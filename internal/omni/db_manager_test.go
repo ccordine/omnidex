@@ -2,10 +2,33 @@ package omni
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 )
+
+type fakeCommandDecisionClient struct {
+	responses []string
+	requests  []OllamaChatRequest
+	calls     int
+}
+
+func (client *fakeCommandDecisionClient) ChatRaw(_ context.Context, request OllamaChatRequest) (OllamaChatResponse, error) {
+	client.requests = append(client.requests, request)
+	if client.calls >= len(client.responses) {
+		return OllamaChatResponse{}, fmt.Errorf("unexpected LLM call %d", client.calls+1)
+	}
+	response := client.responses[client.calls]
+	client.calls++
+	return OllamaChatResponse{Content: response, Done: true}, nil
+}
+
+func quoteJSONForGoCLITest(value string) string {
+	blob, _ := json.Marshal(value)
+	return string(blob)
+}
 
 func TestDBManagerScansSchemaAndRunsLLMGeneratedMemoryQuery(t *testing.T) {
 	runner := newFakeDBManagerRunner()

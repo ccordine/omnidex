@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -18,6 +19,24 @@ type PreparedModel struct {
 	MaxOutputTokens int
 	ContextTokens   int
 	ResponseFormat  string
+	ResponseSchema  map[string]any
+}
+
+func ValidateResponseContract(prepared PreparedModel) error {
+	if prepared.ResponseFormat != "" && prepared.ResponseFormat != ResponseFormatJSON {
+		return fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
+	}
+	if len(prepared.ResponseSchema) == 0 {
+		return nil
+	}
+	if prepared.ResponseFormat != ResponseFormatJSON {
+		return fmt.Errorf("response schema requires response format %q", ResponseFormatJSON)
+	}
+	schemaType, ok := prepared.ResponseSchema["type"].(string)
+	if !ok || strings.TrimSpace(schemaType) == "" {
+		return fmt.Errorf("response schema requires a non-empty type")
+	}
+	return nil
 }
 
 type Client interface {
@@ -26,8 +45,14 @@ type Client interface {
 	GeneratePrepared(ctx context.Context, prepared PreparedModel) (string, error)
 	CleanupPreparedModel(prepared PreparedModel)
 	Embedding(ctx context.Context, content string) ([]float64, error)
-	SuggestTags(ctx context.Context, content string, maxTags int) ([]string, error)
-	SuggestTagsWithModel(ctx context.Context, model, content string, maxTags int) ([]string, error)
+}
+
+type GenerationProgress struct {
+	OutputBytes int
+}
+
+type PreparedStreamingClient interface {
+	GeneratePreparedStream(ctx context.Context, prepared PreparedModel, observe func(GenerationProgress) error) (string, error)
 }
 
 func DerivePreparedModelPromptHint(fullPrompt string) string {
@@ -86,50 +111,4 @@ func TruncatePromptHint(value string, maxChars int) string {
 		return value
 	}
 	return strings.TrimSpace(value[:maxChars]) + " ..."
-}
-
-func ParseSuggestedTags(result, fallbackContent string, maxTags int) []string {
-	if maxTags <= 0 {
-		maxTags = 8
-	}
-
-	parts := strings.Split(result, ",")
-	tags := make([]string, 0, len(parts))
-	seen := map[string]struct{}{}
-	for _, raw := range parts {
-		tag := strings.ToLower(strings.TrimSpace(raw))
-		tag = strings.Trim(tag, "\"'`[](){}")
-		if tag == "" {
-			continue
-		}
-		if _, ok := seen[tag]; ok {
-			continue
-		}
-		seen[tag] = struct{}{}
-		tags = append(tags, tag)
-		if len(tags) >= maxTags {
-			break
-		}
-	}
-
-	if len(tags) > 0 {
-		return tags
-	}
-
-	for _, token := range strings.Fields(strings.ToLower(fallbackContent)) {
-		token = strings.Trim(token, ",.!?:;\"'`()[]{}")
-		if len(token) < 4 {
-			continue
-		}
-		if _, ok := seen[token]; ok {
-			continue
-		}
-		seen[token] = struct{}{}
-		tags = append(tags, token)
-		if len(tags) >= maxTags {
-			break
-		}
-	}
-
-	return tags
 }

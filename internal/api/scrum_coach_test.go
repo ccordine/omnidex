@@ -70,17 +70,15 @@ func TestParseCoachLLMResponseRequiresTypedJSON(t *testing.T) {
 	}
 }
 
-func TestNormalizeCoachModeRejectsUnknownCommandsAndModes(t *testing.T) {
-	if mode, err := normalizeCoachMode("/plan split this", ""); err != nil || mode != "plan" {
+func TestNormalizeCoachModeUsesExplicitTransport(t *testing.T) {
+	if mode, err := normalizeCoachMode(""); err != nil || mode != "chat" {
 		t.Fatalf("mode=%q err=%v", mode, err)
 	}
-	for _, input := range []struct{ message, mode string }{
-		{message: "/mystery", mode: ""},
-		{message: "hello", mode: "magic"},
-	} {
-		if _, err := normalizeCoachMode(input.message, input.mode); err == nil {
-			t.Fatalf("mode=%q message=%q must fail", input.mode, input.message)
-		}
+	if mode, err := normalizeCoachMode("plan"); err != nil || mode != "plan" {
+		t.Fatalf("mode=%q err=%v", mode, err)
+	}
+	if _, err := normalizeCoachMode("magic"); err == nil {
+		t.Fatal("unknown explicit mode must fail")
 	}
 }
 
@@ -94,6 +92,8 @@ func TestScrumCoachSourceHasNoRawReplyOrMemoryFallback(t *testing.T) {
 		"_ = s.mergeProjectTags",
 		"_ = json.Unmarshal(project.Settings",
 		`"qwen3:4b-thinking"`,
+		`case "/plan":`,
+		`case "/research":`,
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Errorf("Scrum coach contains hidden fallback %q", forbidden)

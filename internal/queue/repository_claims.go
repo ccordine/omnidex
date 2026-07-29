@@ -531,16 +531,15 @@ func (r *Repository) AddStepContext(ctx context.Context, stepID int64, key, valu
 	}
 	value = SanitizeUTF8Text(value)
 	if _, err := r.pool.Exec(ctx, `
-		INSERT INTO step_contexts (step_id, key, value)
-		VALUES ($1, $2, $3)
-	`, stepID, key, value); err != nil {
-		return err
-	}
-	if _, err := r.pool.Exec(ctx, `
+		WITH inserted AS (
+			INSERT INTO step_contexts (step_id, key, value)
+			VALUES ($1, $2, $3)
+			RETURNING step_id
+		)
 		UPDATE job_steps
 		SET updated_at = NOW()
-		WHERE id = $1
-	`, stepID); err != nil {
+		WHERE id = (SELECT step_id FROM inserted)
+	`, stepID, key, value); err != nil {
 		return err
 	}
 	return nil

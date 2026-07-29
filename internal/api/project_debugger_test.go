@@ -18,15 +18,16 @@ func TestLoadDebuggerLastRunRejectsMalformedState(t *testing.T) {
 	}
 }
 
-func TestProjectDebuggerSynchronizesMapBeforeEnqueue(t *testing.T) {
+func TestProjectDebuggerDoesNotPersistOrSynchronizeVersionedMaps(t *testing.T) {
 	source := readAPISource(t, "project_debugger.go")
-	syncAt := strings.Index(source, "s.syncProjectMapByID(r.Context(), project.ID)")
-	enqueueAt := strings.Index(source, "s.repo.EnqueueJob(")
-	if syncAt < 0 || enqueueAt < 0 || syncAt > enqueueAt {
-		t.Fatal("project debugger must synchronously refresh its map before enqueue")
+	if !strings.Contains(source, "s.repo.EnqueueJob(") {
+		t.Fatal("project debugger no longer enqueues analysis")
 	}
 	for _, forbidden := range []string{
+		"syncProjectMapByID",
 		"SyncProjectMapAsync",
+		"WriteCodebaseMap",
+		"ReadCodebaseMap",
 		"agentResolved, _ :=",
 		"if details, err := s.repo.GetJobDetails(ctx, lastRun.JobID); err == nil",
 		"_ = json.Unmarshal",

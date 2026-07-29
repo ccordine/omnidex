@@ -39,16 +39,13 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	response := map[string]any{"job": job}
-	if job.ID != jobID {
-		response["superseded_job_id"] = jobID
-		s.publishJobProgress(jobID, realtimeJobFinished, "Job superseded by revised user authority")
-		s.publishJobProgress(job.ID, realtimeJobQueued, "Revised job queued from replanning feedback")
-	} else {
-		s.publishJobProgress(jobID, realtimeJobChanged, "Job replanned")
+	if err := validateSameJobAuthority(jobID, job); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
+	s.publishJobProgress(jobID, realtimeJobChanged, "Job replanned")
 
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, map[string]any{"job": job})
 }
 
 func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {

@@ -19,11 +19,18 @@ func TestMemoryKindAllowsSemanticCorrectionExcludesReferenceChunks(t *testing.T)
 	}
 }
 
-func TestInferMemoryCategoriesFromKindTagsAndContent(t *testing.T) {
+func TestInferMemoryCategoriesFromKindAndTypedTags(t *testing.T) {
 	categories := inferMemoryCategories(
 		model.MemoryKindProcedural,
-		"Successful Go and React project strategy verified with docker compose and PostgreSQL migrations.",
-		[]string{"project:omni-nxt-f54144e2", "react", "docker", "category:custom-skill"},
+		[]string{
+			"project:omni-nxt-f54144e2",
+			"category:language",
+			"category:frontend",
+			"category:infrastructure",
+			"category:database",
+			"category:verification",
+			"category:custom-skill",
+		},
 	)
 
 	for _, want := range []string{"strategy", "project", "language", "frontend", "infrastructure", "database", "verification", "custom-skill"} {

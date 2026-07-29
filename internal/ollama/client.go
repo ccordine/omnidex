@@ -32,7 +32,7 @@ type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
 	Stream   bool          `json:"stream"`
-	Format   string        `json:"format,omitempty"`
+	Format   any           `json:"format,omitempty"`
 	Think    *bool         `json:"think,omitempty"`
 	Options  *chatOptions  `json:"options,omitempty"`
 }
@@ -52,12 +52,12 @@ type chatResponse struct {
 // Chat runs a direct /api/chat call without creating ephemeral context modelfiles.
 // Use for interactive scrum pilot chat where latency matters.
 func (c *Client) Chat(ctx context.Context, model, system, user string) (string, error) {
-	return c.chat(ctx, model, system, user, 0, c.contextTokens, "")
+	return c.chat(ctx, model, system, user, 0, c.contextTokens, "", nil)
 }
 
-func (c *Client) chat(ctx context.Context, model, system, user string, maxOutputTokens, contextTokens int, responseFormat string) (string, error) {
-	if responseFormat != "" && responseFormat != llm.ResponseFormatJSON {
-		return "", fmt.Errorf("unsupported response format %q", responseFormat)
+func (c *Client) chat(ctx context.Context, model, system, user string, maxOutputTokens, contextTokens int, responseFormat string, responseSchema map[string]any) (string, error) {
+	if err := llm.ValidateResponseContract(llm.PreparedModel{ResponseFormat: responseFormat, ResponseSchema: responseSchema}); err != nil {
+		return "", err
 	}
 	if strings.TrimSpace(model) == "" {
 		model = c.defaultModel
@@ -86,9 +86,10 @@ func (c *Client) chat(ctx context.Context, model, system, user string, maxOutput
 		if maxOutputTokens <= 0 {
 			maxOutputTokens = controlPlaneMaxOutputTokens
 		}
-		thinkingDisabled := false
 		request.Format = "json"
-		request.Think = &thinkingDisabled
+		if len(responseSchema) > 0 {
+			request.Format = responseSchema
+		}
 	}
 	if contextTokens > 0 {
 		if err := llm.ValidateInferenceBudget(contextTokens, maxOutputTokens, system, user); err != nil {
@@ -96,11 +97,13 @@ func (c *Client) chat(ctx context.Context, model, system, user string, maxOutput
 		}
 		request.Options = &chatOptions{NumCtx: contextTokens}
 	}
-	if controlPlane {
+	if maxOutputTokens > 0 {
 		if request.Options == nil {
 			request.Options = &chatOptions{}
 		}
+		thinkingDisabled := false
 		zero := 0.0
+		request.Think = &thinkingDisabled
 		request.Options.NumPredict = maxOutputTokens
 		request.Options.Temperature = &zero
 	}
@@ -442,7 +445,7 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 	if contextTokens == 0 {
 		contextTokens = c.contextTokens
 	}
-	return c.chat(ctx, model, system, promptHint, prepared.MaxOutputTokens, contextTokens, prepared.ResponseFormat)
+	return c.chat(ctx, model, system, promptHint, prepared.MaxOutputTokens, contextTokens, prepared.ResponseFormat, prepared.ResponseSchema)
 }
 
 func (c *Client) CleanupPreparedModel(llm.PreparedModel) {}
@@ -577,36 +580,6 @@ func (c *Client) Embedding(ctx context.Context, content string) ([]float64, erro
 		lastErr = fmt.Errorf("embedding request failed")
 	}
 	return nil, lastErr
-}
-
-func (c *Client) SuggestTags(ctx context.Context, content string, maxTags int) ([]string, error) {
-	return c.SuggestTagsWithModel(ctx, c.defaultModel, content, maxTags)
-}
-
-func (c *Client) SuggestTagsWithModel(ctx context.Context, model, content string, maxTags int) ([]string, error) {
-	if maxTags <= 0 {
-		maxTags = 8
-	}
-	if strings.TrimSpace(model) == "" {
-		model = c.defaultModel
-	}
-
-	prompt := strings.Join([]string{
-		"Extract compact relevance tags for retrieval.",
-		"Operational mode: text analysis only. Do not roleplay or invent fictional context.",
-		"Return only comma-separated lowercase tags.",
-		fmt.Sprintf("Maximum tags: %d.", maxTags),
-		"Do not include punctuation-only tokens.",
-		"Text:",
-		content,
-	}, "\n")
-
-	result, err := c.Generate(ctx, model, prompt)
-	if err != nil {
-		return nil, err
-	}
-
-	return llm.ParseSuggestedTags(result, content, maxTags), nil
 }
 
 func (c *Client) wrapConnectivityError(err error, endpoint string) error {

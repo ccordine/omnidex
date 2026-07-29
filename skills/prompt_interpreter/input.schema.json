@@ -1,9 +1,8 @@
 {
   "type": "object",
-  "required": ["current_user_instruction", "authority_directives", "pipeline", "execution_agent", "operation_kind", "transport_requires_action", "authoritative_task_context", "capability_catalog"],
+  "required": ["current_user_instruction", "pipeline", "execution_agent", "operation_kind", "transport_requires_action", "authoritative_task_context", "capability_catalog"],
   "properties": {
     "current_user_instruction": {"type": "string"},
-    "authority_directives": {"type": "array", "items": {"type": "string"}},
     "pipeline": {"type": "string"},
     "execution_agent": {"type": "string", "enum": ["omnidex", "cursor", "codex"]},
     "operation_kind": {"type": "string", "enum": ["user_request", "scrum_play", "scrum_channel"]},

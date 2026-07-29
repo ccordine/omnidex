@@ -17,6 +17,13 @@ type v3WorkspaceScope struct {
 	Source  string
 }
 
+func codingWorkspaceForJob(job model.Job) string {
+	if cwd := clientCWDForJob(job); strings.TrimSpace(cwd) != "" {
+		return cwd
+	}
+	return metadataString(job.Metadata, "workspace")
+}
+
 func (s *Service) workspaceScopeForV3Job(job model.Job) (v3WorkspaceScope, error) {
 	if s == nil || s.workspace == nil || !s.workspace.Enabled() {
 		return v3WorkspaceScope{}, fmt.Errorf("workspace.research is disabled")
@@ -30,7 +37,11 @@ func (s *Service) workspaceScopeForV3Job(job model.Job) (v3WorkspaceScope, error
 	if root == "" {
 		return v3WorkspaceScope{}, fmt.Errorf("workspace.research requires an authoritative workspace root")
 	}
-	scanner, err := s.workspace.Scoped(root)
+	resolvedRoot, err := resolveV3WorkspaceRoot(s.workspace.Root(), s.workspaceHostRoot, root)
+	if err != nil {
+		return v3WorkspaceScope{}, fmt.Errorf("bind %s workspace %q: %w", source, root, err)
+	}
+	scanner, err := s.workspace.Scoped(resolvedRoot)
 	if err != nil {
 		return v3WorkspaceScope{}, fmt.Errorf("bind %s workspace %q: %w", source, root, err)
 	}

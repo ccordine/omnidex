@@ -20,12 +20,6 @@ const screenCaptureTimeout = 8 * time.Second
 const screenOCRTimeout = 10 * time.Second
 const screenVisionTimeout = 45 * time.Second
 
-type screenReadIntent struct {
-	WithOCR    bool
-	WithVision bool
-	Prompt     string
-}
-
 type screenReadResult struct {
 	GeneratedAt   string   `json:"generated_at"`
 	CaptureTool   string   `json:"capture_tool"`
@@ -46,70 +40,6 @@ type ollamaGenerateRequest struct {
 type ollamaGenerateResponse struct {
 	Response string `json:"response"`
 	Error    string `json:"error"`
-}
-
-func tryHandleLocalScreenCommand(input string) (bool, string) {
-	intent, ok := parseScreenReadIntent(input)
-	if !ok {
-		return false, ""
-	}
-
-	result, err := screenReadReport(intent.WithOCR, intent.WithVision, intent.Prompt, defaultVisionModel(), defaultOllamaBaseURL(), false)
-	if err != nil {
-		return true, "Local screen action failed: " + err.Error()
-	}
-	return true, screenReadToText(result)
-}
-
-func parseScreenReadIntent(input string) (screenReadIntent, bool) {
-	clean := strings.TrimSpace(input)
-	if clean == "" {
-		return screenReadIntent{}, false
-	}
-	lower := strings.ToLower(clean)
-
-	screenCue := containsAnyPhrase(lower, []string{"screen", "screenshot", "display", "monitor"})
-	actionCue := containsAnyPhrase(lower, []string{"read", "describe", "summarize", "what's on", "what is on", "scan", "capture", "take"})
-	if !screenCue || !actionCue {
-		return screenReadIntent{}, false
-	}
-
-	intent := screenReadIntent{
-		WithOCR:    true,
-		WithVision: false,
-	}
-	if containsAnyPhrase(lower, []string{"what's on", "what is on", "describe", "summarize", "look at", "ui", "layout", "button", "icon"}) {
-		intent.WithVision = true
-	}
-	if containsAnyPhrase(lower, []string{"only text", "ocr only", "text only"}) {
-		intent.WithOCR = true
-		intent.WithVision = false
-	}
-	if containsAnyPhrase(lower, []string{"vision only", "image only"}) {
-		intent.WithOCR = false
-		intent.WithVision = true
-	}
-
-	intent.Prompt = extractScreenPrompt(clean)
-	return intent, true
-}
-
-func extractScreenPrompt(input string) string {
-	clean := strings.TrimSpace(input)
-	if clean == "" {
-		return ""
-	}
-	lower := strings.ToLower(clean)
-	for _, marker := range []string{" about ", " for ", " focusing on "} {
-		idx := strings.Index(lower, marker)
-		if idx < 0 {
-			continue
-		}
-		prompt := strings.TrimSpace(clean[idx+len(marker):])
-		prompt = strings.Trim(prompt, " \t\r\n\"'`.,!?;:()[]{}")
-		return prompt
-	}
-	return ""
 }
 
 func runScreenRead(args []string) {

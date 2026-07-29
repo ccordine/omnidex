@@ -1,5 +1,10 @@
 import { readJSON } from "./api";
-import { describeChatJobProgress } from "./chat_job_progress";
+import {
+  describeChatJobProgress,
+  describeJobStatus,
+  describeRealtimeJobPhase,
+} from "./chat_job_progress";
+import { t, tf } from "./i18n";
 import { debounce } from "./main_thread";
 import type { OmniPanel } from "./panel_routing";
 
@@ -72,7 +77,7 @@ export class ChatExecutionCoordinator {
   setCurrentJobID(value: number | string | null): void {
     if (value === null) {
       this.jobID = null;
-      if (this.host.hasJobBadge()) this.host.jobBadge().textContent = "none";
+      if (this.host.hasJobBadge()) this.host.jobBadge().textContent = t("job.none");
       return;
     }
     const jobID = positiveJobID(value, "Selected job");
@@ -85,9 +90,9 @@ export class ChatExecutionCoordinator {
     if (!instruction) throw new Error("A non-empty job instruction is required.");
     if (this.pending) throw new Error(`Job #${this.pending.jobID} is already active in this chat.`);
 
-    this.host.setActivityLabel("Queuing job…");
-    this.host.setStatus("queuing", "active");
-    this.host.renderProgressActivity("Queuing job…");
+    this.host.setActivityLabel(t("job.queueing"));
+    this.host.setStatus(t("status.queuing"), "active");
+    this.host.renderProgressActivity(t("job.queueing"));
     const metadata: Record<string, unknown> = {
       source: "omni-web-chat",
       ui: "stimulus-tailwind-recyclr",
@@ -107,7 +112,7 @@ export class ChatExecutionCoordinator {
     }));
     const job = requireJobRecord(payload.job, "Queued job response");
     this.setCurrentJobID(job.id);
-    const label = `Running job #${job.id}…`;
+    const label = tf("job.running", { id: job.id });
     this.host.setActivityLabel(label);
     this.host.renderProgressActivity(label);
     this.host.addEvent("job_created", { id: job.id, status: job.status }, { request, response: payload, job });
@@ -117,11 +122,11 @@ export class ChatExecutionCoordinator {
   handleProgress(event: Event): void {
     const detail = (event as CustomEvent<{ jobID?: unknown; phase?: unknown; summary?: unknown }>).detail;
     const jobID = positiveJobID(detail?.jobID, "Realtime job update");
+    const phaseLabel = describeRealtimeJobPhase(detail?.phase);
     if (this.jobID === jobID) {
-      const summary = typeof detail?.summary === "string" ? detail.summary.trim() : "";
-      if (summary && this.pending?.jobID === jobID) {
-        this.host.setActivityLabel(summary);
-        this.host.renderProgressActivity(summary);
+      if (this.pending?.jobID === jobID) {
+        this.host.setActivityLabel(phaseLabel);
+        this.host.renderProgressActivity(phaseLabel);
       }
       this.scheduleCurrentJobRefresh(jobID);
     }
@@ -149,7 +154,7 @@ export class ChatExecutionCoordinator {
     if (this.pending) {
       return Promise.reject(new Error(`Job #${this.pending.jobID} is already active in this chat.`));
     }
-    this.host.setStatus("running", "active");
+    this.host.setStatus(t("status.running"), "active");
     this.lastSignature = "";
     return new Promise<void>((resolve, reject) => {
       this.pending = { jobID, resolve, reject };
@@ -192,7 +197,10 @@ export class ChatExecutionCoordinator {
     });
     if (signature !== this.lastSignature) {
       const stepLabel = describeChatJobProgress(details);
-      const label = stepLabel || `Running job #${jobID} · ${details.job.status}…`;
+      const label = stepLabel || tf("job.runningStatus", {
+        id: jobID,
+        status: describeJobStatus(details.job.status),
+      });
       this.host.setActivityLabel(label);
       if (this.pending?.jobID === jobID) {
         this.host.renderProgressActivity(label);
@@ -212,12 +220,12 @@ export class ChatExecutionCoordinator {
     }
   }
 
-  private finish(jobID: number, role: JobRole, message: string, status: string, tone: string): void {
+  private finish(jobID: number, role: JobRole, message: string, status: JobStatus, tone: string): void {
     const pending = this.pending;
     if (!pending || pending.jobID !== jobID) return;
     this.pending = null;
     this.host.addMessage(role, message);
-    this.host.setStatus(status, tone);
+    this.host.setStatus(describeJobStatus(status), tone);
     this.host.setBusy(false);
     pending.resolve();
   }

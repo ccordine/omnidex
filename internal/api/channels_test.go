@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -194,6 +195,55 @@ func TestChannelRouteAppendCanPersistMemoryWhenRequested(t *testing.T) {
 	}
 	if !containsString(store.memories[0].Tags, "channel:sim-scene-1-actor-ivo") {
 		t.Fatalf("memory tags=%#v", store.memories[0].Tags)
+	}
+}
+
+func TestChannelMemoryDoesNotCrossChannelsThroughSharedTags(t *testing.T) {
+	llmClient := &fakeLLMClient{outputs: []string{"A clean response."}}
+	server := NewServer(nil, llmClient)
+	store := server.channelStore.(*inMemoryChannelStore)
+
+	for _, channelID := range []string{"sim-scene-one-actor-mara", "sim-scene-two-actor-ivo"} {
+		request := httptest.NewRequest(http.MethodPost, "/v1/channels", strings.NewReader(`{
+			"id":"`+channelID+`",
+			"persona":"roleplay",
+			"model":"rp-model",
+			"tags":["sim","actor"]
+		}`))
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("create %s status=%d body=%s", channelID, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	_, err := store.AddMemoryChunk(
+		context.Background(),
+		"seed",
+		"episodic",
+		"Mara privately hid the brass key.",
+		[]string{"channel:sim-scene-one-actor-mara", "sim", "actor"},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/channels/sim-scene-two-actor-ivo/messages",
+		strings.NewReader(`{"prompt":"Describe the room.","remember":false}`),
+	)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("message status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if len(llmClient.preparePrompts) != 1 {
+		t.Fatalf("prepare calls=%d", len(llmClient.preparePrompts))
+	}
+	if strings.Contains(llmClient.preparePrompts[0], "brass key") {
+		t.Fatalf("cross-channel memory leaked through shared tags:\n%s", llmClient.preparePrompts[0])
 	}
 }
 

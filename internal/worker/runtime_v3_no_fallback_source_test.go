@@ -46,3 +46,26 @@ func TestNativeV3SourceContainsNoLegacyOrSyntheticCompletionFallback(t *testing.
 		}
 	}
 }
+
+func TestCodingPostProcessingUsesDeterministicEvidencePath(t *testing.T) {
+	for path, required := range map[string]string{
+		"runtime_v3_completion.go":   "coding_memory_absent",
+		"runtime_v3_synthesis.go":    "buildDeterministicV3CodingAnalysis(",
+		"runtime_v3_verification.go": "buildDeterministicV3CodingVerification(",
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), required) {
+			t.Errorf("%s does not route completed coding work through %s", path, required)
+		}
+	}
+	synthesis, err := os.ReadFile("runtime_v3_synthesis.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(synthesis), "buildDeterministicV3CodingResponse(") {
+		t.Fatal("response drafting does not route completed coding work through deterministic composition")
+	}
+}

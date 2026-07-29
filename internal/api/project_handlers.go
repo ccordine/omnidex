@@ -401,7 +401,10 @@ func (s *Server) initializeProjectState(ctx context.Context, project model.Proje
 	if strings.TrimSpace(project.ProjectState) != "" {
 		return project, nil
 	}
-	survey := omni.BuildWorksiteSurvey(project.Location)
+	survey, err := omni.BuildWorksiteSurvey(project.Location)
+	if err != nil {
+		return project, fmt.Errorf("inspect project workspace: %w", err)
+	}
 	state := strings.TrimSpace(survey.ProjectState)
 	if state == "" {
 		return project, nil

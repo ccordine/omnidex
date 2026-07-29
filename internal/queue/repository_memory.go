@@ -87,7 +87,7 @@ func (r *Repository) AddMemoryChunk(ctx context.Context, source, kind, content s
 		}
 	}
 
-	categories := inferMemoryCategories(kind, content, tags)
+	categories := inferMemoryCategories(kind, tags)
 	cleaned := decorateMemoryTags(source, appendCleanTags(tags, memoryCategoryTags(categories)...))
 	for _, tag := range cleaned {
 		var tagID int64
@@ -328,7 +328,6 @@ func (r *Repository) BackfillMemoryCategories(ctx context.Context) error {
 		SELECT
 			mc.id,
 			mc.kind,
-			mc.content,
 			COALESCE(array_remove(array_agg(DISTINCT t.name), NULL), ARRAY[]::text[]) AS tags
 		FROM memory_chunks mc
 		LEFT JOIN memory_chunk_tags mct ON mct.memory_chunk_id = mc.id
@@ -353,12 +352,12 @@ func (r *Repository) BackfillMemoryCategories(ctx context.Context) error {
 	pending := []pendingMemoryCategory{}
 	for rows.Next() {
 		var id int64
-		var kind, content string
+		var kind string
 		var tags []string
-		if err := rows.Scan(&id, &kind, &content, &tags); err != nil {
+		if err := rows.Scan(&id, &kind, &tags); err != nil {
 			return err
 		}
-		pending = append(pending, pendingMemoryCategory{id: id, categories: inferMemoryCategories(kind, content, tags)})
+		pending = append(pending, pendingMemoryCategory{id: id, categories: inferMemoryCategories(kind, tags)})
 	}
 	if err := rows.Err(); err != nil {
 		return err

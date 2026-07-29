@@ -14,6 +14,15 @@ func TestNormalizeCoreURL(t *testing.T) {
 	}
 }
 
+func TestNormalizeCoreURLPreservesStandardHTTPSIngress(t *testing.T) {
+	if got := NormalizeCoreURL("https://omni.worknet"); got != "https://omni.worknet" {
+		t.Fatalf("https ingress=%q", got)
+	}
+	if got := NormalizeCoreURL("https://omni.worknet:9443"); got != "https://omni.worknet:9443" {
+		t.Fatalf("explicit https port=%q", got)
+	}
+}
+
 func TestBuildCoreURL(t *testing.T) {
 	if got := BuildCoreURL("192.168.1.102", 8090); got != "http://192.168.1.102:8090" {
 		t.Fatalf("build=%q", got)

@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	Version  = "v0.3.0"
-	Codename = "Venusaur"
+	Version  = "v0.4.0"
+	Codename = "Charmander"
 	Commit   = ""
 	Date     = ""
 )
@@ -22,8 +22,9 @@ type PrideRelease struct {
 var PrideLine = []PrideRelease{
 	{Version: "v0.1.0-alpha", Codename: "Bulbasaur", NationalID: 1, Stage: "alpha"},
 	{Version: "v0.2.0", Codename: "Ivysaur", NationalID: 2, Stage: "growth"},
-	{Version: "v0.3.0", Codename: "Venusaur", NationalID: 3, Stage: "current"},
-	{Version: "future", Codename: "Charmander", NationalID: 4, Stage: "planned"},
+	{Version: "v0.3.0", Codename: "Venusaur", NationalID: 3, Stage: "planner"},
+	{Version: "v0.4.0", Codename: "Charmander", NationalID: 4, Stage: "current"},
+	{Version: "future", Codename: "Charmeleon", NationalID: 5, Stage: "planned"},
 }
 
 func Label() string {
@@ -51,7 +52,7 @@ func JSON() map[string]string {
 		"codename":           strings.TrimSpace(Codename),
 		"release_scheme":     "pride-national-dex",
 		"national_dex_id":    fmt.Sprintf("%d", NationalDexID(Codename)),
-		"next_maturity_name": "Charmander",
+		"next_maturity_name": "Charmeleon",
 		"commit":             strings.TrimSpace(Commit),
 		"date":               strings.TrimSpace(Date),
 	}

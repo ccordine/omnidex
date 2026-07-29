@@ -28,38 +28,21 @@ type RecipeObjective struct {
 	Packages    []string `json:"packages,omitempty"`
 }
 
-type RecipePromptCandidate struct {
-	ID               string   `json:"id"`
-	Description      string   `json:"description"`
-	Operation        string   `json:"operation,omitempty"`
-	ObjectiveIDs     []string `json:"objective_ids"`
-	EvidenceRequired []string `json:"evidence_required,omitempty"`
-}
-
-type RecipeRuntimeConstraint struct {
-	ID               string   `json:"id"`
-	Description      string   `json:"description"`
-	Operation        string   `json:"operation,omitempty"`
-	AllowedCommands  []string `json:"allowed_commands,omitempty"`
-	EvidenceRequired []string `json:"evidence_required,omitempty"`
-	CompletionChecks []string `json:"completion_checks,omitempty"`
-}
-
 func LoadRecipes(root string) ([]Recipe, error) {
-	dir := strings.TrimSpace(root)
-	if dir == "" {
-		dir = "recipes"
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return nil, fmt.Errorf("recipe directory is required")
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, fmt.Errorf("read recipe directory: %w", err)
+		return nil, fmt.Errorf("read recipe directory %s: %w", root, err)
 	}
-	recipes := []Recipe{}
+	recipes := make([]Recipe, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		recipe, err := LoadRecipeFile(filepath.Join(dir, entry.Name()))
+		recipe, err := LoadRecipeFile(filepath.Join(root, entry.Name()))
 		if err != nil {
 			return nil, err
 		}
@@ -84,136 +67,6 @@ func LoadRecipeFile(path string) (Recipe, error) {
 	return recipe, nil
 }
 
-func RecipeObjectiveLedger(recipe Recipe) []StructuredObjective {
-	ledger := make([]StructuredObjective, 0, len(recipe.Objectives))
-	for _, objective := range recipe.Objectives {
-		ledger = append(ledger, StructuredObjective{
-			ID:               objective.ID,
-			Description:      objective.Description,
-			Status:           "pending",
-			Kind:             string(WorkItemKindVerify),
-			RequiredEvidence: recipeCompletionEvidencePredicates(recipe),
-			Source:           structuredObjectiveSourceRecipeRequired,
-			Required:         true,
-			Packages:         cleanStringList(objective.Packages),
-		})
-	}
-	return ledger
-}
-
-func recipeCompletionEvidencePredicates(recipe Recipe) []string {
-	predicates := make([]string, 0, len(recipe.CompletionChecks))
-	for _, command := range cleanStringList(recipe.CompletionChecks) {
-		predicates = append(predicates, "command_passed:"+command)
-	}
-	return predicates
-}
-
-func SelectRecipesByID(recipes []Recipe, ids []string) []Recipe {
-	wanted := map[string]struct{}{}
-	for _, id := range ids {
-		clean := strings.TrimSpace(id)
-		if clean != "" {
-			wanted[clean] = struct{}{}
-		}
-	}
-	if len(wanted) == 0 {
-		return nil
-	}
-	selected := []Recipe{}
-	for _, recipe := range recipes {
-		if _, ok := wanted[recipe.ID]; ok {
-			selected = append(selected, recipe)
-		}
-	}
-	return selected
-}
-
-func FilterRecipesForWorksiteSurvey(recipes []Recipe, survey WorksiteSurvey) []Recipe {
-	if len(recipes) == 0 {
-		return nil
-	}
-	out := []Recipe{}
-	for _, recipe := range recipes {
-		if RecipeAllowedByWorksiteSurvey(recipe, survey) {
-			out = append(out, recipe)
-		}
-	}
-	return out
-}
-
-func RecipeAllowedByWorksiteSurvey(recipe Recipe, survey WorksiteSurvey) bool {
-	if stringListContains(cleanStringList(survey.ForbiddenRecipeIDs), strings.TrimSpace(recipe.ID)) {
-		return false
-	}
-	operation := normalizeUserOperation(recipe.Operation)
-	if survey.UserOperation != "" && survey.UserOperation != userOperationUnknown && operation != userOperationUnknown && operation != survey.UserOperation {
-		return false
-	}
-	forbidden := cleanStringList(recipe.ForbiddenUserOperations)
-	if survey.UserOperation != "" && stringListContains(forbidden, survey.UserOperation) {
-		return false
-	}
-	requiredStates := cleanStringList(recipe.RequiredProjectStates)
-	if len(requiredStates) > 0 && !stringListContains(requiredStates, survey.ProjectState) {
-		return false
-	}
-	return true
-}
-
-func stringListContains(values []string, target string) bool {
-	target = strings.TrimSpace(target)
-	for _, value := range values {
-		if strings.TrimSpace(value) == target {
-			return true
-		}
-	}
-	return false
-}
-
-func recipeIDs(recipes []Recipe) []string {
-	ids := make([]string, 0, len(recipes))
-	for _, recipe := range recipes {
-		if strings.TrimSpace(recipe.ID) != "" {
-			ids = append(ids, recipe.ID)
-		}
-	}
-	return ids
-}
-
-func recipePromptCandidates(recipes []Recipe) []RecipePromptCandidate {
-	out := make([]RecipePromptCandidate, 0, len(recipes))
-	for _, recipe := range recipes {
-		objectiveIDs := []string{}
-		for _, objective := range recipe.Objectives {
-			objectiveIDs = append(objectiveIDs, objective.ID)
-		}
-		out = append(out, RecipePromptCandidate{
-			ID:               recipe.ID,
-			Description:      recipe.Description,
-			Operation:        recipe.Operation,
-			ObjectiveIDs:     objectiveIDs,
-			EvidenceRequired: recipe.EvidenceRequired,
-		})
-	}
-	return out
-}
-
-func recipeRuntimeConstraints(recipes []Recipe) []RecipeRuntimeConstraint {
-	out := make([]RecipeRuntimeConstraint, 0, len(recipes))
-	for _, recipe := range recipes {
-		out = append(out, RecipeRuntimeConstraint{
-			ID:               recipe.ID,
-			Description:      recipe.Description,
-			Operation:        recipe.Operation,
-			AllowedCommands:  recipe.AllowedCommands,
-			EvidenceRequired: recipe.EvidenceRequired,
-			CompletionChecks: recipe.CompletionChecks,
-		})
-	}
-	return out
-}
-
 func validateRecipe(recipe Recipe) error {
 	if strings.TrimSpace(recipe.ID) == "" {
 		return fmt.Errorf("id is required")
@@ -224,53 +77,41 @@ func validateRecipe(recipe Recipe) error {
 	if len(recipe.Objectives) == 0 {
 		return fmt.Errorf("at least one objective is required")
 	}
-	seen := map[string]struct{}{}
+	known := make(map[string]struct{}, len(recipe.Objectives))
 	for _, objective := range recipe.Objectives {
 		id := strings.TrimSpace(objective.ID)
-		if id == "" {
-			return fmt.Errorf("objective id is required")
+		if id == "" || strings.TrimSpace(objective.Description) == "" {
+			return fmt.Errorf("every objective requires an id and description")
 		}
-		if _, exists := seen[id]; exists {
+		if _, duplicate := known[id]; duplicate {
 			return fmt.Errorf("duplicate objective id %q", id)
 		}
-		seen[id] = struct{}{}
-		if strings.TrimSpace(objective.Description) == "" {
-			return fmt.Errorf("objective %q description is required", id)
-		}
+		known[id] = struct{}{}
 	}
 	for _, objective := range recipe.Objectives {
-		for _, dep := range objective.DependsOn {
-			dep = strings.TrimSpace(dep)
-			if dep == "" {
-				return fmt.Errorf("objective %q has empty dependency", objective.ID)
-			}
-			if _, ok := seen[dep]; !ok {
-				return fmt.Errorf("objective %q depends on unknown objective %q", objective.ID, dep)
-			}
-			if dep == objective.ID {
-				return fmt.Errorf("objective %q cannot depend on itself", objective.ID)
+		for _, dependency := range objective.DependsOn {
+			dependency = strings.TrimSpace(dependency)
+			if _, exists := known[dependency]; !exists {
+				return fmt.Errorf("objective %q depends on unknown objective %q", objective.ID, dependency)
 			}
 		}
 	}
 	if err := validateRecipeObjectiveDAG(recipe.Objectives); err != nil {
 		return err
 	}
-	if len(recipe.AllowedCommands) == 0 {
-		return fmt.Errorf("allowed_commands is required")
-	}
-	if len(recipe.EvidenceRequired) == 0 {
-		return fmt.Errorf("evidence_required is required")
+	if len(recipe.AllowedCommands) == 0 || len(recipe.EvidenceRequired) == 0 {
+		return fmt.Errorf("allowed_commands and evidence_required are required")
 	}
 	return nil
 }
 
 func validateRecipeObjectiveDAG(objectives []RecipeObjective) error {
-	byID := map[string]RecipeObjective{}
+	byID := make(map[string]RecipeObjective, len(objectives))
 	for _, objective := range objectives {
 		byID[objective.ID] = objective
 	}
-	visiting := map[string]bool{}
-	visited := map[string]bool{}
+	visiting := make(map[string]bool, len(objectives))
+	visited := make(map[string]bool, len(objectives))
 	var visit func(string) error
 	visit = func(id string) error {
 		if visited[id] {
@@ -280,8 +121,8 @@ func validateRecipeObjectiveDAG(objectives []RecipeObjective) error {
 			return fmt.Errorf("objective dependency cycle includes %q", id)
 		}
 		visiting[id] = true
-		for _, dep := range byID[id].DependsOn {
-			if err := visit(dep); err != nil {
+		for _, dependency := range byID[id].DependsOn {
+			if err := visit(dependency); err != nil {
 				return err
 			}
 		}

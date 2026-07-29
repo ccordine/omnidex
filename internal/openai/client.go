@@ -42,11 +42,19 @@ type chatCompletionRequest struct {
 	Model          string                        `json:"model"`
 	Messages       []chatMessage                 `json:"messages"`
 	Stream         bool                          `json:"stream"`
+	MaxTokens      int                           `json:"max_tokens,omitempty"`
 	ResponseFormat *chatCompletionResponseFormat `json:"response_format,omitempty"`
 }
 
 type chatCompletionResponseFormat struct {
-	Type string `json:"type"`
+	Type       string                    `json:"type"`
+	JSONSchema *chatCompletionJSONSchema `json:"json_schema,omitempty"`
+}
+
+type chatCompletionJSONSchema struct {
+	Name   string         `json:"name"`
+	Strict bool           `json:"strict"`
+	Schema map[string]any `json:"schema"`
 }
 
 type chatCompletionResponse struct {
@@ -190,18 +198,27 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 	}
 
 	request := chatCompletionRequest{
-		Model: model,
+		Model:     model,
+		MaxTokens: prepared.MaxOutputTokens,
 		Messages: []chatMessage{
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: promptHint},
 		},
 		Stream: false,
 	}
+	if err := llm.ValidateResponseContract(prepared); err != nil {
+		return "", err
+	}
 	if prepared.ResponseFormat != "" {
-		if prepared.ResponseFormat != llm.ResponseFormatJSON {
-			return "", fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
-		}
 		request.ResponseFormat = &chatCompletionResponseFormat{Type: "json_object"}
+		if len(prepared.ResponseSchema) > 0 {
+			request.ResponseFormat = &chatCompletionResponseFormat{
+				Type: "json_schema",
+				JSONSchema: &chatCompletionJSONSchema{
+					Name: "omnidex_station_output", Strict: true, Schema: prepared.ResponseSchema,
+				},
+			}
+		}
 	}
 	var resp chatCompletionResponse
 	err := c.doJSON(ctx, http.MethodPost, c.chatCompletionsPath(model), request, &resp)
@@ -239,39 +256,6 @@ func (c *Client) Embedding(ctx context.Context, content string) ([]float64, erro
 		return nil, fmt.Errorf("embedding response missing vectors")
 	}
 	return resp.Data[0].Embedding, nil
-}
-
-func (c *Client) SuggestTags(ctx context.Context, content string, maxTags int) ([]string, error) {
-	return c.SuggestTagsWithModel(ctx, c.defaultModel, content, maxTags)
-}
-
-func (c *Client) SuggestTagsWithModel(ctx context.Context, model, content string, maxTags int) ([]string, error) {
-	if maxTags <= 0 {
-		maxTags = 8
-	}
-	if strings.TrimSpace(model) == "" {
-		model = c.defaultModel
-	}
-	if strings.TrimSpace(model) == "" {
-		return nil, fmt.Errorf("model is required")
-	}
-
-	prompt := strings.Join([]string{
-		"Extract compact relevance tags for retrieval.",
-		"Operational mode: text analysis only. Do not roleplay or invent fictional context.",
-		"Return only comma-separated lowercase tags.",
-		fmt.Sprintf("Maximum tags: %d.", maxTags),
-		"Do not include punctuation-only tokens.",
-		"Text:",
-		content,
-	}, "\n")
-
-	result, err := c.Generate(ctx, model, prompt)
-	if err != nil {
-		return nil, err
-	}
-
-	return llm.ParseSuggestedTags(result, content, maxTags), nil
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, payload any, out any) error {

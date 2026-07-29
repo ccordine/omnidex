@@ -9,6 +9,8 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
+const maxMemoryRetrievalLimit = 64
+
 type v3MemoryAuthorityContextKey struct{}
 
 type v3MemoryAuthority struct {

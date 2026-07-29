@@ -163,11 +163,15 @@ func registerV3MemoryTools(registry *toolruntime.Registry, s *Service) {
 		if err != nil {
 			return toolruntime.Result{}, fmt.Errorf("memory retrieval embedding failed: %w", err)
 		}
-		matches, err := s.repo.FindRelevantMemory(ctx, embedding, scopeTags, limit)
+		candidateLimit := limit * 4
+		if candidateLimit > maxMemoryRetrievalLimit {
+			candidateLimit = maxMemoryRetrievalLimit
+		}
+		matches, err := s.repo.FindRelevantMemory(ctx, embedding, scopeTags, candidateLimit)
 		if err != nil {
 			return toolruntime.Result{}, fmt.Errorf("scoped memory retrieval failed: %w", err)
 		}
-		ranked := rankMemoryOmnibusMatches(matches, query, scopeTags, authority.ProjectScope, authority.SessionScope, limit, nowUTC())
+		ranked := orderV3MemoryMatches(matches, authority.ProjectScope, authority.SessionScope, candidateLimit)
 		ranked = diversifyMemoryMatchesBySourceURL(ranked, limit)
 		artifact, projected := projectV3MemoryToolResult(authority.Intent, ranked, authority.ProjectScope, authority.SessionScope, limit)
 		items := make([]map[string]any, 0, len(artifact.Items))

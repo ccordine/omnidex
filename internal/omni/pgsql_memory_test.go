@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestTwoModelsCommunicateThroughPostgresMemoryInterface(t *testing.T) {
+func TestPostgresMemoryStoresAndRetrievesScopedRecords(t *testing.T) {
 	ctx := context.Background()
 	runner := newFakeMemoryRunner()
 	store := NewPGMemoryStore(runner)
@@ -53,21 +53,6 @@ func TestTwoModelsCommunicateThroughPostgresMemoryInterface(t *testing.T) {
 	}
 	if !memoryRecordsContain(memories, "coding agents") {
 		t.Fatalf("missing career memory: %#v", memories)
-	}
-
-	payload := "MEMORY_QUERY: Gryph career identity"
-	client, closeServer := fakeOllamaClient(t, []string{
-		mustRelayJSON(t, "model_a", "memory_manager", payload),
-		mustRelayJSON(t, "memory_manager", "model_b", payload),
-	})
-	defer closeServer()
-	relay := NewLLMRelayService(client).WithTimeout(5 * time.Second)
-	result, err := relay.TelephoneGame(ctx, []string{"model_a", "memory_manager", "model_b"}, payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !result.Delivered {
-		t.Fatal("relay did not deliver memory query")
 	}
 
 	for _, wantSQL := range []string{

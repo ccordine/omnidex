@@ -70,6 +70,16 @@ func TestEnvVarForRoleID(t *testing.T) {
 		{roleID: RoleCorrectionSpecialist, want: "OLLAMA_MODEL_SPECIALIST_CORRECTION"},
 		{roleID: RoleCodeSpecialist, want: "OLLAMA_MODEL_SPECIALIST_CODE"},
 		{roleID: RoleSummarySpecialist, want: "OLLAMA_MODEL_SPECIALIST_SUMMARY"},
+		{roleID: RoleCodingSurfaceStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_SURFACE"},
+		{roleID: RoleCodingProductIdentityStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY"},
+		{roleID: RoleCodingRequirementPartitionStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION"},
+		{roleID: RoleCodingRequirementSplitStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT"},
+		{roleID: RoleCodingArtifactHandlingStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING"},
+		{roleID: RoleCodingCapabilityRelationStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION"},
+		{roleID: RoleCodingSkillSelectionStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION"},
+		{roleID: RoleCodingSkillProcedureStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE"},
+		{roleID: RoleCodingFragmentStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT"},
+		{roleID: RoleCodingFragmentCorrectionStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION"},
 		{roleID: "unknown", want: ""},
 	}
 

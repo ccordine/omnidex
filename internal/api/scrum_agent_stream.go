@@ -321,7 +321,7 @@ func appendOrMergeChannelMessage(chat []ScrumChatMessage, msg ScrumChatMessage) 
 		}
 		last.Content = merged
 	case "thinking":
-		merged := mergePilotThoughtText(stripAssistantStreamMarker(last.Content), content)
+		merged := mergeScrumChannelThoughtText(stripAssistantStreamMarker(last.Content), content)
 		if merged == strings.TrimSpace(stripAssistantStreamMarker(last.Content)) {
 			return chat
 		}

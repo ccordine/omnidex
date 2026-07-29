@@ -7,7 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
-func (s *Service) scrumCardTicketModelFromProject(settings []byte, metaTicketModel string) (string, error) {
+func scrumCardTicketModelFromProject(settings []byte, metaTicketModel, fallback string) (string, error) {
 	if modelName := strings.TrimSpace(metaTicketModel); modelName != "" {
 		return modelName, nil
 	}
@@ -15,5 +15,5 @@ func (s *Service) scrumCardTicketModelFromProject(settings []byte, metaTicketMod
 	if err != nil {
 		return "", fmt.Errorf("parse project model config for Scrum ticket: %w", err)
 	}
-	return modelconfig.PlannerTicketModel(cfg, firstNonEmpty(s.models.Plan, s.models.Default))
+	return modelconfig.PlannerTicketModel(cfg, fallback)
 }

@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -110,37 +109,6 @@ func (r *Repository) SubmitJobFeedback(ctx context.Context, jobID int64, feedbac
 		return model.Job{}, err
 	}
 
-	var approvalRequiredRaw string
-	approvalCtxErr := tx.QueryRow(ctx, `
-		SELECT value
-		FROM step_contexts
-		WHERE step_id = $1 AND key = $2
-		ORDER BY id DESC
-		LIMIT 1
-	`, stepID, "approval_required").Scan(&approvalRequiredRaw)
-	if approvalCtxErr != nil && !errors.Is(approvalCtxErr, pgx.ErrNoRows) {
-		return model.Job{}, approvalCtxErr
-	}
-	approvalRequired := approvalCtxErr == nil && strings.EqualFold(strings.TrimSpace(approvalRequiredRaw), "true")
-	if approvalRequired && !isExplicitApprovalFeedback(feedback) {
-		return model.Job{}, fmt.Errorf("explicit approval required: reply with APPROVE: <notes> to continue")
-	}
-
-	v3Authority, err := jobUsesV3AuthorityTx(ctx, tx, jobID)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if v3Authority && !approvalRequired {
-		successor, err := r.reviseV3AuthorityTx(ctx, tx, job, feedback, "feedback")
-		if err != nil {
-			return model.Job{}, err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return model.Job{}, err
-		}
-		return successor, nil
-	}
-
 	if _, err := tx.Exec(ctx, `
 		UPDATE job_steps
 		SET status = $2, output = $3, finished_at = NOW(), updated_at = NOW()
@@ -205,16 +173,4 @@ func (r *Repository) SubmitJobFeedback(ctx context.Context, jobID int64, feedbac
 	}
 
 	return job, nil
-}
-
-func isExplicitApprovalFeedback(value string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	if normalized == "" {
-		return false
-	}
-	return strings.HasPrefix(normalized, "approve") ||
-		strings.HasPrefix(normalized, "approved") ||
-		strings.HasPrefix(normalized, "yes, proceed") ||
-		strings.HasPrefix(normalized, "yes proceed") ||
-		strings.Contains(normalized, " i approve")
 }

@@ -152,40 +152,10 @@ func (c *Client) ScanProjectTree(ctx context.Context, path string, maxFiles int)
 	return decodeProjectWalkResult(payload["walk"])
 }
 
-func (c *Client) PersistProjectMap(ctx context.Context, path string, indexJSON, mapJSON []byte) (string, string, error) {
-	body, err := json.Marshal(map[string]any{
-		"path":       strings.TrimSpace(path),
-		"index_json": json.RawMessage(indexJSON),
-		"map_json":   json.RawMessage(mapJSON),
-	})
-	if err != nil {
-		return "", "", err
-	}
-	payload, err := c.postJSON(ctx, "/v1/project-map/scan", body)
-	if err != nil {
-		return "", "", err
-	}
-	return stringField(payload, "index_path"), stringField(payload, "map_path"), nil
-}
-
 func (c *Client) ProjectGitStatus(ctx context.Context, path string) (map[string]any, error) {
 	query := url.Values{}
 	query.Set("path", strings.TrimSpace(path))
 	return c.getJSON(ctx, "/v1/project/git?"+query.Encode())
-}
-
-func (c *Client) ReadProjectMap(ctx context.Context, path string) (map[string]any, string, bool, error) {
-	query := url.Values{}
-	query.Set("path", strings.TrimSpace(path))
-	payload, err := c.getJSON(ctx, "/v1/project-map?"+query.Encode())
-	if err != nil {
-		return nil, "", false, err
-	}
-	rawMap, _ := payload["map"].(map[string]any)
-	if rawMap == nil {
-		rawMap = map[string]any{}
-	}
-	return rawMap, stringField(payload, "map_path"), boolField(payload, "exists"), nil
 }
 
 func decodeProjectWalkResult(raw any) (ProjectWalkResult, error) {

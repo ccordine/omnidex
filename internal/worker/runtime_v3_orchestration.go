@@ -18,14 +18,14 @@ func (r *nativeRuntimeV3) runPlanning() error {
 	if err != nil {
 		return err
 	}
-	if plan, ok := buildV3ImplementationCoordinatorPlan(intent); ok {
+	if plan, ok := buildV3CodingCoordinatorPlan(intent); ok {
 		if err := validateV3Plan(plan, intent, capability); err != nil {
 			return err
 		}
 		if err := r.validatePlannedSpecialists(plan); err != nil {
 			return err
 		}
-		r.svc.emitStepEvent(r.claim.Step.ID, "plan_policy_selected", "strategy=implementation_ledger coordinator_steps=1 model_jobs=file_scoped")
+		r.svc.emitStepEvent(r.claim.Step.ID, "plan_policy_selected", "strategy=direct_coding coordinator_steps=1 state=workspace")
 		return r.persistV3Plan(plan)
 	}
 	workspaceArtifact, err := r.readWorkspaceArtifact()
@@ -60,7 +60,7 @@ func (r *nativeRuntimeV3) runPlanning() error {
 	if err != nil {
 		return err
 	}
-	modelName := r.svc.v3SpecialistModel(r.claim.Job, "executive_planner", specialist.RolePlannerSpecialist, r.svc.models.Plan)
+	modelName := r.svc.v3SpecialistModel(r.claim.Job, r.routing, "executive_planner", specialist.RolePlannerSpecialist, r.routing.Plan)
 	validateOutput := func(output map[string]any) error {
 		raw, err := json.Marshal(output)
 		if err != nil {
@@ -115,8 +115,8 @@ func (r *nativeRuntimeV3) runSubtask() error {
 	}
 	var summary string
 	var sources []string
-	if executionModeForObjective(authoritativeObjective) == subtaskExecutionModeImplementation {
-		summary, sources, err = r.runImplementationObjective(assignment, authoritativeObjective)
+	if requiresDirectCoding(authoritativeObjective) {
+		summary, sources, err = r.runDirectCodingObjective(assignment, authoritativeObjective, intent.CompletionCriteria)
 	} else {
 		summary, sources, err = r.runSubtaskWithTools(assignment, authoritativeObjective)
 	}

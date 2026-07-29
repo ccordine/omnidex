@@ -76,10 +76,6 @@ func (s *Server) handleProjectDebuggerRun(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.syncProjectMapByID(r.Context(), project.ID); err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Sprintf("synchronize project map before analysis: %v", err))
-		return
-	}
 	metadata, err := projectdebugger.JobMetadata(project.ID, agentSystem, analyzerModel, ticketModel)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

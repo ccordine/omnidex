@@ -33,7 +33,7 @@ func (s *Service) runDataSourceExploreStep(ctx context.Context, claim *model.Cla
 	if err != nil {
 		return fmt.Errorf("load data source: %w", err)
 	}
-	llm, err := s.dataSourceLLMClient()
+	llm, err := s.dataSourceLLMClient(claim.Job)
 	if err != nil {
 		return err
 	}

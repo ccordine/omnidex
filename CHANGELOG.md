@@ -1,6 +1,40 @@
 # Changelog
 
-Release codenames follow Omnidex pride versioning based on National Dex order: Bulbasaur (alpha), Ivysaur (growth), **Venusaur** (current — augmented planner & human-in-the-loop scrum).
+Release codenames follow Omnidex pride versioning based on National Dex order: Bulbasaur, Ivysaur, Venusaur, and **Charmander** (current development release).
+
+## v0.4.0 - Charmander (in development)
+
+Charmander is the **AI assembly-line release**. It replaces broad coding-agent loops with server-owned orchestration and small typed model jobs. Its initial three unattended junior-application baseline now passes; arbitrary-project support remains intentionally unclaimed.
+
+### Coding control plane
+
+- Split path-blind semantic interpretation into a five-field classification and one shape-specific label seed. Code validates and expands that seed into the hard-typed software contract; the model never emits the expanded contract.
+- Added deterministic Go adapters for record, unit-conversion, and expense-report CLIs, including code-owned declarations, atomic persistence where required, and assertion-bearing tests.
+- Added dependency-wave scheduling, bounded parallel function transforms, exact single-function AST validation, import derivation, document stitching, and block line maps.
+- Added isolated complete-program staging before authoritative writes and exact test/compiler routing to one declared generated owner.
+- Made actionable free-form turns use one cohesive objective, then bypassed planner, analysis, response, verifier, and memory model calls for deterministic coding results. Code now derives the final summary and verdict directly from the accepted subtask and persisted diff/test evidence.
+- Removed phrase-based requirement compilers, model-generated manifests, whole-file source workers, file repair agents, LLM repair routers, source-version ledgers, and compatibility fallbacks.
+- Removed greeting/action verb dictionaries, software-noun routing, token-overlap requirement scoring, and English sentence-prefix intent rewriting. Typed transport selects the pipeline; semantic intent remains a model task.
+- Removed Project Planning and Scrum Coach slash-prefix mode routing. Their explicit request mode is now the sole transport authority, and free-form message text remains untouched.
+- Removed content-scanned memory categories and assistant-text tool detection. Memory kind/tags and message roles are typed authority; model text cannot reroute storage or presentation.
+- Removed cross-model contract-repair fallback and rejected-response replay. Bounded repairs use the configured model with current authority and the exact validation failure.
+- Put semantic correction on deterministic one-field merge rails: code retains the decoded seed, the correction schema exposes one top-level field, and a structural diff rejects full retries, unrelated mutations, multiple nested changes, and no-ops.
+- Deleted the unreachable legacy planner, tournament, memory-inference, response-rewrite, verification-guessing, and Ollama-restart engine instead of retaining compatibility paths; removed and explicitly reject its obsolete environment settings.
+- Removed the separate keyword-routed research CLI, freshness ledger, dossier store, and official-source fallback. Free-form research now uses the same typed semantic-intent and bounded web-evidence stages as other requests.
+- Added exact workspace reconciliation, protected opaque artifacts, fixed typed-program verification commands, reviewable diffs, and server-authoritative completion.
+- Made per-job model routing immutable so concurrent swarm workers cannot overwrite or restore one another's model selections.
+- Enforced same-job feedback, interruption, and replanning at both server and browser boundaries and deleted unreachable successor-job compatibility responses.
+- Removed the CLI's write-only architect profile and planning, persistence, review, missing-tool, generic reasoning, autonomy, approval, verification, web, and workspace controls. Stale top-level metadata now fails explicitly; only runtime-backed model, external-agent, and research-query settings remain.
+- Registered raw-function response mode for fragment stations; unknown model-call scopes now fail explicitly instead of inheriting a guessed format.
+- Completed a fresh current-build set of three clean-workspace Go CLI proof runs in 53.812 seconds total with eight compact semantic calls, zero fragment-model calls, independently passing tests, and unchanged protected request artifacts. See `docs/CHARMANDER_PROOF.md` for the measured comparison, discarded regression run, and limitations.
+
+### Models, UI, and operations
+
+- Published the core through `https://omni.worknet` over WorkNet's Docker edge instead of claiming host port 8090; fixed standard-HTTPS URL normalization and pinned the edge subnet inside WorkNet's existing Docker-to-Ollama trust boundary.
+- Added a centralized Chinese-service catalog covering DeepSeek, Qwen / Alibaba Model Studio, Moonshot / Kimi, Zhipu / GLM, Z.AI, MiniMax, Baidu Qianfan / ERNIE, Tencent Hunyuan, ByteDance Ark / Doubao, StepFun, 01.AI Yi, Baichuan, iFlytek Spark, SiliconFlow, ModelScope, Huawei ModelArts, Xiaomi MiMo, Meituan LongCat, Ant Ling / InclusionAI, and Tencent TokenHub.
+- Replaced coding planner/source/reviewer roles with one semantic role and one optional fragment role. Tests and standard behavior are rendered by code; a fragment model can return only one immutable-signature function.
+- Added English, Spanish, Simplified Chinese, Russian, and Japanese server-owned UI locale catalogs.
+- Added concise live coding phases, model heartbeats, accepted-file events, reviewable diffs, exact verification failures, and terminal state reporting without replaying redundant status.
 
 ## v0.3.0 - Venusaur
 

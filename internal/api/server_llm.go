@@ -175,26 +175,6 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 	if len(req.Metadata) == 0 {
 		req.Metadata = []byte(`{}`)
 	}
-	if s.v3Enabled {
-		var payload map[string]any
-		if err := json.Unmarshal(req.Metadata, &payload); err != nil {
-			writeError(w, http.StatusBadRequest, "metadata must be a JSON object")
-			return
-		}
-		if payload == nil {
-			payload = map[string]any{}
-		}
-		if _, ok := payload["runtime"]; !ok {
-			payload["runtime"] = "v3"
-		}
-		updated, err := json.Marshal(payload)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to prepare metadata")
-			return
-		}
-		req.Metadata = updated
-	}
-
 	enriched, _, enrichErr := s.enrichJobMetadata(r.Context(), req.Metadata, ScrumCard{})
 	if enrichErr != nil {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("model setup failed: %v", enrichErr))
@@ -417,16 +397,13 @@ func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	response := map[string]any{"job": job}
-	if job.ID != jobID {
-		response["superseded_job_id"] = jobID
-		s.publishJobProgress(jobID, realtimeJobFinished, "Job superseded by revised user authority")
-		s.publishJobProgress(job.ID, realtimeJobQueued, "Revised job queued from user feedback")
-	} else {
-		s.publishJobProgress(jobID, realtimeJobChanged, "Job feedback accepted")
+	if err := validateSameJobAuthority(jobID, job); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
+	s.publishJobProgress(jobID, realtimeJobChanged, "Job feedback accepted")
 
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, map[string]any{"job": job})
 }
 
 func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int64) {
@@ -451,16 +428,13 @@ func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int6
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	response := map[string]any{"job": job}
-	if job.ID != jobID {
-		response["superseded_job_id"] = jobID
-		s.publishJobProgress(jobID, realtimeJobFinished, "Job superseded by revised user authority")
-		s.publishJobProgress(job.ID, realtimeJobQueued, "Revised job queued from interruption")
-	} else {
-		s.publishJobProgress(jobID, realtimeJobChanged, "Job interruption accepted")
+	if err := validateSameJobAuthority(jobID, job); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
+	s.publishJobProgress(jobID, realtimeJobChanged, "Job interruption accepted")
 
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, map[string]any{"job": job})
 }
 
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) {

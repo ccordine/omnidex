@@ -5,11 +5,14 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/artifacts"
-	"github.com/gryph/omnidex/internal/chat"
 	"github.com/gryph/omnidex/internal/model"
 )
 
 func (r *nativeRuntimeV3) runMemoryReview() error {
+	intent, err := r.readIntentArtifact()
+	if err != nil {
+		return err
+	}
 	verification, err := r.readVerificationArtifact()
 	if err != nil {
 		return err
@@ -17,6 +20,18 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 	if verification.Verdict != artifacts.VerificationVerdictPass || verificationHasBlockingFindings(verification) {
 		summary := "memory review suppressed: independent verification did not pass cleanly"
 		r.svc.emitStepEvent(r.claim.Step.ID, "memory_review_suppressed", "verdict="+safeLine(verification.Verdict, "missing"))
+		return r.complete("memory_review", summary, summary)
+	}
+	if _, directCoding := buildV3CodingCoordinatorPlan(intent); directCoding {
+		candidates, err := r.svc.repo.ListMemoryCandidates(r.ctx, r.claim.Job.ID, "candidate", 1)
+		if err != nil {
+			return err
+		}
+		if len(candidates) > 0 {
+			return fmt.Errorf("deterministic coding route produced an unauthorized memory candidate %d", candidates[0].ID)
+		}
+		summary := "coding memory review: no memory candidates permitted"
+		r.svc.emitStepEvent(r.claim.Step.ID, "coding_memory_absent", "candidates=0 model_calls=0")
 		return r.complete("memory_review", summary, summary)
 	}
 	candidates, err := r.svc.repo.ListMemoryCandidates(r.ctx, r.claim.Job.ID, "candidate", 24)
@@ -30,7 +45,7 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 	rejected := make([]string, 0, len(candidates))
 	tags := memoryScopeTags(r.claim.Job, splitCSVTags(r.contexts["tags"]))
 	for _, candidate := range candidates {
-		decision := reviewMemoryCandidate(candidate, r.claim.Job)
+		decision := reviewMemoryCandidate(candidate)
 		if decision == model.MemoryCandidateStatusRejected {
 			rejected = append(rejected, candidate.Content)
 			if err := r.svc.repo.UpdateMemoryCandidateStatus(r.ctx, candidate.ID, model.MemoryCandidateStatusRejected); err != nil {
@@ -59,16 +74,6 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 	return r.complete("memory_review", summary, summary)
 }
 
-func (r *nativeRuntimeV3) runChatFastPath() error {
-	response := chat.LowSignalResponse(r.claim.Job.Instruction)
-	artifact := artifacts.ResponseDraftArtifact{Response: response}
-	if err := r.writeArtifact(artifacts.KindResponseDraft, artifact); err != nil {
-		return err
-	}
-	r.svc.emitStepEvent(r.claim.Step.ID, "response_ready", "strategy=low_signal_fastpath")
-	return r.complete("response", response, response)
-}
-
 func (r *nativeRuntimeV3) runFinalize() error {
 	intent, err := r.readIntentArtifact()
 	if err != nil {
@@ -87,8 +92,8 @@ func (r *nativeRuntimeV3) runFinalize() error {
 		return fmt.Errorf("list evidence for finalization: %w", err)
 	}
 	final := strings.TrimSpace(draft.Response)
-	if genericNonAnswer(final) {
-		return fmt.Errorf("v3 finalization rejected a non-substantive response draft")
+	if final == "" {
+		return fmt.Errorf("v3 finalization requires a non-empty response draft")
 	}
 	if err := validateV3Finalization(intent, verificationArtifact, records, final); err != nil {
 		return err

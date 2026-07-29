@@ -158,13 +158,8 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 	if !ok {
 		return ScrumCard{}, fmt.Errorf("card not found")
 	}
-	instruction := s.buildScrumPlayInstructionWithHistory(r.Context(), board, card)
-	if len(card.Chat) > 0 {
-		query := scrumChannelResumeQuery(card)
-		pilotContext := s.summarizeScrumPilotChannel(r.Context(), board, card, query, nil)
-		s.recordScrumPilotContextShrink(r.Context(), projectID, card, board, query, pilotContext, instruction)
-	}
-	return s.enqueueScrumCardAgentRun(r, board, projectID, card, instance, instruction, false, "")
+	instruction := buildScrumPlayInstruction(board, card)
+	return s.enqueueScrumCardAgentRun(r, board, projectID, card, instance, instruction, false)
 }
 
 func scrumCardFromBoard(board ScrumBoard, cardID string) (ScrumCard, bool) {

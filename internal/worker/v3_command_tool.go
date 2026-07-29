@@ -151,11 +151,11 @@ func validateV3Command(program string, args []string) error {
 	}
 	verb := strings.ToLower(strings.TrimSpace(args[0]))
 	allowed := map[string]map[string]struct{}{
-		"go": {"build": {}, "list": {}, "mod": {}, "test": {}, "version": {}, "vet": {}}, "git": {"diff": {}, "log": {}, "rev-parse": {}, "show": {}, "status": {}},
-		"npm": {"init": {}, "run": {}, "test": {}}, "pnpm": {"run": {}, "test": {}}, "yarn": {"run": {}, "test": {}},
+		"go": {"build": {}, "fmt": {}, "list": {}, "mod": {}, "test": {}, "version": {}, "vet": {}}, "git": {"diff": {}, "log": {}, "rev-parse": {}, "show": {}, "status": {}},
+		"npm": {"init": {}, "install": {}, "run": {}, "test": {}}, "pnpm": {"run": {}, "test": {}}, "yarn": {"run": {}, "test": {}},
 		"cargo": {"build": {}, "check": {}, "clippy": {}, "fmt": {}, "init": {}, "test": {}}, "pytest": {verb: {}}, "python3": {"-m": {}},
 		"dotnet": {"build": {}, "test": {}}, "mvn": {"test": {}, "verify": {}}, "gradle": {"build": {}, "check": {}, "test": {}},
-		"phpunit": {verb: {}}, "composer": {"validate": {}},
+		"phpunit": {verb: {}}, "composer": {"test": {}, "validate": {}},
 	}
 	verbs, ok := allowed[strings.ToLower(program)]
 	if !ok {
@@ -177,6 +177,9 @@ func validateV3Command(program string, args []string) error {
 	if program == "npm" && verb == "init" && (len(args) != 2 || args[1] != "--yes" && args[1] != "-y") {
 		return fmt.Errorf("command.run permits npm init only as npm init --yes")
 	}
+	if program == "npm" && verb == "install" && !slicesEqualStrings(args, directCodingNPMInstallArgs()) {
+		return fmt.Errorf("command.run permits npm install only with the code-owned no-script verification arguments")
+	}
 	if program == "python3" && (len(args) < 2 || args[0] != "-m" || args[1] != "pytest") {
 		return fmt.Errorf("command.run permits python3 only as python3 -m pytest")
 	}
@@ -190,6 +193,18 @@ func validateV3Command(program string, args []string) error {
 		return fmt.Errorf("command.run requires git diff --no-ext-diff --no-textconv to disable repository-configured executors")
 	}
 	return nil
+}
+
+func slicesEqualStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func validateV3CargoInit(args []string) error {

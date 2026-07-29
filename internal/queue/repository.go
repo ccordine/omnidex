@@ -12,7 +12,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/artifacts"
-	"github.com/gryph/omnidex/internal/chat"
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
@@ -305,7 +304,7 @@ func createTelemetryRunForJob(ctx context.Context, tx pgx.Tx, job model.Job, pro
 	projectType := strings.TrimSpace(firstMetadataString(metadata, "project_type", "framework", "stack"))
 	taskKind := strings.TrimSpace(firstMetadataString(metadata, "task_kind", "kind"))
 	if taskKind == "" {
-		taskKind = inferTelemetryTaskKind(job.Pipeline, job.Instruction, metadata)
+		taskKind = inferTelemetryTaskKind(job.Pipeline, metadata)
 	}
 	promptHash := telemetryPromptHash(job.Instruction)
 	promptSummary := telemetryPromptSummary(job.Instruction, 240)
@@ -433,7 +432,7 @@ func pgTextArray(values []string) []string {
 	return values
 }
 
-func inferTelemetryTaskKind(pipeline, instruction string, metadata map[string]any) string {
+func inferTelemetryTaskKind(pipeline string, metadata map[string]any) string {
 	if kind := strings.TrimSpace(firstMetadataString(metadata, "research_topic")); kind != "" {
 		return "research"
 	}
@@ -446,15 +445,7 @@ func inferTelemetryTaskKind(pipeline, instruction string, metadata map[string]an
 	case model.PipelineChat:
 		return "chat"
 	}
-	lower := strings.ToLower(instruction)
-	switch {
-	case strings.Contains(lower, "research"), strings.Contains(lower, "look up"), strings.Contains(lower, "search"):
-		return "research"
-	case strings.Contains(lower, "build"), strings.Contains(lower, "code"), strings.Contains(lower, "test"), strings.Contains(lower, "fix"):
-		return "coding"
-	default:
-		return pipeline
-	}
+	return pipeline
 }
 
 func telemetryPromptHash(instruction string) string {
@@ -508,37 +499,11 @@ func projectNameFromLocation(location string) string {
 	return base
 }
 
-func usesV3NativeSteps(metadataJSON []byte) bool {
-	if len(metadataJSON) == 0 {
-		return false
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(metadataJSON, &payload); err != nil {
-		return false
-	}
-	for _, key := range []string{"runtime", "engine", "execution_mode"} {
-		raw, ok := payload[key]
-		if !ok {
-			continue
-		}
-		text := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", raw)))
-		if text == "v3" || text == "native_v3" || text == "native-v3" {
-			return true
-		}
-	}
-	if raw, ok := payload["v3_enabled"]; ok {
-		switch typed := raw.(type) {
-		case bool:
-			return typed
-		case string:
-			text := strings.ToLower(strings.TrimSpace(typed))
-			return text == "true" || text == "1" || text == "yes" || text == "on"
-		}
-	}
-	return false
-}
-
 func stepsForJob(pipeline, instruction string, metadataJSON []byte) ([]stepSeed, error) {
+	metadata := decodeMetadataObject(metadataJSON)
+	if err := ValidateJobMetadataAuthority(metadata); err != nil {
+		return nil, err
+	}
 	agentCfg, err := agentconfig.FromJobMetadata(metadataJSON)
 	if err != nil {
 		return nil, err
@@ -559,46 +524,36 @@ func stepsForJob(pipeline, instruction string, metadataJSON []byte) ([]stepSeed,
 		return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}, nil
 	}
 	if scrum.IsScrumJob(metadataJSON) {
-		return []stepSeed{
-			{action: "v3_intent_parse", sortIndex: 5},
-			{action: "v3_capability_audit", sortIndex: 10},
-			{action: "v3_workspace_research", sortIndex: 20},
-			{action: "v3_memory_retrieval", sortIndex: 30},
-			{action: "v3_external_research", sortIndex: 35},
-			{action: "v3_planning", sortIndex: 40},
-			{action: "v3_analysis", sortIndex: 80},
-			{action: "v3_response_draft", sortIndex: 90},
-			{action: "v3_verification", sortIndex: 100},
-			{action: "v3_memory_review", sortIndex: 110},
-			{action: "v3_finalize", sortIndex: 120},
-		}, nil
+		channelOrigin, _ := metadata["scrum_channel_origin"].(bool)
+		if !channelOrigin {
+			return []stepSeed{{action: "v3_coding", sortIndex: 5}}, nil
+		}
+		return v3ConversationSteps(), nil
 	}
 	if normalizePipeline(pipeline) == model.PipelineCoding {
 		return stepsForPipeline(model.PipelineCoding), nil
 	}
-	if usesV3NativeSteps(metadataJSON) || strings.EqualFold(strings.TrimSpace(pipeline), "v3") {
-		authorityDirectives, err := v3AuthorityDirectivesFromMetadata(metadataJSON)
-		if err != nil {
-			return nil, err
-		}
-		if chat.IsLowSignal(instruction, pipeline) && len(authorityDirectives) == 0 {
-			return []stepSeed{{action: "v3_chat_fastpath", sortIndex: 1}}, nil
-		}
-		return []stepSeed{
-			{action: "v3_intent_parse", sortIndex: 5},
-			{action: "v3_capability_audit", sortIndex: 10},
-			{action: "v3_workspace_research", sortIndex: 20},
-			{action: "v3_memory_retrieval", sortIndex: 30},
-			{action: "v3_external_research", sortIndex: 35},
-			{action: "v3_planning", sortIndex: 40},
-			{action: "v3_analysis", sortIndex: 80},
-			{action: "v3_response_draft", sortIndex: 90},
-			{action: "v3_verification", sortIndex: 100},
-			{action: "v3_memory_review", sortIndex: 110},
-			{action: "v3_finalize", sortIndex: 120},
-		}, nil
+	switch normalizePipeline(pipeline) {
+	case model.PipelineAssistant, model.PipelineChat, model.PipelineStory:
+		return v3ConversationSteps(), nil
 	}
 	return stepsForPipeline(pipeline), nil
+}
+
+func v3ConversationSteps() []stepSeed {
+	return []stepSeed{
+		{action: "v3_intent_parse", sortIndex: 5},
+		{action: "v3_capability_audit", sortIndex: 10},
+		{action: "v3_workspace_research", sortIndex: 20},
+		{action: "v3_memory_retrieval", sortIndex: 30},
+		{action: "v3_external_research", sortIndex: 35},
+		{action: "v3_planning", sortIndex: 40},
+		{action: "v3_analysis", sortIndex: 80},
+		{action: "v3_response_draft", sortIndex: 90},
+		{action: "v3_verification", sortIndex: 100},
+		{action: "v3_memory_review", sortIndex: 110},
+		{action: "v3_finalize", sortIndex: 120},
+	}
 }
 
 func (r *Repository) WriteArtifact(ctx context.Context, artifact artifacts.Envelope) error {

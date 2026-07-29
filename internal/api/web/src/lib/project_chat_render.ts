@@ -214,7 +214,7 @@ export function renderProjectChatShell(
               <textarea
                 data-project-chat-target="input"
                 rows="2"
-                placeholder="Talk about the project… /batch /research /plan /cards /scan"
+                placeholder="Talk about the project…"
                 class="scrollbar max-h-32 min-h-[3.25rem] w-full resize-none bg-transparent text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-500"
               ></textarea>
               <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">

@@ -102,17 +102,17 @@ func TestSetActiveChatModelUsesOmnidexRoleModels(t *testing.T) {
 	}
 }
 
-func TestSetChatMetadataOverrideValidatesReasoning(t *testing.T) {
+func TestSetChatMetadataOverrideOnlyAcceptsRuntimeBackedModels(t *testing.T) {
 	metadata := map[string]any{}
-	handled, err := setChatMetadataOverride(metadata, "reasoning", "deep")
+	handled, err := setChatMetadataOverride(metadata, "model_plan", "qwen3:14b")
 	if err != nil || !handled {
-		t.Fatalf("expected reasoning handled, handled=%v err=%v", handled, err)
+		t.Fatalf("expected model override handled, handled=%v err=%v", handled, err)
 	}
-	if metadata["reasoning_level"] != "deep" {
-		t.Fatalf("reasoning_level=%#v", metadata["reasoning_level"])
+	if metadata["model_plan"] != "qwen3:14b" {
+		t.Fatalf("model_plan=%#v", metadata["model_plan"])
 	}
-	_, err = setChatMetadataOverride(metadata, "reasoning", "extreme")
-	if err == nil {
-		t.Fatal("expected invalid reasoning to fail")
+	handled, err = setChatMetadataOverride(metadata, "reasoning", "deep")
+	if err != nil || handled {
+		t.Fatalf("write-only reasoning control must be unknown, handled=%v err=%v", handled, err)
 	}
 }

@@ -13,6 +13,20 @@ func (r *nativeRuntimeV3) runAnalysis() error {
 	if err != nil {
 		return err
 	}
+	delegated, err := r.collectSubtaskResults()
+	if err != nil {
+		return err
+	}
+	if artifact, handled, buildErr := buildDeterministicV3CodingAnalysis(intent, delegated); handled {
+		if buildErr != nil {
+			return buildErr
+		}
+		if err := r.writeArtifact(artifacts.KindAnalysis, artifact); err != nil {
+			return err
+		}
+		r.svc.emitStepEvent(r.claim.Step.ID, "coding_analysis_derived", "source=accepted_subtask_result model_calls=0")
+		return r.complete("analysis", artifact.Summary, artifact.Summary)
+	}
 	workspaceArtifact, err := r.readWorkspaceArtifact()
 	if err != nil {
 		return err
@@ -22,10 +36,6 @@ func (r *nativeRuntimeV3) runAnalysis() error {
 		return err
 	}
 	webArtifact, err := r.readWebArtifact()
-	if err != nil {
-		return err
-	}
-	delegated, err := r.collectSubtaskResults()
 	if err != nil {
 		return err
 	}
@@ -49,7 +59,7 @@ func (r *nativeRuntimeV3) runAnalysis() error {
 	if err != nil {
 		return err
 	}
-	modelName := r.svc.v3SpecialistModel(r.claim.Job, "analysis_specialist", specialist.RoleAnalysisSpecialist, r.svc.models.Analyze)
+	modelName := r.svc.v3SpecialistModel(r.claim.Job, r.routing, "analysis_specialist", specialist.RoleAnalysisSpecialist, r.routing.Analyze)
 	output, err := r.invokeSpecialist("v3_analysis", "analysis_specialist", modelName, invocation, nil)
 	if err != nil {
 		return err
@@ -59,8 +69,8 @@ func (r *nativeRuntimeV3) runAnalysis() error {
 		return err
 	}
 	artifact.Summary = strings.TrimSpace(artifact.Summary)
-	if artifact.Summary == "" || genericNonAnswer(artifact.Summary) {
-		return fmt.Errorf("analysis specialist returned a non-substantive analysis")
+	if artifact.Summary == "" {
+		return fmt.Errorf("analysis specialist returned an empty analysis")
 	}
 	if err := r.writeArtifact(artifacts.KindAnalysis, artifact); err != nil {
 		return err
@@ -77,13 +87,23 @@ func (r *nativeRuntimeV3) runResponseDraft() error {
 	if err != nil {
 		return err
 	}
-	records, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
-	if err != nil {
-		return fmt.Errorf("list evidence for response composition: %w", err)
-	}
 	delegated, err := r.collectSubtaskResults()
 	if err != nil {
 		return err
+	}
+	if artifact, handled, buildErr := buildDeterministicV3CodingResponse(intent, analysisArtifact, delegated); handled {
+		if buildErr != nil {
+			return buildErr
+		}
+		if err := r.writeArtifact(artifacts.KindResponseDraft, artifact); err != nil {
+			return err
+		}
+		r.svc.emitStepEvent(r.claim.Step.ID, "coding_response_derived", "source=accepted_coding_summary model_calls=0")
+		return r.complete("response_draft", artifact.Response, artifact.Response)
+	}
+	records, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+	if err != nil {
+		return fmt.Errorf("list evidence for response composition: %w", err)
 	}
 	verificationInput := buildV3VerificationInput(intent, "", records)
 	payload := map[string]any{
@@ -104,7 +124,7 @@ func (r *nativeRuntimeV3) runResponseDraft() error {
 	if err != nil {
 		return err
 	}
-	modelName := r.svc.v3SpecialistModel(r.claim.Job, "response_composer", specialist.RoleResponseSpecialist, r.svc.models.Response)
+	modelName := r.svc.v3SpecialistModel(r.claim.Job, r.routing, "response_composer", specialist.RoleResponseSpecialist, r.routing.Response)
 	output, err := r.invokeSpecialist("v3_response_draft", "response_composer", modelName, invocation, nil)
 	if err != nil {
 		return err
@@ -116,8 +136,8 @@ func (r *nativeRuntimeV3) runResponseDraft() error {
 		return err
 	}
 	draft := strings.TrimSpace(typedOutput.Response)
-	if draft == "" || genericNonAnswer(draft) {
-		return fmt.Errorf("response composer returned a non-substantive response")
+	if draft == "" {
+		return fmt.Errorf("response composer returned an empty response")
 	}
 	artifact := artifacts.ResponseDraftArtifact{Response: draft}
 	if err := r.writeArtifact(artifacts.KindResponseDraft, artifact); err != nil {

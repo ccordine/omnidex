@@ -42,6 +42,8 @@ func main() {
 		runEnqueue(apiClient, os.Args[2:])
 	case "chat":
 		runChat(apiClient, os.Args[2:])
+	case "run":
+		runCoding(apiClient, os.Args[2:])
 	case "list":
 		runList(apiClient, os.Args[2:])
 	case "show":
@@ -70,8 +72,6 @@ func main() {
 		runBrowserScan(os.Args[2:])
 	case "screen-read":
 		runScreenRead(os.Args[2:])
-	case "research":
-		runResearch(apiClient, os.Args[2:])
 	case "audio-notes":
 		runAudioNotes(apiClient, os.Args[2:])
 	case "permissions":

@@ -121,6 +121,7 @@ export function renderContext(context) {
 
 export function contextEventType(key) {
   key = String(key || "").toLowerCase();
+  if (key === "coding_diff") return "coding_diff";
   if (key.includes("prompt")) return "llm_prompt";
   if (key.includes("response") || key.includes("completion")) return "llm_response";
   if (key.includes("context")) return "llm_context";

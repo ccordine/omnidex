@@ -11,22 +11,23 @@ func TestCodebaseMapPayloadSummarizesFiles(t *testing.T) {
 	cm := omni.CodebaseMap{
 		Root:        "/tmp/project",
 		GeneratedAt: "2026-05-29T12:00:00Z",
-		Revision:    "abc123",
 		Files: []omni.FileSummary{
 			{Path: "internal/api/server.go", Language: "go", Module: "internal/api", Purpose: "HTTP server"},
-			{Path: "README.md", Language: "markdown", Module: ".", Purpose: "docs", Stale: true},
+			{Path: "README.md", Language: "markdown", Module: ".", Purpose: "docs"},
 		},
 		Modules: []omni.ModuleSummary{
 			{Path: "internal/api", Purpose: "API layer", ImportantFiles: []string{"internal/api/server.go"}},
 		},
 		Languages: []omni.LanguageSummary{{Language: "go", Files: 1}},
 	}
-	payload := codebaseMapPayload(cm, "/tmp/project/.omni/codebase-map.json", true)
+	payload := codebaseMapPayload(cm, true)
 	if payload["file_count"] != 2 {
 		t.Fatalf("file_count=%#v", payload["file_count"])
 	}
-	if payload["stale_file_count"] != 1 {
-		t.Fatalf("stale_file_count=%#v", payload["stale_file_count"])
+	for _, forbidden := range []string{"map_path", "relative_map_path", "stale_file_count"} {
+		if _, exists := payload[forbidden]; exists {
+			t.Fatalf("live payload retained %q: %#v", forbidden, payload)
+		}
 	}
 	preview, ok := payload["files_preview"].([]map[string]any)
 	if !ok || len(preview) != 2 {
@@ -35,7 +36,7 @@ func TestCodebaseMapPayloadSummarizesFiles(t *testing.T) {
 }
 
 func TestCodebaseMapPayloadEmpty(t *testing.T) {
-	payload := codebaseMapPayload(omni.CodebaseMap{}, "/tmp/.omni/codebase-map.json", false)
+	payload := codebaseMapPayload(omni.CodebaseMap{}, false)
 	if payload["exists"] != false {
 		t.Fatalf("expected exists=false, got %#v", payload["exists"])
 	}

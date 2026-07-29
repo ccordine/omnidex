@@ -21,7 +21,7 @@ func TestV3WorkspaceWriteMutatesOnlyAuthoritativeScope(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	base := workspace.New(true, configuredRoot, 100, 4000)
+	base := mustWorkspaceScanner(t, configuredRoot)
 	scanner, err := base.Scoped(jobRoot)
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +51,13 @@ func TestV3WorkspaceWriteMutatesOnlyAuthoritativeScope(t *testing.T) {
 	if len(result.Evidence) != 1 || result.Evidence[0].Kind != evidence.KindGeneratedDiff || !metadataFlag(result.Evidence[0].Metadata, "succeeded") {
 		t.Fatalf("patch evidence=%#v", result.Evidence)
 	}
+	diff, _ := result.Output["diff"].(string)
+	if !strings.Contains(diff, "-old") || !strings.Contains(diff, "+authoritative routing") {
+		t.Fatalf("reviewable diff=%q", diff)
+	}
+	if result.Output["diff_truncated"] != false {
+		t.Fatalf("unexpected diff truncation: %#v", result.Output)
+	}
 }
 
 func TestV3WorkspaceWriteIsTheOnlyRegisteredMutationTool(t *testing.T) {
@@ -65,7 +72,7 @@ func TestV3WorkspaceWriteIsTheOnlyRegisteredMutationTool(t *testing.T) {
 
 func TestV3WorkspaceWriteRequiresExplicitFileLifecycle(t *testing.T) {
 	root := t.TempDir()
-	base := workspace.New(true, root, 100, 4000)
+	base := mustWorkspaceScanner(t, root)
 	scanner, err := base.Scoped(root)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +123,7 @@ func TestV3WorkspaceWriteRejectsEscapesSymlinksAndProtectedFiles(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
 		t.Fatal(err)
 	}
-	base := workspace.New(true, root, 100, 4000)
+	base := mustWorkspaceScanner(t, root)
 	scanner, err := base.Scoped(root)
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +147,7 @@ func TestV3WorkspaceWriteRejectsEscapesSymlinksAndProtectedFiles(t *testing.T) {
 
 func TestV3CommandRunIsShellFreeAndRecordsObservedResult(t *testing.T) {
 	root := t.TempDir()
-	base := workspace.New(true, root, 100, 4000)
+	base := mustWorkspaceScanner(t, root)
 	scanner, err := base.Scoped(root)
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +184,7 @@ func TestV3CommandRunIsShellFreeAndRecordsObservedResult(t *testing.T) {
 
 func TestV3CommandRunAllowsBoundedGoModuleInitialization(t *testing.T) {
 	root := t.TempDir()
-	base := workspace.New(true, root, 100, 4000)
+	base := mustWorkspaceScanner(t, root)
 	scanner, err := base.Scoped(root)
 	if err != nil {
 		t.Fatal(err)
@@ -214,6 +221,7 @@ func TestV3CommandAllowsOnlyBoundedWorkspaceInitializers(t *testing.T) {
 		{program: "go", args: []string{"mod", "init", "pockettasks"}},
 		{program: "cargo", args: []string{"init", "--name", "caesar_lab", "--vcs", "none", "."}},
 		{program: "npm", args: []string{"init", "--yes"}},
+		{program: "npm", args: directCodingNPMInstallArgs()},
 	}
 	for _, test := range allowed {
 		if err := validateV3Command(test.program, test.args); err != nil {
@@ -241,7 +249,7 @@ func TestV3CommandAllowsOnlyBoundedWorkspaceInitializers(t *testing.T) {
 
 func TestV3ToolPreflightFailuresAreRecoverableObservations(t *testing.T) {
 	root := t.TempDir()
-	base := workspace.New(true, root, 100, 4000)
+	base := mustWorkspaceScanner(t, root)
 	scanner, err := base.Scoped(root)
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +279,7 @@ func TestV3WorkspaceWriteRejectsNoOpReplacement(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module pocket_tasks\n\ngo 1.26.3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	base := workspace.New(true, root, 100, 4000)
+	base := mustWorkspaceScanner(t, root)
 	scanner, err := base.Scoped(root)
 	if err != nil {
 		t.Fatal(err)
@@ -384,4 +392,13 @@ func TestV3FinalizationRequiresPatchAndSuccessfulCommandForWorkspaceWrite(t *tes
 	if err == nil || !strings.Contains(err.Error(), "command.execute") {
 		t.Fatalf("missing verification command err=%v", err)
 	}
+}
+
+func mustWorkspaceScanner(t *testing.T, root string) *workspace.Service {
+	t.Helper()
+	scanner, err := workspace.New(true, root, 100, 4000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scanner
 }

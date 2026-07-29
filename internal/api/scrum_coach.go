@@ -155,7 +155,7 @@ func (s *Server) handleScrumCardCoach(w http.ResponseWriter, r *http.Request, ca
 		return
 	}
 	req.Message = strings.TrimSpace(req.Message)
-	mode, err := normalizeCoachMode(req.Message, req.Mode)
+	mode, err := normalizeCoachMode(req.Mode)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -35,7 +35,14 @@ type chatRequest struct {
 }
 
 type chatResponseFormat struct {
-	Type string `json:"type"`
+	Type       string                  `json:"type"`
+	JSONSchema *chatResponseJSONSchema `json:"json_schema,omitempty"`
+}
+
+type chatResponseJSONSchema struct {
+	Name   string         `json:"name"`
+	Strict bool           `json:"strict"`
+	Schema map[string]any `json:"schema"`
 }
 
 type chatResponse struct {
@@ -106,11 +113,19 @@ func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedMode
 		},
 		Stream: false,
 	}
+	if err := llm.ValidateResponseContract(prepared); err != nil {
+		return "", err
+	}
 	if prepared.ResponseFormat != "" {
-		if prepared.ResponseFormat != llm.ResponseFormatJSON {
-			return "", fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
-		}
 		request.ResponseFormat = &chatResponseFormat{Type: "json_object"}
+		if len(prepared.ResponseSchema) > 0 {
+			request.ResponseFormat = &chatResponseFormat{
+				Type: "json_schema",
+				JSONSchema: &chatResponseJSONSchema{
+					Name: "omnidex_station_output", Strict: true, Schema: prepared.ResponseSchema,
+				},
+			}
+		}
 	}
 	var parsed chatResponse
 	if err := c.doRouterJSON(ctx, "/chat/completions", request, &parsed); err != nil {
@@ -143,30 +158,6 @@ func (c *Client) Embedding(ctx context.Context, input string) ([]float64, error)
 		return nil, fmt.Errorf("huggingface embedding response missing vector")
 	}
 	return vector, nil
-}
-
-func (c *Client) SuggestTags(ctx context.Context, content string, maxTags int) ([]string, error) {
-	return c.SuggestTagsWithModel(ctx, c.defaultModel, content, maxTags)
-}
-
-func (c *Client) SuggestTagsWithModel(ctx context.Context, model, text string, maxTags int) ([]string, error) {
-	if maxTags <= 0 {
-		maxTags = 8
-	}
-	prompt := strings.Join([]string{
-		"Extract compact relevance tags for retrieval.",
-		"Operational mode: text analysis only. Do not roleplay or invent fictional context.",
-		"Return only comma-separated lowercase tags.",
-		fmt.Sprintf("Maximum tags: %d.", maxTags),
-		"Do not include punctuation-only tokens.",
-		"Text:",
-		text,
-	}, "\n")
-	result, err := c.Generate(ctx, model, prompt)
-	if err != nil {
-		return nil, err
-	}
-	return llm.ParseSuggestedTags(result, text, maxTags), nil
 }
 
 func (c *Client) doRouterJSON(ctx context.Context, path string, payload any, out any) error {

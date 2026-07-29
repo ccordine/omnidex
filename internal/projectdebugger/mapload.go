@@ -2,7 +2,6 @@ package projectdebugger
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/omni"
@@ -13,16 +12,9 @@ func LoadMapPayload(location string) (map[string]any, error) {
 	if location == "" {
 		return nil, fmt.Errorf("project debugger map requires a project location")
 	}
-	mapPath := omni.DefaultCodebaseMapPath(location)
-	if _, err := os.Stat(mapPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("project debugger map %q does not exist; scan the project before analysis", mapPath)
-		}
-		return nil, fmt.Errorf("stat project debugger map: %w", err)
-	}
-	cm, err := omni.ReadCodebaseMap(mapPath)
+	cm, err := omni.BuildCodebaseMap(location, omni.CodebaseMapConfig{MaxFiles: 1200})
 	if err != nil {
-		return nil, fmt.Errorf("read project debugger map: %w", err)
+		return nil, fmt.Errorf("scan current project for debugger: %w", err)
 	}
 	return mapPayloadFromCodebaseMap(cm, true), nil
 }

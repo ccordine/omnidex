@@ -99,26 +99,6 @@ func TestRuntimeV3ExternalResearchPrefersSearchQueryMetadata(t *testing.T) {
 	}
 }
 
-func TestGenericNonAnswerDetectsClarificationTemplates(t *testing.T) {
-	cases := []string{
-		"Understood! Please let me know what specific output you need.",
-		"Sure, I can do that. What is the output you need?",
-		"Could you clarify what you want?",
-		"Understood. I will return only the requested output as per your instructions. If you have any questions or need further assistance, feel free to ask!",
-		"Sure, please provide me with the details of what you need the output to be.",
-		"Sure, please specify what you need me to return.",
-		"Sure, please provide the details of what you need me to return.",
-	}
-	for _, tc := range cases {
-		if !genericNonAnswer(tc) {
-			t.Fatalf("genericNonAnswer(%q)=false, want true", tc)
-		}
-	}
-	if genericNonAnswer("Tokio's spawn_blocking is intended for blocking operations; CPU-bound work may need a separate executor.") {
-		t.Fatalf("genericNonAnswer rejected a substantive response")
-	}
-}
-
 func TestCollectSubtaskResultsPreservesTypedRoutingContext(t *testing.T) {
 	stored, err := json.Marshal(artifacts.SubtaskResultArtifact{
 		SubtaskID: "t0", Kind: artifacts.SubtaskKindResearch, RoleID: "workspace_researcher", ObjectiveID: "inspect", Objective: "Inspect stored state", Priority: 100, Summary: "stored subtask output", Sources: []string{"workspace"},

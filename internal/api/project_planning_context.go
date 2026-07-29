@@ -214,12 +214,6 @@ func (s *Server) projectPlanningResearchContext(ctx context.Context, message, mo
 		return nil, false, fmt.Errorf("project planning %s mode requires web search to be enabled", mode)
 	}
 	query := strings.TrimSpace(message)
-	for _, prefix := range []string{"/batch", "/research", "/researching"} {
-		if strings.HasPrefix(strings.ToLower(query), prefix) {
-			query = strings.TrimSpace(query[len(prefix):])
-			break
-		}
-	}
 	if query == "" {
 		return nil, false, fmt.Errorf("project planning %s mode requires a research query", mode)
 	}

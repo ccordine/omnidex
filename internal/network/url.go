@@ -37,6 +37,9 @@ func NormalizeCoreURL(raw string) string {
 	host := parsed.Hostname()
 	port := parsed.Port()
 	if port == "" {
+		if scheme == "https" {
+			return "https://" + host
+		}
 		port = strconv.Itoa(DefaultPort)
 	}
 	return fmt.Sprintf("%s://%s:%s", scheme, host, port)

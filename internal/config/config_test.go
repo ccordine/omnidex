@@ -69,6 +69,9 @@ func TestLoadChineseOpenAICompatibleProviders(t *testing.T) {
 			if cfg.ProviderModels[test.canonical].Default != "provider-test-model" {
 				t.Fatalf("provider DefaultModel=%q", cfg.ProviderModels[test.canonical].Default)
 			}
+			if cfg.CodingFragmentConcurrency != 4 {
+				t.Fatalf("remote fragment concurrency=%d want 4", cfg.CodingFragmentConcurrency)
+			}
 		})
 	}
 }
@@ -98,6 +101,74 @@ func TestLoadDedicatedSubtaskExecutorModel(t *testing.T) {
 	}
 	if got := cfg.SpecialistModels[specialist.RoleSubtaskExecutorSpecialist]; got != "qwen3-coder:30b" {
 		t.Fatalf("subtask executor model=%q, want dedicated configured model", got)
+	}
+}
+
+func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("WRAPPER_ONLY", "true")
+	t.Setenv("LLM_PROVIDER", "ollama")
+	t.Setenv("OLLAMA_MODEL", "qwen2.5-coder:14b")
+	t.Setenv("OLLAMA_MODEL_GLUE", "qwen2.5-coder:3b")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_SURFACE", "qwen3:4b-thinking")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY", "qwen2.5-coder:14b-identity")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION", "qwen2.5-coder:7b-partition")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT", "qwen2.5-coder:7b-split")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING", "qwen2.5:3b-artifact")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION", "qwen3:4b-relation")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION", "qwen3:4b-skill-selection")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE", "qwen2.5-coder:7b-skill-procedure")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT", "qwen3-coder:30b")
+	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION", "qwen2.5-coder:14b-correction")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingSurfaceStation]; got != "qwen3:4b-thinking" {
+		t.Fatalf("coding surface model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingProductIdentityStation]; got != "qwen2.5-coder:14b-identity" {
+		t.Fatalf("coding product identity model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingRequirementPartitionStation]; got != "qwen2.5-coder:7b-partition" {
+		t.Fatalf("coding requirement partition model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingRequirementSplitStation]; got != "qwen2.5-coder:7b-split" {
+		t.Fatalf("coding requirement split model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingArtifactHandlingStation]; got != "qwen2.5:3b-artifact" {
+		t.Fatalf("coding artifact handling model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingCapabilityRelationStation]; got != "qwen3:4b-relation" {
+		t.Fatalf("coding capability relation model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingSkillSelectionStation]; got != "qwen3:4b-skill-selection" {
+		t.Fatalf("coding skill selection model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingSkillProcedureStation]; got != "qwen2.5-coder:7b-skill-procedure" {
+		t.Fatalf("coding skill procedure model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingFragmentStation]; got != "qwen3-coder:30b" {
+		t.Fatalf("coding fragment model=%q want dedicated override", got)
+	}
+	if got := cfg.SpecialistModels[specialist.RoleCodingFragmentCorrectionStation]; got != "qwen2.5-coder:14b-correction" {
+		t.Fatalf("coding fragment correction model=%q want dedicated override", got)
+	}
+	if cfg.CodingFragmentConcurrency != 1 {
+		t.Fatalf("local fragment concurrency=%d want 1", cfg.CodingFragmentConcurrency)
+	}
+}
+
+func TestLoadRejectsUnsafeCodingFragmentConcurrency(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("WRAPPER_ONLY", "true")
+	t.Setenv("LLM_PROVIDER", "ollama")
+	t.Setenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+	t.Setenv("CODING_FRAGMENT_CONCURRENCY", "5")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "CODING_FRAGMENT_CONCURRENCY") {
+		t.Fatalf("Load() error=%v, want fragment concurrency bound", err)
 	}
 }
 
@@ -494,15 +565,8 @@ func TestLoadRejectsOutOfRangeRuntimeSettings(t *testing.T) {
 		{key: "RETRIEVAL_LIMIT", value: "65"},
 		{key: "CONTEXT_CHAR_BUDGET", value: "0"},
 		{key: "INFERENCE_CONTEXT_TOKENS", value: "4095"},
-		{key: "SUFFICIENT_CONTEXT_CHARS", value: "0"},
-		{key: "MEMORY_INFERENCE_MAX_ITEMS", value: "-1"},
-		{key: "TOURNAMENT_CHUNK_CHARS", value: "499"},
-		{key: "TOURNAMENT_SUMMARY_CHARS", value: "119"},
-		{key: "TOURNAMENT_MAX_ROUNDS", value: "9"},
 		{key: "WORKSPACE_MAX_FILES", value: "0"},
 		{key: "WORKSPACE_CONTEXT_BUDGET", value: "0"},
-		{key: "OLLAMA_RESTART_TIMEOUT", value: "0s"},
-		{key: "HALLUCINATION_RETRY_LIMIT", value: "7"},
 		{key: "REALTIME_MAX_CLIENTS", value: "0"},
 		{key: "REALTIME_STREAM_MAX_AGE", value: "10s"},
 		{key: "REALTIME_HEARTBEAT", value: "1s"},
@@ -522,6 +586,21 @@ func TestLoadRejectsOutOfRangeRuntimeSettings(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), test.key) {
 				t.Fatalf("Load() error=%v, want %s context", err, test.key)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsRemovedDecisionEngineSettings(t *testing.T) {
+	for _, key := range removedEnvironmentKeys {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", "")
+			t.Setenv("WRAPPER_ONLY", "true")
+			t.Setenv(key, "legacy-value")
+
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "was removed") {
+				t.Fatalf("Load() error=%v, want explicit %s removal failure", err, key)
 			}
 		})
 	}

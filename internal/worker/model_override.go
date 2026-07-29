@@ -37,6 +37,7 @@ func modelRoutingFromJobMetadata(metadata json.RawMessage, base ModelRouting) (M
 	baseRouting := modelconfig.Routing{
 		Default:    base.Default,
 		Fast:       base.Fast,
+		Glue:       base.Glue,
 		Reasoning:  base.Reasoning,
 		Tagging:    base.Tagging,
 		Plan:       base.Plan,
@@ -50,6 +51,7 @@ func modelRoutingFromJobMetadata(metadata json.RawMessage, base ModelRouting) (M
 	return ModelRouting{
 		Default:    applied.Default,
 		Fast:       applied.Fast,
+		Glue:       applied.Glue,
 		Reasoning:  applied.Reasoning,
 		Tagging:    applied.Tagging,
 		Plan:       applied.Plan,
@@ -71,6 +73,8 @@ func validateExplicitJobModels(payload map[string]any) error {
 		"model_verify",
 		"model_memory",
 		"model_execute",
+		"model_source_review",
+		"model_source",
 	} {
 		value, exists := payload[key]
 		if !exists {
@@ -84,13 +88,13 @@ func validateExplicitJobModels(payload map[string]any) error {
 	return nil
 }
 
-func (s *Service) v3SpecialistModel(job model.Job, skillID, defaultRoleID, fallback string) string {
+func (s *Service) v3SpecialistModel(job model.Job, routing ModelRouting, skillID, defaultRoleID, fallback string) string {
 	if key := v3SkillModelOverrideKey(skillID); key != "" {
 		if explicit := metadataModel(job, key, ""); explicit != "" {
 			return explicit
 		}
 	}
-	return s.skillPreferredModel(skillID, s.specialistModel(job, defaultRoleID, fallback))
+	return s.skillPreferredModel(skillID, specialistModel(job, defaultRoleID, fallback, routing), routing)
 }
 
 func v3SkillModelOverrideKey(skillID string) string {
@@ -103,6 +107,8 @@ func v3SkillModelOverrideKey(skillID string) string {
 		return "model_analyze"
 	case "subtask_executor":
 		return "model_execute"
+	case "coding_fragment":
+		return "model_fragment"
 	case "response_composer":
 		return "model_response"
 	case "verifier":
@@ -122,19 +128,4 @@ func modelConfigSource(metadata json.RawMessage) string {
 		return "env"
 	}
 	return source
-}
-
-func withJobModelRouting(s *Service, job model.Job) (func(), error) {
-	if s == nil {
-		return nil, fmt.Errorf("job model routing requires a worker service")
-	}
-	prev := s.models
-	routing, err := modelRoutingFromJobMetadata(job.Metadata, prev)
-	if err != nil {
-		return nil, err
-	}
-	s.models = routing
-	return func() {
-		s.models = prev
-	}, nil
 }

@@ -79,6 +79,7 @@ func TestGenerateUsesAuthAndReturnsMessage(t *testing.T) {
 
 func TestGeneratePreparedRequestsJSONObjectForTypedControlPlane(t *testing.T) {
 	var responseType string
+	var maxTokens int
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		var req chatCompletionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -87,6 +88,7 @@ func TestGeneratePreparedRequestsJSONObjectForTypedControlPlane(t *testing.T) {
 		if req.ResponseFormat != nil {
 			responseType = req.ResponseFormat.Type
 		}
+		maxTokens = req.MaxTokens
 		return jsonResponse(http.StatusOK, `{"choices":[{"message":{"content":"{}"}}]}`), nil
 	})
 	client, err := NewCompatible("deepseek", "DEEPSEEK_API_KEY", "https://api.deepseek.com/v1", "test-key", "deepseek-chat", "", "", "", time.Second)
@@ -95,13 +97,52 @@ func TestGeneratePreparedRequestsJSONObjectForTypedControlPlane(t *testing.T) {
 	}
 	client.httpClient = &http.Client{Timeout: time.Second, Transport: transport}
 	_, err = client.GeneratePrepared(context.Background(), llm.PreparedModel{
-		BaseModel: "deepseek-chat", Prompt: "Return an object", PromptHint: "Begin", ResponseFormat: llm.ResponseFormatJSON,
+		BaseModel: "deepseek-chat", Prompt: "Return an object", PromptHint: "Begin", MaxOutputTokens: 1024, ResponseFormat: llm.ResponseFormatJSON,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if responseType != "json_object" {
 		t.Fatalf("response_format.type=%q, want json_object", responseType)
+	}
+	if maxTokens != 1024 {
+		t.Fatalf("max_tokens=%d want 1024", maxTokens)
+	}
+}
+
+func TestGeneratePreparedRequestsStrictJSONSchemaFromCompatibleProviders(t *testing.T) {
+	var responseFormat *chatCompletionResponseFormat
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var req chatCompletionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		responseFormat = req.ResponseFormat
+		return jsonResponse(http.StatusOK, `{"choices":[{"message":{"content":"{\"content\":\"ok\"}"}}]}`), nil
+	})
+	client, err := NewCompatible("qwen", "QWEN_API_KEY", "https://dashscope.example/v1", "test-key", "qwen-coder", "", "", "", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.httpClient = &http.Client{Timeout: time.Second, Transport: transport}
+	schema := map[string]any{
+		"type":                 "object",
+		"properties":           map[string]any{"content": map[string]any{"type": "string"}},
+		"required":             []string{"content"},
+		"additionalProperties": false,
+	}
+	_, err = client.GeneratePrepared(context.Background(), llm.PreparedModel{
+		BaseModel: "qwen-coder", Prompt: "Generate a file", PromptHint: "Begin",
+		ResponseFormat: llm.ResponseFormatJSON, ResponseSchema: schema,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if responseFormat == nil || responseFormat.Type != "json_schema" || responseFormat.JSONSchema == nil {
+		t.Fatalf("response format=%#v", responseFormat)
+	}
+	if responseFormat.JSONSchema.Strict != true || responseFormat.JSONSchema.Schema["type"] != "object" {
+		t.Fatalf("json schema=%#v", responseFormat.JSONSchema)
 	}
 }
 

@@ -302,3 +302,11 @@ func rejectPatchSymlinkEscape(absWorkspace, absTarget, relPath string) error {
 	}
 	return nil
 }
+
+func isWithinWorkspace(workspace, target string) bool {
+	relative, err := filepath.Rel(workspace, target)
+	if err != nil {
+		return false
+	}
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}

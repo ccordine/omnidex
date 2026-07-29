@@ -26,7 +26,7 @@ func TestSelectExternalAgentAppliesCursorConfig(t *testing.T) {
 	if name != "cursor_sdk" {
 		t.Fatalf("expected cursor_sdk, got %q", name)
 	}
-	cursor, ok := agent.(*omni.CursorSDKArchitectAgent)
+	cursor, ok := agent.(*omni.CursorSDKAgent)
 	if !ok {
 		t.Fatalf("expected cursor sdk agent, got %T", agent)
 	}
@@ -56,7 +56,7 @@ func TestSelectExternalAgentAppliesCodexConfig(t *testing.T) {
 	if name != "codex_sdk" {
 		t.Fatalf("expected codex_sdk, got %q", name)
 	}
-	codex, ok := agent.(*omni.CodexSDKArchitectAgent)
+	codex, ok := agent.(*omni.CodexSDKAgent)
 	if !ok {
 		t.Fatalf("expected codex sdk agent, got %T", agent)
 	}
@@ -88,7 +88,7 @@ func TestExternalAgentJobModeUsesGenericCLIForChat(t *testing.T) {
 	if got := externalAgentJobMode(job); got != "cli_agent_task" {
 		t.Fatalf("externalAgentJobMode()=%q", got)
 	}
-	prompt := buildExternalAgentPrompt(job, map[string]string{"environment": "env summary"}, agentconfig.SystemCodex)
+	prompt := buildExternalAgentContext(job, map[string]string{"environment": "env summary"}, agentconfig.SystemCodex)
 	if !strings.Contains(prompt, "bounded CLI agent task") {
 		t.Fatalf("expected generic CLI prompt, got %q", prompt)
 	}
@@ -105,7 +105,7 @@ func TestExternalAgentJobModeKeepsScrumPrompt(t *testing.T) {
 	if got := externalAgentJobMode(job); got != "scrum_task" {
 		t.Fatalf("externalAgentJobMode()=%q", got)
 	}
-	prompt := buildExternalAgentPrompt(job, nil, agentconfig.SystemCursor)
+	prompt := buildExternalAgentContext(job, nil, agentconfig.SystemCursor)
 	if !strings.Contains(prompt, "bounded scrum card task") {
 		t.Fatalf("expected scrum prompt, got %q", prompt)
 	}

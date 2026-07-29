@@ -6,7 +6,7 @@ import (
 )
 
 func TestExternalAgentResultErrorDetectsCursorStatusError(t *testing.T) {
-	result := CursorArchitectAgentResult{
+	result := ExternalCodingResult{
 		Output: `{"type":"status","agent_id":"agent-1","run_id":"run-1","status":"ERROR"}`,
 	}
 	err := externalAgentResultError(result)
@@ -19,7 +19,7 @@ func TestExternalAgentResultErrorDetectsCursorStatusError(t *testing.T) {
 }
 
 func TestExternalAgentResultErrorDetectsTypedErrorEvent(t *testing.T) {
-	result := CursorArchitectAgentResult{
+	result := ExternalCodingResult{
 		Output: `{"agent":"cursor","type":"error","message":"Cursor startup failed: invalid api key"}`,
 	}
 	if err := externalAgentResultError(result); err == nil {
@@ -28,7 +28,7 @@ func TestExternalAgentResultErrorDetectsTypedErrorEvent(t *testing.T) {
 }
 
 func TestExternalAgentResultErrorDetectsLaunchFailure(t *testing.T) {
-	result := CursorArchitectAgentResult{
+	result := ExternalCodingResult{
 		Output: `{"agent":"cursor","type":"error","message":"Cursor agent failed to launch: code=unauthenticated"}`,
 	}
 	if err := externalAgentResultError(result); err == nil {
@@ -37,7 +37,7 @@ func TestExternalAgentResultErrorDetectsLaunchFailure(t *testing.T) {
 }
 
 func TestExternalAgentResultErrorDoesNotInferStatusFromPlainText(t *testing.T) {
-	result := CursorArchitectAgentResult{
+	result := ExternalCodingResult{
 		Output: "Error: spawn codex ENOENT\nNode.js v25.2.1 (exit status 1)",
 	}
 	if err := externalAgentResultError(result); err != nil {
@@ -46,7 +46,7 @@ func TestExternalAgentResultErrorDoesNotInferStatusFromPlainText(t *testing.T) {
 }
 
 func TestExternalAgentResultErrorIgnoresSuccess(t *testing.T) {
-	result := CursorArchitectAgentResult{
+	result := ExternalCodingResult{
 		Output:  `{"agent":"cursor","type":"completed","message":"done"}`,
 		Summary: "done",
 	}

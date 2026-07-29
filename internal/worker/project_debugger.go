@@ -23,6 +23,10 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 	if err != nil {
 		return err
 	}
+	routing, err := modelRoutingFromJobMetadata(claim.Job.Metadata, s.models)
+	if err != nil {
+		return err
+	}
 	projectID := meta.ProjectID
 	agentSystem := meta.AgentSystem
 	modelName := meta.AnalyzerModel
@@ -35,7 +39,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 		if err != nil {
 			return fmt.Errorf("parse project debugger model config: %w", err)
 		}
-		modelName, err = modelconfig.AnalyzerModel(cfg, firstNonEmpty(s.models.Analyze, s.models.Plan, s.models.Default))
+		modelName, err = modelconfig.AnalyzerModel(cfg, firstNonEmpty(routing.Analyze, routing.Plan, routing.Default))
 		if err != nil {
 			return err
 		}
@@ -43,7 +47,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 	if agentSystem == "" {
 		return fmt.Errorf("project debugger agent system is required")
 	}
-	ticketModel, err := s.scrumCardTicketModelFromProject(project.Settings, meta.TicketModel)
+	ticketModel, err := scrumCardTicketModelFromProject(project.Settings, meta.TicketModel, firstNonEmpty(routing.Plan, routing.Default))
 	if err != nil {
 		return err
 	}

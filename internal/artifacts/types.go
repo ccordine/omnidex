@@ -8,20 +8,19 @@ import (
 )
 
 const (
-	KindIntent               = "intent"
-	KindCapabilityAudit      = "capability_audit"
-	KindPlan                 = "plan"
-	KindWorkspace            = "workspace"
-	KindRetrieval            = "retrieval"
-	KindWebEvidence          = "web_evidence"
-	KindAnalysis             = "analysis"
-	KindSubtaskResult        = "subtask_result"
-	KindResponseDraft        = "response_draft"
-	KindVerification         = "verification"
-	KindMemoryCandidate      = "memory_candidate"
-	KindToolCall             = "tool_call"
-	KindToolResult           = "tool_result"
-	KindImplementationLedger = "implementation_ledger"
+	KindIntent          = "intent"
+	KindCapabilityAudit = "capability_audit"
+	KindPlan            = "plan"
+	KindWorkspace       = "workspace"
+	KindRetrieval       = "retrieval"
+	KindWebEvidence     = "web_evidence"
+	KindAnalysis        = "analysis"
+	KindSubtaskResult   = "subtask_result"
+	KindResponseDraft   = "response_draft"
+	KindVerification    = "verification"
+	KindMemoryCandidate = "memory_candidate"
+	KindToolCall        = "tool_call"
+	KindToolResult      = "tool_result"
 )
 
 const (

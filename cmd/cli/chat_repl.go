@@ -71,17 +71,6 @@ func handleChatReplCommand(line string, sessionID *string, lastJobID *int64, bas
 		agentOverrides.ApplyToMetadata(baseMetadata)
 		emitSystem(ui, message)
 		return true, false
-	case "reasoning":
-		if strings.TrimSpace(body) == "" {
-			emitSystem(ui, "reasoning_level="+strings.TrimSpace(fmt.Sprint(baseMetadata["reasoning_level"])))
-			return true, false
-		}
-		if _, err := setChatMetadataOverride(baseMetadata, "reasoning_level", body); err != nil {
-			emitAssistantError(ui, err.Error())
-			return true, false
-		}
-		emitSystem(ui, "reasoning_level="+strings.TrimSpace(fmt.Sprint(baseMetadata["reasoning_level"])))
-		return true, false
 	case "set":
 		key, value, ok := parseRuntimeSetBody(body)
 		if !ok {
@@ -169,25 +158,13 @@ func printInteractiveChatHelp() {
 	fmt.Println("  /agent <name>      switch agent override: omnidex|cursor|codex")
 	fmt.Println("  /agent reset       clear agent override and use core defaults")
 	fmt.Println("  /model <name>      set model for the active agent override")
-	fmt.Println("  /reasoning <mode>  set thinking level: auto|fast|deep")
-	fmt.Println("  /set <key> <value> set an agent/runtime key such as codex_reasoning_effort, codex_sandbox, model_plan, web, verify")
+	fmt.Println("  /set <key> <value> set an active agent or model key such as codex_reasoning_effort, codex_sandbox, or model_plan")
 	fmt.Println("  /exit              quit interactive mode")
 	fmt.Println("  progress note      live stage/event updates are shown by default (disable with --progress=false)")
 	fmt.Println("  phase note         stage lines include phase=planning|execution|review")
-	fmt.Println("  specialist note    each routed action is assigned to a specialist role (e.g., browser/media/shell)")
-	fmt.Println("  confirm note       chat runs an AI interpretation pass for local automation actions and waits for `yes` before execution (disable with --confirm-actions=false)")
 	fmt.Println("  queue note         while assistant is running, type TAB + message + Enter to queue a follow-up for the next turn")
-	fmt.Println("  note               invasive local actions ask one-time permission (managed by `omni permissions ...`)")
-	fmt.Println("  natural command    routing is capability-based (examples below are not exact trigger phrases)")
-	fmt.Println("  natural command    'play the next episode ...' controls local VLC when --local-media is on")
-	fmt.Println("  natural command    'show my browser tabs' scans local browser processes/tabs when --local-browser is on")
-	fmt.Println("  natural command    'what's on my screen' captures and reads the local screen when --local-screen is on")
-	fmt.Println("  natural command    'create a file named notes.txt' executes locally when --local-shell is on")
-	fmt.Println("  natural command    'what is my ip' or 'what ports are open' runs local network inspection when --local-shell is on")
-	fmt.Println("  local-shell note   file-edit commands include git change summaries/diff snippets when inside a git repo")
-	fmt.Println("  natural command    'determine my location' / 'am I on VPN' / 'show network tools catalog' runs advanced network intelligence when --local-shell is on")
-	fmt.Println("  natural command    'take notes during this call' starts local audio notes when --local-audio is on")
-	fmt.Println("  profile note       start with --profile architect for stricter plan/verify/watch defaults")
+	fmt.Println("  routing note       every non-slash message is sent unchanged to the core semantic pipeline")
+	fmt.Println("  host operations    use explicit top-level commands: browser-scan, screen-read, audio-notes, media-index, media-search")
 }
 
 func printInteractiveInputHelp() {
@@ -197,31 +174,6 @@ func printInteractiveInputHelp() {
 	fmt.Println("  /cancel [reason]   stop the active job")
 	fmt.Println("  note               during a running turn, type these slash commands directly; TAB + text queues a follow-up")
 	fmt.Println("  /exit              quit interactive mode")
-}
-
-func formatLocalAutomationResponse(sourceLine, response string) string {
-	text := strings.TrimSpace(response)
-	if text == "" {
-		return text
-	}
-	if hasSourceSection(text) {
-		return text
-	}
-	sourceLine = strings.TrimSpace(sourceLine)
-	if sourceLine == "" {
-		return text
-	}
-	return text + "\n\nSources:\n- " + sourceLine
-}
-
-func hasSourceSection(text string) bool {
-	for _, line := range strings.Split(strings.ToLower(text), "\n") {
-		clean := strings.TrimSpace(line)
-		if clean == "source:" || clean == "sources:" || strings.HasPrefix(clean, "source:") || strings.HasPrefix(clean, "sources:") {
-			return true
-		}
-	}
-	return false
 }
 
 func cloneMetadata(metadata map[string]any) map[string]any {

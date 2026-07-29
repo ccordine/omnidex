@@ -3,8 +3,6 @@ package worker
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,7 +13,10 @@ import (
 	toolruntime "github.com/gryph/omnidex/internal/tools"
 )
 
-const maxV3WriteBytes = 128 * 1024
+const (
+	maxV3WriteBytes       = 128 * 1024
+	maxV3DiffPreviewBytes = 24 * 1024
+)
 
 func workspaceWriteToolSpec() toolruntime.Spec {
 	return toolruntime.Spec{
@@ -32,13 +33,14 @@ func workspaceWriteToolSpec() toolruntime.Spec {
 		},
 		OutputSchema: toolruntime.Schema{
 			Type:     "object",
-			Required: []string{"summary", "workspace", "path", "operation", "content_sha256"},
+			Required: []string{"summary", "workspace", "path", "operation", "diff", "diff_truncated"},
 			Properties: map[string]toolruntime.Schema{
 				"summary":        {Type: "string"},
 				"workspace":      {Type: "string"},
 				"path":           {Type: "string"},
 				"operation":      {Type: "string"},
-				"content_sha256": {Type: "string"},
+				"diff":           {Type: "string"},
+				"diff_truncated": {Type: "boolean"},
 			},
 		},
 		Examples: []toolruntime.Example{{
@@ -108,6 +110,7 @@ func executeV3WorkspaceWrite(ctx context.Context, call toolruntime.Call) (toolru
 	}
 
 	patch := fullFileUnifiedPatch(path, operation, string(original), content)
+	diff, diffTruncated := boundedV3DiffPreview(patch)
 	preview, err := omni.ApplyUnifiedPatch(omni.PatchApplyOptions{Context: ctx, Workspace: scope.Root, Patch: patch, DryRun: true})
 	if err != nil {
 		return toolruntime.Result{}, toolruntime.RejectCall(fmt.Errorf("workspace.write validation rejected: %w", err))
@@ -120,21 +123,31 @@ func executeV3WorkspaceWrite(ctx context.Context, call toolruntime.Call) (toolru
 		return toolruntime.Result{}, fmt.Errorf("workspace.write apply failed after successful validation: %w", err)
 	}
 
-	digest := sha256.Sum256([]byte(content))
-	digestText := hex.EncodeToString(digest[:])
 	summary := fmt.Sprintf("%s complete file %s", pastTenseWriteOperation(operation), path)
 	return toolruntime.Result{
 		Summary: summary,
 		Output: map[string]any{
 			"summary": summary, "workspace": applied.Workspace, "path": path,
-			"operation": operation, "content_sha256": digestText,
+			"operation": operation, "diff": diff, "diff_truncated": diffTruncated,
 		},
 		Evidence: []evidence.Record{{
-			Kind: evidence.KindGeneratedDiff, SourceType: "workspace", SourceRef: "sha256:" + digestText,
-			FilePaths: []string{path}, Excerpt: operation + " " + path, Summary: summary, Hash: digestText, Confidence: 1,
+			Kind: evidence.KindGeneratedDiff, SourceType: "workspace", SourceRef: path,
+			FilePaths: []string{path}, Excerpt: operation + " " + path, Summary: summary, Confidence: 1,
 			Metadata: map[string]any{"mutation": true, "succeeded": true, "workspace": applied.Workspace, "operation": operation},
 		}},
 	}, nil
+}
+
+func boundedV3DiffPreview(diff string) (string, bool) {
+	if len(diff) <= maxV3DiffPreviewBytes {
+		return diff, false
+	}
+	marker := fmt.Sprintf("\n[diff truncated: original=%d bytes; inspect the authoritative file for complete content]\n", len(diff))
+	budget := maxV3DiffPreviewBytes - len(marker)
+	if budget < 0 {
+		return marker, true
+	}
+	return diff[:budget] + marker, true
 }
 
 func resolveV3WorkspaceFile(root, path string) (string, error) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
 )
 
@@ -35,19 +36,11 @@ func (*recordingWorkerLLM) Embedding(context.Context, string) ([]float64, error)
 	return nil, nil
 }
 
-func (*recordingWorkerLLM) SuggestTags(context.Context, string, int) ([]string, error) {
-	return nil, nil
-}
-
-func (*recordingWorkerLLM) SuggestTagsWithModel(context.Context, string, string, int) ([]string, error) {
-	return nil, nil
-}
-
 func TestDataSourceLLMClientUsesConfiguredClientAndTaggingModel(t *testing.T) {
 	client := &recordingWorkerLLM{output: `{"answer":"ok"}`}
 	service := &Service{llm: client, models: ModelRouting{Tagging: "provider-model"}}
 
-	adapter, err := service.dataSourceLLMClient()
+	adapter, err := service.dataSourceLLMClient(model.Job{})
 	if err != nil {
 		t.Fatalf("dataSourceLLMClient() error: %v", err)
 	}

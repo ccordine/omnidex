@@ -373,13 +373,13 @@ export function renderProjectMapSection(projectID: number, map: ProjectMapSummar
   }
 
   const statusBadge = map.exists
-    ? `<span class="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-200">Mapped</span>`
-    : `<span class="rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Not scanned</span>`;
+    ? `<span class="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-200">Live</span>`
+    : `<span class="rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Unavailable</span>`;
 
   const stats = [
     ["Files", map.file_count],
     ["Modules", map.module_count],
-    ["Stale", map.stale_file_count],
+    ["Scan", map.scan_truncated ? "Limited" : "Complete"],
   ];
 
   const languageRows = (map.languages ?? [])
@@ -393,10 +393,7 @@ export function renderProjectMapSection(projectID: number, map: ProjectMapSummar
       const files = (mod.important_files ?? []).slice(0, 4).map((file) => `<li class="font-mono text-[11px] text-zinc-500">${escapeHTML(file)}</li>`).join("");
       return `
         <article class="rounded-md border border-white/10 bg-zinc-900/50 p-3">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="font-mono text-xs text-cyan-200">${escapeHTML(mod.path || ".")}</div>
-            ${mod.stale ? `<span class="text-[10px] uppercase tracking-wide text-amber-300">stale</span>` : ""}
-          </div>
+          <div class="font-mono text-xs text-cyan-200">${escapeHTML(mod.path || ".")}</div>
           ${mod.purpose ? `<p class="mt-2 text-xs leading-5 text-zinc-400">${escapeHTML(mod.purpose)}</p>` : ""}
           ${files ? `<ul class="mt-2 space-y-1">${files}</ul>` : ""}
         </article>
@@ -426,11 +423,11 @@ export function renderProjectMapSection(projectID: number, map: ProjectMapSummar
             <h3 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Codebase map</h3>
             ${statusBadge}
           </div>
-          <p class="mt-1 text-xs text-zinc-500">Advisory routing context Omnidex uses for likely files, modules, tests, and verification commands.</p>
-          <p class="mt-2 font-mono text-[11px] text-zinc-600">${escapeHTML(map.relative_map_path || map.map_path || ".omni/codebase-map.json")}</p>
-          ${map.generated_at ? `<p class="mt-1 text-[11px] text-zinc-600">Updated ${escapeHTML(formatDateTime(map.generated_at))}${map.revision ? ` · rev ${escapeHTML(map.revision)}` : ""}</p>` : ""}
+          <p class="mt-1 text-xs text-zinc-500">Current filesystem context for likely files, modules, tests, and verification commands. Nothing is persisted in the project.</p>
+          ${map.root ? `<p class="mt-2 font-mono text-[11px] text-zinc-600">${escapeHTML(map.root)}</p>` : ""}
+          ${map.generated_at ? `<p class="mt-1 text-[11px] text-zinc-600">Scanned ${escapeHTML(formatDateTime(map.generated_at))}</p>` : ""}
         </div>
-        <button type="button" data-action="projects#scanProjectMap" data-project-id="${projectID}" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Scan project directory</button>
+        <button type="button" data-action="projects#scanProjectMap" data-project-id="${projectID}" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-200">Refresh current map</button>
       </div>
 
       <div class="mt-4 grid gap-3 sm:grid-cols-3">

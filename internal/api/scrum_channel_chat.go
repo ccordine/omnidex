@@ -369,7 +369,7 @@ func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
 				continue
 			}
 		case "assistant":
-			if isAgentToolLikeAssistant(content) || isScrumChannelNoiseContent(role, content) {
+			if isScrumChannelNoiseContent(role, content) {
 				continue
 			}
 		case "system":
@@ -448,7 +448,7 @@ func collapseScrumChannelDisplayMessages(messages []ScrumChatMessage) []ScrumCha
 		case "assistant":
 			last.Content = mergeAssistantStreamContent(last.Content, msg.Content)
 		case "thinking":
-			last.Content = mergePilotThoughtText(last.Content, msg.Content)
+			last.Content = mergeScrumChannelThoughtText(last.Content, msg.Content)
 		case "tool":
 			if lastActivity, ok := parseChannelActivity(last.Content); ok {
 				if nextActivity, ok := parseChannelActivity(msg.Content); ok && sameChannelActivity(lastActivity, nextActivity) {

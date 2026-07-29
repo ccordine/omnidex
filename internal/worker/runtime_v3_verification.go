@@ -21,6 +21,29 @@ func (r *nativeRuntimeV3) runVerification() error {
 	if err != nil {
 		return err
 	}
+	if _, directCoding := buildV3CodingCoordinatorPlan(intent); directCoding {
+		evidenceRecords, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+		if err != nil {
+			return fmt.Errorf("list evidence for deterministic coding verification: %w", err)
+		}
+		artifact, handled, err := buildDeterministicV3CodingVerification(intent, evidenceRecords)
+		if err != nil {
+			return err
+		}
+		if !handled {
+			return fmt.Errorf("deterministic coding verification declined a coding coordinator intent")
+		}
+		if err := r.writeArtifact(artifacts.KindVerification, artifact); err != nil {
+			return err
+		}
+		summary := strings.Join([]string{
+			"verdict=" + artifact.Verdict,
+			fmt.Sprintf("objectives=%d", len(artifact.ObjectiveCoverage)),
+			"authority=deterministic_evidence",
+		}, "\n")
+		r.svc.emitStepEvent(r.claim.Step.ID, "coding_evidence_verified", "model_calls=0 "+safeLine(summary, "verification completed"))
+		return r.complete("verification", summary, summary)
+	}
 	result, err := r.svc.executeV3Tool(r.ctx, r.claim, "verifier", toolruntime.Call{
 		Name:  "evidence.inspect",
 		Input: map[string]any{"job_id": r.claim.Job.ID},
@@ -63,7 +86,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 		return err
 	}
 	r.svc.emitStepEvent(r.claim.Step.ID, "independent_challenge_started", fmt.Sprintf("objectives=%d evidence=%d", len(intent.Objectives), len(verificationInput.Evidence)))
-	modelName := r.svc.v3SpecialistModel(r.claim.Job, "verifier", specialist.RoleReviewVerificationSpecialist, r.svc.models.Analyze)
+	modelName := r.svc.v3SpecialistModel(r.claim.Job, r.routing, "verifier", specialist.RoleReviewVerificationSpecialist, r.routing.Analyze)
 	output, err := r.invokeSpecialist("v3_independent_verification", "verifier", modelName, invocation, nil)
 	if err != nil {
 		return err

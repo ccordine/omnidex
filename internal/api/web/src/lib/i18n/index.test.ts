@@ -9,14 +9,15 @@ describe("server-authoritative localization", () => {
   });
 
   it.each([
-    ["es", "Nuevo hilo"],
-    ["zh-Hans", "新对话"],
-    ["ru", "Новая ветка"],
-    ["ja", "新しいスレッド"],
-  ] as const)("loads the complete %s catalog selected by the server", (locale, expected) => {
+    ["es", "Nuevo hilo", "Poniendo el trabajo en cola…"],
+    ["zh-Hans", "新对话", "正在将任务加入队列…"],
+    ["ru", "Новая ветка", "Постановка задачи в очередь…"],
+    ["ja", "新しいスレッド", "ジョブをキューに追加中…"],
+  ] as const)("loads the complete %s catalog selected by the server", (locale, expected, jobExpected) => {
     document.documentElement.lang = locale;
     initI18n();
     expect(t("nav.newThread")).toBe(expected);
+    expect(t("job.queueing")).toBe(jobExpected);
   });
 
   it("rejects an unsupported server-rendered locale", () => {

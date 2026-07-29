@@ -80,6 +80,73 @@ func summarizeStepEvent(payload stepEventPayload) string {
 			return "Web search skipped (" + reason + ")"
 		}
 		return "Web search skipped"
+	case "llm_stream_progress":
+		outputBytes := eventMessageField(message, "output_bytes")
+		elapsed := eventMessageField(message, "elapsed")
+		if outputBytes == "" || elapsed == "" {
+			return "Generating model response"
+		}
+		return "Generating model response (" + outputBytes + " bytes, " + elapsed + " elapsed)"
+	case "coding_phase_changed":
+		return summarizeCodingPhase(message)
+	case "coding_assembly_ready":
+		files := eventMessageField(message, "files")
+		if files == "" {
+			return "Deterministic assembly ready"
+		}
+		return "Deterministic assembly ready: " + files + " source units"
+	case "coding_file_started":
+		path := eventMessageField(message, "path")
+		stage := eventMessageField(message, "stage")
+		if stage == "repair" {
+			return "Repairing " + fallbackWatchValue(path, "assigned file")
+		}
+		return "Generating " + fallbackWatchValue(path, "assigned file")
+	case "coding_file_written":
+		path := fallbackWatchValue(eventMessageField(message, "path"), "assigned file")
+		bytes := eventMessageField(message, "bytes")
+		if bytes != "" {
+			return "Accepted " + path + " (" + bytes + " bytes)"
+		}
+		return "Accepted " + path
+	case "coding_file_unchanged":
+		return "File station made no change to " + fallbackWatchValue(eventMessageField(message, "path"), "the assigned file")
+	case "coding_verification_failed":
+		return "Verification failed: " + fallbackWatchValue(eventMessageField(message, "command"), "see diagnostic")
+	case "coding_static_validation_failed":
+		return "Static validation failed: " + fallbackWatchValue(eventMessageTail(message, "diagnostic"), "see diagnostic")
+	case "coding_repair_selected":
+		repair := fallbackWatchValue(eventMessageField(message, "repair"), "?")
+		path := fallbackWatchValue(eventMessageField(message, "path"), "assigned file")
+		return "Selected " + path + " for diagnostic repair " + repair
+	case "coding_fragment_correction_started":
+		block := fallbackWatchValue(eventMessageField(message, "block"), "assigned function")
+		failure := fallbackWatchValue(eventMessageTail(message, "exact_failure"), "see diagnostic")
+		return "Correcting " + block + ": " + compactProgressValue(failure, 240)
+	case "coding_worker_rejected":
+		kind := codingWorkerLabel(eventMessageField(message, "kind"))
+		subject := fallbackWatchValue(eventMessageField(message, "subject"), "assigned input")
+		attempt := eventMessageField(message, "attempt")
+		reason := eventMessageTail(message, "error")
+		summary := kind + " station rejected " + subject
+		if attempt != "" {
+			summary += " (" + attempt + ")"
+		}
+		if reason != "" {
+			summary += ": " + compactProgressValue(reason, 240)
+		}
+		return summary
+	case "coding_worker_failed":
+		kind := codingWorkerLabel(eventMessageField(message, "kind"))
+		subject := fallbackWatchValue(eventMessageField(message, "subject"), "assigned input")
+		reason := eventMessageTail(message, "error")
+		summary := kind + " station failed for " + subject
+		if reason != "" {
+			summary += ": " + compactProgressValue(reason, 240)
+		}
+		return summary
+	case "coding_completed":
+		return "Coding workflow completed with verified workspace"
 	}
 
 	if strings.HasSuffix(eventType, "_waiting_input") {
@@ -103,6 +170,67 @@ func summarizeStepEvent(payload stepEventPayload) string {
 	return "event update"
 }
 
+func showStepEventInSlimProgress(eventType string) bool {
+	switch strings.ToLower(strings.TrimSpace(eventType)) {
+	case "llm_stream_progress",
+		"coding_phase_changed",
+		"coding_assembly_ready",
+		"coding_file_started",
+		"coding_file_written",
+		"coding_file_deleted",
+		"coding_file_unchanged",
+		"coding_verification_failed",
+		"coding_static_validation_failed",
+		"coding_repair_selected",
+		"coding_fragment_correction_started",
+		"coding_worker_rejected",
+		"coding_worker_failed",
+		"coding_completed":
+		return true
+	default:
+		return false
+	}
+}
+
+func codingWorkerLabel(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "plan":
+		return "Plan"
+	case "repair":
+		return "Repair"
+	case "file":
+		return "File"
+	default:
+		return "Typed"
+	}
+}
+
+func summarizeCodingPhase(message string) string {
+	switch strings.ToLower(eventMessageField(message, "phase")) {
+	case "planning":
+		return "Compiling a bounded construction plan"
+	case "constructing":
+		return "Constructing planned files"
+	case "verifying":
+		return "Verifying accepted workspace"
+	case "repairing":
+		return "Repairing exact diagnostic"
+	case "completed":
+		return "Coding workflow completed"
+	case "failed":
+		return "Coding workflow failed"
+	default:
+		return "Coding workflow state changed"
+	}
+}
+
+func fallbackWatchValue(value, fallback string) string {
+	if value = strings.TrimSpace(value); value != "" {
+		return value
+	}
+	return fallback
+}
+
 func eventMessageField(message, key string) string {
 	needle := strings.TrimSpace(key) + "="
 	for _, field := range strings.Fields(strings.TrimSpace(message)) {
@@ -112,6 +240,19 @@ func eventMessageField(message, key string) string {
 		return strings.TrimSpace(strings.TrimPrefix(field, needle))
 	}
 	return ""
+}
+
+func eventMessageTail(message, key string) string {
+	needle := strings.TrimSpace(key) + "="
+	message = strings.TrimSpace(message)
+	index := strings.Index(message, needle)
+	if index < 0 {
+		return ""
+	}
+	if index > 0 && message[index-1] != ' ' {
+		return ""
+	}
+	return strings.TrimSpace(message[index+len(needle):])
 }
 
 func summarizeProgressStream(stream, value string, maxChars int) (string, string) {

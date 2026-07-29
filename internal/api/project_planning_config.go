@@ -38,26 +38,9 @@ func validateProjectPlanningChatConfig(config ProjectPlanningChatConfig) (Projec
 	}
 }
 
-func normalizeProjectPlanningMode(message, mode string) (string, error) {
+func normalizeProjectPlanningMode(mode string) (string, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" || mode == "chat" {
-		if strings.HasPrefix(strings.TrimSpace(message), "/") {
-			parts := strings.Fields(message)
-			switch strings.ToLower(parts[0]) {
-			case "/plan":
-				return "plan", nil
-			case "/research", "/researching":
-				return "research", nil
-			case "/scan":
-				return "scan", nil
-			case "/cards":
-				return "cards", nil
-			case "/batch":
-				return "batch", nil
-			default:
-				return "", fmt.Errorf("unsupported project planning command %q", parts[0])
-			}
-		}
 		return "chat", nil
 	}
 	switch mode {
@@ -154,7 +137,7 @@ func (s *Server) projectPlanningModel(project model.Project, config ProjectPlann
 	}
 	keys := []string{"planner_model", "default_model"}
 	if config.ReasoningMode == "thinking" {
-		keys = []string{"thinking_model", "reasoning_model"}
+		keys = []string{"reasoning_model", "planner_model", "default_model"}
 	}
 	for _, key := range keys {
 		if modelName := resolved.Get(key); modelName != "" {

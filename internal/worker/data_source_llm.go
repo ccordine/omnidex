@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
 )
 
@@ -16,11 +17,15 @@ type dataSourceLLMAdapter struct {
 	model  string
 }
 
-func (s *Service) dataSourceLLMClient() (omni.DBManagerLLMClient, error) {
+func (s *Service) dataSourceLLMClient(job model.Job) (omni.DBManagerLLMClient, error) {
 	if s == nil || s.llm == nil {
 		return nil, fmt.Errorf("configured LLM client is required for data source queries")
 	}
-	modelName := strings.TrimSpace(s.models.Tagging)
+	routing, err := modelRoutingFromJobMetadata(job.Metadata, s.models)
+	if err != nil {
+		return nil, err
+	}
+	modelName := strings.TrimSpace(routing.Tagging)
 	if modelName == "" {
 		return nil, fmt.Errorf("tagging model is not configured for data source queries")
 	}

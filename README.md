@@ -1,1768 +1,250 @@
 # Omnidex
 
-**Current release:** `v0.3.0` Venusaur
+**Current development release:** `v0.4.0` Charmander
 
-Omnidex is a local-first platform for **evidence-led development** and **human-in-the-loop project planning**.
+Omnidex is a local-first AI workbench with a conversational surface and a server-authoritative execution core. Charmander replaces the broad coding-agent loop with a deterministic assembly line of small, typed model jobs.
 
-At the Venusaur layer, it works as an augmented planner and research tool: you explore topics, review AI-generated task cards, promote the work you want done, and let build agents execute approved cards — while deterministic code still owns policy, evidence, and completion.
+Charmander is a real architecture break from `v0.3.0` Venusaur, not a cosmetic bump. It remains a development release, but its unattended three-application baseline now passes; the captured measurements and limitations are in [docs/CHARMANDER_PROOF.md](docs/CHARMANDER_PROOF.md).
 
-Under the hood it remains an agent runtime: plan, patch, verify, observe, and continue until evidence says the task is done.
+## Charmander in one sentence
 
-## Two layers
-
-| Layer | What it does |
-| --- | --- |
-| **Project planner** (web UI) | Research, architect, draft backlog cards, scan the board. You review before anything hits Ready. |
-| **Agent runtime** (`omni`, workers) | Execute approved work with specialists, memory, recipes, evidence ledgers, and Pathfinder recovery. |
-
-Core pieces:
-
-- **`omni`**: deterministic local CLI for chat, command execution, research, install/update, and workspace-aware automation.
-- **Web cockpit**: general chat, projects, scrum board, Project Chat, draft queue, card channel pilot, data channels, data-source admin, flow metrics.
-- **`agent-core`**: API + Postgres queue + worker pipeline for service-backed workflows.
-- **`agent-cli`**: queue/API CLI for enqueueing and inspecting core jobs.
-
-License: MIT.
-
-## Venusaur workflow (start here)
-
-```bash
-cd omnidex
-cp default.env .env
-docker compose up --build -d core
-# open http://localhost:8090 → Projects → pick/create a project
-```
-
-1. **Project Chat** — research a topic (`Research` or **Research & draft** / `/batch`).
-2. **Draft queue** — review suggested cards; **Add** or **Add all** to the backlog.
-3. **Scrum board** — edit cards, drag approved work to **Ready**, **Play** to run the agent.
-4. **Card Channel** — steer running work without replaying full agent logs.
-5. Keep chatting — *"continue research on …"* — more drafts accumulate for review.
-
-Full guide: [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md)
-
-Example prompts:
-
-- *Research login systems for our Go app and draft backlog cards for each approach.*
-- *Research music theory intervals — draft study cards, not implementation.*
-- *Break the auth epic into setup / middleware / tests / docs cards.*
-
-## Dynamic AI agent framework
-
-Omnidex is moving from a single-purpose local assistant into a dynamic AI agent framework with a GUI-first control plane. The web UI is not a thin skin over the CLI; it is where projects, data, agent configuration, memory, tickets, and live human steering meet.
-
-The goal is to let a human describe intent in normal language, then let deterministic services decide what kind of agent run is appropriate:
-
-- **Research assistant** when the user is in general chat and only needs web search, synthesis, memory creation, or lightweight follow-up.
-- **Project planning assistant** when the user is inside a project and wants to turn research into backlog cards.
-- **Build agent** when a card has been promoted and the repository/workspace context matters.
-- **Data analyst** when the user asks questions against configured read-only databases.
-- **Reviewer/debugger** when the user asks the system to analyze a project and generate cleanup/refactor/error cards.
-
-The framework separates those modes instead of forcing every request through a code workspace. General chat can research without a project directory. Project and card agents get project context, repo files, recipes, model settings, and agent settings. Data channels get database schema and read-only query tools. The same job queue, evidence model, memory system, and live UI update layer tie the modes together.
-
-### GUI-first cockpit
-
-The web cockpit is the primary operator interface:
-
-- **Chat** is the general assistant surface. It can answer, research, use web search, store useful memories, and work without a project selected.
-- **Projects** organize real workspaces. A project owns its directory, codebase map, recipe, model config, agent config, scrum board, git status, debugger/analyzer runs, and auto-work settings.
-- **Scrum** is the human-in-the-loop execution board. Cards move through backlog, ready/assigned, in progress, review, blocked, and done.
-- **Data** provides natural-language database channels for configured read-only sources.
-- **Jobs, Memory, Metrics, and Admin** expose the queue, durable knowledge, model/agent defaults, secrets, data sources, host bridge state, and operational health.
-
-The UI is built around live partial updates rather than full-page refreshes. RecyclrJS targets small regions such as a card modal tab, channel stream, toolbar, data result, or board column so the interface can update while preserving the user's current modal, tab, and scroll position.
-
-The shared shell and server-rendered panels are available in English, Spanish, Simplified Chinese, Russian, and Japanese. Locale selection is validated and stored with the server-side UI session; `Accept-Language` chooses the first visit, and an explicit `?locale=es`, `?locale=zh-Hans`, `?locale=ru`, or `?locale=ja` overrides it. Unsupported explicit locales return a validation error instead of silently falling back to English.
-
-### Project and scrum interface
-
-The scrum board turns project work into explicit, reviewable units. A card is more than a title:
-
-- title and description
-- checklist and test criteria
-- generated or manually edited ticket body
-- planning/coaching notes
-- tags and suggested tags
-- card channel conversation
-- model and agent overrides
-- recipe JSON
-- reference files and directories from the repo
-- uploaded card-specific files such as PDFs, docs, screenshots, or other context artifacts
-- live job state, console stream, and flow metrics
-
-The intended loop is:
-
-1. Use **Project Chat** to research a topic, inspect direction, or draft a batch of cards.
-2. Review the draft queue and promote only the useful work.
-3. Attach files, folders, recipes, tests, and implementation notes to each card.
-4. Move a card to assigned/in progress and press **Play**, or let auto-work pull from configured columns.
-5. Steer the same running agent from the card channel without losing the card's isolated history.
-6. Let completed work land in **Review**, inspect the output, then mark it done or send it back through the loop.
-
-Cards are intentionally editable. AI-generated tickets are a starting point, not a lock-in. The user can rewrite the ticket, add constraints, attach files, change the agent, and re-run with a clearer scope.
-
-### Live card channels
-
-Each card has an isolated channel used for both planning and execution steering. The channel is designed for long-lived task context:
-
-- messages are attached to the card, not only the browser session
-- running agents can stream status, reasoning summaries, commands, file changes, and final output
-- channel messages can move a card into active work when the user is steering a ticket
-- context minification keeps the useful history without replaying every raw token forever
-- project/card configuration decides whether Omnidex, Codex, Cursor, or another configured agent executes the work
-
-This makes a card feel less like a static Jira ticket and more like a bounded agent workspace with human supervision.
-
-### Data source integration
-
-Omnidex also treats databases as first-class agent surfaces. Admins can configure read-only data sources, currently focused on PostgreSQL-style connections, then explore and query them from the GUI.
-
-Data-source capabilities include:
-
-- read-only connection configuration in **Admin -> Data sources**
-- connection testing
-- raw schema loading
-- AI-assisted schema/catalog exploration
-- direct SQL query execution with SELECT/WITH restrictions
-- natural-language questions that queue a data query job
-- data channels for repeated conversations against the same source
-- rendered answers, SQL, tables, row counts, query evidence, and chartable results
-
-The important design point is that a user can ask human-language questions such as "which accounts had the largest week-over-week drop?" while the system records the SQL and evidence used to answer. This keeps the interaction approachable without hiding the query plan from technical users.
-
-### Human language as the routing layer
-
-The new direction is that users should not need to pick a low-level pipeline for ordinary work. They should be able to ask:
-
-- "Research auth options and draft implementation cards."
-- "Analyze this repo for obvious bugs and refactor candidates."
-- "Why did revenue dip last week?"
-- "Attach this PDF to the ticket and have the agent account for it."
-- "Keep working on this card, but check the migration files first."
-- "Remember the findings from this research topic for next time."
-
-Omnidex then routes the request to the correct bounded context: no workspace for general research, project workspace for build work, card history for ticket steering, database schema for data questions, and memory retrieval when historical context matters.
-
-### Configuration hierarchy
-
-The framework is configurable at multiple scopes:
-
-- **Default/workspace config** for global model and agent defaults.
-- **Project config** for repository-specific models, agents, recipes, and auto-work behavior.
-- **Card config** for per-ticket overrides.
-- **Run config** for one-off decisions like faster mode, deeper reasoning, sandbox behavior, approval policy, network access, or external-agent selection.
-
-This lets lightweight research use a fast native route while a risky project card can use a stricter build agent with stronger reasoning and explicit workspace constraints.
-
-### Memory, evidence, and accountability
-
-Across chat, scrum, data, and CLI runs, Omnidex keeps deterministic systems in charge of state:
-
-- the queue owns job and step lifecycle
-- memories preserve reusable research, preferences, procedures, and project knowledge
-- evidence records commands, web/data findings, outputs, and verification details
-- cards and data channels retain the human-facing conversation
-- deterministic transition logic moves tickets between columns based on job outcomes
-
-The practical result: AI can propose and execute, but Omnidex keeps the audit trail, state transitions, and human approval surfaces explicit.
-
-## Why this design
-
-- **Human gates execution**: the planner generates work; you curate the queue; agents run what you promoted.
-- **Deterministic control plane**: models propose structured outputs; code validates, gates, executes, and records evidence.
-- **Hot-swappable model roles**: each specialist can use the model best suited to its job (instant vs thinking in Project Chat too).
-- **Minimal context by default**: channel pilot and structured commands use summary/minification instead of raw transcript replay.
-- **Evidence ledger by default**: work is explainable after the fact, including rejected commands and remaining objectives.
-- **Relevance-first retrieval**: tags + pgvector similarity (`memory_chunks.embedding`) before analysis/response.
-- **Queue-native processing**: workers lease steps with `FOR UPDATE SKIP LOCKED`.
-
-## Agent runtime (CLI)
-
-Specialist roles handle bounded jobs such as prompt interpretation, planning, shell command selection, summarization, done checks, retrieval, analysis, and verification.
-
-- Model routing is configurable per role, so fast utility models and deeper reasoning models can be swapped independently.
-- Skills and tools extend what Omnidex can do while deterministic code owns policy, execution, evidence, and state transitions.
-- Evidence ledgers record objectives, commands, rejected commands, observed output, pending work, and final responses.
-- Run traces summarize model calls, command counts, rejections, loop exhaustion, and completion-check pressure from existing session events.
-- Development loops convert discovered failures into regression targets, make scoped changes, run targeted verification, and continue from concrete observations instead of starting over.
-- Pathfinder is the high-reward problem-solving layer for stalled runs: it diagnoses the real blocker, scores candidate strategies, and hands one validated next action back to the normal runtime.
-
-## Try This: Frontend Project (CLI)
-
-```bash
-mkdir demo-calculator && cd demo-calculator
-omni chat
-```
-
-Prompt:
+The user talks to one apparent agent, while two tiny semantic model calls produce a behavior class and shape-specific labels; code expands everything else into parser-validated blocks, a staged complete program, authoritative writes, and real tests.
 
 ```text
-Create a small npm frontend project using Stimulus, RecyclrJS, Tailwind CSS, and webpack.
-Initialize npm, install dependencies, create a minimal calculator page, wire a Stimulus controller,
-use RecyclrJS, run a build or smoke test, and summarize the evidence.
+conversation
+    ↓
+behavior class (five fields)             semantic model
+    ↓
+shape-specific semantic labels           semantic model
+    ↓
+expanded typed behavior                  code-owned
+    ↓
+validated adapter + block graph          code-owned
+    ↓
+static declarations + rare functions     code + fragment model(s)
+    ↓
+AST assembly + isolated full tests        code-owned
+    ↓
+authoritative writes + exact verification code-owned
+    ↑ exact failure
+one owning generated function only        fragment model
 ```
 
-Then export the evidence ledger:
+## What changed after Venusaur
 
-```bash
-omni ledger export --out evidence-ledger.json
-omni run:trace latest
-omni bench report
+| Venusaur-era failure | Charmander contract |
+| --- | --- |
+| One model carried project scope, workflow control, code, checking, and recovery. | Each model receives one small typed responsibility. |
+| Raw memories and old work could redirect the active task. | The coding semantic model receives only current direct authority and ordered user feedback; memory is absent. |
+| Correction arrived late or restarted the build. | Accepted blocks remain in memory and only one declared generated owner can be corrected. |
+| Models chose commands, declared success, and confused advice with execution. | Code owns tools, mutation authority, verification, and completion. |
+| Intermediate files were rejected because unfinished siblings did not compile. | Dependency waves complete before the whole staged program is compiled or tested. |
+| Source workers received paths, trees, plans, and excessive project context. | A fragment model receives one signature, one behavior, direct declarations, allowed symbols, and optionally its own current function plus a path-free failure. |
+| Hidden ledgers and duplicate recovery systems accumulated stale state. | Git is the source history; Omnidex keeps one current workspace and one coding engine. |
+| Long generic status streams obscured real progress. | Live events report phase, active station, target, accepted diff, diagnostic, and terminal outcome. |
+
+## Coding assembly line
+
+The runtime has deliberately unequal stations:
+
+1. **Semantic interpreter (model)** — performs two bounded jobs: a three-field schema/shape/language classification and one compact shape-specific label extraction. Code owns the surface and toolchain version. Neither response can express implementation or orchestration.
+2. **Seed validator, expander, and adapter registry (code)** — reject malformed or unsupported seeds, expand types/roles/inputs/persistence guarantees, resolve opaque protected artifacts, and build one exact block graph.
+3. **Block scheduler and parser (code)** — compute dependency waves, render all standard behavior directly, and derive the minimum declarations for any behavior code cannot render.
+4. **Fragment transformer (model, only when required)** — returns exactly one function with an immutable signature. It never sees a path, document, project, job, plan, or filesystem operation.
+5. **Stager and correction controller (code)** — stitch and format complete documents, run the isolated complete program, and map an exact failure to one declared generated owner. Static defects fail as adapter defects.
+6. **Mutation, verification, and completion controllers (code)** — write only a staged program, emit reviewable diffs, verify exact workspace content, run fixed tests once more, and declare the outcome.
+
+The detailed contract lives in [internal/worker/RUNTIME.md](internal/worker/RUNTIME.md).
+
+## Reliability rules
+
+- One authoritative implementation; no legacy fallback engine.
+- Explicit errors for invalid provider configuration, schemas, paths, mutations, and completion claims.
+- No source snapshots or generated version ledgers; use Git.
+- No rollback of valid file work because a later file fails.
+- No deletion unless the current instruction authorizes deletion.
+- No modification of protected instruction files.
+- Tiny typed JSON only for semantic classification and label extraction; one raw AST declaration only for a coding transform.
+- Bounded fragment retries and node corrections; unchanged output and repeated failure stop loudly.
+- Verification commands are selected from the accepted typed program, never inferred from prose or workspace guesses.
+- Direct, exact diagnostic feedback reaches the next worker immediately.
+- Bounded contract correction stays on the configured model and receives current authority plus the exact failure, never a fallback model or replayed rejected response.
+
+## Live operator experience
+
+The CLI and web cockpit expose the same concise execution truth:
+
+- interpreting, assembling, staging, constructing, verifying, completed, or failed phase;
+- active semantic/fragment role and current semantic block;
+- periodic alive heartbeat for slow local inference;
+- accepted writes and reviewable diffs;
+- exact rejected candidate or command diagnostic;
+- queue position and final state.
+
+Repeated polling state is coalesced. Full prompts and context remain available through explicit verbose/debug views instead of flooding the normal progress stream.
+
+## Models
+
+Ollama is the default local provider. The only coding model roles are independently configurable without giving either one control-plane authority:
+
+```dotenv
+LLM_PROVIDER=ollama
+OLLAMA_MODEL_SPECIALIST_CODING_SURFACE=qwen2.5:7b
+OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY=qwen2.5-coder:14b
+OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION=qwen2.5-coder:14b
+OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT=qwen2.5-coder:7b
+OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING=qwen2.5-coder:7b
+OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION=qwen3:4b-thinking
+OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION=qwen3:4b-thinking
+OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE=qwen2.5-coder:7b
+OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT=qwen2.5-coder:7b
+OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION=qwen2.5-coder:14b
+CODING_FRAGMENT_CONCURRENCY=1
 ```
 
-Useful deterministic surfaces:
+The surface role classifies only browser, command-line, or service delivery. The feature-extraction role sees the user request once and returns only exact feature envelopes. Code removes those spans to derive non-feature context; fixed-point split workers then see one already-accepted envelope at a time. There is no model-authored kind, outcome, plan, or coverage verdict. Artifact handling is a separate token-blind classification job. For each local need, code either binds an exact active PostgreSQL skill, gives a selector at most five opaque purpose summaries, or asks a procedure worker to produce one bounded reusable instruction. The fragment role then receives one exact feature contract plus that procedure and returns one raw declaration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. Local Ollama defaults to one fragment lane because concurrent requests to one endpoint are contention, not distributed capacity; the explicit concurrency setting may be raised to at most four when real independent capacity exists. A missing model or invalid capacity fails explicitly.
+
+Hosted generation providers include Ollama, OpenAI, Azure AI, xAI, Google Gemini, Anthropic, Hugging Face, and custom OpenAI-compatible endpoints.
+
+Chinese service integrations include DeepSeek; Alibaba Qwen / Model Studio; Moonshot / Kimi; Zhipu / BigModel / GLM; Z.AI; MiniMax; Baidu Qianfan / ERNIE; Tencent Hunyuan; ByteDance Doubao / Volcengine Ark; StepFun; 01.AI Yi; Baichuan; iFlytek Spark; SiliconFlow; ModelScope; Huawei ModelArts; Xiaomi MiMo; Meituan LongCat; Ant Ling / InclusionAI; and Tencent TokenHub.
+
+Provider IDs, aliases, endpoints, credential keys, and embedding capabilities are centralized in [internal/llmprovider/catalog/definitions.go](internal/llmprovider/catalog/definitions.go). Selecting a service without its required key, model, endpoint, or separate embedding provider fails configuration validation.
+
+## Localization
+
+The cockpit ships server-validated catalogs for:
+
+- English (`en`)
+- Spanish (`es`)
+- Simplified Chinese (`zh-Hans`)
+- Russian (`ru`)
+- Japanese (`ja`)
+
+The server owns the selected locale. `Accept-Language` seeds the first visit; `?locale=...` explicitly changes it. Unsupported explicit locales return a validation error instead of silently falling back.
+
+## State and UI boundaries
+
+- PostgreSQL owns durable jobs, steps, projects, cards, messages, and memories.
+- Redis owns ephemeral coordination, progress, pub/sub, locks, and realtime fanout.
+- The server owns lifecycle and mutation truth.
+- RecyclrJS is the page-scoped realtime bridge.
+- Stimulus coordinates interactions and loading states; it is not an application component renderer.
+- Reusable application UI is server-rendered. Scrum card modals remain the explicit React + TypeScript typed-JSON exception.
+
+## Product surfaces
+
+- **Chat** — conversational entrypoint with model-owned semantic intent classification and code-owned typed transport; wording lists never select execution.
+- **Projects** — workspace, model, agent, and codebase-map configuration.
+- **Scrum** — Venusaur’s planner, review queue, board, card channel, and controlled execution surface.
+- **Data** — read-only data-source channels with recorded SQL and result evidence.
+- **Jobs** — live queue, station progress, failures, and final results.
+- **Memory** — scoped reference/preference storage; never hidden prompt authority.
+
+See [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md) for the planner surface retained from Venusaur.
+
+## Quick start
+
+Requirements: Docker with Compose and an Ollama endpoint reachable from the core service.
 
 ```bash
-omni fastpath project.probe
-omni index build
-omni patch apply --file change.diff --dry-run
-omni fingerprint --text "npm error code E404"
-omni ollama prewarm --json
-```
-
-See `docs/SCRUM_PLANNER.md`, `docs/DEVELOPMENT_LOOPS.md`, `docs/VALIDATED_PLAYBOOKS.md`, `docs/EVIDENCE_LEDGER.md`, `docs/RUN_TRACE.md`, `docs/FAST_PATHS.md`, `docs/WORKSPACE_INDEX.md`, `docs/COMMAND_CACHE.md`, `docs/PATCH_MODE.md`, `docs/FAILURE_FINGERPRINTS.md`, `docs/OLLAMA_PREWARM.md`, `docs/COMMAND_POLICY.md`, `docs/RECIPES.md`, `docs/BENCHMARKS.md`, `docs/ROADMAP.md`, and `SECURITY.md`.
-
-For embedding Omnidex into other apps as a local memory-backed chat/RP/support service, see `docs/LOCAL_SERVICE_CHANNELS.md`.
-
-## Pipeline
-
-Default step pipelines by type:
-- `assistant`: `plan -> tooling -> workspace_scan -> tag -> retrieve -> web_search -> analyze -> assist -> verify`
-- `chat`: `plan -> tooling -> workspace_scan -> tag -> retrieve -> web_search -> analyze -> roleplay -> verify`
-- `story`: `plan -> tooling -> workspace_scan -> tag -> retrieve -> web_search -> analyze -> narrate -> verify`
-
-Worker runtime uses a stage-driven orchestrator with stable per-stage context contracts:
-- `tooling` -> writes `tooling`
-- `workspace_scan` -> writes `workspace`
-- `tag` -> writes `tags`
-- `retrieve` -> writes `retrieval`
-- `plan` -> writes `plan`
-- `web_search` -> writes `web_search`
-- `analyze` -> writes `analyzer`
-- `assist|roleplay|narrate` -> writes that action key
-- `verify` -> writes `verification`
-
-This keeps queue/API compatibility while making execution flow linear and easier to reason about/extend.
-
-## Pathfinder
-
-Pathfinder is Omnidex's meta-problem-solving specialist. It is invoked when the normal routine stalls, loops, hits repeated false completion, encounters invalid file assumptions, or needs a better strategy than asking the generic planner for another command.
-
-Pathfinder receives a `ProblemCase` built from current evidence: the user goal, phase, pending objectives, objective ledger, worksite survey, prep context, codebase route, recent observations, failed/rejected commands, false-done count, loop state, available tools, constraints, and success condition.
-
-It returns a `BreakthroughPacket`:
-
-- diagnosis and real blocker
-- assumptions and evidence used
-- at least three candidate strategies with practical scores
-- selected strategy and expected progress
-- next action such as inspect, research, proof-contract update, patch, verification, external-agent delegation, objective/context adjustment, ask-user, or fail-with-evidence
-- forbidden paths and proof needed after the action
-
-Pathfinder cannot mark objectives complete. Its output must pass deterministic packet validation, then any action is dispatched through normal Omnidex policy. Completion still requires machine-checkable evidence from proof commands, artifact validation, scope checks, and objective predicates.
-
-Live progress reports these pipeline phases explicitly:
-- `planning`: `plan`
-- `execution`: `tooling`, `workspace_scan`, `tag`, `retrieve`, `web_search`, `analyze`, `assist|roleplay|narrate`
-- `review`: `verify`
-
-`web_search` uses fixed provider routes (Yahoo, Google, Reddit-via-Google) and query normalization (`spaces/commas -> +`, strip non-alphanumeric symbols, collapse duplicate `+`).
-
-`plan` derives a deterministic JSON execution plan, `tooling` audits host capability and install hints, `workspace_scan` snapshots repository context, and `verify` enforces grounding checks (with optional persistent replan recovery).
-
-Jobs can still pause/continue through `feedback`, be steered with `interrupt`, or be reset with `replan`.
-
-See `internal/worker/RUNTIME.md` for stage contracts and extension points.
-
-Memory is typed so retrieval can prioritize durable guidance:
-- `instruction` (rules/policies)
-- `procedural` (how-to workflows)
-- `reference` (books/docs/transcripts/subtitles)
-- `preference` (user/project tendencies)
-- `episodic` (interaction history)
-
-After each response, core can infer long-term memories (`procedural` / `instruction` / `preference`) and store or correct near-duplicate inferred entries.
-
-Tables are in `migrations/001_init.sql` and created automatically on startup when `MIGRATE_ON_STARTUP=true`.
-
-## Quick start (Docker)
-
-```bash
-cd omnidex
 cp default.env .env
 docker compose up --build
 ```
 
-Do not set `PATH=` in `.env` for compose — see [Docker troubleshooting](#docker-troubleshooting) and `default.env` comments.
+Open `http://localhost:8090`.
 
-Core API is exposed on `http://localhost:8090`.
-Postgres and Redis stay on the internal backend Docker network (`omnidex-backend`) and are not published to the host by default. The core service is the only normal host-facing service.
+The default compose topology keeps PostgreSQL and Redis on the internal backend network. The core API is the normal host-facing service.
 
-### Docker troubleshooting
+For a host build:
 
-#### `agent-core`: executable file not found in `$PATH`
-
-This usually means **host `.env` set `PATH=`** (often for Cursor/npm on the host bridge) and Docker Compose injected it into the core container. A host PATH like `/home/you/.local/share/mise/shims:/usr/bin:/bin` does not include `/usr/local/bin`, where the image installs `agent-core`.
-
-Fix:
-
-1. **Remove `PATH=` from `.env`** (recommended). Put host-only PATH in `~/.config/omni/host-bridge.env` instead:
-
-```bash
-# ~/.config/omni/host-bridge.env — host bridge only, not core .env
-OMNI_CURSOR_NODE_BIN=/home/you/.local/share/mise/installs/node/VERSION/bin/node
-OMNI_CURSOR_NPM_BIN=/home/you/.local/share/mise/installs/node/VERSION/bin/npm
-PATH=/home/you/.local/share/mise/shims:/usr/bin:/bin
-```
-
-2. **Rebuild and restart** after pulling a fix or editing `.env`:
-
-```bash
-docker compose up --build -d core
-```
-
-The image runs `/usr/local/bin/agent-core` directly and `docker-compose.yml` pins container `PATH`; either should survive a stray host `PATH` in `.env`.
-
-Verify the binary exists:
-
-```bash
-docker compose run --rm --entrypoint sh core -c 'ls -la /usr/local/bin/agent-core'
-```
-
-#### Cannot connect to the Docker daemon (`unix:///var/run/docker.sock`)
-
-The engine is not running, or your shell user cannot access the socket.
-
-1. **Start Docker** (Arch Linux example):
-
-```bash
-sudo systemctl start docker
-sudo systemctl enable docker
-systemctl is-active docker
-```
-
-2. **Add your user to the `docker` group** (one-time), then open a **new login session** (log out/in, or `newgrp docker`):
-
-```bash
-sudo usermod -aG docker "$USER"
-newgrp docker   # or restart the terminal / re-login
-groups | grep docker
-```
-
-3. **Check the socket**:
-
-```bash
-ls -l /var/run/docker.sock
-```
-
-You want `root docker` ownership and your user in group `docker`.
-
-4. **Temporary workaround**: `sudo docker compose up --build -d core` (not ideal long-term).
-
-5. **Rootless Docker**: if you use rootless, point the client at the user socket:
-
-```bash
-export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
-```
-
-On macOS/Windows, start **Docker Desktop** before `docker compose`; the Homebrew `docker` package is client-only.
-
-#### General rebuild after updates
-
-```bash
-docker compose up --build -d core
-docker compose ps
-docker compose logs -f core --tail 50
-```
-
-Or from an install path: `./update.sh` / `omni update` (requires a working Docker daemon).
-
-### Isolated CLI/toolbox container
-
-For safer agent work, you can run the core service in Docker and run the CLI from a separate disposable container on the same Docker network. In that setup, Omnidex sees only the files and tools mounted into the CLI container. Your host source tree, host package managers, and host system dependencies are not touched unless you explicitly mount them writable.
-
-The recommended local topology is:
-
-```text
-native host Ollama
-  <- reached through host.docker.internal:11434
-Docker core container
-  <- reached through http://core:8090 on the compose network
-disposable CLI/toolbox container
-```
-
-Keep Ollama running natively on the system when possible, especially for GPU access, driver stability, and model cache reuse. The core container should connect outward to that host Ollama instance with `OLLAMA_BASE_URL=http://host.docker.internal:11434`; Ollama does not need to run inside the Docker network.
-
-Start the core:
-
-```bash
-docker compose up --build -d core
-```
-
-Then run a CLI/toolbox container on the compose edge network. The exact network name is usually `<repo>_omnidex-edge`; from this repo it is commonly `omnidex_omnidex-edge`:
-
-```bash
-docker network ls --filter name=omnidex-edge
-```
-
-Example service-backed CLI run:
-
-```bash
-mkdir -p "$HOME/omnidex-sandbox"
-
-docker run --rm -it \
-  --network omnidex_omnidex-edge \
-  -e CORE_URL=http://core:8090 \
-  -v "$PWD":/src/omnidex:ro \
-  -v "$HOME/omnidex-sandbox":/workspace \
-  -w /src/omnidex \
-  golang:1.24.1-bookworm \
-  go run ./cmd/cli enqueue --pipeline assistant --workspace on --approval auto --verify auto \
-    "Inspect /workspace and suggest the next safe development task."
-```
-
-For local deterministic `omni` work inside the same kind of isolated container:
-
-```bash
-docker run --rm -it \
-  --network omnidex_omnidex-edge \
-  -e CORE_URL=http://core:8090 \
-  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
-  -v "$PWD":/src/omnidex:ro \
-  -v "$HOME/omnidex-sandbox":/workspace \
-  -w /workspace \
-  golang:1.24.1-bookworm \
-  bash -lc 'cd /src/omnidex && go run ./cmd/omni chat'
-```
-
-Use a writable mount only for the project you want Omnidex to edit. Mount the Omnidex source read-only, mount throwaway dependency caches if you want repeatable installs, and avoid mounting `/`, `$HOME`, Docker sockets, SSH keys, cloud credentials, or production repositories into the toolbox container.
-
-### Local service channels
-
-Core exposes non-agent channel routes for applications that need a local assistant, support bot, roleplay participant, narrator, or instruction-following model with memory:
-
-- `POST /v1/channels`
-- `GET /v1/channels`
-- `POST /v1/channels/{id}/messages`
-- `GET /v1/channels/{id}/messages`
-
-Channels use configured model/persona/system/context/tags, retrieve channel-scoped memory, call the selected model, store recent messages, and persist conversation turns as memory. They do not run shell commands or agent jobs.
-
-See `docs/LOCAL_SERVICE_CHANNELS.md` for install steps and JavaScript, Python, Go, support, and roleplay examples.
-
-### Ollama connectivity from Docker
-
-Recommended: run Ollama natively on the host and let the Dockerized core connect to it through Docker's host gateway. Keep:
-- `OLLAMA_BASE_URL=http://host.docker.internal:11434`
-
-If Ollama runs in another container, set `OLLAMA_BASE_URL` to that service URL.
-
-Linux note: if jobs fail with `connect: connection refused` to `host.docker.internal:11434`, Ollama is usually bound to `127.0.0.1` only. Expose it on all interfaces and restart:
-
-```bash
-OLLAMA_HOST=0.0.0.0:11434 ollama serve
-```
-
-If you run Ollama as a systemd service, set `OLLAMA_HOST=0.0.0.0:11434` in the service environment override, then restart the service.
-
-#### Troubleshooting tips
-
-If chat or research jobs fail with Ollama timeouts, `/api/tags` errors, or `generation provider ollama is unreachable from core`:
-
-1. **Rebuild and restart core**
-
-```bash
-docker compose up --build -d core
-```
-
-2. **Check `.env`** — If you still have `OLLAMA_BASE_URL=http://172.20.0.1:11434` and that gateway is wrong, either remove it (use the default `http://host.docker.internal:11434`) or fix the IP. Core also auto-probes fallbacks at startup (`host.docker.internal`, the Docker bridge gateway, then localhost); check core logs for `ollama endpoint resolved`.
-
-3. **Ensure Ollama listens on all interfaces on the host**
-
-```bash
-OLLAMA_HOST=0.0.0.0:11434 ollama serve
-```
-
-4. **Verify from inside the core container**
-
-```bash
-docker compose exec core wget -qO- --timeout=5 http://host.docker.internal:11434/api/tags
-```
-
-If your compose project uses a different container name, substitute it (for example `docker exec omni-nxt-core-1 ...`).
-
-6. **Arch Linux + UFW** — If probes **time out** (not `connection refused`) from inside the container while `curl http://127.0.0.1:11434/api/tags` works on the host, UFW is usually blocking Docker bridge traffic. Allow host ports from Docker networks:
-
-```bash
-scripts/ufw-docker-host.sh
-# or manually:
-sudo ufw allow from 172.16.0.0/12 to any port 11434,8091 proto tcp
-docker compose up -d core
-```
-
-7. **Read the startup logs**
-
-- If **all candidates failed**, Ollama is not reachable from Docker at all — that is a host networking/binding issue, not the UI.
-- If logs show a **successful resolved URL**, chat should queue immediately even when Status briefly still shows Ollama as down.
-
-The web UI Status panel includes a server-rendered Research Health card backed by `GET /v1/status/research`. It reports generation and embedding providers separately, distinguishes configuration validation from actual reachability probes, checks Ollama only when an active role uses it, reports required/missing local models, and probes configured web-search providers. Remote hosted services are reported as `configured · not probed`; Omnidex never labels them reachable without making a real probe.
-
-If a configured Ollama generation model is missing, Omnidex pulls it through Ollama's `/api/pull` endpoint and retries the request. First use can take as long as the model download. You can avoid that delay by pre-pulling:
-
-```bash
-ollama pull qwen2.5:7b
-ollama pull nomic-embed-text
-```
-
-### Ollama GPU setup and stress testing
-
-Omnidex can drive many sequential specialist calls. A weak or half-configured Ollama setup may look fine for one chat request, then fail during long planning, research, verification, or memory-indexing runs. Before using Omnidex for serious agent loops, verify Ollama under sustained load.
-
-Recommended checks:
-
-```bash
-ollama --version
-ollama list
-ollama pull qwen2.5-coder:7b
-ollama pull qwen2.5:7b
-ollama pull nomic-embed-text
-omni ollama prewarm --json
-```
-
-For memory retrieval, use an embedding model whose output dimension matches the database schema. The default local vector column is `vector(768)`, so `nomic-embed-text` is a good Ollama default:
-
-```bash
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-```
-
-On Linux AMD systems, confirm the server is actually using the GPU instead of silently falling back to CPU. Useful tools include:
-
-```bash
-ollama ps
-journalctl -u ollama -f
-ls -l /dev/dri /dev/kfd
-groups
-```
-
-During a long generation, watch GPU utilization with one of:
-
-```bash
-amdgpu_top
-radeontop
-watch -n 1 rocm-smi
-```
-
-The exact AMD path depends on GPU generation, kernel, Mesa, ROCm, and Ollama build. Official Ollama docs currently describe AMD ROCm support on Linux and note additional AMD coverage through Vulkan. On Arch Linux, the most practical paths are usually:
-
-- `ollama-rocm` when the GPU is supported by ROCm and `/dev/kfd` access is working.
-- a Vulkan-enabled Ollama build/package when ROCm does not fully support the device or does not use the whole GPU.
-- CPU fallback only as a last resort for small models or debugging.
-
-For Arch Linux AMD laptops/desktops, including Framework Laptop 16 GPU configurations, check:
-
-```bash
-pacman -Qs 'ollama|rocm|vulkan|mesa|amdgpu'
-vulkaninfo --summary
-rocminfo
-```
-
-If Ollama runs as a systemd service, put GPU and networking settings in an override:
-
-```bash
-sudo systemctl edit ollama
-```
-
-Example override:
-
-```ini
-[Service]
-Environment="OLLAMA_HOST=0.0.0.0:11434"
-Environment="OLLAMA_KEEP_ALIVE=30m"
-Environment="OLLAMA_EMBEDDING_MODEL=nomic-embed-text"
-```
-
-Then reload and restart:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart ollama
-journalctl -u ollama -f
-```
-
-If you use a Vulkan-enabled Ollama build, set the Vulkan flag required by that build/package in the same override. Some builds use:
-
-```ini
-[Service]
-Environment="OLLAMA_VULKAN=1"
-```
-
-Do not assume Vulkan or ROCm is active because the model runs. Prove it with utilization during generation and by checking Ollama logs for the selected backend. For Omnidex stress testing, run several long prompts or research jobs back to back and watch for:
-
-- `context canceled`
-- HTTP 500/connection reset errors from Ollama
-- model pulls during active jobs
-- repeated CPU fallback
-- thermal throttling
-- VRAM exhaustion or partial offload warnings
-
-Helpful references:
-- Ollama GPU docs: `https://docs.ollama.com/gpu`
-- Ollama Linux docs: `https://docs.ollama.com/linux`
-- Ollama troubleshooting: `https://docs.ollama.com/troubleshooting`
-- Arch package notes for Ollama/ROCm/Vulkan from your distribution packages
-
-### Remote model providers
-
-Omnidex supports these model sources for generation:
-
-| Provider | `LLM_PROVIDER` values | Required credential | Default model |
-| --- | --- | --- | --- |
-| Ollama | `ollama`, `local` | none | `llama3.2` in core, CLI defaults vary by role |
-| OpenAI-compatible OpenAI API | `openai`, `chatgpt`, `chat-gpt` | `OPENAI_API_KEY` | `gpt-4.1-mini` |
-| Microsoft Azure AI / Azure OpenAI | `azure`, `azureai`, `azure-openai`, `microsoft`, `windows-ai` | `AZURE_AI_API_KEY` or `AZURE_OPENAI_API_KEY` | deployment/model from `AZURE_AI_MODEL` or `AZURE_OPENAI_DEPLOYMENT` |
-| xAI Grok | `xai`, `x-ai`, `grok`, `grock` | `XAI_API_KEY` or `GROK_API_KEY` | `grok-4.3` |
-| Google Gemini | `google`, `gemini`, `googleai`, `google-ai` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `gemini-2.0-flash` |
-| Anthropic Claude | `anthropic`, `claude` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
-| Hugging Face Inference Providers | `huggingface`, `hugging-face`, `hf` | `HUGGINGFACE_API_KEY` or `HF_TOKEN` | `openai/gpt-oss-20b:fastest` |
-
-Chinese OpenAI-compatible services have first-class presets:
-
-| Provider ID | Service/model families | Credential | Default API base |
-| --- | --- | --- | --- |
-| `deepseek` | DeepSeek | `DEEPSEEK_API_KEY` | `https://api.deepseek.com` |
-| `qwen` | Alibaba Qwen / Model Studio / DashScope | `QWEN_API_KEY` or `DASHSCOPE_API_KEY` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
-| `moonshot` | Moonshot AI / Kimi | `MOONSHOT_API_KEY` or `KIMI_API_KEY` | `https://api.moonshot.ai/v1` |
-| `zhipu` | Zhipu AI / BigModel / GLM | `ZHIPU_API_KEY`, `BIGMODEL_API_KEY`, or `GLM_API_KEY` | `https://open.bigmodel.cn/api/paas/v4` |
-| `zai` | Z.AI | `ZAI_API_KEY` | `https://api.z.ai/api/paas/v4` |
-| `minimax` | MiniMax | `MINIMAX_API_KEY` | `https://api.minimax.io/v1` |
-| `qianfan` | Baidu Qianfan / ERNIE | `QIANFAN_API_KEY`, `BAIDU_API_KEY`, or `ERNIE_API_KEY` | `https://qianfan.baidubce.com/v2` |
-| `hunyuan` | Tencent Hunyuan | `HUNYUAN_API_KEY` | `https://api.hunyuan.cloud.tencent.com/v1` |
-| `doubao` | ByteDance Doubao / Volcengine Ark | `DOUBAO_API_KEY`, `VOLCENGINE_API_KEY`, or `ARK_API_KEY` | `https://ark.cn-beijing.volces.com/api/v3` |
-| `stepfun` | StepFun | `STEPFUN_API_KEY` or `STEP_API_KEY` | `https://api.stepfun.com/v1` |
-| `yi` | 01.AI Yi | `YI_API_KEY` | `https://api.01.ai/v1` |
-| `baichuan` | Baichuan AI | `BAICHUAN_API_KEY` | `https://api.baichuan-ai.com/v1` |
-| `spark` | iFlytek Spark | `SPARK_API_KEY`, `IFLYTEK_API_KEY`, or `XFYUN_API_KEY` | `https://spark-api-open.xf-yun.com/v1` |
-| `siliconflow` | SiliconFlow model catalog | `SILICONFLOW_API_KEY` | `https://api.siliconflow.cn/v1` |
-| `modelscope` | ModelScope API Inference | `MODELSCOPE_API_KEY` | `https://api-inference.modelscope.cn/v1` |
-| `modelarts` | Huawei ModelArts MaaS | `MODELARTS_API_KEY` or `HUAWEI_MAAS_API_KEY` | `https://api.modelarts-maas.com/openai/v1` |
-| `mimo` | Xiaomi MiMo | `MIMO_API_KEY` | `https://api.xiaomimimo.com/v1` |
-| `longcat` | Meituan LongCat | `LONGCAT_API_KEY` | `https://api.longcat.chat/openai/v1` |
-| `antling` | Ant Ling / InclusionAI | `ANTLING_API_KEY` | `https://api.ant-ling.com/v1` |
-| `tokenhub` | Tencent TokenHub unified model gateway | `TOKENHUB_API_KEY` | `https://tokenhub.tencentmaas.com/v1` |
-| `compatible` | Any other OpenAI-compatible service | `COMPATIBLE_API_KEY` | explicit `COMPATIBLE_BASE_URL` required |
-
-These presets accept arbitrary current text/chat-capable model or endpoint IDs exposed by each service's compatible Chat Completions API through `<PREFIX>_MODEL`; Omnidex intentionally does not freeze fast-changing hosted model catalogs into code. Every hosted Chinese preset requires an explicit model. Regional, workspace, plan, and account-specific endpoints can override the preset through `<PREFIX>_BASE_URL`. The `compatible` provider is strict: base URL, API key, and model are all required, and an unknown provider never falls back to Ollama.
-
-`GET /v1/providers` exposes the authoritative runtime catalog, aliases, capabilities, selected generation/embedding roles, configured model IDs, and configuration readiness without returning credentials. `GET /v1/status/research` adds concise live readiness and a server-rendered Recyclr fragment for the Admin health panel.
-
-Provider API keys may be stored through Admin → Models & agents. At startup, Omnidex loads structural environment configuration, overlays database-stored keys, then performs final credential validation before constructing the shared API/worker clients. Saving or clearing a key reports a required core restart so the API and workers never run with different provider credentials.
-
-Generation and embeddings are routed separately. `LLM_PROVIDER` controls chat, planning, summarization, specialists, and response generation. `EMBEDDING_PROVIDER` controls memory vectors and retrieval embeddings. Supported OpenAI-compatible embedding presets are `qwen`, `zhipu`, `qianfan`, `hunyuan`, and `siliconflow`; the catch-all `compatible` route can also embed when its endpoint supports `/embeddings`. Generation-only providers require an explicit different `EMBEDDING_PROVIDER`; Omnidex does not silently select one.
-
-To run with OpenAI instead of Ollama:
-- `LLM_PROVIDER=openai`
-- `OPENAI_API_KEY=...`
-- optional `OPENAI_MODEL=gpt-4.1-mini`
-- optional `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
-
-To run with Microsoft Azure AI / Azure OpenAI:
-- `LLM_PROVIDER=azure`, `LLM_PROVIDER=azure-openai`, `LLM_PROVIDER=microsoft`, or `LLM_PROVIDER=windows-ai`
-- `AZURE_AI_API_KEY=...` or `AZURE_OPENAI_API_KEY=...`
-- for the current Azure OpenAI v1-compatible API, set `AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com`, `AZURE_AI_API_STYLE=v1`, and `AZURE_OPENAI_DEPLOYMENT=<chat-deployment>`
-- for older Azure OpenAI deployment routes, set `AZURE_AI_API_STYLE=azure_openai`, `AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com`, and `AZURE_OPENAI_DEPLOYMENT=<chat-deployment>`
-- optional `AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<embedding-deployment>` when using Azure for memory vectors
-- optional `AZURE_AI_API_VERSION=2024-10-21` for deployment routes
-- for Azure AI Foundry model inference, set `AZURE_AI_BASE_URL=https://<resource>.services.ai.azure.com`, `AZURE_AI_API_STYLE=foundry`, and `AZURE_AI_MODEL=<model-or-deployment>`
-
-To run with xAI Grok:
-- `LLM_PROVIDER=xai`, `LLM_PROVIDER=grok`, or `LLM_PROVIDER=grock`
-- `XAI_API_KEY=...` or `GROK_API_KEY=...`
-- optional `XAI_BASE_URL=https://api.x.ai/v1`
-- optional `XAI_MODEL=grok-4.3`
-- set an explicit embedding-capable `EMBEDDING_PROVIDER`, because Grok generation does not expose an embeddings route supported by Omnidex.
-
-To run with Google Gemini:
-- `LLM_PROVIDER=google` or `LLM_PROVIDER=gemini`
-- `GOOGLE_API_KEY=...` or `GEMINI_API_KEY=...`
-- optional `GOOGLE_MODEL=gemini-2.0-flash`
-- optional `GOOGLE_EMBEDDING_MODEL=text-embedding-004`
-
-To run with Anthropic Claude:
-- `LLM_PROVIDER=anthropic` or `LLM_PROVIDER=claude`
-- `ANTHROPIC_API_KEY=...`
-- optional `ANTHROPIC_MODEL=claude-sonnet-4-20250514`
-- set an explicit embedding-capable `EMBEDDING_PROVIDER`, because Anthropic does not provide a native embeddings API.
-
-To run with Hugging Face Inference Providers:
-- `LLM_PROVIDER=huggingface` or `LLM_PROVIDER=hf`
-- `HUGGINGFACE_API_KEY=...` or `HF_TOKEN=...`
-- optional `HUGGINGFACE_MODEL=openai/gpt-oss-20b:fastest`
-- optional `HUGGINGFACE_EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2`
-
-`EMBEDDING_PROVIDER` can be set independently from `LLM_PROVIDER` when you want one provider for generation and another provider for memory vectors. It is required for every generation-only provider and useful when you want stable vector dimensions while testing different generation models.
-
-Chinese provider examples:
-
-```env
-# Qwen generation and embeddings. Use the model IDs currently enabled in your Model Studio workspace.
-LLM_PROVIDER=qwen
-QWEN_API_KEY=...
-QWEN_MODEL=<chat-model-id>
-EMBEDDING_PROVIDER=qwen
-QWEN_EMBEDDING_MODEL=<embedding-model-id>
-```
-
-```env
-# DeepSeek generation with local embeddings.
-LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=...
-DEEPSEEK_MODEL=<current-chat-model-id>
-EMBEDDING_PROVIDER=ollama
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-```
-
-Common setups:
-
-```env
-# Fully local generation and embeddings.
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=qwen2.5-coder:7b
-EMBEDDING_PROVIDER=ollama
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-```
-
-```env
-# OpenAI for generation, local Ollama embeddings for stable memory dimensions.
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4.1-mini
-OPENAI_MODEL_REASONING=gpt-4.1
-OPENAI_MODEL_PLANNER=gpt-4.1
-EMBEDDING_PROVIDER=ollama
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-```
-
-```env
-# Grok for generation, local Ollama embeddings.
-LLM_PROVIDER=xai
-XAI_API_KEY=xai-...
-XAI_MODEL=grok-4.3
-XAI_MODEL_FAST=grok-4.3
-EMBEDDING_PROVIDER=ollama
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-```
-
-```env
-# Claude for generation, OpenAI embeddings.
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-4-20250514
-ANTHROPIC_MODEL_FAST=claude-3-5-haiku-latest
-EMBEDDING_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-```
-
-```env
-# Gemini for generation and embeddings.
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-2.0-flash
-GEMINI_MODEL_REASONING=gemini-2.5-pro
-EMBEDDING_PROVIDER=google
-GEMINI_EMBEDDING_MODEL=text-embedding-004
-```
-
-```env
-# Hugging Face Inference Providers.
-LLM_PROVIDER=hf
-HF_TOKEN=hf_...
-HF_MODEL=openai/gpt-oss-20b:fastest
-HF_MODEL_FAST=meta-llama/Llama-3.1-8B-Instruct:fireworks-ai
-EMBEDDING_PROVIDER=huggingface
-HF_EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2
-```
-
-### External coding agents: Cursor and Codex
-
-Omnidex can delegate implementation work to Cursor or Codex as bounded external coding agents. These agents are not the planner, validator, or completion authority. Omnidex still owns workspace survey, memory lookup, context compaction, objective evidence, proof commands, artifact validation, scope validation, and final completion decisions.
-
-The external-agent flow is:
-
-```text
-Omnidex prepares a mission packet
-  -> Cursor/Codex receives exact task, edit surface, read-only context, forbidden actions, and proof contract
-  -> Cursor/Codex edits files as an implementation worker
-  -> Omnidex streams agent events into the timeline
-  -> Omnidex runs local proof commands and artifact checks
-  -> Omnidex accepts, rejects, or repairs from deterministic evidence
-```
-
-External agent output is recorded as implementation evidence only. A streamed `completed` event means the worker claims its implementation is ready for validation; it does not mean the Omnidex objective is done.
-
-External agent delegation is opt-in. If no agent is explicitly enabled and selected, Omnidex uses its local coding system and deterministic handlers.
-
-Cursor delegation requires both selection and enablement:
-
-```env
-OMNI_ARCHITECT_AGENT=cursor
-OMNI_ENABLE_CURSOR_ARCHITECT=true
-CURSOR_API_KEY=...
-OMNI_CURSOR_MODEL=composer-2
-OMNI_CURSOR_TIMEOUT=90m
-OMNI_CURSOR_INSTALL_TIMEOUT=10m
-OMNI_CURSOR_SDK_RUNNER_DIR=
-OMNI_CURSOR_NODE_BIN=node
-OMNI_CURSOR_NPM_BIN=npm
-OMNI_DISABLE_CURSOR_ARCHITECT=false
-```
-
-Codex delegation also requires both selection and enablement:
-
-```env
-OMNI_ARCHITECT_AGENT=codex
-OMNI_ENABLE_CODEX_ARCHITECT=true
-CODEX_API_KEY=...
-# OPENAI_API_KEY is also accepted when CODEX_API_KEY is unset.
-OMNI_CODEX_MODEL=gpt-5.3-codex
-OMNI_CODEX_TIMEOUT=90m
-OMNI_CODEX_INSTALL_TIMEOUT=10m
-OMNI_CODEX_SDK_RUNNER_DIR=
-OMNI_CODEX_NODE_BIN=node
-OMNI_CODEX_NPM_BIN=npm
-OMNI_CODEX_BIN=codex
-OMNI_DISABLE_CODEX_ARCHITECT=false
-```
-
-Set `OMNI_ARCHITECT_AGENT=none` or leave it unset to force local Omnidex execution even when SDK credentials are present.
-
-Mission packets are compact by design. They include:
-
-- `task`, `mode`, `workspace`, and `target_root`
-- detected worksite state, package manager, and frameworks
-- exact edit surface and read-only context files
-- requested objectives
-- proof commands, artifact checks, and evidence predicates
-- forbidden actions such as sibling project creation, unrequested dependencies, backend/routing additions, test weakening, and completion claims
-- prepared context from route planning, documentation briefs, and relevant memories
-
-Human correction is treated as higher-authority current-run context. The safe baseline behavior is cancel and restart: Omnidex cancels the active external session, runs cleanup, revises the mission packet with the correction, refreshes the allowed/forbidden scope, and starts a new external session. Same-session interrupt/resume can be added per adapter when the underlying SDK supports it reliably.
-
-Operational rules:
-
-- Do not expose external-agent execution in untrusted/public environments.
-- External agents must not push git, create sibling projects, or install unrequested dependencies.
-- Shell/process cleanup matters after cancel, failure, or completion.
-- Local proof gates remain mandatory: build/test/smoke commands, artifact validation, scope/dependency checks, and objective evidence predicates.
-
-### CLI agent mode
-
-After install, use the core-backed agent chat from any workspace:
-
-```bash
-omni agent --profile architect
-```
-
-`omni agent` is a bridge to `agent-cli chat`, so it uses the core configuration stack: env, workspace defaults from Admin, project/card config when present, and per-run CLI overrides. The local deterministic `omni chat` command remains available separately.
-
-Useful one-shot starts:
-
-```bash
-omni agent --agent codex --agent-model gpt-5.3-codex --codex-reasoning-effort high
-omni agent --agent cursor --agent-model composer-2
-omni agent --agent omnidex --reasoning deep
-```
-
-Inside the interactive chat:
-
-```text
-/agent codex
-/model gpt-5.3-codex
-/reasoning deep
-/set codex_reasoning_effort high
-/set codex_sandbox workspace-write
-/settings
-/interrupt add this constraint to the active run
-/replan restart with this corrected scope
-/cancel stop this run
-```
-
-The installed aliases also include `oagent`, `oagentcodex`, `oagentcursor`, and `oagentomni`.
-
-### Workspace scan from Docker
-
-By default compose mounts your parent directory read-only into `/workspace` and the core scans from there.
-Set `HOST_WORKSPACE_PATH` to control what gets mounted.
-
-### Web search tuning
-
-Environment variables:
-- `WEB_SEARCH_ENABLED=true|false`
-- `WEB_SEARCH_PROVIDERS=duckduckgo,google,reddit`
-- `WEB_SEARCH_TIMEOUT=15s`
-- `WEB_SEARCH_PER_SOURCE_BUDGET=3000`
-- `WEB_SEARCH_TOTAL_BUDGET=6000`
-- `WORKSPACE_SCAN_ENABLED=true|false`
-- `WORKSPACE_ROOT=/workspace`
-- `WORKSPACE_MAX_FILES=5000`
-- `WORKSPACE_CONTEXT_BUDGET=6000`
-
-### Model routing and cognition
-
-Environment variables use the selected generation provider as a prefix. For example, when `LLM_PROVIDER=openai`, `MODEL_PLANNER` is read from `OPENAI_MODEL_PLANNER`; when `LLM_PROVIDER=google`, it is read from `GOOGLE_MODEL_PLANNER` or `GEMINI_MODEL_PLANNER`; when `LLM_PROVIDER=ollama`, it is read from `OLLAMA_MODEL_PLANNER` or `OMNI_PLANNER_MODEL`.
-
-Routing fallback order:
-- `*_MODEL` is the default generation model.
-- `*_MODEL_FAST` defaults to `*_MODEL`.
-- `*_MODEL_REASONING` defaults to `*_MODEL`.
-- `*_MODEL_TAGGER` defaults to fast.
-- `*_MODEL_SEARCH` defaults to fast.
-- `*_MODEL_MEMORY` defaults to fast.
-- `*_MODEL_ANALYZER`, `*_MODEL_PLANNER`, and `*_MODEL_RESPONDER` default to reasoning.
-- specialist models default to the closest role model unless explicitly configured.
-
-Role-specific model variables let you tune cost, speed, and quality without changing code:
-
-```env
-# Example: cheap fast model, stronger planner, strong shell/code specialist.
-OLLAMA_MODEL=qwen2.5-coder:7b
-OLLAMA_MODEL_FAST=qwen2.5:7b
-OLLAMA_MODEL_REASONING=qwen2.5:14b
-OLLAMA_MODEL_PLANNER=qwen2.5-coder:14b
-OLLAMA_MODEL_EVALUATOR=qwen2.5:7b
-OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION=qwen2.5-coder:14b
-OLLAMA_MODEL_SPECIALIST_WEB_RESEARCH=qwen2.5:7b
-OLLAMA_MODEL_SPECIALIST_MEMORY_RETRIEVAL=qwen2.5:7b
-```
-
-The same suffixes work for hosted providers:
-
-```env
-LLM_PROVIDER=openai
-OPENAI_MODEL=gpt-4.1-mini
-OPENAI_MODEL_FAST=gpt-4.1-mini
-OPENAI_MODEL_REASONING=gpt-4.1
-OPENAI_MODEL_PLANNER=gpt-4.1
-OPENAI_MODEL_SPECIALIST_SHELL_EXECUTION=gpt-4.1
-OPENAI_MODEL_SPECIALIST_WEB_RESEARCH=gpt-4.1-mini
-```
-
-Supported environment variables:
-- `LLM_PROVIDER=ollama|openai|azure|xai|google|anthropic|huggingface|deepseek|qwen|moonshot|zhipu|zai|minimax|qianfan|hunyuan|doubao|stepfun|yi|baichuan|spark|siliconflow|modelscope|modelarts|mimo|longcat|antling|tokenhub|compatible`
-- `EMBEDDING_PROVIDER=ollama|openai|azure|google|huggingface|qwen|zhipu|qianfan|hunyuan|siliconflow|compatible`
-- Chinese compatible presets use `<PREFIX>_API_KEY`, optional `<PREFIX>_BASE_URL`, required `<PREFIX>_MODEL`, role overrides such as `<PREFIX>_MODEL_REASONING`, and `<PREFIX>_EMBEDDING_MODEL` where embeddings are supported. Prefix aliases such as `DASHSCOPE_*`, `KIMI_*`, `GLM_*`, `ARK_*`, and `XFYUN_*` are accepted by the authoritative provider catalog.
-- `COMPATIBLE_BASE_URL`, `COMPATIBLE_API_KEY`, and `COMPATIBLE_MODEL` are all required for the strict custom OpenAI-compatible route.
-- `OPENAI_API_KEY` (required when `LLM_PROVIDER=openai`)
-- `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
-- `OPENAI_MODEL` (default fallback when provider is OpenAI)
-- `OPENAI_MODEL_FAST`
-- `OPENAI_MODEL_REASONING`
-- `OPENAI_MODEL_TAGGER`
-- `OPENAI_MODEL_PLANNER`
-- `OPENAI_MODEL_ANALYZER`
-- `OPENAI_MODEL_RESPONDER`
-- `OPENAI_MODEL_SEARCH`
-- `OPENAI_MODEL_MEMORY`
-- `OPENAI_EMBEDDING_MODEL`
-- `AZURE_AI_API_KEY` / `AZURE_OPENAI_API_KEY` (required when `LLM_PROVIDER=azure`)
-- `AZURE_AI_BASE_URL` / `AZURE_OPENAI_ENDPOINT` (required when `LLM_PROVIDER=azure`)
-- `AZURE_AI_API_VERSION` / `AZURE_OPENAI_API_VERSION` (defaults to `2024-10-21` for Azure OpenAI deployment routes and `2024-05-01-preview` for Foundry)
-- `AZURE_AI_API_STYLE` / `AZURE_OPENAI_API_STYLE` (`v1`, `azure_openai`, or `foundry`; defaults to `foundry` for `*.services.ai.azure.com`, to `v1` when the base URL contains `/openai/v1`, otherwise Azure OpenAI deployment routes)
-- `AZURE_AI_MODEL` / `AZURE_OPENAI_DEPLOYMENT`
-- `AZURE_AI_MODEL_FAST`, `AZURE_AI_MODEL_REASONING`, `AZURE_AI_MODEL_TAGGER`, `AZURE_AI_MODEL_PLANNER`, `AZURE_AI_MODEL_ANALYZER`, `AZURE_AI_MODEL_RESPONDER`, `AZURE_AI_MODEL_SEARCH`, `AZURE_AI_MODEL_MEMORY`
-- `AZURE_AI_EMBEDDING_MODEL` / `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`
-- `XAI_API_KEY` / `GROK_API_KEY` (required when `LLM_PROVIDER=xai|grok|grock`)
-- `XAI_BASE_URL` / `GROK_BASE_URL` (default `https://api.x.ai/v1`)
-- `XAI_MODEL` / `GROK_MODEL`
-- `XAI_MODEL_FAST`, `XAI_MODEL_REASONING`, `XAI_MODEL_TAGGER`, `XAI_MODEL_PLANNER`, `XAI_MODEL_ANALYZER`, `XAI_MODEL_RESPONDER`, `XAI_MODEL_SEARCH`, `XAI_MODEL_MEMORY`
-- `GOOGLE_API_KEY` / `GEMINI_API_KEY` (required when `LLM_PROVIDER=google`)
-- `GOOGLE_BASE_URL` (default `https://generativelanguage.googleapis.com/v1beta`)
-- `GOOGLE_MODEL` / `GEMINI_MODEL`
-- `GOOGLE_MODEL_FAST`, `GOOGLE_MODEL_REASONING`, `GOOGLE_MODEL_TAGGER`, `GOOGLE_MODEL_PLANNER`, `GOOGLE_MODEL_ANALYZER`, `GOOGLE_MODEL_RESPONDER`, `GOOGLE_MODEL_SEARCH`, `GOOGLE_MODEL_MEMORY`
-- `GOOGLE_EMBEDDING_MODEL` / `GEMINI_EMBEDDING_MODEL`
-- `ANTHROPIC_API_KEY` (required when `LLM_PROVIDER=anthropic`)
-- `ANTHROPIC_BASE_URL` (default `https://api.anthropic.com/v1`)
-- `ANTHROPIC_VERSION` (default `2023-06-01`)
-- `ANTHROPIC_MAX_TOKENS` (default `4096`)
-- `ANTHROPIC_MODEL` / `CLAUDE_MODEL`
-- `ANTHROPIC_MODEL_FAST`, `ANTHROPIC_MODEL_REASONING`, `ANTHROPIC_MODEL_TAGGER`, `ANTHROPIC_MODEL_PLANNER`, `ANTHROPIC_MODEL_ANALYZER`, `ANTHROPIC_MODEL_RESPONDER`, `ANTHROPIC_MODEL_SEARCH`, `ANTHROPIC_MODEL_MEMORY`
-- `HUGGINGFACE_API_KEY` / `HF_TOKEN` (required when `LLM_PROVIDER=huggingface`)
-- `HUGGINGFACE_BASE_URL` (default `https://router.huggingface.co`)
-- `HUGGINGFACE_MODEL` / `HF_MODEL`
-- `HUGGINGFACE_MODEL_FAST`, `HUGGINGFACE_MODEL_REASONING`, `HUGGINGFACE_MODEL_TAGGER`, `HUGGINGFACE_MODEL_PLANNER`, `HUGGINGFACE_MODEL_ANALYZER`, `HUGGINGFACE_MODEL_RESPONDER`, `HUGGINGFACE_MODEL_SEARCH`, `HUGGINGFACE_MODEL_MEMORY`
-- `HUGGINGFACE_EMBEDDING_MODEL` / `HF_EMBEDDING_MODEL`
-- `OLLAMA_MODEL` / `OMNI_MODEL` / `OMNI_CONVERSATION_MODEL` (default conversation fallback; CLI default `qwen2.5-coder:7b`)
-- `OLLAMA_MODEL_FAST`
-- `OLLAMA_MODEL_REASONING`
-- `OLLAMA_MODEL_TAGGER`
-- `OLLAMA_MODEL_ANALYZER`
-- `OLLAMA_MODEL_RESPONDER`
-- `OLLAMA_MODEL_SEARCH`
-- `OLLAMA_MODEL_MEMORY`
-- `OLLAMA_MODEL_PLANNER` / `OMNI_PLANNER_MODEL` (structured command planner; CLI default `qwen2.5-coder:14b`)
-- `OLLAMA_MODEL_EVALUATOR` / `OMNI_EVALUATOR_MODEL` (structured response self-evaluator; CLI default `qwen2.5:7b`)
-- `OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION` / `OMNI_SHELL_SPECIALIST_MODEL` (shell command specialist; CLI default `qwen2.5-coder:7b`)
-- `OLLAMA_MODEL_SPECIALIST_PLANNER`
-- `OLLAMA_MODEL_SPECIALIST_TOOLING`
-- `OLLAMA_MODEL_SPECIALIST_FILESYSTEM_RESEARCH`
-- `OLLAMA_MODEL_SPECIALIST_INTENT_TAGGING`
-- `OLLAMA_MODEL_SPECIALIST_MEMORY_RETRIEVAL`
-- `OLLAMA_MODEL_SPECIALIST_WEB_RESEARCH`
-- `OLLAMA_MODEL_SPECIALIST_ANALYSIS`
-- `OLLAMA_MODEL_SPECIALIST_RESPONSE`
-- `OLLAMA_MODEL_SPECIALIST_REVIEW_VERIFICATION`
-- `OLLAMA_MODEL_SPECIALIST_MEDIA_CONTROL`
-- `OLLAMA_MODEL_SPECIALIST_BROWSER_INSPECTION`
-- `OLLAMA_MODEL_SPECIALIST_SCREEN_VISION`
-- `OLLAMA_MODEL_SPECIALIST_AUDIO_NOTES`
-- `OLLAMA_MODEL_VISION` (used by `screen-read --vision`; default `llava:latest`)
-- `OMNI_EVALUATOR_THRESHOLD` (integer 0..100; default `70`)
-- `OMNI_PLANNER_NUM_CTX` (default `4096`)
-- `OMNI_EVALUATOR_NUM_CTX` (default `2048`)
-- `OMNI_DISABLE_EVALUATOR=true` disables the self-evaluator.
-- `STOP_ON_SUFFICIENT_CONTEXT=true|false` (skip web search in auto mode when memory context is already sufficient)
-- `SUFFICIENT_CONTEXT_CHARS=1400`
-- `MEMORY_INFERENCE_ENABLED=true|false`
-- `MEMORY_INFERENCE_MAX_ITEMS=3`
-- `TOURNAMENT_ENABLED=true|false` (default `true`; hierarchical long-context reduction)
-- `TOURNAMENT_CHUNK_CHARS=2200` (leaf chunk size)
-- `TOURNAMENT_SUMMARY_CHARS=750` (target output size per tournament summary)
-- `TOURNAMENT_MAX_ROUNDS=4` (recursive summarization cap)
-- `TOURNAMENT_VERIFY_RELEVANCE=true|false` (second-pass support check on original chunks)
-
-### Core runtime tuning
-
-Environment variables:
-
-Explicit malformed or out-of-range runtime values stop startup with the offending key; documented defaults apply only when a value is unset.
-
-- `WRAPPER_ONLY=true|false` (default `false`; when `true`, disables DB/worker/queue routes and exposes only stateless wrapper endpoints)
-- `WORKER_COUNT=3`
-- `WORKER_POLL_INTERVAL=2s`
-- `REQUEST_TIMEOUT=90s`
-- `REALTIME_MAX_CLIENTS=512` (caps live WebSocket subscriptions)
-- `REALTIME_STREAM_MAX_AGE=30m` (recycles browser realtime streams; clients reconnect automatically)
-- `REALTIME_HEARTBEAT=25s`
-- `REALTIME_WRITE_TIMEOUT=10s`
-- `RETRIEVAL_LIMIT=8`
-- `CONTEXT_CHAR_BUDGET=4000`
-- `HALLUCINATION_RETRY_LIMIT=2` (verification retries flagged as hallucination before forcing an Ollama restart attempt when provider is Ollama)
-- `OLLAMA_RESTART_COMMAND=` (optional command or `||`-separated fallback chain, e.g. `docker compose restart ollama || systemctl restart ollama`)
-- `OLLAMA_RESTART_TIMEOUT=20s` (per restart command timeout)
-- `MIGRATE_ON_STARTUP=true|false`
-
-## Host dependency bootstrap
-
-Install host-side dependencies for core + local automations:
-
-```bash
-cd omnidex
-./scripts/setup-host-deps.sh --profile all -y
-```
-
-`--profile local` now includes networking diagnostics tools used by chat automation (for example `ip/ifconfig`, `ss/netstat/lsof`, `dig/nslookup/host`, `traceroute`, `whois`, `nmap`, `nmcli` where available).
-
-Include local whisper transcription support (`whisper` CLI via pip):
-
-```bash
-./scripts/setup-host-deps.sh --profile all --with-whisper -y
-```
-
-Preview only (no changes):
-
-```bash
-./scripts/setup-host-deps.sh --dry-run --profile all --with-whisper
-```
-
-macOS uses the same shell script through Homebrew:
-
-```bash
-brew install git go make curl jq ripgrep node docker docker-compose
-./scripts/setup-host-deps.sh --profile core -y
-```
-
-Docker on macOS still requires Docker Desktop or another running Docker engine; the Homebrew `docker` package only installs the client tools. Start Docker Desktop before running compose-backed core workflows.
-
-Windows has a native PowerShell dependency bootstrap for Git, Go, Node, Docker Desktop, jq, ripgrep, ffmpeg, VLC, Tesseract, Python, and optional Whisper:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\setup-host-deps.ps1 -Profile core -Yes
-.\scripts\setup-host-deps.ps1 -Profile all -WithWhisper -Yes
-```
-
-The Windows script prefers `winget`, then Scoop, then Chocolatey. Local automation support on Windows is partial because Linux desktop tools such as `pactl`, `playerctl`, `iproute`, `nmcli`, and screenshot utilities do not map directly.
-
-Build release archives for macOS and Windows from any host with Go installed:
-
-```bash
-./scripts/build-release.sh --version v0.3.0 --codename Venusaur --target darwin/arm64 --target windows/amd64
-```
-
-Default release targets are Linux, macOS, and Windows for `amd64` and `arm64`; outputs are written to `dist/` with `SHA256SUMS`. The current release line is **`v0.3.0` Venusaur** (augmented planner & scrum). Previous releases: `v0.2.0` Ivysaur, `v0.1.0-alpha` Bulbasaur. Omnidex uses pride release codenames based on National Dex order. See [docs/RELEASE_VERSIONING.md](docs/RELEASE_VERSIONING.md).
-
-## Install to ~/.omnidex
-
-Install Omnidex into a user-local directory (default: `~/.omnidex`), build binaries, install dependencies, and auto-load aliases on shell startup:
-
-```bash
-./install.sh
-```
-
-The installer places `omni` in `~/.omnidex/bin` and prepends that directory to `PATH` through the managed shell-init block. Running `omni` from any directory uses that shell directory as the active working directory for deterministic file and command work.
-
-Non-interactive install with explicit flags:
-
-```bash
-./install.sh --prefix ~/.omnidex --deps-profile all --yes
-```
-
-Update an existing Omnidex repo/install to latest and rebuild the core Docker image:
-
-```bash
-cd ~/.omnidex
-./update.sh
-```
-
-From any directory after install, the same managed updater is available through `omni`:
-
-```bash
-omni update
-```
-
-To update only the installed source and host binaries (`omni`, `agent-cli`, `agent-core`) without requiring Docker Compose:
-
-```bash
-omni update --host-only
-```
-
-Optional update flags:
-
-```bash
-./update.sh --branch main --service core --no-cache
-```
-
-You can run the same workflow via CLI command wrappers:
-
-```bash
-omni update --branch main --service core --no-cache
-acli build --race -v
-acli uninstall --yes
-acli migrate:fresh --yes
-```
-
-Notes:
-- Installer adds a managed shell-init block to existing `~/.bashrc`, `~/.bash_profile`, `~/.profile`, and `~/.zshrc` files (or creates one fallback file if none exist).
-- Shell-init block exports `OMNIDEX_DIR`, prepends `~/.omnidex/bin` to `PATH`, and sources `agent_aliases.sh`; this exposes the global `omni` binary plus `agent-cli` helper aliases.
-- `aupdate` runs `~/.omnidex/update.sh` through your loaded aliases.
-- `update.sh` expects `.git` in the install path; installer copies `.git` when installing from a git checkout. It pulls latest refs, refreshes installed script permissions, rebuilds host binaries, and restarts the host bridge user service when installed (`omni-host-bridge`).
-- Skip dependency install with `--skip-deps`.
-- Include whisper CLI bootstrap with `--with-whisper`.
-
-Uninstall (remove shell-init integration + install directory):
-
-```bash
-./uninstall.sh
-```
-
-Optional uninstall flags:
-
-```bash
-./uninstall.sh --prefix ~/.omnidex --purge-config --yes
-```
-
-## Local dev
-
-```bash
-cd omnidex
-go mod tidy
-./scripts/build-core.sh
-go build -o bin/omni ./cmd/omni
-go build -o bin/agent-cli ./cmd/cli
-```
-
-Run core locally:
-
-```bash
-# use a host-reachable Postgres instance for local core runs
-DATABASE_URL='postgres://agent:agent@localhost:5432/agent?sslmode=disable' \
-OLLAMA_BASE_URL='http://localhost:11434' \
-./core
-```
-
-If you specifically need to use the compose-managed Postgres from the host, add a local `docker-compose.override.yml` that publishes `5433:5432`.
-
-## CLI walkthrough (with aliases)
-
-Load helper aliases:
-
-```bash
-source ./agent_aliases.sh
-```
-
-Alias note: `omni` preserves your shell working directory for deterministic local work. `acli` and the `a*` helper aliases preserve your working directory while targeting the queue/API CLI.
-
-Install dependencies via alias:
-
-```bash
-asetupdeps --profile all -y
-```
-
-Set core URL (optional; defaults to `http://localhost:8090`):
-
-```bash
-asetcore http://localhost:8090
-```
-
-Start deterministic local chat:
-
-```bash
-omni
-# or explicitly:
-omni chat
-```
-
-The deterministic CLI stores workspace sessions under `~/.omni/sessions`, run logs under `~/.omni/runs`, and uses the directory where you launched `omni` as the active working directory.
-
-Legacy queue/API chat remains available through `acli`:
-
-```bash
-acli chat --session daily-chat
-# architect profile (recommended for vague implementation requests):
-# acli chat --profile architect --session build-thread
-# live stage/event progress is shown by default (disable with --progress=false)
-# progress output is rendered as an activity timeline (Inspect/Explore/Run) during each turn
-# action confirmation is on by default: chat asks "So you want me to..." before execution (disable with --confirm-actions=false)
-# local capability routing is semantic (examples below are illustrative, not exact trigger phrases)
-# slash commands inside chat:
-# /help, /session, /session <id>, /new, /last, /exit
-# while waiting_input: /interrupt <...>, /replan <...>, /cancel [reason]
-# local media automation (enabled by default in chat):
-# "play the next episode of star trek"
-# "what just happened in the show?"
-# "what did they just say about warp core?"
-# local browser automation (enabled by default in chat):
-# "show my open browser tabs"
-# "read the javascript console for 5 seconds"
-# local screen automation (enabled by default in chat):
-# "what's on my screen?"
-# "read my screen text"
-# local shell automation (enabled by default in chat):
-# "create a file named test"
-# "rename test to test-2"
-# "run `pwd`"
-# "run go test ./..."
-# "run docker compose up --build -d"
-# local shell edit actions now include git diff summaries/snippets when in a git repo
-# "walk me through current changes in this repo"
-# "where did I leave off in this project?"
-# "show changed files in chronological order"
-# repo walkthrough can discover/select a nearby repo when you're not inside one
-# "what is my ip?"
-# "what ports are open?"
-# "what ports are open with process names?"   # requires sudo permission + sudo auth
-# "determine my location based on my connection"
-# "am I on VPN right now?"
-# "show network tools catalog"
-# "install network tools"                     # runs setup-host-deps local profile if script exists
-# "what were we just talking about?"          # uses recent same-session conversation context
-# host environment discovery (automatic):
-# OS, arch, distro, discovered package managers, available tools, and selected installed packages
-# capability snapshot is auto-synced to memory (procedural) for reuse in later planning/tooling steps
-
-# quick service status checks:
-# omni status
-# omni core:status
-# omni queue:status
-# omni ollama:status
-# omni web:status
-
-# service lifecycle controls (compose):
-# omni --service core up
-# omni --service core build
-# omni --service core restart
-# omni --service core down
-# omni service:core logs --follow
-# omni service --service all down
-# omni --service core migrate:fresh --yes
-
-# edit runtime config (.env) in vim:
-# omni config
-# omni config --editor "vim"
-# omni config --print
-```
-
-Run a typical end-to-end flow:
-
-1. Enqueue a job:
-
-```bash
-aqd "Design a migration plan for auth service split"
-```
-
-2. Grab latest job id:
-
-```bash
-alast
-```
-
-3. Watch live progress with detailed step/context output:
-
-```bash
-awlatestv
-# or: awv <job-id>
-```
-
-4. If the job asks for clarification/input:
-
-```bash
-afb <job-id> "Use PostgreSQL 16 and keep API surface unchanged."
-```
-
-5. If you want to steer a running step with extra context:
-
-```bash
-aint <job-id> "Prefer minimal diffs and avoid new dependencies."
-```
-
-6. If you need a full replan from the `plan` step:
-
-```bash
-areplan <job-id> "Replan for a phased rollout with rollback checkpoints."
-```
-
-7. If you need to stop execution immediately:
-
-```bash
-acancel <job-id> "Cancel this run"
-```
-
-8. Inspect final state/result:
-
-```bash
-ashow <job-id>
-```
-
-9. Continue the thread with a follow-up instruction:
-
-```bash
-acont <job-id> "Now draft the implementation tasks for sprint planning."
-```
-
-### Alias cheat sheet
-
-| Alias | Expands to |
-|---|---|
-| `omni ...` | deterministic local Omnidex CLI (`bin/omni` or `go run ./cmd/omni`) |
-| `omnidex ...` | same as `omni ...` |
-| `acli ...` | queue/API CLI (`agent-cli` or `go run ./cmd/cli`) |
-| `asetcore <url>` | `export CORE_URL=<url>` |
-| `asetupdeps ...` | `./scripts/setup-host-deps.sh ...` |
-| `aq "..."` | `enqueue --pipeline assistant --web auto --workspace auto` |
-| `aqf "..."` | `enqueue assistant + --reasoning fast` |
-| `aqd "..."` | `enqueue assistant + --reasoning deep` |
-| `aqarch "..."` | `enqueue --profile architect --pipeline assistant ...` |
-| `achat "..."` | `enqueue --pipeline chat --web auto --workspace auto` |
-| `achatarch ...` | `chat --profile architect ...` |
-| `achatrepl ...` | `chat ...` |
-| `astro "..."` | `enqueue --pipeline story --web auto --workspace auto` |
-| `alist` | `list` |
-| `arun` | `list --status running` |
-| `awaiting` | `list --status waiting_input` |
-| `ashow <id>` | `show <id>` |
-| `awatch <id>` | `watch <id>` |
-| `awv <id>` | `watch --interval 2s --verbose --max-chars 1600 <id>` |
-| `afb <id> "..."` | `feedback <id> "..."` |
-| `aint <id> "..."` | `interrupt <id> "..."` |
-| `areplan <id> "..."` | `replan <id> "..."` |
-| `acont <id> "..."` | `continue <id> "..."` |
-| `acancel <id> ["reason"]` | `cancel <id> ["reason"]` |
-| `aremember ...` | `remember ...` |
-| `aingest ...` | `ingest ...` |
-| `amediaindex ...` | `media-index ...` |
-| `amediasearch ...` | `media-search ...` |
-| `abrowserscan ...` | `browser-scan ...` |
-| `ascreenread ...` | `screen-read ...` |
-| `aresearch ...` | `research ...` |
-| `aperms ...` | `permissions ...` |
-| `anotes ...` | `audio-notes ...` |
-| `alast` | print latest job id |
-| `aslatest` | `show <latest-id>` |
-| `awlatest` | `watch <latest-id>` |
-| `awlatestv` | verbose `watch <latest-id>` |
-
-## CLI reference (raw commands)
-
-Set core URL (optional; default is `http://localhost:8090`):
-
-```bash
-export CORE_URL=http://localhost:8090
-```
-
-Queue instructions:
-
-```bash
-go run ./cmd/cli enqueue --pipeline assistant --web auto --workspace auto --approval auto --verify auto --verify-iterations 2 --session auth-thread "Refactor auth flow and suggest migration plan"
-# architect profile for end-to-end implementation pressure:
-go run ./cmd/cli enqueue --profile architect --session auth-thread "Implement the requested feature fully, run tests, and summarize verification evidence"
-```
-
-Interactive chat mode:
-
-```bash
-go run ./cmd/cli chat --session daily-chat --reasoning fast
-# architect profile (deep reasoning + workspace on + verify on + approval on + verbose):
-# go run ./cmd/cli chat --profile architect --session build-thread
-# disable local media automation if needed:
-# go run ./cmd/cli chat --local-media=false
-# disable local browser automation if needed:
-# go run ./cmd/cli chat --local-browser=false
-# disable local screen automation if needed:
-# go run ./cmd/cli chat --local-screen=false
-# disable local shell automation if needed:
-# go run ./cmd/cli chat --local-shell=false
-# disable local audio-notes automation if needed:
-# go run ./cmd/cli chat --local-audio=false
-```
-
-Host discovery metadata is attached automatically to `chat` and `enqueue` jobs:
-- `host_env_os`, `host_env_arch`, `host_env_kernel`, `host_env_distro`
-- `host_env_shell`, `host_env_user`, `host_env_identity`, `host_env_cwd`, `host_env_package_manager`, `host_env_package_managers`
-- `host_clock_local`, `host_clock_utc`, `host_clock_tz`, `host_clock_weekday`, `host_clock_epoch`
-- `host_tools_available`
-- `host_packages_installed` (lightweight curated package probe)
-
-Chat sessions also include short-term recent conversation context (same `session_id`) in plan/analyze/response prompts so follow-up questions can reference what was just discussed.
-Final model responses now include a `Sources:` section by default, summarizing which context blocks were used (instruction, recent conversation, retrieval, workspace, web search, tooling, and executed tests when applicable).
-
-Time-sensitive instructions (`latest`, `today`, `as of`, `current`, etc.) are treated as freshness-sensitive:
-- web-search auto mode prefers fresh search for those requests
-- local clock/date-only questions (e.g., "what time is it") use host clock context without forcing web search
-
-Chat-mode controls (entered at the prompt):
-- `/help`, `/session`, `/session <id>`, `/new`, `/last`, `/exit`
-- During waiting input: `/interrupt <...>`, `/replan <...>`, `/cancel [reason]`, or plain feedback text
-
-Local invasive-tool permissions are stored in one registry file (default: `~/.config/omni/permissions.json`, with fallback to `.omni/permissions.json` if needed):
-
-```bash
-go run ./cmd/cli permissions list
-go run ./cmd/cli permissions grant local.shell.exec
-go run ./cmd/cli permissions grant local.shell.sudo
-go run ./cmd/cli permissions grant local.screen.capture
-go run ./cmd/cli permissions deny local.browser.console
-go run ./cmd/cli permissions unset local.screen.capture
-```
-
-Force web-search on a job (or turn it off):
-
-```bash
-go run ./cmd/cli enqueue --pipeline assistant --web on "Find current PostgreSQL 16 pgvector indexing guidance"
-go run ./cmd/cli enqueue --pipeline assistant --web off "Rewrite this paragraph"
-```
-
-Control reasoning depth per job:
-
-```bash
-go run ./cmd/cli enqueue --pipeline assistant --reasoning deep "Design migration strategy with tradeoffs"
-go run ./cmd/cli enqueue --pipeline assistant --reasoning fast "Summarize this note in 3 bullets"
-```
-
-Override step models per job when needed:
-
-```bash
-go run ./cmd/cli enqueue --pipeline assistant --reasoning deep --model-plan llama3.2 --model-analyze llama3.2 --model-response llama3.1:8b "Compare tradeoffs and draft final recommendation"
-```
-
-Queue-level behavior controls via metadata:
-- `workspace_scan`: `auto|on|off`
-- `allow_missing_tools`: `true|false`
-- `approval_mode`: `auto|force|off`
-- `verification_mode`: `auto|force|off`
-- `verification_iterations`: `1..4`
-- `hallucination_retry_limit`: `1..6` (overrides `HALLUCINATION_RETRY_LIMIT` per job)
-- `ollama_restart_command`: optional command or `||`-separated fallback chain
-- `session_id`: string
-
-Equivalent CLI flags:
-- `--workspace auto|on|off`
-- `--allow-missing-tools`
-- `--approval auto|on|off`
-- `--verify auto|on|off`
-- `--verify-iterations 1-4`
-- `--session <id>`
-
-When `--workspace on` is used and workspace settings are missing, the job pauses and asks for corrected workspace config or confirmation to continue without scan.
-
-List jobs:
-
-```bash
-go run ./cmd/cli list --status running
-```
-
-Inspect one job:
-
 ```bash
-go run ./cmd/cli show 12
+go build ./cmd/core ./cmd/cli ./cmd/omni
+cd internal/api/web
+npm install
+npm run build
 ```
 
-Watch job progress:
+## Run a coding job
 
-```bash
-go run ./cmd/cli watch --interval 2s 12
-# live stage/event progress is on by default (disable with --progress=false)
-```
-
-Watch with detailed step outputs and context updates:
-
-```bash
-go run ./cmd/cli watch --interval 2s --verbose --max-chars 1600 12
-```
-
-If a job pauses for clarification/tooling input, continue it:
-
-```bash
-go run ./cmd/cli feedback 12 "Use the /srv/app workspace and proceed without playwright."
-```
-
-Interrupt a running job with extra context:
-
-```bash
-go run ./cmd/cli interrupt 12 "Prefer TypeScript, and keep changes backward compatible."
-```
-
-If a step is currently running, `interrupt` preempts it and re-queues that step with the injected context.
-
-Force a full replan from the `plan` step:
-
-```bash
-go run ./cmd/cli replan 12 "Replan this for a phased rollout with rollback checkpoints."
-```
-
-Kill switch for an in-flight job:
-
-```bash
-go run ./cmd/cli cancel 12 "No longer needed"
-```
-
-Continue an existing thread/session with a follow-up instruction:
-
-```bash
-go run ./cmd/cli continue 12 "Now write implementation tasks for sprint planning."
-```
-
-Approval workflow for risky actions:
-
-```bash
-go run ./cmd/cli enqueue --pipeline assistant --approval on "Reset production DB and recreate schema"
-# when prompted:
-go run ./cmd/cli feedback 12 "APPROVE: execute only after backup verification"
-```
-
-Seed memory with tags and kind:
-
-```bash
-go run ./cmd/cli remember --kind instruction --tags auth,oauth "Always rotate refresh tokens before access token expiry."
-```
+Build the API CLI:
 
-Ingest files directly into reference memory (supports `.pdf`, `.docx`, `.srt`, `.vtt`, and text-like files):
-
 ```bash
-go run ./cmd/cli ingest --kind reference --tags lore,book ./docs/worldbook.pdf
-go run ./cmd/cli ingest --kind reference --tags subtitles ./media/episode01.srt
+make cli
 ```
 
-Index an entire media library into memory using subtitle files (episode metadata + timestamped subtitle chunks):
+From the project directory that should be changed:
 
 ```bash
-go run ./cmd/cli media-index --root ~/Media/StarTrek --source media --tags tv,subtitles
-# preview only:
-go run ./cmd/cli media-index --root ~/Media/StarTrek --dry-run
+CORE_URL=http://localhost:8090 /path/to/omnidex/bin/agent-cli run \
+  "Build the requested feature, include focused tests, and run the project test suite."
 ```
 
-Search subtitle lines directly with surrounding context:
+The CLI prints live phases, file events, diagnostics, and the final state. Direct correction stays on the job:
 
 ```bash
-go run ./cmd/cli media-search --root ~/Media/StarTrek --context 2 --limit 20 "engage"
+CORE_URL=http://localhost:8090 /path/to/omnidex/bin/agent-cli feedback JOB_ID \
+  "Fix the failing boundary test specifically; preserve the accepted implementation."
 ```
 
-Scan local browser processes and read debuggable tabs:
+## Configuration
 
-```bash
-go run ./cmd/cli browser-scan
-go run ./cmd/cli browser-scan --json
-```
+Start with [default.env](default.env) or [.env.example](.env.example). Important groups are:
 
-Capture live JavaScript console events from debuggable tabs:
+- database, Redis, listener, and migration settings;
+- generation and embedding provider selection;
+- per-role model routing;
+- worker count, polling interval, and request timeout;
+- workspace/host bridge boundaries;
+- bounded web-search, semantic-memory retrieval, and context limits;
+- realtime/UI Redis requirements.
 
-```bash
-go run ./cmd/cli browser-scan --console --seconds 5 --limit 120
-```
+Optional systems are disabled explicitly; a requested capability that is unavailable fails instead of pretending to run.
 
-Note: tab URL and console capture requires a browser exposing a local DevTools endpoint (for example Chromium with `--remote-debugging-port=9222`).
+## Development verification
 
-Read the current screen (OCR text and optional vision summary):
+Backend:
 
 ```bash
-go run ./cmd/cli screen-read --ocr
-go run ./cmd/cli screen-read --vision --model llava:latest
-go run ./cmd/cli screen-read --ocr --vision --prompt "focus on error messages and active window"
+go test ./...
+go vet ./...
 ```
-
-Note: screen capture needs a local screenshot utility (`grim`, `gnome-screenshot`, `maim`, `scrot`, or ImageMagick `import`). OCR needs `tesseract`.
-Screen/browser/media invasive actions prompt once for permission and persist decisions in the permissions registry.
 
-Long-running call notes from mic/speaker audio (capture now, stop later, then transcript + memory):
+Frontend:
 
 ```bash
-go run ./cmd/cli audio-notes doctor
-go run ./cmd/cli audio-notes start --mic --speaker
-# ... after your call:
-go run ./cmd/cli audio-notes stop --store-memory --tags meeting,notes
-go run ./cmd/cli audio-notes search \"action items\"
+cd internal/api/web
+npm test
+npm run typecheck
+npm run build
 ```
 
-This stores timestamped quotes with source (`mic` / `speaker`) under `.omni/audio-notes/<session>/`.
-In interactive `chat`, you can also use natural commands like `take notes during this call`, `stop taking notes`, and `notes status` when `--local-audio` is enabled (default).
+Release identity:
 
-Build a long-lived knowledge base for a topic (auto web research + memory ingest + freshness tracking):
-
 ```bash
-go run ./cmd/cli research --tags games,rpg --refresh-days 14 "Cyberpunk 2077"
-# force a refresh even if still fresh:
-go run ./cmd/cli research --force "Cyberpunk 2077"
-```
-
-This stores chunked research memories with topic tags and writes freshness metadata to `.omni/research-index.json`.
-
-## API endpoints
-
-### Provider discovery and readiness
-
-- `GET /v1/providers` — authoritative provider catalog and secret-free configuration readiness
-- `GET /v1/status/research` — generation, embeddings, local-runtime, and web-search readiness plus server-rendered health HTML
-- `GET/PUT /v1/settings/secrets` — masked database-backed credentials; mutations explicitly report `restart_required`
-
-### Project planner & scrum (Venusaur)
-
-- `GET /v1/projects/{id}/planning-chat`
-- `POST /v1/projects/{id}/planning-chat`
-- `PATCH /v1/projects/{id}/planning-chat`
-- `POST /v1/projects/{id}/planning-chat/drafts`
-- `GET/PUT /v1/scrum`
-- `POST /v1/scrum/cards`
-- `POST /v1/scrum/cards/{id}/play|pause|move|chat|coach|…`
-- `GET /v1/scrum/flow-metrics`
-
-See [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md).
-
-### Data sources and human-language querying
-
-- `GET /v1/data-sources`
-- `GET /v1/data-sources/{id}/channels`
-- `POST /v1/data-sources/{id}/channels`
-- `GET /v1/data-sources/{id}/channels/{channelID}/messages`
-- `POST /v1/data-sources/{id}/channels/{channelID}/messages`
-- `GET /v1/admin/data-sources`
-- `POST /v1/admin/data-sources`
-- `PUT /v1/admin/data-sources/{id}`
-- `DELETE /v1/admin/data-sources/{id}`
-- `POST /v1/admin/data-sources/{id}/test`
-- `GET /v1/admin/data-sources/{id}/schema`
-- `GET /v1/admin/data-sources/{id}/catalog`
-- `POST /v1/admin/data-sources/{id}/explore`
-- `POST /v1/admin/data-sources/{id}/query`
-- `POST /v1/admin/data-sources/{id}/ask`
-
-### Core jobs & wrappers
-
-- `GET /healthz`
-- `POST /v1/instruct` (stateless prompt wrapper)
-- `POST /v1/roleplay` (stateless in-character wrapper)
-- `POST /v1/narrate` (stateless narration wrapper)
-- `POST /v1/reasoning` (3-stage stateless reasoning chain: parse -> deliberate -> final)
-- `POST /v1/jobs`
-- `GET /v1/jobs?status=&limit=&offset=`
-- `GET /v1/jobs/{id}`
-- `POST /v1/jobs/{id}/feedback`
-- `POST /v1/jobs/{id}/interrupt`
-- `POST /v1/jobs/{id}/replan`
-- `POST /v1/jobs/{id}/cancel`
-- `POST /v1/memory`
-
-When `WRAPPER_ONLY=true`, repository-backed job, memory, metrics, and admin-data routes are not registered. Stateless wrappers and repository-independent provider, status, UI, and settings routes remain available.
-
-### Example stateless wrapper body
-
-```json
-{
-  "model": "llama3.2",
-  "system": "You are the narrator for a grounded fantasy scene.",
-  "prompt": "Narrate what happens when the ranger opens the vault door.",
-  "context": {
-    "setting": "Ancient underground vault",
-    "characters": ["Ranger", "Scholar"],
-    "event_history": ["They bypassed the rune lock", "A low hum started in the chamber"]
-  },
-  "history": [
-    {"role": "user", "content": "The ranger checks for traps."},
-    {"role": "assistant", "content": "She finds a hidden wire and cuts it safely."}
-  ]
-}
+go run ./cmd/cli version
+./scripts/build-release.sh --version v0.4.0 --codename Charmander
 ```
-
-### Instruct integration: enqueue jobs/tasks
 
-`/v1/instruct` can optionally bridge into the async job queue by sending an `integration` block.
-When present, Omnidex will queue a job and return an integration payload (instead of running the stateless LLM wrapper path).
+## Architecture map
 
-```json
-{
-  "prompt": "Create a migration plan for splitting monolith services",
-  "integration": {
-    "action": "enqueue_job",
-    "pipeline": "assistant",
-    "metadata": {
-      "source": "instruct-route",
-      "web_search": "auto",
-      "reasoning_level": "deep"
-    }
-  }
-}
-```
+- [internal/queue](internal/queue) — durable typed job transport, feedback continuity, and memory boundaries.
+- [internal/worker](internal/worker) — V3 typed orchestration and the Charmander coding assembly line.
+- [internal/queue](internal/queue) — authoritative job and step lifecycle.
+- [internal/workspace](internal/workspace) — bounded snapshots, excerpts, and relevance ranking.
+- [internal/llmprovider/catalog](internal/llmprovider/catalog) — provider capability registry.
+- [internal/api](internal/api) — API, project/scrum services, and server-owned UI state.
+- [internal/api/web/locales](internal/api/web/locales) — locale catalogs.
+- [internal/version](internal/version) — embedded release identity.
 
-Supported integration actions:
-- `enqueue_job` (aliases: `queue_job`, `enqueue_task`, `job`, `task`)
+## Release line
 
-Notes:
-- `integration.instruction` can override `prompt`; otherwise `prompt` is used as the queued instruction.
-- `integration.pipeline` defaults to `assistant`.
-- `integration.metadata` must be a JSON object.
-- Queue integration requires DB/worker mode (`WRAPPER_ONLY=false`).
+| Version | Codename | Meaning |
+| --- | --- | --- |
+| `v0.1.0-alpha` | Bulbasaur | Initial alpha. |
+| `v0.2.0` | Ivysaur | Provider, memory, and runtime growth. |
+| `v0.3.0` | Venusaur | Planner, draft queue, and human-controlled scrum execution. |
+| `v0.4.0` | Charmander | Deterministic distributed coding assembly line. |
 
-### Example enqueue body
+See [docs/RELEASE_VERSIONING.md](docs/RELEASE_VERSIONING.md) and [CHANGELOG.md](CHANGELOG.md).
 
-```json
-{
-  "instruction": "Create a migration plan for splitting monolith services",
-  "pipeline": "assistant",
-  "metadata": {
-    "source": "cli",
-    "web_search": "auto",
-    "search_query": "postgresql 16 pgvector indexing best practices",
-    "reasoning_level": "deep",
-    "workspace_scan": "auto",
-    "allow_missing_tools": false,
-    "approval_mode": "auto",
-    "verification_mode": "auto",
-    "verification_iterations": 2,
-    "hallucination_retry_limit": 2,
-    "session_id": "auth-thread",
-    "model_plan": "llama3.2:latest",
-    "model_analyze": "llama3.2:latest",
-    "model_response": "llama3.1:8b"
-  }
-}
-```
+License: MIT.

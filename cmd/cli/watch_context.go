@@ -37,13 +37,23 @@ func printContextUpdatesWithUI(
 		}
 		switch ctxValue.Key {
 		case "event":
-			if !verbose {
-				continue
-			}
 			event := parseStepEventPayload(value)
 			eventType := strings.TrimSpace(event.EventType)
+			if !verbose && (!progress || !showStepEventInSlimProgress(eventType)) {
+				continue
+			}
 			if eventType == "" {
 				eventType = "unknown"
+			}
+			if !verbose {
+				line := fmt.Sprintf("Model step %d: %s", ctxValue.StepID, summarizeStepEvent(event))
+				if ui != nil {
+					emitSystem(ui, line)
+				} else {
+					fmt.Printf("  %s\n", line)
+				}
+				printed = true
+				continue
 			}
 			line := fmt.Sprintf("event step=%d type=%s", ctxValue.StepID, eventType)
 			block := indentBlock(truncateForWatch(value, maxChars), "    ")
@@ -103,6 +113,18 @@ func printContextUpdatesWithUI(
 				continue
 			}
 			line := fmt.Sprintf("Explore step %d: scanned workspace snapshot", ctxValue.StepID)
+			line += "\n" + indentBlock(truncateForWatch(value, maxChars), "    ")
+			if ui != nil {
+				emitSystem(ui, line)
+			} else {
+				fmt.Printf("  %s\n", line)
+			}
+			printed = true
+		case "coding_diff":
+			if !verbose {
+				continue
+			}
+			line := fmt.Sprintf("Review step %d: accepted workspace diff", ctxValue.StepID)
 			line += "\n" + indentBlock(truncateForWatch(value, maxChars), "    ")
 			if ui != nil {
 				emitSystem(ui, line)

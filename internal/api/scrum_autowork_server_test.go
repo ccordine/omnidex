@@ -176,7 +176,7 @@ func TestScrumCardLLMEnqueueIsAtomicAndHasNoDuplicateFallback(t *testing.T) {
 }
 
 func TestContextTelemetryDoesNotSilentlyDropPersistenceFailures(t *testing.T) {
-	for _, path := range []string{"llm_context_telemetry.go", "scrum_pilot_metrics.go"} {
+	for _, path := range []string{"llm_context_telemetry.go"} {
 		source := readAPISource(t, path)
 		if strings.Contains(source, "_ = s.repo.Record") {
 			t.Errorf("%s silently drops telemetry persistence failures", path)

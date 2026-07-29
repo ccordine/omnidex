@@ -161,24 +161,9 @@ func isJSONEOF(err error) bool {
 	return err == io.EOF
 }
 
-func normalizeCoachMode(message, mode string) (string, error) {
+func normalizeCoachMode(mode string) (string, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" || mode == "chat" {
-		if strings.HasPrefix(strings.TrimSpace(message), "/") {
-			parts := strings.Fields(message)
-			switch strings.ToLower(parts[0]) {
-			case "/plan":
-				return "plan", nil
-			case "/research", "/researching":
-				return "research", nil
-			case "/card-ticket", "/card":
-				return "card-ticket", nil
-			case "/scan":
-				return "scan", nil
-			default:
-				return "", fmt.Errorf("unsupported Scrum coach command %q", parts[0])
-			}
-		}
 		return "chat", nil
 	}
 	switch mode {

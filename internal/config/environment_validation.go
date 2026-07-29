@@ -14,34 +14,23 @@ var integerEnvironmentKeys = []string{
 	"WEB_SEARCH_TOTAL_BUDGET",
 	"WORKSPACE_MAX_FILES",
 	"WORKSPACE_CONTEXT_BUDGET",
-	"SUFFICIENT_CONTEXT_CHARS",
-	"MEMORY_INFERENCE_MAX_ITEMS",
-	"TOURNAMENT_CHUNK_CHARS",
-	"TOURNAMENT_SUMMARY_CHARS",
-	"TOURNAMENT_MAX_ROUNDS",
 	"WORKER_COUNT",
+	"CODING_FRAGMENT_CONCURRENCY",
 	"REALTIME_MAX_CLIENTS",
 	"RETRIEVAL_LIMIT",
 	"CONTEXT_CHAR_BUDGET",
 	"INFERENCE_CONTEXT_TOKENS",
-	"HALLUCINATION_RETRY_LIMIT",
 }
 
 var booleanEnvironmentKeys = []string{
 	"WRAPPER_ONLY",
 	"WEB_SEARCH_ENABLED",
 	"WORKSPACE_SCAN_ENABLED",
-	"STOP_ON_SUFFICIENT_CONTEXT",
-	"MEMORY_INFERENCE_ENABLED",
-	"TOURNAMENT_ENABLED",
-	"TOURNAMENT_VERIFY_RELEVANCE",
 	"UI_REDIS_REQUIRED",
 	"MIGRATE_ON_STARTUP",
-	"OMNIDEX_V3_ENABLED",
 }
 
 var durationEnvironmentKeys = []string{
-	"OLLAMA_RESTART_TIMEOUT",
 	"WEB_SEARCH_TIMEOUT",
 	"WORKER_POLL_INTERVAL",
 	"REQUEST_TIMEOUT",
@@ -51,7 +40,28 @@ var durationEnvironmentKeys = []string{
 	"UI_SESSION_TTL",
 }
 
+var removedEnvironmentKeys = []string{
+	"OMNIDEX_V3_ENABLED",
+	"STOP_ON_SUFFICIENT_CONTEXT",
+	"SUFFICIENT_CONTEXT_CHARS",
+	"MEMORY_INFERENCE_ENABLED",
+	"MEMORY_INFERENCE_MAX_ITEMS",
+	"TOURNAMENT_ENABLED",
+	"TOURNAMENT_CHUNK_CHARS",
+	"TOURNAMENT_SUMMARY_CHARS",
+	"TOURNAMENT_MAX_ROUNDS",
+	"TOURNAMENT_VERIFY_RELEVANCE",
+	"HALLUCINATION_RETRY_LIMIT",
+	"OLLAMA_RESTART_COMMAND",
+	"OLLAMA_RESTART_TIMEOUT",
+}
+
 func validateTypedEnvironment() error {
+	for _, key := range removedEnvironmentKeys {
+		if _, exists := os.LookupEnv(key); exists {
+			return fmt.Errorf("%s was removed with the legacy decision engine; delete this setting", key)
+		}
+	}
 	for _, key := range integerEnvironmentKeys {
 		value, present := nonEmptyEnvironmentValue(key)
 		if !present {

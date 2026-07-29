@@ -2,6 +2,7 @@ package omni
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,16 +11,30 @@ import (
 )
 
 func (a *App) runAgentMode(args []string) error {
+	return a.runAgentCLI(agentModeArgs(args), a.in)
+}
+
+func (a *App) runAgentCLI(args []string, input io.Reader) error {
+	if a == nil || a.agentCLI == nil {
+		return fmt.Errorf("agent-cli runner is not configured")
+	}
+	return a.agentCLI(args, input)
+}
+
+func (a *App) executeAgentCLI(args []string, input io.Reader) error {
+	workspace, err := currentWorkspacePath()
+	if err != nil {
+		return err
+	}
 	bin, err := resolveAgentCLIBinary()
 	if err != nil {
 		return err
 	}
-	cliArgs := agentModeArgs(args)
-	cmd := exec.Command(bin, cliArgs...)
-	cmd.Stdin = a.in
+	cmd := exec.Command(bin, args...)
+	cmd.Stdin = input
 	cmd.Stdout = a.out
 	cmd.Stderr = a.errOut
-	cmd.Env = append(os.Environ(), "OMNI_INVOKE_CWD="+workspacePathOrCurrentDir())
+	cmd.Env = append(os.Environ(), "OMNI_INVOKE_CWD="+workspace)
 	return cmd.Run()
 }
 
@@ -33,7 +48,7 @@ func agentModeArgs(args []string) []string {
 	if len(clean) == 0 || strings.HasPrefix(clean[0], "-") {
 		return append([]string{"chat"}, clean...)
 	}
-	if clean[0] == "chat" || isAgentCLIPassthroughCommand(clean[0]) {
+	if clean[0] == "chat" || clean[0] == "run" || isAgentCLIPassthroughCommand(clean[0]) {
 		return clean
 	}
 	return append([]string{"chat"}, clean...)

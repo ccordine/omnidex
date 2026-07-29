@@ -22,7 +22,7 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 	if err != nil {
 		return fmt.Errorf("load data source: %w", err)
 	}
-	llm, err := s.dataSourceLLMClient()
+	llm, err := s.dataSourceLLMClient(claim.Job)
 	if err != nil {
 		return err
 	}

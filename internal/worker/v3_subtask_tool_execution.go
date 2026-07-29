@@ -41,7 +41,7 @@ func (r *nativeRuntimeV3) runSubtaskWithTools(assignment v3SubtaskAssignment, au
 	authoritativeDescription := strings.TrimSpace(authoritativeObjective.Description)
 	availableTools := r.availableToolSpecs(assignment.RoleID, assignment.RequiredCapabilities)
 	allowedToolNames := toolSpecNames(availableTools)
-	modelName := r.svc.v3SpecialistModel(r.claim.Job, assignment.RoleID, assignment.RoleID, r.svc.models.Analyze)
+	modelName := r.svc.v3SpecialistModel(r.claim.Job, r.routing, assignment.RoleID, assignment.RoleID, r.routing.Analyze)
 	records := make([]subtaskToolRecord, 0, maxSubtaskToolCalls)
 	sources := map[string]struct{}{}
 	totalCalls := 0
@@ -87,9 +87,6 @@ func (r *nativeRuntimeV3) runSubtaskWithTools(assignment v3SubtaskAssignment, au
 			final := strings.TrimSpace(decision.Final)
 			if final == "" {
 				return "", nil, fmt.Errorf("tool decision contained neither tool calls nor final")
-			}
-			if genericNonAnswer(final) {
-				return "", nil, fmt.Errorf("specialist %s returned advice or a generic non-answer instead of its assigned result", assignment.RoleID)
 			}
 			liveWorkspace, _ := contextPayload["current_workspace"].(string)
 			if err := validateSubtaskCompletionEvidence(authoritativeObjective, records, liveWorkspace); err != nil {

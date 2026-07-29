@@ -1,30 +1,25 @@
 package hostbridge
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
-	"time"
 )
 
 const defaultScanMaxFiles = 1200
 
 type ProjectWalkFile struct {
-	Path    string `json:"path"`
-	Size    int64  `json:"size"`
-	ModTime string `json:"mod_time,omitempty"`
-	SHA256  string `json:"sha256"`
+	Path string `json:"path"`
+	Size int64  `json:"size"`
 }
 
 type ProjectWalkResult struct {
 	Root      string            `json:"root"`
 	Files     []ProjectWalkFile `json:"files"`
-	Manifests map[string]string `json:"manifests,omitempty"`
+	Manifests []string          `json:"manifests,omitempty"`
+	Truncated bool              `json:"truncated,omitempty"`
 }
 
 func WalkProjectTree(path string, maxFiles int) (ProjectWalkResult, error) {
@@ -35,15 +30,12 @@ func WalkProjectTree(path string, maxFiles int) (ProjectWalkResult, error) {
 	if maxFiles <= 0 {
 		maxFiles = defaultScanMaxFiles
 	}
-
-	result := ProjectWalkResult{
-		Root:      abs,
-		Files:     []ProjectWalkFile{},
-		Manifests: map[string]string{},
-	}
-
+	result := ProjectWalkResult{Root: abs, Files: []ProjectWalkFile{}, Manifests: []string{}}
 	err = filepath.WalkDir(abs, func(walkPath string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil || walkPath == abs {
+		if walkErr != nil {
+			return fmt.Errorf("walk project path %q: %w", walkPath, walkErr)
+		}
+		if walkPath == abs {
 			return nil
 		}
 		name := entry.Name()
@@ -56,73 +48,31 @@ func WalkProjectTree(path string, maxFiles int) (ProjectWalkResult, error) {
 		if shouldSkipProjectWalkFile(name) {
 			return nil
 		}
-		if maxFiles > 0 && len(result.Files) >= maxFiles {
+		if len(result.Files) >= maxFiles {
+			result.Truncated = true
 			return filepath.SkipAll
 		}
 		rel, err := filepath.Rel(abs, walkPath)
 		if err != nil {
-			return nil
+			return fmt.Errorf("resolve project-relative path for %q: %w", walkPath, err)
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return nil
-		}
-		sum, err := hashProjectFile(walkPath)
-		if err != nil {
-			return nil
+			return fmt.Errorf("inspect project file %q: %w", walkPath, err)
 		}
 		rel = filepath.ToSlash(rel)
-		result.Files = append(result.Files, ProjectWalkFile{
-			Path:    rel,
-			Size:    info.Size(),
-			ModTime: info.ModTime().UTC().Format(time.RFC3339Nano),
-			SHA256:  sum,
-		})
+		result.Files = append(result.Files, ProjectWalkFile{Path: rel, Size: info.Size()})
 		if isProjectWalkManifest(rel) {
-			result.Manifests[rel] = sum
+			result.Manifests = append(result.Manifests, rel)
 		}
 		return nil
 	})
 	if err != nil {
 		return ProjectWalkResult{}, err
 	}
+	sort.Slice(result.Files, func(i, j int) bool { return result.Files[i].Path < result.Files[j].Path })
+	sort.Strings(result.Manifests)
 	return result, nil
-}
-
-func WriteProjectArtifacts(root string, indexJSON, mapJSON []byte) (string, string, error) {
-	abs, err := resolveScannableProjectPath(root)
-	if err != nil {
-		return "", "", err
-	}
-	omniDir := filepath.Join(abs, ".omni")
-	if err := os.MkdirAll(omniDir, 0o755); err != nil {
-		return "", "", fmt.Errorf("create .omni directory: %w", err)
-	}
-	indexPath := filepath.Join(omniDir, "index.json")
-	mapPath := filepath.Join(omniDir, "codebase-map.json")
-	if err := os.WriteFile(indexPath, append(indexJSON, '\n'), 0o644); err != nil {
-		return "", "", err
-	}
-	if err := os.WriteFile(mapPath, append(mapJSON, '\n'), 0o644); err != nil {
-		return "", "", err
-	}
-	return indexPath, mapPath, nil
-}
-
-func ReadProjectMapFile(path string) ([]byte, string, error) {
-	abs, err := resolveScannableProjectPath(path)
-	if err != nil {
-		return nil, "", err
-	}
-	mapPath := filepath.Join(abs, ".omni", "codebase-map.json")
-	blob, err := os.ReadFile(mapPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, mapPath, nil
-		}
-		return nil, "", err
-	}
-	return blob, mapPath, nil
 }
 
 func shouldSkipProjectWalkDir(name string) bool {
@@ -135,10 +85,7 @@ func shouldSkipProjectWalkDir(name string) bool {
 }
 
 func shouldSkipProjectWalkFile(name string) bool {
-	if name == ".env" || strings.HasPrefix(name, ".env.") || strings.HasSuffix(name, ".pem") || strings.HasSuffix(name, ".key") {
-		return true
-	}
-	return false
+	return name == ".env" || strings.HasPrefix(name, ".env.") || strings.HasSuffix(name, ".pem") || strings.HasSuffix(name, ".key")
 }
 
 func isProjectWalkManifest(path string) bool {
@@ -150,37 +97,17 @@ func isProjectWalkManifest(path string) bool {
 	}
 }
 
-func hashProjectFile(path string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
-}
-
-func decodeProjectMapBlob(blob []byte) (map[string]any, error) {
-	if len(blob) == 0 {
-		return map[string]any{}, nil
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(blob, &payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
 func resolveScannableProjectPath(path string) (string, error) {
 	workspace, err := resolveHostWorkspace(path)
 	if err != nil {
 		return "", err
 	}
-	if err := ensureBrowseAllowed(workspace, BrowseOptions{ExtraRoots: []string{workspace}}); err != nil {
+	info, err := os.Stat(workspace)
+	if err != nil {
 		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("project path is not a directory")
 	}
 	return workspace, nil
 }

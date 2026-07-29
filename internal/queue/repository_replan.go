@@ -28,32 +28,27 @@ func (r *Repository) ReplanJob(ctx context.Context, jobID int64, feedback string
 	if job.Status == model.JobStatusCanceled || job.Status == model.JobStatusCompleted || job.Status == model.JobStatusFailed {
 		return model.Job{}, fmt.Errorf("job is already %s", job.Status)
 	}
-	v3Authority, err := jobUsesV3AuthorityTx(ctx, tx, jobID)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if v3Authority {
-		successor, err := r.reviseV3AuthorityTx(ctx, tx, job, feedback, "replan")
-		if err != nil {
-			return model.Job{}, err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return model.Job{}, err
-		}
-		return successor, nil
-	}
-
 	var planStepID int64
 	var planSortIndex int
 	if err := tx.QueryRow(ctx, `
 		SELECT id, sort_index
 		FROM job_steps
-		WHERE job_id = $1 AND action = 'plan'
-		ORDER BY sort_index ASC, id ASC
+		WHERE job_id = $1
+		  AND action IN ('v3_coding', 'v3_subtask', 'v3_planning', 'plan')
+		ORDER BY
+		  CASE
+		    WHEN status = 'running' THEN 0
+		    WHEN status = 'waiting' THEN 1
+		    WHEN status = 'completed' AND action IN ('v3_coding', 'v3_subtask') THEN 2
+		    WHEN action IN ('v3_coding', 'v3_subtask') THEN 3
+		    ELSE 4
+		  END ASC,
+		  CASE WHEN status = 'completed' THEN -sort_index ELSE sort_index END ASC,
+		  id ASC
 		FOR UPDATE
 		LIMIT 1
 	`, jobID).Scan(&planStepID, &planSortIndex); err != nil {
-		return model.Job{}, err
+		return model.Job{}, fmt.Errorf("job has no coding or planning step to requeue: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -90,10 +85,9 @@ func (r *Repository) ReplanJob(ctx context.Context, jobID int64, feedback string
 		    result = NULL,
 		    error = NULL,
 		    completed_at = NULL,
-		    metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{replan_feedback}', to_jsonb($3::text), true),
 		    updated_at = NOW()
 		WHERE id = $1
-	`, jobID, model.JobStatusRunning, feedback); err != nil {
+	`, jobID, model.JobStatusRunning); err != nil {
 		return model.Job{}, err
 	}
 

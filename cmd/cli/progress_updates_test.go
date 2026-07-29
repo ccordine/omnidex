@@ -93,6 +93,81 @@ func TestPrintContextUpdatesSlimHidesLLMPromptTrace(t *testing.T) {
 	}
 }
 
+func TestPrintContextUpdatesSlimShowsModelStreamProgress(t *testing.T) {
+	contexts := []model.StepContext{
+		{
+			ID:     1,
+			StepID: 11,
+			Key:    "event",
+			Value:  "time=2026-07-28T00:00:00Z event=llm_stream_progress scope=v3_source_turn_3 output_bytes=2048 elapsed=12s",
+		},
+		{
+			ID:     2,
+			StepID: 11,
+			Key:    "event",
+			Value:  "time=2026-07-28T00:00:01Z event=operation_heartbeat scope=v3_source_turn_3 elapsed=13s",
+		},
+	}
+	seen := map[int64]struct{}{}
+	if !printContextUpdates(contexts, seen, true, false, 1200) {
+		t.Fatal("expected model stream progress to show in slim progress mode")
+	}
+}
+
+func TestSlimProgressShowsCodingMilestonesButNotHeartbeatNoise(t *testing.T) {
+	for _, eventType := range []string{
+		"coding_phase_changed",
+		"coding_assembly_ready",
+		"coding_file_started",
+		"coding_file_written",
+		"coding_file_deleted",
+		"coding_file_unchanged",
+		"coding_verification_failed",
+		"coding_static_validation_failed",
+		"coding_repair_selected",
+		"coding_fragment_correction_started",
+		"coding_worker_rejected",
+		"coding_worker_failed",
+		"coding_completed",
+	} {
+		if !showStepEventInSlimProgress(eventType) {
+			t.Fatalf("coding milestone %q is hidden in slim progress", eventType)
+		}
+	}
+	for _, eventType := range []string{"operation_heartbeat", "step_authority_poll", "coding_verification_command_passed", "coding_worker_started", "coding_worker_completed"} {
+		if showStepEventInSlimProgress(eventType) {
+			t.Fatalf("redundant event %q is visible in slim progress", eventType)
+		}
+	}
+	if showStepEventInSlimProgress("coding_manifest_ready") {
+		t.Fatal("removed manifest event is still visible")
+	}
+	if showStepEventInSlimProgress("coding_model_response_rejected") {
+		t.Fatal("removed untyped model rejection event is still visible")
+	}
+}
+
+func TestSummarizeStepEventExplainsCodingState(t *testing.T) {
+	cases := []struct {
+		event stepEventPayload
+		want  string
+	}{
+		{event: stepEventPayload{EventType: "coding_phase_changed", Message: "phase=verifying detail=running_server_checks"}, want: "Verifying accepted workspace"},
+		{event: stepEventPayload{EventType: "coding_assembly_ready", Message: "adapter=go_cli files=6"}, want: "Deterministic assembly ready: 6 source units"},
+		{event: stepEventPayload{EventType: "coding_static_validation_failed", Message: "diagnostic=go.mod declares Go 1.21; requirement R1 requires Go 1.22"}, want: "go.mod declares Go 1.21"},
+		{event: stepEventPayload{EventType: "coding_worker_rejected", Message: "kind=repair subject=go_test model=qwen2.5-coder:3b attempt=1/3 error=repair must target main.go"}, want: "Repair station rejected go_test (1/3): repair must target main.go"},
+		{event: stepEventPayload{EventType: "coding_worker_failed", Message: "kind=file subject=main.go model=qwen3-coder:30b attempt=3/3 error=typed response is malformed"}, want: "File station failed for main.go: typed response is malformed"},
+		{event: stepEventPayload{EventType: "coding_file_written", Message: "stage=generate path=store.go bytes=812"}, want: "Accepted store.go (812 bytes)"},
+		{event: stepEventPayload{EventType: "coding_repair_selected", Message: "repair=1 path=main_test.go command=go_test_./..."}, want: "Selected main_test.go for diagnostic repair 1"},
+		{event: stepEventPayload{EventType: "coding_fragment_correction_started", Message: "block=feature.001 correction=1 exact_failure=TypeError: AudioContext is not defined"}, want: "Correcting feature.001: TypeError: AudioContext is not defined"},
+	}
+	for _, test := range cases {
+		if got := summarizeStepEvent(test.event); !strings.Contains(got, test.want) {
+			t.Errorf("summary=%q want substring %q", got, test.want)
+		}
+	}
+}
+
 func TestPrintContextUpdatesSlimShowsLLMResponseTrace(t *testing.T) {
 	contexts := []model.StepContext{
 		{

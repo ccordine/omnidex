@@ -59,14 +59,6 @@ func (f *fakeLLMClient) Embedding(context.Context, string) ([]float64, error) {
 	return append([]float64(nil), f.embedding...), f.embeddingErr
 }
 
-func (f *fakeLLMClient) SuggestTags(context.Context, string, int) ([]string, error) {
-	return nil, nil
-}
-
-func (f *fakeLLMClient) SuggestTagsWithModel(context.Context, string, string, int) ([]string, error) {
-	return nil, nil
-}
-
 func TestInstructRouteUsesPromptAsPromptHint(t *testing.T) {
 	llmClient := &fakeLLMClient{outputs: []string{"instruction-output"}}
 	server := NewServer(nil, llmClient)

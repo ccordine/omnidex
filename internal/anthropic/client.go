@@ -91,6 +91,12 @@ func (c *Client) PrepareContextModel(_ context.Context, model, prompt string) (l
 }
 
 func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedModel) (string, error) {
+	if err := llm.ValidateResponseContract(prepared); err != nil {
+		return "", err
+	}
+	if len(prepared.ResponseSchema) > 0 {
+		return "", fmt.Errorf("anthropic prepared generation does not support enforced response schemas")
+	}
 	model := strings.TrimSpace(prepared.ContextModel)
 	if model == "" {
 		model = strings.TrimSpace(prepared.BaseModel)
@@ -138,30 +144,6 @@ func (c *Client) CleanupPreparedModel(_ llm.PreparedModel) {}
 
 func (c *Client) Embedding(context.Context, string) ([]float64, error) {
 	return nil, fmt.Errorf("anthropic does not provide embeddings; configure EMBEDDING_PROVIDER=ollama|openai|google|huggingface")
-}
-
-func (c *Client) SuggestTags(ctx context.Context, content string, maxTags int) ([]string, error) {
-	return c.SuggestTagsWithModel(ctx, c.defaultModel, content, maxTags)
-}
-
-func (c *Client) SuggestTagsWithModel(ctx context.Context, model, content string, maxTags int) ([]string, error) {
-	if maxTags <= 0 {
-		maxTags = 8
-	}
-	prompt := strings.Join([]string{
-		"Extract compact relevance tags for retrieval.",
-		"Operational mode: text analysis only. Do not roleplay or invent fictional context.",
-		"Return only comma-separated lowercase tags.",
-		fmt.Sprintf("Maximum tags: %d.", maxTags),
-		"Do not include punctuation-only tokens.",
-		"Text:",
-		content,
-	}, "\n")
-	result, err := c.Generate(ctx, model, prompt)
-	if err != nil {
-		return nil, err
-	}
-	return llm.ParseSuggestedTags(result, content, maxTags), nil
 }
 
 func (c *Client) doJSON(ctx context.Context, path string, payload any, out any) error {

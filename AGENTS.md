@@ -85,6 +85,112 @@ If a file is getting large, split it by responsibility before continuing.
 
 Architecture Rules
 
+Omnidex AI Coding Architecture (Non-Negotiable)
+
+The authoritative design is [docs/CHARMANDER_ASSEMBLY_LINE.md](docs/CHARMANDER_ASSEMBLY_LINE.md).
+
+Build Codenames Have No Architectural Meaning
+
+Bulbasaur, Ivysaur, Venusaur, and Charmander are only names for successive Omnidex builds. They mark major rewrite milestones. They are not products, agents, runtimes, frameworks, workers, orchestration layers, or workload types. Do not create a `Charmander` subsystem or say that Charmander independently builds an application. Omnidex is the product and this repository currently contains its Charmander build.
+
+Omnidex is a deterministic assembly line, not an LLM pretending to be a software team.
+
+Codex Builds Omnidex; Omnidex Builds the Workload
+
+Codex's task is to implement and improve the general Omnidex system. Codex must not implement, scaffold, finish, prompt-engineer, or otherwise steer the application used to prove Omnidex. The workload application must be produced only by the checked-in Omnidex build after receiving the same ordinary request a human user supplied.
+
+A unit test that manually constructs an application specification, feature list, document graph, component contract, acceptance contract, or fragment prompt may prove that an isolated framework primitive works. It is never evidence that Omnidex understood or built a user request.
+
+An autonomy claim is valid only when all of the following are true:
+
+* The unchanged user request entered through the ordinary production request boundary.
+* Checked-in, task-neutral code derived and dispatched every subsequent envelope.
+* Codex supplied no intermediate specification, decomposition, rubric, feature prompt, correction, file content, or implementation hint.
+* The run used a fresh workspace and proceeded until the framework stopped, without source edits or human steering during the run.
+* The evidence records every model, exact model-visible envelope, response, rejection, accepted artifact, verification command, elapsed duration, and context byte count.
+* Evaluation criteria remained unavailable to the builder until the build stopped.
+
+If any condition is false, label the run contaminated and do not use it as proof.
+
+Never convert an observed benchmark need into framework code. In particular, do not add a domain action, helper, service, enum, prompt clause, component wrapper, test fixture, CSS treatment, or correction instruction because the current workload needs it. Adding `tone()` after a music-app failure, a brush primitive after a drawing-app failure, or a character controller after a simulation failure is implementing the benchmark inside the framework.
+
+After a failed benchmark, framework changes may address only a task-neutral failure class. The change must be expressible without benchmark nouns or behavior and must be proven against at least two unrelated fixtures before beginning a completely new benchmark run. Never patch a benchmark while it is running and never resume a contaminated workspace as evidence.
+
+The framework may own general mechanics such as syntax parsing, typed boundaries, DOM event wiring, process execution, compiler invocation, and retry accounting. It must not pre-decide the product's domain model, user interactions, feature layout, or implementation merely to make a held-out application pass.
+
+Prompt construction is production code. Codex must not compose better one-off prompts at the terminal or inject additional instructions into a live run. Every model-visible byte must come from a versioned generic renderer, be subject to hard size and capability limits, and appear in the run evidence. If the framework cannot derive adequate work from the raw request, that is a framework failure to measure and fix generally—not permission for Codex to steer the model.
+
+Domain Skills Are Learned Data, Not Repository Features
+
+Omnidex must not accumulate product-domain abilities in Go source, checked-in prompts, static skill folders, or adapter branches. Audio production, drawing, simulation, accounting, calendars, and every other workload domain belong outside the Omnidex implementation.
+
+When Omnidex needs a reusable ability that is not already available, it must be able to synthesize a narrowly scoped skill through bounded model jobs, validate that skill with code, and persist the accepted skill in PostgreSQL. Later jobs may retrieve the smallest relevant accepted skills from that registry. Natural-language skill matching is a narrow semantic-model job; it must not be replaced with keyword or phrase heuristics.
+
+Code owns skill identity, schemas, version numbers, lifecycle state, tool permissions, dependency edges, validation, test evidence, activation, retrieval limits, and database writes. Models may propose only the small semantic or instructional fields that code cannot derive. A proposed skill is unavailable until its schema, boundaries, and executable checks pass. Rejected skill candidates remain rejected; there is no silent fallback to a checked-in domain skill or general-purpose agent.
+
+The repository may contain only the task-neutral bootstrap machinery needed to create, validate, store, retrieve, and execute skills. A workload-specific skill must be data with provenance in the database, not a new Omnidex code path. Generated application source remains in the target workspace; reusable worker procedure belongs in the skill registry; neither belongs in Omnidex's static architecture.
+
+Code must own:
+
+* Generic language, runtime, and toolchain adapter selection.
+* Document structure, paths, names, declarations, signatures, and block boundaries.
+* Dependency graphs, scheduling, retries, diagnostic routing, and completion state.
+* Parser and compiler context extraction.
+* Imports, stitching, formatting, complete-graph dependency checks, isolated compiler/test staging, workspace writes, and final test execution.
+
+A coding LLM may only fill one explicitly defined code block when deterministic code cannot provide that block. Initial generation receives only the language, exact signature, local behavioral contract, and strictly required declarations/symbols. Correction is a separate envelope: it receives the signature, required declarations/symbols, current block, one code-owned imperative, and one exact path-free failure; the superseded initial behavioral narrative is not replayed. It returns exactly one parseable code node.
+
+Dependency order does not grant model context. Every model-visible declaration must be named in a separate explicit capability allowlist, must be a direct dependency, and must be projected at symbol level rather than through an aggregate domain API. Transitive dependencies are invisible. Capability, current-declaration, correction, initial-envelope, and total-envelope budgets are hard failures at the final model-call boundary. A test failure contributes one code-owned single-line repair directive and a bounded sanitized diagnostic; test source is never model context.
+
+No coding LLM may receive or choose:
+
+* A file name, path, tree, workspace snapshot, project plan, queue, phase, or job graph.
+* Whole-file or whole-project responsibility.
+* Which block runs next, what depends on what, which failure to repair, or whether work is complete.
+* Memories, prior projects, broad conversation history, or unrelated requirements.
+
+Documents are constructed in memory from parser-validated blocks. Code waits until every required dependency block exists before complete-graph checks and isolated compiler/test staging. A failure is mapped by code to the smallest responsible block; accepted blocks remain accepted and only that block is corrected. The loop must never restart the project or ask a model to re-plan it.
+
+If code can parse, derive, validate, route, format, or decide something, code must do it. AI is not the default solution.
+
+Do not fake natural-language understanding with keyword lists, regex phrase routing, or checks for one expected wording. Human phrasing is variable and semantic interpretation is one of the narrow jobs that legitimately requires a model. Split interpretation into fixed tiny stations: surface classification, exact product-context extraction, exact requirement extraction and fixed-point splitting, opaque artifact handling, pairwise direct capability relation, bounded learned-skill selection, and one-need procedure synthesis. No station may emit an expanded software contract. Every station remains blind to documents, paths, workers, and orchestration. A capability-relation station sees exactly two local needs and returns only one registered direction; code owns the resulting graph and compiler-enforced per-feature projection. Code validates every small output and deterministically maps the result to one registered technical adapter. Invalid, contradictory, or unsupported semantic output fails loudly.
+
+Semantic correction must preserve the decoded candidate in code. A correction model receives the exact validation failure and a schema permitting exactly one top-level field; its one-field merge patch must alter exactly one JSON leaf in retained state. Repeating the full response, changing an unrelated label, changing multiple nested values, or returning a no-op is rejected. Never ask a model to reconstruct already accepted semantic fields during correction.
+
+Execution transport is explicit state, never inferred from wording. The coding pipeline and Scrum Play enter the coding assembly line directly. Chat, assistant, and story transports always enter semantic intent interpretation; code must not inspect greetings, verbs, nouns, token overlap, or English sentence prefixes to reroute or rewrite them. Semantic outputs may be structurally validated, but code must not reconstruct meaning from phrases in the user request or model response.
+
+An actionable free-form turn has one cohesive objective. If the semantic interpreter invents multiple action/advice objectives, reject that hierarchy at the boundary and correct the small intent artifact. Once the typed objective requires workspace mutation and command verification, code owns the coordinator plan, post-build analysis, response summary, evidence verification, and memory suppression. Do not call planner, analysis, response, verifier, or memory models to restate a deterministic coding result.
+
+There is one free-form front door. Ordinary CLI chat text is passed unchanged to semantic interpretation. Shell, browser, screen, media, and audio operations require explicit typed commands. Do not add a keyword-routed research or local-automation sidecar, a freshness/version ledger, or a failure fallback around the authoritative runtime.
+
+Free-form text must never select a UI or API mode. Project Planning and Scrum Coach modes are explicit transport fields. Memory categories come only from hard-typed memory kind and explicit structured tags; code must never scan memory content for technology names, preferences, errors, or other semantic phrases. Typed message roles own presentation, so assistant text must not be reclassified or hidden because it resembles a tool payload.
+
+User feedback, interruption, and replanning update the same authoritative job. A repository result with a different job ID is an invariant failure, never a signal to create or follow a successor job.
+
+Per-job model routing is immutable. Concurrent workers must resolve routing into job-local state and must never mutate shared service routing before attempting to restore it.
+
+Every exposed CLI or API control must have one authoritative runtime consumer and a test proving its effect. Write-only metadata is forbidden. The removed profile, planning-pass, persistent-execution, review, missing-tool, generic reasoning, autonomy, approval, verification, web, and workspace toggles must not return under new names; old top-level metadata using them fails explicitly. Keep only typed settings that actually alter execution, such as model routing, external-agent configuration, and the consumed explicit research query.
+
+Whole-file generation, model-owned planning, model-owned repair routing, and path-bearing prompts are forbidden regressions and require source-level absence tests.
+
+Product-Specific Workloads Are Not Framework Code
+
+The application named in an autonomy benchmark is a held-out workload. It must not have a product-specific adapter, blueprint, source template, component contract, test suite, repair directive, prompt branch, or domain enum in the framework under test.
+
+For example, a music-studio benchmark may not be implemented by registering an audio-workstation adapter containing its sequencer, transport, instruments, state, UI, styles, or tests. That tests whether Codex encoded a music app, not whether Omnidex can build one.
+
+Adapters may describe reusable technical mechanics such as a language parser, package manager, browser runtime, persistence primitive, AST form, or test runner. They may not describe the benchmark product. Product behavior must be derived from the current user request into a domain-neutral typed representation and constructed through the same generic machinery used for an unseen application.
+
+Autonomy Benchmark Boundary
+
+An autonomy benchmark gives the framework exactly the ordinary request a user would submit. No benchmark rubric, expected feature list, target structure, reference implementation, private test source, or app-specific correction text may enter semantic or generation context.
+
+The evaluation plan must remain unloaded until the build attempt has stopped. A separate observer then evaluates the resulting workspace through typed, black-box checks of user-visible behavior. Evaluation must allow any valid implementation; private class names, wrapper elements, array literals, callback syntax, or other implementation choices are not acceptance criteria unless the user's request explicitly requires them.
+
+A failed build is still evaluated. Report the weighted capabilities that work, the capabilities that do not, the stopping failure, model calls, context volume, accepted work, corrections, verification runs, elapsed time, and human interventions. Never collapse partial progress into either fake success or an uninformative binary failure.
+
+Framework changes may be made between complete benchmark runs to address reusable failure classes. Do not steer a running benchmark, write a product-specific prompt after observing its failure, or tune an exact implementation into acceptance. If a benchmark-specific source template, contract, test, or repair instruction is required for a pass, the run is invalid.
+
 4. Server-Authoritative State
 
 The server owns the truth.
