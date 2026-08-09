@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -83,7 +84,14 @@ func partitionRequirementFeatures(
 	iteration int,
 	identities []assemblyline.ArtifactIdentity,
 ) (assemblyline.RequirementPartitionDecision, error) {
-	job, err := assemblyline.NewRequirementPartitionJob(input)
+	if runtime.Advise == nil {
+		return assemblyline.RequirementPartitionDecision{}, fmt.Errorf("requirement partition advisory runtime is required")
+	}
+	advisoryModel := strings.TrimSpace(runtime.AdvisoryModel)
+	if advisoryModel == "" {
+		return assemblyline.RequirementPartitionDecision{}, fmt.Errorf("requirement partition advisory model is required")
+	}
+	briefingJob, err := assemblyline.NewRequirementPartitionBriefingJob(input)
 	if err != nil {
 		return assemblyline.RequirementPartitionDecision{}, err
 	}
@@ -91,8 +99,56 @@ func partitionRequirementFeatures(
 	if input.Mode == assemblyline.RequirementSplitFeature {
 		subject = fmt.Sprintf("requirement_split_%03d", iteration)
 	}
+	briefing, err := runDirectCodingSemanticCall[assemblyline.RequirementPartitionBriefingDecision](
+		runtime, modelName, subject+"_briefing", briefingJob, identities,
+		func(value assemblyline.RequirementPartitionBriefingDecision) error { return value.Validate() },
+	)
+	if err != nil {
+		return assemblyline.RequirementPartitionDecision{}, err
+	}
+	advisoryJob, err := assemblyline.NewRequirementPartitionAdvisoryJob(assemblyline.RequirementPartitionAdvisoryInput{
+		Original: input, Lens: briefing.Lens,
+	})
+	if err != nil {
+		return assemblyline.RequirementPartitionDecision{}, err
+	}
+	advisoryPrompt, _, err := assemblyline.RenderPortableJob(advisoryJob)
+	if err != nil {
+		return assemblyline.RequirementPartitionDecision{}, err
+	}
+	if err := validateDirectCodingSemanticPrompt(advisoryPrompt, identities); err != nil {
+		return assemblyline.RequirementPartitionDecision{}, err
+	}
+	emitTypedWorker(runtime, typedWorkerEvent{
+		State: typedWorkerStarted, Kind: typedWorkerAdvisory, Subject: subject + "_advisory",
+		Model: advisoryModel, Attempt: 1, MaxAttempts: 1, PromptBytes: len(advisoryPrompt),
+	})
+	advisory, err := runtime.Advise(advisoryJob, advisoryModel)
+	if err != nil {
+		emitTypedWorker(runtime, typedWorkerEvent{
+			State: typedWorkerFailed, Kind: typedWorkerAdvisory, Subject: subject + "_advisory",
+			Model: advisoryModel, Attempt: 1, MaxAttempts: 1, Detail: err.Error(),
+		})
+		return assemblyline.RequirementPartitionDecision{}, fmt.Errorf("requirement partition advisory failed: %w", err)
+	}
+	if err := advisory.Validate(); err != nil {
+		return assemblyline.RequirementPartitionDecision{}, fmt.Errorf("requirement partition advisory response: %w", err)
+	}
+	if strings.TrimSpace(advisory.Content) == "" {
+		return assemblyline.RequirementPartitionDecision{}, fmt.Errorf("requirement partition advisory returned no final memo content")
+	}
+	emitTypedWorker(runtime, typedWorkerEvent{
+		State: typedWorkerCompleted, Kind: typedWorkerAdvisory, Subject: subject + "_advisory",
+		Model: advisoryModel, Attempt: 1, MaxAttempts: 1,
+	})
+	synthesisJob, err := assemblyline.NewRequirementPartitionSynthesisJob(assemblyline.RequirementPartitionSynthesisInput{
+		Original: input, AdvisoryMemo: advisory.Content,
+	})
+	if err != nil {
+		return assemblyline.RequirementPartitionDecision{}, err
+	}
 	return runDirectCodingSemanticCall[assemblyline.RequirementPartitionDecision](
-		runtime, modelName, subject, job, identities,
+		runtime, modelName, subject+"_synthesis", synthesisJob, identities,
 		func(value assemblyline.RequirementPartitionDecision) error { return value.ValidateFor(input) },
 	)
 }

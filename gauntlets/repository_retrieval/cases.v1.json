@@ -1,0 +1,53 @@
+{
+  "schema": "omnidex.model-gauntlet.repository-retrieval-cases.v1",
+  "cases": [
+    {
+      "id": "parse-envelope-declaration",
+      "input": {"research_need": "Locate the declaration of ParseEnvelope so its validation boundary can be reviewed."}
+    },
+    {
+      "id": "runner-type-declaration",
+      "input": {"research_need": "Retrieve the declaration for TaskRunner before changing its public methods."}
+    },
+    {
+      "id": "response-correction-references",
+      "input": {"research_need": "Find every direct reference to ApplyResponseCorrection before changing its contract."}
+    },
+    {
+      "id": "evidence-store-references",
+      "input": {"research_need": "Retrieve direct references to EvidenceStore to measure the callers affected by an interface change."}
+    },
+    {
+      "id": "retry-accounting-behavior",
+      "input": {"research_need": "Find the indexed source behavior responsible for bounded retry accounting."}
+    },
+    {
+      "id": "server-reconciliation-behavior",
+      "input": {"research_need": "Find source evidence implementing server reconciliation after mutations."}
+    },
+    {
+      "id": "thinking-evidence-behavior",
+      "input": {"research_need": "Find the implementation of native thinking evidence persistence without selecting any file path."}
+    },
+    {
+      "id": "undefined-schema-diagnostic",
+      "input": {"research_need": "Retrieve source context for compiler failure undefined: ResponseSchema."}
+    },
+    {
+      "id": "empty-digest-diagnostic",
+      "input": {"research_need": "Retrieve the source context implicated by test failure TestIndex rejects an empty source digest."}
+    },
+    {
+      "id": "pgx-dependency",
+      "input": {"research_need": "Inspect declared dependency metadata for the pgx dependency version."}
+    },
+    {
+      "id": "typescript-toolchain",
+      "input": {"research_need": "Retrieve dependency metadata declaring the TypeScript compiler version."}
+    },
+    {
+      "id": "capability-prompt-references",
+      "input": {"research_need": "Find direct references to BuildCapabilityRelationPrompt before altering its signature."}
+    }
+  ]
+}

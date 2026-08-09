@@ -45,7 +45,7 @@ func TestLLMEvidenceCapturesEffectivePreparedRequest(t *testing.T) {
 		BaseModel: "base-model", ContextModel: "effective-model",
 		Prompt: "exact prepared system", PromptHint: "exact prepared user",
 		ResponseFormat: llm.ResponseFormatJSON, ResponseSchema: map[string]any{"type": "array"},
-		ContextTokens: 8192, MaxOutputTokens: 768,
+		ContextTokens: 8192, MaxOutputTokens: 768, ThinkingEnabled: true,
 	}
 	applyPreparedRequestToEvidence(&record, prepared)
 	if record.RequestedModel != "requested-model" || record.Model != "effective-model" {
@@ -59,6 +59,9 @@ func TestLLMEvidenceCapturesEffectivePreparedRequest(t *testing.T) {
 	}
 	if record.ResponseSchema["type"] != "array" {
 		t.Fatalf("schema=%#v", record.ResponseSchema)
+	}
+	if !record.ThinkingEnabled {
+		t.Fatal("native thinking state was omitted from evidence")
 	}
 }
 

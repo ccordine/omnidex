@@ -35,6 +35,7 @@ type LLMCallEvidenceRecord struct {
 	ResponseSchema  map[string]any
 	ContextTokens   int
 	MaxOutputTokens int
+	ThinkingEnabled bool
 	Response        string
 	Status          LLMCallEvidenceStatus
 	Error           string
@@ -58,6 +59,7 @@ type LLMCallEvidence struct {
 	ResponseSchema  json.RawMessage
 	ContextTokens   int
 	MaxOutputTokens int
+	ThinkingEnabled bool
 	Response        string
 	ResponseSHA256  string
 	Status          LLMCallEvidenceStatus
@@ -81,20 +83,20 @@ func (r *Repository) RecordLLMCallEvidence(ctx context.Context, record LLMCallEv
 		INSERT INTO llm_call_evidence (
 			job_id, step_id, scope, work_id, work_kind, requested_model, model, attempt,
 			system_prompt, user_prompt, request_sha256, response_format, response_schema,
-			context_tokens, max_output_tokens, response, response_sha256, status, error, latency_ms
+			context_tokens, max_output_tokens, thinking_enabled, response, response_sha256, status, error, latency_ms
 		)
 		SELECT steps.job_id, steps.id, $2, NULLIF($3,''), NULLIF($4,''), $5, $6, $7,
-		       $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, NULLIF($18,''), $19
+		       $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, NULLIF($19,''), $20
 		FROM job_steps AS steps
 		WHERE steps.id=$1
 		RETURNING id, job_id, step_id, scope, work_id, work_kind, requested_model, model,
 		          attempt, system_prompt, user_prompt, request_sha256, response_format,
-		          response_schema, context_tokens, max_output_tokens, response,
+		          response_schema, context_tokens, max_output_tokens, thinking_enabled, response,
 		          response_sha256, status, error, latency_ms, created_at
 	`, record.StepID, record.Scope, record.WorkID, record.WorkKind, record.RequestedModel,
 		record.Model, record.Attempt, record.SystemPrompt, record.UserPrompt, requestHash,
 		record.ResponseFormat, schema, record.ContextTokens, record.MaxOutputTokens,
-		response, responseHash, string(record.Status), record.Error, record.LatencyMS), &evidence)
+		record.ThinkingEnabled, response, responseHash, string(record.Status), record.Error, record.LatencyMS), &evidence)
 	if err != nil {
 		return LLMCallEvidence{}, fmt.Errorf("record exact LLM call evidence: %w", err)
 	}
@@ -117,7 +119,7 @@ func (r *Repository) ListLLMCallEvidenceForJob(ctx context.Context, jobID int64,
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, job_id, step_id, scope, work_id, work_kind, requested_model, model,
 		       attempt, system_prompt, user_prompt, request_sha256, response_format,
-		       response_schema, context_tokens, max_output_tokens, response,
+		       response_schema, context_tokens, max_output_tokens, thinking_enabled, response,
 		       response_sha256, status, error, latency_ms, created_at
 		FROM llm_call_evidence
 		WHERE job_id=$1
@@ -153,7 +155,7 @@ func scanLLMCallEvidence(scanner llmEvidenceScanner, evidence *LLMCallEvidence) 
 		&evidence.ID, &evidence.JobID, &evidence.StepID, &evidence.Scope, &workID, &workKind,
 		&evidence.RequestedModel, &evidence.Model, &evidence.Attempt, &evidence.SystemPrompt,
 		&evidence.UserPrompt, &evidence.RequestSHA256, &evidence.ResponseFormat, &schema,
-		&evidence.ContextTokens, &evidence.MaxOutputTokens, &response, &responseHash,
+		&evidence.ContextTokens, &evidence.MaxOutputTokens, &evidence.ThinkingEnabled, &response, &responseHash,
 		&evidence.Status, &errorText, &evidence.LatencyMS, &evidence.CreatedAt,
 	); err != nil {
 		return err
@@ -204,8 +206,9 @@ func validateAndHashLLMCallEvidenceRecord(record LLMCallEvidenceRecord) (any, st
 		ResponseSchema  json.RawMessage `json:"response_schema,omitempty"`
 		ContextTokens   int             `json:"context_tokens"`
 		MaxOutputTokens int             `json:"max_output_tokens"`
+		ThinkingEnabled bool            `json:"thinking_enabled"`
 	}{record.RequestedModel, record.Model, record.SystemPrompt, record.UserPrompt,
-		record.ResponseFormat, schemaJSON, record.ContextTokens, record.MaxOutputTokens}
+		record.ResponseFormat, schemaJSON, record.ContextTokens, record.MaxOutputTokens, record.ThinkingEnabled}
 	raw, err := json.Marshal(digestInput)
 	if err != nil {
 		return nil, "", fmt.Errorf("hash exact LLM request: %w", err)

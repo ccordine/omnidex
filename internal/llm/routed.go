@@ -41,6 +41,17 @@ func (c *RoutedClient) GeneratePrepared(ctx context.Context, prepared PreparedMo
 	return c.Generation.GeneratePrepared(ctx, prepared)
 }
 
+func (c *RoutedClient) GeneratePreparedAdvisory(ctx context.Context, prepared PreparedModel) (AdvisoryResponse, error) {
+	if c == nil || c.Generation == nil {
+		return AdvisoryResponse{}, fmt.Errorf("generation client is not configured")
+	}
+	client, okay := c.Generation.(PreparedAdvisoryClient)
+	if !okay {
+		return AdvisoryResponse{}, fmt.Errorf("configured generation provider does not support native advisory thinking")
+	}
+	return client.GeneratePreparedAdvisory(ctx, prepared)
+}
+
 func (c *RoutedClient) CleanupPreparedModel(prepared PreparedModel) {
 	if c == nil || c.Generation == nil {
 		return

@@ -33,3 +33,14 @@ func TestValidateResponseContractAcceptsTypedJSONSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestValidateResponseContractRejectsStructuredNativeThinking(t *testing.T) {
+	for _, prepared := range []PreparedModel{
+		{ThinkingEnabled: true, ResponseFormat: ResponseFormatJSON},
+		{ThinkingEnabled: true, ResponseSchema: map[string]any{"type": "object"}},
+	} {
+		if err := ValidateResponseContract(prepared); err == nil || !strings.Contains(err.Error(), "native thinking forbids") {
+			t.Fatalf("ValidateResponseContract(%#v) error=%v", prepared, err)
+		}
+	}
+}

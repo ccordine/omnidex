@@ -13,6 +13,24 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationIdentityInput](payload, ApplicationIdentityInput.validate)
 	case WorkRequirementPartition:
 		return decodeAndValidatePortablePayload[RequirementPartitionInput](payload, RequirementPartitionInput.validate)
+	case WorkRequirementBriefing:
+		return decodeAndValidatePortablePayload[RequirementPartitionInput](payload, RequirementPartitionInput.validate)
+	case WorkRequirementAdvisory:
+		return decodeAndValidatePortablePayload[RequirementPartitionAdvisoryInput](payload, RequirementPartitionAdvisoryInput.validate)
+	case WorkRequirementSynthesis:
+		return decodeAndValidatePortablePayload[RequirementPartitionSynthesisInput](payload, RequirementPartitionSynthesisInput.validate)
+	case WorkRequirementFinalAdvisory:
+		return decodeAndValidatePortablePayload[RequirementFinalAdvisoryInput](payload, RequirementFinalAdvisoryInput.validate)
+	case WorkRequirementFinalSynthesis:
+		return decodeAndValidatePortablePayload[RequirementFinalSynthesisInput](payload, RequirementFinalSynthesisInput.validate)
+	case WorkRepositoryRetrieval:
+		return decodeAndValidatePortablePayload[RepositoryRetrievalInput](payload, RepositoryRetrievalInput.validate)
+	case WorkRetrievalBriefing:
+		return decodeAndValidatePortablePayload[RepositoryRetrievalInput](payload, RepositoryRetrievalInput.validate)
+	case WorkRetrievalAdvisory:
+		return decodeAndValidatePortablePayload[RepositoryRetrievalAdvisoryInput](payload, RepositoryRetrievalAdvisoryInput.validate)
+	case WorkRetrievalSynthesis:
+		return decodeAndValidatePortablePayload[RepositoryRetrievalSynthesisInput](payload, RepositoryRetrievalSynthesisInput.validate)
 	case WorkArtifactHandling:
 		return decodeAndValidatePortablePayload[ArtifactHandlingInput](payload, ArtifactHandlingInput.validate)
 	case WorkCapabilityRelation:

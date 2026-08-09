@@ -1,6 +1,15 @@
 # Ollama Stability Profile
 
-## Observed Failure
+## Current verified state
+
+As of 2026-08-08, the active Ollama 0.24.0 service uses Vulkan, is pinned to
+`GGML_VK_VISIBLE_DEVICES=1` (the RX 7700S), and has one loaded model and one
+parallel request. A 16K `qwen3-coder:30b` prewarm completed with 22.41 GB
+allocated, 7.28 GB allocated on the GPU, and 13.12 evaluation tokens/second.
+See [LOCAL_MODEL_PROFILE.md](LOCAL_MODEL_PROFILE.md) for the complete measured
+profile.
+
+## Historical ROCm failure
 
 Local `journalctl -u ollama` logs showed the model runner crashing under the
 ROCm backend:
@@ -10,7 +19,7 @@ ROCm backend:
 - stack frames in `libhsa-runtime64.so.1`
 - Omni then received Ollama `/api/chat` failures such as HTTP 500 and EOF.
 
-The active local systemd drop-ins force ROCm:
+The systemd drop-ins active when the failure was captured forced ROCm:
 
 - `OLLAMA_LLM_LIBRARY=rocm`
 - `ROCR_VISIBLE_DEVICES=0`
@@ -134,7 +143,7 @@ Then try the Vulkan profile.
 ## Vulkan Profile
 
 ROCm can see the RX 7700S through `rocminfo` while Ollama still falls back to
-CPU. Vulkan is slower and experimental, but it is the next GPU path to test.
+CPU. Vulkan is the currently verified GPU path on this host.
 Install the Ollama Vulkan backend first:
 
 ```bash

@@ -57,6 +57,27 @@ func TestLLMCallEvidencePreservesExactPromptsAndRawResponse(t *testing.T) {
 	}
 }
 
+func TestLLMCallEvidenceHashIncludesNativeThinkingMode(t *testing.T) {
+	base := normalizeLLMCallEvidenceRecord(LLMCallEvidenceRecord{
+		StepID: 1, Scope: "portable_advisory_worker", RequestedModel: "requested", Model: "effective", Attempt: 1,
+		SystemPrompt: "system", UserPrompt: "user", ResponseFormat: "text",
+		ContextTokens: 4096, MaxOutputTokens: 512,
+		Status: LLMEvidenceSucceeded, Response: `{"thinking":"trace","content":"memo"}`,
+	})
+	_, directHash, err := validateAndHashLLMCallEvidenceRecord(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.ThinkingEnabled = true
+	_, advisoryHash, err := validateAndHashLLMCallEvidenceRecord(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if directHash == advisoryHash {
+		t.Fatal("thinking-enabled request shared the direct request identity")
+	}
+}
+
 func TestLLMCallEvidenceAllowsPartialOutputOnlyForGenerationFailure(t *testing.T) {
 	t.Parallel()
 
@@ -107,6 +128,18 @@ func TestLLMEvidenceMigrationIsImmutableAndExact(t *testing.T) {
 	}
 }
 
+func TestLLMAdvisoryEvidenceMigrationAddsThinkingRequestIdentity(t *testing.T) {
+	raw, err := os.ReadFile("../../migrations/025_llm_advisory_evidence.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"thinking_enabled", "BOOLEAN", "NOT NULL"} {
+		if !strings.Contains(string(raw), required) {
+			t.Fatalf("advisory evidence migration omitted %q", required)
+		}
+	}
+}
+
 func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
 	if databaseURL == "" {
@@ -148,7 +181,7 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 		RequestedModel: "requested-model", Model: "effective-model", Attempt: 1,
 		SystemPrompt: "\nexact system prompt\n", UserPrompt: " exact user prompt ",
 		ResponseFormat: "json", ResponseSchema: map[string]any{"type": "object"},
-		ContextTokens: 8192, MaxOutputTokens: 1024,
+		ContextTokens: 8192, MaxOutputTokens: 1024, ThinkingEnabled: true,
 		Response: response, Status: LLMEvidenceSucceeded, LatencyMS: 17,
 	})
 	if err != nil {
@@ -159,6 +192,9 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	}
 	if created.ResponseSHA256 != llmEvidenceSHA256(response) || len(created.RequestSHA256) != 64 {
 		t.Fatalf("hashes request=%q response=%q", created.RequestSHA256, created.ResponseSHA256)
+	}
+	if !created.ThinkingEnabled {
+		t.Fatal("PostgreSQL omitted native thinking state from exact request evidence")
 	}
 	if _, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
 		StepID: stepID, Scope: "portable_fragment_worker",

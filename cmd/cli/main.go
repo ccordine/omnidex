@@ -98,6 +98,10 @@ func main() {
 		runQueueStatus(apiClient, os.Args[2:])
 	case "ollama:status":
 		runOllamaStatus(os.Args[2:])
+	case "ollama:prewarm":
+		runOllamaPrewarm(os.Args[2:])
+	case "model:gauntlet":
+		runModelGauntlet(os.Args[2:])
 	case "web:status":
 		runWebStatus(os.Args[2:])
 	case "service":

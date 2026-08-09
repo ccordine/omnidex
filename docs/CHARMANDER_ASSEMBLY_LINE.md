@@ -28,7 +28,9 @@ A model may perform only a bounded task whose semantics cannot be reliably deriv
 
 * classify one delivery surface;
 * copy one exact product-context quote;
-* extract or split exact requirement quotes;
+* select one code-registered requirement-analysis lens;
+* critique one exact requirement-partition prompt as a bounded plain-text memo;
+* extract or split exact requirement quotes after stable-model synthesis;
 * classify one opaque artifact disposition;
 * classify the direct live-state relation between two local needs;
 * select one of at most five opaque active-skill summaries, or `none`;
@@ -42,8 +44,8 @@ No model receives a file name, path, workspace tree, project plan, queue, phase,
 
 1. The unchanged request enters the typed coding transport.
 2. Artifact names are replaced with code-owned opaque tokens before semantic calls.
-3. Independent semantic stations derive the supported surface, one exact product-context quote, exact requirement quotes, and explicit artifact handling.
-4. Requirements are recursively split to a fixed point. Code assigns `requirement_NNN` identities and rejects ungrounded, overlapping, reordered, duplicate, empty, or excessive results.
+3. Independent semantic stations derive the supported surface, one exact product-context quote, exact requirement quotes, and explicit artifact handling. Requirement partitioning uses three immutable jobs: the stable model selects one registered lens, the configured native-thinking adviser returns one bounded plain-text memo, and the stable model synthesizes the original exact-quote decision. The adviser never receives a schema and never owns the accepted decision.
+4. Requirements are recursively split to a fixed point. Only the adviser's final memo content enters synthesis; native thinking is retained solely in immutable call evidence. Code assigns `requirement_NNN` identities and rejects missing final memo content, oversized memos, ungrounded, overlapping, reordered, duplicate, empty, or excessive results. There is no direct-partition fallback.
 5. The current browser assembly supports one through ten requirements. Other surfaces or larger graphs fail explicitly before construction work begins.
 6. Each requirement receives a procedure binding:
    * an exact active learned skill is reused by code when its code-owned identity matches;
@@ -61,6 +63,14 @@ No model receives a file name, path, workspace tree, project plan, queue, phase,
 14. A mapped source failure opens a correction job for the smallest declared owner. It receives the current declaration, exact signature, direct capabilities, one code-owned repair imperative, and a bounded path-free diagnostic. Other accepted declarations survive.
 15. Only an isolated assembly that passes is written to the authoritative workspace.
 16. Code reconciles exact files and protected paths, repeats authoritative verification, then activates pending learned skills and declares completion.
+
+## Final-partition promotion experiment
+
+The checked-in complete-requirement gauntlet is not a second production path. It measures whether one advisory pass after direct fixed-point partitioning is stronger than both direct partitioning and the current per-operation advisory flow.
+
+For the experimental final-pass variant, code first obtains and validates a complete direct candidate `C0`. An immutable final-advisory subject binds the original source, `C0`, its SHA-256 digest, and the protocol version. The reasoning model receives that subject without a response schema and returns one bounded plain-text memo. It must reserve output for non-empty final content; native thinking alone is invalid. A separate synthesis job binds the advisory job ID and exact memo digest, and the stable station returns `C1` under the existing requirement-partition schema. Code then applies exact-source, residual, and requirement-graph validation.
+
+The final advisory work kind is rejected by the production worker. Promotion requires a frozen corpus of at least 50 cases, repeated runs, improved paired correctness, zero direct-pass regressions, no reduction in stability, complete validity, and exact model digest and quantization evidence. Until all gates pass, the production flow above remains authoritative and unchanged.
 
 ## Semantic correction
 

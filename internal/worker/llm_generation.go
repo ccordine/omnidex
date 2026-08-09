@@ -31,21 +31,38 @@ func (s *Service) llmGenerateWithEvidenceTrace(
 	responseSchema map[string]any,
 	work llmEvidenceWork,
 ) (string, error) {
+	response, err := s.llmGenerateResponseWithEvidenceTrace(
+		ctx, stepID, scope, modelName, prompt, responseSchema, work, false,
+	)
+	return response.Content, err
+}
+
+func (s *Service) llmGenerateResponseWithEvidenceTrace(
+	ctx context.Context,
+	stepID int64,
+	scope, modelName, prompt string,
+	responseSchema map[string]any,
+	work llmEvidenceWork,
+	thinkingEnabled bool,
+) (llm.AdvisoryResponse, error) {
 	scope = safeLine(scope, "")
 	if scope == "" {
-		return "", fmt.Errorf("LLM scope is required")
+		return llm.AdvisoryResponse{}, fmt.Errorf("LLM scope is required")
+	}
+	if thinkingEnabled && scope != "portable_advisory_worker" {
+		return llm.AdvisoryResponse{}, fmt.Errorf("native advisory generation requires the registered portable advisory scope")
 	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
-		return "", fmt.Errorf("LLM model is required for scope %q", scope)
+		return llm.AdvisoryResponse{}, fmt.Errorf("LLM model is required for scope %q", scope)
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return "", fmt.Errorf("LLM prompt is required for scope %q", scope)
+		return llm.AdvisoryResponse{}, fmt.Errorf("LLM prompt is required for scope %q", scope)
 	}
 	contract, err := llmResponseContractForScope(scope)
 	if err != nil {
-		return "", err
+		return llm.AdvisoryResponse{}, err
 	}
 	s.emitStepEvent(stepID, "llm_prompt", fmt.Sprintf("scope=%s model=%s chars=%d", scope, modelName, len(prompt)))
 	s.emitStepContextWithBudget(stepID, "llm_prompt", strings.Join([]string{
@@ -55,16 +72,20 @@ func (s *Service) llmGenerateWithEvidenceTrace(
 		prompt,
 	}, "\n"), 14000)
 
-	raw, err := s.llmGenerateSingleAttempt(ctx, stepID, scope, modelName, prompt, responseSchema, contract, work, 1)
+	response, err := s.llmGenerateSingleAttempt(
+		ctx, stepID, scope, modelName, prompt, responseSchema, contract, work, thinkingEnabled, 1,
+	)
 	if err == nil {
-		return raw, nil
+		return response, nil
 	}
 	attemptErrors := []string{fmt.Sprintf("%s: %s", modelName, trimForBudget(err.Error(), 240))}
 	if shouldRetrySameModelAfterCreateEOF(err) {
 		s.emitStepEvent(stepID, "llm_retry_same_model", fmt.Sprintf("scope=%s model=%s reason=create_eof", scope, modelName))
-		raw, retryErr := s.llmGenerateSingleAttempt(ctx, stepID, scope, modelName, prompt, responseSchema, contract, work, 2)
+		response, retryErr := s.llmGenerateSingleAttempt(
+			ctx, stepID, scope, modelName, prompt, responseSchema, contract, work, thinkingEnabled, 2,
+		)
 		if retryErr == nil {
-			return raw, nil
+			return response, nil
 		}
 		attemptErrors = append(attemptErrors, fmt.Sprintf("%s(retry): %s", modelName, trimForBudget(retryErr.Error(), 240)))
 	}
@@ -75,7 +96,7 @@ func (s *Service) llmGenerateWithEvidenceTrace(
 		"model=" + modelName,
 		"error=" + trimForBudget(finalErr.Error(), 1400),
 	}, "\n"), 3200)
-	return "", finalErr
+	return llm.AdvisoryResponse{}, finalErr
 }
 
 func (s *Service) llmGenerateSingleAttempt(
@@ -85,22 +106,24 @@ func (s *Service) llmGenerateSingleAttempt(
 	responseSchema map[string]any,
 	contract llmResponseContract,
 	work llmEvidenceWork,
+	thinkingEnabled bool,
 	attempt int,
-) (string, error) {
+) (llm.AdvisoryResponse, error) {
 	started := time.Now()
 	evidence := newLLMCallEvidenceRecord(
 		stepID, scope, modelName, prompt, responseSchema, contract, s.inferenceContextTokens, attempt, work,
 	)
+	evidence.ThinkingEnabled = thinkingEnabled
 	stopHeartbeat := s.startProgressHeartbeat(ctx, stepID, fmt.Sprintf("llm:%s:attempt-%d", scope, attempt))
 	defer stopHeartbeat()
 	prepared, err := s.llm.PrepareContextModel(ctx, modelName, prompt)
 	if err != nil {
 		latency := time.Since(started)
 		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidencePreparationFailed, "", err, latency); evidenceErr != nil {
-			return "", evidenceErr
+			return llm.AdvisoryResponse{}, evidenceErr
 		}
 		s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, false, err, latency)
-		return "", err
+		return llm.AdvisoryResponse{}, err
 	}
 	defer s.llm.CleanupPreparedModel(prepared)
 	prepared.PromptHint = contract.PromptHint
@@ -108,24 +131,25 @@ func (s *Service) llmGenerateSingleAttempt(
 	prepared.ContextTokens = s.inferenceContextTokens
 	prepared.ResponseFormat = contract.Format
 	prepared.ResponseSchema = responseSchema
+	prepared.ThinkingEnabled = thinkingEnabled
 	applyPreparedRequestToEvidence(&evidence, prepared)
 	if err := llm.ValidateResponseContract(prepared); err != nil {
 		callErr := fmt.Errorf("prepare response contract for scope %q: %w", scope, err)
 		latency := time.Since(started)
 		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidencePreparationFailed, "", callErr, latency); evidenceErr != nil {
-			return "", evidenceErr
+			return llm.AdvisoryResponse{}, evidenceErr
 		}
 		s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, false, callErr, latency)
-		return "", callErr
+		return llm.AdvisoryResponse{}, callErr
 	}
 	if err := llm.ValidateInferenceBudget(prepared.ContextTokens, prepared.MaxOutputTokens, prepared.Prompt, prepared.PromptHint); err != nil {
 		callErr := fmt.Errorf("prepare inference budget for scope %q: %w", scope, err)
 		latency := time.Since(started)
 		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidencePreparationFailed, "", callErr, latency); evidenceErr != nil {
-			return "", evidenceErr
+			return llm.AdvisoryResponse{}, evidenceErr
 		}
 		s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, false, callErr, latency)
-		return "", callErr
+		return llm.AdvisoryResponse{}, callErr
 	}
 	s.emitStepEvent(stepID, "llm_model_prepared", fmt.Sprintf("scope=%s model=%s context_model=%s", scope, modelName, safeLine(prepared.ContextModel, "unknown")))
 	s.emitStepContextWithBudget(stepID, "llm_model_prepare", strings.Join([]string{
@@ -138,37 +162,58 @@ func (s *Service) llmGenerateSingleAttempt(
 		fmt.Sprintf("context_tokens=%d", prepared.ContextTokens),
 		"response_format=" + safeLine(prepared.ResponseFormat, "text"),
 		fmt.Sprintf("response_schema=%t", len(prepared.ResponseSchema) > 0),
+		fmt.Sprintf("thinking_enabled=%t", prepared.ThinkingEnabled),
 	}, "\n"), 3200)
 
-	raw, err := s.generatePreparedWithProgress(ctx, stepID, scope, prepared)
+	response, err := s.generatePreparedResponseWithProgress(ctx, stepID, scope, prepared)
 	latency := time.Since(started)
+	evidenceResponse, evidenceResponseErr := llmResponseEvidence(response, thinkingEnabled)
+	if evidenceResponseErr != nil {
+		return llm.AdvisoryResponse{}, evidenceResponseErr
+	}
 	if err != nil {
-		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceGenerationFailed, raw, err, latency); evidenceErr != nil {
-			return "", evidenceErr
+		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceGenerationFailed, evidenceResponse, err, latency); evidenceErr != nil {
+			return llm.AdvisoryResponse{}, evidenceErr
 		}
 		s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, false, err, latency)
-		return "", err
+		return llm.AdvisoryResponse{}, err
 	}
-	response := strings.TrimSpace(raw)
-	if response == "" {
+	if err := response.Validate(); err != nil {
 		err = fmt.Errorf("LLM scope %q returned empty output", scope)
-		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceEmptyResponse, raw, err, latency); evidenceErr != nil {
-			return "", evidenceErr
+		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceEmptyResponse, evidenceResponse, err, latency); evidenceErr != nil {
+			return llm.AdvisoryResponse{}, evidenceErr
 		}
 		s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, false, err, latency)
-		return "", err
+		return llm.AdvisoryResponse{}, err
 	}
-	if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceSucceeded, raw, nil, latency); evidenceErr != nil {
-		return "", evidenceErr
+	if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceSucceeded, evidenceResponse, nil, latency); evidenceErr != nil {
+		return llm.AdvisoryResponse{}, evidenceErr
 	}
 	s.recordWorkerLLMCall(ctx, stepID, scope, modelName, len(prompt), attempt, true, nil, latency)
-	s.emitStepEvent(stepID, "llm_response", fmt.Sprintf("scope=%s model=%s chars=%d", scope, modelName, len(response)))
+	s.emitStepEvent(stepID, "llm_response", fmt.Sprintf(
+		"scope=%s model=%s content_chars=%d thinking_chars=%d",
+		scope, modelName, len(response.Content), len(response.Thinking),
+	))
 	s.emitStepContextWithBudget(stepID, "llm_response", strings.Join([]string{
 		"scope=" + scope,
 		"model=" + modelName,
-		fmt.Sprintf("response_chars=%d", len(response)),
-		response,
+		fmt.Sprintf("response_chars=%d", len(response.Content)),
+		response.Content,
 	}, "\n"), 14000)
+	return response, nil
+}
+
+func llmResponseEvidence(response llm.AdvisoryResponse, thinkingEnabled bool) (string, error) {
+	if !thinkingEnabled {
+		return response.Content, nil
+	}
+	if err := response.Validate(); err != nil {
+		return "", nil
+	}
+	raw, err := response.EvidenceJSON()
+	if err != nil {
+		return "", fmt.Errorf("encode exact advisory evidence: %w", err)
+	}
 	return raw, nil
 }
 

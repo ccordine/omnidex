@@ -1,0 +1,101 @@
+{
+  "schema": "omnidex.model-gauntlet.capability-relation-cases.v1",
+  "cases": [
+    {
+      "id": "shared-source-inventory-count-export",
+      "input": {
+        "local_context": "inventory reporting dashboard backed by the same stored inventory records",
+        "left_need": "show the count of current inventory records",
+        "right_need": "export the current inventory records as a spreadsheet"
+      }
+    },
+    {
+      "id": "shared-source-weather-readings",
+      "input": {
+        "local_context": "weather dashboard backed by the same current forecast response",
+        "left_need": "show the current temperature reading",
+        "right_need": "draw the current precipitation forecast chart"
+      }
+    },
+    {
+      "id": "independent-editor-ruler-spellcheck",
+      "input": {
+        "local_context": "document editor preferences",
+        "left_need": "toggle visibility of the layout ruler",
+        "right_need": "select the spell-check language"
+      }
+    },
+    {
+      "id": "left-reads-right-storage-remaining",
+      "input": {
+        "local_context": "storage management panel",
+        "left_need": "show the remaining capacity after current stored objects are accounted for",
+        "right_need": "upload and delete stored objects"
+      }
+    },
+    {
+      "id": "left-reads-right-simulation-summary",
+      "input": {
+        "local_context": "simulation controls",
+        "left_need": "show the result summary from the most recently completed simulation",
+        "right_need": "run a simulation with the current inputs"
+      }
+    },
+    {
+      "id": "left-reads-right-submit-eligibility",
+      "input": {
+        "local_context": "regulated submission form",
+        "left_need": "show whether submission is currently allowed from the required acknowledgements",
+        "right_need": "toggle the required acknowledgement selections"
+      }
+    },
+    {
+      "id": "right-reads-left-currency-conversion",
+      "input": {
+        "local_context": "invoice display",
+        "left_need": "select the active display currency",
+        "right_need": "convert invoice amounts into the active display currency"
+      }
+    },
+    {
+      "id": "right-reads-left-repository-branch",
+      "input": {
+        "local_context": "source repository browser",
+        "left_need": "select the active repository branch",
+        "right_need": "show commits from the active repository branch"
+      }
+    },
+    {
+      "id": "right-reads-left-playback-highlight",
+      "input": {
+        "local_context": "transcript playback viewer",
+        "left_need": "set the active playback speed",
+        "right_need": "advance transcript highlighting using the active playback speed"
+      }
+    },
+    {
+      "id": "bidirectional-fixed-allocation",
+      "input": {
+        "local_context": "two-part allocation editor whose parts must always sum to the fixed total",
+        "left_need": "edit the first allocation and recalculate the current second allocation",
+        "right_need": "edit the second allocation and recalculate the current first allocation"
+      }
+    },
+    {
+      "id": "bidirectional-secret-confirmation",
+      "input": {
+        "local_context": "secret and confirmation editor with live equality validation",
+        "left_need": "edit the secret and validate it against the current confirmation",
+        "right_need": "edit the confirmation and validate it against the current secret"
+      }
+    },
+    {
+      "id": "bidirectional-route-endpoints",
+      "input": {
+        "local_context": "route endpoint selector that forbids identical origin and destination values",
+        "left_need": "choose the origin while excluding the current destination",
+        "right_need": "choose the destination while excluding the current origin"
+      }
+    }
+  ]
+}
