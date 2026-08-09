@@ -31,13 +31,6 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 			PromptHint: "Return only one JSON object that satisfies the supplied response contract.",
 		}, nil
 	}
-	if scope == "portable_advisory_worker" {
-		return llmResponseContract{
-			MaxTokens:  1024,
-			PromptHint: "Return one bounded plain-text advisory memo. Do not emit JSON or make the authoritative decision.",
-		}, nil
-	}
-
 	maxTokens := 0
 	switch {
 	case strings.HasPrefix(scope, "v3_subtask_tool_"):

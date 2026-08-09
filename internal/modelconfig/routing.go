@@ -77,12 +77,6 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("coding_requirement_partition_model"); value != "" {
 		out.Specialist[specialist.RoleCodingRequirementPartitionStation] = value
 	}
-	if value := cfg.Get("coding_requirement_adviser_model"); value != "" {
-		out.Specialist[specialist.RoleCodingRequirementAdviserStation] = value
-	}
-	if value := cfg.Get("coding_requirement_split_model"); value != "" {
-		out.Specialist[specialist.RoleCodingRequirementSplitStation] = value
-	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
 		out.Specialist[specialist.RoleCodingArtifactHandlingStation] = value
 	}

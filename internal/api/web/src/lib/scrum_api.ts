@@ -1,4 +1,5 @@
 import { readJSON } from "./api";
+import type { LifecycleOperationID } from "./lifecycle_operation";
 import { projectQuery } from "./project_api";
 import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCardModalResponse, ScrumChannelPage, ScrumCreateTicketConfig } from "./scrum_types";
 
@@ -258,12 +259,13 @@ export async function patchScrumCard(
 export async function chatScrumCard(
   cardID: string,
   message: string,
+  operationID: LifecycleOperationID,
   projectID?: number | null,
 ): Promise<{ card: ScrumCard; reply: string; error?: string; agent?: string; action?: string }> {
   const response = await fetch(cardURL(cardID, "chat", projectID), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ operation_id: operationID, message }),
   });
   return readJSON(response);
 }

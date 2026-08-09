@@ -128,12 +128,25 @@ func TestPostgresLearnedSkillActivatesOnlyAfterPassingChecks(t *testing.T) {
 
 	digest := sha256.Sum256([]byte(fmt.Sprintf("learned-%d", time.Now().UnixNano())))
 	id := fmt.Sprintf("learned_%x", digest[:16])
+	seedTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seedTx.Rollback(context.Background())
 	var jobID int64
-	if err := pool.QueryRow(ctx, `
+	if err := seedTx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata)
 		VALUES ('worker skill lifecycle test', 'agent', 'completed', '{}'::jsonb)
 		RETURNING id
 	`).Scan(&jobID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seedTx.Exec(ctx, `
+		INSERT INTO job_generations (job_id, generation, purpose) VALUES ($1, 1, 'initial')
+	`, jobID); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedTx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

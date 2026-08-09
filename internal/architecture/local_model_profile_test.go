@@ -11,10 +11,9 @@ import (
 const (
 	localSemanticModel = "qwen3.5:9b-q4_K_M"
 	localFragmentModel = "qwen3-coder:30b"
-	localAdvisoryModel = "deepseek-r1:8b"
 )
 
-func TestLocalModelProfileUsesSemanticAdvisoryAndFragmentModels(t *testing.T) {
+func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 	semanticKeys := []string{
 		"OLLAMA_MODEL",
 		"OLLAMA_MODEL_FAST",
@@ -43,7 +42,6 @@ func TestLocalModelProfileUsesSemanticAdvisoryAndFragmentModels(t *testing.T) {
 		"OLLAMA_MODEL_SPECIALIST_CODING_SURFACE",
 		"OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY",
 		"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION",
-		"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT",
 		"OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING",
 		"OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION",
 		"OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION",
@@ -65,8 +63,13 @@ func TestLocalModelProfileUsesSemanticAdvisoryAndFragmentModels(t *testing.T) {
 				t.Errorf("%s: %s=%q, want %q", name, key, got, localFragmentModel)
 			}
 		}
-		if got := values["OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER"]; got != localAdvisoryModel {
-			t.Errorf("%s: OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER=%q, want %q", name, got, localAdvisoryModel)
+		for _, removed := range []string{
+			"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER",
+			"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT",
+		} {
+			if _, exists := values[removed]; exists {
+				t.Errorf("%s: removed production route %s remains configured", name, removed)
+			}
 		}
 		if got := values["INFERENCE_CONTEXT_TOKENS"]; got != "16384" {
 			t.Errorf("%s: INFERENCE_CONTEXT_TOKENS=%q, want 16384", name, got)

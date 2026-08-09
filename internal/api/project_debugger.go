@@ -121,7 +121,7 @@ func (s *Server) projectDebuggerStatus(ctx context.Context, project model.Projec
 		if jobProjectID != project.ID {
 			return nil, fmt.Errorf("debugger job %d belongs to project %d, expected %d", lastRun.JobID, jobProjectID, project.ID)
 		}
-		details, err := s.repo.GetJobDetails(ctx, lastRun.JobID)
+		details, err := s.repo.CurrentJobDetails(ctx, lastRun.JobID)
 		if err != nil {
 			return nil, fmt.Errorf("load debugger job %d: %w", lastRun.JobID, err)
 		}

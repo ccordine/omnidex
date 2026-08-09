@@ -26,6 +26,9 @@ func directCodingTypeScriptModelFailure(raw string) string {
 		if line == "" || strings.HasPrefix(line, "× ") || directCodingTypeScriptSourceFramePattern.MatchString(line) {
 			continue
 		}
+		if containsModelContextPathIdentity(line) {
+			continue
+		}
 		if marker := strings.Index(line, "[source] > "); marker >= 0 {
 			if focusedFailure {
 				break

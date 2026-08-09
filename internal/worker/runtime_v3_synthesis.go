@@ -101,7 +101,7 @@ func (r *nativeRuntimeV3) runResponseDraft() error {
 		r.svc.emitStepEvent(r.claim.Step.ID, "coding_response_derived", "source=accepted_coding_summary model_calls=0")
 		return r.complete("response_draft", artifact.Response, artifact.Response)
 	}
-	records, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+	records, err := r.svc.repo.ListCurrentEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
 	if err != nil {
 		return fmt.Errorf("list evidence for response composition: %w", err)
 	}

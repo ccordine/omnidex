@@ -52,7 +52,7 @@ func directCodingUnexpectedProgramSources(root string, expected map[string]strin
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", "vendor", "node_modules", "dist", "build", "target":
+			case ".git", ".omni", "vendor", "node_modules", "dist", "build", "target":
 				if path != root {
 					return filepath.SkipDir
 				}

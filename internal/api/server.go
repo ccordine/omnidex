@@ -11,6 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/llmprovider/catalog"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/research"
 	"github.com/gryph/omnidex/internal/secrets"
@@ -116,15 +117,18 @@ type researchIngestResponse struct {
 }
 
 type memoryCandidatePromotionRequest struct {
-	Tier string `json:"tier"`
+	Tier      string                         `json:"tier"`
+	Authority model.MemoryPromotionAuthority `json:"authority"`
 }
 
 type feedbackRequest struct {
-	Feedback string `json:"feedback"`
+	OperationID queue.LifecycleOperationID `json:"operation_id"`
+	Feedback    string                     `json:"feedback"`
 }
 
 type cancelRequest struct {
-	Reason string `json:"reason"`
+	OperationID queue.LifecycleOperationID `json:"operation_id"`
+	Reason      string                     `json:"reason"`
 }
 
 type personaMessage struct {

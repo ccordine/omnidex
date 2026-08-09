@@ -7,14 +7,17 @@ import (
 )
 
 const (
-	KindFileExcerpt   = "file_excerpt"
-	KindCommandOutput = "command_output"
-	KindTestResult    = "test_result"
-	KindWebPage       = "web_page"
-	KindSearchResult  = "search_result"
-	KindMemoryExcerpt = "memory_excerpt"
-	KindGeneratedDiff = "generated_diff"
-	KindModelJudgment = "model_judgment"
+	KindFileExcerpt              = "file_excerpt"
+	KindCommandOutput            = "command_output"
+	KindTestResult               = "test_result"
+	KindWebPage                  = "web_page"
+	KindSearchResult             = "search_result"
+	KindMemoryExcerpt            = "memory_excerpt"
+	KindGeneratedDiff            = "generated_diff"
+	KindModelJudgment            = "model_judgment"
+	KindRepositoryIndex          = "repository_index"
+	KindRepositoryEvidence       = "repository_evidence"
+	KindRepositoryChangeContract = "repository_change_contract"
 )
 
 type Record struct {

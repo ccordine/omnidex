@@ -17,7 +17,11 @@ func (r *nativeRuntimeV3) complete(contextKey, output, contextValue string) erro
 		contextValue = output
 	}
 	r.contexts[contextKey] = contextValue
-	return r.svc.repo.CompleteStep(r.ctx, r.claim.Step.ID, output, contextKey, contextValue)
+	command, err := completeClaimedStepCommand(r.claim, output, contextKey, contextValue)
+	if err != nil {
+		return err
+	}
+	return r.svc.repo.CompleteStep(r.ctx, command)
 }
 
 func (r *nativeRuntimeV3) writeArtifact(kind string, payload any) error {
@@ -28,6 +32,18 @@ func (r *nativeRuntimeV3) writeArtifact(kind string, payload any) error {
 	envelope.JobID = r.claim.Job.ID
 	envelope.StepID = r.claim.Step.ID
 	return r.svc.repo.WriteArtifact(r.ctx, envelope)
+}
+
+func (r *nativeRuntimeV3) writeAcceptedIntentArtifact(
+	payload artifacts.IntentArtifact,
+) error {
+	envelope, err := artifacts.MarshalPayload(artifacts.KindIntent, "1", payload)
+	if err != nil {
+		return err
+	}
+	envelope.JobID = r.claim.Job.ID
+	envelope.StepID = r.claim.Step.ID
+	return r.svc.repo.WriteAcceptedIntentArtifact(r.ctx, envelope)
 }
 
 func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {

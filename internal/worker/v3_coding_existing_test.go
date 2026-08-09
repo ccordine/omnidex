@@ -22,6 +22,17 @@ func TestDirectCodingDetectsExistingImplementationWithoutTreatingProtectedReques
 	if hasImplementation {
 		t.Fatal("protected request was treated as an existing implementation")
 	}
+	internalState := filepath.Join(root, ".omni", "runs", "481")
+	if err := os.MkdirAll(internalState, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(internalState, "projection.ts"), []byte("derived inspection only\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hasImplementation, err = directCodingWorkspaceHasImplementation(root, protected)
+	if err != nil || hasImplementation {
+		t.Fatalf("internal task-state projection became implementation=%t error=%v", hasImplementation, err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

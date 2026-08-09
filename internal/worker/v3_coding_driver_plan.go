@@ -35,14 +35,6 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	adviserModel, err := s.workerModel("coding_requirement_adviser", specialist.RoleCodingRequirementAdviserStation)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	splitModel, err := s.workerModel("coding_requirement_split", specialist.RoleCodingRequirementSplitStation)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
 	identityModel, err := s.workerModel("coding_product_identity", specialist.RoleCodingProductIdentityStation)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -52,9 +44,8 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
-	workerRuntime.AdvisoryModel = adviserModel
 	specification, err := runDirectCodingApplicationInterpreter(
-		workerRuntime, partitionModel, splitModel, surfaceModel, identityModel, artifactModel, redacted, identities,
+		workerRuntime, partitionModel, surfaceModel, identityModel, artifactModel, redacted, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err

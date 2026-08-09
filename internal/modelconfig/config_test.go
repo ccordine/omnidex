@@ -2,6 +2,7 @@ package modelconfig
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/specialist"
@@ -41,11 +42,24 @@ func TestFromJSONRejectsMalformedAndUnknownValues(t *testing.T) {
 		json.RawMessage(`{"thinking_model":"x"}`),
 		json.RawMessage(`{"evaluator_model":"x"}`),
 		json.RawMessage(`{"file_worker_model":"x"}`),
+		json.RawMessage(`{"coding_requirement_adviser_model":"x"}`),
+		json.RawMessage(`{"coding_requirement_split_model":"x"}`),
 		json.RawMessage(`{"default_model":"x"} {}`),
 	} {
 		if _, err := FromJSON(raw); err == nil {
 			t.Fatalf("model config %s must fail", raw)
 		}
+	}
+}
+
+func TestValidateEnvironmentValuesRejectsRemovedRequirementRoutes(t *testing.T) {
+	for _, key := range RemovedEnvironmentKeys() {
+		if err := ValidateEnvironmentValues(map[string]string{key: ""}); err == nil || !strings.Contains(err.Error(), key) {
+			t.Fatalf("key=%s error=%v", key, err)
+		}
+	}
+	if err := ValidateEnvironmentValues(map[string]string{"OMNI_CODING_REQUIREMENT_PARTITION_MODEL": "stable"}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -97,8 +111,6 @@ func TestApplyExpandedRoutingFields(t *testing.T) {
 		"coding_surface_model":               "qwen3:4b-surface",
 		"coding_product_identity_model":      "qwen2.5-coder:14b-identity",
 		"coding_requirement_partition_model": "qwen2.5-coder:7b-partition",
-		"coding_requirement_adviser_model":   "deepseek-r1:8b",
-		"coding_requirement_split_model":     "qwen2.5-coder:7b-split",
 		"coding_artifact_handling_model":     "qwen2.5:3b-artifact",
 		"coding_capability_relation_model":   "qwen3:4b-relation",
 		"coding_skill_selection_model":       "qwen3:4b-skill-select",
@@ -123,12 +135,6 @@ func TestApplyExpandedRoutingFields(t *testing.T) {
 	}
 	if got := applied.Specialist[specialist.RoleCodingRequirementPartitionStation]; got != "qwen2.5-coder:7b-partition" {
 		t.Fatalf("coding requirement partition model=%q", got)
-	}
-	if got := applied.Specialist[specialist.RoleCodingRequirementAdviserStation]; got != "deepseek-r1:8b" {
-		t.Fatalf("coding requirement adviser model=%q", got)
-	}
-	if got := applied.Specialist[specialist.RoleCodingRequirementSplitStation]; got != "qwen2.5-coder:7b-split" {
-		t.Fatalf("coding requirement split model=%q", got)
 	}
 	if got := applied.Specialist[specialist.RoleCodingArtifactHandlingStation]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q", got)

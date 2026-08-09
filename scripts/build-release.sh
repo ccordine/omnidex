@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DIST_DIR="${REPO_ROOT}/dist"
-VERSION="v0.4.0"
-CODENAME="Charmander"
+VERSION="v0.5.0"
+CODENAME="Charmeleon"
 TARGETS=(
   "linux/amd64"
   "linux/arm64"
@@ -28,14 +28,14 @@ Usage:
 
 Options:
   --dist <path>       Output directory (default: ./dist)
-  --version <value>   Version label used in archive names and binary metadata (default: v0.4.0)
-  --codename <value>  Release codename embedded in binary metadata (default: Charmander)
+  --version <value>   Version label used in archive names and binary metadata (default: v0.5.0)
+  --codename <value>  Release codename embedded in binary metadata (default: Charmeleon)
   --target <goos/goarch>
                       Build one target. May be repeated. Defaults to linux/darwin/windows amd64+arm64.
   -h, --help          Show this help
 
 Examples:
-  scripts/build-release.sh --version v0.4.0 --codename Charmander
+  scripts/build-release.sh --version v0.5.0 --codename Charmeleon
   scripts/build-release.sh --target darwin/arm64 --target windows/amd64
 EOF
 }

@@ -103,10 +103,17 @@ omni model:gauntlet repository-retrieval \
   --stable-model qwen3.5:9b-q4_K_M \
   --reasoning-model deepseek-r1:8b \
   --num-ctx 16384 \
-  --cases gauntlets/repository_retrieval/cases.v1.json \
-  --labels gauntlets/repository_retrieval/labels.v1.json \
-  --output /tmp/repository-retrieval-v1.json
+  --cases gauntlets/repository_retrieval/cases.v2.json \
+  --labels gauntlets/repository_retrieval/labels.v2.json \
+  --output /tmp/repository-retrieval-v2.json
 ```
+
+The active v2 contract exposes only three operations with distinct production
+consumers: bounded semantic excerpts, one unambiguous exact symbol declaration,
+and incoming direct symbol references. Exact-symbol ambiguity and a graph result
+that reaches the hard edge boundary are explicit failures. The former
+`diagnostic_context` and `dependency_metadata` labels were removed because they
+had no distinct code-owned retrieval implementation.
 
 ## Evolution rules
 
@@ -191,6 +198,11 @@ No PostgreSQL source index, RAG execution path, or production repository-search
 adviser was added. The typed operation vocabulary and gauntlet remain as a
 measured framework primitive; another renderer must beat the direct baseline
 without reducing validity before database integration is authorized.
+
+That statement describes the historical v1 run only. The v2 contract replaces
+its five-value write-only vocabulary and is evaluated separately; the v1 result
+must not be interpreted as evidence for the three operation-specific production
+consumers.
 
 Exact local evidence: `/tmp/omnidex-repository-retrieval-v1-run1-20260808.json`
 (`sha256:70f0eb63234075557b3ff1584aa92343215152a97b6a178ae03dc35b506b884f`).

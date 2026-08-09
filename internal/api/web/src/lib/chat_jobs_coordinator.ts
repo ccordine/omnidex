@@ -2,6 +2,7 @@ import { jsonRequest, readJSON } from "./api";
 import { emptyState, escapeHTML, formatDateTime, statusPillClass } from "./dom";
 import { renderContext, renderJobsPanel, renderStep, renderStepSummary } from "./render";
 import type { JobContext } from "./types";
+import { LifecycleOperationAttempt } from "./lifecycle_operation";
 
 export interface ChatJobsHost {
   queueEnabled(): boolean;
@@ -35,6 +36,8 @@ export function authoritativeControlJobID(payload: unknown, expectedJobID: strin
 }
 
 export class ChatJobsCoordinator {
+  private readonly lifecycleOperationAttempt = new LifecycleOperationAttempt();
+
   constructor(private readonly host: ChatJobsHost) {}
 
   async load(options: { quiet?: boolean; strict?: boolean } = {}): Promise<void> {
@@ -118,19 +121,32 @@ export class ChatJobsCoordinator {
   }
 
   async cancel(event: Event): Promise<void> {
-    const reason = window.prompt("Cancel reason?", "Canceled from Omni UI");
+    const reason = window.prompt("Cancel reason?", "Canceled from Omni UI")?.trim();
     if (!reason) return;
     const id = jobIDFromEvent(event);
-    await readJSON(await fetch(`/v1/jobs/${id}/cancel`, jsonRequest({ reason })));
+    const attemptKey = { scope: id, action: "cancel", content: reason };
+    const operationID = this.lifecycleOperationAttempt.acquire(attemptKey);
+    const control = await readJSON(await fetch(
+      `/v1/jobs/${id}/cancel`,
+      jsonRequest({ operation_id: operationID, reason }),
+    ));
+    const authoritativeID = authoritativeControlJobID(control, id);
+    this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
     await this.load();
-    this.host.addEvent("job_canceled", { id });
+    this.host.addEvent("job_canceled", { id: authoritativeID });
   }
 
-  private async postControl(id: string, action: string, question: string): Promise<void> {
-    const feedback = window.prompt(question);
+  private async postControl(id: string, action: "interrupt" | "replan", question: string): Promise<void> {
+    const feedback = window.prompt(question)?.trim();
     if (!feedback) return;
-    const control = await readJSON(await fetch(`/v1/jobs/${id}/${action}`, jsonRequest({ feedback })));
+    const attemptKey = { scope: id, action, content: feedback };
+    const operationID = this.lifecycleOperationAttempt.acquire(attemptKey);
+    const control = await readJSON(await fetch(
+      `/v1/jobs/${id}/${action}`,
+      jsonRequest({ operation_id: operationID, feedback }),
+    ));
     const authoritativeID = authoritativeControlJobID(control, id);
+    this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
     const details = await readJSON(await fetch(`/v1/jobs/${authoritativeID}`));
     this.renderDetails(details);
     this.host.addEvent(`job_${action}`, { id: authoritativeID });

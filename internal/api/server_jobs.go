@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/research"
 	"github.com/jackc/pgx/v5"
 )
@@ -29,8 +30,14 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, http.StatusBadRequest, "feedback is required")
 		return
 	}
+	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	job, err := s.repo.ReplanJob(r.Context(), jobID, req.Feedback)
+	job, err := s.repo.ReplanJob(r.Context(), queue.ReplanJobCommand{
+		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job not found")
@@ -67,7 +74,7 @@ func (s *Server) handleMemoryCandidates(w http.ResponseWriter, r *http.Request) 
 	jobID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("job_id")), 10, 64)
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	limit := parseInt(r.URL.Query().Get("limit"), 50)
-	items, err := s.repo.ListMemoryCandidates(r.Context(), jobID, status, limit)
+	items, err := s.repo.ListHistoricalMemoryCandidates(r.Context(), jobID, status, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -356,6 +363,13 @@ func (s *Server) promoteMemoryCandidate(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, "tier must be approved or durable")
 		return
 	}
+	authority := model.MemoryPromotionAuthority(strings.TrimSpace(string(req.Authority)))
+	if authority != model.MemoryPromotionAuthorityCurrent &&
+		authority != model.MemoryPromotionAuthorityHistorical &&
+		authority != model.MemoryPromotionAuthorityGlobal {
+		writeError(w, http.StatusBadRequest, "authority must be current_generation, historical_generation, or global")
+		return
+	}
 
 	candidate, err := s.repo.GetMemoryCandidate(r.Context(), candidateID)
 	if err != nil {
@@ -366,31 +380,46 @@ func (s *Server) promoteMemoryCandidate(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if authority == model.MemoryPromotionAuthorityGlobal && (candidate.JobID != 0 || candidate.Generation != nil) {
+		writeError(w, http.StatusConflict, "global authority requires a global memory candidate")
+		return
+	}
+	if authority != model.MemoryPromotionAuthorityGlobal && (candidate.JobID <= 0 || candidate.Generation == nil) {
+		writeError(w, http.StatusConflict, "job generation authority requires a job-scoped memory candidate")
+		return
+	}
 
-	embed, err := s.llmClient.Embedding(r.Context(), candidate.Content)
+	embed, err := s.requireMemoryEmbedding(r.Context(), candidate.Content)
 	if err != nil {
-		embed = nil
+		log.Printf("memory promotion rejected candidate_id=%d authority=%s: %v", candidate.ID, authority, err)
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
 	}
 	tags := append(memoryCandidateScopeTags(candidate), candidate.CandidateKind)
-	source := fmt.Sprintf("job:%d:reviewed:%s", candidate.JobID, tier)
-	chunk, err := s.repo.AddMemoryChunk(r.Context(), source, candidate.CandidateKind, candidate.Content, tags, embed)
+	promotion := queue.MemoryCandidatePromotion{
+		Candidate: candidate,
+		Tier:      tier,
+		Tags:      tags,
+		Embedding: embed,
+	}
+	var result model.MemoryCandidatePromotionResult
+	switch authority {
+	case model.MemoryPromotionAuthorityCurrent:
+		result, err = s.repo.PromoteCurrentMemoryCandidate(r.Context(), promotion)
+	case model.MemoryPromotionAuthorityHistorical:
+		result, err = s.repo.PromoteHistoricalMemoryCandidate(r.Context(), promotion)
+	case model.MemoryPromotionAuthorityGlobal:
+		result, err = s.repo.PromoteGlobalMemoryCandidate(r.Context(), promotion)
+	}
 	if err != nil {
+		if errors.Is(err, queue.ErrStaleJobGeneration) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.repo.UpdateMemoryCandidateStatus(r.Context(), candidate.ID, tier); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	updated, err := s.repo.GetMemoryCandidate(r.Context(), candidate.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, model.MemoryCandidatePromotionResult{
-		Candidate: updated,
-		Memory:    &chunk,
-	})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) rejectMemoryCandidate(w http.ResponseWriter, r *http.Request, candidateID int64) {
@@ -403,7 +432,7 @@ func (s *Server) rejectMemoryCandidate(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.repo.UpdateMemoryCandidateStatus(r.Context(), candidateID, model.MemoryCandidateStatusRejected); err != nil {
+	if err := s.repo.RejectCurrentMemoryCandidate(r.Context(), item); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -45,7 +45,7 @@ func TestV3CodingFeedbackRequeuesTheSameJob(t *testing.T) {
 		_, _ = pool.Exec(cleanupCtx, `DELETE FROM projects WHERE location = $1`, location)
 	})
 
-	details, err := repo.GetJobDetails(ctx, job.ID)
+	details, err := repo.CurrentJobDetails(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,27 +60,48 @@ func TestV3CodingFeedbackRequeuesTheSameJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	controlled, err := repo.InterruptJob(ctx, job.ID, "Correct the current CLI file; keep completed domain code")
+	controlled, err := repo.InterruptJob(ctx, testReplanCommand(
+		t, job.ID, "v3-feedback", "Correct the current CLI file; keep completed domain code",
+	))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if controlled.ID != job.ID {
 		t.Fatalf("feedback created successor job %d from %d", controlled.ID, job.ID)
 	}
-	details, err = repo.GetJobDetails(ctx, job.ID)
+	details, err = repo.CurrentJobDetails(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if details.Steps[0].Status != model.StepStatusPending {
-		t.Fatalf("coding step status=%s want pending", details.Steps[0].Status)
+	if controlled.CurrentGeneration != 2 || details.Job.CurrentGeneration != 2 {
+		t.Fatalf("interrupt generation controlled=%d details=%d", controlled.CurrentGeneration, details.Job.CurrentGeneration)
 	}
-	found := false
+	if len(details.Steps) != 1 || details.Steps[0].ID == stepID ||
+		details.Steps[0].Generation != 2 || details.Steps[0].Status != model.StepStatusPending {
+		t.Fatalf("current replacement step=%+v, retired=%d", details.Steps, stepID)
+	}
 	for _, item := range details.Contexts {
 		if item.StepID == stepID && item.Key == "user_feedback" && strings.Contains(item.Value, "current CLI file") {
-			found = true
+			t.Fatalf("interrupt leaked feedback into retired step context: %+v", item)
 		}
 	}
-	if !found {
-		t.Fatalf("direct feedback did not reach the same coding step: %+v", details.Contexts)
+	var oldStatus string
+	var supersededAt *int64
+	if err := pool.QueryRow(ctx, `
+		SELECT status, superseded_at_generation FROM job_steps WHERE id=$1
+	`, stepID).Scan(&oldStatus, &supersededAt); err != nil {
+		t.Fatal(err)
+	}
+	if oldStatus != model.StepStatusCanceled || supersededAt == nil || *supersededAt != 2 {
+		t.Fatalf("retired step status=%q superseded_at=%v", oldStatus, supersededAt)
+	}
+	var storedFeedback string
+	if err := pool.QueryRow(ctx, `
+		SELECT feedback FROM job_generations WHERE job_id=$1 AND generation=2
+	`, job.ID).Scan(&storedFeedback); err != nil {
+		t.Fatal(err)
+	}
+	if storedFeedback != "Correct the current CLI file; keep completed domain code" {
+		t.Fatalf("generation feedback=%q", storedFeedback)
 	}
 }

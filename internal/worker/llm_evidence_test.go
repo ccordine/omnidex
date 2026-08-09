@@ -39,8 +39,15 @@ func TestLLMEvidenceCapturesEffectivePreparedRequest(t *testing.T) {
 	record := newLLMCallEvidenceRecord(
 		7, "portable_semantic_worker", "requested-model", "initial system prompt",
 		map[string]any{"type": "object"}, contract, 4096, 2,
-		llmEvidenceWork{ID: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Kind: "application_classification"},
+		llmEvidenceWork{
+			ID:                  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Kind:                "application_classification",
+			ContextProjectionID: "context_projection_" + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		},
 	)
+	if record.ContextProjectionID == "" {
+		t.Fatal("portable LLM evidence omitted its exact context projection binding")
+	}
 	prepared := llm.PreparedModel{
 		BaseModel: "base-model", ContextModel: "effective-model",
 		Prompt: "exact prepared system", PromptHint: "exact prepared user",

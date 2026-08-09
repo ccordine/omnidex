@@ -44,9 +44,9 @@ func (s *Server) handleHostTerminalPreflight(w http.ResponseWriter, r *http.Requ
 }
 
 type terminalConnectionPayload struct {
-	mode     string
-	wsURL    string
-	cwd      string
+	mode      string
+	wsURL     string
+	cwd       string
 	bridgeURL string
 }
 
@@ -141,9 +141,9 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if payload.mode == "direct" {
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"error":   "terminal uses direct host bridge websocket; call /v1/host/terminal/preflight instead",
-			"ws_url":  payload.wsURL,
-			"mode":    "direct",
+			"error":     "terminal uses direct host bridge websocket; call /v1/host/terminal/preflight instead",
+			"ws_url":    payload.wsURL,
+			"mode":      "direct",
 			"workspace": payload.cwd,
 		})
 		return

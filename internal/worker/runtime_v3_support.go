@@ -66,7 +66,7 @@ func requireArtifactPayload[T any](ctx context.Context, repo *queue.Repository, 
 	if strings.TrimSpace(kind) == "" {
 		return zero, fmt.Errorf("read artifact: kind is required")
 	}
-	env, ok, err := repo.LatestArtifact(ctx, jobID, kind)
+	env, ok, err := repo.CurrentArtifact(ctx, jobID, kind)
 	if err != nil {
 		return zero, fmt.Errorf("read %s artifact for job %d: %w", kind, jobID, err)
 	}
@@ -108,7 +108,7 @@ func filterDelegatedSubtasks(subtasks []artifacts.Subtask) []artifacts.Subtask {
 		}
 		seen[key] = struct{}{}
 		out = append(out, subtask)
-		if len(out) >= maxDelegatedSubtasks {
+		if len(out) >= queue.MaxDelegatedSubtasks {
 			break
 		}
 	}

@@ -8,7 +8,6 @@ import (
 // Struggle and outcome event types persisted from the worker pipeline for metrics.
 var telemetryStruggleEventTypes = []string{
 	"step_error",
-	"step_interrupted",
 	"verify_auto_replan",
 	"verify_replan",
 	"verify_hallucination_retry",

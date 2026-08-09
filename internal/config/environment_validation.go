@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
 var integerEnvironmentKeys = []string{
@@ -40,7 +42,7 @@ var durationEnvironmentKeys = []string{
 	"UI_SESSION_TTL",
 }
 
-var removedEnvironmentKeys = []string{
+var removedEnvironmentKeys = append([]string{
 	"OMNIDEX_V3_ENABLED",
 	"STOP_ON_SUFFICIENT_CONTEXT",
 	"SUFFICIENT_CONTEXT_CHARS",
@@ -54,12 +56,12 @@ var removedEnvironmentKeys = []string{
 	"HALLUCINATION_RETRY_LIMIT",
 	"OLLAMA_RESTART_COMMAND",
 	"OLLAMA_RESTART_TIMEOUT",
-}
+}, modelconfig.RemovedEnvironmentKeys()...)
 
 func validateTypedEnvironment() error {
 	for _, key := range removedEnvironmentKeys {
 		if _, exists := os.LookupEnv(key); exists {
-			return fmt.Errorf("%s was removed with the legacy decision engine; delete this setting", key)
+			return fmt.Errorf("%s was removed and is unsupported; delete this setting", key)
 		}
 	}
 	for _, key := range integerEnvironmentKeys {

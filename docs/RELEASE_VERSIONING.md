@@ -7,12 +7,13 @@ Omnidex uses pride release codenames based on National Dex order.
 | `v0.1.0-alpha` | Bulbasaur | 001 | First alpha release. |
 | `v0.2.0` | Ivysaur | 002 | Growth release — memory categories, providers, evidence/playbooks. |
 | `v0.3.0` | Venusaur | 003 | Augmented project planner, draft queue, scrum board, human-in-the-loop agent execution. |
-| **`v0.4.0`** | **Charmander** | 004 | **Current development release** — deterministic AST assembly line, typed semantics, isolated function transforms, and concise live execution. |
-| future | Charmeleon | 005 | Next planned maturity line. |
+| `v0.4.0` | Charmander | 004 | Deterministic AST assembly line, typed semantics, isolated function transforms, and concise live execution. |
+| **`v0.5.0`** | **Charmeleon** | 005 | **Current development release** — repository intelligence, durable task continuity, bounded working sets, and immutable context projections. |
+| future | Charizard | 006 | Next planned maturity line. |
 
 Notes:
 
-- Use the official spellings **Venusaur** and **Charmander**.
+- Use the official spellings **Venusaur**, **Charmander**, and **Charmeleon**.
 - The release codename is embedded in binaries through `internal/version` and `scripts/build-release.sh`.
 - Patch releases keep the same codename unless the release meaning changes substantially.
 - Major maturity jumps follow the National Dex progression instead of arbitrary codenames.
@@ -29,3 +30,7 @@ Charmander replaces the broad, self-confusing coding agent with a server-owned a
 6. Completion is code-authoritative and requires exact workspace reconciliation plus current successful tests.
 
 The initial unattended three-application baseline passes; its exact measurements and explicit limits are in [CHARMANDER_PROOF.md](CHARMANDER_PROOF.md). This proves the three registered Go CLI shapes, not arbitrary-project autonomy. See [`internal/worker/RUNTIME.md`](../internal/worker/RUNTIME.md) for the execution contract. The Venusaur planner remains documented in [SCRUM_PLANNER.md](SCRUM_PLANNER.md).
+
+## Charmeleon (`v0.5.0`) theme
+
+Charmeleon keeps the Charmander authority split and moves repository knowledge, task continuity, active attention, and per-call context into separate code-owned systems. Repository facts remain snapshot- and hash-bound; task state is transactional and job-scoped; working sets are budgeted references; every model-visible projection is immutable evidence. See [CHARMELEON_CONTEXT_SYSTEM.md](CHARMELEON_CONTEXT_SYSTEM.md). Existing-repository mutation remains unclaimed until restart, stale-reference, bounded-context, isolated-verification, and withheld-evaluation gates pass.

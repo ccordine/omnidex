@@ -63,6 +63,25 @@ func executeV3Command(ctx context.Context, call toolruntime.Call) (toolruntime.R
 	if err != nil {
 		return toolruntime.Result{}, err
 	}
+	return executeV3CommandAtRoot(ctx, scope.Root, call)
+}
+
+func executeV3CommandAtRoot(
+	ctx context.Context,
+	root string,
+	call toolruntime.Call,
+) (toolruntime.Result, error) {
+	if ctx == nil {
+		return toolruntime.Result{}, fmt.Errorf("command.run requires a context")
+	}
+	root = strings.TrimSpace(root)
+	if root == "" || !filepath.IsAbs(root) {
+		return toolruntime.Result{}, fmt.Errorf("command.run requires one absolute server-authoritative root")
+	}
+	rootInfo, err := os.Lstat(root)
+	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
+		return toolruntime.Result{}, fmt.Errorf("command.run root is not an exact directory: %s", root)
+	}
 	program := strings.TrimSpace(toolInputString(call.Input, "program"))
 	args, err := strictV3StringArray(call.Input["args"], "args")
 	if err != nil {
@@ -79,7 +98,7 @@ func executeV3Command(ctx context.Context, call toolruntime.Call) (toolruntime.R
 	defer cancel()
 	started := time.Now()
 	cmd := exec.CommandContext(runCtx, program, args...)
-	cmd.Dir = scope.Root
+	cmd.Dir = root
 	cmd.Env = v3CommandEnvironment(os.Environ())
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -124,7 +143,7 @@ func executeV3Command(ctx context.Context, call toolruntime.Call) (toolruntime.R
 			Kind: kind, SourceType: "command", SourceRef: program, Command: commandText,
 			Excerpt: trimForBudget("stdout:\n"+stdoutText+"\nstderr:\n"+stderrText, maxV3CommandOutput), Summary: summary,
 			Confidence: 1, Warnings: warnings,
-			Metadata: map[string]any{"execution": true, "side_effect_possible": true, "succeeded": succeeded, "exit_code": exitCode, "duration_ms": duration.Milliseconds(), "workspace": scope.Root},
+			Metadata: map[string]any{"execution": true, "side_effect_possible": true, "succeeded": succeeded, "exit_code": exitCode, "duration_ms": duration.Milliseconds(), "workspace": root},
 		}},
 	}, nil
 }

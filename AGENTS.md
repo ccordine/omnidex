@@ -87,11 +87,11 @@ Architecture Rules
 
 Omnidex AI Coding Architecture (Non-Negotiable)
 
-The authoritative design is [docs/CHARMANDER_ASSEMBLY_LINE.md](docs/CHARMANDER_ASSEMBLY_LINE.md).
+The authoritative coding foundation is [docs/CHARMANDER_ASSEMBLY_LINE.md](docs/CHARMANDER_ASSEMBLY_LINE.md). The authoritative repository-intelligence and software-defined context evolution is [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md).
 
 Build Codenames Have No Architectural Meaning
 
-Bulbasaur, Ivysaur, Venusaur, and Charmander are only names for successive Omnidex builds. They mark major rewrite milestones. They are not products, agents, runtimes, frameworks, workers, orchestration layers, or workload types. Do not create a `Charmander` subsystem or say that Charmander independently builds an application. Omnidex is the product and this repository currently contains its Charmander build.
+Bulbasaur, Ivysaur, Venusaur, Charmander, and Charmeleon are only names for successive Omnidex builds. They mark major rewrite milestones. They are not products, agents, runtimes, frameworks, workers, orchestration layers, or workload types. Do not create a codename subsystem or say that a codename independently builds an application. Omnidex is the product and this repository currently contains its Charmeleon build.
 
 Omnidex is a deterministic assembly line, not an LLM pretending to be a software team.
 

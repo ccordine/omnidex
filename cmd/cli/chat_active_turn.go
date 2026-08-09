@@ -9,6 +9,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func parseQueuedTurnInput(raw string) (string, bool) {
@@ -88,7 +89,13 @@ func handleActiveTurnSlashCommand(c *client.Client, jobID *int64, line string, u
 		printInteractiveInputHelp()
 		return true, false
 	case "cancel":
-		job, err := c.Cancel(context.Background(), *jobID, body)
+		if strings.TrimSpace(body) == "" {
+			emitSystem(ui, "usage: /cancel <reason>")
+			return true, false
+		}
+		job, err := c.Cancel(context.Background(), queue.CancelJobCommand{
+			OperationID: newLifecycleOperationID(), JobID: *jobID, Reason: body,
+		})
 		if err != nil {
 			emitAssistantError(ui, "error canceling job: "+err.Error())
 			return true, false
@@ -101,7 +108,7 @@ func handleActiveTurnSlashCommand(c *client.Client, jobID *int64, line string, u
 			return true, false
 		}
 		previousID := *jobID
-		job, err := c.Interrupt(context.Background(), previousID, body)
+		job, err := c.Interrupt(context.Background(), previousID, newLifecycleOperationID(), body)
 		if err != nil {
 			emitAssistantError(ui, "error interrupting job: "+err.Error())
 			return true, false
@@ -115,7 +122,7 @@ func handleActiveTurnSlashCommand(c *client.Client, jobID *int64, line string, u
 			return true, false
 		}
 		previousID := *jobID
-		job, err := c.Replan(context.Background(), previousID, body)
+		job, err := c.Replan(context.Background(), previousID, newLifecycleOperationID(), body)
 		if err != nil {
 			emitAssistantError(ui, "error replanning job: "+err.Error())
 			return true, false
@@ -238,7 +245,13 @@ func awaitInteractiveTurn(
 						printInteractiveInputHelp()
 						continue
 					case "cancel":
-						job, err := c.Cancel(context.Background(), jobID, body)
+						if strings.TrimSpace(body) == "" {
+							emitSystem(ui, "usage: /cancel <reason>")
+							continue
+						}
+						job, err := c.Cancel(context.Background(), queue.CancelJobCommand{
+							OperationID: newLifecycleOperationID(), JobID: jobID, Reason: body,
+						})
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "error canceling job: %v\n", err)
 							continue
@@ -250,7 +263,7 @@ func awaitInteractiveTurn(
 							continue
 						}
 						previousID := jobID
-						job, err := c.Interrupt(context.Background(), previousID, body)
+						job, err := c.Interrupt(context.Background(), previousID, newLifecycleOperationID(), body)
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "error interrupting job: %v\n", err)
 							continue
@@ -263,7 +276,7 @@ func awaitInteractiveTurn(
 							continue
 						}
 						previousID := jobID
-						job, err := c.Replan(context.Background(), previousID, body)
+						job, err := c.Replan(context.Background(), previousID, newLifecycleOperationID(), body)
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "error replanning job: %v\n", err)
 							continue
@@ -278,7 +291,7 @@ func awaitInteractiveTurn(
 				}
 
 				previousID := jobID
-				job, err := c.SubmitFeedback(context.Background(), previousID, feedbackInput)
+				job, err := c.SubmitFeedback(context.Background(), previousID, newLifecycleOperationID(), feedbackInput)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error submitting feedback: %v\n", err)
 					continue

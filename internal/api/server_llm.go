@@ -233,12 +233,12 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.HasSuffix(idText, "/inspection") {
+	if strings.HasSuffix(idText, "/history") {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		idText = strings.TrimSuffix(idText, "/inspection")
+		idText = strings.TrimSuffix(idText, "/history")
 		idText = strings.TrimSpace(strings.Trim(idText, "/"))
 		if idText == "" {
 			writeError(w, http.StatusBadRequest, "job id is required")
@@ -249,7 +249,7 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid job id")
 			return
 		}
-		s.inspectJob(w, r, id)
+		s.jobHistory(w, r, id)
 		return
 	}
 
@@ -344,7 +344,7 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	details, err := s.repo.GetJobDetails(r.Context(), id)
+	details, err := s.repo.CurrentJobDetails(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job not found")
@@ -355,24 +355,6 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, details)
-}
-
-func (s *Server) inspectJob(w http.ResponseWriter, r *http.Request, jobID int64) {
-	limit := parseInt(r.URL.Query().Get("limit"), 200)
-	if limit < 1 {
-		limit = 200
-	}
-	inspection, err := s.repo.GetJobInspection(r.Context(), jobID, limit)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "job not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, inspection)
 }
 
 func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID int64) {
@@ -387,8 +369,14 @@ func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID
 		writeError(w, http.StatusBadRequest, "feedback is required")
 		return
 	}
+	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	job, err := s.repo.SubmitJobFeedback(r.Context(), jobID, req.Feedback)
+	job, err := s.repo.SubmitJobFeedback(r.Context(), queue.SubmitJobFeedbackCommand{
+		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job has no pending input request")
@@ -418,8 +406,14 @@ func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int6
 		writeError(w, http.StatusBadRequest, "feedback is required")
 		return
 	}
+	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	job, err := s.repo.InterruptJob(r.Context(), jobID, req.Feedback)
+	job, err := s.repo.InterruptJob(r.Context(), queue.ReplanJobCommand{
+		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job not found")
@@ -443,14 +437,24 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	job, err := s.repo.CancelJob(r.Context(), jobID, req.Reason)
+	job, err := s.repo.CancelJob(r.Context(), queue.CancelJobCommand{
+		OperationID: req.OperationID, JobID: jobID, Reason: req.Reason,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job not found")
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, cancelJobHTTPStatus(err), err.Error())
+		return
+	}
+	if err := validateSameJobAuthority(jobID, job); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	coalescer, coalescerErr := s.ensureJobOutputCoalescer()
@@ -464,4 +468,11 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"job": job,
 	})
+}
+
+func cancelJobHTTPStatus(err error) int {
+	if errors.Is(err, queue.ErrLifecycleOperationConflict) || errors.Is(err, queue.ErrStepNotWritable) {
+		return http.StatusConflict
+	}
+	return http.StatusBadRequest
 }

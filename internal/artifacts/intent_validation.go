@@ -6,7 +6,13 @@ import (
 	"strings"
 )
 
-const maxIntentAcceptanceCriteria = 12
+const (
+	maxIntentAcceptanceCriteria = 12
+	maxIntentCompletionCriteria = 12
+	maxIntentConstraints        = 32
+	maxIntentAmbiguities        = 16
+	maxIntentProjectedTextBytes = 4096
+)
 
 func (a IntentArtifact) Validate() error {
 	violations := make([]string, 0, 8)
@@ -35,25 +41,55 @@ func (a IntentArtifact) Validate() error {
 		} else {
 			seen[id] = struct{}{}
 		}
-		if strings.TrimSpace(objective.Description) == "" {
-			violations = append(violations, fmt.Sprintf("objectives[%d].description is required", index))
+		if !exactBoundedArtifactString(objective.Description, maxIntentProjectedTextBytes) {
+			violations = append(violations, fmt.Sprintf(
+				"objectives[%d].description must contain one exact value of at most %d bytes",
+				index, maxIntentProjectedTextBytes,
+			))
 		}
 		if objective.Priority < 1 || objective.Priority > 100 {
 			violations = append(violations, fmt.Sprintf("objectives[%d].priority must be between 1 and 100", index))
 		}
-		criteria := cleanArtifactStrings(objective.AcceptanceCriteria)
-		if len(criteria) == 0 {
+		if len(objective.AcceptanceCriteria) == 0 {
 			violations = append(violations, fmt.Sprintf("objectives[%d].acceptance_criteria is required", index))
-		} else if len(criteria) > maxIntentAcceptanceCriteria {
+		} else if len(objective.AcceptanceCriteria) > maxIntentAcceptanceCriteria {
 			violations = append(violations, fmt.Sprintf("objectives[%d].acceptance_criteria must contain at most %d items", index, maxIntentAcceptanceCriteria))
+		} else if !exactUniqueBoundedArtifactStrings(objective.AcceptanceCriteria, maxIntentProjectedTextBytes) {
+			violations = append(violations, fmt.Sprintf(
+				"objectives[%d].acceptance_criteria must contain exact unique values of at most %d bytes",
+				index, maxIntentProjectedTextBytes,
+			))
 		}
 		actionObjective = actionObjective || objective.RequiresAction
 	}
 	if a.RequiresAction != actionObjective {
 		violations = append(violations, "requires_action must equal the objective action requirements")
 	}
-	if len(cleanArtifactStrings(a.CompletionCriteria)) == 0 {
+	if len(a.CompletionCriteria) == 0 {
 		violations = append(violations, "completion_criteria is required")
+	} else if len(a.CompletionCriteria) > maxIntentCompletionCriteria {
+		violations = append(violations, fmt.Sprintf("completion_criteria must contain at most %d items", maxIntentCompletionCriteria))
+	} else if !exactUniqueBoundedArtifactStrings(a.CompletionCriteria, maxIntentProjectedTextBytes) {
+		violations = append(violations, fmt.Sprintf(
+			"completion_criteria must contain exact unique values of at most %d bytes",
+			maxIntentProjectedTextBytes,
+		))
+	}
+	if len(a.Constraints) > maxIntentConstraints {
+		violations = append(violations, fmt.Sprintf("constraints must contain at most %d items", maxIntentConstraints))
+	} else if !exactUniqueBoundedArtifactStrings(a.Constraints, maxIntentProjectedTextBytes) {
+		violations = append(violations, fmt.Sprintf(
+			"constraints must contain exact unique values of at most %d bytes",
+			maxIntentProjectedTextBytes,
+		))
+	}
+	if len(a.Ambiguities) > maxIntentAmbiguities {
+		violations = append(violations, fmt.Sprintf("ambiguities must contain at most %d items", maxIntentAmbiguities))
+	} else if !exactUniqueBoundedArtifactStrings(a.Ambiguities, maxIntentProjectedTextBytes) {
+		violations = append(violations, fmt.Sprintf(
+			"ambiguities must contain exact unique values of at most %d bytes",
+			maxIntentProjectedTextBytes,
+		))
 	}
 	if len(violations) > 0 {
 		sort.Strings(violations)
@@ -62,19 +98,21 @@ func (a IntentArtifact) Validate() error {
 	return nil
 }
 
-func cleanArtifactStrings(values []string) []string {
-	out := make([]string, 0, len(values))
+func exactUniqueBoundedArtifactStrings(values []string, maxBytes int) bool {
 	seen := map[string]struct{}{}
 	for _, value := range values {
-		clean := strings.TrimSpace(value)
-		if clean == "" {
-			continue
+		if !exactBoundedArtifactString(value, maxBytes) {
+			return false
 		}
-		if _, exists := seen[clean]; exists {
-			continue
+		if _, exists := seen[value]; exists {
+			return false
 		}
-		seen[clean] = struct{}{}
-		out = append(out, clean)
+		seen[value] = struct{}{}
 	}
-	return out
+	return true
+}
+
+func exactBoundedArtifactString(value string, maxBytes int) bool {
+	return value != "" && value == strings.TrimSpace(value) &&
+		!strings.ContainsRune(value, '\x00') && (maxBytes <= 0 || len([]byte(value)) <= maxBytes)
 }

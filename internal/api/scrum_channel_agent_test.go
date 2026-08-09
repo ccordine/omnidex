@@ -5,13 +5,6 @@ import (
 	"testing"
 )
 
-func TestMoveScrumCardToInProgress(t *testing.T) {
-	card := moveScrumCardToInProgress(ScrumCard{Column: "backlog", PlayState: scrumPlayQueued, QueueOrder: 3})
-	if card.Column != "in_progress" || card.PlayState != "" || card.QueueOrder != 0 {
-		t.Fatalf("card=%+v", card)
-	}
-}
-
 func TestScrumChannelJobMetadata(t *testing.T) {
 	raw, err := scrumChannelJobMetadata([]byte(`{"source":"omni-scrum"}`), "review")
 	if err != nil {

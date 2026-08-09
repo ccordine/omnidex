@@ -9,7 +9,7 @@ import (
 
 func lockedJobTx(ctx context.Context, tx pgx.Tx, jobID int64) (model.Job, error) {
 	return scanJob(tx.QueryRow(ctx, `
-		SELECT id, instruction, pipeline, status, result, error, metadata, created_at, updated_at, completed_at
+		SELECT id, instruction, pipeline, status, result, error, metadata, current_generation, created_at, updated_at, completed_at
 		FROM jobs
 		WHERE id = $1
 		FOR UPDATE

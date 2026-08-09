@@ -1,0 +1,30 @@
+package workingset
+
+import "errors"
+
+var (
+	ErrInvalidSet           = errors.New("invalid working set")
+	ErrSetClosed            = errors.New("working set is closed")
+	ErrClockOverflow        = errors.New("working-set clock exhausted PostgreSQL BIGINT")
+	ErrCapacityExceeded     = errors.New("working-set aggregate capacity exceeded")
+	ErrInvalidBudget        = errors.New("invalid working-set budget")
+	ErrInvalidScope         = errors.New("invalid working-set scope")
+	ErrInvalidItem          = errors.New("invalid working-set item")
+	ErrInvalidReference     = errors.New("invalid stable reference")
+	ErrInvalidAcquisition   = errors.New("invalid acquisition provenance")
+	ErrInvalidRetention     = errors.New("invalid retention")
+	ErrReferenceConflict    = errors.New("resident reference hash conflict")
+	ErrDuplicateItem        = errors.New("duplicate working-set item")
+	ErrDuplicateReference   = errors.New("duplicate resident reference")
+	ErrItemNotFound         = errors.New("working-set item not found")
+	ErrItemNotResident      = errors.New("working-set item is not resident")
+	ErrMembershipExists     = errors.New("scope membership already exists")
+	ErrMembershipNotFound   = errors.New("scope membership not found")
+	ErrScopeClosed          = errors.New("working-set scope is closed")
+	ErrBudgetExceeded       = errors.New("working-set resident budget exceeded")
+	ErrPinnedBudgetExceeded = errors.New("working-set pinned budget exceeded")
+	ErrInvalidCommand       = errors.New("invalid working-set command")
+	ErrCommandIDConflict    = errors.New("working-set command identity conflict")
+	ErrVersionConflict      = errors.New("working-set version conflict")
+	ErrNoStateChange        = errors.New("working-set command would not change state")
+)

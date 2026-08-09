@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -96,18 +97,6 @@ func TestLLMCallEvidenceAllowsPartialOutputOnlyForGenerationFailure(t *testing.T
 	}
 }
 
-func TestListLLMCallEvidenceRequiresBoundedPagination(t *testing.T) {
-	t.Parallel()
-
-	repository := &Repository{}
-	if _, err := repository.ListLLMCallEvidenceForJob(context.Background(), 1, maxLLMCallEvidencePageSize+1, 0); err == nil {
-		t.Fatal("accepted an unbounded evidence page")
-	}
-	if _, err := repository.ListLLMCallEvidenceForJob(context.Background(), 1, 1, -1); err == nil {
-		t.Fatal("accepted a negative evidence offset")
-	}
-}
-
 func TestLLMEvidenceMigrationIsImmutableAndExact(t *testing.T) {
 	t.Parallel()
 
@@ -145,6 +134,7 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	if databaseURL == "" {
 		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL LLM evidence tests")
 	}
+	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pool, err := pgxpool.New(ctx, databaseURL)
@@ -159,18 +149,31 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 
 	marker := fmt.Sprintf("immutable LLM evidence test %d", time.Now().UnixNano())
 	var jobID, stepID int64
-	if err := pool.QueryRow(ctx, `
+	seedTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seedTx.Rollback(context.Background())
+	if err := seedTx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata)
 		VALUES ($1, 'agent', 'completed', '{}'::jsonb)
 		RETURNING id
 	`, marker).Scan(&jobID); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `
-		INSERT INTO job_steps (job_id, action, sort_index, status)
-		VALUES ($1, 'evidence_contract', 0, 'completed')
+	if _, err := seedTx.Exec(ctx, `
+		INSERT INTO job_generations (job_id, generation, purpose) VALUES ($1, 1, 'initial')
+	`, jobID); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedTx.QueryRow(ctx, `
+		INSERT INTO job_steps (job_id, action, sort_index, status, generation)
+		VALUES ($1, 'evidence_contract', 0, 'completed', 1)
 		RETURNING id
 	`, jobID).Scan(&stepID); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedTx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -196,6 +199,9 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	if !created.ThinkingEnabled {
 		t.Fatal("PostgreSQL omitted native thinking state from exact request evidence")
 	}
+	if created.JobGeneration != 1 || created.ContextProjectionID != "" {
+		t.Fatalf("legacy shadow call generation/projection authority=%+v", created)
+	}
 	if _, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
 		StepID: stepID, Scope: "portable_fragment_worker",
 		RequestedModel: "requested-model", Model: "effective-model", Attempt: 1,
@@ -206,12 +212,20 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	items, err := repository.ListLLMCallEvidenceForJob(ctx, jobID, 10, 0)
+	page, err := repository.ReadJobHistoryPage(ctx, jobID, JobHistoryRequest{
+		Stream: JobHistoryLLMCalls, Limit: 10,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 2 || items[0].ID != created.ID || items[1].Response != "partial output" {
-		t.Fatalf("evidence page=%#v", items)
+	if len(page.LLMCalls) != 2 || page.LLMCalls[0].Call.ID != created.ID ||
+		page.LLMCalls[1].Call.Response != "partial output" {
+		t.Fatalf("evidence page=%#v", page.LLMCalls)
+	}
+	for _, item := range page.LLMCalls {
+		if item.Step.StepID != stepID || item.Step.Generation != 1 || item.Step.SupersededAtGeneration != nil {
+			t.Fatalf("LLM evidence step authority=%+v", item.Step)
+		}
 	}
 	if _, err := pool.Exec(ctx, `UPDATE llm_call_evidence SET system_prompt='tampered' WHERE id=$1`, created.ID); err == nil {
 		t.Fatal("database allowed exact model evidence to be edited")

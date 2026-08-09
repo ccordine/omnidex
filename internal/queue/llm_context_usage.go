@@ -89,11 +89,11 @@ type LLMContextUsageDailyPoint struct {
 }
 
 type LLMContextUsageMetricsResponse struct {
-	Summary  LLMContextUsageSummary    `json:"summary"`
-	BySource []LLMContextUsageBySource `json:"by_source"`
-	History  []LLMContextUsageEntry    `json:"history"`
-	Overloads []LLMContextUsageEntry   `json:"overloads"`
-	Daily    []LLMContextUsageDailyPoint `json:"daily"`
+	Summary   LLMContextUsageSummary      `json:"summary"`
+	BySource  []LLMContextUsageBySource   `json:"by_source"`
+	History   []LLMContextUsageEntry      `json:"history"`
+	Overloads []LLMContextUsageEntry      `json:"overloads"`
+	Daily     []LLMContextUsageDailyPoint `json:"daily"`
 }
 
 func llmContextUtilizationPct(sent, limit int) float64 {

@@ -12,6 +12,8 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
+	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 	"github.com/gryph/omnidex/internal/specialist"
 	"github.com/gryph/omnidex/internal/specialists"
 	"github.com/gryph/omnidex/internal/tools"
@@ -35,7 +37,7 @@ type ModelRouting struct {
 	Specialist map[string]string
 }
 
-type stepCompleteFunc func(context.Context, int64, string, string, string) error
+type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
 
 type nativeV3StepRunner func(context.Context, *model.ClaimedStep, map[string]string, string) error
 
@@ -78,6 +80,8 @@ type Service struct {
 	embeddingModel         string
 	models                 ModelRouting
 	workspace              *workspace.Service
+	repositoryIndex        repositoryIndexRefresher
+	repositoryRetrieval    repositoryEvidenceBuilder
 	workspaceHostRoot      string
 	bootstrapRegistry      *specialists.Registry
 	skillMu                sync.RWMutex
@@ -116,6 +120,14 @@ func New(
 	if err != nil {
 		return nil, fmt.Errorf("configure workspace scanner: %w", err)
 	}
+	repositoryIndex, err := repositoryindex.New(repo)
+	if err != nil {
+		return nil, fmt.Errorf("configure repository indexer: %w", err)
+	}
+	repositoryRetrieval, err := repositoryretrieval.New(repo)
+	if err != nil {
+		return nil, fmt.Errorf("configure repository retrieval: %w", err)
+	}
 
 	skillRegistry, err := specialists.LoadRegistry(opts.SkillsRoot)
 	if err != nil {
@@ -142,6 +154,8 @@ func New(
 		embeddingModel:         opts.EmbeddingModel,
 		models:                 opts.Models,
 		workspace:              workspaceSvc,
+		repositoryIndex:        repositoryIndex,
+		repositoryRetrieval:    repositoryRetrieval,
 		workspaceHostRoot:      opts.Workspace.HostRoot,
 		bootstrapRegistry:      skillRegistry,
 		completeStep:           completeStep,
@@ -161,10 +175,10 @@ func (s *Service) wrapStepCompleter(complete stepCompleteFunc) stepCompleteFunc 
 	if complete == nil {
 		return nil
 	}
-	return func(ctx context.Context, stepID int64, output, contextKey, contextValue string) error {
-		err := complete(ctx, stepID, output, contextKey, contextValue)
+	return func(ctx context.Context, command queue.CompleteStepCommand) error {
+		err := complete(ctx, command)
 		if err == nil {
-			s.notifyJobFinishedForStep(ctx, stepID)
+			s.notifyJobFinishedForStep(ctx, command.StepID)
 		}
 		return err
 	}
@@ -185,7 +199,7 @@ func (s *Service) notifyJobFinishedForJob(ctx context.Context, jobID int64) {
 	if s.onJobFinished == nil || s.repo == nil || jobID <= 0 {
 		return
 	}
-	details, err := s.repo.GetJobDetails(ctx, jobID)
+	details, err := s.repo.CurrentJobDetails(ctx, jobID)
 	if err != nil {
 		return
 	}
@@ -259,12 +273,8 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.refreshSkillRegistry(ctx); err != nil {
 		return fmt.Errorf("initialize authoritative worker skill registry: %w", err)
 	}
-	recovered, err := s.repo.RecoverStaleV3Steps(ctx, time.Now().Add(-staleV3StepLease))
-	if err != nil {
-		return fmt.Errorf("recover stale V3 worker leases: %w", err)
-	}
-	if recovered > 0 {
-		s.logger.Printf("recovered stale V3 worker leases count=%d", recovered)
+	if err := s.repo.CheckStaleV3StepLeases(ctx, time.Now().Add(-staleV3StepLease)); err != nil {
+		return fmt.Errorf("validate V3 worker leases: %w", err)
 	}
 	var wg sync.WaitGroup
 	for i := 0; i < s.workerCount; i++ {
@@ -323,7 +333,12 @@ func (s *Service) run(ctx context.Context, workerID string) {
 			}
 			s.emitStepEvent(claim.Step.ID, "step_error", err.Error())
 			s.logger.Printf("worker=%s job=%d step=%d action=%s failed: %v", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err)
-			failErr := s.repo.FailStep(ctx, claim.Step.ID, err.Error())
+			failCommand, identityErr := failClaimedStepCommand(claim, err.Error())
+			if identityErr != nil {
+				s.logger.Printf("worker=%s job=%d step=%d failure identity error: %v", workerID, claim.Job.ID, claim.Step.ID, identityErr)
+				continue
+			}
+			failErr := s.repo.FailStep(ctx, failCommand)
 			if failErr != nil {
 				s.logger.Printf("worker=%s job=%d step=%d fail update error: %v", workerID, claim.Job.ID, claim.Step.ID, failErr)
 			} else {
@@ -398,7 +413,7 @@ func (s *Service) watchStepControl(ctx context.Context, jobID, stepID int64) (co
 				cancel()
 				return
 			}
-			if stepStatus == model.StepStatusPending || stepStatus == model.StepStatusCanceled {
+			if stepStatus == model.StepStatusCanceled {
 				cancel()
 				return
 			}
@@ -432,11 +447,5 @@ func (s *Service) skipFailureForControlledCancel(ctx context.Context, workerID s
 		s.emitStepEvent(claim.Step.ID, "step_canceled", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
 		return true
 	}
-	if stepStatus == model.StepStatusPending {
-		s.logger.Printf("worker=%s job=%d step=%d action=%s interrupted and re-queued", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action)
-		s.emitStepEvent(claim.Step.ID, "step_interrupted", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
-		return true
-	}
-
 	return false
 }

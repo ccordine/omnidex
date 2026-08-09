@@ -10,8 +10,8 @@ func EvaluateRepositoryRetrieval(
 	report RepositoryRetrievalReport,
 	labels []RepositoryRetrievalLabel,
 ) (RepositoryRetrievalEvaluation, error) {
-	if report.Schema != RepositoryRetrievalReportSchemaV1 {
-		return RepositoryRetrievalEvaluation{}, fmt.Errorf("repository retrieval report schema must be %q", RepositoryRetrievalReportSchemaV1)
+	if report.Schema != RepositoryRetrievalReportSchemaV2 {
+		return RepositoryRetrievalEvaluation{}, fmt.Errorf("repository retrieval report schema must be %q", RepositoryRetrievalReportSchemaV2)
 	}
 	caseIDs := make(map[string]struct{}, len(report.Cases))
 	inputs := make(map[string]assemblyline.RepositoryRetrievalInput, len(report.Cases))
@@ -80,7 +80,7 @@ func validateRepositoryRetrievalLabels(
 			return nil, fmt.Errorf("repository retrieval label for case %q is duplicated", label.CaseID)
 		}
 		decision := assemblyline.RepositoryRetrievalDecision{
-			Schema:    assemblyline.RepositoryRetrievalSchemaV1,
+			Schema:    assemblyline.RepositoryRetrievalSchemaV2,
 			Operation: label.Operation, QueryQuote: label.QueryQuote,
 		}
 		if err := decision.ValidateFor(input); err != nil {

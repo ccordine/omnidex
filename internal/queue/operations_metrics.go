@@ -10,7 +10,6 @@ import (
 
 var telemetryFailureEventTypes = []string{
 	"step_error",
-	"step_interrupted",
 	"step_canceled",
 	"llm_error",
 	"llm_retry_same_model",

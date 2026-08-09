@@ -2,12 +2,16 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // embeddedSchemaMigrationCutoff is the last migrations/*.sql file whose changes are
@@ -49,28 +53,36 @@ func ResolveMigrationsDir() string {
 	return ""
 }
 
-func (r *Repository) ApplyFileMigrations(ctx context.Context, dir string) error {
+func (r *Repository) ApplyFileMigrations(ctx context.Context, dir string) (resultErr error) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return nil
-	}
-	if _, err := r.pool.Exec(ctx, schemaMigrationsTableSQL); err != nil {
-		return fmt.Errorf("ensure schema_migrations table: %w", err)
 	}
 
 	files, err := listMigrationFiles(dir)
 	if err != nil {
 		return err
 	}
+
+	conn, err := r.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire file migration connection: %w", err)
+	}
+	if err := acquireFileMigrationLock(ctx, conn); err != nil {
+		return errors.Join(err, destroyLockedConnection(conn))
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, releaseFileMigrationLock(conn))
+	}()
+
+	if err := prepareFileMigrationLedger(ctx, conn, files); err != nil {
+		return err
+	}
 	if len(files) == 0 {
 		return nil
 	}
 
-	if err := r.bootstrapFileMigrationLedger(ctx, files); err != nil {
-		return err
-	}
-
-	applied, err := r.loadAppliedFileMigrations(ctx)
+	applied, err := loadAppliedFileMigrations(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -88,11 +100,8 @@ func (r *Repository) ApplyFileMigrations(ctx context.Context, dir string) error 
 		if body == "" {
 			return fmt.Errorf("migration %s is empty", name)
 		}
-		if _, err := r.pool.Exec(ctx, body); err != nil {
-			return fmt.Errorf("apply migration %s: %w", name, err)
-		}
-		if _, err := r.pool.Exec(ctx, `INSERT INTO schema_migrations (filename) VALUES ($1)`, name); err != nil {
-			return fmt.Errorf("record migration %s: %w", name, err)
+		if err := applyFileMigration(ctx, conn, name, body); err != nil {
+			return err
 		}
 		log.Printf("schema migration applied: %s", name)
 	}
@@ -134,17 +143,36 @@ func isNumberedMigrationFile(name string) bool {
 	return name[3] == '_'
 }
 
-func (r *Repository) bootstrapFileMigrationLedger(ctx context.Context, files []string) error {
-	var count int
-	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
+func prepareFileMigrationLedger(ctx context.Context, conn *pgxpool.Conn, files []string) error {
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin file migration ledger transaction: %w", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	if _, err := tx.Exec(ctx, schemaMigrationsTableSQL); err != nil {
+		return fmt.Errorf("ensure schema_migrations table: %w", err)
+	}
+	if err := bootstrapFileMigrationLedger(ctx, tx, files); err != nil {
 		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit file migration ledger transaction: %w", err)
+	}
+	return nil
+}
+
+func bootstrapFileMigrationLedger(ctx context.Context, tx pgx.Tx, files []string) error {
+	var count int
+	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
+		return fmt.Errorf("count applied file migrations: %w", err)
 	}
 	if count > 0 {
 		return nil
 	}
 
 	var jobsExists bool
-	if err := r.pool.QueryRow(ctx, `
+	if err := tx.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM information_schema.tables
@@ -152,7 +180,7 @@ func (r *Repository) bootstrapFileMigrationLedger(ctx context.Context, files []s
 			  AND table_name = 'jobs'
 		)
 	`).Scan(&jobsExists); err != nil {
-		return err
+		return fmt.Errorf("inspect embedded migration schema: %w", err)
 	}
 	if !jobsExists {
 		return nil
@@ -162,7 +190,7 @@ func (r *Repository) bootstrapFileMigrationLedger(ctx context.Context, files []s
 		if name > embeddedSchemaMigrationCutoff {
 			continue
 		}
-		if _, err := r.pool.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO schema_migrations (filename)
 			VALUES ($1)
 			ON CONFLICT (filename) DO NOTHING
@@ -173,10 +201,10 @@ func (r *Repository) bootstrapFileMigrationLedger(ctx context.Context, files []s
 	return nil
 }
 
-func (r *Repository) loadAppliedFileMigrations(ctx context.Context) (map[string]bool, error) {
-	rows, err := r.pool.Query(ctx, `SELECT filename FROM schema_migrations`)
+func loadAppliedFileMigrations(ctx context.Context, conn *pgxpool.Conn) (map[string]bool, error) {
+	rows, err := conn.Query(ctx, `SELECT filename FROM schema_migrations`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load applied file migrations: %w", err)
 	}
 	defer rows.Close()
 
@@ -189,4 +217,23 @@ func (r *Repository) loadAppliedFileMigrations(ctx context.Context) (map[string]
 		out[name] = true
 	}
 	return out, rows.Err()
+}
+
+func applyFileMigration(ctx context.Context, conn *pgxpool.Conn, name, body string) error {
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin migration %s: %w", name, err)
+	}
+	defer tx.Rollback(context.Background())
+
+	if _, err := tx.Exec(ctx, body); err != nil {
+		return fmt.Errorf("apply migration %s: %w", name, err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations (filename) VALUES ($1)`, name); err != nil {
+		return fmt.Errorf("record migration %s: %w", name, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit migration %s: %w", name, err)
+	}
+	return nil
 }

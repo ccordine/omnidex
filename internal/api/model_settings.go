@@ -68,6 +68,9 @@ func writeEnvFile(path string, updates map[string]string) error {
 	if err != nil {
 		return err
 	}
+	if err := modelconfig.ValidateEnvironmentValues(existing); err != nil {
+		return err
+	}
 	for key, value := range updates {
 		key = strings.TrimSpace(key)
 		if key == "" {
@@ -104,6 +107,9 @@ func buildModelSettingsResponse() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := modelconfig.ValidateEnvironmentValues(values); err != nil {
+		return nil, err
+	}
 	fields := (modelconfig.Config{}).FieldList(values)
 	return map[string]any{
 		"env_file": path,
@@ -126,6 +132,10 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		if err := validateModelSettingKeys(req.Values); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		path, err := resolveEnvFilePath()
@@ -152,4 +162,22 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func validateModelSettingKeys(values map[string]string) error {
+	allowed := make(map[string]struct{}, len(modelconfig.Fields))
+	for _, field := range modelconfig.Fields {
+		allowed[field.Key] = struct{}{}
+	}
+	unknown := make([]string, 0)
+	for key := range values {
+		if _, ok := allowed[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	sort.Strings(unknown)
+	return fmt.Errorf("model settings contain unsupported field %q", unknown[0])
 }

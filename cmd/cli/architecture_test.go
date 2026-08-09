@@ -127,6 +127,47 @@ func TestCLIHasNoHeuristicResearchSidecar(t *testing.T) {
 	}
 }
 
+func TestCancelCommandRequiresExplicitReasonAndOperationIdentity(t *testing.T) {
+	source := readCLISource(t, "job_control_commands.go")
+	for _, required := range []string{
+		`if len(args) < 2`,
+		`cancel requires [--operation-id id] <job-id> <reason>`,
+		`if reason == ""`,
+		`OperationID: operationID`,
+		`announceLifecycleOperationID(operationID)`,
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("cancel command is missing %q", required)
+		}
+	}
+	if help := readCLISource(t, "cli_help.go"); !strings.Contains(help, "cancel [--operation-id id] <job-id> <reason>") {
+		t.Error("CLI help does not require a cancellation reason")
+	}
+}
+
+func TestLifecycleCLICommandsExposeRetryIdentityBeforeRequest(t *testing.T) {
+	for _, path := range []string{"job_control_commands.go", "feedback_command.go"} {
+		source := readCLISource(t, path)
+		if !strings.Contains(source, "parseLifecycleOperationArgs(args)") {
+			t.Errorf("%s does not accept an explicit retry identity", path)
+		}
+		if !strings.Contains(source, "announceLifecycleOperationID(operationID)") {
+			t.Errorf("%s does not surface its lifecycle identity before submission", path)
+		}
+	}
+	help := readCLISource(t, "cli_help.go")
+	for _, command := range []string{"interrupt", "replan", "cancel", "feedback"} {
+		if !strings.Contains(help, command+" [--operation-id id]") {
+			t.Errorf("CLI help omits retry identity for %s", command)
+		}
+	}
+	if source := readCLISource(t, "lifecycle_operation.go"); !strings.Contains(
+		source, "announceLifecycleOperationID(id)",
+	) {
+		t.Error("interactive lifecycle controls do not surface their generated retry identity")
+	}
+}
+
 func TestCLIHasNoWriteOnlyAgentControls(t *testing.T) {
 	if _, err := os.Stat("execution_profile.go"); !os.IsNotExist(err) {
 		t.Fatal("execution_profile.go must be absent; it only configured metadata the runtime never consumed")

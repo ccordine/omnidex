@@ -41,7 +41,9 @@ func (s *Service) emitStepEvent(stepID int64, eventType, message string) {
 		"event=" + strings.TrimSpace(eventType),
 		strings.TrimSpace(message),
 	}, " "))
-	s.emitStepContext(stepID, "event", payload)
+	if eventType != "step_complete" && eventType != "step_canceled" {
+		s.emitStepContext(stepID, "event", payload)
+	}
 	if s.repo == nil {
 		return
 	}

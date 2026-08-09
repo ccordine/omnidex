@@ -65,7 +65,7 @@ func (s *Service) runScrumCardLLMStep(ctx context.Context, claim *model.ClaimedS
 		completeStep = s.repo.CompleteStep
 	}
 	s.emitStepEvent(claim.Step.ID, "scrum_card_llm_completed", summary)
-	return completeStep(ctx, claim.Step.ID, string(payloadBytes), "scrum_card_llm", summary)
+	return invokeCompleteClaimedStep(ctx, completeStep, claim, string(payloadBytes), "scrum_card_llm", summary)
 }
 
 func (s *Service) runScrumCardTagsSuggestJob(

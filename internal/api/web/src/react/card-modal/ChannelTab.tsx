@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { chatScrumCard, fetchScrumChannelPage } from "../../lib/scrum_api";
+import { LifecycleOperationAttempt } from "../../lib/lifecycle_operation";
 import type { ScrumChatMessage } from "../../lib/scrum_types";
 import { ActionButton, EmptyState, Panel, submitForm, TextArea } from "./common";
 import type { CardModalChildProps } from "./types";
@@ -43,6 +44,8 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
   const pinnedToBottomRef = useRef(true);
   const previousMessageCountRef = useRef(0);
   const historyAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const channelOperationAttemptRef = useRef<LifecycleOperationAttempt | null>(null);
+  if (!channelOperationAttemptRef.current) channelOperationAttemptRef.current = new LifecycleOperationAttempt();
   const messages = useMemo(() => mergeMessages(earlierMessages, recentMessages), [earlierMessages, recentMessages]);
 
   useEffect(() => {
@@ -155,10 +158,21 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
         </div>
         <form
           onSubmit={submitForm(async () => {
-            if (!message.trim()) return;
-            const payload = await runMutation("Sending channel message", () => chatScrumCard(card.id, message, projectID));
-            if (payload?.card) onCardUpdated(payload.card, { reloadContext: true });
-            setMessage("");
+            const submittedMessage = message.trim();
+            if (!submittedMessage) return;
+            const attempt = channelOperationAttemptRef.current;
+            if (!attempt) throw new Error("Card channel lifecycle attempt is unavailable.");
+            const attemptKey = { scope: card.id, action: "chat", content: submittedMessage };
+            const operationID = attempt.acquire(attemptKey);
+            const payload = await runMutation(
+              "Sending channel message",
+              () => chatScrumCard(card.id, submittedMessage, operationID, projectID),
+            );
+            if (!payload?.card) return;
+            onCardUpdated(payload.card, { reloadContext: true });
+            if (attempt.confirm(attemptKey, operationID)) {
+              setMessage((current) => current.trim() === submittedMessage ? "" : current);
+            }
           })}
           className="flex gap-2"
         >

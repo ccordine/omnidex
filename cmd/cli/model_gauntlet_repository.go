@@ -18,8 +18,8 @@ func runRepositoryRetrievalGauntlet(args []string) {
 		die(err.Error())
 	}
 	fs := flag.NewFlagSet("model:gauntlet repository-retrieval", flag.ExitOnError)
-	casesPath := fs.String("cases", "gauntlets/repository_retrieval/cases.v1.json", "versioned path-blind cases file")
-	labelsPath := fs.String("labels", "gauntlets/repository_retrieval/labels.v1.json", "independent labels file loaded only after inference")
+	casesPath := fs.String("cases", "gauntlets/repository_retrieval/cases.v2.json", "versioned path-blind cases file")
+	labelsPath := fs.String("labels", "gauntlets/repository_retrieval/labels.v2.json", "independent labels file loaded only after inference")
 	outputPath := fs.String("output", "", "new evidence file; existing files are never overwritten")
 	stableModel := fs.String("stable-model", ollamaPrewarmDefaultModel(), "exact Ollama stable model")
 	reasoningModel := fs.String("reasoning-model", getenv("OMNIDEX_GAUNTLET_REASONING_MODEL", "deepseek-r1:8b"), "exact Ollama advisory reasoner")
@@ -93,7 +93,7 @@ func executeRepositoryRetrievalGauntlet(
 		return modelgauntlet.RepositoryRetrievalResult{}, err
 	}
 	result := modelgauntlet.RepositoryRetrievalResult{
-		Schema:      modelgauntlet.RepositoryRetrievalResultSchemaV1,
+		Schema:      modelgauntlet.RepositoryRetrievalResultSchemaV2,
 		LabelSHA256: labelHash, Report: report, Evaluation: evaluation,
 	}
 	if err := modelgauntlet.WriteRepositoryRetrievalResult(options.OutputPath, result); err != nil {

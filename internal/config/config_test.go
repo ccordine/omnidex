@@ -113,8 +113,6 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_SURFACE", "qwen3:4b-thinking")
 	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY", "qwen2.5-coder:14b-identity")
 	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION", "qwen2.5-coder:7b-partition")
-	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER", "deepseek-r1:8b")
-	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT", "qwen2.5-coder:7b-split")
 	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING", "qwen2.5:3b-artifact")
 	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION", "qwen3:4b-relation")
 	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION", "qwen3:4b-skill-selection")
@@ -134,12 +132,6 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	}
 	if got := cfg.SpecialistModels[specialist.RoleCodingRequirementPartitionStation]; got != "qwen2.5-coder:7b-partition" {
 		t.Fatalf("coding requirement partition model=%q want dedicated override", got)
-	}
-	if got := cfg.SpecialistModels[specialist.RoleCodingRequirementAdviserStation]; got != "deepseek-r1:8b" {
-		t.Fatalf("coding requirement adviser model=%q want dedicated override", got)
-	}
-	if got := cfg.SpecialistModels[specialist.RoleCodingRequirementSplitStation]; got != "qwen2.5-coder:7b-split" {
-		t.Fatalf("coding requirement split model=%q want dedicated override", got)
 	}
 	if got := cfg.SpecialistModels[specialist.RoleCodingArtifactHandlingStation]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q want dedicated override", got)
@@ -161,6 +153,24 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	}
 	if cfg.CodingFragmentConcurrency != 1 {
 		t.Fatalf("local fragment concurrency=%d want 1", cfg.CodingFragmentConcurrency)
+	}
+}
+
+func TestLoadRejectsRemovedRequirementModelEnvironmentRoutes(t *testing.T) {
+	for _, key := range []string{
+		"OMNI_CODING_REQUIREMENT_ADVISER_MODEL",
+		"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER",
+		"OMNI_CODING_REQUIREMENT_SPLIT_MODEL",
+		"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT",
+	} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", "")
+			t.Setenv("WRAPPER_ONLY", "true")
+			t.Setenv(key, "removed-model")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("Load() error=%v, want explicit rejection of %s", err, key)
+			}
+		})
 	}
 }
 

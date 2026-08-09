@@ -76,6 +76,13 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildRepositoryRetrievalPrompt(input)
 		return prompt, RepositoryRetrievalResponseSchema(), err
+	case WorkRepositoryChangeSurface:
+		var input RepositoryChangeSurfaceInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryChangeSurfacePrompt(input)
+		return prompt, RepositoryChangeSurfaceResponseSchema(input), err
 	case WorkRetrievalBriefing:
 		var input RepositoryRetrievalInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -131,6 +138,13 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 			return "", nil, err
 		}
 		return renderPortableFragmentGeneration(input)
+	case WorkFragmentModification:
+		var input FragmentModificationInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildGoFragmentModificationPrompt(input)
+		return prompt, nil, err
 	case WorkFragmentCorrection:
 		var input FragmentCorrectionInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -162,18 +176,23 @@ func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, ma
 }
 
 func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, map[string]any, error) {
-	if input.Language != "typescript" {
+	switch input.Language {
+	case "go":
+		prompt, err := BuildGoFragmentCorrectionPrompt(input)
+		return prompt, nil, err
+	case "typescript":
+		prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
+			Signature:      input.Signature,
+			Available:      strings.Join(input.Capabilities, "\n"),
+			Globals:        input.PermittedSymbols,
+			Current:        input.CurrentDeclaration,
+			RequiredChange: input.RequiredChange,
+			Diagnostic:     input.Diagnostic,
+		})
+		return prompt, nil, err
+	default:
 		return "", nil, fmt.Errorf("no fragment renderer supports language %q", input.Language)
 	}
-	prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-		Signature:      input.Signature,
-		Available:      strings.Join(input.Capabilities, "\n"),
-		Globals:        input.PermittedSymbols,
-		Current:        input.CurrentDeclaration,
-		RequiredChange: input.RequiredChange,
-		Diagnostic:     input.Diagnostic,
-	})
-	return prompt, nil, err
 }
 
 func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, map[string]any, error) {

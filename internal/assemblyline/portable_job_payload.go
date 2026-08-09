@@ -25,6 +25,8 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[RequirementFinalSynthesisInput](payload, RequirementFinalSynthesisInput.validate)
 	case WorkRepositoryRetrieval:
 		return decodeAndValidatePortablePayload[RepositoryRetrievalInput](payload, RepositoryRetrievalInput.validate)
+	case WorkRepositoryChangeSurface:
+		return decodeAndValidatePortablePayload[RepositoryChangeSurfaceInput](payload, RepositoryChangeSurfaceInput.validate)
 	case WorkRetrievalBriefing:
 		return decodeAndValidatePortablePayload[RepositoryRetrievalInput](payload, RepositoryRetrievalInput.validate)
 	case WorkRetrievalAdvisory:
@@ -41,6 +43,8 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[SkillSelectionInput](payload, SkillSelectionInput.validate)
 	case WorkFragmentGeneration:
 		return decodeAndValidatePortablePayload[FragmentGenerationInput](payload, FragmentGenerationInput.validate)
+	case WorkFragmentModification:
+		return decodeAndValidatePortablePayload[FragmentModificationInput](payload, FragmentModificationInput.validate)
 	case WorkFragmentCorrection:
 		return decodeAndValidatePortablePayload[FragmentCorrectionInput](payload, FragmentCorrectionInput.validate)
 	case WorkResponseCorrection:

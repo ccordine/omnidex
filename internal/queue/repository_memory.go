@@ -87,46 +87,8 @@ func (r *Repository) AddMemoryChunk(ctx context.Context, source, kind, content s
 		}
 	}
 
-	categories := inferMemoryCategories(kind, tags)
-	cleaned := decorateMemoryTags(source, appendCleanTags(tags, memoryCategoryTags(categories)...))
-	for _, tag := range cleaned {
-		var tagID int64
-		err := tx.QueryRow(ctx, `
-			INSERT INTO tags(name) VALUES ($1)
-			ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name
-			RETURNING id
-		`, tag).Scan(&tagID)
-		if err != nil {
-			return model.MemoryChunk{}, err
-		}
-
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO memory_chunk_tags (memory_chunk_id, tag_id)
-			VALUES ($1, $2)
-			ON CONFLICT(memory_chunk_id, tag_id) DO NOTHING
-		`, chunk.ID, tagID); err != nil {
-			return model.MemoryChunk{}, err
-		}
-	}
-
-	for _, category := range categories {
-		var categoryID int64
-		err := tx.QueryRow(ctx, `
-			INSERT INTO memory_categories(name) VALUES ($1)
-			ON CONFLICT(name) DO UPDATE SET name = EXCLUDED.name
-			RETURNING id
-		`, category).Scan(&categoryID)
-		if err != nil {
-			return model.MemoryChunk{}, err
-		}
-
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO memory_chunk_categories (memory_chunk_id, category_id)
-			VALUES ($1, $2)
-			ON CONFLICT(memory_chunk_id, category_id) DO NOTHING
-		`, chunk.ID, categoryID); err != nil {
-			return model.MemoryChunk{}, err
-		}
+	if err := attachMemoryTaxonomyTx(ctx, tx, chunk.ID, source, kind, tags); err != nil {
+		return model.MemoryChunk{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

@@ -176,32 +176,6 @@ func (s *Server) scrumDeleteCard(r *http.Request, cardID string) error {
 	return s.repo.DeleteScrumCard(r.Context(), projectID, cardID)
 }
 
-func (s *Server) scrumAppendChat(r *http.Request, cardID, role, content string) (ScrumCard, error) {
-	card, _, projectID, err := s.scrumGetCard(r, cardID)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	card.Chat = append(card.Chat, ScrumChatMessage{
-		ID:        newScrumChatMessageID(role, content),
-		Role:      strings.TrimSpace(role),
-		Content:   strings.TrimSpace(content),
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	})
-	card.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if s.repo == nil || projectID <= 0 {
-		return ScrumCard{}, fmt.Errorf("postgres repository and project are required for Scrum")
-	}
-	patch, err := apiScrumCardToPatch(card)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patch)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	return dbScrumCardToAPI(updated)
-}
-
 func (s *Server) scrumSetCardJob(r *http.Request, cardID, jobID, column, consoleLog string) (ScrumCard, error) {
 	card, _, projectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {

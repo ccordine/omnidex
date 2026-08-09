@@ -167,7 +167,7 @@ func TestScrumCardLLMEnqueueIsAtomicAndHasNoDuplicateFallback(t *testing.T) {
 		"s.repo.EnqueueJob(",
 		"s.repo.UpdateScrumCard(",
 		"if jobID, err := parseJobID(existing); err == nil",
-		"if details, err := s.repo.GetJobDetails(ctx, jobID); err == nil",
+		"if details, err := s.repo.CurrentJobDetails(ctx, jobID); err == nil",
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Errorf("Scrum card LLM enqueue contains a non-atomic or swallowed path %q", forbidden)

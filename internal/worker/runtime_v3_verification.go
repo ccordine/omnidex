@@ -22,7 +22,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 		return err
 	}
 	if _, directCoding := buildV3CodingCoordinatorPlan(intent); directCoding {
-		evidenceRecords, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+		evidenceRecords, err := r.svc.repo.ListCurrentEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
 		if err != nil {
 			return fmt.Errorf("list evidence for deterministic coding verification: %w", err)
 		}
@@ -57,7 +57,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 	}](result); err != nil {
 		return err
 	}
-	evidenceRecords, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+	evidenceRecords, err := r.svc.repo.ListCurrentEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
 	if err != nil {
 		return fmt.Errorf("list evidence for independent verification: %w", err)
 	}

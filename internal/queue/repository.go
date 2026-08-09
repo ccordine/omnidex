@@ -130,6 +130,9 @@ func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline strin
 }
 
 func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
+	if err := validateJobInstruction(instruction); err != nil {
+		return model.Job{}, err
+	}
 	projectID, err := resolveProjectID(ctx, tx, metadataJSON)
 	if err != nil {
 		return model.Job{}, err
@@ -137,12 +140,12 @@ func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, p
 
 	var job model.Job
 	var result, errText *string
-	instruction = SanitizeUTF8Text(instruction)
 	metadataJSON = SanitizeUTF8Bytes(metadataJSON)
 	err = tx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata, project_id)
 		VALUES ($1, $2, $3, $4::jsonb, $5)
-		RETURNING id, instruction, pipeline, status, result, error, metadata, created_at, updated_at, completed_at
+		RETURNING id, instruction, pipeline, status, result, error, metadata,
+		          current_generation, created_at, updated_at, completed_at
 	`, instruction, pipeline, model.JobStatusPending, string(metadataJSON), projectID).Scan(
 		&job.ID,
 		&job.Instruction,
@@ -151,6 +154,7 @@ func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, p
 		&result,
 		&errText,
 		&job.Metadata,
+		&job.CurrentGeneration,
 		&job.CreatedAt,
 		&job.UpdatedAt,
 		&job.CompletedAt,
@@ -165,22 +169,35 @@ func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, p
 	if err != nil {
 		return model.Job{}, err
 	}
-	if telemetryRunID != "" {
-		if err := tx.QueryRow(ctx, `
-			UPDATE jobs
-			SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{telemetry_run_id}', to_jsonb($2::text), true)
-			WHERE id = $1
-			RETURNING metadata
-		`, job.ID, telemetryRunID).Scan(&job.Metadata); err != nil {
-			return model.Job{}, err
-		}
-		if err := recordTelemetryJobEvent(ctx, tx, job.ID, "run_started", map[string]any{
-			"job_id":   job.ID,
-			"pipeline": job.Pipeline,
-			"status":   job.Status,
-		}); err != nil {
-			return model.Job{}, err
-		}
+	if telemetryRunID == "" {
+		return model.Job{}, fmt.Errorf("create telemetry run for job %d returned an empty identity", job.ID)
+	}
+	if err := tx.QueryRow(ctx, `
+		UPDATE jobs
+		SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{telemetry_run_id}', to_jsonb($2::text), true)
+		WHERE id = $1
+		RETURNING metadata
+	`, job.ID, telemetryRunID).Scan(&job.Metadata); err != nil {
+		return model.Job{}, err
+	}
+	if err := recordTelemetryJobEvent(ctx, tx, job.ID, "run_started", map[string]any{
+		"job_id":   job.ID,
+		"pipeline": job.Pipeline,
+		"status":   job.Status,
+	}); err != nil {
+		return model.Job{}, err
+	}
+	if err := createTaskLedgerTx(ctx, tx, job.ID, telemetryRunID); err != nil {
+		return model.Job{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO job_generations (job_id, generation, purpose)
+		VALUES ($1, 1, $2)
+	`, job.ID, jobGenerationPurposeInitial); err != nil {
+		return model.Job{}, fmt.Errorf("create initial generation for job %d: %w", job.ID, err)
+	}
+	if err := seedInitialTaskAuthorityTx(ctx, tx, job); err != nil {
+		return model.Job{}, err
 	}
 
 	steps, err := stepsForJob(pipeline, instruction, metadataJSON)
@@ -192,8 +209,8 @@ func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, p
 	}
 	for _, step := range steps {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO job_steps (job_id, action, sort_index, status)
-			VALUES ($1, $2, $3, $4)
+			INSERT INTO job_steps (job_id, action, sort_index, status, generation)
+			VALUES ($1, $2, $3, $4, 1)
 		`, job.ID, step.action, step.sortIndex, model.StepStatusPending); err != nil {
 			return model.Job{}, err
 		}
@@ -556,30 +573,23 @@ func v3ConversationSteps() []stepSeed {
 	}
 }
 
-func (r *Repository) WriteArtifact(ctx context.Context, artifact artifacts.Envelope) error {
-	if err := artifact.Validate(); err != nil {
-		return err
-	}
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO artifacts (job_id, step_id, kind, version, payload_json)
-		VALUES ($1, $2, $3, $4, $5::jsonb)
-	`, artifact.JobID, artifact.StepID, artifact.Kind, artifact.Version, string(artifact.Payload))
-	return err
-}
-
-func (r *Repository) LatestArtifact(ctx context.Context, jobID int64, kind string) (artifacts.Envelope, bool, error) {
+func (r *Repository) CurrentArtifact(ctx context.Context, jobID int64, kind string) (artifacts.Envelope, bool, error) {
 	kind = strings.TrimSpace(kind)
 	if jobID <= 0 || kind == "" {
-		return artifacts.Envelope{}, false, nil
+		return artifacts.Envelope{}, false, fmt.Errorf("current artifact requires a positive job ID and exact kind")
 	}
 	var env artifacts.Envelope
 	var raw []byte
 	var id int64
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, job_id, step_id, kind, version, payload_json, created_at
-		FROM artifacts
-		WHERE job_id = $1 AND kind = $2
-		ORDER BY id DESC
+		SELECT artifact.id, artifact.job_id, artifact.step_id, artifact.kind,
+		       artifact.version, artifact.payload_json, artifact.created_at
+		FROM artifacts AS artifact
+		JOIN job_steps AS steps
+		  ON steps.job_id=artifact.job_id AND steps.id=artifact.step_id
+		WHERE artifact.job_id=$1 AND artifact.kind=$2
+		  AND steps.superseded_at_generation IS NULL
+		ORDER BY artifact.id DESC
 		LIMIT 1
 	`, jobID, kind).Scan(&id, &env.JobID, &env.StepID, &env.Kind, &env.Version, &raw, &env.CreatedAt)
 	if err != nil {
@@ -593,59 +603,7 @@ func (r *Repository) LatestArtifact(ctx context.Context, jobID int64, kind strin
 	return env, true, nil
 }
 
-func (r *Repository) ListArtifactsByJob(ctx context.Context, jobID int64, limit int) ([]artifacts.Envelope, error) {
-	if jobID <= 0 {
-		return nil, nil
-	}
-	if limit <= 0 {
-		limit = 200
-	}
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, job_id, step_id, kind, version, payload_json, created_at
-		FROM artifacts
-		WHERE job_id = $1
-		ORDER BY id ASC
-		LIMIT $2
-	`, jobID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	items := make([]artifacts.Envelope, 0, limit)
-	for rows.Next() {
-		var item artifacts.Envelope
-		var raw []byte
-		var id int64
-		if err := rows.Scan(&id, &item.JobID, &item.StepID, &item.Kind, &item.Version, &raw, &item.CreatedAt); err != nil {
-			return nil, err
-		}
-		item.ID = fmt.Sprintf("%d", id)
-		item.Payload = append([]byte(nil), raw...)
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-func (r *Repository) WriteEvidence(ctx context.Context, record evidence.Record) error {
-	if err := record.Validate(); err != nil {
-		return err
-	}
-	payload, err := json.Marshal(record)
-	if err != nil {
-		return err
-	}
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO evidence (job_id, step_id, kind, source_type, source_ref, payload_json)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-	`, record.JobID, record.StepID, record.Kind, record.SourceType, record.SourceRef, string(payload))
-	return err
-}
-
-func (r *Repository) ListEvidenceByJob(ctx context.Context, jobID int64, limit int) ([]evidence.Record, error) {
+func (r *Repository) ListCurrentEvidenceByJob(ctx context.Context, jobID int64, limit int) ([]evidence.Record, error) {
 	if jobID <= 0 {
 		return nil, nil
 	}
@@ -656,10 +614,13 @@ func (r *Repository) ListEvidenceByJob(ctx context.Context, jobID int64, limit i
 		limit = 1000
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, payload_json
+		SELECT evidence.id, evidence.payload_json
 		FROM evidence
-		WHERE job_id = $1
-		ORDER BY id ASC
+		JOIN job_steps AS steps
+		  ON steps.job_id=evidence.job_id AND steps.id=evidence.step_id
+		WHERE evidence.job_id=$1
+		  AND steps.superseded_at_generation IS NULL
+		ORDER BY evidence.id ASC
 		LIMIT $2
 	`, jobID, limit)
 	if err != nil {
@@ -685,37 +646,4 @@ func (r *Repository) ListEvidenceByJob(ctx context.Context, jobID int64, limit i
 		return nil, err
 	}
 	return items, nil
-}
-
-func (r *Repository) ListClaimsByJob(ctx context.Context, jobID int64, limit int) ([]model.ClaimRecord, error) {
-	if jobID <= 0 {
-		return nil, nil
-	}
-	if limit <= 0 {
-		limit = 200
-	}
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, job_id, step_id, text, normalized_text, status, confidence, created_at
-		FROM claims
-		WHERE job_id = $1
-		ORDER BY id ASC
-		LIMIT $2
-	`, jobID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]model.ClaimRecord, 0, limit)
-	for rows.Next() {
-		var item model.ClaimRecord
-		if err := rows.Scan(&item.ID, &item.JobID, &item.StepID, &item.Text, &item.NormalizedText, &item.Status, &item.Confidence, &item.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
 }

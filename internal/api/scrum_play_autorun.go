@@ -180,7 +180,7 @@ func (s *Server) refreshScrumPlayQueueForProjectAsync(projectID int64, reason st
 }
 
 func (s *Server) refreshScrumPlayQueueForJob(ctx context.Context, jobID int64) error {
-	details, err := s.repo.GetJobDetails(ctx, jobID)
+	details, err := s.repo.CurrentJobDetails(ctx, jobID)
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func (s *Server) refreshScrumPlayQueueForJob(ctx context.Context, jobID int64) e
 }
 
 func (s *Server) refreshScrumCardOutputForJob(ctx context.Context, jobID int64) error {
-	details, err := s.repo.GetJobDetails(ctx, jobID)
+	details, err := s.repo.CurrentJobDetails(ctx, jobID)
 	if err != nil {
 		return err
 	}

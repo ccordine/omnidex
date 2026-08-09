@@ -167,7 +167,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 		completeStep = s.repo.CompleteStep
 	}
 	s.emitStepEvent(claim.Step.ID, "project_debugger_completed", summary)
-	return completeStep(ctx, claim.Step.ID, string(payloadBytes), "project_debugger", summary)
+	return invokeCompleteClaimedStep(ctx, completeStep, claim, string(payloadBytes), "project_debugger", summary)
 }
 
 func (s *Service) debuggerBoardCards(ctx context.Context, projectID int64) ([]projectdebugger.BoardCard, error) {

@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 const (
@@ -159,7 +161,7 @@ func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID
 		return ScrumCard{}, fmt.Errorf("card not found")
 	}
 	instruction := buildScrumPlayInstruction(board, card)
-	return s.enqueueScrumCardAgentRun(r, board, projectID, card, instance, instruction, false)
+	return s.enqueueScrumCardAgentRun(r, board, projectID, card, instance, instruction)
 }
 
 func scrumCardFromBoard(board ScrumBoard, cardID string) (ScrumCard, bool) {
@@ -187,7 +189,16 @@ func (s *Server) pauseScrumCardPlay(r *http.Request, cardID string) (ScrumCard, 
 		if err != nil {
 			return ScrumCard{}, fmt.Errorf("parse job id for Scrum card %q: %w", card.ID, err)
 		}
-		if _, err := s.repo.CancelJob(r.Context(), jobID, "paused from scrum board"); err != nil {
+		operationID, err := queue.NewLifecycleOperationID(
+			"scrum-card-pause-v1", strconv.FormatInt(projectID, 10),
+			card.ID, strconv.FormatInt(jobID, 10),
+		)
+		if err != nil {
+			return ScrumCard{}, fmt.Errorf("build cancellation identity for Scrum card %q: %w", card.ID, err)
+		}
+		if _, err := s.repo.CancelJob(r.Context(), queue.CancelJobCommand{
+			OperationID: operationID, JobID: jobID, Reason: "paused from scrum board",
+		}); err != nil {
 			return ScrumCard{}, err
 		}
 	} else if card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing {
@@ -253,7 +264,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		if err != nil {
 			return board, fmt.Errorf("parse job id for Scrum card %q: %w", card.ID, err)
 		}
-		job, err := s.repo.GetJobDetails(r.Context(), jobID)
+		job, err := s.repo.CurrentJobDetails(r.Context(), jobID)
 		if err != nil {
 			return board, fmt.Errorf("load job %d for Scrum card %q: %w", jobID, card.ID, err)
 		}

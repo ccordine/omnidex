@@ -3,9 +3,6 @@ package model
 import (
 	"encoding/json"
 	"time"
-
-	"github.com/gryph/omnidex/internal/artifacts"
-	"github.com/gryph/omnidex/internal/evidence"
 )
 
 const (
@@ -51,7 +48,13 @@ const (
 	MemoryCandidateStatusApproved  = "approved"
 	MemoryCandidateStatusDurable   = "durable"
 	MemoryCandidateStatusRejected  = "rejected"
+
+	MemoryPromotionAuthorityCurrent    MemoryPromotionAuthority = "current_generation"
+	MemoryPromotionAuthorityHistorical MemoryPromotionAuthority = "historical_generation"
+	MemoryPromotionAuthorityGlobal     MemoryPromotionAuthority = "global"
 )
+
+type MemoryPromotionAuthority string
 
 const (
 	MemoryTrustTagApproved = "trust:approved"
@@ -59,31 +62,34 @@ const (
 )
 
 type Job struct {
-	ID          int64           `json:"id"`
-	Instruction string          `json:"instruction"`
-	Pipeline    string          `json:"pipeline"`
-	Status      string          `json:"status"`
-	Result      string          `json:"result,omitempty"`
-	Error       string          `json:"error,omitempty"`
-	Metadata    json.RawMessage `json:"metadata,omitempty"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
-	CompletedAt *time.Time      `json:"completed_at,omitempty"`
+	ID                int64           `json:"id"`
+	Instruction       string          `json:"instruction"`
+	Pipeline          string          `json:"pipeline"`
+	Status            string          `json:"status"`
+	Result            string          `json:"result,omitempty"`
+	Error             string          `json:"error,omitempty"`
+	Metadata          json.RawMessage `json:"metadata,omitempty"`
+	CurrentGeneration int64           `json:"current_generation"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+	CompletedAt       *time.Time      `json:"completed_at,omitempty"`
 }
 
 type Step struct {
-	ID         int64      `json:"id"`
-	JobID      int64      `json:"job_id"`
-	Action     string     `json:"action"`
-	SortIndex  int        `json:"sort_index"`
-	Status     string     `json:"status"`
-	WorkerID   string     `json:"worker_id,omitempty"`
-	Output     string     `json:"output,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID                     int64      `json:"id"`
+	JobID                  int64      `json:"job_id"`
+	Action                 string     `json:"action"`
+	SortIndex              int        `json:"sort_index"`
+	Status                 string     `json:"status"`
+	Generation             int64      `json:"generation"`
+	SupersededAtGeneration *int64     `json:"superseded_at_generation,omitempty"`
+	WorkerID               string     `json:"worker_id,omitempty"`
+	Output                 string     `json:"output,omitempty"`
+	Error                  string     `json:"error,omitempty"`
+	StartedAt              *time.Time `json:"started_at,omitempty"`
+	FinishedAt             *time.Time `json:"finished_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 type StepContext struct {
@@ -132,6 +138,7 @@ type MemoryFacet struct {
 type MemoryCandidate struct {
 	ID             int64           `json:"id"`
 	JobID          int64           `json:"job_id,omitempty"`
+	Generation     *int64          `json:"generation,omitempty"`
 	SourceMemoryID *int64          `json:"source_memory_id,omitempty"`
 	CandidateKind  string          `json:"candidate_kind"`
 	Content        string          `json:"content"`
@@ -160,29 +167,6 @@ type ClaimSupportRecord struct {
 	SupportScore float64   `json:"support_score,omitempty"`
 	Rationale    string    `json:"rationale,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
-}
-
-type ClaimSupportDetail struct {
-	ID                int64     `json:"id"`
-	ClaimID           int64     `json:"claim_id"`
-	ClaimText         string    `json:"claim_text"`
-	ClaimStatus       string    `json:"claim_status,omitempty"`
-	EvidenceID        int64     `json:"evidence_id"`
-	EvidenceKind      string    `json:"evidence_kind,omitempty"`
-	EvidenceSourceRef string    `json:"evidence_source_ref,omitempty"`
-	SupportScore      float64   `json:"support_score,omitempty"`
-	Rationale         string    `json:"rationale,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-}
-
-type JobInspection struct {
-	Job              Job                  `json:"job"`
-	JobID            int64                `json:"job_id"`
-	Artifacts        []artifacts.Envelope `json:"artifacts,omitempty"`
-	Evidence         []evidence.Record    `json:"evidence,omitempty"`
-	Claims           []ClaimRecord        `json:"claims,omitempty"`
-	ClaimSupport     []ClaimSupportDetail `json:"claim_support,omitempty"`
-	MemoryCandidates []MemoryCandidate    `json:"memory_candidates,omitempty"`
 }
 
 type MemoryCandidatePromotionResult struct {

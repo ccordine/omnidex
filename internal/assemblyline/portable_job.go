@@ -26,6 +26,7 @@ const (
 	WorkRequirementFinalAdvisory  WorkKind = "requirement_final_advisory"
 	WorkRequirementFinalSynthesis WorkKind = "requirement_final_synthesis"
 	WorkRepositoryRetrieval       WorkKind = "repository_retrieval"
+	WorkRepositoryChangeSurface   WorkKind = "repository_change_surface"
 	WorkRetrievalBriefing         WorkKind = "repository_retrieval_briefing"
 	WorkRetrievalAdvisory         WorkKind = "repository_retrieval_advisory"
 	WorkRetrievalSynthesis        WorkKind = "repository_retrieval_synthesis"
@@ -36,6 +37,7 @@ const (
 	WorkSkillSelection            WorkKind = "skill_selection"
 	WorkSkillProcedure            WorkKind = "skill_procedure"
 	WorkFragmentGeneration        WorkKind = "fragment_generation"
+	WorkFragmentModification      WorkKind = "fragment_modification"
 	WorkFragmentCorrection        WorkKind = "fragment_correction"
 	WorkResponseCorrection        WorkKind = "response_correction"
 )
@@ -129,9 +131,9 @@ func validWorkKind(kind WorkKind) bool {
 	case WorkApplicationClassify, WorkApplicationIdentity, WorkRequirementPartition,
 		WorkRequirementBriefing, WorkRequirementAdvisory, WorkRequirementSynthesis,
 		WorkRequirementFinalAdvisory, WorkRequirementFinalSynthesis,
-		WorkRepositoryRetrieval, WorkRetrievalBriefing, WorkRetrievalAdvisory, WorkRetrievalSynthesis,
+		WorkRepositoryRetrieval, WorkRepositoryChangeSurface, WorkRetrievalBriefing, WorkRetrievalAdvisory, WorkRetrievalSynthesis,
 		WorkArtifactHandling, WorkCapabilityRelation, WorkSkillSelection, WorkSkillProcedure,
-		WorkFragmentGeneration, WorkFragmentCorrection, WorkResponseCorrection:
+		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection:
 		return true
 	default:
 		return false

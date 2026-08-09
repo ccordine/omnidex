@@ -171,7 +171,7 @@ func printInteractiveInputHelp() {
 	fmt.Println("feedback mode commands:")
 	fmt.Println("  /interrupt <text>  inject context into the active job")
 	fmt.Println("  /replan <text>     restart the job from plan with new context")
-	fmt.Println("  /cancel [reason]   stop the active job")
+	fmt.Println("  /cancel <reason>   stop the active job")
 	fmt.Println("  note               during a running turn, type these slash commands directly; TAB + text queues a follow-up")
 	fmt.Println("  /exit              quit interactive mode")
 }

@@ -79,5 +79,5 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 		completeStep = s.repo.CompleteStep
 	}
 	s.emitStepEvent(claim.Step.ID, "data_source_query_completed", summary)
-	return completeStep(ctx, claim.Step.ID, string(payloadBytes), "data_source_query", summary)
+	return invokeCompleteClaimedStep(ctx, completeStep, claim, string(payloadBytes), "data_source_query", summary)
 }

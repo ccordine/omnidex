@@ -122,7 +122,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		completeStep = s.repo.CompleteStep
 	}
 	s.emitStepEvent(claim.Step.ID, "external_agent_completed", output)
-	return completeStep(ctx, claim.Step.ID, stepOutput, "external_agent_execute", string(summary))
+	return invokeCompleteClaimedStep(ctx, completeStep, claim, stepOutput, "external_agent_execute", string(summary))
 }
 
 func selectExternalAgent(cfg agentconfig.Config) (omni.ExternalCodingAgent, string, string) {

@@ -12,8 +12,9 @@ import (
 )
 
 type llmEvidenceWork struct {
-	ID   string
-	Kind string
+	ID                  string
+	Kind                string
+	ContextProjectionID string
 }
 
 type llmEvidencePersistenceError struct {
@@ -38,27 +39,14 @@ func (s *Service) llmGeneratePortableWithSchemaTrace(
 	job assemblyline.PortableJob,
 	scope, modelName, prompt string,
 	responseSchema map[string]any,
+	contextProjectionID string,
 ) (string, error) {
 	work, err := llmEvidenceWorkForPortableJob(job)
 	if err != nil {
 		return "", err
 	}
+	work.ContextProjectionID = contextProjectionID
 	return s.llmGenerateWithEvidenceTrace(ctx, stepID, scope, modelName, prompt, responseSchema, work)
-}
-
-func (s *Service) llmGeneratePortableAdvisoryTrace(
-	ctx context.Context,
-	stepID int64,
-	job assemblyline.PortableJob,
-	modelName, prompt string,
-) (llm.AdvisoryResponse, error) {
-	work, err := llmEvidenceWorkForPortableJob(job)
-	if err != nil {
-		return llm.AdvisoryResponse{}, err
-	}
-	return s.llmGenerateResponseWithEvidenceTrace(
-		ctx, stepID, "portable_advisory_worker", modelName, prompt, nil, work, true,
-	)
 }
 
 func llmEvidenceWorkForPortableJob(job assemblyline.PortableJob) (llmEvidenceWork, error) {
@@ -82,7 +70,8 @@ func newLLMCallEvidenceRecord(
 	}
 	return queue.LLMCallEvidenceRecord{
 		StepID: stepID, Scope: scope, WorkID: work.ID, WorkKind: work.Kind,
-		RequestedModel: requestedModel, Model: requestedModel, Attempt: attempt,
+		ContextProjectionID: work.ContextProjectionID,
+		RequestedModel:      requestedModel, Model: requestedModel, Attempt: attempt,
 		SystemPrompt: prompt, UserPrompt: contract.PromptHint,
 		ResponseFormat: format, ResponseSchema: responseSchema,
 		ContextTokens: contextTokens, MaxOutputTokens: contract.MaxTokens,

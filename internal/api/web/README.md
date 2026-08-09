@@ -2,7 +2,7 @@
 
 TypeScript frontend for the Omni cockpit. Most existing cockpit surfaces still use [Hotwired Stimulus](https://stimulus.hotwired.dev/); Scrum card modals are React SPA surfaces mounted by a Stimulus controller.
 
-**Platform release:** Charmander (`v0.4.0`) — deterministic AI assembly line and live execution control. The planner, draft queue, scrum board, and flow metrics remain the Venusaur-era product surface.
+**Platform release:** Charmeleon (`v0.5.0`, in development) — software-defined context, repository intelligence, and durable task continuity built on the deterministic assembly-line authority established in Charmander. Promotion remains gated by the repository and restart proofs documented in [`docs/CHARMELEON_CONTEXT_SYSTEM.md`](../../../docs/CHARMELEON_CONTEXT_SYSTEM.md).
 
 Primary surfaces:
 

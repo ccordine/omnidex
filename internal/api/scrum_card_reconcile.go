@@ -26,7 +26,7 @@ func (s *Server) reconcileScrumCardJobState(ctx context.Context, projectID int64
 	if err != nil {
 		return card, false, fmt.Errorf("parse job id for Scrum card %q: %w", card.ID, err)
 	}
-	job, err := s.repo.GetJobDetails(ctx, jobID)
+	job, err := s.repo.CurrentJobDetails(ctx, jobID)
 	if err != nil {
 		return card, false, fmt.Errorf("load job %d for Scrum card %q: %w", jobID, card.ID, err)
 	}

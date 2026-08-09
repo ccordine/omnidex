@@ -12,8 +12,6 @@ import (
 	toolruntime "github.com/gryph/omnidex/internal/tools"
 )
 
-const maxDelegatedSubtasks = 6
-
 type nativeRuntimeV3 struct {
 	svc      *Service
 	ctx      context.Context
@@ -125,7 +123,7 @@ func (r *nativeRuntimeV3) runIntentParse() error {
 	if len(intent.UnresolvedReferences) > 0 {
 		return fmt.Errorf("prompt interpreter found unresolved references: %s", strings.Join(intent.UnresolvedReferences, "; "))
 	}
-	if err := r.writeArtifact(artifacts.KindIntent, intent); err != nil {
+	if err := r.writeAcceptedIntentArtifact(intent); err != nil {
 		return err
 	}
 	summary := strings.Join([]string{

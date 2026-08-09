@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 const maxTypedWorkerAttempts = 3
@@ -15,12 +14,11 @@ type typedWorkerKind string
 const (
 	typedWorkerSemantic typedWorkerKind = "semantic"
 	typedWorkerFragment typedWorkerKind = "fragment"
-	typedWorkerAdvisory typedWorkerKind = "advisory"
 )
 
 func (kind typedWorkerKind) validate() error {
 	switch kind {
-	case typedWorkerSemantic, typedWorkerFragment, typedWorkerAdvisory:
+	case typedWorkerSemantic, typedWorkerFragment:
 		return nil
 	default:
 		return fmt.Errorf("typed worker kind %q is not registered", kind)
@@ -55,9 +53,7 @@ type typedWorkerRuntime struct {
 	MaxAttempts     int
 	MaxConcurrency  int
 	CorrectionModel string
-	AdvisoryModel   string
 	Execute         func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error)
-	Advise          func(job assemblyline.PortableJob, model string) (llm.AdvisoryResponse, error)
 	Emit            func(event typedWorkerEvent)
 }
 

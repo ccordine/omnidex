@@ -4,24 +4,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
 const (
-	RepositoryRetrievalSchemaV1         = "omnidex.repository-retrieval.v1"
-	RepositoryRetrievalBriefingSchemaV1 = "omnidex.repository-retrieval-briefing.v1"
+	RepositoryRetrievalSchemaV2         = "omnidex.repository-retrieval.v2"
+	RepositoryRetrievalBriefingSchemaV2 = "omnidex.repository-retrieval-briefing.v2"
 	maxRepositoryResearchNeedBytes      = 4 * 1024
 	maxRepositoryRetrievalQueryBytes    = 512
 	maxRepositoryRetrievalMemoBytes     = 4 * 1024
 )
 
-type RepositoryRetrievalOperation string
+type RepositoryRetrievalOperation = repositoryretrieval.Operation
 
 const (
-	RetrievalSemanticExcerpts   RepositoryRetrievalOperation = "semantic_excerpts"
-	RetrievalSymbolDeclaration  RepositoryRetrievalOperation = "symbol_declaration"
-	RetrievalDirectReferences   RepositoryRetrievalOperation = "direct_references"
-	RetrievalDiagnosticContext  RepositoryRetrievalOperation = "diagnostic_context"
-	RetrievalDependencyMetadata RepositoryRetrievalOperation = "dependency_metadata"
+	RetrievalSemanticExcerpts  = repositoryretrieval.OperationSemanticExcerpts
+	RetrievalSymbolDeclaration = repositoryretrieval.OperationSymbolDeclaration
+	RetrievalDirectReferences  = repositoryretrieval.OperationDirectReferences
 )
 
 type RepositoryRetrievalInput struct {
@@ -39,8 +39,6 @@ type RepositoryRetrievalLens string
 const (
 	RetrievalLensTargetPrecision   RepositoryRetrievalLens = "target_precision"
 	RetrievalLensRelationDirection RepositoryRetrievalLens = "relation_direction"
-	RetrievalLensFailureGrounding  RepositoryRetrievalLens = "failure_grounding"
-	RetrievalLensScopeControl      RepositoryRetrievalLens = "scope_control"
 )
 
 type RepositoryRetrievalBriefingDecision struct {
@@ -88,8 +86,8 @@ func (decision RepositoryRetrievalDecision) ValidateFor(input RepositoryRetrieva
 	if err := input.validate(); err != nil {
 		return err
 	}
-	if decision.Schema != RepositoryRetrievalSchemaV1 {
-		return fmt.Errorf("repository retrieval schema must be %q", RepositoryRetrievalSchemaV1)
+	if decision.Schema != RepositoryRetrievalSchemaV2 {
+		return fmt.Errorf("repository retrieval schema must be %q", RepositoryRetrievalSchemaV2)
 	}
 	if err := validateRepositoryRetrievalOperation(decision.Operation); err != nil {
 		return err
@@ -107,8 +105,8 @@ func (decision RepositoryRetrievalDecision) ValidateFor(input RepositoryRetrieva
 }
 
 func (decision RepositoryRetrievalBriefingDecision) Validate() error {
-	if decision.Schema != RepositoryRetrievalBriefingSchemaV1 {
-		return fmt.Errorf("repository retrieval briefing schema must be %q", RepositoryRetrievalBriefingSchemaV1)
+	if decision.Schema != RepositoryRetrievalBriefingSchemaV2 {
+		return fmt.Errorf("repository retrieval briefing schema must be %q", RepositoryRetrievalBriefingSchemaV2)
 	}
 	_, err := repositoryRetrievalLensInstruction(decision.Lens)
 	return err
@@ -141,7 +139,8 @@ func BuildRepositoryRetrievalPrompt(input RepositoryRetrievalInput) (string, err
 	}
 	return strings.Join([]string{
 		"Select exactly one registered repository retrieval operation and copy the shortest unique exact quote that should be its query.",
-		"semantic_excerpts retrieves behaviorally related indexed symbols or excerpts. symbol_declaration retrieves the declaration for a named symbol. direct_references retrieves direct references to a named symbol. diagnostic_context retrieves indexed symbols named by one compiler or test failure. dependency_metadata retrieves declared technical dependency metadata.",
+		"semantic_excerpts retrieves behaviorally related indexed declarations and their bounded direct graph neighborhood. symbol_declaration resolves exactly one uniquely named declaration and returns no graph relations. direct_references resolves exactly one uniquely named declaration and returns only incoming direct symbol references.",
+		"symbol_declaration and direct_references require a unique exact symbol name or qualified name. They fail on ambiguity. Use semantic_excerpts for behavioral language, diagnostics, dependency concepts, or any need that does not name one exact symbol.",
 		"The operation is a code-owned PostgreSQL retrieval primitive. Do not output a path, file name, tree, shell command, SQL, implementation plan, mutation, or completion decision.",
 		"RESEARCH_NEED:\n" + input.ResearchNeed,
 	}, "\n\n"), nil
@@ -152,11 +151,8 @@ func RepositoryRetrievalResponseSchema() map[string]any {
 		"type": "object", "additionalProperties": false,
 		"required": []string{"schema", "operation", "query_quote"},
 		"properties": map[string]any{
-			"schema": map[string]any{"type": "string", "const": RepositoryRetrievalSchemaV1},
-			"operation": map[string]any{"type": "string", "enum": []RepositoryRetrievalOperation{
-				RetrievalSemanticExcerpts, RetrievalSymbolDeclaration, RetrievalDirectReferences,
-				RetrievalDiagnosticContext, RetrievalDependencyMetadata,
-			}},
+			"schema":      map[string]any{"type": "string", "const": RepositoryRetrievalSchemaV2},
+			"operation":   map[string]any{"type": "string", "enum": repositoryretrieval.SupportedOperations()},
 			"query_quote": map[string]any{"type": "string", "minLength": 1, "maxLength": maxRepositoryRetrievalQueryBytes},
 		},
 	}
@@ -172,8 +168,6 @@ func BuildRepositoryRetrievalBriefingPrompt(input RepositoryRetrievalInput) (str
 		"The lens critiques a typed retrieval decision; it cannot create or execute a command.",
 		"target_precision: distinguish one named declaration from broader behavioral evidence.",
 		"relation_direction: distinguish a declaration from incoming direct references.",
-		"failure_grounding: determine whether a concrete diagnostic is the retrieval authority.",
-		"scope_control: distinguish source evidence from dependency metadata and avoid broad retrieval.",
 		authoritative,
 	}, "\n\n"), nil
 }
@@ -183,10 +177,9 @@ func RepositoryRetrievalBriefingResponseSchema() map[string]any {
 		"type": "object", "additionalProperties": false,
 		"required": []string{"schema", "lens"},
 		"properties": map[string]any{
-			"schema": map[string]any{"type": "string", "const": RepositoryRetrievalBriefingSchemaV1},
+			"schema": map[string]any{"type": "string", "const": RepositoryRetrievalBriefingSchemaV2},
 			"lens": map[string]any{"type": "string", "enum": []RepositoryRetrievalLens{
 				RetrievalLensTargetPrecision, RetrievalLensRelationDirection,
-				RetrievalLensFailureGrounding, RetrievalLensScopeControl,
 			}},
 		},
 	}
@@ -245,13 +238,7 @@ func BuildRepositoryRetrievalSynthesisPrompt(input RepositoryRetrievalSynthesisI
 }
 
 func validateRepositoryRetrievalOperation(operation RepositoryRetrievalOperation) error {
-	switch operation {
-	case RetrievalSemanticExcerpts, RetrievalSymbolDeclaration, RetrievalDirectReferences,
-		RetrievalDiagnosticContext, RetrievalDependencyMetadata:
-		return nil
-	default:
-		return fmt.Errorf("repository retrieval operation %q is unsupported", operation)
-	}
+	return operation.Validate()
 }
 
 func repositoryRetrievalLensInstruction(lens RepositoryRetrievalLens) (string, error) {
@@ -260,10 +247,6 @@ func repositoryRetrievalLensInstruction(lens RepositoryRetrievalLens) (string, e
 		return "Test whether the need names one exact symbol or instead describes behavior requiring semantic excerpt retrieval.", nil
 	case RetrievalLensRelationDirection:
 		return "Test whether evidence is needed for the symbol declaration itself or for code that directly references it.", nil
-	case RetrievalLensFailureGrounding:
-		return "Test whether one concrete compiler or test diagnostic should constrain retrieval to named failing symbols.", nil
-	case RetrievalLensScopeControl:
-		return "Test whether the need concerns declared dependency metadata and identify the narrowest exact query quote.", nil
 	default:
 		return "", fmt.Errorf("repository retrieval lens %q is unsupported", lens)
 	}

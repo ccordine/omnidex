@@ -58,7 +58,7 @@ func registerV3EvidenceTool(registry *toolruntime.Registry, service *Service) {
 			return toolruntime.Result{}, fmt.Errorf("evidence.inspect job_id is required")
 		}
 		limit := toolInputInt(call.Input, "limit", 200)
-		records, err := service.repo.ListEvidenceByJob(ctx, jobID, limit)
+		records, err := service.repo.ListCurrentEvidenceByJob(ctx, jobID, limit)
 		if err != nil {
 			return toolruntime.Result{}, err
 		}

@@ -1,14 +1,14 @@
 # Omnidex
 
-**Current development release:** `v0.4.0` Charmander
+**Current development release:** `v0.5.0` Charmeleon
 
-Omnidex is a local-first AI workbench with a conversational surface and a server-authoritative execution core. Charmander replaces the broad coding-agent loop with a deterministic assembly line of small, typed model jobs.
+Omnidex is a local-first AI workbench with a conversational surface and a server-authoritative execution core. Charmeleon extends the deterministic assembly line with repository intelligence and software-defined task context for bounded work in existing codebases.
 
-Charmander is a real architecture break from `v0.3.0` Venusaur, not a cosmetic bump. It remains a development release, but its unattended three-application baseline now passes; the captured measurements and limitations are in [docs/CHARMANDER_PROOF.md](docs/CHARMANDER_PROOF.md).
+Charmander established the bounded assembly-line foundation; its captured measurements and limitations remain in [docs/CHARMANDER_PROOF.md](docs/CHARMANDER_PROOF.md). Charmeleon is now the active development milestone. Its context architecture and uncompleted promotion gates are in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md).
 
-## Charmander in one sentence
+## Charmeleon in one sentence
 
-The user talks to one apparent agent, while two tiny semantic model calls produce a behavior class and shape-specific labels; code expands everything else into parser-validated blocks, a staged complete program, authoritative writes, and real tests.
+Omnidex stores repository truth and task continuity outside the model, then gives each Qwen call one immutable, bounded projection while code retains authority over acquisition, mutation, verification, and completion.
 
 ```text
 conversation
@@ -56,11 +56,60 @@ The runtime has deliberately unequal stations:
 
 The detailed contract lives in [internal/worker/RUNTIME.md](internal/worker/RUNTIME.md).
 
+## Existing-repository path (development)
+
+Charmeleon's existing-repository workflow is deliberately separate from the
+greenfield application builder. It currently supports Go repositories through one
+server-owned path:
+
+1. Git and the active worktree produce a complete, content-addressed snapshot.
+2. Compiler-backed analysis stores files, symbols, direct edges, tests, and exact
+   source spans as derived PostgreSQL facts.
+3. Typed semantic-excerpt, declaration, and incoming-reference queries construct a
+   bounded evidence pack; the model never receives a path or repository tree.
+4. Code partitions every exact requirement and validates complete change-surface
+   coverage into one source-snapshot-bound change contract and ordered verification
+   plan.
+5. Before any fragment generation, the complete focused-plus-terminal-broad plan must
+   pass in a disposable projection containing exactly the validated source-snapshot
+   files. Git metadata, `.omni`, ignored files, and excluded paths are never mounted.
+   A failing or drifting baseline stops with no generation, correction, or mutation
+   authority.
+6. Each fragment call receives only one function plus direct capabilities. Candidate
+   declarations are AST-validated and applied to a complete disposable
+   stage. Focused direct tests and a terminal broad test run through a read-only,
+   network-isolated bubblewrap sandbox with structured `go test -json` proof. The
+   sandbox receives a disposable checksum-validated projection of only the source
+   module's resolved build-list dependencies; it never receives the host-wide Go
+   module cache.
+7. Only a uniquely owned, path-free ordinary test/compiler failure may correct one
+   function. The complete candidate set is restaged, with two total correction rounds
+   and explicit no-progress/oscillation rejection.
+8. A PostgreSQL mutation journal binds the exact source snapshot, contract, stage,
+   patch, source/post file states, claim, and generated-diff evidence. Exact source may
+   apply once; exact post may finalize once; every other state is indeterminate and
+   fails loudly. Authoritative verification uses a newly constructed exact post-state
+   projection rather than the already-tested candidate stage or the live worktree.
+
+These proofs establish a clean pre-change baseline, exact patch integrity, and
+regression verification against the repository's existing tests. They do not prove
+that an arbitrary new user requirement was satisfied: that requires an independent,
+requirement-bound or held-out proof unavailable to the builder until it stops. The
+existing-repository path therefore remains unpromoted as an autonomy claim. Context
+Projection is also shadow-only, the index is not yet incrementally refreshed, and a
+lost running worker cannot be reclaimed until all worker writes carry a monotonic
+step-attempt lease. In addition, an `applied` mutation-journal row is not a resumable
+authoritative-proof or completion checkpoint: interruption after patch finalization
+can restart the semantic change workflow. The current path must not be described as
+crash-safe end-to-end execution. The exact promotion gates and restart boundary are
+documented in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md).
+
 ## Reliability rules
 
 - One authoritative implementation; no legacy fallback engine.
 - Explicit errors for invalid provider configuration, schemas, paths, mutations, and completion claims.
-- No source snapshots or generated version ledgers; use Git.
+- Git and the active worktree remain source authority. PostgreSQL repository snapshots are immutable, disposable, hash-bound derived facts—not alternate source history.
+- The Task Ledger records typed job execution state only; it never versions or overrides source code.
 - No rollback of valid file work because a later file fails.
 - No deletion unless the current instruction authorizes deletion.
 - No modification of protected instruction files.
@@ -92,7 +141,6 @@ LLM_PROVIDER=ollama
 OLLAMA_MODEL_SPECIALIST_CODING_SURFACE=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION=qwen3.5:9b-q4_K_M
@@ -103,7 +151,7 @@ INFERENCE_CONTEXT_TOKENS=16384
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
-The surface role classifies only browser, command-line, or service delivery. The feature-extraction role sees the user request once and returns only exact feature envelopes. Code removes those spans to derive non-feature context; fixed-point split workers then see one already-accepted envelope at a time. There is no model-authored kind, outcome, plan, or coverage verdict. Artifact handling is a separate token-blind classification job. For each local need, code either binds an exact active PostgreSQL skill, gives a selector at most five opaque purpose summaries, or asks a procedure worker to produce one bounded reusable instruction. The fragment role then receives one exact feature contract plus that procedure and returns one raw declaration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. Local Ollama uses Qwen 3.5 9B for the bounded semantic stations and Qwen3-Coder 30B for fragment generation and correction. Keeping the profile to two models limits phase-boundary model swaps on a one-model Ollama runner. It defaults to one fragment lane because concurrent requests to one endpoint are contention, not distributed capacity; the explicit concurrency setting may be raised to at most four when real independent capacity exists. A missing model, context mismatch, or invalid capacity fails explicitly. See [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md) for measured hardware limits and alternatives. Offline advisory-model experiments are isolated from production routing and documented in [docs/MODEL_GAUNTLETS.md](docs/MODEL_GAUNTLETS.md).
+The surface role classifies only browser, command-line, or service delivery. One stable feature-partition role extracts exact feature envelopes from the user authority and splits each accepted envelope to a code-owned fixed point. There is no production reasoning adviser and no separate split-model route. There is no model-authored kind, outcome, plan, or coverage verdict. Artifact handling is a separate token-blind classification job. For each local need, code either binds an exact active PostgreSQL skill, gives a selector at most five opaque purpose summaries, or asks a procedure worker to produce one bounded reusable instruction. The fragment role then receives one exact feature contract plus that procedure and returns one raw declaration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. Local Ollama uses Qwen 3.5 9B for the bounded semantic stations and Qwen3-Coder 30B for fragment generation and correction. Keeping the profile to two models limits phase-boundary model swaps on a one-model Ollama runner. It defaults to one fragment lane because concurrent requests to one endpoint are contention, not distributed capacity; the explicit concurrency setting may be raised to at most four when real independent capacity exists. A missing model, context mismatch, or invalid capacity fails explicitly. See [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md) for measured hardware limits and alternatives. Offline advisory-model experiments are isolated from production routing and documented in [docs/MODEL_GAUNTLETS.md](docs/MODEL_GAUNTLETS.md).
 
 Hosted generation providers include Ollama, OpenAI, Azure AI, xAI, Google Gemini, Anthropic, Hugging Face, and custom OpenAI-compatible endpoints.
 
@@ -223,13 +271,15 @@ Release identity:
 
 ```bash
 go run ./cmd/cli version
-./scripts/build-release.sh --version v0.4.0 --codename Charmander
+./scripts/build-release.sh --version v0.5.0 --codename Charmeleon
 ```
 
 ## Architecture map
 
 - [internal/queue](internal/queue) — durable typed job transport, feedback continuity, and memory boundaries.
-- [internal/worker](internal/worker) — V3 typed orchestration and the Charmander coding assembly line.
+- [internal/worker](internal/worker) — V3 typed orchestration and the bounded coding assembly line.
+- [internal/repository](internal/repository) — hash-bound repository snapshots, compiler-derived facts, retrieval, and evidence packs.
+- [internal/taskstate](internal/taskstate) — job-scoped task continuity and state-transition authority.
 - [internal/queue](internal/queue) — authoritative job and step lifecycle.
 - [internal/workspace](internal/workspace) — bounded snapshots, excerpts, and relevance ranking.
 - [internal/llmprovider/catalog](internal/llmprovider/catalog) — provider capability registry.
@@ -245,6 +295,7 @@ go run ./cmd/cli version
 | `v0.2.0` | Ivysaur | Provider, memory, and runtime growth. |
 | `v0.3.0` | Venusaur | Planner, draft queue, and human-controlled scrum execution. |
 | `v0.4.0` | Charmander | Deterministic distributed coding assembly line. |
+| `v0.5.0` | Charmeleon | Repository intelligence and software-defined task context. |
 
 See [docs/RELEASE_VERSIONING.md](docs/RELEASE_VERSIONING.md) and [CHANGELOG.md](CHANGELOG.md).
 
