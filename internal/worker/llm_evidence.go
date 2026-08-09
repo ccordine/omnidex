@@ -46,6 +46,21 @@ func (s *Service) llmGeneratePortableWithSchemaTrace(
 	return s.llmGenerateWithEvidenceTrace(ctx, stepID, scope, modelName, prompt, responseSchema, work)
 }
 
+func (s *Service) llmGeneratePortableAdvisoryTrace(
+	ctx context.Context,
+	stepID int64,
+	job assemblyline.PortableJob,
+	modelName, prompt string,
+) (llm.AdvisoryResponse, error) {
+	work, err := llmEvidenceWorkForPortableJob(job)
+	if err != nil {
+		return llm.AdvisoryResponse{}, err
+	}
+	return s.llmGenerateResponseWithEvidenceTrace(
+		ctx, stepID, "portable_advisory_worker", modelName, prompt, nil, work, true,
+	)
+}
+
 func llmEvidenceWorkForPortableJob(job assemblyline.PortableJob) (llmEvidenceWork, error) {
 	if err := job.Validate(); err != nil {
 		return llmEvidenceWork{}, fmt.Errorf("record portable LLM work identity: %w", err)
@@ -88,6 +103,7 @@ func applyPreparedRequestToEvidence(record *queue.LLMCallEvidenceRecord, prepare
 		record.ResponseFormat = "text"
 	}
 	record.ResponseSchema = prepared.ResponseSchema
+	record.ThinkingEnabled = prepared.ThinkingEnabled
 }
 
 func effectivePreparedModel(prepared llm.PreparedModel, requested string) string {

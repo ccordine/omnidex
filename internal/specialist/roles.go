@@ -41,6 +41,7 @@ const (
 	RoleCodingSurfaceStation              = "coding_surface"
 	RoleCodingProductIdentityStation      = "coding_product_identity"
 	RoleCodingRequirementPartitionStation = "coding_requirement_partition"
+	RoleCodingRequirementAdviserStation   = "coding_requirement_adviser"
 	RoleCodingRequirementSplitStation     = "coding_requirement_split"
 	RoleCodingArtifactHandlingStation     = "coding_artifact_handling"
 	RoleCodingCapabilityRelationStation   = "coding_capability_relation"
@@ -366,6 +367,8 @@ func EnvVarForRoleID(roleID string) string {
 		return "OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY"
 	case RoleCodingRequirementPartitionStation:
 		return "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION"
+	case RoleCodingRequirementAdviserStation:
+		return "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER"
 	case RoleCodingRequirementSplitStation:
 		return "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT"
 	case RoleCodingArtifactHandlingStation:

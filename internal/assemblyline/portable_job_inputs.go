@@ -14,6 +14,16 @@ type RequirementPartitionInput struct {
 	Mode       RequirementPartitionMode `json:"mode"`
 }
 
+type RequirementPartitionAdvisoryInput struct {
+	Original RequirementPartitionInput `json:"original"`
+	Lens     RequirementPartitionLens  `json:"lens"`
+}
+
+type RequirementPartitionSynthesisInput struct {
+	Original     RequirementPartitionInput `json:"original"`
+	AdvisoryMemo string                    `json:"advisory_memo"`
+}
+
 type ApplicationClassificationInput struct {
 	UserRequest string `json:"user_request"`
 }
@@ -52,6 +62,18 @@ type ResponseCorrectionInput struct {
 
 func NewRequirementPartitionJob(input RequirementPartitionInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkRequirementPartition, input, input.validate)
+}
+
+func NewRequirementPartitionBriefingJob(input RequirementPartitionInput) (PortableJob, error) {
+	return newValidatedPortableJob(WorkRequirementBriefing, input, input.validate)
+}
+
+func NewRequirementPartitionAdvisoryJob(input RequirementPartitionAdvisoryInput) (PortableJob, error) {
+	return newValidatedPortableJob(WorkRequirementAdvisory, input, input.validate)
+}
+
+func NewRequirementPartitionSynthesisJob(input RequirementPartitionSynthesisInput) (PortableJob, error) {
+	return newValidatedPortableJob(WorkRequirementSynthesis, input, input.validate)
 }
 
 func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {

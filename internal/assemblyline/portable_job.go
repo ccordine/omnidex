@@ -19,16 +19,25 @@ const (
 type WorkKind string
 
 const (
-	WorkRequirementPartition WorkKind = "requirement_partition"
-	WorkApplicationClassify  WorkKind = "application_classification"
-	WorkApplicationIdentity  WorkKind = "application_identity"
-	WorkArtifactHandling     WorkKind = "artifact_handling"
-	WorkCapabilityRelation   WorkKind = "capability_relation"
-	WorkSkillSelection       WorkKind = "skill_selection"
-	WorkSkillProcedure       WorkKind = "skill_procedure"
-	WorkFragmentGeneration   WorkKind = "fragment_generation"
-	WorkFragmentCorrection   WorkKind = "fragment_correction"
-	WorkResponseCorrection   WorkKind = "response_correction"
+	WorkRequirementPartition      WorkKind = "requirement_partition"
+	WorkRequirementBriefing       WorkKind = "requirement_partition_briefing"
+	WorkRequirementAdvisory       WorkKind = "requirement_partition_advisory"
+	WorkRequirementSynthesis      WorkKind = "requirement_partition_synthesis"
+	WorkRequirementFinalAdvisory  WorkKind = "requirement_final_advisory"
+	WorkRequirementFinalSynthesis WorkKind = "requirement_final_synthesis"
+	WorkRepositoryRetrieval       WorkKind = "repository_retrieval"
+	WorkRetrievalBriefing         WorkKind = "repository_retrieval_briefing"
+	WorkRetrievalAdvisory         WorkKind = "repository_retrieval_advisory"
+	WorkRetrievalSynthesis        WorkKind = "repository_retrieval_synthesis"
+	WorkApplicationClassify       WorkKind = "application_classification"
+	WorkApplicationIdentity       WorkKind = "application_identity"
+	WorkArtifactHandling          WorkKind = "artifact_handling"
+	WorkCapabilityRelation        WorkKind = "capability_relation"
+	WorkSkillSelection            WorkKind = "skill_selection"
+	WorkSkillProcedure            WorkKind = "skill_procedure"
+	WorkFragmentGeneration        WorkKind = "fragment_generation"
+	WorkFragmentCorrection        WorkKind = "fragment_correction"
+	WorkResponseCorrection        WorkKind = "response_correction"
 )
 
 type PortableJob struct {
@@ -118,6 +127,9 @@ func decodePortablePayload(payload []byte, target any) error {
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
 	case WorkApplicationClassify, WorkApplicationIdentity, WorkRequirementPartition,
+		WorkRequirementBriefing, WorkRequirementAdvisory, WorkRequirementSynthesis,
+		WorkRequirementFinalAdvisory, WorkRequirementFinalSynthesis,
+		WorkRepositoryRetrieval, WorkRetrievalBriefing, WorkRetrievalAdvisory, WorkRetrievalSynthesis,
 		WorkArtifactHandling, WorkCapabilityRelation, WorkSkillSelection, WorkSkillProcedure,
 		WorkFragmentGeneration, WorkFragmentCorrection, WorkResponseCorrection:
 		return true

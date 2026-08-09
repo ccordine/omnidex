@@ -1,0 +1,61 @@
+{
+  "schema": "omnidex.model-gauntlet.requirement-partition-cases.v1",
+  "cases": [
+    {
+      "id": "timer-features",
+      "input": {
+        "source_text": "Build a timer with lap history and keyboard controls.",
+        "mode": "extract_features"
+      }
+    },
+    {
+      "id": "archive-product-only",
+      "input": {
+        "source_text": "Create a command-line archive utility.",
+        "mode": "extract_features"
+      }
+    },
+    {
+      "id": "drawing-features",
+      "input": {
+        "source_text": "Build a drawing workspace with pressure-sensitive brushes, layer visibility, and PNG export.",
+        "mode": "extract_features"
+      }
+    },
+    {
+      "id": "pomodoro-feature",
+      "input": {
+        "source_text": "Build a browser pomodoro timer with sound notifications.",
+        "mode": "extract_features"
+      }
+    },
+    {
+      "id": "filter-and-sort",
+      "input": {
+        "source_text": "filter records by owner and sort them by last update",
+        "mode": "split_feature"
+      }
+    },
+    {
+      "id": "single-recovery",
+      "input": {
+        "source_text": "offline draft recovery",
+        "mode": "split_feature"
+      }
+    },
+    {
+      "id": "board-actions",
+      "input": {
+        "source_text": "drag cards between columns, assign owners, and set due dates",
+        "mode": "split_feature"
+      }
+    },
+    {
+      "id": "search-and-export",
+      "input": {
+        "source_text": "search invoices by customer and export matching rows as CSV",
+        "mode": "split_feature"
+      }
+    }
+  ]
+}

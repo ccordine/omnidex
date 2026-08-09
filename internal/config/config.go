@@ -209,6 +209,7 @@ func Load() (Config, error) {
 		specialist.RoleCodingSurfaceStation:              roleEnv(specialist.RoleCodingSurfaceStation, cfg.TaggingModel),
 		specialist.RoleCodingProductIdentityStation:      roleEnv(specialist.RoleCodingProductIdentityStation, cfg.GlueModel),
 		specialist.RoleCodingRequirementPartitionStation: roleEnv(specialist.RoleCodingRequirementPartitionStation, cfg.GlueModel),
+		specialist.RoleCodingRequirementAdviserStation:   roleEnv(specialist.RoleCodingRequirementAdviserStation, ""),
 		specialist.RoleCodingRequirementSplitStation:     roleEnv(specialist.RoleCodingRequirementSplitStation, cfg.GlueModel),
 		specialist.RoleCodingArtifactHandlingStation:     roleEnv(specialist.RoleCodingArtifactHandlingStation, cfg.GlueModel),
 		specialist.RoleCodingCapabilityRelationStation:   roleEnv(specialist.RoleCodingCapabilityRelationStation, cfg.ReasoningModel),

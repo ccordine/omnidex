@@ -14,6 +14,7 @@ func TestModelSettingsUsesAuthoritativeModelRoleCatalog(t *testing.T) {
 		"OMNI_GLUE_MODEL=qwen2.5-coder:3b",
 		"OMNI_CODING_SURFACE_MODEL=qwen3:4b-surface",
 		"OMNI_CODING_REQUIREMENT_PARTITION_MODEL=qwen2.5-coder:7b-partition",
+		"OMNI_CODING_REQUIREMENT_ADVISER_MODEL=deepseek-r1:8b",
 		"OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen2.5:3b-artifact",
 		"OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3:4b-relation",
 		"OMNI_CODING_SKILL_SELECTION_MODEL=qwen3:4b-skill-select",
@@ -50,6 +51,9 @@ func TestModelSettingsUsesAuthoritativeModelRoleCatalog(t *testing.T) {
 	}
 	if values["coding_requirement_partition_model"] != "qwen2.5-coder:7b-partition" {
 		t.Fatalf("coding_requirement_partition_model=%q", values["coding_requirement_partition_model"])
+	}
+	if values["coding_requirement_adviser_model"] != "deepseek-r1:8b" {
+		t.Fatalf("coding_requirement_adviser_model=%q", values["coding_requirement_adviser_model"])
 	}
 	if values["coding_artifact_handling_model"] != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding_artifact_handling_model=%q", values["coding_artifact_handling_model"])

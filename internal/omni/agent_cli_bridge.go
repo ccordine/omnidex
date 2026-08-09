@@ -56,7 +56,7 @@ func agentModeArgs(args []string) []string {
 
 func isAgentCLIPassthroughCommand(command string) bool {
 	switch strings.ToLower(strings.TrimSpace(command)) {
-	case "enqueue", "list", "show", "watch", "interrupt", "cancel", "replan", "continue", "feedback", "status", "metrics", "core:status", "queue:status", "ollama:status", "web:status", "config", "host":
+	case "enqueue", "list", "show", "watch", "interrupt", "cancel", "replan", "continue", "feedback", "status", "metrics", "core:status", "queue:status", "ollama:status", "ollama:prewarm", "web:status", "config", "host":
 		return true
 	default:
 		return false

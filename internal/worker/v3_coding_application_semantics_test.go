@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestApplicationInterpreterUsesOneExtractionThenBlindFeatureJobs(t *testing.T) {
@@ -28,13 +29,16 @@ func TestApplicationInterpreterUsesOneExtractionThenBlindFeatureJobs(t *testing.
 	if specification.Surface != assemblyline.ApplicationSurfaceBrowser || len(specification.Requirements) != 2 {
 		t.Fatalf("specification=%#v", specification)
 	}
-	if countValue(script.models, "partition-model") != 1 || countValue(script.models, "split-model") != 2 ||
+	if countValue(script.models, "partition-model") != 2 || countValue(script.models, "split-model") != 4 ||
 		countValue(script.models, "identity-model") != 1 ||
 		countValue(script.models, "artifact-model") != 0 {
 		t.Fatalf("unexpected semantic routing: models=%#v", script.models)
 	}
-	for _, index := range []int{3, 4} {
-		if strings.Contains(script.prompts[index], request) {
+	if len(script.advisoryModels) != 3 || countValue(script.advisoryModels, "adviser-model") != 3 {
+		t.Fatalf("unexpected advisory routing: models=%#v", script.advisoryModels)
+	}
+	for index, modelName := range script.models {
+		if modelName == "split-model" && strings.Contains(script.prompts[index], request) {
 			t.Fatalf("small job %d received the broad request:\n%s", index, script.prompts[index])
 		}
 	}
@@ -86,10 +90,15 @@ func TestFeatureSplitFailureGetsDirectCorrectionOnTheSameSmallJob(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(script.prompts[4], "JSON merge patch") ||
-		!strings.Contains(script.prompts[4], "requires at least one") ||
-		strings.Contains(script.prompts[4], request) {
-		t.Fatalf("direct local correction was not delivered:\n%s", script.prompts[4])
+	var correctionPrompt string
+	for _, prompt := range script.prompts {
+		if strings.Contains(prompt, "JSON merge patch") {
+			correctionPrompt = prompt
+			break
+		}
+	}
+	if !strings.Contains(correctionPrompt, "requires at least one") || strings.Contains(correctionPrompt, request) {
+		t.Fatalf("direct local correction was not delivered:\n%s", correctionPrompt)
 	}
 }
 
@@ -108,25 +117,57 @@ func TestApplicationInterpreterFailsWhenExtractionFindsNoFeatures(t *testing.T) 
 }
 
 type semanticScript struct {
-	models  []string
-	prompts []string
-	runtime typedWorkerRuntime
+	models          []string
+	prompts         []string
+	advisoryModels  []string
+	advisoryPrompts []string
+	runtime         typedWorkerRuntime
 }
 
 func scriptedSemanticRuntime(t *testing.T, responses []any) *semanticScript {
 	t.Helper()
-	script := &semanticScript{models: make([]string, 0, len(responses)), prompts: make([]string, 0, len(responses))}
+	script := &semanticScript{
+		models: make([]string, 0, len(responses)*2), prompts: make([]string, 0, len(responses)*2),
+		advisoryModels: make([]string, 0, len(responses)), advisoryPrompts: make([]string, 0, len(responses)),
+	}
+	responseIndex := 0
 	script.runtime = typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 3,
-		Execute: testPortableExecutor(func(_ string, model string, prompt string, _ map[string]any) (string, error) {
+		Context: context.Background(), MaxAttempts: 3, AdvisoryModel: "adviser-model",
+		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
+			prompt, _, err := assemblyline.RenderPortableJob(job)
+			if err != nil {
+				return assemblyline.PortableResult{}, err
+			}
 			script.models = append(script.models, model)
 			script.prompts = append(script.prompts, prompt)
-			if len(script.models) > len(responses) {
-				t.Fatalf("unexpected semantic call %d:\n%s", len(script.models), prompt)
+			var response any
+			if job.Kind == assemblyline.WorkRequirementBriefing {
+				response = assemblyline.RequirementPartitionBriefingDecision{
+					Schema: assemblyline.RequirementPartitionBriefingSchemaV1,
+					Lens:   assemblyline.RequirementLensCoverage,
+				}
+			} else {
+				if responseIndex >= len(responses) {
+					t.Fatalf("unexpected semantic call %d:\n%s", len(script.models), prompt)
+				}
+				response = responses[responseIndex]
+				responseIndex++
 			}
-			encoded, err := json.Marshal(responses[len(script.models)-1])
-			return string(encoded), err
-		}),
+			encoded, err := json.Marshal(response)
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(encoded)}, err
+		},
+		Advise: func(job assemblyline.PortableJob, model string) (llm.AdvisoryResponse, error) {
+			prompt, schema, err := assemblyline.RenderPortableJob(job)
+			if err != nil {
+				return llm.AdvisoryResponse{}, err
+			}
+			if schema != nil {
+				t.Fatalf("advisory job returned schema %#v", schema)
+			}
+			script.advisoryModels = append(script.advisoryModels, model)
+			script.advisoryPrompts = append(script.advisoryPrompts, prompt)
+			return llm.AdvisoryResponse{Thinking: "evidence only", Content: "bounded final critique memo"}, nil
+		},
 	}
 	return script
 }

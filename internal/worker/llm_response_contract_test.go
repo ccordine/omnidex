@@ -28,6 +28,13 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			maxTokens:  4096,
 			promptHint: "Return only the raw TypeScript function required by the supplied contract. No JSON, Markdown, import, export, path, or commentary.",
 		},
+		{
+			name:       "portable advisory station",
+			scope:      "portable_advisory_worker",
+			format:     "",
+			maxTokens:  1024,
+			promptHint: "Return one bounded plain-text advisory memo. Do not emit JSON or make the authoritative decision.",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

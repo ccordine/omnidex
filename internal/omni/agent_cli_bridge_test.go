@@ -22,10 +22,14 @@ func TestAgentModeArgsTreatsFlagsAsChatFlags(t *testing.T) {
 }
 
 func TestAgentModeArgsPassesKnownAgentCLICommands(t *testing.T) {
-	got := agentModeArgs([]string{"list", "--status", "running"})
-	want := []string{"list", "--status", "running"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("agentModeArgs()=%v want %v", got, want)
+	for _, want := range [][]string{
+		{"list", "--status", "running"},
+		{"ollama:prewarm", "--model", "qwen3-coder:30b"},
+	} {
+		got := agentModeArgs(want)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("agentModeArgs()=%v want %v", got, want)
+		}
 	}
 }
 

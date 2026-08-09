@@ -50,3 +50,20 @@ func (s *Service) generatePreparedWithProgress(
 		return nil
 	})
 }
+
+func (s *Service) generatePreparedResponseWithProgress(
+	ctx context.Context,
+	stepID int64,
+	scope string,
+	prepared llm.PreparedModel,
+) (llm.AdvisoryResponse, error) {
+	if !prepared.ThinkingEnabled {
+		raw, err := s.generatePreparedWithProgress(ctx, stepID, scope, prepared)
+		return llm.AdvisoryResponse{Content: raw}, err
+	}
+	advisory, ok := s.llm.(llm.PreparedAdvisoryClient)
+	if !ok {
+		return llm.AdvisoryResponse{}, fmt.Errorf("LLM provider does not implement native advisory generation")
+	}
+	return advisory.GeneratePreparedAdvisory(ctx, prepared)
+}

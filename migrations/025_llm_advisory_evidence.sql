@@ -1,0 +1,2 @@
+ALTER TABLE llm_call_evidence
+    ADD COLUMN IF NOT EXISTS thinking_enabled BOOLEAN NOT NULL DEFAULT FALSE;

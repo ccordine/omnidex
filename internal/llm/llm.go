@@ -20,9 +20,13 @@ type PreparedModel struct {
 	ContextTokens   int
 	ResponseFormat  string
 	ResponseSchema  map[string]any
+	ThinkingEnabled bool
 }
 
 func ValidateResponseContract(prepared PreparedModel) error {
+	if prepared.ThinkingEnabled && (prepared.ResponseFormat != "" || len(prepared.ResponseSchema) > 0) {
+		return fmt.Errorf("native thinking forbids a structured response contract")
+	}
 	if prepared.ResponseFormat != "" && prepared.ResponseFormat != ResponseFormatJSON {
 		return fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
 	}

@@ -34,6 +34,69 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildRequirementPartitionPrompt(input)
 		return prompt, RequirementPartitionResponseSchema(), err
+	case WorkRequirementBriefing:
+		var input RequirementPartitionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRequirementPartitionBriefingPrompt(input)
+		return prompt, RequirementPartitionBriefingResponseSchema(), err
+	case WorkRequirementAdvisory:
+		var input RequirementPartitionAdvisoryInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRequirementPartitionAdvisoryPrompt(input)
+		return prompt, nil, err
+	case WorkRequirementSynthesis:
+		var input RequirementPartitionSynthesisInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRequirementPartitionSynthesisPrompt(input)
+		return prompt, RequirementPartitionResponseSchema(), err
+	case WorkRequirementFinalAdvisory:
+		var input RequirementFinalAdvisoryInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRequirementFinalAdvisoryPrompt(input)
+		return prompt, nil, err
+	case WorkRequirementFinalSynthesis:
+		var input RequirementFinalSynthesisInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRequirementFinalSynthesisPrompt(input)
+		return prompt, RequirementPartitionResponseSchema(), err
+	case WorkRepositoryRetrieval:
+		var input RepositoryRetrievalInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryRetrievalPrompt(input)
+		return prompt, RepositoryRetrievalResponseSchema(), err
+	case WorkRetrievalBriefing:
+		var input RepositoryRetrievalInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryRetrievalBriefingPrompt(input)
+		return prompt, RepositoryRetrievalBriefingResponseSchema(), err
+	case WorkRetrievalAdvisory:
+		var input RepositoryRetrievalAdvisoryInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryRetrievalAdvisoryPrompt(input)
+		return prompt, nil, err
+	case WorkRetrievalSynthesis:
+		var input RepositoryRetrievalSynthesisInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryRetrievalSynthesisPrompt(input)
+		return prompt, RepositoryRetrievalResponseSchema(), err
 	case WorkArtifactHandling:
 		var input ArtifactHandlingInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
