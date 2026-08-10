@@ -96,14 +96,21 @@ func RunOfflineMatrix(
 	if derivedLast != lastInferenceExitedAt || derivedFirst != firstEvaluatorStartedAt {
 		return VerifiedOfflineMatrixReceipt{}, fmt.Errorf("matrix aggregate chronology diverged from sealed runs")
 	}
+	releaseCoverage, releaseCoverageSHA, err := deriveReleaseMatrixCoverage(registration)
+	if err != nil {
+		return VerifiedOfflineMatrixReceipt{}, err
+	}
 	receipt := OfflineMatrixReceipt{
-		Schema:                OfflineMatrixReceiptSchemaV2,
+		Schema:                OfflineMatrixReceiptSchemaV3,
 		PreregistrationSHA256: config.PreregistrationSHA256,
 		Runs:                  runs, DeterministicOracleBounds: oracleBounds, Tournament: tournament,
 		Gate: gate, LastInferenceExitedAt: lastInferenceExitedAt,
-		FirstEvaluatorStartedAt: firstEvaluatorStartedAt,
-		CompletedAt:             derivedCompleted, GateEvidenceQualified: gate.Passed,
-		PromotionEligible: false,
+		FirstEvaluatorStartedAt:  firstEvaluatorStartedAt,
+		CompletedAt:              derivedCompleted,
+		GateEvidenceQualified:    gate.Passed,
+		ReleaseCoverageQualified: releaseCoverage,
+		ReleaseCoverageSHA256:    releaseCoverageSHA,
+		PromotionEligible:        false,
 	}
 	if err := receipt.Validate(registration); err != nil {
 		return VerifiedOfflineMatrixReceipt{}, err

@@ -34,7 +34,7 @@ func (oracle *Oracle) canonicalize() {
 }
 
 func (oracle Oracle) Validate() error {
-	if oracle.Schema != OracleSchemaV1 || !validSymbol(string(oracle.ScenarioID)) ||
+	if oracle.Schema != OracleSchemaV2 || !validSymbol(string(oracle.ScenarioID)) ||
 		!validDigest(oracle.PublicSHA256) || !validDigest(oracle.DefinitionSHA256) ||
 		oracle.GeneratorVersion != GeneratorVersionV1 || oracle.GrammarVersion != GrammarVersionV1 {
 		return fmt.Errorf("%w: oracle authority is invalid", ErrGeneration)
@@ -42,30 +42,27 @@ func (oracle Oracle) Validate() error {
 	if len(oracle.Witness) < MinSolutionDepth || len(oracle.Witness) > MaxSolutionDepth {
 		return fmt.Errorf("%w: oracle witness length is invalid", ErrGeneration)
 	}
-	witnessCost := 0
-	seenActions := make(map[cognition.ActionID]struct{}, len(oracle.Witness))
-	for index, action := range oracle.Witness {
-		if !validSymbol(string(action.ID)) || action.Schema.Validate() != nil || action.Request.Validate() != nil ||
-			action.Cost < 1 || action.Cost > cognition.MaxTransitionCost {
-			return fmt.Errorf("%w: witness action %d is invalid", ErrGeneration, index)
-		}
-		if _, duplicate := seenActions[action.ID]; duplicate {
-			return fmt.Errorf("%w: witness action ID is duplicated", ErrGeneration)
-		}
-		seenActions[action.ID] = struct{}{}
-		witnessCost += action.Cost
+	witnessCost, err := validateOraclePlanActions("witness", oracle.Witness)
+	if err != nil {
+		return err
 	}
 	if witnessCost != oracle.WitnessCost || oracle.LowerBound < 1 || oracle.LowerBound > oracle.WitnessCost {
 		return fmt.Errorf("%w: oracle witness costs are inconsistent", ErrGeneration)
 	}
 	switch oracle.Quality {
 	case OracleOptimal:
-		if oracle.OptimalCost == nil || *oracle.OptimalCost != oracle.LowerBound || *oracle.OptimalCost > oracle.WitnessCost {
+		if oracle.OptimalCost == nil || len(oracle.OptimalPlan) == 0 ||
+			len(oracle.OptimalPlan) > MaxSolutionDepth || *oracle.OptimalCost != oracle.LowerBound ||
+			*oracle.OptimalCost > oracle.WitnessCost {
 			return fmt.Errorf("%w: optimal oracle proof is inconsistent", ErrGeneration)
 		}
+		optimalCost, planErr := validateOraclePlanActions("optimal plan", oracle.OptimalPlan)
+		if planErr != nil || optimalCost != *oracle.OptimalCost {
+			return fmt.Errorf("%w: optimal oracle plan cost is inconsistent", ErrGeneration)
+		}
 	case OracleWitnessOnly:
-		if oracle.OptimalCost != nil {
-			return fmt.Errorf("%w: witness-only oracle claims an optimal cost", ErrGeneration)
+		if oracle.OptimalCost != nil || oracle.OptimalPlan == nil || len(oracle.OptimalPlan) != 0 {
+			return fmt.Errorf("%w: witness-only oracle claims an optimal proof", ErrGeneration)
 		}
 	default:
 		return fmt.Errorf("%w: oracle quality is unregistered", ErrGeneration)
@@ -126,6 +123,7 @@ func (oracle Oracle) MarshalJSON() ([]byte, error) {
 
 func (oracle Oracle) clone() Oracle {
 	oracle.Witness = cloneWitness(oracle.Witness)
+	oracle.OptimalPlan = cloneWitness(oracle.OptimalPlan)
 	oracle.RequiredEvidence = append([]EvidenceIdentity(nil), oracle.RequiredEvidence...)
 	oracle.EvidenceUses = append([]EvidenceUse(nil), oracle.EvidenceUses...)
 	oracle.CausalDAG = append([]CausalEdge(nil), oracle.CausalDAG...)
@@ -134,6 +132,27 @@ func (oracle Oracle) clone() Oracle {
 		oracle.OptimalCost = &value
 	}
 	return oracle
+}
+
+func validateOraclePlanActions(label string, actions []WitnessAction) (int, error) {
+	if actions == nil {
+		return 0, fmt.Errorf("%w: %s actions must be explicit", ErrGeneration, label)
+	}
+	total := 0
+	seen := make(map[cognition.ActionID]struct{}, len(actions))
+	for index, action := range actions {
+		if !validSymbol(string(action.ID)) || action.Schema.Validate() != nil ||
+			action.Request.Validate() != nil || action.Cost < 1 ||
+			action.Cost > cognition.MaxTransitionCost {
+			return 0, fmt.Errorf("%w: %s action %d is invalid", ErrGeneration, label, index)
+		}
+		if _, duplicate := seen[action.ID]; duplicate {
+			return 0, fmt.Errorf("%w: %s action ID is duplicated", ErrGeneration, label)
+		}
+		seen[action.ID] = struct{}{}
+		total += action.Cost
+	}
+	return total, nil
 }
 
 func (oracle Oracle) validateEvidenceUses() error {

@@ -39,22 +39,20 @@ type ProviderIdentityEvidenceRef struct {
 }
 
 type ProviderIdentityOperationEvidence struct {
-	Operation            ProviderIdentityOperation            `json:"operation"`
-	Method               string                               `json:"method"`
-	Endpoint             string                               `json:"endpoint"`
-	RequestDispatched    bool                                 `json:"request_dispatched"`
-	RequestSHA256        string                               `json:"request_sha256"`
-	RequestBytes         int                                  `json:"request_bytes"`
-	Request              []byte                               `json:"-"`
-	HTTPStatus           int                                  `json:"http_status"`
-	Disposition          ProviderIdentityOperationDisposition `json:"disposition"`
-	ResponseComplete     bool                                 `json:"response_complete"`
-	ContentEncodingCount int                                  `json:"content_encoding_count"`
-	ContentEncoding      string                               `json:"content_encoding"`
-	ResponseUncompressed bool                                 `json:"response_uncompressed"`
-	ResponseSHA256       string                               `json:"response_sha256"`
-	ResponseBytes        int                                  `json:"response_bytes"`
-	ResponseCapture      []byte                               `json:"-"`
+	Operation         ProviderIdentityOperation            `json:"operation"`
+	Method            string                               `json:"method"`
+	Endpoint          string                               `json:"endpoint"`
+	RequestDispatched bool                                 `json:"request_dispatched"`
+	RequestSHA256     string                               `json:"request_sha256"`
+	RequestBytes      int                                  `json:"request_bytes"`
+	Request           []byte                               `json:"-"`
+	HTTPStatus        int                                  `json:"http_status"`
+	Disposition       ProviderIdentityOperationDisposition `json:"disposition"`
+	ResponseComplete  bool                                 `json:"response_complete"`
+	ContentEncoding   ProviderContentEncodingEvidence      `json:"content_encoding"`
+	ResponseSHA256    string                               `json:"response_sha256"`
+	ResponseBytes     int                                  `json:"response_bytes"`
+	ResponseCapture   []byte                               `json:"-"`
 }
 
 type ProviderIdentityEvidence struct {
@@ -82,9 +80,7 @@ func NewProviderIdentityOperationEvidence(
 	status int,
 	disposition ProviderIdentityOperationDisposition,
 	responseComplete bool,
-	contentEncodingCount int,
-	contentEncoding string,
-	responseUncompressed bool,
+	contentEncoding ProviderContentEncodingEvidence,
 	response []byte,
 ) (ProviderIdentityOperationEvidence, error) {
 	value := ProviderIdentityOperationEvidence{
@@ -92,10 +88,9 @@ func NewProviderIdentityOperationEvidence(
 		RequestDispatched: requestDispatched, Request: append([]byte(nil), request...),
 		RequestSHA256: providerBodySHA256(request), RequestBytes: len(request),
 		HTTPStatus: status, Disposition: disposition, ResponseComplete: responseComplete,
-		ContentEncodingCount: contentEncodingCount, ContentEncoding: contentEncoding,
-		ResponseUncompressed: responseUncompressed,
-		ResponseCapture:      append([]byte(nil), response...),
-		ResponseSHA256:       providerBodySHA256(response), ResponseBytes: len(response),
+		ContentEncoding: contentEncoding,
+		ResponseCapture: append([]byte(nil), response...),
+		ResponseSHA256:  providerBodySHA256(response), ResponseBytes: len(response),
 	}
 	if err := value.Validate(); err != nil {
 		return ProviderIdentityOperationEvidence{}, err
@@ -149,7 +144,8 @@ func NewSuccessfulProviderIdentityEvidence(
 	for _, definition := range definitions {
 		operation, err := NewProviderIdentityOperationEvidence(
 			definition.operation, definition.method, definition.endpoint, true,
-			definition.request, 200, ProviderIdentitySucceeded, true, 0, "", false,
+			definition.request, 200, ProviderIdentitySucceeded, true,
+			NewProviderContentEncodingEvidence(nil, false),
 			definition.response,
 		)
 		if err != nil {
@@ -200,15 +196,15 @@ func (operation ProviderIdentityOperationEvidence) Validate() error {
 		operation.ResponseSHA256 != providerBodySHA256(operation.ResponseCapture) {
 		return fmt.Errorf("provider identity operation bytes differ from their identity")
 	}
-	if !validProviderContentEncoding(
-		operation.ContentEncodingCount, operation.ContentEncoding,
-	) {
+	if operation.Disposition != ProviderIdentityNotDispatched &&
+		operation.Disposition != ProviderIdentityTransport &&
+		operation.ContentEncoding.Validate() != nil {
 		return fmt.Errorf("provider identity operation content encoding is invalid")
 	}
 	if operation.Disposition == ProviderIdentityNotDispatched {
 		if operation.RequestDispatched || operation.HTTPStatus != 0 || operation.ResponseComplete ||
-			operation.ResponseBytes != 0 || operation.ContentEncodingCount != 0 ||
-			operation.ResponseUncompressed {
+			operation.ResponseBytes != 0 ||
+			operation.ContentEncoding != (ProviderContentEncodingEvidence{}) {
 			return fmt.Errorf("undispatched provider identity operation claims a request")
 		}
 		return nil
@@ -219,8 +215,7 @@ func (operation ProviderIdentityOperationEvidence) Validate() error {
 	switch operation.Disposition {
 	case ProviderIdentityTransport:
 		if operation.HTTPStatus != 0 || operation.ResponseComplete || operation.ResponseBytes != 0 ||
-			operation.ContentEncodingCount != 0 || operation.ContentEncoding != "" ||
-			operation.ResponseUncompressed {
+			operation.ContentEncoding != (ProviderContentEncodingEvidence{}) {
 			return fmt.Errorf("provider identity transport failure claims a response")
 		}
 	case ProviderIdentityBodyLimit:
@@ -242,10 +237,7 @@ func (operation ProviderIdentityOperationEvidence) Validate() error {
 			(operation.HTTPStatus >= 200 && operation.HTTPStatus < 300) {
 			return fmt.Errorf("provider identity response status differs from disposition")
 		}
-		if operation.Disposition == ProviderIdentitySucceeded &&
-			(operation.ResponseUncompressed || !ProviderContentEncodingIsIdentity(
-				operation.ContentEncodingCount, operation.ContentEncoding,
-			)) {
+		if operation.Disposition == ProviderIdentitySucceeded && !operation.ContentEncoding.IsIdentity() {
 			return fmt.Errorf("successful provider identity response used transformed encoding")
 		}
 	default:

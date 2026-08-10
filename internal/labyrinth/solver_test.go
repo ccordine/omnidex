@@ -2,6 +2,7 @@ package labyrinth
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -21,6 +22,20 @@ func TestSolverProvesGeneratedOptimalCost(t *testing.T) {
 	}
 	if result.Cost != *oracle.OptimalCost || result.Cost != oracle.LowerBound {
 		t.Fatalf("solver cost=%d oracle optimal=%d lower=%d", result.Cost, *oracle.OptimalCost, oracle.LowerBound)
+	}
+	if len(oracle.OptimalPlan) != len(result.Actions) || witnessCost(oracle.OptimalPlan) != result.Cost {
+		t.Fatalf("sealed optimal plan=%#v solver=%#v", oracle.OptimalPlan, result)
+	}
+	for index := range result.Actions {
+		if !reflect.DeepEqual(oracle.OptimalPlan[index].Request, result.Actions[index]) {
+			t.Fatalf("optimal request %d differs from solver result", index)
+		}
+	}
+	transition, replayedCost, err := verifyScenarioWitness(
+		generated.ExecutionScenario(), oracle.OptimalPlan,
+	)
+	if err != nil || !transition.Terminal || replayedCost != result.Cost {
+		t.Fatalf("optimal plan replay terminal=%t cost=%d error=%v", transition.Terminal, replayedCost, err)
 	}
 }
 
@@ -57,7 +72,8 @@ func TestGeneratorMarksBoundedUnprovenCaseWitnessOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	oracle := generated.PrivateOracle()
-	if oracle.Quality != OracleWitnessOnly || oracle.OptimalCost != nil || oracle.LowerBound < 1 {
+	if oracle.Quality != OracleWitnessOnly || oracle.OptimalCost != nil ||
+		oracle.OptimalPlan == nil || len(oracle.OptimalPlan) != 0 || oracle.LowerBound < 1 {
 		t.Fatalf("bounded oracle = %#v, want explicit witness-only authority", oracle)
 	}
 	if transition, _, err := VerifyWitness(generated); err != nil || !transition.Terminal {

@@ -73,9 +73,11 @@ func RequireProviderIdentityObservation(
 			Model:              request.Expectation.Model,
 			NativeContextLimit: request.Expectation.NativeContextLimit,
 		}
-		if evidenceErr := observed.Evidence.ValidateRequests(selection); evidenceErr != nil {
+		if evidenceErr := observed.Evidence.ValidateFailure(
+			selection, &request.Expectation,
+		); evidenceErr != nil {
 			return observed, fmt.Errorf(
-				"provider identity failure lacks exact request-scoped evidence: %v: %w",
+				"provider identity failure is not proven by exact request-scoped evidence: %v: %w",
 				evidenceErr, err,
 			)
 		}

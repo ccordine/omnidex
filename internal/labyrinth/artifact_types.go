@@ -7,7 +7,7 @@ import (
 const (
 	GeneratedScenarioSchemaV1 = "labyrinth.generated-scenario.v1"
 	PublicWorldSchemaV1       = "labyrinth.public-world.v1"
-	OracleSchemaV1            = "labyrinth.private-oracle.v1"
+	OracleSchemaV2            = "labyrinth.private-oracle.v2"
 )
 
 type GeneratedScenario struct {
@@ -72,6 +72,7 @@ type Oracle struct {
 	Witness          []WitnessAction      `json:"witness"`
 	WitnessCost      int                  `json:"witness_cost"`
 	OptimalCost      *int                 `json:"optimal_cost,omitempty"`
+	OptimalPlan      []WitnessAction      `json:"optimal_plan"`
 	LowerBound       int                  `json:"lower_bound"`
 	RequiredEvidence []EvidenceIdentity   `json:"required_evidence"`
 	EvidenceUses     []EvidenceUse        `json:"evidence_uses"`

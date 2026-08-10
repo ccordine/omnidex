@@ -28,9 +28,7 @@ type CognitionProviderIdentityOperationMetadata struct {
 	HTTPStatus        int
 	Disposition       llm.ProviderIdentityOperationDisposition
 	ResponseComplete  bool
-	ContentEncodingCount int
-	ContentEncoding      string
-	ResponseUncompressed bool
+	ContentEncoding   llm.ProviderContentEncodingEvidence
 	ResponseSHA256    string
 	ResponseBytes     int
 }
@@ -64,8 +62,7 @@ func (r *Repository) ReadCognitionProviderIdentityEvidenceManifest(
 		       operations.method,operations.endpoint,operations.request_dispatched,
 		       operations.request_sha256,operations.request_bytes,operations.http_status,
 		       operations.disposition,operations.response_complete,
-		       operations.content_encoding_count,operations.content_encoding,
-		       operations.response_uncompressed,
+		       operations.content_encoding_json,
 		       operations.response_sha256,operations.response_bytes
 		FROM cognition_provider_identity_evidence evidence
 		JOIN cognition_provider_identity_evidence_operations operations
@@ -84,18 +81,21 @@ func (r *Repository) ReadCognitionProviderIdentityEvidenceManifest(
 	var value CognitionProviderIdentityEvidenceManifest
 	for rows.Next() {
 		var refJSON []byte
+		var contentEncodingJSON []byte
 		var operation CognitionProviderIdentityOperationMetadata
 		if err := rows.Scan(&refJSON, &operation.Index, &operation.Operation,
 			&operation.Method, &operation.Endpoint, &operation.RequestDispatched,
 			&operation.RequestSHA256, &operation.RequestBytes, &operation.HTTPStatus,
 			&operation.Disposition, &operation.ResponseComplete,
-			&operation.ContentEncodingCount, &operation.ContentEncoding,
-			&operation.ResponseUncompressed,
+			&contentEncodingJSON,
 			&operation.ResponseSHA256, &operation.ResponseBytes); err != nil {
 			return CognitionProviderIdentityEvidenceManifest{}, err
 		}
 		var ref llm.ProviderIdentityEvidenceRef
 		if err := cognitionDecodeExact(refJSON, &ref); err != nil {
+			return CognitionProviderIdentityEvidenceManifest{}, err
+		}
+		if err := cognitionDecodeExact(contentEncodingJSON, &operation.ContentEncoding); err != nil {
 			return CognitionProviderIdentityEvidenceManifest{}, err
 		}
 		if value.Ref == (llm.ProviderIdentityEvidenceRef{}) {

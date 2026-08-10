@@ -23,6 +23,8 @@ func TestGeneratedV1WorldsRemainSolvableAcrossThousandsOfSeeds(t *testing.T) {
 			}
 			oracle := generated.PrivateOracle()
 			if oracle.Quality != OracleOptimal || oracle.OptimalCost == nil ||
+				len(oracle.OptimalPlan) == 0 ||
+				witnessCost(oracle.OptimalPlan) != *oracle.OptimalCost ||
 				*oracle.OptimalCost > oracle.WitnessCost {
 				t.Fatalf("suite=%s seed=%d lacks an exact exhaustive cost proof", suite, seed)
 			}

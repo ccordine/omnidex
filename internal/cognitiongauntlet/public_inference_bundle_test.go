@@ -29,7 +29,8 @@ func TestPublicInferenceBundleContainsNoPrivateEvaluationAuthority(t *testing.T)
 	assertNoPrivateEvaluationAuthority(t, raw, paired)
 	for _, forbidden := range []string{
 		`"world"`, `"descriptor"`, `"entities"`, `"predicate_schemas"`,
-		`"initial_facts"`, `"records"`, `"artifact_corpus"`,
+		`"initial_facts"`, `"records"`, `"artifact_corpus"`, `"optimal_plan"`,
+		`"expanded_states"`,
 	} {
 		if strings.Contains(string(raw), forbidden) {
 			t.Fatalf("inference bootstrap contains world authority %q: %s", forbidden, raw)

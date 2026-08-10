@@ -70,8 +70,7 @@ func validateResultProviderEvidence(result CallResult, attempt CallAttempt) erro
 			!reflect.DeepEqual(result.ProviderObservation, llm.ProviderIdentityObservation{}) ||
 			result.ProviderRequestSHA256 != "" || result.ProviderHTTPStatus != 0 ||
 			result.ProviderResponseDisposition != "" || result.ProviderResponseComplete ||
-			result.ProviderContentEncodingCount != 0 || result.ProviderContentEncoding != "" ||
-			result.ProviderResponseUncompressed ||
+			result.ProviderContentEncoding != (llm.ProviderContentEncodingEvidence{}) ||
 			result.ProviderResponseBytesKnown || result.ProviderResponseSHA256 != "" ||
 			result.ProviderResponseBytes != 0 || result.ProviderResponseCaptureSHA256 != "" ||
 			result.ProviderResponseCapturedBytes != 0 || result.ProviderResponseModel != "" ||
@@ -93,8 +92,7 @@ func validateResultProviderEvidence(result CallResult, attempt CallAttempt) erro
 			result.ProviderRequestDispatched || result.ProviderRequestSHA256 != "" ||
 			result.ProviderHTTPStatus != 0 || result.ProviderResponseDisposition != "" ||
 			result.ProviderResponseComplete || result.ProviderResponseBytesKnown ||
-			result.ProviderContentEncodingCount != 0 || result.ProviderContentEncoding != "" ||
-			result.ProviderResponseUncompressed ||
+			result.ProviderContentEncoding != (llm.ProviderContentEncodingEvidence{}) ||
 			result.ProviderResponseSHA256 != "" ||
 			result.ProviderResponseBytes != 0 || result.ProviderResponseCaptureSHA256 != "" ||
 			result.ProviderResponseCapturedBytes != 0 || result.ProviderResponseModel != "" ||
@@ -127,9 +125,7 @@ func validateResultProviderEvidence(result CallResult, attempt CallAttempt) erro
 		ProviderHTTPStatus:            result.ProviderHTTPStatus,
 		ProviderResponseDisposition:   result.ProviderResponseDisposition,
 		ProviderResponseComplete:      result.ProviderResponseComplete,
-		ProviderContentEncodingCount:  result.ProviderContentEncodingCount,
 		ProviderContentEncoding:       result.ProviderContentEncoding,
-		ProviderResponseUncompressed:  result.ProviderResponseUncompressed,
 		ProviderResponseBytesKnown:    result.ProviderResponseBytesKnown,
 		ProviderResponseSHA256:        result.ProviderResponseSHA256,
 		ProviderResponseBytes:         result.ProviderResponseBytes,
@@ -276,7 +272,9 @@ func validateCallResponse(result CallResult, budget cognition.RuntimeBudget) err
 	}
 	if !result.ProviderRequestDispatched || !result.ProviderResponseComplete ||
 		!result.ProviderResponseBytesKnown ||
-		result.ProviderResponseDisposition != llm.ProviderResponseSucceeded {
+		(result.ProviderResponseDisposition != llm.ProviderResponseSucceeded &&
+			!(result.Status == CallResultFailed && result.FailureCode == CallFailureGeneration &&
+				result.ProviderResponseDisposition == llm.ProviderResponseEmptyContent)) {
 		return fmt.Errorf("%w: model response lacks an exact complete provider result", ErrInvalidEvidence)
 	}
 	if result.ResponseEvidence.ValidateFor(result.CallID) != nil ||

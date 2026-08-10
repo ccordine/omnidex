@@ -121,6 +121,55 @@ func TestProviderIdentityFailureEvidenceKeepsEveryPlannedRequestExact(t *testing
 	}
 }
 
+func TestProviderIdentityFailureMustBeDerivedFromExactRawEvidence(t *testing.T) {
+	t.Parallel()
+	expected := providerIdentityTestExpectation()
+	selection := ProviderIdentitySelection{
+		Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
+	}
+	valid := providerIdentityTestEvidence(t, expected)
+	if err := valid.ValidateFailure(selection, &expected); err == nil {
+		t.Fatal("successful expected identity was relabeled as a failure")
+	}
+
+	validJSONFailure := cloneProviderIdentityOperations(valid.Operations)
+	operation := validJSONFailure[0]
+	operation.Disposition = ProviderIdentityInvalidJSON
+	validJSONFailure[0] = operation
+	for index := 1; index < len(validJSONFailure); index++ {
+		validJSONFailure[index] = providerIdentityPendingOperation(t, validJSONFailure[index])
+	}
+	evidence, err := NewProviderIdentityEvidence(validJSONFailure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := evidence.ValidateFailure(selection, &expected); err == nil {
+		t.Fatal("valid exact JSON was relabeled as invalid_json")
+	}
+
+	invalidJSON := cloneProviderIdentityOperations(validJSONFailure)
+	invalidJSON[0].ResponseCapture = []byte(`{"version":`)
+	invalidJSON[0].ResponseBytes = len(invalidJSON[0].ResponseCapture)
+	invalidJSON[0].ResponseSHA256 = providerBodySHA256(invalidJSON[0].ResponseCapture)
+	evidence, err = NewProviderIdentityEvidence(invalidJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := evidence.ValidateFailure(selection, &expected); err != nil {
+		t.Fatalf("malformed exact JSON did not prove failure: %v", err)
+	}
+
+	encoded := cloneProviderIdentityOperations(validJSONFailure)
+	encoded[0].ContentEncoding = NewProviderContentEncodingEvidence([]string{"gzip"}, false)
+	evidence, err = NewProviderIdentityEvidence(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := evidence.ValidateFailure(selection, &expected); err != nil {
+		t.Fatalf("unsupported content encoding did not prove failure: %v", err)
+	}
+}
+
 func providerIdentityPendingOperation(
 	t *testing.T,
 	operation ProviderIdentityOperationEvidence,
@@ -128,7 +177,8 @@ func providerIdentityPendingOperation(
 	t.Helper()
 	value, err := NewProviderIdentityOperationEvidence(
 		operation.Operation, operation.Method, operation.Endpoint, false,
-		operation.Request, 0, ProviderIdentityNotDispatched, false, 0, "", false, nil,
+		operation.Request, 0, ProviderIdentityNotDispatched, false,
+		ProviderContentEncodingEvidence{}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +195,8 @@ func providerIdentityFailedOperation(
 	t.Helper()
 	value, err := NewProviderIdentityOperationEvidence(
 		operation.Operation, operation.Method, operation.Endpoint, true,
-		operation.Request, status, disposition, true, 0, "", false,
+		operation.Request, status, disposition, true,
+		NewProviderContentEncodingEvidence(nil, false),
 		[]byte(`{"error":"failed"}`),
 	)
 	if err != nil {

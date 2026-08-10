@@ -35,30 +35,26 @@ type ProviderGenerationUsage struct {
 
 type PreparedGeneration struct {
 	Schema string `json:"schema"`
-	// ProviderRequestDispatched means the exact provider request was dispatched. A
-	// transport failure after dispatch is true; any pre-dispatch failure is false.
-	ProviderRequestDispatched     bool                        `json:"provider_request_dispatched"`
-	Content                       string                      `json:"content"`
-	ProviderRequestSHA256         string                      `json:"provider_request_sha256"`
-	ProviderHTTPStatus            int                         `json:"provider_http_status"`
-	ProviderResponseDisposition   ProviderResponseDisposition `json:"provider_response_disposition"`
-	ProviderResponseComplete      bool                        `json:"provider_response_complete"`
-	ProviderContentEncodingCount  int                         `json:"provider_content_encoding_count"`
-	ProviderContentEncoding       string                      `json:"provider_content_encoding"`
-	ProviderResponseUncompressed  bool                        `json:"provider_response_uncompressed"`
-	ProviderResponseBytesKnown    bool                        `json:"provider_response_bytes_known"`
-	ProviderResponseSHA256        string                      `json:"provider_response_sha256"`
-	ProviderResponseBytes         int64                       `json:"provider_response_bytes"`
-	ProviderResponseCaptureSHA256 string                      `json:"provider_response_capture_sha256"`
-	ProviderResponseCapturedBytes int                         `json:"provider_response_captured_bytes"`
-	ProviderResponseCapture       []byte                      `json:"-"`
-	ProviderResponseModel         string                      `json:"provider_response_model"`
-	ProviderDonePresent           bool                        `json:"provider_done_present"`
-	ProviderDone                  bool                        `json:"provider_done"`
-	ProviderDoneReason            string                      `json:"provider_done_reason"`
-	UsagePresent                  bool                        `json:"usage_present"`
-	Usage                         ProviderGenerationUsage     `json:"usage"`
-	ProviderObservation           ProviderIdentityObservation `json:"provider_observation"`
+	ProviderRequestDisposition    ProviderRequestDisposition      `json:"provider_request_disposition"`
+	Content                       string                          `json:"content"`
+	ProviderRequestSHA256         string                          `json:"provider_request_sha256"`
+	ProviderHTTPStatus            int                             `json:"provider_http_status"`
+	ProviderResponseDisposition   ProviderResponseDisposition     `json:"provider_response_disposition"`
+	ProviderResponseComplete      bool                            `json:"provider_response_complete"`
+	ProviderContentEncoding       ProviderContentEncodingEvidence `json:"provider_content_encoding"`
+	ProviderResponseBytesKnown    bool                            `json:"provider_response_bytes_known"`
+	ProviderResponseSHA256        string                          `json:"provider_response_sha256"`
+	ProviderResponseBytes         int64                           `json:"provider_response_bytes"`
+	ProviderResponseCaptureSHA256 string                          `json:"provider_response_capture_sha256"`
+	ProviderResponseCapturedBytes int                             `json:"provider_response_captured_bytes"`
+	ProviderResponseCapture       []byte                          `json:"-"`
+	ProviderResponseModel         string                          `json:"provider_response_model"`
+	ProviderDonePresent           bool                            `json:"provider_done_present"`
+	ProviderDone                  bool                            `json:"provider_done"`
+	ProviderDoneReason            string                          `json:"provider_done_reason"`
+	UsagePresent                  bool                            `json:"usage_present"`
+	Usage                         ProviderGenerationUsage         `json:"usage"`
+	ProviderObservation           ProviderIdentityObservation     `json:"provider_observation"`
 	// ProviderIdentityEvidence is persisted out of line. The normalized
 	// observation above binds its content-addressed reference; keeping the raw
 	// bodies out of the prepared-generation JSON prevents large provider
@@ -152,15 +148,15 @@ func (generation PreparedGeneration) ValidateProviderResponseEvidence() error {
 // ValidateProviderResponseReceipt validates the normalized provider receipt
 // without claiming that its out-of-line raw response bytes were supplied.
 func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
-	if generation.Schema != PreparedGenerationSchemaV1 || !generation.ProviderRequestDispatched ||
+	if generation.Schema != PreparedGenerationSchemaV1 ||
+		generation.ProviderRequestDisposition.Validate() != nil ||
 		!providerIdentityDigest.MatchString(generation.ProviderRequestSHA256) {
 		return fmt.Errorf("exact prepared provider response evidence is invalid")
 	}
 	if generation.ProviderResponseDisposition == ProviderResponseTransportError {
 		if generation.ProviderHTTPStatus != 0 || generation.ProviderResponseComplete ||
 			generation.ProviderResponseBytesKnown ||
-			generation.ProviderContentEncodingCount != 0 ||
-			generation.ProviderContentEncoding != "" || generation.ProviderResponseUncompressed ||
+			generation.ProviderContentEncoding != (ProviderContentEncodingEvidence{}) ||
 			generation.ProviderResponseSHA256 != "" || generation.ProviderResponseBytes != 0 ||
 			generation.ProviderResponseCaptureSHA256 != "" ||
 			generation.ProviderResponseCapturedBytes != 0 || generation.ProviderResponseModel != "" ||
@@ -169,14 +165,15 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 		}
 		return nil
 	}
+	if generation.ProviderRequestDisposition != ProviderRequestDispatched {
+		return fmt.Errorf("provider response claims a request that was not fully dispatched")
+	}
 	if !registeredProviderResponseDisposition(generation.ProviderResponseDisposition) ||
 		generation.ProviderHTTPStatus < 100 || generation.ProviderHTTPStatus > 599 ||
 		generation.ProviderResponseBytes < 0 || generation.ProviderResponseCapturedBytes < 0 ||
 		generation.ProviderResponseCapturedBytes > MaxExactPreparedProviderResponseBytes+1 ||
 		!providerIdentityDigest.MatchString(generation.ProviderResponseCaptureSHA256) ||
-		!validProviderContentEncoding(
-			generation.ProviderContentEncodingCount, generation.ProviderContentEncoding,
-		) {
+		generation.ProviderContentEncoding.Validate() != nil {
 		return fmt.Errorf("provider response receipt is invalid")
 	}
 	if generation.ProviderResponseComplete {
@@ -207,9 +204,7 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 		generation.ProviderResponseDisposition == ProviderResponseEmptyContent
 	if parsedFinal &&
 		(generation.ProviderHTTPStatus < 200 || generation.ProviderHTTPStatus >= 300 ||
-			generation.ProviderResponseUncompressed || !ProviderContentEncodingIsIdentity(
-				generation.ProviderContentEncodingCount, generation.ProviderContentEncoding,
-			) ||
+			!generation.ProviderContentEncoding.IsIdentity() ||
 			!generation.ProviderResponseComplete || !validPreparedResponseModel(generation.ProviderResponseModel) ||
 			(!generation.ProviderDonePresent && generation.ProviderDone) ||
 			(generation.ProviderDoneReason != "" && generation.ProviderDoneReason != "stop" &&

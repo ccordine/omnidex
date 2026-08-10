@@ -43,8 +43,7 @@ func (c *Client) generatePreparedRaw(
 	}
 	defer response.Body.Close()
 	result.ProviderHTTPStatus = response.StatusCode
-	result.ProviderContentEncodingCount, result.ProviderContentEncoding,
-		result.ProviderResponseUncompressed = exactProviderContentEncodingEvidence(response)
+	result.ProviderContentEncoding = exactProviderContentEncodingEvidence(response)
 	body, readErr := io.ReadAll(io.LimitReader(
 		response.Body, llm.MaxExactPreparedProviderResponseBytes+1,
 	))
@@ -70,8 +69,9 @@ func (c *Client) generatePreparedRaw(
 	if !exactProviderContentEncoding(response) {
 		result.ProviderResponseDisposition = llm.ProviderResponseInvalidJSON
 		return result, fmt.Errorf(
-			"exact Ollama response used unsupported content encoding %q",
-			result.ProviderContentEncoding,
+			"exact Ollama response used unsupported content encoding: values=%d bytes=%d sha256=%s uncompressed=%t",
+			result.ProviderContentEncoding.Values, result.ProviderContentEncoding.Bytes,
+			result.ProviderContentEncoding.SHA256, result.ProviderContentEncoding.Uncompressed,
 		)
 	}
 	decoded, decodeErr := llm.DecodeExactPreparedResponse(response.StatusCode, body)

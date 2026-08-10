@@ -7,11 +7,12 @@ import (
 )
 
 type solverNode struct {
-	facts   factSet
-	cost    int
-	actions []cognition.ActionRequest
-	key     string
-	index   int
+	facts    factSet
+	evidence solverEvidence
+	cost     int
+	actions  []cognition.ActionRequest
+	key      string
+	index    int
 }
 
 type solverQueue []*solverNode

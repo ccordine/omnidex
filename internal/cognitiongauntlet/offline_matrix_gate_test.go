@@ -114,11 +114,21 @@ func TestOfflineMatrixReceiptRequiresEveryCoordinateExactlyOnce(t *testing.T) {
 	if !receipt.GateEvidenceQualified || receipt.PromotionEligible {
 		t.Fatal("passing diagnostic matrix did not remain non-promotional")
 	}
+	if receipt.ReleaseCoverageQualified || !validDigest(receipt.ReleaseCoverageSHA256) {
+		t.Fatal("one-suite diagnostic matrix claimed complete release coverage")
+	}
 	t.Run("isolated promotion claim", func(t *testing.T) {
 		candidate := receipt
 		candidate.PromotionEligible = true
 		if err := candidate.Validate(registration); err == nil {
 			t.Fatal("isolated matrix receipt claimed global promotion")
+		}
+	})
+	t.Run("forged release coverage", func(t *testing.T) {
+		candidate := receipt
+		candidate.ReleaseCoverageQualified = true
+		if err := candidate.Validate(registration); err == nil {
+			t.Fatal("diagnostic matrix forged complete release coverage")
 		}
 	})
 	for name, changed := range map[string][]OfflineMatrixRunReceipt{
@@ -269,13 +279,20 @@ func matrixReceiptForGate(
 	if err != nil {
 		t.Fatal(err)
 	}
+	coverage, coverageSHA, err := deriveReleaseMatrixCoverage(registration)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return OfflineMatrixReceipt{
-		Schema: OfflineMatrixReceiptSchemaV2, PreregistrationSHA256: sha,
+		Schema: OfflineMatrixReceiptSchemaV3, PreregistrationSHA256: sha,
 		Runs: runs, DeterministicOracleBounds: bounds, Tournament: tournament,
 		Gate: gate, LastInferenceExitedAt: lastInference,
-		FirstEvaluatorStartedAt: runs[0].EvaluatorStartedAt,
-		CompletedAt:             runs[len(runs)-1].EvaluatorCompletedAt,
-		GateEvidenceQualified:   gate.Passed, PromotionEligible: false,
+		FirstEvaluatorStartedAt:  runs[0].EvaluatorStartedAt,
+		CompletedAt:              runs[len(runs)-1].EvaluatorCompletedAt,
+		GateEvidenceQualified:    gate.Passed,
+		ReleaseCoverageQualified: coverage,
+		ReleaseCoverageSHA256:    coverageSHA,
+		PromotionEligible:        false,
 	}
 }
 

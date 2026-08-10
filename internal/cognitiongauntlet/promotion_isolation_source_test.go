@@ -33,6 +33,7 @@ func TestPromotionParentAndInferenceSourcesCannotLoadPrivateOracleAuthority(t *t
 		assertSourceOmits(t, filepath.Join(directory, name), []string{
 			"PrivateOracle", "privateEvaluationFixture", "GenerateMicrogauntlet(",
 			"HostScenario", "SealedEnvironmentScenario", "GeneratorConfig",
+			"OptimalPlan", "SolverResult", "labyrinth.Solve(",
 		})
 	}
 }
@@ -58,6 +59,36 @@ func TestOfflinePrepareHasNoNormalizedProviderDiscoveryFallback(t *testing.T) {
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Fatalf("offline prepare retains normalized provider discovery %q", forbidden)
+		}
+	}
+}
+
+func TestNoHiddenGlobalPromotionReadinessSwitchRemains(t *testing.T) {
+	t.Parallel()
+	_, current, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve cognition gauntlet source directory")
+	}
+	directory := filepath.Dir(current)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") ||
+			strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"seriousPromotionEvidenceReady", "seriousPromotionEligible",
+		} {
+			if strings.Contains(string(raw), forbidden) {
+				t.Fatalf("%s retains hidden global promotion switch %q", entry.Name(), forbidden)
+			}
 		}
 	}
 }

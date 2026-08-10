@@ -30,6 +30,10 @@ func (verified VerifiedOfflineMatrixReceipt) GateEvidenceQualified() bool {
 	return verified.receipt.GateEvidenceQualified
 }
 
+func (verified VerifiedOfflineMatrixReceipt) ReleaseCoverageQualified() bool {
+	return verified.receipt.ReleaseCoverageQualified
+}
+
 func (verified VerifiedOfflineMatrixReceipt) Receipt() OfflineMatrixReceipt {
 	copy := verified.receipt
 	copy.Runs = append([]OfflineMatrixRunReceipt{}, verified.receipt.Runs...)

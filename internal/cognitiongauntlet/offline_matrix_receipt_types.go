@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const OfflineMatrixReceiptSchemaV2 = "omnidex.offline-cognition-matrix-receipt.v2"
+const OfflineMatrixReceiptSchemaV3 = "omnidex.offline-cognition-matrix-receipt.v3"
 
 type OfflineMatrixEvidenceClass string
 
@@ -86,6 +86,8 @@ type OfflineMatrixReceipt struct {
 	FirstEvaluatorStartedAt   time.Time                  `json:"first_evaluator_started_at"`
 	CompletedAt               time.Time                  `json:"completed_at"`
 	GateEvidenceQualified     bool                       `json:"gate_evidence_qualified"`
+	ReleaseCoverageQualified  bool                       `json:"release_coverage_qualified"`
+	ReleaseCoverageSHA256     string                     `json:"release_coverage_sha256"`
 	PromotionEligible         bool                       `json:"promotion_eligible"`
 }
 
@@ -99,7 +101,7 @@ func (receipt OfflineMatrixReceipt) Validate(
 	if err != nil {
 		return err
 	}
-	if receipt.Schema != OfflineMatrixReceiptSchemaV2 ||
+	if receipt.Schema != OfflineMatrixReceiptSchemaV3 ||
 		receipt.PreregistrationSHA256 != registrationSHA ||
 		receipt.Runs == nil || len(receipt.Runs) != registration.RunCount ||
 		receipt.LastInferenceExitedAt.IsZero() || receipt.FirstEvaluatorStartedAt.IsZero() ||
@@ -142,6 +144,11 @@ func (receipt OfflineMatrixReceipt) Validate(
 	if !equalMatrixGate(receipt.Gate, derived) ||
 		receipt.GateEvidenceQualified != derived.Passed || receipt.PromotionEligible {
 		return fmt.Errorf("offline cognition matrix gate is not derived from its sealed runs")
+	}
+	coverage, coverageSHA, err := deriveReleaseMatrixCoverage(registration)
+	if err != nil || receipt.ReleaseCoverageQualified != coverage ||
+		receipt.ReleaseCoverageSHA256 != coverageSHA {
+		return fmt.Errorf("offline cognition matrix release coverage is not registry-derived")
 	}
 	return nil
 }

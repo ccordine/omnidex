@@ -51,9 +51,7 @@ BEGIN
             'http_status',operations.http_status,
             'disposition',operations.disposition,
             'response_complete',operations.response_complete,
-            'content_encoding_count',operations.content_encoding_count,
-            'content_encoding',operations.content_encoding,
-            'response_uncompressed',operations.response_uncompressed,
+            'content_encoding',operations.content_encoding_json::jsonb,
             'response_sha256',operations.response_sha256,
             'response_bytes',operations.response_bytes
         ) ORDER BY operations.operation_index)

@@ -2,6 +2,7 @@ package cognitionpolicy
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -61,5 +62,37 @@ func TestProviderGenerationEvidencePreservesInvalidUTF8AndRejectsNoncanonicalWir
 	evidence.Ref = providerGenerationEvidenceRef(attempt.ID, noncanonical)
 	if err := evidence.Validate(); err == nil {
 		t.Fatal("noncanonical provider generation wire validated")
+	}
+}
+
+func TestProviderGenerationEvidenceBoundsEveryUntrustedContentEncodingField(t *testing.T) {
+	projection := policyTestProjection(t, "bounded provider headers")
+	snapshot, _ := policyTestSnapshot(t, projection)
+	rendered, err := Render(snapshot, projection, policyTestBrain())
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation := policyTestPreparedGeneration(attempt, `{}`)
+	malicious := strings.Repeat("z", maxProviderContentEncodingBase64Bytes+2)
+	generation.ProviderContentEncoding.CapturedBase64 = malicious
+	for index := range generation.ProviderIdentityEvidence.Operations {
+		operation := &generation.ProviderIdentityEvidence.Operations[index]
+		operation.ContentEncoding.Schema = malicious
+		operation.ContentEncoding.SHA256 = malicious
+		operation.ContentEncoding.CapturedBase64 = malicious
+	}
+	evidence, err := NewProviderGenerationEvidence(attempt.ID, generation)
+	if err != nil {
+		t.Fatalf("bounded malicious content-encoding evidence: %v", err)
+	}
+	if evidence.Ref.Bytes > MaxProviderGenerationEvidenceBytes {
+		t.Fatalf("evidence bytes=%d maximum=%d", evidence.Ref.Bytes, MaxProviderGenerationEvidenceBytes)
+	}
+	if _, complete, err := inspectProviderGenerationEvidence(evidence.Generation); err != nil || complete {
+		t.Fatalf("malicious header evidence complete=%t error=%v", complete, err)
 	}
 }

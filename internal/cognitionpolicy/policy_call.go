@@ -44,9 +44,10 @@ func (policy *Policy) executeReservedCall(
 		)
 	}
 	generation, generationErr := policy.exactClient.GeneratePreparedExact(ctx, prepared)
+	generation = generation.Clone()
 	executed := cognition.PolicyOutcome{ProviderRequestDispatched: generation.ProviderRequestDispatched}
 	if !generation.ProviderRequestDispatched {
-		if providerIdentityFailureEvidence(attempt, generation) {
+		if exactProviderIdentityFailureGeneration(attempt, generation) {
 			failure := fmt.Errorf("%w: %v", ErrProviderIdentity, generationErr)
 			return executed, policy.finishCall(
 				ctx, attempt, providerIdentityFailedCallResult(attempt, generation, failure), generation, failure,
@@ -57,7 +58,7 @@ func (policy *Policy) executeReservedCall(
 			ErrInvalidEvidence, generationErr,
 		)
 		return executed, policy.finishUntrustedCall(
-			ctx, attempt, generation, CallFailurePolicyAuthority, failure,
+			ctx, attempt, generation, generationErr, CallFailurePolicyAuthority, failure,
 		)
 	}
 	providerErr := validatePreparedGenerationProvider(attempt, generation)
@@ -68,7 +69,7 @@ func (policy *Policy) executeReservedCall(
 			"%w: provider observation or response receipt is invalid: %v / %v",
 			ErrInvalidEvidence, providerErr, responseEvidenceErr,
 		)
-		if validPolicySHA256(generation.ProviderRequestSHA256) &&
+		if providerErr == nil && validPolicySHA256(generation.ProviderRequestSHA256) &&
 			generation.ProviderRequestSHA256 != expectedRequestSHA {
 			code = CallFailureProviderRequest
 			failure = fmt.Errorf(
@@ -76,7 +77,9 @@ func (policy *Policy) executeReservedCall(
 				ErrGeneration, ErrInvalidEvidence,
 			)
 		}
-		return executed, policy.finishUntrustedCall(ctx, attempt, generation, code, failure)
+		return executed, policy.finishUntrustedCall(
+			ctx, attempt, generation, generationErr, code, failure,
+		)
 	}
 	if generation.ProviderRequestSHA256 != expectedRequestSHA {
 		failure := fmt.Errorf(
@@ -102,9 +105,9 @@ func (policy *Policy) executeReservedCall(
 					"%w: provider returned a valid successful response together with an error",
 					ErrInvalidEvidence,
 				)
-				return executed, policy.finishCall(
-					ctx, attempt, policyAuthorityFailedCallResult(attempt, generation, failure),
-					generation, failure,
+				return executed, policy.finishUntrustedCall(
+					ctx, attempt, generation, generationErr,
+					CallFailureProviderEvidence, failure,
 				)
 			}
 			failure := fmt.Errorf("%w: %v", ErrProviderUsage, generationErr)
@@ -201,6 +204,23 @@ func providerIdentityFailureEvidence(
 	return providerIdentityEvidenceProvesFailure(attempt, generation.ProviderIdentityEvidence)
 }
 
+func exactProviderIdentityFailureGeneration(
+	attempt CallAttempt,
+	generation llm.PreparedGeneration,
+) bool {
+	return providerIdentityFailureEvidence(attempt, generation) &&
+		generation.Schema == llm.PreparedGenerationSchemaV1 && generation.Content == "" &&
+		generation.ProviderRequestSHA256 == "" && generation.ProviderHTTPStatus == 0 &&
+		generation.ProviderResponseDisposition == "" && !generation.ProviderResponseComplete &&
+		generation.ProviderContentEncoding == (llm.ProviderContentEncodingEvidence{}) &&
+		!generation.ProviderResponseBytesKnown && generation.ProviderResponseSHA256 == "" &&
+		generation.ProviderResponseBytes == 0 && generation.ProviderResponseCaptureSHA256 == "" &&
+		generation.ProviderResponseCapturedBytes == 0 && len(generation.ProviderResponseCapture) == 0 &&
+		generation.ProviderResponseModel == "" && !generation.ProviderDonePresent &&
+		!generation.ProviderDone && generation.ProviderDoneReason == "" &&
+		!generation.UsagePresent && generation.Usage == (llm.ProviderGenerationUsage{})
+}
+
 func providerIdentityEvidenceProvesFailure(
 	attempt CallAttempt,
 	evidence llm.ProviderIdentityEvidence,
@@ -208,20 +228,8 @@ func providerIdentityEvidenceProvesFailure(
 	selection := llm.ProviderIdentitySelection{
 		Model: attempt.Brain.Model, NativeContextLimit: attempt.Brain.NativeContextLimit,
 	}
-	if evidence.ValidateRequests(selection) != nil {
-		return false
-	}
-	if !evidence.Successful() {
-		return true
-	}
-	derived, err := llm.DeriveExactProviderIdentityExpectation(
-		evidence, selection,
-	)
-	if err != nil {
-		return true
-	}
 	expected, err := attempt.Brain.ProviderExpectation()
-	return err == nil && derived != expected
+	return err == nil && evidence.ValidateFailure(selection, &expected) == nil
 }
 
 func decodePolicyDecision(

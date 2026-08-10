@@ -34,13 +34,19 @@ func Generate(config GeneratorConfig) (GeneratedCase, error) {
 	generated.oracle.ExpandedStates = result.ExpandedStates
 	generated.oracle.LowerBound = result.LowerBound
 	if solveErr == nil && result.Optimal {
+		optimalPlan, planErr := buildSolverOptimalPlan(generated.execution, result)
+		if planErr != nil {
+			return GeneratedCase{}, planErr
+		}
 		generated.oracle.Quality = OracleOptimal
 		optimal := result.Cost
 		generated.oracle.OptimalCost = &optimal
+		generated.oracle.OptimalPlan = optimalPlan
 		generated.oracle.LowerBound = optimal
 	} else {
 		generated.oracle.Quality = OracleWitnessOnly
 		generated.oracle.OptimalCost = nil
+		generated.oracle.OptimalPlan = []WitnessAction{}
 	}
 	if err := generated.oracle.seal(); err != nil {
 		return GeneratedCase{}, err
@@ -103,10 +109,11 @@ func generateWithoutSolve(config GeneratorConfig) (GeneratedCase, error) {
 		return GeneratedCase{}, err
 	}
 	oracle := Oracle{
-		Schema: OracleSchemaV1, ScenarioID: scenarioID, PublicSHA256: scenario.Ref().SHA256,
+		Schema: OracleSchemaV2, ScenarioID: scenarioID, PublicSHA256: scenario.Ref().SHA256,
 		GeneratorVersion: config.GeneratorVersion, GrammarVersion: config.GrammarVersion,
 		Seed: config.Seed, DefinitionSHA256: definition.SHA256(), Quality: OracleWitnessOnly,
-		Witness: witness, WitnessCost: witnessCost(witness), LowerBound: minimumActionCost(actions),
+		Witness: witness, WitnessCost: witnessCost(witness), OptimalPlan: []WitnessAction{},
+		LowerBound:       minimumActionCost(actions),
 		RequiredEvidence: world.evidence,
 		EvidenceUses:     buildEvidenceUses(world.evidence, witness, world.contract),
 		CausalDAG:        plan.dag,

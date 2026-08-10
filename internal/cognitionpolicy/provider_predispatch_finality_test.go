@@ -56,6 +56,16 @@ func TestPolicyTerminalizesEveryContradictoryPredispatchProviderOutcome(t *testi
 			},
 			failure: CallFailureProviderIdentity, want: ErrProviderIdentity,
 		},
+		{
+			name: "failed identity probe with extraneous provider response",
+			generation: func(attempt CallAttempt) llm.PreparedGeneration {
+				value := policyTestFailedProviderIdentityGeneration(attempt)
+				value.Content = "extraneous"
+				value.ProviderResponseCapture = []byte("extraneous")
+				return value
+			},
+			failure: CallFailurePolicyAuthority, want: ErrInvalidEvidence,
+		},
 	} {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {

@@ -46,19 +46,22 @@ func insertCognitionProviderIdentityEvidenceTx(
 		return fmt.Errorf("persist provider identity evidence %q: %w", evidence.Ref.ID, err)
 	}
 	for index, operation := range evidence.Operations {
+		contentEncodingJSON, err := exactjson.Canonical(operation.ContentEncoding)
+		if err != nil {
+			return fmt.Errorf("encode provider identity content encoding %d: %w", index, err)
+		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO cognition_provider_identity_evidence_operations (
 				evidence_id,operation_index,operation,method,endpoint,request_dispatched,
 				request_sha256,request_bytes,request_body,http_status,disposition,
-				response_complete,content_encoding_count,content_encoding,response_uncompressed,
+				response_complete,content_encoding_json,
 				response_sha256,response_bytes,response_body
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 			ON CONFLICT (evidence_id,operation_index) DO NOTHING
 		`, evidence.Ref.ID, index, operation.Operation, operation.Method, operation.Endpoint,
 			operation.RequestDispatched, operation.RequestSHA256, operation.RequestBytes,
 			operation.Request, operation.HTTPStatus, operation.Disposition,
-			operation.ResponseComplete, operation.ContentEncodingCount,
-			operation.ContentEncoding, operation.ResponseUncompressed,
+			operation.ResponseComplete, string(contentEncodingJSON),
 			operation.ResponseSHA256, operation.ResponseBytes, operation.ResponseCapture); err != nil {
 			return fmt.Errorf("persist provider identity operation %d: %w", index, err)
 		}
@@ -104,7 +107,7 @@ func loadCognitionProviderIdentityEvidenceTx(
 	rows, err := tx.Query(ctx, `
 		SELECT operation,method,endpoint,request_dispatched,request_sha256,request_bytes,
 		       request_body,http_status,disposition,response_complete,response_sha256,
-		       content_encoding_count,content_encoding,response_uncompressed,
+		       content_encoding_json,
 		       response_bytes,response_body
 		FROM cognition_provider_identity_evidence_operations
 		WHERE evidence_id=$1 ORDER BY operation_index
@@ -116,13 +119,16 @@ func loadCognitionProviderIdentityEvidenceTx(
 	operations := make([]llm.ProviderIdentityOperationEvidence, 0, 5)
 	for rows.Next() {
 		var operation llm.ProviderIdentityOperationEvidence
+		var contentEncodingJSON []byte
 		if err := rows.Scan(&operation.Operation, &operation.Method, &operation.Endpoint,
 			&operation.RequestDispatched, &operation.RequestSHA256, &operation.RequestBytes,
 			&operation.Request, &operation.HTTPStatus, &operation.Disposition,
 			&operation.ResponseComplete, &operation.ResponseSHA256,
-			&operation.ContentEncodingCount, &operation.ContentEncoding,
-			&operation.ResponseUncompressed, &operation.ResponseBytes,
+			&contentEncodingJSON, &operation.ResponseBytes,
 			&operation.ResponseCapture); err != nil {
+			return llm.ProviderIdentityEvidence{}, err
+		}
+		if err := cognitionDecodeExact(contentEncodingJSON, &operation.ContentEncoding); err != nil {
 			return llm.ProviderIdentityEvidence{}, err
 		}
 		operations = append(operations, operation)

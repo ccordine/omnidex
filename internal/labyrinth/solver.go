@@ -30,8 +30,11 @@ func Solve(scenario Scenario, bounds SolverBounds) (SolverResult, error) {
 		return SolverResult{}, err
 	}
 	initialFacts := newFactSet(definition.initialFacts)
-	initialKey := solverStateKey(initialFacts)
-	queue := newSolverQueue(&solverNode{facts: initialFacts, key: initialKey})
+	initialEvidence := solverEvidence{}
+	initialKey := solverStateKey(initialFacts, initialEvidence)
+	queue := newSolverQueue(&solverNode{
+		facts: initialFacts, evidence: initialEvidence, key: initialKey,
+	})
 	best := map[string]int{initialKey: 0}
 	expanded := 0
 	lowerBound := minimumActionCost(definition.actions)
@@ -56,22 +59,31 @@ func Solve(scenario Scenario, bounds SolverBounds) (SolverResult, error) {
 			if !exists {
 				return SolverResult{}, fmt.Errorf("%w: grounded request has no definition", ErrGeneration)
 			}
+			if !solverRequestEvidenceGrounded(
+				action.Schema, request, node.facts, node.evidence, scenario.descriptor.Records,
+			) {
+				continue
+			}
 			registered, registerErr := solverRegisteredAction(action.Schema, request)
 			if registerErr != nil {
 				return SolverResult{}, registerErr
 			}
 			candidate, changed, applyErr := applyActionDefinition(action, registered, entities, predicates, node.facts)
-			if errors.Is(applyErr, ErrPrecondition) || !changed {
+			if errors.Is(applyErr, ErrPrecondition) {
 				continue
 			}
 			if applyErr != nil {
 				return SolverResult{}, fmt.Errorf("%w: apply grounded request: %v", ErrGeneration, applyErr)
 			}
+			candidateEvidence := solverEvidenceAfterRequest(scenario, candidate, request, node.evidence)
+			if !changed && candidateEvidence.equal(node.evidence) {
+				continue
+			}
 			if len(candidate) > MaxWorldFacts {
 				return SolverResult{}, fmt.Errorf("%w: solver candidate exceeds world fact limit", ErrWorldLimit)
 			}
 			cost := node.cost + action.Cost
-			key := solverStateKey(candidate)
+			key := solverStateKey(candidate, candidateEvidence)
 			if previous, exists := best[key]; exists && previous <= cost {
 				continue
 			}
@@ -82,7 +94,9 @@ func Solve(scenario Scenario, bounds SolverBounds) (SolverResult, error) {
 			}
 			best[key] = cost
 			path := append(cloneRequests(node.actions), request.Clone())
-			heap.Push(queue, &solverNode{facts: candidate, cost: cost, actions: path, key: key})
+			heap.Push(queue, &solverNode{
+				facts: candidate, evidence: candidateEvidence, cost: cost, actions: path, key: key,
+			})
 		}
 	}
 	return SolverResult{LowerBound: lowerBound, ExpandedStates: expanded}, ErrUnsolvable
@@ -113,8 +127,6 @@ func actionDefinitionForKind(definition Definition, kind cognition.ActionKind) (
 	}
 	return ActionDefinition{}, false
 }
-
-func solverStateKey(facts factSet) string { return canonicalJSON(facts.sorted()) }
 
 func cloneRequests(values []cognition.ActionRequest) []cognition.ActionRequest {
 	cloned := make([]cognition.ActionRequest, len(values))

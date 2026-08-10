@@ -38,13 +38,10 @@ CREATE TABLE cognition_provider_identity_evidence_operations (
         'body_limit','body_read_error','invalid_json'
     )),
     response_complete BOOLEAN NOT NULL,
-    content_encoding_count INTEGER NOT NULL CHECK (
-        content_encoding_count BETWEEN 0 AND 65536
+    content_encoding_json TEXT NOT NULL CHECK (
+        jsonb_typeof(content_encoding_json::jsonb)='object' AND
+        octet_length(content_encoding_json)<=196608
     ),
-    content_encoding TEXT NOT NULL CHECK (
-        octet_length(content_encoding)<=65536
-    ),
-    response_uncompressed BOOLEAN NOT NULL,
     response_sha256 TEXT NOT NULL CHECK (response_sha256~'^[0-9a-f]{64}$'),
     response_bytes BIGINT NOT NULL CHECK (
         response_bytes>=0 AND response_bytes<=4194305
@@ -63,19 +60,19 @@ CREATE TABLE cognition_provider_identity_evidence_operations (
     ),
     CHECK (
         (disposition='not_dispatched' AND NOT request_dispatched AND http_status=0 AND
-         NOT response_complete AND response_bytes=0 AND content_encoding_count=0 AND
-         content_encoding='' AND NOT response_uncompressed) OR
+         NOT response_complete AND response_bytes=0 AND
+         content_encoding_json='{"bytes":0,"captured_base64":"","captured_bytes":0,"complete":false,"schema":"","sha256":"","uncompressed":false,"values":0}') OR
         (disposition='transport_error' AND request_dispatched AND http_status=0 AND
-         NOT response_complete AND response_bytes=0 AND content_encoding_count=0 AND
-         content_encoding='' AND NOT response_uncompressed) OR
+         NOT response_complete AND response_bytes=0 AND
+         content_encoding_json='{"bytes":0,"captured_base64":"","captured_bytes":0,"complete":false,"schema":"","sha256":"","uncompressed":false,"values":0}') OR
         (disposition='body_limit' AND request_dispatched AND http_status BETWEEN 100 AND 599 AND
          NOT response_complete AND response_bytes=4194305) OR
         (disposition='body_read_error' AND request_dispatched AND
          http_status BETWEEN 100 AND 599 AND NOT response_complete) OR
         (disposition='succeeded' AND request_dispatched AND
          http_status BETWEEN 200 AND 299 AND response_complete AND response_bytes<=4194304 AND
-         NOT response_uncompressed AND content_encoding_count<=1 AND
-         (content_encoding_count=0 OR content_encoding='identity')) OR
+         (content_encoding_json::jsonb->>'uncompressed')::BOOLEAN IS FALSE AND
+         (content_encoding_json::jsonb->>'complete')::BOOLEAN IS TRUE) OR
         (disposition='http_error' AND request_dispatched AND
          http_status BETWEEN 100 AND 599 AND NOT (http_status BETWEEN 200 AND 299) AND
          response_complete AND response_bytes<=4194304) OR

@@ -56,8 +56,8 @@ func RequireDiscoveredProviderIdentityEvidence(
 	}
 	observed, err := discoverer.DiscoverProviderIdentityEvidence(ctx, selection, challenge)
 	if err != nil {
-		if evidenceErr := observed.Evidence.ValidateRequests(selection); evidenceErr != nil {
-			return observed, fmt.Errorf("provider identity discovery failure lacks exact raw evidence: %v: %w", evidenceErr, err)
+		if evidenceErr := observed.Evidence.ValidateFailure(selection, nil); evidenceErr != nil {
+			return observed, fmt.Errorf("provider identity discovery failure is not proven by exact raw evidence: %v: %w", evidenceErr, err)
 		}
 		return observed, err
 	}

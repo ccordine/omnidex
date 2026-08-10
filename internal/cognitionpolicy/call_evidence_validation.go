@@ -26,7 +26,8 @@ func (evidence CallEvidence) ValidateFor(attempt CallAttempt, result CallResult)
 		if !providerIdentityEvidenceProvesFailure(attempt, evidence.ProviderIdentity) {
 			return fmt.Errorf("%w: provider identity failure is not proven by raw evidence", ErrInvalidEvidence)
 		}
-	} else if result.ProviderIdentityEvidence != (llm.ProviderIdentityEvidenceRef{}) &&
+	} else if result.ProviderRequestDispatched &&
+		result.ProviderIdentityEvidence != (llm.ProviderIdentityEvidenceRef{}) &&
 		!evidence.ProviderIdentity.Successful() {
 		return fmt.Errorf("%w: executed provider result lacks complete identity evidence", ErrInvalidEvidence)
 	}
@@ -63,7 +64,8 @@ func (evidence CallEvidence) ValidateFor(attempt CallAttempt, result CallResult)
 		evidence.ProviderGeneration.Ref != result.ProviderGenerationEvidence {
 		return fmt.Errorf("%w: untrusted provider evidence differs from its result", ErrInvalidEvidence)
 	}
-	generation, complete, err := inspectProviderGenerationEvidence(evidence.ProviderGeneration.Generation)
+	generation, providerErrorPresent, _, complete, err :=
+		inspectProviderGenerationOutcomeEvidence(evidence.ProviderGeneration.Generation)
 	if err != nil {
 		return fmt.Errorf("%w: decode untrusted provider generation: %v", ErrInvalidEvidence, err)
 	}
@@ -95,7 +97,7 @@ func (evidence CallEvidence) ValidateFor(attempt CallAttempt, result CallResult)
 	case CallFailureProviderEvidence:
 		providerErr := validatePreparedGenerationProvider(attempt, generation)
 		responseErr := generation.ValidateProviderResponseEvidence()
-		if providerErr == nil && responseErr == nil {
+		if providerErr == nil && responseErr == nil && !providerErrorPresent {
 			return fmt.Errorf("%w: provider evidence failure contains valid provider evidence", ErrInvalidEvidence)
 		}
 	case CallFailureProviderRequest:
@@ -119,9 +121,7 @@ func validateProviderCaptureProjection(result CallResult, evidence CallEvidence)
 		ProviderHTTPStatus:            result.ProviderHTTPStatus,
 		ProviderResponseDisposition:   result.ProviderResponseDisposition,
 		ProviderResponseComplete:      result.ProviderResponseComplete,
-		ProviderContentEncodingCount:  result.ProviderContentEncodingCount,
 		ProviderContentEncoding:       result.ProviderContentEncoding,
-		ProviderResponseUncompressed:  result.ProviderResponseUncompressed,
 		ProviderResponseBytesKnown:    result.ProviderResponseBytesKnown,
 		ProviderResponseSHA256:        result.ProviderResponseSHA256,
 		ProviderResponseBytes:         result.ProviderResponseBytes,

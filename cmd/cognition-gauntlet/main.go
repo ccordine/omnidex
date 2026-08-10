@@ -111,10 +111,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf(
-			"sealed matrix runs %d; promotion eligible %t\n",
-			receipt.RunCount(), receipt.PromotionEligible(),
-		)
+		fmt.Print(gateEvidenceSummary(
+			"sealed matrix runs", receipt.RunCount(),
+			receipt.GateEvidenceQualified(), receipt.PromotionEligible(),
+		))
 		return nil
 	case "verify-matrix":
 		if *configPath == "" || *processPath != "" || *requestPath != "" {
@@ -128,10 +128,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf(
-			"verified sealed matrix runs %d; promotion eligible %t\n",
-			receipt.RunCount(), receipt.PromotionEligible(),
-		)
+		fmt.Print(gateEvidenceSummary(
+			"verified sealed matrix runs", receipt.RunCount(),
+			receipt.GateEvidenceQualified(), receipt.PromotionEligible(),
+		))
 		return nil
 	case "resume":
 		if *configPath == "" || *processPath != "" || *requestPath != "" {
@@ -149,10 +149,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf(
-			"sealed Resume schedules %d; promotion eligible %t\n",
-			receipt.RunCount(), receipt.PromotionEligible(),
-		)
+		fmt.Print(gateEvidenceSummary(
+			"sealed Resume schedules", receipt.RunCount(),
+			receipt.GateEvidenceQualified(), receipt.PromotionEligible(),
+		))
 		return nil
 	case "verify-resume":
 		if *configPath == "" || *processPath != "" || *requestPath != "" {
@@ -166,10 +166,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf(
-			"verified sealed Resume schedules %d; promotion eligible %t\n",
-			receipt.RunCount(), receipt.PromotionEligible(),
-		)
+		fmt.Print(gateEvidenceSummary(
+			"verified sealed Resume schedules", receipt.RunCount(),
+			receipt.GateEvidenceQualified(), receipt.PromotionEligible(),
+		))
 		return nil
 	case "transfer":
 		if *configPath == "" || *processPath != "" || *requestPath != "" {
@@ -187,8 +187,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("sealed Transfer surfaces %d; promotion eligible %t\n",
-			len(receipt.Receipt().Runs), receipt.PromotionEligible())
+		fmt.Print(gateEvidenceSummary(
+			"sealed Transfer surfaces", len(receipt.Receipt().Runs),
+			receipt.GateEvidenceQualified(), receipt.PromotionEligible(),
+		))
 		return nil
 	case "verify-transfer":
 		if *configPath == "" || *processPath != "" || *requestPath != "" {
@@ -202,8 +204,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("verified sealed Transfer surfaces %d; promotion eligible %t\n",
-			len(receipt.Receipt().Runs), receipt.PromotionEligible())
+		fmt.Print(gateEvidenceSummary(
+			"verified sealed Transfer surfaces", len(receipt.Receipt().Runs),
+			receipt.GateEvidenceQualified(), receipt.PromotionEligible(),
+		))
 		return nil
 	case "scale":
 		if *configPath == "" || *processPath != "" || *requestPath != "" {
@@ -221,8 +225,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("sealed Scale runs %d; promotion eligible %t\n",
-			len(receipt.Receipt().Runs), receipt.PromotionEligible())
+		fmt.Print(gateEvidenceSummary(
+			"sealed Scale runs", len(receipt.Receipt().Runs),
+			receipt.GateEvidenceQualified(), receipt.PromotionEligible(),
+		))
 		return nil
 	case "verify-scale":
 		if *configPath == "" || *processPath != "" || *requestPath != "" {
@@ -236,8 +242,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("verified sealed Scale runs %d; promotion eligible %t\n",
-			len(receipt.Receipt().Runs), receipt.PromotionEligible())
+		fmt.Print(gateEvidenceSummary(
+			"verified sealed Scale runs", len(receipt.Receipt().Runs),
+			receipt.GateEvidenceQualified(), receipt.PromotionEligible(),
+		))
 		return nil
 	case "takeover":
 		if *configPath == "" || *processPath != "" || *requestPath != "" {

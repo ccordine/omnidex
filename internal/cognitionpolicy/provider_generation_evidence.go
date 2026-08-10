@@ -9,14 +9,27 @@ import (
 )
 
 const (
-	ProviderGenerationEvidenceSchemaV1 = "omnidex.provider-generation-evidence.v1"
-	// The opaque byte-preserving JSON base64-encodes a provider-bounded model
-	// response. This allowance covers the exact maximum response plus every
-	// registered receipt/observation field without making the evidence unbounded.
+	ProviderGenerationEvidenceSchemaV1  = "omnidex.provider-generation-evidence.v1"
+	maxProviderIdentityWireCaptureBytes = maxProviderIdentityWireOperations *
+		((llm.MaxProviderIdentityComponentBytes + 1) +
+			(llm.MaxProviderIdentityComponentBytes + 2))
+	maxProviderContentEncodingWireCaptureBytes = (1 + maxProviderIdentityWireOperations) *
+		((2 * (maxProviderGenerationMetadataCaptureBytes + 1)) +
+			(maxProviderContentEncodingBase64Bytes + 1))
+	maxProviderGenerationMetadataWireFields = 8 + 18 + 4 +
+		(6 * maxProviderIdentityWireOperations)
+	maxProviderGenerationWireCaptureBytes = (MaxModelResponseEvidenceBytes + 1) +
+		(llm.MaxExactPreparedProviderResponseBytes + 2) +
+		maxProviderIdentityWireCaptureBytes +
+		maxProviderContentEncodingWireCaptureBytes +
+		(maxProviderGenerationMetadataWireFields *
+			(maxProviderGenerationMetadataCaptureBytes + 1))
+	// Canonical JSON base64-encodes every bounded byte witness. The fixed JSON
+	// allowance covers field names, numeric values, and structural punctuation.
+	// This includes six adversarial identity operations whose request, response,
+	// and content-encoding fields all independently overflow their normal caps.
 	MaxProviderGenerationEvidenceWireOverheadBytes = 8 * 1024 * 1024
-	MaxProviderGenerationEvidenceBytes             = ((MaxModelResponseEvidenceBytes + 2) / 3 * 4) +
-		((llm.MaxExactPreparedProviderResponseBytes + 3) / 3 * 4) +
-		((llm.MaxProviderIdentityEvidenceBytes + 2) / 3 * 4) +
+	MaxProviderGenerationEvidenceBytes             = ((maxProviderGenerationWireCaptureBytes + 2) / 3 * 4) +
 		MaxProviderGenerationEvidenceWireOverheadBytes
 )
 
@@ -37,12 +50,26 @@ func NewProviderGenerationEvidence(
 	callID string,
 	generation llm.PreparedGeneration,
 ) (ProviderGenerationEvidence, error) {
+	return newProviderGenerationOutcomeEvidence(callID, generation, nil)
+}
+
+func newProviderGenerationOutcomeEvidence(
+	callID string,
+	generation llm.PreparedGeneration,
+	providerErr error,
+) (ProviderGenerationEvidence, error) {
 	if !validExactName(callID, 256) {
 		return ProviderGenerationEvidence{}, fmt.Errorf(
 			"%w: untrusted provider generation call identity is invalid", ErrInvalidEvidence,
 		)
 	}
-	raw, err := encodeProviderGenerationEvidence(generation)
+	var providerError []byte
+	if providerErr != nil {
+		providerError = []byte(providerErr.Error())
+	}
+	raw, err := encodeProviderGenerationOutcomeEvidence(
+		generation, providerError, providerErr != nil,
+	)
 	if err != nil || len(raw) < 1 || len(raw) > MaxProviderGenerationEvidenceBytes {
 		return ProviderGenerationEvidence{}, fmt.Errorf(
 			"%w: untrusted provider generation is outside its evidence bound", ErrInvalidEvidence,
@@ -67,7 +94,8 @@ func (evidence ProviderGenerationEvidence) Validate() error {
 	if err := evidence.Ref.ValidateFor(evidence.CallID); err != nil {
 		return err
 	}
-	generation, complete, err := inspectProviderGenerationEvidence(evidence.Generation)
+	generation, providerErrorPresent, providerError, complete, err :=
+		inspectProviderGenerationOutcomeEvidence(evidence.Generation)
 	if err != nil {
 		return fmt.Errorf("%w: decode exact provider generation evidence: %v", ErrInvalidEvidence, err)
 	}
@@ -78,7 +106,9 @@ func (evidence ProviderGenerationEvidence) Validate() error {
 	if !complete {
 		return nil
 	}
-	canonical, err := encodeProviderGenerationEvidence(generation)
+	canonical, err := encodeProviderGenerationOutcomeEvidence(
+		generation, providerError, providerErrorPresent,
+	)
 	if err != nil || !bytes.Equal(canonical, evidence.Generation) {
 		return fmt.Errorf("%w: exact provider generation evidence changed", ErrInvalidEvidence)
 	}

@@ -1,11 +1,13 @@
 package cognitionpolicy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
@@ -29,6 +31,25 @@ func TestPolicyTerminallyRecordsEveryDispatchedMalformedProviderReturn(t *testin
 			name: "normalized content differs from raw capture",
 			mutate: func(value *llm.PreparedGeneration) {
 				value.Content = `{"substituted":true}`
+			},
+			failure: CallFailureProviderEvidence, want: []error{ErrInvalidEvidence},
+		},
+		{
+			name: "oversized top-level content encoding receipt",
+			mutate: func(value *llm.PreparedGeneration) {
+				value.ProviderContentEncoding.CapturedBase64 = strings.Repeat(
+					"x", maxProviderContentEncodingBase64Bytes+2,
+				)
+			},
+			failure: CallFailureProviderEvidence, want: []error{ErrInvalidEvidence},
+		},
+		{
+			name: "oversized nested identity content encoding receipts",
+			mutate: func(value *llm.PreparedGeneration) {
+				for index := range value.ProviderIdentityEvidence.Operations {
+					value.ProviderIdentityEvidence.Operations[index].ContentEncoding.CapturedBase64 =
+						strings.Repeat("y", maxProviderContentEncodingBase64Bytes+2)
+				}
 			},
 			failure: CallFailureProviderEvidence, want: []error{ErrInvalidEvidence},
 		},
@@ -58,6 +79,42 @@ func TestPolicyTerminallyRecordsEveryDispatchedMalformedProviderReturn(t *testin
 			want:    []error{ErrGeneration, ErrInvalidEvidence},
 		},
 		{
+			name: "changed raw identity takes precedence over request mismatch",
+			mutate: func(value *llm.PreparedGeneration) {
+				operation := value.ProviderIdentityEvidence.Operations[1]
+				changedBody := bytes.ReplaceAll(
+					operation.ResponseCapture,
+					[]byte(policyTestBrain().Digest), []byte(strings.Repeat("c", 64)),
+				)
+				changed, err := llm.NewProviderIdentityOperationEvidence(
+					operation.Operation, operation.Method, operation.Endpoint,
+					operation.RequestDispatched, operation.Request, operation.HTTPStatus,
+					operation.Disposition, operation.ResponseComplete,
+					operation.ContentEncoding, changedBody,
+				)
+				if err != nil {
+					panic(err)
+				}
+				operations := value.ProviderIdentityEvidence.Clone().Operations
+				operations[1] = changed
+				evidence, err := llm.NewProviderIdentityEvidence(operations)
+				if err != nil {
+					panic(err)
+				}
+				value.ProviderIdentityEvidence = evidence
+				value.ProviderObservation.InstalledBodySHA256 = policySHA256(string(changedBody))
+				value.ProviderObservation.Evidence = evidence.Ref
+				value.ProviderObservation.ObservationSHA256 = ""
+				raw, err := exactjson.Canonical(value.ProviderObservation)
+				if err != nil {
+					panic(err)
+				}
+				value.ProviderObservation.ObservationSHA256 = policySHA256(string(raw))
+				value.ProviderRequestSHA256 = strings.Repeat("d", 64)
+			},
+			failure: CallFailureProviderEvidence, want: []error{ErrInvalidEvidence},
+		},
+		{
 			name: "invalid observation and malformed receipt",
 			mutate: func(value *llm.PreparedGeneration) {
 				value.ProviderObservation.ChallengeSHA256 = strings.Repeat("e", 64)
@@ -69,7 +126,7 @@ func TestPolicyTerminallyRecordsEveryDispatchedMalformedProviderReturn(t *testin
 			name:        "successful receipt and contradictory provider error",
 			mutate:      func(*llm.PreparedGeneration) {},
 			providerErr: errors.New("provider contradicted its successful receipt"),
-			failure:     CallFailurePolicyAuthority, want: []error{ErrInvalidEvidence},
+			failure:     CallFailureProviderEvidence, want: []error{ErrInvalidEvidence},
 		},
 	} {
 		testCase := testCase
@@ -105,12 +162,7 @@ func TestPolicyTerminallyRecordsEveryDispatchedMalformedProviderReturn(t *testin
 				len(journal.providerEvidence) != 1 {
 				t.Fatalf("terminal result/evidence=%+v / %+v", journal.results, journal.providerEvidence)
 			}
-			if testCase.failure == CallFailurePolicyAuthority {
-				if journal.providerEvidence[0].Ref != (ProviderGenerationEvidenceRef{}) ||
-					len(journal.providerEvidence[0].Generation) != 0 {
-					t.Fatal("trusted authority failure unexpectedly used opaque provider evidence")
-				}
-			} else if journal.providerEvidence[0].Validate() != nil ||
+			if journal.providerEvidence[0].Validate() != nil ||
 				journal.results[0].ProviderGenerationEvidence != journal.providerEvidence[0].Ref {
 				t.Fatal("malformed provider result lacks exact opaque evidence")
 			}

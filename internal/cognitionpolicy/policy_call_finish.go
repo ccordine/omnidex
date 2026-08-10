@@ -26,10 +26,13 @@ func (policy *Policy) finishUntrustedCall(
 	ctx context.Context,
 	attempt CallAttempt,
 	generation llm.PreparedGeneration,
+	providerErr error,
 	code CallFailureCode,
 	primary error,
 ) error {
-	providerEvidence, err := NewProviderGenerationEvidence(attempt.ID, generation)
+	providerEvidence, err := newProviderGenerationOutcomeEvidence(
+		attempt.ID, generation, providerErr,
+	)
 	if err != nil {
 		return errors.Join(primary, err)
 	}

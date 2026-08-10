@@ -58,7 +58,10 @@ func TestGenerateIsDeterministicAndSeparatesArtifacts(t *testing.T) {
 		t.Fatalf("aggregate marshal error = %v, want ErrArtifactSeparation", err)
 	}
 	publicText := strings.ToLower(string(firstPublic))
-	for _, forbidden := range []string{"\"seed\"", "oracle", "solution", "relevance", "latent.", "private."} {
+	for _, forbidden := range []string{
+		"\"seed\"", "oracle", "solution", "optimal_plan", "expanded_states",
+		"relevance", "latent.", "private.",
+	} {
 		if strings.Contains(publicText, forbidden) {
 			t.Fatalf("public artifact contains forbidden private term %q", forbidden)
 		}

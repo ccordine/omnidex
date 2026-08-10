@@ -102,6 +102,7 @@ func (client *policyTestClient) GeneratePreparedExact(
 		ProviderRequestSHA256: mustPolicyTestRequestSHA(prepared),
 		ProviderHTTPStatus:    200, ProviderResponseDisposition: llm.ProviderResponseSucceeded,
 		ProviderResponseComplete:      true,
+		ProviderContentEncoding:       llm.NewProviderContentEncodingEvidence(nil, false),
 		ProviderResponseBytesKnown:    true,
 		ProviderResponseSHA256:        policySHA256(string(rawResponse)),
 		ProviderResponseBytes:         int64(len(rawResponse)),
@@ -197,6 +198,7 @@ func policyTestPreparedGeneration(
 		Content: response, ProviderRequestSHA256: attempt.ExpectedProviderRequestSHA256,
 		ProviderHTTPStatus: 200, ProviderResponseDisposition: llm.ProviderResponseSucceeded,
 		ProviderResponseComplete:      true,
+		ProviderContentEncoding:       llm.NewProviderContentEncodingEvidence(nil, false),
 		ProviderResponseBytesKnown:    true,
 		ProviderResponseSHA256:        policySHA256(string(rawResponse)),
 		ProviderResponseBytes:         int64(len(rawResponse)),
@@ -287,6 +289,7 @@ func policyTestFailedGeneration(attempt CallAttempt) llm.PreparedGeneration {
 	generation.ProviderHTTPStatus = 0
 	generation.ProviderResponseDisposition = llm.ProviderResponseTransportError
 	generation.ProviderResponseComplete = false
+	generation.ProviderContentEncoding = llm.ProviderContentEncodingEvidence{}
 	generation.ProviderResponseBytesKnown = false
 	generation.ProviderResponseSHA256 = ""
 	generation.ProviderResponseBytes = 0

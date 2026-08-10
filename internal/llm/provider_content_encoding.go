@@ -1,83 +1,112 @@
 package llm
 
 import (
-	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
-
-	"github.com/gryph/omnidex/internal/exactjson"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 )
 
 const (
-	MaxProviderContentEncodingValues        = 64 * 1024
-	MaxProviderContentEncodingRawBytes      = 64 * 1024
-	MaxProviderContentEncodingEvidenceBytes = 192 * 1024
+	ProviderContentEncodingEvidenceSchemaV1 = "omnidex.provider-content-encoding-evidence.v1"
+	MaxProviderContentEncodingCaptureBytes  = 64*1024 + 1
 )
 
-func EncodeProviderContentEncodingEvidence(values []string) (int, string, bool) {
-	if len(values) == 0 {
-		return 0, "", true
-	}
-	if len(values) > MaxProviderContentEncodingValues {
-		return 0, "", false
-	}
-	encoded := make([]string, len(values))
-	total := 0
-	for index, value := range values {
-		total += len(value)
-		if total > MaxProviderContentEncodingRawBytes {
-			return 0, "", false
-		}
-		encoded[index] = base64.StdEncoding.EncodeToString([]byte(value))
-	}
-	raw, err := exactjson.Canonical(encoded)
-	if err != nil || len(raw) > MaxProviderContentEncodingEvidenceBytes {
-		return 0, "", false
-	}
-	return len(values), string(raw), true
+// ProviderContentEncodingEvidence byte-preserves every Content-Encoding value.
+// Each value is framed by an unsigned 64-bit big-endian byte length before
+// hashing/capture, so multiple values and arbitrary string bytes remain exact.
+type ProviderContentEncodingEvidence struct {
+	Schema         string `json:"schema"`
+	Values         int    `json:"values"`
+	Complete       bool   `json:"complete"`
+	SHA256         string `json:"sha256"`
+	Bytes          int64  `json:"bytes"`
+	CapturedBase64 string `json:"captured_base64"`
+	CapturedBytes  int    `json:"captured_bytes"`
+	Uncompressed   bool   `json:"uncompressed"`
 }
 
-func validProviderContentEncoding(count int, evidence string) bool {
-	if count == 0 {
-		return evidence == ""
-	}
-	if count < 0 || count > MaxProviderContentEncodingValues ||
-		len(evidence) > MaxProviderContentEncodingEvidenceBytes {
-		return false
-	}
-	var encoded []string
-	if err := json.Unmarshal([]byte(evidence), &encoded); err != nil || len(encoded) != count {
-		return false
-	}
-	canonical, err := exactjson.Canonical(encoded)
-	if err != nil || !bytes.Equal(canonical, []byte(evidence)) {
-		return false
-	}
-	total := 0
-	for _, value := range encoded {
-		raw, err := base64.StdEncoding.Strict().DecodeString(value)
-		if err != nil {
-			return false
+func NewProviderContentEncodingEvidence(
+	values []string,
+	uncompressed bool,
+) ProviderContentEncodingEvidence {
+	hash := sha256.New()
+	capture := make([]byte, 0, MaxProviderContentEncodingCaptureBytes)
+	total := int64(0)
+	appendPart := func(part []byte) {
+		_, _ = hash.Write(part)
+		total += int64(len(part))
+		remaining := MaxProviderContentEncodingCaptureBytes - len(capture)
+		if remaining > len(part) {
+			remaining = len(part)
 		}
-		total += len(raw)
-		if total > MaxProviderContentEncodingRawBytes {
-			return false
+		if remaining > 0 {
+			capture = append(capture, part[:remaining]...)
 		}
 	}
-	return true
+	for _, value := range values {
+		var length [8]byte
+		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+		appendPart(length[:])
+		appendPart([]byte(value))
+	}
+	return ProviderContentEncodingEvidence{
+		Schema: ProviderContentEncodingEvidenceSchemaV1, Values: len(values),
+		Complete: total <= MaxProviderContentEncodingCaptureBytes,
+		SHA256:   hex.EncodeToString(hash.Sum(nil)), Bytes: total,
+		CapturedBase64: base64.StdEncoding.EncodeToString(capture),
+		CapturedBytes:  len(capture), Uncompressed: uncompressed,
+	}
 }
 
-func ProviderContentEncodingIsIdentity(count int, evidence string) bool {
-	if count == 0 {
-		return evidence == ""
+func (evidence ProviderContentEncodingEvidence) Validate() error {
+	if evidence.Schema != ProviderContentEncodingEvidenceSchemaV1 || evidence.Values < 0 ||
+		evidence.Bytes < 0 || !providerIdentityDigest.MatchString(evidence.SHA256) ||
+		evidence.CapturedBytes < 0 || evidence.CapturedBytes > MaxProviderContentEncodingCaptureBytes {
+		return fmt.Errorf("provider content-encoding evidence identity is invalid")
 	}
-	if count != 1 || !validProviderContentEncoding(count, evidence) {
+	captured, err := base64.StdEncoding.Strict().DecodeString(evidence.CapturedBase64)
+	if err != nil || len(captured) != evidence.CapturedBytes {
+		return fmt.Errorf("provider content-encoding capture is invalid")
+	}
+	if evidence.Complete {
+		if evidence.Bytes != int64(len(captured)) || providerBodySHA256(captured) != evidence.SHA256 {
+			return fmt.Errorf("complete provider content-encoding evidence changed")
+		}
+		values, err := decodeProviderContentEncodingValues(captured)
+		if err != nil || len(values) != evidence.Values {
+			return fmt.Errorf("provider content-encoding framing is invalid")
+		}
+	} else if evidence.Values < 1 || evidence.Bytes <= int64(evidence.CapturedBytes) ||
+		evidence.CapturedBytes != MaxProviderContentEncodingCaptureBytes {
+		return fmt.Errorf("partial provider content-encoding evidence lacks its exact prefix")
+	}
+	return nil
+}
+
+func (evidence ProviderContentEncodingEvidence) IsIdentity() bool {
+	if evidence.Validate() != nil || evidence.Uncompressed || !evidence.Complete {
 		return false
 	}
-	var values []string
-	if json.Unmarshal([]byte(evidence), &values) != nil {
-		return false
+	captured, _ := base64.StdEncoding.Strict().DecodeString(evidence.CapturedBase64)
+	values, _ := decodeProviderContentEncodingValues(captured)
+	return len(values) == 0 || (len(values) == 1 && string(values[0]) == "identity")
+}
+
+func decodeProviderContentEncodingValues(raw []byte) ([][]byte, error) {
+	values := make([][]byte, 0)
+	for len(raw) > 0 {
+		if len(raw) < 8 {
+			return nil, fmt.Errorf("content-encoding length is truncated")
+		}
+		length := binary.BigEndian.Uint64(raw[:8])
+		raw = raw[8:]
+		if length > uint64(len(raw)) {
+			return nil, fmt.Errorf("content-encoding value is truncated")
+		}
+		values = append(values, append([]byte(nil), raw[:int(length)]...))
+		raw = raw[int(length):]
 	}
-	raw, err := base64.StdEncoding.Strict().DecodeString(values[0])
-	return err == nil && string(raw) == "identity"
+	return values, nil
 }

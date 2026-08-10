@@ -119,7 +119,8 @@ func policyTestFailedProviderIdentityGeneration(
 	operations[0], err = llm.NewProviderIdentityOperationEvidence(
 		operations[0].Operation, operations[0].Method, operations[0].Endpoint,
 		true, operations[0].Request, 503, llm.ProviderIdentityHTTPError,
-		true, 0, "", false, []byte(`{"error":"unavailable"}`),
+		true, llm.NewProviderContentEncodingEvidence(nil, false),
+		[]byte(`{"error":"unavailable"}`),
 	)
 	if err != nil {
 		panic(err)
@@ -128,7 +129,7 @@ func policyTestFailedProviderIdentityGeneration(
 		operations[index], err = llm.NewProviderIdentityOperationEvidence(
 			operations[index].Operation, operations[index].Method, operations[index].Endpoint,
 			false, operations[index].Request, 0, llm.ProviderIdentityNotDispatched,
-			false, 0, "", false, nil,
+			false, llm.ProviderContentEncodingEvidence{}, nil,
 		)
 		if err != nil {
 			panic(err)

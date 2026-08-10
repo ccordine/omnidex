@@ -21,6 +21,15 @@ func (generated GeneratedCase) Validate() error {
 		generated.oracle.DefinitionSHA256 != generated.execution.definitionSHA256 {
 		return fmt.Errorf("%w: generated authority components do not match", ErrGeneration)
 	}
+	if generated.oracle.Quality == OracleOptimal {
+		transition, cost, err := verifyScenarioWitness(
+			generated.execution, generated.oracle.OptimalPlan,
+		)
+		if err != nil || !transition.Terminal || generated.oracle.OptimalCost == nil ||
+			cost != *generated.oracle.OptimalCost {
+			return fmt.Errorf("%w: solver-derived optimal plan does not replay exactly", ErrGeneration)
+		}
+	}
 	return generated.validateCoordinates()
 }
 
