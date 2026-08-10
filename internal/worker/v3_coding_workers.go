@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime {
@@ -17,58 +16,40 @@ func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime 
 		MaxAttempts:    maxTypedWorkerAttempts,
 		MaxConcurrency: session.runtime.svc.fragmentConcurrency,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-			if err := rejectOrdinaryAdvisoryJob(job.Kind); err != nil {
+			if err := rejectOfflineExperimentJob(job.Kind); err != nil {
 				return assemblyline.PortableResult{}, err
 			}
 			prompt, responseSchema, err := assemblyline.RenderPortableJob(job)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
+			contextProjectionID, err := prepareRepositoryShadowContext(session, job)
+			if err != nil {
+				return assemblyline.PortableResult{}, err
+			}
 			session.runtime.svc.emitStepEvent(
-				session.runtime.claim.Step.ID,
+				session.runtime.claim.Authority,
 				"coding_portable_dispatched",
 				fmt.Sprintf("kind=%s work=%s payload=%dB model=%s", job.Kind, job.ID[:12], len(job.Payload), safeEventToken(model, "unknown")),
 			)
 			raw, err := session.runtime.svc.llmGeneratePortableWithSchemaTrace(
 				session.runtime.ctx,
-				session.runtime.claim.Step.ID,
+				session.runtime.claim.Authority,
 				job,
 				portableModelScope(responseSchema),
 				model,
 				prompt,
 				responseSchema,
+				contextProjectionID,
 			)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: raw}, nil
 		},
-		Advise: func(job assemblyline.PortableJob, model string) (llm.AdvisoryResponse, error) {
-			if err := job.Validate(); err != nil {
-				return llm.AdvisoryResponse{}, err
-			}
-			if err := validateProductionAdvisoryJob(job.Kind); err != nil {
-				return llm.AdvisoryResponse{}, err
-			}
-			prompt, responseSchema, err := assemblyline.RenderPortableJob(job)
-			if err != nil {
-				return llm.AdvisoryResponse{}, err
-			}
-			if responseSchema != nil {
-				return llm.AdvisoryResponse{}, fmt.Errorf("native advisory job %q unexpectedly has a response schema", job.Kind)
-			}
-			session.runtime.svc.emitStepEvent(
-				session.runtime.claim.Step.ID,
-				"coding_portable_dispatched",
-				fmt.Sprintf("kind=%s work=%s payload=%dB model=%s", job.Kind, job.ID[:12], len(job.Payload), safeEventToken(model, "unknown")),
-			)
-			return session.runtime.svc.llmGeneratePortableAdvisoryTrace(
-				session.runtime.ctx, session.runtime.claim.Step.ID, job, model, prompt,
-			)
-		},
 		Emit: func(event typedWorkerEvent) {
 			session.runtime.svc.emitStepEvent(
-				session.runtime.claim.Step.ID,
+				session.runtime.claim.Authority,
 				"coding_worker_"+string(event.State),
 				renderDirectCodingWorkerEvent(event),
 			)
@@ -76,22 +57,20 @@ func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime 
 	}
 }
 
-func rejectOrdinaryAdvisoryJob(kind assemblyline.WorkKind) error {
+func rejectOfflineExperimentJob(kind assemblyline.WorkKind) error {
 	switch kind {
-	case assemblyline.WorkRequirementAdvisory,
+	case assemblyline.WorkRequirementBriefing,
+		assemblyline.WorkRequirementAdvisory,
+		assemblyline.WorkRequirementSynthesis,
 		assemblyline.WorkRequirementFinalAdvisory,
-		assemblyline.WorkRetrievalAdvisory:
-		return fmt.Errorf("advisory job %q requires a registered native advisory transport", kind)
+		assemblyline.WorkRequirementFinalSynthesis,
+		assemblyline.WorkRetrievalBriefing,
+		assemblyline.WorkRetrievalAdvisory,
+		assemblyline.WorkRetrievalSynthesis:
+		return fmt.Errorf("work kind %q belongs to an offline advisory experiment and is forbidden in production", kind)
 	default:
 		return nil
 	}
-}
-
-func validateProductionAdvisoryJob(kind assemblyline.WorkKind) error {
-	if kind != assemblyline.WorkRequirementAdvisory {
-		return fmt.Errorf("native advisory transport rejects work kind %q", kind)
-	}
-	return nil
 }
 
 func portableModelScope(responseSchema map[string]any) string {

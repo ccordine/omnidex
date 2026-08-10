@@ -22,7 +22,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 		return err
 	}
 	if _, directCoding := buildV3CodingCoordinatorPlan(intent); directCoding {
-		evidenceRecords, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+		evidenceRecords, err := r.svc.repo.ListCurrentEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
 		if err != nil {
 			return fmt.Errorf("list evidence for deterministic coding verification: %w", err)
 		}
@@ -41,7 +41,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 			fmt.Sprintf("objectives=%d", len(artifact.ObjectiveCoverage)),
 			"authority=deterministic_evidence",
 		}, "\n")
-		r.svc.emitStepEvent(r.claim.Step.ID, "coding_evidence_verified", "model_calls=0 "+safeLine(summary, "verification completed"))
+		r.svc.emitStepEvent(r.claim.Authority, "coding_evidence_verified", "model_calls=0 "+safeLine(summary, "verification completed"))
 		return r.complete("verification", summary, summary)
 	}
 	result, err := r.svc.executeV3Tool(r.ctx, r.claim, "verifier", toolruntime.Call{
@@ -57,7 +57,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 	}](result); err != nil {
 		return err
 	}
-	evidenceRecords, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+	evidenceRecords, err := r.svc.repo.ListCurrentEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
 	if err != nil {
 		return fmt.Errorf("list evidence for independent verification: %w", err)
 	}
@@ -85,7 +85,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 	if err != nil {
 		return err
 	}
-	r.svc.emitStepEvent(r.claim.Step.ID, "independent_challenge_started", fmt.Sprintf("objectives=%d evidence=%d", len(intent.Objectives), len(verificationInput.Evidence)))
+	r.svc.emitStepEvent(r.claim.Authority, "independent_challenge_started", fmt.Sprintf("objectives=%d evidence=%d", len(intent.Objectives), len(verificationInput.Evidence)))
 	modelName := r.svc.v3SpecialistModel(r.claim.Job, r.routing, "verifier", specialist.RoleReviewVerificationSpecialist, r.routing.Analyze)
 	output, err := r.invokeSpecialist("v3_independent_verification", "verifier", modelName, invocation, nil)
 	if err != nil {
@@ -114,7 +114,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 	}
 	if verificationHasBlockingFindings(artifact) && artifact.Verdict == artifacts.VerificationVerdictPass {
 		artifact.Verdict = artifacts.VerificationVerdictRevise
-		r.svc.emitStepEvent(r.claim.Step.ID, "independent_challenge_overruled_pass", "deterministic evidence checks found blocking gaps")
+		r.svc.emitStepEvent(r.claim.Authority, "independent_challenge_overruled_pass", "deterministic evidence checks found blocking gaps")
 	}
 	if err := validateV3VerificationArtifact(intent, artifact, evidenceRecords); err != nil {
 		return err
@@ -126,7 +126,7 @@ func (r *nativeRuntimeV3) runVerification() error {
 		return err
 	}
 	summary := strings.Join([]string{"verdict=" + artifact.Verdict, fmt.Sprintf("supported_claims=%d", len(artifact.SupportedClaims)), fmt.Sprintf("unsupported_claims=%d", len(artifact.UnsupportedClaims)), fmt.Sprintf("missing_evidence=%d", len(artifact.MissingEvidence))}, "\n")
-	r.svc.emitStepEvent(r.claim.Step.ID, "independent_challenge_completed", safeLine(summary, "verification completed"))
+	r.svc.emitStepEvent(r.claim.Authority, "independent_challenge_completed", safeLine(summary, "verification completed"))
 	return r.complete("verification", summary, summary)
 }
 
@@ -145,7 +145,7 @@ func (r *nativeRuntimeV3) persistDeterministicClaimAssessment(draft string, reco
 		}
 		claims = append(claims, model.ClaimRecord{JobID: r.claim.Job.ID, StepID: r.claim.Step.ID, Text: assessment.Text, NormalizedText: assessment.Normalized, Status: status, Confidence: assessment.SupportScore})
 	}
-	saved, err := r.svc.repo.WriteClaims(r.ctx, claims)
+	saved, err := r.svc.repo.WriteClaims(r.ctx, r.claim.Authority, claims)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -155,7 +155,7 @@ func (r *nativeRuntimeV3) persistDeterministicClaimAssessment(draft string, reco
 			links = append(links, model.ClaimSupportRecord{ClaimID: claim.ID, EvidenceID: evidenceID, SupportScore: assessments[index].SupportScore, Rationale: assessments[index].Rationale})
 		}
 	}
-	if err := r.svc.repo.WriteClaimSupports(r.ctx, links); err != nil {
+	if err := r.svc.repo.WriteClaimSupports(r.ctx, r.claim.Authority, links); err != nil {
 		return nil, nil, err
 	}
 	return supported, unsupported, nil

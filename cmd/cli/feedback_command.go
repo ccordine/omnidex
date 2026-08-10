@@ -10,8 +10,12 @@ import (
 )
 
 func runFeedback(c *client.Client, args []string) {
+	operationID, args, err := parseLifecycleOperationArgs(args)
+	if err != nil {
+		die(err.Error())
+	}
 	if len(args) < 2 {
-		die("feedback requires <job-id> and feedback text")
+		die("feedback requires [--operation-id id] <job-id> and feedback text")
 	}
 
 	id, err := strconv.ParseInt(args[0], 10, 64)
@@ -24,7 +28,8 @@ func runFeedback(c *client.Client, args []string) {
 		die("feedback text is required")
 	}
 
-	job, err := c.SubmitFeedback(context.Background(), id, feedback)
+	announceLifecycleOperationID(operationID)
+	job, err := c.SubmitFeedback(context.Background(), id, operationID, feedback)
 	if err != nil {
 		die(err.Error())
 	}

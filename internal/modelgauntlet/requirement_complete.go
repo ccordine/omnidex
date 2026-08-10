@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 const (
 	maxCompleteRequirementCases   = 100
 	maxCompleteRequirementRepeats = 5
-	maxCompletePartitionCalls     = 128
 )
 
 type completePartitionAttempt struct {
@@ -110,55 +108,35 @@ func (runner *completeRequirementRunner) runCompletePartition(
 	source string,
 	partition func(assemblyline.RequirementPartitionInput, string) (completePartitionAttempt, error),
 ) (completePartitionAttempt, error) {
-	extraction, err := partition(assemblyline.RequirementPartitionInput{
-		SourceText: source, Mode: assemblyline.RequirementExtractFeatures,
-	}, "extract")
-	if err != nil || extraction.Error != "" {
-		return extraction, err
-	}
-	if len(extraction.Decision.FeatureQuotes) == 0 {
-		return completePartitionAttempt{Error: "complete requirement extraction returned no feature envelopes"}, nil
-	}
-	queue := append([]string(nil), extraction.Decision.FeatureQuotes...)
-	features := make([]string, 0, len(queue))
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		result, splitErr := partition(assemblyline.RequirementPartitionInput{
-			SourceText: current, Mode: assemblyline.RequirementSplitFeature,
-		}, "split")
-		if splitErr != nil || result.Error != "" {
-			return result, splitErr
-		}
-		if len(result.Decision.FeatureQuotes) == 1 && result.Decision.FeatureQuotes[0] == current {
-			features = append(features, current)
-			continue
-		}
-		for _, child := range result.Decision.FeatureQuotes {
-			if len(child) >= len(current) {
-				return completePartitionAttempt{Error: fmt.Sprintf(
-					"requirement split %q did not make strict progress from %q", child, current,
-				)}, nil
+	var fatalErr error
+	decision, err := assemblyline.CompleteRequirementPartition(
+		source,
+		func(input assemblyline.RequirementPartitionInput) (assemblyline.RequirementPartitionDecision, error) {
+			kind := "extract"
+			if input.Mode == assemblyline.RequirementSplitFeature {
+				kind = "split"
 			}
-			queue = append(queue, child)
-		}
+			attempt, callErr := partition(input, kind)
+			if callErr != nil {
+				fatalErr = callErr
+				return assemblyline.RequirementPartitionDecision{}, callErr
+			}
+			if attempt.Error != "" {
+				return assemblyline.RequirementPartitionDecision{}, fmt.Errorf("%s", attempt.Error)
+			}
+			return attempt.Decision, nil
+		},
+	)
+	if fatalErr != nil {
+		return completePartitionAttempt{}, fatalErr
 	}
-	sort.SliceStable(features, func(left, right int) bool {
-		return strings.Index(source, features[left]) < strings.Index(source, features[right])
-	})
-	decision := assemblyline.RequirementPartitionDecision{
-		Schema: assemblyline.RequirementPartitionSchemaV1, FeatureQuotes: features,
-	}
-	if err := assemblyline.ValidateCompleteRequirementPartition(source, decision); err != nil {
+	if err != nil {
 		return completePartitionAttempt{Error: err.Error()}, nil
 	}
 	return completePartitionAttempt{Decision: decision}, nil
 }
 
 func (runner *completeRequirementRunner) nextOperation(kind string) (string, error) {
-	if runner.sequence >= maxCompletePartitionCalls {
-		return "", fmt.Errorf("complete requirement partition exceeded %d bounded operations", maxCompletePartitionCalls)
-	}
 	runner.sequence++
 	return fmt.Sprintf("partition_%03d_%s", runner.sequence, kind), nil
 }

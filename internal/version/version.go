@@ -6,10 +6,12 @@ import (
 )
 
 var (
-	Version  = "v0.4.0"
-	Codename = "Charmander"
-	Commit   = ""
-	Date     = ""
+	Version          = "v0.5.0"
+	Codename         = "Charmeleon"
+	Commit           = ""
+	SourceSHA256     = ""
+	MigrationsSHA256 = ""
+	Date             = ""
 )
 
 type PrideRelease struct {
@@ -23,8 +25,9 @@ var PrideLine = []PrideRelease{
 	{Version: "v0.1.0-alpha", Codename: "Bulbasaur", NationalID: 1, Stage: "alpha"},
 	{Version: "v0.2.0", Codename: "Ivysaur", NationalID: 2, Stage: "growth"},
 	{Version: "v0.3.0", Codename: "Venusaur", NationalID: 3, Stage: "planner"},
-	{Version: "v0.4.0", Codename: "Charmander", NationalID: 4, Stage: "current"},
-	{Version: "future", Codename: "Charmeleon", NationalID: 5, Stage: "planned"},
+	{Version: "v0.4.0", Codename: "Charmander", NationalID: 4, Stage: "assembly_line"},
+	{Version: "v0.5.0", Codename: "Charmeleon", NationalID: 5, Stage: "current"},
+	{Version: "future", Codename: "Charizard", NationalID: 6, Stage: "planned"},
 }
 
 func Label() string {
@@ -52,8 +55,10 @@ func JSON() map[string]string {
 		"codename":           strings.TrimSpace(Codename),
 		"release_scheme":     "pride-national-dex",
 		"national_dex_id":    fmt.Sprintf("%d", NationalDexID(Codename)),
-		"next_maturity_name": "Charmeleon",
+		"next_maturity_name": "Charizard",
 		"commit":             strings.TrimSpace(Commit),
+		"source_sha256":      strings.TrimSpace(SourceSHA256),
+		"migrations_sha256":  strings.TrimSpace(MigrationsSHA256),
 		"date":               strings.TrimSpace(Date),
 	}
 }

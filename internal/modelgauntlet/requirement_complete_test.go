@@ -31,8 +31,8 @@ func TestRunCompleteRequirementPartitionComparesAllThreeVariants(t *testing.T) {
 			t.Fatalf("prediction=%#v", prediction)
 		}
 	}
-	if len(report.Calls) != 24 {
-		t.Fatalf("calls=%d, want 24", len(report.Calls))
+	if len(report.Calls) != 34 {
+		t.Fatalf("calls=%d, want 34", len(report.Calls))
 	}
 	for _, call := range report.Calls {
 		if call.Request.Repetition < 1 || strings.TrimSpace(call.Request.Operation) == "" {
@@ -134,7 +134,12 @@ func (completeRequirementTestGenerator) Generate(_ context.Context, request Gene
 		if request.CaseID == "board" {
 			quote = "card search"
 		}
-		response.Content = fmt.Sprintf(`{"schema":"omnidex.requirement-partition.v1","feature_quotes":[%q]}`, quote)
+		quotes := fmt.Sprintf("[%q]", quote)
+		if strings.Contains(request.SystemPrompt, "USER_REQUEST:") &&
+			!strings.Contains(request.SystemPrompt, quote) {
+			quotes = "[]"
+		}
+		response.Content = fmt.Sprintf(`{"schema":"omnidex.requirement-partition.v1","feature_quotes":%s}`, quotes)
 	default:
 		return GenerateResponse{}, fmt.Errorf("unexpected stage %q", request.Stage)
 	}

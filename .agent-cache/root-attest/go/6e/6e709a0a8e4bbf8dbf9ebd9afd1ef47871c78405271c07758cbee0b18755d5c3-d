@@ -1,0 +1,5 @@
+./config.go
+./parse.go
+./resolve.go
+./config_test.go
+./resolve_test.go

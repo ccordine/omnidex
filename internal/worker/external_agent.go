@@ -28,7 +28,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	workspace := codingWorkspaceForJob(claim.Job)
 	if strings.TrimSpace(workspace) == "" {
 		message := "selected external agent requires an explicit project workspace"
-		s.emitStepEvent(claim.Step.ID, "external_agent_failed", message)
+		s.emitStepEvent(claim.Authority, "external_agent_failed", message)
 		return fmt.Errorf("%s", message)
 	}
 	agent, agentName, unavailable := selectExternalAgent(cfg)
@@ -37,7 +37,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		if msg == "" {
 			msg = cfg.System() + " agent is not configured"
 		}
-		s.emitStepEvent(claim.Step.ID, "external_agent_unavailable", msg)
+		s.emitStepEvent(claim.Authority, "external_agent_unavailable", msg)
 		return fmt.Errorf("selected external agent required: %s", msg)
 	}
 
@@ -47,7 +47,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		Workspace:   workspace,
 	}
 
-	s.emitStepEvent(claim.Step.ID, "external_agent_started", agentName)
+	s.emitStepEvent(claim.Authority, "external_agent_started", agentName)
 
 	var result omni.ExternalCodingResult
 	streamLines := make([]string, 0, 64)
@@ -65,7 +65,7 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 				streamLines = append(streamLines, line)
 				appendCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				if appendErr := s.repo.AppendStepOutput(appendCtx, claim.Step.ID, line); appendErr != nil {
+				if appendErr := s.repo.AppendStepOutput(appendCtx, claim.Authority, line); appendErr != nil {
 					return appendErr
 				}
 				if s.onJobOutput != nil {
@@ -79,18 +79,18 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 	}
 
 	if err != nil {
-		s.emitStepEvent(claim.Step.ID, "external_agent_failed", err.Error())
+		s.emitStepEvent(claim.Authority, "external_agent_failed", err.Error())
 		return fmt.Errorf("%s failed: %w", agentName, err)
 	}
 	if err := omni.ExternalAgentResultError(result); err != nil {
-		s.emitStepEvent(claim.Step.ID, "external_agent_failed", err.Error())
+		s.emitStepEvent(claim.Authority, "external_agent_failed", err.Error())
 		return fmt.Errorf("%s failed: %w", agentName, err)
 	}
 
 	output := firstNonEmpty(result.Summary, result.Output)
 	if output == "" {
 		message := agentName + " returned no summary or output"
-		s.emitStepEvent(claim.Step.ID, "external_agent_failed", message)
+		s.emitStepEvent(claim.Authority, "external_agent_failed", message)
 		return fmt.Errorf("%s", message)
 	}
 	stepOutput := output
@@ -121,8 +121,8 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		}
 		completeStep = s.repo.CompleteStep
 	}
-	s.emitStepEvent(claim.Step.ID, "external_agent_completed", output)
-	return completeStep(ctx, claim.Step.ID, stepOutput, "external_agent_execute", string(summary))
+	s.emitStepEvent(claim.Authority, "external_agent_completed", output)
+	return invokeCompleteClaimedStep(ctx, completeStep, claim, stepOutput, "external_agent_execute", string(summary))
 }
 
 func selectExternalAgent(cfg agentconfig.Config) (omni.ExternalCodingAgent, string, string) {

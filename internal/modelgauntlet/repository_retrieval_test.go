@@ -18,12 +18,12 @@ func TestRepositoryRetrievalGauntletUsesFinalMemoOnly(t *testing.T) {
 	generator := &scriptedGenerator{generate: func(request GenerateRequest) (GenerateResponse, error) {
 		switch request.Stage {
 		case StageBriefing:
-			return GenerateResponse{Content: `{"schema":"omnidex.repository-retrieval-briefing.v1","lens":"relation_direction"}`}, nil
+			return GenerateResponse{Content: `{"schema":"omnidex.repository-retrieval-briefing.v2","lens":"relation_direction"}`}, nil
 		case StageDeliberation:
 			return GenerateResponse{Thinking: "private evidence-only chain", Content: "The need asks for incoming direct references."}, nil
 		case StageDirect, StageSynthesis:
 			raw, _ := json.Marshal(assemblyline.RepositoryRetrievalDecision{
-				Schema:     assemblyline.RepositoryRetrievalSchemaV1,
+				Schema:     assemblyline.RepositoryRetrievalSchemaV2,
 				Operation:  assemblyline.RetrievalDirectReferences,
 				QueryQuote: "ApplyResponseCorrection",
 			})

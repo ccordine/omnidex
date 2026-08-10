@@ -4,23 +4,25 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 const stepEventWriteTimeout = 5 * time.Second
 
-func (s *Service) emitStepStream(stepID int64, stream, message string) {
+func (s *Service) emitStepStream(authority model.StepAttemptAuthority, stream, message string) {
 	key := "tool_stdout"
 	if strings.EqualFold(strings.TrimSpace(stream), "stderr") {
 		key = "tool_stderr"
 	}
-	s.emitStepContext(stepID, key, message)
+	s.emitStepContext(authority, key, message)
 }
 
-func (s *Service) emitStepContext(stepID int64, key, value string) {
-	s.emitStepContextWithBudget(stepID, key, value, 1800)
+func (s *Service) emitStepContext(authority model.StepAttemptAuthority, key, value string) {
+	s.emitStepContextWithBudget(authority, key, value, 1800)
 }
 
-func (s *Service) emitStepContextWithBudget(stepID int64, key, value string, maxChars int) {
+func (s *Service) emitStepContextWithBudget(authority model.StepAttemptAuthority, key, value string, maxChars int) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return
@@ -30,24 +32,26 @@ func (s *Service) emitStepContextWithBudget(stepID int64, key, value string, max
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), stepEventWriteTimeout)
 	defer cancel()
-	if err := s.repo.AddStepContext(ctx, stepID, key, trimForBudget(value, maxChars)); err != nil {
-		s.logger.Printf("step=%d context key=%s write error: %v", stepID, key, err)
+	if err := s.repo.AddStepContext(ctx, authority, key, trimForBudget(value, maxChars)); err != nil {
+		s.logger.Printf("step=%d attempt=%d context key=%s write error: %v", authority.StepID, authority.Attempt, key, err)
 	}
 }
 
-func (s *Service) emitStepEvent(stepID int64, eventType, message string) {
+func (s *Service) emitStepEvent(authority model.StepAttemptAuthority, eventType, message string) {
 	payload := strings.TrimSpace(strings.Join([]string{
 		"time=" + time.Now().UTC().Format(time.RFC3339),
 		"event=" + strings.TrimSpace(eventType),
 		strings.TrimSpace(message),
 	}, " "))
-	s.emitStepContext(stepID, "event", payload)
+	if eventType != "step_complete" && eventType != "step_canceled" {
+		s.emitStepContext(authority, "event", payload)
+	}
 	if s.repo == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := s.repo.RecordTelemetryStepEvent(ctx, stepID, eventType, message); err != nil {
-		s.logger.Printf("step=%d telemetry event=%s write error: %v", stepID, eventType, err)
+	if err := s.repo.RecordTelemetryStepEvent(ctx, authority, eventType, message); err != nil {
+		s.logger.Printf("step=%d attempt=%d telemetry event=%s write error: %v", authority.StepID, authority.Attempt, eventType, err)
 	}
 }

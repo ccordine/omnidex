@@ -22,11 +22,10 @@ second channel. Framework documents two SODIMM slots and support for up to
 - https://frame.work/products/ddr5-5600?v=FRANRM0003X2
 - https://frame.work/laptop16?slug=laptop16-amd-7040
 
-## Authoritative three-tier profile
+## Authoritative two-tier profile
 
-Use one model for authoritative small semantic stations, one bounded
-native-thinking adviser, and one coding model for raw declaration generation
-and correction:
+Use one stable model for authoritative small semantic stations and one coding
+model for raw declaration generation and correction:
 
 ```dotenv
 OLLAMA_MODEL=qwen3.5:9b-q4_K_M
@@ -40,8 +39,7 @@ OLLAMA_MODEL_RESPONDER=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SEARCH=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_MEMORY=qwen3.5:9b-q4_K_M
 
-# Every other OLLAMA_MODEL_SPECIALIST_* semantic station uses the same 9B model.
-OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER=deepseek-r1:8b
+# Every OLLAMA_MODEL_SPECIALIST_* semantic station uses the same 9B model.
 OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT=qwen3-coder:30b
 OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION=qwen3-coder:30b
 
@@ -50,21 +48,19 @@ CODING_FRAGMENT_CONCURRENCY=1
 ```
 
 The complete role list is checked in to `default.env` and `.env.example`.
-Keeping the authoritative semantic routes on one model avoids needless reloads
-between tiny stations. The dedicated R1 route is used only between a typed
-requirement briefing and synthesis; it emits no JSON and has no decision,
-repair, path, scheduling, or completion authority. Keeping fragment generation
-and correction on the same coding model avoids another reload during a repair
-loop.
+Keeping the authoritative semantic routes on one stable model avoids needless
+reloads between tiny stations. Production requirement extraction and splitting
+use the same schema-bound Qwen route; reasoning-adviser protocols remain offline
+gauntlet experiments only. Keeping fragment generation and correction on the
+same coding model avoids another reload during a repair loop.
 
 Qwen 3.5 9B is the practical semantic choice because its Q4_K_M Ollama image is
 6.6 GB and Qwen publishes strong instruction following, tool-use, and coding
-results for the 9B checkpoint. DeepSeek R1 8B earned the advisory route in the
-checked-in development gauntlet; with only its final memo exposed to synthesis
-it improved exact requirement partitioning from 5/8 to 6/8 without an invalid
-response or paired regression. Qwen3-Coder 30B is a 30.5B-total, 3.3B-active
-MoE trained primarily on code and is non-thinking by design, which fits
-Omnidex's bounded single-node output contract.
+results for the 9B checkpoint. DeepSeek R1 8B showed a small development-set
+gain in an isolated advisory gauntlet, but did not earn a production route in
+the larger application trial. Qwen3-Coder 30B is a 30.5B-total, 3.3B-active MoE
+trained primarily on code and is non-thinking by design, which fits Omnidex's
+bounded single-node output contract.
 
 Primary model sources:
 
@@ -89,7 +85,7 @@ through the new command.
 | `qwen2.5-coder:7b` | 2K | 4.81 GB | 4.81 GB | 51.67 tok/s |
 | `qwen2.5-coder:14b` | 2K | 9.91 GB | 7.32 GB | 7.86 tok/s |
 | `qwen3.5:9b-q4_K_M` | 16K | 13.82 GB | 7.53 GB | 11.10 tok/s |
-| `deepseek-r1:8b` | 16K | 13.82 GB peak in paired trial | recorded in trial evidence | quality-first advisory only |
+| `deepseek-r1:8b` | 16K | 13.82 GB peak in paired trial | recorded in trial evidence | offline gauntlet only |
 | `qwen3-coder:30b` | 2K | 18.98 GB | 7.56 GB | 14.85 tok/s |
 | `qwen3-coder:30b` | 16K | 22.41 GB | 7.28 GB | 13.12 tok/s |
 | `qwen3-coder:30b` | 32K | 26.24 GB | 7.28 GB | 11.06 tok/s |

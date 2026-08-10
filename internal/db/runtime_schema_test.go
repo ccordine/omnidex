@@ -1,0 +1,41 @@
+package db
+
+import (
+	"context"
+	"testing"
+)
+
+func TestRuntimeSchemaNameRequiresDedicatedIdentifier(t *testing.T) {
+	for _, invalid := range []string{
+		"", "public", "information_schema", "pg_catalog", "Omnidex", "omnidex-runtime",
+	} {
+		if err := ValidateRuntimeSchemaName(invalid); err == nil {
+			t.Fatalf("runtime schema %q was accepted", invalid)
+		}
+	}
+	if err := ValidateRuntimeSchemaName(DefaultRuntimeSchema); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRuntimeConnectionRejectsURLSearchPathAuthority(t *testing.T) {
+	for _, databaseURL := range []string{
+		"postgres://user:password@127.0.0.1/database?search_path=other",
+		"postgres://user:password@127.0.0.1/database?options=-csearch_path%3Dother",
+	} {
+		if _, err := ConnectRuntime(
+			context.Background(), databaseURL, DefaultRuntimeSchema,
+		); err == nil {
+			t.Fatal("URL-level search_path was accepted beside DATABASE_SCHEMA")
+		}
+	}
+}
+
+func TestRuntimeSchemaBootstrapRejectsLegacyPublicState(t *testing.T) {
+	if err := rejectPublicOmnidexState(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := rejectPublicOmnidexState(true); err == nil {
+		t.Fatal("legacy public Omnidex state was accepted beside a new runtime schema")
+	}
+}

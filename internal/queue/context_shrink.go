@@ -24,12 +24,12 @@ type ContextShrinkMetricRecord struct {
 }
 
 type ContextShrinkMetricSummary struct {
-	Requests     int     `json:"requests"`
-	AvgRawChars  float64 `json:"avg_raw_chars"`
+	Requests       int     `json:"requests"`
+	AvgRawChars    float64 `json:"avg_raw_chars"`
 	AvgShrunkChars float64 `json:"avg_shrunk_chars"`
-	AvgSavedPct  float64 `json:"avg_saved_pct"`
-	MaxRawChars  int     `json:"max_raw_chars"`
-	MinShrunkChars int   `json:"min_shrunk_chars"`
+	AvgSavedPct    float64 `json:"avg_saved_pct"`
+	MaxRawChars    int     `json:"max_raw_chars"`
+	MinShrunkChars int     `json:"min_shrunk_chars"`
 }
 
 type ContextShrinkMetricEntry struct {
@@ -47,17 +47,17 @@ type ContextShrinkMetricEntry struct {
 }
 
 type ContextShrinkDailyPoint struct {
-	Day         string  `json:"day"`
-	Requests    int     `json:"requests"`
-	AvgRawChars float64 `json:"avg_raw_chars"`
+	Day            string  `json:"day"`
+	Requests       int     `json:"requests"`
+	AvgRawChars    float64 `json:"avg_raw_chars"`
 	AvgShrunkChars float64 `json:"avg_shrunk_chars"`
-	AvgSavedPct float64 `json:"avg_saved_pct"`
+	AvgSavedPct    float64 `json:"avg_saved_pct"`
 }
 
 type ContextShrinkMetricsResponse struct {
-	Summary ContextShrinkMetricSummary  `json:"summary"`
-	History []ContextShrinkMetricEntry  `json:"history"`
-	Daily   []ContextShrinkDailyPoint   `json:"daily"`
+	Summary ContextShrinkMetricSummary `json:"summary"`
+	History []ContextShrinkMetricEntry `json:"history"`
+	Daily   []ContextShrinkDailyPoint  `json:"daily"`
 }
 
 func contextShrinkSavedPct(raw, shrunk int) float64 {

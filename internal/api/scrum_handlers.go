@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
@@ -376,7 +378,8 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		return
 	}
 	var req struct {
-		Message string `json:"message"`
+		OperationID queue.LifecycleOperationID `json:"operation_id"`
+		Message     string                     `json:"message"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
@@ -387,35 +390,58 @@ func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, car
 		writeError(w, http.StatusBadRequest, "message is required")
 		return
 	}
-	_, board, projectID, err := s.scrumGetCard(r, cardID)
+	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	projectID, err := s.resolveProjectID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	operationRequest := queue.ScrumChannelOperationRequest{
+		OperationID: req.OperationID, ProjectID: projectID, CardID: cardID, Message: req.Message,
+	}
+	if replay, found, err := s.repo.LoadScrumChannelOperation(r.Context(), operationRequest); err != nil {
+		status := http.StatusBadGateway
+		if errors.Is(err, queue.ErrLifecycleOperationConflict) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
+		return
+	} else if found {
+		result, err := decodeScrumChannelResult(replay)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeScrumChannelDispatchResponse(w, result)
+		return
+	}
+	card, board, resolvedProjectID, err := s.scrumGetCard(r, cardID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "card not found")
 		return
 	}
-	updated, err := s.scrumAppendChat(r, cardID, "user", req.Message)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if resolvedProjectID != projectID {
+		writeError(w, http.StatusInternalServerError, "Scrum channel project authority changed during request")
 		return
 	}
-	result, err := s.dispatchScrumChannelMessage(r, board, projectID, updated, req.Message)
+	result, err := s.dispatchScrumChannelMessage(
+		r, board, projectID, card, req.OperationID, req.Message,
+	)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	if refreshed, refreshErr := s.refreshScrumPlayQueue(r, projectID, board); refreshErr == nil {
-		board = refreshed
-		if card := findScrumCard(board, result.Card.ID); card != nil {
-			result.Card = *card
+		status := http.StatusBadGateway
+		if errors.Is(err, queue.ErrLifecycleOperationConflict) || errors.Is(err, queue.ErrStepNotWritable) {
+			status = http.StatusConflict
 		}
+		writeError(w, status, err.Error())
+		return
 	}
-	s.publishScrumCardUpdate(r.Context(), projectID, result.Card, "channel chat")
-	responseCard := scrumCardChannelPayload(result.Card, scrumChannelDefaultPageSize)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"card":   responseCard,
-		"reply":  "",
-		"agent":  result.Agent,
-		"action": result.Action,
-	})
+	if result.Applied {
+		s.publishScrumCardUpdate(r.Context(), projectID, result.Card, "channel chat")
+	}
+	writeScrumChannelDispatchResponse(w, result)
 }
 
 func (s *Server) handleScrumFiles(w http.ResponseWriter, r *http.Request) {

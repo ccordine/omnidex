@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +16,6 @@ func TestModelSettingsUsesAuthoritativeModelRoleCatalog(t *testing.T) {
 		"OMNI_GLUE_MODEL=qwen2.5-coder:3b",
 		"OMNI_CODING_SURFACE_MODEL=qwen3:4b-surface",
 		"OMNI_CODING_REQUIREMENT_PARTITION_MODEL=qwen2.5-coder:7b-partition",
-		"OMNI_CODING_REQUIREMENT_ADVISER_MODEL=deepseek-r1:8b",
 		"OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen2.5:3b-artifact",
 		"OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3:4b-relation",
 		"OMNI_CODING_SKILL_SELECTION_MODEL=qwen3:4b-skill-select",
@@ -52,9 +53,6 @@ func TestModelSettingsUsesAuthoritativeModelRoleCatalog(t *testing.T) {
 	if values["coding_requirement_partition_model"] != "qwen2.5-coder:7b-partition" {
 		t.Fatalf("coding_requirement_partition_model=%q", values["coding_requirement_partition_model"])
 	}
-	if values["coding_requirement_adviser_model"] != "deepseek-r1:8b" {
-		t.Fatalf("coding_requirement_adviser_model=%q", values["coding_requirement_adviser_model"])
-	}
 	if values["coding_artifact_handling_model"] != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding_artifact_handling_model=%q", values["coding_artifact_handling_model"])
 	}
@@ -73,9 +71,48 @@ func TestModelSettingsUsesAuthoritativeModelRoleCatalog(t *testing.T) {
 	if values["coding_fragment_correction_model"] != "qwen2.5-coder:14b-correction" {
 		t.Fatalf("coding_fragment_correction_model=%q", values["coding_fragment_correction_model"])
 	}
-	for _, removed := range []string{"thinking_model", "evaluator_model", "file_worker_model", "coding_plan_model", "coding_repair_model", "coding_file_model", "coding_source_review_model", "coding_source_model", "coding_requirement_quote_model", "coding_semantic_check_model", "coding_semantics_model"} {
+	for _, removed := range []string{"thinking_model", "evaluator_model", "file_worker_model", "coding_plan_model", "coding_repair_model", "coding_file_model", "coding_source_review_model", "coding_source_model", "coding_requirement_quote_model", "coding_semantic_check_model", "coding_semantics_model", "coding_requirement_adviser_model", "coding_requirement_split_model"} {
 		if _, exists := values[removed]; exists {
 			t.Fatalf("removed model role %q remains in Admin settings", removed)
 		}
+	}
+}
+
+func TestModelSettingsRejectsRemovedRequirementRoutes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("OMNI_MODEL=stable\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OMNI_ENV_FILE", path)
+
+	for _, key := range []string{"coding_requirement_adviser_model", "coding_requirement_split_model"} {
+		req := httptest.NewRequest(
+			http.MethodPut,
+			"/v1/settings/models",
+			strings.NewReader(`{"values":{"`+key+`":"removed"}}`),
+		)
+		recorder := httptest.NewRecorder()
+		(&Server{}).handleModelSettings(recorder, req)
+		if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), key) {
+			t.Fatalf("key=%s status=%d body=%s", key, recorder.Code, recorder.Body.String())
+		}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "OMNI_MODEL=stable\n" {
+		t.Fatalf("rejected settings mutated env file: %q", raw)
+	}
+}
+
+func TestModelSettingsReadFailsOnRemovedEnvironmentRoute(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER=removed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OMNI_ENV_FILE", path)
+	if _, err := buildModelSettingsResponse(); err == nil || !strings.Contains(err.Error(), "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER") {
+		t.Fatalf("error=%v", err)
 	}
 }

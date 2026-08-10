@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -28,11 +29,38 @@ func (startupTestLLM) GeneratePrepared(context.Context, llm.PreparedModel) (stri
 
 func (startupTestLLM) CleanupPreparedModel(llm.PreparedModel) {}
 
+func (startupTestLLM) RequireExactPreparedContract() error { return nil }
+
+func (startupTestLLM) ValidateExactPreparedProvider(expected llm.ProviderIdentityExpectation) error {
+	return expected.Validate()
+}
+
+func (startupTestLLM) ValidateExactPreparedContract(llm.PreparedModel) error { return nil }
+
+func (startupTestLLM) GeneratePreparedExact(
+	context.Context,
+	llm.PreparedModel,
+) (llm.PreparedGeneration, error) {
+	return llm.PreparedGeneration{}, nil
+}
+
 func (startupTestLLM) Embedding(context.Context, string) ([]float64, error) {
 	return nil, nil
 }
 
 func validWorkerOptions() Options {
+	sampling, err := cognitionpolicy.NewSamplingIdentity(32768, 24576, 4096)
+	if err != nil {
+		panic(err)
+	}
+	brain, err := cognitionpolicy.NewBrainRef(
+		"analyze-model", strings.Repeat("a", 64), "Q4_K_M",
+		llm.ExactPreparedProviderBackend, llm.ExactPreparedProviderVersion,
+		"test-hardware", sampling,
+	)
+	if err != nil {
+		panic(err)
+	}
 	return Options{
 		WorkerCount:            2,
 		FragmentConcurrency:    1,
@@ -55,6 +83,7 @@ func validWorkerOptions() Options {
 			Memory:     "memory-model",
 			Specialist: map[string]string{"planner": "planner-model"},
 		},
+		CognitionBrain: brain,
 		Workspace: WorkspaceSettings{
 			MaxFiles:      5000,
 			ContextBudget: 6000,
@@ -88,6 +117,7 @@ func TestValidateWorkerOptionsRejectsInvalidRuntimeBounds(t *testing.T) {
 		{name: "inference context", mutate: func(opts *Options) { opts.InferenceContextTokens = 4095 }, message: "inference_context_tokens"},
 		{name: "embedding provider", mutate: func(opts *Options) { opts.EmbeddingProvider = "" }, message: "embedding_provider"},
 		{name: "embedding model", mutate: func(opts *Options) { opts.EmbeddingModel = "" }, message: "embedding_model"},
+		{name: "cognition brain", mutate: func(opts *Options) { opts.CognitionBrain.Model = "" }, message: "cognition_brain"},
 		{name: "workspace files", mutate: func(opts *Options) { opts.Workspace.MaxFiles = 0 }, message: "workspace.max_files"},
 		{name: "workspace budget", mutate: func(opts *Options) { opts.Workspace.ContextBudget = 0 }, message: "workspace.context_budget"},
 		{name: "logger", mutate: func(opts *Options) { opts.Logger = nil }, message: "logger"},

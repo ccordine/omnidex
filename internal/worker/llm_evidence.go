@@ -8,12 +8,14 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
 type llmEvidenceWork struct {
-	ID   string
-	Kind string
+	ID                  string
+	Kind                string
+	ContextProjectionID string
 }
 
 type llmEvidencePersistenceError struct {
@@ -34,31 +36,18 @@ func (e llmEvidencePersistenceError) Unwrap() error {
 
 func (s *Service) llmGeneratePortableWithSchemaTrace(
 	ctx context.Context,
-	stepID int64,
+	authority model.StepAttemptAuthority,
 	job assemblyline.PortableJob,
 	scope, modelName, prompt string,
 	responseSchema map[string]any,
+	contextProjectionID string,
 ) (string, error) {
 	work, err := llmEvidenceWorkForPortableJob(job)
 	if err != nil {
 		return "", err
 	}
-	return s.llmGenerateWithEvidenceTrace(ctx, stepID, scope, modelName, prompt, responseSchema, work)
-}
-
-func (s *Service) llmGeneratePortableAdvisoryTrace(
-	ctx context.Context,
-	stepID int64,
-	job assemblyline.PortableJob,
-	modelName, prompt string,
-) (llm.AdvisoryResponse, error) {
-	work, err := llmEvidenceWorkForPortableJob(job)
-	if err != nil {
-		return llm.AdvisoryResponse{}, err
-	}
-	return s.llmGenerateResponseWithEvidenceTrace(
-		ctx, stepID, "portable_advisory_worker", modelName, prompt, nil, work, true,
-	)
+	work.ContextProjectionID = contextProjectionID
+	return s.llmGenerateWithEvidenceTrace(ctx, authority, scope, modelName, prompt, responseSchema, work)
 }
 
 func llmEvidenceWorkForPortableJob(job assemblyline.PortableJob) (llmEvidenceWork, error) {
@@ -69,7 +58,7 @@ func llmEvidenceWorkForPortableJob(job assemblyline.PortableJob) (llmEvidenceWor
 }
 
 func newLLMCallEvidenceRecord(
-	stepID int64,
+	authority model.StepAttemptAuthority,
 	scope, requestedModel, prompt string,
 	responseSchema map[string]any,
 	contract llmResponseContract,
@@ -81,8 +70,9 @@ func newLLMCallEvidenceRecord(
 		format = "text"
 	}
 	return queue.LLMCallEvidenceRecord{
-		StepID: stepID, Scope: scope, WorkID: work.ID, WorkKind: work.Kind,
-		RequestedModel: requestedModel, Model: requestedModel, Attempt: attempt,
+		Authority: authority, StepID: authority.StepID, Scope: scope, WorkID: work.ID, WorkKind: work.Kind,
+		ContextProjectionID: work.ContextProjectionID,
+		RequestedModel:      requestedModel, Model: requestedModel, Attempt: attempt,
 		SystemPrompt: prompt, UserPrompt: contract.PromptHint,
 		ResponseFormat: format, ResponseSchema: responseSchema,
 		ContextTokens: contextTokens, MaxOutputTokens: contract.MaxTokens,

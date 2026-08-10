@@ -1,0 +1,7 @@
+./auth.go
+./client.go
+./completion.go
+./errors.go
+./server.go
+./server_completion.go
+./types.go

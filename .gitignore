@@ -15,6 +15,7 @@
 coverage.out
 *.cover
 *.prof
+.agent-cache/
 
 # Runtime state and logs
 .omni/

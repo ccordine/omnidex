@@ -1,8 +1,37 @@
 # Changelog
 
-Release codenames follow Omnidex pride versioning based on National Dex order: Bulbasaur, Ivysaur, Venusaur, and **Charmander** (current development release).
+Release codenames follow Omnidex pride versioning based on National Dex order: Bulbasaur, Ivysaur, Venusaur, Charmander, and **Charmeleon** (current development release).
 
-## v0.4.0 - Charmander (in development)
+## v0.5.0 - Charmeleon (in development)
+
+Charmeleon is the **repository-intelligence and software-defined context release**. It keeps the bounded assembly-line authority split while moving repository knowledge, job continuity, attention, and exact per-call context into separate code-owned primitives. Implementation is in progress; existing-repository mutation and large-codebase autonomy remain explicitly unclaimed until the published promotion gates pass.
+
+### Context and repository control plane
+
+- Added complete, content-addressed Git/worktree snapshots and normalized immutable repository facts.
+- Added compiler-backed Go symbol and dependency analysis plus bounded, path-free evidence packs.
+- Added a transactional job-scoped Task Ledger with append-only command events,
+  generation-safe replanning, lifecycle operation identity, accepted-intent projection,
+  and cursor-paginated history.
+- Added generation-bound Working Sets with explicit budgets and immutable Context
+  Projections. The first repository consumer remains shadow-only and proves that model
+  prompt bytes are unchanged while exact selected/omitted references are recorded.
+- Defined the domain-neutral Cognition Runtime and the separately isolated Labyrinth
+  cognition laboratory, including registered environment actions, public/oracle
+  separation, obligation and evidence authority, restart fencing, sealed traces,
+  independent capability suites, and pre-registered scale and transfer gates.
+- Made memory-candidate promotion atomic and generation-aware so a retired job
+  generation cannot publish durable memory.
+- Added typed repository retrieval operations, complete requirement/change-surface
+  coverage, hash-bound path-free fragment modification, exact full-tree staging,
+  read-only network-isolated Go verification, structured target-bound test proof, and
+  bounded single-owner correction.
+- Added a durable prepared/applying/applied/indeterminate repository mutation journal
+  with immutable sealed file authority, exact source/post recovery, atomic generated
+  diff evidence, and real PostgreSQL plus bubblewrap workflow tests.
+- Removed the production R1 requirement-adviser and separate split-model routes; greenfield and existing-repository requests now share one code-owned fixed-point partition loop over the stable Qwen station, while advisory protocols remain offline gauntlet experiments.
+
+## v0.4.0 - Charmander
 
 Charmander is the **AI assembly-line release**. It replaces broad coding-agent loops with server-owned orchestration and small typed model jobs. Its initial three unattended junior-application baseline now passes; arbitrary-project support remains intentionally unclaimed.
 

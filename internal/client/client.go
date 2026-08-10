@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 type Client struct {
@@ -78,17 +79,10 @@ func (c *Client) Show(ctx context.Context, id int64) (model.JobDetails, error) {
 	return details, nil
 }
 
-func (c *Client) Inspect(ctx context.Context, id int64) (model.JobInspection, error) {
-	var inspection model.JobInspection
-	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/v1/jobs/%d/inspection", id), nil, &inspection); err != nil {
-		return model.JobInspection{}, err
-	}
-	return inspection, nil
-}
-
-func (c *Client) SubmitFeedback(ctx context.Context, id int64, feedback string) (model.Job, error) {
+func (c *Client) SubmitFeedback(ctx context.Context, id int64, operationID queue.LifecycleOperationID, feedback string) (model.Job, error) {
 	payload := map[string]any{
-		"feedback": feedback,
+		"operation_id": operationID,
+		"feedback":     feedback,
 	}
 
 	var resp struct {
@@ -104,9 +98,10 @@ func (c *Client) SubmitFeedback(ctx context.Context, id int64, feedback string) 
 	return resp.Job, nil
 }
 
-func (c *Client) Interrupt(ctx context.Context, id int64, feedback string) (model.Job, error) {
+func (c *Client) Interrupt(ctx context.Context, id int64, operationID queue.LifecycleOperationID, feedback string) (model.Job, error) {
 	payload := map[string]any{
-		"feedback": feedback,
+		"operation_id": operationID,
+		"feedback":     feedback,
 	}
 
 	var resp struct {
@@ -122,16 +117,17 @@ func (c *Client) Interrupt(ctx context.Context, id int64, feedback string) (mode
 	return resp.Job, nil
 }
 
-func (c *Client) Cancel(ctx context.Context, id int64, reason string) (model.Job, error) {
+func (c *Client) Cancel(ctx context.Context, command queue.CancelJobCommand) (model.Job, error) {
 	payload := map[string]any{
-		"reason": reason,
+		"operation_id": command.OperationID,
+		"reason":       command.Reason,
 	}
 
 	var resp struct {
 		Job   model.Job `json:"job"`
 		Error string    `json:"error"`
 	}
-	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/v1/jobs/%d/cancel", id), payload, &resp); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/v1/jobs/%d/cancel", command.JobID), payload, &resp); err != nil {
 		return model.Job{}, err
 	}
 	if resp.Error != "" {
@@ -140,9 +136,10 @@ func (c *Client) Cancel(ctx context.Context, id int64, reason string) (model.Job
 	return resp.Job, nil
 }
 
-func (c *Client) Replan(ctx context.Context, id int64, feedback string) (model.Job, error) {
+func (c *Client) Replan(ctx context.Context, id int64, operationID queue.LifecycleOperationID, feedback string) (model.Job, error) {
 	payload := map[string]any{
-		"feedback": feedback,
+		"operation_id": operationID,
+		"feedback":     feedback,
 	}
 
 	var resp struct {
@@ -265,8 +262,16 @@ func (c *Client) ListMemoryCandidates(ctx context.Context, jobID int64, status s
 	return resp.MemoryCandidates, nil
 }
 
-func (c *Client) PromoteMemoryCandidate(ctx context.Context, id int64, tier string) (model.MemoryCandidatePromotionResult, error) {
-	payload := map[string]any{"tier": strings.TrimSpace(tier)}
+func (c *Client) PromoteMemoryCandidate(
+	ctx context.Context,
+	id int64,
+	tier string,
+	authority model.MemoryPromotionAuthority,
+) (model.MemoryCandidatePromotionResult, error) {
+	payload := map[string]any{
+		"tier":      strings.TrimSpace(tier),
+		"authority": authority,
+	}
 	var resp model.MemoryCandidatePromotionResult
 	if err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/v1/memory-candidates/%d/promote", id), payload, &resp); err != nil {
 		return model.MemoryCandidatePromotionResult{}, err

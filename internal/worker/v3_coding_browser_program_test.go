@@ -130,6 +130,17 @@ func TestGenericBrowserWorkspaceRejectsUndeclaredCompetingSource(t *testing.T) {
 	if err != nil || diagnostic != nil {
 		t.Fatalf("authoritative workspace diagnostic=%#v err=%v", diagnostic, err)
 	}
+	inspectionRoot := filepath.Join(root, ".omni", "runs", "481")
+	if err := os.MkdirAll(inspectionRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inspectionRoot, "projection.ts"), []byte("derived inspection only\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	diagnostic, err = directCodingProgramWorkspaceDiagnostic(root, program)
+	if err != nil || diagnostic != nil {
+		t.Fatalf("internal task-state projection diagnostic=%#v err=%v", diagnostic, err)
+	}
 	legacy := filepath.Join(root, "src", "legacy.jsx")
 	if err := os.WriteFile(legacy, []byte("export const Legacy = () => null;\n"), 0o600); err != nil {
 		t.Fatal(err)

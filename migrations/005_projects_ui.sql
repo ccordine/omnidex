@@ -40,5 +40,38 @@ CREATE TABLE IF NOT EXISTS workspace_settings (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS ui_sessions (
+    session_id TEXT PRIMARY KEY,
+    state_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 minutes'
+);
+
+CREATE INDEX IF NOT EXISTS idx_ui_sessions_expires ON ui_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS data_source_channels (
+    id TEXT PRIMARY KEY,
+    data_source_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_source_channels_source
+    ON data_source_channels(data_source_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS data_source_channel_messages (
+    id BIGSERIAL PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES data_source_channels(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    job_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_source_channel_messages_channel
+    ON data_source_channel_messages(channel_id, created_at ASC, id ASC);
+
 ALTER TABLE scrum_cards
     ADD COLUMN IF NOT EXISTS model_config JSONB NOT NULL DEFAULT '{}'::jsonb;

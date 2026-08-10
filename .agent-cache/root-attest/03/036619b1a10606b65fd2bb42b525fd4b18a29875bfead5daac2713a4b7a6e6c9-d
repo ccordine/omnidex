@@ -1,0 +1,3 @@
+./version.go
+./release_builder_security_test.go
+./version_test.go

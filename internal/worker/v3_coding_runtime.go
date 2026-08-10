@@ -6,6 +6,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/assemblyline"
+	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/gryph/omnidex/internal/scrum"
 	"github.com/gryph/omnidex/internal/specialists"
 )
@@ -27,6 +28,7 @@ type directCodingSession struct {
 	protectedPaths  map[string]directCodingProtectedPath
 	skillCandidates []specialists.SkillVersion
 	lastCommands    []string
+	repositoryIndex *repositoryindex.Result
 	plannedFiles    int
 	plannedDeletes  int
 }
@@ -116,16 +118,31 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 	if err != nil {
 		return "", err
 	}
+	var indexed *repositoryindex.Result
+	if hasExistingImplementation {
+		if err := r.reconcileCurrentRepositoryMutation(scope.Root); err != nil {
+			return "", err
+		}
+		result, indexErr := r.refreshExistingRepositoryIndex(scope.Root)
+		if indexErr != nil {
+			return "", indexErr
+		}
+		indexed = &result
+	}
 	session := &directCodingSession{
-		runtime:        r,
-		request:        request,
-		root:           scope.Root,
-		protectedPaths: map[string]directCodingProtectedPath{},
+		runtime:         r,
+		request:         request,
+		root:            scope.Root,
+		repositoryIndex: indexed,
+		protectedPaths:  map[string]directCodingProtectedPath{},
 		completion: directCodingCompletionState{
 			AllowExistingWorkspace: len(request.Feedback) > 0 || hasExistingImplementation,
 			TestsRequired:          true,
 			WrittenSource:          map[string]string{},
 		},
+	}
+	if indexed != nil {
+		return session.runExistingRepositoryChangeWorkflow()
 	}
 	summary, err := runDirectCodingWorkflow(session, session.completion.AllowExistingWorkspace)
 	if err == nil {

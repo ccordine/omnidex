@@ -27,14 +27,14 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 		return err
 	}
 
-	s.emitStepEvent(claim.Step.ID, "data_source_query_started", record.Name)
+	s.emitStepEvent(claim.Authority, "data_source_query_started", record.Name)
 
 	catalog, hasCatalog, err := s.repo.GetDataSourceCatalog(ctx, sourceID)
 	if err != nil {
 		return fmt.Errorf("load data source catalog: %w", err)
 	}
-	store := &repoCatalogStore{svc: s}
-	writer := &dataSourceMemoryWriter{repo: s.repo}
+	store := &repoCatalogStore{svc: s, authority: claim.Authority}
+	writer := &dataSourceMemoryWriter{repo: s.repo, authority: claim.Authority}
 	result, updatedCatalog, err := datasource.AnalyticalAsk(ctx, datasource.AnalyticalAskInput{
 		Connection: record.Connection(),
 		Profile:    record.Profile(),
@@ -52,7 +52,7 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 		if err := store.Save(ctx, updatedCatalog); err != nil {
 			return fmt.Errorf("save updated data source catalog: %w", err)
 		}
-		if err := s.repo.UpdateDataSourceCatalogTimestamp(ctx, record.ID, updatedCatalog.UpdatedAt); err != nil {
+		if err := s.repo.UpdateDataSourceCatalogTimestampByStepAttempt(ctx, claim.Authority, record.ID, updatedCatalog.UpdatedAt); err != nil {
 			return fmt.Errorf("update data source catalog timestamp: %w", err)
 		}
 		if err := datasource.PersistCatalogMemories(ctx, writer, updatedCatalog); err != nil {
@@ -70,7 +70,9 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 	}
 	if channelID := datasource.ParseChannelID(claim.Job.Metadata); channelID != "" {
 		jobID := claim.Job.ID
-		if _, err := s.repo.AddDataSourceChannelMessage(ctx, channelID, "assistant", summary, payloadBytes, &jobID); err != nil {
+		if _, err := s.repo.AddDataSourceChannelMessageByStepAttempt(
+			ctx, claim.Authority, channelID, "assistant", summary, payloadBytes, &jobID,
+		); err != nil {
 			return fmt.Errorf("append data source channel result: %w", err)
 		}
 	}
@@ -78,6 +80,6 @@ func (s *Service) runDataSourceQueryStep(ctx context.Context, claim *model.Claim
 	if completeStep == nil {
 		completeStep = s.repo.CompleteStep
 	}
-	s.emitStepEvent(claim.Step.ID, "data_source_query_completed", summary)
-	return completeStep(ctx, claim.Step.ID, string(payloadBytes), "data_source_query", summary)
+	s.emitStepEvent(claim.Authority, "data_source_query_completed", summary)
+	return invokeCompleteClaimedStep(ctx, completeStep, claim, string(payloadBytes), "data_source_query", summary)
 }

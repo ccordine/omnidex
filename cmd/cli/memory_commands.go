@@ -58,6 +58,7 @@ func runMemoryCandidates(c *client.Client, args []string) {
 	case "promote":
 		fs := flag.NewFlagSet("memory-candidates promote", flag.ExitOnError)
 		tier := fs.String("tier", model.MemoryCandidateStatusApproved, "target tier: approved|durable")
+		authority := fs.String("authority", string(model.MemoryPromotionAuthorityCurrent), "promotion authority: current_generation|historical_generation|global")
 		_ = fs.Parse(args[1:])
 		if len(fs.Args()) < 1 {
 			die("memory-candidates promote requires a candidate id")
@@ -66,7 +67,9 @@ func runMemoryCandidates(c *client.Client, args []string) {
 		if err != nil || id <= 0 {
 			die("invalid candidate id")
 		}
-		result, err := c.PromoteMemoryCandidate(context.Background(), id, *tier)
+		result, err := c.PromoteMemoryCandidate(
+			context.Background(), id, *tier, model.MemoryPromotionAuthority(strings.TrimSpace(*authority)),
+		)
 		if err != nil {
 			die(err.Error())
 		}

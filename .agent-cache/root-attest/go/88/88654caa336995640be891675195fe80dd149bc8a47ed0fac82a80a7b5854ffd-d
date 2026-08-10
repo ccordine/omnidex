@@ -1,0 +1,5 @@
+./schema.go
+./spec.go
+./version.go
+./schema_test.go
+./version_test.go

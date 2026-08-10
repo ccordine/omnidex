@@ -260,34 +260,34 @@ func (r *Repository) ListRunningScrumPlayProjectIDs(ctx context.Context) ([]int6
 }
 
 type DBScrumCard struct {
-	ID           string
-	ProjectID    int64
-	Title        string
-	Description  string
-	Column       string
-	Checklist    json.RawMessage
-	RefFiles     json.RawMessage
-	Chat         json.RawMessage
-	ModelConfig  json.RawMessage
-	AgentConfig  json.RawMessage
-	CardTicket   string
-	CardPrompt   string
-	RecipeID     string
-	Recipe       json.RawMessage
-	Tags         json.RawMessage
-	PlanningChat json.RawMessage
-	CoachConfig  json.RawMessage
-	TestCriteria json.RawMessage
-	FlowMetrics  json.RawMessage
-	JobID        string
-	TagsJobID    string
-	TicketJobID  string
-	ConsoleLog   string
-	PlayState    string
-	QueueOrder   int
-	BoardOrder   int
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID           string          `json:"id"`
+	ProjectID    int64           `json:"project_id"`
+	Title        string          `json:"title"`
+	Description  string          `json:"description"`
+	Column       string          `json:"column"`
+	Checklist    json.RawMessage `json:"checklist"`
+	RefFiles     json.RawMessage `json:"ref_files"`
+	Chat         json.RawMessage `json:"chat"`
+	ModelConfig  json.RawMessage `json:"model_config"`
+	AgentConfig  json.RawMessage `json:"agent_config"`
+	CardTicket   string          `json:"card_ticket"`
+	CardPrompt   string          `json:"card_prompt"`
+	RecipeID     string          `json:"recipe_id"`
+	Recipe       json.RawMessage `json:"recipe"`
+	Tags         json.RawMessage `json:"tags"`
+	PlanningChat json.RawMessage `json:"planning_chat"`
+	CoachConfig  json.RawMessage `json:"coach_config"`
+	TestCriteria json.RawMessage `json:"test_criteria"`
+	FlowMetrics  json.RawMessage `json:"flow_metrics"`
+	JobID        string          `json:"job_id"`
+	TagsJobID    string          `json:"tags_job_id"`
+	TicketJobID  string          `json:"ticket_job_id"`
+	ConsoleLog   string          `json:"console_log"`
+	PlayState    string          `json:"play_state"`
+	QueueOrder   int             `json:"queue_order"`
+	BoardOrder   int             `json:"board_order"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 func (r *Repository) ListScrumCards(ctx context.Context, projectID int64) ([]DBScrumCard, error) {
@@ -670,32 +670,6 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		return DBScrumCard{}, err
 	}
 	return card, nil
-}
-
-func (r *Repository) BackfillScrumBoardOrder(ctx context.Context) error {
-	_, err := r.pool.Exec(ctx, `
-		WITH need_backfill AS (
-			SELECT project_id, column_name
-			FROM scrum_cards
-			GROUP BY project_id, column_name
-			HAVING COUNT(*) > 1 AND bool_and(board_order = 0)
-		),
-		ranked AS (
-			SELECT c.id,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY c.project_id, c.column_name
-			           ORDER BY c.updated_at DESC, c.id ASC
-			       ) - 1 AS rn
-			FROM scrum_cards c
-			INNER JOIN need_backfill nb
-				ON nb.project_id = c.project_id AND nb.column_name = c.column_name
-		)
-		UPDATE scrum_cards AS c
-		SET board_order = r.rn
-		FROM ranked AS r
-		WHERE c.id = r.id
-	`)
-	return err
 }
 
 func (r *Repository) DeleteScrumCard(ctx context.Context, projectID int64, cardID string) error {

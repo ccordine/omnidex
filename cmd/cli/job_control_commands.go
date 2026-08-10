@@ -8,11 +8,16 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func runInterrupt(c *client.Client, args []string) {
+	operationID, args, err := parseLifecycleOperationArgs(args)
+	if err != nil {
+		die(err.Error())
+	}
 	if len(args) < 2 {
-		die("interrupt requires <job-id> and context text")
+		die("interrupt requires [--operation-id id] <job-id> and context text")
 	}
 
 	id, err := strconv.ParseInt(args[0], 10, 64)
@@ -25,7 +30,8 @@ func runInterrupt(c *client.Client, args []string) {
 		die("context text is required")
 	}
 
-	job, err := c.Interrupt(context.Background(), id, feedback)
+	announceLifecycleOperationID(operationID)
+	job, err := c.Interrupt(context.Background(), id, operationID, feedback)
 	if err != nil {
 		die(err.Error())
 	}
@@ -34,8 +40,12 @@ func runInterrupt(c *client.Client, args []string) {
 }
 
 func runCancel(c *client.Client, args []string) {
-	if len(args) < 1 {
-		die("cancel requires <job-id> [reason]")
+	operationID, args, err := parseLifecycleOperationArgs(args)
+	if err != nil {
+		die(err.Error())
+	}
+	if len(args) < 2 {
+		die("cancel requires [--operation-id id] <job-id> <reason>")
 	}
 
 	id, err := strconv.ParseInt(args[0], 10, 64)
@@ -43,12 +53,15 @@ func runCancel(c *client.Client, args []string) {
 		die("invalid job id")
 	}
 
-	reason := ""
-	if len(args) > 1 {
-		reason = strings.TrimSpace(strings.Join(args[1:], " "))
+	reason := strings.TrimSpace(strings.Join(args[1:], " "))
+	if reason == "" {
+		die("cancel reason is required")
 	}
 
-	job, err := c.Cancel(context.Background(), id, reason)
+	announceLifecycleOperationID(operationID)
+	job, err := c.Cancel(context.Background(), queue.CancelJobCommand{
+		OperationID: operationID, JobID: id, Reason: reason,
+	})
 	if err != nil {
 		die(err.Error())
 	}
@@ -57,8 +70,12 @@ func runCancel(c *client.Client, args []string) {
 }
 
 func runReplan(c *client.Client, args []string) {
+	operationID, args, err := parseLifecycleOperationArgs(args)
+	if err != nil {
+		die(err.Error())
+	}
 	if len(args) < 2 {
-		die("replan requires <job-id> and replanning context text")
+		die("replan requires [--operation-id id] <job-id> and replanning context text")
 	}
 
 	id, err := strconv.ParseInt(args[0], 10, 64)
@@ -71,7 +88,8 @@ func runReplan(c *client.Client, args []string) {
 		die("replanning context text is required")
 	}
 
-	job, err := c.Replan(context.Background(), id, feedback)
+	announceLifecycleOperationID(operationID)
+	job, err := c.Replan(context.Background(), id, operationID, feedback)
 	if err != nil {
 		die(err.Error())
 	}

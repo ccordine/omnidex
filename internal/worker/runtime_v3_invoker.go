@@ -29,31 +29,31 @@ func (r *nativeRuntimeV3) invokeSpecialist(scope, skillID, modelName string, inv
 	if err != nil {
 		return nil, err
 	}
-	r.svc.emitStepEvent(r.claim.Step.ID, "specialist_dispatched", fmt.Sprintf(
+	r.svc.emitStepEvent(r.claim.Authority, "specialist_dispatched", fmt.Sprintf(
 		"role=%s objective=%s tools=%d artifacts=%d",
 		safeLine(skillID, "unknown"),
 		safeLine(invocation.ObjectiveID, "unknown"),
 		len(invocation.AllowedTools),
 		len(invocation.InputArtifactRefs),
 	))
-	raw, err := r.svc.llmGenerateWithTrace(r.ctx, r.claim.Step.ID, scope, modelName, prompt)
+	raw, err := r.svc.llmGenerateWithTrace(r.ctx, r.claim.Authority, scope, modelName, prompt)
 	if err != nil {
 		return nil, err
 	}
 	output, normalized, contractErr := decodeAndValidateV3SpecialistResponse(raw, skillID, spec, validate)
 	if contractErr == nil {
 		if normalized {
-			r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_normalized", "role="+safeLine(skillID, "unknown")+" field=empty_error")
+			r.svc.emitStepEvent(r.claim.Authority, "specialist_contract_normalized", "role="+safeLine(skillID, "unknown")+" field=empty_error")
 		}
-		r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_accepted", "role="+safeLine(skillID, "unknown"))
+		r.svc.emitStepEvent(r.claim.Authority, "specialist_contract_accepted", "role="+safeLine(skillID, "unknown"))
 		return output, nil
 	}
 	var outcomeErr *v3SpecialistOutcomeError
 	if errors.As(contractErr, &outcomeErr) {
-		r.svc.emitStepEvent(r.claim.Step.ID, "specialist_"+outcomeErr.Status, fmt.Sprintf("role=%s code=%s reason=%s", safeLine(skillID, "unknown"), safeLine(outcomeErr.Code, "unspecified"), safeLine(outcomeErr.Message, "unspecified")))
+		r.svc.emitStepEvent(r.claim.Authority, "specialist_"+outcomeErr.Status, fmt.Sprintf("role=%s code=%s reason=%s", safeLine(skillID, "unknown"), safeLine(outcomeErr.Code, "unspecified"), safeLine(outcomeErr.Message, "unspecified")))
 		return nil, outcomeErr
 	}
-	r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_rejected", fmt.Sprintf("role=%s reason=%s", safeLine(skillID, "unknown"), safeLine(contractErr.Error(), "invalid response")))
+	r.svc.emitStepEvent(r.claim.Authority, "specialist_contract_rejected", fmt.Sprintf("role=%s reason=%s", safeLine(skillID, "unknown"), safeLine(contractErr.Error(), "invalid response")))
 	repairLimit := v3SpecialistRepairLimit(spec.RetryPolicy)
 	if repairLimit == 0 {
 		return nil, contractErr
@@ -66,12 +66,12 @@ func (r *nativeRuntimeV3) invokeSpecialist(scope, skillID, modelName string, inv
 		if promptErr != nil {
 			return nil, promptErr
 		}
-		r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_repair_started", fmt.Sprintf(
+		r.svc.emitStepEvent(r.claim.Authority, "specialist_contract_repair_started", fmt.Sprintf(
 			"role=%s attempt=%d/%d model=%s",
 			safeLine(skillID, "unknown"), attempt, repairLimit, safeLine(modelName, "unknown"),
 		))
 		repaired, generateErr := r.svc.llmGenerateWithTrace(
-			r.ctx, r.claim.Step.ID, fmt.Sprintf("%s_contract_repair_%d", scope, attempt), modelName, repairPrompt,
+			r.ctx, r.claim.Authority, fmt.Sprintf("%s_contract_repair_%d", scope, attempt), modelName, repairPrompt,
 		)
 		if generateErr != nil {
 			return nil, generateErr
@@ -79,16 +79,16 @@ func (r *nativeRuntimeV3) invokeSpecialist(scope, skillID, modelName string, inv
 		output, normalized, err = decodeAndValidateV3SpecialistResponse(repaired, skillID, spec, validate)
 		if err == nil {
 			if normalized {
-				r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_normalized", "role="+safeLine(skillID, "unknown")+" field=empty_error")
+				r.svc.emitStepEvent(r.claim.Authority, "specialist_contract_normalized", "role="+safeLine(skillID, "unknown")+" field=empty_error")
 			}
-			r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_repair_accepted", fmt.Sprintf("role=%s attempt=%d", safeLine(skillID, "unknown"), attempt))
+			r.svc.emitStepEvent(r.claim.Authority, "specialist_contract_repair_accepted", fmt.Sprintf("role=%s attempt=%d", safeLine(skillID, "unknown"), attempt))
 			return output, nil
 		}
 		if errors.As(err, &outcomeErr) {
 			return nil, outcomeErr
 		}
 		previousErr = err
-		r.svc.emitStepEvent(r.claim.Step.ID, "specialist_contract_repair_rejected", fmt.Sprintf(
+		r.svc.emitStepEvent(r.claim.Authority, "specialist_contract_repair_rejected", fmt.Sprintf(
 			"role=%s attempt=%d reason=%s", safeLine(skillID, "unknown"), attempt, safeLine(err.Error(), "invalid repair"),
 		))
 	}

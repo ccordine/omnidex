@@ -18,14 +18,14 @@ func (s *directCodingSession) Verify() (directCodingVerification, error) {
 		return directCodingVerification{}, err
 	}
 	if programDiagnostic != nil {
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_static_validation_failed", "diagnostic="+safeLine(programDiagnostic.Detail, "unknown"))
+		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_static_validation_failed", "diagnostic="+safeLine(programDiagnostic.Detail, "unknown"))
 		return directCodingVerification{Diagnostic: programDiagnostic}, nil
 	}
 	commands, err := directCodingProgramVerificationCommands(*s.specification, *s.program)
 	if err != nil {
 		return directCodingVerification{}, err
 	}
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_verification_started", fmt.Sprintf("commands=%d", len(commands)))
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_verification_started", fmt.Sprintf("commands=%d", len(commands)))
 	executed := make([]string, 0, len(commands))
 	testEvidence := false
 	for _, command := range commands {
@@ -41,7 +41,7 @@ func (s *directCodingSession) Verify() (directCodingVerification, error) {
 				Command: label,
 				Detail:  directCodingCommandResult(result),
 			}
-			s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_verification_failed", fmt.Sprintf(
+			s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_verification_failed", fmt.Sprintf(
 				"command=%s diagnostic=%s",
 				directCodingEventToken(label, "unknown"),
 				safeLine(diagnostic.Detail, "unknown"),
@@ -52,7 +52,7 @@ func (s *directCodingSession) Verify() (directCodingVerification, error) {
 		if isV3TestCommand(command.Name, command.Args) && !verificationReportsNoTests(output) {
 			testEvidence = true
 		}
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_verification_command_passed", "command="+directCodingEventToken(label, "unknown"))
+		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_verification_command_passed", "command="+directCodingEventToken(label, "unknown"))
 	}
 	if s.completion.TestsRequired && !testEvidence {
 		diagnostic := &directCodingDiagnostic{
@@ -99,7 +99,7 @@ func (s *directCodingSession) Complete(verification directCodingVerification) (s
 		s.completion.MutationCount,
 		strings.Join(verification.Commands, " | "),
 	)
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_completed", summary)
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_completed", summary)
 	return summary, nil
 }
 

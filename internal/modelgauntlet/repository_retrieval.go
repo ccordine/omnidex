@@ -16,12 +16,12 @@ func RunRepositoryRetrieval(
 	generator Generator,
 ) (RepositoryRetrievalReport, error) {
 	report := RepositoryRetrievalReport{
-		Schema: RepositoryRetrievalReportSchemaV1, StartedAt: time.Now().UTC(),
+		Schema: RepositoryRetrievalReportSchemaV2, StartedAt: time.Now().UTC(),
 		Cases: append([]RepositoryRetrievalCase(nil), cases...),
 		Config: RepositoryRetrievalConfigEvidence{
 			StableModel: config.StableModel, ReasoningModel: config.ReasoningModel,
 			ContextTokens: config.ContextTokens, KeepAlive: config.KeepAlive,
-			PromptRenderer: RepositoryRetrievalPromptRendererV1,
+			PromptRenderer: RepositoryRetrievalPromptRendererV2,
 		},
 	}
 	specs, err := repositoryRetrievalAdvisoryCases(config, cases, generator)

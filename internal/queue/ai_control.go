@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -107,13 +108,20 @@ func (r *Repository) PauseAI(ctx context.Context, reason string) (projectIDs, jo
 		FROM jobs
 		WHERE status IN ($1, $2)
 		ORDER BY id
-		FOR UPDATE
 	`, model.JobStatusRunning, model.JobStatusWaiting)
 	if err != nil {
 		return nil, nil, err
 	}
 	for _, jobID := range jobIDs {
-		if _, err := cancelJobTx(ctx, tx, jobID, reason); err != nil {
+		operationID, err := NewLifecycleOperationID(
+			"global-ai-pause-cancel-v1", strconv.FormatInt(jobID, 10),
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("build cancellation identity for job %d: %w", jobID, err)
+		}
+		if _, err := cancelJobTx(ctx, tx, CancelJobCommand{
+			OperationID: operationID, JobID: jobID, Reason: reason,
+		}); err != nil {
 			return nil, nil, fmt.Errorf("cancel job %d during global AI pause: %w", jobID, err)
 		}
 	}

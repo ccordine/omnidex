@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -113,7 +114,7 @@ func TestExecuteRepositoryRetrievalGauntletLoadsLabelsOnlyAfterInference(t *test
 	labelsPath := filepath.Join(directory, "labels.json")
 	outputPath := filepath.Join(directory, "result.json")
 	writeGauntletTestFile(t, casesPath, `{
-		"schema":"omnidex.model-gauntlet.repository-retrieval-cases.v1",
+		"schema":"omnidex.model-gauntlet.repository-retrieval-cases.v2",
 		"cases":[{"id":"one","input":{"research_need":"Find direct references to ParseEnvelope."}}]
 	}`)
 	writeGauntletTestFile(t, labelsPath, `{"schema":"not-yet-valid"}`)
@@ -121,18 +122,18 @@ func TestExecuteRepositoryRetrievalGauntletLoadsLabelsOnlyAfterInference(t *test
 	generator := &gauntletCLIStub{onCall: func(call int, request modelgauntlet.GenerateRequest) modelgauntlet.GenerateResponse {
 		if call == 4 {
 			writeGauntletTestFile(t, labelsPath, `{
-				"schema":"omnidex.model-gauntlet.repository-retrieval-labels.v1",
+				"schema":"omnidex.model-gauntlet.repository-retrieval-labels.v2",
 				"labels":[{"case_id":"one","operation":"direct_references","query_quote":"ParseEnvelope"}]
 			}`)
 		}
 		switch request.Stage {
 		case modelgauntlet.StageBriefing:
-			return modelgauntlet.GenerateResponse{Content: `{"schema":"omnidex.repository-retrieval-briefing.v1","lens":"relation_direction"}`}
+			return modelgauntlet.GenerateResponse{Content: `{"schema":"omnidex.repository-retrieval-briefing.v2","lens":"relation_direction"}`}
 		case modelgauntlet.StageDeliberation:
 			return modelgauntlet.GenerateResponse{Thinking: "evidence only", Content: "retrieve incoming references"}
 		default:
 			raw, _ := json.Marshal(assemblyline.RepositoryRetrievalDecision{
-				Schema:    assemblyline.RepositoryRetrievalSchemaV1,
+				Schema:    assemblyline.RepositoryRetrievalSchemaV2,
 				Operation: assemblyline.RetrievalDirectReferences, QueryQuote: "ParseEnvelope",
 			})
 			return modelgauntlet.GenerateResponse{Content: string(raw)}
@@ -162,7 +163,8 @@ func TestExecuteCompleteRequirementGauntletLoadsLabelsOnlyAfterEveryVariantStops
 	writeGauntletTestFile(t, labelsPath, `{"schema":"not-yet-valid"}`)
 
 	generator := &gauntletCLIStub{onCall: func(call int, request modelgauntlet.GenerateRequest) modelgauntlet.GenerateResponse {
-		if call == 12 {
+		if request.Variant == modelgauntlet.VariantPerSplitAdvisory &&
+			request.Operation == "partition_003_split.synthesis" {
 			writeGauntletTestFile(t, labelsPath, `{
 				"schema":"omnidex.model-gauntlet.complete-requirement-labels.v1",
 				"labels":[{"case_id":"one","feature_quotes":["lap history"]}]
@@ -174,7 +176,12 @@ func TestExecuteCompleteRequirementGauntletLoadsLabelsOnlyAfterEveryVariantStops
 		case modelgauntlet.StageDeliberation:
 			return modelgauntlet.GenerateResponse{Thinking: "inspect", Content: "the candidate covers the explicit feature"}
 		default:
-			return modelgauntlet.GenerateResponse{Content: `{"schema":"omnidex.requirement-partition.v1","feature_quotes":["lap history"]}`}
+			quotes := `["lap history"]`
+			if strings.Contains(request.SystemPrompt, "USER_REQUEST:") &&
+				!strings.Contains(request.SystemPrompt, "lap history") {
+				quotes = `[]`
+			}
+			return modelgauntlet.GenerateResponse{Content: `{"schema":"omnidex.requirement-partition.v1","feature_quotes":` + quotes + `}`}
 		}
 	}}
 	result, err := executeCompleteRequirementGauntlet(context.Background(), completeRequirementGauntletOptions{
@@ -185,8 +192,8 @@ func TestExecuteCompleteRequirementGauntletLoadsLabelsOnlyAfterEveryVariantStops
 	if err != nil {
 		t.Fatal(err)
 	}
-	if generator.calls != 12 {
-		t.Fatalf("calls=%d want 12", generator.calls)
+	if generator.calls != 17 {
+		t.Fatalf("calls=%d want 17", generator.calls)
 	}
 	if result.Evaluation.Scores[modelgauntlet.VariantFinalPassAdvisory].Correct != 1 || result.LabelSHA256 == "" {
 		t.Fatalf("result=%#v", result)

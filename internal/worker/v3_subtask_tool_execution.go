@@ -63,15 +63,15 @@ func (r *nativeRuntimeV3) runSubtaskWithTools(assignment v3SubtaskAssignment, au
 		if err != nil {
 			return "", nil, err
 		}
-		r.svc.emitStepEvent(r.claim.Step.ID, "specialist_dispatched", fmt.Sprintf("role=%s objective=%s tool_turn=%d", assignment.RoleID, assignment.ObjectiveID, turn))
-		raw, err := r.svc.llmGenerateWithTrace(r.ctx, r.claim.Step.ID, fmt.Sprintf("%s_%d", subtaskToolScopePrefix, turn), modelName, prompt)
+		r.svc.emitStepEvent(r.claim.Authority, "specialist_dispatched", fmt.Sprintf("role=%s objective=%s tool_turn=%d", assignment.RoleID, assignment.ObjectiveID, turn))
+		raw, err := r.svc.llmGenerateWithTrace(r.ctx, r.claim.Authority, fmt.Sprintf("%s_%d", subtaskToolScopePrefix, turn), modelName, prompt)
 		if err != nil {
 			return "", nil, err
 		}
 		decision, err := parseSubtaskToolDecision(raw, assignment.RoleID)
 		if err != nil {
 			records = append(records, rejectedSubtaskDecisionRecord(decision, err, assignment.RoleID, authoritativeDescription))
-			r.svc.emitStepEvent(r.claim.Step.ID, "subtask_decision_rejected", fmt.Sprintf("role=%s turn=%d reason=%s next=direct_feedback", safeLine(assignment.RoleID, "unknown"), turn, safeLine(err.Error(), "invalid decision")))
+			r.svc.emitStepEvent(r.claim.Authority, "subtask_decision_rejected", fmt.Sprintf("role=%s turn=%d reason=%s next=direct_feedback", safeLine(assignment.RoleID, "unknown"), turn, safeLine(err.Error(), "invalid decision")))
 			continue
 		}
 		if decision.Status == "blocked" || decision.Status == "fail" {
@@ -97,7 +97,7 @@ func (r *nativeRuntimeV3) runSubtaskWithTools(assignment v3SubtaskAssignment, au
 						Summary: err.Error(), Error: err.Error(),
 					},
 				})
-				r.svc.emitStepEvent(r.claim.Step.ID, "subtask_completion_deferred", "role="+safeLine(assignment.RoleID, "unknown")+" reason="+safeLine(err.Error(), "missing evidence"))
+				r.svc.emitStepEvent(r.claim.Authority, "subtask_completion_deferred", "role="+safeLine(assignment.RoleID, "unknown")+" reason="+safeLine(err.Error(), "missing evidence"))
 				continue
 			}
 			if len(records) == 0 {
@@ -133,7 +133,7 @@ func (r *nativeRuntimeV3) runSubtaskWithTools(assignment v3SubtaskAssignment, au
 			totalCalls++
 			if err != nil {
 				if toolruntime.IsCallRejected(err) {
-					r.svc.emitStepEvent(r.claim.Step.ID, "tool_correction_requested", fmt.Sprintf("tool=%s remaining_calls=%d", safeLine(call.Name, "unknown"), maxSubtaskToolCalls-totalCalls))
+					r.svc.emitStepEvent(r.claim.Authority, "tool_correction_requested", fmt.Sprintf("tool=%s remaining_calls=%d", safeLine(call.Name, "unknown"), maxSubtaskToolCalls-totalCalls))
 					rejectedCall = true
 					break
 				}
@@ -171,7 +171,7 @@ func (r *nativeRuntimeV3) executeSubtaskToolCall(spec specialists.Spec, objectiv
 		record.Result.Summary = err.Error()
 		callWriteErr := r.writeArtifact(artifacts.KindToolCall, record.Call)
 		resultWriteErr := r.writeArtifact(artifacts.KindToolResult, record.Result)
-		r.svc.emitStepEvent(r.claim.Step.ID, "tool_call_rejected", fmt.Sprintf("tool=%s reason=outside_subtask_capability_contract", safeLine(call.Name, "unknown")))
+		r.svc.emitStepEvent(r.claim.Authority, "tool_call_rejected", fmt.Sprintf("tool=%s reason=outside_subtask_capability_contract", safeLine(call.Name, "unknown")))
 		return record, errors.Join(err, callWriteErr, resultWriteErr)
 	}
 	result, err := r.svc.executeV3Tool(r.ctx, r.claim, spec.ID, call)

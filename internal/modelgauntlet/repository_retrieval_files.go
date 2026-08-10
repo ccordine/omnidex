@@ -27,8 +27,8 @@ func LoadRepositoryRetrievalCases(path string) ([]RepositoryRetrievalCase, error
 	if err := decodeExactJSON(string(raw), &input); err != nil {
 		return nil, fmt.Errorf("decode repository retrieval cases: %w", err)
 	}
-	if input.Schema != RepositoryRetrievalCasesSchemaV1 {
-		return nil, fmt.Errorf("repository retrieval cases schema must be %q", RepositoryRetrievalCasesSchemaV1)
+	if input.Schema != RepositoryRetrievalCasesSchemaV2 {
+		return nil, fmt.Errorf("repository retrieval cases schema must be %q", RepositoryRetrievalCasesSchemaV2)
 	}
 	config := RepositoryRetrievalConfig{
 		StableModel: "validation", ReasoningModel: "validation", ContextTokens: 16384, KeepAlive: "1s",
@@ -51,8 +51,8 @@ func LoadRepositoryRetrievalLabels(
 	if err := decodeExactJSON(string(raw), &input); err != nil {
 		return nil, "", fmt.Errorf("decode repository retrieval labels: %w", err)
 	}
-	if input.Schema != RepositoryRetrievalLabelsSchemaV1 {
-		return nil, "", fmt.Errorf("repository retrieval labels schema must be %q", RepositoryRetrievalLabelsSchemaV1)
+	if input.Schema != RepositoryRetrievalLabelsSchemaV2 {
+		return nil, "", fmt.Errorf("repository retrieval labels schema must be %q", RepositoryRetrievalLabelsSchemaV2)
 	}
 	inputs := make(map[string]assemblyline.RepositoryRetrievalInput, len(cases))
 	for _, fixture := range cases {
@@ -69,8 +69,8 @@ func LoadRepositoryRetrievalLabels(
 }
 
 func WriteRepositoryRetrievalResult(path string, result RepositoryRetrievalResult) error {
-	if result.Schema != RepositoryRetrievalResultSchemaV1 {
-		return fmt.Errorf("repository retrieval result schema must be %q", RepositoryRetrievalResultSchemaV1)
+	if result.Schema != RepositoryRetrievalResultSchemaV2 {
+		return fmt.Errorf("repository retrieval result schema must be %q", RepositoryRetrievalResultSchemaV2)
 	}
 	return writeExclusiveGauntletJSON(path, "repository retrieval result", result)
 }

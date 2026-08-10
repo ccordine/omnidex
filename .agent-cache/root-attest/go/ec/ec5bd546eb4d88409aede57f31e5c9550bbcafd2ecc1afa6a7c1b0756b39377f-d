@@ -1,0 +1,5 @@
+./excerpt.go
+./ranking.go
+./render.go
+./scan.go
+./scan_test.go

@@ -1,0 +1,6 @@
+./mapload.go
+./metadata.go
+./response.go
+./scan.go
+./types.go
+./scan_test.go

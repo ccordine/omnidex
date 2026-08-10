@@ -73,8 +73,6 @@ func TestEnvVarForRoleID(t *testing.T) {
 		{roleID: RoleCodingSurfaceStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_SURFACE"},
 		{roleID: RoleCodingProductIdentityStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY"},
 		{roleID: RoleCodingRequirementPartitionStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION"},
-		{roleID: RoleCodingRequirementAdviserStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER"},
-		{roleID: RoleCodingRequirementSplitStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT"},
 		{roleID: RoleCodingArtifactHandlingStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING"},
 		{roleID: RoleCodingCapabilityRelationStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION"},
 		{roleID: RoleCodingSkillSelectionStation, want: "OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION"},

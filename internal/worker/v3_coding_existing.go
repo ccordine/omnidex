@@ -18,7 +18,7 @@ func directCodingWorkspaceHasImplementation(
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", "node_modules", "vendor", "dist", "build", "target":
+			case ".git", ".omni", "node_modules", "vendor", "dist", "build", "target":
 				if path != root {
 					return filepath.SkipDir
 				}

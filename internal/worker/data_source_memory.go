@@ -9,7 +9,8 @@ import (
 )
 
 type dataSourceMemoryWriter struct {
-	repo *queue.Repository
+	repo      *queue.Repository
+	authority model.StepAttemptAuthority
 }
 
 func (w *dataSourceMemoryWriter) AddMemory(ctx context.Context, source, kind, content string, tags []string) error {
@@ -19,6 +20,6 @@ func (w *dataSourceMemoryWriter) AddMemory(ctx context.Context, source, kind, co
 	if strings.TrimSpace(kind) == "" {
 		kind = model.MemoryKindReference
 	}
-	_, err := w.repo.AddMemoryChunk(ctx, source, kind, content, tags, nil)
+	_, err := w.repo.AddMemoryChunkByStepAttempt(ctx, w.authority, source, kind, content, tags, nil)
 	return err
 }

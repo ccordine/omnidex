@@ -41,6 +41,57 @@ func (c *RoutedClient) GeneratePrepared(ctx context.Context, prepared PreparedMo
 	return c.Generation.GeneratePrepared(ctx, prepared)
 }
 
+func (c *RoutedClient) RequireExactPreparedContract() error {
+	if c == nil || c.Generation == nil {
+		return fmt.Errorf("generation client is not configured")
+	}
+	exact, ok := c.Generation.(ExactPreparedContractClient)
+	if !ok {
+		return fmt.Errorf("configured generation provider does not enforce the exact prepared contract")
+	}
+	return exact.RequireExactPreparedContract()
+}
+
+func (c *RoutedClient) ValidateExactPreparedProvider(expected ProviderIdentityExpectation) error {
+	if err := c.RequireExactPreparedContract(); err != nil {
+		return err
+	}
+	return c.Generation.(ExactPreparedContractClient).ValidateExactPreparedProvider(expected)
+}
+
+func (c *RoutedClient) ValidateExactPreparedContract(prepared PreparedModel) error {
+	if err := c.RequireExactPreparedContract(); err != nil {
+		return err
+	}
+	return c.Generation.(ExactPreparedContractClient).ValidateExactPreparedContract(prepared)
+}
+
+func (c *RoutedClient) GeneratePreparedExact(
+	ctx context.Context,
+	prepared PreparedModel,
+) (PreparedGeneration, error) {
+	if err := c.RequireExactPreparedContract(); err != nil {
+		return PreparedGeneration{}, err
+	}
+	return c.Generation.(ExactPreparedContractClient).GeneratePreparedExact(ctx, prepared)
+}
+
+func (c *RoutedClient) ObserveProviderIdentity(
+	ctx context.Context,
+	request ProviderIdentityObservationRequest,
+) (ObservedProviderIdentity, error) {
+	if c == nil || c.Generation == nil {
+		return ObservedProviderIdentity{}, fmt.Errorf("generation client is not configured")
+	}
+	observer, ok := c.Generation.(ProviderIdentityObserver)
+	if !ok {
+		return ObservedProviderIdentity{}, fmt.Errorf(
+			"configured generation provider cannot observe its live identity",
+		)
+	}
+	return observer.ObserveProviderIdentity(ctx, request)
+}
+
 func (c *RoutedClient) GeneratePreparedAdvisory(ctx context.Context, prepared PreparedModel) (AdvisoryResponse, error) {
 	if c == nil || c.Generation == nil {
 		return AdvisoryResponse{}, fmt.Errorf("generation client is not configured")

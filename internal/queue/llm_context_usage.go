@@ -89,11 +89,11 @@ type LLMContextUsageDailyPoint struct {
 }
 
 type LLMContextUsageMetricsResponse struct {
-	Summary  LLMContextUsageSummary    `json:"summary"`
-	BySource []LLMContextUsageBySource `json:"by_source"`
-	History  []LLMContextUsageEntry    `json:"history"`
-	Overloads []LLMContextUsageEntry   `json:"overloads"`
-	Daily    []LLMContextUsageDailyPoint `json:"daily"`
+	Summary   LLMContextUsageSummary      `json:"summary"`
+	BySource  []LLMContextUsageBySource   `json:"by_source"`
+	History   []LLMContextUsageEntry      `json:"history"`
+	Overloads []LLMContextUsageEntry      `json:"overloads"`
+	Daily     []LLMContextUsageDailyPoint `json:"daily"`
 }
 
 func llmContextUtilizationPct(sent, limit int) float64 {
@@ -199,7 +199,7 @@ func (r *Repository) RecordLLMContextUsage(ctx context.Context, record LLMContex
 		)
 		VALUES (
 			$1, NULLIF($2,''), NULLIF($3,''), $4, NULLIF($5,''), NULLIF($6,'')::uuid, $7, $8, NULLIF($9,''), $10,
-			$11, $12, $13, $14, $15, $16, $17, $18, NULLIF($19,''), NULLIF($20,0), $21, $22, $23
+			$11, $12, $13, $14, $15, $16, $17, $18, $19, NULLIF($20,0), $21, $22, $23
 		)
 	`, source, strings.TrimSpace(record.Model), strings.TrimSpace(record.Provider), projectID,
 		strings.TrimSpace(record.CardID), nullUUID(runID), jobID, stepID, scope, attempt,

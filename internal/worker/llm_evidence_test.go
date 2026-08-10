@@ -6,6 +6,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestPortableLLMEvidenceIdentityComesFromValidatedImmutableWork(t *testing.T) {
@@ -37,10 +38,18 @@ func TestLLMEvidenceCapturesEffectivePreparedRequest(t *testing.T) {
 		Format: llm.ResponseFormatJSON, MaxTokens: 512, PromptHint: "initial user prompt",
 	}
 	record := newLLMCallEvidenceRecord(
-		7, "portable_semantic_worker", "requested-model", "initial system prompt",
+		model.StepAttemptAuthority{JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a"},
+		"portable_semantic_worker", "requested-model", "initial system prompt",
 		map[string]any{"type": "object"}, contract, 4096, 2,
-		llmEvidenceWork{ID: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Kind: "application_classification"},
+		llmEvidenceWork{
+			ID:                  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Kind:                "application_classification",
+			ContextProjectionID: "context_projection_" + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		},
 	)
+	if record.ContextProjectionID == "" {
+		t.Fatal("portable LLM evidence omitted its exact context projection binding")
+	}
 	prepared := llm.PreparedModel{
 		BaseModel: "base-model", ContextModel: "effective-model",
 		Prompt: "exact prepared system", PromptHint: "exact prepared user",

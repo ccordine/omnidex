@@ -2,13 +2,16 @@ package queue
 
 import (
 	"context"
+	"fmt"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/jackc/pgx/v5"
 )
 
 // Struggle and outcome event types persisted from the worker pipeline for metrics.
 var telemetryStruggleEventTypes = []string{
 	"step_error",
-	"step_interrupted",
 	"verify_auto_replan",
 	"verify_replan",
 	"verify_hallucination_retry",
@@ -133,46 +136,51 @@ func (r *Repository) MarkTelemetryRunRunningForJob(ctx context.Context, jobID in
 	return err
 }
 
-func (r *Repository) RecordTelemetryStepEvent(ctx context.Context, stepID int64, eventType, message string) error {
+func (r *Repository) RecordTelemetryStepEvent(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	eventType, message string,
+) error {
 	if !shouldRecordTelemetryStepEvent(eventType, message) {
 		return nil
 	}
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := lockStepAttemptAuthorityTx(ctx, tx, authority); err != nil {
+		return err
+	}
 	var runID *string
-	var jobID int64
-	err := r.pool.QueryRow(ctx, `
-		SELECT j.id, NULLIF(j.metadata->>'telemetry_run_id', '')
-		FROM job_steps s
-		JOIN jobs j ON j.id = s.job_id
-		WHERE s.id = $1
-	`, stepID).Scan(&jobID, &runID)
+	err = tx.QueryRow(ctx, `
+		SELECT NULLIF(metadata->>'telemetry_run_id', '') FROM jobs WHERE id=$1
+	`, authority.JobID).Scan(&runID)
 	if err != nil || runID == nil || strings.TrimSpace(*runID) == "" {
 		return err
 	}
 	run := strings.TrimSpace(*runID)
 	payload := map[string]any{
-		"job_id":  jobID,
-		"step_id": stepID,
+		"job_id": authority.JobID, "step_id": authority.StepID,
+		"step_attempt": authority.Attempt, "worker_id": authority.WorkerID,
 		"message": strings.TrimSpace(message),
 	}
-	if err := r.RecordTelemetryEvent(ctx, TelemetryEventRecord{
-		RunID:     run,
-		EventType: strings.TrimSpace(eventType),
-		Payload:   payload,
-	}); err != nil {
-		return err
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO omni_run_events (run_id,event_type,payload)
+		VALUES ($1,$2,$3)
+	`, run, strings.TrimSpace(eventType), jsonParam(payload)); err != nil {
+		return fmt.Errorf("insert fenced step telemetry event: %w", err)
 	}
 	if strategy, ok := telemetryRecoveryTriggers[eventType]; ok && shouldRecordTelemetryRecovery(eventType) {
-		success := false
-		_ = r.RecordTelemetryRecovery(ctx, TelemetryRecoveryRecord{
-			RunID:        run,
-			RecoveryKind: "worker",
-			TriggerEvent: eventType,
-			Strategy:     strategy,
-			Success:      &success,
-			Evidence:     payload,
-		})
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO omni_recovery_metrics (
+				run_id,recovery_kind,trigger_event,strategy,success,evidence
+			) VALUES ($1,'worker',$2,$3,false,$4)
+		`, run, eventType, strategy, jsonParam(payload)); err != nil {
+			return fmt.Errorf("insert fenced step recovery metric: %w", err)
+		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) RecordTelemetryJobEventNow(ctx context.Context, jobID int64, eventType string, payload any) error {

@@ -26,12 +26,12 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, hostBridgeAPIError(err))
 			return
 		}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"path":    result.Path,
-		"parent":  result.Parent,
-		"entries": hostbridge.NonEmptyEntries(result.Entries),
-		"source":  "host-bridge",
-	})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"path":    result.Path,
+			"parent":  result.Parent,
+			"entries": hostbridge.NonEmptyEntries(result.Entries),
+			"source":  "host-bridge",
+		})
 		return
 	}
 

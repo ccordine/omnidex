@@ -3,9 +3,11 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (s *Server) handleProjectPlay(w http.ResponseWriter, r *http.Request, id int64) {
@@ -140,7 +142,18 @@ func (s *Server) pauseProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 			if err != nil {
 				return ScrumBoard{}, paused, "", fmt.Errorf("parse job id for Scrum card %q: %w", card.ID, err)
 			}
-			if _, err := s.repo.CancelJob(r.Context(), jobID, "project auto-work paused"); err != nil {
+			operationID, err := queue.NewLifecycleOperationID(
+				"project-auto-work-pause-v1", strconv.FormatInt(projectID, 10),
+				card.ID, strconv.FormatInt(jobID, 10),
+			)
+			if err != nil {
+				return ScrumBoard{}, paused, "", fmt.Errorf(
+					"build cancellation identity for Scrum card %q: %w", card.ID, err,
+				)
+			}
+			if _, err := s.repo.CancelJob(r.Context(), queue.CancelJobCommand{
+				OperationID: operationID, JobID: jobID, Reason: "project auto-work paused",
+			}); err != nil {
 				return ScrumBoard{}, paused, "", fmt.Errorf("cancel job %d for Scrum card %q: %w", jobID, card.ID, err)
 			}
 		} else if card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing {

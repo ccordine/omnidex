@@ -112,8 +112,8 @@ func TestGeneratePreparedStreamRawTextHonorsBudgetAndDisablesThinking(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != "package main" {
-		t.Fatalf("result=%q", result)
+	if result != "package main\n" {
+		t.Fatalf("exact streamed result=%q", result)
 	}
 	if _, exists := payload["format"]; exists {
 		t.Fatalf("raw file request unexpectedly set format: %#v", payload["format"])

@@ -1,9 +1,12 @@
 package assemblyline
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
+
+	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
 func TestRepositoryRetrievalDecisionIsGroundedAndPathBlind(t *testing.T) {
@@ -13,15 +16,15 @@ func TestRepositoryRetrievalDecisionIsGroundedAndPathBlind(t *testing.T) {
 		ResearchNeed: "Find every direct reference to ApplyResponseCorrection before changing its contract.",
 	}
 	decision := RepositoryRetrievalDecision{
-		Schema: RepositoryRetrievalSchemaV1, Operation: RetrievalDirectReferences,
+		Schema: RepositoryRetrievalSchemaV2, Operation: RetrievalDirectReferences,
 		QueryQuote: "ApplyResponseCorrection",
 	}
 	if err := decision.ValidateFor(input); err != nil {
 		t.Fatal(err)
 	}
 	for name, invalid := range map[string]RepositoryRetrievalDecision{
-		"paraphrase": {Schema: RepositoryRetrievalSchemaV1, Operation: RetrievalDirectReferences, QueryQuote: "response correction callers"},
-		"operation":  {Schema: RepositoryRetrievalSchemaV1, Operation: RepositoryRetrievalOperation("shell"), QueryQuote: "ApplyResponseCorrection"},
+		"paraphrase": {Schema: RepositoryRetrievalSchemaV2, Operation: RetrievalDirectReferences, QueryQuote: "response correction callers"},
+		"operation":  {Schema: RepositoryRetrievalSchemaV2, Operation: RepositoryRetrievalOperation("shell"), QueryQuote: "ApplyResponseCorrection"},
 		"schema":     {Schema: "wrong", Operation: RetrievalDirectReferences, QueryQuote: "ApplyResponseCorrection"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -37,6 +40,31 @@ func TestRepositoryRetrievalDecisionIsGroundedAndPathBlind(t *testing.T) {
 			if _, exists := typ.FieldByName(forbidden); exists {
 				t.Fatalf("%s exposes forbidden field %q", typ.Name(), forbidden)
 			}
+		}
+	}
+}
+
+func TestRepositoryRetrievalSchemaExposesOnlyImplementedOperations(t *testing.T) {
+	t.Parallel()
+	properties := RepositoryRetrievalResponseSchema()["properties"].(map[string]any)
+	operations := properties["operation"].(map[string]any)["enum"].([]repositoryretrieval.Operation)
+	want := repositoryretrieval.SupportedOperations()
+	if !reflect.DeepEqual(operations, want) {
+		t.Fatalf("response operations=%v implemented=%v", operations, want)
+	}
+	encoded, err := json.Marshal(RepositoryRetrievalResponseSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, removed := range []string{"diagnostic_context", "dependency_metadata"} {
+		if strings.Contains(string(encoded), removed) {
+			t.Fatalf("write-only operation %q remains in response schema", removed)
+		}
+		decision := RepositoryRetrievalDecision{
+			Schema: RepositoryRetrievalSchemaV2, Operation: RepositoryRetrievalOperation(removed), QueryQuote: "named",
+		}
+		if err := decision.ValidateFor(RepositoryRetrievalInput{ResearchNeed: "Find named evidence."}); err == nil {
+			t.Fatalf("removed operation %q remains accepted", removed)
 		}
 	}
 }

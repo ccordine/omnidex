@@ -18,7 +18,7 @@ func (s *directCodingSession) Delete(path string) (bool, error) {
 	}
 	if _, err := os.Stat(target); err != nil {
 		if os.IsNotExist(err) {
-			s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_file_delete_skipped", "path="+safeLine(path, "unknown")+" reason=missing")
+			s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_file_delete_skipped", "path="+safeLine(path, "unknown")+" reason=missing")
 			return false, nil
 		}
 		return false, fmt.Errorf("inspect coding delete target %s: %w", path, err)
@@ -33,7 +33,7 @@ func (s *directCodingSession) Delete(path string) (bool, error) {
 	}
 	s.emitReviewableDiff(path, result)
 	s.recordDeletedSource(path)
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_file_deleted", fmt.Sprintf(
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_file_deleted", fmt.Sprintf(
 		"path=%s result=%s",
 		safeLine(path, "unknown"),
 		safeLine(result.Summary, "deleted"),
@@ -75,7 +75,7 @@ func (s *directCodingSession) writeDirectCodingSource(
 	content string,
 ) (bool, error) {
 	if bytes.Equal(current, []byte(content)) {
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_file_unchanged", fmt.Sprintf(
+		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_file_unchanged", fmt.Sprintf(
 			"path=%s", safeLine(path, "unknown"),
 		))
 		return false, nil
@@ -90,7 +90,7 @@ func (s *directCodingSession) writeDirectCodingSource(
 	}
 	s.emitReviewableDiff(path, result)
 	s.recordWrittenSource(path, content)
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_file_written", fmt.Sprintf(
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_file_written", fmt.Sprintf(
 		"path=%s bytes=%d operation=%s result=%s",
 		safeLine(path, "unknown"),
 		len(content),
@@ -106,7 +106,7 @@ func (s *directCodingSession) emitReviewableDiff(path string, result toolruntime
 		return
 	}
 	s.runtime.svc.emitStepContextWithBudget(
-		s.runtime.claim.Step.ID,
+		s.runtime.claim.Authority,
 		"coding_diff",
 		"path="+path+"\n"+diff,
 		maxV3DiffPreviewBytes+512,

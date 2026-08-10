@@ -14,7 +14,7 @@ The repository contains a rubric-blind benchmark foundation. It does not current
 
 The builder returns before the runner loads the evaluation plan. A failed build is still evaluated so accepted partial behavior remains measurable.
 
-## Baseline versus thinking assistance
+## Baseline versus experimental thinking assistance
 
 `internal/autonomybench.RunComparison` is the authoritative A/B coordinator. It enforces:
 
@@ -28,15 +28,15 @@ The `BuildInput` type deliberately contains only `UserRequest` and `Workspace`. 
 
 ## Required production adapter
 
-A valid app-build comparison still requires one checked-in adapter that:
+A valid app-build comparison would still require one checked-in adapter that:
 
 - submits the ordinary request through the production front door;
 - waits for the authoritative job to stop without source edits or steering;
 - uses a verified empty workspace;
 - reports exact model calls, prompt bytes, accepted/rejected units, corrections, verification runs, and file changes from immutable evidence;
-- configures the assisted build so R1 memos can advise only registered narrow stations and never choose a plan, graph, path, repair target, or completion state.
+- uses an explicitly promoted assisted protocol without granting its adviser plan, graph, path, repair-target, or completion authority.
 
-There must be one production execution path. Do not implement comparison by shelling out to an alternate agent, replaying hand-authored intermediate prompts, or maintaining a benchmark-only builder.
+No assisted protocol is currently promoted: production rejects the offline advisory work kinds and uses one stable Qwen requirement-partition route. There must remain one production execution path. Do not implement comparison by shelling out to an alternate agent, replaying hand-authored intermediate prompts, or maintaining a benchmark-only builder.
 
 ## Required evaluator
 

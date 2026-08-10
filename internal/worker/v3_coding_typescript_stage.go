@@ -40,7 +40,7 @@ func (s *directCodingSession) stageTypeScriptProgram(program *directCodingProgra
 
 	repeated := make(map[string]int)
 	for correction := 0; correction <= maxDirectCodingStageCorrections; correction++ {
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_stage_started", fmt.Sprintf(
+		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_started", fmt.Sprintf(
 			"attempt=%d generated_blocks=%d", correction+1, len(program.Generated),
 		))
 		if err := writeDirectCodingTypeScriptStage(root, *program); err != nil {
@@ -51,7 +51,7 @@ func (s *directCodingSession) stageTypeScriptProgram(program *directCodingProgra
 			return err
 		}
 		if diagnostic == nil {
-			s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_stage_passed", fmt.Sprintf(
+			s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_passed", fmt.Sprintf(
 				"attempt=%d generated_blocks=%d", correction+1, len(program.Generated),
 			))
 			return nil
@@ -81,7 +81,7 @@ func (s *directCodingSession) stageTypeScriptProgram(program *directCodingProgra
 			return err
 		}
 		failure := directCodingTypeScriptModelFailure(diagnostic.Output)
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_fragment_correction_started", fmt.Sprintf(
+		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_fragment_correction_started", fmt.Sprintf(
 			"block=%s correction=%d exact_failure=%s", target.ID, correction+1,
 			safeLine(trimForBudget(failure, 500), "unknown"),
 		))

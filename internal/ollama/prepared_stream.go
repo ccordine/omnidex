@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
@@ -60,6 +61,11 @@ func (c *Client) GeneratePreparedStream(
 			continue
 		}
 		var chunk preparedStreamChunk
+		if err := exactjson.ValidateCompatibleObject(
+			[]byte(line), preparedStreamChunk{}, "Ollama streaming response",
+		); err != nil {
+			return output.String(), fmt.Errorf("decode exact Ollama streaming chunk: %w", err)
+		}
 		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
 			return output.String(), fmt.Errorf("decode Ollama streaming chunk: %w", err)
 		}
@@ -85,8 +91,8 @@ func (c *Client) GeneratePreparedStream(
 	if !done {
 		return output.String(), fmt.Errorf("ollama streaming response ended before the done frame")
 	}
-	result := strings.TrimSpace(output.String())
-	if result == "" {
+	result := output.String()
+	if strings.TrimSpace(result) == "" {
 		return "", fmt.Errorf("ollama response missing message content")
 	}
 	return result, nil

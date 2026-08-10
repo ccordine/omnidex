@@ -9,7 +9,6 @@ import (
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
 	partitionModel string,
-	splitModel string,
 	surfaceModel string,
 	identityModel string,
 	artifactModel string,
@@ -32,9 +31,7 @@ func runDirectCodingApplicationInterpreter(
 	if err != nil {
 		return zero, err
 	}
-	requirements, err := extractGroundedRequirements(
-		runtime, partitionModel, splitModel, authority, identities,
-	)
+	requirements, err := extractGroundedRequirements(runtime, partitionModel, authority, identities)
 	if err != nil {
 		return zero, err
 	}
@@ -88,35 +85,15 @@ func extractApplicationIdentity(
 
 func extractGroundedRequirements(
 	runtime typedWorkerRuntime,
-	partitionModel string,
-	splitModel string,
+	modelName string,
 	authority string,
 	identities []assemblyline.ArtifactIdentity,
 ) ([]assemblyline.Requirement, error) {
-	envelopes, sequence, err := extractRequirementFeatureEnvelopes(
-		runtime, partitionModel, authority, identities,
-	)
+	partition, err := partitionCodingRequirements(runtime, modelName, authority, identities)
 	if err != nil {
 		return nil, err
 	}
-	if len(envelopes) == 0 {
-		return nil, fmt.Errorf("requirement extraction returned no grounded application features")
-	}
-	featureQuotes := make([]string, 0, len(envelopes))
-	for _, envelope := range envelopes {
-		features, refineErr := refineRequirementFeature(
-			runtime, splitModel, envelope, &sequence, identities,
-		)
-		if refineErr != nil {
-			return nil, refineErr
-		}
-		featureQuotes = append(featureQuotes, features...)
-	}
-	if _, err := assemblyline.BuildRequirementResidual(authority, featureQuotes); err != nil {
-		return nil, fmt.Errorf("validate extracted requirement features: %w", err)
-	}
-	featureQuotes = orderGroundedQuotes(authority, featureQuotes)
-	graph, err := assemblyline.BuildRequirementGraph(authority, featureQuotes)
+	graph, err := assemblyline.BuildRequirementGraph(authority, partition.FeatureQuotes)
 	if err != nil {
 		return nil, err
 	}

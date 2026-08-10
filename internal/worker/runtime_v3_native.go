@@ -12,8 +12,6 @@ import (
 	toolruntime "github.com/gryph/omnidex/internal/tools"
 )
 
-const maxDelegatedSubtasks = 6
-
 type nativeRuntimeV3 struct {
 	svc      *Service
 	ctx      context.Context
@@ -118,14 +116,14 @@ func (r *nativeRuntimeV3) runIntentParse() error {
 		return err
 	}
 	intent := authoritativeIntent
-	r.svc.emitStepEvent(r.claim.Step.ID, "intent_requirements_compiled", fmt.Sprintf(
+	r.svc.emitStepEvent(r.claim.Authority, "intent_requirements_compiled", fmt.Sprintf(
 		"authority=server objectives=%d constraints=%d completion_criteria=%d",
 		len(intent.Objectives), len(intent.Constraints), len(intent.CompletionCriteria),
 	))
 	if len(intent.UnresolvedReferences) > 0 {
 		return fmt.Errorf("prompt interpreter found unresolved references: %s", strings.Join(intent.UnresolvedReferences, "; "))
 	}
-	if err := r.writeArtifact(artifacts.KindIntent, intent); err != nil {
+	if err := r.writeAcceptedIntentArtifact(intent); err != nil {
 		return err
 	}
 	summary := strings.Join([]string{
@@ -196,7 +194,7 @@ func (r *nativeRuntimeV3) runCapabilityAudit() error {
 		"missing_capabilities=" + csvOrNone(missingCapabilities),
 	}, "\n")
 	if len(missingCapabilities) > 0 {
-		r.svc.emitStepEvent(r.claim.Step.ID, "capability_audit_blocked", "missing="+strings.Join(missingCapabilities, ","))
+		r.svc.emitStepEvent(r.claim.Authority, "capability_audit_blocked", "missing="+strings.Join(missingCapabilities, ","))
 		return fmt.Errorf("required capabilities are unavailable: %s", strings.Join(missingCapabilities, ", "))
 	}
 	return r.complete("capability_audit", output, output)

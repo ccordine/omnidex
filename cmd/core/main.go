@@ -32,8 +32,13 @@ func main() {
 	defer cancel()
 
 	var repo *queue.Repository
+	var migrationBundle queue.MigrationBundle
 	if !cfg.WrapperOnly {
-		pool, err := db.Connect(ctx, cfg.DatabaseURL)
+		migrationBundle, err = loadCoreMigrationBundle()
+		if err != nil {
+			log.Fatalf("migration authority error: %v", err)
+		}
+		pool, err := db.ConnectRuntime(ctx, cfg.DatabaseURL, cfg.DatabaseSchema)
 		if err != nil {
 			log.Fatalf("database connection error: %v", err)
 		}
@@ -41,7 +46,7 @@ func main() {
 
 		repo = queue.New(pool)
 		if cfg.MigrateOnStartup {
-			if err := repo.EnsureSchema(ctx); err != nil {
+			if err := repo.EnsureSchema(ctx, migrationBundle); err != nil {
 				log.Fatalf("schema migration error: %v", err)
 			}
 		}
@@ -83,6 +88,7 @@ func main() {
 
 	httpServer := api.NewServerWithOptions(repo, llmClient, api.ServerOptions{
 		LifecycleContext:     ctx,
+		MigrationBundle:      migrationBundle,
 		ProviderConfig:       cfg,
 		RequestTimeout:       cfg.RequestTimeout,
 		WebSearchEnabled:     cfg.WebSearchEnabled,
@@ -101,6 +107,10 @@ func main() {
 		UISessionTTL:         cfg.UISessionTTL,
 	})
 	if !cfg.WrapperOnly {
+		cognitionBrain, err := cognitionBrainFromConfig(cfg)
+		if err != nil {
+			log.Fatalf("configure cognition brain: %v", err)
+		}
 		workerService, err := worker.New(
 			repo,
 			llmClient,
@@ -127,6 +137,7 @@ func main() {
 					Memory:     cfg.MemoryModel,
 					Specialist: cfg.SpecialistModels,
 				},
+				CognitionBrain: cognitionBrain,
 				Workspace: worker.WorkspaceSettings{
 					Enabled:       cfg.WorkspaceScanEnabled,
 					Root:          cfg.WorkspaceRoot,

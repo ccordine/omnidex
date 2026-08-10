@@ -6,6 +6,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (r *nativeRuntimeV3) runMemoryReview() error {
@@ -19,11 +20,11 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 	}
 	if verification.Verdict != artifacts.VerificationVerdictPass || verificationHasBlockingFindings(verification) {
 		summary := "memory review suppressed: independent verification did not pass cleanly"
-		r.svc.emitStepEvent(r.claim.Step.ID, "memory_review_suppressed", "verdict="+safeLine(verification.Verdict, "missing"))
+		r.svc.emitStepEvent(r.claim.Authority, "memory_review_suppressed", "verdict="+safeLine(verification.Verdict, "missing"))
 		return r.complete("memory_review", summary, summary)
 	}
 	if _, directCoding := buildV3CodingCoordinatorPlan(intent); directCoding {
-		candidates, err := r.svc.repo.ListMemoryCandidates(r.ctx, r.claim.Job.ID, "candidate", 1)
+		candidates, err := r.svc.repo.ListCurrentMemoryCandidates(r.ctx, r.claim.Job.ID, "candidate", 1)
 		if err != nil {
 			return err
 		}
@@ -31,10 +32,10 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 			return fmt.Errorf("deterministic coding route produced an unauthorized memory candidate %d", candidates[0].ID)
 		}
 		summary := "coding memory review: no memory candidates permitted"
-		r.svc.emitStepEvent(r.claim.Step.ID, "coding_memory_absent", "candidates=0 model_calls=0")
+		r.svc.emitStepEvent(r.claim.Authority, "coding_memory_absent", "candidates=0 model_calls=0")
 		return r.complete("memory_review", summary, summary)
 	}
-	candidates, err := r.svc.repo.ListMemoryCandidates(r.ctx, r.claim.Job.ID, "candidate", 24)
+	candidates, err := r.svc.repo.ListCurrentMemoryCandidates(r.ctx, r.claim.Job.ID, "candidate", 24)
 	if err != nil {
 		return err
 	}
@@ -48,7 +49,7 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 		decision := reviewMemoryCandidate(candidate)
 		if decision == model.MemoryCandidateStatusRejected {
 			rejected = append(rejected, candidate.Content)
-			if err := r.svc.repo.UpdateMemoryCandidateStatus(r.ctx, candidate.ID, model.MemoryCandidateStatusRejected); err != nil {
+			if err := r.svc.repo.RejectCurrentMemoryCandidateByStepAttempt(r.ctx, r.claim.Authority, candidate); err != nil {
 				return fmt.Errorf("reject memory candidate %d: %w", candidate.ID, err)
 			}
 			continue
@@ -62,10 +63,12 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 			trustTag = model.MemoryTrustTagDurable
 		}
 		enrichedTags := appendUnique(tags, candidate.CandidateKind, "reviewed", trustTag)
-		if _, err := r.svc.repo.AddMemoryChunk(r.ctx, fmt.Sprintf("job:%d:reviewed:%s", r.claim.Job.ID, decision), candidate.CandidateKind, candidate.Content, enrichedTags, embed); err != nil {
-			return err
-		}
-		if err := r.svc.repo.UpdateMemoryCandidateStatus(r.ctx, candidate.ID, decision); err != nil {
+		if _, err := r.svc.repo.PromoteCurrentMemoryCandidateByStepAttempt(r.ctx, r.claim.Authority, queue.MemoryCandidatePromotion{
+			Candidate: candidate,
+			Tier:      decision,
+			Tags:      enrichedTags,
+			Embedding: embed,
+		}); err != nil {
 			return fmt.Errorf("promote memory candidate %d: %w", candidate.ID, err)
 		}
 		promoted = append(promoted, candidate.Content)
@@ -87,7 +90,7 @@ func (r *nativeRuntimeV3) runFinalize() error {
 	if err != nil {
 		return err
 	}
-	records, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+	records, err := r.svc.repo.ListCurrentEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
 	if err != nil {
 		return fmt.Errorf("list evidence for finalization: %w", err)
 	}

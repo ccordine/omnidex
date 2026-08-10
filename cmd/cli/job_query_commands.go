@@ -11,6 +11,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func runList(c *client.Client, args []string) {
@@ -37,8 +38,16 @@ func runList(c *client.Client, args []string) {
 
 func runShow(c *client.Client, args []string) {
 	fs := flag.NewFlagSet("show", flag.ExitOnError)
-	inspect := fs.Bool("inspect", false, "show v3 inspection payload")
+	history := fs.String("history", "", "show one history stream: generations|steps|artifacts|evidence|claims|llm_calls")
+	historyLimit := fs.Int("history-limit", 50, "history page size")
+	historyCursor := fs.String("history-cursor", "", "opaque history cursor")
 	_ = fs.Parse(args)
+	historyPagingRequested := false
+	fs.Visit(func(item *flag.Flag) {
+		if item.Name == "history-limit" || item.Name == "history-cursor" {
+			historyPagingRequested = true
+		}
+	})
 
 	if len(fs.Args()) < 1 {
 		die("show requires a job id")
@@ -50,17 +59,22 @@ func runShow(c *client.Client, args []string) {
 	}
 
 	var payload []byte
-	if *inspect {
-		inspection, err := c.Inspect(context.Background(), id)
+	if *history != "" {
+		page, err := c.JobHistory(context.Background(), id, queue.JobHistoryRequest{
+			Stream: queue.JobHistoryStream(*history), Limit: *historyLimit, Cursor: *historyCursor,
+		})
 		if err != nil {
 			die(err.Error())
 		}
-		payload, err = json.MarshalIndent(inspection, "", "  ")
+		payload, err = json.MarshalIndent(page, "", "  ")
 		if err != nil {
 			die(err.Error())
 		}
 		fmt.Println(string(payload))
 		return
+	}
+	if historyPagingRequested {
+		die("history cursor and limit require --history")
 	}
 
 	details, err := c.Show(context.Background(), id)

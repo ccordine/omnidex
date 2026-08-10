@@ -50,7 +50,7 @@ func (s *Server) reconcileScrumCardLlmJobField(ctx context.Context, projectID in
 	if s.repo == nil || projectID <= 0 {
 		return card, false, fmt.Errorf("postgres repository and project are required to reconcile %s job %d", kind, jobID)
 	}
-	job, err := s.repo.GetJobDetails(ctx, jobID)
+	job, err := s.repo.CurrentJobDetails(ctx, jobID)
 	if err != nil {
 		return card, false, fmt.Errorf("load %s job %d for Scrum card %q: %w", kind, jobID, card.ID, err)
 	}

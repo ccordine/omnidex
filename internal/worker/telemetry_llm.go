@@ -2,31 +2,48 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
 const workerLLMContextCharsPerToken = 4
 
-func (s *Service) recordWorkerLLMCall(ctx context.Context, stepID int64, scope, modelName string, promptChars, attempt int, success bool, callErr error, latency time.Duration) {
-	if s.repo == nil || stepID <= 0 {
-		return
+func (s *Service) recordWorkerLLMCall(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	scope, modelName string,
+	promptChars, attempt int,
+	success bool,
+	callErr error,
+	latency time.Duration,
+) error {
+	if s.repo == nil || authority.StepID <= 0 {
+		return nil
 	}
-	runID, jobID, _ := s.repo.TelemetryJobContextForStep(ctx, stepID)
+	runID, jobID, err := s.repo.TelemetryJobContextForStep(ctx, authority.StepID)
+	if err != nil {
+		return fmt.Errorf("load worker LLM telemetry authority: %w", err)
+	}
+	if jobID != authority.JobID {
+		return fmt.Errorf("worker LLM telemetry job %d disagrees with attempt job %d", jobID, authority.JobID)
+	}
 	errorClass := ""
 	if callErr != nil {
 		errorClass = classifyWorkerLLMError(callErr)
 	}
 	limit := s.inferenceContextTokens * workerLLMContextCharsPerToken
-	_ = s.repo.RecordLLMContextUsage(ctx, queue.LLMContextUsageRecord{
+	contextErr := s.repo.RecordLLMContextUsageByStepAttempt(ctx, authority, queue.LLMContextUsageRecord{
 		Source:            "worker:" + strings.TrimSpace(scope),
 		Model:             strings.TrimSpace(modelName),
 		Provider:          "ollama",
 		RunID:             runID,
 		JobID:             jobID,
-		StepID:            stepID,
+		StepID:            authority.StepID,
 		Scope:             strings.TrimSpace(scope),
 		Attempt:           attempt,
 		PromptChars:       promptChars,
@@ -41,13 +58,13 @@ func (s *Service) recordWorkerLLMCall(ctx context.Context, stepID int64, scope, 
 		},
 	})
 	if runID == "" {
-		return
+		return contextErr
 	}
 	finished := time.Now().UTC()
 	started := finished.Add(-latency)
 	latencyMS := latency.Milliseconds()
 	successVal := success
-	_ = s.repo.RecordTelemetryModelCall(ctx, queue.TelemetryModelCallRecord{
+	modelErr := s.repo.RecordTelemetryModelCallByStepAttempt(ctx, authority, queue.TelemetryModelCallRecord{
 		RunID:      runID,
 		Role:       strings.TrimSpace(scope),
 		Provider:   "ollama",
@@ -58,13 +75,14 @@ func (s *Service) recordWorkerLLMCall(ctx context.Context, stepID int64, scope, 
 		Success:    &successVal,
 		Metadata: map[string]any{
 			"job_id":         jobID,
-			"step_id":        stepID,
+			"step_id":        authority.StepID,
 			"prompt_chars":   promptChars,
 			"error_class":    errorClass,
 			"attempt":        attempt,
 			"context_tokens": s.inferenceContextTokens,
 		},
 	})
+	return errors.Join(contextErr, modelErr)
 }
 
 func classifyWorkerLLMError(err error) string {

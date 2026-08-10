@@ -102,7 +102,7 @@ func (r *nativeRuntimeV3) runMemoryRetrieval() error {
 	if err != nil {
 		return fmt.Errorf("marshal memory projection: %w", err)
 	}
-	r.svc.emitStepEvent(r.claim.Step.ID, "memory_projection_ready", fmt.Sprintf("included=%d omitted=%d authority=%s", len(projection.References), projection.Omitted, projection.Authority))
+	r.svc.emitStepEvent(r.claim.Authority, "memory_projection_ready", fmt.Sprintf("included=%d omitted=%d authority=%s", len(projection.References), projection.Omitted, projection.Authority))
 	output := fmt.Sprintf("memory projection: included=%d omitted=%d", len(projection.References), projection.Omitted)
 	return r.complete("retrieval", output, string(projectionJSON))
 }

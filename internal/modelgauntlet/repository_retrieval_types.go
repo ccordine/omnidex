@@ -7,11 +7,11 @@ import (
 )
 
 const (
-	RepositoryRetrievalCasesSchemaV1    = "omnidex.model-gauntlet.repository-retrieval-cases.v1"
-	RepositoryRetrievalLabelsSchemaV1   = "omnidex.model-gauntlet.repository-retrieval-labels.v1"
-	RepositoryRetrievalReportSchemaV1   = "omnidex.model-gauntlet.repository-retrieval-report.v1"
-	RepositoryRetrievalResultSchemaV1   = "omnidex.model-gauntlet.repository-retrieval-result.v1"
-	RepositoryRetrievalPromptRendererV1 = "omnidex.structured-advisory-protocol.v1.repository-retrieval.v1"
+	RepositoryRetrievalCasesSchemaV2    = "omnidex.model-gauntlet.repository-retrieval-cases.v2"
+	RepositoryRetrievalLabelsSchemaV2   = "omnidex.model-gauntlet.repository-retrieval-labels.v2"
+	RepositoryRetrievalReportSchemaV2   = "omnidex.model-gauntlet.repository-retrieval-report.v2"
+	RepositoryRetrievalResultSchemaV2   = "omnidex.model-gauntlet.repository-retrieval-result.v2"
+	RepositoryRetrievalPromptRendererV2 = "omnidex.structured-advisory-protocol.v1.repository-retrieval.v2"
 )
 
 type RepositoryRetrievalCase struct {

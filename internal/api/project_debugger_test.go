@@ -29,7 +29,7 @@ func TestProjectDebuggerDoesNotPersistOrSynchronizeVersionedMaps(t *testing.T) {
 		"WriteCodebaseMap",
 		"ReadCodebaseMap",
 		"agentResolved, _ :=",
-		"if details, err := s.repo.GetJobDetails(ctx, lastRun.JobID); err == nil",
+		"if details, err := s.repo.CurrentJobDetails(ctx, lastRun.JobID); err == nil",
 		"_ = json.Unmarshal",
 	} {
 		if strings.Contains(source, forbidden) {

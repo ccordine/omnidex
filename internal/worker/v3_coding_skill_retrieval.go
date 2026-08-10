@@ -123,21 +123,21 @@ func (s *directCodingSession) createCodingSkillCandidate(
 	if err != nil {
 		return directCodingSkillBinding{}, err
 	}
-	stored, created, err := s.runtime.svc.repo.CreateLearnedSkillCandidate(
-		s.runtime.ctx, spec, s.runtime.claim.Job.ID,
+	stored, created, err := s.runtime.svc.repo.CreateLearnedSkillCandidateByStepAttempt(
+		s.runtime.ctx, s.runtime.claim.Authority, spec,
 	)
 	if err != nil {
 		return directCodingSkillBinding{}, fmt.Errorf("store learned skill for %s: %w", requirement.ID, err)
 	}
-	if err := s.runtime.svc.repo.StoreWorkerSkillEmbedding(
-		s.runtime.ctx, stored.Spec.ID, stored.Version,
+	if err := s.runtime.svc.repo.StoreWorkerSkillEmbeddingByStepAttempt(
+		s.runtime.ctx, s.runtime.claim.Authority, stored.Spec.ID, stored.Version,
 		s.runtime.svc.embeddingProvider, s.runtime.svc.embeddingModel, embedding,
 	); err != nil {
 		return directCodingSkillBinding{}, err
 	}
 	if stored.Status == specialists.SkillStatusCandidate {
-		if err := s.runtime.svc.repo.BeginWorkerSkillValidation(
-			s.runtime.ctx, stored.Spec.ID, stored.Version, specialists.SkillCheck{
+		if err := s.runtime.svc.repo.BeginWorkerSkillValidationByStepAttempt(
+			s.runtime.ctx, s.runtime.claim.Authority, stored.Spec.ID, stored.Version, specialists.SkillCheck{
 				Name: "contract", Status: specialists.SkillCheckPassed,
 				Detail: "Bounded procedure and fixed coding schemas passed structural validation.",
 			},
@@ -155,7 +155,7 @@ func (s *directCodingSession) createCodingSkillCandidate(
 	if pending {
 		s.trackSkillCandidate(stored)
 	}
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_skill_bound", fmt.Sprintf(
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_skill_bound", fmt.Sprintf(
 		"requirement=%s skill=%s version=%d source=generated status=%s created=%t",
 		requirement.ID, stored.Spec.ID, stored.Version, stored.Status, created,
 	))
@@ -170,7 +170,7 @@ func (s *directCodingSession) activeSkillBinding(
 	version specialists.SkillVersion,
 	source string,
 ) directCodingSkillBinding {
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_skill_bound", fmt.Sprintf(
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_skill_bound", fmt.Sprintf(
 		"requirement=%s skill=%s version=%d source=%s status=%s",
 		requirementID, version.Spec.ID, version.Version, strings.TrimSpace(source), version.Status,
 	))

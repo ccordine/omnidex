@@ -1,0 +1,12 @@
+./apply.go
+./authority.go
+./identity.go
+./mutations.go
+./patch.go
+./plan.go
+./snapshot_workspace.go
+./staging.go
+./types.go
+./validation.go
+./verify.go
+./validation_internal_test.go

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 const (
@@ -16,13 +17,13 @@ const (
 
 func (s *Service) generatePreparedWithProgress(
 	ctx context.Context,
-	stepID int64,
+	authority model.StepAttemptAuthority,
 	scope string,
 	prepared llm.PreparedModel,
 ) (string, error) {
 	streaming, ok := s.llm.(llm.PreparedStreamingClient)
 	if !ok {
-		s.emitStepEvent(stepID, "llm_progress_unavailable", "scope="+safeLine(scope, "generation")+" provider=non_streaming")
+		s.emitStepEvent(authority, "llm_progress_unavailable", "scope="+safeLine(scope, "generation")+" provider=non_streaming")
 		return s.llm.GeneratePrepared(ctx, prepared)
 	}
 	started := time.Now()
@@ -41,7 +42,7 @@ func (s *Service) generatePreparedWithProgress(
 		if progress.OutputBytes-lastEmitted < llmProgressByteStep && now.Sub(lastEmission) < llmProgressMaxSilence {
 			return nil
 		}
-		s.emitStepEvent(stepID, "llm_stream_progress", fmt.Sprintf(
+		s.emitStepEvent(authority, "llm_stream_progress", fmt.Sprintf(
 			"scope=%s output_bytes=%d elapsed=%s",
 			safeLine(scope, "generation"), progress.OutputBytes, now.Sub(started).Truncate(time.Second),
 		))
@@ -49,21 +50,4 @@ func (s *Service) generatePreparedWithProgress(
 		lastEmission = now
 		return nil
 	})
-}
-
-func (s *Service) generatePreparedResponseWithProgress(
-	ctx context.Context,
-	stepID int64,
-	scope string,
-	prepared llm.PreparedModel,
-) (llm.AdvisoryResponse, error) {
-	if !prepared.ThinkingEnabled {
-		raw, err := s.generatePreparedWithProgress(ctx, stepID, scope, prepared)
-		return llm.AdvisoryResponse{Content: raw}, err
-	}
-	advisory, ok := s.llm.(llm.PreparedAdvisoryClient)
-	if !ok {
-		return llm.AdvisoryResponse{}, fmt.Errorf("LLM provider does not implement native advisory generation")
-	}
-	return advisory.GeneratePreparedAdvisory(ctx, prepared)
 }

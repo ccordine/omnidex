@@ -1,0 +1,3 @@
+./catalog.go
+./definitions.go
+./catalog_test.go

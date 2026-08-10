@@ -98,7 +98,7 @@ func (s *Service) executeV3Tool(ctx context.Context, claim *model.ClaimedStep, s
 		Forbidden:   append([]string(nil), forbidden...),
 		RequestedBy: claim.Step.Action,
 	}
-	s.emitStepEvent(claim.Step.ID, "tool_call_begin", fmt.Sprintf("tool=%s skill=%s", safeLine(call.Name, "unknown"), safeLine(skillID, "unknown")))
+	s.emitStepEvent(claim.Authority, "tool_call_begin", fmt.Sprintf("tool=%s skill=%s", safeLine(call.Name, "unknown"), safeLine(skillID, "unknown")))
 
 	executionCtx := ctx
 	var bindErr error
@@ -109,7 +109,7 @@ func (s *Service) executeV3Tool(ctx context.Context, claim *model.ClaimedStep, s
 		} else {
 			executionCtx, bindErr = withV3WorkspaceScope(ctx, scope)
 			if bindErr == nil {
-				s.emitStepEvent(claim.Step.ID, "workspace_scope_bound", fmt.Sprintf("source=%s root=%s", scope.Source, safeLine(scope.Root, "unknown")))
+				s.emitStepEvent(claim.Authority, "workspace_scope_bound", fmt.Sprintf("source=%s root=%s", scope.Source, safeLine(scope.Root, "unknown")))
 			}
 		}
 	}
@@ -120,11 +120,11 @@ func (s *Service) executeV3Tool(ctx context.Context, claim *model.ClaimedStep, s
 		} else {
 			executionCtx, bindErr = withV3MemoryAuthority(executionCtx, authority)
 			if bindErr == nil {
-				s.emitStepEvent(claim.Step.ID, "memory_authority_bound", fmt.Sprintf("mode=%s project_scope=%s session_scope=%s", authority.Intent.MemoryMode, safeLine(authority.ProjectScope, "global"), safeLine(authority.SessionScope, "none")))
+				s.emitStepEvent(claim.Authority, "memory_authority_bound", fmt.Sprintf("mode=%s project_scope=%s session_scope=%s", authority.Intent.MemoryMode, safeLine(authority.ProjectScope, "global"), safeLine(authority.SessionScope, "none")))
 			}
 		}
 	}
-	stopHeartbeat := s.startProgressHeartbeat(executionCtx, claim.Step.ID, "tool:"+safeLine(call.Name, "unknown"))
+	stopHeartbeat := s.startProgressHeartbeat(executionCtx, claim.Authority, "tool:"+safeLine(call.Name, "unknown"))
 	var result toolruntime.Result
 	err := bindErr
 	if err == nil {
@@ -142,7 +142,7 @@ func (s *Service) executeV3Tool(ctx context.Context, claim *model.ClaimedStep, s
 		callArtifact.Allowed = toolruntime.IsCallRejected(err)
 		callEnvelope, marshalErr := marshalStepArtifact(claim, artifacts.KindToolCall, callArtifact)
 		if marshalErr == nil {
-			marshalErr = s.repo.WriteArtifact(ctx, callEnvelope)
+			marshalErr = s.repo.WriteArtifact(ctx, claim.Authority, callEnvelope)
 		}
 		resultEnvelope, resultMarshalErr := marshalStepArtifact(claim, artifacts.KindToolResult, artifacts.ToolResultArtifact{
 			Tool:     call.Name,
@@ -152,9 +152,9 @@ func (s *Service) executeV3Tool(ctx context.Context, claim *model.ClaimedStep, s
 			Error:    strings.TrimSpace(err.Error()),
 		})
 		if resultMarshalErr == nil {
-			resultMarshalErr = s.repo.WriteArtifact(ctx, resultEnvelope)
+			resultMarshalErr = s.repo.WriteArtifact(ctx, claim.Authority, resultEnvelope)
 		}
-		s.emitStepEvent(claim.Step.ID, "tool_call_rejected", fmt.Sprintf("tool=%s recoverable=%t reason=%s", safeLine(call.Name, "unknown"), toolruntime.IsCallRejected(err), safeLine(err.Error(), "rejected")))
+		s.emitStepEvent(claim.Authority, "tool_call_rejected", fmt.Sprintf("tool=%s recoverable=%t reason=%s", safeLine(call.Name, "unknown"), toolruntime.IsCallRejected(err), safeLine(err.Error(), "rejected")))
 		if persistErr := errors.Join(marshalErr, resultMarshalErr); persistErr != nil {
 			return toolruntime.Result{}, fmt.Errorf("persist rejected tool call %q after %v: %w", call.Name, err, persistErr)
 		}
@@ -165,7 +165,7 @@ func (s *Service) executeV3Tool(ctx context.Context, claim *model.ClaimedStep, s
 	if err != nil {
 		return toolruntime.Result{}, err
 	}
-	if err := s.repo.WriteArtifact(ctx, callEnvelope); err != nil {
+	if err := s.repo.WriteArtifact(ctx, claim.Authority, callEnvelope); err != nil {
 		return toolruntime.Result{}, err
 	}
 
@@ -176,7 +176,7 @@ func (s *Service) executeV3Tool(ctx context.Context, claim *model.ClaimedStep, s
 			record.ToolName = result.Tool
 		}
 		record.Metadata = v3EvidenceMetadata(record.Metadata, claim, skillID)
-		if err := s.repo.WriteEvidence(ctx, record); err != nil {
+		if err := s.repo.WriteEvidence(ctx, claim.Authority, record); err != nil {
 			return toolruntime.Result{}, err
 		}
 	}
@@ -193,10 +193,10 @@ func (s *Service) executeV3Tool(ctx context.Context, claim *model.ClaimedStep, s
 	if err != nil {
 		return toolruntime.Result{}, err
 	}
-	if err := s.repo.WriteArtifact(ctx, resultEnvelope); err != nil {
+	if err := s.repo.WriteArtifact(ctx, claim.Authority, resultEnvelope); err != nil {
 		return toolruntime.Result{}, err
 	}
-	s.emitStepEvent(claim.Step.ID, "tool_call_complete", fmt.Sprintf("tool=%s accepted=%t", safeLine(result.Tool, call.Name), result.Accepted))
+	s.emitStepEvent(claim.Authority, "tool_call_complete", fmt.Sprintf("tool=%s accepted=%t", safeLine(result.Tool, call.Name), result.Accepted))
 	return result, nil
 }
 

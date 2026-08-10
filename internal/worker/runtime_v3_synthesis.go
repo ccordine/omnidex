@@ -24,7 +24,7 @@ func (r *nativeRuntimeV3) runAnalysis() error {
 		if err := r.writeArtifact(artifacts.KindAnalysis, artifact); err != nil {
 			return err
 		}
-		r.svc.emitStepEvent(r.claim.Step.ID, "coding_analysis_derived", "source=accepted_subtask_result model_calls=0")
+		r.svc.emitStepEvent(r.claim.Authority, "coding_analysis_derived", "source=accepted_subtask_result model_calls=0")
 		return r.complete("analysis", artifact.Summary, artifact.Summary)
 	}
 	workspaceArtifact, err := r.readWorkspaceArtifact()
@@ -98,10 +98,10 @@ func (r *nativeRuntimeV3) runResponseDraft() error {
 		if err := r.writeArtifact(artifacts.KindResponseDraft, artifact); err != nil {
 			return err
 		}
-		r.svc.emitStepEvent(r.claim.Step.ID, "coding_response_derived", "source=accepted_coding_summary model_calls=0")
+		r.svc.emitStepEvent(r.claim.Authority, "coding_response_derived", "source=accepted_coding_summary model_calls=0")
 		return r.complete("response_draft", artifact.Response, artifact.Response)
 	}
-	records, err := r.svc.repo.ListEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
+	records, err := r.svc.repo.ListCurrentEvidenceByJob(r.ctx, r.claim.Job.ID, 256)
 	if err != nil {
 		return fmt.Errorf("list evidence for response composition: %w", err)
 	}

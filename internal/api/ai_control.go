@@ -25,9 +25,9 @@ type aiControlResponse struct {
 	Resumed           bool             `json:"resumed"`
 	Counts            map[string]int64 `json:"counts"`
 	UpdatedAt         time.Time        `json:"updated_at"`
-	RealtimePublished *bool  `json:"realtime_published,omitempty"`
-	RealtimeError     string `json:"realtime_error,omitempty"`
-	OperationError    string `json:"operation_error,omitempty"`
+	RealtimePublished *bool            `json:"realtime_published,omitempty"`
+	RealtimeError     string           `json:"realtime_error,omitempty"`
+	OperationError    string           `json:"operation_error,omitempty"`
 }
 
 func (s *Server) handleAIControl(w http.ResponseWriter, r *http.Request) {
