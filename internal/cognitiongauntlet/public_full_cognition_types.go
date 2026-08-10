@@ -23,6 +23,8 @@ type PublicFullCognitionRunRequest struct {
 	LedgerSchemaVersion     string
 	WorkingSetPolicyVersion string
 	ProjectionPolicyVersion string
+	liveStaleProbe          *liveStalePortController
+	recoverStalePort        liveStalePort
 }
 
 type PublicFullCognitionRunResult struct {
@@ -66,6 +68,9 @@ func (request PublicFullCognitionRunRequest) validate(bundle PublicInferenceBund
 	}
 	if request.OmnidexCommit != "" && !validCommitIdentity(request.OmnidexCommit) {
 		return fmt.Errorf("public full cognition Omnidex commit is invalid")
+	}
+	if request.recoverStalePort != "" && request.recoverStalePort.Validate() != nil {
+		return fmt.Errorf("public full cognition stale recovery port is not registered")
 	}
 	return nil
 }

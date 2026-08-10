@@ -84,18 +84,19 @@ type OracleManifest struct {
 type TraceKind string
 
 const (
-	TraceModelCall      TraceKind = "model_call"
-	TraceProjection     TraceKind = "context_projection"
-	TraceObservation    TraceKind = "observation"
-	TraceAction         TraceKind = "action"
-	TraceLedger         TraceKind = "task_ledger"
-	TraceWorkingSet     TraceKind = "working_set"
-	TraceObligation     TraceKind = "obligation"
-	TraceFailure        TraceKind = "failure"
-	TraceRestart        TraceKind = "restart"
-	TraceLease          TraceKind = "lease"
-	TraceStaleRejection TraceKind = "stale_rejection"
-	TraceTerminal       TraceKind = "terminal"
+	TraceModelCall         TraceKind = "model_call"
+	TracePolicyDisposition TraceKind = "policy_disposition"
+	TraceProjection        TraceKind = "context_projection"
+	TraceObservation       TraceKind = "observation"
+	TraceAction            TraceKind = "action"
+	TraceLedger            TraceKind = "task_ledger"
+	TraceWorkingSet        TraceKind = "working_set"
+	TraceObligation        TraceKind = "obligation"
+	TraceFailure           TraceKind = "failure"
+	TraceRestart           TraceKind = "restart"
+	TraceLease             TraceKind = "lease"
+	TraceStaleRejection    TraceKind = "stale_rejection"
+	TraceTerminal          TraceKind = "terminal"
 )
 
 type TraceEntry struct {
@@ -127,21 +128,25 @@ type Outcome struct {
 }
 
 type Resources struct {
-	ModelCalls          int   `json:"model_calls"`
-	ModelDecisions      int   `json:"model_decisions"`
-	EnvironmentActions  int   `json:"environment_actions"`
-	LowLevelTransitions int   `json:"low_level_transitions"`
-	ToolOperations      int   `json:"tool_operations"`
-	SearchOperations    int   `json:"search_operations"`
-	ReadOperations      int   `json:"read_operations"`
-	InputTokens         int64 `json:"input_tokens"`
-	OutputTokens        int64 `json:"output_tokens"`
-	ContextBytes        int64 `json:"context_bytes"`
-	OutputBytes         int64 `json:"output_bytes"`
-	PeakContextBytes    int64 `json:"peak_context_bytes"`
-	PeakWorkingSetBytes int64 `json:"peak_working_set_bytes"`
-	ModelMilliseconds   int64 `json:"model_milliseconds"`
-	WallMilliseconds    int64 `json:"wall_milliseconds"`
+	ModelCalls                    int   `json:"model_calls"`
+	ModelDecisions                int   `json:"model_decisions"`
+	EnvironmentActions            int   `json:"environment_actions"`
+	LowLevelTransitions           int   `json:"low_level_transitions"`
+	ToolOperations                int   `json:"tool_operations"`
+	SearchOperations              int   `json:"search_operations"`
+	ReadOperations                int   `json:"read_operations"`
+	InputTokens                   int64 `json:"input_tokens"`
+	OutputTokens                  int64 `json:"output_tokens"`
+	ContextBytes                  int64 `json:"context_bytes"`
+	OutputBytes                   int64 `json:"output_bytes"`
+	PeakContextBytes              int64 `json:"peak_context_bytes"`
+	PeakWorkingSetBytes           int64 `json:"peak_working_set_bytes"`
+	ProviderTotalNanoseconds      int64 `json:"provider_total_nanoseconds"`
+	ProviderLoadNanoseconds       int64 `json:"provider_load_nanoseconds"`
+	ProviderPromptEvalNanoseconds int64 `json:"provider_prompt_eval_nanoseconds"`
+	ProviderEvalNanoseconds       int64 `json:"provider_eval_nanoseconds"`
+	PolicyWallMilliseconds        int64 `json:"policy_wall_milliseconds"`
+	WallMilliseconds              int64 `json:"wall_milliseconds"`
 }
 
 type MemoryMetrics struct {

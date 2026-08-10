@@ -23,33 +23,50 @@ func validateOfflinePromotionIdentity(
 	embeddedMigrationsSHA256 string,
 	embeddedVersion string,
 ) (string, error) {
-	if !validCommitIdentity(embeddedCommit) || config.OmnidexCommit != embeddedCommit {
+	return validateOfflineExecutionIdentity(
+		config.executionAuthority(), executable, embeddedCommit, embeddedSourceSHA256,
+		embeddedMigrationsSHA256, embeddedVersion,
+	)
+}
+
+func validateOfflineExecutionIdentity(
+	authority offlineExecutionAuthority,
+	executable string,
+	embeddedCommit string,
+	embeddedSourceSHA256 string,
+	embeddedMigrationsSHA256 string,
+	embeddedVersion string,
+) (string, error) {
+	if err := authority.Validate(); err != nil {
+		return "", err
+	}
+	if !validCommitIdentity(embeddedCommit) || authority.OmnidexCommit != embeddedCommit {
 		return "", fmt.Errorf("offline promotion commit does not match the embedded build commit")
 	}
 	if !validDigest(embeddedSourceSHA256) ||
-		config.RatGeneration.Runtime.SourceSHA256 != embeddedSourceSHA256 {
+		authority.RatGeneration.Runtime.SourceSHA256 != embeddedSourceSHA256 {
 		return "", fmt.Errorf("offline promotion source digest does not match the embedded build source")
 	}
 	if !validDigest(embeddedMigrationsSHA256) ||
-		config.RatGeneration.Runtime.MigrationsSHA256 != embeddedMigrationsSHA256 {
+		authority.RatGeneration.Runtime.MigrationsSHA256 != embeddedMigrationsSHA256 {
 		return "", fmt.Errorf("offline promotion migration digest does not match the embedded build")
 	}
 	if err := requireExact(embeddedVersion, "embedded runtime version", 256); err != nil ||
-		config.RatGeneration.Runtime.Version != embeddedVersion {
+		authority.RatGeneration.Runtime.Version != embeddedVersion {
 		return "", fmt.Errorf("offline promotion runtime version does not match the embedded build")
 	}
 	executableSHA, err := executableSHA256(executable)
 	if err != nil {
 		return "", err
 	}
-	if config.RatGeneration.Runtime.ExecutableSHA256 != executableSHA {
+	if authority.RatGeneration.Runtime.ExecutableSHA256 != executableSHA {
 		return "", fmt.Errorf("offline promotion executable does not match the frozen runtime candidate")
 	}
 	expected, err := currentRuntimeFingerprint(embeddedSourceSHA256)
 	if err != nil {
 		return "", err
 	}
-	if config.RuntimeFingerprint != expected {
+	if authority.RuntimeFingerprint != expected {
 		return "", fmt.Errorf("offline promotion runtime fingerprint is not code-derived")
 	}
 	return executableSHA, nil

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/taskstate"
 )
 
@@ -54,6 +56,90 @@ func TestProjectionTraceRejectsSelfSourceLineage(t *testing.T) {
 	}
 }
 
+func TestModelCallTraceSealsExactNativeUsageLimitWithoutClaimingQualification(t *testing.T) {
+	call := testModelCallTrace()
+	call.ResultStatus = cognitionpolicy.CallResultRejected
+	call.FailureCode = cognitionpolicy.CallFailureProviderUsageLimit
+	call.ProviderUsage.PromptEvalCount = call.Budget.MaxInputTokens + 1
+	call.InputTokens = int64(call.ProviderUsage.PromptEvalCount)
+	if err := call.Validate(); err != nil {
+		t.Fatalf("exact usage-limit rejection did not seal: %v", err)
+	}
+	if callBudgetQualified(call) {
+		t.Fatal("over-budget provider call was competence-qualified")
+	}
+
+	forged := call
+	forged.ResultStatus = cognitionpolicy.CallResultAccepted
+	forged.FailureCode = ""
+	if err := forged.Validate(); err == nil {
+		t.Fatal("over-budget accepted call was admitted")
+	}
+	forged = call
+	forged.FailureCode = cognitionpolicy.CallFailureInvalidDecision
+	if err := forged.Validate(); err == nil {
+		t.Fatal("over-budget call without exact usage-limit attribution was admitted")
+	}
+}
+
+func TestNonDispatchedDispositionConsumesProjectionWithoutCountingModelUsage(t *testing.T) {
+	manifest := validEpisodeManifest(mustRatGeneration(t), terminalTestPayload(t))
+	disposition := PolicyDispositionTrace{
+		Schema: PolicyDispositionSchemaV1, ProjectionID: "projection-1",
+		ProjectionSHA256: strings.Repeat("d", 64), Budget: testStationBudget(),
+		ResultStatus:              cognitionpolicy.CallResultFailed,
+		FailureCode:               cognitionpolicy.CallFailureProviderIdentity,
+		ProviderRequestDispatched: false,
+	}
+	manifest.Trace[1].Kind = TracePolicyDisposition
+	manifest.Trace[1].Payload = mustTraceJSONObject(t, disposition)
+	manifest.Resources = Resources{}
+	if _, err := prepareEpisodeManifest(manifest); err != nil {
+		t.Fatalf("non-dispatched disposition did not consume its exact projection: %v", err)
+	}
+
+	manifest = validEpisodeManifest(mustRatGeneration(t), terminalTestPayload(t))
+	manifest.Trace = append(manifest.Trace[:1], manifest.Trace[2:]...)
+	for index := range manifest.Trace {
+		manifest.Trace[index].Sequence = uint64(index + 1)
+	}
+	manifest.Resources = Resources{}
+	if _, err := prepareEpisodeManifest(manifest); err == nil {
+		t.Fatal("unused projection without a non-dispatched disposition was accepted")
+	}
+}
+
+func TestModelCallTraceBindsProviderDispatchAndDoneReason(t *testing.T) {
+	length := testModelCallTrace()
+	length.ResultStatus = cognitionpolicy.CallResultRejected
+	length.FailureCode = cognitionpolicy.CallFailureResponseLimit
+	length.ProviderDoneReason = "length"
+	length.ProviderUsage.EvalCount = length.Budget.MaxOutputTokens
+	length.OutputTokens = int64(length.Budget.MaxOutputTokens)
+	if err := length.Validate(); err != nil {
+		t.Fatalf("exact provider length rejection did not seal: %v", err)
+	}
+
+	acceptedLength := length
+	acceptedLength.ResultStatus = cognitionpolicy.CallResultAccepted
+	acceptedLength.FailureCode = ""
+	if err := acceptedLength.Validate(); err == nil {
+		t.Fatal("accepted model call claimed a provider length stop")
+	}
+
+	transport := testModelCallTrace()
+	transport.ResultStatus = cognitionpolicy.CallResultFailed
+	transport.FailureCode = cognitionpolicy.CallFailureGeneration
+	transport.ProviderResponseDisposition = llm.ProviderResponseTransportError
+	transport.ProviderDoneReason = ""
+	transport.ProviderUsagePresent = false
+	transport.ProviderUsage = llm.ProviderGenerationUsage{}
+	transport.InputTokens, transport.OutputTokens, transport.OutputBytes = 0, 0, 0
+	if err := transport.Validate(); err != nil {
+		t.Fatalf("dispatched transport failure did not seal without claiming native inference: %v", err)
+	}
+}
+
 func sealedModelEpisode(t *testing.T, selected []ProjectedReference) SealedEpisode {
 	t.Helper()
 	manifest := validEpisodeManifest(mustRatGeneration(t), terminalTestPayload(t))
@@ -90,8 +176,15 @@ func testProjectionTrace() ProjectionTrace {
 
 func testModelCallTrace() ModelCallTrace {
 	return ModelCallTrace{
-		Schema: ModelCallTraceSchemaV1, ProjectionID: "projection-1",
+		Schema: ModelCallTraceSchemaV2, ProjectionID: "projection-1",
 		ProjectionSHA256: strings.Repeat("d", 64), Budget: testStationBudget(),
+		ResultStatus:                cognitionpolicy.CallResultAccepted,
+		ProviderResponseDisposition: llm.ProviderResponseSucceeded,
+		ProviderRequestDispatched:   true, ProviderDoneReason: "stop", ProviderUsagePresent: true,
+		ProviderUsage: llm.ProviderGenerationUsage{
+			PromptEvalCount: 32, EvalCount: 16, TotalDurationNanos: 4,
+			LoadDurationNanos: 1, PromptEvalDurationNanos: 1, EvalDurationNanos: 1,
+		},
 		InputBytes: 128, InputTokens: 32, OutputBytes: 64, OutputTokens: 16,
 	}
 }

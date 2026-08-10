@@ -69,6 +69,12 @@ func (cognitionGuardPolicyClient) CleanupPreparedModel(llm.PreparedModel) {}
 
 func (cognitionGuardPolicyClient) RequireExactPreparedContract() error { return nil }
 
+func (cognitionGuardPolicyClient) ValidateExactPreparedProvider(
+	expected llm.ProviderIdentityExpectation,
+) error {
+	return expected.Validate()
+}
+
 func (cognitionGuardPolicyClient) ValidateExactPreparedContract(prepared llm.PreparedModel) error {
 	if prepared.PromptHint != llm.MinimalGeneratePrompt || prepared.MaxOutputTokens <= 0 ||
 		prepared.ContextTokens <= 0 || prepared.ResponseFormat != llm.ResponseFormatJSON ||

@@ -49,6 +49,12 @@ func newScaleFamilyAuthority(
 		return ScaleFamilyAuthority{}, fmt.Errorf("full cognition scale requires measured repetitions")
 	}
 	first := requests[0].Runs[0]
+	budget, err := NewExecutableRunBudgetV2(
+		base.spec.Budget, first.RatGeneration.Fixed.Brain.Sampling,
+	)
+	if err != nil {
+		return ScaleFamilyAuthority{}, err
+	}
 	suite, err := gauntletSuite(family.Suite)
 	if err != nil {
 		return ScaleFamilyAuthority{}, err
@@ -63,7 +69,7 @@ func newScaleFamilyAuthority(
 		RelevantEvidenceCount: len(base.generated.PrivateOracle().RequiredEvidence),
 		SemanticDecisionCount: len(base.generated.PrivateOracle().Witness),
 		Variant:               VariantFullCognition, RatGeneration: first.RatGeneration,
-		Budget: base.spec.Budget, Runtime: first.RuntimeFingerprint,
+		Budget: budget, Runtime: first.RuntimeFingerprint,
 	}
 	if err := authority.Validate(); err != nil {
 		return ScaleFamilyAuthority{}, err

@@ -7,7 +7,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionruntime"
-	"github.com/gryph/omnidex/internal/labyrinth"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
@@ -16,7 +15,7 @@ type PublicAblationRunRequest struct {
 	Client                  llm.Client
 	Environment             cognition.Environment
 	Completion              cognitionruntime.CompletionEvaluator
-	ContaminatedOracle      *labyrinth.Oracle
+	ContaminatedEvidence    *ContaminatedEvidencePacket
 	EpisodeSealPath         string
 	OmnidexCommit           string
 	LedgerSchemaVersion     string
@@ -42,10 +41,10 @@ func (request PublicAblationRunRequest) validate(bundle PublicInferenceBundle) e
 		return err
 	}
 	if variant == VariantOracleEvidence {
-		if request.ContaminatedOracle == nil || request.ContaminatedOracle.Validate() != nil {
+		if request.ContaminatedEvidence == nil || request.ContaminatedEvidence.Validate() != nil {
 			return fmt.Errorf("oracle-evidence ceiling requires an explicit contaminated grant")
 		}
-	} else if request.ContaminatedOracle != nil {
+	} else if request.ContaminatedEvidence != nil {
 		return fmt.Errorf("non-oracle ablation received private evaluator authority")
 	}
 	if request.EpisodeSealPath == "" || filepath.Clean(request.EpisodeSealPath) != request.EpisodeSealPath {

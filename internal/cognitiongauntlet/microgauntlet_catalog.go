@@ -41,6 +41,7 @@ func microSpec(
 			GrammarVersion:   labyrinth.GrammarVersionV1, SolverStateLimit: 100_000,
 		},
 		Budget: RunBudget{
+			Schema:       RunBudgetSchemaStructuralV1,
 			ContextBytes: 24_576, WorkingSetBytes: 8_192, RuntimeCycles: 96, ModelCalls: 32,
 			EnvironmentActions: 64, ToolOperations: 64,
 			Station: StationBudget{

@@ -178,6 +178,8 @@ func New(baseURL, defaultModel, embeddingModel string, timeout time.Duration, co
 		dialTimeout = timeout
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableCompression = true
+	transport.MaxResponseHeaderBytes = maxExactProviderResponseHeaderBytes
 	transport.DialContext = (&net.Dialer{
 		Timeout:   dialTimeout,
 		KeepAlive: 30 * time.Second,

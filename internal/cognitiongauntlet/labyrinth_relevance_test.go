@@ -3,6 +3,9 @@ package cognitiongauntlet
 import (
 	"context"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestLabyrinthRelevanceIsDerivedFromPrivateOracleAfterEpisodeSeal(t *testing.T) {
@@ -99,8 +102,16 @@ func modelEpisodeWithConsumerProjection(
 	projection.EstimatedTokens = (projection.RenderedBytes + 3) / 4
 	inputBytes := projection.RenderedBytes + 128
 	call := ModelCallTrace{
-		Schema: ModelCallTraceSchemaV1, ProjectionID: projection.ProjectionID,
+		Schema: ModelCallTraceSchemaV2, ProjectionID: projection.ProjectionID,
 		ProjectionSHA256: projection.ProjectionSHA256, Budget: manifest.StationBudget,
+		ResultStatus:                cognitionpolicy.CallResultAccepted,
+		ProviderResponseDisposition: llm.ProviderResponseSucceeded,
+		ProviderRequestDispatched:   true, ProviderDoneReason: "stop", ProviderUsagePresent: true,
+		ProviderUsage: llm.ProviderGenerationUsage{
+			PromptEvalCount: int((inputBytes + 3) / 4), EvalCount: 16,
+			TotalDurationNanos: 4, LoadDurationNanos: 1,
+			PromptEvalDurationNanos: 1, EvalDurationNanos: 1,
+		},
 		InputBytes: inputBytes, InputTokens: (inputBytes + 3) / 4,
 		OutputBytes: 64, OutputTokens: 16,
 	}
@@ -138,6 +149,10 @@ func modelEpisodeWithConsumerProjection(
 	manifest.Resources.InputTokens = call.InputTokens
 	manifest.Resources.OutputBytes = call.OutputBytes
 	manifest.Resources.OutputTokens = call.OutputTokens
+	manifest.Resources.ProviderTotalNanoseconds = call.ProviderUsage.TotalDurationNanos
+	manifest.Resources.ProviderLoadNanoseconds = call.ProviderUsage.LoadDurationNanos
+	manifest.Resources.ProviderPromptEvalNanoseconds = call.ProviderUsage.PromptEvalDurationNanos
+	manifest.Resources.ProviderEvalNanoseconds = call.ProviderUsage.EvalDurationNanos
 	prepared, err := prepareEpisodeManifest(manifest)
 	if err != nil {
 		t.Fatal(err)

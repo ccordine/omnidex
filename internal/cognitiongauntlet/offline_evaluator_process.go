@@ -40,14 +40,18 @@ func RunOfflineEvaluatorProcess(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
-	fixture, err := GenerateMicrogauntlet(private.Spec)
+	generated, err := generateOfflineScenario(private.Scenario)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(fixture.generated.PrivateOracle(), private.Oracle) {
-		return fmt.Errorf("private evaluator regeneration changed the sealed oracle")
+	if generated.initial != nil {
+		if !reflect.DeepEqual(generated.initial.generated.PrivateOracle(), *private.InitialOracle) {
+			return fmt.Errorf("private evaluator regeneration changed the sealed initial oracle")
+		}
+	} else if !reflect.DeepEqual(generated.extended.PrivateOracle(), *private.ExtendedOracle) {
+		return fmt.Errorf("private evaluator regeneration changed the sealed extended oracle")
 	}
-	paired, err := fixture.PairedAuthority(
+	paired, err := generated.pairedAuthority(
 		private.Surface, private.Authority.RatGeneration, private.Authority.Repetition,
 		private.Authority.Runtime,
 	)
@@ -67,16 +71,16 @@ func RunOfflineEvaluatorProcess(ctx context.Context, configPath string) error {
 		return err
 	}
 	if bundle.Authority.Variant == VariantFullCognition {
-		result, evaluateErr := EvaluatePublicFullCognition(
-			config.EvaluationPath, fixture, paired, bundle.Authority, episode,
+		result, evaluateErr := evaluateGeneratedPublicFullCognition(
+			config.EvaluationPath, generated, paired, bundle.Authority, episode,
 		)
 		if evaluateErr != nil {
 			return evaluateErr
 		}
 		return result.Validate()
 	}
-	result, err := EvaluatePublicAblation(
-		config.EvaluationPath, fixture, paired, bundle.Authority, episode,
+	result, err := evaluateGeneratedPublicAblation(
+		config.EvaluationPath, generated, paired, bundle.Authority, episode,
 	)
 	if err != nil {
 		return err

@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -209,14 +208,13 @@ func openRepositoryShadowDatabase(t *testing.T) (context.Context, *queue.Reposit
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadWorkerTestMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, repository, pool

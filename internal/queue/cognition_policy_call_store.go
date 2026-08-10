@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,17 +9,19 @@ import (
 	"math"
 	"reflect"
 
-	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
 type cognitionPolicyCallRecord struct {
-	Attempt       cognitionpolicy.CallAttempt
-	AttemptSHA256 string
-	Status        string
-	Result        *cognitionpolicy.CallResult
+	Attempt          cognitionpolicy.CallAttempt
+	AttemptSHA256    string
+	Status           string
+	Result           *cognitionpolicy.CallResult
+	ResultSHA256     string
+	ResponseEvidence *cognitionpolicy.ModelResponseEvidence
 }
 
 func cognitionPolicyCallAuthority(attempt cognitionpolicy.CallAttempt) (model.StepAttemptAuthority, error) {
@@ -37,7 +40,8 @@ func loadCognitionPolicyCallTx(
 	callID string,
 	lock bool,
 ) (cognitionPolicyCallRecord, bool, error) {
-	query := `SELECT attempt_json,attempt_sha256,status,result_json FROM cognition_policy_calls WHERE call_id=$1`
+	query := `SELECT attempt_json,attempt_sha256,status,result_json,COALESCE(result_sha256,'')
+		FROM cognition_policy_calls WHERE call_id=$1`
 	if lock {
 		query += ` FOR UPDATE`
 	}
@@ -45,7 +49,7 @@ func loadCognitionPolicyCallTx(
 	var resultJSON []byte
 	var record cognitionPolicyCallRecord
 	err := tx.QueryRow(ctx, query, callID).Scan(
-		&attemptJSON, &record.AttemptSHA256, &record.Status, &resultJSON,
+		&attemptJSON, &record.AttemptSHA256, &record.Status, &resultJSON, &record.ResultSHA256,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return cognitionPolicyCallRecord{}, false, nil
@@ -53,19 +57,34 @@ func loadCognitionPolicyCallTx(
 	if err != nil {
 		return cognitionPolicyCallRecord{}, false, err
 	}
+	if err := exactjson.ValidateObject(
+		attemptJSON, cognitionpolicy.CallAttempt{}, "cognition policy attempt",
+	); err != nil {
+		return cognitionPolicyCallRecord{}, false, fmt.Errorf("decode exact cognition policy attempt: %w", err)
+	}
 	if err := json.Unmarshal(attemptJSON, &record.Attempt); err != nil {
 		return cognitionPolicyCallRecord{}, false, fmt.Errorf("decode cognition policy attempt: %w", err)
 	}
-	_, expectedSHA, err := cognitionJSON(record.Attempt)
-	if err != nil || expectedSHA != record.AttemptSHA256 || record.Attempt.Validate() != nil {
+	canonicalAttempt, err := exactjson.Canonical(record.Attempt)
+	if err != nil || !bytes.Equal(canonicalAttempt, attemptJSON) ||
+		cognitionPayloadSHA(canonicalAttempt) != record.AttemptSHA256 ||
+		record.Attempt.Validate() != nil {
 		return cognitionPolicyCallRecord{}, false, fmt.Errorf("%w: persisted policy attempt is invalid", ErrCognitionConflict)
 	}
 	if len(resultJSON) > 0 {
 		var result cognitionpolicy.CallResult
+		if err := exactjson.ValidateObject(
+			resultJSON, cognitionpolicy.CallResult{}, "cognition policy result",
+		); err != nil {
+			return cognitionPolicyCallRecord{}, false, fmt.Errorf("decode exact cognition policy result: %w", err)
+		}
 		if err := json.Unmarshal(resultJSON, &result); err != nil {
 			return cognitionPolicyCallRecord{}, false, fmt.Errorf("decode cognition policy result: %w", err)
 		}
-		if err := result.Validate(record.Attempt); err != nil {
+		canonicalResult, err := exactjson.Canonical(result)
+		if err != nil || !bytes.Equal(canonicalResult, resultJSON) ||
+			cognitionPayloadSHA(canonicalResult) != record.ResultSHA256 ||
+			result.Validate(record.Attempt) != nil {
 			return cognitionPolicyCallRecord{}, false, fmt.Errorf("%w: persisted policy result: %v", ErrCognitionConflict, err)
 		}
 		record.Result = &result
@@ -79,6 +98,23 @@ func loadCognitionPolicyCallTx(
 		return cognitionPolicyCallRecord{}, false, fmt.Errorf(
 			"%w: persisted policy call status differs from its result", ErrCognitionConflict,
 		)
+	}
+	if record.Result != nil {
+		if err := validateLoadedCognitionProviderIdentityRefTx(
+			ctx, tx, callID, record.Result.ProviderIdentityEvidence,
+		); err != nil {
+			return cognitionPolicyCallRecord{}, false, err
+		}
+	}
+	if record.Result != nil && record.Result.Status == cognitionpolicy.CallResultAccepted {
+		evidence, err := loadCognitionResponseEvidenceTx(ctx, tx, callID, lock)
+		if err != nil {
+			return cognitionPolicyCallRecord{}, false, err
+		}
+		record.ResponseEvidence = evidence
+		if err := validateLoadedCognitionResponseEvidence(record.Attempt, *record.Result, evidence); err != nil {
+			return cognitionPolicyCallRecord{}, false, err
+		}
 	}
 	return record, true, nil
 }
@@ -105,6 +141,10 @@ func exactCognitionCallReservation(
 	if persisted.Result != nil {
 		result := persisted.Result.Clone()
 		reservation.ExistingResult = &result
+		if persisted.ResponseEvidence != nil {
+			evidence := persisted.ResponseEvidence.Clone()
+			reservation.ExistingResponseEvidence = &evidence
+		}
 	}
 	if err := reservation.ValidateFor(attempt); err != nil {
 		return cognitionpolicy.CallReservation{}, err
@@ -116,51 +156,30 @@ func requireExactCognitionPolicySnapshotTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	authority model.StepAttemptAuthority,
+	episode CognitionEpisode,
 	attempt cognitionpolicy.CallAttempt,
 ) error {
-	var episodeID cognition.EpisodeID
-	var jobID, generation, stepID, actorAttempt, ordinal, revision int64
-	var workerID, revisionSHA, obligationID, projectionID, workingSetID string
-	var budgetJSON []byte
-	err := tx.QueryRow(ctx, `
-		SELECT episode_id,job_id,generation,step_id,actor_attempt,actor_worker_id,
-		       call_ordinal,expected_revision,expected_revision_sha256,obligation_node_id,
-		       projection_id,working_set_id,runtime_budget_json
-		FROM cognition_runtime_snapshots WHERE snapshot_sha256=$1
-	`, attempt.SnapshotSHA256).Scan(
-		&episodeID, &jobID, &generation, &stepID, &actorAttempt, &workerID, &ordinal,
-		&revision, &revisionSHA, &obligationID, &projectionID, &workingSetID, &budgetJSON,
+	graph, found, err := loadCurrentCognitionObligationGraphTx(ctx, tx, episode.EpisodeID, true)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%w: policy call episode has no obligation graph", ErrCognitionConflict)
+	}
+	prepared, err := loadCognitionPreparedSnapshotBySHATx(
+		ctx, tx, authority, episode, graph, attempt.SnapshotSHA256,
 	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("%w: policy call has no prepared snapshot", ErrCognitionConflict)
+	if err != nil {
+		return fmt.Errorf("%w: restore exact prepared policy snapshot: %v", ErrCognitionConflict, err)
 	}
+	projection, err := loadContextProjectionTx(ctx, tx, string(attempt.ContextProjection.ID))
 	if err != nil {
 		return err
 	}
-	var budget cognition.RuntimeBudget
-	if err := json.Unmarshal(budgetJSON, &budget); err != nil {
-		return fmt.Errorf("decode prepared policy budget: %w", err)
-	}
-	if episodeID != attempt.ExpectedRevision.EpisodeID || jobID != authority.JobID ||
-		generation != authority.Generation || stepID != authority.StepID || actorAttempt != authority.Attempt ||
-		workerID != authority.WorkerID || revision <= 0 || uint64(revision) != attempt.ExpectedRevision.Number ||
-		revisionSHA != attempt.ExpectedRevision.SHA256 || obligationID != string(attempt.ObligationID) ||
-		projectionID != string(attempt.ContextProjection.ID) || workingSetID != string(attempt.ContextProjection.WorkingSetID) ||
-		budget != attempt.RuntimeBudget || ordinal <= 0 {
-		return fmt.Errorf("%w: policy call differs from exact prepared snapshot", ErrCognitionConflict)
-	}
-	projection, err := loadContextProjectionTx(ctx, tx, projectionID)
-	if err != nil {
-		return err
-	}
-	ref := cognition.ContextProjectionRef{
-		ID: cognition.ContextProjectionID(projection.Projection.ID), SHA256: projection.Projection.RenderedSHA256,
-		WorkingSetID:      cognition.WorkingSetID(projection.Projection.WorkingSetID),
-		WorkingSetVersion: projection.Projection.WorkingSetVersion,
-		RendererVersion:   projection.Projection.RendererVersion,
-	}
-	if ref != attempt.ContextProjection {
-		return fmt.Errorf("%w: policy call projection identity changed", ErrCognitionConflict)
+	if err := cognitionpolicy.VerifyCallAttempt(
+		prepared.Prepared.Snapshot, projection.Projection, attempt,
+	); err != nil {
+		return fmt.Errorf("%w: exact policy input verification: %v", ErrCognitionConflict, err)
 	}
 	return nil
 }
@@ -179,10 +198,11 @@ func insertCognitionPolicyCallTx(
 	if err != nil {
 		return err
 	}
-	attemptJSON, attemptSHA, err := cognitionJSON(attempt)
+	attemptJSON, err := exactjson.Canonical(attempt)
 	if err != nil {
 		return err
 	}
+	attemptSHA := cognitionPayloadSHA(attemptJSON)
 	_, budgetSHA, err := cognitionJSON(attempt.RuntimeBudget)
 	if err != nil {
 		return err

@@ -49,6 +49,14 @@ func (brain BrainRef) Validate() error {
 	if err := brain.Sampling.Validate(); err != nil {
 		return err
 	}
+	if err := llm.ValidateExactPreparedProviderExpectation(llm.ProviderIdentityExpectation{
+		Backend: brain.Backend, BackendVersion: brain.BackendVersion,
+		Model: brain.Model, Digest: brain.Digest, Quantization: brain.Quantization,
+		NativeContextLimit: brain.NativeContextLimit,
+		TokenizerProfile:   llm.ExactPreparedTokenizerProfile,
+	}); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidBrain, err)
+	}
 	samplingSHA, err := brain.Sampling.SHA256()
 	if err != nil || samplingSHA != brain.SamplingSHA256 ||
 		brain.Sampling.NativeContextLimit != brain.NativeContextLimit ||
@@ -93,6 +101,7 @@ func (brain BrainRef) ProviderExpectation() (llm.ProviderIdentityExpectation, er
 		Backend: brain.Backend, BackendVersion: brain.BackendVersion,
 		Model: brain.Model, Digest: brain.Digest, Quantization: brain.Quantization,
 		NativeContextLimit: brain.NativeContextLimit,
+		TokenizerProfile:   llm.ExactPreparedTokenizerProfile,
 	}
 	if err := expected.Validate(); err != nil {
 		return llm.ProviderIdentityExpectation{}, fmt.Errorf("%w: %v", ErrInvalidBrain, err)

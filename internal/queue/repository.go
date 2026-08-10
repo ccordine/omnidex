@@ -46,62 +46,14 @@ func (r *Repository) Ping(ctx context.Context) error {
 	return r.pool.Ping(ctx)
 }
 
-func (r *Repository) EnsureSchema(ctx context.Context) error {
-	if _, err := r.pool.Exec(ctx, schemaSQL); err != nil {
+func (r *Repository) EnsureSchema(ctx context.Context, bundle MigrationBundle) error {
+	if ctx == nil || r == nil || r.pool == nil {
+		return fmt.Errorf("ensure schema requires PostgreSQL and context")
+	}
+	if err := bundle.validate(); err != nil {
 		return err
 	}
-	if _, err := r.pool.Exec(ctx, v3SchemaSQL); err != nil {
-		return err
-	}
-	if _, err := r.pool.Exec(ctx, telemetrySchemaSQL); err != nil {
-		return err
-	}
-	if _, err := r.pool.Exec(ctx, projectsUISchemaSQL); err != nil {
-		return err
-	}
-	if err := r.ApplyFileMigrations(ctx, ResolveMigrationsDir()); err != nil {
-		return err
-	}
-	if err := r.BackfillMemoryCategories(ctx); err != nil {
-		return err
-	}
-	if err := r.BackfillScrumBoardOrder(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (r *Repository) MigrateFresh(ctx context.Context) error {
-	rows, err := r.pool.Query(ctx, `
-		SELECT tablename
-		FROM pg_tables
-		WHERE schemaname = current_schema()
-		ORDER BY tablename ASC
-	`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	names := make([]string, 0, 32)
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return err
-		}
-		names = append(names, name)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	for _, name := range names {
-		if _, err := r.pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS "%s" CASCADE`, strings.ReplaceAll(name, `"`, `""`))); err != nil {
-			return err
-		}
-	}
-
-	return r.EnsureSchema(ctx)
+	return r.applyMigrationBundle(ctx, bundle)
 }
 
 func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {

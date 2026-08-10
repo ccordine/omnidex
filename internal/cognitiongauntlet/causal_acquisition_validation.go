@@ -13,7 +13,7 @@ import (
 func (report CausalAcquisitionReport) Validate() error {
 	if report.Schema != CausalAcquisitionReportSchemaV1 ||
 		!validDigest(report.EpisodeSealSHA256) || !validDigest(report.OracleSHA256) ||
-		!validDigest(report.EvidenceUseSHA256) || report.RequiredEvidence <= 0 ||
+		!validDigest(report.EvidenceUseSHA256) || report.RequiredEvidence < 0 ||
 		report.AcquiredEvidence < 0 || report.AcquiredEvidence > report.RequiredEvidence ||
 		report.AcquisitionTraceRefs == nil ||
 		len(report.AcquisitionTraceRefs) > report.AcquiredEvidence ||

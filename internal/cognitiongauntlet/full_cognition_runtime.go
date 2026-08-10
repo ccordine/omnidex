@@ -16,11 +16,15 @@ import (
 )
 
 type fullRuntimeComponents struct {
-	repository  *queue.Repository
-	store       *cognitionstore.Store
-	environment cognition.Environment
-	runtime     *cognitionruntime.Runtime
-	brain       cognitionpolicy.AttestedBrain
+	repository     *queue.Repository
+	store          *cognitionstore.Store
+	environment    cognition.Environment
+	completion     cognitionruntime.CompletionEvaluator
+	client         llm.Client
+	frozenBrain    cognitionpolicy.AttestedBrain
+	runtime        *cognitionruntime.Runtime
+	brain          cognitionpolicy.AttestedBrain
+	liveStaleProbe *liveStalePortController
 }
 
 func newFullRuntimeComponents(
@@ -72,6 +76,9 @@ func newRuntimeComponents(
 	environment cognition.Environment,
 	completion cognitionruntime.CompletionEvaluator,
 ) (fullRuntimeComponents, error) {
+	if ctx == nil {
+		return fullRuntimeComponents{}, fmt.Errorf("cognition runtime construction context is nil")
+	}
 	repository := queue.New(pool)
 	facts, err := newVisibleObservationFactAuthority()
 	if err != nil {
@@ -81,35 +88,84 @@ func newRuntimeComponents(
 	if err != nil {
 		return fullRuntimeComponents{}, err
 	}
-	attestedBrain, err := cognitionpolicy.AttestBrain(ctx, client, brain)
-	if err != nil {
-		return fullRuntimeComponents{}, err
-	}
 	frozenBrain, err := frozen.attestedBrain()
 	if err != nil {
 		return fullRuntimeComponents{}, err
 	}
-	if attestedBrain != frozenBrain {
+	if brain != frozenBrain.Ref {
 		return fullRuntimeComponents{}, fmt.Errorf(
-			"live provider or host attestation differs from the frozen Rat authority",
+			"production brain differs from the frozen Rat authority",
 		)
 	}
-	policy, err := cognitionpolicy.New(client, attestedBrain, store, store)
+	return fullRuntimeComponents{
+		repository: repository, store: store, environment: environment,
+		completion: completion, client: client, frozenBrain: frozenBrain,
+	}, nil
+}
+
+func activateRuntimeComponents(
+	ctx context.Context,
+	components fullRuntimeComponents,
+	episode queue.CognitionEpisode,
+	actor cognition.AttemptRef,
+) (fullRuntimeComponents, error) {
+	if ctx == nil || components.repository == nil || components.store == nil ||
+		nilRunDependency(components.client) || nilRunDependency(components.environment) ||
+		nilRunDependency(components.completion) {
+		return fullRuntimeComponents{}, fmt.Errorf("cognition runtime activation dependencies are incomplete")
+	}
+	if !sameFrozenBrain(episode.AttestedBrain, components.frozenBrain) {
+		return fullRuntimeComponents{}, fmt.Errorf(
+			"stored cognition brain differs from the frozen Rat authority",
+		)
+	}
+	liveHost, err := cognitionpolicy.AttestLocalHostHardware()
+	if err != nil {
+		return fullRuntimeComponents{}, fmt.Errorf("attest cognition runtime host: %w", err)
+	}
+	if liveHost != episode.AttestedBrain.Host {
+		return fullRuntimeComponents{}, fmt.Errorf(
+			"live host differs from the frozen Rat authority",
+		)
+	}
+	observation, err := cognitionpolicy.ObserveProviderProcess(
+		ctx, components.client, episode.AttestedBrain,
+		cognition.EpisodeRef{ID: episode.EpisodeID}, actor,
+		cognitionpolicy.ProviderProcessEpisodeInvocation,
+	)
+	if err != nil {
+		return fullRuntimeComponents{}, fmt.Errorf("observe cognition provider process: %w", err)
+	}
+	if err := components.store.RecordProviderProcessObservation(ctx, observation); err != nil {
+		return fullRuntimeComponents{}, fmt.Errorf("record cognition provider process observation: %w", err)
+	}
+	var journal cognitionpolicy.CallJournal = components.store
+	var environment cognition.Environment = components.environment
+	var reconciler cognitionruntime.DecisionReconciler = components.store
+	var episodes cognitionruntime.EpisodeJournal = components.store
+	if components.liveStaleProbe != nil {
+		journal = liveStaleCallJournal{probe: components.liveStaleProbe, base: journal}
+		environment = liveStaleEnvironment{probe: components.liveStaleProbe, base: environment}
+		reconciler = liveStaleReconciler{probe: components.liveStaleProbe, base: reconciler}
+		episodes = liveStaleEpisodeJournal{probe: components.liveStaleProbe, base: episodes}
+	}
+	policy, err := cognitionpolicy.New(components.client, episode.AttestedBrain, components.store, journal)
 	if err != nil {
 		return fullRuntimeComponents{}, err
 	}
 	runtime, err := cognitionruntime.New(cognitionruntime.Dependencies{
-		Policy: policy, Environment: environment, Snapshots: store, Accepted: store, PolicyRecovery: store,
-		Completion: completion,
-		Episodes:   store, Reconciler: store, Actions: store, TerminalSeal: store,
+		Policy: policy, Environment: environment, Snapshots: components.store,
+		Accepted: components.store, PolicyRecovery: components.store,
+		Completion: components.completion,
+		Episodes:   episodes, Reconciler: reconciler,
+		Actions: components.store, TerminalSeal: components.store,
 	})
 	if err != nil {
 		return fullRuntimeComponents{}, err
 	}
-	return fullRuntimeComponents{
-		repository: repository, store: store, environment: environment, runtime: runtime,
-		brain: attestedBrain,
-	}, nil
+	components.runtime = runtime
+	components.brain = episode.AttestedBrain
+	return components, nil
 }
 
 func productionBrain(

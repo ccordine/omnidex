@@ -15,62 +15,154 @@ func (policy *Policy) executeReservedCall(
 	attempt CallAttempt,
 	snapshot cognition.RuntimeSnapshot,
 ) (cognition.PolicyOutcome, error) {
-	expected, err := policy.brain.Ref.ProviderExpectation()
-	if err != nil {
-		failure := fmt.Errorf("%w: frozen provider expectation: %v", ErrProviderIdentity, err)
-		return cognition.PolicyOutcome{}, policy.finishCall(
-			ctx, attempt, providerIdentityFailedCallResult(attempt, failure), failure,
-		)
-	}
-	providerAttestation, err := llm.RequireProviderIdentityAttestation(
-		ctx, policy.client, expected,
-	)
-	if err != nil {
-		failure := fmt.Errorf("%w: %v", ErrProviderIdentity, err)
-		return cognition.PolicyOutcome{}, policy.finishCall(
-			ctx, attempt, providerIdentityFailedCallResult(attempt, failure), failure,
-		)
-	}
 	prepared, err := policy.prepareModelCall(ctx, attempt, snapshot)
 	if err != nil {
-		failure := fmt.Errorf("%w: %v", ErrGeneration, err)
+		failure := fmt.Errorf("%w: prepare exact policy authority: %v", ErrInvalidEvidence, err)
 		return cognition.PolicyOutcome{}, policy.finishCall(
-			ctx, attempt, failedCallResult(attempt, providerAttestation, err), failure,
+			ctx, attempt, policyAuthorityFailedCallResult(
+				attempt, llm.PreparedGeneration{}, failure,
+			), llm.PreparedGeneration{}, failure,
 		)
 	}
 	defer policy.client.CleanupPreparedModel(prepared)
 	contractSHA, err := preparedModelSHA(prepared)
 	if err != nil {
-		failure := fmt.Errorf("%w: %v", ErrGeneration, err)
+		failure := fmt.Errorf("%w: exact prepared contract identity: %v", ErrInvalidEvidence, err)
 		return cognition.PolicyOutcome{}, policy.finishCall(
-			ctx, attempt, failedCallResult(attempt, providerAttestation, err), failure,
+			ctx, attempt, policyAuthorityFailedCallResult(
+				attempt, llm.PreparedGeneration{}, failure,
+			), llm.PreparedGeneration{}, failure,
 		)
 	}
-	response, err := policy.client.GeneratePrepared(ctx, prepared)
-	executed := cognition.PolicyOutcome{InferenceExecuted: true}
-	if err != nil {
-		failure := fmt.Errorf("%w: %v", ErrGeneration, err)
+	expectedRequestSHA, err := llm.ExactPreparedRequestSHA256(prepared)
+	if err != nil || expectedRequestSHA != attempt.ExpectedProviderRequestSHA256 {
+		failure := fmt.Errorf("%w: exact prepared provider request identity changed", ErrInvalidEvidence)
+		return cognition.PolicyOutcome{}, policy.finishCall(
+			ctx, attempt, policyAuthorityFailedCallResult(
+				attempt, llm.PreparedGeneration{}, failure,
+			), llm.PreparedGeneration{}, failure,
+		)
+	}
+	generation, generationErr := policy.exactClient.GeneratePreparedExact(ctx, prepared)
+	executed := cognition.PolicyOutcome{ProviderRequestDispatched: generation.ProviderRequestDispatched}
+	if !generation.ProviderRequestDispatched {
+		if providerIdentityFailureEvidence(attempt, generation) {
+			failure := fmt.Errorf("%w: %v", ErrProviderIdentity, generationErr)
+			return executed, policy.finishCall(
+				ctx, attempt, providerIdentityFailedCallResult(attempt, generation, failure), generation, failure,
+			)
+		}
+		failure := fmt.Errorf(
+			"%w: exact client returned a non-dispatched outcome without failed identity evidence: %v",
+			ErrInvalidEvidence, generationErr,
+		)
+		return executed, policy.finishUntrustedCall(
+			ctx, attempt, generation, CallFailurePolicyAuthority, failure,
+		)
+	}
+	providerErr := validatePreparedGenerationProvider(attempt, generation)
+	responseEvidenceErr := generation.ValidateProviderResponseEvidence()
+	if providerErr != nil || responseEvidenceErr != nil {
+		code := CallFailureProviderEvidence
+		failure := fmt.Errorf(
+			"%w: provider observation or response receipt is invalid: %v / %v",
+			ErrInvalidEvidence, providerErr, responseEvidenceErr,
+		)
+		if validPolicySHA256(generation.ProviderRequestSHA256) &&
+			generation.ProviderRequestSHA256 != expectedRequestSHA {
+			code = CallFailureProviderRequest
+			failure = fmt.Errorf(
+				"%w: %w: provider request and receipt authority differ",
+				ErrGeneration, ErrInvalidEvidence,
+			)
+		}
+		return executed, policy.finishUntrustedCall(ctx, attempt, generation, code, failure)
+	}
+	if generation.ProviderRequestSHA256 != expectedRequestSHA {
+		failure := fmt.Errorf(
+			"%w: %w: provider request identity differs from the exact prepared request",
+			ErrGeneration, ErrInvalidEvidence,
+		)
 		return executed, policy.finishCall(
-			ctx, attempt, failedCallResult(attempt, providerAttestation, err), failure,
+			ctx, attempt, providerRequestFailedCallResult(attempt, generation, failure),
+			generation, failure,
 		)
 	}
 	if after, hashErr := preparedModelSHA(prepared); hashErr != nil || after != contractSHA {
-		failure := fmt.Errorf("%w: prepared generation contract was mutated", ErrGeneration)
+		failure := fmt.Errorf("%w: prepared generation contract was mutated", ErrInvalidEvidence)
 		return executed, policy.finishCall(
-			ctx, attempt, failedCallResult(attempt, providerAttestation, failure), failure,
+			ctx, attempt, policyAuthorityFailedCallResult(attempt, generation, failure),
+			generation, failure,
 		)
 	}
+	if generationErr != nil {
+		if generation.ProviderResponseDisposition == llm.ProviderResponseSucceeded {
+			if generation.Validate() == nil {
+				failure := fmt.Errorf(
+					"%w: provider returned a valid successful response together with an error",
+					ErrInvalidEvidence,
+				)
+				return executed, policy.finishCall(
+					ctx, attempt, policyAuthorityFailedCallResult(attempt, generation, failure),
+					generation, failure,
+				)
+			}
+			failure := fmt.Errorf("%w: %v", ErrProviderUsage, generationErr)
+			result := rejectedCallResult(attempt, generation, CallFailureProviderUsage, failure)
+			return executed, policy.finishCall(ctx, attempt, result, generation, failure)
+		}
+		failure := fmt.Errorf("%w: %v", ErrGeneration, generationErr)
+		return executed, policy.finishCall(
+			ctx, attempt, failedCallResult(attempt, generation, failure), generation, failure,
+		)
+	}
+	if err := generation.Validate(); err != nil {
+		failure := fmt.Errorf("%w: %v", ErrProviderUsage, err)
+		result := rejectedCallResult(attempt, generation, CallFailureProviderUsage, failure)
+		return executed, policy.finishCall(ctx, attempt, result, generation, failure)
+	}
 	budget := attempt.RuntimeBudget
-	if !validBoundedText(response, MaxResponseBytes) || len(response) > budget.MaxOutputBytes ||
-		estimatePolicyTokens(len(response)) > budget.MaxOutputTokens {
+	if generation.Usage.PromptEvalCount > budget.MaxInputTokens ||
+		generation.Usage.EvalCount > budget.MaxOutputTokens {
 		failure := fmt.Errorf(
-			"%w: response must be nonempty UTF-8 without NUL and within %d bytes/%d estimated tokens",
-			ErrResponseLimit, budget.MaxOutputBytes, budget.MaxOutputTokens,
+			"%w: provider used %d input and %d output tokens against ceilings %d/%d",
+			ErrProviderUsageLimit, generation.Usage.PromptEvalCount,
+			generation.Usage.EvalCount, budget.MaxInputTokens, budget.MaxOutputTokens,
+		)
+		result := rejectedCallResult(attempt, generation, CallFailureProviderUsageLimit, failure)
+		return executed, policy.finishCall(ctx, attempt, result, generation, failure)
+	}
+	if generation.ProviderDoneReason == "length" {
+		if generation.Usage.EvalCount != budget.MaxOutputTokens {
+			failure := fmt.Errorf(
+				"%w: provider reported length at %d tokens below the exact %d-token ceiling",
+				ErrProviderUsage, generation.Usage.EvalCount, budget.MaxOutputTokens,
+			)
+			result := rejectedCallResult(attempt, generation, CallFailureProviderUsage, failure)
+			return executed, policy.finishCall(ctx, attempt, result, generation, failure)
+		}
+		failure := fmt.Errorf(
+			"%w: provider reached the exact %d-token output ceiling",
+			ErrResponseLimit, budget.MaxOutputTokens,
+		)
+		result := rejectedCallResult(attempt, generation, CallFailureResponseLimit, failure)
+		return executed, policy.finishCall(ctx, attempt, result, generation, failure)
+	}
+	response := generation.Content
+	if len(response) > budget.MaxOutputBytes {
+		failure := fmt.Errorf(
+			"%w: response exceeds the %d-byte station ceiling",
+			ErrResponseLimit, budget.MaxOutputBytes,
 		)
 		result := rejectedCallResult(
-			attempt, providerAttestation, response, CallFailureResponseLimit, failure,
+			attempt, generation, CallFailureResponseLimit, failure,
 		)
-		return executed, policy.finishCall(ctx, attempt, result, failure)
+		return executed, policy.finishCall(ctx, attempt, result, generation, failure)
+	}
+	if !validBoundedText(response, MaxModelResponseEvidenceBytes) {
+		failure := fmt.Errorf("%w: response is not bounded valid UTF-8 JSON", ErrInvalidDecision)
+		result := rejectedCallResult(attempt, generation, CallFailureInvalidDecision, failure)
+		return executed, policy.finishCall(ctx, attempt, result, generation, failure)
 	}
 
 	decision, schema, err := decodePolicyDecision(response, snapshot)
@@ -80,86 +172,56 @@ func (policy *Policy) executeReservedCall(
 			failureCode = CallFailureAuthorityDenied
 		}
 		result := rejectedCallResult(
-			attempt, providerAttestation, response, failureCode, err,
+			attempt, generation, failureCode, err,
 		)
-		return executed, policy.finishCall(ctx, attempt, result, err)
+		return executed, policy.finishCall(ctx, attempt, result, generation, err)
 	}
 	decisionRaw, err := json.Marshal(decision)
 	if err != nil {
 		failure := fmt.Errorf("%w: encode accepted decision: %v", ErrInvalidDecision, err)
 		result := rejectedCallResult(
-			attempt, providerAttestation, response, CallFailureInvalidDecision, failure,
+			attempt, generation, CallFailureInvalidDecision, failure,
 		)
-		return executed, policy.finishCall(ctx, attempt, result, failure)
+		return executed, policy.finishCall(ctx, attempt, result, generation, failure)
 	}
 	result := acceptedCallResult(
-		attempt, providerAttestation, response, schema.Ref(), policySHA256(string(decisionRaw)),
+		attempt, generation, schema.Ref(), policySHA256(string(decisionRaw)),
 	)
-	if err := policy.finishCall(ctx, attempt, result, nil); err != nil {
+	if err := policy.finishCall(ctx, attempt, result, generation, nil); err != nil {
 		return executed, err
 	}
 	executed.Decision = decision.Clone()
 	return executed, nil
 }
 
-func (policy *Policy) prepareModelCall(
-	ctx context.Context,
+func providerIdentityFailureEvidence(
 	attempt CallAttempt,
-	snapshot cognition.RuntimeSnapshot,
-) (llm.PreparedModel, error) {
-	if attempt.RuntimeBudget.MaxOutputTokens > policy.brain.Ref.Sampling.MaxOutputTokens {
-		return llm.PreparedModel{}, fmt.Errorf("runtime output limit exceeds the frozen cognition station ceiling")
-	}
-	prepared, err := policy.client.PrepareContextModel(ctx, policy.brain.Ref.Model, attempt.Envelope)
-	if err != nil {
-		return llm.PreparedModel{}, fmt.Errorf("prepare exact cognition model context: %w", err)
-	}
-	if prepared.BaseModel != policy.brain.Ref.Model || prepared.ContextModel != policy.brain.Ref.Model ||
-		prepared.Prompt != attempt.Envelope {
-		policy.client.CleanupPreparedModel(prepared)
-		return llm.PreparedModel{}, fmt.Errorf("prepared model changed the frozen model or exact envelope")
-	}
-	schemaRaw, err := decisionSchemaJSON(snapshot.ActionCatalog())
-	if err != nil {
-		policy.client.CleanupPreparedModel(prepared)
-		return llm.PreparedModel{}, err
-	}
-	var schema map[string]any
-	if err := json.Unmarshal(schemaRaw, &schema); err != nil {
-		policy.client.CleanupPreparedModel(prepared)
-		return llm.PreparedModel{}, fmt.Errorf("decode exact cognition response schema: %w", err)
-	}
-	zero := 0.0
-	prepared.PromptHint = llm.MinimalGeneratePrompt
-	prepared.MaxOutputTokens = attempt.RuntimeBudget.MaxOutputTokens
-	prepared.ContextTokens = policy.brain.Ref.NativeContextLimit
-	prepared.ResponseFormat = llm.ResponseFormatJSON
-	prepared.ResponseSchema = schema
-	prepared.ThinkingEnabled = false
-	prepared.Temperature = &zero
-	if err := llm.ValidateResponseContract(prepared); err != nil {
-		policy.client.CleanupPreparedModel(prepared)
-		return llm.PreparedModel{}, err
-	}
-	if err := llm.ValidateInferenceBudget(
-		prepared.ContextTokens, prepared.MaxOutputTokens, prepared.Prompt, prepared.PromptHint,
-	); err != nil {
-		policy.client.CleanupPreparedModel(prepared)
-		return llm.PreparedModel{}, err
-	}
-	if err := policy.exactClient.ValidateExactPreparedContract(prepared); err != nil {
-		policy.client.CleanupPreparedModel(prepared)
-		return llm.PreparedModel{}, fmt.Errorf("provider rejected exact prepared contract: %w", err)
-	}
-	return prepared, nil
+	generation llm.PreparedGeneration,
+) bool {
+	return providerIdentityEvidenceProvesFailure(attempt, generation.ProviderIdentityEvidence)
 }
 
-func preparedModelSHA(prepared llm.PreparedModel) (string, error) {
-	raw, err := json.Marshal(prepared)
-	if err != nil {
-		return "", err
+func providerIdentityEvidenceProvesFailure(
+	attempt CallAttempt,
+	evidence llm.ProviderIdentityEvidence,
+) bool {
+	selection := llm.ProviderIdentitySelection{
+		Model: attempt.Brain.Model, NativeContextLimit: attempt.Brain.NativeContextLimit,
 	}
-	return policySHA256(string(raw)), nil
+	if evidence.ValidateRequests(selection) != nil {
+		return false
+	}
+	if !evidence.Successful() {
+		return true
+	}
+	derived, err := llm.DeriveExactProviderIdentityExpectation(
+		evidence, selection,
+	)
+	if err != nil {
+		return true
+	}
+	expected, err := attempt.Brain.ProviderExpectation()
+	return err == nil && derived != expected
 }
 
 func decodePolicyDecision(
@@ -199,49 +261,18 @@ func (policy *Policy) replayReservedCall(
 	result := *reservation.ExistingResult
 	switch result.Status {
 	case CallResultAccepted:
-		decision, err := decisionFromAcceptedResult(result, snapshot)
+		if reservation.ExistingResponseEvidence == nil {
+			return cognition.PolicyOutcome{}, fmt.Errorf("%w: accepted replay lacks response evidence", ErrInvalidEvidence)
+		}
+		decision, err := decisionFromAcceptedResult(
+			result, *reservation.ExistingResponseEvidence, snapshot,
+		)
 		return cognition.PolicyOutcome{Decision: decision}, err
 	case CallResultRejected:
-		sentinel := error(ErrInvalidDecision)
-		if result.FailureCode == CallFailureResponseLimit {
-			sentinel = ErrResponseLimit
-		}
-		if result.FailureCode == CallFailureAuthorityDenied {
-			return cognition.PolicyOutcome{}, fmt.Errorf(
-				"%w: %w: prior call: %s",
-				ErrInvalidDecision, cognition.ErrAuthorityDenied, result.FailureMessage,
-			)
-		}
-		return cognition.PolicyOutcome{}, fmt.Errorf("%w: prior call: %s", sentinel, result.FailureMessage)
+		return cognition.PolicyOutcome{}, CallResultError(result)
 	case CallResultFailed:
-		sentinel := error(ErrGeneration)
-		if result.FailureCode == CallFailureProviderIdentity {
-			sentinel = ErrProviderIdentity
-		}
-		return cognition.PolicyOutcome{}, fmt.Errorf("%w: prior call: %s", sentinel, result.FailureMessage)
+		return cognition.PolicyOutcome{}, CallResultError(result)
 	default:
 		return cognition.PolicyOutcome{}, fmt.Errorf("%w: prior call result is invalid", ErrInvalidEvidence)
 	}
-}
-
-func (policy *Policy) finishCall(
-	ctx context.Context,
-	attempt CallAttempt,
-	result CallResult,
-	primary error,
-) error {
-	if err := result.Validate(attempt); err != nil {
-		if primary == nil {
-			return err
-		}
-		return errors.Join(primary, err)
-	}
-	if err := policy.journal.Finish(ctx, attempt, result); err != nil {
-		journalErr := fmt.Errorf("%w: finish call: %v", ErrCallJournal, err)
-		if primary == nil {
-			return journalErr
-		}
-		return errors.Join(primary, journalErr)
-	}
-	return primary
 }

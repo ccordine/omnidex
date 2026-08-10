@@ -104,6 +104,10 @@ func (manifest EpisodeManifest) validateSealed() error {
 			if err := station.acceptModelCall(entry, manifest.StationBudget); err != nil {
 				return err
 			}
+		case TracePolicyDisposition:
+			if err := station.acceptPolicyDisposition(entry, manifest.StationBudget); err != nil {
+				return err
+			}
 		case TraceAction:
 			if _, err := decodeActionTrace(entry, cognition.EpisodeRef{ID: manifest.EpisodeID}); err != nil {
 				return err
@@ -135,7 +139,12 @@ func (manifest EpisodeManifest) validateSealed() error {
 	if manifest.Variant == VariantDeterministicOracle &&
 		(manifest.Resources.ModelCalls != 0 || manifest.Resources.ModelDecisions != 0 ||
 			manifest.Resources.InputTokens != 0 || manifest.Resources.OutputTokens != 0 ||
-			manifest.Resources.ContextBytes != 0 || manifest.Resources.PeakContextBytes != 0) {
+			manifest.Resources.ContextBytes != 0 || manifest.Resources.PeakContextBytes != 0 ||
+			manifest.Resources.ProviderTotalNanoseconds != 0 ||
+			manifest.Resources.ProviderLoadNanoseconds != 0 ||
+			manifest.Resources.ProviderPromptEvalNanoseconds != 0 ||
+			manifest.Resources.ProviderEvalNanoseconds != 0 ||
+			manifest.Resources.PolicyWallMilliseconds != 0) {
 		return fmt.Errorf("deterministic oracle episode cannot claim model execution")
 	}
 	expectedTrace, err := digestJSON(manifest.Trace)
@@ -204,8 +213,14 @@ func (resources Resources) Validate() error {
 		resources.InputTokens < 0 || resources.OutputTokens < 0 ||
 		resources.ContextBytes < 0 || resources.OutputBytes < 0 ||
 		resources.PeakContextBytes < 0 || resources.PeakWorkingSetBytes < 0 ||
-		resources.ModelMilliseconds < 0 || resources.WallMilliseconds < 0 {
+		resources.ProviderTotalNanoseconds < 0 || resources.ProviderLoadNanoseconds < 0 ||
+		resources.ProviderPromptEvalNanoseconds < 0 || resources.ProviderEvalNanoseconds < 0 ||
+		resources.PolicyWallMilliseconds < 0 || resources.WallMilliseconds < 0 {
 		return fmt.Errorf("cognition episode resources cannot be negative")
+	}
+	if resources.ProviderTotalNanoseconds < resources.ProviderLoadNanoseconds+
+		resources.ProviderPromptEvalNanoseconds+resources.ProviderEvalNanoseconds {
+		return fmt.Errorf("cognition episode provider duration is smaller than its native components")
 	}
 	return nil
 }
@@ -242,7 +257,7 @@ func (metrics RecoveryMetrics) Validate() error {
 
 func validTraceKind(kind TraceKind) bool {
 	switch kind {
-	case TraceModelCall, TraceProjection, TraceObservation, TraceAction, TraceLedger,
+	case TraceModelCall, TracePolicyDisposition, TraceProjection, TraceObservation, TraceAction, TraceLedger,
 		TraceWorkingSet, TraceObligation, TraceFailure, TraceRestart, TraceLease,
 		TraceStaleRejection, TraceTerminal:
 		return true

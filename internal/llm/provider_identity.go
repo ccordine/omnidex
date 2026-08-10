@@ -1,18 +1,16 @@
 package llm
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/exactjson"
 )
 
-const ProviderIdentityAttestationSchemaV1 = "omnidex.provider-identity-attestation.v1"
+const ProviderIdentityAttestationSchemaV2 = "omnidex.provider-identity-attestation.v2"
 
 var providerIdentityDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -23,6 +21,7 @@ type ProviderIdentityExpectation struct {
 	Digest             string `json:"digest"`
 	Quantization       string `json:"quantization"`
 	NativeContextLimit int    `json:"native_context_limit"`
+	TokenizerProfile   string `json:"tokenizer_profile"`
 }
 
 type ProviderIdentityAttestation struct {
@@ -33,17 +32,11 @@ type ProviderIdentityAttestation struct {
 	Digest             string `json:"digest"`
 	Quantization       string `json:"quantization"`
 	NativeContextLimit int    `json:"native_context_limit"`
+	TokenizerProfile   string `json:"tokenizer_profile"`
 	BackendEvidence    string `json:"backend_evidence"`
 	InstalledEvidence  string `json:"installed_evidence"`
 	RunnerEvidence     string `json:"runner_evidence"`
 	AttestationSHA256  string `json:"attestation_sha256"`
-}
-
-type ProviderIdentityAttestor interface {
-	AttestProviderIdentity(
-		context.Context,
-		ProviderIdentityExpectation,
-	) (ProviderIdentityAttestation, error)
 }
 
 func (attestation ProviderIdentityAttestation) Validate() error {
@@ -52,6 +45,7 @@ func (attestation ProviderIdentityAttestation) Validate() error {
 		Model: attestation.Model, Digest: attestation.Digest,
 		Quantization:       attestation.Quantization,
 		NativeContextLimit: attestation.NativeContextLimit,
+		TokenizerProfile:   attestation.TokenizerProfile,
 	})
 }
 
@@ -59,6 +53,7 @@ func (expected ProviderIdentityExpectation) Validate() error {
 	for label, value := range map[string]string{
 		"backend": expected.Backend, "backend version": expected.BackendVersion,
 		"model": expected.Model, "quantization": expected.Quantization,
+		"tokenizer profile": expected.TokenizerProfile,
 	} {
 		if !providerIdentityText(value, 256) {
 			return fmt.Errorf("provider identity %s is not exact bounded text", label)
@@ -84,11 +79,11 @@ func NewProviderIdentityAttestation(
 		return ProviderIdentityAttestation{}, err
 	}
 	attestation := ProviderIdentityAttestation{
-		Schema:  ProviderIdentityAttestationSchemaV1,
+		Schema:  ProviderIdentityAttestationSchemaV2,
 		Backend: expected.Backend, BackendVersion: expected.BackendVersion,
 		Model: expected.Model, Digest: expected.Digest, Quantization: expected.Quantization,
-		NativeContextLimit: expected.NativeContextLimit,
-		BackendEvidence:    backendEvidence, InstalledEvidence: installedEvidence,
+		NativeContextLimit: expected.NativeContextLimit, TokenizerProfile: expected.TokenizerProfile,
+		BackendEvidence: backendEvidence, InstalledEvidence: installedEvidence,
 		RunnerEvidence: runnerEvidence,
 	}
 	attestation.AttestationSHA256 = providerAttestationSHA256(attestation)
@@ -104,12 +99,13 @@ func (attestation ProviderIdentityAttestation) ValidateFor(
 	if err := expected.Validate(); err != nil {
 		return err
 	}
-	if attestation.Schema != ProviderIdentityAttestationSchemaV1 ||
+	if attestation.Schema != ProviderIdentityAttestationSchemaV2 ||
 		attestation.Backend != expected.Backend ||
 		attestation.BackendVersion != expected.BackendVersion ||
 		attestation.Model != expected.Model || attestation.Digest != expected.Digest ||
 		attestation.Quantization != expected.Quantization ||
-		attestation.NativeContextLimit != expected.NativeContextLimit {
+		attestation.NativeContextLimit != expected.NativeContextLimit ||
+		attestation.TokenizerProfile != expected.TokenizerProfile {
 		return fmt.Errorf("provider identity attestation differs from the frozen expectation")
 	}
 	for label, value := range map[string]string{
@@ -128,37 +124,14 @@ func (attestation ProviderIdentityAttestation) ValidateFor(
 	return nil
 }
 
-func RequireProviderIdentityAttestation(
-	ctx context.Context,
-	client Client,
-	expected ProviderIdentityExpectation,
-) (ProviderIdentityAttestation, error) {
-	if ctx == nil || client == nil {
-		return ProviderIdentityAttestation{}, fmt.Errorf("provider identity attestation requires context and client")
-	}
-	attestor, ok := client.(ProviderIdentityAttestor)
-	if !ok {
-		return ProviderIdentityAttestation{}, fmt.Errorf("configured generation provider cannot attest its live identity")
-	}
-	attestation, err := attestor.AttestProviderIdentity(ctx, expected)
-	if err != nil {
-		return ProviderIdentityAttestation{}, err
-	}
-	if err := attestation.ValidateFor(expected); err != nil {
-		return ProviderIdentityAttestation{}, err
-	}
-	return attestation, nil
-}
-
 func providerAttestationSHA256(attestation ProviderIdentityAttestation) string {
 	copy := attestation
 	copy.AttestationSHA256 = ""
-	raw, err := json.Marshal(copy)
+	raw, err := exactjson.Canonical(copy)
 	if err != nil {
 		panic(fmt.Sprintf("marshal provider identity attestation: %v", err))
 	}
-	digest := sha256.Sum256(raw)
-	return hex.EncodeToString(digest[:])
+	return providerBodySHA256(raw)
 }
 
 func providerIdentityText(value string, maxBytes int) bool {

@@ -122,22 +122,14 @@ func validateRecoverableCognitionPolicyCallTx(
 }
 
 func terminalCognitionPolicyError(result cognitionpolicy.CallResult) error {
-	var sentinel error
-	switch result.FailureCode {
-	case cognitionpolicy.CallFailureResponseLimit:
-		sentinel = cognitionpolicy.ErrResponseLimit
-	case cognitionpolicy.CallFailureInvalidDecision:
-		sentinel = cognitionpolicy.ErrInvalidDecision
-	case cognitionpolicy.CallFailureAuthorityDenied:
-		sentinel = errors.Join(cognitionpolicy.ErrInvalidDecision, cognition.ErrAuthorityDenied)
-	case cognitionpolicy.CallFailureGeneration:
-		sentinel = cognitionpolicy.ErrGeneration
-	case cognitionpolicy.CallFailureProviderIdentity:
-		sentinel = cognitionpolicy.ErrProviderIdentity
-	default:
-		return fmt.Errorf("%w: terminal policy failure code %q is not registered", ErrCognitionConflict, result.FailureCode)
+	err := cognitionpolicy.CallResultError(result)
+	if errors.Is(err, cognitionpolicy.ErrInvalidEvidence) &&
+		result.FailureCode != cognitionpolicy.CallFailureProviderRequest &&
+		result.FailureCode != cognitionpolicy.CallFailurePolicyAuthority &&
+		result.FailureCode != cognitionpolicy.CallFailureProviderEvidence {
+		return fmt.Errorf("%w: terminal policy failure mapping: %v", ErrCognitionConflict, err)
 	}
-	return fmt.Errorf("%w: durable policy call %s", sentinel, result.CallID)
+	return fmt.Errorf("%w: durable policy call %s", err, result.CallID)
 }
 
 func loadSourceCognitionAttemptStatusTx(

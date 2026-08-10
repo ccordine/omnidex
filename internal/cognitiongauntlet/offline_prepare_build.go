@@ -19,6 +19,7 @@ const (
 	offlineEvaluatorVersionV1           = "omnidex.symbolic-state-evaluator.v1"
 	offlineAuthorityPolicyVersionV1     = "omnidex.cognition-authority-policy.v1"
 	offlineOracleIsolationVersionV1     = "omnidex.separate-process-oracle-isolation.v1"
+	offlineProviderDiscoveryScopeV1     = "offline-cognition-provider-discovery.v1"
 )
 
 type preparedOfflineExperiment struct {
@@ -29,7 +30,7 @@ type preparedOfflineExperiment struct {
 
 func prepareOfflineExperiment(
 	request OfflineExperimentRequest,
-	provider llm.ProviderIdentityAttestation,
+	provider llm.ObservedProviderIdentity,
 	host cognitionpolicy.HostHardwareAttestation,
 	executable string,
 	embeddedCommit string,
@@ -51,12 +52,23 @@ func prepareOfflineExperiment(
 	if err != nil {
 		return preparedOfflineExperiment{}, err
 	}
-	brain, err := request.Brain.build(request.Budget, provider, host)
+	sampling, err := cognitionpolicy.NewSamplingIdentity(
+		request.Brain.NativeContextLimit, request.Budget.ContextBytes,
+		request.Budget.Station.MaxOutputTokens,
+	)
+	if err != nil {
+		return preparedOfflineExperiment{}, err
+	}
+	executionBudget, err := NewExecutableRunBudgetV2(request.Budget, sampling)
+	if err != nil {
+		return preparedOfflineExperiment{}, err
+	}
+	brain, err := request.Brain.build(executionBudget, provider, host)
 	if err != nil {
 		return preparedOfflineExperiment{}, err
 	}
 	fixed := FixedExperiment{
-		Brain: brain, ContextCeilingBytes: request.Budget.ContextBytes,
+		Brain: brain, ContextCeilingBytes: executionBudget.ContextBytes,
 		EnvironmentContractVersion: offlineEnvironmentContractVersionV1,
 		EvaluatorVersion:           offlineEvaluatorVersionV1,
 		AuthorityPolicyVersion:     offlineAuthorityPolicyVersionV1,
@@ -81,14 +93,16 @@ func prepareOfflineExperiment(
 	if err != nil {
 		return preparedOfflineExperiment{}, err
 	}
-	spec, err := configuredMicrogauntletSpec(request)
+	scenario, err := ResolveOfflineScenarioSpecV1(
+		request.Suite, request.Seed, executionBudget,
+	)
 	if err != nil {
 		return preparedOfflineExperiment{}, err
 	}
 	promotion := OfflinePromotionConfig{
 		Schema: OfflinePromotionConfigSchemaV1, DatabaseURL: request.DatabaseURL,
 		OllamaEndpoint:          request.OllamaEndpoint,
-		InferenceTimeoutSeconds: request.InferenceTimeoutSeconds, Spec: spec,
+		InferenceTimeoutSeconds: request.InferenceTimeoutSeconds, Scenario: scenario,
 		Variant: request.Variant, Surface: request.Surface,
 		RatGeneration: generation, RuntimeFingerprint: fingerprint,
 		Repetition: request.Repetition, PublicOutputDirectory: request.PublicOutputDirectory,
@@ -119,20 +133,6 @@ func prepareOfflineExperiment(
 	return prepared, nil
 }
 
-func configuredMicrogauntletSpec(request OfflineExperimentRequest) (MicrogauntletSpec, error) {
-	spec, err := initialMicrogauntletSpec(request.Suite)
-	if err != nil {
-		return MicrogauntletSpec{}, err
-	}
-	spec.CaseID = "configured-" + string(request.Suite) + "-v1"
-	spec.Generator.Seed = request.Seed
-	spec.Budget = request.Budget
-	if err := spec.Validate(); err != nil {
-		return MicrogauntletSpec{}, err
-	}
-	return spec, nil
-}
-
 func initialMicrogauntletSpec(suite Suite) (MicrogauntletSpec, error) {
 	for _, spec := range InitialMicrogauntletsV1() {
 		candidate, err := gauntletSuite(spec.Generator.Suite)
@@ -157,7 +157,7 @@ func prepareCurrentOfflineExperiment(
 	if err := request.Validate(); err != nil {
 		return preparedOfflineExperiment{}, err
 	}
-	if _, err := releaseMigrationBundle(executable, buildversion.MigrationsSHA256); err != nil {
+	if _, err := loadReleaseMigrationBundle(executable, buildversion.MigrationsSHA256); err != nil {
 		return preparedOfflineExperiment{}, err
 	}
 	timeout := time.Duration(request.InferenceTimeoutSeconds) * time.Second
@@ -165,14 +165,59 @@ func prepareCurrentOfflineExperiment(
 		request.OllamaEndpoint, request.Brain.Model, "", timeout,
 		request.Brain.NativeContextLimit,
 	)
-	provider, err := llm.RequireDiscoveredProviderIdentity(
-		ctx, client, llm.ProviderIdentitySelection{
-			Model:              request.Brain.Model,
-			NativeContextLimit: request.Brain.NativeContextLimit,
-		},
+	selection := llm.ProviderIdentitySelection{
+		Model:              request.Brain.Model,
+		NativeContextLimit: request.Brain.NativeContextLimit,
+	}
+	discovered, err := llm.RequireDiscoveredProviderIdentityEvidence(
+		ctx, client, selection, offlineProviderDiscoveryScopeV1,
 	)
 	if err != nil {
 		return preparedOfflineExperiment{}, fmt.Errorf("discover live cognition brain: %w", err)
+	}
+	expected, err := llm.DeriveExactProviderIdentityExpectation(
+		discovered.Evidence, selection,
+	)
+	if err != nil {
+		return preparedOfflineExperiment{}, fmt.Errorf(
+			"derive live cognition brain from raw evidence: %w", err,
+		)
+	}
+	if discovered.Attestation.ValidateFor(expected) != nil ||
+		discovered.Observation.ValidateEvidence(discovered.Evidence) != nil {
+		return preparedOfflineExperiment{}, fmt.Errorf(
+			"discovered cognition brain differs from its raw evidence",
+		)
+	}
+	if err := llm.ValidateExactPreparedProvider(client, expected); err != nil {
+		return preparedOfflineExperiment{}, fmt.Errorf(
+			"validate live cognition provider contract: %w", err,
+		)
+	}
+	sampling, err := cognitionpolicy.NewSamplingIdentity(
+		request.Brain.NativeContextLimit, request.Budget.ContextBytes,
+		request.Budget.Station.MaxOutputTokens,
+	)
+	if err != nil {
+		return preparedOfflineExperiment{}, err
+	}
+	samplingSHA256, err := sampling.SHA256()
+	if err != nil {
+		return preparedOfflineExperiment{}, err
+	}
+	challenge, err := llm.DeriveProviderIdentityObservationChallenge(
+		"cognition-brain-bootstrap:"+samplingSHA256, expected,
+	)
+	if err != nil {
+		return preparedOfflineExperiment{}, err
+	}
+	provider, err := llm.RequireProviderIdentityObservation(
+		ctx, client, llm.ProviderIdentityObservationRequest{
+			Expectation: expected, ChallengeSHA256: challenge,
+		},
+	)
+	if err != nil {
+		return preparedOfflineExperiment{}, fmt.Errorf("observe live cognition brain: %w", err)
 	}
 	host, err := cognitionpolicy.AttestLocalHostHardware()
 	if err != nil {

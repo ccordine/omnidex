@@ -27,6 +27,12 @@ func (fixture MicrogauntletCase) TransferAuthority(
 	if err != nil {
 		return TransferAuthority{}, err
 	}
+	budget, err := NewExecutableRunBudgetV2(
+		fixture.spec.Budget, generation.Fixed.Brain.Sampling,
+	)
+	if err != nil {
+		return TransferAuthority{}, err
+	}
 	authority := TransferAuthority{
 		Schema: TransferAuthoritySchemaV1, CaseID: fixture.spec.CaseID,
 		TaskSuite: public.Suite, FixtureVersion: fixture.spec.FixtureVersion,
@@ -36,7 +42,7 @@ func (fixture MicrogauntletCase) TransferAuthority(
 		ActionCatalogVersion: public.ActionCatalogVersion,
 		ActionCatalogSHA256:  public.ActionCatalogSHA256,
 		SurfaceVersions:      versions, Variant: variant, Repetition: repetition,
-		RatGeneration: generation, Budget: fixture.spec.Budget, Runtime: runtime,
+		RatGeneration: generation, Budget: budget, Runtime: runtime,
 	}
 	return authority, authority.Validate()
 }

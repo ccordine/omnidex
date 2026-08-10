@@ -32,6 +32,7 @@ func (*strandingCognitionCallJournal) Finish(
 	context.Context,
 	cognitionpolicy.CallAttempt,
 	cognitionpolicy.CallResult,
+	cognitionpolicy.CallEvidence,
 ) error {
 	return errors.New("stranding journal cannot finish")
 }
@@ -97,7 +98,7 @@ func (failingCognitionPolicyClient) GeneratePrepared(context.Context, llm.Prepar
 
 func providerIdentityFailureResult(attempt cognitionpolicy.CallAttempt) cognitionpolicy.CallResult {
 	return cognitionpolicy.CallResult{
-		Schema: cognitionpolicy.CallResultSchemaV2, CallID: attempt.ID,
+		Schema: cognitionpolicy.CallResultSchemaV3, CallID: attempt.ID,
 		Status: cognitionpolicy.CallResultFailed, FailureCode: cognitionpolicy.CallFailureProviderIdentity,
 		FailureMessage: "The frozen provider identity changed.",
 	}

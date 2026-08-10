@@ -40,13 +40,13 @@ type oraclePacketContext struct {
 
 func (state *ablationState) context(
 	call uint32,
-	oracle labyrinth.Oracle,
+	authority ContaminatedEvidencePacket,
 ) (ablationContext, error) {
 	task, err := state.taskMaterial()
 	if err != nil {
 		return ablationContext{}, err
 	}
-	contextMaterial, evidence, err := state.variantContextMaterial(call, oracle)
+	contextMaterial, evidence, err := state.variantContextMaterial(call, authority)
 	if err != nil {
 		return ablationContext{}, err
 	}
@@ -57,7 +57,7 @@ func (state *ablationState) context(
 
 func (state *ablationState) variantContextMaterial(
 	call uint32,
-	oracle labyrinth.Oracle,
+	authority ContaminatedEvidencePacket,
 ) ([]ablationMaterial, []cognition.EvidenceRef, error) {
 	if len(state.observations) == 0 {
 		return nil, nil, fmt.Errorf("ablation context has no legal observation")
@@ -96,11 +96,11 @@ func (state *ablationState) variantContextMaterial(
 		return materials, evidenceForObservations(observations), err
 	case VariantOracleEvidence:
 		packet := oraclePacketContext{Contaminated: true, Evidence: []labyrinth.EvidenceIdentity{}}
-		if len(state.actions) < len(oracle.Witness) {
-			next := oracle.Witness[len(state.actions)].Request.Clone()
+		if len(state.actions) < len(authority.Witness) {
+			next := authority.Witness[len(state.actions)].Request.Clone()
 			packet.NextAction = &next
-			for _, use := range oracle.EvidenceUses {
-				if use.RequiredByActionID == oracle.Witness[len(state.actions)].ID {
+			for _, use := range authority.EvidenceUses {
+				if use.RequiredByActionID == authority.Witness[len(state.actions)].ID {
 					packet.Evidence = append(packet.Evidence, use.Evidence)
 				}
 			}

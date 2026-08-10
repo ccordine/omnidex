@@ -33,6 +33,9 @@ func loadCognitionTracePayloadTx(
 		)
 	case "policy_timing", "accepted_decision_recovery":
 		return loadCognitionTraceDiagnosticPayloadTx(ctx, tx, episode.EpisodeID, record)
+	case "policy_response_evidence", "policy_provider_generation_evidence",
+		"policy_provider_response_capture":
+		return loadCognitionPolicyEvidenceTracePayloadTx(ctx, tx, episode.EpisodeID, record)
 	}
 	query, args, err := cognitionTracePayloadQuery(episode.EpisodeID, record)
 	if err != nil {
@@ -69,6 +72,9 @@ func cognitionTracePayloadQuery(
 	case "policy_result":
 		return `SELECT result_json,result_sha256 FROM cognition_policy_calls
 			WHERE episode_id=$1 AND call_id||':result'=$2 AND result_json IS NOT NULL`, args[:2], nil
+	case "provider_process_observation":
+		return `SELECT receipt_json,receipt_sha256 FROM cognition_provider_process_observations
+			WHERE episode_id=$1 AND observation_id=$2 AND sequence=$3`, args, nil
 	case "policy_abandonment":
 		return `SELECT descriptor_json,descriptor_json_sha256 FROM cognition_policy_call_abandonments
 			WHERE episode_id=$1 AND abandonment_id=$2 AND recovery_attempt=$3`, args, nil

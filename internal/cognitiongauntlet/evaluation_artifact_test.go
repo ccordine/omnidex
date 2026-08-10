@@ -119,8 +119,9 @@ func validEvaluationArtifactReceipt(
 			ConfigSHA256: strings.Repeat("7", 64), ReadySHA256: strings.Repeat("8", 64),
 			StartedAt: base.Add(time.Second), ExitedAt: base.Add(3 * time.Second),
 		},
-		InferencePID: 103, InferenceExitedAt: base.Add(2 * time.Second),
-		EvaluatorPID: 104, EvaluatorStartedAt: base.Add(4 * time.Second),
+		InferencePID: 103, InferenceStartedAt: base.Add(1500 * time.Millisecond),
+		InferenceExitedAt: base.Add(2 * time.Second),
+		EvaluatorPID:      104, EvaluatorStartedAt: base.Add(4 * time.Second),
 		CompletedAt: base.Add(5 * time.Second),
 	}
 }

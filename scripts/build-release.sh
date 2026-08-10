@@ -123,7 +123,7 @@ prepare_source_stage() {
   [[ -d "$SOURCE_STAGE_ROOT" && ! -L "$SOURCE_STAGE_ROOT" ]] || die "immutable source stage is unavailable"
   SOURCE_TREE="${SOURCE_STAGE_ROOT}/source"
   RELEASE_OUTPUT_STAGE="${SOURCE_STAGE_ROOT}/output"
-  mkdir -p "$SOURCE_TREE" "$RELEASE_OUTPUT_STAGE" "${SOURCE_STAGE_ROOT}/migration-manifest"
+  mkdir -p "$SOURCE_TREE" "$RELEASE_OUTPUT_STAGE"
   local archive="${SOURCE_STAGE_ROOT}/source.tar"
   git -C "$REPO_ROOT" archive --format=tar --output="$archive" "$RELEASE_COMMIT"
   RELEASE_SOURCE_SHA256="$(source_archive_sha256 "$archive")"
@@ -134,8 +134,8 @@ prepare_source_stage() {
   write_source_manifest "$SOURCE_TREE" "$EXPECTED_SOURCE_MANIFEST"
   chmod 0444 "$archive" "$EXPECTED_SOURCE_MANIFEST"
   chmod -R a-w "$SOURCE_TREE"
-  write_migration_manifest "${SOURCE_TREE}/migrations" "${SOURCE_STAGE_ROOT}/migration-manifest"
-  RELEASE_MIGRATIONS_SHA256="$(sha256_file "${SOURCE_STAGE_ROOT}/migration-manifest/SHA256SUMS")"
+  verify_migration_manifest "${SOURCE_TREE}/migrations"
+  RELEASE_MIGRATIONS_SHA256="$(sha256_file "${SOURCE_TREE}/migrations/SHA256SUMS")"
   [[ "$RELEASE_MIGRATIONS_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "migration manifest SHA-256 is invalid"
   RELEASE_BUILD_DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 }
@@ -199,7 +199,7 @@ build_target() {
   cp -a "${target_source}/README.md" "${target_dir}/README.md"
   cp -a "${target_source}/LICENSE" "${target_dir}/LICENSE"
   cp -a "${target_source}/migrations" "${target_dir}/migrations"
-  write_migration_manifest "${target_dir}/migrations" "${target_dir}/migrations"
+  verify_migration_manifest "${target_dir}/migrations"
   [[ "$(sha256_file "${target_dir}/migrations/SHA256SUMS")" == "$RELEASE_MIGRATIONS_SHA256" ]] || die "packaged migration manifest changed"
   if [[ -f "${target_source}/CHANGELOG.md" ]]; then
     cp -a "${target_source}/CHANGELOG.md" "${target_dir}/CHANGELOG.md"

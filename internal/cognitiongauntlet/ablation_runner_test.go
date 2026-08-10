@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/cognition"
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
 )
 
 func TestAllDeclaredNonFullAblationsExecuteAndSealRealEvidence(t *testing.T) {
@@ -43,19 +44,43 @@ func TestAllDeclaredNonFullAblationsExecuteAndSealRealEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			projections, calls, actions := 0, 0, 0
+			var nativeInput, nativeOutput, providerTotal int64
 			for _, entry := range result.Episode.Manifest.Trace {
 				switch entry.Kind {
 				case TraceProjection:
 					projections++
 				case TraceModelCall:
 					calls++
+					var call ModelCallTrace
+					if err := decodeTracePayload(entry.Payload, &call, "ablation exact model call"); err != nil {
+						t.Fatal(err)
+					}
+					if !call.ProviderRequestDispatched || call.InputBytes <= 0 {
+						t.Fatalf("variant %s did not use exact dispatched provider metrics: %+v", variant, call)
+					}
+					if call.ProviderUsagePresent {
+						if call.InputTokens != 1 || call.OutputTokens != 1 ||
+							call.InputTokens == (call.InputBytes+3)/4 {
+							t.Fatalf("variant %s substituted estimated tokens for native usage: %+v", variant, call)
+						}
+					} else if call.InputTokens != 0 || call.OutputTokens != 0 ||
+						call.ResultStatus != cognitionpolicy.CallResultFailed ||
+						call.FailureCode != cognitionpolicy.CallFailureGeneration {
+						t.Fatalf("variant %s invented usage for a dispatched transport failure: %+v", variant, call)
+					}
+					nativeInput += call.InputTokens
+					nativeOutput += call.OutputTokens
+					providerTotal += call.ProviderUsage.TotalDurationNanos
 				case TraceAction:
 					actions++
 				}
 			}
 			if calls == 0 || projections != calls || actions == 0 ||
 				result.Episode.Manifest.Resources.ModelCalls != calls ||
-				result.Episode.Manifest.Resources.EnvironmentActions != actions {
+				result.Episode.Manifest.Resources.EnvironmentActions != actions ||
+				result.Episode.Manifest.Resources.InputTokens != nativeInput ||
+				result.Episode.Manifest.Resources.OutputTokens != nativeOutput ||
+				result.Episode.Manifest.Resources.ProviderTotalNanoseconds != providerTotal {
 				t.Fatalf("variant %s emitted projection/call/action=%d/%d/%d resources=%+v",
 					variant, projections, calls, actions, result.Episode.Manifest.Resources)
 			}

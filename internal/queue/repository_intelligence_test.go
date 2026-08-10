@@ -52,7 +52,7 @@ func TestPostgresRepositorySnapshotsAreExactAndImmutable(t *testing.T) {
 	}
 	defer pool.Close()
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 

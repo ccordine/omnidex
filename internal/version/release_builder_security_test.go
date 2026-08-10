@@ -1,6 +1,8 @@
 package version
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -98,43 +100,122 @@ func TestReleaseBuilderRejectsUnregisteredMigrationEntries(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			source, target := t.TempDir(), t.TempDir()
+			source := t.TempDir()
 			writeReleaseTestFile(t, filepath.Join(source, "001_valid.sql"), "SELECT 1;\n")
+			writeReleaseMigrationManifest(t, source, []string{"001_valid.sql"})
 			test.setup(t, source)
-			output, err := runMigrationManifest(script, source, target)
+			output, err := runMigrationManifest(script, source)
 			if err == nil || !strings.Contains(output, "migration") {
 				t.Fatalf("migration validation error=%v output=%q", err, output)
-			}
-			if _, statErr := os.Stat(filepath.Join(target, "SHA256SUMS")); !os.IsNotExist(statErr) {
-				t.Fatalf("invalid source emitted a manifest: %v", statErr)
 			}
 		})
 	}
 }
 
-func TestReleaseBuilderWritesManifestForExactMigrationSet(t *testing.T) {
+func TestReleaseBuilderVerifiesCheckedManifestForExactMigrationSet(t *testing.T) {
 	script := filepath.Join(releaseRepositoryRoot(t), "scripts", "build-release.sh")
-	source, target := t.TempDir(), t.TempDir()
-	writeReleaseTestFile(t, filepath.Join(source, "001_valid.sql"), "SELECT 1;\n")
+	source := t.TempDir()
+	writeReleaseTestFile(t, filepath.Join(source, "001_first.sql"), "SELECT 1;\n")
+	writeReleaseTestFile(t, filepath.Join(source, "001_second.sql"), "SELECT 11;\n")
 	writeReleaseTestFile(t, filepath.Join(source, "002_next.sql"), "SELECT 2;\n")
-	if output, err := runMigrationManifest(script, source, target); err != nil {
-		t.Fatalf("write exact migration manifest: %v: %s", err, output)
-	}
-	raw, err := os.ReadFile(filepath.Join(target, "SHA256SUMS"))
+	writeReleaseMigrationManifest(t, source, []string{"001_first.sql", "001_second.sql", "002_next.sql"})
+	before, err := os.ReadFile(filepath.Join(source, "SHA256SUMS"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lines := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n"); len(lines) != 2 ||
-		!strings.HasSuffix(lines[0], "  001_valid.sql") || !strings.HasSuffix(lines[1], "  002_next.sql") {
-		t.Fatalf("manifest=%q", raw)
+	if output, err := runMigrationManifest(script, source); err != nil {
+		t.Fatalf("verify exact migration manifest: %v: %s", err, output)
+	}
+	after, err := os.ReadFile(filepath.Join(source, "SHA256SUMS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("release verifier rewrote the checked manifest: before=%q after=%q", before, after)
 	}
 }
 
-func runMigrationManifest(script, source, target string) (string, error) {
-	command := exec.Command("bash", "-c", `source "$1"; write_migration_manifest "$2" "$3"`,
-		"release-builder-test", script, source, target)
+func TestReleaseBuilderRejectsMissingNumericPrefixBeforePublication(t *testing.T) {
+	script := filepath.Join(releaseRepositoryRoot(t), "scripts", "build-release.sh")
+	for name, files := range map[string][]string{
+		"missing first":        {"002_second.sql"},
+		"missing intermediate": {"001_first.sql", "003_third.sql"},
+	} {
+		name, files := name, files
+		t.Run(name, func(t *testing.T) {
+			source := t.TempDir()
+			for _, file := range files {
+				writeReleaseTestFile(t, filepath.Join(source, file), "SELECT 1;\n")
+			}
+			writeReleaseMigrationManifest(t, source, files)
+			publication := filepath.Join(t.TempDir(), "omnidex-v1.2.3")
+			command := exec.Command(
+				"bash", "-c",
+				`source "$1"; verify_migration_manifest "$2"; mkdir "$3"`,
+				"release-prefix-test", script, source, publication,
+			)
+			output, err := command.CombinedOutput()
+			if err == nil || !strings.Contains(string(output), "missing numeric migration prefix") {
+				t.Fatalf("prefix error=%v output=%q", err, output)
+			}
+			if _, statErr := os.Stat(publication); !os.IsNotExist(statErr) {
+				t.Fatalf("invalid migration prefix left a visible publication: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestReleaseBuilderRejectsChangedMissingAndUnregisteredMigrationManifestEntries(t *testing.T) {
+	script := filepath.Join(releaseRepositoryRoot(t), "scripts", "build-release.sh")
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, string)
+	}{
+		{name: "changed sql", mutate: func(t *testing.T, source string) {
+			writeReleaseTestFile(t, filepath.Join(source, "001_valid.sql"), "SELECT 2;\n")
+		}},
+		{name: "unregistered sql", mutate: func(t *testing.T, source string) {
+			writeReleaseTestFile(t, filepath.Join(source, "002_extra.sql"), "SELECT 2;\n")
+		}},
+		{name: "missing sql", mutate: func(t *testing.T, source string) {
+			if err := os.Remove(filepath.Join(source, "001_valid.sql")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := t.TempDir()
+			writeReleaseTestFile(t, filepath.Join(source, "001_valid.sql"), "SELECT 1;\n")
+			writeReleaseMigrationManifest(t, source, []string{"001_valid.sql"})
+			test.mutate(t, source)
+			output, err := runMigrationManifest(script, source)
+			if err == nil || !strings.Contains(output, "migration") {
+				t.Fatalf("migration substitution error=%v output=%q", err, output)
+			}
+		})
+	}
+}
+
+func runMigrationManifest(script, source string) (string, error) {
+	command := exec.Command("bash", "-c", `source "$1"; verify_migration_manifest "$2"`,
+		"release-builder-test", script, source)
 	output, err := command.CombinedOutput()
 	return string(output), err
+}
+
+func writeReleaseMigrationManifest(t *testing.T, source string, names []string) {
+	t.Helper()
+	var manifest strings.Builder
+	for _, name := range names {
+		raw, err := os.ReadFile(filepath.Join(source, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(raw)
+		fmt.Fprintf(&manifest, "%x  %s\n", digest, name)
+	}
+	writeReleaseTestFile(t, filepath.Join(source, "SHA256SUMS"), manifest.String())
 }
 
 func releaseRepositoryRoot(t *testing.T) string {

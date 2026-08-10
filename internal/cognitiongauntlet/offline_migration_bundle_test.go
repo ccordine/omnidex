@@ -1,21 +1,25 @@
 package cognitiongauntlet
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestReleaseMigrationBundleDerivesFromExecutableAndVerifiesExactManifest(t *testing.T) {
 	executable, manifestSHA := writeTestReleaseBundle(t)
-	directory, err := releaseMigrationBundle(executable, manifestSHA)
+	bundle, err := loadReleaseMigrationBundle(executable, manifestSHA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if directory != filepath.Join(filepath.Dir(filepath.Dir(executable)), "migrations") {
-		t.Fatalf("migration directory=%q", directory)
+	if bundle.ManifestSHA256() != manifestSHA {
+		t.Fatalf("migration manifest=%q", bundle.ManifestSHA256())
 	}
 }
 
@@ -25,7 +29,7 @@ func TestReleaseMigrationBundleRejectsEveryTamperAndUnregisteredPath(t *testing.
 			writeTestFile(t, filepath.Join(filepath.Dir(filepath.Dir(executable)), "migrations", "001_first.sql"), "changed\n")
 		},
 		"manifest": func(t *testing.T, executable string) {
-			writeTestFile(t, filepath.Join(filepath.Dir(filepath.Dir(executable)), "migrations", offlineMigrationManifestName), "invalid\n")
+			writeTestFile(t, filepath.Join(filepath.Dir(filepath.Dir(executable)), "migrations", queue.MigrationManifestName), "invalid\n")
 		},
 		"extra file": func(t *testing.T, executable string) {
 			writeTestFile(t, filepath.Join(filepath.Dir(filepath.Dir(executable)), "migrations", "notes.txt"), "not registered\n")
@@ -34,15 +38,35 @@ func TestReleaseMigrationBundleRejectsEveryTamperAndUnregisteredPath(t *testing.
 		t.Run(name, func(t *testing.T) {
 			executable, manifestSHA := writeTestReleaseBundle(t)
 			mutate(t, executable)
-			if _, err := releaseMigrationBundle(executable, manifestSHA); err == nil {
+			if _, err := loadReleaseMigrationBundle(executable, manifestSHA); err == nil {
 				t.Fatal("tampered release migration bundle was accepted")
 			}
 		})
 	}
 	executable := filepath.Join(t.TempDir(), "cognition-gauntlet")
 	writeTestFile(t, executable, "binary")
-	if _, err := releaseMigrationBundle(executable, strings.Repeat("a", 64)); err == nil {
+	if _, err := loadReleaseMigrationBundle(executable, strings.Repeat("a", 64)); err == nil {
 		t.Fatal("executable outside a release bin directory was accepted")
+	}
+}
+
+func TestOfflinePromotionHasOneMigrationBundleAuthorityAndNoEnvironmentFallback(t *testing.T) {
+	for _, name := range []string{
+		"offline_migration_bundle.go", "offline_promotion_database.go",
+		"offline_promotion_inference_phase.go", "offline_takeover.go", "offline_prepare_build.go",
+	} {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"MIGRATIONS_DIR", "releaseMigrationBundle(", "verifyMigrationBundle(",
+			"parseMigrationManifest(",
+		} {
+			if strings.Contains(string(raw), forbidden) {
+				t.Fatalf("%s retains forbidden migration authority %q", name, forbidden)
+			}
+		}
 	}
 }
 
@@ -65,11 +89,16 @@ func writeTestReleaseBundle(t *testing.T) (string, string) {
 	var manifest strings.Builder
 	for _, file := range files {
 		writeTestFile(t, filepath.Join(migrations, file.name), file.content)
-		fmt.Fprintf(&manifest, "%s  %s\n", digestBytes([]byte(file.content)), file.name)
+		fmt.Fprintf(&manifest, "%s  %s\n", migrationTestDigest([]byte(file.content)), file.name)
 	}
 	raw := []byte(manifest.String())
-	writeTestFile(t, filepath.Join(migrations, offlineMigrationManifestName), string(raw))
-	return executable, digestBytes(raw)
+	writeTestFile(t, filepath.Join(migrations, queue.MigrationManifestName), string(raw))
+	return executable, migrationTestDigest(raw)
+}
+
+func migrationTestDigest(raw []byte) string {
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
 }
 
 func writeTestFile(t *testing.T, path string, content string) {

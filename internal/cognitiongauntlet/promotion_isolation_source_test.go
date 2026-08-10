@@ -37,6 +37,31 @@ func TestPromotionParentAndInferenceSourcesCannotLoadPrivateOracleAuthority(t *t
 	}
 }
 
+func TestOfflinePrepareHasNoNormalizedProviderDiscoveryFallback(t *testing.T) {
+	t.Parallel()
+	_, current, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve cognition gauntlet source directory")
+	}
+	path := filepath.Join(filepath.Dir(current), "offline_prepare_build.go")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	if !strings.Contains(source, "RequireDiscoveredProviderIdentityEvidence(") {
+		t.Fatal("offline prepare does not require raw provider identity evidence")
+	}
+	for _, forbidden := range []string{
+		"RequireDiscoveredProviderIdentity(",
+		"DiscoverProviderIdentity(",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Fatalf("offline prepare retains normalized provider discovery %q", forbidden)
+		}
+	}
+}
+
 func assertSourceOmits(t *testing.T, path string, forbidden []string) {
 	t.Helper()
 	raw, err := os.ReadFile(path)

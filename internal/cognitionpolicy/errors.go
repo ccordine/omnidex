@@ -16,5 +16,7 @@ var (
 	ErrInvalidProjection  = errors.New("invalid cognition policy projection")
 	ErrProjectionMismatch = errors.New("cognition policy projection mismatch")
 	ErrProviderIdentity   = errors.New("cognition policy provider identity changed")
+	ErrProviderUsage      = errors.New("cognition policy provider usage evidence is invalid")
+	ErrProviderUsageLimit = errors.New("cognition policy provider usage limit exceeded")
 	ErrResponseLimit      = errors.New("cognition policy response limit exceeded")
 )

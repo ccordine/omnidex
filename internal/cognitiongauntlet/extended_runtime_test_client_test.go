@@ -45,6 +45,26 @@ func (client *extendedWitnessPolicyClient) GeneratePrepared(
 	return client.generateRevisionDecision(prepared.BaseModel, prepared.Prompt)
 }
 
+func (client *extendedWitnessPolicyClient) GeneratePreparedExact(
+	_ context.Context,
+	prepared llm.PreparedModel,
+) (llm.PreparedGeneration, error) {
+	if err := client.ValidateExactPreparedContract(prepared); err != nil {
+		return llm.PreparedGeneration{}, err
+	}
+	var content string
+	var err error
+	if client.suite == labyrinth.SuiteRevise || client.suite == labyrinth.SuiteRogue {
+		content, err = client.generateRevisionDecision(prepared.BaseModel, prepared.Prompt)
+	} else {
+		content, err = client.generateDecision(prepared.BaseModel, prepared.Prompt)
+	}
+	if err != nil {
+		return llm.PreparedGeneration{}, err
+	}
+	return client.exactPreparedGeneration(prepared, content)
+}
+
 func (client *extendedWitnessPolicyClient) generateRevisionDecision(
 	modelName, prompt string,
 ) (string, error) {

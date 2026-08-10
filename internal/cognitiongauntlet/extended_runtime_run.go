@@ -74,9 +74,14 @@ func runExtendedRuntime(
 	if err != nil {
 		return ExtendedRuntimeReceipt{}, fmt.Errorf("start durable extended Labyrinth episode: %w", err)
 	}
-	if err := startExtendedRuntimeEpisode(
-		ctx, components.store, request, authority, components.brain, episode, scenario, start,
-	); err != nil {
+	stored, err := startExtendedRuntimeEpisode(
+		ctx, components.store, request, authority, components.frozenBrain, episode, scenario, start,
+	)
+	if err != nil {
+		return ExtendedRuntimeReceipt{}, err
+	}
+	components, err = activateRuntimeComponents(ctx, components, stored, binding.Attempt)
+	if err != nil {
 		return ExtendedRuntimeReceipt{}, err
 	}
 	run, err := components.runtime.Run(ctx, binding, cognitionruntime.RunLimits{

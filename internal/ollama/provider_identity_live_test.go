@@ -26,16 +26,27 @@ func TestLiveOllamaProviderIdentity(t *testing.T) {
 		Digest:             os.Getenv("OMNIDEX_TEST_OLLAMA_DIGEST"),
 		Quantization:       os.Getenv("OMNIDEX_TEST_OLLAMA_QUANTIZATION"),
 		NativeContextLimit: contextLimit,
+		TokenizerProfile:   llm.ExactPreparedTokenizerProfile,
 	}
 	if err := expected.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	client := New(baseURL, expected.Model, "", 5*time.Minute, contextLimit)
-	attestation, err := client.AttestProviderIdentity(context.Background(), expected)
+	challenge, err := llm.DeriveProviderIdentityObservationChallenge("live-test", expected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := attestation.ValidateFor(expected); err != nil {
+	observed, err := client.ObserveProviderIdentity(
+		context.Background(), llm.ProviderIdentityObservationRequest{
+			Expectation: expected, ChallengeSHA256: challenge,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := observed.ValidateFor(llm.ProviderIdentityObservationRequest{
+		Expectation: expected, ChallengeSHA256: challenge,
+	}); err != nil {
 		t.Fatal(err)
 	}
 }

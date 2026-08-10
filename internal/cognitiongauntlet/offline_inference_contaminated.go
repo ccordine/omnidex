@@ -1,10 +1,6 @@
 package cognitiongauntlet
 
-import (
-	"fmt"
-
-	"github.com/gryph/omnidex/internal/labyrinth"
-)
+import "fmt"
 
 // loadContaminatedInferenceGrant is reachable only for the explicitly labeled
 // oracle-evidence ceiling. Ordinary inference configurations cannot carry this
@@ -12,7 +8,7 @@ import (
 func loadContaminatedInferenceGrant(
 	config inferenceProcessConfig,
 	bundle PublicInferenceBundle,
-) (*labyrinth.Oracle, error) {
+) (*ContaminatedEvidencePacket, error) {
 	if bundle.Authority.Variant != VariantOracleEvidence {
 		if config.ContaminatedOraclePath != "" || config.ContaminatedOracleGrant != "" {
 			return nil, fmt.Errorf("non-oracle inference received private evaluator authority")
@@ -31,6 +27,13 @@ func loadContaminatedInferenceGrant(
 	if err := ValidatePublicRunAuthorityProjection(private.Authority, bundle.Authority); err != nil {
 		return nil, fmt.Errorf("contaminated oracle grant changed public authority: %w", err)
 	}
-	oracle := private.Oracle
-	return &oracle, nil
+	generated, err := generateOfflineScenario(private.Scenario)
+	if err != nil {
+		return nil, err
+	}
+	packet, err := contaminatedEvidenceFor(generated)
+	if err != nil {
+		return nil, err
+	}
+	return &packet, nil
 }

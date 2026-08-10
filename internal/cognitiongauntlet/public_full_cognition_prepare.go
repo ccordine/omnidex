@@ -47,6 +47,7 @@ func preparePublicFullCognition(
 	if err != nil {
 		return publicFullCognitionExecution{}, err
 	}
+	components.liveStaleProbe = request.liveStaleProbe
 	if err := components.store.AuthorizeAttempt(ctx, binding.Attempt); err != nil {
 		return publicFullCognitionExecution{}, fmt.Errorf("authorize public cognition attempt: %w", err)
 	}
@@ -63,9 +64,14 @@ func preparePublicFullCognition(
 	if err != nil {
 		return publicFullCognitionExecution{}, fmt.Errorf("start public cognition environment: %w", err)
 	}
-	if err := startPublicCognitionEpisode(
-		ctx, components.store, request.Attempt, bundle, components.brain, episode, start,
-	); err != nil {
+	stored, err := startPublicCognitionEpisode(
+		ctx, components.store, request.Attempt, bundle, components.frozenBrain, episode, start,
+	)
+	if err != nil {
+		return publicFullCognitionExecution{}, err
+	}
+	components, err = activateRuntimeComponents(ctx, components, stored, binding.Attempt)
+	if err != nil {
 		return publicFullCognitionExecution{}, err
 	}
 	return publicFullCognitionExecution{

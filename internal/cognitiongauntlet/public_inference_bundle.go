@@ -32,6 +32,16 @@ func NewVariantPublicInferenceBundle(
 	paired PairedRunAuthority,
 	variant Variant,
 ) (PublicInferenceBundle, error) {
+	return newScenarioPublicInferenceBundle(
+		fixture.SealedEnvironmentScenario(), paired, variant,
+	)
+}
+
+func newScenarioPublicInferenceBundle(
+	scenario labyrinth.Scenario,
+	paired PairedRunAuthority,
+	variant Variant,
+) (PublicInferenceBundle, error) {
 	if variant != VariantFullCognition && !executableAblation(variant) {
 		return PublicInferenceBundle{}, fmt.Errorf("public inference variant %q is not executable", variant)
 	}
@@ -39,7 +49,6 @@ func NewVariantPublicInferenceBundle(
 	if err != nil {
 		return PublicInferenceBundle{}, err
 	}
-	scenario := fixture.generated.ExecutionScenario()
 	if scenario.Ref() != public.Scenario {
 		return PublicInferenceBundle{}, fmt.Errorf("public inference fixture changed the paired scenario")
 	}

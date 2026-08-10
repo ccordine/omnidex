@@ -12,22 +12,22 @@ import (
 const OfflinePromotionConfigSchemaV1 = "omnidex.offline-cognition-promotion-config.v1"
 
 type OfflinePromotionConfig struct {
-	Schema                  string             `json:"schema"`
-	DatabaseURL             string             `json:"database_url"`
-	OllamaEndpoint          string             `json:"ollama_endpoint"`
-	InferenceTimeoutSeconds int                `json:"inference_timeout_seconds"`
-	Spec                    MicrogauntletSpec  `json:"spec"`
-	Variant                 Variant            `json:"variant"`
-	Surface                 Surface            `json:"surface"`
-	RatGeneration           RatGeneration      `json:"rat_generation"`
-	RuntimeFingerprint      RuntimeFingerprint `json:"runtime_fingerprint"`
-	Repetition              int                `json:"repetition"`
-	PublicOutputDirectory   string             `json:"public_output_directory"`
-	PrivateOutputDirectory  string             `json:"private_output_directory"`
-	OmnidexCommit           string             `json:"omnidex_commit,omitempty"`
-	LedgerSchemaVersion     string             `json:"ledger_schema_version"`
-	WorkingSetPolicyVersion string             `json:"working_set_policy_version"`
-	ProjectionPolicyVersion string             `json:"projection_policy_version"`
+	Schema                  string              `json:"schema"`
+	DatabaseURL             string              `json:"database_url"`
+	OllamaEndpoint          string              `json:"ollama_endpoint"`
+	InferenceTimeoutSeconds int                 `json:"inference_timeout_seconds"`
+	Scenario                OfflineScenarioSpec `json:"scenario"`
+	Variant                 Variant             `json:"variant"`
+	Surface                 Surface             `json:"surface"`
+	RatGeneration           RatGeneration       `json:"rat_generation"`
+	RuntimeFingerprint      RuntimeFingerprint  `json:"runtime_fingerprint"`
+	Repetition              int                 `json:"repetition"`
+	PublicOutputDirectory   string              `json:"public_output_directory"`
+	PrivateOutputDirectory  string              `json:"private_output_directory"`
+	OmnidexCommit           string              `json:"omnidex_commit,omitempty"`
+	LedgerSchemaVersion     string              `json:"ledger_schema_version"`
+	WorkingSetPolicyVersion string              `json:"working_set_policy_version"`
+	ProjectionPolicyVersion string              `json:"projection_policy_version"`
 }
 
 type OfflinePromotionPaths struct {
@@ -42,7 +42,7 @@ func (config OfflinePromotionConfig) Validate() error {
 	if config.Schema != OfflinePromotionConfigSchemaV1 || config.DatabaseURL == "" {
 		return fmt.Errorf("offline cognition promotion configuration is invalid")
 	}
-	if err := config.Spec.Validate(); err != nil {
+	if err := config.Scenario.Validate(); err != nil {
 		return err
 	}
 	if config.Variant != VariantFullCognition && !executableAblation(config.Variant) {
@@ -57,11 +57,12 @@ func (config OfflinePromotionConfig) Validate() error {
 	if err := config.RatGeneration.Validate(); err != nil {
 		return err
 	}
-	if err := config.Spec.Budget.ValidateFor(config.RatGeneration); err != nil {
+	budget := config.Scenario.Budget()
+	if err := budget.ValidateFor(config.RatGeneration); err != nil {
 		return err
 	}
 	if _, err := productionBrain(
-		config.RatGeneration, config.Spec.Budget.Station.MaxOutputTokens,
+		config.RatGeneration, budget.Station.MaxOutputTokens,
 	); err != nil {
 		return err
 	}
@@ -86,26 +87,9 @@ func (config OfflinePromotionConfig) Validate() error {
 		database.Host == "" {
 		return fmt.Errorf("offline cognition promotion database URL is invalid")
 	}
-	for _, directory := range []string{
+	if err := validateOfflineOutputDirectories(
 		config.PublicOutputDirectory, config.PrivateOutputDirectory,
-	} {
-		info, err := os.Lstat(directory)
-		resolved, resolveErr := filepath.EvalSymlinks(directory)
-		if err != nil || resolveErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
-			!filepath.IsAbs(directory) || filepath.Clean(directory) != directory || resolved != directory {
-			return fmt.Errorf("offline cognition promotion directory %q is unavailable or inexact", directory)
-		}
-	}
-	publicInfo, _ := os.Stat(config.PublicOutputDirectory)
-	privateInfo, _ := os.Stat(config.PrivateOutputDirectory)
-	if os.SameFile(publicInfo, privateInfo) {
-		return fmt.Errorf("offline cognition promotion requires separate public and private output directories")
-	}
-	if pathContains(config.PublicOutputDirectory, config.PrivateOutputDirectory) ||
-		pathContains(config.PrivateOutputDirectory, config.PublicOutputDirectory) {
-		return fmt.Errorf("offline cognition output directories cannot contain each other")
-	}
-	if err := validatePrivateOutputDirectory(config.PrivateOutputDirectory, privateInfo); err != nil {
+	); err != nil {
 		return err
 	}
 	for label, value := range map[string]string{
@@ -121,6 +105,30 @@ func (config OfflinePromotionConfig) Validate() error {
 		return fmt.Errorf("offline cognition promotion Omnidex commit is invalid")
 	}
 	return validateOfflineOutputTargets(config.Paths())
+}
+
+func validateOfflineOutputDirectories(publicDirectory, privateDirectory string) error {
+	for _, directory := range []string{publicDirectory, privateDirectory} {
+		info, err := os.Lstat(directory)
+		resolved, resolveErr := filepath.EvalSymlinks(directory)
+		if err != nil || resolveErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
+			!filepath.IsAbs(directory) || filepath.Clean(directory) != directory || resolved != directory {
+			return fmt.Errorf("offline cognition promotion directory %q is unavailable or inexact", directory)
+		}
+	}
+	publicInfo, _ := os.Stat(publicDirectory)
+	privateInfo, _ := os.Stat(privateDirectory)
+	if os.SameFile(publicInfo, privateInfo) {
+		return fmt.Errorf("offline cognition promotion requires separate public and private output directories")
+	}
+	if pathContains(publicDirectory, privateDirectory) ||
+		pathContains(privateDirectory, publicDirectory) {
+		return fmt.Errorf("offline cognition output directories cannot contain each other")
+	}
+	if err := validatePrivateOutputDirectory(privateDirectory, privateInfo); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (config OfflinePromotionConfig) Paths() OfflinePromotionPaths {

@@ -48,10 +48,11 @@ func extendedRuntimeAuthority(
 
 func extendedRuntimeBudget() RunBudget {
 	return RunBudget{
+		Schema:       RunBudgetSchemaRawV2,
 		ContextBytes: 24_576, WorkingSetBytes: 8_192,
 		RuntimeCycles: 96, ModelCalls: 32, EnvironmentActions: 64, ToolOperations: 64,
 		Station: StationBudget{
-			MaxInputBytes: 24_576, MaxInputTokens: 6_144,
+			MaxInputBytes: 24_576, MaxInputTokens: 24_578,
 			MaxOutputBytes: 4_096, MaxOutputTokens: 1_024,
 		},
 		Decision: DecisionBudget{

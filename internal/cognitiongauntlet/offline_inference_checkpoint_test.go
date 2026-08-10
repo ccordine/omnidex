@@ -14,6 +14,7 @@ func TestPausedInferenceCheckpointBindsCodeOwnedPrefixAndPreCallState(t *testing
 		digestForTest("public-authority"), episode,
 		testSemanticPreCallCheckpoint(1, "worker-before", "projection-before", "snapshot-before"),
 		cognitionruntime.RunResult{Cycles: 2, PolicyCalls: 2, EnvironmentActions: 2}, 1,
+		inferenceBoundary{Kind: inferenceBoundaryActions, Count: 1},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -28,9 +29,32 @@ func TestPausedInferenceCheckpointBindsCodeOwnedPrefixAndPreCallState(t *testing
 		t.Fatal("paused checkpoint accepted impossible successful-action count")
 	}
 	changed = checkpoint
+	changed.Boundary.Count = 2
+	if err := changed.Validate(); err == nil {
+		t.Fatal("paused checkpoint accepted a mismatched action boundary")
+	}
+	changed = checkpoint
 	changed.PreCall.Bound.SnapshotSHA256 = "invalid"
 	if err := changed.Validate(); err == nil {
 		t.Fatal("paused checkpoint accepted invalid pre-call authority")
+	}
+}
+
+func TestPausedInferenceCheckpointBindsPolicyDecisionBoundarySeparatelyFromActions(t *testing.T) {
+	t.Parallel()
+	checkpoint, err := NewPausedInferenceCheckpoint(
+		digestForTest("public-authority"), cognition.EpisodeRef{ID: "episode-decisions"},
+		testSemanticPreCallCheckpoint(1, "worker-before", "projection-before", "snapshot-before"),
+		cognitionruntime.RunResult{Cycles: 3, PolicyCalls: 2, EnvironmentActions: 1}, 1,
+		inferenceBoundary{Kind: inferenceBoundaryDecisions, Count: 2},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := checkpoint
+	changed.Boundary.Count++
+	if err := changed.Validate(); err == nil {
+		t.Fatal("paused checkpoint accepted a mismatched decision boundary")
 	}
 }
 

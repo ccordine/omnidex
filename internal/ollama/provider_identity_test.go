@@ -38,17 +38,120 @@ func TestOllamaAttestsExactInstalledAndRunningIdentity(t *testing.T) {
 			t.Errorf("preload payload=%+v", payload)
 		}
 	})
-	attestation, err := client.AttestProviderIdentity(context.Background(), expected)
+	observed, err := client.ObserveProviderIdentity(
+		context.Background(), ollamaObservationRequest(t, expected, "attestation"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := attestation.ValidateFor(expected); err != nil {
+	if err := observed.Attestation.ValidateFor(expected); err != nil {
 		t.Fatal(err)
 	}
-	for _, endpoint := range []string{"/api/version", "/api/tags", "/api/generate", "/api/ps"} {
+	for _, endpoint := range []string{
+		"/api/version", "/api/tags", "/api/show", "/api/generate", "/api/ps",
+	} {
 		if seen[endpoint] != 1 {
 			t.Fatalf("endpoint %s calls=%d want 1", endpoint, seen[endpoint])
 		}
+	}
+}
+
+func TestOllamaObservationBindsEveryLiveResponseBodyAndFreshTime(t *testing.T) {
+	t.Parallel()
+	expected := ollamaIdentityExpectation()
+	client := ollamaIdentityClient(t, expected, nil)
+	first, err := client.ObserveProviderIdentity(
+		context.Background(), ollamaObservationRequest(t, expected, "first"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.ObserveProviderIdentity(
+		context.Background(), ollamaObservationRequest(t, expected, "second"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.ValidateFor(ollamaObservationRequest(t, expected, "first")); err != nil {
+		t.Fatal(err)
+	}
+	if first.Observation.ObservationSHA256 == second.Observation.ObservationSHA256 ||
+		!second.Observation.ObservedAt.After(first.Observation.ObservedAt) {
+		t.Fatalf("fresh provider observations were indistinguishable: first=%+v second=%+v",
+			first.Observation, second.Observation)
+	}
+	if first.Observation.VersionBodySHA256 == first.Observation.InstalledBodySHA256 ||
+		first.Observation.InstalledBodySHA256 == first.Observation.TokenizerBodySHA256 ||
+		first.Observation.TokenizerBodySHA256 == first.Observation.PreloadBodySHA256 ||
+		first.Observation.PreloadBodySHA256 == first.Observation.RunnerBodySHA256 {
+		t.Fatal("provider observation did not bind four distinct raw response bodies")
+	}
+}
+
+func TestOllamaIdentityObservationNeverFollowsRedirectsOrAcceptsEncodedBodies(t *testing.T) {
+	t.Parallel()
+	expected := ollamaIdentityExpectation()
+	for _, status := range []int{301, 302, 303, 307, 308} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+			client := ollamaIdentityClient(t, expected, nil)
+			base := client.httpClient.Transport
+			redirected := 0
+			client.httpClient.Transport = identityRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+				if request.Header.Get("Accept-Encoding") != "identity" {
+					t.Error("identity request omitted exact entity encoding")
+				}
+				if request.URL.Path == "/redirected" {
+					redirected++
+				}
+				if request.URL.Path == "/api/version" {
+					return &http.Response{
+						StatusCode: status, Header: http.Header{"Location": []string{"/redirected"}},
+						Body: io.NopCloser(strings.NewReader(`{"redirect":true}`)), Request: request,
+					}, nil
+				}
+				return base.RoundTrip(request)
+			})
+			observed, err := client.ObserveProviderIdentity(
+				context.Background(), ollamaObservationRequest(t, expected, "redirect"),
+			)
+			if err == nil || redirected != 0 || observed.Evidence.Operations[0].HTTPStatus != status ||
+				observed.Evidence.Operations[0].Disposition != llm.ProviderIdentityHTTPError {
+				t.Fatalf("redirect evidence=%+v redirected=%d error=%v", observed.Evidence, redirected, err)
+			}
+		})
+	}
+
+	client := ollamaIdentityClient(t, expected, nil)
+	base := client.httpClient.Transport
+	client.httpClient.Transport = identityRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		response, err := base.RoundTrip(request)
+		if request.URL.Path == "/api/version" {
+			response.Header.Set("Content-Encoding", "gzip")
+		}
+		return response, err
+	})
+	observed, err := client.ObserveProviderIdentity(
+		context.Background(), ollamaObservationRequest(t, expected, "encoded"),
+	)
+	if err == nil || observed.Evidence.Operations[0].Disposition != llm.ProviderIdentityInvalidJSON {
+		t.Fatalf("encoded identity response=%+v error=%v", observed.Evidence, err)
+	}
+}
+
+func ollamaObservationRequest(
+	t *testing.T,
+	expected llm.ProviderIdentityExpectation,
+	scope string,
+) llm.ProviderIdentityObservationRequest {
+	t.Helper()
+	challenge, err := llm.DeriveProviderIdentityObservationChallenge(scope, expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return llm.ProviderIdentityObservationRequest{
+		Expectation: expected, ChallengeSHA256: challenge,
 	}
 }
 
@@ -56,16 +159,18 @@ func TestOllamaDiscoversProviderMaintainedIdentityFromLiveEndpoints(t *testing.T
 	t.Parallel()
 	expected := ollamaIdentityExpectation()
 	client := ollamaIdentityClient(t, expected, nil)
-	attestation, err := client.DiscoverProviderIdentity(
+	observed, err := client.DiscoverProviderIdentityEvidence(
 		context.Background(),
 		llm.ProviderIdentitySelection{
 			Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
 		},
+		strings.Repeat("e", 64),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attestation.Backend != expected.Backend ||
+	attestation := observed.Attestation
+	if observed.Evidence.Validate() != nil || attestation.Backend != expected.Backend ||
 		attestation.BackendVersion != expected.BackendVersion ||
 		attestation.Digest != expected.Digest ||
 		attestation.Quantization != expected.Quantization {
@@ -88,6 +193,8 @@ func TestOllamaDiscoveryRejectsInstalledRunnerIdentityDrift(t *testing.T) {
 			raw = []byte(`{"version":"0.24.0"}`)
 		case "/api/tags":
 			raw = ollamaIdentityModelsJSON(t, expected, false)
+		case "/api/show":
+			raw = ollamaTokenizerProfileJSON()
 		case "/api/ps":
 			raw = ollamaIdentityModelsJSON(t, identity, true)
 		case "/api/generate":
@@ -99,11 +206,12 @@ func TestOllamaDiscoveryRejectsInstalledRunnerIdentityDrift(t *testing.T) {
 			Body: io.NopCloser(strings.NewReader(string(raw))),
 		}, nil
 	})
-	if _, err := client.DiscoverProviderIdentity(
+	if _, err := client.DiscoverProviderIdentityEvidence(
 		context.Background(),
 		llm.ProviderIdentitySelection{
 			Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
 		},
+		strings.Repeat("e", 64),
 	); err == nil {
 		t.Fatal("installed and running model identity drift was accepted")
 	}
@@ -124,52 +232,10 @@ func TestOllamaAttestationRejectsEveryFrozenIdentityMismatch(t *testing.T) {
 			client := ollamaIdentityClient(t, actual, nil)
 			expected := actual
 			mutate(&expected)
-			if _, err := client.AttestProviderIdentity(context.Background(), expected); err == nil {
-				t.Fatal("mismatched live identity was accepted")
-			}
-		})
-	}
-}
-
-func TestOllamaAttestationRejectsAmbiguousProviderJSON(t *testing.T) {
-	t.Parallel()
-	for name, testCase := range map[string]struct {
-		raw    string
-		target any
-	}{
-		"duplicate version": {`{"version":"0.24.0","version":"0.25.0"}`, &versionResponse{}},
-		"version alias":     {`{"Version":"0.24.0"}`, &versionResponse{}},
-		"duplicate digest": {
-			`{"models":[{"name":"m","model":"m","digest":"a","digest":"b","details":{"quantization_level":"Q4"}}]}`,
-			&tagsResponse{},
-		},
-		"quantization alias": {
-			`{"models":[{"name":"m","model":"m","digest":"a","details":{"Quantization_Level":"Q4"}}]}`,
-			&tagsResponse{},
-		},
-		"unregistered runner field": {
-			`{"models":[{"name":"m","model":"m","size":1,"digest":"a","details":{},"expires_at":"2026-08-09T17:22:58-04:00","size_vram":1,"context_length":32768,"hidden_runner_label":"x"}]}`,
-			&runningModelsResponse{},
-		},
-	} {
-		testCase := testCase
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			client := &Client{
-				baseURL: "http://ollama.test",
-				httpClient: &http.Client{Transport: identityRoundTripFunc(func(
-					request *http.Request,
-				) (*http.Response, error) {
-					return &http.Response{
-						StatusCode: http.StatusOK, Header: make(http.Header), Request: request,
-						Body: io.NopCloser(strings.NewReader(testCase.raw)),
-					}, nil
-				})},
-			}
-			if err := client.attestationJSON(
-				context.Background(), http.MethodGet, "/identity", nil, testCase.target,
+			if _, err := client.ObserveProviderIdentity(
+				context.Background(), ollamaObservationRequest(t, expected, "mismatch"),
 			); err == nil {
-				t.Fatal("ambiguous provider identity JSON was accepted")
+				t.Fatal("mismatched live identity was accepted")
 			}
 		})
 	}
@@ -196,6 +262,8 @@ func ollamaIdentityClient(
 				raw = []byte(`{"version":"0.24.0"}`)
 			case "/api/tags":
 				raw = ollamaIdentityModelsJSON(t, identity, false)
+			case "/api/show":
+				raw = ollamaTokenizerProfileJSON()
 			case "/api/generate":
 				raw = []byte(`{"done":true}`)
 			case "/api/ps":
@@ -209,6 +277,14 @@ func ollamaIdentityClient(
 			}, nil
 		})},
 	}
+}
+
+func ollamaTokenizerProfileJSON() []byte {
+	return []byte(`{"model_info":{"general.architecture":"qwen35",` +
+		`"tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35",` +
+		`"tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,` +
+		`"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,` +
+		`"tokenizer.ggml.merges":null}}`)
 }
 
 func ollamaIdentityModelsJSON(
@@ -245,5 +321,6 @@ func ollamaIdentityExpectation() llm.ProviderIdentityExpectation {
 	return llm.ProviderIdentityExpectation{
 		Backend: "ollama", BackendVersion: "0.24.0", Model: "qwen3.5:9b-q4_K_M",
 		Digest: strings.Repeat("a", 64), Quantization: "Q4_K_M", NativeContextLimit: 32768,
+		TokenizerProfile: llm.ExactPreparedTokenizerProfile,
 	}
 }

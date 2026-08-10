@@ -50,6 +50,7 @@ func TestReleaseBuilderDefaultsToCharmeleon(t *testing.T) {
 		`cd "$REPO_ROOT"` + "\n" + `      CGO_ENABLED`,
 		`cp -a "${REPO_ROOT}/migrations"`,
 		`cp -a "${REPO_ROOT}/README.md"`,
+		`write_migration_manifest`,
 	} {
 		if strings.Contains(script, forbidden) {
 			t.Fatalf("release builder still consumes live source: %s", forbidden)

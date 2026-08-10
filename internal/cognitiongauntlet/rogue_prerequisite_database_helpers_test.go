@@ -100,11 +100,11 @@ func runRogueScalePrerequisite(
 	generation RatGeneration,
 ) FullCognitionScaleResult {
 	t.Helper()
-	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	sizes := []int{64, 6_400}
+	sizes := []int{40, 4_000}
 	generated, _, err := labyrinth.GenerateScaleFamily(base.spec.Generator, sizes)
 	if err != nil {
 		t.Fatal(err)

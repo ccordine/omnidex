@@ -17,10 +17,10 @@ func TestRatDoctrineFreezesBrainAndExperimentalConstants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixed := validFixedExperiment()
-	fixed.Brain.SamplingSHA256 = samplingSHA
-	fixed.Brain.Sampling = sampling
-	fixed.ContextCeilingBytes = 24_000
+	fixed := fixedExperimentForSampling(sampling)
+	if fixed.Brain.SamplingSHA256 != samplingSHA {
+		t.Fatal("fixed experiment changed the requested sampling authority")
+	}
 	first, err := NewRatGeneration("rat-generation-1", fixed, RuntimeCandidate{
 		Version: "cognition-runtime.v1", SourceSHA256: strings.Repeat("c", 64),
 		ExecutableSHA256: strings.Repeat("1", 64), MigrationsSHA256: strings.Repeat("f", 64),
@@ -62,6 +62,7 @@ func TestRatDoctrineFreezesBrainAndExperimentalConstants(t *testing.T) {
 			Model: providerExpectation.Model, Digest: providerExpectation.Digest,
 			Quantization:       providerExpectation.Quantization,
 			NativeContextLimit: providerExpectation.NativeContextLimit,
+			TokenizerProfile:   providerExpectation.TokenizerProfile,
 		},
 		providerExpectation.BackendEvidence, providerExpectation.InstalledEvidence,
 		providerExpectation.RunnerEvidence,
@@ -69,6 +70,25 @@ func TestRatDoctrineFreezesBrainAndExperimentalConstants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	changedRef, err := cognitionpolicy.NewBrainRef(
+		changed.Brain.Model, changed.Brain.Digest, changed.Brain.Quantization,
+		changed.Brain.Backend, changed.Brain.BackendVersion, changed.Brain.Hardware,
+		changed.Brain.Sampling,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedBootstrap, err := cognitionpolicy.BootstrapProviderIdentityRequest(changedRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedObserved, err := newWitnessProviderIdentity(
+		changed.Brain.ProviderAttestation, changedBootstrap.ChallengeSHA256, 2,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed.Brain.ProviderObservation = changedObserved.Observation
 	third, err := NewRatGeneration("rat-generation-3", changed, RuntimeCandidate{
 		Version: "cognition-runtime.v3", SourceSHA256: strings.Repeat("e", 64),
 		ExecutableSHA256: strings.Repeat("3", 64), MigrationsSHA256: strings.Repeat("f", 64),
@@ -121,17 +141,15 @@ func validFixedExperiment() FixedExperiment {
 	if err != nil {
 		panic(err)
 	}
+	return fixedExperimentForSampling(sampling)
+}
+
+func fixedExperimentForSampling(sampling cognitionpolicy.SamplingIdentity) FixedExperiment {
 	ref, err := cognitionpolicy.NewBrainRef(
-		"qwen", strings.Repeat("a", 64), "q4", "ollama", "1.0.0", "pending", sampling,
+		"qwen", strings.Repeat("a", 64), "q4",
+		llm.ExactPreparedProviderBackend, llm.ExactPreparedProviderVersion,
+		"pending", sampling,
 	)
-	if err != nil {
-		panic(err)
-	}
-	expected, err := ref.ProviderExpectation()
-	if err != nil {
-		panic(err)
-	}
-	provider, err := llm.NewProviderIdentityAttestation(expected, "fixture:backend", "fixture:installed", "fixture:runner")
 	if err != nil {
 		panic(err)
 	}
@@ -140,13 +158,32 @@ func validFixedExperiment() FixedExperiment {
 		panic(err)
 	}
 	ref, err = cognitionpolicy.NewBrainRef(
-		"qwen", strings.Repeat("a", 64), "q4", "ollama", "1.0.0",
+		"qwen", strings.Repeat("a", 64), "q4",
+		llm.ExactPreparedProviderBackend, llm.ExactPreparedProviderVersion,
 		"host-attestation:"+host.AttestationSHA256, sampling,
 	)
 	if err != nil {
 		panic(err)
 	}
-	attested, err := cognitionpolicy.NewAttestedBrain(ref, provider, host)
+	expected, err := ref.ProviderExpectation()
+	if err != nil {
+		panic(err)
+	}
+	provider, err := llm.NewProviderIdentityAttestation(
+		expected, "fixture:backend", "fixture:installed", "fixture:runner",
+	)
+	if err != nil {
+		panic(err)
+	}
+	bootstrap, err := cognitionpolicy.BootstrapProviderIdentityRequest(ref)
+	if err != nil {
+		panic(err)
+	}
+	observed, err := newWitnessProviderIdentity(provider, bootstrap.ChallengeSHA256, 1)
+	if err != nil {
+		panic(err)
+	}
+	attested, err := cognitionpolicy.NewAttestedBrain(ref, provider, observed.Observation, host)
 	if err != nil {
 		panic(err)
 	}
@@ -155,9 +192,10 @@ func validFixedExperiment() FixedExperiment {
 		panic(err)
 	}
 	return FixedExperiment{
-		Brain:               brain,
-		ContextCeilingBytes: 24_576, EnvironmentContractVersion: "environment.v1",
-		EvaluatorVersion: "evaluator.v1", AuthorityPolicyVersion: "authority.v1",
+		Brain:                      brain,
+		ContextCeilingBytes:        sampling.ContextCeilingBytes,
+		EnvironmentContractVersion: "environment.v1",
+		EvaluatorVersion:           "evaluator.v1", AuthorityPolicyVersion: "authority.v1",
 		OracleIsolationVersion: "separate-process.v1",
 	}
 }

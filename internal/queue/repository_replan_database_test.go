@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -223,9 +222,8 @@ func replanTestRepository(t *testing.T) (*Repository, *pgxpool.Pool, context.Con
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	t.Cleanup(cancel)
 	pool := openIsolatedMigrationPool(t)
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	return repository, pool, ctx

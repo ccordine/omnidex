@@ -31,7 +31,18 @@ func (startupTestLLM) CleanupPreparedModel(llm.PreparedModel) {}
 
 func (startupTestLLM) RequireExactPreparedContract() error { return nil }
 
+func (startupTestLLM) ValidateExactPreparedProvider(expected llm.ProviderIdentityExpectation) error {
+	return expected.Validate()
+}
+
 func (startupTestLLM) ValidateExactPreparedContract(llm.PreparedModel) error { return nil }
+
+func (startupTestLLM) GeneratePreparedExact(
+	context.Context,
+	llm.PreparedModel,
+) (llm.PreparedGeneration, error) {
+	return llm.PreparedGeneration{}, nil
+}
 
 func (startupTestLLM) Embedding(context.Context, string) ([]float64, error) {
 	return nil, nil
@@ -44,7 +55,8 @@ func validWorkerOptions() Options {
 	}
 	brain, err := cognitionpolicy.NewBrainRef(
 		"analyze-model", strings.Repeat("a", 64), "Q4_K_M",
-		"ollama", "test-version", "test-hardware", sampling,
+		llm.ExactPreparedProviderBackend, llm.ExactPreparedProviderVersion,
+		"test-hardware", sampling,
 	)
 	if err != nil {
 		panic(err)

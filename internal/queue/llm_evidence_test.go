@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -134,7 +133,6 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	if databaseURL == "" {
 		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL LLM evidence tests")
 	}
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pool, err := pgxpool.New(ctx, databaseURL)
@@ -143,7 +141,7 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	}
 	defer pool.Close()
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 

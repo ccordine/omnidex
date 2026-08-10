@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"os"
 
 	labyrinthhost "github.com/gryph/omnidex/internal/labyrinth/host"
 	"github.com/gryph/omnidex/internal/model"
@@ -30,9 +29,20 @@ type offlinePromotionDatabase struct {
 func prepareOfflinePromotionDatabase(
 	ctx context.Context,
 	config OfflinePromotionConfig,
-	migrationsDirectory string,
+	migrations queue.MigrationBundle,
 ) (*offlinePromotionDatabase, error) {
-	admin, err := pgxpool.New(ctx, config.DatabaseURL)
+	return prepareOfflineExecutionDatabase(ctx, config.executionAuthority(), migrations)
+}
+
+func prepareOfflineExecutionDatabase(
+	ctx context.Context,
+	authority offlineExecutionAuthority,
+	migrations queue.MigrationBundle,
+) (*offlinePromotionDatabase, error) {
+	if err := authority.Validate(); err != nil {
+		return nil, err
+	}
+	admin, err := pgxpool.New(ctx, authority.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +83,14 @@ func prepareOfflinePromotionDatabase(
 		admin.Close()
 		return nil, err
 	}
-	pool, err := promotionPool(ctx, config.DatabaseURL, runtimeSchema)
+	pool, err := promotionPool(ctx, authority.DatabaseURL, runtimeSchema)
 	if err != nil {
 		admin.Close()
 		return nil, err
 	}
 	// The trusted host transaction qualifies private host tables but must also
 	// see the isolated runtime schema to fence the exact queue lease atomically.
-	hostAdminPool, err := promotionPool(ctx, config.DatabaseURL, hostSchema+","+runtimeSchema)
+	hostAdminPool, err := promotionPool(ctx, authority.DatabaseURL, hostSchema+","+runtimeSchema)
 	if err != nil {
 		pool.Close()
 		admin.Close()
@@ -91,7 +101,11 @@ func prepareOfflinePromotionDatabase(
 		repository: queue.New(pool), schema: runtimeSchema, hostSchema: hostSchema,
 		inferenceRole: inferenceRole, hostRole: hostRole,
 	}
-	if err := database.installRuntime(ctx, migrationsDirectory); err != nil {
+	if err := database.installRuntime(ctx, migrations); err != nil {
+		database.close()
+		return nil, err
+	}
+	if err := database.repository.ProvisionStepAttemptAuthorizerRole(ctx, hostRole); err != nil {
 		database.close()
 		return nil, err
 	}
@@ -108,18 +122,18 @@ func prepareOfflinePromotionDatabase(
 		return nil, err
 	}
 	database.inferenceURL, err = restrictedDatabaseURL(
-		config.DatabaseURL, inferenceRole, inferencePassword,
+		authority.DatabaseURL, inferenceRole, inferencePassword,
 	)
 	if err != nil {
 		database.close()
 		return nil, err
 	}
-	database.hostURL, err = restrictedDatabaseURL(config.DatabaseURL, hostRole, hostPassword)
+	database.hostURL, err = restrictedDatabaseURL(authority.DatabaseURL, hostRole, hostPassword)
 	if err != nil {
 		database.close()
 		return nil, err
 	}
-	if err := database.claim(ctx, config.Spec.Budget.WorkingSetBytes); err != nil {
+	if err := database.claim(ctx, authority.Budget.WorkingSetBytes); err != nil {
 		database.close()
 		return nil, err
 	}
@@ -134,20 +148,11 @@ func (database *offlinePromotionDatabase) installHost(ctx context.Context) error
 	return store.InstallSchema(ctx)
 }
 
-func (database *offlinePromotionDatabase) installRuntime(ctx context.Context, migrations string) error {
-	previous, existed := os.LookupEnv("MIGRATIONS_DIR")
-	if err := os.Setenv("MIGRATIONS_DIR", migrations); err != nil {
-		return err
-	}
-	err := database.repository.EnsureSchema(ctx)
-	if existed {
-		if restoreErr := os.Setenv("MIGRATIONS_DIR", previous); err == nil {
-			err = restoreErr
-		}
-	} else if restoreErr := os.Unsetenv("MIGRATIONS_DIR"); err == nil {
-		err = restoreErr
-	}
-	return err
+func (database *offlinePromotionDatabase) installRuntime(
+	ctx context.Context,
+	migrations queue.MigrationBundle,
+) error {
+	return database.repository.EnsureSchema(ctx, migrations)
 }
 
 func (database *offlinePromotionDatabase) claim(ctx context.Context, workingSetBytes int) error {

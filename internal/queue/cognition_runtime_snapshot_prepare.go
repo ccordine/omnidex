@@ -121,7 +121,9 @@ func (r *Repository) PrepareCognitionRuntimeSnapshot(
 		CompletionEvidenceRefs: append([]cognition.EvidenceRef{}, refs...),
 		EnvironmentTerminal:    terminal, PublicOutcome: outcome,
 	}
-	if err := insertCognitionSnapshotJournalTx(ctx, tx, command.Authority, prepared, callOrdinal); err != nil {
+	if err := insertCognitionSnapshotJournalTx(
+		ctx, tx, command.Authority, prepared, fit.Projection, episode.AttestedBrain.Ref, callOrdinal,
+	); err != nil {
 		return CognitionRuntimeSnapshotRecord{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

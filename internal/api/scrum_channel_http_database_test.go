@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,14 +23,13 @@ func TestPostgresScrumChannelHTTPReplaySurvivesCardDeletion(t *testing.T) {
 	if databaseURL == "" {
 		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL Scrum channel HTTP tests")
 	}
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	pool, err := pgxpool.New(t.Context(), databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(t.Context()); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(

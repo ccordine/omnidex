@@ -7,6 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/contextbuilder"
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 var errAblationContextBudget = errors.New("cognition ablation context budget exhausted")
@@ -60,15 +61,19 @@ func prepareAblationPolicyInput(
 		if err != nil {
 			return contextbuilder.Projection{}, cognition.RuntimeSnapshot{}, err
 		}
-		if envelope.Bytes <= runtimeBudget.MaxInputBytes &&
-			envelope.EstimatedTokens <= runtimeBudget.MaxInputTokens {
+		modelInput, err := llm.ExactPreparedModelInput(
+			envelope.JSON, llm.MinimalGeneratePrompt,
+		)
+		if err != nil {
+			return contextbuilder.Projection{}, cognition.RuntimeSnapshot{}, err
+		}
+		if len([]byte(modelInput)) <= runtimeBudget.MaxInputBytes {
 			return projection, snapshot, nil
 		}
 		if state.variant != VariantLedgerProjection || maxEvidence == 0 {
 			return contextbuilder.Projection{}, cognition.RuntimeSnapshot{}, fmt.Errorf(
-				"%w: exact envelope needs %d bytes/%d tokens; frozen limits are %d bytes/%d tokens",
-				errAblationContextBudget, envelope.Bytes, envelope.EstimatedTokens,
-				runtimeBudget.MaxInputBytes, runtimeBudget.MaxInputTokens,
+				"%w: exact raw model input needs %d bytes; frozen limit is %d bytes",
+				errAblationContextBudget, len([]byte(modelInput)), runtimeBudget.MaxInputBytes,
 			)
 		}
 		maxEvidence--

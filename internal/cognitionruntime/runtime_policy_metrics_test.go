@@ -9,7 +9,7 @@ import (
 func TestRunCountsFailedProviderInvocationFromExactPolicyOutcome(t *testing.T) {
 	harness := newRuntimeHarness(t)
 	harness.policyError = errors.New("provider invocation failed")
-	harness.policyInferenceExecuted = true
+	harness.policyProviderRequestDispatched = true
 	runtime, err := New(harness.dependencies())
 	requireNoError(t, err)
 
@@ -22,7 +22,7 @@ func TestRunCountsFailedProviderInvocationFromExactPolicyOutcome(t *testing.T) {
 func TestRunDoesNotCountDurablePolicyResultReplayAsInference(t *testing.T) {
 	harness := newRuntimeHarness(t)
 	harness.policyError = errors.New("durable rejected call replay")
-	harness.policyInferenceExecuted = false
+	harness.policyProviderRequestDispatched = false
 	runtime, err := New(harness.dependencies())
 	requireNoError(t, err)
 

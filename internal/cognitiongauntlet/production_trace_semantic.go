@@ -42,6 +42,9 @@ func appendProductionTrace(
 		return productionTraceMetrics{}, err
 	}
 	state := newProductionTraceState(trace, recovery, frozen)
+	if state.initErr != nil {
+		return productionTraceMetrics{}, state.initErr
+	}
 	for _, record := range trace.Records {
 		if err := state.accept(recorder, record); err != nil {
 			return productionTraceMetrics{}, err
@@ -51,17 +54,19 @@ func appendProductionTrace(
 }
 
 type productionTraceState struct {
-	trace            productionTrace
-	policyOrdinals   map[int64]struct{}
-	attempts         map[string]cognitionpolicy.CallAttempt
-	results          map[string]cognitionpolicy.CallResultStatus
-	actions          map[cognition.ActionID]queue.CognitionTraceAction
-	consumedActions  map[cognition.ActionID]struct{}
-	diagnostics      productionTraceDiagnostics
-	metrics          productionTraceMetrics
-	terminalProgress *cognitionruntime.EpisodeProgress
-	cancellation     *cognitionruntime.CancellationEvidence
-	frozenBrain      cognitionpolicy.AttestedBrain
+	trace             productionTrace
+	attempts          map[string]cognitionpolicy.CallAttempt
+	results           map[string]cognitionpolicy.CallResultStatus
+	abandonments      map[string]cognitionruntime.PolicyCallAbandonment
+	policyProjections map[string]struct{}
+	actions           map[cognition.ActionID]queue.CognitionTraceAction
+	consumedActions   map[cognition.ActionID]struct{}
+	diagnostics       productionTraceDiagnostics
+	metrics           productionTraceMetrics
+	terminalProgress  *cognitionruntime.EpisodeProgress
+	cancellation      *cognitionruntime.CancellationEvidence
+	frozenBrain       cognitionpolicy.AttestedBrain
+	initErr           error
 }
 
 func newProductionTraceState(
@@ -69,20 +74,26 @@ func newProductionTraceState(
 	recovery RecoveryMetrics,
 	frozen cognitionpolicy.AttestedBrain,
 ) *productionTraceState {
-	ordinals := make(map[int64]struct{})
+	projections := make(map[string]struct{})
 	for _, record := range trace.Records {
 		if record.Kind == "policy_attempt" {
-			ordinals[record.CallOrdinal] = struct{}{}
+			var attempt cognitionpolicy.CallAttempt
+			if err := decodeProductionPayload(record.Payload, &attempt, "policy attempt authority"); err != nil {
+				return &productionTraceState{initErr: err}
+			}
+			projections[string(attempt.ContextProjection.ID)] = struct{}{}
 		}
 	}
 	return &productionTraceState{
-		trace: trace, policyOrdinals: ordinals,
-		attempts:        make(map[string]cognitionpolicy.CallAttempt),
-		results:         make(map[string]cognitionpolicy.CallResultStatus),
-		actions:         make(map[cognition.ActionID]queue.CognitionTraceAction),
-		consumedActions: make(map[cognition.ActionID]struct{}),
-		diagnostics:     newProductionTraceDiagnostics(),
-		metrics:         productionTraceMetrics{Recovery: recovery}, frozenBrain: frozen,
+		trace:             trace,
+		attempts:          make(map[string]cognitionpolicy.CallAttempt),
+		results:           make(map[string]cognitionpolicy.CallResultStatus),
+		abandonments:      make(map[string]cognitionruntime.PolicyCallAbandonment),
+		policyProjections: projections,
+		actions:           make(map[cognition.ActionID]queue.CognitionTraceAction),
+		consumedActions:   make(map[cognition.ActionID]struct{}),
+		diagnostics:       newProductionTraceDiagnostics(),
+		metrics:           productionTraceMetrics{Recovery: recovery}, frozenBrain: frozen,
 	}
 }
 
@@ -96,7 +107,7 @@ func (state *productionTraceState) accept(
 			return err
 		}
 	case "context_projection":
-		if _, used := state.policyOrdinals[record.CallOrdinal]; used {
+		if _, used := state.policyProjections[record.ID]; used {
 			if err := appendProductionProjection(recorder, record); err != nil {
 				return err
 			}
@@ -119,6 +130,21 @@ func (state *productionTraceState) accept(
 		if err := state.acceptPolicyResult(recorder, record); err != nil {
 			return err
 		}
+	case "policy_abandonment":
+		var abandonment cognitionruntime.PolicyCallAbandonment
+		if err := decodeProductionPayload(record.Payload, &abandonment, "policy abandonment"); err != nil {
+			return err
+		}
+		if err := abandonment.Validate(); err != nil || record.ID != abandonment.ID {
+			return fmt.Errorf("sealed production policy abandonment is invalid")
+		}
+		if _, exists := state.attempts[abandonment.CallID]; !exists {
+			return fmt.Errorf("sealed production policy abandonment has no exact attempt")
+		}
+		if _, duplicate := state.abandonments[abandonment.CallID]; duplicate {
+			return fmt.Errorf("sealed production policy abandonment is duplicated")
+		}
+		state.abandonments[abandonment.CallID] = abandonment
 	case "policy_timing", "working_set_snapshot", "working_set_event",
 		"accepted_decision_recovery":
 		if err := state.diagnostics.accept(record, state.trace.Header); err != nil {

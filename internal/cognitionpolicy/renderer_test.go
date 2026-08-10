@@ -115,7 +115,7 @@ func TestBrainAndCallAttemptIdentitiesFailLoudly(t *testing.T) {
 	}
 }
 
-func TestCallIdentityBindsEveryBrainField(t *testing.T) {
+func TestCallIdentityBindsEveryVariableBrainField(t *testing.T) {
 	t.Parallel()
 	projection := policyTestProjection(t, "direct authority")
 	snapshot, evidence := policyTestSnapshot(t, projection)
@@ -144,10 +144,6 @@ func TestCallIdentityBindsEveryBrainField(t *testing.T) {
 		"byte ceiling": func(value *BrainRef) {
 			value.ContextCeilingBytes++
 			refreshPolicyTestSampling(value)
-		},
-		"backend": func(value *BrainRef) { value.Backend = "changed-backend" },
-		"backend version": func(value *BrainRef) {
-			value.BackendVersion = "2.0.0"
 		},
 		"hardware": func(value *BrainRef) { value.Hardware = "changed-hardware" },
 	}

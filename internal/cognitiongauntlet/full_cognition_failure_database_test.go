@@ -100,6 +100,23 @@ func (client *terminalPolicyClient) GeneratePrepared(
 	return client.response, client.failure
 }
 
+func (client *terminalPolicyClient) GeneratePreparedExact(
+	_ context.Context,
+	prepared llm.PreparedModel,
+) (llm.PreparedGeneration, error) {
+	if err := client.ValidateExactPreparedContract(prepared); err != nil {
+		return llm.PreparedGeneration{}, err
+	}
+	client.mu.Lock()
+	client.count++
+	response, failure := client.response, client.failure
+	client.mu.Unlock()
+	if failure != nil {
+		return client.exactPreparedFailure(prepared, failure)
+	}
+	return client.exactPreparedGeneration(prepared, response)
+}
+
 func (client *terminalPolicyClient) calls() int {
 	client.mu.Lock()
 	defer client.mu.Unlock()

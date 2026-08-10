@@ -8,100 +8,20 @@ import (
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/contextbuilder"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/gryph/omnidex/internal/workingset"
 )
 
 const policyTestDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-type policyTestClient struct {
-	response               string
-	err                    error
-	generateCalls          int
-	plainGenerateCalls     int
-	prepareCalls           int
-	cleanupCalls           int
-	otherCalls             int
-	model                  string
-	prompt                 string
-	prompts                []string
-	prepared               []llm.PreparedModel
-	changePreparedIdentity bool
-	mutateContract         bool
-	attestations           []llm.ProviderIdentityAttestation
-	attestationErr         error
-	attestationCalls       int
-}
-
-func (client *policyTestClient) Generate(_ context.Context, model, prompt string) (string, error) {
-	client.plainGenerateCalls++
-	return "", errors.New("plain Generate must not be called by cognition policy")
-}
-
-func (client *policyTestClient) PrepareContextModel(_ context.Context, model, prompt string) (llm.PreparedModel, error) {
-	client.prepareCalls++
-	prepared := llm.PreparedModel{BaseModel: model, ContextModel: model, Prompt: prompt}
-	if client.changePreparedIdentity {
-		prepared.ContextModel = "changed-model"
-	}
-	return prepared, nil
-}
-
-func (client *policyTestClient) GeneratePrepared(_ context.Context, prepared llm.PreparedModel) (string, error) {
-	client.generateCalls++
-	client.model, client.prompt = prepared.ContextModel, prepared.Prompt
-	client.prompts = append(client.prompts, prepared.Prompt)
-	client.prepared = append(client.prepared, prepared)
-	if client.mutateContract {
-		prepared.ResponseSchema["type"] = "array"
-	}
-	return client.response, client.err
-}
-
-func (client *policyTestClient) CleanupPreparedModel(llm.PreparedModel) { client.cleanupCalls++ }
-
-func (client *policyTestClient) RequireExactPreparedContract() error { return nil }
-
-func (client *policyTestClient) AttestProviderIdentity(
-	_ context.Context,
-	expected llm.ProviderIdentityExpectation,
-) (llm.ProviderIdentityAttestation, error) {
-	client.attestationCalls++
-	if client.attestationErr != nil {
-		return llm.ProviderIdentityAttestation{}, client.attestationErr
-	}
-	if len(client.attestations) > 0 {
-		index := client.attestationCalls - 1
-		if index >= len(client.attestations) {
-			index = len(client.attestations) - 1
-		}
-		return client.attestations[index], nil
-	}
-	return llm.NewProviderIdentityAttestation(
-		expected, "test:/version", "test:/installed", "test:/runner",
-	)
-}
-
-func (client *policyTestClient) ValidateExactPreparedContract(prepared llm.PreparedModel) error {
-	if prepared.ResponseFormat != llm.ResponseFormatJSON || len(prepared.ResponseSchema) == 0 ||
-		prepared.ThinkingEnabled || prepared.Temperature == nil || *prepared.Temperature != 0 {
-		return errors.New("prepared contract is not exact")
-	}
-	return nil
-}
-
-func (client *policyTestClient) Embedding(context.Context, string) ([]float64, error) {
-	client.otherCalls++
-	return nil, nil
-}
-
 type policyTestCallJournal struct {
-	attempts    []CallAttempt
-	results     []CallResult
-	reservation *CallReservation
-	startErr    error
-	finishErr   error
+	attempts         []CallAttempt
+	results          []CallResult
+	evidence         []ModelResponseEvidence
+	providerEvidence []ProviderGenerationEvidence
+	reservation      *CallReservation
+	startErr         error
+	finishErr        error
 }
 
 func (journal *policyTestCallJournal) Start(
@@ -122,8 +42,13 @@ func (journal *policyTestCallJournal) Finish(
 	_ context.Context,
 	attempt CallAttempt,
 	result CallResult,
+	evidence CallEvidence,
 ) error {
 	journal.results = append(journal.results, result.Clone())
+	journal.evidence = append(journal.evidence, evidence.Response.Clone())
+	journal.providerEvidence = append(
+		journal.providerEvidence, evidence.ProviderGeneration.Clone(),
+	)
 	return journal.finishErr
 }
 
@@ -258,7 +183,7 @@ func policyTestSnapshot(t *testing.T, projection contextbuilder.Projection) (cog
 		cognition.AttemptRef{JobID: 1, Generation: 1, StepID: 2, Attempt: 1, WorkerID: "worker-1"},
 		projectionRef,
 		cognition.RuntimeBudget{
-			RemainingPolicyCalls: 1, MaxInputBytes: 64 * 1024, MaxInputTokens: 16 * 1024,
+			RemainingPolicyCalls: 1, MaxInputBytes: 64 * 1024, MaxInputTokens: 64*1024 + 2,
 			MaxOutputBytes: 16 * 1024, MaxOutputTokens: 4 * 1024,
 			MaxEvidenceRefs: 4, MaxActionArguments: 4,
 			MaxLedgerProposals: 4, MaxAttentionRequests: 4, MaxExpectedEffectBytes: 512,

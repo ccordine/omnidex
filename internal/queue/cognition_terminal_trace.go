@@ -46,6 +46,10 @@ func buildCognitionTraceAuthorityTx(
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT kind,call_ordinal,phase,sequence,id,sha256 FROM (
+			SELECT 'provider_process_observation'::text AS kind,sequence,
+			       observation_id AS id,receipt_sha256 AS sha256,0 AS call_ordinal,5 AS phase
+			FROM cognition_provider_process_observations WHERE episode_id=$1
+			UNION ALL
 			SELECT 'transition'::text AS kind,revision AS sequence,transition_id AS id,
 			       transition_sha256 AS sha256,COALESCE(snapshots.call_ordinal,0) AS call_ordinal,
 			       CASE WHEN transitions.action_id IS NULL THEN 10 ELSE 53 END AS phase
@@ -190,6 +194,12 @@ func buildCognitionTraceAuthorityTx(
 		return nil, "", err
 	}
 	records, err = appendCognitionDiagnosticTraceRecordsTx(
+		ctx, tx, episode.EpisodeID, records,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	records, err = appendCognitionPolicyEvidenceTraceRecordsTx(
 		ctx, tx, episode.EpisodeID, records,
 	)
 	if err != nil {

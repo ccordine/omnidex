@@ -40,6 +40,25 @@ func buildLabyrinthProjectionRelevance(
 	if err != nil {
 		return ProjectionRelevanceEvidence{}, err
 	}
+	return buildOfflineProjectionRelevance(
+		offlineEvidenceAuthority{
+			Scenario: fixture.SealedEnvironmentScenario().Ref(),
+			Suite:    fixture.spec.Generator.Suite, OracleSHA256: oracle.OracleSHA256,
+			Witness: oracle.Witness, EvidenceUses: oracle.EvidenceUses,
+			RequiredEvidence: len(oracle.RequiredEvidence),
+		}, oracleManifest, episode, surfaceVersion,
+	)
+}
+
+func buildOfflineProjectionRelevance(
+	authority offlineEvidenceAuthority,
+	oracleManifest OracleManifest,
+	episode SealedEpisode,
+	surfaceVersion string,
+) (ProjectionRelevanceEvidence, error) {
+	if _, err := measureOfflineCausalAcquisition(authority, episode, surfaceVersion); err != nil {
+		return ProjectionRelevanceEvidence{}, err
+	}
 	observations, err := acquisitionObservations(episode)
 	if err != nil {
 		return ProjectionRelevanceEvidence{}, err
@@ -50,12 +69,12 @@ func buildLabyrinthProjectionRelevance(
 	}
 	relevant := make(map[ProjectionReferenceIdentity]struct{})
 	critical := make(map[string]CriticalProjectionUse)
-	for index, use := range oracle.EvidenceUses {
-		witnessAcquisition, err := privateWitnessAction(oracle, use.AcquisitionActionID)
+	for index, use := range authority.EvidenceUses {
+		witnessAcquisition, err := privateWitnessActionIn(authority.Witness, use.AcquisitionActionID)
 		if err != nil {
 			return ProjectionRelevanceEvidence{}, err
 		}
-		witnessConsumer, err := privateWitnessAction(oracle, use.RequiredByActionID)
+		witnessConsumer, err := privateWitnessActionIn(authority.Witness, use.RequiredByActionID)
 		if err != nil {
 			return ProjectionRelevanceEvidence{}, err
 		}
@@ -109,7 +128,7 @@ func buildLabyrinthProjectionRelevance(
 	})
 	evidence := ProjectionRelevanceEvidence{
 		Schema: ProjectionRelevanceSchemaV1, EpisodeSealSHA256: episode.SealSHA256,
-		OracleSHA256: oracle.OracleSHA256, RelevantRefs: relevantRefs, CriticalUses: criticalUses,
+		OracleSHA256: authority.OracleSHA256, RelevantRefs: relevantRefs, CriticalUses: criticalUses,
 	}
 	if _, _, err := validateProjectionRelevance(evidence, episode, oracleManifest); err != nil {
 		return ProjectionRelevanceEvidence{}, err

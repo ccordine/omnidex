@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/cognition"
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
 )
 
 func validateProjectionRelevance(
@@ -79,19 +80,24 @@ func (metric StationCallMetrics) Validate() error {
 	if err := metric.Budget.Validate(); err != nil {
 		return err
 	}
-	if metric.InputBytes <= 0 || metric.InputTokens <= 0 || metric.OutputBytes < 0 ||
+	if err := validateStationMetricDisposition(metric); err != nil {
+		return err
+	}
+	withinBudget := metric.InputBytes <= int64(metric.Budget.MaxInputBytes) &&
+		metric.InputTokens <= int64(metric.Budget.MaxInputTokens) &&
+		metric.OutputBytes <= int64(metric.Budget.MaxOutputBytes) &&
+		metric.OutputTokens <= int64(metric.Budget.MaxOutputTokens)
+	if metric.InputBytes <= 0 || metric.InputTokens < 0 || metric.OutputBytes < 0 ||
 		metric.OutputTokens < 0 || metric.RelevantProjectedBytes < 0 ||
 		metric.IrrelevantSelectedBytes < 0 || metric.MissingCriticalBytes < 0 ||
 		metric.InputBytes > int64(metric.Budget.MaxInputBytes) ||
-		metric.InputTokens > int64(metric.Budget.MaxInputTokens) ||
-		metric.OutputBytes > int64(metric.Budget.MaxOutputBytes) ||
-		metric.OutputTokens > int64(metric.Budget.MaxOutputTokens) ||
-		(metric.OutputBytes == 0) != (metric.OutputTokens == 0) ||
 		metric.MissingCriticalRefs < 0 || metric.RelevantProjectedBytes+metric.IrrelevantSelectedBytes > metric.InputBytes ||
 		!finite(metric.ContextConcentration) || metric.ContextConcentration < 0 ||
 		metric.ContextConcentration > 1 ||
 		metric.ContextConcentration != concentration(metric.RelevantProjectedBytes, metric.InputBytes) ||
-		metric.ConcentrationQualified != (metric.MissingCriticalRefs == 0) ||
+		metric.BudgetQualified != withinBudget ||
+		metric.ConcentrationQualified != (metric.MissingCriticalRefs == 0 &&
+			metric.NativeUsagePresent && metric.BudgetQualified) ||
 		(metric.MissingCriticalBytes == 0) != (metric.MissingCriticalRefs == 0) {
 		return fmt.Errorf("clean-desk station call metrics are inconsistent")
 	}
@@ -104,7 +110,7 @@ func (metrics CleanDeskMetrics) Validate() error {
 		len(metrics.Calls) > maxEpisodeTraceEntries {
 		return fmt.Errorf("clean-desk metric authority is invalid")
 	}
-	var total CleanDeskMetrics
+	total := CleanDeskMetrics{NativeUsageComplete: true, BudgetQualified: true}
 	seenCalls := make(map[string]struct{}, len(metrics.Calls))
 	for index, call := range metrics.Calls {
 		if err := call.Validate(); err != nil {
@@ -124,8 +130,47 @@ func (metrics CleanDeskMetrics) Validate() error {
 		metrics.MissingCriticalBytes != total.MissingCriticalBytes ||
 		metrics.MissingCriticalRefs != total.MissingCriticalRefs ||
 		metrics.ContextConcentration != concentration(metrics.RelevantProjectedBytes, metrics.TotalModelVisibleBytes) ||
-		metrics.ConcentrationQualified != (metrics.MissingCriticalRefs == 0) {
+		metrics.NativeUsageComplete != total.NativeUsageComplete ||
+		metrics.BudgetQualified != total.BudgetQualified ||
+		metrics.ConcentrationQualified != (metrics.MissingCriticalRefs == 0 &&
+			metrics.NativeUsageComplete && metrics.BudgetQualified) {
 		return fmt.Errorf("aggregate clean-desk metrics do not match their sealed calls")
+	}
+	return nil
+}
+
+func validateStationMetricDisposition(metric StationCallMetrics) error {
+	inputOver := metric.InputTokens > int64(metric.Budget.MaxInputTokens)
+	outputTokenOver := metric.OutputTokens > int64(metric.Budget.MaxOutputTokens)
+	outputByteOver := metric.OutputBytes > int64(metric.Budget.MaxOutputBytes)
+	if !metric.NativeUsagePresent && (metric.InputTokens != 0 || metric.OutputTokens != 0) {
+		return fmt.Errorf("clean-desk call claims unavailable native usage")
+	}
+	if metric.NativeUsagePresent && (metric.InputTokens <= 0 || metric.OutputTokens <= 0) {
+		return fmt.Errorf("clean-desk call lacks positive native usage")
+	}
+	switch metric.ResultStatus {
+	case cognitionpolicy.CallResultAccepted:
+		if metric.FailureCode != "" || !metric.NativeUsagePresent || metric.OutputBytes <= 0 {
+			return fmt.Errorf("clean-desk accepted call disposition is invalid")
+		}
+	case cognitionpolicy.CallResultRejected:
+		if !registeredRejectedFailure(metric.FailureCode) {
+			return fmt.Errorf("clean-desk rejected call disposition is invalid")
+		}
+	case cognitionpolicy.CallResultFailed:
+		if metric.FailureCode != cognitionpolicy.CallFailureGeneration {
+			return fmt.Errorf("clean-desk failed call disposition is invalid")
+		}
+	default:
+		return fmt.Errorf("clean-desk call status is not registered")
+	}
+	if (inputOver || outputTokenOver) !=
+		(metric.FailureCode == cognitionpolicy.CallFailureProviderUsageLimit) {
+		return fmt.Errorf("clean-desk native usage-limit attribution is inconsistent")
+	}
+	if outputByteOver && metric.FailureCode != cognitionpolicy.CallFailureResponseLimit {
+		return fmt.Errorf("clean-desk response byte overage lacks exact attribution")
 	}
 	return nil
 }

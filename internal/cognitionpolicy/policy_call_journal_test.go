@@ -22,7 +22,7 @@ func TestPolicyStartFailurePreventsInference(t *testing.T) {
 	if !errors.Is(err, ErrCallJournal) {
 		t.Fatalf("error=%v want ErrCallJournal", err)
 	}
-	if outcome.InferenceExecuted {
+	if outcome.ProviderRequestDispatched {
 		t.Fatal("call reservation failure reported inference")
 	}
 	if client.generateCalls != 0 || len(journal.attempts) != 1 || len(journal.results) != 0 {
@@ -44,7 +44,7 @@ func TestPolicyPersistsProviderFailureAgainstReservedCall(t *testing.T) {
 	if !errors.Is(err, ErrGeneration) {
 		t.Fatalf("error=%v want ErrGeneration", err)
 	}
-	if !outcome.InferenceExecuted {
+	if !outcome.ProviderRequestDispatched {
 		t.Fatal("provider invocation failure was not reported")
 	}
 	if client.generateCalls != 1 || len(journal.results) != 1 ||
@@ -71,7 +71,7 @@ func TestPolicyJournalFailureNeverReturnsAResult(t *testing.T) {
 		t.Fatalf("error=%v want joined generation and journal failures", err)
 	}
 	decision := outcome.Decision
-	if !outcome.InferenceExecuted {
+	if !outcome.ProviderRequestDispatched {
 		t.Fatal("failed provider invocation was hidden by the journal error")
 	}
 	if decision.ObligationID != "" || decision.Action.Kind != "" {
@@ -93,9 +93,10 @@ func TestPolicyReplaysAcceptedCallWithoutInference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, result := firstJournal.attempts[0], firstJournal.results[0]
+	attempt, result, responseEvidence := firstJournal.attempts[0], firstJournal.results[0], firstJournal.evidence[0]
 	replayJournal := &policyTestCallJournal{reservation: &CallReservation{
-		Attempt: attempt, ExistingResult: &result, Created: false,
+		Attempt: attempt, ExistingResult: &result, ExistingResponseEvidence: &responseEvidence,
+		Created: false,
 	}}
 	replayClient := &policyTestClient{err: errors.New("must not be called")}
 	replay, err := New(replayClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), replayJournal)
@@ -106,7 +107,7 @@ func TestPolicyReplaysAcceptedCallWithoutInference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !want.InferenceExecuted || got.InferenceExecuted ||
+	if !want.ProviderRequestDispatched || got.ProviderRequestDispatched ||
 		got.Decision.ObligationID != want.Decision.ObligationID ||
 		got.Decision.Action.Kind != want.Decision.Action.Kind || replayClient.generateCalls != 0 {
 		t.Fatalf("replay=%#v model calls=%d", got, replayClient.generateCalls)
@@ -121,26 +122,31 @@ func TestPolicyRefusesIndeterminateAndRejectedReplayWithoutInference(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt := newCallAttempt(snapshot, policyTestAttestedBrain(), envelope)
+	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedGeneration := policyTestPreparedGeneration(attempt, "not-json")
+	authorityGeneration := policyTestPreparedGeneration(attempt, `{"complete":true}`)
 	for name, reservation := range map[string]struct {
 		value CallReservation
 		want  error
 	}{
 		"indeterminate": {CallReservation{Attempt: attempt}, ErrCallIndeterminate},
 		"rejected": {CallReservation{Attempt: attempt, ExistingResult: callResultPointer(rejectedCallResult(
-			attempt, attempt.ProviderAttestation, "not-json",
-			CallFailureInvalidDecision, errors.New("invalid response"),
+			attempt, rejectedGeneration, CallFailureInvalidDecision, errors.New("invalid response"),
 		))}, ErrInvalidDecision},
 		"authority_denied": {CallReservation{Attempt: attempt, ExistingResult: callResultPointer(rejectedCallResult(
-			attempt, attempt.ProviderAttestation, `{"complete":true}`,
-			CallFailureAuthorityDenied, errors.Join(ErrInvalidDecision, cognition.ErrAuthorityDenied),
+			attempt, authorityGeneration, CallFailureAuthorityDenied,
+			errors.Join(ErrInvalidDecision, cognition.ErrAuthorityDenied),
 		))}, cognition.ErrAuthorityDenied},
 		"failed": {CallReservation{Attempt: attempt, ExistingResult: callResultPointer(failedCallResult(
-			attempt, attempt.ProviderAttestation, errors.New("provider offline"),
+			attempt, policyTestFailedGeneration(attempt), errors.New("provider offline"),
 		))}, ErrGeneration},
 		"provider_identity_failed": {CallReservation{
 			Attempt: attempt, ExistingResult: callResultPointer(providerIdentityFailedCallResult(
-				attempt, errors.New("provider identity changed"),
+				attempt, policyTestFailedProviderIdentityGeneration(attempt),
+				errors.New("provider identity changed"),
 			)),
 		}, ErrProviderIdentity},
 	} {
@@ -160,7 +166,7 @@ func TestPolicyRefusesIndeterminateAndRejectedReplayWithoutInference(t *testing.
 			if name == "authority_denied" && !errors.Is(err, ErrInvalidDecision) {
 				t.Fatalf("authority replay error=%v want ErrInvalidDecision too", err)
 			}
-			if outcome.InferenceExecuted || client.generateCalls != 0 {
+			if outcome.ProviderRequestDispatched || client.generateCalls != 0 {
 				t.Fatal("durable prior outcome reached model")
 			}
 		})

@@ -62,8 +62,20 @@ func executeFullCognition(
 		if err != nil {
 			return result, restarts, err
 		}
-		if _, err := replacement.environment.Start(ctx, scenario.Ref()); err != nil {
+		restartTransition, err := replacement.environment.Start(ctx, scenario.Ref())
+		if err != nil {
 			return result, restarts, fmt.Errorf("restart durable Labyrinth host: %w", err)
+		}
+		stored, err := startFullCognitionEpisode(
+			ctx, replacement.store, request, authority, replacement.frozenBrain,
+			episode, scenario, restartTransition,
+		)
+		if err != nil {
+			return result, restarts, err
+		}
+		replacement, err = activateRuntimeComponents(ctx, replacement, stored, binding.Attempt)
+		if err != nil {
+			return result, restarts, err
 		}
 		after, err := captureRuntimeCheckpoint(ctx, replacement.repository, episode.ID)
 		if err != nil {

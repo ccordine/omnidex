@@ -1,6 +1,0 @@
-./config.go
-./environment_validation.go
-./providers.go
-./runtime_validation.go
-./cognition_config_test.go
-./config_test.go

@@ -31,10 +31,20 @@ func newBenchmarkEnvironmentWithAuthorizer(
 	authorize labyrinth.AttemptAuthorizer,
 	surface Surface,
 ) (cognition.Environment, environmentClose, error) {
+	return newScenarioEnvironmentWithAuthorizer(
+		fixture.SealedEnvironmentScenario(), episode, authorize, surface,
+	)
+}
+
+func newScenarioEnvironmentWithAuthorizer(
+	scenario labyrinth.Scenario,
+	episode cognition.EpisodeRef,
+	authorize labyrinth.AttemptAuthorizer,
+	surface Surface,
+) (cognition.Environment, environmentClose, error) {
 	if authorize == nil {
 		return nil, nil, fmt.Errorf("benchmark environment requires exact attempt authority")
 	}
-	scenario := fixture.generated.ExecutionScenario()
 	switch surface {
 	case SurfaceSymbolic:
 		environment, err := labyrinth.NewEnvironment(scenario, episode, authorize)

@@ -104,7 +104,7 @@ func newCognitionDatabaseFixture(
 
 func cognitionTestRuntimeBudget() cognition.RuntimeBudget {
 	return cognition.RuntimeBudget{
-		RemainingPolicyCalls: 32, MaxInputBytes: 64 * 1024, MaxInputTokens: 16 * 1024,
+		RemainingPolicyCalls: 32, MaxInputBytes: 64 * 1024, MaxInputTokens: 64*1024 + 2,
 		MaxOutputBytes: 16 * 1024, MaxOutputTokens: 4 * 1024,
 		MaxEvidenceRefs: 16, MaxActionArguments: 8,
 		MaxLedgerProposals: 8, MaxAttentionRequests: 8, MaxExpectedEffectBytes: 1024,

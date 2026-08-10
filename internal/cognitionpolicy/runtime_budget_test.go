@@ -29,3 +29,21 @@ func TestRuntimeBudgetMustFitFrozenBrainBeforeEpisodeStart(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeBudgetRequiresExactRawInputTokenAuthority(t *testing.T) {
+	projection := policyTestProjection(t, "exact raw budget")
+	snapshot, _ := policyTestSnapshot(t, projection)
+	brain, budget := policyTestBrain(), snapshot.Budget()
+	budget.MaxInputTokens++
+	if err := ValidateRuntimeBudget(brain, budget); !errors.Is(err, ErrInvalidBrain) {
+		t.Fatalf("ValidateRuntimeBudget() error=%v, want ErrInvalidBrain", err)
+	}
+}
+
+func TestBrainRejectsUnregisteredRawProviderVersion(t *testing.T) {
+	brain := policyTestBrain()
+	brain.BackendVersion = "0.25.0"
+	if err := brain.Validate(); !errors.Is(err, ErrInvalidBrain) {
+		t.Fatalf("BrainRef.Validate() error=%v, want ErrInvalidBrain", err)
+	}
+}

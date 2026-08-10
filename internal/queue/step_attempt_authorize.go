@@ -25,12 +25,8 @@ func (r *Repository) AuthorizeStepAttempt(
 		return err
 	}
 	defer tx.Rollback(ctx)
-	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
-	if err != nil {
+	if err := r.AuthorizeStepAttemptTransaction(ctx, tx, authority); err != nil {
 		return err
-	}
-	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
-		return staleStepAttemptError(authority, "job or step is not running", nil)
 	}
 	return tx.Commit(ctx)
 }
@@ -47,12 +43,12 @@ func (r *Repository) AuthorizeStepAttemptTransaction(
 	if ctx == nil || r == nil || r.pool == nil || tx == nil {
 		return fmt.Errorf("transactional step-attempt authorization requires PostgreSQL and context")
 	}
-	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
+	if err := validateStepAttemptAuthority(authority); err != nil {
+		return err
+	}
+	schema, err := resolveStepAttemptFenceTransaction(ctx, tx)
 	if err != nil {
 		return err
 	}
-	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
-		return staleStepAttemptError(authority, "job or step is not running", nil)
-	}
-	return nil
+	return callStepAttemptFenceTransaction(ctx, tx, schema, authority)
 }

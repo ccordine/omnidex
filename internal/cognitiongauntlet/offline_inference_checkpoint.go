@@ -7,7 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/cognitionruntime"
 )
 
-const PausedInferenceCheckpointSchemaV1 = "omnidex.paused-cognition-inference.v1"
+const PausedInferenceCheckpointSchemaV2 = "omnidex.paused-cognition-inference.v2"
 
 type RuntimePrefix struct {
 	Cycles                  uint32 `json:"cycles"`
@@ -26,6 +26,7 @@ type PausedInferenceCheckpoint struct {
 	Episode                  cognition.EpisodeRef      `json:"episode"`
 	PreCall                  SemanticPreCallCheckpoint `json:"pre_call"`
 	Prefix                   RuntimePrefix             `json:"runtime_prefix"`
+	Boundary                 inferenceBoundary         `json:"boundary"`
 	SuccessfulActions        uint32                    `json:"successful_actions"`
 }
 
@@ -35,25 +36,35 @@ func NewPausedInferenceCheckpoint(
 	preCall SemanticPreCallCheckpoint,
 	run cognitionruntime.RunResult,
 	successfulActions uint32,
+	boundary inferenceBoundary,
 ) (PausedInferenceCheckpoint, error) {
 	checkpoint := PausedInferenceCheckpoint{
-		Schema:                   PausedInferenceCheckpointSchemaV1,
+		Schema:                   PausedInferenceCheckpointSchemaV2,
 		PublicRunAuthoritySHA256: publicAuthoritySHA256,
 		Episode:                  episode, PreCall: preCall, Prefix: runtimePrefix(run),
-		SuccessfulActions: successfulActions,
+		Boundary: boundary, SuccessfulActions: successfulActions,
 	}
 	return checkpoint, checkpoint.Validate()
 }
 
 func (checkpoint PausedInferenceCheckpoint) Validate() error {
-	if checkpoint.Schema != PausedInferenceCheckpointSchemaV1 ||
+	if checkpoint.Schema != PausedInferenceCheckpointSchemaV2 ||
 		!validDigest(checkpoint.PublicRunAuthoritySHA256) || checkpoint.Episode.Validate() != nil ||
 		checkpoint.PreCall.Validate() != nil || checkpoint.PreCall.Bound.Attempt.Validate() != nil ||
+		checkpoint.Boundary.Validate() != nil ||
 		checkpoint.Prefix.Cycles == 0 || checkpoint.Prefix.PolicyCalls > checkpoint.Prefix.Cycles ||
 		checkpoint.Prefix.EnvironmentActions > checkpoint.Prefix.Cycles ||
-		checkpoint.SuccessfulActions == 0 || checkpoint.SuccessfulActions > checkpoint.Prefix.EnvironmentActions ||
+		checkpoint.SuccessfulActions > checkpoint.Prefix.EnvironmentActions ||
 		checkpoint.PreCall.Bound.Projection.SHA256 != checkpoint.PreCall.ProjectionRenderedSHA256 {
 		return fmt.Errorf("paused cognition inference checkpoint is invalid")
+	}
+	if checkpoint.Boundary.Kind == inferenceBoundaryActions &&
+		checkpoint.SuccessfulActions != checkpoint.Boundary.Count {
+		return fmt.Errorf("paused cognition action boundary is inconsistent")
+	}
+	if checkpoint.Boundary.Kind == inferenceBoundaryDecisions &&
+		checkpoint.Prefix.PolicyCalls != checkpoint.Boundary.Count {
+		return fmt.Errorf("paused cognition decision boundary is inconsistent")
 	}
 	return nil
 }

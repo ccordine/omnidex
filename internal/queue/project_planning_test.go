@@ -126,7 +126,7 @@ func TestProjectPlanningRepositoryRoundTrip(t *testing.T) {
 		t.Skipf("PostgreSQL unavailable: %v", err)
 	}
 	repo := New(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
+	if err := repo.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	location := fmt.Sprintf("/tmp/omni-planning-test-%d", time.Now().UnixNano())

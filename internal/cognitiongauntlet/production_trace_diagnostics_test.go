@@ -57,7 +57,7 @@ func TestProductionDiagnosticsDeriveDurableTimingAndWorkingSetMetrics(t *testing
 	if err := state.diagnostics.finish(state); err != nil {
 		t.Fatal(err)
 	}
-	if state.metrics.Resources.ModelMilliseconds != 25 ||
+	if state.metrics.Resources.PolicyWallMilliseconds != 25 ||
 		state.metrics.Resources.WallMilliseconds != 250 ||
 		state.metrics.Resources.PeakWorkingSetBytes != 17 ||
 		state.metrics.Memory.Reacquisitions != 1 || state.metrics.Memory.Thrashes != 0 {

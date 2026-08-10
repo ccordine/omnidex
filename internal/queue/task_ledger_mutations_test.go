@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -23,14 +22,13 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 

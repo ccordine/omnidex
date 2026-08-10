@@ -85,6 +85,12 @@ func (*repositoryCognitionTestClient) Embedding(context.Context, string) ([]floa
 
 func (*repositoryCognitionTestClient) RequireExactPreparedContract() error { return nil }
 
+func (*repositoryCognitionTestClient) ValidateExactPreparedProvider(
+	expected llm.ProviderIdentityExpectation,
+) error {
+	return expected.Validate()
+}
+
 func (client *repositoryCognitionTestClient) ValidateExactPreparedContract(
 	prepared llm.PreparedModel,
 ) error {

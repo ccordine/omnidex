@@ -19,17 +19,22 @@ func createOfflineDatabaseAuthorities(
 	hostPassword string,
 ) error {
 	var inferencePasswordLiteral string
-	if err := admin.QueryRow(ctx, `SELECT quote_literal($1)`, inferencePassword).Scan(&inferencePasswordLiteral); err != nil {
-		return err
-	}
 	var hostPasswordLiteral string
-	if err := admin.QueryRow(ctx, `SELECT quote_literal($1)`, hostPassword).Scan(&hostPasswordLiteral); err != nil {
-		return err
-	}
 	runtimeID := pgx.Identifier{runtimeSchema}.Sanitize()
 	hostID := pgx.Identifier{hostSchema}.Sanitize()
 	inferenceRoleID := pgx.Identifier{inferenceRole}.Sanitize()
 	hostRoleID := pgx.Identifier{hostRole}.Sanitize()
+	tx, err := admin.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin offline database authority creation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := tx.QueryRow(ctx, `SELECT quote_literal($1)`, inferencePassword).Scan(&inferencePasswordLiteral); err != nil {
+		return err
+	}
+	if err := tx.QueryRow(ctx, `SELECT quote_literal($1)`, hostPassword).Scan(&hostPasswordLiteral); err != nil {
+		return err
+	}
 	commands := []string{
 		"CREATE SCHEMA " + runtimeID,
 		"CREATE SCHEMA " + hostID,
@@ -41,9 +46,17 @@ func createOfflineDatabaseAuthorities(
 			" NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 8",
 	}
 	for _, command := range commands {
-		if _, err := admin.Exec(ctx, command); err != nil {
+		if _, err := tx.Exec(ctx, command); err != nil {
 			return fmt.Errorf("create offline database authority: %w", err)
 		}
+	}
+	if err := validateCreatedOfflineAuthorities(
+		ctx, tx, runtimeSchema, hostSchema, inferenceRole, hostRole,
+	); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit offline database authority creation: %w", err)
 	}
 	return nil
 }
@@ -60,12 +73,12 @@ func grantOfflineHostAuthority(
 		"GRANT USAGE ON SCHEMA " + schema + " TO " + role,
 		"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA " + schema + " TO " + role,
 	}
-	for _, command := range commands {
-		if _, err := admin.Exec(ctx, command); err != nil {
-			return fmt.Errorf("grant offline host authority: %w", err)
-		}
-	}
-	return nil
+	return executeOfflineAuthorityTransaction(
+		ctx, admin, "grant offline host authority", commands,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return validateOfflineTableAuthority(ctx, tx, schemaName, roleName, false)
+		},
+	)
 }
 
 func grantOfflineRuntimeAuthority(
@@ -81,12 +94,12 @@ func grantOfflineRuntimeAuthority(
 		"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA " + schema + " TO " + role,
 		"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA " + schema + " TO " + role,
 	}
-	for _, command := range commands {
-		if _, err := admin.Exec(ctx, command); err != nil {
-			return fmt.Errorf("grant offline runtime authority: %w", err)
-		}
-	}
-	return nil
+	return executeOfflineAuthorityTransaction(
+		ctx, admin, "grant offline runtime authority", commands,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return validateOfflineTableAuthority(ctx, tx, schemaName, roleName, true)
+		},
+	)
 }
 
 func revokeOfflineInferenceLogin(

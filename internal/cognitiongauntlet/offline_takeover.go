@@ -32,7 +32,7 @@ func RunOfflineTakeover(
 	if err != nil {
 		return OfflineTakeoverReceipt{}, err
 	}
-	migrationsDirectory, err := releaseMigrationBundle(executable, buildversion.MigrationsSHA256)
+	migrations, err := loadReleaseMigrationBundle(executable, buildversion.MigrationsSHA256)
 	if err != nil {
 		return OfflineTakeoverReceipt{}, err
 	}
@@ -66,10 +66,7 @@ func RunOfflineTakeover(
 	if err := os.Remove(generatorPath); err != nil {
 		return OfflineTakeoverReceipt{}, fmt.Errorf("remove consumed generator authority: %w", err)
 	}
-	if err := verifyMigrationBundle(migrationsDirectory, buildversion.MigrationsSHA256); err != nil {
-		return OfflineTakeoverReceipt{}, err
-	}
-	database, err := prepareOfflinePromotionDatabase(ctx, promotion, migrationsDirectory)
+	database, err := prepareOfflinePromotionDatabase(ctx, promotion, migrations)
 	if err != nil {
 		return OfflineTakeoverReceipt{}, err
 	}

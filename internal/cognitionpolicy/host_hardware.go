@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const HostHardwareAttestationSchemaV1 = "omnidex.host-hardware-attestation.v1"
+const HostHardwareAttestationSchemaV2 = "omnidex.host-hardware-attestation.v2"
 
 type HostHardwareAttestation struct {
 	Schema                    string `json:"schema"`
@@ -51,7 +51,7 @@ func NewHostHardwareAttestation(
 	acceleratorIdentitySHA256 string,
 ) (HostHardwareAttestation, error) {
 	attestation := HostHardwareAttestation{
-		Schema: HostHardwareAttestationSchemaV1,
+		Schema: HostHardwareAttestationSchemaV2,
 		OS:     operatingSystem, Architecture: architecture, LogicalCPUs: logicalCPUs,
 		CPUIdentitySHA256:         cpuIdentitySHA256,
 		AcceleratorIdentitySHA256: acceleratorIdentitySHA256,
@@ -89,7 +89,7 @@ func attestHostHardware(probe hostHardwareProbe) (HostHardwareAttestation, error
 }
 
 func (attestation HostHardwareAttestation) Validate() error {
-	if attestation.Schema != HostHardwareAttestationSchemaV1 ||
+	if attestation.Schema != HostHardwareAttestationSchemaV2 ||
 		attestation.OS != "linux" || !validExactName(attestation.Architecture, 64) ||
 		attestation.LogicalCPUs < 1 ||
 		!validPolicySHA256(attestation.CPUIdentitySHA256) ||
@@ -168,7 +168,7 @@ func exactStringListSHA256(values []string) string {
 func hostAttestationSHA256(attestation HostHardwareAttestation) string {
 	copy := attestation
 	copy.AttestationSHA256 = ""
-	raw, err := json.Marshal(copy)
+	raw, err := canonicalPolicyJSON(copy)
 	if err != nil {
 		panic(err)
 	}

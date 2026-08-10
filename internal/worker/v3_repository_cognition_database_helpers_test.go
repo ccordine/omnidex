@@ -82,6 +82,13 @@ func openRepositoryCognitionDatabase(
 		admin.Close()
 		t.Fatal(err)
 	}
+	var authoritySchema string
+	if err := admin.QueryRow(ctx, `SELECT 'omnidex_host_authority_' || md5($1)`, schema).Scan(
+		&authoritySchema,
+	); err != nil {
+		admin.Close()
+		t.Fatal(err)
+	}
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		admin.Close()
@@ -97,12 +104,13 @@ func openRepositoryCognitionDatabase(
 		pool.Close()
 		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
 		defer stop()
+		_, _ = admin.Exec(cleanup,
+			"DROP SCHEMA IF EXISTS "+pgx.Identifier{authoritySchema}.Sanitize()+" CASCADE")
 		_, _ = admin.Exec(cleanup, "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
 		admin.Close()
 	})
-	t.Setenv("MIGRATIONS_DIR", "../../migrations")
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadWorkerTestMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, repository, pool

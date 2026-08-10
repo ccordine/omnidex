@@ -2,63 +2,71 @@ package llm
 
 import (
 	"context"
-	"strings"
 	"testing"
+	"time"
 )
 
 type providerDiscoveryTestClient struct {
 	Client
-	attestation ProviderIdentityAttestation
+	observed ObservedProviderIdentity
 }
 
-func (client providerDiscoveryTestClient) DiscoverProviderIdentity(
+func (client providerDiscoveryTestClient) DiscoverProviderIdentityEvidence(
 	_ context.Context,
 	_ ProviderIdentitySelection,
-) (ProviderIdentityAttestation, error) {
-	return client.attestation, nil
+	_ string,
+) (ObservedProviderIdentity, error) {
+	return client.observed, nil
 }
 
-func TestRequireDiscoveredProviderIdentityBindsOnlySelectedFields(t *testing.T) {
-	selection := ProviderIdentitySelection{Model: "model:v1", NativeContextLimit: 32768}
-	expected := ProviderIdentityExpectation{
-		Backend: "provider", BackendVersion: "1.2.3", Model: selection.Model,
-		Digest: strings.Repeat("a", 64), Quantization: "Q4",
-		NativeContextLimit: selection.NativeContextLimit,
+func TestRequireDiscoveredProviderIdentityEvidencePreservesRawAuthority(t *testing.T) {
+	expected := providerIdentityTestExpectation()
+	selection := ProviderIdentitySelection{
+		Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
 	}
 	attestation, err := NewProviderIdentityAttestation(expected, "backend", "installed", "runner")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := RequireDiscoveredProviderIdentity(
-		context.Background(), providerDiscoveryTestClient{attestation: attestation}, selection,
+	scope := "provider-discovery-test"
+	challenge, err := DeriveProviderIdentityDiscoveryChallenge(scope, selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := NewObservedProviderIdentity(
+		time.Date(2026, 8, 10, 18, 0, 0, 0, time.UTC), attestation,
+		providerIdentityTestEvidence(t, expected), challenge,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != attestation {
-		t.Fatalf("attestation=%+v want %+v", got, attestation)
-	}
-}
-
-func TestRequireDiscoveredProviderIdentityRejectsUnsupportedOrChangedSelection(t *testing.T) {
-	selection := ProviderIdentitySelection{Model: "model:v1", NativeContextLimit: 32768}
-	if _, err := RequireDiscoveredProviderIdentity(
-		context.Background(), providerIdentityTestClient{}, selection,
-	); err == nil {
-		t.Fatal("provider without discovery authority was accepted")
-	}
-	expected := ProviderIdentityExpectation{
-		Backend: "provider", BackendVersion: "1.2.3", Model: "model:v2",
-		Digest: strings.Repeat("a", 64), Quantization: "Q4",
-		NativeContextLimit: selection.NativeContextLimit,
-	}
-	attestation, err := NewProviderIdentityAttestation(expected, "backend", "installed", "runner")
+	got, err := RequireDiscoveredProviderIdentityEvidence(
+		context.Background(), providerDiscoveryTestClient{observed: observed}, selection, scope,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := RequireDiscoveredProviderIdentity(
-		context.Background(), providerDiscoveryTestClient{attestation: attestation}, selection,
+	if got.Attestation != observed.Attestation || got.Observation != observed.Observation ||
+		got.Evidence.Ref != observed.Evidence.Ref {
+		t.Fatalf("observed identity changed: %#v", got)
+	}
+}
+
+func TestRequireDiscoveredProviderIdentityEvidenceRejectsUnsupportedOrChangedSelection(t *testing.T) {
+	expected := providerIdentityTestExpectation()
+	selection := ProviderIdentitySelection{
+		Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
+	}
+	if _, err := RequireDiscoveredProviderIdentityEvidence(
+		context.Background(), struct{ Client }{}, selection, "provider-discovery-test",
 	); err == nil {
-		t.Fatal("provider discovery changed the selected model")
+		t.Fatal("provider without raw discovery authority was accepted")
+	}
+	changed := selection
+	changed.Model = "other-model"
+	if _, err := RequireDiscoveredProviderIdentityEvidence(
+		context.Background(), providerDiscoveryTestClient{}, changed, "provider-discovery-test",
+	); err == nil {
+		t.Fatal("provider discovery without raw evidence was accepted")
 	}
 }

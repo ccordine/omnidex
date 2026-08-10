@@ -131,8 +131,10 @@ func runPrivateReplayEpisode(
 	}
 	result, err := RunPublicAblation(context.Background(), bundle, PublicAblationRunRequest{
 		Actor: actor, Client: client, Environment: environment,
-		Completion:          localRuntimeCompletion{evaluator: environment.(ablationGoalEvaluator)},
-		ContaminatedOracle:  &oracle,
+		Completion: localRuntimeCompletion{evaluator: environment.(ablationGoalEvaluator)},
+		ContaminatedEvidence: &ContaminatedEvidencePacket{
+			Witness: oracle.Witness, EvidenceUses: oracle.EvidenceUses,
+		},
 		EpisodeSealPath:     filepath.Join(t.TempDir(), "episode.json"),
 		LedgerSchemaVersion: "task-ledger.v1", WorkingSetPolicyVersion: "working-set.v1",
 		ProjectionPolicyVersion: ablationProjectionPolicyVersionV1,

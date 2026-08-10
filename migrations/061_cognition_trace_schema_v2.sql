@@ -43,6 +43,30 @@ CREATE TRIGGER cognition_trace_schema_authority_no_truncate
 BEFORE TRUNCATE ON cognition_trace_schema_authority
 FOR EACH STATEMENT EXECUTE FUNCTION prevent_cognition_immutable_mutation();
 
+CREATE OR REPLACE FUNCTION cognition_policy_evidence_trace_sha256(
+    evidence_kind TEXT,
+    call_id TEXT,
+    evidence_id TEXT,
+    reference_json_sha256 TEXT,
+    content_sha256 TEXT,
+    content_bytes BIGINT
+) RETURNS TEXT AS $$
+BEGIN
+    IF evidence_kind NOT IN ('model_response','provider_generation','provider_response_capture') THEN
+        RAISE EXCEPTION 'unregistered cognition policy evidence trace kind';
+    END IF;
+    RETURN encode(digest(cognition_canonical_jsonb(jsonb_build_object(
+        'schema','omnidex.cognition-policy-evidence-trace.v1',
+        'evidence_kind',evidence_kind,
+        'call_id',call_id,
+        'evidence_id',evidence_id,
+        'reference_json_sha256',reference_json_sha256,
+        'content_sha256',content_sha256,
+        'bytes',content_bytes
+    )),'sha256'),'hex');
+END;
+$$ LANGUAGE plpgsql IMMUTABLE STRICT;
+
 CREATE OR REPLACE FUNCTION require_cognition_terminal_trace_schema_v2()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -92,6 +116,120 @@ BEGIN
         )
     ) THEN
         RAISE EXCEPTION 'cognition terminal trace contains unbound revision authority';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM cognition_provider_process_observations observations
+        WHERE observations.episode_id=NEW.episode_id AND NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(NEW.trace_json::jsonb->'records') record
+            WHERE record->>'kind'='provider_process_observation'
+              AND record->>'id'=observations.observation_id
+              AND record->>'sha256'=observations.receipt_sha256
+              AND (record->>'sequence')::BIGINT=observations.sequence
+        )
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements(NEW.trace_json::jsonb->'records') record
+        WHERE record->>'kind'='provider_process_observation' AND NOT EXISTS (
+            SELECT 1 FROM cognition_provider_process_observations observations
+            WHERE observations.episode_id=NEW.episode_id
+              AND observations.observation_id=record->>'id'
+              AND observations.receipt_sha256=record->>'sha256'
+              AND observations.sequence=(record->>'sequence')::BIGINT
+        )
+    ) THEN
+        RAISE EXCEPTION 'cognition terminal trace omitted or forged provider process authority';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM cognition_policy_response_evidence evidence
+        JOIN cognition_policy_calls calls ON calls.call_id=evidence.call_id
+        JOIN cognition_runtime_snapshots snapshots ON snapshots.snapshot_sha256=calls.snapshot_sha256
+        WHERE evidence.episode_id=NEW.episode_id AND NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(NEW.trace_json::jsonb->'records') record
+            WHERE record->>'kind'='policy_response_evidence'
+              AND record->>'id'=evidence.evidence_id
+              AND record->>'sha256'=cognition_policy_evidence_trace_sha256(
+                  'model_response',evidence.call_id,evidence.evidence_id,evidence.ref_sha256,
+                  evidence.response_sha256,evidence.response_bytes
+              )
+              AND (record->>'call_ordinal')::BIGINT=snapshots.call_ordinal
+              AND (record->>'phase')::INTEGER=32 AND (record->>'sequence')::BIGINT=0
+        )
+    ) OR EXISTS (
+        SELECT 1 FROM cognition_policy_provider_generation_evidence evidence
+        JOIN cognition_policy_calls calls ON calls.call_id=evidence.call_id
+        JOIN cognition_runtime_snapshots snapshots ON snapshots.snapshot_sha256=calls.snapshot_sha256
+        WHERE evidence.episode_id=NEW.episode_id AND NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(NEW.trace_json::jsonb->'records') record
+            WHERE record->>'kind'='policy_provider_generation_evidence'
+              AND record->>'id'=evidence.evidence_id
+              AND record->>'sha256'=cognition_policy_evidence_trace_sha256(
+                  'provider_generation',evidence.call_id,evidence.evidence_id,evidence.ref_sha256,
+                  evidence.generation_sha256,evidence.generation_bytes
+              )
+              AND (record->>'call_ordinal')::BIGINT=snapshots.call_ordinal
+              AND (record->>'phase')::INTEGER=32 AND (record->>'sequence')::BIGINT=0
+        )
+    ) OR EXISTS (
+        SELECT 1 FROM cognition_policy_provider_response_captures evidence
+        JOIN cognition_policy_calls calls ON calls.call_id=evidence.call_id
+        JOIN cognition_runtime_snapshots snapshots ON snapshots.snapshot_sha256=calls.snapshot_sha256
+        WHERE evidence.episode_id=NEW.episode_id AND NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(NEW.trace_json::jsonb->'records') record
+            WHERE record->>'kind'='policy_provider_response_capture'
+              AND record->>'id'=evidence.evidence_id
+              AND record->>'sha256'=cognition_policy_evidence_trace_sha256(
+                  'provider_response_capture',evidence.call_id,evidence.evidence_id,evidence.ref_sha256,
+                  evidence.capture_sha256,evidence.capture_bytes
+              )
+              AND (record->>'call_ordinal')::BIGINT=snapshots.call_ordinal
+              AND (record->>'phase')::INTEGER=32 AND (record->>'sequence')::BIGINT=0
+        )
+    ) THEN
+        RAISE EXCEPTION 'cognition terminal trace omitted policy evidence metadata';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM jsonb_array_elements(NEW.trace_json::jsonb->'records') record
+        WHERE record->>'kind'='policy_response_evidence' AND NOT EXISTS (
+            SELECT 1 FROM cognition_policy_response_evidence evidence
+            JOIN cognition_policy_calls calls ON calls.call_id=evidence.call_id
+            JOIN cognition_runtime_snapshots snapshots ON snapshots.snapshot_sha256=calls.snapshot_sha256
+            WHERE evidence.episode_id=NEW.episode_id AND evidence.evidence_id=record->>'id'
+              AND record->>'sha256'=cognition_policy_evidence_trace_sha256(
+                  'model_response',evidence.call_id,evidence.evidence_id,evidence.ref_sha256,
+                  evidence.response_sha256,evidence.response_bytes
+              )
+              AND (record->>'call_ordinal')::BIGINT=snapshots.call_ordinal
+              AND (record->>'phase')::INTEGER=32 AND (record->>'sequence')::BIGINT=0
+        )
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements(NEW.trace_json::jsonb->'records') record
+        WHERE record->>'kind'='policy_provider_generation_evidence' AND NOT EXISTS (
+            SELECT 1 FROM cognition_policy_provider_generation_evidence evidence
+            JOIN cognition_policy_calls calls ON calls.call_id=evidence.call_id
+            JOIN cognition_runtime_snapshots snapshots ON snapshots.snapshot_sha256=calls.snapshot_sha256
+            WHERE evidence.episode_id=NEW.episode_id AND evidence.evidence_id=record->>'id'
+              AND record->>'sha256'=cognition_policy_evidence_trace_sha256(
+                  'provider_generation',evidence.call_id,evidence.evidence_id,evidence.ref_sha256,
+                  evidence.generation_sha256,evidence.generation_bytes
+              )
+              AND (record->>'call_ordinal')::BIGINT=snapshots.call_ordinal
+              AND (record->>'phase')::INTEGER=32 AND (record->>'sequence')::BIGINT=0
+        )
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements(NEW.trace_json::jsonb->'records') record
+        WHERE record->>'kind'='policy_provider_response_capture' AND NOT EXISTS (
+            SELECT 1 FROM cognition_policy_provider_response_captures evidence
+            JOIN cognition_policy_calls calls ON calls.call_id=evidence.call_id
+            JOIN cognition_runtime_snapshots snapshots ON snapshots.snapshot_sha256=calls.snapshot_sha256
+            WHERE evidence.episode_id=NEW.episode_id AND evidence.evidence_id=record->>'id'
+              AND record->>'sha256'=cognition_policy_evidence_trace_sha256(
+                  'provider_response_capture',evidence.call_id,evidence.evidence_id,evidence.ref_sha256,
+                  evidence.capture_sha256,evidence.capture_bytes
+              )
+              AND (record->>'call_ordinal')::BIGINT=snapshots.call_ordinal
+              AND (record->>'phase')::INTEGER=32 AND (record->>'sequence')::BIGINT=0
+        )
+    ) THEN
+        RAISE EXCEPTION 'cognition terminal trace contains forged policy evidence metadata';
     END IF;
     RETURN NEW;
 END;

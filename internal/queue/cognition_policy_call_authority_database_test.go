@@ -25,6 +25,7 @@ func (*captureCognitionCallJournal) Finish(
 	context.Context,
 	cognitionpolicy.CallAttempt,
 	cognitionpolicy.CallResult,
+	cognitionpolicy.CallEvidence,
 ) error {
 	return errors.New("capture journal cannot finish")
 }

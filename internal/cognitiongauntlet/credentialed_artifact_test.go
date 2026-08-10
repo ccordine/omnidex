@@ -23,9 +23,15 @@ func TestPrivateOracleArtifactRequiresEvaluatorOnlyCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	private := privateEvaluationFixture{
-		Schema: privateEvaluationFixtureSchemaV1, Spec: fixture.spec, Surface: SurfaceSymbolic,
-		Authority: paired, Oracle: fixture.generated.PrivateOracle(),
+		Schema: privateEvaluationFixtureSchemaV2,
+		Scenario: OfflineScenarioSpec{
+			Schema: OfflineScenarioSpecSchemaV1, Kind: OfflineScenarioInitial,
+			Initial: &fixture.spec,
+		},
+		Surface: SurfaceSymbolic, Authority: paired,
 	}
+	oracle := fixture.generated.PrivateOracle()
+	private.InitialOracle = &oracle
 	path := filepath.Join(t.TempDir(), "private-oracle.json")
 	credential := "evaluator-only-credential"
 	if err := sealCredentialedJSON(path, private, credential, "private cognition evaluation fixture"); err != nil {
@@ -36,7 +42,7 @@ func TestPrivateOracleArtifactRequiresEvaluatorOnlyCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, forbidden := range []string{
-		`"seed"`, `"oracle"`, `"witness"`, string(private.Oracle.OracleSHA256),
+		`"seed"`, `"oracle"`, `"witness"`, string(private.InitialOracle.OracleSHA256),
 	} {
 		if bytes.Contains(raw, []byte(forbidden)) {
 			t.Fatalf("credentialed private artifact exposed %q", forbidden)
@@ -50,7 +56,7 @@ func TestPrivateOracleArtifactRequiresEvaluatorOnlyCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	if loaded.Authority.OracleSHA256 != paired.OracleSHA256 ||
-		loaded.Spec.Generator.Seed != fixture.spec.Generator.Seed {
+		loaded.Scenario.Seed() != fixture.spec.Generator.Seed {
 		t.Fatal("private evaluator artifact changed authority")
 	}
 }

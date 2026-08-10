@@ -8,7 +8,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/labyrinth"
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 // witnessPolicyClient is test machinery, not a cognition baseline. It follows a
@@ -220,80 +219,4 @@ func witnessCurrentObligation(envelope witnessPolicyEnvelope) (cognition.Obligat
 		return cognition.Obligation{}, fmt.Errorf("projected current obligation matched %d items", len(matches))
 	}
 	return matches[0], nil
-}
-
-func (client *witnessPolicyClient) PrepareContextModel(
-	_ context.Context,
-	modelName string,
-	prompt string,
-) (llm.PreparedModel, error) {
-	if modelName != client.model || prompt == "" {
-		return llm.PreparedModel{}, fmt.Errorf("witness policy received invalid prepared-model authority")
-	}
-	client.mu.Lock()
-	client.prompts = append(client.prompts, prompt)
-	client.mu.Unlock()
-	return llm.PreparedModel{
-		BaseModel: modelName, ContextModel: modelName, Prompt: prompt,
-	}, nil
-}
-
-func (client *witnessPolicyClient) GeneratePrepared(
-	_ context.Context,
-	prepared llm.PreparedModel,
-) (string, error) {
-	if err := llm.ValidateResponseContract(prepared); err != nil {
-		return "", err
-	}
-	if prepared.PromptHint != llm.MinimalGeneratePrompt || prepared.ResponseFormat != llm.ResponseFormatJSON ||
-		len(prepared.ResponseSchema) == 0 || prepared.ThinkingEnabled || prepared.Temperature == nil ||
-		*prepared.Temperature != 0 || prepared.MaxOutputTokens <= 0 || prepared.ContextTokens <= 0 {
-		return "", fmt.Errorf("witness policy received a non-frozen prepared cognition contract")
-	}
-	return client.generateDecision(prepared.BaseModel, prepared.Prompt)
-}
-
-func (*witnessPolicyClient) CleanupPreparedModel(llm.PreparedModel) {}
-
-func (*witnessPolicyClient) RequireExactPreparedContract() error { return nil }
-
-func (*witnessPolicyClient) AttestProviderIdentity(
-	_ context.Context,
-	expected llm.ProviderIdentityExpectation,
-) (llm.ProviderIdentityAttestation, error) {
-	return llm.NewProviderIdentityAttestation(
-		expected, "fixture:backend", "fixture:installed", "fixture:runner",
-	)
-}
-
-func (*witnessPolicyClient) ValidateExactPreparedContract(prepared llm.PreparedModel) error {
-	if err := llm.ValidateResponseContract(prepared); err != nil {
-		return err
-	}
-	if prepared.BaseModel == "" || prepared.ContextModel != prepared.BaseModel || prepared.Prompt == "" ||
-		prepared.PromptHint != llm.MinimalGeneratePrompt || prepared.MaxOutputTokens <= 0 ||
-		prepared.ContextTokens <= 0 || prepared.ResponseFormat != llm.ResponseFormatJSON ||
-		len(prepared.ResponseSchema) == 0 || prepared.ThinkingEnabled || prepared.Temperature == nil ||
-		*prepared.Temperature != 0 {
-		return fmt.Errorf("witness policy received a non-exact prepared cognition contract")
-	}
-	return llm.ValidateInferenceBudget(
-		prepared.ContextTokens, prepared.MaxOutputTokens, prepared.Prompt, prepared.PromptHint,
-	)
-}
-
-func (*witnessPolicyClient) Embedding(context.Context, string) ([]float64, error) {
-	return nil, fmt.Errorf("witness policy does not permit embedding fallback")
-}
-
-func (client *witnessPolicyClient) calls() int {
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	return client.next
-}
-
-func (client *witnessPolicyClient) renderedPrompts() []string {
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	return append([]string{}, client.prompts...)
 }

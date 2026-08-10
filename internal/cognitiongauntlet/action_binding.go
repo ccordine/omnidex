@@ -17,7 +17,14 @@ func privateWitnessAction(
 	oracle labyrinth.Oracle,
 	id cognition.ActionID,
 ) (labyrinth.WitnessAction, error) {
-	for _, action := range oracle.Witness {
+	return privateWitnessActionIn(oracle.Witness, id)
+}
+
+func privateWitnessActionIn(
+	witness []labyrinth.WitnessAction,
+	id cognition.ActionID,
+) (labyrinth.WitnessAction, error) {
+	for _, action := range witness {
 		if action.ID == id {
 			return action, nil
 		}

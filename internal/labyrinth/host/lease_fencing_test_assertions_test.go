@@ -1,7 +1,9 @@
 package host
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
@@ -22,7 +24,8 @@ func fencedHostAttestedBrain(t *testing.T) cognitionpolicy.AttestedBrain {
 		t.Fatal(err)
 	}
 	brain, err := cognitionpolicy.NewBrainRef(
-		"host-fence-model", fencedHostTestDigest, "Q4", "host-fence-provider", "1.0.0",
+		"host-fence-model", fencedHostTestDigest, "Q4",
+		llm.ExactPreparedProviderBackend, llm.ExactPreparedProviderVersion,
 		"host-attestation:"+host.AttestationSHA256, sampling,
 	)
 	if err != nil {
@@ -38,11 +41,61 @@ func fencedHostAttestedBrain(t *testing.T) cognitionpolicy.AttestedBrain {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attested, err := cognitionpolicy.NewAttestedBrain(brain, provider, host)
+	bootstrap, err := cognitionpolicy.BootstrapProviderIdentityRequest(brain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := fencedHostProviderEvidence(provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := llm.NewObservedProviderIdentity(
+		time.Date(2026, 8, 9, 20, 0, 0, 0, time.UTC), provider,
+		evidence, bootstrap.ChallengeSHA256,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attested, err := cognitionpolicy.NewAttestedBrain(brain, provider, observation.Observation, host)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return attested
+}
+
+func fencedHostProviderEvidence(
+	attestation llm.ProviderIdentityAttestation,
+) (llm.ProviderIdentityEvidence, error) {
+	selection := llm.ProviderIdentitySelection{
+		Model: attestation.Model, NativeContextLimit: attestation.NativeContextLimit,
+	}
+	tokenizerRequest, err := llm.ExactProviderTokenizerRequestBytes(selection)
+	if err != nil {
+		return llm.ProviderIdentityEvidence{}, err
+	}
+	preloadRequest, err := llm.ExactProviderPreloadRequestBytes(selection)
+	if err != nil {
+		return llm.ProviderIdentityEvidence{}, err
+	}
+	version := []byte(fmt.Sprintf(`{"version":%q}`, attestation.BackendVersion))
+	installed := []byte(fmt.Sprintf(
+		`{"models":[{"name":%q,"model":%q,"size":1,"digest":%q,"details":{"parent_model":"","format":"gguf","family":"qwen3","families":["qwen3"],"parameter_size":"9B","quantization_level":%q}}]}`,
+		attestation.Model, attestation.Model, attestation.Digest, attestation.Quantization,
+	))
+	tokenizer := []byte(`{"model_info":{"general.architecture":"qwen35",` +
+		`"tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35",` +
+		`"tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,` +
+		`"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,` +
+		`"tokenizer.ggml.merges":null}}`)
+	runner := []byte(fmt.Sprintf(
+		`{"models":[{"name":%q,"model":%q,"size":1,"size_vram":1,"digest":%q,"details":{"parent_model":"","format":"gguf","family":"qwen3","families":["qwen3"],"parameter_size":"9B","quantization_level":%q},"context_length":%d}]}`,
+		attestation.Model, attestation.Model, attestation.Digest,
+		attestation.Quantization, attestation.NativeContextLimit,
+	))
+	return llm.NewSuccessfulProviderIdentityEvidence(
+		version, installed, tokenizerRequest, tokenizer,
+		preloadRequest, []byte(`{"done":true}`), runner,
+	)
 }
 
 func stepAuthority(actor cognition.AttemptRef) model.StepAttemptAuthority {

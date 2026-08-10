@@ -4,10 +4,15 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/cognition"
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-const PairedRunAuthoritySchemaV1 = "omnidex.cognition-paired-run.v1"
+const (
+	PairedRunAuthoritySchemaV1  = "omnidex.cognition-paired-run.v1"
+	RunBudgetSchemaStructuralV1 = "omnidex.cognition-run-budget.structural.v1"
+	RunBudgetSchemaRawV2        = "omnidex.cognition-run-budget.raw-input.v2"
+)
 
 type Variant string
 
@@ -25,6 +30,7 @@ const (
 )
 
 type RunBudget struct {
+	Schema             string         `json:"schema"`
 	ContextBytes       int            `json:"context_bytes"`
 	WorkingSetBytes    int            `json:"working_set_bytes"`
 	RuntimeCycles      int            `json:"runtime_cycles"`
@@ -106,6 +112,9 @@ func (authority PairedRunAuthority) Validate() error {
 }
 
 func (budget RunBudget) Validate() error {
+	if budget.Schema != RunBudgetSchemaStructuralV1 && budget.Schema != RunBudgetSchemaRawV2 {
+		return fmt.Errorf("paired cognition run-budget schema is invalid")
+	}
 	if budget.ContextBytes <= 0 || budget.WorkingSetBytes <= 0 || budget.RuntimeCycles <= 0 ||
 		budget.ModelCalls <= 0 ||
 		budget.EnvironmentActions <= 0 || budget.ToolOperations <= 0 {
@@ -122,7 +131,42 @@ func (budget RunBudget) Validate() error {
 		budget.ToolOperations > 1_000_000 {
 		return fmt.Errorf("paired cognition budget exceeds registered limits")
 	}
+	if budget.Schema == RunBudgetSchemaRawV2 &&
+		budget.Station.MaxInputTokens != budget.Station.MaxInputBytes+
+			llm.MaxRawInputSpecialTokenReserve {
+		return fmt.Errorf("raw cognition station input ceiling is not code-derived")
+	}
 	return nil
+}
+
+// NewExecutableRunBudgetV2 supersedes a structural benchmark budget with the
+// exact raw-provider input authority. The caller never supplies the derived
+// token ceiling persisted in serious run configuration and preregistration.
+func NewExecutableRunBudgetV2(
+	structural RunBudget,
+	sampling cognitionpolicy.SamplingIdentity,
+) (RunBudget, error) {
+	if structural.Schema != RunBudgetSchemaStructuralV1 {
+		return RunBudget{}, fmt.Errorf("executable cognition budget requires structural v1 input")
+	}
+	if err := structural.Validate(); err != nil {
+		return RunBudget{}, err
+	}
+	if err := sampling.Validate(); err != nil {
+		return RunBudget{}, err
+	}
+	if structural.ContextBytes != sampling.ContextCeilingBytes ||
+		structural.Station.MaxInputBytes > sampling.ContextCeilingBytes ||
+		structural.Station.MaxOutputTokens != sampling.MaxOutputTokens {
+		return RunBudget{}, fmt.Errorf("structural cognition budget changed frozen sampling ceilings")
+	}
+	result := structural
+	result.Schema = RunBudgetSchemaRawV2
+	result.Station.MaxInputTokens = result.Station.MaxInputBytes + sampling.InputSpecialTokenReserve
+	if err := result.Validate(); err != nil {
+		return RunBudget{}, err
+	}
+	return result, nil
 }
 
 func (budget DecisionBudget) Validate() error {
@@ -168,26 +212,30 @@ func (budget RunBudget) ValidateFor(generation RatGeneration) error {
 	if err := generation.Validate(); err != nil {
 		return err
 	}
+	if budget.Schema != RunBudgetSchemaRawV2 {
+		return fmt.Errorf("structural cognition budget is not executable under the raw provider contract")
+	}
 	if budget.ContextBytes != generation.Fixed.ContextCeilingBytes {
 		return fmt.Errorf("cognition run changed its frozen context ceiling")
 	}
-	if budget.Station.MaxInputBytes > budget.ContextBytes ||
-		budget.Station.MaxInputTokens+budget.Station.MaxOutputTokens >
-			generation.Fixed.Brain.NativeContextLimit {
+	if budget.Station.MaxInputBytes > budget.ContextBytes {
 		return fmt.Errorf("cognition station budget exceeds its frozen brain or context ceiling")
 	}
 	brain, err := productionBrain(generation, budget.Station.MaxOutputTokens)
 	if err != nil {
 		return fmt.Errorf("cognition station sampling authority: %w", err)
 	}
-	if budget.Station.MaxOutputTokens > brain.Sampling.MaxOutputTokens {
+	if budget.Station.MaxOutputTokens > brain.Sampling.MaxOutputTokens ||
+		budget.Station.MaxInputTokens != budget.Station.MaxInputBytes+
+			brain.Sampling.InputSpecialTokenReserve {
 		return fmt.Errorf("cognition station output exceeds its frozen sampling ceiling")
 	}
-	if err := llm.ValidateInferenceBudget(
-		brain.NativeContextLimit, budget.Station.MaxOutputTokens,
-		string(make([]byte, budget.Station.MaxInputBytes)), llm.MinimalGeneratePrompt,
-	); err != nil {
-		return fmt.Errorf("cognition station cannot fit its conservative inference envelope: %w", err)
+	runtime, err := budget.RuntimeBudget()
+	if err != nil {
+		return err
+	}
+	if err := cognitionpolicy.ValidateRuntimeBudget(brain, runtime); err != nil {
+		return fmt.Errorf("cognition station cannot fit its exact raw inference authority: %w", err)
 	}
 	return nil
 }

@@ -12,7 +12,7 @@ func TestCoordinatorUsesCodeOwnedCompletionWithoutCallingPolicy(t *testing.T) {
 	policyCalls := 0
 	coordinator, err := NewCoordinator(PolicyFunc(func(context.Context, RuntimeSnapshot) (PolicyOutcome, error) {
 		policyCalls++
-		return PolicyOutcome{InferenceExecuted: true}, errors.New("must not be called")
+		return PolicyOutcome{ProviderRequestDispatched: true}, errors.New("must not be called")
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestCoordinatorAcceptsCompletionEvidenceFromExactSnapshotPacket(t *testing.
 	policyCalls := 0
 	coordinator, err := NewCoordinator(PolicyFunc(func(context.Context, RuntimeSnapshot) (PolicyOutcome, error) {
 		policyCalls++
-		return PolicyOutcome{InferenceExecuted: true}, errors.New("must not be called")
+		return PolicyOutcome{ProviderRequestDispatched: true}, errors.New("must not be called")
 	}))
 	if err != nil {
 		t.Fatal(err)

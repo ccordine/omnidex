@@ -1,8 +1,0 @@
-./advisory.go
-./chat.go
-./client.go
-./model_match.go
-./prepared.go
-./prepared_stream.go
-./provider_identity.go
-./resolve.go

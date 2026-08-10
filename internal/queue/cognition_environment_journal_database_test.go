@@ -102,9 +102,8 @@ func TestPostgresCognitionEnvironmentJournalConcurrentReplayCommitsOneReceipt(t 
 
 func TestPostgresCognitionEnvironmentCommitFencesReplacedAttempt(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
-	t.Setenv("MIGRATIONS_DIR", "../../migrations")
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context()); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	fixture := startTaskGenerationRetirementFixtureIn(

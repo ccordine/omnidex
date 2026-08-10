@@ -47,6 +47,9 @@ func (request OfflineExperimentRequest) Validate() error {
 		request.Seed == 0 {
 		return fmt.Errorf("offline cognition experiment request authority is invalid")
 	}
+	if request.Budget.Schema != RunBudgetSchemaStructuralV1 {
+		return fmt.Errorf("offline cognition request requires the structural v1 budget authority")
+	}
 	if request.Variant != VariantFullCognition && !executableAblation(request.Variant) {
 		return fmt.Errorf("offline cognition experiment variant %q is not executable", request.Variant)
 	}
@@ -56,7 +59,7 @@ func (request OfflineExperimentRequest) Validate() error {
 	if request.Mode == OfflineExperimentTakeover && request.Variant != VariantFullCognition {
 		return fmt.Errorf("offline takeover currently requires full cognition")
 	}
-	if _, err := initialMicrogauntletSpec(request.Suite); err != nil {
+	if _, err := ResolveOfflineScenarioSpecV1(request.Suite, request.Seed, request.Budget); err != nil {
 		return err
 	}
 	if _, err := request.Surface.Version(); err != nil {
@@ -91,11 +94,12 @@ func (request OfflineExperimentRequest) Validate() error {
 
 func (brain OfflineBrainRequest) build(
 	budget RunBudget,
-	provider llm.ProviderIdentityAttestation,
+	provider llm.ObservedProviderIdentity,
 	host cognitionpolicy.HostHardwareAttestation,
 ) (BrainFingerprint, error) {
-	if err := provider.Validate(); err != nil || provider.Model != brain.Model ||
-		provider.NativeContextLimit != brain.NativeContextLimit {
+	if err := provider.Attestation.Validate(); err != nil ||
+		provider.Attestation.Model != brain.Model ||
+		provider.Attestation.NativeContextLimit != brain.NativeContextLimit {
 		return BrainFingerprint{}, fmt.Errorf("live provider identity changed the selected brain")
 	}
 	if err := host.Validate(); err != nil {
@@ -108,13 +112,24 @@ func (brain OfflineBrainRequest) build(
 		return BrainFingerprint{}, err
 	}
 	ref, err := cognitionpolicy.NewBrainRef(
-		provider.Model, provider.Digest, provider.Quantization, provider.Backend,
-		provider.BackendVersion, "host-attestation:"+host.AttestationSHA256, sampling,
+		provider.Attestation.Model, provider.Attestation.Digest,
+		provider.Attestation.Quantization, provider.Attestation.Backend,
+		provider.Attestation.BackendVersion,
+		"host-attestation:"+host.AttestationSHA256, sampling,
 	)
 	if err != nil {
 		return BrainFingerprint{}, err
 	}
-	attested, err := cognitionpolicy.NewAttestedBrain(ref, provider, host)
+	bootstrap, err := cognitionpolicy.BootstrapProviderIdentityRequest(ref)
+	if err != nil {
+		return BrainFingerprint{}, err
+	}
+	if err := provider.ValidateFor(bootstrap); err != nil {
+		return BrainFingerprint{}, fmt.Errorf("live provider identity changed the bootstrap challenge")
+	}
+	attested, err := cognitionpolicy.NewAttestedBrain(
+		ref, provider.Attestation, provider.Observation, host,
+	)
 	if err != nil {
 		return BrainFingerprint{}, err
 	}

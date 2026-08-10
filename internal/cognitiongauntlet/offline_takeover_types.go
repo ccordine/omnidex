@@ -55,7 +55,7 @@ func (config OfflineTakeoverConfig) Validate() error {
 		return fmt.Errorf("offline cognition takeover requires full cognition")
 	}
 	if config.AfterSuccessfulActions == 0 ||
-		int(config.AfterSuccessfulActions) >= config.Promotion.Spec.Budget.EnvironmentActions {
+		int(config.AfterSuccessfulActions) >= config.Promotion.Scenario.Budget().EnvironmentActions {
 		return fmt.Errorf("offline cognition takeover boundary is outside the frozen action budget")
 	}
 	return nil

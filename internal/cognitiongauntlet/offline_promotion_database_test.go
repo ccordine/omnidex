@@ -2,6 +2,8 @@ package cognitiongauntlet
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,7 +23,7 @@ func TestPostgresOfflineInferenceRoleCannotReadPrivateHostOrOtherSchemas(t *test
 	}
 	config := offlinePromotionTestConfig(t, databaseURL)
 	database, err := prepareOfflinePromotionDatabase(
-		t.Context(), config, filepath.Join("..", "..", "migrations"),
+		t.Context(), config, loadRepositoryMigrationBundle(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +91,24 @@ func TestPostgresOfflineInferenceRoleCannotReadPrivateHostOrOtherSchemas(t *test
 	}
 }
 
+func loadRepositoryMigrationBundle(t *testing.T) queue.MigrationBundle {
+	t.Helper()
+	directory, err := filepath.Abs(filepath.Join("..", "..", "migrations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(directory, queue.MigrationManifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(raw)
+	bundle, err := queue.LoadMigrationBundle(directory, hex.EncodeToString(digest[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bundle
+}
+
 func assertPermissionDenied(
 	t *testing.T,
 	pool *pgxpool.Pool,
@@ -113,7 +133,8 @@ func offlinePromotionTestConfig(t *testing.T, databaseURL string) OfflinePromoti
 	return OfflinePromotionConfig{
 		Schema: OfflinePromotionConfigSchemaV1, DatabaseURL: databaseURL,
 		OllamaEndpoint: "http://127.0.0.1:11434", InferenceTimeoutSeconds: 60,
-		Spec: InitialMicrogauntletsV1()[0], Variant: VariantFullCognition, Surface: SurfaceSymbolic,
+		Scenario: mustOfflineScenarioSpec(t, SuiteRetrieve, 17_001),
+		Variant:  VariantFullCognition, Surface: SurfaceSymbolic,
 		RatGeneration: mustRatGeneration(t), RuntimeFingerprint: transferTestFingerprint(), Repetition: 1,
 		PublicOutputDirectory: t.TempDir(), PrivateOutputDirectory: privateDirectory,
 		LedgerSchemaVersion: "task-ledger.v1", WorkingSetPolicyVersion: "working-set.v1",
@@ -125,9 +146,23 @@ func cleanupOfflinePromotionDatabase(t *testing.T, database *offlinePromotionDat
 	t.Helper()
 	ctx := context.Background()
 	_ = database.revokeInference(ctx)
-	_, _ = database.adminPool.Exec(ctx, "DROP OWNED BY "+pgx.Identifier{database.inferenceRole}.Sanitize())
-	_, _ = database.adminPool.Exec(ctx, "DROP SCHEMA "+pgx.Identifier{database.schema}.Sanitize()+" CASCADE")
-	_, _ = database.adminPool.Exec(ctx, "DROP SCHEMA "+pgx.Identifier{database.hostSchema}.Sanitize()+" CASCADE")
-	_, _ = database.adminPool.Exec(ctx, "DROP ROLE "+pgx.Identifier{database.inferenceRole}.Sanitize())
+	_ = database.revokeHost(ctx)
+	for _, role := range []string{database.inferenceRole, database.hostRole} {
+		_, _ = database.adminPool.Exec(ctx, "DROP OWNED BY "+pgx.Identifier{role}.Sanitize())
+	}
+	var fenceSchema string
+	_ = database.adminPool.QueryRow(ctx,
+		`SELECT 'omnidex_host_authority_'||md5($1)`, database.schema,
+	).Scan(&fenceSchema)
+	for _, schema := range []string{database.schema, database.hostSchema, fenceSchema} {
+		if schema != "" {
+			_, _ = database.adminPool.Exec(ctx,
+				"DROP SCHEMA IF EXISTS "+pgx.Identifier{schema}.Sanitize()+" CASCADE",
+			)
+		}
+	}
+	for _, role := range []string{database.inferenceRole, database.hostRole} {
+		_, _ = database.adminPool.Exec(ctx, "DROP ROLE "+pgx.Identifier{role}.Sanitize())
+	}
 	database.close()
 }

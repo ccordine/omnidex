@@ -28,7 +28,7 @@ func TestV3CodingFeedbackRequeuesTheSameJob(t *testing.T) {
 		t.Skipf("PostgreSQL unavailable: %v", err)
 	}
 	repo := New(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
+	if err := repo.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 

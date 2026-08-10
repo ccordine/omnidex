@@ -20,7 +20,7 @@ func TestOfflineTakeoverConfigRequiresAnInteriorDurableBoundary(t *testing.T) {
 	if err := config.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	config.AfterSuccessfulActions = uint32(promotion.Spec.Budget.EnvironmentActions)
+	config.AfterSuccessfulActions = uint32(promotion.Scenario.Budget().EnvironmentActions)
 	if err := config.Validate(); err == nil {
 		t.Fatal("takeover accepted a boundary at terminal budget exhaustion")
 	}

@@ -360,8 +360,15 @@ must match an uninterrupted execution at the same boundary:
 - Task Ledger materialized state and replay hash;
 - Working Set contents, scopes, freshness, and version;
 - active obligation, dependencies, generation, and status;
-- exact Context Projection identity and rendered hash;
+- exact rendered model-visible projection bytes and an attempt-normalized semantic
+  digest over goal, world revision, graph, ledger, Working Set, active obligation,
+  catalog, evidence refs, and non-actor budget/policy fields;
 - completed action receipts and remaining budgets.
+
+The replacement Context Projection and snapshot identities are not equal to the old
+worker's identities: those immutable authorities deliberately bind attempt and worker.
+They must differ and the old identities must remain fenced. Continuity requires equal
+rendered content and semantic state after removing only the actor authority fields.
 
 The next stochastic model choice need not be byte-identical. The deterministic state
 presented before that choice must be identical. Interruption tests cover no kill, one

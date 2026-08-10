@@ -1,5 +1,5 @@
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 CREATE INDEX IF NOT EXISTS idx_memory_chunks_embedding_hnsw
     ON memory_chunks USING hnsw (embedding vector_cosine_ops)

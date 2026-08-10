@@ -35,6 +35,10 @@ func TestRuntimeCancellationClassifiesOnlyRegisteredModelAndBudgetFailures(t *te
 			source: cognitionruntime.ErrRunCycleLimit,
 			code:   cognitionruntime.CancellationRunBudgetExhausted,
 		},
+		"native provider usage budget": {
+			source: errors.Join(cognition.ErrPolicyFailed, cognitionpolicy.ErrProviderUsageLimit),
+			code:   cognitionruntime.CancellationRunBudgetExhausted,
+		},
 	} {
 		name, test := name, test
 		t.Run(name, func(t *testing.T) {
@@ -60,6 +64,7 @@ func TestRuntimeCancellationClassifiesOnlyRegisteredModelAndBudgetFailures(t *te
 		errors.Join(cognition.ErrPolicyFailed, cognitionpolicy.ErrCallIndeterminate),
 		errors.Join(cognition.ErrPolicyFailed, cognitionpolicy.ErrEnvelopeLimit),
 		errors.Join(cognition.ErrPolicyFailed, cognitionpolicy.ErrInvalidProjection),
+		errors.Join(cognition.ErrPolicyFailed, cognitionpolicy.ErrProviderUsage),
 		errors.Join(cognitionpolicy.ErrGeneration, cognitionpolicy.ErrProviderIdentity),
 	} {
 		if _, ok := classifyRuntimeCancellation(source); ok {

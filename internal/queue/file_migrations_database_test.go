@@ -18,34 +18,36 @@ func TestFileMigrationSQLAndLedgerRecordCommitAtomically(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repo := New(pool)
 	dir := t.TempDir()
-	writeMigrationTestFile(t, dir, "900_committed.sql", `
+	writeMigrationTestFile(t, dir, "001_committed.sql", `
 		CREATE TABLE committed_migration_probe (id BIGINT PRIMARY KEY);
 	`)
-	writeMigrationTestFile(t, dir, "901_rejected_record.sql", `
+	writeMigrationTestFile(t, dir, "002_rejected_record.sql", `
 		CREATE TABLE rejected_migration_probe (id BIGINT PRIMARY KEY);
 		ALTER TABLE schema_migrations
-			ADD CONSTRAINT reject_901_ledger_record
-			CHECK (filename <> '901_rejected_record.sql');
+			ADD CONSTRAINT reject_002_ledger_record
+			CHECK (filename <> '002_rejected_record.sql');
 	`)
+	bundle := loadMigrationTestBundle(t, dir)
 
-	err := repo.ApplyFileMigrations(context.Background(), dir)
-	if err == nil || !strings.Contains(err.Error(), "record migration 901_rejected_record.sql") {
-		t.Fatalf("ApplyFileMigrations error=%v, want rejected ledger record", err)
+	err := repo.applyMigrationBundle(context.Background(), bundle)
+	if err == nil || !strings.Contains(err.Error(), "record migration 002_rejected_record.sql") {
+		t.Fatalf("applyMigrationBundle error=%v, want rejected ledger record", err)
 	}
 
 	assertMigrationRelationExists(t, pool, "committed_migration_probe", true)
 	assertMigrationRelationExists(t, pool, "rejected_migration_probe", false)
-	assertAppliedMigrationCount(t, pool, "900_committed.sql", 1)
-	assertAppliedMigrationCount(t, pool, "901_rejected_record.sql", 0)
+	assertAppliedMigrationCount(t, pool, "001_committed.sql", 1)
+	assertAppliedMigrationCount(t, pool, "002_rejected_record.sql", 0)
 }
 
 func TestConcurrentFileMigrationRunnersAreSerialized(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	dir := t.TempDir()
-	writeMigrationTestFile(t, dir, "900_serialized.sql", `
+	writeMigrationTestFile(t, dir, "001_serialized.sql", `
 		CREATE TABLE serialized_migration_probe (id BIGINT PRIMARY KEY);
 		SELECT pg_sleep(0.35);
 	`)
+	bundle := loadMigrationTestBundle(t, dir)
 
 	start := make(chan struct{})
 	results := make(chan error, 2)
@@ -55,7 +57,7 @@ func TestConcurrentFileMigrationRunnersAreSerialized(t *testing.T) {
 		go func() {
 			ready.Done()
 			<-start
-			results <- New(pool).ApplyFileMigrations(context.Background(), dir)
+			results <- New(pool).applyMigrationBundle(context.Background(), bundle)
 		}()
 	}
 	ready.Wait()
@@ -65,7 +67,7 @@ func TestConcurrentFileMigrationRunnersAreSerialized(t *testing.T) {
 		select {
 		case err := <-results:
 			if err != nil {
-				t.Fatalf("concurrent ApplyFileMigrations: %v", err)
+				t.Fatalf("concurrent applyMigrationBundle: %v", err)
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("concurrent migration runners did not finish")
@@ -73,7 +75,7 @@ func TestConcurrentFileMigrationRunnersAreSerialized(t *testing.T) {
 	}
 
 	assertMigrationRelationExists(t, pool, "serialized_migration_probe", true)
-	assertAppliedMigrationCount(t, pool, "900_serialized.sql", 1)
+	assertAppliedMigrationCount(t, pool, "001_serialized.sql", 1)
 }
 
 func TestFileMigrationRunnerFailsExplicitlyWhenLockWaitIsCanceled(t *testing.T) {
@@ -94,10 +96,49 @@ func TestFileMigrationRunnerFailsExplicitlyWhenLockWaitIsCanceled(t *testing.T) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	err = New(pool).ApplyFileMigrations(ctx, t.TempDir())
+	directory := t.TempDir()
+	writeMigrationTestFile(t, directory, "001_lock.sql", "SELECT 1;\n")
+	err = New(pool).applyMigrationBundle(ctx, loadMigrationTestBundle(t, directory))
 	if err == nil || !strings.Contains(err.Error(), "acquire file migration advisory lock") {
-		t.Fatalf("ApplyFileMigrations error=%v, want explicit lock acquisition failure", err)
+		t.Fatalf("applyMigrationBundle error=%v, want explicit lock acquisition failure", err)
 	}
+}
+
+func TestFileMigrationAppliesOnlyBytesSealedBeforeDatabaseLock(t *testing.T) {
+	pool := openIsolatedMigrationPool(t)
+	directory := t.TempDir()
+	writeMigrationTestFile(t, directory, "001_sealed.sql", `
+		CREATE TABLE sealed_before_lock_probe (id BIGINT PRIMARY KEY);
+	`)
+	bundle := loadMigrationTestBundle(t, directory)
+	writeMigrationTestFile(t, directory, "001_sealed.sql", `
+		CREATE TABLE substituted_after_load_probe (id BIGINT PRIMARY KEY);
+	`)
+	if err := New(pool).applyMigrationBundle(context.Background(), bundle); err != nil {
+		t.Fatal(err)
+	}
+	assertMigrationRelationExists(t, pool, "sealed_before_lock_probe", true)
+	assertMigrationRelationExists(t, pool, "substituted_after_load_probe", false)
+}
+
+func loadMigrationTestBundle(t *testing.T, directory string) MigrationBundle {
+	t.Helper()
+	names := make([]string, 0)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if migrationFileNamePattern.MatchString(entry.Name()) {
+			names = append(names, entry.Name())
+		}
+	}
+	digest := rewriteTestMigrationManifest(t, directory, names)
+	bundle, err := LoadMigrationBundle(directory, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bundle
 }
 
 func openIsolatedMigrationPool(t *testing.T) *pgxpool.Pool {
@@ -126,6 +167,13 @@ func openIsolatedMigrationPool(t *testing.T) *pgxpool.Pool {
 		admin.Close()
 		t.Fatal(err)
 	}
+	var authoritySchema string
+	if err := admin.QueryRow(ctx, `SELECT 'omnidex_host_authority_' || md5($1)`, schema).Scan(
+		&authoritySchema,
+	); err != nil {
+		admin.Close()
+		t.Fatal(err)
+	}
 
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
@@ -143,6 +191,11 @@ func openIsolatedMigrationPool(t *testing.T) *pgxpool.Pool {
 		pool.Close()
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cleanupCancel()
+		if _, err := admin.Exec(cleanupCtx,
+			"DROP SCHEMA IF EXISTS "+pgx.Identifier{authoritySchema}.Sanitize()+" CASCADE",
+		); err != nil {
+			t.Errorf("drop migration authority schema: %v", err)
+		}
 		if _, err := admin.Exec(cleanupCtx, "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE"); err != nil {
 			t.Errorf("drop migration test schema: %v", err)
 		}

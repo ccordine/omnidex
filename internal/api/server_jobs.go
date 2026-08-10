@@ -475,7 +475,7 @@ func (s *Server) handleAdminMigrateFresh(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s.repo.MigrateFresh(r.Context()); err != nil {
+	if err := s.repo.MigrateFresh(r.Context(), s.migrationBundle); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

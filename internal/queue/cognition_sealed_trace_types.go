@@ -87,7 +87,8 @@ func validCognitionTraceKind(kind string) bool {
 		"episode_progress", "episode_progress_command", "obligation_graph",
 		"lifecycle_retirement",
 		"plan_revision", "policy_abandonment", "policy_attempt", "policy_result", "policy_timing", "reconciliation_command",
-		"reconciliation_receipt", "runtime_snapshot", "transition",
+		"policy_provider_generation_evidence", "policy_provider_response_capture", "policy_response_evidence",
+		"provider_process_observation", "reconciliation_receipt", "runtime_snapshot", "transition",
 		"working_set_event", "working_set_snapshot":
 		return true
 	default:

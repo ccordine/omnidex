@@ -79,7 +79,7 @@ func repositoryCognitionBudget(
 	budget := cognition.RuntimeBudget{
 		RemainingPolicyCalls:   policyCalls,
 		MaxInputBytes:          brain.ContextCeilingBytes,
-		MaxInputTokens:         (brain.ContextCeilingBytes + 3) / 4,
+		MaxInputTokens:         brain.ContextCeilingBytes + brain.Sampling.InputSpecialTokenReserve,
 		MaxOutputBytes:         outputBytes,
 		MaxOutputTokens:        brain.Sampling.MaxOutputTokens,
 		MaxEvidenceRefs:        1 + (2 * len(catalog.Schemas)),

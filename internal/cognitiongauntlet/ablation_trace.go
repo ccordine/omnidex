@@ -50,19 +50,42 @@ func appendAblationPolicyTrace(
 	if err := recorder.Append(TraceProjection, projection.ID, nil, payload); err != nil {
 		return err
 	}
+	budget := StationBudget{
+		MaxInputBytes:   call.Attempt.RuntimeBudget.MaxInputBytes,
+		MaxInputTokens:  call.Attempt.RuntimeBudget.MaxInputTokens,
+		MaxOutputBytes:  call.Attempt.RuntimeBudget.MaxOutputBytes,
+		MaxOutputTokens: call.Attempt.RuntimeBudget.MaxOutputTokens,
+	}
+	if !call.Result.ProviderRequestDispatched {
+		disposition := PolicyDispositionTrace{
+			Schema: PolicyDispositionSchemaV1, ProjectionID: projection.ID,
+			ProjectionSHA256: projection.RenderedSHA256, Budget: budget,
+			ResultStatus: call.Result.Status, FailureCode: call.Result.FailureCode,
+			ProviderRequestDispatched: false,
+		}
+		if err := disposition.Validate(); err != nil {
+			return err
+		}
+		payload, err = traceJSONObject(disposition)
+		if err != nil {
+			return err
+		}
+		return recorder.Append(TracePolicyDisposition, call.Attempt.ID, nil, payload)
+	}
 	callTrace := ModelCallTrace{
-		Schema: ModelCallTraceSchemaV1, ProjectionID: projection.ID,
+		Schema: ModelCallTraceSchemaV2, ProjectionID: projection.ID,
 		ProjectionSHA256: projection.RenderedSHA256,
-		Budget: StationBudget{
-			MaxInputBytes:   call.Attempt.RuntimeBudget.MaxInputBytes,
-			MaxInputTokens:  call.Attempt.RuntimeBudget.MaxInputTokens,
-			MaxOutputBytes:  call.Attempt.RuntimeBudget.MaxOutputBytes,
-			MaxOutputTokens: call.Attempt.RuntimeBudget.MaxOutputTokens,
-		},
-		InputBytes:   int64(call.Attempt.EnvelopeBytes),
-		InputTokens:  int64(call.Attempt.EnvelopeEstimatedTokens),
-		OutputBytes:  int64(call.Result.ResponseBytes),
-		OutputTokens: int64(estimateProductionTokens(call.Result.ResponseBytes)),
+		Budget:           budget, ResultStatus: call.Result.Status, FailureCode: call.Result.FailureCode,
+		ProviderResponseDisposition: call.Result.ProviderResponseDisposition,
+		ProviderRequestDispatched:   call.Result.ProviderRequestDispatched,
+		ProviderDoneReason:          call.Result.ProviderDoneReason,
+		ProviderUsagePresent:        call.Result.ProviderUsagePresent, ProviderUsage: call.Result.ProviderUsage,
+		InputBytes:  int64(call.Attempt.ModelVisibleInputBytes),
+		OutputBytes: int64(call.Result.ResponseBytes),
+	}
+	if call.Result.ProviderUsagePresent {
+		callTrace.InputTokens = int64(call.Result.ProviderUsage.PromptEvalCount)
+		callTrace.OutputTokens = int64(call.Result.ProviderUsage.EvalCount)
 	}
 	payload, err = traceJSONObject(callTrace)
 	if err != nil {
@@ -76,6 +99,10 @@ func appendAblationPolicyTrace(
 	resources.InputTokens += callTrace.InputTokens
 	resources.OutputBytes += callTrace.OutputBytes
 	resources.OutputTokens += callTrace.OutputTokens
+	resources.ProviderTotalNanoseconds += call.Result.ProviderUsage.TotalDurationNanos
+	resources.ProviderLoadNanoseconds += call.Result.ProviderUsage.LoadDurationNanos
+	resources.ProviderPromptEvalNanoseconds += call.Result.ProviderUsage.PromptEvalDurationNanos
+	resources.ProviderEvalNanoseconds += call.Result.ProviderUsage.EvalDurationNanos
 	if callTrace.InputBytes > resources.PeakContextBytes {
 		resources.PeakContextBytes = callTrace.InputBytes
 	}

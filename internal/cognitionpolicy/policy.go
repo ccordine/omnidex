@@ -48,6 +48,13 @@ func New(
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
+	expected, err := brain.Ref.ProviderExpectation()
+	if err != nil {
+		return nil, err
+	}
+	if err := exactClient.ValidateExactPreparedProvider(expected); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
 	return &Policy{
 		client: client, exactClient: exactClient, brain: brain,
 		projections: projections, journal: journal,
@@ -81,8 +88,8 @@ func (policy *Policy) Decide(
 	if err != nil {
 		return cognition.PolicyOutcome{}, err
 	}
-	attempt := newCallAttempt(snapshot, policy.brain, envelope)
-	if err := attempt.Validate(); err != nil {
+	attempt, err := newCallAttempt(snapshot, policy.brain, envelope)
+	if err != nil {
 		return cognition.PolicyOutcome{}, err
 	}
 	reservation, err := policy.journal.Start(ctx, attempt)

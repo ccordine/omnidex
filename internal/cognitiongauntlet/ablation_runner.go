@@ -9,7 +9,6 @@ import (
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/contextbuilder"
-	"github.com/gryph/omnidex/internal/labyrinth"
 )
 
 type ablationProjectionLoader struct {
@@ -65,7 +64,7 @@ func RunAblation(
 		return AblationRunResult{}, err
 	}
 	frozen, err := request.RatGeneration.Fixed.Brain.attestedBrain()
-	if err != nil || attested != frozen {
+	if err != nil || !sameFrozenBrain(attested, frozen) {
 		return AblationRunResult{}, fmt.Errorf("live provider or host differs from frozen ablation authority")
 	}
 	environment, closeEnvironment, err := newBenchmarkEnvironment(
@@ -117,14 +116,25 @@ func RunAblation(
 	if err := state.recordTransition(transition); err != nil {
 		return AblationRunResult{}, err
 	}
-	privateOracle := labyrinth.Oracle{}
+	privateEvidence := ContaminatedEvidencePacket{}
 	if request.Variant == VariantOracleEvidence {
-		privateOracle = fixture.generated.PrivateOracle()
+		generated := generatedOfflineScenario{
+			spec: OfflineScenarioSpec{
+				Schema: OfflineScenarioSpecSchemaV1, Kind: OfflineScenarioInitial,
+				Initial: &fixture.spec,
+			},
+			scenario: fixture.SealedEnvironmentScenario(), public: fixture.PublicArtifact(),
+			suite: Suite(fixture.spec.Generator.Suite), initial: &fixture,
+		}
+		privateEvidence, err = contaminatedEvidenceFor(generated)
+		if err != nil {
+			return AblationRunResult{}, err
+		}
 	}
 	execution, err := executeAblation(
 		ctx, authority.Budget, environment, completion,
 		recorder, state, loader, journal, policy,
-		privateOracle, transition, startedAt,
+		privateEvidence, transition, startedAt,
 	)
 	if err != nil {
 		return AblationRunResult{}, err
@@ -149,7 +159,7 @@ func executeAblation(
 	loader *ablationProjectionLoader,
 	journal *ablationCallJournal,
 	policy *cognitionpolicy.Policy,
-	privateOracle labyrinth.Oracle,
+	privateEvidence ContaminatedEvidencePacket,
 	transition cognition.Transition,
 	startedAt time.Time,
 ) (ablationExecution, error) {
@@ -165,7 +175,7 @@ func executeAblation(
 			return failAblation(execution, recorder, "resource_budget", "ablation-budget-model-calls",
 				"The frozen model-call budget was exhausted.", startedAt, true)
 		}
-		context, err := state.context(uint32(cycle), privateOracle)
+		context, err := state.context(uint32(cycle), privateEvidence)
 		if err != nil {
 			return ablationExecution{}, err
 		}
@@ -194,7 +204,11 @@ func executeAblation(
 		}
 		if policyErr != nil {
 			id := fmt.Sprintf("ablation-policy-failure-%03d", cycle)
-			return failAblation(execution, recorder, "model_policy", id, policyErr.Error(), startedAt, false)
+			code := "model_policy"
+			if errors.Is(policyErr, cognitionpolicy.ErrProviderUsageLimit) {
+				code = "resource_budget"
+			}
+			return failAblation(execution, recorder, code, id, policyErr.Error(), startedAt, false)
 		}
 		requestAction := outcome.Decision.Action.Clone()
 		if state.variant == VariantRawShell {
@@ -239,5 +253,6 @@ func registeredAblationPolicyFailure(err error) bool {
 	return errors.Is(err, cognitionpolicy.ErrGeneration) ||
 		errors.Is(err, cognitionpolicy.ErrInvalidDecision) ||
 		errors.Is(err, cognitionpolicy.ErrResponseLimit) ||
+		errors.Is(err, cognitionpolicy.ErrProviderUsageLimit) ||
 		errors.Is(err, cognitionpolicy.ErrCallRejected)
 }

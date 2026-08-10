@@ -52,6 +52,13 @@ func (c *RoutedClient) RequireExactPreparedContract() error {
 	return exact.RequireExactPreparedContract()
 }
 
+func (c *RoutedClient) ValidateExactPreparedProvider(expected ProviderIdentityExpectation) error {
+	if err := c.RequireExactPreparedContract(); err != nil {
+		return err
+	}
+	return c.Generation.(ExactPreparedContractClient).ValidateExactPreparedProvider(expected)
+}
+
 func (c *RoutedClient) ValidateExactPreparedContract(prepared PreparedModel) error {
 	if err := c.RequireExactPreparedContract(); err != nil {
 		return err
@@ -59,20 +66,30 @@ func (c *RoutedClient) ValidateExactPreparedContract(prepared PreparedModel) err
 	return c.Generation.(ExactPreparedContractClient).ValidateExactPreparedContract(prepared)
 }
 
-func (c *RoutedClient) AttestProviderIdentity(
+func (c *RoutedClient) GeneratePreparedExact(
 	ctx context.Context,
-	expected ProviderIdentityExpectation,
-) (ProviderIdentityAttestation, error) {
-	if c == nil || c.Generation == nil {
-		return ProviderIdentityAttestation{}, fmt.Errorf("generation client is not configured")
+	prepared PreparedModel,
+) (PreparedGeneration, error) {
+	if err := c.RequireExactPreparedContract(); err != nil {
+		return PreparedGeneration{}, err
 	}
-	attestor, ok := c.Generation.(ProviderIdentityAttestor)
+	return c.Generation.(ExactPreparedContractClient).GeneratePreparedExact(ctx, prepared)
+}
+
+func (c *RoutedClient) ObserveProviderIdentity(
+	ctx context.Context,
+	request ProviderIdentityObservationRequest,
+) (ObservedProviderIdentity, error) {
+	if c == nil || c.Generation == nil {
+		return ObservedProviderIdentity{}, fmt.Errorf("generation client is not configured")
+	}
+	observer, ok := c.Generation.(ProviderIdentityObserver)
 	if !ok {
-		return ProviderIdentityAttestation{}, fmt.Errorf(
-			"configured generation provider cannot attest its live identity",
+		return ObservedProviderIdentity{}, fmt.Errorf(
+			"configured generation provider cannot observe its live identity",
 		)
 	}
-	return attestor.AttestProviderIdentity(ctx, expected)
+	return observer.ObserveProviderIdentity(ctx, request)
 }
 
 func (c *RoutedClient) GeneratePreparedAdvisory(ctx context.Context, prepared PreparedModel) (AdvisoryResponse, error) {

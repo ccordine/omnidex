@@ -33,15 +33,16 @@ func TestCognitionProjectionFitUsesRemainingBudgetForHighestPriorityOptionalCont
 	if fullEnvelope.Bytes <= oneEnvelope.Bytes {
 		t.Fatalf("full envelope=%d one optional=%d", fullEnvelope.Bytes, oneEnvelope.Bytes)
 	}
-	input.Budget.MaxInputBytes = oneEnvelope.Bytes
-	input.Budget.MaxInputTokens = fullEnvelope.EstimatedTokens + 1
+	input.Budget.MaxInputBytes = cognitionModelVisibleInputBytes(oneEnvelope)
+	reserve := input.Episode.AttestedBrain.Ref.Sampling.InputSpecialTokenReserve
+	input.Budget.MaxInputTokens = cognitionModelInputTokenUpperBound(fullEnvelope, reserve) + 1
 
 	fit, err := fitCognitionPolicyProjection(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fit.Envelope.Bytes > input.Budget.MaxInputBytes ||
-		fit.Envelope.EstimatedTokens > input.Budget.MaxInputTokens {
+	if cognitionModelVisibleInputBytes(fit.Envelope) > input.Budget.MaxInputBytes ||
+		cognitionModelInputTokenUpperBound(fit.Envelope, reserve) > input.Budget.MaxInputTokens {
 		t.Fatalf("fit envelope=%d/%d budget=%d/%d", fit.Envelope.Bytes,
 			fit.Envelope.EstimatedTokens, input.Budget.MaxInputBytes, input.Budget.MaxInputTokens)
 	}
@@ -106,12 +107,33 @@ func TestCognitionProjectionFitFailsWhenRequiredEnvelopeCannotFit(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	input.Budget.MaxInputBytes = requiredEnvelope.Bytes - 1
-	input.Budget.MaxInputTokens = requiredEnvelope.EstimatedTokens + 1024
+	input.Budget.MaxInputBytes = cognitionModelVisibleInputBytes(requiredEnvelope) - 1
+	reserve := input.Episode.AttestedBrain.Ref.Sampling.InputSpecialTokenReserve
+	input.Budget.MaxInputTokens = cognitionModelInputTokenUpperBound(requiredEnvelope, reserve) + 1024
 
 	_, err = fitCognitionPolicyProjection(input)
 	if !errors.Is(err, ErrCognitionEnvelopeBudget) {
 		t.Fatalf("required overflow error=%v", err)
+	}
+}
+
+func TestCognitionEnvelopeFitBindsExactPromptAtInputBoundary(t *testing.T) {
+	t.Parallel()
+	input := cognitionProjectionFitTestInput(t)
+	_, envelope, err := measureCognitionProjection(input, input.Initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := input.Budget
+	budget.MaxInputBytes = cognitionModelVisibleInputBytes(envelope)
+	reserve := input.Episode.AttestedBrain.Ref.Sampling.InputSpecialTokenReserve
+	budget.MaxInputTokens = cognitionModelInputTokenUpperBound(envelope, reserve)
+	if !cognitionEnvelopeFits(envelope, budget, reserve) {
+		t.Fatal("exact model-visible input boundary was rejected")
+	}
+	budget.MaxInputBytes--
+	if cognitionEnvelopeFits(envelope, budget, reserve) {
+		t.Fatal("prompt hint bytes escaped the model-visible input ceiling")
 	}
 }
 

@@ -2,6 +2,7 @@ package cognitionpolicy
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -30,14 +31,19 @@ func TestCallAttemptBindsExactCleanDeskBeforeInference(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutations := map[string]func(*CallAttempt){
-		"actor":      func(value *CallAttempt) { value.Actor.WorkerID = "worker-other" },
-		"snapshot":   func(value *CallAttempt) { value.SnapshotSHA256 = strings.Repeat("d", 64) },
-		"revision":   func(value *CallAttempt) { value.ExpectedRevision.SHA256 = strings.Repeat("e", 64) },
-		"obligation": func(value *CallAttempt) { value.ObligationID = "obligation-other" },
-		"budget":     func(value *CallAttempt) { value.RuntimeBudget.MaxOutputBytes-- },
-		"projection": func(value *CallAttempt) { value.ContextProjection.WorkingSetVersion++ },
-		"brain":      func(value *CallAttempt) { value.Brain.Hardware = "other-hardware" },
-		"envelope":   func(value *CallAttempt) { value.Envelope += " " },
+		"actor":               func(value *CallAttempt) { value.Actor.WorkerID = "worker-other" },
+		"snapshot":            func(value *CallAttempt) { value.SnapshotSHA256 = strings.Repeat("d", 64) },
+		"revision":            func(value *CallAttempt) { value.ExpectedRevision.SHA256 = strings.Repeat("e", 64) },
+		"obligation":          func(value *CallAttempt) { value.ObligationID = "obligation-other" },
+		"budget":              func(value *CallAttempt) { value.RuntimeBudget.MaxOutputBytes-- },
+		"projection":          func(value *CallAttempt) { value.ContextProjection.WorkingSetVersion++ },
+		"brain":               func(value *CallAttempt) { value.Brain.Hardware = "other-hardware" },
+		"envelope":            func(value *CallAttempt) { value.Envelope += " " },
+		"prompt hint":         func(value *CallAttempt) { value.PromptHint += " " },
+		"model visible bytes": func(value *CallAttempt) { value.ModelVisibleInputBytes++ },
+		"response contract": func(value *CallAttempt) {
+			value.ResponseContractSHA256 = strings.Repeat("f", 64)
+		},
 	}
 	for name, mutate := range mutations {
 		name, mutate := name, mutate
@@ -56,34 +62,27 @@ func TestCallResultsDistinguishAcceptedRejectedAndFailed(t *testing.T) {
 	t.Parallel()
 	attempt := policyTestCallAttempt(t)
 	response := `{"obligation_id":"obligation-1"}`
-	accepted := CallResult{
-		Schema: CallResultSchemaV2, CallID: attempt.ID, Status: CallResultAccepted,
-		ProviderIdentityChecked: true, ProviderAttestation: attempt.ProviderAttestation,
-		ResponseStored: true, ResponseSHA256: policySHA256(response),
-		ResponseBytes: len(response), Response: response,
-		ActionSchema: cognition.ActionSchemaRef{
+	generation := policyTestPreparedGeneration(attempt, response)
+	accepted := acceptedCallResult(
+		attempt, generation, cognition.ActionSchemaRef{
 			ID: "schema-1", Version: "v1", SHA256: strings.Repeat("a", 64),
 		},
-		DecisionSHA256: strings.Repeat("b", 64),
-	}
+		strings.Repeat("b", 64),
+	)
 	if err := accepted.Validate(attempt); err != nil {
 		t.Fatalf("accepted result: %v", err)
 	}
-	rejected := CallResult{
-		Schema: CallResultSchemaV2, CallID: attempt.ID, Status: CallResultRejected,
-		ProviderIdentityChecked: true, ProviderAttestation: attempt.ProviderAttestation,
-		ResponseStored: true, ResponseSHA256: policySHA256(response),
-		ResponseBytes: len(response), Response: response,
-		FailureCode: CallFailureInvalidDecision, FailureMessage: "Response did not match the registered decision schema.",
-	}
+	rejected := rejectedCallResult(
+		attempt, generation, CallFailureInvalidDecision,
+		fmt.Errorf("response did not match the registered decision schema"),
+	)
 	if err := rejected.Validate(attempt); err != nil {
 		t.Fatalf("rejected result: %v", err)
 	}
-	failed := CallResult{
-		Schema: CallResultSchemaV2, CallID: attempt.ID, Status: CallResultFailed,
-		ProviderIdentityChecked: true, ProviderAttestation: attempt.ProviderAttestation,
-		FailureCode: CallFailureGeneration, FailureMessage: "The model provider returned an error.",
-	}
+	failed := failedCallResult(
+		attempt, policyTestFailedGeneration(attempt),
+		fmt.Errorf("the model provider returned an error"),
+	)
 	if err := failed.Validate(attempt); err != nil {
 		t.Fatalf("failed result: %v", err)
 	}
@@ -126,8 +125,8 @@ func policyTestCallAttempt(t *testing.T) CallAttempt {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt := newCallAttempt(snapshot, policyTestAttestedBrain(), envelope)
-	if err := attempt.Validate(); err != nil {
+	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), envelope)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return attempt

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/specialist"
 )
@@ -19,6 +20,7 @@ type Config struct {
 	HostAgentToken               string
 	WrapperOnly                  bool
 	DatabaseURL                  string
+	DatabaseSchema               string
 	LLMProvider                  string
 	EmbeddingProvider            string
 	ProviderModels               map[string]ProviderModelConfig
@@ -102,6 +104,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	databaseSchema, err := loadDatabaseSchema()
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		AppEnv:                       getenv("APP_ENV", "development"),
@@ -111,6 +117,7 @@ func Load() (Config, error) {
 		CoreURL:                      getenv("CORE_URL", "http://192.168.1.102:8090"),
 		WrapperOnly:                  getenvBool("WRAPPER_ONLY", false),
 		DatabaseURL:                  os.Getenv("DATABASE_URL"),
+		DatabaseSchema:               databaseSchema,
 		LLMProvider:                  provider,
 		EmbeddingProvider:            embeddingProvider,
 		ProviderModels:               providerModels,
@@ -240,6 +247,20 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+func loadDatabaseSchema() (string, error) {
+	value, configured := os.LookupEnv("DATABASE_SCHEMA")
+	if !configured {
+		return db.DefaultRuntimeSchema, nil
+	}
+	if value == "" {
+		return "", fmt.Errorf("DATABASE_SCHEMA is explicitly empty")
+	}
+	if err := db.ValidateRuntimeSchemaName(value); err != nil {
+		return "", fmt.Errorf("DATABASE_SCHEMA: %w", err)
+	}
+	return value, nil
+}
+
 func defaultCodingFragmentConcurrency(provider string) int {
 	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
 		return 1
@@ -262,6 +283,11 @@ func Validate(cfg Config) error {
 func validateConfigStructure(cfg Config) error {
 	if !cfg.WrapperOnly && strings.TrimSpace(cfg.DatabaseURL) == "" {
 		return fmt.Errorf("DATABASE_URL is required")
+	}
+	if !cfg.WrapperOnly {
+		if err := db.ValidateRuntimeSchemaName(cfg.DatabaseSchema); err != nil {
+			return fmt.Errorf("DATABASE_SCHEMA: %w", err)
+		}
 	}
 	if err := validateSelectedProviderEndpoint(cfg.LLMProvider, cfg, "LLM_PROVIDER"); err != nil {
 		return err

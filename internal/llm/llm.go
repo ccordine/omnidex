@@ -12,17 +12,19 @@ const MinimalGeneratePrompt = "Return only the requested output."
 const ResponseFormatJSON = "json"
 
 type PreparedModel struct {
-	BaseModel       string
-	ContextModel    string
-	ModelfilePath   string
-	PromptHint      string
-	Prompt          string
-	MaxOutputTokens int
-	ContextTokens   int
-	ResponseFormat  string
-	ResponseSchema  map[string]any
-	ThinkingEnabled bool
-	Temperature     *float64
+	BaseModel                    string
+	ContextModel                 string
+	ModelfilePath                string
+	PromptHint                   string
+	Prompt                       string
+	MaxOutputTokens              int
+	ContextTokens                int
+	ResponseFormat               string
+	ResponseSchema               map[string]any
+	ThinkingEnabled              bool
+	Temperature                  *float64
+	ProviderIdentityExpectation  *ProviderIdentityExpectation
+	ProviderObservationChallenge string
 }
 
 func ValidateResponseContract(prepared PreparedModel) error {

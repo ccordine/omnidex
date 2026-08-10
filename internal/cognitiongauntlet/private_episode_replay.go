@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/gryph/omnidex/internal/cognition"
+	"github.com/gryph/omnidex/internal/labyrinth"
 )
 
 type privateGoalEnvironment interface {
@@ -24,6 +25,17 @@ type privateGoalEnvironment interface {
 func derivePrivateEvaluationEvidence(
 	ctx context.Context,
 	fixture MicrogauntletCase,
+	surfaceVersion string,
+	episode SealedEpisode,
+) (SymbolicEvaluationEvidence, error) {
+	return derivePrivateScenarioEvaluationEvidence(
+		ctx, fixture.SealedEnvironmentScenario(), surfaceVersion, episode,
+	)
+}
+
+func derivePrivateScenarioEvaluationEvidence(
+	ctx context.Context,
+	scenario labyrinth.Scenario,
 	surfaceVersion string,
 	episode SealedEpisode,
 ) (SymbolicEvaluationEvidence, error) {
@@ -51,8 +63,8 @@ func derivePrivateEvaluationEvidence(
 		}
 		return nil
 	}
-	base, closeEnvironment, err := newBenchmarkEnvironmentWithAuthorizer(
-		fixture, ref, authorize, surface,
+	base, closeEnvironment, err := newScenarioEnvironmentWithAuthorizer(
+		scenario, ref, authorize, surface,
 	)
 	if err != nil {
 		return SymbolicEvaluationEvidence{}, err
@@ -62,7 +74,7 @@ func derivePrivateEvaluationEvidence(
 		_ = closeEnvironment()
 		return SymbolicEvaluationEvidence{}, fmt.Errorf("private replay environment lacks goal authority")
 	}
-	started, err := environment.Start(ctx, fixture.SealedEnvironmentScenario().Ref())
+	started, err := environment.Start(ctx, scenario.Ref())
 	if err != nil {
 		_ = closeEnvironment()
 		return SymbolicEvaluationEvidence{}, fmt.Errorf("start private episode replay: %w", err)
@@ -96,7 +108,7 @@ func derivePrivateEvaluationEvidence(
 		current = actual
 	}
 	goalSatisfied, err := environment.EvaluateGoal(
-		ctx, ref, current.Current, fixture.SealedEnvironmentScenario().Goal(),
+		ctx, ref, current.Current, scenario.Goal(),
 	)
 	closeErr := closeEnvironment()
 	if err != nil {

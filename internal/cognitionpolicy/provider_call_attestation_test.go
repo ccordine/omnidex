@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
@@ -44,10 +46,10 @@ func TestPolicyReattestsExactProviderBeforeEveryFreshGeneration(t *testing.T) {
 	if _, err := policy.Decide(context.Background(), secondSnapshot); err == nil {
 		t.Fatal("changed live provider identity reached a second generation")
 	}
-	if client.attestationCalls != 2 || client.generateCalls != 1 || client.prepareCalls != 1 {
+	if client.observationCalls != 2 || client.generateCalls != 1 || client.prepareCalls != 2 {
 		t.Fatalf(
-			"attest=%d generate=%d prepare=%d, want 2/1/1",
-			client.attestationCalls, client.generateCalls, client.prepareCalls,
+			"observe=%d generate=%d prepare=%d, want 2/1/2",
+			client.observationCalls, client.generateCalls, client.prepareCalls,
 		)
 	}
 	if len(journal.results) != 2 || journal.results[1].FailureCode != CallFailureProviderIdentity {
@@ -71,10 +73,11 @@ func TestPolicyReplayPerformsNoProviderIdentityProbe(t *testing.T) {
 	if _, err := first.Decide(context.Background(), snapshot); err != nil {
 		t.Fatal(err)
 	}
-	attempt, result := firstJournal.attempts[0], firstJournal.results[0]
+	attempt, result, responseEvidence := firstJournal.attempts[0], firstJournal.results[0], firstJournal.evidence[0]
 	replayClient := &policyTestClient{}
 	replayJournal := &policyTestCallJournal{reservation: &CallReservation{
-		Attempt: attempt, ExistingResult: &result, Created: false,
+		Attempt: attempt, ExistingResult: &result, ExistingResponseEvidence: &responseEvidence,
+		Created: false,
 	}}
 	replay, err := New(
 		replayClient, policyTestAttestedBrain(),
@@ -86,11 +89,52 @@ func TestPolicyReplayPerformsNoProviderIdentityProbe(t *testing.T) {
 	if _, err := replay.Decide(context.Background(), snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if replayClient.attestationCalls != 0 || replayClient.generateCalls != 0 ||
+	if replayClient.observationCalls != 0 || replayClient.generateCalls != 0 ||
 		replayClient.prepareCalls != 0 {
 		t.Fatalf(
-			"replay touched provider: attest=%d prepare=%d generate=%d",
-			replayClient.attestationCalls, replayClient.prepareCalls, replayClient.generateCalls,
+			"replay touched provider: observe=%d prepare=%d generate=%d",
+			replayClient.observationCalls, replayClient.prepareCalls, replayClient.generateCalls,
 		)
+	}
+}
+
+func TestProviderRawIdentityMustDeriveTheFrozenBrainExpectation(t *testing.T) {
+	t.Parallel()
+	attempt := policyTestCallAttempt(t)
+	expected, err := attempt.Brain.ProviderExpectation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge, err := callProviderObservationChallenge(attempt, expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := expected
+	changed.Digest = strings.Repeat("c", 64)
+	changedAttestation, err := llm.NewProviderIdentityAttestation(
+		changed, "changed:/version", "changed:/installed", "changed:/runner",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := policyTestObservedProviderIdentity(
+		time.Date(2026, 8, 10, 16, 0, 0, 0, time.UTC), changedAttestation, challenge,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := observed.Observation
+	forged.AttestationSHA256 = attempt.ProviderAttestation.AttestationSHA256
+	forged.ObservationSHA256 = ""
+	raw, err := exactjson.Canonical(forged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged.ObservationSHA256 = policySHA256(string(raw))
+	if err := forged.ValidateFor(attempt.ProviderAttestation, challenge); err != nil {
+		t.Fatalf("forged normalized observation is self-consistent: %v", err)
+	}
+	if err := validateObservedProviderForAttempt(attempt, forged, observed.Evidence); err == nil {
+		t.Fatal("raw provider identity for another model digest was accepted")
 	}
 }

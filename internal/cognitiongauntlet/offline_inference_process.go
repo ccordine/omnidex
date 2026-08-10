@@ -2,12 +2,14 @@ package cognitiongauntlet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/gryph/omnidex/internal/cognitiontransport"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/queue"
 	buildversion "github.com/gryph/omnidex/internal/version"
@@ -70,25 +72,63 @@ func RunOfflineInferenceProcess(ctx context.Context, configPath string) error {
 	modelClient := ollama.New(
 		config.OllamaEndpoint, brain.Model, "", timeout, brain.NativeContextLimit,
 	)
+	var policyClient llm.Client = modelClient
+	var staleProbe *liveStalePortController
+	if config.Control.Mode == inferenceProbeStalePort {
+		staleProbe, err = newLiveStalePortController(
+			config.Control.ProbePort, config.Attempt,
+			config.Control.ProbeCheckpointPath, config.Control.ProbeRejectionPath,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	if config.Control.Mode == inferenceProbeStalePort &&
+		config.Control.ProbePort == liveStalePolicyFinish {
+		policyClient, err = newPausingExactClient(
+			modelClient, config.Attempt, config.Control.GeneratePausePath,
+		)
+		if err != nil {
+			return err
+		}
+		staleProbe.pause = func() error { return nil }
+	}
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	heartbeat := maintainInferenceLease(runCtx, queue.New(pool), config.Attempt, cancel)
+	var heartbeat <-chan error
+	if config.Control.Mode == inferenceProbeStalePort {
+		completed := make(chan error, 1)
+		completed <- nil
+		heartbeat = completed
+	} else {
+		heartbeat = maintainInferenceLease(runCtx, queue.New(pool), config.Attempt, cancel)
+	}
 	fullRequest := PublicFullCognitionRunRequest{
-		Attempt: config.Attempt, Pool: pool, Client: modelClient,
+		Attempt: config.Attempt, Pool: pool, Client: policyClient,
 		Environment: transportClient, Completion: transportClient,
 		EpisodeSealPath: config.EpisodePath, OmnidexCommit: config.OmnidexCommit,
 		LedgerSchemaVersion:     config.LedgerSchemaVersion,
 		WorkingSetPolicyVersion: config.WorkingSetPolicyVersion,
 		ProjectionPolicyVersion: config.ProjectionPolicyVersion,
+		liveStaleProbe:          staleProbe,
+		recoverStalePort:        recoveryPort(config.Control),
 	}
 	var result PublicFullCognitionRunResult
 	var ablation PublicAblationRunResult
 	var runErr error
 	if bundle.Authority.Variant == VariantFullCognition {
 		switch config.Control.Mode {
-		case inferenceRunToTerminal:
-			result, runErr = RunPublicFullCognition(runCtx, bundle, fullRequest)
+		case inferenceRunToTerminal, inferenceProbeStalePort, inferenceRecoverStalePort:
+			if config.Control.ResumeCheckpointPath == "" {
+				result, runErr = RunPublicFullCognition(runCtx, bundle, fullRequest)
+			} else {
+				result, runErr = runControlledPublicFullCognition(
+					runCtx, bundle, fullRequest, config.Control,
+				)
+			}
 		case inferenceStopBeforeNextCall:
+			result, runErr = runControlledPublicFullCognition(runCtx, bundle, fullRequest, config.Control)
+		case inferenceRecordResumeBaseline:
 			result, runErr = runControlledPublicFullCognition(runCtx, bundle, fullRequest, config.Control)
 		default:
 			runErr = fmt.Errorf("offline inference process mode %q is not registered", config.Control.Mode)
@@ -97,7 +137,7 @@ func RunOfflineInferenceProcess(ctx context.Context, configPath string) error {
 		runErr = fmt.Errorf("controlled takeover is unavailable for ablation variant %q", bundle.Authority.Variant)
 	} else {
 		ablationRequest := PublicAblationRunRequest{
-			Actor: bindingAttemptRef(config.Attempt), Client: modelClient,
+			Actor: bindingAttemptRef(config.Attempt), Client: policyClient,
 			Environment: transportClient, Completion: transportClient,
 			EpisodeSealPath: config.EpisodePath, OmnidexCommit: config.OmnidexCommit,
 			LedgerSchemaVersion:     config.LedgerSchemaVersion,
@@ -105,7 +145,7 @@ func RunOfflineInferenceProcess(ctx context.Context, configPath string) error {
 			ProjectionPolicyVersion: config.ProjectionPolicyVersion,
 		}
 		if contaminatedOracle != nil {
-			ablationRequest.ContaminatedOracle = contaminatedOracle
+			ablationRequest.ContaminatedEvidence = contaminatedOracle
 		}
 		ablation, runErr = RunPublicAblation(runCtx, bundle, ablationRequest)
 	}
@@ -115,10 +155,30 @@ func RunOfflineInferenceProcess(ctx context.Context, configPath string) error {
 		return heartbeatErr
 	}
 	if runErr != nil {
+		if config.Control.Mode == inferenceProbeStalePort {
+			checkpoint, checkpointErr := loadLiveStalePortCheckpoint(config.Control.ProbeCheckpointPath)
+			rejection, rejectionErr := loadLiveStalePortRejection(config.Control.ProbeRejectionPath)
+			if checkpointErr != nil || rejectionErr != nil || rejection.ValidateFor(checkpoint) != nil ||
+				checkpoint.Port != config.Control.ProbePort || checkpoint.Attempt != config.Attempt {
+				return errors.Join(runErr, checkpointErr, rejectionErr,
+					fmt.Errorf("stale-port inference did not seal an exact rejection"))
+			}
+			return fmt.Errorf(
+				"live stale-port %q rejected its expired actor: %w",
+				config.Control.ProbePort, runErr,
+			)
+		}
 		return runErr
 	}
 	if bundle.Authority.Variant == VariantFullCognition {
 		return result.Validate()
 	}
 	return ablation.Validate()
+}
+
+func recoveryPort(control inferenceProcessControl) liveStalePort {
+	if control.Mode == inferenceRecoverStalePort {
+		return control.ProbePort
+	}
+	return ""
 }

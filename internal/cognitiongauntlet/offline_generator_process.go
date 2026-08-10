@@ -6,18 +6,20 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/labyrinth"
 	buildversion "github.com/gryph/omnidex/internal/version"
 )
 
-const privateEvaluationFixtureSchemaV1 = "omnidex.private-evaluation-fixture.v1"
+const privateEvaluationFixtureSchemaV2 = "omnidex.private-evaluation-fixture.v2"
 
 type privateEvaluationFixture struct {
-	Schema    string             `json:"schema"`
-	Spec      MicrogauntletSpec  `json:"spec"`
-	Surface   Surface            `json:"surface"`
-	Authority PairedRunAuthority `json:"authority"`
-	Oracle    labyrinth.Oracle   `json:"oracle"`
+	Schema         string                    `json:"schema"`
+	Scenario       OfflineScenarioSpec       `json:"scenario"`
+	Surface        Surface                   `json:"surface"`
+	Authority      PairedRunAuthority        `json:"authority"`
+	InitialOracle  *labyrinth.Oracle         `json:"initial_oracle,omitempty"`
+	ExtendedOracle *labyrinth.ExtendedOracle `json:"extended_oracle,omitempty"`
 }
 
 func RunOfflineGeneratorProcess(ctx context.Context, configPath string) error {
@@ -37,27 +39,36 @@ func RunOfflineGeneratorProcess(ctx context.Context, configPath string) error {
 	); err != nil {
 		return err
 	}
-	fixture, err := GenerateMicrogauntlet(config.Spec)
+	generated, err := generateOfflineScenario(config.Scenario)
 	if err != nil {
 		return err
 	}
-	paired, err := fixture.PairedAuthority(
+	paired, err := generated.pairedAuthority(
 		config.Surface, config.RatGeneration, config.Repetition, config.RuntimeFingerprint,
 	)
 	if err != nil {
 		return err
 	}
-	bundle, err := NewVariantPublicInferenceBundle(fixture, paired, config.Variant)
+	bundle, err := newScenarioPublicInferenceBundle(
+		generated.scenario, paired, config.Variant,
+	)
 	if err != nil {
 		return err
 	}
-	hostRaw, err := fixture.SealedEnvironmentScenario().MarshalPrivateJSON()
+	hostRaw, err := generated.scenario.MarshalPrivateJSON()
 	if err != nil {
 		return err
 	}
 	private := privateEvaluationFixture{
-		Schema: privateEvaluationFixtureSchemaV1, Spec: config.Spec, Surface: config.Surface,
-		Authority: paired, Oracle: fixture.generated.PrivateOracle(),
+		Schema: privateEvaluationFixtureSchemaV2, Scenario: config.Scenario,
+		Surface: config.Surface, Authority: paired,
+	}
+	if generated.initial != nil {
+		oracle := generated.initial.generated.PrivateOracle()
+		private.InitialOracle = &oracle
+	} else {
+		oracle := generated.extended.PrivateOracle()
+		private.ExtendedOracle = &oracle
 	}
 	if err := private.Validate(); err != nil {
 		return err
@@ -80,7 +91,7 @@ func (config generatorProcessConfig) Validate() error {
 		!validCommitIdentity(config.OmnidexCommit) {
 		return fmt.Errorf("offline generator process configuration is invalid")
 	}
-	if err := config.Spec.Validate(); err != nil {
+	if err := config.Scenario.Validate(); err != nil {
 		return err
 	}
 	if config.Variant != VariantFullCognition && !executableAblation(config.Variant) {
@@ -95,7 +106,7 @@ func (config generatorProcessConfig) Validate() error {
 	if err := config.RatGeneration.Validate(); err != nil {
 		return err
 	}
-	if err := config.Spec.Budget.ValidateFor(config.RatGeneration); err != nil {
+	if err := config.Scenario.Budget().ValidateFor(config.RatGeneration); err != nil {
 		return err
 	}
 	if err := config.RuntimeFingerprint.Validate(); err != nil {
@@ -131,10 +142,10 @@ func (config generatorProcessConfig) Validate() error {
 }
 
 func (fixture privateEvaluationFixture) Validate() error {
-	if fixture.Schema != privateEvaluationFixtureSchemaV1 {
+	if fixture.Schema != privateEvaluationFixtureSchemaV2 {
 		return fmt.Errorf("private evaluation fixture schema is invalid")
 	}
-	if err := fixture.Spec.Validate(); err != nil {
+	if err := fixture.Scenario.Validate(); err != nil {
 		return err
 	}
 	surfaceVersion, err := fixture.Surface.Version()
@@ -144,14 +155,28 @@ func (fixture privateEvaluationFixture) Validate() error {
 	if err := fixture.Authority.Validate(); err != nil {
 		return err
 	}
-	if err := fixture.Oracle.Validate(); err != nil {
-		return err
+	oracleSHA, scenarioID, publicSHA := "", cognition.ScenarioID(""), ""
+	switch fixture.Scenario.Kind {
+	case OfflineScenarioInitial:
+		if fixture.InitialOracle == nil || fixture.ExtendedOracle != nil ||
+			fixture.InitialOracle.Validate() != nil {
+			return fmt.Errorf("private initial evaluation oracle is invalid")
+		}
+		oracleSHA, scenarioID, publicSHA = fixture.InitialOracle.OracleSHA256,
+			fixture.InitialOracle.ScenarioID, fixture.InitialOracle.PublicSHA256
+	case OfflineScenarioExtended:
+		if fixture.InitialOracle != nil || fixture.ExtendedOracle == nil ||
+			fixture.ExtendedOracle.Validate() != nil {
+			return fmt.Errorf("private extended evaluation oracle is invalid")
+		}
+		oracleSHA, scenarioID, publicSHA = fixture.ExtendedOracle.OracleSHA256,
+			fixture.ExtendedOracle.ScenarioID, fixture.ExtendedOracle.PublicSHA256
 	}
-	if fixture.Authority.CaseID != fixture.Spec.CaseID ||
-		fixture.Authority.Seed != fixture.Spec.Generator.Seed ||
-		fixture.Authority.OracleSHA256 != fixture.Oracle.OracleSHA256 ||
-		fixture.Authority.Scenario.ID != fixture.Oracle.ScenarioID ||
-		fixture.Authority.Scenario.SHA256 != fixture.Oracle.PublicSHA256 {
+	if fixture.Authority.CaseID != fixture.Scenario.CaseID() ||
+		fixture.Authority.Seed != fixture.Scenario.Seed() ||
+		fixture.Authority.OracleSHA256 != oracleSHA ||
+		fixture.Authority.Scenario.ID != scenarioID ||
+		fixture.Authority.Scenario.SHA256 != publicSHA {
 		return fmt.Errorf("private evaluation fixture authority is inconsistent")
 	}
 	return nil

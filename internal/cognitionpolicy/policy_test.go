@@ -27,13 +27,14 @@ func TestPolicyReservesCallBeforeInferenceAndPersistsAcceptedResultBeforeReturn(
 		t.Fatalf("decide: %v", err)
 	}
 	decision := outcome.Decision
-	if !outcome.InferenceExecuted {
+	if !outcome.ProviderRequestDispatched {
 		t.Fatal("accepted provider generation was not reported")
 	}
 	if decision.ObligationID != snapshot.CurrentObligation().ID || decision.Action.Kind != "inspect" {
 		t.Fatalf("decision = %#v", decision)
 	}
-	if client.generateCalls != 1 || client.plainGenerateCalls != 0 || client.prepareCalls != 1 ||
+	if client.generateCalls != 1 || client.legacyPreparedCalls != 0 ||
+		client.plainGenerateCalls != 0 || client.prepareCalls != 1 ||
 		client.cleanupCalls != 1 || client.otherCalls != 0 || client.model != policyTestBrain().Model {
 		t.Fatalf("client calls prepared=%d plain=%d prepare=%d cleanup=%d other=%d model=%q",
 			client.generateCalls, client.plainGenerateCalls, client.prepareCalls,
@@ -50,8 +51,9 @@ func TestPolicyReservesCallBeforeInferenceAndPersistsAcceptedResultBeforeReturn(
 	if loader.calls != 1 {
 		t.Fatalf("projection loads=%d want 1", loader.calls)
 	}
-	if len(journal.attempts) != 1 || len(journal.results) != 1 {
-		t.Fatalf("attempts=%d results=%d, want 1/1", len(journal.attempts), len(journal.results))
+	if len(journal.attempts) != 1 || len(journal.results) != 1 || len(journal.evidence) != 1 {
+		t.Fatalf("attempts/results/evidence=%d/%d/%d, want 1/1/1",
+			len(journal.attempts), len(journal.results), len(journal.evidence))
 	}
 	attempt, result := journal.attempts[0], journal.results[0]
 	if err := attempt.Validate(); err != nil {
@@ -67,12 +69,23 @@ func TestPolicyReservesCallBeforeInferenceAndPersistsAcceptedResultBeforeReturn(
 		attempt.ContextProjection != snapshot.ContextProjection() || attempt.Brain != policyTestBrain() {
 		t.Fatalf("authority identity was not persisted exactly: %#v", attempt)
 	}
-	if attempt.Envelope != client.prompt || result.Response != client.response ||
+	if attempt.Envelope != client.prompt || string(journal.evidence[0].Content) != client.response ||
+		journal.evidence[0].Ref != result.ResponseEvidence ||
 		attempt.EnvelopeSHA256 == "" || result.ResponseSHA256 == "" || result.Status != CallResultAccepted {
 		t.Fatalf("model bytes/result were not persisted exactly: %#v / %#v", attempt, result)
 	}
 	if attempt.ProviderAttestation != policyTestAttestedBrain().Attestation {
 		t.Fatal("policy call omitted exact live provider attestation")
+	}
+	if attempt.PromptHint != llm.MinimalGeneratePrompt || attempt.PromptHintSHA256 == "" ||
+		attempt.PromptHintBytes != len(llm.MinimalGeneratePrompt) ||
+		attempt.ModelVisibleInputBytes != len(attempt.Envelope)+
+			len(llm.ExactPreparedPromptJoiner)+len(attempt.PromptHint) ||
+		attempt.ModelVisibleInputSHA256 == "" || attempt.ResponseContractSHA256 == "" ||
+		!result.ProviderUsagePresent || result.ProviderRequestSHA256 == "" ||
+		result.ProviderResponseSHA256 == "" ||
+		result.ProviderObservation.ObservationSHA256 == "" {
+		t.Fatalf("exact prepared input/provider usage evidence is incomplete: %#v / %#v", attempt, result)
 	}
 }
 
@@ -91,7 +104,7 @@ func TestPolicyRefusesDecisionWhenCallFinishFails(t *testing.T) {
 		t.Fatalf("error = %v, want ErrCallJournal", err)
 	}
 	decision := outcome.Decision
-	if !outcome.InferenceExecuted {
+	if !outcome.ProviderRequestDispatched {
 		t.Fatal("failed finish hid the executed provider generation")
 	}
 	if decision.ObligationID != "" || decision.Action.Kind != "" || len(decision.EvidenceRefs) != 0 {
@@ -158,7 +171,7 @@ func TestPolicyEnforcesHardResponseLimit(t *testing.T) {
 	t.Parallel()
 	projection := policyTestProjection(t, "direct authority")
 	snapshot, _ := policyTestSnapshot(t, projection)
-	client := &policyTestClient{response: strings.Repeat("x", MaxResponseBytes+1)}
+	client := &policyTestClient{response: strings.Repeat("x", snapshot.Budget().MaxOutputBytes+1)}
 	journal := &policyTestCallJournal{}
 	policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
 	if err != nil {
@@ -171,8 +184,10 @@ func TestPolicyEnforcesHardResponseLimit(t *testing.T) {
 		t.Fatalf("generate calls = %d, want 1", client.generateCalls)
 	}
 	if len(journal.results) != 1 || journal.results[0].Status != CallResultRejected ||
-		journal.results[0].ResponseStored {
-		t.Fatalf("oversize result was not recorded as bounded rejection: %#v", journal.results)
+		len(journal.evidence) != 1 ||
+		string(journal.evidence[0].Content) != client.response {
+		t.Fatalf("oversize result/evidence was not recorded as an exact rejection: %#v / %#v",
+			journal.results, journal.evidence)
 	}
 }
 
@@ -183,7 +198,7 @@ func TestPolicyEnforcesFreshPerCallInputAndOutputBudgets(t *testing.T) {
 
 	inputBudget := base.Budget()
 	inputBudget.MaxInputBytes = 1
-	inputBudget.MaxInputTokens = 1
+	inputBudget.MaxInputTokens = 1 + policyTestBrain().Sampling.InputSpecialTokenReserve
 	inputLimited := policySnapshotWithBudget(t, base, inputBudget)
 	inputClient := &policyTestClient{response: policyTestResponse(t, base, evidence)}
 	policy, err := New(inputClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), &policyTestCallJournal{})

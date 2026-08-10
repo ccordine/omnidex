@@ -19,6 +19,12 @@ func (fixture MicrogauntletCase) PairedAuthority(
 	if err := generation.Validate(); err != nil {
 		return PairedRunAuthority{}, err
 	}
+	budget, err := NewExecutableRunBudgetV2(
+		fixture.spec.Budget, generation.Fixed.Brain.Sampling,
+	)
+	if err != nil {
+		return PairedRunAuthority{}, err
+	}
 	public, err := fixture.PublicManifest(surface)
 	if err != nil {
 		return PairedRunAuthority{}, err
@@ -35,7 +41,7 @@ func (fixture MicrogauntletCase) PairedAuthority(
 		OracleSHA256: oracle.OracleSHA256, SurfaceVersion: public.SurfaceVersion,
 		ActionCatalogVersion: public.ActionCatalogVersion,
 		ActionCatalogSHA256:  public.ActionCatalogSHA256,
-		RatGeneration:        generation, Budget: fixture.spec.Budget, Runtime: runtime,
+		RatGeneration:        generation, Budget: budget, Runtime: runtime,
 		Repetition: repetition,
 	}
 	return authority, authority.Validate()

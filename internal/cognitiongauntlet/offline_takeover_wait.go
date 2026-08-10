@@ -10,18 +10,21 @@ import (
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func waitForPausedInference(
 	ctx context.Context,
+	pool *pgxpool.Pool,
 	repository *queue.Repository,
 	episodeID cognition.EpisodeID,
 	authority model.StepAttemptAuthority,
-	boundary uint32,
+	boundary inferenceBoundary,
 	checkpointPath string,
 	child *offlineChildProcess,
 ) (PausedInferenceCheckpoint, error) {
-	if ctx == nil || repository == nil || child == nil || child.pid() == 0 {
+	if ctx == nil || pool == nil || repository == nil || boundary.Validate() != nil ||
+		child == nil || child.pid() == 0 {
 		return PausedInferenceCheckpoint{}, fmt.Errorf("paused inference wait authority is incomplete")
 	}
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -38,10 +41,14 @@ func waitForPausedInference(
 			if err != nil {
 				return PausedInferenceCheckpoint{}, err
 			}
-			if episode.SuccessfulActions > int64(boundary) {
+			count, err := durableInferenceBoundaryCount(ctx, pool, episode, boundary.Kind)
+			if err != nil {
+				return PausedInferenceCheckpoint{}, err
+			}
+			if count > int64(boundary.Count) {
 				return PausedInferenceCheckpoint{}, fmt.Errorf("inference child crossed its public durable boundary")
 			}
-			if episode.SuccessfulActions != int64(boundary) {
+			if count != int64(boundary.Count) {
 				continue
 			}
 			if _, err := os.Stat(checkpointPath); err != nil {
@@ -54,7 +61,7 @@ func waitForPausedInference(
 			if err != nil {
 				return PausedInferenceCheckpoint{}, err
 			}
-			if checkpoint.SuccessfulActions != boundary ||
+			if checkpoint.Boundary != boundary ||
 				checkpoint.PreCall.Bound.Attempt != bindingAttemptRef(authority) {
 				return PausedInferenceCheckpoint{}, fmt.Errorf("paused inference checkpoint changed its durable authority")
 			}
@@ -63,6 +70,29 @@ func waitForPausedInference(
 			}
 			return checkpoint, nil
 		}
+	}
+}
+
+func durableInferenceBoundaryCount(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	episode queue.CognitionEpisode,
+	kind inferenceBoundaryKind,
+) (int64, error) {
+	switch kind {
+	case inferenceBoundaryActions:
+		return episode.SuccessfulActions, nil
+	case inferenceBoundaryDecisions:
+		var count int64
+		if err := pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM cognition_policy_calls
+			WHERE episode_id=$1 AND status='accepted'
+		`, episode.EpisodeID).Scan(&count); err != nil {
+			return 0, fmt.Errorf("count durable cognition policy decisions: %w", err)
+		}
+		return count, nil
+	default:
+		return 0, fmt.Errorf("durable inference boundary kind is not registered")
 	}
 }
 

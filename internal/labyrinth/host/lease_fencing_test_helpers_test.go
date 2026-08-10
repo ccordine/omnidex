@@ -14,6 +14,7 @@ import (
 	"github.com/gryph/omnidex/internal/labyrinth"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/version"
 	"github.com/gryph/omnidex/internal/workingset"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,9 +68,16 @@ func newFencedHostFixture(t *testing.T) fencedHostFixture {
 		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+runtimeID+" CASCADE")
 		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+hostID+" CASCADE")
 	})
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "..", "migrations"))
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	directory, err := filepath.Abs(filepath.Join("..", "..", "..", "migrations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := queue.LoadMigrationBundle(directory, version.MigrationsSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.EnsureSchema(ctx, bundle); err != nil {
 		t.Fatal(err)
 	}
 	store, err := NewStoreInSchema(pool, hostSchema)

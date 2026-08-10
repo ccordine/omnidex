@@ -43,6 +43,7 @@ var durationEnvironmentKeys = []string{
 }
 
 var removedEnvironmentKeys = append([]string{
+	"MIGRATIONS_DIR",
 	"OMNIDEX_V3_ENABLED",
 	"STOP_ON_SUFFICIENT_CONTEXT",
 	"SUFFICIENT_CONTEXT_CHARS",

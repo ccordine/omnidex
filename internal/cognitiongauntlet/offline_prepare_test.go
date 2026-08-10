@@ -36,6 +36,11 @@ func TestOfflinePrepareDerivesReleaseRuntimeAndSamplingAuthority(t *testing.T) {
 		config.RatGeneration.Runtime.ExecutableSHA256 != executableSHA ||
 		config.RuntimeFingerprint.ProductionSourceSHA256 != source ||
 		config.RatGeneration.Fixed.Brain.Sampling.MaxOutputTokens != request.Budget.Station.MaxOutputTokens ||
+		config.Scenario.Budget().Schema != RunBudgetSchemaRawV2 ||
+		config.Scenario.Budget().Station.MaxInputTokens !=
+			request.Budget.Station.MaxInputBytes+
+				config.RatGeneration.Fixed.Brain.Sampling.InputSpecialTokenReserve ||
+		request.Budget.Schema != RunBudgetSchemaStructuralV1 ||
 		config.RatGeneration.Fixed.Brain.SamplingSHA256 == "" {
 		t.Fatalf("prepared authority=%+v", config)
 	}
@@ -124,7 +129,8 @@ func TestOfflinePrepareCompilesRegisteredAblationWithoutDerivedCallerIdentity(t 
 		t.Fatal(err)
 	}
 	if prepared.promotion.Variant != VariantRawObservation ||
-		prepared.promotion.RatGeneration.Fixed.Brain.ProviderAttestation != provider ||
+		prepared.promotion.RatGeneration.Fixed.Brain.ProviderAttestation != provider.Attestation ||
+		prepared.promotion.RatGeneration.Fixed.Brain.ProviderObservation != provider.Observation ||
 		prepared.promotion.RatGeneration.Fixed.Brain.HostAttestation != host {
 		t.Fatalf("prepared ablation authority=%+v", prepared.promotion)
 	}
@@ -179,8 +185,22 @@ func offlinePrepareTestRequest(t *testing.T, mode OfflineExperimentMode) Offline
 
 func offlinePrepareTestAttestations(
 	t *testing.T,
-) (llm.ProviderIdentityAttestation, cognitionpolicy.HostHardwareAttestation) {
+) (llm.ObservedProviderIdentity, cognitionpolicy.HostHardwareAttestation) {
 	t.Helper()
 	brain := mustRatGeneration(t).Fixed.Brain
-	return brain.ProviderAttestation, brain.HostAttestation
+	evidence, err := witnessProviderIdentityEvidence(brain.ProviderAttestation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := llm.NewObservedProviderIdentity(
+		brain.ProviderObservation.ObservedAt, brain.ProviderAttestation,
+		evidence, brain.ProviderObservation.ChallengeSHA256,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.Observation != brain.ProviderObservation {
+		t.Fatal("offline prepare fixture changed the frozen provider observation")
+	}
+	return observed, brain.HostAttestation
 }

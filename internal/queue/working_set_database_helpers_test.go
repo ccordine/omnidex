@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -20,9 +19,8 @@ func openWorkingSetDatabase(t *testing.T) (context.Context, *Repository, *pgxpoo
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
 	pool := openIsolatedMigrationPool(t)
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, repository, pool

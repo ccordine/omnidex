@@ -7,7 +7,9 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/cognition"
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/cognitionruntime"
+	"github.com/gryph/omnidex/internal/contextbuilder"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -17,6 +19,8 @@ func insertCognitionSnapshotJournalTx(
 	tx pgx.Tx,
 	authority model.StepAttemptAuthority,
 	prepared cognitionruntime.PreparedSnapshot,
+	projection contextbuilder.Projection,
+	brain cognitionpolicy.BrainRef,
 	callOrdinal uint64,
 ) error {
 	snapshot := prepared.Snapshot
@@ -43,7 +47,11 @@ func insertCognitionSnapshotJournalTx(
 	if err != nil {
 		return err
 	}
-	projection := snapshot.ContextProjection()
+	projectionRef := snapshot.ContextProjection()
+	input, err := cognitionpolicy.MeasureCallInputAuthority(snapshot, projection, brain)
+	if err != nil {
+		return err
+	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO cognition_runtime_snapshots (
 			snapshot_sha256,preparation_id,episode_id,job_id,generation,step_id,
@@ -51,14 +59,27 @@ func insertCognitionSnapshotJournalTx(
 			expected_revision_sha256,obligation_node_id,graph_version,graph_sha256,
 			projection_id,working_set_id,runtime_budget_json,runtime_budget_sha256,
 			evidence_refs_json,evidence_refs_sha256,completion_evidence_refs_json,
-			completion_evidence_refs_sha256,environment_terminal,public_outcome
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+			completion_evidence_refs_sha256,environment_terminal,public_outcome,
+			policy_envelope_renderer_version,policy_envelope_token_estimator,
+			policy_envelope_estimated_tokens,policy_envelope_sha256,policy_envelope_bytes,
+			policy_prompt_hint_sha256,policy_prompt_hint_bytes,
+			policy_model_visible_input_sha256,policy_model_visible_input_bytes,
+			policy_model_visible_estimated_tokens,policy_model_input_token_upper_bound,
+			policy_response_contract_sha256,
+			policy_expected_provider_request_sha256
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
+		          $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)
 	`, snapshot.SHA256(), "cognition_snapshot_"+snapshot.SHA256(), snapshot.CurrentRevision().EpisodeID,
 		authority.JobID, authority.Generation, authority.StepID, authority.Attempt, authority.WorkerID,
 		int64(callOrdinal), int64(snapshot.CurrentRevision().Number), snapshot.CurrentRevision().SHA256,
 		snapshot.CurrentObligation().ID, int64(prepared.GraphVersion), prepared.ObligationGraph.SHA256,
-		projection.ID, projection.WorkingSetID, string(budgetJSON), budgetSHA, string(refsJSON), refsSHA,
-		string(completionRefsJSON), completionRefsSHA, prepared.EnvironmentTerminal, prepared.PublicOutcome)
+		projectionRef.ID, projectionRef.WorkingSetID, string(budgetJSON), budgetSHA, string(refsJSON), refsSHA,
+		string(completionRefsJSON), completionRefsSHA, prepared.EnvironmentTerminal, prepared.PublicOutcome,
+		input.EnvelopeRendererVersion, input.EnvelopeTokenEstimator, input.EnvelopeEstimatedTokens,
+		input.EnvelopeSHA256, input.EnvelopeBytes, input.PromptHintSHA256, input.PromptHintBytes,
+		input.ModelVisibleInputSHA256, input.ModelVisibleInputBytes, input.ModelVisibleEstimatedTokens,
+		input.ModelInputTokenUpperBound, input.ResponseContractSHA256,
+		input.ExpectedProviderRequestSHA256)
 	if err != nil {
 		return fmt.Errorf("insert cognition runtime snapshot: %w", err)
 	}

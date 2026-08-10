@@ -16,8 +16,9 @@ func TestPolicyRejectsPreparedIdentityDriftWithoutPlainGenerateFallback(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := policy.Decide(context.Background(), snapshot); !errors.Is(err, ErrGeneration) {
-		t.Fatalf("prepared identity error=%v, want ErrGeneration", err)
+	if _, err := policy.Decide(context.Background(), snapshot); !errors.Is(err, ErrInvalidEvidence) ||
+		errors.Is(err, ErrGeneration) {
+		t.Fatalf("prepared identity error=%v, want only loud ErrInvalidEvidence", err)
 	}
 	if client.prepareCalls != 1 || client.generateCalls != 0 ||
 		client.plainGenerateCalls != 0 || client.cleanupCalls != 1 {
@@ -38,8 +39,9 @@ func TestPolicyRejectsClientMutationOfExactPreparedContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := policy.Decide(context.Background(), snapshot); !errors.Is(err, ErrGeneration) {
-		t.Fatalf("mutated contract error=%v, want ErrGeneration", err)
+	if _, err := policy.Decide(context.Background(), snapshot); !errors.Is(err, ErrInvalidEvidence) ||
+		!errors.Is(err, ErrGeneration) {
+		t.Fatalf("mutated contract error=%v, want request mismatch with loud ErrInvalidEvidence", err)
 	}
 	if client.generateCalls != 1 || client.plainGenerateCalls != 0 || client.cleanupCalls != 1 ||
 		len(journal.results) != 1 || journal.results[0].Status != CallResultFailed {

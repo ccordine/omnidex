@@ -47,7 +47,12 @@ func buildAcceptedCognitionRecoveryTx(
 	if err != nil {
 		return cognitionruntime.AcceptedDecisionRecovery{}, err
 	}
-	decision, err := cognition.DecodeCognitionDecision([]byte(call.Result.Response), schema)
+	if call.ResponseEvidence == nil {
+		return cognitionruntime.AcceptedDecisionRecovery{}, fmt.Errorf(
+			"%w: accepted recovery lacks exact model response evidence", ErrCognitionConflict,
+		)
+	}
+	decision, err := cognition.DecodeCognitionDecision(call.ResponseEvidence.Content, schema)
 	if err != nil {
 		return cognitionruntime.AcceptedDecisionRecovery{}, fmt.Errorf(
 			"%w: decode accepted recovery decision: %v", ErrCognitionConflict, err,

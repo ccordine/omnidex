@@ -64,7 +64,9 @@ func TestPublicAblationRunnerExecutesSealsAndEvaluatesRegisteredVariants(t *test
 				ProjectionPolicyVersion: ablationProjectionPolicyVersionV1,
 			}
 			if variant == VariantOracleEvidence {
-				request.ContaminatedOracle = &oracle
+				request.ContaminatedEvidence = &ContaminatedEvidencePacket{
+					Witness: oracle.Witness, EvidenceUses: oracle.EvidenceUses,
+				}
 			}
 			public, err := RunPublicAblation(t.Context(), bundle, request)
 			if err != nil {

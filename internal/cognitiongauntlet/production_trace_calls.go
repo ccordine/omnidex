@@ -76,14 +76,23 @@ func (state *productionTraceState) acceptPolicyResult(
 		MaxOutputBytes:  attempt.RuntimeBudget.MaxOutputBytes,
 		MaxOutputTokens: attempt.RuntimeBudget.MaxOutputTokens,
 	}
+	if !result.ProviderRequestDispatched {
+		return appendProductionPolicyDisposition(recorder, attempt, result, budget)
+	}
 	call := ModelCallTrace{
-		Schema:           ModelCallTraceSchemaV1,
+		Schema:           ModelCallTraceSchemaV2,
 		ProjectionID:     string(attempt.ContextProjection.ID),
 		ProjectionSHA256: attempt.ContextProjection.SHA256,
-		Budget:           budget, InputBytes: int64(attempt.EnvelopeBytes),
-		InputTokens:  int64(attempt.EnvelopeEstimatedTokens),
-		OutputBytes:  int64(result.ResponseBytes),
-		OutputTokens: int64(estimateProductionTokens(result.ResponseBytes)),
+		Budget:           budget, ResultStatus: result.Status, FailureCode: result.FailureCode,
+		ProviderResponseDisposition: result.ProviderResponseDisposition,
+		ProviderRequestDispatched:   result.ProviderRequestDispatched,
+		ProviderDoneReason:          result.ProviderDoneReason,
+		ProviderUsagePresent:        result.ProviderUsagePresent, ProviderUsage: result.ProviderUsage,
+		InputBytes: int64(attempt.ModelVisibleInputBytes), OutputBytes: int64(result.ResponseBytes),
+	}
+	if result.ProviderUsagePresent {
+		call.InputTokens = int64(result.ProviderUsage.PromptEvalCount)
+		call.OutputTokens = int64(result.ProviderUsage.EvalCount)
 	}
 	if err := call.Validate(); err != nil {
 		return err
@@ -97,12 +106,16 @@ func (state *productionTraceState) acceptPolicyResult(
 	}
 	resources := &state.metrics.Resources
 	resources.ModelCalls++
-	resources.ContextBytes += int64(attempt.EnvelopeBytes)
-	resources.InputTokens += int64(attempt.EnvelopeEstimatedTokens)
+	resources.ContextBytes += call.InputBytes
+	resources.InputTokens += call.InputTokens
 	resources.OutputBytes += int64(result.ResponseBytes)
-	resources.OutputTokens += int64(estimateProductionTokens(result.ResponseBytes))
-	if int64(attempt.EnvelopeBytes) > resources.PeakContextBytes {
-		resources.PeakContextBytes = int64(attempt.EnvelopeBytes)
+	resources.OutputTokens += call.OutputTokens
+	resources.ProviderTotalNanoseconds += result.ProviderUsage.TotalDurationNanos
+	resources.ProviderLoadNanoseconds += result.ProviderUsage.LoadDurationNanos
+	resources.ProviderPromptEvalNanoseconds += result.ProviderUsage.PromptEvalDurationNanos
+	resources.ProviderEvalNanoseconds += result.ProviderUsage.EvalDurationNanos
+	if call.InputBytes > resources.PeakContextBytes {
+		resources.PeakContextBytes = call.InputBytes
 	}
 	if result.Status == cognitionpolicy.CallResultAccepted {
 		resources.ModelDecisions++
@@ -110,13 +123,29 @@ func (state *productionTraceState) acceptPolicyResult(
 	return nil
 }
 
-func projectionReference(ref taskstate.Ref) ProjectionReferenceIdentity {
-	return ProjectionReferenceIdentity{URI: ref.URI, Version: ref.Version, ContentSHA256: ref.Hash}
+func appendProductionPolicyDisposition(
+	recorder *EpisodeRecorder,
+	attempt cognitionpolicy.CallAttempt,
+	result cognitionpolicy.CallResult,
+	budget StationBudget,
+) error {
+	disposition := PolicyDispositionTrace{
+		Schema:           PolicyDispositionSchemaV1,
+		ProjectionID:     string(attempt.ContextProjection.ID),
+		ProjectionSHA256: attempt.ContextProjection.SHA256,
+		Budget:           budget, ResultStatus: result.Status,
+		FailureCode: result.FailureCode, ProviderRequestDispatched: false,
+	}
+	if err := disposition.Validate(); err != nil {
+		return err
+	}
+	payload, err := traceJSONObject(disposition)
+	if err != nil {
+		return err
+	}
+	return recorder.Append(TracePolicyDisposition, attempt.ID, nil, payload)
 }
 
-func estimateProductionTokens(bytes int) int {
-	if bytes <= 0 {
-		return 0
-	}
-	return (bytes + 3) / 4
+func projectionReference(ref taskstate.Ref) ProjectionReferenceIdentity {
+	return ProjectionReferenceIdentity{URI: ref.URI, Version: ref.Version, ContentSHA256: ref.Hash}
 }

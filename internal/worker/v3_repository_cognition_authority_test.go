@@ -50,6 +50,8 @@ func TestRepositoryCognitionBudgetIsBoundToOperationCatalog(t *testing.T) {
 			t.Fatal(err)
 		}
 		if budget.MaxInputBytes != brain.ContextCeilingBytes ||
+			budget.MaxInputTokens != brain.ContextCeilingBytes+
+				brain.Sampling.InputSpecialTokenReserve ||
 			budget.MaxOutputTokens != brain.Sampling.MaxOutputTokens ||
 			budget.RemainingPolicyCalls != uint32(testCase.decisions) || cycles != testCase.decisions+1 ||
 			budget.MaxEvidenceRefs != 1+(2*testCase.decisions) ||

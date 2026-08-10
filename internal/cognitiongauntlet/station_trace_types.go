@@ -4,12 +4,15 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/cognition"
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/taskstate"
 )
 
 const (
-	ProjectionTraceSchemaV1 = "omnidex.cognition-projection-trace.v1"
-	ModelCallTraceSchemaV1  = "omnidex.cognition-model-call-trace.v1"
+	ProjectionTraceSchemaV1   = "omnidex.cognition-projection-trace.v1"
+	ModelCallTraceSchemaV2    = "omnidex.cognition-model-call-trace.v2"
+	PolicyDispositionSchemaV1 = "omnidex.cognition-policy-disposition-trace.v1"
 )
 
 type StationBudget struct {
@@ -42,14 +45,31 @@ type ProjectionTrace struct {
 }
 
 type ModelCallTrace struct {
-	Schema           string        `json:"schema"`
-	ProjectionID     string        `json:"projection_id"`
-	ProjectionSHA256 string        `json:"projection_sha256"`
-	Budget           StationBudget `json:"budget"`
-	InputBytes       int64         `json:"input_bytes"`
-	InputTokens      int64         `json:"input_tokens"`
-	OutputBytes      int64         `json:"output_bytes"`
-	OutputTokens     int64         `json:"output_tokens"`
+	Schema                      string                           `json:"schema"`
+	ProjectionID                string                           `json:"projection_id"`
+	ProjectionSHA256            string                           `json:"projection_sha256"`
+	Budget                      StationBudget                    `json:"budget"`
+	ResultStatus                cognitionpolicy.CallResultStatus `json:"result_status"`
+	FailureCode                 cognitionpolicy.CallFailureCode  `json:"failure_code,omitempty"`
+	ProviderResponseDisposition llm.ProviderResponseDisposition  `json:"provider_response_disposition"`
+	ProviderRequestDispatched   bool                             `json:"provider_request_dispatched"`
+	ProviderDoneReason          string                           `json:"provider_done_reason"`
+	ProviderUsagePresent        bool                             `json:"provider_usage_present"`
+	ProviderUsage               llm.ProviderGenerationUsage      `json:"provider_usage"`
+	InputBytes                  int64                            `json:"input_bytes"`
+	InputTokens                 int64                            `json:"input_tokens"`
+	OutputBytes                 int64                            `json:"output_bytes"`
+	OutputTokens                int64                            `json:"output_tokens"`
+}
+
+type PolicyDispositionTrace struct {
+	Schema                    string                           `json:"schema"`
+	ProjectionID              string                           `json:"projection_id"`
+	ProjectionSHA256          string                           `json:"projection_sha256"`
+	Budget                    StationBudget                    `json:"budget"`
+	ResultStatus              cognitionpolicy.CallResultStatus `json:"result_status"`
+	FailureCode               cognitionpolicy.CallFailureCode  `json:"failure_code"`
+	ProviderRequestDispatched bool                             `json:"provider_request_dispatched"`
 }
 
 func (budget StationBudget) Validate() error {
@@ -123,23 +143,27 @@ func (projection ProjectionTrace) Validate() error {
 }
 
 func (call ModelCallTrace) Validate() error {
-	if call.Schema != ModelCallTraceSchemaV1 ||
+	if call.Schema != ModelCallTraceSchemaV2 ||
 		requireExact(call.ProjectionID, "model-call projection ID", 512) != nil ||
-		!validDigest(call.ProjectionSHA256) {
+		!validDigest(call.ProjectionSHA256) || !call.ProviderRequestDispatched {
 		return fmt.Errorf("model-call trace authority is invalid")
 	}
 	if err := call.Budget.Validate(); err != nil {
 		return err
 	}
-	if call.InputBytes <= 0 || call.InputTokens <= 0 || call.OutputBytes < 0 || call.OutputTokens < 0 ||
-		call.InputBytes > int64(call.Budget.MaxInputBytes) ||
-		call.InputTokens > int64(call.Budget.MaxInputTokens) ||
-		call.OutputBytes > int64(call.Budget.MaxOutputBytes) ||
-		call.OutputTokens > int64(call.Budget.MaxOutputTokens) ||
-		(call.OutputBytes == 0) != (call.OutputTokens == 0) {
-		return fmt.Errorf("model-call trace usage exceeds its station budget")
+	return validateExecutedCallUsage(call)
+}
+
+func (trace PolicyDispositionTrace) Validate() error {
+	if trace.Schema != PolicyDispositionSchemaV1 ||
+		requireExact(trace.ProjectionID, "policy disposition projection ID", 512) != nil ||
+		!validDigest(trace.ProjectionSHA256) || trace.ProviderRequestDispatched ||
+		trace.ResultStatus != cognitionpolicy.CallResultFailed ||
+		(trace.FailureCode != cognitionpolicy.CallFailureProviderIdentity &&
+			trace.FailureCode != cognitionpolicy.CallFailureGeneration) {
+		return fmt.Errorf("non-inference policy disposition authority is invalid")
 	}
-	return nil
+	return trace.Budget.Validate()
 }
 
 func decodeTracePayload(payload taskstate.JSONObject, target any, label string) error {

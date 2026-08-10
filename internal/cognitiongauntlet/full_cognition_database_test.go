@@ -97,7 +97,6 @@ func openFullCognitionDatabase(
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	t.Cleanup(cancel)
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	admin, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +128,7 @@ func openFullCognitionDatabase(
 		}
 	})
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadRepositoryMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	hostStore, err := labyrinthhost.NewStoreInSchema(pool, hostSchema)

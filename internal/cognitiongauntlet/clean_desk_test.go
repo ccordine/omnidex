@@ -3,6 +3,8 @@ package cognitiongauntlet
 import (
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
 )
 
 func TestCleanDeskEvaluationJoinsSealedProjectionToPrivateOracle(t *testing.T) {
@@ -61,6 +63,26 @@ func TestCleanDeskNeverRewardsProjectionThatOmittedCriticalEvidence(t *testing.T
 	if metrics.ContextConcentration != 0 || metrics.MissingCriticalBytes != 40 ||
 		metrics.MissingCriticalRefs != 1 || metrics.ConcentrationQualified {
 		t.Fatalf("omitted critical evidence received clean-desk credit: %+v", metrics)
+	}
+}
+
+func TestCleanDeskDisqualifiesExactNativeUsageOverage(t *testing.T) {
+	projection := testProjectionTrace()
+	call := testModelCallTrace()
+	call.ResultStatus = cognitionpolicy.CallResultRejected
+	call.FailureCode = cognitionpolicy.CallFailureProviderUsageLimit
+	call.ProviderUsage.EvalCount = call.Budget.MaxOutputTokens + 1
+	call.OutputTokens = int64(call.ProviderUsage.EvalCount)
+	metric, err := measureStationCall(
+		"usage-limit-call", projection, call,
+		map[ProjectionReferenceIdentity]struct{}{},
+		map[ProjectionReferenceIdentity]int64{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metric.BudgetQualified || metric.ConcentrationQualified {
+		t.Fatalf("over-budget clean-desk call was qualified: %+v", metric)
 	}
 }
 

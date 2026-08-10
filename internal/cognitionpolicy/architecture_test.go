@@ -31,6 +31,7 @@ func TestProductionImportsOnlyRegisteredPolicyDependencies(t *testing.T) {
 	allowed := map[string]bool{
 		"github.com/gryph/omnidex/internal/cognition":      true,
 		"github.com/gryph/omnidex/internal/contextbuilder": true,
+		"github.com/gryph/omnidex/internal/exactjson":      true,
 		"github.com/gryph/omnidex/internal/llm":            true,
 	}
 	for _, entry := range entries {

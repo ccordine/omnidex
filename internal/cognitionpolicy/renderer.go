@@ -55,21 +55,37 @@ func Render(
 			"%w: runtime output limit exceeds the frozen cognition station ceiling", ErrEnvelopeLimit,
 		)
 	}
-	if envelope.Bytes > brain.ContextCeilingBytes ||
-		envelope.Bytes > snapshot.Budget().MaxInputBytes ||
-		envelope.EstimatedTokens > snapshot.Budget().MaxInputTokens ||
+	modelInput, err := llm.ExactPreparedModelInput(envelope.JSON, llm.MinimalGeneratePrompt)
+	if err != nil {
+		return RenderedEnvelope{}, fmt.Errorf("%w: %v", ErrEnvelopeLimit, err)
+	}
+	modelVisibleBytes := len(modelInput)
+	modelVisibleEstimatedTokens := estimatePolicyTokens(modelVisibleBytes)
+	modelInputTokenUpperBound, err := llm.ModelInputTokenUpperBound(
+		modelInput, brain.Sampling.InputSpecialTokenReserve,
+	)
+	if err != nil {
+		return RenderedEnvelope{}, fmt.Errorf("%w: %v", ErrEnvelopeLimit, err)
+	}
+	if modelVisibleBytes > brain.ContextCeilingBytes ||
+		modelVisibleBytes > snapshot.Budget().MaxInputBytes ||
+		modelInputTokenUpperBound > snapshot.Budget().MaxInputTokens ||
 		snapshot.Budget().MaxInputTokens+snapshot.Budget().MaxOutputTokens > brain.NativeContextLimit {
 		return RenderedEnvelope{}, fmt.Errorf(
-			"%w: envelope is %d bytes/%d estimated tokens; hard maximum is %d bytes, call limits are %d bytes/%d input tokens plus %d output tokens, and brain limits are %d bytes/%d native units",
-			ErrEnvelopeLimit, envelope.Bytes, envelope.EstimatedTokens, MaxEnvelopeBytes,
+			"%w: model-visible input is %d bytes/%d estimated tokens/%d conservative input-token upper bound (%d-byte envelope); hard envelope maximum is %d bytes, call limits are %d bytes/%d input tokens plus %d output tokens, and brain limits are %d bytes/%d native units",
+			ErrEnvelopeLimit, modelVisibleBytes, modelVisibleEstimatedTokens, modelInputTokenUpperBound,
+			envelope.Bytes, MaxEnvelopeBytes,
 			snapshot.Budget().MaxInputBytes, snapshot.Budget().MaxInputTokens,
 			snapshot.Budget().MaxOutputTokens,
 			brain.ContextCeilingBytes, brain.NativeContextLimit,
 		)
 	}
-	if err := llm.ValidateInferenceBudget(
-		brain.NativeContextLimit, snapshot.Budget().MaxOutputTokens,
-		envelope.JSON, llm.MinimalGeneratePrompt,
+	if err := llm.ValidateExactPreparedInputBudget(
+		brain.NativeContextLimit,
+		snapshot.Budget().MaxInputTokens,
+		snapshot.Budget().MaxOutputTokens,
+		modelInput,
+		brain.Sampling.InputSpecialTokenReserve,
 	); err != nil {
 		return RenderedEnvelope{}, fmt.Errorf("%w: %v", ErrEnvelopeLimit, err)
 	}

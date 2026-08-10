@@ -104,6 +104,13 @@ func TestLoadDedicatedSubtaskExecutorModel(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsExplicitlyEmptyDatabaseSchema(t *testing.T) {
+	t.Setenv("DATABASE_SCHEMA", "")
+	if _, err := loadDatabaseSchema(); err == nil || !strings.Contains(err.Error(), "explicitly empty") {
+		t.Fatalf("loadDatabaseSchema() error=%v, want explicit failure", err)
+	}
+}
+
 func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("WRAPPER_ONLY", "true")

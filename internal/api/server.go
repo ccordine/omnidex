@@ -20,6 +20,7 @@ import (
 type Server struct {
 	lifecycleContext          context.Context
 	repo                      *queue.Repository
+	migrationBundle           queue.MigrationBundle
 	channelStore              channelStore
 	llmClient                 llm.Client
 	mux                       *http.ServeMux
@@ -61,6 +62,7 @@ type Server struct {
 
 type ServerOptions struct {
 	LifecycleContext     context.Context
+	MigrationBundle      queue.MigrationBundle
 	ProviderConfig       config.Config
 	RequestTimeout       time.Duration
 	WebSearchEnabled     bool
@@ -249,6 +251,7 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 	s := &Server{
 		lifecycleContext:     lifecycleContext,
 		repo:                 repo,
+		migrationBundle:      options.MigrationBundle,
 		channelStore:         channels,
 		llmClient:            llmClient,
 		mux:                  http.NewServeMux(),

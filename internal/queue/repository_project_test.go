@@ -113,7 +113,7 @@ func TestEnqueueJobPreservesCustomProjectName(t *testing.T) {
 	}
 
 	repo := New(pool)
-	if err := repo.EnsureSchema(ctx); err != nil {
+	if err := repo.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 

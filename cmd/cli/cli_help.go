@@ -37,7 +37,7 @@ func usage() {
 	fmt.Println("  update [update.sh flags]            run update.sh")
 	fmt.Println("  stash [stash flags]                 git stash helper for Omnidex repo")
 	fmt.Println("  uninstall [uninstall.sh flags]      run uninstall.sh")
-	fmt.Println("  migrate:fresh [--yes]  wipe Omnidex tables and re-run schema migrations via core")
+	fmt.Println("  migrate:fresh [--yes]  reset the dedicated Omnidex schema and re-run sealed migrations via core")
 	fmt.Println("  metrics <live|runs|models|playbooks|benchmarks|export>  query telemetry/benchmark metrics")
 	fmt.Println("  status [--timeout 5s] [--queue-limit N] [--web-probe]  combined service status")
 	fmt.Println("  core:status [--timeout 5s] [--core-url url]            core API health")

@@ -145,19 +145,22 @@ func (diagnostics *productionTraceDiagnostics) finish(
 }
 
 func (diagnostics *productionTraceDiagnostics) finishTimings(state *productionTraceState) error {
-	if len(diagnostics.timings) != len(state.attempts) || len(state.results) != len(state.attempts) {
+	if len(diagnostics.timings) != len(state.attempts) ||
+		len(state.results)+len(state.abandonments) != len(state.attempts) {
 		return fmt.Errorf("sealed production policy timing, attempts, and results differ")
 	}
 	var elapsed int64
 	for callID := range state.attempts {
 		timing, exists := diagnostics.timings[callID]
 		status, resultExists := state.results[callID]
-		if !exists || !resultExists || timing.Status != status || timing.FinishedAt == nil {
+		_, abandoned := state.abandonments[callID]
+		if !exists || resultExists == abandoned || timing.FinishedAt == nil ||
+			(resultExists && timing.Status != status) || (abandoned && timing.Status != "abandoned") {
 			return fmt.Errorf("sealed production policy timing is not terminal or disagrees with its result")
 		}
 		elapsed += timing.FinishedAt.Sub(timing.StartedAt).Milliseconds()
 	}
-	state.metrics.Resources.ModelMilliseconds = elapsed
+	state.metrics.Resources.PolicyWallMilliseconds = elapsed
 	state.metrics.Resources.WallMilliseconds = state.trace.Header.SealedAt.
 		Sub(state.trace.Header.EpisodeStartedAt).Milliseconds()
 	return nil

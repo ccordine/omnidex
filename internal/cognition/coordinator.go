@@ -13,8 +13,8 @@ type Policy interface {
 }
 
 type PolicyOutcome struct {
-	Decision          CognitionDecision
-	InferenceExecuted bool
+	Decision                  CognitionDecision
+	ProviderRequestDispatched bool
 }
 
 type PolicyFunc func(context.Context, RuntimeSnapshot) (PolicyOutcome, error)
@@ -86,7 +86,7 @@ func (coordinator *Coordinator) Step(
 		return CoordinatorStep{}, ErrCoordinatorBudgetExhausted
 	}
 	outcome, err := coordinator.policy.Decide(ctx, snapshot)
-	base.PolicyCalled = outcome.InferenceExecuted
+	base.PolicyCalled = outcome.ProviderRequestDispatched
 	if err != nil {
 		return base, fmt.Errorf("%w: %w", ErrPolicyFailed, err)
 	}

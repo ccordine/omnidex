@@ -22,6 +22,15 @@ type CausalAcquisitionReport struct {
 	AcquisitionTraceRefs []string `json:"acquisition_trace_refs"`
 }
 
+type offlineEvidenceAuthority struct {
+	Scenario         cognition.ScenarioRef
+	Suite            labyrinth.Suite
+	OracleSHA256     string
+	Witness          []labyrinth.WitnessAction
+	EvidenceUses     []labyrinth.EvidenceUse
+	RequiredEvidence int
+}
+
 func ValidateCausalAcquisitionTrace(
 	fixture MicrogauntletCase,
 	episode SealedEpisode,
@@ -63,6 +72,33 @@ func MeasureCausalAcquisitionTrace(
 	); err != nil {
 		return CausalAcquisitionReport{}, err
 	}
+	return measureOfflineCausalAcquisition(
+		offlineEvidenceAuthority{
+			Scenario: fixture.SealedEnvironmentScenario().Ref(),
+			Suite:    fixture.spec.Generator.Suite, OracleSHA256: oracle.OracleSHA256,
+			Witness: oracle.Witness, EvidenceUses: oracle.EvidenceUses,
+			RequiredEvidence: len(oracle.RequiredEvidence),
+		}, episode, surfaceVersion,
+	)
+}
+
+func measureOfflineCausalAcquisition(
+	authority offlineEvidenceAuthority,
+	episode SealedEpisode,
+	surfaceVersion string,
+) (CausalAcquisitionReport, error) {
+	if err := episode.Validate(); err != nil {
+		return CausalAcquisitionReport{}, err
+	}
+	if err := requireExact(surfaceVersion, "causal acquisition surface version", 256); err != nil {
+		return CausalAcquisitionReport{}, err
+	}
+	if episode.Manifest.Scenario != authority.Scenario ||
+		!validDigest(authority.OracleSHA256) || authority.Witness == nil ||
+		authority.EvidenceUses == nil || authority.RequiredEvidence < 0 ||
+		authority.RequiredEvidence != len(authority.EvidenceUses) {
+		return CausalAcquisitionReport{}, fmt.Errorf("causal acquisition authority is inconsistent")
+	}
 	observations, err := acquisitionObservations(episode)
 	if err != nil {
 		return CausalAcquisitionReport{}, err
@@ -73,12 +109,12 @@ func MeasureCausalAcquisitionTrace(
 	}
 	refs := make(map[string]struct{})
 	acquiredCount := 0
-	for index, use := range oracle.EvidenceUses {
-		witnessAcquisition, err := privateWitnessAction(oracle, use.AcquisitionActionID)
+	for index, use := range authority.EvidenceUses {
+		witnessAcquisition, err := privateWitnessActionIn(authority.Witness, use.AcquisitionActionID)
 		if err != nil {
 			return CausalAcquisitionReport{}, err
 		}
-		witnessConsumer, err := privateWitnessAction(oracle, use.RequiredByActionID)
+		witnessConsumer, err := privateWitnessActionIn(authority.Witness, use.RequiredByActionID)
 		if err != nil {
 			return CausalAcquisitionReport{}, err
 		}
@@ -111,14 +147,14 @@ func MeasureCausalAcquisitionTrace(
 		orderedRefs = append(orderedRefs, ref)
 	}
 	sort.Strings(orderedRefs)
-	usesSHA, err := digestJSON(oracle.EvidenceUses)
+	usesSHA, err := digestJSON(authority.EvidenceUses)
 	if err != nil {
 		return CausalAcquisitionReport{}, fmt.Errorf("hash causal evidence uses: %w", err)
 	}
 	report := CausalAcquisitionReport{
 		Schema: CausalAcquisitionReportSchemaV1, EpisodeSealSHA256: episode.SealSHA256,
-		OracleSHA256: oracle.OracleSHA256, SurfaceVersion: surfaceVersion,
-		EvidenceUseSHA256: usesSHA, RequiredEvidence: len(oracle.RequiredEvidence),
+		OracleSHA256: authority.OracleSHA256, SurfaceVersion: surfaceVersion,
+		EvidenceUseSHA256: usesSHA, RequiredEvidence: authority.RequiredEvidence,
 		AcquiredEvidence: acquiredCount, AcquisitionTraceRefs: orderedRefs,
 	}
 	return report, report.Validate()

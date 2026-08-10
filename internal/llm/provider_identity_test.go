@@ -1,22 +1,10 @@
 package llm
 
 import (
-	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
-
-type providerIdentityTestClient struct {
-	Client
-	attestation ProviderIdentityAttestation
-}
-
-func (client providerIdentityTestClient) AttestProviderIdentity(
-	_ context.Context,
-	_ ProviderIdentityExpectation,
-) (ProviderIdentityAttestation, error) {
-	return client.attestation, nil
-}
 
 func TestProviderIdentityAttestationBindsEveryLiveField(t *testing.T) {
 	t.Parallel()
@@ -27,25 +15,13 @@ func TestProviderIdentityAttestationBindsEveryLiveField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := providerIdentityTestClient{attestation: attestation}
-	got, err := RequireProviderIdentityAttestation(context.Background(), client, expected)
-	if err != nil || got != attestation {
-		t.Fatalf("attestation=%+v error=%v", got, err)
+	if err := attestation.ValidateFor(expected); err != nil {
+		t.Fatal(err)
 	}
 	changed := expected
 	changed.Digest = strings.Repeat("b", 64)
-	if _, err := RequireProviderIdentityAttestation(context.Background(), client, changed); err == nil {
+	if err := attestation.ValidateFor(changed); err == nil {
 		t.Fatal("attestation accepted another model digest")
-	}
-}
-
-func TestProviderIdentityAttestationRejectsUnsupportedClient(t *testing.T) {
-	t.Parallel()
-	if _, err := RequireProviderIdentityAttestation(
-		context.Background(), providerIdentityTestClient{}.Client,
-		providerIdentityTestExpectation(),
-	); err == nil {
-		t.Fatal("client without live identity capability was accepted")
 	}
 }
 
@@ -53,5 +29,44 @@ func providerIdentityTestExpectation() ProviderIdentityExpectation {
 	return ProviderIdentityExpectation{
 		Backend: "ollama", BackendVersion: "0.24.0", Model: "qwen:9b",
 		Digest: strings.Repeat("a", 64), Quantization: "Q4_K_M", NativeContextLimit: 32768,
+		TokenizerProfile: ExactPreparedTokenizerProfile,
 	}
+}
+
+func providerIdentityTestEvidence(t *testing.T, expected ProviderIdentityExpectation) ProviderIdentityEvidence {
+	t.Helper()
+	selection := ProviderIdentitySelection{
+		Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
+	}
+	showRequest, err := ExactProviderTokenizerRequestBytes(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preloadRequest, err := ExactProviderPreloadRequestBytes(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := []byte(fmt.Sprintf(
+		`{"models":[{"name":%q,"model":%q,"size":1,"digest":%q,"details":{"quantization_level":%q}}]}`,
+		expected.Model, expected.Model, expected.Digest, expected.Quantization,
+	))
+	show := []byte(`{"model_info":{"general.architecture":"qwen35",` +
+		`"tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35",` +
+		`"tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,` +
+		`"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,` +
+		`"tokenizer.ggml.merges":null}}`)
+	runner := []byte(fmt.Sprintf(
+		`{"models":[{"name":%q,"model":%q,"size":1,"digest":%q,`+
+			`"details":{"quantization_level":%q},"context_length":%d}]}`,
+		expected.Model, expected.Model, expected.Digest, expected.Quantization,
+		expected.NativeContextLimit,
+	))
+	evidence, err := NewSuccessfulProviderIdentityEvidence(
+		[]byte(fmt.Sprintf(`{"version":%q}`, expected.BackendVersion)), installed,
+		showRequest, show, preloadRequest, []byte(`{"done":true}`), runner,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return evidence
 }

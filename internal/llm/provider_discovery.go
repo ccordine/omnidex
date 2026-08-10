@@ -13,11 +13,12 @@ type ProviderIdentitySelection struct {
 	NativeContextLimit int    `json:"native_context_limit"`
 }
 
-type ProviderIdentityDiscoverer interface {
-	DiscoverProviderIdentity(
+type ProviderIdentityEvidenceDiscoverer interface {
+	DiscoverProviderIdentityEvidence(
 		context.Context,
 		ProviderIdentitySelection,
-	) (ProviderIdentityAttestation, error)
+		string,
+	) (ObservedProviderIdentity, error)
 }
 
 func (selection ProviderIdentitySelection) Validate() error {
@@ -29,37 +30,45 @@ func (selection ProviderIdentitySelection) Validate() error {
 	return nil
 }
 
-func RequireDiscoveredProviderIdentity(
+func RequireDiscoveredProviderIdentityEvidence(
 	ctx context.Context,
 	client Client,
 	selection ProviderIdentitySelection,
-) (ProviderIdentityAttestation, error) {
+	scope string,
+) (ObservedProviderIdentity, error) {
 	if ctx == nil || client == nil {
-		return ProviderIdentityAttestation{}, fmt.Errorf(
+		return ObservedProviderIdentity{}, fmt.Errorf(
 			"provider identity discovery requires context and client",
 		)
 	}
 	if err := selection.Validate(); err != nil {
-		return ProviderIdentityAttestation{}, err
+		return ObservedProviderIdentity{}, err
 	}
-	discoverer, ok := client.(ProviderIdentityDiscoverer)
-	if !ok {
-		return ProviderIdentityAttestation{}, fmt.Errorf(
-			"configured generation provider cannot discover its live identity",
-		)
-	}
-	attestation, err := discoverer.DiscoverProviderIdentity(ctx, selection)
+	challenge, err := DeriveProviderIdentityDiscoveryChallenge(scope, selection)
 	if err != nil {
-		return ProviderIdentityAttestation{}, err
+		return ObservedProviderIdentity{}, err
 	}
-	if err := attestation.Validate(); err != nil {
-		return ProviderIdentityAttestation{}, err
-	}
-	if attestation.Model != selection.Model ||
-		attestation.NativeContextLimit != selection.NativeContextLimit {
-		return ProviderIdentityAttestation{}, fmt.Errorf(
-			"discovered provider identity changed the selected model or context allocation",
+	discoverer, ok := client.(ProviderIdentityEvidenceDiscoverer)
+	if !ok {
+		return ObservedProviderIdentity{}, fmt.Errorf(
+			"configured generation provider cannot discover raw live identity evidence",
 		)
 	}
-	return attestation, nil
+	observed, err := discoverer.DiscoverProviderIdentityEvidence(ctx, selection, challenge)
+	if err != nil {
+		if evidenceErr := observed.Evidence.ValidateRequests(selection); evidenceErr != nil {
+			return observed, fmt.Errorf("provider identity discovery failure lacks exact raw evidence: %v: %w", evidenceErr, err)
+		}
+		return observed, err
+	}
+	expected, err := DeriveExactProviderIdentityExpectation(observed.Evidence, selection)
+	if err != nil {
+		return observed, err
+	}
+	if err := observed.ValidateFor(ProviderIdentityObservationRequest{
+		Expectation: expected, ChallengeSHA256: challenge,
+	}); err != nil {
+		return observed, err
+	}
+	return observed, nil
 }

@@ -72,9 +72,13 @@ func scaleTestAuthority(t *testing.T) ScaleFamilyAuthority {
 		Variant:       VariantFullCognition,
 		RatGeneration: generation,
 		Budget: RunBudget{
+			Schema:       RunBudgetSchemaRawV2,
 			ContextBytes: generation.Fixed.ContextCeilingBytes, WorkingSetBytes: 8192, RuntimeCycles: 96,
 			ModelCalls: 32, EnvironmentActions: 64, ToolOperations: 64,
-			Station: testStationBudget(),
+			Station: StationBudget{
+				MaxInputBytes: 24_576, MaxInputTokens: 24_578,
+				MaxOutputBytes: 4_096, MaxOutputTokens: 1_024,
+			},
 			Decision: DecisionBudget{
 				MaxEvidenceRefs: 16, MaxActionArguments: 8,
 				MaxLedgerProposals: 8, MaxAttentionRequests: 8,

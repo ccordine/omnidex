@@ -21,6 +21,7 @@ type BrainFingerprint struct {
 	Hardware                string                                  `json:"hardware"`
 	HardwareAuthoritySource string                                  `json:"hardware_authority_source"`
 	ProviderAttestation     llm.ProviderIdentityAttestation         `json:"provider_attestation"`
+	ProviderObservation     llm.ProviderIdentityObservation         `json:"provider_observation"`
 	HostAttestation         cognitionpolicy.HostHardwareAttestation `json:"host_attestation"`
 }
 
@@ -154,8 +155,10 @@ func brainFingerprintFromAttested(brain cognitionpolicy.AttestedBrain) (BrainFin
 		Sampling: brain.Ref.Sampling, NativeContextLimit: brain.Ref.NativeContextLimit,
 		Backend: brain.Ref.Backend, BackendVersion: brain.Ref.BackendVersion,
 		Hardware:                brain.Ref.Hardware,
-		HardwareAuthoritySource: cognitionpolicy.HostHardwareAttestationSchemaV1,
-		ProviderAttestation:     brain.Attestation, HostAttestation: brain.Host,
+		HardwareAuthoritySource: cognitionpolicy.HostHardwareAttestationSchemaV2,
+		ProviderAttestation:     brain.Attestation,
+		ProviderObservation:     brain.BootstrapObservation,
+		HostAttestation:         brain.Host,
 	}
 	if err := value.Validate(); err != nil {
 		return BrainFingerprint{}, err
@@ -164,7 +167,7 @@ func brainFingerprintFromAttested(brain cognitionpolicy.AttestedBrain) (BrainFin
 }
 
 func (brain BrainFingerprint) attestedBrain() (cognitionpolicy.AttestedBrain, error) {
-	if brain.HardwareAuthoritySource != cognitionpolicy.HostHardwareAttestationSchemaV1 ||
+	if brain.HardwareAuthoritySource != cognitionpolicy.HostHardwareAttestationSchemaV2 ||
 		brain.Hardware != "host-attestation:"+brain.HostAttestation.AttestationSHA256 {
 		return cognitionpolicy.AttestedBrain{}, fmt.Errorf(
 			"rat experiment hardware is not derived from its code-owned host attestation",
@@ -181,12 +184,20 @@ func (brain BrainFingerprint) attestedBrain() (cognitionpolicy.AttestedBrain, er
 		return cognitionpolicy.AttestedBrain{}, fmt.Errorf("rat experiment sampling hash is inconsistent")
 	}
 	attested, err := cognitionpolicy.NewAttestedBrain(
-		ref, brain.ProviderAttestation, brain.HostAttestation,
+		ref, brain.ProviderAttestation, brain.ProviderObservation, brain.HostAttestation,
 	)
 	if err != nil {
 		return cognitionpolicy.AttestedBrain{}, err
 	}
 	return attested, nil
+}
+
+func sameFrozenBrain(
+	observed cognitionpolicy.AttestedBrain,
+	frozen cognitionpolicy.AttestedBrain,
+) bool {
+	return observed.Ref == frozen.Ref && observed.Attestation == frozen.Attestation &&
+		observed.Host == frozen.Host
 }
 
 func (runtime RuntimeCandidate) Validate() error {

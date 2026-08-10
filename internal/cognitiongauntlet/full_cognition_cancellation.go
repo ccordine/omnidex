@@ -20,7 +20,8 @@ func classifyRuntimeCancellation(source error) (registeredRuntimeCancellation, b
 		return registeredRuntimeCancellation{}, false
 	}
 	if errors.Is(source, cognition.ErrCoordinatorBudgetExhausted) ||
-		errors.Is(source, cognitionruntime.ErrRunCycleLimit) {
+		errors.Is(source, cognitionruntime.ErrRunCycleLimit) ||
+		errors.Is(source, cognitionpolicy.ErrProviderUsageLimit) {
 		return registeredRuntimeCancellation{
 			code:    cognitionruntime.CancellationRunBudgetExhausted,
 			message: "The cognition runtime exhausted its registered execution budget.",
@@ -50,6 +51,7 @@ func runtimeCancellationRequiresLoudFailure(source error) bool {
 		cognitionpolicy.ErrInvalidProjection,
 		cognitionpolicy.ErrProjectionMismatch,
 		cognitionpolicy.ErrProviderIdentity,
+		cognitionpolicy.ErrProviderUsage,
 		cognitionruntime.ErrInvalidConfiguration,
 		cognitionruntime.ErrInvalidBinding,
 		cognitionruntime.ErrInvalidPreparedState,

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,13 +21,12 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if err := New(pool).EnsureSchema(ctx); err != nil {
+	if err := New(pool).EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 

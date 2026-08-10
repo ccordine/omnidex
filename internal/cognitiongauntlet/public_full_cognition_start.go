@@ -19,25 +19,25 @@ func startPublicCognitionEpisode(
 	brain cognitionpolicy.AttestedBrain,
 	episode cognition.EpisodeRef,
 	start cognition.Transition,
-) error {
+) (queue.CognitionEpisode, error) {
 	budget, err := bundle.Authority.Budget.RuntimeBudget()
 	if err != nil {
-		return err
+		return queue.CognitionEpisode{}, err
 	}
 	check, err := bundle.Completion.Resolve(bundle.Goal)
 	if err != nil {
-		return err
+		return queue.CognitionEpisode{}, err
 	}
 	rootID, err := cognition.DeriveObligationID(
 		episode.ID, cognition.InitialObligationGeneration, "", bundle.Goal, check,
 	)
 	if err != nil {
-		return err
+		return queue.CognitionEpisode{}, err
 	}
 	if err := cognitionpolicy.ValidateRuntimeBudget(brain.Ref, budget); err != nil {
-		return fmt.Errorf("validate public cognition runtime budget: %w", err)
+		return queue.CognitionEpisode{}, fmt.Errorf("validate public cognition runtime budget: %w", err)
 	}
-	_, err = store.StartEpisode(ctx, queue.CognitionEpisodeStart{
+	stored, err := store.StartEpisode(ctx, queue.CognitionEpisodeStart{
 		Authority: attempt, EpisodeID: episode.ID, Scenario: bundle.Authority.Scenario,
 		AttestedBrain: brain,
 		Goal:          bundle.Goal, Completion: bundle.Completion, ActionCatalog: bundle.Catalog, Budget: budget,
@@ -48,7 +48,7 @@ func startPublicCognitionEpisode(
 		Transition: start,
 	})
 	if err != nil {
-		return fmt.Errorf("start public production cognition episode: %w", err)
+		return queue.CognitionEpisode{}, fmt.Errorf("start public production cognition episode: %w", err)
 	}
-	return nil
+	return stored, nil
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
-	"github.com/gryph/omnidex/internal/labyrinth"
 )
 
 func RunPublicAblation(
@@ -35,7 +34,7 @@ func RunPublicAblation(
 		return PublicAblationRunResult{}, err
 	}
 	frozen, err := bundle.Authority.RatGeneration.Fixed.Brain.attestedBrain()
-	if err != nil || attested != frozen {
+	if err != nil || !sameFrozenBrain(attested, frozen) {
 		return PublicAblationRunResult{}, fmt.Errorf("live provider or host differs from frozen ablation authority")
 	}
 	state, err := newAblationStateWithAuthority(
@@ -73,14 +72,14 @@ func RunPublicAblation(
 	if err := state.recordTransition(transition); err != nil {
 		return PublicAblationRunResult{}, err
 	}
-	oracle := labyrinth.Oracle{}
-	if request.ContaminatedOracle != nil {
-		oracle = *request.ContaminatedOracle
+	packet := ContaminatedEvidencePacket{}
+	if request.ContaminatedEvidence != nil {
+		packet = *request.ContaminatedEvidence
 	}
 	execution, err := executeAblation(
 		ctx, bundle.Authority.Budget,
 		request.Environment, runtimeAblationCompletion{evaluator: request.Completion},
-		recorder, state, loader, journal, policy, oracle, transition, startedAt,
+		recorder, state, loader, journal, policy, packet, transition, startedAt,
 	)
 	if err != nil {
 		return PublicAblationRunResult{}, err

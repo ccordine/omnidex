@@ -263,7 +263,9 @@ and budgets. Registered offline variants are:
 | Oracle evidence packet | Estimate model-policy ceiling with perfect next-step evidence |
 | Raw shell agent | Compare typed operations with shell wandering |
 
-Initial comparisons are sequential rather than an all-variants sweep:
+Every preregistered variant coordinate executes blind before any evaluator loads a
+score or selects a winner. After all model calls have stopped, code derives the
+following comparisons sequentially from the complete sealed matrix:
 
 1. raw current observation versus full transcript;
 2. the winner versus Task Ledger;
@@ -372,8 +374,12 @@ waking after replacement.
 Immediately before the next model call, interrupted and uninterrupted executions at
 the same transition boundary must have identical environment revision, Task Ledger
 replay/materialized hashes, Working Set version and members, active obligation and
-generation, Context Projection hash, action catalog, action receipts, and remaining
-budgets. The next stochastic response is outside this equality check.
+generation, rendered model-visible projection bytes, action catalog, action receipts,
+and all non-actor budget and policy fields. The code-derived continuity comparison is
+an attempt-normalized semantic digest over those exact values and evidence refs. The
+replacement's immutable Context Projection and snapshot identities must differ from
+the stale worker's identities because they bind the new attempt and worker; both old
+identities remain fenced. The next stochastic response is outside this equality check.
 
 After takeover, the stale worker attempts a ledger write, Working Set mutation,
 model-call evidence write, environment action, and goal completion. Every attempt must
@@ -473,7 +479,8 @@ Continuity promotion requires, across randomized interruptions:
 world revision restored correctly                    100%
 Task Ledger restored correctly                       100%
 Working Set restored correctly                       100%
-pre-call Context Projection hash identical           100%
+attempt-normalized semantic pre-call digest identical 100%
+old/new attempt-bound projection identities differ  100%
 duplicate environment actions executed               0
 ```
 

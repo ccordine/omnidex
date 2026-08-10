@@ -32,11 +32,10 @@ func sealPublicFullCognition(
 	if err != nil {
 		return PublicFullCognitionRunResult{}, err
 	}
-	if metrics.Resources.ModelCalls != int(run.PolicyCalls) ||
-		metrics.Resources.EnvironmentActions != int(run.EnvironmentActions) {
-		return PublicFullCognitionRunResult{}, fmt.Errorf(
-			"public runtime counters differ from its sealed production trace",
-		)
+	if err := validatePublicRuntimeCounters(
+		metrics.Resources, run, request.recoverStalePort,
+	); err != nil {
+		return PublicFullCognitionRunResult{}, err
 	}
 	sealed, err := recorder.Seal(
 		request.EpisodeSealPath, trace.Header.Seal.FinalRevision, metrics.Outcome,
@@ -47,6 +46,28 @@ func sealPublicFullCognition(
 	}
 	result := PublicFullCognitionRunResult{Authority: bundle.Authority, Episode: sealed}
 	return result, result.Validate()
+}
+
+func validatePublicRuntimeCounters(
+	resources Resources,
+	run cognitionruntime.RunResult,
+	recovery liveStalePort,
+) error {
+	if recovery != "" {
+		if err := recovery.Validate(); err != nil {
+			return err
+		}
+		// A replacement process starts with invocation-local counters while the
+		// sealed production trace owns the complete pre- and post-takeover
+		// history. The live probe receipt independently proves the exact stale
+		// command, recovery disposition, and resource delta.
+		return nil
+	}
+	if resources.ModelCalls != int(run.PolicyCalls) ||
+		resources.EnvironmentActions != int(run.EnvironmentActions) {
+		return fmt.Errorf("public runtime counters differ from its sealed production trace")
+	}
+	return nil
 }
 
 func publicCognitionEpisodeTemplate(

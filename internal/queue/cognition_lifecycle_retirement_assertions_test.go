@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -14,10 +13,9 @@ func lifecycleRetirementTestRepository(
 ) (*Repository, *pgxpool.Pool, context.Context) {
 	t.Helper()
 	pool := openIsolatedMigrationPool(t)
-	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
 	repository := New(pool)
 	ctx := context.Background()
-	if err := repository.EnsureSchema(ctx); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	return repository, pool, ctx

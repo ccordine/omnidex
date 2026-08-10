@@ -18,7 +18,7 @@ func newGeneratorProcessConfig(
 	executableSHA256 string,
 ) generatorProcessConfig {
 	return generatorProcessConfig{
-		Schema: generatorProcessConfigSchemaV1, Spec: config.Spec, Variant: config.Variant,
+		Schema: generatorProcessConfigSchemaV1, Scenario: config.Scenario, Variant: config.Variant,
 		Surface:       config.Surface,
 		RatGeneration: config.RatGeneration, RuntimeFingerprint: config.RuntimeFingerprint,
 		Repetition: config.Repetition, PublicBundlePath: paths.PublicBundle,
@@ -38,21 +38,35 @@ func newInferenceProcessConfig(
 	executableSHA256 string,
 	privateOracleCredential string,
 ) inferenceProcessConfig {
+	return newInferenceProcessConfigForExecution(
+		config.executionAuthority(), database, host, paths,
+		executableSHA256, privateOracleCredential,
+	)
+}
+
+func newInferenceProcessConfigForExecution(
+	authority offlineExecutionAuthority,
+	database *offlinePromotionDatabase,
+	host *offlinePromotionHost,
+	paths OfflinePromotionPaths,
+	executableSHA256 string,
+	privateOracleCredential string,
+) inferenceProcessConfig {
 	process := inferenceProcessConfig{
 		Schema:      inferenceProcessConfigSchemaV1,
 		DatabaseURL: database.inferenceURL, DatabaseSchema: database.schema,
 		EnvironmentURL: host.baseURL, EnvironmentToken: host.token,
-		OllamaEndpoint: config.OllamaEndpoint, TimeoutSeconds: config.InferenceTimeoutSeconds,
+		OllamaEndpoint: authority.OllamaEndpoint, TimeoutSeconds: authority.InferenceTimeoutSeconds,
 		PublicBundlePath: paths.PublicBundle, EpisodePath: paths.Episode,
 		Attempt: database.attempt, ExecutableSHA256: executableSHA256,
-		SourceSHA256:            config.RatGeneration.Runtime.SourceSHA256,
-		OmnidexCommit:           config.OmnidexCommit,
-		LedgerSchemaVersion:     config.LedgerSchemaVersion,
-		WorkingSetPolicyVersion: config.WorkingSetPolicyVersion,
-		ProjectionPolicyVersion: config.ProjectionPolicyVersion,
+		SourceSHA256:            authority.RatGeneration.Runtime.SourceSHA256,
+		OmnidexCommit:           authority.OmnidexCommit,
+		LedgerSchemaVersion:     authority.LedgerSchemaVersion,
+		WorkingSetPolicyVersion: authority.WorkingSetPolicyVersion,
+		ProjectionPolicyVersion: authority.ProjectionPolicyVersion,
 		Control:                 terminalInferenceControl(),
 	}
-	if config.Variant == VariantOracleEvidence {
+	if authority.Variant == VariantOracleEvidence {
 		process.ContaminatedOraclePath = paths.PrivateOracle
 		process.ContaminatedOracleGrant = privateOracleCredential
 	}
@@ -65,14 +79,25 @@ func newEvaluatorProcessConfig(
 	privateOracleCredential string,
 	executableSHA256 string,
 ) evaluatorProcessConfig {
+	return newEvaluatorProcessConfigForExecution(
+		config.executionAuthority(), paths, privateOracleCredential, executableSHA256,
+	)
+}
+
+func newEvaluatorProcessConfigForExecution(
+	authority offlineExecutionAuthority,
+	paths OfflinePromotionPaths,
+	privateOracleCredential string,
+	executableSHA256 string,
+) evaluatorProcessConfig {
 	return evaluatorProcessConfig{
 		Schema: evaluatorProcessConfigSchemaV1, PrivateOraclePath: paths.PrivateOracle,
 		PrivateOracleCredential: privateOracleCredential,
 		PublicBundlePath:        paths.PublicBundle,
 		EpisodePath:             paths.Episode, EvaluationPath: paths.Evaluation,
 		ExecutableSHA256: executableSHA256,
-		SourceSHA256:     config.RatGeneration.Runtime.SourceSHA256,
-		OmnidexCommit:    config.OmnidexCommit,
+		SourceSHA256:     authority.RatGeneration.Runtime.SourceSHA256,
+		OmnidexCommit:    authority.OmnidexCommit,
 	}
 }
 
@@ -105,7 +130,7 @@ func startOfflineChild(
 	configPath string,
 	expectedExecutableSHA256 string,
 ) (*offlineChildProcess, error) {
-	if phase != "generate" && phase != "host" && phase != "infer" && phase != "evaluate" {
+	if !registeredOfflineChildPhase(phase) {
 		return nil, fmt.Errorf("offline cognition child phase %q is not registered", phase)
 	}
 	actualSHA256, err := executableSHA256(executable)
@@ -160,7 +185,7 @@ func offlineChildCommand(
 	phase string,
 	configPath string,
 ) (*exec.Cmd, error) {
-	if ctx == nil || (phase != "generate" && phase != "host" && phase != "infer" && phase != "evaluate") ||
+	if ctx == nil || !registeredOfflineChildPhase(phase) ||
 		executable == "" || configPath == "" {
 		return nil, fmt.Errorf("offline cognition child command authority is invalid")
 	}
@@ -168,6 +193,15 @@ func offlineChildCommand(
 	command.Env = []string{"LANG=C.UTF-8"}
 	command.Stdin = nil
 	return command, nil
+}
+
+func registeredOfflineChildPhase(phase string) bool {
+	switch phase {
+	case "generate", "generate-scale", "host", "infer", "evaluate", "evaluate-scale":
+		return true
+	default:
+		return false
+	}
 }
 
 type boundedProcessOutput struct {

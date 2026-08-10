@@ -39,6 +39,8 @@ func TestEpisodeRecorderOwnsSequenceAndSealsOnce(t *testing.T) {
 		Resources{
 			ModelCalls: 1, ModelDecisions: 1, InputTokens: 32, OutputTokens: 16,
 			ContextBytes: 128, OutputBytes: 64, PeakContextBytes: 128,
+			ProviderTotalNanoseconds: 4, ProviderLoadNanoseconds: 1,
+			ProviderPromptEvalNanoseconds: 1, ProviderEvalNanoseconds: 1,
 		},
 		MemoryMetrics{}, PlanningMetrics{}, RecoveryMetrics{},
 	)

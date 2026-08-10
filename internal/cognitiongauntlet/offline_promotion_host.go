@@ -47,6 +47,23 @@ func startOfflinePromotionHost(
 	executableSHA256 string,
 	temporary string,
 ) (*offlinePromotionHost, error) {
+	return startOfflineExecutionHost(
+		ctx, config.executionAuthority(), database, bundle, hostScenarioPath,
+		config.Paths().PublicBundle, executable, executableSHA256, temporary,
+	)
+}
+
+func startOfflineExecutionHost(
+	ctx context.Context,
+	authority offlineExecutionAuthority,
+	database *offlinePromotionDatabase,
+	bundle PublicInferenceBundle,
+	hostScenarioPath string,
+	publicBundlePath string,
+	executable string,
+	executableSHA256 string,
+	temporary string,
+) (*offlinePromotionHost, error) {
 	if ctx == nil || database == nil {
 		return nil, fmt.Errorf("offline host launch authority is invalid")
 	}
@@ -56,8 +73,9 @@ func startOfflinePromotionHost(
 	}
 	processPath := filepath.Join(temporary, "host-process.json")
 	readyPath := filepath.Join(temporary, "host-ready.json")
-	process := newHostProcessConfig(
-		config, database, bundle, hostScenarioPath, readyPath, token, executableSHA256,
+	process := newHostProcessConfigForExecution(
+		authority, database, bundle, hostScenarioPath, publicBundlePath,
+		readyPath, token, executableSHA256,
 	)
 	if err := process.Validate(); err != nil {
 		return nil, err

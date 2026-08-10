@@ -48,21 +48,14 @@ func validateCognitionEpisodeStartReplayTx(
 	if err != nil {
 		return err
 	}
-	brainJSON, _, err := cognitionJSON(command.AttestedBrain)
-	if err != nil {
-		return err
-	}
-	existingBrain, _, err := cognitionJSON(existing.AttestedBrain)
-	if err != nil {
-		return err
-	}
 	if existing.Authority.JobID != command.Authority.JobID ||
 		existing.Authority.Generation != command.Authority.Generation ||
 		existing.Authority.StepID != command.Authority.StepID ||
 		existing.Scenario != command.Scenario ||
 		string(goalJSON) != string(existingGoal) ||
 		string(completionJSON) != string(existingCompletion) || string(catalogJSON) != string(existingCatalog) ||
-		string(budgetJSON) != string(existingBudget) || string(brainJSON) != string(existingBrain) ||
+		string(budgetJSON) != string(existingBudget) ||
+		!stableAttestedBrainEqual(command.AttestedBrain, existing.AttestedBrain) ||
 		!reflect.DeepEqual(existing.FactAuthority, factAuthority) {
 		return fmt.Errorf("%w: cognition episode start identity changed", ErrCognitionConflict)
 	}

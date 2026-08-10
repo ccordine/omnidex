@@ -3,13 +3,17 @@ package cognitiongauntlet
 import "fmt"
 
 type stationTraceState struct {
-	pending      *ProjectionTrace
-	modelCalls   int
-	inputBytes   int64
-	inputTokens  int64
-	outputBytes  int64
-	outputTokens int64
-	peakInput    int64
+	pending        *ProjectionTrace
+	modelCalls     int
+	inputBytes     int64
+	inputTokens    int64
+	outputBytes    int64
+	outputTokens   int64
+	peakInput      int64
+	providerTotal  int64
+	providerLoad   int64
+	providerPrompt int64
+	providerEval   int64
 }
 
 func (state *stationTraceState) acceptProjection(entry TraceEntry) error {
@@ -54,8 +58,31 @@ func (state *stationTraceState) acceptModelCall(entry TraceEntry, budget Station
 	state.inputTokens += call.InputTokens
 	state.outputBytes += call.OutputBytes
 	state.outputTokens += call.OutputTokens
+	state.providerTotal += call.ProviderUsage.TotalDurationNanos
+	state.providerLoad += call.ProviderUsage.LoadDurationNanos
+	state.providerPrompt += call.ProviderUsage.PromptEvalDurationNanos
+	state.providerEval += call.ProviderUsage.EvalDurationNanos
 	if call.InputBytes > state.peakInput {
 		state.peakInput = call.InputBytes
+	}
+	state.pending = nil
+	return nil
+}
+
+func (state *stationTraceState) acceptPolicyDisposition(entry TraceEntry, budget StationBudget) error {
+	if state.pending == nil {
+		return fmt.Errorf("non-inference policy disposition has no preceding Context Projection")
+	}
+	var disposition PolicyDispositionTrace
+	if err := decodeTracePayload(entry.Payload, &disposition, "policy disposition trace"); err != nil {
+		return err
+	}
+	if err := disposition.Validate(); err != nil {
+		return err
+	}
+	if disposition.Budget != budget || disposition.ProjectionID != state.pending.ProjectionID ||
+		disposition.ProjectionSHA256 != state.pending.ProjectionSHA256 {
+		return fmt.Errorf("non-inference policy disposition changed its projection or budget authority")
 	}
 	state.pending = nil
 	return nil
@@ -67,7 +94,11 @@ func (state stationTraceState) validateResources(resources Resources) error {
 	}
 	if state.modelCalls != resources.ModelCalls || state.inputBytes != resources.ContextBytes ||
 		state.inputTokens != resources.InputTokens || state.outputBytes != resources.OutputBytes ||
-		state.outputTokens != resources.OutputTokens || state.peakInput != resources.PeakContextBytes {
+		state.outputTokens != resources.OutputTokens || state.peakInput != resources.PeakContextBytes ||
+		state.providerTotal != resources.ProviderTotalNanoseconds ||
+		state.providerLoad != resources.ProviderLoadNanoseconds ||
+		state.providerPrompt != resources.ProviderPromptEvalNanoseconds ||
+		state.providerEval != resources.ProviderEvalNanoseconds {
 		return fmt.Errorf("sealed station calls do not match aggregate resource metrics")
 	}
 	return nil

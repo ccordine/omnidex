@@ -3,6 +3,8 @@ package ollama
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,7 +41,23 @@ type chatOptions struct {
 }
 
 type chatResponse struct {
-	Message chatMessage `json:"message"`
+	Message                       chatMessage                     `json:"message"`
+	Done                          *bool                           `json:"done,omitempty"`
+	TotalDuration                 *int64                          `json:"total_duration,omitempty"`
+	LoadDuration                  *int64                          `json:"load_duration,omitempty"`
+	PromptEvalCount               *int                            `json:"prompt_eval_count,omitempty"`
+	PromptEvalDuration            *int64                          `json:"prompt_eval_duration,omitempty"`
+	EvalCount                     *int                            `json:"eval_count,omitempty"`
+	EvalDuration                  *int64                          `json:"eval_duration,omitempty"`
+	ProviderRequestSHA256         string                          `json:"-"`
+	ProviderRequestDispatched     bool                            `json:"-"`
+	ProviderHTTPStatus            int                             `json:"-"`
+	ProviderResponseDisposition   llm.ProviderResponseDisposition `json:"-"`
+	ProviderResponseComplete      bool                            `json:"-"`
+	ProviderResponseSHA256        string                          `json:"-"`
+	ProviderResponseBytes         int64                           `json:"-"`
+	ProviderResponseCaptureSHA256 string                          `json:"-"`
+	ProviderResponseCapturedBytes int                             `json:"-"`
 }
 
 // Chat runs one direct request without creating an ephemeral model.
@@ -56,18 +74,37 @@ func (c *Client) chat(
 	thinkingEnabled bool,
 	temperature *float64,
 ) (string, error) {
+	parsed, err := c.chatResponse(
+		ctx, model, system, user, maxOutputTokens, contextTokens,
+		responseFormat, responseSchema, thinkingEnabled, temperature,
+	)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Message.Content, nil
+}
+
+func (c *Client) chatResponse(
+	ctx context.Context,
+	model, system, user string,
+	maxOutputTokens, contextTokens int,
+	responseFormat string,
+	responseSchema map[string]any,
+	thinkingEnabled bool,
+	temperature *float64,
+) (chatResponse, error) {
 	if err := llm.ValidateResponseContract(llm.PreparedModel{
 		ResponseFormat: responseFormat, ResponseSchema: responseSchema,
 		ThinkingEnabled: thinkingEnabled, Temperature: temperature,
 	}); err != nil {
-		return "", err
+		return chatResponse{}, err
 	}
 	if strings.TrimSpace(model) == "" {
 		model = c.defaultModel
 	}
 	model = strings.TrimSpace(model)
 	if model == "" {
-		return "", fmt.Errorf("model is required")
+		return chatResponse{}, fmt.Errorf("model is required")
 	}
 	messages := make([]chatMessage, 0, 2)
 	if strings.TrimSpace(system) != "" {
@@ -91,7 +128,7 @@ func (c *Client) chat(
 	}
 	if contextTokens > 0 {
 		if err := llm.ValidateInferenceBudget(contextTokens, maxOutputTokens, system, user); err != nil {
-			return "", err
+			return chatResponse{}, err
 		}
 		request.Options = &chatOptions{NumCtx: contextTokens}
 	}
@@ -108,42 +145,85 @@ func (c *Client) chat(
 		value := *temperature
 		request.Options.Temperature = &value
 	}
-	payload, err := json.Marshal(request)
+	payload, err := exactjson.Canonical(request)
 	if err != nil {
-		return "", err
+		return chatResponse{}, err
 	}
+	requestDigest := sha256.Sum256(payload)
+	partial := chatResponse{ProviderRequestSHA256: hex.EncodeToString(requestDigest[:])}
 	httpRequest, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, c.baseURL+"/api/chat", bytes.NewReader(payload),
 	)
 	if err != nil {
-		return "", err
+		return chatResponse{}, err
 	}
 	httpRequest.Header.Set("Content-Type", "application/json")
+	partial.ProviderRequestDispatched = true
 	response, err := c.httpClient.Do(httpRequest)
 	if err != nil {
-		return "", c.wrapConnectivityError(err, "/api/chat")
+		partial.ProviderResponseDisposition = llm.ProviderResponseTransportError
+		return partial, c.wrapConnectivityError(err, "/api/chat")
 	}
 	defer response.Body.Close()
+	partial.ProviderHTTPStatus = response.StatusCode
 	body, err := io.ReadAll(io.LimitReader(response.Body, ollamaChatResponseBodyLimit+1))
+	partial.ProviderResponseCapturedBytes = len(body)
+	captureDigest := sha256.Sum256(body)
+	partial.ProviderResponseCaptureSHA256 = hex.EncodeToString(captureDigest[:])
 	if err != nil {
-		return "", err
+		partial.ProviderResponseBytes = int64(len(body))
+		partial.ProviderResponseDisposition = llm.ProviderResponseBodyReadError
+		return partial, err
 	}
 	if len(body) > ollamaChatResponseBodyLimit {
-		return "", fmt.Errorf("ollama chat response exceeds %d bytes", ollamaChatResponseBodyLimit)
+		partial.ProviderResponseBytes = int64(len(body))
+		partial.ProviderResponseDisposition = llm.ProviderResponseBodyLimit
+		return partial, fmt.Errorf("ollama chat response exceeds %d bytes", ollamaChatResponseBodyLimit)
 	}
+	partial.ProviderResponseBytes = int64(len(body))
+	partial.ProviderResponseComplete = true
+	partial.ProviderResponseSHA256 = partial.ProviderResponseCaptureSHA256
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("ollama chat failed: status=%d body=%s", response.StatusCode, string(body))
+		var parsed chatResponse
+		decodeErr := exactjson.ValidateCompatibleObject(body, chatResponse{}, "Ollama chat error response")
+		if decodeErr == nil {
+			decodeErr = json.Unmarshal(body, &parsed)
+		}
+		parsed = mergeChatResponseEvidence(parsed, partial)
+		parsed.ProviderResponseDisposition = llm.ProviderResponseHTTPError
+		if decodeErr != nil {
+			return parsed, fmt.Errorf("decode exact Ollama chat error response: %w", decodeErr)
+		}
+		return parsed, fmt.Errorf("ollama chat failed: status=%d body=%s", response.StatusCode, string(body))
 	}
 	var parsed chatResponse
-	if err := exactjson.ValidateCompatibleObject(body, chatResponse{}, "Ollama chat response"); err != nil {
-		return "", fmt.Errorf("decode exact Ollama chat response: %w", err)
+	decodeErr := exactjson.ValidateCompatibleObject(body, chatResponse{}, "Ollama chat response")
+	if decodeErr == nil {
+		decodeErr = json.Unmarshal(body, &parsed)
 	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", err
+	parsed = mergeChatResponseEvidence(parsed, partial)
+	if decodeErr != nil {
+		parsed.ProviderResponseDisposition = llm.ProviderResponseInvalidJSON
+		return parsed, fmt.Errorf("decode exact Ollama chat response: %w", decodeErr)
 	}
 	out := parsed.Message.Content
 	if strings.TrimSpace(out) == "" {
-		return "", fmt.Errorf("ollama response missing message content")
+		parsed.ProviderResponseDisposition = llm.ProviderResponseEmptyContent
+		return parsed, fmt.Errorf("ollama response missing message content")
 	}
-	return out, nil
+	parsed.ProviderResponseDisposition = llm.ProviderResponseSucceeded
+	return parsed, nil
+}
+
+func mergeChatResponseEvidence(parsed chatResponse, evidence chatResponse) chatResponse {
+	parsed.ProviderRequestSHA256 = evidence.ProviderRequestSHA256
+	parsed.ProviderRequestDispatched = evidence.ProviderRequestDispatched
+	parsed.ProviderHTTPStatus = evidence.ProviderHTTPStatus
+	parsed.ProviderResponseDisposition = evidence.ProviderResponseDisposition
+	parsed.ProviderResponseComplete = evidence.ProviderResponseComplete
+	parsed.ProviderResponseSHA256 = evidence.ProviderResponseSHA256
+	parsed.ProviderResponseBytes = evidence.ProviderResponseBytes
+	parsed.ProviderResponseCaptureSHA256 = evidence.ProviderResponseCaptureSHA256
+	parsed.ProviderResponseCapturedBytes = evidence.ProviderResponseCapturedBytes
+	return parsed
 }

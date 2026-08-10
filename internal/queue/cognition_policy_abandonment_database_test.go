@@ -50,6 +50,7 @@ func TestPostgresStaleFinishRacesTypedAbandonmentWithoutActionAuthority(t *testi
 		<-start
 		finishErrors <- fixture.Repository.FinishCognitionPolicyCall(
 			fixture.Context, attempt, providerIdentityFailureResult(attempt),
+			cognitionpolicy.CallEvidence{},
 		)
 	}()
 	close(start)
@@ -169,6 +170,7 @@ func TestPostgresReplacementAtomicallyAbandonsAndReplaysExactCall(t *testing.T) 
 	}
 	if err := fixture.Repository.FinishCognitionPolicyCall(
 		fixture.Context, attempt, providerIdentityFailureResult(attempt),
+		cognitionpolicy.CallEvidence{},
 	); err == nil {
 		t.Fatal("stale source finished an abandoned policy call")
 	}

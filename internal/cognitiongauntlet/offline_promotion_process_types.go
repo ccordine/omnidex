@@ -18,20 +18,20 @@ const (
 )
 
 type generatorProcessConfig struct {
-	Schema                  string             `json:"schema"`
-	Spec                    MicrogauntletSpec  `json:"spec"`
-	Variant                 Variant            `json:"variant"`
-	Surface                 Surface            `json:"surface"`
-	RatGeneration           RatGeneration      `json:"rat_generation"`
-	RuntimeFingerprint      RuntimeFingerprint `json:"runtime_fingerprint"`
-	Repetition              int                `json:"repetition"`
-	PublicBundlePath        string             `json:"public_bundle_path"`
-	HostScenarioPath        string             `json:"host_scenario_path"`
-	PrivateOraclePath       string             `json:"private_oracle_path"`
-	PrivateOracleCredential string             `json:"private_oracle_credential"`
-	ExecutableSHA256        string             `json:"executable_sha256"`
-	SourceSHA256            string             `json:"source_sha256"`
-	OmnidexCommit           string             `json:"omnidex_commit"`
+	Schema                  string              `json:"schema"`
+	Scenario                OfflineScenarioSpec `json:"scenario"`
+	Variant                 Variant             `json:"variant"`
+	Surface                 Surface             `json:"surface"`
+	RatGeneration           RatGeneration       `json:"rat_generation"`
+	RuntimeFingerprint      RuntimeFingerprint  `json:"runtime_fingerprint"`
+	Repetition              int                 `json:"repetition"`
+	PublicBundlePath        string              `json:"public_bundle_path"`
+	HostScenarioPath        string              `json:"host_scenario_path"`
+	PrivateOraclePath       string              `json:"private_oracle_path"`
+	PrivateOracleCredential string              `json:"private_oracle_credential"`
+	ExecutableSHA256        string              `json:"executable_sha256"`
+	SourceSHA256            string              `json:"source_sha256"`
+	OmnidexCommit           string              `json:"omnidex_commit"`
 }
 
 type hostProcessConfig struct {
@@ -109,6 +109,7 @@ type OfflinePromotionReceipt struct {
 	GeneratorExitedAt        time.Time          `json:"generator_exited_at"`
 	Host                     OfflineHostReceipt `json:"host"`
 	InferencePID             int                `json:"inference_pid"`
+	InferenceStartedAt       time.Time          `json:"inference_started_at"`
 	InferenceExitedAt        time.Time          `json:"inference_exited_at"`
 	EvaluatorPID             int                `json:"evaluator_pid"`
 	EvaluatorStartedAt       time.Time          `json:"evaluator_started_at"`
@@ -126,7 +127,9 @@ func (receipt OfflinePromotionReceipt) Validate() error {
 		receipt.GeneratorPID <= 0 || receipt.InferencePID <= 0 || receipt.EvaluatorPID <= 0 ||
 		receipt.Host.validateChronology(
 			receipt.GeneratorExitedAt, receipt.InferenceExitedAt, receipt.EvaluatorStartedAt,
-		) != nil || receipt.Host.PID == receipt.GeneratorPID ||
+		) != nil || receipt.InferenceStartedAt.Before(receipt.Host.StartedAt) ||
+		receipt.InferenceExitedAt.Before(receipt.InferenceStartedAt) ||
+		receipt.Host.PID == receipt.GeneratorPID ||
 		receipt.Host.PID == receipt.InferencePID || receipt.Host.PID == receipt.EvaluatorPID ||
 		receipt.DatabaseSchema == "" || receipt.GeneratorExitedAt.IsZero() ||
 		receipt.InferenceExitedAt.Before(receipt.GeneratorExitedAt) || receipt.EvaluatorStartedAt.IsZero() ||

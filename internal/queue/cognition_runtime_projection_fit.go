@@ -8,6 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/contextbuilder"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/gryph/omnidex/internal/workingset"
 )
@@ -38,7 +39,10 @@ func fitCognitionPolicyProjection(input cognitionProjectionFitInput) (cognitionP
 	for {
 		candidate, envelope, err := measureCognitionProjection(input, projection)
 		if err == nil {
-			if cognitionEnvelopeFits(envelope, input.Budget) {
+			if cognitionEnvelopeFits(
+				envelope, input.Budget,
+				input.Episode.AttestedBrain.Ref.Sampling.InputSpecialTokenReserve,
+			) {
 				return cognitionProjectionFit{
 					Projection: projection, Snapshot: candidate, Envelope: envelope,
 				}, nil
@@ -60,7 +64,8 @@ func fitCognitionPolicyProjection(input cognitionProjectionFitInput) (cognitionP
 			}
 			return cognitionProjectionFit{}, fmt.Errorf(
 				"%w: required context needs %d bytes/%d estimated tokens; limits are %d bytes/%d estimated tokens",
-				ErrCognitionEnvelopeBudget, envelope.Bytes, envelope.EstimatedTokens,
+				ErrCognitionEnvelopeBudget, cognitionModelVisibleInputBytes(envelope),
+				cognitionModelVisibleEstimatedTokens(envelope),
 				input.Budget.MaxInputBytes, input.Budget.MaxInputTokens,
 			)
 		}
@@ -168,9 +173,40 @@ func projectedCognitionEvidenceRefs(
 	return model, nil
 }
 
-func cognitionEnvelopeFits(envelope cognitionpolicy.RenderedEnvelope, budget cognition.RuntimeBudget) bool {
-	return envelope.Bytes <= budget.MaxInputBytes &&
-		envelope.EstimatedTokens <= budget.MaxInputTokens
+func cognitionEnvelopeFits(
+	envelope cognitionpolicy.RenderedEnvelope,
+	budget cognition.RuntimeBudget,
+	specialTokenReserve int,
+) bool {
+	return cognitionModelVisibleInputBytes(envelope) <= budget.MaxInputBytes &&
+		cognitionModelInputTokenUpperBound(envelope, specialTokenReserve) <= budget.MaxInputTokens
+}
+
+func cognitionModelVisibleInputBytes(envelope cognitionpolicy.RenderedEnvelope) int {
+	input, err := llm.ExactPreparedModelInput(envelope.JSON, llm.MinimalGeneratePrompt)
+	if err != nil {
+		return cognition.MaxPolicyInputBytes + 1
+	}
+	return len(input)
+}
+
+func cognitionModelVisibleEstimatedTokens(envelope cognitionpolicy.RenderedEnvelope) int {
+	return (cognitionModelVisibleInputBytes(envelope) + 3) / 4
+}
+
+func cognitionModelInputTokenUpperBound(
+	envelope cognitionpolicy.RenderedEnvelope,
+	specialTokenReserve int,
+) int {
+	input, err := llm.ExactPreparedModelInput(envelope.JSON, llm.MinimalGeneratePrompt)
+	if err != nil {
+		return cognition.MaxPolicyInputTokens + 1
+	}
+	value, err := llm.ModelInputTokenUpperBound(input, specialTokenReserve)
+	if err != nil {
+		return cognition.MaxPolicyInputTokens + 1
+	}
+	return value
 }
 
 func cognitionProjectionReference(projection contextbuilder.Projection) cognition.ContextProjectionRef {

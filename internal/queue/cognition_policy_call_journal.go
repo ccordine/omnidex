@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -31,11 +32,12 @@ func (journal CognitionPolicyCallJournal) Finish(
 	ctx context.Context,
 	attempt cognitionpolicy.CallAttempt,
 	result cognitionpolicy.CallResult,
+	evidence cognitionpolicy.CallEvidence,
 ) error {
 	if journal.Repository == nil {
 		return fmt.Errorf("cognition policy call journal requires a repository")
 	}
-	return journal.Repository.FinishCognitionPolicyCall(ctx, attempt, result)
+	return journal.Repository.FinishCognitionPolicyCall(ctx, attempt, result, evidence)
 }
 
 func (r *Repository) StartCognitionPolicyCall(
@@ -75,7 +77,7 @@ func (r *Repository) StartCognitionPolicyCall(
 		}
 		return reservation, nil
 	}
-	if err := requireExactCognitionPolicySnapshotTx(ctx, tx, authority, attempt); err != nil {
+	if err := requireExactCognitionPolicySnapshotTx(ctx, tx, authority, episode, attempt); err != nil {
 		return cognitionpolicy.CallReservation{}, err
 	}
 	var priorCalls int64
@@ -106,11 +108,15 @@ func (r *Repository) FinishCognitionPolicyCall(
 	ctx context.Context,
 	attempt cognitionpolicy.CallAttempt,
 	result cognitionpolicy.CallResult,
+	evidence cognitionpolicy.CallEvidence,
 ) error {
 	if ctx == nil || r == nil || r.pool == nil {
 		return fmt.Errorf("cognition policy call finish requires PostgreSQL and context")
 	}
 	if err := result.Validate(attempt); err != nil {
+		return err
+	}
+	if err := evidence.ValidateFor(attempt, result); err != nil {
 		return err
 	}
 	authority, err := cognitionPolicyCallAuthority(attempt)
@@ -141,10 +147,31 @@ func (r *Repository) FinishCognitionPolicyCall(
 		}
 		return tx.Commit(ctx)
 	}
-	resultJSON, resultSHA, err := cognitionJSON(result)
+	if err := insertCognitionProviderIdentityEvidenceTx(
+		ctx, tx, authority, attempt, result, evidence.ProviderIdentity,
+	); err != nil {
+		return err
+	}
+	if err := insertCognitionResponseEvidenceTx(
+		ctx, tx, authority, attempt, result, evidence.Response,
+	); err != nil {
+		return err
+	}
+	if err := insertCognitionProviderResponseCaptureTx(
+		ctx, tx, authority, attempt, result, evidence.ProviderResponseCapture,
+	); err != nil {
+		return err
+	}
+	if err := insertCognitionProviderGenerationEvidenceTx(
+		ctx, tx, authority, attempt, result, evidence.ProviderGeneration,
+	); err != nil {
+		return err
+	}
+	resultJSON, err := exactjson.Canonical(result)
 	if err != nil {
 		return err
 	}
+	resultSHA := cognitionPayloadSHA(resultJSON)
 	tag, err := tx.Exec(ctx, `
 		UPDATE cognition_policy_calls SET status=$2,result_json=$3,result_sha256=$4,finished_at=NOW()
 		WHERE call_id=$1 AND status='started'
