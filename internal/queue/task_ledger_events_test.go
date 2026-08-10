@@ -89,3 +89,25 @@ func TestDecodeTaskEventColumnsRejectsUnknownTrailingAndInvalidShapes(t *testing
 		t.Fatalf("extra event projection error=%v", err)
 	}
 }
+
+func TestTaskEventShapeAllowsEvidenceBoundEntryRejection(t *testing.T) {
+	t.Parallel()
+	event := taskstate.Event{
+		LedgerID:      taskstate.LedgerID("ledger_" + strings.Repeat("a", 64)),
+		Version:       2,
+		CommandID:     taskstate.CommandID("command_" + strings.Repeat("b", 64)),
+		CommandSHA256: strings.Repeat("c", 64),
+		CommandKind:   taskstate.CommandRejectEntry,
+		Kind:          taskstate.EventEntryRejected,
+		Authority:     taskstate.AuthorityCode,
+		EntryID:       "hypothesis-one",
+		VerificationRefs: []taskstate.Ref{{
+			URI:     "cognition:episode/episode-one/observation/observation-one",
+			Version: "1", Hash: strings.Repeat("d", 64), Relation: taskstate.RefContradicts,
+		}},
+		Reason: "Contradicted by exact current evidence.",
+	}
+	if err := validateTaskEventShape(event, nil); err != nil {
+		t.Fatalf("evidence-bound entry rejection shape failed: %v", err)
+	}
+}

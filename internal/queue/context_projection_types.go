@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/contextbuilder"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 const (
@@ -20,17 +21,16 @@ var (
 )
 
 type ContextProjectionAuthority struct {
-	JobID      int64
-	Generation int64
-	StepID     int64
-	WorkKind   string
-	Mode       ContextProjectionMode
+	model.StepAttemptAuthority
+	WorkKind string
+	Mode     ContextProjectionMode
 }
 
 type ContextProjectionMode string
 
 const (
 	ContextProjectionModeShadow ContextProjectionMode = "shadow"
+	ContextProjectionModeLive   ContextProjectionMode = "live"
 )
 
 type ContextProjectionRecord struct {

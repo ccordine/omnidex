@@ -31,7 +31,7 @@ func (r *nativeRuntimeV3) writeArtifact(kind string, payload any) error {
 	}
 	envelope.JobID = r.claim.Job.ID
 	envelope.StepID = r.claim.Step.ID
-	return r.svc.repo.WriteArtifact(r.ctx, envelope)
+	return r.svc.repo.WriteArtifact(r.ctx, r.claim.Authority, envelope)
 }
 
 func (r *nativeRuntimeV3) writeAcceptedIntentArtifact(
@@ -43,13 +43,13 @@ func (r *nativeRuntimeV3) writeAcceptedIntentArtifact(
 	}
 	envelope.JobID = r.claim.Job.ID
 	envelope.StepID = r.claim.Step.ID
-	return r.svc.repo.WriteAcceptedIntentArtifact(r.ctx, envelope)
+	return r.svc.repo.WriteAcceptedIntentArtifact(r.ctx, r.claim.Authority, envelope)
 }
 
 func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {
 	record.JobID = r.claim.Job.ID
 	record.StepID = r.claim.Step.ID
-	return r.svc.repo.WriteEvidence(r.ctx, record)
+	return r.svc.repo.WriteEvidence(r.ctx, r.claim.Authority, record)
 }
 
 func (r *nativeRuntimeV3) readIntentArtifact() (artifacts.IntentArtifact, error) {

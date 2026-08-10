@@ -69,7 +69,9 @@ func ledgerAtEntryLimit(t *testing.T) *Ledger {
 		}
 	}
 	ledger, err := RestoreLedger(MaterializedState{
-		ID: id, Owner: owner, Version: 1, Status: LedgerActive, Entries: entries,
+		ID: id, Owner: owner, Version: 1, Status: LedgerActive,
+		Nodes: make([]Node, 0), Edges: make([]Edge, 0), Entries: entries,
+		NodeSupersessions: make([]NodeGenerationSupersession, 0),
 	})
 	if err != nil {
 		t.Fatal(err)

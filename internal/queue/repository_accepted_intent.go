@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/gryph/omnidex/internal/artifacts"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 )
@@ -20,11 +21,15 @@ var ErrIntentArtifactRequiresAcceptedWriter = errors.New(
 
 func (r *Repository) WriteAcceptedIntentArtifact(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	envelope artifacts.Envelope,
 ) error {
 	intent, err := validateAcceptedIntentEnvelope(envelope)
 	if err != nil {
 		return err
+	}
+	if envelope.JobID != authority.JobID || envelope.StepID != authority.StepID {
+		return fmt.Errorf("%w: accepted intent owner disagrees with step attempt", ErrStaleStepAttempt)
 	}
 	if err := validateTaskLedgerRequest(r, ctx, envelope.JobID); err != nil {
 		return err
@@ -34,6 +39,13 @@ func (r *Repository) WriteAcceptedIntentArtifact(
 		return fmt.Errorf("begin accepted intent artifact write: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
+	if err != nil {
+		return err
+	}
+	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return fmt.Errorf("%w: accepted intent attempt is not running", ErrStaleStepAttempt)
+	}
 	generation, err := requireAcceptedIntentStepTx(ctx, tx, envelope.JobID, envelope.StepID)
 	if err != nil {
 		return err
@@ -44,10 +56,10 @@ func (r *Repository) WriteAcceptedIntentArtifact(
 	}
 	if found {
 		if existing.StepID != envelope.StepID || existing.JobGeneration != generation {
-			return fmt.Errorf(
-				"%w: accepted intent projection belongs to step %d generation %d",
-				ErrStaleJobGeneration, existing.StepID, existing.JobGeneration,
-			)
+			return staleStepAttemptError(authority, fmt.Sprintf(
+				"accepted intent projection belongs to step %d generation %d",
+				existing.StepID, existing.JobGeneration,
+			), nil)
 		}
 		if err := verifyAcceptedIntentProjectionTx(ctx, tx, existing, intent); err != nil {
 			return err
@@ -59,10 +71,10 @@ func (r *Repository) WriteAcceptedIntentArtifact(
 		return err
 	}
 	if header.Generation != generation || header.Status != taskstate.LedgerActive {
-		return fmt.Errorf(
-			"%w: accepted intent observed generation %d with ledger generation %d status %q",
-			ErrStaleJobGeneration, generation, header.Generation, header.Status,
-		)
+		return staleStepAttemptError(authority, fmt.Sprintf(
+			"accepted intent observed generation %d with ledger generation %d status %q",
+			generation, header.Generation, header.Status,
+		), nil)
 	}
 	artifactID, payloadSHA, err := insertAcceptedIntentArtifactTx(ctx, tx, envelope)
 	if err != nil {

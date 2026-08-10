@@ -2,19 +2,18 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
-	"github.com/gryph/omnidex/internal/specialist"
 	"github.com/gryph/omnidex/internal/specialists"
 	"github.com/gryph/omnidex/internal/tools"
 	"github.com/gryph/omnidex/internal/websearch"
@@ -59,6 +58,7 @@ type Options struct {
 	EmbeddingProvider      string
 	EmbeddingModel         string
 	Models                 ModelRouting
+	CognitionBrain         cognitionpolicy.BrainRef
 	Workspace              WorkspaceSettings
 	SkillsRoot             string
 	Logger                 *log.Logger
@@ -79,6 +79,7 @@ type Service struct {
 	embeddingProvider      string
 	embeddingModel         string
 	models                 ModelRouting
+	cognitionBrain         cognitionpolicy.BrainRef
 	workspace              *workspace.Service
 	repositoryIndex        repositoryIndexRefresher
 	repositoryRetrieval    repositoryEvidenceBuilder
@@ -108,6 +109,9 @@ func New(
 	}
 	if err := validateWorkerOptions(opts); err != nil {
 		return nil, fmt.Errorf("invalid worker options: %w", err)
+	}
+	if _, err := llm.RequireExactPreparedContract(llmClient); err != nil {
+		return nil, fmt.Errorf("worker cognition provider: %w", err)
 	}
 	opts = normalizeWorkerOptions(opts)
 
@@ -153,6 +157,7 @@ func New(
 		embeddingProvider:      opts.EmbeddingProvider,
 		embeddingModel:         opts.EmbeddingModel,
 		models:                 opts.Models,
+		cognitionBrain:         opts.CognitionBrain,
 		workspace:              workspaceSvc,
 		repositoryIndex:        repositoryIndex,
 		repositoryRetrieval:    repositoryRetrieval,
@@ -265,187 +270,4 @@ func resolveSkillModelPreference(preference string, routing ModelRouting) string
 		}
 		return strings.TrimSpace(preference)
 	}
-}
-
-const staleV3StepLease = 75 * time.Second
-
-func (s *Service) Start(ctx context.Context) error {
-	if err := s.refreshSkillRegistry(ctx); err != nil {
-		return fmt.Errorf("initialize authoritative worker skill registry: %w", err)
-	}
-	if err := s.repo.CheckStaleV3StepLeases(ctx, time.Now().Add(-staleV3StepLease)); err != nil {
-		return fmt.Errorf("validate V3 worker leases: %w", err)
-	}
-	var wg sync.WaitGroup
-	for i := 0; i < s.workerCount; i++ {
-		wg.Add(1)
-		workerID := fmt.Sprintf("worker-%d", i+1)
-		go func(id string) {
-			defer wg.Done()
-			s.run(ctx, id)
-		}(workerID)
-	}
-
-	<-ctx.Done()
-	wg.Wait()
-	return nil
-}
-
-func (s *Service) run(ctx context.Context, workerID string) {
-	ticker := time.NewTicker(s.pollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		claim, err := s.repo.ClaimNextStep(ctx, workerID)
-		if err != nil {
-			s.logger.Printf("worker=%s claim error: %v", workerID, err)
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-			continue
-		}
-
-		if claim == nil {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-			continue
-		}
-
-		phase := pipelinePhaseForAction(claim.Step.Action)
-		stepRole := specialist.ForPipelineAction(claim.Step.Action)
-		s.emitStepContext(claim.Step.ID, "phase", phase)
-		s.emitStepContext(claim.Step.ID, "specialist_role", strings.Join(specialist.DetailLines(stepRole), "\n"))
-		s.emitStepEvent(claim.Step.ID, "step_start", fmt.Sprintf("phase=%s action=%s worker=%s specialist=%s", phase, claim.Step.Action, workerID, strings.TrimSpace(stepRole.ID)))
-		if err := s.processStep(ctx, claim); err != nil {
-			if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
-				continue
-			}
-			s.emitStepEvent(claim.Step.ID, "step_error", err.Error())
-			s.logger.Printf("worker=%s job=%d step=%d action=%s failed: %v", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err)
-			failCommand, identityErr := failClaimedStepCommand(claim, err.Error())
-			if identityErr != nil {
-				s.logger.Printf("worker=%s job=%d step=%d failure identity error: %v", workerID, claim.Job.ID, claim.Step.ID, identityErr)
-				continue
-			}
-			failErr := s.repo.FailStep(ctx, failCommand)
-			if failErr != nil {
-				s.logger.Printf("worker=%s job=%d step=%d fail update error: %v", workerID, claim.Job.ID, claim.Step.ID, failErr)
-			} else {
-				s.notifyJobFinishedForJob(ctx, claim.Job.ID)
-			}
-			continue
-		}
-		s.emitStepEvent(claim.Step.ID, "step_complete", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
-	}
-}
-
-func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
-	if _, err := modelRoutingFromJobMetadata(claim.Job.Metadata, s.models); err != nil {
-		return err
-	}
-
-	action := strings.ToLower(strings.TrimSpace(claim.Step.Action))
-	contexts := contextsToMap(claim.Contexts)
-	stepCtx, stop := s.watchStepControl(ctx, claim.Job.ID, claim.Step.ID)
-	defer stop()
-
-	if strings.HasPrefix(action, "v3_") {
-		if s.nativeV3Runner != nil {
-			return s.nativeV3Runner(stepCtx, claim, contexts, action)
-		}
-		return s.runNativeV3Step(stepCtx, claim, contexts, action)
-	}
-	if action == "external_agent_execute" {
-		return s.runExternalAgentStep(stepCtx, claim, contexts)
-	}
-	if action == "data_source_query" {
-		return s.runDataSourceQueryStep(stepCtx, claim)
-	}
-	if action == "data_source_explore" {
-		return s.runDataSourceExploreStep(stepCtx, claim)
-	}
-	if action == "project_debugger" {
-		return s.runProjectDebuggerStep(stepCtx, claim)
-	}
-	if action == "scrum_card_llm" {
-		return s.runScrumCardLLMStep(stepCtx, claim)
-	}
-	return fmt.Errorf("unsupported worker action %q", action)
-}
-
-func (s *Service) watchStepControl(ctx context.Context, jobID, stepID int64) (context.Context, func()) {
-	stepCtx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(stepControlPollInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-stepCtx.Done():
-				return
-			case <-ticker.C:
-			}
-
-			jobStatus, stepStatus, err := s.repo.GetStepRuntimeState(stepCtx, jobID, stepID)
-			if err != nil {
-				if errors.Is(err, context.Canceled) || stepCtx.Err() != nil {
-					return
-				}
-				s.logger.Printf("job=%d step=%d control poll error: %v", jobID, stepID, err)
-				continue
-			}
-
-			if jobStatus == model.JobStatusCanceled {
-				cancel()
-				return
-			}
-			if stepStatus == model.StepStatusCanceled {
-				cancel()
-				return
-			}
-		}
-	}()
-
-	stop := func() {
-		cancel()
-		<-done
-	}
-
-	return stepCtx, stop
-}
-
-func (s *Service) skipFailureForControlledCancel(ctx context.Context, workerID string, claim *model.ClaimedStep, err error) bool {
-	if !errors.Is(err, context.Canceled) {
-		return false
-	}
-	if ctx.Err() != nil {
-		return true
-	}
-
-	jobStatus, stepStatus, stateErr := s.repo.GetStepRuntimeState(ctx, claim.Job.ID, claim.Step.ID)
-	if stateErr != nil {
-		s.logger.Printf("worker=%s job=%d step=%d cancel-state lookup error: %v", workerID, claim.Job.ID, claim.Step.ID, stateErr)
-		return false
-	}
-
-	if jobStatus == model.JobStatusCanceled || stepStatus == model.StepStatusCanceled {
-		s.logger.Printf("worker=%s job=%d step=%d action=%s canceled", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action)
-		s.emitStepEvent(claim.Step.ID, "step_canceled", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
-		return true
-	}
-	return false
 }

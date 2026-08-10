@@ -39,15 +39,20 @@ func TestProductionCannotImportCognitionBenchmarkPackages(t *testing.T) {
 	}
 }
 
-func TestProductionCognitionContainsNoLabyrinthVocabulary(t *testing.T) {
+func TestProductionCognitionPackagesContainNoLabyrinthVocabulary(t *testing.T) {
 	t.Parallel()
-	root := filepath.Clean(filepath.Join("..", "cognition"))
-	violations, err := forbiddenCognitionVocabulary(root)
-	if err != nil {
-		t.Fatalf("scan cognition vocabulary: %v", err)
-	}
-	for _, violation := range violations {
-		t.Errorf("production cognition contains benchmark vocabulary: %s", violation)
+	for _, name := range []string{
+		"cognition", "cognitionpolicy", "cognitionruntime",
+		"cognitionstate", "cognitionstore", "cognitiontransport",
+	} {
+		root := filepath.Clean(filepath.Join("..", name))
+		violations, err := forbiddenCognitionVocabulary(root)
+		if err != nil {
+			t.Fatalf("scan %s vocabulary: %v", name, err)
+		}
+		for _, violation := range violations {
+			t.Errorf("production cognition contains benchmark vocabulary: %s", violation)
+		}
 	}
 }
 
@@ -228,7 +233,8 @@ func walkProductionGo(root string, inspect func(string, []byte) error) error {
 		}
 		if entry.IsDir() {
 			if path != root && filepath.Dir(path) == root &&
-				(entry.Name() == "cognitiongauntlet" || entry.Name() == "labyrinth") {
+				(entry.Name() == "cognitiongauntlet" || entry.Name() == "labyrinth" ||
+					entry.Name() == "cognition-gauntlet") {
 				return filepath.SkipDir
 			}
 			if path != root && (entry.Name() == "testdata" || strings.HasPrefix(entry.Name(), ".")) {

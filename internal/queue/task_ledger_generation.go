@@ -96,7 +96,9 @@ func taskCommandStepTarget(command taskstate.Command) (*int64, error) {
 		taskstate.RejectEntryCommand, *taskstate.RejectEntryCommand,
 		taskstate.ResolveEntryCommand, *taskstate.ResolveEntryCommand,
 		taskstate.SupersedeEntryCommand, *taskstate.SupersedeEntryCommand,
-		taskstate.PromoteReadyNodesCommand, *taskstate.PromoteReadyNodesCommand:
+		taskstate.PromoteReadyNodesCommand, *taskstate.PromoteReadyNodesCommand,
+		taskstate.TerminalFailNodeCommand, *taskstate.TerminalFailNodeCommand,
+		taskstate.SupersedeNodeGenerationCommand, *taskstate.SupersedeNodeGenerationCommand:
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: unregistered task command type %T", taskstate.ErrInvalidCommand, command)

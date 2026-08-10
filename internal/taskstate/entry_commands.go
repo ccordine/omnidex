@@ -16,6 +16,9 @@ func (command AddEntryCommand) decide(ledger *Ledger) (Event, error) {
 		if _, exists := ledger.nodes[command.ScopeNodeID]; !exists {
 			return Event{}, fmt.Errorf("%w: scope node %q", ErrNotFound, command.ScopeNodeID)
 		}
+		if ledger.nodeSuperseded(command.ScopeNodeID) {
+			return Event{}, fmt.Errorf("%w: scope node %q is superseded", ErrInvalidState, command.ScopeNodeID)
+		}
 	}
 	if err := requireExactText(command.Content, "entry content"); err != nil {
 		return Event{}, err
@@ -66,7 +69,16 @@ func (command RejectEntryCommand) decide(ledger *Ledger) (Event, error) {
 	if err := requireExactText(command.Reason, "rejection reason"); err != nil {
 		return Event{}, err
 	}
-	return Event{Kind: EventEntryRejected, EntryID: entry.ID, Reason: command.Reason}, nil
+	if err := validateRefs(command.Refs); err != nil {
+		return Event{}, err
+	}
+	if entry.Kind == EntryHypothesis && command.Actor == AuthorityCode && !hasContradictionRef(command.Refs) {
+		return Event{}, fmt.Errorf("%w: code rejection of a hypothesis requires contradiction evidence", ErrEvidenceRequired)
+	}
+	return Event{
+		Kind: EventEntryRejected, EntryID: entry.ID, Reason: command.Reason,
+		VerificationRefs: cloneRefs(command.Refs),
+	}, nil
 }
 
 func (command ResolveEntryCommand) decide(ledger *Ledger) (Event, error) {
@@ -192,8 +204,8 @@ func validateNewEntryAuthority(actor Authority, kind EntryKind) error {
 		return fmt.Errorf("%w: accepted-model-decision authority cannot create entries directly", ErrAuthorityDenied)
 	}
 	if actor == AuthorityModelProposal {
-		if kind != EntryHypothesis && kind != EntryQuestion && kind != EntryDecisionCandidate {
-			return fmt.Errorf("%w: model proposals may create only hypotheses, questions, and decision candidates", ErrAuthorityDenied)
+		if kind != EntryObservation && kind != EntryHypothesis && kind != EntryQuestion && kind != EntryDecisionCandidate {
+			return fmt.Errorf("%w: model proposals may create only observations, hypotheses, questions, and decision candidates", ErrAuthorityDenied)
 		}
 	}
 	return nil

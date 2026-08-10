@@ -12,7 +12,7 @@ func TestPostgresClassifierFailureLeavesPreparedJournalAndBlocksReplan(t *testin
 	want := errors.New("repository inventory unavailable")
 	var applied atomic.Bool
 	err := fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command,
+		fixture.ctx, fixture.authority, fixture.command,
 		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
 			return "", want
 		},
@@ -44,7 +44,7 @@ func TestPostgresCallbackErrorWithExactPostFinalizesAsSuccess(t *testing.T) {
 	var state atomic.Value
 	state.Store(RepositoryMutationSource)
 	err := fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command, stateClassifier(&state),
+		fixture.ctx, fixture.authority, fixture.command, stateClassifier(&state),
 		func(context.Context) error {
 			state.Store(RepositoryMutationPost)
 			return errors.New("callback lost its response after exact write")
@@ -64,7 +64,7 @@ func TestPostgresCallbackErrorWithExactPostFinalizesAsSuccess(t *testing.T) {
 
 	var replayApplied atomic.Bool
 	err = fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command, stateClassifier(&state),
+		fixture.ctx, fixture.authority, fixture.command, stateClassifier(&state),
 		func(context.Context) error {
 			replayApplied.Store(true)
 			return nil
@@ -87,7 +87,7 @@ func TestPostgresMutationSourceFactsMustMatchDurableSnapshot(t *testing.T) {
 	wrong.ChangedFiles[0].SourceSize++
 	var classified, applied atomic.Bool
 	err := fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, wrong,
+		fixture.ctx, fixture.authority, wrong,
 		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
 			classified.Store(true)
 			return RepositoryMutationSource, nil
@@ -119,7 +119,7 @@ func TestPostgresAppliedMutationAuthorityAndEvidenceAreImmutable(t *testing.T) {
 	var state atomic.Value
 	state.Store(RepositoryMutationSource)
 	if err := fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command, stateClassifier(&state),
+		fixture.ctx, fixture.authority, fixture.command, stateClassifier(&state),
 		func(context.Context) error {
 			state.Store(RepositoryMutationPost)
 			return nil

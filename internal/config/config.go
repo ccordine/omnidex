@@ -12,68 +12,74 @@ import (
 )
 
 type Config struct {
-	AppEnv                    string
-	ListenAddr                string
-	CoreURL                   string
-	HostAgentURL              string
-	HostAgentToken            string
-	WrapperOnly               bool
-	DatabaseURL               string
-	LLMProvider               string
-	EmbeddingProvider         string
-	ProviderModels            map[string]ProviderModelConfig
-	OllamaBaseURL             string
-	CompatibleProviders       map[string]CompatibleProviderConfig
-	AzureAIBaseURL            string
-	AzureAIAPIKey             string
-	AzureAIAPIVersion         string
-	AzureAIAPIStyle           string
-	GoogleBaseURL             string
-	GoogleAPIKey              string
-	AnthropicBaseURL          string
-	AnthropicAPIKey           string
-	AnthropicVersion          string
-	AnthropicMaxTokens        int
-	HuggingFaceBaseURL        string
-	HuggingFaceAPIKey         string
-	DefaultModel              string
-	FastModel                 string
-	GlueModel                 string
-	ReasoningModel            string
-	TaggingModel              string
-	PlanModel                 string
-	AnalyzeModel              string
-	ResponseModel             string
-	SearchModel               string
-	MemoryModel               string
-	SpecialistModels          map[string]string
-	EmbeddingModel            string
-	WebSearchEnabled          bool
-	WebSearchProviders        []string
-	WebSearchTimeout          time.Duration
-	WebSearchPerSourceBudget  int
-	WebSearchTotalBudget      int
-	WorkspaceScanEnabled      bool
-	WorkspaceRoot             string
-	WorkspaceHostRoot         string
-	WorkspaceMaxFiles         int
-	WorkspaceContextBudget    int
-	WorkerCount               int
-	CodingFragmentConcurrency int
-	WorkerPollInterval        time.Duration
-	RequestTimeout            time.Duration
-	RealtimeMaxClients        int
-	RealtimeStreamMaxAge      time.Duration
-	RealtimeHeartbeat         time.Duration
-	RealtimeWriteTimeout      time.Duration
-	RedisURL                  string
-	UIRedisRequired           bool
-	UISessionTTL              time.Duration
-	RetrievalLimit            int
-	ContextCharBudget         int
-	InferenceContextTokens    int
-	MigrateOnStartup          bool
-	SkillsRoot                string
+	AppEnv                       string
+	ListenAddr                   string
+	CoreURL                      string
+	HostAgentURL                 string
+	HostAgentToken               string
+	WrapperOnly                  bool
+	DatabaseURL                  string
+	LLMProvider                  string
+	EmbeddingProvider            string
+	ProviderModels               map[string]ProviderModelConfig
+	OllamaBaseURL                string
+	CompatibleProviders          map[string]CompatibleProviderConfig
+	AzureAIBaseURL               string
+	AzureAIAPIKey                string
+	AzureAIAPIVersion            string
+	AzureAIAPIStyle              string
+	GoogleBaseURL                string
+	GoogleAPIKey                 string
+	AnthropicBaseURL             string
+	AnthropicAPIKey              string
+	AnthropicVersion             string
+	AnthropicMaxTokens           int
+	HuggingFaceBaseURL           string
+	HuggingFaceAPIKey            string
+	DefaultModel                 string
+	FastModel                    string
+	GlueModel                    string
+	ReasoningModel               string
+	TaggingModel                 string
+	PlanModel                    string
+	AnalyzeModel                 string
+	ResponseModel                string
+	SearchModel                  string
+	MemoryModel                  string
+	SpecialistModels             map[string]string
+	EmbeddingModel               string
+	WebSearchEnabled             bool
+	WebSearchProviders           []string
+	WebSearchTimeout             time.Duration
+	WebSearchPerSourceBudget     int
+	WebSearchTotalBudget         int
+	WorkspaceScanEnabled         bool
+	WorkspaceRoot                string
+	WorkspaceHostRoot            string
+	WorkspaceMaxFiles            int
+	WorkspaceContextBudget       int
+	WorkerCount                  int
+	CodingFragmentConcurrency    int
+	WorkerPollInterval           time.Duration
+	RequestTimeout               time.Duration
+	RealtimeMaxClients           int
+	RealtimeStreamMaxAge         time.Duration
+	RealtimeHeartbeat            time.Duration
+	RealtimeWriteTimeout         time.Duration
+	RedisURL                     string
+	UIRedisRequired              bool
+	UISessionTTL                 time.Duration
+	RetrievalLimit               int
+	ContextCharBudget            int
+	InferenceContextTokens       int
+	CognitionModelDigest         string
+	CognitionModelQuantization   string
+	CognitionBackendVersion      string
+	CognitionHardware            string
+	CognitionContextCeilingBytes int
+	CognitionMaxOutputTokens     int
+	MigrateOnStartup             bool
+	SkillsRoot                   string
 }
 
 // Load parses the environment and validates all non-secret configuration.
@@ -88,69 +94,83 @@ func Load() (Config, error) {
 	}
 	compatibleProviders := loadCompatibleProviderConfigs()
 	providerModels := loadProviderModelConfigs()
+	cognitionContextCeilingBytes, err := requiredPositiveEnvInt("COGNITION_CONTEXT_CEILING_BYTES")
+	if err != nil {
+		return Config{}, err
+	}
+	cognitionMaxOutputTokens, err := requiredPositiveEnvInt("COGNITION_MAX_OUTPUT_TOKENS")
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
-		AppEnv:                    getenv("APP_ENV", "development"),
-		ListenAddr:                getenv("LISTEN_ADDR", "0.0.0.0:8090"),
-		HostAgentURL:              getenv("HOST_AGENT_URL", ""),
-		HostAgentToken:            getenv("HOST_AGENT_TOKEN", ""),
-		CoreURL:                   getenv("CORE_URL", "http://192.168.1.102:8090"),
-		WrapperOnly:               getenvBool("WRAPPER_ONLY", false),
-		DatabaseURL:               os.Getenv("DATABASE_URL"),
-		LLMProvider:               provider,
-		EmbeddingProvider:         embeddingProvider,
-		ProviderModels:            providerModels,
-		OllamaBaseURL:             getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
-		CompatibleProviders:       compatibleProviders,
-		AzureAIBaseURL:            firstNonEmptyEnv([]string{"AZURE_AI_BASE_URL", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_BASE_URL"}, ""),
-		AzureAIAPIKey:             firstEnv("AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY"),
-		AzureAIAPIVersion:         getenv("AZURE_AI_API_VERSION", getenv("AZURE_OPENAI_API_VERSION", "")),
-		AzureAIAPIStyle:           getenv("AZURE_AI_API_STYLE", getenv("AZURE_OPENAI_API_STYLE", "")),
-		GoogleBaseURL:             getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
-		GoogleAPIKey:              firstEnv("GOOGLE_API_KEY", "GEMINI_API_KEY"),
-		AnthropicBaseURL:          getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1"),
-		AnthropicAPIKey:           strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
-		AnthropicVersion:          getenv("ANTHROPIC_VERSION", "2023-06-01"),
-		AnthropicMaxTokens:        getenvInt("ANTHROPIC_MAX_TOKENS", 4096),
-		HuggingFaceBaseURL:        getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
-		HuggingFaceAPIKey:         firstEnv("HUGGINGFACE_API_KEY", "HF_TOKEN"),
-		DefaultModel:              providerModels[provider].Default,
-		FastModel:                 getenvProvider(provider, "MODEL_FAST", ""),
-		GlueModel:                 getenvProvider(provider, "MODEL_GLUE", ""),
-		ReasoningModel:            getenvProvider(provider, "MODEL_REASONING", ""),
-		TaggingModel:              getenvProvider(provider, "MODEL_TAGGER", ""),
-		PlanModel:                 getenvProvider(provider, "MODEL_PLANNER", ""),
-		AnalyzeModel:              getenvProvider(provider, "MODEL_ANALYZER", ""),
-		ResponseModel:             getenvProvider(provider, "MODEL_RESPONDER", ""),
-		SearchModel:               getenvProvider(provider, "MODEL_SEARCH", ""),
-		MemoryModel:               getenvProvider(provider, "MODEL_MEMORY", ""),
-		EmbeddingModel:            embeddingModelForProvider(embeddingProvider),
-		WebSearchEnabled:          getenvBool("WEB_SEARCH_ENABLED", true),
-		WebSearchProviders:        getenvCSV("WEB_SEARCH_PROVIDERS", []string{"duckduckgo", "google", "reddit"}),
-		WebSearchTimeout:          getenvDuration("WEB_SEARCH_TIMEOUT", 15*time.Second),
-		WebSearchPerSourceBudget:  getenvInt("WEB_SEARCH_PER_SOURCE_BUDGET", 3000),
-		WebSearchTotalBudget:      getenvInt("WEB_SEARCH_TOTAL_BUDGET", 6000),
-		WorkspaceScanEnabled:      getenvBool("WORKSPACE_SCAN_ENABLED", true),
-		WorkspaceRoot:             getenv("WORKSPACE_ROOT", ""),
-		WorkspaceHostRoot:         getenv("HOST_WORKSPACE_PATH", ""),
-		WorkspaceMaxFiles:         getenvInt("WORKSPACE_MAX_FILES", 5000),
-		WorkspaceContextBudget:    getenvInt("WORKSPACE_CONTEXT_BUDGET", 6000),
-		WorkerCount:               getenvInt("WORKER_COUNT", 2),
-		CodingFragmentConcurrency: getenvInt("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
-		WorkerPollInterval:        getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),
-		RequestTimeout:            getenvDuration("REQUEST_TIMEOUT", 180*time.Second),
-		RealtimeMaxClients:        getenvInt("REALTIME_MAX_CLIENTS", 512),
-		RealtimeStreamMaxAge:      getenvDuration("REALTIME_STREAM_MAX_AGE", 10*time.Minute),
-		RealtimeHeartbeat:         getenvDuration("REALTIME_HEARTBEAT", 25*time.Second),
-		RealtimeWriteTimeout:      getenvDuration("REALTIME_WRITE_TIMEOUT", 10*time.Second),
-		RedisURL:                  getenv("REDIS_URL", ""),
-		UIRedisRequired:           getenvBool("UI_REDIS_REQUIRED", false),
-		UISessionTTL:              getenvDuration("UI_SESSION_TTL", 30*time.Minute),
-		RetrievalLimit:            getenvInt("RETRIEVAL_LIMIT", 8),
-		ContextCharBudget:         getenvInt("CONTEXT_CHAR_BUDGET", 4000),
-		InferenceContextTokens:    getenvInt("INFERENCE_CONTEXT_TOKENS", llm.DefaultInferenceContextTokens),
-		MigrateOnStartup:          getenvBool("MIGRATE_ON_STARTUP", true),
-		SkillsRoot:                getenv("OMNIDEX_SKILLS_ROOT", "skills"),
+		AppEnv:                       getenv("APP_ENV", "development"),
+		ListenAddr:                   getenv("LISTEN_ADDR", "0.0.0.0:8090"),
+		HostAgentURL:                 getenv("HOST_AGENT_URL", ""),
+		HostAgentToken:               getenv("HOST_AGENT_TOKEN", ""),
+		CoreURL:                      getenv("CORE_URL", "http://192.168.1.102:8090"),
+		WrapperOnly:                  getenvBool("WRAPPER_ONLY", false),
+		DatabaseURL:                  os.Getenv("DATABASE_URL"),
+		LLMProvider:                  provider,
+		EmbeddingProvider:            embeddingProvider,
+		ProviderModels:               providerModels,
+		OllamaBaseURL:                getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
+		CompatibleProviders:          compatibleProviders,
+		AzureAIBaseURL:               firstNonEmptyEnv([]string{"AZURE_AI_BASE_URL", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_BASE_URL"}, ""),
+		AzureAIAPIKey:                firstEnv("AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY"),
+		AzureAIAPIVersion:            getenv("AZURE_AI_API_VERSION", getenv("AZURE_OPENAI_API_VERSION", "")),
+		AzureAIAPIStyle:              getenv("AZURE_AI_API_STYLE", getenv("AZURE_OPENAI_API_STYLE", "")),
+		GoogleBaseURL:                getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
+		GoogleAPIKey:                 firstEnv("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+		AnthropicBaseURL:             getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1"),
+		AnthropicAPIKey:              strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
+		AnthropicVersion:             getenv("ANTHROPIC_VERSION", "2023-06-01"),
+		AnthropicMaxTokens:           getenvInt("ANTHROPIC_MAX_TOKENS", 4096),
+		HuggingFaceBaseURL:           getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
+		HuggingFaceAPIKey:            firstEnv("HUGGINGFACE_API_KEY", "HF_TOKEN"),
+		DefaultModel:                 providerModels[provider].Default,
+		FastModel:                    getenvProvider(provider, "MODEL_FAST", ""),
+		GlueModel:                    getenvProvider(provider, "MODEL_GLUE", ""),
+		ReasoningModel:               getenvProvider(provider, "MODEL_REASONING", ""),
+		TaggingModel:                 getenvProvider(provider, "MODEL_TAGGER", ""),
+		PlanModel:                    getenvProvider(provider, "MODEL_PLANNER", ""),
+		AnalyzeModel:                 getenvProvider(provider, "MODEL_ANALYZER", ""),
+		ResponseModel:                getenvProvider(provider, "MODEL_RESPONDER", ""),
+		SearchModel:                  getenvProvider(provider, "MODEL_SEARCH", ""),
+		MemoryModel:                  getenvProvider(provider, "MODEL_MEMORY", ""),
+		EmbeddingModel:               embeddingModelForProvider(embeddingProvider),
+		WebSearchEnabled:             getenvBool("WEB_SEARCH_ENABLED", true),
+		WebSearchProviders:           getenvCSV("WEB_SEARCH_PROVIDERS", []string{"duckduckgo", "google", "reddit"}),
+		WebSearchTimeout:             getenvDuration("WEB_SEARCH_TIMEOUT", 15*time.Second),
+		WebSearchPerSourceBudget:     getenvInt("WEB_SEARCH_PER_SOURCE_BUDGET", 3000),
+		WebSearchTotalBudget:         getenvInt("WEB_SEARCH_TOTAL_BUDGET", 6000),
+		WorkspaceScanEnabled:         getenvBool("WORKSPACE_SCAN_ENABLED", true),
+		WorkspaceRoot:                getenv("WORKSPACE_ROOT", ""),
+		WorkspaceHostRoot:            getenv("HOST_WORKSPACE_PATH", ""),
+		WorkspaceMaxFiles:            getenvInt("WORKSPACE_MAX_FILES", 5000),
+		WorkspaceContextBudget:       getenvInt("WORKSPACE_CONTEXT_BUDGET", 6000),
+		WorkerCount:                  getenvInt("WORKER_COUNT", 2),
+		CodingFragmentConcurrency:    getenvInt("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
+		WorkerPollInterval:           getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),
+		RequestTimeout:               getenvDuration("REQUEST_TIMEOUT", 180*time.Second),
+		RealtimeMaxClients:           getenvInt("REALTIME_MAX_CLIENTS", 512),
+		RealtimeStreamMaxAge:         getenvDuration("REALTIME_STREAM_MAX_AGE", 10*time.Minute),
+		RealtimeHeartbeat:            getenvDuration("REALTIME_HEARTBEAT", 25*time.Second),
+		RealtimeWriteTimeout:         getenvDuration("REALTIME_WRITE_TIMEOUT", 10*time.Second),
+		RedisURL:                     getenv("REDIS_URL", ""),
+		UIRedisRequired:              getenvBool("UI_REDIS_REQUIRED", false),
+		UISessionTTL:                 getenvDuration("UI_SESSION_TTL", 30*time.Minute),
+		RetrievalLimit:               getenvInt("RETRIEVAL_LIMIT", 8),
+		ContextCharBudget:            getenvInt("CONTEXT_CHAR_BUDGET", 4000),
+		InferenceContextTokens:       getenvInt("INFERENCE_CONTEXT_TOKENS", llm.DefaultInferenceContextTokens),
+		CognitionModelDigest:         os.Getenv("COGNITION_MODEL_SHA256"),
+		CognitionModelQuantization:   os.Getenv("COGNITION_MODEL_QUANTIZATION"),
+		CognitionBackendVersion:      os.Getenv("COGNITION_BACKEND_VERSION"),
+		CognitionHardware:            os.Getenv("COGNITION_HARDWARE"),
+		CognitionContextCeilingBytes: cognitionContextCeilingBytes,
+		CognitionMaxOutputTokens:     cognitionMaxOutputTokens,
+		MigrateOnStartup:             getenvBool("MIGRATE_ON_STARTUP", true),
+		SkillsRoot:                   getenv("OMNIDEX_SKILLS_ROOT", "skills"),
 	}
 
 	if err := validateConfigStructure(cfg); err != nil {
@@ -279,6 +299,21 @@ func getenvInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+func requiredPositiveEnvInt(key string) (int, error) {
+	raw, exists := os.LookupEnv(key)
+	if !exists || strings.TrimSpace(raw) == "" {
+		return 0, fmt.Errorf("%s is required", key)
+	}
+	if raw != strings.TrimSpace(raw) {
+		return 0, fmt.Errorf("%s must be one exact positive integer", key)
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be one exact positive integer, received %q", key, raw)
+	}
+	return value, nil
 }
 
 func getenvBool(key string, fallback bool) bool {

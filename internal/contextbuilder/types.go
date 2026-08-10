@@ -33,6 +33,7 @@ type ContextSpec struct {
 type Material struct {
 	ItemID     workingset.ItemID   `json:"item_id"`
 	CurrentRef taskstate.Ref       `json:"current_ref"`
+	SourceRefs []taskstate.Ref     `json:"source_refs"`
 	Authority  taskstate.Authority `json:"authority"`
 	Content    string              `json:"content"`
 	ByteCost   int                 `json:"byte_cost"`
@@ -58,6 +59,7 @@ const (
 type Selection struct {
 	ItemID          workingset.ItemID   `json:"item_id"`
 	Ref             taskstate.Ref       `json:"ref"`
+	SourceRefs      []taskstate.Ref     `json:"source_refs"`
 	Role            workingset.Role     `json:"role"`
 	Authority       taskstate.Authority `json:"authority"`
 	SourceFreshness SourceFreshness     `json:"source_freshness"`

@@ -28,6 +28,15 @@ func assertContextProjectionImmutable(
 		`DELETE FROM context_projections WHERE projection_id=$1`,
 		`UPDATE context_projection_selected_refs SET role='historical' WHERE projection_id=$1`,
 		`DELETE FROM context_projection_selected_refs WHERE projection_id=$1`,
+		`UPDATE context_projection_selected_source_refs SET ref_version='tampered' WHERE projection_id=$1`,
+		`DELETE FROM context_projection_selected_source_refs WHERE projection_id=$1`,
+		`INSERT INTO context_projection_selected_source_refs (
+			projection_id,selection_position,source_position,
+			ref_uri,ref_version,ref_sha256,ref_relation
+		) SELECT projection_id,position,source_ref_count,
+			ref_uri,ref_version,ref_sha256,ref_relation
+		  FROM context_projection_selected_refs
+		 WHERE projection_id=$1 AND position=0`,
 	} {
 		tx, err := pool.Begin(ctx)
 		if err != nil {
@@ -164,8 +173,8 @@ func advanceContextProjectionGeneration(
 	}
 	var stepID int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO job_steps (job_id, action, sort_index, status, generation, started_at)
-		VALUES ($1,'generation_two_projection',0,'running',2,NOW()) RETURNING id
+		INSERT INTO job_steps (job_id, action, sort_index, status, generation)
+		VALUES ($1,'generation_two_projection',0,'pending',2) RETURNING id
 	`, jobID).Scan(&stepID); err != nil {
 		t.Fatal(err)
 	}

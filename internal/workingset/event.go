@@ -14,6 +14,7 @@ type EventKind string
 
 const (
 	EventAcquired         EventKind = "acquired"
+	EventReacquired       EventKind = "reacquired"
 	EventRetained         EventKind = "retained"
 	EventReleased         EventKind = "released"
 	EventTouched          EventKind = "touched"
@@ -22,14 +23,21 @@ const (
 )
 
 type Event struct {
-	SetID         SetID               `json:"working_set_id"`
-	Version       uint64              `json:"working_set_version"`
-	CommandID     CommandID           `json:"command_id"`
-	CommandSHA256 string              `json:"command_sha256"`
-	CommandKind   CommandKind         `json:"command_kind"`
-	Kind          EventKind           `json:"event_kind"`
-	Actor         taskstate.Authority `json:"actor"`
-	Command       json.RawMessage     `json:"command"`
+	SetID         SetID                  `json:"working_set_id"`
+	Version       uint64                 `json:"working_set_version"`
+	CommandID     CommandID              `json:"command_id"`
+	CommandSHA256 string                 `json:"command_sha256"`
+	CommandKind   CommandKind            `json:"command_kind"`
+	Kind          EventKind              `json:"event_kind"`
+	Actor         taskstate.Authority    `json:"actor"`
+	Command       json.RawMessage        `json:"command"`
+	Reacquisition *ReacquisitionMetadata `json:"reacquisition,omitempty"`
+}
+
+type ReacquisitionMetadata struct {
+	ItemID              ItemID      `json:"item_id"`
+	Count               uint64      `json:"count"`
+	OriginalAcquisition Acquisition `json:"original_acquisition"`
 }
 
 func (set *Set) Apply(command Command) (Event, error) {
@@ -62,6 +70,7 @@ func (set *Set) Apply(command Command) (Event, error) {
 		Kind: eventKindForCommand(descriptor.Kind), Actor: descriptor.Actor,
 		Command: append(json.RawMessage(nil), descriptor.Raw...),
 	}
+	event.Reacquisition = reacquisitionMetadata(command, set)
 	if err := ValidateEvent(event); err != nil {
 		return Event{}, fmt.Errorf("%w: generated command event is invalid: %v", ErrInvalidSet, err)
 	}
@@ -87,6 +96,9 @@ func ValidateEvent(event Event) error {
 		event.Kind != eventKindForCommand(event.CommandKind) {
 		return fmt.Errorf("%w: event columns disagree with the exact command", ErrInvalidSet)
 	}
+	if err := validateReacquisitionMetadata(event, command); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -95,6 +107,8 @@ func DecodeCommand(kind CommandKind, raw []byte) (Command, error) {
 	switch kind {
 	case CommandAcquire:
 		command = &AcquireCommand{}
+	case CommandReacquire:
+		command = &ReacquireCommand{}
 	case CommandRetain:
 		command = &RetainCommand{}
 	case CommandRelease:
@@ -157,6 +171,8 @@ func eventKindForCommand(kind CommandKind) EventKind {
 	switch kind {
 	case CommandAcquire:
 		return EventAcquired
+	case CommandReacquire:
+		return EventReacquired
 	case CommandRetain:
 		return EventRetained
 	case CommandRelease:
@@ -174,7 +190,52 @@ func eventKindForCommand(kind CommandKind) EventKind {
 
 func cloneEvent(event Event) Event {
 	event.Command = append(json.RawMessage(nil), event.Command...)
+	if event.Reacquisition != nil {
+		metadata := *event.Reacquisition
+		event.Reacquisition = &metadata
+	}
 	return event
+}
+
+func reacquisitionMetadata(command Command, set *Set) *ReacquisitionMetadata {
+	var request ReacquireRequest
+	switch value := command.(type) {
+	case ReacquireCommand:
+		request = value.Request
+	case *ReacquireCommand:
+		request = value.Request
+	default:
+		return nil
+	}
+	item := set.items[request.ItemID]
+	return &ReacquisitionMetadata{
+		ItemID: item.ID, Count: item.ReacquisitionCount, OriginalAcquisition: item.Acquisition,
+	}
+}
+
+func validateReacquisitionMetadata(event Event, command Command) error {
+	var request *ReacquireRequest
+	switch value := command.(type) {
+	case ReacquireCommand:
+		request = &value.Request
+	case *ReacquireCommand:
+		request = &value.Request
+	}
+	if request == nil {
+		if event.Reacquisition != nil {
+			return fmt.Errorf("%w: non-reacquisition event carries reacquisition metadata", ErrInvalidSet)
+		}
+		return nil
+	}
+	metadata := event.Reacquisition
+	if metadata == nil || metadata.ItemID != request.ItemID ||
+		metadata.Count != request.ExpectedReacquisitionCount+1 {
+		return fmt.Errorf("%w: reacquisition event metadata disagrees with the exact command", ErrInvalidSet)
+	}
+	if err := validateAcquisition(metadata.OriginalAcquisition); err != nil {
+		return fmt.Errorf("%w: reacquisition event has invalid original acquisition: %v", ErrInvalidSet, err)
+	}
+	return nil
 }
 
 type VersionConflictError struct {

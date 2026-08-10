@@ -45,14 +45,14 @@ func (s *Service) runScrumCardLLMStep(ctx context.Context, claim *model.ClaimedS
 
 	switch meta.Action {
 	case scrumcardllm.ActionTagsSuggest:
-		resultPayload, summary, err = s.runScrumCardTagsSuggestJob(ctx, meta, board, card)
+		resultPayload, summary, err = s.runScrumCardTagsSuggestJob(ctx, claim.Authority, meta, board, card)
 	case scrumcardllm.ActionCardTicket:
-		resultPayload, summary, err = s.runScrumCardTicketJob(ctx, meta, board, card)
+		resultPayload, summary, err = s.runScrumCardTicketJob(ctx, claim.Authority, meta, board, card)
 	default:
 		return fmt.Errorf("unsupported scrum card llm action %q", meta.Action)
 	}
 	if err != nil {
-		clearErr := s.clearScrumCardLLMJobID(ctx, meta.ProjectID, meta.CardID, meta.Action)
+		clearErr := s.clearScrumCardLLMJobID(ctx, claim.Authority, meta.ProjectID, meta.CardID, meta.Action)
 		return errors.Join(err, clearErr)
 	}
 
@@ -64,12 +64,13 @@ func (s *Service) runScrumCardLLMStep(ctx context.Context, claim *model.ClaimedS
 	if completeStep == nil {
 		completeStep = s.repo.CompleteStep
 	}
-	s.emitStepEvent(claim.Step.ID, "scrum_card_llm_completed", summary)
+	s.emitStepEvent(claim.Authority, "scrum_card_llm_completed", summary)
 	return invokeCompleteClaimedStep(ctx, completeStep, claim, string(payloadBytes), "scrum_card_llm", summary)
 }
 
 func (s *Service) runScrumCardTagsSuggestJob(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	meta scrumcardllm.ParsedMetadata,
 	board scrumcardllm.BoardContext,
 	card scrumcardllm.CardContext,
@@ -92,7 +93,7 @@ func (s *Service) runScrumCardTagsSuggestJob(
 		}
 		patch["tags"] = json.RawMessage(tagsJSON)
 	}
-	if _, err := s.repo.UpdateScrumCard(ctx, meta.ProjectID, meta.CardID, patch); err != nil {
+	if _, err := s.repo.UpdateScrumCardByStepAttempt(ctx, authority, meta.ProjectID, meta.CardID, patch); err != nil {
 		return nil, "", err
 	}
 
@@ -116,6 +117,7 @@ func (s *Service) runScrumCardTagsSuggestJob(
 
 func (s *Service) runScrumCardTicketJob(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	meta scrumcardllm.ParsedMetadata,
 	board scrumcardllm.BoardContext,
 	card scrumcardllm.CardContext,
@@ -135,7 +137,7 @@ func (s *Service) runScrumCardTicketJob(
 		"card_ticket":   ticket,
 		"card_prompt":   cardPrompt,
 	}
-	if _, err := s.repo.UpdateScrumCard(ctx, meta.ProjectID, meta.CardID, patch); err != nil {
+	if _, err := s.repo.UpdateScrumCardByStepAttempt(ctx, authority, meta.ProjectID, meta.CardID, patch); err != nil {
 		return nil, "", err
 	}
 	summary := "Card ticket draft generated"
@@ -150,12 +152,17 @@ func (s *Service) runScrumCardTicketJob(
 	}, summary, nil
 }
 
-func (s *Service) clearScrumCardLLMJobID(ctx context.Context, projectID int64, cardID, action string) error {
+func (s *Service) clearScrumCardLLMJobID(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	projectID int64,
+	cardID, action string,
+) error {
 	field := "tags_job_id"
 	if action == scrumcardllm.ActionCardTicket {
 		field = "ticket_job_id"
 	}
-	_, err := s.repo.UpdateScrumCard(ctx, projectID, cardID, map[string]any{field: ""})
+	_, err := s.repo.UpdateScrumCardByStepAttempt(ctx, authority, projectID, cardID, map[string]any{field: ""})
 	return err
 }
 

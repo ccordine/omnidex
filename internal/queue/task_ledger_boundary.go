@@ -37,6 +37,14 @@ func (queueOwnedTaskCommandBoundary) validate(taskstate.Command) error { return 
 
 func reservedTaskCommandMutation(command taskstate.Command) bool {
 	switch typed := command.(type) {
+	case taskstate.TerminalFailNodeCommand:
+		return true
+	case *taskstate.TerminalFailNodeCommand:
+		return typed != nil
+	case taskstate.SupersedeNodeGenerationCommand:
+		return true
+	case *taskstate.SupersedeNodeGenerationCommand:
+		return typed != nil
 	case taskstate.AddNodeCommand:
 		return reservedTaskNodeID(typed.ID) || reservedTaskNodeID(typed.ParentID) ||
 			reservedTaskNodeID(typed.ObjectiveID)
@@ -84,13 +92,16 @@ func reservedTaskCommandMutation(command taskstate.Command) bool {
 func reservedTaskEntryID(id taskstate.EntryID) bool {
 	return id == initialUserInstructionEntryID ||
 		strings.HasPrefix(string(id), replanFeedbackEntryPrefix) ||
-		strings.HasPrefix(string(id), acceptedIntentEntryPrefix)
+		strings.HasPrefix(string(id), acceptedIntentEntryPrefix) ||
+		strings.HasPrefix(string(id), cognitionEntryPrefix)
 }
 
 func reservedTaskNodeID(id taskstate.NodeID) bool {
-	return id == initialTaskRootNodeID || strings.HasPrefix(string(id), acceptedIntentObjectivePrefix)
+	return id == initialTaskRootNodeID || strings.HasPrefix(string(id), acceptedIntentObjectivePrefix) ||
+		strings.HasPrefix(string(id), cognitionObligationNodePrefix)
 }
 
 func reservedTaskEdgeID(id taskstate.EdgeID) bool {
-	return strings.HasPrefix(string(id), acceptedIntentEdgePrefix)
+	return strings.HasPrefix(string(id), acceptedIntentEdgePrefix) ||
+		strings.HasPrefix(string(id), cognitionObligationEdgePrefix)
 }

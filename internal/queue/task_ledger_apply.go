@@ -139,7 +139,9 @@ func applyTaskCommandWithBoundaryTx(
 	if result.RowsAffected() != 1 {
 		return taskstate.Event{}, fmt.Errorf("%w: task ledger %q version changed during command %q", taskstate.ErrVersionConflict, header.ID, descriptor.ID)
 	}
-	if err := persistTaskLedgerMutation(ctx, tx, header.ID, jobID, event, state); err != nil {
+	if err := persistTaskLedgerMutation(
+		ctx, tx, header.ID, jobID, observedGeneration, event, state,
+	); err != nil {
 		return taskstate.Event{}, err
 	}
 	payload, err := json.Marshal(event)

@@ -20,7 +20,11 @@ const (
 	claimStatusUnsupported = "unsupported"
 )
 
-func (r *Repository) WriteClaims(ctx context.Context, claims []model.ClaimRecord) ([]model.ClaimRecord, error) {
+func (r *Repository) WriteClaims(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	claims []model.ClaimRecord,
+) ([]model.ClaimRecord, error) {
 	if len(claims) == 0 {
 		return []model.ClaimRecord{}, nil
 	}
@@ -34,8 +38,13 @@ func (r *Repository) WriteClaims(ctx context.Context, claims []model.ClaimRecord
 	defer tx.Rollback(ctx)
 
 	jobID, stepID := claims[0].JobID, claims[0].StepID
-	if err := requireRunningCurrentStepTx(ctx, tx, jobID, stepID); err != nil {
+	if jobID != authority.JobID || stepID != authority.StepID {
+		return nil, staleStepAttemptError(authority, "claim batch owner disagrees with attempt", nil)
+	}
+	if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority); err != nil {
 		return nil, err
+	} else if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return nil, staleStepAttemptError(authority, "claim writer is not running", nil)
 	}
 	saved := make([]model.ClaimRecord, 0, len(claims))
 	for _, claim := range claims {
@@ -53,7 +62,7 @@ func (r *Repository) WriteClaims(ctx context.Context, claims []model.ClaimRecord
 			&claim.ID, &claim.CreatedAt,
 		); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, fmt.Errorf("%w: claim step %d is no longer current", ErrStaleJobGeneration, stepID)
+				return nil, staleStepAttemptError(authority, "claim target lost current authority", nil)
 			}
 			return nil, err
 		}
@@ -65,7 +74,11 @@ func (r *Repository) WriteClaims(ctx context.Context, claims []model.ClaimRecord
 	return saved, nil
 }
 
-func (r *Repository) WriteClaimSupports(ctx context.Context, supports []model.ClaimSupportRecord) error {
+func (r *Repository) WriteClaimSupports(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	supports []model.ClaimSupportRecord,
+) error {
 	if len(supports) == 0 {
 		return nil
 	}
@@ -82,8 +95,13 @@ func (r *Repository) WriteClaimSupports(ctx context.Context, supports []model.Cl
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`, jobID); err != nil {
+	if jobID != authority.JobID {
+		return staleStepAttemptError(authority, "claim-support batch owner disagrees with attempt", nil)
+	}
+	if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority); err != nil {
 		return err
+	} else if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return staleStepAttemptError(authority, "claim-support writer is not running", nil)
 	}
 	for _, support := range supports {
 		var id int64
@@ -98,18 +116,18 @@ func (r *Repository) WriteClaimSupports(ctx context.Context, supports []model.Cl
 			JOIN evidence ON evidence.id = $2 AND evidence.job_id = claims.job_id
 			JOIN job_steps AS evidence_steps ON evidence_steps.id = evidence.step_id
 			WHERE claims.id = $1
+			  AND claims.step_id = $6
 			  AND claim_steps.superseded_at_generation IS NULL
 			  AND claim_steps.generation = jobs.current_generation
 			  AND claim_steps.status = $5
 			  AND evidence_steps.superseded_at_generation IS NULL
 			RETURNING claim_support.id
 		`, support.ClaimID, support.EvidenceID, support.SupportScore, support.Rationale,
-			model.StepStatusRunning).Scan(&id); err != nil {
+			model.StepStatusRunning, authority.StepID).Scan(&id); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return fmt.Errorf(
-					"%w: claim %d or evidence %d is not current for job %d",
-					ErrStaleJobGeneration, support.ClaimID, support.EvidenceID, jobID,
-				)
+				return staleStepAttemptError(authority, fmt.Sprintf(
+					"claim %d or evidence %d lost current authority", support.ClaimID, support.EvidenceID,
+				), nil)
 			}
 			return err
 		}

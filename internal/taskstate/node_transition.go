@@ -2,6 +2,22 @@ package taskstate
 
 import "fmt"
 
+func validateTerminalNodeFailure(node Node, reason string, proof Ref) error {
+	if terminalNode(node.Status) {
+		return fmt.Errorf("%w: terminal node %q cannot fail again", ErrInvalidTransition, node.ID)
+	}
+	if err := requireExactText(reason, "terminal failure reason"); err != nil {
+		return err
+	}
+	if err := ValidateRef(proof); err != nil {
+		return fmt.Errorf("%w: terminal failure proof: %v", ErrInvalidCommand, err)
+	}
+	if proof.Relation != RefVerifies {
+		return fmt.Errorf("%w: terminal failure proof must verify the transition", ErrInvalidCommand)
+	}
+	return nil
+}
+
 func validateNodeTransition(node Node, command TransitionNodeCommand) error {
 	if terminalNode(node.Status) {
 		return fmt.Errorf("%w: terminal node %q cannot reopen", ErrInvalidTransition, node.ID)
@@ -67,7 +83,10 @@ func (command CloseLedgerCommand) decide(ledger *Ledger) (Event, error) {
 		return Event{}, err
 	}
 	if command.Status == LedgerClosed {
-		for _, node := range ledger.nodes {
+		for id, node := range ledger.nodes {
+			if ledger.nodeSuperseded(id) {
+				continue
+			}
 			if node.Status != NodeDone {
 				return Event{}, fmt.Errorf("%w: successful close requires every node to be done; node %q is %q", ErrInvalidState, node.ID, node.Status)
 			}

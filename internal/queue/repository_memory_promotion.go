@@ -31,27 +31,36 @@ func (r *Repository) PromoteCurrentMemoryCandidate(
 	ctx context.Context,
 	request MemoryCandidatePromotion,
 ) (model.MemoryCandidatePromotionResult, error) {
-	return r.promoteMemoryCandidate(ctx, request, promotionCurrent)
+	return r.promoteMemoryCandidate(ctx, request, promotionCurrent, nil)
+}
+
+func (r *Repository) PromoteCurrentMemoryCandidateByStepAttempt(
+	ctx context.Context,
+	stepAuthority model.StepAttemptAuthority,
+	request MemoryCandidatePromotion,
+) (model.MemoryCandidatePromotionResult, error) {
+	return r.promoteMemoryCandidate(ctx, request, promotionCurrent, &stepAuthority)
 }
 
 func (r *Repository) PromoteHistoricalMemoryCandidate(
 	ctx context.Context,
 	request MemoryCandidatePromotion,
 ) (model.MemoryCandidatePromotionResult, error) {
-	return r.promoteMemoryCandidate(ctx, request, promotionHistorical)
+	return r.promoteMemoryCandidate(ctx, request, promotionHistorical, nil)
 }
 
 func (r *Repository) PromoteGlobalMemoryCandidate(
 	ctx context.Context,
 	request MemoryCandidatePromotion,
 ) (model.MemoryCandidatePromotionResult, error) {
-	return r.promoteMemoryCandidate(ctx, request, promotionGlobal)
+	return r.promoteMemoryCandidate(ctx, request, promotionGlobal, nil)
 }
 
 func (r *Repository) promoteMemoryCandidate(
 	ctx context.Context,
 	request MemoryCandidatePromotion,
 	authority memoryPromotionAuthority,
+	stepAuthority *model.StepAttemptAuthority,
 ) (model.MemoryCandidatePromotionResult, error) {
 	if err := validateMemoryCandidatePromotion(request, authority); err != nil {
 		return model.MemoryCandidatePromotionResult{}, err
@@ -61,6 +70,17 @@ func (r *Repository) promoteMemoryCandidate(
 		return model.MemoryCandidatePromotionResult{}, err
 	}
 	defer tx.Rollback(ctx)
+	if stepAuthority != nil {
+		if authority != promotionCurrent || request.Candidate.JobID != stepAuthority.JobID ||
+			request.Candidate.Generation == nil || *request.Candidate.Generation != stepAuthority.Generation {
+			return model.MemoryCandidatePromotionResult{}, staleStepAttemptError(*stepAuthority, "memory candidate owner disagrees with attempt", nil)
+		}
+		if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, *stepAuthority); err != nil {
+			return model.MemoryCandidatePromotionResult{}, err
+		} else if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+			return model.MemoryCandidatePromotionResult{}, staleStepAttemptError(*stepAuthority, "memory promotion writer is not running", nil)
+		}
+	}
 
 	if err := lockMemoryPromotionAuthorityTx(ctx, tx, request.Candidate, authority); err != nil {
 		return model.MemoryCandidatePromotionResult{}, err

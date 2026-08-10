@@ -143,7 +143,7 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 			return fmt.Errorf("repository verification %q has invalid structured proof: %w", label, proofErr)
 		}
 		session.runtime.svc.emitStepEvent(
-			session.runtime.claim.Step.ID,
+			session.runtime.claim.Authority,
 			"repository_verification_command_passed",
 			fmt.Sprintf("scope=%s command=%s", scope, directCodingEventToken(label, "unknown")),
 		)
@@ -160,7 +160,7 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 		return fmt.Errorf("record accepted repository verification plan: %w", err)
 	}
 	session.runtime.svc.emitStepEvent(
-		session.runtime.claim.Step.ID,
+		session.runtime.claim.Authority,
 		repositoryVerificationAcceptanceEvent(scope),
 		fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
 	)

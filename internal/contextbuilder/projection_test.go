@@ -58,6 +58,34 @@ func TestProjectionRecordsSelectedAndOmittedSourceFreshness(t *testing.T) {
 	}
 }
 
+func TestProjectionBindsExactSelectedSourceLineage(t *testing.T) {
+	t.Parallel()
+	set := testWorkingSet(t, workingset.Budget{MaxItems: 2, MaxBytes: 2048})
+	item := acquireContextItem(t, set, "fact", workingset.RoleFact, 90, "a")
+	material := contextMaterial(item, taskstate.AuthorityAcceptedModelDecision, "accepted compact fact")
+	source := taskstate.Ref{
+		URI: "cognition:episode/e1/observation/o1", Version: "3",
+		Hash: strings.Repeat("a", 64), Relation: taskstate.RefEvidence,
+	}
+	material.SourceRefs = []taskstate.Ref{source}
+	spec := testSpec()
+	spec.Required = []Selector{{ID: "fact", Role: workingset.RoleFact, MinItems: 1, MaxItems: 1}}
+	projection, err := Build(BuildInput{WorkID: "lineage", Spec: spec, WorkingSet: set, Materials: []Material{material}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	material.SourceRefs[0].Hash = strings.Repeat("b", 64)
+	if len(projection.Selected) != 1 || len(projection.Selected[0].SourceRefs) != 1 ||
+		projection.Selected[0].SourceRefs[0] != source {
+		t.Fatalf("selected source lineage = %#v", projection.Selected)
+	}
+	projection.Selected[0].SourceRefs = nil
+	projection.ID = mustProjectionID(t, projection)
+	if err := projection.Validate(); !errors.Is(err, ErrInvalidProjection) {
+		t.Fatalf("nil source lineage error = %v", err)
+	}
+}
+
 func TestProjectionRejectsContradictoryOmissionFreshness(t *testing.T) {
 	t.Parallel()
 	projection := testProjection(t)

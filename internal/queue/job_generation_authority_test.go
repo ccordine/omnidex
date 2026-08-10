@@ -13,33 +13,33 @@ import (
 func TestGenerationSensitiveWritersRequireCurrentAuthority(t *testing.T) {
 	cases := map[string][]string{
 		"repository_current_records.go": {
-			"requireRunningCurrentStepTx",
-			"steps.generation=jobs.current_generation",
+			"requireActiveStepAttemptTx",
+			"steps.current_attempt=$8",
 		},
 		"repository_steps.go": {
-			"lockCurrentGenerationStep",
+			"lockStepAttemptAuthorityTx",
 			"superseded_at_generation IS NULL",
 		},
 		"repository_step_input.go": {
-			"lockCurrentGenerationStepByID",
+			"requireActiveStepAttemptTx",
 			"job_steps.superseded_at_generation IS NULL",
 			"job_steps.generation = jobs.current_generation",
 		},
 		"repository_step_output.go": {
-			"lockCurrentGenerationStepByID",
+			"requireActiveStepAttemptTx",
 			"superseded_at_generation IS NULL",
 		},
 		"repository_step_context.go": {
-			"requireRunningCurrentStepTx",
+			"requireActiveStepAttemptTx",
 			"steps.generation=jobs.current_generation",
 		},
-		"repository_stale_leases.go": {
-			"ErrStepLeaseRequired",
-			"steps.superseded_at_generation IS NULL",
-			"steps.generation=jobs.current_generation",
+		"step_attempt_authority.go": {
+			"ErrStaleStepAttempt",
+			"currentAttempt != authority.Attempt",
+			"attemptWorker != authority.WorkerID",
 		},
 		"repository_claim_writes.go": {
-			"requireRunningCurrentStepTx",
+			"requireActiveStepAttemptTx",
 			"claim_steps.generation = jobs.current_generation",
 			"evidence_steps.superseded_at_generation IS NULL",
 		},

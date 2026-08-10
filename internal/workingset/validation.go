@@ -2,6 +2,7 @@ package workingset
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -74,10 +75,26 @@ func validateAcquire(request AcquireRequest) error {
 	return validateAcquisition(request.Acquisition)
 }
 
+func validateReacquire(request ReacquireRequest) error {
+	if err := requireExactIdentity(string(request.ItemID), "item ID", ErrInvalidItem); err != nil {
+		return err
+	}
+	if err := validateReference(request.Ref); err != nil {
+		return err
+	}
+	if err := validateMembership(request.Scope, request.Retention); err != nil {
+		return err
+	}
+	if request.ExpectedReacquisitionCount >= uint64(math.MaxInt64) {
+		return fmt.Errorf("%w: reacquisition count exceeds PostgreSQL BIGINT", ErrInvalidItem)
+	}
+	return requireExact(request.Reason, "reacquisition reason", ErrInvalidItem)
+}
+
 func validateRole(role Role) error {
 	switch role {
 	case RoleUserAuthority, RoleGoal, RoleObjective, RoleTask, RoleAcceptanceCriterion,
-		RoleConstraint, RoleDecision, RoleInvariant, RoleFailure, RoleQuestion, RoleEvidence,
+		RoleConstraint, RoleFact, RoleHypothesis, RoleDecision, RoleInvariant, RoleFailure, RoleQuestion, RoleEvidence,
 		RoleRepositoryEvidence, RoleDependency, RoleVerification, RoleHistorical:
 		return nil
 	default:

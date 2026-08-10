@@ -17,6 +17,7 @@ const (
 	eventFieldVerificationRefs
 	eventFieldLedgerStatus
 	eventFieldReason
+	eventFieldGenerations
 )
 
 // ValidateEventProjection validates the complete stateless event contract shared by
@@ -66,7 +67,13 @@ func validateEventPayload(event Event) (eventProjectionField, error) {
 		if event.Authority != AuthorityCode && event.Authority != AuthorityUser {
 			return 0, invalidEvent("entry rejection requires code or user authority")
 		}
-		return eventFieldEntryID | eventFieldReason, requireEventEntryAndReason(event)
+		if err := requireEventEntryAndReason(event); err != nil {
+			return 0, err
+		}
+		if err := validateRefs(event.VerificationRefs); err != nil {
+			return 0, invalidEvent("entry rejection evidence is invalid: %v", err)
+		}
+		return eventFieldEntryID | eventFieldVerificationRefs | eventFieldReason, nil
 	case EventEntryResolved:
 		if event.Authority != AuthorityCode {
 			return 0, invalidEvent("entry resolution requires code authority")
@@ -105,11 +112,38 @@ func validateEventPayload(event Event) (eventProjectionField, error) {
 	case EventNodeTransitioned:
 		return eventFieldNodeID | eventFieldStatuses | eventFieldStep |
 			eventFieldVerificationRefs | eventFieldReason, validateProjectedNodeTransition(event)
+	case EventNodeGenerationSuperseded:
+		return eventFieldNodeIDs | eventFieldGenerations | eventFieldReason,
+			validateProjectedNodeGenerationSupersession(event)
 	case EventLedgerClosed:
 		return eventFieldLedgerStatus | eventFieldStep | eventFieldReason, validateProjectedLedgerClose(event)
 	default:
 		return 0, invalidEvent("event kind %q is not registered", event.Kind)
 	}
+}
+
+func validateProjectedNodeGenerationSupersession(event Event) error {
+	if event.Authority != AuthorityCode || len(event.NodeIDs) == 0 {
+		return invalidEvent("node-generation supersession requires code authority and nodes")
+	}
+	if err := validateGenerationSuccessor(event.RetiringGeneration, event.SupersededAtGeneration); err != nil {
+		return invalidEvent("%v", err)
+	}
+	if event.Reason == "" {
+		return invalidEvent("node-generation supersession requires a reason")
+	}
+	seen := make(map[NodeID]struct{}, len(event.NodeIDs))
+	previous := NodeID("")
+	for index, id := range event.NodeIDs {
+		if err := requireExactText(string(id), "superseded node ID"); err != nil {
+			return invalidEvent("%v", err)
+		}
+		if _, duplicate := seen[id]; duplicate || (index > 0 && id <= previous) {
+			return invalidEvent("superseded node IDs must be unique and sorted")
+		}
+		seen[id], previous = struct{}{}, id
+	}
+	return nil
 }
 
 func invalidEvent(format string, values ...any) error {

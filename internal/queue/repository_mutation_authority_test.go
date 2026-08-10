@@ -142,7 +142,7 @@ func repositoryMutationTestCommand(
 	patch := "diff --git a/value.go b/value.go\n--- a/value.go\n+++ b/value.go\n@@ -1 +1 @@\n-" +
 		"return one\n+" + replacement + "\n"
 	return RepositoryMutationCommand{
-		JobID: jobID, StepID: stepID, Generation: generation, WorkerID: workerID,
+		JobID: jobID, StepID: stepID, Generation: generation, Attempt: 1, WorkerID: workerID,
 		ContractID:       "change_contract_" + repositoryMutationDigest("contract"),
 		StageID:          "repository_change_stage_" + repositoryMutationDigest(patch),
 		SourceSnapshotID: "snapshot_" + repositoryMutationDigest("snapshot"),

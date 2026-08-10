@@ -113,6 +113,14 @@ func openIsolatedMigrationPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := admin.Exec(ctx, `
+		CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+		CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+		CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+	`); err != nil {
+		admin.Close()
+		t.Fatalf("install isolated migration test extensions: %v", err)
+	}
 	schema := fmt.Sprintf("file_migrations_%d", time.Now().UnixNano())
 	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
 		admin.Close()
@@ -125,7 +133,7 @@ func openIsolatedMigrationPool(t *testing.T) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	config.MaxConns = 4
-	config.ConnConfig.RuntimeParams["search_path"] = schema
+	config.ConnConfig.RuntimeParams["search_path"] = schema + ",public"
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		admin.Close()
@@ -154,7 +162,11 @@ func assertMigrationRelationExists(t *testing.T, pool *pgxpool.Pool, name string
 	t.Helper()
 	var exists bool
 	if err := pool.QueryRow(context.Background(), `
-		SELECT to_regclass($1) IS NOT NULL
+		SELECT EXISTS (
+			SELECT 1 FROM pg_class relations
+			JOIN pg_namespace namespaces ON namespaces.oid=relations.relnamespace
+			WHERE namespaces.nspname=current_schema() AND relations.relname=$1
+		)
 	`, name).Scan(&exists); err != nil {
 		t.Fatal(err)
 	}

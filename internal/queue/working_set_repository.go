@@ -13,10 +13,10 @@ import (
 
 func (r *Repository) CreateCurrentWorkingSet(
 	ctx context.Context,
-	jobID, observedGeneration int64,
+	authority model.StepAttemptAuthority,
 	budget workingset.Budget,
 ) (workingset.Snapshot, error) {
-	if err := validateWorkingSetRequest(r, ctx, jobID, observedGeneration); err != nil {
+	if err := validateWorkingSetRequest(r, ctx, authority.JobID, authority.Generation); err != nil {
 		return workingset.Snapshot{}, err
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -24,15 +24,22 @@ func (r *Repository) CreateCurrentWorkingSet(
 		return workingset.Snapshot{}, fmt.Errorf("begin working-set creation: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	header, err := loadTaskLedgerHeaderTx(ctx, tx, jobID, true)
+	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
 	if err != nil {
 		return workingset.Snapshot{}, err
 	}
-	if err := requireCurrentWorkingSetAuthority(header, observedGeneration); err != nil {
+	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return workingset.Snapshot{}, staleStepAttemptError(authority, "working-set creator is not running", nil)
+	}
+	header, err := loadTaskLedgerHeaderTx(ctx, tx, authority.JobID, false)
+	if err != nil {
+		return workingset.Snapshot{}, err
+	}
+	if err := requireCurrentWorkingSetAuthority(header, authority.Generation); err != nil {
 		return workingset.Snapshot{}, err
 	}
 	owner := workingset.Owner{
-		LedgerID: header.ID, JobID: jobID, Generation: observedGeneration,
+		LedgerID: header.ID, JobID: authority.JobID, Generation: authority.Generation,
 	}
 	set, err := workingset.New(owner, budget)
 	if err != nil {
@@ -44,12 +51,12 @@ func (r *Repository) CreateCurrentWorkingSet(
 		SELECT EXISTS (
 			SELECT 1 FROM working_sets WHERE job_id=$1 AND generation=$2
 		)
-	`, jobID, observedGeneration).Scan(&exists); err != nil {
-		return workingset.Snapshot{}, fmt.Errorf("check working set for job %d: %w", jobID, err)
+	`, authority.JobID, authority.Generation).Scan(&exists); err != nil {
+		return workingset.Snapshot{}, fmt.Errorf("check working set for job %d: %w", authority.JobID, err)
 	}
 	if exists {
 		return workingset.Snapshot{}, fmt.Errorf(
-			"%w: job %d generation %d", ErrWorkingSetExists, jobID, observedGeneration,
+			"%w: job %d generation %d", ErrWorkingSetExists, authority.JobID, authority.Generation,
 		)
 	}
 	if _, err := tx.Exec(ctx, `
@@ -58,7 +65,7 @@ func (r *Repository) CreateCurrentWorkingSet(
 			max_items, max_bytes, max_pinned_items, max_pinned_bytes,
 			status, version, clock, closed_tick, close_reason
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-	`, snapshot.ID, snapshot.Owner.LedgerID, jobID, observedGeneration,
+	`, snapshot.ID, snapshot.Owner.LedgerID, authority.JobID, authority.Generation,
 		snapshot.Scope.Kind, snapshot.Scope.ID, snapshot.Budget.MaxItems, snapshot.Budget.MaxBytes,
 		snapshot.Budget.MaxPinnedItems, snapshot.Budget.MaxPinnedBytes,
 		snapshot.Status, int64(snapshot.Version), int64(snapshot.Clock), int64(snapshot.ClosedTick), snapshot.CloseReason,

@@ -24,6 +24,7 @@ func TestPostgresTerminalJobAndTaskLedgerCommitTogether(t *testing.T) {
 			transition: func(_ int64, stepID int64) error {
 				return repository.CompleteStep(ctx, CompleteStepCommand{
 					OperationID: testLifecycleOperationID(t, "terminal-complete", stepID),
+					Authority:   stepAttemptAuthorityForTest(t, repository, stepID),
 					StepID:      stepID, Output: "complete",
 				})
 			},
@@ -33,6 +34,7 @@ func TestPostgresTerminalJobAndTaskLedgerCommitTogether(t *testing.T) {
 			transition: func(_ int64, stepID int64) error {
 				return repository.FailStep(ctx, FailStepCommand{
 					OperationID: testLifecycleOperationID(t, "terminal-fail", stepID),
+					Authority:   stepAttemptAuthorityForTest(t, repository, stepID),
 					StepID:      stepID, Error: "explicit test failure",
 				})
 			},
@@ -49,7 +51,9 @@ func TestPostgresTerminalJobAndTaskLedgerCommitTogether(t *testing.T) {
 		{
 			name: "feedback completed", jobStatus: model.JobStatusCompleted, ledger: taskstate.LedgerClosed, root: taskstate.NodeDone,
 			transition: func(jobID int64, stepID int64) error {
-				if err := repository.PauseStepForInput(ctx, stepID, "waiting", "Continue?", nil); err != nil {
+				if err := repository.PauseStepForInput(
+					ctx, stepAttemptAuthorityForTest(t, repository, stepID), "waiting", "Continue?", nil,
+				); err != nil {
 					return err
 				}
 				_, err := repository.SubmitJobFeedback(ctx, SubmitJobFeedbackCommand{
@@ -112,6 +116,7 @@ func TestPostgresSuccessfulJobCompletionRollsBackWhenTaskLedgerIsIncomplete(t *t
 	}
 	if err := repository.CompleteStep(ctx, CompleteStepCommand{
 		OperationID: testLifecycleOperationID(t, "incomplete-rollback", claimed.Step.ID),
+		Authority:   claimed.Authority,
 		StepID:      claimed.Step.ID, Output: "must roll back",
 	}); !errors.Is(err, taskstate.ErrInvalidState) {
 		t.Fatalf("incomplete-ledger completion error=%v", err)

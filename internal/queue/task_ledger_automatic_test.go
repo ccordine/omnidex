@@ -40,6 +40,7 @@ func TestPostgresJobLifecycleAutomaticallyRecordsRootTaskAuthority(t *testing.T)
 
 	if err := repository.CompleteStep(ctx, CompleteStepCommand{
 		OperationID: testLifecycleOperationID(t, "automatic-complete", claimed.Step.ID),
+		Authority:   claimed.Authority,
 		StepID:      claimed.Step.ID, Output: "verified completion",
 	}); err != nil {
 		t.Fatal(err)

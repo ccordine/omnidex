@@ -5,13 +5,14 @@ import (
 )
 
 type MaterializedState struct {
-	ID      LedgerID     `json:"id"`
-	Owner   LedgerOwner  `json:"owner"`
-	Version uint64       `json:"version"`
-	Status  LedgerStatus `json:"status"`
-	Nodes   []Node       `json:"nodes"`
-	Edges   []Edge       `json:"edges"`
-	Entries []Entry      `json:"entries"`
+	ID                LedgerID                     `json:"id"`
+	Owner             LedgerOwner                  `json:"owner"`
+	Version           uint64                       `json:"version"`
+	Status            LedgerStatus                 `json:"status"`
+	Nodes             []Node                       `json:"nodes"`
+	Edges             []Edge                       `json:"edges"`
+	Entries           []Entry                      `json:"entries"`
+	NodeSupersessions []NodeGenerationSupersession `json:"node_supersessions"`
 }
 
 func (ledger *Ledger) ID() LedgerID {
@@ -94,6 +95,26 @@ func (ledger *Ledger) Entries() []Entry {
 	return entries
 }
 
+func (ledger *Ledger) NodeSupersessions() []NodeGenerationSupersession {
+	if ledger == nil {
+		return nil
+	}
+	values := make([]NodeGenerationSupersession, 0, len(ledger.nodeSupersessions))
+	for _, value := range ledger.nodeSupersessions {
+		values = append(values, value)
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i].NodeID < values[j].NodeID })
+	return values
+}
+
+func (ledger *Ledger) NodeSupersession(id NodeID) (NodeGenerationSupersession, bool) {
+	if ledger == nil {
+		return NodeGenerationSupersession{}, false
+	}
+	value, ok := ledger.nodeSupersessions[id]
+	return value, ok
+}
+
 func (ledger *Ledger) Events() []Event {
 	if ledger == nil {
 		return nil
@@ -112,6 +133,7 @@ func (ledger *Ledger) MaterializedState() MaterializedState {
 	return MaterializedState{
 		ID: ledger.id, Owner: ledger.owner, Version: ledger.version, Status: ledger.status,
 		Nodes: ledger.Nodes(), Edges: ledger.Edges(), Entries: ledger.Entries(),
+		NodeSupersessions: ledger.NodeSupersessions(),
 	}
 }
 
@@ -121,7 +143,8 @@ func (ledger *Ledger) NextRunnableNode() (Node, bool) {
 	}
 	ready := make([]Node, 0)
 	for _, node := range ledger.nodes {
-		if node.Status == NodeReady && executableNode(node.Kind) {
+		_, superseded := ledger.nodeSupersessions[node.ID]
+		if !superseded && node.Status == NodeReady && executableNode(node.Kind) {
 			ready = append(ready, node)
 		}
 	}

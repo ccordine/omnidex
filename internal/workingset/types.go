@@ -64,6 +64,8 @@ const (
 	RoleTask                Role = "task"
 	RoleAcceptanceCriterion Role = "acceptance_criterion"
 	RoleConstraint          Role = "constraint"
+	RoleFact                Role = "fact"
+	RoleHypothesis          Role = "hypothesis"
 	RoleDecision            Role = "decision"
 	RoleInvariant           Role = "invariant"
 	RoleFailure             Role = "failure"
@@ -110,20 +112,21 @@ type Membership struct {
 }
 
 type Item struct {
-	ID                ItemID       `json:"id"`
-	Ref               Ref          `json:"ref"`
-	Role              Role         `json:"role"`
-	Retention         Retention    `json:"retention"`
-	Priority          int          `json:"priority"`
-	State             ItemState    `json:"state"`
-	ByteCost          int          `json:"byte_cost"`
-	Acquisition       Acquisition  `json:"acquisition"`
-	Memberships       []Membership `json:"memberships"`
-	UseCount          uint64       `json:"use_count"`
-	CreatedTick       uint64       `json:"created_tick"`
-	LastUsedTick      uint64       `json:"last_used_tick"`
-	ReleasedTick      uint64       `json:"released_tick,omitempty"`
-	DispositionReason string       `json:"disposition_reason,omitempty"`
+	ID                 ItemID       `json:"id"`
+	Ref                Ref          `json:"ref"`
+	Role               Role         `json:"role"`
+	Retention          Retention    `json:"retention"`
+	Priority           int          `json:"priority"`
+	State              ItemState    `json:"state"`
+	ByteCost           int          `json:"byte_cost"`
+	Acquisition        Acquisition  `json:"acquisition"`
+	Memberships        []Membership `json:"memberships"`
+	UseCount           uint64       `json:"use_count"`
+	ReacquisitionCount uint64       `json:"reacquisition_count"`
+	CreatedTick        uint64       `json:"created_tick"`
+	LastUsedTick       uint64       `json:"last_used_tick"`
+	ReleasedTick       uint64       `json:"released_tick,omitempty"`
+	DispositionReason  string       `json:"disposition_reason,omitempty"`
 }
 
 func (item Item) SourceHash() string { return item.Ref.Hash }
@@ -154,6 +157,20 @@ type AcquireRequest struct {
 }
 
 type AcquireResult struct {
+	Item    Item
+	Evicted []Item
+}
+
+type ReacquireRequest struct {
+	ItemID                     ItemID    `json:"item_id"`
+	Ref                        Ref       `json:"ref"`
+	Scope                      Scope     `json:"scope"`
+	Retention                  Retention `json:"retention"`
+	ExpectedReacquisitionCount uint64    `json:"expected_reacquisition_count"`
+	Reason                     string    `json:"reason"`
+}
+
+type ReacquireResult struct {
 	Item    Item
 	Evicted []Item
 }

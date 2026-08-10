@@ -42,12 +42,12 @@ func (runtime *nativeRuntimeV3) reconcileCurrentRepositoryMutation(root string) 
 		return fmt.Errorf("load repository mutation recovery source: %w", err)
 	}
 	runtime.svc.emitStepEvent(
-		step.ID, "repository_mutation_recovery_started",
+		runtime.claim.Authority, "repository_mutation_recovery_started",
 		fmt.Sprintf("stage=%s snapshot=%s", command.StageID, source.ID),
 	)
 	var applyResult omni.PatchApplyResult
 	err = runtime.svc.repo.ApplyRepositoryMutation(
-		runtime.ctx, *command,
+		runtime.ctx, runtime.claim.Authority, *command,
 		exactRepositoryMutationClassifier(root, source),
 		func(ctx context.Context) error {
 			var applyErr error
@@ -64,7 +64,7 @@ func (runtime *nativeRuntimeV3) reconcileCurrentRepositoryMutation(root string) 
 		return fmt.Errorf("reconcile durable repository mutation: %w", err)
 	}
 	runtime.svc.emitStepEvent(
-		step.ID, "repository_mutation_recovered",
+		runtime.claim.Authority, "repository_mutation_recovered",
 		fmt.Sprintf("stage=%s snapshot=%s", command.StageID, source.ID),
 	)
 	return nil
@@ -79,14 +79,17 @@ func requireCurrentRepositoryMutationRecoveryClaim(
 	}
 	if claim.Job.ID <= 0 || claim.Job.CurrentGeneration <= 0 ||
 		claim.Step.ID <= 0 || claim.Step.WorkerID == "" ||
+		claim.Authority.JobID != claim.Job.ID ||
+		claim.Authority.Generation != claim.Job.CurrentGeneration ||
+		claim.Authority.StepID != claim.Step.ID || claim.Authority.Attempt <= 0 ||
+		claim.Authority.WorkerID != claim.Step.WorkerID ||
 		claim.Step.JobID != claim.Job.ID ||
 		claim.Step.Generation != claim.Job.CurrentGeneration {
 		return fmt.Errorf("repository mutation recovery active queue claim is incomplete or stale")
 	}
 	if command.JobID != claim.Job.ID ||
 		command.Generation != claim.Job.CurrentGeneration ||
-		command.StepID != claim.Step.ID ||
-		command.WorkerID != claim.Step.WorkerID {
+		command.StepID != claim.Step.ID {
 		return fmt.Errorf(
 			"repository mutation recovery command does not match the active queue claim",
 		)

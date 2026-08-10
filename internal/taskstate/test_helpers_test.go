@@ -46,6 +46,12 @@ func withTestCommandID(t *testing.T, command Command) Command {
 	case TransitionNodeCommand:
 		value.CommandID = id
 		return value
+	case TerminalFailNodeCommand:
+		value.CommandID = id
+		return value
+	case SupersedeNodeGenerationCommand:
+		value.CommandID = id
+		return value
 	case CloseLedgerCommand:
 		value.CommandID = id
 		return value

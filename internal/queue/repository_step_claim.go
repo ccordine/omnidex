@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -26,6 +27,10 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+	var databaseNow time.Time
+	if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&databaseNow); err != nil {
+		return nil, fmt.Errorf("read database claim clock: %w", err)
+	}
 
 	var candidateJobID int64
 	err = tx.QueryRow(ctx, `
@@ -34,21 +39,34 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		WHERE jobs.status IN ($1, $2)
 		  AND EXISTS (
 		      SELECT 1 FROM job_steps AS candidate
-		      WHERE candidate.job_id=jobs.id AND candidate.status=$3
+		      WHERE candidate.job_id=jobs.id
 		        AND candidate.superseded_at_generation IS NULL
 		        AND candidate.generation=jobs.current_generation
+		        AND (
+		            (candidate.status=$3 AND candidate.current_attempt=0) OR
+		            (candidate.status=$4 AND EXISTS (
+		                SELECT 1 FROM job_step_attempts AS attempts
+		                WHERE attempts.job_id=candidate.job_id
+		                  AND attempts.generation=candidate.generation
+		                  AND attempts.step_id=candidate.id
+		                  AND attempts.attempt=candidate.current_attempt
+		                  AND attempts.status=$5
+		                  AND attempts.expires_at<=$6
+		            ))
+		        )
 		        AND NOT EXISTS (
 		            SELECT 1 FROM job_steps AS predecessor
 		            WHERE predecessor.job_id=candidate.job_id
 		              AND predecessor.superseded_at_generation IS NULL
 		              AND predecessor.sort_index<candidate.sort_index
-		              AND predecessor.status<>$4
+		              AND predecessor.status<>$7
 		        )
 		  )
 		ORDER BY jobs.id ASC
 		FOR UPDATE OF jobs SKIP LOCKED
 		LIMIT 1
 	`, model.JobStatusPending, model.JobStatusRunning, model.StepStatusPending,
+		model.StepStatusRunning, model.StepAttemptActive, databaseNow,
 		model.StepStatusCompleted).Scan(&candidateJobID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -66,22 +84,35 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 			j.created_at, j.updated_at, j.completed_at
 		FROM job_steps AS s
 		JOIN jobs AS j ON j.id=s.job_id
-		WHERE s.job_id=$1 AND s.status=$2
+		WHERE s.job_id=$1
 		  AND s.superseded_at_generation IS NULL
 		  AND s.generation=j.current_generation
-		  AND j.status IN ($3, $4)
+		  AND j.status IN ($2, $3)
+		  AND (
+		      (s.status=$4 AND s.current_attempt=0) OR
+		      (s.status=$5 AND EXISTS (
+		          SELECT 1 FROM job_step_attempts AS attempts
+		          WHERE attempts.job_id=s.job_id
+		            AND attempts.generation=s.generation
+		            AND attempts.step_id=s.id
+		            AND attempts.attempt=s.current_attempt
+		            AND attempts.status=$6
+		            AND attempts.expires_at<=$7
+		      ))
+		  )
 		  AND NOT EXISTS (
 		      SELECT 1 FROM job_steps AS predecessor
 		      WHERE predecessor.job_id=s.job_id
 		        AND predecessor.superseded_at_generation IS NULL
 		        AND predecessor.sort_index<s.sort_index
-		        AND predecessor.status<>$5
+		        AND predecessor.status<>$8
 		  )
 		ORDER BY s.sort_index ASC, s.id ASC
 		FOR UPDATE OF s SKIP LOCKED
 		LIMIT 1
-	`, candidateJobID, model.StepStatusPending, model.JobStatusPending, model.JobStatusRunning,
-		model.StepStatusCompleted))
+	`, candidateJobID, model.JobStatusPending, model.JobStatusRunning,
+		model.StepStatusPending, model.StepStatusRunning, model.StepAttemptActive,
+		databaseNow, model.StepStatusCompleted))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -89,18 +120,61 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		return nil, err
 	}
 
+	var previousAttempt int64
+	if err := tx.QueryRow(ctx, `
+		SELECT current_attempt FROM job_steps WHERE id=$1 FOR UPDATE
+	`, step.ID).Scan(&previousAttempt); err != nil {
+		return nil, err
+	}
+	if step.Status == model.StepStatusPending && previousAttempt != 0 {
+		return nil, fmt.Errorf("%w: pending step %d has attempt %d", ErrStepNotWritable, step.ID, previousAttempt)
+	}
+	if step.Status == model.StepStatusRunning {
+		result, err := tx.Exec(ctx, `
+			UPDATE job_step_attempts
+			SET status=$5,finished_at=$6
+			WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND attempt=$4
+			  AND status=$7 AND expires_at<=$6
+		`, step.JobID, step.Generation, step.ID, previousAttempt,
+			model.StepAttemptExpired, databaseNow, model.StepAttemptActive)
+		if err != nil {
+			return nil, err
+		}
+		if result.RowsAffected() != 1 {
+			return nil, staleStepAttemptError(model.StepAttemptAuthority{
+				JobID: step.JobID, Generation: step.Generation, StepID: step.ID,
+				Attempt: previousAttempt, WorkerID: step.WorkerID,
+			}, "expired attempt lost reclaim authority", nil)
+		}
+	}
+	attemptNumber := previousAttempt + 1
+	var leaseExpiresAt time.Time
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO job_step_attempts (
+			job_id,generation,step_id,attempt,worker_id,claimed_at,renewed_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$6)
+		RETURNING expires_at
+	`, step.JobID, step.Generation, step.ID, attemptNumber, workerID, databaseNow).Scan(&leaseExpiresAt); err != nil {
+		return nil, fmt.Errorf("create step %d attempt %d: %w", step.ID, attemptNumber, err)
+	}
 	stepUpdate, err := tx.Exec(ctx, `
 		UPDATE job_steps
-		SET status=$2, worker_id=$3, started_at=NOW(), updated_at=NOW()
-		WHERE id=$1 AND status=$4
-	`, step.ID, model.StepStatusRunning, workerID, model.StepStatusPending)
+		SET status=$2,worker_id=$3,current_attempt=$4,
+		    started_at=COALESCE(started_at,$5),finished_at=NULL,updated_at=$5
+		WHERE id=$1 AND status=$6 AND current_attempt=$7
+	`, step.ID, model.StepStatusRunning, workerID, attemptNumber, databaseNow,
+		step.Status, previousAttempt)
 	if err != nil {
 		return nil, err
 	}
 	if stepUpdate.RowsAffected() != 1 {
-		return nil, fmt.Errorf("%w: step %d lost pending claim authority", ErrStepNotWritable, step.ID)
+		return nil, fmt.Errorf("%w: step %d lost claim authority", ErrStepNotWritable, step.ID)
 	}
 	step.Status, step.WorkerID = model.StepStatusRunning, workerID
+	if step.StartedAt == nil {
+		startedAt := databaseNow
+		step.StartedAt = &startedAt
+	}
 	priorJobStatus := job.Status
 	jobUpdate, err := tx.Exec(ctx, `
 		UPDATE jobs SET status=$2, updated_at=NOW()
@@ -122,6 +196,7 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 	}
 	if err := recordTelemetryJobEvent(ctx, tx, job.ID, "run_running", map[string]any{
 		"job_id": job.ID, "step_id": step.ID, "action": step.Action,
+		"attempt": attemptNumber, "worker_id": workerID,
 	}); err != nil {
 		return nil, err
 	}
@@ -132,5 +207,12 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return &model.ClaimedStep{Job: job, Step: step, Contexts: contexts}, nil
+	authority := model.StepAttemptAuthority{
+		JobID: step.JobID, Generation: step.Generation, StepID: step.ID,
+		Attempt: attemptNumber, WorkerID: workerID,
+	}
+	return &model.ClaimedStep{
+		Job: job, Step: step, Authority: authority,
+		LeaseExpiresAt: leaseExpiresAt, Contexts: contexts,
+	}, nil
 }

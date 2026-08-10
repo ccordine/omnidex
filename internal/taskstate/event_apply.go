@@ -37,6 +37,8 @@ func (ledger *Ledger) applyEvent(event Event) error {
 		err = ledger.applyNodeStepAssigned(event)
 	case EventNodeTransitioned:
 		err = ledger.applyNodeTransitioned(event)
+	case EventNodeGenerationSuperseded:
+		err = ledger.applyNodeGenerationSuperseded(event)
 	case EventLedgerClosed:
 		err = ledger.applyLedgerClosed(event)
 	default:
@@ -117,6 +119,9 @@ func (ledger *Ledger) applyEdgeAdded(event Event) error {
 	if !fromOK || !toOK || edge.From == edge.To || edge.CreatedVersion != event.Version {
 		return fmt.Errorf("edge projection has invalid endpoints or version")
 	}
+	if ledger.nodeSuperseded(edge.From) || ledger.nodeSuperseded(edge.To) {
+		return fmt.Errorf("edge endpoints must be current")
+	}
 	if ledger.semanticEdgeExists(edge.Kind, edge.From, edge.To) {
 		return fmt.Errorf("semantic edge already exists")
 	}
@@ -161,6 +166,19 @@ func (ledger *Ledger) applyEntryStatus(event Event, target EntryStatus) error {
 		if entry.Authority == AuthorityUser && event.Authority != AuthorityUser {
 			return fmt.Errorf("user-authority state requires user rejection authority")
 		}
+		if err := validateRefs(event.VerificationRefs); err != nil {
+			return err
+		}
+		if entry.Kind == EntryHypothesis && event.Authority == AuthorityCode &&
+			!hasContradictionRef(event.VerificationRefs) {
+			return fmt.Errorf("code rejection of a hypothesis requires contradiction evidence")
+		}
+		combined := append(cloneRefs(entry.Refs), event.VerificationRefs...)
+		if err := validateRefs(combined); err != nil {
+			return fmt.Errorf("rejected entry reference set is invalid: %w", err)
+		}
+		entry.Refs = combined
+		ledger.entryRefCount += len(event.VerificationRefs)
 	} else {
 		if event.Authority != AuthorityCode {
 			return fmt.Errorf("entry resolution requires code authority")

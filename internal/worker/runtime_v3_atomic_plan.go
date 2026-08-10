@@ -49,7 +49,7 @@ func (r *nativeRuntimeV3) persistV3Plan(plan artifacts.PlanArtifact) error {
 	if count == 0 {
 		filtered := filterDelegatedSubtasks(plan.Subtasks)
 		if len(filtered) > 0 {
-			if _, err := r.svc.repo.ExpandDelegatedSubtasks(r.ctx, r.claim.Job.ID, r.claim.Step.ID, filtered); err != nil {
+			if _, err := r.svc.repo.ExpandDelegatedSubtasks(r.ctx, r.claim.Authority, filtered); err != nil {
 				return err
 			}
 		}

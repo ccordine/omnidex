@@ -1,0 +1,12 @@
+./advisory.go
+./client.go
+./model_match.go
+./prepared_stream.go
+./provider_identity.go
+./resolve.go
+./advisory_test.go
+./client_test.go
+./model_match_test.go
+./prepared_stream_test.go
+./provider_identity_test.go
+./resolve_test.go

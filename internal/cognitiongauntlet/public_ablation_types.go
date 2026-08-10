@@ -1,0 +1,92 @@
+package cognitiongauntlet
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/gryph/omnidex/internal/cognition"
+	"github.com/gryph/omnidex/internal/cognitionruntime"
+	"github.com/gryph/omnidex/internal/labyrinth"
+	"github.com/gryph/omnidex/internal/llm"
+)
+
+type PublicAblationRunRequest struct {
+	Actor                   cognition.AttemptRef
+	Client                  llm.Client
+	Environment             cognition.Environment
+	Completion              cognitionruntime.CompletionEvaluator
+	ContaminatedOracle      *labyrinth.Oracle
+	EpisodeSealPath         string
+	OmnidexCommit           string
+	LedgerSchemaVersion     string
+	WorkingSetPolicyVersion string
+	ProjectionPolicyVersion string
+}
+
+type PublicAblationRunResult struct {
+	Authority PublicRunAuthority `json:"authority"`
+	Episode   SealedEpisode      `json:"episode"`
+}
+
+func (request PublicAblationRunRequest) validate(bundle PublicInferenceBundle) error {
+	if err := bundle.Validate(); err != nil {
+		return err
+	}
+	variant := bundle.Authority.Variant
+	if !executableAblation(variant) || nilRunDependency(request.Client) ||
+		nilRunDependency(request.Environment) || nilRunDependency(request.Completion) {
+		return fmt.Errorf("public cognition ablation dependencies are incomplete")
+	}
+	if err := request.Actor.Validate(); err != nil {
+		return err
+	}
+	if variant == VariantOracleEvidence {
+		if request.ContaminatedOracle == nil || request.ContaminatedOracle.Validate() != nil {
+			return fmt.Errorf("oracle-evidence ceiling requires an explicit contaminated grant")
+		}
+	} else if request.ContaminatedOracle != nil {
+		return fmt.Errorf("non-oracle ablation received private evaluator authority")
+	}
+	if request.EpisodeSealPath == "" || filepath.Clean(request.EpisodeSealPath) != request.EpisodeSealPath {
+		return fmt.Errorf("public cognition ablation episode path is inexact")
+	}
+	if _, err := os.Stat(request.EpisodeSealPath); !os.IsNotExist(err) {
+		return fmt.Errorf("public cognition ablation episode output already exists or is inaccessible")
+	}
+	if info, err := os.Stat(filepath.Dir(request.EpisodeSealPath)); err != nil || !info.IsDir() {
+		return fmt.Errorf("public cognition ablation episode directory is unavailable")
+	}
+	for label, value := range map[string]string{
+		"Task Ledger schema version":        request.LedgerSchemaVersion,
+		"Working Set policy version":        request.WorkingSetPolicyVersion,
+		"Context Projection policy version": request.ProjectionPolicyVersion,
+	} {
+		if err := requireExact(value, label, 256); err != nil {
+			return err
+		}
+	}
+	if request.OmnidexCommit != "" && !validCommitIdentity(request.OmnidexCommit) {
+		return fmt.Errorf("public cognition ablation commit is invalid")
+	}
+	return nil
+}
+
+func (result PublicAblationRunResult) Validate() error {
+	if err := result.Authority.Validate(); err != nil {
+		return err
+	}
+	if !executableAblation(result.Authority.Variant) {
+		return fmt.Errorf("public cognition ablation variant is invalid")
+	}
+	if err := result.Episode.Validate(); err != nil {
+		return err
+	}
+	want, err := result.Authority.SHA256()
+	if err != nil || result.Episode.Manifest.PublicRunAuthoritySHA256 != want ||
+		result.Episode.Manifest.Variant != result.Authority.Variant ||
+		result.Episode.Manifest.Scenario != result.Authority.Scenario {
+		return fmt.Errorf("public cognition ablation changed its sealed authority")
+	}
+	return nil
+}

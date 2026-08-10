@@ -45,7 +45,7 @@ func (session *directCodingSession) applyExistingRepositoryChangeContract(
 			},
 			mutate: func(ctx context.Context, prepared *verifiedRepositoryChangeStage) error {
 				session.runtime.svc.emitStepEvent(
-					session.runtime.claim.Step.ID, "repository_change_staged",
+					session.runtime.claim.Authority, "repository_change_staged",
 					fmt.Sprintf("contract=%s files=%d", contract.ID, len(prepared.ChangedFileIDs())),
 				)
 				mutation, mutationErr := existingRepositoryMutationCommand(
@@ -55,7 +55,7 @@ func (session *directCodingSession) applyExistingRepositoryChangeContract(
 					return mutationErr
 				}
 				return session.runtime.svc.repo.ApplyRepositoryMutation(
-					ctx, mutation,
+					ctx, session.runtime.claim.Authority, mutation,
 					exactRepositoryMutationClassifier(session.root, before.Snapshot),
 					func(applyCtx context.Context) error {
 						applyResult, applyErr := prepared.ApplyVerified(applyCtx)
@@ -111,7 +111,7 @@ func (session *directCodingSession) applyExistingRepositoryChangeContract(
 		directCodingCommandLabel(broad[0]), result.Refreshed.Snapshot.ID,
 	)
 	session.runtime.svc.emitStepEvent(
-		session.runtime.claim.Step.ID, "repository_change_completed",
+		session.runtime.claim.Authority, "repository_change_completed",
 		fmt.Sprintf("contract=%s files=%d snapshot=%s", contract.ID, len(result.ChangedFileIDs), result.Refreshed.Snapshot.ID),
 	)
 	return summary, nil
@@ -132,7 +132,11 @@ func existingRepositoryMutationCommand(
 	}
 	claim := runtime.claim
 	if claim.Job.ID <= 0 || claim.Step.ID <= 0 || claim.Step.Generation <= 0 ||
-		claim.Step.Generation != claim.Job.CurrentGeneration || claim.Step.WorkerID == "" {
+		claim.Step.Generation != claim.Job.CurrentGeneration || claim.Step.WorkerID == "" ||
+		claim.Authority.JobID != claim.Job.ID ||
+		claim.Authority.Generation != claim.Step.Generation ||
+		claim.Authority.StepID != claim.Step.ID || claim.Authority.Attempt <= 0 ||
+		claim.Authority.WorkerID != claim.Step.WorkerID {
 		return queue.RepositoryMutationCommand{}, fmt.Errorf("repository mutation claim authority is incomplete or stale")
 	}
 	files := make(map[string]repositoryfacts.File, len(snapshot.Files))
@@ -155,8 +159,9 @@ func existingRepositoryMutationCommand(
 		}
 	}
 	return queue.RepositoryMutationCommand{
-		JobID: claim.Job.ID, StepID: claim.Step.ID,
-		Generation: claim.Step.Generation, WorkerID: claim.Step.WorkerID,
+		JobID: claim.Authority.JobID, StepID: claim.Authority.StepID,
+		Generation: claim.Authority.Generation, Attempt: claim.Authority.Attempt,
+		WorkerID:   claim.Authority.WorkerID,
 		ContractID: contract.ID, StageID: stage.ID(), SourceSnapshotID: snapshot.ID,
 		Patch: stage.Patch(), PatchSHA256: stage.PatchSHA256(), ChangedFiles: changed,
 	}, nil

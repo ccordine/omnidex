@@ -23,15 +23,15 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
-		return err
-	}
-
-	jobID, err := stepJobIDTx(ctx, tx, command.StepID)
+	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
 	if err != nil {
 		return err
 	}
-	job, err := lockedJobTx(ctx, tx, jobID)
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+		return err
+	}
+	jobID := command.Authority.JobID
+	job, err := scanLockedJobTx(ctx, tx, jobID)
 	if err != nil {
 		return err
 	}
@@ -40,25 +40,32 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 	} else if found {
 		return requireCompleteStepReplayTx(ctx, tx, existing, command)
 	}
-	jobStatus, err := lockCurrentGenerationStep(ctx, tx, jobID, command.StepID)
-	if err != nil {
+	if err := requireLockedStepAttemptActiveTx(ctx, tx, command.Authority, lockedAttempt); err != nil {
 		return err
 	}
-	if !jobAcceptsStepTerminal(jobStatus) {
-		return fmt.Errorf("%w: job %d status is %q", ErrStepNotWritable, jobID, jobStatus)
+	if lockedAttempt.StepStatus != model.StepStatusRunning || !jobAcceptsStepTerminal(lockedAttempt.JobStatus) {
+		return staleStepAttemptError(command.Authority, fmt.Sprintf(
+			"completion writer job status %q step status %q",
+			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
+		), nil)
 	}
-	generation := job.CurrentGeneration
+	generation := command.Authority.Generation
+	if err := terminalizeStepAttemptTx(ctx, tx, command.Authority, model.StepAttemptCompleted); err != nil {
+		return err
+	}
 
 	stepUpdate, err := tx.Exec(ctx, `
 		UPDATE job_steps
 		SET status = $2, output = $3, finished_at = NOW(), updated_at = NOW()
-		WHERE id = $1 AND status IN ($4, $5)
-	`, command.StepID, model.StepStatusCompleted, command.Output, model.StepStatusRunning, model.StepStatusWaiting)
+		WHERE id = $1 AND job_id=$4 AND generation=$5 AND current_attempt=$6
+		  AND worker_id=$7 AND status=$8
+	`, command.StepID, model.StepStatusCompleted, command.Output, jobID, generation,
+		command.Authority.Attempt, command.Authority.WorkerID, model.StepStatusRunning)
 	if err != nil {
 		return err
 	}
 	if stepUpdate.RowsAffected() == 0 {
-		return fmt.Errorf("%w: step %d is neither running nor waiting", ErrStepNotWritable, command.StepID)
+		return staleStepAttemptError(command.Authority, "completion target lost current authority", nil)
 	}
 
 	var contextID *int64
@@ -100,7 +107,7 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 			return err
 		}
 		if jobUpdate.RowsAffected() != 1 {
-			return fmt.Errorf("%w: job %d did not accept terminal completion", ErrStepNotWritable, jobID)
+			return staleStepAttemptError(command.Authority, "job lost terminal-completion authority", nil)
 		}
 		if err := terminalizeTaskLedgerTx(
 			ctx, tx, jobID, generation, model.JobStatusCompleted, &command.StepID,
@@ -154,15 +161,15 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
-		return err
-	}
-
-	jobID, err := stepJobIDTx(ctx, tx, command.StepID)
+	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
 	if err != nil {
 		return err
 	}
-	job, err := lockedJobTx(ctx, tx, jobID)
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+		return err
+	}
+	jobID := command.Authority.JobID
+	job, err := scanLockedJobTx(ctx, tx, jobID)
 	if err != nil {
 		return err
 	}
@@ -171,25 +178,32 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 	} else if found {
 		return requireFailStepReplayTx(ctx, tx, existing, command)
 	}
-	jobStatus, err := lockCurrentGenerationStep(ctx, tx, jobID, command.StepID)
-	if err != nil {
+	if err := requireLockedStepAttemptActiveTx(ctx, tx, command.Authority, lockedAttempt); err != nil {
 		return err
 	}
-	if !jobAcceptsStepTerminal(jobStatus) {
-		return fmt.Errorf("%w: job %d status is %q", ErrStepNotWritable, jobID, jobStatus)
+	if lockedAttempt.StepStatus != model.StepStatusRunning || !jobAcceptsStepTerminal(lockedAttempt.JobStatus) {
+		return staleStepAttemptError(command.Authority, fmt.Sprintf(
+			"failure writer job status %q step status %q",
+			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
+		), nil)
 	}
-	generation := job.CurrentGeneration
+	generation := command.Authority.Generation
+	if err := terminalizeStepAttemptTx(ctx, tx, command.Authority, model.StepAttemptFailed); err != nil {
+		return err
+	}
 
 	stepUpdate, err := tx.Exec(ctx, `
 		UPDATE job_steps
 		SET status = $2, error = $3, finished_at = NOW(), updated_at = NOW()
-		WHERE id = $1 AND status IN ($4, $5)
-	`, command.StepID, model.StepStatusFailed, command.Error, model.StepStatusRunning, model.StepStatusWaiting)
+		WHERE id = $1 AND job_id=$4 AND generation=$5 AND current_attempt=$6
+		  AND worker_id=$7 AND status=$8
+	`, command.StepID, model.StepStatusFailed, command.Error, jobID, generation,
+		command.Authority.Attempt, command.Authority.WorkerID, model.StepStatusRunning)
 	if err != nil {
 		return err
 	}
 	if stepUpdate.RowsAffected() == 0 {
-		return fmt.Errorf("%w: step %d is neither running nor waiting", ErrStepNotWritable, command.StepID)
+		return staleStepAttemptError(command.Authority, "failure target lost current authority", nil)
 	}
 	if err := transitionInitialTaskRootTx(
 		ctx, tx, jobID, generation, command.StepID, taskstate.NodeFailed, "", command.Error,
@@ -206,7 +220,7 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 		return err
 	}
 	if jobUpdate.RowsAffected() != 1 {
-		return fmt.Errorf("%w: job %d did not accept terminal failure", ErrStepNotWritable, jobID)
+		return staleStepAttemptError(command.Authority, "job lost terminal-failure authority", nil)
 	}
 	if err := terminalizeTaskLedgerTx(
 		ctx, tx, jobID, generation, model.JobStatusFailed, &command.StepID,

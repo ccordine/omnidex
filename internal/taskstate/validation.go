@@ -166,6 +166,15 @@ func hasEvidenceRef(refs []Ref) bool {
 	return false
 }
 
+func hasContradictionRef(refs []Ref) bool {
+	for _, ref := range refs {
+		if ref.Relation == RefContradicts {
+			return true
+		}
+	}
+	return false
+}
+
 func executableNode(kind NodeKind) bool {
 	return kind == NodeTask || kind == NodeCheckpoint || kind == NodeChangeGroup
 }

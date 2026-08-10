@@ -25,7 +25,7 @@ func (r *nativeRuntimeV3) runPlanning() error {
 		if err := r.validatePlannedSpecialists(plan); err != nil {
 			return err
 		}
-		r.svc.emitStepEvent(r.claim.Step.ID, "plan_policy_selected", "strategy=direct_coding coordinator_steps=1 state=workspace")
+		r.svc.emitStepEvent(r.claim.Authority, "plan_policy_selected", "strategy=direct_coding coordinator_steps=1 state=workspace")
 		return r.persistV3Plan(plan)
 	}
 	workspaceArtifact, err := r.readWorkspaceArtifact()

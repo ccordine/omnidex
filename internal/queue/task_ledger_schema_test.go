@@ -209,11 +209,12 @@ func TestTaskLedgerQueueUsesOneNormalizedAuthorityAndBoundedHistory(t *testing.T
 	}
 	for _, required := range []string{
 		"TaskLedger(ctx context.Context, jobID int64) (taskstate.MaterializedState, error)",
-		"maxTaskLedgerNodes    = taskstate.MaxLedgerNodes",
-		"maxTaskLedgerNodeRefs = taskstate.MaxLedgerNodeVerificationRefs",
-		"maxTaskLedgerEdges    = taskstate.MaxLedgerEdges",
-		"maxTaskLedgerEntries  = taskstate.MaxLedgerEntries",
-		"maxTaskLedgerRefs     = taskstate.MaxLedgerEntryRefs",
+		"maxTaskLedgerNodes             = taskstate.MaxLedgerNodes",
+		"maxTaskLedgerNodeRefs          = taskstate.MaxLedgerNodeVerificationRefs",
+		"maxTaskLedgerEdges             = taskstate.MaxLedgerEdges",
+		"maxTaskLedgerEntries           = taskstate.MaxLedgerEntries",
+		"maxTaskLedgerRefs              = taskstate.MaxLedgerEntryRefs",
+		"maxTaskLedgerNodeSupersessions = taskstate.MaxLedgerNodeSupersessions",
 		"LIMIT $2",
 	} {
 		if !strings.Contains(store, required) {

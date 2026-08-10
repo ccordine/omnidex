@@ -11,8 +11,8 @@ import (
 // UnresolvedRepositoryMutation returns the one exact durable command that must
 // be reconciled before any new repository indexing or semantic work for the
 // current generation. The schema forbids multiple unresolved operations. This
-// read does not claim or transfer a running step; process-restart execution
-// remains unavailable until queue writes carry monotonic step-attempt leases.
+// read does not claim or transfer a running step; reconciliation must execute
+// under the caller's current exact step-attempt authority.
 func (r *Repository) UnresolvedRepositoryMutation(
 	ctx context.Context,
 	jobID, generation int64,
@@ -33,7 +33,7 @@ func (r *Repository) UnresolvedRepositoryMutation(
 	var operationID, commandSHA, status string
 	err := r.pool.QueryRow(ctx, `
 		SELECT operation.id, operation.command_sha256, operation.status,
-		       operation.job_id, operation.step_id, operation.generation,
+		       operation.job_id, operation.step_id, operation.generation, operation.step_attempt,
 		       operation.worker_id, operation.contract_id, operation.stage_id,
 		       operation.source_snapshot_id, operation.patch, operation.patch_sha256
 		FROM repository_mutation_operations AS operation
@@ -44,7 +44,7 @@ func (r *Repository) UnresolvedRepositoryMutation(
 	`, jobID, generation, repositoryMutationPrepared, repositoryMutationApplying,
 		repositoryMutationIndeterminate).Scan(
 		&operationID, &commandSHA, &status,
-		&command.JobID, &command.StepID, &command.Generation,
+		&command.JobID, &command.StepID, &command.Generation, &command.Attempt,
 		&command.WorkerID, &command.ContractID, &command.StageID,
 		&command.SourceSnapshotID, &command.Patch, &command.PatchSHA256,
 	)

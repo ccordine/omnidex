@@ -128,8 +128,8 @@ func validateDirectCodingSkillBindings(
 
 func (s *directCodingSession) recordPendingSkillCheck(name, detail string) error {
 	for _, version := range s.skillCandidates {
-		if err := s.runtime.svc.repo.RecordWorkerSkillCheck(
-			s.runtime.ctx, version.Spec.ID, version.Version, specialists.SkillCheck{
+		if err := s.runtime.svc.repo.RecordWorkerSkillCheckByStepAttempt(
+			s.runtime.ctx, s.runtime.claim.Authority, version.Spec.ID, version.Version, specialists.SkillCheck{
 				Name: name, Status: specialists.SkillCheckPassed, Detail: detail,
 			},
 		); err != nil {
@@ -150,13 +150,13 @@ func (s *directCodingSession) activatePendingSkills() error {
 	}
 	for len(s.skillCandidates) > 0 {
 		version := s.skillCandidates[0]
-		if err := s.runtime.svc.repo.ActivateWorkerSkill(
-			s.runtime.ctx, version.Spec.ID, version.Version,
+		if err := s.runtime.svc.repo.ActivateWorkerSkillByStepAttempt(
+			s.runtime.ctx, s.runtime.claim.Authority, version.Spec.ID, version.Version,
 		); err != nil {
 			return err
 		}
 		s.skillCandidates = s.skillCandidates[1:]
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_skill_activated", fmt.Sprintf(
+		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_skill_activated", fmt.Sprintf(
 			"skill=%s version=%d", version.Spec.ID, version.Version,
 		))
 	}
@@ -183,15 +183,15 @@ func (s *directCodingSession) rejectPendingSkills(cause error) error {
 	var failures []string
 	for len(s.skillCandidates) > 0 {
 		version := s.skillCandidates[0]
-		err := s.runtime.svc.repo.RejectWorkerSkill(
-			s.runtime.ctx, version.Spec.ID, version.Version, specialists.SkillCheck{
+		err := s.runtime.svc.repo.RejectWorkerSkillByStepAttempt(
+			s.runtime.ctx, s.runtime.claim.Authority, version.Spec.ID, version.Version, specialists.SkillCheck{
 				Name: "workflow_failure", Status: specialists.SkillCheckFailed, Detail: detail,
 			},
 		)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s v%d: %v", version.Spec.ID, version.Version, err))
 		} else {
-			s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_skill_rejected", fmt.Sprintf(
+			s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_skill_rejected", fmt.Sprintf(
 				"skill=%s version=%d", version.Spec.ID, version.Version,
 			))
 		}

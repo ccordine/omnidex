@@ -33,10 +33,18 @@ func validateProjectedNodeTransition(event Event) error {
 	if event.FromStatus == event.ToStatus || terminalNode(event.FromStatus) {
 		return invalidEvent("node transition source and target are invalid")
 	}
-	if event.ToStatus != NodeDone && len(event.VerificationRefs) != 0 {
+	terminalFailure := event.ToStatus == NodeFailed && len(event.VerificationRefs) == 1
+	if event.ToStatus != NodeDone && len(event.VerificationRefs) != 0 && !terminalFailure {
 		return invalidEvent("non-completion transition cannot carry verification references")
 	}
 	switch {
+	case terminalFailure:
+		if event.Reason == "" || event.VerificationRefs[0].Relation != RefVerifies {
+			return invalidEvent("terminal failure requires an exact reason and verifying proof")
+		}
+		if err := validateRefs(event.VerificationRefs); err != nil {
+			return invalidEvent("terminal failure proof is invalid: %v", err)
+		}
 	case event.FromStatus == NodeReady && event.ToStatus == NodeActive:
 		if event.Reason != "" {
 			return invalidEvent("activation cannot carry a reason")
@@ -94,6 +102,7 @@ func rejectUnexpectedEventProjection(event Event, allowed eventProjectionField) 
 		{eventFieldVerificationRefs, len(event.VerificationRefs) != 0, "verification_refs"},
 		{eventFieldLedgerStatus, event.LedgerStatus != "", "ledger_status"},
 		{eventFieldReason, event.Reason != "", "reason"},
+		{eventFieldGenerations, event.RetiringGeneration != 0 || event.SupersededAtGeneration != 0, "generation"},
 	}
 	for _, check := range checks {
 		if check.present && allowed&check.field == 0 {

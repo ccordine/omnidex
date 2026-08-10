@@ -263,7 +263,7 @@ func acquireContextItem(
 
 func contextMaterial(item workingset.Item, authority taskstate.Authority, content string) Material {
 	return Material{
-		ItemID: item.ID, CurrentRef: item.Ref, Authority: authority,
+		ItemID: item.ID, CurrentRef: item.Ref, SourceRefs: []taskstate.Ref{}, Authority: authority,
 		Content: content, ByteCost: len([]byte(content)),
 	}
 }

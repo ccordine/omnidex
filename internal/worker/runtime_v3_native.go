@@ -116,7 +116,7 @@ func (r *nativeRuntimeV3) runIntentParse() error {
 		return err
 	}
 	intent := authoritativeIntent
-	r.svc.emitStepEvent(r.claim.Step.ID, "intent_requirements_compiled", fmt.Sprintf(
+	r.svc.emitStepEvent(r.claim.Authority, "intent_requirements_compiled", fmt.Sprintf(
 		"authority=server objectives=%d constraints=%d completion_criteria=%d",
 		len(intent.Objectives), len(intent.Constraints), len(intent.CompletionCriteria),
 	))
@@ -194,7 +194,7 @@ func (r *nativeRuntimeV3) runCapabilityAudit() error {
 		"missing_capabilities=" + csvOrNone(missingCapabilities),
 	}, "\n")
 	if len(missingCapabilities) > 0 {
-		r.svc.emitStepEvent(r.claim.Step.ID, "capability_audit_blocked", "missing="+strings.Join(missingCapabilities, ","))
+		r.svc.emitStepEvent(r.claim.Authority, "capability_audit_blocked", "missing="+strings.Join(missingCapabilities, ","))
 		return fmt.Errorf("required capabilities are unavailable: %s", strings.Join(missingCapabilities, ", "))
 	}
 	return r.complete("capability_audit", output, output)

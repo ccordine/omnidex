@@ -15,7 +15,14 @@ const maxStepOutputDeltaBytes = 1 << 20
 // AppendStepOutput appends one bounded chunk to the current running step. A
 // retired worker may retain its step identity for audit, but cannot append to
 // the new generation's live output.
-func (r *Repository) AppendStepOutput(ctx context.Context, stepID int64, delta string) error {
+func (r *Repository) AppendStepOutput(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	delta string,
+) error {
+	if err := validateStepAttemptAuthority(authority); err != nil {
+		return err
+	}
 	if delta == "" {
 		return nil
 	}
@@ -33,29 +40,29 @@ func (r *Repository) AppendStepOutput(ctx context.Context, stepID int64, delta s
 		return err
 	}
 	defer tx.Rollback(ctx)
-	jobID, jobStatus, err := lockCurrentGenerationStepByID(ctx, tx, stepID)
+	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
 	if err != nil {
 		return err
 	}
-	if jobStatus != model.JobStatusRunning {
-		return fmt.Errorf(
-			"%w: job %d status is %q, expected %q",
-			ErrStepNotWritable, jobID, jobStatus, model.JobStatusRunning,
-		)
+	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return staleStepAttemptError(authority, fmt.Sprintf(
+			"output writer job status %q step status %q", jobStatus, stepStatus,
+		), nil)
 	}
 	result, err := tx.Exec(ctx, `
 		UPDATE job_steps
 		SET output = COALESCE(output, '') || $2,
 		    updated_at = NOW()
-		WHERE id = $1
-		  AND status = $3
+		WHERE id = $1 AND job_id=$4 AND generation=$5 AND current_attempt=$6
+		  AND worker_id=$7 AND status = $3
 		  AND superseded_at_generation IS NULL
-	`, stepID, delta, model.StepStatusRunning)
+	`, authority.StepID, delta, model.StepStatusRunning, authority.JobID,
+		authority.Generation, authority.Attempt, authority.WorkerID)
 	if err != nil {
 		return err
 	}
 	if result.RowsAffected() != 1 {
-		return fmt.Errorf("%w: step %d is not running", ErrStepNotWritable, stepID)
+		return staleStepAttemptError(authority, "output target lost current authority", nil)
 	}
 	return tx.Commit(ctx)
 }

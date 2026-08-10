@@ -156,6 +156,9 @@ func validateMaterial(item workingset.Item, material Material) error {
 	if authorityRank(material.Authority) == 0 {
 		return fmt.Errorf("%w: item %q has unknown authority", ErrMaterialMismatch, item.ID)
 	}
+	if err := validateSourceRefs(material.SourceRefs); err != nil {
+		return fmt.Errorf("%w: item %q source refs: %v", ErrMaterialMismatch, item.ID, err)
+	}
 	if material.Content == "" || !utf8.ValidString(material.Content) || strings.IndexByte(material.Content, 0) >= 0 ||
 		material.ByteCost != len([]byte(material.Content)) || material.ByteCost > item.ByteCost {
 		return fmt.Errorf("%w: item %q content cost is invalid", ErrMaterialMismatch, item.ID)

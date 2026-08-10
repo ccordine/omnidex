@@ -20,7 +20,7 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 	}
 	if verification.Verdict != artifacts.VerificationVerdictPass || verificationHasBlockingFindings(verification) {
 		summary := "memory review suppressed: independent verification did not pass cleanly"
-		r.svc.emitStepEvent(r.claim.Step.ID, "memory_review_suppressed", "verdict="+safeLine(verification.Verdict, "missing"))
+		r.svc.emitStepEvent(r.claim.Authority, "memory_review_suppressed", "verdict="+safeLine(verification.Verdict, "missing"))
 		return r.complete("memory_review", summary, summary)
 	}
 	if _, directCoding := buildV3CodingCoordinatorPlan(intent); directCoding {
@@ -32,7 +32,7 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 			return fmt.Errorf("deterministic coding route produced an unauthorized memory candidate %d", candidates[0].ID)
 		}
 		summary := "coding memory review: no memory candidates permitted"
-		r.svc.emitStepEvent(r.claim.Step.ID, "coding_memory_absent", "candidates=0 model_calls=0")
+		r.svc.emitStepEvent(r.claim.Authority, "coding_memory_absent", "candidates=0 model_calls=0")
 		return r.complete("memory_review", summary, summary)
 	}
 	candidates, err := r.svc.repo.ListCurrentMemoryCandidates(r.ctx, r.claim.Job.ID, "candidate", 24)
@@ -49,7 +49,7 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 		decision := reviewMemoryCandidate(candidate)
 		if decision == model.MemoryCandidateStatusRejected {
 			rejected = append(rejected, candidate.Content)
-			if err := r.svc.repo.RejectCurrentMemoryCandidate(r.ctx, candidate); err != nil {
+			if err := r.svc.repo.RejectCurrentMemoryCandidateByStepAttempt(r.ctx, r.claim.Authority, candidate); err != nil {
 				return fmt.Errorf("reject memory candidate %d: %w", candidate.ID, err)
 			}
 			continue
@@ -63,7 +63,7 @@ func (r *nativeRuntimeV3) runMemoryReview() error {
 			trustTag = model.MemoryTrustTagDurable
 		}
 		enrichedTags := appendUnique(tags, candidate.CandidateKind, "reviewed", trustTag)
-		if _, err := r.svc.repo.PromoteCurrentMemoryCandidate(r.ctx, queue.MemoryCandidatePromotion{
+		if _, err := r.svc.repo.PromoteCurrentMemoryCandidateByStepAttempt(r.ctx, r.claim.Authority, queue.MemoryCandidatePromotion{
 			Candidate: candidate,
 			Tier:      decision,
 			Tags:      enrichedTags,

@@ -5,7 +5,13 @@ import (
 	"sort"
 )
 
-func (set *Set) planEvictions(request AcquireRequest) ([]ItemID, error) {
+type admissionRequest struct {
+	ID        ItemID
+	Retention Retention
+	ByteCost  int
+}
+
+func (set *Set) planEvictions(request admissionRequest) ([]ItemID, error) {
 	usage := set.Usage()
 	if request.Retention == RetentionPinned {
 		if usage.PinnedItems+1 > set.budget.MaxPinnedItems ||

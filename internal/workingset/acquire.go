@@ -33,7 +33,9 @@ func (set *Set) Acquire(request AcquireRequest) (AcquireResult, error) {
 		}
 		return AcquireResult{}, fmt.Errorf("%w: reference is already resident as %s", ErrDuplicateReference, existing)
 	}
-	victims, err := set.planEvictions(request)
+	victims, err := set.planEvictions(admissionRequest{
+		ID: request.ID, Retention: request.Retention, ByteCost: request.ByteCost,
+	})
 	if err != nil {
 		return AcquireResult{}, err
 	}

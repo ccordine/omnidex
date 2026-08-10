@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -18,18 +17,10 @@ import (
 
 func openWorkingSetDatabase(t *testing.T) (context.Context, *Repository, *pgxpool.Pool) {
 	t.Helper()
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL working-set tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
+	pool := openIsolatedMigrationPool(t)
 	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx); err != nil {
 		t.Fatal(err)
@@ -44,6 +35,23 @@ func enqueueWorkingSetTestJob(t *testing.T, ctx context.Context, repository *Rep
 		t.Fatal(err)
 	}
 	return job
+}
+
+func claimWorkingSetTestJob(
+	t *testing.T,
+	ctx context.Context,
+	repository *Repository,
+	job model.Job,
+) model.StepAttemptAuthority {
+	t.Helper()
+	claim, err := repository.ClaimNextStep(ctx, "working-set-"+strings.TrimPrefix(job.Instruction, "working-set-"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Job.ID != job.ID {
+		t.Fatalf("claimed step=%+v want job %d", claim, job.ID)
+	}
+	return claim.Authority
 }
 
 func workingSetDatabaseCommandID(t *testing.T, marker, label string) workingset.CommandID {

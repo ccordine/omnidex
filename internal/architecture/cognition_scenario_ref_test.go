@@ -34,8 +34,9 @@ func TestScenarioRefContractScannerRejectsAdditionalAuthority(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	writeArchitectureFixture(t, filepath.Join(root, "scenario.go"), `package cognition
+type ScenarioID string
 type ScenarioRef struct {
-	ID string
+	ID ScenarioID
 	SHA256 string
 	Version string
 	seed int64
@@ -85,28 +86,30 @@ func validateScenarioRef(path string, specification *ast.TypeSpec) []string {
 	if !ok {
 		return []string{path + " declares ScenarioRef as a non-struct type"}
 	}
-	allowed := map[string]bool{"ID": false, "SHA256": false}
+	allowed := map[string]string{"ID": "ScenarioID", "SHA256": "string"}
+	present := map[string]bool{"ID": false, "SHA256": false}
 	violations := []string{}
 	for _, field := range structure.Fields.List {
-		kind, stringField := field.Type.(*ast.Ident)
+		kind, namedField := field.Type.(*ast.Ident)
 		if len(field.Names) == 0 {
 			violations = append(violations, path+" embeds authority in ScenarioRef")
 			continue
 		}
 		for _, name := range field.Names {
-			if _, exists := allowed[name.Name]; !exists {
+			expectedType, exists := allowed[name.Name]
+			if !exists {
 				violations = append(violations, path+" exposes ScenarioRef."+name.Name)
 				continue
 			}
-			if !stringField || kind.Name != "string" {
-				violations = append(violations, path+" requires ScenarioRef."+name.Name+" to be string")
+			if !namedField || kind.Name != expectedType {
+				violations = append(violations, path+" requires ScenarioRef."+name.Name+" to use "+expectedType)
 				continue
 			}
-			allowed[name.Name] = true
+			present[name.Name] = true
 		}
 	}
-	for name, present := range allowed {
-		if !present {
+	for name, exists := range present {
+		if !exists {
 			violations = append(violations, path+" omits ScenarioRef."+name)
 		}
 	}

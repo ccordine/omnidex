@@ -10,7 +10,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (r *Repository) PauseStepForInput(ctx context.Context, stepID int64, stepOutput string, question string, extraContexts map[string]string) error {
+func (r *Repository) PauseStepForInput(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	stepOutput string,
+	question string,
+	extraContexts map[string]string,
+) error {
 	stepOutput = SanitizeUTF8Text(stepOutput)
 	question = SanitizeUTF8Text(question)
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -19,31 +25,38 @@ func (r *Repository) PauseStepForInput(ctx context.Context, stepID int64, stepOu
 	}
 	defer tx.Rollback(ctx)
 
-	jobID, jobStatus, err := lockCurrentGenerationStepByID(ctx, tx, stepID)
+	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
 	if err != nil {
 		return err
 	}
-	if jobStatus != model.JobStatusRunning {
-		return fmt.Errorf("%w: job %d status is %q", ErrStepNotWritable, jobID, jobStatus)
+	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return staleStepAttemptError(authority, fmt.Sprintf(
+			"input-pause writer job status %q step status %q", jobStatus, stepStatus,
+		), nil)
+	}
+	if err := terminalizeStepAttemptTx(ctx, tx, authority, model.StepAttemptWaiting); err != nil {
+		return err
 	}
 
 	stepUpdate, err := tx.Exec(ctx, `
 		UPDATE job_steps
 		SET status = $2, output = $3, updated_at = NOW()
-		WHERE id = $1 AND status = $4
-	`, stepID, model.StepStatusWaiting, stepOutput, model.StepStatusRunning)
+		WHERE id = $1 AND job_id=$5 AND generation=$6 AND current_attempt=$7
+		  AND worker_id=$8 AND status = $4
+	`, authority.StepID, model.StepStatusWaiting, stepOutput, model.StepStatusRunning,
+		authority.JobID, authority.Generation, authority.Attempt, authority.WorkerID)
 	if err != nil {
 		return err
 	}
 	if stepUpdate.RowsAffected() == 0 {
-		return fmt.Errorf("%w: step %d is not running", ErrStepNotWritable, stepID)
+		return staleStepAttemptError(authority, "input-pause target lost current authority", nil)
 	}
 
 	if strings.TrimSpace(question) != "" {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO step_contexts (step_id, key, value)
 			VALUES ($1, $2, $3)
-		`, stepID, "input_question", strings.TrimSpace(question)); err != nil {
+		`, authority.StepID, "input_question", strings.TrimSpace(question)); err != nil {
 			return err
 		}
 	}
@@ -56,7 +69,7 @@ func (r *Repository) PauseStepForInput(ctx context.Context, stepID int64, stepOu
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO step_contexts (step_id, key, value)
 			VALUES ($1, $2, $3)
-		`, stepID, k, SanitizeUTF8Text(value)); err != nil {
+			`, authority.StepID, k, SanitizeUTF8Text(value)); err != nil {
 			return err
 		}
 	}
@@ -65,12 +78,12 @@ func (r *Repository) PauseStepForInput(ctx context.Context, stepID int64, stepOu
 		UPDATE jobs
 		SET status = $2, updated_at = NOW(), error = NULL
 		WHERE id = $1 AND status IN ($3, $4, $5)
-	`, jobID, model.JobStatusWaiting, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting)
+	`, authority.JobID, model.JobStatusWaiting, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting)
 	if err != nil {
 		return err
 	}
 	if jobUpdate.RowsAffected() != 1 {
-		return fmt.Errorf("%w: job %d did not accept input pause", ErrStepNotWritable, jobID)
+		return staleStepAttemptError(authority, "job lost input-pause authority", nil)
 	}
 
 	return tx.Commit(ctx)

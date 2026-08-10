@@ -16,6 +16,10 @@ Charmeleon is the **repository-intelligence and software-defined context release
 - Added generation-bound Working Sets with explicit budgets and immutable Context
   Projections. The first repository consumer remains shadow-only and proves that model
   prompt bytes are unchanged while exact selected/omitted references are recorded.
+- Defined the domain-neutral Cognition Runtime and the separately isolated Labyrinth
+  cognition laboratory, including registered environment actions, public/oracle
+  separation, obligation and evidence authority, restart fencing, sealed traces,
+  independent capability suites, and pre-registered scale and transfer gates.
 - Made memory-candidate promotion atomic and generation-aware so a retired job
   generation cannot publish durable memory.
 - Added typed repository retrieval operations, complete requirement/change-surface

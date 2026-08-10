@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const maxRepositoryGoCorrectionDiagnosticBytes = 1024
@@ -207,7 +209,7 @@ func validateRepositoryGoPathFreeDiagnostic(value string) (string, bool) {
 		strings.ContainsAny(value, "\r\n\\") || len([]byte(value)) > maxRepositoryGoCorrectionDiagnosticBytes {
 		return "", false
 	}
-	if containsModelContextPathIdentity(value) || strings.Contains(value, repositorySandboxRoot) {
+	if modelcontext.ContainsPathIdentity(value) || strings.Contains(value, repositorySandboxRoot) {
 		return "", false
 	}
 	if strings.HasPrefix(value, "=== ") || strings.HasPrefix(value, "--- ") || strings.HasPrefix(value, "# ") {

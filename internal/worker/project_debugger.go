@@ -53,7 +53,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 	}
 
 	startedAt := time.Now().UTC().Format(time.RFC3339)
-	s.emitStepEvent(claim.Step.ID, "project_debugger_started", project.Name)
+	s.emitStepEvent(claim.Authority, "project_debugger_started", project.Name)
 
 	boardCards, err := s.debuggerBoardCards(ctx, projectID)
 	if err != nil {
@@ -91,7 +91,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 		lastRun.Status = "failed"
 		lastRun.Error = scanErr.Error()
 		lastRun.CompletedAt = time.Now().UTC().Format(time.RFC3339)
-		if saveErr := s.saveDebuggerLastRun(ctx, project, lastRun); saveErr != nil {
+		if saveErr := s.saveDebuggerLastRun(ctx, claim.Authority, project, lastRun); saveErr != nil {
 			return errors.Join(scanErr, fmt.Errorf("persist failed project debugger run: %w", saveErr))
 		}
 		return scanErr
@@ -121,7 +121,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 			Prompt:       "Draft a planning ticket and implementation plan from the card title and description.",
 			PlanningMode: true,
 		}
-		card, ticketJob, err := s.repo.CreateProjectDebuggerCardJob(ctx, projectID, queue.ProjectDebuggerCardInput{
+		card, ticketJob, err := s.repo.CreateProjectDebuggerCardJobByStepAttempt(ctx, claim.Authority, projectID, queue.ProjectDebuggerCardInput{
 			Title:       ticket.Title,
 			Description: description,
 			Column:      ticket.Column,
@@ -147,7 +147,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 	lastRun.CardsCreated = created
 	lastRun.FindingsCount = len(result.BugTickets)
 	lastRun.CompletedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := s.saveDebuggerLastRun(ctx, project, lastRun); err != nil {
+	if err := s.saveDebuggerLastRun(ctx, claim.Authority, project, lastRun); err != nil {
 		return fmt.Errorf("persist completed project debugger run: %w", err)
 	}
 
@@ -166,7 +166,7 @@ func (s *Service) runProjectDebuggerStep(ctx context.Context, claim *model.Claim
 	if completeStep == nil {
 		completeStep = s.repo.CompleteStep
 	}
-	s.emitStepEvent(claim.Step.ID, "project_debugger_completed", summary)
+	s.emitStepEvent(claim.Authority, "project_debugger_completed", summary)
 	return invokeCompleteClaimedStep(ctx, completeStep, claim, string(payloadBytes), "project_debugger", summary)
 }
 
@@ -205,10 +205,15 @@ func (s *Service) debuggerLLMClient() projectdebugger.LLMClient {
 	return s.llm
 }
 
-func (s *Service) saveDebuggerLastRun(ctx context.Context, project model.Project, run projectdebugger.LastRun) error {
+func (s *Service) saveDebuggerLastRun(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	project model.Project,
+	run projectdebugger.LastRun,
+) error {
 	raw, err := json.Marshal(run)
 	if err != nil {
 		return err
 	}
-	return s.repo.UpdateProjectSetting(ctx, project.ID, projectdebugger.SettingsKey, raw)
+	return s.repo.UpdateProjectSettingByStepAttempt(ctx, authority, project.ID, projectdebugger.SettingsKey, raw)
 }

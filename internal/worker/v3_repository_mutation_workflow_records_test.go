@@ -159,11 +159,11 @@ func loadRepositoryMutationWorkflowCommand(
 	t.Helper()
 	var command queue.RepositoryMutationCommand
 	err := pool.QueryRow(t.Context(), `
-		SELECT job_id,step_id,generation,worker_id,contract_id,stage_id,
+		SELECT job_id,step_id,generation,step_attempt,worker_id,contract_id,stage_id,
 		       source_snapshot_id,patch,patch_sha256
 		FROM repository_mutation_operations WHERE job_id=$1
 	`, jobID).Scan(
-		&command.JobID, &command.StepID, &command.Generation, &command.WorkerID,
+		&command.JobID, &command.StepID, &command.Generation, &command.Attempt, &command.WorkerID,
 		&command.ContractID, &command.StageID, &command.SourceSnapshotID,
 		&command.Patch, &command.PatchSHA256,
 	)

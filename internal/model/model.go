@@ -107,9 +107,11 @@ type JobDetails struct {
 }
 
 type ClaimedStep struct {
-	Job      Job
-	Step     Step
-	Contexts []StepContext
+	Job            Job
+	Step           Step
+	Authority      StepAttemptAuthority
+	LeaseExpiresAt time.Time
+	Contexts       []StepContext
 }
 
 type MemoryChunk struct {

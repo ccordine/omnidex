@@ -87,7 +87,7 @@ func TestWorkingSetQueueHasNoSnapshotOrUpsertFallback(t *testing.T) {
 			t.Fatalf("%s introduced a duplicate snapshot authority", name)
 		}
 	}
-	applyRaw, err := os.ReadFile("working_set_apply.go")
+	applyRaw, err := os.ReadFile("working_set_apply_tx.go")
 	if err != nil {
 		t.Fatal(err)
 	}

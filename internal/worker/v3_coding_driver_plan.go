@@ -11,7 +11,7 @@ import (
 
 func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
 	detail = trimForBudget(strings.TrimSpace(detail), 1200)
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_phase_changed", fmt.Sprintf(
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_phase_changed", fmt.Sprintf(
 		"phase=%s detail=%s",
 		phase,
 		safeLine(detail, "none"),
@@ -107,11 +107,11 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_specification_accepted", fmt.Sprintf(
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_specification_accepted", fmt.Sprintf(
 		"surface=%s requirements=%d product_bytes=%d",
 		specification.Surface, len(specification.Requirements), len(specification.ProductQuote),
 	))
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Step.ID, "coding_assembly_ready", fmt.Sprintf(
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_assembly_ready", fmt.Sprintf(
 		"adapter=%s files=%d blocks=%d waves=%d",
 		program.Adapter, len(assembly.Files), blockCount, waveCount,
 	))

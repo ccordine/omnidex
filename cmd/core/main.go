@@ -101,6 +101,10 @@ func main() {
 		UISessionTTL:         cfg.UISessionTTL,
 	})
 	if !cfg.WrapperOnly {
+		cognitionBrain, err := cognitionBrainFromConfig(cfg)
+		if err != nil {
+			log.Fatalf("configure cognition brain: %v", err)
+		}
 		workerService, err := worker.New(
 			repo,
 			llmClient,
@@ -127,6 +131,7 @@ func main() {
 					Memory:     cfg.MemoryModel,
 					Specialist: cfg.SpecialistModels,
 				},
+				CognitionBrain: cognitionBrain,
 				Workspace: worker.WorkspaceSettings{
 					Enabled:       cfg.WorkspaceScanEnabled,
 					Root:          cfg.WorkspaceRoot,

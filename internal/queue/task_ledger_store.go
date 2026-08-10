@@ -11,11 +11,12 @@ import (
 )
 
 const (
-	maxTaskLedgerNodes    = taskstate.MaxLedgerNodes
-	maxTaskLedgerNodeRefs = taskstate.MaxLedgerNodeVerificationRefs
-	maxTaskLedgerEdges    = taskstate.MaxLedgerEdges
-	maxTaskLedgerEntries  = taskstate.MaxLedgerEntries
-	maxTaskLedgerRefs     = taskstate.MaxLedgerEntryRefs
+	maxTaskLedgerNodes             = taskstate.MaxLedgerNodes
+	maxTaskLedgerNodeRefs          = taskstate.MaxLedgerNodeVerificationRefs
+	maxTaskLedgerEdges             = taskstate.MaxLedgerEdges
+	maxTaskLedgerEntries           = taskstate.MaxLedgerEntries
+	maxTaskLedgerRefs              = taskstate.MaxLedgerEntryRefs
+	maxTaskLedgerNodeSupersessions = taskstate.MaxLedgerNodeSupersessions
 )
 
 func (r *Repository) TaskLedger(ctx context.Context, jobID int64) (taskstate.MaterializedState, error) {
@@ -119,7 +120,8 @@ func restoreTaskLedgerTx(ctx context.Context, tx pgx.Tx, header taskLedgerHeader
 	state := taskstate.MaterializedState{
 		ID: header.ID, Owner: header.Owner, Version: header.Version, Status: header.Status,
 		Nodes: make([]taskstate.Node, 0), Edges: make([]taskstate.Edge, 0),
-		Entries: make([]taskstate.Entry, 0),
+		Entries:           make([]taskstate.Entry, 0),
+		NodeSupersessions: make([]taskstate.NodeGenerationSupersession, 0),
 	}
 	if state.Nodes, err = loadTaskLedgerNodes(ctx, tx, header.ID); err != nil {
 		return nil, err
@@ -128,6 +130,9 @@ func restoreTaskLedgerTx(ctx context.Context, tx pgx.Tx, header taskLedgerHeader
 		return nil, err
 	}
 	if state.Entries, err = loadTaskLedgerEntries(ctx, tx, header.ID); err != nil {
+		return nil, err
+	}
+	if state.NodeSupersessions, err = loadTaskLedgerNodeSupersessions(ctx, tx, header.ID); err != nil {
 		return nil, err
 	}
 	ledger, err := taskstate.RestoreLedger(state)

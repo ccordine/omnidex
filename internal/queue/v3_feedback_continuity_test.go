@@ -53,12 +53,7 @@ func TestV3CodingFeedbackRequeuesTheSameJob(t *testing.T) {
 		t.Fatalf("coding steps=%+v", details.Steps)
 	}
 	stepID := details.Steps[0].ID
-	if _, err := pool.Exec(ctx, `UPDATE jobs SET status = $2 WHERE id = $1`, job.ID, model.JobStatusRunning); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE job_steps SET status = $2, worker_id = 'test-worker' WHERE id = $1`, stepID, model.StepStatusRunning); err != nil {
-		t.Fatal(err)
-	}
+	activateStepAttemptForTest(t, ctx, pool, job.ID, 1, stepID, "test-worker")
 
 	controlled, err := repo.InterruptJob(ctx, testReplanCommand(
 		t, job.ID, "v3-feedback", "Correct the current CLI file; keep completed domain code",

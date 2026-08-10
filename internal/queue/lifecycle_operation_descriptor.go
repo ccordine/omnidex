@@ -41,8 +41,14 @@ func describeLifecycleOperation(
 }
 
 func normalizeCompleteStepCommand(command CompleteStepCommand) (CompleteStepCommand, error) {
+	if err := validateStepAttemptAuthority(command.Authority); err != nil {
+		return CompleteStepCommand{}, err
+	}
 	if command.StepID <= 0 {
 		return CompleteStepCommand{}, fmt.Errorf("complete-step command requires a positive step ID")
+	}
+	if command.StepID != command.Authority.StepID {
+		return CompleteStepCommand{}, fmt.Errorf("%w: complete-step identity disagrees with attempt authority", ErrStaleStepAttempt)
 	}
 	if err := validateLifecycleText("step output", command.Output, maxLifecycleOutputBytes, true); err != nil {
 		return CompleteStepCommand{}, err
@@ -61,8 +67,14 @@ func normalizeCompleteStepCommand(command CompleteStepCommand) (CompleteStepComm
 }
 
 func normalizeFailStepCommand(command FailStepCommand) (FailStepCommand, error) {
+	if err := validateStepAttemptAuthority(command.Authority); err != nil {
+		return FailStepCommand{}, err
+	}
 	if command.StepID <= 0 {
 		return FailStepCommand{}, fmt.Errorf("fail-step command requires a positive step ID")
+	}
+	if command.StepID != command.Authority.StepID {
+		return FailStepCommand{}, fmt.Errorf("%w: fail-step identity disagrees with attempt authority", ErrStaleStepAttempt)
 	}
 	if err := validateLifecycleText("step failure reason", command.Error, maxLifecycleOutputBytes, false); err != nil {
 		return FailStepCommand{}, err

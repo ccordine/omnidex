@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -50,12 +49,14 @@ func TestPostgresReplanCreatesFreshCanonicalGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
-		UPDATE job_steps
-		SET status=CASE id WHEN $2 THEN $4 WHEN $3 THEN $5 ELSE status END
-		WHERE job_id=$1
-	`, job.ID, planningID, analysisID, model.StepStatusCompleted, model.StepStatusRunning); err != nil {
+		UPDATE job_steps SET status=$3 WHERE job_id=$1 AND id=$2
+	`, job.ID, planningID, model.StepStatusCompleted); err != nil {
 		t.Fatal(err)
 	}
+	activateStepAttemptForTest(
+		t, ctx, pool, job.ID, 1, analysisID,
+		testStepAttemptWorker("replan-active", analysisID),
+	)
 	if _, err := pool.Exec(ctx, `
 		UPDATE jobs SET status=$2, result='old', error='old', completed_at=NOW() WHERE id=$1
 	`, job.ID, model.JobStatusRunning); err != nil {
@@ -219,23 +220,14 @@ func TestPostgresReplanRejectsAssignedRetiringStepAtomically(t *testing.T) {
 
 func replanTestRepository(t *testing.T) (*Repository, *pgxpool.Pool, context.Context) {
 	t.Helper()
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL generation replan tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	t.Cleanup(cancel)
+	pool := openIsolatedMigrationPool(t)
 	t.Setenv("MIGRATIONS_DIR", filepath.Join("..", "..", "migrations"))
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx); err != nil {
 		t.Fatal(err)
 	}
-	cancelOpenTaskLedgerTestJobs(t, repository, pool, ctx)
 	return repository, pool, ctx
 }
 

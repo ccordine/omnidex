@@ -150,7 +150,7 @@ func TestPostgresScrumChannelOperationSubmitsFeedbackOnce(t *testing.T) {
 	if claim == nil || claim.Job.ID != job.ID {
 		t.Fatalf("claim=%+v want job %d", claim, job.ID)
 	}
-	if err := repository.PauseStepForInput(ctx, claim.Step.ID, "waiting", "Continue?", nil); err != nil {
+	if err := repository.PauseStepForInput(ctx, claim.Authority, "waiting", "Continue?", nil); err != nil {
 		t.Fatal(err)
 	}
 	card, err = repository.UpdateScrumCard(ctx, project.ID, card.ID, map[string]any{

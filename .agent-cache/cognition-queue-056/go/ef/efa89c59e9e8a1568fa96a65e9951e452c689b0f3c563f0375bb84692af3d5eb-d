@@ -1,0 +1,11 @@
+./auth.go
+./client.go
+./completion.go
+./errors.go
+./server.go
+./server_completion.go
+./types.go
+./completion_test.go
+./strict_json_test.go
+./transport_test.go
+./transport_test_helpers_test.go

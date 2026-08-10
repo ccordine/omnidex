@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -17,15 +15,15 @@ import (
 
 func TestPostgresDelegatedExpansionRejectsSupersededAnchor(t *testing.T) {
 	repository, pool, ctx := replanTestRepository(t)
-	job, anchorStepID, _ := runningPlanningJob(t, repository, pool, ctx, "stale-anchor")
+	job, authority, _ := runningPlanningJob(t, repository, pool, ctx, "stale-anchor")
 	if _, err := repository.ReplanJob(ctx, testReplanCommand(t, job.ID, "retire-observed", "Retire the observed planning generation.")); err != nil {
 		t.Fatal(err)
 	}
 
 	_, err := repository.ExpandDelegatedSubtasks(
-		ctx, job.ID, anchorStepID, []artifacts.Subtask{delegatedSubtaskFixture("stale-task")},
+		ctx, authority, []artifacts.Subtask{delegatedSubtaskFixture("stale-task")},
 	)
-	if !errors.Is(err, ErrStaleJobGeneration) {
+	if !errors.Is(err, ErrStaleStepAttempt) {
 		t.Fatalf("superseded anchor error=%v", err)
 	}
 	var generation, delegated int64
@@ -44,7 +42,7 @@ func TestPostgresDelegatedExpansionRejectsSupersededAnchor(t *testing.T) {
 
 func TestPostgresDelegatedExpansionSerializesBeforeReplan(t *testing.T) {
 	repository, pool, ctx := replanTestRepository(t)
-	job, anchorStepID, tailStepID := runningPlanningJob(t, repository, pool, ctx, "lock-order")
+	job, authority, tailStepID := runningPlanningJob(t, repository, pool, ctx, "lock-order")
 
 	blocker, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -65,8 +63,8 @@ func TestPostgresDelegatedExpansionSerializesBeforeReplan(t *testing.T) {
 
 	expandName := fmt.Sprintf("omni_expand_%d", time.Now().UnixNano())
 	replanName := fmt.Sprintf("omni_replan_%d", time.Now().UnixNano())
-	expandRepository, expandPool := namedRepository(t, ctx, expandName)
-	replanRepository, replanPool := namedRepository(t, ctx, replanName)
+	expandRepository, expandPool := namedRepository(t, ctx, pool, expandName)
+	replanRepository, replanPool := namedRepository(t, ctx, pool, replanName)
 	defer expandPool.Close()
 	defer replanPool.Close()
 
@@ -75,7 +73,7 @@ func TestPostgresDelegatedExpansionSerializesBeforeReplan(t *testing.T) {
 	expandResult := make(chan error, 1)
 	go func() {
 		_, callErr := expandRepository.ExpandDelegatedSubtasks(
-			runCtx, job.ID, anchorStepID,
+			runCtx, authority,
 			[]artifacts.Subtask{delegatedSubtaskFixture("concurrent-task")},
 		)
 		expandResult <- callErr
@@ -141,7 +139,7 @@ func runningPlanningJob(
 	pool *pgxpool.Pool,
 	ctx context.Context,
 	label string,
-) (model.Job, int64, int64) {
+) (model.Job, model.StepAttemptAuthority, int64) {
 	t.Helper()
 	job, err := repository.EnqueueJob(
 		ctx, fmt.Sprintf("delegated-%s-%d", label, time.Now().UnixNano()),
@@ -165,34 +163,31 @@ func runningPlanningJob(
 	}
 	if _, err := pool.Exec(ctx, `
 		UPDATE job_steps
-		SET status=CASE
-		    WHEN id=$2 THEN $3
-		    WHEN sort_index < 40 THEN $4
-		    ELSE status
-		END,
+		SET status=CASE WHEN sort_index < 40 THEN $2 ELSE status END,
+		    finished_at=CASE WHEN sort_index < 40 THEN NOW() ELSE finished_at END,
 		updated_at=NOW()
 		WHERE job_id=$1 AND generation=1
-	`, job.ID, anchorStepID, model.StepStatusRunning, model.StepStatusCompleted); err != nil {
+	`, job.ID, model.StepStatusCompleted); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `
-		UPDATE jobs SET status=$2, updated_at=NOW() WHERE id=$1
-	`, job.ID, model.JobStatusRunning); err != nil {
+	claim, err := repository.ClaimNextStep(ctx, fmt.Sprintf("delegated-%s-worker", label))
+	if err != nil {
 		t.Fatal(err)
 	}
-	return job, anchorStepID, tailStepID
+	if claim == nil || claim.Job.ID != job.ID || claim.Step.ID != anchorStepID {
+		t.Fatalf("planning claim=%+v want job %d step %d", claim, job.ID, anchorStepID)
+	}
+	return job, claim.Authority, tailStepID
 }
 
 func namedRepository(
 	t *testing.T,
 	ctx context.Context,
+	source *pgxpool.Pool,
 	applicationName string,
 ) (*Repository, *pgxpool.Pool) {
 	t.Helper()
-	config, err := pgxpool.ParseConfig(strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL")))
-	if err != nil {
-		t.Fatal(err)
-	}
+	config := source.Config().Copy()
 	config.MaxConns = 1
 	config.ConnConfig.RuntimeParams["application_name"] = applicationName
 	pool, err := pgxpool.NewWithConfig(ctx, config)

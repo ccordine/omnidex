@@ -41,6 +41,40 @@ func (c *RoutedClient) GeneratePrepared(ctx context.Context, prepared PreparedMo
 	return c.Generation.GeneratePrepared(ctx, prepared)
 }
 
+func (c *RoutedClient) RequireExactPreparedContract() error {
+	if c == nil || c.Generation == nil {
+		return fmt.Errorf("generation client is not configured")
+	}
+	exact, ok := c.Generation.(ExactPreparedContractClient)
+	if !ok {
+		return fmt.Errorf("configured generation provider does not enforce the exact prepared contract")
+	}
+	return exact.RequireExactPreparedContract()
+}
+
+func (c *RoutedClient) ValidateExactPreparedContract(prepared PreparedModel) error {
+	if err := c.RequireExactPreparedContract(); err != nil {
+		return err
+	}
+	return c.Generation.(ExactPreparedContractClient).ValidateExactPreparedContract(prepared)
+}
+
+func (c *RoutedClient) AttestProviderIdentity(
+	ctx context.Context,
+	expected ProviderIdentityExpectation,
+) (ProviderIdentityAttestation, error) {
+	if c == nil || c.Generation == nil {
+		return ProviderIdentityAttestation{}, fmt.Errorf("generation client is not configured")
+	}
+	attestor, ok := c.Generation.(ProviderIdentityAttestor)
+	if !ok {
+		return ProviderIdentityAttestation{}, fmt.Errorf(
+			"configured generation provider cannot attest its live identity",
+		)
+	}
+	return attestor.AttestProviderIdentity(ctx, expected)
+}
+
 func (c *RoutedClient) GeneratePreparedAdvisory(ctx context.Context, prepared PreparedModel) (AdvisoryResponse, error) {
 	if c == nil || c.Generation == nil {
 		return AdvisoryResponse{}, fmt.Errorf("generation client is not configured")

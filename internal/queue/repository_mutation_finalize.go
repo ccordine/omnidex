@@ -5,11 +5,13 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
 func (r *Repository) finalizeRepositoryMutation(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	command RepositoryMutationCommand,
 	identity repositoryMutationOperationIdentity,
 ) error {
@@ -18,6 +20,9 @@ func (r *Repository) finalizeRepositoryMutation(
 		return fmt.Errorf("begin repository mutation finalization: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockRepositoryMutationAuthorityTx(ctx, tx, authority, command, false); err != nil {
+		return err
+	}
 	record, err := lockRepositoryMutationOperationTx(ctx, tx, identity.ID)
 	if err != nil {
 		return err

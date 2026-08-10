@@ -31,9 +31,6 @@ func (r *Repository) ReplanJob(ctx context.Context, command ReplanJobCommand) (m
 		return model.Job{}, fmt.Errorf("begin replan for job %d: %w", command.JobID, err)
 	}
 	defer tx.Rollback(ctx)
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
-		return model.Job{}, err
-	}
 	job, err := replanJobTx(ctx, tx, command, feedbackSHA, descriptor)
 	if err != nil {
 		return model.Job{}, err
@@ -55,10 +52,18 @@ func replanJobTx(
 	if err != nil {
 		return model.Job{}, err
 	}
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+		return model.Job{}, err
+	}
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, command.JobID); err != nil {
 		return model.Job{}, err
 	} else if found {
 		if err := requireReplanReplayTx(ctx, tx, existing, command, feedbackSHA); err != nil {
+			return model.Job{}, err
+		}
+		if err := requireCognitionLifecycleSealSetReplayTx(
+			ctx, tx, descriptor, existing.JobID, existing.ObservedGeneration,
+		); err != nil {
 			return model.Job{}, err
 		}
 		return existing.ResultJob, nil
@@ -109,9 +114,28 @@ func replanJobTx(
 	if err := rejectAssignedRetiringStepsTx(ctx, tx, command.JobID, retiringIDs); err != nil {
 		return model.Job{}, err
 	}
+	if _, err := retireCognitionEpisodesForLifecycleTx(
+		ctx, tx, descriptor, command.JobID, currentGeneration, retiringIDs,
+	); err != nil {
+		return model.Job{}, err
+	}
+	if err := terminalizeStepAttemptsForAuthorityChangeTx(
+		ctx, tx, command.JobID, currentGeneration, retiringIDs, model.StepAttemptSuperseded,
+	); err != nil {
+		return model.Job{}, err
+	}
 	newGeneration := currentGeneration + 1
 	if err := createReplanGenerationTx(
 		ctx, tx, command, feedbackSHA, currentGeneration, newGeneration, boundary,
+	); err != nil {
+		return model.Job{}, err
+	}
+	header, err = loadTaskLedgerHeaderTx(ctx, tx, command.JobID, true)
+	if err != nil {
+		return model.Job{}, err
+	}
+	if err := supersedeCurrentCognitionObligationsTx(
+		ctx, tx, header, currentGeneration, newGeneration,
 	); err != nil {
 		return model.Job{}, err
 	}

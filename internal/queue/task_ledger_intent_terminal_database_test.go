@@ -22,6 +22,7 @@ func TestPostgresAcceptedIntentObjectiveCompletesWithVerifiedJobAuthority(t *tes
 		}
 		terminal = CompleteStepCommand{
 			OperationID: testLifecycleOperationID(t, "accepted-intent-complete", stepID),
+			Authority:   stepAttemptAuthorityForTest(t, repository, stepID),
 			StepID:      stepID, Output: "verified completion for " + action,
 		}
 		if err := repository.CompleteStep(ctx, terminal); err != nil {
@@ -78,6 +79,7 @@ func TestPostgresAcceptedIntentObjectiveFailsAndCancelsAtomically(t *testing.T) 
 			transition: func(repository *Repository, _ int64, stepID int64, marker string) error {
 				return repository.FailStep(t.Context(), FailStepCommand{
 					OperationID: testLifecycleOperationID(t, marker+"-fail", stepID),
+					Authority:   stepAttemptAuthorityForTest(t, repository, stepID),
 					StepID:      stepID, Error: "explicit accepted intent failure",
 				})
 			},
@@ -121,6 +123,7 @@ func TestPostgresAcceptedIntentObjectiveSurvivesReplanWithoutStepAssignment(t *t
 	job, intentStepID := enqueueAndProjectAcceptedIntent(t, repository, marker)
 	if err := repository.CompleteStep(ctx, CompleteStepCommand{
 		OperationID: testLifecycleOperationID(t, marker+"-complete-intent", intentStepID),
+		Authority:   stepAttemptAuthorityForTest(t, repository, intentStepID),
 		StepID:      intentStepID, Output: "accepted intent persisted",
 	}); err != nil {
 		t.Fatal(err)
@@ -172,7 +175,7 @@ func enqueueAndProjectAcceptedIntent(
 		t.Fatalf("claimed step=%+v, want job %d intent", claimed, job.ID)
 	}
 	if err := repository.WriteAcceptedIntentArtifact(
-		t.Context(), acceptedIntentTestEnvelope(t, job.ID, claimed.Step.ID),
+		t.Context(), claimed.Authority, acceptedIntentTestEnvelope(t, job.ID, claimed.Step.ID),
 	); err != nil {
 		t.Fatal(err)
 	}

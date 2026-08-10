@@ -16,13 +16,13 @@ func TestPostgresPreparedMutationWithExactPostFinalizesWithoutReapplying(t *test
 		t.Fatal(err)
 	}
 	if _, err := fixture.repository.prepareRepositoryMutation(
-		fixture.ctx, fixture.command, identity,
+		fixture.ctx, fixture.authority, fixture.command, identity,
 	); err != nil {
 		t.Fatal(err)
 	}
 	var applied atomic.Bool
 	err = fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command,
+		fixture.ctx, fixture.authority, fixture.command,
 		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
 			return RepositoryMutationPost, nil
 		},
@@ -50,7 +50,7 @@ func TestPostgresUnresolvedMutationLoadsTheExactDurableCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := fixture.repository.prepareRepositoryMutation(
-		fixture.ctx, fixture.command, identity,
+		fixture.ctx, fixture.authority, fixture.command, identity,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -89,18 +89,18 @@ func TestPostgresApplyingMutationWithExactPostRecoversAfterCrashBoundary(t *test
 		t.Fatal(err)
 	}
 	if _, err := fixture.repository.prepareRepositoryMutation(
-		fixture.ctx, fixture.command, identity,
+		fixture.ctx, fixture.authority, fixture.command, identity,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if err := fixture.repository.markRepositoryMutationApplying(
-		fixture.ctx, fixture.command, identity,
+		fixture.ctx, fixture.authority, fixture.command, identity,
 	); err != nil {
 		t.Fatal(err)
 	}
 	var applied atomic.Bool
 	err = fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command,
+		fixture.ctx, fixture.authority, fixture.command,
 		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
 			return RepositoryMutationPost, nil
 		},
@@ -128,12 +128,12 @@ func TestPostgresExactPostFinalizesAfterCancellationRacesWithApplying(t *testing
 		t.Fatal(err)
 	}
 	if _, err := fixture.repository.prepareRepositoryMutation(
-		fixture.ctx, fixture.command, identity,
+		fixture.ctx, fixture.authority, fixture.command, identity,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if err := fixture.repository.markRepositoryMutationApplying(
-		fixture.ctx, fixture.command, identity,
+		fixture.ctx, fixture.authority, fixture.command, identity,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestPostgresExactPostFinalizesAfterCancellationRacesWithApplying(t *testing
 	}
 	var applied atomic.Bool
 	err = fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command,
+		fixture.ctx, fixture.authority, fixture.command,
 		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
 			return RepositoryMutationPost, nil
 		},
@@ -155,14 +155,14 @@ func TestPostgresExactPostFinalizesAfterCancellationRacesWithApplying(t *testing
 			return nil
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrStaleStepAttempt) {
+		t.Fatalf("canceled attempt mutation error=%v", err)
 	}
 	if applied.Load() {
 		t.Fatal("canceled exact-post recovery invoked a new filesystem mutation")
 	}
 	status, _, evidenceID := repositoryMutationJournalStatus(t, fixture)
-	if status != repositoryMutationApplied || evidenceID == nil {
+	if status != repositoryMutationApplying || evidenceID != nil {
 		t.Fatalf("canceled exact-post journal=%s/%v", status, evidenceID)
 	}
 }
@@ -171,7 +171,7 @@ func TestPostgresIndeterminateMutationPersistsAndBlocksReplan(t *testing.T) {
 	fixture := newRepositoryMutationDatabaseFixture(t, "indeterminate")
 	var applied atomic.Bool
 	err := fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command,
+		fixture.ctx, fixture.authority, fixture.command,
 		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
 			return RepositoryMutationIndeterminate, nil
 		},
@@ -208,7 +208,7 @@ func TestPostgresMutationCommandConflictCannotReuseAStage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := fixture.repository.prepareRepositoryMutation(
-		fixture.ctx, fixture.command, identity,
+		fixture.ctx, fixture.authority, fixture.command, identity,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestPostgresMutationCommandConflictCannotReuseAStage(t *testing.T) {
 	changed.ChangedFiles[0].ExpectedSize++
 	var called atomic.Bool
 	err = fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, changed,
+		fixture.ctx, fixture.authority, changed,
 		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
 			called.Store(true)
 			return RepositoryMutationPost, nil

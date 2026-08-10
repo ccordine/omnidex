@@ -7,6 +7,9 @@ func (ledger *Ledger) applyNodeStepAssigned(event Event) error {
 		return fmt.Errorf("node step assignment requires code authority and a positive step")
 	}
 	node, exists := ledger.nodes[event.NodeID]
+	if ledger.nodeSuperseded(event.NodeID) {
+		return fmt.Errorf("node %q is superseded", event.NodeID)
+	}
 	if !exists || !executableNode(node.Kind) ||
 		(node.Status != NodePending && node.Status != NodeReady) || node.AssignedStepID != nil {
 		return fmt.Errorf("node %q cannot receive a step assignment", event.NodeID)
@@ -26,6 +29,9 @@ func (ledger *Ledger) applyNodeTransitioned(event Event) error {
 		return fmt.Errorf("node transition requires code authority")
 	}
 	node, exists := ledger.nodes[event.NodeID]
+	if ledger.nodeSuperseded(event.NodeID) {
+		return fmt.Errorf("node %q is superseded", event.NodeID)
+	}
 	if !exists || node.Status != event.FromStatus {
 		return fmt.Errorf("node transition source is missing or stale")
 	}
@@ -35,19 +41,28 @@ func (ledger *Ledger) applyNodeTransitioned(event Event) error {
 	} else if !equalInt64Pointers(event.StepID, node.AssignedStepID) {
 		return fmt.Errorf("non-completion transition step does not match assigned step")
 	}
-	command := TransitionNodeCommand{
-		Actor: event.Authority, NodeID: event.NodeID, To: event.ToStatus,
-		CompletedStepID:  completedStep,
-		VerificationRefs: cloneRefs(event.VerificationRefs), Reason: event.Reason,
-	}
-	if err := validateNodeTransition(node, command); err != nil {
-		return err
+	if event.ToStatus == NodeFailed && len(event.VerificationRefs) == 1 {
+		if err := validateTerminalNodeFailure(node, event.Reason, event.VerificationRefs[0]); err != nil {
+			return err
+		}
+	} else {
+		command := TransitionNodeCommand{
+			Actor: event.Authority, NodeID: event.NodeID, To: event.ToStatus,
+			CompletedStepID:  completedStep,
+			VerificationRefs: cloneRefs(event.VerificationRefs), Reason: event.Reason,
+		}
+		if err := validateNodeTransition(node, command); err != nil {
+			return err
+		}
 	}
 	node.Status, node.StatusReason, node.UpdatedVersion = event.ToStatus, event.Reason, event.Version
 	if event.ToStatus == NodeDone {
 		node.CompletedStepID = cloneInt64(event.StepID)
 		node.VerificationRefs = cloneRefs(event.VerificationRefs)
 		ledger.nodeRefCount += len(event.VerificationRefs)
+	} else if event.ToStatus == NodeFailed && len(event.VerificationRefs) == 1 {
+		node.VerificationRefs = cloneRefs(event.VerificationRefs)
+		ledger.nodeRefCount++
 	}
 	ledger.nodes[node.ID] = node
 	return nil
@@ -64,7 +79,10 @@ func (ledger *Ledger) applyLedgerClosed(event Event) error {
 		return err
 	}
 	if event.LedgerStatus == LedgerClosed {
-		for _, node := range ledger.nodes {
+		for id, node := range ledger.nodes {
+			if ledger.nodeSuperseded(id) {
+				continue
+			}
 			if node.Status != NodeDone {
 				return fmt.Errorf("successful close requires every node to be done")
 			}
@@ -84,6 +102,9 @@ func (ledger *Ledger) validateNewEntryProjection(event Event, entry Entry) error
 	if entry.ScopeNodeID != "" {
 		if _, exists := ledger.nodes[entry.ScopeNodeID]; !exists {
 			return fmt.Errorf("scope node %q does not exist", entry.ScopeNodeID)
+		}
+		if ledger.nodeSuperseded(entry.ScopeNodeID) {
+			return fmt.Errorf("scope node %q is superseded", entry.ScopeNodeID)
 		}
 	}
 	if entry.Status != EntryActive || entry.Authority != event.Authority || entry.CreatedBy != event.Authority ||

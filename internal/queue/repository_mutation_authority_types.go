@@ -1,6 +1,10 @@
 package queue
 
-import "context"
+import (
+	"context"
+
+	"github.com/gryph/omnidex/internal/model"
+)
 
 const (
 	maxRepositoryMutationPatchBytes = 1 << 20
@@ -25,6 +29,7 @@ type RepositoryMutationCommand struct {
 	JobID            int64                    `json:"job_id"`
 	StepID           int64                    `json:"step_id"`
 	Generation       int64                    `json:"generation"`
+	Attempt          int64                    `json:"attempt"`
 	WorkerID         string                   `json:"worker_id"`
 	ContractID       string                   `json:"contract_id"`
 	StageID          string                   `json:"stage_id"`
@@ -32,6 +37,13 @@ type RepositoryMutationCommand struct {
 	Patch            string                   `json:"patch"`
 	PatchSHA256      string                   `json:"patch_sha256"`
 	ChangedFiles     []RepositoryMutationFile `json:"changed_files"`
+}
+
+func (command RepositoryMutationCommand) stepAttemptAuthority() model.StepAttemptAuthority {
+	return model.StepAttemptAuthority{
+		JobID: command.JobID, Generation: command.Generation, StepID: command.StepID,
+		Attempt: command.Attempt, WorkerID: command.WorkerID,
+	}
 }
 
 // RepositoryMutationState is a code-derived classification of the complete

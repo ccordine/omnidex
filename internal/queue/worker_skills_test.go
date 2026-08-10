@@ -63,7 +63,7 @@ func TestPostgresWorkerSkillsAreVersionedAndImmutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx); err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ func TestPostgresLearnedSkillActivatesOnlyAfterPassingChecks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx); err != nil {
 		t.Fatal(err)

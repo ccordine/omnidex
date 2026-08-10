@@ -211,6 +211,7 @@ func taskEventJSONFieldContract(kind taskstate.EventKind) (map[string]bool, map[
 		allow("step_id")
 	case taskstate.EventEntryRejected:
 		require("entry_id", "reason")
+		allow("verification_refs")
 	case taskstate.EventEntryResolved:
 		require("entry_id", "verification_refs", "reason")
 	case taskstate.EventEntrySuperseded:
@@ -225,6 +226,8 @@ func taskEventJSONFieldContract(kind taskstate.EventKind) (map[string]bool, map[
 	case taskstate.EventNodeTransitioned:
 		require("node_id", "from_status", "to_status")
 		allow("step_id", "verification_refs", "reason")
+	case taskstate.EventNodeGenerationSuperseded:
+		require("node_ids", "retiring_generation", "superseded_at_generation", "reason")
 	case taskstate.EventLedgerClosed:
 		require("ledger_status", "reason")
 		allow("step_id")

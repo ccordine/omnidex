@@ -61,7 +61,8 @@ func (r *Repository) ListWorkingSetEvents(
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT id, working_set_version, command_id, command_sha256,
-		       command_kind, event_kind, actor, payload, created_at
+		       command_kind, event_kind, actor, reacquired_item_id,
+		       reacquisition_count, payload, created_at
 		FROM working_set_events
 		WHERE working_set_id=$1 AND job_id=$2 AND generation=$3 AND id>$4
 		ORDER BY id ASC LIMIT $5
@@ -75,17 +76,21 @@ func (r *Repository) ListWorkingSetEvents(
 		var record WorkingSetEventRecord
 		var version int64
 		var commandID, commandSHA, commandKind, eventKind, actor string
+		var reacquiredItemID *string
+		var reacquisitionCount *int64
 		var payload []byte
 		if err := rows.Scan(
 			&record.ID, &version, &commandID, &commandSHA,
-			&commandKind, &eventKind, &actor, &payload, &record.CreatedAt,
+			&commandKind, &eventKind, &actor, &reacquiredItemID,
+			&reacquisitionCount, &payload, &record.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan working-set event page for job %d: %w", jobID, err)
 		}
 		record.JobID, record.Generation = jobID, generation
 		record.Event, err = decodeWorkingSetEventColumns(
 			snapshot.ID, version, workingset.CommandID(commandID), commandSHA,
-			workingset.CommandKind(commandKind), workingset.EventKind(eventKind), actor, payload,
+			workingset.CommandKind(commandKind), workingset.EventKind(eventKind), actor,
+			reacquiredItemID, reacquisitionCount, payload,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("decode working-set event %d: %w", record.ID, err)
@@ -112,6 +117,8 @@ func decodeWorkingSetEventColumns(
 	commandKind workingset.CommandKind,
 	eventKind workingset.EventKind,
 	actor string,
+	reacquiredItemID *string,
+	reacquisitionCount *int64,
 	payload []byte,
 ) (workingset.Event, error) {
 	var event workingset.Event
@@ -131,8 +138,29 @@ func decodeWorkingSetEventColumns(
 			"%w: immutable working-set event disagrees with its typed columns", workingset.ErrInvalidSet,
 		)
 	}
+	if err := validateWorkingSetReacquisitionColumns(event, reacquiredItemID, reacquisitionCount); err != nil {
+		return workingset.Event{}, err
+	}
 	if err := workingset.ValidateEvent(event); err != nil {
 		return workingset.Event{}, err
 	}
 	return event, nil
+}
+
+func validateWorkingSetReacquisitionColumns(
+	event workingset.Event,
+	itemID *string,
+	count *int64,
+) error {
+	if event.Reacquisition == nil {
+		if itemID != nil || count != nil {
+			return fmt.Errorf("%w: non-reacquisition event has typed reacquisition columns", workingset.ErrInvalidSet)
+		}
+		return nil
+	}
+	if itemID == nil || count == nil || *count <= 0 ||
+		*itemID != string(event.Reacquisition.ItemID) || uint64(*count) != event.Reacquisition.Count {
+		return fmt.Errorf("%w: reacquisition event disagrees with its typed metadata columns", workingset.ErrInvalidSet)
+	}
+	return nil
 }

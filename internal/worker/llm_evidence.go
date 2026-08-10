@@ -8,6 +8,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -35,7 +36,7 @@ func (e llmEvidencePersistenceError) Unwrap() error {
 
 func (s *Service) llmGeneratePortableWithSchemaTrace(
 	ctx context.Context,
-	stepID int64,
+	authority model.StepAttemptAuthority,
 	job assemblyline.PortableJob,
 	scope, modelName, prompt string,
 	responseSchema map[string]any,
@@ -46,7 +47,7 @@ func (s *Service) llmGeneratePortableWithSchemaTrace(
 		return "", err
 	}
 	work.ContextProjectionID = contextProjectionID
-	return s.llmGenerateWithEvidenceTrace(ctx, stepID, scope, modelName, prompt, responseSchema, work)
+	return s.llmGenerateWithEvidenceTrace(ctx, authority, scope, modelName, prompt, responseSchema, work)
 }
 
 func llmEvidenceWorkForPortableJob(job assemblyline.PortableJob) (llmEvidenceWork, error) {
@@ -57,7 +58,7 @@ func llmEvidenceWorkForPortableJob(job assemblyline.PortableJob) (llmEvidenceWor
 }
 
 func newLLMCallEvidenceRecord(
-	stepID int64,
+	authority model.StepAttemptAuthority,
 	scope, requestedModel, prompt string,
 	responseSchema map[string]any,
 	contract llmResponseContract,
@@ -69,7 +70,7 @@ func newLLMCallEvidenceRecord(
 		format = "text"
 	}
 	return queue.LLMCallEvidenceRecord{
-		StepID: stepID, Scope: scope, WorkID: work.ID, WorkKind: work.Kind,
+		Authority: authority, StepID: authority.StepID, Scope: scope, WorkID: work.ID, WorkKind: work.Kind,
 		ContextProjectionID: work.ContextProjectionID,
 		RequestedModel:      requestedModel, Model: requestedModel, Attempt: attempt,
 		SystemPrompt: prompt, UserPrompt: contract.PromptHint,

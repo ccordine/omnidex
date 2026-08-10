@@ -70,6 +70,9 @@ func (command AddEdgeCommand) decide(ledger *Ledger) (Event, error) {
 	if !fromOK || !toOK {
 		return Event{}, fmt.Errorf("%w: edge endpoints must both exist", ErrNotFound)
 	}
+	if ledger.nodeSuperseded(command.From) || ledger.nodeSuperseded(command.To) {
+		return Event{}, fmt.Errorf("%w: edge endpoints must be current", ErrInvalidState)
+	}
 	if ledger.semanticEdgeExists(command.Kind, command.From, command.To) {
 		return Event{}, fmt.Errorf("%w: semantic edge already exists", ErrInvalidState)
 	}
@@ -112,6 +115,9 @@ func (command AssignNodeStepCommand) decide(ledger *Ledger) (Event, error) {
 	if !executableNode(node.Kind) {
 		return Event{}, fmt.Errorf("%w: node kind %q cannot be assigned a step", ErrInvalidState, node.Kind)
 	}
+	if ledger.nodeSuperseded(node.ID) {
+		return Event{}, fmt.Errorf("%w: node %q is superseded", ErrInvalidState, node.ID)
+	}
 	if node.Status != NodePending && node.Status != NodeReady {
 		return Event{}, fmt.Errorf("%w: node in status %q cannot be assigned", ErrInvalidState, node.Status)
 	}
@@ -134,6 +140,9 @@ func (command TransitionNodeCommand) decide(ledger *Ledger) (Event, error) {
 	if !exists {
 		return Event{}, fmt.Errorf("%w: node %q", ErrNotFound, command.NodeID)
 	}
+	if ledger.nodeSuperseded(node.ID) {
+		return Event{}, fmt.Errorf("%w: node %q is superseded", ErrInvalidState, node.ID)
+	}
 	if err := validateNodeTransition(node, command); err != nil {
 		return Event{}, err
 	}
@@ -148,11 +157,35 @@ func (command TransitionNodeCommand) decide(ledger *Ledger) (Event, error) {
 	}, nil
 }
 
+func (command TerminalFailNodeCommand) decide(ledger *Ledger) (Event, error) {
+	if err := requireCode(command.Actor, "terminally fail task nodes"); err != nil {
+		return Event{}, err
+	}
+	node, exists := ledger.nodes[command.NodeID]
+	if !exists {
+		return Event{}, fmt.Errorf("%w: node %q", ErrNotFound, command.NodeID)
+	}
+	if ledger.nodeSuperseded(node.ID) || terminalNode(node.Status) {
+		return Event{}, fmt.Errorf("%w: node %q is not open", ErrInvalidState, node.ID)
+	}
+	if err := validateTerminalNodeFailure(node, command.Reason, command.Proof); err != nil {
+		return Event{}, err
+	}
+	return Event{
+		Kind: EventNodeTransitioned, NodeID: node.ID, FromStatus: node.Status,
+		ToStatus: NodeFailed, StepID: cloneInt64(node.AssignedStepID),
+		VerificationRefs: []Ref{command.Proof}, Reason: command.Reason,
+	}, nil
+}
+
 func (ledger *Ledger) validateNodeHierarchy(parentID, objectiveID NodeID, kind NodeKind) error {
 	if parentID != "" {
 		parent, exists := ledger.nodes[parentID]
 		if !exists {
 			return fmt.Errorf("%w: parent node %q", ErrNotFound, parentID)
+		}
+		if ledger.nodeSuperseded(parentID) {
+			return fmt.Errorf("%w: parent node %q is superseded", ErrInvalidState, parentID)
 		}
 		if parent.Kind != NodeGoal && parent.Kind != NodeObjective && parent.Kind != NodeChangeGroup {
 			return fmt.Errorf("%w: node kind %q cannot be a parent", ErrInvalidState, parent.Kind)
@@ -162,6 +195,9 @@ func (ledger *Ledger) validateNodeHierarchy(parentID, objectiveID NodeID, kind N
 		objective, exists := ledger.nodes[objectiveID]
 		if !exists {
 			return fmt.Errorf("%w: objective node %q", ErrNotFound, objectiveID)
+		}
+		if ledger.nodeSuperseded(objectiveID) {
+			return fmt.Errorf("%w: objective node %q is superseded", ErrInvalidState, objectiveID)
 		}
 		if objective.Kind != NodeObjective {
 			return fmt.Errorf("%w: objective ID must reference an objective node", ErrInvalidState)
@@ -204,6 +240,9 @@ func (ledger *Ledger) semanticEdgeExists(kind EdgeKind, from, to NodeID) bool {
 			if edge.Kind != EdgeDependsOn && edge.Kind != EdgeBlocks {
 				continue
 			}
+			if ledger.nodeSuperseded(edge.From) || ledger.nodeSuperseded(edge.To) {
+				continue
+			}
 			existingDependent, existingPrerequisite := executionOrder(edge.Kind, edge.From, edge.To)
 			if dependent == existingDependent && prerequisite == existingPrerequisite {
 				return true
@@ -234,6 +273,9 @@ func (ledger *Ledger) executionPathExists(from, to NodeID) bool {
 			if edge.Kind != EdgeDependsOn && edge.Kind != EdgeBlocks {
 				continue
 			}
+			if ledger.nodeSuperseded(edge.From) || ledger.nodeSuperseded(edge.To) {
+				continue
+			}
 			dependent, prerequisite := executionOrder(edge.Kind, edge.From, edge.To)
 			if dependent == current && visit(prerequisite) {
 				return true
@@ -247,7 +289,7 @@ func (ledger *Ledger) executionPathExists(from, to NodeID) bool {
 func (ledger *Ledger) promotableNodeIDs() []NodeID {
 	ids := make([]NodeID, 0)
 	for id, node := range ledger.nodes {
-		if node.Status == NodePending && ledger.dependenciesDone(id) {
+		if !ledger.nodeSuperseded(id) && node.Status == NodePending && ledger.dependenciesDone(id) {
 			ids = append(ids, id)
 		}
 	}
@@ -266,6 +308,9 @@ func (ledger *Ledger) promotableNodeIDs() []NodeID {
 
 func (ledger *Ledger) dependenciesDone(id NodeID) bool {
 	for _, edge := range ledger.edges {
+		if ledger.nodeSuperseded(edge.From) || ledger.nodeSuperseded(edge.To) {
+			continue
+		}
 		dependent, prerequisite := executionOrder(edge.Kind, edge.From, edge.To)
 		if edge.Kind != EdgeDependsOn && edge.Kind != EdgeBlocks {
 			continue

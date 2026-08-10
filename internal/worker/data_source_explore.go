@@ -10,7 +10,8 @@ import (
 )
 
 type repoCatalogStore struct {
-	svc *Service
+	svc       *Service
+	authority model.StepAttemptAuthority
 }
 
 func (s *repoCatalogStore) Get(ctx context.Context, sourceID string) (datasource.SchemaCatalog, bool, error) {
@@ -18,7 +19,7 @@ func (s *repoCatalogStore) Get(ctx context.Context, sourceID string) (datasource
 }
 
 func (s *repoCatalogStore) Save(ctx context.Context, catalog datasource.SchemaCatalog) error {
-	return s.svc.repo.SaveDataSourceCatalog(ctx, catalog)
+	return s.svc.repo.SaveDataSourceCatalogByStepAttempt(ctx, s.authority, catalog)
 }
 
 func (s *Service) runDataSourceExploreStep(ctx context.Context, claim *model.ClaimedStep) error {
@@ -38,14 +39,14 @@ func (s *Service) runDataSourceExploreStep(ctx context.Context, claim *model.Cla
 		return err
 	}
 
-	s.emitStepEvent(claim.Step.ID, "data_source_explore_started", record.Name)
-	store := &repoCatalogStore{svc: s}
-	writer := &dataSourceMemoryWriter{repo: s.repo}
+	s.emitStepEvent(claim.Authority, "data_source_explore_started", record.Name)
+	store := &repoCatalogStore{svc: s, authority: claim.Authority}
+	writer := &dataSourceMemoryWriter{repo: s.repo, authority: claim.Authority}
 	catalog, err := datasource.EnsureCatalog(ctx, store, writer, record.Connection(), record.Profile(), record.ID, sourceName, llm)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.UpdateDataSourceCatalogTimestamp(ctx, record.ID, catalog.UpdatedAt); err != nil {
+	if err := s.repo.UpdateDataSourceCatalogTimestampByStepAttempt(ctx, claim.Authority, record.ID, catalog.UpdatedAt); err != nil {
 		return fmt.Errorf("update data source catalog timestamp: %w", err)
 	}
 
@@ -61,6 +62,6 @@ func (s *Service) runDataSourceExploreStep(ctx context.Context, claim *model.Cla
 	if completeStep == nil {
 		completeStep = s.repo.CompleteStep
 	}
-	s.emitStepEvent(claim.Step.ID, "data_source_explore_completed", summary)
+	s.emitStepEvent(claim.Authority, "data_source_explore_completed", summary)
 	return invokeCompleteClaimedStep(ctx, completeStep, claim, string(payloadBytes), "data_source_explore", summary)
 }

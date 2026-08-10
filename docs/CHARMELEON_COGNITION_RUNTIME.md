@@ -51,24 +51,28 @@ internal/workingset/                code-owned attention lifecycle
 internal/contextbuilder/            immutable per-call projection construction
 internal/evidence/                  exact call and transition evidence
 
+internal/labyrinth/                 benchmark-only world, adapters, and oracle handling
 internal/cognitiongauntlet/         offline benchmark runner and evaluators only
-    labyrinth/                     procedural world, adapters, and oracle handling
 gauntlets/labyrinth/                versioned public cases and private labels/oracles
 ```
 
 These are target boundaries, not a statement that the packages exist today. The
 production runtime may depend on the existing task-state, working-set,
-context-builder, evidence, model, and queue contracts. The offline cognition gauntlet
-may depend on the production runtime.
+context-builder, evidence, model, and queue contracts. Labyrinth may implement the
+production Environment Contract; the offline cognition gauntlet may depend on both.
 
 The reverse directions are forbidden:
 
 ```text
 internal/cognition        -> internal/cognitiongauntlet
+internal/cognition        -> internal/labyrinth
 internal/worker           -> internal/cognitiongauntlet
+internal/worker           -> internal/labyrinth
 internal/api              -> internal/cognitiongauntlet
+internal/api              -> internal/labyrinth
 internal/omni             -> internal/cognitiongauntlet
-other production core     -> internal/cognitiongauntlet
+internal/omni             -> internal/labyrinth
+other production core     -> either benchmark package
 ```
 
 Only an offline benchmark entrypoint may construct a Labyrinth adapter. Before any
@@ -105,6 +109,7 @@ type Revision struct {
 
 type RegisteredAction struct {
     ID            ActionID
+    Actor         AttemptRef
     SpecID        ActionSpecID
     Input         ValidatedActionInput
     RequestSHA256 Digest
@@ -119,6 +124,17 @@ type Transition struct {
     Terminal      bool
     PublicOutcome string
 }
+
+type Observation struct {
+    ID        ObservationID
+    EpisodeID EpisodeID
+    ActionID  *ActionID
+    Revision  Revision
+    SpecID    ObservationSpecID
+    Payload   ValidatedObservation
+    SHA256    Digest
+    ByteCount int64
+}
 ```
 
 `ScenarioRef` contains only the public scenario identity and public artifact hash. It
@@ -131,17 +147,21 @@ Identity and transition rules are absolute:
 
 - Code assigns episode, action, model-call, and obligation identities. `ActionID` is
   the sole idempotency identity; there is no second retry key.
+- `RegisteredAction.Actor` is the current invocation fence, not part of semantic
+  action identity. `RequestSHA256` binds the action ID, specification, and input. A
+  replacement attempt may retry that same request with its current actor fence.
 - A revision is an opaque monotonic number plus a digest of authoritative environment
   state. The model receives the identity, never the state used to derive it.
 - `Start` returns a transition whose `Previous` and `ActionID` are absent. An `Apply`
-  transition has both fields present, all revisions belong to the same episode, and
-  `Current.Number` equals `Previous.Number + 1`.
+  transition has both fields present, `Previous` exactly equals the requested
+  revision, all revisions belong to the same episode, and `Current.Number` equals
+  `Previous.Number + 1`.
 - An observation is immutable and bound to its episode, revision, canonical payload
   digest, authority, byte cost, and optional producing action. Initial observations
   have no producing action.
 - An exact `ActionID` retry with the same canonical request returns the already
   recorded transition. Reusing it with different canonical content fails explicitly.
-  This replay check precedes the current-revision check.
+  Actor-fence validation precedes replay; replay precedes the current-revision check.
 - A previously unseen action accepts only the exact current revision. A stale
   revision or cross-episode revision fails without an effect.
 - Preconditions, authorization, input validation, state mutation, transition
@@ -199,10 +219,12 @@ that an effect occurred. The decision must reference the active obligation and e
 currently projected evidence to authorize the chosen action. Code rejects missing,
 stale, out-of-scope, duplicate, oversized, or unsupported references.
 
-The model may propose a hypothesis, question, decision candidate, candidate
-obligation, or bounded retain/release request. It may not assign durable IDs, create
-authoritative observations or facts, mutate the Task Ledger or Working Set, change a
-budget, bypass the environment, or declare completion.
+The model may propose an observation claim, hypothesis, question, decision candidate,
+candidate obligation, or bounded retain/release request. A proposed observation is
+stored with `model_proposal` authority and never becomes an environment observation
+merely because it uses the observation entry kind. The model may not assign durable
+IDs, create authoritative observations or facts, mutate the Task Ledger or Working
+Set, change a budget, bypass the environment, or declare completion.
 
 The first policy uses one configured model. Planner/actor committees, advisers, and
 model-authored reviews are separate experiments, not assumed production features.
@@ -251,6 +273,36 @@ generation, action-catalog version, Working Set version, Context Projection iden
 renderer version, and hard input/output/tool budgets. The accepted response and any
 subsequent action bind that same projection hash. An unbound call or a response that
 arrives after any bound authority becomes stale is rejected.
+
+### Every model call gets a clean desk
+
+The context window is reusable compute space, not accumulated memory. PostgreSQL,
+the Task Ledger, the Working Set, and immutable evidence hold long-lived state. For
+each bounded station, code compiles a new disposable Context Projection from that
+state and loads it by exact projection identity immediately before inference. The
+policy retains no prior prompt, response, transcript tail, or message buffer after
+the call.
+
+Two budgets remain distinct:
+
+- the episode budget limits how many model calls and environment actions the whole
+  run may consume;
+- the registered station budget independently limits input bytes/tokens, output
+  bytes/tokens, evidence references, and typed decision fields for every call.
+
+Consuming one episode call decrements only the remaining-call allowance. It does not
+shrink the next station's input or output capacity. Planning, one execution step, one
+declaration, and one correction may therefore each use their complete registered
+workspace while seeing different exact projections.
+
+Conversation history is never selected by `last N`. The current direct instruction,
+active accepted constraints, authority referenced by the active obligation, and
+explicitly relevant changed directives may enter as source-bound entries. Recency may
+order already relevant authority but cannot make unrelated chat relevant. A worker
+normally receives the accepted typed constraint; it receives original message bytes
+only when the station specification explicitly requires that source. Missing required
+authority or projection overflow fails before inference; neither causes transcript
+fallback or a larger budget.
 
 ## Authority and epistemic rules
 
@@ -334,22 +386,24 @@ mutation is authorized by Labyrinth success alone.
 
 ## Ordered implementation and promotion
 
-1. Freeze these contracts and enforce the production-to-gauntlet import prohibition.
-2. Build and property-test the deterministic Labyrinth kernel and sealed oracle split.
-3. Add solution-first generation and prove every case with an optimal or witness
+0. **PR 0:** Freeze these contracts and enforce the production-to-gauntlet import
+   prohibition.
+1. **PR 1:** Build and property-test the deterministic Labyrinth kernel and sealed
+   oracle split.
+2. **PR 2:** Add solution-first generation and prove every case with an optimal or witness
    oracle.
-4. Add the isolated filesystem adapter and bounded registered actions.
-5. Add the minimal single-policy coordinator with durable transition ingestion.
-6. Integrate Task Ledger recording in shadow without changing prompts.
-7. Measure deterministic Working Set retention and release in shadow.
-8. Promote immutable Context Projection for one isolated suite and remove its prior
+3. **PR 3:** Add the isolated filesystem adapter and bounded registered actions.
+4. **PR 4:** Add the minimal single-policy coordinator with durable transition ingestion.
+5. **PR 5:** Integrate Task Ledger recording in shadow without changing prompts.
+6. **PR 6:** Measure deterministic Working Set retention and release in shadow.
+7. **PR 7:** Promote immutable Context Projection for one isolated suite and remove its prior
    transcript consumer.
-9. Add the obligation graph, generation-safe replanning, and contradiction handling.
-10. Add real process death, monotonic attempt takeover, replay, and stale-writer
+8. **PR 8:** Add the obligation graph, generation-safe replanning, and contradiction handling.
+9. **PR 9:** Add real process death, monotonic attempt takeover, replay, and stale-writer
     rejection.
-11. Prove scale and transfer on frozen held-out cases.
-12. Run the combined long-horizon Rogue Suite, then a repository-investigation shadow
-    consumer.
+10. **PR 10:** Prove scale and transfer on frozen held-out cases.
+11. **PR 11:** Run the combined long-horizon Rogue Suite.
+12. **PR 12:** Add a repository-investigation shadow consumer without mutation.
 
 No later stage supplies evidence for an earlier missing gate. Shadow execution is
 never a fallback path, and a promoted consumer has one authoritative implementation.
@@ -360,7 +414,7 @@ Only checked items may be cited as implemented. A checkbox may be changed only i
 same reviewed change that adds the production code, success/failure/forbidden-path
 tests, and exact evidence proving it.
 
-- [ ] Production packages exist and forbidden gauntlet imports fail architecture tests.
+- [x] Production packages exist and forbidden gauntlet imports fail architecture tests.
 - [ ] Environment actions are schema-validated, revision-fenced, transactional, and
   idempotent solely by `ActionID`.
 - [ ] Cognition transitions, obligations, and terminal state survive PostgreSQL-only
@@ -377,6 +431,7 @@ tests, and exact evidence proving it.
 - [ ] Every applicable promotion gate in
   [`LABYRINTH_GAUNTLET.md`](LABYRINTH_GAUNTLET.md) has sealed evidence.
 
-At publication all items are unchecked. Existing Task Ledger, Working Set, Context
-Projection, and repository-intelligence primitives are foundations, not proof that
-this cognition contract or its restart guarantees are implemented.
+Checked items above correspond only to the implementation and exact tests in this
+change. Existing Task Ledger, Working Set, Context Projection, and
+repository-intelligence primitives remain foundations rather than proof of any
+unchecked cognition or restart guarantee.

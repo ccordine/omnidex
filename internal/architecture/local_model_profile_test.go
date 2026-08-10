@@ -71,11 +71,39 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 				t.Errorf("%s: removed production route %s remains configured", name, removed)
 			}
 		}
-		if got := values["INFERENCE_CONTEXT_TOKENS"]; got != "16384" {
-			t.Errorf("%s: INFERENCE_CONTEXT_TOKENS=%q, want 16384", name, got)
+		if got := values["INFERENCE_CONTEXT_TOKENS"]; got != "32768" {
+			t.Errorf("%s: INFERENCE_CONTEXT_TOKENS=%q, want 32768", name, got)
 		}
 		if got := values["CODING_FRAGMENT_CONCURRENCY"]; got != "1" {
 			t.Errorf("%s: CODING_FRAGMENT_CONCURRENCY=%q, want 1", name, got)
+		}
+	}
+}
+
+func TestReadmeCannotAdvertiseStaleOrFabricatedCognitionConfiguration(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "README.md")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(raw)
+	if strings.Contains(contents, "INFERENCE_CONTEXT_TOKENS=16384") {
+		t.Fatal("README advertises a native context too small for the required cognition station")
+	}
+	if !strings.Contains(contents, "Production cognition is currently Ollama-only") {
+		t.Fatal("README does not disclose the exact prepared-provider cognition boundary")
+	}
+	required := []string{
+		"INFERENCE_CONTEXT_TOKENS=32768",
+		"COGNITION_MODEL_SHA256=",
+		"COGNITION_MODEL_QUANTIZATION=",
+		"COGNITION_BACKEND_VERSION=",
+		"COGNITION_HARDWARE=",
+		"COGNITION_CONTEXT_CEILING_BYTES=",
+		"COGNITION_MAX_OUTPUT_TOKENS=",
+	}
+	for _, line := range required {
+		if !strings.Contains(contents, "\n"+line+"\n") {
+			t.Fatalf("README omits truthful cognition configuration line %q", line)
 		}
 	}
 }

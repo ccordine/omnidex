@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 const lifecycleOperationIdentitySchema = "omnidex.lifecycle-operation-identity.v1"
@@ -63,17 +65,19 @@ const (
 )
 
 type CompleteStepCommand struct {
-	OperationID  LifecycleOperationID `json:"operation_id"`
-	StepID       int64                `json:"step_id"`
-	Output       string               `json:"output"`
-	ContextKey   string               `json:"context_key"`
-	ContextValue string               `json:"context_value"`
+	OperationID  LifecycleOperationID       `json:"operation_id"`
+	Authority    model.StepAttemptAuthority `json:"-"`
+	StepID       int64                      `json:"step_id"`
+	Output       string                     `json:"output"`
+	ContextKey   string                     `json:"context_key"`
+	ContextValue string                     `json:"context_value"`
 }
 
 type FailStepCommand struct {
-	OperationID LifecycleOperationID `json:"operation_id"`
-	StepID      int64                `json:"step_id"`
-	Error       string               `json:"error"`
+	OperationID LifecycleOperationID       `json:"operation_id"`
+	Authority   model.StepAttemptAuthority `json:"-"`
+	StepID      int64                      `json:"step_id"`
+	Error       string                     `json:"error"`
 }
 
 type SubmitJobFeedbackCommand struct {

@@ -25,8 +25,11 @@ func validateSnapshotItem(set *Set, item Item) error {
 		return err
 	}
 	if item.CreatedTick == 0 || item.CreatedTick > item.LastUsedTick || item.LastUsedTick > set.clock ||
-		item.UseCount > uint64(math.MaxInt64) {
+		item.UseCount > uint64(math.MaxInt64) || item.ReacquisitionCount > uint64(math.MaxInt64) {
 		return fmt.Errorf("%w: creation, usage, or clock values are inconsistent", ErrInvalidItem)
+	}
+	if item.ReacquisitionCount > (item.LastUsedTick-item.CreatedTick)/2 {
+		return fmt.Errorf("%w: reacquisition count exceeds the recorded lifecycle", ErrInvalidItem)
 	}
 	switch item.State {
 	case ItemResident:

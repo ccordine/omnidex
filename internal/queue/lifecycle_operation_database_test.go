@@ -18,6 +18,7 @@ func TestPostgresStepLifecycleOperationsReplayAndConflict(t *testing.T) {
 		job, stepID := claimedLifecycleTestJob(t, repository, model.PipelineCoding, "complete")
 		command := CompleteStepCommand{
 			OperationID: testLifecycleOperationID(t, "complete-replay", stepID),
+			Authority:   stepAttemptAuthorityForTest(t, repository, stepID),
 			StepID:      stepID, Output: "accepted output", ContextKey: "result", ContextValue: "accepted context",
 		}
 		if err := repository.CompleteStep(ctx, command); err != nil {
@@ -53,7 +54,7 @@ func TestPostgresStepLifecycleOperationsReplayAndConflict(t *testing.T) {
 		}
 		newIdentity := command
 		newIdentity.OperationID = testLifecycleOperationID(t, "complete-second-identity", stepID)
-		if err := repository.CompleteStep(ctx, newIdentity); !errors.Is(err, ErrStepNotWritable) {
+		if err := repository.CompleteStep(ctx, newIdentity); !errors.Is(err, ErrStaleStepAttempt) {
 			t.Fatalf("status-only complete retry error=%v", err)
 		}
 		if _, err := pool.Exec(ctx, `
@@ -70,11 +71,13 @@ func TestPostgresStepLifecycleOperationsReplayAndConflict(t *testing.T) {
 
 	t.Run("fail", func(t *testing.T) {
 		job, stepID := claimedLifecycleTestJob(t, repository, model.PipelineCoding, "fail")
-		if err := repository.AppendStepOutput(ctx, stepID, "partial diagnostic output"); err != nil {
+		authority := stepAttemptAuthorityForTest(t, repository, stepID)
+		if err := repository.AppendStepOutput(ctx, authority, "partial diagnostic output"); err != nil {
 			t.Fatal(err)
 		}
 		command := FailStepCommand{
 			OperationID: testLifecycleOperationID(t, "fail-replay", stepID),
+			Authority:   authority,
 			StepID:      stepID, Error: "authoritative failure",
 		}
 		if err := repository.FailStep(ctx, command); err != nil {
@@ -94,7 +97,7 @@ func TestPostgresStepLifecycleOperationsReplayAndConflict(t *testing.T) {
 		}
 		newIdentity := command
 		newIdentity.OperationID = testLifecycleOperationID(t, "fail-second-identity", stepID)
-		if err := repository.FailStep(ctx, newIdentity); !errors.Is(err, ErrStepNotWritable) {
+		if err := repository.FailStep(ctx, newIdentity); !errors.Is(err, ErrStaleStepAttempt) {
 			t.Fatalf("status-only fail retry error=%v", err)
 		}
 	})
@@ -106,7 +109,9 @@ func TestPostgresFeedbackAndReplanOperationsReplayExactly(t *testing.T) {
 
 	t.Run("final feedback", func(t *testing.T) {
 		job, stepID := claimedLifecycleTestJob(t, repository, model.PipelineCoding, "feedback")
-		if err := repository.PauseStepForInput(ctx, stepID, "waiting", "Continue?", nil); err != nil {
+		if err := repository.PauseStepForInput(
+			ctx, stepAttemptAuthorityForTest(t, repository, stepID), "waiting", "Continue?", nil,
+		); err != nil {
 			t.Fatal(err)
 		}
 		command := SubmitJobFeedbackCommand{
@@ -236,4 +241,24 @@ func lifecycleOperationCounts(t *testing.T, repository *Repository, jobID int64)
 		t.Fatal(err)
 	}
 	return counts
+}
+
+func stepAttemptAuthorityForTest(
+	t *testing.T,
+	repository *Repository,
+	stepID int64,
+) model.StepAttemptAuthority {
+	t.Helper()
+	var authority model.StepAttemptAuthority
+	err := repository.pool.QueryRow(t.Context(), `
+		SELECT job_id,generation,id,current_attempt,COALESCE(worker_id,'')
+		FROM job_steps WHERE id=$1
+	`, stepID).Scan(
+		&authority.JobID, &authority.Generation, &authority.StepID,
+		&authority.Attempt, &authority.WorkerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return authority
 }

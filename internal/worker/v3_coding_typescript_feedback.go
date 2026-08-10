@@ -3,6 +3,8 @@ package worker
 import (
 	"regexp"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const maxDirectCodingModelFailureLines = 4
@@ -26,7 +28,7 @@ func directCodingTypeScriptModelFailure(raw string) string {
 		if line == "" || strings.HasPrefix(line, "× ") || directCodingTypeScriptSourceFramePattern.MatchString(line) {
 			continue
 		}
-		if containsModelContextPathIdentity(line) {
+		if modelcontext.ContainsPathIdentity(line) {
 			continue
 		}
 		if marker := strings.Index(line, "[source] > "); marker >= 0 {

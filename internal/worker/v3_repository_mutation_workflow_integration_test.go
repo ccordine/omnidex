@@ -97,7 +97,7 @@ func TestPostgresRepositoryMutationWorkflowProvesAndFinalizesExactPostOnce(t *te
 	command := loadRepositoryMutationWorkflowCommand(t, pool, claim.Job.ID)
 	callbackRan := false
 	if err := repository.ApplyRepositoryMutation(
-		ctx, command, exactRepositoryMutationClassifier(root, before.Snapshot),
+		ctx, claim.Authority, command, exactRepositoryMutationClassifier(root, before.Snapshot),
 		func(context.Context) error {
 			callbackRan = true
 			return nil

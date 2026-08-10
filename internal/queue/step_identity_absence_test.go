@@ -9,7 +9,8 @@ import (
 func TestRunningStepIdentityHasNoRequeueFallback(t *testing.T) {
 	paths := []string{
 		"repository_interrupt.go",
-		"repository_stale_leases.go",
+		"repository_step_claim.go",
+		"step_attempt_authority.go",
 		"../worker/engine.go",
 	}
 	var source strings.Builder
@@ -31,11 +32,12 @@ func TestRunningStepIdentityHasNoRequeueFallback(t *testing.T) {
 			t.Fatalf("step authority contains forbidden identity-reuse path %q", forbidden)
 		}
 	}
-	migration, err := os.ReadFile("../../migrations/028_job_generations.sql")
+	migration, err := os.ReadFile("../../migrations/037_step_attempt_leases.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(migration), "job step execution identity cannot return to pending") {
-		t.Fatal("PostgreSQL does not reject running-step identity reuse")
+	if !strings.Contains(string(migration), "step attempt identity is immutable") ||
+		!strings.Contains(string(migration), "step attempt must increase monotonically by one") {
+		t.Fatal("PostgreSQL does not enforce monotonic immutable step attempts")
 	}
 }

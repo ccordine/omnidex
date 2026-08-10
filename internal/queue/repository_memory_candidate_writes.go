@@ -60,6 +60,22 @@ func (r *Repository) WriteMemoryCandidate(ctx context.Context, candidate model.M
 }
 
 func (r *Repository) RejectCurrentMemoryCandidate(ctx context.Context, candidate model.MemoryCandidate) error {
+	return r.rejectCurrentMemoryCandidate(ctx, nil, candidate)
+}
+
+func (r *Repository) RejectCurrentMemoryCandidateByStepAttempt(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	candidate model.MemoryCandidate,
+) error {
+	return r.rejectCurrentMemoryCandidate(ctx, &authority, candidate)
+}
+
+func (r *Repository) rejectCurrentMemoryCandidate(
+	ctx context.Context,
+	authority *model.StepAttemptAuthority,
+	candidate model.MemoryCandidate,
+) error {
 	if candidate.ID <= 0 {
 		return fmt.Errorf("memory candidate identity must be positive")
 	}
@@ -71,6 +87,16 @@ func (r *Repository) RejectCurrentMemoryCandidate(ctx context.Context, candidate
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if authority != nil {
+		if candidate.JobID != authority.JobID || *candidate.Generation != authority.Generation {
+			return staleStepAttemptError(*authority, "memory candidate owner disagrees with attempt", nil)
+		}
+		if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, *authority); err != nil {
+			return err
+		} else if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+			return staleStepAttemptError(*authority, "memory rejection writer is not running", nil)
+		}
+	}
 	if err := lockObservedJobGenerationTx(ctx, tx, candidate.JobID, *candidate.Generation); err != nil {
 		return err
 	}

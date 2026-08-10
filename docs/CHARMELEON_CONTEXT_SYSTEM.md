@@ -52,6 +52,12 @@ user authority ─────────┘
 
 The model may forget everything after every call. Omnidex must not.
 
+The domain-neutral coordinator that consumes these authorities is specified in
+[`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md). Its first
+procedural proof environment is the separately isolated offline laboratory defined in
+[`LABYRINTH_GAUNTLET.md`](LABYRINTH_GAUNTLET.md). Neither benchmark mechanics nor
+private evaluation authority may enter this context substrate.
+
 ## Task Ledger
 
 PostgreSQL is canonical. One transaction updates normalized current state, appends one
@@ -269,13 +275,13 @@ existing-repository execution. Promotion requires a code-owned phase checkpoint 
 binds and resumes the baseline, staged proof, mutation, authoritative proof, refresh,
 and completion sequence without rerunning an already applied request.
 
-Global process-restart execution is therefore still blocked by `ErrStepLeaseRequired`.
-A worker process that loses a running step cannot be replaced safely until every queue
-write is bound to a durable, monotonically increasing step-attempt lease. The mutation
-journal must not be cited as forced-restart proof or used to invent a repository-only
-takeover path around that missing cross-cutting authority.
+The cross-cutting step-attempt lease cutover is implemented. Every worker-originated
+durable write is bound to one monotonically increasing attempt, an expired attempt is
+reclaimed only as a later attempt, and the stale worker is fenced from subsequent
+writes and completion. The former lease-required error and its unfenced writer path
+are removed and must not return.
 
-The lease cutover is one atomic authority migration, not a queue-only patch. It must:
+The implemented lease authority:
 
 - add a monotonic attempt identity and one expiring active lease to each claimed step;
 - carry the exact job, generation, step, attempt, and worker identity through every
@@ -290,8 +296,12 @@ The lease cutover is one atomic authority migration, not a queue-only patch. It 
   writes and completion, safe waiting-for-feedback behavior, and post-state mutation
   finalization after a real repository-process restart.
 
-Until that entire writer cutover lands together, Omnidex fails loudly instead of
-reusing a running step identity.
+This lease authority does not by itself promote end-to-end repository-process restart.
+That claim remains blocked by the missing phase checkpoint described above: the
+baseline, staged proof, mutation, authoritative proof, refreshed index, and completion
+sequence must resume from PostgreSQL without rerunning an already accepted phase.
+Omnidex fails loudly at that boundary instead of treating attempt fencing as proof of
+phase-level continuity or inventing a repository-only takeover path.
 
 ## Proof gates
 

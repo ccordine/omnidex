@@ -34,6 +34,20 @@ func taskLedgerStateEntry(state taskstate.MaterializedState, id taskstate.EntryI
 	return taskstate.Entry{}, fmt.Errorf("%w: materialized task entry %q is missing", taskstate.ErrInvalidState, id)
 }
 
+func taskLedgerStateNodeSupersession(
+	state taskstate.MaterializedState,
+	id taskstate.NodeID,
+) (taskstate.NodeGenerationSupersession, error) {
+	for _, value := range state.NodeSupersessions {
+		if value.NodeID == id {
+			return value, nil
+		}
+	}
+	return taskstate.NodeGenerationSupersession{}, fmt.Errorf(
+		"%w: materialized task-node supersession %q is missing", taskstate.ErrInvalidState, id,
+	)
+}
+
 func nullableTaskText(value string) any {
 	if value == "" {
 		return nil

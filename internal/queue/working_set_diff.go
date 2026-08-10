@@ -70,13 +70,13 @@ func insertWorkingSetItemTx(
 			ref_uri, ref_version, ref_sha256, ref_relation,
 			role, retention, priority, state, byte_cost,
 			provider, operation_id, acquisition_reason,
-			use_count, created_tick, last_used_tick, released_tick, disposition_reason
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+			use_count, reacquisition_count, created_tick, last_used_tick, released_tick, disposition_reason
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 	`, snapshot.ID, snapshot.Owner.JobID, snapshot.Owner.Generation, item.ID,
 		item.Ref.URI, item.Ref.Version, item.Ref.Hash, item.Ref.Relation,
 		item.Role, item.Retention, item.Priority, item.State, item.ByteCost,
 		item.Acquisition.Provider, item.Acquisition.OperationID, item.Acquisition.Reason,
-		int64(item.UseCount), int64(item.CreatedTick), int64(item.LastUsedTick),
+		int64(item.UseCount), int64(item.ReacquisitionCount), int64(item.CreatedTick), int64(item.LastUsedTick),
 		int64(item.ReleasedTick), item.DispositionReason,
 	); err != nil {
 		return fmt.Errorf("insert working set %q item %q: %w", snapshot.ID, item.ID, err)
@@ -102,11 +102,11 @@ func updateWorkingSetItemTx(
 	}
 	result, err := tx.Exec(ctx, `
 		UPDATE working_set_items
-		SET retention=$5, state=$6, use_count=$7, last_used_tick=$8,
-		    released_tick=$9, disposition_reason=$10, updated_at=NOW()
+		SET retention=$5, state=$6, use_count=$7, reacquisition_count=$8, last_used_tick=$9,
+		    released_tick=$10, disposition_reason=$11, updated_at=NOW()
 		WHERE working_set_id=$1 AND job_id=$2 AND generation=$3 AND item_id=$4
 	`, snapshot.ID, snapshot.Owner.JobID, snapshot.Owner.Generation, after.ID,
-		after.Retention, after.State, int64(after.UseCount), int64(after.LastUsedTick),
+		after.Retention, after.State, int64(after.UseCount), int64(after.ReacquisitionCount), int64(after.LastUsedTick),
 		int64(after.ReleasedTick), after.DispositionReason)
 	if err != nil {
 		return fmt.Errorf("update working set %q item %q: %w", snapshot.ID, after.ID, err)

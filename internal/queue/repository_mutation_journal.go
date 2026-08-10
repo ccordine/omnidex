@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -16,6 +17,7 @@ const maxRepositoryMutationErrorBytes = 64 * 1024
 
 func (r *Repository) prepareRepositoryMutation(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	command RepositoryMutationCommand,
 	identity repositoryMutationOperationIdentity,
 ) (repositoryMutationOperationRecord, error) {
@@ -32,21 +34,24 @@ func (r *Repository) prepareRepositoryMutation(
 		if err := requireRepositoryMutationIdentity(existing, identity); err != nil {
 			return repositoryMutationOperationRecord{}, err
 		}
+		if err := lockRepositoryMutationAuthorityTx(ctx, tx, authority, command, false); err != nil {
+			return repositoryMutationOperationRecord{}, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return repositoryMutationOperationRecord{}, fmt.Errorf("commit repository mutation replay lock: %w", err)
 		}
 		return existing, nil
 	}
-	if err := lockRepositoryMutationAuthorityTx(ctx, tx, command); err != nil {
+	if err := lockRepositoryMutationAuthorityTx(ctx, tx, authority, command, true); err != nil {
 		return repositoryMutationOperationRecord{}, err
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO repository_mutation_operations (
-			id, command_sha256, job_id, step_id, generation, worker_id,
+			id, command_sha256, job_id, step_id, generation, step_attempt, worker_id,
 			contract_id, stage_id, source_snapshot_id, patch, patch_sha256, status
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 	`, identity.ID, identity.CommandSHA256, command.JobID, command.StepID,
-		command.Generation, command.WorkerID, command.ContractID, command.StageID,
+		command.Generation, command.Attempt, command.WorkerID, command.ContractID, command.StageID,
 		command.SourceSnapshotID, command.Patch, command.PatchSHA256,
 		repositoryMutationPrepared); err != nil {
 		return repositoryMutationOperationRecord{}, fmt.Errorf("insert repository mutation preparation: %w", err)
@@ -95,6 +100,7 @@ func (r *Repository) prepareRepositoryMutation(
 
 func (r *Repository) markRepositoryMutationApplying(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	command RepositoryMutationCommand,
 	identity repositoryMutationOperationIdentity,
 ) error {
@@ -103,7 +109,7 @@ func (r *Repository) markRepositoryMutationApplying(
 		return fmt.Errorf("begin repository mutation applying transition: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if err := lockRepositoryMutationAuthorityTx(ctx, tx, command); err != nil {
+	if err := lockRepositoryMutationAuthorityTx(ctx, tx, authority, command, false); err != nil {
 		return err
 	}
 	record, err := lockRepositoryMutationOperationTx(ctx, tx, identity.ID)
@@ -145,6 +151,7 @@ func (r *Repository) markRepositoryMutationApplying(
 
 func (r *Repository) recordRepositoryMutationState(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	command RepositoryMutationCommand,
 	identity repositoryMutationOperationIdentity,
 	status string,
@@ -162,6 +169,9 @@ func (r *Repository) recordRepositoryMutationState(
 		return fmt.Errorf("begin repository mutation state transition: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockRepositoryMutationAuthorityTx(ctx, tx, authority, command, false); err != nil {
+		return err
+	}
 	record, err := lockRepositoryMutationOperationTx(ctx, tx, identity.ID)
 	if err != nil {
 		return err

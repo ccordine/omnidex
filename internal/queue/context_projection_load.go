@@ -48,7 +48,7 @@ func loadContextProjectionTx(
 	var workingSetVersion int64
 	var selectedCount, omittedCount int
 	err := tx.QueryRow(ctx, `
-		SELECT record_id, projection_id, schema_name, job_id, generation, step_id,
+		SELECT record_id, projection_id, schema_name, job_id, generation, step_id, step_attempt, worker_id,
 		       work_id, work_kind, usage_mode, spec_name, spec_version, spec_sha256, renderer_version,
 		       scope_ref_uri, scope_ref_version, scope_ref_sha256, scope_ref_relation,
 		       working_set_id, working_set_version, selected_count, omitted_count,
@@ -58,6 +58,7 @@ func loadContextProjectionTx(
 	`, projectionID).Scan(
 		&record.RecordID, &projection.ID, &projection.Schema,
 		&record.Authority.JobID, &record.Authority.Generation, &record.Authority.StepID,
+		&record.Authority.Attempt, &record.Authority.WorkerID,
 		&projection.WorkID, &record.Authority.WorkKind, &record.Authority.Mode, &projection.SpecName,
 		&projection.SpecVersion, &projection.SpecSHA256, &projection.RendererVersion,
 		&projection.ScopeRef.URI, &projection.ScopeRef.Version, &projection.ScopeRef.Hash,
@@ -100,7 +101,7 @@ func validateContextProjectionStoreAuthority(
 	authority ContextProjectionAuthority,
 	projection contextbuilder.Projection,
 ) error {
-	if authority.JobID <= 0 || authority.Generation <= 0 || authority.StepID <= 0 {
+	if err := validateStepAttemptAuthority(authority.StepAttemptAuthority); err != nil {
 		return fmt.Errorf("%w: durable owner is invalid", ErrInvalidContextProjection)
 	}
 	if err := validateContextProjectionExact(authority.WorkKind, "work kind", 256); err != nil {

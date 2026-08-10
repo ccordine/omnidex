@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/workingset"
 )
 
@@ -12,7 +13,8 @@ func TestWorkingSetRepositoryRejectsInvalidRequestsBeforeDatabaseAccess(t *testi
 	t.Parallel()
 	repository := &Repository{}
 	if _, err := repository.CreateCurrentWorkingSet(
-		context.Background(), 1, 1, workingset.Budget{MaxItems: 1, MaxBytes: 1},
+		context.Background(), model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
+		workingset.Budget{MaxItems: 1, MaxBytes: 1},
 	); err == nil || !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("unconfigured creation error=%v", err)
 	}
@@ -24,7 +26,7 @@ func TestWorkingSetRepositoryRejectsInvalidRequestsBeforeDatabaseAccess(t *testi
 		!strings.Contains(err.Error(), "generation") {
 		t.Fatalf("invalid generation read error=%v", err)
 	}
-	if _, err := repository.ApplyWorkingSetCommand(context.Background(), 1, 0, nil); err == nil ||
+	if _, err := repository.ApplyWorkingSetCommand(context.Background(), model.StepAttemptAuthority{JobID: 1}, nil); err == nil ||
 		!strings.Contains(err.Error(), "generation") {
 		t.Fatalf("invalid apply error=%v", err)
 	}

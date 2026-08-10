@@ -36,7 +36,11 @@ func TestMemoryPromotionCallersContainNoSplitPublishThenStatusPath(t *testing.T)
 				t.Errorf("%s promotion still contains split path %q", name, forbidden)
 			}
 		}
-		if !strings.Contains(source, "PromoteCurrentMemoryCandidate(") {
+		promotion := "PromoteCurrentMemoryCandidate("
+		if name == "worker" {
+			promotion = "PromoteCurrentMemoryCandidateByStepAttempt("
+		}
+		if !strings.Contains(source, promotion) {
 			t.Errorf("%s promotion omits the atomic current-generation path", name)
 		}
 	}

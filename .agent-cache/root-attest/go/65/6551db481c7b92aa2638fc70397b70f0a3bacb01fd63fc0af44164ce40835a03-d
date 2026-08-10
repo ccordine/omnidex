@@ -1,0 +1,7 @@
+./chat.go
+./deadline.go
+./metadata.go
+./prompts.go
+./runner.go
+./metadata_test.go
+./runner_test.go

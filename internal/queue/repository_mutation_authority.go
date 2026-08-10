@@ -14,6 +14,7 @@ import (
 // database callback authority.
 func (r *Repository) ApplyRepositoryMutation(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	command RepositoryMutationCommand,
 	classify RepositoryMutationClassifier,
 	apply func(context.Context) error,
@@ -33,6 +34,9 @@ func (r *Repository) ApplyRepositoryMutation(
 	if err := validateRepositoryMutationCommand(command); err != nil {
 		return err
 	}
+	if err := validateRepositoryMutationExecutionAuthority(authority, command); err != nil {
+		return err
+	}
 	if r == nil || r.pool == nil {
 		return ErrRepositoryNotConfigured
 	}
@@ -47,7 +51,7 @@ func (r *Repository) ApplyRepositoryMutation(
 	defer func() {
 		resultErr = errors.Join(resultErr, releaseRepositoryMutationLock(lock, command))
 	}()
-	record, err := r.prepareRepositoryMutation(ctx, command, identity)
+	record, err := r.prepareRepositoryMutation(ctx, authority, command, identity)
 	if err != nil {
 		return err
 	}
@@ -62,13 +66,28 @@ func (r *Repository) ApplyRepositoryMutation(
 				ErrRepositoryMutationUnresolved, identity.ID,
 			)
 		}
-		return r.finalizeRepositoryMutation(ctx, command, identity)
+		return r.finalizeRepositoryMutation(ctx, authority, command, identity)
 	}
-	return r.driveRepositoryMutation(ctx, command, identity, state, classify, apply)
+	return r.driveRepositoryMutation(ctx, authority, command, identity, state, classify, apply)
+}
+
+func validateRepositoryMutationExecutionAuthority(
+	authority model.StepAttemptAuthority,
+	command RepositoryMutationCommand,
+) error {
+	if err := validateStepAttemptAuthority(authority); err != nil {
+		return err
+	}
+	if authority.JobID != command.JobID || authority.Generation != command.Generation ||
+		authority.StepID != command.StepID {
+		return staleStepAttemptError(authority, "repository mutation owner disagrees with command", nil)
+	}
+	return nil
 }
 
 func (r *Repository) driveRepositoryMutation(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	command RepositoryMutationCommand,
 	identity repositoryMutationOperationIdentity,
 	state RepositoryMutationState,
@@ -77,17 +96,17 @@ func (r *Repository) driveRepositoryMutation(
 ) error {
 	switch state {
 	case RepositoryMutationPost:
-		return r.finalizeRepositoryMutation(ctx, command, identity)
+		return r.finalizeRepositoryMutation(ctx, authority, command, identity)
 	case RepositoryMutationIndeterminate:
 		reason := fmt.Errorf("complete repository inventory matches neither source nor exact post state")
 		if err := r.recordRepositoryMutationState(
-			ctx, command, identity, repositoryMutationIndeterminate, reason,
+			ctx, authority, command, identity, repositoryMutationIndeterminate, reason,
 		); err != nil {
 			return errors.Join(ErrRepositoryMutationUnresolved, reason, err)
 		}
 		return fmt.Errorf("%w: %s", ErrRepositoryMutationUnresolved, reason)
 	case RepositoryMutationSource:
-		return r.applyPreparedRepositoryMutation(ctx, command, identity, classify, apply)
+		return r.applyPreparedRepositoryMutation(ctx, authority, command, identity, classify, apply)
 	default:
 		return fmt.Errorf("repository mutation classifier returned invalid state %q", state)
 	}
@@ -95,12 +114,13 @@ func (r *Repository) driveRepositoryMutation(
 
 func (r *Repository) applyPreparedRepositoryMutation(
 	ctx context.Context,
+	authority model.StepAttemptAuthority,
 	command RepositoryMutationCommand,
 	identity repositoryMutationOperationIdentity,
 	classify RepositoryMutationClassifier,
 	apply func(context.Context) error,
 ) error {
-	if err := r.markRepositoryMutationApplying(ctx, command, identity); err != nil {
+	if err := r.markRepositoryMutationApplying(ctx, authority, command, identity); err != nil {
 		return err
 	}
 	applyErr := apply(ctx)
@@ -113,7 +133,7 @@ func (r *Repository) applyPreparedRepositoryMutation(
 	}
 	switch state {
 	case RepositoryMutationPost:
-		return r.finalizeRepositoryMutation(ctx, command, identity)
+		return r.finalizeRepositoryMutation(ctx, authority, command, identity)
 	case RepositoryMutationSource:
 		reason := applyErr
 		if reason == nil {
@@ -122,7 +142,7 @@ func (r *Repository) applyPreparedRepositoryMutation(
 			reason = fmt.Errorf("apply authoritative repository mutation: %w", applyErr)
 		}
 		if err := r.recordRepositoryMutationState(
-			ctx, command, identity, repositoryMutationPrepared, reason,
+			ctx, authority, command, identity, repositoryMutationPrepared, reason,
 		); err != nil {
 			return errors.Join(reason, err)
 		}
@@ -133,7 +153,7 @@ func (r *Repository) applyPreparedRepositoryMutation(
 			reason = errors.Join(reason, fmt.Errorf("apply authoritative repository mutation: %w", applyErr))
 		}
 		if err := r.recordRepositoryMutationState(
-			ctx, command, identity, repositoryMutationIndeterminate, reason,
+			ctx, authority, command, identity, repositoryMutationIndeterminate, reason,
 		); err != nil {
 			return errors.Join(ErrRepositoryMutationUnresolved, reason, err)
 		}
@@ -163,66 +183,22 @@ func classifyRepositoryMutation(
 func lockRepositoryMutationAuthorityTx(
 	ctx context.Context,
 	tx pgx.Tx,
+	authority model.StepAttemptAuthority,
 	command RepositoryMutationCommand,
+	requireOrigin bool,
 ) error {
-	var jobStatus string
-	var currentGeneration int64
-	if err := tx.QueryRow(ctx, `
-		SELECT status, current_generation
-		FROM jobs WHERE id=$1
-		FOR UPDATE
-	`, command.JobID).Scan(&jobStatus, &currentGeneration); err != nil {
-		return fmt.Errorf("lock repository mutation job %d: %w", command.JobID, err)
+	if err := validateRepositoryMutationExecutionAuthority(authority, command); err != nil {
+		return err
 	}
-	if currentGeneration != command.Generation {
-		return fmt.Errorf(
-			"%w: repository mutation step %d generation %d is not job %d generation %d",
-			ErrStaleJobGeneration, command.StepID, command.Generation, command.JobID, currentGeneration,
-		)
+	if requireOrigin && authority != command.stepAttemptAuthority() {
+		return staleStepAttemptError(authority, "new repository mutation origin disagrees with executor", nil)
 	}
-	if jobStatus != model.JobStatusRunning {
-		return fmt.Errorf(
-			"%w: repository mutation job %d status is %q, expected %q",
-			ErrStepNotWritable, command.JobID, jobStatus, model.JobStatusRunning,
-		)
-	}
-	var stepStatus, workerID string
-	var stepGeneration int64
-	var supersededAt *int64
-	err := tx.QueryRow(ctx, `
-		SELECT status, generation, superseded_at_generation, COALESCE(worker_id, '')
-		FROM job_steps
-		WHERE id=$1 AND job_id=$2
-		FOR UPDATE
-	`, command.StepID, command.JobID).Scan(
-		&stepStatus, &stepGeneration, &supersededAt, &workerID,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf(
-			"%w: repository mutation step %d does not belong to job %d",
-			ErrStaleJobGeneration, command.StepID, command.JobID,
-		)
-	}
+	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
 	if err != nil {
-		return fmt.Errorf("lock repository mutation step %d: %w", command.StepID, err)
+		return err
 	}
-	if supersededAt != nil || stepGeneration != currentGeneration {
-		return fmt.Errorf(
-			"%w: repository mutation step %d generation %d is not current generation %d",
-			ErrStaleJobGeneration, command.StepID, stepGeneration, currentGeneration,
-		)
-	}
-	if stepStatus != model.StepStatusRunning {
-		return fmt.Errorf(
-			"%w: repository mutation step %d status is %q, expected %q",
-			ErrStepNotWritable, command.StepID, stepStatus, model.StepStatusRunning,
-		)
-	}
-	if workerID != command.WorkerID {
-		return fmt.Errorf(
-			"%w: repository mutation step %d belongs to worker %q, not %q",
-			ErrStepNotWritable, command.StepID, workerID, command.WorkerID,
-		)
+	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return staleStepAttemptError(authority, "repository mutation executor is not running", nil)
 	}
 	return nil
 }

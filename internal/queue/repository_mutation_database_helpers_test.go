@@ -22,6 +22,7 @@ type repositoryMutationDatabaseFixture struct {
 	job        model.Job
 	stepID     int64
 	workerID   string
+	authority  model.StepAttemptAuthority
 	command    RepositoryMutationCommand
 }
 
@@ -71,6 +72,7 @@ func newRepositoryMutationDatabaseFixture(
 	command := repositoryMutationTestCommand(
 		job.ID, claim.Step.ID, claim.Step.Generation, claim.Step.WorkerID, "return two",
 	)
+	command.Attempt = claim.Authority.Attempt
 	command.SourceSnapshotID = snapshot.ID
 	command.ChangedFiles[0].FileID = file.ID
 	command.ChangedFiles[0].Path = file.Path
@@ -83,7 +85,8 @@ func newRepositoryMutationDatabaseFixture(
 	})
 	return repositoryMutationDatabaseFixture{
 		repository: repository, pool: pool, ctx: ctx, job: job,
-		stepID: claim.Step.ID, workerID: claim.Step.WorkerID, command: command,
+		stepID: claim.Step.ID, workerID: claim.Step.WorkerID,
+		authority: claim.Authority, command: command,
 	}
 }
 

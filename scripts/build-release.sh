@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/build-release-lib.sh"
 
 DIST_DIR="${REPO_ROOT}/dist"
 VERSION="v0.5.0"
@@ -19,7 +20,17 @@ PACKAGES=(
   "omni:./cmd/omni"
   "agent-core:./cmd/core"
   "agent-cli:./cmd/cli"
+  "cognition-gauntlet:./cmd/cognition-gauntlet"
 )
+
+SOURCE_STAGE_ROOT=""
+SOURCE_TREE=""
+RELEASE_OUTPUT_STAGE=""
+RELEASE_COMMIT=""
+RELEASE_SOURCE_SHA256=""
+RELEASE_MIGRATIONS_SHA256=""
+RELEASE_BUILD_DATE=""
+EXPECTED_SOURCE_MANIFEST=""
 
 usage() {
   cat <<'EOF'
@@ -40,13 +51,8 @@ Examples:
 EOF
 }
 
-log() {
-  printf '[build-release] %s\n' "$*"
-}
-
-die() {
-  printf '[build-release][error] %s\n' "$*" >&2
-  exit 1
+source_archive_sha256() {
+  sha256_file "$1"
 }
 
 parse_args() {
@@ -96,11 +102,68 @@ archive_target() {
   (
     cd "$target_dir"
     if [[ "$goos" == "windows" ]]; then
-      zip -qr "${DIST_DIR}/${archive_base}.zip" .
+      zip -qr "${RELEASE_OUTPUT_STAGE}/${archive_base}.zip" .
     else
-      tar -czf "${DIST_DIR}/${archive_base}.tar.gz" .
+      tar -czf "${RELEASE_OUTPUT_STAGE}/${archive_base}.tar.gz" .
     fi
   )
+}
+
+cleanup_source_stage() {
+  if [[ -n "$SOURCE_STAGE_ROOT" && "$SOURCE_STAGE_ROOT" != "/" && -d "$SOURCE_STAGE_ROOT" ]]; then
+    chmod -R u+w "$SOURCE_STAGE_ROOT" 2>/dev/null || true
+    rm -rf -- "$SOURCE_STAGE_ROOT"
+  fi
+}
+
+prepare_source_stage() {
+  RELEASE_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+  [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]] || die "a full Git commit is required"
+  SOURCE_STAGE_ROOT="$(mktemp -d "${DIST_DIR}/.release-stage.XXXXXXXX")"
+  [[ -d "$SOURCE_STAGE_ROOT" && ! -L "$SOURCE_STAGE_ROOT" ]] || die "immutable source stage is unavailable"
+  SOURCE_TREE="${SOURCE_STAGE_ROOT}/source"
+  RELEASE_OUTPUT_STAGE="${SOURCE_STAGE_ROOT}/output"
+  mkdir -p "$SOURCE_TREE" "$RELEASE_OUTPUT_STAGE" "${SOURCE_STAGE_ROOT}/migration-manifest"
+  local archive="${SOURCE_STAGE_ROOT}/source.tar"
+  git -C "$REPO_ROOT" archive --format=tar --output="$archive" "$RELEASE_COMMIT"
+  RELEASE_SOURCE_SHA256="$(source_archive_sha256 "$archive")"
+  [[ "$RELEASE_SOURCE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "tracked source SHA-256 is invalid"
+  tar -xf "$archive" -C "$SOURCE_TREE"
+  tar -df "$archive" -C "$SOURCE_TREE" >/dev/null || die "extracted source differs from its archive"
+  EXPECTED_SOURCE_MANIFEST="${SOURCE_STAGE_ROOT}/source-manifest"
+  write_source_manifest "$SOURCE_TREE" "$EXPECTED_SOURCE_MANIFEST"
+  chmod 0444 "$archive" "$EXPECTED_SOURCE_MANIFEST"
+  chmod -R a-w "$SOURCE_TREE"
+  write_migration_manifest "${SOURCE_TREE}/migrations" "${SOURCE_STAGE_ROOT}/migration-manifest"
+  RELEASE_MIGRATIONS_SHA256="$(sha256_file "${SOURCE_STAGE_ROOT}/migration-manifest/SHA256SUMS")"
+  [[ "$RELEASE_MIGRATIONS_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "migration manifest SHA-256 is invalid"
+  RELEASE_BUILD_DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+}
+
+verify_source_stage() {
+  local archive="${SOURCE_STAGE_ROOT}/source.tar"
+  [[ "$(source_archive_sha256 "$archive")" == "$RELEASE_SOURCE_SHA256" ]] ||
+    die "immutable source archive changed during release build"
+  tar -df "$archive" -C "$SOURCE_TREE" >/dev/null ||
+    die "immutable source tree changed during release build"
+  local actual="${SOURCE_STAGE_ROOT}/source-manifest.actual"
+  write_source_manifest "$SOURCE_TREE" "$actual"
+  cmp -s "$EXPECTED_SOURCE_MANIFEST" "$actual" ||
+    die "immutable source manifest changed during release build"
+  rm -f -- "$actual"
+}
+
+prepare_target_source() {
+  local target_name="$1" target_source="${SOURCE_STAGE_ROOT}/work-${target_name}"
+  verify_source_stage
+  mkdir -p "$target_source"
+  tar -xf "${SOURCE_STAGE_ROOT}/source.tar" -C "$target_source"
+  local actual="${SOURCE_STAGE_ROOT}/${target_name}.manifest"
+  write_source_manifest "$target_source" "$actual"
+  cmp -s "$EXPECTED_SOURCE_MANIFEST" "$actual" || die "target source extraction changed"
+  rm -f -- "$actual"
+  chmod -R a-w "$target_source"
+  printf '%s\n' "$target_source"
 }
 
 build_target() {
@@ -111,12 +174,11 @@ build_target() {
   [[ -n "$goos" && -n "$goarch" && "$goos" != "$goarch" ]] || die "invalid target: $target"
 
   local target_name="omnidex-${VERSION}-${goos}-${goarch}"
-  local commit build_date ldflags
-  commit="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || true)"
-  build_date="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-  ldflags="-X github.com/gryph/omnidex/internal/version.Version=${VERSION} -X github.com/gryph/omnidex/internal/version.Codename=${CODENAME} -X github.com/gryph/omnidex/internal/version.Commit=${commit} -X github.com/gryph/omnidex/internal/version.Date=${build_date}"
-  local target_dir="${DIST_DIR}/${target_name}"
-  rm -rf "$target_dir"
+  local target_source
+  target_source="$(prepare_target_source "$target_name")"
+  local ldflags
+  ldflags="-X github.com/gryph/omnidex/internal/version.Version=${VERSION} -X github.com/gryph/omnidex/internal/version.Codename=${CODENAME} -X github.com/gryph/omnidex/internal/version.Commit=${RELEASE_COMMIT} -X github.com/gryph/omnidex/internal/version.SourceSHA256=${RELEASE_SOURCE_SHA256} -X github.com/gryph/omnidex/internal/version.MigrationsSHA256=${RELEASE_MIGRATIONS_SHA256} -X github.com/gryph/omnidex/internal/version.Date=${RELEASE_BUILD_DATE}"
+  local target_dir="${RELEASE_OUTPUT_STAGE}/${target_name}"
   mkdir -p "${target_dir}/bin"
 
   log "building ${target}"
@@ -129,61 +191,87 @@ build_target() {
       ext=".exe"
     fi
     (
-      cd "$REPO_ROOT"
+      cd "$target_source"
       CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$ldflags" -o "${target_dir}/bin/${name}${ext}" "$pkg"
     )
   done
 
-  cp -a "${REPO_ROOT}/README.md" "${target_dir}/README.md"
-  cp -a "${REPO_ROOT}/LICENSE" "${target_dir}/LICENSE"
-  if [[ -f "${REPO_ROOT}/CHANGELOG.md" ]]; then
-    cp -a "${REPO_ROOT}/CHANGELOG.md" "${target_dir}/CHANGELOG.md"
+  cp -a "${target_source}/README.md" "${target_dir}/README.md"
+  cp -a "${target_source}/LICENSE" "${target_dir}/LICENSE"
+  cp -a "${target_source}/migrations" "${target_dir}/migrations"
+  write_migration_manifest "${target_dir}/migrations" "${target_dir}/migrations"
+  [[ "$(sha256_file "${target_dir}/migrations/SHA256SUMS")" == "$RELEASE_MIGRATIONS_SHA256" ]] || die "packaged migration manifest changed"
+  if [[ -f "${target_source}/CHANGELOG.md" ]]; then
+    cp -a "${target_source}/CHANGELOG.md" "${target_dir}/CHANGELOG.md"
   fi
-  if [[ -f "${REPO_ROOT}/agent_aliases.sh" && "$goos" != "windows" ]]; then
-    cp -a "${REPO_ROOT}/agent_aliases.sh" "${target_dir}/agent_aliases.sh"
+  if [[ -f "${target_source}/agent_aliases.sh" && "$goos" != "windows" ]]; then
+    cp -a "${target_source}/agent_aliases.sh" "${target_dir}/agent_aliases.sh"
   fi
 
+  local actual="${SOURCE_STAGE_ROOT}/${target_name}.after.manifest"
+  write_source_manifest "$target_source" "$actual"
+  cmp -s "$EXPECTED_SOURCE_MANIFEST" "$actual" || die "target source changed during build"
+  rm -f -- "$actual"
+  verify_source_stage
   archive_target "$target_dir" "$target_name" "$goos"
+}
+
+write_release_checksums() {
+  (
+    cd "$RELEASE_OUTPUT_STAGE"
+    local artifacts=()
+    local artifact
+    for artifact in omnidex-*.tar.gz omnidex-*.zip; do
+      [[ -f "$artifact" ]] || continue
+      artifacts+=("$artifact")
+    done
+    ((${#artifacts[@]} > 0)) || die "release staging produced no archives"
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "${artifacts[@]}" > SHA256SUMS
+    else
+      shasum -a 256 "${artifacts[@]}" > SHA256SUMS
+    fi
+  )
+}
+
+publish_staged_release() {
+  verify_source_stage
+  assert_repository_matches_snapshot "$REPO_ROOT" "$RELEASE_COMMIT" "$DIST_DIR"
+  local publication_name="omnidex-${VERSION}"
+  [[ "$publication_name" =~ ^omnidex-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*$ ]] ||
+    die "release publication name is unsafe"
+  local publication="${DIST_DIR}/${publication_name}"
+  [[ "$(dirname "$publication")" == "$DIST_DIR" && ! -e "$publication" && ! -L "$publication" ]] ||
+    die "version-scoped release publication already exists or is unsafe"
+  mv "$RELEASE_OUTPUT_STAGE" "$publication"
 }
 
 main() {
   parse_args "$@"
 
+  validate_release_inputs
+  validate_dist_dir
+
   command -v go >/dev/null 2>&1 || die "go is required"
   command -v tar >/dev/null 2>&1 || die "tar is required"
+  [[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal)" ]] || die "release builds require a clean tracked and untracked worktree"
   if printf '%s\n' "${TARGETS[@]}" | grep -q '^windows/'; then
     command -v zip >/dev/null 2>&1 || die "zip is required for Windows archives"
   fi
+  create_dist_dir
 
-  if [[ "$DIST_DIR" != /* ]]; then
-    DIST_DIR="${REPO_ROOT}/${DIST_DIR#./}"
-  fi
-  mkdir -p "$DIST_DIR"
+  prepare_source_stage
+  trap cleanup_source_stage EXIT
 
   local target
   for target in "${TARGETS[@]}"; do
     build_target "$target"
   done
-
-  (
-    cd "$DIST_DIR"
-    rm -f SHA256SUMS
-    artifacts=()
-    for artifact in omnidex-*.tar.gz omnidex-*.zip; do
-      [[ -f "$artifact" ]] || continue
-      artifacts+=("$artifact")
-    done
-    if ((${#artifacts[@]} > 0)); then
-      if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "${artifacts[@]}" > SHA256SUMS
-      elif command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 "${artifacts[@]}" > SHA256SUMS
-      else
-        die "sha256sum or shasum is required"
-      fi
-    fi
-  )
+  write_release_checksums
+  publish_staged_release
   log "release artifacts written to ${DIST_DIR}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

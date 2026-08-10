@@ -1,0 +1,10 @@
+./cancel_lifecycle_cutover_test.go
+./cognition_benchmark_boundary_test.go
+./cognition_scenario_ref_test.go
+./context_authority_isolation_test.go
+./job_history_cutover_test.go
+./local_model_profile_test.go
+./model_gauntlet_isolation_test.go
+./requirement_advisory_cutover_test.go
+./source_size_test.go
+./worknet_ingress_test.go

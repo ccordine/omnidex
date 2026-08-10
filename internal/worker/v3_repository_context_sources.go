@@ -36,7 +36,10 @@ func repositoryShadowEligible(kind assemblyline.WorkKind) bool {
 }
 
 func repositoryShadowWorkingSetBudget() workingset.Budget {
-	return workingset.Budget{MaxItems: 2, MaxBytes: 32 * 1024}
+	return workingset.Budget{
+		MaxItems: 32, MaxBytes: 128 * 1024,
+		MaxPinnedItems: 16, MaxPinnedBytes: 96 * 1024,
+	}
 }
 
 func repositoryShadowPlan(job assemblyline.PortableJob) (repositoryShadowProjectionPlan, error) {
@@ -137,7 +140,7 @@ func newRepositoryShadowSource(
 		},
 	}
 	return repositoryShadowSource{item: request, material: contextbuilder.Material{
-		ItemID: request.ID, CurrentRef: ref, Authority: authority,
+		ItemID: request.ID, CurrentRef: ref, SourceRefs: []taskstate.Ref{}, Authority: authority,
 		Content: content, ByteCost: request.ByteCost,
 	}}
 }

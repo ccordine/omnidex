@@ -15,8 +15,9 @@ func TestPostgresWorkingSetWriteSerializesBehindGenerationCutover(t *testing.T) 
 	ctx, repository, pool := openWorkingSetDatabase(t)
 	marker := fmt.Sprintf("working-set-lock-%d", time.Now().UnixNano())
 	job := enqueueWorkingSetTestJob(t, ctx, repository, marker)
+	authority := claimWorkingSetTestJob(t, ctx, repository, job)
 	if _, err := repository.CreateCurrentWorkingSet(
-		ctx, job.ID, 1, workingset.Budget{MaxItems: 2, MaxBytes: 32},
+		ctx, authority, workingset.Budget{MaxItems: 2, MaxBytes: 32},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +38,7 @@ func TestPostgresWorkingSetWriteSerializesBehindGenerationCutover(t *testing.T) 
 	commandID := workingSetDatabaseCommandID(t, marker, "blocked-write")
 	finished := make(chan result, 1)
 	go func() {
-		_, applyErr := repository.ApplyWorkingSetCommand(ctx, job.ID, 1, workingset.AcquireCommand{
+		_, applyErr := repository.ApplyWorkingSetCommand(ctx, authority, workingset.AcquireCommand{
 			CommandID:       commandID,
 			ExpectedVersion: 0, Actor: taskstate.AuthorityCode,
 			Request: workingSetDatabaseRequest(
@@ -57,8 +58,8 @@ func TestPostgresWorkingSetWriteSerializesBehindGenerationCutover(t *testing.T) 
 	}
 	select {
 	case completed := <-finished:
-		if !errors.Is(completed.err, ErrStaleJobGeneration) {
-			t.Fatalf("serialized write error=%v, want ErrStaleJobGeneration", completed.err)
+		if !errors.Is(completed.err, ErrStaleStepAttempt) {
+			t.Fatalf("serialized write error=%v, want ErrStaleStepAttempt", completed.err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("working-set write did not finish after generation cutover committed")

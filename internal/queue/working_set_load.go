@@ -86,7 +86,7 @@ func loadWorkingSetItemsTx(
 		SELECT item_id, ref_uri, ref_version, ref_sha256, ref_relation,
 		       role, retention, priority, state, byte_cost,
 		       provider, operation_id, acquisition_reason,
-		       use_count, created_tick, last_used_tick, released_tick, disposition_reason
+		       use_count, reacquisition_count, created_tick, last_used_tick, released_tick, disposition_reason
 		FROM working_set_items WHERE working_set_id=$1
 		ORDER BY item_id ASC LIMIT $2
 	`
@@ -102,22 +102,23 @@ func loadWorkingSetItemsTx(
 	for rows.Next() {
 		var item workingset.Item
 		var relation, role, retention, state, provider string
-		var useCount, createdTick, lastUsedTick, releasedTick int64
+		var useCount, reacquisitionCount, createdTick, lastUsedTick, releasedTick int64
 		if err := rows.Scan(
 			&item.ID, &item.Ref.URI, &item.Ref.Version, &item.Ref.Hash, &relation,
 			&role, &retention, &item.Priority, &state, &item.ByteCost,
 			&provider, &item.Acquisition.OperationID, &item.Acquisition.Reason,
-			&useCount, &createdTick, &lastUsedTick, &releasedTick, &item.DispositionReason,
+			&useCount, &reacquisitionCount, &createdTick, &lastUsedTick, &releasedTick, &item.DispositionReason,
 		); err != nil {
 			return nil, fmt.Errorf("scan working set %q item: %w", setID, err)
 		}
-		if useCount < 0 || createdTick < 0 || lastUsedTick < 0 || releasedTick < 0 {
+		if useCount < 0 || reacquisitionCount < 0 || createdTick < 0 || lastUsedTick < 0 || releasedTick < 0 {
 			return nil, fmt.Errorf("%w: working set %q item %q contains a negative counter", workingset.ErrInvalidSet, setID, item.ID)
 		}
 		item.Ref.Relation = taskstate.RefRelation(relation)
 		item.Role, item.Retention = workingset.Role(role), workingset.Retention(retention)
 		item.State, item.Acquisition.Provider = workingset.ItemState(state), workingset.Provider(provider)
 		item.UseCount, item.CreatedTick = uint64(useCount), uint64(createdTick)
+		item.ReacquisitionCount = uint64(reacquisitionCount)
 		item.LastUsedTick, item.ReleasedTick = uint64(lastUsedTick), uint64(releasedTick)
 		item.Memberships = make([]workingset.Membership, 0)
 		items = append(items, item)

@@ -18,7 +18,10 @@ func RestoreLedger(state MaterializedState) (*Ledger, error) {
 	if state.Status != LedgerActive && !terminalLedger(state.Status) {
 		return nil, fmt.Errorf("%w: ledger status %q is not registered", ErrInvalidState, state.Status)
 	}
-	if state.Version == 0 && (state.Status != LedgerActive || len(state.Nodes)+len(state.Edges)+len(state.Entries) != 0) {
+	if state.NodeSupersessions == nil {
+		return nil, fmt.Errorf("%w: node supersessions must be an explicit array", ErrInvalidState)
+	}
+	if state.Version == 0 && (state.Status != LedgerActive || len(state.Nodes)+len(state.Edges)+len(state.Entries)+len(state.NodeSupersessions) != 0) {
 		return nil, fmt.Errorf("%w: version zero ledger cannot contain materialized records or be terminal", ErrInvalidState)
 	}
 	assignedSteps := make(map[int64]NodeID)
@@ -82,8 +85,14 @@ func RestoreLedger(state MaterializedState) (*Ledger, error) {
 	if err := ledger.validateRestoredEntryLinks(); err != nil {
 		return nil, err
 	}
+	if err := ledger.restoreNodeSupersessions(state.NodeSupersessions, state.Version); err != nil {
+		return nil, err
+	}
 	if state.Status == LedgerClosed {
-		for _, node := range ledger.nodes {
+		for id, node := range ledger.nodes {
+			if ledger.nodeSuperseded(id) {
+				continue
+			}
 			if node.Status != NodeDone {
 				return nil, fmt.Errorf("%w: closed ledger contains unfinished node %q", ErrInvalidState, node.ID)
 			}
@@ -137,6 +146,10 @@ func validateRestoredNode(node Node, ledgerVersion uint64) error {
 		if !hasEvidenceRef(node.VerificationRefs) {
 			return fmt.Errorf("%w: %w: completed node %q lacks verification evidence", ErrInvalidState, ErrEvidenceRequired, node.ID)
 		}
+	} else if node.Status == NodeFailed && len(node.VerificationRefs) == 1 &&
+		node.VerificationRefs[0].Relation == RefVerifies {
+		// Queue-owned terminal failure carries one immutable code proof. An
+		// ordinary failed transition still carries no verification references.
 	} else if len(node.VerificationRefs) != 0 {
 		return fmt.Errorf("%w: non-done node %q cannot carry verification references", ErrInvalidState, node.ID)
 	}

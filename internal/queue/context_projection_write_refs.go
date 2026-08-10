@@ -18,14 +18,20 @@ func insertContextProjectionReferencesTx(
 			INSERT INTO context_projection_selected_refs (
 				projection_id, working_set_id, job_id, generation, position, item_id,
 				ref_uri, ref_version, ref_sha256, ref_relation, role, authority,
-				source_freshness, content_sha256, rendered_bytes
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+				source_freshness, content_sha256, rendered_bytes, source_ref_count, source_refs_sealed_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NULL)
 		`, projection.ID, projection.WorkingSetID, authority.JobID, authority.Generation,
 			position, selected.ItemID, selected.Ref.URI, selected.Ref.Version,
 			selected.Ref.Hash, selected.Ref.Relation, selected.Role, selected.Authority,
-			selected.SourceFreshness, selected.ContentSHA256, selected.RenderedBytes,
+			selected.SourceFreshness, selected.ContentSHA256, selected.RenderedBytes, len(selected.SourceRefs),
 		); err != nil {
 			return fmt.Errorf("insert context projection %q selected reference %d: %w", projection.ID, position, err)
+		}
+		if err := insertContextProjectionSelectedSourcesTx(ctx, tx, projection.ID, position, selected.SourceRefs); err != nil {
+			return err
+		}
+		if err := sealContextProjectionSelectedSourcesTx(ctx, tx, projection.ID, position); err != nil {
+			return err
 		}
 	}
 	for position, omitted := range projection.Omitted {

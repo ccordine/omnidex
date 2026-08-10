@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -21,9 +22,15 @@ type PreparedModel struct {
 	ResponseFormat  string
 	ResponseSchema  map[string]any
 	ThinkingEnabled bool
+	Temperature     *float64
 }
 
 func ValidateResponseContract(prepared PreparedModel) error {
+	if prepared.Temperature != nil &&
+		(math.IsNaN(*prepared.Temperature) || math.IsInf(*prepared.Temperature, 0) ||
+			*prepared.Temperature < 0 || *prepared.Temperature > 2) {
+		return fmt.Errorf("temperature must be between 0 and 2")
+	}
 	if prepared.ThinkingEnabled && (prepared.ResponseFormat != "" || len(prepared.ResponseSchema) > 0) {
 		return fmt.Errorf("native thinking forbids a structured response contract")
 	}

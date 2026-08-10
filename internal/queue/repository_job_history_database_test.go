@@ -218,8 +218,19 @@ func insertJobHistoryFixture(
 	`, jobID, stepID, marker, marker).Scan(&fixture.claimID); err != nil {
 		t.Fatal(err)
 	}
+	var generation int64
+	if err := pool.QueryRow(ctx, `
+		SELECT generation FROM job_steps WHERE job_id=$1 AND id=$2
+	`, jobID, stepID).Scan(&generation); err != nil {
+		t.Fatal(err)
+	}
+	authority := activateStepAttemptForTest(
+		t, ctx, pool, jobID, generation, stepID,
+		testStepAttemptWorker("job-history", stepID),
+	)
 	llmCall, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
-		StepID: stepID, Scope: "job_history_fixture", RequestedModel: "fixture-model",
+		Authority: authority, StepID: stepID,
+		Scope: "job_history_fixture", RequestedModel: "fixture-model",
 		Model: "fixture-model", Attempt: 1, SystemPrompt: "Exact fixture system prompt.",
 		UserPrompt: marker, ResponseFormat: "text", ContextTokens: 128,
 		MaxOutputTokens: 32, Response: marker, Status: LLMEvidenceSucceeded,

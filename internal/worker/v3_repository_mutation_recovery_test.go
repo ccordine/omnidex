@@ -13,16 +13,19 @@ func TestRepositoryMutationRecoveryRequiresExactActiveClaim(t *testing.T) {
 	claim := &model.ClaimedStep{
 		Job:  model.Job{ID: 41, CurrentGeneration: 3},
 		Step: model.Step{ID: 72, JobID: 41, Generation: 3, WorkerID: "worker-current"},
+		Authority: model.StepAttemptAuthority{
+			JobID: 41, Generation: 3, StepID: 72, Attempt: 2, WorkerID: "worker-current",
+		},
 	}
 	command := queue.RepositoryMutationCommand{
-		JobID: 41, StepID: 72, Generation: 3, WorkerID: "worker-current",
+		JobID: 41, StepID: 72, Generation: 3, Attempt: 1, WorkerID: "worker-original",
 	}
 	if err := requireCurrentRepositoryMutationRecoveryClaim(claim, command); err != nil {
 		t.Fatal(err)
 	}
 	for name, mutate := range map[string]func(*queue.RepositoryMutationCommand){
-		"foreign step":   func(value *queue.RepositoryMutationCommand) { value.StepID++ },
-		"foreign worker": func(value *queue.RepositoryMutationCommand) { value.WorkerID = "worker-foreign" },
+		"foreign step":       func(value *queue.RepositoryMutationCommand) { value.StepID++ },
+		"foreign generation": func(value *queue.RepositoryMutationCommand) { value.Generation++ },
 	} {
 		t.Run(name, func(t *testing.T) {
 			foreign := command

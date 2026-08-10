@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 const (
@@ -12,8 +14,8 @@ const (
 	progressHeartbeatInterval = 15 * time.Second
 )
 
-func (s *Service) startProgressHeartbeat(ctx context.Context, stepID int64, operation string) func() {
-	if s == nil || stepID <= 0 {
+func (s *Service) startProgressHeartbeat(ctx context.Context, authority model.StepAttemptAuthority, operation string) func() {
+	if s == nil || authority.StepID <= 0 {
 		return func() {}
 	}
 	if ctx == nil {
@@ -34,7 +36,7 @@ func (s *Service) startProgressHeartbeat(ctx context.Context, stepID int64, oper
 		case <-initial.C:
 		}
 		emit := func() {
-			s.emitStepEvent(stepID, "operation_heartbeat", fmt.Sprintf("operation=%s elapsed=%s", safeLine(operation, "work"), time.Since(started).Truncate(time.Second)))
+			s.emitStepEvent(authority, "operation_heartbeat", fmt.Sprintf("operation=%s elapsed=%s", safeLine(operation, "work"), time.Since(started).Truncate(time.Second)))
 		}
 		emit()
 		ticker := time.NewTicker(progressHeartbeatInterval)

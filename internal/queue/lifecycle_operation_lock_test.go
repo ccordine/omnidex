@@ -6,16 +6,38 @@ import (
 	"testing"
 )
 
-func TestLifecycleMutationsLockGlobalIdentityBeforeAggregateAuthority(t *testing.T) {
+func TestLifecycleMutationsUseOneDeadlockSafeAuthorityOrder(t *testing.T) {
 	t.Parallel()
+	for _, testCase := range []struct{ file, function string }{
+		{"repository_steps.go", "func (r *Repository) CompleteStep"},
+		{"repository_steps.go", "func (r *Repository) FailStep"},
+	} {
+		t.Run(testCase.function, func(t *testing.T) {
+			source := lifecycleFunctionSource(t, testCase.file, testCase.function)
+			authorityAt := strings.Index(source, "lockStepAttemptAuthorityTx(")
+			identityAt := strings.Index(source, "lockLifecycleOperationIdentityTx(")
+			if authorityAt < 0 || identityAt < 0 || authorityAt >= identityAt {
+				t.Fatalf("%s authority=%d identity=%d", testCase.function, authorityAt, identityAt)
+			}
+		})
+	}
+	for _, testCase := range []struct{ file, function string }{
+		{"repository_replan.go", "func replanJobTx"},
+		{"repository_cancel.go", "func cancelJobTx"},
+	} {
+		t.Run(testCase.function, func(t *testing.T) {
+			source := lifecycleFunctionSource(t, testCase.file, testCase.function)
+			jobAt := strings.Index(source, "lockedJobTx(")
+			identityAt := strings.Index(source, "lockLifecycleOperationIdentityTx(")
+			if jobAt < 0 || identityAt < 0 || jobAt >= identityAt {
+				t.Fatalf("%s job=%d identity=%d", testCase.function, jobAt, identityAt)
+			}
+		})
+	}
 	cases := []struct {
 		file, function, aggregate string
 	}{
-		{"repository_steps.go", "func (r *Repository) CompleteStep", "stepJobIDTx("},
-		{"repository_steps.go", "func (r *Repository) FailStep", "stepJobIDTx("},
 		{"repository_step_input.go", "func (r *Repository) SubmitJobFeedback", "submitJobFeedbackTx("},
-		{"repository_replan.go", "func (r *Repository) ReplanJob", "replanJobTx("},
-		{"repository_cancel.go", "func cancelJobTx", "lockedJobTx("},
 		{"scrum_channel_operation_execute.go", "func (r *Repository) ExecuteScrumChannelOperation", "reserveLifecycleOperationIdentityTx("},
 		{"scrum_channel_operation_execute.go", "func executeScrumChannelReplanTx", "replanJobTx("},
 		{"scrum_channel_operation_execute.go", "func executeScrumChannelFeedbackTx", "submitJobFeedbackTx("},

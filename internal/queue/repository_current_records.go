@@ -11,20 +11,29 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (r *Repository) WriteArtifact(ctx context.Context, artifact artifacts.Envelope) error {
+func (r *Repository) WriteArtifact(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	artifact artifacts.Envelope,
+) error {
 	if artifact.Kind == artifacts.KindIntent {
 		return ErrIntentArtifactRequiresAcceptedWriter
 	}
 	if err := artifact.Validate(); err != nil {
 		return err
 	}
+	if artifact.JobID != authority.JobID || artifact.StepID != authority.StepID {
+		return fmt.Errorf("%w: artifact owner disagrees with step attempt", ErrStaleStepAttempt)
+	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if err := requireRunningCurrentStepTx(ctx, tx, artifact.JobID, artifact.StepID); err != nil {
+	if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority); err != nil {
 		return err
+	} else if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return fmt.Errorf("%w: artifact attempt is not running", ErrStaleStepAttempt)
 	}
 	result, err := tx.Exec(ctx, `
 		INSERT INTO artifacts (job_id, step_id, kind, version, payload_json)
@@ -33,22 +42,31 @@ func (r *Repository) WriteArtifact(ctx context.Context, artifact artifacts.Envel
 		JOIN jobs ON jobs.id=steps.job_id
 		WHERE steps.job_id=$1 AND steps.id=$2
 		  AND steps.status=$6
+		  AND steps.generation=$7 AND steps.current_attempt=$8 AND steps.worker_id=$9
 		  AND steps.superseded_at_generation IS NULL
 		  AND steps.generation=jobs.current_generation
 	`, artifact.JobID, artifact.StepID, artifact.Kind, artifact.Version,
-		string(artifact.Payload), model.StepStatusRunning)
+		string(artifact.Payload), model.StepStatusRunning, authority.Generation,
+		authority.Attempt, authority.WorkerID)
 	if err != nil {
 		return err
 	}
 	if result.RowsAffected() != 1 {
-		return fmt.Errorf("%w: artifact step %d lost current authority", ErrStaleJobGeneration, artifact.StepID)
+		return staleStepAttemptError(authority, "artifact target lost current authority", nil)
 	}
 	return tx.Commit(ctx)
 }
 
-func (r *Repository) WriteEvidence(ctx context.Context, record evidence.Record) error {
+func (r *Repository) WriteEvidence(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	record evidence.Record,
+) error {
 	if err := record.Validate(); err != nil {
 		return err
+	}
+	if record.JobID != authority.JobID || record.StepID != authority.StepID {
+		return fmt.Errorf("%w: evidence owner disagrees with step attempt", ErrStaleStepAttempt)
 	}
 	payload, err := json.Marshal(record)
 	if err != nil {
@@ -59,8 +77,10 @@ func (r *Repository) WriteEvidence(ctx context.Context, record evidence.Record) 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if err := requireRunningCurrentStepTx(ctx, tx, record.JobID, record.StepID); err != nil {
+	if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority); err != nil {
 		return err
+	} else if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return fmt.Errorf("%w: evidence attempt is not running", ErrStaleStepAttempt)
 	}
 	result, err := tx.Exec(ctx, `
 		INSERT INTO evidence (job_id, step_id, kind, source_type, source_ref, payload_json)
@@ -69,15 +89,17 @@ func (r *Repository) WriteEvidence(ctx context.Context, record evidence.Record) 
 		JOIN jobs ON jobs.id=steps.job_id
 		WHERE steps.job_id=$1 AND steps.id=$2
 		  AND steps.status=$7
+		  AND steps.generation=$8 AND steps.current_attempt=$9 AND steps.worker_id=$10
 		  AND steps.superseded_at_generation IS NULL
 		  AND steps.generation=jobs.current_generation
 	`, record.JobID, record.StepID, record.Kind, record.SourceType, record.SourceRef,
-		string(payload), model.StepStatusRunning)
+		string(payload), model.StepStatusRunning, authority.Generation,
+		authority.Attempt, authority.WorkerID)
 	if err != nil {
 		return err
 	}
 	if result.RowsAffected() != 1 {
-		return fmt.Errorf("%w: evidence step %d lost current authority", ErrStaleJobGeneration, record.StepID)
+		return staleStepAttemptError(authority, "evidence target lost current authority", nil)
 	}
 	return tx.Commit(ctx)
 }

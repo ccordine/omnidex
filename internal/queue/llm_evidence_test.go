@@ -156,7 +156,7 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	defer seedTx.Rollback(context.Background())
 	if err := seedTx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata)
-		VALUES ($1, 'agent', 'completed', '{}'::jsonb)
+		VALUES ($1, 'agent', 'pending', '{}'::jsonb)
 		RETURNING id
 	`, marker).Scan(&jobID); err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	}
 	if err := seedTx.QueryRow(ctx, `
 		INSERT INTO job_steps (job_id, action, sort_index, status, generation)
-		VALUES ($1, 'evidence_contract', 0, 'completed', 1)
+		VALUES ($1, 'evidence_contract', 0, 'pending', 1)
 		RETURNING id
 	`, jobID).Scan(&stepID); err != nil {
 		t.Fatal(err)
@@ -176,10 +176,14 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	if err := seedTx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
+	authority := activateStepAttemptForTest(
+		t, ctx, pool, jobID, 1, stepID,
+		testStepAttemptWorker("llm-evidence", stepID),
+	)
 
 	response := "\n  exact raw provider response  \n"
 	created, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
-		StepID: stepID, Scope: "portable_semantic_worker",
+		Authority: authority, StepID: stepID, Scope: "portable_semantic_worker",
 		WorkID: strings.Repeat("b", 64), WorkKind: "application_classification",
 		RequestedModel: "requested-model", Model: "effective-model", Attempt: 1,
 		SystemPrompt: "\nexact system prompt\n", UserPrompt: " exact user prompt ",
@@ -199,11 +203,12 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	if !created.ThinkingEnabled {
 		t.Fatal("PostgreSQL omitted native thinking state from exact request evidence")
 	}
-	if created.JobGeneration != 1 || created.ContextProjectionID != "" {
-		t.Fatalf("legacy shadow call generation/projection authority=%+v", created)
+	if created.JobGeneration != 1 || created.StepAttempt != 1 ||
+		created.WorkerID != authority.WorkerID || created.ContextProjectionID != "" {
+		t.Fatalf("exact call generation/projection authority=%+v", created)
 	}
 	if _, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
-		StepID: stepID, Scope: "portable_fragment_worker",
+		Authority: authority, StepID: stepID, Scope: "portable_fragment_worker",
 		RequestedModel: "requested-model", Model: "effective-model", Attempt: 1,
 		SystemPrompt: "system", UserPrompt: "user", ResponseFormat: "text",
 		ContextTokens: 4096, MaxOutputTokens: 512,
@@ -212,6 +217,7 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	completeStepAttemptForTest(t, ctx, pool, authority)
 	page, err := repository.ReadJobHistoryPage(ctx, jobID, JobHistoryRequest{
 		Stream: JobHistoryLLMCalls, Limit: 10,
 	})

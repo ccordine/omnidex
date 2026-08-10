@@ -12,7 +12,7 @@ func TestPostgresRepositoryMutationFileAuthoritySealsAfterPreparation(t *testing
 		t.Fatal(err)
 	}
 	if _, err := fixture.repository.prepareRepositoryMutation(
-		fixture.ctx, fixture.command, identity,
+		fixture.ctx, fixture.authority, fixture.command, identity,
 	); err != nil {
 		t.Fatal(err)
 	}

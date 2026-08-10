@@ -30,10 +30,10 @@ func TestPostgresAcceptedIntentArtifactProjectsOneBoundedAuthority(t *testing.T)
 		t.Fatalf("claimed step=%+v, want job %d intent parse", claimed, job.ID)
 	}
 	envelope := acceptedIntentTestEnvelope(t, job.ID, claimed.Step.ID)
-	if err := repository.WriteAcceptedIntentArtifact(ctx, envelope); err != nil {
+	if err := repository.WriteAcceptedIntentArtifact(ctx, claimed.Authority, envelope); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.WriteAcceptedIntentArtifact(ctx, envelope); err != nil {
+	if err := repository.WriteAcceptedIntentArtifact(ctx, claimed.Authority, envelope); err != nil {
 		t.Fatalf("exact accepted-intent replay failed: %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestPostgresAcceptedIntentArtifactProjectsOneBoundedAuthority(t *testing.T)
 		t.Fatal(err)
 	}
 	changed.JobID, changed.StepID = job.ID, claimed.Step.ID
-	if err := repository.WriteAcceptedIntentArtifact(ctx, changed); err == nil {
+	if err := repository.WriteAcceptedIntentArtifact(ctx, claimed.Authority, changed); err == nil {
 		t.Fatal("changed accepted intent replay was accepted")
 	}
 }
@@ -145,7 +145,7 @@ func TestPostgresAcceptedIntentProjectionFailureRollsBackArtifactAndLedger(t *te
 	}
 	installAcceptedIntentProjectionFailure(t, ctx, pool, job.ID)
 	if err := repository.WriteAcceptedIntentArtifact(
-		ctx, acceptedIntentTestEnvelope(t, job.ID, claimed.Step.ID),
+		ctx, claimed.Authority, acceptedIntentTestEnvelope(t, job.ID, claimed.Step.ID),
 	); err == nil || !strings.Contains(err.Error(), "forced accepted intent projection failure") {
 		t.Fatalf("forced projection failure error=%v", err)
 	}

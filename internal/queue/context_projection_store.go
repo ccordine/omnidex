@@ -59,30 +59,12 @@ func validateCurrentContextProjectionAuthorityTx(
 	authority ContextProjectionAuthority,
 	projection contextbuilder.Projection,
 ) error {
-	header, err := loadTaskLedgerHeaderTx(ctx, tx, authority.JobID, true)
+	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority.StepAttemptAuthority)
 	if err != nil {
 		return err
 	}
-	if err := requireCurrentWorkingSetAuthority(header, authority.Generation); err != nil {
-		return err
-	}
-	if header.JobStatus != model.JobStatusRunning {
-		return fmt.Errorf("%w: job %d status is %q, expected running", ErrInvalidContextProjection, authority.JobID, header.JobStatus)
-	}
-	var stepGeneration int64
-	var stepStatus string
-	var supersededAt *int64
-	if err := tx.QueryRow(ctx, `
-		SELECT generation, status, superseded_at_generation
-		FROM job_steps WHERE id=$1 AND job_id=$2 FOR UPDATE
-	`, authority.StepID, authority.JobID).Scan(&stepGeneration, &stepStatus, &supersededAt); err != nil {
-		return fmt.Errorf("lock context projection step %d: %w", authority.StepID, err)
-	}
-	if stepGeneration != authority.Generation || supersededAt != nil || stepStatus != model.StepStatusRunning {
-		return fmt.Errorf(
-			"%w: step %d is not running in current generation %d",
-			ErrInvalidContextProjection, authority.StepID, authority.Generation,
-		)
+	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return staleStepAttemptError(authority.StepAttemptAuthority, "context projection writer is not running", nil)
 	}
 	var setVersion int64
 	var setStatus string
@@ -111,19 +93,21 @@ func insertContextProjectionTx(
 	record := ContextProjectionRecord{Authority: authority, Projection: projection}
 	err := tx.QueryRow(ctx, `
 		INSERT INTO context_projections (
-			projection_id, schema_name, job_id, generation, step_id, work_id, work_kind, usage_mode,
+			projection_id, schema_name, job_id, generation, step_id, step_attempt, worker_id,
+			work_id, work_kind, usage_mode,
 			spec_name, spec_version, spec_sha256, renderer_version,
 			scope_ref_uri, scope_ref_version, scope_ref_sha256, scope_ref_relation,
 			working_set_id, working_set_version, selected_count, omitted_count,
 			rendered_context, rendered_sha256, rendered_bytes,
 			estimated_tokens, token_estimator
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27
 		)
 		ON CONFLICT (projection_id) DO NOTHING
 		RETURNING record_id, created_at
 	`, projection.ID, projection.Schema, authority.JobID, authority.Generation, authority.StepID,
-		projection.WorkID, authority.WorkKind, authority.Mode, projection.SpecName, projection.SpecVersion,
+		authority.Attempt, authority.WorkerID, projection.WorkID, authority.WorkKind, authority.Mode,
+		projection.SpecName, projection.SpecVersion,
 		projection.SpecSHA256, projection.RendererVersion, projection.ScopeRef.URI,
 		projection.ScopeRef.Version, projection.ScopeRef.Hash, projection.ScopeRef.Relation,
 		projection.WorkingSetID, int64(projection.WorkingSetVersion), len(projection.Selected),

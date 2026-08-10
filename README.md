@@ -2,13 +2,13 @@
 
 **Current development release:** `v0.5.0` Charmeleon
 
-Omnidex is a local-first AI workbench with a conversational surface and a server-authoritative execution core. Charmeleon extends the deterministic assembly line with repository intelligence and software-defined task context for bounded work in existing codebases.
+Omnidex is a local-first AI workbench with a conversational surface and a server-authoritative execution core. Charmeleon extends the deterministic assembly line with repository intelligence, software-defined task context, and a domain-neutral cognition runtime for bounded work across long-lived environments.
 
-Charmander established the bounded assembly-line foundation; its captured measurements and limitations remain in [docs/CHARMANDER_PROOF.md](docs/CHARMANDER_PROOF.md). Charmeleon is now the active development milestone. Its context architecture and uncompleted promotion gates are in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md).
+Charmander established the bounded assembly-line foundation; its captured measurements and limitations remain in [docs/CHARMANDER_PROOF.md](docs/CHARMANDER_PROOF.md). Charmeleon is now the active development milestone. Its context architecture is in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md), its production cognition contract is in [docs/CHARMELEON_COGNITION_RUNTIME.md](docs/CHARMELEON_COGNITION_RUNTIME.md), and its offline procedural proof contract is in [docs/LABYRINTH_GAUNTLET.md](docs/LABYRINTH_GAUNTLET.md).
 
 ## Charmeleon in one sentence
 
-Omnidex stores repository truth and task continuity outside the model, then gives each Qwen call one immutable, bounded projection while code retains authority over acquisition, mutation, verification, and completion.
+Charmander made individual model jobs reliable. Charmeleon makes those bounded jobs cooperate through code-owned continuity, attention, action, evidence, revision, and completion across environments too large or long-lived for any one model context.
 
 ```text
 conversation
@@ -147,13 +147,23 @@ OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT=qwen3-coder:30b
 OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION=qwen3-coder:30b
-INFERENCE_CONTEXT_TOKENS=16384
+INFERENCE_CONTEXT_TOKENS=32768
+# Required immutable cognition evidence. Populate every blank from the exact
+# installed model and live backend; Omnidex refuses to guess these values.
+COGNITION_MODEL_SHA256=
+COGNITION_MODEL_QUANTIZATION=
+COGNITION_BACKEND_VERSION=
+COGNITION_HARDWARE=
+COGNITION_CONTEXT_CEILING_BYTES=
+COGNITION_MAX_OUTPUT_TOKENS=
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
 The surface role classifies only browser, command-line, or service delivery. One stable feature-partition role extracts exact feature envelopes from the user authority and splits each accepted envelope to a code-owned fixed point. There is no production reasoning adviser and no separate split-model route. There is no model-authored kind, outcome, plan, or coverage verdict. Artifact handling is a separate token-blind classification job. For each local need, code either binds an exact active PostgreSQL skill, gives a selector at most five opaque purpose summaries, or asks a procedure worker to produce one bounded reusable instruction. The fragment role then receives one exact feature contract plus that procedure and returns one raw declaration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. Local Ollama uses Qwen 3.5 9B for the bounded semantic stations and Qwen3-Coder 30B for fragment generation and correction. Keeping the profile to two models limits phase-boundary model swaps on a one-model Ollama runner. It defaults to one fragment lane because concurrent requests to one endpoint are contention, not distributed capacity; the explicit concurrency setting may be raised to at most four when real independent capacity exists. A missing model, context mismatch, or invalid capacity fails explicitly. See [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md) for measured hardware limits and alternatives. Offline advisory-model experiments are isolated from production routing and documented in [docs/MODEL_GAUNTLETS.md](docs/MODEL_GAUNTLETS.md).
 
 Hosted generation providers include Ollama, OpenAI, Azure AI, xAI, Google Gemini, Anthropic, Hugging Face, and custom OpenAI-compatible endpoints.
+
+Production cognition is currently Ollama-only: every other provider remains available for ordinary non-cognition calls, but worker startup rejects it until it can prove the exact prepared-inference and live-identity contracts.
 
 Chinese service integrations include DeepSeek; Alibaba Qwen / Model Studio; Moonshot / Kimi; Zhipu / BigModel / GLM; Z.AI; MiniMax; Baidu Qianfan / ERNIE; Tencent Hunyuan; ByteDance Doubao / Volcengine Ark; StepFun; 01.AI Yi; Baichuan; iFlytek Spark; SiliconFlow; ModelScope; Huawei ModelArts; Xiaomi MiMo; Meituan LongCat; Ant Ling / InclusionAI; and Tencent TokenHub.
 

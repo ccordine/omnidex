@@ -27,11 +27,37 @@ func TestReleaseBuilderDefaultsToCharmeleon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := string(raw)
-	for _, required := range []string{`VERSION="v0.5.0"`, `CODENAME="Charmeleon"`} {
+	library, err := os.ReadFile("../../scripts/build-release-lib.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw) + "\n" + string(library)
+	for _, required := range []string{
+		`VERSION="v0.5.0"`, `CODENAME="Charmeleon"`,
+		`git -C "$REPO_ROOT" rev-parse HEAD`, `source_archive_sha256`, `git -C "$REPO_ROOT" archive`,
+		`internal/version.SourceSHA256`, `internal/version.MigrationsSHA256`,
+		`cognition-gauntlet:./cmd/cognition-gauntlet`, `migrations/SHA256SUMS`,
+		`release builds require a clean tracked and untracked worktree`,
+		`validate_dist_dir`, `create_dist_dir`, `distribution path enters tracked source`,
+		`cd "$target_source"`, `verify_source_stage`, `assert_repository_matches_snapshot`,
+		`publish_staged_release`,
+	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("release builder omitted %s", required)
 		}
+	}
+	for _, forbidden := range []string{
+		`cd "$REPO_ROOT"` + "\n" + `      CGO_ENABLED`,
+		`cp -a "${REPO_ROOT}/migrations"`,
+		`cp -a "${REPO_ROOT}/README.md"`,
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("release builder still consumes live source: %s", forbidden)
+		}
+	}
+	if strings.Index(script, `release builds require a clean tracked and untracked worktree`) >
+		strings.LastIndex(script, "\n  create_dist_dir\n") {
+		t.Fatal("release builder creates its distribution directory before proving a clean worktree")
 	}
 	for _, forbidden := range []string{`VERSION="v0.4.0"`, `CODENAME="Charmander"`} {
 		if strings.Contains(script, forbidden) {

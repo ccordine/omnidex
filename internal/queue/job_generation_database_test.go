@@ -89,9 +89,10 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 	expectGenerationDatabaseFailure(t, ctx, tx, `
 		UPDATE job_steps SET generation=1 WHERE id=$1
 	`, secondGenerationStep)
-	if _, err := tx.Exec(ctx, `UPDATE job_steps SET status='running' WHERE id=$1`, secondGenerationStep); err != nil {
-		t.Fatal(err)
-	}
+	activateStepAttemptInTxForTest(
+		t, ctx, tx, firstJob, 2, secondGenerationStep,
+		testStepAttemptWorker("generation-boundary", secondGenerationStep),
+	)
 	expectGenerationDatabaseFailure(t, ctx, tx, `
 		UPDATE job_steps SET status='pending' WHERE id=$1
 	`, secondGenerationStep)

@@ -28,13 +28,13 @@ func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime 
 				return assemblyline.PortableResult{}, err
 			}
 			session.runtime.svc.emitStepEvent(
-				session.runtime.claim.Step.ID,
+				session.runtime.claim.Authority,
 				"coding_portable_dispatched",
 				fmt.Sprintf("kind=%s work=%s payload=%dB model=%s", job.Kind, job.ID[:12], len(job.Payload), safeEventToken(model, "unknown")),
 			)
 			raw, err := session.runtime.svc.llmGeneratePortableWithSchemaTrace(
 				session.runtime.ctx,
-				session.runtime.claim.Step.ID,
+				session.runtime.claim.Authority,
 				job,
 				portableModelScope(responseSchema),
 				model,
@@ -49,7 +49,7 @@ func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime 
 		},
 		Emit: func(event typedWorkerEvent) {
 			session.runtime.svc.emitStepEvent(
-				session.runtime.claim.Step.ID,
+				session.runtime.claim.Authority,
 				"coding_worker_"+string(event.State),
 				renderDirectCodingWorkerEvent(event),
 			)

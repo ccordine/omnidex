@@ -57,7 +57,8 @@ func (state *buildState) projection() (Projection, error) {
 	for _, selected := range state.selected {
 		selections = append(selections, Selection{
 			ItemID: selected.item.ID, Ref: selected.item.Ref, Role: selected.item.Role,
-			Authority: selected.material.Authority, SourceFreshness: SourceFreshnessValidatedCurrent,
+			SourceRefs: cloneSourceRefs(selected.material.SourceRefs),
+			Authority:  selected.material.Authority, SourceFreshness: SourceFreshnessValidatedCurrent,
 			ContentSHA256: digestString(selected.material.Content),
 			RenderedBytes: selected.material.ByteCost,
 		})
@@ -136,7 +137,8 @@ func (projection Projection) Validate() error {
 	for _, selected := range projection.Selected {
 		if err := taskstate.ValidateRef(selected.Ref); err != nil || roleRank(selected.Role) == 0 ||
 			authorityRank(selected.Authority) == 0 || selected.RenderedBytes < 1 ||
-			!validDigest(selected.ContentSHA256) || selected.SourceFreshness != SourceFreshnessValidatedCurrent {
+			!validDigest(selected.ContentSHA256) || selected.SourceFreshness != SourceFreshnessValidatedCurrent ||
+			validateSourceRefs(selected.SourceRefs) != nil {
 			return fmt.Errorf("%w: selected item %q is invalid", ErrInvalidProjection, selected.ItemID)
 		}
 		if err := requireExact(string(selected.ItemID), "selected item ID", ErrInvalidProjection); err != nil {

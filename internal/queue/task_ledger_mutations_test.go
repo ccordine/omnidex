@@ -90,6 +90,7 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 
 	refSource := taskLedgerMutationRef("source://mutation/input", taskstate.RefSource, "a")
 	refEvidence := taskLedgerMutationRef("evidence://mutation/resolution", taskstate.RefEvidence, "b")
+	refContradiction := taskLedgerMutationRef("evidence://mutation/contradiction", taskstate.RefContradicts, "c")
 	apply(taskstate.AddEntryCommand{
 		CommandID: taskLedgerMutationCommandID(t, marker, "add-rejected"), ExpectedVersion: initialTaskLedgerVersion + 3,
 		Actor: taskstate.AuthorityCode, ID: "entry-rejected", Kind: taskstate.EntryNote,
@@ -98,6 +99,7 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 	apply(taskstate.RejectEntryCommand{
 		CommandID: taskLedgerMutationCommandID(t, marker, "reject-entry"), ExpectedVersion: initialTaskLedgerVersion + 4,
 		Actor: taskstate.AuthorityCode, EntryID: "entry-rejected", Reason: "The evidence invalidated it.",
+		Refs: []taskstate.Ref{refContradiction},
 	}, taskstate.EventEntryRejected)
 	apply(taskstate.AddEntryCommand{
 		CommandID: taskLedgerMutationCommandID(t, marker, "add-resolved"), ExpectedVersion: initialTaskLedgerVersion + 5,
@@ -141,6 +143,7 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 		entries := taskLedgerMutationEntries(state.Entries)
 		if len(entries) != 7 || entries["entry-rejected"].Status != taskstate.EntryRejected ||
 			entries["entry-rejected"].DispositionBy != taskstate.AuthorityCode ||
+			!reflect.DeepEqual(entries["entry-rejected"].Refs, []taskstate.Ref{refContradiction}) ||
 			entries["entry-resolved"].Status != taskstate.EntryResolved ||
 			entries["entry-resolved"].DispositionBy != taskstate.AuthorityCode ||
 			!reflect.DeepEqual(entries["entry-resolved"].Refs, []taskstate.Ref{refSource, refEvidence}) ||

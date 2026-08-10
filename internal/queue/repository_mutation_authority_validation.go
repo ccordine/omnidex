@@ -10,11 +10,8 @@ import (
 )
 
 func validateRepositoryMutationCommand(command RepositoryMutationCommand) error {
-	if command.JobID <= 0 || command.StepID <= 0 || command.Generation <= 0 {
-		return fmt.Errorf("repository mutation requires positive job, step, and generation identities")
-	}
-	if err := validateRepositoryMutationText("worker identity", command.WorkerID, 256); err != nil {
-		return err
+	if err := validateStepAttemptAuthority(command.stepAttemptAuthority()); err != nil {
+		return fmt.Errorf("repository mutation authority: %w", err)
 	}
 	for _, identity := range []struct {
 		name, value, prefix string

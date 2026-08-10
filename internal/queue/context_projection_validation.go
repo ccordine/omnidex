@@ -17,8 +17,8 @@ func validateContextProjectionStore(
 	authority ContextProjectionAuthority,
 	projection contextbuilder.Projection,
 ) error {
-	if authority.JobID <= 0 || authority.Generation <= 0 || authority.StepID <= 0 {
-		return fmt.Errorf("%w: job, generation, and step must be positive", ErrInvalidContextProjection)
+	if err := validateStepAttemptAuthority(authority.StepAttemptAuthority); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidContextProjection, err)
 	}
 	if err := validateContextProjectionExact(authority.WorkKind, "work kind", 256); err != nil {
 		return err
@@ -43,7 +43,7 @@ func validateContextProjectionStore(
 }
 
 func validContextProjectionMode(mode ContextProjectionMode) bool {
-	return mode == ContextProjectionModeShadow
+	return mode == ContextProjectionModeShadow || mode == ContextProjectionModeLive
 }
 
 func validateContextProjectionRepository(r *Repository, ctx context.Context) error {

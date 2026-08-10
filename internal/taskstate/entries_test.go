@@ -8,7 +8,7 @@ import (
 func TestModelProposalAuthorityIsNarrow(t *testing.T) {
 	ledger := newTestLedger(t)
 	allowed := []EntryKind{
-		EntryHypothesis, EntryQuestion, EntryDecisionCandidate,
+		EntryObservation, EntryHypothesis, EntryQuestion, EntryDecisionCandidate,
 	}
 	for index, kind := range allowed {
 		applyTestCommand(t, ledger, AddEntryCommand{
@@ -18,7 +18,7 @@ func TestModelProposalAuthorityIsNarrow(t *testing.T) {
 		})
 	}
 
-	for _, kind := range []EntryKind{EntryObservation, EntryFact, EntryAcceptedDecision, EntryCheckpoint} {
+	for _, kind := range []EntryKind{EntryFact, EntryAcceptedDecision, EntryCheckpoint} {
 		before := ledger.Version()
 		_, err := ledger.Apply(withTestCommandID(t, AddEntryCommand{
 			ExpectedVersion: before, Actor: AuthorityModelProposal,
@@ -40,6 +40,48 @@ func TestModelProposalAuthorityIsNarrow(t *testing.T) {
 	}))
 	if !errors.Is(err, ErrAuthorityDenied) {
 		t.Fatalf("model created task node: %v", err)
+	}
+}
+
+func TestModelObservationRemainsNonAuthoritativeAcrossRestore(t *testing.T) {
+	ledger := newTestLedger(t)
+	applyTestCommand(t, ledger, AddEntryCommand{
+		ExpectedVersion: 0,
+		Actor:           AuthorityModelProposal,
+		ID:              "proposed-observation",
+		Kind:            EntryObservation,
+		Content:         "The bounded policy reports a possible transition.",
+		Metadata:        EmptyJSONObject(),
+	})
+
+	entry, ok := ledger.Entry("proposed-observation")
+	if !ok {
+		t.Fatal("model-proposed observation is missing")
+	}
+	if entry.Authority != AuthorityModelProposal || entry.CreatedBy != AuthorityModelProposal {
+		t.Fatalf("model-proposed observation gained authority: %+v", entry)
+	}
+
+	restored, err := RestoreLedger(ledger.MaterializedState())
+	if err != nil {
+		t.Fatalf("restore model-proposed observation: %v", err)
+	}
+	restoredEntry, ok := restored.Entry(entry.ID)
+	if !ok || restoredEntry.Authority != AuthorityModelProposal || restoredEntry.Kind != EntryObservation {
+		t.Fatalf("restored model-proposed observation changed semantics: %+v", restoredEntry)
+	}
+
+	_, err = restored.Apply(withTestCommandID(t, AcceptDecisionCommand{
+		ExpectedVersion:  restored.Version(),
+		Actor:            AuthorityCode,
+		CandidateID:      entry.ID,
+		AcceptedEntryID:  "forbidden-promotion",
+		AcceptancePolicy: "not-a-decision",
+		AcceptanceRefs:   testVerificationRefs(),
+		Metadata:         EmptyJSONObject(),
+	}))
+	if !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("observation was accepted through decision authority: %v", err)
 	}
 }
 

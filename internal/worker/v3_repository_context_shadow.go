@@ -17,8 +17,8 @@ import (
 
 type repositoryShadowContextStore interface {
 	CurrentWorkingSet(context.Context, int64) (workingset.Snapshot, error)
-	CreateCurrentWorkingSet(context.Context, int64, int64, workingset.Budget) (workingset.Snapshot, error)
-	ApplyWorkingSetCommand(context.Context, int64, int64, workingset.Command) (workingset.Event, error)
+	CreateCurrentWorkingSet(context.Context, model.StepAttemptAuthority, workingset.Budget) (workingset.Snapshot, error)
+	ApplyWorkingSetCommand(context.Context, model.StepAttemptAuthority, workingset.Command) (workingset.Event, error)
 	StoreContextProjection(
 		context.Context, queue.ContextProjectionAuthority, contextbuilder.Projection,
 	) (queue.ContextProjectionRecord, error)
@@ -77,8 +77,8 @@ func prepareRepositoryShadowProjection(
 		return "", fmt.Errorf("build repository shadow context projection: %w", err)
 	}
 	record, err := store.StoreContextProjection(ctx, queue.ContextProjectionAuthority{
-		JobID: claim.Job.ID, Generation: claim.Job.CurrentGeneration, StepID: claim.Step.ID,
-		WorkKind: string(job.Kind), Mode: queue.ContextProjectionModeShadow,
+		StepAttemptAuthority: claim.Authority,
+		WorkKind:             string(job.Kind), Mode: queue.ContextProjectionModeShadow,
 	}, projection)
 	if err != nil {
 		return "", fmt.Errorf("store repository shadow context projection: %w", err)
@@ -110,7 +110,7 @@ func acquireRepositoryShadowWorkingSet(
 	snapshot, err := store.CurrentWorkingSet(ctx, owner.JobID)
 	if errors.Is(err, queue.ErrWorkingSetNotFound) {
 		snapshot, err = store.CreateCurrentWorkingSet(
-			ctx, owner.JobID, owner.Generation, repositoryShadowWorkingSetBudget(),
+			ctx, claim.Authority, repositoryShadowWorkingSetBudget(),
 		)
 	}
 	if err != nil {
@@ -134,7 +134,7 @@ func acquireRepositoryShadowWorkingSet(
 		if commandErr != nil {
 			return nil, commandErr
 		}
-		if _, err := store.ApplyWorkingSetCommand(ctx, owner.JobID, owner.Generation, workingset.AcquireCommand{
+		if _, err := store.ApplyWorkingSetCommand(ctx, claim.Authority, workingset.AcquireCommand{
 			CommandID: commandID, ExpectedVersion: snapshot.Version,
 			Actor: taskstate.AuthorityCode, Request: bound,
 		}); err != nil {

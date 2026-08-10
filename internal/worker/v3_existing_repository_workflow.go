@@ -78,6 +78,9 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	if err != nil {
 		return "", err
 	}
+	if err := session.runRepositoryCognitionShadow(decision, pack.AnalysisID); err != nil {
+		return "", err
+	}
 	contract, err := session.buildExistingRepositoryChangeContract(pack, surface)
 	if err != nil {
 		return "", err

@@ -41,7 +41,7 @@ func (r *Repository) ListContextProjectionSummaries(
 		return nil, fmt.Errorf("%w: job %d generation %d", ErrContextProjectionNotFound, jobID, generation)
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT record_id, projection_id, step_id, work_id, work_kind, usage_mode,
+		SELECT record_id, projection_id, step_id, step_attempt, worker_id, work_id, work_kind, usage_mode,
 		       spec_name, spec_version, spec_sha256, renderer_version,
 		       working_set_id, working_set_version, selected_count, omitted_count,
 		       rendered_sha256, rendered_bytes, estimated_tokens, token_estimator, created_at
@@ -60,6 +60,7 @@ func (r *Repository) ListContextProjectionSummaries(
 		item.Authority.JobID, item.Authority.Generation = jobID, generation
 		if err := rows.Scan(
 			&item.RecordID, &item.ProjectionID, &item.Authority.StepID,
+			&item.Authority.Attempt, &item.Authority.WorkerID,
 			&item.WorkID, &item.Authority.WorkKind, &item.Authority.Mode,
 			&item.SpecName, &item.SpecVersion, &item.SpecSHA256, &item.RendererVersion,
 			&item.WorkingSetID, &workingSetVersion, &item.SelectedCount, &item.OmittedCount,
@@ -88,7 +89,8 @@ func (r *Repository) ListContextProjectionSummaries(
 
 func validateContextProjectionSummary(item ContextProjectionSummary, afterRecordID int64) error {
 	if item.RecordID <= afterRecordID || !validContextProjectionID(item.ProjectionID) ||
-		item.Authority.StepID <= 0 || len(item.WorkID) != 64 || !llmEvidenceLowerHex(item.WorkID) ||
+		validateStepAttemptAuthority(item.Authority.StepAttemptAuthority) != nil ||
+		len(item.WorkID) != 64 || !llmEvidenceLowerHex(item.WorkID) ||
 		!validContextProjectionMode(item.Authority.Mode) ||
 		item.SelectedCount < 1 || item.SelectedCount > maxContextProjectionSelected ||
 		item.OmittedCount < 0 || item.SelectedCount+item.OmittedCount > maxContextProjectionRecords ||

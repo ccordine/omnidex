@@ -99,6 +99,8 @@ func TestWorkingSetRegistersStructuredTaskAttentionRoles(t *testing.T) {
 		RoleTask,
 		RoleAcceptanceCriterion,
 		RoleConstraint,
+		RoleFact,
+		RoleHypothesis,
 		RoleDecision,
 		RoleInvariant,
 		RoleFailure,

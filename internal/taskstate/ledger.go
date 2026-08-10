@@ -9,7 +9,9 @@ func NewLedger(id LedgerID, owner LedgerOwner) (*Ledger, error) {
 	return &Ledger{
 		id: id, owner: owner, status: LedgerActive,
 		nodes: make(map[NodeID]Node), edges: make(map[EdgeID]Edge),
-		entries: make(map[EntryID]Entry), commandEvents: make(map[CommandID]Event),
+		entries:           make(map[EntryID]Entry),
+		nodeSupersessions: make(map[NodeID]NodeGenerationSupersession),
+		commandEvents:     make(map[CommandID]Event),
 	}, nil
 }
 
@@ -59,7 +61,8 @@ func (ledger *Ledger) validateInitialized() error {
 	if ledger == nil {
 		return fmt.Errorf("%w: ledger is required", ErrInvalidState)
 	}
-	if ledger.nodes == nil || ledger.edges == nil || ledger.entries == nil || ledger.commandEvents == nil {
+	if ledger.nodes == nil || ledger.edges == nil || ledger.entries == nil ||
+		ledger.nodeSupersessions == nil || ledger.commandEvents == nil {
 		return fmt.Errorf("%w: ledger aggregate is uninitialized", ErrInvalidState)
 	}
 	if err := validateLedgerID(ledger.id, ledger.owner); err != nil {
@@ -109,7 +112,8 @@ func validateCommandEventKinds(command CommandKind, event EventKind) error {
 		CommandResolveEntry: EventEntryResolved, CommandSupersedeEntry: EventEntrySuperseded,
 		CommandAcceptDecision: EventDecisionAccepted, CommandPromoteReady: EventNodesReadied,
 		CommandAssignStep: EventNodeStepAssigned, CommandTransitionNode: EventNodeTransitioned,
-		CommandCloseLedger: EventLedgerClosed,
+		CommandSupersedeNodeGeneration: EventNodeGenerationSuperseded,
+		CommandCloseLedger:             EventLedgerClosed,
 	}
 	expected, ok := want[command]
 	if !ok || expected != event {

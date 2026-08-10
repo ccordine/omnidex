@@ -101,6 +101,7 @@ func TestRestoreRejectsLifecycleAndPersistenceCorruption(t *testing.T) {
 		"wrong root scope":       func(s *Snapshot) { s.Scope.ID = "job-8" },
 		"invalid utf8":           func(s *Snapshot) { s.Items[0].Acquisition.Reason = string([]byte{0xff}) },
 		"nul":                    func(s *Snapshot) { s.Items[0].Acquisition.Reason = "bad\x00reason" },
+		"invented reacquisition": func(s *Snapshot) { s.Items[0].ReacquisitionCount = 1 },
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -16,10 +16,15 @@ func loadContextProjectionSelectedTx(
 	record ContextProjectionRecord,
 	expected int,
 ) ([]contextbuilder.Selection, error) {
+	sources, err := loadContextProjectionSelectedSourcesTx(ctx, tx, record.Projection.ID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := tx.Query(ctx, `
 		SELECT projection_id, working_set_id, job_id, generation, position, item_id,
 		       ref_uri, ref_version, ref_sha256, ref_relation, role, authority,
-		       source_freshness, content_sha256, rendered_bytes
+		       source_freshness, content_sha256, rendered_bytes, source_ref_count,
+		       source_refs_sealed_at IS NOT NULL
 		FROM context_projection_selected_refs
 		WHERE projection_id=$1 ORDER BY position ASC LIMIT $2
 	`, record.Projection.ID, maxContextProjectionSelected+1)
@@ -34,12 +39,14 @@ func loadContextProjectionSelectedTx(
 		var workingSetID workingset.SetID
 		var jobID, generation int64
 		var position int
+		var sourceCount int
+		var sourcesSealed bool
 		var item contextbuilder.Selection
 		var uri, version, hash, relation string
 		if err := rows.Scan(
 			&projectionID, &workingSetID, &jobID, &generation, &position, &item.ItemID,
 			&uri, &version, &hash, &relation, &item.Role, &item.Authority,
-			&item.SourceFreshness, &item.ContentSHA256, &item.RenderedBytes,
+			&item.SourceFreshness, &item.ContentSHA256, &item.RenderedBytes, &sourceCount, &sourcesSealed,
 		); err != nil {
 			return nil, fmt.Errorf("scan context projection %q selected ref: %w", record.Projection.ID, err)
 		}
@@ -47,6 +54,13 @@ func loadContextProjectionSelectedTx(
 			return nil, fmt.Errorf("%w: selected reference authority or order is invalid", ErrInvalidContextProjection)
 		}
 		item.Ref = projectionRef(uri, version, hash, relation)
+		item.SourceRefs = sources[position]
+		if item.SourceRefs == nil {
+			item.SourceRefs = []taskstate.Ref{}
+		}
+		if !sourcesSealed || sourceCount != len(item.SourceRefs) {
+			return nil, fmt.Errorf("%w: selected source reference seal is invalid", ErrInvalidContextProjection)
+		}
 		selected = append(selected, item)
 	}
 	if err := rows.Err(); err != nil {

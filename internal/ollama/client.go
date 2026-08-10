@@ -1,7 +1,6 @@
 package ollama
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -23,213 +22,6 @@ type Client struct {
 	httpClient     *http.Client
 }
 
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
-	Format   any           `json:"format,omitempty"`
-	Think    *bool         `json:"think,omitempty"`
-	Options  *chatOptions  `json:"options,omitempty"`
-}
-
-type chatOptions struct {
-	NumPredict  int      `json:"num_predict,omitempty"`
-	NumCtx      int      `json:"num_ctx,omitempty"`
-	Temperature *float64 `json:"temperature,omitempty"`
-}
-
-const controlPlaneMaxOutputTokens = 2048
-
-type chatResponse struct {
-	Message chatMessage `json:"message"`
-}
-
-// Chat runs a direct /api/chat call without creating ephemeral context modelfiles.
-// Use for interactive scrum pilot chat where latency matters.
-func (c *Client) Chat(ctx context.Context, model, system, user string) (string, error) {
-	return c.chat(ctx, model, system, user, 0, c.contextTokens, "", nil)
-}
-
-func (c *Client) chat(ctx context.Context, model, system, user string, maxOutputTokens, contextTokens int, responseFormat string, responseSchema map[string]any) (string, error) {
-	if err := llm.ValidateResponseContract(llm.PreparedModel{ResponseFormat: responseFormat, ResponseSchema: responseSchema}); err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(model) == "" {
-		model = c.defaultModel
-	}
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return "", fmt.Errorf("model is required")
-	}
-	messages := make([]chatMessage, 0, 2)
-	if strings.TrimSpace(system) != "" {
-		messages = append(messages, chatMessage{Role: "system", Content: strings.TrimSpace(system)})
-	}
-	user = strings.TrimSpace(user)
-	if user == "" {
-		user = "(empty)"
-	}
-	messages = append(messages, chatMessage{Role: "user", Content: user})
-
-	request := chatRequest{
-		Model:    model,
-		Messages: messages,
-		Stream:   false,
-	}
-	controlPlane := strings.Contains(system, "CONTROL_PLANE_COMMAND:") || responseFormat == llm.ResponseFormatJSON
-	if controlPlane {
-		if maxOutputTokens <= 0 {
-			maxOutputTokens = controlPlaneMaxOutputTokens
-		}
-		request.Format = "json"
-		if len(responseSchema) > 0 {
-			request.Format = responseSchema
-		}
-	}
-	if contextTokens > 0 {
-		if err := llm.ValidateInferenceBudget(contextTokens, maxOutputTokens, system, user); err != nil {
-			return "", err
-		}
-		request.Options = &chatOptions{NumCtx: contextTokens}
-	}
-	if maxOutputTokens > 0 {
-		if request.Options == nil {
-			request.Options = &chatOptions{}
-		}
-		thinkingDisabled := false
-		zero := 0.0
-		request.Think = &thinkingDisabled
-		request.Options.NumPredict = maxOutputTokens
-		request.Options.Temperature = &zero
-	}
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/chat", bytes.NewReader(payload))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", c.wrapConnectivityError(err, "/api/chat")
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ollama chat failed: status=%d body=%s", resp.StatusCode, string(body))
-	}
-
-	var parsed chatResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", err
-	}
-	out := strings.TrimSpace(parsed.Message.Content)
-	if out == "" {
-		return "", fmt.Errorf("ollama response missing message content")
-	}
-	return out, nil
-}
-
-type chatStreamChunk struct {
-	Message chatMessage `json:"message"`
-	Done    bool        `json:"done"`
-}
-
-// ChatStream streams /api/chat tokens to onChunk and returns the full assembled reply.
-func (c *Client) ChatStream(ctx context.Context, model, system, user string, onChunk func(string) error) (string, error) {
-	if strings.TrimSpace(model) == "" {
-		model = c.defaultModel
-	}
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return "", fmt.Errorf("model is required")
-	}
-	messages := make([]chatMessage, 0, 2)
-	if strings.TrimSpace(system) != "" {
-		messages = append(messages, chatMessage{Role: "system", Content: strings.TrimSpace(system)})
-	}
-	user = strings.TrimSpace(user)
-	if user == "" {
-		user = "(empty)"
-	}
-	messages = append(messages, chatMessage{Role: "user", Content: user})
-
-	request := chatRequest{
-		Model:    model,
-		Messages: messages,
-		Stream:   true,
-	}
-	if c.contextTokens > 0 {
-		if err := llm.ValidateInferenceBudget(c.contextTokens, 0, system, user); err != nil {
-			return "", err
-		}
-		request.Options = &chatOptions{NumCtx: c.contextTokens}
-	}
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/chat", bytes.NewReader(payload))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", c.wrapConnectivityError(err, "/api/chat")
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("ollama chat failed: status=%d body=%s", resp.StatusCode, string(body))
-	}
-
-	var full strings.Builder
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var chunk chatStreamChunk
-		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
-			continue
-		}
-		if text := chunk.Message.Content; text != "" {
-			full.WriteString(text)
-			if onChunk != nil {
-				if err := onChunk(text); err != nil {
-					return full.String(), err
-				}
-			}
-		}
-		if chunk.Done {
-			break
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return full.String(), err
-	}
-	return strings.TrimSpace(full.String()), nil
-}
-
 type deleteModelRequest struct {
 	Name  string `json:"name,omitempty"`
 	Model string `json:"model,omitempty"`
@@ -246,10 +38,21 @@ type tagsResponse struct {
 }
 
 type ModelInfo struct {
-	Name       string    `json:"name"`
-	Model      string    `json:"model"`
-	Size       int64     `json:"size"`
-	ModifiedAt time.Time `json:"modified_at"`
+	Name       string       `json:"name"`
+	Model      string       `json:"model"`
+	Size       int64        `json:"size"`
+	Digest     string       `json:"digest"`
+	Details    ModelDetails `json:"details"`
+	ModifiedAt time.Time    `json:"modified_at"`
+}
+
+type ModelDetails struct {
+	ParentModel       string   `json:"parent_model"`
+	Format            string   `json:"format"`
+	Family            string   `json:"family"`
+	Families          []string `json:"families"`
+	ParameterSize     string   `json:"parameter_size"`
+	QuantizationLevel string   `json:"quantization_level"`
 }
 
 func (c *Client) ListTags(ctx context.Context) ([]string, error) {
@@ -390,65 +193,6 @@ func New(baseURL, defaultModel, embeddingModel string, timeout time.Duration, co
 		},
 	}
 }
-
-func (c *Client) Generate(ctx context.Context, model, prompt string) (string, error) {
-	prepared, err := c.PrepareContextModel(ctx, model, prompt)
-	if err != nil {
-		return "", err
-	}
-	defer c.CleanupPreparedModel(prepared)
-
-	return c.GeneratePrepared(ctx, prepared)
-}
-
-func (c *Client) PrepareContextModel(_ context.Context, model, prompt string) (llm.PreparedModel, error) {
-	if strings.TrimSpace(model) == "" {
-		model = c.defaultModel
-	}
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return llm.PreparedModel{}, fmt.Errorf("model is required")
-	}
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		prompt = "(empty prompt)"
-	}
-	return llm.PreparedModel{
-		BaseModel:     model,
-		ContextModel:  model,
-		PromptHint:    llm.DerivePreparedModelPromptHint(prompt),
-		Prompt:        prompt,
-		ContextTokens: c.contextTokens,
-	}, nil
-}
-
-func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedModel) (string, error) {
-	model := strings.TrimSpace(prepared.ContextModel)
-	if model == "" {
-		model = strings.TrimSpace(prepared.BaseModel)
-	}
-	if model == "" {
-		model = c.defaultModel
-	}
-	if strings.TrimSpace(model) == "" {
-		return "", fmt.Errorf("model is required")
-	}
-	system := strings.TrimSpace(prepared.Prompt)
-	if system == "" {
-		system = "(empty prompt)"
-	}
-	promptHint := strings.TrimSpace(prepared.PromptHint)
-	if promptHint == "" {
-		promptHint = llm.MinimalGeneratePrompt
-	}
-	contextTokens := prepared.ContextTokens
-	if contextTokens == 0 {
-		contextTokens = c.contextTokens
-	}
-	return c.chat(ctx, model, system, promptHint, prepared.MaxOutputTokens, contextTokens, prepared.ResponseFormat, prepared.ResponseSchema)
-}
-
-func (c *Client) CleanupPreparedModel(llm.PreparedModel) {}
 
 func (c *Client) PullModel(ctx context.Context, model string) error {
 	model = strings.TrimSpace(model)

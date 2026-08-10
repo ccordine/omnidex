@@ -27,10 +27,10 @@ func (r *nativeRuntimeV3) refreshExistingRepositoryIndex(root string) (repositor
 	if projectID < 1 {
 		return repositoryindex.Result{}, fmt.Errorf("existing repository indexing requires durable project authority")
 	}
-	r.svc.emitStepEvent(r.claim.Step.ID, "repository_index_started", "authority=server")
+	r.svc.emitStepEvent(r.claim.Authority, "repository_index_started", "authority=server")
 	result, err := r.svc.repositoryIndex.Refresh(r.ctx, projectID, root)
 	if err != nil {
-		r.svc.emitStepEvent(r.claim.Step.ID, "repository_index_failed", trimForBudget(err.Error(), 1000))
+		r.svc.emitStepEvent(r.claim.Authority, "repository_index_failed", trimForBudget(err.Error(), 1000))
 		return result, err
 	}
 	if !result.Complete {
@@ -57,7 +57,7 @@ func (r *nativeRuntimeV3) refreshExistingRepositoryIndex(root string) (repositor
 	}); err != nil {
 		return result, fmt.Errorf("record repository index evidence: %w", err)
 	}
-	r.svc.emitStepEvent(r.claim.Step.ID, "repository_index_ready", strings.Join([]string{
+	r.svc.emitStepEvent(r.claim.Authority, "repository_index_ready", strings.Join([]string{
 		"snapshot=" + result.Snapshot.ID,
 		fmt.Sprintf("files=%d", len(result.Snapshot.Files)),
 		fmt.Sprintf("analyses=%d", len(result.Analyses)),

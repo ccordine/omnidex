@@ -44,7 +44,7 @@ func TestContextProjectionMigrationDefinesImmutableExactAuthority(t *testing.T) 
 	}
 }
 
-func TestContextProjectionSourceRegistersOnlyShadowMode(t *testing.T) {
+func TestContextProjectionSourceHasNoAppliedCompatibilityMode(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"context_projection_types.go", "context_projection_validation.go"} {
 		raw, err := os.ReadFile(name)
@@ -55,6 +55,51 @@ func TestContextProjectionSourceRegistersOnlyShadowMode(t *testing.T) {
 			if strings.Contains(string(raw), forbidden) {
 				t.Fatalf("context projection source %s retains unsupported mode %q", name, forbidden)
 			}
+		}
+	}
+}
+
+func TestLiveContextProjectionMigrationAddsOneExplicitMode(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../migrations/043_live_context_projections.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := string(raw)
+	for _, required := range []string{
+		"LOCK TABLE context_projections IN ACCESS EXCLUSIVE MODE",
+		"WHERE usage_mode <> 'shadow'",
+		"DROP CONSTRAINT context_projections_usage_mode_check",
+		"CHECK (usage_mode IN ('shadow','live'))",
+	} {
+		if !strings.Contains(schema, required) {
+			t.Fatalf("live context projection migration omitted %q", required)
+		}
+	}
+	if strings.Contains(schema, "'applied'") || strings.Contains(schema, "transcript") {
+		t.Fatal("live context projection migration introduced a fallback mode")
+	}
+}
+
+func TestContextProjectionSourceLineageIsNormalizedSealedAndImmutable(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../migrations/048_context_projection_source_lineage.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := string(raw)
+	for _, required := range []string{
+		"CREATE TABLE context_projection_selected_source_refs",
+		"source_ref_count",
+		"source_refs_sealed_at",
+		"guard_context_projection_selected_source_insert",
+		"context projection selected source authority is sealed",
+		"context_projection_selected_source_immutable",
+		"BEFORE UPDATE OR DELETE",
+		"BEFORE TRUNCATE",
+	} {
+		if !strings.Contains(schema, required) {
+			t.Fatalf("context projection source-lineage migration omitted %q", required)
 		}
 	}
 }

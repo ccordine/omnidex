@@ -29,10 +29,10 @@ type delegatedContext struct {
 
 func (r *Repository) ExpandDelegatedSubtasks(
 	ctx context.Context,
-	jobID int64,
-	anchorStepID int64,
+	authority model.StepAttemptAuthority,
 	subtasks []artifacts.Subtask,
 ) ([]model.Step, error) {
+	jobID, anchorStepID := authority.JobID, authority.StepID
 	if err := validateDelegatedExpansion(jobID, anchorStepID, subtasks); err != nil {
 		return nil, err
 	}
@@ -44,6 +44,11 @@ func (r *Repository) ExpandDelegatedSubtasks(
 		return nil, fmt.Errorf("begin delegated expansion for job %d: %w", jobID, err)
 	}
 	defer tx.Rollback(ctx)
+	if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority); err != nil {
+		return nil, err
+	} else if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return nil, staleStepAttemptError(authority, "delegated expansion writer is not running", nil)
+	}
 
 	anchor, err := lockDelegatedAnchorTx(ctx, tx, jobID, anchorStepID)
 	if err != nil {

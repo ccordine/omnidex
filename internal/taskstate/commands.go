@@ -55,6 +55,7 @@ type RejectEntryCommand struct {
 	Actor           Authority `json:"actor"`
 	EntryID         EntryID   `json:"entry_id"`
 	Reason          string    `json:"reason"`
+	Refs            []Ref     `json:"refs"`
 }
 
 type ResolveEntryCommand struct {
@@ -112,6 +113,28 @@ type TransitionNodeCommand struct {
 	Reason           string     `json:"reason,omitempty"`
 }
 
+// TerminalFailNodeCommand is reserved for a queue-owned terminalization
+// boundary. Unlike an ordinary transition, it truthfully records that code
+// failed a nonterminal node because an exact terminal proof ended the scope.
+type TerminalFailNodeCommand struct {
+	CommandID       CommandID `json:"command_id"`
+	ExpectedVersion uint64    `json:"expected_version"`
+	Actor           Authority `json:"actor"`
+	NodeID          NodeID    `json:"node_id"`
+	Reason          string    `json:"reason"`
+	Proof           Ref       `json:"proof"`
+}
+
+type SupersedeNodeGenerationCommand struct {
+	CommandID              CommandID `json:"command_id"`
+	ExpectedVersion        uint64    `json:"expected_version"`
+	Actor                  Authority `json:"actor"`
+	RetiringGeneration     int64     `json:"retiring_generation"`
+	SupersededAtGeneration int64     `json:"superseded_at_generation"`
+	NodeIDs                []NodeID  `json:"node_ids"`
+	Reason                 string    `json:"reason"`
+}
+
 type CloseLedgerCommand struct {
 	CommandID       CommandID    `json:"command_id"`
 	ExpectedVersion uint64       `json:"expected_version"`
@@ -121,62 +144,72 @@ type CloseLedgerCommand struct {
 	Reason          string       `json:"reason"`
 }
 
-func (AddNodeCommand) taskStateCommand()           {}
-func (AddEdgeCommand) taskStateCommand()           {}
-func (AddEntryCommand) taskStateCommand()          {}
-func (RejectEntryCommand) taskStateCommand()       {}
-func (ResolveEntryCommand) taskStateCommand()      {}
-func (SupersedeEntryCommand) taskStateCommand()    {}
-func (AcceptDecisionCommand) taskStateCommand()    {}
-func (PromoteReadyNodesCommand) taskStateCommand() {}
-func (AssignNodeStepCommand) taskStateCommand()    {}
-func (TransitionNodeCommand) taskStateCommand()    {}
-func (CloseLedgerCommand) taskStateCommand()       {}
+func (AddNodeCommand) taskStateCommand()                 {}
+func (AddEdgeCommand) taskStateCommand()                 {}
+func (AddEntryCommand) taskStateCommand()                {}
+func (RejectEntryCommand) taskStateCommand()             {}
+func (ResolveEntryCommand) taskStateCommand()            {}
+func (SupersedeEntryCommand) taskStateCommand()          {}
+func (AcceptDecisionCommand) taskStateCommand()          {}
+func (PromoteReadyNodesCommand) taskStateCommand()       {}
+func (AssignNodeStepCommand) taskStateCommand()          {}
+func (TransitionNodeCommand) taskStateCommand()          {}
+func (TerminalFailNodeCommand) taskStateCommand()        {}
+func (SupersedeNodeGenerationCommand) taskStateCommand() {}
+func (CloseLedgerCommand) taskStateCommand()             {}
 
-func (c AddNodeCommand) commandID() CommandID           { return c.CommandID }
-func (c AddEdgeCommand) commandID() CommandID           { return c.CommandID }
-func (c AddEntryCommand) commandID() CommandID          { return c.CommandID }
-func (c RejectEntryCommand) commandID() CommandID       { return c.CommandID }
-func (c ResolveEntryCommand) commandID() CommandID      { return c.CommandID }
-func (c SupersedeEntryCommand) commandID() CommandID    { return c.CommandID }
-func (c AcceptDecisionCommand) commandID() CommandID    { return c.CommandID }
-func (c PromoteReadyNodesCommand) commandID() CommandID { return c.CommandID }
-func (c AssignNodeStepCommand) commandID() CommandID    { return c.CommandID }
-func (c TransitionNodeCommand) commandID() CommandID    { return c.CommandID }
-func (c CloseLedgerCommand) commandID() CommandID       { return c.CommandID }
+func (c AddNodeCommand) commandID() CommandID                 { return c.CommandID }
+func (c AddEdgeCommand) commandID() CommandID                 { return c.CommandID }
+func (c AddEntryCommand) commandID() CommandID                { return c.CommandID }
+func (c RejectEntryCommand) commandID() CommandID             { return c.CommandID }
+func (c ResolveEntryCommand) commandID() CommandID            { return c.CommandID }
+func (c SupersedeEntryCommand) commandID() CommandID          { return c.CommandID }
+func (c AcceptDecisionCommand) commandID() CommandID          { return c.CommandID }
+func (c PromoteReadyNodesCommand) commandID() CommandID       { return c.CommandID }
+func (c AssignNodeStepCommand) commandID() CommandID          { return c.CommandID }
+func (c TransitionNodeCommand) commandID() CommandID          { return c.CommandID }
+func (c TerminalFailNodeCommand) commandID() CommandID        { return c.CommandID }
+func (c SupersedeNodeGenerationCommand) commandID() CommandID { return c.CommandID }
+func (c CloseLedgerCommand) commandID() CommandID             { return c.CommandID }
 
-func (c AddNodeCommand) expectedVersion() uint64           { return c.ExpectedVersion }
-func (c AddEdgeCommand) expectedVersion() uint64           { return c.ExpectedVersion }
-func (c AddEntryCommand) expectedVersion() uint64          { return c.ExpectedVersion }
-func (c RejectEntryCommand) expectedVersion() uint64       { return c.ExpectedVersion }
-func (c ResolveEntryCommand) expectedVersion() uint64      { return c.ExpectedVersion }
-func (c SupersedeEntryCommand) expectedVersion() uint64    { return c.ExpectedVersion }
-func (c AcceptDecisionCommand) expectedVersion() uint64    { return c.ExpectedVersion }
-func (c PromoteReadyNodesCommand) expectedVersion() uint64 { return c.ExpectedVersion }
-func (c AssignNodeStepCommand) expectedVersion() uint64    { return c.ExpectedVersion }
-func (c TransitionNodeCommand) expectedVersion() uint64    { return c.ExpectedVersion }
-func (c CloseLedgerCommand) expectedVersion() uint64       { return c.ExpectedVersion }
+func (c AddNodeCommand) expectedVersion() uint64                 { return c.ExpectedVersion }
+func (c AddEdgeCommand) expectedVersion() uint64                 { return c.ExpectedVersion }
+func (c AddEntryCommand) expectedVersion() uint64                { return c.ExpectedVersion }
+func (c RejectEntryCommand) expectedVersion() uint64             { return c.ExpectedVersion }
+func (c ResolveEntryCommand) expectedVersion() uint64            { return c.ExpectedVersion }
+func (c SupersedeEntryCommand) expectedVersion() uint64          { return c.ExpectedVersion }
+func (c AcceptDecisionCommand) expectedVersion() uint64          { return c.ExpectedVersion }
+func (c PromoteReadyNodesCommand) expectedVersion() uint64       { return c.ExpectedVersion }
+func (c AssignNodeStepCommand) expectedVersion() uint64          { return c.ExpectedVersion }
+func (c TransitionNodeCommand) expectedVersion() uint64          { return c.ExpectedVersion }
+func (c TerminalFailNodeCommand) expectedVersion() uint64        { return c.ExpectedVersion }
+func (c SupersedeNodeGenerationCommand) expectedVersion() uint64 { return c.ExpectedVersion }
+func (c CloseLedgerCommand) expectedVersion() uint64             { return c.ExpectedVersion }
 
-func (c AddNodeCommand) actor() Authority           { return c.Actor }
-func (c AddEdgeCommand) actor() Authority           { return c.Actor }
-func (c AddEntryCommand) actor() Authority          { return c.Actor }
-func (c RejectEntryCommand) actor() Authority       { return c.Actor }
-func (c ResolveEntryCommand) actor() Authority      { return c.Actor }
-func (c SupersedeEntryCommand) actor() Authority    { return c.Actor }
-func (c AcceptDecisionCommand) actor() Authority    { return c.Actor }
-func (c PromoteReadyNodesCommand) actor() Authority { return c.Actor }
-func (c AssignNodeStepCommand) actor() Authority    { return c.Actor }
-func (c TransitionNodeCommand) actor() Authority    { return c.Actor }
-func (c CloseLedgerCommand) actor() Authority       { return c.Actor }
+func (c AddNodeCommand) actor() Authority                 { return c.Actor }
+func (c AddEdgeCommand) actor() Authority                 { return c.Actor }
+func (c AddEntryCommand) actor() Authority                { return c.Actor }
+func (c RejectEntryCommand) actor() Authority             { return c.Actor }
+func (c ResolveEntryCommand) actor() Authority            { return c.Actor }
+func (c SupersedeEntryCommand) actor() Authority          { return c.Actor }
+func (c AcceptDecisionCommand) actor() Authority          { return c.Actor }
+func (c PromoteReadyNodesCommand) actor() Authority       { return c.Actor }
+func (c AssignNodeStepCommand) actor() Authority          { return c.Actor }
+func (c TransitionNodeCommand) actor() Authority          { return c.Actor }
+func (c TerminalFailNodeCommand) actor() Authority        { return c.Actor }
+func (c SupersedeNodeGenerationCommand) actor() Authority { return c.Actor }
+func (c CloseLedgerCommand) actor() Authority             { return c.Actor }
 
-func (AddNodeCommand) kind() CommandKind           { return CommandAddNode }
-func (AddEdgeCommand) kind() CommandKind           { return CommandAddEdge }
-func (AddEntryCommand) kind() CommandKind          { return CommandAddEntry }
-func (RejectEntryCommand) kind() CommandKind       { return CommandRejectEntry }
-func (ResolveEntryCommand) kind() CommandKind      { return CommandResolveEntry }
-func (SupersedeEntryCommand) kind() CommandKind    { return CommandSupersedeEntry }
-func (AcceptDecisionCommand) kind() CommandKind    { return CommandAcceptDecision }
-func (PromoteReadyNodesCommand) kind() CommandKind { return CommandPromoteReady }
-func (AssignNodeStepCommand) kind() CommandKind    { return CommandAssignStep }
-func (TransitionNodeCommand) kind() CommandKind    { return CommandTransitionNode }
-func (CloseLedgerCommand) kind() CommandKind       { return CommandCloseLedger }
+func (AddNodeCommand) kind() CommandKind                 { return CommandAddNode }
+func (AddEdgeCommand) kind() CommandKind                 { return CommandAddEdge }
+func (AddEntryCommand) kind() CommandKind                { return CommandAddEntry }
+func (RejectEntryCommand) kind() CommandKind             { return CommandRejectEntry }
+func (ResolveEntryCommand) kind() CommandKind            { return CommandResolveEntry }
+func (SupersedeEntryCommand) kind() CommandKind          { return CommandSupersedeEntry }
+func (AcceptDecisionCommand) kind() CommandKind          { return CommandAcceptDecision }
+func (PromoteReadyNodesCommand) kind() CommandKind       { return CommandPromoteReady }
+func (AssignNodeStepCommand) kind() CommandKind          { return CommandAssignStep }
+func (TransitionNodeCommand) kind() CommandKind          { return CommandTransitionNode }
+func (TerminalFailNodeCommand) kind() CommandKind        { return CommandTransitionNode }
+func (SupersedeNodeGenerationCommand) kind() CommandKind { return CommandSupersedeNodeGeneration }
+func (CloseLedgerCommand) kind() CommandKind             { return CommandCloseLedger }

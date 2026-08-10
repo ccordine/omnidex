@@ -18,7 +18,7 @@ func TestPostgresRepositoryMutationBlocksReplanUntilExactPostIsDurable(t *testin
 	mutationResult := make(chan error, 1)
 	go func() {
 		mutationResult <- fixture.repository.ApplyRepositoryMutation(
-			fixture.ctx, fixture.command, stateClassifier(&state),
+			fixture.ctx, fixture.authority, fixture.command, stateClassifier(&state),
 			func(callCtx context.Context) error {
 				close(entered)
 				select {
@@ -73,7 +73,7 @@ func TestPostgresRepositoryMutationRejectsWrongAuthorityBeforeCallbacks(t *testi
 	wrong.WorkerID += "-stale"
 	var classified, applied atomic.Bool
 	err := fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, wrong,
+		fixture.ctx, fixture.authority, wrong,
 		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
 			classified.Store(true)
 			return RepositoryMutationSource, nil
@@ -83,7 +83,7 @@ func TestPostgresRepositoryMutationRejectsWrongAuthorityBeforeCallbacks(t *testi
 			return nil
 		},
 	)
-	if !errors.Is(err, ErrStepNotWritable) {
+	if !errors.Is(err, ErrStaleStepAttempt) {
 		t.Fatalf("wrong worker error=%v", err)
 	}
 	if classified.Load() || applied.Load() {
@@ -107,7 +107,7 @@ func TestPostgresRepositoryMutationFailureWithExactSourceRemainsPrepared(t *test
 	state.Store(RepositoryMutationSource)
 	want := errors.New("authoritative filesystem mutation failed")
 	err := fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.command, stateClassifier(&state),
+		fixture.ctx, fixture.authority, fixture.command, stateClassifier(&state),
 		func(context.Context) error { return want },
 	)
 	if !errors.Is(err, want) {

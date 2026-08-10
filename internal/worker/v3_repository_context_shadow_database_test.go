@@ -44,8 +44,8 @@ func (*repositoryShadowTestLLM) Embedding(context.Context, string) ([]float64, e
 }
 
 func TestPostgresRepositoryShadowConsumerPreservesPromptAndBindsEvidence(t *testing.T) {
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
-	claim := startRepositoryShadowJob(t, ctx, repository, pool, "shadow-live")
+	ctx, repository, _ := openRepositoryShadowDatabase(t)
+	claim := startRepositoryShadowJob(t, ctx, repository, "shadow-live")
 	client := &repositoryShadowTestLLM{}
 	service := &Service{
 		repo: repository, llm: client, inferenceContextTokens: 8192, fragmentConcurrency: 1,
@@ -116,10 +116,10 @@ func TestPostgresRepositoryShadowConsumerPreservesPromptAndBindsEvidence(t *test
 }
 
 func TestPostgresRepositoryShadowConsumerRejectsMismatchedExistingSet(t *testing.T) {
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
-	claim := startRepositoryShadowJob(t, ctx, repository, pool, "shadow-mismatch")
+	ctx, repository, _ := openRepositoryShadowDatabase(t)
+	claim := startRepositoryShadowJob(t, ctx, repository, "shadow-mismatch")
 	if _, err := repository.CreateCurrentWorkingSet(
-		ctx, claim.Job.ID, claim.Job.CurrentGeneration,
+		ctx, claim.Authority,
 		workingset.Budget{MaxItems: 1, MaxBytes: 1024},
 	); err != nil {
 		t.Fatal(err)
@@ -226,7 +226,6 @@ func startRepositoryShadowJob(
 	t *testing.T,
 	ctx context.Context,
 	repository *queue.Repository,
-	pool *pgxpool.Pool,
 	label string,
 ) *model.ClaimedStep {
 	t.Helper()
@@ -236,18 +235,12 @@ func startRepositoryShadowJob(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE jobs SET status='running', updated_at=NOW() WHERE id=$1`, job.ID); err != nil {
+	claim, err := repository.ClaimNextStep(ctx, label+"-worker")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `
-		UPDATE job_steps SET status='running', started_at=NOW(), updated_at=NOW()
-		WHERE id=(SELECT id FROM job_steps WHERE job_id=$1 ORDER BY sort_index,id LIMIT 1)
-	`, job.ID); err != nil {
-		t.Fatal(err)
+	if claim == nil || claim.Job.ID != job.ID {
+		t.Fatalf("claimed shadow job=%+v want job %d", claim, job.ID)
 	}
-	details, err := repository.CurrentJobDetails(ctx, job.ID)
-	if err != nil || len(details.Steps) == 0 {
-		t.Fatalf("load started shadow job details=%+v error=%v", details, err)
-	}
-	return &model.ClaimedStep{Job: details.Job, Step: details.Steps[0], Contexts: details.Contexts}
+	return claim
 }

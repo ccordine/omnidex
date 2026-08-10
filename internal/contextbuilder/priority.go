@@ -21,24 +21,28 @@ func roleRank(role workingset.Role) int {
 		return 5
 	case workingset.RoleConstraint:
 		return 6
-	case workingset.RoleDecision:
+	case workingset.RoleFact:
 		return 7
-	case workingset.RoleInvariant:
+	case workingset.RoleHypothesis:
 		return 8
-	case workingset.RoleFailure:
+	case workingset.RoleDecision:
 		return 9
-	case workingset.RoleQuestion:
+	case workingset.RoleInvariant:
 		return 10
-	case workingset.RoleEvidence:
+	case workingset.RoleFailure:
 		return 11
-	case workingset.RoleRepositoryEvidence:
+	case workingset.RoleQuestion:
 		return 12
-	case workingset.RoleDependency:
+	case workingset.RoleEvidence:
 		return 13
-	case workingset.RoleVerification:
+	case workingset.RoleRepositoryEvidence:
 		return 14
-	case workingset.RoleHistorical:
+	case workingset.RoleDependency:
 		return 15
+	case workingset.RoleVerification:
+		return 16
+	case workingset.RoleHistorical:
+		return 17
 	default:
 		return 0
 	}

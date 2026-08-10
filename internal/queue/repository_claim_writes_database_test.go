@@ -21,21 +21,21 @@ func TestPostgresClaimWritesRejectStaleAndCrossJobAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	retiredStepID := taskGenerationStepID(t, ctx, pool, job.ID, 1)
-	claimExpectedJobStep(t, ctx, repository, job.ID, retiredStepID, marker+"-retired-worker")
+	retiredAuthority := claimExpectedJobStep(t, ctx, repository, job.ID, retiredStepID, marker+"-retired-worker")
 	retiredEvidenceID := generationClaimEvidence(t, ctx, repository, pool, job.ID, retiredStepID, marker+"-retired")
-	retiredClaimID := generationClaim(t, ctx, repository, job.ID, retiredStepID, marker+" retired claim")
+	retiredClaimID := generationClaim(t, ctx, repository, retiredAuthority, marker+" retired claim")
 	if _, err := repository.ReplanJob(ctx, testReplanCommand(t, job.ID, "claim-writes", "Advance claim authority to a fresh generation.")); err != nil {
 		t.Fatal(err)
 	}
 	currentStepID := taskGenerationStepID(t, ctx, pool, job.ID, 2)
-	claimExpectedJobStep(t, ctx, repository, job.ID, currentStepID, marker+"-current-worker")
+	currentAuthority := claimExpectedJobStep(t, ctx, repository, job.ID, currentStepID, marker+"-current-worker")
 	currentEvidenceID := generationClaimEvidence(t, ctx, repository, pool, job.ID, currentStepID, marker+"-current")
-	currentClaimID := generationClaim(t, ctx, repository, job.ID, currentStepID, marker+" current claim")
+	currentClaimID := generationClaim(t, ctx, repository, currentAuthority, marker+" current claim")
 
-	if _, err := repository.WriteClaims(ctx, []model.ClaimRecord{{
+	if _, err := repository.WriteClaims(ctx, retiredAuthority, []model.ClaimRecord{{
 		JobID: job.ID, StepID: retiredStepID, Text: "Stale claim", NormalizedText: "stale claim",
 		Status: claimStatusSupported, Confidence: 1,
-	}}); !errors.Is(err, ErrStaleJobGeneration) {
+	}}); !errors.Is(err, ErrStaleStepAttempt) {
 		t.Fatalf("retired claim write error=%v", err)
 	}
 
@@ -89,17 +89,17 @@ func TestPostgresClaimWritesRejectStaleAndCrossJobAuthority(t *testing.T) {
 	}
 	for _, testCase := range invalidBatches {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := repository.WriteClaimSupports(ctx, testCase.supports)
+			err := repository.WriteClaimSupports(ctx, currentAuthority, testCase.supports)
 			if err == nil {
 				t.Fatal("invalid claim support was accepted")
 			}
-			if testCase.stale && !errors.Is(err, ErrStaleJobGeneration) {
+			if testCase.stale && !errors.Is(err, ErrStaleStepAttempt) {
 				t.Fatalf("stale claim support error=%v", err)
 			}
 		})
 	}
 
-	if err := repository.WriteClaimSupports(ctx, []model.ClaimSupportRecord{
+	if err := repository.WriteClaimSupports(ctx, currentAuthority, []model.ClaimSupportRecord{
 		{
 			ClaimID: currentClaimID, EvidenceID: currentEvidenceID,
 			SupportScore: 0.8, Rationale: "This insert must roll back with the batch.",
@@ -108,7 +108,7 @@ func TestPostgresClaimWritesRejectStaleAndCrossJobAuthority(t *testing.T) {
 			ClaimID: currentClaimID, EvidenceID: retiredEvidenceID,
 			SupportScore: 0.2, Rationale: "This retired link must fail the batch.",
 		},
-	}); !errors.Is(err, ErrStaleJobGeneration) {
+	}); !errors.Is(err, ErrStaleStepAttempt) {
 		t.Fatalf("partial stale batch error=%v", err)
 	}
 	if count := generationClaimSupportCount(t, ctx, pool, job.ID); count != 0 {
@@ -124,21 +124,21 @@ func TestPostgresDuplicateClaimSupportIsNotUpserted(t *testing.T) {
 		t.Fatal(err)
 	}
 	stepID := taskGenerationStepID(t, ctx, pool, job.ID, 1)
-	claimExpectedJobStep(t, ctx, repository, job.ID, stepID, marker+"-worker")
-	claimID := generationClaim(t, ctx, repository, job.ID, stepID, marker+" claim")
+	authority := claimExpectedJobStep(t, ctx, repository, job.ID, stepID, marker+"-worker")
+	claimID := generationClaim(t, ctx, repository, authority, marker+" claim")
 	evidenceID := generationClaimEvidence(t, ctx, repository, pool, job.ID, stepID, marker+"-evidence")
 
 	first := model.ClaimSupportRecord{
 		ClaimID: claimID, EvidenceID: evidenceID,
 		SupportScore: 0.25, Rationale: "Original support remains authoritative.",
 	}
-	if err := repository.WriteClaimSupports(ctx, []model.ClaimSupportRecord{first}); err != nil {
+	if err := repository.WriteClaimSupports(ctx, authority, []model.ClaimSupportRecord{first}); err != nil {
 		t.Fatal(err)
 	}
 	second := first
 	second.SupportScore = 0.95
 	second.Rationale = "A duplicate must not overwrite the original."
-	if err := repository.WriteClaimSupports(ctx, []model.ClaimSupportRecord{second}); err == nil {
+	if err := repository.WriteClaimSupports(ctx, authority, []model.ClaimSupportRecord{second}); err == nil {
 		t.Fatal("duplicate claim support was silently upserted")
 	}
 
@@ -163,7 +163,7 @@ func claimExpectedJobStep(
 	repository *Repository,
 	jobID, stepID int64,
 	workerID string,
-) {
+) model.StepAttemptAuthority {
 	t.Helper()
 	claimed, err := repository.ClaimNextStep(ctx, workerID)
 	if err != nil {
@@ -172,18 +172,19 @@ func claimExpectedJobStep(
 	if claimed == nil || claimed.Job.ID != jobID || claimed.Step.ID != stepID {
 		t.Fatalf("claimed step=%+v, want job %d step %d", claimed, jobID, stepID)
 	}
+	return claimed.Authority
 }
 
 func generationClaim(
 	t *testing.T,
 	ctx context.Context,
 	repository *Repository,
-	jobID, stepID int64,
+	authority model.StepAttemptAuthority,
 	text string,
 ) int64 {
 	t.Helper()
-	saved, err := repository.WriteClaims(ctx, []model.ClaimRecord{{
-		JobID: jobID, StepID: stepID, Text: text, NormalizedText: text,
+	saved, err := repository.WriteClaims(ctx, authority, []model.ClaimRecord{{
+		JobID: authority.JobID, StepID: authority.StepID, Text: text, NormalizedText: text,
 		Status: claimStatusSupported, Confidence: 0.75,
 	}})
 	if err != nil {
@@ -204,7 +205,7 @@ func generationClaimEvidence(
 	sourceRef string,
 ) int64 {
 	t.Helper()
-	if err := repository.WriteEvidence(ctx, evidence.Record{
+	if err := repository.WriteEvidence(ctx, stepAttemptAuthorityForTest(t, repository, stepID), evidence.Record{
 		JobID: jobID, StepID: stepID, Kind: evidence.KindModelJudgment,
 		SourceType: "generation_authority_test", SourceRef: sourceRef, Summary: "Bounded test evidence.",
 	}); err != nil {

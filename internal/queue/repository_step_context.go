@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -14,7 +15,11 @@ const (
 	maxStepContextValueBytes = 1 << 20
 )
 
-func (r *Repository) AddStepContext(ctx context.Context, stepID int64, key, value string) error {
+func (r *Repository) AddStepContext(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	key, value string,
+) error {
 	key = strings.TrimSpace(key)
 	if key == "" || len(key) > maxStepContextKeyBytes || !utf8.ValidString(key) || strings.ContainsRune(key, '\x00') {
 		return fmt.Errorf("step context key must be exact PostgreSQL-compatible text of at most %d bytes", maxStepContextKeyBytes)
@@ -27,12 +32,12 @@ func (r *Repository) AddStepContext(ctx context.Context, stepID int64, key, valu
 		return err
 	}
 	defer tx.Rollback(ctx)
-	jobID, err := stepJobIDTx(ctx, tx, stepID)
+	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
 	if err != nil {
 		return err
 	}
-	if err := requireRunningCurrentStepTx(ctx, tx, jobID, stepID); err != nil {
-		return err
+	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+		return staleStepAttemptError(authority, "step-context writer is not running", nil)
 	}
 	result, err := tx.Exec(ctx, `
 		WITH inserted AS (
@@ -49,12 +54,12 @@ func (r *Repository) AddStepContext(ctx context.Context, stepID int64, key, valu
 		UPDATE job_steps
 		SET updated_at = NOW()
 		WHERE id = (SELECT step_id FROM inserted)
-	`, stepID, key, value, jobID)
+	`, authority.StepID, key, value, authority.JobID)
 	if err != nil {
 		return err
 	}
 	if result.RowsAffected() != 1 {
-		return fmt.Errorf("%w: step context target %d lost current authority", ErrStaleJobGeneration, stepID)
+		return staleStepAttemptError(authority, "step-context target lost current authority", nil)
 	}
 	return tx.Commit(ctx)
 }

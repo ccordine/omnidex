@@ -8,6 +8,7 @@ const (
 	MaxLedgerEdges                = 16384
 	MaxLedgerEntries              = 8192
 	MaxLedgerEntryRefs            = 32768
+	MaxLedgerNodeSupersessions    = MaxLedgerNodes
 )
 
 // ValidateMaterializedState validates the complete normalized aggregate without
@@ -19,7 +20,7 @@ func ValidateMaterializedState(state MaterializedState) error {
 
 func validateMaterializedCapacity(state MaterializedState) error {
 	if err := validateAggregateCounts(
-		state.ID, len(state.Nodes), len(state.Edges), len(state.Entries), 0, 0,
+		state.ID, len(state.Nodes), len(state.Edges), len(state.Entries), len(state.NodeSupersessions), 0, 0,
 	); err != nil {
 		return err
 	}
@@ -38,13 +39,13 @@ func validateMaterializedCapacity(state MaterializedState) error {
 		}
 	}
 	return validateAggregateCounts(
-		state.ID, len(state.Nodes), len(state.Edges), len(state.Entries), nodeRefs, entryRefs,
+		state.ID, len(state.Nodes), len(state.Edges), len(state.Entries), len(state.NodeSupersessions), nodeRefs, entryRefs,
 	)
 }
 
 func (ledger *Ledger) validateAggregateCapacity() error {
 	return validateAggregateCounts(
-		ledger.id, len(ledger.nodes), len(ledger.edges), len(ledger.entries),
+		ledger.id, len(ledger.nodes), len(ledger.edges), len(ledger.entries), len(ledger.nodeSupersessions),
 		ledger.nodeRefCount, ledger.entryRefCount,
 	)
 }
@@ -69,12 +70,16 @@ func (ledger *Ledger) validateProjectedAggregateCapacity(event Event) error {
 			nodeRefs += len(event.VerificationRefs)
 		}
 	}
-	return validateAggregateCounts(ledger.id, nodes, edges, entries, nodeRefs, entryRefs)
+	supersessions := len(ledger.nodeSupersessions)
+	if event.Kind == EventNodeGenerationSuperseded {
+		supersessions += len(event.NodeIDs)
+	}
+	return validateAggregateCounts(ledger.id, nodes, edges, entries, supersessions, nodeRefs, entryRefs)
 }
 
 func validateAggregateCounts(
 	ledgerID LedgerID,
-	nodes, edges, entries, nodeRefs, entryRefs int,
+	nodes, edges, entries, supersessions, nodeRefs, entryRefs int,
 ) error {
 	limits := []struct {
 		count   int
@@ -84,6 +89,7 @@ func validateAggregateCounts(
 		{nodes, MaxLedgerNodes, "nodes"},
 		{edges, MaxLedgerEdges, "edges"},
 		{entries, MaxLedgerEntries, "entries"},
+		{supersessions, MaxLedgerNodeSupersessions, "node supersessions"},
 		{nodeRefs, MaxLedgerNodeVerificationRefs, "node verification references"},
 		{entryRefs, MaxLedgerEntryRefs, "entry references"},
 	}

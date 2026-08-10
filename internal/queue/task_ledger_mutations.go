@@ -14,6 +14,7 @@ func persistTaskLedgerMutation(
 	tx pgx.Tx,
 	ledgerID taskstate.LedgerID,
 	jobID int64,
+	jobGeneration int64,
 	event taskstate.Event,
 	state taskstate.MaterializedState,
 ) error {
@@ -56,14 +57,11 @@ func persistTaskLedgerMutation(
 		if err := updateTaskLedgerEntry(ctx, tx, ledgerID, jobID, entry); err != nil {
 			return err
 		}
-		if event.Kind == taskstate.EventEntryResolved {
-			position := len(entry.Refs) - len(event.VerificationRefs)
-			if position < 0 {
-				return fmt.Errorf("%w: resolved entry reference projection is inconsistent", taskstate.ErrInvalidState)
-			}
-			return insertTaskLedgerEntryRefs(ctx, tx, ledgerID, jobID, entry.ID, event.VerificationRefs, position)
+		position := len(entry.Refs) - len(event.VerificationRefs)
+		if position < 0 {
+			return fmt.Errorf("%w: disposed entry reference projection is inconsistent", taskstate.ErrInvalidState)
 		}
-		return nil
+		return insertTaskLedgerEntryRefs(ctx, tx, ledgerID, jobID, entry.ID, event.VerificationRefs, position)
 	case taskstate.EventEntrySuperseded:
 		oldEntry, err := taskLedgerStateEntry(state, event.EntryID)
 		if err != nil {
@@ -115,8 +113,36 @@ func persistTaskLedgerMutation(
 		if err := updateTaskLedgerNode(ctx, tx, ledgerID, jobID, node); err != nil {
 			return err
 		}
-		if node.Status == taskstate.NodeDone {
+		if node.Status == taskstate.NodeDone ||
+			node.Status == taskstate.NodeFailed && len(node.VerificationRefs) == 1 {
 			return insertTaskLedgerNodeVerificationRefs(ctx, tx, ledgerID, jobID, node)
+		}
+		return nil
+	case taskstate.EventNodeGenerationSuperseded:
+		for _, nodeID := range event.NodeIDs {
+			node, err := taskLedgerStateNode(state, nodeID)
+			if err != nil {
+				return err
+			}
+			if node.UpdatedVersion == event.Version {
+				if err := updateTaskLedgerNode(ctx, tx, ledgerID, jobID, node); err != nil {
+					return err
+				}
+			}
+			value, err := taskLedgerStateNodeSupersession(state, nodeID)
+			if err != nil {
+				return err
+			}
+			if value.RetiringGeneration != event.RetiringGeneration ||
+				value.SupersededAtGeneration != event.SupersededAtGeneration ||
+				value.CreatedVersion != event.Version || value.Reason != event.Reason {
+				return fmt.Errorf("%w: node %q supersession projection is inconsistent", taskstate.ErrInvalidState, nodeID)
+			}
+			if err := insertTaskLedgerNodeSupersession(
+				ctx, tx, ledgerID, jobID, jobGeneration, value,
+			); err != nil {
+				return err
+			}
 		}
 		return nil
 	case taskstate.EventLedgerClosed:

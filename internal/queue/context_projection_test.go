@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/contextbuilder"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/gryph/omnidex/internal/workingset"
 )
@@ -15,8 +16,9 @@ func TestContextProjectionStoreRejectsInvalidAuthorityBeforePostgreSQL(t *testin
 	t.Parallel()
 	projection := testQueueContextProjection(t, strings.Repeat("a", 64))
 	base := ContextProjectionAuthority{
-		JobID: 1, Generation: 1, StepID: 1, WorkKind: "repository_investigation",
-		Mode: ContextProjectionModeShadow,
+		StepAttemptAuthority: model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
+		WorkKind:             "repository_investigation",
+		Mode:                 ContextProjectionModeShadow,
 	}
 	for name, mutate := range map[string]func(*ContextProjectionAuthority, *contextbuilder.Projection){
 		"missing job":        func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.JobID = 0 },
@@ -55,6 +57,19 @@ func TestContextProjectionReadsRequireHardPagination(t *testing.T) {
 	}
 	if _, err := repository.GetContextProjection(context.Background(), "invalid"); !errors.Is(err, ErrInvalidContextProjection) {
 		t.Fatalf("invalid identity error=%v", err)
+	}
+}
+
+func TestContextProjectionRegistersShadowAndLiveWithoutAppliedFallback(t *testing.T) {
+	t.Parallel()
+	if !validContextProjectionMode(ContextProjectionModeShadow) ||
+		!validContextProjectionMode(ContextProjectionModeLive) {
+		t.Fatal("registered context projection modes were rejected")
+	}
+	for _, invalid := range []ContextProjectionMode{"", "applied", "fallback", "transcript"} {
+		if validContextProjectionMode(invalid) {
+			t.Fatalf("unregistered context projection mode %q was accepted", invalid)
+		}
 	}
 }
 
@@ -128,7 +143,8 @@ func testQueueContextProjection(t *testing.T, workID string) contextbuilder.Proj
 		WorkingSet: set,
 		Materials: []contextbuilder.Material{{
 			ItemID: item.Item.ID, CurrentRef: item.Item.Ref, Authority: taskstate.AuthorityUser,
-			Content: "authoritative user request", ByteCost: len("authoritative user request"),
+			SourceRefs: []taskstate.Ref{item.Item.Ref},
+			Content:    "authoritative user request", ByteCost: len("authoritative user request"),
 		}},
 	})
 	if err != nil {

@@ -134,6 +134,10 @@ func (ledger *Ledger) validateRestoredEntry(entry Entry, ledgerVersion uint64) e
 			return fmt.Errorf("%w: %w: resolved entry %q lacks evidence", ErrInvalidState, ErrEvidenceRequired, entry.ID)
 		}
 	}
+	if entry.Status == EntryRejected && entry.Kind == EntryHypothesis &&
+		entry.DispositionBy == AuthorityCode && !hasContradictionRef(entry.Refs) {
+		return fmt.Errorf("%w: %w: rejected hypothesis %q lacks contradiction evidence", ErrInvalidState, ErrEvidenceRequired, entry.ID)
+	}
 	return nil
 }
 

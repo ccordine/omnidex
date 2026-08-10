@@ -1,14 +1,53 @@
 # Labyrinth cognition gauntlet contract
 
-Status: benchmark design only. No Labyrinth world engine, generator, environment
-adapter, cognition runner, frozen fixture, oracle, score, or promotion result is
-implemented or claimed by this document.
+Status: normative offline benchmark contract; unchecked behavior has no implementation or promotion claim.
 
-Labyrinth is an offline procedural cognition laboratory for the domain-neutral
-Omnidex Cognition Runtime defined in
-[`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md). It is not a
-production runtime, a product mode, an agent, or a source of workload logic. A maze is
-only the first controlled environment surface.
+Labyrinth is an offline procedural laboratory for the domain-neutral Cognition Runtime
+defined in [`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md). It is
+not a production runtime, product mode, agent, or source of workload logic. A maze is
+only its first controlled surface. Its versioned suites and reports are Cognition
+Gauntlets; Rogue is the final combined long-horizon suite.
+
+Labyrinth isolates nine claims before programming is used as evidence:
+
+| Capability | Question |
+| --- | --- |
+| Discovery | Can relevant evidence be located without exposing the whole world? |
+| Continuity | Do goals and progress survive loss of model and worker state? |
+| Working memory | Is evidence retained while causal and released afterward? |
+| Epistemic discipline | Are observations, facts, hypotheses, decisions, and rejections distinct? |
+| Planning | Can bounded dependent obligations be maintained? |
+| Action grounding | Are actions valid and supported by current evidence? |
+| Revision and recovery | Can beliefs and plans change after contradiction or interruption? |
+| Scaling | Does context follow relevant surface rather than world size? |
+| Transfer | Does unchanged cognition operate through a different surface? |
+
+Code editing is excluded from the foundational proof because its retrieval, language, framework, generation, compiler, dependency, and test failures confound these claims.
+
+## The Rat Doctrine
+
+During one cognition-architecture experiment, the intelligence provider is frozen.
+Procedural environments vary; the brain does not. A failure may justify changes only
+to domain-neutral sensing, evidence classification, state, memory, attention,
+obligations, action grounding, validation, contradiction handling, recovery, or
+instrumentation. It may not justify benchmark nouns, fixture knowledge, oracle access,
+or a prompt tuned to one generated world.
+
+Every experimental generation therefore seals one fixed authority containing the
+model name and digest, quantization, sampling digest, native context limit, inference
+backend and version, hardware class, effective context ceiling, Environment Contract
+version, evaluator version, authority-policy version, and separate-process
+oracle-isolation version. Paired generations must have
+the same fixed-authority hash and different Cognition Runtime identities. A model
+change starts a different experiment; its results cannot be presented as an
+architectural improvement to the same organism.
+
+The model ceiling is reached only when the trace proves all of the following at the
+failed decision boundary: necessary evidence was acquired, recorded, retained, and
+projected; the active obligation and legal action catalog were correct; the revision
+and authority fences were current; and the model still repeatedly selected the wrong
+bounded action. Until then, attribution names the failed body mechanism rather than
+blaming or replacing the model.
 
 ## Boundary and dependency direction
 
@@ -30,11 +69,12 @@ after every model call stops:
 sealed trace + private oracle ──> separate evaluator ──> report
 ```
 
-`internal/cognitiongauntlet` may import `internal/cognition`. Production cognition,
-worker, API, core, and normal runtime packages may not import the gauntlet. The
-production model renderer may contain only generic cognition vocabulary and registered
-environment schemas; it may not contain Labyrinth nouns, oracle labels, fixture hints,
-or score logic.
+`internal/labyrinth` may implement contracts from `internal/cognition`, and
+`internal/cognitiongauntlet` may import both. Production cognition, worker, API, core,
+and normal runtime packages may import neither benchmark package. The production model
+renderer may contain only generic cognition vocabulary and registered environment
+schemas; it may not contain Labyrinth nouns, oracle labels, fixture hints, or score
+logic.
 
 The benchmark does not prove autonomy merely by exercising an interface. A promotion
 run must use frozen checked-in production code, an ordinary public request boundary,
@@ -54,6 +94,26 @@ The world kernel will model three states without collapsing them into text chunk
 A clue is an observation. A proposed interpretation is a hypothesis. A failed action
 may contradict the hypothesis without changing the historical clue. The evaluator
 uses world truth; the model never receives it directly.
+
+## Symbolic world kernel
+
+The filesystem is a renderer, not the conceptual world. The benchmark kernel uses
+typed entities, locations, connections, objects, predicates, action schemas,
+preconditions, effects, documents, mutable targets, and goal expressions.
+Conceptually:
+
+```go
+type Predicate struct { Name PredicateName; Args []EntityID }
+type ActionSchema struct {
+    ID ActionSpecID; Preconditions []Predicate; Effects []Effect; Cost int64
+}
+type GoalExpression struct { All, Any, Not []Predicate }
+```
+
+The complete predicate set stays inside the environment host. Legal transitions emit
+only registered observations. Files, text-adventure descriptions, records, and
+repository-like objects are alternate renderings of the same symbolic class, not
+separate cognition implementations.
 
 ## Public scenario and private oracle
 
@@ -139,9 +199,8 @@ Initial cases contain 25–250 visible artifacts, 3–8 relevant artifacts, 2–
 dependency edges, and a target of 4–10 meaningful model decisions. These are fixture
 generation bounds, not model context entitlements.
 
-Dynamic maps, combat, health, crafting, random effects, resource scarcity,
-irreversible traps, multiple agents, web access, learned skills, and code generation
-are excluded from v1. They cannot be added merely to make a benchmark look harder.
+Dynamic maps, combat, health, crafting, random effects, scarcity, irreversible traps,
+multiple agents, web, learned skills, and code generation are excluded from v1.
 
 ## Initial five microgauntlets
 
@@ -169,10 +228,42 @@ branching factor, solution depth, distractor ratio, semantic ambiguity, dependen
 count, delayed-fact count, simultaneous obligations, irreversible-action count,
 Working Set budget, context budget, tool budget, and restart schedule.
 
+## Extended cognition suites
+
+Only after the initial five are individually diagnosable may frozen suites add:
+
+| Suite | Isolated capability |
+| --- | --- |
+| Traverse | Partial map construction and backtracking |
+| Bind | Combine evidence from distant sources |
+| Revise | Reject a contradicted belief and replan |
+| Order | Respect ordered or irreversible actions |
+| Resume | Recover under real process interruption and attempt takeover |
+| Scale | Hold relevant surface fixed while adding irrelevant artifacts |
+| Transfer | Reuse unchanged cognition through a different environment skin |
+| Rogue | Combine long dependencies, multiple goals, dynamic state, and limited resources |
+
+Game decoration is never a suite objective; a new mechanic must isolate a declared cognitive property and first pass symbolic validity tests.
+
 ## Baselines and controlled ablations
 
 Paired variants use the same model, seed, scenario, action API, sampling parameters,
-and budgets. Initial comparisons are sequential rather than an all-variants sweep:
+and budgets. Registered offline variants are:
+
+| Variant | Purpose |
+| --- | --- |
+| Deterministic oracle | Validate the world and establish the optimal or witness bound |
+| Raw observation only | Expose only the public goal and current observation |
+| Full transcript | Conventional agent baseline |
+| Transcript plus compaction | Conventional long-context baseline |
+| Task Ledger only | Isolate external continuity |
+| Ledger plus Working Set | Isolate retention lifecycle |
+| Ledger plus Context Projection | Isolate software-defined context |
+| Full Cognition Runtime | Add obligations, attention requests, and recovery |
+| Oracle evidence packet | Estimate model-policy ceiling with perfect next-step evidence |
+| Raw shell agent | Compare typed operations with shell wandering |
+
+Initial comparisons are sequential rather than an all-variants sweep:
 
 1. raw current observation versus full transcript;
 2. the winner versus Task Ledger;
@@ -214,11 +305,43 @@ Every sealed episode records:
 The hidden task archetype and mechanics may be attached only after sealing and
 evaluation. Failed and partial episodes remain immutable evidence.
 
+Sealing writes one exclusive episode manifest that hashes the complete ordered trace,
+all projection and model-call evidence, final public revision, runtime versions, and
+resource counters. Nothing may append to a sealed trace. Evaluation creates a
+separate hash-bound record; it does not rewrite the episode or expose private fields
+to production storage during execution.
+
 ## Scoring and failure attribution
 
 There is no aggregate intelligence score. Reports preserve paired outcome, validity,
 stability, efficiency, memory behavior, planning behavior, recovery, and scale
 metrics. Repetitions measure stability and are not independent cases.
+
+Required metric families are:
+
+- **Primary:** goal success, valid terminal state, authority violations, and
+  cross-repetition stability.
+- **Efficiency:** model decisions, environment actions, low-level transitions, model
+  calls, input/output tokens, model and wall time, context bytes, peak Working Set
+  bytes, search/read counts, and per-station clean-desk budget use.
+- **Memory:** critical evidence acquired and available when needed, projection misses,
+  stale and irrelevant resident bytes, release latency, reacquisitions, and thrashing.
+- **Planning:** obligations created/completed, plan churn, unnecessary subgoals,
+  unsupported or invalid actions, dead-end revisits, and backtracks.
+- **Recovery:** restoration mismatches, duplicate suppression, stale-attempt
+  rejections, and projection identity after restart.
+- **Scale:** world and relevant-surface size, model context, decisions, retrieval
+  rounds, and success.
+
+Every call also reports context concentration as code-auditable projected relevant
+bytes divided by total model-visible bytes. Required, useful supporting, omitted
+critical, and irrelevant selected evidence are separate counters derived from sealed
+projection/oracle joins after execution; an LLM judge does not label them. The metric
+never rewards simply shrinking a projection that omitted necessary evidence.
+
+For `optimal` cases, `decision_regret = actual decision cost / optimal decision cost`.
+For `witness_only` cases, `witness_overhead = actual decision cost / witness decision
+cost`. Reports never compare one label as though it were the other.
 
 Attribution is deterministic from the trace:
 
@@ -238,6 +361,62 @@ The classifier records the exact acquisition action, entry, release event, proje
 decision, or transition that establishes the label. Ambiguous traces remain
 `unattributed`; an LLM judge does not guess a category.
 
+## Restart and stale-worker gauntlet
+
+The Resume suite uses the real production lifecycle, PostgreSQL state, environment
+host, process boundary, and attempt lease. It does not substitute a benchmark-only
+coordinator. Schedules include no interruption, one and five seeded random kills,
+kill after every model decision, lease expiry during inference, and an old worker
+waking after replacement.
+
+Immediately before the next model call, interrupted and uninterrupted executions at
+the same transition boundary must have identical environment revision, Task Ledger
+replay/materialized hashes, Working Set version and members, active obligation and
+generation, Context Projection hash, action catalog, action receipts, and remaining
+budgets. The next stochastic response is outside this equality check.
+
+After takeover, the stale worker attempts a ledger write, Working Set mutation,
+model-call evidence write, environment action, and goal completion. Every attempt must
+return the one typed stale-attempt failure and produce no state change. A previously
+committed action retried by the replacement uses the same `ActionID` and returns its
+recorded transition without executing twice.
+
+## Scale and transfer gauntlets
+
+Scale cases preserve solution depth, relevant evidence count, semantic decisions,
+action catalog, and public goal while growing irrelevant visible artifacts:
+
+```text
+World A       100 artifacts
+World B    10,000 artifacts
+World C 1,000,000 artifacts
+```
+
+Index, storage, and bounded search implementation cost may grow. Working Set size,
+model-visible context, model decisions, and correctness should follow the relevant
+surface. Reports make `context bytes / relevant surface bytes` primary and do not
+normalize prompt size by total world size.
+
+Transfer uses the same latent causal cases through at least two of these independently
+versioned surfaces: filesystem, text adventure, knowledge base, and repository-like.
+Only the environment adapter and public rendering change. A production source,
+renderer, prompt, retention-policy, obligation-policy, or action-decision schema
+change invalidates the transfer claim.
+
+## Experience normalization boundary
+
+Sealed traces may later be normalized into generic operation motifs such as search for
+prerequisite evidence, resolve a target, acquire a prerequisite, and apply it to a
+blocked transition. Normalization runs only after evaluation and cannot change the
+source episode.
+
+A reusable procedure is invalid if it contains a seed, concrete entity or room ID,
+file path, item name, exact clue wording, hidden label, or oracle fact. A candidate is
+a typed DAG of registered operations, variables, preconditions, provenance, and
+validation evidence. It remains unavailable until historical replay, held-out
+Labyrinth, live shadow, and paired rescue/regression gates accept it through the
+durable skill registry. Learning is not part of the initial cognition proof.
+
 ## Experimental discipline
 
 - Public cases and private oracles/labels are versioned and hashed separately.
@@ -253,6 +432,24 @@ decision, or transition that establishes the label. Ambiguous traces remain
 - A benchmark failure may justify only a task-neutral production change proven on at
   least two unrelated fixtures before a completely new run.
 - Runtime code, model prompts, and fixtures are not patched during a run.
+
+## Hard anti-goals
+
+The following invalidate an implementation or run:
+
+- a maze-specific branch, noun, action, or planner in production cognition code;
+- coordinator or model access to hidden state, an oracle, a seed, or live scores;
+- LLM-generated worlds, labels, success judgments, or failure attribution in the
+  foundational suites;
+- full transcript, raw shell, or increased context budget as a production fallback;
+- direct model mutation of Task Ledger, Working Set, action catalog, or completion;
+- accepting a model claim as fact without evidence and a code-owned policy;
+- silently replacing failed actions or outcomes on retry;
+- one aggregate intelligence score or prompt tuning against a frozen seed;
+- learning before immutable experience sealing and replay validation exist;
+- dynamic game complexity before isolated suites pass;
+- a benchmark-only coordinator, planner, lease, or evaluator presented as production
+  cognition evidence.
 
 ## Pre-registered promotion gates
 
@@ -285,7 +482,8 @@ Competence promotion must satisfy one pre-selected policy:
 - **Success superiority:** statistically credible positive paired lift, materially
   more rescues than regressions, and no validity reduction; or
 - **Efficiency superiority:** no more than two percentage points of success loss, at
-  least 40% context reduction, and fewer duplicate acquisitions and tool calls.
+  least a pre-registered 40–50% context reduction, and fewer duplicate acquisitions
+  and tool calls. The exact threshold in that range is frozen before inference.
 
 Scale promotion compares equivalent tasks whose relevant surface and solution depth
 remain fixed while visible world size grows by 100 times:
@@ -305,3 +503,31 @@ and zero concrete hidden labels exposed during execution.
 None of these gates has passed yet. The first implementation milestone is the
 deterministic world kernel and public/oracle artifact separation; the first live
 model run is not authorized until its symbolic and architecture tests pass.
+
+## Conformance status
+
+Only checked items may be cited as implemented. A checkbox may be changed only with
+the code, positive/negative/property tests, frozen evidence schema, and exact local
+proof for that item.
+
+- [x] Production-to-gauntlet import prohibition is enforced by source tests.
+- [ ] Symbolic kernel, deterministic goals, revisions, and transactional actions pass
+  property tests over thousands of generated worlds.
+- [ ] Public scenarios and private oracles are separately hashed and credentialed.
+- [ ] Solution-first generation produces validated optimal or witness-only cases.
+- [ ] The v1 filesystem adapter exposes only the seven registered bounded actions.
+- [ ] Retrieve, Recall, Unlock, Mutate, and Combined have versioned frozen fixtures.
+- [ ] Every baseline and ablation uses paired identities, models, seeds, and budgets.
+- [x] Every architectural generation shares one Rat Doctrine fixed-authority hash;
+  changing the brain begins a separate experiment.
+- [ ] Episode sealing is exclusive, complete, immutable, and evaluator-bound.
+- [x] Failure attribution is deterministic and retains `unattributed` ambiguity.
+- [ ] Real process-death and stale-worker suites pass without benchmark lifecycle code.
+- [ ] A 100-times scale comparison passes the pre-registered scale gate.
+- [ ] Two held-out surface adapters pass without production changes.
+- [ ] Rogue is attempted only after isolated suites and absolute gates pass.
+- [ ] Promotion evidence passes the architecture, continuity, competence, scale, and
+  transfer gates above.
+
+Checked items above correspond only to implemented invariants and their exact tests.
+They are not benchmark results and do not satisfy any unchecked promotion gate.

@@ -116,33 +116,35 @@ const (
 type CommandKind string
 
 const (
-	CommandAddNode        CommandKind = "add_node"
-	CommandAddEdge        CommandKind = "add_edge"
-	CommandAddEntry       CommandKind = "add_entry"
-	CommandRejectEntry    CommandKind = "reject_entry"
-	CommandResolveEntry   CommandKind = "resolve_entry"
-	CommandSupersedeEntry CommandKind = "supersede_entry"
-	CommandAcceptDecision CommandKind = "accept_decision"
-	CommandPromoteReady   CommandKind = "promote_ready_nodes"
-	CommandAssignStep     CommandKind = "assign_node_step"
-	CommandTransitionNode CommandKind = "transition_node"
-	CommandCloseLedger    CommandKind = "close_ledger"
+	CommandAddNode                 CommandKind = "add_node"
+	CommandAddEdge                 CommandKind = "add_edge"
+	CommandAddEntry                CommandKind = "add_entry"
+	CommandRejectEntry             CommandKind = "reject_entry"
+	CommandResolveEntry            CommandKind = "resolve_entry"
+	CommandSupersedeEntry          CommandKind = "supersede_entry"
+	CommandAcceptDecision          CommandKind = "accept_decision"
+	CommandPromoteReady            CommandKind = "promote_ready_nodes"
+	CommandAssignStep              CommandKind = "assign_node_step"
+	CommandTransitionNode          CommandKind = "transition_node"
+	CommandSupersedeNodeGeneration CommandKind = "supersede_node_generation"
+	CommandCloseLedger             CommandKind = "close_ledger"
 )
 
 type EventKind string
 
 const (
-	EventNodeAdded        EventKind = "node_added"
-	EventEdgeAdded        EventKind = "edge_added"
-	EventEntryAdded       EventKind = "entry_added"
-	EventEntryRejected    EventKind = "entry_rejected"
-	EventEntryResolved    EventKind = "entry_resolved"
-	EventEntrySuperseded  EventKind = "entry_superseded"
-	EventDecisionAccepted EventKind = "decision_accepted"
-	EventNodesReadied     EventKind = "nodes_readied"
-	EventNodeStepAssigned EventKind = "node_step_assigned"
-	EventNodeTransitioned EventKind = "node_transitioned"
-	EventLedgerClosed     EventKind = "ledger_closed"
+	EventNodeAdded                EventKind = "node_added"
+	EventEdgeAdded                EventKind = "edge_added"
+	EventEntryAdded               EventKind = "entry_added"
+	EventEntryRejected            EventKind = "entry_rejected"
+	EventEntryResolved            EventKind = "entry_resolved"
+	EventEntrySuperseded          EventKind = "entry_superseded"
+	EventDecisionAccepted         EventKind = "decision_accepted"
+	EventNodesReadied             EventKind = "nodes_readied"
+	EventNodeStepAssigned         EventKind = "node_step_assigned"
+	EventNodeTransitioned         EventKind = "node_transitioned"
+	EventNodeGenerationSuperseded EventKind = "node_generation_superseded"
+	EventLedgerClosed             EventKind = "ledger_closed"
 )
 
 type Ref struct {
@@ -176,6 +178,14 @@ type Node struct {
 	StatusReason       string     `json:"status_reason,omitempty"`
 	CreatedVersion     uint64     `json:"created_version"`
 	UpdatedVersion     uint64     `json:"updated_version"`
+}
+
+type NodeGenerationSupersession struct {
+	NodeID                 NodeID `json:"node_id"`
+	RetiringGeneration     int64  `json:"retiring_generation"`
+	SupersededAtGeneration int64  `json:"superseded_at_generation"`
+	Reason                 string `json:"reason"`
+	CreatedVersion         uint64 `json:"created_version"`
 }
 
 type Edge struct {
@@ -212,38 +222,41 @@ type Entry struct {
 func (entry Entry) Active() bool { return entry.Status == EntryActive }
 
 type Event struct {
-	LedgerID         LedgerID     `json:"ledger_id"`
-	Version          uint64       `json:"ledger_version"`
-	CommandID        CommandID    `json:"command_id"`
-	CommandSHA256    string       `json:"command_sha256"`
-	CommandKind      CommandKind  `json:"command_kind"`
-	Kind             EventKind    `json:"event_kind"`
-	Authority        Authority    `json:"actor"`
-	StepID           *int64       `json:"step_id,omitempty"`
-	Node             *Node        `json:"node,omitempty"`
-	Edge             *Edge        `json:"edge,omitempty"`
-	Entry            *Entry       `json:"entry,omitempty"`
-	NodeID           NodeID       `json:"node_id,omitempty"`
-	NodeIDs          []NodeID     `json:"node_ids,omitempty"`
-	EntryID          EntryID      `json:"entry_id,omitempty"`
-	ReplacementID    EntryID      `json:"replacement_id,omitempty"`
-	FromStatus       NodeStatus   `json:"from_status,omitempty"`
-	ToStatus         NodeStatus   `json:"to_status,omitempty"`
-	VerificationRefs []Ref        `json:"verification_refs,omitempty"`
-	LedgerStatus     LedgerStatus `json:"ledger_status,omitempty"`
-	Reason           string       `json:"reason,omitempty"`
+	LedgerID               LedgerID     `json:"ledger_id"`
+	Version                uint64       `json:"ledger_version"`
+	CommandID              CommandID    `json:"command_id"`
+	CommandSHA256          string       `json:"command_sha256"`
+	CommandKind            CommandKind  `json:"command_kind"`
+	Kind                   EventKind    `json:"event_kind"`
+	Authority              Authority    `json:"actor"`
+	StepID                 *int64       `json:"step_id,omitempty"`
+	Node                   *Node        `json:"node,omitempty"`
+	Edge                   *Edge        `json:"edge,omitempty"`
+	Entry                  *Entry       `json:"entry,omitempty"`
+	NodeID                 NodeID       `json:"node_id,omitempty"`
+	NodeIDs                []NodeID     `json:"node_ids,omitempty"`
+	EntryID                EntryID      `json:"entry_id,omitempty"`
+	ReplacementID          EntryID      `json:"replacement_id,omitempty"`
+	FromStatus             NodeStatus   `json:"from_status,omitempty"`
+	ToStatus               NodeStatus   `json:"to_status,omitempty"`
+	VerificationRefs       []Ref        `json:"verification_refs,omitempty"`
+	LedgerStatus           LedgerStatus `json:"ledger_status,omitempty"`
+	Reason                 string       `json:"reason,omitempty"`
+	RetiringGeneration     int64        `json:"retiring_generation,omitempty"`
+	SupersededAtGeneration int64        `json:"superseded_at_generation,omitempty"`
 }
 
 type Ledger struct {
-	id            LedgerID
-	owner         LedgerOwner
-	version       uint64
-	status        LedgerStatus
-	nodes         map[NodeID]Node
-	edges         map[EdgeID]Edge
-	entries       map[EntryID]Entry
-	nodeRefCount  int
-	entryRefCount int
-	events        []Event
-	commandEvents map[CommandID]Event
+	id                LedgerID
+	owner             LedgerOwner
+	version           uint64
+	status            LedgerStatus
+	nodes             map[NodeID]Node
+	edges             map[EdgeID]Edge
+	entries           map[EntryID]Entry
+	nodeSupersessions map[NodeID]NodeGenerationSupersession
+	nodeRefCount      int
+	entryRefCount     int
+	events            []Event
+	commandEvents     map[CommandID]Event
 }

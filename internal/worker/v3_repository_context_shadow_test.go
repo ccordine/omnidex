@@ -45,6 +45,11 @@ func TestRepositoryShadowSourcesAndSpecsAreStationSpecific(t *testing.T) {
 		changePlan.sources[1].material.Authority != taskstate.AuthorityToolEvidence || changePlan.spec.MaxItems != 2 {
 		t.Fatalf("change plan=%+v", changePlan)
 	}
+	for index, source := range changePlan.sources {
+		if source.material.SourceRefs == nil || len(source.material.SourceRefs) != 0 {
+			t.Fatalf("raw shadow source %d lineage=%#v, want explicit empty roots", index, source.material.SourceRefs)
+		}
+	}
 	if !reflect.DeepEqual(retrievalPlan.sources[0], changePlan.sources[0]) {
 		t.Fatal("identical research authority did not resolve to one stable content-addressed item")
 	}

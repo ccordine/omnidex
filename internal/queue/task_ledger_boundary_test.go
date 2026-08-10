@@ -2,6 +2,7 @@ package queue
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/taskstate"
@@ -9,6 +10,16 @@ import (
 
 func TestGeneralTaskBoundaryReservesQueueOwnedAuthority(t *testing.T) {
 	commands := []taskstate.Command{
+		taskstate.TerminalFailNodeCommand{
+			NodeID: "task:ordinary", Reason: "terminal proof",
+			Proof: taskstate.Ref{
+				URI: "cognition:episode/1/terminal", Version: "1",
+				Hash: strings.Repeat("b", 64), Relation: taskstate.RefVerifies,
+			},
+		},
+		taskstate.SupersedeNodeGenerationCommand{NodeIDs: []taskstate.NodeID{"task:ordinary"}},
+		taskstate.TransitionNodeCommand{NodeID: cognitionObligationNodePrefix + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		taskstate.AddEdgeCommand{ID: cognitionObligationEdgePrefix + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		taskstate.AddNodeCommand{ID: initialTaskRootNodeID},
 		taskstate.TransitionNodeCommand{NodeID: initialTaskRootNodeID},
 		taskstate.AssignNodeStepCommand{NodeID: initialTaskRootNodeID},
