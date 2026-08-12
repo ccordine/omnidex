@@ -105,6 +105,16 @@ func runPreparedOfflineInference(
 	if err := validatePublicInferenceEpisode(bundle, episode); err != nil {
 		return offlineExecutionInference{}, err
 	}
+	if err := validateEpisodeExecutionIdentity(episode.Manifest, authority); err != nil {
+		return offlineExecutionInference{}, err
+	}
+	if bundle.Authority.Variant != VariantFullCognition {
+		if _, err := verifyOfflineInferenceAblationEvidence(
+			bundle, episode, paths.Evidence,
+		); err != nil {
+			return offlineExecutionInference{}, err
+		}
+	}
 	if err := completeOfflineInferenceStep(ctx, database); err != nil {
 		return offlineExecutionInference{}, err
 	}
@@ -116,4 +126,18 @@ func runPreparedOfflineInference(
 		generatorExitedAt: generatorExitedAt, host: hostReceipt, inferencePID: inferencePID,
 		inferenceStartedAt: inferenceStartedAt, inferenceExitedAt: inferenceExitedAt,
 	}, nil
+}
+
+func validateEpisodeExecutionIdentity(
+	manifest EpisodeManifest,
+	authority offlineExecutionAuthority,
+) error {
+	if authority.Validate() != nil ||
+		manifest.OmnidexCommit != authority.OmnidexCommit ||
+		manifest.LedgerSchemaVersion != authority.LedgerSchemaVersion ||
+		manifest.WorkingSetPolicyVersion != authority.WorkingSetPolicyVersion ||
+		manifest.ProjectionPolicyVersion != authority.ProjectionPolicyVersion {
+		return fmt.Errorf("sealed episode changed its preregistered execution identity")
+	}
+	return nil
 }

@@ -65,6 +65,50 @@ func TestPostgresPolicyCallRequiresExactRenderedSnapshotInput(t *testing.T) {
 	}
 }
 
+func TestPostgresPolicyCallRequiresNamedPersistedProcessActivation(t *testing.T) {
+	repository, pool, ctx := policyInputFreshRepository(t)
+	fixture := startTaskGenerationRetirementFixtureIn(
+		t, repository, pool, ctx, "policy-process-activation",
+	)
+	exact := capturePreparedCognitionCall(t, fixture)
+	mutations := map[string]func(*cognitionpolicy.CallAttempt){
+		"unassociated observation": func(value *cognitionpolicy.CallAttempt) {
+			value.ProviderProcessActivation.ObservationID =
+				"provider_process_observation_" + strings.Repeat("f", 64)
+		},
+		"other actor": func(value *cognitionpolicy.CallAttempt) {
+			value.ProviderProcessActivation.Actor.Attempt++
+		},
+		"substituted stable Brain": func(value *cognitionpolicy.CallAttempt) {
+			value.ProviderProcessActivation.StableBrainSHA256 = strings.Repeat("f", 64)
+		},
+		"substituted provider observation": func(value *cognitionpolicy.CallAttempt) {
+			value.ProviderProcessActivation.ProviderObservationSHA256 = strings.Repeat("f", 64)
+		},
+		"unassociated raw evidence": func(value *cognitionpolicy.CallAttempt) {
+			value.ProviderProcessActivation.Evidence.ID =
+				"provider_identity_" + strings.Repeat("f", 64)
+			value.ProviderProcessActivation.Evidence.SHA256 = strings.Repeat("f", 64)
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			forged := exact
+			mutate(&forged)
+			refreshForgedPolicyAttempt(t, &forged)
+			if _, err := fixture.Repository.StartCognitionPolicyCall(
+				fixture.Context, forged,
+			); err == nil {
+				t.Fatal("journal accepted a policy call without its exact named activation")
+			}
+			if err := insertForgedPolicyAttempt(t, fixture, forged); err == nil {
+				t.Fatal("direct SQL accepted a policy call without its exact named activation")
+			}
+			assertNoPolicyCallForSnapshot(t, fixture, exact.SnapshotSHA256)
+		})
+	}
+}
+
 func policyInputFreshRepository(t *testing.T) (*Repository, *pgxpool.Pool, context.Context) {
 	t.Helper()
 	pool := openIsolatedMigrationPool(t)

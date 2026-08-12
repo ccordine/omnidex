@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const OfflineTransferPreregistrationSchemaV1 = "omnidex.offline-transfer-preregistration.v1"
+const OfflineTransferPreregistrationSchemaV2 = "omnidex.offline-transfer-preregistration.v2"
 
 type OfflineTransferPlan struct {
 	Suite      Suite     `json:"suite"`
@@ -67,7 +67,7 @@ func (plan OfflineTransferPlan) Validate() error {
 }
 
 func (registration OfflineTransferPreregistration) Validate() error {
-	if registration.Schema != OfflineTransferPreregistrationSchemaV1 ||
+	if registration.Schema != OfflineTransferPreregistrationSchemaV2 ||
 		registration.Variant != VariantFullCognition ||
 		registration.RegisteredAt.IsZero() ||
 		registration.RegisteredAt.After(time.Now().UTC().Add(time.Minute)) {
@@ -128,7 +128,7 @@ func buildOfflineTransferPreregistration(
 		return OfflineTransferPreregistration{}, err
 	}
 	return OfflineTransferPreregistration{
-		Schema:     OfflineTransferPreregistrationSchemaV1,
+		Schema:     OfflineTransferPreregistrationSchemaV2,
 		Hypothesis: "One fixed cognition runtime completes the same held-out task through every preregistered surface adapter without production changes.",
 		Plan: OfflineTransferPlan{
 			Suite: plan.Suite, Seed: plan.Seed, Repetition: plan.Repetition,

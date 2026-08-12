@@ -27,7 +27,7 @@ func TestMicrogauntletSuiteMotifsAreCodeValidated(t *testing.T) {
 }
 
 func TestInitialMicrogauntletsRequireExactCausalEvidenceUses(t *testing.T) {
-	fixtures, err := GenerateInitialMicrogauntletsV1()
+	fixtures, err := GenerateInitialMicrogauntletsV2()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestInitialMicrogauntletsRequireExactCausalEvidenceUses(t *testing.T) {
 }
 
 func TestMicrogauntletAdmissionRejectsNoncausalOrMismatchedEvidenceUse(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}

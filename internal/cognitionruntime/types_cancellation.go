@@ -18,6 +18,7 @@ type CancellationCode string
 const (
 	CancellationPolicyFailure      CancellationCode = "policy_failure"
 	CancellationRunBudgetExhausted CancellationCode = "run_budget_exhausted"
+	CancellationProviderActivation CancellationCode = "provider_activation_failed"
 	CancellationJobCanceled        CancellationCode = "job_canceled"
 	CancellationGenerationRetired  CancellationCode = "generation_superseded"
 )
@@ -29,6 +30,27 @@ type CancellationEvidence struct {
 	SourceErrorSHA256 string           `json:"source_error_sha256"`
 	PublicMessage     string           `json:"public_message"`
 	SHA256            string           `json:"sha256"`
+}
+
+const providerActivationCancellationMessage = "Provider activation failed before cognition could resume."
+
+func NewProviderActivationCancellationEvidence(
+	failureRecordID string,
+) (CancellationEvidence, error) {
+	const prefix = "cognition_provider_failure_"
+	digest := strings.TrimPrefix(failureRecordID, prefix)
+	if failureRecordID != prefix+digest || !validSHA256(digest) {
+		return CancellationEvidence{}, fmt.Errorf(
+			"provider activation cancellation requires an exact failure record identity",
+		)
+	}
+	value := CancellationEvidence{
+		Schema: CancellationEvidenceSchemaV1, Code: CancellationProviderActivation,
+		SourceErrorSHA256: digest, PublicMessage: providerActivationCancellationMessage,
+	}
+	value.SHA256 = cancellationEvidenceSHA(value)
+	value.ID = "cognition_cancellation_evidence_" + value.SHA256
+	return value, value.Validate()
 }
 
 type CancellationCommand struct {
@@ -152,7 +174,8 @@ func registeredCancellationCode(code CancellationCode) bool {
 }
 
 func registeredWorkerCancellationCode(code CancellationCode) bool {
-	return code == CancellationPolicyFailure || code == CancellationRunBudgetExhausted
+	return code == CancellationPolicyFailure || code == CancellationRunBudgetExhausted ||
+		code == CancellationProviderActivation
 }
 
 func registeredLifecycleCancellationCode(code CancellationCode) bool {

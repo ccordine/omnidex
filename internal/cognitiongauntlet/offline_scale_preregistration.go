@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const OfflineScalePreregistrationSchemaV1 = "omnidex.offline-scale-preregistration.v1"
+const OfflineScalePreregistrationSchemaV2 = "omnidex.offline-scale-preregistration.v2"
 
 type OfflineScalePlan struct {
 	Seed        uint64 `json:"seed"`
@@ -64,7 +64,7 @@ func (plan OfflineScalePlan) Validate() error {
 }
 
 func (registration OfflineScalePreregistration) Validate() error {
-	if registration.Schema != OfflineScalePreregistrationSchemaV1 ||
+	if registration.Schema != OfflineScalePreregistrationSchemaV2 ||
 		registration.Suite != SuiteScale || registration.Surface != SurfaceSymbolic ||
 		registration.Variant != VariantFullCognition || registration.RegisteredAt.IsZero() ||
 		registration.RegisteredAt.After(time.Now().UTC().Add(time.Minute)) {
@@ -121,7 +121,7 @@ func buildOfflineScalePreregistration(
 		Schema     string              `json:"schema"`
 		Workload   OfflineScenarioSpec `json:"workload"`
 		WorldSizes []int               `json:"world_sizes"`
-	}{OfflineScalePreregistrationSchemaV1, workload, worldSizes})
+	}{OfflineScalePreregistrationSchemaV2, workload, worldSizes})
 	if err != nil {
 		return OfflineScalePreregistration{}, err
 	}
@@ -135,7 +135,7 @@ func buildOfflineScalePreregistration(
 		}
 	}
 	return OfflineScalePreregistration{
-		Schema:     OfflineScalePreregistrationSchemaV1,
+		Schema:     OfflineScalePreregistrationSchemaV2,
 		Hypothesis: "A one-hundred-times larger visible world does not materially grow model context, decisions, or success loss under one fixed cognition runtime.",
 		Suite:      SuiteScale, Plan: plan, BaseWorkload: workload,
 		ScaleFamilySpecSHA256: familySHA, WorldSizes: worldSizes,

@@ -77,25 +77,39 @@ func decodeProviderObservationWire(
 		wire.EvidenceSHA256, wire.ObservationSHA256,
 	}
 	values := make([]string, len(fields))
+	complete := true
+	timeFieldsComplete := true
 	for index, field := range fields {
-		raw, complete, err := field.exact(maxProviderGenerationMetadataCaptureBytes)
-		if err != nil || !complete {
-			return llm.ProviderIdentityObservation{}, complete, err
+		raw, exact, err := field.exact(maxProviderGenerationMetadataCaptureBytes)
+		if err != nil {
+			return llm.ProviderIdentityObservation{}, false, err
 		}
-		values[index] = string(raw)
+		complete = complete && exact
+		if index == 1 || index == 2 {
+			timeFieldsComplete = timeFieldsComplete && exact
+		}
+		if exact {
+			values[index] = string(raw)
+		}
 	}
-	location := time.FixedZone(values[2], wire.ObservedOffsetSeconds)
-	if values[2] == "UTC" && wire.ObservedOffsetSeconds == 0 {
-		location = time.UTC
+	var observedAt time.Time
+	if timeFieldsComplete {
+		location := time.FixedZone(values[2], wire.ObservedOffsetSeconds)
+		if values[2] == "UTC" && wire.ObservedOffsetSeconds == 0 {
+			location = time.UTC
+		}
+		observedAt = time.Date(
+			wire.ObservedYear, time.Month(wire.ObservedMonth), wire.ObservedDay,
+			wire.ObservedHour, wire.ObservedMinute, wire.ObservedSecond,
+			wire.ObservedNanosecond, location,
+		)
+		if values[1] != observedAt.Format(time.RFC3339Nano) {
+			return llm.ProviderIdentityObservation{}, false,
+				fmt.Errorf("provider observation time wire changed")
+		}
 	}
-	observedAt := time.Date(
-		wire.ObservedYear, time.Month(wire.ObservedMonth), wire.ObservedDay,
-		wire.ObservedHour, wire.ObservedMinute, wire.ObservedSecond,
-		wire.ObservedNanosecond, location,
-	)
-	if values[1] != observedAt.Format(time.RFC3339Nano) {
-		return llm.ProviderIdentityObservation{}, false,
-			fmt.Errorf("provider observation time wire changed")
+	if !complete {
+		return llm.ProviderIdentityObservation{}, false, nil
 	}
 	return llm.ProviderIdentityObservation{
 		Schema: values[0], ObservedAt: observedAt, AttestationSHA256: values[3],

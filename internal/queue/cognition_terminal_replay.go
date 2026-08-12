@@ -50,6 +50,7 @@ func loadCognitionTerminalSealTx(
 	if lifecycleOperation != nil {
 		seal.LifecycleOperationID = LifecycleOperationID(*lifecycleOperation)
 	}
+	seal.CreatedAt = seal.CreatedAt.UTC()
 	if err := seal.FinalRevision.Validate(); err != nil || !validCognitionTerminalStatus(seal.Outcome) ||
 		!cognitionDigestPattern.MatchString(seal.CompletionSHA256) ||
 		!cognitionDigestPattern.MatchString(seal.ObligationGraphSHA256) ||

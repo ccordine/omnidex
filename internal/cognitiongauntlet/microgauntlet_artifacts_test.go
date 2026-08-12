@@ -8,7 +8,7 @@ import (
 )
 
 func TestMicrogauntletArtifactsSealFullPublicAndPrivateAuthoritiesSeparately(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}

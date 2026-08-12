@@ -78,6 +78,70 @@ func TestReleaseBuilderInvalidDistDoesNotCreateDirectories(t *testing.T) {
 	}
 }
 
+func TestReleaseBuilderRejectsTrackedGeneratedArtifacts(t *testing.T) {
+	script := filepath.Join(releaseRepositoryRoot(t), "scripts", "build-release.sh")
+	paths := []string{
+		".agent-cache/go/7f/cached-object-a",
+		"internal/pkg/__pycache__/module.pyc",
+		"build/omnidex",
+		"dist/archive.tar.gz",
+		"bin/omni",
+		"core",
+		"core.817",
+		"go.mod.orig",
+		"notes.txt~",
+		"object.o",
+		"omnidex.exe",
+	}
+	for _, relative := range paths {
+		relative := relative
+		t.Run(relative, func(t *testing.T) {
+			repository := t.TempDir()
+			runReleaseGit(t, repository, "init")
+			path := filepath.Join(repository, filepath.FromSlash(relative))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeReleaseTestFile(t, path, "generated\n")
+			runReleaseGit(t, repository, "add", "-f", "--", relative)
+			command := exec.Command(
+				"bash", "-c", `source "$1"; validate_tracked_release_sources "$2"`,
+				"release-tracked-source-test", script, repository,
+			)
+			output, err := command.CombinedOutput()
+			if err == nil || !strings.Contains(string(output), "tracked generated artifact") ||
+				!strings.Contains(string(output), relative) {
+				t.Fatalf("tracked artifact error=%v output=%q", err, output)
+			}
+		})
+	}
+}
+
+func TestReleaseBuilderAcceptsTrackedSourceFiles(t *testing.T) {
+	repository := t.TempDir()
+	runReleaseGit(t, repository, "init")
+	for relative, content := range map[string]string{
+		"go.mod":                    "module example.invalid/release\n",
+		"cmd/example/main.go":       "package main\n",
+		"scripts/release-helper.sh": "#!/usr/bin/env bash\n",
+	} {
+		path := filepath.Join(repository, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeReleaseTestFile(t, path, content)
+		runReleaseGit(t, repository, "add", "--", relative)
+	}
+	script := filepath.Join(releaseRepositoryRoot(t), "scripts", "build-release.sh")
+	command := exec.Command(
+		"bash", "-c", `source "$1"; validate_tracked_release_sources "$2"`,
+		"release-tracked-source-test", script, repository,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("valid tracked sources error=%v output=%q", err, output)
+	}
+}
+
 func TestReleaseBuilderRejectsUnregisteredMigrationEntries(t *testing.T) {
 	script := filepath.Join(releaseRepositoryRoot(t), "scripts", "build-release.sh")
 	tests := []struct {

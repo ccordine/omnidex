@@ -101,7 +101,11 @@ func TestBrainAndCallAttemptIdentitiesFailLoudly(t *testing.T) {
 	snapshot, evidence := policyTestSnapshot(t, projection)
 	client := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
 	journal := &policyTestCallJournal{}
-	policy, err := New(client, policyAttestBrain(brain), newPolicyTestProjectionLoader(projection), journal)
+	attested := policyAttestBrain(brain)
+	policy, err := New(
+		client, attested, policyTestDefaultProviderProcessActivation(attested),
+		newPolicyTestProjectionLoader(projection), journal,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +125,7 @@ func TestCallIdentityBindsEveryVariableBrainField(t *testing.T) {
 	snapshot, evidence := policyTestSnapshot(t, projection)
 	client := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
 	journal := &policyTestCallJournal{}
-	policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
+	policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal)
 	if err != nil {
 		t.Fatal(err)
 	}

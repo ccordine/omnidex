@@ -10,7 +10,7 @@ import (
 
 const (
 	liveStalePortCheckpointSchemaV1 = "omnidex.live-stale-port-checkpoint.v1"
-	liveStalePortRejectionSchemaV1  = "omnidex.live-stale-port-rejection.v1"
+	liveStalePortRejectionSchemaV2  = "omnidex.live-stale-port-rejection.v2"
 )
 
 type liveStalePortCheckpoint struct {
@@ -23,17 +23,17 @@ type liveStalePortCheckpoint struct {
 }
 
 type liveStalePortRejection struct {
-	Schema                    string                      `json:"schema"`
-	Port                      liveStalePort               `json:"port"`
-	PID                       int                         `json:"pid"`
-	Attempt                   model.StepAttemptAuthority  `json:"attempt"`
-	CommandSHA256             string                      `json:"command_sha256"`
-	ErrorClass                string                      `json:"error_class"`
-	ProviderRequestDispatched bool                        `json:"provider_request_dispatched"`
-	ProviderUsagePresent      bool                        `json:"provider_usage_present"`
-	ProviderUsage             llm.ProviderGenerationUsage `json:"provider_usage"`
-	ProviderDoneReason        string                      `json:"provider_done_reason"`
-	RejectedAt                time.Time                   `json:"rejected_at"`
+	Schema                     string                         `json:"schema"`
+	Port                       liveStalePort                  `json:"port"`
+	PID                        int                            `json:"pid"`
+	Attempt                    model.StepAttemptAuthority     `json:"attempt"`
+	CommandSHA256              string                         `json:"command_sha256"`
+	ErrorClass                 string                         `json:"error_class"`
+	ProviderRequestDisposition llm.ProviderRequestDisposition `json:"provider_request_disposition"`
+	ProviderUsagePresent       bool                           `json:"provider_usage_present"`
+	ProviderUsage              llm.ProviderGenerationUsage    `json:"provider_usage"`
+	ProviderDoneReason         string                         `json:"provider_done_reason"`
+	RejectedAt                 time.Time                      `json:"rejected_at"`
 }
 
 func (checkpoint liveStalePortCheckpoint) Validate() error {
@@ -47,7 +47,7 @@ func (checkpoint liveStalePortCheckpoint) Validate() error {
 }
 
 func (rejection liveStalePortRejection) Validate() error {
-	if rejection.Schema != liveStalePortRejectionSchemaV1 ||
+	if rejection.Schema != liveStalePortRejectionSchemaV2 ||
 		rejection.Port.Validate() != nil || rejection.PID <= 0 ||
 		!validTakeoverAttempt(rejection.Attempt) ||
 		!validDigest(rejection.CommandSHA256) || rejection.RejectedAt.IsZero() ||
@@ -55,14 +55,32 @@ func (rejection liveStalePortRejection) Validate() error {
 		return fmt.Errorf("live stale-port rejection is invalid")
 	}
 	if rejection.Port == liveStalePolicyFinish {
-		if !rejection.ProviderRequestDispatched || rejection.ProviderDoneReason == "" ||
-			(rejection.ProviderUsagePresent && rejection.ProviderUsage.ValidateSuccessful() != nil) {
-			return fmt.Errorf("live stale policy rejection lacks exact provider dispatch evidence")
+		if err := rejection.validateProviderRequestEvidence(); err != nil {
+			return fmt.Errorf("live stale policy rejection lacks exact provider request evidence")
 		}
-	} else if rejection.ProviderRequestDispatched || rejection.ProviderUsagePresent ||
+	} else if rejection.ProviderRequestDisposition != llm.ProviderRequestNotDispatched ||
+		rejection.ProviderUsagePresent ||
 		rejection.ProviderUsage != (llm.ProviderGenerationUsage{}) ||
 		rejection.ProviderDoneReason != "" {
 		return fmt.Errorf("nonpolicy stale rejection carries provider evidence")
+	}
+	return nil
+}
+
+func (rejection liveStalePortRejection) validateProviderRequestEvidence() error {
+	switch rejection.ProviderRequestDisposition {
+	case llm.ProviderRequestDispatched:
+		if rejection.ProviderDoneReason == "" ||
+			(rejection.ProviderUsagePresent && rejection.ProviderUsage.ValidateSuccessful() != nil) {
+			return fmt.Errorf("dispatched provider evidence is invalid")
+		}
+	case llm.ProviderRequestWriteIndeterminate:
+		if rejection.ProviderDoneReason != "" || rejection.ProviderUsagePresent ||
+			rejection.ProviderUsage != (llm.ProviderGenerationUsage{}) {
+			return fmt.Errorf("indeterminate provider write claims response evidence")
+		}
+	default:
+		return fmt.Errorf("provider request did not reach the provider")
 	}
 	return nil
 }

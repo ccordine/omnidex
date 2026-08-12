@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/labyrinth"
 )
 
 func TestInitialMicrogauntletsFreezeFiveDistinctSolvableSuites(t *testing.T) {
-	specs := InitialMicrogauntletsV1()
+	specs := InitialMicrogauntletsV2()
 	if len(specs) != 5 {
 		t.Fatalf("initial microgauntlets=%d want=5", len(specs))
+	}
+	if specs[0].Generator.Difficulty.WorldSize != labyrinth.MinGeneratedWorldSize ||
+		specs[0].Generator.Difficulty.SolutionDepth != labyrinth.MinSolutionDepth {
+		t.Fatalf("first cognition rung is not the smallest registered world: %+v", specs[0].Generator.Difficulty)
 	}
 	want := []Suite{SuiteRetrieve, SuiteRecall, SuiteUnlock, SuiteMutate, SuiteCombined}
 	seenSeeds := map[uint64]struct{}{}
@@ -27,7 +33,7 @@ func TestInitialMicrogauntletsFreezeFiveDistinctSolvableSuites(t *testing.T) {
 		seenSeeds[spec.Generator.Seed] = struct{}{}
 	}
 
-	fixtures, err := GenerateInitialMicrogauntletsV1()
+	fixtures, err := GenerateInitialMicrogauntletsV2()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +56,7 @@ func TestInitialMicrogauntletsFreezeFiveDistinctSolvableSuites(t *testing.T) {
 }
 
 func TestGeneratedPublicMicrogauntletNeverSerializesPrivateAuthority(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,25 +76,30 @@ func TestGeneratedPublicMicrogauntletNeverSerializesPrivateAuthority(t *testing.
 }
 
 func TestMicrogauntletRejectsUnregisteredFixtureAndInsufficientBudget(t *testing.T) {
-	spec := InitialMicrogauntletsV1()[0]
+	spec := InitialMicrogauntletsV2()[0]
+	spec.FixtureVersion = "microgauntlets.v1"
+	if _, err := GenerateMicrogauntlet(spec); err == nil {
+		t.Fatal("microgauntlet accepted the superseded larger-world fixture version")
+	}
+	spec = InitialMicrogauntletsV2()[0]
 	spec.FixtureVersion = "microgauntlets.live-edit"
 	if err := spec.Validate(); err == nil {
 		t.Fatal("unregistered fixture version was accepted")
 	}
-	spec = InitialMicrogauntletsV1()[0]
+	spec = InitialMicrogauntletsV2()[0]
 	spec.Budget.EnvironmentActions = spec.Generator.Difficulty.SolutionDepth - 1
 	if err := spec.Validate(); err == nil {
 		t.Fatal("budget below witness depth was accepted")
 	}
-	spec = InitialMicrogauntletsV1()[0]
+	spec = InitialMicrogauntletsV2()[0]
 	spec.Budget.Station.MaxInputTokens = 0
 	if err := spec.Validate(); err == nil {
 		t.Fatal("microgauntlet accepted an unset per-call station budget")
 	}
 
-	first := InitialMicrogauntletsV1()
+	first := InitialMicrogauntletsV2()
 	first[0].CaseID = "changed"
-	if strings.HasPrefix(InitialMicrogauntletsV1()[0].CaseID, "changed") {
+	if strings.HasPrefix(InitialMicrogauntletsV2()[0].CaseID, "changed") {
 		t.Fatal("callers mutated the frozen fixture catalog")
 	}
 }

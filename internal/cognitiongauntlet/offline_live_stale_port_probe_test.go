@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
@@ -49,6 +51,26 @@ func TestLiveStalePortWrappersPauseBeforeExactProductionPortAndSealRejection(t *
 	}
 }
 
+func TestLiveStalePolicyRejectionPreservesIndeterminateProviderWrite(t *testing.T) {
+	rejection := liveStalePortRejection{
+		Schema: liveStalePortRejectionSchemaV2, Port: liveStalePolicyFinish,
+		PID: 817, Attempt: model.StepAttemptAuthority{
+			JobID: 41, Generation: 2, StepID: 7, Attempt: 3, WorkerID: "expired-worker",
+		},
+		CommandSHA256:              strings.Repeat("a", 64),
+		ErrorClass:                 liveStaleErrorAttempt,
+		ProviderRequestDisposition: llm.ProviderRequestWriteIndeterminate,
+		RejectedAt:                 time.Now().UTC(),
+	}
+	if err := rejection.Validate(); err != nil {
+		t.Fatalf("indeterminate stale provider write was not preserved: %v", err)
+	}
+	rejection.ProviderRequestDisposition = llm.ProviderRequestNotDispatched
+	if err := rejection.Validate(); err == nil {
+		t.Fatal("non-dispatched stale request was accepted as provider-reaching")
+	}
+}
+
 func invokeLiveStalePort(t *testing.T, probe *liveStalePortController, port liveStalePort) {
 	t.Helper()
 	ctx := context.Background()
@@ -56,8 +78,9 @@ func invokeLiveStalePort(t *testing.T, probe *liveStalePortController, port live
 	case liveStalePolicyFinish:
 		journal := liveStaleCallJournal{probe: probe, base: staleTestJournal{}}
 		result := cognitionpolicy.CallResult{
-			ProviderRequestDispatched: true, ProviderUsagePresent: true,
-			ProviderDoneReason: "stop", ProviderUsage: llm.ProviderGenerationUsage{
+			ProviderRequestDisposition: llm.ProviderRequestDispatched,
+			ProviderUsagePresent:       true,
+			ProviderDoneReason:         "stop", ProviderUsage: llm.ProviderGenerationUsage{
 				PromptEvalCount: 2, EvalCount: 1, TotalDurationNanos: 4,
 				LoadDurationNanos: 1, PromptEvalDurationNanos: 1, EvalDurationNanos: 1,
 			},

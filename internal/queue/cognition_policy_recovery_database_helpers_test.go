@@ -52,6 +52,7 @@ func reserveIndeterminateCognitionCall(
 	journal := &strandingCognitionCallJournal{repository: fixture.Repository}
 	policy, err := cognitionpolicy.New(
 		cognitionGuardPolicyClient{response: "unused"}, cognitionTestBrain(),
+		cognitionGuardActivationAuthority(t, fixture),
 		cognitionGuardProjectionLoader{repository: fixture.Repository}, journal,
 	)
 	if err != nil {
@@ -80,7 +81,8 @@ func reserveTerminalCognitionPolicyCall(
 		t.Fatal(err)
 	}
 	policy, err := cognitionpolicy.New(
-		client, cognitionTestBrain(), cognitionGuardProjectionLoader{repository: fixture.Repository},
+		client, cognitionTestBrain(), cognitionGuardActivationAuthority(t, fixture),
+		cognitionGuardProjectionLoader{repository: fixture.Repository},
 		CognitionPolicyCallJournal{Repository: fixture.Repository},
 	)
 	if err != nil {
@@ -92,8 +94,32 @@ func reserveTerminalCognitionPolicyCall(
 
 type failingCognitionPolicyClient struct{ cognitionGuardPolicyClient }
 
-func (failingCognitionPolicyClient) GeneratePrepared(context.Context, llm.PreparedModel) (string, error) {
-	return "", fmt.Errorf("injected provider failure")
+func (client failingCognitionPolicyClient) GeneratePreparedExact(
+	ctx context.Context,
+	prepared llm.PreparedModel,
+) (llm.PreparedGeneration, error) {
+	generation, err := client.cognitionGuardPolicyClient.GeneratePreparedExact(ctx, prepared)
+	if err != nil {
+		return generation, err
+	}
+	generation.Content = ""
+	generation.ProviderHTTPStatus = 0
+	generation.ProviderResponseDisposition = llm.ProviderResponseTransportError
+	generation.ProviderResponseComplete = false
+	generation.ProviderContentEncoding = llm.ProviderContentEncodingEvidence{}
+	generation.ProviderResponseBytesKnown = false
+	generation.ProviderResponseSHA256 = ""
+	generation.ProviderResponseBytes = 0
+	generation.ProviderResponseCaptureSHA256 = ""
+	generation.ProviderResponseCapturedBytes = 0
+	generation.ProviderResponseCapture = nil
+	generation.ProviderResponseModel = ""
+	generation.ProviderDonePresent = false
+	generation.ProviderDone = false
+	generation.ProviderDoneReason = ""
+	generation.UsagePresent = false
+	generation.Usage = llm.ProviderGenerationUsage{}
+	return generation, fmt.Errorf("injected exact provider transport failure")
 }
 
 func providerIdentityFailureResult(attempt cognitionpolicy.CallAttempt) cognitionpolicy.CallResult {

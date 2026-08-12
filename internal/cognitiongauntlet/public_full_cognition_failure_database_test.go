@@ -3,13 +3,10 @@ package cognitiongauntlet
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/cognition"
-	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/cognitionstate"
 	"github.com/gryph/omnidex/internal/cognitionstore"
 	"github.com/gryph/omnidex/internal/labyrinth"
@@ -19,37 +16,79 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestPostgresPublicFullCognitionSealsRegisteredPolicyFailure(t *testing.T) {
-	ctx, pool, repository, hostStore := openFullCognitionDatabase(t)
-	fixture, bundle, request := publicFailureFixture(t, ctx, pool, repository, hostStore)
-	client := &terminalPolicyClient{
-		witnessPolicyClient: &witnessPolicyClient{model: bundle.Authority.RatGeneration.Fixed.Brain.Model},
-		failure:             errors.New("registered provider generation failure"),
+func TestPostgresPublicFullCognitionSealsExactPolicyFailureDispositions(t *testing.T) {
+	for _, disposition := range []llm.ProviderRequestDisposition{
+		llm.ProviderRequestDispatched,
+		llm.ProviderRequestNotDispatched,
+		llm.ProviderRequestWriteIndeterminate,
+	} {
+		t.Run(string(disposition), func(t *testing.T) {
+			ctx, pool, repository, hostStore := openFullCognitionDatabase(t)
+			_, bundle, request := publicFailureFixture(t, ctx, pool, repository, hostStore)
+			client := &terminalPolicyClient{
+				witnessPolicyClient: &witnessPolicyClient{
+					model: bundle.Authority.RatGeneration.Fixed.Brain.Model,
+				},
+				failure:            errors.New("registered provider generation failure"),
+				requestDisposition: disposition,
+			}
+			request.Client = client
+			result, err := RunPublicFullCognition(ctx, bundle, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertPublicCanceled(t, pool, result, 1, client.calls())
+			resources := result.Episode.Manifest.Resources
+			if result.Episode.Manifest.Outcome.GoalSatisfied || resources.PolicyCallsConsumed != 1 {
+				t.Fatalf("registered failure outcome/resources=%+v/%+v", result.Episode.Manifest.Outcome, resources)
+			}
+			wantModelCalls := 0
+			wantTraceKind := TracePolicyDisposition
+			if disposition == llm.ProviderRequestDispatched {
+				wantModelCalls = 1
+				wantTraceKind = TraceModelCall
+			}
+			if resources.ModelCalls != wantModelCalls ||
+				(resources.ModelCalls == 0 && (resources.ContextBytes != 0 || resources.InputTokens != 0)) {
+				t.Fatalf("request disposition %q invented model usage: %+v", disposition, resources)
+			}
+			assertPolicyTerminalTraceDisposition(t, result.Episode, wantTraceKind, disposition)
+		})
 	}
-	request.Client = client
-	result, err := RunPublicFullCognition(ctx, bundle, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertPublicCanceled(t, pool, result, 1, client.calls())
-	if result.Episode.Manifest.Outcome.GoalSatisfied {
-		t.Fatal("registered public policy failure was sealed as successful")
-	}
-	_ = fixture
 }
 
-func TestPostgresPublicFullCognitionLeavesProviderDriftLoudAndUnsealed(t *testing.T) {
-	ctx, pool, repository, hostStore := openFullCognitionDatabase(t)
-	_, bundle, request := publicFailureFixture(t, ctx, pool, repository, hostStore)
-	client := &driftingPolicyClient{witnessPolicyClient: &witnessPolicyClient{
-		model: bundle.Authority.RatGeneration.Fixed.Brain.Model,
-	}}
-	request.Client = client
-	_, err := RunPublicFullCognition(ctx, bundle, request)
-	if !errors.Is(err, cognitionpolicy.ErrProviderIdentity) {
-		t.Fatalf("error=%v, want provider identity drift", err)
+func assertPolicyTerminalTraceDisposition(
+	t *testing.T,
+	episode SealedEpisode,
+	wantKind TraceKind,
+	wantDisposition llm.ProviderRequestDisposition,
+) {
+	t.Helper()
+	for _, entry := range episode.Manifest.Trace {
+		if entry.Kind != wantKind {
+			continue
+		}
+		if wantKind == TraceModelCall {
+			var call ModelCallTrace
+			if err := decodeTracePayload(entry.Payload, &call, "failure model call"); err != nil {
+				t.Fatal(err)
+			}
+			if call.ProviderRequestDisposition != wantDisposition {
+				t.Fatalf("model call disposition=%q want %q", call.ProviderRequestDisposition, wantDisposition)
+			}
+			return
+		}
+		var disposition PolicyDispositionTrace
+		if err := decodeTracePayload(entry.Payload, &disposition, "failure policy disposition"); err != nil {
+			t.Fatal(err)
+		}
+		if disposition.Disposition != PolicyCallResultDisposition ||
+			disposition.ProviderRequestDisposition != wantDisposition {
+			t.Fatalf("policy disposition=%+v want %q", disposition, wantDisposition)
+		}
+		return
 	}
-	assertPublicFailureRemainsUnsealed(t, pool, bundle, request.EpisodeSealPath)
+	t.Fatalf("sealed failure trace lacks %q disposition %q", wantKind, wantDisposition)
 }
 
 func publicFailureFixture(
@@ -60,7 +99,7 @@ func publicFailureFixture(
 	hostStore *labyrinthhost.Store,
 ) (MicrogauntletCase, PublicInferenceBundle, PublicFullCognitionRunRequest) {
 	t.Helper()
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,55 +149,6 @@ func publicFailureFixture(
 	}
 }
 
-type driftingPolicyClient struct {
-	*witnessPolicyClient
-	mu    sync.Mutex
-	calls int
-}
-
-func (client *driftingPolicyClient) AttestProviderIdentity(
-	ctx context.Context,
-	expected llm.ProviderIdentityExpectation,
-) (llm.ProviderIdentityAttestation, error) {
-	client.mu.Lock()
-	client.calls++
-	call := client.calls
-	client.mu.Unlock()
-	if call > 1 {
-		return llm.ProviderIdentityAttestation{}, errors.New("provider identity changed after episode bootstrap")
-	}
-	return client.witnessPolicyClient.AttestProviderIdentity(ctx, expected)
-}
-
-func assertPublicFailureRemainsUnsealed(
-	t *testing.T,
-	pool *pgxpool.Pool,
-	bundle PublicInferenceBundle,
-	episodePath string,
-) {
-	t.Helper()
-	episode, err := PublicVariantEpisodeRef(bundle.Authority)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var status string
-	var cancellations, seals int
-	if err := pool.QueryRow(t.Context(), `
-		SELECT episodes.status,
-		       (SELECT COUNT(*) FROM cognition_episode_cancellations WHERE episode_id=episodes.episode_id),
-		       (SELECT COUNT(*) FROM cognition_terminal_seals WHERE episode_id=episodes.episode_id)
-		FROM cognition_episodes episodes WHERE episodes.episode_id=$1
-	`, episode.ID).Scan(&status, &cancellations, &seals); err != nil {
-		t.Fatal(err)
-	}
-	if status != string(queue.CognitionEpisodeActive) || cancellations != 0 || seals != 0 {
-		t.Fatalf("status/cancellations/seals=%s/%d/%d", status, cancellations, seals)
-	}
-	if _, err := os.Stat(episodePath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("loud public failure wrote an episode seal: %v", err)
-	}
-}
-
 func assertPublicCanceled(
 	t *testing.T,
 	pool *pgxpool.Pool,
@@ -191,5 +181,3 @@ func assertPublicCanceled(
 			status, cancellations, seals, calls, clientCalls)
 	}
 }
-
-var _ llm.Client = (*driftingPolicyClient)(nil)

@@ -138,7 +138,7 @@ func TestPolicyAcceptsTypedObligationAndRejectsRemovedFreeTextForm(t *testing.T)
 		t.Fatal(err)
 	}
 	policy, err := New(
-		&policyTestClient{response: string(raw)}, policyTestAttestedBrain(),
+		&policyTestClient{response: string(raw)}, policyTestAttestedBrain(), policyTestActivation(),
 		newPolicyTestProjectionLoader(projection), &policyTestCallJournal{},
 	)
 	if err != nil {
@@ -158,7 +158,7 @@ func TestPolicyAcceptsTypedObligationAndRejectsRemovedFreeTextForm(t *testing.T)
 	}
 	journal := &policyTestCallJournal{}
 	policy, err = New(
-		&policyTestClient{response: string(raw)}, policyTestAttestedBrain(),
+		&policyTestClient{response: string(raw)}, policyTestAttestedBrain(), policyTestActivation(),
 		newPolicyTestProjectionLoader(projection), journal,
 	)
 	if err != nil {

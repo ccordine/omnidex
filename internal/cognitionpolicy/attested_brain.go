@@ -18,27 +18,92 @@ func AttestBrain(
 	ctx context.Context,
 	client llm.Client,
 	brain BrainRef,
-) (AttestedBrain, error) {
+) (BrainBootstrapOutcome, error) {
+	return attestBrainWithHostAttestor(ctx, client, brain, AttestLocalHostHardware)
+}
+
+func attestBrainWithHostAttestor(
+	ctx context.Context,
+	client llm.Client,
+	brain BrainRef,
+	hostAttestor func() (HostHardwareAttestation, error),
+) (BrainBootstrapOutcome, error) {
+	if hostAttestor == nil {
+		return BrainBootstrapOutcome{}, fmt.Errorf("%w: host hardware attestor is nil", ErrInvalidBrain)
+	}
 	expected, err := brain.ProviderExpectation()
 	if err != nil {
-		return AttestedBrain{}, err
+		return BrainBootstrapOutcome{}, err
 	}
 	if err := llm.ValidateExactPreparedProvider(client, expected); err != nil {
-		return AttestedBrain{}, fmt.Errorf("%w: %v", ErrInvalidBrain, err)
+		return BrainBootstrapOutcome{}, fmt.Errorf("%w: %v", ErrInvalidBrain, err)
 	}
 	request, err := BootstrapProviderIdentityRequest(brain)
 	if err != nil {
-		return AttestedBrain{}, err
+		return BrainBootstrapOutcome{}, err
 	}
 	observed, err := llm.RequireProviderIdentityObservation(ctx, client, request)
 	if err != nil {
-		return AttestedBrain{}, fmt.Errorf("%w: live provider identity: %v", ErrInvalidBrain, err)
+		code, codeErr := providerIdentityFailureCodeForObserved(brain, request, observed)
+		if codeErr != nil {
+			return BrainBootstrapOutcome{}, fmt.Errorf(
+				"%w: live provider identity returned unrecordable evidence: %v",
+				ErrInvalidBrain, codeErr,
+			)
+		}
+		outcome, outcomeErr := newBrainBootstrapFailure(brain, request, observed, code)
+		if outcomeErr != nil {
+			return BrainBootstrapOutcome{}, outcomeErr
+		}
+		return outcome, fmt.Errorf("%w: live provider identity: %v", ErrInvalidBrain, err)
 	}
-	host, err := AttestLocalHostHardware()
+	host, err := hostAttestor()
 	if err != nil {
-		return AttestedBrain{}, fmt.Errorf("%w: live host hardware identity: %v", ErrInvalidBrain, err)
+		outcome, outcomeErr := newBrainBootstrapFailure(
+			brain, request, observed, ProviderHostAttestationFailed,
+		)
+		if outcomeErr != nil {
+			return BrainBootstrapOutcome{}, outcomeErr
+		}
+		return outcome, fmt.Errorf("%w: live host hardware identity: %v", ErrInvalidBrain, err)
 	}
-	return NewAttestedBrain(brain, observed.Attestation, observed.Observation, host)
+	attested, err := NewAttestedBrain(brain, observed.Attestation, observed.Observation, host)
+	if err != nil {
+		return BrainBootstrapOutcome{}, err
+	}
+	bootstrap, err := NewBrainBootstrap(attested, observed.Evidence)
+	if err != nil {
+		return BrainBootstrapOutcome{}, err
+	}
+	return newSuccessfulBrainBootstrapOutcome(bootstrap)
+}
+
+func providerIdentityFailureCodeForObserved(
+	brain BrainRef,
+	request llm.ProviderIdentityObservationRequest,
+	observed llm.ObservedProviderIdentity,
+) (ProviderIdentityFailureCode, error) {
+	selection := llm.ProviderIdentitySelection{
+		Model: brain.Model, NativeContextLimit: brain.NativeContextLimit,
+	}
+	expected, err := brain.ProviderExpectation()
+	if err != nil {
+		return "", err
+	}
+	if observed.Evidence.ValidateFailure(selection, &expected) == nil {
+		return ProviderIdentityObservationFailed, nil
+	}
+	if observed.Evidence.ValidateRequests(selection) == nil && observed.Evidence.Successful() {
+		if !providerIdentityFailureProofBounded(providerIdentityFailureProof{
+			Attestation: observed.Attestation, Observation: observed.Observation,
+		}) {
+			return "", fmt.Errorf("provider identity normalized metadata exceeds its recordable bound")
+		}
+		if observed.ValidateFor(request) != nil {
+			return ProviderIdentityObservationInvalid, nil
+		}
+	}
+	return "", fmt.Errorf("bounded raw evidence does not prove the returned failure")
 }
 
 func NewAttestedBrain(
@@ -96,37 +161,4 @@ func BootstrapProviderIdentityRequest(
 	return llm.ProviderIdentityObservationRequest{
 		Expectation: expected, ChallengeSHA256: challenge,
 	}, nil
-}
-
-func ObserveAttestedBrainFresh(
-	ctx context.Context,
-	client llm.Client,
-	brain AttestedBrain,
-	scope string,
-) (llm.ProviderIdentityObservation, error) {
-	if err := brain.Validate(); err != nil {
-		return llm.ProviderIdentityObservation{}, err
-	}
-	expected, err := brain.Ref.ProviderExpectation()
-	if err != nil {
-		return llm.ProviderIdentityObservation{}, err
-	}
-	challenge, err := llm.DeriveProviderIdentityObservationChallenge(scope, expected)
-	if err != nil {
-		return llm.ProviderIdentityObservation{}, err
-	}
-	observed, err := llm.RequireProviderIdentityObservation(
-		ctx, client, llm.ProviderIdentityObservationRequest{
-			Expectation: expected, ChallengeSHA256: challenge,
-		},
-	)
-	if err != nil {
-		return llm.ProviderIdentityObservation{}, err
-	}
-	if observed.Attestation != brain.Attestation {
-		return llm.ProviderIdentityObservation{}, fmt.Errorf(
-			"%w: fresh provider identity changed the frozen brain", ErrInvalidBrain,
-		)
-	}
-	return observed.Observation, nil
 }

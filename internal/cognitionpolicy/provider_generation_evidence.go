@@ -16,8 +16,8 @@ const (
 	maxProviderContentEncodingWireCaptureBytes = (1 + maxProviderIdentityWireOperations) *
 		((2 * (maxProviderGenerationMetadataCaptureBytes + 1)) +
 			(maxProviderContentEncodingBase64Bytes + 1))
-	maxProviderGenerationMetadataWireFields = 8 + 18 + 4 +
-		(6 * maxProviderIdentityWireOperations)
+	maxProviderGenerationMetadataWireFields = 9 + 18 + 4 +
+		(7 * maxProviderIdentityWireOperations)
 	maxProviderGenerationWireCaptureBytes = (MaxModelResponseEvidenceBytes + 1) +
 		(llm.MaxExactPreparedProviderResponseBytes + 2) +
 		maxProviderIdentityWireCaptureBytes +
@@ -63,9 +63,9 @@ func newProviderGenerationOutcomeEvidence(
 			"%w: untrusted provider generation call identity is invalid", ErrInvalidEvidence,
 		)
 	}
-	var providerError []byte
+	var providerError string
 	if providerErr != nil {
-		providerError = []byte(providerErr.Error())
+		providerError = providerErr.Error()
 	}
 	raw, err := encodeProviderGenerationOutcomeEvidence(
 		generation, providerError, providerErr != nil,

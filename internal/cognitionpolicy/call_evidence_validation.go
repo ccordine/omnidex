@@ -26,7 +26,7 @@ func (evidence CallEvidence) ValidateFor(attempt CallAttempt, result CallResult)
 		if !providerIdentityEvidenceProvesFailure(attempt, evidence.ProviderIdentity) {
 			return fmt.Errorf("%w: provider identity failure is not proven by raw evidence", ErrInvalidEvidence)
 		}
-	} else if result.ProviderRequestDispatched &&
+	} else if result.ProviderRequestDisposition.MayHaveReachedProvider() &&
 		result.ProviderIdentityEvidence != (llm.ProviderIdentityEvidenceRef{}) &&
 		!evidence.ProviderIdentity.Successful() {
 		return fmt.Errorf("%w: executed provider result lacks complete identity evidence", ErrInvalidEvidence)
@@ -86,7 +86,7 @@ func (evidence CallEvidence) ValidateFor(attempt CallAttempt, result CallResult)
 			[]byte(nil), evidence.ProviderResponseCapture.Content...,
 		)
 	}
-	captureRequired := generation.ProviderRequestDispatched &&
+	captureRequired := generation.ProviderRequestDisposition == llm.ProviderRequestDispatched &&
 		(generation.ProviderResponseDisposition != llm.ProviderResponseTransportError ||
 			len(generation.ProviderResponseCapture) > 0)
 	if captureRequired !=
@@ -105,7 +105,7 @@ func (evidence CallEvidence) ValidateFor(attempt CallAttempt, result CallResult)
 			return fmt.Errorf("%w: provider request failure contains the expected request", ErrInvalidEvidence)
 		}
 	case CallFailurePolicyAuthority:
-		if generation.ProviderRequestDispatched {
+		if generation.ProviderRequestDisposition.MayHaveReachedProvider() {
 			return fmt.Errorf("%w: predispatch authority evidence claims dispatch", ErrInvalidEvidence)
 		}
 	default:
@@ -116,8 +116,9 @@ func (evidence CallEvidence) ValidateFor(attempt CallAttempt, result CallResult)
 
 func validateProviderCaptureProjection(result CallResult, evidence CallEvidence) error {
 	generation := llm.PreparedGeneration{
-		Schema: llm.PreparedGenerationSchemaV1, ProviderRequestDispatched: result.ProviderRequestDispatched,
-		Content: string(evidence.Response.Content), ProviderRequestSHA256: result.ProviderRequestSHA256,
+		Schema:                     llm.PreparedGenerationSchemaV1,
+		ProviderRequestDisposition: result.ProviderRequestDisposition,
+		Content:                    string(evidence.Response.Content), ProviderRequestSHA256: result.ProviderRequestSHA256,
 		ProviderHTTPStatus:            result.ProviderHTTPStatus,
 		ProviderResponseDisposition:   result.ProviderResponseDisposition,
 		ProviderResponseComplete:      result.ProviderResponseComplete,

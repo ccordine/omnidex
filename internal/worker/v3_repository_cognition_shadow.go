@@ -72,9 +72,24 @@ func (session *directCodingSession) runRepositoryCognitionShadow(
 	if err := store.AuthorizeAttempt(session.runtime.ctx, binding.Attempt); err != nil {
 		return fmt.Errorf("authorize repository cognition attempt: %w", err)
 	}
-	attestedBrain, err := cognitionpolicy.AttestBrain(session.runtime.ctx, session.runtime.svc.llm, brain)
+	bootstrapOutcome, err := cognitionpolicy.AttestBrain(
+		session.runtime.ctx, session.runtime.svc.llm, brain,
+	)
 	if err != nil {
+		if bootstrapOutcome.Failure == nil {
+			return fmt.Errorf("attest repository cognition brain without durable failure evidence: %w", err)
+		}
+		if persistErr := store.RecordBrainBootstrapFailure(
+			session.runtime.ctx, session.runtime.claim.Authority,
+			binding.Episode, *bootstrapOutcome.Failure,
+		); persistErr != nil {
+			return errors.Join(err, fmt.Errorf("persist repository cognition Brain failure: %w", persistErr))
+		}
 		return fmt.Errorf("attest repository cognition brain: %w", err)
+	}
+	bootstrap, err := bootstrapOutcome.RequireSuccess()
+	if err != nil {
+		return err
 	}
 	environment, err := cognitionenv.NewEnvironment(
 		investigation, episode, session.runtime.svc.repositoryRetrieval,
@@ -87,12 +102,38 @@ func (session *directCodingSession) runRepositoryCognitionShadow(
 	if err != nil {
 		return fmt.Errorf("start repository cognition environment: %w", err)
 	}
-	if err := startRepositoryCognitionEpisode(
-		session, store, environment, investigation, episode, attestedBrain, budget, start,
-	); err != nil {
+	activationOutcome, err := cognitionpolicy.ObserveProviderProcess(
+		session.runtime.ctx, session.runtime.svc.llm, bootstrap.AttestedBrain,
+		binding.Episode, binding.Attempt, cognitionpolicy.ProviderProcessEpisodeInvocation,
+	)
+	if err != nil {
+		if activationOutcome.Failure == nil {
+			return fmt.Errorf("observe repository cognition provider process without durable failure evidence: %w", err)
+		}
+		if persistErr := store.RecordProviderProcessFailure(
+			session.runtime.ctx, bootstrap, *activationOutcome.Failure,
+		); persistErr != nil {
+			return errors.Join(err, fmt.Errorf("persist repository cognition provider process failure: %w", persistErr))
+		}
+		return fmt.Errorf("observe repository cognition provider process: %w", err)
+	}
+	activation, err := activationOutcome.RequireSuccess(bootstrap.AttestedBrain)
+	if err != nil {
 		return err
 	}
-	policy, err := cognitionpolicy.New(session.runtime.svc.llm, attestedBrain, store, store)
+	storedEpisode, err := startRepositoryCognitionEpisode(
+		session, store, environment, investigation, episode, bootstrap, activation, budget, start,
+	)
+	if err != nil {
+		return err
+	}
+	activationAuthority, err := activation.Authority()
+	if err != nil {
+		return fmt.Errorf("bind repository cognition provider process: %w", err)
+	}
+	policy, err := cognitionpolicy.New(
+		session.runtime.svc.llm, storedEpisode.AttestedBrain, activationAuthority, store, store,
+	)
 	if err != nil {
 		return err
 	}

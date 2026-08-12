@@ -18,7 +18,7 @@ func TestPolicyReservesCallBeforeInferenceAndPersistsAcceptedResultBeforeReturn(
 	client := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
 	journal := &policyTestCallJournal{}
 	loader := newPolicyTestProjectionLoader(projection)
-	policy, err := New(client, policyTestAttestedBrain(), loader, journal)
+	policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), loader, journal)
 	if err != nil {
 		t.Fatalf("new policy: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestPolicyReservesCallBeforeInferenceAndPersistsAcceptedResultBeforeReturn(
 		t.Fatalf("decide: %v", err)
 	}
 	decision := outcome.Decision
-	if !outcome.ProviderRequestDispatched {
+	if !outcome.PolicyCallConsumed {
 		t.Fatal("accepted provider generation was not reported")
 	}
 	if decision.ObligationID != snapshot.CurrentObligation().ID || decision.Action.Kind != "inspect" {
@@ -95,7 +95,7 @@ func TestPolicyRefusesDecisionWhenCallFinishFails(t *testing.T) {
 	snapshot, evidence := policyTestSnapshot(t, projection)
 	client := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
 	journal := &policyTestCallJournal{finishErr: errors.New("storage unavailable")}
-	policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
+	policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestPolicyRefusesDecisionWhenCallFinishFails(t *testing.T) {
 		t.Fatalf("error = %v, want ErrCallJournal", err)
 	}
 	decision := outcome.Decision
-	if !outcome.ProviderRequestDispatched {
+	if !outcome.PolicyCallConsumed {
 		t.Fatal("failed finish hid the executed provider generation")
 	}
 	if decision.ObligationID != "" || decision.Action.Kind != "" || len(decision.EvidenceRefs) != 0 {
@@ -153,7 +153,7 @@ func TestPolicyRejectsProjectionIdentityMismatchBeforeModelCall(t *testing.T) {
 				t.Fatal(err)
 			}
 			client := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
-			policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), &policyTestCallJournal{})
+			policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), &policyTestCallJournal{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -173,7 +173,7 @@ func TestPolicyEnforcesHardResponseLimit(t *testing.T) {
 	snapshot, _ := policyTestSnapshot(t, projection)
 	client := &policyTestClient{response: strings.Repeat("x", snapshot.Budget().MaxOutputBytes+1)}
 	journal := &policyTestCallJournal{}
-	policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
+	policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestPolicyEnforcesFreshPerCallInputAndOutputBudgets(t *testing.T) {
 	inputBudget.MaxInputTokens = 1 + policyTestBrain().Sampling.InputSpecialTokenReserve
 	inputLimited := policySnapshotWithBudget(t, base, inputBudget)
 	inputClient := &policyTestClient{response: policyTestResponse(t, base, evidence)}
-	policy, err := New(inputClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), &policyTestCallJournal{})
+	policy, err := New(inputClient, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), &policyTestCallJournal{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestPolicyEnforcesFreshPerCallInputAndOutputBudgets(t *testing.T) {
 	outputLimited := policySnapshotWithBudget(t, base, outputBudget)
 	outputClient := &policyTestClient{response: policyTestResponse(t, base, evidence)}
 	outputJournal := &policyTestCallJournal{}
-	policy, err = New(outputClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), outputJournal)
+	policy, err = New(outputClient, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), outputJournal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestPolicyLoadsOneDisposableProjectionPerCallWithoutHistory(t *testing.T) {
 	loader.projections[cognition.ContextProjectionID(secondProjection.ID)] = cloneProjection(secondProjection)
 	client := &policyTestClient{response: policyTestResponse(t, firstSnapshot, evidence)}
 	journal := &policyTestCallJournal{}
-	policy, err := New(client, policyTestAttestedBrain(), loader, journal)
+	policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), loader, journal)
 	if err != nil {
 		t.Fatal(err)
 	}

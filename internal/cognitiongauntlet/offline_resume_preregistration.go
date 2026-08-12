@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	OfflineResumePreregistrationSchemaV2 = "omnidex.offline-resume-preregistration.v2"
+	OfflineResumePreregistrationSchemaV3 = "omnidex.offline-resume-preregistration.v3"
 	OfflineResumeRecoveryReserveCalls    = 1
 )
 
@@ -54,7 +54,7 @@ func NewOfflineResumePreregistration(
 		return OfflineResumePreregistration{}, err
 	}
 	registration := OfflineResumePreregistration{
-		Schema: OfflineResumePreregistrationSchemaV2, Suite: SuiteResume,
+		Schema: OfflineResumePreregistrationSchemaV3, Suite: SuiteResume,
 		Plan: plan, Workload: workload, WorkloadSpecSHA256: workloadSHA,
 		SchedulePolicy:             OfflineResumeSchedulePolicyV1,
 		RecoveryReservePolicyCalls: OfflineResumeRecoveryReserveCalls,
@@ -75,7 +75,7 @@ func (plan OfflineResumePlan) Validate() error {
 }
 
 func (registration OfflineResumePreregistration) Validate() error {
-	if registration.Schema != OfflineResumePreregistrationSchemaV2 ||
+	if registration.Schema != OfflineResumePreregistrationSchemaV3 ||
 		registration.Suite != SuiteResume || registration.SchedulePolicy != OfflineResumeSchedulePolicyV1 ||
 		registration.RecoveryReservePolicyCalls != OfflineResumeRecoveryReserveCalls ||
 		registration.RegisteredAt.IsZero() ||

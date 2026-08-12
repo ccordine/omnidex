@@ -63,6 +63,7 @@ func TestExtendedScenarioUsesTheSamePublicRunAndPrivateEvaluatorPath(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	episodeDirectory, evidenceDirectory := t.TempDir(), t.TempDir()
 	public, err := RunPublicAblation(t.Context(), bundle, PublicAblationRunRequest{
 		Actor: actor,
 		Client: &witnessPolicyClient{
@@ -72,7 +73,8 @@ func TestExtendedScenarioUsesTheSamePublicRunAndPrivateEvaluatorPath(t *testing.
 		Environment:             environment,
 		Completion:              localRuntimeCompletion{evaluator: environment.(ablationGoalEvaluator)},
 		ContaminatedEvidence:    &packet,
-		EpisodeSealPath:         filepath.Join(t.TempDir(), "episode.json"),
+		EpisodeSealPath:         filepath.Join(episodeDirectory, "episode.json"),
+		EvidenceSealPath:        filepath.Join(evidenceDirectory, "ablation-evidence.json"),
 		LedgerSchemaVersion:     "task-ledger.v1",
 		WorkingSetPolicyVersion: "working-set.v1",
 		ProjectionPolicyVersion: ablationProjectionPolicyVersionV1,

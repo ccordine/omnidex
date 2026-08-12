@@ -55,7 +55,7 @@ func registeredReleaseMatrixSuites() ([]Suite, error) {
 		suites = append(suites, suite)
 		return nil
 	}
-	for _, spec := range InitialMicrogauntletsV1() {
+	for _, spec := range InitialMicrogauntletsV2() {
 		if err := spec.Validate(); err != nil {
 			return nil, fmt.Errorf("registered initial release suite: %w", err)
 		}

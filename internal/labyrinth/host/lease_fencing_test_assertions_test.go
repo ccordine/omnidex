@@ -11,7 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func fencedHostAttestedBrain(t *testing.T) cognitionpolicy.AttestedBrain {
+func fencedHostBrainBootstrap(t *testing.T) cognitionpolicy.BrainBootstrap {
 	t.Helper()
 	host, err := cognitionpolicy.NewHostHardwareAttestation(
 		"linux", "amd64", 1, fencedHostTestDigest, fencedHostTestDigest,
@@ -60,7 +60,11 @@ func fencedHostAttestedBrain(t *testing.T) cognitionpolicy.AttestedBrain {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return attested
+	result, err := cognitionpolicy.NewBrainBootstrap(attested, observation.Evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func fencedHostProviderEvidence(

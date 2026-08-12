@@ -104,45 +104,69 @@ func readProviderProcessRecordsPageTx(
 	episode CognitionEpisode,
 	request CognitionProviderProcessObservationPageRequest,
 ) ([]CognitionProviderProcessObservationRecord, error) {
-	query := `SELECT sequence,'','','',receipt_json,receipt_sha256
+	query := `SELECT sequence,'','','','',receipt_json,receipt_sha256,evidence_id
 		FROM cognition_provider_process_observations
 		WHERE episode_id=$1 AND sequence>$2 ORDER BY sequence LIMIT $3`
 	if request.Scope == CognitionProviderObservationPostSealAudit {
-		query = `SELECT sequence,terminal_trace_sha256,previous_chain_sha256,chain_sha256,
-			receipt_json,receipt_sha256 FROM cognition_provider_postseal_observations
+		query = `SELECT sequence,terminal_trace_sha256,previous_chain_sha256,chain_sha256,source_kind,
+			receipt_json,receipt_sha256,evidence_id FROM cognition_provider_postseal_observations
 			WHERE episode_id=$1 AND sequence>$2 ORDER BY sequence LIMIT $3`
 	}
 	rows, err := tx.Query(ctx, query, episode.EpisodeID, request.AfterSequence, request.Limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	records := make([]CognitionProviderProcessObservationRecord, 0, request.Limit)
+	type persistedRecord struct {
+		record     CognitionProviderProcessObservationRecord
+		raw        []byte
+		evidenceID string
+	}
+	persisted := make([]persistedRecord, 0, request.Limit)
 	for rows.Next() {
-		record := CognitionProviderProcessObservationRecord{Scope: request.Scope}
-		var raw []byte
+		value := persistedRecord{
+			record: CognitionProviderProcessObservationRecord{Scope: request.Scope},
+		}
 		if err := rows.Scan(
-			&record.Sequence, &record.TerminalTraceSHA256, &record.PreviousChainSHA256,
-			&record.ChainSHA256, &raw, &record.ReceiptSHA256,
+			&value.record.Sequence, &value.record.TerminalTraceSHA256,
+			&value.record.PreviousChainSHA256, &value.record.ChainSHA256,
+			&value.record.PostSealSource,
+			&value.raw, &value.record.ReceiptSHA256, &value.evidenceID,
 		); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		if err := exactjson.ValidateObject(raw, cognitionpolicy.ProviderProcessObservation{},
+		persisted = append(persisted, value)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	records := make([]CognitionProviderProcessObservationRecord, 0, len(persisted))
+	for _, value := range persisted {
+		record := value.record
+		if err := exactjson.ValidateObject(value.raw, cognitionpolicy.ProviderProcessObservation{},
 			"provider process observation"); err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrCognitionConflict, err)
 		}
-		if err := json.Unmarshal(raw, &record.Receipt); err != nil {
+		if err := json.Unmarshal(value.raw, &record.Activation.Receipt); err != nil {
 			return nil, err
 		}
-		canonical, err := exactjson.Canonical(record.Receipt)
-		if err != nil || string(canonical) != string(raw) ||
+		record.Activation.IdentityEvidence, err = loadCognitionProviderIdentityEvidenceTx(
+			ctx, tx, value.evidenceID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		canonical, err := exactjson.Canonical(record.Activation.Receipt)
+		if err != nil || string(canonical) != string(value.raw) ||
 			cognitionPayloadSHA(canonical) != record.ReceiptSHA256 ||
 			record.validate(episode.AttestedBrain) != nil {
 			return nil, fmt.Errorf("%w: provider process receipt changed", ErrCognitionConflict)
 		}
 		records = append(records, record)
 	}
-	return records, rows.Err()
+	return records, nil
 }
 
 func validateProviderProcessObservationPage(
@@ -162,7 +186,8 @@ func validateProviderProcessObservationPage(
 				record.TerminalTraceSHA256 != page.TerminalTraceSHA256 ||
 				record.PreviousChainSHA256 != previous ||
 				record.ChainSHA256 != providerPostSealChainSHA(
-					page.TerminalTraceSHA256, previous, record.Sequence, record.ReceiptSHA256,
+					page.TerminalTraceSHA256, previous, record.Sequence,
+					record.PostSealSource, record.ReceiptSHA256,
 				) {
 				return fmt.Errorf("%w: post-seal provider observation chain changed", ErrCognitionConflict)
 			}

@@ -20,7 +20,7 @@ import (
 
 func TestPostgresFullCognitionExecutesProductionRuntimeAndSealedTrace(t *testing.T) {
 	ctx, pool, repository, hostStore := openFullCognitionDatabase(t)
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,10 +120,10 @@ func openFullCognitionDatabase(
 	}
 	t.Cleanup(func() {
 		pool.Close()
-		if _, err := admin.Exec(context.Background(), "DROP SCHEMA "+identifier+" CASCADE"); err != nil {
+		if _, err := admin.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+identifier+" CASCADE"); err != nil {
 			t.Errorf("drop isolated gauntlet schema: %v", err)
 		}
-		if _, err := admin.Exec(context.Background(), "DROP SCHEMA "+hostIdentifier+" CASCADE"); err != nil {
+		if _, err := admin.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+hostIdentifier+" CASCADE"); err != nil {
 			t.Errorf("drop isolated Labyrinth host schema: %v", err)
 		}
 	})

@@ -71,6 +71,11 @@ func (r *Repository) IngestCognitionTransition(
 		if err := requireExactCognitionTransitionReplayTx(ctx, tx, record, transition); err != nil {
 			return CognitionActionRecord{}, err
 		}
+		if err := requireCognitionAcceptedFactMaterializationReplayTx(
+			ctx, tx, record.EpisodeID, transition, facts,
+		); err != nil {
+			return CognitionActionRecord{}, err
+		}
 		proof, err := cognitionTransitionProof(transition)
 		if err != nil {
 			return CognitionActionRecord{}, err

@@ -88,7 +88,7 @@ func TestPolicyTerminallyRecordsEveryDispatchedMalformedProviderReturn(t *testin
 				)
 				changed, err := llm.NewProviderIdentityOperationEvidence(
 					operation.Operation, operation.Method, operation.Endpoint,
-					operation.RequestDispatched, operation.Request, operation.HTTPStatus,
+					operation.RequestDisposition, operation.Request, operation.HTTPStatus,
 					operation.Disposition, operation.ResponseComplete,
 					operation.ContentEncoding, changedBody,
 				)
@@ -146,7 +146,7 @@ func TestPolicyTerminallyRecordsEveryDispatchedMalformedProviderReturn(t *testin
 			}
 			journal := &policyTestCallJournal{}
 			policy, err := New(
-				client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal,
+				client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -157,7 +157,7 @@ func TestPolicyTerminallyRecordsEveryDispatchedMalformedProviderReturn(t *testin
 					t.Fatalf("error=%v want %v", err, want)
 				}
 			}
-			if !outcome.ProviderRequestDispatched || len(journal.results) != 1 ||
+			if !outcome.PolicyCallConsumed || len(journal.results) != 1 ||
 				journal.results[0].FailureCode != testCase.failure ||
 				len(journal.providerEvidence) != 1 {
 				t.Fatalf("terminal result/evidence=%+v / %+v", journal.results, journal.providerEvidence)
@@ -173,7 +173,7 @@ func TestPolicyTerminallyRecordsEveryDispatchedMalformedProviderReturn(t *testin
 				Attempt: attempt, ExistingResult: &result,
 			}}
 			replay, err := New(
-				replayClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection),
+				replayClient, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection),
 				replayJournal,
 			)
 			if err != nil {

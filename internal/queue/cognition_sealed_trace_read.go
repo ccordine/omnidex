@@ -129,7 +129,7 @@ func loadCognitionTracePageTx(
 		if err != nil {
 			return CognitionSealedTracePage{}, err
 		}
-		if len(payload) > maxCognitionTracePayloadBytes {
+		if len(payload) > MaxCognitionTracePayloadBytes {
 			return CognitionSealedTracePage{}, fmt.Errorf("%w: cognition trace payload exceeds the hard cap", ErrCognitionConflict)
 		}
 		if cognitionPayloadSHA(payload) != authority.SHA256 {
@@ -137,7 +137,7 @@ func loadCognitionTracePageTx(
 				"%w: cognition trace payload hash differs from sealed authority", ErrCognitionConflict,
 			)
 		}
-		if len(records) > 0 && payloadBytes+len(payload) > maxCognitionTracePageBytes {
+		if len(records) > 0 && payloadBytes+len(payload) > MaxCognitionTracePageBytes {
 			break
 		}
 		payloadBytes += len(payload)

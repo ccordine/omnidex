@@ -3,14 +3,11 @@ package queue
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestProjectLocationFromMetadata(t *testing.T) {
@@ -95,22 +92,9 @@ func TestProjectNameFromLocation(t *testing.T) {
 }
 
 func TestEnqueueJobPreservesCustomProjectName(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run Postgres project name regression test")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	if err := pool.Ping(ctx); err != nil {
-		t.Skipf("Postgres unavailable: %v", err)
-	}
+	pool := openIsolatedMigrationPool(t)
 
 	repo := New(pool)
 	if err := repo.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {

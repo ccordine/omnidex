@@ -2,12 +2,41 @@ package queue
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func TestPostgresMigrationInstallerRejectsPublicExtensionObjectsWithoutLedger(t *testing.T) {
+	databaseURL := freshRuntimeDatabaseURL(
+		t,
+		strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL")),
+	)
+	if databaseURL == "" {
+		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL migration tests")
+	}
+	pool, err := pgxpool.New(t.Context(), databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	if _, err := pool.Exec(t.Context(), `
+		CREATE EXTENSION vector WITH SCHEMA public;
+		CREATE EXTENSION pg_trgm WITH SCHEMA public;
+		CREATE EXTENSION pgcrypto WITH SCHEMA public;
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	err = New(pool).EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "059"))
+	if err == nil || !strings.Contains(err.Error(), "without a migration ledger") {
+		t.Fatalf("EnsureSchema error=%v, want public extension-state rejection", err)
+	}
+	assertMigrationRelationExists(t, pool, "schema_migrations", false)
+}
 
 func TestPostgresEnsureSchemaRejectsUntrackedRuntimeObjects(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)

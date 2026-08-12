@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	OfflineMatrixPreregistrationSchemaV2 = "omnidex.offline-cognition-matrix-preregistration.v2"
+	OfflineMatrixPreregistrationSchemaV3 = "omnidex.offline-cognition-matrix-preregistration.v3"
 	matrixOrderingV2                     = "blind-variant-major-case-minor.evaluate-after-all-inference.v2"
 	matrixStatisticalTestV1              = "exact-paired-binomial-mcnemar.v1"
 	matrixAlphaPPM                       = 50_000
@@ -34,6 +34,7 @@ type OfflineMatrixCase struct {
 type OfflineMatrixFixedAuthority struct {
 	Budget                  RunBudget          `json:"budget"`
 	RatGeneration           RatGeneration      `json:"rat_generation"`
+	PreparedBrainEvidence   PreparedBrainEvidenceAuthority `json:"prepared_brain_evidence"`
 	RuntimeFingerprint      RuntimeFingerprint `json:"runtime_fingerprint"`
 	InferenceTimeoutSeconds int                `json:"inference_timeout_seconds"`
 	OmnidexCommit           string             `json:"omnidex_commit"`
@@ -90,6 +91,11 @@ func (fixed OfflineMatrixFixedAuthority) Validate() error {
 	}
 	if err := fixed.RuntimeFingerprint.Validate(); err != nil {
 		return err
+	}
+	if _, err := loadPreparedBrainEvidenceAuthority(
+		fixed.PreparedBrainEvidence, fixed.RatGeneration.Fixed.Brain,
+	); err != nil {
+		return fmt.Errorf("verify matrix prepared Brain raw evidence: %w", err)
 	}
 	if fixed.RuntimeFingerprint.ProductionSourceSHA256 != fixed.RatGeneration.Runtime.SourceSHA256 ||
 		fixed.InferenceTimeoutSeconds <= 0 || fixed.InferenceTimeoutSeconds > 24*60*60 ||
@@ -229,7 +235,7 @@ func buildOfflineMatrixPreregistration(
 		hypothesis = "Full cognition preserves success within two percentage points of the strongest preregistered baseline while reducing median context by at least forty-five percent, duplicate acquisitions, and tool operations."
 	}
 	return OfflineMatrixPreregistration{
-		Schema: OfflineMatrixPreregistrationSchemaV2, Hypothesis: hypothesis,
+		Schema: OfflineMatrixPreregistrationSchemaV3, Hypothesis: hypothesis,
 		Policy: plan.Policy, Suites: cloneMatrixSlice(plan.Suites), Seeds: cloneMatrixSlice(plan.Seeds),
 		Repetitions: plan.Repetitions, Surface: plan.Surface, Variants: variants,
 		TournamentSeed: VariantRawObservation, TournamentRounds: offlineMatrixTournamentRounds(),

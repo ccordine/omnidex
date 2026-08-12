@@ -23,7 +23,8 @@ func (result CallResult) Validate(attempt CallAttempt) error {
 	}
 	switch result.Status {
 	case CallResultAccepted:
-		if !result.ProviderIdentityChecked || !result.ProviderRequestDispatched ||
+		if !result.ProviderIdentityChecked ||
+			result.ProviderRequestDisposition != llm.ProviderRequestDispatched ||
 			result.ProviderResponseDisposition != llm.ProviderResponseSucceeded ||
 			!result.ProviderDonePresent || !result.ProviderDone ||
 			result.ProviderDoneReason != "stop" || result.ResponseBytes < 1 ||
@@ -63,7 +64,8 @@ func validateResultProviderEvidence(result CallResult, attempt CallAttempt) erro
 			(result.FailureCode != CallFailureProviderEvidence &&
 				result.FailureCode != CallFailureProviderRequest &&
 				result.FailureCode != CallFailurePolicyAuthority) ||
-			(result.FailureCode == CallFailureProviderRequest && !result.ProviderRequestDispatched) ||
+			(result.FailureCode == CallFailureProviderRequest &&
+				result.ProviderRequestDisposition != llm.ProviderRequestDispatched) ||
 			result.ProviderGenerationEvidence.ValidateFor(attempt.ID) != nil ||
 			result.ProviderIdentityChecked ||
 			!reflect.DeepEqual(result.ProviderAttestation, llm.ProviderIdentityAttestation{}) ||
@@ -89,7 +91,8 @@ func validateResultProviderEvidence(result CallResult, attempt CallAttempt) erro
 	if !result.ProviderIdentityChecked {
 		if !reflect.DeepEqual(result.ProviderAttestation, llm.ProviderIdentityAttestation{}) ||
 			!reflect.DeepEqual(result.ProviderObservation, llm.ProviderIdentityObservation{}) ||
-			result.ProviderRequestDispatched || result.ProviderRequestSHA256 != "" ||
+			result.ProviderRequestDisposition != llm.ProviderRequestNotDispatched ||
+			result.ProviderRequestSHA256 != "" ||
 			result.ProviderHTTPStatus != 0 || result.ProviderResponseDisposition != "" ||
 			result.ProviderResponseComplete || result.ProviderResponseBytesKnown ||
 			result.ProviderContentEncoding != (llm.ProviderContentEncodingEvidence{}) ||
@@ -120,7 +123,8 @@ func validateResultProviderEvidence(result CallResult, attempt CallAttempt) erro
 		return fmt.Errorf("%w: fresh provider observation is invalid", ErrInvalidEvidence)
 	}
 	invocation := llm.PreparedGeneration{
-		Schema: llm.PreparedGenerationSchemaV1, ProviderRequestDispatched: result.ProviderRequestDispatched,
+		Schema:                        llm.PreparedGenerationSchemaV1,
+		ProviderRequestDisposition:    result.ProviderRequestDisposition,
 		ProviderRequestSHA256:         result.ProviderRequestSHA256,
 		ProviderHTTPStatus:            result.ProviderHTTPStatus,
 		ProviderResponseDisposition:   result.ProviderResponseDisposition,
@@ -168,52 +172,6 @@ func validateResultProviderEvidence(result CallResult, attempt CallAttempt) erro
 	return nil
 }
 
-func validateRejectedCallResult(result CallResult, attempt CallAttempt) error {
-	if !result.ProviderIdentityChecked || !result.ProviderRequestDispatched ||
-		!reflect.DeepEqual(result.ActionSchema, cognition.ActionSchemaRef{}) ||
-		result.DecisionSHA256 != "" {
-		return fmt.Errorf("%w: rejected call result shape is invalid", ErrInvalidEvidence)
-	}
-	switch result.FailureCode {
-	case CallFailureResponseLimit, CallFailureInvalidDecision, CallFailureAuthorityDenied,
-		CallFailureProviderUsageLimit:
-		if result.ProviderResponseDisposition != llm.ProviderResponseSucceeded ||
-			result.ResponseBytes < 1 ||
-			!result.ProviderUsagePresent || result.ProviderUsage.ValidateSuccessful() != nil {
-			return fmt.Errorf("%w: rejected result lacks exact provider usage", ErrInvalidEvidence)
-		}
-		if result.FailureCode == CallFailureProviderUsageLimit &&
-			result.ProviderUsage.PromptEvalCount <= attempt.RuntimeBudget.MaxInputTokens &&
-			result.ProviderUsage.EvalCount <= attempt.RuntimeBudget.MaxOutputTokens {
-			return fmt.Errorf("%w: provider usage limit rejection is within budget", ErrInvalidEvidence)
-		}
-		if result.FailureCode != CallFailureProviderUsageLimit &&
-			(result.ProviderUsage.PromptEvalCount > attempt.RuntimeBudget.MaxInputTokens ||
-				result.ProviderUsage.EvalCount > attempt.RuntimeBudget.MaxOutputTokens) {
-			return fmt.Errorf("%w: non-usage rejection exceeds native usage budget", ErrInvalidEvidence)
-		}
-		if result.FailureCode == CallFailureResponseLimit &&
-			result.ResponseBytes <= attempt.RuntimeBudget.MaxOutputBytes &&
-			!(result.ProviderDoneReason == "length" &&
-				result.ProviderUsage.EvalCount == attempt.RuntimeBudget.MaxOutputTokens) {
-			return fmt.Errorf("%w: response limit rejection is within budget", ErrInvalidEvidence)
-		}
-	case CallFailureProviderUsage:
-		if result.ProviderResponseDisposition != llm.ProviderResponseSucceeded ||
-			result.ProviderResponseSHA256 == "" || result.ResponseBytes == 0 ||
-			(result.ProviderDonePresent && result.ProviderDone &&
-				(result.ProviderDoneReason == "stop" || result.ProviderDoneReason == "length") &&
-				result.ProviderUsagePresent && result.ProviderUsage.ValidateSuccessful() == nil &&
-				!(result.ProviderDoneReason == "length" &&
-					result.ProviderUsage.EvalCount != attempt.RuntimeBudget.MaxOutputTokens)) {
-			return fmt.Errorf("%w: usage rejection lacks exact provider response", ErrInvalidEvidence)
-		}
-	default:
-		return fmt.Errorf("%w: rejected call failure code is invalid", ErrInvalidEvidence)
-	}
-	return nil
-}
-
 func validateFailedCallResult(result CallResult, attempt CallAttempt) error {
 	if result.FailureCode != CallFailureGeneration &&
 		result.FailureCode != CallFailureProviderIdentity &&
@@ -224,24 +182,39 @@ func validateFailedCallResult(result CallResult, attempt CallAttempt) error {
 	}
 	providerFailure := result.FailureCode == CallFailureProviderIdentity
 	requestFailure := result.FailureCode == CallFailureProviderRequest
-	evidenceFailure := result.FailureCode == CallFailureProviderEvidence
 	authorityFailure := result.FailureCode == CallFailurePolicyAuthority
-	if providerFailure && (result.ProviderIdentityChecked || result.ProviderRequestDispatched) {
+	if providerFailure && (result.ProviderIdentityChecked ||
+		result.ProviderRequestDisposition != llm.ProviderRequestNotDispatched) {
 		return fmt.Errorf("%w: provider identity failure claims provider execution", ErrInvalidEvidence)
 	}
-	if !providerFailure && !evidenceFailure && result.ProviderGenerationEvidence == (ProviderGenerationEvidenceRef{}) &&
-		result.ProviderIdentityChecked != result.ProviderRequestDispatched {
-		return fmt.Errorf("%w: generation failure has inconsistent provider execution", ErrInvalidEvidence)
+	if result.ProviderGenerationEvidence == (ProviderGenerationEvidenceRef{}) {
+		if result.ProviderRequestDisposition.Validate() != nil {
+			return fmt.Errorf("%w: generation failure has invalid request disposition", ErrInvalidEvidence)
+		}
+		if result.FailureCode == CallFailureProviderEvidence {
+			return fmt.Errorf("%w: provider evidence failure lacks its raw outcome", ErrInvalidEvidence)
+		}
+	} else if result.ProviderRequestDisposition == "" {
+		if result.FailureCode != CallFailureProviderEvidence {
+			return fmt.Errorf("%w: only invalid provider evidence may omit request disposition", ErrInvalidEvidence)
+		}
+	} else if result.ProviderRequestDisposition.Validate() != nil {
+		return fmt.Errorf("%w: untrusted provider outcome has invalid request disposition", ErrInvalidEvidence)
 	}
 	if requestFailure && result.ProviderGenerationEvidence == (ProviderGenerationEvidenceRef{}) &&
-		(!result.ProviderIdentityChecked || !result.ProviderRequestDispatched) {
+		(!result.ProviderIdentityChecked ||
+			result.ProviderRequestDisposition != llm.ProviderRequestDispatched) {
 		return fmt.Errorf("%w: provider request mismatch lacks executed provider evidence", ErrInvalidEvidence)
 	}
-	if evidenceFailure && !result.ProviderRequestDispatched {
-		return fmt.Errorf("%w: provider evidence failure lacks a dispatched request", ErrInvalidEvidence)
-	}
-	if authorityFailure && result.ProviderRequestDispatched && !result.ProviderIdentityChecked {
+	if authorityFailure && result.ProviderRequestDisposition.MayHaveReachedProvider() &&
+		!result.ProviderIdentityChecked {
 		return fmt.Errorf("%w: dispatched policy authority failure lacks provider evidence", ErrInvalidEvidence)
+	}
+	if result.ProviderRequestDisposition == llm.ProviderRequestWriteIndeterminate &&
+		(result.ProviderResponseDisposition != llm.ProviderResponseTransportError ||
+			result.ProviderHTTPStatus != 0 || result.ProviderResponseComplete ||
+			result.ProviderUsagePresent || result.ProviderUsage != (llm.ProviderGenerationUsage{})) {
+		return fmt.Errorf("%w: indeterminate provider write claims a response or native usage", ErrInvalidEvidence)
 	}
 	if result.ProviderUsagePresent && result.ProviderUsage.Validate() != nil {
 		return fmt.Errorf("%w: failed result has invalid native usage telemetry", ErrInvalidEvidence)
@@ -270,7 +243,8 @@ func validateCallResponse(result CallResult, budget cognition.RuntimeBudget) err
 		}
 		return nil
 	}
-	if !result.ProviderRequestDispatched || !result.ProviderResponseComplete ||
+	if result.ProviderRequestDisposition != llm.ProviderRequestDispatched ||
+		!result.ProviderResponseComplete ||
 		!result.ProviderResponseBytesKnown ||
 		(result.ProviderResponseDisposition != llm.ProviderResponseSucceeded &&
 			!(result.Status == CallResultFailed && result.FailureCode == CallFailureGeneration &&

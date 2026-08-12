@@ -10,8 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const maxCognitionTraceRecords = 16_384
-
 const cognitionTraceAuthoritySchemaV2 = "omnidex.cognition-trace-authority.v2"
 
 type cognitionTraceAuthority struct {
@@ -49,6 +47,9 @@ func buildCognitionTraceAuthorityTx(
 			SELECT 'provider_process_observation'::text AS kind,sequence,
 			       observation_id AS id,receipt_sha256 AS sha256,0 AS call_ordinal,5 AS phase
 			FROM cognition_provider_process_observations WHERE episode_id=$1
+			UNION ALL
+			SELECT 'provider_activation_failure',record_number,record_id,receipt_sha256,0,4
+			FROM cognition_provider_activation_failures WHERE episode_id=$1
 			UNION ALL
 			SELECT 'transition'::text AS kind,revision AS sequence,transition_id AS id,
 			       transition_sha256 AS sha256,COALESCE(snapshots.call_ordinal,0) AS call_ordinal,
@@ -98,15 +99,28 @@ func buildCognitionTraceAuthorityTx(
 			JOIN cognition_runtime_snapshots snapshots ON snapshots.snapshot_sha256=reconciliations.snapshot_sha256
 			WHERE reconciliations.episode_id=$1
 			UNION ALL
+			SELECT 'proposal_materialization',materializations.proposal_index,
+			       materializations.materialization_id,materializations.payload_json_sha256,
+			       materializations.call_ordinal,42 AS phase
+			FROM cognition_proposal_materializations materializations
+			WHERE materializations.episode_id=$1
+			UNION ALL
+			SELECT 'accepted_fact_materialization',materializations.transition_revision,
+			       materializations.materialization_id,materializations.payload_json_sha256,
+			       materializations.call_ordinal,
+			       CASE WHEN materializations.action_id IS NULL THEN 11 ELSE 54 END
+			FROM cognition_accepted_fact_materializations materializations
+			WHERE materializations.episode_id=$1
+			UNION ALL
 			SELECT 'belief_revision',revisions.expected_ledger_version,revisions.revision_id,
-			       revisions.descriptor_json_sha256,snapshots.call_ordinal,42
+			       revisions.descriptor_json_sha256,snapshots.call_ordinal,43
 			FROM cognition_belief_revisions revisions
 			JOIN cognition_runtime_snapshots snapshots
 			  ON snapshots.snapshot_sha256=revisions.source_snapshot_sha256
 			WHERE revisions.episode_id=$1
 			UNION ALL
 			SELECT 'plan_revision',applications.output_graph_version,revisions.plan_revision_id,
-			       revisions.descriptor_json_sha256,snapshots.call_ordinal,43
+			       revisions.descriptor_json_sha256,snapshots.call_ordinal,44
 			FROM cognition_plan_revisions revisions
 			JOIN cognition_plan_revision_applications applications
 			  ON applications.plan_revision_id=revisions.plan_revision_id
@@ -128,7 +142,7 @@ func buildCognitionTraceAuthorityTx(
 			UNION ALL
 			SELECT 'action_event',events.sequence,events.action_id||':'||events.status,events.event_sha256,
 			       snapshots.call_ordinal,
-			       CASE events.sequence WHEN 1 THEN 51 WHEN 2 THEN 52 ELSE 54 END
+			       CASE events.sequence WHEN 1 THEN 51 WHEN 2 THEN 52 ELSE 55 END
 			FROM cognition_action_events events
 			JOIN cognition_actions actions ON actions.action_id=events.action_id
 			JOIN cognition_runtime_snapshots snapshots ON snapshots.snapshot_sha256=actions.snapshot_sha256
@@ -187,6 +201,12 @@ func buildCognitionTraceAuthorityTx(
 	if err != nil {
 		return nil, "", err
 	}
+	records, err = appendCognitionBrainBootstrapTraceRecordsTx(
+		ctx, tx, episode.EpisodeID, records,
+	)
+	if err != nil {
+		return nil, "", err
+	}
 	records, err = appendCognitionWorkingSetTraceRecordsTx(
 		ctx, tx, episode, workingVersion, records,
 	)
@@ -205,7 +225,7 @@ func buildCognitionTraceAuthorityTx(
 	if err != nil {
 		return nil, "", err
 	}
-	if len(records) < 2 || len(records) > maxCognitionTraceRecords {
+	if len(records) < 2 || len(records) > MaxCognitionTraceRecords {
 		return nil, "", fmt.Errorf("cognition trace is missing required transition, graph, or action authority")
 	}
 	sort.Slice(records, func(left, right int) bool {

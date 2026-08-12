@@ -9,7 +9,7 @@ import (
 
 const (
 	OfflineMatrixRequestSchemaV2 = "omnidex.offline-cognition-matrix-request.v2"
-	OfflineMatrixConfigSchemaV2  = "omnidex.offline-cognition-matrix-config.v2"
+	OfflineMatrixConfigSchemaV3  = "omnidex.offline-cognition-matrix-config.v3"
 )
 
 type OfflineMatrixRequest struct {
@@ -34,6 +34,7 @@ type OfflineMatrixConfig struct {
 	PublicOutputDirectory   string             `json:"public_output_directory"`
 	PrivateOutputDirectory  string             `json:"private_output_directory"`
 	RatGeneration           RatGeneration      `json:"rat_generation"`
+	PreparedBrainEvidence   PreparedBrainEvidenceAuthority `json:"prepared_brain_evidence"`
 	RuntimeFingerprint      RuntimeFingerprint `json:"runtime_fingerprint"`
 	PreregistrationSHA256   string             `json:"preregistration_sha256"`
 	OmnidexCommit           string             `json:"omnidex_commit"`
@@ -68,7 +69,7 @@ func (request OfflineMatrixRequest) Validate() error {
 }
 
 func (config OfflineMatrixConfig) Validate() error {
-	if config.Schema != OfflineMatrixConfigSchemaV2 || config.Plan.Validate() != nil ||
+	if config.Schema != OfflineMatrixConfigSchemaV3 || config.Plan.Validate() != nil ||
 		!validDigest(config.PreregistrationSHA256) || !validCommitIdentity(config.OmnidexCommit) ||
 		config.InferenceTimeoutSeconds <= 0 || config.InferenceTimeoutSeconds > 24*60*60 {
 		return fmt.Errorf("offline cognition matrix configuration is invalid")
@@ -125,6 +126,7 @@ func (config OfflineMatrixConfig) ValidateStart() error {
 func (config OfflineMatrixConfig) fixedAuthority() OfflineMatrixFixedAuthority {
 	return OfflineMatrixFixedAuthority{
 		Budget: config.Budget, RatGeneration: config.RatGeneration,
+		PreparedBrainEvidence: config.PreparedBrainEvidence,
 		RuntimeFingerprint:      config.RuntimeFingerprint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		OmnidexCommit:           config.OmnidexCommit,
@@ -193,11 +195,13 @@ func (config OfflineMatrixConfig) derivedRunConfig(
 		config.PrivateOutputDirectory, "runs", coordinate.ID, string(variant),
 	)
 	run := OfflinePromotionConfig{
-		Schema: OfflinePromotionConfigSchemaV1, DatabaseURL: config.DatabaseURL,
+		Schema: OfflinePromotionConfigSchemaV2, DatabaseURL: config.DatabaseURL,
 		OllamaEndpoint:          config.OllamaEndpoint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		Scenario:                scenario, Variant: variant, Surface: config.Plan.Surface,
-		RatGeneration: config.RatGeneration, RuntimeFingerprint: config.RuntimeFingerprint,
+		RatGeneration: config.RatGeneration,
+		PreparedBrainEvidence: config.PreparedBrainEvidence,
+		RuntimeFingerprint: config.RuntimeFingerprint,
 		Repetition: coordinate.Repetition, PublicOutputDirectory: publicDirectory,
 		PrivateOutputDirectory: privateDirectory, OmnidexCommit: config.OmnidexCommit,
 		LedgerSchemaVersion:     config.LedgerSchemaVersion,

@@ -10,7 +10,7 @@ import (
 )
 
 func TestFullCognitionScalePreparesRealHundredFoldWorlds(t *testing.T) {
-	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestFullCognitionScalePreparesRealHundredFoldWorlds(t *testing.T) {
 }
 
 func TestFullCognitionScaleRejectsChangedRatOrCallerWorldSize(t *testing.T) {
-	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -51,9 +51,10 @@ func testLiveStaleProbe(t *testing.T, now time.Time) LiveStaleProbeReceipt {
 				Attempt: original, CommandSHA256: commandSHA, EnteredAt: entered,
 			},
 			Rejection: liveStalePortRejection{
-				Schema: liveStalePortRejectionSchemaV1, Port: port, PID: 300 + index,
+				Schema: liveStalePortRejectionSchemaV2, Port: port, PID: 300 + index,
 				Attempt: original, CommandSHA256: commandSHA, ErrorClass: port.expectedError(),
-				RejectedAt: entered.Add(3 * time.Second),
+				ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
+				RejectedAt:                 entered.Add(3 * time.Second),
 			},
 			StateBefore: state, StateAfter: state,
 			StateBeforeSHA256: stateSHA, StateAfterSHA256: stateSHA,
@@ -73,7 +74,7 @@ func testLiveStaleProbe(t *testing.T, now time.Time) LiveStaleProbeReceipt {
 				t.Fatal(err)
 			}
 			proof.StateAfterSHA256 = proof.StateBeforeSHA256
-			proof.Rejection.ProviderRequestDispatched = true
+			proof.Rejection.ProviderRequestDisposition = llm.ProviderRequestDispatched
 			proof.Rejection.ProviderUsagePresent = true
 			proof.Rejection.ProviderDoneReason = "stop"
 			proof.Rejection.ProviderUsage = llm.ProviderGenerationUsage{

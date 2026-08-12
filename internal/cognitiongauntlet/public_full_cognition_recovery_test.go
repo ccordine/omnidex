@@ -7,7 +7,7 @@ import (
 )
 
 func TestPublicRuntimeCounterMismatchRequiresRegisteredLiveRecovery(t *testing.T) {
-	resources := Resources{ModelCalls: 3, EnvironmentActions: 2}
+	resources := Resources{PolicyCallsConsumed: 3, ModelCalls: 3, EnvironmentActions: 2}
 	run := cognitionruntime.RunResult{PolicyCalls: 1, EnvironmentActions: 1}
 	if err := validatePublicRuntimeCounters(resources, run, ""); err == nil {
 		t.Fatal("ordinary runtime counter mismatch was accepted")

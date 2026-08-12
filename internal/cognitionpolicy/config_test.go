@@ -15,25 +15,27 @@ func TestPolicyRequiresClientWriterBrainAndProjection(t *testing.T) {
 	client := &policyTestClient{}
 	journal := &policyTestCallJournal{}
 	loader := newPolicyTestProjectionLoader(projection)
-	if _, err := New(nil, policyTestAttestedBrain(), loader, journal); !errors.Is(err, ErrInvalidConfig) {
+	brain := policyTestAttestedBrain()
+	activation := policyTestDefaultProviderProcessActivation(brain)
+	if _, err := New(nil, brain, activation, loader, journal); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil client error = %v, want ErrInvalidConfig", err)
 	}
-	if _, err := New(client, policyTestAttestedBrain(), loader, nil); !errors.Is(err, ErrInvalidConfig) {
+	if _, err := New(client, brain, activation, loader, nil); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil journal error = %v, want ErrInvalidConfig", err)
 	}
-	if _, err := New(client, policyTestAttestedBrain(), nil, journal); !errors.Is(err, ErrInvalidConfig) {
+	if _, err := New(client, brain, activation, nil, journal); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("nil projection loader error = %v, want ErrInvalidConfig", err)
 	}
 	invalidBrain := policyTestAttestedBrain()
 	invalidBrain.Ref.Model = ""
-	if _, err := New(client, invalidBrain, loader, journal); !errors.Is(err, ErrInvalidBrain) {
+	if _, err := New(client, invalidBrain, activation, loader, journal); !errors.Is(err, ErrInvalidBrain) {
 		t.Fatalf("invalid brain error = %v, want ErrInvalidBrain", err)
 	}
 	invalidProjection := projection
 	invalidProjection.RenderedSHA256 = "bad"
 	invalidLoader := newPolicyTestProjectionLoader(invalidProjection)
 	snapshot, _ := policyTestSnapshot(t, projection)
-	policy, err := New(client, policyTestAttestedBrain(), invalidLoader, journal)
+	policy, err := New(client, brain, activation, invalidLoader, journal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +52,11 @@ func TestPolicyRejectsProjectionBeyondBoundBrainLimitsBeforeModelCall(t *testing
 	byteLimited := policyTestBrain()
 	byteLimited.ContextCeilingBytes = projection.RenderedBytes - 1
 	refreshPolicyTestSampling(&byteLimited)
-	policy, err := New(client, policyAttestBrain(byteLimited), newPolicyTestProjectionLoader(projection), journal)
+	attested := policyAttestBrain(byteLimited)
+	policy, err := New(
+		client, attested, policyTestDefaultProviderProcessActivation(attested),
+		newPolicyTestProjectionLoader(projection), journal,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +73,11 @@ func TestPolicyOwnsProjectionCopy(t *testing.T) {
 	projection := policyTestProjection(t, "direct authority")
 	snapshot, evidence := policyTestSnapshot(t, projection)
 	client := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
-	policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), &policyTestCallJournal{})
+	brain := policyTestAttestedBrain()
+	policy, err := New(
+		client, brain, policyTestDefaultProviderProcessActivation(brain),
+		newPolicyTestProjectionLoader(projection), &policyTestCallJournal{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

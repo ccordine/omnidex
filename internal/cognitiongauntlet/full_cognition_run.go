@@ -49,7 +49,7 @@ func RunFullCognition(
 	scenario := fixture.generated.ExecutionScenario()
 	components, err := newFullRuntimeComponents(
 		ctx, request.Pool, request.Client, brain, request.RatGeneration.Fixed.Brain, request.HostStore,
-		scenario, episode, request.Surface,
+		scenario, episode, request.Attempt, request.Surface,
 	)
 	if err != nil {
 		return FullCognitionRunResult{}, err
@@ -68,13 +68,18 @@ func RunFullCognition(
 	if err != nil {
 		return FullCognitionRunResult{}, fmt.Errorf("start durable Labyrinth episode: %w", err)
 	}
+	activation, err := observeRuntimeProviderActivation(ctx, components, episode, binding.Attempt)
+	if err != nil {
+		return FullCognitionRunResult{}, err
+	}
 	stored, err := startFullCognitionEpisode(
-		ctx, components.store, request, authority, components.frozenBrain, episode, scenario, start,
+		ctx, components.store, request, authority, components.brainBootstrap, activation,
+		episode, scenario, start,
 	)
 	if err != nil {
 		return FullCognitionRunResult{}, err
 	}
-	components, err = activateRuntimeComponents(ctx, components, stored, binding.Attempt)
+	components, err = activateRuntimeComponents(ctx, components, stored, activation)
 	if err != nil {
 		return FullCognitionRunResult{}, err
 	}
@@ -104,7 +109,8 @@ func startFullCognitionEpisode(
 	store *cognitionstore.Store,
 	request FullCognitionRunRequest,
 	authority PairedRunAuthority,
-	brain cognitionpolicy.AttestedBrain,
+	bootstrap cognitionpolicy.BrainBootstrap,
+	activation cognitionpolicy.ProviderProcessActivation,
 	episode cognition.EpisodeRef,
 	scenario labyrinth.Scenario,
 	start cognition.Transition,
@@ -126,13 +132,13 @@ func startFullCognitionEpisode(
 	if err != nil {
 		return queue.CognitionEpisode{}, err
 	}
-	if err := cognitionpolicy.ValidateRuntimeBudget(brain.Ref, budget); err != nil {
+	if err := cognitionpolicy.ValidateRuntimeBudget(bootstrap.AttestedBrain.Ref, budget); err != nil {
 		return queue.CognitionEpisode{}, fmt.Errorf("validate full cognition runtime budget: %w", err)
 	}
 	stored, err := store.StartEpisode(ctx, queue.CognitionEpisodeStart{
 		Authority: request.Attempt, EpisodeID: episode.ID, Scenario: scenario.Ref(),
-		AttestedBrain: brain,
-		Goal:          goal, Completion: completion, ActionCatalog: scenario.Catalog(), Budget: budget,
+		BrainBootstrap: bootstrap, ProviderProcessActivation: activation,
+		Goal: goal, Completion: completion, ActionCatalog: scenario.Catalog(), Budget: budget,
 		Root: cognition.ObligationSpec{
 			ID: rootID, Desired: goal, DependsOn: []cognition.ObligationID{},
 			SupportingRefs: []cognition.EvidenceRef{}, CompletionCheck: check,

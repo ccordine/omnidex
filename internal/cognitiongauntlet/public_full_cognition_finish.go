@@ -28,6 +28,15 @@ func sealPublicFullCognition(
 	if err != nil {
 		return PublicFullCognitionRunResult{}, err
 	}
+	runtimeEvidence, err := preparePublicFullRuntimeEvidence(
+		request.EpisodeSealPath, components,
+	)
+	if err != nil {
+		return PublicFullCognitionRunResult{}, err
+	}
+	if err := runtimeEvidence.appendTo(recorder); err != nil {
+		return PublicFullCognitionRunResult{}, err
+	}
 	metrics, err := appendProductionTrace(recorder, trace, RecoveryMetrics{}, nil)
 	if err != nil {
 		return PublicFullCognitionRunResult{}, err
@@ -37,8 +46,14 @@ func sealPublicFullCognition(
 	); err != nil {
 		return PublicFullCognitionRunResult{}, err
 	}
+	if err := runtimeEvidence.seal(
+		request.EpisodeSealPath, components.frozenFingerprint,
+	); err != nil {
+		return PublicFullCognitionRunResult{}, err
+	}
 	sealed, err := recorder.Seal(
-		request.EpisodeSealPath, trace.Header.Seal.FinalRevision, metrics.Outcome,
+		request.EpisodeSealPath, trace.Header.EpisodeStartedAt, trace.Header.SealedAt,
+		trace.Header.Seal.FinalRevision, metrics.Outcome,
 		metrics.Resources, metrics.Memory, metrics.Planning, metrics.Recovery,
 	)
 	if err != nil {
@@ -63,7 +78,7 @@ func validatePublicRuntimeCounters(
 		// command, recovery disposition, and resource delta.
 		return nil
 	}
-	if resources.ModelCalls != int(run.PolicyCalls) ||
+	if resources.PolicyCallsConsumed != int(run.PolicyCalls) ||
 		resources.EnvironmentActions != int(run.EnvironmentActions) {
 		return fmt.Errorf("public runtime counters differ from its sealed production trace")
 	}
@@ -81,7 +96,7 @@ func publicCognitionEpisodeTemplate(
 	}
 	brain := bundle.Authority.RatGeneration.Fixed.Brain
 	return EpisodeManifest{
-		Schema: EpisodeManifestSchemaV1, EpisodeID: episode.ID,
+		Schema: EpisodeManifestSchemaV2, EpisodeID: episode.ID,
 		Scenario: bundle.Authority.Scenario, PublicRunAuthoritySHA256: authoritySHA,
 		Variant: VariantFullCognition, OmnidexCommit: request.OmnidexCommit,
 		RuntimeVersion:          bundle.Authority.RatGeneration.Runtime.Version,

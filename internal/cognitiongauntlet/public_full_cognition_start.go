@@ -16,7 +16,8 @@ func startPublicCognitionEpisode(
 	store *cognitionstore.Store,
 	attempt model.StepAttemptAuthority,
 	bundle PublicInferenceBundle,
-	brain cognitionpolicy.AttestedBrain,
+	bootstrap cognitionpolicy.BrainBootstrap,
+	activation cognitionpolicy.ProviderProcessActivation,
 	episode cognition.EpisodeRef,
 	start cognition.Transition,
 ) (queue.CognitionEpisode, error) {
@@ -34,13 +35,13 @@ func startPublicCognitionEpisode(
 	if err != nil {
 		return queue.CognitionEpisode{}, err
 	}
-	if err := cognitionpolicy.ValidateRuntimeBudget(brain.Ref, budget); err != nil {
+	if err := cognitionpolicy.ValidateRuntimeBudget(bootstrap.AttestedBrain.Ref, budget); err != nil {
 		return queue.CognitionEpisode{}, fmt.Errorf("validate public cognition runtime budget: %w", err)
 	}
 	stored, err := store.StartEpisode(ctx, queue.CognitionEpisodeStart{
 		Authority: attempt, EpisodeID: episode.ID, Scenario: bundle.Authority.Scenario,
-		AttestedBrain: brain,
-		Goal:          bundle.Goal, Completion: bundle.Completion, ActionCatalog: bundle.Catalog, Budget: budget,
+		BrainBootstrap: bootstrap, ProviderProcessActivation: activation,
+		Goal: bundle.Goal, Completion: bundle.Completion, ActionCatalog: bundle.Catalog, Budget: budget,
 		Root: cognition.ObligationSpec{
 			ID: rootID, Desired: bundle.Goal, DependsOn: []cognition.ObligationID{},
 			SupportingRefs: []cognition.EvidenceRef{}, CompletionCheck: check,

@@ -8,11 +8,60 @@ import (
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/contextbuilder"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/gryph/omnidex/internal/workingset"
 )
 
 const policyTestDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func policyTestProviderProcessActivation(
+	snapshot cognition.RuntimeSnapshot,
+	brain AttestedBrain,
+) ProviderProcessActivationAuthority {
+	stable, err := brain.StableAuthority()
+	if err != nil {
+		panic(err)
+	}
+	return ProviderProcessActivationAuthority{
+		Schema:        ProviderProcessActivationAuthoritySchemaV1,
+		ObservationID: "provider_process_observation_" + policyTestDigest,
+		EpisodeID:     snapshot.CurrentRevision().EpisodeID, Actor: snapshot.Attempt(),
+		StableBrainSHA256: stable.SHA256, ProviderObservationSHA256: policyTestDigest,
+		Evidence: llm.ProviderIdentityEvidenceRef{
+			Schema: llm.ProviderIdentityEvidenceRefSchemaV1,
+			ID:     "provider_identity_" + policyTestDigest,
+			SHA256: policyTestDigest, Bytes: 1,
+		},
+	}
+}
+
+func policyTestDefaultProviderProcessActivation(
+	brain AttestedBrain,
+) ProviderProcessActivationAuthority {
+	stable, err := brain.StableAuthority()
+	if err != nil {
+		panic(err)
+	}
+	return ProviderProcessActivationAuthority{
+		Schema:        ProviderProcessActivationAuthoritySchemaV1,
+		ObservationID: "provider_process_observation_" + policyTestDigest,
+		EpisodeID:     "episode-1",
+		Actor: cognition.AttemptRef{
+			JobID: 1, Generation: 1, StepID: 2, Attempt: 1, WorkerID: "worker-1",
+		},
+		StableBrainSHA256: stable.SHA256, ProviderObservationSHA256: policyTestDigest,
+		Evidence: llm.ProviderIdentityEvidenceRef{
+			Schema: llm.ProviderIdentityEvidenceRefSchemaV1,
+			ID:     "provider_identity_" + policyTestDigest,
+			SHA256: policyTestDigest, Bytes: 1,
+		},
+	}
+}
+
+func policyTestActivation() ProviderProcessActivationAuthority {
+	return policyTestDefaultProviderProcessActivation(policyTestAttestedBrain())
+}
 
 type policyTestCallJournal struct {
 	attempts         []CallAttempt

@@ -2,6 +2,7 @@ package cognitionruntime
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/cognition"
@@ -63,6 +64,24 @@ func TestLifecycleCancellationCodesCannotUseWorkerAuthority(t *testing.T) {
 	}
 	if err := command.Validate(); err == nil {
 		t.Fatal("lifecycle cancellation code entered the worker cancellation API")
+	}
+}
+
+func TestProviderActivationCancellationEvidenceBindsFailureRecord(t *testing.T) {
+	t.Parallel()
+	recordID := "cognition_provider_failure_" + strings.Repeat("a", 64)
+	evidence, err := NewProviderActivationCancellationEvidence(recordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Code != CancellationProviderActivation ||
+		evidence.SourceErrorSHA256 != strings.Repeat("a", 64) || evidence.Validate() != nil {
+		t.Fatalf("provider activation cancellation evidence=%+v", evidence)
+	}
+	if _, err := NewProviderActivationCancellationEvidence(
+		"cognition_provider_failure_" + strings.Repeat("A", 64),
+	); err == nil {
+		t.Fatal("provider activation cancellation accepted a noncanonical record identity")
 	}
 }
 

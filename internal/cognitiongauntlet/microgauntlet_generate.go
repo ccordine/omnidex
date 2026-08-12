@@ -27,8 +27,8 @@ func GenerateMicrogauntlet(spec MicrogauntletSpec) (MicrogauntletCase, error) {
 	return fixture, nil
 }
 
-func GenerateInitialMicrogauntletsV1() ([]MicrogauntletCase, error) {
-	specs := InitialMicrogauntletsV1()
+func GenerateInitialMicrogauntletsV2() ([]MicrogauntletCase, error) {
+	specs := InitialMicrogauntletsV2()
 	fixtures := make([]MicrogauntletCase, len(specs))
 	seenSuites := make(map[Suite]struct{}, len(specs))
 	for index, spec := range specs {

@@ -79,9 +79,10 @@ func (c *Client) GeneratePreparedExact(
 	})
 	if err != nil {
 		return llm.PreparedGeneration{
-			Schema:                   llm.PreparedGenerationSchemaV1,
-			ProviderObservation:      observed.Observation,
-			ProviderIdentityEvidence: observed.Evidence,
+			Schema:                     llm.PreparedGenerationSchemaV1,
+			ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
+			ProviderObservation:        observed.Observation,
+			ProviderIdentityEvidence:   observed.Evidence,
 		}, fmt.Errorf("observe exact cognition provider identity: %w", err)
 	}
 	result, generationErr := c.generatePreparedRaw(ctx, prepared, observed)

@@ -26,7 +26,8 @@ func (client cognitionGuardPolicyClient) GeneratePreparedExact(
 		return llm.PreparedGeneration{}, err
 	}
 	observed, err := queueTestObservedProviderIdentity(
-		time.Now().UTC(), attestation, prepared.ProviderObservationChallenge,
+		time.Now().UTC().Truncate(time.Microsecond),
+		attestation, prepared.ProviderObservationChallenge,
 	)
 	if err != nil {
 		return llm.PreparedGeneration{}, err
@@ -56,12 +57,14 @@ func (client cognitionGuardPolicyClient) GeneratePreparedExact(
 		return llm.PreparedGeneration{}, err
 	}
 	return llm.PreparedGeneration{
-		Schema: llm.PreparedGenerationSchemaV1, ProviderRequestDispatched: true,
-		Content: client.response, ProviderRequestSHA256: requestSHA,
+		Schema:                     llm.PreparedGenerationSchemaV1,
+		ProviderRequestDisposition: llm.ProviderRequestDispatched,
+		Content:                    client.response, ProviderRequestSHA256: requestSHA,
 		ProviderHTTPStatus: 200, ProviderResponseDisposition: llm.ProviderResponseSucceeded,
 		ProviderResponseComplete: true, ProviderResponseBytesKnown: true,
-		ProviderResponseSHA256: responseSHA,
-		ProviderResponseBytes:  int64(len(providerBody)), ProviderResponseCaptureSHA256: responseSHA,
+		ProviderContentEncoding: llm.NewProviderContentEncodingEvidence(nil, false),
+		ProviderResponseSHA256:  responseSHA,
+		ProviderResponseBytes:   int64(len(providerBody)), ProviderResponseCaptureSHA256: responseSHA,
 		ProviderResponseCapturedBytes: len(providerBody), ProviderResponseCapture: providerBody,
 		ProviderResponseModel: prepared.ContextModel,
 		ProviderDonePresent:   true, ProviderDone: true,
@@ -92,6 +95,6 @@ func (cognitionGuardPolicyClient) ObserveProviderIdentity(
 		return llm.ObservedProviderIdentity{}, err
 	}
 	return queueTestObservedProviderIdentity(
-		time.Now().UTC(), attestation, request.ChallengeSHA256,
+		time.Now().UTC().Truncate(time.Microsecond), attestation, request.ChallengeSHA256,
 	)
 }

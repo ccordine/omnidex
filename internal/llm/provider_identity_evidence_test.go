@@ -176,7 +176,7 @@ func providerIdentityPendingOperation(
 ) ProviderIdentityOperationEvidence {
 	t.Helper()
 	value, err := NewProviderIdentityOperationEvidence(
-		operation.Operation, operation.Method, operation.Endpoint, false,
+		operation.Operation, operation.Method, operation.Endpoint, ProviderRequestNotDispatched,
 		operation.Request, 0, ProviderIdentityNotDispatched, false,
 		ProviderContentEncodingEvidence{}, nil,
 	)
@@ -194,7 +194,7 @@ func providerIdentityFailedOperation(
 ) ProviderIdentityOperationEvidence {
 	t.Helper()
 	value, err := NewProviderIdentityOperationEvidence(
-		operation.Operation, operation.Method, operation.Endpoint, true,
+		operation.Operation, operation.Method, operation.Endpoint, ProviderRequestDispatched,
 		operation.Request, status, disposition, true,
 		NewProviderContentEncodingEvidence(nil, false),
 		[]byte(`{"error":"failed"}`),

@@ -125,7 +125,10 @@ func policyTestCallAttempt(t *testing.T) CallAttempt {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), envelope)
+	brain := policyTestAttestedBrain()
+	attempt, err := newCallAttempt(
+		snapshot, brain, policyTestProviderProcessActivation(snapshot, brain), envelope,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

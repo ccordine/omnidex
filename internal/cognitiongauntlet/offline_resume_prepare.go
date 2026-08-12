@@ -103,12 +103,13 @@ func resumeConfigFromBase(
 	base OfflinePromotionConfig,
 ) OfflineResumeConfig {
 	return OfflineResumeConfig{
-		Schema: OfflineResumeConfigSchemaV1, Plan: request.Plan, Budget: base.Scenario.Budget(),
+		Schema: OfflineResumeConfigSchemaV2, Plan: request.Plan, Budget: base.Scenario.Budget(),
 		DatabaseURL: request.DatabaseURL, OllamaEndpoint: request.OllamaEndpoint,
 		InferenceTimeoutSeconds: request.InferenceTimeoutSeconds,
 		PublicOutputDirectory:   request.PublicOutputDirectory,
 		PrivateOutputDirectory:  request.PrivateOutputDirectory,
 		RatGeneration:           base.RatGeneration, RuntimeFingerprint: base.RuntimeFingerprint,
+		PreparedBrainEvidence:   base.PreparedBrainEvidence,
 		OmnidexCommit: base.OmnidexCommit, LedgerSchemaVersion: base.LedgerSchemaVersion,
 		WorkingSetPolicyVersion: base.WorkingSetPolicyVersion,
 		ProjectionPolicyVersion: base.ProjectionPolicyVersion,

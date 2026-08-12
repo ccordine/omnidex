@@ -175,7 +175,7 @@ func TestPostgresRepositoryCognitionShadowDrivesMultiStepReadOnlyInvestigation(t
 		t.Fatal(err)
 	}
 	if seals != 1 || mutations != 0 || client.prepared != 3 || client.generated != 3 ||
-		client.cleaned != 3 || client.attestations != 4 || client.plain != 0 {
+		client.cleaned != 3 || client.attestations != 5 || client.plain != 0 {
 		t.Fatalf("seal/mutation/prepared/generated/cleanup/attest/plain=%d/%d/%d/%d/%d/%d/%d",
 			seals, mutations, client.prepared, client.generated, client.cleaned,
 			client.attestations, client.plain)
@@ -207,7 +207,7 @@ func TestPostgresRepositoryCognitionShadowDrivesMultiStepReadOnlyInvestigation(t
 	after := loadRepositoryCognitionCounts(t, ctx, pool, episodeID, claim.Job.ID)
 	if after != before || client.prepared != prepared || client.generated != generated ||
 		client.cleaned != cleaned || len(client.prompts) != prompts ||
-		client.attestations != attestations+1 || client.plain != 0 {
+		client.attestations != attestations+2 || client.plain != 0 {
 		t.Fatalf("repository cognition replay durable/client before=%+v/%d/%d/%d/%d/%d after=%+v/%d/%d/%d/%d/%d",
 			before, prepared, generated, cleaned, attestations, prompts,
 			after, client.prepared, client.generated, client.cleaned, client.attestations, len(client.prompts))

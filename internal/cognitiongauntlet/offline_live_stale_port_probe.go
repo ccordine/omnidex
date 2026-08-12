@@ -10,6 +10,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -88,9 +89,10 @@ func (probe *liveStalePortController) after(
 		return errors.Join(err, fmt.Errorf("live stale-port %q did not reject its expired actor", port))
 	}
 	rejection := liveStalePortRejection{
-		Schema: liveStalePortRejectionSchemaV1, Port: port, PID: os.Getpid(),
+		Schema: liveStalePortRejectionSchemaV2, Port: port, PID: os.Getpid(),
 		Attempt: probe.attempt, CommandSHA256: commandSHA,
 		ErrorClass: port.expectedError(), RejectedAt: time.Now().UTC(),
+		ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
 	}
 	if sealErr := sealScenarioArtifact(
 		probe.rejectionPath, rejection, "live stale-port rejection",
@@ -113,12 +115,12 @@ func (probe *liveStalePortController) afterPolicy(
 		return errors.Join(err, fmt.Errorf("live stale policy finish did not reject its expired actor"))
 	}
 	rejection := liveStalePortRejection{
-		Schema: liveStalePortRejectionSchemaV1, Port: liveStalePolicyFinish,
+		Schema: liveStalePortRejectionSchemaV2, Port: liveStalePolicyFinish,
 		PID: os.Getpid(), Attempt: probe.attempt, CommandSHA256: commandSHA,
 		ErrorClass: liveStaleErrorAttempt, RejectedAt: time.Now().UTC(),
-		ProviderRequestDispatched: result.ProviderRequestDispatched,
-		ProviderUsagePresent:      result.ProviderUsagePresent,
-		ProviderUsage:             result.ProviderUsage, ProviderDoneReason: result.ProviderDoneReason,
+		ProviderRequestDisposition: result.ProviderRequestDisposition,
+		ProviderUsagePresent:       result.ProviderUsagePresent,
+		ProviderUsage:              result.ProviderUsage, ProviderDoneReason: result.ProviderDoneReason,
 	}
 	if validateErr := rejection.Validate(); validateErr != nil {
 		return errors.Join(err, validateErr)

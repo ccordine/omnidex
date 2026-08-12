@@ -35,12 +35,13 @@ func sealFullCognitionExecution(
 	if err != nil {
 		return SealedEpisode{}, err
 	}
-	if metrics.Resources.ModelCalls != int(run.PolicyCalls) ||
+	if metrics.Resources.PolicyCallsConsumed != int(run.PolicyCalls) ||
 		metrics.Resources.EnvironmentActions != int(run.EnvironmentActions) {
 		return SealedEpisode{}, fmt.Errorf("production runtime counters differ from its sealed trace")
 	}
 	return recorder.Seal(
-		request.EpisodeSealPath, trace.Header.Seal.FinalRevision, metrics.Outcome,
+		request.EpisodeSealPath, trace.Header.EpisodeStartedAt, trace.Header.SealedAt,
+		trace.Header.Seal.FinalRevision, metrics.Outcome,
 		metrics.Resources, metrics.Memory, metrics.Planning, metrics.Recovery,
 	)
 }

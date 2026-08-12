@@ -29,6 +29,10 @@ func EvaluatePublicAblation(
 		episode.Manifest.Scenario != public.Scenario || episode.Manifest.Variant != public.Variant {
 		return AblationRunResult{}, fmt.Errorf("private evaluator received another public ablation episode")
 	}
+	evidenceAuthority, err := ablationEvidenceAuthorityFromEpisode(episode)
+	if err != nil {
+		return AblationRunResult{}, err
+	}
 	evidence, err := derivePrivateEvaluationEvidence(
 		context.Background(), fixture, paired.SurfaceVersion, episode,
 	)
@@ -61,7 +65,7 @@ func EvaluatePublicAblation(
 	}
 	result := AblationRunResult{
 		EvidenceClass: class, PromotionEligible: eligible,
-		Authority: paired, Variant: variant, Episode: episode, Oracle: oracle,
+		Authority: paired, Variant: variant, Episode: episode, Evidence: evidenceAuthority, Oracle: oracle,
 		Evaluation: evaluation, Efficiency: efficiency, CausalAcquisition: causal,
 	}
 	return result, result.Validate()

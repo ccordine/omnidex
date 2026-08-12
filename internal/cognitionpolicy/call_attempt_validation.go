@@ -13,9 +13,23 @@ func (attempt CallAttempt) Validate() error {
 	if err := attempt.Actor.Validate(); err != nil {
 		return fmt.Errorf("%w: actor: %v", ErrInvalidEvidence, err)
 	}
+	stable, err := NewStableBrainAuthority(
+		attempt.Brain, attempt.ProviderAttestation, attempt.HostHardwareAttestation,
+	)
+	if err != nil {
+		return err
+	}
+	if err := attempt.ProviderProcessActivation.ValidateFor(
+		stable,
+		attempt.ExpectedRevision.EpisodeID,
+		attempt.Actor,
+	); err != nil {
+		return err
+	}
 	if !validPolicySHA256(attempt.SnapshotSHA256) || attempt.ExpectedRevision.EpisodeID == "" ||
 		attempt.ObligationID == "" || attempt.ExpectedRevision.Validate() != nil ||
-		attempt.RuntimeBudget.Validate() != nil || attempt.RuntimeBudget.RemainingPolicyCalls == 0 ||
+		ValidateRuntimeBudget(attempt.Brain, attempt.RuntimeBudget) != nil ||
+		attempt.RuntimeBudget.RemainingPolicyCalls == 0 ||
 		attempt.ContextProjection.Validate() != nil || attempt.Brain.Validate() != nil {
 		return fmt.Errorf("%w: snapshot, budget, projection, or brain authority is invalid", ErrInvalidEvidence)
 	}

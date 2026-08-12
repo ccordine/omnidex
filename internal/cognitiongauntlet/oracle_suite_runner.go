@@ -38,7 +38,7 @@ func RunInitialOracleGauntlets(
 ) (OracleSuiteReport, error) {
 	report := OracleSuiteReport{
 		Schema:         OracleSuiteReportSchemaV1,
-		FixtureVersion: InitialMicrogauntletFixtureVersionV1,
+		FixtureVersion: InitialMicrogauntletFixtureVersionV2,
 		Results:        make([]OracleBaselineResult, 0, 5),
 	}
 	if ctx == nil {
@@ -52,7 +52,7 @@ func RunInitialOracleGauntlets(
 	if err != nil {
 		return report, err
 	}
-	fixtures, err := GenerateInitialMicrogauntletsV1()
+	fixtures, err := GenerateInitialMicrogauntletsV2()
 	if err != nil {
 		return report, err
 	}
@@ -118,7 +118,7 @@ func (request OracleSuiteRequest) episodeRequest(episodePath, evaluationPath str
 
 func (report OracleSuiteReport) Validate() error {
 	if report.Schema != OracleSuiteReportSchemaV1 ||
-		report.FixtureVersion != InitialMicrogauntletFixtureVersionV1 {
+		report.FixtureVersion != InitialMicrogauntletFixtureVersionV2 {
 		return fmt.Errorf("oracle suite report schema or fixture version is invalid")
 	}
 	if err := requireExact(report.SurfaceVersion, "oracle suite surface version", 256); err != nil {

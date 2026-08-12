@@ -125,6 +125,9 @@ func (state *productionTraceState) accept(
 			attempt.HostHardwareAttestation != state.frozenBrain.Host {
 			return fmt.Errorf("sealed production policy attempt changed the frozen Rat identity")
 		}
+		if _, duplicate := state.attempts[attempt.ID]; duplicate {
+			return fmt.Errorf("sealed production policy attempt is duplicated")
+		}
 		state.attempts[attempt.ID] = attempt
 	case "policy_result":
 		if err := state.acceptPolicyResult(recorder, record); err != nil {
@@ -138,13 +141,21 @@ func (state *productionTraceState) accept(
 		if err := abandonment.Validate(); err != nil || record.ID != abandonment.ID {
 			return fmt.Errorf("sealed production policy abandonment is invalid")
 		}
-		if _, exists := state.attempts[abandonment.CallID]; !exists {
+		attempt, exists := state.attempts[abandonment.CallID]
+		if !exists {
 			return fmt.Errorf("sealed production policy abandonment has no exact attempt")
+		}
+		if _, hasResult := state.results[abandonment.CallID]; hasResult {
+			return fmt.Errorf("sealed production policy call has both a result and abandonment")
 		}
 		if _, duplicate := state.abandonments[abandonment.CallID]; duplicate {
 			return fmt.Errorf("sealed production policy abandonment is duplicated")
 		}
 		state.abandonments[abandonment.CallID] = abandonment
+		if err := appendProductionPolicyAbandonment(recorder, attempt, abandonment.ID); err != nil {
+			return err
+		}
+		state.metrics.Resources.PolicyCallsConsumed++
 	case "policy_timing", "working_set_snapshot", "working_set_event",
 		"accepted_decision_recovery":
 		if err := state.diagnostics.accept(record, state.trace.Header); err != nil {

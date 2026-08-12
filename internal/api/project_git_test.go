@@ -17,6 +17,7 @@ import (
 
 func TestCollectProjectGitStatusNonRepo(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
 	payload, err := projectgit.CollectStatus(context.Background(), dir, "core-local")
 	if err != nil {
 		t.Fatalf("CollectStatus: %v", err)

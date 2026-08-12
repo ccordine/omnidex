@@ -101,12 +101,14 @@ func TestOfflineChildCommandCarriesNoWorldOrStandardInput(t *testing.T) {
 
 func TestInferenceProcessFileContainsOnlyRuntimeEndpointsAndPublicBootstrapPath(t *testing.T) {
 	config := inferenceProcessConfig{
-		Schema: inferenceProcessConfigSchemaV1, DatabaseURL: "postgres://restricted@db/runtime",
+		Schema: inferenceProcessConfigSchemaV3, DatabaseURL: "postgres://restricted@db/runtime",
 		DatabaseSchema: "runtime", EnvironmentURL: "http://127.0.0.1:4123",
 		EnvironmentToken: "transport-token", OllamaEndpoint: "http://127.0.0.1:11434",
-		TimeoutSeconds: 60, PublicBundlePath: "/public/bootstrap.json",
-		EpisodePath: "/public/episode.json", ExecutableSHA256: strings.Repeat("a", 64),
-		SourceSHA256: strings.Repeat("b", 64), OmnidexCommit: strings.Repeat("c", 40),
+		TimeoutSeconds: 60, PublicBundlePath: "/public/inference-bootstrap.json",
+		PublicOutputDirectory: "/public", PrivateOutputDirectory: "/private",
+		EpisodePath: "/public/sealed-episode.json", EvidencePath: "/public/ablation-evidence.json",
+		ExecutableSHA256: strings.Repeat("a", 64),
+		SourceSHA256:     strings.Repeat("b", 64), OmnidexCommit: strings.Repeat("c", 40),
 		LedgerSchemaVersion: "ledger.v1", WorkingSetPolicyVersion: "working-set.v1",
 		ProjectionPolicyVersion: "projection.v1", Control: terminalInferenceControl(),
 	}
@@ -143,15 +145,20 @@ func offlineIdentityConfig(
 	if err := os.Chmod(privateDirectory, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	publicDirectory := t.TempDir()
 	return OfflinePromotionConfig{
-		Schema:                  OfflinePromotionConfigSchemaV1,
+		Schema:                  OfflinePromotionConfigSchemaV2,
 		DatabaseURL:             "postgres://runner:credential@127.0.0.1:5432/omnidex?sslmode=disable",
 		OllamaEndpoint:          "http://127.0.0.1:11434",
 		InferenceTimeoutSeconds: 60,
 		Scenario:                mustOfflineScenarioSpec(t, SuiteRetrieve, 17_002),
 		Variant:                 VariantFullCognition, Surface: SurfaceSymbolic,
-		RatGeneration: generation, RuntimeFingerprint: runtime,
-		Repetition: 1, PublicOutputDirectory: t.TempDir(), PrivateOutputDirectory: privateDirectory,
+		RatGeneration: generation,
+		PreparedBrainEvidence: testPreparedBrainEvidenceAuthority(
+			t, generation.Fixed.Brain, publicDirectory,
+		),
+		RuntimeFingerprint: runtime,
+		Repetition:         1, PublicOutputDirectory: publicDirectory, PrivateOutputDirectory: privateDirectory,
 		OmnidexCommit: commit, LedgerSchemaVersion: "task-ledger.v1",
 		WorkingSetPolicyVersion: "working-set.v1", ProjectionPolicyVersion: "projection.v1",
 	}

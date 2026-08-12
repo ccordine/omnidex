@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	OfflineTakeoverConfigSchemaV1  = "omnidex.offline-cognition-takeover-config.v1"
+	OfflineTakeoverConfigSchemaV2  = "omnidex.offline-cognition-takeover-config.v2"
 	OfflineTakeoverReceiptSchemaV1 = "omnidex.offline-cognition-takeover-receipt.v1"
 )
 
@@ -45,7 +45,7 @@ type OfflineTakeoverReceipt struct {
 }
 
 func (config OfflineTakeoverConfig) Validate() error {
-	if config.Schema != OfflineTakeoverConfigSchemaV1 {
+	if config.Schema != OfflineTakeoverConfigSchemaV2 {
 		return fmt.Errorf("offline cognition takeover configuration schema is invalid")
 	}
 	if err := config.Promotion.Validate(); err != nil {

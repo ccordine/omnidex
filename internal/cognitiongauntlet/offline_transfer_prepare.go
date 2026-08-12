@@ -36,6 +36,7 @@ func PrepareOfflineTransferConfig(
 	fixed := OfflineMatrixFixedAuthority{
 		Budget:                  base.promotion.Scenario.Budget(),
 		RatGeneration:           base.promotion.RatGeneration,
+		PreparedBrainEvidence:   base.promotion.PreparedBrainEvidence,
 		RuntimeFingerprint:      base.promotion.RuntimeFingerprint,
 		InferenceTimeoutSeconds: request.InferenceTimeoutSeconds,
 		OmnidexCommit:           base.promotion.OmnidexCommit,
@@ -59,12 +60,13 @@ func PrepareOfflineTransferConfig(
 		return err
 	}
 	config := OfflineTransferConfig{
-		Schema: OfflineTransferConfigSchemaV1, Plan: registration.Plan, Budget: fixed.Budget,
+		Schema: OfflineTransferConfigSchemaV2, Plan: registration.Plan, Budget: fixed.Budget,
 		DatabaseURL: request.DatabaseURL, OllamaEndpoint: request.OllamaEndpoint,
 		InferenceTimeoutSeconds: request.InferenceTimeoutSeconds,
 		PublicOutputDirectory:   request.PublicOutputDirectory,
 		PrivateOutputDirectory:  request.PrivateOutputDirectory,
 		RatGeneration:           fixed.RatGeneration, RuntimeFingerprint: fixed.RuntimeFingerprint,
+		PreparedBrainEvidence:   fixed.PreparedBrainEvidence,
 		PreregistrationSHA256: registrationSHA, OmnidexCommit: fixed.OmnidexCommit,
 		LedgerSchemaVersion:     fixed.LedgerSchemaVersion,
 		WorkingSetPolicyVersion: fixed.WorkingSetPolicyVersion,

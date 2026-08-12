@@ -9,6 +9,54 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+func TestOfflineDatabaseAuthorityCreationStartsProcessRolesDisabled(t *testing.T) {
+	admin := offlineAuthorityTestPool(t)
+	identity := func(prefix string) string {
+		value, err := randomProcessIdentity(prefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	runtimeSchema := identity("disabled_runtime_")
+	hostSchema := identity("disabled_host_")
+	inferenceRole := identity("disabled_inference_")
+	hostRole := identity("disabled_host_role_")
+	t.Cleanup(func() {
+		dropOfflineAuthorityFixture(admin, runtimeSchema, hostSchema, inferenceRole)
+		dropOfflineAuthorityFixture(admin, "", "", hostRole)
+	})
+	if err := createOfflineDatabaseAuthorities(
+		t.Context(), admin, runtimeSchema, hostSchema,
+		inferenceRole, "inference-password", hostRole, "host-password",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, role := range []string{inferenceRole, hostRole} {
+		var login, superuser, createDB, createRole, inherit, replication, bypassRLS bool
+		var connectionLimit int
+		if err := admin.QueryRow(t.Context(), `
+			SELECT rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolinherit,
+			       rolreplication,rolbypassrls,rolconnlimit
+			FROM pg_roles WHERE rolname=$1
+		`, role).Scan(
+			&login, &superuser, &createDB, &createRole, &inherit,
+			&replication, &bypassRLS, &connectionLimit,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if login || superuser || createDB || createRole || inherit || replication || bypassRLS ||
+			connectionLimit != 8 {
+			t.Fatalf(
+				"process role %q authority=(login=%t super=%t createdb=%t createrole=%t inherit=%t replication=%t bypassrls=%t limit=%d)",
+				role, login, superuser, createDB, createRole, inherit, replication, bypassRLS,
+				connectionLimit,
+			)
+		}
+	}
+}
+
 func TestOfflineDatabaseAuthorityCreationRollsBackLateFailure(t *testing.T) {
 	admin := offlineAuthorityTestPool(t)
 	runtimeSchema, _ := randomProcessIdentity("rollback_runtime_")

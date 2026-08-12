@@ -105,6 +105,11 @@ func (r *Repository) ReconcileCognitionRuntimeDecision(
 		if err := requireCognitionDecisionAcceptanceReplayTx(ctx, tx, receipt.ID, command); err != nil {
 			return cognitionruntime.ReconciliationReceipt{}, err
 		}
+		if err := requireCognitionProposalMaterializationReplayTx(
+			ctx, tx, episode, prepared, command, receipt,
+		); err != nil {
+			return cognitionruntime.ReconciliationReceipt{}, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return cognitionruntime.ReconciliationReceipt{}, err
 		}
@@ -215,7 +220,18 @@ func (r *Repository) ReconcileCognitionRuntimeDecision(
 	if err != nil {
 		return cognitionruntime.ReconciliationReceipt{}, err
 	}
+	proposalMaterializations, err := newCognitionProposalMaterializations(
+		episode.EpisodeID, policyCallID, prepared.CallOrdinal, proposalInput, receipt,
+	)
+	if err != nil {
+		return cognitionruntime.ReconciliationReceipt{}, err
+	}
 	if err := insertCognitionReconciliationTx(ctx, tx, authority, episode.EpisodeID, policyCallID, command, receipt); err != nil {
+		return cognitionruntime.ReconciliationReceipt{}, err
+	}
+	if err := insertCognitionProposalMaterializationsTx(
+		ctx, tx, authority, proposalMaterializations,
+	); err != nil {
 		return cognitionruntime.ReconciliationReceipt{}, err
 	}
 	if err := insertCognitionAttentionOutcomesTx(ctx, tx, receipt.ID, plan.AdvisoryOutcomes()); err != nil {

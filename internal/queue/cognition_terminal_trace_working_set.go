@@ -85,9 +85,7 @@ func appendCognitionWorkingSetTraceRecordsTx(
 	return records, nil
 }
 
-type cognitionProjectionWorkingVersion struct {
-	CallOrdinal, WorkingVersion int64
-}
+type cognitionProjectionWorkingVersion = CognitionProjectionWorkingVersion
 
 func loadCognitionProjectionWorkingVersionsTx(
 	ctx context.Context,

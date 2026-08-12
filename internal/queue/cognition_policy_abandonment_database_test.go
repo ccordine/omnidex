@@ -95,7 +95,10 @@ func TestPostgresChangedReplacementCannotAbandonIndeterminateCall(t *testing.T) 
 }
 
 func TestPostgresMultipleIndeterminateCallsFailWithoutGuessing(t *testing.T) {
-	fixture := startTaskGenerationRetirementFixture(t, "multiple-indeterminate-calls")
+	repository, pool, ctx := policyInputFreshRepository(t)
+	fixture := startTaskGenerationRetirementFixtureIn(
+		t, repository, pool, ctx, "multiple-indeterminate-calls",
+	)
 	_ = reserveIndeterminateCognitionCall(t, fixture)
 	_ = reserveIndeterminateCognitionCall(t, fixture)
 	binding := cognitionruntime.Binding{
@@ -112,7 +115,10 @@ func TestPostgresMultipleIndeterminateCallsFailWithoutGuessing(t *testing.T) {
 }
 
 func TestPostgresSuccessiveReplacementAttemptsAbandonOneCallEach(t *testing.T) {
-	fixture := startTaskGenerationRetirementFixture(t, "successive-call-takeovers")
+	repository, pool, ctx := policyInputFreshRepository(t)
+	fixture := startTaskGenerationRetirementFixtureIn(
+		t, repository, pool, ctx, "successive-call-takeovers",
+	)
 	first := reserveIndeterminateCognitionCall(t, fixture)
 	firstReplacement := replaceCognitionAttemptForTest(t, fixture.Pool, fixture.Authority)
 	firstBinding := cognitionruntime.Binding{
@@ -126,6 +132,16 @@ func TestPostgresSuccessiveReplacementAttemptsAbandonOneCallEach(t *testing.T) {
 	}
 
 	fixture.Authority = firstReplacement
+	activation := cognitionGuardProviderProcessActivationFor(
+		t, fixture.Context, fixture.EpisodeID, firstReplacement,
+		fixture.Start.BrainBootstrap.AttestedBrain,
+	)
+	if err := fixture.Repository.RecordCognitionProviderProcessObservation(
+		fixture.Context, activation,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixture.Start.ProviderProcessActivation = activation
 	second := reserveIndeterminateCognitionCall(t, fixture)
 	secondReplacement := replaceCognitionAttemptForTest(t, fixture.Pool, firstReplacement)
 	secondBinding := cognitionruntime.Binding{
@@ -147,7 +163,10 @@ func TestPostgresSuccessiveReplacementAttemptsAbandonOneCallEach(t *testing.T) {
 }
 
 func TestPostgresReplacementAtomicallyAbandonsAndReplaysExactCall(t *testing.T) {
-	fixture := startTaskGenerationRetirementFixture(t, "replacement-abandonment")
+	repository, pool, ctx := policyInputFreshRepository(t)
+	fixture := startTaskGenerationRetirementFixtureIn(
+		t, repository, pool, ctx, "replacement-abandonment",
+	)
 	attempt := reserveIndeterminateCognitionCall(t, fixture)
 	replacement := replaceCognitionAttemptForTest(t, fixture.Pool, fixture.Authority)
 	binding := cognitionruntime.Binding{
@@ -191,7 +210,7 @@ func TestPostgresReplacementAtomicallyAbandonsAndReplaysExactCall(t *testing.T) 
 }
 
 func TestPostgresAbandonedCallIsConsumedWhenEpisodeBudgetIsExhausted(t *testing.T) {
-	repository, pool, ctx := replanTestRepository(t)
+	repository, pool, ctx := policyInputFreshRepository(t)
 	fixture := prepareTaskGenerationRetirementFixture(t, repository, pool, ctx, "abandon-budget")
 	fixture.Start.Budget.RemainingPolicyCalls = 1
 	if _, err := repository.StartCognitionEpisode(ctx, fixture.Start, cognitionTestFactAuthority()); err != nil {
@@ -211,7 +230,8 @@ func TestPostgresAbandonedCallIsConsumedWhenEpisodeBudgetIsExhausted(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.Prepared.Snapshot.Budget().RemainingPolicyCalls != 0 {
-		t.Fatalf("abandoned call was refunded: budget=%+v", prepared.Prepared.Snapshot.Budget())
+	if prepared.CallOrdinal != 2 || prepared.Prepared.Snapshot.Budget().RemainingPolicyCalls != 0 {
+		t.Fatalf("post-abandonment ordinal/budget=%d/%+v", prepared.CallOrdinal,
+			prepared.Prepared.Snapshot.Budget())
 	}
 }

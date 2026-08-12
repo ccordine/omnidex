@@ -36,7 +36,9 @@ func TestPolicyReattestsExactProviderBeforeEveryFreshGeneration(t *testing.T) {
 		attestations: []llm.ProviderIdentityAttestation{brain.Attestation, changed},
 	}
 	journal := &policyTestCallJournal{}
-	policy, err := New(client, brain, loader, journal)
+	policy, err := New(
+		client, brain, policyTestDefaultProviderProcessActivation(brain), loader, journal,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +66,7 @@ func TestPolicyReplayPerformsNoProviderIdentityProbe(t *testing.T) {
 	firstClient := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
 	firstJournal := &policyTestCallJournal{}
 	first, err := New(
-		firstClient, policyTestAttestedBrain(),
+		firstClient, policyTestAttestedBrain(), policyTestActivation(),
 		newPolicyTestProjectionLoader(projection), firstJournal,
 	)
 	if err != nil {
@@ -80,7 +82,7 @@ func TestPolicyReplayPerformsNoProviderIdentityProbe(t *testing.T) {
 		Created: false,
 	}}
 	replay, err := New(
-		replayClient, policyTestAttestedBrain(),
+		replayClient, policyTestAttestedBrain(), policyTestActivation(),
 		newPolicyTestProjectionLoader(projection), replayJournal,
 	)
 	if err != nil {

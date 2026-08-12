@@ -38,6 +38,7 @@ func reserveAcceptedDecisionWithoutAction(
 	}
 	policy, err := cognitionpolicy.New(
 		cognitionGuardPolicyClient{response: string(response)}, cognitionTestBrain(),
+		cognitionGuardActivationAuthority(t, fixture),
 		cognitionGuardProjectionLoader{repository: fixture.Repository},
 		CognitionPolicyCallJournal{Repository: fixture.Repository},
 	)
@@ -66,10 +67,18 @@ func reserveAcceptedDecisionWithoutAction(
 }
 
 func cognitionTestBrain() cognitionpolicy.AttestedBrain {
-	return cognitionTestBrainWithCPU("c")
+	return cognitionTestBrainBootstrapWithCPU("c").AttestedBrain
 }
 
 func cognitionTestBrainWithCPU(character string) cognitionpolicy.AttestedBrain {
+	return cognitionTestBrainBootstrapWithCPU(character).AttestedBrain
+}
+
+func cognitionTestBrainBootstrap() cognitionpolicy.BrainBootstrap {
+	return cognitionTestBrainBootstrapWithCPU("c")
+}
+
+func cognitionTestBrainBootstrapWithCPU(character string) cognitionpolicy.BrainBootstrap {
 	sampling, err := cognitionpolicy.NewSamplingIdentity(
 		1_000_000, cognitionpolicy.MaxEnvelopeBytes, 4*1024,
 	)
@@ -105,17 +114,28 @@ func cognitionTestBrainWithCPU(character string) cognitionpolicy.AttestedBrain {
 	if err != nil {
 		panic(err)
 	}
-	host, err := cognitionpolicy.NewHostHardwareAttestation(
-		"linux", "amd64", 8, strings.Repeat(character, 64), strings.Repeat("d", 64),
-	)
+	host, err := cognitionpolicy.AttestLocalHostHardware()
 	if err != nil {
 		panic(err)
+	}
+	if character != "c" {
+		host, err = cognitionpolicy.NewHostHardwareAttestation(
+			host.OS, host.Architecture, host.LogicalCPUs,
+			strings.Repeat(character, 64), host.AcceleratorIdentitySHA256,
+		)
+		if err != nil {
+			panic(err)
+		}
 	}
 	attested, err := cognitionpolicy.NewAttestedBrain(brain, attestation, observed.Observation, host)
 	if err != nil {
 		panic(err)
 	}
-	return attested
+	result, err := cognitionpolicy.NewBrainBootstrap(attested, observed.Evidence)
+	if err != nil {
+		panic(err)
+	}
+	return result
 }
 
 func queueTestObservedProviderIdentity(

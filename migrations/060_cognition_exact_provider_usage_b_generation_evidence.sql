@@ -11,7 +11,7 @@ CREATE TABLE cognition_policy_provider_generation_evidence (
     worker_id TEXT NOT NULL CHECK (task_ledger_text_is_exact(worker_id)),
     generation_sha256 TEXT NOT NULL CHECK (generation_sha256~'^[0-9a-f]{64}$'),
     generation_bytes BIGINT NOT NULL CHECK (
-		generation_bytes>0 AND generation_bytes<=24466776
+		generation_bytes>0 AND generation_bytes<=121527588
     ),
     ref_json TEXT NOT NULL CHECK (
         jsonb_typeof(ref_json::jsonb)='object' AND octet_length(ref_json)<=1024
@@ -50,39 +50,16 @@ BEGIN
                'ref',jsonb_set(NEW.ref_json::jsonb,'{id}','""'::jsonb,false)
            )),'sha256'
        ),'hex') OR
-       NOT cognition_json_has_unique_keys(NEW.generation_json::json) OR
-       NEW.generation_json<>cognition_canonical_jsonb(NEW.generation_json::jsonb) OR
-       NOT cognition_json_object_has_exact_keys(NEW.generation_json::json,ARRAY[
-           'schema_bytes','provider_request_dispatched','content_bytes',
-           'provider_request_sha256_bytes','provider_http_status',
-           'provider_response_disposition_bytes','provider_response_complete',
-           'provider_response_bytes_known','provider_response_sha256_bytes',
-           'provider_response_bytes','provider_response_capture_sha256_bytes',
-           'provider_response_captured_bytes','provider_done_reason_bytes',
-           'usage_present','usage','provider_observation'
-       ]) OR NOT cognition_json_object_has_exact_keys(
-           (NEW.generation_json::json->'usage')::json,ARRAY[
-               'prompt_eval_count','eval_count','total_duration_nanos','load_duration_nanos',
-               'prompt_eval_duration_nanos','eval_duration_nanos'
-           ]
-       ) OR NOT cognition_json_object_has_exact_keys(
-           (NEW.generation_json::json->'provider_observation')::json,ARRAY[
-               'schema_bytes','observed_year','observed_month','observed_day','observed_hour',
-		       'observed_minute','observed_second','observed_nanosecond','observed_at_bytes',
-               'observed_location_bytes','observed_offset_seconds','attestation_sha256_bytes',
-               'version_body_sha256_bytes','installed_body_sha256_bytes',
-               'preload_body_sha256_bytes','runner_body_sha256_bytes','preload_method_bytes',
-               'preload_endpoint_bytes','preload_request_sha256_bytes','challenge_sha256_bytes',
-               'observation_sha256_bytes'
-       ]) OR
-       (NEW.generation_json::jsonb->>'provider_request_dispatched')::BOOLEAN IS NOT TRUE THEN
+	   NOT cognition_json_has_unique_keys(NEW.generation_json::json) OR
+	   NEW.generation_json<>cognition_canonical_jsonb(NEW.generation_json::jsonb) OR
+	   NOT cognition_provider_generation_wire_is_exact(NEW.generation_json::json) THEN
         RAISE EXCEPTION 'untrusted cognition provider generation identity is invalid';
     END IF;
     SELECT * INTO call_row FROM cognition_policy_calls calls
     WHERE calls.call_id=NEW.call_id FOR SHARE;
     IF NOT FOUND OR call_row.status<>'failed' OR
        call_row.result_json::jsonb->>'failure_code' NOT IN (
-           'provider_evidence_invalid','provider_request_mismatch'
+		   'provider_evidence_invalid','provider_request_mismatch','policy_authority_error'
        ) OR
        call_row.result_json::jsonb->'provider_generation_evidence'<>NEW.ref_json::jsonb OR
        ROW(call_row.episode_id,call_row.job_id,call_row.generation,call_row.step_id,

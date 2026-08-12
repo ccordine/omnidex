@@ -31,7 +31,10 @@ func (*captureCognitionCallJournal) Finish(
 }
 
 func TestPostgresRejectsForgedCanonicalPolicyCallIdentity(t *testing.T) {
-	fixture := startTaskGenerationRetirementFixture(t, "forged-call-identity")
+	repository, pool, ctx := policyInputFreshRepository(t)
+	fixture := startTaskGenerationRetirementFixtureIn(
+		t, repository, pool, ctx, "forged-call-identity",
+	)
 	attempt := capturePreparedCognitionCall(t, fixture)
 	forged := attempt
 	forged.ID = "cognition_call_" + strings.Repeat("f", 64)
@@ -91,6 +94,7 @@ func capturePreparedCognitionCall(
 	journal := &captureCognitionCallJournal{}
 	policy, err := cognitionpolicy.New(
 		cognitionGuardPolicyClient{response: "unused"}, cognitionTestBrain(),
+		cognitionGuardActivationAuthority(t, fixture),
 		cognitionGuardProjectionLoader{repository: fixture.Repository}, journal,
 	)
 	if err != nil {

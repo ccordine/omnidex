@@ -14,12 +14,13 @@ func TestOfflineMatrixAuthorityCanBeReloadedAfterReceiptSeals(t *testing.T) {
 		Seeds: []uint64{101}, Repetitions: 1, Surface: SurfaceFilesystem,
 	}
 	config := OfflineMatrixConfig{
-		Schema: OfflineMatrixConfigSchemaV2, Plan: plan, Budget: base.Scenario.Budget(),
+		Schema: OfflineMatrixConfigSchemaV3, Plan: plan, Budget: base.Scenario.Budget(),
 		DatabaseURL: base.DatabaseURL, OllamaEndpoint: base.OllamaEndpoint,
 		InferenceTimeoutSeconds: base.InferenceTimeoutSeconds,
 		PublicOutputDirectory:   base.PublicOutputDirectory,
 		PrivateOutputDirectory:  base.PrivateOutputDirectory,
-		RatGeneration:           base.RatGeneration, RuntimeFingerprint: base.RuntimeFingerprint,
+		RatGeneration: base.RatGeneration, PreparedBrainEvidence: base.PreparedBrainEvidence,
+		RuntimeFingerprint: base.RuntimeFingerprint,
 		OmnidexCommit: base.OmnidexCommit, LedgerSchemaVersion: base.LedgerSchemaVersion,
 		WorkingSetPolicyVersion: base.WorkingSetPolicyVersion,
 		ProjectionPolicyVersion: base.ProjectionPolicyVersion,

@@ -10,12 +10,74 @@ import (
 	"github.com/gryph/omnidex/internal/cognitionruntime"
 	"github.com/gryph/omnidex/internal/contextbuilder"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/jackc/pgx/v5"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type cognitionGuardPolicyClient struct{ response string }
 
 type cognitionGuardProjectionLoader struct{ repository *Repository }
+
+func cognitionGuardActivationAuthority(
+	t *testing.T,
+	fixture taskGenerationRetirementFixture,
+) cognitionpolicy.ProviderProcessActivationAuthority {
+	t.Helper()
+	authority, err := fixture.Start.ProviderProcessActivation.Authority()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return authority
+}
+
+func cognitionGuardActivationAuthorityFor(
+	t *testing.T,
+	ctx context.Context,
+	repository *Repository,
+	episodeID cognition.EpisodeID,
+	authority model.StepAttemptAuthority,
+	brain cognitionpolicy.AttestedBrain,
+) cognitionpolicy.ProviderProcessActivationAuthority {
+	t.Helper()
+	activation := cognitionGuardProviderProcessActivationFor(
+		t, ctx, episodeID, authority, brain,
+	)
+	if err := repository.RecordCognitionProviderProcessObservation(
+		ctx, activation,
+	); err != nil {
+		t.Fatal(err)
+	}
+	bound, err := activation.Authority()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bound
+}
+
+func cognitionGuardProviderProcessActivationFor(
+	t *testing.T,
+	ctx context.Context,
+	episodeID cognition.EpisodeID,
+	authority model.StepAttemptAuthority,
+	brain cognitionpolicy.AttestedBrain,
+) cognitionpolicy.ProviderProcessActivation {
+	t.Helper()
+	outcome, err := cognitionpolicy.ObserveProviderProcess(
+		ctx, cognitionGuardPolicyClient{}, brain, cognition.EpisodeRef{ID: episodeID},
+		cognition.AttemptRef{
+			JobID: authority.JobID, Generation: authority.Generation,
+			StepID: authority.StepID, Attempt: uint64(authority.Attempt),
+			WorkerID: authority.WorkerID,
+		}, cognitionpolicy.ProviderProcessEpisodeInvocation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activation, err := outcome.RequireSuccess(brain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return activation
+}
 
 func (cognitionGuardPolicyClient) AttestProviderIdentity(
 	_ context.Context,
@@ -128,6 +190,7 @@ func prepareCognitionGuardActionWithDecision(
 	policy, err := cognitionpolicy.New(
 		cognitionGuardPolicyClient{response: string(response)},
 		cognitionTestBrain(),
+		cognitionGuardActivationAuthority(t, fixture),
 		cognitionGuardProjectionLoader{repository: fixture.Repository},
 		CognitionPolicyCallJournal{Repository: fixture.Repository},
 	)
@@ -178,85 +241,4 @@ func prepareCognitionGuardActionWithDecision(
 		t.Fatal(err)
 	}
 	return dispatched
-}
-
-func insertCognitionEpisodeWithoutStartTransition(
-	t *testing.T,
-	fixture taskGenerationRetirementFixture,
-	tx pgx.Tx,
-) {
-	t.Helper()
-	header, err := loadTaskLedgerHeaderTx(fixture.Context, tx, fixture.Job.ID, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := createCognitionRootObligationTx(fixture.Context, tx, header, fixture.Start); err != nil {
-		t.Fatal(err)
-	}
-	goalJSON, goalSHA, err := cognitionJSON(fixture.Start.Goal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	catalogJSON, _, err := cognitionJSON(fixture.Start.ActionCatalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	budgetJSON, budgetSHA, err := cognitionJSON(fixture.Start.Budget)
-	if err != nil {
-		t.Fatal(err)
-	}
-	completionJSON, completionSHA, err := cognitionJSON(fixture.Start.Completion)
-	if err != nil {
-		t.Fatal(err)
-	}
-	brainJSON, brainSHA, err := cognitionJSON(fixture.Start.AttestedBrain)
-	if err != nil {
-		t.Fatal(err)
-	}
-	factAuthority := cognitionTestFactAuthority().Reference()
-	factJSON, factSHA, err := cognitionJSON(factAuthority)
-	if err != nil {
-		t.Fatal(err)
-	}
-	factIdentityJSON, factIdentitySHA, err := cognitionJSON(cognitionFactAuthorityIdentity(factAuthority))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(fixture.Context, `
-		INSERT INTO cognition_episodes (
-			episode_id,schema_name,job_id,generation,step_id,created_attempt,created_worker_id,
-			ledger_id,working_set_id,scenario_id,scenario_sha256,goal_json,goal_sha256,
-			completion_authority_json,completion_authority_sha256,
-			action_catalog_json,action_catalog_id,action_catalog_version,action_catalog_sha256,
-			runtime_budget_json,runtime_budget_sha256,attested_brain_json,attested_brain_sha256,
-			fact_authority_json,fact_authority_sha256,
-			fact_authority_identity_json,fact_authority_identity_sha256,
-			current_revision,current_revision_sha256,status
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,'active')
-	`, fixture.EpisodeID, cognitionEpisodeSchemaV1, fixture.Authority.JobID,
-		fixture.Authority.Generation, fixture.Authority.StepID, fixture.Authority.Attempt,
-		fixture.Authority.WorkerID, header.ID, fixture.WorkingSet,
-		fixture.Start.Scenario.ID, fixture.Start.Scenario.SHA256, string(goalJSON), goalSHA,
-		string(completionJSON), completionSHA, string(catalogJSON),
-		fixture.Start.ActionCatalog.ID, fixture.Start.ActionCatalog.Version,
-		fixture.Start.ActionCatalog.SHA256, string(budgetJSON), budgetSHA, string(brainJSON), brainSHA,
-		string(factJSON), factSHA, string(factIdentityJSON), factIdentitySHA,
-		int64(fixture.Start.Transition.Current.Number),
-		fixture.Start.Transition.Current.SHA256); err != nil {
-		t.Fatal(err)
-	}
-	if err := insertCognitionObligationProjectionTx(
-		fixture.Context, tx, fixture.Start, header.ID,
-	); err != nil {
-		t.Fatal(err)
-	}
-	graph, descriptor, err := initialCognitionObligationGraph(fixture.Start)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := insertCognitionObligationGraphTx(
-		fixture.Context, tx, fixture.EpisodeID, 1, descriptor, graph, fixture.Authority,
-	); err != nil {
-		t.Fatal(err)
-	}
 }

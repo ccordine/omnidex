@@ -21,7 +21,7 @@ func RunOfflineInferenceProcess(ctx context.Context, configPath string) error {
 	if err := loadStrictJSONFile(configPath, &config, "offline inference process configuration"); err != nil {
 		return err
 	}
-	if config.Schema != inferenceProcessConfigSchemaV1 || config.DatabaseURL == "" ||
+	if config.Schema != inferenceProcessConfigSchemaV3 || config.DatabaseURL == "" ||
 		config.DatabaseSchema == "" || config.TimeoutSeconds <= 0 ||
 		!validDigest(config.ExecutableSHA256) || !validDigest(config.SourceSHA256) ||
 		!validCommitIdentity(config.OmnidexCommit) {
@@ -43,6 +43,9 @@ func RunOfflineInferenceProcess(ctx context.Context, configPath string) error {
 	if bundle.Authority.RatGeneration.Runtime.SourceSHA256 != config.SourceSHA256 ||
 		bundle.Authority.RatGeneration.Runtime.ExecutableSHA256 != config.ExecutableSHA256 {
 		return fmt.Errorf("offline inference bundle changed the attested build authority")
+	}
+	if err := validateInferenceArtifactPaths(config, bundle.Authority.Variant); err != nil {
+		return err
 	}
 	contaminatedOracle, err := loadContaminatedInferenceGrant(config, bundle)
 	if err != nil {
@@ -139,7 +142,8 @@ func RunOfflineInferenceProcess(ctx context.Context, configPath string) error {
 		ablationRequest := PublicAblationRunRequest{
 			Actor: bindingAttemptRef(config.Attempt), Client: policyClient,
 			Environment: transportClient, Completion: transportClient,
-			EpisodeSealPath: config.EpisodePath, OmnidexCommit: config.OmnidexCommit,
+			EpisodeSealPath: config.EpisodePath, EvidenceSealPath: config.EvidencePath,
+			OmnidexCommit:           config.OmnidexCommit,
 			LedgerSchemaVersion:     config.LedgerSchemaVersion,
 			WorkingSetPolicyVersion: config.WorkingSetPolicyVersion,
 			ProjectionPolicyVersion: config.ProjectionPolicyVersion,

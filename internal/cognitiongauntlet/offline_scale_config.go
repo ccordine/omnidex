@@ -8,7 +8,7 @@ import (
 
 const (
 	OfflineScaleRequestSchemaV1 = "omnidex.offline-scale-request.v1"
-	OfflineScaleConfigSchemaV1  = "omnidex.offline-scale-config.v1"
+	OfflineScaleConfigSchemaV2  = "omnidex.offline-scale-config.v2"
 )
 
 type OfflineScaleRequest struct {
@@ -24,21 +24,22 @@ type OfflineScaleRequest struct {
 }
 
 type OfflineScaleConfig struct {
-	Schema                  string             `json:"schema"`
-	Plan                    OfflineScalePlan   `json:"plan"`
-	Budget                  RunBudget          `json:"budget"`
-	DatabaseURL             string             `json:"database_url"`
-	OllamaEndpoint          string             `json:"ollama_endpoint"`
-	InferenceTimeoutSeconds int                `json:"inference_timeout_seconds"`
-	PublicOutputDirectory   string             `json:"public_output_directory"`
-	PrivateOutputDirectory  string             `json:"private_output_directory"`
-	RatGeneration           RatGeneration      `json:"rat_generation"`
-	RuntimeFingerprint      RuntimeFingerprint `json:"runtime_fingerprint"`
-	PreregistrationSHA256   string             `json:"preregistration_sha256"`
-	OmnidexCommit           string             `json:"omnidex_commit"`
-	LedgerSchemaVersion     string             `json:"ledger_schema_version"`
-	WorkingSetPolicyVersion string             `json:"working_set_policy_version"`
-	ProjectionPolicyVersion string             `json:"projection_policy_version"`
+	Schema                  string                         `json:"schema"`
+	Plan                    OfflineScalePlan               `json:"plan"`
+	Budget                  RunBudget                      `json:"budget"`
+	DatabaseURL             string                         `json:"database_url"`
+	OllamaEndpoint          string                         `json:"ollama_endpoint"`
+	InferenceTimeoutSeconds int                            `json:"inference_timeout_seconds"`
+	PublicOutputDirectory   string                         `json:"public_output_directory"`
+	PrivateOutputDirectory  string                         `json:"private_output_directory"`
+	RatGeneration           RatGeneration                  `json:"rat_generation"`
+	PreparedBrainEvidence   PreparedBrainEvidenceAuthority `json:"prepared_brain_evidence"`
+	RuntimeFingerprint      RuntimeFingerprint             `json:"runtime_fingerprint"`
+	PreregistrationSHA256   string                         `json:"preregistration_sha256"`
+	OmnidexCommit           string                         `json:"omnidex_commit"`
+	LedgerSchemaVersion     string                         `json:"ledger_schema_version"`
+	WorkingSetPolicyVersion string                         `json:"working_set_policy_version"`
+	ProjectionPolicyVersion string                         `json:"projection_policy_version"`
 }
 
 type OfflineScalePaths struct {
@@ -68,7 +69,7 @@ func (request OfflineScaleRequest) Validate() error {
 }
 
 func (config OfflineScaleConfig) Validate() error {
-	if config.Schema != OfflineScaleConfigSchemaV1 || config.Plan.Validate() != nil ||
+	if config.Schema != OfflineScaleConfigSchemaV2 || config.Plan.Validate() != nil ||
 		!validDigest(config.PreregistrationSHA256) || !validCommitIdentity(config.OmnidexCommit) ||
 		config.InferenceTimeoutSeconds <= 0 || config.InferenceTimeoutSeconds > 24*60*60 {
 		return fmt.Errorf("offline Scale configuration is invalid")
@@ -125,6 +126,7 @@ func (config OfflineScaleConfig) ValidateStart() error {
 func (config OfflineScaleConfig) fixedAuthority() OfflineMatrixFixedAuthority {
 	return OfflineMatrixFixedAuthority{
 		Budget: config.Budget, RatGeneration: config.RatGeneration,
+		PreparedBrainEvidence:   config.PreparedBrainEvidence,
 		RuntimeFingerprint:      config.RuntimeFingerprint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		OmnidexCommit:           config.OmnidexCommit,
@@ -146,7 +148,8 @@ func (config OfflineScaleConfig) executionAuthority(current OfflineScaleCase) of
 		DatabaseURL: config.DatabaseURL, OllamaEndpoint: config.OllamaEndpoint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		Variant:                 VariantFullCognition, RatGeneration: config.RatGeneration,
-		RuntimeFingerprint: config.RuntimeFingerprint, Budget: config.Budget,
+		PreparedBrainEvidence: config.PreparedBrainEvidence,
+		RuntimeFingerprint:    config.RuntimeFingerprint, Budget: config.Budget,
 		Repetition: current.Repetition, OmnidexCommit: config.OmnidexCommit,
 		LedgerSchemaVersion:     config.LedgerSchemaVersion,
 		WorkingSetPolicyVersion: config.WorkingSetPolicyVersion,
@@ -160,6 +163,7 @@ func (config OfflineScaleConfig) runPaths(current OfflineScaleCase) OfflinePromo
 	return OfflinePromotionPaths{
 		PublicBundle:  filepath.Join(publicDirectory, "inference-bootstrap.json"),
 		Episode:       filepath.Join(publicDirectory, "sealed-episode.json"),
+		Evidence:      filepath.Join(publicDirectory, "ablation-evidence.json"),
 		PrivateOracle: filepath.Join(privateDirectory, "private-oracle.json"),
 		Evaluation:    filepath.Join(privateDirectory, "evaluation.json"),
 		Receipt:       filepath.Join(privateDirectory, "promotion-receipt.json"),

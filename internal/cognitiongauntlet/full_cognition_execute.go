@@ -57,7 +57,7 @@ func executeFullCognition(
 		replacement, err := newFullRuntimeComponents(
 			ctx, request.Pool, request.Client, brain, authority.RatGeneration.Fixed.Brain,
 			request.HostStore,
-			scenario, episode, request.Surface,
+			scenario, episode, request.Attempt, request.Surface,
 		)
 		if err != nil {
 			return result, restarts, err
@@ -66,14 +66,20 @@ func executeFullCognition(
 		if err != nil {
 			return result, restarts, fmt.Errorf("restart durable Labyrinth host: %w", err)
 		}
+		activation, err := observeRuntimeProviderActivation(
+			ctx, replacement, episode, binding.Attempt,
+		)
+		if err != nil {
+			return result, restarts, err
+		}
 		stored, err := startFullCognitionEpisode(
-			ctx, replacement.store, request, authority, replacement.frozenBrain,
+			ctx, replacement.store, request, authority, replacement.brainBootstrap, activation,
 			episode, scenario, restartTransition,
 		)
 		if err != nil {
 			return result, restarts, err
 		}
-		replacement, err = activateRuntimeComponents(ctx, replacement, stored, binding.Attempt)
+		replacement, err = activateRuntimeComponents(ctx, replacement, stored, activation)
 		if err != nil {
 			return result, restarts, err
 		}

@@ -17,25 +17,26 @@ func startRepositoryCognitionEpisode(
 	environment *cognitionenv.Environment,
 	investigation cognitionenv.Investigation,
 	episode cognition.EpisodeRef,
-	brain cognitionpolicy.AttestedBrain,
+	bootstrap cognitionpolicy.BrainBootstrap,
+	activation cognitionpolicy.ProviderProcessActivation,
 	budget cognition.RuntimeBudget,
 	start cognition.Transition,
-) error {
+) (queue.CognitionEpisode, error) {
 	if session == nil || session.runtime == nil || session.runtime.svc == nil ||
 		session.runtime.svc.repo == nil || session.runtime.claim == nil || store == nil ||
 		environment == nil {
-		return fmt.Errorf("repository cognition episode start is uninitialized")
+		return queue.CognitionEpisode{}, fmt.Errorf("repository cognition episode start is uninitialized")
 	}
-	if err := cognitionpolicy.ValidateRuntimeBudget(brain.Ref, budget); err != nil {
-		return fmt.Errorf("validate repository cognition runtime budget: %w", err)
+	if err := cognitionpolicy.ValidateRuntimeBudget(bootstrap.AttestedBrain.Ref, budget); err != nil {
+		return queue.CognitionEpisode{}, fmt.Errorf("validate repository cognition runtime budget: %w", err)
 	}
 	check, err := investigation.Completion().Resolve(investigation.Goal())
 	if err != nil {
-		return err
+		return queue.CognitionEpisode{}, err
 	}
 	if len(start.Observations) != 1 ||
 		start.Observations[0].Kind != cognitionenv.ObservationNeed {
-		return fmt.Errorf("repository cognition start omitted its exact accepted need evidence")
+		return queue.CognitionEpisode{}, fmt.Errorf("repository cognition start omitted its exact accepted need evidence")
 	}
 	initialEvidence := []cognition.EvidenceRef{start.Observations[0].EvidenceRef()}
 	planGeneration := cognition.InitialObligationGeneration
@@ -43,13 +44,14 @@ func startRepositoryCognitionEpisode(
 		episode.ID, planGeneration, "", investigation.Goal(), check,
 	)
 	if err != nil {
-		return err
+		return queue.CognitionEpisode{}, err
 	}
-	_, err = store.StartEpisode(
+	stored, err := store.StartEpisode(
 		session.runtime.ctx,
 		queue.CognitionEpisodeStart{
 			Authority: session.runtime.claim.Authority, EpisodeID: episode.ID,
-			AttestedBrain: brain, Scenario: investigation.Ref(), Goal: investigation.Goal(),
+			BrainBootstrap: bootstrap, ProviderProcessActivation: activation,
+			Scenario: investigation.Ref(), Goal: investigation.Goal(),
 			Completion: investigation.Completion(), ActionCatalog: investigation.Catalog(), Budget: budget,
 			Root: cognition.ObligationSpec{
 				ID: rootID, Desired: investigation.Goal(),
@@ -60,9 +62,9 @@ func startRepositoryCognitionEpisode(
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("start repository cognition episode: %w", err)
+		return queue.CognitionEpisode{}, fmt.Errorf("start repository cognition episode: %w", err)
 	}
-	return nil
+	return stored, nil
 }
 
 var _ cognitionruntime.CompletionEvaluator = (*cognitionenv.Environment)(nil)

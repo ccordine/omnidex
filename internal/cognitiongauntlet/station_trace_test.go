@@ -82,33 +82,6 @@ func TestModelCallTraceSealsExactNativeUsageLimitWithoutClaimingQualification(t 
 	}
 }
 
-func TestNonDispatchedDispositionConsumesProjectionWithoutCountingModelUsage(t *testing.T) {
-	manifest := validEpisodeManifest(mustRatGeneration(t), terminalTestPayload(t))
-	disposition := PolicyDispositionTrace{
-		Schema: PolicyDispositionSchemaV1, ProjectionID: "projection-1",
-		ProjectionSHA256: strings.Repeat("d", 64), Budget: testStationBudget(),
-		ResultStatus:              cognitionpolicy.CallResultFailed,
-		FailureCode:               cognitionpolicy.CallFailureProviderIdentity,
-		ProviderRequestDispatched: false,
-	}
-	manifest.Trace[1].Kind = TracePolicyDisposition
-	manifest.Trace[1].Payload = mustTraceJSONObject(t, disposition)
-	manifest.Resources = Resources{}
-	if _, err := prepareEpisodeManifest(manifest); err != nil {
-		t.Fatalf("non-dispatched disposition did not consume its exact projection: %v", err)
-	}
-
-	manifest = validEpisodeManifest(mustRatGeneration(t), terminalTestPayload(t))
-	manifest.Trace = append(manifest.Trace[:1], manifest.Trace[2:]...)
-	for index := range manifest.Trace {
-		manifest.Trace[index].Sequence = uint64(index + 1)
-	}
-	manifest.Resources = Resources{}
-	if _, err := prepareEpisodeManifest(manifest); err == nil {
-		t.Fatal("unused projection without a non-dispatched disposition was accepted")
-	}
-}
-
 func TestModelCallTraceBindsProviderDispatchAndDoneReason(t *testing.T) {
 	length := testModelCallTrace()
 	length.ResultStatus = cognitionpolicy.CallResultRejected
@@ -176,11 +149,12 @@ func testProjectionTrace() ProjectionTrace {
 
 func testModelCallTrace() ModelCallTrace {
 	return ModelCallTrace{
-		Schema: ModelCallTraceSchemaV2, ProjectionID: "projection-1",
+		Schema: ModelCallTraceSchemaV4, ProjectionID: "projection-1",
 		ProjectionSHA256: strings.Repeat("d", 64), Budget: testStationBudget(),
 		ResultStatus:                cognitionpolicy.CallResultAccepted,
 		ProviderResponseDisposition: llm.ProviderResponseSucceeded,
-		ProviderRequestDispatched:   true, ProviderDoneReason: "stop", ProviderUsagePresent: true,
+		ProviderRequestDisposition:  llm.ProviderRequestDispatched,
+		ProviderDoneReason:          "stop", ProviderUsagePresent: true,
 		ProviderUsage: llm.ProviderGenerationUsage{
 			PromptEvalCount: 32, EvalCount: 16, TotalDurationNanos: 4,
 			LoadDurationNanos: 1, PromptEvalDurationNanos: 1, EvalDurationNanos: 1,

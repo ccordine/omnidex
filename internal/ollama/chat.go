@@ -50,7 +50,7 @@ type chatResponse struct {
 	EvalCount                     *int                            `json:"eval_count,omitempty"`
 	EvalDuration                  *int64                          `json:"eval_duration,omitempty"`
 	ProviderRequestSHA256         string                          `json:"-"`
-	ProviderRequestDispatched     bool                            `json:"-"`
+	ProviderRequestDisposition    llm.ProviderRequestDisposition  `json:"-"`
 	ProviderHTTPStatus            int                             `json:"-"`
 	ProviderResponseDisposition   llm.ProviderResponseDisposition `json:"-"`
 	ProviderResponseComplete      bool                            `json:"-"`
@@ -158,8 +158,8 @@ func (c *Client) chatResponse(
 		return chatResponse{}, err
 	}
 	httpRequest.Header.Set("Content-Type", "application/json")
-	partial.ProviderRequestDispatched = true
-	response, err := c.httpClient.Do(httpRequest)
+	response, disposition, err := c.doExactProviderRequest(httpRequest)
+	partial.ProviderRequestDisposition = disposition
 	if err != nil {
 		partial.ProviderResponseDisposition = llm.ProviderResponseTransportError
 		return partial, c.wrapConnectivityError(err, "/api/chat")
@@ -217,7 +217,7 @@ func (c *Client) chatResponse(
 
 func mergeChatResponseEvidence(parsed chatResponse, evidence chatResponse) chatResponse {
 	parsed.ProviderRequestSHA256 = evidence.ProviderRequestSHA256
-	parsed.ProviderRequestDispatched = evidence.ProviderRequestDispatched
+	parsed.ProviderRequestDisposition = evidence.ProviderRequestDisposition
 	parsed.ProviderHTTPStatus = evidence.ProviderHTTPStatus
 	parsed.ProviderResponseDisposition = evidence.ProviderResponseDisposition
 	parsed.ProviderResponseComplete = evidence.ProviderResponseComplete

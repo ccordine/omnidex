@@ -118,7 +118,8 @@ func policyTestFailedProviderIdentityGeneration(
 	operations := observed.Evidence.Clone().Operations
 	operations[0], err = llm.NewProviderIdentityOperationEvidence(
 		operations[0].Operation, operations[0].Method, operations[0].Endpoint,
-		true, operations[0].Request, 503, llm.ProviderIdentityHTTPError,
+		llm.ProviderRequestDispatched, operations[0].Request, 503,
+		llm.ProviderIdentityHTTPError,
 		true, llm.NewProviderContentEncodingEvidence(nil, false),
 		[]byte(`{"error":"unavailable"}`),
 	)
@@ -128,7 +129,8 @@ func policyTestFailedProviderIdentityGeneration(
 	for index := 1; index < len(operations); index++ {
 		operations[index], err = llm.NewProviderIdentityOperationEvidence(
 			operations[index].Operation, operations[index].Method, operations[index].Endpoint,
-			false, operations[index].Request, 0, llm.ProviderIdentityNotDispatched,
+			llm.ProviderRequestNotDispatched, operations[index].Request, 0,
+			llm.ProviderIdentityNotDispatched,
 			false, llm.ProviderContentEncodingEvidence{}, nil,
 		)
 		if err != nil {
@@ -145,7 +147,9 @@ func policyTestFailedProviderIdentityGeneration(
 		panic(err)
 	}
 	return llm.PreparedGeneration{
-		Schema: llm.PreparedGenerationSchemaV1, ProviderIdentityEvidence: evidence,
+		Schema:                     llm.PreparedGenerationSchemaV1,
+		ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
+		ProviderIdentityEvidence:   evidence,
 	}
 }
 

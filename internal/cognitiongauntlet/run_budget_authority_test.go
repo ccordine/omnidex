@@ -3,7 +3,7 @@ package cognitiongauntlet
 import "testing"
 
 func TestRawRunBudgetV2IsDerivedAndStructuralV1CannotExecute(t *testing.T) {
-	structural := InitialMicrogauntletsV1()[0].Budget
+	structural := InitialMicrogauntletsV2()[0].Budget
 	if structural.Schema != RunBudgetSchemaStructuralV1 || structural.Validate() != nil {
 		t.Fatal("initial v1 benchmark budget is not preserved as structural authority")
 	}
@@ -31,7 +31,7 @@ func TestRawRunBudgetV2IsDerivedAndStructuralV1CannotExecute(t *testing.T) {
 }
 
 func TestRawRunBudgetV2RejectsCallerSubstitutionAndSecondDerivation(t *testing.T) {
-	structural := InitialMicrogauntletsV1()[0].Budget
+	structural := InitialMicrogauntletsV2()[0].Budget
 	generation := mustRatGeneration(t)
 	executable, err := NewExecutableRunBudgetV2(
 		structural, generation.Fixed.Brain.Sampling,

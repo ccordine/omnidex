@@ -36,7 +36,7 @@ func newAblationEpisodeTemplate(
 	}
 	brain := authority.RatGeneration.Fixed.Brain
 	return EpisodeManifest{
-		Schema: EpisodeManifestSchemaV1, EpisodeID: episode.ID,
+		Schema: EpisodeManifestSchemaV2, EpisodeID: episode.ID,
 		Scenario: authority.Scenario, PublicRunAuthoritySHA256: authoritySHA,
 		Variant: authority.Variant, OmnidexCommit: omnidexCommit,
 		RuntimeVersion:          authority.RatGeneration.Runtime.Version,
@@ -58,6 +58,7 @@ func finishAblation(
 	authority PairedRunAuthority,
 	fixture MicrogauntletCase,
 	sealed SealedEpisode,
+	evidence AblationEvidenceAuthority,
 	failure FailureTrace,
 ) (AblationRunResult, error) {
 	evaluation, causal, err := ScoreAndSealMicrogauntletEpisode(
@@ -84,12 +85,15 @@ func finishAblation(
 		return AblationRunResult{}, err
 	}
 	evidenceClass := AblationDevelopmentEvidence
-	if request.Variant == VariantOracleEvidence {
+	switch request.Variant {
+	case VariantOracleEvidence:
 		evidenceClass = AblationOracleContaminated
+	case VariantRawShell:
+		evidenceClass = AblationBenchmarkOnly
 	}
 	result := AblationRunResult{
 		EvidenceClass: evidenceClass, PromotionEligible: false,
-		Authority: authority, Variant: variant, Episode: sealed, Oracle: oracle,
+		Authority: authority, Variant: variant, Episode: sealed, Evidence: evidence, Oracle: oracle,
 		Evaluation: evaluation, Efficiency: efficiency, CausalAcquisition: causal,
 	}
 	if err := result.Validate(); err != nil {

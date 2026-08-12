@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestLLMCallEvidenceRejectsIncompleteOrFakeSuccess(t *testing.T) {
@@ -129,17 +127,9 @@ func TestLLMAdvisoryEvidenceMigrationAddsThinkingRequestIdentity(t *testing.T) {
 }
 
 func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL LLM evidence tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)

@@ -66,7 +66,10 @@ func TestPostgresRejectedPolicyOutcomeReplaysForSameAndReplacementAttempts(t *te
 }
 
 func TestPostgresFailedPolicyOutcomeReplaysRegisteredGenerationError(t *testing.T) {
-	fixture := startTaskGenerationRetirementFixture(t, "failed-policy-replay")
+	repository, pool, ctx := policyInputFreshRepository(t)
+	fixture := startTaskGenerationRetirementFixtureIn(
+		t, repository, pool, ctx, "failed-policy-replay",
+	)
 	client := failingCognitionPolicyClient{cognitionGuardPolicyClient{response: "unused"}}
 	if err := reserveTerminalCognitionPolicyCall(t, fixture, client); !errors.Is(err, cognitionpolicy.ErrGeneration) {
 		t.Fatalf("fresh failed error=%v", err)

@@ -11,6 +11,7 @@ type offlineExecutionAuthority struct {
 	InferenceTimeoutSeconds int
 	Variant                 Variant
 	RatGeneration           RatGeneration
+	PreparedBrainEvidence   PreparedBrainEvidenceAuthority
 	RuntimeFingerprint      RuntimeFingerprint
 	Budget                  RunBudget
 	Repetition              int
@@ -29,6 +30,11 @@ func (authority offlineExecutionAuthority) Validate() error {
 	}
 	if err := authority.RuntimeFingerprint.Validate(); err != nil {
 		return err
+	}
+	if _, err := loadPreparedBrainEvidenceAuthority(
+		authority.PreparedBrainEvidence, authority.RatGeneration.Fixed.Brain,
+	); err != nil {
+		return fmt.Errorf("verify offline execution prepared Brain evidence: %w", err)
 	}
 	derived, err := currentRuntimeFingerprint(authority.RatGeneration.Runtime.SourceSHA256)
 	if err != nil || derived != authority.RuntimeFingerprint ||
@@ -57,6 +63,7 @@ func (config OfflinePromotionConfig) executionAuthority() offlineExecutionAuthor
 		DatabaseURL: config.DatabaseURL, OllamaEndpoint: config.OllamaEndpoint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		Variant:                 config.Variant, RatGeneration: config.RatGeneration,
+		PreparedBrainEvidence: config.PreparedBrainEvidence,
 		RuntimeFingerprint: config.RuntimeFingerprint, Budget: config.Scenario.Budget(),
 		Repetition: config.Repetition, OmnidexCommit: config.OmnidexCommit,
 		LedgerSchemaVersion:     config.LedgerSchemaVersion,

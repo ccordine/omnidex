@@ -5,6 +5,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/contextbuilder"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/taskstate"
 )
@@ -69,6 +70,9 @@ func (state *productionTraceState) acceptPolicyResult(
 	if _, duplicate := state.results[result.CallID]; duplicate {
 		return fmt.Errorf("sealed production policy result is duplicated")
 	}
+	if _, abandoned := state.abandonments[result.CallID]; abandoned {
+		return fmt.Errorf("sealed production policy call has both a result and abandonment")
+	}
 	state.results[result.CallID] = result.Status
 	budget := StationBudget{
 		MaxInputBytes:   attempt.RuntimeBudget.MaxInputBytes,
@@ -76,16 +80,20 @@ func (state *productionTraceState) acceptPolicyResult(
 		MaxOutputBytes:  attempt.RuntimeBudget.MaxOutputBytes,
 		MaxOutputTokens: attempt.RuntimeBudget.MaxOutputTokens,
 	}
-	if !result.ProviderRequestDispatched {
-		return appendProductionPolicyDisposition(recorder, attempt, result, budget)
+	if result.ProviderRequestDisposition != llm.ProviderRequestDispatched {
+		if err := appendProductionPolicyDisposition(recorder, attempt, result, budget); err != nil {
+			return err
+		}
+		state.metrics.Resources.PolicyCallsConsumed++
+		return nil
 	}
 	call := ModelCallTrace{
-		Schema:           ModelCallTraceSchemaV2,
+		Schema:           ModelCallTraceSchemaV4,
 		ProjectionID:     string(attempt.ContextProjection.ID),
 		ProjectionSHA256: attempt.ContextProjection.SHA256,
 		Budget:           budget, ResultStatus: result.Status, FailureCode: result.FailureCode,
 		ProviderResponseDisposition: result.ProviderResponseDisposition,
-		ProviderRequestDispatched:   result.ProviderRequestDispatched,
+		ProviderRequestDisposition:  result.ProviderRequestDisposition,
 		ProviderDoneReason:          result.ProviderDoneReason,
 		ProviderUsagePresent:        result.ProviderUsagePresent, ProviderUsage: result.ProviderUsage,
 		InputBytes: int64(attempt.ModelVisibleInputBytes), OutputBytes: int64(result.ResponseBytes),
@@ -105,6 +113,7 @@ func (state *productionTraceState) acceptPolicyResult(
 		return err
 	}
 	resources := &state.metrics.Resources
+	resources.PolicyCallsConsumed++
 	resources.ModelCalls++
 	resources.ContextBytes += call.InputBytes
 	resources.InputTokens += call.InputTokens
@@ -130,11 +139,13 @@ func appendProductionPolicyDisposition(
 	budget StationBudget,
 ) error {
 	disposition := PolicyDispositionTrace{
-		Schema:           PolicyDispositionSchemaV1,
+		Schema:           PolicyDispositionSchemaV3,
+		Disposition:      PolicyCallResultDisposition,
 		ProjectionID:     string(attempt.ContextProjection.ID),
 		ProjectionSHA256: attempt.ContextProjection.SHA256,
 		Budget:           budget, ResultStatus: result.Status,
-		FailureCode: result.FailureCode, ProviderRequestDispatched: false,
+		FailureCode:                result.FailureCode,
+		ProviderRequestDisposition: result.ProviderRequestDisposition,
 	}
 	if err := disposition.Validate(); err != nil {
 		return err
@@ -144,6 +155,32 @@ func appendProductionPolicyDisposition(
 		return err
 	}
 	return recorder.Append(TracePolicyDisposition, attempt.ID, nil, payload)
+}
+
+func appendProductionPolicyAbandonment(
+	recorder *EpisodeRecorder,
+	attempt cognitionpolicy.CallAttempt,
+	abandonmentID string,
+) error {
+	disposition := PolicyDispositionTrace{
+		Schema: PolicyDispositionSchemaV3, Disposition: PolicyCallAbandonedDisposition,
+		ProjectionID:     string(attempt.ContextProjection.ID),
+		ProjectionSHA256: attempt.ContextProjection.SHA256,
+		Budget: StationBudget{
+			MaxInputBytes:   attempt.RuntimeBudget.MaxInputBytes,
+			MaxInputTokens:  attempt.RuntimeBudget.MaxInputTokens,
+			MaxOutputBytes:  attempt.RuntimeBudget.MaxOutputBytes,
+			MaxOutputTokens: attempt.RuntimeBudget.MaxOutputTokens,
+		},
+	}
+	if err := disposition.Validate(); err != nil {
+		return err
+	}
+	payload, err := traceJSONObject(disposition)
+	if err != nil {
+		return err
+	}
+	return recorder.Append(TracePolicyDisposition, abandonmentID, nil, payload)
 }
 
 func projectionReference(ref taskstate.Ref) ProjectionReferenceIdentity {

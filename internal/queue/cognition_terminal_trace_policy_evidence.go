@@ -58,7 +58,8 @@ func appendCognitionPolicyEvidenceTraceRecordsTx(
 	records []cognitionTraceRecord,
 ) ([]cognitionTraceRecord, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT evidence_kind,evidence_id,call_id,ref_sha256,content_sha256,
+		SELECT evidence.evidence_kind,evidence.evidence_id,evidence.call_id,
+		       evidence.ref_sha256,evidence.content_sha256,
 		       content_bytes,snapshots.call_ordinal
 		FROM (
 			SELECT 'model_response'::text AS evidence_kind,evidence.evidence_id,

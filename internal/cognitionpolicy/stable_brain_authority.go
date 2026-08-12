@@ -20,9 +20,17 @@ func (brain AttestedBrain) StableAuthority() (StableBrainAuthority, error) {
 	if err := brain.Validate(); err != nil {
 		return StableBrainAuthority{}, err
 	}
+	return NewStableBrainAuthority(brain.Ref, brain.Attestation, brain.Host)
+}
+
+func NewStableBrainAuthority(
+	brain BrainRef,
+	provider llm.ProviderIdentityAttestation,
+	host HostHardwareAttestation,
+) (StableBrainAuthority, error) {
 	value := StableBrainAuthority{
-		Schema: StableBrainAuthoritySchemaV1, Ref: brain.Ref,
-		ProviderAttestation: brain.Attestation, HostHardwareAttestation: brain.Host,
+		Schema: StableBrainAuthoritySchemaV1, Ref: brain,
+		ProviderAttestation: provider, HostHardwareAttestation: host,
 	}
 	value.SHA256 = stableBrainAuthoritySHA(value)
 	return value, value.Validate()

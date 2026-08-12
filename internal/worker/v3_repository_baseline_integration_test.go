@@ -20,7 +20,7 @@ func TestPostgresRepositoryBaselineRejectsConflictingExistingTestBeforeGeneratio
 	if os.Getenv("OMNIDEX_REQUIRE_BWRAP_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_REQUIRE_BWRAP_INTEGRATION=1 for the real dirty-baseline proof")
 	}
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
+	ctx, repository, pool := openRepositoryCognitionDatabase(t)
 	root := repositoryConflictingBaselineRoot(t)
 	project, err := repository.CreateProject(
 		ctx, fmt.Sprintf("mutation-baseline-failure-%d", time.Now().UnixNano()), root, "", "", nil,
@@ -104,7 +104,7 @@ func TestPostgresRepositoryBaselineFailsLoudlyWhenTestRequiresIgnoredSecretState
 	if os.Getenv("OMNIDEX_REQUIRE_BWRAP_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_REQUIRE_BWRAP_INTEGRATION=1 for the real excluded-state proof")
 	}
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
+	ctx, repository, pool := openRepositoryCognitionDatabase(t)
 	root := repositoryMutationWorkflowRoot(t)
 	requiresSecret := `package mutationworkflow
 

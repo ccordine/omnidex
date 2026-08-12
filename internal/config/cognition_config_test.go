@@ -4,13 +4,15 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestMain(m *testing.M) {
 	fixtures := map[string]string{
 		"COGNITION_MODEL_SHA256":          strings.Repeat("a", 64),
 		"COGNITION_MODEL_QUANTIZATION":    "Q4_K_M",
-		"COGNITION_BACKEND_VERSION":       "test-backend-1.0.0",
+		"COGNITION_BACKEND_VERSION":       llm.ExactPreparedProviderVersion,
 		"COGNITION_HARDWARE":              "test-hardware",
 		"COGNITION_CONTEXT_CEILING_BYTES": "24576",
 		"COGNITION_MAX_OUTPUT_TOKENS":     "4096",

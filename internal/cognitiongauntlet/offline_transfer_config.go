@@ -8,7 +8,7 @@ import (
 
 const (
 	OfflineTransferRequestSchemaV1 = "omnidex.offline-transfer-request.v1"
-	OfflineTransferConfigSchemaV1  = "omnidex.offline-transfer-config.v1"
+	OfflineTransferConfigSchemaV2  = "omnidex.offline-transfer-config.v2"
 )
 
 type OfflineTransferRequest struct {
@@ -33,6 +33,7 @@ type OfflineTransferConfig struct {
 	PublicOutputDirectory   string              `json:"public_output_directory"`
 	PrivateOutputDirectory  string              `json:"private_output_directory"`
 	RatGeneration           RatGeneration       `json:"rat_generation"`
+	PreparedBrainEvidence   PreparedBrainEvidenceAuthority `json:"prepared_brain_evidence"`
 	RuntimeFingerprint      RuntimeFingerprint  `json:"runtime_fingerprint"`
 	PreregistrationSHA256   string              `json:"preregistration_sha256"`
 	OmnidexCommit           string              `json:"omnidex_commit"`
@@ -70,7 +71,7 @@ func (request OfflineTransferRequest) Validate() error {
 }
 
 func (config OfflineTransferConfig) Validate() error {
-	if config.Schema != OfflineTransferConfigSchemaV1 || config.Plan.Validate() != nil ||
+	if config.Schema != OfflineTransferConfigSchemaV2 || config.Plan.Validate() != nil ||
 		!validDigest(config.PreregistrationSHA256) || !validCommitIdentity(config.OmnidexCommit) ||
 		config.InferenceTimeoutSeconds <= 0 || config.InferenceTimeoutSeconds > 24*60*60 {
 		return fmt.Errorf("offline Transfer configuration is invalid")
@@ -115,6 +116,7 @@ func (config OfflineTransferConfig) ValidateStart() error {
 func (config OfflineTransferConfig) fixedAuthority() OfflineMatrixFixedAuthority {
 	return OfflineMatrixFixedAuthority{
 		Budget: config.Budget, RatGeneration: config.RatGeneration,
+		PreparedBrainEvidence: config.PreparedBrainEvidence,
 		RuntimeFingerprint:      config.RuntimeFingerprint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		OmnidexCommit:           config.OmnidexCommit,
@@ -141,11 +143,12 @@ func (config OfflineTransferConfig) derivedRunConfig(
 	publicDirectory := filepath.Join(config.PublicOutputDirectory, "runs", string(surface))
 	privateDirectory := filepath.Join(config.PrivateOutputDirectory, "runs", string(surface))
 	return OfflinePromotionConfig{
-		Schema: OfflinePromotionConfigSchemaV1, DatabaseURL: config.DatabaseURL,
+		Schema: OfflinePromotionConfigSchemaV2, DatabaseURL: config.DatabaseURL,
 		OllamaEndpoint:          config.OllamaEndpoint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		Scenario:                registration.Workload, Variant: VariantFullCognition, Surface: surface,
 		RatGeneration: config.RatGeneration, RuntimeFingerprint: config.RuntimeFingerprint,
+		PreparedBrainEvidence: config.PreparedBrainEvidence,
 		Repetition: config.Plan.Repetition, PublicOutputDirectory: publicDirectory,
 		PrivateOutputDirectory: privateDirectory, OmnidexCommit: config.OmnidexCommit,
 		LedgerSchemaVersion:     config.LedgerSchemaVersion,

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
 )
@@ -77,7 +76,8 @@ func TestGeneratePreparedExactRejectsMissingOrNegativeNativeUsage(t *testing.T) 
 			if err == nil {
 				t.Fatal("inexact provider usage was accepted")
 			}
-			if !partial.ProviderRequestDispatched || partial.ProviderObservation.ObservationSHA256 == "" ||
+			if partial.ProviderRequestDisposition != llm.ProviderRequestDispatched ||
+				partial.ProviderObservation.ObservationSHA256 == "" ||
 				partial.ProviderResponseSHA256 == "" || partial.Content != `{}` {
 				t.Fatalf("usage failure lost executed provider evidence: %+v", partial)
 			}
@@ -101,7 +101,8 @@ func TestGeneratePreparedExactPreservesCompleteProviderErrorResponse(t *testing.
 	}
 	digest := sha256.Sum256([]byte(body))
 	wantSHA := hex.EncodeToString(digest[:])
-	if !partial.ProviderRequestDispatched || partial.ProviderHTTPStatus != http.StatusServiceUnavailable ||
+	if partial.ProviderRequestDisposition != llm.ProviderRequestDispatched ||
+		partial.ProviderHTTPStatus != http.StatusServiceUnavailable ||
 		partial.ProviderResponseDisposition != llm.ProviderResponseHTTPError ||
 		!partial.ProviderResponseComplete || !partial.ProviderResponseBytesKnown ||
 		partial.ProviderResponseSHA256 != wantSHA ||
@@ -159,7 +160,7 @@ func TestGeneratePreparedExactReportsOnlyActualProviderRequestDispatch(t *testin
 	invalid := exactPreparedRequest(expected)
 	invalid.PromptHint = "not the registered exact hint"
 	if partial, err := client.GeneratePreparedExact(context.Background(), invalid); err == nil ||
-		partial.ProviderRequestDispatched {
+		partial.ProviderRequestDisposition != "" {
 		t.Fatalf("pre-dispatch result=%+v error=%v", partial, err)
 	}
 
@@ -181,7 +182,7 @@ func TestGeneratePreparedExactReportsOnlyActualProviderRequestDispatch(t *testin
 		return base.RoundTrip(request)
 	})
 	partial, err := client.GeneratePreparedExact(context.Background(), exactPreparedRequest(expected))
-	if err == nil || !partial.ProviderRequestDispatched ||
+	if err == nil || partial.ProviderRequestDisposition != llm.ProviderRequestNotDispatched ||
 		partial.ProviderResponseDisposition != llm.ProviderResponseTransportError ||
 		partial.ProviderRequestSHA256 == "" {
 		t.Fatalf("post-dispatch result=%+v error=%v", partial, err)
@@ -280,85 +281,4 @@ func TestGeneratePreparedExactRejectsTransformedJSONStringsAndPartialDecode(t *t
 	if err != nil || result.Content != "�" {
 		t.Fatalf("literal replacement rune result=%+v error=%v", result, err)
 	}
-}
-
-func exactPreparedRequest(expected llm.ProviderIdentityExpectation) llm.PreparedModel {
-	zero := 0.0
-	challenge, err := llm.DeriveProviderIdentityObservationChallenge("test-policy-call", expected)
-	if err != nil {
-		panic(err)
-	}
-	return llm.PreparedModel{
-		BaseModel: expected.Model, ContextModel: expected.Model,
-		Prompt: `{"instruction":"select"}`, PromptHint: llm.MinimalGeneratePrompt,
-		MaxOutputTokens: 1024, ContextTokens: expected.NativeContextLimit,
-		ResponseFormat:  llm.ResponseFormatJSON,
-		ResponseSchema:  map[string]any{"type": "object"},
-		ThinkingEnabled: false, Temperature: &zero,
-		ProviderIdentityExpectation:  &expected,
-		ProviderObservationChallenge: challenge,
-	}
-}
-
-func exactPreparedIdentityClient(
-	t *testing.T,
-	expected llm.ProviderIdentityExpectation,
-	chatStatus int,
-	chatBody string,
-	seen map[string]int,
-	captured map[string][]byte,
-) *Client {
-	t.Helper()
-	client := New("http://ollama.test", expected.Model, "", 5*time.Second, expected.NativeContextLimit)
-	client.httpClient = &http.Client{Transport: identityRoundTripFunc(func(
-		request *http.Request,
-	) (*http.Response, error) {
-		seen[request.URL.Path]++
-		if request.Body != nil {
-			raw, err := io.ReadAll(request.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
-			captured[request.URL.Path] = raw
-		}
-		status, raw := http.StatusOK, []byte(`{"done":true}`)
-		switch request.URL.Path {
-		case "/api/version":
-			raw = []byte(`{"version":"0.24.0"}`)
-		case "/api/tags":
-			raw = ollamaIdentityModelsJSON(t, expected, false)
-		case "/api/show":
-			raw = ollamaTokenizerProfileJSON()
-		case "/api/ps":
-			raw = ollamaIdentityModelsJSON(t, expected, true)
-		case "/api/generate":
-			if strings.Contains(string(captured[request.URL.Path]), `"raw":true`) {
-				status = chatStatus
-				raw = []byte(chatBody)
-			}
-		default:
-			status = http.StatusNotFound
-		}
-		return &http.Response{
-			StatusCode: status, Header: make(http.Header), Request: request,
-			Body: io.NopCloser(strings.NewReader(string(raw))),
-		}, nil
-	})}
-	return client
-}
-
-func exactChatRequestBytes(t *testing.T, prepared llm.PreparedModel) []byte {
-	t.Helper()
-	raw, err := llm.ExactPreparedRequestBytes(prepared)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return raw
-}
-
-func exactRawBody() string {
-	return `{"model":"qwen3.5:9b-q4_K_M","created_at":"2026-08-09T22:00:00Z",` +
-		`"response":"{}","done":true,"done_reason":"stop",` +
-		`"total_duration":101,"load_duration":11,"prompt_eval_count":41,` +
-		`"prompt_eval_duration":21,"eval_count":7,"eval_duration":31}`
 }

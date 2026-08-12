@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +15,6 @@ import (
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/gryph/omnidex/internal/workingset"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type repositoryShadowTestLLM struct {
@@ -43,7 +41,7 @@ func (*repositoryShadowTestLLM) Embedding(context.Context, string) ([]float64, e
 }
 
 func TestPostgresRepositoryShadowConsumerPreservesPromptAndBindsEvidence(t *testing.T) {
-	ctx, repository, _ := openRepositoryShadowDatabase(t)
+	ctx, repository, _ := openRepositoryCognitionDatabase(t)
 	claim := startRepositoryShadowJob(t, ctx, repository, "shadow-live")
 	client := &repositoryShadowTestLLM{}
 	service := &Service{
@@ -115,7 +113,7 @@ func TestPostgresRepositoryShadowConsumerPreservesPromptAndBindsEvidence(t *test
 }
 
 func TestPostgresRepositoryShadowConsumerRejectsMismatchedExistingSet(t *testing.T) {
-	ctx, repository, _ := openRepositoryShadowDatabase(t)
+	ctx, repository, _ := openRepositoryCognitionDatabase(t)
 	claim := startRepositoryShadowJob(t, ctx, repository, "shadow-mismatch")
 	if _, err := repository.CreateCurrentWorkingSet(
 		ctx, claim.Authority,
@@ -198,26 +196,6 @@ func assertRepositoryShadowLLMEvidence(
 			t.Fatalf("LLM call %d lost exact shadow binding: %+v", index, historical)
 		}
 	}
-}
-
-func openRepositoryShadowDatabase(t *testing.T) (context.Context, *queue.Repository, *pgxpool.Pool) {
-	t.Helper()
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL repository shadow tests")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	t.Cleanup(cancel)
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	repository := queue.New(pool)
-	if err := repository.EnsureSchema(ctx, loadWorkerTestMigrationBundle(t)); err != nil {
-		t.Fatal(err)
-	}
-	return ctx, repository, pool
 }
 
 func startRepositoryShadowJob(

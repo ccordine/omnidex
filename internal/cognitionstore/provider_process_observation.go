@@ -11,12 +11,12 @@ import (
 
 func (store *Store) RecordProviderProcessObservation(
 	ctx context.Context,
-	receipt cognitionpolicy.ProviderProcessObservation,
+	activation cognitionpolicy.ProviderProcessActivation,
 ) error {
 	if store == nil || store.repository == nil {
 		return fmt.Errorf("cognition provider process observation store is uninitialized")
 	}
-	return store.repository.RecordCognitionProviderProcessObservation(ctx, receipt)
+	return store.repository.RecordCognitionProviderProcessObservation(ctx, activation)
 }
 
 func (store *Store) ReadProviderProcessObservationPage(

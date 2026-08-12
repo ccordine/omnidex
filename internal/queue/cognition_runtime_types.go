@@ -30,16 +30,17 @@ var (
 )
 
 type CognitionEpisodeStart struct {
-	Authority     model.StepAttemptAuthority
-	EpisodeID     cognition.EpisodeID
-	AttestedBrain cognitionpolicy.AttestedBrain
-	Scenario      cognition.ScenarioRef
-	Goal          cognition.GoalExpression
-	Completion    cognition.CompletionAuthority
-	ActionCatalog cognition.ActionCatalog
-	Budget        cognition.RuntimeBudget
-	Root          cognition.ObligationSpec
-	Transition    cognition.Transition
+	Authority                 model.StepAttemptAuthority
+	EpisodeID                 cognition.EpisodeID
+	BrainBootstrap            cognitionpolicy.BrainBootstrap
+	ProviderProcessActivation cognitionpolicy.ProviderProcessActivation
+	Scenario                  cognition.ScenarioRef
+	Goal                      cognition.GoalExpression
+	Completion                cognition.CompletionAuthority
+	ActionCatalog             cognition.ActionCatalog
+	Budget                    cognition.RuntimeBudget
+	Root                      cognition.ObligationSpec
+	Transition                cognition.Transition
 }
 
 type CognitionEpisode struct {

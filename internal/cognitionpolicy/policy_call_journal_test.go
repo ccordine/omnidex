@@ -14,7 +14,7 @@ func TestPolicyStartFailurePreventsInference(t *testing.T) {
 	snapshot, evidence := policyTestSnapshot(t, projection)
 	client := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
 	journal := &policyTestCallJournal{startErr: errors.New("database unavailable")}
-	policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
+	policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestPolicyStartFailurePreventsInference(t *testing.T) {
 	if !errors.Is(err, ErrCallJournal) {
 		t.Fatalf("error=%v want ErrCallJournal", err)
 	}
-	if outcome.ProviderRequestDispatched {
+	if outcome.PolicyCallConsumed {
 		t.Fatal("call reservation failure reported inference")
 	}
 	if client.generateCalls != 0 || len(journal.attempts) != 1 || len(journal.results) != 0 {
@@ -36,7 +36,7 @@ func TestPolicyPersistsProviderFailureAgainstReservedCall(t *testing.T) {
 	snapshot, _ := policyTestSnapshot(t, projection)
 	client := &policyTestClient{err: errors.New("provider offline")}
 	journal := &policyTestCallJournal{}
-	policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
+	policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestPolicyPersistsProviderFailureAgainstReservedCall(t *testing.T) {
 	if !errors.Is(err, ErrGeneration) {
 		t.Fatalf("error=%v want ErrGeneration", err)
 	}
-	if !outcome.ProviderRequestDispatched {
+	if !outcome.PolicyCallConsumed {
 		t.Fatal("provider invocation failure was not reported")
 	}
 	if client.generateCalls != 1 || len(journal.results) != 1 ||
@@ -62,7 +62,7 @@ func TestPolicyJournalFailureNeverReturnsAResult(t *testing.T) {
 	snapshot, _ := policyTestSnapshot(t, projection)
 	client := &policyTestClient{err: errors.New("provider offline")}
 	journal := &policyTestCallJournal{finishErr: errors.New("commit failed")}
-	policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
+	policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestPolicyJournalFailureNeverReturnsAResult(t *testing.T) {
 		t.Fatalf("error=%v want joined generation and journal failures", err)
 	}
 	decision := outcome.Decision
-	if !outcome.ProviderRequestDispatched {
+	if !outcome.PolicyCallConsumed {
 		t.Fatal("failed provider invocation was hidden by the journal error")
 	}
 	if decision.ObligationID != "" || decision.Action.Kind != "" {
@@ -85,7 +85,7 @@ func TestPolicyReplaysAcceptedCallWithoutInference(t *testing.T) {
 	snapshot, evidence := policyTestSnapshot(t, projection)
 	firstClient := &policyTestClient{response: policyTestResponse(t, snapshot, evidence)}
 	firstJournal := &policyTestCallJournal{}
-	first, err := New(firstClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), firstJournal)
+	first, err := New(firstClient, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), firstJournal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestPolicyReplaysAcceptedCallWithoutInference(t *testing.T) {
 		Created: false,
 	}}
 	replayClient := &policyTestClient{err: errors.New("must not be called")}
-	replay, err := New(replayClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), replayJournal)
+	replay, err := New(replayClient, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), replayJournal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestPolicyReplaysAcceptedCallWithoutInference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !want.ProviderRequestDispatched || got.ProviderRequestDispatched ||
+	if !want.PolicyCallConsumed || got.PolicyCallConsumed ||
 		got.Decision.ObligationID != want.Decision.ObligationID ||
 		got.Decision.Action.Kind != want.Decision.Action.Kind || replayClient.generateCalls != 0 {
 		t.Fatalf("replay=%#v model calls=%d", got, replayClient.generateCalls)
@@ -122,7 +122,10 @@ func TestPolicyRefusesIndeterminateAndRejectedReplayWithoutInference(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), envelope)
+	brain := policyTestAttestedBrain()
+	attempt, err := newCallAttempt(
+		snapshot, brain, policyTestProviderProcessActivation(snapshot, brain), envelope,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +158,7 @@ func TestPolicyRefusesIndeterminateAndRejectedReplayWithoutInference(t *testing.
 			t.Parallel()
 			client := &policyTestClient{err: errors.New("must not be called")}
 			journal := &policyTestCallJournal{reservation: &reservation.value}
-			policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
+			policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,7 +169,7 @@ func TestPolicyRefusesIndeterminateAndRejectedReplayWithoutInference(t *testing.
 			if name == "authority_denied" && !errors.Is(err, ErrInvalidDecision) {
 				t.Fatalf("authority replay error=%v want ErrInvalidDecision too", err)
 			}
-			if outcome.ProviderRequestDispatched || client.generateCalls != 0 {
+			if outcome.PolicyCallConsumed || client.generateCalls != 0 {
 				t.Fatal("durable prior outcome reached model")
 			}
 		})

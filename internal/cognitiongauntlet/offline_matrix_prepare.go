@@ -39,6 +39,7 @@ func PrepareOfflineMatrixConfig(
 	}
 	fixed := OfflineMatrixFixedAuthority{
 		Budget: base.promotion.Scenario.Budget(), RatGeneration: base.promotion.RatGeneration,
+		PreparedBrainEvidence: base.promotion.PreparedBrainEvidence,
 		RuntimeFingerprint:      base.promotion.RuntimeFingerprint,
 		InferenceTimeoutSeconds: request.InferenceTimeoutSeconds,
 		OmnidexCommit:           base.promotion.OmnidexCommit,
@@ -58,12 +59,13 @@ func PrepareOfflineMatrixConfig(
 		return err
 	}
 	config := OfflineMatrixConfig{
-		Schema: OfflineMatrixConfigSchemaV2, Plan: request.Plan, Budget: fixed.Budget,
+		Schema: OfflineMatrixConfigSchemaV3, Plan: request.Plan, Budget: fixed.Budget,
 		DatabaseURL: request.DatabaseURL, OllamaEndpoint: request.OllamaEndpoint,
 		InferenceTimeoutSeconds: request.InferenceTimeoutSeconds,
 		PublicOutputDirectory:   request.PublicOutputDirectory,
 		PrivateOutputDirectory:  request.PrivateOutputDirectory,
 		RatGeneration:           base.promotion.RatGeneration,
+		PreparedBrainEvidence:   base.promotion.PreparedBrainEvidence,
 		RuntimeFingerprint:      base.promotion.RuntimeFingerprint,
 		PreregistrationSHA256:   registrationSHA256,
 		OmnidexCommit:           base.promotion.OmnidexCommit,

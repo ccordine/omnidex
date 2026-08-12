@@ -237,6 +237,11 @@ func VerifyOfflineMatrixReceipt(
 		if err := validatePublicInferenceEpisode(bundle, episode); err != nil {
 			return err
 		}
+		if err := validateEpisodeExecutionIdentity(
+			episode.Manifest, runConfig.executionAuthority(),
+		); err != nil {
+			return err
+		}
 		rebuilt, err := buildOfflineMatrixRunReceipt(
 			coordinate.Case, coordinate.Variant, promotion, promotionSHA, episode, evaluation,
 		)

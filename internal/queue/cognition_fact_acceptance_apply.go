@@ -26,50 +26,57 @@ func persistCognitionTransitionFactsTx(
 	if err != nil {
 		return header, err
 	}
-	mutations, err := facts.MapTransitionFacts(
-		restored.MaterializedState(), taskstate.NodeID(obligationID), transition,
+	preLedger := restored.MaterializedState()
+	callOrdinal, err := cognitionTransitionCallOrdinalTx(ctx, tx, episodeID, transition)
+	if err != nil {
+		return header, err
+	}
+	materialization, err := newCognitionAcceptedFactMaterialization(
+		episodeID, obligationID, transition, facts, preLedger, callOrdinal,
 	)
 	if err != nil {
 		return header, fmt.Errorf("plan cognition accepted facts: %w", err)
 	}
-	_, transitionSHA, err := cognitionJSON(transition)
-	if err != nil {
-		return header, err
-	}
-	transitionID := cognitionTransitionID(episodeID, transitionSHA)
-	for _, mutation := range mutations {
-		command := mutation.Command()
-		policy, evidence, err := acceptedFactCommandAuthority(command, transition)
-		if err != nil {
-			return header, err
-		}
-		record := cognitionAcceptedFact{
-			Schema: cognitionAcceptedFactSchemaV1, EpisodeID: episodeID, LedgerID: header.ID,
-			TransitionID: transitionID, TransitionSHA256: transitionSHA,
-			ScopeObligationID: obligationID, AuthoritySHA256: facts.Reference().SHA256,
-			Planner: facts.Reference().Planner, Policy: policy,
-			EvidenceRefs: evidence, Mapping: mutation.Descriptor(),
-		}
-		_, record.SHA256, err = cognitionJSON(record.identity())
-		if err != nil {
-			return header, err
-		}
-		record.ID = "cognition_accepted_fact_" + record.SHA256
-		if err := record.validate(); err != nil {
-			return header, err
-		}
+	for _, member := range materialization.Members {
 		event, err := applyQueueOwnedTaskCommandTx(
-			ctx, tx, authority.JobID, authority.Generation, command,
+			ctx, tx, authority.JobID, authority.Generation, member.Command,
 		)
 		if err != nil {
 			return header, fmt.Errorf("persist cognition accepted fact: %w", err)
 		}
 		header.Version = event.Version
-		if err := insertCognitionAcceptedFactTx(ctx, tx, record); err != nil {
+		if err := insertCognitionAcceptedFactTx(ctx, tx, member.Fact); err != nil {
 			return header, err
 		}
 	}
+	if err := insertCognitionAcceptedFactMaterializationTx(
+		ctx, tx, authority, materialization,
+	); err != nil {
+		return header, err
+	}
 	return header, nil
+}
+
+func cognitionTransitionCallOrdinalTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	episodeID cognition.EpisodeID,
+	transition cognition.Transition,
+) (uint64, error) {
+	if transition.ActionID == "" {
+		return 0, nil
+	}
+	var ordinal int64
+	if err := tx.QueryRow(ctx, `
+		SELECT snapshots.call_ordinal
+		FROM cognition_actions actions
+		JOIN cognition_runtime_snapshots snapshots
+		  ON snapshots.snapshot_sha256=actions.snapshot_sha256
+		WHERE actions.episode_id=$1 AND actions.action_id=$2
+	`, episodeID, transition.ActionID).Scan(&ordinal); err != nil || ordinal < 1 {
+		return 0, fmt.Errorf("load accepted-fact transition call ordinal: %w", err)
+	}
+	return uint64(ordinal), nil
 }
 
 func acceptedFactCommandAuthority(

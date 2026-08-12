@@ -130,7 +130,7 @@ func TestPostgresWorkingSetReacquiresOneExactHistoricalRow(t *testing.T) {
 }
 
 func TestPostgresCognitionReconciliationUsesDurableReacquireCommand(t *testing.T) {
-	ctx, repository, pool := openWorkingSetDatabase(t)
+	repository, pool, ctx := policyInputFreshRepository(t)
 	fixture := newCognitionDatabaseFixture(t, repository)
 	if _, err := repository.StartCognitionEpisode(ctx, fixture.Start, cognitionTestFactAuthority()); err != nil {
 		t.Fatal(err)
@@ -226,7 +226,10 @@ func consumeReacquireCognitionPolicyCall(
 	}
 	policy, err := cognitionpolicy.New(
 		cognitionGuardPolicyClient{response: string(response)},
-		cognitionTestBrain(), cognitionGuardProjectionLoader{repository: repository},
+		cognitionTestBrain(), cognitionGuardActivationAuthorityFor(
+			t, t.Context(), repository, fixture.EpisodeID, fixture.Authority,
+			fixture.Start.BrainBootstrap.AttestedBrain,
+		), cognitionGuardProjectionLoader{repository: repository},
 		CognitionPolicyCallJournal{Repository: repository},
 	)
 	if err != nil {

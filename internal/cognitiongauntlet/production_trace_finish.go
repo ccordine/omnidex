@@ -40,8 +40,9 @@ func (state *productionTraceState) finish(
 			)
 		}
 	}
-	if len(state.attempts) != state.metrics.Resources.ModelCalls {
-		return productionTraceMetrics{}, fmt.Errorf("sealed production policy attempts and results differ")
+	if len(state.attempts) != state.metrics.Resources.PolicyCallsConsumed ||
+		len(state.results)+len(state.abandonments) != len(state.attempts) {
+		return productionTraceMetrics{}, fmt.Errorf("sealed production policy attempts and terminal dispositions differ")
 	}
 	if len(restarts) != state.metrics.Recovery.Restarts {
 		return productionTraceMetrics{}, fmt.Errorf("actual restart receipts do not match recovery metrics")

@@ -122,8 +122,8 @@ func (proof LiveStalePortProof) Validate() error {
 	}
 	if proof.Port == liveStalePolicyFinish {
 		if proof.StateBefore.PolicyAbandonments != 1 ||
-			!proof.Rejection.ProviderRequestDispatched {
-			return fmt.Errorf("live policy-finish proof lacks one exact abandoned/dispatched call")
+			!proof.Rejection.ProviderRequestDisposition.MayHaveReachedProvider() {
+			return fmt.Errorf("live policy-finish proof lacks one exact abandoned provider-reaching call")
 		}
 	} else if proof.StateBefore.PolicyAbandonments != 0 {
 		return fmt.Errorf("nonpolicy stale-port proof carries a policy abandonment")

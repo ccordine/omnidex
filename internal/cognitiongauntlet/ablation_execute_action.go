@@ -16,6 +16,7 @@ func applyAblationDecision(
 	state *ablationState,
 	execution *ablationExecution,
 	decision cognition.CognitionDecision,
+	callID string,
 	request cognition.ActionRequest,
 	transition cognition.Transition,
 	cycle int,
@@ -23,9 +24,16 @@ func applyAblationDecision(
 ) (cognition.Transition, error) {
 	if execution.Resources.EnvironmentActions >= budget.EnvironmentActions ||
 		execution.Resources.ToolOperations >= budget.ToolOperations {
+		state.recordNoAction(
+			uint32(cycle), callID, ablationAcceptedNoAction, "resource_budget",
+		)
 		id := fmt.Sprintf("ablation-action-budget-%03d", cycle)
 		if err := terminateAblation(
-			recorder, execution, "resource_budget", id,
+			recorder, execution, ablationTerminalCause{
+				Kind: ablationTerminalNoDispatch, CallOrdinal: uint32(cycle),
+				Reason: "resource_budget", CompletedCalls: execution.Resources.PolicyCallsConsumed,
+				CompletedCycles: cycle,
+			}, "resource_budget", id,
 			"The frozen environment-action budget was exhausted.", true,
 		); err != nil {
 			return cognition.Transition{}, err
@@ -34,34 +42,18 @@ func applyAblationDecision(
 	}
 	schema, exists := state.catalog.Schema(request.Kind)
 	if !exists {
-		id := fmt.Sprintf("ablation-schema-failure-%03d", cycle)
-		if err := terminateAblation(recorder, execution, "model_policy", id,
-			"The model selected an action absent from the world catalog.", false); err != nil {
-			return cognition.Transition{}, err
-		}
-		return transition, nil
+		return cognition.Transition{}, fmt.Errorf(
+			"accepted cognition decision selected action %q absent from the authoritative catalog",
+			request.Kind,
+		)
 	}
-	actionDigest, err := digestJSON(struct {
-		Episode  cognition.EpisodeID     `json:"episode"`
-		Cycle    int                     `json:"cycle"`
-		Request  cognition.ActionRequest `json:"request"`
-		Evidence []cognition.EvidenceRef `json:"evidence"`
-	}{state.episode.ID, cycle, request, decision.EvidenceRefs})
-	if err != nil {
-		return cognition.Transition{}, err
-	}
-	action, err := cognition.NewRegisteredAction(
-		cognition.ActionID("environment-action-"+actionDigest), state.actor,
-		schema, request, decision.EvidenceRefs,
+	action, err := newAblationRegisteredAction(
+		state.episode, state.actor, schema, uint32(cycle), decision, request,
 	)
 	if err != nil {
-		id := fmt.Sprintf("ablation-action-contract-%03d", cycle)
-		if terminalErr := terminateAblation(
-			recorder, execution, "model_policy", id, err.Error(), false,
-		); terminalErr != nil {
-			return cognition.Transition{}, terminalErr
-		}
-		return transition, nil
+		return cognition.Transition{}, fmt.Errorf(
+			"accepted cognition decision could not produce its registered action: %w", err,
+		)
 	}
 	next, applyErr := environment.Apply(ctx, state.episode, transition.Current, action)
 	execution.Resources.EnvironmentActions++
@@ -77,9 +69,20 @@ func applyAblationDecision(
 		}
 		execution.Planning.InvalidActions++
 		state.appendAction(request, failure.PublicMessage, true)
-		if err := appendAblationTerminal(
-			recorder, transition.Current, string(failure.Code), false,
+		state.recordActionEvidence(uint32(cycle), callID, ActionTrace{
+			Schema: ActionTraceSchemaV1, Action: action.Clone(),
+			ExpectedRevision: transition.Current, Failure: &failure,
+		})
+		if err := setPendingAblationTerminal(
+			execution, transition.Current, string(failure.Code), false, string(failure.Code),
 		); err != nil {
+			return cognition.Transition{}, err
+		}
+		if err := setAblationTerminalCause(execution, ablationTerminalCause{
+			Kind: ablationTerminalActionFailure, CallOrdinal: uint32(cycle),
+			ActionID: action.ID, Reason: string(failure.Code),
+			CompletedCalls: execution.Resources.PolicyCallsConsumed, CompletedCycles: cycle,
+		}); err != nil {
 			return cognition.Transition{}, err
 		}
 		execution.Outcome = Outcome{
@@ -96,6 +99,11 @@ func applyAblationDecision(
 	}
 	execution.Resources.LowLevelTransitions++
 	state.appendAction(request, next.PublicOutcome, false)
+	copy := next.Clone()
+	state.recordActionEvidence(uint32(cycle), callID, ActionTrace{
+		Schema: ActionTraceSchemaV1, Action: action.Clone(),
+		ExpectedRevision: transition.Current, Transition: &copy,
+	})
 	if err := appendTransitionObservations(recorder, next); err != nil {
 		return cognition.Transition{}, err
 	}
@@ -103,12 +111,7 @@ func applyAblationDecision(
 		return cognition.Transition{}, err
 	}
 	execution.Revision = next.Current
-	if state.workingSet != nil {
-		resident := int64(state.workingSet.Usage().ResidentBytes)
-		if resident > execution.Resources.PeakWorkingSetBytes {
-			execution.Resources.PeakWorkingSetBytes = resident
-		}
-	}
+	recordAblationWorkingSetPeak(state, &execution.Resources)
 	return next, nil
 }
 
@@ -134,28 +137,38 @@ func completeAblation(
 	if !satisfied {
 		return ablationExecution{}, fmt.Errorf("ablation environment declared terminal without satisfying the exact goal")
 	}
-	if err := appendAblationTerminal(recorder, transition.Current, transition.PublicOutcome, true); err != nil {
-		return ablationExecution{}, err
-	}
 	execution.Revision = transition.Current
 	execution.Outcome = Outcome{
 		Terminal: true, GoalSatisfied: true, PublicOutcome: transition.PublicOutcome,
 	}
 	execution.Planning.ObligationsCompleted = 1
 	execution.Resources.WallMilliseconds = time.Since(startedAt).Milliseconds()
+	if err := setPendingAblationTerminal(
+		&execution, transition.Current, transition.PublicOutcome, true, "",
+	); err != nil {
+		return ablationExecution{}, err
+	}
+	if err := setAblationTerminalCause(&execution, ablationTerminalCause{
+		Kind: ablationTerminalWorld, CallOrdinal: uint32(execution.Resources.PolicyCallsConsumed),
+		ActionID: transition.ActionID, CompletedCalls: execution.Resources.PolicyCallsConsumed,
+		CompletedCycles: execution.Resources.PolicyCallsConsumed,
+	}); err != nil {
+		return ablationExecution{}, err
+	}
 	return execution, nil
 }
 
 func failAblation(
 	execution ablationExecution,
 	recorder *EpisodeRecorder,
+	cause ablationTerminalCause,
 	code string,
 	id string,
 	message string,
 	startedAt time.Time,
 	budget bool,
 ) (ablationExecution, error) {
-	if err := terminateAblation(recorder, &execution, code, id, message, budget); err != nil {
+	if err := terminateAblation(recorder, &execution, cause, code, id, message, budget); err != nil {
 		return ablationExecution{}, err
 	}
 	execution.Resources.WallMilliseconds = time.Since(startedAt).Milliseconds()
@@ -165,15 +178,13 @@ func failAblation(
 func terminateAblation(
 	recorder *EpisodeRecorder,
 	execution *ablationExecution,
+	cause ablationTerminalCause,
 	code string,
 	id string,
 	message string,
 	budget bool,
 ) error {
 	if err := appendAblationFailure(recorder, id, execution.Revision, code, message); err != nil {
-		return err
-	}
-	if err := appendAblationTerminal(recorder, execution.Revision, code, false); err != nil {
 		return err
 	}
 	execution.Outcome = Outcome{
@@ -184,5 +195,8 @@ func terminateAblation(
 	} else {
 		execution.FailureTrace = FailureTrace{PolicyRejected: true, PolicyFailureEventID: id}
 	}
-	return nil
+	if err := setPendingAblationTerminal(execution, execution.Revision, code, false, code); err != nil {
+		return err
+	}
+	return setAblationTerminalCause(execution, cause)
 }

@@ -11,7 +11,6 @@ import (
 
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 	golangadapter "github.com/gryph/omnidex/internal/repository/adapters/golang"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestRepositorySnapshotStoreRejectsMissingAuthority(t *testing.T) {
@@ -37,20 +36,12 @@ func TestRepositorySnapshotStoreRejectsMissingAuthority(t *testing.T) {
 }
 
 func TestPostgresRepositorySnapshotsAreExactAndImmutable(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL repository intelligence tests")
-	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is required for repository intelligence tests")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)

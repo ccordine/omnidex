@@ -198,6 +198,7 @@ build_target() {
 
   cp -a "${target_source}/README.md" "${target_dir}/README.md"
   cp -a "${target_source}/LICENSE" "${target_dir}/LICENSE"
+  package_release_operator_runbook "$target_source" "$target_dir"
   cp -a "${target_source}/migrations" "${target_dir}/migrations"
   verify_migration_manifest "${target_dir}/migrations"
   [[ "$(sha256_file "${target_dir}/migrations/SHA256SUMS")" == "$RELEASE_MIGRATIONS_SHA256" ]] || die "packaged migration manifest changed"
@@ -255,6 +256,7 @@ main() {
   command -v go >/dev/null 2>&1 || die "go is required"
   command -v tar >/dev/null 2>&1 || die "tar is required"
   [[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal)" ]] || die "release builds require a clean tracked and untracked worktree"
+  validate_tracked_release_sources "$REPO_ROOT"
   if printf '%s\n' "${TARGETS[@]}" | grep -q '^windows/'; then
     command -v zip >/dev/null 2>&1 || die "zip is required for Windows archives"
   fi

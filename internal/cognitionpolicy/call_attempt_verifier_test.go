@@ -17,7 +17,10 @@ func TestVerifyCallAttemptRequiresExactRenderedAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), rendered)
+	brain := policyTestAttestedBrain()
+	attempt, err := newCallAttempt(
+		snapshot, brain, policyTestProviderProcessActivation(snapshot, brain), rendered,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

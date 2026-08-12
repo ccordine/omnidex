@@ -16,7 +16,7 @@ func TestProviderIdentityObservationBindsEveryFreshResponseBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observedAt := time.Date(2026, 8, 9, 20, 0, 0, 1, time.UTC)
+	observedAt := time.Date(2026, 8, 9, 20, 0, 0, 1_000, time.UTC)
 	challenge, err := DeriveProviderIdentityObservationChallenge("test-observation", expected)
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +56,28 @@ func TestProviderIdentityObservationBindsEveryFreshResponseBody(t *testing.T) {
 	}
 }
 
+func TestProviderIdentityObservationRejectsSubMicrosecondTime(t *testing.T) {
+	expected := providerIdentityTestExpectation()
+	attestation, err := NewProviderIdentityAttestation(
+		expected, "test:/version", "test:/installed", "test:/runner",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := providerIdentityTestEvidence(t, expected)
+	challenge, err := DeriveProviderIdentityObservationChallenge("time-bound", expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewObservedProviderIdentity(
+		time.Date(2026, 8, 9, 20, 0, 0, 1, time.UTC),
+		attestation, evidence, challenge,
+	)
+	if err == nil {
+		t.Fatal("provider observation accepted precision PostgreSQL cannot preserve")
+	}
+}
+
 func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T) {
 	t.Parallel()
 	expected := providerIdentityTestExpectation()
@@ -70,7 +92,8 @@ func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T
 		t.Fatal(err)
 	}
 	observed, err := NewObservedProviderIdentity(
-		time.Now().UTC(), attestation, providerIdentityTestEvidence(t, expected), challenge,
+		time.Now().UTC().Truncate(time.Microsecond),
+		attestation, providerIdentityTestEvidence(t, expected), challenge,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +103,8 @@ func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T
 		`"load_duration":10,"prompt_eval_count":12,"prompt_eval_duration":20,` +
 		`"eval_count":3,"eval_duration":30}`)
 	result := PreparedGeneration{
-		Schema: PreparedGenerationSchemaV1, ProviderRequestDispatched: true, Content: `{}`,
+		Schema:                     PreparedGenerationSchemaV1,
+		ProviderRequestDisposition: ProviderRequestDispatched, Content: `{}`,
 		ProviderRequestSHA256: strings.Repeat("b", 64), ProviderHTTPStatus: 200,
 		ProviderResponseDisposition: ProviderResponseSucceeded,
 		ProviderResponseComplete:    true, ProviderResponseBytesKnown: true,

@@ -46,13 +46,13 @@ func TestPolicyDurablyRejectsNonfinalProviderResponseAndReplaysWithoutProvider(t
 			}
 			journal := &policyTestCallJournal{}
 			policy, err := New(
-				client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal,
+				client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
 			outcome, decideErr := policy.Decide(context.Background(), snapshot)
-			if !outcome.ProviderRequestDispatched || !errors.Is(decideErr, ErrProviderUsage) ||
+			if !outcome.PolicyCallConsumed || !errors.Is(decideErr, ErrProviderUsage) ||
 				len(journal.results) != 1 || journal.results[0].FailureCode != CallFailureProviderUsage {
 				t.Fatalf("result=%+v error=%v", journal.results, decideErr)
 			}
@@ -60,7 +60,7 @@ func TestPolicyDurablyRejectsNonfinalProviderResponseAndReplaysWithoutProvider(t
 			attempt, result := journal.attempts[0], journal.results[0]
 			replayClient := &policyTestClient{err: errors.New("provider replay is forbidden")}
 			replay, err := New(
-				replayClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection),
+				replayClient, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection),
 				&policyTestCallJournal{reservation: &CallReservation{
 					Attempt: attempt, ExistingResult: &result,
 				}},

@@ -72,9 +72,9 @@ func validOfflineOutputConfig(t *testing.T) OfflinePromotionConfig {
 	if err := os.WriteFile(executable, []byte("exact-release-binary"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	provider, host := offlinePrepareTestAttestations(t)
+	discovery, provider, host := offlinePrepareTestEvidence(t)
 	prepared, err := prepareOfflineExperiment(
-		request, provider, host, executable,
+		request, discovery, provider, host, executable,
 		strings.Repeat("a", 40), strings.Repeat("b", 64), strings.Repeat("c", 64), "v0.5.0",
 	)
 	if err != nil {

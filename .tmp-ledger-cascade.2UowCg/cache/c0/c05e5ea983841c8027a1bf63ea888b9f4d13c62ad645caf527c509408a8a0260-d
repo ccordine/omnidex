@@ -1,0 +1,11 @@
+./advisory.go
+./chat.go
+./chat_stream.go
+./client.go
+./exact_http.go
+./model_match.go
+./prepared.go
+./prepared_raw.go
+./prepared_stream.go
+./provider_identity.go
+./resolve.go

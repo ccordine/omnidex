@@ -40,7 +40,7 @@ func TestProviderContentEncodingEvidencePreservesEveryAdmittedHeaderShape(t *tes
 func TestProviderContentEncodingEvidenceUsesExactBoundedOverflowWitness(t *testing.T) {
 	t.Parallel()
 	evidence := NewProviderContentEncodingEvidence(
-		[]string{strings.Repeat("x", MaxProviderContentEncodingCaptureBytes+1)}, false,
+		[]string{strings.Repeat("x", MaxProviderContentEncodingBytes-8)}, false,
 	)
 	if err := evidence.Validate(); err != nil {
 		t.Fatal(err)
@@ -65,6 +65,15 @@ func TestProviderContentEncodingEvidenceUsesExactBoundedOverflowWitness(t *testi
 			value.Bytes = int64(value.CapturedBytes)
 		},
 		"zero values": func(value *ProviderContentEncodingEvidence) { value.Values = 0 },
+		"oversized total": func(value *ProviderContentEncodingEvidence) {
+			value.Bytes = MaxProviderContentEncodingBytes + 1
+		},
+		"oversized values": func(value *ProviderContentEncodingEvidence) {
+			value.Values = MaxProviderContentEncodingValues + 1
+		},
+		"oversized base64 before decode": func(value *ProviderContentEncodingEvidence) {
+			value.CapturedBase64 = strings.Repeat("A", MaxProviderContentEncodingBase64Bytes+1)
+		},
 	}
 	for name, mutate := range mutations {
 		name, mutate := name, mutate

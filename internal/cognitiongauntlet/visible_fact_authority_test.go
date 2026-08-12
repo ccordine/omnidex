@@ -21,7 +21,7 @@ func TestVisibleFactAuthorityAcceptsPublicRecordsAcrossUnrelatedWorldsAndSurface
 	}
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[test.spec])
+			fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[test.spec])
 			if err != nil {
 				t.Fatal(err)
 			}

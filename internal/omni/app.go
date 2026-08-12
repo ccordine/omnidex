@@ -48,7 +48,7 @@ func (a *App) Run(args []string) error {
 	case "update":
 		return a.runUpdate(args[1:])
 	case "migrate":
-		return a.runMigrate(args[1:])
+		return fmt.Errorf("omni migrate was removed; agent-core installs only its sealed release migration bundle")
 	case "host":
 		return a.runHost(args[1:])
 	case "chat":
@@ -100,7 +100,6 @@ func (a *App) printUsage() {
 	fmt.Fprintln(a.errOut, "  omni chat [flags] [initial message]  start core-backed agent chat")
 	fmt.Fprintln(a.errOut, "  omni run [flags]                    send stdin as one core-backed task")
 	fmt.Fprintln(a.errOut, "  omni update [flags]                 update the host installation")
-	fmt.Fprintln(a.errOut, "  omni migrate <command>              manage database migrations")
 	fmt.Fprintln(a.errOut, "  omni host <command>                 manage the host bridge")
 }
 

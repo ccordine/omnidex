@@ -75,6 +75,10 @@ func evaluateGeneratedPublicAblation(
 	public PublicRunAuthority,
 	episode SealedEpisode,
 ) (AblationRunResult, error) {
+	evidenceAuthority, err := ablationEvidenceAuthorityFromEpisode(episode)
+	if err != nil {
+		return AblationRunResult{}, err
+	}
 	evaluation, causal, err := evaluatePublicOfflineScenario(
 		path, generated, paired, public, episode,
 	)
@@ -101,7 +105,7 @@ func evaluateGeneratedPublicAblation(
 	}
 	result := AblationRunResult{
 		EvidenceClass: class, PromotionEligible: false,
-		Authority: paired, Variant: variant, Episode: episode, Oracle: oracle,
+		Authority: paired, Variant: variant, Episode: episode, Evidence: evidenceAuthority, Oracle: oracle,
 		Evaluation: evaluation, Efficiency: efficiency, CausalAcquisition: causal,
 	}
 	return result, result.Validate()

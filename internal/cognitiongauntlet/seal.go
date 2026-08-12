@@ -42,6 +42,9 @@ func LoadSealedEpisode(path string) (SealedEpisode, error) {
 	if err := seal.Validate(); err != nil {
 		return SealedEpisode{}, err
 	}
+	if err := verifySealedEpisodeRuntimeProviderIdentity(path, seal); err != nil {
+		return SealedEpisode{}, err
+	}
 	return seal, nil
 }
 

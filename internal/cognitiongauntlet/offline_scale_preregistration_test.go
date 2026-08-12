@@ -14,7 +14,7 @@ func TestOfflineScalePreregistrationOwnsGenuineHundredAndMillionArtifactCoordina
 		t.Fatal(err)
 	}
 	wantSizes := []int{64, 6_400, 1_000_000}
-	if registration.Schema != OfflineScalePreregistrationSchemaV1 ||
+	if registration.Schema != OfflineScalePreregistrationSchemaV2 ||
 		registration.Suite != SuiteScale || registration.Variant != VariantFullCognition ||
 		registration.Surface != SurfaceSymbolic || registration.RunCount != 6 ||
 		!reflect.DeepEqual(registration.WorldSizes, wantSizes) {

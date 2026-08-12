@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	labyrinthhost "github.com/gryph/omnidex/internal/labyrinth/host"
@@ -29,6 +30,7 @@ func TestPostgresOfflineInferenceRoleCannotReadPrivateHostOrOtherSchemas(t *test
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cleanupOfflinePromotionDatabase(t, database) })
+	assertInferenceFenceAuthority(t, database)
 	hostStore, err := labyrinthhost.NewStoreInSchema(database.hostAdminPool, database.hostSchema)
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +93,42 @@ func TestPostgresOfflineInferenceRoleCannotReadPrivateHostOrOtherSchemas(t *test
 	}
 }
 
+func assertInferenceFenceAuthority(t *testing.T, database *offlinePromotionDatabase) {
+	t.Helper()
+	registry := pgx.Identifier{
+		database.schema, "step_attempt_transaction_fence_authority",
+	}.Sanitize()
+	var authoritySchema string
+	if err := database.adminPool.QueryRow(t.Context(),
+		"SELECT authority_schema FROM "+registry+" WHERE singleton",
+	).Scan(&authoritySchema); err != nil {
+		t.Fatal(err)
+	}
+	var runtimeUsage, runtimeCreate, authorityUsage, authorityCreate bool
+	var executableAuthorityFunctions int
+	if err := database.adminPool.QueryRow(t.Context(), `SELECT
+		has_schema_privilege($1,$2,'USAGE'),has_schema_privilege($1,$2,'CREATE'),
+		has_schema_privilege($1,$3,'USAGE'),has_schema_privilege($1,$3,'CREATE'),
+		(SELECT COUNT(*) FROM pg_proc procedures
+		 JOIN pg_namespace namespaces ON namespaces.oid=procedures.pronamespace
+		 WHERE namespaces.nspname=$3 AND
+		       has_function_privilege($1,procedures.oid,'EXECUTE'))
+	`, database.inferenceRole, database.schema, authoritySchema).Scan(
+		&runtimeUsage, &runtimeCreate, &authorityUsage, &authorityCreate,
+		&executableAuthorityFunctions,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !runtimeUsage || runtimeCreate || !authorityUsage || authorityCreate ||
+		executableAuthorityFunctions != 1 {
+		t.Fatalf(
+			"inference authority runtime=%t/%t fence=%t/%t functions=%d",
+			runtimeUsage, runtimeCreate, authorityUsage, authorityCreate,
+			executableAuthorityFunctions,
+		)
+	}
+}
+
 func loadRepositoryMigrationBundle(t *testing.T) queue.MigrationBundle {
 	t.Helper()
 	directory, err := filepath.Abs(filepath.Join("..", "..", "migrations"))
@@ -130,13 +168,24 @@ func offlinePromotionTestConfig(t *testing.T, databaseURL string) OfflinePromoti
 	if err := os.Chmod(privateDirectory, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	publicDirectory := t.TempDir()
+	generation := mustRatGeneration(t)
+	runtimeFingerprint, err := currentRuntimeFingerprint(generation.Runtime.SourceSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return OfflinePromotionConfig{
-		Schema: OfflinePromotionConfigSchemaV1, DatabaseURL: databaseURL,
+		Schema: OfflinePromotionConfigSchemaV2, DatabaseURL: databaseURL,
 		OllamaEndpoint: "http://127.0.0.1:11434", InferenceTimeoutSeconds: 60,
 		Scenario: mustOfflineScenarioSpec(t, SuiteRetrieve, 17_001),
 		Variant:  VariantFullCognition, Surface: SurfaceSymbolic,
-		RatGeneration: mustRatGeneration(t), RuntimeFingerprint: transferTestFingerprint(), Repetition: 1,
-		PublicOutputDirectory: t.TempDir(), PrivateOutputDirectory: privateDirectory,
+		RatGeneration: generation,
+		PreparedBrainEvidence: testPreparedBrainEvidenceAuthority(
+			t, generation.Fixed.Brain, publicDirectory,
+		),
+		RuntimeFingerprint: runtimeFingerprint, Repetition: 1,
+		OmnidexCommit:         strings.Repeat("a", 40),
+		PublicOutputDirectory: publicDirectory, PrivateOutputDirectory: privateDirectory,
 		LedgerSchemaVersion: "task-ledger.v1", WorkingSetPolicyVersion: "working-set.v1",
 		ProjectionPolicyVersion: "context-projection.v1",
 	}

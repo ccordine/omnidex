@@ -72,6 +72,7 @@ func ValidateVariantEpisode(result VariantResult, episode SealedEpisode) error {
 	}
 	if manifest.Resources.PeakContextBytes > int64(authority.Budget.ContextBytes) ||
 		manifest.Resources.PeakWorkingSetBytes > int64(authority.Budget.WorkingSetBytes) ||
+		manifest.Resources.PolicyCallsConsumed > authority.Budget.ModelCalls ||
 		manifest.Resources.ModelCalls > authority.Budget.ModelCalls ||
 		manifest.Resources.EnvironmentActions > authority.Budget.EnvironmentActions ||
 		manifest.Resources.ToolOperations > authority.Budget.ToolOperations {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
@@ -64,9 +63,7 @@ func DecodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return invalid, err
 	}
-	createdAt, err := time.Parse(time.RFC3339Nano, wire.CreatedAt)
-	if err != nil || createdAt.Location() != time.UTC ||
-		createdAt.Format(time.RFC3339Nano) != wire.CreatedAt {
+	if _, err := parseExactProviderTimestamp(wire.CreatedAt, 9); err != nil {
 		return invalid, fmt.Errorf("exact provider response created_at is not canonical UTC")
 	}
 	content, err := strictExactJSONObjectString(body, "response")

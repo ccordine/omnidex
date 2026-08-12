@@ -8,7 +8,7 @@ import (
 
 const (
 	OfflineResumeRequestSchemaV1 = "omnidex.offline-resume-request.v1"
-	OfflineResumeConfigSchemaV1  = "omnidex.offline-resume-config.v1"
+	OfflineResumeConfigSchemaV2  = "omnidex.offline-resume-config.v2"
 )
 
 type OfflineResumeRequest struct {
@@ -33,6 +33,7 @@ type OfflineResumeConfig struct {
 	PublicOutputDirectory   string             `json:"public_output_directory"`
 	PrivateOutputDirectory  string             `json:"private_output_directory"`
 	RatGeneration           RatGeneration      `json:"rat_generation"`
+	PreparedBrainEvidence   PreparedBrainEvidenceAuthority `json:"prepared_brain_evidence"`
 	RuntimeFingerprint      RuntimeFingerprint `json:"runtime_fingerprint"`
 	PreregistrationSHA256   string             `json:"preregistration_sha256"`
 	OmnidexCommit           string             `json:"omnidex_commit"`
@@ -70,7 +71,7 @@ func (request OfflineResumeRequest) Validate() error {
 }
 
 func (config OfflineResumeConfig) Validate() error {
-	if config.Schema != OfflineResumeConfigSchemaV1 || config.Plan.Validate() != nil ||
+	if config.Schema != OfflineResumeConfigSchemaV2 || config.Plan.Validate() != nil ||
 		!validDigest(config.PreregistrationSHA256) || !validCommitIdentity(config.OmnidexCommit) ||
 		config.InferenceTimeoutSeconds <= 0 || config.InferenceTimeoutSeconds > 24*60*60 {
 		return fmt.Errorf("offline Resume configuration is invalid")
@@ -115,6 +116,7 @@ func (config OfflineResumeConfig) ValidateStart() error {
 func (config OfflineResumeConfig) fixedAuthority() OfflineMatrixFixedAuthority {
 	return OfflineMatrixFixedAuthority{
 		Budget: config.Budget, RatGeneration: config.RatGeneration,
+		PreparedBrainEvidence: config.PreparedBrainEvidence,
 		RuntimeFingerprint:      config.RuntimeFingerprint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		OmnidexCommit:           config.OmnidexCommit,
@@ -144,11 +146,12 @@ func (config OfflineResumeConfig) derivedRunConfig(
 	publicDirectory := filepath.Join(config.PublicOutputDirectory, "runs", schedule.ID)
 	privateDirectory := filepath.Join(config.PrivateOutputDirectory, "runs", schedule.ID)
 	return OfflinePromotionConfig{
-		Schema: OfflinePromotionConfigSchemaV1, DatabaseURL: config.DatabaseURL,
+		Schema: OfflinePromotionConfigSchemaV2, DatabaseURL: config.DatabaseURL,
 		OllamaEndpoint:          config.OllamaEndpoint,
 		InferenceTimeoutSeconds: config.InferenceTimeoutSeconds,
 		Scenario:                registration.Workload, Variant: VariantFullCognition,
 		Surface: config.Plan.Surface, RatGeneration: config.RatGeneration,
+		PreparedBrainEvidence: config.PreparedBrainEvidence,
 		RuntimeFingerprint: config.RuntimeFingerprint, Repetition: config.Plan.Repetition,
 		PublicOutputDirectory: publicDirectory, PrivateOutputDirectory: privateDirectory,
 		OmnidexCommit: config.OmnidexCommit, LedgerSchemaVersion: config.LedgerSchemaVersion,

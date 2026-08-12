@@ -1,16 +1,13 @@
 package datasource
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -39,7 +36,7 @@ type QueryResult struct {
 
 func JobMetadata(sourceID, sourceName, question, channelID string) ([]byte, error) {
 	payload := map[string]any{
-		"source":             JobSource,
+		"source":           JobSource,
 		MetadataSourceID:   strings.TrimSpace(sourceID),
 		MetadataSourceName: strings.TrimSpace(sourceName),
 		MetadataQuestion:   strings.TrimSpace(question),
@@ -90,93 +87,6 @@ func ParseJobMetadata(raw json.RawMessage) (sourceID, sourceName, question strin
 		return "", "", "", fmt.Errorf("question is required")
 	}
 	return sourceID, sourceName, question, nil
-}
-
-func ConnectReadOnly(ctx context.Context, conn Connection) (*pgxpool.Pool, error) {
-	if !conn.ReadOnly {
-		return nil, fmt.Errorf("only read-only data sources are supported")
-	}
-	driver := strings.ToLower(strings.TrimSpace(conn.Driver))
-	if driver != "" && driver != "postgres" {
-		return nil, fmt.Errorf("only postgres data sources are supported")
-	}
-	dsn, err := BuildPostgresDSN(conn)
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	pool, err := db.Connect(ctx, dsn)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := pool.Exec(ctx, "SET default_transaction_read_only = on"); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	if _, err := pool.Exec(ctx, "SELECT 1"); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	return pool, nil
-}
-
-func InspectSchema(ctx context.Context, conn Connection) ([]omni.DBSchemaTable, error) {
-	pool, err := ConnectReadOnly(ctx, conn)
-	if err != nil {
-		return nil, err
-	}
-	defer pool.Close()
-	return omni.InspectPostgresSchema(ctx, omni.NewPgxMemoryRunner(pool))
-}
-
-func RunSQL(ctx context.Context, conn Connection, sqlText string) (QueryResult, error) {
-	sqlText = strings.TrimSpace(sqlText)
-	if err := omni.ValidateReadOnlyPostgresQuery(sqlText); err != nil {
-		return QueryResult{}, err
-	}
-	sqlText = enforceQueryLimit(sqlText, MaxQueryRows)
-	pool, err := ConnectReadOnly(ctx, conn)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	defer pool.Close()
-	rows, err := omni.NewPgxMemoryRunner(pool).Query(ctx, sqlText)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	columns, publicRows := rowsToColumns(rows)
-	return QueryResult{
-		SQL:     sqlText,
-		Columns: columns,
-		Rows:    publicRows,
-		Count:   len(publicRows),
-	}, nil
-}
-
-func AskQuestion(ctx context.Context, conn Connection, question string, llm omni.DBManagerLLMClient) (QueryResult, error) {
-	question = strings.TrimSpace(question)
-	if question == "" {
-		return QueryResult{}, fmt.Errorf("question is required")
-	}
-	pool, err := ConnectReadOnly(ctx, conn)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	defer pool.Close()
-	result, err := omni.RunDBManagerQuery(ctx, question, omni.NewPgxMemoryRunner(pool), llm)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	columns, publicRows := rowsToColumns(result.Rows)
-	return QueryResult{
-		Question: result.Question,
-		SQL:      result.SQL,
-		Answer:   result.Answer,
-		Columns:  columns,
-		Rows:     publicRows,
-		Count:    len(publicRows),
-	}, nil
 }
 
 func FormatJobResult(result QueryResult) (summary string, payload string, err error) {
@@ -235,7 +145,7 @@ func FormatJobResult(result QueryResult) (summary string, payload string, err er
 
 func ExploreJobMetadata(sourceID, sourceName string) ([]byte, error) {
 	payload := map[string]any{
-		"source":             JobSource,
+		"source":           JobSource,
 		MetadataSourceID:   strings.TrimSpace(sourceID),
 		MetadataSourceName: strings.TrimSpace(sourceName),
 		MetadataMode:       JobModeExplore,

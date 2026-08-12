@@ -42,7 +42,7 @@ func preparePublicFullCognition(
 	}
 	components, err := newRuntimeComponents(
 		ctx, request.Pool, request.Client, brain, bundle.Authority.RatGeneration.Fixed.Brain,
-		request.Environment, request.Completion,
+		episode, request.Attempt, request.Environment, request.Completion,
 	)
 	if err != nil {
 		return publicFullCognitionExecution{}, err
@@ -64,13 +64,18 @@ func preparePublicFullCognition(
 	if err != nil {
 		return publicFullCognitionExecution{}, fmt.Errorf("start public cognition environment: %w", err)
 	}
+	activation, err := observeRuntimeProviderActivation(ctx, components, episode, binding.Attempt)
+	if err != nil {
+		return publicFullCognitionExecution{}, err
+	}
 	stored, err := startPublicCognitionEpisode(
-		ctx, components.store, request.Attempt, bundle, components.frozenBrain, episode, start,
+		ctx, components.store, request.Attempt, bundle, components.brainBootstrap, activation,
+		episode, start,
 	)
 	if err != nil {
 		return publicFullCognitionExecution{}, err
 	}
-	components, err = activateRuntimeComponents(ctx, components, stored, binding.Attempt)
+	components, err = activateRuntimeComponents(ctx, components, stored, activation)
 	if err != nil {
 		return publicFullCognitionExecution{}, err
 	}

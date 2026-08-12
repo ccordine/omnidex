@@ -29,8 +29,25 @@ func validateCognitionEpisodeStart(command CognitionEpisodeStart) error {
 	if err := cognitionEpisodeIdentityValid(command.EpisodeID); err != nil {
 		return err
 	}
-	if err := command.AttestedBrain.Validate(); err != nil {
-		return fmt.Errorf("cognition attested brain: %w", err)
+	if err := command.BrainBootstrap.Validate(); err != nil {
+		return fmt.Errorf("cognition Brain bootstrap: %w", err)
+	}
+	if err := command.ProviderProcessActivation.ValidateFor(
+		command.BrainBootstrap.AttestedBrain,
+	); err != nil {
+		return fmt.Errorf("cognition provider process activation: %w", err)
+	}
+	if command.ProviderProcessActivation.Receipt.EpisodeID != command.EpisodeID ||
+		command.ProviderProcessActivation.Receipt.Actor != cognitionAttempt(command.Authority) {
+		return fmt.Errorf("%w: cognition provider process activation belongs to another start", ErrCognitionConflict)
+	}
+	if command.ProviderProcessActivation.Receipt.Observation.ObservedAt.Before(
+		command.BrainBootstrap.AttestedBrain.BootstrapObservation.ObservedAt,
+	) {
+		return fmt.Errorf(
+			"%w: cognition provider process observation predates its Brain bootstrap",
+			ErrCognitionConflict,
+		)
 	}
 	if err := command.Scenario.Validate(); err != nil {
 		return fmt.Errorf("cognition scenario: %w", err)
@@ -54,7 +71,9 @@ func validateCognitionEpisodeStart(command CognitionEpisodeStart) error {
 	if err := command.Budget.Validate(); err != nil {
 		return fmt.Errorf("cognition runtime budget: %w", err)
 	}
-	if err := cognitionpolicy.ValidateRuntimeBudget(command.AttestedBrain.Ref, command.Budget); err != nil {
+	if err := cognitionpolicy.ValidateRuntimeBudget(
+		command.BrainBootstrap.AttestedBrain.Ref, command.Budget,
+	); err != nil {
 		return fmt.Errorf("cognition runtime budget brain binding: %w", err)
 	}
 	if command.Root.ParentID != "" || len(command.Root.DependsOn) != 0 {

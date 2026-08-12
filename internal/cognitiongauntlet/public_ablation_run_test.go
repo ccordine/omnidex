@@ -10,7 +10,7 @@ import (
 )
 
 func TestPublicAblationRunnerExecutesSealsAndEvaluatesRegisteredVariants(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +51,10 @@ func TestPublicAblationRunnerExecutesSealsAndEvaluatesRegisteredVariants(t *test
 				}
 			}()
 			oracle := fixture.generated.PrivateOracle()
+			episodeDirectory, evidenceDirectory := t.TempDir(), t.TempDir()
+			if variant != VariantOracleEvidence {
+				evidenceDirectory = episodeDirectory
+			}
 			request := PublicAblationRunRequest{
 				Actor: actor,
 				Client: &witnessPolicyClient{
@@ -59,7 +63,8 @@ func TestPublicAblationRunnerExecutesSealsAndEvaluatesRegisteredVariants(t *test
 				},
 				Environment:         environment,
 				Completion:          localRuntimeCompletion{evaluator: environment.(ablationGoalEvaluator)},
-				EpisodeSealPath:     filepath.Join(t.TempDir(), "episode.json"),
+				EpisodeSealPath:     filepath.Join(episodeDirectory, "episode.json"),
+				EvidenceSealPath:    filepath.Join(evidenceDirectory, "ablation-evidence.json"),
 				LedgerSchemaVersion: "task-ledger.v1", WorkingSetPolicyVersion: "working-set.v1",
 				ProjectionPolicyVersion: ablationProjectionPolicyVersionV1,
 			}
@@ -84,6 +89,37 @@ func TestPublicAblationRunnerExecutesSealsAndEvaluatesRegisteredVariants(t *test
 			}
 			if result.PromotionEligible || result.EvidenceClass == AblationIsolatedEvidence {
 				t.Fatalf("direct in-process evaluation claimed serious isolation: %+v", result)
+			}
+			bootstrapTraces, activationTraces := 0, 0
+			for _, entry := range public.Episode.Manifest.Trace {
+				switch entry.Kind {
+				case TraceProviderBootstrap:
+					authority, err := decodeRuntimeBrainBootstrapTrace(entry)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := loadRuntimeBrainBootstrapEvidence(
+						request.EpisodeSealPath, authority, generation.Fixed.Brain,
+					); err != nil {
+						t.Fatalf("fresh verifier rejected runtime bootstrap evidence: %v", err)
+					}
+					bootstrapTraces++
+				case TraceProviderActivation:
+					authority, err := decodeRuntimeProviderActivationTrace(entry)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := loadRuntimeProviderActivationEvidence(
+						request.EpisodeSealPath, authority, generation.Fixed.Brain,
+					); err != nil {
+						t.Fatalf("fresh verifier rejected runtime activation evidence: %v", err)
+					}
+					activationTraces++
+				}
+			}
+			if bootstrapTraces != 1 || activationTraces != 1 {
+				t.Fatalf("runtime bootstrap/activation trace counts=%d/%d, want 1/1",
+					bootstrapTraces, activationTraces)
 			}
 		})
 	}

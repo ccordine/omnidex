@@ -29,7 +29,7 @@ func TestPostgresShippedRuntimeSchemaInstallsAndMigratesFresh(t *testing.T) {
 	}
 	t.Cleanup(pool.Close)
 
-	bundle := loadMigrationBundleThroughPrefix(t, "059")
+	bundle := loadCheckedMigrationBundle(t)
 	repo := New(pool)
 	if err := repo.EnsureSchema(ctx, bundle); err != nil {
 		t.Fatal(err)
@@ -72,6 +72,70 @@ func TestPostgresRuntimeBootstrapRejectsLegacyPublicDataWithoutCreatingSchema(t 
 	}
 	if exists {
 		t.Fatal("runtime schema was created beside legacy public Omnidex data")
+	}
+}
+
+func TestPostgresRuntimeBootstrapRejectsRemovedPublicMigrationLedger(t *testing.T) {
+	baseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
+	databaseURL := freshRuntimeDatabaseURL(t, baseURL)
+	if databaseURL == "" {
+		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL runtime schema tests")
+	}
+	admin, err := pgxpool.New(context.Background(), databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(admin.Close)
+	if _, err := admin.Exec(context.Background(), `
+		CREATE TABLE public.omni_migrations (version TEXT PRIMARY KEY)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	runtimeSchema := fmt.Sprintf("omnidex_runtime_test_%d", time.Now().UnixNano())
+	if _, err := db.ConnectRuntime(context.Background(), databaseURL, runtimeSchema); err == nil ||
+		!strings.Contains(err.Error(), "legacy Omnidex state") {
+		t.Fatalf("ConnectRuntime error=%v, want removed migration-ledger rejection", err)
+	}
+	var exists bool
+	if err := admin.QueryRow(context.Background(), `
+		SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname=$1)
+	`, runtimeSchema).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("runtime schema was created beside the removed public migration ledger")
+	}
+}
+
+func TestPostgresRuntimeBootstrapRejectsRemovedPublicMemoryStoreSchema(t *testing.T) {
+	baseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
+	databaseURL := freshRuntimeDatabaseURL(t, baseURL)
+	if databaseURL == "" {
+		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL runtime schema tests")
+	}
+	admin, err := pgxpool.New(context.Background(), databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(admin.Close)
+	if _, err := admin.Exec(context.Background(), `
+		CREATE TABLE public.memory_chunks (id BIGINT PRIMARY KEY)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	runtimeSchema := fmt.Sprintf("omnidex_runtime_test_%d", time.Now().UnixNano())
+	if _, err := db.ConnectRuntime(context.Background(), databaseURL, runtimeSchema); err == nil ||
+		!strings.Contains(err.Error(), "legacy Omnidex state") {
+		t.Fatalf("ConnectRuntime error=%v, want removed memory-store rejection", err)
+	}
+	var exists bool
+	if err := admin.QueryRow(context.Background(), `
+		SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname=$1)
+	`, runtimeSchema).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("runtime schema was created beside the removed public memory store")
 	}
 }
 

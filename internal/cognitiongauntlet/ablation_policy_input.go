@@ -71,10 +71,11 @@ func prepareAblationPolicyInput(
 			return projection, snapshot, nil
 		}
 		if state.variant != VariantLedgerProjection || maxEvidence == 0 {
-			return contextbuilder.Projection{}, cognition.RuntimeSnapshot{}, fmt.Errorf(
-				"%w: exact raw model input needs %d bytes; frozen limit is %d bytes",
-				errAblationContextBudget, len([]byte(modelInput)), runtimeBudget.MaxInputBytes,
-			)
+			return projection, snapshot, &ablationContextBudgetFailure{
+				projection:      cloneAblationProjection(projection),
+				snapshot:        newSemanticRuntimeSnapshot(snapshot),
+				modelInputBytes: len([]byte(modelInput)),
+			}
 		}
 		maxEvidence--
 	}

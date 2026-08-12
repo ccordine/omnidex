@@ -9,11 +9,13 @@ import (
 const maxEpisodeTraceEntries = 1_000_000
 
 func (manifest EpisodeManifest) validateSealed() error {
-	if manifest.Schema != EpisodeManifestSchemaV1 ||
+	if manifest.Schema != EpisodeManifestSchemaV2 ||
 		!episodePattern.MatchString(string(manifest.EpisodeID)) ||
 		!scenarioPattern.MatchString(string(manifest.Scenario.ID)) ||
 		!validDigest(manifest.Scenario.SHA256) || !validDigest(manifest.PublicRunAuthoritySHA256) ||
-		!validVariant(manifest.Variant) || !validDigest(manifest.TraceSHA256) {
+		!validVariant(manifest.Variant) || !validDigest(manifest.TraceSHA256) ||
+		manifest.EpisodeStartedAt.IsZero() || manifest.SealedAt.IsZero() ||
+		manifest.SealedAt.Before(manifest.EpisodeStartedAt) {
 		return fmt.Errorf("cognition episode manifest identity is invalid")
 	}
 	for label, value := range map[string]string{
@@ -76,7 +78,9 @@ func (manifest EpisodeManifest) validateSealed() error {
 		return fmt.Errorf("cognition episode exceeded its frozen context ceiling")
 	}
 	var previousRevision uint64
-	var actions, restarts, staleRejections, terminals int
+	var actions, restarts, staleRejections, providerBootstraps, providerActivations int
+	var ablationEvidence, terminals int
+	var providerBootstrapSequence, providerActivationSequence uint64
 	station := stationTraceState{}
 	traceIDs := make(map[string]struct{}, len(manifest.Trace))
 	for index, entry := range manifest.Trace {
@@ -117,6 +121,26 @@ func (manifest EpisodeManifest) validateSealed() error {
 			restarts++
 		case TraceStaleRejection:
 			staleRejections++
+		case TraceProviderBootstrap:
+			if _, err := decodeRuntimeBrainBootstrapTrace(entry); err != nil {
+				return err
+			}
+			providerBootstraps++
+			providerBootstrapSequence = entry.Sequence
+		case TraceProviderActivation:
+			if _, err := decodeRuntimeProviderActivationTrace(entry); err != nil {
+				return err
+			}
+			providerActivations++
+			providerActivationSequence = entry.Sequence
+		case TraceAblationEvidence:
+			if _, err := decodeAblationEvidenceTrace(entry); err != nil {
+				return err
+			}
+			ablationEvidence++
+			if index != len(manifest.Trace)-2 {
+				return fmt.Errorf("ablation evidence trace must immediately precede terminal")
+			}
 		case TraceTerminal:
 			terminals++
 			if index != len(manifest.Trace)-1 || entry.Revision == nil ||
@@ -128,16 +152,27 @@ func (manifest EpisodeManifest) validateSealed() error {
 	if terminals != 1 {
 		return fmt.Errorf("cognition trace must contain one terminal event")
 	}
+	if (executableAblation(manifest.Variant) && ablationEvidence != 1) ||
+		(!executableAblation(manifest.Variant) && ablationEvidence != 0) {
+		return fmt.Errorf("cognition trace ablation evidence authority is invalid")
+	}
+	if providerBootstraps > 1 || providerActivations > 1 ||
+		(providerBootstraps != providerActivations) ||
+		(providerBootstraps == 1 && providerBootstrapSequence >= providerActivationSequence) ||
+		(executableAblation(manifest.Variant) && providerBootstraps != 1) ||
+		(manifest.Variant == VariantDeterministicOracle && providerBootstraps != 0) {
+		return fmt.Errorf("cognition trace runtime provider identity evidence is invalid")
+	}
 	if err := station.validateResources(manifest.Resources); err != nil {
 		return err
 	}
 	if actions != manifest.Resources.EnvironmentActions ||
-		restarts != manifest.Recovery.Restarts || staleRejections != manifest.Recovery.StaleAttemptRejections ||
-		manifest.Resources.ModelDecisions > manifest.Resources.ModelCalls {
+		restarts != manifest.Recovery.Restarts || staleRejections != manifest.Recovery.StaleAttemptRejections {
 		return fmt.Errorf("cognition trace counts do not match sealed resource and recovery metrics")
 	}
 	if manifest.Variant == VariantDeterministicOracle &&
-		(manifest.Resources.ModelCalls != 0 || manifest.Resources.ModelDecisions != 0 ||
+		(manifest.Resources.PolicyCallsConsumed != 0 || manifest.Resources.ModelCalls != 0 ||
+			manifest.Resources.ModelDecisions != 0 ||
 			manifest.Resources.InputTokens != 0 || manifest.Resources.OutputTokens != 0 ||
 			manifest.Resources.ContextBytes != 0 || manifest.Resources.PeakContextBytes != 0 ||
 			manifest.Resources.ProviderTotalNanoseconds != 0 ||
@@ -206,7 +241,9 @@ func (entry TraceEntry) Validate(expectedSequence uint64) error {
 }
 
 func (resources Resources) Validate() error {
-	if resources.ModelCalls < 0 || resources.ModelDecisions < 0 || resources.EnvironmentActions < 0 ||
+	if resources.PolicyCallsConsumed < 0 || resources.ModelCalls < 0 ||
+		resources.ModelDecisions < 0 || resources.ModelCalls > resources.PolicyCallsConsumed ||
+		resources.ModelDecisions > resources.ModelCalls || resources.EnvironmentActions < 0 ||
 		resources.LowLevelTransitions < 0 || resources.ToolOperations < 0 ||
 		resources.SearchOperations < 0 || resources.ReadOperations < 0 ||
 		resources.SearchOperations+resources.ReadOperations > resources.ToolOperations ||
@@ -259,7 +296,8 @@ func validTraceKind(kind TraceKind) bool {
 	switch kind {
 	case TraceModelCall, TracePolicyDisposition, TraceProjection, TraceObservation, TraceAction, TraceLedger,
 		TraceWorkingSet, TraceObligation, TraceFailure, TraceRestart, TraceLease,
-		TraceStaleRejection, TraceTerminal:
+		TraceStaleRejection, TraceProviderBootstrap, TraceProviderActivation, TraceAblationEvidence,
+		TraceTerminal:
 		return true
 	default:
 		return false

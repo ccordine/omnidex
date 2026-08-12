@@ -3,15 +3,24 @@ package queue
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/cognition"
+	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPostgresCognitionStartReplaySurvivesProgressAndAttemptReplacement(t *testing.T) {
-	_, repository, pool := openWorkingSetDatabase(t)
+	repository, pool, _ := policyInputFreshRepository(t)
 	fixture := newCognitionDatabaseFixture(t, repository)
+	missingActivation := fixture.Start
+	missingActivation.ProviderProcessActivation = cognitionpolicy.ProviderProcessActivation{}
+	if _, err := repository.StartCognitionEpisode(
+		t.Context(), missingActivation, cognitionTestFactAuthority(),
+	); err == nil {
+		t.Fatal("episode start accepted no provider process activation")
+	}
 	if _, err := repository.StartCognitionEpisode(t.Context(), fixture.Start, cognitionTestFactAuthority()); err != nil {
 		t.Fatal(err)
 	}
@@ -25,6 +34,11 @@ func TestPostgresCognitionStartReplaySurvivesProgressAndAttemptReplacement(t *te
 	replacement := replaceCognitionAttemptForTest(t, pool, fixture.Authority)
 	replay := fixture.Start
 	replay.Authority = replacement
+	replay.BrainBootstrap = freshReplayBrainBootstrap(t, fixture.Start.BrainBootstrap)
+	replay.ProviderProcessActivation = cognitionGuardProviderProcessActivationFor(
+		t, t.Context(), fixture.EpisodeID, replacement,
+		replay.BrainBootstrap.AttestedBrain,
+	)
 	episode, err := repository.StartCognitionEpisode(t.Context(), replay, cognitionTestFactAuthority())
 	if err != nil {
 		t.Fatal(err)
@@ -42,6 +56,22 @@ func TestPostgresCognitionStartReplaySurvivesProgressAndAttemptReplacement(t *te
 	if transitions != 2 || graphs != 2 {
 		t.Fatalf("exact replay mutated transitions/graphs: %d/%d", transitions, graphs)
 	}
+	page, err := repository.ReadCognitionProviderProcessObservationPage(
+		t.Context(), fixture.EpisodeID, CognitionProviderProcessObservationPageRequest{
+			Scope: CognitionProviderObservationTerminalTrace,
+			Limit: MaxCognitionProviderObservationPageSize,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Records) != 2 ||
+		page.Records[0].Activation.Receipt.Actor != cognitionAttempt(fixture.Authority) ||
+		page.Records[1].Activation.Receipt.Actor != cognitionAttempt(replacement) ||
+		len(page.Records[0].Activation.IdentityEvidence.Operations) != 5 ||
+		len(page.Records[1].Activation.IdentityEvidence.Operations) != 5 {
+		t.Fatalf("start/replay provider activations=%+v", page.Records)
+	}
 	changed := replay
 	extra, err := cognition.NewObservation(
 		"observation-changed-start", changed.Transition.Current,
@@ -57,10 +87,42 @@ func TestPostgresCognitionStartReplaySurvivesProgressAndAttemptReplacement(t *te
 		t.Fatalf("changed start replay error=%v, want ErrCognitionConflict", err)
 	}
 	changedBrain := replay
-	changedBrain.AttestedBrain = cognitionTestBrainWithCPU("e")
-	if _, err := repository.StartCognitionEpisode(t.Context(), changedBrain, cognitionTestFactAuthority()); !errors.Is(err, ErrCognitionConflict) {
-		t.Fatalf("changed attested brain replay error=%v, want ErrCognitionConflict", err)
+	changedBrain.BrainBootstrap = cognitionTestBrainBootstrapWithCPU("e")
+	if _, err := repository.StartCognitionEpisode(
+		t.Context(), changedBrain, cognitionTestFactAuthority(),
+	); !errors.Is(err, cognitionpolicy.ErrInvalidEvidence) {
+		t.Fatalf("changed attested brain replay error=%v, want invalid activation evidence", err)
 	}
+}
+
+func freshReplayBrainBootstrap(
+	t *testing.T,
+	original cognitionpolicy.BrainBootstrap,
+) cognitionpolicy.BrainBootstrap {
+	t.Helper()
+	request, err := cognitionpolicy.BootstrapProviderIdentityRequest(original.AttestedBrain.Ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := queueTestObservedProviderIdentity(
+		time.Now().UTC().Truncate(time.Microsecond),
+		original.AttestedBrain.Attestation, request.ChallengeSHA256,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brain, err := cognitionpolicy.NewAttestedBrain(
+		original.AttestedBrain.Ref, original.AttestedBrain.Attestation,
+		observed.Observation, original.AttestedBrain.Host,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrap, err := cognitionpolicy.NewBrainBootstrap(brain, observed.Evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bootstrap
 }
 
 func replaceCognitionAttemptForTest(

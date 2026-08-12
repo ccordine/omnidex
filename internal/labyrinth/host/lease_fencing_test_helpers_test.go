@@ -219,7 +219,7 @@ func (fixture fencedHostFixture) startCognitionEpisode(
 	if err != nil {
 		t.Fatal(err)
 	}
-	brain := fencedHostAttestedBrain(t)
+	bootstrap := fencedHostBrainBootstrap(t)
 	budget := cognition.RuntimeBudget{
 		RemainingPolicyCalls: 4, MaxInputBytes: 8_192, MaxInputTokens: 2_048,
 		MaxOutputBytes: 4_096, MaxOutputTokens: 256, MaxEvidenceRefs: 16,
@@ -228,7 +228,7 @@ func (fixture fencedHostFixture) startCognitionEpisode(
 	}
 	if _, err := fixture.repository.StartCognitionEpisode(
 		t.Context(), queue.CognitionEpisodeStart{
-			Authority: authority, EpisodeID: fixture.episode.ID, AttestedBrain: brain,
+			Authority: authority, EpisodeID: fixture.episode.ID, BrainBootstrap: bootstrap,
 			Scenario: fixture.scenario.Ref(), Goal: goal, Completion: completion,
 			ActionCatalog: fixture.scenario.Catalog(), Budget: budget,
 			Root: cognition.ObligationSpec{

@@ -36,7 +36,9 @@ func TestReadProductionTraceRequiresExactVerifiedPagination(t *testing.T) {
 	first := productionTraceTestPage(t, episode, 0, 1)
 	second := productionTraceTestPage(t, episode, 1, -1)
 	first.Records = []queue.CognitionSealedTraceRecord{productionTraceTestRecord("transition", "one")}
-	second.Records = []queue.CognitionSealedTraceRecord{productionTraceTestRecord("obligation_graph", "two")}
+	second.Records = []queue.CognitionSealedTraceRecord{productionTraceTestRecordAt(
+		"obligation_graph", "two", 20,
+	)}
 	reader := &pagedTraceReader{pages: map[int]queue.CognitionSealedTracePage{0: first, 1: second}}
 
 	trace, err := readProductionTrace(context.Background(), reader, episode)
@@ -106,6 +108,7 @@ func productionTraceTestPage(
 			SealedBy: model.StepAttemptAuthority{
 				JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker",
 			},
+			CreatedAt: startedAt.Add(250 * time.Millisecond),
 		},
 		GraphVersion: 2, GraphSHA256: traceTestDigest("graph"), LedgerVersion: 2,
 		WorkingSetVersion: 2, EpisodeStartedAt: startedAt,
@@ -115,10 +118,14 @@ func productionTraceTestPage(
 }
 
 func productionTraceTestRecord(kind, id string) queue.CognitionSealedTraceRecord {
+	return productionTraceTestRecordAt(kind, id, 10)
+}
+
+func productionTraceTestRecordAt(kind, id string, phase int) queue.CognitionSealedTraceRecord {
 	payload := []byte(`{"value":"` + id + `"}`)
 	digest := sha256.Sum256(payload)
 	return queue.CognitionSealedTraceRecord{
-		Kind: kind, Phase: 10, ID: id, SHA256: hex.EncodeToString(digest[:]), Payload: payload,
+		Kind: kind, Phase: phase, ID: id, SHA256: hex.EncodeToString(digest[:]), Payload: payload,
 	}
 }
 

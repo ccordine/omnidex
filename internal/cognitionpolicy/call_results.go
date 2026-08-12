@@ -16,7 +16,8 @@ func providerIdentityFailedCallResult(
 ) CallResult {
 	result := CallResult{
 		Schema: CallResultSchemaV3, CallID: attempt.ID, Status: CallResultFailed,
-		FailureCode: CallFailureProviderIdentity, FailureMessage: boundedFailureMessage(cause),
+		ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
+		FailureCode:                CallFailureProviderIdentity, FailureMessage: boundedFailureMessage(cause),
 	}
 	if generation.ProviderIdentityEvidence.Schema != "" {
 		result.ProviderIdentityEvidence = generation.ProviderIdentityEvidence.Ref
@@ -30,6 +31,9 @@ func policyAuthorityFailedCallResult(
 	cause error,
 ) CallResult {
 	result := providerResult(attempt, generation)
+	if result.ProviderRequestDisposition == "" {
+		result.ProviderRequestDisposition = llm.ProviderRequestNotDispatched
+	}
 	result.Status = CallResultFailed
 	result.FailureCode = CallFailurePolicyAuthority
 	result.FailureMessage = boundedFailureMessage(cause)
@@ -38,16 +42,19 @@ func policyAuthorityFailedCallResult(
 
 func untrustedProviderFailedCallResult(
 	attempt CallAttempt,
-	dispatched bool,
+	requestDisposition llm.ProviderRequestDisposition,
 	identity llm.ProviderIdentityEvidenceRef,
 	evidence ProviderGenerationEvidenceRef,
 	capture ProviderResponseCaptureEvidenceRef,
 	code CallFailureCode,
 	cause error,
 ) CallResult {
+	if requestDisposition.Validate() != nil {
+		requestDisposition = ""
+	}
 	return CallResult{
 		Schema: CallResultSchemaV3, CallID: attempt.ID, Status: CallResultFailed,
-		ProviderRequestDispatched: dispatched, ProviderResponseCapture: capture,
+		ProviderRequestDisposition: requestDisposition, ProviderResponseCapture: capture,
 		ProviderIdentityEvidence:   identity,
 		ProviderGenerationEvidence: evidence,
 		FailureCode:                code, FailureMessage: boundedFailureMessage(cause),
@@ -107,7 +114,7 @@ func acceptedCallResult(
 func providerResult(attempt CallAttempt, generation llm.PreparedGeneration) CallResult {
 	result := CallResult{
 		Schema: CallResultSchemaV3, CallID: attempt.ID,
-		ProviderRequestDispatched:     generation.ProviderRequestDispatched,
+		ProviderRequestDisposition:    generation.ProviderRequestDisposition,
 		ProviderRequestSHA256:         generation.ProviderRequestSHA256,
 		ProviderHTTPStatus:            generation.ProviderHTTPStatus,
 		ProviderResponseDisposition:   generation.ProviderResponseDisposition,
@@ -125,7 +132,7 @@ func providerResult(attempt CallAttempt, generation llm.PreparedGeneration) Call
 		ProviderUsagePresent:          generation.UsagePresent,
 		ProviderUsage:                 generation.Usage,
 	}
-	if generation.ProviderRequestDispatched || generation.ProviderObservation.Schema != "" {
+	if generation.ProviderObservation.Schema != "" {
 		result.ProviderIdentityChecked = true
 		result.ProviderAttestation = attempt.ProviderAttestation
 		result.ProviderObservation = generation.ProviderObservation
@@ -138,7 +145,7 @@ func providerResult(attempt CallAttempt, generation llm.PreparedGeneration) Call
 		result.ResponseBytes = len(generation.Content)
 		result.ResponseEvidence = modelResponseEvidenceRef(attempt.ID, generation.Content)
 	}
-	if generation.ProviderRequestDispatched &&
+	if generation.ProviderRequestDisposition == llm.ProviderRequestDispatched &&
 		(generation.ProviderResponseDisposition != llm.ProviderResponseTransportError ||
 			len(generation.ProviderResponseCapture) > 0) {
 		result.ProviderResponseCapture = providerResponseCaptureEvidenceRef(

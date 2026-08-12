@@ -2,7 +2,7 @@ package cognitionpolicy
 
 import "github.com/gryph/omnidex/internal/llm"
 
-const maxProviderContentEncodingBase64Bytes = ((llm.MaxProviderContentEncodingCaptureBytes + 2) / 3) * 4
+const maxProviderContentEncodingBase64Bytes = llm.MaxProviderContentEncodingBase64Bytes
 
 // providerContentEncodingEvidenceWire keeps every string in an untrusted
 // content-encoding receipt behind the same total bounded-byte witness used by
@@ -22,13 +22,13 @@ func encodeProviderContentEncodingWire(
 	value llm.ProviderContentEncodingEvidence,
 ) providerContentEncodingEvidenceWire {
 	metadata := func(raw string) providerGenerationWireBytes {
-		return newProviderGenerationWireBytes([]byte(raw), maxProviderGenerationMetadataCaptureBytes)
+		return newProviderGenerationWireString(raw, maxProviderGenerationMetadataCaptureBytes)
 	}
 	return providerContentEncodingEvidenceWire{
 		Schema: metadata(value.Schema), Values: value.Values, Complete: value.Complete,
 		SHA256: metadata(value.SHA256), Bytes: value.Bytes,
-		CapturedBase64: newProviderGenerationWireBytes(
-			[]byte(value.CapturedBase64), maxProviderContentEncodingBase64Bytes,
+		CapturedBase64: newProviderGenerationWireString(
+			value.CapturedBase64, maxProviderContentEncodingBase64Bytes,
 		),
 		CapturedBytes: value.CapturedBytes, Uncompressed: value.Uncompressed,
 	}

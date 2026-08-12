@@ -15,7 +15,7 @@ func TestOfflineTakeoverConfigRequiresAnInteriorDurableBoundary(t *testing.T) {
 		t, strings.Repeat("a", 40), strings.Repeat("b", 64), strings.Repeat("c", 64),
 	)
 	config := OfflineTakeoverConfig{
-		Schema: OfflineTakeoverConfigSchemaV1, Promotion: promotion, AfterSuccessfulActions: 1,
+		Schema: OfflineTakeoverConfigSchemaV2, Promotion: promotion, AfterSuccessfulActions: 1,
 	}
 	if err := config.Validate(); err != nil {
 		t.Fatal(err)

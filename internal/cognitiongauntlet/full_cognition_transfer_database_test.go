@@ -15,7 +15,7 @@ import (
 // proves one production runtime crosses two real surfaces without code changes.
 func TestPostgresFullCognitionTransferExecutesFilesystemAndRecordSurfaces(t *testing.T) {
 	ctx, pool, repository, hostStore := openFullCognitionDatabase(t)
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}

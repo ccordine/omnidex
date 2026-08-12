@@ -4,6 +4,7 @@ import "fmt"
 
 type stationTraceState struct {
 	pending        *ProjectionTrace
+	policyCalls    int
 	modelCalls     int
 	inputBytes     int64
 	inputTokens    int64
@@ -54,6 +55,7 @@ func (state *stationTraceState) acceptModelCall(entry TraceEntry, budget Station
 		return fmt.Errorf("model-call trace does not bind its preceding Context Projection")
 	}
 	state.modelCalls++
+	state.policyCalls++
 	state.inputBytes += call.InputBytes
 	state.inputTokens += call.InputTokens
 	state.outputBytes += call.OutputBytes
@@ -84,6 +86,7 @@ func (state *stationTraceState) acceptPolicyDisposition(entry TraceEntry, budget
 		disposition.ProjectionSHA256 != state.pending.ProjectionSHA256 {
 		return fmt.Errorf("non-inference policy disposition changed its projection or budget authority")
 	}
+	state.policyCalls++
 	state.pending = nil
 	return nil
 }
@@ -92,7 +95,8 @@ func (state stationTraceState) validateResources(resources Resources) error {
 	if state.pending != nil {
 		return fmt.Errorf("cognition trace did not consume its final Context Projection")
 	}
-	if state.modelCalls != resources.ModelCalls || state.inputBytes != resources.ContextBytes ||
+	if state.policyCalls != resources.PolicyCallsConsumed ||
+		state.modelCalls != resources.ModelCalls || state.inputBytes != resources.ContextBytes ||
 		state.inputTokens != resources.InputTokens || state.outputBytes != resources.OutputBytes ||
 		state.outputTokens != resources.OutputTokens || state.peakInput != resources.PeakContextBytes ||
 		state.providerTotal != resources.ProviderTotalNanoseconds ||

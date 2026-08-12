@@ -10,7 +10,9 @@ import (
 
 const cognitionAcceptedFactSchemaV1 = "omnidex.cognition-accepted-fact.v1"
 
-type cognitionAcceptedFact struct {
+// CognitionAcceptedFactTrace is the immutable normalized accepted-fact row
+// carried inside its portable transition materialization batch.
+type CognitionAcceptedFactTrace struct {
 	Schema            string                                 `json:"schema"`
 	ID                string                                 `json:"id"`
 	SHA256            string                                 `json:"sha256"`
@@ -26,7 +28,7 @@ type cognitionAcceptedFact struct {
 	Mapping           cognitionstate.ReplayDescriptor        `json:"mapping"`
 }
 
-func (value cognitionAcceptedFact) identity() any {
+func (value CognitionAcceptedFactTrace) identity() any {
 	return struct {
 		Schema            string                                 `json:"schema"`
 		EpisodeID         cognition.EpisodeID                    `json:"episode_id"`
@@ -44,7 +46,7 @@ func (value cognitionAcceptedFact) identity() any {
 		value.Planner, value.Policy, append([]cognition.EvidenceRef{}, value.EvidenceRefs...), value.Mapping}
 }
 
-func (value cognitionAcceptedFact) validate() error {
+func (value CognitionAcceptedFactTrace) validate() error {
 	_, digest, err := cognitionJSON(value.identity())
 	if err != nil || value.Schema != cognitionAcceptedFactSchemaV1 ||
 		value.ID != "cognition_accepted_fact_"+value.SHA256 || value.SHA256 != digest ||

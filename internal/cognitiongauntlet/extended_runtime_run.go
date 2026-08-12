@@ -59,7 +59,7 @@ func runExtendedRuntime(
 	scenario := generated.ExecutionScenario()
 	components, err := newFullRuntimeComponents(
 		ctx, request.Pool, request.Client, brain, request.RatGeneration.Fixed.Brain,
-		request.HostStore, scenario, episode, request.Surface,
+		request.HostStore, scenario, episode, request.Attempt, request.Surface,
 	)
 	if err != nil {
 		return ExtendedRuntimeReceipt{}, err
@@ -74,13 +74,18 @@ func runExtendedRuntime(
 	if err != nil {
 		return ExtendedRuntimeReceipt{}, fmt.Errorf("start durable extended Labyrinth episode: %w", err)
 	}
+	activation, err := observeRuntimeProviderActivation(ctx, components, episode, binding.Attempt)
+	if err != nil {
+		return ExtendedRuntimeReceipt{}, err
+	}
 	stored, err := startExtendedRuntimeEpisode(
-		ctx, components.store, request, authority, components.frozenBrain, episode, scenario, start,
+		ctx, components.store, request, authority, components.brainBootstrap, activation,
+		episode, scenario, start,
 	)
 	if err != nil {
 		return ExtendedRuntimeReceipt{}, err
 	}
-	components, err = activateRuntimeComponents(ctx, components, stored, binding.Attempt)
+	components, err = activateRuntimeComponents(ctx, components, stored, activation)
 	if err != nil {
 		return ExtendedRuntimeReceipt{}, err
 	}

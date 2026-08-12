@@ -87,7 +87,7 @@ func runPrivateReplayEpisode(
 	partial bool,
 ) (MicrogauntletCase, PairedRunAuthority, SealedEpisode) {
 	t.Helper()
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,13 +129,15 @@ func runPrivateReplayEpisode(
 	if partial {
 		client = &terminalPolicyClient{witnessPolicyClient: base, response: `{}`}
 	}
+	episodeDirectory, evidenceDirectory := t.TempDir(), t.TempDir()
 	result, err := RunPublicAblation(context.Background(), bundle, PublicAblationRunRequest{
 		Actor: actor, Client: client, Environment: environment,
 		Completion: localRuntimeCompletion{evaluator: environment.(ablationGoalEvaluator)},
 		ContaminatedEvidence: &ContaminatedEvidencePacket{
 			Witness: oracle.Witness, EvidenceUses: oracle.EvidenceUses,
 		},
-		EpisodeSealPath:     filepath.Join(t.TempDir(), "episode.json"),
+		EpisodeSealPath:     filepath.Join(episodeDirectory, "episode.json"),
+		EvidenceSealPath:    filepath.Join(evidenceDirectory, "ablation-evidence.json"),
 		LedgerSchemaVersion: "task-ledger.v1", WorkingSetPolicyVersion: "working-set.v1",
 		ProjectionPolicyVersion: ablationProjectionPolicyVersionV1,
 	})

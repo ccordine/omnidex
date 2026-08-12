@@ -83,8 +83,9 @@ func newCognitionDatabaseFixture(
 		t.Fatal(err)
 	}
 	start := CognitionEpisodeStart{
-		Authority: authority, EpisodeID: episodeID, AttestedBrain: cognitionTestBrain(),
-		Scenario: scenario, Goal: goal, Completion: completion,
+		Authority: authority, EpisodeID: episodeID,
+		BrainBootstrap: freshReplayBrainBootstrap(t, cognitionTestBrainBootstrap()),
+		Scenario:       scenario, Goal: goal, Completion: completion,
 		ActionCatalog: catalog, Budget: cognitionTestRuntimeBudget(),
 		Root: cognition.ObligationSpec{
 			ID: rootID, Desired: goal, DependsOn: []cognition.ObligationID{},
@@ -95,6 +96,9 @@ func newCognitionDatabaseFixture(
 			Effects: []cognition.Effect{},
 		},
 	}
+	start.ProviderProcessActivation = cognitionGuardProviderProcessActivationFor(
+		t, ctx, episodeID, authority, start.BrainBootstrap.AttestedBrain,
+	)
 	return cognitionDatabaseFixture{
 		Repository: repository,
 		Authority:  authority, EpisodeID: episodeID, Goal: goal, Catalog: catalog,

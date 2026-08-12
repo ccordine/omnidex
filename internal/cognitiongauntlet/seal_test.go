@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/taskstate"
@@ -107,6 +108,19 @@ func TestEpisodeSealRejectsChangedBrainOrContextCeiling(t *testing.T) {
 	}
 }
 
+func TestEpisodeSealRequiresExactOrderedRunBounds(t *testing.T) {
+	manifest := validEpisodeManifest(mustRatGeneration(t), terminalTestPayload(t))
+	manifest.SealedAt = manifest.EpisodeStartedAt.Add(-time.Nanosecond)
+	if _, err := prepareEpisodeManifest(manifest); err == nil {
+		t.Fatal("episode accepted a seal time before its start")
+	}
+	manifest = validEpisodeManifest(mustRatGeneration(t), terminalTestPayload(t))
+	manifest.EpisodeStartedAt = time.Time{}
+	if _, err := prepareEpisodeManifest(manifest); err == nil {
+		t.Fatal("episode accepted a missing start time")
+	}
+}
+
 func TestEpisodeSealRejectsIncompleteProjectionAndTraceCounts(t *testing.T) {
 	payload, err := taskstate.NewJSONObject([]byte(`{"kind":"projection"}`))
 	if err != nil {
@@ -156,13 +170,15 @@ func validEpisodeManifest(generation RatGeneration, payload taskstate.JSONObject
 	projectionPayload, _ := traceJSONObject(testProjectionTrace())
 	callPayload, _ := traceJSONObject(testModelCallTrace())
 	return EpisodeManifest{
-		Schema: EpisodeManifestSchemaV1, EpisodeID: episodeID,
+		Schema: EpisodeManifestSchemaV2, EpisodeID: episodeID,
 		Scenario: cognition.ScenarioRef{
 			ID:     cognition.ScenarioID("scenario-" + strings.Repeat("b", 64)),
 			SHA256: strings.Repeat("c", 64),
 		},
 		PublicRunAuthoritySHA256: strings.Repeat("f", 64), Variant: VariantFullCognition,
-		RuntimeVersion: generation.Runtime.Version, LedgerSchemaVersion: "ledger.v1",
+		EpisodeStartedAt: time.Unix(1_700_000_000, 0).UTC(),
+		SealedAt:         time.Unix(1_700_000_001, 0).UTC(),
+		RuntimeVersion:   generation.Runtime.Version, LedgerSchemaVersion: "ledger.v1",
 		WorkingSetPolicyVersion: "working-set.v1", ProjectionPolicyVersion: "projection.v1",
 		RatGeneration: generation, StationBudget: testStationBudget(),
 		Model: ModelRecord{
@@ -183,7 +199,8 @@ func validEpisodeManifest(generation RatGeneration, payload taskstate.JSONObject
 			{Sequence: 3, Kind: TraceTerminal, ID: "terminal-1", Revision: &finalRevision, Payload: payload},
 		},
 		Resources: Resources{
-			ModelCalls: 1, ModelDecisions: 1, InputTokens: 32, OutputTokens: 16,
+			PolicyCallsConsumed: 1, ModelCalls: 1, ModelDecisions: 1,
+			InputTokens: 32, OutputTokens: 16,
 			ContextBytes: 128, OutputBytes: 64, PeakContextBytes: 128,
 			ProviderTotalNanoseconds: 4, ProviderLoadNanoseconds: 1,
 			ProviderPromptEvalNanoseconds: 1, ProviderEvalNanoseconds: 1,

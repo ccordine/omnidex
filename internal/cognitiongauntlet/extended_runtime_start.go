@@ -16,7 +16,8 @@ func startExtendedRuntimeEpisode(
 	store *cognitionstore.Store,
 	request ExtendedRuntimeRunRequest,
 	authority PairedRunAuthority,
-	brain cognitionpolicy.AttestedBrain,
+	bootstrap cognitionpolicy.BrainBootstrap,
+	activation cognitionpolicy.ProviderProcessActivation,
 	episode cognition.EpisodeRef,
 	scenario labyrinth.Scenario,
 	start cognition.Transition,
@@ -40,12 +41,13 @@ func startExtendedRuntimeEpisode(
 	if err != nil {
 		return queue.CognitionEpisode{}, err
 	}
-	if err := cognitionpolicy.ValidateRuntimeBudget(brain.Ref, budget); err != nil {
+	if err := cognitionpolicy.ValidateRuntimeBudget(bootstrap.AttestedBrain.Ref, budget); err != nil {
 		return queue.CognitionEpisode{}, fmt.Errorf("validate extended runtime budget: %w", err)
 	}
 	stored, err := store.StartEpisode(ctx, queue.CognitionEpisodeStart{
 		Authority: request.Attempt, EpisodeID: episode.ID, Scenario: scenario.Ref(),
-		AttestedBrain: brain, Goal: goal, Completion: completion,
+		BrainBootstrap: bootstrap, ProviderProcessActivation: activation,
+		Goal: goal, Completion: completion,
 		ActionCatalog: scenario.Catalog(), Budget: budget,
 		Root: cognition.ObligationSpec{
 			ID: rootID, Desired: goal, DependsOn: []cognition.ObligationID{},

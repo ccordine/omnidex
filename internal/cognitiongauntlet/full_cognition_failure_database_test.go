@@ -29,7 +29,7 @@ func TestPostgresFullCognitionSealsPolicyFailuresWithoutFallback(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, pool, repository, hostStore := openFullCognitionDatabase(t)
-			fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+			fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -52,7 +52,7 @@ func TestPostgresFullCognitionSealsPolicyFailuresWithoutFallback(t *testing.T) {
 
 func TestPostgresFullCognitionSealsCycleExhaustionWithoutFallback(t *testing.T) {
 	ctx, pool, repository, hostStore := openFullCognitionDatabase(t)
-	spec := InitialMicrogauntletsV1()[0]
+	spec := InitialMicrogauntletsV2()[0]
 	spec.Budget.RuntimeCycles = spec.Generator.Difficulty.SolutionDepth + 1
 	fixture, err := GenerateMicrogauntlet(spec)
 	if err != nil {
@@ -81,10 +81,11 @@ func TestPostgresFullCognitionSealsCycleExhaustionWithoutFallback(t *testing.T) 
 
 type terminalPolicyClient struct {
 	*witnessPolicyClient
-	mu       sync.Mutex
-	count    int
-	response string
-	failure  error
+	mu                 sync.Mutex
+	count              int
+	response           string
+	failure            error
+	requestDisposition llm.ProviderRequestDisposition
 }
 
 func (client *terminalPolicyClient) GeneratePrepared(
@@ -112,7 +113,11 @@ func (client *terminalPolicyClient) GeneratePreparedExact(
 	response, failure := client.response, client.failure
 	client.mu.Unlock()
 	if failure != nil {
-		return client.exactPreparedFailure(prepared, failure)
+		generation, err := client.exactPreparedFailure(prepared, failure)
+		if client.requestDisposition != "" {
+			generation.ProviderRequestDisposition = client.requestDisposition
+		}
+		return generation, err
 	}
 	return client.exactPreparedGeneration(prepared, response)
 }

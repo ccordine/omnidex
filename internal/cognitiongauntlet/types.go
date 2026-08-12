@@ -1,6 +1,8 @@
 package cognitiongauntlet
 
 import (
+	"time"
+
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/taskstate"
 )
@@ -8,7 +10,7 @@ import (
 const (
 	PublicManifestSchemaV1  = "omnidex.cognition-gauntlet-public.v1"
 	OracleManifestSchemaV1  = "omnidex.cognition-gauntlet-oracle.v1"
-	EpisodeManifestSchemaV1 = "omnidex.cognition-episode.v1"
+	EpisodeManifestSchemaV2 = "omnidex.cognition-episode.v2"
 	EpisodeSealSchemaV1     = "omnidex.cognition-episode-seal.v1"
 	EvaluationSchemaV1      = "omnidex.cognition-evaluation.v1"
 )
@@ -84,19 +86,22 @@ type OracleManifest struct {
 type TraceKind string
 
 const (
-	TraceModelCall         TraceKind = "model_call"
-	TracePolicyDisposition TraceKind = "policy_disposition"
-	TraceProjection        TraceKind = "context_projection"
-	TraceObservation       TraceKind = "observation"
-	TraceAction            TraceKind = "action"
-	TraceLedger            TraceKind = "task_ledger"
-	TraceWorkingSet        TraceKind = "working_set"
-	TraceObligation        TraceKind = "obligation"
-	TraceFailure           TraceKind = "failure"
-	TraceRestart           TraceKind = "restart"
-	TraceLease             TraceKind = "lease"
-	TraceStaleRejection    TraceKind = "stale_rejection"
-	TraceTerminal          TraceKind = "terminal"
+	TraceModelCall          TraceKind = "model_call"
+	TracePolicyDisposition  TraceKind = "policy_disposition"
+	TraceProjection         TraceKind = "context_projection"
+	TraceObservation        TraceKind = "observation"
+	TraceAction             TraceKind = "action"
+	TraceLedger             TraceKind = "task_ledger"
+	TraceWorkingSet         TraceKind = "working_set"
+	TraceObligation         TraceKind = "obligation"
+	TraceFailure            TraceKind = "failure"
+	TraceRestart            TraceKind = "restart"
+	TraceLease              TraceKind = "lease"
+	TraceStaleRejection     TraceKind = "stale_rejection"
+	TraceProviderBootstrap  TraceKind = "provider_bootstrap"
+	TraceProviderActivation TraceKind = "provider_activation"
+	TraceAblationEvidence   TraceKind = "ablation_evidence"
+	TraceTerminal           TraceKind = "terminal"
 )
 
 type TraceEntry struct {
@@ -128,6 +133,7 @@ type Outcome struct {
 }
 
 type Resources struct {
+	PolicyCallsConsumed           int   `json:"policy_calls_consumed"`
 	ModelCalls                    int   `json:"model_calls"`
 	ModelDecisions                int   `json:"model_decisions"`
 	EnvironmentActions            int   `json:"environment_actions"`
@@ -190,6 +196,8 @@ type EpisodeManifest struct {
 	LedgerSchemaVersion      string                  `json:"ledger_schema_version"`
 	WorkingSetPolicyVersion  string                  `json:"working_set_policy_version"`
 	ProjectionPolicyVersion  string                  `json:"projection_policy_version"`
+	EpisodeStartedAt         time.Time               `json:"episode_started_at"`
+	SealedAt                 time.Time               `json:"sealed_at"`
 	RatGeneration            RatGeneration           `json:"rat_generation"`
 	Model                    ModelRecord             `json:"model"`
 	StationBudget            StationBudget           `json:"station_budget"`

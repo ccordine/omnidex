@@ -21,6 +21,10 @@ func loadCognitionTracePayloadTx(
 	switch record.Kind {
 	case "action":
 		return loadCognitionTraceActionPayloadTx(ctx, tx, episode, record)
+	case CognitionTraceKindAcceptedFactMaterialization:
+		return loadCognitionAcceptedFactMaterializationTracePayloadTx(ctx, tx, episode, record)
+	case CognitionTraceKindProposalMaterialization:
+		return loadCognitionProposalMaterializationTracePayloadTx(ctx, tx, episode, record)
 	case "plan_revision":
 		return loadCognitionPlanRevisionTracePayloadTx(ctx, tx, episode, record)
 	case "context_projection":
@@ -36,6 +40,8 @@ func loadCognitionTracePayloadTx(
 	case "policy_response_evidence", "policy_provider_generation_evidence",
 		"policy_provider_response_capture":
 		return loadCognitionPolicyEvidenceTracePayloadTx(ctx, tx, episode.EpisodeID, record)
+	case CognitionTraceKindProviderBrainBootstrap:
+		return loadCognitionBrainBootstrapTracePayloadTx(ctx, tx, episode.EpisodeID, record)
 	}
 	query, args, err := cognitionTracePayloadQuery(episode.EpisodeID, record)
 	if err != nil {
@@ -75,6 +81,9 @@ func cognitionTracePayloadQuery(
 	case "provider_process_observation":
 		return `SELECT receipt_json,receipt_sha256 FROM cognition_provider_process_observations
 			WHERE episode_id=$1 AND observation_id=$2 AND sequence=$3`, args, nil
+	case "provider_activation_failure":
+		return `SELECT receipt_json,receipt_sha256 FROM cognition_provider_activation_failures
+			WHERE episode_id=$1 AND record_id=$2 AND record_number=$3`, args, nil
 	case "policy_abandonment":
 		return `SELECT descriptor_json,descriptor_json_sha256 FROM cognition_policy_call_abandonments
 			WHERE episode_id=$1 AND abandonment_id=$2 AND recovery_attempt=$3`, args, nil

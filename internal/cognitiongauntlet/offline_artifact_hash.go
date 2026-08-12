@@ -31,3 +31,8 @@ func hashExactFile(path string, maximumBytes int64) (string, error) {
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
+
+func digestExactBytes(raw []byte) string {
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
+}

@@ -43,18 +43,23 @@ ALTER TABLE cognition_policy_calls
     ADD COLUMN model_input_token_upper_bound BIGINT NOT NULL,
     ADD COLUMN response_contract_sha256 TEXT NOT NULL,
     ADD COLUMN expected_provider_request_sha256 TEXT NOT NULL,
+    ADD COLUMN provider_process_observation_id TEXT NOT NULL,
     ADD COLUMN provider_identity_checked BOOLEAN,
-    ADD COLUMN provider_request_dispatched BOOLEAN,
+    ADD COLUMN provider_request_disposition TEXT,
     ADD COLUMN provider_observation_sha256 TEXT,
     ADD COLUMN provider_request_sha256 TEXT,
     ADD COLUMN provider_http_status INTEGER,
     ADD COLUMN provider_response_disposition TEXT,
     ADD COLUMN provider_response_complete BOOLEAN,
+	ADD COLUMN provider_content_encoding_json TEXT,
     ADD COLUMN provider_response_bytes_known BOOLEAN,
     ADD COLUMN provider_response_sha256 TEXT,
     ADD COLUMN provider_response_bytes BIGINT,
     ADD COLUMN provider_response_capture_sha256 TEXT,
     ADD COLUMN provider_response_captured_bytes BIGINT,
+	ADD COLUMN provider_response_model TEXT,
+	ADD COLUMN provider_done_present BOOLEAN,
+	ADD COLUMN provider_done BOOLEAN,
     ADD COLUMN provider_done_reason TEXT,
     ADD COLUMN provider_usage_present BOOLEAN,
     ADD COLUMN provider_usage_valid BOOLEAN,
@@ -65,104 +70,14 @@ ALTER TABLE cognition_policy_calls
     ADD COLUMN prompt_eval_duration_nanos BIGINT,
     ADD COLUMN eval_duration_nanos BIGINT;
 
-CREATE OR REPLACE FUNCTION project_cognition_policy_call_v3()
-RETURNS TRIGGER AS $$
-DECLARE usage JSONB;
-BEGIN
-    IF NEW.attempt_json::jsonb->>'schema'<>'omnidex.cognition-policy-call-attempt.v3' THEN
-        RAISE EXCEPTION 'cognition policy call requires exact attempt schema v3';
-    END IF;
-    NEW.envelope_renderer_version := NEW.attempt_json::jsonb->>'envelope_renderer_version';
-    NEW.envelope_token_estimator := NEW.attempt_json::jsonb->>'envelope_token_estimator';
-    NEW.envelope_estimated_tokens := (NEW.attempt_json::jsonb->>'envelope_estimated_tokens')::BIGINT;
-    NEW.envelope_bytes := (NEW.attempt_json::jsonb->>'envelope_bytes')::BIGINT;
-    NEW.envelope_sha256 := NEW.attempt_json::jsonb->>'envelope_sha256';
-    NEW.prompt_hint_sha256 := NEW.attempt_json::jsonb->>'prompt_hint_sha256';
-    NEW.prompt_hint_bytes := (NEW.attempt_json::jsonb->>'prompt_hint_bytes')::BIGINT;
-    NEW.model_visible_input_sha256 := NEW.attempt_json::jsonb->>'model_visible_input_sha256';
-    NEW.model_visible_input_bytes := (NEW.attempt_json::jsonb->>'model_visible_input_bytes')::BIGINT;
-    NEW.model_visible_estimated_tokens :=
-        (NEW.attempt_json::jsonb->>'model_visible_estimated_tokens')::BIGINT;
-    NEW.model_input_token_upper_bound :=
-        (NEW.attempt_json::jsonb->>'model_input_token_upper_bound')::BIGINT;
-    NEW.response_contract_sha256 := NEW.attempt_json::jsonb->>'response_contract_sha256';
-    NEW.expected_provider_request_sha256 :=
-        NEW.attempt_json::jsonb->>'expected_provider_request_sha256';
-    IF NEW.result_json IS NULL THEN
-        NEW.provider_identity_checked := NULL;
-        NEW.provider_request_dispatched := NULL;
-        NEW.provider_observation_sha256 := NULL;
-        NEW.provider_request_sha256 := NULL;
-        NEW.provider_http_status := NULL;
-        NEW.provider_response_disposition := NULL;
-        NEW.provider_response_complete := NULL;
-        NEW.provider_response_bytes_known := NULL;
-        NEW.provider_response_sha256 := NULL;
-        NEW.provider_response_bytes := NULL;
-        NEW.provider_response_capture_sha256 := NULL;
-        NEW.provider_response_captured_bytes := NULL;
-        NEW.provider_done_reason := NULL;
-        NEW.provider_usage_present := NULL;
-        NEW.provider_usage_valid := NULL;
-        NEW.prompt_eval_count := NULL;
-        NEW.eval_count := NULL;
-        NEW.total_duration_nanos := NULL;
-        NEW.load_duration_nanos := NULL;
-        NEW.prompt_eval_duration_nanos := NULL;
-        NEW.eval_duration_nanos := NULL;
-        RETURN NEW;
-    END IF;
-    IF NEW.result_json::jsonb->>'schema'<>'omnidex.cognition-policy-call-result.v3' THEN
-        RAISE EXCEPTION 'cognition policy call requires exact result schema v3';
-    END IF;
-    NEW.provider_identity_checked :=
-        (NEW.result_json::jsonb->>'provider_identity_checked')::BOOLEAN;
-    NEW.provider_request_dispatched := (NEW.result_json::jsonb->>'provider_request_dispatched')::BOOLEAN;
-    NEW.provider_observation_sha256 :=
-        NULLIF(NEW.result_json::jsonb->'provider_observation'->>'observation_sha256','');
-    NEW.provider_request_sha256 := NEW.result_json::jsonb->>'provider_request_sha256';
-    NEW.provider_http_status := (NEW.result_json::jsonb->>'provider_http_status')::INTEGER;
-    NEW.provider_response_disposition := NEW.result_json::jsonb->>'provider_response_disposition';
-    NEW.provider_response_complete :=
-        (NEW.result_json::jsonb->>'provider_response_complete')::BOOLEAN;
-    NEW.provider_response_bytes_known :=
-        (NEW.result_json::jsonb->>'provider_response_bytes_known')::BOOLEAN;
-    NEW.provider_response_sha256 := NEW.result_json::jsonb->>'provider_response_sha256';
-    NEW.provider_response_bytes := (NEW.result_json::jsonb->>'provider_response_bytes')::BIGINT;
-    NEW.provider_response_capture_sha256 :=
-        NEW.result_json::jsonb->>'provider_response_capture_sha256';
-    NEW.provider_response_captured_bytes :=
-        (NEW.result_json::jsonb->>'provider_response_captured_bytes')::BIGINT;
-    NEW.provider_done_reason := NEW.result_json::jsonb->>'provider_done_reason';
-    NEW.provider_usage_present := (NEW.result_json::jsonb->>'provider_usage_present')::BOOLEAN;
-    usage := NEW.result_json::jsonb->'provider_usage';
-    NEW.prompt_eval_count := (usage->>'prompt_eval_count')::BIGINT;
-    NEW.eval_count := (usage->>'eval_count')::BIGINT;
-    NEW.total_duration_nanos := (usage->>'total_duration_nanos')::BIGINT;
-    NEW.load_duration_nanos := (usage->>'load_duration_nanos')::BIGINT;
-    NEW.prompt_eval_duration_nanos := (usage->>'prompt_eval_duration_nanos')::BIGINT;
-    NEW.eval_duration_nanos := (usage->>'eval_duration_nanos')::BIGINT;
-    NEW.provider_usage_valid := NEW.provider_usage_present AND
-        NEW.prompt_eval_count>0 AND NEW.eval_count>0 AND
-        NEW.total_duration_nanos>0 AND NEW.load_duration_nanos>=0 AND
-        NEW.prompt_eval_duration_nanos>0 AND NEW.eval_duration_nanos>0 AND
-        NEW.total_duration_nanos>=NEW.load_duration_nanos+
-            NEW.prompt_eval_duration_nanos+NEW.eval_duration_nanos;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER cognition_policy_calls_00_v3_projection
-BEFORE INSERT OR UPDATE ON cognition_policy_calls
-FOR EACH ROW EXECUTE FUNCTION project_cognition_policy_call_v3();
-
 ALTER TABLE cognition_policy_calls ADD CONSTRAINT cognition_policy_calls_v3_input CHECK (
     cognition_json_has_unique_keys(attempt_json::json) AND
     attempt_json=cognition_canonical_jsonb(attempt_json::jsonb) AND
     cognition_json_object_has_exact_keys(attempt_json::json,ARRAY[
         'schema','id','actor','snapshot_sha256','expected_revision','obligation_id',
         'runtime_budget','context_projection','brain','provider_attestation',
-        'host_hardware_attestation','envelope_renderer_version','envelope_token_estimator',
+        'host_hardware_attestation','provider_process_activation',
+        'envelope_renderer_version','envelope_token_estimator',
         'envelope_estimated_tokens','envelope_sha256','envelope_bytes','envelope','prompt_hint',
         'prompt_hint_sha256','prompt_hint_bytes','model_visible_input_sha256',
         'model_visible_input_bytes','model_visible_estimated_tokens','model_input_token_upper_bound',
@@ -194,7 +109,7 @@ ALTER TABLE cognition_policy_calls ADD CONSTRAINT cognition_policy_calls_v3_inpu
     ]) AND
     cognition_json_object_has_exact_keys((attempt_json::json->'provider_attestation')::json,ARRAY[
         'schema','backend','backend_version','model','digest','quantization',
-        'native_context_limit','backend_evidence','installed_evidence','runner_evidence',
+		'native_context_limit','tokenizer_profile','backend_evidence','installed_evidence','runner_evidence',
         'attestation_sha256'
     ]) AND
     cognition_json_object_has_exact_keys(
@@ -204,6 +119,32 @@ ALTER TABLE cognition_policy_calls ADD CONSTRAINT cognition_policy_calls_v3_inpu
             'attestation_sha256'
         ]
     ) AND
+    cognition_json_object_has_exact_keys(
+        (attempt_json::json->'provider_process_activation')::json,ARRAY[
+            'schema','observation_id','episode_id','actor','stable_brain_sha256',
+            'provider_observation_sha256','evidence'
+        ]
+    ) AND
+    cognition_json_object_has_exact_keys(
+        (attempt_json::json->'provider_process_activation'->'actor')::json,ARRAY[
+            'job_id','generation','step_id','attempt','worker_id'
+        ]
+    ) AND
+    cognition_json_object_has_exact_keys(
+        (attempt_json::json->'provider_process_activation'->'evidence')::json,ARRAY[
+            'schema','id','sha256','bytes'
+        ]
+    ) AND
+    attempt_json::jsonb->'provider_process_activation'->>'schema'=
+        'omnidex.provider-process-activation-authority.v1' AND
+    provider_process_observation_id~'^provider_process_observation_[0-9a-f]{64}$' AND
+    attempt_json::jsonb->'provider_process_activation'->>'episode_id'=episode_id AND
+    attempt_json::jsonb->'provider_process_activation'->'actor'=
+        attempt_json::jsonb->'actor' AND
+    attempt_json::jsonb->'provider_process_activation'->>'stable_brain_sha256'~
+        '^[0-9a-f]{64}$' AND
+    attempt_json::jsonb->'provider_process_activation'->>'provider_observation_sha256'~
+        '^[0-9a-f]{64}$' AND
     envelope_renderer_version='omnidex.cognition-policy-renderer.v2' AND
     envelope_token_estimator='utf8-bytes-div-four.v1' AND
     envelope_estimated_tokens>0 AND envelope_bytes>0 AND prompt_hint_bytes>0 AND
@@ -237,61 +178,84 @@ ALTER TABLE cognition_policy_calls ADD CONSTRAINT cognition_policy_calls_v3_inpu
 
 ALTER TABLE cognition_policy_calls ADD CONSTRAINT cognition_policy_calls_v3_result CHECK (
     (status IN ('started','abandoned') AND provider_identity_checked IS NULL AND
-     provider_request_dispatched IS NULL AND
+     provider_request_disposition IS NULL AND
      provider_observation_sha256 IS NULL AND provider_usage_valid IS NULL) OR
     (status IN ('accepted','rejected','failed') AND provider_identity_checked IS NOT NULL AND
-     provider_request_dispatched IS NOT NULL AND
+     provider_request_disposition IS NOT NULL AND
 	 provider_http_status IS NOT NULL AND provider_response_complete IS NOT NULL AND
+	 provider_content_encoding_json IS NOT NULL AND
 	 provider_response_bytes_known IS NOT NULL AND
      provider_response_bytes>=0 AND provider_response_captured_bytes>=0 AND
-     provider_usage_present IS NOT NULL AND provider_usage_valid IS NOT NULL AND
+	 provider_response_model IS NOT NULL AND provider_done_present IS NOT NULL AND
+	 provider_done IS NOT NULL AND provider_usage_present IS NOT NULL AND provider_usage_valid IS NOT NULL AND
      prompt_eval_count>=0 AND eval_count>=0 AND total_duration_nanos>=0 AND
      load_duration_nanos>=0 AND prompt_eval_duration_nanos>=0 AND eval_duration_nanos>=0)
 );
 
 ALTER TABLE cognition_policy_calls ADD CONSTRAINT cognition_policy_calls_v3_response_capture CHECK (
     status IN ('started','abandoned') OR
-    (NOT provider_request_dispatched AND NOT provider_identity_checked AND
+    (provider_request_disposition='not_dispatched' AND NOT provider_identity_checked AND
      provider_observation_sha256 IS NULL AND provider_request_sha256 IS NULL AND
      provider_http_status=0 AND provider_response_disposition IS NULL AND
 	 NOT provider_response_complete AND NOT provider_response_bytes_known AND
+	 provider_content_encoding_json='{"bytes":0,"captured_base64":"","captured_bytes":0,"complete":false,"schema":"","sha256":"","uncompressed":false,"values":0}' AND
 	 provider_response_sha256 IS NULL AND
      provider_response_bytes=0 AND provider_response_capture_sha256 IS NULL AND
-     provider_response_captured_bytes=0 AND NOT provider_usage_present AND
+	 provider_response_captured_bytes=0 AND provider_response_model='' AND
+	 NOT provider_done_present AND NOT provider_done AND provider_done_reason='' AND
+	 NOT provider_usage_present AND
      NOT provider_usage_valid AND prompt_eval_count=0 AND eval_count=0 AND
      total_duration_nanos=0 AND load_duration_nanos=0 AND
      prompt_eval_duration_nanos=0 AND eval_duration_nanos=0) OR
-    (provider_request_dispatched AND NOT provider_identity_checked AND
+    (provider_request_disposition IN ('','not_dispatched','dispatched','write_indeterminate') AND
+     NOT provider_identity_checked AND
      result_json::jsonb->'provider_generation_evidence'->>'id'<>'' AND
      provider_observation_sha256 IS NULL AND provider_request_sha256 IS NULL AND
      provider_http_status=0 AND provider_response_disposition IS NULL AND
      NOT provider_response_complete AND NOT provider_response_bytes_known AND
+	 provider_content_encoding_json='{"bytes":0,"captured_base64":"","captured_bytes":0,"complete":false,"schema":"","sha256":"","uncompressed":false,"values":0}' AND
      provider_response_sha256 IS NULL AND provider_response_bytes=0 AND
      provider_response_capture_sha256 IS NULL AND provider_response_captured_bytes=0 AND
-     provider_done_reason='' AND NOT provider_usage_present AND NOT provider_usage_valid AND
+	 provider_response_model='' AND NOT provider_done_present AND NOT provider_done AND
+	 provider_done_reason='' AND NOT provider_usage_present AND NOT provider_usage_valid AND
      prompt_eval_count=0 AND eval_count=0 AND total_duration_nanos=0 AND
      load_duration_nanos=0 AND prompt_eval_duration_nanos=0 AND eval_duration_nanos=0) OR
-    (provider_request_dispatched AND provider_identity_checked AND
+    (provider_request_disposition IN ('not_dispatched','dispatched','write_indeterminate') AND
+     provider_identity_checked AND
      provider_response_disposition='transport_error' AND provider_http_status=0 AND
 	 NOT provider_response_complete AND NOT provider_response_bytes_known AND
+	 provider_content_encoding_json='{"bytes":0,"captured_base64":"","captured_bytes":0,"complete":false,"schema":"","sha256":"","uncompressed":false,"values":0}' AND
 	 provider_response_sha256 IS NULL AND
      provider_response_bytes=0 AND provider_response_capture_sha256 IS NULL AND
-     provider_response_captured_bytes=0 AND provider_done_reason='') OR
-    (provider_request_dispatched AND provider_identity_checked AND
+	 provider_response_captured_bytes=0 AND provider_response_model='' AND
+	 NOT provider_done_present AND NOT provider_done AND provider_done_reason='') OR
+    (provider_request_disposition='dispatched' AND provider_identity_checked AND
      provider_response_disposition IN ('body_limit','body_read_error') AND
-     provider_http_status BETWEEN 100 AND 599 AND NOT provider_response_complete AND
+	 provider_http_status BETWEEN 100 AND 599 AND NOT provider_response_complete AND
 	 NOT provider_response_bytes_known AND provider_response_bytes=0 AND
+	 cognition_provider_content_encoding_is_exact(provider_content_encoding_json) AND
 	 provider_response_sha256 IS NULL AND provider_response_capture_sha256~'^[0-9a-f]{64}$' AND
-     provider_done_reason='') OR
-    (provider_request_dispatched AND provider_identity_checked AND
+	 ((provider_response_disposition='body_limit' AND provider_response_captured_bytes=16777217) OR
+	  (provider_response_disposition='body_read_error' AND
+	   provider_response_captured_bytes BETWEEN 0 AND 16777217)) AND
+	 provider_response_model='' AND NOT provider_done_present AND NOT provider_done AND
+	 provider_done_reason='') OR
+    (provider_request_disposition='dispatched' AND provider_identity_checked AND
      provider_response_disposition IN ('succeeded','http_error','invalid_json','empty_content') AND
 	 provider_http_status BETWEEN 100 AND 599 AND provider_response_complete AND
 	 provider_response_bytes_known AND
-     provider_response_sha256~'^[0-9a-f]{64}$' AND
-     provider_response_sha256=provider_response_capture_sha256 AND
-     provider_response_bytes=provider_response_captured_bytes AND
-     ((provider_response_disposition='succeeded' AND provider_done_reason IN ('stop','length')) OR
-      (provider_response_disposition<>'succeeded' AND provider_done_reason='')))
+	 cognition_provider_content_encoding_is_exact(provider_content_encoding_json) AND
+	 provider_response_sha256~'^[0-9a-f]{64}$' AND
+	 provider_response_sha256=provider_response_capture_sha256 AND
+	 provider_response_bytes=provider_response_captured_bytes AND
+	 provider_response_captured_bytes BETWEEN 0 AND 16777216 AND
+	 ((provider_response_disposition IN ('succeeded','empty_content') AND
+	   cognition_provider_content_encoding_is_identity(provider_content_encoding_json) AND
+	   provider_response_model<>'' AND (NOT provider_done_present OR provider_done) AND
+	   provider_done_reason IN ('','stop','length')) OR
+	  (provider_response_disposition NOT IN ('succeeded','empty_content') AND
+	   provider_response_model='' AND NOT provider_done_present AND NOT provider_done AND
+	   provider_done_reason='')))
 );
 
 ALTER TABLE cognition_policy_calls ADD CONSTRAINT cognition_policy_calls_exact_attempt_check CHECK (

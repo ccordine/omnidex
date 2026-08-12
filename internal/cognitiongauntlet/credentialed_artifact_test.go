@@ -12,7 +12,7 @@ import (
 
 func TestPrivateOracleArtifactRequiresEvaluatorOnlyCredential(t *testing.T) {
 	t.Parallel()
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestInferenceProcessAuthorityHasNoGeneratorOrEvaluatorCredential(t *testing
 	}
 	raw := string(encoded)
 	for _, forbidden := range []string{
-		"private_oracle", "oracle_credential", "host_scenario", `"spec"`, `"seed"`, `"witness"`,
+		"contaminated_oracle", "oracle_grant", "host_scenario", `"spec"`, `"seed"`, `"witness"`,
 	} {
 		if strings.Contains(raw, forbidden) {
 			t.Fatalf("inference process authority contains %q: %s", forbidden, raw)

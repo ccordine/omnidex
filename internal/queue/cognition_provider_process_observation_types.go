@@ -8,9 +8,14 @@ import (
 
 type CognitionProviderObservationScope string
 
+type CognitionProviderPostSealSource string
+
 const (
 	CognitionProviderObservationTerminalTrace CognitionProviderObservationScope = "terminal_trace"
 	CognitionProviderObservationPostSealAudit CognitionProviderObservationScope = "post_seal_audit"
+
+	CognitionProviderPostSealDirectAudit   CognitionProviderPostSealSource = "direct_audit"
+	CognitionProviderPostSealEpisodeReplay CognitionProviderPostSealSource = "episode_replay"
 )
 
 type CognitionProviderProcessObservationRecord struct {
@@ -20,7 +25,8 @@ type CognitionProviderProcessObservationRecord struct {
 	PreviousChainSHA256 string
 	ChainSHA256         string
 	ReceiptSHA256       string
-	Receipt             cognitionpolicy.ProviderProcessObservation
+	PostSealSource      CognitionProviderPostSealSource
+	Activation          cognitionpolicy.ProviderProcessActivation
 }
 
 const MaxCognitionProviderObservationPageSize = 32
@@ -56,23 +62,29 @@ func (record CognitionProviderProcessObservationRecord) validate(
 	brain cognitionpolicy.AttestedBrain,
 ) error {
 	if record.Sequence < 1 || record.ReceiptSHA256 == "" ||
-		record.Receipt.ValidateFor(brain) != nil {
+		record.Activation.ValidateFor(brain) != nil {
 		return fmt.Errorf("%w: provider process observation record is invalid", ErrCognitionConflict)
 	}
 	switch record.Scope {
 	case CognitionProviderObservationTerminalTrace:
 		if record.TerminalTraceSHA256 != "" || record.PreviousChainSHA256 != "" ||
-			record.ChainSHA256 != "" {
+			record.ChainSHA256 != "" || record.PostSealSource != "" {
 			return fmt.Errorf("%w: pre-terminal provider observation claims post-seal authority", ErrCognitionConflict)
 		}
 	case CognitionProviderObservationPostSealAudit:
 		if !cognitionDigestPattern.MatchString(record.TerminalTraceSHA256) ||
 			!cognitionDigestPattern.MatchString(record.PreviousChainSHA256) ||
-			!cognitionDigestPattern.MatchString(record.ChainSHA256) {
+			!cognitionDigestPattern.MatchString(record.ChainSHA256) ||
+			!validCognitionProviderPostSealSource(record.PostSealSource) {
 			return fmt.Errorf("%w: post-seal provider observation chain is invalid", ErrCognitionConflict)
 		}
 	default:
 		return fmt.Errorf("%w: provider observation scope is not registered", ErrCognitionConflict)
 	}
 	return nil
+}
+
+func validCognitionProviderPostSealSource(source CognitionProviderPostSealSource) bool {
+	return source == CognitionProviderPostSealDirectAudit ||
+		source == CognitionProviderPostSealEpisodeReplay
 }

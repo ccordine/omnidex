@@ -23,12 +23,18 @@ type ablationState struct {
 	episode          cognition.EpisodeRef
 	actor            cognition.AttemptRef
 	goal             cognition.GoalExpression
+	completion       cognition.CompletionAuthority
 	obligation       cognition.Obligation
 	catalog          cognition.ActionCatalog
 	observations     []cognition.Observation
+	transitions      []cognition.Transition
 	actions          []ablationActionHistory
+	actionEvidence   []ablationActionEvidence
+	noActions        []ablationNoActionEvidence
 	ledger           *taskstate.Ledger
 	workingSet       *workingset.Set
+	workingSetStart  *workingset.Snapshot
+	workingSetEvents []workingset.Event
 	workingMaterials map[workingset.ItemID]ablationMaterial
 	observationItems map[cognition.ObservationID]workingset.ItemID
 }
@@ -96,9 +102,13 @@ func newAblationStateWithAuthority(
 	}
 	state := &ablationState{
 		variant: variant, episode: episode, actor: actor, goal: goal,
-		obligation: obligation, catalog: catalog.Clone(),
+		completion: completion.Clone(), obligation: obligation, catalog: catalog.Clone(),
 		observations:     make([]cognition.Observation, 0, 32),
+		transitions:      make([]cognition.Transition, 0, 32),
 		actions:          make([]ablationActionHistory, 0, 32),
+		actionEvidence:   make([]ablationActionEvidence, 0, 32),
+		noActions:        make([]ablationNoActionEvidence, 0, 1),
+		workingSetEvents: make([]workingset.Event, 0, 32),
 		workingMaterials: make(map[workingset.ItemID]ablationMaterial),
 		observationItems: make(map[cognition.ObservationID]workingset.ItemID),
 	}
@@ -123,6 +133,10 @@ func newAblationStateWithAuthority(
 		}, workingset.Budget{
 			MaxItems: 64, MaxBytes: workingSetBytes, MaxPinnedItems: 0, MaxPinnedBytes: 0,
 		})
+		if err == nil {
+			snapshot := state.workingSet.Snapshot()
+			state.workingSetStart = &snapshot
+		}
 	}
 	return state, err
 }
@@ -142,6 +156,7 @@ func ledgerBackedAblation(variant Variant) bool {
 }
 
 func (state *ablationState) recordTransition(transition cognition.Transition) error {
+	state.transitions = append(state.transitions, transition.Clone())
 	for _, observation := range transition.Observations {
 		state.observations = append(state.observations, observation)
 		if state.ledger != nil {
@@ -178,20 +193,37 @@ func (state *ablationState) recordLedgerObservation(observation cognition.Observ
 		fmt.Sprint(state.ledger.Version()), content, taskstate.RefEvidence,
 	)
 	itemID := workingset.ItemID("resident-material-" + fmt.Sprint(len(state.observationItems)+1))
-	result, err := state.workingSet.Acquire(workingset.AcquireRequest{
-		ID: itemID, Ref: ref, Role: workingset.RoleEvidence,
-		Retention: workingset.RetentionJob, Scope: state.workingSet.Scope(),
-		Priority: 50, ByteCost: len([]byte(content)),
-		Acquisition: workingset.Acquisition{
-			Provider: workingset.ProviderTaskState, OperationID: string(commandID),
-			Reason: "Retain exact observed evidence while it supports the active objective.",
+	workingCommandID, err := workingset.NewCommandID(
+		string(state.episode.ID), string(observation.ID), "retain-observation",
+	)
+	if err != nil {
+		return err
+	}
+	event, err := state.workingSet.Apply(workingset.AcquireCommand{
+		CommandID: workingCommandID, ExpectedVersion: state.workingSet.Snapshot().Version,
+		Actor: taskstate.AuthorityCode,
+		Request: workingset.AcquireRequest{
+			ID: itemID, Ref: ref, Role: workingset.RoleEvidence,
+			Retention: workingset.RetentionJob, Scope: state.workingSet.Scope(),
+			Priority: 50, ByteCost: len([]byte(content)),
+			Acquisition: workingset.Acquisition{
+				Provider: workingset.ProviderTaskState, OperationID: string(commandID),
+				Reason: "Retain exact observed evidence while it supports the active objective.",
+			},
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("retain ablation Working Set observation: %w", err)
 	}
-	for _, evicted := range result.Evicted {
-		delete(state.workingMaterials, evicted.ID)
+	state.workingSetEvents = append(state.workingSetEvents, event)
+	resident := make(map[workingset.ItemID]struct{})
+	for _, item := range state.workingSet.ResidentItems() {
+		resident[item.ID] = struct{}{}
+	}
+	for existing := range state.workingMaterials {
+		if _, remains := resident[existing]; !remains {
+			delete(state.workingMaterials, existing)
+		}
 	}
 	state.workingMaterials[itemID] = ablationMaterial{
 		Ref: ref, SourceRefs: []taskstate.Ref{rawRef}, Role: workingset.RoleEvidence,
@@ -220,5 +252,26 @@ func (state *ablationState) taskMaterial() (ablationMaterial, error) {
 func (state *ablationState) appendAction(request cognition.ActionRequest, outcome string, failed bool) {
 	state.actions = append(state.actions, ablationActionHistory{
 		Request: request.Clone(), PublicOutcome: outcome, Failed: failed,
+	})
+}
+
+func (state *ablationState) recordActionEvidence(
+	cycle uint32,
+	callID string,
+	trace ActionTrace,
+) {
+	state.actionEvidence = append(state.actionEvidence, ablationActionEvidence{
+		Cycle: cycle, CallID: callID, Trace: cloneAblationActionTrace(trace),
+	})
+}
+
+func (state *ablationState) recordNoAction(
+	cycle uint32,
+	callID string,
+	kind ablationNoActionDisposition,
+	reason string,
+) {
+	state.noActions = append(state.noActions, ablationNoActionEvidence{
+		Cycle: cycle, CallID: callID, Kind: kind, Reason: reason,
 	})
 }

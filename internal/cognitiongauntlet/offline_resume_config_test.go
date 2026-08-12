@@ -16,9 +16,9 @@ func TestOfflineResumeConfigBindsPreregistrationAndDerivesRuns(t *testing.T) {
 	if err := os.WriteFile(executable, []byte("exact-release-binary"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	provider, host := offlinePrepareTestAttestations(t)
+	discovery, provider, host := offlinePrepareTestEvidence(t)
 	prepared, err := prepareOfflineExperiment(
-		baseRequest, provider, host, executable,
+		baseRequest, discovery, provider, host, executable,
 		strings.Repeat("a", 40), strings.Repeat("b", 64), strings.Repeat("c", 64), "v0.5.0",
 	)
 	if err != nil {
@@ -60,9 +60,9 @@ func TestOfflineResumeAuthorityCanBeReloadedAfterReceiptSeals(t *testing.T) {
 	if err := os.WriteFile(executable, []byte("exact-release-binary"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	provider, host := offlinePrepareTestAttestations(t)
+	discovery, provider, host := offlinePrepareTestEvidence(t)
 	prepared, err := prepareOfflineExperiment(
-		request.baseExperiment(), provider, host, executable,
+		request.baseExperiment(), discovery, provider, host, executable,
 		strings.Repeat("a", 40), strings.Repeat("b", 64), strings.Repeat("c", 64), "v0.5.0",
 	)
 	if err != nil {

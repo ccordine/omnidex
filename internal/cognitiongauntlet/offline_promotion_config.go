@@ -9,37 +9,39 @@ import (
 	"time"
 )
 
-const OfflinePromotionConfigSchemaV1 = "omnidex.offline-cognition-promotion-config.v1"
+const OfflinePromotionConfigSchemaV2 = "omnidex.offline-cognition-promotion-config.v2"
 
 type OfflinePromotionConfig struct {
-	Schema                  string              `json:"schema"`
-	DatabaseURL             string              `json:"database_url"`
-	OllamaEndpoint          string              `json:"ollama_endpoint"`
-	InferenceTimeoutSeconds int                 `json:"inference_timeout_seconds"`
-	Scenario                OfflineScenarioSpec `json:"scenario"`
-	Variant                 Variant             `json:"variant"`
-	Surface                 Surface             `json:"surface"`
-	RatGeneration           RatGeneration       `json:"rat_generation"`
-	RuntimeFingerprint      RuntimeFingerprint  `json:"runtime_fingerprint"`
-	Repetition              int                 `json:"repetition"`
-	PublicOutputDirectory   string              `json:"public_output_directory"`
-	PrivateOutputDirectory  string              `json:"private_output_directory"`
-	OmnidexCommit           string              `json:"omnidex_commit,omitempty"`
-	LedgerSchemaVersion     string              `json:"ledger_schema_version"`
-	WorkingSetPolicyVersion string              `json:"working_set_policy_version"`
-	ProjectionPolicyVersion string              `json:"projection_policy_version"`
+	Schema                  string                         `json:"schema"`
+	DatabaseURL             string                         `json:"database_url"`
+	OllamaEndpoint          string                         `json:"ollama_endpoint"`
+	InferenceTimeoutSeconds int                            `json:"inference_timeout_seconds"`
+	Scenario                OfflineScenarioSpec            `json:"scenario"`
+	Variant                 Variant                        `json:"variant"`
+	Surface                 Surface                        `json:"surface"`
+	RatGeneration           RatGeneration                  `json:"rat_generation"`
+	PreparedBrainEvidence   PreparedBrainEvidenceAuthority `json:"prepared_brain_evidence"`
+	RuntimeFingerprint      RuntimeFingerprint             `json:"runtime_fingerprint"`
+	Repetition              int                            `json:"repetition"`
+	PublicOutputDirectory   string                         `json:"public_output_directory"`
+	PrivateOutputDirectory  string                         `json:"private_output_directory"`
+	OmnidexCommit           string                         `json:"omnidex_commit,omitempty"`
+	LedgerSchemaVersion     string                         `json:"ledger_schema_version"`
+	WorkingSetPolicyVersion string                         `json:"working_set_policy_version"`
+	ProjectionPolicyVersion string                         `json:"projection_policy_version"`
 }
 
 type OfflinePromotionPaths struct {
 	PublicBundle  string
 	Episode       string
+	Evidence      string
 	PrivateOracle string
 	Evaluation    string
 	Receipt       string
 }
 
 func (config OfflinePromotionConfig) Validate() error {
-	if config.Schema != OfflinePromotionConfigSchemaV1 || config.DatabaseURL == "" {
+	if config.Schema != OfflinePromotionConfigSchemaV2 || config.DatabaseURL == "" {
 		return fmt.Errorf("offline cognition promotion configuration is invalid")
 	}
 	if err := config.Scenario.Validate(); err != nil {
@@ -65,6 +67,11 @@ func (config OfflinePromotionConfig) Validate() error {
 		config.RatGeneration, budget.Station.MaxOutputTokens,
 	); err != nil {
 		return err
+	}
+	if _, err := loadPreparedBrainEvidenceAuthority(
+		config.PreparedBrainEvidence, config.RatGeneration.Fixed.Brain,
+	); err != nil {
+		return fmt.Errorf("verify prepared Brain raw evidence: %w", err)
 	}
 	if err := config.RuntimeFingerprint.Validate(); err != nil {
 		return err
@@ -132,9 +139,14 @@ func validateOfflineOutputDirectories(publicDirectory, privateDirectory string) 
 }
 
 func (config OfflinePromotionConfig) Paths() OfflinePromotionPaths {
+	evidenceDirectory := config.PublicOutputDirectory
+	if config.Variant == VariantOracleEvidence {
+		evidenceDirectory = config.PrivateOutputDirectory
+	}
 	return OfflinePromotionPaths{
 		PublicBundle:  filepath.Join(config.PublicOutputDirectory, "inference-bootstrap.json"),
 		Episode:       filepath.Join(config.PublicOutputDirectory, "sealed-episode.json"),
+		Evidence:      filepath.Join(evidenceDirectory, "ablation-evidence.json"),
 		PrivateOracle: filepath.Join(config.PrivateOutputDirectory, "private-oracle.json"),
 		Evaluation:    filepath.Join(config.PrivateOutputDirectory, "evaluation.json"),
 		Receipt:       filepath.Join(config.PrivateOutputDirectory, "promotion-receipt.json"),
@@ -143,7 +155,7 @@ func (config OfflinePromotionConfig) Paths() OfflinePromotionPaths {
 
 func validateOfflineOutputTargets(paths OfflinePromotionPaths) error {
 	for _, path := range []string{
-		paths.PublicBundle, paths.Episode, paths.PrivateOracle, paths.Evaluation, paths.Receipt,
+		paths.PublicBundle, paths.Episode, paths.Evidence, paths.PrivateOracle, paths.Evaluation, paths.Receipt,
 	} {
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {
 			return fmt.Errorf("offline cognition promotion output %q already exists or is inaccessible", path)

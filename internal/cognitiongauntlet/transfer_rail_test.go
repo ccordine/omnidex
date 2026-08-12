@@ -7,7 +7,7 @@ import (
 )
 
 func TestTransferRailBindsTwoSurfaceEpisodesToOneLatentTaskAndRuntime(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestTransferRailBindsTwoSurfaceEpisodesToOneLatentTaskAndRuntime(t *testing
 }
 
 func TestTransferRailRejectsMissingSurfaceAndChangedRuntimeAuthority(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestTransferRailRejectsMissingSurfaceAndChangedRuntimeAuthority(t *testing.
 }
 
 func TestTransferRailPromotesOnlyFullCognitionAcrossEverySurface(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}

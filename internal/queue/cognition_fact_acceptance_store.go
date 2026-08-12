@@ -8,7 +8,7 @@ import (
 )
 
 func insertCognitionAcceptedFactTx(
-	ctx context.Context, tx pgx.Tx, value cognitionAcceptedFact,
+	ctx context.Context, tx pgx.Tx, value CognitionAcceptedFactTrace,
 ) error {
 	if err := value.validate(); err != nil {
 		return err

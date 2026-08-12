@@ -14,8 +14,9 @@ func validateCognitionEpisodeStartReplayTx(
 	tx pgx.Tx,
 	existing CognitionEpisode,
 	command CognitionEpisodeStart,
-	factAuthority cognitionstate.FactAcceptanceAuthorityRef,
+	facts cognitionstate.FactAcceptanceAuthority,
 ) error {
+	factAuthority := facts.Reference()
 	goalJSON, _, err := cognitionJSON(command.Goal)
 	if err != nil {
 		return err
@@ -55,11 +56,51 @@ func validateCognitionEpisodeStartReplayTx(
 		string(goalJSON) != string(existingGoal) ||
 		string(completionJSON) != string(existingCompletion) || string(catalogJSON) != string(existingCatalog) ||
 		string(budgetJSON) != string(existingBudget) ||
-		!stableAttestedBrainEqual(command.AttestedBrain, existing.AttestedBrain) ||
+		!stableAttestedBrainEqual(command.BrainBootstrap.AttestedBrain, existing.AttestedBrain) ||
 		!reflect.DeepEqual(existing.FactAuthority, factAuthority) {
 		return fmt.Errorf("%w: cognition episode start identity changed", ErrCognitionConflict)
 	}
+	existingActiveInvocation, err := exactPriorCognitionEpisodeStartInvocationTx(
+		ctx, tx, existing, command,
+	)
+	if err != nil {
+		return err
+	}
+	switch existing.Status {
+	case CognitionEpisodeActive:
+		if existingActiveInvocation {
+			break
+		}
+		if err := insertCognitionEpisodeReplayBootstrapEvidenceTx(ctx, tx, command); err != nil {
+			return err
+		}
+		if err := persistCognitionProviderProcessActivationTx(
+			ctx, tx, command.Authority, existing, command.ProviderProcessActivation, "",
+		); err != nil {
+			return err
+		}
+	case CognitionEpisodeCompleted, CognitionEpisodeFailed, CognitionEpisodeCanceled:
+		if existingActiveInvocation {
+			break
+		}
+		if err := persistCognitionProviderProcessActivationTx(
+			ctx, tx, command.Authority, existing, command.ProviderProcessActivation,
+			CognitionProviderPostSealEpisodeReplay,
+		); err != nil {
+			return err
+		}
+		if err := insertCognitionEpisodePostSealReplayBootstrapAuditTx(ctx, tx, command); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("%w: cognition episode replay status is unregistered", ErrCognitionConflict)
+	}
 	if err := requireExactInitialCognitionTransitionTx(ctx, tx, command); err != nil {
+		return err
+	}
+	if err := requireCognitionAcceptedFactMaterializationReplayTx(
+		ctx, tx, command.EpisodeID, command.Transition, facts,
+	); err != nil {
 		return err
 	}
 	return requireExactInitialCognitionGraphTx(ctx, tx, command)

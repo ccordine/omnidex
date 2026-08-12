@@ -152,6 +152,10 @@ func prepareCurrentCognitionAction(
 	}
 	policy, err := cognitionpolicy.New(
 		cognitionGuardPolicyClient{response: string(raw)}, cognitionTestBrain(),
+		cognitionGuardActivationAuthorityFor(
+			t, t.Context(), fixture.Repository, fixture.EpisodeID,
+			fixture.Authority, fixture.Start.BrainBootstrap.AttestedBrain,
+		),
 		cognitionGuardProjectionLoader{repository: fixture.Repository},
 		CognitionPolicyCallJournal{Repository: fixture.Repository},
 	)

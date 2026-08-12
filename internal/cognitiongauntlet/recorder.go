@@ -3,6 +3,7 @@ package cognitiongauntlet
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/taskstate"
@@ -17,10 +18,11 @@ type EpisodeRecorder struct {
 
 func NewEpisodeRecorder(template EpisodeManifest) (*EpisodeRecorder, error) {
 	if template.Trace != nil || template.TraceSHA256 != "" || template.FinalRevision.Number != 0 ||
-		template.Outcome.Terminal || template.Outcome.GoalSatisfied || template.Outcome.PublicOutcome != "" {
+		template.Outcome.Terminal || template.Outcome.GoalSatisfied || template.Outcome.PublicOutcome != "" ||
+		!template.EpisodeStartedAt.IsZero() || !template.SealedAt.IsZero() {
 		return nil, fmt.Errorf("cognition episode recorder template contains runtime outcome state")
 	}
-	if template.Schema != EpisodeManifestSchemaV1 ||
+	if template.Schema != EpisodeManifestSchemaV2 ||
 		!episodePattern.MatchString(string(template.EpisodeID)) ||
 		!scenarioPattern.MatchString(string(template.Scenario.ID)) ||
 		!validDigest(template.Scenario.SHA256) || !validDigest(template.PublicRunAuthoritySHA256) ||
@@ -82,6 +84,8 @@ func (recorder *EpisodeRecorder) Append(
 
 func (recorder *EpisodeRecorder) Seal(
 	path string,
+	startedAt time.Time,
+	sealedAt time.Time,
 	final cognition.WorldRevision,
 	outcome Outcome,
 	resources Resources,
@@ -103,6 +107,8 @@ func (recorder *EpisodeRecorder) Seal(
 		return SealedEpisode{}, err
 	}
 	manifest.Trace = trace
+	manifest.EpisodeStartedAt = startedAt.UTC()
+	manifest.SealedAt = sealedAt.UTC()
 	manifest.FinalRevision = final
 	manifest.Outcome = outcome
 	manifest.Resources = resources

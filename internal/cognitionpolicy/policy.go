@@ -16,6 +16,7 @@ type Policy struct {
 	client      llm.Client
 	exactClient llm.ExactPreparedContractClient
 	brain       AttestedBrain
+	activation  ProviderProcessActivationAuthority
 	projections ProjectionLoader
 	journal     CallJournal
 }
@@ -29,6 +30,7 @@ var _ cognition.Policy = (*Policy)(nil)
 func New(
 	client llm.Client,
 	brain AttestedBrain,
+	activation ProviderProcessActivationAuthority,
 	projections ProjectionLoader,
 	journal CallJournal,
 ) (*Policy, error) {
@@ -44,6 +46,9 @@ func New(
 	if err := brain.Validate(); err != nil {
 		return nil, err
 	}
+	if err := activation.Validate(); err != nil {
+		return nil, err
+	}
 	exactClient, err := llm.RequireExactPreparedContract(client)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
@@ -56,7 +61,7 @@ func New(
 		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 	return &Policy{
-		client: client, exactClient: exactClient, brain: brain,
+		client: client, exactClient: exactClient, brain: brain, activation: activation,
 		projections: projections, journal: journal,
 	}, nil
 }
@@ -88,7 +93,16 @@ func (policy *Policy) Decide(
 	if err != nil {
 		return cognition.PolicyOutcome{}, err
 	}
-	attempt, err := newCallAttempt(snapshot, policy.brain, envelope)
+	stable, err := policy.brain.StableAuthority()
+	if err != nil {
+		return cognition.PolicyOutcome{}, err
+	}
+	if err := policy.activation.ValidateFor(
+		stable, snapshot.CurrentRevision().EpisodeID, snapshot.Attempt(),
+	); err != nil {
+		return cognition.PolicyOutcome{}, err
+	}
+	attempt, err := newCallAttempt(snapshot, policy.brain, policy.activation, envelope)
 	if err != nil {
 		return cognition.PolicyOutcome{}, err
 	}

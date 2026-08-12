@@ -161,7 +161,10 @@ func publicOmnidexSchemaExists(ctx context.Context, tx pgx.Tx) (bool, error) {
 			SELECT 1 FROM pg_class relations
 			JOIN pg_namespace namespaces ON namespaces.oid=relations.relnamespace
 			WHERE namespaces.nspname='public' AND relations.relkind IN ('r','p') AND (
-				relations.relname IN ('schema_migrations','omni_runs','task_ledgers') OR
+				relations.relname IN (
+					'schema_migrations','omni_migrations','omni_runs','task_ledgers',
+					'memory_chunks','memory_chunk_tags'
+				) OR
 				relations.relname='jobs' AND EXISTS (
 					SELECT 1 FROM pg_class steps
 					JOIN pg_namespace step_namespaces ON step_namespaces.oid=steps.relnamespace

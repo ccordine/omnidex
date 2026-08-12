@@ -72,7 +72,7 @@ func runRogueResumePrerequisite(
 	generation RatGeneration,
 ) FullCognitionRunResult {
 	t.Helper()
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func runRogueScalePrerequisite(
 	generation RatGeneration,
 ) FullCognitionScaleResult {
 	t.Helper()
-	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}

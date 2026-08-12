@@ -46,7 +46,7 @@ func TestReleaseMatrixSuitesAreDerivedFromExecutableScenarioRegistries(t *testin
 	for _, suite := range suites {
 		registered[suite] = struct{}{}
 	}
-	for _, spec := range InitialMicrogauntletsV1() {
+	for _, spec := range InitialMicrogauntletsV2() {
 		suite, err := gauntletSuite(spec.Generator.Suite)
 		if err != nil {
 			t.Fatal(err)

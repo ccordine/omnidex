@@ -109,7 +109,7 @@ func (c *Client) discoverProviderIdentity(
 		return llm.ObservedProviderIdentity{}, err
 	}
 	observed, err := llm.NewObservedProviderIdentity(
-		time.Now().UTC(), attestation, evidence, challengeSHA256,
+		time.Now().UTC().Truncate(time.Microsecond), attestation, evidence, challengeSHA256,
 	)
 	if err != nil {
 		return llm.ObservedProviderIdentity{Evidence: evidence}, err
@@ -125,7 +125,7 @@ type providerIdentityOperationSpec struct {
 
 func (spec providerIdentityOperationSpec) notDispatched() llm.ProviderIdentityOperationEvidence {
 	value, err := llm.NewProviderIdentityOperationEvidence(
-		spec.operation, spec.method, spec.endpoint, false, spec.request, 0,
+		spec.operation, spec.method, spec.endpoint, llm.ProviderRequestNotDispatched, spec.request, 0,
 		llm.ProviderIdentityNotDispatched, false, llm.ProviderContentEncodingEvidence{}, nil,
 	)
 	if err != nil {
@@ -147,10 +147,11 @@ func (c *Client) observeProviderIdentityOperation(
 	if len(spec.request) > 0 {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	response, err := c.doExactProviderRequest(request)
+	response, requestDisposition, err := c.doExactProviderRequest(request)
 	if err != nil {
 		operation, evidenceErr := spec.evidence(
-			0, llm.ProviderIdentityTransport, false, llm.ProviderContentEncodingEvidence{}, nil,
+			requestDisposition, 0, llm.ProviderIdentityTransport, false,
+			llm.ProviderContentEncodingEvidence{}, nil,
 		)
 		if evidenceErr != nil {
 			return llm.ProviderIdentityOperationEvidence{}, evidenceErr
@@ -164,7 +165,7 @@ func (c *Client) observeProviderIdentityOperation(
 	))
 	if readErr != nil {
 		operation, evidenceErr := spec.evidence(
-			response.StatusCode, llm.ProviderIdentityBodyReadError, false,
+			requestDisposition, response.StatusCode, llm.ProviderIdentityBodyReadError, false,
 			contentEncoding, raw,
 		)
 		if evidenceErr != nil {
@@ -177,7 +178,7 @@ func (c *Client) observeProviderIdentityOperation(
 	}
 	if len(raw) > llm.MaxProviderIdentityComponentBytes {
 		operation, evidenceErr := spec.evidence(
-			response.StatusCode, llm.ProviderIdentityBodyLimit, false,
+			requestDisposition, response.StatusCode, llm.ProviderIdentityBodyLimit, false,
 			contentEncoding, raw,
 		)
 		if evidenceErr != nil {
@@ -190,7 +191,7 @@ func (c *Client) observeProviderIdentityOperation(
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		operation, evidenceErr := spec.evidence(
-			response.StatusCode, llm.ProviderIdentityHTTPError, true,
+			requestDisposition, response.StatusCode, llm.ProviderIdentityHTTPError, true,
 			contentEncoding, raw,
 		)
 		if evidenceErr != nil {
@@ -203,7 +204,7 @@ func (c *Client) observeProviderIdentityOperation(
 	}
 	if !exactProviderContentEncoding(response) {
 		operation, evidenceErr := spec.evidence(
-			response.StatusCode, llm.ProviderIdentityInvalidJSON, true,
+			requestDisposition, response.StatusCode, llm.ProviderIdentityInvalidJSON, true,
 			contentEncoding, raw,
 		)
 		if evidenceErr != nil {
@@ -217,7 +218,7 @@ func (c *Client) observeProviderIdentityOperation(
 	}
 	if err := exactjson.ValidateUniqueObject(raw, "Ollama identity response "+spec.endpoint); err != nil {
 		operation, evidenceErr := spec.evidence(
-			response.StatusCode, llm.ProviderIdentityInvalidJSON, true,
+			requestDisposition, response.StatusCode, llm.ProviderIdentityInvalidJSON, true,
 			contentEncoding, raw,
 		)
 		if evidenceErr != nil {
@@ -226,7 +227,7 @@ func (c *Client) observeProviderIdentityOperation(
 		return operation, fmt.Errorf("Ollama identity response %s is inexact: %w", spec.endpoint, err)
 	}
 	operation, err := spec.evidence(
-		response.StatusCode, llm.ProviderIdentitySucceeded, true,
+		requestDisposition, response.StatusCode, llm.ProviderIdentitySucceeded, true,
 		contentEncoding, raw,
 	)
 	if err != nil {
@@ -236,6 +237,7 @@ func (c *Client) observeProviderIdentityOperation(
 }
 
 func (spec providerIdentityOperationSpec) evidence(
+	requestDisposition llm.ProviderRequestDisposition,
 	status int,
 	disposition llm.ProviderIdentityOperationDisposition,
 	complete bool,
@@ -243,7 +245,7 @@ func (spec providerIdentityOperationSpec) evidence(
 	response []byte,
 ) (llm.ProviderIdentityOperationEvidence, error) {
 	return llm.NewProviderIdentityOperationEvidence(
-		spec.operation, spec.method, spec.endpoint, true, spec.request,
+		spec.operation, spec.method, spec.endpoint, requestDisposition, spec.request,
 		status, disposition, complete, contentEncoding, response,
 	)
 }

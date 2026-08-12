@@ -18,19 +18,19 @@ const (
 )
 
 type CognitionProviderIdentityOperationMetadata struct {
-	Index             int
-	Operation         llm.ProviderIdentityOperation
-	Method            string
-	Endpoint          string
-	RequestDispatched bool
-	RequestSHA256     string
-	RequestBytes      int
-	HTTPStatus        int
-	Disposition       llm.ProviderIdentityOperationDisposition
-	ResponseComplete  bool
-	ContentEncoding   llm.ProviderContentEncodingEvidence
-	ResponseSHA256    string
-	ResponseBytes     int
+	Index              int
+	Operation          llm.ProviderIdentityOperation
+	Method             string
+	Endpoint           string
+	RequestDisposition llm.ProviderRequestDisposition
+	RequestSHA256      string
+	RequestBytes       int
+	HTTPStatus         int
+	Disposition        llm.ProviderIdentityOperationDisposition
+	ResponseComplete   bool
+	ContentEncoding    llm.ProviderContentEncodingEvidence
+	ResponseSHA256     string
+	ResponseBytes      int
 }
 
 type CognitionProviderIdentityEvidenceManifest struct {
@@ -59,7 +59,7 @@ func (r *Repository) ReadCognitionProviderIdentityEvidenceManifest(
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT evidence.ref_json,operations.operation_index,operations.operation,
-		       operations.method,operations.endpoint,operations.request_dispatched,
+		       operations.method,operations.endpoint,operations.request_disposition,
 		       operations.request_sha256,operations.request_bytes,operations.http_status,
 		       operations.disposition,operations.response_complete,
 		       operations.content_encoding_json,
@@ -67,11 +67,10 @@ func (r *Repository) ReadCognitionProviderIdentityEvidenceManifest(
 		FROM cognition_provider_identity_evidence evidence
 		JOIN cognition_provider_identity_evidence_operations operations
 		  ON operations.evidence_id=evidence.evidence_id
-		WHERE evidence.evidence_id=$2 AND EXISTS (
-		    SELECT 1 FROM cognition_policy_call_provider_identity_evidence association
-		    JOIN cognition_terminal_seals seals ON seals.episode_id=association.episode_id
-		    WHERE association.episode_id=$1 AND association.evidence_id=evidence.evidence_id
-		)
+		WHERE evidence.evidence_id=$2 AND
+		      cognition_episode_has_sealed_provider_identity_evidence(
+		          $1,evidence.evidence_id
+		      )
 		ORDER BY operations.operation_index
 	`, episodeID, evidenceID)
 	if err != nil {
@@ -84,7 +83,7 @@ func (r *Repository) ReadCognitionProviderIdentityEvidenceManifest(
 		var contentEncodingJSON []byte
 		var operation CognitionProviderIdentityOperationMetadata
 		if err := rows.Scan(&refJSON, &operation.Index, &operation.Operation,
-			&operation.Method, &operation.Endpoint, &operation.RequestDispatched,
+			&operation.Method, &operation.Endpoint, &operation.RequestDisposition,
 			&operation.RequestSHA256, &operation.RequestBytes, &operation.HTTPStatus,
 			&operation.Disposition, &operation.ResponseComplete,
 			&contentEncodingJSON,
@@ -144,11 +143,10 @@ func (r *Repository) ReadCognitionProviderIdentityEvidenceBody(
 		FROM cognition_provider_identity_evidence evidence
 		JOIN cognition_provider_identity_evidence_operations operations
 		  ON operations.evidence_id=evidence.evidence_id
-		WHERE evidence.evidence_id=$2 AND EXISTS (
-		    SELECT 1 FROM cognition_policy_call_provider_identity_evidence association
-		    JOIN cognition_terminal_seals seals ON seals.episode_id=association.episode_id
-		    WHERE association.episode_id=$1 AND association.evidence_id=evidence.evidence_id
-		)
+		WHERE evidence.evidence_id=$2 AND
+		      cognition_episode_has_sealed_provider_identity_evidence(
+		          $1,evidence.evidence_id
+		      )
 		  AND operations.operation_index=$3`
 	var refJSON []byte
 	var body []byte

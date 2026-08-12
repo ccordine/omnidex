@@ -6,7 +6,7 @@ import (
 	"github.com/gryph/omnidex/internal/labyrinth"
 )
 
-const InitialMicrogauntletFixtureVersionV1 = "microgauntlets.v1"
+const InitialMicrogauntletFixtureVersionV2 = "microgauntlets.v2"
 
 type Surface string
 
@@ -32,7 +32,7 @@ func (spec MicrogauntletSpec) Validate() error {
 	if err := requireExact(spec.CaseID, "microgauntlet case ID", 256); err != nil {
 		return err
 	}
-	if spec.FixtureVersion != InitialMicrogauntletFixtureVersionV1 {
+	if spec.FixtureVersion != InitialMicrogauntletFixtureVersionV2 {
 		return fmt.Errorf("microgauntlet fixture version is not registered")
 	}
 	if err := spec.Generator.Validate(); err != nil {

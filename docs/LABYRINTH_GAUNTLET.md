@@ -8,6 +8,10 @@ not a production runtime, product mode, agent, or source of workload logic. A ma
 only its first controlled surface. Its versioned suites and reports are Cognition
 Gauntlets; Rogue is the final combined long-horizon suite.
 
+Every serious run must also satisfy the deterministic portable replay boundary in
+[`LABYRINTH_REPLAY.md`](LABYRINTH_REPLAY.md). Replay records immutable cognition
+events; it never records an animation or reconstructs cognition from log strings.
+
 Labyrinth isolates nine claims before programming is used as evidence:
 
 | Capability | Question |
@@ -313,6 +317,19 @@ resource counters. Nothing may append to a sealed trace. Evaluation creates a
 separate hash-bound record; it does not rewrite the episode or expose private fields
 to production storage during execution.
 
+After inference stops, one public `.omnireplay` artifact must be derived only from
+that sealed trace and the exact public run/world authority. Private truth and
+evaluation may appear only in a separate post-stop overlay binding the public replay
+digest. A structural-only replay does not authorize a serious run: every sealed
+source kind must have an exhaustive registered semantic or deliberately opaque-
+evidence mapping, and every derived event must cite exact source records.
+
+Exact source bodies larger than one replay blob use the replay protocol's bounded
+role-specific chunk manifest. Public agent-knowledge bodies and private-world bodies
+cannot share a manifest role. Missing, extra, reordered, altered, self-referential,
+or incompletely reassembled chunks fail verification; oversized evidence is never
+silently omitted.
+
 ## Scoring and failure attribution
 
 There is no aggregate intelligence score. Reports preserve paired outcome, validity,
@@ -457,84 +474,9 @@ The following invalidate an implementation or run:
 - a benchmark-only coordinator, planner, lease, or evaluator presented as production
   cognition evidence.
 
-## Pre-registered promotion gates
+## Promotion and conformance authority
 
-Before each hidden suite, the exact competence hypothesis, sample size, repetitions,
-and statistical test must be published. The following architecture gates are
-absolute:
-
-```text
-hidden oracle accesses by coordinator or model       0
-unauthorized environment or task-state mutations     0
-accepted stale-environment actions                   0
-accepted stale-worker writes                         0
-unbound model Context Projections                    0
-deterministic replay divergences                     0
-model-declared completions accepted                  0
-```
-
-Continuity promotion requires, across randomized interruptions:
-
-```text
-world revision restored correctly                    100%
-Task Ledger restored correctly                       100%
-Working Set restored correctly                       100%
-attempt-normalized semantic pre-call digest identical 100%
-old/new attempt-bound projection identities differ  100%
-duplicate environment actions executed               0
-```
-
-Competence promotion must satisfy one pre-selected policy:
-
-- **Success superiority:** statistically credible positive paired lift, materially
-  more rescues than regressions, and no validity reduction; or
-- **Efficiency superiority:** no more than two percentage points of success loss, at
-  least a pre-registered 40–50% context reduction, and fewer duplicate acquisitions
-  and tool calls. The exact threshold in that range is frozen before inference.
-
-Scale promotion compares equivalent tasks whose relevant surface and solution depth
-remain fixed while visible world size grows by 100 times:
-
-```text
-median model-visible context growth                  <= 25%
-median model-decision growth                         <= 20%
-success-rate loss                                    <= 5 percentage points
-```
-
-Transfer promotion requires held-out success under at least two different surface
-adapters with no production source, renderer, policy, or prompt change. Episode reuse
-or learned-procedure promotion additionally requires a complete immutable trace,
-complete projection evidence, known outcome and versions, post-evaluation archetype,
-and zero concrete hidden labels exposed during execution.
-
-None of these gates has passed yet. The first implementation milestone is the
-deterministic world kernel and public/oracle artifact separation; the first live
-model run is not authorized until its symbolic and architecture tests pass.
-
-## Conformance status
-
-Only checked items may be cited as implemented. A checkbox may be changed only with
-the code, positive/negative/property tests, frozen evidence schema, and exact local
-proof for that item.
-
-- [x] Production-to-gauntlet import prohibition is enforced by source tests.
-- [ ] Symbolic kernel, deterministic goals, revisions, and transactional actions pass
-  property tests over thousands of generated worlds.
-- [ ] Public scenarios and private oracles are separately hashed and credentialed.
-- [ ] Solution-first generation produces validated optimal or witness-only cases.
-- [ ] The v1 filesystem adapter exposes only the seven registered bounded actions.
-- [ ] Retrieve, Recall, Unlock, Mutate, and Combined have versioned frozen fixtures.
-- [ ] Every baseline and ablation uses paired identities, models, seeds, and budgets.
-- [x] Every architectural generation shares one Rat Doctrine fixed-authority hash;
-  changing the brain begins a separate experiment.
-- [ ] Episode sealing is exclusive, complete, immutable, and evaluator-bound.
-- [x] Failure attribution is deterministic and retains `unattributed` ambiguity.
-- [ ] Real process-death and stale-worker suites pass without benchmark lifecycle code.
-- [ ] A 100-times scale comparison passes the pre-registered scale gate.
-- [ ] Two held-out surface adapters pass without production changes.
-- [ ] Rogue is attempted only after isolated suites and absolute gates pass.
-- [ ] Promotion evidence passes the architecture, continuity, competence, scale, and
-  transfer gates above.
-
-Checked items above correspond only to implemented invariants and their exact tests.
-They are not benchmark results and do not satisfy any unchecked promotion gate.
+The absolute architecture, continuity, competence, scale, and transfer gates and the
+evidence-backed implementation checklist live in
+[`LABYRINTH_PROMOTION_GATES.md`](LABYRINTH_PROMOTION_GATES.md). Splitting that
+appendix does not make it optional: every serious run is governed by both documents.

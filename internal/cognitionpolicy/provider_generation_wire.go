@@ -11,7 +11,7 @@ import (
 
 type providerGenerationEvidenceWire struct {
 	Schema                        providerGenerationWireBytes         `json:"schema"`
-	ProviderRequestDispatched     bool                                `json:"provider_request_dispatched"`
+	ProviderRequestDisposition    providerGenerationWireBytes         `json:"provider_request_disposition"`
 	Content                       providerGenerationWireBytes         `json:"content"`
 	ProviderRequestSHA256         providerGenerationWireBytes         `json:"provider_request_sha256"`
 	ProviderHTTPStatus            int                                 `json:"provider_http_status"`
@@ -37,20 +37,21 @@ type providerGenerationEvidenceWire struct {
 }
 
 func encodeProviderGenerationEvidence(generation llm.PreparedGeneration) ([]byte, error) {
-	return encodeProviderGenerationOutcomeEvidence(generation, nil, false)
+	return encodeProviderGenerationOutcomeEvidence(generation, "", false)
 }
 
 func encodeProviderGenerationOutcomeEvidence(
 	generation llm.PreparedGeneration,
-	providerError []byte,
+	providerError string,
 	providerErrorPresent bool,
 ) ([]byte, error) {
 	field := func(value string) providerGenerationWireBytes {
-		return newProviderGenerationWireBytes([]byte(value), maxProviderGenerationMetadataCaptureBytes)
+		return newProviderGenerationWireString(value, maxProviderGenerationMetadataCaptureBytes)
 	}
 	wire := providerGenerationEvidenceWire{
-		Schema: field(generation.Schema), ProviderRequestDispatched: generation.ProviderRequestDispatched,
-		Content:                       newProviderGenerationWireBytes([]byte(generation.Content), MaxModelResponseEvidenceBytes),
+		Schema:                        field(generation.Schema),
+		ProviderRequestDisposition:    field(string(generation.ProviderRequestDisposition)),
+		Content:                       newProviderGenerationWireString(generation.Content, MaxModelResponseEvidenceBytes),
 		ProviderRequestSHA256:         field(generation.ProviderRequestSHA256),
 		ProviderHTTPStatus:            generation.ProviderHTTPStatus,
 		ProviderResponseDisposition:   field(string(generation.ProviderResponseDisposition)),
@@ -71,7 +72,7 @@ func encodeProviderGenerationOutcomeEvidence(
 		ProviderObservation:      encodeProviderObservationWire(generation.ProviderObservation, field),
 		ProviderIdentityEvidence: encodeProviderIdentityEvidenceWire(generation.ProviderIdentityEvidence, field),
 		ProviderErrorPresent:     providerErrorPresent,
-		ProviderError: newProviderGenerationWireBytes(
+		ProviderError: newProviderGenerationWireString(
 			providerError, maxProviderGenerationMetadataCaptureBytes,
 		),
 	}
@@ -96,60 +97,59 @@ func inspectProviderGenerationEvidence(raw []byte) (llm.PreparedGeneration, bool
 
 func inspectProviderGenerationOutcomeEvidence(
 	raw []byte,
-) (llm.PreparedGeneration, bool, []byte, bool, error) {
+) (llm.PreparedGeneration, bool, string, bool, error) {
 	var wire providerGenerationEvidenceWire
 	if err := exactjson.ValidateObject(raw, wire, "provider generation evidence"); err != nil {
-		return llm.PreparedGeneration{}, false, nil, false, err
+		return llm.PreparedGeneration{}, false, "", false, err
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
-		return llm.PreparedGeneration{}, false, nil, false, err
+		return llm.PreparedGeneration{}, false, "", false, err
 	}
 	canonical, err := exactjson.Canonical(wire)
 	if err != nil || !bytes.Equal(canonical, raw) {
-		return llm.PreparedGeneration{}, false, nil, false,
+		return llm.PreparedGeneration{}, false, "", false,
 			fmt.Errorf("provider generation evidence wire is not canonical")
 	}
 	fields := providerGenerationWireFields(wire)
 	values := make([][]byte, len(fields))
-	complete := true
+	topLevelComplete := true
 	for index, item := range fields {
 		value, exact, fieldErr := item.value.exact(item.limit)
 		if fieldErr != nil {
-			return llm.PreparedGeneration{}, false, nil, false, fieldErr
+			return llm.PreparedGeneration{}, false, "", false, fieldErr
 		}
 		values[index] = value
-		complete = complete && exact
-	}
-	if !complete {
-		return llm.PreparedGeneration{}, wire.ProviderErrorPresent, nil, false, nil
+		topLevelComplete = topLevelComplete && exact
 	}
 	providerError, providerErrorComplete, err := wire.ProviderError.exact(
 		maxProviderGenerationMetadataCaptureBytes,
 	)
 	if err != nil {
-		return llm.PreparedGeneration{}, false, nil, false, err
+		return llm.PreparedGeneration{}, false, "", false, err
 	}
 	if !wire.ProviderErrorPresent && len(providerError) > 0 && providerErrorComplete {
-		return llm.PreparedGeneration{}, false, nil, false,
+		return llm.PreparedGeneration{}, false, "", false,
 			fmt.Errorf("provider error presence differs from its exact bytes")
 	}
-	if !providerErrorComplete {
-		return llm.PreparedGeneration{}, wire.ProviderErrorPresent, nil, false, nil
-	}
 	observation, observationComplete, err := decodeProviderObservationWire(wire.ProviderObservation)
-	if err != nil || !observationComplete {
-		return llm.PreparedGeneration{}, false, nil, false, err
+	if err != nil {
+		return llm.PreparedGeneration{}, false, "", false, err
 	}
 	identity, identityComplete, err := decodeProviderIdentityEvidenceWire(wire.ProviderIdentityEvidence)
-	if err != nil || !identityComplete {
-		return llm.PreparedGeneration{}, false, nil, false, err
+	if err != nil {
+		return llm.PreparedGeneration{}, false, "", false, err
 	}
 	contentEncoding, encodingComplete, err := decodeProviderContentEncodingWire(wire.ProviderContentEncoding)
-	if err != nil || !encodingComplete {
-		return llm.PreparedGeneration{}, false, nil, false, err
+	if err != nil {
+		return llm.PreparedGeneration{}, false, "", false, err
+	}
+	complete := topLevelComplete && providerErrorComplete && observationComplete &&
+		identityComplete && encodingComplete
+	if !complete {
+		return llm.PreparedGeneration{}, wire.ProviderErrorPresent, "", false, nil
 	}
 	return generationFromProviderWire(wire, values, contentEncoding, observation, identity),
-		wire.ProviderErrorPresent, providerError, true, nil
+		wire.ProviderErrorPresent, string(providerError), true, nil
 }
 
 type providerGenerationWireField struct {
@@ -161,7 +161,7 @@ func providerGenerationWireFields(wire providerGenerationEvidenceWire) []provide
 	metadata := func(value providerGenerationWireBytes) providerGenerationWireField {
 		return providerGenerationWireField{value, maxProviderGenerationMetadataCaptureBytes}
 	}
-	return []providerGenerationWireField{metadata(wire.Schema),
+	return []providerGenerationWireField{metadata(wire.Schema), metadata(wire.ProviderRequestDisposition),
 		{wire.Content, MaxModelResponseEvidenceBytes}, metadata(wire.ProviderRequestSHA256),
 		metadata(wire.ProviderResponseDisposition), metadata(wire.ProviderResponseSHA256),
 		metadata(wire.ProviderResponseCaptureSHA256),
@@ -178,19 +178,20 @@ func generationFromProviderWire(
 	identity llm.ProviderIdentityEvidence,
 ) llm.PreparedGeneration {
 	return llm.PreparedGeneration{
-		Schema: string(values[0]), ProviderRequestDispatched: wire.ProviderRequestDispatched,
-		Content: string(values[1]), ProviderRequestSHA256: string(values[2]),
+		Schema:                     string(values[0]),
+		ProviderRequestDisposition: llm.ProviderRequestDisposition(string(values[1])),
+		Content:                    string(values[2]), ProviderRequestSHA256: string(values[3]),
 		ProviderHTTPStatus:          wire.ProviderHTTPStatus,
-		ProviderResponseDisposition: llm.ProviderResponseDisposition(string(values[3])),
+		ProviderResponseDisposition: llm.ProviderResponseDisposition(string(values[4])),
 		ProviderResponseComplete:    wire.ProviderResponseComplete,
 		ProviderContentEncoding:     contentEncoding,
 		ProviderResponseBytesKnown:  wire.ProviderResponseBytesKnown,
-		ProviderResponseSHA256:      string(values[4]), ProviderResponseBytes: wire.ProviderResponseBytes,
-		ProviderResponseCaptureSHA256: string(values[5]),
+		ProviderResponseSHA256:      string(values[5]), ProviderResponseBytes: wire.ProviderResponseBytes,
+		ProviderResponseCaptureSHA256: string(values[6]),
 		ProviderResponseCapturedBytes: wire.ProviderResponseCapturedBytes,
-		ProviderResponseCapture:       append([]byte(nil), values[6]...),
-		ProviderResponseModel:         string(values[7]), ProviderDonePresent: wire.ProviderDonePresent,
-		ProviderDone: wire.ProviderDone, ProviderDoneReason: string(values[8]),
+		ProviderResponseCapture:       append([]byte{}, values[7]...),
+		ProviderResponseModel:         string(values[8]), ProviderDonePresent: wire.ProviderDonePresent,
+		ProviderDone: wire.ProviderDone, ProviderDoneReason: string(values[9]),
 		UsagePresent: wire.UsagePresent, Usage: wire.Usage,
 		ProviderObservation: observation, ProviderIdentityEvidence: identity,
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 func TestCausalAdmissionIgnoresEvidenceOutsideBoundedSurfaceResult(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestCausalAdmissionIgnoresEvidenceOutsideBoundedSurfaceResult(t *testing.T)
 }
 
 func TestCausalAdmissionMapsCodeAssignedActionIdentityByExactRequest(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}

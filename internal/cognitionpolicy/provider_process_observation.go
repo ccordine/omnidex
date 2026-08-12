@@ -3,12 +3,17 @@ package cognitionpolicy
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
 const ProviderProcessObservationSchemaV1 = "omnidex.provider-process-observation.v1"
+
+var providerProcessObservationIDPattern = regexp.MustCompile(
+	`^provider_process_observation_[0-9a-f]{64}$`,
+)
 
 type ProviderProcessObservationPurpose string
 
@@ -31,18 +36,78 @@ func ObserveProviderProcess(
 	episode cognition.EpisodeRef,
 	actor cognition.AttemptRef,
 	purpose ProviderProcessObservationPurpose,
-) (ProviderProcessObservation, error) {
+) (ProviderProcessOutcome, error) {
+	return observeProviderProcessWithHostAttestor(
+		ctx, client, brain, episode, actor, purpose, AttestLocalHostHardware,
+	)
+}
+
+func observeProviderProcessWithHostAttestor(
+	ctx context.Context,
+	client llm.Client,
+	brain AttestedBrain,
+	episode cognition.EpisodeRef,
+	actor cognition.AttemptRef,
+	purpose ProviderProcessObservationPurpose,
+	hostAttestor func() (HostHardwareAttestation, error),
+) (ProviderProcessOutcome, error) {
+	if hostAttestor == nil {
+		return ProviderProcessOutcome{}, fmt.Errorf("%w: host hardware attestor is nil", ErrInvalidBrain)
+	}
 	request, stable, err := providerProcessObservationRequest(brain, episode, actor, purpose)
 	if err != nil {
-		return ProviderProcessObservation{}, err
+		return ProviderProcessOutcome{}, err
 	}
 	observed, err := llm.RequireProviderIdentityObservation(ctx, client, request)
 	if err != nil {
-		return ProviderProcessObservation{}, err
+		code, codeErr := providerIdentityFailureCodeForObserved(brain.Ref, request, observed)
+		if codeErr != nil {
+			return ProviderProcessOutcome{}, fmt.Errorf(
+				"%w: process provider identity returned unrecordable evidence: %v",
+				ErrInvalidEvidence, codeErr,
+			)
+		}
+		outcome, outcomeErr := newProviderProcessFailure(
+			brain, episode, actor, purpose, observed, HostHardwareAttestation{}, code,
+		)
+		if outcomeErr != nil {
+			return ProviderProcessOutcome{}, outcomeErr
+		}
+		return outcome, err
 	}
 	if observed.Attestation != brain.Attestation {
-		return ProviderProcessObservation{}, fmt.Errorf(
+		outcome, outcomeErr := newProviderProcessFailure(
+			brain, episode, actor, purpose, observed, HostHardwareAttestation{},
+			ProviderAttestationIdentityMismatch,
+		)
+		if outcomeErr != nil {
+			return ProviderProcessOutcome{}, outcomeErr
+		}
+		return outcome, fmt.Errorf(
 			"%w: process observation changed the stable provider authority", ErrInvalidBrain,
+		)
+	}
+	liveHost, err := hostAttestor()
+	if err != nil {
+		outcome, outcomeErr := newProviderProcessFailure(
+			brain, episode, actor, purpose, observed, HostHardwareAttestation{},
+			ProviderHostAttestationFailed,
+		)
+		if outcomeErr != nil {
+			return ProviderProcessOutcome{}, outcomeErr
+		}
+		return outcome, fmt.Errorf("%w: process host observation: %v", ErrInvalidBrain, err)
+	}
+	if liveHost != brain.Host {
+		outcome, outcomeErr := newProviderProcessFailure(
+			brain, episode, actor, purpose, observed, liveHost,
+			ProviderHostIdentityMismatch,
+		)
+		if outcomeErr != nil {
+			return ProviderProcessOutcome{}, outcomeErr
+		}
+		return outcome, fmt.Errorf(
+			"%w: process host differs from the stored Brain", ErrInvalidBrain,
 		)
 	}
 	receipt := ProviderProcessObservation{
@@ -51,7 +116,11 @@ func ObserveProviderProcess(
 		Observation: observed.Observation,
 	}
 	receipt.ID = providerProcessObservationID(receipt)
-	return receipt, receipt.ValidateFor(brain)
+	activation, err := NewProviderProcessActivation(receipt, observed.Evidence, brain)
+	if err != nil {
+		return ProviderProcessOutcome{}, err
+	}
+	return newSuccessfulProviderProcessOutcome(activation)
 }
 
 func (receipt ProviderProcessObservation) ValidateFor(brain AttestedBrain) error {
@@ -100,6 +169,31 @@ func providerProcessObservationRequest(
 	if err != nil {
 		return llm.ProviderIdentityObservationRequest{}, StableBrainAuthority{}, err
 	}
+	request, err := providerProcessObservationRequestForStable(
+		stable, episode, actor, purpose,
+	)
+	return request, stable, err
+}
+
+func providerProcessObservationRequestForStable(
+	stable StableBrainAuthority,
+	episode cognition.EpisodeRef,
+	actor cognition.AttemptRef,
+	purpose ProviderProcessObservationPurpose,
+) (llm.ProviderIdentityObservationRequest, error) {
+	if err := stable.Validate(); err != nil {
+		return llm.ProviderIdentityObservationRequest{}, err
+	}
+	if err := episode.Validate(); err != nil {
+		return llm.ProviderIdentityObservationRequest{}, err
+	}
+	if err := actor.Validate(); err != nil {
+		return llm.ProviderIdentityObservationRequest{}, err
+	}
+	if purpose != ProviderProcessEpisodeInvocation {
+		return llm.ProviderIdentityObservationRequest{},
+			fmt.Errorf("provider process observation purpose is not registered")
+	}
 	scopeRaw, err := canonicalPolicyJSON(struct {
 		EpisodeID cognition.EpisodeID               `json:"episode_id"`
 		Actor     cognition.AttemptRef              `json:"actor"`
@@ -107,18 +201,18 @@ func providerProcessObservationRequest(
 		BrainSHA  string                            `json:"stable_brain_sha256"`
 	}{episode.ID, actor, purpose, stable.SHA256})
 	if err != nil {
-		return llm.ProviderIdentityObservationRequest{}, StableBrainAuthority{}, err
+		return llm.ProviderIdentityObservationRequest{}, err
 	}
-	expected, err := brain.Ref.ProviderExpectation()
+	expected, err := stable.Ref.ProviderExpectation()
 	if err != nil {
-		return llm.ProviderIdentityObservationRequest{}, StableBrainAuthority{}, err
+		return llm.ProviderIdentityObservationRequest{}, err
 	}
 	challenge, err := llm.DeriveProviderIdentityObservationChallenge(
 		"cognition-process:"+policySHA256(string(scopeRaw)), expected,
 	)
 	return llm.ProviderIdentityObservationRequest{
 		Expectation: expected, ChallengeSHA256: challenge,
-	}, stable, err
+	}, err
 }
 
 func providerProcessObservationID(receipt ProviderProcessObservation) string {

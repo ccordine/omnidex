@@ -12,7 +12,7 @@ const (
 	generatorProcessConfigSchemaV1  = "omnidex.offline-cognition-generator-process.v1"
 	hostProcessConfigSchemaV1       = "omnidex.offline-cognition-host-process.v1"
 	hostProcessReadySchemaV1        = "omnidex.offline-cognition-host-ready.v1"
-	inferenceProcessConfigSchemaV1  = "omnidex.offline-cognition-inference-process.v1"
+	inferenceProcessConfigSchemaV3  = "omnidex.offline-cognition-inference-process.v3"
 	evaluatorProcessConfigSchemaV1  = "omnidex.offline-cognition-evaluator-process.v1"
 	OfflinePromotionReceiptSchemaV1 = "omnidex.offline-cognition-promotion-receipt.v1"
 )
@@ -68,7 +68,10 @@ type inferenceProcessConfig struct {
 	OllamaEndpoint          string                     `json:"ollama_endpoint"`
 	TimeoutSeconds          int                        `json:"timeout_seconds"`
 	PublicBundlePath        string                     `json:"public_bundle_path"`
+	PublicOutputDirectory   string                     `json:"public_output_directory"`
+	PrivateOutputDirectory  string                     `json:"private_output_directory"`
 	EpisodePath             string                     `json:"episode_path"`
+	EvidencePath            string                     `json:"evidence_path"`
 	ContaminatedOraclePath  string                     `json:"contaminated_oracle_path,omitempty"`
 	ContaminatedOracleGrant string                     `json:"contaminated_oracle_grant,omitempty"`
 	Attempt                 model.StepAttemptAuthority `json:"attempt"`

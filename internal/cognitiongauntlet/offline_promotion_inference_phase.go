@@ -110,7 +110,13 @@ func validatePublicInferenceEpisode(
 	if bundle.Authority.Variant == VariantFullCognition {
 		return (PublicFullCognitionRunResult{Authority: bundle.Authority, Episode: episode}).Validate()
 	}
-	return (PublicAblationRunResult{Authority: bundle.Authority, Episode: episode}).Validate()
+	evidence, err := ablationEvidenceAuthorityFromEpisode(episode)
+	if err != nil {
+		return err
+	}
+	return (PublicAblationRunResult{
+		Authority: bundle.Authority, Episode: episode, Evidence: evidence,
+	}).Validate()
 }
 
 func requireInferencePrivateOutputsAbsent(paths OfflinePromotionPaths) error {

@@ -20,6 +20,24 @@ sha256_file() {
   fi
 }
 
+package_release_operator_runbook() {
+  local source_tree="$1"
+  local target_dir="$2"
+  local source="${source_tree}/docs/LABYRINTH_FIRST_RUN.md"
+  local target="${target_dir}/LABYRINTH_FIRST_RUN.md"
+  [[ -f "$source" && ! -L "$source" ]] ||
+    die "sealed Labyrinth first-run runbook is unavailable"
+  [[ -d "$target_dir" && ! -L "$target_dir" ]] ||
+    die "release target for Labyrinth first-run runbook is unavailable"
+  [[ ! -e "$target" && ! -L "$target" ]] ||
+    die "release Labyrinth first-run runbook target already exists"
+  cp -a "$source" "$target"
+  [[ -f "$target" && ! -L "$target" ]] ||
+    die "packaged Labyrinth first-run runbook is not one regular file"
+  cmp -s "$source" "$target" ||
+    die "packaged Labyrinth first-run runbook differs from sealed source"
+}
+
 verify_migration_manifest() {
   local source_dir="$1"
   local manifest="${source_dir}/SHA256SUMS"
@@ -107,6 +125,35 @@ validate_dist_dir() {
     [[ -z "$(git -C "$REPO_ROOT" ls-files -- "$prefix")" ]] ||
       die "distribution path enters tracked source: $prefix"
   done
+}
+
+validate_tracked_release_sources() {
+  local repository="$1" path base magic
+  git -C "$repository" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+    die "release source repository is unavailable"
+  while IFS= read -r -d '' path; do
+    [[ -n "$path" && "$path" != *$'\n'* && "$path" != *$'\r'* ]] ||
+      die "tracked release source path is invalid"
+    case "/${path}/" in
+      */.agent-cache/* | */.cache/* | */__pycache__/* | */.pytest_cache/* | */.mypy_cache/* | */.ruff_cache/* | */node_modules/* | */build/* | */dist/* | */target/* | */bin/*)
+        die "tracked generated artifact is forbidden in release source: $path"
+        ;;
+    esac
+    base="${path##*/}"
+    case "$base" in
+      core | core.[0-9]* | *.orig | *.rej | *~ | *.bak | *.tmp | *.swp | *.swo | *.o | *.obj | *.a | *.so | *.dylib | *.dll | *.exe | *.class | *.pyc | *.pyo)
+        die "tracked generated artifact is forbidden in release source: $path"
+        ;;
+    esac
+    if [[ -f "$repository/$path" && ! -L "$repository/$path" ]]; then
+      magic="$(LC_ALL=C od -An -tx1 -N8 "$repository/$path" | tr -d '[:space:]')"
+      case "$magic" in
+        7f454c46* | 4d5a* | feedface* | feedfacf* | cefaedfe* | cffaedfe* | cafebabe* | bebafeca* | cafebabf* | bfbafeca* | 0061736d* | 213c617263683e0a*)
+          die "tracked generated artifact is forbidden in release source: $path"
+          ;;
+      esac
+    fi
+  done < <(git -C "$repository" ls-files -z)
 }
 
 create_dist_dir() {

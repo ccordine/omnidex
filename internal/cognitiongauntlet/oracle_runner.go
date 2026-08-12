@@ -48,7 +48,7 @@ func RunOracleBaseline(
 	if err != nil {
 		return OracleBaselineResult{}, err
 	}
-	startedAt := time.Now()
+	startedAt := time.Now().UTC()
 	transition, err := environment.Start(ctx, authority.Scenario)
 	if err != nil {
 		return OracleBaselineResult{}, fmt.Errorf("start oracle baseline: %w", err)
@@ -104,8 +104,9 @@ func RunOracleBaseline(
 		return OracleBaselineResult{}, err
 	}
 	resources.WallMilliseconds = time.Since(startedAt).Milliseconds()
+	sealedAt := time.Now().UTC()
 	sealed, err := recorder.Seal(
-		request.EpisodeSealPath, transition.Current,
+		request.EpisodeSealPath, startedAt, sealedAt, transition.Current,
 		Outcome{Terminal: true, GoalSatisfied: true, PublicOutcome: transition.PublicOutcome},
 		resources, MemoryMetrics{}, PlanningMetrics{}, RecoveryMetrics{},
 	)

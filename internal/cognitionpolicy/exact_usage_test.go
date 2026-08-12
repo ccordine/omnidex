@@ -36,14 +36,14 @@ func TestPolicyDurablyRejectsProviderNativeUsageBeyondEitherCeiling(t *testing.T
 			}
 			journal := &policyTestCallJournal{}
 			policy, err := New(
-				client, policyTestAttestedBrain(),
+				client, policyTestAttestedBrain(), policyTestActivation(),
 				newPolicyTestProjectionLoader(projection), journal,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
 			outcome, err := policy.Decide(context.Background(), snapshot)
-			if !errors.Is(err, ErrProviderUsageLimit) || !outcome.ProviderRequestDispatched {
+			if !errors.Is(err, ErrProviderUsageLimit) || !outcome.PolicyCallConsumed {
 				t.Fatalf("outcome=%+v error=%v", outcome, err)
 			}
 			if len(journal.results) != 1 ||
@@ -72,13 +72,13 @@ func TestPolicyPersistsExecutedResponseWithMalformedNativeUsage(t *testing.T) {
 	}
 	journal := &policyTestCallJournal{}
 	policy, err := New(
-		client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal,
+		client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	outcome, err := policy.Decide(context.Background(), snapshot)
-	if !errors.Is(err, ErrProviderUsage) || !outcome.ProviderRequestDispatched {
+	if !errors.Is(err, ErrProviderUsage) || !outcome.PolicyCallConsumed {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}
 	if len(journal.results) != 1 {
@@ -87,7 +87,8 @@ func TestPolicyPersistsExecutedResponseWithMalformedNativeUsage(t *testing.T) {
 	result := journal.results[0]
 	if result.FailureCode != CallFailureProviderUsage || result.ProviderUsagePresent ||
 		result.ProviderResponseSHA256 == "" || result.ProviderRequestSHA256 == "" ||
-		result.ProviderObservation.ObservationSHA256 == "" || !result.ProviderRequestDispatched {
+		result.ProviderObservation.ObservationSHA256 == "" ||
+		result.ProviderRequestDisposition != llm.ProviderRequestDispatched {
 		t.Fatalf("malformed usage result lost partial provider evidence: %+v", result)
 	}
 }
@@ -97,6 +98,7 @@ func TestCallResultRejectsProviderObservationFromAnotherReservedCall(t *testing.
 	first := policyTestCallAttempt(t)
 	second := first
 	second.Actor.Attempt++
+	second.ProviderProcessActivation.Actor = second.Actor
 	second.ID = callAttemptID(second)
 	if err := second.Validate(); err != nil {
 		t.Fatal(err)

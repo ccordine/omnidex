@@ -57,9 +57,14 @@ func buildCognitionProposalStep(
 	if err != nil {
 		t.Fatal(err)
 	}
+	activationAuthority, err := fixture.Start.ProviderProcessActivation.Authority()
+	if err != nil {
+		t.Fatal(err)
+	}
 	policy, err := cognitionpolicy.New(
 		cognitionGuardPolicyClient{response: string(response)},
 		cognitionTestBrain(),
+		activationAuthority,
 		cognitionGuardProjectionLoader{repository: fixture.Repository},
 		CognitionPolicyCallJournal{Repository: fixture.Repository},
 	)

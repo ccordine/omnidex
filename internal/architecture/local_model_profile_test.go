@@ -80,6 +80,18 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 	}
 }
 
+func TestEnvironmentProfilesHaveOneAuthorityPerKey(t *testing.T) {
+	for _, name := range []string{".env.example", "default.env"} {
+		readEnvTemplate(t, name)
+	}
+	active := filepath.Clean(filepath.Join("..", "..", ".env"))
+	if _, err := os.Stat(active); err == nil {
+		readEnvTemplate(t, ".env")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("inspect .env: %v", err)
+	}
+}
+
 func TestReadmeCannotAdvertiseStaleOrFabricatedCognitionConfiguration(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "README.md")))
 	if err != nil {
@@ -126,7 +138,11 @@ func readEnvTemplate(t *testing.T, name string) map[string]string {
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if ok {
-			values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+			key = strings.TrimSpace(key)
+			if _, exists := values[key]; exists {
+				t.Fatalf("%s contains duplicate environment key %s", name, key)
+			}
+			values[key] = strings.TrimSpace(value)
 		}
 	}
 	if err := scanner.Err(); err != nil {

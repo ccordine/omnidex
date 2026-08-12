@@ -72,16 +72,20 @@ func validateCreatedOfflineAuthorities(
 		}
 	}
 	for _, role := range []string{inferenceRole, hostRole} {
-		var login, superuser, createDB, createRole, inherit, replication bool
+		var login, superuser, createDB, createRole, inherit, replication, bypassRLS bool
 		var connections int
 		if err := tx.QueryRow(ctx, `
 			SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
-			       rolinherit, rolreplication, rolconnlimit
+			       rolinherit, rolreplication, rolbypassrls, rolconnlimit
 			FROM pg_roles WHERE rolname=$1`, role,
-		).Scan(&login, &superuser, &createDB, &createRole, &inherit, &replication, &connections); err != nil {
+		).Scan(
+			&login, &superuser, &createDB, &createRole, &inherit,
+			&replication, &bypassRLS, &connections,
+		); err != nil {
 			return err
 		}
-		if login || superuser || createDB || createRole || inherit || replication || connections != 8 {
+		if login || superuser || createDB || createRole || inherit || replication || bypassRLS ||
+			connections != 8 {
 			return fmt.Errorf("new process role %q has invalid authority", role)
 		}
 	}

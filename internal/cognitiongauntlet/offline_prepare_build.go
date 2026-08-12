@@ -30,6 +30,7 @@ type preparedOfflineExperiment struct {
 
 func prepareOfflineExperiment(
 	request OfflineExperimentRequest,
+	discovery llm.ObservedProviderIdentity,
 	provider llm.ObservedProviderIdentity,
 	host cognitionpolicy.HostHardwareAttestation,
 	executable string,
@@ -67,6 +68,10 @@ func prepareOfflineExperiment(
 	if err != nil {
 		return preparedOfflineExperiment{}, err
 	}
+	evidenceArtifact, err := newPreparedBrainEvidenceArtifact(discovery, provider, brain)
+	if err != nil {
+		return preparedOfflineExperiment{}, fmt.Errorf("bind prepared Brain raw evidence: %w", err)
+	}
 	fixed := FixedExperiment{
 		Brain: brain, ContextCeilingBytes: executionBudget.ContextBytes,
 		EnvironmentContractVersion: offlineEnvironmentContractVersionV1,
@@ -99,13 +104,20 @@ func prepareOfflineExperiment(
 	if err != nil {
 		return preparedOfflineExperiment{}, err
 	}
+	evidenceAuthority, err := sealPreparedBrainEvidenceArtifact(
+		request.PublicOutputDirectory, evidenceArtifact, brain,
+	)
+	if err != nil {
+		return preparedOfflineExperiment{}, err
+	}
 	promotion := OfflinePromotionConfig{
-		Schema: OfflinePromotionConfigSchemaV1, DatabaseURL: request.DatabaseURL,
+		Schema: OfflinePromotionConfigSchemaV2, DatabaseURL: request.DatabaseURL,
 		OllamaEndpoint:          request.OllamaEndpoint,
 		InferenceTimeoutSeconds: request.InferenceTimeoutSeconds, Scenario: scenario,
 		Variant: request.Variant, Surface: request.Surface,
-		RatGeneration: generation, RuntimeFingerprint: fingerprint,
-		Repetition: request.Repetition, PublicOutputDirectory: request.PublicOutputDirectory,
+		RatGeneration: generation, PreparedBrainEvidence: evidenceAuthority,
+		RuntimeFingerprint: fingerprint,
+		Repetition:         request.Repetition, PublicOutputDirectory: request.PublicOutputDirectory,
 		PrivateOutputDirectory: request.PrivateOutputDirectory, OmnidexCommit: embeddedCommit,
 		LedgerSchemaVersion:     taskstate.LedgerSchemaV1,
 		WorkingSetPolicyVersion: workingset.WorkingSetSchemaV1,
@@ -123,7 +135,7 @@ func prepareOfflineExperiment(
 	prepared := preparedOfflineExperiment{mode: request.Mode, promotion: promotion}
 	if request.Mode == OfflineExperimentTakeover {
 		prepared.takeover = OfflineTakeoverConfig{
-			Schema: OfflineTakeoverConfigSchemaV1, Promotion: promotion,
+			Schema: OfflineTakeoverConfigSchemaV2, Promotion: promotion,
 			AfterSuccessfulActions: *request.AfterSuccessfulActions,
 		}
 		if err := prepared.takeover.Validate(); err != nil {
@@ -134,7 +146,7 @@ func prepareOfflineExperiment(
 }
 
 func initialMicrogauntletSpec(suite Suite) (MicrogauntletSpec, error) {
-	for _, spec := range InitialMicrogauntletsV1() {
+	for _, spec := range InitialMicrogauntletsV2() {
 		candidate, err := gauntletSuite(spec.Generator.Suite)
 		if err != nil {
 			return MicrogauntletSpec{}, err
@@ -224,7 +236,7 @@ func prepareCurrentOfflineExperiment(
 		return preparedOfflineExperiment{}, fmt.Errorf("attest cognition host: %w", err)
 	}
 	return prepareOfflineExperiment(
-		request, provider, host, executable, buildversion.Commit,
+		request, discovered, provider, host, executable, buildversion.Commit,
 		buildversion.SourceSHA256, buildversion.MigrationsSHA256, buildversion.Version,
 	)
 }

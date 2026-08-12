@@ -10,10 +10,11 @@ import (
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestAllDeclaredNonFullAblationsExecuteAndSealRealEvidence(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,8 @@ func TestAllDeclaredNonFullAblationsExecuteAndSealRealEvidence(t *testing.T) {
 					if err := decodeTracePayload(entry.Payload, &call, "ablation exact model call"); err != nil {
 						t.Fatal(err)
 					}
-					if !call.ProviderRequestDispatched || call.InputBytes <= 0 {
+					if call.ProviderRequestDisposition != llm.ProviderRequestDispatched ||
+						call.InputBytes <= 0 {
 						t.Fatalf("variant %s did not use exact dispatched provider metrics: %+v", variant, call)
 					}
 					if call.ProviderUsagePresent {
@@ -76,6 +78,7 @@ func TestAllDeclaredNonFullAblationsExecuteAndSealRealEvidence(t *testing.T) {
 				}
 			}
 			if calls == 0 || projections != calls || actions == 0 ||
+				result.Episode.Manifest.Resources.PolicyCallsConsumed != calls ||
 				result.Episode.Manifest.Resources.ModelCalls != calls ||
 				result.Episode.Manifest.Resources.EnvironmentActions != actions ||
 				result.Episode.Manifest.Resources.InputTokens != nativeInput ||
@@ -89,6 +92,9 @@ func TestAllDeclaredNonFullAblationsExecuteAndSealRealEvidence(t *testing.T) {
 			}
 			if variant == VariantOracleEvidence && result.EvidenceClass != AblationOracleContaminated {
 				t.Fatal("oracle-evidence runner omitted its contamination label")
+			}
+			if variant == VariantRawShell && result.EvidenceClass != AblationBenchmarkOnly {
+				t.Fatal("raw-shell runner omitted its benchmark-only label")
 			}
 			assertNeutralAblationPrompts(t, variant, client.renderedPrompts())
 			results[variant] = result
@@ -122,7 +128,7 @@ func assertNeutralAblationPrompts(t *testing.T, variant Variant, prompts []strin
 }
 
 func TestRawShellRoundTripsEveryRegisteredWitnessRequest(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,6 +190,12 @@ func ablationTestRequest(
 			JobID: 191, Generation: 3, StepID: 17, Attempt: 2, WorkerID: "ablation-runner",
 		},
 		Client: client, EpisodeSealPath: filepath.Join(episodeDirectory, "episode.json"),
+		EvidenceSealPath: func() string {
+			if variant == VariantOracleEvidence {
+				return filepath.Join(evaluationDirectory, "ablation-evidence.json")
+			}
+			return filepath.Join(episodeDirectory, "ablation-evidence.json")
+		}(),
 		EvaluationPath:      filepath.Join(evaluationDirectory, "evaluation.json"),
 		LedgerSchemaVersion: "task-ledger.v1", WorkingSetPolicyVersion: "working-set.v1",
 		ProjectionPolicyVersion: ablationProjectionPolicyVersionV1,

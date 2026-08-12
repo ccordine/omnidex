@@ -11,6 +11,9 @@ import (
 const (
 	ProviderContentEncodingEvidenceSchemaV1 = "omnidex.provider-content-encoding-evidence.v1"
 	MaxProviderContentEncodingCaptureBytes  = 64*1024 + 1
+	MaxProviderContentEncodingBytes         = MaxProviderContentEncodingCaptureBytes + 1
+	MaxProviderContentEncodingValues        = MaxProviderContentEncodingBytes / 8
+	MaxProviderContentEncodingBase64Bytes   = ((MaxProviderContentEncodingCaptureBytes + 2) / 3) * 4
 )
 
 // ProviderContentEncodingEvidence byte-preserves every Content-Encoding value.
@@ -62,9 +65,14 @@ func NewProviderContentEncodingEvidence(
 
 func (evidence ProviderContentEncodingEvidence) Validate() error {
 	if evidence.Schema != ProviderContentEncodingEvidenceSchemaV1 || evidence.Values < 0 ||
-		evidence.Bytes < 0 || !providerIdentityDigest.MatchString(evidence.SHA256) ||
+		evidence.Values > MaxProviderContentEncodingValues || evidence.Bytes < 0 ||
+		evidence.Bytes > MaxProviderContentEncodingBytes ||
+		!providerIdentityDigest.MatchString(evidence.SHA256) ||
 		evidence.CapturedBytes < 0 || evidence.CapturedBytes > MaxProviderContentEncodingCaptureBytes {
 		return fmt.Errorf("provider content-encoding evidence identity is invalid")
+	}
+	if len(evidence.CapturedBase64) > MaxProviderContentEncodingBase64Bytes {
+		return fmt.Errorf("provider content-encoding capture is outside its encoded bound")
 	}
 	captured, err := base64.StdEncoding.Strict().DecodeString(evidence.CapturedBase64)
 	if err != nil || len(captured) != evidence.CapturedBytes {

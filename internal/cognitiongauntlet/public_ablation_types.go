@@ -17,6 +17,7 @@ type PublicAblationRunRequest struct {
 	Completion              cognitionruntime.CompletionEvaluator
 	ContaminatedEvidence    *ContaminatedEvidencePacket
 	EpisodeSealPath         string
+	EvidenceSealPath        string
 	OmnidexCommit           string
 	LedgerSchemaVersion     string
 	WorkingSetPolicyVersion string
@@ -24,8 +25,9 @@ type PublicAblationRunRequest struct {
 }
 
 type PublicAblationRunResult struct {
-	Authority PublicRunAuthority `json:"authority"`
-	Episode   SealedEpisode      `json:"episode"`
+	Authority PublicRunAuthority        `json:"authority"`
+	Episode   SealedEpisode             `json:"episode"`
+	Evidence  AblationEvidenceAuthority `json:"evidence"`
 }
 
 func (request PublicAblationRunRequest) validate(bundle PublicInferenceBundle) error {
@@ -56,6 +58,11 @@ func (request PublicAblationRunRequest) validate(bundle PublicInferenceBundle) e
 	if info, err := os.Stat(filepath.Dir(request.EpisodeSealPath)); err != nil || !info.IsDir() {
 		return fmt.Errorf("public cognition ablation episode directory is unavailable")
 	}
+	if err := validateAblationEvidenceOutputPath(
+		request.EvidenceSealPath, request.EpisodeSealPath,
+	); err != nil {
+		return err
+	}
 	for label, value := range map[string]string{
 		"Task Ledger schema version":        request.LedgerSchemaVersion,
 		"Working Set policy version":        request.WorkingSetPolicyVersion,
@@ -80,6 +87,13 @@ func (result PublicAblationRunResult) Validate() error {
 	}
 	if err := result.Episode.Validate(); err != nil {
 		return err
+	}
+	if err := result.Evidence.Validate(); err != nil {
+		return err
+	}
+	boundEvidence, err := ablationEvidenceAuthorityFromEpisode(result.Episode)
+	if err != nil || boundEvidence != result.Evidence {
+		return fmt.Errorf("public cognition ablation changed its evidence authority")
 	}
 	want, err := result.Authority.SHA256()
 	if err != nil || result.Episode.Manifest.PublicRunAuthoritySHA256 != want ||

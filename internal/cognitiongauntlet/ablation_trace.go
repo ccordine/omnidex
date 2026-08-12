@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/cognition"
-	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/contextbuilder"
 	"github.com/gryph/omnidex/internal/taskstate"
 )
@@ -26,23 +25,7 @@ func appendAblationPolicyTrace(
 	call ablationCall,
 	resources *Resources,
 ) error {
-	selected := make([]ProjectedReference, len(projection.Selected))
-	for index, item := range projection.Selected {
-		sources := make([]ProjectionReferenceIdentity, len(item.SourceRefs))
-		for sourceIndex, source := range item.SourceRefs {
-			sources[sourceIndex] = projectionReference(source)
-		}
-		selected[index] = ProjectedReference{
-			Ref: projectionReference(item.Ref), SourceRefs: sources,
-			RenderedBytes: int64(item.RenderedBytes),
-		}
-	}
-	projectionTrace := ProjectionTrace{
-		Schema: ProjectionTraceSchemaV1, ProjectionID: projection.ID,
-		ProjectionSHA256: projection.RenderedSHA256,
-		RenderedBytes:    int64(projection.RenderedBytes), EstimatedTokens: int64(projection.EstimatedTokens),
-		TokenEstimator: projection.TokenEstimator, Selected: selected,
-	}
+	projectionTrace := newAblationProjectionTrace(projection)
 	payload, err := traceJSONObject(projectionTrace)
 	if err != nil {
 		return err
@@ -50,50 +33,19 @@ func appendAblationPolicyTrace(
 	if err := recorder.Append(TraceProjection, projection.ID, nil, payload); err != nil {
 		return err
 	}
-	budget := StationBudget{
-		MaxInputBytes:   call.Attempt.RuntimeBudget.MaxInputBytes,
-		MaxInputTokens:  call.Attempt.RuntimeBudget.MaxInputTokens,
-		MaxOutputBytes:  call.Attempt.RuntimeBudget.MaxOutputBytes,
-		MaxOutputTokens: call.Attempt.RuntimeBudget.MaxOutputTokens,
-	}
-	if !call.Result.ProviderRequestDispatched {
-		disposition := PolicyDispositionTrace{
-			Schema: PolicyDispositionSchemaV1, ProjectionID: projection.ID,
-			ProjectionSHA256: projection.RenderedSHA256, Budget: budget,
-			ResultStatus: call.Result.Status, FailureCode: call.Result.FailureCode,
-			ProviderRequestDispatched: false,
-		}
-		if err := disposition.Validate(); err != nil {
-			return err
-		}
-		payload, err = traceJSONObject(disposition)
-		if err != nil {
-			return err
-		}
-		return recorder.Append(TracePolicyDisposition, call.Attempt.ID, nil, payload)
-	}
-	callTrace := ModelCallTrace{
-		Schema: ModelCallTraceSchemaV2, ProjectionID: projection.ID,
-		ProjectionSHA256: projection.RenderedSHA256,
-		Budget:           budget, ResultStatus: call.Result.Status, FailureCode: call.Result.FailureCode,
-		ProviderResponseDisposition: call.Result.ProviderResponseDisposition,
-		ProviderRequestDispatched:   call.Result.ProviderRequestDispatched,
-		ProviderDoneReason:          call.Result.ProviderDoneReason,
-		ProviderUsagePresent:        call.Result.ProviderUsagePresent, ProviderUsage: call.Result.ProviderUsage,
-		InputBytes:  int64(call.Attempt.ModelVisibleInputBytes),
-		OutputBytes: int64(call.Result.ResponseBytes),
-	}
-	if call.Result.ProviderUsagePresent {
-		callTrace.InputTokens = int64(call.Result.ProviderUsage.PromptEvalCount)
-		callTrace.OutputTokens = int64(call.Result.ProviderUsage.EvalCount)
-	}
-	payload, err = traceJSONObject(callTrace)
+	policyTrace, err := newAblationPolicyTracePayload(projection, call)
 	if err != nil {
 		return err
 	}
-	if err := recorder.Append(TraceModelCall, call.Attempt.ID, nil, payload); err != nil {
+	if err := recorder.Append(policyTrace.kind, call.Attempt.ID, nil, policyTrace.payload); err != nil {
 		return err
 	}
+	if policyTrace.modelCall == nil {
+		resources.PolicyCallsConsumed++
+		return nil
+	}
+	callTrace := *policyTrace.modelCall
+	resources.PolicyCallsConsumed++
 	resources.ModelCalls++
 	resources.ContextBytes += callTrace.InputBytes
 	resources.InputTokens += callTrace.InputTokens
@@ -106,7 +58,7 @@ func appendAblationPolicyTrace(
 	if callTrace.InputBytes > resources.PeakContextBytes {
 		resources.PeakContextBytes = callTrace.InputBytes
 	}
-	if call.Result.Status == cognitionpolicy.CallResultAccepted {
+	if acceptedAblationCall(call.Result) {
 		resources.ModelDecisions++
 	}
 	return nil

@@ -25,18 +25,6 @@ type repositoryCognitionTestClient struct {
 	prompts      []string
 }
 
-func (client *repositoryCognitionTestClient) AttestProviderIdentity(
-	_ context.Context,
-	expected llm.ProviderIdentityExpectation,
-) (llm.ProviderIdentityAttestation, error) {
-	client.mu.Lock()
-	client.attestations++
-	client.mu.Unlock()
-	return llm.NewProviderIdentityAttestation(
-		expected, "worker-test:/version", "worker-test:/installed", "worker-test:/runner",
-	)
-}
-
 func (client *repositoryCognitionTestClient) Generate(context.Context, string, string) (string, error) {
 	client.mu.Lock()
 	client.plain++
@@ -57,20 +45,9 @@ func (client *repositoryCognitionTestClient) PrepareContextModel(
 
 func (client *repositoryCognitionTestClient) GeneratePrepared(
 	_ context.Context,
-	prepared llm.PreparedModel,
+	_ llm.PreparedModel,
 ) (string, error) {
-	if err := client.ValidateExactPreparedContract(prepared); err != nil {
-		return "", err
-	}
-	response, err := repositoryCognitionDecisionFromEnvelope(prepared.Prompt)
-	if err != nil {
-		return "", err
-	}
-	client.mu.Lock()
-	client.generated++
-	client.prompts = append(client.prompts, prepared.Prompt)
-	client.mu.Unlock()
-	return response, nil
+	return "", fmt.Errorf("legacy prepared generation is forbidden for repository cognition")
 }
 
 func (client *repositoryCognitionTestClient) CleanupPreparedModel(llm.PreparedModel) {
@@ -88,7 +65,7 @@ func (*repositoryCognitionTestClient) RequireExactPreparedContract() error { ret
 func (*repositoryCognitionTestClient) ValidateExactPreparedProvider(
 	expected llm.ProviderIdentityExpectation,
 ) error {
-	return expected.Validate()
+	return llm.ValidateExactPreparedProviderExpectation(expected)
 }
 
 func (client *repositoryCognitionTestClient) ValidateExactPreparedContract(
@@ -98,7 +75,8 @@ func (client *repositoryCognitionTestClient) ValidateExactPreparedContract(
 		prepared.Prompt == "" || prepared.ContextTokens != client.native ||
 		prepared.MaxOutputTokens != client.output || prepared.PromptHint != llm.MinimalGeneratePrompt ||
 		prepared.ResponseFormat != llm.ResponseFormatJSON || len(prepared.ResponseSchema) == 0 ||
-		prepared.ThinkingEnabled || prepared.Temperature == nil || *prepared.Temperature != 0 {
+		prepared.ThinkingEnabled || prepared.Temperature == nil || *prepared.Temperature != 0 ||
+		prepared.ProviderIdentityExpectation == nil || prepared.ProviderObservationChallenge == "" {
 		return fmt.Errorf("repository cognition prepared contract changed")
 	}
 	return nil

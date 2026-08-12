@@ -12,8 +12,9 @@ import (
 const (
 	CognitionSealedTraceSchemaV2  = "omnidex.cognition-sealed-trace-page.v2"
 	MaxCognitionTracePageSize     = 32
-	maxCognitionTracePayloadBytes = 2 * 1024 * 1024
-	maxCognitionTracePageBytes    = 16 * 1024 * 1024
+	MaxCognitionTraceRecords      = 16_384
+	MaxCognitionTracePayloadBytes = 2 * 1024 * 1024
+	MaxCognitionTracePageBytes    = 16 * 1024 * 1024
 )
 
 type CognitionTracePageRequest struct {
@@ -59,7 +60,7 @@ func (trace cognitionTraceAuthority) validate() error {
 	if trace.Schema != cognitionTraceAuthoritySchemaV2 || trace.EpisodeID == "" ||
 		trace.Revision.EpisodeID != trace.EpisodeID || trace.Revision.Validate() != nil ||
 		trace.GraphVersion == 0 || !cognitionDigestPattern.MatchString(trace.GraphSHA256) ||
-		trace.LedgerVersion == 0 || len(trace.Records) < 2 || len(trace.Records) > maxCognitionTraceRecords {
+		trace.LedgerVersion == 0 || len(trace.Records) < 2 || len(trace.Records) > MaxCognitionTraceRecords {
 		return fmt.Errorf("%w: sealed cognition trace authority is invalid", ErrCognitionConflict)
 	}
 	seen := make(map[string]struct{}, len(trace.Records))
@@ -83,12 +84,15 @@ func (trace cognitionTraceAuthority) validate() error {
 
 func validCognitionTraceKind(kind string) bool {
 	switch kind {
-	case "accepted_decision_recovery", "action", "action_event", "belief_revision", "cancellation_evidence", "context_projection",
+	case "accepted_decision_recovery", "action", "action_event", CognitionTraceKindAcceptedFactMaterialization,
+		"belief_revision", "cancellation_evidence", "context_projection",
 		"episode_progress", "episode_progress_command", "obligation_graph",
 		"lifecycle_retirement",
 		"plan_revision", "policy_abandonment", "policy_attempt", "policy_result", "policy_timing", "reconciliation_command",
+		CognitionTraceKindProposalMaterialization,
 		"policy_provider_generation_evidence", "policy_provider_response_capture", "policy_response_evidence",
-		"provider_process_observation", "reconciliation_receipt", "runtime_snapshot", "transition",
+		CognitionTraceKindProviderBrainBootstrap,
+		"provider_activation_failure", "provider_process_observation", "reconciliation_receipt", "runtime_snapshot", "transition",
 		"working_set_event", "working_set_snapshot":
 		return true
 	default:

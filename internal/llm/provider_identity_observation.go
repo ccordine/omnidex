@@ -2,12 +2,8 @@ package llm
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"time"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const ProviderIdentityObservationSchemaV2 = "omnidex.provider-identity-observation.v2"
@@ -68,6 +64,12 @@ func RequireProviderIdentityObservation(
 		)
 	}
 	observed, err := observer.ObserveProviderIdentity(ctx, request)
+	observed, ownershipErr := ownBoundedObservedProviderIdentity(observed)
+	if ownershipErr != nil {
+		return ObservedProviderIdentity{}, fmt.Errorf(
+			"provider identity observation exceeds its ownership bound: %w", ownershipErr,
+		)
+	}
 	if err != nil {
 		selection := ProviderIdentitySelection{
 			Model:              request.Expectation.Model,
@@ -98,8 +100,10 @@ func NewObservedProviderIdentity(
 	if err := attestation.Validate(); err != nil {
 		return ObservedProviderIdentity{}, err
 	}
-	if observedAt.IsZero() || observedAt.Location() != time.UTC {
-		return ObservedProviderIdentity{}, fmt.Errorf("provider identity observation time must be nonzero UTC")
+	if observedAt.IsZero() || validateExactProviderTimestamp(observedAt, 6) != nil {
+		return ObservedProviderIdentity{}, fmt.Errorf(
+			"provider identity observation time must be nonzero UTC with PostgreSQL microsecond precision",
+		)
 	}
 	selection := ProviderIdentitySelection{
 		Model: attestation.Model, NativeContextLimit: attestation.NativeContextLimit,
@@ -132,7 +136,8 @@ func NewObservedProviderIdentity(
 
 func (observation ProviderIdentityObservation) Validate() error {
 	if observation.Schema != ProviderIdentityObservationSchemaV2 ||
-		observation.ObservedAt.IsZero() || observation.ObservedAt.Location() != time.UTC {
+		observation.ObservedAt.IsZero() ||
+		validateExactProviderTimestamp(observation.ObservedAt, 6) != nil {
 		return fmt.Errorf("provider identity observation authority is invalid")
 	}
 	for _, digest := range []string{
@@ -236,60 +241,4 @@ func (request ProviderIdentityObservationRequest) Validate() error {
 		return fmt.Errorf("provider identity observation challenge is invalid")
 	}
 	return nil
-}
-
-func DeriveProviderIdentityObservationChallenge(
-	scope string,
-	expected ProviderIdentityExpectation,
-) (string, error) {
-	if !providerIdentityText(scope, 512) {
-		return "", fmt.Errorf("provider identity observation challenge scope is invalid")
-	}
-	if err := expected.Validate(); err != nil {
-		return "", err
-	}
-	raw, err := exactjson.Canonical(struct {
-		Scope       string                      `json:"scope"`
-		Expectation ProviderIdentityExpectation `json:"expectation"`
-	}{scope, expected})
-	if err != nil {
-		return "", err
-	}
-	return providerBodySHA256(raw), nil
-}
-
-func DeriveProviderIdentityDiscoveryChallenge(
-	scope string,
-	selection ProviderIdentitySelection,
-) (string, error) {
-	if !providerIdentityText(scope, 512) {
-		return "", fmt.Errorf("provider identity discovery challenge scope is invalid")
-	}
-	if err := selection.Validate(); err != nil {
-		return "", err
-	}
-	raw, err := exactjson.Canonical(struct {
-		Scope     string                    `json:"scope"`
-		Selection ProviderIdentitySelection `json:"selection"`
-	}{scope, selection})
-	if err != nil {
-		return "", err
-	}
-	return providerBodySHA256(raw), nil
-}
-
-func providerBodySHA256(raw []byte) string {
-	digest := sha256.Sum256(raw)
-	return hex.EncodeToString(digest[:])
-}
-
-func providerObservationSHA256(observation ProviderIdentityObservation) string {
-	copy := observation
-	copy.ObservationSHA256 = ""
-	raw, err := exactjson.Canonical(copy)
-	if err != nil {
-		panic(fmt.Sprintf("marshal provider identity observation: %v", err))
-	}
-	digest := sha256.Sum256(raw)
-	return hex.EncodeToString(digest[:])
 }

@@ -76,7 +76,8 @@ func (client *witnessPolicyClient) exactPreparedFailure(
 		return llm.PreparedGeneration{}, err
 	}
 	return llm.PreparedGeneration{
-		Schema: llm.PreparedGenerationSchemaV1, ProviderRequestDispatched: true,
+		Schema:                      llm.PreparedGenerationSchemaV1,
+		ProviderRequestDisposition:  llm.ProviderRequestDispatched,
 		ProviderRequestSHA256:       requestSHA,
 		ProviderResponseDisposition: llm.ProviderResponseTransportError,
 		ProviderObservation:         observed.Observation,
@@ -115,8 +116,9 @@ func (client *witnessPolicyClient) exactPreparedGeneration(
 	}
 	responseSHA := ablationContentSHA256(string(rawResponse))
 	return llm.PreparedGeneration{
-		Schema: llm.PreparedGenerationSchemaV1, ProviderRequestDispatched: true,
-		Content: content, ProviderRequestSHA256: requestSHA,
+		Schema:                     llm.PreparedGenerationSchemaV1,
+		ProviderRequestDisposition: llm.ProviderRequestDispatched,
+		Content:                    content, ProviderRequestSHA256: requestSHA,
 		ProviderHTTPStatus: 200, ProviderResponseDisposition: llm.ProviderResponseSucceeded,
 		ProviderResponseComplete:   true,
 		ProviderContentEncoding:    llm.NewProviderContentEncodingEvidence(nil, false),
@@ -206,9 +208,9 @@ func (*witnessPolicyClient) providerAttestation(
 func newWitnessProviderIdentity(
 	attestation llm.ProviderIdentityAttestation,
 	challenge string,
-	sequence int,
+	_ int,
 ) (llm.ObservedProviderIdentity, error) {
-	stamp := time.Date(2026, 8, 9, 23, 0, sequence%60, 0, time.UTC)
+	stamp := time.Now().UTC().Truncate(time.Microsecond)
 	evidence, err := witnessProviderIdentityEvidence(attestation)
 	if err != nil {
 		return llm.ObservedProviderIdentity{}, err

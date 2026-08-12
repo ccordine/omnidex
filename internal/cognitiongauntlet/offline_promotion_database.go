@@ -105,6 +105,10 @@ func prepareOfflineExecutionDatabase(
 		database.close()
 		return nil, err
 	}
+	if err := database.repository.ProvisionStepAttemptAuthorizerRole(ctx, inferenceRole); err != nil {
+		database.close()
+		return nil, err
+	}
 	if err := database.repository.ProvisionStepAttemptAuthorizerRole(ctx, hostRole); err != nil {
 		database.close()
 		return nil, err

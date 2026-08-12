@@ -10,7 +10,7 @@ import (
 )
 
 func TestDeterministicOracleBaselineSealsAllFiveMicrogauntlets(t *testing.T) {
-	fixtures, err := GenerateInitialMicrogauntletsV1()
+	fixtures, err := GenerateInitialMicrogauntletsV2()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestDeterministicOracleBaselineSealsAllFiveMicrogauntlets(t *testing.T) {
 }
 
 func TestOracleBaselineExecutesSameCombinedCaseAcrossThreeSurfaces(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestOracleBaselineExecutesSameCombinedCaseAcrossThreeSurfaces(t *testing.T)
 }
 
 func TestOracleBaselineRejectsUnsealedOrAmbiguousRunAuthority(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestOracleBaselineRejectsUnsealedOrAmbiguousRunAuthority(t *testing.T) {
 }
 
 func TestOracleBaselineResultRejectsChangedPrivateGeneratorAuthority(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestOracleBaselineResultRejectsChangedPrivateGeneratorAuthority(t *testing.
 }
 
 func TestVariantEpisodeCannotBeReboundToChangedRunAuthority(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}

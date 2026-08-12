@@ -14,13 +14,14 @@ import (
 // private witness solely to prove that the production runtime is actually wired
 // through its durable policy, projection, action, and terminal ports.
 type witnessPolicyClient struct {
-	mu           sync.Mutex
-	model        string
-	witness      []labyrinth.WitnessAction
-	evidenceUses []labyrinth.EvidenceUse
-	acquired     map[cognition.ActionID][]cognition.EvidenceRef
-	next         int
-	prompts      []string
+	mu             sync.Mutex
+	model          string
+	witness        []labyrinth.WitnessAction
+	evidenceUses   []labyrinth.EvidenceUse
+	acquired       map[cognition.ActionID][]cognition.EvidenceRef
+	emitHypothesis bool
+	next           int
+	prompts        []string
 }
 
 type witnessPolicyEnvelope struct {
@@ -104,11 +105,23 @@ func (client *witnessPolicyClient) generateDecision(
 		}
 		evidence = appendUniqueEvidence(evidence, required)
 	}
+	proposals := []cognition.LedgerProposal{}
+	if client.emitHypothesis && client.next == 0 {
+		if len(envelope.EvidenceRefs) == 0 {
+			return "", fmt.Errorf("witness hypothesis lacks visible evidence")
+		}
+		evidence = appendUniqueEvidence(evidence, envelope.EvidenceRefs[:1])
+		proposals = append(proposals, cognition.LedgerProposal{
+			Kind:         cognition.ProposalHypothesis,
+			Content:      "The observed mechanism remains available.",
+			EvidenceRefs: []cognition.EvidenceRef{envelope.EvidenceRefs[0]},
+		})
+	}
 	decision := cognition.CognitionDecision{
 		ObligationID: current.ID,
 		Action:       decisionRequest, EvidenceRefs: evidence,
 		ExpectedEffect: "Apply the registered transition described by the bounded action.",
-		Proposals:      []cognition.LedgerProposal{}, Attention: attention,
+		Proposals:      proposals, Attention: attention,
 	}
 	raw, err := json.Marshal(decision)
 	if err != nil {

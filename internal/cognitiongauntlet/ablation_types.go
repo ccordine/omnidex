@@ -25,6 +25,7 @@ type AblationRunRequest struct {
 	Actor                   cognition.AttemptRef
 	Client                  llm.Client
 	EpisodeSealPath         string
+	EvidenceSealPath        string
 	EvaluationPath          string
 	OmnidexCommit           string
 	LedgerSchemaVersion     string
@@ -33,15 +34,16 @@ type AblationRunRequest struct {
 }
 
 type AblationRunResult struct {
-	EvidenceClass     AblationEvidenceClass   `json:"evidence_class"`
-	PromotionEligible bool                    `json:"promotion_eligible"`
-	Authority         PairedRunAuthority      `json:"authority"`
-	Variant           VariantResult           `json:"variant"`
-	Episode           SealedEpisode           `json:"episode"`
-	Oracle            OracleManifest          `json:"oracle"`
-	Evaluation        Evaluation              `json:"evaluation"`
-	Efficiency        EfficiencyMetric        `json:"efficiency"`
-	CausalAcquisition CausalAcquisitionReport `json:"causal_acquisition"`
+	EvidenceClass     AblationEvidenceClass     `json:"evidence_class"`
+	PromotionEligible bool                      `json:"promotion_eligible"`
+	Authority         PairedRunAuthority        `json:"authority"`
+	Variant           VariantResult             `json:"variant"`
+	Episode           SealedEpisode             `json:"episode"`
+	Evidence          AblationEvidenceAuthority `json:"evidence"`
+	Oracle            OracleManifest            `json:"oracle"`
+	Evaluation        Evaluation                `json:"evaluation"`
+	Efficiency        EfficiencyMetric          `json:"efficiency"`
+	CausalAcquisition CausalAcquisitionReport   `json:"causal_acquisition"`
 }
 
 func (request AblationRunRequest) Validate() error {
@@ -67,6 +69,11 @@ func (request AblationRunRequest) Validate() error {
 		return err
 	}
 	if err := validateRunOutputPaths(request.EpisodeSealPath, request.EvaluationPath); err != nil {
+		return err
+	}
+	if err := validateAblationEvidenceOutputPath(
+		request.EvidenceSealPath, request.EpisodeSealPath,
+	); err != nil {
 		return err
 	}
 	for label, value := range map[string]string{
@@ -117,6 +124,13 @@ func (result AblationRunResult) Validate() error {
 	}
 	if err := ValidateVariantEpisode(result.Variant, result.Episode); err != nil {
 		return err
+	}
+	if err := result.Evidence.Validate(); err != nil {
+		return err
+	}
+	boundEvidence, err := ablationEvidenceAuthorityFromEpisode(result.Episode)
+	if err != nil || boundEvidence != result.Evidence {
+		return fmt.Errorf("cognition ablation result changed its evidence authority")
 	}
 	if err := ValidateEvaluationAuthority(result.Evaluation, result.Episode, result.Oracle); err != nil {
 		return err

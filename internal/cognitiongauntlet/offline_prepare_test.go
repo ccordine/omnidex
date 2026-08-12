@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/llm"
@@ -18,9 +19,10 @@ func TestOfflinePrepareDerivesReleaseRuntimeAndSamplingAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	commit, source := strings.Repeat("a", 40), strings.Repeat("b", 64)
-	provider, host := offlinePrepareTestAttestations(t)
+	discovery, provider, host := offlinePrepareTestEvidence(t)
 	prepared, err := prepareOfflineExperiment(
-		request, provider, host, executable, commit, source, strings.Repeat("c", 64), "v0.5.0",
+		request, discovery, provider, host, executable, commit, source,
+		strings.Repeat("c", 64), "v0.5.0",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -68,9 +70,9 @@ func TestOfflinePrepareSealsExactlyOneRunOrTakeoverConfiguration(t *testing.T) {
 	for _, mode := range []OfflineExperimentMode{OfflineExperimentRun, OfflineExperimentTakeover} {
 		t.Run(string(mode), func(t *testing.T) {
 			request := offlinePrepareTestRequest(t, mode)
-			provider, host := offlinePrepareTestAttestations(t)
+			discovery, provider, host := offlinePrepareTestEvidence(t)
 			prepared, err := prepareOfflineExperiment(
-				request, provider, host, executable,
+				request, discovery, provider, host, executable,
 				strings.Repeat("a", 40), strings.Repeat("b", 64), strings.Repeat("c", 64), "v0.5.0",
 			)
 			if err != nil {
@@ -120,9 +122,9 @@ func TestOfflinePrepareCompilesRegisteredAblationWithoutDerivedCallerIdentity(t 
 	if err := os.WriteFile(executable, []byte("exact-release-binary"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	provider, host := offlinePrepareTestAttestations(t)
+	discovery, provider, host := offlinePrepareTestEvidence(t)
 	prepared, err := prepareOfflineExperiment(
-		request, provider, host, executable,
+		request, discovery, provider, host, executable,
 		strings.Repeat("a", 40), strings.Repeat("b", 64), strings.Repeat("c", 64), "v0.5.0",
 	)
 	if err != nil {
@@ -169,7 +171,7 @@ func offlinePrepareTestRequest(t *testing.T, mode OfflineExperimentMode) Offline
 	request := OfflineExperimentRequest{
 		Schema: OfflineExperimentRequestSchemaV1, Mode: mode, Variant: VariantFullCognition,
 		Suite: SuiteRetrieve, Seed: 91_001, Surface: SurfaceSymbolic,
-		Budget:                  InitialMicrogauntletsV1()[0].Budget,
+		Budget:                  InitialMicrogauntletsV2()[0].Budget,
 		DatabaseURL:             "postgres://runner:credential@127.0.0.1:5432/omnidex?sslmode=disable",
 		OllamaEndpoint:          "http://127.0.0.1:11434",
 		InferenceTimeoutSeconds: 90, Repetition: 1,
@@ -203,4 +205,32 @@ func offlinePrepareTestAttestations(
 		t.Fatal("offline prepare fixture changed the frozen provider observation")
 	}
 	return observed, brain.HostAttestation
+}
+
+func offlinePrepareTestEvidence(
+	t *testing.T,
+) (
+	llm.ObservedProviderIdentity,
+	llm.ObservedProviderIdentity,
+	cognitionpolicy.HostHardwareAttestation,
+) {
+	t.Helper()
+	bootstrap, host := offlinePrepareTestAttestations(t)
+	selection := llm.ProviderIdentitySelection{
+		Model: bootstrap.Attestation.Model, NativeContextLimit: bootstrap.Attestation.NativeContextLimit,
+	}
+	challenge, err := llm.DeriveProviderIdentityDiscoveryChallenge(
+		offlineProviderDiscoveryScopeV1, selection,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discovery, err := llm.NewObservedProviderIdentity(
+		bootstrap.Observation.ObservedAt.Add(-time.Second), bootstrap.Attestation,
+		bootstrap.Evidence, challenge,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return discovery, bootstrap, host
 }

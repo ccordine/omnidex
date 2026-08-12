@@ -99,7 +99,7 @@ func VerifyCallAttempt(
 	expected, err := newCallAttempt(snapshot, AttestedBrain{
 		Ref: attempt.Brain, Attestation: attempt.ProviderAttestation,
 		Host: attempt.HostHardwareAttestation,
-	}, rendered)
+	}, attempt.ProviderProcessActivation, rendered)
 	if err != nil {
 		return err
 	}

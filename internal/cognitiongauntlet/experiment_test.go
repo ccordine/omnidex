@@ -61,7 +61,7 @@ func TestPairedVariantsRejectInvalidOrIdenticalAblations(t *testing.T) {
 }
 
 func TestGeneratedPairedAuthorityBindsExactSeedSurfaceAndCatalog(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[0])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func validPairedRunAuthority(t *testing.T) PairedRunAuthority {
 	generation := mustRatGeneration(t)
 	return PairedRunAuthority{
 		Schema: PairedRunAuthoritySchemaV1, CaseID: "case-retrieve-1",
-		Suite: SuiteRetrieve, FixtureVersion: "microgauntlets.v1",
+		Suite: SuiteRetrieve, FixtureVersion: "microgauntlets.v2",
 		GeneratorVersion: "generator.v1", Seed: 7,
 		Scenario: cognition.ScenarioRef{
 			ID:     cognition.ScenarioID("scenario-" + strings.Repeat("a", 64)),

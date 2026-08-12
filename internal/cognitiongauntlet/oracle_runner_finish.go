@@ -22,7 +22,7 @@ func oracleEpisodeTemplate(
 		return EpisodeManifest{}, fmt.Errorf("hash validated oracle run authority: %w", err)
 	}
 	return EpisodeManifest{
-		Schema: EpisodeManifestSchemaV1, EpisodeID: episode.ID,
+		Schema: EpisodeManifestSchemaV2, EpisodeID: episode.ID,
 		Scenario:                 fixture.generated.ExecutionScenario().Ref(),
 		PublicRunAuthoritySHA256: authoritySHA,
 		Variant:                  VariantDeterministicOracle,

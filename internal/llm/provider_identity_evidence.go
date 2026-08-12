@@ -39,20 +39,20 @@ type ProviderIdentityEvidenceRef struct {
 }
 
 type ProviderIdentityOperationEvidence struct {
-	Operation         ProviderIdentityOperation            `json:"operation"`
-	Method            string                               `json:"method"`
-	Endpoint          string                               `json:"endpoint"`
-	RequestDispatched bool                                 `json:"request_dispatched"`
-	RequestSHA256     string                               `json:"request_sha256"`
-	RequestBytes      int                                  `json:"request_bytes"`
-	Request           []byte                               `json:"-"`
-	HTTPStatus        int                                  `json:"http_status"`
-	Disposition       ProviderIdentityOperationDisposition `json:"disposition"`
-	ResponseComplete  bool                                 `json:"response_complete"`
-	ContentEncoding   ProviderContentEncodingEvidence      `json:"content_encoding"`
-	ResponseSHA256    string                               `json:"response_sha256"`
-	ResponseBytes     int                                  `json:"response_bytes"`
-	ResponseCapture   []byte                               `json:"-"`
+	Operation          ProviderIdentityOperation            `json:"operation"`
+	Method             string                               `json:"method"`
+	Endpoint           string                               `json:"endpoint"`
+	RequestDisposition ProviderRequestDisposition           `json:"request_disposition"`
+	RequestSHA256      string                               `json:"request_sha256"`
+	RequestBytes       int                                  `json:"request_bytes"`
+	Request            []byte                               `json:"-"`
+	HTTPStatus         int                                  `json:"http_status"`
+	Disposition        ProviderIdentityOperationDisposition `json:"disposition"`
+	ResponseComplete   bool                                 `json:"response_complete"`
+	ContentEncoding    ProviderContentEncodingEvidence      `json:"content_encoding"`
+	ResponseSHA256     string                               `json:"response_sha256"`
+	ResponseBytes      int                                  `json:"response_bytes"`
+	ResponseCapture    []byte                               `json:"-"`
 }
 
 type ProviderIdentityEvidence struct {
@@ -75,7 +75,7 @@ func NewProviderIdentityOperationEvidence(
 	operation ProviderIdentityOperation,
 	method string,
 	endpoint string,
-	requestDispatched bool,
+	requestDisposition ProviderRequestDisposition,
 	request []byte,
 	status int,
 	disposition ProviderIdentityOperationDisposition,
@@ -85,7 +85,7 @@ func NewProviderIdentityOperationEvidence(
 ) (ProviderIdentityOperationEvidence, error) {
 	value := ProviderIdentityOperationEvidence{
 		Operation: operation, Method: method, Endpoint: endpoint,
-		RequestDispatched: requestDispatched, Request: append([]byte(nil), request...),
+		RequestDisposition: requestDisposition, Request: append([]byte(nil), request...),
 		RequestSHA256: providerBodySHA256(request), RequestBytes: len(request),
 		HTTPStatus: status, Disposition: disposition, ResponseComplete: responseComplete,
 		ContentEncoding: contentEncoding,
@@ -143,7 +143,7 @@ func NewSuccessfulProviderIdentityEvidence(
 	operations := make([]ProviderIdentityOperationEvidence, 0, len(definitions))
 	for _, definition := range definitions {
 		operation, err := NewProviderIdentityOperationEvidence(
-			definition.operation, definition.method, definition.endpoint, true,
+			definition.operation, definition.method, definition.endpoint, ProviderRequestDispatched,
 			definition.request, 200, ProviderIdentitySucceeded, true,
 			NewProviderContentEncodingEvidence(nil, false),
 			definition.response,
@@ -202,33 +202,40 @@ func (operation ProviderIdentityOperationEvidence) Validate() error {
 		return fmt.Errorf("provider identity operation content encoding is invalid")
 	}
 	if operation.Disposition == ProviderIdentityNotDispatched {
-		if operation.RequestDispatched || operation.HTTPStatus != 0 || operation.ResponseComplete ||
+		if operation.RequestDisposition != ProviderRequestNotDispatched || operation.HTTPStatus != 0 || operation.ResponseComplete ||
 			operation.ResponseBytes != 0 ||
 			operation.ContentEncoding != (ProviderContentEncodingEvidence{}) {
 			return fmt.Errorf("undispatched provider identity operation claims a request")
 		}
 		return nil
 	}
-	if !operation.RequestDispatched {
-		return fmt.Errorf("provider identity operation disposition lacks dispatch")
+	if operation.RequestDisposition.Validate() != nil {
+		return fmt.Errorf("provider identity operation request disposition is invalid")
 	}
 	switch operation.Disposition {
 	case ProviderIdentityTransport:
+		if !operation.RequestDisposition.MayHaveReachedProvider() &&
+			operation.RequestDisposition != ProviderRequestNotDispatched {
+			return fmt.Errorf("provider identity transport failure has invalid request disposition")
+		}
 		if operation.HTTPStatus != 0 || operation.ResponseComplete || operation.ResponseBytes != 0 ||
 			operation.ContentEncoding != (ProviderContentEncodingEvidence{}) {
 			return fmt.Errorf("provider identity transport failure claims a response")
 		}
 	case ProviderIdentityBodyLimit:
-		if operation.HTTPStatus < 100 || operation.HTTPStatus > 599 || operation.ResponseComplete ||
+		if operation.RequestDisposition != ProviderRequestDispatched ||
+			operation.HTTPStatus < 100 || operation.HTTPStatus > 599 || operation.ResponseComplete ||
 			operation.ResponseBytes != MaxProviderIdentityComponentBytes+1 {
 			return fmt.Errorf("provider identity body limit lacks its exact prefix")
 		}
 	case ProviderIdentityBodyReadError:
-		if operation.HTTPStatus < 100 || operation.HTTPStatus > 599 || operation.ResponseComplete {
+		if operation.RequestDisposition != ProviderRequestDispatched ||
+			operation.HTTPStatus < 100 || operation.HTTPStatus > 599 || operation.ResponseComplete {
 			return fmt.Errorf("provider identity body read failure claims completeness")
 		}
 	case ProviderIdentitySucceeded, ProviderIdentityHTTPError, ProviderIdentityInvalidJSON:
-		if operation.HTTPStatus < 100 || operation.HTTPStatus > 599 || !operation.ResponseComplete ||
+		if operation.RequestDisposition != ProviderRequestDispatched ||
+			operation.HTTPStatus < 100 || operation.HTTPStatus > 599 || !operation.ResponseComplete ||
 			operation.ResponseBytes > MaxProviderIdentityComponentBytes {
 			return fmt.Errorf("complete provider identity operation is invalid")
 		}
@@ -278,8 +285,11 @@ func providerIdentityOperationAt(index int) (ProviderIdentityOperation, string, 
 func cloneProviderIdentityOperations(values []ProviderIdentityOperationEvidence) []ProviderIdentityOperationEvidence {
 	cloned := append([]ProviderIdentityOperationEvidence(nil), values...)
 	for index := range cloned {
-		cloned[index].Request = append([]byte(nil), cloned[index].Request...)
-		cloned[index].ResponseCapture = append([]byte(nil), cloned[index].ResponseCapture...)
+		// PostgreSQL BYTEA NOT NULL is the durable representation of every exact
+		// body, including zero bytes. Normalize nil to an owned empty slice so the
+		// in-memory evidence has the same single representation before persistence.
+		cloned[index].Request = append([]byte{}, cloned[index].Request...)
+		cloned[index].ResponseCapture = append([]byte{}, cloned[index].ResponseCapture...)
 	}
 	return cloned
 }

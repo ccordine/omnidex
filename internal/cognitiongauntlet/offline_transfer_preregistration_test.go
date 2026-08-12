@@ -17,7 +17,7 @@ func TestOfflineTransferPreregistrationFreezesSortedSurfacesAndFixedAuthority(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if registration.Schema != OfflineTransferPreregistrationSchemaV1 ||
+	if registration.Schema != OfflineTransferPreregistrationSchemaV2 ||
 		registration.Variant != VariantFullCognition || registration.RunCount != 2 ||
 		!reflect.DeepEqual(registration.Plan.Surfaces, []Surface{SurfaceSymbolic, SurfaceFilesystem}) {
 		t.Fatalf("unexpected transfer registration: %#v", registration)
@@ -66,13 +66,16 @@ func validOfflineTransferFixedAuthority(t *testing.T) OfflineMatrixFixedAuthorit
 	t.Helper()
 	generation := mustRatGeneration(t)
 	budget, err := NewExecutableRunBudgetV2(
-		InitialMicrogauntletsV1()[4].Budget, generation.Fixed.Brain.Sampling,
+		InitialMicrogauntletsV2()[4].Budget, generation.Fixed.Brain.Sampling,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return OfflineMatrixFixedAuthority{
 		Budget: budget, RatGeneration: generation,
+		PreparedBrainEvidence: testPreparedBrainEvidenceAuthority(
+			t, generation.Fixed.Brain, t.TempDir(),
+		),
 		RuntimeFingerprint: RuntimeFingerprint{
 			ProductionSourceSHA256: generation.Runtime.SourceSHA256,
 			RendererSHA256:         strings.Repeat("2", 64), RetentionPolicySHA256: strings.Repeat("3", 64),

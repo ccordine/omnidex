@@ -9,17 +9,17 @@ import (
 )
 
 func TestPostgresCognitionStartAtomicallyAcceptsRegisteredFactsAndReplays(t *testing.T) {
-	_, repository, pool := openWorkingSetDatabase(t)
+	repository, pool, ctx := policyInputFreshRepository(t)
 	fixture := newCognitionDatabaseFixture(t, repository)
 	facts := cognitionFactAuthorityForTest(t, planFirstCognitionObservation, cognitionTestDigest("e"))
-	episode, err := repository.StartCognitionEpisode(t.Context(), fixture.Start, facts)
+	episode, err := repository.StartCognitionEpisode(ctx, fixture.Start, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if episode.FactAuthority.SHA256 != facts.Reference().SHA256 {
 		t.Fatalf("episode fact authority=%+v", episode.FactAuthority)
 	}
-	state, err := repository.TaskLedger(t.Context(), fixture.Authority.JobID)
+	state, err := repository.TaskLedger(ctx, fixture.Authority.JobID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestPostgresCognitionStartAtomicallyAcceptsRegisteredFactsAndReplays(t *tes
 		}
 	}
 	var normalized, evidence, policies int
-	if err := pool.QueryRow(t.Context(), `
+	if err := pool.QueryRow(ctx, `
 		SELECT (SELECT COUNT(*) FROM cognition_accepted_facts WHERE episode_id=$1),
 		       (SELECT COUNT(*) FROM cognition_accepted_fact_evidence evidence
 		        JOIN cognition_accepted_facts facts ON facts.fact_id=evidence.fact_id
@@ -45,11 +45,17 @@ func TestPostgresCognitionStartAtomicallyAcceptsRegisteredFactsAndReplays(t *tes
 	if factsFound != 1 || normalized != 1 || evidence != 1 || policies != 1 {
 		t.Fatalf("fact ledger/normalized/evidence/policies=%d/%d/%d/%d", factsFound, normalized, evidence, policies)
 	}
-	if _, err := repository.StartCognitionEpisode(t.Context(), fixture.Start, facts); err != nil {
+	replay := fixture.Start
+	replay.BrainBootstrap = freshReplayBrainBootstrap(t, fixture.Start.BrainBootstrap)
+	replay.ProviderProcessActivation = cognitionGuardProviderProcessActivationFor(
+		t, ctx, fixture.EpisodeID, fixture.Authority,
+		replay.BrainBootstrap.AttestedBrain,
+	)
+	if _, err := repository.StartCognitionEpisode(ctx, replay, facts); err != nil {
 		t.Fatalf("exact fact authority replay: %v", err)
 	}
 	changed := cognitionFactAuthorityForTest(t, planFirstCognitionObservation, cognitionTestDigest("f"))
-	if _, err := repository.StartCognitionEpisode(t.Context(), fixture.Start, changed); !errors.Is(err, ErrCognitionConflict) {
+	if _, err := repository.StartCognitionEpisode(ctx, fixture.Start, changed); !errors.Is(err, ErrCognitionConflict) {
 		t.Fatalf("changed fact authority replay error=%v", err)
 	}
 }

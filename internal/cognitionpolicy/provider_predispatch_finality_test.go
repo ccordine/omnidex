@@ -21,13 +21,13 @@ func TestPolicyTerminalizesEveryContradictoryPredispatchProviderOutcome(t *testi
 			generation: func(CallAttempt) llm.PreparedGeneration {
 				return llm.PreparedGeneration{Schema: llm.PreparedGenerationSchemaV1}
 			},
-			failure: CallFailurePolicyAuthority, want: ErrInvalidEvidence,
+			failure: CallFailureProviderEvidence, want: ErrInvalidEvidence,
 		},
 		{
 			name: "successful identity plus error",
 			generation: func(attempt CallAttempt) llm.PreparedGeneration {
 				value := policyTestPreparedGeneration(attempt, `{}`)
-				value.ProviderRequestDispatched = false
+				value.ProviderRequestDisposition = llm.ProviderRequestNotDispatched
 				value.ProviderRequestSHA256 = ""
 				value.ProviderHTTPStatus = 0
 				value.ProviderResponseDisposition = ""
@@ -47,7 +47,7 @@ func TestPolicyTerminalizesEveryContradictoryPredispatchProviderOutcome(t *testi
 				value.Content = ""
 				return value
 			},
-			failure: CallFailurePolicyAuthority, want: ErrInvalidEvidence,
+			failure: CallFailureProviderEvidence, want: ErrInvalidEvidence,
 		},
 		{
 			name: "failed identity probe",
@@ -64,7 +64,7 @@ func TestPolicyTerminalizesEveryContradictoryPredispatchProviderOutcome(t *testi
 				value.ProviderResponseCapture = []byte("extraneous")
 				return value
 			},
-			failure: CallFailurePolicyAuthority, want: ErrInvalidEvidence,
+			failure: CallFailureProviderEvidence, want: ErrInvalidEvidence,
 		},
 	} {
 		testCase := testCase
@@ -77,7 +77,9 @@ func TestPolicyTerminalizesEveryContradictoryPredispatchProviderOutcome(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			attempt, err := newCallAttempt(snapshot, brain, envelope)
+			attempt, err := newCallAttempt(
+				snapshot, brain, policyTestProviderProcessActivation(snapshot, brain), envelope,
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -85,13 +87,17 @@ func TestPolicyTerminalizesEveryContradictoryPredispatchProviderOutcome(t *testi
 				return testCase.generation(attempt), errors.New("contradictory predispatch error")
 			}}
 			journal := &policyTestCallJournal{}
-			policy, err := New(client, brain, newPolicyTestProjectionLoader(projection), journal)
+			activation := policyTestProviderProcessActivation(snapshot, brain)
+			policy, err := New(client, brain, activation, newPolicyTestProjectionLoader(projection), journal)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, decideErr := policy.Decide(context.Background(), snapshot)
+			outcome, decideErr := policy.Decide(context.Background(), snapshot)
 			if !errors.Is(decideErr, testCase.want) {
 				t.Fatalf("fresh error=%v want %v", decideErr, testCase.want)
+			}
+			if !outcome.PolicyCallConsumed {
+				t.Fatal("fresh exact-provider invocation did not consume its policy-call allowance")
 			}
 			if len(journal.results) != 1 || journal.results[0].FailureCode != testCase.failure {
 				t.Fatalf("terminal result=%+v error=%v", journal.results, decideErr)
@@ -103,7 +109,7 @@ func TestPolicyTerminalizesEveryContradictoryPredispatchProviderOutcome(t *testi
 				return llm.PreparedGeneration{}, nil
 			}}
 			replay, err := New(
-				replayClient, brain, newPolicyTestProjectionLoader(projection),
+				replayClient, brain, activation, newPolicyTestProjectionLoader(projection),
 				&policyTestCallJournal{reservation: &CallReservation{
 					Attempt: journal.attempts[0], ExistingResult: &result,
 				}},
@@ -111,11 +117,12 @@ func TestPolicyTerminalizesEveryContradictoryPredispatchProviderOutcome(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := replay.Decide(context.Background(), snapshot); !errors.Is(err, testCase.want) {
+			replayed, err := replay.Decide(context.Background(), snapshot)
+			if !errors.Is(err, testCase.want) {
 				t.Fatalf("replay error=%v want %v", err, testCase.want)
 			}
-			if replayClient.observationCalls != 0 {
-				t.Fatal("terminal replay observed provider")
+			if replayed.PolicyCallConsumed || replayClient.observationCalls != 0 {
+				t.Fatal("terminal replay consumed or observed the provider")
 			}
 		})
 	}

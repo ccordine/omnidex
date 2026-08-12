@@ -16,10 +16,11 @@ func insertActiveProviderProcessObservationTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	authority model.StepAttemptAuthority,
-	receipt cognitionpolicy.ProviderProcessObservation,
+	activation cognitionpolicy.ProviderProcessActivation,
 	receiptJSON []byte,
 	receiptSHA string,
 ) error {
+	receipt := activation.Receipt
 	sequence, err := nextProviderProcessObservationSequenceTx(
 		ctx, tx, receipt.EpisodeID, false,
 	)
@@ -33,13 +34,13 @@ func insertActiveProviderProcessObservationTx(
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO cognition_provider_process_observations (
-			observation_id,episode_id,job_id,generation,step_id,step_attempt,worker_id,
+			observation_id,evidence_id,episode_id,job_id,generation,step_id,step_attempt,worker_id,
 			purpose,sequence,stable_brain_json,stable_brain_json_sha256,stable_brain_sha256,
 			provider_observation_json,provider_observation_json_sha256,
 			provider_observation_sha256,provider_attestation_sha256,challenge_sha256,
 			observed_at,receipt_json,receipt_sha256
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-	`, receipt.ID, receipt.EpisodeID, authority.JobID, authority.Generation,
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+	`, receipt.ID, activation.IdentityEvidence.Ref.ID, receipt.EpisodeID, authority.JobID, authority.Generation,
 		authority.StepID, authority.Attempt, authority.WorkerID, receipt.Purpose, sequence,
 		string(stableJSON), stableJSONSHA, receipt.StableBrain.SHA256,
 		string(observationJSON), observationJSONSHA, receipt.Observation.ObservationSHA256,
@@ -56,10 +57,12 @@ func insertPostSealProviderProcessObservationTx(
 	tx pgx.Tx,
 	authority model.StepAttemptAuthority,
 	episode CognitionEpisode,
-	receipt cognitionpolicy.ProviderProcessObservation,
+	activation cognitionpolicy.ProviderProcessActivation,
+	postSealSource CognitionProviderPostSealSource,
 	receiptJSON []byte,
 	receiptSHA string,
 ) error {
+	receipt := activation.Receipt
 	seal, err := loadCognitionTerminalSealTx(ctx, tx, episode.EpisodeID)
 	if err != nil {
 		return err
@@ -79,7 +82,9 @@ func insertPostSealProviderProcessObservationTx(
 			return err
 		}
 	}
-	chain := providerPostSealChainSHA(seal.TraceSHA256, previous, sequence, receiptSHA)
+	chain := providerPostSealChainSHA(
+		seal.TraceSHA256, previous, sequence, postSealSource, receiptSHA,
+	)
 	stableJSON, stableJSONSHA, observationJSON, observationJSONSHA, err :=
 		providerProcessObservationPayloads(receipt)
 	if err != nil {
@@ -87,18 +92,18 @@ func insertPostSealProviderProcessObservationTx(
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO cognition_provider_postseal_observations (
-			observation_id,episode_id,job_id,generation,step_id,step_attempt,worker_id,
-			purpose,sequence,terminal_trace_sha256,previous_chain_sha256,chain_sha256,
+			observation_id,evidence_id,episode_id,job_id,generation,step_id,step_attempt,worker_id,
+			purpose,sequence,source_kind,terminal_trace_sha256,previous_chain_sha256,chain_sha256,
 			stable_brain_json,stable_brain_json_sha256,stable_brain_sha256,
 			provider_observation_json,provider_observation_json_sha256,
 			provider_observation_sha256,provider_attestation_sha256,challenge_sha256,
 			observed_at,receipt_json,receipt_sha256
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
 		)
-	`, receipt.ID, receipt.EpisodeID, authority.JobID, authority.Generation,
+	`, receipt.ID, activation.IdentityEvidence.Ref.ID, receipt.EpisodeID, authority.JobID, authority.Generation,
 		authority.StepID, authority.Attempt, authority.WorkerID, receipt.Purpose, sequence,
-		seal.TraceSHA256, previous, chain, string(stableJSON), stableJSONSHA,
+		postSealSource, seal.TraceSHA256, previous, chain, string(stableJSON), stableJSONSHA,
 		receipt.StableBrain.SHA256, string(observationJSON), observationJSONSHA,
 		receipt.Observation.ObservationSHA256, receipt.Observation.AttestationSHA256,
 		receipt.Observation.ChallengeSHA256, receipt.Observation.ObservedAt,
@@ -138,7 +143,14 @@ func nextProviderProcessObservationSequenceTx(
 	return sequence, nil
 }
 
-func providerPostSealChainSHA(trace, previous string, sequence int64, receipt string) string {
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d:%s", trace, previous, sequence, receipt)))
+func providerPostSealChainSHA(
+	trace, previous string,
+	sequence int64,
+	source CognitionProviderPostSealSource,
+	receipt string,
+) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf(
+		"%s:%s:%d:%s:%s", trace, previous, sequence, source, receipt,
+	)))
 	return hex.EncodeToString(digest[:])
 }

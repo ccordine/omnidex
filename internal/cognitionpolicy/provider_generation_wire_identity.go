@@ -19,20 +19,20 @@ type providerIdentityEvidenceWire struct {
 }
 
 type providerIdentityOperationEvidenceWire struct {
-	Operation         providerGenerationWireBytes         `json:"operation"`
-	Method            providerGenerationWireBytes         `json:"method"`
-	Endpoint          providerGenerationWireBytes         `json:"endpoint"`
-	RequestDispatched bool                                `json:"request_dispatched"`
-	RequestSHA256     providerGenerationWireBytes         `json:"request_sha256"`
-	RequestBytes      int                                 `json:"request_bytes"`
-	Request           providerGenerationWireBytes         `json:"request"`
-	HTTPStatus        int                                 `json:"http_status"`
-	Disposition       providerGenerationWireBytes         `json:"disposition"`
-	ResponseComplete  bool                                `json:"response_complete"`
-	ContentEncoding   providerContentEncodingEvidenceWire `json:"content_encoding"`
-	ResponseSHA256    providerGenerationWireBytes         `json:"response_sha256"`
-	ResponseBytes     int                                 `json:"response_bytes"`
-	ResponseCapture   providerGenerationWireBytes         `json:"response_capture"`
+	Operation          providerGenerationWireBytes         `json:"operation"`
+	Method             providerGenerationWireBytes         `json:"method"`
+	Endpoint           providerGenerationWireBytes         `json:"endpoint"`
+	RequestDisposition providerGenerationWireBytes         `json:"request_disposition"`
+	RequestSHA256      providerGenerationWireBytes         `json:"request_sha256"`
+	RequestBytes       int                                 `json:"request_bytes"`
+	Request            providerGenerationWireBytes         `json:"request"`
+	HTTPStatus         int                                 `json:"http_status"`
+	Disposition        providerGenerationWireBytes         `json:"disposition"`
+	ResponseComplete   bool                                `json:"response_complete"`
+	ContentEncoding    providerContentEncodingEvidenceWire `json:"content_encoding"`
+	ResponseSHA256     providerGenerationWireBytes         `json:"response_sha256"`
+	ResponseBytes      int                                 `json:"response_bytes"`
+	ResponseCapture    providerGenerationWireBytes         `json:"response_capture"`
 }
 
 func encodeProviderIdentityEvidenceWire(
@@ -49,8 +49,9 @@ func encodeProviderIdentityEvidenceWire(
 		operation := evidence.Operations[index]
 		operations[index] = providerIdentityOperationEvidenceWire{
 			Operation: field(string(operation.Operation)), Method: field(operation.Method),
-			Endpoint: field(operation.Endpoint), RequestDispatched: operation.RequestDispatched,
-			RequestSHA256: field(operation.RequestSHA256), RequestBytes: operation.RequestBytes,
+			Endpoint:           field(operation.Endpoint),
+			RequestDisposition: field(string(operation.RequestDisposition)),
+			RequestSHA256:      field(operation.RequestSHA256), RequestBytes: operation.RequestBytes,
 			Request: newProviderGenerationWireBytes(
 				operation.Request, llm.MaxProviderIdentityComponentBytes,
 			),
@@ -125,6 +126,7 @@ func decodeProviderIdentityOperationWire(
 		{wire.Operation, maxProviderGenerationMetadataCaptureBytes},
 		{wire.Method, maxProviderGenerationMetadataCaptureBytes},
 		{wire.Endpoint, maxProviderGenerationMetadataCaptureBytes},
+		{wire.RequestDisposition, maxProviderGenerationMetadataCaptureBytes},
 		{wire.RequestSHA256, maxProviderGenerationMetadataCaptureBytes},
 		{wire.Request, llm.MaxProviderIdentityComponentBytes},
 		{wire.Disposition, maxProviderGenerationMetadataCaptureBytes},
@@ -150,12 +152,13 @@ func decodeProviderIdentityOperationWire(
 	}
 	return llm.ProviderIdentityOperationEvidence{
 		Operation: llm.ProviderIdentityOperation(string(values[0])), Method: string(values[1]),
-		Endpoint: string(values[2]), RequestDispatched: wire.RequestDispatched,
-		RequestSHA256: string(values[3]), RequestBytes: wire.RequestBytes,
-		Request: append([]byte(nil), values[4]...), HTTPStatus: wire.HTTPStatus,
-		Disposition:      llm.ProviderIdentityOperationDisposition(string(values[5])),
+		Endpoint:           string(values[2]),
+		RequestDisposition: llm.ProviderRequestDisposition(string(values[3])),
+		RequestSHA256:      string(values[4]), RequestBytes: wire.RequestBytes,
+		Request: append([]byte{}, values[5]...), HTTPStatus: wire.HTTPStatus,
+		Disposition:      llm.ProviderIdentityOperationDisposition(string(values[6])),
 		ResponseComplete: wire.ResponseComplete, ContentEncoding: contentEncoding,
-		ResponseSHA256: string(values[6]), ResponseBytes: wire.ResponseBytes,
-		ResponseCapture: append([]byte(nil), values[7]...),
+		ResponseSHA256: string(values[7]), ResponseBytes: wire.ResponseBytes,
+		ResponseCapture: append([]byte{}, values[8]...),
 	}, true, nil
 }

@@ -43,22 +43,21 @@ func (policy *Policy) executeReservedCall(
 			), llm.PreparedGeneration{}, failure,
 		)
 	}
-	generation, generationErr := policy.exactClient.GeneratePreparedExact(ctx, prepared)
-	generation = generation.Clone()
-	executed := cognition.PolicyOutcome{ProviderRequestDispatched: generation.ProviderRequestDispatched}
-	if !generation.ProviderRequestDispatched {
-		if exactProviderIdentityFailureGeneration(attempt, generation) {
-			failure := fmt.Errorf("%w: %v", ErrProviderIdentity, generationErr)
-			return executed, policy.finishCall(
-				ctx, attempt, providerIdentityFailedCallResult(attempt, generation, failure), generation, failure,
-			)
-		}
-		failure := fmt.Errorf(
-			"%w: exact client returned a non-dispatched outcome without failed identity evidence: %v",
-			ErrInvalidEvidence, generationErr,
-		)
+	rawGeneration, generationErr := policy.exactClient.GeneratePreparedExact(ctx, prepared)
+	executed := cognition.PolicyOutcome{PolicyCallConsumed: true}
+	generation, ownershipErr := llm.OwnBoundedPreparedGeneration(rawGeneration)
+	if ownershipErr != nil {
+		failure := fmt.Errorf("%w: unsafe provider-owned generation: %v", ErrInvalidEvidence, ownershipErr)
 		return executed, policy.finishUntrustedCall(
-			ctx, attempt, generation, generationErr, CallFailurePolicyAuthority, failure,
+			ctx, attempt, rawGeneration, generationErr,
+			CallFailureProviderEvidence, failure,
+		)
+	}
+	if generation.ProviderRequestDisposition == llm.ProviderRequestNotDispatched &&
+		exactProviderIdentityFailureGeneration(attempt, generation) {
+		failure := fmt.Errorf("%w: %v", ErrProviderIdentity, generationErr)
+		return executed, policy.finishCall(
+			ctx, attempt, providerIdentityFailedCallResult(attempt, generation, failure), generation, failure,
 		)
 	}
 	providerErr := validatePreparedGenerationProvider(attempt, generation)
@@ -210,6 +209,7 @@ func exactProviderIdentityFailureGeneration(
 ) bool {
 	return providerIdentityFailureEvidence(attempt, generation) &&
 		generation.Schema == llm.PreparedGenerationSchemaV1 && generation.Content == "" &&
+		generation.ProviderRequestDisposition == llm.ProviderRequestNotDispatched &&
 		generation.ProviderRequestSHA256 == "" && generation.ProviderHTTPStatus == 0 &&
 		generation.ProviderResponseDisposition == "" && !generation.ProviderResponseComplete &&
 		generation.ProviderContentEncoding == (llm.ProviderContentEncodingEvidence{}) &&

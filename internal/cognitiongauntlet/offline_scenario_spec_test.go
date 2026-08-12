@@ -2,7 +2,7 @@ package cognitiongauntlet
 
 import "testing"
 
-func offlineScenarioTestBudget() RunBudget { return InitialMicrogauntletsV1()[0].Budget }
+func offlineScenarioTestBudget() RunBudget { return InitialMicrogauntletsV2()[0].Budget }
 
 func offlineExecutableScenarioTestBudget(t *testing.T) RunBudget {
 	t.Helper()

@@ -29,13 +29,24 @@ func RunPublicAblation(
 	if err != nil {
 		return PublicAblationRunResult{}, err
 	}
-	attested, err := cognitionpolicy.AttestBrain(ctx, request.Client, brain)
+	bootstrap, err := attestAblationBrain(ctx, request.Client, brain)
 	if err != nil {
 		return PublicAblationRunResult{}, err
 	}
+	attested := bootstrap.AttestedBrain
 	frozen, err := bundle.Authority.RatGeneration.Fixed.Brain.attestedBrain()
 	if err != nil || !sameFrozenBrain(attested, frozen) {
 		return PublicAblationRunResult{}, fmt.Errorf("live provider or host differs from frozen ablation authority")
+	}
+	activation, err := observeAblationProviderProcess(
+		ctx, request.Client, attested, episode, request.Actor,
+	)
+	if err != nil {
+		return PublicAblationRunResult{}, err
+	}
+	activationAuthority, err := activation.Authority()
+	if err != nil {
+		return PublicAblationRunResult{}, fmt.Errorf("derive public ablation provider process activation authority: %w", err)
 	}
 	state, err := newAblationStateWithAuthority(
 		bundle.Authority.Variant, episode, request.Actor, bundle.Goal,
@@ -46,7 +57,9 @@ func RunPublicAblation(
 	}
 	journal := newAblationCallJournal()
 	loader := &ablationProjectionLoader{}
-	policy, err := cognitionpolicy.New(request.Client, attested, loader, journal)
+	policy, err := cognitionpolicy.New(
+		request.Client, attested, activationAuthority, loader, journal,
+	)
 	if err != nil {
 		return PublicAblationRunResult{}, err
 	}
@@ -61,7 +74,25 @@ func RunPublicAblation(
 	if err != nil {
 		return PublicAblationRunResult{}, err
 	}
-	startedAt := time.Now()
+	bootstrapArtifact, bootstrapAuthority, err := prepareRuntimeBrainBootstrapEvidence(
+		request.EpisodeSealPath, bootstrap, bundle.Authority.RatGeneration.Fixed.Brain,
+	)
+	if err != nil {
+		return PublicAblationRunResult{}, err
+	}
+	if err := appendRuntimeBrainBootstrapTrace(recorder, bootstrapAuthority); err != nil {
+		return PublicAblationRunResult{}, err
+	}
+	activationArtifact, activationEvidenceAuthority, err := prepareRuntimeProviderActivationEvidence(
+		request.EpisodeSealPath, activation, bundle.Authority.RatGeneration.Fixed.Brain,
+	)
+	if err != nil {
+		return PublicAblationRunResult{}, err
+	}
+	if err := appendRuntimeProviderActivationTrace(recorder, activationEvidenceAuthority); err != nil {
+		return PublicAblationRunResult{}, err
+	}
+	startedAt := time.Now().UTC()
 	transition, err := request.Environment.Start(ctx, bundle.Authority.Scenario)
 	if err != nil {
 		return PublicAblationRunResult{}, fmt.Errorf("start public cognition ablation: %w", err)
@@ -84,13 +115,28 @@ func RunPublicAblation(
 	if err != nil {
 		return PublicAblationRunResult{}, err
 	}
-	sealed, err := recorder.Seal(
-		request.EpisodeSealPath, execution.Revision, execution.Outcome,
-		execution.Resources, execution.Memory, execution.Planning, RecoveryMetrics{},
+	if err := sealRuntimeBrainBootstrapEvidence(
+		request.EpisodeSealPath, bootstrapArtifact, bootstrapAuthority,
+		bundle.Authority.RatGeneration.Fixed.Brain,
+	); err != nil {
+		return PublicAblationRunResult{}, err
+	}
+	if err := sealRuntimeProviderActivationEvidence(
+		request.EpisodeSealPath, activationArtifact, activationEvidenceAuthority,
+		bundle.Authority.RatGeneration.Fixed.Brain,
+	); err != nil {
+		return PublicAblationRunResult{}, err
+	}
+	sealed, evidenceAuthority, err := finalizeAblationEpisode(
+		request.EpisodeSealPath, request.EvidenceSealPath, startedAt,
+		bundle.Authority, recorder, state, journal, execution,
+		bootstrapAuthority, activationEvidenceAuthority,
 	)
 	if err != nil {
 		return PublicAblationRunResult{}, err
 	}
-	result := PublicAblationRunResult{Authority: bundle.Authority, Episode: sealed}
+	result := PublicAblationRunResult{
+		Authority: bundle.Authority, Episode: sealed, Evidence: evidenceAuthority,
+	}
 	return result, result.Validate()
 }

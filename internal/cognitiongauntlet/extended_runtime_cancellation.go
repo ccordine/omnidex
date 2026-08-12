@@ -46,7 +46,7 @@ func finishExtendedCanceledRuntime(
 		if run.PolicyCalls != 0 || run.EnvironmentActions != 0 {
 			return ExtendedRuntimeReceipt{}, fmt.Errorf("canceled extended runtime replay performed work")
 		}
-	} else if metrics.Resources.ModelCalls != int(run.PolicyCalls) ||
+	} else if metrics.Resources.PolicyCallsConsumed != int(run.PolicyCalls) ||
 		metrics.Resources.EnvironmentActions != int(run.EnvironmentActions) {
 		return ExtendedRuntimeReceipt{}, fmt.Errorf("canceled extended runtime counters differ from its live run")
 	}
@@ -66,7 +66,7 @@ func finishExtendedCanceledRuntime(
 	receipt := ExtendedRuntimeReceipt{
 		Schema: ExtendedRuntimeReceiptSchemaV1, Authority: authority,
 		EpisodeID: string(episode.ID), Seal: trace.Header.Seal,
-		PolicyCalls: uint32(metrics.Resources.ModelCalls), EnvironmentActions: uint32(actions),
+		PolicyCalls: uint32(metrics.Resources.PolicyCallsConsumed), EnvironmentActions: uint32(actions),
 		FailedActions: uint32(failures), EvidenceClass: evidenceClass,
 		PromotionEligible: false, CancellationCode: code,
 		CostBaseline: extendedCostWitnessOnly, ActualCost: cost, WitnessCost: witnessCost,
@@ -92,7 +92,7 @@ func validateExtendedCanceledTrace(
 		return productionTraceMetrics{}, err
 	}
 	recorder, err := NewEpisodeRecorder(EpisodeManifest{
-		Schema: EpisodeManifestSchemaV1, EpisodeID: episode.ID,
+		Schema: EpisodeManifestSchemaV2, EpisodeID: episode.ID,
 		Scenario:                 scenario,
 		PublicRunAuthoritySHA256: authoritySHA, Variant: VariantFullCognition,
 		RatGeneration: request.RatGeneration, StationBudget: authority.Budget.Station,

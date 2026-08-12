@@ -41,33 +41,76 @@ func TestPostgresCognitionNormalizedAndTerminalJSONHaveHardByteCaps(t *testing.T
 	})
 
 	t.Run("terminal completion", func(t *testing.T) {
-		trace := `{"schema":"omnidex.cognition-trace-authority.v2","records":[]}`
+		terminalFixture := startTaskGenerationRetirementFixtureIn(
+			t, fixture.Repository, fixture.Pool, fixture.Context, "json-byte-caps-terminal",
+		)
 		var graphSHA string
-		if err := fixture.Pool.QueryRow(fixture.Context, `
+		if err := terminalFixture.Pool.QueryRow(terminalFixture.Context, `
 			SELECT graph_sha256 FROM cognition_obligation_graphs
 			WHERE episode_id=$1 ORDER BY graph_version DESC LIMIT 1
-		`, fixture.EpisodeID).Scan(&graphSHA); err != nil {
+		`, terminalFixture.EpisodeID).Scan(&graphSHA); err != nil {
 			t.Fatal(err)
 		}
-		expectCognitionJSONCheckViolation(t, fixture, func(tx pgx.Tx) error {
-			_, err := tx.Exec(fixture.Context, `
+		expectCognitionJSONCheckViolation(t, terminalFixture, func(tx pgx.Tx) error {
+			trace, traceSHA := cognitionByteLimitTrace(t, terminalFixture, tx)
+			_, err := tx.Exec(terminalFixture.Context, `
 					INSERT INTO cognition_terminal_seals (
 						episode_id,job_id,generation,step_id,final_revision,final_revision_sha256,
 						outcome,completion_json,completion_sha256,obligation_graph_sha256,
 						ledger_version,working_set_version,trace_json,trace_sha256,
 						authority_kind,sealed_attempt,sealed_worker_id,lifecycle_operation_id
 					) SELECT $1,$2,$3,$4,1,$5,'failed',$6,encode(digest($6,'sha256'),'hex'),$7,
-					         ledgers.version,sets.version,$11,encode(digest($11,'sha256'),'hex'),
+					         ledgers.version,sets.version,$11,$12,
 					         'worker',$8,$9,NULL
 					  FROM task_ledgers ledgers,working_sets sets
 					 WHERE ledgers.job_id=$2 AND sets.id=$10
-				`, fixture.EpisodeID, fixture.Authority.JobID, fixture.Authority.Generation,
-				fixture.Authority.StepID, fixture.Start.Transition.Current.SHA256, oversized,
-				graphSHA, fixture.Authority.Attempt, fixture.Authority.WorkerID,
-				fixture.WorkingSet, trace)
+				`, terminalFixture.EpisodeID, terminalFixture.Authority.JobID,
+				terminalFixture.Authority.Generation, terminalFixture.Authority.StepID,
+				terminalFixture.Start.Transition.Current.SHA256, oversized, graphSHA,
+				terminalFixture.Authority.Attempt, terminalFixture.Authority.WorkerID,
+				terminalFixture.WorkingSet, trace, traceSHA)
 			return err
 		})
 	})
+}
+
+func cognitionByteLimitTrace(
+	t *testing.T,
+	fixture taskGenerationRetirementFixture,
+	tx pgx.Tx,
+) (string, string) {
+	t.Helper()
+	header, err := loadTaskLedgerHeaderTx(
+		fixture.Context, tx, fixture.Authority.JobID, false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episode, found, err := loadCognitionEpisodeTx(
+		fixture.Context, tx, fixture.EpisodeID, false,
+	)
+	if err != nil || !found {
+		t.Fatalf("load cognition byte-limit episode: found=%t error=%v", found, err)
+	}
+	graph, found, err := loadCurrentCognitionObligationGraphTx(
+		fixture.Context, tx, fixture.EpisodeID, false,
+	)
+	if err != nil || !found {
+		t.Fatalf("load cognition byte-limit graph: found=%t error=%v", found, err)
+	}
+	set, err := loadWorkingSetSnapshotTx(
+		fixture.Context, tx, header, fixture.Authority.Generation, false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, digest, err := buildCognitionTraceAuthorityTx(
+		fixture.Context, tx, episode, graph, header.Version, set.Version,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw), digest
 }
 
 func insertUnsealedCognitionByteLimitTransition(

@@ -30,6 +30,40 @@ func TestPolicyTerminalizesEveryDispatchedOversizedProviderReturn(t *testing.T) 
 				)
 			},
 		},
+		{
+			name: "identity operation count",
+			mutate: func(generation *llm.PreparedGeneration) {
+				generation.ProviderIdentityEvidence.Operations = make(
+					[]llm.ProviderIdentityOperationEvidence, 10_000,
+				)
+			},
+		},
+		{
+			name: "identity request component",
+			mutate: func(generation *llm.PreparedGeneration) {
+				generation.ProviderIdentityEvidence.Operations[0].Request = bytes.Repeat(
+					[]byte{'r'}, llm.MaxProviderIdentityComponentBytes+1,
+				)
+			},
+		},
+		{
+			name: "identity response component",
+			mutate: func(generation *llm.PreparedGeneration) {
+				generation.ProviderIdentityEvidence.Operations[0].ResponseCapture = bytes.Repeat(
+					[]byte{'s'}, llm.MaxProviderIdentityComponentBytes+2,
+				)
+			},
+		},
+		{
+			name: "identity aggregate",
+			mutate: func(generation *llm.PreparedGeneration) {
+				shared := bytes.Repeat([]byte{'a'}, 3*1024*1024)
+				for index := range generation.ProviderIdentityEvidence.Operations {
+					generation.ProviderIdentityEvidence.Operations[index].Request = shared
+					generation.ProviderIdentityEvidence.Operations[index].ResponseCapture = shared
+				}
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			projection := policyTestProjection(t, "oversized dispatched provider return")
@@ -46,13 +80,13 @@ func TestPolicyTerminalizesEveryDispatchedOversizedProviderReturn(t *testing.T) 
 			}
 			journal := &policyTestCallJournal{}
 			policy, err := New(
-				client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal,
+				client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
 			outcome, decideErr := policy.Decide(context.Background(), snapshot)
-			if !outcome.ProviderRequestDispatched || !errors.Is(decideErr, ErrInvalidEvidence) ||
+			if !outcome.PolicyCallConsumed || !errors.Is(decideErr, ErrInvalidEvidence) ||
 				len(journal.results) != 1 ||
 				journal.results[0].FailureCode != CallFailureProviderEvidence ||
 				len(journal.providerEvidence) != 1 || journal.providerEvidence[0].Validate() != nil {
@@ -62,7 +96,7 @@ func TestPolicyTerminalizesEveryDispatchedOversizedProviderReturn(t *testing.T) 
 			attempt, result := journal.attempts[0], journal.results[0]
 			replayClient := &policyTestClient{err: errors.New("provider replay is forbidden")}
 			replay, err := New(
-				replayClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection),
+				replayClient, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection),
 				&policyTestCallJournal{reservation: &CallReservation{
 					Attempt: attempt, ExistingResult: &result,
 				}},

@@ -78,7 +78,7 @@ func loadCognitionWorkingSetEventsTx(
 	snapshot workingset.Snapshot,
 	finalVersion uint64,
 ) ([]workingset.Event, []time.Time, error) {
-	if finalVersion > maxCognitionTraceRecords {
+	if finalVersion > MaxCognitionTraceRecords {
 		return nil, nil, fmt.Errorf("%w: sealed Working Set event stream exceeds hard cap", ErrCognitionConflict)
 	}
 	rows, err := tx.Query(ctx, `

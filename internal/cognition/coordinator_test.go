@@ -90,7 +90,7 @@ func TestCoordinatorProducesOneValidatedActionWithoutEnvironmentMutation(t *test
 		refs := received.EvidenceRefs()
 		refs[0].SHA256 = strings.Repeat("b", 64)
 		return PolicyOutcome{
-			Decision: testPolicyDecision(received, evidence), ProviderRequestDispatched: true,
+			Decision: testPolicyDecision(received, evidence), PolicyCallConsumed: true,
 		}, nil
 	})
 	coordinator, err := NewCoordinator(policy)
@@ -163,7 +163,7 @@ func TestCoordinatorRejectsPolicyAuthorityAndEvidenceViolations(t *testing.T) {
 			coordinator, err := NewCoordinator(PolicyFunc(func(_ context.Context, received RuntimeSnapshot) (PolicyOutcome, error) {
 				decision := testPolicyDecision(received, evidence)
 				mutate(&decision)
-				return PolicyOutcome{Decision: decision, ProviderRequestDispatched: true}, nil
+				return PolicyOutcome{Decision: decision, PolicyCallConsumed: true}, nil
 			}))
 			if err != nil {
 				t.Fatal(err)
@@ -201,7 +201,7 @@ func TestCoordinatorFailsLoudlyWhenPolicyIsUnavailableOrFails(t *testing.T) {
 	}
 	policyCause := errors.New("policy unavailable")
 	coordinator, err := NewCoordinator(PolicyFunc(func(context.Context, RuntimeSnapshot) (PolicyOutcome, error) {
-		return PolicyOutcome{ProviderRequestDispatched: true}, policyCause
+		return PolicyOutcome{PolicyCallConsumed: true}, policyCause
 	}))
 	if err != nil {
 		t.Fatal(err)

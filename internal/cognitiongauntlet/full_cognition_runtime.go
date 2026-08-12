@@ -11,20 +11,24 @@ import (
 	"github.com/gryph/omnidex/internal/labyrinth"
 	labyrinthhost "github.com/gryph/omnidex/internal/labyrinth/host"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type fullRuntimeComponents struct {
-	repository     *queue.Repository
-	store          *cognitionstore.Store
-	environment    cognition.Environment
-	completion     cognitionruntime.CompletionEvaluator
-	client         llm.Client
-	frozenBrain    cognitionpolicy.AttestedBrain
-	runtime        *cognitionruntime.Runtime
-	brain          cognitionpolicy.AttestedBrain
-	liveStaleProbe *liveStalePortController
+	repository         *queue.Repository
+	store              *cognitionstore.Store
+	environment        cognition.Environment
+	completion         cognitionruntime.CompletionEvaluator
+	client             llm.Client
+	frozenBrain        cognitionpolicy.AttestedBrain
+	frozenFingerprint  BrainFingerprint
+	brainBootstrap     cognitionpolicy.BrainBootstrap
+	providerActivation cognitionpolicy.ProviderProcessActivation
+	runtime            *cognitionruntime.Runtime
+	brain              cognitionpolicy.AttestedBrain
+	liveStaleProbe     *liveStalePortController
 }
 
 func newFullRuntimeComponents(
@@ -36,6 +40,7 @@ func newFullRuntimeComponents(
 	hostStore *labyrinthhost.Store,
 	scenario labyrinth.Scenario,
 	episode cognition.EpisodeRef,
+	authority model.StepAttemptAuthority,
 	surface Surface,
 ) (fullRuntimeComponents, error) {
 	surfaceVersion, err := surface.Version()
@@ -64,7 +69,9 @@ func newFullRuntimeComponents(
 	if err != nil {
 		return fullRuntimeComponents{}, err
 	}
-	return newRuntimeComponents(ctx, pool, client, brain, frozen, environment, environment)
+	return newRuntimeComponents(
+		ctx, pool, client, brain, frozen, episode, authority, environment, environment,
+	)
 }
 
 func newRuntimeComponents(
@@ -73,6 +80,8 @@ func newRuntimeComponents(
 	client llm.Client,
 	brain cognitionpolicy.BrainRef,
 	frozen BrainFingerprint,
+	episode cognition.EpisodeRef,
+	authority model.StepAttemptAuthority,
 	environment cognition.Environment,
 	completion cognitionruntime.CompletionEvaluator,
 ) (fullRuntimeComponents, error) {
@@ -97,17 +106,50 @@ func newRuntimeComponents(
 			"production brain differs from the frozen Rat authority",
 		)
 	}
+	bootstrap, err := attestPersistedRuntimeBrain(
+		ctx, store, client, brain, authority, episode,
+	)
+	if err != nil {
+		return fullRuntimeComponents{}, err
+	}
+	if !sameFrozenBrain(bootstrap.AttestedBrain, frozenBrain) {
+		return fullRuntimeComponents{}, fmt.Errorf(
+			"live provider or host differs from the frozen Rat authority",
+		)
+	}
 	return fullRuntimeComponents{
 		repository: repository, store: store, environment: environment,
 		completion: completion, client: client, frozenBrain: frozenBrain,
+		frozenFingerprint: frozen, brainBootstrap: bootstrap,
 	}, nil
+}
+
+func observeRuntimeProviderActivation(
+	ctx context.Context,
+	components fullRuntimeComponents,
+	episode cognition.EpisodeRef,
+	actor cognition.AttemptRef,
+) (cognitionpolicy.ProviderProcessActivation, error) {
+	if ctx == nil || nilRunDependency(components.client) {
+		return cognitionpolicy.ProviderProcessActivation{}, fmt.Errorf(
+			"cognition provider process observation dependencies are incomplete",
+		)
+	}
+	activation, err := observePersistedRuntimeProviderProcess(
+		ctx, components.store, components.client, components.brainBootstrap,
+		episode, actor,
+	)
+	if err != nil {
+		return cognitionpolicy.ProviderProcessActivation{}, err
+	}
+	return activation, nil
 }
 
 func activateRuntimeComponents(
 	ctx context.Context,
 	components fullRuntimeComponents,
 	episode queue.CognitionEpisode,
-	actor cognition.AttemptRef,
+	activation cognitionpolicy.ProviderProcessActivation,
 ) (fullRuntimeComponents, error) {
 	if ctx == nil || components.repository == nil || components.store == nil ||
 		nilRunDependency(components.client) || nilRunDependency(components.environment) ||
@@ -119,25 +161,17 @@ func activateRuntimeComponents(
 			"stored cognition brain differs from the frozen Rat authority",
 		)
 	}
-	liveHost, err := cognitionpolicy.AttestLocalHostHardware()
-	if err != nil {
-		return fullRuntimeComponents{}, fmt.Errorf("attest cognition runtime host: %w", err)
+	if err := activation.ValidateFor(episode.AttestedBrain); err != nil {
+		return fullRuntimeComponents{}, fmt.Errorf("validate cognition provider process activation: %w", err)
 	}
-	if liveHost != episode.AttestedBrain.Host {
+	if activation.Receipt.EpisodeID != episode.EpisodeID {
 		return fullRuntimeComponents{}, fmt.Errorf(
-			"live host differs from the frozen Rat authority",
+			"cognition provider process activation belongs to another episode",
 		)
 	}
-	observation, err := cognitionpolicy.ObserveProviderProcess(
-		ctx, components.client, episode.AttestedBrain,
-		cognition.EpisodeRef{ID: episode.EpisodeID}, actor,
-		cognitionpolicy.ProviderProcessEpisodeInvocation,
-	)
+	activationAuthority, err := activation.Authority()
 	if err != nil {
-		return fullRuntimeComponents{}, fmt.Errorf("observe cognition provider process: %w", err)
-	}
-	if err := components.store.RecordProviderProcessObservation(ctx, observation); err != nil {
-		return fullRuntimeComponents{}, fmt.Errorf("record cognition provider process observation: %w", err)
+		return fullRuntimeComponents{}, fmt.Errorf("derive cognition provider process activation authority: %w", err)
 	}
 	var journal cognitionpolicy.CallJournal = components.store
 	var environment cognition.Environment = components.environment
@@ -149,7 +183,9 @@ func activateRuntimeComponents(
 		reconciler = liveStaleReconciler{probe: components.liveStaleProbe, base: reconciler}
 		episodes = liveStaleEpisodeJournal{probe: components.liveStaleProbe, base: episodes}
 	}
-	policy, err := cognitionpolicy.New(components.client, episode.AttestedBrain, components.store, journal)
+	policy, err := cognitionpolicy.New(
+		components.client, episode.AttestedBrain, activationAuthority, components.store, journal,
+	)
 	if err != nil {
 		return fullRuntimeComponents{}, err
 	}
@@ -165,6 +201,7 @@ func activateRuntimeComponents(
 	}
 	components.runtime = runtime
 	components.brain = episode.AttestedBrain
+	components.providerActivation = activation
 	return components, nil
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestLabyrinthRelevanceIsDerivedFromPrivateOracleAfterEpisodeSeal(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,11 +102,12 @@ func modelEpisodeWithConsumerProjection(
 	projection.EstimatedTokens = (projection.RenderedBytes + 3) / 4
 	inputBytes := projection.RenderedBytes + 128
 	call := ModelCallTrace{
-		Schema: ModelCallTraceSchemaV2, ProjectionID: projection.ProjectionID,
+		Schema: ModelCallTraceSchemaV4, ProjectionID: projection.ProjectionID,
 		ProjectionSHA256: projection.ProjectionSHA256, Budget: manifest.StationBudget,
 		ResultStatus:                cognitionpolicy.CallResultAccepted,
 		ProviderResponseDisposition: llm.ProviderResponseSucceeded,
-		ProviderRequestDispatched:   true, ProviderDoneReason: "stop", ProviderUsagePresent: true,
+		ProviderRequestDisposition:  llm.ProviderRequestDispatched,
+		ProviderDoneReason:          "stop", ProviderUsagePresent: true,
 		ProviderUsage: llm.ProviderGenerationUsage{
 			PromptEvalCount: int((inputBytes + 3) / 4), EvalCount: 16,
 			TotalDurationNanos: 4, LoadDurationNanos: 1,
@@ -142,6 +143,7 @@ func modelEpisodeWithConsumerProjection(
 	}
 	manifest.Trace = trace
 	manifest.TraceSHA256 = ""
+	manifest.Resources.PolicyCallsConsumed = 1
 	manifest.Resources.ModelCalls = 1
 	manifest.Resources.ModelDecisions = 1
 	manifest.Resources.ContextBytes = inputBytes

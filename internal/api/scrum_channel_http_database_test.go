@@ -7,27 +7,16 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPostgresScrumChannelHTTPReplaySurvivesCardDeletion(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL Scrum channel HTTP tests")
-	}
-	pool, err := pgxpool.New(t.Context(), databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := openIsolatedAPIMigrationPool(t)
 	repository := queue.New(pool)
 	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundle(t)); err != nil {
 		t.Fatal(err)

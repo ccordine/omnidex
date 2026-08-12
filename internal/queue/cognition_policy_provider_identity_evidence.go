@@ -33,43 +33,8 @@ func insertCognitionProviderIdentityEvidenceTx(
 	}) != nil || evidence.Ref != result.ProviderIdentityEvidence {
 		return fmt.Errorf("%w: provider identity evidence differs from terminal call", ErrCognitionConflict)
 	}
-	refJSON, err := exactjson.Canonical(evidence.Ref)
-	if err != nil {
+	if err := insertCognitionProviderIdentityEvidenceBodyTx(ctx, tx, evidence); err != nil {
 		return err
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO cognition_provider_identity_evidence (
-			evidence_id,manifest_sha256,total_bytes,ref_json,ref_sha256
-		) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (evidence_id) DO NOTHING
-	`, evidence.Ref.ID, evidence.Ref.SHA256, evidence.Ref.Bytes,
-		string(refJSON), cognitionPayloadSHA(refJSON)); err != nil {
-		return fmt.Errorf("persist provider identity evidence %q: %w", evidence.Ref.ID, err)
-	}
-	for index, operation := range evidence.Operations {
-		contentEncodingJSON, err := exactjson.Canonical(operation.ContentEncoding)
-		if err != nil {
-			return fmt.Errorf("encode provider identity content encoding %d: %w", index, err)
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO cognition_provider_identity_evidence_operations (
-				evidence_id,operation_index,operation,method,endpoint,request_dispatched,
-				request_sha256,request_bytes,request_body,http_status,disposition,
-				response_complete,content_encoding_json,
-				response_sha256,response_bytes,response_body
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-			ON CONFLICT (evidence_id,operation_index) DO NOTHING
-		`, evidence.Ref.ID, index, operation.Operation, operation.Method, operation.Endpoint,
-			operation.RequestDispatched, operation.RequestSHA256, operation.RequestBytes,
-			operation.Request, operation.HTTPStatus, operation.Disposition,
-			operation.ResponseComplete, string(contentEncodingJSON),
-			operation.ResponseSHA256, operation.ResponseBytes, operation.ResponseCapture); err != nil {
-			return fmt.Errorf("persist provider identity operation %d: %w", index, err)
-		}
-	}
-	persisted, err := loadCognitionProviderIdentityEvidenceTx(ctx, tx, evidence.Ref.ID)
-	if err != nil || !reflect.DeepEqual(persisted, evidence) {
-		return fmt.Errorf("%w: content-addressed provider identity evidence changed: %v",
-			ErrCognitionConflict, err)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO cognition_policy_call_provider_identity_evidence (
@@ -92,7 +57,7 @@ func loadCognitionProviderIdentityEvidenceTx(
 	var refSHA string
 	if err := tx.QueryRow(ctx, `
 		SELECT ref_json,ref_sha256 FROM cognition_provider_identity_evidence
-		WHERE evidence_id=$1 FOR SHARE
+		WHERE evidence_id=$1
 	`, evidenceID).Scan(&refJSON, &refSHA); err != nil {
 		return llm.ProviderIdentityEvidence{}, err
 	}
@@ -105,7 +70,7 @@ func loadCognitionProviderIdentityEvidenceTx(
 		return llm.ProviderIdentityEvidence{}, fmt.Errorf("persisted provider identity ref changed")
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT operation,method,endpoint,request_dispatched,request_sha256,request_bytes,
+		SELECT operation,method,endpoint,request_disposition,request_sha256,request_bytes,
 		       request_body,http_status,disposition,response_complete,response_sha256,
 		       content_encoding_json,
 		       response_bytes,response_body
@@ -121,7 +86,7 @@ func loadCognitionProviderIdentityEvidenceTx(
 		var operation llm.ProviderIdentityOperationEvidence
 		var contentEncodingJSON []byte
 		if err := rows.Scan(&operation.Operation, &operation.Method, &operation.Endpoint,
-			&operation.RequestDispatched, &operation.RequestSHA256, &operation.RequestBytes,
+			&operation.RequestDisposition, &operation.RequestSHA256, &operation.RequestBytes,
 			&operation.Request, &operation.HTTPStatus, &operation.Disposition,
 			&operation.ResponseComplete, &operation.ResponseSHA256,
 			&contentEncodingJSON, &operation.ResponseBytes,

@@ -135,7 +135,8 @@ func prepareTaskGenerationRetirementFixture(
 		t.Fatal(err)
 	}
 	start := CognitionEpisodeStart{
-		Authority: claim.Authority, EpisodeID: episodeID, AttestedBrain: cognitionTestBrain(), Scenario: scenario,
+		Authority: claim.Authority, EpisodeID: episodeID,
+		BrainBootstrap: freshReplayBrainBootstrap(t, cognitionTestBrainBootstrap()), Scenario: scenario,
 		Goal: goal, Completion: completion, ActionCatalog: catalog, Budget: cognitionTestRuntimeBudget(),
 		Root: cognition.ObligationSpec{
 			ID: nodeID, Desired: goal, DependsOn: []cognition.ObligationID{},
@@ -145,6 +146,9 @@ func prepareTaskGenerationRetirementFixture(
 			Current: revision, Observations: []cognition.Observation{}, Effects: []cognition.Effect{},
 		},
 	}
+	start.ProviderProcessActivation = cognitionGuardProviderProcessActivationFor(
+		t, ctx, episodeID, claim.Authority, start.BrainBootstrap.AttestedBrain,
+	)
 	return taskGenerationRetirementFixture{
 		Repository: repository, Pool: pool, Context: ctx, Job: job,
 		Authority: claim.Authority, EpisodeID: episodeID, NodeID: taskstate.NodeID(nodeID),

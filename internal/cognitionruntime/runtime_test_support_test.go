@@ -70,7 +70,7 @@ type runtimeHarness struct {
 	public   string
 
 	policyCalls, completionCalls, environmentCalls  int
-	policyProviderRequestDispatched                 bool
+	policyCallConsumed                              bool
 	forceSatisfied, forceUnsatisfied, nextTerminal  bool
 	useModelEvidenceOverride                        bool
 	modelEvidenceOverride, completionResultEvidence []cognition.EvidenceRef
@@ -100,7 +100,7 @@ func newRuntimeHarness(t *testing.T) *runtimeHarness {
 		fixture: fixture, graph: fixture.graph.Clone(), version: 1,
 		journal: fixture.revision, env: fixture.revision,
 		receipts: make(map[cognition.ActionID]cognition.Transition), remainingCalls: 8,
-		policyProviderRequestDispatched: true,
+		policyCallConsumed: true,
 	}
 }
 
@@ -173,16 +173,16 @@ func (h *runtimeHarness) Decide(_ context.Context, snapshot cognition.RuntimeSna
 	h.order = append(h.order, "policy")
 	h.policyCalls++
 	if h.policyError != nil {
-		return cognition.PolicyOutcome{ProviderRequestDispatched: h.policyProviderRequestDispatched}, h.policyError
+		return cognition.PolicyOutcome{PolicyCallConsumed: h.policyCallConsumed}, h.policyError
 	}
 	request, err := cognition.NewActionRequest("operate", []cognition.ActionArgument{{Name: "target", Value: "unit"}})
 	if err != nil {
-		return cognition.PolicyOutcome{ProviderRequestDispatched: h.policyProviderRequestDispatched}, err
+		return cognition.PolicyOutcome{PolicyCallConsumed: h.policyCallConsumed}, err
 	}
 	return cognition.PolicyOutcome{Decision: cognition.CognitionDecision{
 		ObligationID: snapshot.CurrentObligation().ID, Action: request,
 		EvidenceRefs: []cognition.EvidenceRef{h.fixture.evidence}, ExpectedEffect: "The target changes state.",
-	}, ProviderRequestDispatched: h.policyProviderRequestDispatched}, nil
+	}, PolicyCallConsumed: h.policyCallConsumed}, nil
 }
 
 func (h *runtimeHarness) Reconcile(

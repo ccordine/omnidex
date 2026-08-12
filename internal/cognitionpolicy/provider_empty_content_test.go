@@ -25,7 +25,7 @@ func TestPolicyPersistsWhitespaceOnlyProviderOutputAndReplaysWithoutProvider(t *
 	}
 	journal := &policyTestCallJournal{}
 	policy, err := New(
-		client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal,
+		client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestPolicyPersistsWhitespaceOnlyProviderOutputAndReplaysWithoutProvider(t *
 	result := journal.results[0]
 	replayClient := &policyTestClient{err: errors.New("provider must not be called")}
 	replay, err := New(
-		replayClient, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection),
+		replayClient, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection),
 		&policyTestCallJournal{reservation: &CallReservation{
 			Attempt: journal.attempts[0], ExistingResult: &result,
 		}},

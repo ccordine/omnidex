@@ -2,10 +2,10 @@ package cognitiongauntlet
 
 import "github.com/gryph/omnidex/internal/labyrinth"
 
-func InitialMicrogauntletsV1() []MicrogauntletSpec {
+func InitialMicrogauntletsV2() []MicrogauntletSpec {
 	return []MicrogauntletSpec{
 		microSpec("retrieve-v1", labyrinth.SuiteRetrieve, 11_001, labyrinth.Difficulty{
-			WorldSize: 40, RelevantArtifacts: 3, SolutionDepth: 4,
+			WorldSize: labyrinth.MinGeneratedWorldSize, RelevantArtifacts: 3, SolutionDepth: 4,
 			BranchingFactor: 2, DependencyCount: 2,
 		}),
 		microSpec("recall-v1", labyrinth.SuiteRecall, 12_001, labyrinth.Difficulty{
@@ -34,7 +34,7 @@ func microSpec(
 	difficulty labyrinth.Difficulty,
 ) MicrogauntletSpec {
 	return MicrogauntletSpec{
-		CaseID: "micro-" + id, FixtureVersion: InitialMicrogauntletFixtureVersionV1,
+		CaseID: "micro-" + id, FixtureVersion: InitialMicrogauntletFixtureVersionV2,
 		Generator: labyrinth.GeneratorConfig{
 			Suite: suite, Seed: seed, Difficulty: difficulty,
 			GeneratorVersion: labyrinth.GeneratorVersionV1,

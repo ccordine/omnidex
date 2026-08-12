@@ -15,7 +15,7 @@ import (
 // proves real scale execution wiring and is never model-competence evidence.
 func TestPostgresFullCognitionScaleExecutesGeneratedHundredFoldWorlds(t *testing.T) {
 	ctx, pool, repository, hostStore := openFullCognitionDatabase(t)
-	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	base, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}

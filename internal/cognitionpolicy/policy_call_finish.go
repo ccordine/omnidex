@@ -40,17 +40,18 @@ func (policy *Policy) finishUntrustedCall(
 	if err != nil {
 		return errors.Join(primary, err)
 	}
-	identity := generation.ProviderIdentityEvidence.Clone()
+	identity := llm.ProviderIdentityEvidence{}
 	identityRef := llm.ProviderIdentityEvidenceRef{}
-	if identity.ValidateRequests(llm.ProviderIdentitySelection{
+	rawIdentity := generation.ProviderIdentityEvidence
+	if rawIdentity.ValidateRequests(llm.ProviderIdentitySelection{
 		Model: attempt.Brain.Model, NativeContextLimit: attempt.Brain.NativeContextLimit,
-	}) == nil && (!generation.ProviderRequestDispatched || identity.Successful()) {
+	}) == nil &&
+		(generation.ProviderRequestDisposition == llm.ProviderRequestNotDispatched || rawIdentity.Successful()) {
+		identity = rawIdentity.Clone()
 		identityRef = identity.Ref
-	} else {
-		identity = llm.ProviderIdentityEvidence{}
 	}
 	result := untrustedProviderFailedCallResult(
-		attempt, generation.ProviderRequestDispatched, identityRef,
+		attempt, generation.ProviderRequestDisposition, identityRef,
 		providerEvidence.Ref, capture.Ref, code, primary,
 	)
 	return policy.finishCallEvidence(ctx, attempt, result, CallEvidence{
@@ -95,7 +96,7 @@ func providerResponseCaptureForGeneration(
 	callID string,
 	generation llm.PreparedGeneration,
 ) (ProviderResponseCaptureEvidence, error) {
-	if !generation.ProviderRequestDispatched ||
+	if generation.ProviderRequestDisposition != llm.ProviderRequestDispatched ||
 		(generation.ProviderResponseDisposition == llm.ProviderResponseTransportError &&
 			len(generation.ProviderResponseCapture) == 0) {
 		return ProviderResponseCaptureEvidence{}, nil

@@ -38,6 +38,7 @@ func TestReleaseBuilderDefaultsToCharmeleon(t *testing.T) {
 		`internal/version.SourceSHA256`, `internal/version.MigrationsSHA256`,
 		`cognition-gauntlet:./cmd/cognition-gauntlet`, `migrations/SHA256SUMS`,
 		`release builds require a clean tracked and untracked worktree`,
+		`validate_tracked_release_sources "$REPO_ROOT"`,
 		`validate_dist_dir`, `create_dist_dir`, `distribution path enters tracked source`,
 		`cd "$target_source"`, `verify_source_stage`, `assert_repository_matches_snapshot`,
 		`publish_staged_release`,
@@ -59,6 +60,10 @@ func TestReleaseBuilderDefaultsToCharmeleon(t *testing.T) {
 	if strings.Index(script, `release builds require a clean tracked and untracked worktree`) >
 		strings.LastIndex(script, "\n  create_dist_dir\n") {
 		t.Fatal("release builder creates its distribution directory before proving a clean worktree")
+	}
+	if strings.Index(string(raw), `validate_tracked_release_sources "$REPO_ROOT"`) >
+		strings.Index(string(raw), "\n  create_dist_dir\n") {
+		t.Fatal("release builder creates its distribution directory before rejecting tracked generated artifacts")
 	}
 	for _, forbidden := range []string{`VERSION="v0.4.0"`, `CODENAME="Charmander"`} {
 		if strings.Contains(script, forbidden) {

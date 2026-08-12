@@ -33,7 +33,7 @@ func TestPolicyStrictlyRejectsUnknownCompletionAndUnboundEvidence(t *testing.T) 
 			t.Parallel()
 			client := &policyTestClient{response: testCase.response}
 			journal := &policyTestCallJournal{}
-			policy, err := New(client, policyTestAttestedBrain(), newPolicyTestProjectionLoader(projection), journal)
+			policy, err := New(client, policyTestAttestedBrain(), policyTestActivation(), newPolicyTestProjectionLoader(projection), journal)
 			if err != nil {
 				t.Fatal(err)
 			}

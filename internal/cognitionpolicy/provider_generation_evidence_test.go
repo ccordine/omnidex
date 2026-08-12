@@ -2,9 +2,49 @@ package cognitionpolicy
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestProviderGenerationEvidenceOwnsZeroByteIdentityComponents(t *testing.T) {
+	projection := policyTestProjection(t, "zero byte identity evidence")
+	snapshot, _ := policyTestSnapshot(t, projection)
+	rendered, err := Render(snapshot, projection, policyTestBrain())
+	if err != nil {
+		t.Fatal(err)
+	}
+	brain := policyTestAttestedBrain()
+	attempt, err := newCallAttempt(
+		snapshot, brain, policyTestProviderProcessActivation(snapshot, brain), rendered,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation := policyTestPreparedGeneration(attempt, `{}`)
+	for index := range generation.ProviderIdentityEvidence.Operations {
+		operation := &generation.ProviderIdentityEvidence.Operations[index]
+		if len(operation.Request) == 0 {
+			operation.Request = []byte{}
+		}
+		if len(operation.ResponseCapture) == 0 {
+			operation.ResponseCapture = []byte{}
+		}
+	}
+	evidence, err := NewProviderGenerationEvidence(attempt.ID, generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, _, _, complete, err := inspectProviderGenerationOutcomeEvidence(evidence.Generation)
+	if err != nil || !complete {
+		t.Fatalf("inspect complete=%t error=%v", complete, err)
+	}
+	if !reflect.DeepEqual(
+		decoded.ProviderIdentityEvidence, generation.ProviderIdentityEvidence,
+	) {
+		t.Fatal("zero-byte identity request or response changed across the opaque wire")
+	}
+}
 
 func TestProviderGenerationEvidencePreservesMaximumBoundedResponse(t *testing.T) {
 	projection := policyTestProjection(t, "maximum provider evidence")
@@ -13,7 +53,10 @@ func TestProviderGenerationEvidencePreservesMaximumBoundedResponse(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), rendered)
+	brain := policyTestAttestedBrain()
+	attempt, err := newCallAttempt(
+		snapshot, brain, policyTestProviderProcessActivation(snapshot, brain), rendered,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +86,10 @@ func TestProviderGenerationEvidencePreservesInvalidUTF8AndRejectsNoncanonicalWir
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), rendered)
+	brain := policyTestAttestedBrain()
+	attempt, err := newCallAttempt(
+		snapshot, brain, policyTestProviderProcessActivation(snapshot, brain), rendered,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +118,10 @@ func TestProviderGenerationEvidenceBoundsEveryUntrustedContentEncodingField(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, err := newCallAttempt(snapshot, policyTestAttestedBrain(), rendered)
+	brain := policyTestAttestedBrain()
+	attempt, err := newCallAttempt(
+		snapshot, brain, policyTestProviderProcessActivation(snapshot, brain), rendered,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

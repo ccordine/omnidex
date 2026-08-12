@@ -41,32 +41,33 @@ const (
 )
 
 type CallAttempt struct {
-	Schema                        string                          `json:"schema"`
-	ID                            string                          `json:"id"`
-	Actor                         cognition.AttemptRef            `json:"actor"`
-	SnapshotSHA256                string                          `json:"snapshot_sha256"`
-	ExpectedRevision              cognition.WorldRevision         `json:"expected_revision"`
-	ObligationID                  cognition.ObligationID          `json:"obligation_id"`
-	RuntimeBudget                 cognition.RuntimeBudget         `json:"runtime_budget"`
-	ContextProjection             cognition.ContextProjectionRef  `json:"context_projection"`
-	Brain                         BrainRef                        `json:"brain"`
-	ProviderAttestation           llm.ProviderIdentityAttestation `json:"provider_attestation"`
-	HostHardwareAttestation       HostHardwareAttestation         `json:"host_hardware_attestation"`
-	EnvelopeRendererVersion       string                          `json:"envelope_renderer_version"`
-	EnvelopeTokenEstimator        string                          `json:"envelope_token_estimator"`
-	EnvelopeEstimatedTokens       int                             `json:"envelope_estimated_tokens"`
-	EnvelopeSHA256                string                          `json:"envelope_sha256"`
-	EnvelopeBytes                 int                             `json:"envelope_bytes"`
-	Envelope                      string                          `json:"envelope"`
-	PromptHint                    string                          `json:"prompt_hint"`
-	PromptHintSHA256              string                          `json:"prompt_hint_sha256"`
-	PromptHintBytes               int                             `json:"prompt_hint_bytes"`
-	ModelVisibleInputSHA256       string                          `json:"model_visible_input_sha256"`
-	ModelVisibleInputBytes        int                             `json:"model_visible_input_bytes"`
-	ModelVisibleEstimatedTokens   int                             `json:"model_visible_estimated_tokens"`
-	ModelInputTokenUpperBound     int                             `json:"model_input_token_upper_bound"`
-	ResponseContractSHA256        string                          `json:"response_contract_sha256"`
-	ExpectedProviderRequestSHA256 string                          `json:"expected_provider_request_sha256"`
+	Schema                        string                             `json:"schema"`
+	ID                            string                             `json:"id"`
+	Actor                         cognition.AttemptRef               `json:"actor"`
+	SnapshotSHA256                string                             `json:"snapshot_sha256"`
+	ExpectedRevision              cognition.WorldRevision            `json:"expected_revision"`
+	ObligationID                  cognition.ObligationID             `json:"obligation_id"`
+	RuntimeBudget                 cognition.RuntimeBudget            `json:"runtime_budget"`
+	ContextProjection             cognition.ContextProjectionRef     `json:"context_projection"`
+	Brain                         BrainRef                           `json:"brain"`
+	ProviderAttestation           llm.ProviderIdentityAttestation    `json:"provider_attestation"`
+	HostHardwareAttestation       HostHardwareAttestation            `json:"host_hardware_attestation"`
+	ProviderProcessActivation     ProviderProcessActivationAuthority `json:"provider_process_activation"`
+	EnvelopeRendererVersion       string                             `json:"envelope_renderer_version"`
+	EnvelopeTokenEstimator        string                             `json:"envelope_token_estimator"`
+	EnvelopeEstimatedTokens       int                                `json:"envelope_estimated_tokens"`
+	EnvelopeSHA256                string                             `json:"envelope_sha256"`
+	EnvelopeBytes                 int                                `json:"envelope_bytes"`
+	Envelope                      string                             `json:"envelope"`
+	PromptHint                    string                             `json:"prompt_hint"`
+	PromptHintSHA256              string                             `json:"prompt_hint_sha256"`
+	PromptHintBytes               int                                `json:"prompt_hint_bytes"`
+	ModelVisibleInputSHA256       string                             `json:"model_visible_input_sha256"`
+	ModelVisibleInputBytes        int                                `json:"model_visible_input_bytes"`
+	ModelVisibleEstimatedTokens   int                                `json:"model_visible_estimated_tokens"`
+	ModelInputTokenUpperBound     int                                `json:"model_input_token_upper_bound"`
+	ResponseContractSHA256        string                             `json:"response_contract_sha256"`
+	ExpectedProviderRequestSHA256 string                             `json:"expected_provider_request_sha256"`
 }
 
 type CallResult struct {
@@ -77,7 +78,7 @@ type CallResult struct {
 	ProviderAttestation           llm.ProviderIdentityAttestation     `json:"provider_attestation"`
 	ProviderObservation           llm.ProviderIdentityObservation     `json:"provider_observation"`
 	ProviderIdentityEvidence      llm.ProviderIdentityEvidenceRef     `json:"provider_identity_evidence"`
-	ProviderRequestDispatched     bool                                `json:"provider_request_dispatched"`
+	ProviderRequestDisposition    llm.ProviderRequestDisposition      `json:"provider_request_disposition"`
 	ProviderRequestSHA256         string                              `json:"provider_request_sha256,omitempty"`
 	ProviderHTTPStatus            int                                 `json:"provider_http_status"`
 	ProviderResponseDisposition   llm.ProviderResponseDisposition     `json:"provider_response_disposition,omitempty"`
@@ -152,6 +153,7 @@ func (result CallResult) Clone() CallResult { return result }
 func newCallAttempt(
 	snapshot cognition.RuntimeSnapshot,
 	brain AttestedBrain,
+	activation ProviderProcessActivationAuthority,
 	envelope RenderedEnvelope,
 ) (CallAttempt, error) {
 	contractSHA, err := responseContractSHA(snapshot.ActionCatalog())
@@ -176,9 +178,10 @@ func newCallAttempt(
 		SnapshotSHA256: snapshot.SHA256(), ExpectedRevision: snapshot.CurrentRevision(),
 		ObligationID: snapshot.CurrentObligation().ID, RuntimeBudget: snapshot.Budget(),
 		ContextProjection: snapshot.ContextProjection(), Brain: brain.Ref,
-		ProviderAttestation:     brain.Attestation,
-		HostHardwareAttestation: brain.Host,
-		EnvelopeRendererVersion: envelope.Version, EnvelopeTokenEstimator: envelope.TokenEstimator,
+		ProviderAttestation:       brain.Attestation,
+		HostHardwareAttestation:   brain.Host,
+		ProviderProcessActivation: activation,
+		EnvelopeRendererVersion:   envelope.Version, EnvelopeTokenEstimator: envelope.TokenEstimator,
 		EnvelopeEstimatedTokens: envelope.EstimatedTokens, EnvelopeSHA256: envelope.SHA256,
 		EnvelopeBytes: envelope.Bytes, Envelope: envelope.JSON,
 		PromptHint: promptHint, PromptHintSHA256: policySHA256(promptHint),

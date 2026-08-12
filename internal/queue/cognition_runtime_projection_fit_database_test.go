@@ -9,7 +9,8 @@ func TestPostgresRequiredEnvelopeOverflowPersistsNoProjectionOrSnapshot(t *testi
 	repository, pool, ctx := replanTestRepository(t)
 	fixture := prepareTaskGenerationRetirementFixture(t, repository, pool, ctx, "required-envelope-overflow")
 	fixture.Start.Budget.MaxInputBytes = 1
-	fixture.Start.Budget.MaxInputTokens = 1
+	fixture.Start.Budget.MaxInputTokens = 1 +
+		fixture.Start.BrainBootstrap.AttestedBrain.Ref.Sampling.InputSpecialTokenReserve
 	if _, err := repository.StartCognitionEpisode(ctx, fixture.Start, cognitionTestFactAuthority()); err != nil {
 		t.Fatal(err)
 	}

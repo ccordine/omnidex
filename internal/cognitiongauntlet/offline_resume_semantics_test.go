@@ -6,7 +6,7 @@ import (
 )
 
 func TestResumeEpisodeSemanticsIgnoreAttemptActorsButBindActions(t *testing.T) {
-	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV1()[4])
+	fixture, err := GenerateMicrogauntlet(InitialMicrogauntletsV2()[4])
 	if err != nil {
 		t.Fatal(err)
 	}

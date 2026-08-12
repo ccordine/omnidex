@@ -83,7 +83,7 @@ func matrixFixedAuthority(t *testing.T) OfflineMatrixFixedAuthority {
 	t.Helper()
 	generation := mustRatGeneration(t)
 	budget, err := NewExecutableRunBudgetV2(
-		InitialMicrogauntletsV1()[0].Budget, generation.Fixed.Brain.Sampling,
+		InitialMicrogauntletsV2()[0].Budget, generation.Fixed.Brain.Sampling,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +95,9 @@ func matrixFixedAuthority(t *testing.T) OfflineMatrixFixedAuthority {
 	}
 	return OfflineMatrixFixedAuthority{
 		Budget: budget, RatGeneration: generation,
+		PreparedBrainEvidence: testPreparedBrainEvidenceAuthority(
+			t, generation.Fixed.Brain, t.TempDir(),
+		),
 		RuntimeFingerprint: fingerprint, InferenceTimeoutSeconds: 60,
 		OmnidexCommit: strings.Repeat("d", 40), LedgerSchemaVersion: "ledger.v1",
 		WorkingSetPolicyVersion: "working-set.v1", ProjectionPolicyVersion: "projection.v1",

@@ -19,7 +19,7 @@ func TestPostgresRepositoryMutationWorkflowRejectsFailedStagedProofBeforeMutatio
 	if os.Getenv("OMNIDEX_REQUIRE_BWRAP_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_REQUIRE_BWRAP_INTEGRATION=1 for the real failed staged proof")
 	}
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
+	ctx, repository, pool := openRepositoryCognitionDatabase(t)
 	root := repositoryMutationWorkflowRoot(t)
 	project, err := repository.CreateProject(
 		ctx, fmt.Sprintf("mutation-workflow-failure-%d", time.Now().UnixNano()), root, "", "", nil,

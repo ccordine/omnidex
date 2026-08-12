@@ -123,13 +123,21 @@ func exactCognitionCallReservation(
 	attempt cognitionpolicy.CallAttempt,
 	persisted cognitionPolicyCallRecord,
 ) (cognitionpolicy.CallReservation, error) {
-	_, attemptSHA, err := cognitionJSON(attempt)
+	attemptJSON, err := exactjson.Canonical(attempt)
 	if err != nil {
 		return cognitionpolicy.CallReservation{}, err
 	}
-	if attemptSHA != persisted.AttemptSHA256 || !reflect.DeepEqual(attempt, persisted.Attempt) {
+	attemptSHA := cognitionPayloadSHA(attemptJSON)
+	if attemptSHA != persisted.AttemptSHA256 {
 		return cognitionpolicy.CallReservation{}, fmt.Errorf(
-			"%w: cognition policy call replay changed the exact attempt", ErrCognitionConflict,
+			"%w: cognition policy call replay changed attempt hash %s, persisted %s",
+			ErrCognitionConflict, attemptSHA, persisted.AttemptSHA256,
+		)
+	}
+	if !reflect.DeepEqual(attempt, persisted.Attempt) {
+		return cognitionpolicy.CallReservation{}, fmt.Errorf(
+			"%w: cognition policy call replay changed typed attempt %q",
+			ErrCognitionConflict, attempt.ID,
 		)
 	}
 	if persisted.Status == "abandoned" {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 const maxOfflineChildOutputBytes = 64 * 1024
@@ -53,12 +54,16 @@ func newInferenceProcessConfigForExecution(
 	privateOracleCredential string,
 ) inferenceProcessConfig {
 	process := inferenceProcessConfig{
-		Schema:      inferenceProcessConfigSchemaV1,
+		Schema:      inferenceProcessConfigSchemaV3,
 		DatabaseURL: database.inferenceURL, DatabaseSchema: database.schema,
 		EnvironmentURL: host.baseURL, EnvironmentToken: host.token,
 		OllamaEndpoint: authority.OllamaEndpoint, TimeoutSeconds: authority.InferenceTimeoutSeconds,
-		PublicBundlePath: paths.PublicBundle, EpisodePath: paths.Episode,
-		Attempt: database.attempt, ExecutableSHA256: executableSHA256,
+		PublicBundlePath:       paths.PublicBundle,
+		PublicOutputDirectory:  filepath.Dir(paths.PublicBundle),
+		PrivateOutputDirectory: filepath.Dir(paths.PrivateOracle),
+		EpisodePath:            paths.Episode,
+		EvidencePath:           paths.Evidence,
+		Attempt:                database.attempt, ExecutableSHA256: executableSHA256,
 		SourceSHA256:            authority.RatGeneration.Runtime.SourceSHA256,
 		OmnidexCommit:           authority.OmnidexCommit,
 		LedgerSchemaVersion:     authority.LedgerSchemaVersion,

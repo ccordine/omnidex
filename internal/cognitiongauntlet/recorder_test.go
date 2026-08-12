@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/taskstate"
@@ -34,10 +35,12 @@ func TestEpisodeRecorderOwnsSequenceAndSealsOnce(t *testing.T) {
 		}
 	}
 	seal, err := recorder.Seal(
-		filepath.Join(t.TempDir(), "episode.json"), revision,
+		filepath.Join(t.TempDir(), "episode.json"),
+		time.Unix(1_700_000_000, 0).UTC(), time.Unix(1_700_000_001, 0).UTC(), revision,
 		Outcome{Terminal: true, GoalSatisfied: true, PublicOutcome: "complete"},
 		Resources{
-			ModelCalls: 1, ModelDecisions: 1, InputTokens: 32, OutputTokens: 16,
+			PolicyCallsConsumed: 1, ModelCalls: 1, ModelDecisions: 1,
+			InputTokens: 32, OutputTokens: 16,
 			ContextBytes: 128, OutputBytes: 64, PeakContextBytes: 128,
 			ProviderTotalNanoseconds: 4, ProviderLoadNanoseconds: 1,
 			ProviderPromptEvalNanoseconds: 1, ProviderEvalNanoseconds: 1,
@@ -67,7 +70,7 @@ func validRecorderTemplate(t *testing.T) EpisodeManifest {
 	t.Helper()
 	generation := mustRatGeneration(t)
 	return EpisodeManifest{
-		Schema:    EpisodeManifestSchemaV1,
+		Schema:    EpisodeManifestSchemaV2,
 		EpisodeID: cognition.EpisodeID("episode-" + strings.Repeat("a", 64)),
 		Scenario: cognition.ScenarioRef{
 			ID:     cognition.ScenarioID("scenario-" + strings.Repeat("b", 64)),

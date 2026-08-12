@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 )
 
 const maxProviderGenerationMetadataCaptureBytes = 4096
@@ -18,6 +19,20 @@ type providerGenerationWireBytes struct {
 	Capture        []byte `json:"capture"`
 }
 
+func newProviderGenerationWireString(value string, limit int) providerGenerationWireBytes {
+	hash := sha256.New()
+	_, _ = io.WriteString(hash, value)
+	captureBytes := len(value)
+	complete := captureBytes <= limit
+	if !complete {
+		captureBytes = limit + 1
+	}
+	return providerGenerationWireBytes{
+		OriginalBytes: len(value), OriginalSHA256: hex.EncodeToString(hash.Sum(nil)),
+		Complete: complete, Capture: []byte(value[:captureBytes]),
+	}
+}
+
 func newProviderGenerationWireBytes(value []byte, limit int) providerGenerationWireBytes {
 	digest := sha256.Sum256(value)
 	captureBytes := len(value)
@@ -27,7 +42,7 @@ func newProviderGenerationWireBytes(value []byte, limit int) providerGenerationW
 	}
 	return providerGenerationWireBytes{
 		OriginalBytes: len(value), OriginalSHA256: hex.EncodeToString(digest[:]),
-		Complete: complete, Capture: append([]byte(nil), value[:captureBytes]...),
+		Complete: complete, Capture: append([]byte{}, value[:captureBytes]...),
 	}
 }
 
@@ -55,5 +70,5 @@ func (value providerGenerationWireBytes) exact(limit int) ([]byte, bool, error) 
 	if !value.Complete {
 		return nil, false, nil
 	}
-	return append([]byte(nil), value.Capture...), true, nil
+	return append([]byte{}, value.Capture...), true, nil
 }

@@ -1,13 +1,16 @@
 package queue
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gryph/omnidex/internal/cognition"
 	"github.com/gryph/omnidex/internal/cognitionpolicy"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestPostgresProviderProcessObservationsSealThenAppendAuditChain(t *testing.T) {
@@ -30,8 +33,8 @@ func TestPostgresProviderProcessObservationsSealThenAppendAuditChain(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if active.EpisodeBrain != fixture.Start.AttestedBrain || active.TerminalTraceSHA256 != "" ||
-		active.TotalRecords != 1 || len(active.Records) != 1 {
+	if active.EpisodeBrain != fixture.Start.BrainBootstrap.AttestedBrain || active.TerminalTraceSHA256 != "" ||
+		active.TotalRecords != 2 || len(active.Records) != 2 {
 		t.Fatalf("active provider process page=%+v", active)
 	}
 	if _, err := repository.ReadCognitionProviderProcessObservationPage(
@@ -47,6 +50,7 @@ func TestPostgresProviderProcessObservationsSealThenAppendAuditChain(t *testing.
 	if err != nil {
 		t.Fatalf("seal episode with process observation: %v", err)
 	}
+	assertProviderObservationCannotCrossSeal(t, pool, ctx, fixture.EpisodeID, seal.TraceSHA256, pre)
 	sealed, err := repository.ReadCognitionProviderProcessObservationPage(
 		ctx, fixture.EpisodeID, CognitionProviderProcessObservationPageRequest{
 			Scope: CognitionProviderObservationTerminalTrace, Limit: MaxCognitionProviderObservationPageSize,
@@ -56,13 +60,13 @@ func TestPostgresProviderProcessObservationsSealThenAppendAuditChain(t *testing.
 		t.Fatal(err)
 	}
 	if sealed.TerminalTraceSHA256 != seal.TraceSHA256 ||
-		len(sealed.Records) != 1 || sealed.Records[0].Receipt.ID != pre.ID {
+		len(sealed.Records) != 2 || sealed.Records[1].Activation.Receipt.ID != pre.Receipt.ID {
 		t.Fatalf("sealed provider process page=%+v", sealed)
 	}
 	assertSealedProviderProcessRecord(t, repository, fixture, pre)
 
 	post := providerProcessReceiptForTest(t, fixture)
-	if post.ID == pre.ID {
+	if post.Receipt.ID == pre.Receipt.ID {
 		t.Fatal("fresh terminal replay observation reused preterminal identity")
 	}
 	if err := repository.RecordCognitionProviderProcessObservation(ctx, post); err != nil {
@@ -80,7 +84,7 @@ func TestPostgresProviderProcessObservationsSealThenAppendAuditChain(t *testing.
 		t.Fatal(err)
 	}
 	if after.TerminalTraceSHA256 != seal.TraceSHA256 ||
-		len(after.Records) != 1 || after.Records[0].Receipt.ID != post.ID ||
+		len(after.Records) != 1 || after.Records[0].Activation.Receipt.ID != post.Receipt.ID ||
 		after.PostSealAuditHeadSHA256 != after.Records[0].ChainSHA256 {
 		t.Fatalf("post-seal provider process page=%+v", after)
 	}
@@ -91,6 +95,52 @@ func TestPostgresProviderProcessObservationsSealThenAppendAuditChain(t *testing.
 	}
 	if persistedTrace != seal.TraceSHA256 {
 		t.Fatal("post-seal audit append changed the immutable terminal trace")
+	}
+}
+
+func assertProviderObservationCannotCrossSeal(
+	t *testing.T,
+	pool interface {
+		Begin(context.Context) (pgx.Tx, error)
+	},
+	ctx context.Context,
+	episodeID cognition.EpisodeID,
+	traceSHA256 string,
+	activation cognitionpolicy.ProviderProcessActivation,
+) {
+	t.Helper()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	_, err = tx.Exec(ctx, `
+		INSERT INTO cognition_provider_postseal_observations (
+			observation_id,evidence_id,episode_id,job_id,generation,step_id,step_attempt,
+			worker_id,purpose,sequence,source_kind,terminal_trace_sha256,previous_chain_sha256,chain_sha256,
+			stable_brain_json,stable_brain_json_sha256,stable_brain_sha256,
+			provider_observation_json,provider_observation_json_sha256,
+			provider_observation_sha256,provider_attestation_sha256,challenge_sha256,
+			observed_at,receipt_json,receipt_sha256
+		)
+		SELECT observation_id,evidence_id,episode_id,job_id,generation,step_id,step_attempt,
+		       worker_id,purpose,1,'direct_audit',$2,$2,
+		       encode(digest($2||':'||$2||':1:direct_audit:'||receipt_sha256,'sha256'),'hex'),
+		       stable_brain_json,stable_brain_json_sha256,stable_brain_sha256,
+		       provider_observation_json,provider_observation_json_sha256,
+		       provider_observation_sha256,provider_attestation_sha256,challenge_sha256,
+		       observed_at,receipt_json,receipt_sha256
+		FROM cognition_provider_process_observations
+		WHERE episode_id=$1 AND observation_id=$3
+	`, episodeID, traceSHA256, activation.Receipt.ID)
+	if err != nil {
+		t.Fatalf("stage cross-seal process observation duplicate: %v", err)
+	}
+	_, err = tx.Exec(ctx,
+		"SET CONSTRAINTS cognition_provider_postseal_observation_cross_table_unique IMMEDIATE",
+	)
+	if err == nil || !strings.Contains(err.Error(), "already exists pre-seal") {
+		t.Fatalf("cross-seal observation identity error=%v", err)
 	}
 }
 
@@ -110,14 +160,14 @@ func TestPostgresProviderProcessPostSealConcurrentAppendIsContiguous(t *testing.
 	).Scan(&sealCreated); err != nil {
 		t.Fatal(err)
 	}
-	receipts := []cognitionpolicy.ProviderProcessObservation{
+	receipts := []cognitionpolicy.ProviderProcessActivation{
 		providerProcessReceiptForTest(t, fixture), providerProcessReceiptForTest(t, fixture),
 	}
-	if receipts[0].ID == receipts[1].ID {
+	if receipts[0].Receipt.ID == receipts[1].Receipt.ID {
 		t.Fatal("concurrent fixtures reused one fresh observation identity")
 	}
-	if receipts[0].Observation.ObservedAt.Before(sealCreated) ||
-		receipts[1].Observation.ObservedAt.Before(sealCreated) {
+	if receipts[0].Receipt.Observation.ObservedAt.Before(sealCreated) ||
+		receipts[1].Receipt.Observation.ObservedAt.Before(sealCreated) {
 		t.Fatal("post-seal observation predates the immutable seal")
 	}
 	start := make(chan struct{})
@@ -203,45 +253,4 @@ func TestPostgresProviderProcessObservationPagesRemainBounded(t *testing.T) {
 		second.PostSealAuditHeadSHA256 != first.PostSealAuditHeadSHA256 {
 		t.Fatalf("second provider observation page=%+v", second)
 	}
-}
-
-func providerProcessReceiptForTest(
-	t *testing.T,
-	fixture taskGenerationRetirementFixture,
-) cognitionpolicy.ProviderProcessObservation {
-	t.Helper()
-	receipt, err := cognitionpolicy.ObserveProviderProcess(
-		fixture.Context, cognitionGuardPolicyClient{}, fixture.Start.AttestedBrain,
-		cognition.EpisodeRef{ID: fixture.EpisodeID}, cognition.AttemptRef{
-			JobID: fixture.Authority.JobID, Generation: fixture.Authority.Generation,
-			StepID: fixture.Authority.StepID, Attempt: uint64(fixture.Authority.Attempt),
-			WorkerID: fixture.Authority.WorkerID,
-		}, cognitionpolicy.ProviderProcessEpisodeInvocation,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return receipt
-}
-
-func assertSealedProviderProcessRecord(
-	t *testing.T,
-	repository *Repository,
-	fixture taskGenerationRetirementFixture,
-	receipt cognitionpolicy.ProviderProcessObservation,
-) {
-	t.Helper()
-	page, err := repository.ReadCognitionSealedTrace(
-		fixture.Context, fixture.EpisodeID,
-		CognitionTracePageRequest{Limit: MaxCognitionTracePageSize},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, record := range page.Records {
-		if record.Kind == "provider_process_observation" && record.ID == receipt.ID {
-			return
-		}
-	}
-	t.Fatalf("sealed trace omitted provider process observation %q", receipt.ID)
 }
