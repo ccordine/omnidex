@@ -23,10 +23,6 @@ func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime 
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
-			contextProjectionID, err := prepareRepositoryShadowContext(session, job)
-			if err != nil {
-				return assemblyline.PortableResult{}, err
-			}
 			session.runtime.svc.emitStepEvent(
 				session.runtime.claim.Authority,
 				"coding_portable_dispatched",
@@ -40,7 +36,7 @@ func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime 
 				model,
 				prompt,
 				responseSchema,
-				contextProjectionID,
+				"",
 			)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
@@ -63,10 +59,7 @@ func rejectOfflineExperimentJob(kind assemblyline.WorkKind) error {
 		assemblyline.WorkRequirementAdvisory,
 		assemblyline.WorkRequirementSynthesis,
 		assemblyline.WorkRequirementFinalAdvisory,
-		assemblyline.WorkRequirementFinalSynthesis,
-		assemblyline.WorkRetrievalBriefing,
-		assemblyline.WorkRetrievalAdvisory,
-		assemblyline.WorkRetrievalSynthesis:
+		assemblyline.WorkRequirementFinalSynthesis:
 		return fmt.Errorf("work kind %q belongs to an offline advisory experiment and is forbidden in production", kind)
 	default:
 		return nil

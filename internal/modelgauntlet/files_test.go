@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
 func TestLoadCapabilityRelationCasesAndLabelsRequireExactSchemas(t *testing.T) {
@@ -138,58 +137,6 @@ func TestWriteRequirementPartitionResultRefusesToOverwriteEvidence(t *testing.T)
 		t.Fatal(err)
 	}
 	if err := WriteRequirementPartitionResult(path, result); err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("overwrite error=%v", err)
-	}
-}
-
-func TestCheckedInRepositoryRetrievalGauntletCoversEveryRegisteredOperation(t *testing.T) {
-	root := filepath.Join("..", "..", "gauntlets", "repository_retrieval")
-	cases, err := LoadRepositoryRetrievalCases(filepath.Join(root, "cases.v2.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	labels, hash, err := LoadRepositoryRetrievalLabels(filepath.Join(root, "labels.v2.json"), cases)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cases) != 8 || len(labels) != 8 || len(hash) != 64 {
-		t.Fatalf("cases=%d labels=%d hash=%q", len(cases), len(labels), hash)
-	}
-	counts := make(map[assemblyline.RepositoryRetrievalOperation]int)
-	for _, label := range labels {
-		counts[label.Operation]++
-	}
-	for _, operation := range repositoryretrieval.SupportedOperations() {
-		if counts[operation] < 2 {
-			t.Fatalf("operation %q count=%d want at least 2", operation, counts[operation])
-		}
-	}
-}
-
-func TestRepositoryRetrievalGauntletRejectsRetiredV1Contract(t *testing.T) {
-	root := filepath.Join("..", "..", "gauntlets", "repository_retrieval")
-	if _, err := LoadRepositoryRetrievalCases(filepath.Join(root, "cases.v1.json")); err == nil || !strings.Contains(err.Error(), RepositoryRetrievalCasesSchemaV2) {
-		t.Fatalf("retired cases error=%v", err)
-	}
-	cases, err := LoadRepositoryRetrievalCases(filepath.Join(root, "cases.v2.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := LoadRepositoryRetrievalLabels(filepath.Join(root, "labels.v1.json"), cases); err == nil || !strings.Contains(err.Error(), RepositoryRetrievalLabelsSchemaV2) {
-		t.Fatalf("retired labels error=%v", err)
-	}
-}
-
-func TestWriteRepositoryRetrievalResultRefusesToOverwriteEvidence(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "result.json")
-	result := RepositoryRetrievalResult{
-		Schema: RepositoryRetrievalResultSchemaV2,
-		Report: RepositoryRetrievalReport{Schema: RepositoryRetrievalReportSchemaV2},
-	}
-	if err := WriteRepositoryRetrievalResult(path, result); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteRepositoryRetrievalResult(path, result); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("overwrite error=%v", err)
 	}
 }

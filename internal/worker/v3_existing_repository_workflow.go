@@ -40,48 +40,51 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	if err != nil {
 		return "", err
 	}
-	retrievalModel, err := session.repositorySemanticModel(
-		"coding_repository_retrieval", specialist.RoleCodingRepositoryRetrievalStation,
+	resolutions, err := prepareExistingRepositoryRequirementResolutions(
+		partition.FeatureQuotes,
+		func(query string) (repositoryretrieval.EvidencePack, error) {
+			if authorityErr := session.requireCurrentRepositoryAuthority(
+				"repository evidence acquisition",
+			); authorityErr != nil {
+				return repositoryretrieval.EvidencePack{}, authorityErr
+			}
+			return session.buildExistingRepositoryEvidence(query)
+		},
+		func(requirementQuote string) (assemblyline.RepositorySearchTermDecision, error) {
+			searchTermModel, modelErr := session.repositorySemanticModel(
+				"coding_repository_search_term", specialist.RoleCodingRepositorySearchTermStation,
+			)
+			if modelErr != nil {
+				return assemblyline.RepositorySearchTermDecision{}, modelErr
+			}
+			return generateExistingRepositorySearchTerm(
+				directCodingWorkerRuntime(session), searchTermModel, requirementQuote, identities,
+			)
+		},
+		func(acquisition existingRepositoryEvidenceAcquisition) error {
+			return session.recordExistingRepositoryEvidence(acquisition.Query, acquisition.Pack)
+		},
+		func(acquisition existingRepositoryEvidenceAcquisition) (assemblyline.RepositoryChangeSurfaceDecision, error) {
+			changeModel, modelErr := session.repositorySemanticModel(
+				"coding_repository_change_surface", specialist.RoleCodingRepositoryChangeStation,
+			)
+			if modelErr != nil {
+				return assemblyline.RepositoryChangeSurfaceDecision{}, modelErr
+			}
+			if authorityErr := session.requireCurrentRepositoryAuthority(
+				"change-surface projection",
+			); authorityErr != nil {
+				return assemblyline.RepositoryChangeSurfaceDecision{}, authorityErr
+			}
+			return selectExistingRepositoryRequirementSurface(
+				directCodingWorkerRuntime(session), changeModel, acquisition, identities,
+			)
+		},
 	)
 	if err != nil {
 		return "", err
 	}
-	decision, err := classifyExistingRepositoryRetrieval(
-		directCodingWorkerRuntime(session), retrievalModel, redacted, identities,
-	)
-	if err != nil {
-		return "", err
-	}
-	if err := session.requireCurrentRepositoryAuthority("repository evidence acquisition"); err != nil {
-		return "", err
-	}
-	pack, err := session.buildExistingRepositoryEvidence(decision)
-	if err != nil {
-		return "", err
-	}
-	if err := session.recordExistingRepositoryEvidence(decision, pack); err != nil {
-		return "", err
-	}
-	changeModel, err := session.repositorySemanticModel(
-		"coding_repository_change_surface", specialist.RoleCodingRepositoryChangeStation,
-	)
-	if err != nil {
-		return "", err
-	}
-	if err := session.requireCurrentRepositoryAuthority("change-surface projection"); err != nil {
-		return "", err
-	}
-	surface, err := selectExistingRepositoryChangeSurface(
-		directCodingWorkerRuntime(session), changeModel, redacted,
-		partition.FeatureQuotes, pack, identities,
-	)
-	if err != nil {
-		return "", err
-	}
-	if err := session.runRepositoryCognitionShadow(decision, pack.AnalysisID); err != nil {
-		return "", err
-	}
-	contract, err := session.buildExistingRepositoryChangeContract(pack, surface)
+	contract, err := session.buildExistingRepositoryChangeContract(resolutions)
 	if err != nil {
 		return "", err
 	}
@@ -128,8 +131,14 @@ func (session *directCodingSession) repositorySemanticModel(skillID, roleID stri
 }
 
 func (session *directCodingSession) buildExistingRepositoryEvidence(
-	decision assemblyline.RepositoryRetrievalDecision,
+	searchTerm string,
 ) (repositoryretrieval.EvidencePack, error) {
+	if session == nil || session.runtime == nil || session.runtime.svc == nil ||
+		session.runtime.svc.repo == nil || session.repositoryIndex == nil {
+		return repositoryretrieval.EvidencePack{}, fmt.Errorf(
+			"repository evidence acquisition requires runtime, store, and immutable index authority",
+		)
+	}
 	if session.runtime.svc.repositoryRetrieval == nil {
 		return repositoryretrieval.EvidencePack{}, fmt.Errorf("repository evidence retrieval is unavailable")
 	}
@@ -144,13 +153,11 @@ func (session *directCodingSession) buildExistingRepositoryEvidence(
 	sort.Slice(analyses, func(left, right int) bool { return analyses[left].ID < analyses[right].ID })
 	packs := make([]repositoryretrieval.EvidencePack, 0, len(analyses))
 	for _, analysis := range analyses {
-		pack, buildErr := session.runtime.svc.repositoryRetrieval.Build(session.runtime.ctx, repositoryretrieval.Request{
-			ProjectID: projectID, AnalysisID: analysis.ID,
-			Operation: decision.Operation, Query: decision.QueryQuote,
-			Limits: repositoryretrieval.Limits{
-				MaxSymbols: 8, MaxEdges: 32, MaxSpanBytes: 4 * 1024, MaxPackBytes: 9 * 1024,
-			},
-		})
+		request, requestErr := newExistingRepositoryEvidenceRequest(projectID, analysis.ID, searchTerm)
+		if requestErr != nil {
+			return repositoryretrieval.EvidencePack{}, requestErr
+		}
+		pack, buildErr := session.runtime.svc.repositoryRetrieval.Build(session.runtime.ctx, request)
 		if errors.Is(buildErr, repositoryretrieval.ErrInsufficientEvidence) {
 			continue
 		}
@@ -161,8 +168,8 @@ func (session *directCodingSession) buildExistingRepositoryEvidence(
 	}
 	if len(packs) == 0 {
 		return repositoryretrieval.EvidencePack{}, fmt.Errorf(
-			"%w: %s %q matched no complete analysis",
-			repositoryretrieval.ErrInsufficientEvidence, decision.Operation, decision.QueryQuote,
+			"%w: code-owned lexical neighborhood for %q matched no complete analysis",
+			repositoryretrieval.ErrInsufficientEvidence, searchTerm,
 		)
 	}
 	if len(packs) > 1 {
@@ -173,12 +180,42 @@ func (session *directCodingSession) buildExistingRepositoryEvidence(
 	return packs[0], nil
 }
 
+func newExistingRepositoryEvidenceRequest(
+	projectID int64,
+	analysisID string,
+	searchTerm string,
+) (repositoryretrieval.Request, error) {
+	if projectID < 1 {
+		return repositoryretrieval.Request{}, fmt.Errorf("repository evidence request requires durable project authority")
+	}
+	if strings.TrimSpace(analysisID) == "" {
+		return repositoryretrieval.Request{}, fmt.Errorf("repository evidence request requires one analysis ID")
+	}
+	if _, err := repositoryretrieval.NewQueryBinding(
+		repositoryretrieval.OperationSemanticExcerpts, searchTerm,
+	); err != nil {
+		return repositoryretrieval.Request{}, fmt.Errorf("repository evidence search term: %w", err)
+	}
+	return repositoryretrieval.Request{
+		ProjectID:  projectID,
+		AnalysisID: analysisID,
+		Operation:  repositoryretrieval.OperationSemanticExcerpts,
+		Query:      searchTerm,
+		Limits: repositoryretrieval.Limits{
+			MaxSymbols: 8, MaxEdges: 32, MaxSpanBytes: 4 * 1024, MaxPackBytes: 9 * 1024,
+		},
+	}, nil
+}
+
 func (session *directCodingSession) recordExistingRepositoryEvidence(
-	decision assemblyline.RepositoryRetrievalDecision,
+	searchTerm string,
 	pack repositoryretrieval.EvidencePack,
 ) error {
-	if err := pack.ValidateForRequest(decision.Operation, decision.QueryQuote); err != nil {
+	if err := pack.ValidateForRequest(repositoryretrieval.OperationSemanticExcerpts, searchTerm); err != nil {
 		return fmt.Errorf("record repository evidence: %w", err)
+	}
+	if session == nil || session.runtime == nil {
+		return fmt.Errorf("record repository evidence requires a runtime")
 	}
 	return session.runtime.writeEvidence(evidence.Record{
 		Kind: evidence.KindRepositoryEvidence, SourceType: "repository", SourceRef: pack.ID,
@@ -186,7 +223,7 @@ func (session *directCodingSession) recordExistingRepositoryEvidence(
 		Confidence: 1,
 		Metadata: map[string]any{
 			"snapshot_id": pack.SnapshotID, "analysis_id": pack.AnalysisID,
-			"operation": decision.Operation, "query_quote": decision.QueryQuote,
+			"operation": repositoryretrieval.OperationSemanticExcerpts, "search_term": searchTerm,
 			"pack_bytes": evidencePackBytes(pack),
 		},
 	})

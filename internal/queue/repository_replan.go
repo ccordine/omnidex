@@ -61,11 +61,6 @@ func replanJobTx(
 		if err := requireReplanReplayTx(ctx, tx, existing, command, feedbackSHA); err != nil {
 			return model.Job{}, err
 		}
-		if err := requireCognitionLifecycleSealSetReplayTx(
-			ctx, tx, descriptor, existing.JobID, existing.ObservedGeneration,
-		); err != nil {
-			return model.Job{}, err
-		}
 		return existing.ResultJob, nil
 	}
 	if terminalJobStatus(job.Status) {
@@ -114,11 +109,6 @@ func replanJobTx(
 	if err := rejectAssignedRetiringStepsTx(ctx, tx, command.JobID, retiringIDs); err != nil {
 		return model.Job{}, err
 	}
-	if _, err := retireCognitionEpisodesForLifecycleTx(
-		ctx, tx, descriptor, command.JobID, currentGeneration, retiringIDs,
-	); err != nil {
-		return model.Job{}, err
-	}
 	if err := terminalizeStepAttemptsForAuthorityChangeTx(
 		ctx, tx, command.JobID, currentGeneration, retiringIDs, model.StepAttemptSuperseded,
 	); err != nil {
@@ -127,15 +117,6 @@ func replanJobTx(
 	newGeneration := currentGeneration + 1
 	if err := createReplanGenerationTx(
 		ctx, tx, command, feedbackSHA, currentGeneration, newGeneration, boundary,
-	); err != nil {
-		return model.Job{}, err
-	}
-	header, err = loadTaskLedgerHeaderTx(ctx, tx, command.JobID, true)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if err := supersedeCurrentCognitionObligationsTx(
-		ctx, tx, header, currentGeneration, newGeneration,
 	); err != nil {
 		return model.Job{}, err
 	}

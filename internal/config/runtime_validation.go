@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
@@ -36,9 +35,6 @@ func validateRuntimeConfig(cfg Config) error {
 	}
 	if err := llm.ValidateInferenceContextTokens(cfg.InferenceContextTokens); err != nil {
 		return fmt.Errorf("INFERENCE_CONTEXT_TOKENS is invalid: %w", err)
-	}
-	if err := validateCognitionBrainConfig(cfg); err != nil {
-		return err
 	}
 	if cfg.WorkspaceMaxFiles < 1 {
 		return fmt.Errorf("WORKSPACE_MAX_FILES must be positive, received %d", cfg.WorkspaceMaxFiles)
@@ -87,45 +83,6 @@ func validateRuntimeConfig(cfg Config) error {
 	}
 	if strings.TrimSpace(cfg.SkillsRoot) == "" {
 		return fmt.Errorf("OMNIDEX_SKILLS_ROOT is required")
-	}
-	return nil
-}
-
-func validateCognitionBrainConfig(cfg Config) error {
-	for _, field := range []struct {
-		name  string
-		value string
-	}{
-		{"COGNITION_MODEL_SHA256", cfg.CognitionModelDigest},
-		{"COGNITION_MODEL_QUANTIZATION", cfg.CognitionModelQuantization},
-		{"COGNITION_BACKEND_VERSION", cfg.CognitionBackendVersion},
-		{"COGNITION_HARDWARE", cfg.CognitionHardware},
-	} {
-		if strings.TrimSpace(field.value) == "" {
-			return fmt.Errorf("%s is required", field.name)
-		}
-		if field.value != strings.TrimSpace(field.value) {
-			return fmt.Errorf("%s must be one exact value", field.name)
-		}
-	}
-	sampling, err := cognitionpolicy.NewSamplingIdentity(
-		cfg.InferenceContextTokens,
-		cfg.CognitionContextCeilingBytes,
-		cfg.CognitionMaxOutputTokens,
-	)
-	if err != nil {
-		return fmt.Errorf("cognition sampling configuration: %w", err)
-	}
-	if _, err := cognitionpolicy.NewBrainRef(
-		"configured-cognition-model",
-		cfg.CognitionModelDigest,
-		cfg.CognitionModelQuantization,
-		cfg.LLMProvider,
-		cfg.CognitionBackendVersion,
-		cfg.CognitionHardware,
-		sampling,
-	); err != nil {
-		return fmt.Errorf("COGNITION_MODEL_SHA256 or cognition brain identity is invalid: %w", err)
 	}
 	return nil
 }

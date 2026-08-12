@@ -29,8 +29,7 @@ type ContextProjectionAuthority struct {
 type ContextProjectionMode string
 
 const (
-	ContextProjectionModeShadow ContextProjectionMode = "shadow"
-	ContextProjectionModeLive   ContextProjectionMode = "live"
+	ContextProjectionModeLive ContextProjectionMode = "live"
 )
 
 type ContextProjectionRecord struct {

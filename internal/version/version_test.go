@@ -36,7 +36,7 @@ func TestReleaseBuilderDefaultsToCharmeleon(t *testing.T) {
 		`VERSION="v0.5.0"`, `CODENAME="Charmeleon"`,
 		`git -C "$REPO_ROOT" rev-parse HEAD`, `source_archive_sha256`, `git -C "$REPO_ROOT" archive`,
 		`internal/version.SourceSHA256`, `internal/version.MigrationsSHA256`,
-		`cognition-gauntlet:./cmd/cognition-gauntlet`, `migrations/SHA256SUMS`,
+		`migrations/SHA256SUMS`,
 		`release builds require a clean tracked and untracked worktree`,
 		`validate_tracked_release_sources "$REPO_ROOT"`,
 		`validate_dist_dir`, `create_dist_dir`, `distribution path enters tracked source`,

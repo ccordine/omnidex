@@ -13,7 +13,7 @@ The original station-level protocol uses four phases:
 
 The protocol owns the authoritative portable job, phase order, model-visible schema, hard budgets, memo isolation, validation, and exact call evidence. A failed briefing or memo invalidates only that assisted candidate. It never substitutes the direct result.
 
-Three stations are registered for that measurement: capability relation, requirement partition, and path-blind repository retrieval. Only per-operation requirement partition is wired into production. Other semantic stations require their own hard-typed vocabulary and validator before they can use the protocol.
+Two stations are registered for that measurement: capability relation and requirement partition. Only per-operation requirement partition is wired into production. Other semantic stations require their own hard-typed vocabulary and validator before they can use the protocol.
 
 The complete-requirement experiment is a separate, narrower protocol. It first runs the full direct extraction and fixed-point splitting pipeline to produce a graph-valid candidate `C0`. One final advisory job then binds the original source and `C0` by SHA-256, R1 returns one plain-text memo, and the stable station returns `C1` under the ordinary requirement-partition schema. The synthesis payload binds the advisory job ID and exact memo hash. This experimental final advisory work kind is rejected by the production advisory transport. Protocol v2 explicitly requires the reasoner to reserve output for non-empty final memo content; its separately evidenced 4,096-token ceiling does not alter the existing 1,024-token per-split comparator.
 
@@ -90,31 +90,6 @@ The final-pass protocol is promotion-eligible only when all of these code-owned 
 
 Until a completed evidence file passes that gate, production remains on the current per-operation implementation. There is no production shadow mode or fallback toggle.
 
-## Repository-retrieval decision trial
-
-This development gauntlet does not read a repository. It measures only the
-path-blind decision that would precede PostgreSQL-backed retrieval. The model
-may choose one registered operation and one exact query quote from the research
-need. It cannot emit a path, file, tree, shell command, SQL, plan, mutation, or
-completion decision.
-
-```bash
-omni model:gauntlet repository-retrieval \
-  --stable-model qwen3.5:9b-q4_K_M \
-  --reasoning-model deepseek-r1:8b \
-  --num-ctx 16384 \
-  --cases gauntlets/repository_retrieval/cases.v2.json \
-  --labels gauntlets/repository_retrieval/labels.v2.json \
-  --output /tmp/repository-retrieval-v2.json
-```
-
-The active v2 contract exposes only three operations with distinct production
-consumers: bounded semantic excerpts, one unambiguous exact symbol declaration,
-and incoming direct symbol references. Exact-symbol ambiguity and a graph result
-that reaches the hard edge boundary are explicit failures. The former
-`diagnostic_context` and `dependency_metadata` labels were removed because they
-had no distinct code-owned retrieval implementation.
-
 ## Evolution rules
 
 - Preserve every prior evidence file and fixture version.
@@ -167,7 +142,7 @@ One R1 memo incorrectly proposed splitting `offline draft recovery`; the stable 
 
 Requirement renderer v2 then tightened the production boundary to the proposed final-text handoff. In a fresh run on the same development fixtures it scored 6/8 versus the 5/8 baseline, with 8/8 structurally valid candidates and no paired regression. It corrected the product-only archive request; its remaining two misses were product-identity leaks from the stable synthesizer. R1 again proposed the incorrect `offline` / `draft recovery` split, and synthesis contained it.
 
-This v2 result authorized the requested limited production rollout to requirement partitioning only. It does not authorize capability-relation, repository retrieval, fragment, correction, review, or completion integration.
+This v2 result authorized the requested limited production rollout to requirement partitioning only. It grants no authority to any other semantic station or runtime role.
 
 On this development set, R1 8B is the current quality/cost winner. The set was created and inspected during protocol development, so this is not held-out promotion evidence.
 
@@ -177,37 +152,6 @@ Exact local evidence:
 - Qwen3 4B: `/tmp/omnidex-requirement-partition-v1-qwen3-4b-thinking-run1-20260808.json` (`sha256:34dcb309546dc9ff89e84219ad1cd4a4711988477a7b40db2b26df3bee74cee8`)
 - Qwen3 30B: `/tmp/omnidex-requirement-partition-v1-qwen3-30b-run1-20260808.json` (`sha256:e5eeb2650c2a81f0e6fe6cb52715beec71f2d06b83a7fe7764c140cf9edcd7ab`)
 - R1 8B, final-memo-only renderer v2: `/tmp/omnidex-requirement-partition-v1-renderer-v2-final-memo-run1-20260808.json` (`sha256:697f8e6bace7170c1f56724fd1ddc6abd64107625f7c4075ac4d71a746729eaf`)
-
-## Repository-retrieval development result (2026-08-08)
-
-The first complete path-blind run rejected production promotion:
-
-| Variant | Correct | Structurally valid | Model time | Output tokens |
-|---|---:|---:|---:|---:|
-| Direct stable model | 9/12 | 11/12 | 1m 41s | 488 |
-| R1 final-memo assist | 2/12 | 3/12 | 9m 02s | 4,847 |
-
-The stable briefing frequently returned a retrieval operation where the
-briefing schema required a critique lens. Of the cases that reached synthesis,
-several copied operation-description boilerplate instead of an exact grounded
-query quote. One R1 response had native thinking but no final memo; the generic
-protocol now rejects that response before synthesis while retaining both fields
-in call evidence.
-
-No PostgreSQL source index, RAG execution path, or production repository-search
-adviser was added. The typed operation vocabulary and gauntlet remain as a
-measured framework primitive; another renderer must beat the direct baseline
-without reducing validity before database integration is authorized.
-
-That statement describes the historical v1 run only. The v2 contract replaces
-its five-value write-only vocabulary and is evaluated separately; the v1 result
-must not be interpreted as evidence for the three operation-specific production
-consumers.
-
-Exact local evidence: `/tmp/omnidex-repository-retrieval-v1-run1-20260808.json`
-(`sha256:70f0eb63234075557b3ff1584aa92343215152a97b6a178ae03dc35b506b884f`).
-
-Two earlier attempts are retained as transport diagnostics, not model results: `localhost`/`127.0.0.1` access was denied by the command sandbox before escalation, so every call contains an explicit socket error and no model output.
 
 ## Coding, correction, and review allocation
 

@@ -42,7 +42,7 @@ func Analyze(ctx context.Context, snapshot repositoryfacts.Snapshot) (repository
 			packages.NeedImports | packages.NeedDeps | packages.NeedSyntax |
 			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedModule,
 		Dir: snapshot.Root, Fset: fileSet, Tests: true,
-		Env: goAnalysisEnvironment(os.Environ()),
+		Env: goAnalysisEnvironment(os.Environ(), snapshot.Root, exactGoWork(snapshot)),
 	}, "./...")
 	if err != nil {
 		return repositoryfacts.Analysis{}, fmt.Errorf("load Go repository packages: %w", err)
@@ -176,16 +176,28 @@ func flattenPackages(roots []*packages.Package) []*packages.Package {
 	return items
 }
 
-func goAnalysisEnvironment(current []string) []string {
-	out := make([]string, 0, len(current)+3)
+func exactGoWork(snapshot repositoryfacts.Snapshot) string {
+	for _, file := range snapshot.Files {
+		if file.Path == "go.work" && file.Kind == repositoryfacts.EntryRegular {
+			return filepath.Join(snapshot.Root, "go.work")
+		}
+	}
+	return "off"
+}
+
+func goAnalysisEnvironment(current []string, root, goWork string) []string {
+	out := make([]string, 0, len(current)+9)
 	for _, item := range current {
 		key, _, _ := strings.Cut(item, "=")
 		switch key {
-		case "GOPROXY", "GOSUMDB", "GOTOOLCHAIN":
+		case "GO111MODULE", "GOENV", "GOFLAGS", "GOWORK", "GOPROXY", "GOSUMDB", "GOTOOLCHAIN", "GOVCS", "PWD":
 			continue
 		default:
 			out = append(out, item)
 		}
 	}
-	return append(out, "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local")
+	return append(
+		out, "GO111MODULE=on", "GOENV=off", "GOFLAGS=-mod=readonly", "GOWORK="+goWork,
+		"GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOVCS=off", "PWD="+root,
+	)
 }

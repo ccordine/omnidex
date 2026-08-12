@@ -133,13 +133,19 @@ func TestSemanticCallTypesOnlyCandidateExhaustionAsRecoverable(t *testing.T) {
 	}
 }
 
-func TestDecodeCodingSemanticJSONRejectsUnknownAndTrailingData(t *testing.T) {
+func TestDecodeCodingSemanticJSONRejectsInexactObjects(t *testing.T) {
 	t.Parallel()
 
 	type response struct {
 		Value string `json:"value"`
 	}
-	for _, raw := range []string{`{"value":"ok","unknown":true}`, `{"value":"ok"} {}`} {
+	for _, raw := range []string{
+		`{"value":"ok","unknown":true}`,
+		`{"value":"first","value":"second"}`,
+		`{"Value":"alias"}`,
+		`{"value":"ok"} {}`,
+		"```json\n{\"value\":\"ok\"}\n```",
+	} {
 		if _, err := decodeDirectCodingSemanticJSON[response](raw); err == nil {
 			t.Fatalf("accepted malformed semantic response %q", raw)
 		}

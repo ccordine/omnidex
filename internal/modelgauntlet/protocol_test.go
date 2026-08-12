@@ -134,8 +134,9 @@ func TestStructuredAdvisoryProtocolRejectsThinkingOnlyResponseBeforeSynthesis(t 
 	}
 }
 
-func TestStructuredAdvisoryProtocolRejectsCodingAndCorrectionJobs(t *testing.T) {
+func TestStructuredAdvisoryProtocolRejectsSingleLeafAndCodingJobs(t *testing.T) {
 	for _, kind := range []assemblyline.WorkKind{
+		assemblyline.WorkRepositorySearchTerm,
 		assemblyline.WorkFragmentGeneration,
 		assemblyline.WorkFragmentCorrection,
 		assemblyline.WorkResponseCorrection,

@@ -69,13 +69,13 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildRequirementFinalSynthesisPrompt(input)
 		return prompt, RequirementPartitionResponseSchema(), err
-	case WorkRepositoryRetrieval:
-		var input RepositoryRetrievalInput
+	case WorkRepositorySearchTerm:
+		var input RepositorySearchTermInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return "", nil, err
 		}
-		prompt, err := BuildRepositoryRetrievalPrompt(input)
-		return prompt, RepositoryRetrievalResponseSchema(), err
+		prompt, err := BuildRepositorySearchTermPrompt(input)
+		return prompt, RepositorySearchTermResponseSchema(), err
 	case WorkRepositoryChangeSurface:
 		var input RepositoryChangeSurfaceInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -83,27 +83,6 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildRepositoryChangeSurfacePrompt(input)
 		return prompt, RepositoryChangeSurfaceResponseSchema(input), err
-	case WorkRetrievalBriefing:
-		var input RepositoryRetrievalInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRepositoryRetrievalBriefingPrompt(input)
-		return prompt, RepositoryRetrievalBriefingResponseSchema(), err
-	case WorkRetrievalAdvisory:
-		var input RepositoryRetrievalAdvisoryInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRepositoryRetrievalAdvisoryPrompt(input)
-		return prompt, nil, err
-	case WorkRetrievalSynthesis:
-		var input RepositoryRetrievalSynthesisInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRepositoryRetrievalSynthesisPrompt(input)
-		return prompt, RepositoryRetrievalResponseSchema(), err
 	case WorkArtifactHandling:
 		var input ArtifactHandlingInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {

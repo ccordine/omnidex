@@ -24,7 +24,7 @@ type modelGauntletOptions struct {
 
 func runModelGauntlet(args []string) {
 	if len(args) == 0 {
-		die("model:gauntlet requires capability-relation, requirement-partition, requirement-partition-complete, or repository-retrieval")
+		die("model:gauntlet requires capability-relation, requirement-partition, or requirement-partition-complete")
 	}
 	switch args[0] {
 	case "capability-relation":
@@ -33,8 +33,6 @@ func runModelGauntlet(args []string) {
 		runRequirementPartitionGauntlet(args[1:])
 	case "requirement-partition-complete":
 		runCompleteRequirementPartitionGauntlet(args[1:])
-	case "repository-retrieval":
-		runRepositoryRetrievalGauntlet(args[1:])
 	default:
 		die(fmt.Sprintf("model:gauntlet subcommand %q is unsupported", args[0]))
 	}

@@ -23,16 +23,10 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[RequirementFinalAdvisoryInput](payload, RequirementFinalAdvisoryInput.validate)
 	case WorkRequirementFinalSynthesis:
 		return decodeAndValidatePortablePayload[RequirementFinalSynthesisInput](payload, RequirementFinalSynthesisInput.validate)
-	case WorkRepositoryRetrieval:
-		return decodeAndValidatePortablePayload[RepositoryRetrievalInput](payload, RepositoryRetrievalInput.validate)
+	case WorkRepositorySearchTerm:
+		return decodeAndValidatePortablePayload[RepositorySearchTermInput](payload, RepositorySearchTermInput.validate)
 	case WorkRepositoryChangeSurface:
 		return decodeAndValidatePortablePayload[RepositoryChangeSurfaceInput](payload, RepositoryChangeSurfaceInput.validate)
-	case WorkRetrievalBriefing:
-		return decodeAndValidatePortablePayload[RepositoryRetrievalInput](payload, RepositoryRetrievalInput.validate)
-	case WorkRetrievalAdvisory:
-		return decodeAndValidatePortablePayload[RepositoryRetrievalAdvisoryInput](payload, RepositoryRetrievalAdvisoryInput.validate)
-	case WorkRetrievalSynthesis:
-		return decodeAndValidatePortablePayload[RepositoryRetrievalSynthesisInput](payload, RepositoryRetrievalSynthesisInput.validate)
 	case WorkArtifactHandling:
 		return decodeAndValidatePortablePayload[ArtifactHandlingInput](payload, ArtifactHandlingInput.validate)
 	case WorkCapabilityRelation:

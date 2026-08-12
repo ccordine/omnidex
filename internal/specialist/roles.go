@@ -47,7 +47,7 @@ const (
 	RoleCodingSkillProcedureStation       = "coding_skill_procedure"
 	RoleCodingFragmentStation             = "coding_fragment"
 	RoleCodingFragmentCorrectionStation   = "coding_fragment_correction"
-	RoleCodingRepositoryRetrievalStation  = "coding_repository_retrieval"
+	RoleCodingRepositorySearchTermStation = "coding_repository_search_term"
 	RoleCodingRepositoryChangeStation     = "coding_repository_change_surface"
 )
 

@@ -212,3 +212,30 @@ func TestSemanticResponseCorrectionChangesExactlyOneRetainedLeaf(t *testing.T) {
 		}
 	}
 }
+
+func TestSemanticResponseCorrectionRejectsInexactPatchAuthority(t *testing.T) {
+	t.Parallel()
+	original, err := NewApplicationClassificationJob(ApplicationClassificationInput{
+		UserRequest: "Build a small browser tool.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained := `{"schema":"omnidex.application-class.v1","surface":"unsupported"}`
+	invalid := map[string]string{
+		"duplicate":  `{"surface":"unsupported","surface":"browser_application"}`,
+		"markdown":   "```json\n{\"surface\":\"browser_application\"}\n```",
+		"case_alias": `{"Surface":"browser_application"}`,
+		"unknown":    `{"replacement":"browser_application"}`,
+		"trailing":   `{"surface":"browser_application"}{"surface":"unsupported"}`,
+	}
+	for name, patch := range invalid {
+		name, patch := name, patch
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if corrected, err := ApplyResponseCorrection(original, retained, patch); err == nil {
+				t.Fatalf("accepted inexact correction patch %q as %s", patch, corrected)
+			}
+		})
+	}
+}

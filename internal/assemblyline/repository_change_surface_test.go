@@ -77,6 +77,14 @@ func TestRepositoryChangeSurfaceIsEvidenceLinkedAndPathBlind(t *testing.T) {
 			}
 		}
 	}
+	for _, forbidden := range []string{
+		`"operation"`, `"query_binding"`, `"snapshot_id"`, `"analysis_id"`,
+		`"max_bytes"`, `"omitted_symbol_ids"`, `"omitted_edges"`, `"source_omissions"`,
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("model prompt exposed deterministic retrieval mechanics %q: %s", forbidden, prompt)
+		}
+	}
 	for name, payload := range map[string]string{
 		"qualified name": strings.Replace(
 			string(job.Payload), `"name":"Dispatch"`,

@@ -44,7 +44,7 @@ func usage() {
 	fmt.Println("  queue:status [--timeout 5s] [--limit N] [--core-url url] queue sample counts")
 	fmt.Println("  ollama:status [--timeout 5s] [--base-url url]          ollama connectivity + models")
 	fmt.Println("  ollama:prewarm [--model m] [--num-ctx N] [--keep-alive 10m] [--json]  model load/offload profile")
-	fmt.Println("  model:gauntlet <capability-relation|requirement-partition|requirement-partition-complete|repository-retrieval> --stable-model m --output file [flags]  offline advisory trial")
+	fmt.Println("  model:gauntlet <capability-relation|requirement-partition|requirement-partition-complete> --stable-model m --output file [flags]  offline advisory trial")
 	fmt.Println("  web:status [--timeout 5s] [--probe] [--providers csv]  web search provider status")
 	fmt.Println("  service [--service name] <up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh> [options]")
 	fmt.Println("  service:<name> <up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh> [options]")

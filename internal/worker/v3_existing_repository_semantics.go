@@ -7,19 +7,19 @@ import (
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
-func classifyExistingRepositoryRetrieval(
+func generateExistingRepositorySearchTerm(
 	runtime typedWorkerRuntime,
-	modelName, researchNeed string,
+	modelName, unresolvedConcept string,
 	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.RepositoryRetrievalDecision, error) {
-	input := assemblyline.RepositoryRetrievalInput{ResearchNeed: researchNeed}
-	job, err := assemblyline.NewRepositoryRetrievalJob(input)
+) (assemblyline.RepositorySearchTermDecision, error) {
+	input := assemblyline.RepositorySearchTermInput{UnresolvedConcept: unresolvedConcept}
+	job, err := assemblyline.NewRepositorySearchTermJob(input)
 	if err != nil {
-		return assemblyline.RepositoryRetrievalDecision{}, err
+		return assemblyline.RepositorySearchTermDecision{}, err
 	}
-	return runDirectCodingSemanticCall[assemblyline.RepositoryRetrievalDecision](
-		runtime, modelName, "repository_retrieval", job, identities,
-		func(value assemblyline.RepositoryRetrievalDecision) error { return value.ValidateFor(input) },
+	return runDirectCodingSemanticCall[assemblyline.RepositorySearchTermDecision](
+		runtime, modelName, "repository_search_term", job, identities,
+		func(value assemblyline.RepositorySearchTermDecision) error { return value.ValidateFor(input) },
 	)
 }
 
@@ -52,4 +52,21 @@ func selectExistingRepositoryChangeSurface(
 		)
 	}
 	return decision, nil
+}
+
+func selectExistingRepositoryRequirementSurface(
+	runtime typedWorkerRuntime,
+	modelName string,
+	acquisition existingRepositoryEvidenceAcquisition,
+	identities []assemblyline.ArtifactIdentity,
+) (assemblyline.RepositoryChangeSurfaceDecision, error) {
+	if acquisition.RequirementQuote == "" {
+		return assemblyline.RepositoryChangeSurfaceDecision{}, fmt.Errorf(
+			"repository requirement surface requires one exact requirement quote",
+		)
+	}
+	return selectExistingRepositoryChangeSurface(
+		runtime, modelName, acquisition.RequirementQuote,
+		[]string{acquisition.RequirementQuote}, acquisition.Pack, identities,
+	)
 }

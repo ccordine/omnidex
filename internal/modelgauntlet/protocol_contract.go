@@ -122,7 +122,7 @@ func validateAdvisoryWorkKind(kind assemblyline.WorkKind) error {
 	case assemblyline.WorkApplicationClassify, assemblyline.WorkApplicationIdentity,
 		assemblyline.WorkRequirementPartition, assemblyline.WorkArtifactHandling,
 		assemblyline.WorkCapabilityRelation, assemblyline.WorkSkillSelection,
-		assemblyline.WorkSkillProcedure, assemblyline.WorkRepositoryRetrieval:
+		assemblyline.WorkSkillProcedure:
 		return nil
 	case assemblyline.WorkFragmentGeneration, assemblyline.WorkFragmentCorrection,
 		assemblyline.WorkResponseCorrection:

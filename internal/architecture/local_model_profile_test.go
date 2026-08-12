@@ -101,21 +101,22 @@ func TestReadmeCannotAdvertiseStaleOrFabricatedCognitionConfiguration(t *testing
 	if strings.Contains(contents, "INFERENCE_CONTEXT_TOKENS=16384") {
 		t.Fatal("README advertises a native context too small for the required cognition station")
 	}
-	if !strings.Contains(contents, "Production cognition is currently Ollama-only") {
-		t.Fatal("README does not disclose the exact prepared-provider cognition boundary")
+	if !strings.Contains(contents, "there is no process-wide cognition brain or universal cognition policy") {
+		t.Fatal("README does not disclose the station-owned inference boundary")
 	}
-	required := []string{
-		"INFERENCE_CONTEXT_TOKENS=32768",
+	if !strings.Contains(contents, "\nINFERENCE_CONTEXT_TOKENS=32768\n") {
+		t.Fatal("README omits the model-call context bound")
+	}
+	for _, removed := range []string{
 		"COGNITION_MODEL_SHA256=",
 		"COGNITION_MODEL_QUANTIZATION=",
 		"COGNITION_BACKEND_VERSION=",
 		"COGNITION_HARDWARE=",
 		"COGNITION_CONTEXT_CEILING_BYTES=",
 		"COGNITION_MAX_OUTPUT_TOKENS=",
-	}
-	for _, line := range required {
-		if !strings.Contains(contents, "\n"+line+"\n") {
-			t.Fatalf("README omits truthful cognition configuration line %q", line)
+	} {
+		if strings.Contains(contents, removed) {
+			t.Fatalf("README advertises removed universal cognition setting %q", removed)
 		}
 	}
 }

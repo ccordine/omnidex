@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -58,7 +57,6 @@ type Options struct {
 	EmbeddingProvider      string
 	EmbeddingModel         string
 	Models                 ModelRouting
-	CognitionBrain         cognitionpolicy.BrainRef
 	Workspace              WorkspaceSettings
 	SkillsRoot             string
 	Logger                 *log.Logger
@@ -79,7 +77,6 @@ type Service struct {
 	embeddingProvider      string
 	embeddingModel         string
 	models                 ModelRouting
-	cognitionBrain         cognitionpolicy.BrainRef
 	workspace              *workspace.Service
 	repositoryIndex        repositoryIndexRefresher
 	repositoryRetrieval    repositoryEvidenceBuilder
@@ -157,7 +154,6 @@ func New(
 		embeddingProvider:      opts.EmbeddingProvider,
 		embeddingModel:         opts.EmbeddingModel,
 		models:                 opts.Models,
-		cognitionBrain:         opts.CognitionBrain,
 		workspace:              workspaceSvc,
 		repositoryIndex:        repositoryIndex,
 		repositoryRetrieval:    repositoryRetrieval,

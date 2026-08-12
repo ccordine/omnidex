@@ -33,16 +33,6 @@ func validateWorkerOptions(opts Options) error {
 	if strings.TrimSpace(opts.EmbeddingModel) == "" {
 		return fmt.Errorf("embedding_model is required")
 	}
-	if err := opts.CognitionBrain.Validate(); err != nil {
-		return fmt.Errorf("cognition_brain is invalid: %w", err)
-	}
-	if opts.CognitionBrain.Model != opts.Models.Analyze {
-		return fmt.Errorf("cognition_brain model must exactly match models.analyze")
-	}
-	if opts.CognitionBrain.NativeContextLimit != opts.InferenceContextTokens {
-		return fmt.Errorf("cognition_brain native context must match inference_context_tokens")
-	}
-
 	modelRoles := []struct {
 		name  string
 		value string

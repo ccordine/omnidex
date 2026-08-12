@@ -7,6 +7,8 @@ import (
 	"io"
 	"reflect"
 	"sort"
+
+	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 func responseCorrectionSchema(original PortableJob) (map[string]any, error) {
@@ -91,6 +93,9 @@ func ApplyResponseCorrection(
 }
 
 func decodeJSONObject(raw string, label string) (map[string]any, error) {
+	if err := exactjson.ValidateUniqueObject([]byte(raw), label); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", label, err)
+	}
 	decoder := json.NewDecoder(bytes.NewBufferString(raw))
 	decoder.UseNumber()
 	var value map[string]any

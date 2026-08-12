@@ -56,14 +56,14 @@ func TestPostgresContextProjectionRoundTripBindingAndImmutability(t *testing.T) 
 	if call.ContextProjectionID != projection.ID || call.JobGeneration != authority.Generation {
 		t.Fatalf("bound call lost exact projection authority: %+v", call)
 	}
-	legacy := contextProjectionLLMRecord(authority, projection)
-	legacy.Attempt = 2
-	legacyCall, err := repository.RecordLLMCallEvidence(ctx, legacy)
+	unbound := contextProjectionLLMRecord(authority, projection)
+	unbound.Attempt = 2
+	unboundCall, err := repository.RecordLLMCallEvidence(ctx, unbound)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if legacyCall.ContextProjectionID != "" {
-		t.Fatalf("shadow-era null projection was synthesized: %+v", legacyCall)
+	if unboundCall.ContextProjectionID != "" {
+		t.Fatalf("unbound call received a synthesized projection: %+v", unboundCall)
 	}
 	assertContextProjectionDatabaseValidation(t, ctx, pool, created)
 	assertContextProjectionImmutable(t, ctx, pool, projection.ID)
@@ -202,7 +202,7 @@ func seedContextProjectionTest(
 	}
 	return ContextProjectionAuthority{
 		StepAttemptAuthority: attemptAuthority, WorkKind: "repository_investigation",
-		Mode: ContextProjectionModeShadow,
+		Mode: ContextProjectionModeLive,
 	}, projection
 }
 
@@ -211,7 +211,7 @@ func contextProjectionLLMRecord(
 	projection contextbuilder.Projection,
 ) LLMCallEvidenceRecord {
 	return LLMCallEvidenceRecord{
-		Authority: authority.StepAttemptAuthority, StepID: authority.StepID, Scope: "context_projection_shadow",
+		Authority: authority.StepAttemptAuthority, StepID: authority.StepID, Scope: "context_projection_live",
 		WorkID: projection.WorkID, WorkKind: authority.WorkKind,
 		RequestedModel: "requested", Model: "effective", Attempt: 1,
 		SystemPrompt: "exact system", UserPrompt: "exact user", ResponseFormat: "text",

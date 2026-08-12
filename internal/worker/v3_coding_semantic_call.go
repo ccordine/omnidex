@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const maxDirectCodingSemanticPromptBytes = 16 * 1024
@@ -149,9 +150,14 @@ func runDirectCodingSemanticCall[T any](
 
 func decodeDirectCodingSemanticJSON[T any](raw string) (T, error) {
 	var value T
-	content, err := unwrapDirectCodingJSON(raw)
-	if err != nil {
-		return value, err
+	content := strings.TrimSpace(strings.ReplaceAll(raw, "\r\n", "\n"))
+	if content == "" {
+		return value, fmt.Errorf("coding semantic response is empty")
+	}
+	if err := exactjson.ValidateObject(
+		[]byte(content), value, "coding semantic response",
+	); err != nil {
+		return value, fmt.Errorf("decode coding semantic response: %w", err)
 	}
 	decoder := json.NewDecoder(strings.NewReader(content))
 	decoder.DisallowUnknownFields()
@@ -166,29 +172,6 @@ func decodeDirectCodingSemanticJSON[T any](raw string) (T, error) {
 		return value, fmt.Errorf("decode coding semantic response trailing data: %w", err)
 	}
 	return value, nil
-}
-
-func unwrapDirectCodingJSON(raw string) (string, error) {
-	content := strings.TrimSpace(strings.ReplaceAll(raw, "\r\n", "\n"))
-	if content == "" {
-		return "", fmt.Errorf("coding semantic response is empty")
-	}
-	if !strings.HasPrefix(content, "```") {
-		if strings.Contains(content, "```") {
-			return "", fmt.Errorf("coding semantic response has a malformed Markdown envelope")
-		}
-		return content, nil
-	}
-	lines := strings.Split(content, "\n")
-	opening := strings.ToLower(strings.TrimSpace(lines[0]))
-	if len(lines) < 3 || (opening != "```" && opening != "```json") || strings.TrimSpace(lines[len(lines)-1]) != "```" {
-		return "", fmt.Errorf("coding semantic response has a malformed Markdown envelope")
-	}
-	body := strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
-	if body == "" || strings.Contains(body, "```") {
-		return "", fmt.Errorf("coding semantic response envelope must contain one JSON object")
-	}
-	return body, nil
 }
 
 func validateDirectCodingSemanticPrompt(prompt string, identities []assemblyline.ArtifactIdentity) error {

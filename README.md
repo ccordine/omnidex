@@ -4,7 +4,7 @@
 
 Omnidex is a local-first AI workbench with a conversational surface and a server-authoritative execution core. Charmeleon extends the deterministic assembly line with repository intelligence, software-defined task context, and a domain-neutral cognition runtime for bounded work across long-lived environments.
 
-Charmander established the bounded assembly-line foundation; its captured measurements and limitations remain in [docs/CHARMANDER_PROOF.md](docs/CHARMANDER_PROOF.md). Charmeleon is now the active development milestone. Its context architecture is in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md), its production cognition contract is in [docs/CHARMELEON_COGNITION_RUNTIME.md](docs/CHARMELEON_COGNITION_RUNTIME.md), and its offline procedural proof contract and inseparable promotion gates are in [docs/LABYRINTH_GAUNTLET.md](docs/LABYRINTH_GAUNTLET.md) and [docs/LABYRINTH_PROMOTION_GATES.md](docs/LABYRINTH_PROMOTION_GATES.md).
+Charmander established the bounded assembly-line foundation; its captured measurements and limitations remain in [docs/CHARMANDER_PROOF.md](docs/CHARMANDER_PROOF.md). Charmeleon is now the active development milestone. Its context architecture is in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md), its production cognition contract is in [docs/CHARMELEON_COGNITION_RUNTIME.md](docs/CHARMELEON_COGNITION_RUNTIME.md), and its code-owned prerequisite and narrow-inference boundary is in [docs/CHARMELEON_COGNITION_RESOLUTION.md](docs/CHARMELEON_COGNITION_RESOLUTION.md).
 
 ## Charmeleon in one sentence
 
@@ -148,14 +148,6 @@ OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE=qwen3.5:9b-q4_K_M
 OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT=qwen3-coder:30b
 OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION=qwen3-coder:30b
 INFERENCE_CONTEXT_TOKENS=32768
-# Required immutable cognition evidence. Populate every blank from the exact
-# installed model and live backend; Omnidex refuses to guess these values.
-COGNITION_MODEL_SHA256=
-COGNITION_MODEL_QUANTIZATION=
-COGNITION_BACKEND_VERSION=
-COGNITION_HARDWARE=
-COGNITION_CONTEXT_CEILING_BYTES=
-COGNITION_MAX_OUTPUT_TOKENS=
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
@@ -163,7 +155,7 @@ The surface role classifies only browser, command-line, or service delivery. One
 
 Hosted generation providers include Ollama, OpenAI, Azure AI, xAI, Google Gemini, Anthropic, Hugging Face, and custom OpenAI-compatible endpoints.
 
-Production cognition is currently Ollama-only: every other provider remains available for ordinary non-cognition calls, but worker startup rejects it until it can prove the exact prepared-inference and live-identity contracts.
+Every bounded station must use an exact prepared-inference contract. Provider identity and request-specific authority are established at the station boundary; there is no process-wide cognition brain or universal cognition policy.
 
 Chinese service integrations include DeepSeek; Alibaba Qwen / Model Studio; Moonshot / Kimi; Zhipu / BigModel / GLM; Z.AI; MiniMax; Baidu Qianfan / ERNIE; Tencent Hunyuan; ByteDance Doubao / Volcengine Ark; StepFun; 01.AI Yi; Baichuan; iFlytek Spark; SiliconFlow; ModelScope; Huawei ModelArts; Xiaomi MiMo; Meituan LongCat; Ant Ling / InclusionAI; and Tencent TokenHub.
 

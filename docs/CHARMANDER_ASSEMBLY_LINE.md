@@ -24,6 +24,12 @@ Code owns:
 * package manifests, pinned toolchains, staging, commands, diagnostics, workspace writes, and reconciliation;
 * PostgreSQL skill persistence and Redis-backed progress/realtime coordination.
 
+Models do not call tools and may not request deterministic machinery. Parsers,
+formatters, compilers, indexes, repository reads, graph traversal, process execution,
+tests, and workspace writes run whenever code-owned state requires them. Tool catalogs
+and function-call schemas are never model context. Inference receives only the
+semantic or source-code remainder left after deterministic closure.
+
 A model may perform only a bounded task whose semantics cannot be reliably derived by code:
 
 * classify one delivery surface;

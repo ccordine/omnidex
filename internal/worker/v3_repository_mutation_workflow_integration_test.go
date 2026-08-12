@@ -30,7 +30,7 @@ func TestPostgresRepositoryMutationWorkflowProvesAndFinalizesExactPostOnce(t *te
 	if os.Getenv("OMNIDEX_REQUIRE_BWRAP_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_REQUIRE_BWRAP_INTEGRATION=1 for the real queue, PostgreSQL, filesystem, and bubblewrap proof")
 	}
-	ctx, repository, pool := openRepositoryCognitionDatabase(t)
+	ctx, repository, pool := openRepositoryTestDatabase(t)
 	root := repositoryMutationWorkflowRoot(t)
 	project, err := repository.CreateProject(
 		ctx, fmt.Sprintf("mutation-workflow-%d", time.Now().UnixNano()), root, "", "", nil,

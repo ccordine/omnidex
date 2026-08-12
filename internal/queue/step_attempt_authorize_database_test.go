@@ -6,11 +6,11 @@ import (
 )
 
 func TestPostgresStepAttemptAuthorizerRejectsStaleAttemptAfterTakeover(t *testing.T) {
-	fixture := startTaskGenerationRetirementFixture(t, "attempt-authorizer")
+	fixture := startStepAttemptFenceFixture(t, "attempt-authorizer")
 	if err := fixture.Repository.AuthorizeStepAttempt(fixture.Context, fixture.Authority); err != nil {
 		t.Fatalf("authorize current attempt: %v", err)
 	}
-	replacement := replaceCognitionAttemptForTest(t, fixture.Pool, fixture.Authority)
+	replacement := replaceStepAttemptForTest(t, fixture.Pool, fixture.Authority)
 	if err := fixture.Repository.AuthorizeStepAttempt(
 		fixture.Context, fixture.Authority,
 	); !errors.Is(err, ErrStaleStepAttempt) {
@@ -22,7 +22,7 @@ func TestPostgresStepAttemptAuthorizerRejectsStaleAttemptAfterTakeover(t *testin
 }
 
 func TestPostgresTransactionalStepAttemptAuthorizerFencesEnvironmentMutation(t *testing.T) {
-	fixture := startTaskGenerationRetirementFixture(t, "attempt-tx-authorizer")
+	fixture := startStepAttemptFenceFixture(t, "attempt-tx-authorizer")
 	tx, err := fixture.Pool.Begin(fixture.Context)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestPostgresTransactionalStepAttemptAuthorizerFencesEnvironmentMutation(t *
 		t.Fatal(err)
 	}
 
-	replacement := replaceCognitionAttemptForTest(t, fixture.Pool, fixture.Authority)
+	replacement := replaceStepAttemptForTest(t, fixture.Pool, fixture.Authority)
 	staleTx, err := fixture.Pool.Begin(fixture.Context)
 	if err != nil {
 		t.Fatal(err)

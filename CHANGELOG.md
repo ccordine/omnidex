@@ -4,7 +4,7 @@ Release codenames follow Omnidex pride versioning based on National Dex order: B
 
 ## v0.5.0 - Charmeleon (in development)
 
-Charmeleon is the **repository-intelligence and software-defined context release**. It keeps the bounded assembly-line authority split while moving repository knowledge, job continuity, attention, and exact per-call context into separate code-owned primitives. Implementation is in progress; existing-repository mutation and large-codebase autonomy remain explicitly unclaimed until the published promotion gates pass.
+Charmeleon is the **repository-intelligence and software-defined context release**. It keeps the bounded assembly-line authority split while moving repository knowledge, job continuity, attention, and exact per-call context into separate code-owned primitives. Implementation is in progress; existing-repository mutation and large-codebase autonomy remain explicitly unclaimed until production vertical evidence passes.
 
 ### Context and repository control plane
 
@@ -14,12 +14,12 @@ Charmeleon is the **repository-intelligence and software-defined context release
   generation-safe replanning, lifecycle operation identity, accepted-intent projection,
   and cursor-paginated history.
 - Added generation-bound Working Sets with explicit budgets and immutable Context
-  Projections. The first repository consumer remains shadow-only and proves that model
-  prompt bytes are unchanged while exact selected/omitted references are recorded.
-- Defined the domain-neutral Cognition Runtime and the separately isolated Labyrinth
-  cognition laboratory, including registered environment actions, public/oracle
-  separation, obligation and evidence authority, restart fencing, sealed traces,
-  independent capability suites, and pre-registered scale and transfer gates.
+  Projections. A model-visible projection is valid only when the production station
+  consumes it to resolve its named semantic gap.
+- Replaced the rejected universal cognition runtime and its model-driven procedural
+  gauntlet with an isolated in-memory reference objective machine. The reference proves
+  deterministic closure, one-leaf semantic gaps, repository discovery, bounded source
+  generation handoff, and recursive semantic correction before durable cutover.
 - Made memory-candidate promotion atomic and generation-aware so a retired job
   generation cannot publish durable memory.
 - Added typed repository retrieval operations, complete requirement/change-surface

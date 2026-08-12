@@ -16,9 +16,6 @@ func TestProductionTransportRejectsEveryOfflineAdvisoryProtocolWorkKind(t *testi
 		assemblyline.WorkRequirementSynthesis,
 		assemblyline.WorkRequirementFinalAdvisory,
 		assemblyline.WorkRequirementFinalSynthesis,
-		assemblyline.WorkRetrievalBriefing,
-		assemblyline.WorkRetrievalAdvisory,
-		assemblyline.WorkRetrievalSynthesis,
 	} {
 		if err := rejectOfflineExperimentJob(kind); err == nil || !strings.Contains(err.Error(), "offline advisory experiment") {
 			t.Fatalf("kind=%q error=%v", kind, err)
@@ -26,7 +23,7 @@ func TestProductionTransportRejectsEveryOfflineAdvisoryProtocolWorkKind(t *testi
 	}
 	for _, kind := range []assemblyline.WorkKind{
 		assemblyline.WorkRequirementPartition,
-		assemblyline.WorkRepositoryRetrieval,
+		assemblyline.WorkRepositorySearchTerm,
 	} {
 		if err := rejectOfflineExperimentJob(kind); err != nil {
 			t.Fatalf("production work %q rejected: %v", kind, err)

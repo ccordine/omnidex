@@ -18,7 +18,7 @@ func TestContextProjectionStoreRejectsInvalidAuthorityBeforePostgreSQL(t *testin
 	base := ContextProjectionAuthority{
 		StepAttemptAuthority: model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
 		WorkKind:             "repository_investigation",
-		Mode:                 ContextProjectionModeShadow,
+		Mode:                 ContextProjectionModeLive,
 	}
 	for name, mutate := range map[string]func(*ContextProjectionAuthority, *contextbuilder.Projection){
 		"missing job":        func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.JobID = 0 },
@@ -60,13 +60,12 @@ func TestContextProjectionReadsRequireHardPagination(t *testing.T) {
 	}
 }
 
-func TestContextProjectionRegistersShadowAndLiveWithoutAppliedFallback(t *testing.T) {
+func TestContextProjectionRegistersOnlyLiveMode(t *testing.T) {
 	t.Parallel()
-	if !validContextProjectionMode(ContextProjectionModeShadow) ||
-		!validContextProjectionMode(ContextProjectionModeLive) {
-		t.Fatal("registered context projection modes were rejected")
+	if !validContextProjectionMode(ContextProjectionModeLive) {
+		t.Fatal("registered live context projection mode was rejected")
 	}
-	for _, invalid := range []ContextProjectionMode{"", "applied", "fallback", "transcript"} {
+	for _, invalid := range []ContextProjectionMode{"", "shadow", "applied", "fallback", "transcript"} {
 		if validContextProjectionMode(invalid) {
 			t.Fatalf("unregistered context projection mode %q was accepted", invalid)
 		}

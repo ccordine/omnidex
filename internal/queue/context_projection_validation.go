@@ -43,7 +43,7 @@ func validateContextProjectionStore(
 }
 
 func validContextProjectionMode(mode ContextProjectionMode) bool {
-	return mode == ContextProjectionModeShadow || mode == ContextProjectionModeLive
+	return mode == ContextProjectionModeLive
 }
 
 func validateContextProjectionRepository(r *Repository, ctx context.Context) error {

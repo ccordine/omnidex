@@ -11,6 +11,8 @@ import (
 const (
 	RepositoryChangeSurfaceSchemaV1 = "omnidex.repository-change-surface.v1"
 	maxRepositoryChangeTargets      = 8
+	maxRepositoryChangeNeedBytes    = 4 * 1024
+	maxRepositoryRequirementBytes   = 512
 )
 
 type RepositoryChangeSurfaceInput struct {
@@ -30,6 +32,11 @@ type RepositoryChangeSurfaceDecision struct {
 	UnresolvedRequirementQuotes []string                 `json:"unresolved_requirement_quotes"`
 }
 
+type repositoryChangeSurfaceEvidence struct {
+	Symbols   []repositoryretrieval.EvidenceSymbol   `json:"symbols"`
+	Relations []repositoryretrieval.EvidenceRelation `json:"relations"`
+}
+
 func NewRepositoryChangeSurfaceJob(input RepositoryChangeSurfaceInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkRepositoryChangeSurface, input, input.validate)
 }
@@ -38,8 +45,8 @@ func (input RepositoryChangeSurfaceInput) validate() error {
 	if input.ResearchNeed == "" || input.ResearchNeed != strings.TrimSpace(input.ResearchNeed) {
 		return fmt.Errorf("repository change surface requires one trimmed research need")
 	}
-	if len(input.ResearchNeed) > maxRepositoryResearchNeedBytes {
-		return fmt.Errorf("repository change surface research need exceeds %d bytes", maxRepositoryResearchNeedBytes)
+	if len(input.ResearchNeed) > maxRepositoryChangeNeedBytes {
+		return fmt.Errorf("repository change surface research need exceeds %d bytes", maxRepositoryChangeNeedBytes)
 	}
 	if len(input.RequirementQuotes) == 0 || len(input.RequirementQuotes) > maxRepositoryChangeTargets {
 		return fmt.Errorf(
@@ -138,8 +145,8 @@ func (decision RepositoryChangeSurfaceDecision) ValidateFor(input RepositoryChan
 }
 
 func validateRepositoryRequirementQuote(researchNeed, quote string) error {
-	if quote == "" || quote != strings.TrimSpace(quote) || len(quote) > maxRepositoryRetrievalQueryBytes {
-		return fmt.Errorf("repository change surface requires trimmed requirement quotes of at most %d bytes", maxRepositoryRetrievalQueryBytes)
+	if quote == "" || quote != strings.TrimSpace(quote) || len(quote) > maxRepositoryRequirementBytes {
+		return fmt.Errorf("repository change surface requires trimmed requirement quotes of at most %d bytes", maxRepositoryRequirementBytes)
 	}
 	if _, err := uniqueTextSpan(researchNeed, quote); err != nil {
 		return fmt.Errorf("repository change requirement quote %q: %w", quote, err)
@@ -151,7 +158,10 @@ func BuildRepositoryChangeSurfacePrompt(input RepositoryChangeSurfaceInput) (str
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	evidence, err := json.Marshal(input.Evidence)
+	evidence, err := json.Marshal(repositoryChangeSurfaceEvidence{
+		Symbols:   append([]repositoryretrieval.EvidenceSymbol(nil), input.Evidence.Symbols...),
+		Relations: append([]repositoryretrieval.EvidenceRelation(nil), input.Evidence.Relations...),
+	})
 	if err != nil {
 		return "", fmt.Errorf("encode repository change evidence: %w", err)
 	}

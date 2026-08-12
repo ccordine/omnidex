@@ -93,15 +93,15 @@ func reservedTaskEntryID(id taskstate.EntryID) bool {
 	return id == initialUserInstructionEntryID ||
 		strings.HasPrefix(string(id), replanFeedbackEntryPrefix) ||
 		strings.HasPrefix(string(id), acceptedIntentEntryPrefix) ||
-		strings.HasPrefix(string(id), cognitionEntryPrefix)
+		strings.HasPrefix(string(id), retiredCognitionEntryPrefix)
 }
 
 func reservedTaskNodeID(id taskstate.NodeID) bool {
 	return id == initialTaskRootNodeID || strings.HasPrefix(string(id), acceptedIntentObjectivePrefix) ||
-		strings.HasPrefix(string(id), cognitionObligationNodePrefix)
+		strings.HasPrefix(string(id), retiredCognitionObligationNodePrefix)
 }
 
 func reservedTaskEdgeID(id taskstate.EdgeID) bool {
 	return strings.HasPrefix(string(id), acceptedIntentEdgePrefix) ||
-		strings.HasPrefix(string(id), cognitionObligationEdgePrefix)
+		strings.HasPrefix(string(id), retiredCognitionObligationEdgePrefix)
 }

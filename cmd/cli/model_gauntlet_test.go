@@ -108,49 +108,6 @@ func TestExecuteRequirementPartitionGauntletLoadsLabelsOnlyAfterInference(t *tes
 	}
 }
 
-func TestExecuteRepositoryRetrievalGauntletLoadsLabelsOnlyAfterInference(t *testing.T) {
-	directory := t.TempDir()
-	casesPath := filepath.Join(directory, "cases.json")
-	labelsPath := filepath.Join(directory, "labels.json")
-	outputPath := filepath.Join(directory, "result.json")
-	writeGauntletTestFile(t, casesPath, `{
-		"schema":"omnidex.model-gauntlet.repository-retrieval-cases.v2",
-		"cases":[{"id":"one","input":{"research_need":"Find direct references to ParseEnvelope."}}]
-	}`)
-	writeGauntletTestFile(t, labelsPath, `{"schema":"not-yet-valid"}`)
-
-	generator := &gauntletCLIStub{onCall: func(call int, request modelgauntlet.GenerateRequest) modelgauntlet.GenerateResponse {
-		if call == 4 {
-			writeGauntletTestFile(t, labelsPath, `{
-				"schema":"omnidex.model-gauntlet.repository-retrieval-labels.v2",
-				"labels":[{"case_id":"one","operation":"direct_references","query_quote":"ParseEnvelope"}]
-			}`)
-		}
-		switch request.Stage {
-		case modelgauntlet.StageBriefing:
-			return modelgauntlet.GenerateResponse{Content: `{"schema":"omnidex.repository-retrieval-briefing.v2","lens":"relation_direction"}`}
-		case modelgauntlet.StageDeliberation:
-			return modelgauntlet.GenerateResponse{Thinking: "evidence only", Content: "retrieve incoming references"}
-		default:
-			raw, _ := json.Marshal(assemblyline.RepositoryRetrievalDecision{
-				Schema:    assemblyline.RepositoryRetrievalSchemaV2,
-				Operation: assemblyline.RetrievalDirectReferences, QueryQuote: "ParseEnvelope",
-			})
-			return modelgauntlet.GenerateResponse{Content: string(raw)}
-		}
-	}}
-	result, err := executeRepositoryRetrievalGauntlet(context.Background(), modelGauntletOptions{
-		CasesPath: casesPath, LabelsPath: labelsPath, OutputPath: outputPath,
-		StableModel: "stable", ReasoningModel: "reasoner", ContextTokens: 16384, KeepAlive: "5m",
-	}, generator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if generator.calls != 4 || result.Evaluation.Scores[modelgauntlet.VariantDeliberated].Correct != 1 {
-		t.Fatalf("calls=%d result=%#v", generator.calls, result)
-	}
-}
-
 func TestExecuteCompleteRequirementGauntletLoadsLabelsOnlyAfterEveryVariantStops(t *testing.T) {
 	directory := t.TempDir()
 	casesPath := filepath.Join(directory, "cases.json")
