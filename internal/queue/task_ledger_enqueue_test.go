@@ -23,7 +23,7 @@ func TestPostgresJobEnqueueCreatesInitialTaskAuthorityAtomically(t *testing.T) {
 	}
 
 	marker := fmt.Sprintf("task-ledger-enqueue-%d", time.Now().UnixNano())
-	job, err := repository.EnqueueJob(ctx, marker+"-public", model.PipelineAssistant, []byte(`{}`))
+	job, err := repository.EnqueueJob(ctx, marker+"-public", model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestPostgresJobEnqueueCreatesInitialTaskAuthorityAtomically(t *testing.T) {
 
 	failureMarker := marker + "-forced-ledger-failure"
 	installTaskLedgerFailureTrigger(t, ctx, pool, failureMarker)
-	if _, err := repository.EnqueueJob(ctx, failureMarker, model.PipelineAssistant, []byte(`{}`)); err == nil ||
+	if _, err := repository.EnqueueJob(ctx, failureMarker, model.PipelineCoding, []byte(`{}`)); err == nil ||
 		!strings.Contains(err.Error(), "create task ledger") {
 		t.Fatalf("forced task ledger failure error=%v", err)
 	}

@@ -45,12 +45,6 @@ func selectExistingRepositoryChangeSurface(
 	if err != nil {
 		return assemblyline.RepositoryChangeSurfaceDecision{}, err
 	}
-	if len(decision.UnresolvedRequirementQuotes) > 0 {
-		return assemblyline.RepositoryChangeSurfaceDecision{}, fmt.Errorf(
-			"insufficient_repository_evidence: unresolved requirements: %v",
-			decision.UnresolvedRequirementQuotes,
-		)
-	}
 	return decision, nil
 }
 

@@ -20,7 +20,7 @@ var Fields = buildFields()
 
 func ProviderSecretKey(provider string) (string, bool) {
 	definition, ok := catalog.Lookup(provider)
-	if !ok || len(definition.APIKeyEnvironmentKeys) == 0 {
+	if !ok || (!definition.SupportsExactPreparedStations && !definition.SupportsEmbeddings) || len(definition.APIKeyEnvironmentKeys) == 0 {
 		return "", false
 	}
 	if definition.ID == "azure" {
@@ -34,7 +34,7 @@ func buildFields() []Field {
 		{Key: "cursor_api_key", Label: "Cursor API key", Description: "Cursor SDK architect delegation.", EnvKeys: []string{"CURSOR_API_KEY"}},
 		{Key: "codex_api_key", Label: "Codex API key", Description: "Codex SDK architect delegation. Falls back to OpenAI key when unset.", EnvKeys: []string{"CODEX_API_KEY"}},
 	}
-	for _, definition := range catalog.Definitions() {
+	for _, definition := range catalog.ProductionDefinitions() {
 		key, ok := ProviderSecretKey(definition.ID)
 		if !ok {
 			continue

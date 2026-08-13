@@ -63,6 +63,10 @@ func (s *Server) enqueueScrumCardAgentRun(
 		card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Models: %s", strings.Join(pulled, ", ")))
 	}
 	card.JobID = fmt.Sprintf("%d", job.ID)
+	card.SyncJobID = card.JobID
+	card.AgentStreamChatCursor = 0
+	card.AgentStreamConsoleCursor = 0
+	card.StepContextCursor = 0
 	card.Column = "in_progress"
 	card.PlayState = scrumPlayRunning
 	card.QueueOrder = 0

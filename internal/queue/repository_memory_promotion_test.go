@@ -24,7 +24,8 @@ func TestCurrentMemoryPromotionRequiresJobGenerationAuthority(t *testing.T) {
 	generation := int64(1)
 	request.Candidate.JobID = 9
 	request.Candidate.Generation = &generation
-	request.Embedding = []float64{math.NaN()}
+	request.Embedding = make([]float64, model.MemoryEmbeddingDimensions)
+	request.Embedding[0] = math.NaN()
 	if _, err := (&Repository{}).PromoteCurrentMemoryCandidate(context.Background(), request); err == nil ||
 		!strings.Contains(err.Error(), "finite") {
 		t.Fatalf("invalid embedding error=%v", err)
@@ -41,7 +42,8 @@ func TestMemoryPromotionAuthoritiesAreNotInterchangeable(t *testing.T) {
 		ID: 12, CandidateKind: model.MemoryKindReference, Content: "global fact",
 	}
 	base := MemoryCandidatePromotion{
-		Tier: model.MemoryCandidateStatusApproved, Embedding: []float64{0.5},
+		Tier:      model.MemoryCandidateStatusApproved,
+		Embedding: make([]float64, model.MemoryEmbeddingDimensions),
 	}
 
 	base.Candidate = globalCandidate

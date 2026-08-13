@@ -19,23 +19,6 @@ func TestSkillVersionRequiresValidatedActiveState(t *testing.T) {
 	}
 }
 
-func TestSkillVersionRejectsInvalidLifecycleTransition(t *testing.T) {
-	t.Parallel()
-
-	if err := ValidateSkillTransition(SkillStatusCandidate, SkillStatusActive); err == nil {
-		t.Fatal("candidate activated without validation")
-	}
-	if err := ValidateSkillTransition(SkillStatusCandidate, SkillStatusValidating); err != nil {
-		t.Fatalf("candidate -> validating rejected: %v", err)
-	}
-	if err := ValidateSkillTransition(SkillStatusValidating, SkillStatusActive); err != nil {
-		t.Fatalf("validating -> active rejected: %v", err)
-	}
-	if err := ValidateSkillTransition(SkillStatusRejected, SkillStatusActive); err == nil {
-		t.Fatal("rejected skill was resurrected")
-	}
-}
-
 func TestSkillContentHashCoversEveryExecutableContractField(t *testing.T) {
 	t.Parallel()
 
@@ -60,11 +43,11 @@ func TestSkillContentHashCanonicalizesSchemaFormatting(t *testing.T) {
 	first := validSkillVersion(t).Spec
 	second := first
 	second.inputSchemaRaw = json.RawMessage("{\n  \"additionalProperties\": false,\n  \"type\": \"object\"\n}")
-	firstHash, err := SkillContentHash(first, SkillKindBootstrapSpecialist)
+	firstHash, err := SkillContentHash(first, SkillKindCodeProcedure)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondHash, err := SkillContentHash(second, SkillKindBootstrapSpecialist)
+	secondHash, err := SkillContentHash(second, SkillKindCodeProcedure)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,17 +59,19 @@ func TestSkillContentHashCanonicalizesSchemaFormatting(t *testing.T) {
 func validSkillVersion(t *testing.T) SkillVersion {
 	t.Helper()
 	spec := Spec{
-		ID: "bootstrap_test", Purpose: "Perform one bounded test operation.",
-		Instructions: "Return the tested value only.", ContextBudget: 512,
+		ID: "learned_0123456789abcdef0123456789abcdef", Purpose: "Perform one bounded test operation.",
+		Instructions:    "Return the tested value only.",
 		inputSchemaRaw:  json.RawMessage(`{"type":"object","additionalProperties":false}`),
 		outputSchemaRaw: json.RawMessage(`{"type":"object","additionalProperties":false}`),
 	}
-	hash, err := SkillContentHash(spec, SkillKindBootstrapSpecialist)
+	hash, err := SkillContentHash(spec, SkillKindCodeProcedure)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return SkillVersion{
-		Spec: spec, Version: 1, Status: SkillStatusValidating,
-		Source: SkillSourceBootstrap, Kind: SkillKindBootstrapSpecialist, ContentSHA256: hash,
+		Spec: spec, Version: 1, Status: SkillStatusActive,
+		Source: SkillSourceLearned, Kind: SkillKindCodeProcedure, CreatedByJobID: int64Pointer(1), ContentSHA256: hash,
 	}
 }
+
+func int64Pointer(value int64) *int64 { return &value }

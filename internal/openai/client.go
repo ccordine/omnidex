@@ -10,8 +10,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 const (
@@ -22,7 +20,6 @@ const (
 type Client struct {
 	baseURL        string
 	apiKey         string
-	defaultModel   string
 	embeddingModel string
 	organization   string
 	project        string
@@ -31,38 +28,6 @@ type Client struct {
 	apiStyle       string
 	apiVersion     string
 	httpClient     *http.Client
-}
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatCompletionRequest struct {
-	Model          string                        `json:"model"`
-	Messages       []chatMessage                 `json:"messages"`
-	Stream         bool                          `json:"stream"`
-	MaxTokens      int                           `json:"max_tokens,omitempty"`
-	ResponseFormat *chatCompletionResponseFormat `json:"response_format,omitempty"`
-}
-
-type chatCompletionResponseFormat struct {
-	Type       string                    `json:"type"`
-	JSONSchema *chatCompletionJSONSchema `json:"json_schema,omitempty"`
-}
-
-type chatCompletionJSONSchema struct {
-	Name   string         `json:"name"`
-	Strict bool           `json:"strict"`
-	Schema map[string]any `json:"schema"`
-}
-
-type chatCompletionResponse struct {
-	Choices []struct {
-		Message struct {
-			Content any `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
 }
 
 type embeddingsRequest struct {
@@ -76,11 +41,30 @@ type embeddingsResponse struct {
 	} `json:"data"`
 }
 
-func New(baseURL, apiKey, defaultModel, embeddingModel, organization, project string, timeout time.Duration) (*Client, error) {
-	return NewCompatible("openai", "OPENAI_API_KEY", baseURL, apiKey, defaultModel, embeddingModel, organization, project, timeout)
+func NewEmbedding(
+	baseURL string,
+	apiKey string,
+	embeddingModel string,
+	organization string,
+	project string,
+	timeout time.Duration,
+) (*Client, error) {
+	return NewCompatibleEmbedding(
+		"openai", "OPENAI_API_KEY", baseURL, apiKey, embeddingModel,
+		organization, project, timeout,
+	)
 }
 
-func NewCompatible(providerName, apiKeyName, baseURL, apiKey, defaultModel, embeddingModel, organization, project string, timeout time.Duration) (*Client, error) {
+func NewCompatibleEmbedding(
+	providerName string,
+	apiKeyName string,
+	baseURL string,
+	apiKey string,
+	embeddingModel string,
+	organization string,
+	project string,
+	timeout time.Duration,
+) (*Client, error) {
 	providerName = strings.TrimSpace(providerName)
 	if providerName == "" {
 		return nil, fmt.Errorf("provider name is required")
@@ -89,7 +73,7 @@ func NewCompatible(providerName, apiKeyName, baseURL, apiKey, defaultModel, embe
 	if apiKeyName == "" {
 		return nil, fmt.Errorf("API key environment name is required for provider %s", providerName)
 	}
-	baseURL, err := normalizeCompatibleBaseURL(baseURL)
+	normalizedBaseURL, err := normalizeCompatibleBaseURL(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("%s base URL: %w", providerName, err)
 	}
@@ -97,30 +81,29 @@ func NewCompatible(providerName, apiKeyName, baseURL, apiKey, defaultModel, embe
 	if apiKey == "" {
 		return nil, fmt.Errorf("%s is required for provider %s", apiKeyName, providerName)
 	}
-	defaultModel = strings.TrimSpace(defaultModel)
-	if defaultModel == "" {
-		return nil, fmt.Errorf("default model is required for provider %s", providerName)
+	embeddingModel = strings.TrimSpace(embeddingModel)
+	if embeddingModel == "" {
+		return nil, fmt.Errorf("embedding model is required for provider %s", providerName)
 	}
 	if timeout <= 0 {
 		return nil, fmt.Errorf("request timeout must be positive for provider %s", providerName)
 	}
 	return &Client{
-		baseURL:        baseURL,
-		apiKey:         apiKey,
-		defaultModel:   defaultModel,
-		embeddingModel: strings.TrimSpace(embeddingModel),
-		organization:   strings.TrimSpace(organization),
-		project:        strings.TrimSpace(project),
-		providerName:   providerName,
-		apiKeyName:     apiKeyName,
-		apiStyle:       "openai",
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		baseURL: normalizedBaseURL, apiKey: apiKey, embeddingModel: embeddingModel,
+		organization: strings.TrimSpace(organization), project: strings.TrimSpace(project),
+		providerName: providerName, apiKeyName: apiKeyName, apiStyle: "openai",
+		httpClient: &http.Client{Timeout: timeout},
 	}, nil
 }
 
-func NewAzureAI(baseURL, apiKey, defaultModel, embeddingModel, apiVersion, apiStyle string, timeout time.Duration) *Client {
+func NewAzureAIEmbedding(
+	baseURL string,
+	apiKey string,
+	embeddingModel string,
+	apiVersion string,
+	apiStyle string,
+	timeout time.Duration,
+) (*Client, error) {
 	apiStyle = normalizeAzureAIStyle(apiStyle, baseURL)
 	if strings.TrimSpace(apiVersion) == "" {
 		switch apiStyle {
@@ -132,111 +115,28 @@ func NewAzureAI(baseURL, apiKey, defaultModel, embeddingModel, apiVersion, apiSt
 			apiVersion = "2024-10-21"
 		}
 	}
+	baseURL = normalizeAzureBaseURLForStyle(baseURL, apiStyle)
+	if _, err := normalizeCompatibleBaseURL(baseURL); err != nil {
+		return nil, fmt.Errorf("azure base URL: %w", err)
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return nil, fmt.Errorf("AZURE_AI_API_KEY is required for provider azure")
+	}
+	embeddingModel = strings.TrimSpace(embeddingModel)
+	if embeddingModel == "" {
+		return nil, fmt.Errorf("embedding model is required for provider azure")
+	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("request timeout must be positive for provider azure")
+	}
 	return &Client{
-		baseURL:        normalizeAzureBaseURLForStyle(baseURL, apiStyle),
-		apiKey:         strings.TrimSpace(apiKey),
-		defaultModel:   strings.TrimSpace(defaultModel),
-		embeddingModel: strings.TrimSpace(embeddingModel),
-		providerName:   "azure",
-		apiKeyName:     "AZURE_AI_API_KEY",
-		apiStyle:       apiStyle,
-		apiVersion:     strings.TrimSpace(apiVersion),
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
-	}
-}
-
-func (c *Client) Generate(ctx context.Context, model, prompt string) (string, error) {
-	prepared, err := c.PrepareContextModel(ctx, model, prompt)
-	if err != nil {
-		return "", err
-	}
-	return c.GeneratePrepared(ctx, prepared)
-}
-
-func (c *Client) PrepareContextModel(_ context.Context, model, prompt string) (llm.PreparedModel, error) {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		model = c.defaultModel
-	}
-	if model == "" {
-		return llm.PreparedModel{}, fmt.Errorf("model is required")
-	}
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		prompt = "(empty prompt)"
-	}
-	return llm.PreparedModel{
-		BaseModel:     model,
-		ContextModel:  model,
-		ModelfilePath: "",
-		PromptHint:    llm.DerivePreparedModelPromptHint(prompt),
-		Prompt:        prompt,
+		baseURL: baseURL, apiKey: apiKey, embeddingModel: embeddingModel,
+		providerName: "azure", apiKeyName: "AZURE_AI_API_KEY",
+		apiStyle: apiStyle, apiVersion: strings.TrimSpace(apiVersion),
+		httpClient: &http.Client{Timeout: timeout},
 	}, nil
 }
-
-func (c *Client) GeneratePrepared(ctx context.Context, prepared llm.PreparedModel) (string, error) {
-	model := strings.TrimSpace(prepared.ContextModel)
-	if model == "" {
-		model = strings.TrimSpace(prepared.BaseModel)
-	}
-	if model == "" {
-		model = c.defaultModel
-	}
-	if model == "" {
-		return "", fmt.Errorf("model is required")
-	}
-
-	prompt := strings.TrimSpace(prepared.Prompt)
-	if prompt == "" {
-		prompt = "(empty prompt)"
-	}
-	promptHint := strings.TrimSpace(prepared.PromptHint)
-	if promptHint == "" {
-		promptHint = llm.MinimalGeneratePrompt
-	}
-
-	request := chatCompletionRequest{
-		Model:     model,
-		MaxTokens: prepared.MaxOutputTokens,
-		Messages: []chatMessage{
-			{Role: "system", Content: prompt},
-			{Role: "user", Content: promptHint},
-		},
-		Stream: false,
-	}
-	if err := llm.ValidateResponseContract(prepared); err != nil {
-		return "", err
-	}
-	if prepared.ResponseFormat != "" {
-		request.ResponseFormat = &chatCompletionResponseFormat{Type: "json_object"}
-		if len(prepared.ResponseSchema) > 0 {
-			request.ResponseFormat = &chatCompletionResponseFormat{
-				Type: "json_schema",
-				JSONSchema: &chatCompletionJSONSchema{
-					Name: "omnidex_station_output", Strict: true, Schema: prepared.ResponseSchema,
-				},
-			}
-		}
-	}
-	var resp chatCompletionResponse
-	err := c.doJSON(ctx, http.MethodPost, c.chatCompletionsPath(model), request, &resp)
-	if err != nil {
-		return "", err
-	}
-
-	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("%s response missing choices", c.providerName)
-	}
-	text := strings.TrimSpace(messageContentAsString(resp.Choices[0].Message.Content))
-	if text == "" {
-		return "", fmt.Errorf("%s response missing message content", c.providerName)
-	}
-	return text, nil
-}
-
-func (c *Client) CleanupPreparedModel(_ llm.PreparedModel) {}
 
 func (c *Client) Embedding(ctx context.Context, content string) ([]float64, error) {
 	model := strings.TrimSpace(c.embeddingModel)
@@ -244,21 +144,26 @@ func (c *Client) Embedding(ctx context.Context, content string) ([]float64, erro
 		return nil, fmt.Errorf("embedding model is required")
 	}
 
-	var resp embeddingsResponse
-	err := c.doJSON(ctx, http.MethodPost, c.embeddingsPath(model), embeddingsRequest{
-		Model: model,
-		Input: content,
-	}, &resp)
-	if err != nil {
+	var response embeddingsResponse
+	if err := c.doJSON(
+		ctx, http.MethodPost, c.embeddingsPath(model),
+		embeddingsRequest{Model: model, Input: content}, &response,
+	); err != nil {
 		return nil, err
 	}
-	if len(resp.Data) == 0 || len(resp.Data[0].Embedding) == 0 {
+	if len(response.Data) == 0 || len(response.Data[0].Embedding) == 0 {
 		return nil, fmt.Errorf("embedding response missing vectors")
 	}
-	return resp.Data[0].Embedding, nil
+	return response.Data[0].Embedding, nil
 }
 
-func (c *Client) doJSON(ctx context.Context, method, path string, payload any, out any) error {
+func (c *Client) doJSON(
+	ctx context.Context,
+	method string,
+	path string,
+	payload any,
+	out any,
+) error {
 	if strings.TrimSpace(c.apiKey) == "" {
 		return fmt.Errorf("%s is required", c.apiKeyName)
 	}
@@ -272,7 +177,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 		body = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.baseURL, "/")+path, body)
+	req, err := http.NewRequestWithContext(
+		ctx, method, strings.TrimRight(c.baseURL, "/")+path, body,
+	)
 	if err != nil {
 		return err
 	}
@@ -294,7 +201,6 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 		return fmt.Errorf("%s request: %w", c.providerName, err)
 	}
 	defer resp.Body.Close()
-
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
 		return fmt.Errorf("read %s response: %w", c.providerName, err)
@@ -302,28 +208,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 	if len(data) > maxProviderResponseBytes {
 		return fmt.Errorf("%s response exceeded %d bytes", c.providerName, maxProviderResponseBytes)
 	}
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var errBody struct {
-			Error struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			} `json:"error"`
-		}
-		if json.Unmarshal(data, &errBody) == nil && strings.TrimSpace(errBody.Error.Message) != "" {
-			msg := strings.TrimSpace(errBody.Error.Message)
-			if strings.TrimSpace(errBody.Error.Type) != "" {
-				msg = fmt.Sprintf("%s (%s)", msg, strings.TrimSpace(errBody.Error.Type))
-			}
-			return fmt.Errorf("%s request failed: %s", c.providerName, msg)
-		}
-		body := strings.TrimSpace(string(data))
-		if len(body) > maxProviderErrorBytes {
-			body = body[:maxProviderErrorBytes] + "...[truncated]"
-		}
-		return fmt.Errorf("%s request failed: status=%d body=%s", c.providerName, resp.StatusCode, body)
+		return c.providerError(resp.StatusCode, data)
 	}
-
 	if out != nil {
 		if err := json.Unmarshal(data, out); err != nil {
 			return fmt.Errorf("decode %s response: %w", c.providerName, err)
@@ -332,27 +219,35 @@ func (c *Client) doJSON(ctx context.Context, method, path string, payload any, o
 	return nil
 }
 
-func (c *Client) chatCompletionsPath(model string) string {
-	switch c.apiStyle {
-	case "azure_openai":
-		return c.withAPIVersion("/openai/deployments/" + url.PathEscape(strings.TrimSpace(model)) + "/chat/completions")
-	case "foundry":
-		return c.withAPIVersion("/models/chat/completions")
-	case "azure_v1":
-		return "/chat/completions"
-	default:
-		return "/chat/completions"
+func (c *Client) providerError(status int, data []byte) error {
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
 	}
+	if json.Unmarshal(data, &body) == nil && strings.TrimSpace(body.Error.Message) != "" {
+		message := strings.TrimSpace(body.Error.Message)
+		if kind := strings.TrimSpace(body.Error.Type); kind != "" {
+			message = fmt.Sprintf("%s (%s)", message, kind)
+		}
+		return fmt.Errorf("%s request failed: %s", c.providerName, message)
+	}
+	message := strings.TrimSpace(string(data))
+	if len(message) > maxProviderErrorBytes {
+		message = message[:maxProviderErrorBytes] + "...[truncated]"
+	}
+	return fmt.Errorf("%s request failed: status=%d body=%s", c.providerName, status, message)
 }
 
 func (c *Client) embeddingsPath(model string) string {
 	switch c.apiStyle {
 	case "azure_openai":
-		return c.withAPIVersion("/openai/deployments/" + url.PathEscape(strings.TrimSpace(model)) + "/embeddings")
+		return c.withAPIVersion(
+			"/openai/deployments/" + url.PathEscape(strings.TrimSpace(model)) + "/embeddings",
+		)
 	case "foundry":
 		return c.withAPIVersion("/models/embeddings")
-	case "azure_v1":
-		return "/embeddings"
 	default:
 		return "/embeddings"
 	}
@@ -363,89 +258,5 @@ func (c *Client) withAPIVersion(path string) string {
 	if version == "" {
 		return path
 	}
-	separator := "?"
-	if strings.Contains(path, "?") {
-		separator = "&"
-	}
-	return path + separator + "api-version=" + url.QueryEscape(version)
-}
-
-func normalizeCompatibleBaseURL(baseURL string) (string, error) {
-	value := strings.TrimSpace(baseURL)
-	if value == "" {
-		return "", fmt.Errorf("base URL is required")
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return "", fmt.Errorf("must be an absolute HTTP(S) URL, received %q", value)
-	}
-	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("must not contain credentials, query parameters, or fragments, received %q", value)
-	}
-	return strings.TrimRight(value, "/"), nil
-}
-
-func normalizeAzureBaseURL(baseURL string) string {
-	return normalizeAzureBaseURLForStyle(baseURL, "")
-}
-
-func normalizeAzureBaseURLForStyle(baseURL, style string) string {
-	value := strings.TrimSpace(baseURL)
-	if value == "" {
-		return ""
-	}
-	if !strings.Contains(value, "://") {
-		value = "https://" + value
-	}
-	if normalizeAzureAIStyle(style, value) == "azure_v1" {
-		parsed, err := url.Parse(value)
-		if err == nil && (parsed.Path == "" || parsed.Path == "/") {
-			parsed.Path = "/openai/v1"
-			value = parsed.String()
-		}
-	}
-	return strings.TrimRight(value, "/")
-}
-
-func normalizeAzureAIStyle(style, baseURL string) string {
-	switch strings.ToLower(strings.TrimSpace(style)) {
-	case "foundry", "ai-foundry", "azure-foundry", "models", "model-inference":
-		return "foundry"
-	case "v1", "openai-v1", "azure-v1", "azure_v1", "azure_openai_v1":
-		return "azure_v1"
-	case "openai", "azure-openai", "azure_openai", "deployments", "deployment":
-		return "azure_openai"
-	}
-	if strings.Contains(strings.ToLower(baseURL), "/openai/v1") {
-		return "azure_v1"
-	}
-	if strings.Contains(strings.ToLower(baseURL), ".services.ai.azure.com") {
-		return "foundry"
-	}
-	return "azure_openai"
-}
-
-func messageContentAsString(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case []any:
-		parts := make([]string, 0, len(typed))
-		for _, item := range typed {
-			entry, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			textValue, ok := entry["text"].(string)
-			if !ok {
-				continue
-			}
-			if text := strings.TrimSpace(textValue); text != "" {
-				parts = append(parts, text)
-			}
-		}
-		return strings.TrimSpace(strings.Join(parts, "\n"))
-	default:
-		return ""
-	}
+	return path + "?api-version=" + url.QueryEscape(version)
 }

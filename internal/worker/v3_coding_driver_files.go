@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
 
 func (s *directCodingSession) Delete(path string) (bool, error) {
@@ -23,16 +23,15 @@ func (s *directCodingSession) Delete(path string) (bool, error) {
 		}
 		return false, fmt.Errorf("inspect coding delete target %s: %w", path, err)
 	}
-	result, err := s.execute(toolruntime.Call{Name: "workspace.write", Input: map[string]any{
-		"path":      path,
-		"operation": "delete",
-		"content":   "",
-	}})
+	result, err := s.executeWorkspaceMutation(workspaceFileMutation{
+		Path: path, Operation: workspaceFileDelete,
+	})
 	if err != nil {
 		return false, fmt.Errorf("delete coding file %s: %w", path, err)
 	}
 	s.emitReviewableDiff(path, result)
 	s.recordDeletedSource(path)
+	s.recordMutation(path, workspaceFileDelete)
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_file_deleted", fmt.Sprintf(
 		"path=%s result=%s",
 		safeLine(path, "unknown"),
@@ -41,7 +40,7 @@ func (s *directCodingSession) Delete(path string) (bool, error) {
 	return true, nil
 }
 
-func (s *directCodingSession) Generate(task directCodingFileTask) (bool, error) {
+func (s *directCodingSession) MaterializeTask(task directCodingFileTask) (bool, error) {
 	if err := task.validate(); err != nil {
 		return false, err
 	}
@@ -52,10 +51,10 @@ func (s *directCodingSession) Generate(task directCodingFileTask) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	operation := "create"
+	operation := workspaceFileCreate
 	current, readErr := os.ReadFile(target)
 	if readErr == nil {
-		operation = "replace"
+		operation = workspaceFileReplace
 	} else if !os.IsNotExist(readErr) {
 		return false, fmt.Errorf("inspect coding target %s: %w", task.Path, readErr)
 	}
@@ -70,7 +69,7 @@ func (s *directCodingSession) Generate(task directCodingFileTask) (bool, error) 
 
 func (s *directCodingSession) writeDirectCodingSource(
 	path string,
-	operation string,
+	operation workspaceFileOperation,
 	current []byte,
 	content string,
 ) (bool, error) {
@@ -80,16 +79,15 @@ func (s *directCodingSession) writeDirectCodingSource(
 		))
 		return false, nil
 	}
-	result, writeErr := s.execute(toolruntime.Call{Name: "workspace.write", Input: map[string]any{
-		"path":      path,
-		"operation": operation,
-		"content":   content,
-	}})
+	result, writeErr := s.executeWorkspaceMutation(workspaceFileMutation{
+		Path: path, Operation: operation, Content: content,
+	})
 	if writeErr != nil {
 		return false, fmt.Errorf("write generated coding source %s: %w", path, writeErr)
 	}
 	s.emitReviewableDiff(path, result)
 	s.recordWrittenSource(path, content)
+	s.recordMutation(path, operation)
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_file_written", fmt.Sprintf(
 		"path=%s bytes=%d operation=%s result=%s",
 		safeLine(path, "unknown"),
@@ -100,7 +98,7 @@ func (s *directCodingSession) writeDirectCodingSource(
 	return true, nil
 }
 
-func (s *directCodingSession) emitReviewableDiff(path string, result toolruntime.Result) {
+func (s *directCodingSession) emitReviewableDiff(path string, result operation.Result) {
 	diff, _ := result.Output["diff"].(string)
 	if diff == "" {
 		return
@@ -127,6 +125,31 @@ func (s *directCodingSession) recordDeletedSource(path string) {
 	delete(s.completion.WrittenSource, path)
 }
 
-func (s *directCodingSession) execute(call toolruntime.Call) (toolruntime.Result, error) {
-	return s.runtime.svc.executeV3Tool(s.runtime.ctx, s.runtime.claim, "subtask_executor", call)
+func (s *directCodingSession) recordMutation(path string, operation workspaceFileOperation) {
+	s.mutationJournal = append(s.mutationJournal, directCodingMutationJournalEntry{
+		Path: path, Operation: operation,
+	})
+}
+
+func (s *directCodingSession) executeWorkspaceMutation(command workspaceFileMutation) (operation.Result, error) {
+	result, err := applyWorkspaceFileMutation(s.runtime.ctx, s.root, command)
+	if err != nil {
+		return operation.Result{}, err
+	}
+	if err := s.persistCodeOwnedEvidence(result); err != nil {
+		return operation.Result{}, err
+	}
+	return result, nil
+}
+
+func (s *directCodingSession) persistCodeOwnedEvidence(result operation.Result) error {
+	if len(result.Evidence) == 0 {
+		return fmt.Errorf("code-owned operation produced no evidence")
+	}
+	for _, record := range result.Evidence {
+		if err := s.runtime.writeEvidence(record); err != nil {
+			return err
+		}
+	}
+	return nil
 }

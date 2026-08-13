@@ -53,22 +53,22 @@ No model receives a file name, path, workspace tree, project plan, queue, phase,
 3. Independent semantic stations derive the supported surface, one exact product-context quote, exact requirement quotes, and explicit artifact handling. One stable schema-bound requirement-partition station is used for every extraction and split decision; there is no production reasoning adviser or second split-model route.
 4. Code repeatedly removes accepted exact spans, asks the same stable partition station about the residual, and recursively splits every feature envelope to a strict fixed point. Code assigns `requirement_NNN` identities and rejects ungrounded, overlapping, reordered, duplicate, empty, non-progressing, or excessive results.
 5. The current browser assembly supports one through ten requirements. Other surfaces or larger graphs fail explicitly before construction work begins.
-6. Each requirement receives a procedure binding:
+6. Each requirement may receive one active procedure enrichment:
    * an exact active learned skill is reused by code when its code-owned identity matches;
    * otherwise the configured embedding provider retrieves at most five active `code_procedure` candidates from PostgreSQL;
    * a tiny selector sees only local context, one need, and opaque purpose summaries;
-   * if it selects `none`, a tiny procedure station proposes one bounded instruction;
-   * code creates the opaque skill ID, fixed schemas, immutable version, embedding, provenance, and validation lifecycle.
+   * if the registry has no active match, code performs no embedding or skill-model call and the exact requirement remains sufficient for ordinary generation;
+   * ordinary workload planning cannot synthesize, validate, reject, or promote a skill candidate. Candidate synthesis remains unavailable until a separate code-owned recurring-gap workflow and an exact held-out replay producer exist.
 7. Every unordered requirement pair becomes one tiny capability-relation job. It sees one bounded product context and exactly two local needs. Its four-value result can express independence, either read direction, or a bidirectional dependency.
 8. Code converts those decisions into a direct capability graph. Each feature receives a TypeScript projection containing only selected direct capability fields. Unselected channels are absent from the type checked by the compiler; transitive or all-to-all context is not exposed.
 9. The generic TypeScript browser adapter creates an in-memory blueprint with a task-neutral runtime, one feature document per requirement, isolated acceptance functions, a compositor, runtime tests, smoke tests, and pinned static toolchain files.
-10. Dependency waves are calculated by code. A generated block receives only its exact signature, local product context, exact need, one validated procedure, direct symbol projection, and explicitly in-scope package symbols.
+10. Dependency waves are calculated by code. A generated block receives only its exact signature, local product context, exact need, an optional independently promoted active procedure, direct symbol projection, and explicitly in-scope package symbols.
 11. The model returns one raw function declaration. Tree-sitter proves that it is exactly the requested declaration and rejects extra nodes, altered signatures, forbidden calls, or undeclared symbols.
 12. Accepted declarations remain in memory. Code stitches complete documents only after their declared dependencies exist.
 13. The complete program is written to an isolated stage. Code runs the pinned install, generated tests, runtime tests, type check, and production build.
 14. A mapped source failure opens a correction job for the smallest declared owner. It receives the current declaration, exact signature, direct capabilities, one code-owned repair imperative, and a bounded path-free diagnostic. Other accepted declarations survive.
 15. Only an isolated assembly that passes is written to the authoritative workspace.
-16. Code reconciles exact files and protected paths, repeats authoritative verification, then activates pending learned skills and declares completion.
+16. Code reconciles exact files and protected paths, repeats authoritative verification, and declares completion. The workload has no learned-skill mutation authority.
 
 ## Final-partition promotion experiment
 
@@ -86,24 +86,30 @@ Code applies the response as a JSON merge patch and proves that exactly one JSON
 
 ## Learned-skill registry
 
-PostgreSQL is the runtime authority. The checked-in `skills/` directory is bootstrap input only and is synchronized into immutable active `bootstrap_specialist` versions during startup.
+PostgreSQL is the sole learned-skill authority. Omnidex does not load or synchronize checked-in skill files at startup.
 
-Learned domain procedures are database data, never Go branches or static skill files. A learned version moves through:
+Learned domain procedures are database data, never Go branches or static skill files.
+Production currently exposes active-skill retrieval only. Candidate creation,
+embedding writes, validation, rejection, and promotion are deliberately unavailable:
+the repository has no code-owned recurring-gap producer or held-out replay executor,
+so accepting caller-supplied success claims would manufacture authority.
 
-`candidate -> validating -> active`
-
-or:
-
-`candidate|validating -> rejected`
-
-Active versions may be retired but never edited. Activation requires all of the following code-observed evidence:
+A future promotion cutover must introduce one separate code-owned transaction whose
+exact replay job differs from the creating job and which loads, rather than accepts
+from its caller, all of the following immutable evidence:
 
 * bounded contract validation;
 * an immutable retrieval embedding tied to provider and model identity;
-* complete isolated-stage verification;
-* complete authoritative-workspace verification.
+* at least two held-out replay cases bound to one immutable fixture-set digest;
+* complete isolated-stage replay evidence;
+* complete independent-workspace verification evidence.
 
-An active version is unavailable to retrieval until the transaction commits. Rejected content cannot be silently resurrected, and there is no filesystem or general-agent fallback.
+The candidate, its one frozen provider/model embedding identity, replay receipt, fixed
+validation checks, and activation must be bound by database constraints and commit
+atomically. Until that producer exists, database mutation guards reject every learned
+skill and embedding write. Same-job promotion, raw activation, caller-asserted hashes,
+rejected-content resurrection, filesystem skills, and general-agent fallbacks are
+forbidden.
 
 ## Context hard cuts
 

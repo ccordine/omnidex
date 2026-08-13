@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
 func (s *Server) handleScrumTags(w http.ResponseWriter, r *http.Request) {
@@ -37,53 +35,7 @@ func (s *Server) handleScrumCardTagsSuggest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	card, board, projectID, err := s.scrumGetCard(r, cardID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "card not found")
-		return
-	}
-	if s.repo == nil || projectID <= 0 {
-		writeError(w, http.StatusServiceUnavailable, "tag suggestion requires a project database")
-		return
-	}
-	cfg, err := s.scrumCoachConfig(card.CoachConfig)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionTagsSuggest, cfg.Model, "", scrumcardllm.TicketRequest{})
-	if err != nil {
-		writeScrumCardLLMEnqueueError(w, err)
-		return
-	}
-	writeScrumCardLLMQueued(w, job, updated, fmt.Sprintf("Queued tag suggestion job #%d for %s", job.ID, board.Name))
-}
-
-func scrumBoardContext(board ScrumBoard) scrumcardllm.BoardContext {
-	return scrumcardllm.BoardContext{
-		Name:             board.Name,
-		ProjectDirectory: board.ProjectDirectory,
-	}
-}
-
-func scrumCardContext(card ScrumCard) scrumcardllm.CardContext {
-	out := scrumcardllm.CardContext{
-		ID:          card.ID,
-		Title:       card.Title,
-		Description: card.Description,
-		Column:      card.Column,
-		RefFiles:    append([]string(nil), card.RefFiles...),
-		Tags:        append([]string(nil), card.Tags...),
-		CardPrompt:  card.CardPrompt,
-		CardTicket:  card.CardTicket,
-	}
-	for _, item := range card.Checklist {
-		out.Checklist = append(out.Checklist, scrumcardllm.ChecklistItem{Text: item.Text, Done: item.Done})
-	}
-	for _, item := range card.TestCriteria {
-		out.TestCriteria = append(out.TestCriteria, scrumcardllm.ChecklistItem{Text: item.Text, Done: item.Done})
-	}
-	return out
+	writeRemovedInferenceAction(w, "Scrum card tag suggestion")
 }
 
 func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, query string, limit int) ([]string, error) {
@@ -135,19 +87,11 @@ func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, qu
 			}
 		}
 	}
-	cards, err := s.repo.ListScrumCards(ctx, projectID)
+	cardTags, err := s.repo.ListScrumCardTags(ctx, projectID, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list Scrum cards for tags: %w", err)
 	}
-	for _, card := range cards {
-		var tags []string
-		if len(card.Tags) > 0 {
-			if err := json.Unmarshal(card.Tags, &tags); err != nil {
-				return nil, fmt.Errorf("decode Scrum card %s tags: %w", card.ID, err)
-			}
-		}
-		add(tags...)
-	}
+	add(cardTags...)
 
 	out := make([]string, 0, len(seen))
 	for tag := range seen {

@@ -9,14 +9,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
-type DBManagerLLMClient interface {
-	ChatRaw(ctx context.Context, req OllamaChatRequest) (OllamaChatResponse, error)
-}
-
 type DBManagerMemoryWriter interface {
-	AddMemory(ctx context.Context, agentID, kind, content string, tags []string) (MemoryRecord, error)
+	AddMemory(ctx context.Context, input model.MemoryInput) (MemoryRecord, error)
 }
 
 type DBSchemaTable struct {
@@ -31,15 +29,6 @@ type DBSchemaColumn struct {
 	Nullable bool   `json:"nullable"`
 }
 
-type DBManagerQueryResult struct {
-	Question          string
-	SQL               string
-	Rows              []MemorySQLRow
-	Schema            []DBSchemaTable
-	SchemaFingerprint string
-	Answer            string
-}
-
 type DBSchemaMemorySnapshot struct {
 	Label       string
 	Fingerprint string
@@ -48,55 +37,7 @@ type DBSchemaMemorySnapshot struct {
 	Tags        []string
 }
 
-type dbManagerSQLPayload struct {
-	SQL    string `json:"sql"`
-	Answer string `json:"answer"`
-}
-
 var readOnlySQLPrefixRe = regexp.MustCompile(`(?is)^\s*(select|with)\b`)
-
-func RunDBManagerQuery(ctx context.Context, question string, runner MemorySQLRunner, llm DBManagerLLMClient) (DBManagerQueryResult, error) {
-	question = strings.TrimSpace(question)
-	if question == "" {
-		return DBManagerQueryResult{}, fmt.Errorf("question is required")
-	}
-	if runner == nil {
-		return DBManagerQueryResult{}, fmt.Errorf("database runner is required")
-	}
-	if llm == nil {
-		return DBManagerQueryResult{}, fmt.Errorf("llm client is required")
-	}
-
-	schema, err := InspectPostgresSchema(ctx, runner)
-	if err != nil {
-		return DBManagerQueryResult{}, err
-	}
-	snapshot := BuildDBSchemaMemorySnapshot("postgres", schema)
-	resp, err := llm.ChatRaw(ctx, buildDBManagerRequest(question, snapshot))
-	if err != nil {
-		return DBManagerQueryResult{}, err
-	}
-	payload, err := parseDBManagerSQLPayload(resp.Content)
-	if err != nil {
-		return DBManagerQueryResult{}, err
-	}
-	sql := strings.TrimSpace(payload.SQL)
-	if err := ValidateReadOnlyPostgresQuery(sql); err != nil {
-		return DBManagerQueryResult{}, err
-	}
-	rows, err := runner.Query(ctx, sql)
-	if err != nil {
-		return DBManagerQueryResult{}, err
-	}
-	return DBManagerQueryResult{
-		Question:          question,
-		SQL:               sql,
-		Rows:              rows,
-		Schema:            schema,
-		SchemaFingerprint: snapshot.Fingerprint,
-		Answer:            strings.TrimSpace(payload.Answer),
-	}, nil
-}
 
 func InspectPostgresSchema(ctx context.Context, runner MemorySQLRunner) ([]DBSchemaTable, error) {
 	if runner == nil {
@@ -157,12 +98,20 @@ func BuildDBSchemaMemorySnapshot(label string, schema []DBSchemaTable) DBSchemaM
 	}
 }
 
-func StoreDBSchemaMemorySnapshot(ctx context.Context, writer DBManagerMemoryWriter, label string, schema []DBSchemaTable) (MemoryRecord, DBSchemaMemorySnapshot, error) {
+func StoreDBSchemaMemorySnapshot(ctx context.Context, writer DBManagerMemoryWriter, scope model.MemoryScope, label string, schema []DBSchemaTable) (MemoryRecord, DBSchemaMemorySnapshot, error) {
 	if writer == nil {
 		return MemoryRecord{}, DBSchemaMemorySnapshot{}, fmt.Errorf("memory writer is required")
 	}
 	snapshot := BuildDBSchemaMemorySnapshot(label, schema)
-	record, err := writer.AddMemory(ctx, "db_schema_specialist", "reference", snapshot.Content, snapshot.Tags)
+	input := model.MemoryInput{
+		Scope: scope, Source: "db_schema_specialist", Kind: model.MemoryKindReference,
+		Content: snapshot.Content, Tags: snapshot.Tags,
+		Categories: []model.MemoryCategory{model.MemoryCategoryDatabase},
+	}
+	if err := input.Validate(); err != nil {
+		return MemoryRecord{}, snapshot, err
+	}
+	record, err := writer.AddMemory(ctx, input)
 	if err != nil {
 		return MemoryRecord{}, snapshot, err
 	}
@@ -263,67 +212,15 @@ func dbSchemaTagToken(value string) string {
 }
 
 func dbSchemaMemoryTags(label, fingerprint string, schema []DBSchemaTable) []string {
-	tags := []string{"db-schema", "schema-memory", "pgsql", "postgresql", "schema:" + dbSchemaTagToken(label)}
+	tags := []string{"db-schema", "schema-memory", "schema:" + dbSchemaTagToken(label)}
 	if len(fingerprint) >= 12 {
 		tags = append(tags, "schema-fingerprint:"+fingerprint[:12])
 	}
 	for _, table := range schema {
 		tags = append(tags, "table:"+dbSchemaTagToken(table.Schema+"-"+table.Name))
 	}
-	return cleanMemoryTags(tags)
-}
-
-func buildDBManagerRequest(question string, snapshot DBSchemaMemorySnapshot) OllamaChatRequest {
-	blob, _ := json.Marshal(struct {
-		Question          string          `json:"question"`
-		SchemaFingerprint string          `json:"schema_fingerprint"`
-		SchemaSummary     string          `json:"schema_summary"`
-		Schema            []DBSchemaTable `json:"schema"`
-	}{
-		Question:          question,
-		SchemaFingerprint: snapshot.Fingerprint,
-		SchemaSummary:     snapshot.Content,
-		Schema:            snapshot.Tables,
-	})
-	return OllamaChatRequest{
-		Messages: []OllamaMessage{
-			{
-				Role: "system",
-				Content: strings.Join([]string{
-					"Return JSON only.",
-					"Schema: {\"sql\":\"read-only PostgreSQL query\",\"answer\":\"brief explanation of query intent\"}.",
-					"You are the DB manager for memories, documents, research, and project history.",
-					"Use the provided schema only; do not invent tables or columns.",
-					"Generate one read-only PostgreSQL query that answers the user question.",
-					"Only SELECT or WITH queries are allowed.",
-					"Do not generate INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, GRANT, REVOKE, VACUUM, COPY, CALL, or DO.",
-					"Prefer explicit columns and LIMIT for exploratory searches.",
-					"No markdown.",
-				}, "\n"),
-			},
-			{Role: "user", Content: string(blob)},
-		},
-		Format: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"sql":    map[string]interface{}{"type": "string"},
-				"answer": map[string]interface{}{"type": "string"},
-			},
-			"required": []string{"sql", "answer"},
-		},
-		Options: map[string]interface{}{"temperature": 0},
-	}
-}
-
-func parseDBManagerSQLPayload(raw string) (dbManagerSQLPayload, error) {
-	var payload dbManagerSQLPayload
-	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &payload); err != nil {
-		return payload, fmt.Errorf("parse db manager payload: %w", err)
-	}
-	if strings.TrimSpace(payload.SQL) == "" {
-		return payload, fmt.Errorf("db manager payload sql is empty")
-	}
-	return payload, nil
+	sort.Strings(tags)
+	return tags
 }
 
 func ValidateReadOnlyPostgresQuery(sql string) error {

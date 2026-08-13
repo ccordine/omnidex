@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
+	"github.com/gryph/omnidex/internal/agentstream"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
 	"github.com/gryph/omnidex/internal/scrum"
@@ -51,59 +52,50 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 
 	var result omni.ExternalCodingResult
 	streamLines := make([]string, 0, 64)
-	if starter, ok := agent.(externalAgentSessionStarter); ok && s.repo != nil {
-		session, externalJob, sessionErr := starter.PrepareCodingSession(request)
-		if sessionErr != nil {
-			err = sessionErr
-		} else {
-			externalJob.SessionID = agentName
-			result, err = omni.StreamExternalAgentSession(ctx, session, externalJob, func(event omni.AgentEvent) error {
-				line, encodeErr := omni.AgentEventJSONLine(event)
-				if encodeErr != nil {
-					return encodeErr
-				}
-				streamLines = append(streamLines, line)
-				appendCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				if appendErr := s.repo.AppendStepOutput(appendCtx, claim.Authority, line); appendErr != nil {
-					return appendErr
-				}
-				if s.onJobOutput != nil {
-					s.onJobOutput(claim.Job.ID, line+"\n")
-				}
-				return nil
-			})
-		}
+	starter, ok := agent.(externalAgentSessionStarter)
+	if !ok {
+		return fmt.Errorf("%s does not provide the required typed event session", agentName)
+	}
+	if s.repo == nil {
+		return fmt.Errorf("external agent typed event persistence repository is nil")
+	}
+	session, externalJob, sessionErr := starter.PrepareCodingSession(request)
+	if sessionErr != nil {
+		err = sessionErr
 	} else {
-		result, err = agent.RunCodingTask(ctx, request)
+		externalJob.SessionID = agentName
+		result, err = omni.StreamExternalAgentSession(ctx, session, externalJob, func(event agentstream.Event) error {
+			line, encodeErr := agentstream.EncodeLine(event)
+			if encodeErr != nil {
+				return encodeErr
+			}
+			streamLines = append(streamLines, line)
+			appendCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if appendErr := s.repo.AppendStepOutput(appendCtx, claim.Authority, line); appendErr != nil {
+				return appendErr
+			}
+			if s.onJobOutput != nil {
+				s.onJobOutput(claim.Job.ID, line+"\n")
+			}
+			return nil
+		})
 	}
 
 	if err != nil {
 		s.emitStepEvent(claim.Authority, "external_agent_failed", err.Error())
 		return fmt.Errorf("%s failed: %w", agentName, err)
 	}
-	if err := omni.ExternalAgentResultError(result); err != nil {
-		s.emitStepEvent(claim.Authority, "external_agent_failed", err.Error())
-		return fmt.Errorf("%s failed: %w", agentName, err)
-	}
-
-	output := firstNonEmpty(result.Summary, result.Output)
+	output := result.Summary
 	if output == "" {
-		message := agentName + " returned no summary or output"
+		message := agentName + " returned no typed completion content"
 		s.emitStepEvent(claim.Authority, "external_agent_failed", message)
 		return fmt.Errorf("%s", message)
 	}
-	stepOutput := output
-	if len(streamLines) > 0 {
-		transcript := strings.TrimSpace(strings.Join(streamLines, "\n"))
-		if transcript != "" {
-			if output != "" && !strings.Contains(transcript, output) {
-				stepOutput = transcript + "\n" + output
-			} else {
-				stepOutput = transcript
-			}
-		}
+	if len(streamLines) == 0 {
+		return fmt.Errorf("%s returned no typed event stream", agentName)
 	}
+	stepOutput := strings.Join(streamLines, "\n") + "\n"
 	summary, err := json.Marshal(map[string]any{
 		"agent":    agentName,
 		"system":   cfg.System(),
@@ -121,7 +113,6 @@ func (s *Service) runExternalAgentStep(ctx context.Context, claim *model.Claimed
 		}
 		completeStep = s.repo.CompleteStep
 	}
-	s.emitStepEvent(claim.Authority, "external_agent_completed", output)
 	return invokeCompleteClaimedStep(ctx, completeStep, claim, stepOutput, "external_agent_execute", string(summary))
 }
 
@@ -169,7 +160,7 @@ func buildExternalAgentContext(job model.Job, contexts map[string]string, agentS
 	if feedback := strings.TrimSpace(contexts["user_feedback"]); feedback != "" {
 		lines = append(lines, "Feedback:", feedback)
 	}
-	lines = append(lines, "", scrum.AgentStatusFooter)
+	lines = append(lines, "", "Report the work performed and verification evidence. Omnidex owns completion from typed lifecycle state.")
 	return strings.Join(lines, "\n")
 }
 

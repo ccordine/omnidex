@@ -104,6 +104,7 @@ func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T
 		`"eval_count":3,"eval_duration":30}`)
 	result := PreparedGeneration{
 		Schema:                     PreparedGenerationSchemaV1,
+		Protocol:                   ExactPreparedProtocolStructuredV1,
 		ProviderRequestDisposition: ProviderRequestDispatched, Content: `{}`,
 		ProviderRequestSHA256: strings.Repeat("b", 64), ProviderHTTPStatus: 200,
 		ProviderResponseDisposition: ProviderResponseSucceeded,

@@ -1,6 +1,0 @@
-./version.go
-./migration_digest_test.go
-./release_builder_binary_test.go
-./release_builder_integrity_test.go
-./release_builder_security_test.go
-./version_test.go

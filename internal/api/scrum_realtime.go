@@ -145,10 +145,18 @@ func (s *Server) scrumBoardRealtimeHTML(ctx context.Context, projectID int64, bo
 		return "", err
 	}
 	autoWork := automation.AutoWork
-	autoReview := automation.AutoReview
 	visibleColumn := scrumRealtimeViewportColumn(fullBoard, autoWork)
-	columnCounts := scrumColumnCounts(cardsByColumn(fullBoard))
-	viewportBoard := scrumBoardColumnViewport(fullBoard, visibleColumn)
+	columnCounts, err := s.scrumColumnCountsFromRepository(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+	pageCards, cardHasMore, err := s.scrumCardColumnPage(ctx, projectID, visibleColumn, 0)
+	if err != nil {
+		return "", err
+	}
+	viewportBoard := fullBoard
+	viewportBoard.Columns = []string{visibleColumn}
+	viewportBoard.Cards = pageCards
 	cardsByCol := cardsByColumn(viewportBoard)
 	playQueue := scrumPlayQueueSummary(fullBoard)
 	flowSummary := summarizeScrumFlowMetrics(fullBoard.Cards)
@@ -160,9 +168,9 @@ func (s *Server) scrumBoardRealtimeHTML(ctx context.Context, projectID int64, bo
 		columnCounts,
 		playQueue,
 		autoWork.Enabled,
-		autoReview,
 		autoWork,
 		flowSummary,
+		scrumCardPageState{Count: len(pageCards), HasMore: cardHasMore},
 	)
 	return fragments.Bundle, nil
 }
@@ -184,7 +192,7 @@ func scrumRealtimeViewportColumn(board ScrumBoard, autoWork ScrumAutoWorkConfig)
 
 func findRunningScrumCardInBoard(board ScrumBoard) *ScrumCard {
 	for i, card := range board.Cards {
-		if card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing {
+		if card.PlayState == scrumPlayRunning {
 			return &board.Cards[i]
 		}
 	}

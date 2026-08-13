@@ -1,36 +1,22 @@
 import { readJSON } from "./api";
 import type { LifecycleOperationID } from "./lifecycle_operation";
 import { projectQuery } from "./project_api";
-import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCardModalResponse, ScrumChannelPage, ScrumCreateTicketConfig } from "./scrum_types";
+import type { ScrumAutoWorkConfig, ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCardModalResponse, ScrumChannelPage } from "./scrum_types";
 
-export type ScrumCardLlmJob = {
-  id: number;
-  status?: string;
-  result?: string;
-  error?: string;
-};
+export { elaborateScrumCardTicket, generateScrumCardTicket } from "./scrum_ticket_api";
 
-export type ScrumCardLlmQueuedResponse = {
-  queued?: boolean;
-  job?: ScrumCardLlmJob;
-  card?: ScrumCard;
-  message?: string;
-  tags?: string[];
-  notes?: string;
-  ticket?: string;
-};
-
-function scrumBoardQuery(projectID?: number | null, options: { column?: string | null } = {}): string {
+function scrumBoardQuery(projectID?: number | null, options: { column?: string | null; cardOffset?: number } = {}): string {
   const query = new URLSearchParams();
   if (projectID != null) query.set("project_id", String(projectID));
   if (options.column?.trim()) query.set("column", options.column.trim());
+  if (options.cardOffset != null) query.set("card_offset", String(options.cardOffset));
   const encoded = query.toString();
   return encoded ? `?${encoded}` : "";
 }
 
 export async function fetchScrumBoard(
   projectID?: number | null,
-  options: { column?: string | null } = {},
+  options: { column?: string | null; cardOffset?: number } = {},
   signal?: AbortSignal,
 ): Promise<ScrumBoardResponse> {
   const response = await fetch(`/v1/scrum${scrumBoardQuery(projectID, options)}`, { signal });
@@ -98,51 +84,13 @@ export async function patchScrumAutoWork(
   return readJSON<ScrumBoardResponse>(response);
 }
 
-export async function patchScrumAutoReview(
-  config: import("./scrum_types").ScrumAutoReviewConfig,
-  projectID?: number | null,
-): Promise<ScrumBoardResponse> {
-  const response = await fetch(`/v1/scrum${projectQuery(projectID)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ auto_review: config }),
-  });
-  return readJSON<ScrumBoardResponse>(response);
-}
-
-export async function patchScrumAutomation(
-  config: {
-    auto_work?: ScrumAutoWorkConfig;
-    auto_review?: import("./scrum_types").ScrumAutoReviewConfig;
-    create_ticket?: ScrumCreateTicketConfig;
-  },
-  projectID?: number | null,
-): Promise<ScrumBoardResponse> {
-  const response = await fetch(`/v1/scrum${projectQuery(projectID)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(config),
-  });
-  return readJSON<ScrumBoardResponse>(response);
-}
-
 export async function createScrumCard(
   title: string,
   description: string,
   column: string,
   projectID?: number | null,
-  options: { createTicket?: boolean; createTicketConfig?: ScrumCreateTicketConfig } = {},
 ): Promise<ScrumCard> {
   const body: Record<string, unknown> = { title, description, column };
-  if (options.createTicketConfig) {
-    body.create_ticket_config = options.createTicketConfig;
-    if (options.createTicket) {
-      body.column = options.createTicketConfig.column || column;
-    }
-  }
-  if (options.createTicket) {
-    body.create_ticket = true;
-  }
   const response = await fetch(`/v1/scrum/cards${projectQuery(projectID)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -241,7 +189,7 @@ export async function deleteScrumCard(cardID: string, projectID?: number | null)
 
 export async function patchScrumCard(
   cardID: string,
-  patch: Partial<ScrumCard>,
+  patch: ScrumCardEdit,
   projectID?: number | null,
 ): Promise<ScrumCard> {
   const response = await fetch(`/v1/scrum/cards/${encodeURIComponent(cardID)}${projectQuery(projectID)}`, {
@@ -253,6 +201,40 @@ export async function patchScrumCard(
   if (!payload.card?.id) {
     throw new Error("Card update did not return a card");
   }
+  return payload.card;
+}
+
+export type ScrumCardEdit = Partial<Pick<
+  ScrumCard,
+  | "title"
+  | "description"
+  | "ref_files"
+  | "model_config"
+  | "card_ticket"
+  | "card_prompt"
+  | "recipe_id"
+  | "recipe"
+  | "tags"
+>>;
+
+export type ScrumCardItemMutation =
+  | { action: "add"; expected_updated_at: string; text: string }
+  | { action: "toggle"; expected_updated_at: string; item_id: string; done: boolean }
+  | { action: "remove"; expected_updated_at: string; item_id: string };
+
+export async function mutateScrumCardItem(
+  cardID: string,
+  collection: "checklist" | "test-criteria",
+  mutation: ScrumCardItemMutation,
+  projectID?: number | null,
+): Promise<ScrumCard> {
+  const response = await fetch(cardURL(cardID, collection, projectID), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(mutation),
+  });
+  const payload = await readJSON<{ card?: ScrumCard | null }>(response);
+  if (!payload.card?.id) throw new Error("Scrum card item mutation did not return a card");
   return payload.card;
 }
 
@@ -282,51 +264,6 @@ export async function fetchScrumChannelPage(
   return readJSON<ScrumChannelPage>(response);
 }
 
-export async function cardTicketScrumCard(
-  cardID: string,
-  payload: {
-    prompt?: string;
-    card_prompt?: string;
-    ticket?: string;
-    iterate?: boolean;
-    iterate_notes?: string;
-  },
-  projectID?: number | null,
-): Promise<ScrumCardLlmQueuedResponse> {
-  const response = await fetch(cardURL(cardID, "card-ticket", projectID), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return readJSON(response);
-}
-
-export async function coachScrumCard(
-  cardID: string,
-  payload: { message?: string; mode?: string; snapshot?: Record<string, string> },
-  projectID?: number | null,
-): Promise<import("./scrum_types").ScrumCoachResponse> {
-  const response = await fetch(cardURL(cardID, "coach", projectID), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return readJSON(response);
-}
-
-export async function updateScrumCoachConfig(
-  cardID: string,
-  config: import("./scrum_types").ScrumCoachConfig,
-  projectID?: number | null,
-): Promise<{ card: ScrumCard; coach_config: import("./scrum_types").ScrumCoachConfig }> {
-  const response = await fetch(cardURL(cardID, "coach-config", projectID), {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(config),
-  });
-  return readJSON(response);
-}
-
 export async function fetchScrumTags(
   query = "",
   projectID?: number | null,
@@ -341,18 +278,6 @@ export async function fetchScrumTags(
   const response = await fetch(url);
   const payload = await readJSON<{ tags: string[] }>(response);
   return payload.tags ?? [];
-}
-
-export async function suggestScrumTags(
-  cardID: string,
-  projectID?: number | null,
-): Promise<ScrumCardLlmQueuedResponse> {
-  const response = await fetch(cardURL(cardID, "tags-suggest", projectID), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-  return readJSON(response);
 }
 
 export async function fetchScrumFiles(projectID?: number | null): Promise<{ files: string[]; dirs?: string[]; root: string }> {

@@ -48,6 +48,42 @@ func TestGeneratePreparedExactIdentityFailureNeverDispatchesGeneration(t *testin
 	}
 }
 
+func TestGeneratePreparedExactIdentityDriftReturnsEvidenceWithoutObservation(t *testing.T) {
+	expected := ollamaIdentityExpectation()
+	seen := make(map[string]int)
+	client := exactPreparedIdentityClient(
+		t, expected, http.StatusOK, exactRawBody(), seen, make(map[string][]byte),
+	)
+	base := client.httpClient.Transport
+	rawGenerationCalls := 0
+	client.httpClient.Transport = identityRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/api/version" {
+			return identityResponse(http.StatusOK, `{"version":"0.24.1"}`), nil
+		}
+		if request.URL.Path == "/api/generate" {
+			raw, err := io.ReadAll(request.Body)
+			if err != nil {
+				return nil, err
+			}
+			request.Body = io.NopCloser(strings.NewReader(string(raw)))
+			if strings.Contains(string(raw), `"raw":true`) {
+				rawGenerationCalls++
+			}
+		}
+		return base.RoundTrip(request)
+	})
+	prepared := exactPreparedRequest(expected)
+	generation, err := client.GeneratePreparedExact(context.Background(), prepared)
+	selection := llm.ProviderIdentitySelection{
+		Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
+	}
+	if err == nil || generation.ProviderRequestDisposition != llm.ProviderRequestNotDispatched ||
+		generation.ProviderObservation != (llm.ProviderIdentityObservation{}) || rawGenerationCalls != 0 ||
+		generation.ProviderIdentityEvidence.ValidateFailure(selection, &expected) != nil {
+		t.Fatalf("generation=%+v raw_calls=%d error=%v", generation, rawGenerationCalls, err)
+	}
+}
+
 func identityResponse(status int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: status,

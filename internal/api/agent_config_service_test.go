@@ -137,7 +137,7 @@ func TestAgentConfigPatchRejectsRemovedStrictToggle(t *testing.T) {
 }
 
 func TestMergeProjectAgentConfig(t *testing.T) {
-	settings := json.RawMessage(`{"theme":"dark","model_config":{"default_model":"x"}}`)
+	settings := json.RawMessage(`{"theme":"dark","model_config":{"conversation_response_model":"x"}}`)
 	override := json.RawMessage(`{"agent_system":"cursor"}`)
 	merged, err := mergeProjectAgentConfig(settings, override)
 	if err != nil {

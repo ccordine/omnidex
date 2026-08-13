@@ -52,8 +52,8 @@ _omni_cmd() {
 omni() { _omni_cmd "$@"; }
 omnidex() { _omni_cmd "$@"; }
 oagent() { _omni_cmd agent "$@"; }
-oagentcodex() { _omni_cmd agent --profile architect --agent codex "$@"; }
-oagentcursor() { _omni_cmd agent --profile architect --agent cursor "$@"; }
+oagentcodex() { _omni_cmd agent --agent codex "$@"; }
+oagentcursor() { _omni_cmd agent --agent cursor "$@"; }
 oagentomni() { _omni_cmd agent --agent omnidex "$@"; }
 
 # Queue/API CLI passthrough
@@ -78,18 +78,8 @@ aupdate() {
   (cd "${OMNIDEX_DIR}" && ./update.sh "$@")
 }
 
-# Enqueue helpers
-# usage: aq "instruction"
-aq()   { _agent_cli_cmd enqueue --pipeline assistant --web auto --workspace auto "$@"; }
-aqf()  { _agent_cli_cmd enqueue --pipeline assistant --reasoning fast --web auto --workspace auto "$@"; }
-aqd()  { _agent_cli_cmd enqueue --pipeline assistant --reasoning deep --web auto --workspace auto "$@"; }
-
-# Pipeline variants
-achat() { _agent_cli_cmd enqueue --pipeline chat --web auto --workspace auto "$@"; }
-aqarch() { _agent_cli_cmd enqueue --profile architect --pipeline assistant "$@"; }
-achatarch() { _agent_cli_cmd chat --profile architect "$@"; }
+# Typed chat transport
 achatrepl() { _agent_cli_cmd chat "$@"; }
-astro() { _agent_cli_cmd enqueue --pipeline story --web auto --workspace auto "$@"; }
 
 # Job inspection
 alist() { _agent_cli_cmd list "$@"; }
@@ -103,7 +93,6 @@ awv() { _agent_cli_cmd watch --interval 2s --verbose --max-chars 1600 "$@"; }
 afb()       { _agent_cli_cmd feedback "$@"; }
 aint()      { _agent_cli_cmd interrupt "$@"; }
 areplan()   { _agent_cli_cmd replan "$@"; }
-acont()     { _agent_cli_cmd continue "$@"; }
 acancel()   { _agent_cli_cmd cancel "$@"; }
 aremember() { _agent_cli_cmd remember "$@"; }
 aingest()   { _agent_cli_cmd ingest "$@"; }

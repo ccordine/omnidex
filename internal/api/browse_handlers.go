@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,34 +17,38 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := strings.TrimSpace(r.URL.Query().Get("path"))
+	opts, err := browsePageOptions(r, hostbridge.DefaultBrowsePageSize, false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if client := s.hostBridgeClient(); client != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
-		result, err := client.Browse(ctx, target)
+		result, err := client.Browse(ctx, target, opts)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, hostBridgeAPIError(err))
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"path":    result.Path,
-			"parent":  result.Parent,
-			"entries": hostbridge.NonEmptyEntries(result.Entries),
-			"source":  "host-bridge",
+			"path":            result.Path,
+			"parent":          result.Parent,
+			"entries":         hostbridge.NonEmptyEntries(result.Entries),
+			"limit":           result.Limit,
+			"offset":          result.Offset,
+			"has_previous":    result.HasPrevious,
+			"previous_offset": result.PreviousOffset,
+			"has_more":        result.HasMore,
+			"next_offset":     result.NextOffset,
+			"source":          "host-bridge",
 		})
 		return
 	}
 
-	opts := hostbridge.BrowseOptions{}
-	if s.repo != nil {
-		projects, err := s.repo.ListProjects(r.Context(), 500, 0)
-		if err == nil {
-			for _, project := range projects {
-				root := filepath.Clean(strings.TrimSpace(project.Location))
-				if root != "" {
-					opts.ExtraRoots = append(opts.ExtraRoots, root)
-				}
-			}
-		}
+	opts, err = s.projectAuthorizedBrowseOptions(r.Context(), target, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	result, err := hostbridge.ListDirectory(target, opts)
 	if err != nil {
@@ -57,10 +60,16 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"path":    result.Path,
-		"parent":  result.Parent,
-		"entries": hostbridge.NonEmptyEntries(result.Entries),
-		"source":  "core-local",
+		"path":            result.Path,
+		"parent":          result.Parent,
+		"entries":         hostbridge.NonEmptyEntries(result.Entries),
+		"limit":           result.Limit,
+		"offset":          result.Offset,
+		"has_previous":    result.HasPrevious,
+		"previous_offset": result.PreviousOffset,
+		"has_more":        result.HasMore,
+		"next_offset":     result.NextOffset,
+		"source":          "core-local",
 	})
 }
 
@@ -89,17 +98,10 @@ func (s *Server) handleBrowseMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := hostbridge.BrowseOptions{}
-	if s.repo != nil {
-		projects, err := s.repo.ListProjects(r.Context(), 500, 0)
-		if err == nil {
-			for _, project := range projects {
-				root := filepath.Clean(strings.TrimSpace(project.Location))
-				if root != "" {
-					opts.ExtraRoots = append(opts.ExtraRoots, root)
-				}
-			}
-		}
+	opts, err := s.projectAuthorizedBrowseOptions(r.Context(), req.Parent, hostbridge.BrowseOptions{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	path, err := hostbridge.CreateDirectory(req.Parent, req.Name, opts)
 	if err != nil {

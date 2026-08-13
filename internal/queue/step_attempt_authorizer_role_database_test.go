@@ -118,7 +118,7 @@ func TestPostgresProvisionAcceptsDisabledRoleWithoutGrantingLoginAuthority(t *te
 		"queue table": `SELECT id FROM ` +
 			pgx.Identifier{runtimeSchema, "jobs"}.Sanitize() + ` LIMIT 1`,
 		"unrelated runtime function": `SELECT ` +
-			pgx.Identifier{runtimeSchema, "cognition_canonical_jsonb"}.Sanitize() + `('{}'::jsonb)`,
+			pgx.Identifier{runtimeSchema, "task_ledger_text_is_exact"}.Sanitize() + `('probe')`,
 	} {
 		if _, err := restricted.Exec(fixture.Context, statement); err == nil {
 			restricted.Close()

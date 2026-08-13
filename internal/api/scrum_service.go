@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
@@ -33,12 +32,12 @@ func (s *Server) scrumGetCard(r *http.Request, cardID string) (ScrumCard, ScrumB
 	if err != nil {
 		return ScrumCard{}, ScrumBoard{}, 0, err
 	}
-	for _, card := range board.Cards {
-		if card.ID == cardID {
-			return card, board, projectID, nil
-		}
+	stored, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
+	if err != nil {
+		return ScrumCard{}, board, projectID, err
 	}
-	return ScrumCard{}, board, projectID, fmt.Errorf("card not found")
+	card, err := dbScrumCardToAPI(stored)
+	return card, board, projectID, err
 }
 
 func (s *Server) scrumCreateCard(r *http.Request, title, description, column string) (ScrumCard, error) {
@@ -60,111 +59,6 @@ func (s *Server) scrumCreateCard(r *http.Request, title, description, column str
 	return dbScrumCardToAPI(card)
 }
 
-func (s *Server) scrumUpdateCard(r *http.Request, cardID string, patch ScrumCard, raw map[string]json.RawMessage) (ScrumCard, error) {
-	if s.repo == nil {
-		return ScrumCard{}, fmt.Errorf("postgres repository is required for Scrum")
-	}
-	projectID, err := s.resolveProjectID(r)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	current, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	merged, err := dbScrumCardToAPI(current)
-	if err != nil {
-		return ScrumCard{}, fmt.Errorf("decode current Scrum card: %w", err)
-	}
-	if strings.TrimSpace(patch.Title) != "" {
-		merged.Title = strings.TrimSpace(patch.Title)
-	}
-	if _, ok := raw["description"]; ok {
-		merged.Description = patch.Description
-	}
-	if col := normalizeScrumColumn(patch.Column); col != "" {
-		merged.Column = col
-	}
-	if patch.Checklist != nil {
-		merged.Checklist = patch.Checklist
-	}
-	if patch.RefFiles != nil {
-		merged.RefFiles = patch.RefFiles
-	}
-	if patch.Chat != nil {
-		merged.Chat = patch.Chat
-	}
-	if len(patch.ModelConfig) > 0 {
-		merged.ModelConfig = patch.ModelConfig
-	}
-	if len(patch.AgentConfig) > 0 {
-		merged.AgentConfig = patch.AgentConfig
-	}
-	if _, ok := raw["card_ticket"]; ok {
-		merged.CardTicket = patch.CardTicket
-	}
-	if _, ok := raw["recipe_id"]; ok {
-		merged.RecipeID = strings.TrimSpace(patch.RecipeID)
-	}
-	if _, ok := raw["recipe"]; ok {
-		if len(patch.Recipe) > 0 {
-			merged.Recipe = patch.Recipe
-		} else {
-			merged.Recipe = json.RawMessage(`{}`)
-		}
-	}
-	if _, ok := raw["card_prompt"]; ok {
-		merged.CardPrompt = patch.CardPrompt
-	}
-	if patch.PlanningChat != nil {
-		merged.PlanningChat = patch.PlanningChat
-	}
-	if patch.Tags != nil {
-		merged.Tags = patch.Tags
-	}
-	if patch.TestCriteria != nil {
-		merged.TestCriteria = patch.TestCriteria
-	}
-	if len(patch.CoachConfig) > 0 {
-		merged.CoachConfig = patch.CoachConfig
-	}
-	if patch.ConsoleLog != "" {
-		merged.ConsoleLog = patch.ConsoleLog
-	}
-	if strings.TrimSpace(patch.JobID) != "" {
-		merged.JobID = strings.TrimSpace(patch.JobID)
-	}
-	merged.PlayState = strings.TrimSpace(patch.PlayState)
-	merged.QueueOrder = patch.QueueOrder
-	patchMap, err := apiScrumCardToPatch(merged)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	if _, ok := raw["card_ticket"]; ok {
-		patchMap["card_ticket"] = merged.CardTicket
-	}
-	if _, ok := raw["recipe_id"]; ok {
-		patchMap["recipe_id"] = merged.RecipeID
-	}
-	if _, ok := raw["recipe"]; ok {
-		patchMap["recipe"] = merged.Recipe
-	}
-	updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patchMap)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	result, err := dbScrumCardToAPI(updated)
-	if err != nil {
-		return ScrumCard{}, fmt.Errorf("decode updated Scrum card: %w", err)
-	}
-	previous, err := dbScrumCardToAPI(current)
-	if err != nil {
-		return ScrumCard{}, fmt.Errorf("decode previous Scrum card: %w", err)
-	}
-	result.FlowMetrics = s.trackScrumCardFlow(r.Context(), projectID, previous, result, "update")
-	return result, nil
-}
-
 func (s *Server) scrumDeleteCard(r *http.Request, cardID string) error {
 	if s.repo == nil {
 		return fmt.Errorf("postgres repository is required for Scrum")
@@ -174,35 +68,6 @@ func (s *Server) scrumDeleteCard(r *http.Request, cardID string) error {
 		return err
 	}
 	return s.repo.DeleteScrumCard(r.Context(), projectID, cardID)
-}
-
-func (s *Server) scrumSetCardJob(r *http.Request, cardID, jobID, column, consoleLog string) (ScrumCard, error) {
-	card, _, projectID, err := s.scrumGetCard(r, cardID)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	if strings.TrimSpace(jobID) != "" {
-		card.JobID = strings.TrimSpace(jobID)
-	}
-	if col := normalizeScrumColumn(column); col != "" {
-		card.Column = col
-	}
-	if consoleLog != "" {
-		card.ConsoleLog = consoleLog
-	}
-	card.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if s.repo == nil || projectID <= 0 {
-		return ScrumCard{}, fmt.Errorf("postgres repository and project are required for Scrum")
-	}
-	patch, err := apiScrumCardToPatch(card)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patch)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	return dbScrumCardToAPI(updated)
 }
 
 func (s *Server) scrumUpdateBoard(r *http.Request, name, projectDirectory string) (ScrumBoard, error) {
@@ -258,7 +123,6 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 		"scrum_card_id":          card.ID,
 		"scrum_card_title":       card.Title,
 		"scrum_card_description": card.Description,
-		"scrum_card_ticket":      card.CardTicket,
 		"scrum_checklist":        strings.Join(checklistLines, "\n"),
 		"scrum_test_criteria":    strings.Join(testLines, "\n"),
 		"project_directory":      board.ProjectDirectory,
@@ -269,9 +133,6 @@ func (s *Server) scrumPlayMetadata(ctx context.Context, board ScrumBoard, card S
 	}
 	if len(card.RefFiles) > 0 {
 		payload["ref_files"] = card.RefFiles
-	}
-	if len(card.Tags) > 0 {
-		payload["scrum_card_tags"] = card.Tags
 	}
 	if len(instance) > 0 {
 		payload["instance_agent_config"] = instance.ToMap()
@@ -330,6 +191,10 @@ func (s *Server) scrumProjectDirectory(r *http.Request) (string, error) {
 }
 
 func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
+	cardOffset, err := exactChannelQueryInteger(r, "card_offset", 0, 0, 1<<30)
+	if err != nil {
+		return nil, err
+	}
 	board, projectID, err := s.loadScrumContext(r)
 	if err != nil {
 		return nil, err
@@ -338,19 +203,21 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	board, err = s.refreshScrumCardLlmJobs(r.Context(), projectID, board)
-	if err != nil {
-		return nil, err
-	}
 	if err := s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board); err != nil {
 		return nil, err
 	}
 	fullBoard := board
 	visibleColumn := scrumViewportColumn(r, board.Columns)
-	columnCounts := scrumColumnCounts(cardsByColumn(fullBoard))
-	if visibleColumn != "" {
-		board = scrumBoardColumnViewport(board, visibleColumn)
+	columnCounts, err := s.scrumColumnCountsFromRepository(r.Context(), projectID)
+	if err != nil {
+		return nil, err
 	}
+	pageCards, cardHasMore, err := s.scrumCardColumnPage(r.Context(), projectID, visibleColumn, cardOffset)
+	if err != nil {
+		return nil, err
+	}
+	board.Columns = []string{visibleColumn}
+	board.Cards = pageCards
 	payload := map[string]any{
 		"board":          board,
 		"cards_by_col":   cardsByColumn(board),
@@ -359,6 +226,8 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 		"all_columns":    append([]string(nil), fullBoard.Columns...),
 		"visible_column": visibleColumn,
 		"column_counts":  columnCounts,
+		"card_offset":    cardOffset,
+		"card_has_more":  cardHasMore,
 	}
 	if projectID > 0 {
 		automation, err := s.scrumAutomationSettings(r.Context(), projectID)
@@ -367,8 +236,6 @@ func (s *Server) scrumBoardResponse(r *http.Request) (map[string]any, error) {
 		}
 		payload["project_id"] = projectID
 		payload["auto_work"] = automation.AutoWork
-		payload["auto_review"] = automation.AutoReview
-		payload["create_ticket"] = automation.CreateTicket
 	}
 	scrumBoardFragmentsForPayload(payload, fullBoard)
 	return payload, nil

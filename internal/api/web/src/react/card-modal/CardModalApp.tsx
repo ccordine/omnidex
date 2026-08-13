@@ -168,7 +168,7 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
 
   const card = context.card;
   const columns = context.board.columns?.length ? context.board.columns : ["backlog", "ready", "assigned", "in_progress", "review", "blocked", "error", "done"];
-  const canPause = card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing";
+  const canPause = card.play_state === "running" || card.play_state === "queued";
 
   return (
     <div data-react-card-modal-card-id={card.id} className="flex max-h-[88vh] min-h-[32rem] flex-col">

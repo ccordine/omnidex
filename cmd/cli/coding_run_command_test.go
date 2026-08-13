@@ -12,7 +12,6 @@ func TestBuildCodingRunRequestUsesDirectPipelineAndCurrentWorkspace(t *testing.T
 		"  build the complete notes app  ",
 		"/work/notes",
 		"session-7",
-		"coder-model",
 		nil,
 	)
 	if err != nil {
@@ -30,8 +29,8 @@ func TestBuildCodingRunRequestUsesDirectPipelineAndCurrentWorkspace(t *testing.T
 	if request.Metadata["session_id"] != "session-7" {
 		t.Fatalf("session metadata=%#v", request.Metadata)
 	}
-	if request.Metadata["model_execute"] != "coder-model" {
-		t.Fatalf("model metadata=%#v", request.Metadata)
+	if _, exists := request.Metadata["model_execute"]; exists {
+		t.Fatalf("removed model alias remains in metadata=%#v", request.Metadata)
 	}
 	agent, ok := request.Metadata["instance_agent_config"].(map[string]string)
 	if !ok || agent["agent_system"] != agentconfig.SystemOmnidex {
@@ -49,7 +48,7 @@ func TestBuildCodingRunRequestPreservesExplicitExternalAgent(t *testing.T) {
 	if err := agent.Set("agent_system", agentconfig.SystemCodex); err != nil {
 		t.Fatal(err)
 	}
-	request, err := buildCodingRunRequest("build it", "/work/app", "", "", agent)
+	request, err := buildCodingRunRequest("build it", "/work/app", "", agent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,10 +59,10 @@ func TestBuildCodingRunRequestPreservesExplicitExternalAgent(t *testing.T) {
 }
 
 func TestBuildCodingRunRequestFailsWithoutInstructionOrWorkspace(t *testing.T) {
-	if _, err := buildCodingRunRequest("", "/work/notes", "", "", nil); err == nil {
+	if _, err := buildCodingRunRequest("", "/work/notes", "", nil); err == nil {
 		t.Fatal("empty instruction was accepted")
 	}
-	if _, err := buildCodingRunRequest("build it", "", "", "", nil); err == nil {
+	if _, err := buildCodingRunRequest("build it", "", "", nil); err == nil {
 		t.Fatal("empty workspace was accepted")
 	}
 }

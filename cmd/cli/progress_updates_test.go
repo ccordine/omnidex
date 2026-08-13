@@ -128,7 +128,6 @@ func TestSlimProgressShowsCodingMilestonesButNotHeartbeatNoise(t *testing.T) {
 		"coding_fragment_correction_started",
 		"coding_worker_rejected",
 		"coding_worker_failed",
-		"coding_completed",
 	} {
 		if !showStepEventInSlimProgress(eventType) {
 			t.Fatalf("coding milestone %q is hidden in slim progress", eventType)
@@ -217,25 +216,10 @@ func TestLLMTraceBody(t *testing.T) {
 	}
 }
 
-func TestRoleForLLMScope(t *testing.T) {
-	if got := roleForLLMScope("analyze"); got != "analysis_specialist" {
-		t.Fatalf("roleForLLMScope(analyze)=%q, want %q", got, "analysis_specialist")
-	}
-	if got := roleForLLMScope("response_draft"); got != "response_specialist" {
-		t.Fatalf("roleForLLMScope(response_draft)=%q, want %q", got, "response_specialist")
-	}
-	if got := roleForLLMScope("unknown_scope"); got != "" {
-		t.Fatalf("roleForLLMScope(unknown_scope)=%q, want empty", got)
-	}
-}
-
 func TestSummarizePreparedModelContext(t *testing.T) {
 	kind, summary := summarizePreparedModelContext("scope=analyze\nbase_model=qwen3:14b\ncontext_model=ctx-qwen3-1234", 240)
 	if kind != "Model" {
 		t.Fatalf("kind=%q want Model", kind)
-	}
-	if !strings.Contains(summary, "role=analysis_specialist") {
-		t.Fatalf("expected role in summary, got: %q", summary)
 	}
 	if !strings.Contains(summary, "context_model=ctx-qwen3-1234") {
 		t.Fatalf("expected context model in summary, got: %q", summary)

@@ -11,6 +11,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 		name       string
 		scope      string
 		format     string
+		protocol   llm.ExactPreparedProtocol
 		maxTokens  int
 		promptHint string
 	}{
@@ -18,15 +19,17 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			name:       "portable semantic station",
 			scope:      "portable_semantic_worker",
 			format:     llm.ResponseFormatJSON,
+			protocol:   llm.ExactPreparedProtocolStructuredV1,
 			maxTokens:  1024,
-			promptHint: "Return only one JSON object that satisfies the supplied response contract.",
+			promptHint: llm.MinimalGeneratePrompt,
 		},
 		{
 			name:       "portable fragment station",
 			scope:      "portable_fragment_worker",
 			format:     "",
+			protocol:   llm.ExactPreparedProtocolRawTextV1,
 			maxTokens:  4096,
-			promptHint: "Return only the raw TypeScript function required by the supplied contract. No JSON, Markdown, import, export, path, or commentary.",
+			promptHint: llm.MinimalGeneratePrompt,
 		},
 	}
 	for _, test := range tests {
@@ -35,7 +38,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if contract.Format != test.format || contract.MaxTokens != test.maxTokens || contract.PromptHint != test.promptHint {
+			if contract.Protocol != test.protocol || contract.Format != test.format || contract.MaxTokens != test.maxTokens || contract.PromptHint != test.promptHint {
 				t.Fatalf("llmResponseContractForScope(%q)=%#v", test.scope, contract)
 			}
 		})

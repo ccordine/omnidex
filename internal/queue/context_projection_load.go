@@ -47,6 +47,7 @@ func loadContextProjectionTx(
 	var projection contextbuilder.Projection
 	var workingSetVersion int64
 	var selectedCount, omittedCount int
+	var usageMode string
 	err := tx.QueryRow(ctx, `
 		SELECT record_id, projection_id, schema_name, job_id, generation, step_id, step_attempt, worker_id,
 		       work_id, work_kind, usage_mode, spec_name, spec_version, spec_sha256, renderer_version,
@@ -59,7 +60,7 @@ func loadContextProjectionTx(
 		&record.RecordID, &projection.ID, &projection.Schema,
 		&record.Authority.JobID, &record.Authority.Generation, &record.Authority.StepID,
 		&record.Authority.Attempt, &record.Authority.WorkerID,
-		&projection.WorkID, &record.Authority.WorkKind, &record.Authority.Mode, &projection.SpecName,
+		&projection.WorkID, &record.Authority.WorkKind, &usageMode, &projection.SpecName,
 		&projection.SpecVersion, &projection.SpecSHA256, &projection.RendererVersion,
 		&projection.ScopeRef.URI, &projection.ScopeRef.Version, &projection.ScopeRef.Hash,
 		&projection.ScopeRef.Relation, &projection.WorkingSetID, &workingSetVersion,
@@ -72,6 +73,9 @@ func loadContextProjectionTx(
 	}
 	if err != nil {
 		return ContextProjectionRecord{}, fmt.Errorf("read context projection %q: %w", projectionID, err)
+	}
+	if err := requireLiveContextProjectionUsageMode(usageMode); err != nil {
+		return ContextProjectionRecord{}, err
 	}
 	if workingSetVersion < 0 || selectedCount < 1 || selectedCount > maxContextProjectionSelected ||
 		omittedCount < 0 || selectedCount+omittedCount > maxContextProjectionRecords {
@@ -106,9 +110,6 @@ func validateContextProjectionStoreAuthority(
 	}
 	if err := validateContextProjectionExact(authority.WorkKind, "work kind", 256); err != nil {
 		return err
-	}
-	if !validContextProjectionMode(authority.Mode) {
-		return fmt.Errorf("%w: durable context projection mode %q is invalid", ErrInvalidContextProjection, authority.Mode)
 	}
 	if len(projection.WorkID) != 64 || !llmEvidenceLowerHex(projection.WorkID) {
 		return fmt.Errorf("%w: durable work ID is invalid", ErrInvalidContextProjection)

@@ -44,21 +44,49 @@ func TestContextProjectionMigrationDefinesImmutableExactAuthority(t *testing.T) 
 	}
 }
 
-func TestContextProjectionSourceRegistersOnlyLiveMode(t *testing.T) {
+func TestContextProjectionSourceHasNoCallerControlledUsageMode(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"context_projection_types.go", "context_projection_validation.go"} {
+	for _, name := range []string{
+		"context_projection_types.go",
+		"context_projection_validation.go",
+		"context_projection_store.go",
+		"context_projection_load.go",
+		"context_projection_list.go",
+	} {
 		raw, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, forbidden := range []string{
+			"ContextProjectionMode",
+			"authority.Mode",
 			"ContextProjectionModeShadow",
-			`ContextProjectionMode = "shadow"`,
 			"ContextProjectionModeApplied",
-			`"applied"`,
 		} {
 			if strings.Contains(string(raw), forbidden) {
-				t.Fatalf("context projection source %s retains unsupported mode %q", name, forbidden)
+				t.Fatalf("context projection source %s retains caller-controlled mode through %q", name, forbidden)
+			}
+		}
+	}
+	store, err := os.ReadFile("context_projection_store.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(store), "$8,$9,'live',$10") {
+		t.Fatal("context projection store does not hard-code the sole durable live usage mode")
+	}
+	for _, name := range []string{"context_projection_load.go", "context_projection_list.go"} {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, required := range []string{
+			"var usageMode string",
+			"&usageMode",
+			"requireLiveContextProjectionUsageMode(usageMode)",
+		} {
+			if !strings.Contains(string(raw), required) {
+				t.Fatalf("context projection source %s omitted strict durable usage check %q", name, required)
 			}
 		}
 	}

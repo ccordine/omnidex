@@ -6,10 +6,10 @@ import {
   pauseScrumCard,
   playScrumCard,
 } from "../lib/scrum_api";
-import { renderRecyclrBundle } from "../lib/recyclr";
 import { openModalShell } from "../lib/modal";
-import { renderScrumCreateCardModal } from "../lib/scrum_modal_render";
-import type { ScrumBoard, ScrumBoardResponse, ScrumCard, ScrumCreateTicketConfig } from "../lib/scrum_types";
+import { fetchScrumCreateCardComponent } from "../lib/operational_component_api";
+import { renderServerBundle } from "../lib/server_component_api";
+import type { ScrumBoard, ScrumBoardResponse, ScrumCard } from "../lib/scrum_types";
 import { ScrumBoardDrag, type ScrumDragDropResult } from "../lib/scrum_drag";
 import { debounce, yieldToMain } from "../lib/main_thread";
 import type RecyclrController from "./recyclr_controller";
@@ -42,8 +42,8 @@ export default class ScrumController extends Controller {
   private scrumTabActive = true;
   private playQueue: ScrumBoardResponse["play_queue"] | null = null;
   private autoWorkEnabled = false;
-  private createTicketConfig: ScrumCreateTicketConfig = { enabled: false, column: "backlog" };
   private activeColumn = "assigned";
+  private cardOffset = 0;
   private boardDrag = new ScrumBoardDrag();
   private readonly cardModal = new ScrumCardModalHost(
     () => this.projectID,
@@ -93,6 +93,7 @@ export default class ScrumController extends Controller {
         this.boardAbortController?.abort();
         this.busy = false;
         this.board = null;
+				this.cardOffset = 0;
         this.boardTracker.reset();
       }
       this.projectID = nextProjectID;
@@ -110,6 +111,7 @@ export default class ScrumController extends Controller {
       this.busy = false;
       this.scrumTabActive = true;
       this.activeColumn = "assigned";
+      this.cardOffset = 0;
       if (this.hasBoardTarget) {
         this.boardTarget.replaceChildren();
         this.boardTarget.textContent = "Select a project to view its scrum board.";
@@ -163,7 +165,7 @@ export default class ScrumController extends Controller {
     return (
       this.board?.cards.some(
         (card) =>
-          card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing",
+			card.play_state === "running" || card.play_state === "queued",
       ) ?? false
     );
   }
@@ -193,7 +195,7 @@ export default class ScrumController extends Controller {
     this.boardAbortController?.abort();
     const controller = new AbortController();
     this.boardAbortController = controller;
-    return fetchScrumBoard(this.projectID, { column: this.activeColumn }, controller.signal);
+    return fetchScrumBoard(this.projectID, { column: this.activeColumn, cardOffset: this.cardOffset }, controller.signal);
   }
 
   private async reconcileBoardFromServer(cardID?: string | null): Promise<ScrumCard | null> {
@@ -247,15 +249,11 @@ export default class ScrumController extends Controller {
     this.board = payload.board;
     this.playQueue = payload.play_queue ?? null;
     this.autoWorkEnabled = Boolean(payload.auto_work?.enabled);
-    this.createTicketConfig = {
-      enabled: Boolean(payload.create_ticket?.enabled),
-      column: payload.create_ticket?.column || "backlog",
-    };
+    this.cardOffset = payload.card_offset ?? 0;
     await this.applyServerBundle(payload.html?.bundle);
     transition.commit();
     transition.notices.forEach((notice) => {
       showToast(notice.message, notice.tone);
-      if (notice.llmActivity) this.notifyLLMActivity();
     });
     if (updateStatus && this.isPlayActive()) {
       const queued = payload.play_queue?.queued_count ?? 0;
@@ -307,17 +305,20 @@ export default class ScrumController extends Controller {
     return field?.value?.trim() ?? "";
   }
 
-  openCreateCardModal(event?: Event) {
+  async openCreateCardModal(event?: Event) {
     event?.preventDefault();
     event?.stopPropagation();
     const clickedColumn = (event?.currentTarget as HTMLElement | null)?.dataset?.column || "";
-    const column = this.createTicketConfig.enabled ? this.createTicketConfig.column || "backlog" : clickedColumn || "backlog";
+    const column = clickedColumn || "backlog";
+    if (!this.projectID) throw new Error("Create card requires an open project.");
     this.cardModal.clearCardRoute();
-    this.openModal(renderScrumCreateCardModal(column, this.createTicketConfig));
-  }
-
-  private notifyLLMActivity() {
-    document.dispatchEvent(new CustomEvent("omni:llm-activity"));
+    try {
+      const component = await fetchScrumCreateCardComponent(this.projectID, column);
+      await renderServerBundle(this.recyclrHost(), component, "Scrum create-card component");
+      openModalShell({ wide: true });
+    } catch (error) {
+      this.feedback.fail(error);
+    }
   }
 
   private setModalSubmitting(submitting: boolean, label = "Create card") {
@@ -358,15 +359,6 @@ export default class ScrumController extends Controller {
     return controller;
   }
 
-  recycle(target: string, html: string): void {
-    void renderRecyclrBundle(this.recyclrHost(), target, html).catch((error) => this.feedback.fail(error));
-  }
-
-  openModal(html: string): void {
-    this.recycle("modal", html);
-    openModalShell({ wide: true });
-  }
-
   closeModal() {
     this.cardModal.close();
   }
@@ -401,7 +393,6 @@ export default class ScrumController extends Controller {
     this.feedback.set("Loading board…", "busy");
     try {
       const payload = await this.fetchBoardViewport();
-      this.boardTracker.rememberLLMPending(payload.board.cards);
       await this.applyBoardPayload(payload);
       this.cardModal.openFromLocation();
       this.feedback.set(`Updated ${new Date().toLocaleTimeString()}`, "ok");
@@ -428,6 +419,18 @@ export default class ScrumController extends Controller {
     const column = (event.currentTarget as HTMLElement | null)?.dataset.column?.trim();
     if (!column || column === this.activeColumn) return;
     this.setActiveColumn(column);
+    this.cardOffset = 0;
+    this.boardTracker.reset();
+    void this.load();
+  }
+
+  loadCardPage(event: Event) {
+    event.preventDefault();
+    const offset = Number((event.currentTarget as HTMLElement | null)?.dataset.cardOffset ?? -1);
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error("Scrum card page control is invalid.");
+    }
+    this.cardOffset = offset;
     this.boardTracker.reset();
     void this.load();
   }
@@ -437,22 +440,14 @@ export default class ScrumController extends Controller {
     const title = this.modalField(event, "newTitle");
     if (!title) return;
 
-    const form = event.currentTarget as HTMLFormElement;
     const description = this.modalField(event, "newDesc");
     const column = this.modalField(event, "newColumn") || "backlog";
-    const createTicket = Boolean((form.querySelector('[data-scrum-field="newCreateTicket"]') as HTMLInputElement | null)?.checked);
-    const createTicketColumn = this.modalField(event, "newCreateTicketColumn") || column;
-    const createTicketConfig = { enabled: createTicket, column: createTicketColumn };
-    const destinationColumn = createTicket ? createTicketColumn : column;
 
-    this.setModalSubmitting(true, createTicket ? "Creating card and queueing ticket" : "Creating card");
+    this.setModalSubmitting(true, "Creating card");
     try {
       await this.withBoardRefresh(
-        createTicket ? "Creating card and queueing ticket…" : "Creating card…",
-        () => createScrumCard(title, description, destinationColumn, this.projectID, {
-          createTicket,
-          createTicketConfig,
-        }),
+        "Creating card…",
+        () => createScrumCard(title, description, column, this.projectID),
         { closeModal: true },
       );
     } finally {

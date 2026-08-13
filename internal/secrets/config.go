@@ -19,7 +19,7 @@ func OverlayConfigContext(ctx context.Context, cfg *config.Config, resolver *Res
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	for _, definition := range catalog.Definitions() {
+	for _, definition := range catalog.ProductionDefinitions() {
 		secretKey, ok := ProviderSecretKey(definition.ID)
 		if !ok {
 			continue
@@ -40,8 +40,6 @@ func OverlayConfigContext(ctx context.Context, cfg *config.Config, resolver *Res
 			cfg.AzureAIAPIKey = value
 		case catalog.ProtocolGoogle:
 			cfg.GoogleAPIKey = value
-		case catalog.ProtocolAnthropic:
-			cfg.AnthropicAPIKey = value
 		case catalog.ProtocolHuggingFace:
 			cfg.HuggingFaceAPIKey = value
 		}

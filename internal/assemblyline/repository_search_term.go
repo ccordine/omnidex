@@ -26,9 +26,19 @@ func NewRepositorySearchTermJob(input RepositorySearchTermInput) (PortableJob, e
 }
 
 func (input RepositorySearchTermInput) validate() error {
-	return validateRepositorySearchText(
-		"unresolved concept", input.UnresolvedConcept, maxRepositorySearchConceptBytes,
-	)
+	if strings.TrimSpace(input.UnresolvedConcept) == "" {
+		return fmt.Errorf("repository search unresolved concept is blank")
+	}
+	if len(input.UnresolvedConcept) > maxRepositorySearchConceptBytes {
+		return fmt.Errorf("repository search unresolved concept exceeds %d bytes", maxRepositorySearchConceptBytes)
+	}
+	if !utf8.ValidString(input.UnresolvedConcept) {
+		return fmt.Errorf("repository search unresolved concept is not valid UTF-8")
+	}
+	if strings.ContainsRune(input.UnresolvedConcept, '\x00') {
+		return fmt.Errorf("repository search unresolved concept contains NUL")
+	}
+	return nil
 }
 
 func (decision RepositorySearchTermDecision) ValidateFor(input RepositorySearchTermInput) error {

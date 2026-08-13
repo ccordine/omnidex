@@ -102,9 +102,9 @@ func validateRecoveredRepositoryPatchResult(
 	command queue.RepositoryMutationCommand,
 	files []omni.PatchFileResult,
 ) error {
-	changed := make([]string, len(command.ChangedFiles))
-	for index, file := range command.ChangedFiles {
-		changed[index] = file.FileID
+	expected, err := repositoryMutationExpectedStates(source, command.ChangedFiles)
+	if err != nil {
+		return err
 	}
-	return validateRepositoryPatchResult(source, changed, files)
+	return validateRepositoryFileStatePatchResult(source, expected, files)
 }

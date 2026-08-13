@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 type Client struct {
@@ -33,10 +31,6 @@ type pullModelRequest struct {
 	Stream bool   `json:"stream"`
 }
 
-type tagsResponse struct {
-	Models []ModelInfo `json:"models"`
-}
-
 type ModelInfo struct {
 	Name       string       `json:"name"`
 	Model      string       `json:"model"`
@@ -55,71 +49,18 @@ type ModelDetails struct {
 	QuantizationLevel string   `json:"quantization_level"`
 }
 
-func (c *Client) ListTags(ctx context.Context) ([]string, error) {
-	models, err := c.ListModels(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(models))
-	for _, item := range models {
-		if name := strings.TrimSpace(item.Name); name != "" {
-			out = append(out, name)
-		}
-	}
-	return out, nil
-}
-
-func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/tags", nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, c.wrapConnectivityError(err, "/api/tags")
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ollama tags failed: status=%d body=%s", resp.StatusCode, string(body))
-	}
-	var payload tagsResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-	out := make([]ModelInfo, 0, len(payload.Models))
-	for _, item := range payload.Models {
-		name := strings.TrimSpace(item.Name)
-		if name == "" {
-			name = strings.TrimSpace(item.Model)
-		}
-		if name == "" {
-			continue
-		}
-		item.Name = name
-		out = append(out, item)
-	}
-	return out, nil
-}
-
 func (c *Client) HasModel(ctx context.Context, model string) (bool, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return false, nil
 	}
-	tags, err := c.ListTags(ctx)
-	if err != nil {
-		return false, err
-	}
-	for _, tag := range tags {
-		if MatchesOllamaModel(model, tag) {
-			return true, nil
+	found := false
+	err := c.visitModels(ctx, func(item ModelInfo) {
+		if MatchesOllamaModel(model, item.Name) {
+			found = true
 		}
-	}
-	return false, nil
+	})
+	return found, err
 }
 
 func (c *Client) EnsureModels(ctx context.Context, models []string) ([]string, error) {
@@ -153,20 +94,6 @@ type embeddingsRequest struct {
 type embeddingsResponse struct {
 	Embedding  []float64   `json:"embedding"`
 	Embeddings [][]float64 `json:"embeddings"`
-}
-
-const minimalGeneratePrompt = llm.MinimalGeneratePrompt
-
-func derivePreparedModelPromptHint(fullPrompt string) string {
-	return llm.DerivePreparedModelPromptHint(fullPrompt)
-}
-
-func extractPromptBlock(fullPrompt string, blockName string) string {
-	return llm.ExtractPromptBlock(fullPrompt, blockName)
-}
-
-func truncatePromptHint(value string, maxChars int) string {
-	return llm.TruncatePromptHint(value, maxChars)
 }
 
 func New(baseURL, defaultModel, embeddingModel string, timeout time.Duration, contextTokens int) *Client {

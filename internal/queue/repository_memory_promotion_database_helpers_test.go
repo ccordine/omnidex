@@ -13,11 +13,13 @@ func writePromotionTestCandidate(
 	t *testing.T,
 	ctx context.Context,
 	repository *Repository,
+	scope model.MemoryScope,
 	jobID, generation int64,
 	content string,
 ) model.MemoryCandidate {
 	t.Helper()
 	candidate := model.MemoryCandidate{
+		Scope: scope,
 		JobID: jobID, Generation: &generation, CandidateKind: model.MemoryKindReference,
 		Content: content, Provenance: []byte(`{"scope_tags":["project:test"]}`), Confidence: 0.9,
 		Status: model.MemoryCandidateStatusCandidate,

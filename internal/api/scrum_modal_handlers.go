@@ -39,6 +39,8 @@ func scrumModalPayload(ctx *scrumModalRenderContext) map[string]any {
 		"agent_system":          ctx.AgentSystem,
 		"agent_overrides":       ctx.AgentOverrides,
 		"recipes":               ctx.Recipes,
+		"recipe_offset":         ctx.RecipeOffset,
+		"recipe_has_more":       ctx.RecipeHasMore,
 		"project_recipe_id":     ctx.ProjectRecipeID,
 		"project_recipe":        ctx.ProjectRecipe,
 		"pilot_pending":         ctx.PilotPending,

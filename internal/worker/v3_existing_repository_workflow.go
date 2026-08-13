@@ -3,16 +3,13 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
-	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 type repositoryEvidenceBuilder interface {
@@ -28,9 +25,13 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	if err != nil {
 		return "", err
 	}
-	partitionModel, err := session.workerModel(
-		"coding_requirement_partition", specialist.RoleCodingRequirementPartitionStation,
+	directives, err := classifyExistingRepositoryArtifactDirectives(
+		session, redacted, identities,
 	)
+	if err != nil {
+		return "", err
+	}
+	partitionModel, err := session.workerModel(station.CodingRequirementPartition)
 	if err != nil {
 		return "", err
 	}
@@ -39,6 +40,80 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	)
 	if err != nil {
 		return "", err
+	}
+	analysis, err := exactExistingRepositoryGoAnalysis(
+		session.repositoryIndex.Snapshot, session.repositoryIndex.Analyses,
+	)
+	if err != nil {
+		return "", err
+	}
+	absenceQuotes, err := session.classifyPathFreeArtifactAbsence(
+		partition.FeatureQuotes, directives, identities,
+	)
+	if err != nil {
+		return "", err
+	}
+	if containsArtifactAbsenceCandidate(directives) {
+		directives, err = session.resolveNamedArtifactDeletionCandidates(
+			partition.FeatureQuotes, directives, identities, analysis,
+		)
+		if err != nil {
+			return "", err
+		}
+	}
+	if containsForbiddenArtifactDirective(directives) {
+		return session.runNamedArtifactDeletion(
+			authority, partition, directives, identities, analysis,
+		)
+	}
+	if len(absenceQuotes) != 0 {
+		return session.runPathFreeArtifactDeletion(
+			authority, partition.FeatureQuotes, absenceQuotes,
+			identities, analysis,
+		)
+	}
+	signature, quote, missing, err := explicitMissingGoArtifactCandidate(
+		authority, partition.FeatureQuotes, analysis,
+	)
+	if err != nil {
+		return "", err
+	}
+	if missing {
+		if err := validateDesiredCreationFeatureCoverage(
+			quote, partition.FeatureQuotes, directives,
+		); err != nil {
+			return "", err
+		}
+		boundaryModel, modelErr := session.workerModel(station.CodingDeclarationArtifactBoundary)
+		if modelErr != nil {
+			return "", modelErr
+		}
+		boundary, boundaryErr := classifyDeclarationArtifactBoundary(
+			directCodingWorkerRuntime(session), boundaryModel,
+			assemblyline.DeclarationArtifactBoundaryInput{
+				RequirementQuote: quote, GoSignature: signature.Canonical,
+				DeclarationID: "DECLARATION_1",
+			},
+		)
+		if boundaryErr != nil {
+			return "", boundaryErr
+		}
+		if boundary.Boundary != assemblyline.DeclarationBoundaryIndependentArtifact {
+			return "", fmt.Errorf(
+				"missing Go declaration has no accepted independent artifact boundary; ordinary bounded modification or explicit placement is required",
+			)
+		}
+		graph, graphErr := compileDesiredArtifactCreation(
+			authority, partition.FeatureQuotes,
+			session.repositoryIndex.Snapshot, analysis,
+		)
+		if graphErr != nil {
+			return "", graphErr
+		}
+		if err := session.recordDesiredRepositoryGraph(graph); err != nil {
+			return "", err
+		}
+		return session.runExistingRepositoryDesiredState(graph, analysis)
 	}
 	resolutions, err := prepareExistingRepositoryRequirementResolutions(
 		partition.FeatureQuotes,
@@ -51,9 +126,7 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 			return session.buildExistingRepositoryEvidence(query)
 		},
 		func(requirementQuote string) (assemblyline.RepositorySearchTermDecision, error) {
-			searchTermModel, modelErr := session.repositorySemanticModel(
-				"coding_repository_search_term", specialist.RoleCodingRepositorySearchTermStation,
-			)
+			searchTermModel, modelErr := session.repositorySemanticModel(station.CodingRepositorySearchTerm)
 			if modelErr != nil {
 				return assemblyline.RepositorySearchTermDecision{}, modelErr
 			}
@@ -65,9 +138,7 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 			return session.recordExistingRepositoryEvidence(acquisition.Query, acquisition.Pack)
 		},
 		func(acquisition existingRepositoryEvidenceAcquisition) (assemblyline.RepositoryChangeSurfaceDecision, error) {
-			changeModel, modelErr := session.repositorySemanticModel(
-				"coding_repository_change_surface", specialist.RoleCodingRepositoryChangeStation,
-			)
+			changeModel, modelErr := session.repositorySemanticModel(station.CodingRepositoryChange)
 			if modelErr != nil {
 				return assemblyline.RepositoryChangeSurfaceDecision{}, modelErr
 			}
@@ -91,7 +162,7 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	if err := session.recordExistingRepositoryChangeContract(contract); err != nil {
 		return "", err
 	}
-	analysis, err := exactRepositoryChangeAnalysis(
+	analysis, err = exactRepositoryChangeAnalysis(
 		session.repositoryIndex.Analyses, contract.AnalysisID,
 	)
 	if err != nil {
@@ -116,6 +187,24 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	return session.applyExistingRepositoryChangeContract(contract, candidates, baseline)
 }
 
+func containsForbiddenArtifactDirective(directives []assemblyline.ArtifactDirective) bool {
+	for _, directive := range directives {
+		if directive.Disposition == assemblyline.ArtifactForbid {
+			return true
+		}
+	}
+	return false
+}
+
+func containsArtifactAbsenceCandidate(directives []assemblyline.ArtifactDirective) bool {
+	for _, directive := range directives {
+		if directive.Disposition == assemblyline.ArtifactAbsenceCandidate {
+			return true
+		}
+	}
+	return false
+}
+
 func existingRepositoryAuthority(request directCodingRequest) string {
 	parts := []string{request.Instruction}
 	parts = append(parts, request.AdditionalAuthority...)
@@ -123,11 +212,12 @@ func existingRepositoryAuthority(request directCodingRequest) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
-func (session *directCodingSession) repositorySemanticModel(skillID, roleID string) (string, error) {
-	modelName := session.runtime.svc.v3SpecialistModel(
-		session.runtime.claim.Job, session.runtime.routing, skillID, roleID, session.runtime.routing.Glue,
-	)
-	return requireDirectCodingModel(roleID, modelName)
+func (session *directCodingSession) repositorySemanticModel(id station.ID) (string, error) {
+	modelName, err := stationModel(session.runtime.routing, id)
+	if err != nil {
+		return "", err
+	}
+	return requireDirectCodingModel(id, modelName)
 }
 
 func (session *directCodingSession) buildExistingRepositoryEvidence(
@@ -149,35 +239,10 @@ func (session *directCodingSession) buildExistingRepositoryEvidence(
 	if projectID < 1 {
 		return repositoryretrieval.EvidencePack{}, fmt.Errorf("repository evidence requires durable project authority")
 	}
-	analyses := append([]repositoryfacts.Analysis(nil), session.repositoryIndex.Analyses...)
-	sort.Slice(analyses, func(left, right int) bool { return analyses[left].ID < analyses[right].ID })
-	packs := make([]repositoryretrieval.EvidencePack, 0, len(analyses))
-	for _, analysis := range analyses {
-		request, requestErr := newExistingRepositoryEvidenceRequest(projectID, analysis.ID, searchTerm)
-		if requestErr != nil {
-			return repositoryretrieval.EvidencePack{}, requestErr
-		}
-		pack, buildErr := session.runtime.svc.repositoryRetrieval.Build(session.runtime.ctx, request)
-		if errors.Is(buildErr, repositoryretrieval.ErrInsufficientEvidence) {
-			continue
-		}
-		if buildErr != nil {
-			return repositoryretrieval.EvidencePack{}, buildErr
-		}
-		packs = append(packs, pack)
-	}
-	if len(packs) == 0 {
-		return repositoryretrieval.EvidencePack{}, fmt.Errorf(
-			"%w: code-owned lexical neighborhood for %q matched no complete analysis",
-			repositoryretrieval.ErrInsufficientEvidence, searchTerm,
-		)
-	}
-	if len(packs) > 1 {
-		return repositoryretrieval.EvidencePack{}, fmt.Errorf(
-			"repository evidence spans %d language analyses; composite evidence is required", len(packs),
-		)
-	}
-	return packs[0], nil
+	return buildObjectiveRepositoryEvidence(
+		session.runtime.ctx, session.runtime.svc.repositoryRetrieval,
+		projectID, session.repositoryIndex.Analyses, searchTerm,
+	)
 }
 
 func newExistingRepositoryEvidenceRequest(

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,7 +14,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/gryph/omnidex/internal/research"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -64,6 +63,14 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleMemoryBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.addMemoryBatch(w, r)
 }
 
 func (s *Server) handleMemoryCandidates(w http.ResponseWriter, r *http.Request) {
@@ -167,45 +174,99 @@ func (s *Server) handleMemoryCandidateByID(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) addMemory(w http.ResponseWriter, r *http.Request) {
 	var req memoryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+	if err := decodeExactMemoryJSON(
+		w, r, "memory request", maxMemoryRequestBodyBytes, &req,
+	); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	req.Content = strings.TrimSpace(req.Content)
-	if req.Content == "" {
-		writeError(w, http.StatusBadRequest, "content is required")
+	input := req.input()
+	if err := input.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	embedding, err := s.requireMemoryEmbedding(r.Context(), req.Content)
+	embedding, err := s.requireMemoryEmbedding(r.Context(), input.Content)
 	if err != nil {
-		log.Printf("memory ingest rejected source=%q kind=%q content_bytes=%d: %v", req.Source, req.Kind, len(req.Content), err)
+		log.Printf("memory ingest rejected source=%q kind=%q content_bytes=%d: %v",
+			input.Source, input.Kind, len(input.Content), err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-
-	chunk, err := s.repo.AddMemoryChunk(r.Context(), req.Source, req.Kind, req.Content, req.Tags, embedding)
+	chunks, err := s.repo.AddMemoryChunks(r.Context(), []queue.MemoryChunkWrite{{
+		Input: input, Embedding: embedding,
+	}})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, memoryWriteStatus(err), err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"memory": chunk,
+		"memory": chunks[0],
 	})
 }
 
+func (s *Server) addMemoryBatch(w http.ResponseWriter, r *http.Request) {
+	var req memoryBatchRequest
+	if err := decodeExactMemoryJSON(
+		w, r, "memory batch", maxMemoryBatchBodyBytes, &req,
+	); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	inputs, err := validateMemoryBatchRequest(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writes := make([]queue.MemoryChunkWrite, len(inputs))
+	for index, input := range inputs {
+		embedding, err := s.requireMemoryEmbedding(r.Context(), input.Content)
+		if err != nil {
+			log.Printf("memory batch embedding rejected item=%d source=%q kind=%q: %v",
+				index+1, input.Source, input.Kind, err)
+			writeError(w, http.StatusBadGateway, fmt.Sprintf(
+				"memory batch item %d: %v", index+1, err,
+			))
+			return
+		}
+		writes[index] = queue.MemoryChunkWrite{Input: input, Embedding: embedding}
+	}
+	chunks, err := s.repo.AddMemoryChunks(r.Context(), writes)
+	if err != nil {
+		writeError(w, memoryWriteStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"memories": chunks})
+}
+
+func memoryWriteStatus(err error) int {
+	message := err.Error()
+	if strings.Contains(message, "memory source") || strings.Contains(message, "memory kind") ||
+		strings.Contains(message, "memory content") || strings.Contains(message, "memory tag") ||
+		strings.Contains(message, "memory categor") || strings.Contains(message, "memory embedding") ||
+		strings.Contains(message, "memory batch") {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
 func (s *Server) requireMemoryEmbedding(ctx context.Context, content string) ([]float64, error) {
-	if s.llmClient == nil {
+	if s.embeddingClient == nil {
 		return nil, fmt.Errorf("memory embedding client is not configured")
 	}
-	embedding, err := s.llmClient.Embedding(ctx, content)
+	embedding, err := s.embeddingClient.Embedding(ctx, content)
 	if err != nil {
 		return nil, fmt.Errorf("generate memory embedding: %w", err)
 	}
-	if len(embedding) == 0 {
-		return nil, fmt.Errorf("generate memory embedding: provider returned an empty vector")
+	if len(embedding) != model.MemoryEmbeddingDimensions {
+		return nil, fmt.Errorf(
+			"generate memory embedding: provider returned %d values, expected %d",
+			len(embedding), model.MemoryEmbeddingDimensions,
+		)
+	}
+	for _, value := range embedding {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil, fmt.Errorf("generate memory embedding: provider returned a non-finite value")
+		}
 	}
 	return embedding, nil
 }
@@ -238,132 +299,20 @@ func (s *Server) handleMemoryTags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tags": facets})
 }
 
-func (s *Server) handleResearchIngest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if s.repo == nil {
-		writeError(w, http.StatusServiceUnavailable, "repository is not configured")
-		return
-	}
-
-	var req researchIngestRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	topic := strings.TrimSpace(req.Topic)
-	if topic == "" {
-		writeError(w, http.StatusBadRequest, "topic is required")
-		return
-	}
-
-	includeOfficial := true
-	if req.IncludeOfficialSources != nil {
-		includeOfficial = *req.IncludeOfficialSources
-	}
-	sourcePrefix := strings.TrimSpace(req.Source)
-	if sourcePrefix == "" {
-		sourcePrefix = research.DefaultSourcePrefix
-	}
-	kind := strings.TrimSpace(req.Kind)
-	if kind == "" {
-		kind = model.MemoryKindReference
-	}
-	slug := research.SanitizeToken(topic)
-	if slug == "" {
-		slug = fmt.Sprintf("topic-%d", time.Now().Unix())
-	}
-
-	documents := []research.Document{}
-	warnings := []string{}
-	if includeOfficial {
-		fetched, fetchWarnings, err := research.FetchOfficialDocuments(r.Context(), topic)
-		warnings = append(warnings, fetchWarnings...)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, err.Error())
-			return
-		}
-		documents = append(documents, fetched...)
-	}
-	if len(documents) == 0 {
-		writeError(w, http.StatusBadRequest, "no research documents found for topic")
-		return
-	}
-
-	prepared := research.PrepareChunks(documents, research.PrepareOptions{
-		Topic:        topic,
-		Slug:         slug,
-		SourcePrefix: sourcePrefix,
-		Tags:         req.Tags,
-		ChunkSize:    req.ChunkSize,
-		Overlap:      req.Overlap,
-		MaxChunks:    req.MaxChunks,
-	})
-	if len(prepared) == 0 {
-		writeError(w, http.StatusBadRequest, "no ingestible research chunks produced")
-		return
-	}
-	embeddings := make([][]float64, len(prepared))
-	for index, chunk := range prepared {
-		embedding, err := s.requireMemoryEmbedding(r.Context(), chunk.Content)
-		if err != nil {
-			log.Printf("research ingest rejected topic=%q chunk=%d source=%q content_bytes=%d: %v", topic, index, chunk.Source, len(chunk.Content), err)
-			writeError(w, http.StatusBadGateway, fmt.Sprintf("embed research chunk %d: %v", index, err))
-			return
-		}
-		embeddings[index] = embedding
-	}
-
-	storedSources := make([]string, 0, len(prepared))
-	var storedTags []string
-	for index, chunk := range prepared {
-		if _, err := s.repo.AddMemoryChunk(r.Context(), chunk.Source, kind, chunk.Content, chunk.Tags, embeddings[index]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		storedSources = append(storedSources, chunk.Source)
-		if len(storedTags) == 0 {
-			storedTags = chunk.Tags
-		}
-	}
-
-	sources := make([]string, 0, len(documents))
-	for _, doc := range documents {
-		if url := research.DocumentURL(doc.Content); url != "" {
-			sources = append(sources, url)
-		}
-	}
-
-	writeJSON(w, http.StatusCreated, researchIngestResponse{
-		Topic:             topic,
-		Slug:              slug,
-		SourcePrefix:      sourcePrefix,
-		StoredChunks:      len(storedSources),
-		Tags:              storedTags,
-		Warnings:          warnings,
-		Dossier:           research.BuildDossier(topic, 0, time.Now(), documents, storedTags, sourcePrefix, len(storedSources)),
-		Sources:           sources,
-		StoredChunkSource: storedSources,
-	})
-}
-
 func (s *Server) promoteMemoryCandidate(w http.ResponseWriter, r *http.Request, candidateID int64) {
 	var req memoryCandidatePromotionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+	if err := decodeExactMemoryJSON(
+		w, r, "memory candidate promotion", maxMemoryRequestBodyBytes, &req,
+	); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	tier := strings.ToLower(strings.TrimSpace(req.Tier))
-	if tier == "" {
-		tier = model.MemoryCandidateStatusApproved
-	}
+	tier := req.Tier
 	if tier != model.MemoryCandidateStatusApproved && tier != model.MemoryCandidateStatusDurable {
-		writeError(w, http.StatusBadRequest, "tier must be approved or durable")
+		writeError(w, http.StatusBadRequest, "tier must be exact approved or durable")
 		return
 	}
-	authority := model.MemoryPromotionAuthority(strings.TrimSpace(string(req.Authority)))
+	authority := req.Authority
 	if authority != model.MemoryPromotionAuthorityCurrent &&
 		authority != model.MemoryPromotionAuthorityHistorical &&
 		authority != model.MemoryPromotionAuthorityGlobal {
@@ -389,18 +338,23 @@ func (s *Server) promoteMemoryCandidate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	tags, categories, err := memoryCandidatePromotionMetadata(candidate)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	embed, err := s.requireMemoryEmbedding(r.Context(), candidate.Content)
 	if err != nil {
 		log.Printf("memory promotion rejected candidate_id=%d authority=%s: %v", candidate.ID, authority, err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	tags := append(memoryCandidateScopeTags(candidate), candidate.CandidateKind)
 	promotion := queue.MemoryCandidatePromotion{
-		Candidate: candidate,
-		Tier:      tier,
-		Tags:      tags,
-		Embedding: embed,
+		Candidate:  candidate,
+		Tier:       tier,
+		Tags:       tags,
+		Categories: categories,
+		Embedding:  embed,
 	}
 	var result model.MemoryCandidatePromotionResult
 	switch authority {
@@ -440,33 +394,6 @@ func (s *Server) rejectMemoryCandidate(w http.ResponseWriter, r *http.Request, c
 	writeJSON(w, http.StatusOK, map[string]any{
 		"memory_candidate": item,
 	})
-}
-
-func memoryCandidateScopeTags(candidate model.MemoryCandidate) []string {
-	if len(candidate.Provenance) == 0 || !json.Valid(candidate.Provenance) {
-		return nil
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(candidate.Provenance, &payload); err != nil {
-		return nil
-	}
-	raw, ok := payload["scope_tags"]
-	if !ok {
-		return nil
-	}
-	items, ok := raw.([]any)
-	if !ok {
-		return nil
-	}
-	tags := make([]string, 0, len(items))
-	for _, item := range items {
-		tag := strings.TrimSpace(fmt.Sprintf("%v", item))
-		if tag == "" {
-			continue
-		}
-		tags = append(tags, tag)
-	}
-	return tags
 }
 
 func (s *Server) handleAdminMigrateFresh(w http.ResponseWriter, r *http.Request) {

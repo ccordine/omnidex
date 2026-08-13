@@ -70,11 +70,6 @@ func statusLLMProvider() (string, error) {
 }
 
 func printWebStatusLine(report webStatusReport, summaryOnly bool) {
-	if !report.Enabled {
-		fmt.Println("web: disabled WEB_SEARCH_ENABLED=false")
-		return
-	}
-
 	reachable := 0
 	failed := 0
 	for _, probe := range report.Probes {

@@ -5,10 +5,11 @@ import (
 	"fmt"
 )
 
-var removedProjectPlanningSettingKeys = []string{
+var removedProjectSettingKeys = []string{
 	"planning_chat",
 	"planning_chat_config",
 	"planning_draft_queue",
+	"scrum_auto_review",
 }
 
 func validateProjectSettings(settings json.RawMessage) error {
@@ -22,9 +23,9 @@ func validateProjectSettings(settings json.RawMessage) error {
 	if payload == nil {
 		return fmt.Errorf("project settings must be a JSON object, received null")
 	}
-	for _, key := range removedProjectPlanningSettingKeys {
+	for _, key := range removedProjectSettingKeys {
 		if _, exists := payload[key]; exists {
-			return fmt.Errorf("project setting %q was removed; use the PostgreSQL project planning API", key)
+			return fmt.Errorf("project setting %q was removed and has no compatibility path", key)
 		}
 	}
 	return nil

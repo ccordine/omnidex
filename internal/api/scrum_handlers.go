@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,9 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
 func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
@@ -51,16 +48,30 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			AutoWork     *ScrumAutoWorkConfig     `json:"auto_work"`
-			AutoReview   *ScrumAutoReviewConfig   `json:"auto_review"`
-			CreateTicket *ScrumCreateTicketConfig `json:"create_ticket"`
+			AutoWork            *ScrumAutoWorkConfig `json:"auto_work"`
+			RemovedAutoReview   json.RawMessage      `json:"auto_review"`
+			RemovedCreateTicket json.RawMessage      `json:"create_ticket"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		if req.AutoWork == nil && req.AutoReview == nil && req.CreateTicket == nil {
-			writeError(w, http.StatusBadRequest, "auto_work, auto_review, or create_ticket is required")
+		if err := requireJSONEOF(decoder, "Scrum automation request"); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if len(req.RemovedCreateTicket) > 0 {
+			writeRemovedInferenceAction(w, "Scrum create-ticket automation")
+			return
+		}
+		if len(req.RemovedAutoReview) > 0 {
+			writeRemovedInferenceAction(w, "Scrum auto-review automation")
+			return
+		}
+		if req.AutoWork == nil {
+			writeError(w, http.StatusBadRequest, "auto_work is required")
 			return
 		}
 		projectID, err := s.resolveProjectID(r)
@@ -81,23 +92,6 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			}
 			project, err = s.repo.GetProject(r.Context(), projectID)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-		}
-		if req.AutoReview != nil {
-			if err := s.saveScrumAutoReviewConfig(r.Context(), project, *req.AutoReview); err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			project, err = s.repo.GetProject(r.Context(), projectID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-		}
-		if req.CreateTicket != nil {
-			if err := s.saveScrumCreateTicketConfig(r.Context(), project, *req.CreateTicket); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -134,61 +128,33 @@ func (s *Server) handleScrumCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title              string                   `json:"title"`
-		Description        string                   `json:"description"`
-		Column             string                   `json:"column"`
-		CreateTicket       bool                     `json:"create_ticket"`
-		CreateTicketConfig *ScrumCreateTicketConfig `json:"create_ticket_config"`
+		Title                     string          `json:"title"`
+		Description               string          `json:"description"`
+		Column                    string          `json:"column"`
+		RemovedCreateTicket       json.RawMessage `json:"create_ticket"`
+		RemovedCreateTicketConfig json.RawMessage `json:"create_ticket_config"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	column := req.Column
-	if req.CreateTicket && req.CreateTicketConfig != nil {
-		column = req.CreateTicketConfig.Column
-	}
-	projectID, err := s.resolveProjectID(r)
-	if err != nil {
+	if err := requireJSONEOF(decoder, "Scrum card create request"); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.CreateTicketConfig != nil {
-		project, err := s.repo.GetProject(r.Context(), projectID)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "project not found")
-			return
-		}
-		if err := s.saveScrumCreateTicketConfig(r.Context(), project, *req.CreateTicketConfig); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	if len(req.RemovedCreateTicket) > 0 || len(req.RemovedCreateTicketConfig) > 0 {
+		writeRemovedInferenceAction(w, "Scrum card ticket generation")
+		return
 	}
+	column := req.Column
 	card, err := s.scrumCreateCard(r, req.Title, req.Description, column)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var ticketJob *model.Job
-	if req.CreateTicket {
-		ticketModel, err := s.scrumCardTicketModel(r.Context(), projectID)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Sprintf("card %s was created but its ticket model could not be resolved: %v", card.ID, err))
-			return
-		}
-		job, updated, err := s.enqueueScrumCardLLMJob(r.Context(), projectID, card, scrumcardllm.ActionCardTicket, "", ticketModel, scrumcardllm.TicketRequest{PlanningMode: true})
-		if err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Sprintf("card %s was created but its ticket job failed: %v", card.ID, err))
-			return
-		}
-		card = updated
-		ticketJob = &job
-	}
 	payload := map[string]any{"card": card}
-	if ticketJob != nil {
-		payload["ticket_job"] = ticketJob
-		payload["message"] = fmt.Sprintf("Queued card ticket job #%d", ticketJob.ID)
-	}
 	writeJSON(w, http.StatusCreated, payload)
 }
 
@@ -212,10 +178,14 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 			s.handleScrumCardChat(w, r, cardID)
 		case "card-ticket":
 			s.handleScrumCardTicket(w, r, cardID)
+		case "checklist":
+			s.handleScrumCardItem(w, r, cardID, queue.ScrumCardChecklist)
+		case "test-criteria":
+			s.handleScrumCardItem(w, r, cardID, queue.ScrumCardTestCriteria)
 		case "coach":
-			s.handleScrumCardCoach(w, r, cardID)
+			writeRemovedInferenceAction(w, "Scrum card coach")
 		case "coach-config":
-			s.handleScrumCardCoachConfig(w, r, cardID)
+			writeRemovedInferenceAction(w, "Scrum card coach configuration")
 		case "tags-suggest":
 			s.handleScrumCardTagsSuggest(w, r, cardID)
 		case "files":
@@ -244,22 +214,12 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 			"card": card,
 		})
 	case http.MethodPatch:
-		body, err := io.ReadAll(r.Body)
+		edit, err := decodeScrumCardEditRequest(w, r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+			writeScrumCardEditBodyError(w, err)
 			return
 		}
-		raw := map[string]json.RawMessage{}
-		if err := json.Unmarshal(body, &raw); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		var patch ScrumCard
-		if err := json.Unmarshal(body, &patch); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		card, err := s.scrumUpdateCard(r, cardID, patch, raw)
+		card, err := s.scrumEditCard(r, cardID, edit)
 		if err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -294,12 +254,9 @@ func (s *Server) handleScrumCardMove(w http.ResponseWriter, r *http.Request, car
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct {
-		Column       string `json:"column"`
-		BeforeCardID string `json:"before_card_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+	req, err := decodeScrumCardMoveRequest(w, r)
+	if err != nil {
+		writeScrumCardStateBodyError(w, err)
 		return
 	}
 	card, err := s.scrumMoveCard(r, cardID, req.Column, req.BeforeCardID)
@@ -315,37 +272,16 @@ func (s *Server) handleScrumCardDone(w http.ResponseWriter, r *http.Request, car
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if err := decodeScrumCardDoneRequest(w, r); err != nil {
+		writeScrumCardStateBodyError(w, err)
+		return
+	}
 	card, err := s.scrumMoveCard(r, cardID, "done", "")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"card": card})
-}
-
-func (s *Server) scrumLLMGenerate(ctx context.Context, source, system, user string, meta llmContextTelemetryMeta) (string, error) {
-	if s.llmClient == nil {
-		return "", fmt.Errorf("no llm client configured")
-	}
-	modelName, err := s.requiredDefaultLLMModel()
-	if err != nil {
-		return "", err
-	}
-	prompt := strings.TrimSpace(system + "\n\n" + user)
-	promptChars := llmPromptCharCount(system, user)
-	generated, err := s.llmClient.Generate(ctx, modelName, prompt)
-	s.recordLLMContextUsage(ctx, source, modelName, s.llmProviderName(), meta, promptChars, len(prompt), false, 0, err)
-	return generated, err
-}
-
-func (s *Server) runScrumDirectInstruct(ctx context.Context, instruction string, board ScrumBoard, card ScrumCard) (string, error) {
-	system := strings.Join([]string{
-		"You are the Omni scrum task pilot.",
-		"Think through the task, then provide actionable next steps and evidence.",
-		"Project directory: " + board.ProjectDirectory,
-		"Reference files: " + strings.Join(card.RefFiles, ", "),
-	}, "\n")
-	return s.scrumLLMGenerate(ctx, llmContextSourceScrumGeneric, system, instruction, llmContextTelemetryMeta{CardID: card.ID})
 }
 
 func (s *Server) handleScrumCardChat(w http.ResponseWriter, r *http.Request, cardID string) {
@@ -579,7 +515,9 @@ func (s *Server) handleScrumCardFiles(w http.ResponseWriter, r *http.Request, ca
 			refs = append(refs, ref)
 		}
 	}
-	updated, err := s.scrumUpdateCard(r, cardID, ScrumCard{RefFiles: refs}, map[string]json.RawMessage{"ref_files": json.RawMessage(`[]`)})
+	updated, err := s.scrumEditCard(r, cardID, scrumCardEditRequest{
+		RefFiles: editableScrumCardField(refs),
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -645,8 +583,6 @@ func (s *Server) handleScrumCardSync(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		payload["auto_work"] = automation.AutoWork
-		payload["auto_review"] = automation.AutoReview
-		payload["create_ticket"] = automation.CreateTicket
 	}
 	writeJSON(w, http.StatusOK, payload)
 }

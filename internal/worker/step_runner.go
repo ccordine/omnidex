@@ -9,13 +9,9 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/specialist"
 )
 
 func (s *Service) Start(ctx context.Context) error {
-	if err := s.refreshSkillRegistry(ctx); err != nil {
-		return fmt.Errorf("initialize authoritative worker skill registry: %w", err)
-	}
 	var wg sync.WaitGroup
 	for i := 0; i < s.workerCount; i++ {
 		wg.Add(1)
@@ -58,10 +54,8 @@ func (s *Service) run(ctx context.Context, workerID string) {
 			continue
 		}
 		phase := pipelinePhaseForAction(claim.Step.Action)
-		stepRole := specialist.ForPipelineAction(claim.Step.Action)
 		s.emitStepContext(claim.Authority, "phase", phase)
-		s.emitStepContext(claim.Authority, "specialist_role", strings.Join(specialist.DetailLines(stepRole), "\n"))
-		s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("phase=%s action=%s worker=%s specialist=%s", phase, claim.Step.Action, workerID, strings.TrimSpace(stepRole.ID)))
+		s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("phase=%s action=%s worker=%s", phase, claim.Step.Action, workerID))
 		if err := s.processStep(ctx, claim); err != nil {
 			if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
 				continue
@@ -100,7 +94,7 @@ func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) err
 }
 
 func (s *Service) processClaimedAction(stepCtx context.Context, claim *model.ClaimedStep, contexts map[string]string, action string) error {
-	if strings.HasPrefix(action, "v3_") {
+	if strings.HasPrefix(action, "v3_") || action == "objective_resolve" {
 		if s.nativeV3Runner != nil {
 			return s.nativeV3Runner(stepCtx, claim, contexts, action)
 		}
@@ -109,14 +103,6 @@ func (s *Service) processClaimedAction(stepCtx context.Context, claim *model.Cla
 	switch action {
 	case "external_agent_execute":
 		return s.runExternalAgentStep(stepCtx, claim, contexts)
-	case "data_source_query":
-		return s.runDataSourceQueryStep(stepCtx, claim)
-	case "data_source_explore":
-		return s.runDataSourceExploreStep(stepCtx, claim)
-	case "project_debugger":
-		return s.runProjectDebuggerStep(stepCtx, claim)
-	case "scrum_card_llm":
-		return s.runScrumCardLLMStep(stepCtx, claim)
 	default:
 		return fmt.Errorf("unsupported worker action %q", action)
 	}

@@ -13,26 +13,46 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationIdentityInput](payload, ApplicationIdentityInput.validate)
 	case WorkRequirementPartition:
 		return decodeAndValidatePortablePayload[RequirementPartitionInput](payload, RequirementPartitionInput.validate)
-	case WorkRequirementBriefing:
-		return decodeAndValidatePortablePayload[RequirementPartitionInput](payload, RequirementPartitionInput.validate)
-	case WorkRequirementAdvisory:
-		return decodeAndValidatePortablePayload[RequirementPartitionAdvisoryInput](payload, RequirementPartitionAdvisoryInput.validate)
-	case WorkRequirementSynthesis:
-		return decodeAndValidatePortablePayload[RequirementPartitionSynthesisInput](payload, RequirementPartitionSynthesisInput.validate)
-	case WorkRequirementFinalAdvisory:
-		return decodeAndValidatePortablePayload[RequirementFinalAdvisoryInput](payload, RequirementFinalAdvisoryInput.validate)
-	case WorkRequirementFinalSynthesis:
-		return decodeAndValidatePortablePayload[RequirementFinalSynthesisInput](payload, RequirementFinalSynthesisInput.validate)
 	case WorkRepositorySearchTerm:
 		return decodeAndValidatePortablePayload[RepositorySearchTermInput](payload, RepositorySearchTermInput.validate)
 	case WorkRepositoryChangeSurface:
 		return decodeAndValidatePortablePayload[RepositoryChangeSurfaceInput](payload, RepositoryChangeSurfaceInput.validate)
+	case WorkRepositoryEvidenceRelevance:
+		return decodeAndValidatePortablePayload[RepositoryEvidenceRelevanceInput](payload, RepositoryEvidenceRelevanceInput.validate)
+	case WorkRepositoryGroundedReview:
+		return decodeAndValidatePortablePayload[RepositoryGroundedReviewInput](payload, RepositoryGroundedReviewInput.validate)
+	case WorkRepositoryGroundedCorrection:
+		return decodeAndValidatePortablePayload[RepositoryGroundedCorrectionInput](payload, RepositoryGroundedCorrectionInput.validate)
+	case WorkConversationContextSelection:
+		return decodeAndValidatePortablePayload[ConversationContextSelectionInput](payload, ConversationContextSelectionInput.validate)
+	case WorkMemoryContextSelection:
+		return decodeAndValidatePortablePayload[MemoryContextSelectionInput](payload, MemoryContextSelectionInput.validate)
+	case WorkConversationObjectiveKind:
+		return decodeAndValidatePortablePayload[ConversationObjectiveKindInput](payload, ConversationObjectiveKindInput.validate)
+	case WorkConversationResponse:
+		return decodeAndValidatePortablePayload[ConversationResponseInput](payload, ConversationResponseInput.validate)
+	case WorkGroundedAnswer:
+		return decodeAndValidatePortablePayload[GroundedAnswerInput](payload, GroundedAnswerInput.validate)
+	case WorkWebSearchTerms:
+		return decodeAndValidatePortablePayload[WebSearchTermsInput](payload, WebSearchTermsInput.validate)
+	case WorkWebRelevance:
+		return decodeAndValidatePortablePayload[WebRelevanceInput](payload, WebRelevanceInput.validate)
+	case WorkWebGroundedSynthesis:
+		return decodeAndValidatePortablePayload[WebGroundedSynthesisInput](payload, WebGroundedSynthesisInput.validate)
+	case WorkWebGroundedSynthesisCorrection:
+		return decodeAndValidatePortablePayload[WebGroundedSynthesisCorrectionInput](payload, WebGroundedSynthesisCorrectionInput.validate)
+	case WorkWebClaimEvidenceReview:
+		return decodeAndValidatePortablePayload[WebClaimEvidenceReviewInput](payload, WebClaimEvidenceReviewInput.validate)
 	case WorkArtifactHandling:
 		return decodeAndValidatePortablePayload[ArtifactHandlingInput](payload, ArtifactHandlingInput.validate)
+	case WorkKnownArtifactTruth:
+		return decodeAndValidatePortablePayload[KnownArtifactTruthInput](payload, KnownArtifactTruthInput.validate)
+	case WorkDeclarationArtifactBoundary:
+		return decodeAndValidatePortablePayload[DeclarationArtifactBoundaryInput](payload, DeclarationArtifactBoundaryInput.validate)
+	case WorkArtifactCandidateSelection:
+		return decodeAndValidatePortablePayload[ArtifactCandidateSelectionInput](payload, ArtifactCandidateSelectionInput.validate)
 	case WorkCapabilityRelation:
 		return decodeAndValidatePortablePayload[CapabilityRelationInput](payload, CapabilityRelationInput.validate)
-	case WorkSkillProcedure:
-		return decodeAndValidatePortablePayload[SkillProcedureInput](payload, SkillProcedureInput.validate)
 	case WorkSkillSelection:
 		return decodeAndValidatePortablePayload[SkillSelectionInput](payload, SkillSelectionInput.validate)
 	case WorkFragmentGeneration:

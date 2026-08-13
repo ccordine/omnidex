@@ -52,12 +52,13 @@ func (s *Server) scrumMoveCard(r *http.Request, cardID, column, beforeCardID str
 			updated.FlowMetrics = metrics
 		}
 	}
-	if normalizeScrumColumn(before[updated.ID].Column) != "review" && normalizeScrumColumn(updated.Column) == "review" {
-		reviewed, reviewErr := s.maybeStartScrumAutoReview(r, projectID, board, updated, before[updated.ID].Column)
-		if reviewErr != nil {
-			return ScrumCard{}, fmt.Errorf("start Scrum auto-review: %w", reviewErr)
-		}
-		updated = reviewed
+	stored, err := s.repo.GetScrumCard(r.Context(), projectID, updated.ID)
+	if err != nil {
+		return ScrumCard{}, fmt.Errorf("load moved Scrum card post-state: %w", err)
+	}
+	updated, err = dbScrumCardToAPI(stored)
+	if err != nil {
+		return ScrumCard{}, fmt.Errorf("decode moved Scrum card post-state: %w", err)
 	}
 	if err := s.ReconcileScrumPlayQueueForProjectAsync(projectID); err != nil {
 		return ScrumCard{}, err
@@ -87,11 +88,20 @@ func placeScrumCard(board *ScrumBoard, cardID, column, beforeCardID string) (Scr
 	targetCards := columnCards(board, column, cardID)
 	insertAt := len(targetCards)
 	if beforeCardID != "" {
+		found := false
 		for i, card := range targetCards {
 			if card.ID == beforeCardID {
 				insertAt = i
+				found = true
 				break
 			}
+		}
+		if !found {
+			return ScrumCard{}, nil, fmt.Errorf(
+				"before card %q was not found in target column %q",
+				beforeCardID,
+				column,
+			)
 		}
 	}
 	targetCards = append(targetCards[:insertAt], append([]ScrumCard{moved}, targetCards[insertAt:]...)...)

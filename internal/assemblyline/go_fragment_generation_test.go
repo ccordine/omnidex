@@ -1,0 +1,28 @@
+package assemblyline
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestGoFragmentGenerationIsOnePathBlindDeclaration(t *testing.T) {
+	t.Parallel()
+	job, err := NewFragmentGenerationJob(FragmentGenerationInput{
+		Language: "go", Signature: "func Added() int", Behavior: "return two",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, schema, err := RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if schema != nil || !strings.Contains(prompt, "func Added() int") || !strings.Contains(prompt, "return two") {
+		t.Fatalf("prompt=%q schema=%#v", prompt, schema)
+	}
+	for _, forbidden := range []string{"filename", "target path", "create_file", "delete_file", "write_file", "shell command"} {
+		if strings.Contains(strings.ToLower(prompt), forbidden) {
+			t.Fatalf("Go generation prompt exposed forbidden authority %q: %s", forbidden, prompt)
+		}
+	}
+}

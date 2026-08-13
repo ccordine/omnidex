@@ -24,15 +24,11 @@ const (
 )
 
 const (
-	PipelineAssistant       = "assistant"
-	PipelineChat            = "chat"
-	PipelineCoding          = "coding"
-	PipelineStory           = "story"
-	PipelineDataQuery       = "data_query"
-	PipelineDataExplore     = "data_explore"
-	PipelineProjectDebugger = "project_debugger"
-	PipelineScrumCardLLM    = "scrum_card_llm"
-	PipelineScrum           = "scrum"
+	PipelineAssistant = "assistant"
+	PipelineChat      = "chat"
+	PipelineCoding    = "coding"
+	PipelineStory     = "story"
+	PipelineScrum     = "scrum"
 )
 
 const (
@@ -115,21 +111,23 @@ type ClaimedStep struct {
 }
 
 type MemoryChunk struct {
-	ID        int64     `json:"id"`
-	Source    string    `json:"source"`
-	Kind      string    `json:"kind"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64        `json:"id"`
+	Scope     MemoryScope  `json:"scope"`
+	Source    MemorySource `json:"source"`
+	Kind      MemoryKind   `json:"kind"`
+	Content   string       `json:"content"`
+	CreatedAt time.Time    `json:"created_at"`
 }
 
 type MemoryMatch struct {
-	ID         int64     `json:"id"`
-	Kind       string    `json:"kind"`
-	Content    string    `json:"content"`
-	Tags       []string  `json:"tags,omitempty"`
-	Categories []string  `json:"categories,omitempty"`
-	Score      float64   `json:"score"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         int64            `json:"id"`
+	Scope      MemoryScope      `json:"scope"`
+	Kind       MemoryKind       `json:"kind"`
+	Content    string           `json:"content"`
+	Tags       []string         `json:"tags,omitempty"`
+	Categories []MemoryCategory `json:"categories,omitempty"`
+	Score      float64          `json:"score"`
+	CreatedAt  time.Time        `json:"created_at"`
 }
 
 type MemoryFacet struct {
@@ -139,10 +137,11 @@ type MemoryFacet struct {
 
 type MemoryCandidate struct {
 	ID             int64           `json:"id"`
+	Scope          MemoryScope     `json:"scope"`
 	JobID          int64           `json:"job_id,omitempty"`
 	Generation     *int64          `json:"generation,omitempty"`
 	SourceMemoryID *int64          `json:"source_memory_id,omitempty"`
-	CandidateKind  string          `json:"candidate_kind"`
+	CandidateKind  MemoryKind      `json:"candidate_kind"`
 	Content        string          `json:"content"`
 	Provenance     json.RawMessage `json:"provenance,omitempty"`
 	Confidence     float64         `json:"confidence,omitempty"`
@@ -177,24 +176,36 @@ type MemoryCandidatePromotionResult struct {
 }
 
 type Channel struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name,omitempty"`
-	Persona   string          `json:"persona"`
-	System    string          `json:"system,omitempty"`
-	Provider  string          `json:"provider,omitempty"`
-	Model     string          `json:"model,omitempty"`
-	Context   json.RawMessage `json:"context,omitempty"`
-	Tags      []string        `json:"tags,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
+	ID            ChannelID    `json:"id"`
+	Scope         ChannelScope `json:"scope"`
+	Name          string       `json:"name,omitempty"`
+	Tags          []string     `json:"tags,omitempty"`
+	ProjectID     int64        `json:"project_id"`
+	WorkspaceRoot string       `json:"workspace_root"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
 }
 
+type ChannelID string
+type ChannelMessageRole string
+
+const (
+	ChannelMessageRoleUser      ChannelMessageRole = "user"
+	ChannelMessageRoleAssistant ChannelMessageRole = "assistant"
+)
+
 type ChannelMessage struct {
-	ID        int64     `json:"id"`
-	ChannelID string    `json:"channel_id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64              `json:"id"`
+	ChannelID ChannelID          `json:"channel_id"`
+	Role      ChannelMessageRole `json:"role"`
+	Content   string             `json:"content"`
+	CreatedAt time.Time          `json:"created_at"`
+}
+
+type ChannelMessagePage struct {
+	Messages     []ChannelMessage `json:"messages"`
+	NextBeforeID *int64           `json:"next_before_id,omitempty"`
+	HasMore      bool             `json:"has_more"`
 }
 
 type DataSourceChannel struct {

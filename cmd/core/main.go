@@ -5,15 +5,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/gryph/omnidex/internal/api"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llmprovider"
-	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/gryph/omnidex/internal/version"
@@ -22,6 +19,23 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch {
+		case len(os.Args) == 3 && os.Args[1] == "config:validate-file":
+			if err := validateCoreEnvironmentFile(os.Args[2]); err != nil {
+				log.Fatalf("config validation error: %v", err)
+			}
+			log.Printf("configuration is valid")
+			return
+		case len(os.Args) == 2 && os.Args[1] == "database:preserve-legacy-public":
+			if err := runLegacyPublicPreservationCommand(); err != nil {
+				log.Fatalf("legacy public preservation error: %v", err)
+			}
+			return
+		default:
+			log.Fatalf("unsupported core command")
+		}
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
@@ -58,42 +72,32 @@ func main() {
 		log.Fatalf("config validation error: %v", err)
 	}
 
-	if shouldResolveOllamaEndpoint(cfg) {
-		resolveCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		resolved, err := ollama.ResolveReachableBaseURL(resolveCtx, cfg.OllamaBaseURL, 4*time.Second)
-		cancel()
-		if err != nil {
-			log.Printf("ollama startup probe failed (jobs may fail until OLLAMA_BASE_URL is reachable): %v", err)
-		} else if resolved != strings.TrimSpace(cfg.OllamaBaseURL) {
-			log.Printf("ollama endpoint resolved %s -> %s", cfg.OllamaBaseURL, resolved)
-			cfg.OllamaBaseURL = resolved
-		} else {
-			log.Printf("ollama endpoint reachable at %s", resolved)
-		}
-	}
-
-	llmClient, err := llmprovider.NewFromConfig(cfg)
+	llmTransports, err := llmprovider.NewFromConfig(cfg)
 	if err != nil {
 		log.Fatalf("llm provider error: %v", err)
 	}
 	var webSearchService *websearch.Service
-	if cfg.WebSearchEnabled {
-		webSearchService = websearch.New(
-			cfg.WebSearchProviders,
-			cfg.WebSearchTimeout,
-			cfg.WebSearchPerSourceBudget,
-			cfg.WebSearchTotalBudget,
-		)
+	providers := make([]websearch.ProviderID, len(cfg.WebSearchProviders))
+	for index, provider := range cfg.WebSearchProviders {
+		providers[index] = websearch.ProviderID(provider)
+	}
+	webSearchService, err = websearch.New(websearch.Config{
+		Providers: providers, Timeout: cfg.WebSearchTimeout,
+		PerDocumentBytes:         cfg.WebSearchPerSourceBudget,
+		TotalDocumentBytes:       cfg.WebSearchTotalBudget,
+		MaxCandidatesPerProvider: 8, MaxCandidates: 16,
+		MaxDocuments: 2, MaxResponseBytes: int64(cfg.WebSearchTotalBudget * 8),
+	})
+	if err != nil {
+		log.Fatalf("web search configuration error: %v", err)
 	}
 
-	httpServer := api.NewServerWithOptions(repo, llmClient, api.ServerOptions{
+	httpServer := api.NewServerWithOptions(repo, llmTransports.Embeddings, api.ServerOptions{
 		LifecycleContext:     ctx,
 		MigrationBundle:      migrationBundle,
 		ProviderConfig:       cfg,
 		RequestTimeout:       cfg.RequestTimeout,
-		WebSearchEnabled:     cfg.WebSearchEnabled,
 		WebSearchProviders:   cfg.WebSearchProviders,
-		WebSearchTimeout:     cfg.WebSearchTimeout,
 		CoreURL:              cfg.CoreURL,
 		ListenAddr:           cfg.ListenAddr,
 		HostAgentURL:         cfg.HostAgentURL,
@@ -109,38 +113,23 @@ func main() {
 	if !cfg.WrapperOnly {
 		workerService, err := worker.New(
 			repo,
-			llmClient,
+			llmTransports.Stations,
+			llmTransports.Embeddings,
 			webSearchService,
 			worker.Options{
 				WorkerCount:            cfg.WorkerCount,
 				FragmentConcurrency:    cfg.CodingFragmentConcurrency,
 				PollInterval:           cfg.WorkerPollInterval,
-				RetrievalLimit:         cfg.RetrievalLimit,
-				ContextBudget:          cfg.ContextCharBudget,
 				InferenceContextTokens: cfg.InferenceContextTokens,
 				EmbeddingProvider:      cfg.EmbeddingProvider,
 				EmbeddingModel:         cfg.EmbeddingModel,
 				Models: worker.ModelRouting{
-					Default:    cfg.DefaultModel,
-					Fast:       cfg.FastModel,
-					Glue:       cfg.GlueModel,
-					Reasoning:  cfg.ReasoningModel,
-					Tagging:    cfg.TaggingModel,
-					Plan:       cfg.PlanModel,
-					Analyze:    cfg.AnalyzeModel,
-					Response:   cfg.ResponseModel,
-					Search:     cfg.SearchModel,
-					Memory:     cfg.MemoryModel,
-					Specialist: cfg.SpecialistModels,
+					Stations: cfg.StationModels,
 				},
 				Workspace: worker.WorkspaceSettings{
-					Enabled:       cfg.WorkspaceScanEnabled,
-					Root:          cfg.WorkspaceRoot,
-					HostRoot:      cfg.WorkspaceHostRoot,
-					MaxFiles:      cfg.WorkspaceMaxFiles,
-					ContextBudget: cfg.WorkspaceContextBudget,
+					Root:     cfg.WorkspaceRoot,
+					HostRoot: cfg.WorkspaceHostRoot,
 				},
-				SkillsRoot:    cfg.SkillsRoot,
 				Logger:        log.Default(),
 				OnJobFinished: httpServer.OnJobFinishedAsync,
 				OnJobOutput:   httpServer.OnJobOutputAsync,
@@ -163,10 +152,4 @@ func main() {
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
-}
-
-func shouldResolveOllamaEndpoint(cfg config.Config) bool {
-	provider := strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
-	embedding := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
-	return provider == "ollama" || embedding == "ollama"
 }

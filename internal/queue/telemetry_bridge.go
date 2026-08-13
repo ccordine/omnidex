@@ -111,7 +111,7 @@ func isTelemetryOpsEvent(eventType string) bool {
 	case "llm_prompt", "llm_response", "llm_model_prepared", "verification_retry",
 		"verify_consensus", "verify_test_start", "verify_test_pass", "verify_test_fail",
 		"step_complete", "run_completed", "tool_call_begin", "tool_call_complete",
-		"plan_candidate_ready", "plan_selected", "external_agent_started", "external_agent_completed",
+		"plan_candidate_ready", "plan_selected", "external_agent_started",
 		"coding_fragment_correction_started":
 		return true
 	}

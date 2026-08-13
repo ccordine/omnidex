@@ -236,12 +236,7 @@ func ollamaTokenRate(tokens int, durationNS int64) float64 {
 }
 
 func ollamaPrewarmDefaultModel() string {
-	for _, key := range []string{"OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT", "OLLAMA_MODEL"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return ""
+	return strings.TrimSpace(os.Getenv("OMNI_CODING_FRAGMENT_MODEL"))
 }
 
 func ollamaPrewarmDefaultContext() (int, error) {

@@ -88,11 +88,13 @@
             </div>
             <div class="rounded-md border border-white/10 bg-white/[.04] p-3">
               <dt class="text-zinc-500" data-i18n="session.lanUrl">LAN URL</dt>
-              <dd data-chat-target="networkUrl" class="mt-1 truncate font-mono text-xs text-cyan-200">
+              <dd class="mt-1 truncate font-mono text-xs text-cyan-200">
+                <a data-chat-target="networkUrl" class="text-cyan-200 hover:text-cyan-100">
                 <span class="inline-flex items-center gap-1.5 text-zinc-400" role="status" aria-live="polite">
                   <span class="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-cyan-300/25 border-t-cyan-200" aria-hidden="true"></span>
                   <span data-i18n="session.loading">loading…</span>
                 </span>
+                </a>
               </dd>
             </div>
             <div class="rounded-md border border-white/10 bg-white/[.04] p-3">
@@ -159,18 +161,20 @@
         <section class="mb-5 rounded-lg border border-white/10 bg-zinc-950/60 p-4">
           <div class="flex items-center justify-between gap-3">
             <h2 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400" data-i18n="drawer.progress">Progress</h2>
-            <span data-chat-target="progressState" class="rounded bg-zinc-800 px-2 py-1 font-mono text-[11px] text-zinc-400" data-i18n="status.idle">idle</span>
+            <span data-chat-target="progressState" data-recyclr-sink="progress-state" class="rounded bg-zinc-800 px-2 py-1 font-mono text-[11px] text-zinc-400" data-i18n="status.idle">idle</span>
           </div>
           <div data-chat-target="progress" data-recyclr-sink="progress" class="mt-3 text-sm text-zinc-500">
             <span data-i18n="drawer.noActiveJob">No active job.</span>
+            <p data-chat-target="progressLoading" class="hidden text-sm text-cyan-100" role="status"></p>
           </div>
         </section>
 
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400" data-i18n="drawer.timeline">Timeline</h2>
-          <span data-chat-target="eventCount" class="font-mono text-xs text-zinc-500" data-i18n="drawer.zeroEvents">0 events</span>
+          <span data-chat-target="eventCount" data-recyclr-sink="event-count" class="font-mono text-xs text-zinc-500" data-i18n="drawer.zeroEvents">0 events</span>
         </div>
         <div data-chat-target="timeline" data-recyclr-sink="timeline" class="scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto"></div>
+        <div data-recyclr-sink="timeline-pagination" class="mt-3 flex justify-center"></div>
           </div>
         </aside>
         <button type="button" data-action="shell#toggleRight" class="slide-drawer-rail slide-drawer-rail-right" data-i18n-aria="nav.showTimeline" aria-label="Show timeline">

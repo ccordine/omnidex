@@ -11,9 +11,11 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	"github.com/gryph/omnidex/internal/agentstream"
 )
 
-const externalAgentMaxEventBytes = 4 << 20
+const externalAgentMaxEventBytes = agentstream.MaxEventBytes
 
 type externalAgentCommandFactory func(context.Context, ExternalAgentJob) (*exec.Cmd, func() error, error)
 
@@ -27,7 +29,7 @@ type externalAgentCommandSession struct {
 	cleanup func() error
 }
 
-func (s *externalAgentCommandSession) Start(ctx context.Context, job ExternalAgentJob) (<-chan AgentEvent, error) {
+func (s *externalAgentCommandSession) Start(ctx context.Context, job ExternalAgentJob) (<-chan agentstream.Event, error) {
 	if s == nil || s.command == nil {
 		return nil, fmt.Errorf("external agent session is not configured")
 	}
@@ -61,7 +63,7 @@ func (s *externalAgentCommandSession) Start(ctx context.Context, job ExternalAge
 	s.cleanup = cleanup
 	s.mu.Unlock()
 
-	events := make(chan AgentEvent, 32)
+	events := make(chan agentstream.Event, 32)
 	go s.collectCommandEvents(runCtx, cancel, job, cmd, stdout, stderr, events)
 	return events, nil
 }
@@ -73,7 +75,7 @@ func (s *externalAgentCommandSession) collectCommandEvents(
 	cmd *exec.Cmd,
 	stdout io.Reader,
 	stderr io.Reader,
-	events chan<- AgentEvent,
+	events chan<- agentstream.Event,
 ) {
 	defer close(events)
 	defer cancel()
@@ -90,10 +92,10 @@ func (s *externalAgentCommandSession) collectCommandEvents(
 		if streamErr == nil {
 			continue
 		}
-		emitAgentEvent(ctx, events, AgentEvent{
+		emitAgentEvent(ctx, events, agentstream.Event{
 			SessionID: job.SessionID,
 			Agent:     job.Agent,
-			Type:      AgentEventError,
+			Type:      agentstream.EventError,
 			Message:   streamErr.Error(),
 		})
 	}
@@ -131,25 +133,14 @@ func (s *externalAgentCommandSession) Cleanup(ctx context.Context) error {
 	return errors.Join(cancelErr, runExternalAgentCleanup(cleanup))
 }
 
-func scanExternalAgentJSONL(ctx context.Context, stdout io.Reader, job ExternalAgentJob, events chan<- AgentEvent) error {
+func scanExternalAgentJSONL(ctx context.Context, stdout io.Reader, job ExternalAgentJob, events chan<- agentstream.Event) error {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), externalAgentMaxEventBytes)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var event AgentEvent
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			if !emitAgentEvent(ctx, events, AgentEvent{
-				SessionID: job.SessionID,
-				Agent:     job.Agent,
-				Type:      AgentEventError,
-				Message:   fmt.Sprintf("decode external agent event: %v", err),
-			}) {
-				return ctx.Err()
-			}
-			continue
+		line := scanner.Text()
+		event, err := agentstream.DecodeBoundaryLine(line)
+		if err != nil {
+			return err
 		}
 		if event.SessionID == "" {
 			event.SessionID = job.SessionID
@@ -167,18 +158,18 @@ func scanExternalAgentJSONL(ctx context.Context, stdout io.Reader, job ExternalA
 	return nil
 }
 
-func scanExternalAgentStderr(ctx context.Context, stderr io.Reader, job ExternalAgentJob, events chan<- AgentEvent) error {
+func scanExternalAgentStderr(ctx context.Context, stderr io.Reader, job ExternalAgentJob, events chan<- agentstream.Event) error {
 	scanner := bufio.NewScanner(stderr)
 	scanner.Buffer(make([]byte, 0, 64*1024), externalAgentMaxEventBytes)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := scanner.Text()
 		if line == "" {
 			continue
 		}
-		if !emitAgentEvent(ctx, events, AgentEvent{
+		if !emitAgentEvent(ctx, events, agentstream.Event{
 			SessionID: job.SessionID,
 			Agent:     job.Agent,
-			Type:      AgentEventError,
+			Type:      agentstream.EventError,
 			Message:   line,
 		}) {
 			return ctx.Err()
@@ -190,7 +181,7 @@ func scanExternalAgentStderr(ctx context.Context, stderr io.Reader, job External
 	return nil
 }
 
-func emitAgentEvent(ctx context.Context, events chan<- AgentEvent, event AgentEvent) bool {
+func emitAgentEvent(ctx context.Context, events chan<- agentstream.Event, event agentstream.Event) bool {
 	select {
 	case events <- event:
 		return true

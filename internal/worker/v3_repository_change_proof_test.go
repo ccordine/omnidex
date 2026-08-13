@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/operation"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	toolruntime "github.com/gryph/omnidex/internal/tools"
 )
 
 func TestRepositoryGoVerificationCommandRejectsTamperedProofBinding(t *testing.T) {
@@ -159,7 +159,7 @@ func TestRepositoryVerificationAcceptanceIsPlanLevelAndExitOneIsTheOnlyCorrectab
 		{output: map[string]any{"succeeded": false, "exit_code": float64(1)}},
 		{output: map[string]any{"succeeded": true, "exit_code": 1}},
 	} {
-		err := requireRepositoryGoOrdinaryFailure(toolruntime.Result{Output: test.output})
+		err := requireRepositoryGoOrdinaryFailure(operation.Result{Output: test.output})
 		if (err == nil) != test.accepts {
 			t.Fatalf("output=%#v accepts=%t error=%v", test.output, test.accepts, err)
 		}

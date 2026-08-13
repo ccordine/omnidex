@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 const maxDirectCodingFragmentConcurrency = 4
@@ -19,13 +19,11 @@ func (s *directCodingSession) generateProgramFragments(program directCodingProgr
 	if !directCodingTypeScriptBlueprintHasGeneratedBlocks(program.TypeScript) {
 		return map[string]string{}, nil
 	}
-	modelName, err := s.workerModel("coding_fragment", specialist.RoleCodingFragmentStation)
+	modelName, err := s.workerModel(station.CodingFragment)
 	if err != nil {
 		return nil, err
 	}
-	correctionModel, err := s.workerModel(
-		"coding_fragment_correction", specialist.RoleCodingFragmentCorrectionStation,
-	)
+	correctionModel, err := s.workerModel(station.CodingFragmentCorrection)
 	if err != nil {
 		return nil, err
 	}

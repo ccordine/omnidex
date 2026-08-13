@@ -66,7 +66,7 @@ func (session *directCodingSession) buildExistingRepositoryChangeContract(
 		}
 		if len(resolution.Surface.UnresolvedRequirementQuotes) != 0 {
 			return repositoryfacts.ChangeContract{}, fmt.Errorf(
-				"repository change surface for requirement %q remains unresolved",
+				"repository change surface for requirement %q remains unresolved and requires desired-state compilation",
 				acquisition.RequirementQuote,
 			)
 		}

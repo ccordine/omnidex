@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/hostbridge"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
 	"github.com/gryph/omnidex/internal/queue"
@@ -149,7 +150,7 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "debugger" || action == "debugger/" || action == "debugger/run" {
-		s.handleProjectDebugger(w, r, id, action)
+		writeRemovedInferenceAction(w, "project debugger")
 		return
 	}
 	switch r.Method {
@@ -414,16 +415,11 @@ func (s *Server) initializeProjectState(ctx context.Context, project model.Proje
 }
 
 func (s *Server) loadCatalogRecipeJSON(recipeID string) (json.RawMessage, error) {
-	recipes, err := omni.LoadRecipes(s.recipeRoot())
+	recipe, err := omni.LoadRecipeByID(s.recipeRoot(), recipeID)
 	if err != nil {
 		return nil, err
 	}
-	for _, recipe := range recipes {
-		if recipe.ID == recipeID {
-			return json.Marshal(recipe)
-		}
-	}
-	return nil, fmt.Errorf("recipe %q was not found", strings.TrimSpace(recipeID))
+	return json.Marshal(recipe)
 }
 
 func (s *Server) resolveProjectID(r *http.Request) (int64, error) {
@@ -449,57 +445,46 @@ func (s *Server) scrumBoardFromProject(ctx context.Context, projectID int64) (Sc
 	if err != nil {
 		return ScrumBoard{}, err
 	}
-	cards, err := s.repo.ListScrumCards(ctx, projectID)
-	if err != nil {
-		return ScrumBoard{}, err
-	}
-	board := ScrumBoard{
+	return ScrumBoard{
 		ID:               fmt.Sprintf("project_%d", projectID),
 		Name:             project.Name,
 		ProjectDirectory: project.Location,
 		Columns:          append([]string(nil), scrumColumns...),
-		Cards:            make([]ScrumCard, 0, len(cards)),
+		Cards:            []ScrumCard{},
 		UpdatedAt:        project.UpdatedAt.UTC().Format(time.RFC3339),
-	}
-	for _, card := range cards {
-		apiCard, err := dbScrumCardToAPI(card)
-		if err != nil {
-			return ScrumBoard{}, fmt.Errorf("decode Scrum card %q: %w", card.ID, err)
-		}
-		board.Cards = append(board.Cards, apiCard)
-	}
-	return board, nil
+	}, nil
 }
 
 func dbScrumCardToAPI(card queue.DBScrumCard) (ScrumCard, error) {
 	out := ScrumCard{
-		ID:           card.ID,
-		Title:        card.Title,
-		Description:  card.Description,
-		Column:       card.Column,
-		JobID:        card.JobID,
-		TagsJobID:    card.TagsJobID,
-		TicketJobID:  card.TicketJobID,
-		ConsoleLog:   card.ConsoleLog,
-		PlayState:    card.PlayState,
-		QueueOrder:   card.QueueOrder,
-		BoardOrder:   card.BoardOrder,
-		CardTicket:   card.CardTicket,
-		CardPrompt:   card.CardPrompt,
-		RecipeID:     card.RecipeID,
-		Recipe:       card.Recipe,
-		CoachConfig:  card.CoachConfig,
-		ModelConfig:  card.ModelConfig,
-		AgentConfig:  card.AgentConfig,
-		CreatedAt:    card.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:    card.UpdatedAt.UTC().Format(time.RFC3339),
-		Checklist:    []ScrumChecklistItem{},
-		RefFiles:     []string{},
-		Chat:         []ScrumChatMessage{},
-		PlanningChat: []ScrumChatMessage{},
-		Tags:         []string{},
-		TestCriteria: []ScrumChecklistItem{},
-		FlowMetrics:  card.FlowMetrics,
+		ID:                       card.ID,
+		Title:                    card.Title,
+		Description:              card.Description,
+		Column:                   card.Column,
+		JobID:                    card.JobID,
+		ConsoleLog:               card.ConsoleLog,
+		PlayState:                card.PlayState,
+		QueueOrder:               card.QueueOrder,
+		BoardOrder:               card.BoardOrder,
+		SyncJobID:                card.SyncJobID,
+		AgentStreamChatCursor:    card.AgentStreamChatCursor,
+		AgentStreamConsoleCursor: card.AgentStreamConsoleCursor,
+		StepContextCursor:        card.StepContextCursor,
+		CardTicket:               card.CardTicket,
+		CardPrompt:               card.CardPrompt,
+		RecipeID:                 card.RecipeID,
+		Recipe:                   card.Recipe,
+		ModelConfig:              card.ModelConfig,
+		AgentConfig:              card.AgentConfig,
+		CreatedAt:                card.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:                card.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		Checklist:                []ScrumChecklistItem{},
+		RefFiles:                 []string{},
+		Chat:                     []ScrumChatMessage{},
+		PlanningChat:             []ScrumChatMessage{},
+		Tags:                     []string{},
+		TestCriteria:             []ScrumChecklistItem{},
+		FlowMetrics:              card.FlowMetrics,
 	}
 	fields := []struct {
 		name   string
@@ -522,7 +507,6 @@ func dbScrumCardToAPI(card queue.DBScrumCard) (ScrumCard, error) {
 		"model_config": card.ModelConfig,
 		"agent_config": card.AgentConfig,
 		"recipe":       card.Recipe,
-		"coach_config": card.CoachConfig,
 		"flow_metrics": card.FlowMetrics,
 	} {
 		var object map[string]any
@@ -537,6 +521,9 @@ func dbScrumCardToAPI(card queue.DBScrumCard) (ScrumCard, error) {
 }
 
 func apiScrumCardToPatch(card ScrumCard) (map[string]any, error) {
+	if err := validateScrumCardSyncState(card); err != nil {
+		return nil, err
+	}
 	checklist, err := json.Marshal(card.Checklist)
 	if err != nil {
 		return nil, fmt.Errorf("encode Scrum card checklist: %w", err)
@@ -573,44 +560,40 @@ func apiScrumCardToPatch(card ScrumCard) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode Scrum card test criteria: %w", err)
 	}
-	coachConfig := card.CoachConfig
-	if len(coachConfig) == 0 {
-		coachConfig = json.RawMessage(`{}`)
-	}
 	for name, raw := range map[string]json.RawMessage{
 		"model_config": modelConfig,
 		"agent_config": agentConfig,
 		"recipe":       recipe,
-		"coach_config": coachConfig,
 	} {
 		if !json.Valid(raw) {
 			return nil, fmt.Errorf("Scrum card %s must contain valid JSON", name)
 		}
 	}
 	return map[string]any{
-		"title":         sanitizeScrumChannelText(card.Title),
-		"description":   sanitizeScrumChannelText(card.Description),
-		"column":        card.Column,
-		"checklist":     json.RawMessage(sanitizeScrumChannelBytes(checklist)),
-		"ref_files":     json.RawMessage(sanitizeScrumChannelBytes(refFiles)),
-		"chat":          json.RawMessage(sanitizeScrumChannelBytes(chat)),
-		"planning_chat": json.RawMessage(sanitizeScrumChannelBytes(planningChat)),
-		"tags":          json.RawMessage(sanitizeScrumChannelBytes(tags)),
-		"test_criteria": json.RawMessage(sanitizeScrumChannelBytes(testCriteria)),
-		"coach_config":  json.RawMessage(sanitizeScrumChannelBytes(coachConfig)),
-		"model_config":  json.RawMessage(sanitizeScrumChannelBytes(modelConfig)),
-		"agent_config":  json.RawMessage(sanitizeScrumChannelBytes(agentConfig)),
-		"card_ticket":   sanitizeScrumChannelText(card.CardTicket),
-		"card_prompt":   sanitizeScrumChannelText(card.CardPrompt),
-		"recipe_id":     sanitizeScrumChannelText(card.RecipeID),
-		"recipe":        json.RawMessage(sanitizeScrumChannelBytes(recipe)),
-		"job_id":        card.JobID,
-		"tags_job_id":   card.TagsJobID,
-		"ticket_job_id": card.TicketJobID,
-		"console_log":   sanitizeScrumChannelText(card.ConsoleLog),
-		"play_state":    card.PlayState,
-		"queue_order":   card.QueueOrder,
-		"board_order":   card.BoardOrder,
+		"title":                       sanitizeScrumChannelText(card.Title),
+		"description":                 sanitizeScrumChannelText(card.Description),
+		"column":                      card.Column,
+		"checklist":                   json.RawMessage(sanitizeScrumChannelBytes(checklist)),
+		"ref_files":                   json.RawMessage(sanitizeScrumChannelBytes(refFiles)),
+		"chat":                        json.RawMessage(sanitizeScrumChannelBytes(chat)),
+		"planning_chat":               json.RawMessage(sanitizeScrumChannelBytes(planningChat)),
+		"tags":                        json.RawMessage(sanitizeScrumChannelBytes(tags)),
+		"test_criteria":               json.RawMessage(sanitizeScrumChannelBytes(testCriteria)),
+		"model_config":                json.RawMessage(sanitizeScrumChannelBytes(modelConfig)),
+		"agent_config":                json.RawMessage(sanitizeScrumChannelBytes(agentConfig)),
+		"card_ticket":                 sanitizeScrumChannelText(card.CardTicket),
+		"card_prompt":                 sanitizeScrumChannelText(card.CardPrompt),
+		"recipe_id":                   sanitizeScrumChannelText(card.RecipeID),
+		"recipe":                      json.RawMessage(sanitizeScrumChannelBytes(recipe)),
+		"job_id":                      card.JobID,
+		"console_log":                 sanitizeScrumChannelText(card.ConsoleLog),
+		"play_state":                  card.PlayState,
+		"queue_order":                 card.QueueOrder,
+		"board_order":                 card.BoardOrder,
+		"sync_job_id":                 card.SyncJobID,
+		"agent_stream_chat_cursor":    card.AgentStreamChatCursor,
+		"agent_stream_console_cursor": card.AgentStreamConsoleCursor,
+		"step_context_cursor":         card.StepContextCursor,
 	}, nil
 }
 
@@ -631,7 +614,7 @@ func (s *Server) validateProjectLocation(ctx context.Context, raw string) (strin
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	result, err := client.Browse(ctx, location)
+	result, err := client.Browse(ctx, location, hostbridge.BrowseOptions{Limit: 1})
 	if err != nil {
 		return "", fmt.Errorf("location must be an existing directory")
 	}

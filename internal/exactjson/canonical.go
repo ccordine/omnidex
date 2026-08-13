@@ -10,8 +10,7 @@ import (
 )
 
 // Canonical marshals the JSON value with UTF-8 key ordering and no
-// insignificant whitespace. It matches cognition_canonical_jsonb in the
-// PostgreSQL authority schema.
+// insignificant whitespace.
 func Canonical(value any) ([]byte, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {

@@ -1,110 +1,103 @@
 package modelconfig
 
 import (
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 type Routing struct {
-	Default    string
-	Fast       string
-	Glue       string
-	Reasoning  string
-	Tagging    string
-	Plan       string
-	Analyze    string
-	Response   string
-	Search     string
-	Memory     string
-	Specialist map[string]string
+	Stations map[station.ID]string
 }
 
 func Apply(base Routing, cfg Config) Routing {
 	out := base
-	if out.Specialist == nil {
-		out.Specialist = map[string]string{}
+	if out.Stations == nil {
+		out.Stations = map[station.ID]string{}
 	} else {
-		clone := map[string]string{}
-		for key, value := range out.Specialist {
+		clone := map[station.ID]string{}
+		for key, value := range out.Stations {
 			clone[key] = value
 		}
-		out.Specialist = clone
+		out.Stations = clone
 	}
-	if value := cfg.Get("default_model"); value != "" {
-		out.Default = value
-		if out.Response == base.Response || out.Response == "" {
-			out.Response = value
-		}
-		if out.Fast == base.Fast || out.Fast == "" {
-			out.Fast = value
-		}
+	if value := cfg.Get("conversation_context_selection_model"); value != "" {
+		out.Stations[station.ConversationContextSelection] = value
 	}
-	if value := cfg.Get("fast_model"); value != "" {
-		out.Fast = value
+	if value := cfg.Get("memory_context_selection_model"); value != "" {
+		out.Stations[station.MemoryContextSelection] = value
 	}
-	if value := cfg.Get("glue_model"); value != "" {
-		out.Glue = value
+	if value := cfg.Get("conversation_objective_kind_model"); value != "" {
+		out.Stations[station.ConversationObjectiveKind] = value
 	}
-	if value := cfg.Get("reasoning_model"); value != "" {
-		out.Reasoning = value
+	if value := cfg.Get("conversation_response_model"); value != "" {
+		out.Stations[station.ConversationResponse] = value
 	}
-	if value := cfg.Get("planner_model"); value != "" {
-		out.Plan = value
+	if value := cfg.Get("grounded_answer_model"); value != "" {
+		out.Stations[station.GroundedAnswer] = value
 	}
-	if value := cfg.Get("analyzer_model"); value != "" {
-		out.Analyze = value
+	if value := cfg.Get("repository_evidence_relevance_model"); value != "" {
+		out.Stations[station.RepositoryEvidenceRelevance] = value
 	}
-	if value := cfg.Get("responder_model"); value != "" {
-		out.Response = value
+	if value := cfg.Get("repository_grounded_review_model"); value != "" {
+		out.Stations[station.RepositoryGroundedReview] = value
 	}
-	if value := cfg.Get("tagger_model"); value != "" {
-		out.Tagging = value
+	if value := cfg.Get("repository_grounded_correction_model"); value != "" {
+		out.Stations[station.RepositoryGroundedCorrection] = value
 	}
-	if value := cfg.Get("search_model"); value != "" {
-		out.Search = value
+	if value := cfg.Get("web_search_terms_model"); value != "" {
+		out.Stations[station.WebSearchTerms] = value
 	}
-	if value := cfg.Get("memory_model"); value != "" {
-		out.Memory = value
+	if value := cfg.Get("web_relevance_model"); value != "" {
+		out.Stations[station.WebRelevance] = value
 	}
-	if value := cfg.Get("executor_model"); value != "" {
-		out.Specialist[specialist.RoleSubtaskExecutorSpecialist] = value
+	if value := cfg.Get("web_grounded_synthesis_model"); value != "" {
+		out.Stations[station.WebGroundedSynthesis] = value
+	}
+	if value := cfg.Get("web_grounded_synthesis_correction_model"); value != "" {
+		out.Stations[station.WebGroundedSynthesisCorrection] = value
+	}
+	if value := cfg.Get("web_claim_evidence_review_model"); value != "" {
+		out.Stations[station.WebClaimEvidenceReview] = value
 	}
 	if value := cfg.Get("coding_surface_model"); value != "" {
-		out.Specialist[specialist.RoleCodingSurfaceStation] = value
+		out.Stations[station.CodingSurface] = value
 	}
 	if value := cfg.Get("coding_product_identity_model"); value != "" {
-		out.Specialist[specialist.RoleCodingProductIdentityStation] = value
+		out.Stations[station.CodingProductIdentity] = value
 	}
 	if value := cfg.Get("coding_requirement_partition_model"); value != "" {
-		out.Specialist[specialist.RoleCodingRequirementPartitionStation] = value
+		out.Stations[station.CodingRequirementPartition] = value
 	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
-		out.Specialist[specialist.RoleCodingArtifactHandlingStation] = value
+		out.Stations[station.CodingArtifactHandling] = value
+		out.Stations[station.CodingKnownArtifactTruth] = value
+		out.Stations[station.CodingDeclarationArtifactBoundary] = value
+		out.Stations[station.CodingArtifactCandidateSelection] = value
 	}
 	if value := cfg.Get("coding_capability_relation_model"); value != "" {
-		out.Specialist[specialist.RoleCodingCapabilityRelationStation] = value
+		out.Stations[station.CodingCapabilityRelation] = value
 	}
 	if value := cfg.Get("coding_skill_selection_model"); value != "" {
-		out.Specialist[specialist.RoleCodingSkillSelectionStation] = value
-	}
-	if value := cfg.Get("coding_skill_procedure_model"); value != "" {
-		out.Specialist[specialist.RoleCodingSkillProcedureStation] = value
+		out.Stations[station.CodingSkillSelection] = value
 	}
 	if value := cfg.Get("coding_fragment_model"); value != "" {
-		out.Specialist[specialist.RoleCodingFragmentStation] = value
+		out.Stations[station.CodingFragment] = value
 	}
 	if value := cfg.Get("coding_fragment_correction_model"); value != "" {
-		out.Specialist[specialist.RoleCodingFragmentCorrectionStation] = value
+		out.Stations[station.CodingFragmentCorrection] = value
 	}
-	if value := cfg.Get("shell_specialist_model"); value != "" {
-		out.Specialist[specialist.RoleShellExecutionSpecialist] = value
+	if value := cfg.Get("coding_repository_search_term_model"); value != "" {
+		out.Stations[station.CodingRepositorySearchTerm] = value
+	}
+	if value := cfg.Get("coding_repository_change_surface_model"); value != "" {
+		out.Stations[station.CodingRepositoryChange] = value
 	}
 	return out
 }
 
-func Resolve(base Routing, env Config, project Config, card Config) Config {
+func Resolve(env Config, project Config, card Config) Config {
 	return Merge(env, project, card)
 }
 
 func ResolveRouting(base Routing, env Config, project Config, card Config) Routing {
-	return Apply(base, Resolve(base, env, project, card))
+	return Apply(base, Resolve(env, project, card))
 }

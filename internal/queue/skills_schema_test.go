@@ -6,26 +6,30 @@ import (
 	"testing"
 )
 
-func TestLearnedSkillMigrationDefinesOneImmutableVersionedRegistry(t *testing.T) {
+func TestWorkerSkillSchemaRetainsOnlyRetrievalAuthority(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile("../../migrations/023_worker_skills.sql")
+	raw, err := os.ReadFile("../../migrations/079_worker_skill_retrieval_only.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(raw)
 	for _, required := range []string{
-		"CREATE TABLE IF NOT EXISTS worker_skills",
-		"PRIMARY KEY (skill_id, version)",
-		"worker_skill_checks",
-		"worker_skill_dependencies",
-		"worker_skill_embeddings",
-		"prevent_worker_skill_content_update",
-		"prevent_worker_skill_embedding_update",
-		"WHERE status = 'active'",
+		"worker_skills", "worker_skill_embeddings",
+		"worker_skill_embeddings_one_frozen_identity",
+		"learned skill mutation is unavailable",
 	} {
 		if !strings.Contains(source, required) {
-			t.Fatalf("skill migration omitted %q", required)
+			t.Fatalf("retrieval-only skill schema omitted %q", required)
+		}
+	}
+	for _, removed := range []string{
+		"CREATE TABLE worker_skill_checks",
+		"CREATE TABLE worker_skill_dependencies",
+		"CREATE TABLE worker_skill_promotion_receipts",
+	} {
+		if strings.Contains(source, removed) {
+			t.Fatalf("retrieval-only skill schema recreated %q", removed)
 		}
 	}
 }

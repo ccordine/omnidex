@@ -117,7 +117,7 @@ func printAudioNotesHelp() {
 	fmt.Println("audio-notes commands:")
 	fmt.Println("  audio-notes doctor")
 	fmt.Println("  audio-notes start [--root dir] [--session id] [--mic] [--speaker] [--mic-source name] [--speaker-source name]")
-	fmt.Println("  audio-notes stop [--root dir] [--session id] [--transcribe] [--transcriber auto|whisper|whisper-cli|none] [--model value] [--language en] [--store-memory] [--source audio-notes] [--kind reference] [--tags a,b] [--chunk-size N] [--overlap N] [--max-chunks N]")
+	fmt.Println("  audio-notes stop [--root dir] [--session id] [--transcribe] [--transcriber auto|whisper|whisper-cli|none] [--model value] [--language en] [--store-memory --project-id id --channel-id id --source name --kind kind] [--tags a,b] [--chunk-size N] [--overlap N] [--max-chunks N]")
 	fmt.Println("  audio-notes status [--root dir] [--session id]")
 	fmt.Println("  audio-notes list [--root dir] [--limit N]")
 	fmt.Println("  audio-notes search [--root dir] [--session id] [--limit N] [--context N] <query>")

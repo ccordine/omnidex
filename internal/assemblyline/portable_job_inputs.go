@@ -14,16 +14,6 @@ type RequirementPartitionInput struct {
 	Mode       RequirementPartitionMode `json:"mode"`
 }
 
-type RequirementPartitionAdvisoryInput struct {
-	Original RequirementPartitionInput `json:"original"`
-	Lens     RequirementPartitionLens  `json:"lens"`
-}
-
-type RequirementPartitionSynthesisInput struct {
-	Original     RequirementPartitionInput `json:"original"`
-	AdvisoryMemo string                    `json:"advisory_memo"`
-}
-
 type ApplicationClassificationInput struct {
 	UserRequest string `json:"user_request"`
 }
@@ -64,18 +54,6 @@ func NewRequirementPartitionJob(input RequirementPartitionInput) (PortableJob, e
 	return newValidatedPortableJob(WorkRequirementPartition, input, input.validate)
 }
 
-func NewRequirementPartitionBriefingJob(input RequirementPartitionInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkRequirementBriefing, input, input.validate)
-}
-
-func NewRequirementPartitionAdvisoryJob(input RequirementPartitionAdvisoryInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkRequirementAdvisory, input, input.validate)
-}
-
-func NewRequirementPartitionSynthesisJob(input RequirementPartitionSynthesisInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkRequirementSynthesis, input, input.validate)
-}
-
 func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkApplicationClassify, input, input.validate)
 }
@@ -90,10 +68,6 @@ func NewArtifactHandlingJob(input ArtifactHandlingInput) (PortableJob, error) {
 
 func NewCapabilityRelationJob(input CapabilityRelationInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkCapabilityRelation, input, input.validate)
-}
-
-func NewSkillProcedureJob(input SkillProcedureInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkSkillProcedure, input, input.validate)
 }
 
 func NewSkillSelectionJob(input SkillSelectionInput) (PortableJob, error) {

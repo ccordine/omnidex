@@ -32,13 +32,13 @@ func (selection ProviderIdentitySelection) Validate() error {
 
 func RequireDiscoveredProviderIdentityEvidence(
 	ctx context.Context,
-	client Client,
+	discoverer ProviderIdentityEvidenceDiscoverer,
 	selection ProviderIdentitySelection,
 	scope string,
 ) (ObservedProviderIdentity, error) {
-	if ctx == nil || client == nil {
+	if ctx == nil || discoverer == nil {
 		return ObservedProviderIdentity{}, fmt.Errorf(
-			"provider identity discovery requires context and client",
+			"provider identity discovery requires context and discoverer",
 		)
 	}
 	if err := selection.Validate(); err != nil {
@@ -48,13 +48,14 @@ func RequireDiscoveredProviderIdentityEvidence(
 	if err != nil {
 		return ObservedProviderIdentity{}, err
 	}
-	discoverer, ok := client.(ProviderIdentityEvidenceDiscoverer)
-	if !ok {
+	observed, err := discoverer.DiscoverProviderIdentityEvidence(ctx, selection, challenge)
+	owned, ownershipErr := OwnBoundedProviderIdentityEvidence(observed.Evidence)
+	if ownershipErr != nil {
 		return ObservedProviderIdentity{}, fmt.Errorf(
-			"configured generation provider cannot discover raw live identity evidence",
+			"provider identity discovery exceeds its ownership bound: %w", ownershipErr,
 		)
 	}
-	observed, err := discoverer.DiscoverProviderIdentityEvidence(ctx, selection, challenge)
+	observed.Evidence = owned
 	if err != nil {
 		if evidenceErr := observed.Evidence.ValidateFailure(selection, nil); evidenceErr != nil {
 			return observed, fmt.Errorf("provider identity discovery failure is not proven by exact raw evidence: %v: %w", evidenceErr, err)

@@ -65,13 +65,101 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		"060_cognition_provider_process_observation_zzzzz_postseal_replay_audit_b_outcomes.sql",
 	}
 	got := make(map[string]int)
+	retirementCount := 0
+	conversationCutoverCount := 0
+	semanticGapCount := 0
+	stationCallCount := 0
+	channelAuthorityCount := 0
+	webReviewStationCount := 0
+	channelWorkspaceBindingCount := 0
+	channelMessageRoleBoundsCount := 0
+	conversationContextSelectionCount := 0
+	repositoryGroundingStationCount := 0
+	stationTerminalAuthorityCount := 0
+	scrumTypedAuthorityCount := 0
+	workerSkillPromotionCount := 0
+	stationJSONAuthorityCount := 0
+	workerSkillRetrievalOnlyCount := 0
+	objectiveCompletionEvidenceCount := 0
+	memoryObjectiveContextCount := 0
+	repositoryFileStateCount := 0
+	declarationArtifactBoundaryStationCount := 0
+	artifactCandidateSelectionStationCount := 0
+	knownArtifactTruthStationCount := 0
+	projectPlanningRetirementCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
 		}
+		if entry.name == "065_legacy_cognition_runtime_retirement.sql" {
+			retirementCount++
+		}
+		if entry.name == "066_conversation_objective_cutover.sql" {
+			conversationCutoverCount++
+		}
+		if entry.name == "067_semantic_gap_authority.sql" {
+			semanticGapCount++
+		}
+		if entry.name == "068_station_call_authority.sql" {
+			stationCallCount++
+		}
+		if entry.name == "069_channel_authority.sql" {
+			channelAuthorityCount++
+		}
+		if entry.name == "070_web_claim_evidence_review_station.sql" {
+			webReviewStationCount++
+		}
+		if entry.name == "071_channel_workspace_binding.sql" {
+			channelWorkspaceBindingCount++
+		}
+		if entry.name == "072_channel_message_role_bounds.sql" {
+			channelMessageRoleBoundsCount++
+		}
+		if entry.name == "073_conversation_context_selection_station.sql" {
+			conversationContextSelectionCount++
+		}
+		if entry.name == "074_repository_grounding_stations.sql" {
+			repositoryGroundingStationCount++
+		}
+		if entry.name == "075_station_terminal_receipt_authority.sql" {
+			stationTerminalAuthorityCount++
+		}
+		if entry.name == "076_scrum_typed_authority.sql" {
+			scrumTypedAuthorityCount++
+		}
+		if entry.name == "077_worker_skill_promotion_authority.sql" {
+			workerSkillPromotionCount++
+		}
+		if entry.name == "078_station_json_authority.sql" {
+			stationJSONAuthorityCount++
+		}
+		if entry.name == "079_worker_skill_retrieval_only.sql" {
+			workerSkillRetrievalOnlyCount++
+		}
+		if entry.name == "080_objective_completion_evidence_authority.sql" {
+			objectiveCompletionEvidenceCount++
+		}
+		if entry.name == "081_memory_objective_context_authority.sql" {
+			memoryObjectiveContextCount++
+		}
+		if entry.name == "082_repository_mutation_file_state_transitions.sql" {
+			repositoryFileStateCount++
+		}
+		if entry.name == "083_declaration_artifact_boundary_station.sql" {
+			declarationArtifactBoundaryStationCount++
+		}
+		if entry.name == "084_artifact_candidate_selection_station.sql" {
+			artifactCandidateSelectionStationCount++
+		}
+		if entry.name == "085_known_artifact_truth_station.sql" {
+			knownArtifactTruthStationCount++
+		}
+		if entry.name == "086_project_planning_retirement.sql" {
+			projectPlanningRetirementCount++
+		}
 	}
-	if len(bundle.entries) != 115 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 115/%d",
+	if len(bundle.entries) != 137 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 137/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -82,5 +170,51 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("checked bundle contains unexpected provider migrations: %v", got)
+	}
+	if retirementCount != 1 {
+		t.Fatalf("checked retirement migration count=%d want 1", retirementCount)
+	}
+	if conversationCutoverCount != 1 {
+		t.Fatalf("checked conversation cutover migration count=%d want 1", conversationCutoverCount)
+	}
+	if semanticGapCount != 1 || stationCallCount != 1 || channelAuthorityCount != 1 {
+		t.Fatalf("checked horizontal authority migrations gap/call/channel=%d/%d/%d want 1/1/1",
+			semanticGapCount, stationCallCount, channelAuthorityCount)
+	}
+	if webReviewStationCount != 1 {
+		t.Fatalf("checked web review station migration count=%d want 1", webReviewStationCount)
+	}
+	if channelWorkspaceBindingCount != 1 {
+		t.Fatalf("checked channel workspace binding migration count=%d want 1", channelWorkspaceBindingCount)
+	}
+	if channelMessageRoleBoundsCount != 1 {
+		t.Fatalf("checked channel message role bounds migration count=%d want 1", channelMessageRoleBoundsCount)
+	}
+	if conversationContextSelectionCount != 1 {
+		t.Fatalf("checked conversation context-selection migration count=%d want 1", conversationContextSelectionCount)
+	}
+	if repositoryGroundingStationCount != 1 {
+		t.Fatalf("checked repository-grounding station migration count=%d want 1", repositoryGroundingStationCount)
+	}
+	if stationTerminalAuthorityCount != 1 || scrumTypedAuthorityCount != 1 ||
+		workerSkillPromotionCount != 1 || stationJSONAuthorityCount != 1 ||
+		workerSkillRetrievalOnlyCount != 1 || objectiveCompletionEvidenceCount != 1 ||
+		memoryObjectiveContextCount != 1 || repositoryFileStateCount != 1 ||
+		declarationArtifactBoundaryStationCount != 1 ||
+		artifactCandidateSelectionStationCount != 1 ||
+		knownArtifactTruthStationCount != 1 {
+		t.Fatalf(
+			"checked migrations 075..085 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
+			stationTerminalAuthorityCount, scrumTypedAuthorityCount,
+			workerSkillPromotionCount, stationJSONAuthorityCount,
+			workerSkillRetrievalOnlyCount, objectiveCompletionEvidenceCount,
+			memoryObjectiveContextCount, repositoryFileStateCount,
+			declarationArtifactBoundaryStationCount,
+			artifactCandidateSelectionStationCount,
+			knownArtifactTruthStationCount,
+		)
+	}
+	if projectPlanningRetirementCount != 1 {
+		t.Fatalf("checked project-planning retirement migration count=%d want 1", projectPlanningRetirementCount)
 	}
 }

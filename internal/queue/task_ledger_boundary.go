@@ -92,16 +92,14 @@ func reservedTaskCommandMutation(command taskstate.Command) bool {
 func reservedTaskEntryID(id taskstate.EntryID) bool {
 	return id == initialUserInstructionEntryID ||
 		strings.HasPrefix(string(id), replanFeedbackEntryPrefix) ||
-		strings.HasPrefix(string(id), acceptedIntentEntryPrefix) ||
 		strings.HasPrefix(string(id), retiredCognitionEntryPrefix)
 }
 
 func reservedTaskNodeID(id taskstate.NodeID) bool {
-	return id == initialTaskRootNodeID || strings.HasPrefix(string(id), acceptedIntentObjectivePrefix) ||
+	return id == initialTaskRootNodeID ||
 		strings.HasPrefix(string(id), retiredCognitionObligationNodePrefix)
 }
 
 func reservedTaskEdgeID(id taskstate.EdgeID) bool {
-	return strings.HasPrefix(string(id), acceptedIntentEdgePrefix) ||
-		strings.HasPrefix(string(id), retiredCognitionObligationEdgePrefix)
+	return strings.HasPrefix(string(id), retiredCognitionObligationEdgePrefix)
 }

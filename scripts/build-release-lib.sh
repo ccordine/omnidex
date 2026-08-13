@@ -78,6 +78,21 @@ validate_release_inputs() {
   done
 }
 
+validate_release_cgo_targets() {
+  local host_goos host_goarch host_target cc target
+  host_goos="$(go env GOOS)"
+  host_goarch="$(go env GOARCH)"
+  host_target="${host_goos}/${host_goarch}"
+  [[ "$host_target" =~ ^[a-z0-9]+/[a-z0-9]+$ ]] || die "native Go release target is invalid"
+  cc="$(go env CC)"
+  [[ -n "$cc" && "$cc" != *[[:space:]]* ]] || die "native CGO compiler is invalid: $cc"
+  command -v "$cc" >/dev/null 2>&1 || die "native CGO compiler is unavailable: $cc"
+  for target in "$@"; do
+    [[ "$target" == "$host_target" ]] ||
+      die "CGO release cross-compilation is unsupported: target $target requires a native $target release host"
+  done
+}
+
 validate_dist_dir() {
   [[ -n "$DIST_DIR" && "$DIST_DIR" != "/" ]] || die "distribution directory must be explicit and non-root"
   if [[ "$DIST_DIR" != /* ]]; then
@@ -187,4 +202,24 @@ write_source_manifest() {
       die "release source contains an unsupported entry: $relative"
     fi
   done < <(find "$source_dir" -mindepth 1 -print0 | LC_ALL=C sort -z)
+}
+
+verify_archive_tree_content() {
+  local archive="$1" source_tree="$2" scratch_root="$3"
+  local comparison actual expected
+  comparison="$(mktemp -d "${scratch_root}/archive-content.XXXXXXXX")"
+  actual="${comparison}/actual.manifest"
+  expected="${comparison}/expected.manifest"
+  mkdir -p "${comparison}/expected"
+
+  if ! (
+    tar -xf "$archive" -C "${comparison}/expected"
+    write_source_manifest "$source_tree" "$actual"
+    write_source_manifest "${comparison}/expected" "$expected"
+    cmp -s "$actual" "$expected"
+  ); then
+    rm -rf -- "$comparison"
+    return 1
+  fi
+  rm -rf -- "$comparison"
 }

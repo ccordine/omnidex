@@ -19,7 +19,8 @@ For coding tasks, the default loop is proof-first:
 
 ## Proof Plan Contract
 
-The planner should express proof work as a small contract when feasible:
+Code should materialize proof work as a small contract when feasible. This is
+authoritative workflow state, not a planner-model response:
 
 ```json
 {
@@ -70,7 +71,8 @@ Not every task needs a unit test. Omnidex should choose the smallest proof type 
 
 Validated tests and probes are protected evidence.
 
-Once a proof test/probe is validated, the coder must not weaken, delete, skip, or rewrite it just to make the loop pass.
+Once a proof test/probe is validated, the coding workflow must not weaken, delete,
+skip, or rewrite it just to make the loop pass.
 
 Allowed test changes:
 

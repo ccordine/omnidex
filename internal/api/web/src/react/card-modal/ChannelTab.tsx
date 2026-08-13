@@ -30,7 +30,7 @@ function mergeMessages(current: ScrumChatMessage[], incoming: ScrumChatMessage[]
 
 export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: CardModalChildProps) {
   const card = context.card;
-  const agentWorking = card.play_state === "running" || card.play_state === "queued" || card.play_state === "reviewing";
+  const agentWorking = card.play_state === "running" || card.play_state === "queued";
   const [message, setMessage] = useState("");
   const [recentMessages, setRecentMessages] = useState<ScrumChatMessage[]>(card.chat ?? []);
   const [earlierMessages, setEarlierMessages] = useState<ScrumChatMessage[]>([]);

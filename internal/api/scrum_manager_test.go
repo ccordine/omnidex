@@ -5,47 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/agentstream"
 	"github.com/gryph/omnidex/internal/model"
 )
-
-func TestParseScrumManagerOutcome(t *testing.T) {
-	outcome, ok := parseScrumManagerOutcome("All good.\nSCRUM_STATUS: success\n")
-	if !ok || outcome != ScrumOutcomeSuccess {
-		t.Fatalf("parse success = %q ok=%v", outcome, ok)
-	}
-	outcome, ok = parseScrumManagerOutcome(`{"scrum_status":"blocked","reason":"waiting on API key"}`)
-	if !ok || outcome != ScrumOutcomeBlocked {
-		t.Fatalf("parse blocked json = %q ok=%v", outcome, ok)
-	}
-}
-
-func TestParseScrumManagerOutcomeRejectsAmbiguousOrEmbeddedStatus(t *testing.T) {
-	for _, output := range []string{
-		"The prompt said SCRUM_STATUS: success but no result was produced.",
-		"SCRUM_STATUS: success\nSCRUM_STATUS: failed",
-	} {
-		if outcome, ok := parseScrumManagerOutcome(output); ok {
-			t.Fatalf("parsed ambiguous status %q from %q", outcome, output)
-		}
-	}
-}
-
-func TestResolveScrumManagerOutcomeFromJob(t *testing.T) {
-	details := model.JobDetails{
-		Job: model.Job{Status: model.JobStatusCompleted},
-		Steps: []model.Step{{
-			Output: "Implemented feature.\nSCRUM_STATUS: blocked\nNeed credentials.",
-		}},
-	}
-	outcome := resolveScrumManagerOutcome(details)
-	if outcome != ScrumOutcomeBlocked {
-		t.Fatalf("resolve outcome = %q want blocked", outcome)
-	}
-	transition := scrumColumnForOutcome(outcome)
-	if transition.Column != "blocked" {
-		t.Fatalf("transition column = %q want blocked", transition.Column)
-	}
-}
 
 func TestScrumColumnForOutcomeFailed(t *testing.T) {
 	transition := scrumColumnForOutcome(ScrumOutcomeFailed)
@@ -62,11 +24,17 @@ func TestScrumColumnForUnknownOutcomeFailsClosed(t *testing.T) {
 }
 
 func TestSyncRunningJobConsoleLogIncremental(t *testing.T) {
-	card := ScrumCard{ConsoleLog: "job 1 queued\n"}
+	lineOne := scrumAgentEventLine(t, agentstream.EventMessage, "line one")
+	lineTwo := scrumAgentEventLine(t, agentstream.EventMessage, "line two")
 	job := model.JobDetails{
-		Steps: []model.Step{{Output: "line one\n"}},
+		Job:   model.Job{ID: 4, Status: model.JobStatusRunning},
+		Steps: []model.Step{{Action: "external_agent_execute", Output: lineOne + "\n"}},
 	}
-	updated, ok := syncRunningJobConsoleLog(card, job)
+	card := scrumSyncTestCard(job.Job.ID, ScrumCard{ConsoleLog: "job 1 queued\n"})
+	updated, ok, err := syncRunningJobConsoleLog(card, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("expected first sync")
 	}
@@ -77,8 +45,11 @@ func TestSyncRunningJobConsoleLogIncremental(t *testing.T) {
 		t.Fatalf("console=%q", updated.ConsoleLog)
 	}
 
-	job.Steps = []model.Step{{Output: "line one\nline two\n"}}
-	updated2, ok := syncRunningJobConsoleLog(updated, job)
+	job.Steps = []model.Step{{Action: "external_agent_execute", Output: lineOne + "\n" + lineTwo + "\n"}}
+	updated2, ok, err := syncRunningJobConsoleLog(updated, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("expected second sync")
 	}
@@ -89,9 +60,8 @@ func TestSyncRunningJobConsoleLogIncremental(t *testing.T) {
 		t.Fatalf("should not duplicate stream header: %q", updated2.ConsoleLog)
 	}
 
-	display := StripAgentStreamMarker(updated2.ConsoleLog)
-	if strings.Contains(display, "[[agent-stream-len:") {
-		t.Fatalf("marker leaked to display: %q", display)
+	if updated2.AgentStreamConsoleCursor != int64(len(lineOne+"\n"+lineTwo+"\n")) {
+		t.Fatalf("console cursor=%d", updated2.AgentStreamConsoleCursor)
 	}
 }
 
@@ -102,7 +72,10 @@ func TestResolveScrumPlayOutcomeFailedJob(t *testing.T) {
 			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"codex"},"scrum_raw_play":true}`),
 		},
 	}
-	outcome := resolveScrumManagerOutcome(details)
+	outcome, err := resolveScrumManagerOutcome(details)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if outcome != ScrumOutcomeFailed {
 		t.Fatalf("outcome=%q want failed", outcome)
 	}
@@ -120,7 +93,10 @@ func TestResolveScrumPlayOutcomeCanceledJobMovesToError(t *testing.T) {
 		},
 		Steps: []model.Step{{Output: "connection lost"}},
 	}
-	outcome := resolveScrumManagerOutcome(details)
+	outcome, err := resolveScrumManagerOutcome(details)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if outcome != ScrumOutcomeFailed {
 		t.Fatalf("outcome=%q want failed", outcome)
 	}
@@ -138,7 +114,10 @@ func TestResolveScrumPlayOutcomeFailureStatusOverridesSuccessText(t *testing.T) 
 		},
 		Steps: []model.Step{{Output: "SCRUM_STATUS: success"}},
 	}
-	outcome := resolveScrumManagerOutcome(details)
+	outcome, err := resolveScrumManagerOutcome(details)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if outcome != ScrumOutcomeFailed {
 		t.Fatalf("outcome=%q want failed", outcome)
 	}

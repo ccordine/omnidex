@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func validateJobInstruction(instruction string) error {
@@ -17,6 +19,10 @@ func validateJobInstruction(instruction string) error {
 		return fmt.Errorf("job instruction must contain non-whitespace user authority")
 	}
 	return nil
+}
+
+func validateChannelMessageContent(content string) error {
+	return model.ValidateChannelMessageContent(content)
 }
 
 func validateCancelReason(reason string) (string, error) {

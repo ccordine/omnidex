@@ -97,13 +97,6 @@ func transitionInitialTaskRootTx(
 	to taskstate.NodeStatus,
 	proofContent, reason string,
 ) error {
-	if acceptedIntentTerminalStatus(to) {
-		if err := transitionAcceptedIntentObjectiveTx(
-			ctx, tx, jobID, generation, stepID, to, proofContent, reason,
-		); err != nil {
-			return err
-		}
-	}
 	header, root, err := loadInitialTaskRootTx(ctx, tx, jobID, generation)
 	if err != nil {
 		return err

@@ -28,6 +28,10 @@ func classifyArtifactHandling(
 			directive = assemblyline.ArtifactProtect
 		case assemblyline.ArtifactMustExist:
 			directive = assemblyline.ArtifactRequire
+		case assemblyline.ArtifactMustBeAbsent:
+			directive = assemblyline.ArtifactForbid
+		case assemblyline.ArtifactPossibleAbsenceCandidate:
+			directive = assemblyline.ArtifactAbsenceCandidate
 		case assemblyline.ArtifactMentionedOnly:
 			directive = assemblyline.ArtifactReference
 		}

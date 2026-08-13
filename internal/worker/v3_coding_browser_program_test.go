@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/specialists"
 )
 
 func TestGenericBrowserProgramUsesCompleteCodeOwnedVerification(t *testing.T) {
@@ -267,6 +268,7 @@ func genericBrowserSkillBindings(
 		bindings[requirement.ID] = directCodingSkillBinding{
 			RequirementID: requirement.ID,
 			Procedure:     "Implement the stated local behavior with accessible controls and an observable state transition.",
+			Version:       specialists.SkillVersion{Status: specialists.SkillStatusActive},
 		}
 	}
 	return bindings

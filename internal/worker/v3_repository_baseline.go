@@ -59,7 +59,7 @@ func newRepositoryBaselineVerificationAuthority(
 func (authority repositoryBaselineVerificationAuthority) validate(commands []testCommand) error {
 	if !validRepositoryVerificationOpaqueID(authority.baselineID, "repository_baseline_") ||
 		!validRepositoryVerificationOpaqueID(authority.sourceSnapshotID, "snapshot_") ||
-		!validRepositoryVerificationOpaqueID(authority.contractID, "change_contract_") ||
+		!validRepositoryVerificationOwnerID(authority.contractID) ||
 		!validRepositoryVerificationSHA256(authority.planID) {
 		return fmt.Errorf("repository baseline authority contains a malformed identity")
 	}
@@ -83,12 +83,14 @@ func (authority repositoryBaselineVerificationAuthority) validate(commands []tes
 }
 
 func (authority repositoryBaselineVerificationAuthority) metadata() map[string]any {
-	return map[string]any{
+	metadata := map[string]any{
 		"repository_verification_baseline_id": authority.baselineID,
 		"repository_source_snapshot_id":       authority.sourceSnapshotID,
-		"repository_change_contract_id":       authority.contractID,
+		"repository_mutation_owner_id":        authority.contractID,
 		"repository_verification_plan_id":     authority.planID,
 	}
+	setRepositoryOwnerMetadata(metadata, authority.contractID)
+	return metadata
 }
 
 func (authority repositoryBaselineVerificationAuthority) planIdentity() string {
@@ -101,7 +103,7 @@ func (authority repositoryBaselineVerificationAuthority) allowsScope(scope repos
 
 func repositoryBaselineID(sourceSnapshotID, contractID, planID string) (string, error) {
 	if !validRepositoryVerificationOpaqueID(sourceSnapshotID, "snapshot_") ||
-		!validRepositoryVerificationOpaqueID(contractID, "change_contract_") ||
+		!validRepositoryVerificationOwnerID(contractID) ||
 		!validRepositoryVerificationSHA256(planID) {
 		return "", fmt.Errorf("repository baseline identity is incomplete")
 	}

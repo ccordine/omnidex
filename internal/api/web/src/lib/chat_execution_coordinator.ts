@@ -4,47 +4,31 @@ import {
   describeJobStatus,
   describeRealtimeJobPhase,
 } from "./chat_job_progress";
+import {
+  positiveJobID,
+  requireJobDetails,
+  requiredMessage,
+} from "./chat_execution_contract";
 import { t, tf } from "./i18n";
 import { debounce } from "./main_thread";
 import type { OmniPanel } from "./panel_routing";
+import type { StatusTone } from "./types";
 
-type JobRole = "assistant" | "error";
-const JOB_STATUSES = ["pending", "running", "waiting_input", "completed", "failed", "canceled"] as const;
-type JobStatus = (typeof JOB_STATUSES)[number];
 type JobCompletion = {
   jobID: number;
   resolve: () => void;
   reject: (error: unknown) => void;
 };
 
-interface JobRecord {
-  id: number;
-  status: JobStatus;
-  result?: unknown;
-  error?: unknown;
-}
-
-interface JobDetails {
-  job: JobRecord;
-  steps: Array<Record<string, unknown>>;
-  contexts: Array<Record<string, unknown>>;
-}
-
 export interface ChatExecutionHost {
-  openedProjectID(): number | null;
-  openedProjectLocation(): string | null;
   currentPanel(): OmniPanel;
   hasJobBadge(): boolean;
   jobBadge(): HTMLElement;
   setActivityLabel(label: string): void;
-  setStatus(text: string, mode: string): void;
+  setStatus(text: string, mode: StatusTone): void;
   renderProgressActivity(label: string): void;
-  recordJobProgress(details: Record<string, any>): void;
-  renderMessages(): void;
-  renderJobDetails(details: Record<string, any>): void;
+  renderJobState(details: unknown): Promise<void>;
   addEvent(type: string, details?: Record<string, unknown>, full?: unknown): void;
-  addMessage(role: JobRole, content: string): void;
-  setBusy(value: boolean): void;
   loadJobs(options: { quiet?: boolean; strict?: boolean }): Promise<void>;
   loadGlobalActivity(options: { quiet?: boolean; strict?: boolean }): Promise<void>;
   reportError(error: unknown): void;
@@ -85,38 +69,14 @@ export class ChatExecutionCoordinator {
     if (this.host.hasJobBadge()) this.host.jobBadge().textContent = `#${jobID}`;
   }
 
-  async submit(prompt: string): Promise<void> {
-    const instruction = prompt.trim();
-    if (!instruction) throw new Error("A non-empty job instruction is required.");
+  async waitForExistingJob(value: number): Promise<void> {
+    const jobID = positiveJobID(value, "Existing channel job");
     if (this.pending) throw new Error(`Job #${this.pending.jobID} is already active in this chat.`);
-
-    this.host.setActivityLabel(t("job.queueing"));
-    this.host.setStatus(t("status.queuing"), "active");
-    this.host.renderProgressActivity(t("job.queueing"));
-    const metadata: Record<string, unknown> = {
-      source: "omni-web-chat",
-      ui: "stimulus-tailwind-recyclr",
-    };
-    const projectID = this.host.openedProjectID();
-    if (projectID !== null) metadata.project_id = projectID;
-    const location = this.host.openedProjectLocation();
-    if (location !== null) {
-      metadata.client_cwd = location;
-      metadata.project_directory = location;
-    }
-    const request = { instruction, pipeline: "chat", metadata };
-    const payload = await readJSON<Record<string, any>>(await fetch("/v1/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    }));
-    const job = requireJobRecord(payload.job, "Queued job response");
-    this.setCurrentJobID(job.id);
-    const label = tf("job.running", { id: job.id });
+    this.setCurrentJobID(jobID);
+    const label = tf("job.running", { id: jobID });
     this.host.setActivityLabel(label);
     this.host.renderProgressActivity(label);
-    this.host.addEvent("job_created", { id: job.id, status: job.status }, { request, response: payload, job });
-    await this.waitForJob(job.id);
+    await this.waitForJob(jobID);
   }
 
   handleProgress(event: Event): void {
@@ -186,14 +146,15 @@ export class ChatExecutionCoordinator {
   }
 
   private async reconcile(jobID: number): Promise<void> {
-    const payload = await readJSON<Record<string, any>>(await fetch(`/v1/jobs/${jobID}`));
+    const payload = await readJSON<Record<string, any>>(await fetch(`/v1/ui/chat/jobs/${jobID}`));
     const details = requireJobDetails(payload, jobID);
     const signature = JSON.stringify({
       status: details.job.status,
       result: details.job.result,
       error: details.job.error,
-      steps: details.steps.map((step) => [step.id, step.status, step.output, step.error]),
-      contexts: details.contexts.length,
+      steps: details.steps.map((step) => [step.id, step.action, step.status, step.generation]),
+      generation: details.job.current_generation,
+      progress: [details.progress.latest_context_id, details.progress.count],
     });
     if (signature !== this.lastSignature) {
       const stepLabel = describeChatJobProgress(details);
@@ -204,30 +165,33 @@ export class ChatExecutionCoordinator {
       this.host.setActivityLabel(label);
       if (this.pending?.jobID === jobID) {
         this.host.renderProgressActivity(label);
-        this.host.recordJobProgress(details);
-        this.host.renderMessages();
       }
-      if (this.host.currentPanel() === "jobs" && this.jobID === jobID) {
-        this.host.renderJobDetails(details);
-      }
+      await this.host.renderJobState(details);
       this.lastSignature = signature;
     }
 
     if (details.job.status === "completed") {
-      this.finish(jobID, "assistant", requiredMessage(details.job.result, `Completed job #${jobID} did not include a result.`), "completed", "ready");
+      this.finishCompleted(jobID);
     } else if (details.job.status === "failed" || details.job.status === "canceled") {
-      this.finish(jobID, "error", requiredMessage(details.job.error, `Job #${jobID} entered ${details.job.status} without an error message.`), details.job.status, "error");
+      this.finishFailed(jobID, details.job.status, details.job.error);
     }
   }
 
-  private finish(jobID: number, role: JobRole, message: string, status: JobStatus, tone: string): void {
+  private finishCompleted(jobID: number): void {
     const pending = this.pending;
     if (!pending || pending.jobID !== jobID) return;
     this.pending = null;
-    this.host.addMessage(role, message);
-    this.host.setStatus(describeJobStatus(status), tone);
-    this.host.setBusy(false);
+    this.host.setStatus(describeJobStatus("completed"), "ready");
     pending.resolve();
+  }
+
+  private finishFailed(jobID: number, status: "failed" | "canceled", rawError: unknown): void {
+    const pending = this.pending;
+    if (!pending || pending.jobID !== jobID) return;
+    const message = requiredMessage(rawError, `Job #${jobID} entered ${status} without an error message.`);
+    this.pending = null;
+    this.host.setStatus(describeJobStatus(status), "error");
+    pending.reject(new Error(message));
   }
 
   private failRefresh(jobID: number, error: unknown): void {
@@ -247,41 +211,4 @@ export class ChatExecutionCoordinator {
     this.host.addEvent("realtime_refresh_failed", { operation, error: message });
     this.host.reportError(error);
   }
-}
-
-function positiveJobID(value: unknown, source: string): number {
-  const jobID = typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN;
-  if (!Number.isSafeInteger(jobID) || jobID <= 0) {
-    throw new Error(`${source} did not include a valid positive integer id.`);
-  }
-  return jobID;
-}
-
-function requireJobRecord(value: unknown, source: string): JobRecord {
-  if (!value || typeof value !== "object") throw new Error(`${source} did not include a job record.`);
-  const raw = value as Record<string, unknown>;
-  const id = positiveJobID(raw.id, source);
-  if (!isJobStatus(raw.status)) {
-    throw new Error(`${source} job #${id} has invalid status ${JSON.stringify(raw.status)}.`);
-  }
-  return { id, status: raw.status, result: raw.result, error: raw.error };
-}
-
-function isJobStatus(value: unknown): value is JobStatus {
-  return typeof value === "string" && JOB_STATUSES.includes(value as JobStatus);
-}
-
-function requireJobDetails(value: Record<string, any>, requestedJobID: number): JobDetails {
-  const job = requireJobRecord(value.job, `Job #${requestedJobID} response`);
-  if (job.id !== requestedJobID) {
-    throw new Error(`Job refresh requested #${requestedJobID} but the server returned #${job.id}.`);
-  }
-  if (!Array.isArray(value.steps)) throw new Error(`Job #${requestedJobID} response did not include a steps array.`);
-  if (!Array.isArray(value.contexts)) throw new Error(`Job #${requestedJobID} response did not include a contexts array.`);
-  return { job, steps: value.steps, contexts: value.contexts };
-}
-
-function requiredMessage(value: unknown, error: string): string {
-  if (typeof value !== "string" || !value.trim()) throw new Error(error);
-  return value;
 }

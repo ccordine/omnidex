@@ -25,11 +25,13 @@ func TestPostgresRepositoryMutationFileAuthoritySealsAfterPreparation(t *testing
 			<-started
 			_, insertErr := fixture.pool.Exec(fixture.ctx, `
 				INSERT INTO repository_mutation_files (
-					operation_id, ordinal, file_id, path, source_sha256, source_size,
-					expected_sha256, expected_size
-				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-			`, identity.ID, ordinal, file.FileID, file.Path, file.SourceSHA256,
-				file.SourceSize, file.ExpectedSHA256, file.ExpectedSize)
+					operation_id, ordinal, file_id, path,
+					source_present, source_sha256, source_size, source_mode,
+					expected_present, expected_sha256, expected_size, expected_mode
+				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			`, identity.ID, ordinal, file.FileID, file.Path,
+				file.SourcePresent, file.SourceSHA256, file.SourceSize, file.SourceMode,
+				file.ExpectedPresent, file.ExpectedSHA256, file.ExpectedSize, file.ExpectedMode)
 			results <- insertErr
 		}(ordinal)
 	}

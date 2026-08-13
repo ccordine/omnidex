@@ -1,12 +1,10 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -29,10 +27,13 @@ func New(baseURL string, timeout time.Duration) *Client {
 	}
 }
 
-func (c *Client) Enqueue(ctx context.Context, instruction, pipeline string, metadata map[string]any) (model.Job, error) {
+func (c *Client) EnqueueCoding(ctx context.Context, instruction string, metadata map[string]any) (model.Job, error) {
+	if strings.TrimSpace(instruction) == "" {
+		return model.Job{}, fmt.Errorf("coding instruction is required")
+	}
 	payload := map[string]any{
 		"instruction": instruction,
-		"pipeline":    pipeline,
+		"pipeline":    model.PipelineCoding,
 		"metadata":    metadata,
 	}
 
@@ -48,7 +49,9 @@ func (c *Client) Enqueue(ctx context.Context, instruction, pipeline string, meta
 	if resp.Error != "" {
 		return model.Job{}, errors.New(resp.Error)
 	}
-
+	if resp.Job.ID < 1 || resp.Job.Pipeline != model.PipelineCoding || resp.Job.Instruction != instruction {
+		return model.Job{}, fmt.Errorf("coding enqueue returned a mismatched authoritative job")
+	}
 	return resp.Job, nil
 }
 
@@ -155,27 +158,6 @@ func (c *Client) Replan(ctx context.Context, id int64, operationID queue.Lifecyc
 	return resp.Job, nil
 }
 
-func (c *Client) AddMemory(ctx context.Context, source, kind, content string, tags []string) (model.MemoryChunk, error) {
-	payload := map[string]any{
-		"source":  source,
-		"kind":    kind,
-		"content": content,
-		"tags":    tags,
-	}
-
-	var resp struct {
-		Memory model.MemoryChunk `json:"memory"`
-		Error  string            `json:"error"`
-	}
-	if err := c.doJSON(ctx, http.MethodPost, "/v1/memory", payload, &resp); err != nil {
-		return model.MemoryChunk{}, err
-	}
-	if resp.Error != "" {
-		return model.MemoryChunk{}, errors.New(resp.Error)
-	}
-	return resp.Memory, nil
-}
-
 func (c *Client) ListMemoryCategories(ctx context.Context, limit int) ([]model.MemoryFacet, error) {
 	if limit <= 0 {
 		limit = 100
@@ -210,37 +192,6 @@ func (c *Client) ListMemoryTags(ctx context.Context, limit int) ([]model.MemoryF
 	return resp.Tags, nil
 }
 
-type ResearchIngestRequest struct {
-	Topic                  string   `json:"topic"`
-	Source                 string   `json:"source,omitempty"`
-	Kind                   string   `json:"kind,omitempty"`
-	Tags                   []string `json:"tags,omitempty"`
-	ChunkSize              int      `json:"chunk_size,omitempty"`
-	Overlap                int      `json:"overlap,omitempty"`
-	MaxChunks              int      `json:"max_chunks,omitempty"`
-	IncludeOfficialSources *bool    `json:"include_official_sources,omitempty"`
-}
-
-type ResearchIngestResponse struct {
-	Topic             string   `json:"topic"`
-	Slug              string   `json:"slug"`
-	SourcePrefix      string   `json:"source_prefix"`
-	StoredChunks      int      `json:"stored_chunks"`
-	Tags              []string `json:"tags"`
-	Warnings          []string `json:"warnings,omitempty"`
-	Dossier           string   `json:"dossier,omitempty"`
-	Sources           []string `json:"sources,omitempty"`
-	StoredChunkSource []string `json:"stored_chunk_sources,omitempty"`
-}
-
-func (c *Client) ResearchIngest(ctx context.Context, req ResearchIngestRequest) (ResearchIngestResponse, error) {
-	var resp ResearchIngestResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/v1/research/ingest", req, &resp); err != nil {
-		return ResearchIngestResponse{}, err
-	}
-	return resp, nil
-}
-
 func (c *Client) ListMemoryCandidates(ctx context.Context, jobID int64, status string, limit int) ([]model.MemoryCandidate, error) {
 	path := fmt.Sprintf("/v1/memory-candidates?limit=%d", limit)
 	if jobID > 0 {
@@ -268,8 +219,16 @@ func (c *Client) PromoteMemoryCandidate(
 	tier string,
 	authority model.MemoryPromotionAuthority,
 ) (model.MemoryCandidatePromotionResult, error) {
+	if tier != model.MemoryCandidateStatusApproved && tier != model.MemoryCandidateStatusDurable {
+		return model.MemoryCandidatePromotionResult{}, fmt.Errorf("memory promotion tier %q is not registered exact text", tier)
+	}
+	if authority != model.MemoryPromotionAuthorityCurrent &&
+		authority != model.MemoryPromotionAuthorityHistorical &&
+		authority != model.MemoryPromotionAuthorityGlobal {
+		return model.MemoryCandidatePromotionResult{}, fmt.Errorf("memory promotion authority %q is not registered exact text", authority)
+	}
 	payload := map[string]any{
-		"tier":      strings.TrimSpace(tier),
+		"tier":      tier,
 		"authority": authority,
 	}
 	var resp model.MemoryCandidatePromotionResult
@@ -320,50 +279,4 @@ func (c *Client) MetricsRaw(ctx context.Context, path string) (json.RawMessage, 
 		return nil, err
 	}
 	return raw, nil
-}
-
-func (c *Client) doJSON(ctx context.Context, method, path string, payload any, out any) error {
-	var body io.Reader
-	if payload != nil {
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(encoded)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var errBody struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(data, &errBody) == nil && errBody.Error != "" {
-			return fmt.Errorf("%s", errBody.Error)
-		}
-		return fmt.Errorf("request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(data)))
-	}
-
-	if out != nil {
-		if err := json.Unmarshal(data, out); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }

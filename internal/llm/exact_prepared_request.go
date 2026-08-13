@@ -4,22 +4,38 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
-	// ExactPreparedRequestProtocolV1 bypasses model-specific chat templates by
+	// ExactPreparedProtocolStructuredV1 bypasses model-specific chat templates by
 	// using Ollama raw generation. The fixed prompt joiner is itself visible and
 	// included in every byte/hash/budget authority.
-	ExactPreparedRequestProtocolV1 = "omnidex.ollama-raw-generate-request.v1"
 	ExactPreparedProviderBackend   = "ollama"
 	ExactPreparedProviderVersion   = "0.24.0"
 	ExactPreparedTokenizerProfile  = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
 	ExactPreparedPromptJoiner      = "\n"
 	MaxRawInputSpecialTokenReserve = 2
 )
+
+type ExactPreparedProtocol string
+
+const (
+	ExactPreparedProtocolStructuredV1 ExactPreparedProtocol = "omnidex.ollama-raw-generate-request.v1"
+	ExactPreparedProtocolRawTextV1    ExactPreparedProtocol = "omnidex.ollama-raw-text-generate-request.v1"
+)
+
+func (protocol ExactPreparedProtocol) Validate() error {
+	switch protocol {
+	case ExactPreparedProtocolStructuredV1, ExactPreparedProtocolRawTextV1:
+		return nil
+	default:
+		return fmt.Errorf("exact prepared protocol is not registered")
+	}
+}
 
 func ValidateExactPreparedProviderExpectation(expected ProviderIdentityExpectation) error {
 	if err := expected.Validate(); err != nil {
@@ -43,6 +59,17 @@ type exactPreparedRequestOptions struct {
 }
 
 type exactPreparedRequest struct {
+	Model    string                      `json:"model"`
+	Options  exactPreparedRequestOptions `json:"options"`
+	Prompt   string                      `json:"prompt"`
+	Raw      bool                        `json:"raw"`
+	Shift    bool                        `json:"shift"`
+	Stream   bool                        `json:"stream"`
+	Think    bool                        `json:"think"`
+	Truncate bool                        `json:"truncate"`
+}
+
+type exactStructuredPreparedRequest struct {
 	Format   map[string]any              `json:"format"`
 	Model    string                      `json:"model"`
 	Options  exactPreparedRequestOptions `json:"options"`
@@ -64,29 +91,81 @@ func ExactPreparedModelInput(systemEnvelope, promptHint string) (string, error) 
 // ExactPreparedRequestBytes renders the exact raw /api/generate request body.
 // Both policy authority and the Ollama adapter call this sole function.
 func ExactPreparedRequestBytes(prepared PreparedModel) ([]byte, error) {
-	if strings.TrimSpace(prepared.BaseModel) == "" ||
-		prepared.ContextModel != prepared.BaseModel || strings.TrimSpace(prepared.Prompt) == "" ||
-		prepared.PromptHint != MinimalGeneratePrompt || prepared.MaxOutputTokens <= 0 ||
-		prepared.ContextTokens <= 0 || prepared.ResponseFormat != ResponseFormatJSON ||
-		len(prepared.ResponseSchema) == 0 || prepared.ThinkingEnabled ||
-		prepared.Temperature == nil || *prepared.Temperature != 0 {
-		return nil, fmt.Errorf("prepared request does not satisfy the exact raw Ollama cognition contract")
-	}
-	if err := ValidateResponseContract(prepared); err != nil {
+	if err := validateExactPreparedRequest(prepared); err != nil {
 		return nil, err
 	}
 	prompt, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
 	if err != nil {
 		return nil, err
 	}
-	return exactjson.Canonical(exactPreparedRequest{
-		Format: prepared.ResponseSchema, Model: prepared.ContextModel,
+	base := exactPreparedRequest{
+		Model: prepared.ContextModel,
 		Options: exactPreparedRequestOptions{
 			NumCtx: prepared.ContextTokens, NumPredict: prepared.MaxOutputTokens,
 			Temperature: *prepared.Temperature,
 		},
 		Prompt: prompt, Raw: true, Shift: false, Stream: false, Think: false, Truncate: false,
+	}
+	if prepared.Protocol == ExactPreparedProtocolRawTextV1 {
+		return exactjson.Canonical(base)
+	}
+	return exactjson.Canonical(exactStructuredPreparedRequest{
+		Format: prepared.ResponseSchema, Model: base.Model, Options: base.Options,
+		Prompt: base.Prompt, Raw: base.Raw, Shift: base.Shift, Stream: base.Stream,
+		Think: base.Think, Truncate: base.Truncate,
 	})
+}
+
+func validateExactPreparedRequest(prepared PreparedModel) error {
+	if err := prepared.Protocol.Validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(prepared.BaseModel) == "" ||
+		prepared.ContextModel != prepared.BaseModel || strings.TrimSpace(prepared.Prompt) == "" ||
+		prepared.PromptHint != MinimalGeneratePrompt || prepared.MaxOutputTokens <= 0 ||
+		prepared.ContextTokens <= 0 || prepared.ThinkingEnabled ||
+		prepared.Temperature == nil || *prepared.Temperature != 0 ||
+		math.Signbit(*prepared.Temperature) {
+		return fmt.Errorf("prepared request does not satisfy the exact Ollama generation contract")
+	}
+	if prepared.ProviderIdentityExpectation == nil ||
+		prepared.ProviderIdentityExpectation.Model != prepared.BaseModel ||
+		prepared.ProviderIdentityExpectation.NativeContextLimit != prepared.ContextTokens {
+		return fmt.Errorf("prepared request lacks its frozen provider identity")
+	}
+	if err := ValidateExactPreparedProviderExpectation(*prepared.ProviderIdentityExpectation); err != nil {
+		return err
+	}
+	if err := (ProviderIdentityObservationRequest{
+		Expectation:     *prepared.ProviderIdentityExpectation,
+		ChallengeSHA256: prepared.ProviderObservationChallenge,
+	}).Validate(); err != nil {
+		return fmt.Errorf("prepared request has an invalid provider observation authority: %w", err)
+	}
+	switch prepared.Protocol {
+	case ExactPreparedProtocolStructuredV1:
+		if prepared.ResponseFormat != ResponseFormatJSON || len(prepared.ResponseSchema) == 0 {
+			return fmt.Errorf("exact structured protocol requires a JSON response schema")
+		}
+	case ExactPreparedProtocolRawTextV1:
+		if prepared.ResponseFormat != "" || prepared.ResponseSchema != nil {
+			return fmt.Errorf("exact raw-text protocol forbids response format and schema")
+		}
+	}
+	if err := ValidateResponseContract(prepared); err != nil {
+		return err
+	}
+	rawInput, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
+	if err != nil {
+		return err
+	}
+	return ValidateExactPreparedInputBudget(
+		prepared.ContextTokens,
+		prepared.ContextTokens-prepared.MaxOutputTokens,
+		prepared.MaxOutputTokens,
+		rawInput,
+		MaxRawInputSpecialTokenReserve,
+	)
 }
 
 func ExactPreparedRequestSHA256(prepared PreparedModel) (string, error) {

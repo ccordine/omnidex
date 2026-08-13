@@ -19,7 +19,7 @@ type codingRunRequest struct {
 	Metadata    map[string]any
 }
 
-func buildCodingRunRequest(instruction, cwd, session, modelName string, agent *cliAgentRuntimeConfig) (codingRunRequest, error) {
+func buildCodingRunRequest(instruction, cwd, session string, agent *cliAgentRuntimeConfig) (codingRunRequest, error) {
 	instruction = strings.TrimSpace(instruction)
 	if instruction == "" {
 		return codingRunRequest{}, fmt.Errorf("coding instruction is required")
@@ -34,9 +34,6 @@ func buildCodingRunRequest(instruction, cwd, session, modelName string, agent *c
 	}
 	if session = strings.TrimSpace(session); session != "" {
 		metadata["session_id"] = session
-	}
-	if modelName = strings.TrimSpace(modelName); modelName != "" {
-		metadata["model_execute"] = modelName
 	}
 	agentValues := map[string]string{}
 	if agent != nil {
@@ -56,7 +53,6 @@ func buildCodingRunRequest(instruction, cwd, session, modelName string, agent *c
 func runCoding(c *client.Client, args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	session := fs.String("session", "", "optional session identifier for follow-up continuity")
-	modelName := fs.String("model", "", "override the native coding model for this run")
 	interval := fs.Duration("interval", 2*time.Second, "poll interval while the coding job runs")
 	progress := fs.Bool("progress", true, "print concise live coding events")
 	verbose := fs.Bool("verbose", false, "print full prompts and context diagnostics")
@@ -72,11 +68,11 @@ func runCoding(c *client.Client, args []string) {
 	if err != nil {
 		die("resolve coding workspace: " + err.Error())
 	}
-	request, err := buildCodingRunRequest(strings.Join(fs.Args(), " "), cwd, *session, *modelName, agent)
+	request, err := buildCodingRunRequest(strings.Join(fs.Args(), " "), cwd, *session, agent)
 	if err != nil {
 		die(err.Error())
 	}
-	job, err := c.Enqueue(context.Background(), request.Instruction, request.Pipeline, request.Metadata)
+	job, err := c.EnqueueCoding(context.Background(), request.Instruction, request.Metadata)
 	if err != nil {
 		die(err.Error())
 	}

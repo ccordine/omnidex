@@ -14,9 +14,12 @@ import (
 
 func runRemember(c *client.Client, args []string) {
 	fs := flag.NewFlagSet("remember", flag.ExitOnError)
-	source := fs.String("source", "manual", "memory source label")
-	kind := fs.String("kind", model.MemoryKindEpisodic, "memory kind: episodic|procedural|instruction|preference|reference")
+	source := fs.String("source", "", "required exact memory source label")
+	projectID := fs.Int64("project-id", 0, "required exact memory project id")
+	channelID := fs.String("channel-id", "", "required exact memory channel id")
+	kind := fs.String("kind", "", "required memory kind: episodic|procedural|instruction|preference|reference")
 	tags := fs.String("tags", "", "comma-separated tags")
+	categories := fs.String("categories", "", "comma-separated structured categories")
 	_ = fs.Parse(args)
 
 	content := strings.TrimSpace(strings.Join(fs.Args(), " "))
@@ -24,8 +27,30 @@ func runRemember(c *client.Client, args []string) {
 		die("remember requires content")
 	}
 
-	tagList := splitTags(*tags)
-	chunk, err := c.AddMemory(context.Background(), *source, *kind, content, tagList)
+	tagList, err := parseCLIMemoryTags(*tags)
+	if err != nil {
+		die(err.Error())
+	}
+	categoryList, err := parseCLIMemoryCategories(*categories)
+	if err != nil {
+		die(err.Error())
+	}
+	parsedSource, err := model.ParseMemorySource(*source)
+	if err != nil {
+		die(err.Error())
+	}
+	parsedKind, err := model.ParseMemoryKind(*kind)
+	if err != nil {
+		die(err.Error())
+	}
+	scope, err := parseCLIMemoryScope(*projectID, *channelID)
+	if err != nil {
+		die(err.Error())
+	}
+	chunk, err := c.AddMemory(context.Background(), model.MemoryInput{
+		Scope: scope, Source: parsedSource, Kind: parsedKind, Content: content,
+		Tags: tagList, Categories: categoryList,
+	})
 	if err != nil {
 		die(err.Error())
 	}

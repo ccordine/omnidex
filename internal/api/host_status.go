@@ -10,17 +10,18 @@ import (
 )
 
 type hostBridgeStatusResponse struct {
-	Configured   bool     `json:"configured"`
-	Reachable    bool     `json:"reachable"`
-	URL          string   `json:"url,omitempty"`
-	Error        string   `json:"error,omitempty"`
-	Message      string   `json:"message,omitempty"`
-	NativePicker bool     `json:"native_picker,omitempty"`
-	Service      string   `json:"service,omitempty"`
-	Terminal     bool     `json:"terminal,omitempty"`
-	Screen       bool     `json:"screen,omitempty"`
-	PickerReady  bool     `json:"picker_ready"`
-	Suggestions  []string `json:"suggestions,omitempty"`
+	Configured   bool              `json:"configured"`
+	Reachable    bool              `json:"reachable"`
+	URL          string            `json:"url,omitempty"`
+	Error        string            `json:"error,omitempty"`
+	Message      string            `json:"message,omitempty"`
+	NativePicker bool              `json:"native_picker,omitempty"`
+	Service      string            `json:"service,omitempty"`
+	Terminal     bool              `json:"terminal,omitempty"`
+	Screen       bool              `json:"screen,omitempty"`
+	PickerReady  bool              `json:"picker_ready"`
+	Suggestions  []string          `json:"suggestions,omitempty"`
+	HTML         chatComponentHTML `json:"html"`
 }
 
 func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusResponse {

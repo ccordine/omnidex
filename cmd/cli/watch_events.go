@@ -145,8 +145,6 @@ func summarizeStepEvent(payload stepEventPayload) string {
 			summary += ": " + compactProgressValue(reason, 240)
 		}
 		return summary
-	case "coding_completed":
-		return "Coding workflow completed with verified workspace"
 	}
 
 	if strings.HasSuffix(eventType, "_waiting_input") {
@@ -184,8 +182,7 @@ func showStepEventInSlimProgress(eventType string) bool {
 		"coding_repair_selected",
 		"coding_fragment_correction_started",
 		"coding_worker_rejected",
-		"coding_worker_failed",
-		"coding_completed":
+		"coding_worker_failed":
 		return true
 	default:
 		return false

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/datasource"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/jackc/pgx/v5"
@@ -23,12 +22,20 @@ func (s *Server) handleDataSources(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		items, err := s.repo.ListDataSources(r.Context())
+		request, err := dataSourcePageRequest(r, dataSourceAPIPageSize)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		page, err := s.repo.ListDataSourcesPage(r.Context(), request)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"sources": dataSourcesPublicList(items)})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"sources": dataSourcesPublicList(page.Items), "offset": page.Offset, "has_more": page.HasMore,
+			"next_offset": dataSourceNextOffset(page.Offset, len(page.Items), page.HasMore),
+		})
 	case http.MethodPost:
 		s.handleDataSourceCreate(w, r)
 	default:
@@ -192,38 +199,7 @@ func (s *Server) handleDataSourceAsk(w http.ResponseWriter, r *http.Request, id 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct {
-		Question string `json:"question"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	question := strings.TrimSpace(req.Question)
-	if question == "" {
-		writeError(w, http.StatusBadRequest, "question is required")
-		return
-	}
-	record, err := s.repo.GetDataSource(r.Context(), id)
-	if err != nil {
-		writeDataSourceError(w, err)
-		return
-	}
-	metadata, err := datasource.JobMetadata(record.ID, record.Name, question, "")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	job, err := s.repo.EnqueueJob(r.Context(), question, model.PipelineDataQuery, metadata)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"job":      job,
-		"question": question,
-		"message":  fmt.Sprintf("Queued data query job #%d", job.ID),
-	})
+	writeRemovedInferenceAction(w, "data-source natural-language query")
 }
 
 func (s *Server) handleDataSourceCatalog(w http.ResponseWriter, r *http.Request, id string) {
@@ -253,25 +229,7 @@ func (s *Server) handleDataSourceExplore(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	record, err := s.repo.GetDataSource(r.Context(), id)
-	if err != nil {
-		writeDataSourceError(w, err)
-		return
-	}
-	metadata, err := datasource.ExploreJobMetadata(record.ID, record.Name)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	job, err := s.repo.EnqueueJob(r.Context(), fmt.Sprintf("Explore schema map for %s", record.Name), model.PipelineDataExplore, metadata)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"job":     job,
-		"message": fmt.Sprintf("Queued schema exploration job #%d", job.ID),
-	})
+	writeRemovedInferenceAction(w, "data-source inferred schema exploration")
 }
 
 func decodeDataSourceUpsert(r *http.Request) (queue.DataSourceUpsert, error) {

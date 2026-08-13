@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -18,8 +17,10 @@ import (
 func runMediaIndex(c *client.Client, args []string) {
 	fs := flag.NewFlagSet("media-index", flag.ExitOnError)
 	root := fs.String("root", ".", "media library root directory")
-	source := fs.String("source", "media", "memory source prefix")
-	kind := fs.String("kind", model.MemoryKindReference, "memory kind")
+	source := fs.String("source", "", "required memory source prefix")
+	projectID := fs.Int64("project-id", 0, "required exact memory project id")
+	channelID := fs.String("channel-id", "", "required exact memory channel id")
+	kind := fs.String("kind", "", "required memory kind")
 	tags := fs.String("tags", "", "comma-separated base tags")
 	episodeLimit := fs.Int("episode-limit", 0, "max episodes to index (0 = all)")
 	maxLinesPerChunk := fs.Int("lines-per-chunk", 45, "subtitle lines per memory chunk")
@@ -30,6 +31,18 @@ func runMediaIndex(c *client.Client, args []string) {
 	rootPath := strings.TrimSpace(*root)
 	if rootPath == "" {
 		die("--root is required")
+	}
+	parsedSource, err := model.ParseMemorySource(*source)
+	if err != nil {
+		die(err.Error())
+	}
+	parsedKind, err := model.ParseMemoryKind(*kind)
+	if err != nil {
+		die(err.Error())
+	}
+	scope, err := parseCLIMemoryScope(*projectID, *channelID)
+	if err != nil {
+		die(err.Error())
 	}
 	absRoot, err := filepath.Abs(rootPath)
 	if err != nil {
@@ -45,18 +58,30 @@ func runMediaIndex(c *client.Client, args []string) {
 		return
 	}
 
-	baseTags := splitTags(*tags)
+	baseTags, err := parseCLIMemoryTags(*tags)
+	if err != nil {
+		die(err.Error())
+	}
 	totalEpisodes := 0
 	episodesWithSubs := 0
 	episodesWithoutSubs := 0
 	totalChunks := 0
 	totalStored := 0
 	totalLines := 0
-	errorsCount := 0
+	pendingInputs := make([]model.MemoryInput, 0)
 
 	for _, ep := range episodes {
 		totalEpisodes++
-		episodeTags := mergeTags(baseTags, media.EpisodeTags(ep), ingest.InferTagsFromPath(ep.VideoPath, "subtitle"))
+		formatTag, err := ingest.DocumentFormatTag("subtitle")
+		if err != nil {
+			die(err.Error())
+		}
+		episodeTags, err := combineMemoryTags(
+			baseTags, []string{"media-index", "subtitle", formatTag},
+		)
+		if err != nil {
+			die(err.Error())
+		}
 		metaContent := buildEpisodeMetadataContent(ep)
 		slug := sanitizeMemorySourceToken(fmt.Sprintf("%s-s%02de%02d", ep.ShowSlug, ep.Season, ep.Episode))
 		if slug == "" {
@@ -72,13 +97,12 @@ func runMediaIndex(c *client.Client, args []string) {
 				if *dryRun {
 					fmt.Printf("dry-run metadata only: %s\n", ep.VideoPath)
 				} else {
-					sourceLabel := fmt.Sprintf("%s:%s#meta", strings.TrimSpace(*source), slug)
-					if _, err := c.AddMemory(context.Background(), sourceLabel, *kind, metaContent, episodeTags); err != nil {
-						errorsCount++
-						fmt.Fprintf(os.Stderr, "warn: metadata store failed for %s: %v\n", ep.VideoPath, err)
-					} else {
-						totalStored++
-					}
+					pendingInputs = append(pendingInputs, model.MemoryInput{
+						Scope:  scope,
+						Source: model.MemorySource(fmt.Sprintf("%s:%s#meta", parsedSource, slug)),
+						Kind:   parsedKind, Content: metaContent,
+						Tags: episodeTags, Categories: []model.MemoryCategory{model.MemoryCategoryResearch},
+					})
 				}
 			}
 			continue
@@ -86,9 +110,7 @@ func runMediaIndex(c *client.Client, args []string) {
 
 		lines, err := media.ParseSubtitleLines(ep.SubtitlePath)
 		if err != nil {
-			errorsCount++
-			fmt.Fprintf(os.Stderr, "warn: subtitle parse failed for %s: %v\n", ep.SubtitlePath, err)
-			continue
+			die(fmt.Sprintf("subtitle parse failed for %s: %v", ep.SubtitlePath, err))
 		}
 		if len(lines) == 0 {
 			episodesWithoutSubs++
@@ -105,28 +127,32 @@ func runMediaIndex(c *client.Client, args []string) {
 			continue
 		}
 
-		sourceMeta := fmt.Sprintf("%s:%s#meta", strings.TrimSpace(*source), slug)
-		if _, err := c.AddMemory(context.Background(), sourceMeta, *kind, metaContent, episodeTags); err != nil {
-			errorsCount++
-			fmt.Fprintf(os.Stderr, "warn: metadata store failed for %s: %v\n", ep.VideoPath, err)
-		} else {
-			totalStored++
-		}
-
+		pendingInputs = append(pendingInputs, model.MemoryInput{
+			Scope:  scope,
+			Source: model.MemorySource(fmt.Sprintf("%s:%s#meta", parsedSource, slug)),
+			Kind:   parsedKind, Content: metaContent, Tags: episodeTags,
+			Categories: []model.MemoryCategory{model.MemoryCategoryResearch},
+		})
 		for i, chunk := range chunks {
 			payload := buildSubtitleChunkContent(ep, chunk)
-			sourceChunk := fmt.Sprintf("%s:%s#%03d", strings.TrimSpace(*source), slug, i+1)
-			if _, err := c.AddMemory(context.Background(), sourceChunk, *kind, payload, episodeTags); err != nil {
-				errorsCount++
-				fmt.Fprintf(os.Stderr, "warn: chunk store failed for %s chunk=%d: %v\n", ep.SubtitlePath, i+1, err)
-				continue
-			}
-			totalStored++
+			pendingInputs = append(pendingInputs, model.MemoryInput{
+				Scope:  scope,
+				Source: model.MemorySource(fmt.Sprintf("%s:%s#%03d", parsedSource, slug, i+1)),
+				Kind:   parsedKind, Content: payload, Tags: episodeTags,
+				Categories: []model.MemoryCategory{model.MemoryCategoryResearch},
+			})
 		}
+	}
+	if !*dryRun && len(pendingInputs) > 0 {
+		stored, err := c.AddMemories(context.Background(), pendingInputs)
+		if err != nil {
+			die(err.Error())
+		}
+		totalStored = len(stored)
 	}
 
 	fmt.Printf("media index complete root=%s episodes=%d with_subtitles=%d without_subtitles=%d subtitle_lines=%d chunks=%d stored=%d errors=%d dry_run=%v\n",
-		absRoot, totalEpisodes, episodesWithSubs, episodesWithoutSubs, totalLines, totalChunks, totalStored, errorsCount, *dryRun)
+		absRoot, totalEpisodes, episodesWithSubs, episodesWithoutSubs, totalLines, totalChunks, totalStored, 0, *dryRun)
 }
 
 func runMediaSearch(args []string) {

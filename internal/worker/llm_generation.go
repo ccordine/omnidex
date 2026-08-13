@@ -5,204 +5,156 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func (s *Service) llmGenerateWithTrace(ctx context.Context, authority model.StepAttemptAuthority, scope, modelName, prompt string) (string, error) {
-	return s.llmGenerateWithSchemaTrace(ctx, authority, scope, modelName, prompt, nil)
+type exactStationExecution struct {
+	Gap              queue.StationGapOpening
+	Candidate        string
+	ProviderIdentity llm.ProviderIdentityExpectation
 }
 
-func (s *Service) llmGenerateWithSchemaTrace(
+func (s *Service) executeExactPortableStation(
 	ctx context.Context,
 	authority model.StepAttemptAuthority,
-	scope, modelName, prompt string,
-	responseSchema map[string]any,
-) (string, error) {
-	return s.llmGenerateWithEvidenceTrace(ctx, authority, scope, modelName, prompt, responseSchema, llmEvidenceWork{})
-}
-
-func (s *Service) llmGenerateWithEvidenceTrace(
-	ctx context.Context,
-	authority model.StepAttemptAuthority,
-	scope, modelName, prompt string,
-	responseSchema map[string]any,
-	work llmEvidenceWork,
-) (string, error) {
-	return s.llmGenerateResponseWithEvidenceTrace(
-		ctx, authority, scope, modelName, prompt, responseSchema, work,
-	)
-}
-
-func (s *Service) llmGenerateResponseWithEvidenceTrace(
-	ctx context.Context,
-	authority model.StepAttemptAuthority,
-	scope, modelName, prompt string,
-	responseSchema map[string]any,
-	work llmEvidenceWork,
-) (string, error) {
-	scope = safeLine(scope, "")
-	if scope == "" {
-		return "", fmt.Errorf("LLM scope is required")
+	job assemblyline.PortableJob,
+	modelName string,
+) (assemblyline.PortableResult, exactStationExecution, error) {
+	if ctx == nil || s == nil || s.repo == nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station requires context, worker, and PostgreSQL authority")
+	}
+	if err := ctx.Err(); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	if s.stationClient == nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station generation provider is not configured")
+	}
+	if err := s.stationClient.RequireExactPreparedContract(); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station provider: %w", err)
 	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
-		return "", fmt.Errorf("LLM model is required for scope %q", scope)
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station model is required")
 	}
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return "", fmt.Errorf("LLM prompt is required for scope %q", scope)
-	}
-	contract, err := llmResponseContractForScope(scope)
+	stationID, err := queue.StationForPortableJob(job)
 	if err != nil {
-		return "", err
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	s.emitStepEvent(authority, "llm_prompt", fmt.Sprintf("scope=%s model=%s chars=%d", scope, modelName, len(prompt)))
-	s.emitStepContextWithBudget(authority, "llm_prompt", strings.Join([]string{
-		"scope=" + scope,
-		"model=" + modelName,
-		fmt.Sprintf("prompt_chars=%d", len(prompt)),
-		prompt,
-	}, "\n"), 14000)
-
-	response, err := s.llmGenerateSingleAttempt(
-		ctx, authority, scope, modelName, prompt, responseSchema, contract, work, 1,
+	prompt, schema, err := assemblyline.RenderPortableJob(job)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	contract, err := llmResponseContractForScope(portableModelScope(schema))
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	selection := llm.ProviderIdentitySelection{
+		Model: modelName, NativeContextLimit: s.inferenceContextTokens,
+	}
+	if err := validateExactStationStaticCall(prompt, schema, contract, selection); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	opening, err := s.repo.OpenStationGapDiscovery(ctx, queue.StationGapDiscoveryOpenRecord{
+		Gap: queue.StationGapOpenRecord{
+			Authority: authority, Job: job, Station: stationID,
+			ContextTokens: s.inferenceContextTokens, MaxOutputTokens: contract.MaxTokens,
+		},
+		Selection: selection,
+	})
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("persist typed station gap and provider discovery: %w", err)
+	}
+	gap, discovery := opening.Gap, opening.Discovery
+	observed, discoveryErr := s.stationClient.DiscoverProviderIdentityEvidence(
+		ctx, selection, discovery.Challenge,
 	)
-	if err == nil {
-		return response, nil
+	observed, ownershipErr := ownStationDiscovery(observed)
+	if ownershipErr != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("station discovery ownership left an unmatched boundary: %w", ownershipErr)
 	}
-	attemptErrors := []string{fmt.Sprintf("%s: %s", modelName, trimForBudget(err.Error(), 240))}
-	if shouldRetrySameModelAfterCreateEOF(err) {
-		s.emitStepEvent(authority, "llm_retry_same_model", fmt.Sprintf("scope=%s model=%s reason=create_eof", scope, modelName))
-		response, retryErr := s.llmGenerateSingleAttempt(
-			ctx, authority, scope, modelName, prompt, responseSchema, contract, work, 2,
+	if discoveryErr == nil {
+		expected, deriveErr := llm.DeriveExactProviderIdentityExpectation(observed.Evidence, selection)
+		if deriveErr != nil {
+			discoveryErr = deriveErr
+		} else if validateErr := observed.ValidateFor(llm.ProviderIdentityObservationRequest{
+			Expectation: expected, ChallengeSHA256: discovery.Challenge,
+		}); validateErr != nil {
+			discoveryErr = validateErr
+		}
+	}
+	if discoveryErr != nil {
+		failureReason, failedObservation, reasonErr := classifyStationDiscoveryFailure(
+			observed, selection, discovery.Challenge, discoveryErr,
 		)
-		if retryErr == nil {
-			return response, nil
+		if reasonErr != nil {
+			return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+				"classify exact station discovery rejection: %w", reasonErr,
+			)
 		}
-		attemptErrors = append(attemptErrors, fmt.Sprintf("%s(retry): %s", modelName, trimForBudget(retryErr.Error(), 240)))
+		cause := fmt.Errorf("discover exact station provider: %w", discoveryErr)
+		persistCtx, cancel := stationPersistenceContext(ctx)
+		_, persistErr := s.repo.RecordStationDiscoveryFailure(persistCtx, queue.StationDiscoveryFailureRecord{
+			Authority: authority, Gap: gap, Discovery: discovery,
+			Observed: failedObservation, FailureReason: failureReason,
+			Error: stationFailureText(cause),
+		})
+		cancel()
+		return assemblyline.PortableResult{}, exactStationExecution{}, errors.Join(cause, persistErr)
 	}
-	finalErr := fmt.Errorf("LLM generation failed after %d attempt(s) with configured model %q: %s", len(attemptErrors), modelName, strings.Join(attemptErrors, " | "))
-	s.emitStepEvent(authority, "llm_error", fmt.Sprintf("scope=%s model=%s", scope, modelName))
-	s.emitStepContextWithBudget(authority, "llm_error", strings.Join([]string{
-		"scope=" + scope,
-		"model=" + modelName,
-		"error=" + trimForBudget(finalErr.Error(), 1400),
-	}, "\n"), 3200)
-	return "", finalErr
+	expected, err := llm.DeriveExactProviderIdentityExpectation(observed.Evidence, selection)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	prepared, err := prepareExactStationCall(gap, contract, modelName, expected)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	persistCtx, cancel := stationPersistenceContext(ctx)
+	transition, err := s.repo.RecordStationDiscoveryCallOpening(persistCtx, queue.StationDiscoveryCallOpenRecord{
+		Authority: authority, Gap: gap, Discovery: discovery,
+		Observed: observed, Prepared: prepared,
+	})
+	cancel()
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("persist discovery receipt and exact station call: %w", err)
+	}
+	if transition.Attempt != model.StepAttemptActive {
+		return s.recordAuthorityEndedExactStationCall(
+			ctx, authority, gap, transition.Call, modelName, prepared, observed, transition.Attempt,
+		)
+	}
+	return s.dispatchExactStationCall(ctx, authority, gap, transition.Call, modelName, prepared)
 }
 
-func (s *Service) llmGenerateSingleAttempt(
-	ctx context.Context,
-	authority model.StepAttemptAuthority,
-	scope, modelName, prompt string,
-	responseSchema map[string]any,
-	contract llmResponseContract,
-	work llmEvidenceWork,
-	attempt int,
-) (string, error) {
-	started := time.Now()
-	evidence := newLLMCallEvidenceRecord(
-		authority, scope, modelName, prompt, responseSchema, contract, s.inferenceContextTokens, attempt, work,
-	)
-	stopHeartbeat := s.startProgressHeartbeat(ctx, authority, fmt.Sprintf("llm:%s:attempt-%d", scope, attempt))
-	defer stopHeartbeat()
-	prepared, err := s.llm.PrepareContextModel(ctx, modelName, prompt)
+func classifyStationDiscoveryFailure(
+	observed llm.ObservedProviderIdentity,
+	selection llm.ProviderIdentitySelection,
+	challenge string,
+	discoveryErr error,
+) (queue.StationDiscoveryFailureReason, llm.ObservedProviderIdentity, error) {
+	if discoveryErr == nil {
+		return "", llm.ObservedProviderIdentity{}, fmt.Errorf("station discovery failure requires an exact error")
+	}
+	if evidenceErr := observed.Evidence.ValidateFailure(selection, nil); evidenceErr == nil {
+		observed.Attestation = llm.ProviderIdentityAttestation{}
+		observed.Observation = llm.ProviderIdentityObservation{}
+		return queue.StationDiscoveryFailureEvidenceRejected, observed, nil
+	}
+	expected, err := llm.DeriveExactProviderIdentityExpectation(observed.Evidence, selection)
 	if err != nil {
-		latency := time.Since(started)
-		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidencePreparationFailed, "", err, latency); evidenceErr != nil {
-			return "", evidenceErr
-		}
-		telemetryErr := s.recordWorkerLLMCall(ctx, authority, scope, modelName, len(prompt), attempt, false, err, latency)
-		return "", errors.Join(err, telemetryErr)
+		return "", llm.ObservedProviderIdentity{}, fmt.Errorf(
+			"provider discovery error is not proven by its bounded evidence: %w", err,
+		)
 	}
-	defer s.llm.CleanupPreparedModel(prepared)
-	prepared.PromptHint = contract.PromptHint
-	prepared.MaxOutputTokens = contract.MaxTokens
-	prepared.ContextTokens = s.inferenceContextTokens
-	prepared.ResponseFormat = contract.Format
-	prepared.ResponseSchema = responseSchema
-	prepared.ThinkingEnabled = false
-	applyPreparedRequestToEvidence(&evidence, prepared)
-	if err := llm.ValidateResponseContract(prepared); err != nil {
-		callErr := fmt.Errorf("prepare response contract for scope %q: %w", scope, err)
-		latency := time.Since(started)
-		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidencePreparationFailed, "", callErr, latency); evidenceErr != nil {
-			return "", evidenceErr
-		}
-		telemetryErr := s.recordWorkerLLMCall(ctx, authority, scope, modelName, len(prompt), attempt, false, callErr, latency)
-		return "", errors.Join(callErr, telemetryErr)
+	validationErr := observed.ValidateFor(llm.ProviderIdentityObservationRequest{
+		Expectation: expected, ChallengeSHA256: challenge,
+	})
+	if validationErr != nil {
+		return queue.StationDiscoveryFailureObservationRejected, observed, nil
 	}
-	if err := llm.ValidateInferenceBudget(prepared.ContextTokens, prepared.MaxOutputTokens, prepared.Prompt, prepared.PromptHint); err != nil {
-		callErr := fmt.Errorf("prepare inference budget for scope %q: %w", scope, err)
-		latency := time.Since(started)
-		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidencePreparationFailed, "", callErr, latency); evidenceErr != nil {
-			return "", evidenceErr
-		}
-		telemetryErr := s.recordWorkerLLMCall(ctx, authority, scope, modelName, len(prompt), attempt, false, callErr, latency)
-		return "", errors.Join(callErr, telemetryErr)
-	}
-	s.emitStepEvent(authority, "llm_model_prepared", fmt.Sprintf("scope=%s model=%s context_model=%s", scope, modelName, safeLine(prepared.ContextModel, "unknown")))
-	s.emitStepContextWithBudget(authority, "llm_model_prepare", strings.Join([]string{
-		"scope=" + scope,
-		"base_model=" + safeLine(prepared.BaseModel, modelName),
-		"context_model=" + safeLine(prepared.ContextModel, "unknown"),
-		"modelfile_path=" + safeLine(prepared.ModelfilePath, "unknown"),
-		"prompt_hint=" + trimForBudget(prepared.PromptHint, 420),
-		fmt.Sprintf("max_output_tokens=%d", prepared.MaxOutputTokens),
-		fmt.Sprintf("context_tokens=%d", prepared.ContextTokens),
-		"response_format=" + safeLine(prepared.ResponseFormat, "text"),
-		fmt.Sprintf("response_schema=%t", len(prepared.ResponseSchema) > 0),
-		fmt.Sprintf("thinking_enabled=%t", prepared.ThinkingEnabled),
-	}, "\n"), 3200)
-
-	response, err := s.generatePreparedWithProgress(ctx, authority, scope, prepared)
-	latency := time.Since(started)
-	if err != nil {
-		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceGenerationFailed, response, err, latency); evidenceErr != nil {
-			return "", evidenceErr
-		}
-		telemetryErr := s.recordWorkerLLMCall(ctx, authority, scope, modelName, len(prompt), attempt, false, err, latency)
-		return "", errors.Join(err, telemetryErr)
-	}
-	if strings.TrimSpace(response) == "" {
-		err = fmt.Errorf("LLM scope %q returned empty output", scope)
-		if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceEmptyResponse, response, err, latency); evidenceErr != nil {
-			return "", evidenceErr
-		}
-		telemetryErr := s.recordWorkerLLMCall(ctx, authority, scope, modelName, len(prompt), attempt, false, err, latency)
-		return "", errors.Join(err, telemetryErr)
-	}
-	if evidenceErr := s.persistLLMCallEvidence(ctx, evidence, queue.LLMEvidenceSucceeded, response, nil, latency); evidenceErr != nil {
-		return "", evidenceErr
-	}
-	if err := s.recordWorkerLLMCall(ctx, authority, scope, modelName, len(prompt), attempt, true, nil, latency); err != nil {
-		return "", fmt.Errorf("record worker LLM telemetry: %w", err)
-	}
-	s.emitStepEvent(authority, "llm_response", fmt.Sprintf(
-		"scope=%s model=%s content_chars=%d",
-		scope, modelName, len(response),
-	))
-	s.emitStepContextWithBudget(authority, "llm_response", strings.Join([]string{
-		"scope=" + scope,
-		"model=" + modelName,
-		fmt.Sprintf("response_chars=%d", len(response)),
-		response,
-	}, "\n"), 14000)
-	return response, nil
-}
-
-func shouldRetrySameModelAfterCreateEOF(err error) bool {
-	if err == nil {
-		return false
-	}
-	var persistenceErr llmEvidencePersistenceError
-	if errors.As(err, &persistenceErr) {
-		return false
-	}
-	message := strings.ToLower(strings.TrimSpace(err.Error()))
-	return strings.Contains(message, "ollama create failed") && strings.Contains(message, "eof")
+	return queue.StationDiscoveryFailureProviderRejected, observed, nil
 }

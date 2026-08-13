@@ -43,12 +43,16 @@ type ScrumChannelOperationCommand struct {
 }
 
 type ScrumChannelCardUpdate struct {
-	Chat       json.RawMessage
-	Column     string
-	JobID      string
-	ConsoleLog string
-	PlayState  string
-	QueueOrder int
+	Chat                     json.RawMessage
+	Column                   string
+	JobID                    string
+	ConsoleLog               string
+	PlayState                string
+	QueueOrder               int
+	SyncJobID                string
+	AgentStreamChatCursor    int64
+	AgentStreamConsoleCursor int64
+	StepContextCursor        int64
 }
 
 type ScrumChannelCardBuilder func(DBScrumCard, model.Job) (ScrumChannelCardUpdate, error)
@@ -127,7 +131,7 @@ func validateScrumChannelEffect(command *ScrumChannelOperationCommand) error {
 			return err
 		}
 		effect.Instruction = instruction
-		pipeline, err := validatePipeline(effect.Pipeline)
+		pipeline, err := validatePublicEnqueuePipeline(effect.Pipeline)
 		if err != nil {
 			return err
 		}

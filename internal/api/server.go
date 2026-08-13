@@ -13,7 +13,6 @@ import (
 	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/gryph/omnidex/internal/research"
 	"github.com/gryph/omnidex/internal/secrets"
 )
 
@@ -22,18 +21,15 @@ type Server struct {
 	repo                      *queue.Repository
 	migrationBundle           queue.MigrationBundle
 	channelStore              channelStore
-	llmClient                 llm.Client
+	enqueueChannelTurn        enqueueChannelTurnFunc
+	embeddingClient           llm.EmbeddingClient
 	mux                       *http.ServeMux
-	instructIntegration       *instructIntegrationService
 	providerConfig            config.Config
 	defaultProvider           string
 	requestTimeout            time.Duration
 	ollamaBaseURL             string
-	ollamaDefaultModel        string
 	ollamaEmbeddingModel      string
-	webSearchEnabled          bool
 	webSearchProviders        []string
-	webSearchTimeout          time.Duration
 	secretsResolver           *secrets.Resolver
 	coreURLDefault            string
 	listenAddr                string
@@ -65,9 +61,7 @@ type ServerOptions struct {
 	MigrationBundle      queue.MigrationBundle
 	ProviderConfig       config.Config
 	RequestTimeout       time.Duration
-	WebSearchEnabled     bool
 	WebSearchProviders   []string
-	WebSearchTimeout     time.Duration
 	CoreURL              string
 	ListenAddr           string
 	HostAgentURL         string
@@ -87,37 +81,6 @@ type enqueueRequest struct {
 	Metadata    json.RawMessage `json:"metadata"`
 }
 
-type memoryRequest struct {
-	Source  string   `json:"source"`
-	Kind    string   `json:"kind"`
-	Content string   `json:"content"`
-	Tags    []string `json:"tags"`
-}
-
-type researchIngestRequest struct {
-	Topic                  string   `json:"topic"`
-	Source                 string   `json:"source"`
-	Kind                   string   `json:"kind"`
-	Tags                   []string `json:"tags"`
-	ChunkSize              int      `json:"chunk_size"`
-	Overlap                int      `json:"overlap"`
-	MaxChunks              int      `json:"max_chunks"`
-	IncludeOfficialSources *bool    `json:"include_official_sources,omitempty"`
-}
-
-type researchIngestResponse struct {
-	Topic             string              `json:"topic"`
-	Slug              string              `json:"slug"`
-	SourcePrefix      string              `json:"source_prefix"`
-	StoredChunks      int                 `json:"stored_chunks"`
-	Tags              []string            `json:"tags"`
-	Warnings          []string            `json:"warnings,omitempty"`
-	Dossier           string              `json:"dossier,omitempty"`
-	Sources           []string            `json:"sources,omitempty"`
-	StoredChunkSource []string            `json:"stored_chunk_sources,omitempty"`
-	Documents         []research.Document `json:"documents,omitempty"`
-}
-
 type memoryCandidatePromotionRequest struct {
 	Tier      string                         `json:"tier"`
 	Authority model.MemoryPromotionAuthority `json:"authority"`
@@ -133,68 +96,11 @@ type cancelRequest struct {
 	Reason      string                     `json:"reason"`
 }
 
-type personaMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+func NewServer(repo *queue.Repository, embeddingClient llm.EmbeddingClient) *Server {
+	return NewServerWithOptions(repo, embeddingClient, ServerOptions{})
 }
 
-type personaRequest struct {
-	Model       string                      `json:"model"`
-	System      string                      `json:"system"`
-	Prompt      string                      `json:"prompt"`
-	Context     json.RawMessage             `json:"context"`
-	History     []personaMessage            `json:"history"`
-	LLM         *personaLLMRequest          `json:"llm,omitempty"`
-	Integration *instructIntegrationRequest `json:"integration,omitempty"`
-}
-
-type personaLLMRequest struct {
-	Provider   string                   `json:"provider,omitempty"`
-	Model      string                   `json:"model,omitempty"`
-	Compatible *personaCompatibleConfig `json:"compatible,omitempty"`
-}
-
-type personaCompatibleConfig struct {
-	APIKey       string `json:"api_key,omitempty"`
-	BaseURL      string `json:"base_url,omitempty"`
-	Organization string `json:"organization,omitempty"`
-	Project      string `json:"project,omitempty"`
-}
-
-type resolvedPersonaLLM struct {
-	Client   llm.Client
-	Provider string
-	Model    string
-}
-
-type personaRequestError struct {
-	StatusCode int
-	Message    string
-}
-
-func (e personaRequestError) Error() string {
-	return strings.TrimSpace(e.Message)
-}
-
-type personaStage struct {
-	Name   string `json:"name"`
-	Output string `json:"output"`
-}
-
-type personaResponse struct {
-	Persona     string                     `json:"persona"`
-	Model       string                     `json:"model"`
-	Output      string                     `json:"output"`
-	LatencyMS   int64                      `json:"latency_ms"`
-	Stages      []personaStage             `json:"stages,omitempty"`
-	Integration *instructIntegrationResult `json:"integration,omitempty"`
-}
-
-func NewServer(repo *queue.Repository, llmClient llm.Client) *Server {
-	return NewServerWithOptions(repo, llmClient, ServerOptions{})
-}
-
-func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options ServerOptions) *Server {
+func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingClient, options ServerOptions) *Server {
 	lifecycleContext := options.LifecycleContext
 	if lifecycleContext == nil {
 		lifecycleContext = context.Background()
@@ -233,16 +139,12 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 	}
 
 	var channels channelStore
+	var enqueueChannelTurn enqueueChannelTurnFunc
 	if repo != nil {
 		channels = repo
-	} else {
-		channels = newInMemoryChannelStore()
+		enqueueChannelTurn = repo.EnqueueChannelTurn
 	}
 	ollamaModels := providerConfig.ProviderModels["ollama"]
-	ollamaDefaultModel := strings.TrimSpace(ollamaModels.Default)
-	if defaultProvider == "ollama" && strings.TrimSpace(providerConfig.DefaultModel) != "" {
-		ollamaDefaultModel = strings.TrimSpace(providerConfig.DefaultModel)
-	}
 	ollamaEmbeddingModel := strings.TrimSpace(ollamaModels.Embedding)
 	if strings.EqualFold(strings.TrimSpace(providerConfig.EmbeddingProvider), "ollama") && strings.TrimSpace(providerConfig.EmbeddingModel) != "" {
 		ollamaEmbeddingModel = strings.TrimSpace(providerConfig.EmbeddingModel)
@@ -253,18 +155,15 @@ func NewServerWithOptions(repo *queue.Repository, llmClient llm.Client, options 
 		repo:                 repo,
 		migrationBundle:      options.MigrationBundle,
 		channelStore:         channels,
-		llmClient:            llmClient,
+		enqueueChannelTurn:   enqueueChannelTurn,
+		embeddingClient:      embeddingClient,
 		mux:                  http.NewServeMux(),
-		instructIntegration:  newInstructIntegrationService(repo),
 		providerConfig:       providerConfig,
 		defaultProvider:      defaultProvider,
 		requestTimeout:       options.RequestTimeout,
 		ollamaBaseURL:        strings.TrimSpace(providerConfig.OllamaBaseURL),
-		ollamaDefaultModel:   ollamaDefaultModel,
 		ollamaEmbeddingModel: ollamaEmbeddingModel,
-		webSearchEnabled:     options.WebSearchEnabled,
 		webSearchProviders:   append([]string(nil), options.WebSearchProviders...),
-		webSearchTimeout:     options.WebSearchTimeout,
 		coreURLDefault:       strings.TrimSpace(options.CoreURL),
 		listenAddr:           strings.TrimSpace(options.ListenAddr),
 		realtimeMaxClients:   options.RealtimeMaxClients,
@@ -302,10 +201,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
 	s.mux.HandleFunc("/v1/providers", s.handleProviderCatalog)
 	s.mux.HandleFunc("/v1/status/research", s.handleResearchStatus)
-	s.mux.HandleFunc("/v1/instruct", s.handleInstruct)
-	s.mux.HandleFunc("/v1/roleplay", s.handleRoleplay)
-	s.mux.HandleFunc("/v1/narrate", s.handleNarrate)
-	s.mux.HandleFunc("/v1/reasoning", s.handleReasoning)
 	s.mux.HandleFunc("/v1/scrum", s.handleScrum)
 	s.mux.HandleFunc("/v1/scrum/cards", s.handleScrumCards)
 	s.mux.HandleFunc("/v1/scrum/cards/sync", s.handleScrumCardSync)
@@ -328,7 +223,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/ui/runtime-config", s.handleUIRuntimeConfig)
 	s.mux.HandleFunc("/v1/ui/session", s.handleUISession)
 	s.mux.HandleFunc("/v1/ui/panel", s.handleUIPanel)
+	s.mux.HandleFunc("/v1/ui/admin", s.handleUIAdminComponent)
 	s.mux.HandleFunc("/v1/host/screen/monitors", s.handleHostScreenMonitors)
+	s.mux.HandleFunc("/v1/ui/screen/monitors", s.handleUIScreenMonitors)
 	s.mux.HandleFunc("/v1/host/screen/mjpeg", s.handleHostScreenMJPEG)
 	s.mux.HandleFunc("/v1/recipes", s.handleRecipes)
 	s.mux.HandleFunc("/v1/recipes/", s.handleRecipeByID)
@@ -341,6 +238,7 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
 		s.mux.HandleFunc("/v1/activity", s.handleActivity)
 		s.mux.HandleFunc("/v1/memory", s.handleMemory)
+		s.mux.HandleFunc("/v1/memory/batch", s.handleMemoryBatch)
 		s.mux.HandleFunc("/v1/memory/", s.handleMemoryByID)
 		s.mux.HandleFunc("/v1/memory/categories", s.handleMemoryCategories)
 		s.mux.HandleFunc("/v1/memory/tags", s.handleMemoryTags)
@@ -348,11 +246,18 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/admin/mind/stats", s.handleMindStats)
 		s.mux.HandleFunc("/v1/admin/data-sources", s.handleDataSources)
 		s.mux.HandleFunc("/v1/admin/data-sources/", s.handleDataSourceByID)
+		s.mux.HandleFunc("/v1/ui/admin/data-sources", s.handleUIAdminDataSources)
+		s.mux.HandleFunc("/v1/ui/admin/data-sources/schema", s.handleUIAdminDataSourceSchema)
+		s.mux.HandleFunc("/v1/ui/admin/data-sources/query", s.handleUIAdminDataSourceQuery)
+		s.mux.HandleFunc("/v1/ui/data", s.handleUIDataComponent)
+		s.mux.HandleFunc("/v1/ui/projects", s.handleUIProjectsComponent)
+		s.mux.HandleFunc("/v1/ui/projects/modal", s.handleUIProjectModal)
+		s.mux.HandleFunc("/v1/ui/projects/", s.handleUIProjectComponent)
+		s.mux.HandleFunc("/v1/ui/scrum/create-card", s.handleUIScrumCreateCard)
 		s.mux.HandleFunc("/v1/data-sources", s.handlePublicDataSources)
 		s.mux.HandleFunc("/v1/data-sources/", s.handlePublicDataSourceByID)
 		s.mux.HandleFunc("/v1/ollama/models", s.handleOllamaModels)
 		s.mux.HandleFunc("/v1/ollama/models/", s.handleOllamaModelByName)
-		s.mux.HandleFunc("/v1/research/ingest", s.handleResearchIngest)
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
 		s.mux.HandleFunc("/v1/admin/migrate-fresh", s.handleAdminMigrateFresh)
@@ -367,10 +272,16 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/metrics/operations", s.handleMetricsOperations)
 		s.mux.HandleFunc("/v1/metrics/scrum", s.handleMetricsScrum)
 		s.mux.HandleFunc("/v1/metrics/glance", s.handleMetricsGlance)
+		s.mux.HandleFunc("/v1/ui/chat/jobs", s.handleChatJobsComponent)
+		s.mux.HandleFunc("/v1/ui/chat/jobs/", s.handleChatJobStateComponent)
+		s.mux.HandleFunc("/v1/ui/chat/memory", s.handleChatMemoryComponent)
+		s.mux.HandleFunc("/v1/ui/chat/timeline", s.handleChatTimelineComponent)
+		s.mux.HandleFunc("/v1/ui/chat/metrics", s.handleChatMetricsComponent)
 	}
 	if s.channelStore != nil {
 		s.mux.HandleFunc("/v1/channels", s.handleChannels)
 		s.mux.HandleFunc("/v1/channels/", s.handleChannelByID)
+		s.mux.HandleFunc("/v1/ui/chat/channels", s.handleChatChannelOptions)
 	}
 	s.registerUIRoutes()
 }

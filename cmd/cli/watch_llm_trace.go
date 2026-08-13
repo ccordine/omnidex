@@ -2,8 +2,6 @@ package main
 
 import (
 	"strings"
-
-	"github.com/gryph/omnidex/internal/specialist"
 )
 
 func summarizeLLMTraceContext(key, value string, maxChars int) (string, string) {
@@ -30,9 +28,6 @@ func summarizeLLMTraceContext(key, value string, maxChars int) (string, string) 
 	parts := make([]string, 0, 4)
 	if scope != "" {
 		parts = append(parts, "scope="+scope)
-	}
-	if roleID := roleForLLMScope(scope); roleID != "" {
-		parts = append(parts, "role="+roleID)
 	}
 	if model != "" {
 		parts = append(parts, "model="+model)
@@ -61,9 +56,6 @@ func summarizePreparedModelContext(value string, maxChars int) (string, string) 
 	if scope != "" {
 		parts = append(parts, "scope="+scope)
 	}
-	if roleID := roleForLLMScope(scope); roleID != "" {
-		parts = append(parts, "role="+roleID)
-	}
 	if baseModel != "" {
 		parts = append(parts, "base_model="+baseModel)
 	}
@@ -80,28 +72,6 @@ func summarizePreparedModelContext(value string, maxChars int) (string, string) 
 		return "Model", compactProgressValue(value, maxChars)
 	}
 	return "Model", compactProgressValue(strings.Join(parts, " "), maxChars)
-}
-
-func roleForLLMScope(scope string) string {
-	clean := strings.ToLower(strings.TrimSpace(scope))
-	switch {
-	case strings.HasPrefix(clean, "plan"):
-		return specialist.RolePlannerSpecialist
-	case strings.HasPrefix(clean, "analyze"):
-		return specialist.RoleAnalysisSpecialist
-	case strings.HasPrefix(clean, "response"):
-		return specialist.RoleResponseSpecialist
-	case strings.HasPrefix(clean, "verify"):
-		return specialist.RoleReviewVerificationSpecialist
-	case strings.HasPrefix(clean, "search_query"):
-		return specialist.RoleWebResearchSpecialist
-	case strings.HasPrefix(clean, "memory"):
-		return specialist.RoleMemoryRetrievalSpecialist
-	case strings.HasPrefix(clean, "tag"):
-		return specialist.RoleIntentTaggingSpecialist
-	default:
-		return ""
-	}
 }
 
 func llmTraceBody(value string) string {

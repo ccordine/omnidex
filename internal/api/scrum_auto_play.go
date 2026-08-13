@@ -88,6 +88,9 @@ func loadScrumAutoWorkConfig(settings json.RawMessage) (ScrumAutoWorkConfig, err
 	if _, legacy := payload["scrum_auto_play_through"]; legacy {
 		return ScrumAutoWorkConfig{}, fmt.Errorf("legacy scrum_auto_play_through setting is unsupported; apply database migrations")
 	}
+	if _, removed := payload["scrum_auto_review"]; removed {
+		return ScrumAutoWorkConfig{}, fmt.Errorf("removed scrum_auto_review setting has no compatibility path")
+	}
 	if raw, ok := payload[scrumAutoWorkConfigKey]; ok && len(raw) > 0 {
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			return ScrumAutoWorkConfig{}, fmt.Errorf("Scrum auto-work config must be an object")
@@ -162,14 +165,11 @@ func (s *Server) nextAutoWorkCardInColumn(board ScrumBoard, column string) *Scru
 	return &candidates[0]
 }
 
-func scrumAutoWorkComplete(board ScrumBoard, autoReviewEnabled bool) bool {
+func scrumAutoWorkComplete(board ScrumBoard) bool {
 	for _, card := range board.Cards {
 		col := normalizeScrumColumn(card.Column)
 		switch col {
 		case "review":
-			if autoReviewEnabled && card.PlayState == scrumPlayReviewing {
-				return false
-			}
 			continue
 		case "done":
 			continue
@@ -231,10 +231,14 @@ func (s *Server) startNextScrumAutoWork(r *http.Request, projectID int64, board 
 	if !autoWork.Enabled {
 		return board, nil
 	}
-	attempts := len(board.Cards)
+	attempts := len(normalizeScrumAutoWorkColumns(autoWork.SourceColumns)) + 1
 	for attempts > 0 {
 		attempts--
-		if s.findRunningScrumCard(board) != nil {
+		running, err := s.runningScrumCard(r.Context(), projectID)
+		if err != nil {
+			return board, err
+		}
+		if running != nil {
 			return board, nil
 		}
 		globalPlayActive, err := s.scrumGlobalPlayActive(r.Context())
@@ -249,11 +253,17 @@ func (s *Server) startNextScrumAutoWork(r *http.Request, projectID int64, board 
 		} else if paused {
 			return board, nil
 		}
-		reviewCfg := automation.AutoReview
-		if scrumAutoWorkComplete(board, reviewCfg.Enabled) {
+		complete, err := s.repo.ScrumProjectComplete(r.Context(), projectID)
+		if err != nil {
+			return board, err
+		}
+		if complete {
 			return board, nil
 		}
-		next := s.nextAutoWorkScrumCard(board, autoWork)
+		next, err := s.nextScrumWorkCard(r.Context(), projectID, normalizeScrumAutoWorkColumns(autoWork.SourceColumns))
+		if err != nil {
+			return board, err
+		}
 		if next == nil {
 			return board, nil
 		}

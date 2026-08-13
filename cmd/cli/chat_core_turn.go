@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -14,8 +13,7 @@ import (
 func executeChatCoreTurn(
 	c *client.Client,
 	input *chatInputReader,
-	session string,
-	baseMetadata map[string]any,
+	channelID model.ChannelID,
 	lastJobID *int64,
 	pendingInputs *[]string,
 	instruction string,
@@ -25,22 +23,12 @@ func executeChatCoreTurn(
 	maxChars int,
 	ui *chatUI,
 ) bool {
-	turnMetadata := cloneMetadata(baseMetadata)
-	turnMetadata["session_id"] = session
-	if cwd, err := os.Getwd(); err == nil && strings.TrimSpace(cwd) != "" {
-		turnMetadata["client_cwd"] = cwd
-		turnMetadata["host_env_cwd"] = cwd
-	}
-	applyHostTemporalMetadata(turnMetadata, time.Now())
-	if *lastJobID > 0 {
-		turnMetadata["parent_job_id"] = *lastJobID
-	}
-
-	job, err := c.Enqueue(context.Background(), instruction, model.PipelineChat, turnMetadata)
+	turn, err := c.PostChannelMessage(context.Background(), channelID, instruction)
 	if err != nil {
-		emitAssistantError(ui, fmt.Sprintf("enqueue turn: %v", err))
+		emitAssistantError(ui, fmt.Sprintf("post channel turn: %v", err))
 		return false
 	}
+	job := turn.Job
 	*lastJobID = job.ID
 	emitSystem(ui, fmt.Sprintf("assistant thinking (job %d)...", job.ID))
 	emitSystem(ui, queuedTurnHintText())

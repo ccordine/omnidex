@@ -1,8 +1,0 @@
-./change_contract.go
-./facts.go
-./facts_validation.go
-./paths.go
-./query.go
-./snapshot.go
-./source_span.go
-./types.go

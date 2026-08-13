@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	toolruntime "github.com/gryph/omnidex/internal/tools"
 )
 
 func TestExecuteV3CommandAtRootUsesExplicitServerDirectory(t *testing.T) {
@@ -23,8 +21,8 @@ func TestStage(t *testing.T) {}
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := executeV3CommandAtRoot(context.Background(), root, toolruntime.Call{
-		Name: "command.run", Input: map[string]any{"program": "go", "args": []string{"test", "./..."}},
+	result, err := executeCodeCommandAtRoot(context.Background(), root, codeCommand{
+		Program: "go", Args: []string{"test", "./..."},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -39,8 +37,8 @@ func TestStage(t *testing.T) {}
 
 func TestExecuteV3CommandAtRootRejectsUnboundRoot(t *testing.T) {
 	t.Parallel()
-	_, err := executeV3CommandAtRoot(context.Background(), "relative", toolruntime.Call{
-		Name: "command.run", Input: map[string]any{"program": "go", "args": []string{"version"}},
+	_, err := executeCodeCommandAtRoot(context.Background(), "relative", codeCommand{
+		Program: "go", Args: []string{"version"},
 	})
 	if err == nil {
 		t.Fatal("command.run accepted a relative unbound root")

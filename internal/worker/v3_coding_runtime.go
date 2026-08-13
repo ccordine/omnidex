@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/assemblyline"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/gryph/omnidex/internal/scrum"
-	"github.com/gryph/omnidex/internal/specialists"
 )
 
 type directCodingRequest struct {
@@ -26,17 +24,16 @@ type directCodingSession struct {
 	completion      directCodingCompletionState
 	sequence        int
 	protectedPaths  map[string]directCodingProtectedPath
-	skillCandidates []specialists.SkillVersion
 	lastCommands    []string
 	repositoryIndex *repositoryindex.Result
 	plannedFiles    int
 	plannedDeletes  int
+	mutationJournal []directCodingMutationJournalEntry
 }
 
-func requiresDirectCoding(objective artifacts.Objective) bool {
-	return objective.RequiresAction &&
-		containsString(objective.RequiredCapabilities, capabilityWorkspaceWrite) &&
-		containsString(objective.RequiredCapabilities, capabilityCommandExecute)
+type directCodingMutationJournalEntry struct {
+	Path      string
+	Operation workspaceFileOperation
 }
 
 func (r *nativeRuntimeV3) runDirectCodingAction() error {
@@ -51,30 +48,11 @@ func (r *nativeRuntimeV3) runDirectCodingAction() error {
 	return r.complete("coding", summary, summary)
 }
 
-func (r *nativeRuntimeV3) runDirectCodingObjective(
-	_ v3SubtaskAssignment,
-	objective artifacts.Objective,
-	_ []string,
-) (string, []string, error) {
-	if !requiresDirectCoding(objective) {
-		return "", nil, fmt.Errorf("objective %q does not authorize direct coding", objective.ID)
-	}
-	request, err := r.directCodingRequest()
-	if err != nil {
-		return "", nil, err
-	}
-	summary, err := r.runDirectCodingSession(request)
-	if err != nil {
-		return "", nil, err
-	}
-	return summary, []string{"workspace"}, nil
-}
-
 func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 	if r == nil || r.claim == nil {
 		return directCodingRequest{}, fmt.Errorf("direct coding requires a claimed job")
 	}
-	instruction := strings.TrimSpace(r.claim.Job.Instruction)
+	instruction := r.claim.Job.Instruction
 	additionalAuthority := make([]string, 0)
 	if scrum.IsScrumJob(r.claim.Job.Metadata) {
 		cardLines := scrum.ContextLinesFromMetadata(r.claim.Job.Metadata)
@@ -96,7 +74,7 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 			additionalAuthority = append(additionalAuthority, card)
 		}
 	}
-	if instruction == "" {
+	if strings.TrimSpace(instruction) == "" {
 		return directCodingRequest{}, fmt.Errorf("direct coding requires a non-empty current instruction")
 	}
 	return directCodingRequest{
@@ -107,7 +85,7 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 }
 
 func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (string, error) {
-	if r == nil || r.svc == nil || r.svc.v3Tools == nil {
+	if r == nil || r.svc == nil {
 		return "", fmt.Errorf("direct coding runtime is unavailable")
 	}
 	scope, err := r.svc.workspaceScopeForV3Job(r.claim.Job)
@@ -145,13 +123,7 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 		return session.runExistingRepositoryChangeWorkflow()
 	}
 	summary, err := runDirectCodingWorkflow(session, session.completion.AllowExistingWorkspace)
-	if err == nil {
-		return summary, nil
-	}
-	if rejectErr := session.rejectPendingSkills(err); rejectErr != nil {
-		return "", fmt.Errorf("%w; %v", err, rejectErr)
-	}
-	return "", err
+	return summary, err
 }
 
 func (s *directCodingSession) nextSequence() int {

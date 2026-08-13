@@ -1,44 +1,27 @@
 # Patch Mode
 
-Patch mode gives Omnidex a constrained source-editing path.
+Patch application is a constrained internal source-editing primitive.
 
-Instead of asking a model to write shell heredocs or ad hoc file-editing commands, the runtime can accept a unified diff, validate that it stays inside the workspace, dry-run it, apply it, and then run the normal formatter/test evidence loop.
-
-## CLI
-
-```bash
-omni patch apply --file change.diff --workspace . --dry-run
-omni patch apply --file change.diff --workspace .
-cat change.diff | omni patch apply --workspace . --json
-```
-
-Structured planner payloads can also use the same runtime:
-
-```json
-{
-  "command": "",
-  "done": false,
-  "answer": "",
-  "tool": "patch.apply",
-  "patch": "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new\n"
-}
-```
+Code builds a unified diff from parser-validated source mutations, validates that it
+stays inside the workspace, dry-runs it, applies it once, and records the result for
+the normal formatter and verification loop. Patch application is not a model tool,
+free-form command, or alternate mutation path.
 
 ## Guarantees
 
 - patch paths must be relative
 - patch paths cannot escape the workspace
 - hunk context must match the current file
-- `--dry-run` validates without writing
+- dry-run validation completes before any authoritative write
 - the result records each changed file and action
-- patch artifacts used by the structured loop emit `structured_patch_apply_started` and `structured_patch_apply_finished` events
+- the mutation journal binds the accepted patch to its exact source and post state
 
 ## Role In The Loop
 
-Patch mode is a foundation for model-produced source edits:
+Patch application is the final mechanical step of a code-owned change:
 
-1. deterministic probes gather the relevant file state
-2. a model proposes a unified diff
-3. Omnidex validates and applies the diff
-4. project tooling formats and tests the result
-5. failures are fingerprinted and fed back as compact evidence
+1. deterministic probes gather the exact relevant source state
+2. bounded stations fill only declared source nodes that code cannot render
+3. code parses, assembles, stages, and derives the unified diff
+4. Omnidex validates and applies the exact accepted diff
+5. code-owned project tooling formats and verifies the resulting state

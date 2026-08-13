@@ -32,7 +32,7 @@ func requireReplanReplayTx(
 		return fmt.Errorf("validate lifecycle replan generation: %w", err)
 	}
 	if predecessor != record.ObservedGeneration || purpose != jobGenerationPurposeReplan ||
-		(boundary != replanCodingBoundary && boundary != replanPlanningBoundary) ||
+		(boundary != replanCodingBoundary && boundary != replanObjectiveBoundary) ||
 		feedback != command.Feedback || persistedSHA != feedbackSHA {
 		return lifecycleReplayStateError(record.ID, "immutable replan generation")
 	}

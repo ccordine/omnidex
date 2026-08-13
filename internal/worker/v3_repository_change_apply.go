@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
+	"sort"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/omni"
 	"github.com/gryph/omnidex/internal/queue"
@@ -105,9 +106,14 @@ func (session *directCodingSession) applyExistingRepositoryChangeContract(
 	}
 	broad := commands[len(commands)-1:]
 	session.repositoryIndex = &result.Refreshed
+	changedPaths, err := exactRepositoryChangedPaths(before.Snapshot, result.ChangedFileIDs)
+	if err != nil {
+		return "", err
+	}
 	summary = fmt.Sprintf(
-		"Completed bounded existing-repository change: targets=%d files=%d verification=%s snapshot=%s",
-		len(contract.Targets), len(result.ChangedFileIDs),
+		"Completed bounded existing-repository change: targets=%d files=[%s] verification=%s snapshot=%s",
+		len(contract.Targets),
+		strings.Join(changedPaths, ","),
 		directCodingCommandLabel(broad[0]), result.Refreshed.Snapshot.ID,
 	)
 	session.runtime.svc.emitStepEvent(
@@ -117,6 +123,31 @@ func (session *directCodingSession) applyExistingRepositoryChangeContract(
 	return summary, nil
 }
 
+func exactRepositoryChangedPaths(
+	snapshot repositoryfacts.Snapshot,
+	changedFileIDs []string,
+) ([]string, error) {
+	pathsByID := make(map[string]string, len(snapshot.Files))
+	for _, file := range snapshot.Files {
+		pathsByID[file.ID] = file.Path
+	}
+	paths := make([]string, len(changedFileIDs))
+	seen := make(map[string]struct{}, len(changedFileIDs))
+	for index, fileID := range changedFileIDs {
+		path, exists := pathsByID[fileID]
+		if !exists {
+			return nil, fmt.Errorf("changed repository file %q is absent from its source snapshot", fileID)
+		}
+		if _, duplicate := seen[fileID]; duplicate {
+			return nil, fmt.Errorf("changed repository file %q is duplicated", fileID)
+		}
+		seen[fileID] = struct{}{}
+		paths[index] = path
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
 func existingRepositoryMutationCommand(
 	runtime *nativeRuntimeV3,
 	contract repositoryfacts.ChangeContract,
@@ -124,10 +155,23 @@ func existingRepositoryMutationCommand(
 	commands []testCommand,
 	stage *verifiedRepositoryChangeStage,
 ) (queue.RepositoryMutationCommand, error) {
+	return repositoryMutationCommand(runtime, contract.ID, snapshot, commands, stage)
+}
+
+func repositoryMutationCommand(
+	runtime *nativeRuntimeV3,
+	ownerID string,
+	snapshot repositoryfacts.Snapshot,
+	commands []testCommand,
+	stage *verifiedRepositoryChangeStage,
+) (queue.RepositoryMutationCommand, error) {
 	if runtime == nil || runtime.claim == nil || runtime.svc == nil || runtime.svc.repo == nil || stage == nil {
 		return queue.RepositoryMutationCommand{}, fmt.Errorf("repository mutation requires one active queue-owned claim")
 	}
-	if err := stage.RequireAuthority(contract.ID, commands); err != nil {
+	if !validRepositoryVerificationOwnerID(ownerID) {
+		return queue.RepositoryMutationCommand{}, fmt.Errorf("repository mutation requires one exact owner authority")
+	}
+	if err := stage.RequireAuthority(ownerID, commands); err != nil {
 		return queue.RepositoryMutationCommand{}, err
 	}
 	claim := runtime.claim
@@ -139,30 +183,16 @@ func existingRepositoryMutationCommand(
 		claim.Authority.WorkerID != claim.Step.WorkerID {
 		return queue.RepositoryMutationCommand{}, fmt.Errorf("repository mutation claim authority is incomplete or stale")
 	}
-	files := make(map[string]repositoryfacts.File, len(snapshot.Files))
-	for _, file := range snapshot.Files {
-		files[file.ID] = file
-	}
 	expected := stage.ExpectedFiles()
-	changed := make([]queue.RepositoryMutationFile, len(expected))
-	for index, post := range expected {
-		file, exists := files[post.FileID]
-		if !exists {
-			return queue.RepositoryMutationCommand{}, fmt.Errorf(
-				"repository mutation target file %q is absent from its source snapshot", post.FileID,
-			)
-		}
-		changed[index] = queue.RepositoryMutationFile{
-			FileID: post.FileID, Path: file.Path,
-			SourceSHA256: file.SHA256, SourceSize: file.Size,
-			ExpectedSHA256: post.SHA256, ExpectedSize: post.Size,
-		}
+	changed, err := repositoryMutationFilesForExpectedState(snapshot, expected)
+	if err != nil {
+		return queue.RepositoryMutationCommand{}, err
 	}
 	return queue.RepositoryMutationCommand{
 		JobID: claim.Authority.JobID, StepID: claim.Authority.StepID,
 		Generation: claim.Authority.Generation, Attempt: claim.Authority.Attempt,
 		WorkerID:   claim.Authority.WorkerID,
-		ContractID: contract.ID, StageID: stage.ID(), SourceSnapshotID: snapshot.ID,
+		ContractID: ownerID, StageID: stage.ID(), SourceSnapshotID: snapshot.ID,
 		Patch: stage.Patch(), PatchSHA256: stage.PatchSHA256(), ChangedFiles: changed,
 	}, nil
 }
@@ -219,6 +249,50 @@ func validateRepositoryPatchResult(
 	return nil
 }
 
+func validateRepositoryFileStatePatchResult(
+	snapshot repositoryfacts.Snapshot,
+	expectedFiles []changeapply.ExpectedFileState,
+	files []omni.PatchFileResult,
+) error {
+	source := make(map[string]repositoryfacts.File, len(snapshot.Files))
+	for _, file := range snapshot.Files {
+		source[file.ID] = file
+	}
+	expected := make(map[string]string, len(expectedFiles))
+	for _, state := range expectedFiles {
+		if err := validateExpectedRepositoryFileState(state); err != nil {
+			return fmt.Errorf("repository patch expected state: %w", err)
+		}
+		if _, duplicate := expected[state.Path]; duplicate {
+			return fmt.Errorf("repository patch expected state repeats one path")
+		}
+		_, existed := source[state.FileID]
+		switch {
+		case !existed && state.Present:
+			expected[state.Path] = "create"
+		case existed && !state.Present:
+			expected[state.Path] = "delete"
+		case existed && state.Present:
+			expected[state.Path] = "update"
+		default:
+			return fmt.Errorf("repository patch expected state has no legal source-to-post transition")
+		}
+	}
+	if len(files) != len(expected) {
+		return fmt.Errorf("repository patch result differs from its exact file-state authority")
+	}
+	for _, file := range files {
+		if expected[file.Path] != file.Action {
+			return fmt.Errorf("repository patch result contains unexpected action for one target file")
+		}
+		delete(expected, file.Path)
+	}
+	if len(expected) != 0 {
+		return fmt.Errorf("repository patch result omitted one or more exact target files")
+	}
+	return nil
+}
+
 func validateRefreshedRepositoryChange(
 	before repositoryfacts.Snapshot,
 	after repositoryindex.Result,
@@ -230,41 +304,5 @@ func validateRefreshedRepositoryChange(
 		after.Snapshot.Root != before.Root {
 		return fmt.Errorf("refreshed repository index does not represent one complete changed worktree")
 	}
-	expected := make(map[string]changeapply.ExpectedFileState, len(expectedFiles))
-	for _, file := range expectedFiles {
-		if file.FileID == "" || file.SHA256 == "" || file.Size < 0 {
-			return fmt.Errorf("repository change expected post-patch file authority is invalid")
-		}
-		if _, duplicate := expected[file.FileID]; duplicate {
-			return fmt.Errorf("repository change expected post-patch file authority is duplicated")
-		}
-		expected[file.FileID] = file
-	}
-	current := make(map[string]repositoryfacts.File, len(after.Snapshot.Files))
-	for _, file := range after.Snapshot.Files {
-		current[file.ID] = file
-	}
-	if len(current) != len(before.Files) {
-		return fmt.Errorf("repository verification changed the indexed file inventory outside the contract")
-	}
-	for _, prior := range before.Files {
-		next, exists := current[prior.ID]
-		if !exists {
-			return fmt.Errorf("repository verification removed an indexed file outside the contract")
-		}
-		if target, isTarget := expected[prior.ID]; isTarget {
-			if prior.SHA256 == target.SHA256 && prior.Size == target.Size {
-				return fmt.Errorf("repository target file %q has unchanged expected authority", prior.ID)
-			}
-			prior.SHA256, prior.Size = target.SHA256, target.Size
-			delete(expected, prior.ID)
-		}
-		if !reflect.DeepEqual(prior, next) {
-			return fmt.Errorf("repository verification changed file %q outside the exact contract", prior.ID)
-		}
-	}
-	if len(expected) != 0 || !reflect.DeepEqual(before.Exclusions, after.Snapshot.Exclusions) {
-		return fmt.Errorf("repository change refresh omitted a target or changed excluded inventory")
-	}
-	return nil
+	return validateExactRepositoryPostInventory(before, after.Snapshot, expectedFiles)
 }

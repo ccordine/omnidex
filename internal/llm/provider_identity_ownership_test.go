@@ -9,7 +9,6 @@ import (
 )
 
 type staticProviderIdentityObserver struct {
-	Client
 	observed ObservedProviderIdentity
 	err      error
 }

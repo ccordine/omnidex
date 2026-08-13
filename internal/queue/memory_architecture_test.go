@@ -16,12 +16,9 @@ func TestMemoryCategoryInferenceHasNoContentHeuristics(t *testing.T) {
 	}
 	source := string(raw)
 	for _, forbidden := range []string{
-		"inferMemoryCategories(kind, content string",
-		"containsAnyText(",
-		"isLanguageMemoryMarker(",
-		"isDatabaseMemoryMarker(",
-		"isInfrastructureMemoryMarker(",
-		"isFrontendMemoryMarker(",
+		"inferMemoryCategories(", "normalizeMemoryCategory(", "memoryCategoryFilters(",
+		"strings.HasPrefix(tag", "postgresql", "pgsql", "react", "vite", "docker",
+		"repo", "workspace", "api", "provider",
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Errorf("memory category inference contains forbidden content heuristic %q", forbidden)

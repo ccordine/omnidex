@@ -31,6 +31,10 @@ func scanDBScrumCard(row pgx.Row) (DBScrumCard, error) {
 		&card.PlayState,
 		&card.QueueOrder,
 		&card.BoardOrder,
+		&card.SyncJobID,
+		&card.AgentStreamChatCursor,
+		&card.AgentStreamConsoleCursor,
+		&card.StepContextCursor,
 		&card.CreatedAt,
 		&card.UpdatedAt,
 	)

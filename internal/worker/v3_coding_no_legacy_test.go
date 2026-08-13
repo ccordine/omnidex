@@ -11,6 +11,7 @@ func TestDirectCodingSourceHasNoLedgerReviewerOrVersionStore(t *testing.T) {
 	for _, removed := range []string{
 		"v3_coding_requirements.go", "v3_coding_assembly.go", "v3_source_worker.go",
 		"v3_source_prompt.go", "v3_coding_diagnostic.go", "v3_coding_go_repair_routing.go",
+		"v3_coding_code_envelope.go",
 		"../assemblyline/semantic_contract_schema.go", "../assemblyline/semantic_contract_validation.go",
 	} {
 		if _, err := os.Stat(removed); !os.IsNotExist(err) {

@@ -101,12 +101,12 @@ func insertContextProjectionTx(
 			rendered_context, rendered_sha256, rendered_bytes,
 			estimated_tokens, token_estimator
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,'live',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
 		)
 		ON CONFLICT (projection_id) DO NOTHING
 		RETURNING record_id, created_at
 	`, projection.ID, projection.Schema, authority.JobID, authority.Generation, authority.StepID,
-		authority.Attempt, authority.WorkerID, projection.WorkID, authority.WorkKind, authority.Mode,
+		authority.Attempt, authority.WorkerID, projection.WorkID, authority.WorkKind,
 		projection.SpecName, projection.SpecVersion,
 		projection.SpecSHA256, projection.RendererVersion, projection.ScopeRef.URI,
 		projection.ScopeRef.Version, projection.ScopeRef.Hash, projection.ScopeRef.Relation,

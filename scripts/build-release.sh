@@ -8,14 +8,7 @@ source "${SCRIPT_DIR}/build-release-lib.sh"
 DIST_DIR="${REPO_ROOT}/dist"
 VERSION="v0.5.0"
 CODENAME="Charmeleon"
-TARGETS=(
-  "linux/amd64"
-  "linux/arm64"
-  "darwin/amd64"
-  "darwin/arm64"
-  "windows/amd64"
-  "windows/arm64"
-)
+TARGETS=()
 PACKAGES=(
   "omni:./cmd/omni"
   "agent-core:./cmd/core"
@@ -30,6 +23,7 @@ RELEASE_SOURCE_SHA256=""
 RELEASE_MIGRATIONS_SHA256=""
 RELEASE_BUILD_DATE=""
 EXPECTED_SOURCE_MANIFEST=""
+UI_DIST=""
 
 usage() {
   cat <<'EOF'
@@ -41,7 +35,7 @@ Options:
   --version <value>   Version label used in archive names and binary metadata (default: v0.5.0)
   --codename <value>  Release codename embedded in binary metadata (default: Charmeleon)
   --target <goos/goarch>
-                      Build one target. May be repeated. Defaults to linux/darwin/windows amd64+arm64.
+                      Build one target. May be repeated. Defaults to the native Go host target.
   -h, --help          Show this help
 
 Examples:
@@ -128,7 +122,8 @@ prepare_source_stage() {
   RELEASE_SOURCE_SHA256="$(source_archive_sha256 "$archive")"
   [[ "$RELEASE_SOURCE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "tracked source SHA-256 is invalid"
   tar -xf "$archive" -C "$SOURCE_TREE"
-  tar -df "$archive" -C "$SOURCE_TREE" >/dev/null || die "extracted source differs from its archive"
+  verify_archive_tree_content "$archive" "$SOURCE_TREE" "$SOURCE_STAGE_ROOT" ||
+    die "extracted source content differs from its archive"
   EXPECTED_SOURCE_MANIFEST="${SOURCE_STAGE_ROOT}/source-manifest"
   write_source_manifest "$SOURCE_TREE" "$EXPECTED_SOURCE_MANIFEST"
   chmod 0444 "$archive" "$EXPECTED_SOURCE_MANIFEST"
@@ -143,8 +138,6 @@ verify_source_stage() {
   local archive="${SOURCE_STAGE_ROOT}/source.tar"
   [[ "$(source_archive_sha256 "$archive")" == "$RELEASE_SOURCE_SHA256" ]] ||
     die "immutable source archive changed during release build"
-  tar -df "$archive" -C "$SOURCE_TREE" >/dev/null ||
-    die "immutable source tree changed during release build"
   local actual="${SOURCE_STAGE_ROOT}/source-manifest.actual"
   write_source_manifest "$SOURCE_TREE" "$actual"
   cmp -s "$EXPECTED_SOURCE_MANIFEST" "$actual" ||
@@ -161,8 +154,19 @@ prepare_target_source() {
   write_source_manifest "$target_source" "$actual"
   cmp -s "$EXPECTED_SOURCE_MANIFEST" "$actual" || die "target source extraction changed"
   rm -f -- "$actual"
-  chmod -R a-w "$target_source"
   printf '%s\n' "$target_source"
+}
+
+prepare_ui_dist() {
+  local ui_source="${SOURCE_STAGE_ROOT}/ui-source"
+  UI_DIST="${SOURCE_STAGE_ROOT}/ui-dist"
+  mkdir -p "${ui_source}"
+  tar -xf "${SOURCE_STAGE_ROOT}/source.tar" -C "${ui_source}"
+  "${ui_source}/scripts/build-ui.sh"
+  [[ -d "${ui_source}/internal/api/web/dist" ]] || die "release GUI build produced no dist directory"
+  mv "${ui_source}/internal/api/web/dist" "${UI_DIST}"
+  rm -rf -- "${ui_source}"
+  verify_source_stage
 }
 
 build_target() {
@@ -179,6 +183,8 @@ build_target() {
   ldflags="-X github.com/gryph/omnidex/internal/version.Version=${VERSION} -X github.com/gryph/omnidex/internal/version.Codename=${CODENAME} -X github.com/gryph/omnidex/internal/version.Commit=${RELEASE_COMMIT} -X github.com/gryph/omnidex/internal/version.SourceSHA256=${RELEASE_SOURCE_SHA256} -X github.com/gryph/omnidex/internal/version.MigrationsSHA256=${RELEASE_MIGRATIONS_SHA256} -X github.com/gryph/omnidex/internal/version.Date=${RELEASE_BUILD_DATE}"
   local target_dir="${RELEASE_OUTPUT_STAGE}/${target_name}"
   mkdir -p "${target_dir}/bin"
+  [[ ! -e "${target_source}/internal/api/web/dist" ]] || die "tracked release source contains generated GUI assets"
+  cp -a "${UI_DIST}" "${target_source}/internal/api/web/dist"
 
   log "building ${target}"
   local entry name pkg ext
@@ -191,9 +197,11 @@ build_target() {
     fi
     (
       cd "$target_source"
-      CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$ldflags" -o "${target_dir}/bin/${name}${ext}" "$pkg"
+      CGO_ENABLED=1 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "$ldflags" -o "${target_dir}/bin/${name}${ext}" "$pkg"
     )
   done
+
+  rm -rf -- "${target_source}/internal/api/web/dist"
 
   cp -a "${target_source}/README.md" "${target_dir}/README.md"
   cp -a "${target_source}/LICENSE" "${target_dir}/LICENSE"
@@ -248,10 +256,15 @@ publish_staged_release() {
 main() {
   parse_args "$@"
 
+  command -v go >/dev/null 2>&1 || die "go is required"
+  if ((${#TARGETS[@]} == 0)); then
+    TARGETS=("$(go env GOOS)/$(go env GOARCH)")
+  fi
   validate_release_inputs
   validate_dist_dir
-
-  command -v go >/dev/null 2>&1 || die "go is required"
+  validate_release_cgo_targets "${TARGETS[@]}"
+  command -v node >/dev/null 2>&1 || die "node is required to build the embedded GUI"
+  command -v npm >/dev/null 2>&1 || die "npm is required to build the embedded GUI"
   command -v tar >/dev/null 2>&1 || die "tar is required"
   [[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal)" ]] || die "release builds require a clean tracked and untracked worktree"
   validate_tracked_release_sources "$REPO_ROOT"
@@ -262,6 +275,7 @@ main() {
 
   prepare_source_stage
   trap cleanup_source_stage EXIT
+  prepare_ui_dist
 
   local target
   for target in "${TARGETS[@]}"; do

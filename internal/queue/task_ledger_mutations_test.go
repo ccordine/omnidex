@@ -23,7 +23,7 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 	}
 
 	marker := fmt.Sprintf("task-ledger-mutations-%d", time.Now().UnixNano())
-	job, err := repository.EnqueueJob(ctx, marker, model.PipelineAssistant, []byte(`{}`))
+	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}

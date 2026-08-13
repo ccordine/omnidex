@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -15,48 +16,89 @@ import (
 const (
 	maxMemoryCandidateContentBytes    = 1 << 20
 	maxMemoryCandidateProvenanceBytes = 64 << 10
+	maxMemoryCandidateBatchItems      = 512
 )
 
 func (r *Repository) WriteMemoryCandidate(ctx context.Context, candidate model.MemoryCandidate) (int64, error) {
-	provenance, err := validateNewMemoryCandidate(candidate)
+	ids, err := r.WriteMemoryCandidates(ctx, []model.MemoryCandidate{candidate})
 	if err != nil {
 		return 0, err
 	}
-	if candidate.JobID == 0 {
-		var id int64
-		err := r.pool.QueryRow(ctx, `
-			INSERT INTO memory_candidates (
-				job_id, generation, source_memory_id, candidate_kind, content,
-				provenance, confidence, status
-			) VALUES (NULL, NULL, $1, $2, $3, $4::jsonb, $5, $6)
-			RETURNING id
-		`, candidate.SourceMemoryID, candidate.CandidateKind, candidate.Content,
-			provenance, candidate.Confidence, model.MemoryCandidateStatusCandidate).Scan(&id)
-		return id, err
+	return ids[0], nil
+}
+
+func (r *Repository) WriteMemoryCandidates(
+	ctx context.Context,
+	candidates []model.MemoryCandidate,
+) ([]int64, error) {
+	if len(candidates) == 0 || len(candidates) > maxMemoryCandidateBatchItems {
+		return nil, fmt.Errorf(
+			"memory candidate batch must contain 1..%d candidates",
+			maxMemoryCandidateBatchItems,
+		)
+	}
+	provenances := make([]string, len(candidates))
+	for index, candidate := range candidates {
+		provenance, err := validateNewMemoryCandidate(candidate)
+		if err != nil {
+			return nil, fmt.Errorf("memory candidate batch item %d: %w", index+1, err)
+		}
+		provenances[index] = provenance
+	}
+	if r == nil || r.pool == nil {
+		return nil, fmt.Errorf("memory candidate writes require PostgreSQL")
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	if err := lockObservedJobGenerationTx(ctx, tx, candidate.JobID, *candidate.Generation); err != nil {
-		return 0, err
+	owners := make(map[int64]int64)
+	for _, candidate := range candidates {
+		if candidate.JobID == 0 {
+			continue
+		}
+		if observed, exists := owners[candidate.JobID]; exists && observed != *candidate.Generation {
+			return nil, fmt.Errorf("memory candidate batch has contradictory job generation authority")
+		}
+		owners[candidate.JobID] = *candidate.Generation
 	}
-	var id int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO memory_candidates (
-			job_id, generation, source_memory_id, candidate_kind, content,
-			provenance, confidence, status
-		) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
-		RETURNING id
-	`, candidate.JobID, *candidate.Generation, candidate.SourceMemoryID, candidate.CandidateKind,
-		candidate.Content, provenance, candidate.Confidence, model.MemoryCandidateStatusCandidate).Scan(&id); err != nil {
-		return 0, err
+	jobIDs := make([]int64, 0, len(owners))
+	for jobID := range owners {
+		jobIDs = append(jobIDs, jobID)
+	}
+	sort.Slice(jobIDs, func(left, right int) bool { return jobIDs[left] < jobIDs[right] })
+	for _, jobID := range jobIDs {
+		if err := lockObservedJobGenerationTx(ctx, tx, jobID, owners[jobID]); err != nil {
+			return nil, err
+		}
+	}
+	ids := make([]int64, 0, len(candidates))
+	for index, candidate := range candidates {
+		var jobID, generation any
+		if candidate.JobID > 0 {
+			jobID = candidate.JobID
+			generation = *candidate.Generation
+		}
+		var id int64
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO memory_candidates (
+				project_id, channel_id, job_id, generation, source_memory_id,
+				candidate_kind, content, provenance, confidence, status
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+			RETURNING id
+		`, candidate.Scope.ProjectID, candidate.Scope.ChannelID, jobID, generation,
+			candidate.SourceMemoryID, candidate.CandidateKind,
+			candidate.Content, provenances[index], candidate.Confidence,
+			model.MemoryCandidateStatusCandidate).Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, err
+		return nil, err
 	}
-	return id, nil
+	return ids, nil
 }
 
 func (r *Repository) RejectCurrentMemoryCandidate(ctx context.Context, candidate model.MemoryCandidate) error {
@@ -79,6 +121,9 @@ func (r *Repository) rejectCurrentMemoryCandidate(
 	if candidate.ID <= 0 {
 		return fmt.Errorf("memory candidate identity must be positive")
 	}
+	if err := candidate.Scope.Validate(); err != nil {
+		return err
+	}
 	if candidate.JobID <= 0 || candidate.Generation == nil || *candidate.Generation <= 0 {
 		return fmt.Errorf("current memory candidate rejection requires a job-scoped candidate with observed generation")
 	}
@@ -100,17 +145,22 @@ func (r *Repository) rejectCurrentMemoryCandidate(
 	if err := lockObservedJobGenerationTx(ctx, tx, candidate.JobID, *candidate.Generation); err != nil {
 		return err
 	}
+	var persistedScope model.MemoryScope
 	var persistedJobID, persistedGeneration *int64
 	var persistedStatus string
 	if err := tx.QueryRow(ctx, `
-		SELECT job_id, generation, status
+		SELECT project_id, channel_id, job_id, generation, status
 		FROM memory_candidates
 		WHERE id=$1
 		FOR UPDATE
-	`, candidate.ID).Scan(&persistedJobID, &persistedGeneration, &persistedStatus); err != nil {
+	`, candidate.ID).Scan(
+		&persistedScope.ProjectID, &persistedScope.ChannelID,
+		&persistedJobID, &persistedGeneration, &persistedStatus,
+	); err != nil {
 		return err
 	}
-	if !sameMemoryCandidateOwner(candidate, persistedJobID, persistedGeneration) {
+	if persistedScope != candidate.Scope ||
+		!sameMemoryCandidateOwner(candidate, persistedJobID, persistedGeneration) {
 		return fmt.Errorf("memory candidate %d owner changed before review", candidate.ID)
 	}
 	if persistedStatus == model.MemoryCandidateStatusRejected {
@@ -150,6 +200,9 @@ func lockObservedJobGenerationTx(ctx context.Context, tx pgx.Tx, jobID, generati
 }
 
 func validateNewMemoryCandidate(candidate model.MemoryCandidate) (string, error) {
+	if err := candidate.Scope.Validate(); err != nil {
+		return "", err
+	}
 	if candidate.JobID < 0 {
 		return "", fmt.Errorf("memory candidate job identity must not be negative")
 	}
@@ -159,8 +212,8 @@ func validateNewMemoryCandidate(candidate model.MemoryCandidate) (string, error)
 	if candidate.JobID > 0 && (candidate.Generation == nil || *candidate.Generation <= 0) {
 		return "", fmt.Errorf("job memory candidate requires its observed positive generation")
 	}
-	if candidate.CandidateKind != strings.TrimSpace(candidate.CandidateKind) || !registeredMemoryKind(candidate.CandidateKind) {
-		return "", fmt.Errorf("memory candidate kind %q is not registered exact text", candidate.CandidateKind)
+	if _, err := model.ParseMemoryKind(string(candidate.CandidateKind)); err != nil {
+		return "", err
 	}
 	if candidate.Content == "" || candidate.Content != strings.TrimSpace(candidate.Content) ||
 		!utf8.ValidString(candidate.Content) || strings.ContainsRune(candidate.Content, '\x00') ||
@@ -186,16 +239,6 @@ func validateNewMemoryCandidate(candidate model.MemoryCandidate) (string, error)
 		return "", fmt.Errorf("memory candidate provenance must be a JSON object")
 	}
 	return provenance, nil
-}
-
-func registeredMemoryKind(kind string) bool {
-	switch kind {
-	case model.MemoryKindEpisodic, model.MemoryKindProcedural, model.MemoryKindInstruction,
-		model.MemoryKindPreference, model.MemoryKindReference:
-		return true
-	default:
-		return false
-	}
 }
 
 func sameMemoryCandidateOwner(candidate model.MemoryCandidate, jobID, generation *int64) bool {

@@ -7,14 +7,18 @@ import (
 )
 
 func TestSyncRunningJobStepContexts(t *testing.T) {
-	card := ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job queued"}}}
 	job := model.JobDetails{
+		Job: model.Job{ID: 2, Status: model.JobStatusRunning},
 		Contexts: []model.StepContext{
 			{ID: 1, Key: "event", Value: "time=2026-05-29T10:00:00Z event=structured_patch_apply_started Applying structured patch artifact"},
 			{ID: 2, Key: "event", Value: "time=2026-05-29T10:00:01Z event=structured_patch_apply_finished files=2"},
 		},
 	}
-	updated, ok := syncRunningJobStepContexts(card, job)
+	card := scrumSyncTestCard(job.Job.ID, ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job queued"}}})
+	updated, ok, err := syncRunningJobStepContexts(card, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("expected context sync")
 	}
@@ -24,8 +28,11 @@ func TestSyncRunningJobStepContexts(t *testing.T) {
 			toolCount++
 		}
 	}
-	if toolCount < 2 {
+	if toolCount != 2 {
 		t.Fatalf("chat=%+v", updated.Chat)
+	}
+	if updated.StepContextCursor != 2 {
+		t.Fatalf("typed context cursor=%d want 2", updated.StepContextCursor)
 	}
 }
 

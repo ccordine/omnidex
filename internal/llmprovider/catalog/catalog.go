@@ -25,12 +25,10 @@ type Definition struct {
 	EnvironmentPrefixes           []string
 	APIKeyEnvironmentKeys         []string
 	BaseURLEnvironmentKeys        []string
-	ModelEnvironmentKeys          []string
 	EmbeddingModelEnvironmentKeys []string
 	DefaultBaseURL                string
-	DefaultModel                  string
 	DefaultEmbeddingModel         string
-	SupportsGeneration            bool
+	SupportsExactPreparedStations bool
 	SupportsEmbeddings            bool
 	RequiresBaseURL               bool
 	ChineseService                bool
@@ -42,10 +40,6 @@ func (d Definition) EnvironmentKeys(suffix string) []string {
 		return nil
 	}
 	switch suffix {
-	case "MODEL":
-		if len(d.ModelEnvironmentKeys) > 0 {
-			return append([]string(nil), d.ModelEnvironmentKeys...)
-		}
 	case "EMBEDDING_MODEL":
 		if len(d.EmbeddingModelEnvironmentKeys) > 0 {
 			return append([]string(nil), d.EmbeddingModelEnvironmentKeys...)
@@ -89,8 +83,19 @@ func Definitions() []Definition {
 	return out
 }
 
-func GenerationProviderIDs() []string {
-	return providerIDs(func(definition Definition) bool { return definition.SupportsGeneration })
+func ProductionDefinitions() []Definition {
+	definitions := Definitions()
+	out := make([]Definition, 0, len(definitions))
+	for _, definition := range definitions {
+		if definition.SupportsExactPreparedStations || definition.SupportsEmbeddings {
+			out = append(out, definition)
+		}
+	}
+	return out
+}
+
+func ExactStationProviderIDs() []string {
+	return providerIDs(func(definition Definition) bool { return definition.SupportsExactPreparedStations })
 }
 
 func EmbeddingProviderIDs() []string {
@@ -140,7 +145,6 @@ func cloneDefinition(definition Definition) Definition {
 	definition.EnvironmentPrefixes = append([]string(nil), definition.EnvironmentPrefixes...)
 	definition.APIKeyEnvironmentKeys = append([]string(nil), definition.APIKeyEnvironmentKeys...)
 	definition.BaseURLEnvironmentKeys = append([]string(nil), definition.BaseURLEnvironmentKeys...)
-	definition.ModelEnvironmentKeys = append([]string(nil), definition.ModelEnvironmentKeys...)
 	definition.EmbeddingModelEnvironmentKeys = append([]string(nil), definition.EmbeddingModelEnvironmentKeys...)
 	return definition
 }

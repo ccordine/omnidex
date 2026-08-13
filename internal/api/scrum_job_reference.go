@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/scrumcardllm"
 )
 
 const scrumPlayJobSource = "omni-scrum"
@@ -46,12 +44,6 @@ func parseScrumJobReference(metadataJSON []byte) (scrumJobReference, error) {
 			return scrumJobReference{}, err
 		}
 		return scrumJobReference{IsScrum: true, ProjectID: projectID, CardID: cardID}, nil
-	case scrumcardllm.JobSource:
-		meta, err := scrumcardllm.ParseJobReference(metadataJSON)
-		if err != nil {
-			return scrumJobReference{}, fmt.Errorf("parse Scrum card LLM metadata: %w", err)
-		}
-		return scrumJobReference{IsScrum: true, ProjectID: meta.ProjectID, CardID: meta.CardID}, nil
 	default:
 		return scrumJobReference{}, nil
 	}

@@ -8,7 +8,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 func (session *directCodingSession) generateExistingRepositoryChangeCandidates(
@@ -36,13 +36,11 @@ func (session *directCodingSession) generateExistingRepositoryChangeCandidates(
 	); err != nil {
 		return nil, fmt.Errorf("authorize repository generation from clean baseline: %w", err)
 	}
-	modelName, err := session.workerModel("coding_fragment", specialist.RoleCodingFragmentStation)
+	modelName, err := session.workerModel(station.CodingFragment)
 	if err != nil {
 		return nil, err
 	}
-	correctionModel, err := session.workerModel(
-		"coding_fragment_correction", specialist.RoleCodingFragmentCorrectionStation,
-	)
+	correctionModel, err := session.workerModel(station.CodingFragmentCorrection)
 	if err != nil {
 		return nil, err
 	}

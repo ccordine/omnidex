@@ -28,37 +28,28 @@ Use one stable model for authoritative small semantic stations and one coding
 model for raw declaration generation and correction:
 
 ```dotenv
-OLLAMA_MODEL=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_FAST=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_GLUE=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_REASONING=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_TAGGER=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_PLANNER=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_ANALYZER=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_RESPONDER=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SEARCH=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_MEMORY=qwen3.5:9b-q4_K_M
+# Each named semantic station has its own explicit route.
+OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
 
-# Every OLLAMA_MODEL_SPECIALIST_* semantic station uses the same 9B model.
-OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT=qwen3-coder:30b
-OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION=qwen3-coder:30b
-
-INFERENCE_CONTEXT_TOKENS=16384
+INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
-The complete role list is checked in to `default.env` and `.env.example`.
-Keeping the authoritative semantic routes on one stable model avoids needless
-reloads between tiny stations. Production requirement extraction and splitting
-use the same schema-bound Qwen route; reasoning-adviser protocols remain offline
-gauntlet experiments only. Keeping fragment generation and correction on the
-same coding model avoids another reload during a repair loop.
+The complete exact station-key list is checked in to `default.env` and `.env.example`.
+The repository and web claim-evidence review routes use `deepseek-r1:8b`.
+Their live provider identity must differ from the Qwen answer, synthesis, and
+correction routes; startup or the named review gap fails loudly if that exact
+independent route is unavailable. Keeping every other authoritative semantic
+route on one stable Qwen model avoids needless reloads between tiny stations.
+Production requirement extraction and splitting use the same schema-bound Qwen
+route; reasoning-adviser protocols remain offline gauntlet experiments.
 
 Qwen 3.5 9B is the practical semantic choice because its Q4_K_M Ollama image is
 6.6 GB and Qwen publishes strong instruction following, tool-use, and coding
-results for the 9B checkpoint. DeepSeek R1 8B showed a small development-set
-gain in an isolated advisory gauntlet, but did not earn a production route in
-the larger application trial. Qwen3-Coder 30B is a 30.5B-total, 3.3B-active MoE
+results for the 9B checkpoint. DeepSeek R1 8B is restricted to the two
+independent evidence-review stations; it does not plan, synthesize, correct, or
+select repository operations. Qwen3-Coder 30B is a 30.5B-total, 3.3B-active MoE
 trained primarily on code and is non-thinking by design, which fits Omnidex's
 bounded single-node output contract.
 
@@ -75,7 +66,7 @@ Primary model sources:
 Measurements use the same deterministic request shape now checked in as
 `omni ollama:prewarm`: the fixed minimal prompt, thinking disabled, temperature
 zero, a 64-token output ceiling, and runner inspection through Ollama `/api/ps`.
-The production 16K row was verified by the command. The 2K comparison rows
+The measured 16K row was verified by the command. The 2K comparison rows
 used equivalent direct Ollama requests before the command was added; 2K is
 below Omnidex's current hard inference-context minimum and cannot be selected
 through the new command.
@@ -85,7 +76,7 @@ through the new command.
 | `qwen2.5-coder:7b` | 2K | 4.81 GB | 4.81 GB | 51.67 tok/s |
 | `qwen2.5-coder:14b` | 2K | 9.91 GB | 7.32 GB | 7.86 tok/s |
 | `qwen3.5:9b-q4_K_M` | 16K | 13.82 GB | 7.53 GB | 11.10 tok/s |
-| `deepseek-r1:8b` | 16K | 13.82 GB peak in paired trial | recorded in trial evidence | offline gauntlet only |
+| `deepseek-r1:8b` | 16K | 13.82 GB peak in paired trial | recorded in trial evidence | independent evidence review |
 | `qwen3-coder:30b` | 2K | 18.98 GB | 7.56 GB | 14.85 tok/s |
 | `qwen3-coder:30b` | 16K | 22.41 GB | 7.28 GB | 13.12 tok/s |
 | `qwen3-coder:30b` | 32K | 26.24 GB | 7.28 GB | 11.06 tok/s |
@@ -93,9 +84,9 @@ through the new command.
 The 30B MoE is almost twice as fast as the old 14B dense correction model on
 this host despite the larger total checkpoint. At 32K it also pushed an
 already busy host deep into swap. The observed semantic envelopes and the
-fragment prompt/output limits fit inside 16K, so the checked-in local profile
-uses 16K rather than paying the 32K allocation and latency cost. An unusually
-large semantic envelope may therefore fail the conservative byte-as-token
+fragment prompt/output limits also fit inside the exact 8K minimum, so the
+checked-in local profile uses 8K rather than paying the 16K/32K allocation and
+latency cost. An unusually large semantic envelope may therefore fail the conservative byte-as-token
 budget before the request; raise the explicit setting for that workload rather
 than allowing provider truncation.
 
@@ -131,12 +122,13 @@ correction rate, and a fresh uncontaminated Omnidex run.
 
 ## Hosted capability ceiling
 
-The existing provider catalog already exposes Qwen/Model Studio, DeepSeek,
-Moonshot/Kimi, Zhipu/BigModel, Z.AI, and other OpenAI-compatible Chinese
-services. Hosted models are the realistic route to a capability tier that does
-not fit locally. Model IDs remain explicit because hosted aliases and versions
-change. For example, current official documentation exposes Qwen 3.6 hosted
-models, DeepSeek V4 Flash/Pro, and Z.AI GLM coding endpoints:
+Hosted generation is intentionally not a production station transport. The
+known-provider registry preserves identities and rejected environment keys, and
+the production catalog exposes a hosted provider only for a consumed embedding
+transport. Supporting hosted station inference later requires a provider-specific
+exact prepared contract with the same immutable request and evidence guarantees;
+generic chat-completions compatibility is insufficient. Current external model
+documentation may inform that future isolated integration work:
 
 - https://qwenlm.github.io/qwen-code-docs/en/users/configuration/model-providers/
 - https://api-docs.deepseek.com/quick_start/pricing

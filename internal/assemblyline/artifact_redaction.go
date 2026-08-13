@@ -9,7 +9,7 @@ import (
 const maxArtifactIdentities = 64
 
 var (
-	artifactIdentityPattern = regexp.MustCompile(`(?i)(?:\b[a-z0-9_-]+(?:/[a-z0-9_.-]+)+\.[a-z][a-z0-9]{0,15}\b|\b[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.[a-z][a-z0-9]{0,15}\b)`)
+	artifactIdentityPattern = regexp.MustCompile(`(?i)(?:\b[a-z0-9_-]+(?:/[a-z0-9_.-]+)+\.[a-z][a-z0-9]{0,15}\b|\b[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.(?:go|ts|tsx|js|jsx|json|md|yaml|yml|toml|sql|html|css|scss|php|py|rs|java|kt)\b)`)
 	opaqueArtifactPattern   = regexp.MustCompile(`^ARTIFACT_[1-9][0-9]*$`)
 )
 

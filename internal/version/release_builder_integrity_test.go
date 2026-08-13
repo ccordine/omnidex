@@ -28,6 +28,47 @@ func TestReleaseBuilderRejectsMutatedImmutableSourceStageBeforePublication(t *te
 	assertNoReleasePublication(t, fixture.dist)
 }
 
+func TestReleaseArchiveVerificationComparesContentNotTarMetadata(t *testing.T) {
+	repository := t.TempDir()
+	runReleaseGit(t, repository, "init")
+	runReleaseGit(t, repository, "config", "user.email", "release-test@example.invalid")
+	runReleaseGit(t, repository, "config", "user.name", "Release Test")
+	writeReleaseTestFile(t, filepath.Join(repository, "source.txt"), "accepted content\n")
+	runReleaseGit(t, repository, "add", "source.txt")
+	runReleaseGit(t, repository, "commit", "-m", "fixture")
+
+	stage := t.TempDir()
+	archive := filepath.Join(stage, "source.tar")
+	tree := filepath.Join(stage, "source")
+	if err := os.Mkdir(tree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("git", "-C", repository, "archive", "--format=tar", "--output="+archive, "HEAD")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("create git archive: %v: %s", err, output)
+	}
+	command = exec.Command("tar", "-xf", archive, "-C", tree)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("extract git archive: %v: %s", err, output)
+	}
+
+	verify := func() (string, error) {
+		script := filepath.Join(releaseRepositoryRoot(t), "scripts", "build-release.sh")
+		command := exec.Command("bash", "-c",
+			`source "$1"; verify_archive_tree_content "$2" "$3" "$4" || die "archive content mismatch"`,
+			"release-archive-content", script, archive, tree, stage)
+		output, err := command.CombinedOutput()
+		return string(output), err
+	}
+	if output, err := verify(); err != nil {
+		t.Fatalf("metadata-only archive differences were rejected: %v: %s", err, output)
+	}
+	writeReleaseTestFile(t, filepath.Join(tree, "source.txt"), "tampered content\n")
+	if output, err := verify(); err == nil || !strings.Contains(output, "archive content mismatch") {
+		t.Fatalf("content mismatch error=%v output=%q", err, output)
+	}
+}
+
 func TestReleaseBuilderAtomicPublicationLeavesNothingWhenRenameFails(t *testing.T) {
 	fixture := newReleaseStageFixture(t)
 	fakeBin := t.TempDir()

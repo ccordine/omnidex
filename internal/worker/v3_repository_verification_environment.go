@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
 
 type repositoryGoVerificationEnvironment struct {
@@ -47,16 +47,16 @@ func newRepositoryGoVerificationEnvironmentWithConfig(
 func (environment *repositoryGoVerificationEnvironment) executeRepositoryGoVerification(
 	ctx context.Context,
 	root string,
-	call toolruntime.Call,
-) (toolruntime.Result, error) {
+	request repositoryGoVerificationRequest,
+) (operation.Result, error) {
 	if environment == nil || environment.modules == nil || environment.root == "" {
-		return toolruntime.Result{}, fmt.Errorf("repository Go verification environment is incomplete")
+		return operation.Result{}, fmt.Errorf("repository Go verification environment is incomplete")
 	}
 	if root != environment.root {
-		return toolruntime.Result{}, fmt.Errorf("repository Go verification environment belongs to a different source")
+		return operation.Result{}, fmt.Errorf("repository Go verification environment belongs to a different source")
 	}
 	return executeRepositoryGoVerificationWithConfig(
-		ctx, root, call, environment.config, environment.modules,
+		ctx, root, request, environment.config, environment.modules,
 	)
 }
 
@@ -70,17 +70,17 @@ func (environment *repositoryGoVerificationEnvironment) Cleanup() error {
 func executeRepositoryGoVerification(
 	ctx context.Context,
 	root string,
-	call toolruntime.Call,
-) (result toolruntime.Result, resultErr error) {
+	request repositoryGoVerificationRequest,
+) (result operation.Result, resultErr error) {
 	environment, err := newRepositoryGoVerificationEnvironment(ctx, root)
 	if err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	defer func() {
 		if cleanupErr := environment.Cleanup(); cleanupErr != nil {
-			result = toolruntime.Result{}
+			result = operation.Result{}
 			resultErr = errors.Join(resultErr, cleanupErr)
 		}
 	}()
-	return environment.executeRepositoryGoVerification(ctx, root, call)
+	return environment.executeRepositoryGoVerification(ctx, root, request)
 }

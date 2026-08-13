@@ -1,0 +1,122 @@
+package queue
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/station"
+)
+
+func TestStationGapOpeningPreservesClosedPortableJobAndCanonicalProjection(t *testing.T) {
+	t.Parallel()
+
+	job, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
+		Kind: assemblyline.ObjectiveKindAnswer, ExactInstruction: "\n exact question \n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := StationGapOpenRecord{
+		Authority: model.StepAttemptAuthority{JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a"},
+		Job:       job, Station: station.ConversationResponse,
+		ContextTokens: 8192, MaxOutputTokens: 1024,
+	}
+	validated, err := validateStationGapOpening(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, _, err := assemblyline.RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validated.Prompt != prompt || validated.PortablePayload != string(job.Payload) {
+		t.Fatalf("opening changed exact prompt or payload: %+v", validated)
+	}
+	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v1"`) ||
+		len(validated.ProjectionSHA256) != 64 || len(validated.PortableEnvelopeSHA256) != 64 {
+		t.Fatalf("projection envelope=%q sha=%q", validated.ProjectionEnvelope, validated.ProjectionSHA256)
+	}
+}
+
+func TestStationGapOpeningRejectsGenericOrUnboundedAuthority(t *testing.T) {
+	t.Parallel()
+
+	job, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
+		Kind: assemblyline.ObjectiveKindAnswer, ExactInstruction: "Exact request.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := StationGapOpenRecord{
+		Authority: model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
+		Job:       job, Station: station.ConversationResponse,
+		ContextTokens: 8192, MaxOutputTokens: 1024,
+	}
+	for name, mutate := range map[string]func(*StationGapOpenRecord){
+		"forged portable identity": func(record *StationGapOpenRecord) { record.Job.ID = strings.Repeat("c", 64) },
+		"different station":        func(record *StationGapOpenRecord) { record.Station = station.GroundedAnswer },
+		"missing station":          func(record *StationGapOpenRecord) { record.Station = "" },
+		"missing budget":           func(record *StationGapOpenRecord) { record.ContextTokens = 0 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			record := base
+			mutate(&record)
+			if _, err := validateStationGapOpening(record); err == nil {
+				t.Fatalf("accepted invalid record %#v", record)
+			}
+		})
+	}
+}
+
+func TestStationMappingIsExplicitForEveryPortableWorkKind(t *testing.T) {
+	t.Parallel()
+	for _, kind := range assemblyline.AllWorkKinds() {
+		_, err := stationForPortableWorkKind(kind)
+		switch kind {
+		case assemblyline.WorkResponseCorrection:
+			if err == nil {
+				t.Fatalf("non-direct work kind %q unexpectedly mapped without its exact envelope", kind)
+			}
+		default:
+			if err != nil {
+				t.Fatalf("production work kind %q has no station mapping: %v", kind, err)
+			}
+		}
+	}
+}
+
+func TestStationMappingRejectsRemovedSkillProcedureWork(t *testing.T) {
+	t.Parallel()
+
+	if _, err := stationForPortableWorkKind(assemblyline.WorkKind("skill_procedure")); err == nil ||
+		!strings.Contains(err.Error(), "not a production semantic station") {
+		t.Fatalf("removed skill procedure mapping error=%v", err)
+	}
+}
+
+func TestStationGapTerminalRequiresOneExactOutcome(t *testing.T) {
+	t.Parallel()
+
+	base := StationGapTerminalRecord{
+		Authority: model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
+		OpeningID: 7, GapID: strings.Repeat("d", 64), Status: StationGapResolved,
+		Response: " exact response ",
+	}
+	if err := validateStationGapTerminal(base); err != nil {
+		t.Fatal(err)
+	}
+	base.Error = "invented failure"
+	if err := validateStationGapTerminal(base); err == nil {
+		t.Fatal("resolved gap accepted an error")
+	}
+	base.Status, base.Response, base.Error = StationGapFailed, "", "provider failed"
+	if err := validateStationGapTerminal(base); err != nil {
+		t.Fatal(err)
+	}
+	base.Response = "partial"
+	if err := validateStationGapTerminal(base); err == nil {
+		t.Fatal("failed gap accepted a response")
+	}
+}

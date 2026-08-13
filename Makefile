@@ -4,12 +4,12 @@ tidy:
 	go mod tidy
 
 ui:
-	cd internal/api/web && npm install && npm run build
+	./scripts/build-ui.sh
 
 ui-dev:
 	cd internal/api/web && npm install && npm run dev
 
-build: ui core cli omni
+build: core cli omni
 
 core:
 	./scripts/build-core.sh

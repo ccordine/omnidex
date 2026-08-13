@@ -379,7 +379,7 @@ export default class TerminalController extends Controller {
     this.term?.dispose();
     this.term = null;
     this.fitAddon = null;
-    this.mountTarget.innerHTML = "";
+    this.mountTarget.replaceChildren();
     this.setStatus("Idle", "idle");
     this.syncFullscreenButton();
   }

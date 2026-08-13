@@ -5,7 +5,10 @@ import (
 	"strings"
 )
 
-const CapabilityRelationSchemaV1 = "omnidex.capability-relation.v1"
+const (
+	CapabilityRelationSchemaV1 = "omnidex.capability-relation.v1"
+	maxCapabilityRelationNeed  = 2000
+)
 
 type CapabilityRelation string
 
@@ -38,7 +41,7 @@ func (input CapabilityRelationInput) validate() error {
 		}
 	}
 	if len(input.LocalContext) > maxSkillLocalContext ||
-		len(input.LeftNeed) > maxSkillProcedureNeed || len(input.RightNeed) > maxSkillProcedureNeed {
+		len(input.LeftNeed) > maxCapabilityRelationNeed || len(input.RightNeed) > maxCapabilityRelationNeed {
 		return fmt.Errorf("capability relation input exceeds its hard context limit")
 	}
 	if input.LeftNeed == input.RightNeed {

@@ -22,3 +22,18 @@ func TestArtifactRedactionPreservesVersionsAndHidesSourceIdentity(t *testing.T) 
 		t.Fatalf("redacted=%q identities=%#v", redacted, identities)
 	}
 }
+
+func TestArtifactRedactionDoesNotTreatDottedGoSymbolsAsPaths(t *testing.T) {
+	t.Parallel()
+	request := "Use http.Client and time.Time while leaving transport.go unchanged."
+	redacted, identities, err := RedactArtifactIdentities(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(redacted, "http.Client") || !strings.Contains(redacted, "time.Time") {
+		t.Fatalf("dotted symbols were corrupted: %q", redacted)
+	}
+	if len(identities) != 1 || identities[0].Value != "transport.go" {
+		t.Fatalf("artifact identities=%#v", identities)
+	}
+}

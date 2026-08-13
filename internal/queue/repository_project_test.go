@@ -119,7 +119,7 @@ func TestEnqueueJobPreservesCustomProjectName(t *testing.T) {
 		t.Fatalf("CreateProject name=%q want %q", project.Name, customName)
 	}
 
-	if _, err := repo.EnqueueJob(ctx, "test instruction", model.PipelineAssistant, []byte(metadata)); err != nil {
+	if _, err := repo.EnqueueJob(ctx, "test instruction", model.PipelineCoding, []byte(metadata)); err != nil {
 		t.Fatal(err)
 	}
 

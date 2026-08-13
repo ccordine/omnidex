@@ -40,7 +40,10 @@ describe("ChatPanelCoordinator", () => {
   });
 
   it("commits navigation only after receiving the requested server panel", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => response({ panel: "jobs", locale: "en", html: "<section>Jobs</section>" }));
+	const bundle = '<template data-recyclr-target="app-panel"><section>Jobs</section></template>';
+	const fetchMock = vi.fn(async (_input: RequestInfo | URL) => response({
+	  panel: "jobs", locale: "en", html: { bundle },
+	}));
     vi.stubGlobal("fetch", fetchMock);
     const fixture = createFixture();
     const coordinator = new ChatPanelCoordinator(fixture.host);
@@ -50,7 +53,7 @@ describe("ChatPanelCoordinator", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/ui/panel?panel=jobs");
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("/v1/ui/session");
-    expect(fixture.renderPanel).toHaveBeenCalledWith("<section>Jobs</section>");
+	expect(fixture.renderPanel).toHaveBeenCalledWith(bundle);
     expect(coordinator.current()).toBe("jobs");
     expect(fixture.loadPanelData).toHaveBeenCalledWith("jobs");
     expect(fixture.pushRoute).toHaveBeenCalledWith("/chat?panel=jobs");
@@ -58,7 +61,9 @@ describe("ChatPanelCoordinator", () => {
   });
 
   it("rejects a mismatched server response without changing client state", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => response({ panel: "memory", locale: "en", html: "<section>Wrong</section>" })));
+	vi.stubGlobal("fetch", vi.fn(async () => response({
+	  panel: "memory", locale: "en", html: { bundle: "server-wrong-panel" },
+	})));
     const fixture = createFixture();
     const coordinator = new ChatPanelCoordinator(fixture.host);
 

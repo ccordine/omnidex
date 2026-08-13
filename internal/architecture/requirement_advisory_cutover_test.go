@@ -23,9 +23,6 @@ func TestProductionRequirementPartitionHasNoAdvisoryOrSplitRoute(t *testing.T) {
 		"internal/worker/llm_response_contract.go": {
 			"portable_advisory_worker",
 		},
-		"internal/specialist/roles.go": {
-			"RoleCodingRequirementAdviserStation", "RoleCodingRequirementSplitStation",
-		},
 		"internal/modelconfig/config.go": {
 			"coding_requirement_adviser_model", "coding_requirement_split_model",
 		},

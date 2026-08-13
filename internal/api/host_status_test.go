@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,5 +68,8 @@ func TestHandleHostBridgeStatusJSON(t *testing.T) {
 	}
 	if payload.Reachable {
 		t.Fatal("expected unreachable in default server")
+	}
+	if !strings.Contains(payload.HTML.Bundle, `data-recyclr-target="host-bridge-status-output"`) {
+		t.Fatalf("host status lacks server component: %s", payload.HTML.Bundle)
 	}
 }

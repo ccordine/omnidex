@@ -1,36 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatExecutionCoordinator, type ChatExecutionHost } from "./chat_execution_coordinator";
 
-function response(body: unknown, status = 200): Response {
+function response(body: unknown): Response {
   return new Response(JSON.stringify(body), {
-    status,
+    status: 200,
     headers: { "Content-Type": "application/json" },
   });
 }
 
 function createHost() {
   const jobBadge = document.createElement("div");
-  let activityLabel = "";
   const host: ChatExecutionHost = {
-    openedProjectID: () => 42,
-    openedProjectLocation: () => "/workspace/project",
     currentPanel: () => "chat",
     hasJobBadge: () => true,
     jobBadge: () => jobBadge,
-    setActivityLabel: (label) => { activityLabel = label; },
+    setActivityLabel: vi.fn(),
     setStatus: vi.fn(),
     renderProgressActivity: vi.fn(),
-    recordJobProgress: vi.fn(),
-    renderMessages: vi.fn(),
-    renderJobDetails: vi.fn(),
+    renderJobState: vi.fn(async () => undefined),
     addEvent: vi.fn(),
-    addMessage: vi.fn(),
-    setBusy: vi.fn(),
     loadJobs: vi.fn(async () => undefined),
     loadGlobalActivity: vi.fn(async () => undefined),
     reportError: vi.fn(),
   };
-  return { host, jobBadge, activityLabel: () => activityLabel };
+  return { host, jobBadge };
 }
 
 describe("ChatExecutionCoordinator", () => {
@@ -38,69 +31,64 @@ describe("ChatExecutionCoordinator", () => {
     vi.restoreAllMocks();
   });
 
-  it("completes a queued job from server-confirmed state", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ job: { id: 17, status: "pending" } }))
-      .mockResolvedValueOnce(response({
-        job: { id: 17, status: "completed", result: "Server result" },
-        steps: [],
-        contexts: [],
-      }));
+  it("waits for an existing channel job without creating transcript state", async () => {
+    const fetchMock = vi.fn(async () => response({
+      job: { id: 73, status: "completed", current_generation: 1, result: "Result persisted to the channel" },
+      steps: [],
+      progress: { latest_context_id: 0, count: 0 },
+	  html: { bundle: "server-job-state" },
+    }));
     vi.stubGlobal("fetch", fetchMock);
     const fixture = createHost();
     const coordinator = new ChatExecutionCoordinator(fixture.host);
 
-    await coordinator.submit("Do the work");
+    await coordinator.waitForExistingJob(73);
 
-    expect(coordinator.currentJobID()).toBe(17);
-    expect(fixture.jobBadge.textContent).toBe("#17");
-    expect(fixture.host.addMessage).toHaveBeenCalledWith("assistant", "Server result");
-    expect(fixture.host.setStatus).toHaveBeenCalledWith("completed", "ready");
-    expect(fixture.host.setBusy).toHaveBeenCalledWith(false);
-    expect(fixture.host.addEvent).toHaveBeenCalledWith(
-      "job_created",
-      { id: 17, status: "pending" },
-      expect.objectContaining({ job: { id: 17, status: "pending" } }),
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/v1/ui/chat/jobs/73");
+    expect(coordinator.currentJobID()).toBe(73);
+    expect(fixture.jobBadge.textContent).toBe("#73");
+    expect(fixture.host.setStatus).toHaveBeenLastCalledWith("completed", "ready");
   });
 
-  it("rejects a queued response without a valid job id", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => response({ job: { id: 0, status: "pending" } })));
+  it("allows a completed channel job without copying its result into browser state", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => response({
+      job: { id: 75, status: "completed", current_generation: 1 },
+      steps: [],
+      progress: { latest_context_id: 0, count: 0 },
+	  html: { bundle: "server-job-state" },
+    })));
     const fixture = createHost();
     const coordinator = new ChatExecutionCoordinator(fixture.host);
 
-    await expect(coordinator.submit("Do the work")).rejects.toThrow("valid positive integer id");
-    expect(coordinator.currentJobID()).toBeNull();
+    await expect(coordinator.waitForExistingJob(75)).resolves.toBeUndefined();
+    expect(fixture.host.setStatus).toHaveBeenLastCalledWith("completed", "ready");
   });
 
-  it("rejects unknown server job states", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => response({ job: { id: 17, status: "maybe" } })));
+  it("rejects a failed channel job without inventing an error message", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => response({
+      job: { id: 74, status: "failed", current_generation: 1, error: "Server failure" },
+      steps: [],
+      progress: { latest_context_id: 0, count: 0 },
+	  html: { bundle: "server-job-state" },
+    })));
     const fixture = createHost();
     const coordinator = new ChatExecutionCoordinator(fixture.host);
 
-    await expect(coordinator.submit("Do the work")).rejects.toThrow('invalid status "maybe"');
-    expect(coordinator.currentJobID()).toBeNull();
+    await expect(coordinator.waitForExistingJob(74)).rejects.toThrow("Server failure");
+    expect(fixture.host.setStatus).toHaveBeenLastCalledWith("failed", "error");
   });
 
-  it("rejects a second submission before creating another server job", async () => {
+  it("rejects overlapping channel jobs", async () => {
     const neverCompletes = new Promise<Response>(() => undefined);
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(response({ job: { id: 17, status: "pending" } }))
-      .mockReturnValueOnce(neverCompletes);
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", vi.fn(() => neverCompletes));
     const fixture = createHost();
     const coordinator = new ChatExecutionCoordinator(fixture.host);
-    const firstResult = coordinator.submit("First job").catch((error) => error as Error);
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const first = coordinator.waitForExistingJob(81).catch((error) => error as Error);
+    await vi.waitFor(() => expect(coordinator.currentJobID()).toBe(81));
 
-    await expect(coordinator.submit("Second job")).rejects.toThrow("Job #17 is already active");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-
+    await expect(coordinator.waitForExistingJob(82)).rejects.toThrow("Job #81 is already active");
     coordinator.disconnect();
-    const error = await firstResult;
-    expect(error).toBeInstanceOf(Error);
-    if (!(error instanceof Error)) throw new Error("Expected the active job promise to reject.");
-    expect(error.message).toContain("disconnected before the active job completed");
+    await expect(first).resolves.toBeInstanceOf(Error);
   });
 
   it("fails loudly on malformed realtime events", () => {
@@ -110,5 +98,20 @@ describe("ChatExecutionCoordinator", () => {
 
     expect(() => coordinator.handleProgress(event)).toThrow("valid positive integer id");
     expect(fixture.host.loadJobs).not.toHaveBeenCalled();
+  });
+
+  it("rejects raw or inconsistent progress authority before applying server markup", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => response({
+      job: { id: 76, status: "running", current_generation: 2 },
+      steps: [{ id: 9, action: "v3_coding", status: "running", generation: 1 }],
+      contexts: [{ id: 99, key: "llm_prompt", value: "private envelope" }],
+      progress: { latest_context_id: 99, count: 25 },
+      html: { bundle: "must-not-render" },
+    })));
+    const fixture = createHost();
+    const coordinator = new ChatExecutionCoordinator(fixture.host);
+
+    await expect(coordinator.waitForExistingJob(76)).rejects.toThrow(/current generation|bounded progress/i);
+    expect(fixture.host.renderJobState).not.toHaveBeenCalled();
   });
 });

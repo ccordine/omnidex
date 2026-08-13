@@ -21,6 +21,8 @@ var removedJobMetadataKeys = []string{
 	"architect_mode",
 	"web_search",
 	"workspace_scan",
+	"channel_id",
+	"channel_user_message_id",
 }
 
 func ValidateJobMetadataAuthority(metadata map[string]any) error {

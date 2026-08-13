@@ -34,41 +34,6 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildRequirementPartitionPrompt(input)
 		return prompt, RequirementPartitionResponseSchema(), err
-	case WorkRequirementBriefing:
-		var input RequirementPartitionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementPartitionBriefingPrompt(input)
-		return prompt, RequirementPartitionBriefingResponseSchema(), err
-	case WorkRequirementAdvisory:
-		var input RequirementPartitionAdvisoryInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementPartitionAdvisoryPrompt(input)
-		return prompt, nil, err
-	case WorkRequirementSynthesis:
-		var input RequirementPartitionSynthesisInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementPartitionSynthesisPrompt(input)
-		return prompt, RequirementPartitionResponseSchema(), err
-	case WorkRequirementFinalAdvisory:
-		var input RequirementFinalAdvisoryInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementFinalAdvisoryPrompt(input)
-		return prompt, nil, err
-	case WorkRequirementFinalSynthesis:
-		var input RequirementFinalSynthesisInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementFinalSynthesisPrompt(input)
-		return prompt, RequirementPartitionResponseSchema(), err
 	case WorkRepositorySearchTerm:
 		var input RepositorySearchTermInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -83,6 +48,133 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildRepositoryChangeSurfacePrompt(input)
 		return prompt, RepositoryChangeSurfaceResponseSchema(input), err
+	case WorkRepositoryEvidenceRelevance:
+		var input RepositoryEvidenceRelevanceInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryEvidenceRelevancePrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := RepositoryEvidenceRelevanceResponseSchema(input)
+		return prompt, schema, err
+	case WorkRepositoryGroundedReview:
+		var input RepositoryGroundedReviewInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryGroundedReviewPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := RepositoryGroundedReviewResponseSchema(input)
+		return prompt, schema, err
+	case WorkRepositoryGroundedCorrection:
+		var input RepositoryGroundedCorrectionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryGroundedCorrectionPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := RepositoryGroundedCorrectionResponseSchema(input)
+		return prompt, schema, err
+	case WorkConversationContextSelection:
+		var input ConversationContextSelectionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildConversationContextSelectionPrompt(input)
+		return prompt, ConversationContextSelectionResponseSchema(), err
+	case WorkMemoryContextSelection:
+		var input MemoryContextSelectionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildMemoryContextSelectionPrompt(input)
+		return prompt, MemoryContextSelectionResponseSchema(), err
+	case WorkConversationObjectiveKind:
+		var input ConversationObjectiveKindInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildConversationObjectiveKindPrompt(input)
+		return prompt, ConversationObjectiveKindResponseSchema(), err
+	case WorkConversationResponse:
+		var input ConversationResponseInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildConversationResponsePrompt(input)
+		return prompt, ConversationResponseSchema(), err
+	case WorkGroundedAnswer:
+		var input GroundedAnswerInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildGroundedAnswerPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := GroundedAnswerResponseSchema(input)
+		return prompt, schema, err
+	case WorkWebSearchTerms:
+		var input WebSearchTermsInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildWebSearchTermsPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := WebSearchTermsResponseSchema(input)
+		return prompt, schema, err
+	case WorkWebRelevance:
+		var input WebRelevanceInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildWebRelevancePrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := WebRelevanceResponseSchema(input)
+		return prompt, schema, err
+	case WorkWebGroundedSynthesis:
+		var input WebGroundedSynthesisInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildWebGroundedSynthesisPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := WebGroundedSynthesisResponseSchema(input)
+		return prompt, schema, err
+	case WorkWebGroundedSynthesisCorrection:
+		var input WebGroundedSynthesisCorrectionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildWebGroundedSynthesisCorrectionPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := WebGroundedSynthesisCorrectionResponseSchema(input)
+		return prompt, schema, err
+	case WorkWebClaimEvidenceReview:
+		var input WebClaimEvidenceReviewInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildWebClaimEvidenceReviewPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := WebClaimEvidenceReviewResponseSchema(input)
+		return prompt, schema, err
 	case WorkArtifactHandling:
 		var input ArtifactHandlingInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -90,6 +182,27 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildArtifactHandlingPrompt(input)
 		return prompt, ArtifactHandlingResponseSchema(input.Token), err
+	case WorkKnownArtifactTruth:
+		var input KnownArtifactTruthInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildKnownArtifactTruthPrompt(input)
+		return prompt, KnownArtifactTruthResponseSchema(), err
+	case WorkDeclarationArtifactBoundary:
+		var input DeclarationArtifactBoundaryInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildDeclarationArtifactBoundaryPrompt(input)
+		return prompt, DeclarationArtifactBoundaryResponseSchema(input), err
+	case WorkArtifactCandidateSelection:
+		var input ArtifactCandidateSelectionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildArtifactCandidateSelectionPrompt(input)
+		return prompt, ArtifactCandidateSelectionResponseSchema(input), err
 	case WorkCapabilityRelation:
 		var input CapabilityRelationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -97,13 +210,6 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildCapabilityRelationPrompt(input)
 		return prompt, CapabilityRelationResponseSchema(), err
-	case WorkSkillProcedure:
-		var input SkillProcedureInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildSkillProcedurePrompt(input)
-		return prompt, SkillProcedureResponseSchema(), err
 	case WorkSkillSelection:
 		var input SkillSelectionInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -142,16 +248,21 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 }
 
 func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, map[string]any, error) {
-	if input.Language != "typescript" {
+	switch input.Language {
+	case "go":
+		prompt, err := BuildGoFragmentGenerationPrompt(input)
+		return prompt, nil, err
+	case "typescript":
+		prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
+			Signature: input.Signature,
+			Contract:  input.Behavior,
+			Available: strings.Join(input.Capabilities, "\n"),
+			Globals:   input.PermittedSymbols,
+		})
+		return prompt, nil, err
+	default:
 		return "", nil, fmt.Errorf("no fragment renderer supports language %q", input.Language)
 	}
-	prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-		Signature: input.Signature,
-		Contract:  input.Behavior,
-		Available: strings.Join(input.Capabilities, "\n"),
-		Globals:   input.PermittedSymbols,
-	})
-	return prompt, nil, err
 }
 
 func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, map[string]any, error) {

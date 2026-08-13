@@ -17,7 +17,6 @@ type CompatibleProviderConfig struct {
 }
 
 type ProviderModelConfig struct {
-	Default   string
 	Embedding string
 }
 
@@ -27,8 +26,11 @@ func loadProviderSelection() (string, string, error) {
 		generationRaw = "ollama"
 	}
 	generation, ok := catalog.Lookup(generationRaw)
-	if !ok || !generation.SupportsGeneration {
-		return "", "", fmt.Errorf("LLM_PROVIDER must be one of: %s", strings.Join(catalog.GenerationProviderIDs(), ", "))
+	if !ok || !generation.SupportsExactPreparedStations {
+		return "", "", fmt.Errorf(
+			"LLM_PROVIDER must implement the exact prepared station contract; supported providers: %s",
+			strings.Join(catalog.ExactStationProviderIDs(), ", "),
+		)
 	}
 
 	embeddingRaw := strings.TrimSpace(os.Getenv("EMBEDDING_PROVIDER"))
@@ -47,7 +49,7 @@ func loadProviderSelection() (string, string, error) {
 
 func loadCompatibleProviderConfigs() map[string]CompatibleProviderConfig {
 	providers := make(map[string]CompatibleProviderConfig)
-	for _, definition := range catalog.Definitions() {
+	for _, definition := range catalog.ProductionDefinitions() {
 		if definition.Protocol != catalog.ProtocolOpenAICompatible {
 			continue
 		}
@@ -66,9 +68,8 @@ func loadCompatibleProviderConfigs() map[string]CompatibleProviderConfig {
 
 func loadProviderModelConfigs() map[string]ProviderModelConfig {
 	models := make(map[string]ProviderModelConfig)
-	for _, definition := range catalog.Definitions() {
+	for _, definition := range catalog.ProductionDefinitions() {
 		models[definition.ID] = ProviderModelConfig{
-			Default:   firstNonEmptyEnv(definition.EnvironmentKeys("MODEL"), definition.DefaultModel),
 			Embedding: firstNonEmptyEnv(definition.EnvironmentKeys("EMBEDDING_MODEL"), definition.DefaultEmbeddingModel),
 		}
 	}
@@ -126,8 +127,6 @@ func validateSelectedProviderEndpoint(provider string, cfg Config, label string)
 		return validateProviderBaseURL(definition, cfg.AzureAIBaseURL, label)
 	case catalog.ProtocolGoogle:
 		return validateProviderBaseURL(definition, cfg.GoogleBaseURL, label)
-	case catalog.ProtocolAnthropic:
-		return validateProviderBaseURL(definition, cfg.AnthropicBaseURL, label)
 	case catalog.ProtocolHuggingFace:
 		return validateProviderBaseURL(definition, cfg.HuggingFaceBaseURL, label)
 	default:
@@ -157,9 +156,6 @@ func validateSelectedProviderCredential(provider string, cfg Config, label strin
 	case catalog.ProtocolGoogle:
 		value = cfg.GoogleAPIKey
 		fallback = "Google API key"
-	case catalog.ProtocolAnthropic:
-		value = cfg.AnthropicAPIKey
-		fallback = "Anthropic API key"
 	case catalog.ProtocolHuggingFace:
 		value = cfg.HuggingFaceAPIKey
 		fallback = "Hugging Face API key"
@@ -184,13 +180,6 @@ func ValidateProviderConfiguration(cfg Config, provider, label string) error {
 }
 
 func validateSelectedProviderModels(cfg Config) error {
-	generation, ok := catalog.Lookup(cfg.LLMProvider)
-	if !ok {
-		return fmt.Errorf("LLM_PROVIDER contains unsupported provider %q", cfg.LLMProvider)
-	}
-	if strings.TrimSpace(cfg.DefaultModel) == "" {
-		return fmt.Errorf("%s is required when LLM_PROVIDER=%s", modelEnvironmentName(generation, false), generation.ID)
-	}
 	embedding, ok := catalog.Lookup(cfg.EmbeddingProvider)
 	if !ok {
 		return fmt.Errorf("EMBEDDING_PROVIDER contains unsupported provider %q", cfg.EmbeddingProvider)
@@ -225,13 +214,12 @@ func environmentChoice(keys []string, fallback string) string {
 }
 
 func modelEnvironmentName(definition catalog.Definition, embedding bool) string {
-	suffix := "MODEL"
-	if embedding {
-		suffix = "EMBEDDING_MODEL"
+	if !embedding {
+		return "exact station model"
 	}
-	keys := definition.EnvironmentKeys(suffix)
+	keys := definition.EnvironmentKeys("EMBEDDING_MODEL")
 	if len(keys) == 0 {
-		return suffix
+		return "EMBEDDING_MODEL"
 	}
 	return keys[0]
 }

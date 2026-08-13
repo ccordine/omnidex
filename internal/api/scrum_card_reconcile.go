@@ -36,12 +36,14 @@ func (s *Server) reconcileScrumCardJobState(ctx context.Context, projectID int64
 		if !scrumCardNeedsTerminalJobReconcile(card) {
 			return card, false, nil
 		}
-		if isScrumAutoReviewJob(job.Job.Metadata) {
-			finished, ok, err := s.finishScrumAutoReviewFromContext(ctx, projectID, card, job)
-			return finished, ok, err
+		card, err = scrumSyncTerminalPlayOutput(card, job)
+		if err != nil {
+			return card, false, err
 		}
-		card = scrumSyncTerminalPlayOutput(card, job)
-		outcome, _ := s.resolveScrumPlayOutcomeForCard(ctx, job, card)
+		outcome, err := s.resolveScrumPlayOutcomeForCard(ctx, job, card)
+		if err != nil {
+			return card, false, err
+		}
 		transition := scrumColumnForOutcome(outcome)
 		transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)
 		card.Column = transition.Column

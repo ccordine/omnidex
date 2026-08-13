@@ -57,17 +57,21 @@ func (r *Repository) ListContextProjectionSummaries(
 	for rows.Next() {
 		var item ContextProjectionSummary
 		var workingSetVersion int64
+		var usageMode string
 		item.Authority.JobID, item.Authority.Generation = jobID, generation
 		if err := rows.Scan(
 			&item.RecordID, &item.ProjectionID, &item.Authority.StepID,
 			&item.Authority.Attempt, &item.Authority.WorkerID,
-			&item.WorkID, &item.Authority.WorkKind, &item.Authority.Mode,
+			&item.WorkID, &item.Authority.WorkKind, &usageMode,
 			&item.SpecName, &item.SpecVersion, &item.SpecSHA256, &item.RendererVersion,
 			&item.WorkingSetID, &workingSetVersion, &item.SelectedCount, &item.OmittedCount,
 			&item.RenderedSHA256, &item.RenderedBytes, &item.EstimatedTokens,
 			&item.TokenEstimator, &item.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan context projection summary: %w", err)
+		}
+		if err := requireLiveContextProjectionUsageMode(usageMode); err != nil {
+			return nil, err
 		}
 		if workingSetVersion < 0 {
 			return nil, fmt.Errorf("%w: summary has negative working-set version", ErrInvalidContextProjection)
@@ -91,7 +95,6 @@ func validateContextProjectionSummary(item ContextProjectionSummary, afterRecord
 	if item.RecordID <= afterRecordID || !validContextProjectionID(item.ProjectionID) ||
 		validateStepAttemptAuthority(item.Authority.StepAttemptAuthority) != nil ||
 		len(item.WorkID) != 64 || !llmEvidenceLowerHex(item.WorkID) ||
-		!validContextProjectionMode(item.Authority.Mode) ||
 		item.SelectedCount < 1 || item.SelectedCount > maxContextProjectionSelected ||
 		item.OmittedCount < 0 || item.SelectedCount+item.OmittedCount > maxContextProjectionRecords ||
 		item.RenderedBytes < 1 || item.RenderedBytes > 1024*1024 ||

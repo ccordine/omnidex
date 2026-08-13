@@ -3,10 +3,10 @@ package worker
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/gryph/omnidex/internal/queue"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
+	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
 func exactRepositoryMutationClassifier(
@@ -52,50 +52,58 @@ func classifyRepositoryMutationSnapshots(
 		current.GitStateSHA256 == source.GitStateSHA256 {
 		return queue.RepositoryMutationSource, nil
 	}
-	expected, err := repositoryMutationPostFiles(source, command.ChangedFiles)
+	expected, err := repositoryMutationExpectedStates(source, command.ChangedFiles)
 	if err != nil {
 		return "", err
 	}
-	if reflect.DeepEqual(current.Files, expected) &&
-		reflect.DeepEqual(current.Exclusions, source.Exclusions) {
+	if err := validateExactRepositoryPostInventory(source, current, expected); err == nil {
 		return queue.RepositoryMutationPost, nil
 	}
 	return queue.RepositoryMutationIndeterminate, nil
 }
 
-func repositoryMutationPostFiles(
+func repositoryMutationExpectedStates(
 	source repositoryfacts.Snapshot,
 	changed []queue.RepositoryMutationFile,
-) ([]repositoryfacts.File, error) {
-	expected := append([]repositoryfacts.File(nil), source.Files...)
-	byID := make(map[string]int, len(expected))
-	for index, file := range expected {
-		byID[file.ID] = index
+) ([]changeapply.ExpectedFileState, error) {
+	byID := make(map[string]repositoryfacts.File, len(source.Files))
+	for _, file := range source.Files {
+		byID[file.ID] = file
 	}
 	seen := make(map[string]struct{}, len(changed))
+	expected := make([]changeapply.ExpectedFileState, 0, len(changed))
 	for _, mutation := range changed {
-		index, exists := byID[mutation.FileID]
-		if !exists {
-			return nil, fmt.Errorf(
-				"repository mutation file %q is absent from its source snapshot",
-				mutation.FileID,
-			)
-		}
 		if _, duplicate := seen[mutation.FileID]; duplicate {
 			return nil, fmt.Errorf("repository mutation file %q is duplicated", mutation.FileID)
 		}
 		seen[mutation.FileID] = struct{}{}
-		file := expected[index]
-		if file.Kind != repositoryfacts.EntryRegular || file.Path != mutation.Path ||
-			file.SHA256 != mutation.SourceSHA256 || file.Size != mutation.SourceSize {
+		file, exists := byID[mutation.FileID]
+		if mutation.SourcePresent != exists {
+			return nil, fmt.Errorf("repository mutation file %q source presence differs from immutable authority", mutation.FileID)
+		}
+		if exists && (file.Kind != repositoryfacts.EntryRegular || file.Path != mutation.Path ||
+			file.SHA256 != mutation.SourceSHA256 || file.Size != mutation.SourceSize ||
+			file.Mode != mutation.SourceMode) {
 			return nil, fmt.Errorf(
 				"repository mutation file %q differs from immutable source authority",
 				mutation.FileID,
 			)
 		}
-		file.SHA256 = mutation.ExpectedSHA256
-		file.Size = mutation.ExpectedSize
-		expected[index] = file
+		if !exists {
+			derivedID, err := repositoryfacts.FileIDForAbsentPath(source, mutation.Path)
+			if err != nil || derivedID != mutation.FileID || mutation.SourceSHA256 != "" ||
+				mutation.SourceSize != 0 || mutation.SourceMode != 0 {
+				return nil, fmt.Errorf("repository mutation file %q has invalid absent source authority", mutation.FileID)
+			}
+		}
+		state := changeapply.ExpectedFileState{
+			FileID: mutation.FileID, Path: mutation.Path, Present: mutation.ExpectedPresent,
+			SHA256: mutation.ExpectedSHA256, Size: mutation.ExpectedSize, Mode: mutation.ExpectedMode,
+		}
+		if err := validateExpectedRepositoryFileState(state); err != nil {
+			return nil, fmt.Errorf("repository mutation file %q post authority: %w", mutation.FileID, err)
+		}
+		expected = append(expected, state)
 	}
 	if len(seen) == 0 {
 		return nil, fmt.Errorf("repository mutation has no changed-file authority")

@@ -1,16 +1,17 @@
 package omni
 
 import (
-	"sort"
-	"strings"
+	"fmt"
 	"time"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type MemoryRecord struct {
 	ID            int64
 	AgentID       string
 	Source        string
-	Kind          string
+	Kind          model.MemoryKind
 	Content       string
 	Tags          []string
 	Priority      int
@@ -20,21 +21,15 @@ type MemoryRecord struct {
 	CreatedAt     time.Time
 }
 
-func cleanMemoryTags(tags []string) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		clean := strings.ToLower(strings.TrimSpace(tag))
-		clean = strings.ReplaceAll(clean, " ", "-")
-		if clean == "" {
-			continue
-		}
-		if _, exists := seen[clean]; exists {
-			continue
-		}
-		seen[clean] = struct{}{}
-		out = append(out, clean)
+func memoryRecordFromInput(id int64, input model.MemoryInput) (MemoryRecord, error) {
+	if id <= 0 {
+		return MemoryRecord{}, fmt.Errorf("memory record identity must be positive")
 	}
-	sort.Strings(out)
-	return out
+	if err := input.Validate(); err != nil {
+		return MemoryRecord{}, err
+	}
+	return MemoryRecord{
+		ID: id, AgentID: string(input.Source), Source: string(input.Source),
+		Kind: input.Kind, Content: input.Content, Tags: append([]string(nil), input.Tags...),
+	}, nil
 }

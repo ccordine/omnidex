@@ -46,22 +46,16 @@ type ProviderIdentityObserver interface {
 
 func RequireProviderIdentityObservation(
 	ctx context.Context,
-	client Client,
+	observer ProviderIdentityObserver,
 	request ProviderIdentityObservationRequest,
 ) (ObservedProviderIdentity, error) {
-	if ctx == nil || client == nil {
+	if ctx == nil || observer == nil {
 		return ObservedProviderIdentity{}, fmt.Errorf(
 			"provider identity observation requires context and client",
 		)
 	}
 	if err := request.Validate(); err != nil {
 		return ObservedProviderIdentity{}, err
-	}
-	observer, ok := client.(ProviderIdentityObserver)
-	if !ok {
-		return ObservedProviderIdentity{}, fmt.Errorf(
-			"configured generation provider cannot observe its live identity",
-		)
 	}
 	observed, err := observer.ObserveProviderIdentity(ctx, request)
 	observed, ownershipErr := ownBoundedObservedProviderIdentity(observed)

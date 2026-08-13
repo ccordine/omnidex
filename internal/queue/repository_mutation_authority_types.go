@@ -11,16 +11,21 @@ const (
 	maxRepositoryMutationFiles      = 8
 )
 
-// RepositoryMutationFile binds one changed file to its exact expected
-// post-patch state. Paths are retained only as server-owned evidence; they are
-// never model authority.
+// RepositoryMutationFile binds one changed path to exact source and expected
+// presence states. Paths are retained only as server-owned evidence; they are
+// never model authority. Presence transitions describe repository truth, not
+// model-selectable filesystem operations.
 type RepositoryMutationFile struct {
-	FileID         string `json:"file_id"`
-	Path           string `json:"path"`
-	SourceSHA256   string `json:"source_sha256"`
-	SourceSize     int64  `json:"source_size"`
-	ExpectedSHA256 string `json:"expected_sha256"`
-	ExpectedSize   int64  `json:"expected_size"`
+	FileID          string `json:"file_id"`
+	Path            string `json:"path"`
+	SourcePresent   bool   `json:"source_present"`
+	SourceSHA256    string `json:"source_sha256,omitempty"`
+	SourceSize      int64  `json:"source_size"`
+	SourceMode      uint32 `json:"source_mode"`
+	ExpectedPresent bool   `json:"expected_present"`
+	ExpectedSHA256  string `json:"expected_sha256,omitempty"`
+	ExpectedSize    int64  `json:"expected_size"`
+	ExpectedMode    uint32 `json:"expected_mode"`
 }
 
 // RepositoryMutationCommand binds one filesystem callback to the exact

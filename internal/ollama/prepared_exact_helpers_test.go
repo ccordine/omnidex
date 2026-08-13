@@ -17,6 +17,7 @@ func exactPreparedRequest(expected llm.ProviderIdentityExpectation) llm.Prepared
 		panic(err)
 	}
 	return llm.PreparedModel{
+		Protocol:  llm.ExactPreparedProtocolStructuredV1,
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: `{"instruction":"select"}`, PromptHint: llm.MinimalGeneratePrompt,
 		MaxOutputTokens: 1024, ContextTokens: expected.NativeContextLimit,

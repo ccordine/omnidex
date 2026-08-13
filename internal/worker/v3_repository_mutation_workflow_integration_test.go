@@ -83,6 +83,7 @@ func TestPostgresRepositoryMutationWorkflowProvesAndFinalizesExactPostOnce(t *te
 		t.Fatal(err)
 	}
 	if !strings.Contains(summary, "Completed bounded existing-repository change") ||
+		!strings.Contains(summary, "files=[value.go]") ||
 		session.repositoryIndex == nil || session.repositoryIndex.Snapshot.ID == before.Snapshot.ID {
 		t.Fatalf("workflow summary=%q result=%+v", summary, session.repositoryIndex)
 	}

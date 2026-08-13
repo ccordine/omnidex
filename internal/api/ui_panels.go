@@ -20,9 +20,9 @@ var (
 var uiPanelNames = []string{"chat", "data", "projects", "jobs", "memory", "metrics", "admin"}
 
 type uiPanelResponse struct {
-	Panel  string   `json:"panel"`
-	Locale uiLocale `json:"locale"`
-	HTML   string   `json:"html"`
+	Panel  string            `json:"panel"`
+	Locale uiLocale          `json:"locale"`
+	HTML   chatComponentHTML `json:"html"`
 }
 
 func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +63,10 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setUILocaleResponseHeaders(w, locale)
-	writeJSON(w, http.StatusOK, uiPanelResponse{Panel: panel, Locale: locale, HTML: html})
+	writeJSON(w, http.StatusOK, uiPanelResponse{
+		Panel: panel, Locale: locale,
+		HTML: chatComponentHTML{Bundle: renderRecyclrTemplateHTML("app-panel", html, "innerHTML")},
+	})
 }
 
 func normalizeUIPanel(value string) string {

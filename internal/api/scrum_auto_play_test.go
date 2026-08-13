@@ -22,11 +22,11 @@ func TestScrumAutoWorkComplete(t *testing.T) {
 			{ID: "b", Column: "done"},
 		},
 	}
-	if !scrumAutoWorkComplete(board, false) {
+	if !scrumAutoWorkComplete(board) {
 		t.Fatal("expected complete when all cards are review/done")
 	}
 	board.Cards = append(board.Cards, ScrumCard{ID: "c", Column: "assigned"})
-	if scrumAutoWorkComplete(board, false) {
+	if scrumAutoWorkComplete(board) {
 		t.Fatal("expected incomplete when assigned cards remain")
 	}
 }
@@ -44,6 +44,9 @@ func TestLoadScrumAutoWorkConfig(t *testing.T) {
 	}
 	if _, err := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_play_through":true}`)); err == nil {
 		t.Fatal("legacy scrum_auto_play_through must fail after migration")
+	}
+	if _, err := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_review":{"enabled":true}}`)); err == nil {
+		t.Fatal("removed scrum_auto_review must fail without a compatibility path")
 	}
 	if _, err := loadScrumAutoWorkConfig([]byte(`{"scrum_auto_work":{"enabled":true,"source_columns":["review"]}}`)); err == nil {
 		t.Fatal("invalid auto-work source column must fail")

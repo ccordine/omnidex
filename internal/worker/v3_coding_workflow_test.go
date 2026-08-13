@@ -97,7 +97,7 @@ func (d *workflowDriverStub) Assemble() (directCodingAssembly, error) {
 
 func (d *workflowDriverStub) Delete(string) (bool, error) { return true, nil }
 
-func (d *workflowDriverStub) Generate(task directCodingFileTask) (bool, error) {
+func (d *workflowDriverStub) MaterializeTask(task directCodingFileTask) (bool, error) {
 	d.generatedPaths = append(d.generatedPaths, task.Path)
 	return !d.unchanged, nil
 }

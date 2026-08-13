@@ -60,6 +60,9 @@ func validateLLMCallEvidenceRecord(record LLMCallEvidenceRecord) error {
 	if (record.WorkID == "") != (record.WorkKind == "") {
 		return fmt.Errorf("LLM call evidence work id and kind must be present together")
 	}
+	if record.StationCallOpeningID < 1 {
+		return fmt.Errorf("LLM call evidence requires one persisted station call opening")
+	}
 	if record.WorkID != "" && (len(record.WorkID) != 64 || !llmEvidenceLowerHex(record.WorkID)) {
 		return fmt.Errorf("LLM call evidence work id must be one SHA-256 digest")
 	}

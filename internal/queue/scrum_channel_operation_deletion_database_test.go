@@ -23,7 +23,7 @@ func TestPostgresScrumChannelReceiptSurvivesCardDeletion(t *testing.T) {
 		Effect: ScrumChannelEffect{
 			Kind:        ScrumChannelStartJob,
 			Instruction: request.Message,
-			Pipeline:    model.PipelineAssistant,
+			Pipeline:    model.PipelineScrum,
 			Metadata:    json.RawMessage(fmt.Sprintf(`{"project_id":%d}`, project.ID)),
 		},
 		ResultAction: "started",

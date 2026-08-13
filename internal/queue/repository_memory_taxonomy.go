@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -10,12 +11,15 @@ func attachMemoryTaxonomyTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	memoryID int64,
-	source, kind string,
+	kind model.MemoryKind,
 	tags []string,
+	explicitCategories []model.MemoryCategory,
 ) error {
-	categories := inferMemoryCategories(kind, tags)
-	cleaned := decorateMemoryTags(source, appendCleanTags(tags, memoryCategoryTags(categories)...))
-	for _, tag := range cleaned {
+	categories, err := memoryCategoriesFor(kind, explicitCategories)
+	if err != nil {
+		return err
+	}
+	for _, tag := range tags {
 		var tagID int64
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO tags(name) VALUES ($1)
@@ -39,7 +43,7 @@ func attachMemoryTaxonomyTx(
 			INSERT INTO memory_categories(name) VALUES ($1)
 			ON CONFLICT(name) DO UPDATE SET name=EXCLUDED.name
 			RETURNING id
-		`, category).Scan(&categoryID); err != nil {
+		`, string(category)).Scan(&categoryID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `

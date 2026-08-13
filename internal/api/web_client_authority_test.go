@@ -81,15 +81,23 @@ func TestScrumControllerRequiresServerRenderedBoardBundle(t *testing.T) {
 
 func TestAdminDataSourcesUseFocusedController(t *testing.T) {
 	admin := readFrontendSource(t, "web/src/controllers/admin_controller.ts")
-	dataSources := readFrontendSource(t, "web/src/lib/data_sources_render.ts")
+	controller := readFrontendSource(t, "web/src/controllers/admin_data_sources_controller.ts")
+	component, err := os.ReadFile("ui_admin_data_sources.go")
+	if err != nil {
+		t.Fatalf("read server data-source component: %v", err)
+	}
 	if strings.Contains(admin, "async loadDataSources(") || strings.Contains(admin, "pollDataSourceJob") {
 		t.Fatal("admin controller still owns the data-source runtime")
 	}
-	if !strings.Contains(dataSources, "admin-data-sources#askDataSource") {
-		t.Fatal("data-source interactions are not wired to the focused controller")
+	for _, required := range []string{"admin-data-sources#loadDataSourceSchema", "admin-data-sources#runDataSourceQuery"} {
+		if !strings.Contains(string(component), required) {
+			t.Errorf("server data-source component is missing focused action %q", required)
+		}
 	}
-	if strings.Contains(dataSources, "admin#askDataSource") {
-		t.Fatal("legacy admin data-source action remains")
+	for _, forbidden := range []string{"askDataSource", "exploreDataSource", "updateDataSourceChart"} {
+		if strings.Contains(controller, forbidden) {
+			t.Errorf("retired data-source inference/chart client capability remains: %q", forbidden)
+		}
 	}
 }
 
@@ -98,12 +106,12 @@ func TestProjectsControllerDelegatesFocusedModalWorkflows(t *testing.T) {
 	if lines := strings.Count(source, "\n") + 1; lines >= 800 {
 		t.Fatalf("projects controller has %d lines; focused controllers must stay below 800", lines)
 	}
-	for _, required := range []string{"ProjectBrowserCoordinator", "ProjectDebuggerCoordinator"} {
+	for _, required := range []string{"ProjectBrowserCoordinator"} {
 		if !strings.Contains(source, required) {
 			t.Errorf("projects controller does not delegate to %s", required)
 		}
 	}
-	for _, forbidden := range []string{"observeRealtimeJob({", "browseDirectory(path)", "renderProjectDebuggerModal({"} {
+	for _, forbidden := range []string{"ProjectDebuggerCoordinator", "observeRealtimeJob({", "browseDirectory(path)", "renderProjectDebuggerModal({"} {
 		if strings.Contains(source, forbidden) {
 			t.Errorf("projects controller still owns focused modal workflow %q", forbidden)
 		}
@@ -111,9 +119,22 @@ func TestProjectsControllerDelegatesFocusedModalWorkflows(t *testing.T) {
 }
 
 func TestChatControllerDelegatesOperationalPanels(t *testing.T) {
-	source := readFrontendSource(t, "web/src/controllers/chat_controller.ts")
-	if lines := strings.Count(source, "\n") + 1; lines >= 600 {
-		t.Fatalf("chat controller has %d lines; focused controllers must stay below 600", lines)
+	paths := []string{
+		"web/src/controllers/chat_controller.ts",
+		"web/src/controllers/chat_runtime_controller.ts",
+		"web/src/controllers/chat_view_controller.ts",
+	}
+	var sources []string
+	for _, path := range paths {
+		source := readFrontendSource(t, path)
+		if lines := strings.Count(source, "\n") + 1; lines > 300 {
+			t.Errorf("%s has %d lines; focused chat controllers must stay at or below 300", path, lines)
+		}
+		sources = append(sources, source)
+	}
+	source := strings.Join(sources, "\n")
+	if !strings.Contains(sources[0], "ChatRuntimeController") {
+		t.Error("chat controller does not delegate lifecycle authority to ChatRuntimeController")
 	}
 	for _, required := range []string{
 		"ChatTargetsController",
@@ -122,7 +143,6 @@ func TestChatControllerDelegatesOperationalPanels(t *testing.T) {
 		"ChatJobsCoordinator",
 		"ChatMemoryCoordinator",
 		"ChatSystemCoordinator",
-		"recordChatJobProgress",
 	} {
 		if !strings.Contains(source, required) {
 			t.Errorf("chat controller does not delegate to %s", required)
@@ -162,35 +182,61 @@ func TestChatCollaboratorsStayFocusedAndHaveNoDuplicateAuthority(t *testing.T) {
 			t.Errorf("chat execution coordinator contains polling, fallback, or superseded state %q", forbidden)
 		}
 	}
-	transcript := readFrontendSource(t, "web/src/lib/transcript_store.ts")
-	if strings.Contains(transcript, "catch {\n      return []") {
-		t.Fatal("transcript storage still silently replaces corruption with an empty transcript")
+}
+
+func TestOrdinaryWebChatUsesOnlyServerAuthoritativeChannels(t *testing.T) {
+	for _, path := range []string{
+		"web/src/controllers/chat_controller.ts",
+		"web/src/controllers/chat_runtime_controller.ts",
+		"web/src/controllers/chat_view_controller.ts",
+		"web/src/lib/chat_channel_coordinator.ts",
+		"web/src/lib/chat_execution_coordinator.ts",
+	} {
+		source := readFrontendSource(t, path)
+		for _, forbidden := range []string{
+			`fetch("/v1/jobs"`, `pipeline: "chat"`, "local-transcript",
+			"restoreObjectiveTranscript", "restoreLocalTranscript", "TranscriptStore",
+		} {
+			if strings.Contains(source, forbidden) {
+				t.Errorf("ordinary chat fallback %q remains in %s", forbidden, path)
+			}
+		}
+	}
+	for _, path := range []string{
+		"web/src/lib/transcript_store.ts",
+		"web/src/lib/transcript_store.test.ts",
+	} {
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("browser-authoritative transcript surface remains: %s", path)
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("inspect %s: %v", path, err)
+		}
+	}
+	channel := readFrontendSource(t, "web/src/lib/chat_channel_coordinator.ts")
+	for _, required := range []string{"sendChannelMessage(", "workspaceRoot()"} {
+		if !strings.Contains(channel, required) {
+			t.Errorf("channel-only chat path is missing %q", required)
+		}
 	}
 }
 
-func TestProjectPlannerUsesServerConfirmedRealtimeState(t *testing.T) {
-	controller := readFrontendSource(t, "web/src/controllers/project_chat_controller.ts")
+func TestRemovedProjectPlannerHasNoClientCapabilitySurface(t *testing.T) {
+	for _, path := range []string{
+		"web/src/controllers/project_chat_controller.ts",
+		"web/src/lib/project_chat_api.ts",
+		"web/src/lib/project_chat_render.ts",
+		"web/src/lib/project_debugger_coordinator.ts",
+		"web/src/lib/project_debugger_render.ts",
+	} {
+		if _, err := os.Stat(path); err == nil {
+			t.Fatalf("removed direct-inference client surface remains: %s", path)
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("inspect %s: %v", path, err)
+		}
+	}
 	recyclr := readFrontendSource(t, "web/src/controllers/recyclr_controller.ts")
-	for _, required := range []string{
-		`document.addEventListener("omni:project-planning-updated"`,
-		"this.reloadPending = true",
-		`this.setStatus("Saved · live sync degraded", "error")`,
-	} {
-		if !strings.Contains(controller, required) {
-			t.Errorf("project planner realtime path missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{
-		`created_at: new Date().toISOString()`,
-		`new CustomEvent("omni:scrum-refresh"`,
-		"catch {\n      this.modelOptions = []",
-	} {
-		if strings.Contains(controller, forbidden) {
-			t.Errorf("project planner contains client-authoritative or silent path %q", forbidden)
-		}
-	}
-	if !strings.Contains(recyclr, `"project-planning-updated": "omni:project-planning-updated"`) {
-		t.Fatal("page-scoped Recyclr does not bridge project planning updates")
+	if strings.Contains(recyclr, "project-planning-updated") {
+		t.Fatal("frontend still subscribes to removed project-planning generation state")
 	}
 }
 

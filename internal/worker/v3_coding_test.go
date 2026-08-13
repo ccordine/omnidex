@@ -5,13 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/model"
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
 
 func TestDirectCodingCommandDiagnosticExcludesVolatileExecutionSummary(t *testing.T) {
-	detail := directCodingCommandResult(toolruntime.Result{
+	detail := directCodingCommandResult(operation.Result{
 		Summary: "Command failed duration_ms=928",
 		Output: map[string]any{
 			"exit_code": 1,
@@ -25,6 +24,18 @@ func TestDirectCodingCommandDiagnosticExcludesVolatileExecutionSummary(t *testin
 		if !strings.Contains(detail, required) {
 			t.Fatalf("diagnostic omitted %q: %q", required, detail)
 		}
+	}
+}
+
+func TestDirectCodingMutationSummaryReportsActualOperationsAndPaths(t *testing.T) {
+	summary := renderDirectCodingMutationJournal([]directCodingMutationJournalEntry{
+		{Path: "z.ts", Operation: workspaceFileDelete},
+		{Path: "b.ts", Operation: workspaceFileCreate},
+		{Path: "a.ts", Operation: workspaceFileCreate},
+		{Path: "main.ts", Operation: workspaceFileReplace},
+	})
+	if summary != "created=[a.ts,b.ts] replaced=[main.ts] deleted=[z.ts]" {
+		t.Fatalf("summary=%q", summary)
 	}
 }
 
@@ -104,20 +115,6 @@ func TestDirectCodingVerificationRejectsInspectionCommands(t *testing.T) {
 		if !isDirectCodingVerificationCommand(command.program, command.args) {
 			t.Fatalf("real verification was not counted: %s %v", command.program, command.args)
 		}
-	}
-}
-
-func TestMutationObjectiveRoutesToDirectCoding(t *testing.T) {
-	objective := artifacts.Objective{
-		RequiresAction:       true,
-		RequiredCapabilities: []string{capabilityWorkspaceWrite, capabilityCommandExecute},
-	}
-	if !requiresDirectCoding(objective) {
-		t.Fatal("mutation objective did not route to direct coding")
-	}
-	objective.RequiredCapabilities = []string{capabilityWorkspaceWrite}
-	if requiresDirectCoding(objective) {
-		t.Fatal("direct coding accepted an objective without command verification authority")
 	}
 }
 

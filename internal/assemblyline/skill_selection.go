@@ -9,6 +9,7 @@ const (
 	SkillSelectionSchemaV1 = "omnidex.skill-selection.v1"
 	SkillSelectionNone     = "none"
 	maxSkillCandidates     = 5
+	maxSkillLocalContext   = 2000
 	maxSkillPurposeBytes   = 1536
 )
 

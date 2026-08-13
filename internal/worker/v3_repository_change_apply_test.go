@@ -116,8 +116,10 @@ func TestRepositoryMutationClassifierRequiresExactCompleteInventory(t *testing.T
 		SourceSnapshotID: source.ID,
 		ChangedFiles: []queue.RepositoryMutationFile{{
 			FileID: first.FileID, Path: sourceFile.Path,
-			SourceSHA256: sourceFile.SHA256, SourceSize: sourceFile.Size,
-			ExpectedSHA256: postFile.SHA256, ExpectedSize: postFile.Size,
+			SourcePresent: true, SourceSHA256: sourceFile.SHA256,
+			SourceSize: sourceFile.Size, SourceMode: sourceFile.Mode,
+			ExpectedPresent: true, ExpectedSHA256: postFile.SHA256,
+			ExpectedSize: postFile.Size, ExpectedMode: postFile.Mode,
 		}},
 	}
 	state, err := classifyRepositoryMutationSnapshots(source, source, command)
@@ -169,9 +171,8 @@ func expectedRepositoryFileState(
 	for _, file := range result.Snapshot.Files {
 		if file.ID == fileID {
 			return changeapply.ExpectedFileState{
-				FileID: file.ID,
-				SHA256: file.SHA256,
-				Size:   file.Size,
+				FileID: file.ID, Path: file.Path, Present: true,
+				SHA256: file.SHA256, Size: file.Size, Mode: file.Mode,
 			}
 		}
 	}

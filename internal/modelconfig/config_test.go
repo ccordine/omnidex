@@ -5,31 +5,31 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 func TestMergePriority(t *testing.T) {
-	env := Config{"default_model": "env-model", "planner_model": "env-planner"}
-	project := Config{"default_model": "project-model"}
-	card := Config{"planner_model": "card-planner"}
+	env := Config{"conversation_response_model": "env-response", "coding_fragment_model": "env-fragment"}
+	project := Config{"conversation_response_model": "project-response"}
+	card := Config{"coding_fragment_model": "card-fragment"}
 
 	merged := Merge(env, project, card)
-	if merged.Get("default_model") != "project-model" {
-		t.Fatalf("expected project default_model, got %q", merged.Get("default_model"))
+	if merged.Get("conversation_response_model") != "project-response" {
+		t.Fatalf("expected project response route, got %q", merged.Get("conversation_response_model"))
 	}
-	if merged.Get("planner_model") != "card-planner" {
-		t.Fatalf("expected card planner_model, got %q", merged.Get("planner_model"))
+	if merged.Get("coding_fragment_model") != "card-fragment" {
+		t.Fatalf("expected card fragment route, got %q", merged.Get("coding_fragment_model"))
 	}
 }
 
 func TestFromSettingsJSON(t *testing.T) {
-	raw := json.RawMessage(`{"model_config":{"default_model":"project-only"}}`)
+	raw := json.RawMessage(`{"model_config":{"conversation_response_model":"project-only"}}`)
 	cfg, err := FromSettingsJSON(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Get("default_model") != "project-only" {
-		t.Fatalf("expected project-only, got %q", cfg.Get("default_model"))
+	if cfg.Get("conversation_response_model") != "project-only" {
+		t.Fatalf("expected project-only, got %q", cfg.Get("conversation_response_model"))
 	}
 }
 
@@ -44,6 +44,16 @@ func TestFromJSONRejectsMalformedAndUnknownValues(t *testing.T) {
 		json.RawMessage(`{"file_worker_model":"x"}`),
 		json.RawMessage(`{"coding_requirement_adviser_model":"x"}`),
 		json.RawMessage(`{"coding_requirement_split_model":"x"}`),
+		json.RawMessage(`{"default_model":"x"}`),
+		json.RawMessage(`{"fast_model":"x"}`),
+		json.RawMessage(`{"glue_model":"x"}`),
+		json.RawMessage(`{"reasoning_model":"x"}`),
+		json.RawMessage(`{"planner_model":"x"}`),
+		json.RawMessage(`{"analyzer_model":"x"}`),
+		json.RawMessage(`{"responder_model":"x"}`),
+		json.RawMessage(`{"tagger_model":"x"}`),
+		json.RawMessage(`{"search_model":"x"}`),
+		json.RawMessage(`{"memory_model":"x"}`),
 		json.RawMessage(`{"default_model":"x"} {}`),
 	} {
 		if _, err := FromJSON(raw); err == nil {
@@ -63,23 +73,11 @@ func TestValidateEnvironmentValuesRejectsRemovedRequirementRoutes(t *testing.T) 
 	}
 }
 
-func TestModelRolesRejectMissingConfiguration(t *testing.T) {
-	if _, err := AnalyzerModel(Config{}, ""); err == nil {
-		t.Fatal("missing analyzer model must fail")
-	}
-	if _, err := PlannerTicketModel(Config{}, ""); err == nil {
-		t.Fatal("missing planner ticket model must fail")
-	}
-	if model, err := AnalyzerModel(Config{"reasoning_model": "reasoner"}, ""); err != nil || model != "reasoner" {
-		t.Fatalf("model=%q err=%v", model, err)
-	}
-}
-
 func TestModelNamesReturnsEverySelectedProviderModel(t *testing.T) {
 	cfg := Config{
-		"default_model":  "llama3.2:latest",
-		"planner_model":  "gpt-4o",
-		"executor_model": "qwen2.5:7b",
+		"conversation_objective_kind_model": "llama3.2:latest",
+		"web_relevance_model":               "gpt-4o",
+		"conversation_response_model":       "qwen2.5:7b",
 	}
 	names := cfg.ModelNames()
 	if len(names) != 3 {
@@ -87,97 +85,80 @@ func TestModelNamesReturnsEverySelectedProviderModel(t *testing.T) {
 	}
 }
 
-func TestApplyExpandedRoutingFields(t *testing.T) {
-	applied := Apply(Routing{
-		Default:   "base-default",
-		Fast:      "base-fast",
-		Reasoning: "base-reasoning",
-		Tagging:   "base-tagging",
-		Plan:      "base-plan",
-		Analyze:   "base-analyze",
-		Response:  "base-response",
-		Search:    "base-search",
-		Memory:    "base-memory",
-	}, Config{
-		"fast_model":                         "fast",
-		"reasoning_model":                    "reasoning",
-		"analyzer_model":                     "analyze",
-		"responder_model":                    "respond",
-		"tagger_model":                       "tag",
-		"search_model":                       "search",
-		"memory_model":                       "memory",
-		"executor_model":                     "qwen3-coder:30b",
-		"glue_model":                         "qwen2.5-coder:3b",
-		"coding_surface_model":               "qwen3:4b-surface",
-		"coding_product_identity_model":      "qwen2.5-coder:14b-identity",
-		"coding_requirement_partition_model": "qwen2.5-coder:7b-partition",
-		"coding_artifact_handling_model":     "qwen2.5:3b-artifact",
-		"coding_capability_relation_model":   "qwen3:4b-relation",
-		"coding_skill_selection_model":       "qwen3:4b-skill-select",
-		"coding_skill_procedure_model":       "qwen3:4b-skill",
-		"coding_fragment_model":              "qwen3-coder:30b-fragment",
-		"coding_fragment_correction_model":   "qwen2.5-coder:14b-correction",
+func TestApplyExactStationRoutingFields(t *testing.T) {
+	applied := Apply(Routing{}, Config{
+		"conversation_objective_kind_model":       "qwen3:4b-kind",
+		"conversation_response_model":             "qwen3:8b-response",
+		"grounded_answer_model":                   "qwen3:8b-grounded",
+		"web_search_terms_model":                  "qwen3:4b-terms",
+		"web_relevance_model":                     "qwen3:4b-relevance",
+		"web_grounded_synthesis_model":            "qwen3:8b-synthesis",
+		"web_grounded_synthesis_correction_model": "qwen3:8b-synthesis",
+		"web_claim_evidence_review_model":         "qwen3:8b-review",
+		"coding_surface_model":                    "qwen3:4b-surface",
+		"coding_product_identity_model":           "qwen2.5-coder:14b-identity",
+		"coding_requirement_partition_model":      "qwen2.5-coder:7b-partition",
+		"coding_artifact_handling_model":          "qwen2.5:3b-artifact",
+		"coding_capability_relation_model":        "qwen3:4b-relation",
+		"coding_skill_selection_model":            "qwen3:4b-skill-select",
+		"coding_fragment_model":                   "qwen3-coder:30b-fragment",
+		"coding_fragment_correction_model":        "qwen2.5-coder:14b-correction",
 	})
-	if applied.Fast != "fast" || applied.Reasoning != "reasoning" || applied.Analyze != "analyze" || applied.Response != "respond" || applied.Tagging != "tag" || applied.Search != "search" || applied.Memory != "memory" {
-		t.Fatalf("expanded routing not applied: %#v", applied)
+	if got := applied.Stations[station.ConversationObjectiveKind]; got != "qwen3:4b-kind" {
+		t.Fatalf("conversation kind model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleSubtaskExecutorSpecialist]; got != "qwen3-coder:30b" {
-		t.Fatalf("executor model=%q, want dedicated model", got)
+	if got := applied.Stations[station.ConversationResponse]; got != "qwen3:8b-response" {
+		t.Fatalf("conversation response model=%q", got)
 	}
-	if applied.Glue != "qwen2.5-coder:3b" {
-		t.Fatalf("glue model=%q", applied.Glue)
+	if got := applied.Stations[station.GroundedAnswer]; got != "qwen3:8b-grounded" {
+		t.Fatalf("grounded answer model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleCodingSurfaceStation]; got != "qwen3:4b-surface" {
+	if got := applied.Stations[station.WebSearchTerms]; got != "qwen3:4b-terms" {
+		t.Fatalf("web search terms model=%q", got)
+	}
+	if got := applied.Stations[station.WebRelevance]; got != "qwen3:4b-relevance" {
+		t.Fatalf("web relevance model=%q", got)
+	}
+	if got := applied.Stations[station.WebGroundedSynthesis]; got != "qwen3:8b-synthesis" {
+		t.Fatalf("web synthesis model=%q", got)
+	}
+	if got := applied.Stations[station.WebGroundedSynthesisCorrection]; got != "qwen3:8b-synthesis" {
+		t.Fatalf("web synthesis correction model=%q", got)
+	}
+	if got := applied.Stations[station.WebClaimEvidenceReview]; got != "qwen3:8b-review" {
+		t.Fatalf("web claim-evidence review model=%q", got)
+	}
+	if got := applied.Stations[station.CodingSurface]; got != "qwen3:4b-surface" {
 		t.Fatalf("coding surface model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleCodingProductIdentityStation]; got != "qwen2.5-coder:14b-identity" {
+	if got := applied.Stations[station.CodingProductIdentity]; got != "qwen2.5-coder:14b-identity" {
 		t.Fatalf("coding product identity model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleCodingRequirementPartitionStation]; got != "qwen2.5-coder:7b-partition" {
+	if got := applied.Stations[station.CodingRequirementPartition]; got != "qwen2.5-coder:7b-partition" {
 		t.Fatalf("coding requirement partition model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleCodingArtifactHandlingStation]; got != "qwen2.5:3b-artifact" {
+	if got := applied.Stations[station.CodingArtifactHandling]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleCodingCapabilityRelationStation]; got != "qwen3:4b-relation" {
+	if got := applied.Stations[station.CodingKnownArtifactTruth]; got != "qwen2.5:3b-artifact" {
+		t.Fatalf("coding known artifact truth model=%q", got)
+	}
+	if got := applied.Stations[station.CodingDeclarationArtifactBoundary]; got != "qwen2.5:3b-artifact" {
+		t.Fatalf("coding declaration artifact boundary model=%q", got)
+	}
+	if got := applied.Stations[station.CodingArtifactCandidateSelection]; got != "qwen2.5:3b-artifact" {
+		t.Fatalf("coding artifact candidate selection model=%q", got)
+	}
+	if got := applied.Stations[station.CodingCapabilityRelation]; got != "qwen3:4b-relation" {
 		t.Fatalf("coding capability relation model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleCodingSkillSelectionStation]; got != "qwen3:4b-skill-select" {
+	if got := applied.Stations[station.CodingSkillSelection]; got != "qwen3:4b-skill-select" {
 		t.Fatalf("coding skill selection model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleCodingSkillProcedureStation]; got != "qwen3:4b-skill" {
-		t.Fatalf("coding skill procedure model=%q", got)
-	}
-	if got := applied.Specialist[specialist.RoleCodingFragmentStation]; got != "qwen3-coder:30b-fragment" {
+	if got := applied.Stations[station.CodingFragment]; got != "qwen3-coder:30b-fragment" {
 		t.Fatalf("coding fragment model=%q", got)
 	}
-	if got := applied.Specialist[specialist.RoleCodingFragmentCorrectionStation]; got != "qwen2.5-coder:14b-correction" {
+	if got := applied.Stations[station.CodingFragmentCorrection]; got != "qwen2.5-coder:14b-correction" {
 		t.Fatalf("coding fragment correction model=%q", got)
-	}
-}
-
-func TestApplyKeepsGeneralRoutesOutOfDedicatedRoleAuthority(t *testing.T) {
-	base := Routing{
-		Reasoning: "reasoning-14b",
-		Specialist: map[string]string{
-			specialist.RolePlannerSpecialist:            "planner-specialist-14b",
-			specialist.RoleReviewVerificationSpecialist: "review-specialist-7b",
-		},
-	}
-	applied := Apply(base, Config{
-		"planner_model":  "general-planner-4b",
-		"analyzer_model": "general-analyzer-4b",
-	})
-	if applied.Reasoning != "reasoning-14b" {
-		t.Fatalf("general route hijacked reasoning route: %#v", applied)
-	}
-	if applied.Specialist[specialist.RolePlannerSpecialist] != "planner-specialist-14b" {
-		t.Fatalf("general planner hijacked dedicated planner specialist: %#v", applied.Specialist)
-	}
-	if applied.Specialist[specialist.RoleReviewVerificationSpecialist] != "review-specialist-7b" {
-		t.Fatalf("general analyzer hijacked dedicated review specialist: %#v", applied.Specialist)
-	}
-	if applied.Plan != "general-planner-4b" || applied.Analyze != "general-analyzer-4b" {
-		t.Fatalf("general routes were not applied to their own fields: %#v", applied)
 	}
 }

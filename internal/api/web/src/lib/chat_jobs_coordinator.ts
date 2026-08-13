@@ -1,19 +1,15 @@
 import { jsonRequest, readJSON } from "./api";
-import { emptyState, escapeHTML, formatDateTime, statusPillClass } from "./dom";
-import { renderContext, renderJobsPanel, renderStep, renderStepSummary } from "./render";
-import type { JobContext } from "./types";
+import { fetchChatJobsPage, requireServerComponentBundle } from "./chat_component_api";
+import { requireJobDetails } from "./chat_execution_contract";
 import { LifecycleOperationAttempt } from "./lifecycle_operation";
 
 export interface ChatJobsHost {
   queueEnabled(): boolean;
   jobFilter(): HTMLSelectElement;
-  hasJobDetails(): boolean;
-  jobDetails(): HTMLElement;
   hasJobBadge(): boolean;
   jobBadge(): HTMLElement;
   setCurrentJobID(id: number | string | null): void;
-  recycle(target: string, html: string): void;
-  indexContexts(contexts: JobContext[]): void;
+  renderComponentBundle(bundle: string): Promise<void>;
   addEvent(type: string, details?: Record<string, unknown>, full?: unknown): void;
 }
 
@@ -40,76 +36,43 @@ export class ChatJobsCoordinator {
 
   constructor(private readonly host: ChatJobsHost) {}
 
-  async load(options: { quiet?: boolean; strict?: boolean } = {}): Promise<void> {
-    if (!this.host.queueEnabled()) {
-      this.setListOutput(emptyState("Queue routes are disabled in wrapper-only mode."));
-      if (this.host.hasJobDetails()) {
-        this.host.jobDetails().textContent = "Start the core server with DATABASE_URL and WRAPPER_ONLY=false to use job controls.";
-      }
-      return;
-    }
-    if (!options.quiet) this.setListOutput(emptyState("Loading jobs…"));
+  async load(options: { quiet?: boolean; strict?: boolean; offset?: number } = {}): Promise<void> {
+    if (!this.host.queueEnabled()) throw new Error("Job components require repository mode.");
+    const offset = options.offset ?? 0;
     try {
-      const status = this.host.jobFilter().value;
-      const query = new URLSearchParams({ limit: "30" });
-      if (status) query.set("status", status);
-      const [jobsPayload, activityPayload] = await Promise.all([
-        readJSON(await fetch(`/v1/jobs?${query}`)),
-        readJSON(await fetch("/v1/activity?limit=30")),
-      ]);
-      const jobs = jobsPayload.jobs || [];
-      const activity = activityPayload.llm_activity || [];
-      this.setListOutput(renderJobsPanel(jobs, activity));
-      this.host.addEvent("jobs_loaded", { count: jobs.length, llm_activity: activity.length, status: status || "all" });
+      const page = await fetchChatJobsPage(this.host.jobFilter().value, offset);
+      await this.host.renderComponentBundle(page.html.bundle);
+      this.host.addEvent("jobs_loaded", {
+        status: this.host.jobFilter().value || "all",
+        next_offset: page.next_offset ?? 0,
+        has_more: page.has_more,
+      });
     } catch (error) {
-      this.setListOutput(errorPanel(error));
       if (!options.quiet) this.host.addEvent("jobs_failed", { error: errorMessage(error) });
       if (options.strict) throw error;
     }
   }
 
-  render(jobs: unknown[]): void {
-    this.setListOutput(renderJobsPanel(jobs, []));
+  async loadMore(event: Event): Promise<void> {
+    const button = requirePageButton(event, "jobs");
+    await withButtonFeedback(button, "Loading jobs…", () => this.load({
+      strict: true,
+      offset: Number(button.dataset.nextOffset),
+    }));
   }
 
   async select(event: Event): Promise<void> {
-    const id = (event.currentTarget as HTMLElement).dataset.jobId;
-    if (!id) throw new Error("Selected job did not include its id.");
-    const details = await readJSON(await fetch(`/v1/jobs/${id}`));
-    const jobID = details.job?.id;
-    if (!jobID) throw new Error(`Job response for ${id} did not include a job record.`);
+    const id = jobIDFromEvent(event);
+    const details = await readJSON<Record<string, unknown>>(await fetch(`/v1/ui/chat/jobs/${id}`));
+    const jobID = await this.renderDetails(details, Number(id));
     this.host.setCurrentJobID(jobID);
     if (this.host.hasJobBadge()) this.host.jobBadge().textContent = `#${jobID}`;
-    this.renderDetails(details);
   }
 
-  renderDetails(details: Record<string, any>): void {
-    const job = details.job || {};
-    const steps = details.steps || [];
-    const contexts = details.contexts || [];
-    this.host.indexContexts(contexts);
-    this.host.recycle("job-details", `
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div class="font-mono text-xs text-cyan-200">#${job.id || ""}</div>
-          <h3 class="mt-1 text-lg font-semibold text-zinc-100">${escapeHTML(job.instruction || "Untitled job")}</h3>
-          <p class="mt-1 text-xs text-zinc-500">${escapeHTML(job.pipeline || "")} · ${formatDateTime(job.created_at)}</p>
-        </div>
-        <span class="${statusPillClass(job.status)}">${escapeHTML(job.status || "unknown")}</span>
-      </div>
-      <div class="mt-4 flex flex-wrap gap-2">
-        <button data-action="chat#interruptJob" data-job-id="${job.id}" class="rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100">Interrupt</button>
-        <button data-action="chat#replanJob" data-job-id="${job.id}" class="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100">Replan</button>
-        <button data-action="chat#cancelJob" data-job-id="${job.id}" class="rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-xs font-semibold text-rose-100">Cancel</button>
-      </div>
-      ${job.result ? `<section class="mt-5"><h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Result</h4><pre class="mt-2 whitespace-pre-wrap rounded-md bg-white/[.04] p-3 text-sm text-zinc-200">${escapeHTML(job.result)}</pre></section>` : ""}
-      ${job.error ? `<section class="mt-5"><h4 class="text-xs font-semibold uppercase tracking-[.18em] text-rose-300">Error</h4><pre class="mt-2 whitespace-pre-wrap rounded-md bg-rose-400/10 p-3 text-sm text-rose-100">${escapeHTML(job.error)}</pre></section>` : ""}
-      <section class="mt-5">
-        <div class="flex flex-wrap items-center justify-between gap-3"><h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Steps</h4>${renderStepSummary(steps)}</div>
-        <div class="mt-3 space-y-3">${steps.map(renderStep).join("") || emptyState("No steps yet.")}</div>
-      </section>
-      <section class="mt-5"><h4 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500">Contexts</h4><div class="mt-3 space-y-2">${contexts.slice(-12).map(renderContext).join("") || emptyState("No context records yet.")}</div></section>
-    `);
+  async renderDetails(details: Record<string, unknown>, expectedJobID: number): Promise<number> {
+    const authoritative = requireJobDetails(details, expectedJobID);
+    await this.host.renderComponentBundle(requireServerComponentBundle(details, "Job details"));
+    return authoritative.job.id;
   }
 
   async interrupt(event: Event): Promise<void> {
@@ -132,7 +95,7 @@ export class ChatJobsCoordinator {
     ));
     const authoritativeID = authoritativeControlJobID(control, id);
     this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
-    await this.load();
+    await this.load({ strict: true });
     this.host.addEvent("job_canceled", { id: authoritativeID });
   }
 
@@ -147,26 +110,46 @@ export class ChatJobsCoordinator {
     ));
     const authoritativeID = authoritativeControlJobID(control, id);
     this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
-    const details = await readJSON(await fetch(`/v1/jobs/${authoritativeID}`));
-    this.renderDetails(details);
+    const details = await readJSON<Record<string, unknown>>(await fetch(`/v1/ui/chat/jobs/${authoritativeID}`));
+    await this.renderDetails(details, Number(authoritativeID));
     this.host.addEvent(`job_${action}`, { id: authoritativeID });
-  }
-
-  private setListOutput(html: string): void {
-    this.host.recycle("jobs-list", html);
   }
 }
 
 function jobIDFromEvent(event: Event): string {
   const id = (event.currentTarget as HTMLElement).dataset.jobId;
-  if (!id) throw new Error("Job control is missing its job id.");
+  if (!id || !/^[1-9][0-9]*$/.test(id)) throw new Error("Job control is missing its canonical job id.");
   return id;
+}
+
+function requirePageButton(event: Event, section: string): HTMLButtonElement {
+  const button = event.currentTarget as HTMLButtonElement;
+  const offset = Number(button.dataset.nextOffset ?? "");
+  if (button.dataset.pageSection !== section || !Number.isSafeInteger(offset) || offset < 1) {
+    throw new Error(`The server-rendered ${section} page cursor is invalid.`);
+  }
+  return button;
+}
+
+async function withButtonFeedback(
+  button: HTMLButtonElement,
+  loading: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const label = button.textContent;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.textContent = loading;
+  try {
+    await operation();
+  } catch (error) {
+    button.disabled = false;
+    button.setAttribute("aria-busy", "false");
+    button.textContent = label;
+    throw error;
+  }
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function errorPanel(error: unknown): string {
-  return `<div class="rounded border border-rose-300/30 bg-rose-400/10 p-3 text-rose-100">${escapeHTML(errorMessage(error))}</div>`;
 }

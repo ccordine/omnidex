@@ -65,6 +65,7 @@ func runRepositoryGoVerificationCorrection(
 		return "", failRepositoryGoVerificationCorrection(runtime, modelName, target.SymbolID, err)
 	}
 	if err := result.ValidateFor(job); err != nil {
+		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failRepositoryGoVerificationCorrection(runtime, modelName, target.SymbolID, err)
 	}
 	contract := gofragment.Contract{
@@ -73,17 +74,24 @@ func runRepositoryGoVerificationCorrection(
 	}
 	currentCanonical, err := gofragment.ParseFunction(contract, input.CurrentDeclaration)
 	if err != nil {
+		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failRepositoryGoVerificationCorrection(runtime, modelName, target.SymbolID, err)
 	}
 	corrected, err := gofragment.ParseFunction(contract, strings.TrimSpace(result.Candidate))
 	if err != nil {
+		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failRepositoryGoVerificationCorrection(runtime, modelName, target.SymbolID, err)
 	}
 	if corrected == currentCanonical {
+		err = finalizeTypedWorkerResult(runtime, job, result,
+			fmt.Errorf("repository Go verification correction made no progress"))
 		return "", failRepositoryGoVerificationCorrection(
 			runtime, modelName, target.SymbolID,
-			fmt.Errorf("repository Go verification correction made no progress"),
+			err,
 		)
+	}
+	if err = finalizeTypedWorkerResult(runtime, job, result, nil); err != nil {
+		return "", failRepositoryGoVerificationCorrection(runtime, modelName, target.SymbolID, err)
 	}
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: target.SymbolID,

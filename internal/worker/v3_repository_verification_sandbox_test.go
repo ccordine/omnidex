@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	toolruntime "github.com/gryph/omnidex/internal/tools"
 )
 
 func TestRepositoryGoVerificationReportsExactGoCommandNotBubblewrap(t *testing.T) {
@@ -24,7 +22,7 @@ func TestRepositoryGoVerificationReportsExactGoCommandNotBubblewrap(t *testing.T
 	if !directCodingCommandSucceeded(result) {
 		t.Fatalf("sandbox command result=%#v", result.Output)
 	}
-	if got := toolResultText(result.Output, "stdout"); !strings.Contains(got, "ok\texample.com/sandbox") {
+	if got := operationResultText(result.Output, "stdout"); !strings.Contains(got, "ok\texample.com/sandbox") {
 		t.Fatalf("stdout=%q", got)
 	}
 	if len(result.Evidence) != 1 || result.Evidence[0].Command != "go test -json -count=1 ./..." {
@@ -130,13 +128,21 @@ func TestRepositoryGoVerificationRejectsFilesystemDriftAfterCommand(t *testing.T
 func TestRepositoryGoVerificationRejectsAnyNonGoTestCommand(t *testing.T) {
 	t.Parallel()
 	root, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
-	call := toolruntime.Call{Name: "command.run", Input: map[string]any{
-		"program": "go", "args": []string{"build", "./..."},
-	}}
+	request := repositoryGoVerificationRequest{Args: []string{"build", "./..."}}
 	if _, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, call, config, view,
+		context.Background(), root, request, config, view,
 	); err == nil || !strings.Contains(err.Error(), "only go test") {
 		t.Fatalf("non-test command error=%v", err)
+	}
+}
+
+func TestRepositoryGoVerificationRequestRejectsNonGoExecutable(t *testing.T) {
+	t.Parallel()
+	_, err := repositoryGoVerificationRequestFromCommand(testCommand{
+		Name: "npm", Args: []string{"test", "-json", "-count=1", "./..."},
+	})
+	if err == nil || !strings.Contains(err.Error(), "exact go executable") {
+		t.Fatalf("non-Go executable error=%v", err)
 	}
 }
 
@@ -157,11 +163,9 @@ func TestRepositoryGoVerificationMountsSourceReadOnly(t *testing.T) {
 func TestRepositoryGoVerificationRejectsUnstructuredGoTestCommand(t *testing.T) {
 	t.Parallel()
 	root, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
-	call := toolruntime.Call{Name: "command.run", Input: map[string]any{
-		"program": "go", "args": []string{"test", "./..."},
-	}}
+	request := repositoryGoVerificationRequest{Args: []string{"test", "./..."}}
 	if _, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, call, config, view,
+		context.Background(), root, request, config, view,
 	); err == nil || !strings.Contains(err.Error(), "structured") {
 		t.Fatalf("unstructured test command error=%v", err)
 	}
@@ -169,24 +173,20 @@ func TestRepositoryGoVerificationRejectsUnstructuredGoTestCommand(t *testing.T) 
 
 func TestRepositoryGoVerificationAcceptsOnlyRegisteredFocusedCommandShape(t *testing.T) {
 	t.Parallel()
-	valid := toolruntime.Call{Name: "command.run", Input: map[string]any{
-		"program": "go",
-		"args":    []string{"test", "-json", "-count=1", "-run", "^TestOne$", "./sample"},
-	}}
-	args, _, err := prepareRepositoryGoVerificationCall(valid)
+	valid := repositoryGoVerificationRequest{
+		Args: []string{"test", "-json", "-count=1", "-run", "^TestOne$", "./sample"},
+	}
+	args, _, err := prepareRepositoryGoVerificationRequest(valid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slicesEqualStrings(args, valid.Input["args"].([]string)) {
+	if !slicesEqualStrings(args, valid.Args) {
 		t.Fatalf("focused args=%v", args)
 	}
 	for _, selector := range []string{"TestOne", "^($"} {
 		invalid := valid
-		invalid.Input = map[string]any{
-			"program": "go",
-			"args":    []string{"test", "-json", "-count=1", "-run", selector, "./sample"},
-		}
-		if _, _, err := prepareRepositoryGoVerificationCall(invalid); err == nil ||
+		invalid.Args = []string{"test", "-json", "-count=1", "-run", selector, "./sample"}
+		if _, _, err := prepareRepositoryGoVerificationRequest(invalid); err == nil ||
 			!strings.Contains(err.Error(), "structured") {
 			t.Fatalf("invalid selector %q error=%v", selector, err)
 		}
@@ -212,12 +212,11 @@ func TestRepositoryChangeVerificationHasNoUnsandboxedFallback(t *testing.T) {
 	}
 }
 
-func repositoryGoTestCall(timeout int) toolruntime.Call {
-	input := map[string]any{"program": "go", "args": []string{"test", "-json", "-count=1", "./..."}}
-	if timeout > 0 {
-		input["timeout_seconds"] = timeout
+func repositoryGoTestCall(timeout int) repositoryGoVerificationRequest {
+	return repositoryGoVerificationRequest{
+		Args:    []string{"test", "-json", "-count=1", "./..."},
+		Timeout: time.Duration(timeout) * time.Second,
 	}
-	return toolruntime.Call{Name: "command.run", Input: input}
 }
 
 func repositorySandboxFixture(

@@ -27,9 +27,18 @@ func repositoryMutationEvidence(
 	fileIDs := make([]string, len(command.ChangedFiles))
 	postState := make([]RepositoryMutationFile, len(command.ChangedFiles))
 	copy(postState, command.ChangedFiles)
+	createdCount, deletedCount, modifiedCount := 0, 0, 0
 	for index, file := range command.ChangedFiles {
 		paths[index] = file.Path
 		fileIDs[index] = file.FileID
+		switch {
+		case !file.SourcePresent && file.ExpectedPresent:
+			createdCount++
+		case file.SourcePresent && !file.ExpectedPresent:
+			deletedCount++
+		case file.SourcePresent && file.ExpectedPresent:
+			modifiedCount++
+		}
 	}
 	record := evidence.Record{
 		JobID: command.JobID, StepID: command.StepID,
@@ -48,6 +57,9 @@ func repositoryMutationEvidence(
 			"patch_sha256":                     command.PatchSHA256,
 			"changed_file_ids":                 fileIDs,
 			"changed_files":                    postState,
+			"created_file_count":               createdCount,
+			"deleted_file_count":               deletedCount,
+			"modified_file_count":              modifiedCount,
 		},
 	}
 	return record, record.Validate()

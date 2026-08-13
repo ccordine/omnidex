@@ -77,12 +77,15 @@ func TestAdminPanelOwnsItsDeferredController(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	var payload struct {
-		HTML string `json:"html"`
+		HTML chatComponentHTML `json:"html"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if !strings.Contains(payload.HTML, `data-controller="admin"`) {
+	if strings.Contains(rec.Body.String(), `"component"`) {
+		t.Fatalf("duplicate legacy panel component field remains: %s", rec.Body.String())
+	}
+	if !strings.Contains(payload.HTML.Bundle, `data-controller="admin"`) {
 		t.Fatal("admin panel must own its deferred controller")
 	}
 }
@@ -174,21 +177,21 @@ func TestUIPanelReturnsSingleServerFragment(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	var payload struct {
-		Panel string `json:"panel"`
-		HTML  string `json:"html"`
-	}
+	var payload uiPanelResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	if payload.Panel != "jobs" {
 		t.Fatalf("panel=%q want jobs", payload.Panel)
 	}
-	if !strings.Contains(payload.HTML, `data-panel-name="jobs"`) {
-		t.Fatalf("jobs fragment missing panel marker: %s", payload.HTML)
+	if !strings.Contains(payload.HTML.Bundle, `data-panel-name="jobs"`) {
+		t.Fatalf("jobs fragment missing panel marker: %s", payload.HTML.Bundle)
 	}
-	if strings.Contains(payload.HTML, `data-panel-name="chat"`) || strings.Contains(payload.HTML, `data-panel-name="memory"`) {
+	if strings.Contains(payload.HTML.Bundle, `data-panel-name="chat"`) || strings.Contains(payload.HTML.Bundle, `data-panel-name="memory"`) {
 		t.Fatalf("fragment should only contain requested panel")
+	}
+	if !strings.Contains(payload.HTML.Bundle, `data-recyclr-target="app-panel"`) {
+		t.Fatalf("panel response lacks its server-rendered component bundle: %s", payload.HTML.Bundle)
 	}
 	if rec.Result().Cookies()[0].Name != uiSessionCookieName {
 		t.Fatalf("ui session cookie missing")
@@ -260,13 +263,20 @@ func TestUIServesBuiltBundle(t *testing.T) {
 	bundle := rec.Body.String()
 	for _, want := range []string{
 		"Omni UI is ready",
-		"chat#openTimelineItem",
-		"renderProgress",
-		"loadGlobalActivity",
-		"evt_",
+		"/v1/ui/chat/channels",
+		"/v1/ui/chat/jobs",
+		"/v1/ui/chat/memory",
+		"/v1/ui/chat/metrics",
+		"/v1/ui/chat/timeline",
+		"/messages?",
 	} {
 		if !strings.Contains(bundle, want) {
 			t.Fatalf("bundle missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"renderChatMessages", "renderJobsPanel", "renderMetricsDashboard", "chat#openTimelineItem"} {
+		if strings.Contains(bundle, forbidden) {
+			t.Fatalf("built bundle retains browser component authority %q", forbidden)
 		}
 	}
 }

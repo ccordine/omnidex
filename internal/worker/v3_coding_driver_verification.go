@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
 
 func (s *directCodingSession) Verify() (directCodingVerification, error) {
@@ -48,7 +49,7 @@ func (s *directCodingSession) Verify() (directCodingVerification, error) {
 			))
 			return directCodingVerification{Commands: executed, Diagnostic: diagnostic}, nil
 		}
-		output := toolResultText(result.Output, "stdout") + "\n" + toolResultText(result.Output, "stderr")
+		output := operationResultText(result.Output, "stdout") + "\n" + operationResultText(result.Output, "stderr")
 		if isV3TestCommand(command.Name, command.Args) && !verificationReportsNoTests(output) {
 			testEvidence = true
 		}
@@ -89,36 +90,56 @@ func (s *directCodingSession) Complete(verification directCodingVerification) (s
 	if err := validateDirectCodingProtectedPaths(s.root, s.protectedPaths); err != nil {
 		return "", err
 	}
-	if err := s.activatePendingSkills(); err != nil {
-		return "", fmt.Errorf("activate verified coding skills: %w", err)
-	}
 	summary := fmt.Sprintf(
-		"Completed deterministic coding workflow: planned_files=%d planned_deletes=%d accepted_mutations=%d verification=%s",
+		"Completed deterministic coding workflow: planned_files=%d planned_deletes=%d accepted_mutations=%d %s verification=%s",
 		s.plannedFiles,
 		s.plannedDeletes,
 		s.completion.MutationCount,
+		renderDirectCodingMutationJournal(s.mutationJournal),
 		strings.Join(verification.Commands, " | "),
 	)
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_completed", summary)
 	return summary, nil
 }
 
-func (s *directCodingSession) executeDirectCodingCommand(command testCommand) (toolruntime.Result, error) {
+func renderDirectCodingMutationJournal(entries []directCodingMutationJournalEntry) string {
+	groups := map[workspaceFileOperation][]string{
+		workspaceFileCreate: {}, workspaceFileReplace: {}, workspaceFileDelete: {},
+	}
+	for _, entry := range entries {
+		if _, registered := groups[entry.Operation]; !registered {
+			continue
+		}
+		groups[entry.Operation] = append(groups[entry.Operation], entry.Path)
+	}
+	for operation := range groups {
+		sort.Strings(groups[operation])
+	}
+	return fmt.Sprintf(
+		"created=[%s] replaced=[%s] deleted=[%s]",
+		strings.Join(groups[workspaceFileCreate], ","),
+		strings.Join(groups[workspaceFileReplace], ","),
+		strings.Join(groups[workspaceFileDelete], ","),
+	)
+}
+
+func (s *directCodingSession) executeDirectCodingCommand(command testCommand) (operation.Result, error) {
 	label := directCodingCommandLabel(command)
 	if err := validateV3Command(command.Name, command.Args); err != nil {
-		return toolruntime.Result{}, fmt.Errorf("server-selected coding command %s is invalid: %w", label, err)
+		return operation.Result{}, fmt.Errorf("server-selected coding command %s is invalid: %w", label, err)
 	}
-	result, err := s.execute(toolruntime.Call{Name: "command.run", Input: map[string]any{
-		"program": command.Name,
-		"args":    append([]string(nil), command.Args...),
-	}})
+	result, err := executeCodeCommandAtRoot(s.runtime.ctx, s.root, codeCommand{
+		Program: command.Name, Args: append([]string(nil), command.Args...),
+	})
 	if err != nil {
-		return toolruntime.Result{}, fmt.Errorf("execute server-selected coding command %s: %w", label, err)
+		return operation.Result{}, fmt.Errorf("execute server-selected coding command %s: %w", label, err)
+	}
+	if err := s.persistCodeOwnedEvidence(result); err != nil {
+		return operation.Result{}, fmt.Errorf("persist server-selected coding command %s: %w", label, err)
 	}
 	return result, nil
 }
 
-func directCodingCommandSucceeded(result toolruntime.Result) bool {
+func directCodingCommandSucceeded(result operation.Result) bool {
 	succeeded, ok := result.Output["succeeded"].(bool)
 	return ok && succeeded
 }
@@ -166,7 +187,7 @@ func directCodingVerificationCommands(root string) []testCommand {
 	return commands
 }
 
-func directCodingCommandResult(result toolruntime.Result) string {
+func directCodingCommandResult(result operation.Result) string {
 	parts := make([]string, 0, 3)
 	if exitCode, ok := result.Output["exit_code"]; ok {
 		parts = append(parts, fmt.Sprintf("exit_code=%v", exitCode))

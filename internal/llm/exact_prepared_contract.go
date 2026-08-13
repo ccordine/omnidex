@@ -34,8 +34,10 @@ type ProviderGenerationUsage struct {
 }
 
 type PreparedGeneration struct {
-	Schema string `json:"schema"`
+	Schema                        string                          `json:"schema"`
+	Protocol                      ExactPreparedProtocol           `json:"protocol"`
 	ProviderRequestDisposition    ProviderRequestDisposition      `json:"provider_request_disposition"`
+	ProviderRequestFailureReason  ProviderRequestFailureReason    `json:"provider_request_failure_reason,omitempty"`
 	Content                       string                          `json:"content"`
 	ProviderRequestSHA256         string                          `json:"provider_request_sha256"`
 	ProviderHTTPStatus            int                             `json:"provider_http_status"`
@@ -60,6 +62,25 @@ type PreparedGeneration struct {
 	// bodies out of the prepared-generation JSON prevents large provider
 	// identity responses from entering prompts or terminal trace payloads.
 	ProviderIdentityEvidence ProviderIdentityEvidence `json:"-"`
+}
+
+type ProviderRequestFailureReason string
+
+const (
+	ProviderRequestFailureAuthorityCanceled   ProviderRequestFailureReason = "authority_canceled"
+	ProviderRequestFailureAuthoritySuperseded ProviderRequestFailureReason = "authority_superseded"
+	ProviderRequestFailureAuthorityExpired    ProviderRequestFailureReason = "authority_expired"
+)
+
+func (reason ProviderRequestFailureReason) Validate() error {
+	switch reason {
+	case ProviderRequestFailureAuthorityCanceled,
+		ProviderRequestFailureAuthoritySuperseded,
+		ProviderRequestFailureAuthorityExpired:
+		return nil
+	default:
+		return fmt.Errorf("provider request failure reason %q is not registered", reason)
+	}
 }
 
 func (usage ProviderGenerationUsage) ValidateSuccessful() error {
@@ -148,10 +169,13 @@ func (generation PreparedGeneration) ValidateProviderResponseEvidence() error {
 // ValidateProviderResponseReceipt validates the normalized provider receipt
 // without claiming that its out-of-line raw response bytes were supplied.
 func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
-	if generation.Schema != PreparedGenerationSchemaV1 ||
+	if generation.Schema != PreparedGenerationSchemaV1 || generation.Protocol.Validate() != nil ||
 		generation.ProviderRequestDisposition.Validate() != nil ||
 		!providerIdentityDigest.MatchString(generation.ProviderRequestSHA256) {
 		return fmt.Errorf("exact prepared provider response evidence is invalid")
+	}
+	if generation.ProviderRequestFailureReason != "" {
+		return fmt.Errorf("provider response receipt cannot claim a local request failure reason")
 	}
 	if generation.ProviderResponseDisposition == ProviderResponseTransportError {
 		if generation.ProviderHTTPStatus != 0 || generation.ProviderResponseComplete ||
@@ -244,7 +268,7 @@ type ExactPreparedContractClient interface {
 	GeneratePreparedExact(context.Context, PreparedModel) (PreparedGeneration, error)
 }
 
-func ValidateExactPreparedProvider(client Client, expected ProviderIdentityExpectation) error {
+func ValidateExactPreparedProvider(client ExactPreparedContractClient, expected ProviderIdentityExpectation) error {
 	exact, err := RequireExactPreparedContract(client)
 	if err != nil {
 		return err
@@ -255,13 +279,12 @@ func ValidateExactPreparedProvider(client Client, expected ProviderIdentityExpec
 	return nil
 }
 
-func RequireExactPreparedContract(client Client) (ExactPreparedContractClient, error) {
-	exact, ok := client.(ExactPreparedContractClient)
-	if !ok {
+func RequireExactPreparedContract(client ExactPreparedContractClient) (ExactPreparedContractClient, error) {
+	if client == nil {
 		return nil, fmt.Errorf("configured generation provider does not enforce the exact prepared contract")
 	}
-	if err := exact.RequireExactPreparedContract(); err != nil {
+	if err := client.RequireExactPreparedContract(); err != nil {
 		return nil, err
 	}
-	return exact, nil
+	return client, nil
 }

@@ -56,9 +56,9 @@ The domain-neutral coordinator that consumes these authorities is specified in
 [`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md), with its
 code-owned prerequisite and named-uncertainty boundary in
 [`CHARMELEON_COGNITION_RESOLUTION.md`](CHARMELEON_COGNITION_RESOLUTION.md). The
-in-memory executable specification remains isolated under `internal/cognitionreference`.
-Fixture mechanics and private evaluation authority may not enter this context
-substrate.
+the sole production assembly-line and queue implementation owns the executable
+contract. The former parallel in-memory reference tree has been retired; fixture
+mechanics and private evaluation authority may not enter this context substrate.
 
 ## Task Ledger
 

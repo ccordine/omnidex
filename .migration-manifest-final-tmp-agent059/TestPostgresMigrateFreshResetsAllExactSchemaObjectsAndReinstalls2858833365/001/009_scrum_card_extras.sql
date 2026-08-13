@@ -1,8 +1,0 @@
-ALTER TABLE scrum_cards
-    ADD COLUMN IF NOT EXISTS jira_ticket TEXT NOT NULL DEFAULT '';
-
-ALTER TABLE scrum_cards
-    ADD COLUMN IF NOT EXISTS recipe_id TEXT NOT NULL DEFAULT '';
-
-ALTER TABLE scrum_cards
-    ADD COLUMN IF NOT EXISTS recipe JSONB NOT NULL DEFAULT '{}'::jsonb;

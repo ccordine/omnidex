@@ -24,6 +24,7 @@ func (c *Client) generatePreparedRaw(
 	digest := sha256.Sum256(payload)
 	result := llm.PreparedGeneration{
 		Schema:                     llm.PreparedGenerationSchemaV1,
+		Protocol:                   prepared.Protocol,
 		ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
 		ProviderRequestSHA256:      hex.EncodeToString(digest[:]),
 		ProviderObservation:        observed.Observation,
@@ -75,7 +76,9 @@ func (c *Client) generatePreparedRaw(
 			result.ProviderContentEncoding.SHA256, result.ProviderContentEncoding.Uncompressed,
 		)
 	}
-	decoded, decodeErr := llm.DecodeExactPreparedResponse(response.StatusCode, body)
+	decoded, decodeErr := llm.DecodeExactPreparedResponseForProtocol(
+		prepared.Protocol, response.StatusCode, body,
+	)
 	result.ProviderResponseDisposition = decoded.Disposition
 	result.ProviderResponseModel = decoded.Model
 	result.Content = decoded.Content

@@ -14,7 +14,8 @@ func TestLLMCallEvidenceRejectsIncompleteOrFakeSuccess(t *testing.T) {
 
 	base := LLMCallEvidenceRecord{
 		StepID: 1, Scope: "portable", RequestedModel: "requested", Model: "effective", Attempt: 1,
-		SystemPrompt: "exact system prompt", UserPrompt: "exact user prompt",
+		StationCallOpeningID: 1,
+		SystemPrompt:         "exact system prompt", UserPrompt: "exact user prompt",
 		ResponseFormat: "json", ResponseSchema: map[string]any{"type": "object"},
 		ContextTokens: 4096, MaxOutputTokens: 512,
 		Status: LLMEvidenceSucceeded, Response: "exact response",
@@ -58,7 +59,8 @@ func TestLLMCallEvidencePreservesExactPromptsAndRawResponse(t *testing.T) {
 func TestLLMCallEvidenceHashIncludesNativeThinkingMode(t *testing.T) {
 	base := normalizeLLMCallEvidenceRecord(LLMCallEvidenceRecord{
 		StepID: 1, Scope: "portable_advisory_worker", RequestedModel: "requested", Model: "effective", Attempt: 1,
-		SystemPrompt: "system", UserPrompt: "user", ResponseFormat: "text",
+		StationCallOpeningID: 1,
+		SystemPrompt:         "system", UserPrompt: "user", ResponseFormat: "text",
 		ContextTokens: 4096, MaxOutputTokens: 512,
 		Status: LLMEvidenceSucceeded, Response: `{"thinking":"trace","content":"memo"}`,
 	})
@@ -81,7 +83,8 @@ func TestLLMCallEvidenceAllowsPartialOutputOnlyForGenerationFailure(t *testing.T
 
 	base := LLMCallEvidenceRecord{
 		StepID: 1, Scope: "portable", RequestedModel: "requested", Model: "effective", Attempt: 1,
-		SystemPrompt: "system", UserPrompt: "user", ResponseFormat: "text",
+		StationCallOpeningID: 1,
+		SystemPrompt:         "system", UserPrompt: "user", ResponseFormat: "text",
 		ContextTokens: 4096, MaxOutputTokens: 512, Error: "stream ended", Response: "partial",
 	}
 	base.Status = LLMEvidenceGenerationFailed

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/agentstream"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -46,43 +46,29 @@ func printExternalAgentStreamUpdatesWithUI(steps []model.Step, offsets map[int64
 }
 
 func formatExternalAgentCLIEventLine(line string, maxChars int) string {
-	line = strings.TrimSpace(line)
-	if line == "" {
+	if strings.TrimSpace(line) == "" {
 		return ""
 	}
-	var event struct {
-		Agent   string   `json:"agent"`
-		Type    string   `json:"type"`
-		Message string   `json:"message"`
-		Command string   `json:"command"`
-		Files   []string `json:"files"`
+	event, err := agentstream.DecodeLine(line)
+	if err != nil {
+		return "external agent stream rejected: " + compactProgressValue(err.Error(), maxChars)
 	}
-	if err := json.Unmarshal([]byte(line), &event); err != nil {
-		if strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
-			return ""
-		}
-		return "external agent: " + compactProgressValue(line, maxChars)
-	}
-	agent := strings.TrimSpace(event.Agent)
-	if agent == "" {
-		agent = "agent"
-	}
-	kind := strings.ToLower(strings.TrimSpace(event.Type))
+	agent := event.Agent
 	message := strings.TrimSpace(event.Message)
-	switch kind {
-	case "started":
+	switch event.Type {
+	case agentstream.EventStarted:
 		return agent + " started"
-	case "status":
+	case agentstream.EventStatus:
 		if message == "" {
 			return ""
 		}
 		return agent + " status: " + compactProgressValue(message, maxChars)
-	case "thinking", "reasoning":
+	case agentstream.EventThinking:
 		if message == "" {
 			return ""
 		}
 		return agent + " thinking: " + compactProgressValue(message, maxChars)
-	case "command":
+	case agentstream.EventCommand:
 		detail := strings.TrimSpace(event.Command)
 		if detail == "" {
 			detail = message
@@ -91,7 +77,7 @@ func formatExternalAgentCLIEventLine(line string, maxChars int) string {
 			return ""
 		}
 		return agent + " command: " + compactProgressValue(detail, maxChars)
-	case "file_change":
+	case agentstream.EventFileChange:
 		if len(event.Files) > 0 {
 			return agent + " files: " + compactProgressValue(strings.Join(event.Files, ", "), maxChars)
 		}
@@ -99,33 +85,27 @@ func formatExternalAgentCLIEventLine(line string, maxChars int) string {
 			return ""
 		}
 		return agent + " file change: " + compactProgressValue(message, maxChars)
-	case "tool", "mcp_tool_call", "web_search":
+	case agentstream.EventTool:
 		if message == "" {
 			return ""
 		}
 		return agent + " tool: " + compactProgressValue(message, maxChars)
-	case "message":
+	case agentstream.EventMessage:
 		if message == "" {
 			return ""
 		}
 		return agent + ": " + compactProgressValue(message, maxChars)
-	case "error":
+	case agentstream.EventError, agentstream.EventInterrupted:
 		if message == "" {
 			message = "external agent reported an error"
 		}
 		return agent + " error: " + compactProgressValue(message, maxChars)
-	case "completed", "turn.completed":
+	case agentstream.EventCompleted:
 		if message == "" {
 			message = "external agent session completed"
 		}
 		return agent + " completed: " + compactProgressValue(message, maxChars)
 	default:
-		if message == "" {
-			return ""
-		}
-		if kind == "" {
-			kind = "event"
-		}
-		return agent + " " + kind + ": " + compactProgressValue(message, maxChars)
+		return "external agent stream rejected: unsupported event type"
 	}
 }

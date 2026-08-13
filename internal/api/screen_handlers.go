@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,11 +25,16 @@ func (s *Server) handleHostScreenMonitors(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	pageRequest, err := screenMonitorPageRequest(r, hostbridge.DefaultScreenMonitorPageSize)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	payload, err := s.proxyHostBridgeJSON(ctx, "/v1/screen/monitors", r.URL.Query())
+	payload, err := s.hostBridgeClient().ScreenMonitors(ctx, pageRequest)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -112,45 +116,6 @@ func (s *Server) handleHostScreenMJPEG(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-}
-
-func (s *Server) proxyHostBridgeJSON(ctx context.Context, path string, query url.Values) (map[string]any, error) {
-	base := strings.TrimRight(strings.TrimSpace(s.hostAgentURL), "/")
-	if resolved, resolveErr := hostbridge.ResolveReachableURL(ctx, base, s.hostAgentToken, 4*time.Second); resolveErr == nil && resolved != "" {
-		base = resolved
-	}
-	parsed, err := url.Parse(base)
-	if err != nil {
-		return nil, err
-	}
-	parsed.Path = path
-	parsed.RawQuery = query.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	if token := strings.TrimSpace(s.hostAgentToken); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("host bridge request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
 }
 
 func buildBridgeScreenStreamURL(base string, query url.Values) (string, error) {

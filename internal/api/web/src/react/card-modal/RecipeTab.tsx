@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { patchScrumCard } from "../../lib/scrum_api";
+import { fetchRecipes } from "../../lib/project_api";
 import { ActionButton, Panel, Select, TextArea } from "./common";
 import type { CardModalChildProps } from "./types";
 
 export function RecipeTab({ context, projectID, runMutation, onCardUpdated }: CardModalChildProps) {
   const card = context.card;
-  const recipes = context.recipes ?? [];
+	const [recipes, setRecipes] = useState(context.recipes ?? []);
+	const [recipeOffset, setRecipeOffset] = useState(context.recipe_offset ?? 0);
+	const [recipeHasMore, setRecipeHasMore] = useState(Boolean(context.recipe_has_more));
   const [recipeID, setRecipeID] = useState(card.recipe_id || context.project_recipe_id || "");
   const [recipeJSON, setRecipeJSON] = useState(JSON.stringify(card.recipe && Object.keys(card.recipe).length > 0 ? card.recipe : context.project_recipe ?? {}, null, 2));
 
@@ -13,6 +16,20 @@ export function RecipeTab({ context, projectID, runMutation, onCardUpdated }: Ca
     setRecipeID(card.recipe_id || context.project_recipe_id || "");
     setRecipeJSON(JSON.stringify(card.recipe && Object.keys(card.recipe).length > 0 ? card.recipe : context.project_recipe ?? {}, null, 2));
   }, [card.id, card.updated_at, context.project_recipe_id]);
+
+	useEffect(() => {
+		setRecipes(context.recipes ?? []);
+		setRecipeOffset(context.recipe_offset ?? 0);
+		setRecipeHasMore(Boolean(context.recipe_has_more));
+	}, [context.recipe_offset, context.recipe_has_more, context.recipes]);
+
+	const loadRecipePage = async (offset: number) => {
+		const page = await runMutation("Loading recipe page", () => fetchRecipes(offset));
+		if (!page) return;
+		setRecipes(page.recipes);
+		setRecipeOffset(page.offset);
+		setRecipeHasMore(page.has_more);
+	};
 
   return (
     <Panel title="Recipe">
@@ -34,6 +51,8 @@ export function RecipeTab({ context, projectID, runMutation, onCardUpdated }: Ca
           >
             Load catalog
           </ActionButton>
+			{recipeOffset > 0 ? <ActionButton onClick={() => loadRecipePage(Math.max(0, recipeOffset - 20))}>Previous recipes</ActionButton> : null}
+			{recipeHasMore ? <ActionButton onClick={() => loadRecipePage(recipeOffset + recipes.length)}>Next recipes</ActionButton> : null}
           <ActionButton
             tone="primary"
             onClick={async () => {

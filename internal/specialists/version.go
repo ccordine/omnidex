@@ -13,25 +13,19 @@ const learnedSkillIDPrefix = "learned_"
 type SkillStatus string
 
 const (
-	SkillStatusCandidate  SkillStatus = "candidate"
-	SkillStatusValidating SkillStatus = "validating"
-	SkillStatusActive     SkillStatus = "active"
-	SkillStatusRejected   SkillStatus = "rejected"
-	SkillStatusRetired    SkillStatus = "retired"
+	SkillStatusActive SkillStatus = "active"
 )
 
 type SkillSource string
 
 const (
-	SkillSourceBootstrap SkillSource = "bootstrap"
-	SkillSourceLearned   SkillSource = "learned"
+	SkillSourceLearned SkillSource = "learned"
 )
 
 type SkillKind string
 
 const (
-	SkillKindBootstrapSpecialist SkillKind = "bootstrap_specialist"
-	SkillKindCodeProcedure       SkillKind = "code_procedure"
+	SkillKindCodeProcedure SkillKind = "code_procedure"
 )
 
 type SkillVersion struct {
@@ -45,35 +39,6 @@ type SkillVersion struct {
 	Validation     json.RawMessage
 }
 
-type SkillCheckStatus string
-
-const (
-	SkillCheckPassed SkillCheckStatus = "passed"
-	SkillCheckFailed SkillCheckStatus = "failed"
-)
-
-type SkillCheck struct {
-	Name   string           `json:"check"`
-	Status SkillCheckStatus `json:"status"`
-	Detail string           `json:"detail"`
-}
-
-func (check SkillCheck) Validate() error {
-	if check.Name == "" || check.Name != strings.TrimSpace(check.Name) {
-		return fmt.Errorf("worker skill check requires one trimmed name")
-	}
-	if check.Detail == "" || check.Detail != strings.TrimSpace(check.Detail) {
-		return fmt.Errorf("worker skill check %s requires one trimmed detail", check.Name)
-	}
-	if len(check.Name) > 96 || len(check.Detail) > 2000 {
-		return fmt.Errorf("worker skill check %s exceeds its bounded evidence size", check.Name)
-	}
-	if check.Status != SkillCheckPassed && check.Status != SkillCheckFailed {
-		return fmt.Errorf("worker skill check %s has invalid status %q", check.Name, check.Status)
-	}
-	return nil
-}
-
 func (version SkillVersion) Validate() error {
 	if err := version.Spec.Validate(); err != nil {
 		return err
@@ -81,20 +46,10 @@ func (version SkillVersion) Validate() error {
 	if version.Version < 1 {
 		return fmt.Errorf("skill %s version must be positive", version.Spec.ID)
 	}
-	switch version.Status {
-	case SkillStatusCandidate, SkillStatusValidating, SkillStatusActive,
-		SkillStatusRejected, SkillStatusRetired:
-	default:
+	if version.Status != SkillStatusActive {
 		return fmt.Errorf("skill %s has invalid status %q", version.Spec.ID, version.Status)
 	}
 	switch version.Source {
-	case SkillSourceBootstrap:
-		if version.Kind != SkillKindBootstrapSpecialist {
-			return fmt.Errorf("bootstrap skill %s requires bootstrap_specialist kind", version.Spec.ID)
-		}
-		if version.CreatedByJobID != nil {
-			return fmt.Errorf("bootstrap skill %s cannot claim a creating job", version.Spec.ID)
-		}
 	case SkillSourceLearned:
 		if version.Kind != SkillKindCodeProcedure {
 			return fmt.Errorf("learned skill %s has unsupported kind %q", version.Spec.ID, version.Kind)
@@ -118,10 +73,8 @@ func (version SkillVersion) Validate() error {
 	if version.ContentSHA256 != wantHash {
 		return fmt.Errorf("skill %s content hash does not match its immutable contract", version.Spec.ID)
 	}
-	if version.Status == SkillStatusActive || version.Status == SkillStatusRejected {
-		if len(version.Validation) == 0 || !json.Valid(version.Validation) || string(version.Validation) == "null" {
-			return fmt.Errorf("skill %s status %s requires validation evidence", version.Spec.ID, version.Status)
-		}
+	if len(version.Validation) == 0 || !json.Valid(version.Validation) || string(version.Validation) == "null" {
+		return fmt.Errorf("skill %s status %s requires validation evidence", version.Spec.ID, version.Status)
 	}
 	return nil
 }
@@ -132,18 +85,6 @@ func validLearnedSkillID(id string) bool {
 	}
 	_, err := hex.DecodeString(strings.TrimPrefix(id, learnedSkillIDPrefix))
 	return err == nil
-}
-
-func ValidateSkillTransition(from, to SkillStatus) error {
-	allowed := map[SkillStatus]map[SkillStatus]bool{
-		SkillStatusCandidate:  {SkillStatusValidating: true, SkillStatusRejected: true},
-		SkillStatusValidating: {SkillStatusActive: true, SkillStatusRejected: true},
-		SkillStatusActive:     {SkillStatusRetired: true},
-	}
-	if allowed[from][to] {
-		return nil
-	}
-	return fmt.Errorf("worker skill transition %s -> %s is forbidden", from, to)
 }
 
 func (spec Spec) ContentHash() (string, error) {
@@ -163,30 +104,16 @@ func SkillContentHash(spec Spec, kind SkillKind) (string, error) {
 		return "", fmt.Errorf("canonicalize skill %s output schema: %w", spec.ID, err)
 	}
 	payload := struct {
-		Kind            SkillKind       `json:"kind,omitempty"`
-		ID              string          `json:"id"`
-		Purpose         string          `json:"purpose"`
-		PreferredModel  []string        `json:"preferred_model"`
-		AllowedTools    []string        `json:"allowed_tools"`
-		ForbiddenTools  []string        `json:"forbidden_tools"`
-		ContextBudget   int             `json:"context_budget"`
-		InputSchema     json.RawMessage `json:"input_schema"`
-		OutputSchema    json.RawMessage `json:"output_schema"`
-		StopConditions  []string        `json:"stop_conditions"`
-		RetryPolicy     string          `json:"retry_policy"`
-		RequireEvidence bool            `json:"require_evidence"`
-		Instructions    string          `json:"instructions"`
+		Kind         SkillKind       `json:"kind,omitempty"`
+		ID           string          `json:"id"`
+		Purpose      string          `json:"purpose"`
+		InputSchema  json.RawMessage `json:"input_schema"`
+		OutputSchema json.RawMessage `json:"output_schema"`
+		Instructions string          `json:"instructions"`
 	}{
 		Kind: kind,
 		ID:   strings.TrimSpace(spec.ID), Purpose: strings.TrimSpace(spec.Purpose),
-		PreferredModel: append([]string(nil), spec.PreferredModel...),
-		AllowedTools:   append([]string(nil), spec.AllowedTools...),
-		ForbiddenTools: append([]string(nil), spec.ForbiddenTools...),
-		ContextBudget:  spec.ContextBudget,
-		InputSchema:    inputSchema,
-		OutputSchema:   outputSchema,
-		StopConditions: append([]string(nil), spec.StopConditions...),
-		RetryPolicy:    strings.TrimSpace(spec.RetryPolicy), RequireEvidence: spec.RequireEvidence,
+		InputSchema: inputSchema, OutputSchema: outputSchema,
 		Instructions: strings.TrimSpace(spec.Instructions),
 	}
 	raw, err := json.Marshal(payload)

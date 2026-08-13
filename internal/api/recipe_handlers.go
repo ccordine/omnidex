@@ -13,14 +13,24 @@ func (s *Server) handleRecipes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	recipes, err := omni.LoadRecipes(s.recipeRoot())
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, omni.MaxRecipePageSize)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	offset, err := exactChannelQueryInteger(r, "offset", 0, 0, 1<<30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	page, err := omni.LoadRecipePage(s.recipeRoot(), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"recipes": recipes,
-		"root":    s.recipeRoot(),
+		"recipes": page.Recipes, "root": s.recipeRoot(), "offset": page.Offset,
+		"has_more": page.HasMore, "next_offset": dataSourceNextOffset(page.Offset, len(page.Recipes), page.HasMore),
 	})
 }
 
@@ -35,18 +45,12 @@ func (s *Server) handleRecipeByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "recipe not found")
 		return
 	}
-	recipes, err := omni.LoadRecipes(s.recipeRoot())
+	recipe, err := omni.LoadRecipeByID(s.recipeRoot(), id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	for _, recipe := range recipes {
-		if recipe.ID == id {
-			writeJSON(w, http.StatusOK, map[string]any{"recipe": recipe})
-			return
-		}
-	}
-	writeError(w, http.StatusNotFound, "recipe not found")
+	writeJSON(w, http.StatusOK, map[string]any{"recipe": recipe})
 }
 
 func mergeRecipeCatalog(catalog omni.Recipe, override json.RawMessage) omni.Recipe {

@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/evidence"
 )
 
 const (
 	lifecycleOperationCommandSchema = "omnidex.lifecycle-operation-command.v1"
 	maxLifecycleOutputBytes         = 4 << 20
+	maxObjectiveCompletionEvidence  = 32
+	maxObjectiveEvidenceSetBytes    = 128 << 10
 )
 
 type lifecycleOperationDescriptor struct {
@@ -64,6 +68,55 @@ func normalizeCompleteStepCommand(command CompleteStepCommand) (CompleteStepComm
 		return CompleteStepCommand{}, fmt.Errorf("step context value requires a nonempty context key")
 	}
 	return command, nil
+}
+
+func normalizeCompleteStepEvidenceCommand(
+	command CompleteStepEvidenceCommand,
+) (CompleteStepEvidenceCommand, [][]byte, error) {
+	normalized, err := normalizeCompleteStepCommand(command.CompleteStepCommand)
+	if err != nil {
+		return CompleteStepEvidenceCommand{}, nil, err
+	}
+	if normalized.ContextKey != "objective_result" {
+		return CompleteStepEvidenceCommand{}, nil, fmt.Errorf(
+			"objective evidence completion requires context key %q", "objective_result",
+		)
+	}
+	if len(command.Evidence) > maxObjectiveCompletionEvidence {
+		return CompleteStepEvidenceCommand{}, nil, fmt.Errorf(
+			"objective evidence completion exceeds the %d-record limit",
+			maxObjectiveCompletionEvidence,
+		)
+	}
+	records := make([]evidence.Record, len(command.Evidence))
+	payloads := make([][]byte, len(command.Evidence))
+	total := 0
+	for index, record := range command.Evidence {
+		payload, recordErr := normalizeObjectiveCompletionEvidence(
+			record, normalized.Authority.JobID, normalized.StepID,
+		)
+		if recordErr != nil {
+			return CompleteStepEvidenceCommand{}, nil, fmt.Errorf(
+				"objective evidence record %d: %w", index, recordErr,
+			)
+		}
+		total += len(payload)
+		if total > maxObjectiveEvidenceSetBytes {
+			return CompleteStepEvidenceCommand{}, nil, fmt.Errorf(
+				"objective evidence set exceeds the %d-byte limit", maxObjectiveEvidenceSetBytes,
+			)
+		}
+		records[index] = record
+		payloads[index] = payload
+	}
+	if records == nil {
+		records = make([]evidence.Record, 0)
+		payloads = make([][]byte, 0)
+	}
+	return CompleteStepEvidenceCommand{
+		CompleteStepCommand: normalized,
+		Evidence:            records,
+	}, payloads, nil
 }
 
 func normalizeFailStepCommand(command FailStepCommand) (FailStepCommand, error) {

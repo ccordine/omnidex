@@ -230,7 +230,7 @@ func (r *Repository) HasRunningScrumPlay(ctx context.Context) (bool, error) {
 		SELECT EXISTS (
 			SELECT 1
 			FROM scrum_cards
-			WHERE play_state IN ('running', 'reviewing')
+			WHERE play_state = 'running'
 			LIMIT 1
 		)
 	`).Scan(&exists)
@@ -241,7 +241,7 @@ func (r *Repository) ListRunningScrumPlayProjectIDs(ctx context.Context) ([]int6
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT project_id
 		FROM scrum_cards
-		WHERE play_state IN ('running', 'reviewing')
+		WHERE play_state = 'running'
 		ORDER BY project_id ASC
 	`)
 	if err != nil {
@@ -260,89 +260,38 @@ func (r *Repository) ListRunningScrumPlayProjectIDs(ctx context.Context) ([]int6
 }
 
 type DBScrumCard struct {
-	ID           string          `json:"id"`
-	ProjectID    int64           `json:"project_id"`
-	Title        string          `json:"title"`
-	Description  string          `json:"description"`
-	Column       string          `json:"column"`
-	Checklist    json.RawMessage `json:"checklist"`
-	RefFiles     json.RawMessage `json:"ref_files"`
-	Chat         json.RawMessage `json:"chat"`
-	ModelConfig  json.RawMessage `json:"model_config"`
-	AgentConfig  json.RawMessage `json:"agent_config"`
-	CardTicket   string          `json:"card_ticket"`
-	CardPrompt   string          `json:"card_prompt"`
-	RecipeID     string          `json:"recipe_id"`
-	Recipe       json.RawMessage `json:"recipe"`
-	Tags         json.RawMessage `json:"tags"`
-	PlanningChat json.RawMessage `json:"planning_chat"`
-	CoachConfig  json.RawMessage `json:"coach_config"`
-	TestCriteria json.RawMessage `json:"test_criteria"`
-	FlowMetrics  json.RawMessage `json:"flow_metrics"`
-	JobID        string          `json:"job_id"`
-	TagsJobID    string          `json:"tags_job_id"`
-	TicketJobID  string          `json:"ticket_job_id"`
-	ConsoleLog   string          `json:"console_log"`
-	PlayState    string          `json:"play_state"`
-	QueueOrder   int             `json:"queue_order"`
-	BoardOrder   int             `json:"board_order"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-}
-
-func (r *Repository) ListScrumCards(ctx context.Context, projectID int64) ([]DBScrumCard, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
-		       model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
-		       tags, planning_chat, coach_config, test_criteria, flow_metrics,
-		       job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
-		FROM scrum_cards
-		WHERE project_id = $1
-		ORDER BY updated_at DESC, id ASC
-	`, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	cards := []DBScrumCard{}
-	for rows.Next() {
-		var card DBScrumCard
-		if err := rows.Scan(
-			&card.ID,
-			&card.ProjectID,
-			&card.Title,
-			&card.Description,
-			&card.Column,
-			&card.Checklist,
-			&card.RefFiles,
-			&card.Chat,
-			&card.ModelConfig,
-			&card.AgentConfig,
-			&card.CardTicket,
-			&card.CardPrompt,
-			&card.RecipeID,
-			&card.Recipe,
-			&card.Tags,
-			&card.PlanningChat,
-			&card.CoachConfig,
-			&card.TestCriteria,
-			&card.FlowMetrics,
-			&card.JobID,
-			&card.TagsJobID,
-			&card.TicketJobID,
-			&card.ConsoleLog,
-			&card.PlayState,
-			&card.QueueOrder,
-			&card.BoardOrder,
-			&card.CreatedAt,
-			&card.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		cards = append(cards, card)
-	}
-	return cards, rows.Err()
+	ID                       string          `json:"id"`
+	ProjectID                int64           `json:"project_id"`
+	Title                    string          `json:"title"`
+	Description              string          `json:"description"`
+	Column                   string          `json:"column"`
+	Checklist                json.RawMessage `json:"checklist"`
+	RefFiles                 json.RawMessage `json:"ref_files"`
+	Chat                     json.RawMessage `json:"chat"`
+	ModelConfig              json.RawMessage `json:"model_config"`
+	AgentConfig              json.RawMessage `json:"agent_config"`
+	CardTicket               string          `json:"card_ticket"`
+	CardPrompt               string          `json:"card_prompt"`
+	RecipeID                 string          `json:"recipe_id"`
+	Recipe                   json.RawMessage `json:"recipe"`
+	Tags                     json.RawMessage `json:"tags"`
+	PlanningChat             json.RawMessage `json:"planning_chat"`
+	CoachConfig              json.RawMessage `json:"coach_config"`
+	TestCriteria             json.RawMessage `json:"test_criteria"`
+	FlowMetrics              json.RawMessage `json:"flow_metrics"`
+	JobID                    string          `json:"job_id"`
+	TagsJobID                string          `json:"tags_job_id"`
+	TicketJobID              string          `json:"ticket_job_id"`
+	ConsoleLog               string          `json:"console_log"`
+	PlayState                string          `json:"play_state"`
+	QueueOrder               int             `json:"queue_order"`
+	BoardOrder               int             `json:"board_order"`
+	SyncJobID                string          `json:"-"`
+	AgentStreamChatCursor    int64           `json:"-"`
+	AgentStreamConsoleCursor int64           `json:"-"`
+	StepContextCursor        int64           `json:"-"`
+	CreatedAt                time.Time       `json:"created_at"`
+	UpdatedAt                time.Time       `json:"updated_at"`
 }
 
 func (r *Repository) GetScrumCard(ctx context.Context, projectID int64, cardID string) (DBScrumCard, error) {
@@ -351,7 +300,9 @@ func (r *Repository) GetScrumCard(ctx context.Context, projectID int64, cardID s
 		SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
 		       model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
 		       tags, planning_chat, coach_config, test_criteria, flow_metrics,
-		       job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
+		       job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order,
+		       sync_job_id, agent_stream_chat_cursor, agent_stream_console_cursor, step_context_cursor,
+		       created_at, updated_at
 		FROM scrum_cards
 		WHERE project_id = $1 AND id = $2
 	`, projectID, strings.TrimSpace(cardID)).Scan(
@@ -381,6 +332,10 @@ func (r *Repository) GetScrumCard(ctx context.Context, projectID int64, cardID s
 		&card.PlayState,
 		&card.QueueOrder,
 		&card.BoardOrder,
+		&card.SyncJobID,
+		&card.AgentStreamChatCursor,
+		&card.AgentStreamConsoleCursor,
+		&card.StepContextCursor,
 		&card.CreatedAt,
 		&card.UpdatedAt,
 	)
@@ -419,6 +374,7 @@ func sanitizeScrumCardFields(card *DBScrumCard) {
 	card.TicketJobID = SanitizeUTF8Text(card.TicketJobID)
 	card.ConsoleLog = SanitizeUTF8Text(card.ConsoleLog)
 	card.PlayState = SanitizeUTF8Text(card.PlayState)
+	card.SyncJobID = SanitizeUTF8Text(card.SyncJobID)
 }
 
 func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardID, title, description, column string, checklist, refFiles, chat json.RawMessage) (DBScrumCard, error) {
@@ -448,7 +404,9 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 			RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
 			          model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
 			          tags, planning_chat, coach_config, test_criteria, flow_metrics,
-			          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
+			          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order,
+			          sync_job_id, agent_stream_chat_cursor, agent_stream_console_cursor, step_context_cursor,
+			          created_at, updated_at
 		),
 		touched_project AS (
 			UPDATE projects
@@ -486,6 +444,10 @@ func (r *Repository) CreateScrumCard(ctx context.Context, projectID int64, cardI
 		&card.PlayState,
 		&card.QueueOrder,
 		&card.BoardOrder,
+		&card.SyncJobID,
+		&card.AgentStreamChatCursor,
+		&card.AgentStreamConsoleCursor,
+		&card.StepContextCursor,
 		&card.CreatedAt,
 		&card.UpdatedAt,
 	)
@@ -563,6 +525,22 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 			current.BoardOrder = int(v)
 		}
 	}
+	if syncJobID, ok := patch["sync_job_id"].(string); ok {
+		current.SyncJobID = strings.TrimSpace(syncJobID)
+	}
+	for key, target := range map[string]*int64{
+		"agent_stream_chat_cursor":    &current.AgentStreamChatCursor,
+		"agent_stream_console_cursor": &current.AgentStreamConsoleCursor,
+		"step_context_cursor":         &current.StepContextCursor,
+	} {
+		if raw, exists := patch[key]; exists {
+			cursor, err := exactScrumCursor(raw, key)
+			if err != nil {
+				return DBScrumCard{}, err
+			}
+			*target = cursor
+		}
+	}
 	if cardTicket, ok := patch["card_ticket"].(string); ok {
 		current.CardTicket = SanitizeUTF8Text(cardTicket)
 	}
@@ -589,6 +567,9 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 	}
 
 	sanitizeScrumCardFields(&current)
+	if err := validateDBScrumCursorAuthority(current); err != nil {
+		return DBScrumCard{}, err
+	}
 
 	var card DBScrumCard
 	err = r.pool.QueryRow(ctx, `
@@ -617,12 +598,18 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		    play_state = $23,
 		    queue_order = $24,
 		    board_order = $25,
+		    sync_job_id = $26,
+		    agent_stream_chat_cursor = $27,
+		    agent_stream_console_cursor = $28,
+		    step_context_cursor = $29,
 			    updated_at = NOW()
-			WHERE project_id = $1 AND id = $2 AND updated_at = $26
+			WHERE project_id = $1 AND id = $2 AND updated_at = $30
 			RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
 			          model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
 			          tags, planning_chat, coach_config, test_criteria, flow_metrics,
-			          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order, created_at, updated_at
+			          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order,
+			          sync_job_id, agent_stream_chat_cursor, agent_stream_console_cursor, step_context_cursor,
+			          created_at, updated_at
 		),
 		touched_project AS (
 			UPDATE projects
@@ -633,7 +620,7 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		SELECT updated_card.*
 		FROM updated_card
 		INNER JOIN touched_project ON touched_project.id = updated_card.project_id
-	`, projectID, cardID, current.Title, current.Description, current.Column, string(current.Checklist), string(current.RefFiles), string(current.Chat), string(current.ModelConfig), string(current.AgentConfig), current.CardTicket, current.CardPrompt, current.RecipeID, string(current.Recipe), string(defaultJSON(current.Tags, `[]`)), string(defaultJSON(current.PlanningChat, `[]`)), string(defaultJSON(current.CoachConfig, `{}`)), string(defaultJSON(current.TestCriteria, `[]`)), current.JobID, current.TagsJobID, current.TicketJobID, current.ConsoleLog, current.PlayState, current.QueueOrder, current.BoardOrder, current.UpdatedAt).Scan(
+	`, projectID, cardID, current.Title, current.Description, current.Column, string(current.Checklist), string(current.RefFiles), string(current.Chat), string(current.ModelConfig), string(current.AgentConfig), current.CardTicket, current.CardPrompt, current.RecipeID, string(current.Recipe), string(defaultJSON(current.Tags, `[]`)), string(defaultJSON(current.PlanningChat, `[]`)), string(defaultJSON(current.CoachConfig, `{}`)), string(defaultJSON(current.TestCriteria, `[]`)), current.JobID, current.TagsJobID, current.TicketJobID, current.ConsoleLog, current.PlayState, current.QueueOrder, current.BoardOrder, current.SyncJobID, current.AgentStreamChatCursor, current.AgentStreamConsoleCursor, current.StepContextCursor, current.UpdatedAt).Scan(
 		&card.ID,
 		&card.ProjectID,
 		&card.Title,
@@ -660,6 +647,10 @@ func (r *Repository) UpdateScrumCard(ctx context.Context, projectID int64, cardI
 		&card.PlayState,
 		&card.QueueOrder,
 		&card.BoardOrder,
+		&card.SyncJobID,
+		&card.AgentStreamChatCursor,
+		&card.AgentStreamConsoleCursor,
+		&card.StepContextCursor,
 		&card.CreatedAt,
 		&card.UpdatedAt,
 	)

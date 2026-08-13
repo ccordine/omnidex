@@ -43,11 +43,11 @@ func TestPostgresTaskLedgerCommandsAreAtomicAndIdempotent(t *testing.T) {
 	}
 
 	marker := fmt.Sprintf("task-ledger-repository-%d", time.Now().UnixNano())
-	job, err := repository.EnqueueJob(ctx, marker+"-one", model.PipelineAssistant, []byte(`{}`))
+	job, err := repository.EnqueueJob(ctx, marker+"-one", model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherJob, err := repository.EnqueueJob(ctx, marker+"-two", model.PipelineAssistant, []byte(`{}`))
+	otherJob, err := repository.EnqueueJob(ctx, marker+"-two", model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}

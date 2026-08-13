@@ -3,11 +3,14 @@ package hostbridge
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/agentstream"
 )
 
 func streamCommandNDJSON(w http.ResponseWriter, cmd *exec.Cmd, agent string) {
@@ -38,13 +41,27 @@ func streamCommandNDJSON(w http.ResponseWriter, cmd *exec.Cmd, agent string) {
 	}()
 
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 4<<20)
+	scanner.Buffer(make([]byte, 0, 64*1024), agentstream.MaxEventBytes)
+	var streamErr error
 	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+		event, err := agentstream.DecodeBoundaryLine(scanner.Text())
+		if err != nil {
+			streamErr = err
+			_ = cmd.Process.Kill()
+			break
 		}
-		if _, err := w.Write(line); err != nil {
+		if event.Agent != agent {
+			streamErr = fmt.Errorf("external agent stream agent %q differs from host agent %q", event.Agent, agent)
+			_ = cmd.Process.Kill()
+			break
+		}
+		line, err := agentstream.EncodeBoundaryLine(event)
+		if err != nil {
+			streamErr = err
+			_ = cmd.Process.Kill()
+			break
+		}
+		if _, err := io.WriteString(w, line); err != nil {
 			_ = cmd.Process.Kill()
 			return
 		}
@@ -56,36 +73,39 @@ func streamCommandNDJSON(w http.ResponseWriter, cmd *exec.Cmd, agent string) {
 			flusher.Flush()
 		}
 	}
+	if err := scanner.Err(); err != nil && streamErr == nil {
+		streamErr = fmt.Errorf("read external agent stream: %w", err)
+		_ = cmd.Process.Kill()
+	}
 	waitErr := cmd.Wait()
 	stderrBlob := <-errCh
+	if streamErr != nil {
+		writeAgentStreamError(w, flusher, agent, streamErr.Error())
+		return
+	}
 	if len(stderrBlob) > 0 {
-		message := strings.TrimSpace(string(stderrBlob))
+		message := strings.TrimRight(string(stderrBlob), "\r\n")
 		if waitErr != nil && !strings.Contains(message, waitErr.Error()) {
 			message = message + " (" + waitErr.Error() + ")"
 		}
-		payload, _ := json.Marshal(map[string]string{
-			"agent":   agent,
-			"type":    "error",
-			"message": message,
-		})
-		_, _ = w.Write(payload)
-		_, _ = io.WriteString(w, "\n")
-		if flusher != nil {
-			flusher.Flush()
-		}
+		writeAgentStreamError(w, flusher, agent, message)
 		return
 	}
 	if waitErr != nil {
-		payload, _ := json.Marshal(map[string]string{
-			"agent":   agent,
-			"type":    "error",
-			"message": waitErr.Error(),
-		})
-		_, _ = w.Write(payload)
-		_, _ = io.WriteString(w, "\n")
-		if flusher != nil {
-			flusher.Flush()
-		}
+		writeAgentStreamError(w, flusher, agent, waitErr.Error())
+	}
+}
+
+func writeAgentStreamError(w io.Writer, flusher http.Flusher, agent, message string) {
+	line, err := agentstream.EncodeBoundaryLine(agentstream.Event{
+		Agent: agent, Type: agentstream.EventError, Message: message,
+	})
+	if err != nil {
+		return
+	}
+	_, _ = io.WriteString(w, line+"\n")
+	if flusher != nil {
+		flusher.Flush()
 	}
 }
 

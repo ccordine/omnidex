@@ -4,7 +4,7 @@ import "fmt"
 
 const (
 	MinInferenceContextTokens      = 8192
-	DefaultInferenceContextTokens  = 32768
+	DefaultInferenceContextTokens  = 8192
 	MaxInferenceContextTokens      = 1048576
 	inferenceContextOverheadTokens = 512
 	defaultOutputReservationTokens = 2048

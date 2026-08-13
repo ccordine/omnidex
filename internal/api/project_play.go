@@ -132,7 +132,7 @@ func (s *Server) pauseProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 	paused := 0
 	for _, card := range board.Cards {
 		switch card.PlayState {
-		case scrumPlayRunning, scrumPlayQueued, scrumPlayReviewing:
+		case scrumPlayRunning, scrumPlayQueued:
 		default:
 			continue
 		}
@@ -156,7 +156,7 @@ func (s *Server) pauseProjectAutoWork(r *http.Request, projectID int64) (ScrumBo
 			}); err != nil {
 				return ScrumBoard{}, paused, "", fmt.Errorf("cancel job %d for Scrum card %q: %w", jobID, card.ID, err)
 			}
-		} else if card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing {
+		} else if card.PlayState == scrumPlayRunning {
 			return ScrumBoard{}, paused, "", fmt.Errorf("active Scrum card %q has no job id", card.ID)
 		}
 		card.Column = "assigned"

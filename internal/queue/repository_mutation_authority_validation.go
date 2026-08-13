@@ -13,10 +13,12 @@ func validateRepositoryMutationCommand(command RepositoryMutationCommand) error 
 	if err := validateStepAttemptAuthority(command.stepAttemptAuthority()); err != nil {
 		return fmt.Errorf("repository mutation authority: %w", err)
 	}
+	if !repositoryMutationOwnerID(command.ContractID) {
+		return fmt.Errorf("repository mutation contract identity is invalid")
+	}
 	for _, identity := range []struct {
 		name, value, prefix string
 	}{
-		{name: "contract identity", value: command.ContractID, prefix: "change_contract_"},
 		{name: "stage identity", value: command.StageID, prefix: "repository_change_stage_"},
 		{name: "source snapshot identity", value: command.SourceSnapshotID, prefix: "snapshot_"},
 	} {
@@ -67,21 +69,53 @@ func validateRepositoryMutationCommand(command RepositoryMutationCommand) error 
 			return fmt.Errorf("repository mutation contains duplicate file path %q", file.Path)
 		}
 		paths[file.Path] = struct{}{}
-		if !repositoryMutationHexDigest(file.ExpectedSHA256) {
-			return fmt.Errorf("repository mutation changed file %q has invalid post-patch SHA", file.FileID)
+		if err := validateRepositoryMutationFileState(
+			file.FileID, "source", file.SourcePresent,
+			file.SourceSHA256, file.SourceSize, file.SourceMode,
+		); err != nil {
+			return err
 		}
-		if file.ExpectedSize < 0 {
-			return fmt.Errorf("repository mutation changed file %q has invalid post-patch size", file.FileID)
+		if err := validateRepositoryMutationFileState(
+			file.FileID, "post-patch", file.ExpectedPresent,
+			file.ExpectedSHA256, file.ExpectedSize, file.ExpectedMode,
+		); err != nil {
+			return err
 		}
-		if !repositoryMutationHexDigest(file.SourceSHA256) {
-			return fmt.Errorf("repository mutation changed file %q has invalid source SHA", file.FileID)
+		if !file.SourcePresent && !file.ExpectedPresent {
+			return fmt.Errorf("repository mutation changed file %q is absent in both source and post-patch state", file.FileID)
 		}
-		if file.SourceSize < 0 {
-			return fmt.Errorf("repository mutation changed file %q has invalid source size", file.FileID)
-		}
-		if file.SourceSHA256 == file.ExpectedSHA256 && file.SourceSize == file.ExpectedSize {
+		if file.SourcePresent == file.ExpectedPresent &&
+			file.SourceSHA256 == file.ExpectedSHA256 && file.SourceSize == file.ExpectedSize &&
+			file.SourceMode == file.ExpectedMode {
 			return fmt.Errorf("repository mutation changed file %q has identical source and post state", file.FileID)
 		}
+	}
+	return nil
+}
+
+func validateRepositoryMutationFileState(
+	fileID, name string,
+	present bool,
+	sha string,
+	size int64,
+	mode uint32,
+) error {
+	if !present {
+		if sha != "" || size != 0 || mode != 0 {
+			return fmt.Errorf(
+				"repository mutation changed file %q has nonempty absent %s state", fileID, name,
+			)
+		}
+		return nil
+	}
+	if !repositoryMutationHexDigest(sha) {
+		return fmt.Errorf("repository mutation changed file %q has invalid %s SHA", fileID, name)
+	}
+	if size < 0 {
+		return fmt.Errorf("repository mutation changed file %q has invalid %s size", fileID, name)
+	}
+	if mode > 0o777 {
+		return fmt.Errorf("repository mutation changed file %q has invalid %s mode", fileID, name)
 	}
 	return nil
 }
@@ -109,6 +143,11 @@ func repositoryMutationOpaqueID(value, prefix string) bool {
 	return strings.HasPrefix(value, prefix) &&
 		len(value) == len(prefix)+sha256.Size*2 &&
 		repositoryMutationHexDigest(strings.TrimPrefix(value, prefix))
+}
+
+func repositoryMutationOwnerID(value string) bool {
+	return repositoryMutationOpaqueID(value, "change_contract_") ||
+		repositoryMutationOpaqueID(value, "desired_graph_")
 }
 
 func repositoryMutationHexDigest(value string) bool {

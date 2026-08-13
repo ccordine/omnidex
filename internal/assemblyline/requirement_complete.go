@@ -10,6 +10,26 @@ const maxCompleteRequirementPartitionCalls = 128
 
 type RequirementPartitionCall func(RequirementPartitionInput) (RequirementPartitionDecision, error)
 
+func ValidateCompleteRequirementPartition(source string, candidate RequirementPartitionDecision) error {
+	input := RequirementPartitionInput{SourceText: source, Mode: RequirementExtractFeatures}
+	if err := input.validate(); err != nil {
+		return err
+	}
+	if err := candidate.ValidateFor(input); err != nil {
+		return err
+	}
+	if len(candidate.FeatureQuotes) == 0 {
+		return fmt.Errorf("complete requirement partition requires at least one grounded feature quote")
+	}
+	if _, err := BuildRequirementResidual(source, candidate.FeatureQuotes); err != nil {
+		return fmt.Errorf("complete requirement partition residual: %w", err)
+	}
+	if _, err := BuildRequirementGraph(source, candidate.FeatureQuotes); err != nil {
+		return fmt.Errorf("complete requirement partition graph: %w", err)
+	}
+	return nil
+}
+
 // CompleteRequirementPartition owns extraction-to-fixed-point, strict split
 // progress, source ordering, residual validation, and graph construction. The
 // callback owns only one tiny semantic decision at a time.

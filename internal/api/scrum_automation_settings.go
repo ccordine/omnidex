@@ -7,9 +7,7 @@ import (
 )
 
 type scrumAutomationSettings struct {
-	AutoWork     ScrumAutoWorkConfig
-	AutoReview   ScrumAutoReviewConfig
-	CreateTicket ScrumCreateTicketConfig
+	AutoWork ScrumAutoWorkConfig
 }
 
 func loadScrumAutomationSettings(settings json.RawMessage) (scrumAutomationSettings, error) {
@@ -17,18 +15,8 @@ func loadScrumAutomationSettings(settings json.RawMessage) (scrumAutomationSetti
 	if err != nil {
 		return scrumAutomationSettings{}, err
 	}
-	autoReview, err := loadScrumAutoReviewConfig(settings)
-	if err != nil {
-		return scrumAutomationSettings{}, err
-	}
-	createTicket, err := loadScrumCreateTicketConfig(settings)
-	if err != nil {
-		return scrumAutomationSettings{}, err
-	}
 	return scrumAutomationSettings{
-		AutoWork:     autoWork,
-		AutoReview:   autoReview,
-		CreateTicket: createTicket,
+		AutoWork: autoWork,
 	}, nil
 }
 

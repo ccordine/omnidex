@@ -33,11 +33,6 @@ func TestPostgresContextProjectionRoundTripBindingAndImmutability(t *testing.T) 
 	if _, err := repository.StoreContextProjection(ctx, changed, projection); !errors.Is(err, ErrContextProjectionConflict) {
 		t.Fatalf("changed identity error=%v, want conflict", err)
 	}
-	changed = authority
-	changed.Mode = ContextProjectionMode("applied")
-	if _, err := repository.StoreContextProjection(ctx, changed, projection); !errors.Is(err, ErrInvalidContextProjection) {
-		t.Fatalf("unsupported usage mode error=%v, want invalid projection", err)
-	}
 	loaded, err := repository.GetContextProjection(ctx, projection.ID)
 	if err != nil || !reflect.DeepEqual(loaded, created) {
 		t.Fatalf("loaded=%+v error=%v, want %+v", loaded, err, created)
@@ -69,22 +64,26 @@ func TestPostgresContextProjectionRoundTripBindingAndImmutability(t *testing.T) 
 	assertContextProjectionImmutable(t, ctx, pool, projection.ID)
 }
 
-func TestPostgresContextProjectionStoresExplicitLiveMode(t *testing.T) {
+func TestPostgresContextProjectionStoresCodeOwnedLiveUsage(t *testing.T) {
 	ctx, repository, pool := openWorkingSetDatabase(t)
 	marker := fmt.Sprintf("context-projection-live-%d", time.Now().UnixNano())
 	authority, projection := seedContextProjectionTest(t, ctx, repository, pool, marker)
-	authority.Mode = ContextProjectionModeLive
-	authority.WorkKind = "cognition_action_decision"
 	created, err := repository.StoreContextProjection(ctx, authority, projection)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Authority.Mode != ContextProjectionModeLive {
-		t.Fatalf("stored context mode=%q want live", created.Authority.Mode)
+	var usageMode string
+	if err := pool.QueryRow(ctx, `
+		SELECT usage_mode FROM context_projections WHERE projection_id=$1
+	`, projection.ID).Scan(&usageMode); err != nil {
+		t.Fatal(err)
+	}
+	if usageMode != "live" {
+		t.Fatalf("stored context usage mode=%q want live", usageMode)
 	}
 	loaded, err := repository.GetContextProjection(ctx, projection.ID)
-	if err != nil || loaded.Authority != authority {
-		t.Fatalf("loaded live projection=%+v error=%v", loaded, err)
+	if err != nil || !reflect.DeepEqual(loaded, created) {
+		t.Fatalf("loaded live projection=%+v error=%v want=%+v", loaded, err, created)
 	}
 }
 
@@ -202,7 +201,6 @@ func seedContextProjectionTest(
 	}
 	return ContextProjectionAuthority{
 		StepAttemptAuthority: attemptAuthority, WorkKind: "repository_investigation",
-		Mode: ContextProjectionModeLive,
 	}, projection
 }
 

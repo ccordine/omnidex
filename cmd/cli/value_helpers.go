@@ -5,27 +5,6 @@ import (
 	"unicode"
 )
 
-func splitTags(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	parts := strings.Split(value, ",")
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		tag := strings.ToLower(strings.TrimSpace(part))
-		if tag == "" {
-			continue
-		}
-		if _, ok := seen[tag]; ok {
-			continue
-		}
-		seen[tag] = struct{}{}
-		out = append(out, tag)
-	}
-	return out
-}
-
 func safeValue(value, fallback string) string {
 	clean := strings.TrimSpace(value)
 	if clean == "" {

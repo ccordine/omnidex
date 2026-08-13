@@ -134,32 +134,41 @@ Repeated polling state is coalesced. Full prompts and context remain available t
 
 ## Models
 
-Ollama is the default local provider. The only coding model roles are independently configurable without giving either one control-plane authority:
+Ollama is the default local provider. Bounded station models are independently configurable without giving any model control-plane authority:
 
 ```dotenv
 LLM_PROVIDER=ollama
-OLLAMA_MODEL_SPECIALIST_CODING_SURFACE=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE=qwen3.5:9b-q4_K_M
-OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT=qwen3-coder:30b
-OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION=qwen3-coder:30b
-INFERENCE_CONTEXT_TOKENS=32768
+OMNI_CODING_SURFACE_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_PRODUCT_IDENTITY_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_REQUIREMENT_PARTITION_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_SKILL_SELECTION_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_REPOSITORY_SEARCH_TERM_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL=qwen3.5:9b-q4_K_M
+OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL=deepseek-r1:8b
+OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL=deepseek-r1:8b
+INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
-The surface role classifies only browser, command-line, or service delivery. One stable feature-partition role extracts exact feature envelopes from the user authority and splits each accepted envelope to a code-owned fixed point. There is no production reasoning adviser and no separate split-model route. There is no model-authored kind, outcome, plan, or coverage verdict. Artifact handling is a separate token-blind classification job. For each local need, code either binds an exact active PostgreSQL skill, gives a selector at most five opaque purpose summaries, or asks a procedure worker to produce one bounded reusable instruction. The fragment role then receives one exact feature contract plus that procedure and returns one raw declaration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. Local Ollama uses Qwen 3.5 9B for the bounded semantic stations and Qwen3-Coder 30B for fragment generation and correction. Keeping the profile to two models limits phase-boundary model swaps on a one-model Ollama runner. It defaults to one fragment lane because concurrent requests to one endpoint are contention, not distributed capacity; the explicit concurrency setting may be raised to at most four when real independent capacity exists. A missing model, context mismatch, or invalid capacity fails explicitly. See [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md) for measured hardware limits and alternatives. Offline advisory-model experiments are isolated from production routing and documented in [docs/MODEL_GAUNTLETS.md](docs/MODEL_GAUNTLETS.md).
+The surface station classifies only browser, command-line, or service delivery. One stable feature-partition station extracts exact feature envelopes from the user authority and splits each accepted envelope to a code-owned fixed point. There is no production reasoning adviser and no separate split-model route. There is no model-authored kind, outcome, plan, or coverage verdict. Artifact handling is a separate token-blind classification job. For each local need, code may bind an exact active PostgreSQL skill or give a selector at most five opaque active-skill purpose summaries. If none exist, the exact requirement remains sufficient and no skill is synthesized during workload planning. Candidate synthesis and promotion stay unavailable until a separate code-owned recurring-gap and held-out replay workflow exists. The fragment station then receives one exact feature contract plus any independently promoted procedure and returns one raw declaration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. Local Ollama uses Qwen 3.5 9B for bounded generation and correction stations and DeepSeek R1 8B only for the independent repository/web evidence-review stations. Keeping generation on one stable model limits routine swaps; a review pays the explicit identity boundary instead of pretending the generator verified itself. It defaults to one fragment lane because concurrent requests to one endpoint are contention, not distributed capacity; the explicit concurrency setting may be raised to at most four when real independent capacity exists. A missing model, context mismatch, or invalid capacity fails explicitly. See [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md) for measured hardware limits and alternatives. The former offline advisory gauntlet and its CLI transport were retired rather than retained as a duplicate inference runtime.
 
-Hosted generation providers include Ollama, OpenAI, Azure AI, xAI, Google Gemini, Anthropic, Hugging Face, and custom OpenAI-compatible endpoints.
+Production station inference currently requires Ollama's exact prepared contract.
+OpenAI, Azure AI, Google, Hugging Face, and compatible services appear only when
+they provide the explicitly selected embedding transport; generic hosted
+generation is not a production compatibility path.
 
 Every bounded station must use an exact prepared-inference contract. Provider identity and request-specific authority are established at the station boundary; there is no process-wide cognition brain or universal cognition policy.
 
-Chinese service integrations include DeepSeek; Alibaba Qwen / Model Studio; Moonshot / Kimi; Zhipu / BigModel / GLM; Z.AI; MiniMax; Baidu Qianfan / ERNIE; Tencent Hunyuan; ByteDance Doubao / Volcengine Ark; StepFun; 01.AI Yi; Baichuan; iFlytek Spark; SiliconFlow; ModelScope; Huawei ModelArts; Xiaomi MiMo; Meituan LongCat; Ant Ling / InclusionAI; and Tencent TokenHub.
-
-Provider IDs, aliases, endpoints, credential keys, and embedding capabilities are centralized in [internal/llmprovider/catalog/definitions.go](internal/llmprovider/catalog/definitions.go). Selecting a service without its required key, model, endpoint, or separate embedding provider fails configuration validation.
+Known provider identities and rejected legacy environment keys remain centralized
+in [internal/llmprovider/catalog/definitions.go](internal/llmprovider/catalog/definitions.go).
+Only transports implementing the exact prepared station contract or the selected
+embedding interface appear in the production provider catalog. Selecting any
+other provider or leaving required embedding credentials/model/endpoint absent
+fails configuration validation.
 
 ## Localization
 
@@ -184,14 +193,12 @@ The server owns the selected locale. `Accept-Language` seeds the first visit; `?
 
 ## Product surfaces
 
-- **Chat** — conversational entrypoint with model-owned semantic intent classification and code-owned typed transport; wording lists never select execution.
+- **Chat** — conversational entrypoint with code-owned objective state and exact typed semantic stations; wording lists never select execution.
 - **Projects** — workspace, model, agent, and codebase-map configuration.
-- **Scrum** — Venusaur’s planner, review queue, board, card channel, and controlled execution surface.
-- **Data** — read-only data-source channels with recorded SQL and result evidence.
+- **Scrum** — review queue, board, typed card channel, and explicit controlled execution surface.
+- **Data** — deterministic read-only data-source queries with recorded SQL and result evidence.
 - **Jobs** — live queue, station progress, failures, and final results.
 - **Memory** — scoped reference/preference storage; never hidden prompt authority.
-
-See [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md) for the planner surface retained from Venusaur.
 
 ## Quick start
 
@@ -209,11 +216,35 @@ The default compose topology keeps PostgreSQL and Redis on the internal backend 
 For a host build:
 
 ```bash
-go build ./cmd/core ./cmd/cli ./cmd/omni
-cd internal/api/web
-npm install
-npm run build
+make build
 ```
+
+The core embeds the production GUI, so every supported core build runs
+`scripts/build-ui.sh` first. That builder requires Node and npm, installs the exact
+lockfile with `npm ci`, and fails if the production bundle is incomplete.
+
+## Install and update
+
+Run the installer from a clean Git checkout with an `origin` remote:
+
+```bash
+./install.sh --yes
+```
+
+The installer stages a complete checkout, builds the GUI and all host binaries,
+then swaps the finished checkout into `~/.omnidex`. An existing install's `.env`
+is the only install-root user file preserved. PostgreSQL and Redis data remain in
+their Docker named volumes.
+
+From any directory, update the installed host checkout and binaries with:
+
+```bash
+omni update --host-only
+```
+
+Use `omni update` without `--host-only` to also rebuild and restart the configured
+Compose service. Updates fast-forward a sibling staged checkout and do not replace
+the active install when fetching, GUI compilation, or Go compilation fails.
 
 ## Run a coding job
 
@@ -283,7 +314,6 @@ go run ./cmd/cli version
 - [internal/repository](internal/repository) — hash-bound repository snapshots, compiler-derived facts, retrieval, and evidence packs.
 - [internal/taskstate](internal/taskstate) — job-scoped task continuity and state-transition authority.
 - [internal/queue](internal/queue) — authoritative job and step lifecycle.
-- [internal/workspace](internal/workspace) — bounded snapshots, excerpts, and relevance ranking.
 - [internal/llmprovider/catalog](internal/llmprovider/catalog) — provider capability registry.
 - [internal/api](internal/api) — API, project/scrum services, and server-owned UI state.
 - [internal/api/web/locales](internal/api/web/locales) — locale catalogs.

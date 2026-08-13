@@ -52,13 +52,9 @@ describe("ScrumBoardTracker", () => {
     expect(manualMove.notices).toEqual([]);
   });
 
-  it("reports completed LLM work once and rejects stale transition commits", () => {
+  it("rejects stale transition commits", () => {
     const tracker = new ScrumBoardTracker();
-    tracker.rememberLLMPending([card({ tags_job_id: "job_1" })]);
     const completion = tracker.prepare(payload(card({ updated_at: "2026-07-26T12:01:00Z" })));
-    expect(completion.notices).toEqual([
-      expect.objectContaining({ message: `Tags updated for Realtime work`, llmActivity: true }),
-    ]);
 
     const competing = tracker.prepare(payload(card({ updated_at: "2026-07-26T12:02:00Z" })));
     completion.commit();

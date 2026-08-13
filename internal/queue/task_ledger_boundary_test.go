@@ -30,15 +30,6 @@ func TestGeneralTaskBoundaryReservesQueueOwnedAuthority(t *testing.T) {
 		taskstate.SupersedeEntryCommand{ReplacementID: initialUserInstructionEntryID},
 		taskstate.AcceptDecisionCommand{AcceptedEntryID: initialUserInstructionEntryID},
 		taskstate.AddEntryCommand{ID: replanFeedbackEntryID(2)},
-		taskstate.AddNodeCommand{ID: taskstate.NodeID(acceptedIntentObjectivePrefix + "abc")},
-		taskstate.AddNodeCommand{ID: "task:new", ParentID: taskstate.NodeID(acceptedIntentObjectivePrefix + "abc")},
-		taskstate.AddEdgeCommand{ID: taskstate.EdgeID(acceptedIntentEdgePrefix + "abc")},
-		taskstate.AddEdgeCommand{ID: "edge:new", To: taskstate.NodeID(acceptedIntentObjectivePrefix + "abc")},
-		taskstate.TransitionNodeCommand{NodeID: taskstate.NodeID(acceptedIntentObjectivePrefix + "abc")},
-		taskstate.AssignNodeStepCommand{NodeID: taskstate.NodeID(acceptedIntentObjectivePrefix + "abc")},
-		taskstate.AddEntryCommand{ID: taskstate.EntryID(acceptedIntentEntryPrefix + "constraint:abc")},
-		taskstate.AddEntryCommand{ID: "entry:new", ScopeNodeID: taskstate.NodeID(acceptedIntentObjectivePrefix + "abc")},
-		taskstate.ResolveEntryCommand{EntryID: taskstate.EntryID(acceptedIntentEntryPrefix + "ambiguity:abc")},
 	}
 	for _, command := range commands {
 		if err := (generalTaskCommandBoundary{}).validate(command); !errors.Is(err, taskstate.ErrAuthorityDenied) {

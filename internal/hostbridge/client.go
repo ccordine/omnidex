@@ -34,19 +34,66 @@ func (c *Client) Health(ctx context.Context) (map[string]any, error) {
 	return c.getJSON(ctx, "/healthz")
 }
 
-func (c *Client) Browse(ctx context.Context, path string) (*BrowseResult, error) {
+func (c *Client) Browse(ctx context.Context, path string, opts BrowseOptions) (*BrowseResult, error) {
+	if err := validateBrowseBounds(opts); err != nil {
+		return nil, err
+	}
 	query := url.Values{}
 	if strings.TrimSpace(path) != "" {
 		query.Set("path", strings.TrimSpace(path))
+	}
+	query.Set("limit", fmt.Sprint(opts.Limit))
+	query.Set("offset", fmt.Sprint(opts.Offset))
+	if opts.DirectoriesOnly {
+		query.Set("directories_only", "true")
 	}
 	payload, err := c.getJSON(ctx, "/v1/browse?"+query.Encode())
 	if err != nil {
 		return nil, err
 	}
+	limit, err := requiredIntField(payload, "limit")
+	if err != nil {
+		return nil, err
+	}
+	offset, err := requiredIntField(payload, "offset")
+	if err != nil {
+		return nil, err
+	}
+	nextOffset, err := requiredIntField(payload, "next_offset")
+	if err != nil {
+		return nil, err
+	}
+	previousOffset, err := requiredIntField(payload, "previous_offset")
+	if err != nil {
+		return nil, err
+	}
+	hasPrevious, err := requiredBoolField(payload, "has_previous")
+	if err != nil {
+		return nil, err
+	}
+	hasMore, err := requiredBoolField(payload, "has_more")
+	if err != nil {
+		return nil, err
+	}
 	result := &BrowseResult{
-		Path:    stringField(payload, "path"),
-		Parent:  stringField(payload, "parent"),
-		Entries: []Entry{},
+		Path:           stringField(payload, "path"),
+		Parent:         stringField(payload, "parent"),
+		Entries:        []Entry{},
+		Limit:          limit,
+		Offset:         offset,
+		HasPrevious:    hasPrevious,
+		PreviousOffset: previousOffset,
+		HasMore:        hasMore,
+		NextOffset:     nextOffset,
+	}
+	if result.Limit != opts.Limit || result.Offset != opts.Offset {
+		return nil, fmt.Errorf("host bridge browse response page does not match the request")
+	}
+	if result.HasMore && result.NextOffset <= result.Offset {
+		return nil, fmt.Errorf("host bridge browse response has an invalid next offset")
+	}
+	if result.HasPrevious != (result.Offset > 0) || result.PreviousOffset < 0 || result.PreviousOffset >= result.Offset && result.HasPrevious {
+		return nil, fmt.Errorf("host bridge browse response has an invalid previous offset")
 	}
 	if rawEntries, ok := payload["entries"].([]any); ok {
 		for _, item := range rawEntries {
@@ -236,4 +283,28 @@ func boolField(payload map[string]any, key string) bool {
 	default:
 		return strings.EqualFold(strings.TrimSpace(fmt.Sprint(value)), "true")
 	}
+}
+
+func requiredBoolField(payload map[string]any, key string) (bool, error) {
+	raw, ok := payload[key]
+	if !ok || raw == nil {
+		return false, fmt.Errorf("host bridge response is missing %q", key)
+	}
+	value, ok := raw.(bool)
+	if !ok {
+		return false, fmt.Errorf("host bridge response field %q must be a boolean", key)
+	}
+	return value, nil
+}
+
+func requiredIntField(payload map[string]any, key string) (int, error) {
+	raw, ok := payload[key]
+	if !ok || raw == nil {
+		return 0, fmt.Errorf("host bridge response is missing %q", key)
+	}
+	value, ok := raw.(float64)
+	if !ok || value != float64(int(value)) {
+		return 0, fmt.Errorf("host bridge response field %q must be an integer", key)
+	}
+	return int(value), nil
 }

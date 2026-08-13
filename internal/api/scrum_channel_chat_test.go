@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gryph/omnidex/internal/agentstream"
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestDisplayScrumChannelMessagesDropsCompletionNoise(t *testing.T) {
+func TestDisplayScrumChannelMessagesPreservesTypedContentVerbatim(t *testing.T) {
 	card := ScrumCard{
 		Chat: []ScrumChatMessage{
 			{Role: "user", Content: "fix it", CreatedAt: "2026-05-29T10:00:00Z"},
@@ -17,9 +18,15 @@ func TestDisplayScrumChannelMessagesDropsCompletionNoise(t *testing.T) {
 			{Role: "system", Content: "Agent finished", CreatedAt: "2026-05-29T10:00:03Z"},
 		},
 	}
-	messages := displayScrumChannelMessages(card)
-	if len(messages) != 2 {
-		t.Fatalf("expected user+assistant only, got %+v", messages)
+	messages, err := displayScrumChannelMessages(card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 4 {
+		t.Fatalf("expected every typed message, got %+v", messages)
+	}
+	if messages[2].Content != "External agent session completed" || messages[3].Content != "Agent finished" {
+		t.Fatalf("message content was inferred as hidden noise: %+v", messages)
 	}
 }
 
@@ -34,9 +41,12 @@ func TestDisplayScrumChannelMessagesShowsToolActivity(t *testing.T) {
 			{Role: "assistant", Content: "Auth middleware wired.", CreatedAt: "2026-05-29T10:00:05Z"},
 		},
 	}
-	messages := displayScrumChannelMessages(card)
-	if len(messages) != 5 {
-		t.Fatalf("expected user/thinking/2 tool/assistant, got %+v", messages)
+	messages, err := displayScrumChannelMessages(card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 6 {
+		t.Fatalf("expected every typed message, got %+v", messages)
 	}
 }
 
@@ -48,7 +58,10 @@ func TestDisplayScrumChannelMessagesSortedByTime(t *testing.T) {
 			{Role: "user", Content: "zeroth", CreatedAt: "2026-05-29T10:00:00Z"},
 		},
 	}
-	messages := displayScrumChannelMessages(card)
+	messages, err := displayScrumChannelMessages(card)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(messages) != 3 {
 		t.Fatalf("messages=%v", messages)
 	}
@@ -80,12 +93,18 @@ func TestSortScrumChatChronologicalParsesNanoTimestamps(t *testing.T) {
 }
 
 func TestSyncRunningJobChannelChatIncremental(t *testing.T) {
-	card := ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job #1 queued"}}}
+	lineOne := scrumAgentEventLine(t, agentstream.EventMessage, "line one")
+	lineTwo := scrumAgentEventLine(t, agentstream.EventMessage, "line two")
 	job := model.JobDetails{
-		Steps: []model.Step{{Output: "line one\nline two"}},
+		Job:   model.Job{ID: 3, Status: model.JobStatusRunning},
+		Steps: []model.Step{{Action: "external_agent_execute", Output: lineOne + "\n" + lineTwo + "\n"}},
 	}
+	card := scrumSyncTestCard(job.Job.ID, ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job #1 queued"}}})
 
-	updated, ok := syncRunningJobChannelChat(card, job)
+	updated, ok, err := syncRunningJobChannelChat(card, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("expected first sync")
 	}
@@ -96,7 +115,10 @@ func TestSyncRunningJobChannelChatIncremental(t *testing.T) {
 		t.Fatalf("assistant=%q", updated.Chat[1].Content)
 	}
 
-	updated2, ok := syncRunningJobChannelChat(updated, job)
+	updated2, ok, err := syncRunningJobChannelChat(updated, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ok {
 		t.Fatal("expected no duplicate sync")
 	}
@@ -115,7 +137,10 @@ func TestDisplayScrumChannelMessagesHydratesLegacyConsole(t *testing.T) {
 	card := ScrumCard{
 		ConsoleLog: "queued for play\nagent stream:\nhello world",
 	}
-	messages := displayScrumChannelMessages(card)
+	messages, err := displayScrumChannelMessages(card)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(messages) == 0 {
 		t.Fatal("expected hydrated messages")
 	}
@@ -127,6 +152,15 @@ func TestDisplayScrumChannelMessagesHydratesLegacyConsole(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("messages=%v", messages)
+	}
+}
+
+func TestDisplayScrumChannelMessagesRejectsUnknownStoredRole(t *testing.T) {
+	_, err := displayScrumChannelMessages(ScrumCard{Chat: []ScrumChatMessage{{
+		ID: "unknown-role", Role: "persona", Content: "do not coerce me",
+	}}})
+	if err == nil || !strings.Contains(err.Error(), `unsupported role "persona"`) {
+		t.Fatalf("error=%v, want loud unsupported role failure", err)
 	}
 }
 

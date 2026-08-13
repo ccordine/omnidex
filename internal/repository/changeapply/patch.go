@@ -18,6 +18,14 @@ func buildUnifiedPatch(mutations []fileMutation) (string, error) {
 	}
 	var output strings.Builder
 	for _, mutation := range mutations {
+		if !mutation.sourcePresent {
+			writeCreatedFilePatch(&output, mutation)
+			continue
+		}
+		if !mutation.desiredPresent {
+			writeDeletedFilePatch(&output, mutation)
+			continue
+		}
 		output.WriteString("diff --git a/")
 		output.WriteString(mutation.file.Path)
 		output.WriteString(" b/")
@@ -60,6 +68,28 @@ func buildUnifiedPatch(mutations []fileMutation) (string, error) {
 		}
 	}
 	return output.String(), nil
+}
+
+func writeCreatedFilePatch(output *strings.Builder, mutation fileMutation) {
+	fmt.Fprintf(output, "diff --git a/%s b/%s\n--- /dev/null\n+++ b/%s\n", mutation.file.Path, mutation.file.Path, mutation.file.Path)
+	lines := splitLFSegment(mutation.next)
+	fmt.Fprintf(output, "@@ -0,0 +1,%d @@\n", len(lines))
+	for _, line := range lines {
+		output.WriteByte('+')
+		output.WriteString(line)
+		output.WriteByte('\n')
+	}
+}
+
+func writeDeletedFilePatch(output *strings.Builder, mutation fileMutation) {
+	fmt.Fprintf(output, "diff --git a/%s b/%s\n--- a/%s\n+++ /dev/null\n", mutation.file.Path, mutation.file.Path, mutation.file.Path)
+	lines := splitLFSegment(mutation.original)
+	fmt.Fprintf(output, "@@ -1,%d +0,0 @@\n", len(lines))
+	for _, line := range lines {
+		output.WriteByte('-')
+		output.WriteString(line)
+		output.WriteByte('\n')
+	}
 }
 
 func changedLineRanges(content []byte, replacements []targetReplacement) []changedLineRange {

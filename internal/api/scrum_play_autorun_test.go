@@ -32,8 +32,8 @@ func TestParseScrumJobReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ref.IsScrum || ref.ProjectID != 2 || ref.CardID != "card-2" {
-		t.Fatalf("unexpected Scrum LLM reference: %#v", ref)
+	if ref.IsScrum {
+		t.Fatalf("removed Scrum LLM metadata was accepted: %#v", ref)
 	}
 	otherMeta, _ := json.Marshal(map[string]any{"source": "chat"})
 	ref, err = parseScrumJobReference(otherMeta)

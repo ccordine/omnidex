@@ -67,6 +67,7 @@ func planMutations(
 		}
 		mutations = append(mutations, fileMutation{
 			file: file, original: original, next: next, replacements: targets,
+			sourcePresent: true, desiredPresent: true,
 		})
 	}
 	sort.Slice(mutations, func(left, right int) bool {
@@ -99,6 +100,12 @@ func replaceExactBytes(content []byte, start, end int, replacement []byte) []byt
 func verifyStagedMutations(workspace string, mutations []fileMutation) error {
 	for _, mutation := range mutations {
 		absolute := filepath.Join(workspace, filepath.FromSlash(mutation.file.Path))
+		if !mutation.desiredPresent {
+			if _, err := os.Lstat(absolute); !os.IsNotExist(err) {
+				return fmt.Errorf("staged absent state for target file %q was not established", mutation.file.ID)
+			}
+			continue
+		}
 		actual, err := os.ReadFile(absolute)
 		if err != nil {
 			return fmt.Errorf("read applied staged target %q: %w", mutation.file.ID, err)

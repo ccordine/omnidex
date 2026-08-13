@@ -3,8 +3,6 @@ package api
 import (
 	"net/http"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/scrum"
 )
 
 func normalizeScrumColumn(column string) string {
@@ -38,7 +36,7 @@ func buildScrumPlayInstruction(board ScrumBoard, card ScrumCard) string {
 		lines = append(lines, "Project directory: "+board.ProjectDirectory)
 	}
 	lines = appendScrumCardContextLines(lines, card)
-	lines = append(lines, "Execute with the server-resolved agent configuration.", scrum.AgentStatusFooter)
+	lines = append(lines, "Execute with the server-resolved agent configuration. Omnidex owns completion from typed job and verification state.")
 	return strings.Join(lines, "\n\n")
 }
 
@@ -80,23 +78,6 @@ func scrumViewportColumn(r *http.Request, columns []string) string {
 	return ""
 }
 
-func scrumBoardColumnViewport(board ScrumBoard, column string) ScrumBoard {
-	column = normalizeScrumColumn(column)
-	if column == "" {
-		return board
-	}
-	cards := make([]ScrumCard, 0)
-	for _, card := range board.Cards {
-		if normalizeScrumColumn(card.Column) == column {
-			cards = append(cards, scrumCardBoardSummary(card))
-		}
-	}
-	sortCardsForColumn(column, cards)
-	board.Columns = []string{column}
-	board.Cards = cards
-	return board
-}
-
 func scrumCardBoardSummary(card ScrumCard) ScrumCard {
 	checklistDone := completedScrumItems(card.Checklist)
 	testDone := completedScrumItems(card.TestCriteria)
@@ -107,7 +88,7 @@ func scrumCardBoardSummary(card ScrumCard) ScrumCard {
 		PlanningChatCount: len(card.PlanningChat), TestCriteriaDone: testDone,
 		TestCriteriaTotal: len(card.TestCriteria), HasCardTicket: strings.TrimSpace(card.CardTicket) != "",
 		Tags: append([]string(nil), card.Tags...), FlowMetrics: card.FlowMetrics,
-		JobID: card.JobID, TagsJobID: card.TagsJobID, TicketJobID: card.TicketJobID,
+		JobID:     card.JobID,
 		PlayState: card.PlayState, QueueOrder: card.QueueOrder, BoardOrder: card.BoardOrder,
 		CreatedAt: card.CreatedAt, UpdatedAt: card.UpdatedAt,
 		Checklist: []ScrumChecklistItem{}, RefFiles: []string{}, Chat: []ScrumChatMessage{},

@@ -18,6 +18,8 @@ const (
 	KindRepositoryIndex          = "repository_index"
 	KindRepositoryEvidence       = "repository_evidence"
 	KindRepositoryChangeContract = "repository_change_contract"
+	KindRepositoryDesiredGraph   = "repository_desired_graph"
+	KindObjectiveCitation        = "objective_citation"
 )
 
 type Record struct {

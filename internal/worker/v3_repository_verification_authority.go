@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/repository/changeapply"
@@ -73,7 +72,7 @@ func newRepositoryVerificationAuthority(
 }
 
 func (authority repositoryVerificationAuthority) validate(commands []testCommand) error {
-	if !validRepositoryVerificationOpaqueID(authority.contractID, "change_contract_") ||
+	if !validRepositoryVerificationOwnerID(authority.contractID) ||
 		!validRepositoryVerificationOpaqueID(authority.sourceSnapshotID, "snapshot_") ||
 		!validRepositoryVerificationOpaqueID(authority.stageID, "repository_change_stage_") ||
 		!validRepositoryVerificationSHA256(authority.patchSHA256) ||
@@ -92,14 +91,16 @@ func (authority repositoryVerificationAuthority) validate(commands []testCommand
 }
 
 func (authority repositoryVerificationAuthority) metadata() map[string]any {
-	return map[string]any{
-		"repository_change_contract_id":   authority.contractID,
+	metadata := map[string]any{
+		"repository_mutation_owner_id":    authority.contractID,
 		"repository_source_snapshot_id":   authority.sourceSnapshotID,
 		"repository_change_stage_id":      authority.stageID,
 		"repository_change_patch_sha256":  authority.patchSHA256,
 		"repository_verification_plan_id": authority.planID,
 		"repository_expected_post_id":     authority.expectedPostID,
 	}
+	setRepositoryOwnerMetadata(metadata, authority.contractID)
+	return metadata
 }
 
 func (authority repositoryVerificationAuthority) planIdentity() string {
@@ -119,16 +120,9 @@ func repositoryExpectedPostID(
 		len(changedFileIDs) == 0 || len(changedFileIDs) != len(expected) {
 		return "", fmt.Errorf("repository verification expected post authority is incomplete")
 	}
-	files := append([]changeapply.ExpectedFileState(nil), expected...)
-	sort.Slice(files, func(left, right int) bool { return files[left].FileID < files[right].FileID })
-	changed := append([]string(nil), changedFileIDs...)
-	sort.Strings(changed)
-	for index, file := range files {
-		if file.FileID == "" || file.FileID != changed[index] ||
-			!validRepositoryVerificationSHA256(file.SHA256) || file.Size < 0 ||
-			index > 0 && file.FileID == files[index-1].FileID {
-			return "", fmt.Errorf("repository verification expected post authority is invalid")
-		}
+	files, err := canonicalExpectedRepositoryFileStates(changedFileIDs, expected)
+	if err != nil {
+		return "", fmt.Errorf("repository verification expected post authority is invalid: %w", err)
 	}
 	raw, err := json.Marshal(repositoryExpectedPostIdentity{
 		Schema: repositoryExpectedPostSchemaV1, SourceSnapshotID: sourceSnapshotID, Files: files,
@@ -138,6 +132,19 @@ func repositoryExpectedPostID(
 	}
 	digest := sha256.Sum256(append([]byte(repositoryExpectedPostSchemaV1+"\x00"), raw...))
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func validRepositoryVerificationOwnerID(value string) bool {
+	return validRepositoryVerificationOpaqueID(value, "change_contract_") ||
+		validRepositoryVerificationOpaqueID(value, "desired_graph_")
+}
+
+func setRepositoryOwnerMetadata(metadata map[string]any, ownerID string) {
+	if strings.HasPrefix(ownerID, "desired_graph_") {
+		metadata["repository_desired_artifact_graph_id"] = ownerID
+	} else {
+		metadata["repository_change_contract_id"] = ownerID
+	}
 }
 
 func validRepositoryVerificationOpaqueID(value, prefix string) bool {

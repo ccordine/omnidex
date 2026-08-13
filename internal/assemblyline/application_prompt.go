@@ -48,7 +48,7 @@ func BuildArtifactHandlingPrompt(input ArtifactHandlingInput) (string, error) {
 	}
 	return strings.Join([]string{
 		"Classify only the user's explicit authority over FOCUSED_ARTIFACT.",
-		"Choose preserve_unchanged when it must not be modified, must_exist when its existence is required but its contents are not authorized to change, or mentioned_only when it is merely referenced. Do not infer its identity, contents, path, or implementation role.",
+		"Choose preserve_unchanged when it must not be modified, must_exist when its existence is required but its contents are not authorized to change, must_be_absent when the user explicitly requires this exact artifact itself to no longer exist, possible_absence_candidate only when this artifact is one member of an explicitly required absence choice whose exact member remains unresolved, or mentioned_only when it is merely referenced. Classify desired truth only: never choose a filesystem operation. Do not infer its identity, contents, path, or implementation role.",
 		"FOCUSED_ARTIFACT: " + input.Token,
 		"CURRENT_REQUEST:\n" + input.UserRequest,
 	}, "\n\n"), nil

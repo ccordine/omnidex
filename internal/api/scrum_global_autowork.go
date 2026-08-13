@@ -198,8 +198,7 @@ func (s *Server) globalScrumAutoWorkCandidates(ctx context.Context) ([]scrumAuto
 			if s.findRunningScrumCard(board) != nil {
 				continue
 			}
-			reviewCfg := automation.AutoReview
-			if scrumAutoWorkComplete(board, reviewCfg.Enabled) {
+			if scrumAutoWorkComplete(board) {
 				continue
 			}
 			next := s.nextAutoWorkScrumCard(board, autoWork)

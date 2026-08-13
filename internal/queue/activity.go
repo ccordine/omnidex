@@ -5,17 +5,20 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type MemoryChunkSummary struct {
-	ID         int64           `json:"id"`
-	Source     string          `json:"source"`
-	Kind       string          `json:"kind"`
-	Content    string          `json:"content"`
-	Tags       []string        `json:"tags,omitempty"`
-	Categories []string        `json:"categories,omitempty"`
-	CreatedAt  time.Time       `json:"created_at"`
-	Metadata   json.RawMessage `json:"metadata,omitempty"`
+	ID         int64             `json:"id"`
+	Scope      model.MemoryScope `json:"scope"`
+	Source     string            `json:"source"`
+	Kind       string            `json:"kind"`
+	Content    string            `json:"content"`
+	Tags       []string          `json:"tags,omitempty"`
+	Categories []string          `json:"categories,omitempty"`
+	CreatedAt  time.Time         `json:"created_at"`
+	Metadata   json.RawMessage   `json:"metadata,omitempty"`
 }
 
 func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []string, limit int) ([]MemoryChunkSummary, error) {
@@ -27,6 +30,8 @@ func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []s
 	rows, err := r.pool.Query(ctx, `
 		SELECT
 			mc.id,
+			mc.project_id,
+			mc.channel_id,
 			mc.source,
 			mc.kind,
 			mc.content,
@@ -59,7 +64,8 @@ func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []s
 	out := []MemoryChunkSummary{}
 	for rows.Next() {
 		var item MemoryChunkSummary
-		if err := rows.Scan(&item.ID, &item.Source, &item.Kind, &item.Content, &item.CreatedAt, &item.Tags, &item.Categories); err != nil {
+		if err := rows.Scan(&item.ID, &item.Scope.ProjectID, &item.Scope.ChannelID,
+			&item.Source, &item.Kind, &item.Content, &item.CreatedAt, &item.Tags, &item.Categories); err != nil {
 			return nil, err
 		}
 		out = append(out, item)

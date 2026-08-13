@@ -116,7 +116,10 @@ func TestQueueExposesNoAmbiguousGenerationReadNames(t *testing.T) {
 }
 
 func TestJobMemoryCandidateRequiresObservedGeneration(t *testing.T) {
-	candidate := model.MemoryCandidate{JobID: 9, CandidateKind: "reference", Content: "bounded"}
+	candidate := model.MemoryCandidate{
+		Scope: model.MemoryScope{ProjectID: 1, ChannelID: "channel-one"},
+		JobID: 9, CandidateKind: "reference", Content: "bounded",
+	}
 	if _, err := (&Repository{}).WriteMemoryCandidate(context.Background(), candidate); err == nil ||
 		!strings.Contains(err.Error(), "observed positive generation") {
 		t.Fatalf("missing generation error=%v", err)

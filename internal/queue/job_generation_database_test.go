@@ -65,7 +65,7 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 		INSERT INTO job_generations (
 			job_id, generation, purpose, predecessor_generation,
 			boundary_action, feedback, feedback_sha256
-		) VALUES ($1, 3, 'replan', 2, 'v3_subtask', $2, $3)
+		) VALUES ($1, 3, 'replan', 2, 'unregistered', $2, $3)
 	`, firstJob, feedback, feedbackSHA)
 	expectGenerationDatabaseFailure(t, ctx, tx, `
 		UPDATE job_generations SET feedback='Changed', feedback_sha256=$2

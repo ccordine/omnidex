@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 const directCodingTypeScriptInstallTimeout = 3 * time.Minute
@@ -76,7 +76,7 @@ func (s *directCodingSession) stageTypeScriptProgram(program *directCodingProgra
 		if err != nil {
 			return err
 		}
-		modelName, err := s.workerModel("coding_fragment_correction", specialist.RoleCodingFragmentCorrectionStation)
+		modelName, err := s.workerModel(station.CodingFragmentCorrection)
 		if err != nil {
 			return err
 		}

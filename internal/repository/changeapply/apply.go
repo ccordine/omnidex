@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/gryph/omnidex/internal/omni"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
@@ -67,20 +68,36 @@ func (stage *StagedChange) Cleanup() error {
 func stagedFileAuthorities(snapshot repositoryfacts.Snapshot, mutations []fileMutation) []stagedFileAuthority {
 	changed := make(map[string]fileMutation, len(mutations))
 	for _, mutation := range mutations {
-		changed[mutation.file.ID] = mutation
+		changed[mutation.file.Path] = mutation
 	}
-	authorities := make([]stagedFileAuthority, 0, len(snapshot.Files))
+	authorities := make([]stagedFileAuthority, 0, len(snapshot.Files)+len(mutations))
 	for _, file := range snapshot.Files {
+		mutation, exists := changed[file.Path]
+		if exists && !mutation.desiredPresent {
+			delete(changed, file.Path)
+			continue
+		}
 		authority := stagedFileAuthority{
 			path: file.Path, kind: file.Kind, sha256: file.SHA256,
 			size: file.Size, mode: file.Mode, linkTarget: file.LinkTarget,
 		}
-		if mutation, exists := changed[file.ID]; exists {
+		if exists {
 			authority.sha256 = digest(mutation.next)
 			authority.size = int64(len(mutation.next))
+			delete(changed, file.Path)
 		}
 		authorities = append(authorities, authority)
 	}
+	for _, mutation := range changed {
+		if !mutation.desiredPresent {
+			continue
+		}
+		authorities = append(authorities, stagedFileAuthority{
+			path: mutation.file.Path, kind: repositoryfacts.EntryRegular,
+			sha256: digest(mutation.next), size: int64(len(mutation.next)), mode: mutation.file.Mode,
+		})
+	}
+	sort.Slice(authorities, func(left, right int) bool { return authorities[left].path < authorities[right].path })
 	return authorities
 }
 

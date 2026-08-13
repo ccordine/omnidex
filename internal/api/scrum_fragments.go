@@ -11,10 +11,17 @@ type scrumBoardFragments struct {
 	Columns     string `json:"columns"`
 	Focus       string `json:"focus"`
 	FlowSummary string `json:"flow_summary"`
+	Pagination  string `json:"pagination"`
 	Bundle      string `json:"bundle"`
 }
 
-func renderScrumBoardFragments(board ScrumBoard, cardsByCol map[string][]ScrumCard, fullBoard ScrumBoard, visibleColumn string, columnCounts map[string]int, playQueue map[string]any, autoWorkEnabled bool, autoReview ScrumAutoReviewConfig, autoWork ScrumAutoWorkConfig, flowSummary ScrumFlowProjectSummary) scrumBoardFragments {
+type scrumCardPageState struct {
+	Offset  int
+	Count   int
+	HasMore bool
+}
+
+func renderScrumBoardFragments(board ScrumBoard, cardsByCol map[string][]ScrumCard, fullBoard ScrumBoard, visibleColumn string, columnCounts map[string]int, playQueue map[string]any, autoWorkEnabled bool, autoWork ScrumAutoWorkConfig, flowSummary ScrumFlowProjectSummary, page scrumCardPageState) scrumBoardFragments {
 	columns := fullBoard.Columns
 	if len(columns) == 0 {
 		columns = append([]string(nil), scrumColumns...)
@@ -26,8 +33,9 @@ func renderScrumBoardFragments(board ScrumBoard, cardsByCol map[string][]ScrumCa
 	fragments := scrumBoardFragments{
 		Board:       renderScrumBoardHTML(board, cardsByCol, playQueue),
 		Columns:     renderScrumColumnNavHTML(columns, activeColumn, columnCounts),
-		Focus:       renderScrumFocusBarHTML(fullBoard, cardsByColumn(fullBoard), playQueue, autoWorkEnabled, autoReview.Enabled, autoWork),
+		Focus:       renderScrumFocusBarHTML(fullBoard, cardsByColumn(fullBoard), playQueue, autoWorkEnabled, autoWork),
 		FlowSummary: renderScrumFlowSummaryHTML(flowSummary),
+		Pagination:  renderScrumCardPaginationHTML(page),
 	}
 	fragments.Bundle = renderScrumBoardBundleHTML(fragments)
 	return fragments
@@ -37,7 +45,28 @@ func renderScrumBoardBundleHTML(fragments scrumBoardFragments) string {
 	return renderRecyclrTemplateHTML("scrum-board", fragments.Board, "innerHTML") +
 		renderRecyclrTemplateHTML("scrum-columns", fragments.Columns, "innerHTML") +
 		renderRecyclrTemplateHTML("scrum-focus", fragments.Focus, "innerHTML") +
-		renderRecyclrTemplateHTML("scrum-flow-summary", fragments.FlowSummary, "innerHTML")
+		renderRecyclrTemplateHTML("scrum-flow-summary", fragments.FlowSummary, "innerHTML") +
+		renderRecyclrTemplateHTML("scrum-pagination", fragments.Pagination, "innerHTML")
+}
+
+func renderScrumCardPaginationHTML(page scrumCardPageState) string {
+	if page.Offset == 0 && !page.HasMore {
+		return ""
+	}
+	var body strings.Builder
+	body.WriteString(`<nav class="flex items-center justify-end gap-2" aria-label="Scrum card pages">`)
+	if page.Offset > 0 {
+		previous := page.Offset - scrumCardUIPageSize
+		if previous < 0 {
+			previous = 0
+		}
+		body.WriteString(fmt.Sprintf(`<button type="button" data-action="scrum#loadCardPage" data-card-offset="%d" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300">Previous</button>`, previous))
+	}
+	if page.HasMore {
+		body.WriteString(fmt.Sprintf(`<button type="button" data-action="scrum#loadCardPage" data-card-offset="%d" class="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300">Next</button>`, page.Offset+page.Count))
+	}
+	body.WriteString(`</nav>`)
+	return body.String()
 }
 
 func renderRecyclrTemplateHTML(target string, inner string, location string) string {
@@ -178,8 +207,8 @@ func renderScrumColumnNavHTML(columns []string, activeColumn string, counts map[
 	return fmt.Sprintf(`<nav class="scrollbar flex max-w-full gap-2 overflow-x-auto" aria-label="Scrum columns">%s</nav>`, b.String())
 }
 
-func renderScrumFocusBarHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard, playQueue map[string]any, autoWorkEnabled bool, autoReviewEnabled bool, autoWork ScrumAutoWorkConfig) string {
-	autoStatus := renderScrumAutoWorkStatusHTML(autoWorkEnabled, scrumAutoWorkUIComplete(cardsByCol, autoReviewEnabled))
+func renderScrumFocusBarHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard, playQueue map[string]any, autoWorkEnabled bool, autoWork ScrumAutoWorkConfig) string {
+	autoStatus := renderScrumAutoWorkStatusHTML(autoWorkEnabled, scrumAutoWorkUIComplete(cardsByCol))
 	focus := pickScrumFocusCardForHTML(board, cardsByCol, playQueue, autoWorkEnabled, autoWork)
 	if focus == nil {
 		message := "Nothing in Assigned or In Progress"
@@ -193,7 +222,7 @@ func renderScrumFocusBarHTML(board ScrumBoard, cardsByCol map[string][]ScrumCard
       </div>
     `, autoStatus, html.EscapeString(message))
 	}
-	isRunning := focus.PlayState == "running" || focus.PlayState == "reviewing"
+	isRunning := focus.PlayState == "running"
 	isQueued := focus.PlayState == "queued"
 	hasActiveRunner := strings.TrimSpace(playQueueString(playQueue, "running_card_id")) != ""
 	playLabel := "Play"
@@ -268,15 +297,13 @@ func renderScrumPlayStateBadgeHTML(card ScrumCard) string {
 		return fmt.Sprintf(`<span class="rounded-full border border-violet-300/40 bg-violet-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-200">Queued%s</span>`, suffix)
 	case "paused":
 		return `<span class="rounded-full border border-zinc-400/40 bg-zinc-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">Paused</span>`
-	case "reviewing":
-		return `<span class="rounded-full border border-cyan-300/40 bg-cyan-300/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-100">Auto-review</span>`
 	default:
 		return ""
 	}
 }
 
 func renderScrumFocusStateBadgeHTML(card ScrumCard) string {
-	if card.PlayState == "running" || card.PlayState == "queued" || card.PlayState == "reviewing" {
+	if card.PlayState == "running" || card.PlayState == "queued" {
 		return renderScrumPlayStateBadgeHTML(card)
 	}
 	return fmt.Sprintf(`<span class="rounded-full border border-white/10 bg-zinc-900/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">%s</span>`, html.EscapeString(scrumColumnLabel(card.Column)))
@@ -363,7 +390,7 @@ func pickScrumFocusCardForHTML(board ScrumBoard, cardsByCol map[string][]ScrumCa
 	return nil
 }
 
-func scrumAutoWorkUIComplete(cardsByCol map[string][]ScrumCard, autoReviewEnabled bool) bool {
+func scrumAutoWorkUIComplete(cardsByCol map[string][]ScrumCard) bool {
 	total := 0
 	for _, cards := range cardsByCol {
 		for _, card := range cards {
@@ -371,9 +398,6 @@ func scrumAutoWorkUIComplete(cardsByCol map[string][]ScrumCard, autoReviewEnable
 			switch card.Column {
 			case "done":
 			case "review":
-				if autoReviewEnabled && card.PlayState == "reviewing" {
-					return false
-				}
 			default:
 				return false
 			}
@@ -460,9 +484,12 @@ func scrumBoardFragmentsForPayload(payload map[string]any, fullBoard ScrumBoard)
 	cardsByCol, _ := payload["cards_by_col"].(map[string][]ScrumCard)
 	columnCounts, _ := payload["column_counts"].(map[string]int)
 	playQueue, _ := payload["play_queue"].(map[string]any)
-	autoReview, _ := payload["auto_review"].(ScrumAutoReviewConfig)
 	autoWork, _ := payload["auto_work"].(ScrumAutoWorkConfig)
 	flowSummary, _ := payload["flow_summary"].(ScrumFlowProjectSummary)
 	visibleColumn, _ := payload["visible_column"].(string)
-	payload["html"] = renderScrumBoardFragments(board, cardsByCol, fullBoard, visibleColumn, columnCounts, playQueue, autoWork.Enabled, autoReview, autoWork, flowSummary)
+	cardOffset, _ := payload["card_offset"].(int)
+	cardHasMore, _ := payload["card_has_more"].(bool)
+	payload["html"] = renderScrumBoardFragments(board, cardsByCol, fullBoard, visibleColumn, columnCounts, playQueue, autoWork.Enabled, autoWork, flowSummary, scrumCardPageState{
+		Offset: cardOffset, Count: len(board.Cards), HasMore: cardHasMore,
+	})
 }

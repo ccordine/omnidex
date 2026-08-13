@@ -49,11 +49,11 @@ The rejected universal cognition runtime, its tool-calling policy, replay/store/
 transport sidecars, and its bespoke procedural gauntlet have been deleted. They are
 not compatibility surfaces and must not return.
 
-`internal/cognitionreference/` is the isolated, in-memory executable specification of
-the code-owned objective machine. It proves deterministic closure, named semantic
-gaps, bounded model leaves, repository discovery, bounded generation handoff, and
-recursive semantic correction before persistence is designed. It is not a second
-production runtime and it provides no production fallback.
+The former in-memory cognition reference tree has been deleted after its task-neutral
+contracts were cut into the authoritative assembly-line, repository, queue, and
+worker packages. Keeping it would create a second objective runtime and an
+archaeological fallback. Architecture tests now require that parallel tree to remain
+absent.
 
 Production continues to use the existing task-state, Working Set, context-builder,
 evidence, assembly-line, model, and queue contracts only where their behavior matches

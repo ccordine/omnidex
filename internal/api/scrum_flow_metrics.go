@@ -1,11 +1,9 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 	"time"
 
@@ -28,7 +26,6 @@ type ScrumFlowMetrics struct {
 	RegressionCount   int      `json:"regression_count"`
 	PlayRuns          int      `json:"play_runs"`
 	ChannelMessages   int      `json:"channel_messages"`
-	PlanningMessages  int      `json:"planning_messages"`
 	ConversationChars int      `json:"conversation_chars"`
 	IncompleteScore   int      `json:"incomplete_score"`
 	CompletionStatus  string   `json:"completion_status"`
@@ -92,7 +89,7 @@ func isScrumColumnRegression(fromColumn, toColumn string) bool {
 	return scrumColumnRankValue(to) < scrumColumnRankValue(from)
 }
 
-func conversationStats(card ScrumCard) (channelMessages, planningMessages, totalChars int) {
+func conversationStats(card ScrumCard) (channelMessages, totalChars int) {
 	for _, msg := range card.Chat {
 		if strings.TrimSpace(msg.Content) == "" {
 			continue
@@ -100,14 +97,7 @@ func conversationStats(card ScrumCard) (channelMessages, planningMessages, total
 		channelMessages++
 		totalChars += len(msg.Content)
 	}
-	for _, msg := range card.PlanningChat {
-		if strings.TrimSpace(msg.Content) == "" {
-			continue
-		}
-		planningMessages++
-		totalChars += len(msg.Content)
-	}
-	return channelMessages, planningMessages, totalChars
+	return channelMessages, totalChars
 }
 
 func checklistIncomplete(card ScrumCard) bool {
@@ -129,7 +119,7 @@ func computeScrumFlowMetrics(card ScrumCard, events []queue.ScrumFlowEvent) Scru
 		CompletionStatus: "uncertain",
 		Signals:          []string{},
 	}
-	metrics.ChannelMessages, metrics.PlanningMessages, metrics.ConversationChars = conversationStats(card)
+	metrics.ChannelMessages, metrics.ConversationChars = conversationStats(card)
 
 	for _, event := range events {
 		switch event.EventType {
@@ -183,7 +173,7 @@ func computeScrumFlowMetrics(card ScrumCard, events []queue.ScrumFlowEvent) Scru
 	if metrics.PlayRuns > 2 {
 		addSignal(fmt.Sprintf("played %d times", metrics.PlayRuns), (metrics.PlayRuns-2)*10)
 	}
-	totalMessages := metrics.ChannelMessages + metrics.PlanningMessages
+	totalMessages := metrics.ChannelMessages
 	if totalMessages >= 30 && metrics.Column != "done" {
 		addSignal(fmt.Sprintf("long conversation (%d messages) without reaching done", totalMessages), 15)
 	}
@@ -217,7 +207,7 @@ func summarizeScrumFlowMetrics(cards []ScrumCard) ScrumFlowProjectSummary {
 	for _, card := range cards {
 		metrics := parseScrumFlowMetrics(card.FlowMetrics)
 		summary.AssignedReturnsTotal += metrics.AssignedReturns
-		if metrics.ChannelMessages+metrics.PlanningMessages >= 30 {
+		if metrics.ChannelMessages >= 30 {
 			summary.LongConversations++
 		}
 		switch metrics.CompletionStatus {
@@ -245,138 +235,4 @@ func parseScrumFlowMetrics(raw json.RawMessage) ScrumFlowMetrics {
 		out.Signals = []string{}
 	}
 	return out
-}
-
-func (s *Server) trackScrumCardFlow(ctx context.Context, projectID int64, previous, next ScrumCard, trigger string) json.RawMessage {
-	if s.repo == nil || projectID <= 0 || strings.TrimSpace(next.ID) == "" {
-		log.Printf("scrum flow tracking rejected project=%d card=%q: repository, project, and card are required", projectID, next.ID)
-		return next.FlowMetrics
-	}
-	prevColumn := normalizeScrumColumn(previous.Column)
-	nextColumn := normalizeScrumColumn(next.Column)
-	prevPlay := strings.TrimSpace(previous.PlayState)
-	nextPlay := strings.TrimSpace(next.PlayState)
-
-	if prevColumn != nextColumn {
-		s.recordScrumFlowEvent(ctx, projectID, next.ID, scrumFlowEventColumnMove, prevColumn, nextColumn, prevPlay, nextPlay, map[string]any{
-			"trigger":       trigger,
-			"is_regression": isScrumColumnRegression(prevColumn, nextColumn),
-			"to_assigned":   isScrumRegressionToAssigned(prevColumn, nextColumn),
-			"review_bounce": isScrumReviewBounce(prevColumn, nextColumn),
-		})
-	}
-
-	if prevPlay != nextPlay {
-		switch nextPlay {
-		case scrumPlayRunning:
-			s.recordScrumFlowEvent(ctx, projectID, next.ID, scrumFlowEventPlayStarted, prevColumn, nextColumn, prevPlay, nextPlay, map[string]any{"trigger": trigger, "job_id": strings.TrimSpace(next.JobID)})
-		case scrumPlayPaused:
-			s.recordScrumFlowEvent(ctx, projectID, next.ID, scrumFlowEventPlayPaused, prevColumn, nextColumn, prevPlay, nextPlay, map[string]any{"trigger": trigger, "job_id": strings.TrimSpace(previous.JobID)})
-		}
-	}
-
-	prevChannel, prevPlanning, _ := conversationStats(previous)
-	nextChannel, nextPlanning, nextChars := conversationStats(next)
-	if nextChannel+nextPlanning > prevChannel+prevPlanning {
-		s.recordScrumFlowEvent(ctx, projectID, next.ID, scrumFlowEventConversation, nextColumn, nextColumn, nextPlay, nextPlay, map[string]any{
-			"trigger":            trigger,
-			"channel_messages":   nextChannel,
-			"planning_messages":  nextPlanning,
-			"conversation_chars": nextChars,
-		})
-	}
-
-	events, err := s.repo.ListScrumFlowEvents(ctx, projectID, next.ID, 200)
-	if err != nil {
-		log.Printf("scrum flow event load failed project=%d card=%q: %v", projectID, next.ID, err)
-		return next.FlowMetrics
-	}
-	metrics := computeScrumFlowMetrics(next, events)
-	raw, err := json.Marshal(metrics)
-	if err != nil {
-		log.Printf("scrum flow metrics encode failed project=%d card=%q: %v", projectID, next.ID, err)
-		return next.FlowMetrics
-	}
-	if err := s.repo.UpdateScrumCardFlowMetrics(ctx, projectID, next.ID, raw); err != nil {
-		log.Printf("scrum flow metrics persistence failed project=%d card=%q: %v", projectID, next.ID, err)
-	}
-	return raw
-}
-
-func (s *Server) recordScrumFlowEvent(ctx context.Context, projectID int64, cardID, eventType, fromColumn, toColumn, fromPlayState, toPlayState string, payload map[string]any) {
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("scrum flow event encode failed project=%d card=%q event=%q: %v", projectID, cardID, eventType, err)
-		return
-	}
-	if err := s.repo.RecordScrumFlowEvent(ctx, projectID, cardID, eventType, fromColumn, toColumn, fromPlayState, toPlayState, raw); err != nil {
-		log.Printf("scrum flow event persistence failed project=%d card=%q event=%q: %v", projectID, cardID, eventType, err)
-	}
-}
-
-func (s *Server) refreshScrumFlowMetricsForBoard(ctx context.Context, projectID int64, board *ScrumBoard) error {
-	if s.repo == nil || projectID <= 0 || board == nil {
-		return fmt.Errorf("scrum flow board refresh requires repository, project, and board")
-	}
-	for i, card := range board.Cards {
-		events, err := s.repo.ListScrumFlowEvents(ctx, projectID, card.ID, 200)
-		if err != nil {
-			return fmt.Errorf("load Scrum flow events project=%d card=%q: %w", projectID, card.ID, err)
-		}
-		metrics := computeScrumFlowMetrics(card, events)
-		raw, err := json.Marshal(metrics)
-		if err != nil {
-			return fmt.Errorf("encode Scrum flow metrics project=%d card=%q: %w", projectID, card.ID, err)
-		}
-		board.Cards[i].FlowMetrics = raw
-	}
-	return nil
-}
-
-func (s *Server) handleScrumFlowMetrics(w http.ResponseWriter, r *http.Request) {
-	if s.repo == nil {
-		writeError(w, http.StatusServiceUnavailable, "scrum flow metrics require database")
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	projectID, err := s.resolveProjectID(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	board, err := s.scrumBoardFromProject(r.Context(), projectID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if err := s.refreshScrumFlowMetricsForBoard(r.Context(), projectID, &board); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	cards := make([]map[string]any, 0, len(board.Cards))
-	for _, card := range board.Cards {
-		flowMetrics, err := jsonRawOrObject(card.FlowMetrics)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("decode flow metrics for card %q: %v", card.ID, err))
-			return
-		}
-		cards = append(cards, map[string]any{
-			"card_id":      card.ID,
-			"title":        card.Title,
-			"column":       card.Column,
-			"flow_metrics": flowMetrics,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"project_id": projectID,
-		"summary":    summarizeScrumFlowMetrics(board.Cards),
-		"cards":      cards,
-	})
-}
-
-func (s *Server) handleMetricsScrum(w http.ResponseWriter, r *http.Request) {
-	s.handleScrumFlowMetrics(w, r)
 }

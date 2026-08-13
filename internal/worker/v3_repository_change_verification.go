@@ -22,6 +22,7 @@ type repositoryGoProofMode string
 
 const (
 	repositoryGoProofFocused repositoryGoProofMode = "focused"
+	repositoryGoProofPackage repositoryGoProofMode = "package"
 	repositoryGoProofBroad   repositoryGoProofMode = "broad"
 )
 

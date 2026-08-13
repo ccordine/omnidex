@@ -15,7 +15,7 @@ import (
 const freshMigrationTimeout = 2 * time.Minute
 const freshConfirmationToken = "fresh"
 
-func runMigrateFresh(c *client.Client, args []string) {
+func runMigrateFresh(c *client.Client, args []string, coreURL string) {
 	fs := flag.NewFlagSet("migrate:fresh", flag.ExitOnError)
 	assumeYes := fs.Bool("yes", false, "skip interactive confirmation prompt")
 	_ = fs.Parse(args)
@@ -24,7 +24,6 @@ func runMigrateFresh(c *client.Client, args []string) {
 		die("core client is unavailable")
 	}
 
-	coreURL := getenv("CORE_URL", "http://localhost:8090")
 	target := fmt.Sprintf("core(%s)", coreURL)
 	if !*assumeYes {
 		if !stdinIsInteractive() {

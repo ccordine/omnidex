@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -18,10 +17,6 @@ func TestValidatePipelinePreservesEverySupportedPipeline(t *testing.T) {
 		model.PipelineChat,
 		model.PipelineCoding,
 		model.PipelineStory,
-		model.PipelineDataQuery,
-		model.PipelineDataExplore,
-		model.PipelineProjectDebugger,
-		model.PipelineScrumCardLLM,
 		model.PipelineScrum,
 	} {
 		got, err := validatePipeline("  " + pipeline + "  ")
@@ -34,21 +29,34 @@ func TestValidatePipelinePreservesEverySupportedPipeline(t *testing.T) {
 	}
 }
 
+func TestPublicEnqueueAcceptsOnlyExplicitCodingAndScrumTransports(t *testing.T) {
+	for _, pipeline := range []string{model.PipelineCoding, model.PipelineScrum} {
+		got, err := validatePublicEnqueuePipeline(pipeline)
+		if err != nil || got != pipeline {
+			t.Fatalf("public pipeline %q got=%q err=%v", pipeline, got, err)
+		}
+	}
+	for _, pipeline := range []string{model.PipelineAssistant, model.PipelineChat, model.PipelineStory} {
+		if _, err := validatePublicEnqueuePipeline(pipeline); !errors.Is(err, ErrChannelTransportRequired) {
+			t.Fatalf("public pipeline %q error=%v must require channel transport", pipeline, err)
+		}
+	}
+}
+
 func TestValidatePipelineRejectsUnknownInsteadOfFallingBack(t *testing.T) {
-	_, err := validatePipeline("mystery")
-	if err == nil {
-		t.Fatal("unknown pipeline must fail loudly")
-	}
-	if !errors.Is(err, ErrUnsupportedPipeline) {
-		t.Fatalf("error=%v must wrap ErrUnsupportedPipeline", err)
-	}
-	if got := stepsForPipeline("mystery"); len(got) != 0 {
-		t.Fatalf("unknown pipeline produced fallback steps: %#v", got)
+	for _, pipeline := range []string{"mystery", "data_query", "data_explore", "project_debugger", "scrum_card_llm"} {
+		_, err := validatePipeline(pipeline)
+		if err == nil || !errors.Is(err, ErrUnsupportedPipeline) {
+			t.Fatalf("pipeline %q error=%v must wrap ErrUnsupportedPipeline", pipeline, err)
+		}
+		if got := stepsForPipeline(pipeline); len(got) != 0 {
+			t.Fatalf("pipeline %q produced fallback steps: %#v", pipeline, got)
+		}
 	}
 }
 
 func TestStandardPipelinesUseOneAuthoritativeRuntime(t *testing.T) {
-	authoritative := stepActions(v3ConversationSteps())
+	authoritative := []string{"objective_resolve"}
 	tests := []struct {
 		name     string
 		pipeline string
@@ -101,7 +109,7 @@ func TestCodingPipelineIsOnlyDirectCoding(t *testing.T) {
 }
 
 func TestChatTransportDoesNotRouteByInstructionPhrasing(t *testing.T) {
-	want := v3ConversationSteps()
+	want := []stepSeed{{action: "objective_resolve", sortIndex: 5}}
 	for _, instruction := range []string{
 		"hello",
 		"Fix the broken authentication middleware and add regression tests",
@@ -146,29 +154,39 @@ func TestTelemetryTaskKindUsesTypedStateNotInstructionWording(t *testing.T) {
 	}
 }
 
-func TestV3AuthoritativeStepsResearchBeforePlanningAndVerifyBeforeFinalize(t *testing.T) {
+func TestConversationTransportUsesOneCodeOwnedObjectiveWorkflow(t *testing.T) {
 	got, err := stepsForJob(model.PipelineAssistant, "Research the current API and explain the evidence", nil)
 	if err != nil {
 		t.Fatalf("stepsForJob: %v", err)
 	}
-	want := []string{
-		"v3_intent_parse",
-		"v3_capability_audit",
-		"v3_workspace_research",
-		"v3_memory_retrieval",
-		"v3_external_research",
-		"v3_planning",
-		"v3_analysis",
-		"v3_response_draft",
-		"v3_verification",
-		"v3_memory_review",
-		"v3_finalize",
-	}
+	want := []string{"objective_resolve"}
 	if actions := stepActions(got); !reflect.DeepEqual(actions, want) {
 		t.Fatalf("stepsForJob(v3)=%#v want %#v", actions, want)
 	}
 	if !strictlyIncreasingSortIndex(got) {
 		t.Fatalf("v3 sort indexes must increase: %+v", got)
+	}
+}
+
+func TestFreeFormTransportCannotBypassObjectiveWorkflowWithExternalAgentMetadata(t *testing.T) {
+	want := []string{"objective_resolve"}
+	metadata := []byte(`{"agent_config":{"agent_system":"codex"}}`)
+	for _, pipeline := range []string{model.PipelineAssistant, model.PipelineChat, model.PipelineStory} {
+		steps, err := stepsForJob(pipeline, "Exact free-form authority.", metadata)
+		if err != nil {
+			t.Fatalf("pipeline %q: %v", pipeline, err)
+		}
+		if got := stepActions(steps); !reflect.DeepEqual(got, want) {
+			t.Fatalf("pipeline %q bypassed objective workflow: got=%v want=%v", pipeline, got, want)
+		}
+	}
+	channelMetadata := []byte(`{"source":"omni-scrum","scrum_channel_origin":true,"agent_config":{"agent_system":"codex"}}`)
+	steps, err := stepsForJob("scrum", "Exact channel authority.", channelMetadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stepActions(steps); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Scrum channel bypassed objective workflow: got=%v want=%v", got, want)
 	}
 }
 
@@ -203,7 +221,14 @@ func TestRemovedRuntimeSelectorFailsLoudly(t *testing.T) {
 func TestLegacyRuntimeActionsAreAbsent(t *testing.T) {
 	for _, pipeline := range []string{model.PipelineAssistant, model.PipelineChat, model.PipelineStory} {
 		actions := stepActions(stepsForPipeline(pipeline))
-		for _, legacy := range []string{"tooling", "workspace_scan", "tag", "retrieve", "plan", "web_search", "analyze", "assist", "roleplay", "narrate", "verify"} {
+		for _, legacy := range []string{
+			"v3_intent_parse", "v3_capability_audit", "v3_workspace_research",
+			"v3_memory_retrieval", "v3_external_research", "v3_planning",
+			"v3_subtask", "v3_analysis", "v3_response_draft", "v3_verification",
+			"v3_memory_review", "v3_finalize", "tooling", "workspace_scan",
+			"tag", "retrieve", "plan", "web_search", "analyze", "assist",
+			"roleplay", "narrate", "verify",
+		} {
 			if containsAction(actions, legacy) {
 				t.Fatalf("pipeline %q retained legacy action %q: %v", pipeline, legacy, actions)
 			}
@@ -229,21 +254,6 @@ func TestScrumExternalJobUsesSingleExternalStep(t *testing.T) {
 	want := []stepSeed{{action: "external_agent_execute", sortIndex: 1}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("stepsForJob(scrum external)=%+v want %+v", got, want)
-	}
-}
-
-func TestDataSourceQueryJobUsesSingleQueryStep(t *testing.T) {
-	meta, err := datasource.JobMetadata("ds-abc", "Hospital DB", "How many patients checked in today?", "dsc-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := stepsForJob(model.PipelineDataQuery, "How many patients checked in today?", meta)
-	if err != nil {
-		t.Fatalf("stepsForJob: %v", err)
-	}
-	want := []stepSeed{{action: "data_source_query", sortIndex: 1}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("stepsForJob(data_query)=%+v want %+v", got, want)
 	}
 }
 

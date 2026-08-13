@@ -16,9 +16,6 @@ func (r *Repository) WriteArtifact(
 	authority model.StepAttemptAuthority,
 	artifact artifacts.Envelope,
 ) error {
-	if artifact.Kind == artifacts.KindIntent {
-		return ErrIntentArtifactRequiresAcceptedWriter
-	}
 	if err := artifact.Validate(); err != nil {
 		return err
 	}
@@ -64,6 +61,9 @@ func (r *Repository) WriteEvidence(
 ) error {
 	if err := record.Validate(); err != nil {
 		return err
+	}
+	if record.Kind == evidence.KindObjectiveCitation {
+		return fmt.Errorf("objective citations require atomic completion evidence authority")
 	}
 	if record.JobID != authority.JobID || record.StepID != authority.StepID {
 		return fmt.Errorf("%w: evidence owner disagrees with step attempt", ErrStaleStepAttempt)

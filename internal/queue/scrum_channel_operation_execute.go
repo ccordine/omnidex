@@ -59,7 +59,7 @@ func (r *Repository) ExecuteScrumChannelOperation(
 		)
 	}
 
-	current, err := lockScrumChannelCardTx(ctx, tx, command.Request.ProjectID, command.Request.CardID)
+	current, err := lockScrumCardTx(ctx, tx, command.Request.ProjectID, command.Request.CardID)
 	if err != nil {
 		return ScrumChannelOperationResult{}, err
 	}
@@ -116,7 +116,7 @@ func (r *Repository) executeScrumChannelEffectTx(
 	var err error
 	switch effect.Kind {
 	case ScrumChannelStartJob:
-		if card.PlayState == "running" || card.PlayState == "queued" || card.PlayState == "reviewing" {
+		if card.PlayState == "running" || card.PlayState == "queued" {
 			return model.Job{}, fmt.Errorf("Scrum card %q already has active play state %q", card.ID, card.PlayState)
 		}
 		job, err = r.enqueueJobTx(ctx, tx, effect.Instruction, effect.Pipeline, effect.Metadata)
@@ -233,24 +233,27 @@ func validateScrumChannelCardUpdate(
 	update.PlayState = strings.TrimSpace(update.PlayState)
 	update.ConsoleLog = SanitizeUTF8Text(update.ConsoleLog)
 	if update.Column != "in_progress" || update.PlayState != "running" || update.QueueOrder != 0 ||
-		update.JobID != strconv.FormatInt(job.ID, 10) {
+		update.JobID != strconv.FormatInt(job.ID, 10) || update.SyncJobID != update.JobID ||
+		update.AgentStreamChatCursor != 0 || update.AgentStreamConsoleCursor != 0 ||
+		update.StepContextCursor != 0 {
 		return fmt.Errorf("Scrum channel card update has invalid job, column, play-state, or queue authority")
 	}
 	return nil
 }
 
-func lockScrumChannelCardTx(ctx context.Context, tx pgx.Tx, projectID int64, cardID string) (DBScrumCard, error) {
-	card, err := scanDBScrumCard(tx.QueryRow(ctx, scrumChannelCardSelectSQL+` FOR UPDATE`, projectID, cardID))
+func lockScrumCardTx(ctx context.Context, tx pgx.Tx, projectID int64, cardID string) (DBScrumCard, error) {
+	card, err := scanDBScrumCard(tx.QueryRow(ctx, scrumCardSelectSQL+` FOR UPDATE`, projectID, cardID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return DBScrumCard{}, fmt.Errorf("Scrum card %q was not found in project %d", cardID, projectID)
+		return DBScrumCard{}, fmt.Errorf("%w: Scrum card %q was not found in project %d", ErrScrumCardNotFound, cardID, projectID)
 	}
 	return card, err
 }
 
-const scrumChannelCardSelectSQL = `
+const scrumCardSelectSQL = `
 	SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
 	       model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
 	       tags, planning_chat, coach_config, test_criteria, flow_metrics,
 	       job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order,
-	       board_order, created_at, updated_at
+	       board_order, sync_job_id, agent_stream_chat_cursor,
+	       agent_stream_console_cursor, step_context_cursor, created_at, updated_at
 	FROM scrum_cards WHERE project_id=$1 AND id=$2`

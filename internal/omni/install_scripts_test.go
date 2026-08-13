@@ -12,7 +12,7 @@ func TestInstallAndUpdateScriptsBuildOmniBinary(t *testing.T) {
 
 	for _, scriptName := range []string{"install.sh", "update.sh"} {
 		body := readRepoScript(t, root, scriptName)
-		if !strings.Contains(body, "go build -o bin/omni ./cmd/omni") {
+		if !strings.Contains(body, `go build -o "${build_dir}/omni" ./cmd/omni`) {
 			t.Fatalf("%s must build bin/omni from ./cmd/omni", scriptName)
 		}
 	}
@@ -20,7 +20,7 @@ func TestInstallAndUpdateScriptsBuildOmniBinary(t *testing.T) {
 
 func TestInstallScriptAddsBinDirectoryToPath(t *testing.T) {
 	root := repoRootFromOmniTest(t)
-	body := readRepoScript(t, root, "install.sh")
+	body := readRepoScript(t, root, "install.sh") + readRepoScript(t, root, "scripts/install-shell-lib.sh")
 
 	for _, want := range []string{
 		"export OMNIDEX_DIR=\"${PREFIX}\"",
@@ -32,30 +32,24 @@ func TestInstallScriptAddsBinDirectoryToPath(t *testing.T) {
 	}
 }
 
-func TestInstallScriptCopiesPublicRuntimeResources(t *testing.T) {
+func TestInstallScriptStagesCompleteCheckoutInsteadOfPartialPayload(t *testing.T) {
 	root := repoRootFromOmniTest(t)
 	body := readRepoScript(t, root, "install.sh")
+	checkout := readRepoScript(t, root, "scripts/managed-checkout-lib.sh")
 
-	for _, want := range []string{
-		"recipes",
-		"benchmarks",
-		"docs",
-		"SECURITY.md",
-		"LICENSE",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("install.sh runtime payload missing %q", want)
+	for _, want := range []string{"managed_checkout_clone_exact", "git clone", "ls-files --deleted"} {
+		combined := body + checkout
+		if !strings.Contains(combined, want) {
+			t.Fatalf("complete checkout installer missing %q", want)
 		}
-		if _, err := os.Stat(filepath.Join(root, want)); err != nil {
-			t.Fatalf("runtime payload item %s must exist in repo: %v", want, err)
-		}
+	}
+	if strings.Contains(body, "payload_items") || strings.Contains(body, "copy_runtime_payload") {
+		t.Fatal("installer retains partial payload copying")
 	}
 }
 
-func TestCrossPlatformBootstrapScriptsArePackaged(t *testing.T) {
+func TestCompleteCheckoutPackagesCrossPlatformBootstrapScripts(t *testing.T) {
 	root := repoRootFromOmniTest(t)
-	installBody := readRepoScript(t, root, "install.sh")
-	updateBody := readRepoScript(t, root, "update.sh")
 
 	for _, scriptName := range []string{
 		"scripts/build-release.sh",
@@ -64,29 +58,76 @@ func TestCrossPlatformBootstrapScriptsArePackaged(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, scriptName)); err != nil {
 			t.Fatalf("cross-platform helper %s must exist in repo: %v", scriptName, err)
 		}
-		if !strings.Contains(installBody, scriptName) {
-			t.Fatalf("install.sh must refresh permissions for %s", scriptName)
-		}
-		if !strings.Contains(updateBody, scriptName) {
-			t.Fatalf("update.sh must refresh permissions for %s", scriptName)
-		}
 	}
 }
 
 func TestUpdateScriptSupportsHostOnlyInstalledUpdate(t *testing.T) {
 	root := repoRootFromOmniTest(t)
 	body := readRepoScript(t, root, "update.sh")
+	runtimeLibrary := readRepoScript(t, root, "scripts/update-runtime-lib.sh")
+	combined := body + runtimeLibrary
 
 	for _, want := range []string{
 		"--host-only",
 		"--no-host-restart",
 		"needs_compose_work",
-		"refresh_installed_payload_permissions",
+		"managed_checkout_fast_forward",
+		"managed_checkout_publish",
 		"restart_host_bridge",
-		"go build -o bin/omni ./cmd/omni",
+		`go build -o "${build_dir}/omni" ./cmd/omni`,
 	} {
-		if !strings.Contains(body, want) {
+		if !strings.Contains(combined, want) {
 			t.Fatalf("update.sh missing installed-update fragment %q", want)
+		}
+	}
+}
+
+func TestUpdateScriptConsumesExactDockerDeploymentAuthority(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	combined := readRepoScript(t, root, "update.sh") +
+		readRepoScript(t, root, "scripts/managed-checkout-lib.sh") +
+		readRepoScript(t, root, "scripts/update-runtime-lib.sh")
+	for _, fragment := range []string{
+		"managed_checkout_env_value",
+		"DOCKER_CONTEXT",
+		"COMPOSE_PROJECT_NAME",
+		"validate_compose_identity",
+		"output+=(-p",
+	} {
+		if !strings.Contains(combined, fragment) {
+			t.Fatalf("update deployment authority missing %q", fragment)
+		}
+	}
+	for _, profile := range []string{"default.env", ".env.example"} {
+		body := readRepoScript(t, root, profile)
+		if !strings.Contains(body, "DOCKER_CONTEXT=") || !strings.Contains(body, "COMPOSE_PROJECT_NAME=omnidex") {
+			t.Fatalf("%s omits explicit Docker deployment identity", profile)
+		}
+	}
+}
+
+func TestInstallAndUpdateNeverReportSuccessWithMissingOrPartiallyBuiltBinaries(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	for _, scriptName := range []string{"install.sh", "update.sh"} {
+		body := readRepoScript(t, root, scriptName)
+		for _, forbidden := range []string{
+			"skipping host binary rebuild",
+			"rm -f bin/agent-core bin/agent-cli bin/omni",
+		} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s retains non-atomic/stale binary behavior %q", scriptName, forbidden)
+			}
+		}
+		for _, required := range []string{
+			".omnidex-build.XXXXXX",
+			"go is required to build Omnidex binaries",
+			"scripts/build-ui.sh",
+			"managed_checkout_validate_env",
+			"managed_checkout_publish",
+		} {
+			if !strings.Contains(body, required) {
+				t.Fatalf("%s omits exact binary update guard %q", scriptName, required)
+			}
 		}
 	}
 }

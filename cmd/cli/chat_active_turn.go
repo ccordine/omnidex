@@ -12,137 +12,6 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func parseQueuedTurnInput(raw string) (string, bool) {
-	if raw == "" {
-		return "", false
-	}
-	trimmedTabs := strings.TrimLeft(raw, "\t")
-	if len(trimmedTabs) == len(raw) {
-		return "", false
-	}
-	message := strings.TrimSpace(trimmedTabs)
-	if message == "" {
-		return "", false
-	}
-	return message, true
-}
-
-func captureQueuedTurnInput(
-	c *client.Client,
-	jobID *int64,
-	input *chatInputReader,
-	pendingInputs *[]string,
-	ui *chatUI,
-) (bool, error) {
-	if input == nil {
-		return false, nil
-	}
-	if pendingInputs == nil {
-		return false, nil
-	}
-	if jobID == nil || *jobID <= 0 {
-		return false, fmt.Errorf("active job id is required")
-	}
-
-	for {
-		event, ok := input.readNonBlocking()
-		if !ok {
-			return false, nil
-		}
-		if event.err != nil {
-			return false, event.err
-		}
-		if event.eof {
-			return true, nil
-		}
-
-		if queuedMessage, queueOK := parseQueuedTurnInput(event.line); queueOK {
-			*pendingInputs = append(*pendingInputs, queuedMessage)
-			emitSystem(ui, fmt.Sprintf("TAB queue: queued next turn (#%d): %s", len(*pendingInputs), truncateForWatch(queuedMessage, 140)))
-			continue
-		}
-
-		command, _ := parseSlashCommand(strings.TrimSpace(event.line))
-		if command == "exit" || command == "quit" {
-			return true, nil
-		}
-		if strings.HasPrefix(strings.TrimSpace(event.line), "/") {
-			if handled, quit := handleActiveTurnSlashCommand(c, jobID, strings.TrimSpace(event.line), ui); handled {
-				return quit, nil
-			}
-		}
-
-		if strings.TrimSpace(event.line) != "" {
-			emitSystem(ui, "turn in progress: TAB + message queues a follow-up; /interrupt, /replan, and /cancel steer the active job")
-		}
-	}
-}
-
-func handleActiveTurnSlashCommand(c *client.Client, jobID *int64, line string, ui *chatUI) (bool, bool) {
-	if jobID == nil || *jobID <= 0 {
-		emitAssistantError(ui, "active job id is unavailable")
-		return true, false
-	}
-	command, body := parseSlashCommand(line)
-	switch command {
-	case "help":
-		printInteractiveInputHelp()
-		return true, false
-	case "cancel":
-		if strings.TrimSpace(body) == "" {
-			emitSystem(ui, "usage: /cancel <reason>")
-			return true, false
-		}
-		job, err := c.Cancel(context.Background(), queue.CancelJobCommand{
-			OperationID: newLifecycleOperationID(), JobID: *jobID, Reason: body,
-		})
-		if err != nil {
-			emitAssistantError(ui, "error canceling job: "+err.Error())
-			return true, false
-		}
-		emitSystem(ui, fmt.Sprintf("canceled job %d status=%s", job.ID, job.Status))
-		return true, false
-	case "interrupt":
-		if strings.TrimSpace(body) == "" {
-			emitSystem(ui, "usage: /interrupt <context>")
-			return true, false
-		}
-		previousID := *jobID
-		job, err := c.Interrupt(context.Background(), previousID, newLifecycleOperationID(), body)
-		if err != nil {
-			emitAssistantError(ui, "error interrupting job: "+err.Error())
-			return true, false
-		}
-		*jobID = job.ID
-		emitAuthorityControlResult(ui, "interrupt", previousID, job)
-		return true, false
-	case "replan":
-		if strings.TrimSpace(body) == "" {
-			emitSystem(ui, "usage: /replan <context>")
-			return true, false
-		}
-		previousID := *jobID
-		job, err := c.Replan(context.Background(), previousID, newLifecycleOperationID(), body)
-		if err != nil {
-			emitAssistantError(ui, "error replanning job: "+err.Error())
-			return true, false
-		}
-		*jobID = job.ID
-		emitAuthorityControlResult(ui, "replan", previousID, job)
-		return true, false
-	default:
-		return false, false
-	}
-}
-
-func emitAuthorityControlResult(ui *chatUI, action string, previousID int64, job model.Job) {
-	if job.ID != previousID {
-		emitSystem(ui, fmt.Sprintf("%s revised authority: job %d replaced job %d and restarted intent validation", action, job.ID, previousID))
-		return
-	}
-	emitSystem(ui, fmt.Sprintf("%s submitted for job %d status=%s", action, job.ID, job.Status))
-}
-
 func awaitInteractiveTurn(
 	c *client.Client,
 	input *chatInputReader,
@@ -268,6 +137,10 @@ func awaitInteractiveTurn(
 							fmt.Fprintf(os.Stderr, "error interrupting job: %v\n", err)
 							continue
 						}
+						if err := validateSameJobControl("interrupt", previousID, job); err != nil {
+							fmt.Fprintln(os.Stderr, err)
+							continue
+						}
 						jobID = job.ID
 						emitAuthorityControlResult(ui, "interrupt", previousID, job)
 					case "replan":
@@ -279,6 +152,10 @@ func awaitInteractiveTurn(
 						job, err := c.Replan(context.Background(), previousID, newLifecycleOperationID(), body)
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "error replanning job: %v\n", err)
+							continue
+						}
+						if err := validateSameJobControl("replan", previousID, job); err != nil {
+							fmt.Fprintln(os.Stderr, err)
 							continue
 						}
 						jobID = job.ID
@@ -294,6 +171,10 @@ func awaitInteractiveTurn(
 				job, err := c.SubmitFeedback(context.Background(), previousID, newLifecycleOperationID(), feedbackInput)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error submitting feedback: %v\n", err)
+					continue
+				}
+				if err := validateSameJobControl("feedback", previousID, job); err != nil {
+					fmt.Fprintln(os.Stderr, err)
 					continue
 				}
 				jobID = job.ID

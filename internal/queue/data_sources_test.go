@@ -1,6 +1,10 @@
 package queue
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 func TestBuildPostgresDSNFromFields(t *testing.T) {
 	dsn, err := BuildPostgresDSN(DataSourceRecord{
@@ -52,5 +56,35 @@ func TestNormalizeDataSourceRecordDefaults(t *testing.T) {
 	}
 	if !record.ReadOnly {
 		t.Fatal("expected read-only default")
+	}
+}
+
+func TestDataSourcePageRequestRejectsUnboundedReads(t *testing.T) {
+	for _, request := range []DataSourcePageRequest{
+		{},
+		{Limit: -1},
+		{Limit: MaxDataSourcePageSize + 1},
+		{Limit: 1, Offset: -1},
+	} {
+		if err := request.validate(); err == nil {
+			t.Fatalf("request %+v should fail", request)
+		}
+	}
+	if err := (DataSourcePageRequest{Limit: 20, Offset: 40}).validate(); err != nil {
+		t.Fatalf("valid page request: %v", err)
+	}
+}
+
+func TestDataSourceRepositoryHasNoExportedUnboundedList(t *testing.T) {
+	for _, path := range []string{"data_sources.go", "data_source_channels.go", "data_source_pagination.go", "data_source_types.go"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{" ListDataSources(ctx ", " ListDataSourceChannels(ctx "} {
+			if strings.Contains(string(raw), forbidden) {
+				t.Errorf("unbounded repository list %q remains in %s", forbidden, path)
+			}
+		}
 	}
 }

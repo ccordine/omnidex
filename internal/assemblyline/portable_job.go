@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
@@ -19,24 +22,34 @@ const (
 type WorkKind string
 
 const (
-	WorkRequirementPartition      WorkKind = "requirement_partition"
-	WorkRequirementBriefing       WorkKind = "requirement_partition_briefing"
-	WorkRequirementAdvisory       WorkKind = "requirement_partition_advisory"
-	WorkRequirementSynthesis      WorkKind = "requirement_partition_synthesis"
-	WorkRequirementFinalAdvisory  WorkKind = "requirement_final_advisory"
-	WorkRequirementFinalSynthesis WorkKind = "requirement_final_synthesis"
-	WorkRepositorySearchTerm      WorkKind = "repository_search_term"
-	WorkRepositoryChangeSurface   WorkKind = "repository_change_surface"
-	WorkApplicationClassify       WorkKind = "application_classification"
-	WorkApplicationIdentity       WorkKind = "application_identity"
-	WorkArtifactHandling          WorkKind = "artifact_handling"
-	WorkCapabilityRelation        WorkKind = "capability_relation"
-	WorkSkillSelection            WorkKind = "skill_selection"
-	WorkSkillProcedure            WorkKind = "skill_procedure"
-	WorkFragmentGeneration        WorkKind = "fragment_generation"
-	WorkFragmentModification      WorkKind = "fragment_modification"
-	WorkFragmentCorrection        WorkKind = "fragment_correction"
-	WorkResponseCorrection        WorkKind = "response_correction"
+	WorkRequirementPartition           WorkKind = "requirement_partition"
+	WorkRepositorySearchTerm           WorkKind = "repository_search_term"
+	WorkRepositoryChangeSurface        WorkKind = "repository_change_surface"
+	WorkRepositoryEvidenceRelevance    WorkKind = "repository_evidence_relevance"
+	WorkRepositoryGroundedReview       WorkKind = "repository_grounded_review"
+	WorkRepositoryGroundedCorrection   WorkKind = "repository_grounded_correction"
+	WorkConversationContextSelection   WorkKind = "conversation_context_selection"
+	WorkMemoryContextSelection         WorkKind = "memory_context_selection"
+	WorkConversationObjectiveKind      WorkKind = "conversation_objective_kind"
+	WorkConversationResponse           WorkKind = "conversation_response"
+	WorkGroundedAnswer                 WorkKind = "grounded_answer"
+	WorkWebSearchTerms                 WorkKind = "web_search_terms"
+	WorkWebRelevance                   WorkKind = "web_relevance"
+	WorkWebGroundedSynthesis           WorkKind = "web_grounded_synthesis"
+	WorkWebGroundedSynthesisCorrection WorkKind = "web_grounded_synthesis_correction"
+	WorkWebClaimEvidenceReview         WorkKind = "web_claim_evidence_review"
+	WorkApplicationClassify            WorkKind = "application_classification"
+	WorkApplicationIdentity            WorkKind = "application_identity"
+	WorkArtifactHandling               WorkKind = "artifact_handling"
+	WorkKnownArtifactTruth             WorkKind = "known_artifact_truth"
+	WorkDeclarationArtifactBoundary    WorkKind = "declaration_artifact_boundary"
+	WorkArtifactCandidateSelection     WorkKind = "artifact_candidate_selection"
+	WorkCapabilityRelation             WorkKind = "capability_relation"
+	WorkSkillSelection                 WorkKind = "skill_selection"
+	WorkFragmentGeneration             WorkKind = "fragment_generation"
+	WorkFragmentModification           WorkKind = "fragment_modification"
+	WorkFragmentCorrection             WorkKind = "fragment_correction"
+	WorkResponseCorrection             WorkKind = "response_correction"
 )
 
 type PortableJob struct {
@@ -109,6 +122,12 @@ func portableJobDigest(schema string, kind WorkKind, payload []byte) string {
 }
 
 func decodePortablePayload(payload []byte, target any) error {
+	if !utf8.Valid(payload) {
+		return fmt.Errorf("decode portable job payload: invalid UTF-8")
+	}
+	if err := exactjson.ValidateObject(payload, target, "portable job payload"); err != nil {
+		return fmt.Errorf("decode portable job payload: %w", err)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -126,13 +145,36 @@ func decodePortablePayload(payload []byte, target any) error {
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
 	case WorkApplicationClassify, WorkApplicationIdentity, WorkRequirementPartition,
-		WorkRequirementBriefing, WorkRequirementAdvisory, WorkRequirementSynthesis,
-		WorkRequirementFinalAdvisory, WorkRequirementFinalSynthesis,
-		WorkRepositorySearchTerm, WorkRepositoryChangeSurface,
-		WorkArtifactHandling, WorkCapabilityRelation, WorkSkillSelection, WorkSkillProcedure,
+		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
+		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
+		WorkConversationContextSelection, WorkMemoryContextSelection,
+		WorkConversationObjectiveKind, WorkConversationResponse, WorkGroundedAnswer,
+		WorkWebSearchTerms, WorkWebRelevance, WorkWebGroundedSynthesis,
+		WorkWebGroundedSynthesisCorrection, WorkWebClaimEvidenceReview,
+		WorkArtifactHandling, WorkKnownArtifactTruth,
+		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
+		WorkCapabilityRelation, WorkSkillSelection,
 		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection:
 		return true
 	default:
 		return false
+	}
+}
+
+// AllWorkKinds returns the closed PortableJob kind registry. Callers may use
+// it to prove exhaustive station mappings without inventing string routing.
+func AllWorkKinds() []WorkKind {
+	return []WorkKind{
+		WorkApplicationClassify, WorkApplicationIdentity, WorkRequirementPartition,
+		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
+		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
+		WorkConversationContextSelection, WorkMemoryContextSelection,
+		WorkConversationObjectiveKind, WorkConversationResponse, WorkGroundedAnswer,
+		WorkWebSearchTerms, WorkWebRelevance, WorkWebGroundedSynthesis,
+		WorkWebGroundedSynthesisCorrection, WorkWebClaimEvidenceReview,
+		WorkArtifactHandling, WorkKnownArtifactTruth,
+		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
+		WorkCapabilityRelation, WorkSkillSelection,
+		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection,
 	}
 }

@@ -57,13 +57,21 @@ func (r *Repository) prepareRepositoryMutation(
 		return repositoryMutationOperationRecord{}, fmt.Errorf("insert repository mutation preparation: %w", err)
 	}
 	for index, file := range command.ChangedFiles {
+		sourceSHA, sourceSize, sourceMode := repositoryMutationSQLState(
+			file.SourcePresent, file.SourceSHA256, file.SourceSize, file.SourceMode,
+		)
+		expectedSHA, expectedSize, expectedMode := repositoryMutationSQLState(
+			file.ExpectedPresent, file.ExpectedSHA256, file.ExpectedSize, file.ExpectedMode,
+		)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO repository_mutation_files (
-				operation_id, ordinal, file_id, path, source_sha256, source_size,
-				expected_sha256, expected_size
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		`, identity.ID, index, file.FileID, file.Path, file.SourceSHA256,
-			file.SourceSize, file.ExpectedSHA256, file.ExpectedSize); err != nil {
+				operation_id, ordinal, file_id, path,
+				source_present, source_sha256, source_size, source_mode,
+				expected_present, expected_sha256, expected_size, expected_mode
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		`, identity.ID, index, file.FileID, file.Path,
+			file.SourcePresent, sourceSHA, sourceSize, sourceMode,
+			file.ExpectedPresent, expectedSHA, expectedSize, expectedMode); err != nil {
 			return repositoryMutationOperationRecord{}, fmt.Errorf(
 				"insert repository mutation file %d: %w", index, err,
 			)

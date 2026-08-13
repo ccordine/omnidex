@@ -14,6 +14,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/ingest"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func readTranscriptSegments(path string) ([]transcriptSegment, error) {
@@ -55,7 +56,7 @@ func buildNotesDocument(session audioNotesSession, segments []transcriptSegment,
 	return strings.Join(lines, "\n")
 }
 
-func storeAudioNotesMemory(c *client.Client, session audioNotesSession, notes, sourcePrefix, kind string, extraTags []string, chunkSize, overlap, maxChunks int) (int, []string, error) {
+func storeAudioNotesMemory(c *client.Client, session audioNotesSession, notes string, scope model.MemoryScope, sourcePrefix, kind string, extraTags []string, chunkSize, overlap, maxChunks int) (int, []string, error) {
 	if c == nil {
 		return 0, nil, errors.New("client is required for memory storage")
 	}
@@ -70,25 +71,37 @@ func storeAudioNotesMemory(c *client.Client, session audioNotesSession, notes, s
 		chunks = chunks[:maxChunks]
 	}
 
-	tags := mergeTags(extraTags, []string{"audio-notes", "transcript", "call-notes", "session-" + session.ID})
-	prefix := strings.TrimSpace(sourcePrefix)
-	if prefix == "" {
-		prefix = "audio-notes"
+	tags, err := combineMemoryTags(extraTags, []string{"audio-notes", "transcript", "call-notes"})
+	if err != nil {
+		return 0, nil, err
+	}
+	parsedSource, err := model.ParseMemorySource(sourcePrefix)
+	if err != nil {
+		return 0, nil, err
+	}
+	prefix := string(parsedSource)
+	parsedKind, err := model.ParseMemoryKind(kind)
+	if err != nil {
+		return 0, nil, err
 	}
 	slug := sanitizeMemorySourceToken(session.ID)
 	if slug == "" {
 		slug = fmt.Sprintf("session-%d", time.Now().Unix())
 	}
 
-	stored := 0
+	inputs := make([]model.MemoryInput, 0, len(chunks))
 	for i, chunk := range chunks {
 		source := fmt.Sprintf("%s:%s#%03d", prefix, slug, i+1)
-		if _, err := c.AddMemory(context.Background(), source, kind, chunk, tags); err != nil {
-			return stored, tags, err
-		}
-		stored++
+		inputs = append(inputs, model.MemoryInput{
+			Scope: scope, Source: model.MemorySource(source), Kind: parsedKind, Content: chunk, Tags: tags,
+			Categories: []model.MemoryCategory{model.MemoryCategoryResearch},
+		})
 	}
-	return stored, tags, nil
+	stored, err := c.AddMemories(context.Background(), inputs)
+	if err != nil {
+		return 0, tags, err
+	}
+	return len(stored), tags, nil
 }
 
 func searchTranscriptSegments(segments []transcriptSegment, query string, limit int) []int {

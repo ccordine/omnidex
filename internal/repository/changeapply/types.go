@@ -28,6 +28,36 @@ type Input struct {
 	Candidates []CandidateDeclaration
 }
 
+// ExactSourceFile is the immutable source-side authority for a desired absent
+// state. It is constructed by code from an indexed snapshot and is never part
+// of a model contract.
+type ExactSourceFile struct {
+	FileID string `json:"file_id"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+	Mode   uint32 `json:"mode"`
+}
+
+// DesiredFileState states repository truth, not an operation. Code compares it
+// with Snapshot and derives the one exact physical transition. Present source
+// bytes are already mechanically assembled around bounded declarations.
+type DesiredFileState struct {
+	Path              string          `json:"path"`
+	Present           bool            `json:"present"`
+	Source            ExactSourceFile `json:"source"`
+	Content           []byte          `json:"-"`
+	Mode              uint32          `json:"mode"`
+	PackageArtifactID string          `json:"package_artifact_id,omitempty"`
+	RemovedSymbolIDs  []string        `json:"removed_symbol_ids,omitempty"`
+}
+
+type FileStateInput struct {
+	Snapshot repositoryfacts.Snapshot
+	Analysis repositoryfacts.Analysis
+	OwnerID  string
+	Desired  []DesiredFileState
+}
+
 type targetReplacement struct {
 	symbolID    string
 	fileID      string
@@ -38,19 +68,24 @@ type targetReplacement struct {
 }
 
 type fileMutation struct {
-	file         repositoryfacts.File
-	original     []byte
-	next         []byte
-	replacements []targetReplacement
+	file           repositoryfacts.File
+	original       []byte
+	next           []byte
+	replacements   []targetReplacement
+	sourcePresent  bool
+	desiredPresent bool
 }
 
 // ExpectedFileState is the exact post-patch authority for one changed file.
 // Callers must compare these bytes with the final authoritative repository;
 // merely observing that a file changed is not sufficient proof.
 type ExpectedFileState struct {
-	FileID string `json:"file_id"`
-	SHA256 string `json:"sha256"`
-	Size   int64  `json:"size"`
+	FileID  string `json:"file_id"`
+	Path    string `json:"path"`
+	Present bool   `json:"present"`
+	SHA256  string `json:"sha256,omitempty"`
+	Size    int64  `json:"size"`
+	Mode    uint32 `json:"mode"`
 }
 
 type stagedFileAuthority struct {

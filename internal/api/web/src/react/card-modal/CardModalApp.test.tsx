@@ -279,7 +279,7 @@ describe("card modal React SPA", () => {
     expect(patchBodies[0]).toEqual({ model_config: { temperature: "0.8" } });
   });
 
-  it("saves only explicit agent overrides when switching agent systems", async () => {
+  it("does not expose generic card agent override controls", async () => {
     const context = makeModalContext({
       tab: "config",
       agent_system: "omnidex",
@@ -304,14 +304,12 @@ describe("card modal React SPA", () => {
 
     render(<CardModalApp cardID="card_1" projectID={7} initialTab="config" />);
 
-    const agentModelInput = (await screen.findByLabelText("Agent model")) as HTMLInputElement;
-    expect(agentModelInput).toHaveValue("");
-    expect(agentModelInput).toHaveAttribute("placeholder", "gpt-inherited");
-
-    fireEvent.click(screen.getByRole("button", { name: "Use codex" }));
-
-    await waitFor(() => expect(patchBodies).toHaveLength(1));
-    expect(patchBodies[0]).toEqual({ agent_config: { agent_system: "codex" } });
+    await screen.findByText("Model Overrides");
+    expect(screen.queryByText("Agent Overrides")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Agent model")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Use codex" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save agent" })).not.toBeInTheDocument();
+    expect(patchBodies).toHaveLength(0);
   });
 
   it("plays paused cards instead of sending another pause request", async () => {

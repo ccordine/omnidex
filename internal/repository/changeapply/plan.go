@@ -3,10 +3,6 @@ package changeapply
 import (
 	"context"
 	"fmt"
-	"os"
-	"sort"
-
-	"github.com/gryph/omnidex/internal/omni"
 )
 
 func Plan(ctx context.Context, input Input) (_ *StagedChange, err error) {
@@ -32,60 +28,7 @@ func Plan(ctx context.Context, input Input) (_ *StagedChange, err error) {
 	if err != nil {
 		return nil, err
 	}
-	workspace, err := stageSnapshot(ctx, input.Snapshot)
-	if err != nil {
-		return nil, err
-	}
-	keepWorkspace := false
-	defer func() {
-		if !keepWorkspace {
-			err = joinCleanupError(err, os.RemoveAll(workspace))
-		}
-	}()
-	mutations, err := planMutations(workspace, input.Snapshot, replacements)
-	if err != nil {
-		return nil, err
-	}
-	patch, err := buildUnifiedPatch(mutations)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := omni.ApplyUnifiedPatch(omni.PatchApplyOptions{
-		Context: ctx, Workspace: workspace, Patch: patch, DryRun: true,
-	}); err != nil {
-		return nil, fmt.Errorf("dry-run staged repository patch: %w", err)
-	}
-	if _, err := omni.ApplyUnifiedPatch(omni.PatchApplyOptions{
-		Context: ctx, Workspace: workspace, Patch: patch,
-	}); err != nil {
-		return nil, fmt.Errorf("apply staged repository patch: %w", err)
-	}
-	if err := verifyStagedMutations(workspace, mutations); err != nil {
-		return nil, err
-	}
-	patchHash := digest([]byte(patch))
-	changedFileIDs := make([]string, len(mutations))
-	expectedFiles := make([]ExpectedFileState, len(mutations))
-	for index, mutation := range mutations {
-		changedFileIDs[index] = mutation.file.ID
-		expectedFiles[index] = ExpectedFileState{
-			FileID: mutation.file.ID,
-			SHA256: digest(mutation.next),
-			Size:   int64(len(mutation.next)),
-		}
-	}
-	sort.Strings(changedFileIDs)
-	sort.Slice(expectedFiles, func(left, right int) bool {
-		return expectedFiles[left].FileID < expectedFiles[right].FileID
+	return stageAndSealMutations(ctx, input.Snapshot, input.Contract.ID, func(workspace string) ([]fileMutation, error) {
+		return planMutations(workspace, input.Snapshot, replacements)
 	})
-	stage := &StagedChange{
-		id:        stageIdentity(input.Snapshot.ID, input.Contract.ID, patchHash),
-		workspace: workspace, authoritativeRoot: input.Snapshot.Root,
-		expectedSnapshotID: input.Snapshot.ID, patch: patch, patchSHA256: patchHash,
-		changedFileIDs: changedFileIDs,
-		expectedFiles:  expectedFiles,
-		stagedFiles:    stagedFileAuthorities(input.Snapshot, mutations),
-	}
-	keepWorkspace = true
-	return stage, nil
 }

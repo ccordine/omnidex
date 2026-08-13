@@ -16,27 +16,6 @@ func (input RequirementPartitionInput) validate() error {
 	}
 }
 
-func (input RequirementPartitionAdvisoryInput) validate() error {
-	if err := input.Original.validate(); err != nil {
-		return fmt.Errorf("requirement partition advisory original: %w", err)
-	}
-	_, err := requirementPartitionLensInstruction(input.Lens)
-	return err
-}
-
-func (input RequirementPartitionSynthesisInput) validate() error {
-	if err := input.Original.validate(); err != nil {
-		return fmt.Errorf("requirement partition synthesis original: %w", err)
-	}
-	if strings.TrimSpace(input.AdvisoryMemo) == "" {
-		return fmt.Errorf("requirement partition synthesis requires a non-empty advisory memo")
-	}
-	if len(input.AdvisoryMemo) > maxRequirementAdvisoryMemoBytes {
-		return fmt.Errorf("requirement partition advisory memo exceeds %d bytes", maxRequirementAdvisoryMemoBytes)
-	}
-	return nil
-}
-
 func validateRequirementQuote(label, quote string) error {
 	if quote == "" || quote != strings.TrimSpace(quote) {
 		return fmt.Errorf("%s requires one trimmed source quote", label)

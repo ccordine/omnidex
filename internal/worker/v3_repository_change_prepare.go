@@ -7,7 +7,7 @@ import (
 
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 	"github.com/gryph/omnidex/internal/repository/changeapply"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 const maxRepositoryGoVerificationCorrectionRounds = 2
@@ -60,9 +60,7 @@ func (session *directCodingSession) prepareVerifiedExistingRepositoryChange(
 			diagnostic string,
 		) (string, error) {
 			if correctionModel == "" {
-				modelName, err := session.workerModel(
-					"coding_fragment_correction", specialist.RoleCodingFragmentCorrectionStation,
-				)
+				modelName, err := session.workerModel(station.CodingFragmentCorrection)
 				if err != nil {
 					return "", err
 				}

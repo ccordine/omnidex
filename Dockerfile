@@ -1,11 +1,12 @@
 FROM golang:1.24.1-alpine AS build
 
-RUN apk add --no-cache build-base
+RUN apk add --no-cache build-base nodejs npm
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+RUN ./scripts/build-ui.sh
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /out/agent-core ./cmd/core
 
 FROM alpine:3.20
@@ -19,7 +20,6 @@ USER app
 WORKDIR /app
 
 COPY --from=build /out/agent-core /usr/local/bin/agent-core
-COPY --from=build /src/skills ./skills
 COPY --from=build /src/migrations /usr/local/migrations
 COPY --from=build /src/database ./database
 

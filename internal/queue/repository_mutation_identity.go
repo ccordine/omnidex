@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-const repositoryMutationIdentitySchema = "omnidex.repository-mutation-command.v1"
+const repositoryMutationIdentitySchema = "omnidex.repository-mutation-command.v2"
 
 type repositoryMutationIdentityEnvelope struct {
 	Schema  string                    `json:"schema"`

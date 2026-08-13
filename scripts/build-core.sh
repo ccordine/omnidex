@@ -92,6 +92,8 @@ if ! command -v go >/dev/null 2>&1; then
   die "go is required but was not found in PATH"
 fi
 
+"${SCRIPT_DIR}/build-ui.sh"
+
 if [[ -z "${OUTPUT}" ]]; then
   die "output path cannot be empty"
 fi

@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/agentstream"
 )
 
 type ExternalAgentRunRequest struct {
@@ -86,16 +88,12 @@ func (c *Client) RunExternalAgent(ctx context.Context, req ExternalAgentRunReque
 	return resp.Body, nil
 }
 
-func ReadExternalAgentEvents(r io.Reader, emit func(AgentStreamEvent) error) error {
+func ReadExternalAgentEvents(r io.Reader, emit func(agentstream.Event) error) error {
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 4<<20)
+	scanner.Buffer(make([]byte, 0, 64*1024), agentstream.MaxEventBytes)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var event AgentStreamEvent
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
+		event, err := agentstream.DecodeBoundaryLine(scanner.Text())
+		if err != nil {
 			return fmt.Errorf("decode host bridge agent event: %w", err)
 		}
 		if err := emit(event); err != nil {
@@ -103,14 +101,4 @@ func ReadExternalAgentEvents(r io.Reader, emit func(AgentStreamEvent) error) err
 		}
 	}
 	return scanner.Err()
-}
-
-type AgentStreamEvent struct {
-	Agent    string          `json:"agent"`
-	Type     string          `json:"type"`
-	Message  string          `json:"message,omitempty"`
-	Command  string          `json:"command,omitempty"`
-	Files    []string        `json:"files,omitempty"`
-	Evidence []string        `json:"evidence,omitempty"`
-	Raw      json.RawMessage `json:"raw,omitempty"`
 }

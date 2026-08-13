@@ -84,6 +84,7 @@ func runDirectCodingGoFragmentModificationWorker(
 			return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt, err)
 		}
 		if err := result.ValidateFor(attemptJob); err != nil {
+			err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
 			return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt, err)
 		}
 		lastCandidate = strings.TrimSpace(result.Candidate)
@@ -97,6 +98,9 @@ func runDirectCodingGoFragmentModificationWorker(
 				if parsed == currentCanonical {
 					lastErr = fmt.Errorf("unchanged modification rejected; the declaration must satisfy the registered requirement")
 				} else {
+					if err = finalizeTypedWorkerResult(runtime, attemptJob, result, nil); err != nil {
+						return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt, err)
+					}
 					emitTypedWorker(runtime, typedWorkerEvent{
 						State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: job.Subject,
 						Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
@@ -104,6 +108,11 @@ func runDirectCodingGoFragmentModificationWorker(
 					return parsed, nil
 				}
 			}
+		}
+		lastErr = finalizeTypedWorkerResult(runtime, attemptJob, result, lastErr)
+		if lastErr == nil {
+			return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt,
+				fmt.Errorf("Go fragment rejection lost its exact failure"))
 		}
 		emitTypedWorker(runtime, typedWorkerEvent{
 			State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.Subject,

@@ -24,6 +24,7 @@ type repositoryMutationDatabaseFixture struct {
 	workerID   string
 	authority  model.StepAttemptAuthority
 	command    RepositoryMutationCommand
+	snapshot   repositoryfacts.Snapshot
 }
 
 func newRepositoryMutationDatabaseFixture(
@@ -87,6 +88,7 @@ func newRepositoryMutationDatabaseFixture(
 		repository: repository, pool: pool, ctx: ctx, job: job,
 		stepID: claim.Step.ID, workerID: claim.Step.WorkerID,
 		authority: claim.Authority, command: command,
+		snapshot: snapshot,
 	}
 }
 

@@ -24,7 +24,13 @@ func (state *analysisState) collectPackageFacts(fileSet *token.FileSet, pkg *pac
 		return err
 	}
 	for _, item := range indexed {
+		sourceID, err := state.goSourceArtifact(item.file)
+		if err != nil {
+			return err
+		}
+		state.addBuildMembership(packageID, sourceID, item.file)
 		state.collectFileSymbols(fileSet, pkg, item.syntax, item.file, packagePath, packageID)
+		state.collectInitializationSource(packagePath, sourceID, item.syntax)
 	}
 	return nil
 }

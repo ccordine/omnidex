@@ -44,7 +44,7 @@ func TestPostgresScrumChannelHTTPReplaySurvivesCardDeletion(t *testing.T) {
 		Request: request, ExpectedCardUpdatedAt: card.UpdatedAt,
 		Effect: queue.ScrumChannelEffect{
 			Kind: queue.ScrumChannelStartJob, Instruction: request.Message,
-			Pipeline: model.PipelineAssistant,
+			Pipeline: model.PipelineScrum,
 			Metadata: json.RawMessage(fmt.Sprintf(`{"project_id":%d}`, project.ID)),
 		},
 		ResultAction: "started", ResultAgent: "omnidex",
@@ -126,7 +126,7 @@ func scrumChannelHTTPTestBuilder(
 		}
 		return queue.ScrumChannelCardUpdate{
 			Chat: chat, Column: "in_progress", JobID: strconv.FormatInt(job.ID, 10),
-			PlayState: "running", QueueOrder: 0,
+			PlayState: "running", QueueOrder: 0, SyncJobID: strconv.FormatInt(job.ID, 10),
 		}, nil
 	}
 }

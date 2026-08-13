@@ -1,7 +1,6 @@
 import { readJSON } from "./api";
 import type {
   BrowseResponse,
-  DebuggerLastRun,
   ProjectMapSummary,
   ProjectGitStatus,
   ProjectRecord,
@@ -120,8 +119,8 @@ export async function fetchProjectGit(id: number, signal?: AbortSignal): Promise
   return readJSON(response);
 }
 
-export async function fetchRecipes(): Promise<{ recipes: RecipeCatalogItem[]; root: string }> {
-  const response = await fetch("/v1/recipes");
+export async function fetchRecipes(offset = 0): Promise<{ recipes: RecipeCatalogItem[]; root: string; offset: number; has_more: boolean }> {
+	const response = await fetch(`/v1/recipes?limit=20&offset=${offset}`);
   return readJSON(response);
 }
 
@@ -150,24 +149,6 @@ export async function createBrowseDirectory(parent: string, name: string): Promi
 
 export async function fetchHostBridgeStatus(): Promise<Record<string, unknown>> {
   const response = await fetch("/v1/host/status");
-  return readJSON(response);
-}
-
-export async function fetchProjectDebuggerStatus(
-  id: number,
-): Promise<{ last_run: DebuggerLastRun; agent_config?: Record<string, unknown> }> {
-  const response = await fetch(`/v1/projects/${id}/debugger`);
-  return readJSON(response);
-}
-
-export async function runProjectDebugger(
-  id: number,
-): Promise<{ job: { id: number; status: string }; last_run: DebuggerLastRun; message?: string }> {
-  const response = await fetch(`/v1/projects/${id}/debugger/run`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
   return readJSON(response);
 }
 

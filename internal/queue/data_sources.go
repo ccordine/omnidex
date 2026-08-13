@@ -13,78 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (r DataSourceRecord) Connection() datasource.Connection {
-	return datasource.Connection{
-		Driver:       r.Driver,
-		Host:         r.Host,
-		Port:         r.Port,
-		DatabaseName: r.DatabaseName,
-		Username:     r.Username,
-		Password:     r.Password,
-		SSLMode:      r.SSLMode,
-		UseDSN:       r.UseDSN,
-		DSN:          r.DSN,
-		ReadOnly:     r.ReadOnly,
-	}
-}
-
-func (r DataSourceRecord) Profile() datasource.Profile {
-	return datasource.NormalizeProfile(datasource.Profile{
-		Driver:        r.Driver,
-		Domain:        r.Domain,
-		ContextPrompt: r.ContextPrompt,
-		PrivacyMode:   r.PrivacyMode,
-	})
-}
-
-func BuildPostgresDSN(record DataSourceRecord) (string, error) {
-	return datasource.BuildPostgresDSN(record.Connection())
-}
-
-const DataSourcesWorkspaceKey = "data_sources"
-
-type DataSourceRecord struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Driver           string     `json:"driver"`
-	Domain           string     `json:"domain"`
-	ContextPrompt    string     `json:"context_prompt"`
-	PrivacyMode      string     `json:"privacy_mode"`
-	Host             string     `json:"host"`
-	Port             int        `json:"port"`
-	DatabaseName     string     `json:"database_name"`
-	Username         string     `json:"username"`
-	Password         string     `json:"password,omitempty"`
-	SSLMode          string     `json:"ssl_mode"`
-	UseDSN           bool       `json:"use_dsn"`
-	DSN              string     `json:"dsn,omitempty"`
-	ReadOnly         bool       `json:"read_only"`
-	LastTestStatus   string     `json:"last_test_status"`
-	LastTestMessage  string     `json:"last_test_message"`
-	LastTestAt       *time.Time `json:"last_test_at,omitempty"`
-	CatalogUpdatedAt *time.Time `json:"catalog_updated_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-}
-
-type DataSourceUpsert struct {
-	Name          string
-	Driver        string
-	Domain        string
-	ContextPrompt string
-	PrivacyMode   string
-	Host          string
-	Port          int
-	DatabaseName  string
-	Username      string
-	Password      string
-	SSLMode       string
-	UseDSN        bool
-	DSN           string
-	ReadOnly      bool
-}
-
-func (r *Repository) ListDataSources(ctx context.Context) ([]DataSourceRecord, error) {
+func (r *Repository) loadAllDataSourcesForMutation(ctx context.Context) ([]DataSourceRecord, error) {
 	raw, err := r.getWorkspaceJSON(ctx, DataSourcesWorkspaceKey)
 	if err != nil {
 		return nil, err
@@ -101,20 +30,31 @@ func (r *Repository) ListDataSources(ctx context.Context) ([]DataSourceRecord, e
 
 func (r *Repository) GetDataSource(ctx context.Context, id string) (DataSourceRecord, error) {
 	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
+	if id == "" {
+		return DataSourceRecord{}, pgx.ErrNoRows
+	}
+	var raw json.RawMessage
+	err := r.pool.QueryRow(ctx, `
+		SELECT item.element
+		FROM workspace_settings AS settings
+		CROSS JOIN LATERAL jsonb_array_elements(
+			CASE WHEN jsonb_typeof(settings.value) = 'array' THEN settings.value ELSE '[]'::jsonb END
+		) AS item(element)
+		WHERE settings.key = $1 AND item.element->>'id' = $2
+		LIMIT 1
+	`, DataSourcesWorkspaceKey, id).Scan(&raw)
 	if err != nil {
 		return DataSourceRecord{}, err
 	}
-	for _, item := range items {
-		if item.ID == id {
-			return item, nil
-		}
+	var item DataSourceRecord
+	if err := json.Unmarshal(raw, &item); err != nil {
+		return DataSourceRecord{}, fmt.Errorf("decode data source %q: %w", id, err)
 	}
-	return DataSourceRecord{}, pgx.ErrNoRows
+	return item, nil
 }
 
 func (r *Repository) CreateDataSource(ctx context.Context, input DataSourceUpsert) (DataSourceRecord, error) {
-	items, err := r.ListDataSources(ctx)
+	items, err := r.loadAllDataSourcesForMutation(ctx)
 	if err != nil {
 		return DataSourceRecord{}, err
 	}
@@ -147,7 +87,7 @@ func (r *Repository) CreateDataSource(ctx context.Context, input DataSourceUpser
 
 func (r *Repository) UpdateDataSource(ctx context.Context, id string, input DataSourceUpsert) (DataSourceRecord, error) {
 	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
+	items, err := r.loadAllDataSourcesForMutation(ctx)
 	if err != nil {
 		return DataSourceRecord{}, err
 	}
@@ -194,7 +134,7 @@ func (r *Repository) UpdateDataSource(ctx context.Context, id string, input Data
 
 func (r *Repository) DeleteDataSource(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
+	items, err := r.loadAllDataSourcesForMutation(ctx)
 	if err != nil {
 		return err
 	}
@@ -219,7 +159,7 @@ func (r *Repository) DeleteDataSource(ctx context.Context, id string) error {
 
 func (r *Repository) UpdateDataSourceTestResult(ctx context.Context, id, status, message string) (DataSourceRecord, error) {
 	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
+	items, err := r.loadAllDataSourcesForMutation(ctx)
 	if err != nil {
 		return DataSourceRecord{}, err
 	}
@@ -285,7 +225,7 @@ func newDataSourceID() string {
 
 func (r *Repository) UpdateDataSourceCatalogTimestamp(ctx context.Context, id string, at time.Time) error {
 	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
+	items, err := r.loadAllDataSourcesForMutation(ctx)
 	if err != nil {
 		return err
 	}

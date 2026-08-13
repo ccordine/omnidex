@@ -69,9 +69,9 @@ func TestLoadProjectGitStatusUsesHostBridgeWhenCoreMissing(t *testing.T) {
 				t.Fatalf("browse path=%q want %q", path, projectDir)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"path":    projectDir,
-				"parent":  hostDir,
-				"entries": []any{},
+				"path": projectDir, "parent": hostDir, "entries": []any{},
+				"limit": 1, "offset": 0, "has_previous": false, "previous_offset": 0,
+				"has_more": false, "next_offset": 0,
 			})
 		case "/v1/project/git":
 			if r.URL.Query().Get("path") != projectDir {

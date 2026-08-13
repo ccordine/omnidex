@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { cardTicketScrumCard, coachScrumCard, fetchScrumTags, patchScrumCard, suggestScrumTags, updateScrumCoachConfig } from "../../lib/scrum_api";
-import type { ScrumChecklistItem, ScrumCoachSuggestion, ScrumCard } from "../../lib/scrum_types";
-import { ActionButton, EmptyState, Panel, Select, submitForm, TextArea, TextInput } from "./common";
+import {
+  elaborateScrumCardTicket,
+  fetchScrumTags,
+  generateScrumCardTicket,
+	mutateScrumCardItem,
+  patchScrumCard,
+} from "../../lib/scrum_api";
+import { ActionButton, EmptyState, Panel, submitForm, TextArea, TextInput } from "./common";
 import type { CardModalChildProps } from "./types";
 
 function normalizeTag(value: string): string {
@@ -16,23 +21,16 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
   const [tagInput, setTagInput] = useState("");
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [cardPrompt, setCardPrompt] = useState(card.card_prompt ?? "");
-  const [iterateNotes, setIterateNotes] = useState("");
+  const [elaboration, setElaboration] = useState("");
   const [ticket, setTicket] = useState(card.card_ticket ?? "");
-  const [coachMessage, setCoachMessage] = useState("");
-  const [coachSuggestions, setCoachSuggestions] = useState<ScrumCoachSuggestion[]>([]);
-  const [coachEnabled, setCoachEnabled] = useState(card.coach_config?.enabled !== false);
-  const [coachAutoScan, setCoachAutoScan] = useState(Boolean(card.coach_config?.auto_scan));
-  const [coachModel, setCoachModel] = useState(card.coach_config?.model ?? "");
 
   useEffect(() => {
     setTitle(card.title);
     setDescription(card.description ?? "");
     setCardPrompt(card.card_prompt ?? "");
+    setElaboration("");
     setTicket(card.card_ticket ?? "");
-    setCoachEnabled(card.coach_config?.enabled !== false);
-    setCoachAutoScan(Boolean(card.coach_config?.auto_scan));
-    setCoachModel(card.coach_config?.model ?? "");
-  }, [card.id, card.updated_at, card.card_ticket, card.card_prompt, card.coach_config]);
+  }, [card.id, card.updated_at, card.card_ticket, card.card_prompt]);
 
   useEffect(() => {
     const timer = window.setTimeout(async () => {
@@ -52,8 +50,8 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
     if (updated) onCardUpdated(updated);
   }
 
-  async function patchChecklist(checklist: ScrumChecklistItem[]) {
-    const updated = await runMutation("Updating checklist", () => patchScrumCard(card.id, { checklist }, projectID));
+	async function mutateChecklist(mutation: Parameters<typeof mutateScrumCardItem>[2]) {
+		const updated = await runMutation("Updating checklist", () => mutateScrumCardItem(card.id, "checklist", mutation, projectID));
     if (updated) onCardUpdated(updated);
   }
 
@@ -63,20 +61,16 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
     if (updated) onCardUpdated(updated);
   }
 
-  async function queueTicket(iterate: boolean) {
-    const payload = await runMutation(iterate ? "Queueing ticket iteration" : "Queueing ticket draft", () =>
-      {
-        if (iterate && !ticket.trim()) throw new Error("Add a ticket draft to iterate on first");
-        return cardTicketScrumCard(
-          card.id,
-          iterate
-            ? { card_prompt: cardPrompt, ticket, iterate: true, iterate_notes: iterateNotes }
-            : { prompt: cardPrompt, card_prompt: cardPrompt },
-          projectID,
-        );
-      },
-    );
-    if (payload?.card) onCardUpdated(payload.card, { reloadContext: true });
+  async function generateTicket() {
+    const updated = await runMutation("Generating ticket", () =>
+      generateScrumCardTicket(card.id, card.updated_at, projectID));
+    if (updated) onCardUpdated(updated);
+  }
+
+  async function elaborateTicket() {
+    const updated = await runMutation("Elaborating ticket", () =>
+      elaborateScrumCardTicket(card.id, card.updated_at, elaboration, projectID));
+    if (updated) onCardUpdated(updated);
   }
 
   return (
@@ -102,13 +96,13 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
                   <input
                     type="checkbox"
                     checked={item.done}
-                    onChange={(event) => patchChecklist((card.checklist ?? []).map((entry) => (entry.id === item.id ? { ...entry, done: event.target.checked } : entry)))}
+						onChange={(event) => void mutateChecklist({ action: "toggle", expected_updated_at: card.updated_at, item_id: item.id, done: event.target.checked })}
                     className="mt-1 rounded border-white/20 bg-zinc-900 text-cyan-300"
                   />
                   <span className={item.done ? "line-through decoration-zinc-500" : ""}>{item.text}</span>
                   <button
                     type="button"
-                    onClick={() => patchChecklist((card.checklist ?? []).filter((entry) => entry.id !== item.id))}
+						onClick={() => void mutateChecklist({ action: "remove", expected_updated_at: card.updated_at, item_id: item.id })}
                     className="ml-auto text-xs text-zinc-500 hover:text-rose-200"
                   >
                     Remove
@@ -119,7 +113,7 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
             <form
               onSubmit={submitForm(() => {
                 if (!checklistText.trim()) return;
-                void patchChecklist([...(card.checklist ?? []), { id: `chk_${Date.now()}`, text: checklistText.trim(), done: false }]);
+				void mutateChecklist({ action: "add", expected_updated_at: card.updated_at, text: checklistText.trim() });
                 setChecklistText("");
               })}
               className="flex gap-2"
@@ -130,22 +124,31 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
           </div>
         </Panel>
 
-        <Panel title="Ticket Draft">
+        <Panel title="Ticket">
           <div className="space-y-3">
-            <TextArea rows={3} value={cardPrompt} onChange={(event) => setCardPrompt(event.target.value)} placeholder="Card prompt" className="w-full" />
-            <TextArea rows={2} value={iterateNotes} onChange={(event) => setIterateNotes(event.target.value)} placeholder="Iteration notes" className="w-full" />
-            <TextArea rows={12} value={ticket} onChange={(event) => setTicket(event.target.value)} placeholder="Generated ticket draft" className="w-full font-mono text-xs" />
+            <label className="block space-y-1 text-xs text-zinc-400">
+              <span>Manual ticket note (not execution context)</span>
+              <TextArea rows={3} value={cardPrompt} onChange={(event) => setCardPrompt(event.target.value)} placeholder="Manual ticket note" className="w-full" />
+            </label>
+            <label className="block space-y-1 text-xs text-zinc-400">
+              <span>New elaboration</span>
+              <TextArea rows={3} value={elaboration} onChange={(event) => setElaboration(event.target.value)} placeholder="User-authored elaboration" className="w-full" />
+            </label>
+            <TextArea rows={12} value={ticket} onChange={(event) => setTicket(event.target.value)} placeholder="Ticket details" className="w-full font-mono text-xs" />
             <div className="flex flex-wrap gap-2">
-              <ActionButton onClick={() => void queueTicket(false)}>Generate</ActionButton>
-              <ActionButton onClick={() => void queueTicket(true)}>Iterate</ActionButton>
+              <ActionButton tone="primary" onClick={() => void generateTicket()}>
+                Generate ticket
+              </ActionButton>
+              <ActionButton onClick={() => void elaborateTicket()} disabled={!elaboration.trim()}>
+                Elaborate ticket
+              </ActionButton>
               <ActionButton
-                tone="primary"
                 onClick={async () => {
-                  const updated = await runMutation("Saving ticket draft", () => patchScrumCard(card.id, { card_prompt: cardPrompt, card_ticket: ticket } as Partial<ScrumCard>, projectID));
+                  const updated = await runMutation("Saving ticket draft", () => patchScrumCard(card.id, { card_prompt: cardPrompt, card_ticket: ticket }, projectID));
                   if (updated) onCardUpdated(updated);
                 }}
               >
-                Save draft
+                Save ticket
               </ActionButton>
             </div>
           </div>
@@ -179,66 +182,6 @@ export function CardTab({ context, projectID, runMutation, onCardUpdated }: Card
             </datalist>
             <ActionButton type="submit">Add</ActionButton>
           </form>
-          <div className="mt-3">
-            <ActionButton
-              onClick={async () => {
-                const payload = await runMutation("Queueing tag suggestions", () => suggestScrumTags(card.id, projectID));
-                if (payload?.card) onCardUpdated(payload.card, { reloadContext: true });
-              }}
-            >
-              Suggest tags
-            </ActionButton>
-          </div>
-        </Panel>
-
-        <Panel title="Coach">
-          <div className="space-y-3">
-            <label className="flex items-center gap-2 text-sm text-zinc-300">
-              <input type="checkbox" checked={coachEnabled} onChange={(event) => setCoachEnabled(event.target.checked)} className="rounded border-white/20 bg-zinc-900 text-cyan-300" />
-              Enabled
-            </label>
-            <label className="flex items-center gap-2 text-sm text-zinc-300">
-              <input type="checkbox" checked={coachAutoScan} onChange={(event) => setCoachAutoScan(event.target.checked)} className="rounded border-white/20 bg-zinc-900 text-cyan-300" />
-              Auto-scan
-            </label>
-            <label className="block space-y-1 text-xs text-zinc-400">
-              <span>Coach model</span>
-              <TextInput value={coachModel} onChange={(event) => setCoachModel(event.target.value)} className="w-full font-mono text-xs" />
-            </label>
-            <ActionButton
-              onClick={async () => {
-                const payload = await runMutation("Saving coach settings", () => updateScrumCoachConfig(card.id, { enabled: coachEnabled, auto_scan: coachAutoScan, model: coachModel }, projectID));
-                if (payload?.card) onCardUpdated(payload.card);
-              }}
-              disabled={!coachModel.trim()}
-            >
-              Save coach
-            </ActionButton>
-            {coachSuggestions.length > 0 ? (
-              <div className="space-y-2">
-                {coachSuggestions.map((suggestion, index) => (
-                  <p key={`${suggestion.text}-${index}`} className="rounded-md border border-white/10 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-300">
-                    {suggestion.text}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-            <form
-              onSubmit={submitForm(async () => {
-                if (!coachMessage.trim()) return;
-                const payload = await runMutation("Coach thinking", () =>
-                  coachScrumCard(card.id, { message: coachMessage, snapshot: { title, description } }, projectID),
-                );
-                if (payload?.card) onCardUpdated(payload.card, { reloadContext: true });
-                setCoachSuggestions(payload?.suggestions ?? []);
-                setCoachMessage("");
-              })}
-              className="space-y-2"
-            >
-              <TextArea rows={3} value={coachMessage} onChange={(event) => setCoachMessage(event.target.value)} placeholder="Talk to the coach..." className="w-full" />
-              <ActionButton type="submit">Send</ActionButton>
-            </form>
-          </div>
         </Panel>
 
         <Panel title="State">

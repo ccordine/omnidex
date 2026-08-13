@@ -5,14 +5,6 @@ import (
 	"strings"
 )
 
-const AgentStatusFooter = `When you finish (or must stop), include exactly one status line in your final output:
-SCRUM_STATUS: success|failed|blocked|in_progress
-
-- success: work is complete and ready for human review
-- failed: could not complete; explain what blocked you
-- blocked: waiting on an external dependency or decision
-- in_progress: meaningful partial progress; more work remains`
-
 type ChecklistItem struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`
@@ -23,10 +15,8 @@ type CardContext struct {
 	ID           string
 	Title        string
 	Description  string
-	CardTicket   string
 	Checklist    []ChecklistItem
 	TestCriteria []ChecklistItem
-	Tags         []string
 	RefFiles     []string
 	RecipeID     string
 	RecipeJSON   string
@@ -51,17 +41,11 @@ func AppendCardContextLines(lines []string, card CardContext) []string {
 	if strings.TrimSpace(card.Description) != "" {
 		lines = append(lines, "Description:", card.Description)
 	}
-	if strings.TrimSpace(card.CardTicket) != "" {
-		lines = append(lines, "Card ticket draft:", card.CardTicket)
-	}
 	if checklist := FormatChecklist(card.Checklist); checklist != "" {
 		lines = append(lines, "Checklist:", checklist)
 	}
 	if tests := FormatChecklist(card.TestCriteria); tests != "" {
 		lines = append(lines, "Test criteria (must pass before done):", tests)
-	}
-	if len(card.Tags) > 0 {
-		lines = append(lines, "Tags: "+strings.Join(card.Tags, ", "))
 	}
 	if len(card.RefFiles) > 0 {
 		lines = append(lines, "Reference files:", strings.Join(card.RefFiles, "\n"))
@@ -89,17 +73,11 @@ func ContextLinesFromMetadata(raw json.RawMessage) []string {
 	if desc := metadataString(raw, "scrum_card_description"); desc != "" {
 		lines = append(lines, "Description:", desc)
 	}
-	if ticket := metadataString(raw, "scrum_card_ticket"); ticket != "" {
-		lines = append(lines, "Card ticket draft:", ticket)
-	}
 	if checklist := metadataString(raw, "scrum_checklist"); checklist != "" {
 		lines = append(lines, "Checklist:", checklist)
 	}
 	if tests := metadataString(raw, "scrum_test_criteria"); tests != "" {
 		lines = append(lines, "Test criteria (must pass before done):", tests)
-	}
-	if tags := metadataStringSlice(raw, "scrum_card_tags"); len(tags) > 0 {
-		lines = append(lines, "Tags: "+strings.Join(tags, ", "))
 	}
 	if refs := metadataStringSlice(raw, "ref_files"); len(refs) > 0 {
 		lines = append(lines, "Reference files:", strings.Join(refs, "\n"))

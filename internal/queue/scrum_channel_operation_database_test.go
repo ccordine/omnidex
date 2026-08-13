@@ -26,7 +26,7 @@ func TestPostgresScrumChannelOperationStartsOnceAndReplaysExactly(t *testing.T) 
 		Effect: ScrumChannelEffect{
 			Kind:        ScrumChannelStartJob,
 			Instruction: request.Message,
-			Pipeline:    model.PipelineAssistant,
+			Pipeline:    model.PipelineScrum,
 			Metadata:    json.RawMessage(fmt.Sprintf(`{"project_id":%d}`, project.ID)),
 		},
 		ResultAction: "started",
@@ -80,14 +80,15 @@ func TestPostgresScrumChannelOperationReplansSameJobOnce(t *testing.T) {
 	job, err := repository.EnqueueJob(
 		ctx,
 		"Initial Scrum channel job.",
-		model.PipelineAssistant,
+		model.PipelineScrum,
 		[]byte(fmt.Sprintf(`{"project_id":%d}`, project.ID)),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	card, err = repository.UpdateScrumCard(ctx, project.ID, card.ID, map[string]any{
-		"job_id": fmt.Sprintf("%d", job.ID), "play_state": "running", "column": "in_progress",
+		"job_id": fmt.Sprintf("%d", job.ID), "sync_job_id": fmt.Sprintf("%d", job.ID),
+		"play_state": "running", "column": "in_progress",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +138,7 @@ func TestPostgresScrumChannelOperationSubmitsFeedbackOnce(t *testing.T) {
 	job, err := repository.EnqueueJob(
 		ctx,
 		"Initial waiting Scrum channel job.",
-		model.PipelineAssistant,
+		model.PipelineScrum,
 		[]byte(fmt.Sprintf(`{"project_id":%d}`, project.ID)),
 	)
 	if err != nil {
@@ -154,7 +155,8 @@ func TestPostgresScrumChannelOperationSubmitsFeedbackOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	card, err = repository.UpdateScrumCard(ctx, project.ID, card.ID, map[string]any{
-		"job_id": fmt.Sprintf("%d", job.ID), "play_state": "running", "column": "in_progress",
+		"job_id": fmt.Sprintf("%d", job.ID), "sync_job_id": fmt.Sprintf("%d", job.ID),
+		"play_state": "running", "column": "in_progress",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +235,7 @@ func scrumChannelTestUpdate(
 	}
 	return ScrumChannelCardUpdate{
 		Chat: raw, Column: "in_progress", JobID: fmt.Sprintf("%d", job.ID),
-		PlayState: "running", QueueOrder: 0,
+		PlayState: "running", QueueOrder: 0, SyncJobID: fmt.Sprintf("%d", job.ID),
 	}
 }
 

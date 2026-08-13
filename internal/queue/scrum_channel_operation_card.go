@@ -22,15 +22,20 @@ func updateScrumChannelCardTx(
 	card, err := scanDBScrumCard(tx.QueryRow(ctx, `
 		UPDATE scrum_cards
 		SET chat=$3::jsonb, column_name=$4, job_id=$5, console_log=$6,
-		    play_state=$7, queue_order=$8, updated_at=NOW()
-		WHERE project_id=$1 AND id=$2 AND updated_at=$9
+		    play_state=$7, queue_order=$8, sync_job_id=$9,
+		    agent_stream_chat_cursor=$10, agent_stream_console_cursor=$11,
+		    step_context_cursor=$12, updated_at=NOW()
+		WHERE project_id=$1 AND id=$2 AND updated_at=$13
 		RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
 		          model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
 		          tags, planning_chat, coach_config, test_criteria, flow_metrics,
 		          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order,
-		          board_order, created_at, updated_at
+		          board_order, sync_job_id, agent_stream_chat_cursor,
+		          agent_stream_console_cursor, step_context_cursor, created_at, updated_at
 	`, current.ProjectID, current.ID, string(update.Chat), update.Column, update.JobID,
-		update.ConsoleLog, update.PlayState, update.QueueOrder, current.UpdatedAt))
+		update.ConsoleLog, update.PlayState, update.QueueOrder, update.SyncJobID,
+		update.AgentStreamChatCursor, update.AgentStreamConsoleCursor,
+		update.StepContextCursor, current.UpdatedAt))
 	if err != nil {
 		return DBScrumCard{}, fmt.Errorf("apply Scrum channel card mutation: %w", err)
 	}

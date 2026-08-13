@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -46,39 +45,6 @@ func isLowSignalToolOutput(text string) bool {
 		return true
 	}
 	return false
-}
-
-func contextSyncMarker(contextID int64) string {
-	return fmt.Sprintf("[[context-sync:%d]]", contextID)
-}
-
-func syncedStepContextID(chat []ScrumChatMessage) int64 {
-	for i := len(chat) - 1; i >= 0; i-- {
-		content := strings.TrimSpace(chat[i].Content)
-		if !strings.HasPrefix(content, "[[context-sync:") {
-			continue
-		}
-		var id int64
-		if _, err := fmt.Sscanf(content, "[[context-sync:%d]]", &id); err == nil {
-			return id
-		}
-	}
-	return 0
-}
-
-func setStepContextSyncMarker(chat []ScrumChatMessage, contextID int64) []ScrumChatMessage {
-	if contextID <= 0 {
-		return chat
-	}
-	marker := contextSyncMarker(contextID)
-	for i := len(chat) - 1; i >= 0; i-- {
-		if strings.HasPrefix(strings.TrimSpace(chat[i].Content), "[[context-sync:") {
-			chat[i].Content = marker
-			chat[i].Role = "system"
-			return chat
-		}
-	}
-	return appendScrumChatMessage(chat, "system", marker)
 }
 
 func sameChannelActivity(left, right ChannelActivity) bool {

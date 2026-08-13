@@ -7,13 +7,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/gryph/omnidex/internal/agentconfig"
-	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
-	"github.com/gryph/omnidex/internal/ollama"
 )
 
 func (s *Server) envModelConfig() (modelconfig.Config, error) {
@@ -24,6 +20,12 @@ func (s *Server) envModelConfig() (modelconfig.Config, error) {
 	values, err := readEnvFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read model environment file: %w", err)
+	}
+	if err := modelconfig.ValidateEnvironmentValues(values); err != nil {
+		return nil, fmt.Errorf("model environment file: %w", err)
+	}
+	if err := modelconfig.ValidateCurrentEnvironment(); err != nil {
+		return nil, fmt.Errorf("process model environment: %w", err)
 	}
 	fileConfig := modelconfig.Config{}
 	for _, field := range modelconfig.Fields {
@@ -78,41 +80,14 @@ func (s *Server) resolveModelConfig(project model.Project, card ScrumCard) (mode
 	return resolved, source, nil
 }
 
-func (s *Server) ensureOllamaModels(ctx context.Context, cfg modelconfig.Config) ([]string, error) {
-	models := cfg.ModelNames()
-	if len(models) == 0 {
-		return nil, nil
-	}
-	definition, ok := catalog.Lookup(s.defaultProvider)
-	if !ok {
-		return nil, fmt.Errorf("cannot prepare models for unsupported LLM provider %q", s.defaultProvider)
-	}
-	if definition.ID != "ollama" {
-		return nil, nil
-	}
-	client := s.ollamaClientWithTimeout(30 * time.Second)
-	pulled, err := client.EnsureModels(ctx, models)
-	if err != nil && isOllamaConnectivityError(err) {
-		endpoint := s.refreshOllamaEndpoint(ctx)
-		client = ollama.New(endpoint, "", "", 30*time.Second, s.providerConfig.InferenceContextTokens)
-		return client.EnsureModels(ctx, models)
-	}
-	return pulled, err
-}
-
-func (s *Server) modelConfigJobMetadata(ctx context.Context, project model.Project, card ScrumCard) (map[string]any, []string, error) {
-	resolved, source, err := s.resolveModelConfig(project, card)
+func (s *Server) modelConfigJobMetadata(_ context.Context, project model.Project, card ScrumCard) (map[string]any, []string, error) {
+	resolved, _, err := s.resolveModelConfig(project, card)
 	if err != nil {
 		return nil, nil, err
 	}
-	pulled, err := s.ensureOllamaModels(ctx, resolved)
-	if err != nil {
-		return nil, pulled, err
-	}
 	return map[string]any{
-		"model_config":        resolved.ToMap(),
-		"model_config_source": source,
-	}, pulled, nil
+		"model_config": resolved.ToMap(),
+	}, nil, nil
 }
 
 func mergeProjectModelConfig(settings json.RawMessage, modelConfig json.RawMessage) (json.RawMessage, error) {
@@ -198,134 +173,6 @@ func (s *Server) handleResolvedModels(w http.ResponseWriter, r *http.Request) {
 		"env_defaults": env.ToMap(),
 		"fields":       env.FieldList(map[string]string{}),
 	})
-}
-
-func (s *Server) enrichJobMetadata(ctx context.Context, metadata []byte, card ScrumCard) ([]byte, []string, error) {
-	if len(metadata) == 0 {
-		metadata = []byte(`{}`)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(metadata, &payload); err != nil {
-		return metadata, nil, fmt.Errorf("metadata must be a JSON object")
-	}
-	if payload == nil {
-		payload = map[string]any{}
-	}
-	project := model.Project{}
-	projectID := metadataInt64(payload, "project_id")
-	if projectID > 0 && s.repo != nil {
-		loaded, err := s.repo.GetProject(ctx, projectID)
-		if err != nil {
-			return metadata, nil, fmt.Errorf("load metadata project %d: %w", projectID, err)
-		}
-		project = loaded
-	}
-	if card.ID == "" {
-		cardID := metadataString(payload, "scrum_card_id")
-		if cardID != "" && projectID > 0 && s.repo != nil {
-			dbCard, err := s.repo.GetScrumCard(ctx, projectID, cardID)
-			if err != nil {
-				return metadata, nil, fmt.Errorf("load metadata Scrum card %q: %w", cardID, err)
-			}
-			card, err = dbScrumCardToAPI(dbCard)
-			if err != nil {
-				return metadata, nil, fmt.Errorf("decode metadata Scrum card %q: %w", cardID, err)
-			}
-		}
-	}
-
-	var instance agentconfig.Config
-	if raw, ok := payload["instance_agent_config"]; ok && raw != nil {
-		bytes, err := json.Marshal(raw)
-		if err != nil {
-			return metadata, nil, fmt.Errorf("encode instance_agent_config: %w", err)
-		}
-		instance, err = agentconfig.FromJSON(bytes)
-		if err != nil {
-			return metadata, nil, fmt.Errorf("parse instance_agent_config: %w", err)
-		}
-	}
-
-	var pulled []string
-	if _, ok := payload["model_config"]; !ok {
-		extra, modelPulled, err := s.modelConfigJobMetadata(ctx, project, card)
-		if err != nil {
-			return metadata, modelPulled, err
-		}
-		for key, value := range extra {
-			payload[key] = value
-		}
-		pulled = modelPulled
-	}
-	if _, ok := payload["agent_config"]; !ok {
-		if generalWebChatWithoutWorkspace(payload) {
-			payload["agent_config"] = map[string]any{"agent_system": agentconfig.SystemOmnidex}
-			payload["agent_config_source"] = "general_chat"
-		} else {
-			extra, err := s.agentConfigJobMetadata(ctx, project, card, instance)
-			if err != nil {
-				return metadata, pulled, err
-			}
-			for key, value := range extra {
-				payload[key] = value
-			}
-		}
-	}
-	if len(pulled) > 0 {
-		payload["models_pulled"] = pulled
-	}
-	out, err := json.Marshal(payload)
-	if err != nil {
-		return metadata, pulled, err
-	}
-	if _, err := agentconfig.FromJobMetadata(out); err != nil {
-		return metadata, pulled, err
-	}
-	return out, pulled, nil
-}
-
-func metadataInt64(payload map[string]any, key string) int64 {
-	raw, ok := payload[key]
-	if !ok || raw == nil {
-		return 0
-	}
-	switch value := raw.(type) {
-	case float64:
-		return int64(value)
-	case int64:
-		return value
-	case int:
-		return int64(value)
-	case json.Number:
-		parsed, _ := value.Int64()
-		return parsed
-	default:
-		parsed, _ := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(value)), 10, 64)
-		return parsed
-	}
-}
-
-func metadataString(payload map[string]any, key string) string {
-	raw, ok := payload[key]
-	if !ok || raw == nil {
-		return ""
-	}
-	return strings.TrimSpace(fmt.Sprint(raw))
-}
-
-func generalWebChatWithoutWorkspace(payload map[string]any) bool {
-	if !webChatJobMetadata(payload) {
-		return false
-	}
-	if metadataInt64(payload, "project_id") > 0 {
-		return false
-	}
-	for _, key := range []string{"client_cwd", "project_directory", "workspace"} {
-		if metadataString(payload, key) != "" {
-			return false
-		}
-	}
-	return true
 }
 
 func (s *Server) resolvedModelsForProjectCard(ctx context.Context, projectID int64, card ScrumCard) (map[string]any, error) {

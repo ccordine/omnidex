@@ -64,7 +64,11 @@ func genericBrowserFeatureDocuments(
 	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
-		skill := skills[requirement.ID]
+		skill, hasSkill := skills[requirement.ID]
+		var activeSkill *directCodingSkillBinding
+		if hasSkill {
+			activeSkill = &skill
+		}
 		functionName := fmt.Sprintf("Feature%03d", sequence)
 		viewName := functionName + "View"
 		viewPropsName := functionName + "ViewProps"
@@ -90,7 +94,7 @@ import type { CapabilitySnapshot, FeatureProps, FeatureViewProps } from '../runt
 					Signature: fmt.Sprintf(
 						"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
 					),
-					Contract: genericBrowserFeatureContract(requirement, skill, dependencies, specification),
+					Contract: genericBrowserFeatureContract(requirement, activeSkill, dependencies, specification),
 					API: fmt.Sprintf(
 						"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
 					),
@@ -116,20 +120,24 @@ import type { CapabilitySnapshot, FeatureProps, FeatureViewProps } from '../runt
 
 func genericBrowserFeatureContract(
 	requirement assemblyline.Requirement,
-	skill directCodingSkillBinding,
+	skill *directCodingSkillBinding,
 	dependencies []directCodingCapabilityBinding,
 	specification assemblyline.ApplicationSpecification,
 ) string {
 	parts := []string{
 		"Product: " + specification.ProductQuote,
 		"Exact feature: " + requirement.SourceQuote,
-		"Validated procedure: " + skill.Procedure,
+	}
+	if skill != nil {
+		parts = append(parts, "Validated procedure: "+skill.Procedure)
+	}
+	parts = append(parts,
 		"Return a complete accessible interactive React view. No placeholder, TODO, invented endpoint, import, or extra declaration.",
 		"The task-neutral code-owned boundary supplies state, read-only capability snapshots, mutations, live working status, and visible errors.",
 		"All shared state changes go through actions inside user interaction handlers. Use state for this feature and capabilities only when another feature materially affects this view.",
 		"React hooks and standard browser APIs are available when the requested behavior needs them. Implement workload-specific behavior here; do not assume Omnidex provides a domain service.",
 		"READABLE_CAPABILITY_CHANNELS:",
-	}
+	)
 	for _, dependency := range dependencies {
 		parts = append(parts, fmt.Sprintf("- %s: %s", dependency.CapabilityID, dependency.Purpose))
 	}

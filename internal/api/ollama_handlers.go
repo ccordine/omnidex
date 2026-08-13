@@ -46,10 +46,20 @@ func (s *Server) handleOllamaModelByName(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, ollama.MaxModelPageSize)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	offset, err := exactChannelQueryInteger(r, "offset", 0, 0, 1<<30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	client := s.ollamaClient()
-	models, err := client.ListModels(ctx)
+	page, err := client.ListModelPage(ctx, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -65,7 +75,10 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 	}
 	providerConfig := s.providerConfiguration()
 	if providerConfig.EmbeddingProvider == "ollama" {
-		embeddingModel := configuredProviderModel(providerConfig, "ollama", true)
+		embeddingModel := strings.TrimSpace(providerConfig.EmbeddingModel)
+		if embeddingModel == "" {
+			embeddingModel = strings.TrimSpace(providerConfig.ProviderModels["ollama"].Embedding)
+		}
 		if embeddingModel != "" {
 			configured = append(configured, embeddingModel)
 		}
@@ -80,8 +93,8 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 		uniqueConfigured = append(uniqueConfigured, name)
 	}
 	configured = uniqueConfigured
-	items := make([]map[string]any, 0, len(models))
-	for _, model := range models {
+	items := make([]map[string]any, 0, len(page.Models))
+	for _, model := range page.Models {
 		_, inUse := configuredSet[model.Name]
 		items = append(items, map[string]any{
 			"name":        model.Name,
@@ -94,6 +107,9 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 		"endpoint":          s.ollamaEndpoint(),
 		"models":            items,
 		"configured_models": configured,
+		"offset":            page.Offset,
+		"has_more":          page.HasMore,
+		"next_offset":       dataSourceNextOffset(page.Offset, len(page.Models), page.HasMore),
 	})
 }
 

@@ -39,13 +39,11 @@ func TestGenerationProjectionShapesMatchSharedScanners(t *testing.T) {
 
 	claimsSource := normalizedGenerationSource(t, "repository_claims.go")
 	stepClaimSource := normalizedGenerationSource(t, "repository_step_claim.go")
-	delegatedSource := normalizedGenerationSource(t, "repository_delegated_steps.go")
-	stepSources := claimsSource + " " + delegatedSource
-	if calls := strings.Count(stepSources, "scanStep("); calls != 2 {
-		t.Fatalf("queue claim/delegation writers have %d scanStep call sites; expected 2", calls)
+	if calls := strings.Count(claimsSource, "scanStep("); calls != 1 {
+		t.Fatalf("queue claim writer has %d scanStep call sites; expected 1", calls)
 	}
-	if projections := strings.Count(stepSources, stepSelectProjection) + strings.Count(stepSources, stepReturningProjection); projections != 2 {
-		t.Fatalf("queue claim/delegation writers have %d complete step projections; expected 2", projections)
+	if projections := strings.Count(claimsSource, stepSelectProjection) + strings.Count(claimsSource, stepReturningProjection); projections != 1 {
+		t.Fatalf("queue claim writer has %d complete step projections; expected 1", projections)
 	}
 	if calls := strings.Count(stepClaimSource, "scanClaim("); calls != 1 {
 		t.Fatalf("repository_step_claim.go has %d scanClaim call sites; expected 1", calls)

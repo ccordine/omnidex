@@ -1,57 +1,234 @@
 import { readJSON } from "./api";
-import type { ChannelMessage, UserChannel } from "./types";
+import type {
+  ChannelMessage,
+  ChannelTranscriptPage,
+  ChannelTurnJob,
+  ChannelTurnAccepted,
+  UserChannel,
+} from "./types";
 
-export async function fetchUserChannels(limit = 100): Promise<UserChannel[]> {
-  const response = await fetch(`/v1/channels?limit=${limit}&scope=user`);
-  const payload = await readJSON<{ channels: UserChannel[] }>(response);
-  return payload.channels ?? [];
-}
+const JOB_STATUSES = ["pending", "running", "waiting_input", "completed", "failed", "canceled"] as const;
 
-export async function fetchChannelMessages(channelID: string, limit = 48): Promise<ChannelMessage[]> {
-  const response = await fetch(`/v1/channels/${encodeURIComponent(channelID)}/messages?limit=${limit}`);
-  const payload = await readJSON<{ messages: ChannelMessage[] }>(response);
-  return payload.messages ?? [];
+export async function fetchChannelTranscript(
+  channelID: string,
+  options: { limit?: number; beforeID?: number; requiredMessageID?: number } = {},
+): Promise<ChannelTranscriptPage> {
+  requireChannelID(channelID, "Channel message request");
+  const limit = options.limit ?? 48;
+  requireBoundedInteger(limit, "channel message limit", 1, 200);
+  if (options.beforeID !== undefined) {
+    requireBoundedInteger(options.beforeID, "channel message cursor", 1, Number.MAX_SAFE_INTEGER);
+  }
+  if (options.requiredMessageID !== undefined) {
+    requireBoundedInteger(options.requiredMessageID, "required channel message", 1, Number.MAX_SAFE_INTEGER);
+  }
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (options.beforeID !== undefined) query.set("before_id", String(options.beforeID));
+  if (options.requiredMessageID !== undefined) query.set("required_message_id", String(options.requiredMessageID));
+  const response = await fetch(`/v1/channels/${encodeURIComponent(channelID)}/messages?${query}`);
+  const payload = await readJSON<Record<string, unknown>>(response);
+  requireStatus(response, 200, "channel transcript");
+  if (payload.channel_id !== channelID) throw new Error("Channel transcript response changed the requested channel identity.");
+  if (typeof payload.has_more !== "boolean") throw new Error("Channel transcript response did not include has_more.");
+  const html = requireRecord(payload.html, "Channel transcript html");
+  const bundle = requireNonblankString(html.bundle, "Channel transcript bundle");
+  const page: ChannelTranscriptPage = {
+    channel_id: channelID,
+    has_more: payload.has_more,
+    html: { bundle },
+  };
+  if (payload.next_before_id !== undefined) {
+    page.next_before_id = requireBoundedInteger(
+      payload.next_before_id,
+      "channel transcript next_before_id",
+      1,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (page.has_more !== (page.next_before_id !== undefined)) {
+    throw new Error("Channel transcript pagination fields are contradictory.");
+  }
+  return page;
 }
 
 export async function sendChannelMessage(
   channelID: string,
   prompt: string,
-): Promise<{ output: string; model?: string; latency_ms?: number }> {
+): Promise<ChannelTurnAccepted> {
+  requireChannelID(channelID, "Channel turn request");
+  requireBoundedText(prompt, "Channel turn prompt", 4096, false);
   const response = await fetch(`/v1/channels/${encodeURIComponent(channelID)}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt }),
   });
-  return readJSON(response);
+  const payload = await readJSON<Record<string, unknown>>(response);
+  requireStatus(response, 202, "channel turn");
+  const accepted: ChannelTurnAccepted = {
+    channel: requireUserChannel(payload.channel, "Channel turn channel"),
+    user_message: requireChannelMessage(payload.user_message, "Channel turn user_message"),
+    job: requireChannelTurnJob(payload.job, "Channel turn job"),
+  };
+  if (accepted.channel.id !== channelID || accepted.user_message.channel_id !== channelID) {
+    throw new Error(`Channel turn response identity does not match ${JSON.stringify(channelID)}.`);
+  }
+  if (accepted.user_message.role !== "user") {
+    throw new Error("Channel turn response user_message role must be exactly user.");
+  }
+  if (accepted.user_message.content !== prompt) {
+    throw new Error("Channel turn response did not preserve the exact prompt bytes.");
+  }
+  if (accepted.job.instruction !== prompt) {
+    throw new Error("Channel turn job did not preserve the exact prompt bytes.");
+  }
+  return accepted;
 }
 
 export async function createUserChannel(input: {
   id: string;
   name: string;
-  persona?: string;
-  system?: string;
+  workspace_root: string;
   tags?: string[];
 }): Promise<UserChannel> {
+  requireChannelID(input.id, "Channel create request");
+  requireExactText(input.name, "Channel create name");
+  requireTags(input.tags ?? [], "Channel create tags");
+  requireWorkspaceRoot(input.workspace_root, "Channel create workspace_root");
   const response = await fetch("/v1/channels", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       id: input.id,
       name: input.name,
-      persona: input.persona || "assistant",
-      system: input.system || "You are a helpful assistant.",
       tags: input.tags ?? [],
-      context: {},
+      workspace_root: input.workspace_root,
     }),
   });
-  const payload = await readJSON<{ channel: UserChannel }>(response);
-  return payload.channel;
+  const payload = await readJSON<{ channel?: unknown }>(response);
+  requireStatus(response, 201, "channel create");
+  const channel = requireUserChannel(payload.channel, "Channel create response");
+  if (channel.id !== input.id || channel.name !== input.name || channel.workspace_root !== input.workspace_root) {
+    throw new Error("Channel create response changed the requested identity.");
+  }
+  return channel;
 }
 
-/** User-facing channels only — excludes internal thought-channel tags if any leak in. */
-export function isUserChannel(channel: UserChannel): boolean {
-  const id = (channel.id || "").toLowerCase();
-  if (id.startsWith("thought_") || id.startsWith("internal-")) return false;
-  const tags = (channel.tags ?? []).map((tag) => tag.toLowerCase());
-  return !tags.includes("thought-channel") && !tags.includes("internal:thought");
+function requireUserChannel(value: unknown, source: string): UserChannel {
+  const raw = requireRecord(value, source);
+  const id = requireChannelID(raw.id, source);
+  if (raw.scope !== "user") throw new Error(`${source} scope must be exactly "user".`);
+  const name = requireExactText(raw.name, `${source} name`);
+  const tags = requireTags(raw.tags, `${source} tags`);
+  return {
+    id,
+    scope: "user",
+    name,
+    tags,
+    project_id: requireBoundedInteger(raw.project_id, `${source} project_id`, 1, Number.MAX_SAFE_INTEGER),
+    workspace_root: requireWorkspaceRoot(raw.workspace_root, `${source} workspace_root`),
+    created_at: requireTimestamp(raw.created_at, `${source} created_at`),
+    updated_at: requireTimestamp(raw.updated_at, `${source} updated_at`),
+  };
+}
+
+function requireChannelMessage(value: unknown, source: string): ChannelMessage {
+  const raw = requireRecord(value, source);
+  const role = raw.role;
+  if (role !== "user" && role !== "assistant") {
+    throw new Error(`${source} has unsupported role ${JSON.stringify(role)}.`);
+  }
+  return {
+    id: requireBoundedInteger(raw.id, `${source} id`, 1, Number.MAX_SAFE_INTEGER),
+    channel_id: requireChannelID(raw.channel_id, source),
+    role,
+    content: requireBoundedText(raw.content, `${source} content`, role === "user" ? 4096 : 32768, false),
+    created_at: requireTimestamp(raw.created_at, `${source} created_at`),
+  };
+}
+
+function requireChannelTurnJob(value: unknown, source: string): ChannelTurnJob {
+  const raw = requireRecord(value, source);
+  const status = raw.status;
+  if (typeof status !== "string" || !JOB_STATUSES.includes(status as (typeof JOB_STATUSES)[number])) {
+    throw new Error(`${source} has invalid status ${JSON.stringify(status)}.`);
+  }
+  return {
+    id: requireBoundedInteger(raw.id, `${source} id`, 1, Number.MAX_SAFE_INTEGER),
+    instruction: requireBoundedText(raw.instruction, `${source} instruction`, 65536, false),
+    pipeline: requireExactValue(raw.pipeline, "chat", `${source} pipeline`),
+    status: status as ChannelTurnJob["status"],
+  };
+}
+
+function requireChannelID(value: unknown, source: string): string {
+  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9_.:-]{0,95}$/.test(value)) {
+    throw new Error(`${source} has an invalid canonical channel id.`);
+  }
+  return value;
+}
+
+function requireTags(value: unknown, source: string): string[] {
+  if (!Array.isArray(value) || value.length > 32) throw new Error(`${source} must be an array of at most 32 tags.`);
+  const tags = value.map((item, index) => requireBoundedText(item, `${source} item ${index}`, 64, true));
+  if (tags.some((tag) => tag !== tag.toLowerCase())) throw new Error(`${source} must contain only lowercase tags.`);
+  if (new Set(tags).size !== tags.length) throw new Error(`${source} contains duplicate tags.`);
+  return tags;
+}
+
+function requireExactText(value: unknown, source: string): string {
+  return requireBoundedText(value, source, 256, true);
+}
+
+function requireWorkspaceRoot(value: unknown, source: string): string {
+  const root = requireBoundedText(value, source, 4096, true);
+  if (!root.startsWith("/") || root.includes("//") || (root !== "/" && root.endsWith("/"))) {
+    throw new Error(`${source} must be an exact absolute canonical path.`);
+  }
+  if (root.split("/").some((segment) => segment === "." || segment === "..")) {
+    throw new Error(`${source} must not contain dot path segments.`);
+  }
+  return root;
+}
+
+function requireNonblankString(value: unknown, source: string): string {
+  if (typeof value !== "string" || !value.trim() || value.includes("\0")) {
+    throw new Error(`${source} must be a non-blank string without NUL.`);
+  }
+  return value;
+}
+
+function requireBoundedText(value: unknown, source: string, maxBytes: number, exact: boolean): string {
+  const text = requireNonblankString(value, source);
+  if (new TextEncoder().encode(text).byteLength > maxBytes) throw new Error(`${source} exceeds ${maxBytes} UTF-8 bytes.`);
+  if (exact && text !== text.trim()) throw new Error(`${source} must not have surrounding whitespace.`);
+  return text;
+}
+
+function requireTimestamp(value: unknown, source: string): string {
+  const timestamp = requireNonblankString(value, source);
+  if (Number.isNaN(Date.parse(timestamp))) throw new Error(`${source} must be a valid timestamp.`);
+  return timestamp;
+}
+
+function requireExactValue<T extends string>(value: unknown, expected: T, source: string): T {
+  if (value !== expected) throw new Error(`${source} must be exactly ${JSON.stringify(expected)}.`);
+  return expected;
+}
+
+function requireBoundedInteger(value: unknown, source: string, minimum: number, maximum: number): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${source} must be an integer between ${minimum} and ${maximum}.`);
+  }
+  return value;
+}
+
+function requireRecord(value: unknown, source: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${source} must be an object.`);
+  return value as Record<string, unknown>;
+}
+
+function requireStatus(response: Response, expected: number, operation: string): void {
+  if (response.status !== expected) {
+    throw new Error(`${operation} expected HTTP ${expected}, received HTTP ${response.status}.`);
+  }
 }

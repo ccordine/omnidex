@@ -20,6 +20,24 @@ describe("authoritativeControlJobID", () => {
 });
 
 describe("ChatJobsCoordinator lifecycle retries", () => {
+	it("rejects malformed bounded job state before applying server markup", async () => {
+		vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+			job: { id: 42, status: "running", current_generation: 2 },
+			steps: [{ id: 9, action: "v3_coding", status: "running", generation: 1 }],
+			progress: { latest_context_id: 1, count: 25 },
+			html: { bundle: "must-not-render" },
+		})));
+		const host = chatJobsTestHost();
+		const coordinator = new ChatJobsCoordinator(host);
+		const button = document.createElement("button");
+		button.dataset.jobId = "42";
+
+		await expect(coordinator.select({ currentTarget: button } as unknown as Event))
+			.rejects.toThrow(/current generation|bounded progress/i);
+		expect(host.renderComponentBundle).not.toHaveBeenCalled();
+		expect(host.setCurrentJobID).not.toHaveBeenCalled();
+	});
+
 	it("submits one replan operation per interaction", async () => {
 		const controlRequests: RequestInit[] = [];
 		const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
@@ -28,7 +46,10 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 				controlRequests.push(init);
 				return jsonResponse({ job: { id: 42 } });
 			}
-			if (input === "/v1/jobs/42") return jsonResponse({ job: { id: 42 }, steps: [], contexts: [] });
+			if (input === "/v1/ui/chat/jobs/42") return jsonResponse({
+				job: { id: 42, status: "running", current_generation: 1 }, steps: [],
+				progress: { latest_context_id: 0, count: 0 }, html: { bundle: "server-job-details" },
+			});
 			throw new Error(`Unexpected request ${input}`);
 		});
 		vi.stubGlobal("fetch", fetchMock);
@@ -56,8 +77,9 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 				if (cancelCalls === 1) throw new Error("response lost after commit");
 				return jsonResponse({ job: { id: 42 } });
 			}
-			if (input.startsWith("/v1/jobs?")) return jsonResponse({ jobs: [] });
-			if (input === "/v1/activity?limit=30") return jsonResponse({ llm_activity: [] });
+			if (input === "/v1/ui/chat/jobs?limit=20&offset=0") {
+				return jsonResponse({ has_more: false, html: { bundle: "server-job-list" } });
+			}
 			throw new Error(`Unexpected request ${input}`);
 		});
 		vi.stubGlobal("fetch", fetchMock);
@@ -83,13 +105,10 @@ function chatJobsTestHost(): ChatJobsHost {
 	return {
 		queueEnabled: () => true,
 		jobFilter: () => filter,
-		hasJobDetails: () => false,
-		jobDetails: () => document.createElement("div"),
 		hasJobBadge: () => false,
 		jobBadge: () => document.createElement("div"),
 		setCurrentJobID: vi.fn(),
-		recycle: vi.fn(),
-		indexContexts: vi.fn(),
+		renderComponentBundle: vi.fn(async () => undefined),
 		addEvent: vi.fn(),
 	};
 }

@@ -17,6 +17,7 @@ var removedLegacyCognitionPaths = []string{
 	"internal/cognition",
 	"internal/cognitiongauntlet",
 	"internal/cognitionpolicy",
+	"internal/cognitionreference",
 	"internal/cognitionreplay",
 	"internal/cognitionruntime",
 	"internal/cognitionstate",
@@ -46,9 +47,6 @@ func TestLegacyCognitionRuntimeIsAbsent(t *testing.T) {
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join(repositoryRoot, "internal", "cognitionreference")); err != nil {
-		t.Fatalf("code-owned cognition reference implementation is missing: %v", err)
-	}
 }
 
 func TestReleaseSurfaceHasNoLegacyCognitionGauntlet(t *testing.T) {
@@ -94,7 +92,7 @@ func TestProductionHasNoLegacyCognitionImports(t *testing.T) {
 				return walkErr
 			}
 			if entry.IsDir() {
-				if entry.Name() == "cognitionreference" || entry.Name() == "testdata" || strings.HasPrefix(entry.Name(), ".") {
+				if entry.Name() == "testdata" || strings.HasPrefix(entry.Name(), ".") {
 					return filepath.SkipDir
 				}
 				return nil

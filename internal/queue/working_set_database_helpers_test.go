@@ -28,7 +28,7 @@ func openWorkingSetDatabase(t *testing.T) (context.Context, *Repository, *pgxpoo
 
 func enqueueWorkingSetTestJob(t *testing.T, ctx context.Context, repository *Repository, marker string) model.Job {
 	t.Helper()
-	job, err := repository.EnqueueJob(ctx, marker, model.PipelineAssistant, []byte(`{}`))
+	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func advanceWorkingSetGenerationTx(
 		INSERT INTO job_generations (
 			job_id, generation, purpose, predecessor_generation,
 			boundary_action, feedback, feedback_sha256
-		) VALUES ($1,2,'replan',1,'v3_planning',$2,encode(digest($2,'sha256'),'hex'))
+		) VALUES ($1,2,'replan',1,'v3_coding',$2,encode(digest($2,'sha256'),'hex'))
 	`, jobID, feedback); err != nil {
 		t.Fatal(err)
 	}

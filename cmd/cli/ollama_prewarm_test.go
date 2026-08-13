@@ -165,7 +165,7 @@ func TestProbeOllamaModelFailsLoudly(t *testing.T) {
 
 func TestOllamaPrewarmDefaultsUseExactFragmentRouteAndContext(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "qwen3.5:9b-q4_K_M")
-	t.Setenv("OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT", "qwen3-coder:30b")
+	t.Setenv("OMNI_CODING_FRAGMENT_MODEL", "qwen3-coder:30b")
 	t.Setenv("INFERENCE_CONTEXT_TOKENS", "16384")
 
 	if got := ollamaPrewarmDefaultModel(); got != "qwen3-coder:30b" {

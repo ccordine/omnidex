@@ -59,8 +59,9 @@ func (r *Repository) UnresolvedRepositoryMutation(
 		return nil, fmt.Errorf("unresolved repository mutation %s has invalid status %q", operationID, status)
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT file_id, path, source_sha256, source_size,
-		       expected_sha256, expected_size
+		SELECT file_id, path,
+		       source_present, source_sha256, source_size, source_mode,
+		       expected_present, expected_sha256, expected_size, expected_mode
 		FROM repository_mutation_files
 		WHERE operation_id=$1
 		ORDER BY ordinal
@@ -72,11 +73,30 @@ func (r *Repository) UnresolvedRepositoryMutation(
 	command.ChangedFiles = make([]RepositoryMutationFile, 0, maxRepositoryMutationFiles)
 	for rows.Next() {
 		var file RepositoryMutationFile
+		var sourceSHA, expectedSHA *string
+		var sourceSize, expectedSize *int64
+		var sourceMode, expectedMode *int32
 		if err := rows.Scan(
-			&file.FileID, &file.Path, &file.SourceSHA256, &file.SourceSize,
-			&file.ExpectedSHA256, &file.ExpectedSize,
+			&file.FileID, &file.Path,
+			&file.SourcePresent, &sourceSHA, &sourceSize, &sourceMode,
+			&file.ExpectedPresent, &expectedSHA, &expectedSize, &expectedMode,
 		); err != nil {
 			return nil, fmt.Errorf("scan unresolved repository mutation file: %w", err)
+		}
+		file.SourceSHA256, file.SourceSize, file.SourceMode, err =
+			assignRepositoryMutationSQLState(
+				file.FileID, "source", file.SourcePresent, sourceSHA, sourceSize, sourceMode,
+			)
+		if err != nil {
+			return nil, err
+		}
+		file.ExpectedSHA256, file.ExpectedSize, file.ExpectedMode, err =
+			assignRepositoryMutationSQLState(
+				file.FileID, "post-patch", file.ExpectedPresent,
+				expectedSHA, expectedSize, expectedMode,
+			)
+		if err != nil {
+			return nil, err
 		}
 		command.ChangedFiles = append(command.ChangedFiles, file)
 	}

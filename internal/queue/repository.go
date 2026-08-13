@@ -7,17 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/artifacts"
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/projectdebugger"
 	"github.com/gryph/omnidex/internal/scrum"
-	"github.com/gryph/omnidex/internal/scrumcardllm"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -30,10 +26,6 @@ type stepSeed struct {
 	action    string
 	sortIndex int
 }
-
-const inferredMemoryCorrectionDistance = 0.08
-
-var channelIDSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_.:-]+`)
 
 func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
@@ -57,7 +49,7 @@ func (r *Repository) EnsureSchema(ctx context.Context, bundle MigrationBundle) e
 }
 
 func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
-	pipeline, err := validatePipeline(pipeline)
+	pipeline, err := validatePublicEnqueuePipeline(pipeline)
 	if err != nil {
 		return model.Job{}, err
 	}
@@ -82,8 +74,25 @@ func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline strin
 }
 
 func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
+	steps, err := stepsForJob(pipeline, instruction, metadataJSON)
+	if err != nil {
+		return model.Job{}, fmt.Errorf("resolve job execution steps: %w", err)
+	}
+	return r.enqueueJobWithStepsTx(ctx, tx, instruction, pipeline, metadataJSON, steps)
+}
+
+func (r *Repository) enqueueJobWithStepsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	instruction, pipeline string,
+	metadataJSON []byte,
+	steps []stepSeed,
+) (model.Job, error) {
 	if err := validateJobInstruction(instruction); err != nil {
 		return model.Job{}, err
+	}
+	if len(steps) == 0 {
+		return model.Job{}, fmt.Errorf("pipeline %q produced no executable steps", pipeline)
 	}
 	projectID, err := resolveProjectID(ctx, tx, metadataJSON)
 	if err != nil {
@@ -152,13 +161,6 @@ func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, p
 		return model.Job{}, err
 	}
 
-	steps, err := stepsForJob(pipeline, instruction, metadataJSON)
-	if err != nil {
-		return model.Job{}, fmt.Errorf("resolve job execution steps: %w", err)
-	}
-	if len(steps) == 0 {
-		return model.Job{}, fmt.Errorf("pipeline %q produced no executable steps", pipeline)
-	}
 	for _, step := range steps {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO job_steps (job_id, action, sort_index, status, generation)
@@ -477,52 +479,34 @@ func stepsForJob(pipeline, instruction string, metadataJSON []byte) ([]stepSeed,
 	if err != nil {
 		return nil, err
 	}
-	if datasource.IsExploreJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineDataExplore {
-		return []stepSeed{{action: "data_source_explore", sortIndex: 1}}, nil
-	}
-	if projectdebugger.IsJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineProjectDebugger {
-		return []stepSeed{{action: "project_debugger", sortIndex: 1}}, nil
-	}
-	if scrumcardllm.IsJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineScrumCardLLM {
-		return []stepSeed{{action: "scrum_card_llm", sortIndex: 1}}, nil
-	}
-	if isDataSourceQueryJob(metadataJSON) || normalizePipeline(pipeline) == model.PipelineDataQuery {
-		return []stepSeed{{action: "data_source_query", sortIndex: 1}}, nil
-	}
-	if agentCfg.IsExternal() {
-		return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}, nil
-	}
 	if scrum.IsScrumJob(metadataJSON) {
 		channelOrigin, _ := metadata["scrum_channel_origin"].(bool)
-		if !channelOrigin {
-			return []stepSeed{{action: "v3_coding", sortIndex: 5}}, nil
+		if channelOrigin {
+			return conversationObjectiveSteps(), nil
 		}
-		return v3ConversationSteps(), nil
+		if agentCfg.IsExternal() {
+			return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}, nil
+		}
+		return []stepSeed{{action: "v3_coding", sortIndex: 5}}, nil
 	}
 	if normalizePipeline(pipeline) == model.PipelineCoding {
+		if agentCfg.IsExternal() {
+			return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}, nil
+		}
 		return stepsForPipeline(model.PipelineCoding), nil
 	}
 	switch normalizePipeline(pipeline) {
 	case model.PipelineAssistant, model.PipelineChat, model.PipelineStory:
-		return v3ConversationSteps(), nil
+		return conversationObjectiveSteps(), nil
+	}
+	if agentCfg.IsExternal() {
+		return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}, nil
 	}
 	return stepsForPipeline(pipeline), nil
 }
 
-func v3ConversationSteps() []stepSeed {
-	return []stepSeed{
-		{action: "v3_intent_parse", sortIndex: 5},
-		{action: "v3_capability_audit", sortIndex: 10},
-		{action: "v3_workspace_research", sortIndex: 20},
-		{action: "v3_memory_retrieval", sortIndex: 30},
-		{action: "v3_external_research", sortIndex: 35},
-		{action: "v3_planning", sortIndex: 40},
-		{action: "v3_analysis", sortIndex: 80},
-		{action: "v3_response_draft", sortIndex: 90},
-		{action: "v3_verification", sortIndex: 100},
-		{action: "v3_memory_review", sortIndex: 110},
-		{action: "v3_finalize", sortIndex: 120},
-	}
+func conversationObjectiveSteps() []stepSeed {
+	return []stepSeed{{action: "objective_resolve", sortIndex: 5}}
 }
 
 func (r *Repository) CurrentArtifact(ctx context.Context, jobID int64, kind string) (artifacts.Envelope, bool, error) {

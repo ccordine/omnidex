@@ -9,7 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestResolveScrumPlayOutcomeForCardUsesChannelSuccess(t *testing.T) {
+func TestResolveScrumPlayOutcomeForCardIgnoresChannelStatusText(t *testing.T) {
 	s := &Server{}
 	job := model.JobDetails{
 		Job: model.Job{
@@ -29,9 +29,12 @@ func TestResolveScrumPlayOutcomeForCardUsesChannelSuccess(t *testing.T) {
 			Content: "Implemented the fix.\nSCRUM_STATUS: success",
 		}},
 	}
-	outcome, _ := s.resolveScrumPlayOutcomeForCard(t.Context(), job, card)
+	outcome, err := s.resolveScrumPlayOutcomeForCard(t.Context(), job, card)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if outcome != ScrumOutcomeSuccess {
-		t.Fatalf("outcome=%q want success when SCRUM_STATUS is in synced channel", outcome)
+		t.Fatalf("outcome=%q want typed completed lifecycle", outcome)
 	}
 	transition := scrumColumnForOutcome(outcome)
 	if transition.Column != "review" {
@@ -50,9 +53,12 @@ func TestResolveScrumPlayOutcomeCompletedWithoutStatusMovesToSuccess(t *testing.
 			Output: `{"agent":"cursor","type":"completed","message":"Cursor external implementation session completed"}`,
 		}},
 	}
-	outcome, note := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
-	if outcome != ScrumOutcomeSuccess || note != "" {
-		t.Fatalf("outcome=%q note=%q want success without scan note", outcome, note)
+	outcome, err := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome != ScrumOutcomeSuccess {
+		t.Fatalf("outcome=%q want success", outcome)
 	}
 	transition := scrumColumnForOutcome(outcome)
 	if transition.Column != "review" || transition.PlayState != "" {
@@ -60,7 +66,7 @@ func TestResolveScrumPlayOutcomeCompletedWithoutStatusMovesToSuccess(t *testing.
 	}
 }
 
-func TestResolveScrumPlayOutcomeCompletedInProgressStatusIsProgrammatic(t *testing.T) {
+func TestResolveScrumPlayOutcomeCompletedIgnoresInProgressProse(t *testing.T) {
 	s := &Server{}
 	job := model.JobDetails{
 		Job: model.Job{
@@ -69,9 +75,12 @@ func TestResolveScrumPlayOutcomeCompletedInProgressStatusIsProgrammatic(t *testi
 		},
 		Steps: []model.Step{{Output: "SCRUM_STATUS: in_progress"}},
 	}
-	outcome, _ := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
-	if outcome != ScrumOutcomeInProgress {
-		t.Fatalf("outcome=%q want in_progress", outcome)
+	outcome, err := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome != ScrumOutcomeSuccess {
+		t.Fatalf("outcome=%q want typed completed lifecycle", outcome)
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/gryph/omnidex/internal/evidence"
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
 
 type repositoryVerificationScope string
@@ -42,8 +42,10 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 	if authority == nil || !authority.allowsScope(scope) {
 		return fmt.Errorf("repository verification authority does not permit scope %q", scope)
 	}
-	if scope == repositoryVerificationStaged && ownership == nil {
-		return fmt.Errorf("staged repository verification requires exact parsed target ownership")
+	pathlessDesiredStage := scope == repositoryVerificationStaged && ownership == nil &&
+		repositoryVerificationAuthorityOwnsDesiredGraph(authority)
+	if scope == repositoryVerificationStaged && ownership == nil && !pathlessDesiredStage {
+		return fmt.Errorf("staged repository verification requires exact parsed target ownership or desired-state authority")
 	}
 	if scope == repositoryVerificationAuthoritative && ownership != nil {
 		return fmt.Errorf("authoritative repository verification cannot accept correction ownership")
@@ -70,13 +72,11 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 				"assert exact repository bytes before verification %q: %w", label, err,
 			)
 		}
-		result, executionErr := environment.executeRepositoryGoVerification(session.runtime.ctx, root, toolruntime.Call{
-			Name: "command.run",
-			Input: map[string]any{
-				"program": command.Name,
-				"args":    append([]string(nil), command.Args...),
-			},
-		})
+		request, err := repositoryGoVerificationRequestFromCommand(command)
+		if err != nil {
+			return fmt.Errorf("construct repository verification request %q: %w", label, err)
+		}
+		result, executionErr := environment.executeRepositoryGoVerification(session.runtime.ctx, root, request)
 		if len(result.Evidence) == 0 && executionErr == nil {
 			return fmt.Errorf("repository verification %q returned no exact command evidence", label)
 		}
@@ -84,7 +84,7 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 		var proofErr error
 		if commandSucceeded {
 			proofErr = validateRepositoryGoTestProof(
-				*command.RepositoryProof, toolResultText(result.Output, "stdout"),
+				*command.RepositoryProof, operationResultText(result.Output, "stdout"),
 			)
 		}
 		proofValid := commandSucceeded && proofErr == nil
@@ -126,11 +126,11 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 					"assert exact repository bytes before failure classification: %w", exactErr,
 				))
 			}
-			if scope != repositoryVerificationStaged {
+			if scope != repositoryVerificationStaged || pathlessDesiredStage {
 				return failure
 			}
 			owned, classifyErr := classifyRepositoryGoVerificationFailure(
-				command, toolResultText(result.Output, "stdout"), *ownership,
+				command, operationResultText(result.Output, "stdout"), *ownership,
 			)
 			if classifyErr != nil {
 				return errors.Join(failure, fmt.Errorf(
@@ -165,6 +165,16 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 		fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
 	)
 	return nil
+}
+
+func repositoryVerificationAuthorityOwnsDesiredGraph(
+	authority repositoryVerificationEvidenceAuthority,
+) bool {
+	if authority == nil {
+		return false
+	}
+	owner, ok := authority.metadata()["repository_desired_artifact_graph_id"].(string)
+	return ok && validRepositoryVerificationOpaqueID(owner, "desired_graph_")
 }
 
 func repositoryCommandMetadata(
@@ -269,7 +279,7 @@ func repositoryVerificationAcceptanceEvent(scope repositoryVerificationScope) st
 	return "repository_verification_plan_accepted"
 }
 
-func requireRepositoryGoOrdinaryFailure(result toolruntime.Result) error {
+func requireRepositoryGoOrdinaryFailure(result operation.Result) error {
 	succeeded, succeededOK := result.Output["succeeded"].(bool)
 	exitCode, exitOK := result.Output["exit_code"].(int)
 	if !succeededOK || succeeded || !exitOK || exitCode != 1 {

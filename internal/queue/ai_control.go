@@ -97,7 +97,7 @@ func (r *Repository) PauseAI(ctx context.Context, reason string) (projectIDs, jo
 	projectIDs, err = queryInt64s(ctx, tx, `
 		SELECT DISTINCT project_id
 		FROM scrum_cards
-		WHERE play_state IN ('running', 'reviewing')
+		WHERE play_state = 'running'
 		ORDER BY project_id
 	`)
 	if err != nil {

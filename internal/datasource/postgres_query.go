@@ -68,33 +68,3 @@ func RunSQL(ctx context.Context, conn Connection, sqlText string) (QueryResult, 
 		Count:   len(publicRows),
 	}, nil
 }
-
-func AskQuestion(
-	ctx context.Context,
-	conn Connection,
-	question string,
-	llm omni.DBManagerLLMClient,
-) (QueryResult, error) {
-	question = strings.TrimSpace(question)
-	if question == "" {
-		return QueryResult{}, fmt.Errorf("question is required")
-	}
-	pool, err := ConnectReadOnly(ctx, conn)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	defer pool.Close()
-	result, err := omni.RunDBManagerQuery(ctx, question, omni.NewPgxMemoryRunner(pool), llm)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	columns, publicRows := rowsToColumns(result.Rows)
-	return QueryResult{
-		Question: result.Question,
-		SQL:      result.SQL,
-		Answer:   result.Answer,
-		Columns:  columns,
-		Rows:     publicRows,
-		Count:    len(publicRows),
-	}, nil
-}

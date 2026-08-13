@@ -81,7 +81,7 @@ func replanJobTx(
 	if err := lockGenerationRecordTx(ctx, tx, command.JobID, currentGeneration); err != nil {
 		return model.Job{}, err
 	}
-	seeds, err := stepsForJob(job.Pipeline, job.Instruction, job.Metadata)
+	seeds, err := canonicalReplanStepsTx(ctx, tx, job)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("recompute canonical steps for job %d: %w", command.JobID, err)
 	}

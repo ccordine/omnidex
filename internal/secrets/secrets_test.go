@@ -78,7 +78,7 @@ func TestSecretFieldsCoverEveryCatalogProviderCredential(t *testing.T) {
 	for _, field := range Fields {
 		fieldsByKey[field.Key] = field
 	}
-	for _, definition := range catalog.Definitions() {
+	for _, definition := range catalog.ProductionDefinitions() {
 		if len(definition.APIKeyEnvironmentKeys) == 0 {
 			continue
 		}

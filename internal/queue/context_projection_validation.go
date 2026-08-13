@@ -23,9 +23,6 @@ func validateContextProjectionStore(
 	if err := validateContextProjectionExact(authority.WorkKind, "work kind", 256); err != nil {
 		return err
 	}
-	if !validContextProjectionMode(authority.Mode) {
-		return fmt.Errorf("%w: context projection mode %q is not registered", ErrInvalidContextProjection, authority.Mode)
-	}
 	if err := projection.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidContextProjection, err)
 	}
@@ -42,8 +39,14 @@ func validateContextProjectionStore(
 	return validateContextProjectionRepository(r, ctx)
 }
 
-func validContextProjectionMode(mode ContextProjectionMode) bool {
-	return mode == ContextProjectionModeLive
+func requireLiveContextProjectionUsageMode(usageMode string) error {
+	if usageMode != "live" {
+		return fmt.Errorf(
+			"%w: durable context projection usage mode %q is not live",
+			ErrInvalidContextProjection, usageMode,
+		)
+	}
+	return nil
 }
 
 func validateContextProjectionRepository(r *Repository, ctx context.Context) error {

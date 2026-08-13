@@ -229,10 +229,14 @@ func (s *Server) refreshScrumCardOutputForJob(ctx context.Context, jobID int64) 
 		return fmt.Errorf("decode Scrum card %q for job %d output: %w", cardID, jobID, err)
 	}
 	updated := card
-	if synced, ok := syncRunningJobChannelChat(updated, details); ok {
+	if synced, ok, err := syncRunningJobChannelChat(updated, details); err != nil {
+		return err
+	} else if ok {
 		updated = synced
 	}
-	if synced, ok := syncRunningJobConsoleLog(updated, details); ok {
+	if synced, ok, err := syncRunningJobConsoleLog(updated, details); err != nil {
+		return err
+	} else if ok {
 		updated = synced
 	}
 	if !scrumCardChannelChanged(card, updated) && strings.TrimSpace(card.ConsoleLog) == strings.TrimSpace(updated.ConsoleLog) {

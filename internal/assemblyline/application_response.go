@@ -46,7 +46,8 @@ func (decision ArtifactHandlingDecision) Validate(token string) error {
 		return fmt.Errorf("artifact handling token %q does not match focused token %q", decision.Token, token)
 	}
 	switch decision.Handling {
-	case ArtifactPreserveUnchanged, ArtifactMustExist, ArtifactMentionedOnly:
+	case ArtifactPreserveUnchanged, ArtifactMustExist, ArtifactMustBeAbsent,
+		ArtifactPossibleAbsenceCandidate, ArtifactMentionedOnly:
 		return nil
 	default:
 		return fmt.Errorf("artifact handling %q is unsupported", decision.Handling)
@@ -62,6 +63,8 @@ func ArtifactHandlingResponseSchema(token string) map[string]any {
 			"handling": enumSchema(
 				ArtifactPreserveUnchanged,
 				ArtifactMustExist,
+				ArtifactMustBeAbsent,
+				ArtifactPossibleAbsenceCandidate,
 				ArtifactMentionedOnly,
 			),
 		},

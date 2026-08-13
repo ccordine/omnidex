@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/evidence"
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
 
 const (
@@ -28,71 +27,39 @@ var (
 	v3CargoNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 )
 
-func commandRunToolSpec() toolruntime.Spec {
-	return toolruntime.Spec{
-		Name:        "command.run",
-		Description: "Run one shell-free, allowlisted workspace initializer, build, or verification command in the server-authoritative job workspace.",
-		InputSchema: toolruntime.Schema{
-			Type:     "object",
-			Required: []string{"program", "args"},
-			Properties: map[string]toolruntime.Schema{
-				"program": {Type: "string"}, "args": {Type: "array", Items: &toolruntime.Schema{Type: "string"}}, "timeout_seconds": {Type: "integer"},
-			},
-		},
-		OutputSchema: toolruntime.Schema{
-			Type:     "object",
-			Required: []string{"summary", "program", "args", "exit_code", "stdout", "stderr", "duration_ms", "succeeded"},
-			Properties: map[string]toolruntime.Schema{
-				"summary": {Type: "string"}, "program": {Type: "string"}, "args": {Type: "array", Items: &toolruntime.Schema{Type: "string"}},
-				"exit_code": {Type: "integer"}, "stdout": {Type: "string"}, "stderr": {Type: "string"}, "duration_ms": {Type: "integer"}, "succeeded": {Type: "boolean"},
-			},
-		},
-		Examples: []toolruntime.Example{
-			{When: "Initialize a Go module in an empty workspace.", Input: map[string]any{"program": "go", "args": []string{"mod", "init", "example"}}},
-			{When: "Initialize a Rust binary crate without creating nested version-control state.", Input: map[string]any{"program": "cargo", "args": []string{"init", "--name", "example", "--vcs", "none", "."}}},
-			{When: "Initialize package metadata without an interactive prompt.", Input: map[string]any{"program": "npm", "args": []string{"init", "--yes"}}},
-			{When: "Verify a Go workspace after applying a patch.", Input: map[string]any{"program": "go", "args": []string{"test", "./..."}, "timeout_seconds": 180}},
-			{When: "Inspect the exact source diff without invoking repository-configured external helpers.", Input: map[string]any{"program": "git", "args": []string{"diff", "--no-ext-diff", "--no-textconv", "--"}}},
-		},
-		RequireEvidence: true,
-	}
+type codeCommand struct {
+	Program string
+	Args    []string
+	Timeout time.Duration
 }
 
-func executeV3Command(ctx context.Context, call toolruntime.Call) (toolruntime.Result, error) {
-	scope, err := v3WorkspaceScopeFromContext(ctx)
-	if err != nil {
-		return toolruntime.Result{}, err
-	}
-	return executeV3CommandAtRoot(ctx, scope.Root, call)
-}
-
-func executeV3CommandAtRoot(
+func executeCodeCommandAtRoot(
 	ctx context.Context,
 	root string,
-	call toolruntime.Call,
-) (toolruntime.Result, error) {
+	command codeCommand,
+) (operation.Result, error) {
 	if ctx == nil {
-		return toolruntime.Result{}, fmt.Errorf("command.run requires a context")
+		return operation.Result{}, fmt.Errorf("command.run requires a context")
 	}
 	root = strings.TrimSpace(root)
 	if root == "" || !filepath.IsAbs(root) {
-		return toolruntime.Result{}, fmt.Errorf("command.run requires one absolute server-authoritative root")
+		return operation.Result{}, fmt.Errorf("command.run requires one absolute server-authoritative root")
 	}
 	rootInfo, err := os.Lstat(root)
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return toolruntime.Result{}, fmt.Errorf("command.run root is not an exact directory: %s", root)
+		return operation.Result{}, fmt.Errorf("command.run root is not an exact directory: %s", root)
 	}
-	program := strings.TrimSpace(toolInputString(call.Input, "program"))
-	args, err := strictV3StringArray(call.Input["args"], "args")
-	if err != nil {
-		return toolruntime.Result{}, toolruntime.RejectCall(err)
-	}
+	program := strings.TrimSpace(command.Program)
+	args := append([]string(nil), command.Args...)
 	if err := validateV3Command(program, args); err != nil {
-		return toolruntime.Result{}, toolruntime.RejectCall(err)
+		return operation.Result{}, operation.Reject(err)
 	}
-	timeout := time.Duration(toolInputInt(call.Input, "timeout_seconds", int(defaultV3CommandLimit/time.Second))) * time.Second
+	timeout := command.Timeout
+	if timeout == 0 {
+		timeout = defaultV3CommandLimit
+	}
 	if timeout <= 0 || timeout > maxV3CommandLimit {
-		return toolruntime.Result{}, toolruntime.RejectCall(fmt.Errorf("command.run timeout must be between 1 and %d seconds", int(maxV3CommandLimit/time.Second)))
+		return operation.Result{}, operation.Reject(fmt.Errorf("command.run timeout must be between 1 and %d seconds", int(maxV3CommandLimit/time.Second)))
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -100,10 +67,16 @@ func executeV3CommandAtRoot(
 	cmd := exec.CommandContext(runCtx, program, args...)
 	cmd.Dir = root
 	cmd.Env = v3CommandEnvironment(os.Environ())
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout, err := newBoundedCommandOutput(maxV3CommandOutput)
+	if err != nil {
+		return operation.Result{}, err
+	}
+	stderr, err := newBoundedCommandOutput(maxV3CommandOutput)
+	if err != nil {
+		return operation.Result{}, err
+	}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	runErr := cmd.Run()
 	duration := time.Since(started)
 	exitCode := 0
@@ -114,14 +87,14 @@ func executeV3CommandAtRoot(
 			exitCode = exitErr.ExitCode()
 		}
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			return toolruntime.Result{}, fmt.Errorf("command.run timed out after %s", timeout)
+			return operation.Result{}, fmt.Errorf("command.run timed out after %s", timeout)
 		}
 		if errors.Is(runCtx.Err(), context.Canceled) {
-			return toolruntime.Result{}, fmt.Errorf("command.run canceled because step authority ended: %w", runCtx.Err())
+			return operation.Result{}, fmt.Errorf("command.run canceled because step authority ended: %w", runCtx.Err())
 		}
 	}
-	stdoutText := trimForBudget(stdout.String(), maxV3CommandOutput)
-	stderrText := trimForBudget(stderr.String(), maxV3CommandOutput)
+	stdoutText, stdoutBytes, stdoutTruncated := stdout.Result()
+	stderrText, stderrBytes, stderrTruncated := stderr.Result()
 	succeeded := runErr == nil
 	commandText := strings.Join(append([]string{program}, args...), " ")
 	summary := fmt.Sprintf("command %s exit_code=%d duration_ms=%d", program, exitCode, duration.Milliseconds())
@@ -133,17 +106,24 @@ func executeV3CommandAtRoot(
 	if isV3TestCommand(program, args) {
 		kind = evidence.KindTestResult
 	}
-	return toolruntime.Result{
+	return operation.Result{
 		Summary: summary, Warnings: warnings,
 		Output: map[string]any{
 			"summary": summary, "program": program, "args": args, "exit_code": exitCode, "stdout": stdoutText,
-			"stderr": stderrText, "duration_ms": duration.Milliseconds(), "succeeded": succeeded,
+			"stderr": stderrText, "stdout_observed_bytes": stdoutBytes,
+			"stderr_observed_bytes": stderrBytes, "stdout_truncated": stdoutTruncated,
+			"stderr_truncated": stderrTruncated, "duration_ms": duration.Milliseconds(), "succeeded": succeeded,
 		},
 		Evidence: []evidence.Record{{
 			Kind: kind, SourceType: "command", SourceRef: program, Command: commandText,
 			Excerpt: trimForBudget("stdout:\n"+stdoutText+"\nstderr:\n"+stderrText, maxV3CommandOutput), Summary: summary,
 			Confidence: 1, Warnings: warnings,
-			Metadata: map[string]any{"execution": true, "side_effect_possible": true, "succeeded": succeeded, "exit_code": exitCode, "duration_ms": duration.Milliseconds(), "workspace": root},
+			Metadata: map[string]any{
+				"execution": true, "side_effect_possible": true, "succeeded": succeeded,
+				"exit_code": exitCode, "duration_ms": duration.Milliseconds(), "workspace": root,
+				"stdout_observed_bytes": stdoutBytes, "stderr_observed_bytes": stderrBytes,
+				"stdout_truncated": stdoutTruncated, "stderr_truncated": stderrTruncated,
+			},
 		}},
 	}, nil
 }

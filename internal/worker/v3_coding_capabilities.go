@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 const maxDirectCodingRequirements = 10
@@ -40,14 +40,11 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 	if len(requirements) == 1 {
 		return directCodingCapabilityGraph{requirements[0].ID: nil}, nil
 	}
-	modelName := s.runtime.svc.v3SpecialistModel(
-		s.runtime.claim.Job,
-		s.runtime.routing,
-		"coding_capability_relation",
-		specialist.RoleCodingCapabilityRelationStation,
-		s.runtime.routing.Glue,
-	)
-	modelName, err := requireDirectCodingModel(specialist.RoleCodingCapabilityRelationStation, modelName)
+	modelName, err := stationModel(s.runtime.routing, station.CodingCapabilityRelation)
+	if err != nil {
+		return nil, err
+	}
+	modelName, err = requireDirectCodingModel(station.CodingCapabilityRelation, modelName)
 	if err != nil {
 		return nil, err
 	}

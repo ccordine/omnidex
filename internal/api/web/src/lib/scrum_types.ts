@@ -32,35 +32,12 @@ export type ScrumTestCriterion = {
   done: boolean;
 };
 
-export type ScrumCoachConfig = {
-  enabled?: boolean;
-  auto_scan?: boolean;
-  model?: string;
-};
-
-export type ScrumCoachSuggestion = {
-  level: "info" | "warn" | "tip" | string;
-  text: string;
-};
-
-export type ScrumCoachResponse = {
-  card: ScrumCard;
-  reply: string;
-  suggestions?: ScrumCoachSuggestion[];
-  card_prompt?: string;
-  memory_stored?: number;
-  mode?: string;
-  model?: string;
-  enabled?: boolean;
-};
-
 export type ScrumFlowMetrics = {
   assigned_returns?: number;
   review_bounces?: number;
   regression_count?: number;
   play_runs?: number;
   channel_messages?: number;
-  planning_messages?: number;
   conversation_chars?: number;
   incomplete_score?: number;
   completion_status?: "likely_complete" | "likely_incomplete" | "uncertain" | string;
@@ -90,10 +67,8 @@ export type ScrumCard = {
   model_config?: Record<string, string>;
   agent_config?: Record<string, string>;
   job_id?: string;
-  tags_job_id?: string;
-  ticket_job_id?: string;
   console_log?: string;
-  play_state?: "" | "queued" | "running" | "paused" | "reviewing";
+  play_state?: "" | "queued" | "running" | "paused";
   queue_order?: number;
   board_order?: number;
   card_ticket?: string;
@@ -102,15 +77,12 @@ export type ScrumCard = {
   recipe?: Record<string, unknown>;
   tags?: string[];
   test_criteria?: ScrumTestCriterion[];
-  planning_chat?: ScrumChatMessage[];
-  coach_config?: ScrumCoachConfig;
   flow_metrics?: ScrumFlowMetrics;
   summary?: boolean;
   checklist_done?: number;
   checklist_total?: number;
   ref_file_count?: number;
   chat_count?: number;
-  planning_chat_count?: number;
   test_criteria_done?: number;
   test_criteria_total?: number;
   has_card_ticket?: boolean;
@@ -127,19 +99,9 @@ export type ScrumBoard = {
   updated_at: string;
 };
 
-export type ScrumAutoReviewConfig = {
-  enabled?: boolean;
-  bounce_column?: string;
-};
-
 export type ScrumAutoWorkConfig = {
   enabled?: boolean;
   source_columns?: string[];
-};
-
-export type ScrumCreateTicketConfig = {
-  enabled?: boolean;
-  column?: string;
 };
 
 export type ScrumConfigField = {
@@ -155,6 +117,7 @@ export type ScrumBoardHTML = {
   columns?: string;
   focus?: string;
   flow_summary?: string;
+  pagination?: string;
   bundle?: string;
 };
 
@@ -166,9 +129,9 @@ export type ScrumBoardResponse = {
   all_columns?: string[];
   visible_column?: string;
   column_counts?: Record<string, number>;
+  card_offset?: number;
+  card_has_more?: boolean;
   auto_work?: ScrumAutoWorkConfig;
-  auto_review?: ScrumAutoReviewConfig;
-  create_ticket?: ScrumCreateTicketConfig;
   play_queue?: {
     running_card_id?: string;
     queued_count: number;
@@ -193,6 +156,8 @@ export type ScrumCardModalResponse = {
   agent_system?: string;
   agent_overrides?: Record<string, string>;
   recipes?: Array<{ id: string; description?: string; [key: string]: unknown }>;
+	recipe_offset?: number;
+	recipe_has_more?: boolean;
   project_recipe_id?: string;
   project_recipe?: Record<string, unknown>;
   pilot_pending?: boolean;

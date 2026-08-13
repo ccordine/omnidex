@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
@@ -27,19 +27,19 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	surfaceModel, err := s.workerModel("coding_surface", specialist.RoleCodingSurfaceStation)
+	surfaceModel, err := s.workerModel(station.CodingSurface)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	partitionModel, err := s.workerModel("coding_requirement_partition", specialist.RoleCodingRequirementPartitionStation)
+	partitionModel, err := s.workerModel(station.CodingRequirementPartition)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	identityModel, err := s.workerModel("coding_product_identity", specialist.RoleCodingProductIdentityStation)
+	identityModel, err := s.workerModel(station.CodingProductIdentity)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	artifactModel, err := s.workerModel("coding_artifact_handling", specialist.RoleCodingArtifactHandlingStation)
+	artifactModel, err := s.workerModel(station.CodingArtifactHandling)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -75,11 +75,6 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	program.Generated = generated
 	if err := s.stageProgram(&program); err != nil {
-		return directCodingAssembly{}, err
-	}
-	if err := s.recordPendingSkillCheck(
-		"isolated_stage", "Complete in-memory assembly passed isolated tests, type checks, and production build.",
-	); err != nil {
 		return directCodingAssembly{}, err
 	}
 	protectedPaths, err := snapshotDirectCodingProtectedPathList(s.root, program.ProtectedPaths)
@@ -118,10 +113,10 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	return assembly, nil
 }
 
-func requireDirectCodingModel(role, modelName string) (string, error) {
+func requireDirectCodingModel(id station.ID, modelName string) (string, error) {
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
-		return "", fmt.Errorf("direct coding %s model is not configured", role)
+		return "", fmt.Errorf("direct coding station %s model is not configured", id)
 	}
 	return modelName, nil
 }

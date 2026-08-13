@@ -64,6 +64,7 @@ func runDirectCodingSemanticCall[T any](
 	lastCandidateRejected := false
 	attemptsUsed := 0
 	seenCandidates := make(map[string]struct{})
+	seenJobs := make(map[string]struct{})
 	for attempt := 1; attempt <= runtime.MaxAttempts; attempt++ {
 		attemptsUsed = attempt
 		if err := runtime.Context.Err(); err != nil {
@@ -93,12 +94,18 @@ func runDirectCodingSemanticCall[T any](
 		if err := validateDirectCodingSemanticPrompt(prompt, identities); err != nil {
 			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt-1, err)
 		}
+		if _, duplicate := seenJobs[attemptJob.ID]; duplicate {
+			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt-1,
+				fmt.Errorf("repeated identical semantic gap rejected before inference"))
+		}
+		seenJobs[attemptJob.ID] = struct{}{}
 
 		result, err := runtime.Execute(attemptJob, modelName)
 		if err != nil {
 			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt, err)
 		}
 		if err = result.ValidateFor(attemptJob); err != nil {
+			err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
 			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt, err)
 		}
 		candidateRejected := true
@@ -122,6 +129,9 @@ func runDirectCodingSemanticCall[T any](
 				err = validate(value)
 			}
 			if err == nil {
+				if err = finalizeTypedWorkerResult(runtime, attemptJob, result, nil); err != nil {
+					return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt, err)
+				}
 				emitTypedWorker(runtime, typedWorkerEvent{
 					State: typedWorkerCompleted, Kind: typedWorkerSemantic, Subject: subject,
 					Model: modelName, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
@@ -130,7 +140,12 @@ func runDirectCodingSemanticCall[T any](
 			}
 		}
 		if contextErr := runtime.Context.Err(); contextErr != nil {
+			contextErr = finalizeTypedWorkerResult(runtime, attemptJob, result, contextErr)
 			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt, fmt.Errorf("authority ended: %w", contextErr))
+		}
+		err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
+		if err == nil {
+			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt, fmt.Errorf("semantic candidate rejection lost its exact failure"))
 		}
 		lastErr = err
 		lastCandidateRejected = candidateRejected

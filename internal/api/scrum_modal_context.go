@@ -38,6 +38,8 @@ type scrumModalRenderContext struct {
 	AgentSystem         string
 	AgentOverrides      map[string]string
 	Recipes             []omni.Recipe
+	RecipeOffset        int
+	RecipeHasMore       bool
 	ProjectRecipeID     string
 	ProjectRecipe       map[string]any
 	PilotPending        bool
@@ -70,24 +72,18 @@ func (s *Server) buildScrumModalContext(r *http.Request, cardID, tab string) (*s
 	if err != nil {
 		return nil, err
 	}
-	board, err = s.refreshScrumCardLlmJobs(r.Context(), projectID, board)
+	stored, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
+	if err != nil {
+		return nil, fmt.Errorf("card not found: %w", err)
+	}
+	card, err := dbScrumCardToAPI(stored)
 	if err != nil {
 		return nil, err
 	}
-	cardPtr := findScrumCard(board, cardID)
-	if cardPtr == nil {
-		return nil, fmt.Errorf("card not found")
-	}
-	card := *cardPtr
-	coachConfig, err := s.scrumCoachConfig(card.CoachConfig)
+	playQueue, err := s.scrumPlayQueuePayload(r.Context(), projectID)
 	if err != nil {
 		return nil, err
 	}
-	card.CoachConfig, err = coachConfigToRaw(coachConfig)
-	if err != nil {
-		return nil, err
-	}
-	playQueue := scrumPlayQueueSummary(board)
 	channelPage, err := scrumChannelMessagePageFor(card, scrumChannelDefaultPageSize, "")
 	if err != nil {
 		return nil, err
@@ -148,10 +144,17 @@ func (s *Server) buildScrumModalContext(r *http.Request, cardID, tab string) (*s
 	if err != nil {
 		return nil, err
 	}
-	ctx.Recipes, err = omni.LoadRecipes(s.recipeRoot())
+	recipeOffset, err := exactChannelQueryInteger(r, "recipe_offset", 0, 0, 1<<30)
+	if err != nil {
+		return nil, err
+	}
+	recipePage, err := omni.LoadRecipePage(s.recipeRoot(), dataSourceUIPageSize, recipeOffset)
 	if err != nil {
 		return nil, fmt.Errorf("load Scrum recipes: %w", err)
 	}
+	ctx.Recipes = recipePage.Recipes
+	ctx.RecipeOffset = recipePage.Offset
+	ctx.RecipeHasMore = recipePage.HasMore
 	if s.repo == nil || projectID <= 0 {
 		return nil, fmt.Errorf("PostgreSQL project repository is required for Scrum modal context")
 	}

@@ -14,40 +14,57 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/evidence"
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
+
+type repositoryGoVerificationRequest struct {
+	Args    []string
+	Timeout time.Duration
+}
+
+func repositoryGoVerificationRequestFromCommand(
+	command testCommand,
+) (repositoryGoVerificationRequest, error) {
+	if command.Name != "go" {
+		return repositoryGoVerificationRequest{}, fmt.Errorf(
+			"repository Go verification requires the exact go executable; received %q",
+			command.Name,
+		)
+	}
+	return repositoryGoVerificationRequest{Args: append([]string(nil), command.Args...)}, nil
+}
 
 func executeRepositoryGoVerificationWithConfig(
 	ctx context.Context,
 	root string,
-	call toolruntime.Call,
+	request repositoryGoVerificationRequest,
 	config repositoryGoSandboxConfig,
 	moduleView *repositoryGoModuleView,
-) (toolruntime.Result, error) {
+) (operation.Result, error) {
 	if ctx == nil {
-		return toolruntime.Result{}, fmt.Errorf("repository Go verification requires a context")
+		return operation.Result{}, fmt.Errorf("repository Go verification requires a context")
 	}
 	if err := ctx.Err(); err != nil {
-		return toolruntime.Result{}, fmt.Errorf(
+		return operation.Result{}, fmt.Errorf(
 			"repository Go verification canceled because step authority ended: %w", err,
 		)
 	}
-	args, timeout, err := prepareRepositoryGoVerificationCall(call)
+	args, timeout, err := prepareRepositoryGoVerificationRequest(request)
 	if err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	if err := config.validateExecution(); err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	if err := moduleView.requireSource(root); err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	if err := moduleView.VerifyExact(ctx); err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	before, err := captureRepositoryVerificationTreeContext(ctx, root)
 	if err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -63,38 +80,32 @@ func executeRepositoryGoVerificationWithConfig(
 	return result, runErr
 }
 
-func prepareRepositoryGoVerificationCall(
-	call toolruntime.Call,
+func prepareRepositoryGoVerificationRequest(
+	request repositoryGoVerificationRequest,
 ) ([]string, time.Duration, error) {
-	if call.Name != "command.run" {
-		return nil, 0, fmt.Errorf("repository Go verification requires command.run")
+	args := append([]string(nil), request.Args...)
+	if err := validateV3Command("go", args); err != nil {
+		return nil, 0, operation.Reject(err)
 	}
-	for key := range call.Input {
-		if key != "program" && key != "args" && key != "timeout_seconds" {
-			return nil, 0, fmt.Errorf("repository Go verification input %q is not registered", key)
-		}
-	}
-	program := strings.TrimSpace(toolInputString(call.Input, "program"))
-	args, err := strictV3StringArray(call.Input["args"], "args")
-	if err != nil {
-		return nil, 0, toolruntime.RejectCall(err)
-	}
-	if err := validateV3Command(program, args); err != nil {
-		return nil, 0, toolruntime.RejectCall(err)
-	}
-	if program != "go" || len(args) < 1 || args[0] != "test" {
-		return nil, 0, fmt.Errorf("repository verification sandbox permits only go test")
+	if len(args) < 1 || args[0] != "test" {
+		return nil, 0, operation.Reject(fmt.Errorf("repository verification sandbox permits only go test"))
 	}
 	if !registeredRepositoryGoTestArguments(args) {
-		return nil, 0, fmt.Errorf(
+		return nil, 0, operation.Reject(fmt.Errorf(
 			"repository verification sandbox requires one code-owned structured Go test command",
-		)
+		))
 	}
-	timeoutSeconds, err := strictRepositoryVerificationTimeout(call.Input)
-	if err != nil {
-		return nil, 0, err
+	timeout := request.Timeout
+	if timeout == 0 {
+		timeout = defaultV3CommandLimit
 	}
-	return args, time.Duration(timeoutSeconds) * time.Second, nil
+	if timeout <= 0 || timeout > maxV3CommandLimit {
+		return nil, 0, operation.Reject(fmt.Errorf(
+			"repository Go verification timeout must be between 1 and %d seconds",
+			int(maxV3CommandLimit/time.Second),
+		))
+	}
+	return args, timeout, nil
 }
 
 func registeredRepositoryGoTestArguments(args []string) bool {
@@ -115,65 +126,31 @@ func registeredRepositoryGoTestArguments(args []string) bool {
 		packageArgument != "./..." && !strings.Contains(packageArgument, "...")
 }
 
-func strictRepositoryVerificationTimeout(input map[string]any) (int, error) {
-	value, exists := input["timeout_seconds"]
-	if !exists {
-		return int(defaultV3CommandLimit / time.Second), nil
-	}
-	var seconds int
-	switch typed := value.(type) {
-	case int:
-		seconds = typed
-	case int64:
-		seconds = int(typed)
-	case float64:
-		seconds = int(typed)
-		if float64(seconds) != typed {
-			return 0, fmt.Errorf("repository Go verification timeout must be an integer")
-		}
-	case json.Number:
-		parsed, err := typed.Int64()
-		if err != nil {
-			return 0, fmt.Errorf("repository Go verification timeout must be an integer")
-		}
-		seconds = int(parsed)
-	default:
-		return 0, fmt.Errorf("repository Go verification timeout must be an integer")
-	}
-	if seconds <= 0 || seconds > int(maxV3CommandLimit/time.Second) {
-		return 0, fmt.Errorf(
-			"repository Go verification timeout must be between 1 and %d seconds",
-			int(maxV3CommandLimit/time.Second),
-		)
-	}
-	return seconds, nil
-}
-
 func runRepositoryGoSandbox(
 	ctx context.Context,
 	root string,
 	goArgs []string,
 	config repositoryGoSandboxConfig,
 	moduleView *repositoryGoModuleView,
-) (toolruntime.Result, error) {
+) (operation.Result, error) {
 	rootHandle, err := openRepositorySandboxDirectory(root, "repository root")
 	if err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	defer rootHandle.Close()
 	goRootHandle, err := openRepositorySandboxDirectory(config.GoRoot, "system Go toolchain")
 	if err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	defer goRootHandle.Close()
 	cacheHandle, err := openRepositorySandboxDirectory(moduleView.Root(), "exact Go module view")
 	if err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	defer cacheHandle.Close()
 	infoReader, infoWriter, err := os.Pipe()
 	if err != nil {
-		return toolruntime.Result{}, fmt.Errorf("create repository sandbox status pipe: %w", err)
+		return operation.Result{}, fmt.Errorf("create repository sandbox status pipe: %w", err)
 	}
 	defer infoReader.Close()
 	extraFiles := []*os.File{rootHandle, goRootHandle, cacheHandle}
@@ -190,12 +167,12 @@ func runRepositoryGoSandbox(
 	started := time.Now()
 	if err := command.Start(); err != nil {
 		_ = infoWriter.Close()
-		return toolruntime.Result{}, fmt.Errorf("start repository verification sandbox: %w", err)
+		return operation.Result{}, fmt.Errorf("start repository verification sandbox: %w", err)
 	}
 	if err := infoWriter.Close(); err != nil {
 		_ = command.Process.Kill()
 		_ = command.Wait()
-		return toolruntime.Result{}, fmt.Errorf("close repository sandbox status authority: %w", err)
+		return operation.Result{}, fmt.Errorf("close repository sandbox status authority: %w", err)
 	}
 	infoChannel := make(chan []byte, 1)
 	go func() {
@@ -209,7 +186,7 @@ func runRepositoryGoSandbox(
 		stdout.Validate("repository verification stdout"),
 		stderr.Validate("repository verification stderr"),
 	); err != nil {
-		return toolruntime.Result{}, err
+		return operation.Result{}, err
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		result := repositoryGoVerificationResult(goArgs, stdout.String(), stderr.String(), duration, runErr)
@@ -220,14 +197,14 @@ func runRepositoryGoSandbox(
 		return result, fmt.Errorf("repository Go verification canceled because step authority ended: %w", ctx.Err())
 	}
 	if len(bytes.TrimSpace(info)) == 0 || !json.Valid(bytes.TrimSpace(info)) {
-		return toolruntime.Result{}, fmt.Errorf(
+		return operation.Result{}, fmt.Errorf(
 			"repository verification sandbox failed before starting the exact Go command: %s",
 			trimForBudget(stderr.String(), 1200),
 		)
 	}
 	var exitError *exec.ExitError
 	if runErr != nil && !errors.As(runErr, &exitError) {
-		return toolruntime.Result{}, fmt.Errorf("wait for repository verification sandbox: %w", runErr)
+		return operation.Result{}, fmt.Errorf("wait for repository verification sandbox: %w", runErr)
 	}
 	result := repositoryGoVerificationResult(goArgs, stdout.String(), stderr.String(), duration, runErr)
 	if exitError != nil && exitError.ExitCode() != 1 {
@@ -245,7 +222,7 @@ func repositoryGoVerificationResult(
 	stderr string,
 	duration time.Duration,
 	runErr error,
-) toolruntime.Result {
+) operation.Result {
 	exitCode := 0
 	var exitError *exec.ExitError
 	if errors.As(runErr, &exitError) {
@@ -262,7 +239,7 @@ func repositoryGoVerificationResult(
 		warnings = []string{"command failed: " + runErr.Error()}
 	}
 	commandText := strings.Join(append([]string{"go"}, args...), " ")
-	return toolruntime.Result{
+	return operation.Result{
 		Summary:  summary,
 		Warnings: warnings,
 		Output: map[string]any{

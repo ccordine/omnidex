@@ -57,13 +57,14 @@ func loadMemoryCandidateForPromotionTx(
 	var candidate model.MemoryCandidate
 	var jobID, promotedMemoryID *int64
 	err := tx.QueryRow(ctx, `
-		SELECT id, job_id, generation, source_memory_id, candidate_kind, content,
+		SELECT id, project_id, channel_id, job_id, generation, source_memory_id, candidate_kind, content,
 		       provenance, confidence, status, promoted_memory_id, created_at, updated_at
 		FROM memory_candidates
 		WHERE id=$1
 		FOR UPDATE
 	`, candidateID).Scan(
-		&candidate.ID, &jobID, &candidate.Generation, &candidate.SourceMemoryID,
+		&candidate.ID, &candidate.Scope.ProjectID, &candidate.Scope.ChannelID,
+		&jobID, &candidate.Generation, &candidate.SourceMemoryID,
 		&candidate.CandidateKind, &candidate.Content, &candidate.Provenance,
 		&candidate.Confidence, &candidate.Status, &promotedMemoryID,
 		&candidate.CreatedAt, &candidate.UpdatedAt,
@@ -84,20 +85,30 @@ func insertPromotedMemoryChunkTx(
 	source := memoryPromotionSource(candidate, request.Tier, authority)
 	var chunk model.MemoryChunk
 	err := tx.QueryRow(ctx, `
-		INSERT INTO memory_chunks (source, kind, content, embedding)
-		VALUES ($1, $2, $3, $4::vector)
-		RETURNING id, source, kind, content, created_at
-	`, source, candidate.CandidateKind, candidate.Content, vectorLiteral(request.Embedding)).Scan(
-		&chunk.ID, &chunk.Source, &chunk.Kind, &chunk.Content, &chunk.CreatedAt,
+		INSERT INTO memory_chunks (project_id, channel_id, source, kind, content, embedding)
+		VALUES ($1, $2, $3, $4, $5, $6::vector)
+		RETURNING id, project_id, channel_id, source, kind, content, created_at
+	`, candidate.Scope.ProjectID, candidate.Scope.ChannelID, source, candidate.CandidateKind,
+		candidate.Content, vectorLiteral(request.Embedding)).Scan(
+		&chunk.ID, &chunk.Scope.ProjectID, &chunk.Scope.ChannelID,
+		&chunk.Source, &chunk.Kind, &chunk.Content, &chunk.CreatedAt,
 	)
 	if err != nil {
 		return model.MemoryChunk{}, err
 	}
-	tags := appendCleanTags(request.Tags, candidate.CandidateKind, "reviewed", "promotion:"+string(authority))
-	if candidate.Generation != nil {
-		tags = appendCleanTags(tags, fmt.Sprintf("generation:%d", *candidate.Generation))
+	tags := append([]string(nil), request.Tags...)
+	tags = append(tags, string(candidate.CandidateKind), "reviewed", "promotion:"+string(authority), "provenance:reviewed")
+	if request.Tier == model.MemoryCandidateStatusDurable {
+		tags = append(tags, model.MemoryTrustTagDurable)
+	} else {
+		tags = append(tags, model.MemoryTrustTagApproved)
 	}
-	if err := attachMemoryTaxonomyTx(ctx, tx, chunk.ID, source, candidate.CandidateKind, tags); err != nil {
+	if candidate.Generation != nil {
+		tags = append(tags, fmt.Sprintf("generation:%d", *candidate.Generation))
+	}
+	if err := attachMemoryTaxonomyTx(
+		ctx, tx, chunk.ID, candidate.CandidateKind, tags, request.Categories,
+	); err != nil {
 		return model.MemoryChunk{}, err
 	}
 	return chunk, nil
@@ -106,9 +117,10 @@ func insertPromotedMemoryChunkTx(
 func loadMemoryChunkTx(ctx context.Context, tx pgx.Tx, memoryID int64) (model.MemoryChunk, error) {
 	var chunk model.MemoryChunk
 	err := tx.QueryRow(ctx, `
-		SELECT id, source, kind, content, created_at
+		SELECT id, project_id, channel_id, source, kind, content, created_at
 		FROM memory_chunks
 		WHERE id=$1
-	`, memoryID).Scan(&chunk.ID, &chunk.Source, &chunk.Kind, &chunk.Content, &chunk.CreatedAt)
+	`, memoryID).Scan(&chunk.ID, &chunk.Scope.ProjectID, &chunk.Scope.ChannelID,
+		&chunk.Source, &chunk.Kind, &chunk.Content, &chunk.CreatedAt)
 	return chunk, err
 }

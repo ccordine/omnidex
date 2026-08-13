@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/agentstream"
 	"github.com/gryph/omnidex/internal/hostbridge"
 )
 
@@ -64,7 +65,7 @@ func newHostBridgeExternalAgentSessionWithOptions(agent, apiKey, model, codexPat
 	}, nil
 }
 
-func (s *hostBridgeExternalAgentSession) Start(ctx context.Context, job ExternalAgentJob) (<-chan AgentEvent, error) {
+func (s *hostBridgeExternalAgentSession) Start(ctx context.Context, job ExternalAgentJob) (<-chan agentstream.Event, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("host bridge external agent session is not configured")
 	}
@@ -90,20 +91,13 @@ func (s *hostBridgeExternalAgentSession) Start(ctx context.Context, job External
 		return nil, err
 	}
 
-	events := make(chan AgentEvent, 32)
+	events := make(chan agentstream.Event, 32)
 	go func() {
 		defer close(events)
 		defer body.Close()
-		readErr := hostbridge.ReadExternalAgentEvents(body, func(stream hostbridge.AgentStreamEvent) error {
-			event := AgentEvent{
-				SessionID: job.SessionID,
-				Agent:     firstNonEmpty(stream.Agent, s.agent),
-				Type:      AgentEventType(stream.Type),
-				Message:   stream.Message,
-				Command:   stream.Command,
-				Files:     stream.Files,
-				Evidence:  stream.Evidence,
-				Raw:       stream.Raw,
+		readErr := hostbridge.ReadExternalAgentEvents(body, func(event agentstream.Event) error {
+			if event.SessionID == "" {
+				event.SessionID = job.SessionID
 			}
 			select {
 			case events <- event:
@@ -113,10 +107,10 @@ func (s *hostBridgeExternalAgentSession) Start(ctx context.Context, job External
 			}
 		})
 		if readErr != nil && ctx.Err() == nil {
-			events <- AgentEvent{
+			events <- agentstream.Event{
 				SessionID: job.SessionID,
 				Agent:     s.agent,
-				Type:      AgentEventError,
+				Type:      agentstream.EventError,
 				Message:   fmt.Sprintf("read host bridge external agent stream: %v", readErr),
 			}
 		}

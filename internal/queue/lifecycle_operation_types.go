@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -71,6 +72,14 @@ type CompleteStepCommand struct {
 	Output       string                     `json:"output"`
 	ContextKey   string                     `json:"context_key"`
 	ContextValue string                     `json:"context_value"`
+}
+
+// CompleteStepEvidenceCommand binds the complete objective citation set to the
+// same immutable lifecycle operation that completes the step. Objective
+// citations are not writable through the generic evidence sidecar.
+type CompleteStepEvidenceCommand struct {
+	CompleteStepCommand
+	Evidence []evidence.Record `json:"evidence"`
 }
 
 type FailStepCommand struct {

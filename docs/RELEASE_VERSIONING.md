@@ -29,7 +29,7 @@ Charmander replaces the broad, self-confusing coding agent with a server-owned a
 5. Exact failures can correct only one declared generated owner while all other accepted nodes remain intact.
 6. Completion is code-authoritative and requires exact workspace reconciliation plus current successful tests.
 
-The initial unattended three-application baseline passes; its exact measurements and explicit limits are in [CHARMANDER_PROOF.md](CHARMANDER_PROOF.md). This proves the three registered Go CLI shapes, not arbitrary-project autonomy. See [`internal/worker/RUNTIME.md`](../internal/worker/RUNTIME.md) for the execution contract. The Venusaur planner remains documented in [SCRUM_PLANNER.md](SCRUM_PLANNER.md).
+The initial unattended three-application baseline passes; its exact measurements and explicit limits are in [CHARMANDER_PROOF.md](CHARMANDER_PROOF.md). This proves the three registered Go CLI shapes, not arbitrary-project autonomy. See [`internal/worker/RUNTIME.md`](../internal/worker/RUNTIME.md) for the execution contract. The rejected broad planner runtime is not a production compatibility path.
 
 ## Charmeleon (`v0.5.0`) theme
 

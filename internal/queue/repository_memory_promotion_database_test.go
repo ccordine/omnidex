@@ -17,7 +17,8 @@ func TestPostgresCurrentMemoryPromotionIsAtomicAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate := writePromotionTestCandidate(t, ctx, repository, job.ID, job.CurrentGeneration, marker)
+	scope := createMemoryScopeForTest(t, repository)
+	candidate := writePromotionTestCandidate(t, ctx, repository, scope, job.ID, job.CurrentGeneration, marker)
 	request := MemoryCandidatePromotion{
 		Candidate: candidate,
 		Tier:      model.MemoryCandidateStatusDurable,
@@ -61,7 +62,8 @@ func TestPostgresCurrentMemoryPromotionRejectsRetiredGenerationWithoutPublishing
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate := writePromotionTestCandidate(t, ctx, repository, job.ID, job.CurrentGeneration, marker)
+	scope := createMemoryScopeForTest(t, repository)
+	candidate := writePromotionTestCandidate(t, ctx, repository, scope, job.ID, job.CurrentGeneration, marker)
 	if _, err := repository.ReplanJob(ctx, testReplanCommand(t, job.ID, "retire-candidate", "Retire the memory candidate generation.")); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +95,8 @@ func TestPostgresMemoryPromotionRollsBackChunkAndTagsWhenCandidateUpdateFails(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate := writePromotionTestCandidate(t, ctx, repository, job.ID, job.CurrentGeneration, marker)
+	scope := createMemoryScopeForTest(t, repository)
+	candidate := writePromotionTestCandidate(t, ctx, repository, scope, job.ID, job.CurrentGeneration, marker)
 	constraint := fmt.Sprintf("reject_promotion_%d", time.Now().UnixNano())
 	if _, err := pool.Exec(ctx, fmt.Sprintf(`
 		ALTER TABLE memory_candidates ADD CONSTRAINT %s
@@ -123,7 +126,9 @@ func TestPostgresMemoryPromotionRollsBackChunkAndTagsWhenCandidateUpdateFails(t 
 func TestPostgresGlobalMemoryPromotionRequiresExplicitGlobalPath(t *testing.T) {
 	repository, pool, ctx := replanTestRepository(t)
 	marker := fmt.Sprintf("global-memory-%d", time.Now().UnixNano())
+	scope := createMemoryScopeForTest(t, repository)
 	id, err := repository.WriteMemoryCandidate(ctx, model.MemoryCandidate{
+		Scope:         scope,
 		CandidateKind: model.MemoryKindReference,
 		Content:       marker,
 		Provenance:    []byte(`{"scope_tags":["global:test"]}`),

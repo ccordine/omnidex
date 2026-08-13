@@ -45,12 +45,12 @@ func TestCLIProductionFilesStayBelowGodFileThreshold(t *testing.T) {
 func TestSplitCLICommandFilesStayFocused(t *testing.T) {
 	for _, path := range []string{
 		"version_command.go",
-		"enqueue_command.go",
 		"chat_command.go",
 		"chat_session.go",
 		"chat_input.go",
 		"chat_core_turn.go",
 		"chat_active_turn.go",
+		"chat_active_control.go",
 		"chat_repl.go",
 		"job_query_commands.go",
 		"memory_commands.go",
@@ -127,6 +127,66 @@ func TestCLIHasNoHeuristicResearchSidecar(t *testing.T) {
 	}
 }
 
+func TestFreeFormCLIHasNoRejectedAgentOrHostSidecarControls(t *testing.T) {
+	for _, path := range []string{
+		"enqueue_command.go",
+		"chat_runtime_settings.go",
+		"host_env.go",
+		"host_capability_memory.go",
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("retired free-form sidecar remains: %s", path)
+		}
+	}
+	checks := map[string][]string{
+		"chat_command.go": {
+			"registerCLIAgentRuntimeFlags", "cliAgentRuntimeConfigFromFlags", "persistHostCapabilityMemory",
+			"discoverHostEnvironmentSnapshot", "applyHostEnvironmentMetadata", "applyHostTemporalMetadata",
+		},
+		"chat_core_turn.go": {
+			"host_env_", "host_clock_", "parent_job_id", "instance_agent_config",
+		},
+		"chat_repl.go": {
+			`case "agent":`, `case "model":`, `case "set":`, `case "settings":`,
+			"/agent", "/model", "/set", "/settings",
+		},
+	}
+	for path, forbidden := range checks {
+		source := readCLISource(t, path)
+		for _, token := range forbidden {
+			if strings.Contains(source, token) {
+				t.Errorf("free-form CLI source %s retains rejected control %q", path, token)
+			}
+		}
+	}
+	help := readCLISource(t, "cli_help.go")
+	for _, token := range []string{"--search-query", "chat [--session id] [--agent", "enqueue ["} {
+		if strings.Contains(help, token) {
+			t.Errorf("CLI help advertises rejected free-form control %q", token)
+		}
+	}
+	mainSource := readCLISource(t, "main.go")
+	for _, token := range []string{`case "enqueue":`, "runEnqueue(", `case "continue":`, "runContinueJob("} {
+		if strings.Contains(mainSource, token) {
+			t.Errorf("CLI entrypoint retains removed generic enqueue control %q", token)
+		}
+	}
+	chatSource := readCLISource(t, "chat_command.go")
+	if !strings.Contains(chatSource, "ensureChatChannel(") {
+		t.Error("omni chat does not establish its server-authoritative channel")
+	}
+	turnSource := readCLISource(t, "chat_core_turn.go")
+	if !strings.Contains(turnSource, ".PostChannelMessage(") || strings.Contains(turnSource, ".Enqueue(") {
+		t.Error("omni chat must post exact turns through the typed channel client only")
+	}
+	productionSources := []string{"chat_core_turn.go", "coding_run_command.go"}
+	for _, path := range productionSources {
+		if source := readCLISource(t, path); strings.Contains(source, ".Enqueue(") {
+			t.Errorf("CLI source %s retains generic job enqueue authority", path)
+		}
+	}
+}
+
 func TestCancelCommandRequiresExplicitReasonAndOperationIdentity(t *testing.T) {
 	source := readCLISource(t, "job_control_commands.go")
 	for _, required := range []string{
@@ -175,9 +235,7 @@ func TestCLIHasNoWriteOnlyAgentControls(t *testing.T) {
 
 	paths := []string{
 		"chat_command.go",
-		"enqueue_command.go",
 		"chat_repl.go",
-		"chat_runtime_settings.go",
 		"chat_ui.go",
 		"cli_help.go",
 	}

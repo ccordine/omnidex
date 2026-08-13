@@ -3,6 +3,8 @@ package api
 import (
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/agentstream"
 )
 
 func TestDbScrumCardToAPIPreservesSyncMarkers(t *testing.T) {
@@ -41,15 +43,18 @@ func TestReconcileScrumCardJobStateRejectsActiveCardWithoutJobID(t *testing.T) {
 	}
 }
 
-func TestSyncRunningJobChannelChatAdvancesMarkerOnMerge(t *testing.T) {
-	line := `{"agent":"cursor","type":"message","message":"{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]}}"}`
-	card := ScrumCard{Chat: []ScrumChatMessage{{Role: "assistant", Content: "Hello", CreatedAt: "2026-05-29T10:00:00Z"}}}
+func TestSyncRunningJobChannelChatAdvancesTypedCursorOnMerge(t *testing.T) {
+	line := scrumAgentEventLine(t, agentstream.EventMessage, "Hello")
 	job := modelJobDetailsWithOutput(line)
-	updated, ok := syncRunningJobChannelChat(card, job)
+	card := scrumSyncTestCard(job.Job.ID, ScrumCard{Chat: []ScrumChatMessage{{Role: "assistant", Content: "Hello", CreatedAt: "2026-05-29T10:00:00Z"}}})
+	updated, ok, err := syncRunningJobChannelChat(card, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("expected sync")
 	}
-	if syncedAgentStreamLenFromChat(updated.Chat) != len(line) {
-		t.Fatalf("stream marker not advanced: chat=%+v", updated.Chat)
+	if updated.AgentStreamChatCursor != int64(len(line)) {
+		t.Fatalf("stream cursor not advanced: card=%+v", updated)
 	}
 }

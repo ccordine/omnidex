@@ -56,7 +56,14 @@ func (fixture *fixture) refresh(t *testing.T) {
 	if err := command.Run(); err != nil {
 		runGit(t, fixture.root, "-c", "user.name=Omnidex Test", "-c", "user.email=test@example.com", "commit", "-m", "fixture")
 	}
-	snapshot, err := repositoryfacts.BuildGitSnapshot(context.Background(), fixture.root, repositoryfacts.SnapshotOptions{})
+	snapshot, analysis := exactFixtureFacts(t, fixture.root)
+	fixture.snapshot = snapshot
+	fixture.analysis = analysis
+}
+
+func exactFixtureFacts(t *testing.T, root string) (repositoryfacts.Snapshot, repositoryfacts.Analysis) {
+	t.Helper()
+	snapshot, err := repositoryfacts.BuildGitSnapshot(context.Background(), root, repositoryfacts.SnapshotOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +71,7 @@ func (fixture *fixture) refresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture.snapshot = snapshot
-	fixture.analysis = analysis
+	return snapshot, analysis
 }
 
 func (fixture *fixture) contract(t *testing.T, names ...string) repositoryfacts.ChangeContract {

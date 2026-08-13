@@ -97,9 +97,9 @@ func (c *cliAgentRuntimeConfig) SetActiveAgentModel(model string) error {
 	case agentconfig.SystemCodex:
 		c.values["codex_model"] = model
 	case "":
-		return fmt.Errorf("active agent is inherited from core defaults; run /agent omnidex, /agent cursor, or /agent codex before /model")
+		return fmt.Errorf("--agent-model requires explicit --agent cursor or --agent codex")
 	case agentconfig.SystemOmnidex:
-		return fmt.Errorf("Omnidex model routing is role-based; use /model for native model routing or /set model_response <model>")
+		return fmt.Errorf("Omnidex has no generic model alias; configure exact semantic station models through model_config")
 	default:
 		return fmt.Errorf("unsupported active agent %q", c.AgentSystemOverride())
 	}

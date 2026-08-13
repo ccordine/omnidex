@@ -41,6 +41,27 @@ type exactPreparedResponseWire struct {
 // exact captured bytes. It returns the derived partial receipt alongside any
 // provider-contract failure so callers can journal the evidence durably.
 func DecodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse, error) {
+	return DecodeExactPreparedResponseForProtocol(
+		ExactPreparedProtocolStructuredV1, status, body,
+	)
+}
+
+// DecodeExactPreparedResponseForProtocol derives one protocol-specific result
+// from the exact provider wrapper. Both protocols preserve the provider's
+// exact JSON-string value; RawTextV1 permits that value to be source text
+// because its request carries no structured-output format.
+func DecodeExactPreparedResponseForProtocol(
+	protocol ExactPreparedProtocol,
+	status int,
+	body []byte,
+) (ExactPreparedResponse, error) {
+	if err := protocol.Validate(); err != nil {
+		return ExactPreparedResponse{}, err
+	}
+	return decodeExactPreparedResponse(status, body)
+}
+
+func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse, error) {
 	if status < 100 || status > 599 {
 		return ExactPreparedResponse{}, fmt.Errorf("exact provider HTTP status is invalid")
 	}
@@ -103,7 +124,8 @@ func ValidateExactPreparedResponseProjection(generation PreparedGeneration) erro
 		generation.ProviderResponseDisposition == ProviderResponseBodyReadError {
 		return nil
 	}
-	derived, _ := DecodeExactPreparedResponse(
+	derived, _ := DecodeExactPreparedResponseForProtocol(
+		generation.Protocol,
 		generation.ProviderHTTPStatus, generation.ProviderResponseCapture,
 	)
 	if derived.Disposition != generation.ProviderResponseDisposition ||

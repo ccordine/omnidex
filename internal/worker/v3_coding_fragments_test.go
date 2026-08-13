@@ -113,8 +113,8 @@ func TestTypeScriptFragmentWorkerCorrectsOnlyTheRejectedFunction(t *testing.T) {
 	if !strings.Contains(prompts[1], "export function apply") {
 		t.Fatalf("correction did not receive the exact rejected declaration:\n%s", prompts[1])
 	}
-	if strings.Contains(prompts[1], "```typescript") {
-		t.Fatalf("correction received transport markup instead of the normalized declaration:\n%s", prompts[1])
+	if !strings.Contains(prompts[1], "```typescript") {
+		t.Fatalf("correction did not preserve the exact rejected fenced candidate:\n%s", prompts[1])
 	}
 	if strings.Contains(prompts[1], "Return the input plus one") || strings.Contains(prompts[1], "LOCAL_BEHAVIOR") {
 		t.Fatalf("correction replayed the superseded initial behavior:\n%s", prompts[1])
@@ -124,7 +124,7 @@ func TestTypeScriptFragmentWorkerCorrectsOnlyTheRejectedFunction(t *testing.T) {
 	}
 }
 
-func TestTypeScriptFragmentWorkerNormalizesOnlyOneExactCodeEnvelope(t *testing.T) {
+func TestTypeScriptFragmentWorkerRejectsMarkdownCodeEnvelope(t *testing.T) {
 	job := directCodingTypeScriptFragmentJob{block: assemblyline.TypeScriptBlock{
 		ID: "calculation.apply", Signature: "function apply(value: number): number",
 		Contract: "Return the input plus one.", API: "function apply(value: number): number",
@@ -135,12 +135,8 @@ func TestTypeScriptFragmentWorkerNormalizesOnlyOneExactCodeEnvelope(t *testing.T
 			return "```typescript\nfunction apply(value: number): number { return value + 1; }\n```", nil
 		}),
 	}
-	source, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if source != "function apply(value: number): number { return value + 1; }" {
-		t.Fatalf("source=%q", source)
+	if _, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job); err == nil {
+		t.Fatal("Markdown-fenced TypeScript was accepted as one exact declaration")
 	}
 }
 
@@ -281,21 +277,6 @@ func TestTypeScriptFragmentWorkerReportsOnlyEnvelopeMeasurements(t *testing.T) {
 		if strings.Contains(rendered, secret) {
 			t.Fatalf("worker status exposed envelope contents %q: %s", secret, rendered)
 		}
-	}
-}
-
-func TestTypeScriptCodeEnvelopeRejectsExpandedOrMalformedTransport(t *testing.T) {
-	for name, raw := range map[string]string{
-		"commentary": "Here it is:\n```typescript\nfunction okay(): void {}\n```",
-		"trailing":   "```typescript\nfunction okay(): void {}\n```\nextra",
-		"nested":     "```typescript\n```ts\nfunction okay(): void {}\n```\n```",
-		"language":   "```javascript\nfunction okay(): void {}\n```",
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := normalizeDirectCodingTypeScriptResponse(raw); err == nil {
-				t.Fatalf("accepted malformed transport %q", raw)
-			}
-		})
 	}
 }
 

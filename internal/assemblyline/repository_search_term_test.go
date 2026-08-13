@@ -58,7 +58,7 @@ func TestRepositorySearchTermRejectsMalformedInputAndOutput(t *testing.T) {
 	}
 	for name, concept := range map[string]string{
 		"empty":        "",
-		"whitespace":   " concept ",
+		"whitespace":   "   \n",
 		"nul":          "delivery\x00timing",
 		"invalid_utf8": invalidUTF8,
 		"oversized":    strings.Repeat("x", maxRepositorySearchConceptBytes+1),
@@ -68,6 +68,15 @@ func TestRepositorySearchTermRejectsMalformedInputAndOutput(t *testing.T) {
 				t.Fatalf("malformed concept %q was accepted", name)
 			}
 		})
+	}
+	exact := "  explain the owner  \n"
+	job, err := NewRepositorySearchTermJob(RepositorySearchTermInput{UnresolvedConcept: exact})
+	if err != nil {
+		t.Fatalf("exact untrimmed user authority was rejected: %v", err)
+	}
+	prompt, _, err := RenderPortableJob(job)
+	if err != nil || !strings.Contains(prompt, exact) {
+		t.Fatalf("exact user authority was rewritten: prompt=%q error=%v", prompt, err)
 	}
 
 	input := RepositorySearchTermInput{UnresolvedConcept: "Find invitation timing behavior"}

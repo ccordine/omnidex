@@ -9,24 +9,10 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 type startupTestLLM struct{}
-
-func (startupTestLLM) Generate(context.Context, string, string) (string, error) {
-	return "", nil
-}
-
-func (startupTestLLM) PrepareContextModel(context.Context, string, string) (llm.PreparedModel, error) {
-	return llm.PreparedModel{}, nil
-}
-
-func (startupTestLLM) GeneratePrepared(context.Context, llm.PreparedModel) (string, error) {
-	return "", nil
-}
-
-func (startupTestLLM) CleanupPreparedModel(llm.PreparedModel) {}
 
 func (startupTestLLM) RequireExactPreparedContract() error { return nil }
 
@@ -43,6 +29,14 @@ func (startupTestLLM) GeneratePreparedExact(
 	return llm.PreparedGeneration{}, nil
 }
 
+func (startupTestLLM) DiscoverProviderIdentityEvidence(
+	context.Context,
+	llm.ProviderIdentitySelection,
+	string,
+) (llm.ObservedProviderIdentity, error) {
+	return llm.ObservedProviderIdentity{}, nil
+}
+
 func (startupTestLLM) Embedding(context.Context, string) ([]float64, error) {
 	return nil, nil
 }
@@ -52,40 +46,29 @@ func validWorkerOptions() Options {
 		WorkerCount:            2,
 		FragmentConcurrency:    1,
 		PollInterval:           time.Second,
-		RetrievalLimit:         8,
-		ContextBudget:          4000,
 		InferenceContextTokens: 32768,
 		EmbeddingProvider:      "ollama",
 		EmbeddingModel:         "nomic-embed-text",
 		Models: ModelRouting{
-			Default:    "default-model",
-			Fast:       "fast-model",
-			Glue:       "glue-model",
-			Reasoning:  "reasoning-model",
-			Tagging:    "tagging-model",
-			Plan:       "plan-model",
-			Analyze:    "analyze-model",
-			Response:   "response-model",
-			Search:     "search-model",
-			Memory:     "memory-model",
-			Specialist: map[string]string{"planner": "planner-model"},
+			Stations: validStationModels(),
 		},
-		Workspace: WorkspaceSettings{
-			MaxFiles:      5000,
-			ContextBudget: 6000,
-		},
-		SkillsRoot: "skills",
-		Logger:     log.New(io.Discard, "", 0),
+		Workspace: WorkspaceSettings{},
+		Logger:    log.New(io.Discard, "", 0),
 	}
 }
 
-func TestValidateWorkerOptionsRejectsMissingModelRole(t *testing.T) {
-	opts := validWorkerOptions()
-	opts.Models.Search = ""
+func validStationModels() map[station.ID]string {
+	models := make(map[station.ID]string, len(station.All()))
+	for _, id := range station.All() {
+		models[id] = "station-model"
+	}
+	return models
+}
 
-	err := validateWorkerOptions(opts)
-	if err == nil || !strings.Contains(err.Error(), "models.search") {
-		t.Fatalf("validateWorkerOptions() error=%v, want models.search failure", err)
+func TestValidateWorkerOptionsDoesNotRequireBroadModelRoles(t *testing.T) {
+	opts := validWorkerOptions()
+	if err := validateWorkerOptions(opts); err != nil {
+		t.Fatalf("validateWorkerOptions() rejected station-only routing: %v", err)
 	}
 }
 
@@ -98,13 +81,10 @@ func TestValidateWorkerOptionsRejectsInvalidRuntimeBounds(t *testing.T) {
 		{name: "worker count", mutate: func(opts *Options) { opts.WorkerCount = 0 }, message: "worker_count"},
 		{name: "fragment concurrency", mutate: func(opts *Options) { opts.FragmentConcurrency = 0 }, message: "fragment_concurrency"},
 		{name: "poll interval", mutate: func(opts *Options) { opts.PollInterval = 0 }, message: "poll_interval"},
-		{name: "retrieval limit", mutate: func(opts *Options) { opts.RetrievalLimit = 0 }, message: "retrieval_limit"},
-		{name: "context budget", mutate: func(opts *Options) { opts.ContextBudget = 0 }, message: "context_budget"},
 		{name: "inference context", mutate: func(opts *Options) { opts.InferenceContextTokens = 4095 }, message: "inference_context_tokens"},
 		{name: "embedding provider", mutate: func(opts *Options) { opts.EmbeddingProvider = "" }, message: "embedding_provider"},
 		{name: "embedding model", mutate: func(opts *Options) { opts.EmbeddingModel = "" }, message: "embedding_model"},
-		{name: "workspace files", mutate: func(opts *Options) { opts.Workspace.MaxFiles = 0 }, message: "workspace.max_files"},
-		{name: "workspace budget", mutate: func(opts *Options) { opts.Workspace.ContextBudget = 0 }, message: "workspace.context_budget"},
+		{name: "workspace root", mutate: func(opts *Options) { opts.Workspace.Root = "relative" }, message: "workspace.root"},
 		{name: "logger", mutate: func(opts *Options) { opts.Logger = nil }, message: "logger"},
 	}
 
@@ -120,18 +100,21 @@ func TestValidateWorkerOptionsRejectsInvalidRuntimeBounds(t *testing.T) {
 	}
 }
 
-func TestNewRejectsMissingSkillRegistry(t *testing.T) {
+func TestValidateWorkerOptionsRejectsPersonaShapedStation(t *testing.T) {
 	opts := validWorkerOptions()
-	opts.SkillsRoot = t.TempDir() + "/missing"
+	opts.Models.Stations = map[station.ID]string{"planner_specialist": "forbidden"}
 
-	service, err := New(&queue.Repository{}, startupTestLLM{}, nil, opts)
-	if err == nil {
-		t.Fatal("New() error=nil, want missing skills failure")
+	err := validateWorkerOptions(opts)
+	if err == nil || !strings.Contains(err.Error(), "unregistered semantic station") {
+		t.Fatalf("validateWorkerOptions() error=%v, want station registry failure", err)
 	}
-	if service != nil {
-		t.Fatal("New() returned a service after skill registry failure")
-	}
-	if !strings.Contains(err.Error(), "load specialist registry") {
-		t.Fatalf("New() error=%v, want specialist registry context", err)
+}
+
+func TestValidateWorkerOptionsAllowsMissingUnreachedStation(t *testing.T) {
+	opts := validWorkerOptions()
+	delete(opts.Models.Stations, station.GroundedAnswer)
+
+	if err := validateWorkerOptions(opts); err != nil {
+		t.Fatalf("unreached station was eagerly required: %v", err)
 	}
 }

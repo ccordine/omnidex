@@ -146,6 +146,12 @@ func (specification ApplicationSpecification) Validate() error {
 		if strings.TrimSpace(artifact.Token) == "" || strings.TrimSpace(string(artifact.Disposition)) == "" {
 			return fmt.Errorf("artifact directive %d is incomplete", index)
 		}
+		switch artifact.Disposition {
+		case ArtifactProtect, ArtifactRequire, ArtifactReference, ArtifactForbid,
+			ArtifactAbsenceCandidate:
+		default:
+			return fmt.Errorf("artifact directive %d has unsupported disposition %q", index, artifact.Disposition)
+		}
 	}
 	return nil
 }

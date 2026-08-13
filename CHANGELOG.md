@@ -86,7 +86,7 @@ Venusaur is the **augmented planner release**: research and architect at project
 
 ### Docs
 
-- [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md) — planner loop, modes, API, example sessions.
+- The historical planner loop and its direct-inference API were retired by the Charmeleon authority cutover.
 
 ## v0.2.0 - Ivysaur
 

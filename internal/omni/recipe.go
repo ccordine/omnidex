@@ -3,9 +3,9 @@ package omni
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -28,28 +28,89 @@ type RecipeObjective struct {
 	Packages    []string `json:"packages,omitempty"`
 }
 
-func LoadRecipes(root string) ([]Recipe, error) {
+const MaxRecipePageSize = 100
+
+type RecipePage struct {
+	Recipes []Recipe `json:"recipes"`
+	Offset  int      `json:"offset"`
+	HasMore bool     `json:"has_more"`
+}
+
+func LoadRecipePage(root string, limit, offset int) (RecipePage, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
-		return nil, fmt.Errorf("recipe directory is required")
+		return RecipePage{}, fmt.Errorf("recipe directory is required")
 	}
-	entries, err := os.ReadDir(root)
+	if limit < 1 || limit > MaxRecipePageSize {
+		return RecipePage{}, fmt.Errorf("recipe page limit must be between 1 and %d", MaxRecipePageSize)
+	}
+	if offset < 0 {
+		return RecipePage{}, fmt.Errorf("recipe page offset must be non-negative")
+	}
+	directory, err := os.Open(root)
 	if err != nil {
-		return nil, fmt.Errorf("read recipe directory %s: %w", root, err)
+		return RecipePage{}, fmt.Errorf("open recipe directory %s: %w", root, err)
 	}
-	recipes := make([]Recipe, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
+	defer directory.Close()
+	recipes := make([]Recipe, 0, limit+1)
+	matched := 0
+	for len(recipes) < limit+1 {
+		entries, readErr := directory.ReadDir(64)
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+			if matched < offset {
+				matched++
+				continue
+			}
+			recipe, err := LoadRecipeFile(filepath.Join(root, entry.Name()))
+			if err != nil {
+				return RecipePage{}, err
+			}
+			recipes = append(recipes, recipe)
+			matched++
+			if len(recipes) == limit+1 {
+				break
+			}
 		}
-		recipe, err := LoadRecipeFile(filepath.Join(root, entry.Name()))
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return RecipePage{}, fmt.Errorf("read recipe directory %s: %w", root, readErr)
+		}
+	}
+	hasMore := len(recipes) > limit
+	if hasMore {
+		recipes = recipes[:limit]
+	}
+	return RecipePage{Recipes: recipes, Offset: offset, HasMore: hasMore}, nil
+}
+
+func LoadRecipeByID(root, id string) (Recipe, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Recipe{}, fmt.Errorf("recipe id is required")
+	}
+	for offset := 0; ; {
+		page, err := LoadRecipePage(root, MaxRecipePageSize, offset)
 		if err != nil {
-			return nil, err
+			return Recipe{}, err
 		}
-		recipes = append(recipes, recipe)
+		for _, recipe := range page.Recipes {
+			if recipe.ID == id {
+				return recipe, nil
+			}
+		}
+		if !page.HasMore {
+			return Recipe{}, fmt.Errorf("recipe %q was not found", id)
+		}
+		if len(page.Recipes) == 0 {
+			return Recipe{}, fmt.Errorf("recipe pagination reported more entries without returning an entry")
+		}
+		offset += len(page.Recipes)
 	}
-	sort.Slice(recipes, func(i, j int) bool { return recipes[i].ID < recipes[j].ID })
-	return recipes, nil
 }
 
 func LoadRecipeFile(path string) (Recipe, error) {

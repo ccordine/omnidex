@@ -18,9 +18,9 @@ func (r *Repository) UpdateProjectSetting(ctx context.Context, projectID int64, 
 	if key == "" {
 		return fmt.Errorf("project setting key is required")
 	}
-	for _, removed := range removedProjectPlanningSettingKeys {
+	for _, removed := range removedProjectSettingKeys {
 		if key == removed {
-			return fmt.Errorf("project setting %q was removed; use the PostgreSQL project planning API", key)
+			return fmt.Errorf("project setting %q was removed and has no compatibility path", key)
 		}
 	}
 	var decoded any

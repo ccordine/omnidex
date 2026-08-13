@@ -77,7 +77,7 @@ type directCodingWorkflowDriver interface {
 	Phase(phase directCodingPhase, detail string)
 	Assemble() (directCodingAssembly, error)
 	Delete(path string) (bool, error)
-	Generate(task directCodingFileTask) (bool, error)
+	MaterializeTask(task directCodingFileTask) (bool, error)
 	Verify() (directCodingVerification, error)
 	Complete(verification directCodingVerification) (string, error)
 }
@@ -107,7 +107,7 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 		}
 	}
 	for _, task := range assembly.Files {
-		changed, generateErr := driver.Generate(task)
+		changed, generateErr := driver.MaterializeTask(task)
 		if generateErr != nil {
 			return failDirectCodingWorkflow(driver, "generate "+task.Path, generateErr)
 		}

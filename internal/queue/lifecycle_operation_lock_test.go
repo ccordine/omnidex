@@ -9,7 +9,7 @@ import (
 func TestLifecycleMutationsUseOneDeadlockSafeAuthorityOrder(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct{ file, function string }{
-		{"repository_steps.go", "func (r *Repository) CompleteStep"},
+		{"repository_steps.go", "func (r *Repository) completeStep"},
 		{"repository_steps.go", "func (r *Repository) FailStep"},
 	} {
 		t.Run(testCase.function, func(t *testing.T) {

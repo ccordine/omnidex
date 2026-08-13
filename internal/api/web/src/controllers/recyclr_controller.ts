@@ -133,7 +133,6 @@ export default class RecyclrController extends Controller<HTMLElement> {
       "metrics-glance": "omni:metrics-glance",
       "scrum-card-updated": "omni:scrum-card-updated",
       "scrum-board-refresh": "omni:scrum-refresh",
-      "project-planning-updated": "omni:project-planning-updated",
       "job-progress": "omni:job-progress",
       "ai-control-updated": "omni:ai-control-updated",
     };

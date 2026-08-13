@@ -1,6 +1,10 @@
 package api
 
-import "testing"
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
 
 func TestPlaceScrumCardMovesAcrossColumns(t *testing.T) {
 	board := ScrumBoard{
@@ -51,5 +55,24 @@ func TestPlaceScrumCardReordersWithinColumn(t *testing.T) {
 	backlog := columnCards(&board, "backlog", "")
 	if len(backlog) != 3 || backlog[0].ID != "c" || backlog[1].ID != "a" || backlog[2].ID != "b" {
 		t.Fatalf("backlog order=%#v", backlog)
+	}
+}
+
+func TestPlaceScrumCardRejectsUnknownBeforeCard(t *testing.T) {
+	t.Parallel()
+	board := ScrumBoard{
+		Columns: []string{"backlog", "ready"},
+		Cards: []ScrumCard{
+			{ID: "a", Column: "backlog"},
+			{ID: "b", Column: "ready"},
+		},
+	}
+	before := append([]ScrumCard(nil), board.Cards...)
+	_, changed, err := placeScrumCard(&board, "a", "ready", "missing")
+	if err == nil || !strings.Contains(err.Error(), `before card "missing" was not found`) {
+		t.Fatalf("error=%v", err)
+	}
+	if changed != nil || !reflect.DeepEqual(board.Cards, before) {
+		t.Fatalf("failed placement changed board: %#v", board.Cards)
 	}
 }

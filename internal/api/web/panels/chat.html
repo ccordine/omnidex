@@ -7,16 +7,26 @@
           <div class="flex flex-wrap items-center gap-2">
             <label class="flex items-center gap-2 text-xs text-zinc-500">
               <span class="hidden sm:inline" data-i18n="panel.chat.channel">Channel</span>
-              <select data-chat-target="channelSelect" data-action="change->chat#selectChannel" class="max-w-[14rem] rounded-md border border-white/10 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
-                <option value="" data-i18n="panel.chat.agentPipeline">Agent pipeline</option>
+              <select data-chat-target="channelSelect" data-recyclr-sink="channel-options" data-action="change->chat#selectChannel" class="max-w-[14rem] rounded-md border border-white/10 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
+                <option value="" disabled selected data-i18n="panel.chat.createChannel">Create user channel</option>
               </select>
             </label>
+            <span data-recyclr-sink="channel-options-pagination"></span>
             <button type="button" data-action="chat#createChannel" class="rounded-md border border-white/10 px-2.5 py-1.5 text-xs font-semibold text-zinc-200 transition hover:border-cyan-300/40 hover:bg-cyan-300/10" data-i18n-title="panel.chat.createChannel" title="Create user channel">+</button>
             <span data-chat-target="liveBadge" class="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-medium text-amber-100" data-i18n="status.idle">idle</span>
           </div>
         </header>
 
-        <div data-chat-target="messages" data-recyclr-sink="messages" class="scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3 md:px-4"></div>
+        <div data-chat-target="messages" id="channel-transcript" aria-live="polite" aria-busy="false" class="scrollbar relative min-h-0 flex-1 overflow-y-auto px-3 py-3 md:px-4">
+          <div data-recyclr-sink="channel-transcript-pagination" class="mb-3 flex justify-center"></div>
+          <div id="channel-transcript-messages" data-recyclr-sink="channel-transcript-messages" class="space-y-1.5">
+            <p role="status" class="rounded-md border border-dashed border-white/10 px-4 py-8 text-center text-sm text-zinc-500">Select or create a channel to load its transcript.</p>
+          </div>
+          <div data-chat-target="transcriptLoading" role="status" aria-live="polite" class="hidden py-3 text-center text-xs font-medium text-cyan-200">
+            <span class="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-300" aria-hidden="true"></span>
+            Loading transcript…
+          </div>
+        </div>
 
         <form data-action="submit->chat#submit keydown->chat#composerKeydown" class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl md:px-4">
           <div class="rounded-md border border-white/10 bg-zinc-900/90 p-2">

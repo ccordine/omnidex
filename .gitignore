@@ -16,6 +16,12 @@ coverage.out
 *.cover
 *.prof
 .agent-cache/
+.codex-ledger-fixture.*/
+.migration-manifest-*/
+.tmp-ledger-cascade.*/
+/.tmp-go-audit-cache/
+/core
+/go.mod.orig
 
 # Runtime state and logs
 .omni/

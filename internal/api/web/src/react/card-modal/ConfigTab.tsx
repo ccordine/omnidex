@@ -51,58 +51,25 @@ function compact(values: Record<string, string>) {
 export function ConfigTab({ context, projectID, runMutation, onCardUpdated }: CardModalChildProps) {
   const card = context.card;
   const modelFields = context.model_fields ?? [];
-  const agentFields = context.agent_fields ?? [];
   const [modelValues, setModelValues] = useState<Record<string, string>>({});
-  const [agentValues, setAgentValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setModelValues(initialValues(modelFields, context.model_overrides));
-    setAgentValues(initialValues(agentFields, context.agent_overrides));
-  }, [card.id, card.updated_at, context.model_overrides, context.agent_overrides]);
+  }, [card.id, card.updated_at, context.model_overrides]);
 
   async function saveModel(values = modelValues) {
     const updated = await runMutation("Saving model settings", () => patchScrumCard(card.id, { model_config: compact(values) }, projectID));
     if (updated) onCardUpdated(updated, { reloadContext: true });
   }
 
-  async function saveAgent(values = agentValues) {
-    const updated = await runMutation("Saving agent settings", () => patchScrumCard(card.id, { agent_config: compact(values) }, projectID));
-    if (updated) onCardUpdated(updated, { reloadContext: true });
-  }
-
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4">
       <Panel title="Model Overrides" aside={<span className="text-xs text-zinc-500">{context.model_source || "default"}</span>}>
         <div className="space-y-3">
           <ConfigFields fields={modelFields} values={modelValues} onChange={(key, value) => setModelValues((current) => ({ ...current, [key]: value }))} />
           <div className="flex gap-2">
             <ActionButton tone="primary" onClick={() => void saveModel()}>Save model</ActionButton>
             <ActionButton onClick={() => { setModelValues({}); void saveModel({}); }}>Clear</ActionButton>
-          </div>
-        </div>
-      </Panel>
-
-      <Panel title="Agent Overrides" aside={<span className="text-xs text-zinc-500">{context.agent_system || "omnidex"}</span>}>
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {["omnidex", "codex", "cursor"].map((system) => (
-              <ActionButton
-                key={system}
-                tone={system === (agentValues.agent_system || context.agent_system) ? "primary" : "default"}
-                onClick={() => {
-                  const next = { ...agentValues, agent_system: system };
-                  setAgentValues(next);
-                  void saveAgent(next);
-                }}
-              >
-                Use {system}
-              </ActionButton>
-            ))}
-          </div>
-          <ConfigFields fields={agentFields} values={agentValues} onChange={(key, value) => setAgentValues((current) => ({ ...current, [key]: value }))} />
-          <div className="flex gap-2">
-            <ActionButton tone="primary" onClick={() => void saveAgent()}>Save agent</ActionButton>
-            <ActionButton onClick={() => { setAgentValues({}); void saveAgent({}); }}>Clear</ActionButton>
           </div>
         </div>
       </Panel>

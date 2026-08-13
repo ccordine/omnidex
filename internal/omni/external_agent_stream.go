@@ -2,20 +2,24 @@ package omni
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/agentstream"
 )
 
 const externalAgentCleanupTimeout = 5 * time.Second
 
 // StreamExternalAgentSession runs an external agent session, invoking onEvent for each
 // streamed event before returning the aggregated result.
-func StreamExternalAgentSession(ctx context.Context, session ExternalAgentSession, job ExternalAgentJob, onEvent func(AgentEvent) error) (result ExternalCodingResult, returnErr error) {
+func StreamExternalAgentSession(ctx context.Context, session ExternalAgentSession, job ExternalAgentJob, onEvent func(agentstream.Event) error) (result ExternalCodingResult, returnErr error) {
 	if session == nil {
 		return result, fmt.Errorf("external agent session is nil")
+	}
+	if strings.TrimSpace(job.Agent) == "" || strings.TrimSpace(job.SessionID) == "" {
+		return result, fmt.Errorf("external agent job requires typed agent and session_id")
 	}
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), externalAgentCleanupTimeout)
@@ -32,7 +36,7 @@ func StreamExternalAgentSession(ctx context.Context, session ExternalAgentSessio
 	if events == nil {
 		return result, fmt.Errorf("external agent session returned a nil event stream")
 	}
-	collected := make([]AgentEvent, 0, 32)
+	collected := make([]agentstream.Event, 0, 32)
 	for {
 		select {
 		case <-ctx.Done():
@@ -44,17 +48,25 @@ func StreamExternalAgentSession(ctx context.Context, session ExternalAgentSessio
 					return resultFromExternalAgentEventSlice(collected), err
 				}
 				result = resultFromExternalAgentEventSlice(collected)
-				if err := externalAgentResultError(result); err != nil {
-					return result, err
-				}
 				return result, nil
 			}
-			event.Type = AgentEventType(strings.ToLower(strings.TrimSpace(string(event.Type))))
 			if event.SessionID == "" {
 				event.SessionID = job.SessionID
 			}
 			if event.Agent == "" {
 				event.Agent = job.Agent
+			}
+			if event.SessionID != job.SessionID {
+				return result, fmt.Errorf("external agent stream session_id %q differs from job session_id %q", event.SessionID, job.SessionID)
+			}
+			if event.Agent != job.Agent {
+				return result, fmt.Errorf("external agent stream agent %q differs from job agent %q", event.Agent, job.Agent)
+			}
+			if err := agentstream.Validate(event); err != nil {
+				return result, fmt.Errorf("validate external agent stream event %d: %w", len(collected)+1, err)
+			}
+			if err := validateNextExternalAgentEvent(collected, event); err != nil {
+				return result, err
 			}
 			collected = append(collected, event)
 			if onEvent != nil {
@@ -67,8 +79,38 @@ func StreamExternalAgentSession(ctx context.Context, session ExternalAgentSessio
 	}
 }
 
-func resultFromExternalAgentEventSlice(events []AgentEvent) ExternalCodingResult {
-	replay := make(chan AgentEvent, len(events))
+func validateNextExternalAgentEvent(events []agentstream.Event, event agentstream.Event) error {
+	started := false
+	for _, previous := range events {
+		switch previous.Type {
+		case agentstream.EventStarted:
+			started = true
+		case agentstream.EventCompleted:
+			if event.Type == agentstream.EventCompleted {
+				return fmt.Errorf("external agent stream contains a duplicate completed event")
+			}
+			return fmt.Errorf("external agent stream emitted %q after its completed event", event.Type)
+		case agentstream.EventError, agentstream.EventInterrupted:
+			return fmt.Errorf("external agent stream emitted %q after terminal %q event", event.Type, previous.Type)
+		}
+	}
+	if event.Type == agentstream.EventStarted {
+		if started || len(events) > 0 {
+			return fmt.Errorf("external agent stream contains a duplicate or late started event")
+		}
+		return nil
+	}
+	if event.Type == agentstream.EventError || event.Type == agentstream.EventInterrupted {
+		return nil
+	}
+	if !started {
+		return fmt.Errorf("external agent stream emitted %q before a started event", event.Type)
+	}
+	return nil
+}
+
+func resultFromExternalAgentEventSlice(events []agentstream.Event) ExternalCodingResult {
+	replay := make(chan agentstream.Event, len(events))
 	for _, event := range events {
 		replay <- event
 	}
@@ -76,7 +118,7 @@ func resultFromExternalAgentEventSlice(events []AgentEvent) ExternalCodingResult
 	return resultFromExternalAgentEvents(replay)
 }
 
-func validateExternalAgentEventSequence(events []AgentEvent) error {
+func validateExternalAgentEventSequence(events []agentstream.Event) error {
 	if len(events) == 0 {
 		return fmt.Errorf("external agent stream ended without events")
 	}
@@ -93,41 +135,34 @@ func validateExternalAgentEventSequence(events []AgentEvent) error {
 			return fmt.Errorf("external agent stream event %d is missing session_id", index+1)
 		}
 		switch event.Type {
-		case AgentEventError:
+		case agentstream.EventError:
 			message := strings.TrimSpace(event.Message)
 			if message == "" {
 				message = "external agent reported an error"
 			}
 			return fmt.Errorf("external agent failed: %s", message)
-		case AgentEventInterrupted:
+		case agentstream.EventInterrupted:
 			message := strings.TrimSpace(event.Message)
 			if message == "" {
 				message = "external agent session was interrupted"
 			}
 			return fmt.Errorf("external agent interrupted: %s", message)
-		case AgentEventStatus:
-			if err := validateExternalAgentStatusEvent(event); err != nil {
-				return err
-			}
 		}
 		if completedAt >= 0 {
-			if event.Type == AgentEventCompleted {
+			if event.Type == agentstream.EventCompleted {
 				return fmt.Errorf("external agent stream contains a duplicate completed event")
 			}
 			return fmt.Errorf("external agent stream emitted %q after its completed event", event.Type)
 		}
 		switch event.Type {
-		case AgentEventStarted:
+		case agentstream.EventStarted:
 			if started {
 				return fmt.Errorf("external agent stream contains a duplicate started event")
 			}
 			started = true
-		case AgentEventCompleted:
+		case agentstream.EventCompleted:
 			if !started {
 				return fmt.Errorf("external agent stream completed before a started event")
-			}
-			if err := validateExternalAgentStatusEvent(event); err != nil {
-				return err
 			}
 			completedAt = index
 		}
@@ -138,34 +173,9 @@ func validateExternalAgentEventSequence(events []AgentEvent) error {
 	return nil
 }
 
-func validateExternalAgentStatusEvent(event AgentEvent) error {
-	if len(event.Raw) == 0 {
-		return nil
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(event.Raw, &payload); err != nil {
-		return fmt.Errorf("external agent %s event has invalid raw payload: %w", event.Type, err)
-	}
-	status := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["status"])))
-	switch status {
-	case "error", "failed", "cancelled", "canceled":
-		return fmt.Errorf("external agent failed with status %s: %s", status, externalAgentStatusFailureDetail(payload, event.Message))
-	default:
-		return nil
-	}
-}
-
 func wrapExternalAgentCancelError(err error) error {
 	if err == nil {
 		return nil
 	}
 	return fmt.Errorf("cancel external agent session: %w", err)
-}
-
-func AgentEventJSONLine(event AgentEvent) (string, error) {
-	blob, err := json.Marshal(event)
-	if err != nil {
-		return "", fmt.Errorf("encode external agent event: %w", err)
-	}
-	return string(blob), nil
 }

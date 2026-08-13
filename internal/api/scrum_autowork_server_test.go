@@ -130,20 +130,6 @@ func TestAIControlDoesNotSwallowPauseOrResumeFailures(t *testing.T) {
 	}
 }
 
-func TestAutoReviewDoesNotInventAVerdictOrIgnoreTelemetryFailure(t *testing.T) {
-	source := readAPISource(t, "scrum_auto_review.go")
-	for _, forbidden := range []string{
-		"completed without explicit verdict",
-		"job did not complete — bouncing",
-		"_ = s.repo.RecordScrumFlowEvent",
-		"payload, _ := json.Marshal",
-	} {
-		if strings.Contains(source, forbidden) {
-			t.Errorf("Scrum auto-review contains a hidden fallback %q", forbidden)
-		}
-	}
-}
-
 func TestScrumFlowMetricsLogsEveryPersistenceFailure(t *testing.T) {
 	source := readAPISource(t, "scrum_flow_metrics.go")
 	for _, forbidden := range []string{
@@ -154,32 +140,6 @@ func TestScrumFlowMetricsLogsEveryPersistenceFailure(t *testing.T) {
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Errorf("Scrum flow metrics contains a swallowed failure %q", forbidden)
-		}
-	}
-}
-
-func TestScrumCardLLMEnqueueIsAtomicAndHasNoDuplicateFallback(t *testing.T) {
-	source := readAPISource(t, "scrum_card_llm_enqueue.go")
-	if !strings.Contains(source, "s.repo.EnqueueScrumCardJob(") {
-		t.Fatal("Scrum card LLM jobs must use the atomic repository operation")
-	}
-	for _, forbidden := range []string{
-		"s.repo.EnqueueJob(",
-		"s.repo.UpdateScrumCard(",
-		"if jobID, err := parseJobID(existing); err == nil",
-		"if details, err := s.repo.CurrentJobDetails(ctx, jobID); err == nil",
-	} {
-		if strings.Contains(source, forbidden) {
-			t.Errorf("Scrum card LLM enqueue contains a non-atomic or swallowed path %q", forbidden)
-		}
-	}
-}
-
-func TestContextTelemetryDoesNotSilentlyDropPersistenceFailures(t *testing.T) {
-	for _, path := range []string{"llm_context_telemetry.go"} {
-		source := readAPISource(t, path)
-		if strings.Contains(source, "_ = s.repo.Record") {
-			t.Errorf("%s silently drops telemetry persistence failures", path)
 		}
 	}
 }

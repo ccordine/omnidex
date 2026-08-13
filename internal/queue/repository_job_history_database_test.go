@@ -26,7 +26,7 @@ type jobHistoryFixture struct {
 func TestPostgresJobHistoryIsCursorPagedAndStepResolved(t *testing.T) {
 	repository, pool, ctx := replanTestRepository(t)
 	marker := fmt.Sprintf("job-history-%d", time.Now().UnixNano())
-	job, err := repository.EnqueueJob(ctx, marker, model.PipelineAssistant, []byte(`{}`))
+	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func historyStepID(t *testing.T, pool *pgxpool.Pool, jobID, generation int64) in
 	var stepID int64
 	if err := pool.QueryRow(t.Context(), `
 		SELECT id FROM job_steps
-		WHERE job_id=$1 AND generation=$2 AND action='v3_planning'
+		WHERE job_id=$1 AND generation=$2 AND action='objective_resolve'
 		ORDER BY id ASC LIMIT 1
 	`, jobID, generation).Scan(&stepID); err != nil {
 		t.Fatal(err)

@@ -48,22 +48,10 @@ func exactAuthoritativeRepositoryPostSnapshot(
 	if root != source.Root {
 		return repositoryfacts.Snapshot{}, fmt.Errorf("authoritative repository post root differs from its source authority")
 	}
-	files := make(map[string]repositoryfacts.File, len(source.Files))
-	for _, file := range source.Files {
-		files[file.ID] = file
-	}
 	expected := prepared.ExpectedFiles()
-	changed := make([]queue.RepositoryMutationFile, len(expected))
-	for index, post := range expected {
-		file, exists := files[post.FileID]
-		if !exists {
-			return repositoryfacts.Snapshot{}, fmt.Errorf("authoritative repository post target %q is absent from its source", post.FileID)
-		}
-		changed[index] = queue.RepositoryMutationFile{
-			FileID: post.FileID, Path: file.Path,
-			SourceSHA256: file.SHA256, SourceSize: file.Size,
-			ExpectedSHA256: post.SHA256, ExpectedSize: post.Size,
-		}
+	changed, err := repositoryMutationFilesForExpectedState(source, expected)
+	if err != nil {
+		return repositoryfacts.Snapshot{}, fmt.Errorf("authoritative repository post authority: %w", err)
 	}
 	current, err := repositoryfacts.BuildGitSnapshot(
 		ctx, root, repositoryfacts.SnapshotOptions{},
