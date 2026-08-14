@@ -46,20 +46,21 @@ func insertStationGapOpeningTx(
 			job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,
 			portable_schema,work_id,work_kind,portable_payload,portable_payload_sha256,
 			portable_envelope,portable_envelope_sha256,renderer_version,prompt,response_schema,
-			projection_envelope,projection_sha256,context_tokens,max_output_tokens
+			projection_envelope,projection_sha256,context_tokens,max_output_tokens,output_limit_mode
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
 		)
 		RETURNING id,job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,
 			portable_schema,work_id,work_kind,portable_payload,portable_payload_sha256,
 			portable_envelope,portable_envelope_sha256,renderer_version,prompt,response_schema,
-			projection_envelope,projection_sha256,context_tokens,max_output_tokens,created_at
+			projection_envelope,projection_sha256,context_tokens,max_output_tokens,output_limit_mode,created_at
 	`, opening.JobID, opening.Generation, opening.StepID, opening.StepAttempt,
 		opening.WorkerID, opening.GapID, opening.Station, opening.Scope, opening.PortableSchema,
 		opening.WorkID, opening.WorkKind, opening.PortablePayload, opening.PortablePayloadSHA256,
 		opening.PortableEnvelope, opening.PortableEnvelopeSHA256, opening.RendererVersion,
 		opening.Prompt, string(opening.ResponseSchema), opening.ProjectionEnvelope,
-		opening.ProjectionSHA256, opening.ContextTokens, opening.MaxOutputTokens), opening)
+		opening.ProjectionSHA256, opening.ContextTokens, opening.MaxOutputTokens,
+		opening.OutputLimitMode), opening)
 	if err != nil {
 		return fmt.Errorf("persist exact station gap opening: %w", err)
 	}
@@ -107,24 +108,65 @@ func insertStationGapOutcomeTx(
 	err := scanStationGapOutcome(tx.QueryRow(ctx, `
 		INSERT INTO station_gap_outcomes (
 			opening_id,job_id,generation,step_id,step_attempt,worker_id,gap_id,
-			status,response,response_sha256,error
+			status,response,response_sha256,projection_kind,call_receipt_sha256,
+			source_response_sha256,source_start_byte,source_end_byte,error
 		)
 		SELECT openings.id,openings.job_id,openings.generation,openings.step_id,
 			openings.step_attempt,openings.worker_id,openings.gap_id,$7,
-			NULLIF($8,''),NULLIF($9,''),NULLIF($10,'')
+			NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),
+			NULLIF($12,''),$13,$14,NULLIF($15,'')
 		FROM station_gap_openings AS openings
 		WHERE openings.id=$1 AND openings.job_id=$2 AND openings.generation=$3
 		  AND openings.step_id=$4 AND openings.step_attempt=$5
-		  AND openings.worker_id=$6 AND openings.gap_id=$11
+		  AND openings.worker_id=$6 AND openings.gap_id=$16
 		RETURNING id,opening_id,job_id,generation,step_id,step_attempt,worker_id,
-			gap_id,status,response,response_sha256,error,created_at
+			gap_id,status,response,response_sha256,projection_kind,call_receipt_sha256,
+			source_response_sha256,source_start_byte,source_end_byte,error,created_at
 	`, record.OpeningID, record.Authority.JobID, record.Authority.Generation,
 		record.Authority.StepID, record.Authority.Attempt, record.Authority.WorkerID,
-		string(record.Status), record.Response, responseHash, record.Error, record.GapID), outcome)
+		string(record.Status), record.Response, responseHash,
+		stationGapProjectionKind(record.Projection), stationGapProjectionCallReceipt(record.Projection),
+		stationGapProjectionSourceResponse(record.Projection), stationGapProjectionStart(record.Projection),
+		stationGapProjectionEnd(record.Projection), record.Error, record.GapID), outcome)
 	if err != nil {
 		return fmt.Errorf("persist exact station gap outcome: %w", err)
 	}
 	return nil
+}
+
+func stationGapProjectionKind(projection *StationGapSourceProjection) string {
+	if projection == nil {
+		return ""
+	}
+	return string(projection.Kind)
+}
+
+func stationGapProjectionCallReceipt(projection *StationGapSourceProjection) string {
+	if projection == nil {
+		return ""
+	}
+	return projection.CallReceiptSHA256
+}
+
+func stationGapProjectionSourceResponse(projection *StationGapSourceProjection) string {
+	if projection == nil {
+		return ""
+	}
+	return projection.SourceResponseSHA256
+}
+
+func stationGapProjectionStart(projection *StationGapSourceProjection) any {
+	if projection == nil {
+		return nil
+	}
+	return projection.StartByte
+}
+
+func stationGapProjectionEnd(projection *StationGapSourceProjection) any {
+	if projection == nil {
+		return nil
+	}
+	return projection.EndByte
 }
 
 func requireStationGapClosingAuthorityTx(

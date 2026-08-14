@@ -134,12 +134,7 @@ func validateObjectiveAdvisoryInputBudget(
 	if err != nil {
 		return err
 	}
-	return llm.ValidateExactPreparedInputAuthority(
-		selection.NativeContextLimit,
-		selection.NativeContextLimit-source.Budget.MaxOutputTokens,
-		source.Budget.MaxOutputTokens,
-		input,
-	)
+	return llm.ValidateExactPreparedNaturalInputAuthority(selection.NativeContextLimit, input)
 }
 
 func prepareObjectiveAdvisoryCall(
@@ -156,14 +151,19 @@ func prepareObjectiveAdvisoryCall(
 	if err != nil {
 		return llm.PreparedModel{}, err
 	}
+	transport, err := llm.ResolveExactPreparedTransport(expected)
+	if err != nil {
+		return llm.PreparedModel{}, err
+	}
 	temperature := float64(0)
 	prepared := llm.PreparedModel{
 		Protocol:  llm.ExactPreparedProtocolRawTextV1,
 		BaseModel: selection.Model, ContextModel: selection.Model,
 		PromptHint: llm.MinimalGeneratePrompt, Prompt: prompt,
 		MaxOutputTokens: request.Source.Budget.MaxOutputTokens,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 		ContextTokens:   selection.NativeContextLimit,
-		ThinkingEnabled: false, Temperature: &temperature,
+		ThinkingEnabled: transport.SeparateThinking, Temperature: &temperature,
 		RawTextStopSequence:          llm.ExactPreparedObjectiveAdvisoryStopV1,
 		ProviderIdentityExpectation:  &expected,
 		ProviderObservationChallenge: challenge,

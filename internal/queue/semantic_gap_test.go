@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 )
@@ -22,6 +23,7 @@ func TestStationGapOpeningPreservesClosedPortableJobAndCanonicalProjection(t *te
 		Authority: model.StepAttemptAuthority{JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a"},
 		Job:       job, Station: station.ConversationResponse,
 		ContextTokens: 8192, MaxOutputTokens: 1024,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	}
 	validated, err := validateStationGapOpening(record)
 	if err != nil {
@@ -53,6 +55,7 @@ func TestStationGapOpeningRejectsGenericOrUnboundedAuthority(t *testing.T) {
 		Authority: model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
 		Job:       job, Station: station.ConversationResponse,
 		ContextTokens: 8192, MaxOutputTokens: 1024,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	}
 	for name, mutate := range map[string]func(*StationGapOpenRecord){
 		"forged portable identity": func(record *StationGapOpenRecord) { record.Job.ID = strings.Repeat("c", 64) },
@@ -102,7 +105,9 @@ func TestStationGapTerminalRequiresOneExactOutcome(t *testing.T) {
 	base := StationGapTerminalRecord{
 		Authority: model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
 		OpeningID: 7, GapID: strings.Repeat("d", 64), Status: StationGapResolved,
-		Response: " exact response ",
+		Response: " exact response ", Projection: stationGapExactResponseProjection(
+			strings.Repeat("a", 64), " exact response ",
+		),
 	}
 	if err := validateStationGapTerminal(base); err != nil {
 		t.Fatal(err)
@@ -111,12 +116,22 @@ func TestStationGapTerminalRequiresOneExactOutcome(t *testing.T) {
 	if err := validateStationGapTerminal(base); err == nil {
 		t.Fatal("resolved gap accepted an error")
 	}
-	base.Status, base.Response, base.Error = StationGapFailed, "", "provider failed"
+	base.Status, base.Response, base.Projection, base.Error = StationGapFailed, "", nil, "provider failed"
 	if err := validateStationGapTerminal(base); err != nil {
 		t.Fatal(err)
 	}
 	base.Response = "partial"
 	if err := validateStationGapTerminal(base); err == nil {
 		t.Fatal("failed gap accepted a response")
+	}
+}
+
+func stationGapExactResponseProjection(
+	receiptSHA256 string,
+	response string,
+) *StationGapSourceProjection {
+	return &StationGapSourceProjection{
+		Kind: StationGapProjectionExactResponse, CallReceiptSHA256: receiptSHA256,
+		SourceResponseSHA256: stationGapSHA256(response), StartByte: 0, EndByte: len(response),
 	}
 }

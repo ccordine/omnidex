@@ -67,7 +67,8 @@ func TestTypeScriptFragmentWorkerRepairsOnlyParserOwnedLineRegion(t *testing.T) 
 		"  const keepThree = keepTwo + 1;",
 		"  const keepFour = keepThree + 1;",
 		"  const keepFive = keepFour + 1;",
-		"  return keepFive;",
+		"  return keepFive + ;",
+		"}",
 	}, "\n")
 	var prompts []string
 	var correctionInput assemblyline.FragmentCorrectionInput
@@ -90,12 +91,10 @@ func TestTypeScriptFragmentWorkerRepairsOnlyParserOwnedLineRegion(t *testing.T) 
 				if err := json.Unmarshal(portable.Payload, &correctionInput); err != nil {
 					t.Fatal(err)
 				}
-				replacement := correctionInput.RepairRegion.Source + "\n}"
-				encoded, err := json.Marshal(map[string]any{"replacement_lines": []string{replacement}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				candidate = string(encoded)
+				replacement := strings.Replace(
+					correctionInput.RepairRegion.Source, "return keepFive + ;", "return keepFive;", 1,
+				)
+				candidate = replacement
 			}
 			return assemblyline.PortableResult{JobID: portable.ID, Candidate: candidate}, nil
 		},
@@ -111,13 +110,11 @@ func TestTypeScriptFragmentWorkerRepairsOnlyParserOwnedLineRegion(t *testing.T) 
 		len(correctionInput.Capabilities) != 0 || len(correctionInput.PermittedSymbols) != 0 {
 		t.Fatalf("parser correction retained whole-declaration authority: %#v", correctionInput)
 	}
-	if correctionInput.RepairRegion.StartLine != 5 || correctionInput.RepairRegion.EndLine != 7 {
-		t.Fatalf("repair region=%#v want lines 5..7", correctionInput.RepairRegion)
+	if correctionInput.RepairRegion.StartLine != 5 || correctionInput.RepairRegion.EndLine != 8 {
+		t.Fatalf("repair region=%#v want lines 5..8", correctionInput.RepairRegion)
 	}
-	properties, ok := correctionSchema["properties"].(map[string]any)
-	if !ok || len(properties) != 1 || properties["replacement_lines"] == nil ||
-		correctionSchema["additionalProperties"] != false {
-		t.Fatalf("localized correction did not receive its exact closed response schema: %#v", correctionSchema)
+	if correctionSchema != nil {
+		t.Fatalf("localized correction retained a structured response schema: %#v", correctionSchema)
 	}
 	for _, forbidden := range []string{"const keepOne", "const keepTwo"} {
 		if strings.Contains(prompts[1], forbidden) {
@@ -173,11 +170,7 @@ func TestTypeScriptFragmentWorkerRepairsMalformedTSXThroughOnlyItsLocalRegion(t 
 					t.Fatalf("parser-owned region omitted the malformed TSX delimiter: %#v", correction.RepairRegion)
 				}
 				replacement := strings.ReplaceAll(correction.RepairRegion.Source, "</section", "</section>")
-				encoded, err := json.Marshal(map[string]any{"replacement_lines": strings.Split(replacement, "\n")})
-				if err != nil {
-					t.Fatal(err)
-				}
-				candidate = string(encoded)
+				candidate = replacement
 			}
 			return assemblyline.PortableResult{JobID: portable.ID, Candidate: candidate}, nil
 		},
@@ -207,7 +200,7 @@ func TestTypeScriptFragmentWorkerStopsWhenRejectionPersistenceFails(t *testing.T
 		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "corrector",
 		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
 			executions++
-			return "function apply(value: number): number { return value + 1; }<|endoftext|>", nil
+			return "function apply(value: number): number { return value + ; }<|endoftext|>", nil
 		}),
 		Finalize: func(_ assemblyline.PortableJob, _ assemblyline.PortableResult, validationErr error) error {
 			if validationErr == nil {
@@ -327,7 +320,7 @@ func TestTypeScriptFragmentWorkerStopsRepeatedIdenticalCorrections(t *testing.T)
 		}),
 	}
 	_, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
-	if err == nil || !strings.Contains(err.Error(), "no progress") {
+	if err == nil || !strings.Contains(err.Error(), "unchanged correction rejected") {
 		t.Fatalf("expected repeated-candidate failure, got %v", err)
 	}
 	if attempts != 2 {

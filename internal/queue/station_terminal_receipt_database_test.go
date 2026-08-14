@@ -31,6 +31,7 @@ func TestPostgresStationGapRejectsReceiptWithoutImmutableEvidence(t *testing.T) 
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: StationGapResolved, Response: result.Content,
+		Projection: stationGapExactResponseProjection(strings.Repeat("a", 64), result.Content),
 	}); err == nil || !strings.Contains(err.Error(), "immutable evidence") {
 		t.Fatalf("gap close without call evidence error=%v", err)
 	}

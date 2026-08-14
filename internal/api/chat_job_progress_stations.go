@@ -25,21 +25,17 @@ func summarizeChatCodingStage(event parsedChatStepEvent) (chatProgressKind, stri
 }
 
 func summarizeChatCodingCorrection(message string) (chatProgressKind, string, error) {
-	fields, err := exactChatEventFields(message, "block", "correction", "exact_failure")
+	fields, err := exactChatEventFields(message, "block", "exact_failure")
 	if err != nil {
 		return "", "", err
 	}
-	block, err := requireChatEventText(fields, "block", 256)
-	if err != nil {
-		return "", "", err
-	}
-	correction, err := requireChatEventInteger(fields, "correction", false)
+	block, err := requireChatEventToken(fields, "block", 256)
 	if err != nil {
 		return "", "", err
 	}
 	failure, err := requireChatEventText(fields, "exact_failure", maxChatProgressRawBytes)
 	return chatProgressDiagnostic, fmt.Sprintf(
-		"Correcting %s (attempt %d): %s", block, correction, boundedChatProgressText(failure),
+		"Correcting %s: %s", block, boundedChatProgressText(failure),
 	), err
 }
 

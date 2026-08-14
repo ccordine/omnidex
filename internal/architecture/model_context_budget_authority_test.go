@@ -43,18 +43,18 @@ func TestModelContextAdmissionDoesNotTreatBytesAsTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(root, "internal", "llm", "exact_prepared_request.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(raw)
-	for _, required := range []string{
-		"MaxExactPreparedModelInputBytes",
-		"ValidateExactPreparedNativeUsage",
-		"Truncate: false",
+	for path, required := range map[string][]string{
+		"exact_prepared_request.go": {"MaxExactPreparedModelInputBytes", "ValidateExactPreparedNativeUsage"},
+		"exact_profile_request.go":  {"Truncate: false"},
 	} {
-		if !strings.Contains(source, required) {
-			t.Errorf("exact provider context authority omits %q", required)
+		raw, err := os.ReadFile(filepath.Join(root, "internal", "llm", path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, token := range required {
+			if !strings.Contains(string(raw), token) {
+				t.Errorf("exact provider context authority %s omits %q", path, token)
+			}
 		}
 	}
 }

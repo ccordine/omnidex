@@ -50,7 +50,10 @@ func providerIdentityTestEvidence(t *testing.T, expected ProviderIdentityExpecta
 		`{"models":[{"name":%q,"model":%q,"size":1,"digest":%q,"details":{"quantization_level":%q}}]}`,
 		expected.Model, expected.Model, expected.Digest, expected.Quantization,
 	))
-	show := []byte(`{"model_info":{"general.architecture":"qwen35",` +
+	show := []byte(`{"capabilities":["completion","vision","tools","thinking"],` +
+		`"parameters":"temperature                    1\ntop_k                          20\ntop_p                          0.95\npresence_penalty               1.5",` +
+		`"template":"{{ .Prompt }}",` +
+		`"model_info":{"general.architecture":"qwen35",` +
 		`"tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35",` +
 		`"tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,` +
 		`"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,` +

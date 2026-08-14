@@ -17,7 +17,7 @@ func scanStationCallOpening(scanner stationGapScanner, opening *StationCallOpeni
 		&opening.ProviderEndpoint, &opening.WireRequest, &opening.WireRequestSHA256,
 		&opening.WireRequestBytes, &expectation, &opening.ExpectationSHA256,
 		&opening.ObservationChallenge, &opening.Model, &opening.ContextTokens,
-		&opening.MaxInputTokens, &opening.MaxOutputTokens, &opening.ModelInput,
+		&opening.MaxInputTokens, &opening.MaxOutputTokens, &opening.OutputLimitMode, &opening.ModelInput,
 		&opening.ModelInputSHA256, &opening.ModelInputBytes,
 		&opening.ModelInputTokenCeiling, &opening.CreatedAt,
 	); err != nil {
@@ -38,7 +38,7 @@ func loadStationCallOpeningTx(
 			protocol,tokenizer_profile,provider_method,provider_endpoint,
 			wire_request,wire_request_sha256,wire_request_bytes,expectation,
 			expectation_sha256,observation_challenge,model,context_tokens,max_input_tokens,
-			max_output_tokens,model_input,model_input_sha256,model_input_bytes,
+			max_output_tokens,output_limit_mode,model_input,model_input_sha256,model_input_bytes,
 			model_input_token_upper_bound,created_at
 		FROM station_call_openings WHERE id=$1 FOR SHARE
 	`, openingID), &opening)

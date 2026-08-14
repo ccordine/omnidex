@@ -194,6 +194,7 @@ func stationCallTestGap(t *testing.T, authority model.StepAttemptAuthority) Stat
 	gap, err := validateStationGapOpening(StationGapOpenRecord{
 		Authority: authority, Job: job, Station: station.ConversationResponse,
 		ContextTokens: 32768, MaxOutputTokens: 1024,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +224,8 @@ func stationCallTestPrepared(t *testing.T, gap StationGapOpening) llm.PreparedMo
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		ContextTokens: gap.ContextTokens, MaxOutputTokens: gap.MaxOutputTokens,
-		ResponseFormat: llm.ResponseFormatJSON, ResponseSchema: schema,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+		ResponseFormat:  llm.ResponseFormatJSON, ResponseSchema: schema,
 		Temperature: &temperature, ProviderIdentityExpectation: &expected,
 		ProviderObservationChallenge: challenge,
 	}

@@ -40,11 +40,15 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 	if err != nil {
 		return StationCallOpening{}, fmt.Errorf("render exact station call wire request: %w", err)
 	}
-	if len(wire) > maxStationCallInputBytes {
-		return StationCallOpening{}, fmt.Errorf("station call wire request exceeds %d bytes", maxStationCallInputBytes)
+	if len(wire) > maxStationRequestResourceBytes {
+		return StationCallOpening{}, fmt.Errorf(
+			"station call wire request exceeds coarse %d-byte request resource ceiling",
+			maxStationRequestResourceBytes,
+		)
 	}
 	if prepared.Prompt != record.Gap.Prompt || prepared.ContextTokens != record.Gap.ContextTokens ||
 		prepared.MaxOutputTokens != record.Gap.MaxOutputTokens ||
+		prepared.OutputLimitMode != record.Gap.OutputLimitMode ||
 		stationGapScope(prepared.ResponseSchema) != record.Gap.Scope {
 		return StationCallOpening{}, fmt.Errorf("station call prepared authority differs from its gap projection")
 	}
@@ -63,6 +67,12 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 	if err != nil {
 		return StationCallOpening{}, err
 	}
+	maxInputTokens := prepared.ContextTokens - prepared.MaxOutputTokens
+	modelInputTokenCeiling := maxInputTokens
+	if prepared.OutputLimitMode == llm.ExactPreparedOutputLimitNatural {
+		maxInputTokens = prepared.ContextTokens
+		modelInputTokenCeiling = prepared.ContextTokens
+	}
 	return StationCallOpening{
 		GapOpeningID: record.Gap.ID, DiscoveryReceiptID: record.Discovery.ID,
 		JobID:      record.Authority.JobID,
@@ -76,12 +86,13 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 		ExpectationSHA256:    stationGapSHA256(string(expectation)),
 		ObservationChallenge: prepared.ProviderObservationChallenge,
 		Model:                prepared.ContextModel, ContextTokens: prepared.ContextTokens,
-		MaxInputTokens:  prepared.ContextTokens - prepared.MaxOutputTokens,
+		MaxInputTokens:  maxInputTokens,
 		MaxOutputTokens: prepared.MaxOutputTokens, ModelInput: modelInput,
+		OutputLimitMode:  prepared.OutputLimitMode,
 		ModelInputSHA256: stationGapSHA256(modelInput), ModelInputBytes: len(modelInput),
 		// The provider owns tokenization. This is the declared native input
 		// ceiling; the receipt records and validates the actual prompt count.
-		ModelInputTokenCeiling: prepared.ContextTokens - prepared.MaxOutputTokens,
+		ModelInputTokenCeiling: modelInputTokenCeiling,
 	}, nil
 }
 
@@ -196,10 +207,17 @@ func ValidateStationCallNativeUsage(
 		!result.UsagePresent {
 		return fmt.Errorf("station call native usage requires one successful provider receipt")
 	}
-	return llm.ValidateExactPreparedNativeUsage(
-		opening.ContextTokens,
-		opening.MaxInputTokens,
-		opening.MaxOutputTokens,
-		result.Usage,
-	)
+	switch opening.OutputLimitMode {
+	case llm.ExactPreparedOutputLimitExplicit:
+		return llm.ValidateExactPreparedNativeUsage(
+			opening.ContextTokens,
+			opening.MaxInputTokens,
+			opening.MaxOutputTokens,
+			result.Usage,
+		)
+	case llm.ExactPreparedOutputLimitNatural:
+		return llm.ValidateExactPreparedNaturalUsage(opening.ContextTokens, result.Usage)
+	default:
+		return fmt.Errorf("station call output-limit mode %q is not registered", opening.OutputLimitMode)
+	}
 }

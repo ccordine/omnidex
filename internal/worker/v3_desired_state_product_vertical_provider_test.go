@@ -234,7 +234,7 @@ func desiredStateProductIdentityEvidence(
 		`{"models":[{"name":%q,"model":%q,"size":1,"digest":%q,"details":{"quantization_level":"Q4_K_M"}}]}`,
 		selection.Model, selection.Model, digest,
 	))
-	tokenizer := []byte(`{"model_info":{"general.architecture":"qwen35","tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35","tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,"tokenizer.ggml.merges":null}}`)
+	tokenizer := []byte(`{"capabilities":["completion","vision","tools","thinking"],"model_info":{"general.architecture":"qwen35","tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35","tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,"tokenizer.ggml.merges":null},"parameters":"temperature                    1\ntop_k                          20\ntop_p                          0.95\npresence_penalty               1.5","template":"{{ .Prompt }}"}`)
 	runner := []byte(fmt.Sprintf(
 		`{"models":[{"name":%q,"model":%q,"size":1,"digest":%q,"details":{"quantization_level":"Q4_K_M"},"context_length":%d}]}`,
 		selection.Model, selection.Model, digest, selection.NativeContextLimit,

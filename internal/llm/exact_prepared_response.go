@@ -16,6 +16,7 @@ type ExactPreparedResponse struct {
 	Disposition  ProviderResponseDisposition
 	Model        string
 	Content      string
+	Thinking     string
 	DonePresent  bool
 	Done         bool
 	DoneReason   string
@@ -24,17 +25,18 @@ type ExactPreparedResponse struct {
 }
 
 type exactPreparedResponseWire struct {
-	Model              string `json:"model"`
-	CreatedAt          string `json:"created_at"`
-	Response           string `json:"response"`
-	Done               *bool  `json:"done,omitempty"`
-	DoneReason         string `json:"done_reason,omitempty"`
-	TotalDuration      *int64 `json:"total_duration,omitempty"`
-	LoadDuration       *int64 `json:"load_duration,omitempty"`
-	PromptEvalCount    *int   `json:"prompt_eval_count,omitempty"`
-	PromptEvalDuration *int64 `json:"prompt_eval_duration,omitempty"`
-	EvalCount          *int   `json:"eval_count,omitempty"`
-	EvalDuration       *int64 `json:"eval_duration,omitempty"`
+	Model              string  `json:"model"`
+	CreatedAt          string  `json:"created_at"`
+	Response           string  `json:"response"`
+	Thinking           *string `json:"thinking,omitempty"`
+	Done               *bool   `json:"done,omitempty"`
+	DoneReason         string  `json:"done_reason,omitempty"`
+	TotalDuration      *int64  `json:"total_duration,omitempty"`
+	LoadDuration       *int64  `json:"load_duration,omitempty"`
+	PromptEvalCount    *int    `json:"prompt_eval_count,omitempty"`
+	PromptEvalDuration *int64  `json:"prompt_eval_duration,omitempty"`
+	EvalCount          *int    `json:"eval_count,omitempty"`
+	EvalDuration       *int64  `json:"eval_duration,omitempty"`
 }
 
 // DecodeExactPreparedResponse derives every normalized response field from the
@@ -75,13 +77,17 @@ func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	if !utf8.Valid(body) {
 		return invalid, fmt.Errorf("exact provider response is not valid UTF-8")
 	}
-	if err := exactjson.ValidateObject(
+	if err := exactjson.ValidateCompatibleObject(
 		body, exactPreparedResponseWire{}, "exact raw generation response",
 	); err != nil {
 		return invalid, err
 	}
 	var wire exactPreparedResponseWire
 	if err := json.Unmarshal(body, &wire); err != nil {
+		return invalid, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
 		return invalid, err
 	}
 	if _, err := parseExactProviderTimestamp(wire.CreatedAt, 9); err != nil {
@@ -91,9 +97,16 @@ func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	if err != nil {
 		return invalid, err
 	}
+	thinking := ""
+	if _, present := fields["thinking"]; present {
+		thinking, err = strictExactJSONObjectString(body, "thinking")
+		if err != nil {
+			return invalid, err
+		}
+	}
 	response := ExactPreparedResponse{
 		Disposition: ProviderResponseSucceeded,
-		Model:       wire.Model, Content: content, DonePresent: wire.Done != nil,
+		Model:       wire.Model, Content: content, Thinking: thinking, DonePresent: wire.Done != nil,
 		DoneReason: wire.DoneReason, Usage: exactPreparedResponseUsage(wire),
 	}
 	if wire.Done != nil {
@@ -130,6 +143,7 @@ func ValidateExactPreparedResponseProjection(generation PreparedGeneration) erro
 	)
 	if derived.Disposition != generation.ProviderResponseDisposition ||
 		derived.Model != generation.ProviderResponseModel || derived.Content != generation.Content ||
+		derived.Thinking != generation.Thinking ||
 		derived.DonePresent != generation.ProviderDonePresent || derived.Done != generation.ProviderDone ||
 		derived.DoneReason != generation.ProviderDoneReason ||
 		derived.UsagePresent != generation.UsagePresent || derived.Usage != generation.Usage {

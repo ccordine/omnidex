@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,15 +8,11 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-const (
-	maxFragmentCorrectionOutputTokens       = 2048
-	maxFragmentRegionCorrectionOutputTokens = 1024
-)
-
 type llmResponseContract struct {
 	Protocol            llm.ExactPreparedProtocol
 	Format              string
 	MaxTokens           int
+	OutputLimitMode     llm.ExactPreparedOutputLimitMode
 	PromptHint          string
 	RawTextStopSequence string
 }
@@ -31,16 +26,18 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 		return llmResponseContract{
 			Protocol:            llm.ExactPreparedProtocolRawTextV1,
 			MaxTokens:           4096,
+			OutputLimitMode:     llm.ExactPreparedOutputLimitNatural,
 			PromptHint:          llm.MinimalGeneratePrompt,
 			RawTextStopSequence: llm.ExactPreparedCodeStopV1,
 		}, nil
 	}
 	if scope == "portable_semantic_worker" {
 		return llmResponseContract{
-			Protocol:   llm.ExactPreparedProtocolStructuredV1,
-			Format:     llm.ResponseFormatJSON,
-			MaxTokens:  1024,
-			PromptHint: llm.MinimalGeneratePrompt,
+			Protocol:        llm.ExactPreparedProtocolStructuredV1,
+			Format:          llm.ResponseFormatJSON,
+			MaxTokens:       1024,
+			OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+			PromptHint:      llm.MinimalGeneratePrompt,
 		}, nil
 	}
 	return llmResponseContract{}, fmt.Errorf("LLM scope %q is not registered", scope)
@@ -54,27 +51,8 @@ func llmResponseContractForPortableJob(
 	if err != nil {
 		return llmResponseContract{}, err
 	}
-	if job.Kind != assemblyline.WorkFragmentCorrection {
-		return contract, nil
-	}
-	var input assemblyline.FragmentCorrectionInput
-	if err := json.Unmarshal(job.Payload, &input); err != nil {
-		return llmResponseContract{}, fmt.Errorf("decode fragment correction response contract: %w", err)
-	}
-	if input.Language == "typescript" {
-		if input.RepairRegion != nil {
-			if responseSchema == nil || contract.Protocol != llm.ExactPreparedProtocolStructuredV1 ||
-				contract.Format != llm.ResponseFormatJSON {
-				return llmResponseContract{}, fmt.Errorf("localized TypeScript fragment correction requires the structured JSON response contract")
-			}
-			contract.MaxTokens = maxFragmentRegionCorrectionOutputTokens
-		} else {
-			if responseSchema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1 {
-				return llmResponseContract{}, fmt.Errorf("whole TypeScript fragment correction requires the raw-text response contract")
-			}
-			contract.MaxTokens = maxFragmentCorrectionOutputTokens
-		}
-	} else if responseSchema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1 {
+	if job.Kind == assemblyline.WorkFragmentCorrection &&
+		(responseSchema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1) {
 		return llmResponseContract{}, fmt.Errorf("fragment correction requires the raw-text response contract")
 	}
 	return contract, nil

@@ -54,6 +54,7 @@ func TestExactStationStaticBudgetRejectsImpossibleOutputReservation(t *testing.T
 		t.Fatal(err)
 	}
 	contract.MaxTokens = 8192
+	contract.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
 	if err := validateExactStationStaticCall(
 		"exact bounded prompt", nil, contract,
 		llm.ProviderIdentitySelection{Model: "qwen3.5:9b", NativeContextLimit: 8192},

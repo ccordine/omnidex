@@ -93,6 +93,9 @@ func TestPostgresStationCallReceiptPersistsAfterExactAttemptCancellation(t *test
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: StationGapResolved, Response: "must not resolve after cancellation",
+		Projection: stationGapExactResponseProjection(
+			strings.Repeat("a", 64), "must not resolve after cancellation",
+		),
 	}); err == nil {
 		t.Fatal("canceled station gap accepted a resolved outcome")
 	}
@@ -208,6 +211,7 @@ func TestPostgresResolvedGapRequiresSuccessfulDiscoveryAndCallReceipts(t *testin
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: StationGapResolved, Response: "unproven",
+		Projection: stationGapExactResponseProjection(strings.Repeat("a", 64), "unproven"),
 	}); err == nil {
 		t.Fatal("resolved gap succeeded without discovery or call receipts")
 	}
@@ -251,20 +255,23 @@ func TestPostgresResolvedGapRequiresSuccessfulDiscoveryAndCallReceipts(t *testin
 		t.Fatal(err)
 	}
 	result := stationCallSuccess(t, prepared, call)
-	if _, err := repository.RecordStationCallReceipt(t.Context(), StationCallReceiptRecord{
+	receipt, err := repository.RecordStationCallReceipt(t.Context(), StationCallReceiptRecord{
 		Authority: claim.Authority, OpeningID: call.ID, GapID: gap.GapID, Result: result,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: StationGapResolved, Response: "forged accepted response",
+		Projection: stationGapExactResponseProjection(receipt.GenerationSHA256, "forged accepted response"),
 	}); err == nil {
-		t.Fatal("resolved gap accepted response bytes differing from provider receipt")
+		t.Fatal("resolved gap accepted projected bytes differing from provider receipt")
 	}
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: StationGapResolved, Response: result.Content,
+		Projection: stationGapExactResponseProjection(receipt.GenerationSHA256, result.Content),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -459,6 +466,19 @@ func stationCallSuccess(
 	call StationCallOpening,
 ) llm.PreparedGeneration {
 	t.Helper()
+	return stationCallSuccessWithContent(
+		t, prepared, call,
+		`{"schema":"omnidex.conversation-response.v1","text":"ok"}`,
+	)
+}
+
+func stationCallSuccessWithContent(
+	t *testing.T,
+	prepared llm.PreparedModel,
+	call StationCallOpening,
+	content string,
+) llm.PreparedGeneration {
+	t.Helper()
 	expected := *prepared.ProviderIdentityExpectation
 	evidence := stationCallIdentityEvidence(t, expected)
 	attestation, err := llm.NewProviderIdentityAttestation(
@@ -474,7 +494,6 @@ func stationCallSuccess(
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := `{"schema":"omnidex.conversation-response.v1","text":"ok"}`
 	body := []byte(fmt.Sprintf(
 		`{"model":%q,"created_at":"2026-08-09T22:00:00Z","response":%q,"done":true,"done_reason":"stop","total_duration":101,"load_duration":11,"prompt_eval_count":41,"prompt_eval_duration":21,"eval_count":7,"eval_duration":31}`,
 		expected.Model, content,
@@ -515,7 +534,7 @@ func stationCallIdentityEvidence(
 	}
 	installed := []byte(fmt.Sprintf(`{"models":[{"name":%q,"model":%q,"size":1,"digest":%q,"details":{"quantization_level":%q}}]}`,
 		expected.Model, expected.Model, expected.Digest, expected.Quantization))
-	show := []byte(`{"model_info":{"general.architecture":"qwen35","tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35","tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,"tokenizer.ggml.merges":null}}`)
+	show := []byte(`{"capabilities":["completion","vision","tools","thinking"],"model_info":{"general.architecture":"qwen35","tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35","tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,"tokenizer.ggml.merges":null},"parameters":"temperature                    1\ntop_k                          20\ntop_p                          0.95\npresence_penalty               1.5","template":"{{ .Prompt }}"}`)
 	runner := []byte(fmt.Sprintf(`{"models":[{"name":%q,"model":%q,"size":1,"digest":%q,"details":{"quantization_level":%q},"context_length":%d}]}`,
 		expected.Model, expected.Model, expected.Digest, expected.Quantization, expected.NativeContextLimit))
 	evidence, err := llm.NewSuccessfulProviderIdentityEvidence(

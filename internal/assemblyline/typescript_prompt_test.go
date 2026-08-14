@@ -32,13 +32,6 @@ func TestTypeScriptFragmentPromptRejectsOversizedEnvelopeSections(t *testing.T) 
 		Contract:  "Do the one supplied operation.",
 	}
 	for name, mutate := range map[string]func(*TypeScriptFragmentPrompt){
-		"capabilities": func(input *TypeScriptFragmentPrompt) {
-			input.Available = strings.Repeat("x", maxTypeScriptCapabilityBytes+1)
-		},
-		"current declaration": func(input *TypeScriptFragmentPrompt) {
-			input.Contract = ""
-			input.Current = strings.Repeat("x", maxTypeScriptCurrentDeclarationBytes+1)
-		},
 		"required change": func(input *TypeScriptFragmentPrompt) {
 			input.Contract = ""
 			input.Current = "function apply(): void { run(); }"

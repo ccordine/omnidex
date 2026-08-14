@@ -14,9 +14,16 @@ import (
 )
 
 const (
-	PortableJobSchemaV1       = "omnidex.portable-job.v1"
-	maxPortablePayloadBytes   = 16 * 1024
-	maxPortableCandidateBytes = 12 * 1024
+	PortableJobSchemaV1      = "omnidex.portable-job.v1"
+	maxPortableResourceBytes = 128 * 1024
+	// Raw provider output is captured and bounded before it becomes a portable
+	// result. This duplicate ceiling protects test and alternate in-process
+	// executors at the same coarse 16 MiB provider-response boundary.
+	maxPortableRawCandidateBytes = 16 * 1024 * 1024
+	// Portable byte limits are coarse resource ceilings. Station field bounds
+	// and the exact provider token budget remain the semantic/context authority.
+	maxPortablePayloadBytes   = maxPortableResourceBytes
+	maxPortableCandidateBytes = maxPortableResourceBytes
 )
 
 type WorkKind string
@@ -63,8 +70,30 @@ type PortableJob struct {
 }
 
 type PortableResult struct {
-	JobID     string `json:"job_id"`
-	Candidate string `json:"candidate"`
+	JobID      string                    `json:"job_id"`
+	Candidate  string                    `json:"candidate"`
+	Projection *PortableResultProjection `json:"-"`
+}
+
+type PortableResultProjectionKind string
+
+const (
+	PortableResultProjectionExactResponse      PortableResultProjectionKind = "exact_response"
+	PortableResultProjectionTypeScriptFunction PortableResultProjectionKind = "typescript_function"
+)
+
+// PortableResultProjection is code-owned metadata binding the accepted leaf
+// to an exact byte span in Candidate. Candidate remains the complete untrusted
+// final response and is preserved separately as call evidence.
+type PortableResultProjection struct {
+	Kind                 PortableResultProjectionKind
+	Source               string
+	SourceResponseSHA256 string
+	SourceSHA256         string
+	StartByte            int
+	EndByte              int
+	RawBytes             int
+	DiscardedBytes       int
 }
 
 func newPortableJob(kind WorkKind, input any) (PortableJob, error) {
@@ -87,8 +116,14 @@ func (job PortableJob) Validate() error {
 	if !validWorkKind(job.Kind) {
 		return fmt.Errorf("portable job kind %q is unsupported", job.Kind)
 	}
-	if len(job.Payload) == 0 || len(job.Payload) > maxPortablePayloadBytes {
-		return fmt.Errorf("portable job payload must contain between 1 and %d bytes", maxPortablePayloadBytes)
+	if len(job.Payload) == 0 {
+		return fmt.Errorf("portable job payload is empty")
+	}
+	if len(job.Payload) > maxPortablePayloadBytes {
+		return fmt.Errorf(
+			"portable job payload exceeds gross resource ceiling of %d bytes",
+			maxPortablePayloadBytes,
+		)
 	}
 	expectedID := portableJobDigest(job.Schema, job.Kind, job.Payload)
 	if job.ID != expectedID {
@@ -108,10 +143,76 @@ func (result PortableResult) ValidateFor(job PortableJob) error {
 	if strings.TrimSpace(result.Candidate) == "" {
 		return fmt.Errorf("portable result candidate is empty")
 	}
-	if len(result.Candidate) > maxPortableCandidateBytes {
-		return fmt.Errorf("portable result candidate exceeds %d bytes", maxPortableCandidateBytes)
+	if len(result.Candidate) > maxPortableRawCandidateBytes {
+		return fmt.Errorf(
+			"portable result candidate exceeds gross resource ceiling of %d bytes",
+			maxPortableRawCandidateBytes,
+		)
+	}
+	if result.Projection != nil {
+		if err := result.Projection.ValidateFor(result.Candidate); err != nil {
+			return fmt.Errorf("portable result projection: %w", err)
+		}
 	}
 	return nil
+}
+
+func NewExactPortableResultProjection(raw string) (PortableResultProjection, error) {
+	projection := PortableResultProjection{
+		Kind: PortableResultProjectionExactResponse, Source: raw,
+		SourceResponseSHA256: portableProjectionSHA256(raw),
+		SourceSHA256:         portableProjectionSHA256(raw),
+		StartByte:            0, EndByte: len(raw), RawBytes: len(raw),
+	}
+	if err := projection.ValidateFor(raw); err != nil {
+		return PortableResultProjection{}, err
+	}
+	return projection, nil
+}
+
+func (projection TypeScriptFunctionProjection) PortableResultProjection() (PortableResultProjection, error) {
+	result := PortableResultProjection{
+		Kind: PortableResultProjectionTypeScriptFunction, Source: projection.Source,
+		SourceResponseSHA256: projection.RawSHA256, SourceSHA256: projection.SourceSHA256,
+		StartByte: projection.StartByte, EndByte: projection.EndByte,
+		RawBytes: projection.RawBytes, DiscardedBytes: projection.DiscardedBytes,
+	}
+	if result.EndByte-result.StartByte != len(result.Source) ||
+		result.RawBytes-result.DiscardedBytes != len(result.Source) {
+		return PortableResultProjection{}, fmt.Errorf("TypeScript projection metadata is internally inconsistent")
+	}
+	return result, nil
+}
+
+func (projection PortableResultProjection) ValidateFor(raw string) error {
+	if projection.Kind != PortableResultProjectionExactResponse &&
+		projection.Kind != PortableResultProjectionTypeScriptFunction {
+		return fmt.Errorf("projection kind %q is not registered", projection.Kind)
+	}
+	if projection.RawBytes != len(raw) || projection.SourceResponseSHA256 != portableProjectionSHA256(raw) {
+		return fmt.Errorf("projection raw response identity is invalid")
+	}
+	if projection.StartByte < 0 || projection.EndByte <= projection.StartByte ||
+		projection.EndByte > len(raw) {
+		return fmt.Errorf("projection source span is invalid")
+	}
+	if projection.Source != raw[projection.StartByte:projection.EndByte] ||
+		projection.SourceSHA256 != portableProjectionSHA256(projection.Source) {
+		return fmt.Errorf("projection source differs from its exact response span")
+	}
+	if projection.DiscardedBytes != len(raw)-len(projection.Source) {
+		return fmt.Errorf("projection discarded byte count is invalid")
+	}
+	if projection.Kind == PortableResultProjectionExactResponse &&
+		(projection.StartByte != 0 || projection.EndByte != len(raw) || projection.DiscardedBytes != 0) {
+		return fmt.Errorf("exact response projection is not the complete response")
+	}
+	return nil
+}
+
+func portableProjectionSHA256(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
 }
 
 func portableJobDigest(schema string, kind WorkKind, payload []byte) string {

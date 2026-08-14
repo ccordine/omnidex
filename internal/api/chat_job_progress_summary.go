@@ -104,18 +104,12 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 			"Verifying %s against its %d-byte exact requirement", task, requirementBytes,
 		), err
 	case "coding_task_verified":
-		fields, err := exactChatEventFields(event.Message, "task", "corrections_remaining")
+		fields, err := exactChatEventFields(event.Message, "task")
 		if err != nil {
 			return "", "", err
 		}
 		task, err := requireChatEventToken(fields, "task", 256)
-		if err != nil {
-			return "", "", err
-		}
-		corrections, err := requireChatEventInteger(fields, "corrections_remaining", true)
-		return chatProgressVerification, fmt.Sprintf(
-			"Verified %s with %d corrections remaining", task, corrections,
-		), err
+		return chatProgressVerification, "Verified " + task, err
 	case "coding_file_started":
 		fields, err := exactChatEventFields(event.Message, "path", "stage")
 		if err != nil {

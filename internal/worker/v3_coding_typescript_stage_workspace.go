@@ -97,19 +97,20 @@ func (s *directCodingSession) stageTypeScriptProgramIn(
 	root string,
 	program *directCodingProgram,
 	commands [][]string,
-	remainingCorrections *int,
+	progress *directCodingTypeScriptCorrectionProgress,
 ) error {
-	if program == nil || remainingCorrections == nil || *remainingCorrections < 0 {
-		return fmt.Errorf("staged TypeScript verification requires a program and correction budget")
+	if program == nil || progress == nil || progress.seen == nil {
+		return fmt.Errorf("staged TypeScript verification requires a program and correction progress authority")
 	}
 	if err := resetDirectCodingTypeScriptStage(root); err != nil {
 		return err
 	}
-	repeated := make(map[string]int)
 	for attempt := 1; ; attempt++ {
+		if err := s.runtime.ctx.Err(); err != nil {
+			return fmt.Errorf("staged TypeScript correction stopped by context authority: %w", err)
+		}
 		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_started", fmt.Sprintf(
-			"attempt=%d generated_blocks=%d corrections_remaining=%d",
-			attempt, len(program.Generated), *remainingCorrections,
+			"attempt=%d generated_blocks=%d", attempt, len(program.Generated),
 		))
 		if err := writeDirectCodingTypeScriptStage(root, *program); err != nil {
 			return err
@@ -126,32 +127,33 @@ func (s *directCodingSession) stageTypeScriptProgramIn(
 			))
 			return nil
 		}
-		if *remainingCorrections == 0 {
-			return fmt.Errorf("staged TypeScript program exhausted its node-correction budget: %s", diagnostic.Message)
-		}
-		if err := s.correctDirectCodingTypeScriptStage(program, diagnostic, repeated); err != nil {
+		if err := s.correctDirectCodingTypeScriptStage(program, diagnostic, progress); err != nil {
 			return err
 		}
-		(*remainingCorrections)--
 	}
 }
 
 func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	program *directCodingProgram,
 	diagnostic *directCodingStageDiagnostic,
-	repeated map[string]int,
+	progress *directCodingTypeScriptCorrectionProgress,
 ) error {
+	if diagnostic == nil {
+		return fmt.Errorf("correct staged TypeScript program requires one diagnostic")
+	}
 	target, err := directCodingTypeScriptCorrectionBlock(program.TypeScript, diagnostic.BlockID)
 	if err != nil {
 		return fmt.Errorf("route staged TypeScript diagnostic: %w: %s", err, diagnostic.Message)
 	}
-	fingerprint := target.ID + "\x00" + firstDirectCodingDiagnosticLine(diagnostic.Message)
-	repeated[fingerprint]++
-	if repeated[fingerprint] > maxDirectCodingStageRepeatedCorrections {
-		return fmt.Errorf(
-			"block %s repeated the same staged failure %d times: %s",
-			target.ID, maxDirectCodingStageRepeatedCorrections, diagnostic.Message,
-		)
+	current, exists := program.Generated[target.ID]
+	if !exists || strings.TrimSpace(current) == "" {
+		return fmt.Errorf("staged TypeScript diagnostic target %s has no accepted declaration", target.ID)
+	}
+	failure := directCodingTypeScriptModelFailure(diagnostic.Output)
+	if err := progress.observe(
+		target.ID, current, diagnostic.VerificationStage, failure,
+	); err != nil {
+		return err
 	}
 	declarations, err := directCodingTypeScriptAcceptedDeclarations(program.TypeScript, program.Generated)
 	if err != nil {
@@ -165,7 +167,6 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	if err != nil {
 		return err
 	}
-	failure := directCodingTypeScriptModelFailure(diagnostic.Output)
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_fragment_correction_started", fmt.Sprintf(
 		"block=%s exact_failure=%s", target.ID,
 		safeLine(trimForBudget(failure, 500), "unknown"),
@@ -176,7 +177,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 		workerRuntime, modelName,
 		directCodingTypeScriptFragmentJob{
 			block: target, tsx: directCodingTypeScriptBlockIsTSX(program.TypeScript, target.ID),
-			available: available, current: program.Generated[target.ID], failure: failure,
+			available: available, current: current, failure: failure,
 		},
 	)
 	if err != nil {
@@ -185,7 +186,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 			target.ID, safeLine(firstDirectCodingDiagnosticLine(diagnostic.Message), "unknown"), err,
 		)
 	}
-	if source == program.Generated[target.ID] {
+	if strings.TrimSpace(source) == strings.TrimSpace(current) {
 		return fmt.Errorf("block %s returned an unchanged declaration for staged failure: %s", target.ID, diagnostic.Message)
 	}
 	program.Generated[target.ID] = source

@@ -50,11 +50,28 @@ func ollamaIdentityClient(
 }
 
 func ollamaTokenizerProfileJSON() []byte {
-	return []byte(`{"model_info":{"general.architecture":"qwen35",` +
-		`"tokenizer.ggml.model":"gpt2","tokenizer.ggml.pre":"qwen35",` +
-		`"tokenizer.ggml.add_eos_token":false,"tokenizer.ggml.add_padding_token":false,` +
-		`"tokenizer.ggml.tokens":null,"tokenizer.ggml.token_type":null,` +
-		`"tokenizer.ggml.merges":null}}`)
+	raw, err := json.Marshal(map[string]any{
+		"capabilities": []string{"completion", "vision", "tools", "thinking"},
+		"model_info": map[string]any{
+			"general.architecture":             "qwen35",
+			"tokenizer.ggml.model":             "gpt2",
+			"tokenizer.ggml.pre":               "qwen35",
+			"tokenizer.ggml.add_eos_token":     false,
+			"tokenizer.ggml.add_padding_token": false,
+			"tokenizer.ggml.tokens":            nil,
+			"tokenizer.ggml.token_type":        nil,
+			"tokenizer.ggml.merges":            nil,
+		},
+		"template": "{{ .Prompt }}",
+		"parameters": "temperature                    1\n" +
+			"top_k                          20\n" +
+			"top_p                          0.95\n" +
+			"presence_penalty               1.5",
+	})
+	if err != nil {
+		panic(err)
+	}
+	return raw
 }
 
 func ollamaIdentityModelsJSON(

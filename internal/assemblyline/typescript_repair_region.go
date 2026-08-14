@@ -1,6 +1,7 @@
 package assemblyline
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -14,85 +15,44 @@ const (
 	maxTypeScriptRepairRegionRadiusLines = 4
 )
 
+// ErrTypeScriptRepairRegionUnrepresentable identifies a valid syntax location
+// whose code-owned local window cannot fit the registered regional authority.
+var ErrTypeScriptRepairRegionUnrepresentable = errors.New(
+	"TypeScript repair region cannot fit its local authority",
+)
+
 type TypeScriptFragmentRepairRegion struct {
 	StartLine int    `json:"start_line"`
 	EndLine   int    `json:"end_line"`
 	Source    string `json:"source"`
 }
 
-type TypeScriptFragmentRepairDecision struct {
-	ReplacementLines []string `json:"replacement_lines"`
-}
-
-func TypeScriptFragmentRepairResponseSchema(
-	region TypeScriptFragmentRepairRegion,
-) (map[string]any, error) {
-	if err := region.validate(); err != nil {
-		return nil, fmt.Errorf("TypeScript fragment repair response schema: %w", err)
-	}
-	lineCount := region.EndLine - region.StartLine + 1
-	return objectSchema(
-		[]string{"replacement_lines"},
-		map[string]any{
-			"replacement_lines": map[string]any{
-				"type": "array", "minItems": 1,
-				"maxItems": lineCount + maxTypeScriptRepairAddedLines,
-				"items": map[string]any{
-					"type": "string", "minLength": 1, "maxLength": maxTypeScriptRepairLineBytes,
-				},
-			},
-		},
-	), nil
-}
-
-func DecodeTypeScriptFragmentRepairDecision(
+func ProjectTypeScriptFragmentRepairResponse(
 	region TypeScriptFragmentRepairRegion,
 	raw string,
 ) (string, error) {
 	if err := region.validate(); err != nil {
 		return "", fmt.Errorf("TypeScript fragment repair response: %w", err)
 	}
-	if len(raw) > maxTypeScriptRepairRegionBytes*2 {
-		return "", fmt.Errorf("TypeScript fragment repair response exceeds %d bytes", maxTypeScriptRepairRegionBytes*2)
+	replacement := strings.Trim(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	if !utf8.ValidString(replacement) || strings.Contains(replacement, "\r") {
+		return "", fmt.Errorf("TypeScript fragment repair response must be normalized UTF-8 without carriage returns")
 	}
-	var decision TypeScriptFragmentRepairDecision
-	if err := decodePortablePayload([]byte(raw), &decision); err != nil {
-		return "", fmt.Errorf("decode TypeScript fragment repair response: %w", err)
-	}
-	regionLines := region.EndLine - region.StartLine + 1
-	if len(decision.ReplacementLines) < 1 {
-		return "", fmt.Errorf("TypeScript fragment repair response requires at least one replacement line")
-	}
-	if len(decision.ReplacementLines) > regionLines+maxTypeScriptRepairAddedLines {
-		return "", fmt.Errorf("TypeScript fragment repair response exceeds its local line authority")
-	}
-	flattened := make([]string, 0, len(decision.ReplacementLines))
-	for index, fragment := range decision.ReplacementLines {
-		if fragment == "" {
-			return "", fmt.Errorf("TypeScript fragment repair response item %d is empty", index+1)
-		}
-		if !utf8.ValidString(fragment) || strings.Contains(fragment, "\r") {
-			return "", fmt.Errorf("TypeScript fragment repair response item %d must be normalized UTF-8 without carriage returns", index+1)
-		}
-		if len(fragment) > maxTypeScriptRepairRegionBytes {
-			return "", fmt.Errorf("TypeScript fragment repair response item %d exceeds %d bytes", index+1, maxTypeScriptRepairRegionBytes)
-		}
-		flattened = append(flattened, strings.Split(fragment, "\n")...)
-	}
-	if len(flattened) > regionLines+maxTypeScriptRepairAddedLines {
-		return "", fmt.Errorf("TypeScript fragment repair response exceeds its flattened local line authority")
-	}
-	for index, line := range flattened {
-		if len(line) > maxTypeScriptRepairLineBytes {
-			return "", fmt.Errorf("TypeScript fragment repair response line %d exceeds %d bytes", index+1, maxTypeScriptRepairLineBytes)
-		}
-	}
-	replacement := strings.Join(flattened, "\n")
 	if strings.TrimSpace(replacement) == "" {
 		return "", fmt.Errorf("TypeScript fragment repair response is empty")
 	}
 	if len(replacement) > maxTypeScriptRepairRegionBytes {
 		return "", fmt.Errorf("TypeScript fragment repair replacement exceeds %d bytes", maxTypeScriptRepairRegionBytes)
+	}
+	regionLines := region.EndLine - region.StartLine + 1
+	lines := strings.Split(replacement, "\n")
+	if len(lines) > regionLines+maxTypeScriptRepairAddedLines {
+		return "", fmt.Errorf("TypeScript fragment repair response exceeds its local line authority")
+	}
+	for index, line := range lines {
+		if len(line) > maxTypeScriptRepairLineBytes {
+			return "", fmt.Errorf("TypeScript fragment repair response line %d exceeds %d bytes", index+1, maxTypeScriptRepairLineBytes)
+		}
 	}
 	if replacement == region.Source {
 		return "", fmt.Errorf("TypeScript fragment repair response made no change")
@@ -106,7 +66,10 @@ func (region TypeScriptFragmentRepairRegion) validate() error {
 	}
 	lineCount := region.EndLine - region.StartLine + 1
 	if lineCount > maxTypeScriptRepairRegionLines {
-		return fmt.Errorf("TypeScript repair region exceeds %d lines", maxTypeScriptRepairRegionLines)
+		return fmt.Errorf(
+			"%w: exceeds %d lines",
+			ErrTypeScriptRepairRegionUnrepresentable, maxTypeScriptRepairRegionLines,
+		)
 	}
 	if !utf8.ValidString(region.Source) || strings.Contains(region.Source, "\r") {
 		return fmt.Errorf("TypeScript repair region source must be valid normalized UTF-8")
@@ -115,10 +78,21 @@ func (region TypeScriptFragmentRepairRegion) validate() error {
 		return fmt.Errorf("TypeScript repair region source is required")
 	}
 	if len(region.Source) > maxTypeScriptRepairRegionBytes {
-		return fmt.Errorf("TypeScript repair region exceeds %d bytes", maxTypeScriptRepairRegionBytes)
+		return fmt.Errorf(
+			"%w: exceeds %d bytes",
+			ErrTypeScriptRepairRegionUnrepresentable, maxTypeScriptRepairRegionBytes,
+		)
 	}
 	if strings.Count(region.Source, "\n")+1 != lineCount {
 		return fmt.Errorf("TypeScript repair region source does not match its line range")
+	}
+	for index, line := range strings.Split(region.Source, "\n") {
+		if len(line) > maxTypeScriptRepairLineBytes {
+			return fmt.Errorf(
+				"%w: line %d exceeds %d bytes",
+				ErrTypeScriptRepairRegionUnrepresentable, index+1, maxTypeScriptRepairLineBytes,
+			)
+		}
 	}
 	return nil
 }

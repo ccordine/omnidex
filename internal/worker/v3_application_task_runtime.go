@@ -99,7 +99,7 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 		return err
 	}
 	defer workspace.Close()
-	remainingCorrections := maxDirectCodingStageCorrections
+	correctionProgress := newDirectCodingTypeScriptCorrectionProgress()
 	return runDirectCodingApplicationTaskLifecycle(
 		input, frozen, program,
 		directCodingApplicationTaskLifecycleHooks{
@@ -113,18 +113,18 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 					"task=%s requirement_bytes=%d", context.Task.TaskID, len(context.Task.RequirementQuote),
 				))
 				if stageErr := s.stageTypeScriptProgramIn(
-					workspace.Root(), stage, commands, &remainingCorrections,
+					workspace.Root(), stage, commands, correctionProgress,
 				); stageErr != nil {
 					return stageErr
 				}
-				s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_task_verified", fmt.Sprintf(
-					"task=%s corrections_remaining=%d", context.Task.TaskID, remainingCorrections,
-				))
+				s.runtime.svc.emitStepEvent(
+					s.runtime.claim.Authority, "coding_task_verified", "task="+context.Task.TaskID,
+				)
 				return nil
 			},
 			FinalStage: func(complete *directCodingProgram) error {
 				return s.stageTypeScriptProgramIn(
-					workspace.Root(), complete, directCodingFullStageCommands(), &remainingCorrections,
+					workspace.Root(), complete, directCodingFullStageCommands(), correctionProgress,
 				)
 			},
 		},

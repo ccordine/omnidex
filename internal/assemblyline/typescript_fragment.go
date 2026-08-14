@@ -9,8 +9,6 @@ import (
 	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
-const maxTypeScriptFragmentBytes = 5 * 1024
-
 type TypeScriptFunctionContract struct {
 	Signature string
 	TSX       bool
@@ -51,10 +49,6 @@ func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (T
 	if content == "" {
 		return zero, fmt.Errorf("TypeScript fragment is empty")
 	}
-	if len(content) > maxTypeScriptFragmentBytes {
-		return zero, fmt.Errorf("TypeScript fragment exceeds %d bytes", maxTypeScriptFragmentBytes)
-	}
-
 	if err := validateTypeScriptFunctionPolicy(contract.Policy); err != nil {
 		return zero, fmt.Errorf("TypeScript function policy: %w", err)
 	}

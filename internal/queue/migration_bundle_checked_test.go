@@ -94,6 +94,10 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	retiredExecutionAuthorityCount := 0
 	portableRendererV2Count := 0
 	portableRendererV3Count := 0
+	tokenizerProfileAuthorityCount := 0
+	stationOutputProjectionCount := 0
+	stationOutputLimitModeCount := 0
+	stationPromptTransportCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -185,9 +189,21 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == "093_portable_renderer_v3.sql" {
 			portableRendererV3Count++
 		}
+		if entry.name == tokenizerProfileAuthorityMigration {
+			tokenizerProfileAuthorityCount++
+		}
+		if entry.name == "095_station_output_artifact_projection.sql" {
+			stationOutputProjectionCount++
+		}
+		if entry.name == stationOutputLimitModeMigration {
+			stationOutputLimitModeCount++
+		}
+		if entry.name == stationPromptTransportMigration {
+			stationPromptTransportCount++
+		}
 	}
-	if len(bundle.entries) != 144 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 144/%d",
+	if len(bundle.entries) != 148 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 148/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -253,9 +269,13 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	}
 	if scrumChannelMessageRelationCount != 1 || scrumChannelOperationReceiptsCount != 1 ||
 		retiredExecutionAuthorityCount != 1 || portableRendererV2Count != 1 ||
-		portableRendererV3Count != 1 {
-		t.Fatalf("checked migrations 089/090/091/092/093 counts=%d/%d/%d/%d/%d want all one",
+		portableRendererV3Count != 1 || tokenizerProfileAuthorityCount != 1 ||
+		stationOutputProjectionCount != 1 || stationOutputLimitModeCount != 1 ||
+		stationPromptTransportCount != 1 {
+		t.Fatalf("checked migrations 089..097 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			scrumChannelMessageRelationCount, scrumChannelOperationReceiptsCount,
-			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count)
+			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count,
+			tokenizerProfileAuthorityCount, stationOutputProjectionCount,
+			stationOutputLimitModeCount, stationPromptTransportCount)
 	}
 }

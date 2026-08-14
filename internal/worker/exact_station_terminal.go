@@ -92,7 +92,7 @@ func (s *Service) persistExactStationCallResult(
 	latencyMS int64,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
 	persistCtx, cancel := stationPersistenceContext(ctx)
-	_, receiptErr := s.repo.RecordStationCallReceiptAndEvidence(
+	receiptEvidence, receiptErr := s.repo.RecordStationCallReceiptAndEvidence(
 		persistCtx,
 		queue.StationCallReceiptEvidenceRecord{
 			Receipt: queue.StationCallReceiptRecord{
@@ -136,9 +136,20 @@ func (s *Service) persistExactStationCallResult(
 			ctx, authority, gap, fmt.Errorf("derive completed station provider identity: %w", err),
 		)
 	}
-	portable := assemblyline.PortableResult{JobID: gap.WorkID, Candidate: result.Content}
+	projection, err := assemblyline.NewExactPortableResultProjection(result.Content)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
+			ctx, authority, gap, fmt.Errorf("bind exact station response projection: %w", err),
+		)
+	}
+	portable := assemblyline.PortableResult{
+		JobID: gap.WorkID, Candidate: result.Content, Projection: &projection,
+	}
 	return portable, exactStationExecution{
-		Gap: gap, Candidate: result.Content, ProviderIdentity: identity,
+		Gap: gap, Candidate: result.Content,
+		CallReceiptSHA256:       receiptEvidence.Receipt.GenerationSHA256,
+		CandidateResponseSHA256: receiptEvidence.Evidence.ResponseSHA256,
+		ProviderIdentity:        identity,
 	}, nil
 }
 

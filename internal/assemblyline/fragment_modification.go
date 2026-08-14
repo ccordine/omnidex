@@ -28,9 +28,6 @@ func (input FragmentModificationInput) validate() error {
 	if input.CurrentDeclaration == "" || input.CurrentDeclaration != strings.TrimSpace(input.CurrentDeclaration) {
 		return fmt.Errorf("fragment modification current declaration is required and must be trimmed")
 	}
-	if len(input.CurrentDeclaration) > maxTypeScriptCurrentDeclarationBytes {
-		return fmt.Errorf("fragment modification current declaration exceeds %d bytes", maxTypeScriptCurrentDeclarationBytes)
-	}
 	if input.RequirementQuote == "" || input.RequirementQuote != strings.TrimSpace(input.RequirementQuote) {
 		return fmt.Errorf("fragment modification requirement quote is required and must be trimmed")
 	}

@@ -79,7 +79,7 @@ func TestPostgresCompleteStepRejectsOpenProviderDiscoveryAtomically(t *testing.T
 	}
 	if _, err := repository.RecordStationDiscoveryReceipt(t.Context(), StationDiscoveryReceiptRecord{
 		Authority: claim.Authority, OpeningID: discovery.ID, GapID: gap.GapID,
-		Observed: llm.ObservedProviderIdentity{Evidence: stationCallIdentityFailure(t, prepared).ProviderIdentityEvidence},
+		Observed:      llm.ObservedProviderIdentity{Evidence: stationCallIdentityFailure(t, prepared).ProviderIdentityEvidence},
 		FailureReason: StationDiscoveryFailureEvidenceRejected,
 		Error:         "provider discovery failed",
 	}); err != nil {
@@ -132,7 +132,7 @@ func semanticGapTestClaim(t *testing.T, marker string) (*Repository, *pgxpool.Po
 	ctx := context.Background()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "080")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "096")); err != nil {
 		t.Fatal(err)
 	}
 	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, nil)
@@ -160,6 +160,7 @@ func stationGapOpenFixture(t *testing.T, authority model.StepAttemptAuthority) S
 	return StationGapOpenRecord{
 		Authority: authority, Job: job, Station: station.ConversationResponse,
 		ContextTokens: 32768, MaxOutputTokens: 1024,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	}
 }
 
@@ -180,7 +181,7 @@ func persistStationDiscoveryFailure(
 	}
 	receipt, err := repository.RecordStationDiscoveryReceipt(t.Context(), StationDiscoveryReceiptRecord{
 		Authority: authority, OpeningID: opening.ID, GapID: gap.GapID,
-		Observed: llm.ObservedProviderIdentity{Evidence: stationCallIdentityFailure(t, prepared).ProviderIdentityEvidence},
+		Observed:      llm.ObservedProviderIdentity{Evidence: stationCallIdentityFailure(t, prepared).ProviderIdentityEvidence},
 		FailureReason: StationDiscoveryFailureEvidenceRejected,
 		Error:         "exact provider discovery failed",
 	})

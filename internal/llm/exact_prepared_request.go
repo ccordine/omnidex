@@ -7,20 +7,18 @@ import (
 	"math"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
-	// ExactPreparedProtocolStructuredV1 bypasses model-specific chat templates by
-	// using Ollama raw generation. The fixed prompt joiner is itself visible and
-	// included in every byte/hash/budget authority.
-	ExactPreparedProviderBackend         = "ollama"
-	ExactPreparedProviderVersion         = "0.24.0"
-	ExactPreparedTokenizerProfile        = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
-	ExactPreparedPromptJoiner            = "\n"
-	ExactPreparedObjectiveAdvisoryStopV1 = "\n<END_OBJECTIVE_ADVISORY_V1>"
-	ExactPreparedCodeStopV1              = "<|endoftext|>"
+	// The protocol fixes the station result shape. The structurally attested
+	// provider profile separately owns raw/native template framing.
+	ExactPreparedProviderBackend            = "ollama"
+	ExactPreparedProviderVersion            = "0.24.0"
+	ExactPreparedTokenizerProfile           = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
+	ExactPreparedTokenizerProfileQwen3Qwen2 = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
+	ExactPreparedPromptJoiner               = "\n"
+	ExactPreparedObjectiveAdvisoryStopV1    = "\n<END_OBJECTIVE_ADVISORY_V1>"
+	ExactPreparedCodeStopV1                 = "<|endoftext|>"
 	// MaxExactPreparedModelInputBytes is a gross transport/resource ceiling.
 	// It is deliberately not a token estimate; the provider's tokenizer owns
 	// native context admission and reports the actual counts in its receipt.
@@ -48,44 +46,14 @@ func ValidateExactPreparedProviderExpectation(expected ProviderIdentityExpectati
 		return err
 	}
 	if expected.Backend != ExactPreparedProviderBackend ||
-		expected.BackendVersion != ExactPreparedProviderVersion ||
-		expected.TokenizerProfile != ExactPreparedTokenizerProfile {
+		expected.BackendVersion != ExactPreparedProviderVersion {
 		return fmt.Errorf(
-			"exact raw cognition supports only backend %s %s",
+			"exact prepared cognition supports only backend %s %s",
 			ExactPreparedProviderBackend, ExactPreparedProviderVersion,
 		)
 	}
-	return nil
-}
-
-type exactPreparedRequestOptions struct {
-	NumCtx      int      `json:"num_ctx"`
-	NumPredict  int      `json:"num_predict"`
-	Stop        []string `json:"stop,omitempty"`
-	Temperature float64  `json:"temperature"`
-}
-
-type exactPreparedRequest struct {
-	Model    string                      `json:"model"`
-	Options  exactPreparedRequestOptions `json:"options"`
-	Prompt   string                      `json:"prompt"`
-	Raw      bool                        `json:"raw"`
-	Shift    bool                        `json:"shift"`
-	Stream   bool                        `json:"stream"`
-	Think    bool                        `json:"think"`
-	Truncate bool                        `json:"truncate"`
-}
-
-type exactStructuredPreparedRequest struct {
-	Format   map[string]any              `json:"format"`
-	Model    string                      `json:"model"`
-	Options  exactPreparedRequestOptions `json:"options"`
-	Prompt   string                      `json:"prompt"`
-	Raw      bool                        `json:"raw"`
-	Shift    bool                        `json:"shift"`
-	Stream   bool                        `json:"stream"`
-	Think    bool                        `json:"think"`
-	Truncate bool                        `json:"truncate"`
+	_, err := exactProviderModelProfileByID(expected.TokenizerProfile)
+	return err
 }
 
 func ExactPreparedModelInput(systemEnvelope, promptHint string) (string, error) {
@@ -95,45 +63,17 @@ func ExactPreparedModelInput(systemEnvelope, promptHint string) (string, error) 
 	return systemEnvelope + ExactPreparedPromptJoiner + promptHint, nil
 }
 
-// ExactPreparedRequestBytes renders the exact raw /api/generate request body.
-// Both policy authority and the Ollama adapter call this sole function.
-func ExactPreparedRequestBytes(prepared PreparedModel) ([]byte, error) {
-	if err := validateExactPreparedRequest(prepared); err != nil {
-		return nil, err
-	}
-	prompt, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
-	if err != nil {
-		return nil, err
-	}
-	base := exactPreparedRequest{
-		Model: prepared.ContextModel,
-		Options: exactPreparedRequestOptions{
-			NumCtx: prepared.ContextTokens, NumPredict: prepared.MaxOutputTokens,
-			Temperature: *prepared.Temperature,
-		},
-		Prompt: prompt, Raw: true, Shift: false, Stream: false, Think: false, Truncate: false,
-	}
-	if prepared.RawTextStopSequence != "" {
-		base.Options.Stop = []string{prepared.RawTextStopSequence}
-	}
-	if prepared.Protocol == ExactPreparedProtocolRawTextV1 {
-		return exactjson.Canonical(base)
-	}
-	return exactjson.Canonical(exactStructuredPreparedRequest{
-		Format: prepared.ResponseSchema, Model: base.Model, Options: base.Options,
-		Prompt: base.Prompt, Raw: base.Raw, Shift: base.Shift, Stream: base.Stream,
-		Think: base.Think, Truncate: base.Truncate,
-	})
-}
-
 func validateExactPreparedRequest(prepared PreparedModel) error {
 	if err := prepared.Protocol.Validate(); err != nil {
+		return err
+	}
+	if err := prepared.OutputLimitMode.Validate(); err != nil {
 		return err
 	}
 	if strings.TrimSpace(prepared.BaseModel) == "" ||
 		prepared.ContextModel != prepared.BaseModel || strings.TrimSpace(prepared.Prompt) == "" ||
 		prepared.PromptHint != MinimalGeneratePrompt || prepared.MaxOutputTokens <= 0 ||
-		prepared.ContextTokens <= 0 || prepared.ThinkingEnabled ||
+		prepared.ContextTokens <= 0 ||
 		prepared.Temperature == nil || *prepared.Temperature != 0 ||
 		math.Signbit(*prepared.Temperature) {
 		return fmt.Errorf("prepared request does not satisfy the exact Ollama generation contract")
@@ -145,6 +85,16 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	}
 	if err := ValidateExactPreparedProviderExpectation(*prepared.ProviderIdentityExpectation); err != nil {
 		return err
+	}
+	profile, err := exactProviderModelProfileByID(
+		prepared.ProviderIdentityExpectation.TokenizerProfile,
+	)
+	if err != nil {
+		return err
+	}
+	wantThinking := profile.transport == exactPreparedTransportNativeThinking
+	if prepared.ThinkingEnabled != wantThinking {
+		return fmt.Errorf("prepared reasoning mode differs from its exact provider profile")
 	}
 	if err := (ProviderIdentityObservationRequest{
 		Expectation:     *prepared.ProviderIdentityExpectation,
@@ -175,12 +125,25 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	if err != nil {
 		return err
 	}
+	if prepared.OutputLimitMode == ExactPreparedOutputLimitNatural {
+		return ValidateExactPreparedNaturalInputAuthority(prepared.ContextTokens, rawInput)
+	}
 	return ValidateExactPreparedInputAuthority(
 		prepared.ContextTokens,
 		prepared.ContextTokens-prepared.MaxOutputTokens,
 		prepared.MaxOutputTokens,
 		rawInput,
 	)
+}
+
+// ValidateExactPreparedNaturalInputAuthority enforces only native context and
+// transport bounds. Natural output shares the remaining native context and is
+// checked from the provider's tokenizer-owned receipt.
+func ValidateExactPreparedNaturalInputAuthority(contextTokens int, rawInput string) error {
+	if err := ValidateInferenceContextTokens(contextTokens); err != nil {
+		return err
+	}
+	return validateExactPreparedInputBytes(rawInput)
 }
 
 func ExactPreparedRequestSHA256(prepared PreparedModel) (string, error) {
@@ -209,6 +172,10 @@ func ValidateExactPreparedInputAuthority(
 		maxInputTokens != contextTokens-maxOutputTokens {
 		return fmt.Errorf("exact raw cognition token ceilings must be positive")
 	}
+	return validateExactPreparedInputBytes(rawInput)
+}
+
+func validateExactPreparedInputBytes(rawInput string) error {
 	if !utf8.ValidString(rawInput) || strings.ContainsRune(rawInput, 0) ||
 		strings.TrimSpace(rawInput) == "" {
 		return fmt.Errorf("exact raw cognition input is invalid")
@@ -243,6 +210,27 @@ func ValidateExactPreparedNativeUsage(
 		return fmt.Errorf(
 			"exact provider context exceeded: prompt_tokens=%d input_ceiling=%d output_tokens=%d output_ceiling=%d native_context=%d",
 			usage.PromptEvalCount, maxInputTokens, usage.EvalCount, maxOutputTokens, contextTokens,
+		)
+	}
+	return nil
+}
+
+// ValidateExactPreparedNaturalUsage validates a natural-stop receipt without
+// inventing separate prompt/output sub-ceilings that were not sent to Ollama.
+func ValidateExactPreparedNaturalUsage(
+	contextTokens int,
+	usage ProviderGenerationUsage,
+) error {
+	if err := ValidateInferenceContextTokens(contextTokens); err != nil {
+		return err
+	}
+	if usage.PromptEvalCount <= 0 || usage.EvalCount <= 0 {
+		return fmt.Errorf("exact natural usage requires positive prompt and output token counts")
+	}
+	if usage.PromptEvalCount+usage.EvalCount > contextTokens {
+		return fmt.Errorf(
+			"exact provider natural context exceeded: prompt_tokens=%d output_tokens=%d native_context=%d",
+			usage.PromptEvalCount, usage.EvalCount, contextTokens,
 		)
 	}
 	return nil

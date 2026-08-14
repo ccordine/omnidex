@@ -8,7 +8,11 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const directCodingTypeScriptRequiredChange = "Fix only the observed local validation failure in the current declaration. Preserve all unrelated executable behavior."
+const (
+	directCodingTypeScriptRequiredChange         = "Fix only the observed local validation failure in the current declaration. Preserve all unrelated executable behavior."
+	directCodingTypeScriptDeclarationReviewBytes = 5 * 1024
+	maxTypeScriptOutputReviewBytes               = 128 * 1024
+)
 
 var errDirectCodingTypeScriptUnchangedCorrection = errors.New(
 	"unchanged correction rejected; modify the current declaration to resolve the original failure",
@@ -22,9 +26,6 @@ func runDirectCodingTypeScriptFragmentWorker(
 	if runtime.Context == nil || runtime.Execute == nil {
 		return "", fmt.Errorf("TypeScript fragment worker requires a portable execution runtime")
 	}
-	if runtime.MaxAttempts < 1 || runtime.MaxAttempts > maxTypedWorkerAttempts {
-		return "", fmt.Errorf("TypeScript fragment worker attempts must be between 1 and %d", maxTypedWorkerAttempts)
-	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return "", fmt.Errorf("TypeScript fragment worker requires one configured model")
@@ -35,13 +36,15 @@ func runDirectCodingTypeScriptFragmentWorker(
 	}
 	var lastErr error
 	var lastCandidate string
-	attemptsUsed := 0
-	seenCandidates := make(map[string]struct{})
-	for attempt := 1; attempt <= runtime.MaxAttempts; attempt++ {
-		attemptsUsed = attempt
+	progress := newDirectCodingTypeScriptCorrectionProgress()
+	var syntaxProgress directCodingTypeScriptSyntaxProgress
+	var nextSyntaxRepair directCodingTypeScriptSyntaxRepair
+	for attempt := 1; ; attempt++ {
 		if err := runtime.Context.Err(); err != nil {
 			return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, attempt-1, err)
 		}
+		previousCandidate := lastCandidate
+		correctionAttempt := lastErr != nil || strings.TrimSpace(job.current) != ""
 		attemptJob := baseJob
 		attemptModel := modelName
 		var repairRegion *assemblyline.TypeScriptFragmentRepairRegion
@@ -55,18 +58,33 @@ func runDirectCodingTypeScriptFragmentWorker(
 			}
 			retry := job
 			if failure, localized := assemblyline.TypeScriptSyntaxFailureFromError(lastErr); localized {
-				region, regionErr := assemblyline.NewTypeScriptFragmentRepairRegion(
-					lastCandidate, failure, 2*(attempt-1),
-				)
-				if regionErr != nil {
+				if nextSyntaxRepair.wholeDeclaration {
+					retry.current = lastCandidate
+					retry.repairRegion = nil
+				} else if nextSyntaxRepair.radius < 1 {
 					return "", failDirectCodingTypeScriptFragmentWorker(
 						runtime, attemptModel, job.block.ID, attempt-1,
-						fmt.Errorf("localize TypeScript syntax repair: %w", regionErr),
+						fmt.Errorf("TypeScript syntax correction lost its code-owned repair radius"),
 					)
+				} else {
+					region, regionErr := assemblyline.NewTypeScriptFragmentRepairRegion(
+						lastCandidate, failure, nextSyntaxRepair.radius,
+					)
+					if regionErr != nil {
+						if !errors.Is(regionErr, assemblyline.ErrTypeScriptRepairRegionUnrepresentable) {
+							return "", failDirectCodingTypeScriptFragmentWorker(
+								runtime, attemptModel, job.block.ID, attempt-1,
+								fmt.Errorf("localize TypeScript syntax repair: %w", regionErr),
+							)
+						}
+						retry.current = lastCandidate
+						retry.repairRegion = nil
+					} else {
+						retry.current = ""
+						retry.repairRegion = &region
+						repairRegion = &region
+					}
 				}
-				retry.current = ""
-				retry.repairRegion = &region
-				repairRegion = &region
 			} else {
 				retry.current = lastCandidate
 				retry.repairRegion = nil
@@ -94,9 +112,10 @@ func runDirectCodingTypeScriptFragmentWorker(
 		}
 		emitTypedWorker(runtime, typedWorkerEvent{
 			State: typedWorkerStarted, Kind: typedWorkerFragment, Subject: job.block.ID,
-			Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
+			Model: attemptModel, Attempt: attempt,
 			PromptBytes: len(prompt), CapabilityBytes: len(strings.TrimSpace(job.available)),
 			CurrentBytes: currentBytes, CorrectionBytes: correctionBytes,
+			Warning: directCodingTypeScriptDeclarationSizeWarning(currentBytes),
 		})
 
 		result, err := runtime.Execute(attemptJob, attemptModel)
@@ -107,10 +126,11 @@ func runDirectCodingTypeScriptFragmentWorker(
 			err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
 			return "", failDirectCodingTypeScriptFragmentWorker(runtime, attemptModel, job.block.ID, attempt, err)
 		}
-		candidate := directCodingCorrectionCandidate(result.Candidate)
+		rawCandidate := directCodingCorrectionCandidate(result.Candidate)
+		candidate := rawCandidate
 		if repairRegion != nil {
 			var replacement string
-			replacement, err = assemblyline.DecodeTypeScriptFragmentRepairDecision(
+			replacement, err = assemblyline.ProjectTypeScriptFragmentRepairResponse(
 				*repairRegion, result.Candidate,
 			)
 			if err == nil {
@@ -119,30 +139,41 @@ func runDirectCodingTypeScriptFragmentWorker(
 				)
 			}
 		} else {
-			candidate, err = assemblyline.DecodeTypeScriptFunctionModelResponse(
+			var projection assemblyline.TypeScriptFunctionProjection
+			projection, err = assemblyline.ProjectTypeScriptFunctionModelResponse(
 				assemblyline.TypeScriptFunctionContract{
 					Signature: job.block.Signature, TSX: job.tsx, Policy: job.block.Policy,
 				},
 				result.Candidate,
 			)
+			candidate = projection.Source
+			if err == nil {
+				var portableProjection assemblyline.PortableResultProjection
+				portableProjection, err = projection.PortableResultProjection()
+				if err == nil {
+					result.Projection = &portableProjection
+				}
+			}
 		}
+		candidate = strings.TrimSpace(candidate)
 		if candidate != "" {
 			lastCandidate = candidate
-			if _, duplicate := seenCandidates[lastCandidate]; duplicate {
-				err = fmt.Errorf("repeated identical candidate rejected; the correction made no progress")
-			} else {
-				seenCandidates[lastCandidate] = struct{}{}
-			}
+		}
+		currentAuthority := strings.TrimSpace(job.current)
+		if lastErr != nil {
+			currentAuthority = strings.TrimSpace(previousCandidate)
+		}
+		if correctionAttempt && candidate != "" && candidate == currentAuthority {
+			err = errDirectCodingTypeScriptUnchangedCorrection
 		}
 		if err == nil {
 			candidate := strings.TrimSpace(lastCandidate)
-			var fragment assemblyline.TypeScriptFragment
-			fragment, err = assemblyline.ParseTypeScriptFunction(assemblyline.TypeScriptFunctionContract{
+			_, err = assemblyline.ParseTypeScriptFunction(assemblyline.TypeScriptFunctionContract{
 				Signature: job.block.Signature, TSX: job.tsx, Policy: job.block.Policy,
 			}, candidate)
 			if err == nil {
-				source := strings.TrimSpace(fragment.Source)
-				if strings.TrimSpace(job.current) != "" && source == strings.TrimSpace(job.current) {
+				source := candidate
+				if correctionAttempt && source == currentAuthority {
 					err = errDirectCodingTypeScriptUnchangedCorrection
 				} else {
 					if err = finalizeTypedWorkerResult(runtime, attemptJob, result, nil); err != nil {
@@ -150,7 +181,11 @@ func runDirectCodingTypeScriptFragmentWorker(
 					}
 					emitTypedWorker(runtime, typedWorkerEvent{
 						State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: job.block.ID,
-						Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
+						Model: attemptModel, Attempt: attempt,
+						Warning: joinTypedWorkerWarnings(
+							directCodingTypeScriptDeclarationSizeWarning(len(source)),
+							directCodingTypeScriptProjectionWarning(result.Projection),
+						),
 					})
 					return source, nil
 				}
@@ -161,6 +196,27 @@ func runDirectCodingTypeScriptFragmentWorker(
 			return "", failDirectCodingTypeScriptFragmentWorker(runtime, attemptModel, job.block.ID, attempt,
 				fmt.Errorf("TypeScript fragment rejection lost its exact failure"))
 		}
+		terminal := errors.Is(rejectionErr, errDirectCodingTypeScriptUnchangedCorrection) ||
+			(candidate == "" && rawCandidate != "")
+		if !terminal {
+			progressCandidate := strings.TrimSpace(lastCandidate)
+			if progressCandidate == "" {
+				progressCandidate = rawCandidate
+			}
+			verificationStage := "fragment_validation"
+			if syntaxFailure, syntaxRejected := assemblyline.TypeScriptSyntaxFailureFromError(rejectionErr); syntaxRejected {
+				nextSyntaxRepair = syntaxProgress.next(syntaxFailure)
+				verificationStage = nextSyntaxRepair.verificationStage()
+			} else {
+				nextSyntaxRepair = directCodingTypeScriptSyntaxRepair{}
+			}
+			if progressErr := progress.observe(
+				job.block.ID, progressCandidate, verificationStage, rejectionErr.Error(),
+			); progressErr != nil {
+				rejectionErr = progressErr
+				terminal = true
+			}
+		}
 		if runtime.Finalize != nil {
 			if persistErr := runtime.Finalize(attemptJob, result, rejectionErr); persistErr != nil {
 				return "", failDirectCodingTypeScriptFragmentWorker(
@@ -169,27 +225,22 @@ func runDirectCodingTypeScriptFragmentWorker(
 				)
 			}
 		}
-		lastErr = rejectionErr
 		emitTypedWorker(runtime, typedWorkerEvent{
 			State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.block.ID,
-			Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
+			Model: attemptModel, Attempt: attempt,
+			Warning: joinTypedWorkerWarnings(
+				directCodingTypeScriptDeclarationSizeWarning(len(lastCandidate)),
+				directCodingTypeScriptProjectionWarning(result.Projection),
+			),
 			Detail: trimForBudget(rejectionErr.Error(), 1200),
 		})
-		if repairRegion != nil {
-			if _, remainsSyntaxLocal := assemblyline.TypeScriptSyntaxFailureFromError(rejectionErr); !remainsSyntaxLocal {
-				break
-			}
+		if terminal {
+			return "", failDirectCodingTypeScriptFragmentWorker(
+				runtime, attemptModel, job.block.ID, attempt, rejectionErr,
+			)
 		}
-		if strings.Contains(rejectionErr.Error(), "repeated identical candidate") {
-			break
-		}
-		if errors.Is(rejectionErr, errDirectCodingTypeScriptUnchangedCorrection) {
-			break
-		}
+		lastErr = rejectionErr
 	}
-	return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, attemptsUsed, fmt.Errorf(
-		"failed after %d bounded attempts: %w", attemptsUsed, lastErr,
-	))
 }
 
 func directCodingCorrectionCandidate(raw string) string {
@@ -243,7 +294,7 @@ func failDirectCodingTypeScriptFragmentWorker(
 ) error {
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerFailed, Kind: typedWorkerFragment, Subject: blockID,
-		Model: modelName, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
+		Model: modelName, Attempt: attempt,
 		Detail: trimForBudget(err.Error(), 1200),
 	})
 	return fmt.Errorf("TypeScript fragment worker failed: %w", err)

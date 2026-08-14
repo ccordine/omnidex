@@ -101,9 +101,6 @@ func (input FragmentCorrectionInput) validate() error {
 		if current != strings.TrimSpace(current) {
 			return fmt.Errorf("fragment correction current declaration must be trimmed")
 		}
-		if len(current) > maxTypeScriptCurrentDeclarationBytes {
-			return fmt.Errorf("fragment correction current declaration exceeds %d bytes", maxTypeScriptCurrentDeclarationBytes)
-		}
 	}
 	if input.RepairRegion != nil {
 		if input.Language != "typescript" {
@@ -149,15 +146,14 @@ func validatePortableFragmentCore(language, signature string, capabilities, symb
 	if len(signature) > 1024 {
 		return fmt.Errorf("fragment signature exceeds 1024 bytes")
 	}
-	if err := validatePortableStringSet("capability", capabilities, 2048); err != nil {
+	if err := validatePortableStringSet("capability", capabilities); err != nil {
 		return err
 	}
-	return validatePortableStringSet("permitted symbol", symbols, 1024)
+	return validateBoundedPortableStringSet("permitted symbol", symbols, 1024)
 }
 
-func validatePortableStringSet(label string, values []string, byteLimit int) error {
+func validatePortableStringSet(label string, values []string) error {
 	seen := make(map[string]struct{}, len(values))
-	total := 0
 	for index, value := range values {
 		if value == "" || value != strings.TrimSpace(value) {
 			return fmt.Errorf("%s %d is empty or untrimmed", label, index)
@@ -166,6 +162,16 @@ func validatePortableStringSet(label string, values []string, byteLimit int) err
 			return fmt.Errorf("%s %q is duplicated", label, value)
 		}
 		seen[value] = struct{}{}
+	}
+	return nil
+}
+
+func validateBoundedPortableStringSet(label string, values []string, byteLimit int) error {
+	if err := validatePortableStringSet(label, values); err != nil {
+		return err
+	}
+	total := 0
+	for _, value := range values {
 		total += len(value)
 	}
 	if total > byteLimit {

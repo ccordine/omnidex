@@ -13,9 +13,11 @@ import (
 )
 
 type exactStationExecution struct {
-	Gap              queue.StationGapOpening
-	Candidate        string
-	ProviderIdentity llm.ProviderIdentityExpectation
+	Gap                     queue.StationGapOpening
+	Candidate               string
+	CallReceiptSHA256       string
+	CandidateResponseSHA256 string
+	ProviderIdentity        llm.ProviderIdentityExpectation
 }
 
 func (s *Service) executeExactPortableStation(
@@ -52,10 +54,15 @@ func (s *Service) executeExactPortableStation(
 	if err := validateExactStationStaticCall(prompt, schema, contract, selection); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
+	maxOutputTokens := contract.MaxTokens
+	if contract.OutputLimitMode == llm.ExactPreparedOutputLimitNatural {
+		maxOutputTokens = s.inferenceContextTokens
+	}
 	opening, err := s.repo.OpenStationGapDiscovery(ctx, queue.StationGapDiscoveryOpenRecord{
 		Gap: queue.StationGapOpenRecord{
 			Authority: authority, Job: job, Station: stationID,
-			ContextTokens: s.inferenceContextTokens, MaxOutputTokens: contract.MaxTokens,
+			ContextTokens: s.inferenceContextTokens, MaxOutputTokens: maxOutputTokens,
+			OutputLimitMode: contract.OutputLimitMode,
 		},
 		Selection: selection,
 	})

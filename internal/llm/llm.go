@@ -11,6 +11,22 @@ const MinimalGeneratePrompt = "Return only the requested output."
 
 const ResponseFormatJSON = "json"
 
+type ExactPreparedOutputLimitMode string
+
+const (
+	ExactPreparedOutputLimitExplicit ExactPreparedOutputLimitMode = "explicit"
+	ExactPreparedOutputLimitNatural  ExactPreparedOutputLimitMode = "natural"
+)
+
+func (mode ExactPreparedOutputLimitMode) Validate() error {
+	switch mode {
+	case ExactPreparedOutputLimitExplicit, ExactPreparedOutputLimitNatural:
+		return nil
+	default:
+		return fmt.Errorf("exact prepared output-limit mode is not registered")
+	}
+}
+
 type PreparedModel struct {
 	Protocol                     ExactPreparedProtocol
 	BaseModel                    string
@@ -19,6 +35,7 @@ type PreparedModel struct {
 	PromptHint                   string
 	Prompt                       string
 	MaxOutputTokens              int
+	OutputLimitMode              ExactPreparedOutputLimitMode
 	ContextTokens                int
 	ResponseFormat               string
 	ResponseSchema               map[string]any

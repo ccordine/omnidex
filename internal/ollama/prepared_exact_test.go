@@ -133,20 +133,26 @@ func TestGeneratePreparedExactKeepsLargeHTTPErrorBodyOutOfReturnedError(t *testi
 	}
 }
 
-func TestGeneratePreparedExactRejectsUnknownSuccessfulResponseField(t *testing.T) {
+func TestGeneratePreparedExactPreservesButDoesNotProjectProviderMetadata(t *testing.T) {
 	t.Parallel()
 	expected := ollamaIdentityExpectation()
-	body := strings.Replace(exactRawBody(), `"created_at":`, `"unknown":true,"created_at":`, 1)
+	body := strings.Replace(
+		exactRawBody(), `"created_at":`,
+		`"context":[1,"opaque",{"token":2}],"unknown":{"provider":true},"created_at":`, 1,
+	)
 	client := exactPreparedIdentityClient(
 		t, expected, http.StatusOK, body, make(map[string]int), make(map[string][]byte),
 	)
-	partial, err := client.GeneratePreparedExact(
+	result, err := client.GeneratePreparedExact(
 		context.Background(), exactPreparedRequest(expected),
 	)
-	if err == nil || partial.ProviderResponseDisposition != llm.ProviderResponseInvalidJSON ||
-		partial.Content != "" || partial.ProviderResponseModel != "" ||
-		len(partial.ProviderResponseCapture) != len(body) {
-		t.Fatalf("unknown raw response field was accepted: result=%+v error=%v", partial, err)
+	if err != nil {
+		t.Fatalf("provider metadata blocked exact generation: %v", err)
+	}
+	if result.Content != `{}` || result.ProviderResponseModel != expected.Model ||
+		string(result.ProviderResponseCapture) != body ||
+		result.ProviderResponseCapturedBytes != len(body) {
+		t.Fatalf("provider metadata changed normalized generation or raw capture: %+v", result)
 	}
 }
 

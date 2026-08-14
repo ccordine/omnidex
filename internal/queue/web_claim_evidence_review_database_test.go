@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 )
@@ -12,7 +13,7 @@ import (
 func TestPostgresWebClaimEvidenceReviewStationIsConsumedByExactGapAuthority(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "070")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
 		t.Fatal(err)
 	}
 	jobRecord, err := repository.EnqueueJob(t.Context(), "review station", model.PipelineCoding, nil)
@@ -39,6 +40,7 @@ func TestPostgresWebClaimEvidenceReviewStationIsConsumedByExactGapAuthority(t *t
 	opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: job, Station: station.WebClaimEvidenceReview,
 		ContextTokens: 8192, MaxOutputTokens: 1024,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +53,7 @@ func TestPostgresWebClaimEvidenceReviewStationIsConsumedByExactGapAuthority(t *t
 func TestPostgresWebSynthesisCorrectionStationIsConsumedByExactGapAuthority(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "070")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
 		t.Fatal(err)
 	}
 	jobRecord, err := repository.EnqueueJob(t.Context(), "correction station", model.PipelineCoding, nil)
@@ -86,6 +88,7 @@ func TestPostgresWebSynthesisCorrectionStationIsConsumedByExactGapAuthority(t *t
 	opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: job, Station: station.WebGroundedSynthesisCorrection,
 		ContextTokens: 8192, MaxOutputTokens: 1024,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	})
 	if err != nil {
 		t.Fatal(err)

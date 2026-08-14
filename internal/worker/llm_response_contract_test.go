@@ -14,6 +14,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 		format     string
 		protocol   llm.ExactPreparedProtocol
 		maxTokens  int
+		outputMode llm.ExactPreparedOutputLimitMode
 		promptHint string
 		stop       string
 	}{
@@ -23,6 +24,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			format:     llm.ResponseFormatJSON,
 			protocol:   llm.ExactPreparedProtocolStructuredV1,
 			maxTokens:  1024,
+			outputMode: llm.ExactPreparedOutputLimitExplicit,
 			promptHint: llm.MinimalGeneratePrompt,
 			stop:       "",
 		},
@@ -32,6 +34,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			format:     "",
 			protocol:   llm.ExactPreparedProtocolRawTextV1,
 			maxTokens:  4096,
+			outputMode: llm.ExactPreparedOutputLimitNatural,
 			promptHint: llm.MinimalGeneratePrompt,
 			stop:       llm.ExactPreparedCodeStopV1,
 		},
@@ -42,7 +45,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if contract.Protocol != test.protocol || contract.Format != test.format || contract.MaxTokens != test.maxTokens || contract.PromptHint != test.promptHint || contract.RawTextStopSequence != test.stop {
+			if contract.Protocol != test.protocol || contract.Format != test.format || contract.MaxTokens != test.maxTokens || contract.OutputLimitMode != test.outputMode || contract.PromptHint != test.promptHint || contract.RawTextStopSequence != test.stop {
 				t.Fatalf("llmResponseContractForScope(%q)=%#v", test.scope, contract)
 			}
 		})
@@ -55,7 +58,7 @@ func TestLLMResponseContractRejectsUnregisteredScope(t *testing.T) {
 	}
 }
 
-func TestFragmentCorrectionReservesOnlyItsMeasuredBoundedOutput(t *testing.T) {
+func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testing.T) {
 	generation, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
 		Language: "typescript", Signature: "function apply(): void",
 		Behavior: "Apply the one accepted behavior.",
@@ -95,8 +98,8 @@ func TestFragmentCorrectionReservesOnlyItsMeasuredBoundedOutput(t *testing.T) {
 		want int
 	}{
 		{name: "initial", job: generation, want: 4096},
-		{name: "correction", job: correction, want: 2048},
-		{name: "localized correction", job: regionCorrection, want: 1024},
+		{name: "correction", job: correction, want: 4096},
+		{name: "localized correction", job: regionCorrection, want: 4096},
 		{name: "go correction", job: goCorrection, want: 4096},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -111,9 +114,9 @@ func TestFragmentCorrectionReservesOnlyItsMeasuredBoundedOutput(t *testing.T) {
 			if contract.MaxTokens != test.want {
 				t.Fatalf("max output tokens=%d want %d", contract.MaxTokens, test.want)
 			}
-			if test.name == "localized correction" &&
-				(contract.Protocol != llm.ExactPreparedProtocolStructuredV1 || contract.Format != llm.ResponseFormatJSON) {
-				t.Fatalf("localized correction contract=%#v", contract)
+			if schema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1 ||
+				contract.Format != "" || contract.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
+				t.Fatalf("raw fragment contract=%#v schema=%#v", contract, schema)
 			}
 		})
 	}

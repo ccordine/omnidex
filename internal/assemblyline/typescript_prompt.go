@@ -6,12 +6,10 @@ import (
 )
 
 const (
-	maxTypeScriptCapabilityBytes         = 2 * 1024
-	maxTypeScriptCurrentDeclarationBytes = 5 * 1024
-	maxTypeScriptRequiredChangeBytes     = 512
-	maxTypeScriptDiagnosticBytes         = 1024
-	maxTypeScriptInitialEnvelopeBytes    = 32 * 1024
-	maxTypeScriptFragmentPromptBytes     = 32 * 1024
+	maxTypeScriptRequiredChangeBytes  = 512
+	maxTypeScriptDiagnosticBytes      = 1024
+	maxTypeScriptInitialEnvelopeBytes = maxPortableResourceBytes
+	maxTypeScriptFragmentPromptBytes  = maxPortableResourceBytes
 )
 
 type TypeScriptFragmentPrompt struct {
@@ -44,12 +42,6 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 	}
 	if current != "" && hasRegion {
 		return "", fmt.Errorf("TypeScript correction prompt requires one current declaration or repair region")
-	}
-	if len(available) > maxTypeScriptCapabilityBytes {
-		return "", fmt.Errorf("TypeScript fragment capabilities exceed %d bytes", maxTypeScriptCapabilityBytes)
-	}
-	if len(current) > maxTypeScriptCurrentDeclarationBytes {
-		return "", fmt.Errorf("TypeScript fragment current declaration exceeds %d bytes", maxTypeScriptCurrentDeclarationBytes)
 	}
 	if len(requiredChange) > maxTypeScriptRequiredChangeBytes {
 		return "", fmt.Errorf("TypeScript fragment required change exceeds %d bytes", maxTypeScriptRequiredChangeBytes)
@@ -89,7 +81,7 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 	if hasRegion {
 		parts = append(parts,
 			"Repair one local region inside a TypeScript function declaration.",
-			"Return one JSON object containing only replacement_lines. Each nonempty array item is a bounded source fragment and may contain normalized \\n between source lines; never use \\r. Do not return line numbers, Markdown, explanation, or the full declaration.",
+			"Return only the raw replacement source for the selected region. Do not return JSON, line numbers, Markdown, explanation, or the full declaration.",
 			"The enclosing declaration has this exact signature:\n"+signature,
 		)
 	} else {
@@ -121,7 +113,7 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 		)
 		if hasRegion {
 			parts = append(parts, fmt.Sprintf(
-				"Return replacement_lines for only lines %d through %d. Do not return line numbers, Markdown, or the whole declaration.",
+				"Return replacement source for only lines %d through %d. Do not return JSON, line numbers, Markdown, explanation, or the whole declaration.",
 				input.RepairRegion.StartLine, input.RepairRegion.EndLine,
 			))
 		} else {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -125,6 +126,7 @@ func rendererMigrationOpening(
 	opening, err := validateStationGapOpening(StationGapOpenRecord{
 		Authority: claim.Authority, Job: portable, Station: station.ConversationResponse,
 		ContextTokens: 8192, MaxOutputTokens: 1024,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -160,7 +162,24 @@ func insertRendererMigrationOpening(
 		t.Fatal(err)
 	}
 	defer tx.Rollback(t.Context())
-	err = insertStationGapOpeningTx(t.Context(), tx, &opening)
+	err = tx.QueryRow(t.Context(), `
+		INSERT INTO station_gap_openings (
+			job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,
+			portable_schema,work_id,work_kind,portable_payload,portable_payload_sha256,
+			portable_envelope,portable_envelope_sha256,renderer_version,prompt,response_schema,
+			projection_envelope,projection_sha256,context_tokens,max_output_tokens
+		) VALUES (
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+		)
+		RETURNING id,created_at
+	`, opening.JobID, opening.Generation, opening.StepID, opening.StepAttempt,
+		opening.WorkerID, opening.GapID, opening.Station, opening.Scope, opening.PortableSchema,
+		opening.WorkID, opening.WorkKind, opening.PortablePayload, opening.PortablePayloadSHA256,
+		opening.PortableEnvelope, opening.PortableEnvelopeSHA256, opening.RendererVersion,
+		opening.Prompt, string(opening.ResponseSchema), opening.ProjectionEnvelope,
+		opening.ProjectionSHA256, opening.ContextTokens, opening.MaxOutputTokens).Scan(
+		&opening.ID, &opening.CreatedAt,
+	)
 	if wantError {
 		if err == nil || !strings.Contains(err.Error(), "renderer_version") {
 			t.Fatalf("unknown renderer insert error=%v", err)

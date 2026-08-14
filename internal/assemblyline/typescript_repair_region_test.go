@@ -1,7 +1,8 @@
 package assemblyline
 
 import (
-	"reflect"
+	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -75,6 +76,37 @@ func TestTypeScriptFragmentRepairRegionRejectsStaleAuthority(t *testing.T) {
 	}
 }
 
+func TestTypeScriptRepairRegionCapacityFailureIsHardTyped(t *testing.T) {
+	t.Parallel()
+
+	current := strings.Join([]string{
+		"function apply(value: number): number {",
+		`  const evidence = "` + strings.Repeat("x", maxTypeScriptRepairLineBytes+1) + `";`,
+		"  return value + ;",
+		"}",
+	}, "\n")
+	_, parseErr := ParseTypeScriptFunction(TypeScriptFunctionContract{
+		Signature: "function apply(value: number): number",
+	}, current)
+	failure, ok := TypeScriptSyntaxFailureFromError(parseErr)
+	if !ok {
+		t.Fatalf("parser failure is not hard typed: %v", parseErr)
+	}
+	_, err := NewTypeScriptFragmentRepairRegion(current, failure, 2)
+	if !errors.Is(err, ErrTypeScriptRepairRegionUnrepresentable) {
+		t.Fatalf("local capacity failure=%v", err)
+	}
+
+	_, invalidLocationErr := NewTypeScriptFragmentRepairRegion(
+		current,
+		TypeScriptSyntaxFailure{Kind: "ERROR", Line: 99, Column: 1},
+		2,
+	)
+	if invalidLocationErr == nil || errors.Is(invalidLocationErr, ErrTypeScriptRepairRegionUnrepresentable) {
+		t.Fatalf("invalid parser authority was misclassified as local capacity: %v", invalidLocationErr)
+	}
+}
+
 func TestTypeScriptRepairRegionPromptContainsNoWholeDeclarationOrControlTokens(t *testing.T) {
 	t.Parallel()
 
@@ -95,6 +127,7 @@ func TestTypeScriptRepairRegionPromptContainsNoWholeDeclarationOrControlTokens(t
 	for _, forbidden := range []string{
 		"<|endoftext|>", "<|im_start|>", "CURRENT_DECLARATION_JSON:",
 		"Implement exactly one TypeScript function declaration.", "Return the corrected declaration only.",
+		"replacement_lines", "Return one JSON object",
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("localized prompt exposed forbidden %q:\n%s", forbidden, prompt)
@@ -103,7 +136,7 @@ func TestTypeScriptRepairRegionPromptContainsNoWholeDeclarationOrControlTokens(t
 	for _, required := range []string{
 		"CURRENT_REPAIR_REGION_JSON:", `"start_line":8`, `"end_line":10`,
 		"Repair one local region inside a TypeScript function declaration.",
-		"replacement_lines for only lines 8 through 10",
+		"replacement source for only lines 8 through 10",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("localized prompt omitted %q:\n%s", required, prompt)
@@ -111,7 +144,34 @@ func TestTypeScriptRepairRegionPromptContainsNoWholeDeclarationOrControlTokens(t
 	}
 }
 
-func TestTypeScriptRepairRegionUsesOneClosedBoundedReplacementLinesResponse(t *testing.T) {
+func TestLocalizedTypeScriptRepairHasNoStructuredResponsePath(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{
+		"typescript_repair_region.go",
+		"typescript_prompt.go",
+		"portable_job_render.go",
+		"../worker/llm_response_contract.go",
+		"../worker/v3_coding_typescript_fragment_worker.go",
+	} {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"replacement_lines",
+			"TypeScriptFragmentRepairResponseSchema",
+			"DecodeTypeScriptFragmentRepairDecision",
+			"maxFragmentRegionCorrectionOutputTokens",
+		} {
+			if strings.Contains(string(source), forbidden) {
+				t.Fatalf("localized repair production %s retains structured response path %q", path, forbidden)
+			}
+		}
+	}
+}
+
+func TestTypeScriptRepairRegionProjectsOneBoundedRawReplacementSource(t *testing.T) {
 	t.Parallel()
 
 	region := TypeScriptFragmentRepairRegion{
@@ -119,35 +179,9 @@ func TestTypeScriptRepairRegionUsesOneClosedBoundedReplacementLinesResponse(t *t
 		EndLine:   10,
 		Source:    "  return (\n    <section>Ready</section\n  );",
 	}
-	schema, err := TypeScriptFragmentRepairResponseSchema(region)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if schema["additionalProperties"] != false {
-		t.Fatalf("regional repair schema permits undeclared fields: %#v", schema)
-	}
-	properties, ok := schema["properties"].(map[string]any)
-	if !ok || len(properties) != 1 {
-		t.Fatalf("regional repair schema properties=%#v", schema["properties"])
-	}
-	lines, ok := properties["replacement_lines"].(map[string]any)
-	if !ok || lines["minItems"] != 1 || lines["maxItems"] != 7 {
-		t.Fatalf("regional replacement line bounds=%#v", lines)
-	}
-	items, ok := lines["items"].(map[string]any)
-	if !ok || items["minLength"] != 1 || items["maxLength"] != maxTypeScriptRepairLineBytes {
-		t.Fatalf("regional replacement item bounds=%#v", lines["items"])
-	}
-	if items["maxLength"] == maxTypeScriptRepairRegionBytes {
-		t.Fatalf("regional replacement schema reintroduced the provider-rejected 2048-character grammar repetition")
-	}
-	if !reflect.DeepEqual(schema["required"], []string{"replacement_lines"}) {
-		t.Fatalf("regional repair required fields=%#v", schema["required"])
-	}
-
-	replacement, err := DecodeTypeScriptFragmentRepairDecision(
+	replacement, err := ProjectTypeScriptFragmentRepairResponse(
 		region,
-		`{"replacement_lines":["  return (","    <section>Ready</section>","  );"]}`,
+		"  return (\n    <section>Ready</section>\n  );",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -155,15 +189,15 @@ func TestTypeScriptRepairRegionUsesOneClosedBoundedReplacementLinesResponse(t *t
 	if replacement != "  return (\n    <section>Ready</section>\n  );" {
 		t.Fatalf("replacement=%q", replacement)
 	}
-	grouped, err := DecodeTypeScriptFragmentRepairDecision(
+	normalized, err := ProjectTypeScriptFragmentRepairResponse(
 		region,
-		`{"replacement_lines":["  return (\n    <section>Ready</section>\n  );"]}`,
+		"\n  return (\r\n    <section>Ready</section>\r\n  );\n",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if grouped != replacement {
-		t.Fatalf("grouped replacement=%q want normalized=%q", grouped, replacement)
+	if normalized != replacement {
+		t.Fatalf("normalized replacement=%q want=%q", normalized, replacement)
 	}
 }
 
@@ -176,20 +210,15 @@ func TestTypeScriptRepairRegionResponseFailsLoudlyOutsideLocalAuthority(t *testi
 		Source:    "  return value + 1;",
 	}
 	invalid := []string{
-		`{"replacement_lines":["  return value + 1;"],"explanation":"trust me"}`,
-		`{"replacement_lines":["  return value + 1;"],"replacement_lines":["  return value + 2;"]}`,
-		`{"replacement_lines":[]}`,
-		`{"replacement_lines":[""]}`,
-		`{"replacement_lines":["line one","line two","line three","line four","line five","line six"]}`,
-		`{"replacement_lines":["line one\nline two\nline three\nline four\nline five\nline six"]}`,
-		`{"replacement_lines":["line one\rline two"]}`,
-		`{"replacement_lines":["  return value + 1;"]}`,
-		`{"replacement_lines":["` + strings.Repeat("x", maxTypeScriptRepairRegionBytes+1) + `"]}`,
-		`{"replacement_lines":["` + strings.Repeat("x", 800) + `","` +
-			strings.Repeat("y", 800) + `","` + strings.Repeat("z", 800) + `"]}`,
+		"",
+		"\n\t\n",
+		"  return value + 1;",
+		strings.Join([]string{"one", "two", "three", "four", "five", "six"}, "\n"),
+		strings.Repeat("x", maxTypeScriptRepairRegionBytes+1),
+		strings.Repeat("x", maxTypeScriptRepairLineBytes+1),
 	}
 	for _, raw := range invalid {
-		if _, err := DecodeTypeScriptFragmentRepairDecision(region, raw); err == nil {
+		if _, err := ProjectTypeScriptFragmentRepairResponse(region, raw); err == nil {
 			t.Fatalf("accepted invalid localized repair response: %.120q", raw)
 		}
 	}

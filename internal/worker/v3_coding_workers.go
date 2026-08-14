@@ -84,15 +84,35 @@ func portableWorkerRuntimeWithIdentityGuard(
 				execution.Candidate != result.Candidate {
 				return fmt.Errorf("portable work %s result differs from its exact station receipt", job.ID)
 			}
+			if err := result.ValidateFor(job); err != nil {
+				return fmt.Errorf("portable work %s result projection is invalid: %w", job.ID, err)
+			}
 			status := queue.StationGapResolved
 			terminal := queue.StationGapTerminalRecord{
 				Authority: runtime.claim.Authority, OpeningID: execution.Gap.ID,
-				GapID: execution.Gap.GapID, Status: status, Response: result.Candidate,
+				GapID: execution.Gap.GapID, Status: status,
 			}
 			if validationErr != nil {
 				terminal.Status = queue.StationGapFailed
-				terminal.Response = ""
 				terminal.Error = stationFailureText(validationErr)
+			} else {
+				if result.Projection == nil {
+					return fmt.Errorf("portable work %s accepted result lacks an exact source projection", job.ID)
+				}
+				projectionKind, err := stationGapProjectionKind(result.Projection.Kind)
+				if err != nil {
+					return fmt.Errorf("portable work %s: %w", job.ID, err)
+				}
+				if result.Projection.SourceResponseSHA256 != execution.CandidateResponseSHA256 ||
+					execution.CallReceiptSHA256 == "" {
+					return fmt.Errorf("portable work %s projection differs from its exact call receipt", job.ID)
+				}
+				terminal.Response = result.Projection.Source
+				terminal.Projection = &queue.StationGapSourceProjection{
+					Kind: projectionKind, CallReceiptSHA256: execution.CallReceiptSHA256,
+					SourceResponseSHA256: result.Projection.SourceResponseSHA256,
+					StartByte:            result.Projection.StartByte, EndByte: result.Projection.EndByte,
+				}
 			}
 			persistCtx, cancel := stationPersistenceContext(executionContext)
 			defer cancel()
@@ -106,6 +126,19 @@ func portableWorkerRuntimeWithIdentityGuard(
 				renderDirectCodingWorkerEvent(event),
 			)
 		},
+	}
+}
+
+func stationGapProjectionKind(
+	kind assemblyline.PortableResultProjectionKind,
+) (queue.StationGapProjectionKind, error) {
+	switch kind {
+	case assemblyline.PortableResultProjectionExactResponse:
+		return queue.StationGapProjectionExactResponse, nil
+	case assemblyline.PortableResultProjectionTypeScriptFunction:
+		return queue.StationGapProjectionTypeScriptFunction, nil
+	default:
+		return "", fmt.Errorf("portable result projection kind %q is not registered", kind)
 	}
 }
 
@@ -133,8 +166,10 @@ func renderDirectCodingWorkerEvent(event typedWorkerEvent) string {
 		"subject=" + safeEventToken(event.Subject, "unknown"),
 		"model=" + safeEventToken(event.Model, "unknown"),
 	}
-	if event.Attempt > 0 || event.MaxAttempts > 0 {
+	if event.MaxAttempts > 0 {
 		parts = append(parts, fmt.Sprintf("attempt=%d/%d", event.Attempt, event.MaxAttempts))
+	} else if event.Attempt > 0 {
+		parts = append(parts, fmt.Sprintf("attempt=%d", event.Attempt))
 	}
 	if event.PromptBytes > 0 {
 		parts = append(parts, fmt.Sprintf(
@@ -144,6 +179,9 @@ func renderDirectCodingWorkerEvent(event typedWorkerEvent) string {
 	}
 	if detail := strings.TrimSpace(event.Detail); detail != "" {
 		parts = append(parts, "error="+safeLine(detail, "unknown"))
+	}
+	if warning := strings.TrimSpace(event.Warning); warning != "" {
+		parts = append(parts, "warning="+safeLine(warning, "unknown"))
 	}
 	return strings.Join(parts, " ")
 }

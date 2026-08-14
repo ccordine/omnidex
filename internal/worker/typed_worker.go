@@ -45,6 +45,7 @@ type typedWorkerEvent struct {
 	CapabilityBytes int
 	CurrentBytes    int
 	CorrectionBytes int
+	Warning         string
 	Detail          string
 }
 

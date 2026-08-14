@@ -227,9 +227,13 @@ machine passes its executable gates:
    bounded semantic remainder.
 5. **Bounded workload compilation** — one intact-request station returns only grounded
    product and requirement quotes. For each accepted requirement, one local station
-   returns only an objective and observable criterion; code assigns identity and order,
-   freezes the workload, executes one task at a time with a task-local projection,
-   verifies its artifact before advancing, and alone decides completion.
+   receives the typed surface, product, complete accepted requirement set, and focused
+   requirement and proposes only a concrete objective, required behaviors, and observable
+   acceptance criteria. A separate bounded review may accept or name one derived field for
+   code-owned repair. Code preserves user authority separately from derived build decisions,
+   assigns identity and order, freezes only reviewed state, executes one task at a time with
+   the minimum sufficient authoritative task projection, verifies its artifact before
+   advancing, and alone decides completion.
 6. **Charmander handoff** — cognition produces one existing bounded declaration job;
    code parses, stitches, formats, stages, tests, applies, and reconciles it.
 7. **Semantic review and correction** — a review station can select at most one

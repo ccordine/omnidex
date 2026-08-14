@@ -58,17 +58,17 @@ func insertStationCallOpeningTx(
 			protocol,tokenizer_profile,provider_method,provider_endpoint,
 			wire_request,wire_request_sha256,wire_request_bytes,
 			expectation,expectation_sha256,observation_challenge,model,
-			context_tokens,max_input_tokens,max_output_tokens,model_input,
+			context_tokens,max_input_tokens,max_output_tokens,output_limit_mode,model_input,
 			model_input_sha256,model_input_bytes,model_input_token_upper_bound
 		) VALUES (
 			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-			$19,$20,$21,$22,$23,$24,$25,$26
+			$19,$20,$21,$22,$23,$24,$25,$26,$27
 		)
 		RETURNING id,gap_opening_id,discovery_receipt_id,job_id,generation,step_id,step_attempt,worker_id,gap_id,
 			protocol,tokenizer_profile,provider_method,provider_endpoint,
 			wire_request,wire_request_sha256,wire_request_bytes,expectation,
 			expectation_sha256,observation_challenge,model,context_tokens,max_input_tokens,
-			max_output_tokens,model_input,model_input_sha256,model_input_bytes,
+			max_output_tokens,output_limit_mode,model_input,model_input_sha256,model_input_bytes,
 			model_input_token_upper_bound,created_at
 	`, opening.GapOpeningID, opening.DiscoveryReceiptID, opening.JobID, opening.Generation, opening.StepID,
 		opening.StepAttempt, opening.WorkerID, opening.GapID, opening.Protocol,
@@ -76,7 +76,7 @@ func insertStationCallOpeningTx(
 		opening.WireRequest, opening.WireRequestSHA256, opening.WireRequestBytes,
 		string(opening.Expectation), opening.ExpectationSHA256, opening.ObservationChallenge,
 		opening.Model, opening.ContextTokens, opening.MaxInputTokens, opening.MaxOutputTokens,
-		opening.ModelInput, opening.ModelInputSHA256, opening.ModelInputBytes,
+		opening.OutputLimitMode, opening.ModelInput, opening.ModelInputSHA256, opening.ModelInputBytes,
 		opening.ModelInputTokenCeiling), opening)
 	if err != nil {
 		return fmt.Errorf("persist exact station call opening: %w", err)

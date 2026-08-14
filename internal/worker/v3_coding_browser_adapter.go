@@ -104,7 +104,7 @@ func genericBrowserFeatureDocuments(
 			Header: `import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { FeatureBoundary } from '../runtime';
-import type { CapabilitySnapshot, FeatureProps, FeatureViewProps } from '../runtime';`,
+import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, FeatureViewProps, SharedValue } from '../runtime';`,
 			Blocks: []assemblyline.TypeScriptBlock{
 				{
 					ID: contextID, Static: genericBrowserFeatureProjectionSource(viewPropsName, dependencies),

@@ -137,6 +137,10 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 	if err != nil {
 		return queue.StationGapOpening{}, err
 	}
+	maxOutputTokens := contract.MaxTokens
+	if contract.OutputLimitMode == llm.ExactPreparedOutputLimitNatural {
+		maxOutputTokens = transport.selection.NativeContextLimit
+	}
 	return queue.StationGapOpening{
 		JobID: 1, Generation: 1, StepID: int64(len(transport.calls) + 1), StepAttempt: 1,
 		WorkerID: "live-qualification", GapID: job.ID, Station: stationID,
@@ -144,7 +148,7 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV3,
 		Prompt: prompt, ResponseSchema: schemaJSON, ProjectionEnvelope: string(projection),
 		ProjectionSHA256: qualificationSHA256(projection), ContextTokens: transport.selection.NativeContextLimit,
-		MaxOutputTokens: contract.MaxTokens,
+		MaxOutputTokens: maxOutputTokens, OutputLimitMode: contract.OutputLimitMode,
 	}, nil
 }
 

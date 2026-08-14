@@ -165,3 +165,98 @@ func TestGenericBrowserAdapterOwnsCapabilityChannelsAndAcceptanceFailureRouting(
 		t.Fatalf("code-owned feature runtime factory is missing: %#v", factory)
 	}
 }
+
+func TestGenericBrowserFeatureDocumentsImportEveryAdvertisedRuntimeTypeWithoutRuntimeAuthority(t *testing.T) {
+	t.Parallel()
+
+	fixtures := []struct {
+		name          string
+		product       string
+		requirement   string
+		generatedView string
+	}{
+		{
+			name:        "inventory filter",
+			product:     "inventory browser",
+			requirement: "filter visible records",
+			generatedView: `function Feature001View({ state, capabilities, actions }: Feature001ViewProps): ReactElement {
+	const current: SharedValue = state.filter ?? '';
+	const localState: FeatureState = state;
+	const localActions: FeatureActions = actions;
+	return <button data-capabilities={Object.keys(capabilities).length} onClick={() => localActions.set('filter', current)}>{String(localState.filter ?? 'All')}</button>;
+}`,
+		},
+		{
+			name:        "schedule toggle",
+			product:     "schedule board",
+			requirement: "toggle an appointment",
+			generatedView: `function Feature001View({ state, capabilities, actions }: Feature001ViewProps): ReactElement {
+	const current: SharedValue = state.selected ?? false;
+	const localState: FeatureState = state;
+	const localActions: FeatureActions = actions;
+	return <button data-capabilities={Object.keys(capabilities).length} onClick={() => localActions.toggle('selected')}>{String(localState.selected ?? current)}</button>;
+}`,
+		},
+	}
+
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+
+			specification := assemblyline.ApplicationSpecification{
+				Surface:      assemblyline.ApplicationSurfaceBrowser,
+				ProductQuote: fixture.product,
+				Requirements: []assemblyline.Requirement{{
+					ID: "requirement_001", SourceQuote: fixture.requirement,
+				}},
+			}
+			_, blueprint, _, err := compileGenericTypeScriptBrowserBlueprint(
+				"unseen", specification, genericBrowserSkillBindings(specification),
+				genericBrowserWorkload(t, specification),
+				genericBrowserCapabilityBindings(specification),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var featureDocument assemblyline.TypeScriptDocument
+			for _, document := range blueprint.Documents {
+				if document.ID == "feature_001" {
+					featureDocument = document
+					break
+				}
+			}
+			if featureDocument.ID == "" {
+				t.Fatal("feature_001 document is missing")
+			}
+			context, exists := directCodingTypeScriptBlueprintBlock(blueprint, "feature.context.001")
+			if !exists {
+				t.Fatal("feature.context.001 is missing")
+			}
+			for _, required := range []string{
+				"SharedValue", "FeatureState", "FeatureActions",
+			} {
+				if !strings.Contains(context.API, required) {
+					t.Fatalf("feature context does not advertise runtime type %s:\n%s", required, context.API)
+				}
+				if !strings.Contains(featureDocument.Header, required) {
+					t.Fatalf("feature header omits advertised runtime type %s:\n%s", required, featureDocument.Header)
+				}
+			}
+			for _, forbidden := range []string{
+				"ApplicationRuntime", "FeatureRuntime", "createApplicationRuntime",
+				"createFeatureRuntime", "useOwnCapabilityState", "publishCapability",
+			} {
+				if strings.Contains(featureDocument.Header, forbidden) || strings.Contains(context.API, forbidden) {
+					t.Fatalf("feature scope exposes aggregate runtime authority %q", forbidden)
+				}
+			}
+			if _, err := assemblyline.ComposeTypeScriptDocument(
+				featureDocument,
+				map[string]string{"feature.001": fixture.generatedView},
+			); err != nil {
+				t.Fatalf("compose generated view using advertised runtime types: %v", err)
+			}
+		})
+	}
+}

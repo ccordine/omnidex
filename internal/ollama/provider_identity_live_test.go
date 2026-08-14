@@ -26,7 +26,7 @@ func TestLiveOllamaProviderIdentity(t *testing.T) {
 		Digest:             os.Getenv("OMNIDEX_TEST_OLLAMA_DIGEST"),
 		Quantization:       os.Getenv("OMNIDEX_TEST_OLLAMA_QUANTIZATION"),
 		NativeContextLimit: contextLimit,
-		TokenizerProfile:   llm.ExactPreparedTokenizerProfile,
+		TokenizerProfile:   os.Getenv("OMNIDEX_TEST_OLLAMA_TOKENIZER_PROFILE"),
 	}
 	if err := expected.Validate(); err != nil {
 		t.Fatal(err)

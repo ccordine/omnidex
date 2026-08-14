@@ -82,6 +82,7 @@ func verifyDirectCodingTypeScriptStageCommands(
 			diagnosticOutput = strings.TrimSpace(receipt.Output + "\n" + output)
 		}
 		if diagnostic, mapped := mapDirectCodingTypeScriptStageDiagnostic(documents, diagnosticOutput); mapped {
+			diagnostic.VerificationStage = strings.Join(args, " ")
 			diagnostic.FailureClass = failureClass
 			if structuredVitest {
 				diagnostic, err = routeDirectCodingAcceptanceFailure(program.TypeScript, diagnostic)

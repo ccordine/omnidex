@@ -40,7 +40,10 @@ type exactIdentityShowRequest struct {
 	Verbose bool   `json:"verbose"`
 }
 type exactIdentityShowResponse struct {
-	ModelInfo map[string]json.RawMessage `json:"model_info"`
+	Capabilities []string                   `json:"capabilities"`
+	ModelInfo    map[string]json.RawMessage `json:"model_info"`
+	Parameters   string                     `json:"parameters"`
+	Template     string                     `json:"template"`
 }
 type exactIdentityPreloadRequest struct {
 	Model     string `json:"model"`
@@ -89,7 +92,8 @@ func DeriveExactProviderIdentityExpectation(
 	if err != nil {
 		return ProviderIdentityExpectation{}, err
 	}
-	if err := validateExactTokenizerOperation(operations[2], selection); err != nil {
+	modelProfile, err := validateExactTokenizerOperation(operations[2], selection)
+	if err != nil {
 		return ProviderIdentityExpectation{}, err
 	}
 	if err := validateExactPreloadOperation(operations[3], selection); err != nil {
@@ -116,7 +120,7 @@ func DeriveExactProviderIdentityExpectation(
 		Model: selection.Model, Digest: installedModel.Digest,
 		Quantization:       installedModel.Details.QuantizationLevel,
 		NativeContextLimit: selection.NativeContextLimit,
-		TokenizerProfile:   ExactPreparedTokenizerProfile,
+		TokenizerProfile:   modelProfile.tokenizerProfile,
 	}
 	if err := ValidateExactPreparedProviderExpectation(expected); err != nil {
 		return ProviderIdentityExpectation{}, err
@@ -127,57 +131,21 @@ func DeriveExactProviderIdentityExpectation(
 func validateExactTokenizerOperation(
 	operation ProviderIdentityOperationEvidence,
 	selection ProviderIdentitySelection,
-) error {
+) (exactProviderModelProfile, error) {
 	wantRequest, err := ExactProviderTokenizerRequestBytes(selection)
 	if err != nil || !bytes.Equal(operation.Request, wantRequest) {
-		return fmt.Errorf("exact tokenizer observation request changed")
+		return exactProviderModelProfile{}, fmt.Errorf("exact tokenizer observation request changed")
 	}
 	if err := exactjson.ValidateCompatibleObject(
 		operation.ResponseCapture, exactIdentityShowResponse{}, "exact tokenizer response",
 	); err != nil {
-		return err
+		return exactProviderModelProfile{}, err
 	}
 	var response exactIdentityShowResponse
 	if err := json.Unmarshal(operation.ResponseCapture, &response); err != nil {
-		return err
+		return exactProviderModelProfile{}, err
 	}
-	return validateExactTokenizerProfile(response.ModelInfo)
-}
-
-func validateExactTokenizerProfile(info map[string]json.RawMessage) error {
-	stringsExpected := map[string]string{
-		"general.architecture": "qwen35", "tokenizer.ggml.model": "gpt2",
-		"tokenizer.ggml.pre": "qwen35",
-	}
-	for key, want := range stringsExpected {
-		var got string
-		if raw, exists := info[key]; !exists || json.Unmarshal(raw, &got) != nil || got != want {
-			return fmt.Errorf("tokenizer profile field %q differs from %q", key, want)
-		}
-	}
-	for _, key := range []string{"tokenizer.ggml.add_eos_token", "tokenizer.ggml.add_padding_token"} {
-		var got bool
-		if raw, exists := info[key]; !exists || json.Unmarshal(raw, &got) != nil || got {
-			return fmt.Errorf("tokenizer profile field %q must be explicit false", key)
-		}
-	}
-	if _, exists := info["tokenizer.ggml.add_bos_token"]; exists {
-		return fmt.Errorf("tokenizer profile unexpectedly declares add_bos_token")
-	}
-	for _, key := range []string{
-		"tokenizer.ggml.tokens", "tokenizer.ggml.token_type", "tokenizer.ggml.merges",
-	} {
-		if raw, exists := info[key]; !exists || string(raw) != "null" {
-			return fmt.Errorf("tokenizer profile field %q must be explicit null", key)
-		}
-	}
-	for key := range info {
-		if strings.HasPrefix(key, "tokenizer.ggml.add_") &&
-			key != "tokenizer.ggml.add_eos_token" && key != "tokenizer.ggml.add_padding_token" {
-			return fmt.Errorf("tokenizer profile contains unsupported boundary field %q", key)
-		}
-	}
-	return nil
+	return deriveExactProviderModelProfile(response)
 }
 
 func validateExactPreloadOperation(

@@ -20,6 +20,7 @@ func exactProtocolPrepared(t *testing.T, protocol ExactPreparedProtocol) Prepare
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: "return one declaration", PromptHint: MinimalGeneratePrompt,
 		MaxOutputTokens: 1024, ContextTokens: expected.NativeContextLimit,
+		OutputLimitMode: ExactPreparedOutputLimitExplicit,
 		ThinkingEnabled: false, Temperature: &zero,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
@@ -87,11 +88,12 @@ func TestExactRawTextProtocolBindsRegisteredAdvisoryTerminator(t *testing.T) {
 func TestExactRawTextProtocolBindsRegisteredCodeTerminator(t *testing.T) {
 	prepared := exactProtocolPrepared(t, ExactPreparedProtocolRawTextV1)
 	prepared.RawTextStopSequence = ExactPreparedCodeStopV1
+	prepared.OutputLimitMode = ExactPreparedOutputLimitNatural
 	got, err := ExactPreparedRequestBytes(prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"model":"qwen:9b","options":{"num_ctx":32768,"num_predict":1024,"stop":["<|endoftext|>"],"temperature":0},"prompt":"return one declaration\nReturn only the requested output.","raw":true,"shift":false,"stream":false,"think":false,"truncate":false}`
+	want := `{"model":"qwen:9b","options":{"num_ctx":32768,"stop":["<|endoftext|>"],"temperature":0},"prompt":"return one declaration\nReturn only the requested output.","raw":true,"shift":false,"stream":false,"think":false,"truncate":false}`
 	if string(got) != want {
 		t.Fatalf("raw-code stopped request changed:\n got %s\nwant %s", got, want)
 	}
@@ -125,10 +127,12 @@ func TestExactRawTextProtocolRejectsImplicitOrStructuredAuthority(t *testing.T) 
 			negativeZero := math.Copysign(0, -1)
 			value.Temperature = &negativeZero
 		},
-		"missing identity":  func(value *PreparedModel) { value.ProviderIdentityExpectation = nil },
-		"missing challenge": func(value *PreparedModel) { value.ProviderObservationChallenge = "" },
-		"zero output":       func(value *PreparedModel) { value.MaxOutputTokens = 0 },
-		"zero context":      func(value *PreparedModel) { value.ContextTokens = 0 },
+		"missing identity":    func(value *PreparedModel) { value.ProviderIdentityExpectation = nil },
+		"missing challenge":   func(value *PreparedModel) { value.ProviderObservationChallenge = "" },
+		"missing output mode": func(value *PreparedModel) { value.OutputLimitMode = "" },
+		"unknown output mode": func(value *PreparedModel) { value.OutputLimitMode = "unknown" },
+		"zero output":         func(value *PreparedModel) { value.MaxOutputTokens = 0 },
+		"zero context":        func(value *PreparedModel) { value.ContextTokens = 0 },
 	}
 	for name, mutate := range mutations {
 		name, mutate := name, mutate
@@ -211,6 +215,18 @@ func TestExactPreparedNativeUsageUsesProviderCounts(t *testing.T) {
 				t.Fatal("provider usage outside native authority was accepted")
 			}
 		})
+	}
+}
+
+func TestExactPreparedNaturalUsageUsesOnlyTheNativeContextBoundary(t *testing.T) {
+	valid := ProviderGenerationUsage{PromptEvalCount: 1730, EvalCount: 3000}
+	if err := ValidateExactPreparedNaturalUsage(8192, valid); err != nil {
+		t.Fatalf("natural provider usage was constrained by a stale sub-ceiling: %v", err)
+	}
+	if err := ValidateExactPreparedNaturalUsage(8192, ProviderGenerationUsage{
+		PromptEvalCount: 5000, EvalCount: 3193,
+	}); err == nil {
+		t.Fatal("natural provider usage beyond native context was accepted")
 	}
 }
 

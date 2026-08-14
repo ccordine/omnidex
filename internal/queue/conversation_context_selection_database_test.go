@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 )
@@ -12,7 +13,7 @@ import (
 func TestPostgresConversationContextSelectionUsesExactGapAuthority(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "073")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
 		t.Fatal(err)
 	}
 	jobRecord, err := repository.EnqueueJob(t.Context(), "context station", model.PipelineCoding, nil)
@@ -45,12 +46,14 @@ func TestPostgresConversationContextSelectionUsesExactGapAuthority(t *testing.T)
 	if _, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: job, Station: station.ConversationObjectiveKind,
 		ContextTokens: 8192, MaxOutputTokens: 512,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	}); err == nil {
 		t.Fatal("context-selection work opened under objective-kind station")
 	}
 	opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: job, Station: station.ConversationContextSelection,
 		ContextTokens: 8192, MaxOutputTokens: 512,
+		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 	})
 	if err != nil {
 		t.Fatal(err)

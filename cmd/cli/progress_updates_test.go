@@ -158,7 +158,7 @@ func TestSummarizeStepEventExplainsCodingState(t *testing.T) {
 		{event: stepEventPayload{EventType: "coding_worker_failed", Message: "kind=file subject=main.go model=qwen3-coder:30b attempt=3/3 error=typed response is malformed"}, want: "File station failed for main.go: typed response is malformed"},
 		{event: stepEventPayload{EventType: "coding_file_written", Message: "stage=generate path=store.go bytes=812"}, want: "Accepted store.go (812 bytes)"},
 		{event: stepEventPayload{EventType: "coding_repair_selected", Message: "repair=1 path=main_test.go command=go_test_./..."}, want: "Selected main_test.go for diagnostic repair 1"},
-		{event: stepEventPayload{EventType: "coding_fragment_correction_started", Message: "block=feature.001 correction=1 exact_failure=TypeError: AudioContext is not defined"}, want: "Correcting feature.001: TypeError: AudioContext is not defined"},
+		{event: stepEventPayload{EventType: "coding_fragment_correction_started", Message: "block=feature.001 exact_failure=TypeError: AudioContext is not defined"}, want: "Correcting feature.001: TypeError: AudioContext is not defined"},
 	}
 	for _, test := range cases {
 		if got := summarizeStepEvent(test.event); !strings.Contains(got, test.want) {

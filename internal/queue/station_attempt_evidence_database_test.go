@@ -17,7 +17,7 @@ func TestPostgresStationAttemptCallEvidenceRequiresAndReturnsExactTerminalChain(
 	}
 
 	result := stationCallSuccess(t, prepared, call)
-	if _, err := repository.RecordStationCallReceiptAndEvidence(
+	receiptEvidence, err := repository.RecordStationCallReceiptAndEvidence(
 		t.Context(), StationCallReceiptEvidenceRecord{
 			Receipt: StationCallReceiptRecord{
 				Authority: claim.Authority, OpeningID: call.ID,
@@ -25,12 +25,16 @@ func TestPostgresStationAttemptCallEvidenceRequiresAndReturnsExactTerminalChain(
 			},
 			RequestedModel: prepared.ContextModel, EvidenceAttempt: 1, LatencyMS: 3,
 		},
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: StationGapResolved, Response: result.Content,
+		Projection: stationGapExactResponseProjection(
+			receiptEvidence.Receipt.GenerationSHA256, result.Content,
+		),
 	}); err != nil {
 		t.Fatal(err)
 	}
