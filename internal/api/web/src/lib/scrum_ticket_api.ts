@@ -1,57 +1,57 @@
 import { readJSON } from "./api";
 import { projectQuery } from "./project_api";
+import { validateScrumCardEnvelope } from "./scrum_response_authority";
+import { exactString } from "./scrum_card_response";
+import { validateCanonicalRevision } from "./revision_authority";
 import type { ScrumCard } from "./scrum_types";
 
 type ScrumCardTicketAction =
-  | { action: "generate"; expected_updated_at: string }
-  | { action: "elaborate"; expected_updated_at: string; elaboration: string };
+  | { action: "assemble"; expected_updated_at: string }
+  | { action: "apply_elaboration"; expected_updated_at: string; elaboration: string };
 
 async function executeScrumCardTicketAction(
   cardID: string,
   action: ScrumCardTicketAction,
-  projectID?: number | null,
+  projectID: number,
 ): Promise<ScrumCard> {
-  if (!cardID.trim() || !action.expected_updated_at.trim()) {
-    throw new Error("Card ID and observed card revision are required for a ticket action.");
-  }
-  if (action.action === "elaborate" && !action.elaboration.trim()) {
+  const exactCardID = exactString(cardID, "Scrum card ticket action card ID", {
+    maxBytes: 256, nonblank: true, canonical: true,
+  });
+  const revision = validateCanonicalRevision(action.expected_updated_at, "Scrum card ticket action expected_updated_at");
+  if (action.action === "apply_elaboration" && !action.elaboration.trim()) {
     throw new Error("Ticket elaboration must not be blank.");
   }
   const response = await fetch(
-    `/v1/scrum/cards/${encodeURIComponent(cardID)}/card-ticket${projectQuery(projectID)}`,
+    `/v1/scrum/cards/${encodeURIComponent(exactCardID)}/card-ticket${projectQuery(projectID)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(action),
+      body: JSON.stringify({ ...action, expected_updated_at: revision }),
     },
   );
-  const payload = await readJSON<{ card?: ScrumCard | null }>(response);
-  if (!payload.card?.id) {
-    throw new Error("Card ticket action did not return authoritative card state.");
-  }
-  return payload.card;
+  return validateScrumCardEnvelope(await readJSON<unknown>(response), exactCardID);
 }
 
-export function generateScrumCardTicket(
+export function assembleScrumCardTicket(
   cardID: string,
   expectedUpdatedAt: string,
-  projectID?: number | null,
+  projectID: number,
 ): Promise<ScrumCard> {
   return executeScrumCardTicketAction(cardID, {
-    action: "generate",
+    action: "assemble",
     expected_updated_at: expectedUpdatedAt,
   }, projectID);
 }
 
-export function elaborateScrumCardTicket(
+export function applyScrumCardElaboration(
   cardID: string,
   expectedUpdatedAt: string,
   elaboration: string,
-  projectID?: number | null,
+  projectID: number,
 ): Promise<ScrumCard> {
   return executeScrumCardTicketAction(cardID, {
-    action: "elaborate",
+    action: "apply_elaboration",
     expected_updated_at: expectedUpdatedAt,
-    elaboration: elaboration.trim(),
+    elaboration,
   }, projectID);
 }

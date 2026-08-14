@@ -7,14 +7,18 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 const scrumPlayAutoRunTimeout = 2 * time.Minute
 const jobOutputRealtimeWindow = 250 * time.Millisecond
+
+type scrumCardRealtimeReason string
+
+const scrumCardRealtimeJobProgress scrumCardRealtimeReason = "job_progress"
 
 func scrumRequestFromContext(ctx context.Context) *http.Request {
 	if ctx == nil {
@@ -101,7 +105,7 @@ func (s *Server) flushJobOutput(jobID int64) {
 		log.Printf("job output flush rejected job=%d: %v", jobID, ErrRealtimeLifecycleUnavailable)
 		return
 	}
-	s.publishJobProgress(jobID, realtimeJobOutput, "Agent produced new output")
+	s.publishJobProgress(jobID, realtimeJobOutput, "Job produced new progress")
 	ctx, cancel := context.WithTimeout(s.lifecycleContext, 15*time.Second)
 	defer cancel()
 	if err := s.refreshScrumCardOutputForJob(ctx, jobID); err != nil {
@@ -234,24 +238,21 @@ func (s *Server) refreshScrumCardOutputForJob(ctx context.Context, jobID int64) 
 	} else if ok {
 		updated = synced
 	}
-	if synced, ok, err := syncRunningJobConsoleLog(updated, details); err != nil {
-		return err
-	} else if ok {
-		updated = synced
-	}
-	if !scrumCardChannelChanged(card, updated) && strings.TrimSpace(card.ConsoleLog) == strings.TrimSpace(updated.ConsoleLog) {
+	if !scrumCardChannelChanged(card, updated) {
 		return nil
 	}
-	saved, err := s.persistScrumCardFromContext(ctx, projectID, updated)
+	saved, err := s.persistScrumCardTransition(
+		ctx, projectID, card, updated, queue.ScrumReconcileJobProgress, "",
+	)
 	if err != nil {
 		return err
 	}
-	s.publishScrumCardUpdate(ctx, projectID, saved, "agent output")
+	s.publishScrumCardUpdate(ctx, projectID, saved, string(scrumCardRealtimeJobProgress))
 	return nil
 }
 
 func (s *Server) refreshScrumPlayQueueForProject(ctx context.Context, projectID int64, reason string) error {
-	board, err := s.scrumBoardFromProject(ctx, projectID)
+	board, err := s.scrumBoardMetadataFromProject(ctx, projectID)
 	if err != nil {
 		return err
 	}

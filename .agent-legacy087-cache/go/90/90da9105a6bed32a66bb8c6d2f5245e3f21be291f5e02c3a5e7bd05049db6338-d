@@ -1,0 +1,11 @@
+./bounds.go
+./canonical.go
+./config.go
+./extract.go
+./fetch.go
+./network_policy.go
+./providers.go
+./service.go
+./text_validation.go
+./types.go
+./validation.go

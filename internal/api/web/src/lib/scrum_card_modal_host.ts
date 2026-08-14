@@ -26,7 +26,7 @@ export class ScrumCardModalHost {
 
   handleTabChanged(cardID: string | undefined, tab: string | undefined): void {
     if (cardID && cardID !== this.cardID) return;
-    if (!tab) return;
+		if (!tab) throw new Error("Scrum card modal tab change requires one exact registered tab.");
     if (!isScrumCardTab(tab)) throw new Error(`Unknown Scrum card modal tab ${JSON.stringify(tab)}.`);
     if (!this.cardID) throw new Error("Cannot change a Scrum card modal tab without an active card.");
     this.tab = tab;
@@ -44,6 +44,10 @@ export class ScrumCardModalHost {
       this.syncRoute();
       return;
     }
+		const projectID = this.projectID();
+		if (!Number.isSafeInteger(projectID) || !projectID || projectID <= 0) {
+			throw new Error("Scrum card modal requires one open server-authoritative project.");
+		}
 
     const { modal, panel } = getModalElements();
     if (!modal || !panel) throw new Error("Scrum card modal shell is unavailable.");
@@ -54,8 +58,7 @@ export class ScrumCardModalHost {
     host.dataset.controller = "card-modal-spa";
     host.dataset.cardModalSpaCardIdValue = cardID;
     host.dataset.cardModalSpaInitialTabValue = this.tab;
-    const projectID = this.projectID();
-    if (projectID && projectID > 0) host.dataset.cardModalSpaProjectIdValue = String(projectID);
+    host.dataset.cardModalSpaProjectIdValue = String(projectID);
     panel.replaceChildren(host);
     this.syncRoute();
   }
@@ -94,7 +97,11 @@ export class ScrumCardModalHost {
   private resolveTab(cardID: string): ScrumCardTab {
     if (parseScrumCardFromLocation() === cardID) return parseScrumTabFromLocation();
     const saved = sessionStorage.getItem(this.storageKey(cardID));
-    return isScrumCardTab(saved) ? saved : "card";
+		if (saved === null) return "card";
+		if (!isScrumCardTab(saved)) {
+			throw new Error("Saved Scrum card modal tab must be one exact registered value.");
+		}
+		return saved;
   }
 
   private storageKey(cardID: string): string {

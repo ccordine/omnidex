@@ -63,7 +63,7 @@ func TestProviderCatalogIsCompleteServerAuthoritativeAndSecretFree(t *testing.T)
 	if !qwen.ChineseService || qwen.SelectedForStations || !qwen.SelectedForEmbeddings {
 		t.Fatalf("qwen catalog item=%#v", qwen)
 	}
-	if qwen.SupportsExactStations || qwen.ExactStationsConfigured || !qwen.EmbeddingConfigured {
+	if qwen.SupportsExactStations || !qwen.SupportsEmbeddings {
 		t.Fatalf("qwen must be embedding-only in the production catalog: %#v", qwen)
 	}
 	if qwen.EmbeddingModel != "text-embedding-v4" {
@@ -83,14 +83,27 @@ func TestProviderCatalogAdvertisesOnlyExactStationGeneration(t *testing.T) {
 	payload := server.providerCatalog()
 	for _, provider := range payload.Providers {
 		if provider.ID == "ollama" {
-			if !provider.SupportsExactStations || !provider.ExactStationsConfigured {
+			if !provider.SupportsExactStations {
 				t.Fatalf("Ollama exact station transport=%#v", provider)
 			}
 			continue
 		}
-		if provider.SupportsExactStations || provider.ExactStationsConfigured {
+		if provider.SupportsExactStations {
 			t.Errorf("hosted provider %s advertises unsupported exact inference: %#v", provider.ID, provider)
 		}
+	}
+}
+
+func TestProviderCatalogDoesNotValidateDormantProviderTransport(t *testing.T) {
+	server := NewServerWithOptions(nil, &fakeLLMClient{}, ServerOptions{
+		ProviderConfig: config.Config{
+			LLMProvider: "ollama", OllamaBaseURL: "not-an-http-url",
+			EmbeddingProvider: "ollama", EmbeddingModel: "nomic-test",
+		},
+	})
+	payload := server.providerCatalog()
+	if payload.ExactStationProvider != "ollama" || payload.EmbeddingProvider != "ollama" {
+		t.Fatalf("catalog changed selected authority: %+v", payload)
 	}
 }
 

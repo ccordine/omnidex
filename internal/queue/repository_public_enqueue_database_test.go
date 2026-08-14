@@ -13,9 +13,14 @@ func TestPostgresPublicEnqueueRejectsFreeFormTransportsBeforePersistence(t *test
 	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM jobs`).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	for _, pipeline := range []string{model.PipelineAssistant, model.PipelineChat, model.PipelineStory} {
+	for _, pipeline := range []string{model.PipelineChat} {
 		if _, err := repository.EnqueueJob(ctx, "must not persist", pipeline, []byte(`{}`)); !errors.Is(err, ErrChannelTransportRequired) {
 			t.Fatalf("pipeline %q error=%v", pipeline, err)
+		}
+	}
+	for _, pipeline := range []string{"assistant", "story", "agent"} {
+		if _, err := repository.EnqueueJob(ctx, "must not persist", pipeline, []byte(`{}`)); !errors.Is(err, ErrUnsupportedPipeline) {
+			t.Fatalf("retired pipeline %q error=%v", pipeline, err)
 		}
 	}
 	var after int
@@ -42,7 +47,7 @@ func TestPostgresHistoricalFreeFormJobsRemainReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, job := range jobs {
-		if job.ID == historicalID && job.Pipeline == model.PipelineAssistant {
+		if job.ID == historicalID && job.Pipeline == "assistant" {
 			return
 		}
 	}

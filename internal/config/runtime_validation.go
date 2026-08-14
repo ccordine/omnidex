@@ -10,6 +10,11 @@ import (
 )
 
 func validateRuntimeConfig(cfg Config) error {
+	if cfg.ObjectiveAdvisoryMode != "" {
+		if err := cfg.ObjectiveAdvisoryMode.Validate(); err != nil {
+			return err
+		}
+	}
 	if cfg.WorkerCount < 1 {
 		return fmt.Errorf("WORKER_COUNT must be at least 1, received %d", cfg.WorkerCount)
 	}
@@ -57,9 +62,6 @@ func validateRuntimeConfig(cfg Config) error {
 	}
 	if err := validateWebSearchProviders(cfg.WebSearchProviders); err != nil {
 		return err
-	}
-	if strings.TrimSpace(cfg.EmbeddingModel) == "" {
-		return fmt.Errorf("embedding model is required for EMBEDDING_PROVIDER=%s", cfg.EmbeddingProvider)
 	}
 	return nil
 }

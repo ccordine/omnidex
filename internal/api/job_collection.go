@@ -1,11 +1,9 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -23,31 +21,21 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
-	var request enqueueRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	instruction, err := requireFreeFormAuthority(request.Instruction, "instruction")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "instruction is required")
-		return
-	}
-	if err := validateGenericJobPipeline(request.Pipeline); err != nil {
+	if err := validateExactQuery(r); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if len(request.Metadata) == 0 {
-		request.Metadata = []byte(`{}`)
+	request, err := decodeGenericCodingEnqueue(w, r)
+	if err != nil {
+		writeError(w, genericCodingEnqueueStatus(err), err.Error())
+		return
 	}
-	enriched, _, err := s.enrichJobMetadata(r.Context(), request.Metadata, ScrumCard{})
+	metadata, err := s.genericCodingRuntimeMetadata(*request.Metadata)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("model setup failed: %v", err))
 		return
 	}
-	job, err := s.repo.EnqueueJob(r.Context(), instruction, request.Pipeline, enriched)
+	job, err := s.repo.EnqueueJob(r.Context(), request.Instruction, request.Pipeline, metadata)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, queue.ErrUnsupportedPipeline) {
@@ -62,26 +50,56 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 
 func validateGenericJobPipeline(pipeline string) error {
 	switch pipeline {
-	case model.PipelineCoding, model.PipelineScrum:
+	case model.PipelineCoding:
 		return nil
-	case model.PipelineAssistant, model.PipelineChat, model.PipelineStory:
+	case model.PipelineChat:
 		return fmt.Errorf(
 			"pipeline %q requires the server-authoritative /v1/channels/{id}/messages transport",
 			pipeline,
 		)
 	default:
-		return fmt.Errorf("generic job pipeline %q is unsupported; expected coding or scrum", pipeline)
+		return fmt.Errorf("generic job pipeline %q is unsupported; expected coding", pipeline)
 	}
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
-	status := strings.TrimSpace(r.URL.Query().Get("status"))
-	limit := parseInt(r.URL.Query().Get("limit"), 20)
-	offset := parseInt(r.URL.Query().Get("offset"), 0)
-	jobs, err := s.repo.ListJobs(r.Context(), status, limit, offset)
+	query, err := decodeJobCollectionQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	jobs, err := s.repo.ListJobs(r.Context(), query.Status, query.Limit, query.Offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
+}
+
+type jobCollectionQuery struct {
+	Status string
+	Limit  int
+	Offset int
+}
+
+func decodeJobCollectionQuery(r *http.Request) (jobCollectionQuery, error) {
+	if err := validateExactQuery(r, "status", "limit", "offset"); err != nil {
+		return jobCollectionQuery{}, err
+	}
+	limit, err := exactChannelQueryInteger(r, "limit", 20, 1, queue.MaxJobHistoryPageSize)
+	if err != nil {
+		return jobCollectionQuery{}, err
+	}
+	offset, err := exactChannelQueryInteger(r, "offset", 0, 0, 1_000_000)
+	if err != nil {
+		return jobCollectionQuery{}, err
+	}
+	status := r.URL.Query().Get("status")
+	switch status {
+	case "", model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting,
+		model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
+	default:
+		return jobCollectionQuery{}, fmt.Errorf("job collection status %q is not registered", status)
+	}
+	return jobCollectionQuery{Status: status, Limit: limit, Offset: offset}, nil
 }

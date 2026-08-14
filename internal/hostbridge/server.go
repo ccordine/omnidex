@@ -22,8 +22,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/terminal/ws", s.handleTerminalWS)
 	mux.HandleFunc("/v1/screen/monitors", s.handleScreenMonitors)
 	mux.HandleFunc("/v1/screen/mjpeg", s.handleScreenMJPEG)
-	mux.HandleFunc("/v1/cursor/run", s.handleCursorRun)
-	mux.HandleFunc("/v1/codex/run", s.handleCodexRun)
 	mux.HandleFunc("/v1/project-map/scan", s.handleProjectMapScan)
 	mux.HandleFunc("/v1/project/git", s.handleProjectGit)
 	return mux
@@ -46,8 +44,6 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"browse":        true,
 		"terminal":      true,
 		"screen":        true,
-		"cursor":        true,
-		"codex":         true,
 		"project_map":   true,
 		"project_git":   true,
 	})
@@ -83,6 +79,7 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		"previous_offset": result.PreviousOffset,
 		"has_more":        result.HasMore,
 		"next_offset":     result.NextOffset,
+		"required_root":   result.RequiredRoot,
 	})
 }
 
@@ -103,7 +100,10 @@ func browseRequestOptions(r *http.Request) (BrowseOptions, error) {
 		}
 		directoriesOnly = value
 	}
-	opts := BrowseOptions{Limit: limit, Offset: offset, DirectoriesOnly: directoriesOnly}
+	opts := BrowseOptions{
+		Limit: limit, Offset: offset, DirectoriesOnly: directoriesOnly,
+		RequiredRoot: strings.TrimSpace(r.URL.Query().Get("required_root")),
+	}
 	if err := validateBrowseBounds(opts); err != nil {
 		return BrowseOptions{}, err
 	}

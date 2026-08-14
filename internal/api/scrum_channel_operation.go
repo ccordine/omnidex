@@ -2,30 +2,35 @@ package api
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/rand"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
 type scrumChannelDispatchResult struct {
-	Card    ScrumCard
-	Job     model.Job
-	Action  string
-	Agent   string
-	Applied bool
+	OperationID queue.LifecycleOperationID
+	ProjectID   int64
+	Card        ScrumCard
+	Job         model.Job
+	Action      string
+	Applied     bool
+}
+
+type scrumChannelDispatchResponse struct {
+	OperationID queue.LifecycleOperationID `json:"operation_id"`
+	ProjectID   int64                      `json:"project_id"`
+	Card        ScrumCard                  `json:"card"`
+	Action      string                     `json:"action"`
 }
 
 func (s *Server) dispatchScrumChannelMessage(
 	r *http.Request,
-	board ScrumBoard,
 	projectID int64,
-	card ScrumCard,
+	cardID string,
 	operationID queue.LifecycleOperationID,
 	userMessage string,
 ) (scrumChannelDispatchResult, error) {
@@ -33,8 +38,8 @@ func (s *Server) dispatchScrumChannelMessage(
 		return scrumChannelDispatchResult{}, fmt.Errorf("postgres repository, request, and project are required for Scrum channel dispatch")
 	}
 	request := queue.ScrumChannelOperationRequest{
-		OperationID: operationID, ProjectID: projectID, CardID: card.ID,
-		Message: strings.TrimSpace(userMessage),
+		OperationID: operationID, ProjectID: projectID, CardID: cardID,
+		Message: userMessage,
 	}
 	if replay, found, err := s.repo.LoadScrumChannelOperation(r.Context(), request); err != nil {
 		return scrumChannelDispatchResult{}, err
@@ -42,40 +47,28 @@ func (s *Server) dispatchScrumChannelMessage(
 		return decodeScrumChannelResult(replay)
 	}
 
-	prepared, err := s.prepareScrumCardForChannelDispatch(r.Context(), projectID, card)
+	current, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
+	if err != nil {
+		return scrumChannelDispatchResult{}, fmt.Errorf("load authoritative Scrum channel card: %w", err)
+	}
+	prepared, err := dbScrumCardToAPI(current)
 	if err != nil {
 		return scrumChannelDispatchResult{}, err
 	}
-	current, err := s.repo.GetScrumCard(r.Context(), projectID, prepared.ID)
-	if err != nil {
-		return scrumChannelDispatchResult{}, fmt.Errorf("load prepared Scrum channel card: %w", err)
-	}
-	prepared, err = dbScrumCardToAPI(current)
-	if err != nil {
-		return scrumChannelDispatchResult{}, err
-	}
-	resolvedAgent, err := s.scrumCardResolvedAgent(r.Context(), projectID, prepared)
-	if err != nil {
-		return scrumChannelDispatchResult{}, err
-	}
-
 	command := queue.ScrumChannelOperationCommand{
 		Request: request, ExpectedCardUpdatedAt: current.UpdatedAt,
-		ResultAgent: resolvedAgent.System(),
 	}
-	pulled := []string(nil)
-	if prepared.PlayState == scrumPlayRunning && strings.TrimSpace(prepared.JobID) != "" {
+	if prepared.PlayState == scrumPlayRunning && prepared.JobID != "" {
 		if err := s.prepareScrumChannelControl(r.Context(), prepared, &command); err != nil {
 			return scrumChannelDispatchResult{}, err
 		}
 	} else {
-		pulled, err = s.prepareScrumChannelStart(r.Context(), board, projectID, prepared, &command)
-		if err != nil {
+		if err = prepareScrumChannelStart(&command); err != nil {
 			return scrumChannelDispatchResult{}, err
 		}
 	}
 	builder := func(locked queue.DBScrumCard, job model.Job) (queue.ScrumChannelCardUpdate, error) {
-		return buildScrumChannelCardUpdate(locked, command.Request, command.ResultAction, pulled, job)
+		return buildScrumChannelCardUpdate(locked, command.Request, command.ResultAction, job)
 	}
 	result, err := s.repo.ExecuteScrumChannelOperation(r.Context(), command, builder)
 	if err != nil {
@@ -94,7 +87,6 @@ func (s *Server) dispatchScrumChannelMessage(
 		if err != nil {
 			return scrumChannelDispatchResult{}, err
 		}
-		_ = s.trackScrumCardFlow(r.Context(), projectID, previous, decoded.Card, "channel")
 		s.notifyScrumCardColumnTransition(r.Context(), projectID, previous, decoded.Card)
 		s.publishJobProgress(result.Job.ID, realtimeJobChanged, note)
 	}
@@ -117,9 +109,9 @@ func (s *Server) prepareScrumChannelControl(
 	command.Effect.JobID = jobID
 	switch details.Job.Status {
 	case model.JobStatusRunning:
-		command.Effect.Kind, command.ResultAction = queue.ScrumChannelReplanJob, "steered"
+		command.Effect.Kind, command.ResultAction = queue.ScrumChannelReplanJob, "replanned"
 	case model.JobStatusPending:
-		command.Effect.Kind, command.ResultAction = queue.ScrumChannelReplanJob, "revised"
+		command.Effect.Kind, command.ResultAction = queue.ScrumChannelReplanJob, "replanned"
 	case model.JobStatusWaiting:
 		command.Effect.Kind, command.ResultAction = queue.ScrumChannelSubmitFeedback, "feedback"
 	case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
@@ -130,106 +122,68 @@ func (s *Server) prepareScrumChannelControl(
 	return nil
 }
 
-func (s *Server) prepareScrumChannelStart(
-	ctx context.Context,
-	board ScrumBoard,
-	projectID int64,
-	card ScrumCard,
-	command *queue.ScrumChannelOperationCommand,
-) ([]string, error) {
-	metadata, pulled, err := s.scrumPlayMetadata(ctx, board, card, projectID, agentconfig.Config{})
-	if err != nil {
-		return nil, err
-	}
-	project, err := s.repo.GetProject(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.validateScrumPlayAgent(ctx, project, card, agentconfig.Config{}); err != nil {
-		return nil, err
-	}
-	metadata, err = scrumChannelJobMetadata(metadata, card.Column)
-	if err != nil {
-		return nil, err
-	}
-	checkContext, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	paused, err := s.repo.IsAIPaused(checkContext)
-	if err != nil {
-		return nil, err
-	}
-	if paused {
-		return nil, fmt.Errorf("AI is globally paused")
+func prepareScrumChannelStart(command *queue.ScrumChannelOperationCommand) error {
+	if command == nil {
+		return fmt.Errorf("Scrum channel start command is required")
 	}
 	command.Effect = queue.ScrumChannelEffect{
 		Kind: queue.ScrumChannelStartJob, Instruction: command.Request.Message,
-		Pipeline: model.PipelineScrum, Metadata: json.RawMessage(metadata),
 	}
 	command.ResultAction = "started"
-	return pulled, nil
+	return nil
 }
 
 func buildScrumChannelCardUpdate(
 	locked queue.DBScrumCard,
 	request queue.ScrumChannelOperationRequest,
 	action string,
-	pulled []string,
 	job model.Job,
 ) (queue.ScrumChannelCardUpdate, error) {
 	card, err := dbScrumCardToAPI(locked)
 	if err != nil {
 		return queue.ScrumChannelCardUpdate{}, err
 	}
-	for _, message := range card.Chat {
-		if message.OperationID == string(request.OperationID) {
-			return queue.ScrumChannelCardUpdate{}, fmt.Errorf("Scrum channel operation message already exists without an immutable operation result")
-		}
+	messageID, err := queue.NewScrumMessageID(rand.Reader)
+	if err != nil {
+		return queue.ScrumChannelCardUpdate{}, err
 	}
-	card.Chat = append(card.Chat, ScrumChatMessage{
-		ID: newScrumChatMessageID("user", request.Message), Role: "user",
-		Content: request.Message, CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	card.PendingChannelMessages = append(card.PendingChannelMessages, ScrumChatMessage{
+		ID: messageID, Role: "user", Content: request.Message,
 		OperationID: string(request.OperationID),
 	})
 	note, err := scrumChannelResultNote(action, job.ID)
 	if err != nil {
 		return queue.ScrumChannelCardUpdate{}, err
 	}
-	card = appendScrumChannelEvent(card, "system", note)
-	if len(pulled) > 0 {
-		card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Models: %s", strings.Join(pulled, ", ")))
+	card, err = appendScrumChannelEvent(card, "system", note)
+	if err != nil {
+		return queue.ScrumChannelCardUpdate{}, err
 	}
 	card.JobID = fmt.Sprintf("%d", job.ID)
 	card.SyncJobID = card.JobID
-	card.AgentStreamChatCursor = 0
-	card.AgentStreamConsoleCursor = 0
 	card.StepContextCursor = 0
 	card.Column = "in_progress"
 	card.PlayState = scrumPlayRunning
 	card.QueueOrder = 0
-	chat, err := json.Marshal(card.Chat)
+	messages, err := scrumChannelMessageAppends(card.PendingChannelMessages)
 	if err != nil {
-		return queue.ScrumChannelCardUpdate{}, fmt.Errorf("encode Scrum channel card chat: %w", err)
+		return queue.ScrumChannelCardUpdate{}, err
 	}
 	return queue.ScrumChannelCardUpdate{
-		Chat: chat, Column: card.Column, JobID: card.JobID, ConsoleLog: card.ConsoleLog,
+		Messages: messages, Column: card.Column, JobID: card.JobID,
 		PlayState: card.PlayState, QueueOrder: card.QueueOrder,
-		SyncJobID:                card.SyncJobID,
-		AgentStreamChatCursor:    card.AgentStreamChatCursor,
-		AgentStreamConsoleCursor: card.AgentStreamConsoleCursor,
-		StepContextCursor:        card.StepContextCursor,
+		SyncJobID: card.SyncJobID, StepContextCursor: card.StepContextCursor,
 	}, nil
 }
 
 func scrumChannelResultNote(action string, jobID int64) (string, error) {
 	switch action {
 	case "started":
-		return fmt.Sprintf("Job #%d queued from channel (card config)", jobID), nil
-	case "steered":
-		return "Channel steer sent to running agent", nil
-	case "revised":
-		return "Channel revision replaced the pending run", nil
+		return fmt.Sprintf("Job #%d queued from channel through the Scrum assembly line", jobID), nil
+	case "replanned":
+		return "Channel revision applied to the Scrum job", nil
 	case "feedback":
-		return "Channel message sent to waiting agent", nil
+		return "Channel message sent to waiting job", nil
 	default:
 		return "", fmt.Errorf("Scrum channel result action %q is not registered", action)
 	}
@@ -240,16 +194,35 @@ func decodeScrumChannelResult(result queue.ScrumChannelOperationResult) (scrumCh
 	if err != nil {
 		return scrumChannelDispatchResult{}, fmt.Errorf("decode Scrum channel operation result: %w", err)
 	}
+	card.Chat = make([]ScrumChatMessage, 0, len(result.Messages))
+	for _, message := range result.Messages {
+		card.Chat = append(card.Chat, ScrumChatMessage{
+			ID: message.ID, Role: message.Role, Content: message.Content,
+			CreatedAt: message.CreatedAt.UTC().Format(time.RFC3339Nano),
+			Status:    message.Status, OperationID: message.OperationID,
+		})
+	}
+	card.ChatCount = result.MessageTotal
+	card.ChannelBeforeCursor, err = encodeScrumChannelCursor(result.MessageStart, result.MessageStart > 0)
+	if err != nil {
+		return scrumChannelDispatchResult{}, err
+	}
+	card.ChannelHasMore = result.MessageStart > 0
 	return scrumChannelDispatchResult{
-		Card: card, Job: result.Job, Action: result.Action, Agent: result.Agent, Applied: result.Applied,
+		OperationID: result.OperationID,
+		ProjectID:   result.Card.ProjectID, Card: card, Job: result.Job,
+		Action: result.Action, Applied: result.Applied,
 	}, nil
 }
 
-func writeScrumChannelDispatchResponse(w http.ResponseWriter, result scrumChannelDispatchResult) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"card":   scrumCardChannelPayload(result.Card, scrumChannelDefaultPageSize),
-		"reply":  "",
-		"agent":  result.Agent,
-		"action": result.Action,
+func writeScrumChannelDispatchResponse(
+	w http.ResponseWriter,
+	result scrumChannelDispatchResult,
+) {
+	writeJSON(w, http.StatusOK, scrumChannelDispatchResponse{
+		OperationID: result.OperationID,
+		ProjectID:   result.ProjectID,
+		Card:        result.Card,
+		Action:      result.Action,
 	})
 }

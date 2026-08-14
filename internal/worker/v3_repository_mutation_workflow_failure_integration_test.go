@@ -22,8 +22,8 @@ func TestPostgresRepositoryMutationWorkflowRejectsFailedStagedProofBeforeMutatio
 	ctx, repository, pool := openRepositoryTestDatabase(t)
 	root := repositoryMutationWorkflowRoot(t)
 	project, err := repository.CreateProject(
-		ctx, fmt.Sprintf("mutation-workflow-failure-%d", time.Now().UnixNano()), root, "", "", nil,
-	)
+		ctx, fmt.Sprintf("mutation-workflow-failure-%d", time.Now().UnixNano()), root, "")
+
 	if err != nil {
 		t.Fatal(err)
 	}

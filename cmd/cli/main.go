@@ -24,11 +24,21 @@ func main() {
 		runVersion(os.Args[2:])
 		return
 	}
+	if cmd == "config:validate-file" {
+		if len(os.Args) != 3 {
+			die("usage: agent-cli config:validate-file <path>")
+		}
+		if err := validateManagedCLIEnvironmentFile(os.Args[2]); err != nil {
+			die("managed client configuration is invalid: " + err.Error())
+		}
+		return
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		die(fmt.Sprintf("resolve agent-cli executable: %v", err))
 	}
-	baseURL, err := resolveCoreURL(os.Getenv("CORE_URL"), executable, readManagedEnvironment)
+	explicitCoreURL, explicitCoreURLSet := os.LookupEnv("CORE_URL")
+	baseURL, err := resolveCoreURL(explicitCoreURL, explicitCoreURLSet, executable, readManagedEnvironment)
 	if err != nil {
 		die(err.Error())
 	}

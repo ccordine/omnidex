@@ -1,10 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
@@ -20,7 +25,23 @@ func decodeExactChannelJSON(
 	destination any,
 ) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-	decoder := json.NewDecoder(r.Body)
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return channelBodyError{Status: http.StatusRequestEntityTooLarge, Err: fmt.Errorf(
+				"%s exceeds the %d-byte transport bound", name, maxBytes,
+			)}
+		}
+		return channelBodyError{Status: http.StatusBadRequest, Err: fmt.Errorf("read %s: %w", name, err)}
+	}
+	if !utf8.Valid(raw) {
+		return channelBodyError{Status: http.StatusBadRequest, Err: fmt.Errorf("%s must be valid UTF-8", name)}
+	}
+	if err := exactjson.ValidateObject(raw, destination, name); err != nil {
+		return channelBodyError{Status: http.StatusBadRequest, Err: err}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
 		var tooLarge *http.MaxBytesError

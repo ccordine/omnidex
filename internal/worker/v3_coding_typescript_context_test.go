@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestGenericFiveCapabilityWorkerStaysInsideTheHardInitialEnvelope(t *testing.T) {
+func TestGenericFiveCapabilityWorkerKeepsExecutableAuthorityInsideThePortableEnvelope(t *testing.T) {
 	t.Parallel()
 
 	specification := assemblyline.ApplicationSpecification{
@@ -25,6 +25,7 @@ func TestGenericFiveCapabilityWorkerStaysInsideTheHardInitialEnvelope(t *testing
 	}
 	_, blueprint, _, err := compileGenericTypeScriptBrowserBlueprint(
 		"bounded", specification, genericBrowserSkillBindings(specification),
+		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
 	)
 	if err != nil {
@@ -48,8 +49,18 @@ func TestGenericFiveCapabilityWorkerStaysInsideTheHardInitialEnvelope(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prompt) > 3*1024 {
-		t.Fatalf("five-capability worker prompt=%dB exceeds hard initial envelope", len(prompt))
+	if len(prompt) > 16*1024 {
+		t.Fatalf("five-capability worker prompt=%dB exceeds portable envelope", len(prompt))
+	}
+	for _, required := range []string{
+		string(specification.Surface), specification.ProductQuote,
+		"multiple work areas", "Implement interactive behavior for multiple work areas.",
+		"Expose an accessible user control for multiple work areas.",
+		"Using the control produces the requested visible state change.",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("five-capability worker omitted executable authority %q:\n%s", required, prompt)
+		}
 	}
 	if strings.Contains(prompt, "createApplicationRuntime") {
 		t.Fatalf("feature worker received the application factory it cannot use:\n%s", prompt)
@@ -62,6 +73,7 @@ func TestGenericWorkersReceiveOnlyLocalAuthorityAndCodeOwnedCapabilityAPIs(t *te
 	specification := genericBrowserSpecification()
 	program, err := compileDirectCodingProgram(
 		"unseen", specification, nil, genericBrowserSkillBindings(specification),
+		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
 	)
 	if err != nil {
@@ -90,22 +102,40 @@ func TestGenericWorkersReceiveOnlyLocalAuthorityAndCodeOwnedCapabilityAPIs(t *te
 			return signature + ` { return <button onClick={() => actions.set('ready', true)}>{String(state.ready ?? 'ready')}</button>; }`, nil
 		}),
 	}
-	generated, err := generateDirectCodingTypeScriptFragments(runtime, "coder", program.TypeScript)
+	input := applicationWorkloadInput(specification)
+	err = runDirectCodingApplicationTaskLifecycle(
+		input, program.Workload, &program,
+		directCodingApplicationTaskLifecycleHooks{
+			BuildBlock: func(
+				_ assemblyline.ApplicationTaskContext,
+				stage *directCodingProgram,
+				block assemblyline.TypeScriptBlock,
+			) (string, error) {
+				job, jobErr := directCodingApplicationTaskFragmentJob(stage, block)
+				if jobErr != nil {
+					return "", jobErr
+				}
+				return runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
+			},
+			Verify:     func(assemblyline.ApplicationTaskContext, *directCodingProgram) error { return nil },
+			FinalStage: func(*directCodingProgram) error { return nil },
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(generated) != 4 || len(prompts) != 4 {
-		t.Fatalf("generated=%d prompts=%d", len(generated), len(prompts))
+	if len(program.Generated) != 4 || len(prompts) != 4 {
+		t.Fatalf("generated=%d prompts=%d", len(program.Generated), len(prompts))
 	}
 	for _, prompt := range prompts {
-		containsFirst := strings.Contains(prompt, "Exact feature: filter the catalog") ||
-			strings.Contains(prompt, "exact accepted feature: filter the catalog")
-		containsSecond := strings.Contains(prompt, "Exact feature: remember my selection") ||
-			strings.Contains(prompt, "exact accepted feature: remember my selection")
+		containsFirst := strings.Contains(prompt, "Exact requirement: filter the catalog")
+		containsSecond := strings.Contains(prompt, "Exact requirement: remember my selection")
 		if containsFirst == containsSecond {
 			t.Fatalf("worker prompt did not contain exactly one local authority:\n%s", prompt)
 		}
-		if strings.Contains(prompt, "READABLE_CAPABILITY_CHANNELS") {
+		implementationPrompt := strings.Contains(prompt, "exactly:\nfunction Feature001View") ||
+			strings.Contains(prompt, "exactly:\nfunction Feature002View")
+		if implementationPrompt {
 			for _, required := range []string{"interface FeatureActions", "ViewProps"} {
 				if !strings.Contains(prompt, required) {
 					t.Fatalf("implementation worker omitted code-owned view API %q:\n%s", required, prompt)
@@ -116,11 +146,11 @@ func TestGenericWorkersReceiveOnlyLocalAuthorityAndCodeOwnedCapabilityAPIs(t *te
 					t.Fatalf("implementation worker received code-owned lifecycle %q:\n%s", forbidden, prompt)
 				}
 			}
-			if strings.Contains(prompt, "Exact feature: filter the catalog") &&
+			if strings.Contains(prompt, "Exact requirement: filter the catalog") &&
 				(strings.Contains(prompt, "capability_001") || strings.Contains(prompt, "capability_002")) {
 				t.Fatalf("independent feature received an undeclared capability:\n%s", prompt)
 			}
-			if strings.Contains(prompt, "Exact feature: remember my selection") &&
+			if strings.Contains(prompt, "Exact requirement: remember my selection") &&
 				(!strings.Contains(prompt, "capability_001") || strings.Contains(prompt, "capability_002")) {
 				t.Fatalf("dependent feature received anything beyond its direct capability:\n%s", prompt)
 			}
@@ -136,4 +166,132 @@ func TestGenericWorkersReceiveOnlyLocalAuthorityAndCodeOwnedCapabilityAPIs(t *te
 			}
 		}
 	}
+}
+
+func TestGenerationAndAcceptancePromptsReceiveTheAcceptedExecutableJobAndOnlyRelatedSiblings(t *testing.T) {
+	t.Parallel()
+
+	specification := assemblyline.ApplicationSpecification{
+		Surface:      assemblyline.ApplicationSurfaceBrowser,
+		ProductQuote: "catalog browser",
+		Requirements: []assemblyline.Requirement{
+			{ID: "requirement_001", SourceQuote: "filter the catalog"},
+			{ID: "requirement_002", SourceQuote: "remember my selection"},
+			{ID: "requirement_003", SourceQuote: "export a report"},
+		},
+	}
+	workload := genericBrowserWorkload(t, specification)
+	capabilities := directCodingCapabilityGraph{
+		"requirement_001": nil,
+		"requirement_002": {{
+			RequirementID: "requirement_001",
+			CapabilityID:  "capability_001",
+			Purpose:       "filter the catalog",
+		}},
+		"requirement_003": nil,
+	}
+	program, err := compileDirectCodingProgram(
+		"unseen", specification, nil, genericBrowserSkillBindings(specification), workload, capabilities,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := applicationWorkloadInput(specification)
+	context, err := assemblyline.ProjectApplicationTaskContext(input, workload, "task_002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := projectDirectCodingApplicationTaskStage(program, context)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	feature, exists := directCodingTypeScriptBlueprintBlock(stage.TypeScript, "feature.002")
+	if !exists {
+		t.Fatal("feature.002 is missing")
+	}
+	generationPrompt := renderApplicationTaskFragmentPrompt(t, &stage, feature)
+	stage.Generated[feature.ID] = feature.Signature +
+		` { return <button onClick={() => actions.set('selected', true)}>Remember selection</button>; }`
+	acceptance, exists := directCodingTypeScriptBlueprintBlock(stage.TypeScript, "acceptance.002")
+	if !exists {
+		t.Fatal("acceptance.002 is missing")
+	}
+	acceptancePrompt := renderApplicationTaskFragmentPrompt(t, &stage, acceptance)
+
+	task := workload.Tasks[1]
+	for label, prompt := range map[string]string{
+		"generation": generationPrompt,
+		"acceptance": acceptancePrompt,
+	} {
+		for _, required := range append(
+			[]string{
+				string(specification.Surface),
+				specification.ProductQuote,
+				task.RequirementQuote,
+				task.Objective,
+			},
+			append(append([]string{}, task.RequiredBehaviors...), task.AcceptanceCriteria...)...,
+		) {
+			if !strings.Contains(prompt, required) {
+				t.Fatalf("%s prompt omitted accepted executable-job fact %q:\n%s", label, required, prompt)
+			}
+		}
+		for _, requiredSibling := range []string{"filter the catalog", "capability_001"} {
+			if !strings.Contains(prompt, requiredSibling) {
+				t.Fatalf("%s prompt omitted relation-selected sibling %q:\n%s", label, requiredSibling, prompt)
+			}
+		}
+		for _, unrelated := range []string{
+			"export a report", "capability_003",
+			"Implement interactive behavior for export a report.",
+			"Expose an accessible user control for export a report.",
+			"The control for export a report is visible and operable.",
+		} {
+			if strings.Contains(prompt, unrelated) {
+				t.Fatalf("%s prompt exposed unrelated sibling state %q:\n%s", label, unrelated, prompt)
+			}
+		}
+		for _, forbidden := range []string{
+			"requirement_001", "requirement_002", "requirement_003",
+			"task_001", "task_002", "task_003", workload.SHA256,
+			"src/features/", "depends_on", "next_task", "completion_state",
+		} {
+			if strings.Contains(strings.ToLower(prompt), strings.ToLower(forbidden)) {
+				t.Fatalf("%s prompt exposed code-owned execution state %q:\n%s", label, forbidden, prompt)
+			}
+		}
+	}
+
+	const publicWrapper = "function Feature002({ runtime }: FeatureProps): ReactElement"
+	if !strings.Contains(acceptancePrompt, publicWrapper) {
+		t.Fatalf("acceptance prompt omitted imported public wrapper signature %q:\n%s", publicWrapper, acceptancePrompt)
+	}
+	if strings.Contains(acceptancePrompt, "function Feature002View") {
+		t.Fatalf("acceptance prompt exposed private implementation signature instead of public wrapper:\n%s", acceptancePrompt)
+	}
+	if strings.Contains(generationPrompt, publicWrapper) {
+		t.Fatalf("implementation leaf received its code-owned public wrapper:\n%s", generationPrompt)
+	}
+}
+
+func renderApplicationTaskFragmentPrompt(
+	t *testing.T,
+	stage *directCodingProgram,
+	block assemblyline.TypeScriptBlock,
+) string {
+	t.Helper()
+	fragment, err := directCodingApplicationTaskFragmentJob(stage, block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := newDirectCodingTypeScriptPortableJob(fragment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, _, err := assemblyline.RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return prompt
 }

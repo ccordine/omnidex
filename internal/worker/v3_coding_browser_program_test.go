@@ -187,7 +187,8 @@ func TestGenericBrowserProgramResolvesProtectedOpaqueArtifactsInCode(t *testing.
 	}}
 	program, err := compileDirectCodingProgram("unseen", specification, []assemblyline.ArtifactIdentity{{
 		Token: "ARTIFACT_1", Value: "REQUEST.md",
-	}}, genericBrowserSkillBindings(specification), genericBrowserCapabilityBindings(specification))
+	}}, genericBrowserSkillBindings(specification), genericBrowserWorkload(t, specification),
+		genericBrowserCapabilityBindings(specification))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,6 +225,7 @@ func stubGenericBrowserProgram(t *testing.T) directCodingProgram {
 	specification := genericBrowserSpecification()
 	program, err := compileDirectCodingProgram(
 		"unseen", specification, nil, genericBrowserSkillBindings(specification),
+		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
 	)
 	if err != nil {
@@ -258,6 +260,37 @@ func genericBrowserSpecification() assemblyline.ApplicationSpecification {
 			{ID: "requirement_002", SourceQuote: "remember my selection"},
 		},
 	}
+}
+
+func genericBrowserWorkload(
+	t *testing.T,
+	specification assemblyline.ApplicationSpecification,
+) assemblyline.FrozenApplicationWorkload {
+	t.Helper()
+	input := applicationWorkloadInput(specification)
+	jobSpecifications := make([]assemblyline.ApplicationJobSpecification, 0, len(specification.Requirements))
+	for _, requirement := range specification.Requirements {
+		jobSpecifications = append(jobSpecifications, assemblyline.ApplicationJobSpecification{
+			Objective: "Implement interactive behavior for " + requirement.SourceQuote + ".",
+			RequiredBehaviors: []string{
+				"Expose an accessible user control for " + requirement.SourceQuote + ".",
+				"Update the visible feature state when that control is used.",
+			},
+			AcceptanceCriteria: []string{
+				"The control for " + requirement.SourceQuote + " is visible and operable.",
+				"Using the control produces the requested visible state change.",
+			},
+		})
+	}
+	draft, err := assemblyline.MaterializeApplicationWorkloadDraft(input, jobSpecifications)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := assemblyline.FreezeApplicationWorkload(input, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frozen
 }
 
 func genericBrowserSkillBindings(

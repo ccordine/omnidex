@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/llmprovider"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -69,12 +71,50 @@ func TestNewRequiresEmbeddingsAtConstruction(t *testing.T) {
 	}
 }
 
-func TestNewValidatesExactStationContractAtConstruction(t *testing.T) {
+func TestNewDefersExactStationContractValidation(t *testing.T) {
 	service, err := New(
 		&queue.Repository{}, rejectedExactStationProvider{}, startupTestLLM{}, nil, validWorkerOptions(),
 	)
-	if err == nil || !strings.Contains(err.Error(), "exact contract unavailable") {
-		t.Fatalf("worker construction service=%v error=%v, want exact contract rejection", service, err)
+	if err != nil {
+		t.Fatalf("worker construction eagerly validated dormant exact station contract: %v", err)
+	}
+	if service.stationClient == nil {
+		t.Fatal("worker lost deferred exact station transport")
+	}
+}
+
+func TestNewAcceptsLazyAbsentProviderAuthority(t *testing.T) {
+	transports := llmprovider.NewLazyFromConfig(config.Config{
+		InferenceContextTokens: llm.DefaultInferenceContextTokens,
+	})
+	opts := validWorkerOptions()
+	opts.EmbeddingProvider = ""
+	opts.EmbeddingModel = ""
+	service, err := New(
+		&queue.Repository{}, transports.Stations, transports.Embeddings, nil, opts,
+	)
+	if err != nil {
+		t.Fatalf("worker startup resolved absent provider authority: %v", err)
+	}
+	if service.stationClient == nil || service.embeddings == nil {
+		t.Fatalf("worker lost lazy provider resolvers: %+v", service)
+	}
+}
+
+func TestNewRetainsExplicitObjectiveAdvisoryMode(t *testing.T) {
+	opts := validWorkerOptions()
+	opts.ObjectiveAdvisoryMode = "shadow"
+	service, err := New(
+		&queue.Repository{}, startupTestLLM{}, startupTestLLM{}, nil, opts,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.objectiveAdvisoryMode != "shadow" {
+		t.Fatalf("service advisory mode=%q want shadow", service.objectiveAdvisoryMode)
+	}
+	if service.objectiveAdvisoryProvider != llm.ExactPreparedProviderBackend {
+		t.Fatalf("service advisory provider=%q want exact backend", service.objectiveAdvisoryProvider)
 	}
 }
 

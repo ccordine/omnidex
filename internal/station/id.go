@@ -10,6 +10,7 @@ const (
 	ConversationContextSelection      ID = "conversation_context_selection"
 	MemoryContextSelection            ID = "memory_context_selection"
 	ConversationObjectiveKind         ID = "conversation_objective_kind"
+	ObjectiveAdvisory                 ID = "objective_advisory"
 	ConversationResponse              ID = "conversation_response"
 	GroundedAnswer                    ID = "grounded_answer"
 	RepositoryEvidenceRelevance       ID = "repository_evidence_relevance"
@@ -21,8 +22,8 @@ const (
 	WebGroundedSynthesisCorrection    ID = "web_grounded_synthesis_correction"
 	WebClaimEvidenceReview            ID = "web_claim_evidence_review"
 	CodingSurface                     ID = "coding_surface"
-	CodingProductIdentity             ID = "coding_product_identity"
-	CodingRequirementPartition        ID = "coding_requirement_partition"
+	CodingRequirements                ID = "coding_requirements"
+	CodingWorkload                    ID = "coding_workload"
 	CodingArtifactHandling            ID = "coding_artifact_handling"
 	CodingKnownArtifactTruth          ID = "coding_known_artifact_truth"
 	CodingDeclarationArtifactBoundary ID = "coding_declaration_artifact_boundary"
@@ -39,6 +40,7 @@ var registered = [...]ID{
 	ConversationContextSelection,
 	MemoryContextSelection,
 	ConversationObjectiveKind,
+	ObjectiveAdvisory,
 	ConversationResponse,
 	GroundedAnswer,
 	RepositoryEvidenceRelevance,
@@ -50,8 +52,8 @@ var registered = [...]ID{
 	WebGroundedSynthesisCorrection,
 	WebClaimEvidenceReview,
 	CodingSurface,
-	CodingProductIdentity,
-	CodingRequirementPartition,
+	CodingRequirements,
+	CodingWorkload,
 	CodingArtifactHandling,
 	CodingKnownArtifactTruth,
 	CodingDeclarationArtifactBoundary,

@@ -4,29 +4,34 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/projectgit"
 )
 
-func (s *Server) loadProjectGitStatusViaBridge(ctx context.Context, location string) (map[string]any, error) {
+func (s *Server) loadProjectGitStatusViaBridge(ctx context.Context, location string) (projectgit.Status, error) {
 	client := s.hostBridgeClient()
 	if client == nil {
-		return nil, fmt.Errorf("project directory is not accessible locally")
+		return projectgit.Status{}, fmt.Errorf("project directory is not accessible locally")
 	}
 	resolved, err := resolveHostBridgeProjectPath(ctx, client, location)
 	if err != nil {
-		return nil, err
+		return projectgit.Status{}, err
 	}
 	payload, err := client.ProjectGitStatus(ctx, resolved)
 	if err != nil {
-		return nil, projectGitBridgeError(err)
+		return projectgit.Status{}, projectGitBridgeError(err)
 	}
-	if payload == nil {
-		return nil, fmt.Errorf("host bridge returned empty git status")
+	if payload.Location != resolved || payload.Source != "host-bridge" {
+		return projectgit.Status{}, fmt.Errorf("host bridge git status does not attest the resolved project path")
 	}
-	if strings.TrimSpace(fmt.Sprint(payload["location"])) == "" {
-		payload["location"] = resolved
+	if payload.RequestedLocation != "" {
+		return projectgit.Status{}, fmt.Errorf("host bridge git status requested path attestation is inconsistent")
 	}
-	if strings.TrimSpace(fmt.Sprint(payload["requested_location"])) == "" && resolved != location {
-		payload["requested_location"] = location
+	if resolved != location {
+		payload.RequestedLocation = location
+	}
+	if err := payload.Validate(); err != nil {
+		return projectgit.Status{}, fmt.Errorf("validate mapped host bridge git status: %w", err)
 	}
 	return payload, nil
 }

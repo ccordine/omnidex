@@ -60,6 +60,26 @@ func TestPostgresLegacyCutoverRejectsChangedReleaseBundleWithoutMutation(t *test
 	assertLegacyRollbackState(t, fixture.DatabaseURL)
 }
 
+func TestPostgresLegacyCutoverRejectsNonterminalRetiredPipelineWithoutMutation(t *testing.T) {
+	fixture := openLegacyPublicFixture(t)
+	if _, err := fixture.Pool.Exec(t.Context(), `
+		INSERT INTO public.jobs(instruction,pipeline,status)
+		VALUES ('must remain legacy','agent','pending')
+	`); err != nil {
+		t.Fatal(err)
+	}
+	fixture.Pool.Close()
+	pool := openLegacyCutoverPool(t, fixture.DatabaseURL)
+	_, err := PreserveLegacyPublic(
+		t.Context(), pool, db.DefaultRuntimeSchema, fixture.Bundle,
+	)
+	if err == nil || !strings.Contains(err.Error(), "nonterminal retired or unregistered pipeline") {
+		t.Fatalf("PreserveLegacyPublic error=%v, want retired-pipeline rejection", err)
+	}
+	pool.Close()
+	assertLegacyRollbackState(t, fixture.DatabaseURL)
+}
+
 func TestPostgresLegacyCutoverRejectsRuntimeCollisionWithoutMutation(t *testing.T) {
 	fixture := openLegacyPublicFixture(t)
 	if _, err := fixture.Pool.Exec(t.Context(), `CREATE SCHEMA omnidex_runtime`); err != nil {

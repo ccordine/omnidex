@@ -111,7 +111,7 @@ func TestEnqueueJobPreservesCustomProjectName(t *testing.T) {
 		_, _ = pool.Exec(cleanupCtx, `DELETE FROM projects WHERE location = $1`, location)
 	})
 
-	project, err := repo.CreateProject(ctx, customName, location, "", "", nil)
+	project, err := repo.CreateProject(ctx, customName, location, "")
 	if err != nil {
 		t.Fatal(err)
 	}

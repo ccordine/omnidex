@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
@@ -75,12 +74,6 @@ type ServerOptions struct {
 	UISessionTTL         time.Duration
 }
 
-type enqueueRequest struct {
-	Instruction string          `json:"instruction"`
-	Pipeline    string          `json:"pipeline"`
-	Metadata    json.RawMessage `json:"metadata"`
-}
-
 type memoryCandidatePromotionRequest struct {
 	Tier      string                         `json:"tier"`
 	Authority model.MemoryPromotionAuthority `json:"authority"`
@@ -109,9 +102,7 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 	providerConfig.CompatibleProviders = config.CloneCompatibleProviders(providerConfig.CompatibleProviders)
 	providerConfig.ProviderModels = config.CloneProviderModels(providerConfig.ProviderModels)
 	defaultProvider := strings.TrimSpace(providerConfig.LLMProvider)
-	if defaultProvider == "" {
-		defaultProvider = "ollama"
-	} else if definition, ok := catalog.Lookup(defaultProvider); ok {
+	if definition, ok := catalog.Lookup(defaultProvider); ok {
 		defaultProvider = definition.ID
 	}
 	providerConfig.LLMProvider = defaultProvider
@@ -199,19 +190,16 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
+	s.mux.HandleFunc("/readyz", s.handleReadiness)
 	s.mux.HandleFunc("/v1/providers", s.handleProviderCatalog)
 	s.mux.HandleFunc("/v1/status/research", s.handleResearchStatus)
 	s.mux.HandleFunc("/v1/scrum", s.handleScrum)
 	s.mux.HandleFunc("/v1/scrum/cards", s.handleScrumCards)
-	s.mux.HandleFunc("/v1/scrum/cards/sync", s.handleScrumCardSync)
 	s.mux.HandleFunc("/v1/scrum/cards/", s.handleScrumCardByID)
 	s.mux.HandleFunc("/v1/scrum/files", s.handleScrumFiles)
 	s.mux.HandleFunc("/v1/scrum/tags", s.handleScrumTags)
 	s.mux.HandleFunc("/v1/scrum/flow-metrics", s.handleScrumFlowMetrics)
 	s.mux.HandleFunc("/v1/settings/models", s.handleModelSettings)
-	s.mux.HandleFunc("/v1/models/resolved", s.handleResolvedModels)
-	s.mux.HandleFunc("/v1/agents/resolved", s.handleResolvedAgents)
-	s.mux.HandleFunc("/v1/settings/agents", s.handleAgentSettings)
 	s.mux.HandleFunc("/v1/settings/secrets", s.handleAPISecrets)
 	s.mux.HandleFunc("/v1/settings/network", s.handleNetworkSettings)
 	s.mux.HandleFunc("/v1/browse", s.handleBrowse)
@@ -227,8 +215,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/host/screen/monitors", s.handleHostScreenMonitors)
 	s.mux.HandleFunc("/v1/ui/screen/monitors", s.handleUIScreenMonitors)
 	s.mux.HandleFunc("/v1/host/screen/mjpeg", s.handleHostScreenMJPEG)
-	s.mux.HandleFunc("/v1/recipes", s.handleRecipes)
-	s.mux.HandleFunc("/v1/recipes/", s.handleRecipeByID)
 	s.mux.HandleFunc("/v1/projects", s.handleProjects)
 	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
 	s.mux.HandleFunc("/v1/realtime/ws", s.handleRealtimeWS)

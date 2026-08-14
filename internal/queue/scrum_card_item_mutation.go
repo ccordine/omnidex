@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -28,6 +29,8 @@ const (
 	ScrumCardItemRemove ScrumCardItemAction = "remove"
 )
 
+var ErrScrumCardItemNotFound = errors.New("Scrum card item was not found")
+
 type ScrumCardItem struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`
@@ -46,12 +49,18 @@ type ScrumCardItemMutation struct {
 }
 
 func (mutation *ScrumCardItemMutation) validate() error {
-	if mutation == nil || mutation.ProjectID <= 0 || strings.TrimSpace(mutation.CardID) == "" {
+	if mutation == nil || mutation.ProjectID <= 0 || mutation.CardID == "" {
 		return fmt.Errorf("Scrum card item mutation requires a project and card")
 	}
-	mutation.CardID = strings.TrimSpace(mutation.CardID)
-	mutation.ItemID = strings.TrimSpace(mutation.ItemID)
-	mutation.Text = strings.TrimSpace(mutation.Text)
+	if mutation.CardID != strings.TrimSpace(mutation.CardID) {
+		return fmt.Errorf("Scrum card item mutation card ID must be canonical")
+	}
+	if mutation.ItemID != strings.TrimSpace(mutation.ItemID) {
+		return fmt.Errorf("Scrum card item mutation item ID must be canonical")
+	}
+	if mutation.Text != strings.TrimSpace(mutation.Text) {
+		return fmt.Errorf("Scrum card item mutation text must be canonical")
+	}
 	if mutation.ExpectedUpdatedAt.IsZero() {
 		return fmt.Errorf("Scrum card item mutation requires an expected card revision")
 	}
@@ -130,6 +139,9 @@ func (r *Repository) MutateScrumCardItem(ctx context.Context, mutation ScrumCard
 	if tag.RowsAffected() != 1 {
 		return DBScrumCard{}, fmt.Errorf("%w: Scrum card %q disappeared during mutation", ErrScrumCardNotFound, mutation.CardID)
 	}
+	if err := refreshScrumFlowMetricsTx(ctx, tx, mutation.ProjectID, mutation.CardID); err != nil {
+		return DBScrumCard{}, fmt.Errorf("refresh Scrum item mutation flow metrics: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `UPDATE projects SET last_seen_at=clock_timestamp(), updated_at=clock_timestamp() WHERE id=$1`, mutation.ProjectID); err != nil {
 		return DBScrumCard{}, fmt.Errorf("touch Scrum card item project: %w", err)
 	}
@@ -153,10 +165,12 @@ func decodeCanonicalScrumCardItems(raw json.RawMessage) ([]ScrumCardItem, error)
 	}
 	seen := make(map[string]struct{}, len(items))
 	for index := range items {
-		items[index].ID = strings.TrimSpace(items[index].ID)
-		items[index].Text = strings.TrimSpace(items[index].Text)
 		if items[index].ID == "" || items[index].Text == "" {
 			return nil, fmt.Errorf("item %d requires a non-blank id and text", index)
+		}
+		if items[index].ID != strings.TrimSpace(items[index].ID) ||
+			items[index].Text != strings.TrimSpace(items[index].Text) {
+			return nil, fmt.Errorf("item %d contains noncanonical id or text", index)
 		}
 		if _, duplicate := seen[items[index].ID]; duplicate {
 			return nil, fmt.Errorf("duplicate item id %q", items[index].ID)
@@ -188,5 +202,5 @@ func applyScrumCardItemMutation(items []ScrumCardItem, mutation ScrumCardItemMut
 			}
 		}
 	}
-	return nil, fmt.Errorf("Scrum card item %q was not found", mutation.ItemID)
+	return nil, fmt.Errorf("%w: %q", ErrScrumCardItemNotFound, mutation.ItemID)
 }

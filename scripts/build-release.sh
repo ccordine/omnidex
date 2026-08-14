@@ -15,6 +15,13 @@ PACKAGES=(
   "agent-cli:./cmd/cli"
 )
 
+MANAGED_RUNTIME_FILES=(
+  "default.env"
+  "install-release.sh"
+  "scripts/install-shell-lib.sh"
+  "scripts/managed-release-install-lib.sh"
+)
+
 SOURCE_STAGE_ROOT=""
 SOURCE_TREE=""
 RELEASE_OUTPUT_STAGE=""
@@ -169,6 +176,24 @@ prepare_ui_dist() {
   verify_source_stage
 }
 
+copy_managed_runtime_layout() {
+  local source="$1" target="$2" goos="$3" relative
+  [[ -d "$source" && ! -L "$source" ]] || die "managed release source is unavailable"
+  [[ -d "$target/bin" && ! -L "$target/bin" ]] || die "managed release binary directory is unavailable"
+
+  for relative in "${MANAGED_RUNTIME_FILES[@]}"; do
+    [[ -f "${source}/${relative}" && ! -L "${source}/${relative}" ]] ||
+      die "managed release source omits ${relative}"
+    mkdir -p "${target}/$(dirname "$relative")"
+    cp -p "${source}/${relative}" "${target}/${relative}"
+  done
+  if [[ "$goos" == "windows" ]]; then
+    cp -p "${target}/bin/agent-cli.exe" "${target}/bin/acli.exe"
+  else
+    ln -s agent-cli "${target}/bin/acli"
+  fi
+}
+
 build_target() {
   local target="$1"
   local goos="${target%/*}"
@@ -211,9 +236,7 @@ build_target() {
   if [[ -f "${target_source}/CHANGELOG.md" ]]; then
     cp -a "${target_source}/CHANGELOG.md" "${target_dir}/CHANGELOG.md"
   fi
-  if [[ -f "${target_source}/agent_aliases.sh" && "$goos" != "windows" ]]; then
-    cp -a "${target_source}/agent_aliases.sh" "${target_dir}/agent_aliases.sh"
-  fi
+  copy_managed_runtime_layout "$target_source" "$target_dir" "$goos"
 
   local actual="${SOURCE_STAGE_ROOT}/${target_name}.after.manifest"
   write_source_manifest "$target_source" "$actual"

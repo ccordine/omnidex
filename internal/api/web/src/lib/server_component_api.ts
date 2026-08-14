@@ -7,11 +7,14 @@ export type ServerComponent = {
 };
 
 export function requireServerBundle(payload: unknown, label: string): string {
-  if (!payload || typeof payload !== "object") {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error(`${label} response is not an object.`);
   }
   const html = (payload as { html?: unknown }).html;
-  const bundle = html && typeof html === "object" ? (html as { bundle?: unknown }).bundle : null;
+  if (!html || typeof html !== "object" || Array.isArray(html) || Object.keys(html).length !== 1 || !("bundle" in html)) {
+    throw new Error(`${label} response did not include one exact server-rendered html authority.`);
+  }
+  const bundle = (html as { bundle?: unknown }).bundle;
   if (typeof bundle !== "string" || !bundle.trim()) {
     throw new Error(`${label} response did not include its required server-rendered bundle.`);
   }

@@ -8,9 +8,8 @@ import (
 
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
-	partitionModel string,
+	requirementModel string,
 	surfaceModel string,
-	identityModel string,
 	artifactModel string,
 	authority string,
 	identities []assemblyline.ArtifactIdentity,
@@ -27,11 +26,9 @@ func runDirectCodingApplicationInterpreter(
 			classification.Surface,
 		)
 	}
-	identity, err := extractApplicationIdentity(runtime, identityModel, authority, identities)
-	if err != nil {
-		return zero, err
-	}
-	requirements, err := extractGroundedRequirements(runtime, partitionModel, authority, identities)
+	resolution, err := interpretApplicationRequirements(
+		runtime, requirementModel, authority, identities,
+	)
 	if err != nil {
 		return zero, err
 	}
@@ -40,8 +37,8 @@ func runDirectCodingApplicationInterpreter(
 		return zero, err
 	}
 	specification := assemblyline.ApplicationSpecification{
-		Surface: classification.Surface, ProductQuote: identity.ProductQuote,
-		Requirements: requirements, Artifacts: artifacts,
+		Surface: classification.Surface, ProductQuote: resolution.ProductQuote,
+		Requirements: resolution.Requirements, Artifacts: artifacts,
 	}
 	if err := specification.Validate(); err != nil {
 		return zero, err
@@ -66,36 +63,29 @@ func classifyApplicationSurface(
 	)
 }
 
-func extractApplicationIdentity(
+func interpretApplicationRequirements(
 	runtime typedWorkerRuntime,
 	modelName string,
 	authority string,
 	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.ApplicationIdentity, error) {
-	input := assemblyline.ApplicationIdentityInput{UserRequest: authority}
-	job, err := assemblyline.NewApplicationIdentityJob(input)
+) (assemblyline.ApplicationRequirementResolution, error) {
+	var zero assemblyline.ApplicationRequirementResolution
+	input := assemblyline.ApplicationRequirementInterpretationInput{UserRequest: authority}
+	job, err := assemblyline.NewApplicationRequirementInterpretationJob(input)
 	if err != nil {
-		return assemblyline.ApplicationIdentity{}, err
+		return zero, err
 	}
-	return runDirectCodingSemanticCall[assemblyline.ApplicationIdentity](
-		runtime, modelName, "application_identity", job, identities,
-		func(value assemblyline.ApplicationIdentity) error { return value.ValidateFor(input) },
+	oneCallRuntime := runtime
+	oneCallRuntime.MaxAttempts = 1
+	interpretation, err := runDirectCodingSemanticCall[assemblyline.ApplicationRequirementInterpretation](
+		oneCallRuntime, modelName, "application_requirements", job, identities,
+		func(value assemblyline.ApplicationRequirementInterpretation) error {
+			_, validationErr := assemblyline.ResolveApplicationRequirements(input, value)
+			return validationErr
+		},
 	)
-}
-
-func extractGroundedRequirements(
-	runtime typedWorkerRuntime,
-	modelName string,
-	authority string,
-	identities []assemblyline.ArtifactIdentity,
-) ([]assemblyline.Requirement, error) {
-	partition, err := partitionCodingRequirements(runtime, modelName, authority, identities)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
-	graph, err := assemblyline.BuildRequirementGraph(authority, partition.FeatureQuotes)
-	if err != nil {
-		return nil, err
-	}
-	return graph.Requirements, nil
+	return assemblyline.ResolveApplicationRequirements(input, interpretation)
 }

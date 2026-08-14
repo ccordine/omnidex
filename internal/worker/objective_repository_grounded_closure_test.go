@@ -22,6 +22,7 @@ func TestRepositoryGroundedClosureRequiresIndependentReviewBeforeReturningAnswer
 	}
 	result, err := runObjectiveRepositoryGroundedClosure(
 		context.Background(), repositoryGroundedAnswerInput(), stations,
+		objectiveRepositoryGroundedClosureOptions{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +63,7 @@ func TestRepositoryGroundedClosureCorrectsOneTextLeafThenReReviews(t *testing.T)
 		correction: assemblyline.RepositoryGroundedCorrectionDecision{Text: "The evidence identifies First and Second."},
 	}
 	result, err := runObjectiveRepositoryGroundedClosure(
-		context.Background(), input, stations,
+		context.Background(), input, stations, objectiveRepositoryGroundedClosureOptions{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -123,6 +124,7 @@ func TestRepositoryGroundedClosureFailsAfterSecondIssueWithoutAnotherCorrection(
 	}
 	result, err := runObjectiveRepositoryGroundedClosure(
 		context.Background(), repositoryGroundedAnswerInput(), stations,
+		objectiveRepositoryGroundedClosureOptions{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "remained unsupported") ||
 		result.CorrectionCalls != 1 || len(stations.correctionInputs) != 1 || len(stations.reviewInputs) != 2 {
@@ -146,6 +148,7 @@ func TestRepositoryGroundedClosureRejectsNoopCorrection(t *testing.T) {
 	}
 	_, err := runObjectiveRepositoryGroundedClosure(
 		context.Background(), repositoryGroundedAnswerInput(), stations,
+		objectiveRepositoryGroundedClosureOptions{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "must change exactly the text leaf") {
 		t.Fatalf("error=%v", err)

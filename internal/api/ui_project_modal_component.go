@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
-	"github.com/gryph/omnidex/internal/omni"
 )
 
 func (s *Server) handleUIProjectModal(w http.ResponseWriter, r *http.Request) {
@@ -24,8 +23,16 @@ func (s *Server) handleUIProjectModal(w http.ResponseWriter, r *http.Request) {
 	var body string
 	switch kind {
 	case "create":
+		if err := validateExactQuery(r, "kind", "selected", "name", "description"); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		body, err = s.renderUIProjectCreateModal(r)
 	case "browse":
+		if err := validateExactQuery(r, "kind", "path", "selected", "mode", "offset"); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		body, err = s.renderUIProjectBrowseModal(r)
 	default:
 		err = fmt.Errorf("unsupported project modal kind %q", kind)
@@ -50,28 +57,7 @@ func (s *Server) renderUIProjectCreateModal(r *http.Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	recipeID, err := exactUIQuery(r, "recipe_id", 256)
-	if err != nil {
-		return "", err
-	}
-	offset, err := exactChannelQueryInteger(r, "recipe_offset", 0, 0, 1<<30)
-	if err != nil {
-		return "", err
-	}
-	page, err := omni.LoadRecipePage(s.recipeRoot(), dataSourceUIPageSize, offset)
-	if err != nil {
-		return "", err
-	}
-	var options strings.Builder
-	options.WriteString(`<option value="">No catalog recipe</option>`)
-	for _, recipe := range page.Recipes {
-		selectedOption := ""
-		if recipe.ID == recipeID {
-			selectedOption = " selected"
-		}
-		options.WriteString(`<option value="` + uiAttribute(recipe.ID) + `"` + selectedOption + `>` + uiEscape(recipe.ID) + `</option>`)
-	}
-	return `<div class="border-b border-white/10 p-4"><h2 class="text-xl font-semibold text-zinc-100">New project</h2></div><form data-action="submit->projects#submitCreate" class="omni-modal-body scrollbar space-y-4 p-4"><div data-projects-modal-feedback class="hidden rounded-md border px-3 py-2 text-sm" role="status"></div><label class="block text-xs text-zinc-500">Working directory<div class="mt-2 flex gap-2"><input data-projects-field="selectedPath" value="` + uiAttribute(selected) + `" readonly class="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs" /><button data-action="projects#openBrowse" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm">Choose folder…</button></div></label>` + uiProjectModalInput("Name", "createName", name) + `<label class="block text-xs text-zinc-500">Catalog recipe<select data-projects-field="createRecipe" class="mt-2 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2">` + options.String() + `</select></label>` + renderUIDataPagination("projects#loadCreateRecipePage", "recipe", page.Offset, len(page.Recipes), page.HasMore) + `<label class="block text-xs text-zinc-500">Description<textarea data-projects-field="createDesc" rows="3" class="mt-2 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2">` + uiEscape(description) + `</textarea></label><div class="flex justify-end gap-2"><button type="button" data-action="projects#closeCreateModal" class="rounded-md border border-white/10 px-4 py-2">Cancel</button><button type="submit" data-projects-create-submit class="rounded-md bg-cyan-300 px-4 py-2 font-semibold text-zinc-950">Create project</button></div></form>`, nil
+	return `<div class="border-b border-white/10 p-4"><h2 class="text-xl font-semibold text-zinc-100">New project</h2></div><form data-action="submit->projects#submitCreate" class="omni-modal-body scrollbar space-y-4 p-4"><div data-projects-modal-feedback class="hidden rounded-md border px-3 py-2 text-sm" role="status"></div><label class="block text-xs text-zinc-500">Working directory<div class="mt-2 flex gap-2"><input data-projects-field="selectedPath" value="` + uiAttribute(selected) + `" readonly class="min-w-0 flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs" /><button data-action="projects#openBrowse" type="button" class="rounded-md border border-white/10 px-4 py-2 text-sm">Choose folder…</button></div></label>` + uiProjectModalInput("Name", "createName", name) + `<label class="block text-xs text-zinc-500">Description<textarea data-projects-field="createDesc" rows="3" class="mt-2 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2">` + uiEscape(description) + `</textarea></label><div class="flex justify-end gap-2"><button type="button" data-action="projects#closeCreateModal" class="rounded-md border border-white/10 px-4 py-2">Cancel</button><button type="submit" data-projects-create-submit class="rounded-md bg-cyan-300 px-4 py-2 font-semibold text-zinc-950">Create project</button></div></form>`, nil
 }
 
 func uiProjectModalInput(label, field, value string) string {

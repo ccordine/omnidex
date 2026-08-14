@@ -92,6 +92,9 @@ func (r *Repository) UpdateScrumCardTicket(
 	if tag.RowsAffected() != 1 {
 		return DBScrumCard{}, fmt.Errorf("%w: Scrum card %q disappeared during mutation", ErrScrumCardNotFound, mutation.CardID)
 	}
+	if err := refreshScrumFlowMetricsTx(ctx, tx, mutation.ProjectID, mutation.CardID); err != nil {
+		return DBScrumCard{}, fmt.Errorf("refresh Scrum card ticket flow metrics: %w", err)
+	}
 	if err := touchScrumTicketProject(ctx, tx, mutation.ProjectID); err != nil {
 		return DBScrumCard{}, err
 	}

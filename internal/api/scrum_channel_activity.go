@@ -247,15 +247,6 @@ func stepContextToActivity(ctx model.StepContext) []ScrumChatMessage {
 				status = "running"
 			}
 			return []ScrumChatMessage{toolCallActivity(eventType, "", status, summary)}
-		case strings.Contains(eventType, "external_agent"):
-			if strings.Contains(eventType, "command") {
-				return []ScrumChatMessage{commandActivity(summary, "running", "")}
-			}
-			if strings.Contains(eventType, "file_change") {
-				files := strings.Split(summary, ",")
-				return []ScrumChatMessage{fileChangeActivity(files, "completed", "", "")}
-			}
-			return nil
 		case isNoisyStepEvent(eventType):
 			return nil
 		default:

@@ -19,32 +19,6 @@ type Transports struct {
 	Embeddings llm.EmbeddingClient
 }
 
-func NewFromConfig(cfg config.Config) (Transports, error) {
-	stationDefinition, ok := catalog.Lookup(cfg.LLMProvider)
-	if !ok || !stationDefinition.SupportsExactPreparedStations {
-		return Transports{}, fmt.Errorf(
-			"LLM provider %q does not implement the exact prepared station contract",
-			cfg.LLMProvider,
-		)
-	}
-	embeddingDefinition, ok := catalog.Lookup(cfg.EmbeddingProvider)
-	if !ok || !embeddingDefinition.SupportsEmbeddings {
-		return Transports{}, fmt.Errorf("unsupported embedding provider: %s", cfg.EmbeddingProvider)
-	}
-
-	stations, err := newExactStationProvider(cfg, stationDefinition, cfg.RequestTimeout)
-	if err != nil {
-		return Transports{}, err
-	}
-	embeddings, err := newEmbeddingProvider(
-		cfg, embeddingDefinition, cfg.EmbeddingModel, cfg.RequestTimeout,
-	)
-	if err != nil {
-		return Transports{}, err
-	}
-	return Transports{Stations: stations, Embeddings: embeddings}, nil
-}
-
 func newExactStationProvider(
 	cfg config.Config,
 	definition catalog.Definition,

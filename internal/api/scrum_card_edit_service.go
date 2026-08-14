@@ -1,16 +1,17 @@
 package api
 
 import (
+	"context"
 	"fmt"
-	"net/http"
 )
 
 func (s *Server) scrumEditCard(
-	r *http.Request,
+	ctx context.Context,
+	projectID int64,
 	cardID string,
 	edit scrumCardEditRequest,
 ) (ScrumCard, error) {
-	if s.repo == nil {
+	if s.repo == nil || ctx == nil || projectID <= 0 {
 		return ScrumCard{}, fmt.Errorf("postgres repository is required for Scrum")
 	}
 	if !edit.hasEditableField() {
@@ -19,23 +20,10 @@ func (s *Server) scrumEditCard(
 	if err := edit.validate(); err != nil {
 		return ScrumCard{}, err
 	}
-	projectID, err := s.resolveProjectID(r)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	patch, err := edit.repositoryPatch()
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	current, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	previous, err := dbScrumCardToAPI(current)
-	if err != nil {
-		return ScrumCard{}, fmt.Errorf("decode current Scrum card: %w", err)
-	}
-	updated, err := s.repo.UpdateScrumCard(r.Context(), projectID, cardID, patch)
+	patch := edit.repositoryPatch()
+	updated, err := s.repo.UpdateScrumCardAtRevision(
+		ctx, projectID, cardID, edit.ExpectedUpdatedAt.Value, patch,
+	)
 	if err != nil {
 		return ScrumCard{}, err
 	}
@@ -43,6 +31,5 @@ func (s *Server) scrumEditCard(
 	if err != nil {
 		return ScrumCard{}, fmt.Errorf("decode updated Scrum card: %w", err)
 	}
-	result.FlowMetrics = s.trackScrumCardFlow(r.Context(), projectID, previous, result, "edit")
 	return result, nil
 }

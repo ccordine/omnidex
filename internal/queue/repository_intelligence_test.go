@@ -70,7 +70,7 @@ func TestPostgresRepositorySnapshotsAreExactAndImmutable(t *testing.T) {
 	if !analysis.Complete || len(analysis.Symbols) == 0 {
 		t.Fatalf("analysis did not produce complete compiler facts: %#v", analysis)
 	}
-	project, err := repository.CreateProject(ctx, "repository-intelligence-test", root, "", "", nil)
+	project, err := repository.CreateProject(ctx, "repository-intelligence-test", root, "")
 	if err != nil {
 		t.Fatal(err)
 	}

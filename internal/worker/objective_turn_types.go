@@ -11,6 +11,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/webresearch"
 )
 
@@ -87,6 +88,7 @@ type objectiveWorkflows struct {
 	WorkspaceMutation func(context.Context, turnAuthority) (string, error)
 	RepositoryRead    func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error)
 	ExternalAnswer    func(context.Context, turnAuthority) (objectiveExternalAnswer, error)
+	ObjectiveAdvisory objectiveAdvisoryRunner
 }
 
 type objectiveEvidenceAcquisition struct {
@@ -125,6 +127,7 @@ type objectiveTurnResult struct {
 	Output            string
 	CitationsRendered bool
 	ModelCalls        int
+	Advisory          objectiveadvisory.Report
 	Complete          bool
 }
 
@@ -173,9 +176,9 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	if job.ID < 1 {
 		return turnAuthority{}, fmt.Errorf("conversation turn requires a positive job ID")
 	}
-	pipeline := strings.ToLower(strings.TrimSpace(job.Pipeline))
+	pipeline := job.Pipeline
 	switch pipeline {
-	case model.PipelineAssistant, model.PipelineChat, model.PipelineStory:
+	case model.PipelineChat:
 	default:
 		return turnAuthority{}, fmt.Errorf("conversation turn pipeline %q is unsupported", pipeline)
 	}

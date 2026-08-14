@@ -80,6 +80,9 @@ func (s *Service) run(ctx context.Context, workerID string) {
 }
 
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
+	if err := requireExecutablePipeline(claim.Job.Pipeline); err != nil {
+		return err
+	}
 	if _, err := modelRoutingFromJobMetadata(claim.Job.Metadata, s.models); err != nil {
 		return err
 	}
@@ -93,6 +96,15 @@ func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) err
 	return s.finishStepAttemptWatch(ctx, claim, workErr, leaseErr)
 }
 
+func requireExecutablePipeline(pipeline string) error {
+	switch pipeline {
+	case model.PipelineChat, model.PipelineCoding, model.PipelineScrum:
+		return nil
+	default:
+		return fmt.Errorf("unsupported executable pipeline %q", pipeline)
+	}
+}
+
 func (s *Service) processClaimedAction(stepCtx context.Context, claim *model.ClaimedStep, contexts map[string]string, action string) error {
 	if strings.HasPrefix(action, "v3_") || action == "objective_resolve" {
 		if s.nativeV3Runner != nil {
@@ -100,12 +112,7 @@ func (s *Service) processClaimedAction(stepCtx context.Context, claim *model.Cla
 		}
 		return s.runNativeV3Step(stepCtx, claim, contexts, action)
 	}
-	switch action {
-	case "external_agent_execute":
-		return s.runExternalAgentStep(stepCtx, claim, contexts)
-	default:
-		return fmt.Errorf("unsupported worker action %q", action)
-	}
+	return fmt.Errorf("unsupported worker action %q", action)
 }
 
 func (s *Service) watchStepControl(ctx context.Context, jobID, stepID int64) (context.Context, func()) {

@@ -19,8 +19,8 @@ func TestDecodeScrumCardTicketActionRequestAcceptsTypedActions(t *testing.T) {
 		action      scrumCardTicketAction
 		elaboration string
 	}{
-		{name: "generate", body: `{"action":"generate","expected_updated_at":"2026-08-13T12:00:00.123456Z"}`, action: scrumCardTicketGenerate},
-		{name: "elaborate", body: `{"action":"elaborate","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"Use the existing boundary."}`, action: scrumCardTicketElaborate, elaboration: "Use the existing boundary."},
+		{name: "assemble", body: `{"action":"assemble","expected_updated_at":"2026-08-13T12:00:00.123456Z"}`, action: scrumCardTicketAssemble},
+		{name: "apply exact elaboration", body: `{"action":"apply_elaboration","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"  Use the existing boundary.\nKeep this tab:\t "}`, action: scrumCardTicketApplyElaboration, elaboration: "  Use the existing boundary.\nKeep this tab:\t "},
 	}
 	for _, test := range tests {
 		test := test
@@ -48,16 +48,19 @@ func TestDecodeScrumCardTicketActionRequestRejectsInexactAuthority(t *testing.T)
 	}{
 		{name: "missing action", body: []byte(`{"expected_updated_at":"2026-08-13T12:00:00Z"}`), want: "action is required"},
 		{name: "unknown action", body: []byte(`{"action":"write","expected_updated_at":"2026-08-13T12:00:00Z"}`), want: `action "write" is not registered`},
-		{name: "missing revision", body: []byte(`{"action":"generate"}`), want: "expected_updated_at is required"},
-		{name: "noncanonical revision", body: []byte(`{"action":"generate","expected_updated_at":"2026-08-13T08:00:00-04:00"}`), want: "canonical UTC"},
-		{name: "generate elaboration", body: []byte(`{"action":"generate","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"extra"}`), want: "must not include elaboration"},
-		{name: "blank elaboration", body: []byte(`{"action":"elaborate","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"  "}`), want: "requires elaboration"},
-		{name: "null elaboration", body: []byte(`{"action":"elaborate","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":null}`), want: "must not be null"},
+		{name: "missing revision", body: []byte(`{"action":"assemble"}`), want: "expected_updated_at is required"},
+		{name: "noncanonical revision", body: []byte(`{"action":"assemble","expected_updated_at":"2026-08-13T08:00:00-04:00"}`), want: "canonical UTC"},
+		{name: "assemble elaboration", body: []byte(`{"action":"assemble","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"extra"}`), want: "must not include elaboration"},
+		{name: "blank elaboration", body: []byte(`{"action":"apply_elaboration","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"  "}`), want: "requires elaboration"},
+		{name: "null elaboration", body: []byte(`{"action":"apply_elaboration","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":null}`), want: "must not be null"},
 		{name: "legacy prompt", body: []byte(`{"prompt":"build a ticket"}`), want: `unknown field "prompt"`},
 		{name: "legacy iterate", body: []byte(`{"iterate":true}`), want: `unknown field "iterate"`},
-		{name: "duplicate", body: []byte(`{"action":"generate","action":"elaborate","expected_updated_at":"2026-08-13T12:00:00Z"}`), want: "duplicate key"},
-		{name: "trailing JSON", body: []byte(`{"action":"generate","expected_updated_at":"2026-08-13T12:00:00Z"} {}`), want: "trailing"},
-		{name: "NUL", body: []byte(`{"action":"elaborate","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"bad\u0000text"}`), want: "NUL"},
+		{name: "legacy generate", body: []byte(`{"action":"generate","expected_updated_at":"2026-08-13T12:00:00Z"}`), want: "not registered"},
+		{name: "legacy elaborate", body: []byte(`{"action":"elaborate","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"text"}`), want: "not registered"},
+		{name: "inexact action whitespace", body: []byte(`{"action":" assemble","expected_updated_at":"2026-08-13T12:00:00Z"}`), want: "not registered"},
+		{name: "duplicate", body: []byte(`{"action":"assemble","action":"apply_elaboration","expected_updated_at":"2026-08-13T12:00:00Z"}`), want: "duplicate key"},
+		{name: "trailing JSON", body: []byte(`{"action":"assemble","expected_updated_at":"2026-08-13T12:00:00Z"} {}`), want: "trailing"},
+		{name: "NUL", body: []byte(`{"action":"apply_elaboration","expected_updated_at":"2026-08-13T12:00:00Z","elaboration":"bad\u0000text"}`), want: "NUL"},
 		{name: "invalid UTF-8", body: []byte{'{', '"', 'a', 'c', 't', 'i', 'o', 'n', '"', ':', '"', 0xff, '"', '}'}, want: "valid UTF-8"},
 		{name: "too large", body: bytes.Repeat([]byte(" "), int(maxScrumCardTicketActionBodyBytes+1)), want: "transport bound"},
 	}
@@ -94,6 +97,19 @@ func TestAssembleScrumCardTicketUsesOnlyAuthoritativeCardFields(t *testing.T) {
 	}
 }
 
+func TestAssembleScrumCardTicketPreservesExactUserElaborationBytes(t *testing.T) {
+	t.Parallel()
+	exact := "  Preserve leading spaces.\nKeep trailing tab:\t "
+	ticket, err := assembleScrumCardTicket(ScrumCard{Title: "Exact", CardPrompt: exact})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Exact\n\n## Objective\n\n## Elaboration\n\n" + exact + "\n"
+	if ticket != want {
+		t.Fatalf("ticket=%q want=%q", ticket, want)
+	}
+}
+
 func TestScrumCardTicketActionSourceHasNoInferenceOrLegacyRequestShape(t *testing.T) {
 	t.Parallel()
 	source, err := os.ReadFile("scrum_card_ticket.go")
@@ -103,9 +119,19 @@ func TestScrumCardTicketActionSourceHasNoInferenceOrLegacyRequestShape(t *testin
 	for _, forbidden := range []string{
 		`json:"prompt"`, `json:"card_prompt"`, `json:"ticket"`, `json:"iterate"`,
 		`json:"iterate_notes"`, "LLM", "Model", "JobID", "Enqueue", "writeRemovedInferenceAction",
+		`= "generate"`, `= "elaborate"`, "strings.TrimSpace(body.Elaboration.Value)",
 	} {
 		if strings.Contains(string(source), forbidden) {
 			t.Errorf("ticket action source retains forbidden authority %q", forbidden)
+		}
+	}
+	browserSource, err := os.ReadFile("web/src/lib/scrum_ticket_api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`action: "generate"`, `action: "elaborate"`, "elaboration.trim(),"} {
+		if strings.Contains(string(browserSource), forbidden) {
+			t.Errorf("ticket browser transport retains forbidden authority %q", forbidden)
 		}
 	}
 }
@@ -124,6 +150,24 @@ func TestLegacyScrumCardTicketInferenceShapeFailsBeforeRepositoryAccess(t *testi
 		server.handleScrumCardTicket(response, request, "card_1")
 		if response.Code != http.StatusBadRequest {
 			t.Errorf("body=%s status=%d response=%s", body, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestScrumCardTicketRejectsInexactProjectQueryBeforeRepositoryAccess(t *testing.T) {
+	t.Parallel()
+	server := &Server{repo: &queue.Repository{}}
+	body := `{"action":"assemble","expected_updated_at":"2026-08-13T12:00:00Z"}`
+	for _, target := range []string{
+		"/card-ticket?project_id=01",
+		"/card-ticket?project_id=1&project_id=2",
+		"/card-ticket?project_id=1&agent=cursor",
+	} {
+		request := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
+		response := httptest.NewRecorder()
+		server.handleScrumCardTicket(response, request, "card_1")
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("target=%q status=%d body=%s", target, response.Code, response.Body.String())
 		}
 	}
 }

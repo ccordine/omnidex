@@ -36,7 +36,7 @@ A valid app-build comparison would still require one checked-in adapter that:
 - reports exact model calls, prompt bytes, accepted/rejected units, corrections, verification runs, and file changes from immutable evidence;
 - uses an explicitly promoted assisted protocol without granting its adviser plan, graph, path, repair-target, or completion authority.
 
-No assisted protocol is currently promoted: production rejects the offline advisory work kinds and uses one stable Qwen requirement-partition route. There must remain one production execution path. Do not implement comparison by shelling out to an alternate agent, replaying hand-authored intermediate prompts, or maintaining a benchmark-only builder.
+No app-build assisted protocol is currently promoted. Production uses one aggregate application-requirements call over the intact request and has no recursive requirement-partition or reasoning-assisted intake route. The off-by-default passive grounded-objective advisory is not an autonomy-builder variant: it can feed at most one non-authoritative capsule to repository-grounded semantic review and has no source-generation, mutation, or completion authority. There must remain one production execution path. Do not implement comparison by shelling out to an alternate agent, replaying hand-authored intermediate prompts, or maintaining a benchmark-only builder.
 
 ## Required evaluator
 

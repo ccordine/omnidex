@@ -21,8 +21,8 @@ func TestPostgresScrumCardPatchRejectsServerAuthorityBeforeMutation(t *testing.T
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		t.Context(), fmt.Sprintf("scrum-card-edit-forbidden-%d", time.Now().UnixNano()), t.TempDir(), "", "", nil,
-	)
+		t.Context(), fmt.Sprintf("scrum-card-edit-forbidden-%d", time.Now().UnixNano()), t.TempDir(), "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +33,9 @@ func TestPostgresScrumCardPatchRejectsServerAuthorityBeforeMutation(t *testing.T
 		"chat":                        []map[string]any{{"role": "assistant", "content": "forged"}},
 		"planning_chat":               []map[string]any{{"role": "system", "content": "forged"}},
 		"agent_config":                map[string]string{"agent_system": "cursor"},
+		"model_config":                map[string]string{"conversation_response_model": "retired"},
+		"recipe_id":                   "retired-recipe",
+		"recipe":                      map[string]any{"retired": true},
 		"job_id":                      "9002",
 		"console_log":                 "forged output",
 		"output":                      "forged output",
@@ -62,7 +65,9 @@ func TestPostgresScrumCardPatchRejectsServerAuthorityBeforeMutation(t *testing.T
 		field, value := field, value
 		t.Run(field, func(t *testing.T) {
 			baseline := createScrumCardEditFixture(t, repository, project.ID, field)
-			response := patchScrumCardHTTP(t, server, project.ID, baseline.ID, map[string]any{field: value})
+			response := patchScrumCardHTTP(t, server, project.ID, baseline.ID, map[string]any{
+				"expected_updated_at": baseline.UpdatedAt.UTC().Format(time.RFC3339Nano), field: value,
+			})
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 			}
@@ -87,23 +92,21 @@ func TestPostgresScrumCardPatchPersistsOnlyEditableFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		t.Context(), fmt.Sprintf("scrum-card-edit-permitted-%d", time.Now().UnixNano()), t.TempDir(), "", "", nil,
-	)
+		t.Context(), fmt.Sprintf("scrum-card-edit-permitted-%d", time.Now().UnixNano()), t.TempDir(), "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
 	baseline := createScrumCardEditFixture(t, repository, project.ID, "permitted")
 	server := &Server{repo: repository}
 	response := patchScrumCardHTTP(t, server, project.ID, baseline.ID, map[string]any{
-		"title":        "Edited title",
-		"description":  "  exact edited description\n",
-		"ref_files":    []string{"docs/edited.md"},
-		"model_config": map[string]string{"conversation_response_model": "edited-model"},
-		"card_ticket":  "Edited ticket",
-		"card_prompt":  "Edited prompt",
-		"recipe_id":    "edited-recipe",
-		"recipe":       map[string]any{"kind": "edited", "version": 2},
-		"tags":         []string{"edited"},
+		"expected_updated_at": baseline.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		"title":               "Edited title",
+		"description":         "  exact edited description\n",
+		"ref_files":           []string{"docs/edited.md"},
+		"card_ticket":         "Edited ticket",
+		"card_prompt":         "Edited prompt",
+		"tags":                []string{"edited"},
 	})
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
@@ -113,25 +116,25 @@ func TestPostgresScrumCardPatchPersistsOnlyEditableFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if after.Title != "Edited title" || after.Description != "  exact edited description\n" ||
-		after.CardTicket != "Edited ticket" || after.CardPrompt != "Edited prompt" || after.RecipeID != "edited-recipe" {
+		after.CardTicket != "Edited ticket" || after.CardPrompt != "Edited prompt" {
 		t.Fatalf("editable scalar fields were not persisted exactly: %#v", after)
 	}
 	assertJSONValueEqual(t, after.Checklist, string(baseline.Checklist))
 	assertJSONValueEqual(t, after.RefFiles, `["docs/edited.md"]`)
-	assertJSONValueEqual(t, after.ModelConfig, `{"conversation_response_model":"edited-model"}`)
-	assertJSONValueEqual(t, after.Recipe, `{"kind":"edited","version":2}`)
 	assertJSONValueEqual(t, after.Tags, `["edited"]`)
 	assertJSONValueEqual(t, after.TestCriteria, string(baseline.TestCriteria))
+	assertFlowMetricsOnlyAdvanceRevision(t, baseline.FlowMetrics, after.FlowMetrics, after.UpdatedAt)
+	if !after.UpdatedAt.After(baseline.UpdatedAt) {
+		t.Fatalf("editable patch did not advance the card revision: before=%s after=%s", baseline.UpdatedAt, after.UpdatedAt)
+	}
 
-	if string(after.Chat) != string(baseline.Chat) || string(after.PlanningChat) != string(baseline.PlanningChat) ||
-		string(after.AgentConfig) != string(baseline.AgentConfig) || after.JobID != baseline.JobID ||
-		after.ProjectID != baseline.ProjectID || after.ID != baseline.ID || after.Column != baseline.Column ||
-		after.TagsJobID != baseline.TagsJobID || after.TicketJobID != baseline.TicketJobID ||
-		string(after.CoachConfig) != string(baseline.CoachConfig) ||
-		after.ConsoleLog != baseline.ConsoleLog || after.PlayState != baseline.PlayState ||
+	if after.JobID != baseline.JobID || after.ProjectID != baseline.ProjectID ||
+		after.ID != baseline.ID || after.Column != baseline.Column ||
+		after.PlayState != baseline.PlayState ||
 		after.QueueOrder != baseline.QueueOrder || after.BoardOrder != baseline.BoardOrder ||
-		after.SyncJobID != baseline.SyncJobID || after.AgentStreamChatCursor != baseline.AgentStreamChatCursor ||
-		after.AgentStreamConsoleCursor != baseline.AgentStreamConsoleCursor || after.StepContextCursor != baseline.StepContextCursor ||
+		after.SyncJobID != baseline.SyncJobID || after.StepContextCursor != baseline.StepContextCursor ||
+		after.ChannelMessageCount != baseline.ChannelMessageCount ||
+		after.ChannelContentBytes != baseline.ChannelContentBytes ||
 		!after.CreatedAt.Equal(baseline.CreatedAt) {
 		t.Fatalf("editable patch changed server authority\nbefore=%#v\nafter=%#v", baseline, after)
 	}
@@ -148,35 +151,16 @@ func createScrumCardEditFixture(
 		t.Context(), projectID, "", "Original "+suffix, "Original description", "assigned",
 		json.RawMessage(`[{"id":"original","text":"Original","done":false}]`),
 		json.RawMessage(`["docs/original.md"]`),
-		json.RawMessage(`[{"role":"user","content":"original chat","created_at":"2026-08-13T00:00:00Z"}]`),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err = repository.UpdateScrumCard(t.Context(), projectID, card.ID, map[string]any{
-		"column":                      "in_progress",
-		"model_config":                json.RawMessage(`{"conversation_response_model":"original-model"}`),
-		"agent_config":                json.RawMessage(`{"agent_system":"codex"}`),
-		"card_ticket":                 "Original ticket",
-		"card_prompt":                 "Original prompt",
-		"recipe_id":                   "original-recipe",
-		"recipe":                      json.RawMessage(`{"kind":"original"}`),
-		"tags":                        json.RawMessage(`["original"]`),
-		"planning_chat":               json.RawMessage(`[{"role":"system","content":"original planning","created_at":"2026-08-13T00:00:00Z"}]`),
-		"coach_config":                json.RawMessage(`{"mode":"original"}`),
-		"test_criteria":               json.RawMessage(`[{"id":"original-test","text":"Original test","done":false}]`),
-		"job_id":                      "9001",
-		"tags_job_id":                 "8001",
-		"ticket_job_id":               "8002",
-		"console_log":                 "original output",
-		"play_state":                  "running",
-		"queue_order":                 7,
-		"board_order":                 8,
-		"sync_job_id":                 "9001",
-		"agent_stream_chat_cursor":    int64(7),
-		"agent_stream_console_cursor": int64(8),
-		"step_context_cursor":         int64(9),
-	})
+	ticket, prompt := "Original ticket", "Original prompt"
+	tags := []string{"original"}
+	card, err = repository.UpdateScrumCardAtRevision(
+		t.Context(), projectID, card.ID, card.UpdatedAt,
+		queue.ScrumCardRevisionPatch{CardTicket: &ticket, CardPrompt: &prompt, Tags: &tags},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,5 +200,32 @@ func assertJSONValueEqual(t *testing.T, actual json.RawMessage, expected string)
 	}
 	if !reflect.DeepEqual(actualValue, expectedValue) {
 		t.Fatalf("JSON mismatch actual=%s expected=%s", actual, expected)
+	}
+}
+
+func assertFlowMetricsOnlyAdvanceRevision(
+	t *testing.T,
+	beforeRaw json.RawMessage,
+	afterRaw json.RawMessage,
+	cardUpdatedAt time.Time,
+) {
+	t.Helper()
+	before, err := parseScrumFlowMetrics(beforeRaw)
+	if err != nil {
+		t.Fatalf("decode flow metrics before edit: %v", err)
+	}
+	after, err := parseScrumFlowMetrics(afterRaw)
+	if err != nil {
+		t.Fatalf("decode flow metrics after edit: %v", err)
+	}
+	observedRevision := after.UpdatedAt
+	before.UpdatedAt = ""
+	after.UpdatedAt = ""
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("editable patch changed flow metrics beyond the revision\nbefore=%s\nafter=%s", beforeRaw, afterRaw)
+	}
+	expectedRevision := cardUpdatedAt.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano)
+	if observedRevision != expectedRevision {
+		t.Fatalf("flow metrics revision=%q card revision=%q", observedRevision, expectedRevision)
 	}
 }

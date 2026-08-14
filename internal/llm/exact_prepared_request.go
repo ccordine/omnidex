@@ -14,11 +14,12 @@ const (
 	// ExactPreparedProtocolStructuredV1 bypasses model-specific chat templates by
 	// using Ollama raw generation. The fixed prompt joiner is itself visible and
 	// included in every byte/hash/budget authority.
-	ExactPreparedProviderBackend   = "ollama"
-	ExactPreparedProviderVersion   = "0.24.0"
-	ExactPreparedTokenizerProfile  = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
-	ExactPreparedPromptJoiner      = "\n"
-	MaxRawInputSpecialTokenReserve = 2
+	ExactPreparedProviderBackend         = "ollama"
+	ExactPreparedProviderVersion         = "0.24.0"
+	ExactPreparedTokenizerProfile        = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
+	ExactPreparedPromptJoiner            = "\n"
+	ExactPreparedObjectiveAdvisoryStopV1 = "\n<END_OBJECTIVE_ADVISORY_V1>"
+	MaxRawInputSpecialTokenReserve       = 2
 )
 
 type ExactPreparedProtocol string
@@ -53,9 +54,10 @@ func ValidateExactPreparedProviderExpectation(expected ProviderIdentityExpectati
 }
 
 type exactPreparedRequestOptions struct {
-	NumCtx      int     `json:"num_ctx"`
-	NumPredict  int     `json:"num_predict"`
-	Temperature float64 `json:"temperature"`
+	NumCtx      int      `json:"num_ctx"`
+	NumPredict  int      `json:"num_predict"`
+	Stop        []string `json:"stop,omitempty"`
+	Temperature float64  `json:"temperature"`
 }
 
 type exactPreparedRequest struct {
@@ -106,6 +108,9 @@ func ExactPreparedRequestBytes(prepared PreparedModel) ([]byte, error) {
 		},
 		Prompt: prompt, Raw: true, Shift: false, Stream: false, Think: false, Truncate: false,
 	}
+	if prepared.RawTextStopSequence != "" {
+		base.Options.Stop = []string{prepared.RawTextStopSequence}
+	}
 	if prepared.Protocol == ExactPreparedProtocolRawTextV1 {
 		return exactjson.Canonical(base)
 	}
@@ -144,12 +149,17 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	}
 	switch prepared.Protocol {
 	case ExactPreparedProtocolStructuredV1:
-		if prepared.ResponseFormat != ResponseFormatJSON || len(prepared.ResponseSchema) == 0 {
+		if prepared.ResponseFormat != ResponseFormatJSON || len(prepared.ResponseSchema) == 0 ||
+			prepared.RawTextStopSequence != "" {
 			return fmt.Errorf("exact structured protocol requires a JSON response schema")
 		}
 	case ExactPreparedProtocolRawTextV1:
 		if prepared.ResponseFormat != "" || prepared.ResponseSchema != nil {
 			return fmt.Errorf("exact raw-text protocol forbids response format and schema")
+		}
+		if prepared.RawTextStopSequence != "" &&
+			prepared.RawTextStopSequence != ExactPreparedObjectiveAdvisoryStopV1 {
+			return fmt.Errorf("exact raw-text protocol stop sequence is not registered")
 		}
 	}
 	if err := ValidateResponseContract(prepared); err != nil {

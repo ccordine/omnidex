@@ -33,8 +33,7 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 			target:      "omni_added_artifact.go", present: true, wantGenerationCalls: 1,
 			wantKinds: []assemblyline.WorkKind{
 				assemblyline.WorkConversationObjectiveKind,
-				assemblyline.WorkRequirementPartition,
-				assemblyline.WorkRequirementPartition,
+				assemblyline.WorkRepositoryRequirements,
 				assemblyline.WorkKnownArtifactTruth,
 				assemblyline.WorkDeclarationArtifactBoundary,
 				assemblyline.WorkFragmentGeneration,
@@ -46,8 +45,7 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 			target:      "obsolete.go", present: false, wantGenerationCalls: 0,
 			wantKinds: []assemblyline.WorkKind{
 				assemblyline.WorkConversationObjectiveKind,
-				assemblyline.WorkRequirementPartition,
-				assemblyline.WorkRequirementPartition,
+				assemblyline.WorkRepositoryRequirements,
 				assemblyline.WorkKnownArtifactTruth,
 				assemblyline.WorkArtifactCandidateSelection,
 			},
@@ -70,8 +68,7 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 		wantKinds: []assemblyline.WorkKind{
 			assemblyline.WorkConversationObjectiveKind,
 			assemblyline.WorkArtifactHandling,
-			assemblyline.WorkRequirementPartition,
-			assemblyline.WorkRequirementPartition,
+			assemblyline.WorkRepositoryRequirements,
 			assemblyline.WorkKnownArtifactTruth,
 		},
 	}

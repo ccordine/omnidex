@@ -111,11 +111,12 @@ func TestValidateCurrentReplanTailRejectsCorruption(t *testing.T) {
 }
 
 func TestValidateReplanFeedbackProducesExactBoundedDigest(t *testing.T) {
-	feedback, digest, err := validateReplanFeedback("  Keep the accepted invariant.  \n")
+	exact := "  Keep the accepted invariant.  \n"
+	feedback, digest, err := validateReplanFeedback(exact)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if feedback != "Keep the accepted invariant." {
+	if feedback != exact {
 		t.Fatalf("feedback=%q", feedback)
 	}
 	want := sha256.Sum256([]byte(feedback))

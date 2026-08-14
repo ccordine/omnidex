@@ -1,6 +1,6 @@
 import { jsonPut, jsonRequest, readJSON } from "./api";
 
-export async function saveNetworkSettings(values: { host: string; port: number; url?: string }): Promise<void> {
+export async function saveNetworkSettings(values: { host: string; port: number }): Promise<void> {
   await readJSON(await fetch("/v1/settings/network", jsonPut(values)));
 }
 

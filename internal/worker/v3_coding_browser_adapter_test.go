@@ -21,6 +21,7 @@ func TestGenericBrowserAdapterCreatesOneCapabilityAndBlindAcceptancePerRequireme
 	}
 	adapter, blueprint, staticFiles, err := compileGenericTypeScriptBrowserBlueprint(
 		"unseen-app", specification, genericBrowserSkillBindings(specification),
+		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
 	)
 	if err != nil {
@@ -41,17 +42,21 @@ func TestGenericBrowserAdapterCreatesOneCapabilityAndBlindAcceptancePerRequireme
 	if len(generated) != len(specification.Requirements)*2 {
 		t.Fatalf("generated blocks=%d want=%d", len(generated), len(specification.Requirements)*2)
 	}
-	if !strings.Contains(generated[0].Contract, "Exact feature: "+specification.Requirements[0].SourceQuote) ||
-		strings.Contains(generated[0].Contract, "Exact feature: "+specification.Requirements[1].SourceQuote) {
+	if !strings.Contains(generated[0].Contract, "Exact requirement: "+specification.Requirements[0].SourceQuote) ||
+		strings.Contains(generated[0].Contract, "Exact requirement: "+specification.Requirements[1].SourceQuote) {
 		t.Fatalf("first feature received the wrong implementation authority:\n%s", generated[0].Contract)
 	}
-	if !strings.Contains(generated[1].Contract, "Exact feature: "+specification.Requirements[1].SourceQuote) ||
-		strings.Contains(generated[1].Contract, "Exact feature: "+specification.Requirements[0].SourceQuote) {
+	if !strings.Contains(generated[1].Contract, "Exact requirement: "+specification.Requirements[1].SourceQuote) ||
+		strings.Contains(generated[1].Contract, "Exact requirement: "+specification.Requirements[0].SourceQuote) {
 		t.Fatalf("second feature received the wrong implementation authority:\n%s", generated[1].Contract)
 	}
 	for _, block := range generated {
-		if !strings.Contains(block.Contract, "compact catalog browser") {
-			t.Fatalf("worker omitted bounded product identity:\n%s", block.Contract)
+		for _, required := range []string{
+			string(specification.Surface), specification.ProductQuote,
+		} {
+			if !strings.Contains(block.Contract, required) {
+				t.Fatalf("worker omitted executable-job authority %q:\n%s", required, block.Contract)
+			}
 		}
 	}
 }
@@ -67,6 +72,7 @@ func TestGenericBrowserAdapterContainsNoHeldOutProductImplementation(t *testing.
 	}
 	_, blueprint, staticFiles, err := compileGenericTypeScriptBrowserBlueprint(
 		"unknown", specification, genericBrowserSkillBindings(specification),
+		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
 	)
 	if err != nil {
@@ -106,6 +112,7 @@ func TestGenericBrowserAdapterOwnsCapabilityChannelsAndAcceptanceFailureRouting(
 	}
 	_, blueprint, _, err := compileGenericTypeScriptBrowserBlueprint(
 		"linked", specification, genericBrowserSkillBindings(specification),
+		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
 	)
 	if err != nil {

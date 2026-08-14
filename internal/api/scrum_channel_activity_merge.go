@@ -22,7 +22,7 @@ func isNoisyStepEvent(eventType string) bool {
 func humanizeStepEventType(eventType string) string {
 	eventType = strings.TrimSpace(eventType)
 	if eventType == "" {
-		return "Agent event"
+		return "Runtime event"
 	}
 	return strings.ReplaceAll(strings.ReplaceAll(eventType, "_", " "), "  ", " ")
 }

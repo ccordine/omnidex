@@ -5,13 +5,7 @@ resolve_compose_cmd() {
     printf '%s\n' "docker compose"
     return
   fi
-  if command_exists docker-compose; then
-    [[ -z "${DOCKER_CONTEXT_NAME}" ]] ||
-      die "DOCKER_CONTEXT requires the docker compose plugin"
-    printf '%s\n' "docker-compose"
-    return
-  fi
-  die "docker compose is required but was not found"
+  die "the Docker Compose plugin is required but was not found"
 }
 
 validate_compose_identity() {
@@ -28,14 +22,19 @@ compose_docker() {
   docker compose "$@"
 }
 
+context_docker() {
+  if [[ -n "${DOCKER_CONTEXT_NAME}" ]]; then
+    env "DOCKER_CONTEXT=${DOCKER_CONTEXT_NAME}" docker "$@"
+    return
+  fi
+  docker "$@"
+}
+
 compose_command_array() {
   local compose_cmd="$1"
   local -n output="$2"
-  if [[ "${compose_cmd}" == "docker compose" ]]; then
-    output=(compose_docker)
-  else
-    read -r -a output <<<"${compose_cmd}"
-  fi
+	[[ "${compose_cmd}" == "docker compose" ]] || die "unsupported compose implementation"
+	output=(compose_docker)
   [[ -z "${COMPOSE_PROJECT}" ]] || output+=(-p "${COMPOSE_PROJECT}")
 }
 
@@ -68,9 +67,38 @@ compose_restart() {
   local -a cmd=()
   compose_command_array "${compose_cmd}" cmd
   [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
-  cmd+=(up -d --remove-orphans "${service}")
-  log "restarting service ${service}"
+  cmd+=(up -d --remove-orphans --wait --wait-timeout 180 "${service}")
+  log "restarting service ${service} and waiting for health"
   (cd "${repo_dir}" && "${cmd[@]}")
+}
+
+compose_image_id() {
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4"
+  local -a cmd=()
+  compose_command_array "${compose_cmd}" cmd
+  [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
+  cmd+=(images -q "${service}")
+  local image_id
+  image_id="$(cd "${repo_dir}" && "${cmd[@]}")"
+  [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    die "compose service ${service} did not resolve to one exact image identity"
+  printf '%s\n' "${image_id}"
+}
+
+compose_require_running_image() {
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" expected_image="$5"
+  local -a cmd=()
+  compose_command_array "${compose_cmd}" cmd
+  [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
+  cmd+=(ps -q "${service}")
+  local container_id running_image
+  container_id="$(cd "${repo_dir}" && "${cmd[@]}")"
+  [[ "${container_id}" =~ ^[0-9a-f]{12,64}$ ]] ||
+    die "compose service ${service} did not resolve to one running container"
+  running_image="$(context_docker inspect --format '{{.Image}}' "${container_id}")"
+  [[ "${running_image}" == "${expected_image}" ]] ||
+    die "compose service ${service} is running image ${running_image}, expected ${expected_image}"
+  log "verified running service ${service} image ${running_image}"
 }
 
 host_bridge_unit_file() {

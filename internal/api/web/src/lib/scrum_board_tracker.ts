@@ -78,8 +78,9 @@ export class ScrumBoardTracker {
   }
 }
 
-function cardTitle(title: string | undefined): string {
-  const trimmed = String(title ?? "").trim() || "Card";
+function cardTitle(title: string): string {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("Authoritative Scrum card title must not be blank.");
   return trimmed.length > 52 ? `${trimmed.slice(0, 49)}…` : trimmed;
 }
 
@@ -116,7 +117,6 @@ function cardSymbol(card: ScrumCard): string {
     card.tags?.map(normalizedText).join(",") ?? "",
     checklistSymbol(card.checklist),
     checklistSymbol(card.test_criteria),
-    normalizedText(card.console_log),
     card.ref_files?.join(",") ?? "",
     card.flow_metrics ? JSON.stringify(card.flow_metrics) : "",
   ].join("::"));
@@ -125,18 +125,18 @@ function cardSymbol(card: ScrumCard): string {
 function boardPayloadFingerprint(payload: ScrumBoardResponse): string {
   return hash([
     payload.board.id,
-    payload.visible_column ?? "",
-    payload.all_columns?.join(",") ?? "",
-    payload.column_counts ? JSON.stringify(payload.column_counts) : "",
-    payload.board.columns?.join(",") ?? "",
-    payload.play_queue?.running_card_id ?? "",
-    payload.play_queue?.queued_count ?? 0,
-    payload.play_queue?.queued_card_ids?.join(",") ?? "",
-    payload.auto_work?.enabled ? "1" : "0",
-    payload.auto_work?.source_columns?.join(",") ?? "",
-    payload.flow_summary ? JSON.stringify(payload.flow_summary) : "",
+    payload.visible_column,
+    payload.all_columns.join(","),
+    JSON.stringify(payload.column_counts),
+    payload.board.columns.join(","),
+    payload.play_queue.running_card_id,
+    payload.play_queue.queued_count,
+    payload.play_queue.queued_card_ids.join(","),
+    payload.auto_work.enabled ? "1" : "0",
+    payload.auto_work.source_columns.join(","),
+    JSON.stringify(payload.flow_summary),
     payload.board.cards.map(cardSymbol).join(";"),
-    payload.html?.bundle ?? "",
+    payload.html.bundle,
   ].join("||"));
 }
 

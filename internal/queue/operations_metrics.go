@@ -22,7 +22,6 @@ var telemetryFailureEventTypes = []string{
 	"verification_retry",
 	"verify_grounding_retry",
 	"tool_call_rejected",
-	"external_agent_failed",
 	"progression_gate_failed",
 	"progression_gate_rejected_false_done",
 	"structured_loop_exhausted",

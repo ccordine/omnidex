@@ -13,6 +13,7 @@ export default class CardModalSpaController extends Controller<HTMLElement> {
   declare readonly projectIdValue: number;
   declare readonly hasProjectIdValue: boolean;
   declare readonly initialTabValue: string;
+	declare readonly hasInitialTabValue: boolean;
 
   private root: Root | null = null;
 
@@ -22,12 +23,15 @@ export default class CardModalSpaController extends Controller<HTMLElement> {
     if (!cardID) {
       throw new Error("card-modal-spa requires cardId");
     }
+    if (!this.hasProjectIdValue || !Number.isSafeInteger(this.projectIdValue) || this.projectIdValue <= 0) {
+      throw new Error("card-modal-spa requires one positive safe-integer projectId");
+    }
     this.root = createRoot(this.element);
     this.root.render(
       <CardModalApp
         cardID={cardID}
-        projectID={this.hasProjectIdValue && this.projectIdValue > 0 ? this.projectIdValue : null}
-        initialTab={this.initialTabValue || "card"}
+        projectID={this.projectIdValue}
+				initialTab={this.hasInitialTabValue ? this.initialTabValue : undefined}
       />,
     );
   }

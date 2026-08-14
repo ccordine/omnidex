@@ -1,4 +1,4 @@
-import { createBrowseDirectory, createProject } from "./project_api";
+import { createBrowseDirectory, createProject, projectMutationFailure } from "./project_api";
 import { fetchProjectModalComponent } from "./operational_component_api";
 import type { ServerComponent } from "./server_component_api";
 import { setGlobalLoading } from "./loading";
@@ -14,6 +14,7 @@ export interface ProjectBrowserHost {
   closeModal(): void;
   setStatus(message: string, tone?: ProjectStatusTone): void;
   projectCreated(project: ProjectRecord): Promise<void>;
+  reloadProjects(): Promise<void>;
 }
 
 export class ProjectBrowserCoordinator {
@@ -23,6 +24,8 @@ export class ProjectBrowserCoordinator {
   private browseMode: "create" | "edit" = "create";
   private browseProjectID: number | null = null;
   private pendingCreatePath = "";
+  private mutationInFlight = false;
+  private disabledStates = new Map<HTMLButtonElement, boolean>();
 
   constructor(private readonly host: ProjectBrowserHost) {}
 
@@ -38,39 +41,32 @@ export class ProjectBrowserCoordinator {
     await this.openBrowseAt(this.pendingCreatePath);
   }
 
-	async loadCreateRecipePage(event: Event): Promise<void> {
-		event.preventDefault();
-		const offset = Number((event.currentTarget as HTMLElement).dataset.pageOffset ?? -1);
-		if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Create-project recipe page offset is invalid.");
-		const query = new URLSearchParams({
-			selected: this.modalField("selectedPath"),
-			name: this.modalField("createName"),
-			description: this.modalField("createDesc"),
-			recipe_id: this.modalField("createRecipe"),
-			recipe_offset: String(offset),
-		});
-		await this.host.openModal(await fetchProjectModalComponent("create", query));
-	}
-
   async browseForEdit(event: Event): Promise<void> {
     event.preventDefault();
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) throw new Error("Edit browse operation requires one server-rendered control.");
     this.browseMode = "edit";
-    this.browseProjectID = Number((event.currentTarget as HTMLElement).dataset.projectId || 0) || null;
+    this.browseProjectID = this.requiredPositiveID(target.dataset.projectId, "Edit browse operation");
     const location = this.host.detailRoot().querySelector("[data-projects-field='location']") as HTMLInputElement | null;
-    await this.openBrowseAt(location?.value ?? "");
+    if (!location) throw new Error("Project location field is unavailable.");
+    await this.openBrowseAt(location.value);
   }
 
   async enterBrowseDir(event: Event): Promise<void> {
     event.preventDefault();
-    await this.openBrowseAt((event.currentTarget as HTMLElement).dataset.path ?? "");
+    await this.openBrowseAt(this.requiredDatasetPath(event, "Directory entry"));
   }
 
   async loadBrowsePage(event: Event): Promise<void> {
     event.preventDefault();
-    const offset = Number((event.currentTarget as HTMLElement).dataset.pageOffset ?? -1);
-    if (!Number.isSafeInteger(offset) || offset < 0) {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) throw new Error("Directory page requires one server-rendered control.");
+    const rawOffset = target.dataset.pageOffset;
+    if (rawOffset === undefined || !/^(0|[1-9][0-9]*)$/.test(rawOffset)) {
       throw new Error("Directory page offset is invalid.");
     }
+    const offset = Number(rawOffset);
+    if (!Number.isSafeInteger(offset)) throw new Error("Directory page offset exceeds the safe integer bound.");
     this.browsePath = this.browseField("currentPath");
     if (!this.browsePath) throw new Error("Directory browser did not provide its authoritative current path.");
     this.browseOffset = offset;
@@ -80,7 +76,7 @@ export class ProjectBrowserCoordinator {
 
   async selectBrowseDir(event: Event): Promise<void> {
     event.preventDefault();
-    this.browseSelected = (event.currentTarget as HTMLElement).dataset.path ?? this.browseSelected;
+    this.browseSelected = this.requiredDatasetPath(event, "Directory selection");
     await this.renderBrowseView();
   }
 
@@ -90,26 +86,27 @@ export class ProjectBrowserCoordinator {
     if (!this.browsePath) throw new Error("Directory browser did not provide its authoritative current path.");
     const name = this.browseField("newFolderName");
     if (!name) return this.setModalFeedback("Enter a folder name.", "error");
-    this.setModalFeedback("Creating folder…", "busy");
-    setGlobalLoading(true);
+    if (!this.beginMutation(event, "Creating folder…")) return;
     try {
       const payload = await createBrowseDirectory(this.browsePath, name);
       this.browseSelected = payload.path;
       await this.renderBrowseView();
       this.setModalFeedback(`Created folder “${name}”.`, "ok");
     } catch (error) {
-      this.setModalFeedback(errorMessage(error), "error");
+      this.setModalFeedback(await this.reconcileFailure(error, () => this.renderBrowseView()), "error");
     } finally {
-      setGlobalLoading(false);
+      this.endMutation(event);
     }
   }
 
   async confirmBrowse(event: Event): Promise<void> {
     event.preventDefault();
-    const path = (event.currentTarget as HTMLElement).dataset.path ?? this.browseSelected;
+    const path = this.requiredDatasetPath(event, "Directory confirmation");
     if (this.browseMode === "create") {
       this.pendingCreatePath = path;
-      const query = new URLSearchParams({ selected: path, name: path.split("/").filter(Boolean).pop() || "project" });
+      const leaf = path.split("/").filter(Boolean).pop();
+      if (!leaf) throw new Error("Selected directory does not provide an exact project name.");
+      const query = new URLSearchParams({ selected: path, name: leaf });
       await this.host.openModal(await fetchProjectModalComponent("create", query));
       return;
     }
@@ -122,23 +119,28 @@ export class ProjectBrowserCoordinator {
 
   async submitCreate(event: Event): Promise<void> {
     event.preventDefault();
-    const location = this.modalField("selectedPath");
-    if (!location) return this.setModalFeedback("Choose a working directory first.", "error");
-    this.setModalFeedback("Creating project…", "busy");
-    setGlobalLoading(true);
+    const location = this.modalField("selectedPath", true);
+    if (!location.trim()) return this.setModalFeedback("Choose a working directory first.", "error");
+    const name = this.modalField("createName");
+    if (!name) return this.setModalFeedback("Enter a project name.", "error");
+    if (!this.beginMutation(event, "Creating project…")) return;
     try {
       const payload = await createProject({
-        name: this.modalField("createName") || location.split("/").filter(Boolean).pop() || "project",
+        name,
         location,
-        description: this.modalField("createDesc"),
-        recipe_id: this.modalField("createRecipe"),
+        description: this.modalField("createDesc", true),
       });
       this.host.closeModal();
       await this.host.projectCreated(payload.project);
+      const degraded = projectMutationFailure(payload);
+      if (degraded) {
+        this.host.setStatus(degraded, "error");
+        showToast(degraded, "error");
+      }
     } catch (error) {
-      this.setModalFeedback(errorMessage(error), "error");
+      this.setModalFeedback(await this.reconcileFailure(error, () => this.host.reloadProjects()), "error");
     } finally {
-      setGlobalLoading(false);
+      this.endMutation(event);
     }
   }
 
@@ -166,13 +168,59 @@ export class ProjectBrowserCoordinator {
     this.browseOffset = authoritativeOffset;
   }
 
-  private modalField(name: string): string {
+  private modalField(name: string, preserveBytes = false): string {
     const field = this.host.modalPanel()?.querySelector(`[data-projects-field="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
-    return field?.value?.trim() ?? "";
+    if (!field) throw new Error(`Project modal field ${JSON.stringify(name)} is unavailable.`);
+    const value = field.value;
+    return preserveBytes ? value : value.trim();
   }
 
   private browseField(name: string): string {
-    return (this.host.modalPanel()?.querySelector(`[data-browse-field="${name}"]`) as HTMLInputElement | null)?.value.trim() ?? "";
+    const field = this.host.modalPanel()?.querySelector(`[data-browse-field="${name}"]`);
+    if (!(field instanceof HTMLInputElement)) throw new Error(`Directory browser field ${JSON.stringify(name)} is unavailable.`);
+    return field.value;
+  }
+
+  private requiredDatasetPath(event: Event, label: string): string {
+    const current = event.currentTarget;
+    if (!(current instanceof HTMLElement) || current.dataset.path === undefined || current.dataset.path === "" || current.dataset.path.includes("\0")) {
+      throw new Error(`${label} lacks one exact server path.`);
+    }
+    return current.dataset.path;
+  }
+
+  private requiredPositiveID(raw: string | undefined, label: string): number {
+    if (raw === undefined || !/^[1-9][0-9]*$/.test(raw)) throw new Error(`${label} requires one canonical project ID.`);
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value)) throw new Error(`${label} project ID exceeds the safe integer bound.`);
+    return value;
+  }
+
+  private beginMutation(event: Event, working: string): boolean {
+    if (this.mutationInFlight) {
+      this.setModalFeedback("A project browser mutation is already in progress.", "error");
+      return false;
+    }
+    const initiator = event.currentTarget;
+    if (!(initiator instanceof HTMLButtonElement) && !(initiator instanceof HTMLFormElement)) {
+      throw new Error("Project browser mutation requires one server-rendered form or button.");
+    }
+    this.mutationInFlight = true;
+    initiator.setAttribute("aria-busy", "true");
+    const controls = [...(this.host.modalPanel()?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+    this.disabledStates = new Map(controls.map((control) => [control, control.disabled]));
+    for (const control of controls) control.disabled = true;
+    this.setModalFeedback(working, "busy");
+    setGlobalLoading(true);
+    return true;
+  }
+
+  private endMutation(event: Event): void {
+    this.mutationInFlight = false;
+    setGlobalLoading(false);
+    this.disabledStates.forEach((disabled, control) => { control.disabled = disabled; });
+    this.disabledStates.clear();
+    if (event.currentTarget instanceof HTMLElement) event.currentTarget.setAttribute("aria-busy", "false");
   }
 
   private setModalFeedback(message: string, tone: ProjectStatusTone): void {
@@ -185,6 +233,15 @@ export class ProjectBrowserCoordinator {
     node.classList.toggle("hidden", !message);
     if (message) this.host.setStatus(message, tone);
     if (message && (tone === "ok" || tone === "error")) showToast(message, tone);
+  }
+
+  private async reconcileFailure(error: unknown, reconcile: () => Promise<void>): Promise<string> {
+    try {
+      await reconcile();
+      return errorMessage(error);
+    } catch (reconciliationError) {
+      return `${errorMessage(error)} Authoritative reconciliation failed: ${errorMessage(reconciliationError)}`;
+    }
   }
 }
 

@@ -35,7 +35,7 @@ Each playbook records:
 
 Validated Playbooks accelerate execution. They do not authorize execution.
 
-A remembered React notes app workflow can suggest inspecting `package.json`, editing `src/App.jsx`, creating components, and running `npm run build`. It cannot force Tailwind, routing, Docker, cloud sync, authentication, or any dependency that the current user request, selected recipe, worksite evidence, or prerequisite objective does not justify.
+A remembered React notes app workflow can suggest inspecting `package.json`, editing `src/App.jsx`, creating components, and running `npm run build`. It cannot force Tailwind, routing, Docker, cloud sync, authentication, or any dependency that the current user request, worksite evidence, or prerequisite objective does not justify.
 
 ## Versioning Direction
 

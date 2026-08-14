@@ -20,31 +20,20 @@ type ProviderModelConfig struct {
 	Embedding string
 }
 
-func loadProviderSelection() (string, string, error) {
-	generationRaw := strings.TrimSpace(os.Getenv("LLM_PROVIDER"))
-	if generationRaw == "" {
-		generationRaw = "ollama"
-	}
-	generation, ok := catalog.Lookup(generationRaw)
-	if !ok || !generation.SupportsExactPreparedStations {
-		return "", "", fmt.Errorf(
-			"LLM_PROVIDER must implement the exact prepared station contract; supported providers: %s",
-			strings.Join(catalog.ExactStationProviderIDs(), ", "),
-		)
-	}
+func loadProviderSelection() (string, string) {
+	return canonicalProviderSelection(os.Getenv("LLM_PROVIDER")),
+		canonicalProviderSelection(os.Getenv("EMBEDDING_PROVIDER"))
+}
 
-	embeddingRaw := strings.TrimSpace(os.Getenv("EMBEDDING_PROVIDER"))
-	if embeddingRaw == "" {
-		if !generation.SupportsEmbeddings {
-			return "", "", fmt.Errorf("EMBEDDING_PROVIDER is required when LLM_PROVIDER=%s because that provider does not expose a supported embeddings API", generation.ID)
-		}
-		embeddingRaw = generation.ID
+func canonicalProviderSelection(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
 	}
-	embedding, ok := catalog.Lookup(embeddingRaw)
-	if !ok || !embedding.SupportsEmbeddings {
-		return "", "", fmt.Errorf("EMBEDDING_PROVIDER must be one of: %s", strings.Join(catalog.EmbeddingProviderIDs(), ", "))
+	if definition, ok := catalog.Lookup(value); ok {
+		return definition.ID
 	}
-	return generation.ID, embedding.ID, nil
+	return value
 }
 
 func loadCompatibleProviderConfigs() map[string]CompatibleProviderConfig {
@@ -110,6 +99,9 @@ func validateSelectedProvider(provider string, cfg Config, label string) error {
 }
 
 func validateSelectedProviderEndpoint(provider string, cfg Config, label string) error {
+	if strings.TrimSpace(provider) == "" {
+		return fmt.Errorf("%s is not configured", label)
+	}
 	definition, ok := catalog.Lookup(provider)
 	if !ok {
 		return fmt.Errorf("%s contains unsupported provider %q", label, provider)
@@ -135,6 +127,9 @@ func validateSelectedProviderEndpoint(provider string, cfg Config, label string)
 }
 
 func validateSelectedProviderCredential(provider string, cfg Config, label string) error {
+	if strings.TrimSpace(provider) == "" {
+		return fmt.Errorf("%s is not configured", label)
+	}
 	definition, ok := catalog.Lookup(provider)
 	if !ok {
 		return fmt.Errorf("%s contains unsupported provider %q", label, provider)
@@ -179,17 +174,6 @@ func ValidateProviderConfiguration(cfg Config, provider, label string) error {
 	return validateSelectedProvider(provider, cfg, label)
 }
 
-func validateSelectedProviderModels(cfg Config) error {
-	embedding, ok := catalog.Lookup(cfg.EmbeddingProvider)
-	if !ok {
-		return fmt.Errorf("EMBEDDING_PROVIDER contains unsupported provider %q", cfg.EmbeddingProvider)
-	}
-	if strings.TrimSpace(cfg.EmbeddingModel) == "" {
-		return fmt.Errorf("%s is required when EMBEDDING_PROVIDER=%s", modelEnvironmentName(embedding, true), embedding.ID)
-	}
-	return nil
-}
-
 func validateProviderBaseURL(definition catalog.Definition, rawURL, label string) error {
 	name := environmentChoice(definition.BaseURLEnvironmentKeys, "base URL")
 	value := strings.TrimSpace(rawURL)
@@ -211,17 +195,6 @@ func environmentChoice(keys []string, fallback string) string {
 		return fallback
 	}
 	return strings.Join(keys, " or ")
-}
-
-func modelEnvironmentName(definition catalog.Definition, embedding bool) string {
-	if !embedding {
-		return "exact station model"
-	}
-	keys := definition.EnvironmentKeys("EMBEDDING_MODEL")
-	if len(keys) == 0 {
-		return "EMBEDDING_MODEL"
-	}
-	return keys[0]
 }
 
 func CloneCompatibleProviders(values map[string]CompatibleProviderConfig) map[string]CompatibleProviderConfig {

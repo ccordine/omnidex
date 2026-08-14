@@ -57,9 +57,9 @@ func TestScrumControllerDoesNotSwitchColumnAfterServerMove(t *testing.T) {
 }
 
 func TestScrumControllerRequiresServerRenderedBoardBundle(t *testing.T) {
-	source := readFrontendSource(t, "web/src/controllers/scrum_controller.ts")
+	source := readFrontendSource(t, "web/src/controllers/scrum_controller_board.ts")
 	required := []string{
-		"await this.applyServerBundle(payload.html?.bundle);",
+		"await this.applyServerBundle(payload.html.bundle);",
 		"Scrum board response did not include its required server-rendered Recyclr bundle.",
 	}
 	for _, snippet := range required {
@@ -246,7 +246,7 @@ func TestAIControlUsesTypedRealtimeEventsWithoutPolling(t *testing.T) {
 	for _, required := range []string{
 		`document.addEventListener("omni:ai-control-updated"`,
 		`document.addEventListener("omni:job-progress"`,
-		"this.applyAIControlPayload(state as AIControlPayload)",
+		"this.applyAIControlPayload(validateAIControlStatePayload(state))",
 	} {
 		if !strings.Contains(shell, required) {
 			t.Errorf("AI control realtime path missing %q", required)
@@ -256,6 +256,7 @@ func TestAIControlUsesTypedRealtimeEventsWithoutPolling(t *testing.T) {
 		"aiControlTimer",
 		"setInterval(() => void this.loadAIControl()",
 		`new CustomEvent("omni:scrum-refresh"`,
+		"state as AIControlPayload",
 	} {
 		if strings.Contains(shell, forbidden) {
 			t.Errorf("AI control contains polling or duplicate refresh path %q", forbidden)

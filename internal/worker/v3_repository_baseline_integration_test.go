@@ -23,8 +23,8 @@ func TestPostgresRepositoryBaselineRejectsConflictingExistingTestBeforeGeneratio
 	ctx, repository, pool := openRepositoryTestDatabase(t)
 	root := repositoryConflictingBaselineRoot(t)
 	project, err := repository.CreateProject(
-		ctx, fmt.Sprintf("mutation-baseline-failure-%d", time.Now().UnixNano()), root, "", "", nil,
-	)
+		ctx, fmt.Sprintf("mutation-baseline-failure-%d", time.Now().UnixNano()), root, "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,8 +125,8 @@ func TestValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		ctx, fmt.Sprintf("mutation-excluded-state-%d", time.Now().UnixNano()), root, "", "", nil,
-	)
+		ctx, fmt.Sprintf("mutation-excluded-state-%d", time.Now().UnixNano()), root, "")
+
 	if err != nil {
 		t.Fatal(err)
 	}

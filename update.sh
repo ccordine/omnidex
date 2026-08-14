@@ -178,16 +178,19 @@ main() {
   [[ -d "${PREFIX}" ]] || die "prefix path does not exist: ${PREFIX}"
   PREFIX="$(absolute_existing_path "${PREFIX}")"
   managed_checkout_require_source "${PREFIX}"
-  DOCKER_CONTEXT_NAME="$(managed_checkout_env_value "${PREFIX}/.env" "DOCKER_CONTEXT")"
-  COMPOSE_PROJECT="$(managed_checkout_env_value "${PREFIX}/.env" "COMPOSE_PROJECT_NAME")"
-  validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
-  validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
   local update_branch update_origin stage=""
   update_branch="$(managed_checkout_branch "${PREFIX}" "${BRANCH}")"
   update_origin="$(managed_checkout_origin "${PREFIX}")"
 
-  local compose_cmd=""
+  local compose_cmd="" expected_image=""
   if needs_compose_work; then
+    managed_checkout_require_env_key "${PREFIX}/.env" "DOCKER_CONTEXT"
+    managed_checkout_require_env_key "${PREFIX}/.env" "COMPOSE_PROJECT_NAME"
+    DOCKER_CONTEXT_NAME="$(managed_checkout_env_value "${PREFIX}/.env" "DOCKER_CONTEXT")"
+    COMPOSE_PROJECT="$(managed_checkout_env_value "${PREFIX}/.env" "COMPOSE_PROJECT_NAME")"
+    validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
+    validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
+    [[ -n "${COMPOSE_PROJECT}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
     if [[ -z "${COMPOSE_FILE}" ]]; then
       COMPOSE_FILE="${PREFIX}/docker-compose.yml"
     else
@@ -214,7 +217,7 @@ main() {
     log "fast-forwarding staged checkout from origin/${update_branch}"
     managed_checkout_fast_forward "${stage}" "${update_branch}"
   fi
-  managed_checkout_preserve_env "${PREFIX}" "${stage}"
+  managed_checkout_stage_env "${PREFIX}" "${stage}" ""
   build_staged_checkout "${stage}"
   managed_checkout_validate_env "${stage}"
   managed_checkout_publish "${stage}" "${PREFIX}"
@@ -223,7 +226,11 @@ main() {
   restart_host_bridge "${PREFIX}"
   if needs_compose_work; then
     compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
+    expected_image="$(compose_image_id "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}")"
     compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
+    if ((NO_RESTART == 0)); then
+      compose_require_running_image "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}" "${expected_image}"
+    fi
   fi
 
   log "update complete"

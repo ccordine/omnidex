@@ -12,8 +12,8 @@ func validateScrumCardEditNulls(raw []byte) error {
 		return err
 	}
 	for _, name := range []string{
-		"title", "description", "ref_files", "model_config", "card_ticket",
-		"card_prompt", "recipe_id", "recipe", "tags",
+		"title", "description", "ref_files", "card_ticket",
+		"card_prompt", "tags",
 	} {
 		if value, ok := fields[name]; ok && isJSONNull(value) {
 			return fmt.Errorf("editable Scrum card field %q must not be null", name)
@@ -31,17 +31,6 @@ func validateScrumCardEditNulls(raw []byte) error {
 		for index, item := range items {
 			if isJSONNull(item) {
 				return fmt.Errorf("editable Scrum card %s %d must not be null", label, index)
-			}
-		}
-	}
-	if value, ok := fields["model_config"]; ok {
-		var routes map[string]json.RawMessage
-		if err := json.Unmarshal(value, &routes); err != nil {
-			return err
-		}
-		for name, route := range routes {
-			if isJSONNull(route) {
-				return fmt.Errorf("editable Scrum card model_config field %q must be a string, received null", name)
 			}
 		}
 	}

@@ -56,18 +56,20 @@ func TestChannelMessageRoleRejectsClientAuthorityExpansion(t *testing.T) {
 	}
 }
 
-func TestCancelReasonValidationIsExactAfterWhitespaceNormalization(t *testing.T) {
-	got, err := validateCancelReason("  deliberate cancellation  ")
+func TestCancelReasonValidationPreservesExactNonblankAuthority(t *testing.T) {
+	exact := "  deliberate cancellation\nwith trailing tab\t "
+	got, err := validateCancelReason(exact)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "deliberate cancellation" {
-		t.Fatalf("cancel reason=%q", got)
+	if got != exact {
+		t.Fatalf("cancel reason=%q want=%q", got, exact)
 	}
 	for name, reason := range map[string]string{
 		"invalid UTF-8": "invalid-" + string([]byte{0xff}),
 		"NUL":           "invalid-\x00reason",
 		"blank":         strings.Repeat(" ", 3),
+		"oversized":     strings.Repeat("x", maxReplanFeedbackBytes+1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := validateCancelReason(reason); err == nil {

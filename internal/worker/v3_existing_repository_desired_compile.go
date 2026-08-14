@@ -18,7 +18,7 @@ var errDesiredArtifactUsesExistingDeclaration = errors.New("desired artifact alr
 
 func compileExistingRepositoryDesiredGraph(
 	authority string,
-	partition assemblyline.RequirementPartitionDecision,
+	featureQuotes []string,
 	resolutions []existingRepositoryRequirementResolution,
 	directives []assemblyline.ArtifactDirective,
 	identities []assemblyline.ArtifactIdentity,
@@ -26,20 +26,20 @@ func compileExistingRepositoryDesiredGraph(
 	analysis repositoryfacts.Analysis,
 ) (repositoryfacts.DesiredArtifactGraph, error) {
 	if len(directives) != 0 {
-		if err := validateDesiredDeletionFeatureCoverage(partition.FeatureQuotes, directives); err != nil {
+		if err := validateDesiredDeletionFeatureCoverage(featureQuotes, directives); err != nil {
 			return repositoryfacts.DesiredArtifactGraph{}, err
 		}
 		return compileDesiredArtifactDeletion(
-			authority, partition.FeatureQuotes, directives, identities, snapshot, analysis,
+			authority, featureQuotes, directives, identities, snapshot, analysis,
 		)
 	}
-	if len(partition.FeatureQuotes) != len(resolutions) {
+	if len(featureQuotes) != len(resolutions) {
 		return repositoryfacts.DesiredArtifactGraph{}, fmt.Errorf("desired repository compilation requires one resolution per exact requirement")
 	}
 	if hasResolvedRepositoryTarget(resolutions) {
 		return repositoryfacts.DesiredArtifactGraph{}, fmt.Errorf("mixed repository modification and file-state transitions are unsupported")
 	}
-	return compileDesiredArtifactCreation(authority, partition.FeatureQuotes, snapshot, analysis)
+	return compileDesiredArtifactCreation(authority, featureQuotes, snapshot, analysis)
 }
 
 func validateDesiredDeletionFeatureCoverage(

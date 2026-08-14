@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const legacyCutoverFinalMigrationPrefix = 86
+const legacyCutoverFinalMigrationPrefix = 88
 
 // PreserveLegacyPublic performs the sole authorized public-to-runtime durable
 // state transition. It never copies or resets data. Every check, schema rename,
@@ -132,7 +132,7 @@ func validateLegacyCutoverBundle(bundle MigrationBundle) error {
 	}
 	lastPrefix, err := migrationNumericPrefix(bundle.entries[len(bundle.entries)-1].name)
 	if err != nil || lastPrefix != legacyCutoverFinalMigrationPrefix {
-		return fmt.Errorf("legacy cutover requires the exact sealed 001..086 migration bundle")
+		return fmt.Errorf("legacy cutover requires the exact sealed 001..088 migration bundle")
 	}
 	return nil
 }

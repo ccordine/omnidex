@@ -31,6 +31,19 @@ func (s *directCodingSession) bindRequirementSkill(
 		}
 		return s.activeSkillBinding(requirement.ID, exact, "exact"), true, nil
 	}
+	hasActiveSkills, err := s.runtime.svc.repo.HasActiveWorkerSkills(s.runtime.ctx)
+	if err != nil {
+		return directCodingSkillBinding{}, false, err
+	}
+	if !hasActiveSkills {
+		return directCodingSkillBinding{}, false, nil
+	}
+	if strings.TrimSpace(s.runtime.svc.embeddingProvider) == "" ||
+		strings.TrimSpace(s.runtime.svc.embeddingModel) == "" {
+		return directCodingSkillBinding{}, false, fmt.Errorf(
+			"coding skill retrieval requires embedding provider and model authority",
+		)
+	}
 	hasCandidates, err := s.runtime.svc.repo.HasActiveWorkerSkillEmbeddings(
 		s.runtime.ctx, s.runtime.svc.embeddingProvider, s.runtime.svc.embeddingModel,
 	)

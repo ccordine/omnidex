@@ -7,6 +7,7 @@ source "${SCRIPT_DIR}/scripts/managed-checkout-lib.sh"
 source "${SCRIPT_DIR}/scripts/install-shell-lib.sh"
 
 PREFIX="${HOME}/.omnidex"
+ENV_FILE=""
 DEPS_PROFILE="all"
 WITH_WHISPER=0
 SKIP_DEPS=0
@@ -23,6 +24,7 @@ Usage:
 
 Options:
   --prefix <path>          Install path (default: ${HOME}/.omnidex)
+  --env-file <path>        Required deployment environment for a fresh install
   --deps-profile <value>   Dependency profile: core|local|all (default: all)
   --with-whisper           Also install whisper CLI via dependency bootstrap
   --skip-deps              Skip host dependency bootstrap step
@@ -153,6 +155,11 @@ parse_args() {
         DEPS_PROFILE="$2"
         shift 2
         ;;
+      --env-file)
+        (($# >= 2)) || die "--env-file requires a value"
+        ENV_FILE="$2"
+        shift 2
+        ;;
       --with-whisper)
         WITH_WHISPER=1
         shift
@@ -193,6 +200,12 @@ main() {
 
   PREFIX="$(expand_home_path "${PREFIX}")"
   PREFIX="$(absolute_target_path "${PREFIX}")"
+  if [[ -n "${ENV_FILE}" ]]; then
+    ENV_FILE="$(expand_home_path "${ENV_FILE}")"
+    if [[ "${ENV_FILE}" != /* ]]; then
+      ENV_FILE="${PWD}/${ENV_FILE#./}"
+    fi
+  fi
   case "$PREFIX" in
     ""|"/"|"$HOME")
       die "refusing to install into unsafe prefix: ${PREFIX}"
@@ -226,7 +239,7 @@ main() {
   stage="$(managed_checkout_new_stage "${PREFIX}" "install")"
   trap '[[ -z "${stage:-}" ]] || rm -rf -- "${stage}"' EXIT
   managed_checkout_clone_exact "${SCRIPT_DIR}" "${stage}" "${source_branch}" "${source_origin}"
-  managed_checkout_preserve_env "${PREFIX}" "${stage}"
+  managed_checkout_stage_env "${PREFIX}" "${stage}" "${ENV_FILE}"
   build_staged_checkout "${stage}"
   managed_checkout_validate_env "${stage}"
   managed_checkout_publish "${stage}" "${PREFIX}"

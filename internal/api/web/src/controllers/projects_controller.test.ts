@@ -81,8 +81,30 @@ describe("ProjectsController panel loading", () => {
 
     document.dispatchEvent(new CustomEvent("omni:panel-shown", { detail: { panel: "projects" } }));
     await waitFor(() => expect(document.querySelector("[data-projects-target='status']")).toHaveTextContent(
-      "Component response did not include its required server-rendered bundle.",
+      "Component response did not include one exact server-rendered html authority.",
     ));
+  });
+
+  it("rejects missing or noncanonical server control datasets before transport", async () => {
+    document.querySelector("[data-controller='projects']")?.insertAdjacentHTML("beforeend", projectsPanelHTML());
+    application = Application.start();
+    application.register("recyclr", TestRecyclrController);
+    application.register("projects", ProjectsController);
+    await Promise.resolve();
+    const element = document.querySelector("[data-controller='projects']");
+    if (!(element instanceof HTMLElement)) throw new Error("Projects controller element is missing.");
+    const controller = application.getControllerForElementAndIdentifier(element, "projects") as ProjectsController | null;
+    if (!controller) throw new Error("Projects controller is not connected.");
+    const button = document.createElement("button");
+    const event = { preventDefault() {}, currentTarget: button } as unknown as Event;
+
+    expect(() => controller.loadProjectPage(event)).toThrow(/server authority/);
+    button.dataset.projectId = "07";
+    await expect(controller.openProject(event)).rejects.toThrow(/canonical integer/);
+    delete button.dataset.projectId;
+    button.dataset.projectTab = " scrum";
+    await expect(controller.showTab(event)).rejects.toThrow(/server authority/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

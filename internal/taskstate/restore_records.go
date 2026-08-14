@@ -63,7 +63,7 @@ func (ledger *Ledger) validateRestoredEntry(entry Entry, ledgerVersion uint64) e
 	if entry.CreatedVersion == 0 || entry.CreatedVersion > entry.UpdatedVersion || entry.UpdatedVersion > ledgerVersion {
 		return fmt.Errorf("%w: entry %q has invalid materialization versions", ErrInvalidState, entry.ID)
 	}
-	if err := requireExactText(entry.Content, "entry content"); err != nil {
+	if err := requireEntryContent(entry.Content, entry.Kind); err != nil {
 		return err
 	}
 	if entry.ContentSHA256 != contentDigest(entry.Content) {

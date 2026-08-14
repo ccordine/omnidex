@@ -28,6 +28,9 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("conversation_objective_kind_model"); value != "" {
 		out.Stations[station.ConversationObjectiveKind] = value
 	}
+	if value := cfg.Get("objective_advisory_model"); value != "" {
+		out.Stations[station.ObjectiveAdvisory] = value
+	}
 	if value := cfg.Get("conversation_response_model"); value != "" {
 		out.Stations[station.ConversationResponse] = value
 	}
@@ -61,11 +64,11 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("coding_surface_model"); value != "" {
 		out.Stations[station.CodingSurface] = value
 	}
-	if value := cfg.Get("coding_product_identity_model"); value != "" {
-		out.Stations[station.CodingProductIdentity] = value
+	if value := cfg.Get("coding_requirements_model"); value != "" {
+		out.Stations[station.CodingRequirements] = value
 	}
-	if value := cfg.Get("coding_requirement_partition_model"); value != "" {
-		out.Stations[station.CodingRequirementPartition] = value
+	if value := cfg.Get("coding_workload_model"); value != "" {
+		out.Stations[station.CodingWorkload] = value
 	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
 		out.Stations[station.CodingArtifactHandling] = value
@@ -92,12 +95,4 @@ func Apply(base Routing, cfg Config) Routing {
 		out.Stations[station.CodingRepositoryChange] = value
 	}
 	return out
-}
-
-func Resolve(env Config, project Config, card Config) Config {
-	return Merge(env, project, card)
-}
-
-func ResolveRouting(base Routing, env Config, project Config, card Config) Routing {
-	return Apply(base, Resolve(env, project, card))
 }

@@ -134,10 +134,9 @@ func (r *Repository) ScrumProjectComplete(ctx context.Context, projectID int64) 
 }
 
 const scrumCardSelectionSQL = `
-	SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
-	       model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
-	       tags, planning_chat, coach_config, test_criteria, flow_metrics,
-	       job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order, board_order,
-	       sync_job_id, agent_stream_chat_cursor, agent_stream_console_cursor, step_context_cursor,
-	       created_at, updated_at
+	SELECT id,project_id,title,description,column_name,checklist,ref_files,
+	       card_ticket,card_prompt,tags,test_criteria,flow_metrics,
+	       job_id,play_state,queue_order,board_order,
+	       sync_job_id,step_context_cursor,channel_message_count,channel_content_bytes,
+	       created_at,updated_at
 	FROM scrum_cards WHERE project_id=$1`

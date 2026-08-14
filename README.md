@@ -67,7 +67,7 @@ server-owned path:
    source spans as derived PostgreSQL facts.
 3. Typed semantic-excerpt, declaration, and incoming-reference queries construct a
    bounded evidence pack; the model never receives a path or repository tree.
-4. Code partitions every exact requirement and validates complete change-surface
+4. One bounded call extracts exact grounded change requirements, and code validates complete change-surface
    coverage into one source-snapshot-bound change contract and ordered verification
    plan.
 5. Before any fragment generation, the complete focused-plus-terminal-broad plan must
@@ -134,13 +134,17 @@ Repeated polling state is coalesced. Full prompts and context remain available t
 
 ## Models
 
-Ollama is the default local provider. Bounded station models are independently configurable without giving any model control-plane authority:
+Ollama is the recommended explicit local provider. Omnidex has no implicit model
+provider: deterministic work starts with both provider selections absent, and a
+persisted named semantic or embedding need fails explicitly if its required
+authority is still unconfigured. Bounded station models are independently
+configurable without giving any model control-plane authority:
 
 ```dotenv
 LLM_PROVIDER=ollama
 OMNI_CODING_SURFACE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_PRODUCT_IDENTITY_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_REQUIREMENT_PARTITION_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_SKILL_SELECTION_MODEL=qwen3.5:9b-q4_K_M
@@ -148,13 +152,15 @@ OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_REPOSITORY_SEARCH_TERM_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL=qwen3.5:9b-q4_K_M
+OMNI_OBJECTIVE_ADVISORY_MODE=off
+OMNI_OBJECTIVE_ADVISORY_MODEL=qwen3.5:9b-q4_K_M
 OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL=deepseek-r1:8b
 OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL=deepseek-r1:8b
 INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
-The surface station classifies only browser, command-line, or service delivery. One stable feature-partition station extracts exact feature envelopes from the user authority and splits each accepted envelope to a code-owned fixed point. There is no production reasoning adviser and no separate split-model route. There is no model-authored kind, outcome, plan, or coverage verdict. Artifact handling is a separate token-blind classification job. For each local need, code may bind an exact active PostgreSQL skill or give a selector at most five opaque active-skill purpose summaries. If none exist, the exact requirement remains sufficient and no skill is synthesized during workload planning. Candidate synthesis and promotion stay unavailable until a separate code-owned recurring-gap and held-out replay workflow exists. The fragment station then receives one exact feature contract plus any independently promoted procedure and returns one raw declaration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. Local Ollama uses Qwen 3.5 9B for bounded generation and correction stations and DeepSeek R1 8B only for the independent repository/web evidence-review stations. Keeping generation on one stable model limits routine swaps; a review pays the explicit identity boundary instead of pretending the generator verified itself. It defaults to one fragment lane because concurrent requests to one endpoint are contention, not distributed capacity; the explicit concurrency setting may be raised to at most four when real independent capacity exists. A missing model, context mismatch, or invalid capacity fails explicitly. See [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md) for measured hardware limits and alternatives. The former offline advisory gauntlet and its CLI transport were retired rather than retained as a duplicate inference runtime.
+The surface station classifies only browser, command-line, or service delivery. One aggregate requirements station receives the intact request once and returns one exact product quote plus one through ten exact feature quotes. Code proves grounding, uniqueness, non-overlap, bounds, and source order, then assigns authoritative requirement identities. Invalid output fails after that one generation: there is no product-identity call, residual-span recursion, synthetic candidate selection, `none` loop, split call, semantic correction, retry, or fallback. For each accepted requirement, one workload leaf sees only the product quote and that requirement and returns one objective plus one observable criterion. Code assigns task identity and order, freezes the workload hash, and keeps dependencies, scheduling, tools, paths, and completion outside model authority. Artifact handling remains a separate token-blind classification job. Code may bind one independently accepted PostgreSQL skill and may expose only direct pairwise capability APIs. Each frozen task generates one feature declaration and one blind acceptance declaration, passes an isolated current-task test and typecheck before the next task starts, and then participates in one final whole-application test/typecheck/build stage. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. An optional, off-by-default `post_grounding_objective_advisory` source may return inert plain text only after repository grounding; it never supplies evidence, operations, mutation, or completion authority. Local Ollama station models are selected through environment-backed routing, so compatible Qwen 3.5 sizes can be qualified against the same unchanged gates without application changes. A missing model, context mismatch, or invalid capacity fails explicitly. See [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md) for measured hardware limits and alternatives.
 
 Production station inference currently requires Ollama's exact prepared contract.
 OpenAI, Azure AI, Google, Hugging Face, and compatible services appear only when
@@ -166,9 +172,11 @@ Every bounded station must use an exact prepared-inference contract. Provider id
 Known provider identities and rejected legacy environment keys remain centralized
 in [internal/llmprovider/catalog/definitions.go](internal/llmprovider/catalog/definitions.go).
 Only transports implementing the exact prepared station contract or the selected
-embedding interface appear in the production provider catalog. Selecting any
-other provider or leaving required embedding credentials/model/endpoint absent
-fails configuration validation.
+embedding interface appear in the production provider catalog. Provider selection,
+credentials, endpoint validation, construction, and discovery occur lazily at the
+first actual provider operation after its named need is persisted. Unsupported or
+incomplete authority fails that gap without provider dispatch; it never falls back
+to Ollama or another transport.
 
 ## Localization
 
@@ -194,7 +202,7 @@ The server owns the selected locale. `Accept-Language` seeds the first visit; `?
 ## Product surfaces
 
 - **Chat** — conversational entrypoint with code-owned objective state and exact typed semantic stations; wording lists never select execution.
-- **Projects** — workspace, model, agent, and codebase-map configuration.
+- **Projects** — workspace, model, and codebase-map configuration.
 - **Scrum** — review queue, board, typed card channel, and explicit controlled execution surface.
 - **Data** — deterministic read-only data-source queries with recorded SQL and result evidence.
 - **Jobs** — live queue, station progress, failures, and final results.
@@ -228,13 +236,17 @@ lockfile with `npm ci`, and fails if the production bundle is incomplete.
 Run the installer from a clean Git checkout with an `origin` remote:
 
 ```bash
-./install.sh --yes
+cp default.env deployment.env
+# Edit deployment.env explicitly for this host before installing.
+./install.sh --env-file deployment.env --yes
 ```
 
 The installer stages a complete checkout, builds the GUI and all host binaries,
-then swaps the finished checkout into `~/.omnidex`. An existing install's `.env`
-is the only install-root user file preserved. PostgreSQL and Redis data remain in
-their Docker named volumes.
+validates the explicit deployment environment, then swaps the finished checkout
+into `~/.omnidex`. `default.env` is a template and is never silently promoted to
+active authority. An existing install's regular `.env` is preserved byte-for-byte;
+supplying `--env-file` during replacement is rejected. PostgreSQL and Redis data
+remain in their Docker named volumes.
 
 From any directory, update the installed host checkout and binaries with:
 
@@ -245,6 +257,20 @@ omni update --host-only
 Use `omni update` without `--host-only` to also rebuild and restart the configured
 Compose service. Updates fast-forward a sibling staged checkout and do not replace
 the active install when fetching, GUI compilation, or Go compilation fails.
+
+A native binary release archive uses the same environment rule but does not
+contain a Git checkout. After extracting it, prepare and review a deployment file,
+then install it atomically:
+
+```bash
+cp default.env ../omnidex-deployment.env
+# Edit ../omnidex-deployment.env explicitly for this host.
+./install-release.sh --env-file ../omnidex-deployment.env --yes
+```
+
+The archive never contains an active `.env`, and its template is never promoted
+implicitly. Replacing a prior binary-release install preserves that install's
+regular `.env` byte-for-byte and rejects a replacement `--env-file`.
 
 ## Run a coding job
 

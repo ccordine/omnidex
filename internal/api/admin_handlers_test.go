@@ -64,3 +64,28 @@ func TestPullOllamaModelValidation(t *testing.T) {
 	var payload map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &payload)
 }
+
+func TestOllamaPullRequestRejectsLooseOrUnboundedAuthority(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/v1/ollama/models", bytes.NewBufferString(`{"model":"registry.ollama.ai/library/qwen3:4b"}`))
+	response := httptest.NewRecorder()
+	decoded, err := decodeOllamaPullRequest(response, request)
+	if err != nil || decoded.Model != "registry.ollama.ai/library/qwen3:4b" {
+		t.Fatalf("decoded=%+v err=%v", decoded, err)
+	}
+	for _, body := range [][]byte{
+		[]byte(`{"model":"one","model":"two"}`),
+		[]byte(`{"model":"one","stream":true}`),
+		[]byte(`{"Model":"one"}`),
+		[]byte(`{"model":"one"} {}`),
+		[]byte(`{"model":null}`),
+		[]byte(`{"model":" padded "}`),
+		[]byte(`{"model":"bad model"}`),
+		bytes.Repeat([]byte(" "), int(maxOllamaPullBodyBytes+1)),
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/v1/ollama/models", bytes.NewReader(body))
+		response := httptest.NewRecorder()
+		if _, err := decodeOllamaPullRequest(response, request); err == nil {
+			t.Fatalf("invalid Ollama pull authority accepted: %q", body)
+		}
+	}
+}

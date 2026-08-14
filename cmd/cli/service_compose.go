@@ -58,10 +58,7 @@ func resolveComposeCommandPrefix() ([]string, error) {
 			return []string{"docker", "compose"}, nil
 		}
 	}
-	if _, err := exec.LookPath("docker-compose"); err == nil {
-		return []string{"docker-compose"}, nil
-	}
-	return nil, errors.New("docker compose is required but was not found (need `docker compose` or `docker-compose`)")
+	return nil, errors.New("the Docker Compose plugin is required but was not found")
 }
 
 func resolveServiceComposeTarget(prefix, composeFile string) (string, string, error) {

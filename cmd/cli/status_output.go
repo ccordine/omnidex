@@ -64,9 +64,19 @@ func printOllamaStatusLine(report ollamaStatusReport) {
 func statusLLMProvider() (string, error) {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv("LLM_PROVIDER")))
 	if value == "" {
-		value = "ollama"
+		return "", nil
 	}
 	return catalog.CanonicalID(value)
+}
+
+func printLLMStatusLine(provider string, err error) {
+	if err != nil {
+		fmt.Printf("llm: invalid error=%s\n", err)
+	} else if provider == "" {
+		fmt.Println("llm: unconfigured")
+	} else {
+		fmt.Printf("llm: configured provider=%s\n", provider)
+	}
 }
 
 func printWebStatusLine(report webStatusReport, summaryOnly bool) {

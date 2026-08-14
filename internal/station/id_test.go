@@ -11,6 +11,9 @@ func TestIDRejectsUnregisteredSemanticAuthority(t *testing.T) {
 	if err := CodingFragment.Validate(); err != nil {
 		t.Fatalf("registered leaf station rejected: %v", err)
 	}
+	if err := ObjectiveAdvisory.Validate(); err != nil {
+		t.Fatalf("registered passive advisory source rejected: %v", err)
+	}
 }
 
 func TestAllContainsOnlyUniqueRegisteredStations(t *testing.T) {
@@ -26,7 +29,7 @@ func TestAllContainsOnlyUniqueRegisteredStations(t *testing.T) {
 		}
 		seen[id] = struct{}{}
 	}
-	if len(seen) != 26 {
-		t.Fatalf("registered stations=%d want 26", len(seen))
+	if len(seen) != 27 {
+		t.Fatalf("registered stations=%d want 27", len(seen))
 	}
 }

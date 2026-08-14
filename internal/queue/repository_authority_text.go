@@ -32,9 +32,11 @@ func validateCancelReason(reason string) (string, error) {
 	if strings.ContainsRune(reason, '\x00') {
 		return "", fmt.Errorf("cancel reason must not contain NUL")
 	}
-	reason = strings.TrimSpace(reason)
-	if reason == "" {
+	if strings.TrimSpace(reason) == "" {
 		return "", fmt.Errorf("cancel reason is required")
+	}
+	if len(reason) > maxReplanFeedbackBytes {
+		return "", fmt.Errorf("cancel reason exceeds the %d-byte limit", maxReplanFeedbackBytes)
 	}
 	return reason, nil
 }

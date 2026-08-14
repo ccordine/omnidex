@@ -8,7 +8,7 @@ import (
 
 func TestWorkersDoNotPublishDomainSuccessBeforeLifecycleCommit(t *testing.T) {
 	for _, path := range []string{
-		"objective_turn_runtime.go", "external_agent.go", "v3_coding_driver_verification.go",
+		"objective_turn_runtime.go", "v3_coding_driver_verification.go",
 	} {
 		source, err := os.ReadFile(path)
 		if err != nil {

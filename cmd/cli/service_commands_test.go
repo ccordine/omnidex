@@ -123,6 +123,39 @@ func TestServiceRunsCoreMigrateFreshRejectsNonCore(t *testing.T) {
 	}
 }
 
+func TestResolveComposeCommandPrefixRequiresDockerPlugin(t *testing.T) {
+	fakeBin := t.TempDir()
+	fakeDocker := "#!/bin/sh\n[ \"$*\" = \"compose version\" ]\n"
+	if err := os.WriteFile(filepath.Join(fakeBin, "docker"), []byte(fakeDocker), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin)
+	got, err := resolveComposeCommandPrefix()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value := strings.Join(got, " "); value != "docker compose" {
+		t.Fatalf("Compose command = %q", value)
+	}
+}
+
+func TestResolveComposeCommandPrefixRejectsStandaloneFallback(t *testing.T) {
+	fakeBin := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "standalone-invoked")
+	fakeStandalone := "#!/bin/sh\n: > \"" + marker + "\"\n"
+	if err := os.WriteFile(filepath.Join(fakeBin, "docker-compose"), []byte(fakeStandalone), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin)
+	_, err := resolveComposeCommandPrefix()
+	if err == nil || !strings.Contains(err.Error(), "Docker Compose plugin is required") {
+		t.Fatalf("standalone Compose error = %v", err)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("standalone docker-compose was invoked: %v", statErr)
+	}
+}
+
 func TestComposeInvocationForServiceCoreDownStopsSingleService(t *testing.T) {
 	opts := serviceCommandOptions{
 		Service: "core",

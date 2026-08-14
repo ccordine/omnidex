@@ -2,7 +2,6 @@ package api
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -127,11 +126,9 @@ func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, payload)
 	case http.MethodPut:
-		var req struct {
-			Values map[string]string `json:"values"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid json body")
+		req, err := decodeModelSettingsRequest(w, r)
+		if err != nil {
+			writeError(w, exactSettingsErrorStatus(err), err.Error())
 			return
 		}
 		if err := validateModelSettingKeys(req.Values); err != nil {

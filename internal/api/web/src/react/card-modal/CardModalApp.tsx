@@ -1,29 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { deleteScrumCard, doneScrumCard, fetchScrumCardModal, moveScrumCard, pauseScrumCard, playScrumCard } from "../../lib/scrum_api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { deleteScrumCard, doneScrumCard, fetchScrumCardModal, moveScrumCard, pauseScrumCard, playScrumCard, type ScrumCardMutationResult } from "../../lib/scrum_api";
 import type { ScrumCard, ScrumCardModalResponse } from "../../lib/scrum_types";
 import { closeModalShell } from "../../lib/modal";
 import { scrumModalHref } from "../../lib/panel_routing";
 import type { RealtimeSyncDetail } from "../../lib/realtime_sync";
+import { validateScrumRealtimeCardUpdate } from "../../lib/scrum_realtime_response";
 import { ActionButton, Select, SpinnerLabel } from "./common";
 import { CardTab } from "./CardTab";
 import { ChannelTab } from "./ChannelTab";
-import { ConfigTab } from "./ConfigTab";
 import { FilesTab } from "./FilesTab";
-import { RecipeTab } from "./RecipeTab";
 import { TestsTab } from "./TestsTab";
 import { CARD_MODAL_TABS, normalizeCardModalTab, type CardModalTab, type RunMutation } from "./types";
 
 export type CardModalAppProps = {
   cardID: string;
-  projectID: number | null;
+  projectID: number;
   initialTab?: string;
-};
-
-type RealtimeDetail = {
-  cardID?: string;
-  projectID?: number;
-  card?: ScrumCard;
-  reason?: string;
 };
 
 export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardModalAppProps) {
@@ -33,6 +25,7 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
   const [busyLabel, setBusyLabel] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const mutationLockRef = useRef(false);
 
   const loadContext = useCallback(
     async (tab = activeTab, options: { silent?: boolean; strict?: boolean } = {}) => {
@@ -41,7 +34,11 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
       }
       setError("");
       try {
-        const payload = await fetchScrumCardModal(cardID, projectID, { tab });
+        const payload = await fetchScrumCardModal(
+          cardID,
+          projectID,
+          tab === "files" ? { tab, filePath: "", fileOffset: 0 } : { tab },
+        );
         setContext(payload);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -59,17 +56,25 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<RealtimeDetail>).detail ?? {};
-      if (detail.projectID && projectID && detail.projectID !== projectID) return;
-      if (detail.cardID !== cardID) return;
-      if (!detail.card) {
-        setError("Live card update did not include typed card state.");
+      let detail;
+      try {
+        detail = validateScrumRealtimeCardUpdate((event as CustomEvent<unknown>).detail);
+      } catch (validationError) {
+        const message = validationError instanceof Error ? validationError.message : String(validationError);
+        document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: projectID } }));
+        void (async () => {
+          try {
+            await loadContext(activeTab, { silent: true, strict: true });
+            setError(`${message} Authoritative card state was reloaded after rejecting the live update.`);
+          } catch (reconcileError) {
+            const reconcileMessage = reconcileError instanceof Error ? reconcileError.message : String(reconcileError);
+            setError(`${message} Live-update reconciliation also failed: ${reconcileMessage}`);
+          }
+        })();
         return;
       }
-      handleCardUpdated(detail.card, {
-        reloadContext: detail.reason === "files updated",
-        refreshBoard: false,
-      });
+      if (detail.projectID !== projectID || detail.cardID !== cardID) return;
+      handleCardUpdated(detail.card, { refreshBoard: false });
     };
     const syncHandler = (event: Event) => {
       const detail = (event as CustomEvent<RealtimeSyncDetail>).detail;
@@ -86,7 +91,16 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
     };
   }, [activeTab, cardID, loadContext, projectID]);
 
+  const refreshBoard = useCallback(() => {
+    document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: projectID } }));
+  }, [projectID]);
+
   const runMutation: RunMutation = useCallback(async (label, fn) => {
+    if (mutationLockRef.current) {
+      setError("A card operation is already in progress.");
+      return null;
+    }
+    mutationLockRef.current = true;
     setBusyLabel(label);
     setError("");
     setNotice("");
@@ -95,16 +109,21 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
       setNotice(`${label} complete`);
       return result;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const mutationError = err instanceof Error ? err.message : String(err);
+      refreshBoard();
+      try {
+        await loadContext(activeTab, { silent: true, strict: true });
+        setError(`${mutationError} Authoritative card state was reloaded after the failed response.`);
+      } catch (reconcileError) {
+        const detail = reconcileError instanceof Error ? reconcileError.message : String(reconcileError);
+        setError(`${mutationError} Server reconciliation also failed: ${detail}`);
+      }
       return null;
     } finally {
+      mutationLockRef.current = false;
       setBusyLabel("");
     }
-  }, []);
-
-  const refreshBoard = useCallback(() => {
-    document.dispatchEvent(new CustomEvent("omni:scrum-refresh", { detail: { project_id: projectID ?? undefined } }));
-  }, [projectID]);
+  }, [activeTab, loadContext, refreshBoard]);
 
   const handleCardUpdated = useCallback(
     (card: ScrumCard, options: { reloadContext?: boolean; refreshBoard?: boolean } = {}) => {
@@ -123,8 +142,8 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
 
   const childProps = useMemo(() => {
     if (!context) return null;
-    return { context, projectID, runMutation, onCardUpdated: handleCardUpdated };
-  }, [context, handleCardUpdated, projectID, runMutation]);
+    return { context, projectID, mutationBusy: busyLabel !== "", runMutation, onCardUpdated: handleCardUpdated, onContextUpdated: setContext };
+  }, [busyLabel, context, handleCardUpdated, projectID, runMutation]);
 
   function selectTab(tab: CardModalTab) {
     setActiveTab(tab);
@@ -136,10 +155,16 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
     document.dispatchEvent(new CustomEvent("omni:card-modal-tab-changed", { detail: { card_id: cardID, tab } }));
   }
 
-  async function runHeaderAction(label: string, fn: () => Promise<ScrumCard | void>, options: { close?: boolean; reload?: boolean; refreshBoard?: boolean } = {}) {
+  async function runHeaderAction(label: string, fn: () => Promise<ScrumCard | ScrumCardMutationResult | void>, options: { close?: boolean; reload?: boolean; refreshBoard?: boolean } = {}) {
     const result = await runMutation(label, fn);
     if (result === null) return;
-    if (result && typeof result === "object" && "id" in result) {
+    if (result && typeof result === "object" && "commit_state" in result) {
+      handleCardUpdated(result.card);
+      if (result.commit_state === "committed_degraded") {
+        if (!result.operation_error) throw new Error("Degraded card mutation response lost its typed post-commit failure.");
+        setError(result.operation_error);
+      }
+    } else if (result && typeof result === "object" && "id" in result) {
       handleCardUpdated(result, { reloadContext: options.reload });
     } else if (options.refreshBoard) {
       refreshBoard();
@@ -167,7 +192,7 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
   }
 
   const card = context.card;
-  const columns = context.board.columns?.length ? context.board.columns : ["backlog", "ready", "assigned", "in_progress", "review", "blocked", "error", "done"];
+  const columns = context.board.columns;
   const canPause = card.play_state === "running" || card.play_state === "queued";
 
   return (
@@ -184,7 +209,8 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={card.column}
-              onChange={(event) => void runHeaderAction("Moving card", () => moveScrumCard(card.id, event.target.value, projectID), { reload: true })}
+              disabled={busyLabel !== ""}
+              onChange={(event) => void runHeaderAction("Moving card", () => moveScrumCard(card.id, event.target.value, card.updated_at, projectID), { reload: true })}
               className="max-w-[11rem]"
             >
               {columns.map((column) => (
@@ -194,21 +220,22 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
               ))}
             </Select>
             {canPause ? (
-              <ActionButton onClick={() => void runHeaderAction("Pausing play", () => pauseScrumCard(card.id, projectID), { reload: true })}>Pause</ActionButton>
+              <ActionButton disabled={busyLabel !== ""} onClick={() => void runHeaderAction("Pausing play", () => pauseScrumCard(card.id, card.updated_at, projectID), { reload: true })}>Pause</ActionButton>
             ) : (
-              <ActionButton tone="primary" onClick={() => void runHeaderAction("Queueing play", () => playScrumCard(card.id, projectID), { reload: true })}>Play</ActionButton>
+              <ActionButton disabled={busyLabel !== ""} tone="primary" onClick={() => void runHeaderAction("Queueing play", () => playScrumCard(card.id, card.updated_at, projectID, { pivot: false }), { reload: true })}>Play</ActionButton>
             )}
-            <ActionButton tone="ok" onClick={() => void runHeaderAction("Marking done", () => doneScrumCard(card.id, projectID), { reload: true })}>Done</ActionButton>
+            <ActionButton disabled={busyLabel !== ""} tone="ok" onClick={() => void runHeaderAction("Marking done", () => doneScrumCard(card.id, card.updated_at, projectID), { reload: true })}>Done</ActionButton>
             <ActionButton
+              disabled={busyLabel !== ""}
               tone="danger"
               onClick={() => {
                 if (!window.confirm("Delete this scrum card?")) return;
-                void runHeaderAction("Deleting card", () => deleteScrumCard(card.id, projectID), { close: true, refreshBoard: true });
+                void runHeaderAction("Deleting card", () => deleteScrumCard(card.id, card.updated_at, projectID), { close: true, refreshBoard: true });
               }}
             >
               Delete
             </ActionButton>
-            <ActionButton onClick={() => closeModalShell()}>Close</ActionButton>
+            <ActionButton disabled={busyLabel !== ""} onClick={() => closeModalShell()}>Close</ActionButton>
           </div>
         </div>
         {busyLabel ? (
@@ -227,6 +254,7 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
             <button
               key={tab.id}
               type="button"
+              disabled={busyLabel !== ""}
               onClick={() => selectTab(tab.id)}
               className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
                 activeTab === tab.id ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-100"
@@ -243,8 +271,6 @@ export function CardModalApp({ cardID, projectID, initialTab = "card" }: CardMod
         {activeTab === "card" ? <CardTab {...childProps} /> : null}
         {activeTab === "files" ? <FilesTab {...childProps} /> : null}
         {activeTab === "tests" ? <TestsTab {...childProps} /> : null}
-        {activeTab === "config" ? <ConfigTab {...childProps} /> : null}
-        {activeTab === "recipe" ? <RecipeTab {...childProps} /> : null}
         {activeTab === "channel" ? <ChannelTab {...childProps} /> : null}
       </main>
     </div>

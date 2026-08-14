@@ -8,8 +8,14 @@ import (
 )
 
 func TestStatusLLMProviderUsesAuthoritativeCatalog(t *testing.T) {
-	t.Setenv("LLM_PROVIDER", "local")
+	t.Setenv("LLM_PROVIDER", "")
 	provider, err := statusLLMProvider()
+	if err != nil || provider != "" {
+		t.Fatalf("absent statusLLMProvider()=%q error=%v", provider, err)
+	}
+
+	t.Setenv("LLM_PROVIDER", "local")
+	provider, err = statusLLMProvider()
 	if err != nil || provider != "ollama" {
 		t.Fatalf("statusLLMProvider()=%q error=%v", provider, err)
 	}

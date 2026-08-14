@@ -24,11 +24,9 @@ const (
 )
 
 const (
-	PipelineAssistant = "assistant"
-	PipelineChat      = "chat"
-	PipelineCoding    = "coding"
-	PipelineStory     = "story"
-	PipelineScrum     = "scrum"
+	PipelineChat   = "chat"
+	PipelineCoding = "coding"
+	PipelineScrum  = "scrum"
 )
 
 const (

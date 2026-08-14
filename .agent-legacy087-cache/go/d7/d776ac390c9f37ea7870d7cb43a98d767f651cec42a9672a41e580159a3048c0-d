@@ -1,0 +1,4 @@
+./config_file.go
+./legacy_public_cutover.go
+./main.go
+./migration_bundle.go

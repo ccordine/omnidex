@@ -29,7 +29,7 @@ func TestRepositoryGroundedReviewReturnsOnlyNoneOrOneIssue(t *testing.T) {
 	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
 		"requirement_id", "exact_requirement", "objective_context",
-		"answer_text", "evidence_ids", "evidence",
+		"answer_text", "evidence_ids", "evidence", "advisory_capsules",
 	})
 	none := RepositoryGroundedReviewDecision{
 		Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewNone,

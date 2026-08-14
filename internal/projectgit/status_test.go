@@ -11,12 +11,12 @@ import (
 func TestCollectStatusNonRepo(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
-	payload, err := CollectStatus(context.Background(), dir, "test")
+	payload, err := CollectStatus(context.Background(), dir, "core-local")
 	if err != nil {
 		t.Fatalf("CollectStatus: %v", err)
 	}
-	if payload["is_repo"] != false {
-		t.Fatalf("expected is_repo=false, got %#v", payload["is_repo"])
+	if payload.IsRepo {
+		t.Fatalf("expected is_repo=false, got %#v", payload.IsRepo)
 	}
 }
 
@@ -40,11 +40,33 @@ func TestCollectStatusRepo(t *testing.T) {
 	runGit(t, dir, "add", "README.md")
 	runGit(t, dir, "commit", "-m", "Initial commit")
 
-	payload, err := CollectStatus(context.Background(), dir, "test")
+	payload, err := CollectStatus(context.Background(), dir, "core-local")
 	if err != nil {
 		t.Fatalf("CollectStatus: %v", err)
 	}
-	if payload["is_repo"] != true {
-		t.Fatalf("expected is_repo=true, got %#v", payload["is_repo"])
+	if !payload.IsRepo {
+		t.Fatalf("expected is_repo=true, got %#v", payload.IsRepo)
+	}
+}
+
+func TestCollectStatusLinkedWorktree(t *testing.T) {
+	repository := t.TempDir()
+	runGit(t, repository, "init")
+	runGit(t, repository, "config", "user.email", "test@example.com")
+	runGit(t, repository, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repository, "add", "README.md")
+	runGit(t, repository, "commit", "-m", "Initial commit")
+	worktree := filepath.Join(t.TempDir(), "linked")
+	runGit(t, repository, "worktree", "add", "-b", "linked-branch", worktree)
+
+	payload, err := CollectStatus(context.Background(), worktree, "core-local")
+	if err != nil {
+		t.Fatalf("CollectStatus linked worktree: %v", err)
+	}
+	if !payload.IsRepo || payload.Branch != "linked-branch" {
+		t.Fatalf("linked worktree status=%+v", payload)
 	}
 }

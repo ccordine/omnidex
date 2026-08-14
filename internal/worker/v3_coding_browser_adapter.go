@@ -21,6 +21,7 @@ func compileGenericTypeScriptBrowserBlueprint(
 	packageName string,
 	specification assemblyline.ApplicationSpecification,
 	skills map[string]directCodingSkillBinding,
+	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 ) (string, assemblyline.TypeScriptBlueprint, []directCodingFileTask, error) {
 	if err := specification.Validate(); err != nil {
@@ -38,9 +39,21 @@ func compileGenericTypeScriptBrowserBlueprint(
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
 		return "", assemblyline.TypeScriptBlueprint{}, nil, err
 	}
+	contexts, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	if err != nil {
+		return "", assemblyline.TypeScriptBlueprint{}, nil, err
+	}
 	documents := []assemblyline.TypeScriptDocument{genericBrowserRuntimeDocument(specification.Requirements)}
-	documents = append(documents, genericBrowserFeatureDocuments(specification, skills, capabilities)...)
-	documents = append(documents, genericBrowserAcceptanceDocuments(specification)...)
+	featureDocuments, err := genericBrowserFeatureDocuments(specification, skills, contexts, capabilities)
+	if err != nil {
+		return "", assemblyline.TypeScriptBlueprint{}, nil, err
+	}
+	documents = append(documents, featureDocuments...)
+	acceptanceDocuments, err := genericBrowserAcceptanceDocuments(specification, contexts, capabilities)
+	if err != nil {
+		return "", assemblyline.TypeScriptBlueprint{}, nil, err
+	}
+	documents = append(documents, acceptanceDocuments...)
 	documents = append(documents, genericBrowserAppDocument(specification))
 	documents = append(documents, genericBrowserSmokeTestDocument(specification))
 	documents = append(documents, genericBrowserRuntimeTestDocument(specification.Requirements))
@@ -59,8 +72,9 @@ func compileGenericTypeScriptBrowserBlueprint(
 func genericBrowserFeatureDocuments(
 	specification assemblyline.ApplicationSpecification,
 	skills map[string]directCodingSkillBinding,
+	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
-) []assemblyline.TypeScriptDocument {
+) ([]assemblyline.TypeScriptDocument, error) {
 	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
@@ -76,6 +90,14 @@ func genericBrowserFeatureDocuments(
 		contextID := fmt.Sprintf("feature.context.%03d", sequence)
 		wrapperID := fmt.Sprintf("feature.wrapper.%03d", sequence)
 		dependencies := capabilities[requirement.ID]
+		taskContext, exists := contexts[requirement.ID]
+		if !exists {
+			return nil, fmt.Errorf("application workload omits requirement %s", requirement.ID)
+		}
+		behavior, err := compileDirectCodingApplicationTaskBehavior(taskContext, dependencies)
+		if err != nil {
+			return nil, err
+		}
 		documents = append(documents, assemblyline.TypeScriptDocument{
 			ID:   fmt.Sprintf("feature_%03d", sequence),
 			Path: fmt.Sprintf("src/features/%s.tsx", functionName),
@@ -94,7 +116,7 @@ import type { CapabilitySnapshot, FeatureProps, FeatureViewProps } from '../runt
 					Signature: fmt.Sprintf(
 						"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
 					),
-					Contract: genericBrowserFeatureContract(requirement, activeSkill, dependencies, specification),
+					Contract: genericBrowserFeatureContract(behavior, activeSkill),
 					API: fmt.Sprintf(
 						"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
 					),
@@ -115,19 +137,14 @@ import type { CapabilitySnapshot, FeatureProps, FeatureViewProps } from '../runt
 			},
 		})
 	}
-	return documents
+	return documents, nil
 }
 
 func genericBrowserFeatureContract(
-	requirement assemblyline.Requirement,
+	behavior string,
 	skill *directCodingSkillBinding,
-	dependencies []directCodingCapabilityBinding,
-	specification assemblyline.ApplicationSpecification,
 ) string {
-	parts := []string{
-		"Product: " + specification.ProductQuote,
-		"Exact feature: " + requirement.SourceQuote,
-	}
+	parts := []string{behavior}
 	if skill != nil {
 		parts = append(parts, "Validated procedure: "+skill.Procedure)
 	}
@@ -136,14 +153,7 @@ func genericBrowserFeatureContract(
 		"The task-neutral code-owned boundary supplies state, read-only capability snapshots, mutations, live working status, and visible errors.",
 		"All shared state changes go through actions inside user interaction handlers. Use state for this feature and capabilities only when another feature materially affects this view.",
 		"React hooks and standard browser APIs are available when the requested behavior needs them. Implement workload-specific behavior here; do not assume Omnidex provides a domain service.",
-		"READABLE_CAPABILITY_CHANNELS:",
 	)
-	for _, dependency := range dependencies {
-		parts = append(parts, fmt.Sprintf("- %s: %s", dependency.CapabilityID, dependency.Purpose))
-	}
-	if len(dependencies) == 0 {
-		parts = append(parts, "(none)")
-	}
 	parts = append(parts, "Use only listed capability identifiers; do not invent identifiers.")
 	return strings.Join(parts, "\n")
 }

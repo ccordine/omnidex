@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/gryph/omnidex/internal/scrum"
 )
@@ -54,21 +55,20 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 	}
 	instruction := r.claim.Job.Instruction
 	additionalAuthority := make([]string, 0)
-	if scrum.IsScrumJob(r.claim.Job.Metadata) {
-		cardLines := scrum.ContextLinesFromMetadata(r.claim.Job.Metadata)
+	if r.claim.Job.Pipeline == model.PipelineScrum {
+		metadata, err := scrum.DecodeStoredJobMetadata(r.claim.Job.Metadata)
+		if err != nil {
+			return directCodingRequest{}, err
+		}
+		cardLines, err := scrum.ContextLinesFromMetadata(r.claim.Job.Metadata)
+		if err != nil {
+			return directCodingRequest{}, err
+		}
 		card := strings.TrimSpace(strings.Join(cardLines, "\n"))
 		if card == "" {
 			return directCodingRequest{}, fmt.Errorf("direct Scrum coding requires authoritative card context")
 		}
-		metadata, err := strictV3MetadataObject(r.claim.Job.Metadata)
-		if err != nil {
-			return directCodingRequest{}, err
-		}
-		channelOrigin, present, err := strictMetadataBool(metadata, "scrum_channel_origin")
-		if err != nil {
-			return directCodingRequest{}, err
-		}
-		if !present || !channelOrigin {
+		if !metadata.ChannelOrigin {
 			instruction = card
 		} else {
 			additionalAuthority = append(additionalAuthority, card)

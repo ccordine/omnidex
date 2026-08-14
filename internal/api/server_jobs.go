@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -18,19 +17,9 @@ import (
 )
 
 func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) {
-	var req feedbackRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-
-	req.Feedback = strings.TrimSpace(req.Feedback)
-	if req.Feedback == "" {
-		writeError(w, http.StatusBadRequest, "feedback is required")
-		return
-	}
-	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	req, err := decodeLifecycleFeedbackRequest(w, r)
+	if err != nil {
+		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
 
@@ -45,13 +34,14 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateSameJobAuthority(jobID, job); err != nil {
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.publishJobProgress(jobID, realtimeJobChanged, "Job replanned")
 
-	writeJSON(w, http.StatusOK, map[string]any{"job": job})
+	writeJSON(w, http.StatusOK, receipt)
 }
 
 func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
@@ -429,18 +419,6 @@ func parsePositiveInt(v string, fallback int) int {
 		return fallback
 	}
 	return parsed
-}
-
-func writeError(w http.ResponseWriter, code int, message string) {
-	writeJSON(w, code, map[string]any{
-		"error": message,
-	})
-}
-
-func writeJSON(w http.ResponseWriter, code int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func Run(ctx context.Context, addr string, handler http.Handler) error {

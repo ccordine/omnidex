@@ -123,13 +123,18 @@ func TestProjectBrowseModalRendersServerPaginationControls(t *testing.T) {
 	}
 }
 
-func TestRecipesList(t *testing.T) {
+func TestProjectModalRejectsUnknownAndDuplicateQueryAuthority(t *testing.T) {
 	server := NewServer(nil, &fakeLLMClient{})
-	req := httptest.NewRequest(http.MethodGet, "/v1/recipes", nil)
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	for _, raw := range []string{
+		"/v1/ui/projects/modal?kind=create&agent=forbidden",
+		"/v1/ui/projects/modal?kind=create&kind=browse",
+		"/v1/ui/projects/modal?kind=browse&mode=create&mode=edit",
+	} {
+		recorder := httptest.NewRecorder()
+		server.handleUIProjectModal(recorder, httptest.NewRequest(http.MethodGet, raw, nil))
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("path=%q status=%d body=%s", raw, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 
@@ -141,6 +146,19 @@ func TestSplitProjectPath(t *testing.T) {
 	id, action = splitProjectPath("/v1/projects/7/map/scan")
 	if id != 7 || action != "map/scan" {
 		t.Fatalf("id=%d action=%q", id, action)
+	}
+	for _, path := range []string{
+		"/v1/projects/042/play",
+		"/v1/projects/+42/play",
+		"/v1/projects/%2042/play",
+		"/v1/projects/42/play/",
+		"/v1/projects/42//play",
+		"/v1/projects/42/play/extra/path",
+		"/v1/projects/" + strings.Repeat("1", 21) + "/play",
+	} {
+		if id, action := splitProjectPath(path); id != 0 || action != "" {
+			t.Fatalf("inexact path %q parsed id=%d action=%q", path, id, action)
+		}
 	}
 }
 

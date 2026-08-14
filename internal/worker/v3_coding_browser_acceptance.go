@@ -10,14 +10,27 @@ import (
 
 func genericBrowserAcceptanceDocuments(
 	specification assemblyline.ApplicationSpecification,
-) []assemblyline.TypeScriptDocument {
+	contexts map[string]assemblyline.ApplicationTaskContext,
+	capabilities directCodingCapabilityGraph,
+) ([]assemblyline.TypeScriptDocument, error) {
 	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
 		functionName := fmt.Sprintf("Feature%03d", sequence)
 		verifyName := fmt.Sprintf("VerifyFeature%03d", sequence)
 		featureID := fmt.Sprintf("feature.%03d", sequence)
+		wrapperID := fmt.Sprintf("feature.wrapper.%03d", sequence)
 		verificationID := fmt.Sprintf("acceptance.%03d", sequence)
+		taskContext, exists := contexts[requirement.ID]
+		if !exists {
+			return nil, fmt.Errorf("application workload omits requirement %s", requirement.ID)
+		}
+		behavior, err := compileDirectCodingApplicationTaskBehavior(
+			taskContext, capabilities[requirement.ID],
+		)
+		if err != nil {
+			return nil, err
+		}
 		documents = append(documents, assemblyline.TypeScriptDocument{
 			ID:   fmt.Sprintf("acceptance_%03d", sequence),
 			Path: fmt.Sprintf("src/features/%s.test.tsx", functionName),
@@ -30,11 +43,11 @@ import { %s } from './%s';`, functionName, functionName),
 					ID:        verificationID,
 					Signature: fmt.Sprintf("async function %s(): Promise<void>", verifyName),
 					Contract: genericBrowserAcceptanceContract(
-						requirement, specification.ProductQuote, functionName, genericBrowserCapabilityID(sequence),
+						behavior, functionName, genericBrowserCapabilityID(sequence),
 					),
 					API:          fmt.Sprintf("async function %s(): Promise<void>", verifyName),
-					DependsOn:    []string{"runtime.factory", featureID},
-					Capabilities: []string{"runtime.factory", featureID},
+					DependsOn:    []string{"runtime.factory", featureID, wrapperID},
+					Capabilities: []string{"runtime.factory", wrapperID},
 					Globals: []string{
 						"React", "fireEvent", "render", "screen", "waitFor", "expect",
 						"createApplicationRuntime", "createFeatureRuntime", functionName,
@@ -58,22 +71,20 @@ import { %s } from './%s';`, functionName, functionName),
 			},
 		})
 	}
-	return documents
+	return documents, nil
 }
 
 func genericBrowserAcceptanceContract(
-	requirement assemblyline.Requirement,
-	productQuote string,
+	behavior string,
 	functionName string,
 	capabilityID string,
 ) string {
 	return strings.Join([]string{
-		"Independently verify observable user behavior for this exact accepted feature: " + requirement.SourceQuote,
-		"Product: " + productQuote,
+		behavior,
 		fmt.Sprintf(
 			"Render <%s runtime={createFeatureRuntime(createApplicationRuntime(), %s)} /> exactly once.",
 			functionName, strconv.Quote(capabilityID),
 		),
-		"Find controls by accessible role, label, or visible text. Perform a realistic interaction when the feature exposes one, then make at least one specific expect assertion about its observable UI result. Use waitFor for asynchronous behavior. Do not inspect source, internal state, class names, data attributes, or implementation details. Do not merely assert that rendering did not throw or that the component exists.",
+		"Exercise the required behaviors through accessible roles, labels, or visible text and assert every observable acceptance criterion. Use realistic interactions and waitFor for asynchronous behavior. Do not inspect source, internal state, class names, data attributes, or implementation details. Do not merely assert that rendering did not throw or that the component exists.",
 	}, "\n")
 }

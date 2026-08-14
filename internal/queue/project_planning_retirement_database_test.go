@@ -12,8 +12,8 @@ func TestPostgresProjectPlanningRetirementDropsOnlyEmptyObsoleteTables(t *testin
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		t.Context(), "Default planning config", "/srv/default-planning-config", "", "", nil,
-	)
+		t.Context(), "Default planning config", "/srv/default-planning-config", "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,8 +56,8 @@ func TestPostgresProjectPlanningRetirementRefusesNonDefaultConfigAtomically(t *t
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		t.Context(), "Configured planning state", "/srv/configured-planning-state", "", "", nil,
-	)
+		t.Context(), "Configured planning state", "/srv/configured-planning-state", "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +89,8 @@ func TestPostgresProjectPlanningRetirementRefusesRetainedStateAtomically(t *test
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		t.Context(), "Retained planning state", "/srv/retained-planning-state", "", "", nil,
-	)
+		t.Context(), "Retained planning state", "/srv/retained-planning-state", "")
+
 	if err != nil {
 		t.Fatal(err)
 	}

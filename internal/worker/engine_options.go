@@ -6,10 +6,32 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/station"
 )
 
 func validateWorkerOptions(opts Options) error {
+	if opts.ObjectiveAdvisoryMode != "" {
+		if err := opts.ObjectiveAdvisoryMode.Validate(); err != nil {
+			return err
+		}
+	}
+	mode := opts.ObjectiveAdvisoryMode
+	if mode == "" {
+		mode = objectiveadvisory.ModeOff
+	}
+	if mode != objectiveadvisory.ModeOff {
+		provider := strings.TrimSpace(opts.ObjectiveAdvisoryProvider)
+		if provider == "" {
+			return fmt.Errorf("objective advisory provider is required when mode is %q", mode)
+		}
+		if provider != llm.ExactPreparedProviderBackend {
+			return fmt.Errorf(
+				"objective advisory supports only exact provider %q, received %q",
+				llm.ExactPreparedProviderBackend, provider,
+			)
+		}
+	}
 	if opts.WorkerCount < 1 {
 		return fmt.Errorf("worker_count must be at least 1, received %d", opts.WorkerCount)
 	}
@@ -21,12 +43,6 @@ func validateWorkerOptions(opts Options) error {
 	}
 	if err := llm.ValidateInferenceContextTokens(opts.InferenceContextTokens); err != nil {
 		return fmt.Errorf("inference_context_tokens is invalid: %w", err)
-	}
-	if strings.TrimSpace(opts.EmbeddingProvider) == "" {
-		return fmt.Errorf("embedding_provider is required")
-	}
-	if strings.TrimSpace(opts.EmbeddingModel) == "" {
-		return fmt.Errorf("embedding_model is required")
 	}
 	for stationID, modelName := range opts.Models.Stations {
 		if err := stationID.Validate(); err != nil {
@@ -49,8 +65,12 @@ func validateWorkerOptions(opts Options) error {
 }
 
 func normalizeWorkerOptions(opts Options) Options {
+	if opts.ObjectiveAdvisoryMode == "" {
+		opts.ObjectiveAdvisoryMode = objectiveadvisory.ModeOff
+	}
 	opts.EmbeddingProvider = strings.TrimSpace(opts.EmbeddingProvider)
 	opts.EmbeddingModel = strings.TrimSpace(opts.EmbeddingModel)
+	opts.ObjectiveAdvisoryProvider = strings.TrimSpace(opts.ObjectiveAdvisoryProvider)
 
 	stationModels := make(map[station.ID]string, len(opts.Models.Stations))
 	for stationID, modelName := range opts.Models.Stations {

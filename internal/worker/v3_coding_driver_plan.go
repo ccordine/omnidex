@@ -31,11 +31,11 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	partitionModel, err := s.workerModel(station.CodingRequirementPartition)
+	requirementModel, err := s.workerModel(station.CodingRequirements)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	identityModel, err := s.workerModel(station.CodingProductIdentity)
+	workloadModel, err := s.workerModel(station.CodingWorkload)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -45,7 +45,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
 	specification, err := runDirectCodingApplicationInterpreter(
-		workerRuntime, partitionModel, surfaceModel, identityModel, artifactModel, redacted, identities,
+		workerRuntime, requirementModel, surfaceModel, artifactModel, redacted, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -53,6 +53,14 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err := validateDirectCodingRequirementCount(specification.Requirements); err != nil {
 		return directCodingAssembly{}, err
 	}
+	workloadInput := applicationWorkloadInput(specification)
+	workload, err := resolveDirectCodingApplicationWorkload(workerRuntime, workloadModel, workloadInput)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_workload_frozen", fmt.Sprintf(
+		"tasks=%d sha256=%s", len(workload.Tasks), workload.SHA256,
+	))
 	skills, err := s.bindRequirementSkills(specification.ProductQuote, specification.Requirements)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -64,17 +72,12 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	program, err := compileDirectCodingProgram(
-		filepath.Base(s.root), specification, identities, skills, capabilities,
+		filepath.Base(s.root), specification, identities, skills, workload, capabilities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	generated, err := s.generateProgramFragments(program)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	program.Generated = generated
-	if err := s.stageProgram(&program); err != nil {
+	if err := s.runDirectCodingApplicationTaskLifecycle(workloadInput, workload, &program); err != nil {
 		return directCodingAssembly{}, err
 	}
 	protectedPaths, err := snapshotDirectCodingProtectedPathList(s.root, program.ProtectedPaths)

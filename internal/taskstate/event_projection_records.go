@@ -113,7 +113,7 @@ func validateProjectedEntryCore(entry Entry, event Event) error {
 		entry.CreatedVersion != event.Version || entry.UpdatedVersion != event.Version {
 		return invalidEvent("new entry projection has invalid status, creator, content, disposition, or versions")
 	}
-	if err := requireExactText(entry.Content, "entry content"); err != nil {
+	if err := requireEntryContent(entry.Content, entry.Kind); err != nil {
 		return invalidEvent("%v", err)
 	}
 	if entry.Confidence != nil && (*entry.Confidence < 0 || *entry.Confidence > 1) {

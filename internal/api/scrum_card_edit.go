@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
-	"github.com/gryph/omnidex/internal/modelconfig"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 const maxScrumCardEditBodyBytes int64 = 256 * 1024
@@ -47,87 +47,79 @@ func editableScrumCardField[T any](value T) scrumCardEditableField[T] {
 }
 
 type scrumCardEditRequest struct {
-	Title       scrumCardEditableField[string]          `json:"title"`
-	Description scrumCardEditableField[string]          `json:"description"`
-	RefFiles    scrumCardEditableField[[]string]        `json:"ref_files"`
-	ModelConfig scrumCardEditableField[json.RawMessage] `json:"model_config"`
-	CardTicket  scrumCardEditableField[string]          `json:"card_ticket"`
-	CardPrompt  scrumCardEditableField[string]          `json:"card_prompt"`
-	RecipeID    scrumCardEditableField[string]          `json:"recipe_id"`
-	Recipe      scrumCardEditableField[json.RawMessage] `json:"recipe"`
-	Tags        scrumCardEditableField[[]string]        `json:"tags"`
+	ExpectedUpdatedAt requiredScrumCardRevision        `json:"expected_updated_at"`
+	Title             scrumCardEditableField[string]   `json:"title"`
+	Description       scrumCardEditableField[string]   `json:"description"`
+	RefFiles          scrumCardEditableField[[]string] `json:"ref_files"`
+	CardTicket        scrumCardEditableField[string]   `json:"card_ticket"`
+	CardPrompt        scrumCardEditableField[string]   `json:"card_prompt"`
+	Tags              scrumCardEditableField[[]string] `json:"tags"`
 }
 
 func (edit scrumCardEditRequest) hasEditableField() bool {
 	return edit.Title.Present || edit.Description.Present ||
-		edit.RefFiles.Present || edit.ModelConfig.Present || edit.CardTicket.Present ||
-		edit.CardPrompt.Present || edit.RecipeID.Present || edit.Recipe.Present ||
-		edit.Tags.Present
+		edit.RefFiles.Present || edit.CardTicket.Present ||
+		edit.CardPrompt.Present || edit.Tags.Present
 }
 
 func (edit scrumCardEditRequest) validate() error {
+	if !edit.ExpectedUpdatedAt.Present {
+		return fmt.Errorf("Scrum card editable patch expected_updated_at is required")
+	}
 	if edit.Title.Present && strings.TrimSpace(edit.Title.Value) == "" {
 		return fmt.Errorf("editable Scrum card title must not be blank")
-	}
-	if edit.ModelConfig.Present {
-		if _, err := modelconfig.FromJSON(edit.ModelConfig.Value); err != nil {
-			return fmt.Errorf("editable Scrum card model_config is invalid: %w", err)
-		}
-	}
-	if edit.Recipe.Present {
-		var object map[string]json.RawMessage
-		decoder := json.NewDecoder(bytes.NewReader(edit.Recipe.Value))
-		if err := decoder.Decode(&object); err != nil {
-			return fmt.Errorf("editable Scrum card recipe must be a JSON object: %w", err)
-		}
-		if err := requireJSONEOF(decoder, "editable Scrum card recipe"); err != nil {
-			return err
-		}
-		if object == nil {
-			return fmt.Errorf("editable Scrum card recipe must be a JSON object")
-		}
 	}
 	return nil
 }
 
-func (edit scrumCardEditRequest) repositoryPatch() (map[string]any, error) {
-	patch := make(map[string]any, 11)
+func (edit scrumCardEditRequest) repositoryPatch() queue.ScrumCardRevisionPatch {
+	var patch queue.ScrumCardRevisionPatch
 	if edit.Title.Present {
-		patch["title"] = strings.TrimSpace(edit.Title.Value)
+		value := strings.TrimSpace(edit.Title.Value)
+		patch.Title = &value
 	}
 	if edit.Description.Present {
-		patch["description"] = edit.Description.Value
+		value := edit.Description.Value
+		patch.Description = &value
 	}
 	if edit.RefFiles.Present {
-		encoded, err := json.Marshal(edit.RefFiles.Value)
-		if err != nil {
-			return nil, fmt.Errorf("encode editable Scrum card reference files: %w", err)
-		}
-		patch["ref_files"] = json.RawMessage(encoded)
-	}
-	if edit.ModelConfig.Present {
-		patch["model_config"] = edit.ModelConfig.Value
+		value := append([]string(nil), edit.RefFiles.Value...)
+		patch.RefFiles = &value
 	}
 	if edit.CardTicket.Present {
-		patch["card_ticket"] = edit.CardTicket.Value
+		value := edit.CardTicket.Value
+		patch.CardTicket = &value
 	}
 	if edit.CardPrompt.Present {
-		patch["card_prompt"] = edit.CardPrompt.Value
-	}
-	if edit.RecipeID.Present {
-		patch["recipe_id"] = strings.TrimSpace(edit.RecipeID.Value)
-	}
-	if edit.Recipe.Present {
-		patch["recipe"] = edit.Recipe.Value
+		value := edit.CardPrompt.Value
+		patch.CardPrompt = &value
 	}
 	if edit.Tags.Present {
-		encoded, err := json.Marshal(edit.Tags.Value)
-		if err != nil {
-			return nil, fmt.Errorf("encode editable Scrum card tags: %w", err)
-		}
-		patch["tags"] = json.RawMessage(encoded)
+		value := normalizeScrumCardTags(edit.Tags.Value)
+		patch.Tags = &value
 	}
-	return patch, nil
+	return patch
+}
+
+func normalizeScrumCardTags(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		tag := canonicalScrumTag(value)
+		if tag == "" {
+			continue
+		}
+		if _, exists := seen[tag]; exists {
+			continue
+		}
+		seen[tag] = struct{}{}
+		normalized = append(normalized, tag)
+	}
+	return normalized
+}
+
+func canonicalScrumTag(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(value), "-"))
 }
 
 type scrumCardEditBodyError struct {

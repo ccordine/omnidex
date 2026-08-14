@@ -1,6 +1,6 @@
 FROM golang:1.24.1-alpine AS build
 
-RUN apk add --no-cache build-base nodejs npm
+RUN apk add --no-cache bash build-base nodejs npm
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

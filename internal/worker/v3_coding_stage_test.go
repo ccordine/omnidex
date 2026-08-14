@@ -77,12 +77,36 @@ func TestRuntimeAcceptanceFailureTargetsImplementationNotTheTest(t *testing.T) {
 	}}
 	diagnostic, err := routeDirectCodingAcceptanceFailure(blueprint, &directCodingStageDiagnostic{
 		BlockID: "feature.acceptance", Message: "expected working, received idle", Output: "failure",
+		FailureClass: directCodingStageFailureVitestBehavior,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if diagnostic.BlockID != "feature.render" {
 		t.Fatalf("runtime acceptance failure targeted %s", diagnostic.BlockID)
+	}
+}
+
+func TestUnclassifiedAcceptanceFailureStaysWithAcceptanceBlock(t *testing.T) {
+	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
+		{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+			ID: "feature.render", Signature: "function Feature(): ReactElement",
+			Contract: "Render a usable feature.", API: "function Feature(): ReactElement",
+		}}},
+		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+			ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
+			Contract: "Verify observable feature behavior.", API: "async function Verify(): Promise<void>",
+			DependsOn: []string{"feature.render"}, FailureTarget: "feature.render",
+		}}},
+	}}
+	diagnostic, err := routeDirectCodingAcceptanceFailure(blueprint, &directCodingStageDiagnostic{
+		BlockID: "feature.acceptance", Message: "acceptance declaration failed", Output: "failure",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnostic.BlockID != "feature.acceptance" {
+		t.Fatalf("unclassified acceptance failure targeted %s", diagnostic.BlockID)
 	}
 }
 

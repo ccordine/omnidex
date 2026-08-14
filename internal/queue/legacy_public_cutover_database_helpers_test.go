@@ -95,6 +95,10 @@ func seedLegacyPublicRows(t *testing.T, pool *pgxpool.Pool) {
 		 VALUES (41,'','instant');
 		INSERT INTO public.jobs(id,instruction,pipeline,project_id,status)
 		 VALUES (51,'preserve exact row','coding',41,'pending');
+		INSERT INTO public.jobs(id,instruction,pipeline,project_id,status) VALUES
+		 (52,'preserve assistant history','assistant',41,'completed'),
+		 (53,'preserve story history','story',41,'failed'),
+		 (54,'preserve agent history','agent',41,'canceled');
 		SELECT setval('public.jobs_id_seq',101,true);
 		INSERT INTO public.job_steps(id,job_id,action,sort_index,status)
 		 VALUES (61,51,'implementation',0,'pending');

@@ -87,6 +87,13 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	artifactCandidateSelectionStationCount := 0
 	knownArtifactTruthStationCount := 0
 	projectPlanningRetirementCount := 0
+	executablePipelineAuthorityCount := 0
+	exactLifecycleFeedbackAuthorityCount := 0
+	scrumChannelMessageRelationCount := 0
+	scrumChannelOperationReceiptsCount := 0
+	retiredExecutionAuthorityCount := 0
+	portableRendererV2Count := 0
+	portableRendererV3Count := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -157,9 +164,30 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == "086_project_planning_retirement.sql" {
 			projectPlanningRetirementCount++
 		}
+		if entry.name == "087_executable_pipeline_authority.sql" {
+			executablePipelineAuthorityCount++
+		}
+		if entry.name == "088_exact_lifecycle_feedback_authority.sql" {
+			exactLifecycleFeedbackAuthorityCount++
+		}
+		if entry.name == "089_scrum_channel_message_relation.sql" {
+			scrumChannelMessageRelationCount++
+		}
+		if entry.name == "090_scrum_channel_operation_receipts.sql" {
+			scrumChannelOperationReceiptsCount++
+		}
+		if entry.name == "091_retired_execution_authority.sql" {
+			retiredExecutionAuthorityCount++
+		}
+		if entry.name == "092_portable_renderer_v2.sql" {
+			portableRendererV2Count++
+		}
+		if entry.name == "093_portable_renderer_v3.sql" {
+			portableRendererV3Count++
+		}
 	}
-	if len(bundle.entries) != 137 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 137/%d",
+	if len(bundle.entries) != 144 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 144/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -216,5 +244,18 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	}
 	if projectPlanningRetirementCount != 1 {
 		t.Fatalf("checked project-planning retirement migration count=%d want 1", projectPlanningRetirementCount)
+	}
+	if executablePipelineAuthorityCount != 1 {
+		t.Fatalf("checked executable-pipeline authority migration count=%d want 1", executablePipelineAuthorityCount)
+	}
+	if exactLifecycleFeedbackAuthorityCount != 1 {
+		t.Fatalf("checked exact-lifecycle-feedback migration count=%d want 1", exactLifecycleFeedbackAuthorityCount)
+	}
+	if scrumChannelMessageRelationCount != 1 || scrumChannelOperationReceiptsCount != 1 ||
+		retiredExecutionAuthorityCount != 1 || portableRendererV2Count != 1 ||
+		portableRendererV3Count != 1 {
+		t.Fatalf("checked migrations 089/090/091/092/093 counts=%d/%d/%d/%d/%d want all one",
+			scrumChannelMessageRelationCount, scrumChannelOperationReceiptsCount,
+			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count)
 	}
 }

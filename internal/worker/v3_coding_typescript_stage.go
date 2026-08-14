@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/station"
 )
 
 const directCodingTypeScriptInstallTimeout = 3 * time.Minute
@@ -22,92 +21,6 @@ var (
 	directCodingTypeScriptColonIssuePattern = regexp.MustCompile(`(?m)(?:^|[ \t])((?:\./)?[A-Za-z0-9_./-]+\.tsx?):([0-9]+):([0-9]+)`)
 	directCodingTypeScriptParenIssuePattern = regexp.MustCompile(`(?m)(?:^|[ \t])((?:\./)?[A-Za-z0-9_./-]+\.tsx?)\(([0-9]+),([0-9]+)\)`)
 )
-
-func (s *directCodingSession) stageTypeScriptProgram(program *directCodingProgram) error {
-	root, err := os.MkdirTemp("", "omnidex-charmander-typescript-stage-")
-	if err != nil {
-		return fmt.Errorf("create isolated TypeScript coding stage: %w", err)
-	}
-	defer os.RemoveAll(root)
-	if err := writeDirectCodingTypeScriptStage(root, *program); err != nil {
-		return err
-	}
-	if output, err := runDirectCodingStageCommand(
-		s.runtime.ctx, root, directCodingTypeScriptInstallTimeout, "npm", directCodingNPMInstallArgs()...,
-	); err != nil {
-		return fmt.Errorf("staged TypeScript dependency installation failed: %w\n%s", err, trimForBudget(output, 12_000))
-	}
-
-	repeated := make(map[string]int)
-	for correction := 0; correction <= maxDirectCodingStageCorrections; correction++ {
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_started", fmt.Sprintf(
-			"attempt=%d generated_blocks=%d", correction+1, len(program.Generated),
-		))
-		if err := writeDirectCodingTypeScriptStage(root, *program); err != nil {
-			return err
-		}
-		diagnostic, err := verifyDirectCodingTypeScriptStage(s.runtime.ctx, root, *program)
-		if err != nil {
-			return err
-		}
-		if diagnostic == nil {
-			s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_passed", fmt.Sprintf(
-				"attempt=%d generated_blocks=%d", correction+1, len(program.Generated),
-			))
-			return nil
-		}
-		if correction == maxDirectCodingStageCorrections {
-			return fmt.Errorf("staged TypeScript program exhausted %d node corrections: %s", maxDirectCodingStageCorrections, diagnostic.Message)
-		}
-		target, err := directCodingTypeScriptCorrectionBlock(program.TypeScript, diagnostic.BlockID)
-		if err != nil {
-			return fmt.Errorf("route staged TypeScript diagnostic: %w: %s", err, diagnostic.Message)
-		}
-		fingerprint := target.ID + "\x00" + firstDirectCodingDiagnosticLine(diagnostic.Message)
-		repeated[fingerprint]++
-		if repeated[fingerprint] > maxDirectCodingStageRepeatedCorrections {
-			return fmt.Errorf("block %s repeated the same staged failure %d times: %s", target.ID, maxDirectCodingStageRepeatedCorrections, diagnostic.Message)
-		}
-		declarations, err := directCodingTypeScriptAcceptedDeclarations(program.TypeScript, program.Generated)
-		if err != nil {
-			return err
-		}
-		available, err := directCodingTypeScriptAvailableDeclarations(target, declarations)
-		if err != nil {
-			return err
-		}
-		modelName, err := s.workerModel(station.CodingFragmentCorrection)
-		if err != nil {
-			return err
-		}
-		failure := directCodingTypeScriptModelFailure(diagnostic.Output)
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_fragment_correction_started", fmt.Sprintf(
-			"block=%s correction=%d exact_failure=%s", target.ID, correction+1,
-			safeLine(trimForBudget(failure, 500), "unknown"),
-		))
-		workerRuntime := directCodingWorkerRuntime(s)
-		workerRuntime.CorrectionModel = modelName
-		source, err := runDirectCodingTypeScriptFragmentWorker(
-			workerRuntime, modelName,
-			directCodingTypeScriptFragmentJob{
-				block: target, tsx: directCodingTypeScriptBlockIsTSX(program.TypeScript, target.ID),
-				available: available, current: program.Generated[target.ID],
-				failure: failure,
-			},
-		)
-		if err != nil {
-			return fmt.Errorf(
-				"correct block %s for staged failure %s: %w",
-				target.ID, safeLine(firstDirectCodingDiagnosticLine(diagnostic.Message), "unknown"), err,
-			)
-		}
-		if source == program.Generated[target.ID] {
-			return fmt.Errorf("block %s returned an unchanged declaration for staged failure: %s", target.ID, diagnostic.Message)
-		}
-		program.Generated[target.ID] = source
-	}
-	return fmt.Errorf("staged TypeScript program correction loop ended without a result")
-}
 
 func writeDirectCodingTypeScriptStage(root string, program directCodingProgram) error {
 	assembly, err := directCodingAssemblyFromProgram(program)
@@ -131,18 +44,46 @@ func verifyDirectCodingTypeScriptStage(
 	root string,
 	program directCodingProgram,
 ) (*directCodingStageDiagnostic, error) {
+	return verifyDirectCodingTypeScriptStageCommands(parent, root, program, directCodingFullStageCommands())
+}
+
+func verifyDirectCodingTypeScriptStageCommands(
+	parent context.Context,
+	root string,
+	program directCodingProgram,
+	commands [][]string,
+) (*directCodingStageDiagnostic, error) {
 	documents, err := composeDirectCodingTypeScriptProgram(program)
 	if err != nil {
 		return nil, err
 	}
-	commands := [][]string{{"test"}, {"run", "typecheck"}, {"run", "build"}}
 	for _, args := range commands {
+		if len(args) == 0 {
+			return nil, fmt.Errorf("staged TypeScript command is empty")
+		}
+		structuredVitest := directCodingStageCommandUsesVitestReport(args)
+		if structuredVitest {
+			if err := clearDirectCodingVitestReport(root); err != nil {
+				return nil, err
+			}
+		}
 		output, commandErr := runDirectCodingStageCommand(parent, root, directCodingStageTimeout, "npm", args...)
 		if commandErr == nil {
 			continue
 		}
-		if diagnostic, mapped := mapDirectCodingTypeScriptStageDiagnostic(documents, output); mapped {
-			if args[0] == "test" {
+		diagnosticOutput := output
+		failureClass := directCodingStageFailureUnclassified
+		if structuredVitest {
+			receipt, receiptErr := readDirectCodingVitestFailureReceipt(root)
+			if receiptErr != nil {
+				return nil, receiptErr
+			}
+			failureClass = receipt.FailureClass
+			diagnosticOutput = strings.TrimSpace(receipt.Output + "\n" + output)
+		}
+		if diagnostic, mapped := mapDirectCodingTypeScriptStageDiagnostic(documents, diagnosticOutput); mapped {
+			diagnostic.FailureClass = failureClass
+			if structuredVitest {
 				diagnostic, err = routeDirectCodingAcceptanceFailure(program.TypeScript, diagnostic)
 				if err != nil {
 					return nil, err
@@ -158,6 +99,10 @@ func verifyDirectCodingTypeScriptStage(
 	return nil, nil
 }
 
+func directCodingFullStageCommands() [][]string {
+	return [][]string{{"run", "typecheck"}, directCodingStructuredVitestCommand(""), {"run", "build"}}
+}
+
 func routeDirectCodingAcceptanceFailure(
 	blueprint assemblyline.TypeScriptBlueprint,
 	diagnostic *directCodingStageDiagnostic,
@@ -169,7 +114,7 @@ func routeDirectCodingAcceptanceFailure(
 	if !exists {
 		return nil, fmt.Errorf("route acceptance failure: unknown originating block %s", diagnostic.BlockID)
 	}
-	if block.FailureTarget == "" {
+	if block.FailureTarget == "" || diagnostic.FailureClass != directCodingStageFailureVitestBehavior {
 		return diagnostic, nil
 	}
 	if _, exists := directCodingTypeScriptBlueprintBlock(blueprint, block.FailureTarget); !exists {

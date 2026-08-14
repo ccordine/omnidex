@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestProductionFrontendComponentRenderersAreServerOwned(t *testing.T) {
@@ -69,10 +70,23 @@ func TestServerRenderersPreserveBoundedInteractionInputs(t *testing.T) {
 	if !strings.Contains(modal, `<option value="ready" selected>`) || !strings.Contains(modal, `data-action="submit->scrum#createCard"`) {
 		t.Fatalf("create-card component lacks its bounded column or typed interaction: %s", modal)
 	}
-	fields := []map[string]any{{"key": "agent_system", "label": "Agent", "value": "omnidex", "options": []string{"omnidex", "codex"}}}
-	settings := uiProjectConfigSection("Agent overrides", "project-agent", "projects#saveAgentConfig", "projects#clearAgentConfig", fields, map[string]string{"agent_system": "codex"})
-	if !strings.Contains(settings, `<option value="codex" selected>`) || strings.Contains(settings, `<option value="omnidex" selected>`) {
+	fields := []uiProjectModelField{{
+		Key: "coding_fragment_model", Label: "Coding fragment model",
+		Value: "qwen3-coder:30b", Options: []string{"qwen3-coder:30b", "qwen2.5-coder:14b"},
+	}}
+	settings := uiProjectConfigSection(
+		7, time.Date(2026, 8, 13, 12, 0, 0, 123456000, time.UTC),
+		"Model overrides", "project-model", "projects#saveModelConfig", "projects#clearModelConfig",
+		fields, map[string]string{"coding_fragment_model": "qwen2.5-coder:14b"},
+	)
+	if !strings.Contains(settings, `<option value="qwen2.5-coder:14b" selected>`) || strings.Contains(settings, `<option value="qwen3-coder:30b" selected>`) {
 		t.Fatalf("project component did not distinguish explicit override from inherited value: %s", settings)
+	}
+	if strings.Count(settings, `data-project-id="7"`) != 2 {
+		t.Fatalf("project configuration mutation controls lack exact server project authority: %s", settings)
+	}
+	if strings.Count(settings, `data-project-updated-at="2026-08-13T12:00:00.123456Z"`) != 2 {
+		t.Fatalf("project configuration controls lack exact server revision authority: %s", settings)
 	}
 }
 
@@ -174,11 +188,20 @@ func TestRecyclrClientAcceptsServerBundlesOnly(t *testing.T) {
 func TestGrowingOperationalCatalogsHaveNoUnboundedProductionLoader(t *testing.T) {
 	t.Parallel()
 	checks := map[string][]string{
-		"../queue/projects.go":             {"ListScrumCards("},
-		"../queue/data_source_channels.go": {"ListDataSourceChannelMessages("},
-		"../ollama/client.go":              {"ListModels("},
-		"../ollama/model_page.go":          {"json.Unmarshal("},
-		"../omni/recipe.go":                {"func LoadRecipes(", "os.ReadDir(root)"},
+		"../queue/projects.go":                  {"ListScrumCards("},
+		"scrum_card_pages.go":                   {"loadAllScrumCards", "for page.HasMore"},
+		"scrum_global_autowork.go":              {"ListProjects(", "sort.SliceStable(candidates"},
+		"scrum_reorder.go":                      {"placeScrumCard(", "board.Cards"},
+		"../queue/data_source_channels.go":      {"ListDataSourceChannelMessages("},
+		"../ollama/client.go":                   {"ListModels("},
+		"../ollama/model_page.go":               {"json.Unmarshal("},
+		"../queue/scrum_card_messages.go":       {"jsonb_array_elements"},
+		"scrum_channel_chat.go":                 {"displayScrumChannelMessages", "hydrateCardChannelChat", "sortScrumChatChronological"},
+		"scrum_channel_presentation.go":         {"displayScrumChannelMessages", "hydrateCardChannelChat", "sortScrumChatChronological"},
+		"scrum_modal_context.go":                {"refreshScrumPlayQueue("},
+		"scrum_service.go":                      {"refreshScrumPlayQueue("},
+		"web/src/lib/scrum_api.ts":              {"fetchScrumFiles", "fetchScrumCard(", "fetchScrumCardPayload"},
+		"web/src/react/card-modal/FilesTab.tsx": {"fetchScrumCardModal"},
 	}
 	for path, forbidden := range checks {
 		raw, err := os.ReadFile(path)
@@ -228,4 +251,46 @@ func TestReactCardItemsCannotOwnDurableRowsOrIdentities(t *testing.T) {
 			t.Errorf("generic Scrum card patch still grants %s authority", forbidden)
 		}
 	}
+}
+
+func TestScrumModalTabLoadersDoNotCrossFetchOperationalState(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("scrum_modal_context.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	checks := map[string]struct {
+		required  string
+		forbidden []string
+	}{
+		"populateScrumModalChannelContext": {"scrumChannelPage(", []string{"resolvedModelsForProject", "LoadRecipePage", "populateScrumModalFileContext"}},
+	}
+	for name, check := range checks {
+		body := exactSourceFunction(t, source, name)
+		if !strings.Contains(body, check.required) {
+			t.Errorf("%s does not load its exact typed authority %q", name, check.required)
+		}
+		for _, forbidden := range check.forbidden {
+			if strings.Contains(body, forbidden) {
+				t.Errorf("%s cross-fetches unrelated modal authority %q", name, forbidden)
+			}
+		}
+	}
+}
+
+func exactSourceFunction(t *testing.T, source, name string) string {
+	t.Helper()
+	start := strings.Index(source, "func "+name+"(")
+	if start < 0 {
+		start = strings.Index(source, "func (s *Server) "+name+"(")
+	}
+	if start < 0 {
+		t.Fatalf("function %s is missing", name)
+	}
+	end := strings.Index(source[start+1:], "\nfunc ")
+	if end < 0 {
+		return source[start:]
+	}
+	return source[start : start+1+end]
 }

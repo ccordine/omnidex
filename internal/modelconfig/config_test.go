@@ -10,15 +10,17 @@ import (
 
 func TestMergePriority(t *testing.T) {
 	env := Config{"conversation_response_model": "env-response", "coding_fragment_model": "env-fragment"}
-	project := Config{"conversation_response_model": "project-response"}
-	card := Config{"coding_fragment_model": "card-fragment"}
+	project := Config{
+		"conversation_response_model": "project-response",
+		"coding_fragment_model":       "project-fragment",
+	}
 
-	merged := Merge(env, project, card)
+	merged := Merge(env, project)
 	if merged.Get("conversation_response_model") != "project-response" {
 		t.Fatalf("expected project response route, got %q", merged.Get("conversation_response_model"))
 	}
-	if merged.Get("coding_fragment_model") != "card-fragment" {
-		t.Fatalf("expected card fragment route, got %q", merged.Get("coding_fragment_model"))
+	if merged.Get("coding_fragment_model") != "project-fragment" {
+		t.Fatalf("expected project fragment route, got %q", merged.Get("coding_fragment_model"))
 	}
 }
 
@@ -42,6 +44,8 @@ func TestFromJSONRejectsMalformedAndUnknownValues(t *testing.T) {
 		json.RawMessage(`{"thinking_model":"x"}`),
 		json.RawMessage(`{"evaluator_model":"x"}`),
 		json.RawMessage(`{"file_worker_model":"x"}`),
+		json.RawMessage(`{"coding_product_identity_model":"x"}`),
+		json.RawMessage(`{"coding_requirement_partition_model":"x"}`),
 		json.RawMessage(`{"coding_requirement_adviser_model":"x"}`),
 		json.RawMessage(`{"coding_requirement_split_model":"x"}`),
 		json.RawMessage(`{"default_model":"x"}`),
@@ -68,7 +72,7 @@ func TestValidateEnvironmentValuesRejectsRemovedRequirementRoutes(t *testing.T) 
 			t.Fatalf("key=%s error=%v", key, err)
 		}
 	}
-	if err := ValidateEnvironmentValues(map[string]string{"OMNI_CODING_REQUIREMENT_PARTITION_MODEL": "stable"}); err != nil {
+	if err := ValidateEnvironmentValues(map[string]string{"OMNI_CODING_REQUIREMENTS_MODEL": "stable"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -87,6 +91,7 @@ func TestModelNamesReturnsEverySelectedProviderModel(t *testing.T) {
 
 func TestApplyExactStationRoutingFields(t *testing.T) {
 	applied := Apply(Routing{}, Config{
+		"objective_advisory_model":                "qwen3:8b-advisory",
 		"conversation_objective_kind_model":       "qwen3:4b-kind",
 		"conversation_response_model":             "qwen3:8b-response",
 		"grounded_answer_model":                   "qwen3:8b-grounded",
@@ -96,14 +101,17 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 		"web_grounded_synthesis_correction_model": "qwen3:8b-synthesis",
 		"web_claim_evidence_review_model":         "qwen3:8b-review",
 		"coding_surface_model":                    "qwen3:4b-surface",
-		"coding_product_identity_model":           "qwen2.5-coder:14b-identity",
-		"coding_requirement_partition_model":      "qwen2.5-coder:7b-partition",
+		"coding_requirements_model":                "qwen2.5-coder:7b-requirements",
+		"coding_workload_model":                    "qwen3.5:27b-workload",
 		"coding_artifact_handling_model":          "qwen2.5:3b-artifact",
 		"coding_capability_relation_model":        "qwen3:4b-relation",
 		"coding_skill_selection_model":            "qwen3:4b-skill-select",
 		"coding_fragment_model":                   "qwen3-coder:30b-fragment",
 		"coding_fragment_correction_model":        "qwen2.5-coder:14b-correction",
 	})
+	if got := applied.Stations[station.ObjectiveAdvisory]; got != "qwen3:8b-advisory" {
+		t.Fatalf("objective advisory model=%q", got)
+	}
 	if got := applied.Stations[station.ConversationObjectiveKind]; got != "qwen3:4b-kind" {
 		t.Fatalf("conversation kind model=%q", got)
 	}
@@ -131,11 +139,11 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 	if got := applied.Stations[station.CodingSurface]; got != "qwen3:4b-surface" {
 		t.Fatalf("coding surface model=%q", got)
 	}
-	if got := applied.Stations[station.CodingProductIdentity]; got != "qwen2.5-coder:14b-identity" {
-		t.Fatalf("coding product identity model=%q", got)
+	if got := applied.Stations[station.CodingRequirements]; got != "qwen2.5-coder:7b-requirements" {
+		t.Fatalf("coding requirements model=%q", got)
 	}
-	if got := applied.Stations[station.CodingRequirementPartition]; got != "qwen2.5-coder:7b-partition" {
-		t.Fatalf("coding requirement partition model=%q", got)
+	if got := applied.Stations[station.CodingWorkload]; got != "qwen3.5:27b-workload" {
+		t.Fatalf("coding workload model=%q", got)
 	}
 	if got := applied.Stations[station.CodingArtifactHandling]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q", got)

@@ -28,7 +28,10 @@ func TestCodingClientUsesOnlyExactCodingTransport(t *testing.T) {
 			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
 			}
-			if payload.Instruction != exact || payload.Pipeline != model.PipelineCoding || payload.Metadata["key"] != "value" {
+			if payload.Instruction != exact || payload.Pipeline != model.PipelineCoding ||
+				payload.Metadata["client_cwd"] != "/srv/work" ||
+				payload.Metadata["host_env_cwd"] != "/srv/work" ||
+				payload.Metadata["session_id"] != "session-1" {
 				t.Fatalf("payload=%+v", payload)
 			}
 			response, err := json.Marshal(map[string]any{"job": model.Job{
@@ -44,7 +47,7 @@ func TestCodingClientUsesOnlyExactCodingTransport(t *testing.T) {
 			}, nil
 		})},
 	}
-	job, err := client.EnqueueCoding(context.Background(), exact, map[string]any{"key": "value"})
+	job, err := client.EnqueueCoding(context.Background(), exact, "/srv/work", "session-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +59,10 @@ func TestCodingClientUsesOnlyExactCodingTransport(t *testing.T) {
 func TestCodingClientRejectsBlankInstructionBeforeHTTP(t *testing.T) {
 	t.Parallel()
 	client := &Client{httpClient: http.DefaultClient}
-	if _, err := client.EnqueueCoding(context.Background(), " \n\t ", nil); err == nil {
+	if _, err := client.EnqueueCoding(context.Background(), " \n\t ", "/srv/work", ""); err == nil {
 		t.Fatal("blank coding instruction was accepted")
+	}
+	if _, err := client.EnqueueCoding(context.Background(), "build it", " /srv/work ", ""); err == nil {
+		t.Fatal("noncanonical coding workspace was accepted")
 	}
 }

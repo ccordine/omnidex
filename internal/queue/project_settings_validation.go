@@ -10,6 +10,7 @@ var removedProjectSettingKeys = []string{
 	"planning_chat_config",
 	"planning_draft_queue",
 	"scrum_auto_review",
+	"agent_config",
 }
 
 func validateProjectSettings(settings json.RawMessage) error {

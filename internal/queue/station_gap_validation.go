@@ -52,7 +52,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		Prompt         string          `json:"prompt"`
 		Renderer       string          `json:"renderer"`
 		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV1, schema})
+	}{prompt, assemblyline.PortableRendererV3, schema})
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("canonicalize station gap projection: %w", err)
 	}
@@ -67,7 +67,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		WorkID: record.Job.ID, WorkKind: string(record.Job.Kind),
 		PortablePayload: string(record.Job.Payload), PortablePayloadSHA256: stationGapSHA256(string(record.Job.Payload)),
 		PortableEnvelope: string(portableEnvelope), PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
-		RendererVersion: assemblyline.PortableRendererV1, Prompt: prompt,
+		RendererVersion: assemblyline.PortableRendererV3, Prompt: prompt,
 		ResponseSchema: append(json.RawMessage(nil), schema...), ProjectionEnvelope: string(projection),
 		ProjectionSHA256: stationGapSHA256(string(projection)), ContextTokens: record.ContextTokens,
 		MaxOutputTokens: record.MaxOutputTokens,

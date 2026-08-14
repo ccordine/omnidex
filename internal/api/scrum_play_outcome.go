@@ -28,3 +28,13 @@ func (s *Server) resolveScrumPlayOutcomeForCard(_ context.Context, job model.Job
 func (s *Server) resolveScrumPlayOutcome(ctx context.Context, job model.JobDetails) (ScrumManagerOutcome, error) {
 	return s.resolveScrumPlayOutcomeForCard(ctx, job, ScrumCard{})
 }
+
+func scrumSyncTerminalPlayOutput(card ScrumCard, job model.JobDetails) (ScrumCard, error) {
+	updated := card
+	if synced, ok, err := syncRunningJobChannelChat(updated, job); err != nil {
+		return card, err
+	} else if ok {
+		updated = synced
+	}
+	return updated, nil
+}

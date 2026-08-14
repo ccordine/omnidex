@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -76,11 +75,7 @@ func runStatus(apiClient *client.Client, args []string, configuredCoreURL string
 
 	printCoreStatusLine(coreReport)
 	printQueueStatusLine(queueReport)
-	if providerErr != nil {
-		fmt.Printf("llm: invalid error=%s\n", providerErr)
-	} else {
-		fmt.Printf("llm: configured provider=%s\n", llmProvider)
-	}
+	printLLMStatusLine(llmProvider, providerErr)
 	printOllamaStatusLine(ollamaReport)
 	printWebStatusLine(webReport, true)
 

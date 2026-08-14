@@ -1,0 +1,12 @@
+./change_contract.go
+./desired_artifact_graph.go
+./facts.go
+./facts_validation.go
+./file_identity.go
+./generated_go.go
+./go_package.go
+./paths.go
+./query.go
+./snapshot.go
+./source_span.go
+./types.go

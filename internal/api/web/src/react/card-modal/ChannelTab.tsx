@@ -28,14 +28,14 @@ function mergeMessages(current: ScrumChatMessage[], incoming: ScrumChatMessage[]
   return limit && merged.length > limit ? merged.slice(-limit) : merged;
 }
 
-export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: CardModalChildProps) {
+export function ChannelTab({ context, projectID, mutationBusy, runMutation, onCardUpdated }: CardModalChildProps) {
   const card = context.card;
-  const agentWorking = card.play_state === "running" || card.play_state === "queued";
+  const assemblyLineWorking = card.play_state === "running" || card.play_state === "queued";
   const [message, setMessage] = useState("");
-  const [recentMessages, setRecentMessages] = useState<ScrumChatMessage[]>(card.chat ?? []);
+  const [recentMessages, setRecentMessages] = useState<ScrumChatMessage[]>(card.chat);
   const [earlierMessages, setEarlierMessages] = useState<ScrumChatMessage[]>([]);
-  const [beforeCursor, setBeforeCursor] = useState(context.channel_before_cursor ?? "");
-  const [hasMore, setHasMore] = useState(Boolean(context.channel_has_more));
+  const [beforeCursor, setBeforeCursor] = useState(context.channel_before_cursor);
+  const [hasMore, setHasMore] = useState(context.channel_has_more);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [hasUnseenActivity, setHasUnseenActivity] = useState(false);
@@ -50,14 +50,26 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
 
   useEffect(() => {
     if (activeCardIDRef.current === card.id) {
-      setRecentMessages((current) => mergeMessages(current, card.chat ?? [], MAX_RECENT_MESSAGES));
+      const authoritativeWindow = card.chat;
+      if (authoritativeWindow.length > MAX_RECENT_MESSAGES) {
+        setHistoryError(`Authoritative channel window exceeds the ${MAX_RECENT_MESSAGES}-message browser bound.`);
+        return;
+      }
+	  // The server cursor describes the boundary immediately before this exact
+	  // recent window. Older pages loaded against a superseded boundary cannot
+	  // be retained without creating a gap or overlap in durable history.
+	  setEarlierMessages([]);
+	  historyAnchorRef.current = null;
+      setRecentMessages(authoritativeWindow);
+	  setBeforeCursor(card.channel_before_cursor);
+	  setHasMore(card.channel_has_more);
       return;
     }
     activeCardIDRef.current = card.id;
-    setRecentMessages(card.chat ?? []);
+    setRecentMessages(card.chat);
     setEarlierMessages([]);
-    setBeforeCursor(context.channel_before_cursor ?? "");
-    setHasMore(Boolean(context.channel_has_more));
+    setBeforeCursor(context.channel_before_cursor);
+    setHasMore(context.channel_has_more);
     setHistoryError("");
     setHasUnseenActivity(false);
     pinnedToBottomRef.current = true;
@@ -84,10 +96,10 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
   return (
     <Panel
       title="Card Channel"
-      aside={agentWorking ? (
+      aside={assemblyLineWorking ? (
         <span className="inline-flex items-center gap-2 text-xs font-medium text-cyan-200" role="status" aria-live="polite">
           <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-300" aria-hidden="true" />
-          Agent working
+          Assembly line working
         </span>
       ) : <span className="text-xs text-zinc-500">{card.play_state || "idle"}</span>}
     >
@@ -107,7 +119,7 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
             <div className="flex justify-center pb-1">
               <button
                 type="button"
-                disabled={loadingEarlier}
+                disabled={mutationBusy || loadingEarlier}
                 onClick={async () => {
                   if (loadingEarlier || !beforeCursor) return;
                   const stream = streamRef.current;
@@ -117,7 +129,7 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
                   setHistoryError("");
                   try {
                     const page = await fetchScrumChannelPage(card.id, beforeCursor, projectID);
-                    setEarlierMessages((current) => [...page.messages, ...current]);
+                    setEarlierMessages((current) => mergeMessages(page.messages, current));
                     setBeforeCursor(page.before_cursor);
                     setHasMore(page.has_more);
                   } catch (error) {
@@ -143,6 +155,7 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
           {hasUnseenActivity ? (
             <button
               type="button"
+              disabled={mutationBusy}
               onClick={() => {
                 const stream = streamRef.current;
                 if (!stream) throw new Error("Card channel scroll container is unavailable.");
@@ -158,8 +171,8 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
         </div>
         <form
           onSubmit={submitForm(async () => {
-            const submittedMessage = message.trim();
-            if (!submittedMessage) return;
+            const submittedMessage = message;
+            if (!submittedMessage.trim()) return;
             const attempt = channelOperationAttemptRef.current;
             if (!attempt) throw new Error("Card channel lifecycle attempt is unavailable.");
             const attemptKey = { scope: card.id, action: "chat", content: submittedMessage };
@@ -171,7 +184,7 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
             if (!payload?.card) return;
             onCardUpdated(payload.card, { reloadContext: true });
             if (attempt.confirm(attemptKey, operationID)) {
-              setMessage((current) => current.trim() === submittedMessage ? "" : current);
+              setMessage((current) => current === submittedMessage ? "" : current);
             }
           })}
           className="flex gap-2"
@@ -186,10 +199,10 @@ export function ChannelTab({ context, projectID, runMutation, onCardUpdated }: C
               }
             }}
             rows={3}
-            placeholder="Steer this card..."
+            placeholder="Send revision to this job..."
             className="min-w-0 flex-1"
           />
-          <ActionButton type="submit" tone="primary">Send</ActionButton>
+          <ActionButton type="submit" tone="primary" disabled={mutationBusy}>Send</ActionButton>
         </form>
       </div>
     </Panel>

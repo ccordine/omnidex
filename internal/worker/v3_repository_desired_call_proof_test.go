@@ -11,8 +11,8 @@ import (
 
 func TestDesiredRepositoryCallProofUsesExactWorkKinds(t *testing.T) {
 	t.Parallel()
-	original, err := assemblyline.NewRequirementPartitionJob(assemblyline.RequirementPartitionInput{
-		SourceText: "Add one value.", Mode: assemblyline.RequirementExtractFeatures,
+	original, err := assemblyline.NewApplicationClassificationJob(assemblyline.ApplicationClassificationInput{
+		UserRequest: "Build a browser tool.",
 	})
 	if err != nil {
 		t.Fatal(err)

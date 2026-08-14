@@ -5,42 +5,19 @@ import "github.com/jackc/pgx/v5"
 func scanDBScrumCard(row pgx.Row) (DBScrumCard, error) {
 	var card DBScrumCard
 	err := row.Scan(
-		&card.ID,
-		&card.ProjectID,
-		&card.Title,
-		&card.Description,
-		&card.Column,
-		&card.Checklist,
-		&card.RefFiles,
-		&card.Chat,
-		&card.ModelConfig,
-		&card.AgentConfig,
-		&card.CardTicket,
-		&card.CardPrompt,
-		&card.RecipeID,
-		&card.Recipe,
-		&card.Tags,
-		&card.PlanningChat,
-		&card.CoachConfig,
-		&card.TestCriteria,
-		&card.FlowMetrics,
-		&card.JobID,
-		&card.TagsJobID,
-		&card.TicketJobID,
-		&card.ConsoleLog,
-		&card.PlayState,
-		&card.QueueOrder,
-		&card.BoardOrder,
-		&card.SyncJobID,
-		&card.AgentStreamChatCursor,
-		&card.AgentStreamConsoleCursor,
-		&card.StepContextCursor,
-		&card.CreatedAt,
-		&card.UpdatedAt,
+		&card.ID, &card.ProjectID, &card.Title, &card.Description, &card.Column,
+		&card.Checklist, &card.RefFiles, &card.CardTicket, &card.CardPrompt,
+		&card.Tags, &card.TestCriteria, &card.FlowMetrics,
+		&card.JobID, &card.PlayState,
+		&card.QueueOrder, &card.BoardOrder, &card.SyncJobID, &card.StepContextCursor,
+		&card.ChannelMessageCount, &card.ChannelContentBytes,
+		&card.CreatedAt, &card.UpdatedAt,
 	)
 	if err != nil {
 		return DBScrumCard{}, err
 	}
-	sanitizeScrumCardFields(&card)
+	if err := validateStoredScrumCard(card); err != nil {
+		return DBScrumCard{}, err
+	}
 	return card, nil
 }

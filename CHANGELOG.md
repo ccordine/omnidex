@@ -29,7 +29,7 @@ Charmeleon is the **repository-intelligence and software-defined context release
 - Added a durable prepared/applying/applied/indeterminate repository mutation journal
   with immutable sealed file authority, exact source/post recovery, atomic generated
   diff evidence, and real PostgreSQL plus bubblewrap workflow tests.
-- Removed the production R1 requirement-adviser and separate split-model routes; greenfield and existing-repository requests now share one code-owned fixed-point partition loop over the stable Qwen station, while advisory protocols remain offline gauntlet experiments.
+- Removed the production R1 requirement adviser, product-identity call, recursive residual partition, synthetic candidate choices, and `none` loop. Greenfield intake now uses one grounded aggregate over the intact request; each accepted requirement receives one local objective/criterion leaf, then code freezes and verifies the workload task by task. Existing-repository intake uses one separate grounded change aggregate.
 
 ## v0.4.0 - Charmander
 
@@ -53,7 +53,7 @@ Charmander is the **AI assembly-line release**. It replaces broad coding-agent l
 - Added exact workspace reconciliation, protected opaque artifacts, fixed typed-program verification commands, reviewable diffs, and server-authoritative completion.
 - Made per-job model routing immutable so concurrent swarm workers cannot overwrite or restore one another's model selections.
 - Enforced same-job feedback, interruption, and replanning at both server and browser boundaries and deleted unreachable successor-job compatibility responses.
-- Removed the CLI's write-only architect profile and planning, persistence, review, missing-tool, generic reasoning, autonomy, approval, verification, web, and workspace controls. Stale top-level metadata now fails explicitly; only runtime-backed model, external-agent, and research-query settings remain.
+- Removed the CLI's write-only architect profile and planning, persistence, review, missing-tool, generic reasoning, autonomy, approval, verification, web, workspace, and external-agent controls. Stale top-level metadata now fails explicitly; only runtime-backed model and consumed research-query settings remain.
 - Registered raw-function response mode for fragment stations; unknown model-call scopes now fail explicitly instead of inheriting a guessed format.
 - Completed a fresh current-build set of three clean-workspace Go CLI proof runs in 53.812 seconds total with eight compact semantic calls, zero fragment-model calls, independently passing tests, and unchanged protected request artifacts. See `docs/CHARMANDER_PROOF.md` for the measured comparison, discarded regression run, and limitations.
 

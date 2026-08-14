@@ -24,8 +24,8 @@ const (
 type scrumCardTicketAction string
 
 const (
-	scrumCardTicketGenerate  scrumCardTicketAction = "generate"
-	scrumCardTicketElaborate scrumCardTicketAction = "elaborate"
+	scrumCardTicketAssemble         scrumCardTicketAction = "assemble"
+	scrumCardTicketApplyElaboration scrumCardTicketAction = "apply_elaboration"
 )
 
 type requiredScrumTicketString struct {
@@ -68,8 +68,9 @@ func decodeScrumCardTicketActionRequest(
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return scrumCardTicketActionRequest{}, fmt.Errorf(
-				"Scrum card ticket action exceeds the %d-byte transport bound",
+				"Scrum card ticket action exceeds the %d-byte transport bound: %w",
 				maxScrumCardTicketActionBodyBytes,
+				err,
 			)
 		}
 		return scrumCardTicketActionRequest{}, fmt.Errorf("read Scrum card ticket action: %w", err)
@@ -107,8 +108,8 @@ func (body scrumCardTicketActionBody) validate() (scrumCardTicketActionRequest, 
 			return scrumCardTicketActionRequest{}, fmt.Errorf("Scrum card ticket %s contains a forbidden NUL character", name)
 		}
 	}
-	action := scrumCardTicketAction(strings.TrimSpace(body.Action.Value))
-	if action != scrumCardTicketGenerate && action != scrumCardTicketElaborate {
+	action := scrumCardTicketAction(body.Action.Value)
+	if action != scrumCardTicketAssemble && action != scrumCardTicketApplyElaboration {
 		return scrumCardTicketActionRequest{}, fmt.Errorf("Scrum card ticket action %q is not registered", action)
 	}
 	revision, err := time.Parse(time.RFC3339Nano, body.ExpectedUpdatedAt.Value)
@@ -118,12 +119,12 @@ func (body scrumCardTicketActionBody) validate() (scrumCardTicketActionRequest, 
 	if body.ExpectedUpdatedAt.Value != revision.UTC().Format(time.RFC3339Nano) {
 		return scrumCardTicketActionRequest{}, fmt.Errorf("Scrum card ticket expected_updated_at must be canonical UTC")
 	}
-	elaboration := strings.TrimSpace(body.Elaboration.Value)
-	if action == scrumCardTicketGenerate && body.Elaboration.Present {
-		return scrumCardTicketActionRequest{}, fmt.Errorf("Scrum card ticket generate must not include elaboration")
+	elaboration := body.Elaboration.Value
+	if action == scrumCardTicketAssemble && body.Elaboration.Present {
+		return scrumCardTicketActionRequest{}, fmt.Errorf("Scrum card ticket assemble must not include elaboration")
 	}
-	if action == scrumCardTicketElaborate && elaboration == "" {
-		return scrumCardTicketActionRequest{}, fmt.Errorf("Scrum card ticket elaborate requires elaboration")
+	if action == scrumCardTicketApplyElaboration && strings.TrimSpace(elaboration) == "" {
+		return scrumCardTicketActionRequest{}, fmt.Errorf("Scrum card ticket apply_elaboration requires elaboration")
 	}
 	return scrumCardTicketActionRequest{Action: action, ExpectedUpdatedAt: revision, Elaboration: elaboration}, nil
 }
@@ -133,6 +134,11 @@ func (s *Server) handleScrumCardTicket(w http.ResponseWriter, r *http.Request, c
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	projectID, err := decodeScrumMutationProjectID(r, "Scrum card ticket action")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	request, err := decodeScrumCardTicketActionRequest(w, r)
 	if err != nil {
 		writeError(w, scrumCardTicketBodyStatus(err), err.Error())
@@ -140,11 +146,6 @@ func (s *Server) handleScrumCardTicket(w http.ResponseWriter, r *http.Request, c
 	}
 	if s.repo == nil {
 		writeError(w, http.StatusServiceUnavailable, "postgres repository is required for Scrum")
-		return
-	}
-	projectID, err := s.resolveProjectID(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	current, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
@@ -159,7 +160,7 @@ func (s *Server) handleScrumCardTicket(w http.ResponseWriter, r *http.Request, c
 	}
 	storedElaboration := card.CardPrompt
 	card.CardPrompt = ""
-	if request.Action == scrumCardTicketElaborate {
+	if request.Action == scrumCardTicketApplyElaboration {
 		storedElaboration = request.Elaboration
 		card.CardPrompt = request.Elaboration
 	}
@@ -181,12 +182,17 @@ func (s *Server) handleScrumCardTicket(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("decode updated Scrum card ticket: %v", err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"card": result})
+	responseCard, err := scrumCardActionProjection(result)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"card": responseCard})
 }
 
 func scrumCardTicketBodyStatus(err error) int {
 	var tooLarge *http.MaxBytesError
-	if errors.As(err, &tooLarge) || strings.Contains(err.Error(), "transport bound") {
+	if errors.As(err, &tooLarge) {
 		return http.StatusRequestEntityTooLarge
 	}
 	return http.StatusBadRequest
@@ -211,12 +217,24 @@ func assembleScrumCardTicket(card ScrumCard) (string, error) {
 	writeTicketItems(&ticket, "## Test criteria", card.TestCriteria)
 	writeTicketValues(&ticket, "## Reference files", card.RefFiles, true)
 	writeTicketValues(&ticket, "## Tags", card.Tags, false)
-	writeTicketSection(&ticket, "## Elaboration", strings.TrimSpace(card.CardPrompt))
-	result := strings.TrimSpace(ticket.String()) + "\n"
+	writeTicketExactSection(&ticket, "## Elaboration", card.CardPrompt)
+	result := ticket.String() + "\n"
 	if len(result) > maxAssembledScrumCardTicketBytes {
 		return "", fmt.Errorf("assembled Scrum card ticket exceeds the %d-byte bound", maxAssembledScrumCardTicketBytes)
 	}
 	return result, nil
+}
+
+func writeTicketExactSection(ticket *strings.Builder, heading, value string) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+	if ticket.Len() > 0 {
+		ticket.WriteString("\n\n")
+	}
+	ticket.WriteString(heading)
+	ticket.WriteString("\n\n")
+	ticket.WriteString(value)
 }
 
 func writeTicketSection(ticket *strings.Builder, values ...string) {

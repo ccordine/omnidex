@@ -20,20 +20,43 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildApplicationClassificationPrompt(input)
 		return prompt, ApplicationClassificationResponseSchema(), err
-	case WorkApplicationIdentity:
-		var input ApplicationIdentityInput
+	case WorkApplicationRequirements:
+		var input ApplicationRequirementInterpretationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return "", nil, err
 		}
-		prompt, err := BuildApplicationIdentityPrompt(input)
-		return prompt, ApplicationIdentityResponseSchema(), err
-	case WorkRequirementPartition:
-		var input RequirementPartitionInput
+		prompt, err := BuildApplicationRequirementInterpretationPrompt(input)
+		return prompt, ApplicationRequirementInterpretationResponseSchema(), err
+	case WorkApplicationJobSpecification:
+		var input ApplicationJobSpecificationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return "", nil, err
 		}
-		prompt, err := BuildRequirementPartitionPrompt(input)
-		return prompt, RequirementPartitionResponseSchema(), err
+		prompt, err := BuildApplicationJobSpecificationPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := ApplicationJobSpecificationResponseSchema(input)
+		return prompt, schema, err
+	case WorkApplicationJobSpecificationReview:
+		var input applicationJobSpecificationReviewPortablePayload
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		return renderApplicationJobSpecificationReviewPortable(input)
+	case WorkApplicationJobSpecificationRepair:
+		var input applicationJobSpecificationRepairPortablePayload
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		return renderApplicationJobSpecificationRepairPortable(input)
+	case WorkRepositoryRequirements:
+		var input RepositoryRequirementInterpretationInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRepositoryRequirementInterpretationPrompt(input)
+		return prompt, RepositoryRequirementInterpretationResponseSchema(), err
 	case WorkRepositorySearchTerm:
 		var input RepositorySearchTermInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -290,7 +313,8 @@ func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, ma
 	if err != nil {
 		return "", nil, err
 	}
-	return "Return a JSON merge patch containing exactly one top-level field and changing exactly one invalid leaf. " +
+	instruction := "Return a JSON merge patch containing exactly one top-level field and changing exactly one invalid leaf. " +
 		"The retained response and its accepted fields are code-owned and unavailable. Resolve only this failure:\n" +
-		input.ValidationFailure, schema, nil
+		input.ValidationFailure
+	return instruction, schema, nil
 }

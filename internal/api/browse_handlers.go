@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -78,12 +76,9 @@ func (s *Server) handleBrowseMkdir(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct {
-		Parent string `json:"parent"`
-		Name   string `json:"name"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+	req, err := decodeBrowseMkdirRequest(w, r)
+	if err != nil {
+		writeError(w, browseMkdirRequestStatus(err), err.Error())
 		return
 	}
 	if client := s.hostBridgeClient(); client != nil {

@@ -58,6 +58,10 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
+	if err := validateExactQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	var req channelCreateRequest
 	if err := decodeExactChannelJSON(w, r, "channel create request", maxChannelCreateBodyBytes, &req); err != nil {
 		writeChannelBodyError(w, err)
@@ -79,6 +83,10 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
+	if err := validateExactQuery(r, "scope", "limit", "offset"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if r.URL.Query().Get("scope") != string(model.ChannelScopeUser) {
 		writeError(w, http.StatusBadRequest, "channel scope must be exactly user")
 		return
@@ -137,6 +145,10 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if err := validateExactQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	channel, err := s.channelStore.GetChannel(r.Context(), channelID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -150,6 +162,10 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, channelID model.ChannelID) {
+	if err := validateExactQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	var req channelMessageRequest
 	if err := decodeExactChannelJSON(w, r, "channel message request", maxChannelMessageBodyBytes, &req); err != nil {
 		writeChannelBodyError(w, err)

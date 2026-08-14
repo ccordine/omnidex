@@ -163,18 +163,6 @@ func summarizeChatRepositoryRecovery(event parsedChatStepEvent) (chatProgressKin
 	return chatProgressReview, "Reconciling a durable repository mutation", nil
 }
 
-func summarizeChatExternalAgent(event parsedChatStepEvent) (chatProgressKind, string, error) {
-	message, err := requireChatProgressMessage(event.Message)
-	switch event.Type {
-	case "external_agent_started":
-		return chatProgressStation, "External coding runtime started: " + message, err
-	case "external_agent_unavailable":
-		return chatProgressDiagnostic, "External coding runtime unavailable: " + message, err
-	default:
-		return chatProgressDiagnostic, "External coding runtime failed: " + message, err
-	}
-}
-
 func chatPortableEventIdentity(eventType string) (namespace, state string, ok bool) {
 	for _, candidate := range []string{"coding", "objective", "web_research"} {
 		prefix := candidate + "_"

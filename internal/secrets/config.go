@@ -45,10 +45,3 @@ func OverlayConfigContext(ctx context.Context, cfg *config.Config, resolver *Res
 		}
 	}
 }
-
-func CodexAPIKey() string {
-	if value := strings.TrimSpace(Lookup("codex_api_key")); value != "" {
-		return value
-	}
-	return strings.TrimSpace(Lookup("openai_api_key"))
-}

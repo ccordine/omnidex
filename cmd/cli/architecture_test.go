@@ -160,7 +160,13 @@ func TestFreeFormCLIHasNoRejectedAgentOrHostSidecarControls(t *testing.T) {
 		}
 	}
 	help := readCLISource(t, "cli_help.go")
-	for _, token := range []string{"--search-query", "chat [--session id] [--agent", "enqueue ["} {
+	for _, token := range []string{
+		"--search-query",
+		"chat [--session id] [--agent",
+		"run [--session id] [--agent",
+		"--agent-model",
+		"enqueue [",
+	} {
 		if strings.Contains(help, token) {
 			t.Errorf("CLI help advertises rejected free-form control %q", token)
 		}
@@ -183,6 +189,34 @@ func TestFreeFormCLIHasNoRejectedAgentOrHostSidecarControls(t *testing.T) {
 	for _, path := range productionSources {
 		if source := readCLISource(t, path); strings.Contains(source, ".Enqueue(") {
 			t.Errorf("CLI source %s retains generic job enqueue authority", path)
+		}
+	}
+}
+
+func TestCLIHasNoExternalAgentCompatibilityViewer(t *testing.T) {
+	for _, path := range []string{
+		"external_agent_progress.go",
+		"external_agent_progress_test.go",
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("retired external-agent compatibility source remains: %s", path)
+		}
+	}
+	if entries, err := os.ReadDir("../../internal/agentstream"); err == nil {
+		for _, entry := range entries {
+			if filepath.Ext(entry.Name()) == ".go" {
+				t.Errorf("retired external-agent compatibility package remains: %s", entry.Name())
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("inspect retired external-agent package: %v", err)
+	}
+	for _, path := range []string{"coding_run_watch.go", "chat_active_turn.go"} {
+		source := readCLISource(t, path)
+		for _, forbidden := range []string{"external_agent_execute", "printExternalAgentStream", "lastExternalOutputOffsets"} {
+			if strings.Contains(source, forbidden) {
+				t.Errorf("CLI source %s retains external-agent compatibility %q", path, forbidden)
+			}
 		}
 	}
 }

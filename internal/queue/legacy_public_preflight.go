@@ -11,9 +11,9 @@ import (
 const (
 	legacyPublicSchema                          = "public"
 	legacyMigrationMaximumPrefix                = 24
-	legacyExpectedMigrationManifestSHA256       = "cba15fdb8f941f500a196cbe4ea97980bfefe3c895a6b25c2f62710635c0f3d4"
+	legacyExpectedMigrationManifestSHA256       = "178e02e51621c535b648d2b94b60026820f9045dbedd6fca684da23e926bb9f7"
 	legacyExpectedCatalogSHA256                 = "83c45ce13170843a21b4780935a6c2c89f5b13fa8c072dff7689db9817ca4dd0"
-	legacyExpectedRuntimeCatalogSHA256          = "c6f3ac2eff3e919554fc1c5e157ff723013d4532257ed3c9de887d503d05b715"
+	legacyExpectedRuntimeCatalogSHA256          = "19848cdd211141f2e4aefb0d0b48bef00b173908c23a6f723269557b610b4c02"
 	legacyExpectedExtensionSHA256               = "e5bc2256fa21a1fe4044c755c2e3d1d3cae548048aa07c1ea446497d5581a052"
 	legacyExpectedTableCount                    = 42
 	legacyExpectedSequenceCount                 = 20

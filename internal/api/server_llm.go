@@ -1,11 +1,9 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/queue"
@@ -34,121 +32,46 @@ func safeStatusError(value string) string {
 }
 
 func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
-	idText := strings.TrimPrefix(r.URL.Path, "/v1/jobs/")
-	idText = strings.TrimSpace(strings.Trim(idText, "/"))
-	if idText == "" {
-		writeError(w, http.StatusBadRequest, "job id is required")
+	id, action, err := decodeJobItemRoute(r)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-
-	if strings.HasSuffix(idText, "/history") {
+	if action == jobItemHistory {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		idText = strings.TrimSuffix(idText, "/history")
-		idText = strings.TrimSpace(strings.Trim(idText, "/"))
-		if idText == "" {
-			writeError(w, http.StatusBadRequest, "job id is required")
-			return
-		}
-		id, err := strconv.ParseInt(idText, 10, 64)
-		if err != nil || id <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid job id")
 			return
 		}
 		s.jobHistory(w, r, id)
 		return
 	}
-
-	if strings.HasSuffix(idText, "/feedback") {
+	if action != jobItemRead {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		idText = strings.TrimSuffix(idText, "/feedback")
-		idText = strings.TrimSpace(strings.Trim(idText, "/"))
-		if idText == "" {
-			writeError(w, http.StatusBadRequest, "job id is required")
+		if err := validateExactQuery(r); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		id, err := strconv.ParseInt(idText, 10, 64)
-		if err != nil || id <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid job id")
-			return
+		switch action {
+		case jobItemFeedback:
+			s.submitJobFeedback(w, r, id)
+		case jobItemInterrupt:
+			s.interruptJob(w, r, id)
+		case jobItemReplan:
+			s.replanJob(w, r, id)
+		case jobItemCancel:
+			s.cancelJob(w, r, id)
 		}
-		s.submitJobFeedback(w, r, id)
 		return
 	}
-
-	if strings.HasSuffix(idText, "/interrupt") {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		idText = strings.TrimSuffix(idText, "/interrupt")
-		idText = strings.TrimSpace(strings.Trim(idText, "/"))
-		if idText == "" {
-			writeError(w, http.StatusBadRequest, "job id is required")
-			return
-		}
-		id, err := strconv.ParseInt(idText, 10, 64)
-		if err != nil || id <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid job id")
-			return
-		}
-		s.interruptJob(w, r, id)
-		return
-	}
-
-	if strings.HasSuffix(idText, "/replan") {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		idText = strings.TrimSuffix(idText, "/replan")
-		idText = strings.TrimSpace(strings.Trim(idText, "/"))
-		if idText == "" {
-			writeError(w, http.StatusBadRequest, "job id is required")
-			return
-		}
-		id, err := strconv.ParseInt(idText, 10, 64)
-		if err != nil || id <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid job id")
-			return
-		}
-		s.replanJob(w, r, id)
-		return
-	}
-
-	if strings.HasSuffix(idText, "/cancel") {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		idText = strings.TrimSuffix(idText, "/cancel")
-		idText = strings.TrimSpace(strings.Trim(idText, "/"))
-		if idText == "" {
-			writeError(w, http.StatusBadRequest, "job id is required")
-			return
-		}
-		id, err := strconv.ParseInt(idText, 10, 64)
-		if err != nil || id <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid job id")
-			return
-		}
-		s.cancelJob(w, r, id)
-		return
-	}
-
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	id, err := strconv.ParseInt(idText, 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid job id")
+	if err := validateExactQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -166,19 +89,9 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID int64) {
-	var req feedbackRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-
-	req.Feedback = strings.TrimSpace(req.Feedback)
-	if req.Feedback == "" {
-		writeError(w, http.StatusBadRequest, "feedback is required")
-		return
-	}
-	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	req, err := decodeLifecycleFeedbackRequest(w, r)
+	if err != nil {
+		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
 
@@ -193,29 +106,20 @@ func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateSameJobAuthority(jobID, job); err != nil {
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.publishJobProgress(jobID, realtimeJobChanged, "Job feedback accepted")
 
-	writeJSON(w, http.StatusOK, map[string]any{"job": job})
+	writeJSON(w, http.StatusOK, receipt)
 }
 
 func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int64) {
-	var req feedbackRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-
-	req.Feedback = strings.TrimSpace(req.Feedback)
-	if req.Feedback == "" {
-		writeError(w, http.StatusBadRequest, "feedback is required")
-		return
-	}
-	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	req, err := decodeLifecycleFeedbackRequest(w, r)
+	if err != nil {
+		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
 
@@ -230,23 +134,20 @@ func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int6
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateSameJobAuthority(jobID, job); err != nil {
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.publishJobProgress(jobID, realtimeJobChanged, "Job interruption accepted")
 
-	writeJSON(w, http.StatusOK, map[string]any{"job": job})
+	writeJSON(w, http.StatusOK, receipt)
 }
 
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) {
-	var req cancelRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	if _, err := queue.ParseLifecycleOperationID(string(req.OperationID)); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	req, err := decodeLifecycleCancelRequest(w, r)
+	if err != nil {
+		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
 
@@ -261,7 +162,8 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, cancelJobHTTPStatus(err), err.Error())
 		return
 	}
-	if err := validateSameJobAuthority(jobID, job); err != nil {
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -273,9 +175,7 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 	}
 	s.publishJobProgress(jobID, realtimeJobFinished, "Job canceled")
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"job": job,
-	})
+	writeJSON(w, http.StatusOK, receipt)
 }
 
 func cancelJobHTTPStatus(err error) int {

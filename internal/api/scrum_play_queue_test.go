@@ -17,24 +17,6 @@ func TestSortCardsForColumnAssignedQueueOrder(t *testing.T) {
 	}
 }
 
-func TestScrumPlayQueueSummary(t *testing.T) {
-	board := ScrumBoard{
-		Cards: []ScrumCard{
-			{ID: "run", PlayState: scrumPlayRunning},
-			{ID: "q2", PlayState: scrumPlayQueued, QueueOrder: 2},
-			{ID: "q1", PlayState: scrumPlayQueued, QueueOrder: 1},
-		},
-	}
-	summary := scrumPlayQueueSummary(board)
-	if summary["running_card_id"] != "run" {
-		t.Fatalf("running=%#v", summary["running_card_id"])
-	}
-	queued := summary["queued_card_ids"].([]string)
-	if len(queued) != 2 || queued[0] != "q1" || queued[1] != "q2" {
-		t.Fatalf("queued order=%#v", queued)
-	}
-}
-
 func TestScrumManagerAutoAdvance(t *testing.T) {
 	if !scrumManagerAutoAdvance(ScrumOutcomeSuccess) {
 		t.Fatal("success should auto-advance")

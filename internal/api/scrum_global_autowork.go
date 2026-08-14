@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sort"
 	"time"
 )
 
@@ -141,7 +140,7 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 		} else if running {
 			return nil
 		}
-		board, err := s.scrumBoardFromProject(ctx, candidate.projectID)
+		board, err := s.scrumBoardMetadataFromProject(ctx, candidate.projectID)
 		if err != nil {
 			return fmt.Errorf("load global auto-work project=%d card=%s: %w", candidate.projectID, candidate.cardID, err)
 		}
@@ -162,78 +161,29 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 }
 
 func (s *Server) refreshRunningScrumPlayProjects(ctx context.Context) error {
-	projectIDs, err := s.repo.ListRunningScrumPlayProjectIDs(ctx)
+	projectID, found, err := s.repo.RunningScrumPlayProjectID(ctx)
 	if err != nil {
 		return err
 	}
-	for _, projectID := range projectIDs {
-		if err := s.refreshScrumPlayQueueForProject(ctx, projectID, "global running reconcile"); err != nil {
-			return fmt.Errorf("reconcile running Scrum project %d: %w", projectID, err)
-		}
+	if !found {
+		return nil
+	}
+	if err := s.refreshScrumPlayQueueForProject(ctx, projectID, "global running reconcile"); err != nil {
+		return fmt.Errorf("reconcile running Scrum project %d: %w", projectID, err)
 	}
 	return nil
 }
 
 func (s *Server) globalScrumAutoWorkCandidates(ctx context.Context) ([]scrumAutoWorkCandidate, error) {
-	candidates := []scrumAutoWorkCandidate{}
-	const pageSize = 250
-	for offset := 0; ; offset += pageSize {
-		projects, err := s.repo.ListProjects(ctx, pageSize, offset)
-		if err != nil {
-			return nil, err
-		}
-		for _, project := range projects {
-			automation, err := loadScrumAutomationSettings(project.Settings)
-			if err != nil {
-				return nil, fmt.Errorf("load Scrum automation settings for project %d: %w", project.ID, err)
-			}
-			autoWork := automation.AutoWork
-			if !autoWork.Enabled {
-				continue
-			}
-			board, err := s.scrumBoardFromProject(ctx, project.ID)
-			if err != nil {
-				return nil, fmt.Errorf("load Scrum board for project %d: %w", project.ID, err)
-			}
-			if s.findRunningScrumCard(board) != nil {
-				continue
-			}
-			if scrumAutoWorkComplete(board) {
-				continue
-			}
-			next := s.nextAutoWorkScrumCard(board, autoWork)
-			if next == nil {
-				continue
-			}
-			candidates = append(candidates, scrumAutoWorkCandidate{
-				projectID: project.ID,
-				cardID:    next.ID,
-				queuedAt:  scrumAutoWorkQueuedAt(*next),
-			})
-		}
-		if len(projects) < pageSize {
-			break
-		}
+	stored, found, err := s.repo.FindGlobalScrumAutoWorkCandidate(ctx)
+	if err != nil || !found {
+		return nil, err
 	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].queuedAt.Equal(candidates[j].queuedAt) {
-			if candidates[i].projectID == candidates[j].projectID {
-				return candidates[i].cardID < candidates[j].cardID
-			}
-			return candidates[i].projectID < candidates[j].projectID
-		}
-		return candidates[i].queuedAt.Before(candidates[j].queuedAt)
-	})
-	return candidates, nil
-}
-
-func scrumAutoWorkQueuedAt(card ScrumCard) time.Time {
-	for _, raw := range []string{card.UpdatedAt, card.CreatedAt} {
-		if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-			return parsed
-		}
-	}
-	return time.Time{}
+	return []scrumAutoWorkCandidate{{
+		projectID: stored.ProjectID,
+		cardID:    stored.CardID,
+		queuedAt:  stored.QueuedAt,
+	}}, nil
 }
 
 func scrumAutoWorkLockHeld(ctx context.Context) bool {

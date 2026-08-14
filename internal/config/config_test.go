@@ -32,8 +32,8 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	t.Setenv("WRAPPER_ONLY", "true")
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("OMNI_CODING_SURFACE_MODEL", "qwen3:4b-thinking")
-	t.Setenv("OMNI_CODING_PRODUCT_IDENTITY_MODEL", "qwen2.5-coder:14b-identity")
-	t.Setenv("OMNI_CODING_REQUIREMENT_PARTITION_MODEL", "qwen2.5-coder:7b-partition")
+	t.Setenv("OMNI_CODING_REQUIREMENTS_MODEL", "qwen2.5-coder:7b-requirements")
+	t.Setenv("OMNI_CODING_WORKLOAD_MODEL", "qwen3.5:27b-workload")
 	t.Setenv("OMNI_CODING_ARTIFACT_HANDLING_MODEL", "qwen2.5:3b-artifact")
 	t.Setenv("OMNI_CODING_CAPABILITY_RELATION_MODEL", "qwen3:4b-relation")
 	t.Setenv("OMNI_CODING_SKILL_SELECTION_MODEL", "qwen3:4b-skill-selection")
@@ -47,11 +47,11 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	if got := cfg.StationModels[station.CodingSurface]; got != "qwen3:4b-thinking" {
 		t.Fatalf("coding surface model=%q want dedicated override", got)
 	}
-	if got := cfg.StationModels[station.CodingProductIdentity]; got != "qwen2.5-coder:14b-identity" {
-		t.Fatalf("coding product identity model=%q want dedicated override", got)
+	if got := cfg.StationModels[station.CodingRequirements]; got != "qwen2.5-coder:7b-requirements" {
+		t.Fatalf("coding requirements model=%q want dedicated override", got)
 	}
-	if got := cfg.StationModels[station.CodingRequirementPartition]; got != "qwen2.5-coder:7b-partition" {
-		t.Fatalf("coding requirement partition model=%q want dedicated override", got)
+	if got := cfg.StationModels[station.CodingWorkload]; got != "qwen3.5:27b-workload" {
+		t.Fatalf("coding workload model=%q want dedicated override", got)
 	}
 	if got := cfg.StationModels[station.CodingArtifactHandling]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q want dedicated override", got)
@@ -118,6 +118,8 @@ func TestLoadExactConversationAndWebStationModels(t *testing.T) {
 
 func TestLoadRejectsRemovedRequirementModelEnvironmentRoutes(t *testing.T) {
 	for _, key := range []string{
+		"OMNI_CODING_PRODUCT_IDENTITY_MODEL",
+		"OMNI_CODING_REQUIREMENT_PARTITION_MODEL",
 		"OMNI_CODING_REQUIREMENT_ADVISER_MODEL",
 		"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER",
 		"OMNI_CODING_REQUIREMENT_SPLIT_MODEL",
@@ -146,16 +148,16 @@ func TestLoadRejectsUnsafeCodingFragmentConcurrency(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsUnknownProvider(t *testing.T) {
+func TestLoadRetainsUnknownProviderForLazyUseRejection(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://agent:agent@localhost:5432/agent?sslmode=disable")
 	t.Setenv("LLM_PROVIDER", "something-else")
 
-	_, err := Load()
-	if err == nil {
-		t.Fatalf("expected error for unknown provider")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() eagerly rejected dormant provider: %v", err)
 	}
-	if !strings.Contains(err.Error(), "LLM_PROVIDER") {
-		t.Fatalf("expected LLM_PROVIDER error, got: %v", err)
+	if cfg.LLMProvider != "something-else" {
+		t.Fatalf("LLMProvider=%q", cfg.LLMProvider)
 	}
 }
 

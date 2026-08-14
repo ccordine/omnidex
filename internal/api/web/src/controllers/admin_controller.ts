@@ -7,7 +7,6 @@ import {
   saveModelSettings,
   saveNetworkSettings,
 } from "../lib/admin_api";
-import { saveGlobalAgentSettings } from "../lib/agent_config_api";
 import { fetchAdminComponent } from "../lib/operational_component_api";
 import { renderServerBundle } from "../lib/server_component_api";
 import type RecyclrController from "./recyclr_controller";
@@ -149,11 +148,6 @@ export default class AdminController extends Controller {
   async saveGlobalModels(event: Event): Promise<void> {
     event.preventDefault();
     await this.mutate("Saving model settings…", "Model settings saved", () => saveModelSettings(this.collect("model_")));
-  }
-
-  async saveGlobalAgents(event: Event): Promise<void> {
-    event.preventDefault();
-    await this.mutate("Saving agent settings…", "Agent settings saved", () => saveGlobalAgentSettings(this.collect("agent_")));
   }
 
   async saveAPISecrets(event: Event): Promise<void> {

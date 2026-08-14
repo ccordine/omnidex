@@ -7,39 +7,49 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/config"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/openai"
 )
 
-func TestNewFromConfigRoutesExactOllamaStationsToHostedEmbeddings(t *testing.T) {
+func TestLazyResolversRouteExactOllamaStationsToHostedEmbeddingsAtUse(t *testing.T) {
 	cfg := config.Config{
-		LLMProvider:       "ollama",
-		EmbeddingProvider: "qwen",
-		EmbeddingModel:    "text-embedding-v4",
-		OllamaBaseURL:     "http://localhost:11434",
-		RequestTimeout:    time.Second,
+		LLMProvider:            "ollama",
+		EmbeddingProvider:      "qwen",
+		EmbeddingModel:         "text-embedding-v4",
+		OllamaBaseURL:          "http://localhost:11434",
+		RequestTimeout:         time.Second,
+		InferenceContextTokens: llm.DefaultInferenceContextTokens,
 		CompatibleProviders: map[string]config.CompatibleProviderConfig{
 			"qwen": {BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", APIKey: "qwen-key"},
 		},
 	}
 
-	transports, err := NewFromConfig(cfg)
+	transports := NewLazyFromConfig(cfg)
+	stationResolver := transports.Stations.(*lazyExactStationResolver)
+	stations, err := stationResolver.resolve()
 	if err != nil {
-		t.Fatalf("NewFromConfig() error: %v", err)
+		t.Fatalf("resolve stations: %v", err)
 	}
-	if _, ok := transports.Stations.(*ollama.Client); !ok {
-		t.Fatalf("station transport type=%T want *ollama.Client", transports.Stations)
+	if _, ok := stations.(*ollama.Client); !ok {
+		t.Fatalf("station transport type=%T want *ollama.Client", stations)
 	}
-	if _, ok := transports.Embeddings.(*openai.Client); !ok {
-		t.Fatalf("embedding transport type=%T want *openai.Client", transports.Embeddings)
+	embeddingResolver := transports.Embeddings.(*lazyEmbeddingResolver)
+	embeddings, err := embeddingResolver.resolve()
+	if err != nil {
+		t.Fatalf("resolve embeddings: %v", err)
+	}
+	if _, ok := embeddings.(*openai.Client); !ok {
+		t.Fatalf("embedding transport type=%T want *openai.Client", embeddings)
 	}
 }
 
-func TestNewFromConfigRejectsGenericHostedGeneration(t *testing.T) {
-	_, err := NewFromConfig(config.Config{LLMProvider: "anthropic", EmbeddingProvider: "ollama"})
+func TestLazyResolverRejectsGenericHostedGenerationAtUse(t *testing.T) {
+	transports := NewLazyFromConfig(config.Config{LLMProvider: "anthropic"})
+	_, err := transports.Stations.(*lazyExactStationResolver).resolve()
 	if err == nil || !strings.Contains(err.Error(), "exact prepared station contract") {
-		t.Fatalf("NewFromConfig() error=%v, want exact station rejection", err)
+		t.Fatalf("resolve() error=%v, want exact station rejection", err)
 	}
 }
 
@@ -132,12 +142,13 @@ func TestNewExactStationProviderRejectsHostedProvider(t *testing.T) {
 	}
 }
 
-func TestNewFromConfigRejectsUnknownProviderWithoutOllamaFallback(t *testing.T) {
-	transports, err := NewFromConfig(config.Config{
+func TestLazyResolverRejectsUnknownProviderWithoutOllamaFallbackAtUse(t *testing.T) {
+	transports := NewLazyFromConfig(config.Config{
 		LLMProvider: "not-real", EmbeddingProvider: "ollama",
 	})
+	_, err := transports.Stations.(*lazyExactStationResolver).resolve()
 	if err == nil || !strings.Contains(err.Error(), "does not implement the exact prepared station contract") {
-		t.Fatalf("NewFromConfig() transports=%+v error=%v", transports, err)
+		t.Fatalf("resolve() error=%v", err)
 	}
 }
 

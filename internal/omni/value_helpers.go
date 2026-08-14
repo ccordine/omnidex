@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 func firstNonEmpty(values ...string) string {
@@ -29,21 +28,6 @@ func currentWorkspacePath() (string, error) {
 		return "", fmt.Errorf("resolve absolute workspace %q: %w", workspace, err)
 	}
 	return abs, nil
-}
-
-func externalAgentTimeout(key string, defaultValue time.Duration) (time.Duration, error) {
-	if defaultValue <= 0 {
-		return 0, fmt.Errorf("default external agent timeout must be positive")
-	}
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return defaultValue, nil
-	}
-	duration, err := time.ParseDuration(value)
-	if err != nil || duration <= 0 {
-		return 0, fmt.Errorf("%s must be a positive duration, received %q", key, value)
-	}
-	return duration, nil
 }
 
 func workspaceHash(value string) string {

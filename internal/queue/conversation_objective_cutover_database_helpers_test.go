@@ -51,7 +51,7 @@ func enqueueConversationCutoverJob(
 	}
 	defer tx.Rollback(ctx)
 	job, err := repository.enqueueJobWithStepsTx(
-		ctx, tx, label, model.PipelineAssistant, []byte(`{}`), conversationObjectiveSteps(),
+		ctx, tx, label, model.PipelineChat, []byte(`{}`), conversationObjectiveSteps(),
 	)
 	if err != nil {
 		t.Fatal(err)

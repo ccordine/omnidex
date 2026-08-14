@@ -12,14 +12,9 @@ import (
 func TestResolveScrumPlayOutcomeForCardIgnoresChannelStatusText(t *testing.T) {
 	s := &Server{}
 	job := model.JobDetails{
-		Job: model.Job{
-			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
-		},
-		Steps: []model.Step{{
-			Output: `{"agent":"cursor","type":"started","message":"Cursor external implementation session started"}
-{"agent":"cursor","type":"completed","message":"Cursor external implementation session completed"}`,
-		}},
+		Job: model.Job{Status: model.JobStatusCompleted,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","project_id":1,"scrum_card_id":"card-1"}`)},
+		Steps: []model.Step{{Output: "typed coding output"}},
 	}
 	card := ScrumCard{
 		Column:    "in_progress",
@@ -45,13 +40,9 @@ func TestResolveScrumPlayOutcomeForCardIgnoresChannelStatusText(t *testing.T) {
 func TestResolveScrumPlayOutcomeCompletedWithoutStatusMovesToSuccess(t *testing.T) {
 	s := &Server{}
 	job := model.JobDetails{
-		Job: model.Job{
-			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
-		},
-		Steps: []model.Step{{
-			Output: `{"agent":"cursor","type":"completed","message":"Cursor external implementation session completed"}`,
-		}},
+		Job: model.Job{Status: model.JobStatusCompleted,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","project_id":1,"scrum_card_id":"card-1"}`)},
+		Steps: []model.Step{{Output: "typed coding output"}},
 	}
 	outcome, err := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
 	if err != nil {
@@ -69,10 +60,8 @@ func TestResolveScrumPlayOutcomeCompletedWithoutStatusMovesToSuccess(t *testing.
 func TestResolveScrumPlayOutcomeCompletedIgnoresInProgressProse(t *testing.T) {
 	s := &Server{}
 	job := model.JobDetails{
-		Job: model.Job{
-			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
-		},
+		Job: model.Job{Status: model.JobStatusCompleted,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","project_id":1,"scrum_card_id":"card-1"}`)},
 		Steps: []model.Step{{Output: "SCRUM_STATUS: in_progress"}},
 	}
 	outcome, err := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})

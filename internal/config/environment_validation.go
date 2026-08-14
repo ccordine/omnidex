@@ -69,6 +69,7 @@ func buildRemovedEnvironmentKeys() []string {
 		"WORKSPACE_SCAN_ENABLED",
 		"ANTHROPIC_VERSION",
 		"ANTHROPIC_MAX_TOKENS",
+		"OMNI_TICKET_CONTEXT_DEADLINE",
 	}, modelconfig.RemovedEnvironmentKeys()...)
 	for _, definition := range catalog.Definitions() {
 		if definition.SupportsExactPreparedStations || definition.SupportsEmbeddings {

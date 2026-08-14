@@ -15,30 +15,31 @@ func BuildApplicationClassificationPrompt(input ApplicationClassificationInput) 
 	}, "\n\n"), nil
 }
 
-func BuildApplicationIdentityPrompt(input ApplicationIdentityInput) (string, error) {
+func BuildApplicationRequirementInterpretationPrompt(
+	input ApplicationRequirementInterpretationInput,
+) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
 	return strings.Join([]string{
-		"Copy only the shortest exact contiguous quote that names the requested product or application category.",
-		"The quote must identify what is being built. Exclude requested features, quality or scope wording, and request phrasing. Never paraphrase, classify the delivery surface, design, or implement anything.",
+		"Extract the explicit product and requested features from one intact software request.",
+		"Return exactly one product item whose source_quote is the shortest exact contiguous quote naming what is being built. Return between one and ten feature items covering every explicitly requested capability, behavior, user-visible element, or constraint. Each source_quote must be the shortest exact contiguous source text that preserves its meaningful action and modifiers.",
+		"Never paraphrase, infer an unstated requirement, merge unrelated requirements, classify the delivery surface, design architecture, create tasks, choose files, or implement anything.",
 		"CURRENT_REQUEST:\n" + input.UserRequest,
 	}, "\n\n"), nil
 }
 
-func BuildRequirementPartitionPrompt(input RequirementPartitionInput) (string, error) {
+func BuildRepositoryRequirementInterpretationPrompt(
+	input RepositoryRequirementInterpretationInput,
+) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	instruction := "Extract every explicit requested application feature from USER_REQUEST as the shortest exact contiguous quotes that each name one different feature. A feature may be phrased only as a noun. Preserve meaningful modifiers and copy source text exactly; never paraphrase. Exclude request wording, product/category naming, project scope or quality wording, constraints, and connective filler. Return an empty feature_quotes array only when no application feature is requested. Return feature quotes in source order. Do not classify kinds, write outcomes, design, or implement anything."
-	label := "USER_REQUEST:\n"
-	if input.Mode == RequirementSplitFeature {
-		instruction = "Split FEATURE_ENVELOPE into the shortest exact contiguous quotes that each name one different requested application feature. The envelope is already known to contain feature work; do not reclassify it as product or project context. Preserve meaningful modifiers and copy source text exactly; never paraphrase. If it already names exactly one feature, return it unchanged as the sole item. Return at least one feature quote in source order. Do not classify kinds, write outcomes, design, or implement anything."
-		label = "FEATURE_ENVELOPE:\n"
-	}
 	return strings.Join([]string{
-		instruction,
-		label + input.SourceText,
+		"Extract the explicit requested changes from one intact existing-repository request.",
+		"Return between one and ten feature_quotes. Each must be the shortest exact contiguous source text that preserves one requested capability, behavior, user-visible change, or constraint and its meaningful modifiers.",
+		"Never paraphrase, infer an unstated change, identify a product, merge unrelated changes, choose artifacts or paths, design architecture, create tasks, or implement anything.",
+		"CURRENT_REQUEST:\n" + input.UserRequest,
 	}, "\n\n"), nil
 }
 

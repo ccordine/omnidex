@@ -2,6 +2,7 @@ package omni
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,6 +49,29 @@ func TestInstallScriptStagesCompleteCheckoutInsteadOfPartialPayload(t *testing.T
 	}
 }
 
+func TestInstallAndUpdateNeverPromoteEnvironmentTemplate(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	combined := readRepoScript(t, root, "install.sh") +
+		readRepoScript(t, root, "update.sh") +
+		readRepoScript(t, root, "scripts/managed-checkout-lib.sh")
+	for _, required := range []string{
+		"--env-file", "managed_checkout_stage_env", "default.env is a template only",
+		"cannot replace an existing managed .env", "regular non-symlink file",
+	} {
+		if !strings.Contains(combined, required) {
+			t.Fatalf("managed checkout environment authority omits %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"managed_checkout_preserve_env",
+		`cp -p "${stage}/default.env" "${stage}/.env"`,
+	} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("managed checkout retains template-promotion path %q", forbidden)
+		}
+	}
+}
+
 func TestCompleteCheckoutPackagesCrossPlatformBootstrapScripts(t *testing.T) {
 	root := repoRootFromOmniTest(t)
 
@@ -88,11 +112,13 @@ func TestUpdateScriptConsumesExactDockerDeploymentAuthority(t *testing.T) {
 		readRepoScript(t, root, "scripts/managed-checkout-lib.sh") +
 		readRepoScript(t, root, "scripts/update-runtime-lib.sh")
 	for _, fragment := range []string{
+		"managed_checkout_require_env_key",
 		"managed_checkout_env_value",
 		"DOCKER_CONTEXT",
 		"COMPOSE_PROJECT_NAME",
 		"validate_compose_identity",
 		"output+=(-p",
+		"COMPOSE_PROJECT_NAME must be explicit and non-empty",
 	} {
 		if !strings.Contains(combined, fragment) {
 			t.Fatalf("update deployment authority missing %q", fragment)
@@ -103,6 +129,64 @@ func TestUpdateScriptConsumesExactDockerDeploymentAuthority(t *testing.T) {
 		if !strings.Contains(body, "DOCKER_CONTEXT=") || !strings.Contains(body, "COMPOSE_PROJECT_NAME=omnidex") {
 			t.Fatalf("%s omits explicit Docker deployment identity", profile)
 		}
+	}
+}
+
+func TestManagedUpdateWaitsForOneHealthyCoreDeployment(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	runtime := readRepoScript(t, root, "scripts/update-runtime-lib.sh")
+	compose := readRepoScript(t, root, "docker-compose.yml")
+	update := readRepoScript(t, root, "update.sh")
+
+	for _, required := range []string{
+		"docker compose", "up -d --remove-orphans", "--wait", "--wait-timeout",
+		"compose_image_id", "compose_require_running_image", `.Image`,
+	} {
+		if !strings.Contains(runtime, required) {
+			t.Fatalf("managed update omits health-gated compose fragment %q", required)
+		}
+	}
+	if strings.Contains(runtime, "docker-compose") {
+		t.Fatal("managed update retains a second docker-compose implementation")
+	}
+	for _, required := range []string{"healthcheck:", "/readyz", "start_period:", "retries:"} {
+		if !strings.Contains(compose, required) {
+			t.Fatalf("core deployment omits health authority %q", required)
+		}
+	}
+	restart := strings.Index(update, "compose_restart")
+	success := strings.LastIndex(update, `log "update complete"`)
+	if restart < 0 || success < 0 || restart >= success {
+		t.Fatal("managed update can report success before the health-gated restart")
+	}
+}
+
+func TestManagedUpdateCannotReportSuccessWhenComposeHealthWaitFails(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	bin := t.TempDir()
+	fakeDocker := filepath.Join(bin, "docker")
+	if err := os.WriteFile(fakeDocker, []byte("#!/usr/bin/env sh\nexit 17\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script := `
+set -euo pipefail
+source "$1/scripts/update-runtime-lib.sh"
+log() { printf '%s\n' "$*"; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+NO_RESTART=0
+DOCKER_CONTEXT_NAME=""
+COMPOSE_PROJECT=""
+compose_restart "$1" "docker compose" "$1/docker-compose.yml" core
+printf '%s\n' 'update complete'
+`
+	command := exec.Command("bash", "-c", script, "update-health-test", root)
+	command.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("failed compose readiness wait returned success: %s", output)
+	}
+	if strings.Contains(string(output), "update complete") {
+		t.Fatalf("failed compose readiness wait reported success: %s", output)
 	}
 }
 

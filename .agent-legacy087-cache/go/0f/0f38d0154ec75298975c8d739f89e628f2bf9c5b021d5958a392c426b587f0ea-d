@@ -1,0 +1,5 @@
+./analyze.go
+./relations.go
+./source_artifacts.go
+./symbols.go
+./typed_uses.go

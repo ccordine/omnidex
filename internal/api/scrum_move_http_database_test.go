@@ -19,18 +19,21 @@ func TestPostgresScrumMoveAndDoneReturnDurableServerState(t *testing.T) {
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		t.Context(), fmt.Sprintf("scrum-move-http-%d", time.Now().UnixNano()), t.TempDir(), "", "", nil,
-	)
+		t.Context(), fmt.Sprintf("scrum-move-http-%d", time.Now().UnixNano()), t.TempDir(), "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := repository.CreateScrumCard(t.Context(), project.ID, "", "Move me", "", "backlog", nil, nil, nil)
+	card, err := repository.CreateScrumCard(t.Context(), project.ID, "", "Move me", "", "backlog", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := &Server{repo: repository, lifecycleContext: context.Background()}
 
-	moved := postScrumCardStateAction(t, server, project.ID, card.ID, "move", `{"column":"review"}`)
+	revision := card.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	moved := postScrumCardStateAction(t, server, project.ID, card.ID, "move", fmt.Sprintf(
+		`{"column":"review","expected_updated_at":%q}`, revision,
+	))
 	if moved.Code != http.StatusOK {
 		t.Fatalf("move status=%d body=%s", moved.Code, moved.Body.String())
 	}
@@ -43,8 +46,23 @@ func TestPostgresScrumMoveAndDoneReturnDurableServerState(t *testing.T) {
 		movedCard.UpdatedAt != stored.UpdatedAt.UTC().Format(time.RFC3339Nano) {
 		t.Fatalf("move response=%#v durable=%#v", movedCard, stored)
 	}
+	stale := postScrumCardStateAction(t, server, project.ID, card.ID, "move", fmt.Sprintf(
+		`{"column":"blocked","expected_updated_at":%q}`, revision,
+	))
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale move status=%d body=%s", stale.Code, stale.Body.String())
+	}
+	storedAfterStale, err := repository.GetScrumCard(t.Context(), project.ID, card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedAfterStale.Column != "review" || !storedAfterStale.UpdatedAt.Equal(stored.UpdatedAt) {
+		t.Fatalf("stale move changed durable card before=%#v after=%#v", stored, storedAfterStale)
+	}
 
-	done := postScrumCardStateAction(t, server, project.ID, card.ID, "done", `{}`)
+	done := postScrumCardStateAction(t, server, project.ID, card.ID, "done", fmt.Sprintf(
+		`{"expected_updated_at":%q}`, stored.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	))
 	if done.Code != http.StatusOK {
 		t.Fatalf("done status=%d body=%s", done.Code, done.Body.String())
 	}

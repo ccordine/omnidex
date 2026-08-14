@@ -23,6 +23,16 @@ var removedJobMetadataKeys = []string{
 	"workspace_scan",
 	"channel_id",
 	"channel_user_message_id",
+	"agent_config",
+	"agent_config_source",
+	"instance_agent_config",
+	"external_agents_used",
+	"execution_agent",
+	"agent_strict",
+	"scrum_raw_play",
+	"omnidex_no_delegate",
+	"recipe_id",
+	"recipe",
 }
 
 func ValidateJobMetadataAuthority(metadata map[string]any) error {

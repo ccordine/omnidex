@@ -8,6 +8,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -33,6 +34,7 @@ type Config struct {
 	HuggingFaceBaseURL        string
 	HuggingFaceAPIKey         string
 	StationModels             map[station.ID]string
+	ObjectiveAdvisoryMode     objectiveadvisory.Mode
 	EmbeddingModel            string
 	WebSearchProviders        []string
 	WebSearchTimeout          time.Duration
@@ -55,18 +57,20 @@ type Config struct {
 	MigrateOnStartup          bool
 }
 
-// Load parses the environment and validates all non-secret configuration.
-// Call Validate after applying the configured durable secret store.
+// Load parses the environment and validates provider-independent runtime
+// structure. It preserves provider selections and credentials without resolving
+// them; provider validation belongs to the first actual provider operation.
 func Load() (Config, error) {
 	if err := validateTypedEnvironment(); err != nil {
 		return Config{}, err
 	}
-	provider, embeddingProvider, err := loadProviderSelection()
+	provider, embeddingProvider := loadProviderSelection()
+	compatibleProviders := loadCompatibleProviderConfigs()
+	providerModels := loadProviderModelConfigs()
+	objectiveAdvisoryMode, err := objectiveadvisory.ParseMode(os.Getenv("OMNI_OBJECTIVE_ADVISORY_MODE"))
 	if err != nil {
 		return Config{}, err
 	}
-	compatibleProviders := loadCompatibleProviderConfigs()
-	providerModels := loadProviderModelConfigs()
 	databaseSchema, err := loadDatabaseSchema()
 	if err != nil {
 		return Config{}, err
@@ -85,6 +89,7 @@ func Load() (Config, error) {
 		ProviderModels:            providerModels,
 		OllamaBaseURL:             getenv("OLLAMA_BASE_URL", ""),
 		CompatibleProviders:       compatibleProviders,
+		ObjectiveAdvisoryMode:     objectiveAdvisoryMode,
 		AzureAIBaseURL:            firstNonEmptyEnv([]string{"AZURE_AI_BASE_URL", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_BASE_URL"}, ""),
 		AzureAIAPIKey:             firstEnv("AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY"),
 		AzureAIAPIVersion:         getenv("AZURE_AI_API_VERSION", getenv("AZURE_OPENAI_API_VERSION", "")),
@@ -103,7 +108,7 @@ func Load() (Config, error) {
 		WorkerCount:               getenvInt("WORKER_COUNT", 2),
 		CodingFragmentConcurrency: getenvInt("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
 		WorkerPollInterval:        getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),
-		RequestTimeout:            getenvDuration("REQUEST_TIMEOUT", 180*time.Second),
+		RequestTimeout:            getenvDuration("REQUEST_TIMEOUT", 10*time.Minute),
 		RealtimeMaxClients:        getenvInt("REALTIME_MAX_CLIENTS", 512),
 		RealtimeStreamMaxAge:      getenvDuration("REALTIME_STREAM_MAX_AGE", 10*time.Minute),
 		RealtimeHeartbeat:         getenvDuration("REALTIME_HEARTBEAT", 25*time.Second),
@@ -145,16 +150,10 @@ func defaultCodingFragmentConcurrency(provider string) int {
 	return 4
 }
 
-// Validate performs final configuration validation, including credentials.
-// It must run after database-backed secrets have been overlaid.
+// Validate checks provider-independent runtime structure. Provider authority is
+// deliberately resolved and validated only at the first provider operation.
 func Validate(cfg Config) error {
-	if err := validateConfigStructure(cfg); err != nil {
-		return err
-	}
-	if err := validateSelectedProviderCredential(cfg.LLMProvider, cfg, "LLM_PROVIDER"); err != nil {
-		return err
-	}
-	return validateSelectedProviderCredential(cfg.EmbeddingProvider, cfg, "EMBEDDING_PROVIDER")
+	return validateConfigStructure(cfg)
 }
 
 func validateConfigStructure(cfg Config) error {
@@ -165,15 +164,6 @@ func validateConfigStructure(cfg Config) error {
 		if err := db.ValidateRuntimeSchemaName(cfg.DatabaseSchema); err != nil {
 			return fmt.Errorf("DATABASE_SCHEMA: %w", err)
 		}
-	}
-	if err := validateSelectedProviderEndpoint(cfg.LLMProvider, cfg, "LLM_PROVIDER"); err != nil {
-		return err
-	}
-	if err := validateSelectedProviderEndpoint(cfg.EmbeddingProvider, cfg, "EMBEDDING_PROVIDER"); err != nil {
-		return err
-	}
-	if err := validateSelectedProviderModels(cfg); err != nil {
-		return err
 	}
 	return validateRuntimeConfig(cfg)
 }

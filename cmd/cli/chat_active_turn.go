@@ -26,7 +26,6 @@ func awaitInteractiveTurn(
 	lastStatus := ""
 	lastStepStatus := map[int64]string{}
 	lastStepDetails := map[int64]string{}
-	lastExternalOutputOffsets := map[int64]int{}
 	seenContextIDs := map[int64]struct{}{}
 	observedJobID := int64(0)
 
@@ -35,7 +34,6 @@ func awaitInteractiveTurn(
 			lastStatus = ""
 			lastStepStatus = map[int64]string{}
 			lastStepDetails = map[int64]string{}
-			lastExternalOutputOffsets = map[int64]int{}
 			seenContextIDs = map[int64]struct{}{}
 			observedJobID = jobID
 		}
@@ -53,9 +51,6 @@ func awaitInteractiveTurn(
 		printed := false
 		if progress || verbose {
 			printed = printStepStatusUpdatesWithUI(details.Steps, lastStepStatus, ui) || printed
-		}
-		if progress && !verbose {
-			printed = printExternalAgentStreamUpdatesWithUI(details.Steps, lastExternalOutputOffsets, ui, maxChars) || printed
 		}
 		if verbose {
 			printed = printStepDetailUpdates(details.Steps, lastStepDetails, maxChars) || printed

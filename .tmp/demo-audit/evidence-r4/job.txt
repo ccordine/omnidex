@@ -1,0 +1,201 @@
+{
+  "job": {
+    "id": 1,
+    "instruction": "Build a small browser music studio with channels, drum pads, and a keyboard.",
+    "pipeline": "chat",
+    "status": "failed",
+    "error": "compile deterministic assembly: coding semantic requirement_extract_001 failed: requirement_extract_001 candidate failed 3 bounded corrections: semantic response merge patch changed 0 JSON leaves; exactly one is required",
+    "metadata": {
+      "channel_id": "cli-chat-baeb675ddbcc2929",
+      "client_cwd": "/home/gryph/Projects/omnidex-demo-music-r4-3bMPENtu",
+      "project_id": 1,
+      "session_id": "channel:cli-chat-baeb675ddbcc2929",
+      "model_config": {},
+      "telemetry_run_id": "d67be1b5-719d-4cd0-ac0e-2144ab7e1490",
+      "channel_user_message_id": 1
+    },
+    "current_generation": 1,
+    "created_at": "2026-08-14T00:27:39.2022-04:00",
+    "updated_at": "2026-08-14T00:28:18.58678-04:00",
+    "completed_at": "2026-08-14T00:28:18.58678-04:00"
+  },
+  "steps": [
+    {
+      "id": 1,
+      "job_id": 1,
+      "action": "objective_resolve",
+      "sort_index": 5,
+      "status": "failed",
+      "generation": 1,
+      "worker_id": "worker-1",
+      "error": "compile deterministic assembly: coding semantic requirement_extract_001 failed: requirement_extract_001 candidate failed 3 bounded corrections: semantic response merge patch changed 0 JSON leaves; exactly one is required",
+      "started_at": "2026-08-14T00:27:40.292359-04:00",
+      "finished_at": "2026-08-14T00:28:18.58678-04:00",
+      "created_at": "2026-08-14T00:27:39.2022-04:00",
+      "updated_at": "2026-08-14T00:28:18.58678-04:00"
+    }
+  ],
+  "contexts": [
+    {
+      "id": 1,
+      "step_id": 1,
+      "key": "phase",
+      "value": "execution",
+      "created_at": "2026-08-14T00:27:40.299445-04:00"
+    },
+    {
+      "id": 2,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:40Z event=step_start phase=execution action=objective_resolve worker=worker-1",
+      "created_at": "2026-08-14T00:27:40.302032-04:00"
+    },
+    {
+      "id": 3,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:40Z event=objective_worker_started kind=semantic subject=conversation_objective_kind model=qwen3.5:9b-q4_K_M attempt=1/3 context=prompt:718B,capabilities:0B,current:0B,correction:0B",
+      "created_at": "2026-08-14T00:27:40.306139-04:00"
+    },
+    {
+      "id": 4,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:40Z event=objective_portable_dispatched kind=conversation_objective_kind work=4cb13e1c9a1b payload=221B model=qwen3.5:9b-q4_K_M",
+      "created_at": "2026-08-14T00:27:40.308052-04:00"
+    },
+    {
+      "id": 5,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:48Z event=objective_worker_completed kind=semantic subject=conversation_objective_kind model=qwen3.5:9b-q4_K_M attempt=1/3",
+      "created_at": "2026-08-14T00:27:48.279082-04:00"
+    },
+    {
+      "id": 6,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:48Z event=coding_phase_changed phase=assembling detail=compiling deterministic source assembly",
+      "created_at": "2026-08-14T00:27:48.281878-04:00"
+    },
+    {
+      "id": 7,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:48Z event=coding_worker_started kind=semantic subject=application_surface model=qwen3.5:9b-q4_K_M attempt=1/3 context=prompt:537B,capabilities:0B,current:0B,correction:0B",
+      "created_at": "2026-08-14T00:27:48.284031-04:00"
+    },
+    {
+      "id": 8,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:48Z event=coding_portable_dispatched kind=application_classification work=9065a267a2b5 payload=95B model=qwen3.5:9b-q4_K_M",
+      "created_at": "2026-08-14T00:27:48.286086-04:00"
+    },
+    {
+      "id": 9,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:51Z event=coding_worker_completed kind=semantic subject=application_surface model=qwen3.5:9b-q4_K_M attempt=1/3",
+      "created_at": "2026-08-14T00:27:51.80626-04:00"
+    },
+    {
+      "id": 10,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:51Z event=coding_worker_started kind=semantic subject=application_identity model=qwen3.5:9b-q4_K_M attempt=1/3 context=prompt:400B,capabilities:0B,current:0B,correction:0B",
+      "created_at": "2026-08-14T00:27:51.808848-04:00"
+    },
+    {
+      "id": 11,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:51Z event=coding_portable_dispatched kind=application_identity work=218bcea28227 payload=95B model=qwen3.5:9b-q4_K_M",
+      "created_at": "2026-08-14T00:27:51.811963-04:00"
+    },
+    {
+      "id": 12,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:55Z event=coding_worker_completed kind=semantic subject=application_identity model=qwen3.5:9b-q4_K_M attempt=1/3",
+      "created_at": "2026-08-14T00:27:55.45696-04:00"
+    },
+    {
+      "id": 13,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:55Z event=coding_worker_started kind=semantic subject=requirement_extract_001 model=qwen3.5:9b-q4_K_M attempt=1/3 context=prompt:710B,capabilities:0B,current:0B,correction:0B",
+      "created_at": "2026-08-14T00:27:55.46024-04:00"
+    },
+    {
+      "id": 14,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:27:55Z event=coding_portable_dispatched kind=requirement_partition work=20e80cb2e853 payload=120B model=qwen3.5:9b-q4_K_M",
+      "created_at": "2026-08-14T00:27:55.462161-04:00"
+    },
+    {
+      "id": 15,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:03Z event=operation_heartbeat operation=station-call:20e80cb2e853e50face6a25372604a7e99457c54eb0a7ca303c4726c06a2773f elapsed=8s",
+      "created_at": "2026-08-14T00:28:03.679517-04:00"
+    },
+    {
+      "id": 16,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:12Z event=coding_worker_rejected kind=semantic subject=requirement_extract_001 model=qwen3.5:9b-q4_K_M attempt=1/3 error=feature quote \"Build a small browser with channels, drum pads, and a requirement-partition step for USER_REQUEST. If an explicit requested capability, behavior, or user-visible element remains, return outcome feature and copy the earliest shortest exact contiguous quote naming it as the sole feature_quotes item. Preserve meaningful actions and modifiers and copy source text exactly; never paraphrase. Exclude request wording, product/category naming, project scope or quality wording, constraints, and connective filler. If no explicit application feature remains, return outcome none and an self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contained, self-contain\": is not an exact source substring",
+      "created_at": "2026-08-14T00:28:12.458401-04:00"
+    },
+    {
+      "id": 17,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:12Z event=coding_portable_dispatched kind=response_correction work=fbd469f49faf payload=1383B model=qwen3.5:9b-q4_K_M",
+      "created_at": "2026-08-14T00:28:12.463291-04:00"
+    },
+    {
+      "id": 18,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:15Z event=coding_worker_rejected kind=semantic subject=requirement_extract_001 model=qwen3.5:9b-q4_K_M attempt=2/3 error=feature quote \"Build a small browser with channels, drum pads, and a requirement-partition step for USER_REQUEST\": is not an exact source substring",
+      "created_at": "2026-08-14T00:28:15.498975-04:00"
+    },
+    {
+      "id": 19,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:15Z event=coding_portable_dispatched kind=response_correction work=89fe8ee1c065 payload=456B model=qwen3.5:9b-q4_K_M",
+      "created_at": "2026-08-14T00:28:15.50342-04:00"
+    },
+    {
+      "id": 20,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:18Z event=coding_worker_rejected kind=semantic subject=requirement_extract_001 model=qwen3.5:9b-q4_K_M attempt=3/3 error=semantic response merge patch changed 0 JSON leaves; exactly one is required",
+      "created_at": "2026-08-14T00:28:18.573446-04:00"
+    },
+    {
+      "id": 21,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:18Z event=coding_worker_failed kind=semantic subject=requirement_extract_001 model=qwen3.5:9b-q4_K_M attempt=3/3 error=requirement_extract_001 candidate failed 3 bounded corrections: semantic response merge patch changed 0 JSON leaves; exactly one is required",
+      "created_at": "2026-08-14T00:28:18.577553-04:00"
+    },
+    {
+      "id": 22,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:18Z event=coding_phase_changed phase=failed detail=compile deterministic assembly: coding semantic requirement_extract_001 failed: requirement_extract_001 candidate failed 3 bounded corrections: semantic response merge patch changed 0 JSON leaves; exactly one is required",
+      "created_at": "2026-08-14T00:28:18.581323-04:00"
+    },
+    {
+      "id": 23,
+      "step_id": 1,
+      "key": "event",
+      "value": "time=2026-08-14T04:28:18Z event=step_error compile deterministic assembly: coding semantic requirement_extract_001 failed: requirement_extract_001 candidate failed 3 bounded corrections: semantic response merge patch changed 0 JSON leaves; exactly one is required",
+      "created_at": "2026-08-14T00:28:18.583172-04:00"
+    }
+  ]
+}

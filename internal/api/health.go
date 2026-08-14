@@ -23,3 +23,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"dependencies":    dependencies,
 	})
 }
+
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	dependencies := s.collectCoreDependencies(r.Context())
+	status := coreHealthStatus(dependencies)
+	code := http.StatusOK
+	if status != "ok" {
+		code = http.StatusServiceUnavailable
+	}
+	writeJSON(w, code, map[string]any{
+		"status":       status,
+		"time":         time.Now().UTC(),
+		"dependencies": dependencies,
+	})
+}

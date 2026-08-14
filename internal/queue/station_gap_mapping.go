@@ -32,10 +32,12 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 	switch kind {
 	case assemblyline.WorkApplicationClassify:
 		return station.CodingSurface, nil
-	case assemblyline.WorkApplicationIdentity:
-		return station.CodingProductIdentity, nil
-	case assemblyline.WorkRequirementPartition:
-		return station.CodingRequirementPartition, nil
+	case assemblyline.WorkApplicationRequirements, assemblyline.WorkRepositoryRequirements:
+		return station.CodingRequirements, nil
+	case assemblyline.WorkApplicationJobSpecification,
+		assemblyline.WorkApplicationJobSpecificationReview,
+		assemblyline.WorkApplicationJobSpecificationRepair:
+		return station.CodingWorkload, nil
 	case assemblyline.WorkRepositorySearchTerm:
 		return station.CodingRepositorySearchTerm, nil
 	case assemblyline.WorkRepositoryChangeSurface:

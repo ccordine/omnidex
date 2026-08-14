@@ -13,17 +13,18 @@ func TestConcurrentJobStationRoutingIsIsolated(t *testing.T) {
 	service := &Service{models: ModelRouting{
 		Stations: map[station.ID]string{
 			station.ConversationObjectiveKind: "base-kind",
+			station.ObjectiveAdvisory:         "base-advisory",
 		},
 	}}
 	metadata := []json.RawMessage{
-		json.RawMessage(`{"model_config":{"conversation_objective_kind_model":"job-a"}}`),
-		json.RawMessage(`{"model_config":{"conversation_objective_kind_model":"job-b"}}`),
+		json.RawMessage(`{"model_config":{"conversation_objective_kind_model":"job-a","objective_advisory_model":"advisory-a"}}`),
+		json.RawMessage(`{"model_config":{"conversation_objective_kind_model":"job-b","objective_advisory_model":"advisory-b"}}`),
 	}
 	errors := make(chan string, 200)
 	var workers sync.WaitGroup
 	for index := 0; index < 200; index++ {
 		workers.Add(1)
-		go func(raw json.RawMessage, want string) {
+		go func(raw json.RawMessage, want, wantAdvisory string) {
 			defer workers.Done()
 			routing, err := modelRoutingFromJobMetadata(raw, service.models)
 			if err != nil {
@@ -34,7 +35,15 @@ func TestConcurrentJobStationRoutingIsIsolated(t *testing.T) {
 			if err != nil || got != want {
 				errors <- "unexpected station route"
 			}
-		}(metadata[index%2], []string{"job-a", "job-b"}[index%2])
+			advisory, err := service.requiredStationModel(routing, station.ObjectiveAdvisory)
+			if err != nil || advisory != wantAdvisory {
+				errors <- "unexpected objective advisory route"
+			}
+		}(
+			metadata[index%2],
+			[]string{"job-a", "job-b"}[index%2],
+			[]string{"advisory-a", "advisory-b"}[index%2],
+		)
 	}
 	workers.Wait()
 	close(errors)
@@ -43,6 +52,9 @@ func TestConcurrentJobStationRoutingIsIsolated(t *testing.T) {
 	}
 	if service.models.Stations[station.ConversationObjectiveKind] != "base-kind" {
 		t.Fatal("job-local station routing mutated shared service routing")
+	}
+	if service.models.Stations[station.ObjectiveAdvisory] != "base-advisory" {
+		t.Fatal("job-local objective advisory routing mutated shared service routing")
 	}
 }
 

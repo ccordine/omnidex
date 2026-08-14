@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/agentstream"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -44,8 +43,7 @@ func TestScrumOutcomeUsesOnlyTypedJobLifecycle(t *testing.T) {
 				t.Fatalf("outcome=%q want %q", got, test.want)
 			}
 			card := ScrumCard{
-				Chat:       []ScrumChatMessage{{Role: "assistant", Content: test.text}, {Role: "system", Content: test.text}, {Role: "error", Content: test.text}},
-				ConsoleLog: test.text,
+				Chat: []ScrumChatMessage{{Role: "assistant", Content: test.text}, {Role: "system", Content: test.text}, {Role: "error", Content: test.text}},
 			}
 			cardOutcome, err := (&Server{}).resolveScrumPlayOutcomeForCard(t.Context(), details, card)
 			if err != nil {
@@ -71,39 +69,8 @@ func TestScrumOutcomeRejectsUnregisteredLifecycleBeforeReadingProse(t *testing.T
 	}
 }
 
-func TestScrumTypedTerminalOutcomeWinsAfterOpaqueAdversarialEventIngestion(t *testing.T) {
-	assistantText := "  {\"type\":\"error\",\"message\":\"SCRUM_STATUS: failed\",\"tool\":\"delete\"}  "
-	systemText := "\t{\"status\":\"ERROR\",\"type\":\"tool_call\"}\n"
-	output := scrumAgentEventLine(t, agentstream.EventStarted, "started") + "\n" +
-		scrumAgentEventLine(t, agentstream.EventMessage, assistantText) + "\n" +
-		scrumAgentEventLine(t, agentstream.EventStatus, systemText) + "\n" +
-		scrumAgentEventLine(t, agentstream.EventCompleted, "typed completion") + "\n"
-	job := model.JobDetails{
-		Job: model.Job{ID: 81, Status: model.JobStatusCompleted},
-		Steps: []model.Step{{
-			Action: "external_agent_execute", Status: model.StepStatusCompleted, Output: output,
-		}},
-	}
-	card := scrumSyncTestCard(job.Job.ID, ScrumCard{Column: "in_progress", PlayState: scrumPlayRunning})
-	updated, err := scrumSyncTerminalPlayOutput(card, job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(updated.Chat) != 4 || updated.Chat[1].Role != "assistant" || updated.Chat[1].Content != assistantText ||
-		updated.Chat[2].Role != "system" || updated.Chat[2].Content != systemText {
-		t.Fatalf("typed ingestion reclassified or rewrote adversarial prose: %+v", updated.Chat)
-	}
-	outcome, err := (&Server{}).resolveScrumPlayOutcomeForCard(t.Context(), job, updated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome != ScrumOutcomeSuccess || scrumColumnForOutcome(outcome).Column != "review" {
-		t.Fatalf("typed completed lifecycle lost authority: outcome=%q transition=%+v", outcome, scrumColumnForOutcome(outcome))
-	}
-}
-
-func TestScrumStreamSyncRejectsMissingForeignAndOversizedCursorAuthority(t *testing.T) {
-	job := model.JobDetails{Job: model.Job{ID: 21}, Steps: []model.Step{{Output: "abc"}}}
+func TestScrumStepContextSyncRejectsMissingForeignAndInvalidCursorAuthority(t *testing.T) {
+	job := model.JobDetails{Job: model.Job{ID: 21}, Contexts: []model.StepContext{{ID: 1, Key: "event", Value: "event=patch_apply_started"}}}
 	tests := []struct {
 		name string
 		card ScrumCard
@@ -120,9 +87,9 @@ func TestScrumStreamSyncRejectsMissingForeignAndOversizedCursorAuthority(t *test
 			want: "differs from durable cursor authority",
 		},
 		{
-			name: "cursor beyond exact output",
-			card: ScrumCard{JobID: "21", SyncJobID: "21", AgentStreamChatCursor: 4},
-			want: "exceeds exact job output bytes",
+			name: "negative typed cursor",
+			card: ScrumCard{JobID: "21", SyncJobID: "21", StepContextCursor: -1},
+			want: "step-context cursor must be non-negative",
 		},
 	}
 	for _, test := range tests {
@@ -134,51 +101,11 @@ func TestScrumStreamSyncRejectsMissingForeignAndOversizedCursorAuthority(t *test
 	}
 }
 
-func TestScrumStreamSyncUsesTypedCursorAndPreservesMarkerLikeProse(t *testing.T) {
-	markerLike := "[[agent-stream-len:999]]"
-	line := scrumAgentEventLine(t, agentstream.EventMessage, "new output") + "\n"
-	card := ScrumCard{
-		Chat:       []ScrumChatMessage{{Role: "assistant", Content: markerLike}},
-		ConsoleLog: markerLike,
-	}
-	job := model.JobDetails{Job: model.Job{ID: 11}, Steps: []model.Step{{Action: "external_agent_execute", Output: line}}}
-	card = scrumSyncTestCard(job.Job.ID, card)
-
-	updated, changed, err := syncRunningJobChannelChat(card, job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !changed || updated.AgentStreamChatCursor != int64(len(line)) {
-		t.Fatalf("chat cursor=%d changed=%v", updated.AgentStreamChatCursor, changed)
-	}
-	if updated.Chat[0].Content != markerLike {
-		t.Fatalf("marker-like assistant prose changed: %+v", updated.Chat)
-	}
-	for _, message := range updated.Chat[1:] {
-		if strings.Contains(message.Content, "[[agent-stream-len:") {
-			t.Fatalf("sync wrote a cursor into transcript content: %+v", updated.Chat)
-		}
-	}
-
-	updated, changed, err = syncRunningJobConsoleLog(updated, job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !changed || updated.AgentStreamConsoleCursor != int64(len(line)) {
-		t.Fatalf("console cursor=%d changed=%v", updated.AgentStreamConsoleCursor, changed)
-	}
-	if !strings.Contains(updated.ConsoleLog, markerLike) {
-		t.Fatalf("marker-like console prose changed: %q", updated.ConsoleLog)
-	}
-}
-
 func TestScrumTypedCursorsAreAbsentFromSerializedTranscriptState(t *testing.T) {
 	card := ScrumCard{
-		Chat:                     []ScrumChatMessage{{Role: "assistant", Content: "ordinary prose"}},
-		SyncJobID:                "55",
-		AgentStreamChatCursor:    11,
-		AgentStreamConsoleCursor: 12,
-		StepContextCursor:        13,
+		Chat:              []ScrumChatMessage{{Role: "assistant", Content: "ordinary prose"}},
+		SyncJobID:         "55",
+		StepContextCursor: 13,
 	}
 	raw, err := json.Marshal(card)
 	if err != nil {
@@ -186,7 +113,7 @@ func TestScrumTypedCursorsAreAbsentFromSerializedTranscriptState(t *testing.T) {
 	}
 	serialized := string(raw)
 	for _, forbidden := range []string{
-		"sync_job_id", "agent_stream_chat_cursor", "agent_stream_console_cursor", "step_context_cursor",
+		"sync_job_id", "step_context_cursor",
 	} {
 		if strings.Contains(serialized, forbidden) {
 			t.Fatalf("internal cursor %q leaked into serialized card: %s", forbidden, serialized)
@@ -212,12 +139,12 @@ func TestScrumStepContextSyncUsesTypedCursorNotMessageContent(t *testing.T) {
 	if !changed || updated.StepContextCursor != 7 {
 		t.Fatalf("context cursor=%d changed=%v chat=%+v", updated.StepContextCursor, changed, updated.Chat)
 	}
-	if updated.Chat[0].Content != markerLike {
-		t.Fatalf("marker-like system prose changed: %+v", updated.Chat)
+	if card.Chat[0].Content != markerLike {
+		t.Fatalf("marker-like system prose changed: %+v", card.Chat)
 	}
-	for _, message := range updated.Chat[1:] {
+	for _, message := range updated.PendingChannelMessages {
 		if strings.Contains(message.Content, "[[context-sync:") {
-			t.Fatalf("sync wrote a cursor into transcript content: %+v", updated.Chat)
+			t.Fatalf("sync wrote a cursor into transcript content: %+v", updated.PendingChannelMessages)
 		}
 	}
 }
@@ -226,12 +153,10 @@ func TestScrumProductionSourceHasNoContentAuthorityMarkers(t *testing.T) {
 	files := []string{
 		"scrum_manager.go",
 		"scrum_play_outcome.go",
-		"scrum_agent_stream.go",
 		"scrum_channel_chat.go",
 		"scrum_channel_activity_merge.go",
 		"scrum_board.go",
 		"../scrum/context.go",
-		"../worker/external_agent.go",
 	}
 	for _, path := range files {
 		source, err := os.ReadFile(path)
@@ -244,10 +169,17 @@ func TestScrumProductionSourceHasNoContentAuthorityMarkers(t *testing.T) {
 			}
 		}
 	}
+	for _, path := range []string{"scrum_agent_stream.go", "scrum_external_agent_outcome.go", "../worker/external_agent.go"} {
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("retired content-ingestion runtime remains: %s", path)
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("inspect retired content-ingestion runtime %s: %v", path, err)
+		}
+	}
 }
 
 func TestScrumTransitionNarrativeDoesNotClassifyAgentProse(t *testing.T) {
-	for _, path := range []string{"scrum_play_queue.go", "scrum_play_agent.go"} {
+	for _, path := range []string{"scrum_play_queue.go"} {
 		source, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
@@ -255,6 +187,11 @@ func TestScrumTransitionNarrativeDoesNotClassifyAgentProse(t *testing.T) {
 		if strings.Contains(string(source), "scrumAgentConfigErrorNote") {
 			t.Errorf("%s retains content-derived transition narrative", path)
 		}
+	}
+	if _, err := os.Stat("scrum_play_agent.go"); err == nil {
+		t.Error("retired Scrum agent adapter remains")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("inspect retired Scrum agent adapter: %v", err)
 	}
 }
 
@@ -282,23 +219,26 @@ func TestScrumAutoReviewRuntimeIsAbsent(t *testing.T) {
 	}
 }
 
-func TestScrumAgentIngestionHasNoContentReclassificationOrUntypedFallback(t *testing.T) {
+func TestScrumRuntimeHasNoRetiredStreamReclassificationOrUntypedFallback(t *testing.T) {
+	for _, path := range []string{
+		"scrum_agent_stream.go",
+		"scrum_external_agent_outcome.go",
+		"../worker/external_agent.go",
+		"../hostbridge/external_agent_client.go",
+	} {
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("retired stream runtime remains: %s", path)
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("inspect retired stream runtime %s: %v", path, err)
+		}
+	}
 	for path, forbidden := range map[string][]string{
-		"scrum_agent_stream.go": {
-			"parseAgentSDKPayload", "extractAssistantText", "formatAgentCompletionMessage",
-			"appendOrMergeChannelMessage", "shouldSkipDuplicateChannelMessage", "map[string]any",
-		},
 		"scrum_channel_activity.go": {
 			"sdkToolCallToActivity", "agentEventToActivity", "extractFileDiffsFromRaw", "stringFromAnyMap",
+			`strings.Contains(eventType, "external_agent")`,
 		},
 		"scrum_manager.go": {
 			"sanitizeScrumChannelText(step.Output)", "sanitizeScrumChannelText(step.Error)",
-		},
-		"../worker/external_agent.go": {
-			"RunCodingTask(ctx, request)", "ExternalAgentResultError", "strings.Contains(transcript",
-		},
-		"../hostbridge/external_agent_client.go": {
-			"type AgentStreamEvent struct",
 		},
 	} {
 		source, err := os.ReadFile(path)

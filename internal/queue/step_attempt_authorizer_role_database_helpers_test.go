@@ -30,7 +30,7 @@ func startStepAttemptFenceFixture(t *testing.T, label string) stepAttemptFenceFi
 		t.Fatal(err)
 	}
 	job, err := repository.EnqueueJob(
-		ctx, label, model.PipelineAssistant, []byte(`{}`),
+		ctx, label, model.PipelineCoding, []byte(`{}`),
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -84,10 +84,6 @@ body {
   border-color: rgba(103, 232, 249, 0.18);
 }
 
-.scrum-channel-scroll .channel-agent-reply {
-  font-weight: 450;
-}
-
 .scrum-channel-scroll .message-thinking .message-shell {
   max-width: min(560px, 92%);
   opacity: 0.85;

@@ -104,7 +104,7 @@ func insertGenerationTestJob(t *testing.T, ctx context.Context, tx pgx.Tx, suffi
 	var jobID int64
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata)
-		VALUES ($1, 'assistant', 'pending', '{}'::jsonb)
+		VALUES ($1, 'coding', 'pending', '{}'::jsonb)
 		RETURNING id
 	`, fmt.Sprintf("generation-%s-%d", suffix, time.Now().UnixNano())).Scan(&jobID); err != nil {
 		t.Fatal(err)

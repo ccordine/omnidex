@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"sort"
@@ -15,6 +16,25 @@ import (
 const defaultProjectMapMaxFiles = 1200
 
 func (s *Server) handleProjectMap(w http.ResponseWriter, r *http.Request, id int64, action string) {
+	switch action {
+	case "map":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	case "map/scan":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := decodeProjectAutoWorkActionRequest(w, r, "project map scan"); err != nil {
+			writeError(w, projectRequestErrorStatus(err), err.Error())
+			return
+		}
+	default:
+		writeError(w, http.StatusNotFound, "project map action not found")
+		return
+	}
 	project, err := s.repo.GetProject(r.Context(), id)
 	if err != nil {
 		writeProjectError(w, err)
@@ -27,10 +47,6 @@ func (s *Server) handleProjectMap(w http.ResponseWriter, r *http.Request, id int
 	}
 	switch action {
 	case "map":
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
 		payload, err := s.loadProjectCodebaseMapPayload(r.Context(), location)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
@@ -38,18 +54,12 @@ func (s *Server) handleProjectMap(w http.ResponseWriter, r *http.Request, id int
 		}
 		writeJSON(w, http.StatusOK, payload)
 	case "map/scan":
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
 		payload, err := s.scanProjectCodebaseMap(r.Context(), project)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, payload)
-	default:
-		writeError(w, http.StatusNotFound, "project map action not found")
 	}
 }
 
@@ -74,10 +84,19 @@ func loadProjectCodebaseMapPayloadLocal(location string) (map[string]any, error)
 	return codebaseMapPayload(cm, true), nil
 }
 
-func (s *Server) scanProjectCodebaseMap(ctx context.Context, project model.Project) (map[string]any, error) {
+type projectMapScanResponse struct {
+	ProjectID     int64  `json:"project_id"`
+	GeneratedAt   string `json:"generated_at"`
+	Source        string `json:"source"`
+	FileCount     int    `json:"file_count"`
+	ModuleCount   int    `json:"module_count"`
+	ScanTruncated bool   `json:"scan_truncated"`
+}
+
+func (s *Server) scanProjectCodebaseMap(ctx context.Context, project model.Project) (projectMapScanResponse, error) {
 	location := strings.TrimSpace(project.Location)
 	if location == "" {
-		return nil, errProjectLocationMissing
+		return projectMapScanResponse{}, errProjectLocationMissing
 	}
 
 	if client := s.hostBridgeClient(); client != nil && !projectPathAccessibleLocally(location) {
@@ -85,22 +104,26 @@ func (s *Server) scanProjectCodebaseMap(ctx context.Context, project model.Proje
 		defer cancel()
 		cm, err := s.scanProjectMapViaBridge(ctx, location, defaultProjectMapMaxFiles)
 		if err != nil {
-			return nil, err
+			return projectMapScanResponse{}, err
 		}
-		payload := codebaseMapPayload(cm, true)
-		payload["message"] = "current codebase map generated"
-		payload["source"] = "host-bridge"
-		return payload, nil
+		return newProjectMapScanResponse(project.ID, "host-bridge", cm)
 	}
 
 	cm, err := omni.BuildCodebaseMap(location, omni.CodebaseMapConfig{MaxFiles: defaultProjectMapMaxFiles})
 	if err != nil {
-		return nil, err
+		return projectMapScanResponse{}, err
 	}
-	payload := codebaseMapPayload(cm, true)
-	payload["message"] = "current codebase map generated"
-	payload["source"] = "core-local"
-	return payload, nil
+	return newProjectMapScanResponse(project.ID, "core-local", cm)
+}
+
+func newProjectMapScanResponse(projectID int64, source string, cm omni.CodebaseMap) (projectMapScanResponse, error) {
+	if projectID <= 0 || (source != "host-bridge" && source != "core-local") || strings.TrimSpace(cm.GeneratedAt) == "" {
+		return projectMapScanResponse{}, fmt.Errorf("codebase scan did not produce exact response authority")
+	}
+	return projectMapScanResponse{
+		ProjectID: projectID, GeneratedAt: cm.GeneratedAt, Source: source,
+		FileCount: len(cm.Files), ModuleCount: len(cm.Modules), ScanTruncated: cm.Truncated,
+	}, nil
 }
 
 func projectPathAccessibleLocally(location string) bool {

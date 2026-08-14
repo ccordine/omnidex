@@ -13,7 +13,6 @@ func TestDisplayOnlyCardTicketCannotEnterExecutionContext(t *testing.T) {
 		"scrum_manager.go",
 		"../scrum/context.go",
 		"../worker/v3_coding_runtime.go",
-		"../worker/external_agent.go",
 	} {
 		source, err := os.ReadFile(path)
 		if err != nil {
@@ -28,6 +27,15 @@ func TestDisplayOnlyCardTicketCannotEnterExecutionContext(t *testing.T) {
 			if strings.Contains(string(source), forbidden) {
 				t.Errorf("%s sends display-only ticket through execution authority %q", path, forbidden)
 			}
+		}
+	}
+	for _, retired := range []string{
+		"../worker/external_agent.go",
+		"scrum_play_agent.go",
+		"scrum_agent_stream.go",
+	} {
+		if _, err := os.Stat(retired); !os.IsNotExist(err) {
+			t.Errorf("retired execution source %s must be absent, stat error=%v", retired, err)
 		}
 	}
 }

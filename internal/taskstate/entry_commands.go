@@ -20,7 +20,7 @@ func (command AddEntryCommand) decide(ledger *Ledger) (Event, error) {
 			return Event{}, fmt.Errorf("%w: scope node %q is superseded", ErrInvalidState, command.ScopeNodeID)
 		}
 	}
-	if err := requireExactText(command.Content, "entry content"); err != nil {
+	if err := requireEntryContent(command.Content, command.Kind); err != nil {
 		return Event{}, err
 	}
 	if command.Confidence != nil && (*command.Confidence < 0 || *command.Confidence > 1) {

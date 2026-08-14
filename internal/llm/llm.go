@@ -24,6 +24,7 @@ type PreparedModel struct {
 	ResponseSchema               map[string]any
 	ThinkingEnabled              bool
 	Temperature                  *float64
+	RawTextStopSequence          string
 	ProviderIdentityExpectation  *ProviderIdentityExpectation
 	ProviderObservationChallenge string
 }

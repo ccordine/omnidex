@@ -36,7 +36,7 @@ func TestPostgresJobEnqueueCreatesInitialTaskAuthorityAtomically(t *testing.T) {
 	}
 	defer tx.Rollback(context.Background())
 	nestedJob, err := repository.enqueueJobTx(
-		ctx, tx, marker+"-nested", model.PipelineAssistant, []byte(`{}`),
+		ctx, tx, marker+"-nested", model.PipelineCoding, []byte(`{}`),
 	)
 	if err != nil {
 		t.Fatal(err)

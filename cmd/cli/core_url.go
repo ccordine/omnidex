@@ -14,9 +14,9 @@ var errCoreURLRequired = errors.New("CORE_URL is required")
 
 type managedEnvironmentReader func(string) (map[string]string, error)
 
-func resolveCoreURL(explicit, executable string, readFile managedEnvironmentReader) (string, error) {
-	if value := strings.TrimSpace(explicit); value != "" {
-		return normalizedCoreURL(value)
+func resolveCoreURL(explicit string, explicitSet bool, executable string, readFile managedEnvironmentReader) (string, error) {
+	if explicitSet {
+		return normalizedCoreURL(explicit)
 	}
 	if readFile == nil {
 		return "", fmt.Errorf("managed environment reader is not configured")
@@ -45,9 +45,13 @@ func managedEnvironmentPath(executable string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve executable path: %w", err)
 	}
-	binDir := filepath.Dir(absolute)
+	canonical, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", fmt.Errorf("resolve managed executable %s: %w", absolute, err)
+	}
+	binDir := filepath.Dir(canonical)
 	if filepath.Base(binDir) != "bin" {
-		return "", fmt.Errorf("CORE_URL is unset and executable is not in a managed bin directory: %s", absolute)
+		return "", fmt.Errorf("CORE_URL is unset and executable is not in a managed bin directory: %s", canonical)
 	}
 	return filepath.Join(filepath.Dir(binDir), ".env"), nil
 }

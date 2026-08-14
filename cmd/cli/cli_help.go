@@ -11,7 +11,7 @@ func usage() {
 	fmt.Println("")
 	fmt.Println("commands:")
 	fmt.Println("  chat [--session id] [--interval 2s] [--progress] [--verbose] [--max-chars 1200] [initial message]")
-	fmt.Println("  run [--session id] [--agent omnidex|cursor|codex] [--agent-model m] [--interval 2s] [--progress] [--verbose] [--max-chars 1200] <coding instruction>")
+	fmt.Println("  run [--session id] [--interval 2s] [--progress] [--verbose] [--max-chars 1200] <coding instruction>")
 	fmt.Println("  list [--status status] [--limit N] [--offset N]")
 	fmt.Println("  show [--history generations|steps|artifacts|evidence|claims|llm_calls] [--history-limit N] [--history-cursor token] <job-id>")
 	fmt.Println("  watch [--interval 2s] [--progress] [--verbose] [--max-chars 1200] <job-id>")

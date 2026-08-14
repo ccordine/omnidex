@@ -9,6 +9,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/queue"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
@@ -32,40 +33,44 @@ type WorkspaceSettings struct {
 }
 
 type Options struct {
-	WorkerCount            int
-	FragmentConcurrency    int
-	PollInterval           time.Duration
-	InferenceContextTokens int
-	EmbeddingProvider      string
-	EmbeddingModel         string
-	Models                 ModelRouting
-	Workspace              WorkspaceSettings
-	Logger                 *log.Logger
-	OnJobFinished          func(jobID int64)
-	OnJobOutput            func(jobID int64, delta string)
+	WorkerCount               int
+	FragmentConcurrency       int
+	PollInterval              time.Duration
+	InferenceContextTokens    int
+	EmbeddingProvider         string
+	EmbeddingModel            string
+	Models                    ModelRouting
+	ObjectiveAdvisoryMode     objectiveadvisory.Mode
+	ObjectiveAdvisoryProvider string
+	Workspace                 WorkspaceSettings
+	Logger                    *log.Logger
+	OnJobFinished             func(jobID int64)
+	OnJobOutput               func(jobID int64, delta string)
 }
 
 type Service struct {
-	repo                   *queue.Repository
-	embeddings             llm.EmbeddingClient
-	stationClient          llm.ExactStationClient
-	webSearch              *websearch.Service
-	workerCount            int
-	fragmentConcurrency    int
-	pollInterval           time.Duration
-	inferenceContextTokens int
-	embeddingProvider      string
-	embeddingModel         string
-	models                 ModelRouting
-	workspaceRoot          string
-	repositoryIndex        repositoryIndexRefresher
-	repositoryRetrieval    repositoryEvidenceBuilder
-	workspaceHostRoot      string
-	completeStep           stepCompleteFunc
-	nativeV3Runner         nativeV3StepRunner
-	logger                 *log.Logger
-	onJobFinished          func(jobID int64)
-	onJobOutput            func(jobID int64, delta string)
+	repo                      *queue.Repository
+	embeddings                llm.EmbeddingClient
+	stationClient             llm.ExactStationClient
+	webSearch                 *websearch.Service
+	workerCount               int
+	fragmentConcurrency       int
+	pollInterval              time.Duration
+	inferenceContextTokens    int
+	embeddingProvider         string
+	embeddingModel            string
+	models                    ModelRouting
+	objectiveAdvisoryMode     objectiveadvisory.Mode
+	objectiveAdvisoryProvider string
+	workspaceRoot             string
+	repositoryIndex           repositoryIndexRefresher
+	repositoryRetrieval       repositoryEvidenceBuilder
+	workspaceHostRoot         string
+	completeStep              stepCompleteFunc
+	nativeV3Runner            nativeV3StepRunner
+	logger                    *log.Logger
+	onJobFinished             func(jobID int64)
+	onJobOutput               func(jobID int64, delta string)
 }
 
 func New(
@@ -80,9 +85,6 @@ func New(
 	}
 	if nilWorkerTransport(stationClient) {
 		return nil, fmt.Errorf("exact station client is required")
-	}
-	if err := stationClient.RequireExactPreparedContract(); err != nil {
-		return nil, fmt.Errorf("exact station client is invalid: %w", err)
 	}
 	if nilWorkerTransport(embeddings) {
 		return nil, fmt.Errorf("embedding client is required")
@@ -106,25 +108,27 @@ func New(
 		completeStep = repo.CompleteStep
 	}
 	svc := &Service{
-		repo:                   repo,
-		embeddings:             embeddings,
-		stationClient:          stationClient,
-		webSearch:              webSearch,
-		workerCount:            opts.WorkerCount,
-		fragmentConcurrency:    opts.FragmentConcurrency,
-		pollInterval:           opts.PollInterval,
-		inferenceContextTokens: opts.InferenceContextTokens,
-		embeddingProvider:      opts.EmbeddingProvider,
-		embeddingModel:         opts.EmbeddingModel,
-		models:                 opts.Models,
-		workspaceRoot:          opts.Workspace.Root,
-		repositoryIndex:        repositoryIndex,
-		repositoryRetrieval:    repositoryRetrieval,
-		workspaceHostRoot:      opts.Workspace.HostRoot,
-		completeStep:           completeStep,
-		logger:                 opts.Logger,
-		onJobFinished:          opts.OnJobFinished,
-		onJobOutput:            opts.OnJobOutput,
+		repo:                      repo,
+		embeddings:                embeddings,
+		stationClient:             stationClient,
+		webSearch:                 webSearch,
+		workerCount:               opts.WorkerCount,
+		fragmentConcurrency:       opts.FragmentConcurrency,
+		pollInterval:              opts.PollInterval,
+		inferenceContextTokens:    opts.InferenceContextTokens,
+		embeddingProvider:         opts.EmbeddingProvider,
+		embeddingModel:            opts.EmbeddingModel,
+		models:                    opts.Models,
+		objectiveAdvisoryMode:     opts.ObjectiveAdvisoryMode,
+		objectiveAdvisoryProvider: opts.ObjectiveAdvisoryProvider,
+		workspaceRoot:             opts.Workspace.Root,
+		repositoryIndex:           repositoryIndex,
+		repositoryRetrieval:       repositoryRetrieval,
+		workspaceHostRoot:         opts.Workspace.HostRoot,
+		completeStep:              completeStep,
+		logger:                    opts.Logger,
+		onJobFinished:             opts.OnJobFinished,
+		onJobOutput:               opts.OnJobOutput,
 	}
 	if repo != nil && completeStep != nil {
 		svc.completeStep = svc.wrapStepCompleter(completeStep)

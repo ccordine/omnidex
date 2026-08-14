@@ -98,11 +98,6 @@ func renderUIModelFields(payload map[string]any) string {
 		`<button type="button" data-action="admin#saveGlobalModels" class="mt-4 rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Save global model settings</button>`
 }
 
-func renderUIAgentFields(fields []map[string]any) string {
-	return renderUIConfigFields(fields, "agent_") +
-		`<button type="button" data-action="admin#saveGlobalAgents" class="mt-4 rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Save workspace agent settings</button>`
-}
-
 func renderUIConfigFields(fields []map[string]any, prefix string) string {
 	var body strings.Builder
 	body.WriteString(`<div class="grid gap-4 lg:grid-cols-2">`)

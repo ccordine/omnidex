@@ -35,7 +35,7 @@ func TestObjectiveMemorySelectionProjectsOnlyOriginalIDCapsules(t *testing.T) {
 	kind := answerObjectiveKindStation()
 	conversation := &scriptedObjectiveConversationStation{}
 	_, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 902, Pipeline: model.PipelineAssistant, Instruction: "Use relevant continuity.", CurrentGeneration: 1,
+		ID: 902, Pipeline: model.PipelineChat, Instruction: "Use relevant continuity.", CurrentGeneration: 1,
 	}, provider, selector, kind, conversation, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{})
 	if err != nil {
 		t.Fatal(err)

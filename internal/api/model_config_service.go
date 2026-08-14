@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -49,14 +47,7 @@ func (s *Server) projectModelConfig(project model.Project) (modelconfig.Config, 
 	return modelconfig.FromSettingsJSON(project.Settings)
 }
 
-func (s *Server) cardModelConfig(card ScrumCard) (modelconfig.Config, error) {
-	if len(card.ModelConfig) == 0 {
-		return modelconfig.Config{}, nil
-	}
-	return modelconfig.FromJSON(card.ModelConfig)
-}
-
-func (s *Server) resolveModelConfig(project model.Project, card ScrumCard) (modelconfig.Config, string, error) {
+func (s *Server) resolveModelConfig(project model.Project) (modelconfig.Config, string, error) {
 	env, err := s.envModelConfig()
 	if err != nil {
 		return nil, "", err
@@ -65,29 +56,12 @@ func (s *Server) resolveModelConfig(project model.Project, card ScrumCard) (mode
 	if err != nil {
 		return nil, "", fmt.Errorf("parse project model config: %w", err)
 	}
-	cardCfg, err := s.cardModelConfig(card)
-	if err != nil {
-		return nil, "", fmt.Errorf("parse Scrum card model config: %w", err)
-	}
-	resolved := modelconfig.Merge(env, projectCfg, cardCfg)
+	resolved := modelconfig.Merge(env, projectCfg)
 	source := "env"
 	if len(projectCfg) > 0 {
 		source = "project"
 	}
-	if len(cardCfg) > 0 {
-		source = "card"
-	}
 	return resolved, source, nil
-}
-
-func (s *Server) modelConfigJobMetadata(_ context.Context, project model.Project, card ScrumCard) (map[string]any, []string, error) {
-	resolved, _, err := s.resolveModelConfig(project, card)
-	if err != nil {
-		return nil, nil, err
-	}
-	return map[string]any{
-		"model_config": resolved.ToMap(),
-	}, nil, nil
 }
 
 func mergeProjectModelConfig(settings json.RawMessage, modelConfig json.RawMessage) (json.RawMessage, error) {
@@ -118,66 +92,9 @@ func mergeProjectModelConfig(settings json.RawMessage, modelConfig json.RawMessa
 	return out, nil
 }
 
-func (s *Server) handleResolvedModels(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	env, err := s.envModelConfig()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	projectIDText := strings.TrimSpace(r.URL.Query().Get("project_id"))
-	projectID := int64(0)
-	if projectIDText != "" {
-		var err error
-		projectID, err = strconv.ParseInt(projectIDText, 10, 64)
-		if err != nil || projectID <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid project_id")
-			return
-		}
-	}
-	cardID := strings.TrimSpace(r.URL.Query().Get("card_id"))
-	card := ScrumCard{}
-	if cardID != "" {
-		if s.repo == nil || projectID <= 0 {
-			writeError(w, http.StatusBadRequest, "card_id requires a project_id and PostgreSQL repository")
-			return
-		}
-		dbCard, err := s.repo.GetScrumCard(r.Context(), projectID, cardID)
-		if err != nil {
-			writeError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		card, err = dbScrumCardToAPI(dbCard)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
-	if projectID > 0 {
-		resolved, err := s.resolvedModelsForProjectCard(r.Context(), projectID, card)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"env_defaults": env.ToMap(),
-			"fields":       env.FieldList(map[string]string{}),
-			"resolved":     resolved,
-		})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"env_defaults": env.ToMap(),
-		"fields":       env.FieldList(map[string]string{}),
-	})
-}
-
-func (s *Server) resolvedModelsForProjectCard(ctx context.Context, projectID int64, card ScrumCard) (map[string]any, error) {
+func (s *Server) resolvedModelsForProject(ctx context.Context, projectID int64) (map[string]any, error) {
 	if s.repo == nil || projectID <= 0 {
-		resolved, source, err := s.resolveModelConfig(model.Project{}, card)
+		resolved, source, err := s.resolveModelConfig(model.Project{})
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +108,7 @@ func (s *Server) resolvedModelsForProjectCard(ctx context.Context, projectID int
 	if err != nil {
 		return nil, err
 	}
-	resolved, source, err := s.resolveModelConfig(project, card)
+	resolved, source, err := s.resolveModelConfig(project)
 	if err != nil {
 		return nil, err
 	}

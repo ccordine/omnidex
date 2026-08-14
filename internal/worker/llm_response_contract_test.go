@@ -3,6 +3,7 @@ package worker
 import (
 	"testing"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
@@ -48,5 +49,50 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 func TestLLMResponseContractRejectsUnregisteredScope(t *testing.T) {
 	if _, err := llmResponseContractForScope("legacy_guessing"); err == nil {
 		t.Fatal("unregistered LLM scope was accepted")
+	}
+}
+
+func TestFragmentCorrectionReservesOnlyItsMeasuredBoundedOutput(t *testing.T) {
+	generation, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
+		Language: "typescript", Signature: "function apply(): void",
+		Behavior: "Apply the one accepted behavior.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	correction, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
+		Language: "typescript", Signature: "function apply(): void",
+		CurrentDeclaration: "function apply(): void { broken(); }",
+		RequiredChange:     "Fix the one syntax error.", Diagnostic: "syntax error",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	goCorrection, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
+		Language: "go", Signature: "func apply()",
+		CurrentDeclaration: "func apply() { broken() }",
+		RequiredChange:     "Fix the one syntax error.", Diagnostic: "syntax error",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		job  assemblyline.PortableJob
+		want int
+	}{
+		{name: "initial", job: generation, want: 4096},
+		{name: "correction", job: correction, want: 2048},
+		{name: "go correction", job: goCorrection, want: 4096},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			contract, contractErr := llmResponseContractForPortableJob(test.job, nil)
+			if contractErr != nil {
+				t.Fatal(contractErr)
+			}
+			if contract.MaxTokens != test.want {
+				t.Fatalf("max output tokens=%d want %d", contract.MaxTokens, test.want)
+			}
+		})
 	}
 }

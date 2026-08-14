@@ -2,85 +2,12 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
-
-func TestGenerateTypeScriptFragmentsGivesModelsOnlyDirectAPIs(t *testing.T) {
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
-		{
-			ID: "domain", Path: "src/private/domain.ts",
-			Blocks: []assemblyline.TypeScriptBlock{{
-				ID: "value.type", Static: "export interface Value { amount: number }", API: "interface Value { amount: number }",
-			}},
-		},
-		{
-			ID: "functions", Path: "src/private/functions.ts",
-			Blocks: []assemblyline.TypeScriptBlock{
-				{
-					ID: "value.double", Signature: "function double(value: Value): Value",
-					Contract: "Return a new Value whose amount is twice the input amount.",
-					API:      "function double(value: Value): Value", DependsOn: []string{"value.type"},
-					Capabilities: []string{"value.type"},
-				},
-				{
-					ID: "value.negative", Signature: "function negative(value: Value): boolean",
-					Contract: "Return whether the input amount is below zero.",
-					API:      "function negative(value: Value): boolean", DependsOn: []string{"value.type"},
-					Capabilities: []string{"value.type"},
-				},
-			},
-		},
-	}}
-	var mutex sync.Mutex
-	prompts := make([]string, 0, 2)
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 3, MaxConcurrency: 2,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string, schema map[string]any) (string, error) {
-			if schema != nil {
-				t.Fatalf("fragment worker requested a response schema: %#v", schema)
-			}
-			mutex.Lock()
-			prompts = append(prompts, prompt)
-			mutex.Unlock()
-			switch {
-			case strings.Contains(prompt, "function double(value: Value): Value"):
-				return "function double(value: Value): Value { return { amount: value.amount * 2 }; }", nil
-			case strings.Contains(prompt, "function negative(value: Value): boolean"):
-				return "function negative(value: Value): boolean { return value.amount < 0; }", nil
-			default:
-				t.Fatalf("unexpected TypeScript fragment prompt: %s", prompt)
-				return "", nil
-			}
-		}),
-	}
-	generated, err := generateDirectCodingTypeScriptFragments(runtime, "qwen-coder", blueprint)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(generated) != 2 || !strings.Contains(generated["value.double"], "amount * 2") {
-		t.Fatalf("generated=%#v", generated)
-	}
-	for _, prompt := range prompts {
-		for _, forbidden := range []string{
-			"src/private", "domain.ts", "functions.ts", "value.double", "value.negative",
-			"workspace", "job", "agent", "dependency graph",
-		} {
-			if strings.Contains(strings.ToLower(prompt), strings.ToLower(forbidden)) {
-				t.Fatalf("TypeScript fragment prompt leaked %q:\n%s", forbidden, prompt)
-			}
-		}
-		if !strings.Contains(prompt, "interface Value { amount: number }") {
-			t.Fatalf("fragment prompt omitted its one required API:\n%s", prompt)
-		}
-	}
-}
 
 func TestTypeScriptFragmentWorkerCorrectsOnlyTheRejectedFunction(t *testing.T) {
 	job := directCodingTypeScriptFragmentJob{block: assemblyline.TypeScriptBlock{
@@ -277,103 +204,5 @@ func TestTypeScriptFragmentWorkerReportsOnlyEnvelopeMeasurements(t *testing.T) {
 		if strings.Contains(rendered, secret) {
 			t.Fatalf("worker status exposed envelope contents %q: %s", secret, rendered)
 		}
-	}
-}
-
-func TestTypeScriptFragmentWaveHonorsOneLocalCapacityLane(t *testing.T) {
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{{
-		ID: "functions", Path: "src/functions.ts", Blocks: []assemblyline.TypeScriptBlock{
-			{ID: "one", Signature: "function one(): number", Contract: "Return one.", API: "function one(): number"},
-			{ID: "two", Signature: "function two(): number", Contract: "Return two.", API: "function two(): number"},
-		},
-	}}}
-	firstStarted := make(chan struct{})
-	secondStarted := make(chan struct{})
-	releaseFirst := make(chan struct{})
-	var mutex sync.Mutex
-	calls := 0
-	firstPrompt := ""
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 1, MaxConcurrency: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
-			mutex.Lock()
-			calls++
-			call := calls
-			if call == 1 {
-				firstPrompt = prompt
-			}
-			mutex.Unlock()
-			if call == 1 {
-				close(firstStarted)
-				<-releaseFirst
-			} else if call == 2 {
-				close(secondStarted)
-			}
-			const marker = "The declaration must match this signature exactly:\n"
-			_, remainder, found := strings.Cut(prompt, marker)
-			if !found {
-				return "", fmt.Errorf("missing signature marker")
-			}
-			signature, _, _ := strings.Cut(remainder, "\n")
-			return signature + " { return 1; }", nil
-		}),
-	}
-	result := make(chan error, 1)
-	go func() {
-		_, err := generateDirectCodingTypeScriptFragments(runtime, "coder", blueprint)
-		result <- err
-	}()
-	select {
-	case <-firstStarted:
-	case <-time.After(time.Second):
-		t.Fatal("first fragment did not start")
-	}
-	mutex.Lock()
-	startedPrompt := firstPrompt
-	mutex.Unlock()
-	if !strings.Contains(startedPrompt, "function one(): number") {
-		close(releaseFirst)
-		t.Fatalf("single-lane wave started out of blueprint order:\n%s", startedPrompt)
-	}
-	select {
-	case <-secondStarted:
-		close(releaseFirst)
-		t.Fatal("second fragment started while the sole local capacity lane was occupied")
-	default:
-	}
-	close(releaseFirst)
-	select {
-	case err := <-result:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("serialized fragment wave did not complete")
-	}
-}
-
-func TestTypeScriptFragmentWaveFailsBeforeStartingLaterSequentialWork(t *testing.T) {
-	t.Parallel()
-
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{{
-		ID: "functions", Path: "src/functions.ts", Blocks: []assemblyline.TypeScriptBlock{
-			{ID: "one", Signature: "function one(): number", Contract: "Return one.", API: "function one(): number"},
-			{ID: "two", Signature: "function two(): number", Contract: "Return two.", API: "function two(): number"},
-		},
-	}}}
-	calls := 0
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 1, MaxConcurrency: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
-			calls++
-			return "export function one(): number { return 1; }", nil
-		}),
-	}
-	_, err := generateDirectCodingTypeScriptFragments(runtime, "coder", blueprint)
-	if err == nil {
-		t.Fatal("invalid first sequential fragment unexpectedly succeeded")
-	}
-	if calls != 1 {
-		t.Fatalf("started %d fragment workers after the first sequential failure", calls)
 	}
 }

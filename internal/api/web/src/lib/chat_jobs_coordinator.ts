@@ -13,20 +13,31 @@ export interface ChatJobsHost {
   addEvent(type: string, details?: Record<string, unknown>, full?: unknown): void;
 }
 
-export function authoritativeControlJobID(payload: unknown, expectedJobID: string): string {
+export function authoritativeControlJobID(payload: unknown, expectedJobID: string, expectedOperationID: string): string {
   const expectedID = Number(expectedJobID);
   if (!Number.isSafeInteger(expectedID) || expectedID <= 0) {
     throw new Error("Job control requires a valid expected job id.");
   }
-  if (!payload || typeof payload !== "object") throw new Error("Job control response must be an object.");
-  const job = (payload as { job?: unknown }).job;
-  if (!job || typeof job !== "object") throw new Error("Job control response is missing the authoritative job.");
-  const id = (job as { id?: unknown }).id;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("Job control response must be one typed object.");
+  const receipt = payload as Record<string, unknown>;
+  const keys = Object.keys(receipt);
+  if (keys.length !== 3 || !keys.includes("job_id") || !keys.includes("operation_id") || !keys.includes("status")) {
+    throw new Error("Job control response must contain only the exact authoritative receipt fields.");
+  }
+  const id = receipt.job_id;
   if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) {
     throw new Error("Job control response contains an invalid authoritative job id.");
   }
   if (id !== expectedID) {
     throw new Error(`Job control expected job ${expectedID}, but the server returned job ${id}.`);
+  }
+  if (typeof receipt.operation_id !== "string" || receipt.operation_id !== expectedOperationID ||
+      !/^lifecycle_operation_[0-9a-f]{64}$/.test(receipt.operation_id)) {
+    throw new Error("Job control response does not attest the submitted lifecycle operation.");
+  }
+  if (typeof receipt.status !== "string" ||
+      !["pending", "running", "completed", "failed", "canceled", "waiting_input"].includes(receipt.status)) {
+    throw new Error("Job control response contains an unregistered authoritative job status.");
   }
   return String(id);
 }
@@ -76,39 +87,52 @@ export class ChatJobsCoordinator {
   }
 
   async interrupt(event: Event): Promise<void> {
-    await this.postControl(jobIDFromEvent(event), "interrupt", "Interrupt with what instruction?");
+    await this.promptedControl(event, "interrupt", "Interrupt with what instruction?", "Interrupting job…");
   }
 
   async replan(event: Event): Promise<void> {
-    await this.postControl(jobIDFromEvent(event), "replan", "What should Omni change in the plan?");
+    await this.promptedControl(event, "replan", "What should Omni change in the plan?", "Replanning job…");
   }
 
   async cancel(event: Event): Promise<void> {
-    const reason = window.prompt("Cancel reason?", "Canceled from Omni UI")?.trim();
-    if (!reason) return;
+    const reason = window.prompt("Cancel reason?", "Canceled from Omni UI");
+    if (reason === null || !reason.trim()) return;
     const id = jobIDFromEvent(event);
-    const attemptKey = { scope: id, action: "cancel", content: reason };
-    const operationID = this.lifecycleOperationAttempt.acquire(attemptKey);
-    const control = await readJSON(await fetch(
-      `/v1/jobs/${id}/cancel`,
-      jsonRequest({ operation_id: operationID, reason }),
-    ));
-    const authoritativeID = authoritativeControlJobID(control, id);
-    this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
-    await this.load({ strict: true });
-    this.host.addEvent("job_canceled", { id: authoritativeID });
+    const button = jobControlButton(event);
+    await withButtonFeedback(button, "Canceling job…", async () => {
+      const attemptKey = { scope: id, action: "cancel", content: reason };
+      const operationID = this.lifecycleOperationAttempt.acquire(attemptKey);
+      const control = await readJSON(await fetch(
+        `/v1/jobs/${id}/cancel`,
+        jsonRequest({ operation_id: operationID, reason }),
+      ));
+      const authoritativeID = authoritativeControlJobID(control, id, operationID);
+      this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
+      await this.load({ strict: true });
+      this.host.addEvent("job_canceled", { id: authoritativeID });
+    });
   }
 
-  private async postControl(id: string, action: "interrupt" | "replan", question: string): Promise<void> {
-    const feedback = window.prompt(question)?.trim();
-    if (!feedback) return;
+  private async promptedControl(
+    event: Event,
+    action: "interrupt" | "replan",
+    question: string,
+    loading: string,
+  ): Promise<void> {
+    const feedback = window.prompt(question);
+    if (feedback === null || !feedback.trim()) return;
+    const id = jobIDFromEvent(event);
+    await withButtonFeedback(jobControlButton(event), loading, () => this.postControl(id, action, feedback));
+  }
+
+  private async postControl(id: string, action: "interrupt" | "replan", feedback: string): Promise<void> {
     const attemptKey = { scope: id, action, content: feedback };
     const operationID = this.lifecycleOperationAttempt.acquire(attemptKey);
     const control = await readJSON(await fetch(
       `/v1/jobs/${id}/${action}`,
       jsonRequest({ operation_id: operationID, feedback }),
     ));
-    const authoritativeID = authoritativeControlJobID(control, id);
+    const authoritativeID = authoritativeControlJobID(control, id, operationID);
     this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
     const details = await readJSON<Record<string, unknown>>(await fetch(`/v1/ui/chat/jobs/${authoritativeID}`));
     await this.renderDetails(details, Number(authoritativeID));
@@ -120,6 +144,14 @@ function jobIDFromEvent(event: Event): string {
   const id = (event.currentTarget as HTMLElement).dataset.jobId;
   if (!id || !/^[1-9][0-9]*$/.test(id)) throw new Error("Job control is missing its canonical job id.");
   return id;
+}
+
+function jobControlButton(event: Event): HTMLButtonElement {
+  const button = event.currentTarget;
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error("Job control requires an authoritative server-rendered button.");
+  }
+  return button;
 }
 
 function requirePageButton(event: Event, section: string): HTMLButtonElement {
@@ -142,11 +174,10 @@ async function withButtonFeedback(
   button.textContent = loading;
   try {
     await operation();
-  } catch (error) {
+  } finally {
     button.disabled = false;
     button.setAttribute("aria-busy", "false");
     button.textContent = label;
-    throw error;
   }
 }
 

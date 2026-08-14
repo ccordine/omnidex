@@ -52,6 +52,9 @@ func replanJobTx(
 	if err != nil {
 		return model.Job{}, err
 	}
+	if _, err := validatePipeline(job.Pipeline); err != nil {
+		return model.Job{}, fmt.Errorf("replan job %d: %w", job.ID, err)
+	}
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
 		return model.Job{}, err
 	}
@@ -150,8 +153,7 @@ func validateLifecycleFeedback(feedback, subject string) (string, string, error)
 	if !utf8.ValidString(feedback) {
 		return "", "", fmt.Errorf("%s must be valid UTF-8", subject)
 	}
-	feedback = strings.TrimSpace(feedback)
-	if feedback == "" {
+	if strings.TrimSpace(feedback) == "" {
 		return "", "", fmt.Errorf("feedback is required")
 	}
 	if strings.ContainsRune(feedback, '\x00') {

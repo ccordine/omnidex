@@ -17,8 +17,12 @@ func TestPostgresChannelTurnCompletesThroughOneAuthoritativeJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	project, err := repository.GetProject(ctx, channel.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	settings := json.RawMessage(`{"model_config":{"conversation_objective_kind_model":"objective-exact","conversation_response_model":"response-exact"}}`)
-	if _, err := repository.UpdateProject(ctx, channel.ProjectID, model.ProjectPatch{Settings: &settings}); err != nil {
+	if _, err := repository.UpdateProjectAtRevision(ctx, channel.ProjectID, project.UpdatedAt, model.ProjectPatch{Settings: &settings}); err != nil {
 		t.Fatal(err)
 	}
 	exact := "  Explain the current evidence.  \n"

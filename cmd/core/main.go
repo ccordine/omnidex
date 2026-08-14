@@ -64,6 +64,9 @@ func main() {
 				log.Fatalf("schema migration error: %v", err)
 			}
 		}
+		if err := repo.ValidateRuntimeAuthority(ctx); err != nil {
+			log.Fatalf("runtime authority error: %v", err)
+		}
 		secretResolver := secrets.NewResolver(repo)
 		secrets.SetGlobal(secretResolver)
 		secrets.OverlayConfig(&cfg, secretResolver)
@@ -72,10 +75,7 @@ func main() {
 		log.Fatalf("config validation error: %v", err)
 	}
 
-	llmTransports, err := llmprovider.NewFromConfig(cfg)
-	if err != nil {
-		log.Fatalf("llm provider error: %v", err)
-	}
+	llmTransports := llmprovider.NewLazyFromConfig(cfg)
 	var webSearchService *websearch.Service
 	providers := make([]websearch.ProviderID, len(cfg.WebSearchProviders))
 	for index, provider := range cfg.WebSearchProviders {
@@ -126,6 +126,8 @@ func main() {
 				Models: worker.ModelRouting{
 					Stations: cfg.StationModels,
 				},
+				ObjectiveAdvisoryMode:     cfg.ObjectiveAdvisoryMode,
+				ObjectiveAdvisoryProvider: cfg.LLMProvider,
 				Workspace: worker.WorkspaceSettings{
 					Root:     cfg.WorkspaceRoot,
 					HostRoot: cfg.WorkspaceHostRoot,

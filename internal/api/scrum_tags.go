@@ -2,11 +2,12 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (s *Server) handleScrumTags(w http.ResponseWriter, r *http.Request) {
@@ -14,15 +15,16 @@ func (s *Server) handleScrumTags(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 40)
-	tags, err := s.collectScrumTagCatalog(r.Context(), r, query, limit)
+	query, err := decodeScrumTagCatalogQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	tags, err := s.collectScrumTagCatalog(r.Context(), query.ProjectID, query.Search, query.Limit)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if s.repo == nil {
 			status = http.StatusServiceUnavailable
-		} else if strings.Contains(err.Error(), "project_id") {
-			status = http.StatusBadRequest
 		}
 		writeError(w, status, err.Error())
 		return
@@ -30,33 +32,25 @@ func (s *Server) handleScrumTags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tags": tags})
 }
 
-func (s *Server) handleScrumCardTagsSuggest(w http.ResponseWriter, r *http.Request, cardID string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+func (s *Server) collectScrumTagCatalog(ctx context.Context, projectID int64, query string, limit int) ([]string, error) {
+	if limit < 1 || limit > queue.MaxScrumTagPageSize {
+		return nil, fmt.Errorf("Scrum tag catalog limit must be between 1 and %d", queue.MaxScrumTagPageSize)
 	}
-	writeRemovedInferenceAction(w, "Scrum card tag suggestion")
-}
-
-func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, query string, limit int) ([]string, error) {
-	if limit <= 0 {
-		limit = 40
+	if projectID <= 0 {
+		return nil, fmt.Errorf("Scrum tag catalog requires a positive project ID")
 	}
 	if s.repo == nil {
 		return nil, fmt.Errorf("postgres repository is required for Scrum tags")
 	}
-	projectID, err := s.resolveProjectID(r)
-	if err != nil {
-		return nil, err
-	}
+	foldedQuery := canonicalScrumTag(query)
 	seen := map[string]struct{}{}
 	add := func(values ...string) {
 		for _, value := range values {
-			tag := strings.ToLower(strings.TrimSpace(value))
+			tag := canonicalScrumTag(value)
 			if tag == "" {
 				continue
 			}
-			if query != "" && !strings.Contains(tag, query) {
+			if foldedQuery != "" && !strings.Contains(tag, foldedQuery) {
 				continue
 			}
 			seen[tag] = struct{}{}
@@ -70,22 +64,9 @@ func (s *Server) collectScrumTagCatalog(ctx context.Context, r *http.Request, qu
 	for _, facet := range facets {
 		add(facet.Name)
 	}
-	project, err := s.repo.GetProject(ctx, projectID)
+	_, err = s.repo.GetProject(ctx, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("load Scrum project: %w", err)
-	}
-	var settings map[string]any
-	if len(project.Settings) > 0 {
-		if err := json.Unmarshal(project.Settings, &settings); err != nil {
-			return nil, fmt.Errorf("decode Scrum project settings: %w", err)
-		}
-	}
-	if raw, ok := settings["tags"].([]any); ok {
-		for _, item := range raw {
-			if text, ok := item.(string); ok {
-				add(text)
-			}
-		}
 	}
 	cardTags, err := s.repo.ListScrumCardTags(ctx, projectID, query, limit)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,14 +15,12 @@ import (
 func TestDecodeScrumCardEditRequestAcceptsOnlyEditableFields(t *testing.T) {
 	t.Parallel()
 	request := httptest.NewRequest("PATCH", "/v1/scrum/cards/card-1", strings.NewReader(`{
+		"expected_updated_at":"2026-08-13T12:00:00.123456Z",
 		"title":"Changed",
 		"description":"Exact description",
 		"ref_files":["docs/readme.md"],
-		"model_config":{"conversation_response_model":"local-response"},
 		"card_ticket":"Ticket",
 		"card_prompt":"Prompt",
-		"recipe_id":"recipe-one",
-		"recipe":{"kind":"exact"},
 		"tags":["typed"]
 	}`))
 	response := httptest.NewRecorder()
@@ -30,20 +29,35 @@ func TestDecodeScrumCardEditRequestAcceptsOnlyEditableFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	patch, err := edit.repositoryPatch()
+	patch := edit.repositoryPatch()
+	if patch.Title == nil || patch.Description == nil || patch.RefFiles == nil ||
+		patch.CardTicket == nil || patch.CardPrompt == nil || patch.Tags == nil {
+		t.Fatalf("typed repository patch lost an editable field: %#v", patch)
+	}
+}
+
+func TestScrumCardTagAuthorityIsNormalizedOnlyByTheServer(t *testing.T) {
+	t.Parallel()
+	request := httptest.NewRequest(
+		http.MethodPatch,
+		"/v1/scrum/cards/card-1?project_id=1",
+		strings.NewReader(`{"expected_updated_at":"2026-08-13T12:00:00.123456Z","description":"  exact bytes\n","tags":[" API Client ","Bug   Fix","api-client"," \t "]}`),
+	)
+	response := httptest.NewRecorder()
+	edit, err := decodeScrumCardEditRequest(response, request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{
-		"title", "description", "ref_files", "model_config", "card_ticket",
-		"card_prompt", "recipe_id", "recipe", "tags",
-	} {
-		if _, ok := patch[field]; !ok {
-			t.Errorf("editable field %q missing from repository patch: %#v", field, patch)
-		}
+	patch := edit.repositoryPatch()
+	if patch.Description == nil || *patch.Description != "  exact bytes\n" {
+		t.Fatalf("non-tag bytes changed: %#v", patch.Description)
 	}
-	if len(patch) != 9 {
-		t.Fatalf("repository patch contains non-editable fields: %#v", patch)
+	if patch.Tags == nil {
+		t.Fatal("server-owned tag projection is missing")
+	}
+	want := []string{"api-client", "bug-fix"}
+	if !reflect.DeepEqual(*patch.Tags, want) {
+		t.Fatalf("tags=%q want=%q", *patch.Tags, want)
 	}
 }
 
@@ -55,6 +69,9 @@ func TestDecodeScrumCardEditRequestRejectsServerOwnedFields(t *testing.T) {
 		"chat":                        `[]`,
 		"planning_chat":               `[]`,
 		"agent_config":                `{}`,
+		"model_config":                `{"conversation_response_model":"retired"}`,
+		"recipe_id":                   `"retired"`,
+		"recipe":                      `{}`,
 		"job_id":                      `"99"`,
 		"tags_job_id":                 `"99"`,
 		"ticket_job_id":               `"99"`,
@@ -86,7 +103,7 @@ func TestDecodeScrumCardEditRequestRejectsServerOwnedFields(t *testing.T) {
 		field, value := field, value
 		t.Run(field, func(t *testing.T) {
 			t.Parallel()
-			request := httptest.NewRequest("PATCH", "/v1/scrum/cards/card-1", strings.NewReader(`{"`+field+`":`+value+`}`))
+			request := httptest.NewRequest("PATCH", "/v1/scrum/cards/card-1", strings.NewReader(`{"expected_updated_at":"2026-08-13T12:00:00Z","`+field+`":`+value+`}`))
 			response := httptest.NewRecorder()
 			_, err := decodeScrumCardEditRequest(response, request)
 			if err == nil || !strings.Contains(err.Error(), field) {
@@ -103,16 +120,17 @@ func TestDecodeScrumCardEditRequestEnforcesBoundAndExactEOF(t *testing.T) {
 		body []byte
 		want string
 	}{
+		{name: "missing revision", body: []byte(`{"title":"one"}`), want: "expected_updated_at is required"},
 		{name: "empty object", body: []byte(`{}`), want: "at least one editable field"},
 		{name: "null", body: []byte(`null`), want: "must be one JSON object"},
-		{name: "trailing JSON", body: []byte(`{"title":"one"} {"title":"two"}`), want: "trailing JSON"},
-		{name: "duplicate field", body: []byte(`{"title":"one","title":"two"}`), want: "duplicate key"},
+		{name: "trailing JSON", body: []byte(`{"expected_updated_at":"2026-08-13T12:00:00Z","title":"one"} {"title":"two"}`), want: "trailing JSON"},
+		{name: "duplicate field", body: []byte(`{"expected_updated_at":"2026-08-13T12:00:00Z","title":"one","title":"two"}`), want: "duplicate key"},
 		{name: "inexact field alias", body: []byte(`{"Title":"one"}`), want: `inexact or unknown field "Title"`},
 		{name: "client checklist authority", body: []byte(`{"checklist":[]}`), want: `inexact or unknown field "checklist"`},
 		{name: "null reference file", body: []byte(`{"ref_files":[null]}`), want: "reference file 0 must not be null"},
 		{name: "null tag", body: []byte(`{"tags":[null]}`), want: "tag 0 must not be null"},
 		{name: "client test criteria authority", body: []byte(`{"test_criteria":[]}`), want: `inexact or unknown field "test_criteria"`},
-		{name: "null model route", body: []byte(`{"model_config":{"conversation_response_model":null}}`), want: "must be a string"},
+		{name: "retired card model route", body: []byte(`{"model_config":{"conversation_response_model":"retired"}}`), want: `inexact or unknown field "model_config"`},
 		{name: "nul text", body: []byte(`{"description":"\u0000"}`), want: "NUL"},
 		{name: "invalid UTF-8", body: []byte{'{', '"', 't', 'i', 't', 'l', 'e', '"', ':', '"', 0xff, '"', '}'}, want: "valid UTF-8"},
 		{name: "too large", body: bytes.Repeat([]byte(" "), int(maxScrumCardEditBodyBytes+1)), want: "transport bound"},
@@ -185,7 +203,8 @@ func TestInternalScrumCardEditableCallersUseTypedFields(t *testing.T) {
 	t.Parallel()
 	for path, required := range map[string][]string{
 		"scrum_card_ticket.go": {"UpdateScrumCardTicket(", "queue.ScrumCardTicketMutation{"},
-		"scrum_handlers.go":    {"scrumEditCard(", "RefFiles: editableScrumCardField"},
+		"scrum_handlers.go":    {"decodeScrumCardEditRequest(", "scrumEditCard("},
+		"scrum_card_edit.go":   {"RefFiles          scrumCardEditableField[[]string]", "expected_updated_at"},
 	} {
 		source, err := os.ReadFile(path)
 		if err != nil {

@@ -30,12 +30,6 @@ func (s *Service) executeExactPortableStation(
 	if err := ctx.Err(); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	if s.stationClient == nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station generation provider is not configured")
-	}
-	if err := s.stationClient.RequireExactPreparedContract(); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station provider: %w", err)
-	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station model is required")
@@ -48,7 +42,7 @@ func (s *Service) executeExactPortableStation(
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	contract, err := llmResponseContractForScope(portableModelScope(schema))
+	contract, err := llmResponseContractForPortableJob(job, schema)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
@@ -69,6 +63,18 @@ func (s *Service) executeExactPortableStation(
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("persist typed station gap and provider discovery: %w", err)
 	}
 	gap, discovery := opening.Gap, opening.Discovery
+	if nilWorkerTransport(s.stationClient) {
+		return s.rejectStationDiscoveryBeforeProvider(
+			ctx, authority, gap, discovery, selection,
+			fmt.Errorf("exact station generation provider is not configured"),
+		)
+	}
+	if err := s.stationClient.RequireExactPreparedContract(); err != nil {
+		return s.rejectStationDiscoveryBeforeProvider(
+			ctx, authority, gap, discovery, selection,
+			fmt.Errorf("exact station provider: %w", err),
+		)
+	}
 	observed, discoveryErr := s.stationClient.DiscoverProviderIdentityEvidence(
 		ctx, selection, discovery.Challenge,
 	)

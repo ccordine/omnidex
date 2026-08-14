@@ -31,11 +31,11 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	if err != nil {
 		return "", err
 	}
-	partitionModel, err := session.workerModel(station.CodingRequirementPartition)
+	partitionModel, err := session.workerModel(station.CodingRequirements)
 	if err != nil {
 		return "", err
 	}
-	partition, err := partitionCodingRequirements(
+	featureQuotes, err := interpretRepositoryRequirements(
 		directCodingWorkerRuntime(session), partitionModel, redacted, identities,
 	)
 	if err != nil {
@@ -48,14 +48,14 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 		return "", err
 	}
 	absenceQuotes, err := session.classifyPathFreeArtifactAbsence(
-		partition.FeatureQuotes, directives, identities,
+		featureQuotes, directives, identities,
 	)
 	if err != nil {
 		return "", err
 	}
 	if containsArtifactAbsenceCandidate(directives) {
 		directives, err = session.resolveNamedArtifactDeletionCandidates(
-			partition.FeatureQuotes, directives, identities, analysis,
+			featureQuotes, directives, identities, analysis,
 		)
 		if err != nil {
 			return "", err
@@ -63,24 +63,24 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	}
 	if containsForbiddenArtifactDirective(directives) {
 		return session.runNamedArtifactDeletion(
-			authority, partition, directives, identities, analysis,
+			authority, featureQuotes, directives, identities, analysis,
 		)
 	}
 	if len(absenceQuotes) != 0 {
 		return session.runPathFreeArtifactDeletion(
-			authority, partition.FeatureQuotes, absenceQuotes,
+			authority, featureQuotes, absenceQuotes,
 			identities, analysis,
 		)
 	}
 	signature, quote, missing, err := explicitMissingGoArtifactCandidate(
-		authority, partition.FeatureQuotes, analysis,
+		authority, featureQuotes, analysis,
 	)
 	if err != nil {
 		return "", err
 	}
 	if missing {
 		if err := validateDesiredCreationFeatureCoverage(
-			quote, partition.FeatureQuotes, directives,
+			quote, featureQuotes, directives,
 		); err != nil {
 			return "", err
 		}
@@ -104,7 +104,7 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 			)
 		}
 		graph, graphErr := compileDesiredArtifactCreation(
-			authority, partition.FeatureQuotes,
+			authority, featureQuotes,
 			session.repositoryIndex.Snapshot, analysis,
 		)
 		if graphErr != nil {
@@ -116,7 +116,7 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 		return session.runExistingRepositoryDesiredState(graph, analysis)
 	}
 	resolutions, err := prepareExistingRepositoryRequirementResolutions(
-		partition.FeatureQuotes,
+		featureQuotes,
 		func(query string) (repositoryretrieval.EvidencePack, error) {
 			if authorityErr := session.requireCurrentRepositoryAuthority(
 				"repository evidence acquisition",

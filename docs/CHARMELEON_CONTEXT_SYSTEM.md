@@ -52,6 +52,13 @@ user authority ─────────┘
 
 The model may forget everything after every call. Omnidex must not.
 
+A passive grounded-objective advisory call is a deliberately weaker side branch: code
+projects already-grounded authority, a configured model returns plain text, and code
+owns an in-memory non-authoritative artifact. Only a relevance-selected bounded
+capsule may join one registered later Context Projection. It does not enter the Task
+Ledger or Working Set, cannot become evidence, and cannot produce a typed execution
+leaf. Persistence remains blocked behind the behavior-first proof gates.
+
 The domain-neutral coordinator that consumes these authorities is specified in
 [`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md), with its
 code-owned prerequisite and named-uncertainty boundary in
@@ -158,6 +165,8 @@ Selection begins with structured authority, never embeddings:
 7. direct dependencies and tests;
 8. permitted durable historical references;
 9. semantic retrieval only when structured retrieval is insufficient.
+10. at most one relevance-selected advisory capsule, after every authoritative item,
+    only for the explicitly registered consumer.
 
 A projection records selected and omitted references, omission reasons, the working-set
 version, renderer/spec versions, byte and token estimates, and the exact rendered hash.
@@ -216,9 +225,11 @@ machine passes its executable gates:
 4. **Read-only repository work** — exact snapshot, index, parser, symbol, reference,
    and test providers run under code control; inference can select only among an exact
    bounded semantic remainder.
-5. **Recursive workload compilation** — unchanged ordinary text is partitioned by
-   bounded semantic stations, then code assigns identities, compiles the objective
-   graph, executes it, verifies artifacts, and decides completion.
+5. **Bounded workload compilation** — one intact-request station returns only grounded
+   product and requirement quotes. For each accepted requirement, one local station
+   returns only an objective and observable criterion; code assigns identity and order,
+   freezes the workload, executes one task at a time with a task-local projection,
+   verifies its artifact before advancing, and alone decides completion.
 6. **Charmander handoff** — cognition produces one existing bounded declaration job;
    code parses, stitches, formats, stages, tests, applies, and reconciles it.
 7. **Semantic review and correction** — a review station can select at most one
@@ -230,6 +241,12 @@ machine passes its executable gates:
 9. **Durability** — only after the preceding behavior survives the production path do
    PostgreSQL Task Ledger state, accepted facts, gap records, artifacts, Working Set,
    projections, restart, replay, and provenance become promotion work.
+
+The passive objective-advisory vertical follows the same order. Its current Gates A–C
+are in memory only: one post-grounding trigger, off/shadow/active comparison, and one
+repository-grounded semantic-review consumer. Gate D durability is intentionally
+absent until repeated paired cases show useful rescues, zero authority violations,
+and no baseline-to-advisory regressions.
 
 Existing ledger and context primitives remain useful foundations, but their existence
 is not evidence that the replacement cognition behavior works. Persistence may add

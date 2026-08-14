@@ -83,15 +83,18 @@ func (r *Resolver) Get(ctx context.Context, key string) string {
 	return lookupFieldEnv(key)
 }
 
-func (r *Resolver) RawStored(ctx context.Context) map[string]string {
+func (r *Resolver) RawStored(ctx context.Context) (map[string]string, error) {
 	if r == nil || r.store == nil {
-		return map[string]string{}
+		return map[string]string{}, nil
 	}
 	values, err := r.store.GetAPISecrets(ctx)
 	if err != nil {
-		return map[string]string{}
+		return nil, err
 	}
-	return values
+	if err := ValidateStored(values); err != nil {
+		return nil, err
+	}
+	return values, nil
 }
 
 func (r *Resolver) Snapshot(ctx context.Context) map[string]string {

@@ -23,19 +23,13 @@ func (s *Server) renderUIProjectTab(r *http.Request, project model.Project, tab 
 		if err != nil {
 			return "", err
 		}
-		return renderUIProjectMap(project.ID, payload), nil
+		return renderUIProjectMap(project.ID, payload)
 	case "git":
 		payload, err := s.loadProjectGitStatus(r.Context(), project, project.Location)
 		if err != nil {
 			return "", err
 		}
-		return renderUIProjectGit(project.ID, payload), nil
-	case "recipe":
-		offset, err := exactChannelQueryInteger(r, "recipe_offset", 0, 0, 1<<30)
-		if err != nil {
-			return "", err
-		}
-		return s.renderUIProjectRecipe(project, offset)
+		return renderUIProjectGit(project.ID, payload)
 	default:
 		return "", fmt.Errorf("unsupported project tab %q", tab)
 	}
@@ -55,11 +49,6 @@ func renderUIProjectScreen(location string) string {
 
 func uiScreenQualityControls() string {
 	return `<label class="w-28 text-xs text-zinc-500">FPS<select data-screen-target="fpsSelect" data-action="change->screen#changeQuality" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2"><option value="8">8</option><option value="12" selected>12</option><option value="20">20</option></select></label><label class="w-32 text-xs text-zinc-500">Scale<select data-screen-target="scaleSelect" data-action="change->screen#changeQuality" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2"><option value="100">100%</option><option value="75" selected>75%</option><option value="50">50%</option></select></label><label class="min-w-[220px] flex-1 text-xs text-zinc-500">LAN stream URL<input data-screen-target="streamUrl" readonly class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-[11px]" /></label>`
-}
-
-func uiMapStringList(values map[string]any, key string) []string {
-	raw, _ := values[key].([]string)
-	return raw
 }
 
 func uiProjectField(name, value string) string {

@@ -45,7 +45,6 @@ func TestEmptyActiveSkillRegistryMakesNoEmbeddingOrSelectionCall(t *testing.T) {
 	embeddings := &countingSkillEmbeddingClient{}
 	service := &Service{
 		repo: repository, embeddings: embeddings,
-		embeddingProvider: "test-provider", embeddingModel: "test-model",
 	}
 	session := &directCodingSession{runtime: &nativeRuntimeV3{svc: service, ctx: ctx}}
 	bindings, err := session.bindRequirementSkills("one local context", []assemblyline.Requirement{
@@ -84,12 +83,10 @@ func TestCodingContractDoesNotRequireLearnedSkillEnrichment(t *testing.T) {
 
 	requirement := assemblyline.Requirement{ID: "requirement_001", SourceQuote: "filter visible records"}
 	contract := genericBrowserFeatureContract(
-		requirement,
+		"Exact requirement: "+requirement.SourceQuote,
 		nil,
-		nil,
-		assemblyline.ApplicationSpecification{ProductQuote: "a bounded browser tool"},
 	)
-	if !strings.Contains(contract, "Exact feature: "+requirement.SourceQuote) {
+	if !strings.Contains(contract, "Exact requirement: "+requirement.SourceQuote) {
 		t.Fatalf("contract lost exact requirement: %q", contract)
 	}
 	if strings.Contains(strings.ToLower(contract), "validated procedure") {

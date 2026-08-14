@@ -45,42 +45,51 @@ func TestLoadRejectsBroadChineseProviderModelID(t *testing.T) {
 	}
 }
 
-func TestLoadCustomCompatibleProviderRequiresCompleteEndpoint(t *testing.T) {
+func TestCustomCompatibleProviderEndpointValidationOccursAtUse(t *testing.T) {
 	setRemoteProviderTestEnvironment(t)
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("EMBEDDING_PROVIDER", "openai-compatible")
 	t.Setenv("EMBEDDING_MODEL", "compatible-embedding")
 	t.Setenv("COMPATIBLE_API_KEY", "test-key")
 	t.Setenv("COMPATIBLE_BASE_URL", "")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "COMPATIBLE_BASE_URL") {
-		t.Fatalf("Load() error=%v, want COMPATIBLE_BASE_URL failure", err)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() eagerly validated dormant endpoint: %v", err)
+	}
+	if err := ValidateProviderConfiguration(cfg, cfg.EmbeddingProvider, "EMBEDDING_PROVIDER"); err == nil || !strings.Contains(err.Error(), "COMPATIBLE_BASE_URL") {
+		t.Fatalf("provider use validation error=%v, want COMPATIBLE_BASE_URL failure", err)
 	}
 }
 
-func TestLoadRejectsMalformedCompatibleProviderURL(t *testing.T) {
+func TestMalformedCompatibleProviderURLValidationOccursAtUse(t *testing.T) {
 	setRemoteProviderTestEnvironment(t)
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("EMBEDDING_PROVIDER", "qwen")
 	t.Setenv("QWEN_API_KEY", "test-key")
 	t.Setenv("QWEN_EMBEDDING_MODEL", "qwen-embedding")
 	t.Setenv("QWEN_BASE_URL", "api.qwen.example/v1")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "QWEN_BASE_URL") {
-		t.Fatalf("Load() error=%v, want absolute URL failure", err)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() eagerly validated dormant endpoint: %v", err)
+	}
+	if err := ValidateProviderConfiguration(cfg, cfg.EmbeddingProvider, "EMBEDDING_PROVIDER"); err == nil || !strings.Contains(err.Error(), "QWEN_BASE_URL") {
+		t.Fatalf("provider use validation error=%v, want absolute URL failure", err)
 	}
 }
 
-func TestLoadCompatibleEmbeddingProviderRequiresEmbeddingModel(t *testing.T) {
+func TestLoadDefersCompatibleEmbeddingModelRequirementUntilUse(t *testing.T) {
 	setRemoteProviderTestEnvironment(t)
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("EMBEDDING_PROVIDER", "qwen")
 	t.Setenv("QWEN_API_KEY", "test-key")
 	t.Setenv("QWEN_EMBEDDING_MODEL", "")
 	t.Setenv("EMBEDDING_MODEL", "")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "QWEN_EMBEDDING_MODEL") {
-		t.Fatalf("Load() error=%v, want explicit QWEN_EMBEDDING_MODEL failure", err)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() eagerly validated dormant embedding model: %v", err)
+	}
+	if cfg.EmbeddingModel != "" {
+		t.Fatalf("EmbeddingModel=%q want absent authority", cfg.EmbeddingModel)
 	}
 }
 
@@ -102,8 +111,8 @@ func TestLoadOpenAIEmbeddingRequiresAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = Validate(cfg); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
-		t.Fatalf("Validate() error=%v", err)
+	if err = ValidateProviderConfiguration(cfg, cfg.EmbeddingProvider, "EMBEDDING_PROVIDER"); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
+		t.Fatalf("provider use validation error=%v", err)
 	}
 }
 
@@ -117,14 +126,14 @@ func TestLoadAllowsDatabaseCredentialOverlayBeforeFinalValidation(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "QWEN_API_KEY") {
-		t.Fatalf("pre-overlay Validate() error=%v", err)
+	if err := ValidateProviderConfiguration(cfg, cfg.EmbeddingProvider, "EMBEDDING_PROVIDER"); err == nil || !strings.Contains(err.Error(), "QWEN_API_KEY") {
+		t.Fatalf("pre-overlay provider use validation error=%v", err)
 	}
 	provider := cfg.CompatibleProviders["qwen"]
 	provider.APIKey = "database-qwen-key"
 	cfg.CompatibleProviders["qwen"] = provider
-	if err := Validate(cfg); err != nil {
-		t.Fatalf("post-overlay Validate(): %v", err)
+	if err := ValidateProviderConfiguration(cfg, cfg.EmbeddingProvider, "EMBEDDING_PROVIDER"); err != nil {
+		t.Fatalf("post-overlay provider use validation: %v", err)
 	}
 }
 

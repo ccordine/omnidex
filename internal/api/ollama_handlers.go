@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -114,26 +113,19 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pullOllamaModel(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Model string `json:"model"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		writeError(w, http.StatusBadRequest, "model is required")
+	req, err := decodeOllamaPullRequest(w, r)
+	if err != nil {
+		writeError(w, exactSettingsErrorStatus(err), err.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
 	defer cancel()
-	if err := s.ollamaClient().PullModel(ctx, model); err != nil {
+	if err := s.ollamaClient().PullModel(ctx, req.Model); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"model":   model,
+		"model":   req.Model,
 		"message": "model pulled",
 	})
 }

@@ -177,8 +177,6 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		return summarizeChatRepositoryVerification(event)
 	case "repository_mutation_recovery_started", "repository_mutation_recovered":
 		return summarizeChatRepositoryRecovery(event)
-	case "external_agent_started", "external_agent_failed", "external_agent_unavailable":
-		return summarizeChatExternalAgent(event)
 	case "coding_repair_selected":
 		fields, err := exactChatEventFields(event.Message, "repair", "path", "command")
 		if err != nil {

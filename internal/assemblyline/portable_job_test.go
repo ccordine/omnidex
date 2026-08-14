@@ -10,14 +10,14 @@ import (
 func TestPortableJobIdentityDependsOnlyOnImmutableSmallInput(t *testing.T) {
 	t.Parallel()
 
-	input := RequirementPartitionInput{
-		SourceText: "Build a compact browser catalog.", Mode: RequirementExtractFeatures,
+	input := ApplicationRequirementInterpretationInput{
+		UserRequest: "Build a compact browser catalog with grouped records.",
 	}
-	first, err := NewRequirementPartitionJob(input)
+	first, err := NewApplicationRequirementInterpretationJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewRequirementPartitionJob(input)
+	second, err := NewApplicationRequirementInterpretationJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +35,25 @@ func TestPortableJobIdentityDependsOnlyOnImmutableSmallInput(t *testing.T) {
 		if strings.Contains(strings.ToLower(string(encoded)), forbidden) {
 			t.Fatalf("portable model job leaked %q: %s", forbidden, encoded)
 		}
+	}
+}
+
+func TestRequirementPortableJobIdentityChangesWithIntactRequest(t *testing.T) {
+	t.Parallel()
+	base := ApplicationRequirementInterpretationInput{
+		UserRequest: "Build a browser catalog with grouped records.",
+	}
+	first, err := NewApplicationRequirementInterpretationJob(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.UserRequest = "Build a browser catalog with grouped records and saved filters."
+	second, err := NewApplicationRequirementInterpretationJob(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == second.ID || reflect.DeepEqual(first.Payload, second.Payload) {
+		t.Fatalf("request did not change immutable job identity: %s", second.ID)
 	}
 }
 
@@ -95,8 +114,8 @@ func TestFragmentCorrectionWirePayloadCannotCarryInitialBehavior(t *testing.T) {
 func TestPortableResultMustAnswerTheExactClaimedJob(t *testing.T) {
 	t.Parallel()
 
-	job, err := NewRequirementPartitionJob(RequirementPartitionInput{
-		SourceText: "Build a small tool.", Mode: RequirementExtractFeatures,
+	job, err := NewApplicationRequirementInterpretationJob(ApplicationRequirementInterpretationInput{
+		UserRequest: "Build a small tool with status output.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +128,16 @@ func TestPortableResultMustAnswerTheExactClaimedJob(t *testing.T) {
 	result.JobID = job.ID
 	if err := result.ValidateFor(job); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPortableApplicationRequirementsRejectRetiredPartitionPayload(t *testing.T) {
+	t.Parallel()
+	payload := json.RawMessage(`{"source_text":"Enable grouped records.","mode":"extract_features"}`)
+	job := PortableJob{Schema: PortableJobSchemaV1, Kind: WorkApplicationRequirements, Payload: payload}
+	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)
+	if err := job.Validate(); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("retired requirement payload error=%v", err)
 	}
 }
 
@@ -135,7 +164,7 @@ func TestPortableJobRejectsUnknownWirePayloadFields(t *testing.T) {
 	payload := json.RawMessage(`{"user_request":"Build a tool.","accepted":[],"workspace":"/secret"}`)
 	job := PortableJob{
 		Schema:  PortableJobSchemaV1,
-		Kind:    WorkRequirementPartition,
+		Kind:    WorkApplicationRequirements,
 		Payload: payload,
 	}
 	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)

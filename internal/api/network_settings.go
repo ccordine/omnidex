@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -64,19 +63,12 @@ func (s *Server) handleNetworkSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "database unavailable")
 			return
 		}
-		var req struct {
-			Host string `json:"host"`
-			Port int    `json:"port"`
-			URL  string `json:"url"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid json body")
+		req, err := decodeNetworkSettingsRequest(w, r)
+		if err != nil {
+			writeError(w, exactSettingsErrorStatus(err), err.Error())
 			return
 		}
-		coreURL := strings.TrimSpace(req.URL)
-		if coreURL == "" {
-			coreURL = network.BuildCoreURL(req.Host, req.Port)
-		}
+		coreURL := network.BuildCoreURL(req.Host, req.Port)
 		stored, err := s.repo.SetCoreURL(r.Context(), coreURL)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())

@@ -89,17 +89,6 @@ func (s *Server) renderUIAdminAI(ctx context.Context, modelOffset int) (string, 
 	if err != nil {
 		return "", fmt.Errorf("load model settings: %w", err)
 	}
-	agents, err := s.defaultAgentConfig(ctx)
-	if err != nil {
-		return "", fmt.Errorf("load agent settings: %w", err)
-	}
-	storedAgents := map[string]string{}
-	if s.repo != nil {
-		storedAgents, err = s.repo.GetWorkspaceAgentConfig(ctx)
-		if err != nil {
-			return "", fmt.Errorf("load stored agent settings: %w", err)
-		}
-	}
 	storedSecrets := map[string]string{}
 	if s.repo != nil {
 		storedSecrets, err = s.repo.GetAPISecrets(ctx)
@@ -113,7 +102,6 @@ func (s *Server) renderUIAdminAI(ctx context.Context, modelOffset int) (string, 
 	}
 	return `<div data-admin-tab-panel="ai" class="mx-auto max-w-5xl space-y-4">` +
 		uiAdminSection("API keys", "Stored in PostgreSQL; environment values are used only when no database value is set.", renderUISecretFields(storedSecrets)) +
-		uiAdminSection("Workspace agent defaults", "Global execution agent settings. Project and card overrides take precedence.", renderUIAgentFields(agents.FieldList(storedAgents))) +
 		uiAdminSection("Ollama models", "Pull, inspect, and remove local models used by the stack.", modelsBody) +
 		uiAdminSection("Global model defaults", "Exact station model settings from the authoritative environment file.", renderUIModelFields(modelSettings)) +
 		`</div>`, nil

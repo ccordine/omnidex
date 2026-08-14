@@ -14,8 +14,8 @@ import (
 func TestDesiredStateModelContractsExposeOnlySemanticLeaves(t *testing.T) {
 	t.Parallel()
 	contracts := []reflect.Type{
-		reflect.TypeOf(assemblyline.RequirementPartitionInput{}),
-		reflect.TypeOf(assemblyline.RequirementPartitionDecision{}),
+		reflect.TypeOf(assemblyline.RepositoryRequirementInterpretationInput{}),
+		reflect.TypeOf(assemblyline.RepositoryRequirementInterpretation{}),
 		reflect.TypeOf(assemblyline.ArtifactHandlingInput{}),
 		reflect.TypeOf(assemblyline.ArtifactHandlingDecision{}),
 		reflect.TypeOf(assemblyline.KnownArtifactTruthInput{}),
@@ -56,8 +56,8 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 		return job
 	}
 	jobs := []assemblyline.PortableJob{
-		must(assemblyline.NewRequirementPartitionJob(assemblyline.RequirementPartitionInput{
-			SourceText: "ARTIFACT_1 must no longer exist", Mode: assemblyline.RequirementExtractFeatures,
+		must(assemblyline.NewRepositoryRequirementInterpretationJob(assemblyline.RepositoryRequirementInterpretationInput{
+			UserRequest: "ARTIFACT_1 must no longer exist",
 		})),
 		must(assemblyline.NewArtifactHandlingJob(assemblyline.ArtifactHandlingInput{
 			UserRequest: "ARTIFACT_1 must no longer exist", Token: "ARTIFACT_1",

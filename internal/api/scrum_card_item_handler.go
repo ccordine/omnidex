@@ -28,12 +28,12 @@ func (s *Server) handleScrumCardItem(w http.ResponseWriter, r *http.Request, car
 		writeError(w, http.StatusMethodNotAllowed, "Scrum card item mutation only accepts POST")
 		return
 	}
-	request, err := decodeScrumCardItemRequest(w, r)
+	projectID, err := decodeScrumMutationProjectID(r, "Scrum card item mutation")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	projectID, err := s.resolveProjectID(r)
+	request, err := decodeScrumCardItemRequest(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -46,7 +46,7 @@ func (s *Server) handleScrumCardItem(w http.ResponseWriter, r *http.Request, car
 		status := http.StatusBadRequest
 		if errors.Is(err, queue.ErrScrumCardVersionConflict) {
 			status = http.StatusConflict
-		} else if errors.Is(err, queue.ErrScrumCardNotFound) || strings.Contains(err.Error(), "was not found") {
+		} else if errors.Is(err, queue.ErrScrumCardNotFound) || errors.Is(err, queue.ErrScrumCardItemNotFound) {
 			status = http.StatusNotFound
 		}
 		writeError(w, status, err.Error())
@@ -57,7 +57,12 @@ func (s *Server) handleScrumCardItem(w http.ResponseWriter, r *http.Request, car
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"card": card})
+	responseCard, err := scrumCardActionProjection(card)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"card": responseCard})
 }
 
 func decodeScrumCardItemRequest(w http.ResponseWriter, r *http.Request) (scrumCardItemRequest, error) {
@@ -80,6 +85,9 @@ func decodeScrumCardItemRequest(w http.ResponseWriter, r *http.Request) (scrumCa
 	}
 	if err := requireJSONEOF(decoder, "Scrum card item mutation"); err != nil {
 		return scrumCardItemRequest{}, err
+	}
+	if request.Action == queue.ScrumCardItemAdd {
+		request.Text = strings.TrimSpace(request.Text)
 	}
 	probe := queue.ScrumCardItemMutation{
 		ProjectID: 1, CardID: "probe", ExpectedUpdatedAt: request.ExpectedUpdatedAt,

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ScrumCardModalResponse } from "../../lib/scrum_types";
+import { SCRUM_COLUMNS, type ScrumCardModalResponse } from "../../lib/scrum_types";
 import { CardModalApp } from "./CardModalApp";
 
 const initialContext: ScrumCardModalResponse = {
@@ -14,6 +14,8 @@ const initialContext: ScrumCardModalResponse = {
     chat: [],
     tags: [],
     test_criteria: [],
+    channel_before_cursor: "",
+    channel_has_more: false,
     created_at: "2026-08-13T12:00:00Z",
     updated_at: "2026-08-13T12:00:00.123456Z",
   },
@@ -21,12 +23,26 @@ const initialContext: ScrumCardModalResponse = {
     id: "board_1",
     name: "Board",
     project_directory: "",
-    columns: ["ready", "in_progress", "done"],
+    columns: [...SCRUM_COLUMNS],
     cards: [],
     updated_at: "2026-08-13T12:00:00Z",
   },
   tab: "card",
   project_id: 7,
+  files: [],
+  dirs: [],
+  file_path: "",
+  file_parent: "",
+  file_has_parent: false,
+  file_offset: 0,
+  file_has_previous: false,
+  file_previous_offset: 0,
+  file_has_more: false,
+  file_next_offset: 0,
+  play_queue: { running_card_id: "", queued_count: 0, queued_card_ids: [], queued_has_more: false },
+  pilot_pending: false,
+  channel_before_cursor: "",
+  channel_has_more: false,
 };
 
 function response(payload: unknown): Response {
@@ -48,7 +64,7 @@ describe("card state code-owned actions", () => {
       name: "move",
       trigger: async () => fireEvent.change(await screen.findByDisplayValue("ready"), { target: { value: "in_progress" } }),
       path: "/move",
-      body: { column: "in_progress" },
+      body: { column: "in_progress", expected_updated_at: "2026-08-13T12:00:00.123456Z" },
       label: "Moving card...",
       column: "in_progress",
     },
@@ -56,7 +72,7 @@ describe("card state code-owned actions", () => {
       name: "done",
       trigger: async () => fireEvent.click(await screen.findByRole("button", { name: "Done" })),
       path: "/done",
-      body: {},
+      body: { expected_updated_at: "2026-08-13T12:00:00.123456Z" },
       label: "Marking done...",
       column: "done",
     },
@@ -69,7 +85,7 @@ describe("card state code-owned actions", () => {
           ...current,
           card: { ...current.card, column, updated_at: "2026-08-13T12:00:01.654321Z" },
         };
-        resolve(response({ card: current.card }));
+        resolve(response({ commit_state: "committed", card: current.card }));
       };
     });
     const requests: Array<{ url: string; body: unknown }> = [];

@@ -11,6 +11,10 @@ import (
 )
 
 func (s *Server) listChannelMessages(w http.ResponseWriter, r *http.Request, channelID model.ChannelID) {
+	if err := validateExactQuery(r, "limit", "before_id", "required_message_id"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	limit, err := exactChannelQueryInteger(r, "limit", defaultChannelHistoryLimit, 1, 200)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

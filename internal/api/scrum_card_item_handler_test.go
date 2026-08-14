@@ -41,17 +41,51 @@ func TestDecodeScrumCardItemRequestAcceptsOnlyExactTypedActions(t *testing.T) {
 	}
 }
 
+func TestDecodeScrumCardItemRequestCanonicalizesUserTextAtBoundary(t *testing.T) {
+	t.Parallel()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/",
+		strings.NewReader(`{"action":"add","expected_updated_at":"2026-08-13T12:00:00Z","text":"  Exact item  "}`),
+	)
+	decoded, err := decodeScrumCardItemRequest(httptest.NewRecorder(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Text != "Exact item" {
+		t.Fatalf("text=%q", decoded.Text)
+	}
+}
+
+func TestScrumCardItemRejectsInexactProjectQueryBeforeRepositoryAccess(t *testing.T) {
+	t.Parallel()
+	server := &Server{repo: &queue.Repository{}}
+	body := `{"action":"remove","expected_updated_at":"2026-08-13T12:00:00Z","item_id":"item-1"}`
+	for _, target := range []string{
+		"/v1/scrum/cards/card-1/checklist?project_id=01",
+		"/v1/scrum/cards/card-1/checklist?project_id=1&project_id=2",
+		"/v1/scrum/cards/card-1/checklist?project_id=1&model=x",
+	} {
+		request := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
+		response := httptest.NewRecorder()
+		server.handleScrumCardItem(response, request, "card-1", queue.ScrumCardChecklist)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("target=%q status=%d body=%s", target, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestPostgresScrumChecklistMutationOwnsIdentityAndRevision(t *testing.T) {
 	pool := openIsolatedAPIMigrationPool(t)
 	repository := queue.New(pool)
 	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
-	project, err := repository.CreateProject(t.Context(), fmt.Sprintf("scrum-items-%d", time.Now().UnixNano()), t.TempDir(), "", "", nil)
+	project, err := repository.CreateProject(t.Context(), fmt.Sprintf("scrum-items-%d", time.Now().UnixNano()), t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := repository.CreateScrumCard(t.Context(), project.ID, "", "Items", "", "assigned", nil, nil, nil)
+	card, err := repository.CreateScrumCard(t.Context(), project.ID, "", "Items", "", "assigned", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

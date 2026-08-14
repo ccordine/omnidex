@@ -11,12 +11,17 @@ func (s *Server) publishScrumCardUpdate(ctx context.Context, projectID int64, ca
 	s.publishScrumCardUpdateWithToast(ctx, projectID, card, reason, "", "")
 }
 
-func (s *Server) publishScrumCardUpdateWithToast(_ context.Context, projectID int64, card ScrumCard, reason, toast, toastTone string) {
+func (s *Server) publishScrumCardUpdateWithToast(ctx context.Context, projectID int64, card ScrumCard, reason, toast, toastTone string) {
 	if strings.TrimSpace(card.ID) == "" {
 		log.Printf("scrum realtime card update rejected project=%d reason=%q: card id required", projectID, reason)
 		return
 	}
-	card = scrumCardChannelPayload(card, scrumRealtimeChannelPageSize)
+	projected, err := s.scrumChannelCardProjection(ctx, projectID, card.ID, scrumRealtimeChannelPageSize)
+	if err != nil {
+		log.Printf("scrum realtime channel projection rejected project=%d card=%s reason=%q: %v", projectID, card.ID, reason, err)
+		return
+	}
+	card = projected
 	msg := realtimeMessage{
 		EventName: "scrum-card-updated",
 		StateKey:  fmt.Sprintf("scrum-card:%d:%s", projectID, strings.TrimSpace(card.ID)),
@@ -56,7 +61,7 @@ func (s *Server) publishScrumBoardRefreshWithToast(ctx context.Context, projectI
 		bundle, err = s.scrumBoardRealtimeHTML(ctx, projectID, board)
 	} else {
 		var loaded ScrumBoard
-		loaded, err = s.scrumBoardFromProject(ctx, projectID)
+		loaded, err = s.scrumBoardMetadataFromProject(ctx, projectID)
 		if err == nil {
 			bundle, err = s.scrumBoardRealtimeHTML(ctx, projectID, loaded)
 		}
@@ -107,7 +112,7 @@ func (s *Server) notifyScrumCardColumnTransition(ctx context.Context, projectID 
 	if toast == "" {
 		return
 	}
-	board, err := s.scrumBoardFromProject(ctx, projectID)
+	board, err := s.scrumBoardMetadataFromProject(ctx, projectID)
 	if err != nil {
 		s.publishScrumRealtimeFailure(projectID, "column "+nextCol, err)
 		return
@@ -136,16 +141,19 @@ func (s *Server) scrumBoardRealtimeHTML(ctx context.Context, projectID int64, bo
 	if projectID <= 0 {
 		return "", fmt.Errorf("positive project id is required to render a realtime Scrum board")
 	}
-	fullBoard := board
-	if err := s.refreshScrumFlowMetricsForBoard(ctx, projectID, &fullBoard); err != nil {
-		return "", err
-	}
 	automation, err := s.scrumAutomationSettings(ctx, projectID)
 	if err != nil {
 		return "", err
 	}
 	autoWork := automation.AutoWork
-	visibleColumn := scrumRealtimeViewportColumn(fullBoard, autoWork)
+	focusBoard, err := s.scrumFocusBoard(ctx, projectID, board, autoWork)
+	if err != nil {
+		return "", err
+	}
+	visibleColumn, err := scrumRealtimeViewportColumn(focusBoard, autoWork)
+	if err != nil {
+		return "", err
+	}
 	columnCounts, err := s.scrumColumnCountsFromRepository(ctx, projectID)
 	if err != nil {
 		return "", err
@@ -154,40 +162,65 @@ func (s *Server) scrumBoardRealtimeHTML(ctx context.Context, projectID int64, bo
 	if err != nil {
 		return "", err
 	}
-	viewportBoard := fullBoard
+	viewportBoard := board
 	viewportBoard.Columns = []string{visibleColumn}
 	viewportBoard.Cards = pageCards
-	cardsByCol := cardsByColumn(viewportBoard)
-	playQueue := scrumPlayQueueSummary(fullBoard)
-	flowSummary := summarizeScrumFlowMetrics(fullBoard.Cards)
-	fragments := renderScrumBoardFragments(
+	cardsByCol, err := cardsByColumn(viewportBoard)
+	if err != nil {
+		return "", err
+	}
+	playQueue, err := s.scrumPlayQueuePayload(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+	flowSummary, err := s.scrumFlowSummaryFromRepository(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+	complete, err := s.repo.ScrumProjectComplete(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+	fragments, err := renderScrumBoardFragments(
 		viewportBoard,
 		cardsByCol,
-		fullBoard,
+		focusBoard,
 		visibleColumn,
 		columnCounts,
 		playQueue,
 		autoWork.Enabled,
 		autoWork,
+		complete,
 		flowSummary,
 		scrumCardPageState{Count: len(pageCards), HasMore: cardHasMore},
 	)
+	if err != nil {
+		return "", err
+	}
 	return fragments.Bundle, nil
 }
 
-func scrumRealtimeViewportColumn(board ScrumBoard, autoWork ScrumAutoWorkConfig) string {
+func scrumRealtimeViewportColumn(board ScrumBoard, autoWork ScrumAutoWorkConfig) (string, error) {
 	if running := findRunningScrumCardInBoard(board); running != nil {
 		if col := normalizeScrumColumn(running.Column); col != "" {
-			return col
+			return col, nil
 		}
+		return "", fmt.Errorf("running Scrum card %q contains noncanonical column %q", running.ID, running.Column)
 	}
-	byCol := cardsByColumn(board)
-	for _, col := range normalizeScrumAutoWorkColumns(autoWork.SourceColumns) {
+	byCol, err := cardsByColumn(board)
+	if err != nil {
+		return "", err
+	}
+	validated, err := validateScrumAutoWorkConfig(autoWork)
+	if err != nil {
+		return "", err
+	}
+	for _, col := range validated.SourceColumns {
 		if len(byCol[col]) > 0 {
-			return col
+			return col, nil
 		}
 	}
-	return "assigned"
+	return "assigned", nil
 }
 
 func findRunningScrumCardInBoard(board ScrumBoard) *ScrumCard {

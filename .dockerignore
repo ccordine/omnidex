@@ -1,5 +1,12 @@
 .git
 .omni
+.cache
+.agent-cache
+.agent-legacy087-cache
+.agent-legacy087-release
+.tmp
+.tmp-*
+tmp
 autonomy-proof
 bin
 test-projects

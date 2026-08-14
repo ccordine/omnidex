@@ -46,7 +46,6 @@ authoritative workflow state, not a planner-model response:
 Allowed proof objective sources:
 
 - `user_explicit`
-- `recipe_required`
 - `evidence_required_prerequisite`
 
 Disallowed proof objective sources:

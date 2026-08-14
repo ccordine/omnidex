@@ -5,17 +5,6 @@ import (
 	"strings"
 )
 
-func (input RequirementPartitionInput) validate() error {
-	switch input.Mode {
-	case RequirementExtractFeatures:
-		return validateResidualText("requirement feature extraction", input.SourceText)
-	case RequirementSplitFeature:
-		return validateRequirementQuote("requirement feature split", input.SourceText)
-	default:
-		return fmt.Errorf("requirement partition mode %q is unsupported", input.Mode)
-	}
-}
-
 func validateRequirementQuote(label, quote string) error {
 	if quote == "" || quote != strings.TrimSpace(quote) {
 		return fmt.Errorf("%s requires one trimmed source quote", label)
@@ -26,28 +15,8 @@ func validateRequirementQuote(label, quote string) error {
 	return nil
 }
 
-func validateResidualText(label, residual string) error {
-	if strings.TrimSpace(residual) == "" {
-		return fmt.Errorf("%s requires unresolved source text", label)
-	}
-	if len(residual) > maxPortablePayloadBytes/2 {
-		return fmt.Errorf("%s residual text exceeds %d bytes", label, maxPortablePayloadBytes/2)
-	}
-	return nil
-}
-
 func (input ApplicationClassificationInput) validate() error {
-	if input.UserRequest == "" || input.UserRequest != strings.TrimSpace(input.UserRequest) {
-		return fmt.Errorf("application classification requires one trimmed user request")
-	}
-	return nil
-}
-
-func (input ApplicationIdentityInput) validate() error {
-	if input.UserRequest == "" || input.UserRequest != strings.TrimSpace(input.UserRequest) {
-		return fmt.Errorf("application identity requires one trimmed user request")
-	}
-	return nil
+	return validateApplicationRequest("application classification", input.UserRequest)
 }
 
 func (input ArtifactHandlingInput) validate() error {
@@ -79,8 +48,12 @@ func validateGroundedQuoteCollection(label, source string, quotes []string) erro
 }
 
 func validateQuoteCollection(label string, quotes []string) error {
-	if len(quotes) > maxRequirementCount {
-		return fmt.Errorf("%s quotes exceed %d items", label, maxRequirementCount)
+	return validateBoundedQuoteCollection(label, quotes, maxRequirementCount)
+}
+
+func validateBoundedQuoteCollection(label string, quotes []string, limit int) error {
+	if len(quotes) > limit {
+		return fmt.Errorf("%s quotes exceed %d items", label, limit)
 	}
 	seen := make(map[string]struct{}, len(quotes))
 	for index, quote := range quotes {

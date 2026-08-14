@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/http/httptrace"
 	"strings"
 	"testing"
@@ -14,6 +15,45 @@ import (
 
 	"github.com/gryph/omnidex/internal/llm"
 )
+
+func TestExactProviderRequestHonorsConfiguredDelayedHeaderTimeout(t *testing.T) {
+	const responseDelay = 220 * time.Millisecond
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(responseDelay)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	request := func(t *testing.T, timeout time.Duration) (*http.Response, llm.ProviderRequestDisposition, error) {
+		t.Helper()
+		client := New(server.URL, "", "", timeout, llm.DefaultInferenceContextTokens)
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/api/generate", strings.NewReader("{}"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return client.doExactProviderRequest(req)
+	}
+
+	if response, disposition, err := request(t, 750*time.Millisecond); err != nil {
+		t.Fatalf("larger configured timeout rejected delayed headers: %v", err)
+	} else {
+		defer response.Body.Close()
+		if disposition != llm.ProviderRequestDispatched || response.StatusCode != http.StatusNoContent {
+			t.Fatalf("response status=%d disposition=%q", response.StatusCode, disposition)
+		}
+	}
+
+	response, disposition, err := request(t, 50*time.Millisecond)
+	if err == nil || response != nil {
+		t.Fatalf("short explicit timeout returned response=%v error=%v", response, err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("short explicit timeout error=%v want context deadline exceeded", err)
+	}
+	if disposition != llm.ProviderRequestDispatched {
+		t.Fatalf("short timeout disposition=%q want dispatched", disposition)
+	}
+}
 
 func TestExactProviderRequestRecordsTruthfulWriteDisposition(t *testing.T) {
 	t.Parallel()

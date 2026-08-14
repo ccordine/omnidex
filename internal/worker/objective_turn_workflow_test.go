@@ -120,7 +120,7 @@ func TestObjectiveTurnMapsWorkspaceFactToCodeOwnedMutation(t *testing.T) {
 	answer := &scriptedObjectiveAnswerStation{}
 	var got turnAuthority
 	result, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 42, Pipeline: model.PipelineAssistant, Instruction: exact,
+		ID: 42, Pipeline: model.PipelineChat, Instruction: exact,
 	}, scriptedConversationCandidateProvider{}, nil, kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{WorkspaceMutation: func(_ context.Context, authority turnAuthority) (string, error) {
 		got = authority
 		return "compiler and tests passed", nil
@@ -186,20 +186,17 @@ func TestObjectiveTurnFailsWithoutFallback(t *testing.T) {
 	}
 }
 
-func TestStoryTransportAlwaysUsesSemanticIntentAndMaySelectAnotherKind(t *testing.T) {
+func TestRetiredStoryTransportCannotReceiveTurnAuthority(t *testing.T) {
 	kind := &scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
 		Schema: assemblyline.ConversationObjectiveKindSchemaV1, Kind: assemblyline.ObjectiveKindWorkspaceMutation,
 	}}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 45, Pipeline: model.PipelineStory, Instruction: "Continue the scene.",
+		ID: 45, Pipeline: "story", Instruction: "Continue the scene.",
 	}, scriptedConversationCandidateProvider{}, nil, kind, &scriptedObjectiveConversationStation{}, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{WorkspaceMutation: func(context.Context, turnAuthority) (string, error) {
 		return "must not execute", nil
 	}})
-	if err != nil || !result.Complete || result.Kind != assemblyline.ObjectiveKindWorkspaceMutation {
-		t.Fatalf("story semantic route failed: result=%#v err=%v", result, err)
-	}
-	if kind.calls != 1 || result.ModelCalls != 1 {
-		t.Fatalf("story skipped semantic interpretation: classifier=%d result=%#v", kind.calls, result)
+	if err == nil || result.Complete || kind.calls != 0 {
+		t.Fatalf("retired story executed: result=%#v classifier=%d err=%v", result, kind.calls, err)
 	}
 }
 

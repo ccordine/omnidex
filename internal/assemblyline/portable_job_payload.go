@@ -9,10 +9,26 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	switch kind {
 	case WorkApplicationClassify:
 		return decodeAndValidatePortablePayload[ApplicationClassificationInput](payload, ApplicationClassificationInput.validate)
-	case WorkApplicationIdentity:
-		return decodeAndValidatePortablePayload[ApplicationIdentityInput](payload, ApplicationIdentityInput.validate)
-	case WorkRequirementPartition:
-		return decodeAndValidatePortablePayload[RequirementPartitionInput](payload, RequirementPartitionInput.validate)
+	case WorkApplicationRequirements:
+		return decodeAndValidatePortablePayload[ApplicationRequirementInterpretationInput](
+			payload, ApplicationRequirementInterpretationInput.validate,
+		)
+	case WorkApplicationJobSpecification:
+		return decodeAndValidatePortablePayload[ApplicationJobSpecificationInput](
+			payload, validateApplicationJobSpecificationInput,
+		)
+	case WorkApplicationJobSpecificationReview:
+		return decodeAndValidatePortablePayload[applicationJobSpecificationReviewPortablePayload](
+			payload, applicationJobSpecificationReviewPortablePayload.validate,
+		)
+	case WorkApplicationJobSpecificationRepair:
+		return decodeAndValidatePortablePayload[applicationJobSpecificationRepairPortablePayload](
+			payload, applicationJobSpecificationRepairPortablePayload.validate,
+		)
+	case WorkRepositoryRequirements:
+		return decodeAndValidatePortablePayload[RepositoryRequirementInterpretationInput](
+			payload, RepositoryRequirementInterpretationInput.validate,
+		)
 	case WorkRepositorySearchTerm:
 		return decodeAndValidatePortablePayload[RepositorySearchTermInput](payload, RepositorySearchTermInput.validate)
 	case WorkRepositoryChangeSurface:

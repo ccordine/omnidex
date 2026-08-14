@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"unicode/utf8"
 )
 
 func TestScrumRequestForProjectCarriesProjectID(t *testing.T) {
@@ -48,56 +47,36 @@ func TestReconcileOnlyAutoWorkHandoffCanBeSuppressed(t *testing.T) {
 	}
 }
 
-func TestStartScrumCardPlayUsesAuthoritativeProjectID(t *testing.T) {
-	source := readAPISource(t, "scrum_play_queue.go")
-	body := sourceBetween(t, source, "func (s *Server) startScrumCardPlay", "\nfunc scrumCardFromBoard")
-	if !strings.Contains(body, "s.scrumBoardFromProject(r.Context(), projectID)") {
-		t.Fatal("startScrumCardPlay must load project board from the server-side project ID")
-	}
-	if strings.Contains(body, "card, board, projectID, err := s.scrumGetCard(r, cardID)") {
-		t.Fatal("startScrumCardPlay must not depend on request URL project resolution when projectID is known")
+func TestScrumRuntimeRetainsNoDeadBoardOrPathPlayHelpers(t *testing.T) {
+	for path, forbidden := range map[string][]string{
+		"scrum_play_queue.go":      {"startScrumCardPlay(", "pauseScrumCardPlay("},
+		"scrum_service.go":         {"loadScrumContext(", "scrumGetCard(", "scrumProjectDirectory("},
+		"scrum_channel_handler.go": {"scrumGetCard(", "scrumBoardMetadataFromProject("},
+	} {
+		source := readAPISource(t, path)
+		for _, fragment := range forbidden {
+			if strings.Contains(source, fragment) {
+				t.Errorf("%s retains dead board/path play helper %q", path, fragment)
+			}
+		}
 	}
 }
 
-func TestAutoWorkKickoffDoesNotSilentlySwallowStartFailures(t *testing.T) {
+func TestAutoWorkKickoffUsesOneLockedRepositoryTransition(t *testing.T) {
 	source := readAPISource(t, "scrum_auto_play.go")
-	required := []string{
-		"markScrumAutoWorkStartFailure",
-		"moving_to=error",
-	}
+	required := []string{"s.repo.ApplyProjectAutoWork", "queue.ProjectAutoWorkPlay"}
 	for _, snippet := range required {
 		if !strings.Contains(source, snippet) {
-			t.Fatalf("expected auto-work start failures to be explicit; missing %q", snippet)
+			t.Fatalf("auto-work must use the locked repository transition; missing %q", snippet)
 		}
 	}
 	forbidden := []string{
-		"if _, err := s.startScrumCardPlay(r, board, projectID, prepared.ID, agentconfig.Config{}); err != nil {\n\t\treturn board, nil\n\t}",
-		"if err != nil {\n\t\treturn board, nil\n\t}\n\tif _, err := s.startScrumCardPlay",
+		"prepareScrumCardForAutoWork", "markScrumAutoWorkStartFailure", "startScrumCardPlay(",
 	}
 	for _, snippet := range forbidden {
 		if strings.Contains(source, snippet) {
-			t.Fatalf("auto-work must not swallow start failures; found %q", snippet)
+			t.Fatalf("auto-work retains a superseded multi-transaction start path %q", snippet)
 		}
-	}
-}
-
-func TestScrumAutoWorkStartErrorIsGlobalPause(t *testing.T) {
-	if !scrumAutoWorkStartErrorIsGlobalPause(autoWorkErrString("AI is globally paused")) {
-		t.Fatal("expected global pause detection")
-	}
-	if scrumAutoWorkStartErrorIsGlobalPause(autoWorkErrString("spawn codex ENOENT")) {
-		t.Fatal("agent start failures must not be treated as global pause")
-	}
-}
-
-func TestAutoWorkFailureReasonTruncationKeepsValidUTF8(t *testing.T) {
-	reason := strings.Repeat("a", scrumAutoWorkStartFailureNoteLimit) + "→ failed"
-	got := truncateScrumChannelText(reason, scrumAutoWorkStartFailureNoteLimit+2, "...")
-	if !utf8.ValidString(got) {
-		t.Fatalf("not valid utf8: %q", got)
-	}
-	if strings.Contains(got, string([]byte{0xe2, 0x86, 0x2e})) {
-		t.Fatalf("found truncated arrow before suffix: %q", got)
 	}
 }
 
@@ -106,7 +85,7 @@ func TestGlobalAutoWorkDoesNotSkipAuthoritativeFailures(t *testing.T) {
 	for _, forbidden := range []string{
 		"scrum global auto-work load project=%d",
 		"scrum global running reconcile project=%d",
-		"if board, err := s.scrumBoardFromProject(ctx, candidate.projectID); err == nil",
+		"if board, err := s.scrumBoardMetadataFromProject(ctx, candidate.projectID); err == nil",
 		"if refreshed, err := s.kickoffAutoPlayThrough",
 		"return true\n\t}\n\treturn running",
 	} {
@@ -144,6 +123,27 @@ func TestScrumFlowMetricsLogsEveryPersistenceFailure(t *testing.T) {
 	}
 }
 
+func TestScrumRuntimeHasNoBroadCardWriterOrModelVisibleRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+	checks := map[string][]string{
+		"../queue/scrum_card_mutation.go":        {"UpdateScrumCard(", "UpdateScrumCardWithMessages(", "map[string]any"},
+		"../queue/step_attempt_domain_writes.go": {"UpdateScrumCardByStepAttempt("},
+		"scrum_channel_handler.go":               {"scrumGetCard(", "ProjectDirectory", "project_directory"},
+		"scrum_channel_operation.go":             {"Project directory:", "RefFiles", "recipe_id", "agent_config"},
+	}
+	for path, forbidden := range checks {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, snippet := range forbidden {
+			if strings.Contains(string(raw), snippet) {
+				t.Errorf("%s retains forbidden Scrum runtime authority %q", path, snippet)
+			}
+		}
+	}
+}
+
 func TestOperationalStatusEndpointsDoNotReturnPartialSuccess(t *testing.T) {
 	checks := map[string][]string{
 		"activity.go":             {"llmActivity, _ :="},
@@ -161,7 +161,7 @@ func TestOperationalStatusEndpointsDoNotReturnPartialSuccess(t *testing.T) {
 }
 
 func TestScrumCardDatabaseJSONNeverSilentlyNormalizesCorruption(t *testing.T) {
-	source := readAPISource(t, "project_handlers.go")
+	source := readAPISource(t, "scrum_card_conversion.go")
 	for _, forbidden := range []string{
 		"_ = json.Unmarshal(card.",
 		"checklist, _ := json.Marshal",
@@ -182,23 +182,4 @@ func readAPISource(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
-}
-
-func sourceBetween(t *testing.T, source, startMarker, endMarker string) string {
-	t.Helper()
-	start := strings.Index(source, startMarker)
-	if start < 0 {
-		t.Fatalf("missing source marker %q", startMarker)
-	}
-	end := strings.Index(source[start:], endMarker)
-	if end < 0 {
-		t.Fatalf("missing source marker %q", endMarker)
-	}
-	return source[start : start+end]
-}
-
-type autoWorkErrString string
-
-func (e autoWorkErrString) Error() string {
-	return string(e)
 }

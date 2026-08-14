@@ -10,8 +10,8 @@ const (
 	maxTypeScriptCurrentDeclarationBytes = 5 * 1024
 	maxTypeScriptRequiredChangeBytes     = 512
 	maxTypeScriptDiagnosticBytes         = 1024
-	maxTypeScriptInitialEnvelopeBytes    = 3 * 1024
-	maxTypeScriptFragmentPromptBytes     = 8 * 1024
+	maxTypeScriptInitialEnvelopeBytes    = 32 * 1024
+	maxTypeScriptFragmentPromptBytes     = 32 * 1024
 )
 
 type TypeScriptFragmentPrompt struct {

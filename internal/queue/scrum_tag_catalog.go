@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 const MaxScrumTagPageSize = 100
@@ -15,7 +16,12 @@ func (r *Repository) ListScrumCardTags(ctx context.Context, projectID int64, que
 	if limit < 1 || limit > MaxScrumTagPageSize {
 		return nil, fmt.Errorf("Scrum tag catalog limit must be between 1 and %d", MaxScrumTagPageSize)
 	}
-	query = strings.ToLower(strings.TrimSpace(query))
+	if !utf8.ValidString(query) || strings.ContainsRune(query, '\x00') {
+		return nil, fmt.Errorf("Scrum tag catalog query must be valid UTF-8 without NUL")
+	}
+	if len(query) > 256 {
+		return nil, fmt.Errorf("Scrum tag catalog query exceeds the 256-byte bound")
+	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT LOWER(BTRIM(tag.value)) AS normalized_tag
 		FROM scrum_cards AS card
@@ -24,7 +30,7 @@ func (r *Repository) ListScrumCardTags(ctx context.Context, projectID int64, que
 		) AS tag(value)
 		WHERE card.project_id = $1
 		  AND BTRIM(tag.value) <> ''
-		  AND ($2 = '' OR STRPOS(LOWER(BTRIM(tag.value)), $2) > 0)
+		  AND ($2 = '' OR STRPOS(LOWER(BTRIM(tag.value)), LOWER($2)) > 0)
 		ORDER BY normalized_tag ASC
 		LIMIT $3
 	`, projectID, query, limit)

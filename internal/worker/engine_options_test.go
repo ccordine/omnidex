@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -43,12 +44,13 @@ func (startupTestLLM) Embedding(context.Context, string) ([]float64, error) {
 
 func validWorkerOptions() Options {
 	return Options{
-		WorkerCount:            2,
-		FragmentConcurrency:    1,
-		PollInterval:           time.Second,
-		InferenceContextTokens: 32768,
-		EmbeddingProvider:      "ollama",
-		EmbeddingModel:         "nomic-embed-text",
+		WorkerCount:               2,
+		FragmentConcurrency:       1,
+		PollInterval:              time.Second,
+		InferenceContextTokens:    32768,
+		EmbeddingProvider:         "ollama",
+		EmbeddingModel:            "nomic-embed-text",
+		ObjectiveAdvisoryProvider: "ollama",
 		Models: ModelRouting{
 			Stations: validStationModels(),
 		},
@@ -72,6 +74,51 @@ func TestValidateWorkerOptionsDoesNotRequireBroadModelRoles(t *testing.T) {
 	}
 }
 
+func TestWorkerObjectiveAdvisoryModeIsOffByDefaultAndRejectsUnknownValues(t *testing.T) {
+	opts := validWorkerOptions()
+	if err := validateWorkerOptions(opts); err != nil {
+		t.Fatal(err)
+	}
+	if got := normalizeWorkerOptions(opts).ObjectiveAdvisoryMode; got != objectiveadvisory.ModeOff {
+		t.Fatalf("normalized mode=%q want off", got)
+	}
+
+	opts.ObjectiveAdvisoryMode = objectiveadvisory.Mode("enabled")
+	if err := validateWorkerOptions(opts); err == nil || !strings.Contains(err.Error(), "objective advisory mode") {
+		t.Fatalf("invalid advisory mode error=%v", err)
+	}
+}
+
+func TestWorkerObjectiveAdvisoryEnabledModeRequiresExactProvider(t *testing.T) {
+	opts := validWorkerOptions()
+	opts.ObjectiveAdvisoryMode = objectiveadvisory.ModeShadow
+
+	opts.ObjectiveAdvisoryProvider = ""
+	if err := validateWorkerOptions(opts); err == nil ||
+		!strings.Contains(err.Error(), "objective advisory provider") {
+		t.Fatalf("missing provider error=%v", err)
+	}
+
+	opts.ObjectiveAdvisoryProvider = "openai"
+	if err := validateWorkerOptions(opts); err == nil ||
+		!strings.Contains(err.Error(), "supports only exact provider") {
+		t.Fatalf("inexact provider error=%v", err)
+	}
+
+	opts.ObjectiveAdvisoryProvider = llm.ExactPreparedProviderBackend
+	if err := validateWorkerOptions(opts); err != nil {
+		t.Fatalf("exact provider rejected: %v", err)
+	}
+}
+
+func TestWorkerObjectiveAdvisoryOffModeDoesNotRequireProvider(t *testing.T) {
+	opts := validWorkerOptions()
+	opts.ObjectiveAdvisoryProvider = ""
+	if err := validateWorkerOptions(opts); err != nil {
+		t.Fatalf("off mode resolved provider configuration: %v", err)
+	}
+}
+
 func TestValidateWorkerOptionsRejectsInvalidRuntimeBounds(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -82,8 +129,6 @@ func TestValidateWorkerOptionsRejectsInvalidRuntimeBounds(t *testing.T) {
 		{name: "fragment concurrency", mutate: func(opts *Options) { opts.FragmentConcurrency = 0 }, message: "fragment_concurrency"},
 		{name: "poll interval", mutate: func(opts *Options) { opts.PollInterval = 0 }, message: "poll_interval"},
 		{name: "inference context", mutate: func(opts *Options) { opts.InferenceContextTokens = 4095 }, message: "inference_context_tokens"},
-		{name: "embedding provider", mutate: func(opts *Options) { opts.EmbeddingProvider = "" }, message: "embedding_provider"},
-		{name: "embedding model", mutate: func(opts *Options) { opts.EmbeddingModel = "" }, message: "embedding_model"},
 		{name: "workspace root", mutate: func(opts *Options) { opts.Workspace.Root = "relative" }, message: "workspace.root"},
 		{name: "logger", mutate: func(opts *Options) { opts.Logger = nil }, message: "logger"},
 	}

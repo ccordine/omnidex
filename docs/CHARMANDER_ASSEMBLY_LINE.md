@@ -33,14 +33,12 @@ semantic or source-code remainder left after deterministic closure.
 A model may perform only a bounded task whose semantics cannot be reliably derived by code:
 
 * classify one delivery surface;
-* copy one exact product-context quote;
-* select one code-registered requirement-analysis lens;
-* critique one exact requirement-partition prompt as a bounded plain-text memo;
-* extract or split exact requirement quotes after stable-model synthesis;
+* transform one intact application request into one bounded aggregate containing one exact product-context quote and one through ten exact feature quotes;
 * classify one opaque artifact disposition;
 * classify the direct live-state relation between two local needs;
 * select one of at most five opaque active-skill summaries, or `none`;
 * propose one short procedure for one local need;
+* return bounded plain-text, non-authoritative considerations for one already-grounded objective;
 * return one raw source declaration;
 * correct one retained semantic leaf or one current source declaration.
 
@@ -50,37 +48,60 @@ No model receives a file name, path, workspace tree, project plan, queue, phase,
 
 1. The unchanged request enters the typed coding transport.
 2. Artifact names are replaced with code-owned opaque tokens before semantic calls.
-3. Independent semantic stations derive the supported surface, one exact product-context quote, exact requirement quotes, and explicit artifact handling. One stable schema-bound requirement-partition station is used for every extraction and split decision; there is no production reasoning adviser or second split-model route.
-4. Code repeatedly removes accepted exact spans, asks the same stable partition station about the residual, and recursively splits every feature envelope to a strict fixed point. Code assigns `requirement_NNN` identities and rejects ungrounded, overlapping, reordered, duplicate, empty, non-progressing, or excessive results.
+3. Independent semantic stations derive the supported surface, one bounded application-requirements aggregate, and explicit artifact handling. The requirements station receives the intact authoritative request once and returns one product item plus one through ten feature items. It cannot emit tasks, dependencies, paths, tools, implementation, or completion state.
+4. Code requires every returned quote to be an exact uniquely grounded span in the request, rejects duplicates and overlap, source-sorts the accepted items, assigns requirement identities, and materializes authoritative requirement state. Invalid aggregate output fails after that single generation. There is no residual text loop, candidate selection, `none` signal, split call, semantic correction, retry, fallback, or separate product-identity call.
 5. The current browser assembly supports one through ten requirements. Other surfaces or larger graphs fail explicitly before construction work begins.
-6. Each requirement may receive one active procedure enrichment:
+6. For each accepted requirement, one workload station sees only the exact product quote and that one requirement quote. It returns one bounded objective and one observable acceptance criterion. Code assigns task identity and source order, materializes the task, validates every leaf, and freezes the complete workload under one content hash. The model cannot return task identity, dependencies, order, tools, paths, completion state, or a whole plan. A validator-named invalid string leaf may be replaced at most twice; transport failures and non-leaf defects fail immediately.
+7. Each requirement may receive one active procedure enrichment:
    * an exact active learned skill is reused by code when its code-owned identity matches;
    * otherwise the configured embedding provider retrieves at most five active `code_procedure` candidates from PostgreSQL;
    * a tiny selector sees only local context, one need, and opaque purpose summaries;
    * if the registry has no active match, code performs no embedding or skill-model call and the exact requirement remains sufficient for ordinary generation;
    * ordinary workload planning cannot synthesize, validate, reject, or promote a skill candidate. Candidate synthesis remains unavailable until a separate code-owned recurring-gap workflow and an exact held-out replay producer exist.
-7. Every unordered requirement pair becomes one tiny capability-relation job. It sees one bounded product context and exactly two local needs. Its four-value result can express independence, either read direction, or a bidirectional dependency.
-8. Code converts those decisions into a direct capability graph. Each feature receives a TypeScript projection containing only selected direct capability fields. Unselected channels are absent from the type checked by the compiler; transitive or all-to-all context is not exposed.
-9. The generic TypeScript browser adapter creates an in-memory blueprint with a task-neutral runtime, one feature document per requirement, isolated acceptance functions, a compositor, runtime tests, smoke tests, and pinned static toolchain files.
-10. Dependency waves are calculated by code. A generated block receives only its exact signature, local product context, exact need, an optional independently promoted active procedure, direct symbol projection, and explicitly in-scope package symbols.
-11. The model returns one raw function declaration. Tree-sitter proves that it is exactly the requested declaration and rejects extra nodes, altered signatures, forbidden calls, or undeclared symbols.
-12. Accepted declarations remain in memory. Code stitches complete documents only after their declared dependencies exist.
-13. The complete program is written to an isolated stage. Code runs the pinned install, generated tests, runtime tests, type check, and production build.
-14. A mapped source failure opens a correction job for the smallest declared owner. It receives the current declaration, exact signature, direct capabilities, one code-owned repair imperative, and a bounded path-free diagnostic. Other accepted declarations survive.
-15. Only an isolated assembly that passes is written to the authoritative workspace.
-16. Code reconciles exact files and protected paths, repeats authoritative verification, and declares completion. The workload has no learned-skill mutation authority.
+8. Every unordered requirement pair becomes one tiny capability-relation job. It sees one bounded product context and exactly two local needs. Its four-value result can express independence, either read direction, or a bidirectional live-state dependency. These relations never choose task order.
+9. Code converts those decisions into a direct capability graph. Each feature receives a TypeScript projection containing only selected direct capability fields. Unselected channels are absent from the type checked by the compiler; transitive or all-to-all context is not exposed.
+10. The generic TypeScript browser adapter creates an in-memory blueprint with a task-neutral runtime, one feature document per frozen task, isolated acceptance functions, a compositor, runtime tests, smoke tests, and pinned static toolchain files.
+11. Code executes frozen tasks in source order. The current task projection contains only the runtime, its feature document, its blind acceptance document, and the pinned test/typecheck files. Other tasks, the application shell, the full workload hash, paths, identities, and unrelated criteria are absent from every source prompt.
+12. The feature model receives one exact signature, the current requirement objective and criterion, an optional independently promoted active procedure, direct symbol projection, and explicitly in-scope package symbols. It returns one raw function declaration. Tree-sitter proves that it is exactly the requested declaration and rejects extra nodes, altered signatures, forbidden calls, or undeclared symbols.
+13. A separate acceptance leaf receives only the same current task contract and the code-owned feature/runtime APIs. Code stages that feature and acceptance together, runs only the current acceptance test plus type checking, and refuses to start the next task until both pass.
+14. A mapped source failure opens a correction job for the smallest current-task owner. It receives the current declaration, exact signature, direct capabilities, one code-owned repair imperative, and a bounded path-free diagnostic. Other accepted task declarations survive. At most three staged node-correction episodes are available across the whole workload.
+15. After every task passes independently, code stitches the complete documents and runs one final isolated generated-test, runtime-test, smoke-test, typecheck, and production-build stage.
+16. Only an isolated complete assembly that passes is written to the authoritative workspace.
+17. Code reconciles exact files and protected paths, repeats authoritative verification, and declares completion. The workload has no learned-skill mutation authority.
 
-## Final-partition promotion experiment
+## Passive grounded-objective advisory
 
-The checked-in complete-requirement gauntlet is not a second production path. It measures whether one advisory pass after the authoritative direct fixed-point partition is stronger than the direct stable-Qwen result.
+The only promoted passive-advice trigger is
+`post_grounding_objective_advisory`. It is optional and defaults to `off`. The
+initial consumer is the existing repository-grounded semantic review, after code
+has selected bounded evidence and produced the candidate answer. It is not part of
+application intake, workload planning, source generation, mutation routing, or
+completion.
 
-For the experimental final-pass variant, code first obtains and validates a complete direct candidate `C0`. An immutable final-advisory subject binds the original source, `C0`, its SHA-256 digest, and the protocol version. The reasoning model receives that subject without a response schema and returns one bounded plain-text memo. It must reserve output for non-empty final content; native thinking alone is invalid. A separate synthesis job binds the advisory job ID and exact memo digest, and the stable station returns `C1` under the existing requirement-partition schema. Code then applies exact-source, residual, and requirement-graph validation.
+Code renders one hash-bound grounded projection and an explicitly configured model
+returns ordinary final text through the raw-text prepared protocol. The text becomes
+an in-memory artifact with `non_authoritative_advisory` authority. Code performs
+bounded span-preserving chunking, deterministic whitespace minification, and
+embedding relevance selection. At most one 1 KiB capsule may enter the review prompt,
+under the `ADVISORY — NON-AUTHORITATIVE` label and separate from cited evidence.
+The correction station never receives the capsule.
 
-The final advisory work kind is rejected by the production worker. Promotion requires a frozen corpus of at least 50 cases, repeated runs, improved paired correctness, zero direct-pass regressions, no reduction in stability, complete validity, and exact model digest and quantization evidence. Until all gates pass, the production flow above remains authoritative and unchanged.
+`off` constructs no advisory runtime and preserves the pre-advisory review bytes.
+`shadow` records artifacts, reduction, cost, and failure metrics but exposes zero
+downstream advisory bytes. `active` exposes only the one selected capsule. Provider,
+truncation, output-bound, and embedding failures are explicit in the in-memory report
+and server log; they never select another provider and the baseline grounded review
+continues without advice. No advisory text can create an objective, operation, tool
+call, path, mutation, evidence fact, accepted decision, Task Ledger entry, or
+completion transition.
+
+This is the behavior-first Gates A–C vertical. Advisory persistence and replay remain
+unimplemented until repeated paired evaluation demonstrates value without authority
+violations or baseline regressions.
 
 ## Semantic correction
 
-A decoded semantic response is retained in code. A correction call never receives the original request or retained JSON. It receives only the exact validation failure and a response schema permitting one mutable top-level field.
+A decoded semantic response is retained in code and never replayed to the correction model. Application and repository requirement aggregates deliberately have no semantic-correction path: invalid output fails after one generation. A semantic station that does permit correction receives only its exact validation failure and one schema-bound mutable field, never the full prior response or unrelated accepted fields.
 
 Code applies the response as a JSON merge patch and proves that exactly one JSON leaf changed. Immutable fields, unsupported fields, multiple top-level fields, multiple changed leaves, no-ops, malformed JSON, repeated candidates, and full-response retries fail explicitly.
 

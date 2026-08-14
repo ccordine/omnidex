@@ -63,6 +63,33 @@ func TestHealthDegradedForPostgresPingFailure(t *testing.T) {
 	}
 }
 
+func TestReadinessFailsWhenRequiredDependencyIsUnreachable(t *testing.T) {
+	server := NewServer(queue.New(nil), &fakeLLMClient{})
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["status"] != "degraded" {
+		t.Fatalf("status=%#v want degraded", payload["status"])
+	}
+}
+
+func TestReadinessSucceedsWithNoRequiredDependencies(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func requestHealthPayload(t *testing.T, server *Server) map[string]any {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)

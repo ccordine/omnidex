@@ -114,11 +114,21 @@ func runObjectiveTurn(
 		Context:          assemblyline.CloneObjectiveContext(authority.Context),
 		Evidence:         modelEvidence,
 	}
-	grounded, err := runObjectiveRepositoryGroundedClosure(ctx, answerInput, repositoryStations)
+	grounded, err := runObjectiveRepositoryGroundedClosure(
+		ctx,
+		answerInput,
+		repositoryStations,
+		objectiveRepositoryGroundedClosureOptions{
+			ObjectiveID: result.ObjectiveID,
+			Generation:  job.CurrentGeneration,
+			Advisory:    workflows.ObjectiveAdvisory,
+		},
+	)
 	if err != nil {
 		return result, err
 	}
 	result.ModelCalls += grounded.ModelCalls
+	result.Advisory = grounded.Advisory
 	citations, err := selectObjectiveCitations(acquisition.Evidence, grounded.Answer.EvidenceIDs)
 	if err != nil {
 		return result, err

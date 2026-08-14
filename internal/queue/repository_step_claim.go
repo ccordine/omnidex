@@ -119,6 +119,9 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 	if err != nil {
 		return nil, err
 	}
+	if _, err := validatePipeline(job.Pipeline); err != nil {
+		return nil, fmt.Errorf("claim job %d: %w", job.ID, err)
+	}
 
 	var previousAttempt int64
 	if err := tx.QueryRow(ctx, `

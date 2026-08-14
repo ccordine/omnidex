@@ -24,13 +24,13 @@ func (session *directCodingSession) resolveNamedArtifactDeletionCandidates(
 
 func (session *directCodingSession) runNamedArtifactDeletion(
 	authority string,
-	partition assemblyline.RequirementPartitionDecision,
+	featureQuotes []string,
 	directives []assemblyline.ArtifactDirective,
 	identities []assemblyline.ArtifactIdentity,
 	analysis repositoryfacts.Analysis,
 ) (string, error) {
 	graph, err := compileExistingRepositoryDesiredGraph(
-		authority, partition, nil, directives, identities,
+		authority, featureQuotes, nil, directives, identities,
 		session.repositoryIndex.Snapshot, analysis,
 	)
 	if err != nil {

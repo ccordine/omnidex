@@ -43,7 +43,10 @@ correction routes; startup or the named review gap fails loudly if that exact
 independent route is unavailable. Keeping every other authoritative semantic
 route on one stable Qwen model avoids needless reloads between tiny stations.
 Production requirement extraction and splitting use the same schema-bound Qwen
-route; reasoning-adviser protocols remain offline gauntlet experiments.
+route; the final-partition reasoning-adviser protocol remains an offline gauntlet
+experiment. The separate passive objective advisory defaults to `off` and currently
+uses the exact-compatible Qwen route when explicitly set to `shadow` or `active`.
+It returns plain text only after grounding and cannot plan, mutate, or complete work.
 
 Qwen 3.5 9B is the practical semantic choice because its Q4_K_M Ollama image is
 6.6 GB and Qwen publishes strong instruction following, tool-use, and coding

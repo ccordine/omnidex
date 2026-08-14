@@ -9,7 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-var uiProjectTabs = map[string]struct{}{"scrum": {}, "terminal": {}, "screen": {}, "settings": {}, "map": {}, "git": {}, "recipe": {}}
+var uiProjectTabs = map[string]struct{}{"scrum": {}, "terminal": {}, "screen": {}, "settings": {}, "map": {}, "git": {}}
 
 type uiProjectDetailComponent struct {
 	HTML            chatComponentHTML `json:"html"`
@@ -68,7 +68,7 @@ func renderUIProjectDetailShell(project model.Project, activeTab, panel string) 
 }
 
 func renderUIProjectTabs(active string) string {
-	items := []struct{ id, label string }{{"scrum", "Scrum"}, {"terminal", "Terminal"}, {"screen", "Screen"}, {"settings", "Settings"}, {"map", "Codebase map"}, {"git", "Git"}, {"recipe", "Recipe"}}
+	items := []struct{ id, label string }{{"scrum", "Scrum"}, {"terminal", "Terminal"}, {"screen", "Screen"}, {"settings", "Settings"}, {"map", "Codebase map"}, {"git", "Git"}}
 	var body strings.Builder
 	body.WriteString(`<nav class="flex shrink-0 flex-wrap gap-2" aria-label="Project sections">`)
 	for _, item := range items {

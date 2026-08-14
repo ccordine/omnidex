@@ -9,9 +9,9 @@ import (
 func TestScrumCardModalPayloadIsTypedAndContainsNoHTMLBundle(t *testing.T) {
 	card := ScrumCard{ID: "card_1", Title: "Modal test"}
 	payloadMap := scrumModalPayload(&scrumModalRenderContext{
-		Card:      card,
-		Board:     ScrumBoard{ID: "project_1", Cards: []ScrumCard{}},
-		Tab:       "card",
+		Card: card, Board: ScrumBoard{ID: "project_1", Cards: []ScrumCard{}}, Tab: "card",
+		Files: []string{"pkg/a.go"}, FilePath: "pkg", FileOffset: 50,
+		FileHasPrevious: true, FilePreviousOffset: 0, FileHasMore: true, FileNextOffset: 100,
 		PlayQueue: map[string]any{"queued_count": 0},
 	})
 	body, err := json.Marshal(payloadMap)
@@ -26,11 +26,14 @@ func TestScrumCardModalPayloadIsTypedAndContainsNoHTMLBundle(t *testing.T) {
 			ID    string `json:"id"`
 			Title string `json:"title"`
 		} `json:"card"`
-		Board       ScrumBoard         `json:"board"`
-		Tab         string             `json:"tab"`
-		Files       []string           `json:"files"`
-		PlayQueue   map[string]any     `json:"play_queue"`
-		ModelFields []scrumConfigField `json:"model_fields"`
+		Board       ScrumBoard     `json:"board"`
+		Tab         string         `json:"tab"`
+		Files       []string       `json:"files"`
+		PlayQueue   map[string]any `json:"play_queue"`
+		FilePath    string         `json:"file_path"`
+		FileOffset  int            `json:"file_offset"`
+		FileHasMore bool           `json:"file_has_more"`
+		FileNext    int            `json:"file_next_offset"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
@@ -49,5 +52,8 @@ func TestScrumCardModalPayloadIsTypedAndContainsNoHTMLBundle(t *testing.T) {
 	}
 	if payload.PlayQueue == nil {
 		t.Fatal("expected play queue context")
+	}
+	if payload.FilePath != "pkg" || payload.FileOffset != 50 || !payload.FileHasMore || payload.FileNext != 100 {
+		t.Fatalf("unexpected bounded file page authority: %#v", payload)
 	}
 }

@@ -15,24 +15,45 @@ func ApplicationClassificationResponseSchema() map[string]any {
 	)
 }
 
-func ApplicationIdentityResponseSchema() map[string]any {
+func ApplicationRequirementInterpretationResponseSchema() map[string]any {
 	return objectSchema(
-		[]string{"schema", "product_quote"},
+		[]string{"schema", "items"},
 		map[string]any{
-			"schema":        map[string]any{"type": "string", "const": ApplicationIdentitySchemaV1},
-			"product_quote": map[string]any{"type": "string", "maxLength": maxApplicationProductBytes},
+			"schema": map[string]any{
+				"type": "string", "const": ApplicationRequirementInterpretationSchemaV1,
+			},
+			"items": map[string]any{
+				"type": "array", "minItems": 2, "maxItems": maxRequirementCount + 1,
+				"items": objectSchema(
+					[]string{"kind", "source_quote"},
+					map[string]any{
+						"kind": enumSchema(
+							ApplicationRequirementProduct,
+							ApplicationRequirementFeature,
+						),
+						"source_quote": map[string]any{
+							"type": "string", "minLength": 1,
+							"maxLength": maxRequirementQuoteBytes,
+						},
+					},
+				),
+			},
 		},
 	)
 }
 
-func RequirementPartitionResponseSchema() map[string]any {
+func RepositoryRequirementInterpretationResponseSchema() map[string]any {
 	return objectSchema(
 		[]string{"schema", "feature_quotes"},
 		map[string]any{
-			"schema": map[string]any{"type": "string", "const": RequirementPartitionSchemaV1},
+			"schema": map[string]any{
+				"type": "string", "const": RepositoryRequirementInterpretationSchemaV1,
+			},
 			"feature_quotes": map[string]any{
-				"type": "array", "minItems": 0, "maxItems": maxRequirementPartitionCount,
-				"items": map[string]any{"type": "string", "maxLength": maxRequirementQuoteBytes},
+				"type": "array", "minItems": 1, "maxItems": maxRequirementCount,
+				"items": map[string]any{
+					"type": "string", "minLength": 1, "maxLength": maxRequirementQuoteBytes,
+				},
 			},
 		},
 	)

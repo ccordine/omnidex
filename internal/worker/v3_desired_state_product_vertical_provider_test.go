@@ -78,14 +78,12 @@ func desiredStateProductResponse(prepared llm.PreparedModel) (string, string, er
 	switch schema {
 	case assemblyline.ConversationObjectiveKindSchemaV1:
 		return fmt.Sprintf(`{"schema":%q,"kind":"workspace_mutation"}`, schema), schema, nil
-	case assemblyline.RequirementPartitionSchemaV1:
-		source, err := desiredStateProductPromptTail(
-			prepared.Prompt, "USER_REQUEST:\n", "FEATURE_ENVELOPE:\n",
-		)
+	case assemblyline.RepositoryRequirementInterpretationSchemaV1:
+		source, err := desiredStateProductRequirementSource(prepared.Prompt)
 		if err != nil {
 			return "", schema, err
 		}
-		response, err := json.Marshal(assemblyline.RequirementPartitionDecision{
+		response, err := json.Marshal(assemblyline.RepositoryRequirementInterpretation{
 			Schema: schema, FeatureQuotes: []string{source},
 		})
 		return string(response), schema, err
@@ -130,6 +128,19 @@ func desiredStateProductResponse(prepared llm.PreparedModel) (string, string, er
 	}
 }
 
+func desiredStateProductRequirementSource(prompt string) (string, error) {
+	const marker = "CURRENT_REQUEST:\n"
+	index := strings.LastIndex(prompt, marker)
+	if index < 0 {
+		return "", fmt.Errorf("product vertical repository requirements omitted current request")
+	}
+	source := strings.TrimSpace(prompt[index+len(marker):])
+	if source == "" {
+		return "", fmt.Errorf("product vertical repository requirement source is empty")
+	}
+	return source, nil
+}
+
 func desiredStateProductSelectDeclarationCandidate(
 	prompt string,
 	declarationName string,
@@ -166,18 +177,6 @@ func desiredStateProductSchemaConst(schema map[string]any) string {
 	property, _ := properties["schema"].(map[string]any)
 	value, _ := property["const"].(string)
 	return value
-}
-
-func desiredStateProductPromptTail(prompt string, labels ...string) (string, error) {
-	for _, label := range labels {
-		if index := strings.LastIndex(prompt, label); index >= 0 {
-			value := strings.TrimSpace(prompt[index+len(label):])
-			if value != "" {
-				return value, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("product vertical envelope omitted exact source authority")
 }
 
 func desiredStateProductPromptLine(prompt, prefix string) (string, error) {

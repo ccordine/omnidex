@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 const scrumQueuedSummaryLimit = 20
@@ -15,7 +13,7 @@ func (s *Server) scrumPlayQueuePayload(ctx context.Context, projectID int64) (ma
 	}
 	return map[string]any{
 		"running_card_id": snapshot.RunningCardID,
-		"queued_count": snapshot.QueuedCount,
+		"queued_count":    snapshot.QueuedCount,
 		"queued_card_ids": snapshot.QueuedCardIDs,
 		"queued_has_more": snapshot.QueuedHasMore,
 	}, nil
@@ -46,8 +44,44 @@ func (s *Server) nextScrumWorkCard(ctx context.Context, projectID int64, columns
 }
 
 func scrumBoardWithCards(board ScrumBoard, cards ...ScrumCard) ScrumBoard {
-	board.Cards = append([]ScrumCard(nil), cards...)
+	seen := make(map[string]struct{}, len(cards))
+	board.Cards = make([]ScrumCard, 0, len(cards))
+	for _, card := range cards {
+		if card.ID == "" {
+			continue
+		}
+		if _, exists := seen[card.ID]; exists {
+			continue
+		}
+		seen[card.ID] = struct{}{}
+		board.Cards = append(board.Cards, card)
+	}
 	return board
 }
 
-var _ = queue.MaxScrumCardPageSize
+func (s *Server) scrumFocusBoard(ctx context.Context, projectID int64, board ScrumBoard, autoWork ScrumAutoWorkConfig) (ScrumBoard, error) {
+	cards := make([]ScrumCard, 0, 2)
+	running, err := s.runningScrumCard(ctx, projectID)
+	if err != nil {
+		return board, err
+	}
+	if running != nil {
+		cards = append(cards, *running)
+	}
+	columns := []string{"in_progress", "assigned"}
+	if autoWork.Enabled {
+		validated, err := validateScrumAutoWorkConfig(autoWork)
+		if err != nil {
+			return board, err
+		}
+		columns = validated.SourceColumns
+	}
+	next, err := s.nextScrumWorkCard(ctx, projectID, columns)
+	if err != nil {
+		return board, err
+	}
+	if next != nil {
+		cards = append(cards, *next)
+	}
+	return scrumBoardWithCards(board, cards...), nil
+}

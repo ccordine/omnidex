@@ -171,7 +171,7 @@ User feedback, interruption, and replanning update the same authoritative job. A
 
 Per-job model routing is immutable. Concurrent workers must resolve routing into job-local state and must never mutate shared service routing before attempting to restore it.
 
-Every exposed CLI or API control must have one authoritative runtime consumer and a test proving its effect. Write-only metadata is forbidden. The removed profile, planning-pass, persistent-execution, review, missing-tool, generic reasoning, autonomy, approval, verification, web, and workspace toggles must not return under new names; old top-level metadata using them fails explicitly. Keep only typed settings that actually alter execution, such as model routing, external-agent configuration, and the consumed explicit research query.
+Every exposed CLI or API control must have one authoritative runtime consumer and a test proving its effect. Write-only metadata is forbidden. The removed profile, planning-pass, persistent-execution, review, missing-tool, generic reasoning, autonomy, approval, verification, web, workspace, and external-agent toggles must not return under new names; old top-level metadata using them fails explicitly. Keep only typed settings that actually alter execution, such as model routing and the consumed explicit research query.
 
 Whole-file generation, model-owned planning, model-owned repair routing, and path-bearing prompts are forbidden regressions and require source-level absence tests.
 

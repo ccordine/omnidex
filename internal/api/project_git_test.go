@@ -22,8 +22,8 @@ func TestCollectProjectGitStatusNonRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectStatus: %v", err)
 	}
-	if payload["is_repo"] != false {
-		t.Fatalf("expected is_repo=false, got %#v", payload["is_repo"])
+	if payload.IsRepo {
+		t.Fatalf("expected is_repo=false, got %#v", payload.IsRepo)
 	}
 }
 
@@ -42,15 +42,14 @@ func TestCollectProjectGitStatusRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectStatus: %v", err)
 	}
-	if payload["is_repo"] != true {
-		t.Fatalf("expected is_repo=true, got %#v", payload["is_repo"])
+	if !payload.IsRepo {
+		t.Fatalf("expected is_repo=true, got %#v", payload.IsRepo)
 	}
-	if payload["clean"] != true {
+	if !payload.Clean {
 		t.Fatalf("expected clean repo, got %#v", payload)
 	}
-	commits, ok := payload["recent_commits"].([]map[string]any)
-	if !ok || len(commits) == 0 {
-		t.Fatalf("expected recent commits, got %#v", payload["recent_commits"])
+	if len(payload.RecentCommits) == 0 {
+		t.Fatalf("expected recent commits, got %#v", payload.RecentCommits)
 	}
 }
 
@@ -77,12 +76,12 @@ func TestLoadProjectGitStatusUsesHostBridgeWhenCoreMissing(t *testing.T) {
 			if r.URL.Query().Get("path") != projectDir {
 				t.Fatalf("git path=%q want %q", r.URL.Query().Get("path"), projectDir)
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"location": projectDir,
-				"source":   "host-bridge",
-				"is_repo":  true,
-				"clean":    true,
-				"branch":   "main",
+			commit := projectgit.Commit{Hash: "abc123abc123", Subject: "Initial", Author: "Test", RelativeDate: "now"}
+			_ = json.NewEncoder(w).Encode(projectgit.Status{
+				Location: projectDir, Source: "host-bridge", IsRepo: true,
+				Root: projectDir, Branch: "main", HeadShort: "abc123",
+				ChangedFiles: []projectgit.ChangedFile{}, Clean: true,
+				RecentCommits: []projectgit.Commit{commit}, LastCommit: &commit,
 			})
 		default:
 			http.NotFound(w, r)
@@ -98,11 +97,11 @@ func TestLoadProjectGitStatusUsesHostBridgeWhenCoreMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadProjectGitStatus: %v", err)
 	}
-	if payload["is_repo"] != true {
+	if !payload.IsRepo {
 		t.Fatalf("expected is_repo=true, got %#v", payload)
 	}
-	if payload["source"] != "host-bridge" {
-		t.Fatalf("source=%#v want host-bridge", payload["source"])
+	if payload.Source != "host-bridge" {
+		t.Fatalf("source=%#v want host-bridge", payload.Source)
 	}
 }
 

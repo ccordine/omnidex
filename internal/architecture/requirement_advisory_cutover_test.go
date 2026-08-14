@@ -29,6 +29,12 @@ func TestProductionRequirementPartitionHasNoAdvisoryOrSplitRoute(t *testing.T) {
 		"internal/modelconfig/routing.go": {
 			"coding_requirement_adviser_model", "coding_requirement_split_model",
 		},
+		"internal/assemblyline/portable_job_inputs.go": {
+			"RequirementDecidePresence", "RequirementPresenceInput",
+		},
+		"internal/assemblyline/application_spec.go": {
+			"RequirementPresenceDecision", "RequirementPresenceSchema",
+		},
 	}
 	for name, forbidden := range checks {
 		raw, err := os.ReadFile(filepath.Join(root, name))

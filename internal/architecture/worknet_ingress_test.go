@@ -18,8 +18,11 @@ func TestDockerComposeUsesWorkNetAsTheOnlyPublicCoreIngress(t *testing.T) {
 	if strings.Contains(compose, `"8090:8090"`) {
 		t.Fatal("core must not claim host port 8090; WorkNet owns public ingress")
 	}
-	if !strings.Contains(compose, `CORE_URL: ${CORE_URL:-https://omni.worknet}`) {
-		t.Fatal("core must advertise the canonical WorkNet HTTPS URL")
+	if !strings.Contains(compose, `CORE_URL: ${CORE_URL:?CORE_URL must be configured}`) {
+		t.Fatal("core must require the one explicitly configured public ingress URL")
+	}
+	if strings.Contains(compose, `CORE_URL: ${CORE_URL:-`) {
+		t.Fatal("core must not silently fall back to a different public ingress URL")
 	}
 	if !strings.Contains(compose, "    expose:\n      - \"8090\"") {
 		t.Fatal("core must expose port 8090 to Docker networks")

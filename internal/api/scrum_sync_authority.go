@@ -19,8 +19,8 @@ func validateScrumSyncAuthority(card ScrumCard, job model.JobDetails) error {
 	if strings.TrimSpace(card.SyncJobID) != jobID {
 		return fmt.Errorf("Scrum output sync job %s differs from durable cursor authority %q", jobID, card.SyncJobID)
 	}
-	if card.AgentStreamChatCursor < 0 || card.AgentStreamConsoleCursor < 0 || card.StepContextCursor < 0 {
-		return fmt.Errorf("Scrum output sync cursors must be non-negative")
+	if card.StepContextCursor < 0 {
+		return fmt.Errorf("Scrum step-context cursor must be non-negative")
 	}
 	return nil
 }
@@ -28,12 +28,12 @@ func validateScrumSyncAuthority(card ScrumCard, job model.JobDetails) error {
 func validateScrumCardSyncState(card ScrumCard) error {
 	jobID := strings.TrimSpace(card.JobID)
 	syncJobID := strings.TrimSpace(card.SyncJobID)
-	if card.AgentStreamChatCursor < 0 || card.AgentStreamConsoleCursor < 0 || card.StepContextCursor < 0 {
-		return fmt.Errorf("Scrum output sync cursors must be non-negative")
+	if card.StepContextCursor < 0 {
+		return fmt.Errorf("Scrum step-context cursor must be non-negative")
 	}
 	if syncJobID == "" {
-		if card.AgentStreamChatCursor != 0 || card.AgentStreamConsoleCursor != 0 || card.StepContextCursor != 0 {
-			return fmt.Errorf("Scrum output cursors require an exact sync job ID")
+		if card.StepContextCursor != 0 {
+			return fmt.Errorf("Scrum step-context cursor requires an exact sync job ID")
 		}
 		if card.PlayState == scrumPlayRunning || (normalizeScrumColumn(card.Column) == "in_progress" && jobID != "") {
 			return fmt.Errorf("active Scrum job %q requires durable cursor authority", jobID)

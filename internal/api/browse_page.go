@@ -16,7 +16,7 @@ func browsePageOptions(r *http.Request, fallbackLimit int, directoriesOnly bool)
 	if err != nil {
 		return hostbridge.BrowseOptions{}, err
 	}
-	offset, err := exactChannelQueryInteger(r, "offset", 0, 0, 1<<30)
+	offset, err := exactChannelQueryInteger(r, "offset", 0, 0, hostbridge.MaxBrowseOffset)
 	if err != nil {
 		return hostbridge.BrowseOptions{}, err
 	}
@@ -40,6 +40,7 @@ func (s *Server) projectAuthorizedBrowseOptions(
 	}
 	if found {
 		opts.ExtraRoots = []string{root}
+		opts.RequiredRoot = root
 	}
 	return opts, nil
 }

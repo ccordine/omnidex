@@ -5,9 +5,9 @@ import type RecyclrController from "./recyclr_controller";
 import { ProjectBrowserCoordinator } from "../lib/project_browser_coordinator";
 import { ProjectMutationCoordinator } from "../lib/project_mutation_coordinator";
 import { closeModalShell, openModalShell } from "../lib/modal";
-import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
+import { reportError, reportOk } from "../lib/feedback";
 
-const PROJECT_TABS = new Set(["scrum", "terminal", "screen", "settings", "map", "git", "recipe"]);
+const PROJECT_TABS = new Set(["scrum", "terminal", "screen", "settings", "map", "git"]);
 
 export default class ProjectsController extends Controller {
   static targets = ["list", "detail", "status", "viewingBadge"];
@@ -23,7 +23,6 @@ export default class ProjectsController extends Controller {
   private selectedID: number | null = null;
   private activeTab = "scrum";
   private pageOffset = 0;
-	private recipeOffset = 0;
   private browser!: ProjectBrowserCoordinator;
   private mutations!: ProjectMutationCoordinator;
   private panelShownHandler: ((event: Event) => void) | null = null;
@@ -42,12 +41,12 @@ export default class ProjectsController extends Controller {
         this.setActiveTab("scrum");
         await this.loadDetail();
       },
+      reloadProjects: () => this.loadListAuthority(),
     });
     this.mutations = new ProjectMutationCoordinator({
       detailRoot: () => this.detailTarget,
-      selectedProjectID: () => this.selectedID,
       reloadDetail: () => this.loadDetail(),
-      reloadList: () => this.load(),
+      reloadList: () => this.loadListAuthority(),
       projectDeleted: () => this.backToList(),
       setStatus: (message, tone) => this.setStatus(message, tone),
       success: (message) => reportOk(this.setStatus.bind(this), message),
@@ -101,16 +100,20 @@ export default class ProjectsController extends Controller {
   async load(): Promise<void> {
     this.setStatus("Loading projects…", "busy");
     try {
-      const payload = await fetchProjectsComponent(this.pageOffset);
-      await renderServerBundle(this.recyclrController(), payload, "Projects component");
-      this.setStatus(`${payload.count} projects on this page`, "ok");
+      await this.loadListAuthority();
       if (this.selectedID) await this.loadDetail();
     } catch (error) { reportError(this.setStatus.bind(this), error); }
   }
 
+  private async loadListAuthority(): Promise<void> {
+    const payload = await fetchProjectsComponent(this.pageOffset);
+    await renderServerBundle(this.recyclrController(), payload, "Projects component");
+    this.setStatus(`${payload.count} projects on this page`, "ok");
+  }
+
   loadProjectPage(event: Event): void {
     event.preventDefault();
-    const offset = Number((event.currentTarget as HTMLElement).dataset.pageOffset ?? -1);
+    const offset = this.requiredDatasetInteger(event, "pageOffset", "Project page offset", true);
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Project page offset is invalid.");
     this.pageOffset = offset;
     void this.load();
@@ -118,8 +121,7 @@ export default class ProjectsController extends Controller {
 
   async openProject(event: Event): Promise<void> {
     event.preventDefault();
-    const id = Number((event.currentTarget as HTMLElement).dataset.projectId ?? 0);
-    if (!id) throw new Error("Open project requires a project id.");
+    const id = this.requiredDatasetInteger(event, "projectId", "Open project", false);
     this.selectedID = id;
     this.setActiveTab(this.resolveTab(id));
     await this.loadDetail();
@@ -127,14 +129,13 @@ export default class ProjectsController extends Controller {
 
   async showTab(event: Event): Promise<void> {
     event.preventDefault();
-    this.setActiveTab((event.currentTarget as HTMLElement).dataset.projectTab ?? "");
+    this.setActiveTab(this.requiredDatasetString(event, "projectTab", "Project tab"));
     await this.loadDetail();
   }
 
   private setActiveTab(tab: string): void {
     if (!PROJECT_TABS.has(tab)) throw new Error(`Unsupported project tab ${JSON.stringify(tab)}.`);
     this.activeTab = tab;
-		if (tab !== "recipe") this.recipeOffset = 0;
     if (this.selectedID) sessionStorage.setItem(`omni.project.tab.${this.selectedID}`, tab);
     const url = new URL(window.location.href);
     url.searchParams.set("project_tab", tab);
@@ -142,8 +143,12 @@ export default class ProjectsController extends Controller {
   }
 
   private resolveTab(id: number): string {
-    const fromURL = new URLSearchParams(window.location.search).get("project_tab");
-    const tab = fromURL || sessionStorage.getItem(`omni.project.tab.${id}`) || "scrum";
+    const query = new URLSearchParams(window.location.search);
+    const queryTabs = query.getAll("project_tab");
+    if (queryTabs.length > 1) throw new Error("Project tab query must not be duplicated.");
+    const fromURL = queryTabs.length === 1 ? queryTabs[0] : null;
+    const stored = sessionStorage.getItem(`omni.project.tab.${id}`);
+    const tab = fromURL !== null ? fromURL : stored !== null ? stored : "scrum";
     if (!PROJECT_TABS.has(tab)) throw new Error(`Unsupported stored project tab ${JSON.stringify(tab)}.`);
     return tab;
   }
@@ -152,7 +157,7 @@ export default class ProjectsController extends Controller {
     if (!this.selectedID) return;
     this.detailRequest?.abort();
     this.detailRequest = new AbortController();
-		const payload = await fetchProjectDetailComponent(this.selectedID, this.activeTab, this.detailRequest.signal, this.recipeOffset);
+		const payload = await fetchProjectDetailComponent(this.selectedID, this.activeTab, this.detailRequest.signal);
     await renderServerBundle(this.recyclrController(), payload, "Project detail");
     this.detailTarget.classList.remove("hidden"); this.detailTarget.classList.add("flex");
     this.listTarget.classList.add("hidden");
@@ -170,6 +175,26 @@ export default class ProjectsController extends Controller {
     document.dispatchEvent(new CustomEvent("omni:project-closed"));
   }
 
+  private requiredDatasetString(event: Event, key: string, label: string): string {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) throw new Error(`${label} requires one server-rendered control.`);
+    const value = target.dataset[key];
+    if (value === undefined || value === "" || value !== value.trim() || value.includes("\0")) {
+      throw new Error(`${label} is missing exact server authority.`);
+    }
+    return value;
+  }
+
+  private requiredDatasetInteger(event: Event, key: string, label: string, allowZero: boolean): number {
+    const raw = this.requiredDatasetString(event, key, label);
+    if (!/^(0|[1-9][0-9]*)$/.test(raw) || (!allowZero && raw === "0")) {
+      throw new Error(`${label} is not a canonical integer.`);
+    }
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value)) throw new Error(`${label} exceeds the safe integer bound.`);
+    return value;
+  }
+
   showCreateModal(): Promise<void> { return this.browser.showCreateModal(); }
   openBrowse(event: Event): Promise<void> { return this.browser.openBrowse(event); }
   browseForEdit(event: Event): Promise<void> { return this.browser.browseForEdit(event); }
@@ -179,13 +204,9 @@ export default class ProjectsController extends Controller {
   createBrowseFolder(event: Event): Promise<void> { return this.browser.createBrowseFolder(event); }
   confirmBrowse(event: Event): Promise<void> { return this.browser.confirmBrowse(event); }
   submitCreate(event: Event): Promise<void> { return this.browser.submitCreate(event); }
-	loadCreateRecipePage(event: Event): Promise<void> { return this.browser.loadCreateRecipePage(event); }
   saveProject(event: Event): Promise<void> { return this.mutations.saveProject(event); }
-  saveRecipe(event: Event): Promise<void> { return this.mutations.saveRecipe(event); }
   saveModelConfig(event: Event): Promise<void> { return this.mutations.saveModelConfig(event); }
   clearModelConfig(event: Event): Promise<void> { return this.mutations.clearModelConfig(event); }
-  saveAgentConfig(event: Event): Promise<void> { return this.mutations.saveAgentConfig(event); }
-  clearAgentConfig(event: Event): Promise<void> { return this.mutations.clearAgentConfig(event); }
   saveScrumAutomation(event: Event): Promise<void> { return this.mutations.saveScrumAutomation(event); }
   rescanProject(event: Event): Promise<void> { return this.mutations.rescanProject(event); }
   scanProjectMap(event: Event): Promise<void> { return this.mutations.scanProjectMap(event); }
@@ -193,12 +214,4 @@ export default class ProjectsController extends Controller {
   startAutoWork(event: Event): Promise<void> { return this.mutations.startAutoWork(event); }
   pauseAutoWork(event: Event): Promise<void> { return this.mutations.pauseAutoWork(event); }
   deleteProject(event: Event): Promise<void> { return this.mutations.deleteProject(event); }
-  loadCatalogRecipe(event: Event): void { event.preventDefault(); reportErrorMessage(this.setStatus.bind(this), "Catalog templates are selected server-side when saved."); }
-	loadRecipePage(event: Event): void {
-		event.preventDefault();
-		const offset = Number((event.currentTarget as HTMLElement).dataset.pageOffset ?? -1);
-		if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Recipe page offset is invalid.");
-		this.recipeOffset = offset;
-		void this.loadDetail();
-	}
 }

@@ -1,4 +1,5 @@
 import { fetchServerComponent, type ServerComponent } from "./server_component_api";
+import { exactInteger, exactRecord, exactString } from "./scrum_card_response";
 
 export type SelectionComponent = ServerComponent & {
   selected_source_id?: string;
@@ -31,8 +32,11 @@ export function fetchDataComponent(sourceID = "", channelID = "", sourceOffset =
   return fetchServerComponent(`/v1/ui/data?${query}`);
 }
 
-export function fetchProjectsComponent(offset = 0): Promise<ServerComponent & { count: number }> {
-  return fetchServerComponent(`/v1/ui/projects?offset=${offset}`);
+export async function fetchProjectsComponent(offset = 0): Promise<ServerComponent & { count: number }> {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Project component offset must be a non-negative safe integer.");
+  const payload = await fetchServerComponent<ServerComponent & { count: number }>(`/v1/ui/projects?offset=${offset}`);
+  const record = exactRecord(payload, "Projects component response", ["html", "count"]);
+  return { html: record.html as ServerComponent["html"], count: exactInteger(record.count, "Projects component response.count", 20) };
 }
 
 export type ProjectDetailComponent = ServerComponent & {
@@ -42,9 +46,23 @@ export type ProjectDetailComponent = ServerComponent & {
   tab: string;
 };
 
-export function fetchProjectDetailComponent(projectID: number, tab: string, signal?: AbortSignal, recipeOffset = 0): Promise<ProjectDetailComponent> {
-	const query = new URLSearchParams({ tab, recipe_offset: String(recipeOffset) });
-	return fetchServerComponent(`/v1/ui/projects/${projectID}?${query}`, { signal });
+export async function fetchProjectDetailComponent(projectID: number, tab: string, signal?: AbortSignal): Promise<ProjectDetailComponent> {
+  if (!Number.isSafeInteger(projectID) || projectID <= 0) throw new Error("Project detail component requires one positive safe integer project id.");
+  if (!["scrum", "terminal", "screen", "settings", "map", "git"].includes(tab)) throw new Error("Project detail component tab is not registered.");
+  const query = new URLSearchParams({ tab });
+  const payload = await fetchServerComponent<ProjectDetailComponent>(`/v1/ui/projects/${projectID}?${query}`, { signal });
+  const record = exactRecord(payload, "Project detail component response", [
+    "html", "project_id", "project_name", "project_location", "tab",
+  ]);
+  if (exactInteger(record.project_id, "Project detail component response.project_id") !== projectID || record.tab !== tab) {
+    throw new Error("Project detail component response does not match its requested route.");
+  }
+  return {
+    html: record.html as ServerComponent["html"], project_id: projectID,
+    project_name: exactString(record.project_name, "Project detail component response.project_name", { maxBytes: 256, nonblank: true, canonical: true }),
+    project_location: exactString(record.project_location, "Project detail component response.project_location", { maxBytes: 4096, nonblank: true, canonical: true }),
+    tab,
+  };
 }
 
 export function fetchProjectModalComponent(kind: "create" | "browse", query = new URLSearchParams()): Promise<ServerComponent> {

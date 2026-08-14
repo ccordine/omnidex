@@ -33,7 +33,7 @@ func TestLoadIncludesOnlyExplicitExactStationRoutes(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsProviderWithoutExactStationContract(t *testing.T) {
+func TestLoadDefersProviderExactStationContractUntilUse(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("WRAPPER_ONLY", "true")
 	t.Setenv("LLM_PROVIDER", "openai")
@@ -41,9 +41,12 @@ func TestLoadRejectsProviderWithoutExactStationContract(t *testing.T) {
 	t.Setenv("EMBEDDING_PROVIDER", "ollama")
 	t.Setenv("OLLAMA_EMBEDDING_MODEL", "nomic-test")
 
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "exact prepared station contract") {
-		t.Fatalf("Load() error=%v, want exact station provider rejection", err)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() eagerly validated dormant exact station authority: %v", err)
+	}
+	if cfg.LLMProvider != "openai" {
+		t.Fatalf("LLMProvider=%q", cfg.LLMProvider)
 	}
 }
 

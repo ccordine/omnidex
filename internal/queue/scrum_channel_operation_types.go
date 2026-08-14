@@ -30,8 +30,6 @@ type ScrumChannelEffect struct {
 	Kind        ScrumChannelEffectKind
 	JobID       int64
 	Instruction string
-	Pipeline    string
-	Metadata    json.RawMessage
 }
 
 type ScrumChannelOperationCommand struct {
@@ -39,30 +37,29 @@ type ScrumChannelOperationCommand struct {
 	ExpectedCardUpdatedAt time.Time
 	Effect                ScrumChannelEffect
 	ResultAction          string
-	ResultAgent           string
 }
 
 type ScrumChannelCardUpdate struct {
-	Chat                     json.RawMessage
-	Column                   string
-	JobID                    string
-	ConsoleLog               string
-	PlayState                string
-	QueueOrder               int
-	SyncJobID                string
-	AgentStreamChatCursor    int64
-	AgentStreamConsoleCursor int64
-	StepContextCursor        int64
+	Messages          []ScrumCardMessageAppend
+	Column            string
+	JobID             string
+	PlayState         string
+	QueueOrder        int
+	SyncJobID         string
+	StepContextCursor int64
 }
 
 type ScrumChannelCardBuilder func(DBScrumCard, model.Job) (ScrumChannelCardUpdate, error)
 
 type ScrumChannelOperationResult struct {
+	OperationID  LifecycleOperationID
 	Card         DBScrumCard
+	Messages     []ScrumCardMessage
+	MessageStart int64
+	MessageTotal int64
 	PreviousCard DBScrumCard
 	Job          model.Job
 	Action       string
-	Agent        string
 	Applied      bool
 }
 
@@ -79,15 +76,12 @@ func describeScrumChannelOperation(request ScrumChannelOperationRequest) (scrumC
 	if request.ProjectID <= 0 {
 		return scrumChannelOperationDescriptor{}, fmt.Errorf("Scrum channel operation requires a positive project ID")
 	}
-	request.CardID = strings.TrimSpace(request.CardID)
-	if request.CardID == "" {
-		return scrumChannelOperationDescriptor{}, fmt.Errorf("Scrum channel operation requires a card ID")
+	if request.CardID == "" || request.CardID != strings.TrimSpace(request.CardID) {
+		return scrumChannelOperationDescriptor{}, fmt.Errorf("Scrum channel operation requires one canonical card ID")
 	}
-	message, _, err := validateLifecycleFeedback(request.Message, "Scrum channel message")
-	if err != nil {
-		return scrumChannelOperationDescriptor{}, err
+	if err := model.ValidateChannelMessage(model.ChannelMessageRoleUser, request.Message); err != nil {
+		return scrumChannelOperationDescriptor{}, fmt.Errorf("Scrum channel message: %w", err)
 	}
-	request.Message = message
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return scrumChannelOperationDescriptor{}, fmt.Errorf("encode Scrum channel operation: %w", err)
@@ -108,10 +102,8 @@ func normalizeScrumChannelOperation(command ScrumChannelOperationCommand) (Scrum
 	if command.ExpectedCardUpdatedAt.IsZero() {
 		return ScrumChannelOperationCommand{}, scrumChannelOperationDescriptor{}, fmt.Errorf("Scrum channel operation requires the observed card version")
 	}
-	command.ResultAction = strings.TrimSpace(command.ResultAction)
-	command.ResultAgent = strings.TrimSpace(command.ResultAgent)
-	if command.ResultAgent == "" {
-		return ScrumChannelOperationCommand{}, scrumChannelOperationDescriptor{}, fmt.Errorf("Scrum channel operation requires a result agent")
+	if command.ResultAction != strings.TrimSpace(command.ResultAction) {
+		return ScrumChannelOperationCommand{}, scrumChannelOperationDescriptor{}, fmt.Errorf("Scrum channel result action is not canonical")
 	}
 	if err := validateScrumChannelEffect(&command); err != nil {
 		return ScrumChannelOperationCommand{}, scrumChannelOperationDescriptor{}, err
@@ -126,22 +118,12 @@ func validateScrumChannelEffect(command *ScrumChannelOperationCommand) error {
 		if effect.JobID != 0 || command.ResultAction != "started" {
 			return fmt.Errorf("start-job Scrum channel operation requires action started and no existing job")
 		}
-		instruction, _, err := validateLifecycleFeedback(effect.Instruction, "Scrum channel instruction")
-		if err != nil {
-			return err
-		}
-		effect.Instruction = instruction
-		pipeline, err := validatePublicEnqueuePipeline(effect.Pipeline)
-		if err != nil {
-			return err
-		}
-		effect.Pipeline = pipeline
-		if len(effect.Metadata) == 0 || !json.Valid(effect.Metadata) || effect.Metadata[0] != '{' {
-			return fmt.Errorf("start-job Scrum channel operation requires JSON object metadata")
+		if effect.Instruction != command.Request.Message {
+			return fmt.Errorf("start-job Scrum channel instruction must equal the exact request message")
 		}
 	case ScrumChannelReplanJob:
-		if effect.JobID <= 0 || (command.ResultAction != "steered" && command.ResultAction != "revised") {
-			return fmt.Errorf("replan Scrum channel operation requires a job and action steered or revised")
+		if effect.JobID <= 0 || command.ResultAction != "replanned" {
+			return fmt.Errorf("replan Scrum channel operation requires a job and action replanned")
 		}
 		if hasScrumChannelStartFields(*effect) {
 			return fmt.Errorf("replan Scrum channel operation forbids start-job fields")
@@ -160,5 +142,5 @@ func validateScrumChannelEffect(command *ScrumChannelOperationCommand) error {
 }
 
 func hasScrumChannelStartFields(effect ScrumChannelEffect) bool {
-	return effect.Instruction != "" || effect.Pipeline != "" || len(effect.Metadata) != 0
+	return effect.Instruction != ""
 }

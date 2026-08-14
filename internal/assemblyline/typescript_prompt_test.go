@@ -63,9 +63,8 @@ func TestTypeScriptFragmentPromptRejectsOversizedEnvelopeSections(t *testing.T) 
 
 func TestTypeScriptFragmentPromptRejectsBloatedInitialEnvelope(t *testing.T) {
 	_, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-		Signature: "function apply(): void",
-		Contract:  strings.Repeat("c", 1500),
-		Available: strings.Repeat("a", 1500),
+		Signature: "function " + strings.Repeat("a", maxTypeScriptInitialEnvelopeBytes) + "(): void",
+		Contract:  "Do the one supplied operation.",
 	})
 	if err == nil || !strings.Contains(err.Error(), "initial envelope") {
 		t.Fatalf("error=%v", err)

@@ -56,11 +56,7 @@ func TestGenericJobRouteRejectsFreeFormPipelines(t *testing.T) {
 	server.repo = &queue.Repository{}
 	server.mux = http.NewServeMux()
 	server.routes()
-	for _, pipeline := range []string{
-		model.PipelineAssistant,
-		model.PipelineChat,
-		model.PipelineStory,
-	} {
+	for _, pipeline := range []string{model.PipelineChat, model.PipelineScrum} {
 		request := httptest.NewRequest(
 			http.MethodPost,
 			"/v1/jobs",
@@ -71,20 +67,23 @@ func TestGenericJobRouteRejectsFreeFormPipelines(t *testing.T) {
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("pipeline=%s status=%d body=%s", pipeline, response.Code, response.Body.String())
 		}
-		if !strings.Contains(response.Body.String(), "channel") {
+		if pipeline == model.PipelineChat && !strings.Contains(response.Body.String(), "channel") {
 			t.Fatalf("pipeline=%s did not direct free-form input to channels: %s", pipeline, response.Body.String())
+		}
+	}
+	for _, pipeline := range []string{"assistant", "story", "agent"} {
+		if err := validateGenericJobPipeline(pipeline); err == nil || !strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("retired pipeline %q error=%v", pipeline, err)
 		}
 	}
 }
 
 func TestGenericJobRouteAcceptsOnlyExactExplicitPipelines(t *testing.T) {
 	t.Parallel()
-	for _, pipeline := range []string{model.PipelineCoding, model.PipelineScrum} {
-		if err := validateGenericJobPipeline(pipeline); err != nil {
-			t.Fatalf("explicit pipeline %q rejected: %v", pipeline, err)
-		}
+	if err := validateGenericJobPipeline(model.PipelineCoding); err != nil {
+		t.Fatalf("explicit coding pipeline rejected: %v", err)
 	}
-	for _, pipeline := range []string{"", "unknown", " coding", "CODING"} {
+	for _, pipeline := range []string{"", "unknown", " coding", "CODING", model.PipelineScrum} {
 		if err := validateGenericJobPipeline(pipeline); err == nil {
 			t.Fatalf("noncanonical/unknown pipeline %q accepted", pipeline)
 		}
@@ -103,8 +102,8 @@ func TestExplicitCodingEnqueuePreservesExactInstructionInPostgres(t *testing.T) 
 		"instruction": exact,
 		"pipeline":    model.PipelineCoding,
 		"metadata": map[string]any{
-			"model_config":          map[string]any{},
-			"instance_agent_config": map[string]any{"agent_system": "omnidex"},
+			"client_cwd":   "/srv/workspaces/exact-authority",
+			"host_env_cwd": "/srv/workspaces/exact-authority",
 		},
 	})
 	if err != nil {

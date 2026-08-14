@@ -64,27 +64,39 @@ managed_checkout_fast_forward() {
     die "updated staged checkout is not clean"
 }
 
-managed_checkout_preserve_env() {
-  local current="$1" stage="$2"
-  if [[ -e "${current}/.env" ]]; then
+managed_checkout_stage_env() {
+  local current="$1" stage="$2" explicit_env="$3" source=""
+  if [[ -e "${current}/.env" || -L "${current}/.env" ]]; then
     [[ -f "${current}/.env" && ! -L "${current}/.env" ]] ||
-      die "existing .env must be a regular file"
-    cp -p "${current}/.env" "${stage}/.env"
+      die "existing managed .env must be a regular file"
+    [[ -z "${explicit_env}" ]] ||
+      die "--env-file cannot replace an existing managed .env"
+    source="${current}/.env"
   else
-    [[ -f "${stage}/default.env" ]] || die "default.env is missing from staged checkout"
-    cp -p "${stage}/default.env" "${stage}/.env"
+    [[ -n "${explicit_env}" ]] ||
+      die "fresh checkout installation requires --env-file PATH; default.env is a template only"
+    [[ -f "${explicit_env}" && ! -L "${explicit_env}" ]] ||
+      die "--env-file must name a regular non-symlink file"
+    source="${explicit_env}"
   fi
+  [[ ! -e "${stage}/.env" && ! -L "${stage}/.env" ]] ||
+    die "staged checkout unexpectedly contains an active .env"
+  cp -p "${source}" "${stage}/.env"
 }
 
 managed_checkout_validate_env() {
   local stage="$1"
   local core="${stage}/bin/agent-core"
+  local cli="${stage}/bin/agent-cli"
   local environment="${stage}/.env"
   [[ -x "${core}" ]] || die "staged agent-core is not executable"
+  [[ -x "${cli}" ]] || die "staged agent-cli is not executable"
   [[ -f "${environment}" && ! -L "${environment}" ]] ||
     die "staged .env must be a regular file"
   "${core}" config:validate-file "${environment}" >/dev/null ||
     die "staged .env is incompatible with this Omnidex build"
+  "${cli}" config:validate-file "${environment}" >/dev/null ||
+    die "staged .env does not provide valid managed CLI authority"
 }
 
 managed_checkout_env_value() {
@@ -101,6 +113,16 @@ managed_checkout_env_value() {
       if (count == 1) print value
     }
   ' "${file}" || die "managed .env defines ${key} more than once"
+}
+
+managed_checkout_require_env_key() {
+  local file="$1" key="$2"
+  [[ -f "${file}" && ! -L "${file}" ]] || die "managed .env must be a regular file"
+  awk -v wanted="${key}" '
+    BEGIN { count=0 }
+    index($0, wanted "=") == 1 { count++ }
+    END { exit count == 1 ? 0 : 1 }
+  ' "${file}" || die "managed .env must define ${key} exactly once"
 }
 
 managed_checkout_publish() {

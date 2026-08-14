@@ -2,23 +2,7 @@ package assemblyline
 
 import "strings"
 
-type RequirementPartitionMode string
-
-const (
-	RequirementExtractFeatures RequirementPartitionMode = "extract_features"
-	RequirementSplitFeature    RequirementPartitionMode = "split_feature"
-)
-
-type RequirementPartitionInput struct {
-	SourceText string                   `json:"source_text"`
-	Mode       RequirementPartitionMode `json:"mode"`
-}
-
 type ApplicationClassificationInput struct {
-	UserRequest string `json:"user_request"`
-}
-
-type ApplicationIdentityInput struct {
 	UserRequest string `json:"user_request"`
 }
 
@@ -50,16 +34,47 @@ type ResponseCorrectionInput struct {
 	ValidationFailure string      `json:"validation_failure"`
 }
 
-func NewRequirementPartitionJob(input RequirementPartitionInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkRequirementPartition, input, input.validate)
-}
-
 func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkApplicationClassify, input, input.validate)
 }
 
-func NewApplicationIdentityJob(input ApplicationIdentityInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationIdentity, input, input.validate)
+func NewApplicationRequirementInterpretationJob(
+	input ApplicationRequirementInterpretationInput,
+) (PortableJob, error) {
+	return newValidatedPortableJob(WorkApplicationRequirements, input, input.validate)
+}
+
+func NewApplicationJobSpecificationJob(input ApplicationJobSpecificationInput) (PortableJob, error) {
+	return newValidatedPortableJob(
+		WorkApplicationJobSpecification, input,
+		func() error { return validateApplicationJobSpecificationInput(input) },
+	)
+}
+
+func NewApplicationJobSpecificationReviewJob(
+	input ApplicationJobSpecificationReviewInput,
+) (PortableJob, error) {
+	payload, err := newApplicationJobSpecificationReviewPortablePayload(input)
+	if err != nil {
+		return PortableJob{}, err
+	}
+	return newPortableJob(WorkApplicationJobSpecificationReview, payload)
+}
+
+func NewApplicationJobSpecificationRepairJob(
+	input ApplicationJobSpecificationRepairInput,
+) (PortableJob, error) {
+	payload, err := newApplicationJobSpecificationRepairPortablePayload(input)
+	if err != nil {
+		return PortableJob{}, err
+	}
+	return newPortableJob(WorkApplicationJobSpecificationRepair, payload)
+}
+
+func NewRepositoryRequirementInterpretationJob(
+	input RepositoryRequirementInterpretationInput,
+) (PortableJob, error) {
+	return newValidatedPortableJob(WorkRepositoryRequirements, input, input.validate)
 }
 
 func NewArtifactHandlingJob(input ArtifactHandlingInput) (PortableJob, error) {

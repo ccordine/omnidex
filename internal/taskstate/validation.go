@@ -7,6 +7,8 @@ import (
 	"unicode/utf8"
 )
 
+const maxFeedbackEntryContentBytes = 64 * 1024
+
 func validateLedgerOwner(owner LedgerOwner) error {
 	if owner.Kind != OwnerJob {
 		return fmt.Errorf("%w: ledger owner kind %q is not registered", ErrInvalidState, owner.Kind)
@@ -40,6 +42,21 @@ func requireCode(actor Authority, action string) error {
 func requireExactText(value, field string) error {
 	if value == "" || !utf8.ValidString(value) || strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("%w: %s must be one nonempty exact value", ErrInvalidCommand, field)
+	}
+	return nil
+}
+
+func requireEntryContent(value string, kind EntryKind) error {
+	if kind != EntryFeedback {
+		return requireExactText(value, "entry content")
+	}
+	if !utf8.ValidString(value) || strings.TrimSpace(value) == "" ||
+		strings.ContainsRune(value, '\x00') || len(value) > maxFeedbackEntryContentBytes {
+		return fmt.Errorf(
+			"%w: feedback entry content must be one nonblank valid UTF-8 value within %d bytes",
+			ErrInvalidCommand,
+			maxFeedbackEntryContentBytes,
+		)
 	}
 	return nil
 }

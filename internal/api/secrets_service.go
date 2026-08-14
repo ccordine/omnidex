@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -21,7 +20,11 @@ func (s *Server) handleAPISecrets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAPISecretsGet(w http.ResponseWriter, r *http.Request) {
-	stored := s.rawStoredSecrets(r.Context())
+	stored, err := s.rawStoredSecrets(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"storage":  "database",
 		"fields":   secrets.FieldList(stored),
@@ -29,16 +32,14 @@ func (s *Server) handleAPISecretsGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) rawStoredSecrets(ctx context.Context) map[string]string {
+func (s *Server) rawStoredSecrets(ctx context.Context) (map[string]string, error) {
 	if s.repo != nil {
-		if values, err := s.repo.GetAPISecrets(ctx); err == nil {
-			return values
-		}
+		return s.repo.GetAPISecrets(ctx)
 	}
 	if s.secretsResolver != nil {
 		return s.secretsResolver.RawStored(ctx)
 	}
-	return map[string]string{}
+	return map[string]string{}, nil
 }
 
 func (s *Server) handleAPISecretsPut(w http.ResponseWriter, r *http.Request) {
@@ -46,23 +47,12 @@ func (s *Server) handleAPISecretsPut(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
-	var req struct {
-		Values    map[string]string `json:"values"`
-		ClearKeys []string          `json:"clear_keys"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+	req, err := decodeAPISecretsRequest(w, r)
+	if err != nil {
+		writeError(w, exactSettingsErrorStatus(err), err.Error())
 		return
 	}
-	updates := map[string]string{}
-	for key, value := range req.Values {
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key != "" && value != "" {
-			updates[key] = value
-		}
-	}
-	stored, err := s.repo.SetAPISecrets(r.Context(), updates, req.ClearKeys)
+	stored, err := s.repo.SetAPISecrets(r.Context(), req.Values, req.ClearKeys)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

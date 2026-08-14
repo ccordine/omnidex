@@ -169,6 +169,38 @@ func TestChannelMutationsRejectTrailingJSON(t *testing.T) {
 	}
 }
 
+func TestChannelMutationsRejectInexactJSONBeforeMutation(t *testing.T) {
+	t.Parallel()
+	server, store := newChannelFrontdoorTestServer(t)
+	enqueueCalls := 0
+	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string) (model.ChannelMessage, model.Job, error) {
+		enqueueCalls++
+		return model.ChannelMessage{}, model.Job{}, nil
+	}
+	tests := []struct {
+		path string
+		body []byte
+	}{
+		{path: "/v1/channels/authority/messages", body: []byte(`{"prompt":"first","prompt":"second"}`)},
+		{path: "/v1/channels/authority/messages", body: []byte(`{"Prompt":"wrong case"}`)},
+		{path: "/v1/channels/authority/messages", body: []byte(`{"prompt":null}`)},
+		{path: "/v1/channels/authority/messages", body: []byte{'{', '"', 'p', 'r', 'o', 'm', 'p', 't', '"', ':', '"', 0xff, '"', '}'}},
+		{path: "/v1/channels", body: []byte(`{"id":"first","id":"second","name":"Duplicate","tags":[],"workspace_root":"/tmp/project"}`)},
+	}
+	for _, test := range tests {
+		request := httptest.NewRequest(http.MethodPost, test.path, bytes.NewReader(test.body))
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("path=%s body=%q status=%d response=%s", test.path, test.body, response.Code, response.Body.String())
+		}
+	}
+	if enqueueCalls != 0 || len(store.channels) != 1 || len(store.messages["authority"]) != 0 {
+		t.Fatalf("inexact JSON mutated state: enqueue=%d channels=%d messages=%d",
+			enqueueCalls, len(store.channels), len(store.messages["authority"]))
+	}
+}
+
 func TestChannelMutationBodiesRejectTransportOverflowWithoutMutation(t *testing.T) {
 	t.Parallel()
 	server, store := newChannelFrontdoorTestServer(t)
@@ -203,6 +235,40 @@ func TestChannelMutationBodiesRejectTransportOverflowWithoutMutation(t *testing.
 	}
 	if enqueueCalls != 0 || len(store.channels) != 1 || len(store.messages["authority"]) != 0 {
 		t.Fatalf("overflow mutated state: enqueue=%d channels=%d messages=%d",
+			enqueueCalls, len(store.channels), len(store.messages["authority"]))
+	}
+}
+
+func TestChannelEndpointsRejectUnknownDuplicateAndMalformedQueryAuthority(t *testing.T) {
+	t.Parallel()
+	server, store := newChannelFrontdoorTestServer(t)
+	enqueueCalls := 0
+	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string) (model.ChannelMessage, model.Job, error) {
+		enqueueCalls++
+		return model.ChannelMessage{}, model.Job{}, nil
+	}
+	for _, test := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/v1/channels?scope=user&scope=user"},
+		{method: http.MethodGet, path: "/v1/channels?scope=user&unknown=1"},
+		{method: http.MethodGet, path: "/v1/channels?scope=user;limit=1"},
+		{method: http.MethodGet, path: "/v1/channels/authority?unknown=1"},
+		{method: http.MethodGet, path: "/v1/channels/authority/messages?limit=24&unknown=1"},
+		{method: http.MethodPost, path: "/v1/channels/authority/messages?limit=1", body: `{"prompt":"exact"}`},
+		{method: http.MethodPost, path: "/v1/channels?scope=user", body: `{"id":"new","name":"New","tags":[],"workspace_root":"/tmp/project"}`},
+	} {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("%s %s status=%d body=%s", test.method, test.path, response.Code, response.Body.String())
+		}
+	}
+	if enqueueCalls != 0 || len(store.channels) != 1 || len(store.messages["authority"]) != 0 {
+		t.Fatalf("inexact query mutated state: enqueue=%d channels=%d messages=%d",
 			enqueueCalls, len(store.channels), len(store.messages["authority"]))
 	}
 }

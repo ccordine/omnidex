@@ -141,11 +141,17 @@ func TestDirectCodingReceivesOrderedFeedbackOnTheSameJob(t *testing.T) {
 func TestDirectScrumCodingUsesCardInsteadOfSyntheticInstruction(t *testing.T) {
 	runtime := &nativeRuntimeV3{claim: &model.ClaimedStep{Job: model.Job{
 		Instruction: "Execute the authoritative Scrum card task.",
+		Pipeline:    model.PipelineScrum,
 		Metadata: json.RawMessage(`{
 			"source":"omni-scrum",
+			"project_id":7,
 			"scrum_card_id":"card-7",
 			"scrum_card_title":"Build the real Blade screen",
-			"scrum_card_description":"Render tasks and validation errors"
+			"scrum_card_description":"Render tasks and validation errors",
+			"scrum_checklist":"","scrum_test_criteria":"",
+			"scrum_return_column":"assigned","scrum_channel_origin":false,
+			"scrum_channel_operation_id":"","model_config":{},
+			"telemetry_run_id":"00000000-0000-4000-8000-000000000001"
 		}`),
 	}}}
 	request, err := runtime.directCodingRequest()
@@ -165,12 +171,18 @@ func TestDirectScrumCodingUsesCardInsteadOfSyntheticInstruction(t *testing.T) {
 func TestDirectScrumChannelCodingUsesOnlyCurrentInstructionAsAuthority(t *testing.T) {
 	runtime := &nativeRuntimeV3{claim: &model.ClaimedStep{Job: model.Job{
 		Instruction: "Fix only the routing defect",
+		Pipeline:    model.PipelineScrum,
 		Metadata: json.RawMessage(`{
 			"source":"omni-scrum",
-			"scrum_channel_origin":true,
+			"project_id":8,
 			"scrum_card_id":"card-8",
 			"scrum_card_title":"Repair agent routing",
-			"scrum_card_description":"Preserve the current API"
+			"scrum_card_description":"Preserve the current API",
+			"scrum_checklist":"","scrum_test_criteria":"",
+			"scrum_return_column":"assigned","scrum_channel_origin":true,
+			"scrum_channel_operation_id":"lifecycle_operation_0000000000000000000000000000000000000000000000000000000000000000",
+			"model_config":{},
+			"telemetry_run_id":"00000000-0000-4000-8000-000000000001"
 		}`),
 	}}}
 	request, err := runtime.directCodingRequest()

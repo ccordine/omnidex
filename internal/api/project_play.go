@@ -3,10 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 
-	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -19,19 +16,45 @@ func (s *Server) handleProjectPlay(w http.ResponseWriter, r *http.Request, id in
 		writeError(w, http.StatusServiceUnavailable, "project play requires database")
 		return
 	}
-	board, card, message, err := s.startProjectAutoWork(r, id)
-	if err != nil {
+	if err := validateExactQuery(r); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"project_id": id,
-		"board":      board,
-		"card":       card,
-		"job_id":     card.JobID,
-		"play_queue": scrumPlayQueueSummary(board),
-		"message":    message,
-	})
+	if err := decodeProjectAutoWorkActionRequest(w, r, "project play"); err != nil {
+		writeError(w, projectRequestErrorStatus(err), err.Error())
+		return
+	}
+	outcome, committed, err := s.startProjectAutoWork(r, id)
+	if err != nil {
+		if committed {
+			writeProjectAutoWorkResponse(w, id, outcome, err)
+		} else {
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	playQueue, err := s.scrumPlayQueuePayload(r.Context(), id)
+	if err != nil {
+		writeProjectAutoWorkResponse(w, id, outcome, err)
+		return
+	}
+	outcome.PlayQueue = playQueue
+	for index := range outcome.Board.Cards {
+		outcome.Board.Cards[index], err = scrumCardActionProjection(outcome.Board.Cards[index])
+		if err != nil {
+			writeProjectAutoWorkResponse(w, id, outcome, err)
+			return
+		}
+	}
+	if outcome.Card != nil {
+		responseCard, err := scrumCardActionProjection(*outcome.Card)
+		if err != nil {
+			writeProjectAutoWorkResponse(w, id, outcome, err)
+			return
+		}
+		outcome.Card = &responseCard
+	}
+	writeProjectAutoWorkResponse(w, id, outcome, nil)
 }
 
 func (s *Server) handleProjectPause(w http.ResponseWriter, r *http.Request, id int64) {
@@ -43,143 +66,94 @@ func (s *Server) handleProjectPause(w http.ResponseWriter, r *http.Request, id i
 		writeError(w, http.StatusServiceUnavailable, "project pause requires database")
 		return
 	}
-	board, paused, message, err := s.pauseProjectAutoWork(r, id)
-	if err != nil {
+	if err := validateExactQuery(r); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"project_id": id,
-		"board":      board,
-		"paused":     paused,
-		"play_queue": scrumPlayQueueSummary(board),
-		"message":    message,
-	})
-}
-
-func (s *Server) startProjectAutoWork(r *http.Request, projectID int64) (ScrumBoard, ScrumCard, string, error) {
-	if projectID <= 0 {
-		return ScrumBoard{}, ScrumCard{}, "", fmt.Errorf("project not found")
+	if err := decodeProjectAutoWorkActionRequest(w, r, "project pause"); err != nil {
+		writeError(w, projectRequestErrorStatus(err), err.Error())
+		return
 	}
-	project, err := s.repo.GetProject(r.Context(), projectID)
+	outcome, committed, err := s.pauseProjectAutoWork(r, id)
 	if err != nil {
-		return ScrumBoard{}, ScrumCard{}, "", err
-	}
-	cfg, err := loadScrumAutoWorkConfig(project.Settings)
-	if err != nil {
-		return ScrumBoard{}, ScrumCard{}, "", err
-	}
-	if !cfg.Enabled {
-		cfg.Enabled = true
-		if err := s.saveScrumAutoWorkConfig(r.Context(), project, cfg); err != nil {
-			return ScrumBoard{}, ScrumCard{}, "", err
+		if committed {
+			writeProjectAutoWorkResponse(w, id, outcome, err)
+		} else {
+			writeError(w, http.StatusBadRequest, err.Error())
 		}
+		return
 	}
-	board, err := s.scrumBoardFromProject(r.Context(), projectID)
+	playQueue, err := s.scrumPlayQueuePayload(r.Context(), id)
 	if err != nil {
-		return ScrumBoard{}, ScrumCard{}, "", err
+		writeProjectAutoWorkResponse(w, id, outcome, err)
+		return
 	}
-	refreshed, err := s.refreshScrumPlayQueue(r, projectID, board)
-	if err != nil {
-		return ScrumBoard{}, ScrumCard{}, "", err
-	}
-	if running := s.findRunningScrumCard(refreshed); running != nil {
-		return refreshed, *running, "auto-work is already running for project", nil
-	}
-	next := s.nextAutoWorkScrumCard(refreshed, cfg)
-	if next == nil {
-		if err := s.RefreshScrumAutoWorkAsync(); err != nil {
-			return ScrumBoard{}, ScrumCard{}, "", err
-		}
-		return refreshed, ScrumCard{}, "auto-work enabled; no eligible cards found", nil
-	}
-	started, err := s.startScrumCardPlay(r, refreshed, projectID, next.ID, agentconfig.Config{})
-	if err != nil {
-		return ScrumBoard{}, ScrumCard{}, "", err
-	}
-	refreshed, err = s.scrumBoardFromProject(r.Context(), projectID)
-	if err != nil {
-		return ScrumBoard{}, ScrumCard{}, "", err
-	}
-	if err := s.RefreshScrumAutoWorkAsync(); err != nil {
-		return ScrumBoard{}, ScrumCard{}, "", err
-	}
-	return refreshed, started, "auto-work enabled and job queued", nil
-}
-
-func (s *Server) pauseProjectAutoWork(r *http.Request, projectID int64) (ScrumBoard, int, string, error) {
-	if projectID <= 0 {
-		return ScrumBoard{}, 0, "", fmt.Errorf("project not found")
-	}
-	project, err := s.repo.GetProject(r.Context(), projectID)
-	if err != nil {
-		return ScrumBoard{}, 0, "", err
-	}
-	cfg, err := loadScrumAutoWorkConfig(project.Settings)
-	if err != nil {
-		return ScrumBoard{}, 0, "", err
-	}
-	if cfg.Enabled {
-		cfg.Enabled = false
-		if err := s.saveScrumAutoWorkConfig(r.Context(), project, cfg); err != nil {
-			return ScrumBoard{}, 0, "", err
-		}
-	}
-	board, err := s.scrumBoardFromProject(r.Context(), projectID)
-	if err != nil {
-		return ScrumBoard{}, 0, "", err
-	}
-	paused := 0
-	for _, card := range board.Cards {
-		switch card.PlayState {
-		case scrumPlayRunning, scrumPlayQueued:
-		default:
-			continue
-		}
-		jobIDText := strings.TrimSpace(card.JobID)
-		if jobIDText != "" {
-			jobID, err := parseJobID(jobIDText)
-			if err != nil {
-				return ScrumBoard{}, paused, "", fmt.Errorf("parse job id for Scrum card %q: %w", card.ID, err)
-			}
-			operationID, err := queue.NewLifecycleOperationID(
-				"project-auto-work-pause-v1", strconv.FormatInt(projectID, 10),
-				card.ID, strconv.FormatInt(jobID, 10),
-			)
-			if err != nil {
-				return ScrumBoard{}, paused, "", fmt.Errorf(
-					"build cancellation identity for Scrum card %q: %w", card.ID, err,
-				)
-			}
-			if _, err := s.repo.CancelJob(r.Context(), queue.CancelJobCommand{
-				OperationID: operationID, JobID: jobID, Reason: "project auto-work paused",
-			}); err != nil {
-				return ScrumBoard{}, paused, "", fmt.Errorf("cancel job %d for Scrum card %q: %w", jobID, card.ID, err)
-			}
-		} else if card.PlayState == scrumPlayRunning {
-			return ScrumBoard{}, paused, "", fmt.Errorf("active Scrum card %q has no job id", card.ID)
-		}
-		card.Column = "assigned"
-		card.PlayState = scrumPlayPaused
-		card.QueueOrder = 0
-		card = appendScrumChannelEvent(card, "system", "Project auto-work paused")
-		saved, err := s.persistScrumCard(r, projectID, card)
+	outcome.PlayQueue = playQueue
+	for index := range outcome.Board.Cards {
+		outcome.Board.Cards[index], err = scrumCardActionProjection(outcome.Board.Cards[index])
 		if err != nil {
-			return ScrumBoard{}, paused, "", fmt.Errorf("persist paused Scrum card %q: %w", card.ID, err)
+			writeProjectAutoWorkResponse(w, id, outcome, err)
+			return
 		}
-		s.publishScrumCardUpdate(r.Context(), projectID, saved, "project auto-work paused")
-		paused++
 	}
-	refreshed, err := s.scrumBoardFromProject(r.Context(), projectID)
+	writeProjectAutoWorkResponse(w, id, outcome, nil)
+}
+
+func (s *Server) startProjectAutoWork(r *http.Request, projectID int64) (projectAutoWorkOutcome, bool, error) {
+	if projectID <= 0 {
+		return projectAutoWorkOutcome{}, false, fmt.Errorf("project not found")
+	}
+	result, err := s.repo.ApplyProjectAutoWork(r.Context(), queue.ProjectAutoWorkCommand{
+		ProjectID: projectID, Action: queue.ProjectAutoWorkPlay,
+	})
 	if err != nil {
-		return ScrumBoard{}, 0, "", err
+		return projectAutoWorkOutcome{}, false, err
 	}
-	refreshed, err = s.refreshScrumPlayQueue(r, projectID, refreshed)
+	outcome := projectAutoWorkOutcome{Authority: projectAutoWorkAuthorityFromResult(result)}
+	refreshed, err := s.scrumBoardMetadataFromProject(r.Context(), projectID)
 	if err != nil {
-		return ScrumBoard{}, 0, "", err
+		return outcome, true, err
 	}
-	if paused > 0 {
-		return refreshed, paused, fmt.Sprintf("auto-work paused; stopped %d active cards", paused), nil
+	outcome.Board = &refreshed
+	if result.ActiveCard == nil {
+		outcome.Message = "auto-work enabled; no eligible cards found"
+		if err := s.RefreshScrumAutoWorkAsync(); err != nil {
+			return outcome, true, err
+		}
+		return outcome, true, nil
 	}
-	return refreshed, paused, "auto-work paused", nil
+	active, err := dbScrumCardToAPI(*result.ActiveCard)
+	if err != nil {
+		return outcome, true, err
+	}
+	outcome.Card = &active
+	outcome.Message = "auto-work enabled and job queued"
+	if err := s.RefreshScrumAutoWorkAsync(); err != nil {
+		return outcome, true, err
+	}
+	return outcome, true, nil
+}
+
+func (s *Server) pauseProjectAutoWork(r *http.Request, projectID int64) (projectAutoWorkOutcome, bool, error) {
+	if projectID <= 0 {
+		return projectAutoWorkOutcome{}, false, fmt.Errorf("project not found")
+	}
+	result, err := s.repo.ApplyProjectAutoWork(r.Context(), queue.ProjectAutoWorkCommand{
+		ProjectID: projectID, Action: queue.ProjectAutoWorkPause,
+	})
+	if err != nil {
+		return projectAutoWorkOutcome{}, false, err
+	}
+	outcome := projectAutoWorkOutcome{Authority: projectAutoWorkAuthorityFromResult(result)}
+	refreshed, err := s.scrumBoardMetadataFromProject(r.Context(), projectID)
+	if err != nil {
+		return outcome, true, err
+	}
+	outcome.Board = &refreshed
+	if result.PausedCards > 0 {
+		outcome.Message = fmt.Sprintf("auto-work paused; stopped %d active cards", result.PausedCards)
+		return outcome, true, nil
+	}
+	outcome.Message = "auto-work paused"
+	return outcome, true, nil
 }

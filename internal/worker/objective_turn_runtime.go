@@ -18,6 +18,10 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 	if err != nil {
 		return err
 	}
+	objectiveAdvisory, err := r.newObjectiveAdvisoryRunner()
+	if err != nil {
+		return err
+	}
 	result, err := runObjectiveTurn(
 		r.ctx,
 		r.claim.Job,
@@ -30,6 +34,7 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 			WorkspaceMutation: r.runObjectiveWorkspaceMutation,
 			RepositoryRead:    r.acquireObjectiveRepositoryEvidence,
 			ExternalAnswer:    r.acquireObjectiveExternalEvidence,
+			ObjectiveAdvisory: objectiveAdvisory,
 		},
 	)
 	if err != nil {

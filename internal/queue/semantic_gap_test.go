@@ -34,7 +34,7 @@ func TestStationGapOpeningPreservesClosedPortableJobAndCanonicalProjection(t *te
 	if validated.Prompt != prompt || validated.PortablePayload != string(job.Payload) {
 		t.Fatalf("opening changed exact prompt or payload: %+v", validated)
 	}
-	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v1"`) ||
+	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v3"`) ||
 		len(validated.ProjectionSHA256) != 64 || len(validated.PortableEnvelopeSHA256) != 64 {
 		t.Fatalf("projection envelope=%q sha=%q", validated.ProjectionEnvelope, validated.ProjectionSHA256)
 	}

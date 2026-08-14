@@ -3,9 +3,10 @@ package worker
 import (
 	"context"
 	"fmt"
-)
 
-import "github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/objectiveadvisory"
+)
 
 type objectiveRepositoryGroundingStation interface {
 	Answer(context.Context, assemblyline.GroundedAnswerInput) (
@@ -24,12 +25,14 @@ type objectiveRepositoryGroundedResult struct {
 	ModelCalls      int
 	ReviewCalls     int
 	CorrectionCalls int
+	Advisory        objectiveadvisory.Report
 }
 
 func runObjectiveRepositoryGroundedClosure(
 	ctx context.Context,
 	input assemblyline.GroundedAnswerInput,
 	stations objectiveRepositoryGroundingStation,
+	options objectiveRepositoryGroundedClosureOptions,
 ) (objectiveRepositoryGroundedResult, error) {
 	if ctx == nil || stations == nil {
 		return objectiveRepositoryGroundedResult{}, fmt.Errorf("repository grounded closure requires context and exact stations")
@@ -57,6 +60,15 @@ func runObjectiveRepositoryGroundedClosure(
 
 	reviewInput, err := objectiveRepositoryReviewInput(input, answer)
 	if err != nil {
+		return result, err
+	}
+	report, capsules, err := runObjectiveRepositoryAdvisory(ctx, input, reviewInput, options)
+	result.Advisory = report
+	if err != nil {
+		return result, err
+	}
+	reviewInput.AdvisoryCapsules = capsules
+	if _, err := assemblyline.NewRepositoryGroundedReviewJob(reviewInput); err != nil {
 		return result, err
 	}
 	issue, reviewReceipt, err := stations.Review(ctx, cloneRepositoryReviewInput(reviewInput))
@@ -178,6 +190,7 @@ func cloneRepositoryReviewInput(input assemblyline.RepositoryGroundedReviewInput
 	copy.Context = assemblyline.CloneObjectiveContext(input.Context)
 	copy.EvidenceIDs = append([]string(nil), input.EvidenceIDs...)
 	copy.Evidence = cloneGroundedEvidence(input.Evidence)
+	copy.AdvisoryCapsules = cloneObjectiveAdvisoryCapsules(input.AdvisoryCapsules)
 	return copy
 }
 

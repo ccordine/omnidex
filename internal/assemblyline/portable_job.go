@@ -22,34 +22,37 @@ const (
 type WorkKind string
 
 const (
-	WorkRequirementPartition           WorkKind = "requirement_partition"
-	WorkRepositorySearchTerm           WorkKind = "repository_search_term"
-	WorkRepositoryChangeSurface        WorkKind = "repository_change_surface"
-	WorkRepositoryEvidenceRelevance    WorkKind = "repository_evidence_relevance"
-	WorkRepositoryGroundedReview       WorkKind = "repository_grounded_review"
-	WorkRepositoryGroundedCorrection   WorkKind = "repository_grounded_correction"
-	WorkConversationContextSelection   WorkKind = "conversation_context_selection"
-	WorkMemoryContextSelection         WorkKind = "memory_context_selection"
-	WorkConversationObjectiveKind      WorkKind = "conversation_objective_kind"
-	WorkConversationResponse           WorkKind = "conversation_response"
-	WorkGroundedAnswer                 WorkKind = "grounded_answer"
-	WorkWebSearchTerms                 WorkKind = "web_search_terms"
-	WorkWebRelevance                   WorkKind = "web_relevance"
-	WorkWebGroundedSynthesis           WorkKind = "web_grounded_synthesis"
-	WorkWebGroundedSynthesisCorrection WorkKind = "web_grounded_synthesis_correction"
-	WorkWebClaimEvidenceReview         WorkKind = "web_claim_evidence_review"
-	WorkApplicationClassify            WorkKind = "application_classification"
-	WorkApplicationIdentity            WorkKind = "application_identity"
-	WorkArtifactHandling               WorkKind = "artifact_handling"
-	WorkKnownArtifactTruth             WorkKind = "known_artifact_truth"
-	WorkDeclarationArtifactBoundary    WorkKind = "declaration_artifact_boundary"
-	WorkArtifactCandidateSelection     WorkKind = "artifact_candidate_selection"
-	WorkCapabilityRelation             WorkKind = "capability_relation"
-	WorkSkillSelection                 WorkKind = "skill_selection"
-	WorkFragmentGeneration             WorkKind = "fragment_generation"
-	WorkFragmentModification           WorkKind = "fragment_modification"
-	WorkFragmentCorrection             WorkKind = "fragment_correction"
-	WorkResponseCorrection             WorkKind = "response_correction"
+	WorkApplicationRequirements           WorkKind = "application_requirements"
+	WorkApplicationJobSpecification       WorkKind = "application_job_specification"
+	WorkApplicationJobSpecificationReview WorkKind = "application_job_specification_review"
+	WorkApplicationJobSpecificationRepair WorkKind = "application_job_specification_repair"
+	WorkRepositoryRequirements            WorkKind = "repository_requirements"
+	WorkRepositorySearchTerm              WorkKind = "repository_search_term"
+	WorkRepositoryChangeSurface           WorkKind = "repository_change_surface"
+	WorkRepositoryEvidenceRelevance       WorkKind = "repository_evidence_relevance"
+	WorkRepositoryGroundedReview          WorkKind = "repository_grounded_review"
+	WorkRepositoryGroundedCorrection      WorkKind = "repository_grounded_correction"
+	WorkConversationContextSelection      WorkKind = "conversation_context_selection"
+	WorkMemoryContextSelection            WorkKind = "memory_context_selection"
+	WorkConversationObjectiveKind         WorkKind = "conversation_objective_kind"
+	WorkConversationResponse              WorkKind = "conversation_response"
+	WorkGroundedAnswer                    WorkKind = "grounded_answer"
+	WorkWebSearchTerms                    WorkKind = "web_search_terms"
+	WorkWebRelevance                      WorkKind = "web_relevance"
+	WorkWebGroundedSynthesis              WorkKind = "web_grounded_synthesis"
+	WorkWebGroundedSynthesisCorrection    WorkKind = "web_grounded_synthesis_correction"
+	WorkWebClaimEvidenceReview            WorkKind = "web_claim_evidence_review"
+	WorkApplicationClassify               WorkKind = "application_classification"
+	WorkArtifactHandling                  WorkKind = "artifact_handling"
+	WorkKnownArtifactTruth                WorkKind = "known_artifact_truth"
+	WorkDeclarationArtifactBoundary       WorkKind = "declaration_artifact_boundary"
+	WorkArtifactCandidateSelection        WorkKind = "artifact_candidate_selection"
+	WorkCapabilityRelation                WorkKind = "capability_relation"
+	WorkSkillSelection                    WorkKind = "skill_selection"
+	WorkFragmentGeneration                WorkKind = "fragment_generation"
+	WorkFragmentModification              WorkKind = "fragment_modification"
+	WorkFragmentCorrection                WorkKind = "fragment_correction"
+	WorkResponseCorrection                WorkKind = "response_correction"
 )
 
 type PortableJob struct {
@@ -144,7 +147,9 @@ func decodePortablePayload(payload []byte, target any) error {
 
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
-	case WorkApplicationClassify, WorkApplicationIdentity, WorkRequirementPartition,
+	case WorkApplicationClassify, WorkApplicationRequirements,
+		WorkApplicationJobSpecification, WorkApplicationJobSpecificationReview,
+		WorkApplicationJobSpecificationRepair, WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
 		WorkConversationContextSelection, WorkMemoryContextSelection,
@@ -165,7 +170,9 @@ func validWorkKind(kind WorkKind) bool {
 // it to prove exhaustive station mappings without inventing string routing.
 func AllWorkKinds() []WorkKind {
 	return []WorkKind{
-		WorkApplicationClassify, WorkApplicationIdentity, WorkRequirementPartition,
+		WorkApplicationClassify, WorkApplicationRequirements,
+		WorkApplicationJobSpecification, WorkApplicationJobSpecificationReview,
+		WorkApplicationJobSpecificationRepair, WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
 		WorkConversationContextSelection, WorkMemoryContextSelection,

@@ -48,8 +48,8 @@ func newRepositoryMutationDatabaseFixture(
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		ctx, "mutation-"+label, root, "", "", nil,
-	)
+		ctx, "mutation-"+label, root, "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
