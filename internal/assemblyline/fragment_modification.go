@@ -44,13 +44,17 @@ func BuildGoFragmentModificationPrompt(input FragmentModificationInput) (string,
 	if err := input.validate(); err != nil {
 		return "", err
 	}
+	current, err := marshalUntrustedPromptString(input.CurrentDeclaration)
+	if err != nil {
+		return "", fmt.Errorf("Go fragment modification current declaration: %w", err)
+	}
 	return strings.Join([]string{
 		"Return exactly one raw Go function or method declaration with the exact signature. Do not use Markdown fences, imports, package clauses, comments, helper declarations, paths, files, commands, or explanations.",
 		"Apply only the exact requirement quote and preserve unrelated executable behavior in the current declaration.",
 		"Use only identifiers already present in the current declaration or explicitly listed as permitted direct capabilities. Transitive repository symbols are unavailable.",
 		"EXACT_SIGNATURE:\n" + input.Signature,
 		"EXACT_REQUIREMENT_QUOTE:\n" + input.RequirementQuote,
-		"CURRENT_DECLARATION:\n" + input.CurrentDeclaration,
+		"CURRENT_DECLARATION_JSON:\n" + current,
 		"DIRECT_CAPABILITIES:\n" + strings.Join(input.Capabilities, "\n"),
 		"PERMITTED_SYMBOLS:\n" + strings.Join(input.PermittedSymbols, "\n"),
 	}, "\n\n"), nil

@@ -12,6 +12,7 @@ type directCodingTypeScriptFragmentJob struct {
 	tsx            bool
 	available      string
 	current        string
+	repairRegion   *assemblyline.TypeScriptFragmentRepairRegion
 	failure        string
 	requiredChange string
 }

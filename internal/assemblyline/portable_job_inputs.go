@@ -20,13 +20,14 @@ type FragmentGenerationInput struct {
 }
 
 type FragmentCorrectionInput struct {
-	Language           string   `json:"language"`
-	Signature          string   `json:"signature"`
-	Capabilities       []string `json:"capabilities"`
-	PermittedSymbols   []string `json:"permitted_symbols"`
-	CurrentDeclaration string   `json:"current_declaration"`
-	RequiredChange     string   `json:"required_change"`
-	Diagnostic         string   `json:"diagnostic"`
+	Language           string                          `json:"language"`
+	Signature          string                          `json:"signature"`
+	Capabilities       []string                        `json:"capabilities"`
+	PermittedSymbols   []string                        `json:"permitted_symbols"`
+	CurrentDeclaration string                          `json:"current_declaration,omitempty"`
+	RepairRegion       *TypeScriptFragmentRepairRegion `json:"repair_region,omitempty"`
+	RequiredChange     string                          `json:"required_change"`
+	Diagnostic         string                          `json:"diagnostic"`
 }
 
 type ResponseCorrectionInput struct {

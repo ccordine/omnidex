@@ -299,10 +299,15 @@ func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, ma
 			Available:      strings.Join(input.Capabilities, "\n"),
 			Globals:        input.PermittedSymbols,
 			Current:        input.CurrentDeclaration,
+			RepairRegion:   input.RepairRegion,
 			RequiredChange: input.RequiredChange,
 			Diagnostic:     input.Diagnostic,
 		})
-		return prompt, nil, err
+		if err != nil || input.RepairRegion == nil {
+			return prompt, nil, err
+		}
+		schema, schemaErr := TypeScriptFragmentRepairResponseSchema(*input.RepairRegion)
+		return prompt, schema, schemaErr
 	default:
 		return "", nil, fmt.Errorf("no fragment renderer supports language %q", input.Language)
 	}

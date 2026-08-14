@@ -90,25 +90,52 @@ func TestReviewedChannelsJobRendersBothLeavesWithinTheExactProviderBudget(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	fragmentJob.current = strings.Repeat("x", 4521)
-	fragmentJob.failure = "CORRECTION_REJECTION: TypeScript syntax rejected: ERROR at line 100 column 2"
+	invalidCandidate := feature.Signature + " {\n" +
+		"  const earlySentinel = state;\n" +
+		strings.Repeat("  void state;\n", 95) +
+		"  return <section>Ready</section>;\n" +
+		"}<|endoftext|><|im_start|>"
+	_, parseErr := assemblyline.ParseTypeScriptFunction(assemblyline.TypeScriptFunctionContract{
+		Signature: feature.Signature, TSX: true, Policy: feature.Policy,
+	}, invalidCandidate)
+	failure, ok := assemblyline.TypeScriptSyntaxFailureFromError(parseErr)
+	if !ok {
+		t.Fatalf("live-sized invalid candidate did not produce a typed syntax failure: %v", parseErr)
+	}
+	region, err := assemblyline.NewTypeScriptFragmentRepairRegion(invalidCandidate, failure, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fragmentJob.current = ""
+	fragmentJob.repairRegion = &region
+	fragmentJob.failure = "CORRECTION_REJECTION: " + parseErr.Error()
 	correctionJob, err := newDirectCodingTypeScriptPortableJob(fragmentJob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	correctionPrompt, _, err := assemblyline.RenderPortableJob(correctionJob)
+	correctionPrompt, correctionSchema, err := assemblyline.RenderPortableJob(correctionJob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(correctionPrompt), 5895; got != want {
-		t.Fatalf("correction prompt=%dB want exact live boundary=%dB", got, want)
+	if len(correctionPrompt) >= len(invalidCandidate) {
+		t.Fatalf("localized correction prompt=%dB did not reduce invalid candidate=%dB", len(correctionPrompt), len(invalidCandidate))
 	}
-	correctionContract, err := llmResponseContractForPortableJob(correctionJob, nil)
+	for _, forbidden := range []string{
+		"CURRENT_DECLARATION_JSON:", "earlySentinel", "<|endoftext|>", "<|im_start|>",
+	} {
+		if strings.Contains(correctionPrompt, forbidden) {
+			t.Fatalf("localized correction prompt retained %q:\n%s", forbidden, correctionPrompt)
+		}
+	}
+	if !strings.Contains(correctionPrompt, "CURRENT_REPAIR_REGION_JSON:") {
+		t.Fatalf("localized correction prompt does not expose its parser-owned region")
+	}
+	correctionContract, err := llmResponseContractForPortableJob(correctionJob, correctionSchema)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := validateExactStationStaticCall(
-		correctionPrompt, nil, correctionContract,
+		correctionPrompt, correctionSchema, correctionContract,
 		llm.ProviderIdentitySelection{Model: "qwen3.5:9b-q4_K_M", NativeContextLimit: 8192},
 	); err != nil {
 		t.Fatalf("measured correction packet must fit the retained 8K context: %v", err)

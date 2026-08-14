@@ -9,7 +9,10 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-const maxFragmentCorrectionOutputTokens = 2048
+const (
+	maxFragmentCorrectionOutputTokens       = 2048
+	maxFragmentRegionCorrectionOutputTokens = 1024
+)
 
 type llmResponseContract struct {
 	Protocol   llm.ExactPreparedProtocol
@@ -52,15 +55,25 @@ func llmResponseContractForPortableJob(
 	if job.Kind != assemblyline.WorkFragmentCorrection {
 		return contract, nil
 	}
-	if responseSchema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1 {
-		return llmResponseContract{}, fmt.Errorf("fragment correction requires the raw-text response contract")
-	}
 	var input assemblyline.FragmentCorrectionInput
 	if err := json.Unmarshal(job.Payload, &input); err != nil {
 		return llmResponseContract{}, fmt.Errorf("decode fragment correction response contract: %w", err)
 	}
 	if input.Language == "typescript" {
-		contract.MaxTokens = maxFragmentCorrectionOutputTokens
+		if input.RepairRegion != nil {
+			if responseSchema == nil || contract.Protocol != llm.ExactPreparedProtocolStructuredV1 ||
+				contract.Format != llm.ResponseFormatJSON {
+				return llmResponseContract{}, fmt.Errorf("localized TypeScript fragment correction requires the structured JSON response contract")
+			}
+			contract.MaxTokens = maxFragmentRegionCorrectionOutputTokens
+		} else {
+			if responseSchema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1 {
+				return llmResponseContract{}, fmt.Errorf("whole TypeScript fragment correction requires the raw-text response contract")
+			}
+			contract.MaxTokens = maxFragmentCorrectionOutputTokens
+		}
+	} else if responseSchema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1 {
+		return llmResponseContract{}, fmt.Errorf("fragment correction requires the raw-text response contract")
 	}
 	return contract, nil
 }

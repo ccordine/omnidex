@@ -76,6 +76,16 @@ func TestFragmentCorrectionReservesOnlyItsMeasuredBoundedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	regionCorrection, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
+		Language: "typescript", Signature: "function apply(): void",
+		RepairRegion: &assemblyline.TypeScriptFragmentRepairRegion{
+			StartLine: 2, EndLine: 2, Source: "  broken();",
+		},
+		RequiredChange: "Fix the one syntax error.", Diagnostic: "syntax error at line 2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct {
 		name string
 		job  assemblyline.PortableJob
@@ -83,15 +93,24 @@ func TestFragmentCorrectionReservesOnlyItsMeasuredBoundedOutput(t *testing.T) {
 	}{
 		{name: "initial", job: generation, want: 4096},
 		{name: "correction", job: correction, want: 2048},
+		{name: "localized correction", job: regionCorrection, want: 1024},
 		{name: "go correction", job: goCorrection, want: 4096},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			contract, contractErr := llmResponseContractForPortableJob(test.job, nil)
+			_, schema, renderErr := assemblyline.RenderPortableJob(test.job)
+			if renderErr != nil {
+				t.Fatal(renderErr)
+			}
+			contract, contractErr := llmResponseContractForPortableJob(test.job, schema)
 			if contractErr != nil {
 				t.Fatal(contractErr)
 			}
 			if contract.MaxTokens != test.want {
 				t.Fatalf("max output tokens=%d want %d", contract.MaxTokens, test.want)
+			}
+			if test.name == "localized correction" &&
+				(contract.Protocol != llm.ExactPreparedProtocolStructuredV1 || contract.Format != llm.ResponseFormatJSON) {
+				t.Fatalf("localized correction contract=%#v", contract)
 			}
 		})
 	}

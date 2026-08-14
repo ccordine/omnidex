@@ -86,16 +86,32 @@ func (input FragmentCorrectionInput) validate() error {
 		return err
 	}
 	for label, value := range map[string]string{
-		"current declaration": input.CurrentDeclaration,
-		"required change":     input.RequiredChange,
-		"diagnostic":          input.Diagnostic,
+		"required change": input.RequiredChange,
+		"diagnostic":      input.Diagnostic,
 	} {
 		if value == "" || value != strings.TrimSpace(value) {
 			return fmt.Errorf("fragment correction %s is required and must be trimmed", label)
 		}
 	}
-	if len(input.CurrentDeclaration) > maxTypeScriptCurrentDeclarationBytes {
-		return fmt.Errorf("fragment correction current declaration exceeds %d bytes", maxTypeScriptCurrentDeclarationBytes)
+	current := input.CurrentDeclaration
+	if (current == "") == (input.RepairRegion == nil) {
+		return fmt.Errorf("fragment correction requires exactly one current declaration or repair region")
+	}
+	if current != "" {
+		if current != strings.TrimSpace(current) {
+			return fmt.Errorf("fragment correction current declaration must be trimmed")
+		}
+		if len(current) > maxTypeScriptCurrentDeclarationBytes {
+			return fmt.Errorf("fragment correction current declaration exceeds %d bytes", maxTypeScriptCurrentDeclarationBytes)
+		}
+	}
+	if input.RepairRegion != nil {
+		if input.Language != "typescript" {
+			return fmt.Errorf("fragment correction repair regions require TypeScript")
+		}
+		if err := input.RepairRegion.validate(); err != nil {
+			return fmt.Errorf("fragment correction repair region: %w", err)
+		}
 	}
 	if len(input.RequiredChange) > maxTypeScriptRequiredChangeBytes {
 		return fmt.Errorf("fragment correction required change exceeds %d bytes", maxTypeScriptRequiredChangeBytes)

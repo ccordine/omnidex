@@ -39,6 +39,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 		}
 		attemptJob := baseJob
 		attemptModel := modelName
+		var repairRegion *assemblyline.TypeScriptFragmentRepairRegion
 		if lastErr != nil {
 			attemptModel = strings.TrimSpace(runtime.CorrectionModel)
 			if attemptModel == "" {
@@ -48,7 +49,23 @@ func runDirectCodingTypeScriptFragmentWorker(
 				)
 			}
 			retry := job
-			retry.current = lastCandidate
+			if failure, localized := assemblyline.TypeScriptSyntaxFailureFromError(lastErr); localized {
+				region, regionErr := assemblyline.NewTypeScriptFragmentRepairRegion(
+					lastCandidate, failure, 2*(attempt-1),
+				)
+				if regionErr != nil {
+					return "", failDirectCodingTypeScriptFragmentWorker(
+						runtime, attemptModel, job.block.ID, attempt-1,
+						fmt.Errorf("localize TypeScript syntax repair: %w", regionErr),
+					)
+				}
+				retry.current = ""
+				retry.repairRegion = &region
+				repairRegion = &region
+			} else {
+				retry.current = lastCandidate
+				retry.repairRegion = nil
+			}
 			retry.failure = directCodingTypeScriptFragmentFailure(job.failure, lastErr)
 			retry.requiredChange = directCodingTypeScriptRequiredChangeFor(lastErr)
 			attemptJob, err = newDirectCodingTypeScriptPortableJob(retry)
@@ -63,7 +80,11 @@ func runDirectCodingTypeScriptFragmentWorker(
 		currentBytes := len(strings.TrimSpace(job.current))
 		correctionBytes := len(strings.TrimSpace(job.failure))
 		if lastErr != nil {
-			currentBytes = len(lastCandidate)
+			if repairRegion != nil {
+				currentBytes = len(repairRegion.Source)
+			} else {
+				currentBytes = len(lastCandidate)
+			}
 			correctionBytes = len(strings.TrimSpace(lastErr.Error()))
 		}
 		emitTypedWorker(runtime, typedWorkerEvent{
@@ -81,7 +102,21 @@ func runDirectCodingTypeScriptFragmentWorker(
 			err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
 			return "", failDirectCodingTypeScriptFragmentWorker(runtime, attemptModel, job.block.ID, attempt, err)
 		}
-		lastCandidate = directCodingCorrectionCandidate(result.Candidate)
+		candidate := directCodingCorrectionCandidate(result.Candidate)
+		if repairRegion != nil {
+			var replacement string
+			replacement, err = assemblyline.DecodeTypeScriptFragmentRepairDecision(
+				*repairRegion, result.Candidate,
+			)
+			if err == nil {
+				candidate, err = assemblyline.ApplyTypeScriptFragmentRepairRegion(
+					lastCandidate, *repairRegion, replacement,
+				)
+			}
+		}
+		if err == nil {
+			lastCandidate = candidate
+		}
 		if err == nil {
 			if _, duplicate := seenCandidates[lastCandidate]; duplicate {
 				err = fmt.Errorf("repeated identical candidate rejected; the correction made no progress")
@@ -90,7 +125,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 			}
 		}
 		if err == nil {
-			candidate := strings.TrimSpace(result.Candidate)
+			candidate := strings.TrimSpace(lastCandidate)
 			var fragment assemblyline.TypeScriptFragment
 			fragment, err = assemblyline.ParseTypeScriptFunction(assemblyline.TypeScriptFunctionContract{
 				Signature: job.block.Signature, TSX: job.tsx, Policy: job.block.Policy,
@@ -111,18 +146,31 @@ func runDirectCodingTypeScriptFragmentWorker(
 				}
 			}
 		}
-		err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
-		if err == nil {
+		rejectionErr := err
+		if rejectionErr == nil {
 			return "", failDirectCodingTypeScriptFragmentWorker(runtime, attemptModel, job.block.ID, attempt,
 				fmt.Errorf("TypeScript fragment rejection lost its exact failure"))
 		}
-		lastErr = err
+		if runtime.Finalize != nil {
+			if persistErr := runtime.Finalize(attemptJob, result, rejectionErr); persistErr != nil {
+				return "", failDirectCodingTypeScriptFragmentWorker(
+					runtime, attemptModel, job.block.ID, attempt,
+					fmt.Errorf("persist TypeScript fragment rejection: %w", persistErr),
+				)
+			}
+		}
+		lastErr = rejectionErr
 		emitTypedWorker(runtime, typedWorkerEvent{
 			State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.block.ID,
 			Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-			Detail: trimForBudget(err.Error(), 1200),
+			Detail: trimForBudget(rejectionErr.Error(), 1200),
 		})
-		if strings.Contains(err.Error(), "repeated identical candidate") {
+		if repairRegion != nil {
+			if _, remainsSyntaxLocal := assemblyline.TypeScriptSyntaxFailureFromError(rejectionErr); !remainsSyntaxLocal {
+				break
+			}
+		}
+		if strings.Contains(rejectionErr.Error(), "repeated identical candidate") {
 			break
 		}
 	}
@@ -137,14 +185,18 @@ func directCodingCorrectionCandidate(raw string) string {
 
 func newDirectCodingTypeScriptPortableJob(job directCodingTypeScriptFragmentJob) (assemblyline.PortableJob, error) {
 	capabilities := make([]string, 0, 1)
-	if available := strings.TrimSpace(job.available); available != "" {
+	if available := strings.TrimSpace(job.available); available != "" && job.repairRegion == nil {
 		capabilities = append(capabilities, available)
 	}
-	if strings.TrimSpace(job.current) == "" {
+	permittedSymbols := append([]string(nil), job.block.Globals...)
+	if job.repairRegion != nil {
+		permittedSymbols = nil
+	}
+	if strings.TrimSpace(job.current) == "" && job.repairRegion == nil {
 		return assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
 			Language: "typescript", Signature: strings.TrimSpace(job.block.Signature),
 			Behavior: strings.TrimSpace(job.block.Contract), Capabilities: capabilities,
-			PermittedSymbols: append([]string(nil), job.block.Globals...),
+			PermittedSymbols: permittedSymbols,
 		})
 	}
 	diagnostic := directCodingTypeScriptModelFailure(job.failure)
@@ -154,8 +206,9 @@ func newDirectCodingTypeScriptPortableJob(job directCodingTypeScriptFragmentJob)
 	}
 	return assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: strings.TrimSpace(job.block.Signature),
-		Capabilities: capabilities, PermittedSymbols: append([]string(nil), job.block.Globals...),
+		Capabilities: capabilities, PermittedSymbols: permittedSymbols,
 		CurrentDeclaration: strings.TrimSpace(job.current),
+		RepairRegion:       job.repairRegion,
 		RequiredChange:     requiredChange,
 		Diagnostic:         diagnostic,
 	})

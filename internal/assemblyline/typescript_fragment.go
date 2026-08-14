@@ -1,6 +1,7 @@
 package assemblyline
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -20,6 +21,24 @@ type TypeScriptFragment struct {
 	Name   string
 	API    string
 	Source string
+}
+
+type TypeScriptSyntaxFailure struct {
+	Kind   string
+	Line   int
+	Column int
+}
+
+func (failure TypeScriptSyntaxFailure) Error() string {
+	return fmt.Sprintf("%s at line %d column %d", failure.Kind, failure.Line, failure.Column)
+}
+
+func TypeScriptSyntaxFailureFromError(err error) (TypeScriptSyntaxFailure, bool) {
+	var failure TypeScriptSyntaxFailure
+	if !errors.As(err, &failure) {
+		return TypeScriptSyntaxFailure{}, false
+	}
+	return failure, true
 }
 
 func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (TypeScriptFragment, error) {
@@ -93,7 +112,7 @@ func parseSingleTypeScriptFunction(
 	if root.HasError() {
 		detail := firstTypeScriptSyntaxFailure(root)
 		closeAll()
-		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf("TypeScript syntax rejected: %s", detail)
+		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf("TypeScript syntax rejected: %w", detail)
 	}
 	if root.NamedChildCount() != 1 {
 		closeAll()
@@ -187,13 +206,13 @@ func canonicalTypeScriptNode(node *treesitter.Node, skippedID uintptr, source []
 	return output.String()
 }
 
-func firstTypeScriptSyntaxFailure(root *treesitter.Node) string {
+func firstTypeScriptSyntaxFailure(root *treesitter.Node) TypeScriptSyntaxFailure {
 	if root == nil {
-		return "unknown parser failure"
+		return TypeScriptSyntaxFailure{Kind: "unknown parser failure", Line: 1, Column: 1}
 	}
 	if root.IsError() || root.IsMissing() {
 		position := root.StartPosition()
-		return fmt.Sprintf("%s at line %d column %d", root.Kind(), position.Row+1, position.Column+1)
+		return TypeScriptSyntaxFailure{Kind: root.Kind(), Line: int(position.Row) + 1, Column: int(position.Column) + 1}
 	}
 	for index := uint(0); index < root.ChildCount(); index++ {
 		child := root.Child(index)
@@ -202,7 +221,7 @@ func firstTypeScriptSyntaxFailure(root *treesitter.Node) string {
 		}
 	}
 	position := root.StartPosition()
-	return fmt.Sprintf("invalid syntax at line %d column %d", position.Row+1, position.Column+1)
+	return TypeScriptSyntaxFailure{Kind: "invalid syntax", Line: int(position.Row) + 1, Column: int(position.Column) + 1}
 }
 
 func ValidateTypeScriptSource(source string, tsx bool) error {
@@ -222,7 +241,7 @@ func ValidateTypeScriptSource(source string, tsx bool) error {
 	}
 	defer tree.Close()
 	if root := tree.RootNode(); root.HasError() {
-		return fmt.Errorf("TypeScript syntax rejected: %s", firstTypeScriptSyntaxFailure(root))
+		return fmt.Errorf("TypeScript syntax rejected: %w", firstTypeScriptSyntaxFailure(root))
 	}
 	return nil
 }
