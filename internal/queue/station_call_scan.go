@@ -19,7 +19,7 @@ func scanStationCallOpening(scanner stationGapScanner, opening *StationCallOpeni
 		&opening.ObservationChallenge, &opening.Model, &opening.ContextTokens,
 		&opening.MaxInputTokens, &opening.MaxOutputTokens, &opening.ModelInput,
 		&opening.ModelInputSHA256, &opening.ModelInputBytes,
-		&opening.ModelInputTokenUpperBound, &opening.CreatedAt,
+		&opening.ModelInputTokenCeiling, &opening.CreatedAt,
 	); err != nil {
 		return err
 	}

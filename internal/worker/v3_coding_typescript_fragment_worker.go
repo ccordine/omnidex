@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,10 @@ import (
 )
 
 const directCodingTypeScriptRequiredChange = "Fix only the observed local validation failure in the current declaration. Preserve all unrelated executable behavior."
+
+var errDirectCodingTypeScriptUnchangedCorrection = errors.New(
+	"unchanged correction rejected; modify the current declaration to resolve the original failure",
+)
 
 func runDirectCodingTypeScriptFragmentWorker(
 	runtime typedWorkerRuntime,
@@ -113,11 +118,16 @@ func runDirectCodingTypeScriptFragmentWorker(
 					lastCandidate, *repairRegion, replacement,
 				)
 			}
+		} else {
+			candidate, err = assemblyline.DecodeTypeScriptFunctionModelResponse(
+				assemblyline.TypeScriptFunctionContract{
+					Signature: job.block.Signature, TSX: job.tsx, Policy: job.block.Policy,
+				},
+				result.Candidate,
+			)
 		}
-		if err == nil {
+		if candidate != "" {
 			lastCandidate = candidate
-		}
-		if err == nil {
 			if _, duplicate := seenCandidates[lastCandidate]; duplicate {
 				err = fmt.Errorf("repeated identical candidate rejected; the correction made no progress")
 			} else {
@@ -133,7 +143,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 			if err == nil {
 				source := strings.TrimSpace(fragment.Source)
 				if strings.TrimSpace(job.current) != "" && source == strings.TrimSpace(job.current) {
-					err = fmt.Errorf("unchanged correction rejected; modify the current declaration to resolve the original failure")
+					err = errDirectCodingTypeScriptUnchangedCorrection
 				} else {
 					if err = finalizeTypedWorkerResult(runtime, attemptJob, result, nil); err != nil {
 						return "", failDirectCodingTypeScriptFragmentWorker(runtime, attemptModel, job.block.ID, attempt, err)
@@ -171,6 +181,9 @@ func runDirectCodingTypeScriptFragmentWorker(
 			}
 		}
 		if strings.Contains(rejectionErr.Error(), "repeated identical candidate") {
+			break
+		}
+		if errors.Is(rejectionErr, errDirectCodingTypeScriptUnchangedCorrection) {
 			break
 		}
 	}

@@ -46,14 +46,17 @@ func BuildApplicationJobSpecificationPrompt(input ApplicationJobSpecificationInp
 	if err := validateApplicationJobSpecificationInput(input); err != nil {
 		return "", err
 	}
-	authority := projectApplicationJobSpecificationAuthority(input)
-	raw, err := json.Marshal(authority)
+	projection := struct {
+		UserAuthority applicationJobSpecificationAuthority `json:"user_authority"`
+	}{UserAuthority: projectApplicationJobSpecificationAuthority(input)}
+	raw, err := json.Marshal(projection)
 	if err != nil {
 		return "", fmt.Errorf("encode application job specification authority: %w", err)
 	}
 	prompt := strings.Join([]string{
 		"Turn the focused accepted requirement into one independently executable local job specification.",
-		"The objective must say specifically what to implement in the named product; it must not merely repeat the requirement noun or say that it works or is usable. List 1 to 4 required_behaviors that each name a concrete action and result, and 1 to 4 specific observable acceptance_criteria that collectively cover every required behavior. Remain faithful to the focused requirement and use the other accepted requirements only to preserve product meaning and boundaries.",
+		"Only user_authority contains stated requirements. Your objective, required_behaviors, and acceptance_criteria are minimum sufficient derived build decisions for this build; never present them as user-stated facts.",
+		"The objective must say specifically what to implement in the named product; it must not merely repeat the requirement noun or say that it works or is usable. List 1 to 4 required_behaviors that each name a concrete action and result, and 1 to 4 specific observable acceptance_criteria that collectively cover every required behavior. Observable does not require invented numeric precision. Do not add capabilities, quantities, counts, ranges, timing, defaults, compatibility promises, or constraints absent from user_authority. Remain faithful to the focused requirement and use the other accepted requirements only to preserve product meaning and boundaries.",
 		"Do not choose files, paths, tools, dependencies, execution order, or claim execution status. Do not add unrelated product scope. Return only the closed JSON response.",
 		"APPLICATION_JOB_SPECIFICATION_AUTHORITY_JSON:\n" + string(raw),
 	}, "\n\n")

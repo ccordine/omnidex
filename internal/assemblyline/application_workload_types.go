@@ -11,7 +11,6 @@ const (
 	maxApplicationBehaviorRunes       = 512
 	maxApplicationCriterionRunes      = 512
 	maxApplicationDependencyIDBytes   = 64
-	maxApplicationWorkloadDefectBytes = 1200
 )
 
 type ApplicationJobSpecificationInput struct {

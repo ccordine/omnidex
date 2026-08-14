@@ -58,6 +58,36 @@ func TestGenericBrowserProgramPinsItsSupportedToolchain(t *testing.T) {
 	if got := manifest.DevDependencies["jsdom"]; got != "26.1.0" {
 		t.Fatalf("jsdom=%q want Node 20-compatible 26.1.0", got)
 	}
+	if got := manifest.DevDependencies["@testing-library/jest-dom"]; got != "7.0.0" {
+		t.Fatalf("@testing-library/jest-dom=%q want 7.0.0", got)
+	}
+}
+
+func TestGenericBrowserTestsRegisterTheCodeOwnedDOMMatcherSurface(t *testing.T) {
+	t.Parallel()
+
+	specification := genericBrowserSpecification()
+	input := applicationWorkloadInput(specification)
+	frozen := genericBrowserWorkload(t, specification)
+	contexts, err := directCodingApplicationTaskContexts(input, frozen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptance, err := genericBrowserAcceptanceDocuments(
+		specification, contexts, genericBrowserCapabilityBindings(specification),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documents := append([]assemblyline.TypeScriptDocument{
+		genericBrowserSmokeTestDocument(specification),
+		genericBrowserRuntimeTestDocument(specification.Requirements),
+	}, acceptance...)
+	for _, document := range documents {
+		if !strings.Contains(document.Header, "import '@testing-library/jest-dom/vitest';") {
+			t.Fatalf("browser test %s lacks the registered DOM matcher surface:\n%s", document.ID, document.Header)
+		}
+	}
 }
 
 func TestGenericBrowserRuntimeContainsNoWorkloadDomainService(t *testing.T) {

@@ -78,7 +78,7 @@ func newApplicationJobSpecificationRepairPortablePayload(
 		Authority: input.authority,
 		Retained:  cloneApplicationJobSpecification(input.retained),
 		Review: ApplicationJobSpecificationReview{
-			Decision: input.review.Decision, Field: input.review.Field, Defect: input.review.Defect,
+			Decision: input.review.Decision, Field: input.review.Field,
 		},
 		Attempt: input.attempt, ReviewBinding: input.review.binding,
 	}

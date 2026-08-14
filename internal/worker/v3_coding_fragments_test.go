@@ -42,8 +42,8 @@ func TestTypeScriptFragmentWorkerCorrectsOnlyTheRejectedFunction(t *testing.T) {
 	if !strings.Contains(prompts[1], "export function apply") {
 		t.Fatalf("correction did not receive the exact rejected declaration:\n%s", prompts[1])
 	}
-	if !strings.Contains(prompts[1], "```typescript") {
-		t.Fatalf("correction did not preserve the exact rejected fenced candidate:\n%s", prompts[1])
+	if strings.Contains(prompts[1], "```typescript") {
+		t.Fatalf("correction replayed normalized response framing:\n%s", prompts[1])
 	}
 	if strings.Contains(prompts[1], "Return the input plus one") || strings.Contains(prompts[1], "LOCAL_BEHAVIOR") {
 		t.Fatalf("correction replayed the superseded initial behavior:\n%s", prompts[1])
@@ -68,7 +68,6 @@ func TestTypeScriptFragmentWorkerRepairsOnlyParserOwnedLineRegion(t *testing.T) 
 		"  const keepFour = keepThree + 1;",
 		"  const keepFive = keepFour + 1;",
 		"  return keepFive;",
-		"}<|endoftext|><|im_start|>",
 	}, "\n")
 	var prompts []string
 	var correctionInput assemblyline.FragmentCorrectionInput
@@ -91,7 +90,12 @@ func TestTypeScriptFragmentWorkerRepairsOnlyParserOwnedLineRegion(t *testing.T) 
 				if err := json.Unmarshal(portable.Payload, &correctionInput); err != nil {
 					t.Fatal(err)
 				}
-				candidate = `{"replacement_lines":["  const keepFive = keepFour + 1;\n  return keepFive;\n}"]}`
+				replacement := correctionInput.RepairRegion.Source + "\n}"
+				encoded, err := json.Marshal(map[string]any{"replacement_lines": []string{replacement}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				candidate = string(encoded)
 			}
 			return assemblyline.PortableResult{JobID: portable.ID, Candidate: candidate}, nil
 		},
@@ -100,23 +104,22 @@ func TestTypeScriptFragmentWorkerRepairsOnlyParserOwnedLineRegion(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prompts) != 2 || !strings.Contains(source, "const keepOne") ||
-		strings.Contains(source, "<|endoftext|>") {
+	if len(prompts) != 2 || !strings.Contains(source, "const keepOne") {
 		t.Fatalf("localized repair did not preserve and reparse the full declaration: attempts=%d\n%s", len(prompts), source)
 	}
 	if correctionInput.CurrentDeclaration != "" || correctionInput.RepairRegion == nil ||
 		len(correctionInput.Capabilities) != 0 || len(correctionInput.PermittedSymbols) != 0 {
 		t.Fatalf("parser correction retained whole-declaration authority: %#v", correctionInput)
 	}
-	if correctionInput.RepairRegion.StartLine != 6 || correctionInput.RepairRegion.EndLine != 8 {
-		t.Fatalf("repair region=%#v want lines 6..8", correctionInput.RepairRegion)
+	if correctionInput.RepairRegion.StartLine != 5 || correctionInput.RepairRegion.EndLine != 7 {
+		t.Fatalf("repair region=%#v want lines 5..7", correctionInput.RepairRegion)
 	}
 	properties, ok := correctionSchema["properties"].(map[string]any)
 	if !ok || len(properties) != 1 || properties["replacement_lines"] == nil ||
 		correctionSchema["additionalProperties"] != false {
 		t.Fatalf("localized correction did not receive its exact closed response schema: %#v", correctionSchema)
 	}
-	for _, forbidden := range []string{"const keepOne", "const keepTwo", "<|endoftext|>", "<|im_start|>"} {
+	for _, forbidden := range []string{"const keepOne", "const keepTwo"} {
 		if strings.Contains(prompts[1], forbidden) {
 			t.Fatalf("localized correction prompt exposed %q:\n%s", forbidden, prompts[1])
 		}
@@ -222,7 +225,7 @@ func TestTypeScriptFragmentWorkerStopsWhenRejectionPersistenceFails(t *testing.T
 	}
 }
 
-func TestTypeScriptFragmentWorkerRejectsMarkdownCodeEnvelope(t *testing.T) {
+func TestTypeScriptFragmentWorkerOwnsOneExactMarkdownCodeEnvelope(t *testing.T) {
 	job := directCodingTypeScriptFragmentJob{block: assemblyline.TypeScriptBlock{
 		ID: "calculation.apply", Signature: "function apply(value: number): number",
 		Contract: "Return the input plus one.", API: "function apply(value: number): number",
@@ -233,12 +236,16 @@ func TestTypeScriptFragmentWorkerRejectsMarkdownCodeEnvelope(t *testing.T) {
 			return "```typescript\nfunction apply(value: number): number { return value + 1; }\n```", nil
 		}),
 	}
-	if _, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job); err == nil {
-		t.Fatal("Markdown-fenced TypeScript was accepted as one exact declaration")
+	source, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(source, "```") || !strings.HasPrefix(source, "function apply") {
+		t.Fatalf("source boundary did not own exact code framing: %q", source)
 	}
 }
 
-func TestTypeScriptFragmentWorkerRetriesAnUnchangedCorrectionWithOriginalFailure(t *testing.T) {
+func TestTypeScriptFragmentWorkerStopsAnUnchangedCorrectionBeforeDuplicateDispatch(t *testing.T) {
 	const current = "function apply(value: number): number { return value; }"
 	job := directCodingTypeScriptFragmentJob{
 		block: assemblyline.TypeScriptBlock{
@@ -253,26 +260,18 @@ func TestTypeScriptFragmentWorkerRetriesAnUnchangedCorrectionWithOriginalFailure
 		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "corrector",
 		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
 			prompts = append(prompts, prompt)
-			if len(prompts) == 1 {
-				return current, nil
-			}
-			return "function apply(value: number): number { return value + 1; }", nil
+			return current, nil
 		}),
 	}
-	source, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
-	if err != nil {
-		t.Fatal(err)
+	_, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
+	if err == nil || !strings.Contains(err.Error(), "unchanged correction rejected") {
+		t.Fatalf("unchanged correction error=%v", err)
 	}
-	if len(prompts) != 2 || !strings.Contains(source, "value + 1") {
-		t.Fatalf("prompts=%d source=%q", len(prompts), source)
+	if len(prompts) != 1 {
+		t.Fatalf("unchanged correction dispatched %d identical jobs, want 1", len(prompts))
 	}
-	for _, required := range []string{"expected 1 to be 2", "unchanged"} {
-		if !strings.Contains(strings.ToLower(prompts[1]), strings.ToLower(required)) {
-			t.Fatalf("second correction prompt omitted %q:\n%s", required, prompts[1])
-		}
-	}
-	if strings.Contains(prompts[1], "Return the input plus one") || strings.Contains(prompts[1], "LOCAL_BEHAVIOR") {
-		t.Fatalf("correction prompt replayed the original local behavior contract:\n%s", prompts[1])
+	if !strings.Contains(prompts[0], "expected 1 to be 2") {
+		t.Fatalf("initial correction omitted the exact observed failure:\n%s", prompts[0])
 	}
 }
 

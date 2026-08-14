@@ -77,7 +77,7 @@ func insertStationCallOpeningTx(
 		string(opening.Expectation), opening.ExpectationSHA256, opening.ObservationChallenge,
 		opening.Model, opening.ContextTokens, opening.MaxInputTokens, opening.MaxOutputTokens,
 		opening.ModelInput, opening.ModelInputSHA256, opening.ModelInputBytes,
-		opening.ModelInputTokenUpperBound), opening)
+		opening.ModelInputTokenCeiling), opening)
 	if err != nil {
 		return fmt.Errorf("persist exact station call opening: %w", err)
 	}

@@ -76,7 +76,8 @@ func genericBrowserSmokeTestDocument(
 ) assemblyline.TypeScriptDocument {
 	return assemblyline.TypeScriptDocument{
 		ID: "application_smoke_test", Path: "src/App.test.tsx",
-		Header: `import { render, screen } from '@testing-library/react';
+		Header: `import '@testing-library/jest-dom/vitest';
+import { render, screen } from '@testing-library/react';
 import { App } from './App';`,
 		Blocks: []assemblyline.TypeScriptBlock{{
 			ID: "tests.application_smoke", Static: genericBrowserSmokeTestSource(specification),

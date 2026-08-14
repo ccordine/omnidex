@@ -83,10 +83,10 @@ func TestCodingContractDoesNotRequireLearnedSkillEnrichment(t *testing.T) {
 
 	requirement := assemblyline.Requirement{ID: "requirement_001", SourceQuote: "filter visible records"}
 	contract := genericBrowserFeatureContract(
-		"Exact requirement: "+requirement.SourceQuote,
+		"Exact user requirement: "+requirement.SourceQuote,
 		nil,
 	)
-	if !strings.Contains(contract, "Exact requirement: "+requirement.SourceQuote) {
+	if !strings.Contains(contract, "Exact user requirement: "+requirement.SourceQuote) {
 		t.Fatalf("contract lost exact requirement: %q", contract)
 	}
 	if strings.Contains(strings.ToLower(contract), "validated procedure") {

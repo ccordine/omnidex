@@ -78,27 +78,39 @@ func BuildApplicationJobSpecificationRepairPrompt(
 		return "", err
 	}
 	projection := struct {
-		Authority   applicationJobSpecificationAuthority `json:"authority"`
-		Retained    ApplicationJobSpecification          `json:"retained_specification"`
-		TargetField ApplicationJobSpecificationField     `json:"target_field"`
-		ExactDefect string                               `json:"exact_defect"`
+		UserAuthority      applicationJobSpecificationAuthority `json:"user_authority"`
+		DerivedCandidate   ApplicationJobSpecification          `json:"derived_candidate"`
+		TargetDerivedField ApplicationJobSpecificationField     `json:"target_derived_field"`
 	}{
-		Authority: projectApplicationJobSpecificationAuthority(input.authority),
-		Retained:  input.retained, TargetField: input.review.Field, ExactDefect: input.review.Defect,
+		UserAuthority:    projectApplicationJobSpecificationAuthority(input.authority),
+		DerivedCandidate: input.retained, TargetDerivedField: input.review.Field,
 	}
 	raw, err := json.Marshal(projection)
 	if err != nil {
 		return "", fmt.Errorf("encode application job specification repair authority: %w", err)
 	}
 	prompt := strings.Join([]string{
-		"Repair exactly the named top-level semantic field to resolve the exact review defect.",
-		"Preserve all other retained fields and remain faithful to the authoritative focused requirement. Return only the one-field JSON replacement.",
+		"Repair exactly target_derived_field using the code-owned instruction: " + applicationJobSpecificationRepairInstruction(input.review.Field),
+		"Only user_authority contains stated requirements. derived_candidate contains derived build decisions, not user facts. Preserve every other derived field. Use the minimum sufficient concrete detail. Observable does not mean numeric. Do not add capabilities, quantities, counts, ranges, timing, defaults, compatibility promises, or constraints absent from user_authority. Return only the one-field JSON replacement.",
 		"APPLICATION_JOB_SPECIFICATION_REPAIR_AUTHORITY_JSON:\n" + string(raw),
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf("application job specification repair prompt exceeds %d bytes", maxPortablePayloadBytes)
 	}
 	return prompt, nil
+}
+
+func applicationJobSpecificationRepairInstruction(field ApplicationJobSpecificationField) string {
+	switch field {
+	case ApplicationJobSpecificationObjectiveField:
+		return "state one concrete local implementation outcome faithful to the focused requirement"
+	case ApplicationJobSpecificationRequiredBehaviorsField:
+		return "state the minimum concrete user actions and observable results needed to deliver the focused requirement"
+	case ApplicationJobSpecificationAcceptanceCriteriaField:
+		return "state observable checks that collectively cover the retained required behaviors without inventing precision"
+	default:
+		return "reject the unsupported repair target"
+	}
 }
 
 func ApplicationJobSpecificationRepairResponseSchema(

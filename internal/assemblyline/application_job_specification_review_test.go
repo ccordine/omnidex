@@ -22,7 +22,7 @@ func TestApplicationJobSpecificationReviewIsBoundToAuthorityAndRetainedState(t *
 	for _, exact := range []string{
 		string(authority.Surface), authority.ProductQuote, authority.FocusedRequirement.SourceQuote,
 		retained.Objective, retained.RequiredBehaviors[0], retained.AcceptanceCriteria[0],
-		"rather than merely repeating a noun", "every required behavior is covered",
+		`"user_authority"`, `"derived_candidate"`, "observable acceptance criteria collectively cover",
 	} {
 		if !strings.Contains(prompt, exact) {
 			t.Fatalf("review prompt omitted %q:\n%s", exact, prompt)
@@ -42,7 +42,7 @@ func TestApplicationJobSpecificationReviewIsBoundToAuthorityAndRetainedState(t *
 	}
 }
 
-func TestApplicationJobSpecificationReviewWireAcceptsOrNamesOneExactDefect(t *testing.T) {
+func TestApplicationJobSpecificationReviewWireAcceptsOrNamesOneDerivedField(t *testing.T) {
 	t.Parallel()
 	input, err := NewApplicationJobSpecificationReviewInput(
 		applicationJobSpecificationTestInput(1), applicationJobSpecificationTestValue(), 1,
@@ -61,7 +61,7 @@ func TestApplicationJobSpecificationReviewWireAcceptsOrNamesOneExactDefect(t *te
 	accept := branches[0].(map[string]any)
 	repairBranch := branches[1].(map[string]any)
 	if !reflect.DeepEqual(accept["required"], []string{"decision"}) ||
-		!reflect.DeepEqual(repairBranch["required"], []string{"decision", "field", "defect"}) {
+		!reflect.DeepEqual(repairBranch["required"], []string{"decision", "field"}) {
 		t.Fatalf("review schema branches do not make legal responses complete: %#v", branches)
 	}
 	for _, branch := range []map[string]any{accept, repairBranch} {
@@ -73,22 +73,22 @@ func TestApplicationJobSpecificationReviewWireAcceptsOrNamesOneExactDefect(t *te
 	if err != nil || accepted.Decision != ApplicationJobSpecificationReviewAccept {
 		t.Fatalf("accepted review=%+v error=%v", accepted, err)
 	}
-	repair, err := DecodeApplicationJobSpecificationReview(input, `{"decision":"repair","field":"required_behaviors","defect":"The behaviors omit the requested channel audio-state interaction."}`)
+	repair, err := DecodeApplicationJobSpecificationReview(input, `{"decision":"repair","field":"required_behaviors"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if repair.Decision != ApplicationJobSpecificationReviewRepair ||
-		repair.Field != ApplicationJobSpecificationRequiredBehaviorsField || repair.Defect == "" {
+		repair.Field != ApplicationJobSpecificationRequiredBehaviorsField {
 		t.Fatalf("repair review=%+v", repair)
 	}
 
 	invalid := []string{
 		`{"decision":"accept","field":"objective"}`,
 		`{"decision":"accept","defect":"Unwanted."}`,
-		`{"decision":"repair","field":"objective"}`,
-		`{"decision":"repair","field":"path","defect":"Wrong."}`,
-		`{"decision":"repair","field":"objective","defect":" Wrong. "}`,
-		`{"decision":"repair","field":"objective","defect":"Wrong.","path":"src/app.tsx"}`,
+		`{"decision":"repair"}`,
+		`{"decision":"repair","field":"path"}`,
+		`{"decision":"repair","field":"objective","defect":"Add at least eight items at 30 Hz."}`,
+		`{"decision":"repair","field":"objective","path":"src/app.tsx"}`,
 	}
 	for _, raw := range invalid {
 		if _, err := DecodeApplicationJobSpecificationReview(input, raw); err == nil {
@@ -110,7 +110,7 @@ func TestApplicationJobSpecificationRepairReplacesExactlyOneTopLevelField(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	review, err := DecodeApplicationJobSpecificationReview(reviewInput, `{"decision":"repair","field":"required_behaviors","defect":"Required behavior is not specific enough to execute."}`)
+	review, err := DecodeApplicationJobSpecificationReview(reviewInput, `{"decision":"repair","field":"required_behaviors"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,9 +122,18 @@ func TestApplicationJobSpecificationRepairReplacesExactlyOneTopLevelField(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, exact := range []string{review.Defect, retained.Objective, retained.RequiredBehaviors[0]} {
+	for _, exact := range []string{
+		retained.Objective, retained.RequiredBehaviors[0],
+		`"user_authority"`, `"derived_candidate"`, `"target_derived_field"`,
+		"Observable does not mean numeric",
+	} {
 		if !strings.Contains(prompt, exact) {
 			t.Fatalf("repair prompt omitted %q:\n%s", exact, prompt)
+		}
+	}
+	for _, forbidden := range []string{"exact_defect", "at least eight", "30 Hz"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("repair prompt exposed reviewer-authored authority %q:\n%s", forbidden, prompt)
 		}
 	}
 	properties := schema["properties"].(map[string]any)
@@ -165,10 +174,7 @@ func TestApplicationJobSpecificationRepairSupportsOnlyThreeSemanticFields(t *tes
 		field, raw := field, raw
 		t.Run(string(field), func(t *testing.T) {
 			t.Parallel()
-			review := applicationJobSpecificationRepairReview(
-				t, authority, retained, field,
-				"The field is not specific enough to implement and verify.",
-			)
+			review := applicationJobSpecificationRepairReview(t, authority, retained, field)
 			input, err := NewApplicationJobSpecificationRepairInput(authority, retained, review, 2)
 			if err != nil {
 				t.Fatal(err)
@@ -190,7 +196,6 @@ func TestApplicationJobSpecificationRepairRejectsNoOpRetargetAndAuthorityDrift(t
 	retained := applicationJobSpecificationTestValue()
 	review := applicationJobSpecificationRepairReview(
 		t, authority, retained, ApplicationJobSpecificationObjectiveField,
-		"The objective is too vague to execute.",
 	)
 	input, err := NewApplicationJobSpecificationRepairInput(authority, retained, review, 2)
 	if err != nil {
@@ -220,7 +225,6 @@ func TestApplicationJobSpecificationRepairRejectsNoOpRetargetAndAuthorityDrift(t
 	accepted := review
 	accepted.Decision = ApplicationJobSpecificationReviewAccept
 	accepted.Field = ""
-	accepted.Defect = ""
 	if _, err := NewApplicationJobSpecificationRepairInput(authority, retained, accepted, 1); err == nil {
 		t.Fatal("constructed repair from accepted review")
 	}
@@ -231,7 +235,6 @@ func applicationJobSpecificationRepairReview(
 	authority ApplicationJobSpecificationInput,
 	retained ApplicationJobSpecification,
 	field ApplicationJobSpecificationField,
-	defect string,
 ) ApplicationJobSpecificationReview {
 	t.Helper()
 	input, err := NewApplicationJobSpecificationReviewInput(authority, retained, 1)
@@ -240,7 +243,7 @@ func applicationJobSpecificationRepairReview(
 	}
 	raw, err := json.Marshal(map[string]string{
 		"decision": string(ApplicationJobSpecificationReviewRepair),
-		"field":    string(field), "defect": defect,
+		"field":    string(field),
 	})
 	if err != nil {
 		t.Fatal(err)

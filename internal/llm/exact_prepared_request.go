@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
@@ -19,7 +20,11 @@ const (
 	ExactPreparedTokenizerProfile        = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
 	ExactPreparedPromptJoiner            = "\n"
 	ExactPreparedObjectiveAdvisoryStopV1 = "\n<END_OBJECTIVE_ADVISORY_V1>"
-	MaxRawInputSpecialTokenReserve       = 2
+	ExactPreparedCodeStopV1              = "<|endoftext|>"
+	// MaxExactPreparedModelInputBytes is a gross transport/resource ceiling.
+	// It is deliberately not a token estimate; the provider's tokenizer owns
+	// native context admission and reports the actual counts in its receipt.
+	MaxExactPreparedModelInputBytes = 128 * 1024
 )
 
 type ExactPreparedProtocol string
@@ -158,7 +163,8 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 			return fmt.Errorf("exact raw-text protocol forbids response format and schema")
 		}
 		if prepared.RawTextStopSequence != "" &&
-			prepared.RawTextStopSequence != ExactPreparedObjectiveAdvisoryStopV1 {
+			prepared.RawTextStopSequence != ExactPreparedObjectiveAdvisoryStopV1 &&
+			prepared.RawTextStopSequence != ExactPreparedCodeStopV1 {
 			return fmt.Errorf("exact raw-text protocol stop sequence is not registered")
 		}
 	}
@@ -169,12 +175,11 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	if err != nil {
 		return err
 	}
-	return ValidateExactPreparedInputBudget(
+	return ValidateExactPreparedInputAuthority(
 		prepared.ContextTokens,
 		prepared.ContextTokens-prepared.MaxOutputTokens,
 		prepared.MaxOutputTokens,
 		rawInput,
-		MaxRawInputSpecialTokenReserve,
 	)
 }
 
@@ -187,41 +192,57 @@ func ExactPreparedRequestSHA256(prepared PreparedModel) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
-// ModelInputTokenUpperBound is hard only for the registered raw input
-// protocol. Raw mode removes the model chat template; the frozen Brain binds a
-// conservative reserve for the at-most BOS/EOS tokens the model may add.
-func ModelInputTokenUpperBound(rawInput string, specialTokenReserve int) (int, error) {
-	if rawInput == "" || specialTokenReserve < 0 ||
-		specialTokenReserve > MaxRawInputSpecialTokenReserve {
-		return 0, fmt.Errorf("raw model input token authority is invalid")
-	}
-	return len([]byte(rawInput)) + specialTokenReserve, nil
-}
-
-// ValidateExactPreparedInputBudget is the sole hard input-token authority for
-// raw cognition calls. Each UTF-8 byte is conservatively treated as one token,
-// and the frozen model contract reserves at most the registered BOS/EOS count.
-func ValidateExactPreparedInputBudget(
+// ValidateExactPreparedInputAuthority validates the declared native token
+// ceilings and one coarse byte safety ceiling. It never interprets bytes as
+// tokens. Ollama tokenizes the exact raw request with truncate=false and its
+// immutable receipt supplies the actual prompt/output token counts.
+func ValidateExactPreparedInputAuthority(
 	contextTokens int,
 	maxInputTokens int,
 	maxOutputTokens int,
 	rawInput string,
-	specialTokenReserve int,
 ) error {
 	if err := ValidateInferenceContextTokens(contextTokens); err != nil {
 		return err
 	}
-	if maxInputTokens <= 0 || maxOutputTokens <= 0 {
+	if maxInputTokens <= 0 || maxOutputTokens <= 0 ||
+		maxInputTokens != contextTokens-maxOutputTokens {
 		return fmt.Errorf("exact raw cognition token ceilings must be positive")
 	}
-	upperBound, err := ModelInputTokenUpperBound(rawInput, specialTokenReserve)
-	if err != nil {
+	if !utf8.ValidString(rawInput) || strings.ContainsRune(rawInput, 0) ||
+		strings.TrimSpace(rawInput) == "" {
+		return fmt.Errorf("exact raw cognition input is invalid")
+	}
+	if len(rawInput) > MaxExactPreparedModelInputBytes {
+		return fmt.Errorf(
+			"exact raw cognition input exceeds %d-byte transport ceiling",
+			MaxExactPreparedModelInputBytes,
+		)
+	}
+	return nil
+}
+
+// ValidateExactPreparedNativeUsage proves the actual provider-tokenized call
+// stayed inside the declared input, output, and native context authorities.
+func ValidateExactPreparedNativeUsage(
+	contextTokens int,
+	maxInputTokens int,
+	maxOutputTokens int,
+	usage ProviderGenerationUsage,
+) error {
+	if err := ValidateExactPreparedInputAuthority(
+		contextTokens, maxInputTokens, maxOutputTokens, "usage-receipt",
+	); err != nil {
 		return err
 	}
-	if upperBound > maxInputTokens || upperBound+maxOutputTokens > contextTokens {
+	if usage.PromptEvalCount <= 0 || usage.EvalCount <= 0 {
+		return fmt.Errorf("exact native usage requires positive prompt and output token counts")
+	}
+	if usage.PromptEvalCount > maxInputTokens || usage.EvalCount > maxOutputTokens ||
+		usage.PromptEvalCount+usage.EvalCount > contextTokens {
 		return fmt.Errorf(
-			"exact raw cognition input exceeds token authority: input_upper_bound=%d input_ceiling=%d output_ceiling=%d native_context=%d",
-			upperBound, maxInputTokens, maxOutputTokens, contextTokens,
+			"exact provider context exceeded: prompt_tokens=%d input_ceiling=%d output_tokens=%d output_ceiling=%d native_context=%d",
+			usage.PromptEvalCount, maxInputTokens, usage.EvalCount, maxOutputTokens, contextTokens,
 		)
 	}
 	return nil

@@ -34,7 +34,8 @@ func genericBrowserAcceptanceDocuments(
 		documents = append(documents, assemblyline.TypeScriptDocument{
 			ID:   fmt.Sprintf("acceptance_%03d", sequence),
 			Path: fmt.Sprintf("src/features/%s.test.tsx", functionName),
-			Header: fmt.Sprintf(`import React from 'react';
+			Header: fmt.Sprintf(`import '@testing-library/jest-dom/vitest';
+import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createApplicationRuntime, createFeatureRuntime } from '../runtime';
 import { %s } from './%s';`, functionName, functionName),

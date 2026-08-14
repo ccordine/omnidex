@@ -84,6 +84,19 @@ func TestExactRawTextProtocolBindsRegisteredAdvisoryTerminator(t *testing.T) {
 	}
 }
 
+func TestExactRawTextProtocolBindsRegisteredCodeTerminator(t *testing.T) {
+	prepared := exactProtocolPrepared(t, ExactPreparedProtocolRawTextV1)
+	prepared.RawTextStopSequence = ExactPreparedCodeStopV1
+	got, err := ExactPreparedRequestBytes(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"model":"qwen:9b","options":{"num_ctx":32768,"num_predict":1024,"stop":["<|endoftext|>"],"temperature":0},"prompt":"return one declaration\nReturn only the requested output.","raw":true,"shift":false,"stream":false,"think":false,"truncate":false}`
+	if string(got) != want {
+		t.Fatalf("raw-code stopped request changed:\n got %s\nwant %s", got, want)
+	}
+}
+
 func TestExactPreparedStopIsRawOnlyAndRegistered(t *testing.T) {
 	structured := exactProtocolPrepared(t, ExactPreparedProtocolStructuredV1)
 	structured.RawTextStopSequence = ExactPreparedObjectiveAdvisoryStopV1
@@ -129,12 +142,75 @@ func TestExactRawTextProtocolRejectsImplicitOrStructuredAuthority(t *testing.T) 
 	}
 }
 
-func TestExactRawTextProtocolRejectsInputBeyondItsFixedBudget(t *testing.T) {
+func TestExactRawTextProtocolDoesNotTreatMeasuredInputBytesAsTokens(t *testing.T) {
 	prepared := exactProtocolPrepared(t, ExactPreparedProtocolRawTextV1)
-	prepared.Prompt = strings.Repeat("x", prepared.ContextTokens)
-	if _, err := ExactPreparedRequestBytes(prepared); err == nil ||
-		!strings.Contains(err.Error(), "exceeds token authority") {
-		t.Fatalf("oversized raw-text request error=%v", err)
+	expected := *prepared.ProviderIdentityExpectation
+	expected.NativeContextLimit = 8192
+	challenge, err := DeriveProviderIdentityObservationChallenge(
+		"raw-text-protocol-test", expected,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.ContextTokens = expected.NativeContextLimit
+	prepared.MaxOutputTokens = 2048
+	prepared.ProviderIdentityExpectation = &expected
+	prepared.ProviderObservationChallenge = challenge
+
+	const measuredRawInputBytes = 6485
+	promptBytes := measuredRawInputBytes - len(ExactPreparedPromptJoiner) - len(MinimalGeneratePrompt)
+	prepared.Prompt = strings.Repeat("x", promptBytes)
+	rawInput, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rawInput) != measuredRawInputBytes {
+		t.Fatalf("raw input=%dB want %dB", len(rawInput), measuredRawInputBytes)
+	}
+	wire, err := ExactPreparedRequestBytes(prepared)
+	if err != nil {
+		t.Fatalf("measured input bytes were guessed to be tokens: %v", err)
+	}
+	for _, required := range []string{
+		`"num_ctx":8192`, `"num_predict":2048`, `"raw":true`, `"truncate":false`,
+	} {
+		if !strings.Contains(string(wire), required) {
+			t.Fatalf("exact provider request omitted %s", required)
+		}
+	}
+}
+
+func TestExactRawTextProtocolRejectsOutputReservationWithoutInputCapacity(t *testing.T) {
+	prepared := exactProtocolPrepared(t, ExactPreparedProtocolRawTextV1)
+	prepared.MaxOutputTokens = prepared.ContextTokens
+	if _, err := ExactPreparedRequestBytes(prepared); err == nil {
+		t.Fatal("exact request accepted an output reservation with no input capacity")
+	}
+}
+
+func TestExactRawTextProtocolRejectsInputBeyondGrossByteCeiling(t *testing.T) {
+	prepared := exactProtocolPrepared(t, ExactPreparedProtocolRawTextV1)
+	prepared.Prompt = strings.Repeat("x", MaxExactPreparedModelInputBytes+1)
+	if _, err := ExactPreparedRequestBytes(prepared); err == nil {
+		t.Fatal("exact request accepted input beyond the registered gross byte ceiling")
+	}
+}
+
+func TestExactPreparedNativeUsageUsesProviderCounts(t *testing.T) {
+	valid := ProviderGenerationUsage{PromptEvalCount: 1730, EvalCount: 1418}
+	if err := ValidateExactPreparedNativeUsage(8192, 6144, 2048, valid); err != nil {
+		t.Fatalf("measured provider usage was rejected: %v", err)
+	}
+	for name, usage := range map[string]ProviderGenerationUsage{
+		"prompt":  {PromptEvalCount: 6145, EvalCount: 1},
+		"output":  {PromptEvalCount: 1, EvalCount: 2049},
+		"context": {PromptEvalCount: 6144, EvalCount: 2049},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := ValidateExactPreparedNativeUsage(8192, 6144, 2048, usage); err == nil {
+				t.Fatal("provider usage outside native authority was accepted")
+			}
+		})
 	}
 }
 

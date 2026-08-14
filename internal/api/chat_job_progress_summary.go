@@ -77,6 +77,45 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 			return "", "", err
 		}
 		return chatProgressReview, fmt.Sprintf("Assembly ready: %d files, %d typed blocks", files, blocks), nil
+	case "coding_workload_frozen":
+		fields, err := exactChatEventFields(event.Message, "tasks", "sha256")
+		if err != nil {
+			return "", "", err
+		}
+		tasks, err := requireChatEventInteger(fields, "tasks", false)
+		if err != nil {
+			return "", "", err
+		}
+		if _, err := requireChatEventToken(fields, "sha256", 64); err != nil {
+			return "", "", err
+		}
+		return chatProgressReview, fmt.Sprintf("Frozen workload with %d concrete tasks", tasks), nil
+	case "coding_task_verification_started":
+		fields, err := exactChatEventFields(event.Message, "task", "requirement_bytes")
+		if err != nil {
+			return "", "", err
+		}
+		task, err := requireChatEventToken(fields, "task", 256)
+		if err != nil {
+			return "", "", err
+		}
+		requirementBytes, err := requireChatEventInteger(fields, "requirement_bytes", false)
+		return chatProgressVerification, fmt.Sprintf(
+			"Verifying %s against its %d-byte exact requirement", task, requirementBytes,
+		), err
+	case "coding_task_verified":
+		fields, err := exactChatEventFields(event.Message, "task", "corrections_remaining")
+		if err != nil {
+			return "", "", err
+		}
+		task, err := requireChatEventToken(fields, "task", 256)
+		if err != nil {
+			return "", "", err
+		}
+		corrections, err := requireChatEventInteger(fields, "corrections_remaining", true)
+		return chatProgressVerification, fmt.Sprintf(
+			"Verified %s with %d corrections remaining", task, corrections,
+		), err
 	case "coding_file_started":
 		fields, err := exactChatEventFields(event.Message, "path", "stage")
 		if err != nil {

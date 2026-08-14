@@ -29,19 +29,36 @@ func TestProviderRequestFailureReasonPreservesExactTerminalAuthority(t *testing.
 	}
 }
 
-func TestExactStationStaticBudgetRejectsBeforeProviderDiscovery(t *testing.T) {
-	contract, err := llmResponseContractForScope("portable_semantic_worker")
+func TestExactStationStaticBudgetDoesNotGuessMeasuredBytesAreTokens(t *testing.T) {
+	contract, err := llmResponseContractForScope("portable_fragment_worker")
 	if err != nil {
 		t.Fatal(err)
 	}
+	contract.MaxTokens = 2048
+	const measuredRawInputBytes = 6485
+	promptBytes := measuredRawInputBytes - len(llm.ExactPreparedPromptJoiner) - len(llm.MinimalGeneratePrompt)
 	err = validateExactStationStaticCall(
-		strings.Repeat("x", 8192),
-		map[string]any{"type": "object"},
+		strings.Repeat("x", promptBytes),
+		nil,
 		contract,
 		llm.ProviderIdentitySelection{Model: "qwen3.5:9b", NativeContextLimit: 8192},
 	)
-	if err == nil || !strings.Contains(err.Error(), "exceeds token authority") {
-		t.Fatalf("static station budget error=%v", err)
+	if err != nil {
+		t.Fatalf("measured correction envelope was blocked before provider discovery: %v", err)
+	}
+}
+
+func TestExactStationStaticBudgetRejectsImpossibleOutputReservation(t *testing.T) {
+	contract, err := llmResponseContractForScope("portable_fragment_worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract.MaxTokens = 8192
+	if err := validateExactStationStaticCall(
+		"exact bounded prompt", nil, contract,
+		llm.ProviderIdentitySelection{Model: "qwen3.5:9b", NativeContextLimit: 8192},
+	); err == nil {
+		t.Fatal("static station accepted an output reservation with no input capacity")
 	}
 }
 

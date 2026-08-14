@@ -89,9 +89,10 @@ this host despite the larger total checkpoint. At 32K it also pushed an
 already busy host deep into swap. The observed semantic envelopes and the
 fragment prompt/output limits also fit inside the exact 8K minimum, so the
 checked-in local profile uses 8K rather than paying the 16K/32K allocation and
-latency cost. An unusually large semantic envelope may therefore fail the conservative byte-as-token
-budget before the request; raise the explicit setting for that workload rather
-than allowing provider truncation.
+latency cost. Omnidex does not interpret prompt bytes as tokens: the exact
+request disables provider truncation, declares the native input/output ceilings,
+and validates Ollama's returned native token counts. Byte limits are only
+coarse transport and resource-safety bounds.
 
 Run the same exact load check after any model, context, backend, or memory change:
 

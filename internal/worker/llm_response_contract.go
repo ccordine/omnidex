@@ -15,10 +15,11 @@ const (
 )
 
 type llmResponseContract struct {
-	Protocol   llm.ExactPreparedProtocol
-	Format     string
-	MaxTokens  int
-	PromptHint string
+	Protocol            llm.ExactPreparedProtocol
+	Format              string
+	MaxTokens           int
+	PromptHint          string
+	RawTextStopSequence string
 }
 
 func llmResponseContractForScope(scope string) (llmResponseContract, error) {
@@ -28,9 +29,10 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 	}
 	if scope == "portable_fragment_worker" {
 		return llmResponseContract{
-			Protocol:   llm.ExactPreparedProtocolRawTextV1,
-			MaxTokens:  4096,
-			PromptHint: llm.MinimalGeneratePrompt,
+			Protocol:            llm.ExactPreparedProtocolRawTextV1,
+			MaxTokens:           4096,
+			PromptHint:          llm.MinimalGeneratePrompt,
+			RawTextStopSequence: llm.ExactPreparedCodeStopV1,
 		}, nil
 	}
 	if scope == "portable_semantic_worker" {

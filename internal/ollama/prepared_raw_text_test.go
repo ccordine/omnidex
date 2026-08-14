@@ -60,6 +60,42 @@ func TestGeneratePreparedExactRawTextSendsRegisteredAdvisoryTerminator(t *testin
 	}
 }
 
+func TestGeneratePreparedExactDispatchesMeasuredCorrectionEnvelopeWithoutByteTokenGuess(t *testing.T) {
+	t.Parallel()
+	expected := ollamaIdentityExpectation()
+	expected.NativeContextLimit = 8192
+	seen := make(map[string]int)
+	captured := make(map[string][]byte)
+	client := exactPreparedIdentityClient(
+		t, expected, http.StatusOK, exactRawBody(), seen, captured,
+	)
+	prepared := exactPreparedRequest(expected)
+	prepared.Protocol = llm.ExactPreparedProtocolRawTextV1
+	prepared.ResponseFormat = ""
+	prepared.ResponseSchema = nil
+	prepared.MaxOutputTokens = 2048
+	const measuredRawInputBytes = 6485
+	promptBytes := measuredRawInputBytes - len(llm.ExactPreparedPromptJoiner) - len(llm.MinimalGeneratePrompt)
+	prepared.Prompt = strings.Repeat("x", promptBytes)
+
+	if _, err := client.GeneratePreparedExact(context.Background(), prepared); err != nil {
+		t.Fatalf("measured correction envelope did not reach provider: %v", err)
+	}
+	// Exact provider identity performs one fixed preload request before the one
+	// raw workload generation request.
+	if seen["/api/generate"] != 2 {
+		t.Fatalf("provider /api/generate calls=%d want preload+workload", seen["/api/generate"])
+	}
+	request := string(captured["/api/generate"])
+	for _, required := range []string{
+		`"num_ctx":8192`, `"num_predict":2048`, `"raw":true`, `"truncate":false`,
+	} {
+		if !strings.Contains(request, required) {
+			t.Fatalf("provider request omitted %s", required)
+		}
+	}
+}
+
 func TestGeneratePreparedExactRawTextRejectsSchemaBeforeProviderObservation(t *testing.T) {
 	t.Parallel()
 	expected := ollamaIdentityExpectation()

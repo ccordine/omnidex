@@ -27,7 +27,8 @@ func typeScriptBrowserStaticFiles(packageName, productName, stylesheet string) [
 			"react": "19.2.7", "react-dom": "19.2.7",
 		},
 		DevDependencies: map[string]string{
-			"@testing-library/react": "16.3.2", "@types/react": "19.2.17",
+			"@testing-library/jest-dom": "7.0.0", "@testing-library/react": "16.3.2",
+			"@types/react":     "19.2.17",
 			"@types/react-dom": "19.2.3", "@vitejs/plugin-react": "5.2.0",
 			"jsdom": "26.1.0", "typescript": "5.9.3", "vite": "6.4.2", "vitest": "4.1.8",
 		},

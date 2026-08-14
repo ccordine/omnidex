@@ -141,6 +141,8 @@ func TestCapabilityPairsStaySeparateFromWorkloadSchedulingAndLeafAuthority(t *te
 	}
 
 	assertMinimalLeafPrompt(t, prompts["task_001"], []string{
+		"Exact user requirement:", "Derived implementation objective:",
+		"Derived build decision 1:", "Derived verification check 1:",
 		string(input.Surface), input.ProductQuote, "groups records",
 		"Implement interactive record grouping in the records console.",
 		"Users can create a named group.",
@@ -149,6 +151,8 @@ func TestCapabilityPairsStaySeparateFromWorkloadSchedulingAndLeafAuthority(t *te
 		"Assigning a record visibly lists it in the selected group.",
 	}, []string{frozen.SHA256, "task_", "requirement_", "filters records", "exports summaries"})
 	assertMinimalLeafPrompt(t, prompts["task_003"], []string{
+		"Exact user requirement:", "Derived implementation objective:",
+		"Derived build decision 1:", "Derived verification check 1:",
 		string(input.Surface), input.ProductQuote, "exports summaries",
 		"Implement summary export from the records console.",
 		"Users can request an export of the visible record summary.",

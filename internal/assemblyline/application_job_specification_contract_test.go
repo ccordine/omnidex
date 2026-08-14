@@ -17,7 +17,8 @@ func TestApplicationJobSpecificationPromptContainsCompleteAuthoritativeIntent(t 
 		string(input.Surface), input.ProductQuote, input.FocusedRequirement.SourceQuote,
 		input.AcceptedRequirements[0].SourceQuote, input.AcceptedRequirements[1].SourceQuote,
 		input.AcceptedRequirements[2].SourceQuote, "required_behaviors", "acceptance_criteria",
-		"concrete action and result", "cover every required behavior",
+		"concrete action and result", "cover every required behavior", `"user_authority"`,
+		"minimum sufficient derived build decisions", "Observable does not require invented numeric precision",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("job specification prompt omitted %q:\n%s", required, prompt)

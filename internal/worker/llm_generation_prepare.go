@@ -37,12 +37,11 @@ func validateExactStationStaticCall(
 	if err != nil {
 		return err
 	}
-	return llm.ValidateExactPreparedInputBudget(
+	return llm.ValidateExactPreparedInputAuthority(
 		selection.NativeContextLimit,
 		selection.NativeContextLimit-contract.MaxTokens,
 		contract.MaxTokens,
 		input,
-		llm.MaxRawInputSpecialTokenReserve,
 	)
 }
 
@@ -72,7 +71,8 @@ func prepareExactStationCall(
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		MaxOutputTokens: gap.MaxOutputTokens, ContextTokens: gap.ContextTokens,
 		ResponseFormat: contract.Format, ResponseSchema: schema,
-		ThinkingEnabled: false, Temperature: &temperature,
+		RawTextStopSequence: contract.RawTextStopSequence,
+		ThinkingEnabled:     false, Temperature: &temperature,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}, nil
 }
@@ -86,7 +86,7 @@ func stationCallChallengeScope(
 		JobID                                                        int64
 		Generation, StepID, StepAttempt                              int64
 		WorkerID, GapID, Station, WorkID, WorkKind, ProjectionSHA256 string
-		RendererVersion, Model, Protocol                             string
+		RendererVersion, Model, Protocol, RawTextStopSequence        string
 		ContextTokens, MaxOutputTokens                               int
 	}{
 		JobID: gap.JobID, Generation: gap.Generation, StepID: gap.StepID,
@@ -95,7 +95,7 @@ func stationCallChallengeScope(
 		WorkKind: gap.WorkKind, ProjectionSHA256: gap.ProjectionSHA256,
 		RendererVersion: gap.RendererVersion, Model: modelName,
 		Protocol: string(contract.Protocol), ContextTokens: gap.ContextTokens,
-		MaxOutputTokens: gap.MaxOutputTokens,
+		MaxOutputTokens: gap.MaxOutputTokens, RawTextStopSequence: contract.RawTextStopSequence,
 	})
 	if err != nil {
 		return "", err

@@ -15,6 +15,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 		protocol   llm.ExactPreparedProtocol
 		maxTokens  int
 		promptHint string
+		stop       string
 	}{
 		{
 			name:       "portable semantic station",
@@ -23,6 +24,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			protocol:   llm.ExactPreparedProtocolStructuredV1,
 			maxTokens:  1024,
 			promptHint: llm.MinimalGeneratePrompt,
+			stop:       "",
 		},
 		{
 			name:       "portable fragment station",
@@ -31,6 +33,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			protocol:   llm.ExactPreparedProtocolRawTextV1,
 			maxTokens:  4096,
 			promptHint: llm.MinimalGeneratePrompt,
+			stop:       llm.ExactPreparedCodeStopV1,
 		},
 	}
 	for _, test := range tests {
@@ -39,7 +42,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if contract.Protocol != test.protocol || contract.Format != test.format || contract.MaxTokens != test.maxTokens || contract.PromptHint != test.promptHint {
+			if contract.Protocol != test.protocol || contract.Format != test.format || contract.MaxTokens != test.maxTokens || contract.PromptHint != test.promptHint || contract.RawTextStopSequence != test.stop {
 				t.Fatalf("llmResponseContractForScope(%q)=%#v", test.scope, contract)
 			}
 		})

@@ -102,8 +102,6 @@ func TestApplicationWorkloadResolutionRepairsOnlyReviewerNamedLeavesAtMostTwice(
 	specification := workerApplicationSpecification()
 	specification.Requirements = specification.Requirements[:1]
 	input := applicationWorkloadInput(specification)
-	const behaviorDefect = "Required behavior is vague and does not state the observable interaction."
-	const acceptanceDefect = "Acceptance criteria omit the visible result after interaction."
 	var kinds []assemblyline.WorkKind
 	var reviews int
 	var repairs int
@@ -126,12 +124,12 @@ func TestApplicationWorkloadResolutionRepairsOnlyReviewerNamedLeavesAtMostTwice(
 				reviews++
 				switch reviews {
 				case 1:
-					return workloadPortableCandidate(job, `{"decision":"repair","field":"required_behaviors","defect":"`+behaviorDefect+`"}`), nil
+					return workloadPortableCandidate(job, `{"decision":"repair","field":"required_behaviors"}`), nil
 				case 2:
 					if !strings.Contains(prompt, "Users can create a named group and assign a visible record to it.") {
 						return assemblyline.PortableResult{}, fmt.Errorf("second review did not receive retained behavior repair")
 					}
-					return workloadPortableCandidate(job, `{"decision":"repair","field":"acceptance_criteria","defect":"`+acceptanceDefect+`"}`), nil
+					return workloadPortableCandidate(job, `{"decision":"repair","field":"acceptance_criteria"}`), nil
 				default:
 					if !strings.Contains(prompt, "After assignment, the record is visibly listed in the selected named group.") {
 						return assemblyline.PortableResult{}, fmt.Errorf("final review did not receive retained acceptance repair")
@@ -144,16 +142,20 @@ func TestApplicationWorkloadResolutionRepairsOnlyReviewerNamedLeavesAtMostTwice(
 					return assemblyline.PortableResult{}, err
 				}
 				assertPromptHasNoModelOwnedExecutionAuthority(t, prompt)
+				for _, required := range []string{`"user_authority"`, `"derived_candidate"`, `"target_derived_field"`} {
+					if !strings.Contains(prompt, required) {
+						return assemblyline.PortableResult{}, fmt.Errorf("repair omitted provenance label %s", required)
+					}
+				}
+				for _, forbidden := range []string{"exact_defect", "at least eight", "30 Hz"} {
+					if strings.Contains(prompt, forbidden) {
+						return assemblyline.PortableResult{}, fmt.Errorf("repair exposed reviewer authority %q", forbidden)
+					}
+				}
 				switch repairs {
 				case 1:
-					if !strings.Contains(prompt, behaviorDefect) || strings.Contains(prompt, acceptanceDefect) {
-						return assemblyline.PortableResult{}, fmt.Errorf("first repair did not receive exactly its reviewer defect")
-					}
 					return workloadPortableCandidate(job, `{"required_behaviors":["Users can create a named group and assign a visible record to it.","Users can remove a record from its current group."]}`), nil
 				case 2:
-					if !strings.Contains(prompt, acceptanceDefect) || strings.Contains(prompt, behaviorDefect) {
-						return assemblyline.PortableResult{}, fmt.Errorf("second repair did not receive exactly its reviewer defect")
-					}
 					return workloadPortableCandidate(job, `{"acceptance_criteria":["After assignment, the record is visibly listed in the selected named group.","After removal, the record is no longer listed in that group."]}`), nil
 				default:
 					return assemblyline.PortableResult{}, fmt.Errorf("repair attempt %d exceeded hard bound", repairs)
@@ -213,7 +215,7 @@ func TestApplicationWorkloadResolutionRefusesAThirdReviewerRepairAndReturnsNoFro
 			case assemblyline.WorkApplicationJobSpecification:
 				return workloadPortableCandidate(job, workerJobSpecificationCandidate("groups records")), nil
 			case assemblyline.WorkApplicationJobSpecificationReview:
-				return workloadPortableCandidate(job, `{"decision":"repair","field":"objective","defect":"Objective remains off task."}`), nil
+				return workloadPortableCandidate(job, `{"decision":"repair","field":"objective"}`), nil
 			case assemblyline.WorkApplicationJobSpecificationRepair:
 				repairs++
 				return workloadPortableCandidate(job, fmt.Sprintf(
@@ -279,6 +281,44 @@ func TestApplicationWorkloadResolutionDoesNotRepairAnUnreviewedInvalidSpecificat
 	}
 	if frozen.Schema != "" || frozen.SHA256 != "" || len(frozen.Tasks) != 0 {
 		t.Fatalf("invalid unreviewed specification was frozen: %+v", frozen)
+	}
+}
+
+func TestApplicationWorkloadResolutionRejectsReviewerProseBeforeRepairOrFreeze(t *testing.T) {
+	t.Parallel()
+
+	specification := workerApplicationSpecification()
+	specification.Requirements = specification.Requirements[:1]
+	input := applicationWorkloadInput(specification)
+	var kinds []assemblyline.WorkKind
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 3,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			kinds = append(kinds, job.Kind)
+			switch job.Kind {
+			case assemblyline.WorkApplicationJobSpecification:
+				return workloadPortableCandidate(job, workerJobSpecificationCandidate("groups records")), nil
+			case assemblyline.WorkApplicationJobSpecificationReview:
+				return workloadPortableCandidate(job, `{"decision":"repair","field":"acceptance_criteria","defect":"Require at least eight items and a 30 Hz update rate."}`), nil
+			default:
+				return assemblyline.PortableResult{}, fmt.Errorf("reviewer prose dispatched forbidden work %s", job.Kind)
+			}
+		},
+	}
+
+	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", input)
+	if err == nil {
+		t.Fatal("reviewer-authored constraint entered repair authority")
+	}
+	wantKinds := []assemblyline.WorkKind{
+		assemblyline.WorkApplicationJobSpecification,
+		assemblyline.WorkApplicationJobSpecificationReview,
+	}
+	if !reflect.DeepEqual(kinds, wantKinds) {
+		t.Fatalf("reviewer prose dispatched repair/freeze work: %v", kinds)
+	}
+	if frozen.Schema != "" || frozen.SHA256 != "" || len(frozen.Tasks) != 0 {
+		t.Fatalf("reviewer prose leaked a frozen workload: %+v", frozen)
 	}
 }
 
@@ -478,7 +518,7 @@ func assertJobSpecificationReviewSchemaHasNoCodeAuthority(schema map[string]any)
 	accept := branches[0].(map[string]any)
 	repairBranch := branches[1].(map[string]any)
 	if !reflect.DeepEqual(accept["required"], []string{"decision"}) ||
-		!reflect.DeepEqual(repairBranch["required"], []string{"decision", "field", "defect"}) {
+		!reflect.DeepEqual(repairBranch["required"], []string{"decision", "field"}) {
 		return fmt.Errorf("job specification review branches permit incomplete responses: %v", schema)
 	}
 	return nil

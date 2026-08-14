@@ -87,22 +87,22 @@ func compileDirectCodingApplicationTaskBehavior(
 		return "", fmt.Errorf("application task context lacks one complete executable objective")
 	}
 	parts := []string{
-		"Delivery surface: " + string(context.Surface),
-		"Product objective: " + context.ProductQuote,
-		"Exact requirement: " + context.Task.RequirementQuote,
-		"Concrete objective: " + context.Task.Objective,
+		"Authoritative delivery surface: " + string(context.Surface),
+		"Authoritative product context: " + context.ProductQuote,
+		"Exact user requirement: " + context.Task.RequirementQuote,
+		"Derived implementation objective: " + context.Task.Objective,
 	}
 	for index, behavior := range context.Task.RequiredBehaviors {
 		if strings.TrimSpace(behavior) == "" || behavior != strings.TrimSpace(behavior) {
 			return "", fmt.Errorf("application task contains invalid required behavior %d", index+1)
 		}
-		parts = append(parts, fmt.Sprintf("Required behavior %d: %s", index+1, behavior))
+		parts = append(parts, fmt.Sprintf("Derived build decision %d: %s", index+1, behavior))
 	}
 	for index, criterion := range context.Task.AcceptanceCriteria {
 		if strings.TrimSpace(criterion) == "" || criterion != strings.TrimSpace(criterion) {
 			return "", fmt.Errorf("application task contains invalid acceptance criterion %d", index+1)
 		}
-		parts = append(parts, fmt.Sprintf("Observable acceptance %d: %s", index+1, criterion))
+		parts = append(parts, fmt.Sprintf("Derived verification check %d: %s", index+1, criterion))
 	}
 	seen := make(map[string]struct{}, len(capabilities))
 	for _, capability := range capabilities {

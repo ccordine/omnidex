@@ -12,7 +12,8 @@ func genericBrowserRuntimeTestDocument(
 ) assemblyline.TypeScriptDocument {
 	return assemblyline.TypeScriptDocument{
 		ID: "application_runtime_test", Path: "src/runtime.test.tsx",
-		Header: `import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+		Header: `import '@testing-library/jest-dom/vitest';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { FeatureBoundary, createApplicationRuntime, createFeatureRuntime, publishCapability, useCapabilityState, useOwnCapabilityState } from './runtime';
 import type { CapabilityID, FeatureViewProps } from './runtime';`,
 		Blocks: []assemblyline.TypeScriptBlock{{

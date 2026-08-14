@@ -134,12 +134,11 @@ func validateObjectiveAdvisoryInputBudget(
 	if err != nil {
 		return err
 	}
-	return llm.ValidateExactPreparedInputBudget(
+	return llm.ValidateExactPreparedInputAuthority(
 		selection.NativeContextLimit,
 		selection.NativeContextLimit-source.Budget.MaxOutputTokens,
 		source.Budget.MaxOutputTokens,
 		input,
-		llm.MaxRawInputSpecialTokenReserve,
 	)
 }
 

@@ -63,10 +63,6 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 	if err != nil {
 		return StationCallOpening{}, err
 	}
-	upperBound, err := llm.ModelInputTokenUpperBound(modelInput, llm.MaxRawInputSpecialTokenReserve)
-	if err != nil {
-		return StationCallOpening{}, err
-	}
 	return StationCallOpening{
 		GapOpeningID: record.Gap.ID, DiscoveryReceiptID: record.Discovery.ID,
 		JobID:      record.Authority.JobID,
@@ -83,7 +79,9 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 		MaxInputTokens:  prepared.ContextTokens - prepared.MaxOutputTokens,
 		MaxOutputTokens: prepared.MaxOutputTokens, ModelInput: modelInput,
 		ModelInputSHA256: stationGapSHA256(modelInput), ModelInputBytes: len(modelInput),
-		ModelInputTokenUpperBound: upperBound,
+		// The provider owns tokenization. This is the declared native input
+		// ceiling; the receipt records and validates the actual prompt count.
+		ModelInputTokenCeiling: prepared.ContextTokens - prepared.MaxOutputTokens,
 	}, nil
 }
 
@@ -184,4 +182,24 @@ func validateStationCallReceipt(
 		ProviderIdentityEvidence llm.ProviderIdentityEvidence `json:"provider_identity_evidence"`
 	}
 	return exactjson.Canonical(durableGeneration{record.Result, record.Result.ProviderIdentityEvidence})
+}
+
+// ValidateStationCallNativeUsage compares the provider's tokenizer-owned
+// receipt with the immutable context ceilings opened for this exact call.
+// Callers run it after persisting the raw provider receipt so an invariant
+// failure cannot erase the evidence that proved it.
+func ValidateStationCallNativeUsage(
+	opening StationCallOpening,
+	result llm.PreparedGeneration,
+) error {
+	if result.ProviderResponseDisposition != llm.ProviderResponseSucceeded ||
+		!result.UsagePresent {
+		return fmt.Errorf("station call native usage requires one successful provider receipt")
+	}
+	return llm.ValidateExactPreparedNativeUsage(
+		opening.ContextTokens,
+		opening.MaxInputTokens,
+		opening.MaxOutputTokens,
+		result.Usage,
+	)
 }

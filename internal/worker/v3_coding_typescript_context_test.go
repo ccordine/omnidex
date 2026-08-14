@@ -128,8 +128,8 @@ func TestGenericWorkersReceiveOnlyLocalAuthorityAndCodeOwnedCapabilityAPIs(t *te
 		t.Fatalf("generated=%d prompts=%d", len(program.Generated), len(prompts))
 	}
 	for _, prompt := range prompts {
-		containsFirst := strings.Contains(prompt, "Exact requirement: filter the catalog")
-		containsSecond := strings.Contains(prompt, "Exact requirement: remember my selection")
+		containsFirst := strings.Contains(prompt, "Exact user requirement: filter the catalog")
+		containsSecond := strings.Contains(prompt, "Exact user requirement: remember my selection")
 		if containsFirst == containsSecond {
 			t.Fatalf("worker prompt did not contain exactly one local authority:\n%s", prompt)
 		}
@@ -146,11 +146,11 @@ func TestGenericWorkersReceiveOnlyLocalAuthorityAndCodeOwnedCapabilityAPIs(t *te
 					t.Fatalf("implementation worker received code-owned lifecycle %q:\n%s", forbidden, prompt)
 				}
 			}
-			if strings.Contains(prompt, "Exact requirement: filter the catalog") &&
+			if strings.Contains(prompt, "Exact user requirement: filter the catalog") &&
 				(strings.Contains(prompt, "capability_001") || strings.Contains(prompt, "capability_002")) {
 				t.Fatalf("independent feature received an undeclared capability:\n%s", prompt)
 			}
-			if strings.Contains(prompt, "Exact requirement: remember my selection") &&
+			if strings.Contains(prompt, "Exact user requirement: remember my selection") &&
 				(!strings.Contains(prompt, "capability_001") || strings.Contains(prompt, "capability_002")) {
 				t.Fatalf("dependent feature received anything beyond its direct capability:\n%s", prompt)
 			}

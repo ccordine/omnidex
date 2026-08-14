@@ -42,12 +42,12 @@ func TestGenericBrowserAdapterCreatesOneCapabilityAndBlindAcceptancePerRequireme
 	if len(generated) != len(specification.Requirements)*2 {
 		t.Fatalf("generated blocks=%d want=%d", len(generated), len(specification.Requirements)*2)
 	}
-	if !strings.Contains(generated[0].Contract, "Exact requirement: "+specification.Requirements[0].SourceQuote) ||
-		strings.Contains(generated[0].Contract, "Exact requirement: "+specification.Requirements[1].SourceQuote) {
+	if !strings.Contains(generated[0].Contract, "Exact user requirement: "+specification.Requirements[0].SourceQuote) ||
+		strings.Contains(generated[0].Contract, "Exact user requirement: "+specification.Requirements[1].SourceQuote) {
 		t.Fatalf("first feature received the wrong implementation authority:\n%s", generated[0].Contract)
 	}
-	if !strings.Contains(generated[1].Contract, "Exact requirement: "+specification.Requirements[1].SourceQuote) ||
-		strings.Contains(generated[1].Contract, "Exact requirement: "+specification.Requirements[0].SourceQuote) {
+	if !strings.Contains(generated[1].Contract, "Exact user requirement: "+specification.Requirements[1].SourceQuote) ||
+		strings.Contains(generated[1].Contract, "Exact user requirement: "+specification.Requirements[0].SourceQuote) {
 		t.Fatalf("second feature received the wrong implementation authority:\n%s", generated[1].Contract)
 	}
 	for _, block := range generated {

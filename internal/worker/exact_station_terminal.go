@@ -113,6 +113,11 @@ func (s *Service) persistExactStationCallResult(
 			ctx, authority, gap, fmt.Errorf("exact station provider call: %w", callErr),
 		)
 	}
+	if err := queue.ValidateStationCallNativeUsage(call, result); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
+			ctx, authority, gap, fmt.Errorf("validate exact provider native context usage: %w", err),
+		)
+	}
 	if err := ctx.Err(); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(ctx, authority, gap, err)
 	}

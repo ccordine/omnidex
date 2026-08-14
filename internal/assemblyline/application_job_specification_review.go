@@ -21,7 +21,6 @@ const (
 type ApplicationJobSpecificationReview struct {
 	Decision ApplicationJobSpecificationReviewDecision `json:"decision"`
 	Field    ApplicationJobSpecificationField          `json:"field,omitempty"`
-	Defect   string                                    `json:"defect,omitempty"`
 
 	binding string
 }
@@ -35,7 +34,6 @@ type ApplicationJobSpecificationReviewInput struct {
 type applicationJobSpecificationReviewWire struct {
 	Decision *ApplicationJobSpecificationReviewDecision `json:"decision"`
 	Field    *ApplicationJobSpecificationField          `json:"field"`
-	Defect   *string                                    `json:"defect"`
 }
 
 func NewApplicationJobSpecificationReviewInput(
@@ -75,20 +73,20 @@ func BuildApplicationJobSpecificationReviewPrompt(
 		return "", err
 	}
 	projection := struct {
-		Authority     applicationJobSpecificationAuthority `json:"authority"`
-		Specification ApplicationJobSpecification          `json:"specification"`
+		UserAuthority    applicationJobSpecificationAuthority `json:"user_authority"`
+		DerivedCandidate ApplicationJobSpecification          `json:"derived_candidate"`
 	}{
-		Authority:     projectApplicationJobSpecificationAuthority(input.authority),
-		Specification: input.retained,
+		UserAuthority:    projectApplicationJobSpecificationAuthority(input.authority),
+		DerivedCandidate: input.retained,
 	}
 	raw, err := json.Marshal(projection)
 	if err != nil {
 		return "", fmt.Errorf("encode application job specification review authority: %w", err)
 	}
 	prompt := strings.Join([]string{
-		"Review only whether the proposed local job is faithful to the focused accepted requirement and specific enough for a competent developer to implement and verify from this packet.",
-		"Accept only when the objective names concrete work rather than merely repeating a noun or saying it works or is usable, every required behavior names a concrete action and result, and every required behavior is covered by a specific observable acceptance criterion. The fields must form one executable job without unrelated scope. Otherwise choose repair and name exactly one target field plus one precise defect. Do not redesign the product, choose files, paths, tools, dependencies, order, or claim execution status.",
-		"Return exactly {\"decision\":\"accept\"} when the specification passes. Otherwise return exactly {\"decision\":\"repair\",\"field\":<one allowed field>,\"defect\":<one precise non-empty line>}.",
+		"Review only whether derived_candidate is faithful to the focused user_authority and specific enough for a competent developer to implement and verify from this packet.",
+		"Accept when the objective names concrete work, every required behavior names a concrete action and result, and observable acceptance criteria collectively cover those behaviors. Qualitative observable results are valid; do not demand invented numeric precision. Reject unrelated scope or capabilities, quantities, counts, ranges, timing, defaults, compatibility promises, or constraints absent from user_authority. A repair decision may identify exactly one derived field; it may not supply replacement prose or new authority. Do not redesign the product, choose files, paths, tools, dependencies, order, or claim execution status.",
+		"Return exactly {\"decision\":\"accept\"} when the specification passes. Otherwise return exactly {\"decision\":\"repair\",\"field\":<one allowed field>}.",
 		"APPLICATION_JOB_SPECIFICATION_REVIEW_AUTHORITY_JSON:\n" + string(raw),
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
@@ -112,7 +110,7 @@ func ApplicationJobSpecificationReviewResponseSchema(
 		},
 	)
 	repair := objectSchema(
-		[]string{"decision", "field", "defect"},
+		[]string{"decision", "field"},
 		map[string]any{
 			"decision": map[string]any{
 				"type": "string", "const": string(ApplicationJobSpecificationReviewRepair),
@@ -122,7 +120,6 @@ func ApplicationJobSpecificationReviewResponseSchema(
 				ApplicationJobSpecificationRequiredBehaviorsField,
 				ApplicationJobSpecificationAcceptanceCriteriaField,
 			),
-			"defect": applicationJobSpecificationLineSchema(maxApplicationWorkloadDefectBytes),
 		},
 	)
 	return map[string]any{
@@ -153,9 +150,6 @@ func DecodeApplicationJobSpecificationReview(
 	if wire.Field != nil {
 		review.Field = *wire.Field
 	}
-	if wire.Defect != nil {
-		review.Defect = *wire.Defect
-	}
 	if err := validateApplicationJobSpecificationReview(review); err != nil {
 		return zero, err
 	}
@@ -170,18 +164,13 @@ func DecodeApplicationJobSpecificationReview(
 func validateApplicationJobSpecificationReview(review ApplicationJobSpecificationReview) error {
 	switch review.Decision {
 	case ApplicationJobSpecificationReviewAccept:
-		if review.Field != "" || review.Defect != "" {
-			return fmt.Errorf("accepted application job specification review must not name a field or defect")
+		if review.Field != "" {
+			return fmt.Errorf("accepted application job specification review must not name a field")
 		}
 		return nil
 	case ApplicationJobSpecificationReviewRepair:
 		if !isApplicationJobSpecificationField(review.Field) {
 			return fmt.Errorf("application job specification review field %q is unsupported", review.Field)
-		}
-		if err := validateApplicationWorkloadLine(
-			"application job specification review defect", review.Defect, maxApplicationWorkloadDefectBytes,
-		); err != nil {
-			return err
 		}
 		return nil
 	default:
