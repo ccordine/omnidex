@@ -84,6 +84,75 @@ func TestValidateExactStationReplayPointPreservesFrozenPortableBoundary(t *testi
 	}
 }
 
+func TestValidateCurrentContractStationReplayPointRetainsJobWithoutRetiredOutputCeiling(t *testing.T) {
+	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
+		Language: "typescript", Signature: "function Repair(value: string): string",
+		CurrentDeclaration: "function Repair(value: string): string { return value; }",
+		RequiredChange:     "Fix the observed local failure.",
+		Diagnostic:         "[source]: error TS2304: Cannot find name 'value'.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gap := replayTestGap(t, job)
+	call := replayTestCall(t, gap)
+	gap.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
+	gap.MaxOutputTokens = 1024
+	call.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
+	call.MaxOutputTokens = 1024
+	point := queue.StationCallReplayPoint{Call: call, Gap: gap}
+	if _, err := validateExactStationReplayPoint(point); err == nil {
+		t.Fatal("exact replay silently changed retired output authority")
+	}
+	loaded, err := validateCurrentContractStationReplayPoint(point)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Job.ID != job.ID || loaded.Prompt != gap.Prompt || loaded.Contract.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
+		t.Fatalf("current-contract replay boundary=%+v", loaded)
+	}
+
+	point.Gap.Prompt += "\nchanged"
+	if _, err := validateCurrentContractStationReplayPoint(point); err == nil {
+		t.Fatal("current-contract replay accepted a prompt different from the current renderer")
+	}
+}
+
+func TestExactStationReplayArtifactUsesBoundReviewDecoder(t *testing.T) {
+	requirement := assemblyline.Requirement{ID: "requirement_001", SourceQuote: "inventory filtering"}
+	authority := assemblyline.ApplicationJobSpecificationInput{
+		Surface: assemblyline.ApplicationSurfaceBrowser, ProductQuote: "inventory dashboard",
+		AcceptedRequirements: []assemblyline.Requirement{requirement}, FocusedRequirement: requirement,
+	}
+	retained := assemblyline.ApplicationJobSpecification{
+		Objective:         "Implement inventory filtering in the inventory dashboard.",
+		RequiredBehaviors: []string{"Users can filter inventory entries by a supplied value."},
+		AcceptanceCriteria: []string{
+			"Entering a filter value shows matching inventory entries and excludes nonmatching entries.",
+		},
+	}
+	input, err := assemblyline.NewApplicationJobSpecificationReviewInput(authority, retained, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := assemblyline.NewApplicationJobSpecificationReviewJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := replayExactStationArtifact(job, `{"decision":"accept"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifact.Kind != "application_job_specification_review_accept" {
+		t.Fatalf("artifact=%+v", artifact)
+	}
+	if _, err := replayExactStationArtifact(
+		job, `{"decision":"accept","field":"objective"}`,
+	); err == nil {
+		t.Fatal("review replay bypassed the bound semantic decoder")
+	}
+}
+
 func replayTestGap(t *testing.T, job assemblyline.PortableJob) queue.StationGapOpening {
 	t.Helper()
 	prompt, schema, err := assemblyline.RenderPortableJob(job)

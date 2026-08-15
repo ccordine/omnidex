@@ -29,7 +29,7 @@ func TestAllContainsOnlyUniqueRegisteredStations(t *testing.T) {
 		}
 		seen[id] = struct{}{}
 	}
-	if len(seen) != 27 {
-		t.Fatalf("registered stations=%d want 27", len(seen))
+	if len(seen) != 28 {
+		t.Fatalf("registered stations=%d want 28", len(seen))
 	}
 }

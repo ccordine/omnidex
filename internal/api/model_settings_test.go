@@ -41,6 +41,7 @@ func TestModelSettingsUsesExactStationCatalog(t *testing.T) {
 		"OMNI_CODING_SURFACE_MODEL=qwen3:4b-surface",
 		"OMNI_CODING_REQUIREMENTS_MODEL=qwen2.5-coder:7b-requirements",
 		"OMNI_CODING_WORKLOAD_MODEL=qwen3.5:27b-workload",
+		"OMNI_CODING_WORKLOAD_REVIEW_MODEL=llama3.2:3b-review",
 		"OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen2.5:3b-artifact",
 		"OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3:4b-relation",
 		"OMNI_CODING_SKILL_SELECTION_MODEL=qwen3:4b-skill-select",
@@ -73,6 +74,9 @@ func TestModelSettingsUsesExactStationCatalog(t *testing.T) {
 	}
 	if values["coding_workload_model"] != "qwen3.5:27b-workload" {
 		t.Fatalf("coding_workload_model=%q", values["coding_workload_model"])
+	}
+	if values["coding_workload_review_model"] != "llama3.2:3b-review" {
+		t.Fatalf("coding_workload_review_model=%q", values["coding_workload_review_model"])
 	}
 	if values["coding_artifact_handling_model"] != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding_artifact_handling_model=%q", values["coding_artifact_handling_model"])

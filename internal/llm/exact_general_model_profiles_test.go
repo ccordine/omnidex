@@ -7,12 +7,13 @@ import (
 func TestGeneralLocalModelProfilesAreClosedNativeTemplateProfiles(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		id           string
-		architecture string
-		model        string
-		pre          string
-		caps         []string
-		adds         map[string]bool
+		id            string
+		architecture  string
+		model         string
+		pre           string
+		caps          []string
+		adds          map[string]bool
+		deterministic bool
 	}{
 		{
 			id:           ExactPreparedTokenizerProfilePhi3GPT4O,
@@ -41,7 +42,7 @@ func TestGeneralLocalModelProfilesAreClosedNativeTemplateProfiles(t *testing.T) 
 			id:           ExactPreparedTokenizerProfileLlama32,
 			architecture: "llama", model: "gpt2", pre: "llama-bpe",
 			caps: []string{"completion", "tools"},
-			adds: nil,
+			adds: nil, deterministic: true,
 		},
 	}
 	for _, test := range tests {
@@ -56,7 +57,9 @@ func TestGeneralLocalModelProfilesAreClosedNativeTemplateProfiles(t *testing.T) 
 				profile.tokenizerPre != test.pre || !sameExactProfileStrings(profile.capabilities, test.caps) ||
 				!sameExactProfileBools(profile.explicitAdd, test.adds) ||
 				profile.templateSHA256 == "" || len(profile.parameterSHA256s) != 1 ||
-				profile.transport != exactPreparedTransportNativeSystem || profile.requestTemperatureSet {
+				profile.transport != exactPreparedTransportNativeSystem ||
+				profile.requestTemperatureSet != test.deterministic ||
+				(test.deterministic && profile.requestTemperature != 0) {
 				t.Fatalf("profile=%+v", profile)
 			}
 			settings, err := ResolveExactPreparedTransport(ProviderIdentityExpectation{
@@ -65,7 +68,9 @@ func TestGeneralLocalModelProfilesAreClosedNativeTemplateProfiles(t *testing.T) 
 				Quantization: "Q4_K_M", NativeContextLimit: 8192, TokenizerProfile: test.id,
 			})
 			if err != nil || !settings.NativeTemplate || !settings.SeparateSystem ||
-				settings.SeparateThinking || settings.Temperature != nil {
+				settings.SeparateThinking ||
+				(test.deterministic && (settings.Temperature == nil || *settings.Temperature != 0)) ||
+				(!test.deterministic && settings.Temperature != nil) {
 				t.Fatalf("settings=%+v error=%v", settings, err)
 			}
 		})

@@ -7,23 +7,23 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const maxApplicationJobSpecificationRepairs = 2
-
 func resolveDirectCodingApplicationWorkload(
 	runtime typedWorkerRuntime,
-	modelName string,
+	plannerModel string,
+	reviewModel string,
 	input assemblyline.ApplicationWorkloadDraftInput,
 ) (assemblyline.FrozenApplicationWorkload, error) {
 	var zero assemblyline.FrozenApplicationWorkload
 	if runtime.Context == nil || runtime.Execute == nil {
 		return zero, fmt.Errorf("application workload resolver requires a portable execution runtime")
 	}
-	if runtime.MaxAttempts < 1 || runtime.MaxAttempts > maxTypedWorkerAttempts {
-		return zero, fmt.Errorf("application workload attempts must be between 1 and %d", maxTypedWorkerAttempts)
+	if runtime.MaxAttempts < 1 {
+		return zero, fmt.Errorf("application workload runtime requires a positive attempt identity")
 	}
-	modelName = strings.TrimSpace(modelName)
-	if modelName == "" {
-		return zero, fmt.Errorf("application workload resolver requires one configured model")
+	plannerModel = strings.TrimSpace(plannerModel)
+	reviewModel = strings.TrimSpace(reviewModel)
+	if plannerModel == "" || reviewModel == "" {
+		return zero, fmt.Errorf("application workload resolver requires planner and review models")
 	}
 	specifications := make([]assemblyline.ApplicationJobSpecification, 0, len(input.Requirements))
 	for index, requirement := range input.Requirements {
@@ -33,7 +33,8 @@ func resolveDirectCodingApplicationWorkload(
 			FocusedRequirement:   requirement,
 		}
 		specification, err := resolveDirectCodingApplicationJobSpecification(
-			runtime, modelName, fmt.Sprintf("application_job_specification_%03d", index+1), authority,
+			runtime, plannerModel, reviewModel,
+			fmt.Sprintf("application_job_specification_%03d", index+1), authority,
 		)
 		if err != nil {
 			return zero, err
@@ -49,7 +50,8 @@ func resolveDirectCodingApplicationWorkload(
 
 func resolveDirectCodingApplicationJobSpecification(
 	runtime typedWorkerRuntime,
-	modelName string,
+	plannerModel string,
+	reviewModel string,
 	subject string,
 	authority assemblyline.ApplicationJobSpecificationInput,
 ) (assemblyline.ApplicationJobSpecification, error) {
@@ -59,7 +61,7 @@ func resolveDirectCodingApplicationJobSpecification(
 		return zero, err
 	}
 	retained, err := runApplicationJobSpecificationCall(
-		runtime, modelName, subject, job,
+		runtime, plannerModel, subject, job,
 		func(raw string) (assemblyline.ApplicationJobSpecification, error) {
 			candidate, decodeErr := assemblyline.DecodeApplicationJobSpecification(authority, raw)
 			if decodeErr != nil {
@@ -74,8 +76,12 @@ func resolveDirectCodingApplicationJobSpecification(
 	if err != nil {
 		return zero, err
 	}
+	progress, err := newApplicationJobSpecificationProgress(retained)
+	if err != nil {
+		return zero, err
+	}
 
-	for reviewAttempt := 1; reviewAttempt <= maxApplicationJobSpecificationRepairs+1; reviewAttempt++ {
+	for reviewAttempt := 1; ; reviewAttempt++ {
 		reviewInput, inputErr := assemblyline.NewApplicationJobSpecificationReviewInput(
 			authority, retained, reviewAttempt,
 		)
@@ -87,7 +93,7 @@ func resolveDirectCodingApplicationJobSpecification(
 			return zero, jobErr
 		}
 		review, callErr := runApplicationJobSpecificationCall(
-			runtime, modelName, fmt.Sprintf("%s_review_%d", subject, reviewAttempt), reviewJob,
+			runtime, reviewModel, fmt.Sprintf("%s_review_%d", subject, reviewAttempt), reviewJob,
 			func(raw string) (assemblyline.ApplicationJobSpecificationReview, error) {
 				return assemblyline.DecodeApplicationJobSpecificationReview(reviewInput, raw)
 			},
@@ -97,12 +103,6 @@ func resolveDirectCodingApplicationJobSpecification(
 		}
 		if review.Decision == assemblyline.ApplicationJobSpecificationReviewAccept {
 			return retained, nil
-		}
-		if reviewAttempt > maxApplicationJobSpecificationRepairs {
-			return zero, fmt.Errorf(
-				"application job specification %s requires more than %d reviewer-directed repairs",
-				subject, maxApplicationJobSpecificationRepairs,
-			)
 		}
 		repairInput, inputErr := assemblyline.NewApplicationJobSpecificationRepairInput(
 			authority, retained, review, reviewAttempt,
@@ -116,7 +116,7 @@ func resolveDirectCodingApplicationJobSpecification(
 		}
 		retainedBeforeRepair := retained
 		retained, callErr = runApplicationJobSpecificationCall(
-			runtime, modelName, fmt.Sprintf("%s_repair_%d", subject, reviewAttempt), repairJob,
+			runtime, plannerModel, fmt.Sprintf("%s_repair_%d", subject, reviewAttempt), repairJob,
 			func(raw string) (assemblyline.ApplicationJobSpecification, error) {
 				patch, decodeErr := assemblyline.DecodeApplicationJobSpecificationRepair(repairInput, raw)
 				if decodeErr != nil {
@@ -130,8 +130,10 @@ func resolveDirectCodingApplicationJobSpecification(
 		if callErr != nil {
 			return zero, callErr
 		}
+		if progressErr := progress.Observe(retained); progressErr != nil {
+			return zero, fmt.Errorf("application job specification %s: %w", subject, progressErr)
+		}
 	}
-	return zero, fmt.Errorf("application job specification %s ended without review acceptance", subject)
 }
 
 func runApplicationJobSpecificationCall[T any](

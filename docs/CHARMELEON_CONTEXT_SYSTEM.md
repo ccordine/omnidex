@@ -229,8 +229,10 @@ machine passes its executable gates:
    product and requirement quotes. For each accepted requirement, one local station
    receives the typed surface, product, complete accepted requirement set, and focused
    requirement and proposes only a concrete objective, required behaviors, and observable
-   acceptance criteria. A separate bounded review may accept or name one derived field for
-   code-owned repair. Code preserves user authority separately from derived build decisions,
+   acceptance criteria. A separately routed review model may accept or name one derived field for
+   code-owned repair. Code retains each new canonical specification and repeats review without a
+   numeric correctness limit; acceptance, an exact no-op or repeated state/cycle, lost authority,
+   provider failure, cancellation, or a real resource limit ends that loop. Code preserves user authority separately from derived build decisions,
    assigns identity and order, freezes only reviewed state, executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
    static code-owned harness alone renders the exact public feature with its runtime and capability
@@ -243,8 +245,10 @@ machine passes its executable gates:
 6. **Charmander handoff** — cognition produces one existing bounded declaration job;
    code parses, stitches, formats, stages, tests, applies, and reconciles it.
 7. **Semantic review and correction** — a review station can select at most one
-   code-issued finding; code creates and executes a correction objective, verifies it,
-   and reruns review under a hard bound.
+   code-issued finding; code creates and executes a one-field correction objective, retains
+   each new canonical state, verifies it, and reruns independent review until acceptance or
+   an exact no-op, repeated state/cycle, provider failure, cancellation, or real resource limit.
+   An arbitrary attempt count is not a correctness boundary.
 8. **Incompatible production cutover** — remove the universal model-action path and
    its schemas, recovery consumers, and provider eagerness. There is no fallback or
    feature flag.

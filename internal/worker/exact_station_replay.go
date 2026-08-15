@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -108,127 +107,37 @@ func ReplayExactStation(
 	}
 	result.PreparedRequest, result.PreparedRequestSHA256 = string(request), replaySHA256(string(request))
 	result.ExpectedIdentity = expected
-
-	started := time.Now()
-	generation, generationErr := client.GeneratePreparedExact(ctx, prepared)
-	result.WallDuration = time.Since(started)
-	owned, ownershipErr := llm.OwnBoundedPreparedGeneration(generation)
-	if ownershipErr != nil {
-		return result, fmt.Errorf("own station replay generation: %w", ownershipErr)
-	}
-	result.Generation = owned
-	if generationErr != nil {
-		return result, fmt.Errorf("generate station replay: %w", generationErr)
-	}
-	if err := owned.Validate(); err != nil {
-		return result, fmt.Errorf("validate station replay generation: %w", err)
-	}
-	if owned.ProviderRequestSHA256 != result.PreparedRequestSHA256 || owned.ProviderResponseModel != result.Model {
-		return result, fmt.Errorf("station replay generation differs from its prepared authority")
-	}
-	derived, err := llm.DeriveExactProviderIdentityExpectation(owned.ProviderIdentityEvidence, selection)
-	if err != nil || derived != expected {
-		return result, fmt.Errorf("station replay provider identity differs from discovery authority")
-	}
-	if err := llm.ValidateExactPreparedNaturalUsage(point.Gap.ContextTokens, owned.Usage); err != nil {
-		return result, fmt.Errorf("validate station replay native usage: %w", err)
-	}
-	projection, err := assemblyline.NewExactPortableResultProjection(owned.Content)
-	if err != nil {
-		return result, fmt.Errorf("project station replay response: %w", err)
-	}
-	if err := (assemblyline.PortableResult{
-		JobID: boundary.Job.ID, Candidate: owned.Content, Projection: &projection,
-	}).ValidateFor(boundary.Job); err != nil {
-		return result, fmt.Errorf("validate station replay portable response: %w", err)
-	}
-	artifact, err := replayExactStationArtifact(boundary.Job, owned.Content)
-	result.Artifact = artifact
-	if err != nil {
-		return result, err
-	}
-	return result, nil
+	return executeExactStationReplayPrepared(
+		ctx, client, result, boundary.Job, point.Gap.ContextTokens, prepared,
+	)
 }
 
 func validateExactStationReplayPoint(
 	point queue.StationCallReplayPoint,
 ) (exactStationReplayBoundary, error) {
-	var boundary exactStationReplayBoundary
-	call, gap := point.Call, point.Gap
-	if call.ID < 1 || gap.ID < 1 || call.GapOpeningID != gap.ID || call.JobID != gap.JobID ||
-		call.Generation != gap.Generation || call.StepID != gap.StepID ||
-		call.StepAttempt != gap.StepAttempt || call.WorkerID != gap.WorkerID || call.GapID != gap.GapID {
-		return boundary, fmt.Errorf("station replay point does not preserve one exact call and gap authority")
-	}
-	if gap.RendererVersion != assemblyline.PortableRendererV3 {
-		return boundary, fmt.Errorf("station replay renderer %q is not current", gap.RendererVersion)
-	}
-	if err := exactjson.ValidateObject(
-		[]byte(gap.PortableEnvelope), assemblyline.PortableJob{}, "station replay portable envelope",
-	); err != nil {
-		return boundary, fmt.Errorf("validate station replay portable envelope: %w", err)
-	}
-	boundary.Job = assemblyline.PortableJob{
-		Schema: gap.PortableSchema, ID: gap.WorkID, Kind: assemblyline.WorkKind(gap.WorkKind),
-		Payload: append(json.RawMessage(nil), gap.PortablePayload...),
-	}
-	if err := boundary.Job.Validate(); err != nil {
-		return boundary, fmt.Errorf("validate station replay portable job: %w", err)
-	}
-	envelope, err := exactjson.Canonical(boundary.Job)
-	if err != nil || string(envelope) != gap.PortableEnvelope || replaySHA256(string(envelope)) != gap.PortableEnvelopeSHA256 {
-		return boundary, fmt.Errorf("station replay portable envelope differs from its stored identity")
-	}
-	if boundary.Job.Schema != gap.PortableSchema || boundary.Job.ID != gap.WorkID ||
-		string(boundary.Job.Kind) != gap.WorkKind || string(boundary.Job.Payload) != gap.PortablePayload ||
-		replaySHA256(string(boundary.Job.Payload)) != gap.PortablePayloadSHA256 {
-		return boundary, fmt.Errorf("station replay portable fields differ from their stored identity")
-	}
-	prompt := gap.Prompt
-	if strings.TrimSpace(prompt) == "" {
-		return boundary, fmt.Errorf("station replay stored prompt is empty")
-	}
-	var schema map[string]any
-	if string(gap.ResponseSchema) != "null" {
-		if err := json.Unmarshal(gap.ResponseSchema, &schema); err != nil {
-			return boundary, fmt.Errorf("decode station replay response schema: %w", err)
-		}
-	}
-	schemaRaw, err := exactjson.Canonical(schema)
-	if err != nil || string(schemaRaw) != string(gap.ResponseSchema) {
-		return boundary, fmt.Errorf("station replay response schema differs from its stored canonical identity")
-	}
-	projection, err := exactjson.Canonical(struct {
-		Prompt         string          `json:"prompt"`
-		Renderer       string          `json:"renderer"`
-		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV3, schemaRaw})
-	if err != nil || string(projection) != gap.ProjectionEnvelope ||
-		replaySHA256(string(projection)) != gap.ProjectionSHA256 {
-		return boundary, fmt.Errorf("station replay projection differs from its stored identity")
-	}
-	contract, err := llmResponseContractForPortableJob(boundary.Job, schema)
+	boundary, err := loadStationReplayPortableBoundary(point)
 	if err != nil {
 		return boundary, err
 	}
-	if gap.Scope != portableModelScope(schema) || gap.OutputLimitMode != contract.OutputLimitMode ||
+	call, gap := point.Call, point.Gap
+	contract := boundary.Contract
+	if gap.Scope != portableModelScope(boundary.Schema) || gap.OutputLimitMode != contract.OutputLimitMode ||
 		gap.ContextTokens != gap.MaxOutputTokens ||
 		call.ContextTokens != gap.ContextTokens || call.MaxOutputTokens != gap.MaxOutputTokens ||
 		call.OutputLimitMode != gap.OutputLimitMode || call.MaxInputTokens != call.ContextTokens ||
 		call.ModelInputTokenCeiling != call.ContextTokens || call.Protocol != string(contract.Protocol) {
 		return boundary, fmt.Errorf("station replay call limits differ from its frozen natural-output authority")
 	}
-	modelInput, err := llm.ExactPreparedModelInput(prompt, contract.PromptHint)
+	modelInput, err := llm.ExactPreparedModelInput(boundary.Prompt, contract.PromptHint)
 	if err != nil || call.ModelInput != modelInput || call.ModelInputBytes != len(modelInput) ||
 		replaySHA256(modelInput) != call.ModelInputSHA256 {
 		return boundary, fmt.Errorf("station replay model input differs from its stored identity")
 	}
-	if err := validateExactStationStaticCall(prompt, schema, contract, llm.ProviderIdentitySelection{
+	if err := validateExactStationStaticCall(boundary.Prompt, boundary.Schema, contract, llm.ProviderIdentitySelection{
 		Model: call.Model, NativeContextLimit: call.ContextTokens,
 	}); err != nil {
 		return boundary, fmt.Errorf("validate frozen station replay boundary: %w", err)
 	}
-	boundary.Prompt, boundary.Schema, boundary.Contract = prompt, schema, contract
 	return boundary, nil
 }
 
@@ -239,6 +148,29 @@ func replayExactStationArtifact(
 	artifact := ExactStationReplayArtifact{
 		Kind: "exact_final_response", Source: raw, SourceSHA256: replaySHA256(raw),
 		StartByte: 0, EndByte: len(raw),
+	}
+	switch job.Kind {
+	case assemblyline.WorkApplicationRequirements:
+		artifact.Kind = "application_requirements"
+		if _, err := assemblyline.DecodeApplicationRequirementInterpretationResult(job, raw); err != nil {
+			return artifact, fmt.Errorf("decode replay application requirements: %w", err)
+		}
+		return artifact, nil
+	case assemblyline.WorkApplicationJobSpecification:
+		artifact.Kind = "application_job_specification"
+		if _, err := assemblyline.DecodeApplicationJobSpecificationResult(job, raw); err != nil {
+			return artifact, fmt.Errorf("decode replay application job specification: %w", err)
+		}
+		return artifact, nil
+	}
+	if job.Kind == assemblyline.WorkApplicationJobSpecificationReview {
+		review, err := assemblyline.DecodeApplicationJobSpecificationReviewResult(job, raw)
+		artifact.Kind = "application_job_specification_review"
+		if err != nil {
+			return artifact, fmt.Errorf("decode replay application job specification review: %w", err)
+		}
+		artifact.Kind += "_" + string(review.Decision)
+		return artifact, nil
 	}
 	if job.Kind != assemblyline.WorkFragmentGeneration && job.Kind != assemblyline.WorkFragmentCorrection {
 		return artifact, nil

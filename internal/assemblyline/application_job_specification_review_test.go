@@ -96,9 +96,68 @@ func TestApplicationJobSpecificationReviewWireAcceptsOrNamesOneDerivedField(t *t
 		}
 	}
 	if _, err := NewApplicationJobSpecificationReviewInput(
-		applicationJobSpecificationTestInput(1), applicationJobSpecificationTestValue(), 4,
+		applicationJobSpecificationTestInput(1), applicationJobSpecificationTestValue(), 41,
+	); err != nil {
+		t.Fatalf("progressing review attempt was rejected by a numeric ceiling: %v", err)
+	}
+}
+
+func TestApplicationJobSpecificationReviewResultDecodesFromItsPortableAuthority(t *testing.T) {
+	t.Parallel()
+	input, err := NewApplicationJobSpecificationReviewInput(
+		applicationJobSpecificationTestInput(1), applicationJobSpecificationTestValue(), 1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := NewApplicationJobSpecificationReviewJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for raw, want := range map[string]ApplicationJobSpecificationReviewDecision{
+		`{"decision":"accept"}`:                               ApplicationJobSpecificationReviewAccept,
+		`{"decision":"repair","field":"acceptance_criteria"}`: ApplicationJobSpecificationReviewRepair,
+	} {
+		review, err := DecodeApplicationJobSpecificationReviewResult(job, raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if review.Decision != want {
+			t.Fatalf("review=%+v want decision=%s", review, want)
+		}
+	}
+	if _, err := DecodeApplicationJobSpecificationReviewResult(
+		job, `{"decision":"accept","field":"objective"}`,
 	); err == nil {
-		t.Fatal("accepted an unbounded fourth review")
+		t.Fatal("portable review result bypassed its bound semantic decoder")
+	}
+}
+
+func TestApplicationJobSpecificationResultDecodesFromItsPortableAuthority(t *testing.T) {
+	t.Parallel()
+	authority := applicationJobSpecificationTestInput(1)
+	job, err := NewApplicationJobSpecificationJob(authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{
+		"objective":"Implement independently controllable mixer channels.",
+		"required_behaviors":["Users can change one mixer channel independently."],
+		"acceptance_criteria":["Changing one channel leaves another channel unchanged."]
+	}`
+	specification, err := DecodeApplicationJobSpecificationResult(job, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specification.Objective != "Implement independently controllable mixer channels." {
+		t.Fatalf("specification=%+v", specification)
+	}
+	if _, err := DecodeApplicationJobSpecificationResult(job, `{
+		"objective":"",
+		"required_behaviors":["Users can change one mixer channel independently."],
+		"acceptance_criteria":["Changing one channel leaves another channel unchanged."]
+	}`); err == nil {
+		t.Fatal("portable specification result bypassed production semantic validation")
 	}
 }
 
@@ -219,8 +278,11 @@ func TestApplicationJobSpecificationRepairRejectsNoOpRetargetAndAuthorityDrift(t
 	if _, err := ApplyApplicationJobSpecificationRepair(input, drifted, patch); err == nil {
 		t.Fatal("applied repair to drifted retained state")
 	}
-	if _, err := NewApplicationJobSpecificationRepairInput(authority, retained, review, 3); err == nil {
-		t.Fatal("accepted a third repair")
+	if _, err := NewApplicationJobSpecificationRepairInput(authority, retained, review, 41); err != nil {
+		t.Fatalf("productive repair identity was given an arbitrary numeric ceiling: %v", err)
+	}
+	if _, err := NewApplicationJobSpecificationRepairInput(authority, retained, review, 0); err == nil {
+		t.Fatal("accepted a non-positive repair identity")
 	}
 	accepted := review
 	accepted.Decision = ApplicationJobSpecificationReviewAccept

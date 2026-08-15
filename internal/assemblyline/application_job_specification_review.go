@@ -6,11 +6,6 @@ import (
 	"strings"
 )
 
-const (
-	maxApplicationJobSpecificationReviewAttempts = 3
-	maxApplicationJobSpecificationRepairAttempts = 2
-)
-
 type ApplicationJobSpecificationReviewDecision string
 
 const (
@@ -57,11 +52,8 @@ func (input ApplicationJobSpecificationReviewInput) validate() error {
 	if err := ValidateApplicationJobSpecification(input.retained); err != nil {
 		return fmt.Errorf("application job specification review requires valid retained state: %w", err)
 	}
-	if input.attempt < 1 || input.attempt > maxApplicationJobSpecificationReviewAttempts {
-		return fmt.Errorf(
-			"application job specification review attempt must be between 1 and %d",
-			maxApplicationJobSpecificationReviewAttempts,
-		)
+	if input.attempt < 1 {
+		return fmt.Errorf("application job specification review attempt must be positive")
 	}
 	return nil
 }

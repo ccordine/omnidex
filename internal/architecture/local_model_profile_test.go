@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	localSemanticModel = "qwen3.5:9b-q4_K_M"
-	localFragmentModel = "qwen3.5:9b-q4_K_M"
-	localReviewModel   = "deepseek-r1:8b"
+	localSemanticModel       = "qwen3.5:9b-q4_K_M"
+	localFragmentModel       = "qwen3.5:9b-q4_K_M"
+	localReviewModel         = "deepseek-r1:8b"
+	localWorkloadReviewModel = "llama3.2:3b"
 )
 
 func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
@@ -42,6 +43,9 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 			if got := values[key]; got != localSemanticModel {
 				t.Errorf("%s: %s=%q, want %q", name, key, got, localSemanticModel)
 			}
+		}
+		if got := values["OMNI_CODING_WORKLOAD_REVIEW_MODEL"]; got != localWorkloadReviewModel {
+			t.Errorf("%s: workload review model=%q, want %q", name, got, localWorkloadReviewModel)
 		}
 		if got := values["OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL"]; got != localReviewModel {
 			t.Errorf("%s: independent web review model=%q, want %q", name, got, localReviewModel)

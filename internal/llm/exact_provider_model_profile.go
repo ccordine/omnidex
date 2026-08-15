@@ -143,9 +143,10 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		absentAdd: []string{
 			"tokenizer.ggml.add_bos_token", "tokenizer.ggml.add_eos_token", "tokenizer.ggml.add_padding_token",
 		},
-		templateSHA256:   "966de95ca8a62200913e3f8bfbf84c8494536f1b94b49166851e76644e966396",
-		parameterSHA256s: []string{"2801e61a8848e505a6e20beeaea63cca1600200f6720e5f916ba7d6da5c3ba39"},
-		transport:        exactPreparedTransportNativeSystem,
+		templateSHA256:     "966de95ca8a62200913e3f8bfbf84c8494536f1b94b49166851e76644e966396",
+		parameterSHA256s:   []string{"2801e61a8848e505a6e20beeaea63cca1600200f6720e5f916ba7d6da5c3ba39"},
+		transport:          exactPreparedTransportNativeSystem,
+		requestTemperature: 0, requestTemperatureSet: true,
 	},
 }
 

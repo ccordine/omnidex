@@ -70,6 +70,9 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("coding_workload_model"); value != "" {
 		out.Stations[station.CodingWorkload] = value
 	}
+	if value := cfg.Get("coding_workload_review_model"); value != "" {
+		out.Stations[station.CodingWorkloadReview] = value
+	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
 		out.Stations[station.CodingArtifactHandling] = value
 		out.Stations[station.CodingKnownArtifactTruth] = value

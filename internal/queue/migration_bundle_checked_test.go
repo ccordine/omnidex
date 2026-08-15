@@ -100,6 +100,7 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	stationPromptTransportCount := 0
 	acceptanceGroundingReviewStationCount := 0
 	stationResponseSchemaResourceCount := 0
+	codingWorkloadReviewStationCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -209,9 +210,12 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == stationResponseSchemaResourceMigration {
 			stationResponseSchemaResourceCount++
 		}
+		if entry.name == codingWorkloadReviewStationMigration {
+			codingWorkloadReviewStationCount++
+		}
 	}
-	if len(bundle.entries) != 151 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 151/%d",
+	if len(bundle.entries) != 152 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 152/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -280,12 +284,13 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		portableRendererV3Count != 1 || tokenizerProfileAuthorityCount != 1 ||
 		stationOutputProjectionCount != 1 || stationOutputLimitModeCount != 1 ||
 		stationPromptTransportCount != 1 || acceptanceGroundingReviewStationCount != 1 ||
-		stationResponseSchemaResourceCount != 1 {
-		t.Fatalf("checked migrations 089..100 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
+		stationResponseSchemaResourceCount != 1 || codingWorkloadReviewStationCount != 1 {
+		t.Fatalf("checked migrations 089..101 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			scrumChannelMessageRelationCount, scrumChannelOperationReceiptsCount,
 			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count,
 			tokenizerProfileAuthorityCount, stationOutputProjectionCount,
 			stationOutputLimitModeCount, stationPromptTransportCount,
-			acceptanceGroundingReviewStationCount, stationResponseSchemaResourceCount)
+			acceptanceGroundingReviewStationCount, stationResponseSchemaResourceCount,
+			codingWorkloadReviewStationCount)
 	}
 }

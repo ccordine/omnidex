@@ -59,7 +59,7 @@ func TestApplicationWorkloadResolutionSpecifiesReviewsAndFreezesEveryAcceptedReq
 		},
 	}
 
-	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", input)
+	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", "semantic-review", input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestApplicationWorkloadResolutionSpecifiesReviewsAndFreezesEveryAcceptedReq
 	}
 }
 
-func TestApplicationWorkloadResolutionRepairsOnlyReviewerNamedLeavesAtMostTwice(t *testing.T) {
+func TestApplicationWorkloadResolutionPreservesReviewerNamedLeafRepairs(t *testing.T) {
 	t.Parallel()
 
 	specification := workerApplicationSpecification()
@@ -158,7 +158,7 @@ func TestApplicationWorkloadResolutionRepairsOnlyReviewerNamedLeavesAtMostTwice(
 				case 2:
 					return workloadPortableCandidate(job, `{"acceptance_criteria":["After assignment, the record is visibly listed in the selected named group.","After removal, the record is no longer listed in that group."]}`), nil
 				default:
-					return assemblyline.PortableResult{}, fmt.Errorf("repair attempt %d exceeded hard bound", repairs)
+					return assemblyline.PortableResult{}, fmt.Errorf("unexpected repair attempt %d", repairs)
 				}
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %s", job.Kind)
@@ -166,7 +166,7 @@ func TestApplicationWorkloadResolutionRepairsOnlyReviewerNamedLeavesAtMostTwice(
 		},
 	}
 
-	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", input)
+	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", "semantic-review", input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,57 +199,6 @@ func TestApplicationWorkloadResolutionRepairsOnlyReviewerNamedLeavesAtMostTwice(
 	}
 }
 
-func TestApplicationWorkloadResolutionRefusesAThirdReviewerRepairAndReturnsNoFrozenWorkload(t *testing.T) {
-	t.Parallel()
-
-	specification := workerApplicationSpecification()
-	specification.Requirements = specification.Requirements[:1]
-	input := applicationWorkloadInput(specification)
-	var kinds []assemblyline.WorkKind
-	var repairs int
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 3,
-		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			kinds = append(kinds, job.Kind)
-			switch job.Kind {
-			case assemblyline.WorkApplicationJobSpecification:
-				return workloadPortableCandidate(job, workerJobSpecificationCandidate("groups records")), nil
-			case assemblyline.WorkApplicationJobSpecificationReview:
-				return workloadPortableCandidate(job, `{"decision":"repair","field":"objective"}`), nil
-			case assemblyline.WorkApplicationJobSpecificationRepair:
-				repairs++
-				return workloadPortableCandidate(job, fmt.Sprintf(
-					`{"objective":"Implement reviewed record grouping revision %d."}`, repairs,
-				)), nil
-			default:
-				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %s", job.Kind)
-			}
-		},
-	}
-
-	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", input)
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "repair") {
-		t.Fatalf("third reviewer repair error=%v", err)
-	}
-	if repairs != 2 {
-		t.Fatalf("reviewer caused %d repairs; want hard maximum 2", repairs)
-	}
-	if frozen.Schema != "" || frozen.SHA256 != "" || len(frozen.Tasks) != 0 {
-		t.Fatalf("rejected specification leaked a frozen workload: %+v", frozen)
-	}
-	wantKinds := []assemblyline.WorkKind{
-		assemblyline.WorkApplicationJobSpecification,
-		assemblyline.WorkApplicationJobSpecificationReview,
-		assemblyline.WorkApplicationJobSpecificationRepair,
-		assemblyline.WorkApplicationJobSpecificationReview,
-		assemblyline.WorkApplicationJobSpecificationRepair,
-		assemblyline.WorkApplicationJobSpecificationReview,
-	}
-	if !reflect.DeepEqual(kinds, wantKinds) {
-		t.Fatalf("third reviewer defect dispatched an illegal repair: %v", kinds)
-	}
-}
-
 func TestApplicationWorkloadResolutionDoesNotRepairAnUnreviewedInvalidSpecification(t *testing.T) {
 	t.Parallel()
 
@@ -272,7 +221,7 @@ func TestApplicationWorkloadResolutionDoesNotRepairAnUnreviewedInvalidSpecificat
 		},
 	}
 
-	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", input)
+	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", "semantic-review", input)
 	if err == nil {
 		t.Fatal("structurally invalid unreviewed specification succeeded")
 	}
@@ -306,7 +255,7 @@ func TestApplicationWorkloadResolutionRejectsReviewerProseBeforeRepairOrFreeze(t
 		},
 	}
 
-	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", input)
+	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", "semantic-review", input)
 	if err == nil {
 		t.Fatal("reviewer-authored constraint entered repair authority")
 	}
@@ -339,7 +288,7 @@ func TestApplicationJobSpecificationTransportFailureDoesNotTriggerReviewOrRepair
 	specification := workerApplicationSpecification()
 	specification.Requirements = specification.Requirements[:1]
 	_, err := resolveDirectCodingApplicationWorkload(
-		runtime, "semantic", applicationWorkloadInput(specification),
+		runtime, "semantic", "semantic-review", applicationWorkloadInput(specification),
 	)
 	if err == nil || !strings.Contains(err.Error(), "transport unavailable") {
 		t.Fatalf("transport failure=%v", err)

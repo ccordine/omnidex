@@ -19,14 +19,18 @@ import (
 )
 
 type stationReplayOptions struct {
-	OpeningID int64
-	JobID     int64
-	WorkKind  string
-	Models    []string
-	Report    string
-	Config    string
-	OllamaURL string
-	Timeout   time.Duration
+	OpeningID             int64
+	JobID                 int64
+	WorkKind              string
+	Models                []string
+	Report                string
+	Config                string
+	OllamaURL             string
+	Timeout               time.Duration
+	CompilerConverge      bool
+	CurrentContract       bool
+	SpecificationConverge bool
+	ReviewModel           string
 }
 
 type stationReplayModels []string
@@ -82,12 +86,20 @@ func runStationReplay(args []string) {
 	}
 	encoder := newStationReplayReportEncoder(report)
 	encoder.SetEscapeHTML(false)
+	reportSchema := stationReplayReportSchema
+	if options.CompilerConverge {
+		reportSchema = stationConvergenceReportSchema
+	} else if options.SpecificationConverge {
+		reportSchema = stationSpecificationConvergenceReportSchema
+	} else if options.CurrentContract {
+		reportSchema = stationCurrentContractReplayReportSchema
+	}
 	header := stationReplayReportHeader{
-		Type: "header", Schema: stationReplayReportSchema, CreatedAt: time.Now().UTC(),
+		Type: "header", Schema: reportSchema, CreatedAt: time.Now().UTC(),
 		SourceCallOpening:           point.Call,
 		SourceCallWireRequestBase64: stationReplayBase64(point.Call.WireRequest),
 		SourceGapOpening:            point.Gap, Models: append([]string(nil), options.Models...),
-		Timeout: options.Timeout.String(),
+		Timeout: options.Timeout.String(), ReviewModel: options.ReviewModel,
 	}
 	if err := writeStationReplayReport(encoder, report, header); err != nil {
 		_ = report.Close()
@@ -99,7 +111,47 @@ func runStationReplay(args []string) {
 	for _, modelName := range options.Models {
 		started := time.Now().UTC()
 		callCtx, cancel := stationReplayContext(options.Timeout)
-		replay, replayErr := worker.ReplayExactStation(callCtx, client, point, modelName)
+		if options.SpecificationConverge {
+			convergence, convergenceErr := worker.ConvergeExactApplicationJobSpecification(
+				callCtx, client, point, modelName, options.ReviewModel,
+			)
+			cancel()
+			run := newStationSpecificationConvergenceReportRun(
+				started, time.Now().UTC(), convergence, convergenceErr,
+			)
+			if convergenceErr != nil {
+				failures++
+			}
+			if err := writeStationReplayReport(encoder, report, run); err != nil {
+				_ = report.Close()
+				die("bench:replay: append specification convergence result: " + err.Error())
+			}
+			printStationSpecificationConvergenceRun(run)
+			continue
+		}
+		if options.CompilerConverge {
+			convergence, convergenceErr := worker.ConvergeExactTypeScriptStation(
+				callCtx, client, point, modelName,
+			)
+			cancel()
+			run := newStationConvergenceReportRun(started, time.Now().UTC(), convergence, convergenceErr)
+			if convergenceErr != nil {
+				failures++
+			}
+			if err := writeStationReplayReport(encoder, report, run); err != nil {
+				_ = report.Close()
+				die("bench:replay: append convergence result: " + err.Error())
+			}
+			printStationConvergenceRun(run)
+			continue
+		}
+		var replay worker.ExactStationReplay
+		var replayErr error
+		if options.CurrentContract {
+			replay, replayErr = worker.ReplayStationWithCurrentContract(callCtx, client, point, modelName)
+		} else {
+			replay, replayErr = worker.ReplayExactStation(callCtx, client, point, modelName)
+		}
 		cancel()
 		finished := time.Now().UTC()
 		run := stationReplayReportRun{
@@ -139,11 +191,23 @@ func parseStationReplayOptions(args []string) (stationReplayOptions, error) {
 	fs.StringVar(&options.Config, "config", "", "read-only Omnidex environment file")
 	fs.StringVar(&options.OllamaURL, "ollama-url", "", "Ollama URL override")
 	fs.DurationVar(&options.Timeout, "timeout", 0, "per-model timeout; 0 waits for provider completion")
+	fs.BoolVar(&options.CompilerConverge, "compiler-converge", false, "continue one TypeScript correction against code-owned compiler feedback")
+	fs.BoolVar(&options.CurrentContract, "current-contract", false, "preserve the frozen portable packet while using the checked-in transport contract")
+	fs.BoolVar(&options.SpecificationConverge, "specification-converge", false, "run the production retained specification review/repair loop")
+	fs.StringVar(&options.ReviewModel, "review-model", "", "independently routed specification review model")
 	if err := fs.Parse(args); err != nil {
 		return options, err
 	}
+	options.ReviewModel = strings.TrimSpace(options.ReviewModel)
+	modes := 0
+	for _, enabled := range []bool{options.CompilerConverge, options.CurrentContract, options.SpecificationConverge} {
+		if enabled {
+			modes++
+		}
+	}
 	if len(fs.Args()) != 0 || options.Timeout < 0 || (options.OpeningID > 0) == (options.JobID > 0) ||
-		len(models) == 0 || strings.TrimSpace(options.Report) == "" {
+		len(models) == 0 || strings.TrimSpace(options.Report) == "" || modes > 1 ||
+		(options.SpecificationConverge != (options.ReviewModel != "")) {
 		return options, errors.New("requires exactly one of --opening or --job, one or more --model values, and --report")
 	}
 	options.WorkKind = strings.TrimSpace(options.WorkKind)

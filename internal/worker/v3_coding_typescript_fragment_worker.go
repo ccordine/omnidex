@@ -35,7 +35,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 		return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, 0, err)
 	}
 	var lastErr error
-	var lastCandidate string
+	lastCandidate := strings.TrimSpace(job.current)
 	progress := newDirectCodingTypeScriptCorrectionProgress()
 	var syntaxProgress directCodingTypeScriptSyntaxProgress
 	var nextSyntaxRepair directCodingTypeScriptSyntaxRepair
@@ -196,8 +196,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 			return "", failDirectCodingTypeScriptFragmentWorker(runtime, attemptModel, job.block.ID, attempt,
 				fmt.Errorf("TypeScript fragment rejection lost its exact failure"))
 		}
-		terminal := errors.Is(rejectionErr, errDirectCodingTypeScriptUnchangedCorrection) ||
-			(candidate == "" && rawCandidate != "")
+		terminal := errors.Is(rejectionErr, errDirectCodingTypeScriptUnchangedCorrection)
 		if !terminal {
 			progressCandidate := strings.TrimSpace(lastCandidate)
 			if progressCandidate == "" {

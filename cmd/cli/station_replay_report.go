@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,9 @@ import (
 )
 
 const stationReplayReportSchema = "omnidex.station-replay-report.v1"
+const stationConvergenceReportSchema = "omnidex.station-convergence-report.v1"
+const stationCurrentContractReplayReportSchema = "omnidex.station-current-contract-replay-report.v1"
+const stationSpecificationConvergenceReportSchema = "omnidex.application-job-specification-convergence-report.v1"
 
 type stationReplayReportHeader struct {
 	Type                        string                   `json:"type"`
@@ -26,6 +30,23 @@ type stationReplayReportHeader struct {
 	SourceGapOpening            queue.StationGapOpening  `json:"source_gap_opening"`
 	Models                      []string                 `json:"models"`
 	Timeout                     string                   `json:"timeout"`
+	ReviewModel                 string                   `json:"review_model,omitempty"`
+}
+
+type stationConvergenceIterationEvidence struct {
+	Number                        int                          `json:"number"`
+	ProviderResponseCaptureBase64 string                       `json:"provider_response_capture_base64"`
+	ProviderIdentityEvidence      llm.ProviderIdentityEvidence `json:"provider_identity_evidence"`
+}
+
+type stationConvergenceReportRun struct {
+	Type        string                                `json:"type"`
+	StartedAt   time.Time                             `json:"started_at"`
+	FinishedAt  time.Time                             `json:"finished_at"`
+	Status      string                                `json:"status"`
+	Error       string                                `json:"error,omitempty"`
+	Convergence worker.ExactTypeScriptConvergence     `json:"convergence"`
+	Evidence    []stationConvergenceIterationEvidence `json:"iteration_evidence"`
 }
 
 type stationReplayReportRun struct {
@@ -37,6 +58,15 @@ type stationReplayReportRun struct {
 	Replay                        worker.ExactStationReplay    `json:"replay"`
 	ProviderResponseCaptureBase64 string                       `json:"provider_response_capture_base64,omitempty"`
 	ProviderIdentityEvidence      llm.ProviderIdentityEvidence `json:"provider_identity_evidence,omitempty"`
+}
+
+type stationSpecificationConvergenceReportRun struct {
+	Type        string                                             `json:"type"`
+	StartedAt   time.Time                                          `json:"started_at"`
+	FinishedAt  time.Time                                          `json:"finished_at"`
+	Status      string                                             `json:"status"`
+	Error       string                                             `json:"error,omitempty"`
+	Convergence worker.ExactApplicationJobSpecificationConvergence `json:"convergence"`
 }
 
 func openStationReplayReport(path string) (*os.File, error) {
@@ -66,6 +96,90 @@ func writeStationReplayReport(encoder *json.Encoder, report *os.File, value any)
 
 func stationReplayBase64(value []byte) string {
 	return base64.StdEncoding.EncodeToString(value)
+}
+
+func newStationConvergenceReportRun(
+	started time.Time,
+	finished time.Time,
+	convergence worker.ExactTypeScriptConvergence,
+	convergenceErr error,
+) stationConvergenceReportRun {
+	convergence.WallDuration = finished.Sub(started)
+	run := stationConvergenceReportRun{
+		Type: "run", StartedAt: started, FinishedAt: finished,
+		Status: "passed", Convergence: convergence,
+		Evidence: make([]stationConvergenceIterationEvidence, 0, len(convergence.Iterations)),
+	}
+	if convergenceErr != nil {
+		run.Status, run.Error = "failed", convergenceErr.Error()
+	}
+	for _, iteration := range convergence.Iterations {
+		run.Evidence = append(run.Evidence, stationConvergenceIterationEvidence{
+			Number:                        iteration.Number,
+			ProviderResponseCaptureBase64: stationReplayBase64(iteration.Replay.Generation.ProviderResponseCapture),
+			ProviderIdentityEvidence:      iteration.Replay.Generation.ProviderIdentityEvidence,
+		})
+	}
+	return run
+}
+
+func newStationSpecificationConvergenceReportRun(
+	started time.Time,
+	finished time.Time,
+	convergence worker.ExactApplicationJobSpecificationConvergence,
+	convergenceErr error,
+) stationSpecificationConvergenceReportRun {
+	convergence.WallDuration = finished.Sub(started)
+	run := stationSpecificationConvergenceReportRun{
+		Type: "run", StartedAt: started, FinishedAt: finished,
+		Status: "passed", Convergence: convergence,
+	}
+	if convergenceErr != nil {
+		run.Status, run.Error = "failed", convergenceErr.Error()
+	}
+	return run
+}
+
+func printStationSpecificationConvergenceRun(run stationSpecificationConvergenceReportRun) {
+	for _, call := range run.Convergence.Calls {
+		generation := call.Replay.Generation
+		fmt.Printf(
+			"specification_convergence planner=%s reviewer=%s call=%d kind=%s model=%s wall_ms=%d prompt_tokens=%d output_tokens=%d artifact=%s\n",
+			run.Convergence.PlannerModel, run.Convergence.ReviewModel, call.Number,
+			call.WorkKind, call.Model, call.Replay.WallDuration.Milliseconds(),
+			generation.Usage.PromptEvalCount, generation.Usage.EvalCount, call.Replay.Artifact.Kind,
+		)
+	}
+	fmt.Printf(
+		"specification_convergence planner=%s reviewer=%s status=%s terminal=%s calls=%d wall_ms=%d error=%s\n",
+		run.Convergence.PlannerModel, run.Convergence.ReviewModel, run.Status,
+		run.Convergence.Terminal, len(run.Convergence.Calls),
+		run.Convergence.WallDuration.Milliseconds(), run.Error,
+	)
+}
+
+func printStationConvergenceRun(run stationConvergenceReportRun) {
+	for _, iteration := range run.Convergence.Iterations {
+		fmt.Printf(
+			"convergence model=%s iteration=%d wall_ms=%d prompt_tokens=%d output_tokens=%d artifact_bytes=%d diagnostics_after=%s artifact_error=%q\n",
+			run.Convergence.Model, iteration.Number, iteration.Replay.WallDuration.Milliseconds(),
+			iteration.Replay.Generation.Usage.PromptEvalCount, iteration.Replay.Generation.Usage.EvalCount,
+			len(iteration.Replay.Artifact.Source), stationConvergenceDiagnosticSummary(iteration),
+			iteration.ArtifactError,
+		)
+	}
+	fmt.Printf(
+		"convergence model=%s status=%s terminal=%s iterations=%d wall_ms=%d error=%s\n",
+		run.Convergence.Model, run.Status, run.Convergence.Terminal,
+		len(run.Convergence.Iterations), run.Convergence.WallDuration.Milliseconds(), run.Error,
+	)
+}
+
+func stationConvergenceDiagnosticSummary(iteration worker.ExactTypeScriptConvergenceIteration) string {
+	if iteration.AfterDiagnostic == nil {
+		return "not_compiled"
+	}
+	return strconv.Itoa(iteration.AfterDiagnostic.Count)
 }
 
 func printStationReplayRun(run stationReplayReportRun) {

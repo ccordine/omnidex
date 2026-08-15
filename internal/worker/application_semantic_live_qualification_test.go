@@ -83,7 +83,7 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				Surface:      assemblyline.ApplicationSurfaceBrowser,
 				ProductQuote: resolution.ProductQuote, Requirements: resolution.Requirements,
 			}
-			frozen, err := resolveDirectCodingApplicationWorkload(runtime, modelName, input)
+			frozen, err := resolveDirectCodingApplicationWorkload(runtime, modelName, modelName, input)
 			if err != nil {
 				t.Fatal(err)
 			}

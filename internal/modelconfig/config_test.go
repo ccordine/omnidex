@@ -101,8 +101,9 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 		"web_grounded_synthesis_correction_model": "qwen3:8b-synthesis",
 		"web_claim_evidence_review_model":         "qwen3:8b-review",
 		"coding_surface_model":                    "qwen3:4b-surface",
-		"coding_requirements_model":                "qwen2.5-coder:7b-requirements",
-		"coding_workload_model":                    "qwen3.5:27b-workload",
+		"coding_requirements_model":               "qwen2.5-coder:7b-requirements",
+		"coding_workload_model":                   "qwen3.5:27b-workload",
+		"coding_workload_review_model":            "llama3.2:3b-review",
 		"coding_artifact_handling_model":          "qwen2.5:3b-artifact",
 		"coding_capability_relation_model":        "qwen3:4b-relation",
 		"coding_skill_selection_model":            "qwen3:4b-skill-select",
@@ -144,6 +145,9 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 	}
 	if got := applied.Stations[station.CodingWorkload]; got != "qwen3.5:27b-workload" {
 		t.Fatalf("coding workload model=%q", got)
+	}
+	if got := applied.Stations[station.CodingWorkloadReview]; got != "llama3.2:3b-review" {
+		t.Fatalf("coding workload review model=%q", got)
 	}
 	if got := applied.Stations[station.CodingArtifactHandling]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q", got)

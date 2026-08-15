@@ -147,7 +147,7 @@ func TestTypeScriptWorkerProjectsRawOutputBeyondFormerPortableCandidateCeiling(t
 	}
 }
 
-func TestTypeScriptWorkerFailsOnceWhenNoUniqueFunctionCanBeProjected(t *testing.T) {
+func TestTypeScriptWorkerStopsRepeatedUnprojectableResponseState(t *testing.T) {
 	t.Parallel()
 
 	job := directCodingTypeScriptFragmentJob{block: assemblyline.TypeScriptBlock{
@@ -169,11 +169,11 @@ func TestTypeScriptWorkerFailsOnceWhenNoUniqueFunctionCanBeProjected(t *testing.
 				}),
 			}
 			_, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
-			if err == nil || !strings.Contains(err.Error(), "TypeScript model response contains") {
+			if err == nil || !strings.Contains(err.Error(), "repeated candidate/diagnostic correction state") {
 				t.Fatalf("projection error=%v", err)
 			}
-			if executions != 1 {
-				t.Fatalf("invalid projection dispatched %d calls, want one explicit failure", executions)
+			if executions != 2 {
+				t.Fatalf("repeated invalid projection dispatched %d calls, want exactly 2", executions)
 			}
 		})
 	}

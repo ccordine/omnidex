@@ -55,11 +55,8 @@ func (input ApplicationJobSpecificationRepairInput) validate() error {
 	if input.review.Decision != ApplicationJobSpecificationReviewRepair {
 		return fmt.Errorf("application job specification repair requires a repair review")
 	}
-	if input.attempt < 1 || input.attempt > maxApplicationJobSpecificationRepairAttempts {
-		return fmt.Errorf(
-			"application job specification repair attempt must be between 1 and %d",
-			maxApplicationJobSpecificationRepairAttempts,
-		)
+	if input.attempt < 1 {
+		return fmt.Errorf("application job specification repair attempt must be positive")
 	}
 	binding, err := applicationJobSpecificationBinding(input.authority, input.retained)
 	if err != nil {

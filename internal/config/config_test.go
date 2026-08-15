@@ -34,6 +34,7 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	t.Setenv("OMNI_CODING_SURFACE_MODEL", "qwen3:4b-thinking")
 	t.Setenv("OMNI_CODING_REQUIREMENTS_MODEL", "qwen2.5-coder:7b-requirements")
 	t.Setenv("OMNI_CODING_WORKLOAD_MODEL", "qwen3.5:27b-workload")
+	t.Setenv("OMNI_CODING_WORKLOAD_REVIEW_MODEL", "llama3.2:3b-review")
 	t.Setenv("OMNI_CODING_ARTIFACT_HANDLING_MODEL", "qwen2.5:3b-artifact")
 	t.Setenv("OMNI_CODING_CAPABILITY_RELATION_MODEL", "qwen3:4b-relation")
 	t.Setenv("OMNI_CODING_SKILL_SELECTION_MODEL", "qwen3:4b-skill-selection")
@@ -52,6 +53,9 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	}
 	if got := cfg.StationModels[station.CodingWorkload]; got != "qwen3.5:27b-workload" {
 		t.Fatalf("coding workload model=%q want dedicated override", got)
+	}
+	if got := cfg.StationModels[station.CodingWorkloadReview]; got != "llama3.2:3b-review" {
+		t.Fatalf("coding workload review model=%q want independent override", got)
 	}
 	if got := cfg.StationModels[station.CodingArtifactHandling]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q want dedicated override", got)
