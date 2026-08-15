@@ -174,8 +174,8 @@ source "$1/scripts/update-runtime-lib.sh"
 log() { printf '%s\n' "$*"; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
 NO_RESTART=0
-DOCKER_CONTEXT_NAME=""
-COMPOSE_PROJECT=""
+DOCKER_CONTEXT_NAME="rootless"
+COMPOSE_PROJECT="omni-nxt"
 compose_restart "$1" "docker compose" "$1/docker-compose.yml" core
 printf '%s\n' 'update complete'
 `

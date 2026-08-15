@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 resolve_compose_cmd() {
+  [[ -n "${DOCKER_CONTEXT_NAME:-}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
   if command_exists docker && compose_docker version >/dev/null 2>&1; then
     printf '%s\n' "docker compose"
     return
@@ -15,19 +16,15 @@ validate_compose_identity() {
 }
 
 compose_docker() {
-  if [[ -n "${DOCKER_CONTEXT_NAME}" ]]; then
-    env "DOCKER_CONTEXT=${DOCKER_CONTEXT_NAME}" docker compose "$@"
-    return
-  fi
-  docker compose "$@"
+  [[ -n "${DOCKER_CONTEXT_NAME:-}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
+  validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
+  env "DOCKER_CONTEXT=${DOCKER_CONTEXT_NAME}" docker compose "$@"
 }
 
 context_docker() {
-  if [[ -n "${DOCKER_CONTEXT_NAME}" ]]; then
-    env "DOCKER_CONTEXT=${DOCKER_CONTEXT_NAME}" docker "$@"
-    return
-  fi
-  docker "$@"
+  [[ -n "${DOCKER_CONTEXT_NAME:-}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
+  validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
+  env "DOCKER_CONTEXT=${DOCKER_CONTEXT_NAME}" docker "$@"
 }
 
 compose_command_array() {
@@ -35,7 +32,9 @@ compose_command_array() {
   local -n output="$2"
 	[[ "${compose_cmd}" == "docker compose" ]] || die "unsupported compose implementation"
 	output=(compose_docker)
-  [[ -z "${COMPOSE_PROJECT}" ]] || output+=(-p "${COMPOSE_PROJECT}")
+  [[ -n "${COMPOSE_PROJECT:-}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
+  validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
+  output+=(-p "${COMPOSE_PROJECT}")
 }
 
 needs_compose_work() {

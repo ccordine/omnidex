@@ -114,8 +114,9 @@ set -euo pipefail
 source "$1/scripts/update-runtime-lib.sh"
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 die() { printf '%s\n' "$*" >&2; exit 1; }
-DOCKER_CONTEXT_NAME=""
-resolve_compose_cmd
+	DOCKER_CONTEXT_NAME="rootless"
+	COMPOSE_PROJECT="omni-nxt"
+	resolve_compose_cmd
 `
 	command := exec.Command("bash", "-c", script, "compose-plugin-only", root)
 	command.Env = exactTestEnvironment(os.Environ(), map[string]string{"PATH": fakeBin})
@@ -128,6 +129,32 @@ resolve_compose_cmd
 	}
 }
 
+func TestManagedComposeRuntimeRejectsAmbientDockerAuthority(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	fakeBin, logPath := writeFakeComposePlugin(t)
+	script := `
+set -euo pipefail
+source "$1/scripts/update-runtime-lib.sh"
+die() { printf '%s\n' "$*" >&2; exit 1; }
+command_exists() { command -v "$1" >/dev/null 2>&1; }
+DOCKER_CONTEXT_NAME=""
+COMPOSE_PROJECT="omni-nxt"
+resolve_compose_cmd
+`
+	command := exec.Command("bash", "-c", script, "compose-explicit-context", root)
+	command.Env = exactTestEnvironment(os.Environ(), map[string]string{
+		"PATH":                 fakeBin + ":" + os.Getenv("PATH"),
+		"OMNI_TEST_DOCKER_LOG": logPath,
+	})
+	output, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "DOCKER_CONTEXT must be explicit and non-empty") {
+		t.Fatalf("ambient Docker authority error = %v, output = %q", err, output)
+	}
+	if _, statErr := os.Stat(logPath); !os.IsNotExist(statErr) {
+		t.Fatalf("ambient Docker command was invoked: %v", statErr)
+	}
+}
+
 func TestManagedComposeDeploymentIdentityFailsWithoutOneExactProjectAuthority(t *testing.T) {
 	root := repoRootFromOmniTest(t)
 	for _, test := range []struct {
@@ -137,9 +164,10 @@ func TestManagedComposeDeploymentIdentityFailsWithoutOneExactProjectAuthority(t 
 	}{
 		{name: "missing context key", raw: "COMPOSE_PROJECT_NAME=omnidex\n", want: "DOCKER_CONTEXT exactly once"},
 		{name: "duplicate context key", raw: "DOCKER_CONTEXT=one\nDOCKER_CONTEXT=two\nCOMPOSE_PROJECT_NAME=omnidex\n", want: "DOCKER_CONTEXT exactly once"},
-		{name: "missing project key", raw: "DOCKER_CONTEXT=\n", want: "COMPOSE_PROJECT_NAME exactly once"},
-		{name: "blank project", raw: "DOCKER_CONTEXT=\nCOMPOSE_PROJECT_NAME=\n", want: "explicit and non-empty"},
-		{name: "invalid project", raw: "DOCKER_CONTEXT=\nCOMPOSE_PROJECT_NAME=bad/project\n", want: "unsupported characters"},
+		{name: "blank context", raw: "DOCKER_CONTEXT=\nCOMPOSE_PROJECT_NAME=omnidex\n", want: "DOCKER_CONTEXT must be explicit and non-empty"},
+		{name: "missing project key", raw: "DOCKER_CONTEXT=rootless\n", want: "COMPOSE_PROJECT_NAME exactly once"},
+		{name: "blank project", raw: "DOCKER_CONTEXT=rootless\nCOMPOSE_PROJECT_NAME=\n", want: "COMPOSE_PROJECT_NAME must be explicit and non-empty"},
+		{name: "invalid project", raw: "DOCKER_CONTEXT=rootless\nCOMPOSE_PROJECT_NAME=bad/project\n", want: "unsupported characters"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			environment := filepath.Join(t.TempDir(), ".env")
@@ -157,6 +185,7 @@ DOCKER_CONTEXT_NAME="$(managed_checkout_env_value "$2" DOCKER_CONTEXT)"
 COMPOSE_PROJECT="$(managed_checkout_env_value "$2" COMPOSE_PROJECT_NAME)"
 validate_compose_identity DOCKER_CONTEXT "$DOCKER_CONTEXT_NAME"
 validate_compose_identity COMPOSE_PROJECT_NAME "$COMPOSE_PROJECT"
+[[ -n "$DOCKER_CONTEXT_NAME" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
 [[ -n "$COMPOSE_PROJECT" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
 `
 			command := exec.Command("bash", "-c", script, "compose-deployment-identity", root, environment)

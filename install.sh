@@ -229,6 +229,7 @@ main() {
     if [[ -n "$(find "${PREFIX}" -mindepth 1 -maxdepth 1 -print -quit)" && ! -d "${PREFIX}/.git" ]]; then
       die "existing non-empty target is not a managed Omnidex checkout: ${PREFIX}"
     fi
+    managed_checkout_require_replaceable_target "${PREFIX}"
     if ! confirm "Update existing Omnidex install at ${PREFIX}?"; then
       die "installation canceled"
     fi

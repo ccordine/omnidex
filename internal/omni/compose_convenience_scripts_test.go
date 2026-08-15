@@ -86,3 +86,15 @@ func TestComposeDeploymentWrapperUsesConfiguredDockerContextAndProject(t *testin
 		t.Fatalf("wrapper docker calls=%q", lines)
 	}
 }
+
+func TestOperatorGuidanceDoesNotSendUsersThroughAmbientCompose(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	for _, path := range []string{"scripts/ufw-docker-host.sh", "internal/api/host_status.go"} {
+		body := readRepoScript(t, root, path)
+		for _, forbidden := range []string{"docker compose up", "docker compose exec"} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s retains ambient deployment guidance %q", path, forbidden)
+			}
+		}
+	}
+}

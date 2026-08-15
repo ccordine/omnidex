@@ -52,13 +52,16 @@ func serviceRunsCoreMigrateFresh(opts serviceCommandOptions) (bool, error) {
 	return true, nil
 }
 
-func resolveComposeCommandPrefix() ([]string, error) {
+func resolveComposeCommandPrefix(contextName string) ([]string, error) {
+	if err := validateServiceDeploymentIdentifier(dockerContextEnvironmentKey, contextName); err != nil {
+		return nil, err
+	}
 	if _, err := exec.LookPath("docker"); err == nil {
-		if err := exec.Command("docker", "compose", "version").Run(); err == nil {
-			return []string{"docker", "compose"}, nil
+		if err := exec.Command("docker", "--context", contextName, "compose", "version").Run(); err == nil {
+			return []string{"docker", "--context", contextName, "compose"}, nil
 		}
 	}
-	return nil, errors.New("the Docker Compose plugin is required but was not found")
+	return nil, fmt.Errorf("the Docker Compose plugin is unavailable in explicit context %q", contextName)
 }
 
 func resolveServiceComposeTarget(prefix, composeFile string) (string, string, error) {
@@ -94,7 +97,7 @@ func resolveServiceComposeTarget(prefix, composeFile string) (string, string, er
 	if cleanPrefix != "" {
 		searchRoots = append(searchRoots, cleanPrefix)
 	} else {
-		searchRoots = runtimeRootCandidates(
+		searchRoots = serviceRuntimeRootCandidates(
 			strings.TrimSpace(os.Getenv(omniRuntimeDirEnv)),
 			currentWorkingDirectory(),
 			currentExecutablePath(),
@@ -114,6 +117,16 @@ func resolveServiceComposeTarget(prefix, composeFile string) (string, string, er
 		return "", "", fmt.Errorf("no docker-compose.yml found under %s", cleanPrefix)
 	}
 	return "", "", errors.New("unable to locate docker-compose.yml; pass --prefix or --compose-file")
+}
+
+func serviceRuntimeRootCandidates(envRoot, cwd, executablePath string) []string {
+	raw := []string{}
+	if executablePath != "" {
+		executableDirectory := filepath.Dir(executablePath)
+		raw = append(raw, executableDirectory, filepath.Dir(executableDirectory))
+	}
+	raw = append(raw, envRoot, cwd)
+	return dedupeAbsolutePaths(raw)
 }
 
 func composeInvocationForService(opts serviceCommandOptions, composeCmd []string, composeFile string) ([]string, error) {

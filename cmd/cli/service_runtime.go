@@ -48,7 +48,7 @@ func runServiceInvocationOrExit(invocation []string, workdir string) {
 	}
 }
 
-func dockerLogsInvocationForService(opts serviceCommandOptions, composeCmd []string, composeFile string, workdir string) ([]string, error) {
+func dockerLogsInvocationForService(opts serviceCommandOptions, composeCmd, dockerCmd []string, composeFile string, workdir string) ([]string, error) {
 	serviceName := normalizeServiceName(opts.Service)
 	if serviceTargetsAll(serviceName) {
 		return nil, errors.New("docker-logs requires a specific service (example: --service core)")
@@ -59,7 +59,7 @@ func dockerLogsInvocationForService(opts serviceCommandOptions, composeCmd []str
 		return nil, err
 	}
 
-	return buildDockerLogsInvocation(containerID, opts.Tail, opts.Follow)
+	return buildDockerLogsInvocation(dockerCmd, containerID, opts.Tail, opts.Follow)
 }
 
 func resolveComposeServiceContainerID(composeCmd []string, composeFile string, serviceName string, workdir string) (string, error) {
@@ -98,17 +98,17 @@ func resolveComposeServiceContainerID(composeCmd []string, composeFile string, s
 	return containerID, nil
 }
 
-func buildDockerLogsInvocation(containerID string, tail int, follow bool) ([]string, error) {
+func buildDockerLogsInvocation(dockerCmd []string, containerID string, tail int, follow bool) ([]string, error) {
+	if len(dockerCmd) == 0 {
+		return nil, errors.New("docker command prefix is required")
+	}
 	containerID = strings.TrimSpace(containerID)
 	if containerID == "" {
 		return nil, errors.New("container id is required for docker logs")
 	}
-	dockerBin, err := exec.LookPath("docker")
-	if err != nil {
-		return nil, errors.New("docker is required for docker-logs action")
-	}
 
-	invocation := []string{dockerBin, "logs", "--tail", strconv.Itoa(maxInt(tail, 0))}
+	invocation := append([]string{}, dockerCmd...)
+	invocation = append(invocation, "logs", "--tail", strconv.Itoa(maxInt(tail, 0)))
 	if follow {
 		invocation = append(invocation, "-f")
 	}

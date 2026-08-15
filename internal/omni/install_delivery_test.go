@@ -209,6 +209,11 @@ func TestManagedCheckoutPublicationFailureRollsBackPriorInstall(t *testing.T) {
 	}
 	writeFixtureFile(t, filepath.Join(target, "marker"), "prior install\n", 0o600)
 	writeFixtureFile(t, filepath.Join(stage, "marker"), "new install\n", 0o600)
+	runFixtureGit(t, target, "init", "-b", "main")
+	runFixtureGit(t, target, "config", "user.email", "install-test@example.invalid")
+	runFixtureGit(t, target, "config", "user.name", "Install Test")
+	runFixtureGit(t, target, "add", "marker")
+	runFixtureGit(t, target, "commit", "-m", "prior install")
 
 	realMove, err := exec.LookPath("mv")
 	if err != nil {
@@ -351,7 +356,7 @@ func newManagedInstallFixture(t *testing.T) managedInstallFixture {
 	writeFixtureFile(t, filepath.Join(source, "go.mod"), "module example.invalid/install-fixture\n\ngo 1.24\n", 0o644)
 	writeFixtureFile(t, filepath.Join(source, "internal/api/web/package.json"), "{}\n", 0o644)
 	writeFixtureFile(t, filepath.Join(source, "internal/api/web/package-lock.json"), "{}\n", 0o644)
-	writeFixtureFile(t, filepath.Join(source, ".gitignore"), "/bin/\n.env\ninternal/api/web/node_modules/\ninternal/api/web/dist/\n", 0o644)
+	writeFixtureFile(t, filepath.Join(source, ".gitignore"), "/bin/\n.env\ninternal/api/web/node_modules/\ninternal/api/web/dist/\nlogs/\n.omni/\n", 0o644)
 	runFixtureGit(t, source, "add", ".")
 	runFixtureGit(t, source, "commit", "-m", "initial")
 	runFixtureGit(t, source, "push", "-u", "origin", "main")

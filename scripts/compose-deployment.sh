@@ -46,6 +46,7 @@ DOCKER_CONTEXT_NAME="$(managed_checkout_env_value "${ENV_FILE}" "DOCKER_CONTEXT"
 COMPOSE_PROJECT="$(managed_checkout_env_value "${ENV_FILE}" "COMPOSE_PROJECT_NAME")"
 validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
 validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
+[[ -n "${DOCKER_CONTEXT_NAME}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
 [[ -n "${COMPOSE_PROJECT}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
 
 compose_cmd="$(resolve_compose_cmd)"

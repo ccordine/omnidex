@@ -125,16 +125,16 @@ func TestServiceRunsCoreMigrateFreshRejectsNonCore(t *testing.T) {
 
 func TestResolveComposeCommandPrefixRequiresDockerPlugin(t *testing.T) {
 	fakeBin := t.TempDir()
-	fakeDocker := "#!/bin/sh\n[ \"$*\" = \"compose version\" ]\n"
+	fakeDocker := "#!/bin/sh\n[ \"$*\" = \"--context rootless compose version\" ]\n"
 	if err := os.WriteFile(filepath.Join(fakeBin, "docker"), []byte(fakeDocker), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", fakeBin)
-	got, err := resolveComposeCommandPrefix()
+	got, err := resolveComposeCommandPrefix("rootless")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value := strings.Join(got, " "); value != "docker compose" {
+	if value := strings.Join(got, " "); value != "docker --context rootless compose" {
 		t.Fatalf("Compose command = %q", value)
 	}
 }
@@ -147,8 +147,8 @@ func TestResolveComposeCommandPrefixRejectsStandaloneFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", fakeBin)
-	_, err := resolveComposeCommandPrefix()
-	if err == nil || !strings.Contains(err.Error(), "Docker Compose plugin is required") {
+	_, err := resolveComposeCommandPrefix("rootless")
+	if err == nil || !strings.Contains(err.Error(), "Docker Compose plugin is unavailable in explicit context") {
 		t.Fatalf("standalone Compose error = %v", err)
 	}
 	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
@@ -161,12 +161,12 @@ func TestComposeInvocationForServiceCoreDownStopsSingleService(t *testing.T) {
 		Service: "core",
 		Action:  "down",
 	}
-	args, err := composeInvocationForService(opts, []string{"docker", "compose"}, "/tmp/docker-compose.yml")
+	args, err := composeInvocationForService(opts, []string{"docker", "--context", "rootless", "compose", "-p", "omni-nxt"}, "/tmp/docker-compose.yml")
 	if err != nil {
 		t.Fatalf("composeInvocationForService returned error: %v", err)
 	}
 	got := strings.Join(args, " ")
-	want := "docker compose -f /tmp/docker-compose.yml stop core"
+	want := "docker --context rootless compose -p omni-nxt -f /tmp/docker-compose.yml stop core"
 	if got != want {
 		t.Fatalf("composeInvocationForService=%q, want %q", got, want)
 	}
@@ -177,12 +177,12 @@ func TestComposeInvocationForServiceAllDownUsesComposeDown(t *testing.T) {
 		Service: "all",
 		Action:  "down",
 	}
-	args, err := composeInvocationForService(opts, []string{"docker", "compose"}, "/tmp/docker-compose.yml")
+	args, err := composeInvocationForService(opts, []string{"docker", "--context", "rootless", "compose", "-p", "omni-nxt"}, "/tmp/docker-compose.yml")
 	if err != nil {
 		t.Fatalf("composeInvocationForService returned error: %v", err)
 	}
 	got := strings.Join(args, " ")
-	want := "docker compose -f /tmp/docker-compose.yml down --remove-orphans"
+	want := "docker --context rootless compose -p omni-nxt -f /tmp/docker-compose.yml down --remove-orphans"
 	if got != want {
 		t.Fatalf("composeInvocationForService=%q, want %q", got, want)
 	}
@@ -193,12 +193,12 @@ func TestComposeInvocationForServiceCoreBuildTargetsSingleService(t *testing.T) 
 		Service: "core",
 		Action:  "build",
 	}
-	args, err := composeInvocationForService(opts, []string{"docker", "compose"}, "/tmp/docker-compose.yml")
+	args, err := composeInvocationForService(opts, []string{"docker", "--context", "rootless", "compose", "-p", "omni-nxt"}, "/tmp/docker-compose.yml")
 	if err != nil {
 		t.Fatalf("composeInvocationForService returned error: %v", err)
 	}
 	got := strings.Join(args, " ")
-	want := "docker compose -f /tmp/docker-compose.yml build core"
+	want := "docker --context rootless compose -p omni-nxt -f /tmp/docker-compose.yml build core"
 	if got != want {
 		t.Fatalf("composeInvocationForService=%q, want %q", got, want)
 	}
@@ -209,12 +209,12 @@ func TestComposeInvocationForServiceAllBuildTargetsStack(t *testing.T) {
 		Service: "all",
 		Action:  "build",
 	}
-	args, err := composeInvocationForService(opts, []string{"docker", "compose"}, "/tmp/docker-compose.yml")
+	args, err := composeInvocationForService(opts, []string{"docker", "--context", "rootless", "compose", "-p", "omni-nxt"}, "/tmp/docker-compose.yml")
 	if err != nil {
 		t.Fatalf("composeInvocationForService returned error: %v", err)
 	}
 	got := strings.Join(args, " ")
-	want := "docker compose -f /tmp/docker-compose.yml build"
+	want := "docker --context rootless compose -p omni-nxt -f /tmp/docker-compose.yml build"
 	if got != want {
 		t.Fatalf("composeInvocationForService=%q, want %q", got, want)
 	}
@@ -224,7 +224,7 @@ func TestDockerLogsInvocationForServiceRequiresSpecificService(t *testing.T) {
 	_, err := dockerLogsInvocationForService(serviceCommandOptions{
 		Service: "all",
 		Action:  "docker-logs",
-	}, []string{"docker", "compose"}, "/tmp/docker-compose.yml", "/tmp")
+	}, []string{"docker", "--context", "rootless", "compose", "-p", "omni-nxt"}, []string{"docker", "--context", "rootless"}, "/tmp/docker-compose.yml", "/tmp")
 	if err == nil {
 		t.Fatalf("expected docker-logs all-service invocation to fail")
 	}
@@ -237,12 +237,12 @@ func TestBuildDockerLogsInvocation(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not available in PATH")
 	}
-	args, err := buildDockerLogsInvocation("abc123", 75, true)
+	args, err := buildDockerLogsInvocation([]string{"docker", "--context", "rootless"}, "abc123", 75, true)
 	if err != nil {
 		t.Fatalf("buildDockerLogsInvocation returned error: %v", err)
 	}
 	got := strings.Join(args, " ")
-	if !strings.Contains(got, " logs --tail 75 -f abc123") {
+	if got != "docker --context rootless logs --tail 75 -f abc123" {
 		t.Fatalf("buildDockerLogsInvocation=%q, expected docker logs args", got)
 	}
 }

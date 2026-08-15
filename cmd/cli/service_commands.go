@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -69,12 +70,18 @@ func runServiceWithPreset(presetService string, args []string, coreURL string) {
 	if err != nil {
 		die(err.Error())
 	}
-	composeCmd, err := resolveComposeCommandPrefix()
+	identity, err := readServiceDeploymentIdentity(root)
 	if err != nil {
 		die(err.Error())
 	}
+	fmt.Fprintf(os.Stderr, "[service] root=%s docker_context=%s compose_project=%s\n", root, identity.DockerContext, identity.ComposeProject)
+	composeCmd, err := resolveComposeCommandPrefix(identity.DockerContext)
+	if err != nil {
+		die(err.Error())
+	}
+	composeCmd = append(composeCmd, "-p", identity.ComposeProject)
 	if strings.EqualFold(strings.TrimSpace(opts.Action), "docker-logs") {
-		invocation, err := dockerLogsInvocationForService(opts, composeCmd, composeFile, root)
+		invocation, err := dockerLogsInvocationForService(opts, composeCmd, identity.dockerCommandPrefix(), composeFile, root)
 		if err != nil {
 			die(err.Error())
 		}

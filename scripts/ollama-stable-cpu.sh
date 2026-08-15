@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${script_dir}/ollama-profile-lib.sh"
+
 dropin_dir="/etc/systemd/system/ollama.service.d"
 dropin_file="${dropin_dir}/zz-omni-stable-cpu.conf"
 rocm_dropin="${dropin_dir}/zz-omni-rx7700s-rocm.conf"
@@ -12,6 +15,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 install -d -m 0755 "${dropin_dir}"
+ollama_require_no_external_backend_dropins "${dropin_dir}"
 rm -f "${rocm_dropin}" "${vulkan_dropin}" "${legacy_vulkan_dropin}"
 cat > "${dropin_file}" <<'EOF'
 [Service]

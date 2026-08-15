@@ -177,7 +177,7 @@ main() {
   [[ ! -L "${PREFIX}" ]] || die "update target must not be a symlink: ${PREFIX}"
   [[ -d "${PREFIX}" ]] || die "prefix path does not exist: ${PREFIX}"
   PREFIX="$(absolute_existing_path "${PREFIX}")"
-  managed_checkout_require_source "${PREFIX}"
+  managed_checkout_require_replaceable_target "${PREFIX}"
   local update_branch update_origin stage=""
   update_branch="$(managed_checkout_branch "${PREFIX}" "${BRANCH}")"
   update_origin="$(managed_checkout_origin "${PREFIX}")"
@@ -190,6 +190,7 @@ main() {
     COMPOSE_PROJECT="$(managed_checkout_env_value "${PREFIX}/.env" "COMPOSE_PROJECT_NAME")"
     validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
     validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
+    [[ -n "${DOCKER_CONTEXT_NAME}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
     [[ -n "${COMPOSE_PROJECT}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
     if [[ -z "${COMPOSE_FILE}" ]]; then
       COMPOSE_FILE="${PREFIX}/docker-compose.yml"

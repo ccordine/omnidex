@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${script_dir}/ollama-profile-lib.sh"
+
 dropin_dir="/etc/systemd/system/ollama.service.d"
 dropin_file="${dropin_dir}/zz-omni-vulkan.conf"
 cpu_dropin="${dropin_dir}/zz-omni-stable-cpu.conf"
@@ -22,6 +25,7 @@ if ! find /usr/lib/ollama -maxdepth 2 -type f \( -iname '*vulkan*' -o -iname '*v
 fi
 
 install -d -m 0755 "${dropin_dir}"
+ollama_require_no_external_backend_dropins "${dropin_dir}"
 rm -f "${cpu_dropin}" "${rocm_dropin}" "${legacy_vulkan_dropin}"
 cat > "${dropin_file}" <<'EOF'
 [Service]

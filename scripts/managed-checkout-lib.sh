@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 managed_checkout_require_source() {
-  local repository="$1"
+  local repository="$1" untracked
   command -v git >/dev/null 2>&1 || die "git is required for the authoritative install/update checkout"
   [[ -d "${repository}/.git" && ! -L "${repository}/.git" ]] ||
     die "source must be a complete Git checkout with a real .git directory: ${repository}"
@@ -9,6 +9,30 @@ managed_checkout_require_source() {
     die "source checkout has unstaged tracked changes"
   git -C "${repository}" diff --cached --quiet --ignore-submodules -- ||
     die "source checkout has staged tracked changes"
+  untracked="$(git -C "${repository}" ls-files --others --exclude-standard)"
+  [[ -z "${untracked}" ]] || die "source checkout has untracked files"
+}
+
+managed_checkout_require_replaceable_target() {
+  local repository="$1" path unexpected=""
+  if [[ ! -d "${repository}/.git" ]]; then
+    [[ -z "$(find "${repository}" -mindepth 1 -maxdepth 1 -print -quit)" ]] ||
+      die "existing non-empty target is not a managed Omnidex checkout: ${repository}"
+    return
+  fi
+  managed_checkout_require_source "${repository}"
+  while IFS= read -r -d '' path; do
+    case "${path}" in
+      .env|bin/*|internal/api/web/node_modules/*|internal/api/web/dist/*)
+        ;;
+      *)
+        unexpected="${path}"
+        break
+        ;;
+    esac
+  done < <(git -C "${repository}" ls-files -z --others --ignored --exclude-standard)
+  [[ -z "${unexpected}" ]] ||
+    die "managed checkout contains unmanaged files that publication would remove: ${unexpected}"
 }
 
 managed_checkout_branch() {
@@ -132,6 +156,7 @@ managed_checkout_publish() {
   [[ "$(dirname "${stage}")" == "${parent}" ]] || die "checkout stage must share the install parent"
   if [[ -e "${target}" || -L "${target}" ]]; then
     [[ -d "${target}" && ! -L "${target}" ]] || die "install target must be a real directory"
+    managed_checkout_require_replaceable_target "${target}"
     backup="$(mktemp -d "${parent}/.${base}.previous.XXXXXX")"
     rmdir "${backup}"
     mv "${target}" "${backup}"
