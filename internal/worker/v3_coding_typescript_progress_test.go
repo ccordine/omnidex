@@ -29,7 +29,7 @@ func TestTypeScriptFragmentWorkerContinuesWhileRejectedCandidateStateChanges(t *
 			},
 			responses: []string{
 				"function adjust(value: string): number { return Number(value) + 1; }",
-				"function adjust(value: number): number { /* later */ return value + 1; }",
+				"function adjust(value: number): number { return value + 1; }\nconst extra = 1;",
 				"function adjust(value: number): number { const run = () => {}; run(); return value + 1; }",
 				"function adjust(value: number): number { console.log(value); return value + 1; }",
 				"function adjust(value: number): number { return value + 1; }",
@@ -46,7 +46,7 @@ func TestTypeScriptFragmentWorkerContinuesWhileRejectedCandidateStateChanges(t *
 			tsx: true,
 			responses: []string{
 				"function Panel(): JSX.Element { return <section />; }",
-				"function Panel(): ReactElement { return <section>{/* later */}</section>; }",
+				"export function Panel(): ReactElement { return <section />; }",
 				"function Panel(): ReactElement { const run = () => {}; run(); return <section />; }",
 				"function Panel(): ReactElement { console.log('panel'); return <section />; }",
 				"function Panel(): ReactElement { return <section aria-label=\"ready\" />; }",

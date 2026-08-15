@@ -26,17 +26,16 @@ func (d TypeScriptDocument) TSX() bool {
 }
 
 type TypeScriptBlock struct {
-	ID            string
-	Static        string
-	Signature     string
-	Contract      string
-	API           string
-	DependsOn     []string
-	Capabilities  []string
-	Globals       []string
-	Policy        TypeScriptFunctionPolicy
-	FailureTarget string
-	Export        bool
+	ID           string
+	Static       string
+	Signature    string
+	Contract     string
+	API          string
+	DependsOn    []string
+	Capabilities []string
+	Globals      []string
+	Policy       TypeScriptFunctionPolicy
+	Export       bool
 }
 
 type TypeScriptCallRequirement struct {
@@ -166,11 +165,6 @@ func validateTypeScriptBlock(block TypeScriptBlock) error {
 	}
 	if err := validateTypeScriptFunctionPolicy(block.Policy); err != nil {
 		return fmt.Errorf("block %s function policy: %w", block.ID, err)
-	}
-	if block.FailureTarget != "" {
-		if _, dependency := seen[block.FailureTarget]; !dependency {
-			return fmt.Errorf("block %s failure target %s is not one of its direct dependencies", block.ID, block.FailureTarget)
-		}
 	}
 	return nil
 }

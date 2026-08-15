@@ -232,8 +232,14 @@ machine passes its executable gates:
    acceptance criteria. A separate bounded review may accept or name one derived field for
    code-owned repair. Code preserves user authority separately from derived build decisions,
    assigns identity and order, freezes only reviewed state, executes one task at a time with
-   the minimum sufficient authoritative task projection, verifies its artifact before
-   advancing, and alone decides completion.
+   the minimum sufficient authoritative task projection, and alone decides completion. A
+   static code-owned harness alone renders the exact public feature with its runtime and capability
+   identity. The generated acceptance declaration receives no render, JSX, component, runtime, or
+   source authority and is source-free inventoried before it executes. Code binds the closed awaited
+   wait mechanic itself; a bounded reviewer sees only direct public product observations and maps
+   them to frozen criteria. Unsupported observations remain acceptance-owned; only a receipt bound
+   to the current acceptance source and the exact failing rooted query or assertion permits a
+   behavior failure to target implementation. Code verifies the grounded artifact before advancing.
 6. **Charmander handoff** — cognition produces one existing bounded declaration job;
    code parses, stitches, formats, stages, tests, applies, and reconciles it.
 7. **Semantic review and correction** — a review station can select at most one

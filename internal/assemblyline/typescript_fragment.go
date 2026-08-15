@@ -145,13 +145,6 @@ func validateTypeScriptGeneratedNode(node *treesitter.Node) error {
 	if node == nil {
 		return nil
 	}
-	if node.Kind() == "comment" {
-		return newTypeScriptFragmentViolation(
-			TypeScriptViolationComment,
-			"TypeScript fragment comments are forbidden; return executable code only",
-			"Delete every comment node from the current declaration. Replace a comment that stands in for behavior with executable code, or remove it if no behavior is required. Change nothing unrelated.",
-		)
-	}
 	if node.Kind() == "statement_block" && !hasExecutableTypeScriptChild(node) {
 		position := node.StartPosition()
 		return newTypeScriptFragmentViolation(

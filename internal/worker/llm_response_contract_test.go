@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -13,7 +14,6 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 		scope      string
 		format     string
 		protocol   llm.ExactPreparedProtocol
-		maxTokens  int
 		outputMode llm.ExactPreparedOutputLimitMode
 		promptHint string
 		stop       string
@@ -23,8 +23,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			scope:      "portable_semantic_worker",
 			format:     llm.ResponseFormatJSON,
 			protocol:   llm.ExactPreparedProtocolStructuredV1,
-			maxTokens:  1024,
-			outputMode: llm.ExactPreparedOutputLimitExplicit,
+			outputMode: llm.ExactPreparedOutputLimitNatural,
 			promptHint: llm.MinimalGeneratePrompt,
 			stop:       "",
 		},
@@ -33,7 +32,6 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			scope:      "portable_fragment_worker",
 			format:     "",
 			protocol:   llm.ExactPreparedProtocolRawTextV1,
-			maxTokens:  4096,
 			outputMode: llm.ExactPreparedOutputLimitNatural,
 			promptHint: llm.MinimalGeneratePrompt,
 			stop:       llm.ExactPreparedCodeStopV1,
@@ -45,7 +43,7 @@ func TestLLMResponseContractIsSelectedByInternalJobType(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if contract.Protocol != test.protocol || contract.Format != test.format || contract.MaxTokens != test.maxTokens || contract.OutputLimitMode != test.outputMode || contract.PromptHint != test.promptHint || contract.RawTextStopSequence != test.stop {
+			if contract.Protocol != test.protocol || contract.Format != test.format || contract.OutputLimitMode != test.outputMode || contract.PromptHint != test.promptHint || contract.RawTextStopSequence != test.stop {
 				t.Fatalf("llmResponseContractForScope(%q)=%#v", test.scope, contract)
 			}
 		})
@@ -95,12 +93,11 @@ func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testi
 	for _, test := range []struct {
 		name string
 		job  assemblyline.PortableJob
-		want int
 	}{
-		{name: "initial", job: generation, want: 4096},
-		{name: "correction", job: correction, want: 4096},
-		{name: "localized correction", job: regionCorrection, want: 4096},
-		{name: "go correction", job: goCorrection, want: 4096},
+		{name: "initial", job: generation},
+		{name: "correction", job: correction},
+		{name: "localized correction", job: regionCorrection},
+		{name: "go correction", job: goCorrection},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, schema, renderErr := assemblyline.RenderPortableJob(test.job)
@@ -111,13 +108,54 @@ func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testi
 			if contractErr != nil {
 				t.Fatal(contractErr)
 			}
-			if contract.MaxTokens != test.want {
-				t.Fatalf("max output tokens=%d want %d", contract.MaxTokens, test.want)
-			}
 			if schema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1 ||
 				contract.Format != "" || contract.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
 				t.Fatalf("raw fragment contract=%#v schema=%#v", contract, schema)
 			}
 		})
+	}
+}
+
+func TestEveryStructuredPortableSemanticCallUsesNaturalCompletion(t *testing.T) {
+	t.Parallel()
+
+	classification, err := assemblyline.NewApplicationClassificationJob(
+		assemblyline.ApplicationClassificationInput{UserRequest: "Build a browser inventory."},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groundingInput, err := assemblyline.NewApplicationAcceptanceGroundingReviewInput(
+		assemblyline.ApplicationTaskContext{
+			WorkloadSHA256: strings.Repeat("a", 64),
+			Task: assemblyline.ApplicationTaskContextTask{
+				TaskID: "task_001", AcceptanceCriteria: []string{"The inventory is visible."},
+			},
+		},
+		`function VerifyInventory(): void { expect(screen.getByText("Inventory")).toBeInTheDocument(); }`,
+		true,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grounding, err := assemblyline.NewApplicationAcceptanceGroundingReviewJob(groundingInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range []assemblyline.PortableJob{classification, grounding} {
+		_, schema, err := assemblyline.RenderPortableJob(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		contract, err := llmResponseContractForPortableJob(job, schema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if schema == nil || contract.Protocol != llm.ExactPreparedProtocolStructuredV1 ||
+			contract.Format != llm.ResponseFormatJSON ||
+			contract.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
+			t.Fatalf("structured natural contract for %s=%#v schema=%#v", job.Kind, contract, schema)
+		}
 	}
 }

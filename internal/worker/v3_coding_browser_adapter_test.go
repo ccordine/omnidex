@@ -140,9 +140,9 @@ func TestGenericBrowserAdapterOwnsCapabilityChannelsAndAcceptanceFailureRouting(
 			t.Fatalf("feature %d has no code-owned boundary: %#v", index+1, wrapper)
 		}
 	}
-	acceptance, exists := directCodingTypeScriptBlueprintBlock(blueprint, "acceptance.001")
-	if !exists || acceptance.FailureTarget != "feature.001" {
-		t.Fatalf("independent acceptance does not target implementation: %#v", acceptance)
+	_, exists := directCodingTypeScriptBlueprintBlock(blueprint, "acceptance.001")
+	if !exists {
+		t.Fatal("independent acceptance is missing")
 	}
 	runtime, exists := directCodingTypeScriptBlueprintBlock(blueprint, "runtime.api")
 	if !exists || !strings.Contains(runtime.Static, `"capability_001"`) ||

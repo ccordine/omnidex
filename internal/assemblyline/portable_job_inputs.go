@@ -33,6 +33,7 @@ type FragmentCorrectionInput struct {
 type ResponseCorrectionInput struct {
 	Original          PortableJob `json:"original"`
 	ValidationFailure string      `json:"validation_failure"`
+	TargetField       string      `json:"target_field,omitempty"`
 }
 
 func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
@@ -72,6 +73,14 @@ func NewApplicationJobSpecificationRepairJob(
 	return newPortableJob(WorkApplicationJobSpecificationRepair, payload)
 }
 
+func NewApplicationAcceptanceGroundingReviewJob(
+	input ApplicationAcceptanceGroundingReviewInput,
+) (PortableJob, error) {
+	return newValidatedPortableJob(
+		WorkApplicationAcceptanceGroundingReview, input, input.validate,
+	)
+}
+
 func NewRepositoryRequirementInterpretationJob(
 	input RepositoryRequirementInterpretationInput,
 ) (PortableJob, error) {
@@ -104,6 +113,18 @@ func NewResponseCorrectionJob(
 ) (PortableJob, error) {
 	input := ResponseCorrectionInput{
 		Original: original, ValidationFailure: strings.TrimSpace(validationFailure),
+	}
+	return newValidatedPortableJob(WorkResponseCorrection, input, input.validate)
+}
+
+func NewResponseCorrectionJobForField(
+	original PortableJob,
+	validationFailure string,
+	targetField string,
+) (PortableJob, error) {
+	input := ResponseCorrectionInput{
+		Original: original, ValidationFailure: strings.TrimSpace(validationFailure),
+		TargetField: targetField,
 	}
 	return newValidatedPortableJob(WorkResponseCorrection, input, input.validate)
 }

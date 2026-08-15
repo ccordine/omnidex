@@ -54,14 +54,10 @@ func (s *Service) executeExactPortableStation(
 	if err := validateExactStationStaticCall(prompt, schema, contract, selection); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	maxOutputTokens := contract.MaxTokens
-	if contract.OutputLimitMode == llm.ExactPreparedOutputLimitNatural {
-		maxOutputTokens = s.inferenceContextTokens
-	}
 	opening, err := s.repo.OpenStationGapDiscovery(ctx, queue.StationGapDiscoveryOpenRecord{
 		Gap: queue.StationGapOpenRecord{
 			Authority: authority, Job: job, Station: stationID,
-			ContextTokens: s.inferenceContextTokens, MaxOutputTokens: maxOutputTokens,
+			ContextTokens: s.inferenceContextTokens, MaxOutputTokens: s.inferenceContextTokens,
 			OutputLimitMode: contract.OutputLimitMode,
 		},
 		Selection: selection,

@@ -5,7 +5,6 @@ import "errors"
 type TypeScriptFragmentViolationCode string
 
 const (
-	TypeScriptViolationComment   TypeScriptFragmentViolationCode = "comment_forbidden"
 	TypeScriptViolationEmptyBody TypeScriptFragmentViolationCode = "empty_executable_body"
 )
 

@@ -47,10 +47,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		return StationGapOpening{}, fmt.Errorf("station gap model input: %w", err)
 	}
 	scope := stationGapScope(renderedSchema)
-	if (scope == "portable_fragment_worker" &&
-		record.OutputLimitMode != llm.ExactPreparedOutputLimitNatural) ||
-		(scope == "portable_semantic_worker" &&
-			record.OutputLimitMode != llm.ExactPreparedOutputLimitExplicit) {
+	if record.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
 		return StationGapOpening{}, fmt.Errorf(
 			"station gap scope %q rejects output-limit mode %q",
 			scope, record.OutputLimitMode,
@@ -59,9 +56,6 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	schema, err := canonicalStationGapSchema(renderedSchema)
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("canonicalize station gap response schema: %w", err)
-	}
-	if len(schema) > maxStationGapSchemaBytes {
-		return StationGapOpening{}, fmt.Errorf("station gap response schema exceeds %d bytes", maxStationGapSchemaBytes)
 	}
 	portableEnvelope, err := exactjson.Canonical(record.Job)
 	if err != nil {

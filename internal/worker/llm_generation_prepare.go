@@ -26,6 +26,9 @@ func validateExactStationStaticCall(
 	if err := contract.OutputLimitMode.Validate(); err != nil {
 		return err
 	}
+	if contract.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
+		return fmt.Errorf("portable exact station requires natural output completion")
+	}
 	switch contract.Protocol {
 	case llm.ExactPreparedProtocolStructuredV1:
 		if contract.Format != llm.ResponseFormatJSON || schema == nil {
@@ -40,16 +43,8 @@ func validateExactStationStaticCall(
 	if err != nil {
 		return err
 	}
-	if contract.OutputLimitMode == llm.ExactPreparedOutputLimitNatural {
-		return llm.ValidateExactPreparedNaturalInputAuthority(
-			selection.NativeContextLimit,
-			input,
-		)
-	}
-	return llm.ValidateExactPreparedInputAuthority(
+	return llm.ValidateExactPreparedNaturalInputAuthority(
 		selection.NativeContextLimit,
-		selection.NativeContextLimit-contract.MaxTokens,
-		contract.MaxTokens,
 		input,
 	)
 }

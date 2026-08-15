@@ -98,15 +98,15 @@ func TestStructuredVitestRoutingDistinguishesAssertionFromRuntimeException(t *te
 		name, acceptance, wantBlock string
 	}{
 		{
-			name: "assertion behavior",
+			name: "ungrounded assertion behavior",
 			acceptance: "async function VerifyFeature001(): Promise<void> { " +
 				"expect('working').toBe('stopped'); }",
-			wantBlock: "feature.001",
+			wantBlock: "acceptance.001",
 		},
 		{
 			name: "runtime exception",
 			acceptance: "async function VerifyFeature001(): Promise<void> { " +
-				"throw new ReferenceError('test declaration defect'); }",
+				"expect(true).toBe(true); throw new ReferenceError('test declaration defect'); }",
 			wantBlock: "acceptance.001",
 		},
 	} {

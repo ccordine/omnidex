@@ -11,7 +11,6 @@ import (
 type llmResponseContract struct {
 	Protocol            llm.ExactPreparedProtocol
 	Format              string
-	MaxTokens           int
 	OutputLimitMode     llm.ExactPreparedOutputLimitMode
 	PromptHint          string
 	RawTextStopSequence string
@@ -25,7 +24,6 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 	if scope == "portable_fragment_worker" {
 		return llmResponseContract{
 			Protocol:            llm.ExactPreparedProtocolRawTextV1,
-			MaxTokens:           4096,
 			OutputLimitMode:     llm.ExactPreparedOutputLimitNatural,
 			PromptHint:          llm.MinimalGeneratePrompt,
 			RawTextStopSequence: llm.ExactPreparedCodeStopV1,
@@ -35,8 +33,7 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 		return llmResponseContract{
 			Protocol:        llm.ExactPreparedProtocolStructuredV1,
 			Format:          llm.ResponseFormatJSON,
-			MaxTokens:       1024,
-			OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 			PromptHint:      llm.MinimalGeneratePrompt,
 		}, nil
 	}

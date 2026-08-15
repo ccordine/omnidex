@@ -11,7 +11,7 @@ import (
 const (
 	directCodingVitestReporterFile   = ".omnidex-vitest-reporter.mjs"
 	directCodingVitestReportFile     = ".omnidex-vitest-report.json"
-	directCodingVitestReportSchemaV1 = "omnidex.vitest-report.v1"
+	directCodingVitestReportSchemaV2 = "omnidex.vitest-report.v2"
 	maxDirectCodingVitestReportBytes = 1024 * 1024
 )
 
@@ -24,6 +24,16 @@ function errorRecord(error) {
     name: typeof error?.name === 'string' ? error.name : '',
     message: typeof error?.message === 'string' ? error.message : '',
     stack: typeof error?.stack === 'string' ? error.stack : '',
+    stacks: Array.isArray(error?.stacks) ? error.stacks
+      .filter((frame) => typeof frame?.file === 'string' && frame.file.length > 0 &&
+        Number.isInteger(frame?.line) && frame.line > 0 &&
+        Number.isInteger(frame?.column) && frame.column > 0)
+      .map((frame) => ({
+        method: typeof frame?.method === 'string' ? frame.method : '',
+        file: frame.file,
+        line: frame.line,
+        column: frame.column,
+      })) : [],
   };
 }
 
@@ -46,7 +56,7 @@ export default class OmnidexVitestReporter {
       });
     }
     await writeFile(reportURL, JSON.stringify({
-      schema: 'omnidex.vitest-report.v1',
+      schema: 'omnidex.vitest-report.v2',
       reason,
       unhandled_errors: unhandledErrors.map(errorRecord),
       modules,
@@ -65,6 +75,13 @@ const (
 type directCodingVitestFailureReceipt struct {
 	FailureClass directCodingStageFailureClass
 	Output       string
+	Locations    []directCodingVitestSourceLocation
+}
+
+type directCodingVitestSourceLocation struct {
+	File   string
+	Line   int
+	Column int
 }
 
 type directCodingVitestReport struct {
@@ -86,9 +103,17 @@ type directCodingVitestTestRecord struct {
 }
 
 type directCodingVitestErrorRecord struct {
-	Name    *string `json:"name"`
-	Message *string `json:"message"`
-	Stack   *string `json:"stack"`
+	Name    *string                          `json:"name"`
+	Message *string                          `json:"message"`
+	Stack   *string                          `json:"stack"`
+	Stacks  *[]directCodingVitestStackRecord `json:"stacks"`
+}
+
+type directCodingVitestStackRecord struct {
+	Method *string `json:"method"`
+	File   *string `json:"file"`
+	Line   *int    `json:"line"`
+	Column *int    `json:"column"`
 }
 
 func directCodingStructuredVitestCommand(path string) []string {
@@ -160,17 +185,18 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 	if report.Schema == nil || report.Reason == nil || report.UnhandledErrors == nil || report.Modules == nil {
 		return zero, fmt.Errorf("structured Vitest report omits required fields")
 	}
-	if *report.Schema != directCodingVitestReportSchemaV1 {
-		return zero, fmt.Errorf("structured Vitest report schema must be %q", directCodingVitestReportSchemaV1)
+	if *report.Schema != directCodingVitestReportSchemaV2 {
+		return zero, fmt.Errorf("structured Vitest report schema must be %q", directCodingVitestReportSchemaV2)
 	}
 	if *report.Reason != "failed" && *report.Reason != "interrupted" {
 		return zero, fmt.Errorf("structured Vitest failure has contradictory reason %q", *report.Reason)
 	}
 
 	output := make([]string, 0)
+	locations := make([]directCodingVitestSourceLocation, 0)
 	unhandledCount := len(*report.UnhandledErrors)
 	for index, failure := range *report.UnhandledErrors {
-		if err := appendDirectCodingVitestError(&output, failure); err != nil {
+		if err := appendDirectCodingVitestError(&output, &locations, failure); err != nil {
 			return zero, fmt.Errorf("structured Vitest unhandled error %d: %w", index, err)
 		}
 	}
@@ -182,7 +208,7 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 		}
 		for errorIndex, failure := range *module.Errors {
 			moduleErrorCount++
-			if err := appendDirectCodingVitestError(&output, failure); err != nil {
+			if err := appendDirectCodingVitestError(&output, &locations, failure); err != nil {
 				return zero, fmt.Errorf("structured Vitest module error %d.%d: %w", moduleIndex, errorIndex, err)
 			}
 		}
@@ -198,7 +224,7 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 				return zero, fmt.Errorf("structured Vitest test %d.%d has unsupported state %q", moduleIndex, testIndex, *test.State)
 			}
 			for errorIndex, failure := range *test.Errors {
-				if err := appendDirectCodingVitestError(&output, failure); err != nil {
+				if err := appendDirectCodingVitestError(&output, &locations, failure); err != nil {
 					return zero, fmt.Errorf("structured Vitest test error %d.%d.%d: %w", moduleIndex, testIndex, errorIndex, err)
 				}
 			}
@@ -215,18 +241,35 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 	return directCodingVitestFailureReceipt{
 		FailureClass: classification,
 		Output:       strings.Join(output, "\n"),
+		Locations:    locations,
 	}, nil
 }
 
-func appendDirectCodingVitestError(output *[]string, failure directCodingVitestErrorRecord) error {
-	if failure.Name == nil || failure.Message == nil || failure.Stack == nil {
-		return fmt.Errorf("error record omits name, message, or stack")
+func appendDirectCodingVitestError(
+	output *[]string,
+	locations *[]directCodingVitestSourceLocation,
+	failure directCodingVitestErrorRecord,
+) error {
+	if failure.Name == nil || failure.Message == nil || failure.Stack == nil || failure.Stacks == nil {
+		return fmt.Errorf("error record omits name, message, stack, or parsed stacks")
 	}
 	if strings.TrimSpace(*failure.Message) != "" {
 		*output = append(*output, *failure.Message)
 	}
 	if strings.TrimSpace(*failure.Stack) != "" {
 		*output = append(*output, *failure.Stack)
+	}
+	for index, frame := range *failure.Stacks {
+		if frame.Method == nil || frame.File == nil || frame.Line == nil || frame.Column == nil {
+			return fmt.Errorf("parsed stack frame %d is incomplete", index)
+		}
+		file := strings.TrimSpace(*frame.File)
+		if file == "" || *frame.Line <= 0 || *frame.Column <= 0 {
+			return fmt.Errorf("parsed stack frame %d has invalid source coordinates", index)
+		}
+		location := directCodingVitestSourceLocation{File: file, Line: *frame.Line, Column: *frame.Column}
+		*locations = append(*locations, location)
+		*output = append(*output, fmt.Sprintf("%s:%d:%d", location.File, location.Line, location.Column))
 	}
 	return nil
 }

@@ -87,7 +87,7 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 	} else {
 		parts = append(parts,
 			"Implement exactly one TypeScript function declaration.",
-			"Return raw code only: no Markdown, import, export, comments, surrounding explanation, or additional declaration.",
+			"Return raw code only: no Markdown, import, export, surrounding explanation, or additional declaration.",
 			"The declaration must match this signature exactly:\n"+signature,
 		)
 	}

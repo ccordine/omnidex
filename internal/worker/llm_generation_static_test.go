@@ -34,7 +34,6 @@ func TestExactStationStaticBudgetDoesNotGuessMeasuredBytesAreTokens(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	contract.MaxTokens = 2048
 	const measuredRawInputBytes = 6485
 	promptBytes := measuredRawInputBytes - len(llm.ExactPreparedPromptJoiner) - len(llm.MinimalGeneratePrompt)
 	err = validateExactStationStaticCall(
@@ -48,18 +47,17 @@ func TestExactStationStaticBudgetDoesNotGuessMeasuredBytesAreTokens(t *testing.T
 	}
 }
 
-func TestExactStationStaticBudgetRejectsImpossibleOutputReservation(t *testing.T) {
+func TestExactStationStaticBudgetRejectsRemovedExplicitOutputMode(t *testing.T) {
 	contract, err := llmResponseContractForScope("portable_fragment_worker")
 	if err != nil {
 		t.Fatal(err)
 	}
-	contract.MaxTokens = 8192
 	contract.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
 	if err := validateExactStationStaticCall(
 		"exact bounded prompt", nil, contract,
 		llm.ProviderIdentitySelection{Model: "qwen3.5:9b", NativeContextLimit: 8192},
 	); err == nil {
-		t.Fatal("static station accepted an output reservation with no input capacity")
+		t.Fatal("portable station accepted the removed explicit output mode")
 	}
 }
 

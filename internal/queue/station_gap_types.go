@@ -22,7 +22,6 @@ const (
 	// envelopes after a renderer-admitted prompt is encoded for persistence or
 	// transport.
 	maxStationRequestResourceBytes = 1024 * 1024
-	maxStationGapSchemaBytes       = 32 * 1024
 	maxStationGapResponseBytes     = 16 * 1024 * 1024
 	maxStationGapErrorBytes        = 8 * 1024
 )

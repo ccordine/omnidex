@@ -24,6 +24,9 @@ func TestTypeScriptFragmentPromptContainsOnlyLocalAPIContext(t *testing.T) {
 	if !strings.Contains(prompt, "interface Value") || !strings.Contains(prompt, "raw code only") {
 		t.Fatalf("prompt=%s", prompt)
 	}
+	if strings.Contains(prompt, "comments") {
+		t.Fatalf("prompt invents a blanket comment prohibition:\n%s", prompt)
+	}
 }
 
 func TestTypeScriptFragmentPromptRejectsOversizedEnvelopeSections(t *testing.T) {

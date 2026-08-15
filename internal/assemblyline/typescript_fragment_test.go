@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -26,20 +25,34 @@ func TestParseTypeScriptFunctionAcceptsOneExactRawTSXDeclaration(t *testing.T) {
 	}
 }
 
-func TestTypeScriptViolationProvidesTypedCommentCorrectionWithoutPhraseMatching(t *testing.T) {
+func TestParseTypeScriptFunctionPreservesOrdinaryCommentInExecutableDeclaration(t *testing.T) {
 	t.Parallel()
 
-	contract := TypeScriptFunctionContract{Signature: "function render(): null"}
-	_, err := ParseTypeScriptFunction(contract, "function render(): null { /* later */ return null; }")
-	if err == nil {
-		t.Fatal("comment was accepted")
+	contract := TypeScriptFunctionContract{Signature: "function calculate(value: number): number"}
+	raw := "function calculate(value: number): number {\n  // Preserve the original input.\n  return value + 1;\n}"
+	fragment, err := ParseTypeScriptFunction(contract, raw)
+	if err != nil {
+		t.Fatal(err)
 	}
-	instruction, ok := TypeScriptFragmentCorrectionInstruction(err)
-	if !ok || !strings.Contains(instruction, "Delete every comment node") || !strings.Contains(instruction, "Change nothing unrelated") {
-		t.Fatalf("instruction=%q ok=%v error=%v", instruction, ok, err)
+	if fragment.Source != raw+"\n" {
+		t.Fatalf("comment-bearing source drifted:\nwant=%q\n got=%q", raw+"\n", fragment.Source)
 	}
-	if _, ok := TypeScriptFragmentCorrectionInstruction(errors.New(err.Error())); ok {
-		t.Fatal("plain text resembling a typed violation selected a correction instruction")
+}
+
+func TestParseTypeScriptFunctionPreservesOrdinaryJSXCommentWithExecutableResult(t *testing.T) {
+	t.Parallel()
+
+	contract := TypeScriptFunctionContract{
+		Signature: "function Status(): ReactElement",
+		TSX:       true,
+	}
+	raw := "function Status(): ReactElement {\n  return <section>{/* Explain the live region. */}<span>Ready</span></section>;\n}"
+	fragment, err := ParseTypeScriptFunction(contract, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fragment.Source != raw+"\n" {
+		t.Fatalf("comment-bearing TSX source drifted:\nwant=%q\n got=%q", raw+"\n", fragment.Source)
 	}
 }
 
@@ -60,14 +73,14 @@ func TestTypeScriptViolationProvidesTypedEmptyBodyCorrection(t *testing.T) {
 func TestParseTypeScriptFunctionRejectsNonRawOrExpandedAuthority(t *testing.T) {
 	contract := TypeScriptFunctionContract{Signature: "function clamp(value: number): number"}
 	for name, raw := range map[string]string{
-		"markdown":       "```ts\nfunction clamp(value: number): number { return value; }\n```",
-		"import":         "import { x } from './x';\nfunction clamp(value: number): number { return x(value); }",
-		"export":         "export function clamp(value: number): number { return value; }",
-		"extra":          "function clamp(value: number): number { return value; }\nconst other = 1;",
-		"wrong":          "function clamp(value: string): number { return Number(value); }",
-		"broken":         "function clamp(value: number): number { return ;",
-		"comment":        "function clamp(value: number): number { /* later */ return value; }",
-		"empty callback": "function clamp(value: number): number { const ignored = () => {}; return value; }",
+		"markdown":              "```ts\nfunction clamp(value: number): number { return value; }\n```",
+		"import":                "import { x } from './x';\nfunction clamp(value: number): number { return x(value); }",
+		"export":                "export function clamp(value: number): number { return value; }",
+		"extra":                 "function clamp(value: number): number { return value; }\nconst other = 1;",
+		"wrong":                 "function clamp(value: string): number { return Number(value); }",
+		"broken":                "function clamp(value: number): number { return ;",
+		"empty callback":        "function clamp(value: number): number { const ignored = () => {}; return value; }",
+		"comment-only callback": "function clamp(value: number): number { const ignored = () => { /* no executable body */ }; return value; }",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ParseTypeScriptFunction(contract, raw); err == nil {

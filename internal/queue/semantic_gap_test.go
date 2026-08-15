@@ -22,8 +22,8 @@ func TestStationGapOpeningPreservesClosedPortableJobAndCanonicalProjection(t *te
 	record := StationGapOpenRecord{
 		Authority: model.StepAttemptAuthority{JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a"},
 		Job:       job, Station: station.ConversationResponse,
-		ContextTokens: 8192, MaxOutputTokens: 1024,
-		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+		ContextTokens: 8192, MaxOutputTokens: 8192,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	}
 	validated, err := validateStationGapOpening(record)
 	if err != nil {
@@ -54,8 +54,8 @@ func TestStationGapOpeningRejectsGenericOrUnboundedAuthority(t *testing.T) {
 	base := StationGapOpenRecord{
 		Authority: model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
 		Job:       job, Station: station.ConversationResponse,
-		ContextTokens: 8192, MaxOutputTokens: 1024,
-		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+		ContextTokens: 8192, MaxOutputTokens: 8192,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	}
 	for name, mutate := range map[string]func(*StationGapOpenRecord){
 		"forged portable identity": func(record *StationGapOpenRecord) { record.Job.ID = strings.Repeat("c", 64) },

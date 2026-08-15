@@ -49,13 +49,13 @@ func TestApplicationTaskStageProjectionExcludesOtherTasksAndApplicationEntrypoin
 		t.Fatal("task stage allowed correction of another task block")
 	}
 	routed, err := routeDirectCodingAcceptanceFailure(
-		stage.TypeScript,
+		stage,
 		&directCodingStageDiagnostic{
 			BlockID: "acceptance.001", Message: "current acceptance failed",
 			FailureClass: directCodingStageFailureVitestBehavior,
 		},
 	)
-	if err != nil || routed.BlockID != "feature.001" {
+	if err != nil || routed.BlockID != "acceptance.001" {
 		t.Fatalf("current acceptance routing=%+v error=%v", routed, err)
 	}
 }
@@ -144,7 +144,7 @@ func applicationTaskLifecycleBlueprint() assemblyline.TypeScriptBlueprint {
 			assemblyline.TypeScriptDocument{
 				ID: "acceptance_" + suffix, Path: "src/features/Feature" + suffix + ".test.tsx",
 				Blocks: []assemblyline.TypeScriptBlock{
-					{ID: "acceptance." + suffix, Signature: "function VerifyFeature" + suffix + "(): number", Contract: "Verify the feature.", API: "function VerifyFeature" + suffix + "(): number", DependsOn: []string{"runtime.factory", featureID}, FailureTarget: featureID},
+					{ID: "acceptance." + suffix, Signature: "function VerifyFeature" + suffix + "(): number", Contract: "Verify the feature.", API: "function VerifyFeature" + suffix + "(): number", DependsOn: []string{"runtime.factory", featureID}},
 					{ID: "acceptance.register." + suffix, Static: "void 0;", API: "registered acceptance " + suffix, DependsOn: []string{"acceptance." + suffix}},
 				},
 			},

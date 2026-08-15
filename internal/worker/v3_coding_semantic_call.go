@@ -10,8 +10,6 @@ import (
 	"github.com/gryph/omnidex/internal/exactjson"
 )
 
-const maxDirectCodingSemanticPromptBytes = 16 * 1024
-
 type semanticCandidateExhaustedError struct {
 	Subject  string
 	Attempts int
@@ -85,11 +83,6 @@ func runDirectCodingSemanticCall[T any](
 		prompt, _, err := assemblyline.RenderPortableJob(attemptJob)
 		if err != nil {
 			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt-1, err)
-		}
-		if len(prompt) > maxDirectCodingSemanticPromptBytes {
-			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt-1, fmt.Errorf(
-				"semantic correction exceeds the %d-byte hard limit", maxDirectCodingSemanticPromptBytes,
-			))
 		}
 		if err := validateDirectCodingSemanticPrompt(prompt, identities); err != nil {
 			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt-1, err)

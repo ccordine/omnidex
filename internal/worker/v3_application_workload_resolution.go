@@ -149,11 +149,6 @@ func runApplicationJobSpecificationCall[T any](
 	if err != nil {
 		return zero, failDirectCodingSemanticCall(runtime, modelName, subject, 0, err)
 	}
-	if len(prompt) > maxDirectCodingSemanticPromptBytes {
-		return zero, failDirectCodingSemanticCall(runtime, modelName, subject, 0, fmt.Errorf(
-			"application job specification prompt exceeds %d bytes", maxDirectCodingSemanticPromptBytes,
-		))
-	}
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerStarted, Kind: typedWorkerSemantic, Subject: subject,
 		Model: modelName, Attempt: 1, MaxAttempts: 1, PromptBytes: len(prompt),

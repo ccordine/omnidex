@@ -54,15 +54,19 @@ func projectDirectCodingApplicationTaskStage(
 	}
 
 	generated := make(map[string]string, 2)
+	grounding := make(map[string]assemblyline.ApplicationAcceptanceGroundingReceipt, 1)
 	for _, blockID := range []string{featureID, acceptanceID} {
 		if source := program.Generated[blockID]; strings.TrimSpace(source) != "" {
 			generated[blockID] = source
 		}
 	}
+	if receipt, exists := program.AcceptanceGrounding[acceptanceID]; exists {
+		grounding[acceptanceID] = receipt
+	}
 	stage := directCodingProgram{
 		Adapter: program.Adapter, PackageName: program.PackageName,
 		Workload: program.Workload, TypeScript: assemblyline.TypeScriptBlueprint{Documents: documents},
-		StaticFiles: staticFiles, Generated: generated,
+		StaticFiles: staticFiles, Generated: generated, AcceptanceGrounding: grounding,
 	}
 	if err := stage.TypeScript.Validate(); err != nil {
 		return zero, fmt.Errorf("validate application task stage: %w", err)

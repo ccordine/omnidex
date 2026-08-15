@@ -52,3 +52,42 @@ func TestPrepareExactStationCallCarriesNaturalOutputAndNativeThinkingAuthority(t
 		t.Fatal("prepared call accepted an output mode different from its durable gap")
 	}
 }
+
+func TestPrepareExactStructuredStationKeepsSchemaWithoutAnOutputCutoff(t *testing.T) {
+	t.Parallel()
+	contract, err := llmResponseContractForScope("portable_semantic_worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gap := queue.StationGapOpening{
+		JobID: 5, Generation: 1, StepID: 9, StepAttempt: 1,
+		WorkerID: "worker-b", GapID: strings.Repeat("d", 64),
+		WorkID: strings.Repeat("d", 64), WorkKind: "application_acceptance_grounding_review",
+		RendererVersion:  "omnidex.render-portable-job.v3",
+		ProjectionSHA256: strings.Repeat("e", 64),
+		Prompt:           "Map each product observation to one frozen criterion.",
+		ResponseSchema:   []byte(`{"additionalProperties":false,"properties":{"decision":{"const":"accept","type":"string"}},"required":["decision"],"type":"object"}`),
+		ContextTokens:    32768, MaxOutputTokens: 32768,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+	}
+	expected := llm.ProviderIdentityExpectation{
+		Backend: llm.ExactPreparedProviderBackend, BackendVersion: llm.ExactPreparedProviderVersion,
+		Model: "qwen3.5:9b-q4_K_M", Digest: strings.Repeat("a", 64), Quantization: "Q4_K_M",
+		NativeContextLimit: gap.ContextTokens,
+		TokenizerProfile:   llm.ExactPreparedTokenizerProfile,
+	}
+	prepared, err := prepareExactStationCall(gap, contract, expected.Model, expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := llm.ExactPreparedRequestBytes(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wire), `"format":{`) ||
+		strings.Contains(string(wire), `"num_predict"`) ||
+		prepared.OutputLimitMode != llm.ExactPreparedOutputLimitNatural ||
+		prepared.MaxOutputTokens != prepared.ContextTokens {
+		t.Fatalf("structured natural request has wrong authority: prepared=%+v wire=%s", prepared, wire)
+	}
+}

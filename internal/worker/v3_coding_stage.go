@@ -12,4 +12,6 @@ type directCodingStageDiagnostic struct {
 	Output            string
 	VerificationStage string
 	FailureClass      directCodingStageFailureClass
+	DeclarationLine   int
+	DeclarationColumn int
 }

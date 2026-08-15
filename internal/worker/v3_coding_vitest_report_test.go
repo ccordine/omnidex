@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -69,6 +70,32 @@ func TestVitestReportUsesStructuredErrorTypeForBehaviorRouting(t *testing.T) {
 	}
 }
 
+func TestVitestReportPreservesProviderParsedFrames(t *testing.T) {
+	root := t.TempDir()
+	report := strings.Replace(
+		vitestFailureReport("AssertionError"),
+		`"file":"src/feature.test.tsx"`,
+		`"file":"`+filepath.ToSlash(filepath.Join(root, "src/feature.test.tsx"))+`"`,
+		1,
+	)
+	if err := os.WriteFile(filepath.Join(root, directCodingVitestReportFile), []byte(report), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := readDirectCodingVitestFailureReceipt(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []directCodingVitestSourceLocation{{
+		File: filepath.ToSlash(filepath.Join(root, "src/feature.test.tsx")), Line: 12, Column: 3,
+	}}
+	if !reflect.DeepEqual(receipt.Locations, want) {
+		t.Fatalf("locations=%#v want=%#v", receipt.Locations, want)
+	}
+	if !strings.Contains(receipt.Output, want[0].File+":12:3") {
+		t.Fatalf("receipt output omitted parsed frame:\n%s", receipt.Output)
+	}
+}
+
 func TestVitestReportRejectsMissingMalformedAndContradictoryReceipts(t *testing.T) {
 	root := t.TempDir()
 	if _, err := readDirectCodingVitestFailureClass(root); err == nil {
@@ -77,10 +104,10 @@ func TestVitestReportRejectsMissingMalformedAndContradictoryReceipts(t *testing.
 	for name, raw := range map[string]string{
 		"malformed": `{`,
 		"contradictory": `{
-			"schema":"omnidex.vitest-report.v1","reason":"passed","unhandled_errors":[],"modules":[]
+			"schema":"omnidex.vitest-report.v2","reason":"passed","unhandled_errors":[],"modules":[]
 		}`,
 		"incomplete error": `{
-			"schema":"omnidex.vitest-report.v1","reason":"failed","unhandled_errors":[],
+			"schema":"omnidex.vitest-report.v2","reason":"failed","unhandled_errors":[],
 			"modules":[{"path":"src/feature.test.tsx","errors":[],"tests":[{
 				"state":"failed","errors":[{"name":"AssertionError"}]
 			}]}]
@@ -99,10 +126,11 @@ func TestVitestReportRejectsMissingMalformedAndContradictoryReceipts(t *testing.
 
 func vitestFailureReport(errorName string) string {
 	return `{
-		"schema":"omnidex.vitest-report.v1","reason":"failed","unhandled_errors":[],
+		"schema":"omnidex.vitest-report.v2","reason":"failed","unhandled_errors":[],
 		"modules":[{"path":"src/feature.test.tsx","errors":[],"tests":[{
 			"state":"failed","errors":[{
-				"name":"` + errorName + `","message":"observed failure","stack":"src/feature.test.tsx:12:3"
+				"name":"` + errorName + `","message":"observed failure","stack":"at Verify (src/feature.test.tsx:12:3)",
+				"stacks":[{"method":"Verify","file":"src/feature.test.tsx","line":12,"column":3}]
 			}]
 		}]}]
 	}`

@@ -271,11 +271,8 @@ func stubGenericBrowserProgram(t *testing.T) directCodingProgram {
 					)
 					continue
 				}
-				sequence := strings.TrimPrefix(block.ID, "acceptance.")
-				program.Generated[block.ID] = block.Signature + fmt.Sprintf(
-					` { render(<Feature%s runtime={createFeatureRuntime(createApplicationRuntime(), 'capability_%s')} />); expect(screen.getByText(/Working capability/)).not.toBeNull(); }`,
-					sequence, sequence,
-				)
+				program.Generated[block.ID] = block.Signature +
+					` { expect(screen.getByText(/Working capability/)).not.toBeNull(); }`
 			}
 		}
 	}

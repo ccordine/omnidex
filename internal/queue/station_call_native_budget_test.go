@@ -13,9 +13,7 @@ func TestStationCallOpeningPersistsDeclaredTokenCeilingWithoutGuessingFromBytes(
 	t.Parallel()
 
 	authority := model.StepAttemptAuthority{JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a"}
-	gap := stationCallTestGap(t, authority)
-	gap.ContextTokens = 8192
-	gap.MaxOutputTokens = 2048
+	gap := stationCallTestExplicitGap(t, authority, 8192, 2048)
 	const measuredModelInputBytes = 6485
 	gap.Prompt = strings.Repeat(
 		"x",
@@ -47,7 +45,7 @@ func TestStationCallOpeningPersistsDeclaredTokenCeilingWithoutGuessingFromBytes(
 func TestStationCallNativeUsageRejectsProviderCountsBeyondOpenedAuthority(t *testing.T) {
 	t.Parallel()
 	authority := model.StepAttemptAuthority{JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a"}
-	gap := stationCallTestGap(t, authority)
+	gap := stationCallTestExplicitGap(t, authority, 32768, 1024)
 	prepared := stationCallTestPrepared(t, gap)
 	opening, err := validateStationCallOpening(StationCallOpenRecord{
 		Authority: authority, Gap: gap,
@@ -71,6 +69,20 @@ func TestStationCallNativeUsageRejectsProviderCountsBeyondOpenedAuthority(t *tes
 			}
 		})
 	}
+}
+
+func stationCallTestExplicitGap(
+	t *testing.T,
+	authority model.StepAttemptAuthority,
+	contextTokens int,
+	maxOutputTokens int,
+) StationGapOpening {
+	t.Helper()
+	gap := stationCallTestGap(t, authority)
+	gap.ContextTokens = contextTokens
+	gap.MaxOutputTokens = maxOutputTokens
+	gap.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
+	return gap
 }
 
 func stationCallSuccessWithUsage(

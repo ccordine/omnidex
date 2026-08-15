@@ -109,6 +109,9 @@ func (s *directCodingSession) stageTypeScriptProgramIn(
 		if err := s.runtime.ctx.Err(); err != nil {
 			return fmt.Errorf("staged TypeScript correction stopped by context authority: %w", err)
 		}
+		if err := s.ensureDirectCodingAcceptanceGrounding(program); err != nil {
+			return fmt.Errorf("ground staged TypeScript acceptance: %w", err)
+		}
 		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_started", fmt.Sprintf(
 			"attempt=%d generated_blocks=%d", attempt, len(program.Generated),
 		))

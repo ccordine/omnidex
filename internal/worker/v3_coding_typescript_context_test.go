@@ -94,10 +94,7 @@ func TestGenericWorkersReceiveOnlyLocalAuthorityAndCodeOwnedCapabilityAPIs(t *te
 			}
 			signature, _, _ := strings.Cut(remainder, "\n")
 			if strings.HasPrefix(signature, "async function VerifyFeature") {
-				name := strings.TrimPrefix(signature, "async function Verify")
-				name, _, _ = strings.Cut(name, "(")
-				sequence := strings.TrimPrefix(name, "Feature")
-				return signature + ` { render(<` + name + ` runtime={createFeatureRuntime(createApplicationRuntime(), 'capability_` + sequence + `')} />); expect(screen.getByText('ready')).not.toBeNull(); }`, nil
+				return signature + ` { expect(screen.getByText('ready')).not.toBeNull(); }`, nil
 			}
 			return signature + ` { return <button onClick={() => actions.set('ready', true)}>{String(state.ready ?? 'ready')}</button>; }`, nil
 		}),
@@ -264,11 +261,15 @@ func TestGenerationAndAcceptancePromptsReceiveTheAcceptedExecutableJobAndOnlyRel
 	}
 
 	const publicWrapper = "function Feature002({ runtime }: FeatureProps): ReactElement"
-	if !strings.Contains(acceptancePrompt, publicWrapper) {
-		t.Fatalf("acceptance prompt omitted imported public wrapper signature %q:\n%s", publicWrapper, acceptancePrompt)
+	for _, forbidden := range []string{
+		publicWrapper, "function Feature002View", "createApplicationRuntime", "createFeatureRuntime",
+	} {
+		if strings.Contains(acceptancePrompt, forbidden) {
+			t.Fatalf("observation-only acceptance prompt exposed render authority %q:\n%s", forbidden, acceptancePrompt)
+		}
 	}
-	if strings.Contains(acceptancePrompt, "function Feature002View") {
-		t.Fatalf("acceptance prompt exposed private implementation signature instead of public wrapper:\n%s", acceptancePrompt)
+	if !strings.Contains(acceptancePrompt, "ALREADY_IN_SCOPE_IDENTIFIERS:\nfireEvent, screen, waitFor, expect") {
+		t.Fatalf("acceptance prompt omitted its closed observation surface:\n%s", acceptancePrompt)
 	}
 	if strings.Contains(generationPrompt, publicWrapper) {
 		t.Fatalf("implementation leaf received its code-owned public wrapper:\n%s", generationPrompt)

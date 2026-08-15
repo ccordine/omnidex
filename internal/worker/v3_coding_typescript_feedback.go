@@ -90,6 +90,7 @@ func directCodingTypeScriptFailureSignal(line string) bool {
 		"error ts", "assertionerror", "typeerror", "referenceerror", "rangeerror",
 		"testinglibraryelementerror", "unable to find", "found multiple", "unable to fire",
 		"expected", "received", "toequal", "tobe", "tohave",
+		"unsupported_acceptance_observation",
 	} {
 		if strings.Contains(lower, signal) {
 			return true

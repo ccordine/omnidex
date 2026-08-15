@@ -98,6 +98,8 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	stationOutputProjectionCount := 0
 	stationOutputLimitModeCount := 0
 	stationPromptTransportCount := 0
+	acceptanceGroundingReviewStationCount := 0
+	stationResponseSchemaResourceCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -201,9 +203,15 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == stationPromptTransportMigration {
 			stationPromptTransportCount++
 		}
+		if entry.name == applicationAcceptanceGroundingReviewMigration {
+			acceptanceGroundingReviewStationCount++
+		}
+		if entry.name == stationResponseSchemaResourceMigration {
+			stationResponseSchemaResourceCount++
+		}
 	}
-	if len(bundle.entries) != 148 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 148/%d",
+	if len(bundle.entries) != 150 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 150/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -271,11 +279,13 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		retiredExecutionAuthorityCount != 1 || portableRendererV2Count != 1 ||
 		portableRendererV3Count != 1 || tokenizerProfileAuthorityCount != 1 ||
 		stationOutputProjectionCount != 1 || stationOutputLimitModeCount != 1 ||
-		stationPromptTransportCount != 1 {
-		t.Fatalf("checked migrations 089..097 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
+		stationPromptTransportCount != 1 || acceptanceGroundingReviewStationCount != 1 ||
+		stationResponseSchemaResourceCount != 1 {
+		t.Fatalf("checked migrations 089..099 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			scrumChannelMessageRelationCount, scrumChannelOperationReceiptsCount,
 			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count,
 			tokenizerProfileAuthorityCount, stationOutputProjectionCount,
-			stationOutputLimitModeCount, stationPromptTransportCount)
+			stationOutputLimitModeCount, stationPromptTransportCount,
+			acceptanceGroundingReviewStationCount, stationResponseSchemaResourceCount)
 	}
 }

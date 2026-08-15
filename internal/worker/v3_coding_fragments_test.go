@@ -268,7 +268,7 @@ func TestTypeScriptFragmentWorkerStopsAnUnchangedCorrectionBeforeDuplicateDispat
 	}
 }
 
-func TestTypeScriptFragmentWorkerGivesCommentViolationOneDirectTypedInstruction(t *testing.T) {
+func TestTypeScriptFragmentWorkerAcceptsCommentWithoutSchedulingCorrection(t *testing.T) {
 	t.Parallel()
 
 	job := directCodingTypeScriptFragmentJob{block: assemblyline.TypeScriptBlock{
@@ -276,33 +276,23 @@ func TestTypeScriptFragmentWorkerGivesCommentViolationOneDirectTypedInstruction(
 		Contract: "Render one usable control.", API: "function render(): ReactElement",
 	}, tsx: true}
 	var prompts []string
+	const source = "function render(): ReactElement { return <button>{/* Accessible status follows. */}Ready</button>; }"
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "corrector",
 		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
 			prompts = append(prompts, prompt)
-			if len(prompts) == 1 {
-				return "function render(): ReactElement { return <button>{/* later */}Ready</button>; }", nil
-			}
-			return "function render(): ReactElement { return <button>Ready</button>; }", nil
+			return source, nil
 		}),
 	}
-	if _, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job); err != nil {
+	result, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prompts) != 2 {
+	if len(prompts) != 1 {
 		t.Fatalf("attempts=%d", len(prompts))
 	}
-	for _, required := range []string{
-		"Delete every comment node", "Change nothing unrelated", "comments are forbidden",
-	} {
-		if !strings.Contains(prompts[1], required) {
-			t.Fatalf("direct correction omitted %q:\n%s", required, prompts[1])
-		}
-	}
-	for _, forbidden := range []string{"Render one usable control", "LOCAL_BEHAVIOR"} {
-		if strings.Contains(prompts[1], forbidden) {
-			t.Fatalf("direct correction replayed %q:\n%s", forbidden, prompts[1])
-		}
+	if result != source {
+		t.Fatalf("comment-bearing source drifted:\nwant=%q\n got=%q", source, result)
 	}
 }
 

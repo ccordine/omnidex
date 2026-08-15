@@ -159,8 +159,8 @@ func stationGapOpenFixture(t *testing.T, authority model.StepAttemptAuthority) S
 	}
 	return StationGapOpenRecord{
 		Authority: authority, Job: job, Station: station.ConversationResponse,
-		ContextTokens: 32768, MaxOutputTokens: 1024,
-		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+		ContextTokens: 32768, MaxOutputTokens: 32768,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	}
 }
 

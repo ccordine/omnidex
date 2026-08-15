@@ -23,12 +23,13 @@ func TestStationGapOpeningRequiresExactOutputLimitAuthority(t *testing.T) {
 	}
 	base := StationGapOpenRecord{
 		Authority: authority, Job: job, Station: station.ConversationResponse,
-		ContextTokens: 8192, MaxOutputTokens: 1024,
-		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+		ContextTokens: 8192, MaxOutputTokens: 8192,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	}
 	if opening, err := validateStationGapOpening(base); err != nil ||
-		opening.OutputLimitMode != llm.ExactPreparedOutputLimitExplicit {
-		t.Fatalf("explicit output authority opening=%+v error=%v", opening, err)
+		opening.OutputLimitMode != llm.ExactPreparedOutputLimitNatural ||
+		opening.MaxOutputTokens != opening.ContextTokens {
+		t.Fatalf("semantic natural output authority opening=%+v error=%v", opening, err)
 	}
 
 	fragmentJob, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
@@ -52,8 +53,8 @@ func TestStationGapOpeningRequiresExactOutputLimitAuthority(t *testing.T) {
 	for name, mutate := range map[string]func(*StationGapOpenRecord){
 		"missing mode": func(record *StationGapOpenRecord) { record.OutputLimitMode = "" },
 		"unknown mode": func(record *StationGapOpenRecord) { record.OutputLimitMode = "unbounded" },
-		"explicit consumes native context": func(record *StationGapOpenRecord) {
-			record.MaxOutputTokens = record.ContextTokens
+		"natural splits native context": func(record *StationGapOpenRecord) {
+			record.MaxOutputTokens = record.ContextTokens / 2
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -69,11 +70,11 @@ func TestStationGapOpeningRequiresExactOutputLimitAuthority(t *testing.T) {
 	if _, err := validateStationGapOpening(wrongNaturalCeiling); err == nil {
 		t.Fatal("natural fragment scope accepted a split output ceiling")
 	}
-	semanticNatural := base
-	semanticNatural.OutputLimitMode = llm.ExactPreparedOutputLimitNatural
-	semanticNatural.MaxOutputTokens = semanticNatural.ContextTokens
-	if _, err := validateStationGapOpening(semanticNatural); err == nil {
-		t.Fatal("semantic scope accepted natural raw-output authority")
+	semanticExplicit := base
+	semanticExplicit.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
+	semanticExplicit.MaxOutputTokens = 1024
+	if _, err := validateStationGapOpening(semanticExplicit); err == nil {
+		t.Fatal("semantic scope accepted an explicit output cap")
 	}
 	rawExplicit := natural
 	rawExplicit.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit

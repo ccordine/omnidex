@@ -50,6 +50,17 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 			return "", nil, err
 		}
 		return renderApplicationJobSpecificationRepairPortable(input)
+	case WorkApplicationAcceptanceGroundingReview:
+		var input ApplicationAcceptanceGroundingReviewInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationAcceptanceGroundingReviewPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := ApplicationAcceptanceGroundingReviewResponseSchema(input)
+		return prompt, schema, err
 	case WorkRepositoryRequirements:
 		var input RepositoryRequirementInterpretationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -310,7 +321,7 @@ func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, ma
 }
 
 func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, map[string]any, error) {
-	schema, err := responseCorrectionSchema(input.Original)
+	schema, err := responseCorrectionSchema(input.Original, input.TargetField)
 	if err != nil {
 		return "", nil, err
 	}

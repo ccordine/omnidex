@@ -11,7 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/exactjson"
 )
 
-func responseCorrectionSchema(original PortableJob) (map[string]any, error) {
+func responseCorrectionSchema(original PortableJob, targetField string) (map[string]any, error) {
 	if original.Kind == WorkResponseCorrection {
 		return nil, fmt.Errorf("response correction cannot wrap another response correction")
 	}
@@ -43,6 +43,17 @@ func responseCorrectionSchema(original PortableJob) (map[string]any, error) {
 	if len(mutable) == 0 {
 		return nil, fmt.Errorf("response correction original schema has no mutable field")
 	}
+	if original.Kind == WorkApplicationAcceptanceGroundingReview {
+		definition, exists := mutable[targetField]
+		if targetField == "" || !exists {
+			return nil, fmt.Errorf(
+				"acceptance grounding response correction target %q is unavailable", targetField,
+			)
+		}
+		mutable = map[string]any{targetField: definition}
+	} else if targetField != "" {
+		return nil, fmt.Errorf("field-scoped response correction is unsupported for %s", original.Kind)
+	}
 	return map[string]any{
 		"type":                 "object",
 		"properties":           mutable,
@@ -57,9 +68,44 @@ func ApplyResponseCorrection(
 	retainedCandidate string,
 	mergePatch string,
 ) (string, error) {
-	schema, err := responseCorrectionSchema(original)
+	return applyResponseCorrection(original, retainedCandidate, mergePatch, "")
+}
+
+func ApplyResponseCorrectionForField(
+	original PortableJob,
+	retainedCandidate string,
+	mergePatch string,
+	targetField string,
+) (string, error) {
+	return applyResponseCorrection(
+		original, retainedCandidate, mergePatch, targetField,
+	)
+}
+
+func applyResponseCorrection(
+	original PortableJob,
+	retainedCandidate string,
+	mergePatch string,
+	targetField string,
+) (string, error) {
+	schema, err := responseCorrectionSchema(original, targetField)
 	if err != nil {
 		return "", err
+	}
+	var beforeGrounding acceptanceGroundingCorrectionState
+	if original.Kind == WorkApplicationAcceptanceGroundingReview {
+		beforeGrounding, err = applicationAcceptanceGroundingCorrectionState(
+			original, retainedCandidate,
+		)
+		if err != nil {
+			return "", err
+		}
+		if !beforeGrounding.allows(targetField) {
+			return "", fmt.Errorf(
+				"acceptance grounding correction target %s does not own current defect %s",
+				targetField, beforeGrounding.identity,
+			)
+		}
 	}
 	retained, err := decodeJSONObject(retainedCandidate, "retained semantic candidate")
 	if err != nil {
@@ -80,10 +126,7 @@ func ApplyResponseCorrection(
 	if _, allowed := properties[field]; !allowed {
 		return "", fmt.Errorf("semantic response merge patch field %q is immutable or unsupported", field)
 	}
-	before, exists := retained[field]
-	if !exists {
-		return "", fmt.Errorf("semantic response merge patch field %q is absent from retained state", field)
-	}
+	before := retained[field]
 	retained[field] = mergeJSONValue(before, patchValue)
 	changes := countJSONLeafChanges(before, retained[field])
 	if changes != 1 {
@@ -95,7 +138,21 @@ func ApplyResponseCorrection(
 	if err != nil {
 		return "", fmt.Errorf("encode corrected semantic response: %w", err)
 	}
-	return string(raw), nil
+	corrected := string(raw)
+	if original.Kind == WorkApplicationAcceptanceGroundingReview {
+		afterGrounding, stateErr := applicationAcceptanceGroundingCorrectionState(original, corrected)
+		if stateErr != nil {
+			return "", stateErr
+		}
+		if afterGrounding.rank < beforeGrounding.rank ||
+			afterGrounding.identity == beforeGrounding.identity {
+			return "", fmt.Errorf(
+				"acceptance grounding correction did not advance exact defect %s",
+				beforeGrounding.identity,
+			)
+		}
+	}
+	return corrected, nil
 }
 
 func decodeJSONObject(raw string, label string) (map[string]any, error) {

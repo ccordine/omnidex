@@ -25,6 +25,10 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[applicationJobSpecificationRepairPortablePayload](
 			payload, applicationJobSpecificationRepairPortablePayload.validate,
 		)
+	case WorkApplicationAcceptanceGroundingReview:
+		return decodeAndValidatePortablePayload[ApplicationAcceptanceGroundingReviewInput](
+			payload, ApplicationAcceptanceGroundingReviewInput.validate,
+		)
 	case WorkRepositoryRequirements:
 		return decodeAndValidatePortablePayload[RepositoryRequirementInterpretationInput](
 			payload, RepositoryRequirementInterpretationInput.validate,
