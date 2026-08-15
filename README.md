@@ -214,12 +214,16 @@ Requirements: Docker with Compose and an Ollama endpoint reachable from the core
 
 ```bash
 cp default.env .env
-docker compose up --build
+./up.sh --build
 ```
 
 Open `http://localhost:8090`.
 
 The default compose topology keeps PostgreSQL and Redis on the internal backend network. The core API is the normal host-facing service.
+`up.sh` and `down.sh` use the exact `DOCKER_CONTEXT` and
+`COMPOSE_PROJECT_NAME` in `.env`; do not run ambient `docker compose` commands,
+which can point at a different Docker engine and create a separate empty
+database.
 
 For a host build:
 

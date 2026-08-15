@@ -33,6 +33,10 @@ func main() {
 		}
 		return
 	}
+	if cmd == "bench:replay" {
+		runStationReplay(os.Args[2:])
+		return
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		die(fmt.Sprintf("resolve agent-cli executable: %v", err))

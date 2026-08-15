@@ -10,6 +10,23 @@ die() {
   exit 1
 }
 
+run_npm_install() {
+  npm ci --include=dev --no-audit --no-fund
+}
+
+ensure_esbuild_binary() {
+  local esbuild_bin="${WEB_ROOT}/node_modules/esbuild/bin/esbuild"
+  local esbuild_install_dir="${WEB_ROOT}/node_modules/esbuild"
+
+  if [[ ! -d "${esbuild_install_dir}" ]]; then
+    return 1
+  fi
+  if [[ ! -f "${esbuild_bin}" || ! -x "${esbuild_bin}" ]]; then
+    return 1
+  fi
+  return 0
+}
+
 command -v node >/dev/null 2>&1 || die "node is required to build the embedded GUI"
 command -v npm >/dev/null 2>&1 || die "npm is required to build the embedded GUI"
 [[ -f "${WEB_ROOT}/package.json" ]] || die "GUI package.json is missing"
@@ -17,7 +34,9 @@ command -v npm >/dev/null 2>&1 || die "npm is required to build the embedded GUI
 
 (
   cd "${WEB_ROOT}"
-  npm ci --no-audit --no-fund
+  run_npm_install || die "npm ci failed; a complete local dependency layout is required before build"
+  ensure_esbuild_binary || die "npm ci completed without the local esbuild binary"
+
   npm run build
 )
 

@@ -347,7 +347,13 @@ func newManagedInstallFixture(t *testing.T) managedInstallFixture {
 	writeFixtureFile(t, filepath.Join(fakeBin, "npm"), `#!/usr/bin/env bash
 set -euo pipefail
 [[ -z "${OMNI_FIXTURE_NPM_FAIL:-}" ]] || { echo "forced npm failure" >&2; exit 61; }
-if [[ "$1" == "ci" ]]; then mkdir -p node_modules; exit 0; fi
+if [[ "$1" == "ci" ]]; then
+  [[ " $* " == *" --include=dev "* ]] || { echo "npm ci must include development build dependencies" >&2; exit 67; }
+  mkdir -p node_modules/esbuild/bin
+  printf '#!/usr/bin/env bash\nexit 0\n' > node_modules/esbuild/bin/esbuild
+  chmod 0755 node_modules/esbuild/bin/esbuild
+  exit 0
+fi
 if [[ "$*" == "run build" ]]; then
   mkdir -p dist/.vite dist/assets
   printf '<html>fixture</html>\n' > dist/index.html

@@ -5,13 +5,14 @@ dropin_dir="/etc/systemd/system/ollama.service.d"
 dropin_file="${dropin_dir}/zz-omni-rx7700s-rocm.conf"
 cpu_dropin="${dropin_dir}/zz-omni-stable-cpu.conf"
 vulkan_dropin="${dropin_dir}/zz-omni-vulkan.conf"
+legacy_vulkan_dropin="${dropin_dir}/zz-odn-vulkan.conf"
 
 if [[ "${EUID}" -ne 0 ]]; then
   exec sudo "$0" "$@"
 fi
 
 install -d -m 0755 "${dropin_dir}"
-rm -f "${cpu_dropin}" "${vulkan_dropin}"
+rm -f "${cpu_dropin}" "${vulkan_dropin}" "${legacy_vulkan_dropin}"
 cat > "${dropin_file}" <<'EOF'
 [Service]
 # Omni RX 7700S ROCm profile.
@@ -20,6 +21,7 @@ cat > "${dropin_file}" <<'EOF'
 #   GPU 1: gfx1102 AMD Radeon RX 7700S
 # The previous GPU hangs came from exposing device 0. Pin Ollama to device 1.
 Environment="OLLAMA_LLM_LIBRARY=rocm"
+Environment="OLLAMA_VULKAN="
 Environment="ROCR_VISIBLE_DEVICES=1"
 Environment="HIP_VISIBLE_DEVICES="
 Environment="GPU_DEVICE_ORDINAL="

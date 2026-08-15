@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -37,5 +38,12 @@ func TestRuntimeSchemaBootstrapRejectsLegacyPublicState(t *testing.T) {
 	}
 	if err := rejectPublicOmnidexState(true); err == nil {
 		t.Fatal("legacy public Omnidex state was accepted beside a new runtime schema")
+	}
+}
+
+func TestConnectRuntimeReadOnlyRejectsInvalidSchemaBeforeOpeningConnection(t *testing.T) {
+	_, err := ConnectRuntimeReadOnly(context.Background(), "postgres://127.0.0.1:1/omnidex", "public")
+	if err == nil || !strings.Contains(err.Error(), "runtime database schema") {
+		t.Fatalf("error=%v, want invalid runtime schema", err)
 	}
 }

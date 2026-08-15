@@ -12,6 +12,10 @@ import (
 const (
 	ExactPreparedTokenizerProfileQwen2Qwen2BOS = "ollama-0.24.0-qwen2-qwen2-bos-boundary-v1"
 	ExactPreparedTokenizerProfileMistral3      = "ollama-0.24.0-mistral3-gpt2-bos-boundary-v1"
+	ExactPreparedTokenizerProfilePhi3GPT4O     = "ollama-0.24.0-phi3-gpt2-gpt4o-boundary-v1"
+	ExactPreparedTokenizerProfilePhi3DBRX      = "ollama-0.24.0-phi3-gpt2-dbrx-boundary-v1"
+	ExactPreparedTokenizerProfileGemma3        = "ollama-0.24.0-gemma3-llama-default-boundary-v1"
+	ExactPreparedTokenizerProfileLlama32       = "ollama-0.24.0-llama-gpt2-llama-bpe-boundary-v1"
 )
 
 type exactPreparedTransport uint8
@@ -92,6 +96,52 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		},
 		templateSHA256:   "5b74c26b9e0b6358e73d0a7eb2f955105097e7bd10b45fa0d2a50f0a906e0798",
 		parameterSHA256s: []string{"e96fd3cee0f18f63a5df2dc1115f0bdf681fd2c9f75aa0f082f840f974111b9a"},
+		transport:        exactPreparedTransportNativeSystem,
+	},
+	{
+		tokenizerProfile: ExactPreparedTokenizerProfilePhi3GPT4O,
+		architecture:     "phi3", tokenizerModel: "gpt2", tokenizerPre: "gpt-4o",
+		capabilities: []string{"completion", "tools"},
+		explicitAdd: map[string]bool{
+			"tokenizer.ggml.add_bos_token": false, "tokenizer.ggml.add_eos_token": false,
+		},
+		absentAdd:        []string{"tokenizer.ggml.add_padding_token"},
+		templateSHA256:   "813f53fdc6e58d35bb1c3853c93266380e9ca918a993e8eab193e8ede5d3a603",
+		parameterSHA256s: []string{"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+		transport:        exactPreparedTransportNativeSystem,
+	},
+	{
+		tokenizerProfile: ExactPreparedTokenizerProfilePhi3DBRX,
+		architecture:     "phi3", tokenizerModel: "gpt2", tokenizerPre: "dbrx",
+		capabilities: []string{"completion"},
+		absentAdd: []string{
+			"tokenizer.ggml.add_bos_token", "tokenizer.ggml.add_eos_token", "tokenizer.ggml.add_padding_token",
+		},
+		templateSHA256:   "32695b892af87ef8fca6e13a1a31c67c1441d7398be037e366e2fc763857c06a",
+		parameterSHA256s: []string{"0f21334ec3cf79cbaebd7b2c69ad7a38398074b109076af04b35c7925abe2675"},
+		transport:        exactPreparedTransportNativeSystem,
+	},
+	{
+		tokenizerProfile: ExactPreparedTokenizerProfileGemma3,
+		architecture:     "gemma3", tokenizerModel: "llama", tokenizerPre: "default",
+		capabilities: []string{"completion", "vision"},
+		explicitAdd: map[string]bool{
+			"tokenizer.ggml.add_bos_token": true, "tokenizer.ggml.add_eos_token": false,
+			"tokenizer.ggml.add_padding_token": false, "tokenizer.ggml.add_unknown_token": false,
+		},
+		templateSHA256:   "e0a42594d802e5d31cdc786deb4823edb8adff66094d49de8fffe976d753e348",
+		parameterSHA256s: []string{"82be0d39faf8dbd5f010de5f8619825954ef45533a1df7db4973110e71cef2d6"},
+		transport:        exactPreparedTransportNativeSystem,
+	},
+	{
+		tokenizerProfile: ExactPreparedTokenizerProfileLlama32,
+		architecture:     "llama", tokenizerModel: "gpt2", tokenizerPre: "llama-bpe",
+		capabilities: []string{"completion", "tools"},
+		absentAdd: []string{
+			"tokenizer.ggml.add_bos_token", "tokenizer.ggml.add_eos_token", "tokenizer.ggml.add_padding_token",
+		},
+		templateSHA256:   "966de95ca8a62200913e3f8bfbf84c8494536f1b94b49166851e76644e966396",
+		parameterSHA256s: []string{"2801e61a8848e505a6e20beeaea63cca1600200f6720e5f916ba7d6da5c3ba39"},
 		transport:        exactPreparedTransportNativeSystem,
 	},
 }

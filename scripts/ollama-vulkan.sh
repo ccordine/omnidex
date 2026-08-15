@@ -5,6 +5,7 @@ dropin_dir="/etc/systemd/system/ollama.service.d"
 dropin_file="${dropin_dir}/zz-omni-vulkan.conf"
 cpu_dropin="${dropin_dir}/zz-omni-stable-cpu.conf"
 rocm_dropin="${dropin_dir}/zz-omni-rx7700s-rocm.conf"
+legacy_vulkan_dropin="${dropin_dir}/zz-odn-vulkan.conf"
 
 if [[ "${EUID}" -ne 0 ]]; then
   exec sudo "$0" "$@"
@@ -21,7 +22,7 @@ if ! find /usr/lib/ollama -maxdepth 2 -type f \( -iname '*vulkan*' -o -iname '*v
 fi
 
 install -d -m 0755 "${dropin_dir}"
-rm -f "${cpu_dropin}" "${rocm_dropin}"
+rm -f "${cpu_dropin}" "${rocm_dropin}" "${legacy_vulkan_dropin}"
 cat > "${dropin_file}" <<'EOF'
 [Service]
 # Omni Vulkan experiment profile.

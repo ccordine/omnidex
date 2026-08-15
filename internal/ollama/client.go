@@ -100,8 +100,23 @@ func New(baseURL, defaultModel, embeddingModel string, timeout time.Duration, co
 	if timeout <= 0 {
 		timeout = 90 * time.Second
 	}
+	return newClient(baseURL, defaultModel, embeddingModel, timeout, contextTokens)
+}
+
+// NewUnbounded leaves response duration under the supplied request context.
+// It retains a bounded connection dial so an unreachable local provider does
+// not hang before a request is established.
+func NewUnbounded(baseURL, defaultModel, embeddingModel string, contextTokens int) *Client {
+	return newClient(baseURL, defaultModel, embeddingModel, 0, contextTokens)
+}
+
+func newClient(
+	baseURL, defaultModel, embeddingModel string,
+	timeout time.Duration,
+	contextTokens int,
+) *Client {
 	dialTimeout := 5 * time.Second
-	if timeout < dialTimeout {
+	if timeout > 0 && timeout < dialTimeout {
 		dialTimeout = timeout
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()

@@ -31,3 +31,10 @@ func TestWrapConnectivityErrorNoHintForOtherHosts(t *testing.T) {
 		t.Fatalf("expected unchanged error, got: %v", got)
 	}
 }
+
+func TestNewUnboundedLeavesResponseDeadlineToCallerContext(t *testing.T) {
+	client := NewUnbounded("http://localhost:11434", "model", "", 8192)
+	if client.httpClient.Timeout != 0 {
+		t.Fatalf("HTTP timeout=%s, want no client response deadline", client.httpClient.Timeout)
+	}
+}

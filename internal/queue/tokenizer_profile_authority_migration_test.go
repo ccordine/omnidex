@@ -8,13 +8,17 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-const tokenizerProfileAuthorityMigration = "094_tokenizer_profile_authority.sql"
+const tokenizerProfileAuthorityMigration = "100_general_tokenizer_profile_authority.sql"
 
 const (
-	qwen35TokenizerProfile   = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
-	qwen3TokenizerProfile    = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
-	qwen2BOSTokenizerProfile = "ollama-0.24.0-qwen2-qwen2-bos-boundary-v1"
-	mistral3TokenizerProfile = "ollama-0.24.0-mistral3-gpt2-bos-boundary-v1"
+	qwen35TokenizerProfile    = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
+	qwen3TokenizerProfile     = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
+	qwen2BOSTokenizerProfile  = "ollama-0.24.0-qwen2-qwen2-bos-boundary-v1"
+	mistral3TokenizerProfile  = "ollama-0.24.0-mistral3-gpt2-bos-boundary-v1"
+	phi3GPT4OTokenizerProfile = "ollama-0.24.0-phi3-gpt2-gpt4o-boundary-v1"
+	phi3DBRXTokenizerProfile  = "ollama-0.24.0-phi3-gpt2-dbrx-boundary-v1"
+	gemma3TokenizerProfile    = "ollama-0.24.0-gemma3-llama-default-boundary-v1"
+	llama32TokenizerProfile   = "ollama-0.24.0-llama-gpt2-llama-bpe-boundary-v1"
 )
 
 func TestTokenizerProfileAuthorityMigrationWidensOnlyTheRegisteredProfiles(t *testing.T) {
@@ -32,6 +36,10 @@ func TestTokenizerProfileAuthorityMigrationWidensOnlyTheRegisteredProfiles(t *te
 		qwen3TokenizerProfile,
 		qwen2BOSTokenizerProfile,
 		mistral3TokenizerProfile,
+		phi3GPT4OTokenizerProfile,
+		phi3DBRXTokenizerProfile,
+		gemma3TokenizerProfile,
+		llama32TokenizerProfile,
 	} {
 		if !strings.Contains(source, required) {
 			t.Errorf("tokenizer-profile migration lacks %q", required)
@@ -53,7 +61,7 @@ func TestTokenizerProfileAuthorityMigrationWidensOnlyTheRegisteredProfiles(t *te
 func TestTokenizerProfileAuthorityDatabaseConstraintAcceptsOnlyRegisteredProfiles(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "100")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -71,6 +79,10 @@ func TestTokenizerProfileAuthorityDatabaseConstraintAcceptsOnlyRegisteredProfile
 		qwen3TokenizerProfile,
 		qwen2BOSTokenizerProfile,
 		mistral3TokenizerProfile,
+		phi3GPT4OTokenizerProfile,
+		phi3DBRXTokenizerProfile,
+		gemma3TokenizerProfile,
+		llama32TokenizerProfile,
 	} {
 		if !strings.Contains(definition, profile) {
 			t.Fatalf("tokenizer-profile constraint=%q lacks registered profile %q", definition, profile)
@@ -151,6 +163,10 @@ func TestTokenizerProfileAuthorityDatabaseConstraintAcceptsOnlyRegisteredProfile
 		qwen3TokenizerProfile,
 		qwen2BOSTokenizerProfile,
 		mistral3TokenizerProfile,
+		phi3GPT4OTokenizerProfile,
+		phi3DBRXTokenizerProfile,
+		gemma3TokenizerProfile,
+		llama32TokenizerProfile,
 	} {
 		if err := setProbeProfile(profile); err != nil {
 			t.Fatalf("registered tokenizer profile %q was rejected: %v", profile, err)

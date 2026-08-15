@@ -210,8 +210,8 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 			stationResponseSchemaResourceCount++
 		}
 	}
-	if len(bundle.entries) != 150 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 150/%d",
+	if len(bundle.entries) != 151 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 151/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -281,7 +281,7 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		stationOutputProjectionCount != 1 || stationOutputLimitModeCount != 1 ||
 		stationPromptTransportCount != 1 || acceptanceGroundingReviewStationCount != 1 ||
 		stationResponseSchemaResourceCount != 1 {
-		t.Fatalf("checked migrations 089..099 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
+		t.Fatalf("checked migrations 089..100 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			scrumChannelMessageRelationCount, scrumChannelOperationReceiptsCount,
 			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count,
 			tokenizerProfileAuthorityCount, stationOutputProjectionCount,
