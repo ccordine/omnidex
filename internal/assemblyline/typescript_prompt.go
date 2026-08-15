@@ -73,8 +73,8 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 			return "", fmt.Errorf("TypeScript fragment repair region: %w", err)
 		}
 		encodedRegion = fmt.Sprintf(
-			`{"start_line":%d,"end_line":%d,"source":%s}`,
-			input.RepairRegion.StartLine, input.RepairRegion.EndLine, encodedSource,
+			`{"kind":%q,"start_line":%d,"end_line":%d,"source":%s}`,
+			input.RepairRegion.Kind, input.RepairRegion.StartLine, input.RepairRegion.EndLine, encodedSource,
 		)
 	}
 	parts := []string{}

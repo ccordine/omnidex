@@ -37,6 +37,8 @@ const (
 type ApplicationJobSpecificationDefect struct {
 	Field  ApplicationJobSpecificationField `json:"field"`
 	Detail string                           `json:"detail"`
+
+	correctionTarget string
 }
 
 func (defect *ApplicationJobSpecificationDefect) Error() string {
@@ -44,6 +46,15 @@ func (defect *ApplicationJobSpecificationDefect) Error() string {
 		return ""
 	}
 	return fmt.Sprintf("%s: %s", defect.Field, defect.Detail)
+}
+
+// CorrectionTarget returns the exact response leaf that owns this defect.
+// Aggregate cardinality defects intentionally have no correction target.
+func (defect *ApplicationJobSpecificationDefect) CorrectionTarget() (string, bool) {
+	if defect == nil || defect.correctionTarget == "" {
+		return "", false
+	}
+	return defect.correctionTarget, true
 }
 
 type ApplicationWorkloadDraftInput struct {

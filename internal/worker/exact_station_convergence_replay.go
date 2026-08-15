@@ -11,9 +11,10 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-// ConvergeExactTypeScriptStation replays one frozen whole-declaration
-// correction and lets code-owned TypeScript diagnostics derive each later
-// correction. It performs no queue, historical-job, or workspace writes.
+// ConvergeExactTypeScriptStation preserves one frozen correction's source,
+// signature, declarations, and symbols while the current compiler derives the
+// exact model failure for every iteration. It performs no queue,
+// historical-job, or workspace writes.
 func ConvergeExactTypeScriptStation(
 	ctx context.Context,
 	client llm.ExactStationClient,
@@ -36,9 +37,6 @@ func ConvergeExactTypeScriptStation(
 	runtime := exactTypeScriptConvergenceRuntime{
 		verify: compiler.Verify,
 		replay: func(callCtx context.Context, job assemblyline.PortableJob, iteration int) (ExactStationReplay, error) {
-			if iteration == 1 {
-				return ReplayExactStation(callCtx, client, point, modelName)
-			}
 			return replayDerivedExactStation(callCtx, client, point, job, modelName, iteration)
 		},
 	}
@@ -53,8 +51,8 @@ func replayDerivedExactStation(
 	modelName string,
 	iteration int,
 ) (ExactStationReplay, error) {
-	if iteration < 2 {
-		return ExactStationReplay{}, fmt.Errorf("derived station replay requires one later iteration")
+	if iteration < 1 {
+		return ExactStationReplay{}, fmt.Errorf("derived station replay requires one positive iteration")
 	}
 	scope := fmt.Sprintf("station-convergence:%d:%d:%s", point.Call.ID, iteration, job.ID)
 	return replayCurrentPortableStation(ctx, client, point, job, modelName, scope)

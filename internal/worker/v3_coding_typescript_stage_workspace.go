@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -152,7 +153,17 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	if !exists || strings.TrimSpace(current) == "" {
 		return fmt.Errorf("staged TypeScript diagnostic target %s has no accepted declaration", target.ID)
 	}
-	failure := directCodingTypeScriptModelFailure(diagnostic.Output)
+	failure, err := directCodingTypeScriptStageModelFeedback(diagnostic)
+	if err != nil {
+		return err
+	}
+	tsx := directCodingTypeScriptBlockIsTSX(program.TypeScript, target.ID)
+	repairRegion, err := assemblyline.NewTypeScriptCompilerRepairRegion(
+		current, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
+	)
+	if err != nil {
+		return fmt.Errorf("localize staged TypeScript compiler failure for block %s: %w", target.ID, err)
+	}
 	if err := progress.observe(
 		target.ID, current, diagnostic.VerificationStage, failure,
 	); err != nil {
@@ -179,8 +190,8 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	source, err := runDirectCodingTypeScriptFragmentWorker(
 		workerRuntime, modelName,
 		directCodingTypeScriptFragmentJob{
-			block: target, tsx: directCodingTypeScriptBlockIsTSX(program.TypeScript, target.ID),
-			available: available, current: current, failure: failure,
+			block: target, tsx: tsx, available: available, current: current,
+			repairRegion: &repairRegion, failure: failure,
 		},
 	)
 	if err != nil {

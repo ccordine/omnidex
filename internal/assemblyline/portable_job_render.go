@@ -325,6 +325,10 @@ func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, ma
 	if err != nil {
 		return "", nil, err
 	}
+	if input.Original.Kind == WorkApplicationJobSpecification {
+		prompt, promptErr := buildApplicationJobSpecificationResponseCorrectionPrompt(input)
+		return prompt, schema, promptErr
+	}
 	instruction := "Return a JSON merge patch containing exactly one top-level field and changing exactly one invalid leaf. " +
 		"The retained response and its accepted fields are code-owned and unavailable. Resolve only this failure:\n" +
 		input.ValidationFailure

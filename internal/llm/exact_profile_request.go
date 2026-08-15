@@ -73,6 +73,19 @@ func (profile exactProviderModelProfile) preparedRequest(
 		request.Prompt = prepared.PromptHint
 		request.System = prepared.Prompt
 		return request, nil
+	case exactPreparedTransportNativeSystemThinking:
+		request.Prompt = prepared.PromptHint
+		request.System = prepared.Prompt
+		think := true
+		request.Think = &think
+		return request, nil
+	case exactPreparedTransportNativePrompt:
+		prompt, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
+		if err != nil {
+			return exactPreparedRequest{}, err
+		}
+		request.Prompt = prompt
+		return request, nil
 	default:
 		return exactPreparedRequest{}, fmt.Errorf(
 			"exact provider model profile %q has no registered transport",

@@ -200,7 +200,7 @@ func TestTypeScriptModelFailureContainsOnlyTheObservedFailure(t *testing.T) {
 		"AssertionError: expected 1 to be 2\n" +
 		" ❯ src/capability.test.tsx:24:18\n" +
 		" ❯ /tmp/isolated/node_modules/runner.js:9:2\n"
-	feedback := directCodingTypeScriptModelFailure(raw)
+	feedback := directCodingTypeScriptTestModelFailure(raw)
 	for _, required := range []string{
 		"capability > reacts to input", "expected 1 to be 2",
 	} {
@@ -227,7 +227,7 @@ AssertionError: expected false to be true
  FAIL  src/checks.test.tsx > second capability > persists
 TestingLibraryElementError: Unable to find an accessible element
 `
-	feedback := directCodingTypeScriptModelFailure(raw)
+	feedback := directCodingTypeScriptTestModelFailure(raw)
 	for _, required := range []string{"first capability > responds", "expected false to be true"} {
 		if !strings.Contains(feedback, required) {
 			t.Fatalf("focused feedback omitted %q:\n%s", required, feedback)

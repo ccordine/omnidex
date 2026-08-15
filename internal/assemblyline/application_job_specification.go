@@ -132,19 +132,23 @@ func FirstApplicationJobSpecificationDefect(
 	if err := validateApplicationWorkloadLine(
 		"objective", specification.Objective, maxApplicationObjectiveRunes,
 	); err != nil {
-		return applicationJobSpecificationDefect(ApplicationJobSpecificationObjectiveField, err)
+		return applicationJobSpecificationDefectAt(
+			ApplicationJobSpecificationObjectiveField, "objective", err,
+		)
 	}
-	if err := validateApplicationJobSpecificationList(
+	if defect := firstApplicationJobSpecificationListDefect(
 		"required behavior", specification.RequiredBehaviors,
 		maxApplicationRequiredBehaviors, maxApplicationBehaviorRunes,
-	); err != nil {
-		return applicationJobSpecificationDefect(ApplicationJobSpecificationRequiredBehaviorsField, err)
+		ApplicationJobSpecificationRequiredBehaviorsField,
+	); defect != nil {
+		return defect
 	}
-	if err := validateApplicationJobSpecificationList(
+	if defect := firstApplicationJobSpecificationListDefect(
 		"acceptance criterion", specification.AcceptanceCriteria,
 		maxApplicationAcceptanceCriteria, maxApplicationCriterionRunes,
-	); err != nil {
-		return applicationJobSpecificationDefect(ApplicationJobSpecificationAcceptanceCriteriaField, err)
+		ApplicationJobSpecificationAcceptanceCriteriaField,
+	); defect != nil {
+		return defect
 	}
 	return nil
 }
@@ -167,9 +171,43 @@ func applicationJobSpecificationListSchema(maximum int) map[string]any {
 	}
 }
 
-func applicationJobSpecificationDefect(
+func firstApplicationJobSpecificationListDefect(
+	label string,
+	values []string,
+	maximumCount int,
+	maximumRunes int,
 	field ApplicationJobSpecificationField,
+) *ApplicationJobSpecificationDefect {
+	if len(values) < 1 || len(values) > maximumCount {
+		return applicationJobSpecificationDefectAt(
+			field, "", fmt.Errorf("requires 1..%d %ss", maximumCount, label),
+		)
+	}
+	seen := make(map[string]int, len(values))
+	for index, value := range values {
+		target := fmt.Sprintf("%s_%03d", field, index+1)
+		if err := validateApplicationWorkloadLine(label, value, maximumRunes); err != nil {
+			return applicationJobSpecificationDefectAt(
+				field, target, fmt.Errorf("%s %d: %w", label, index, err),
+			)
+		}
+		if earlier, duplicate := seen[value]; duplicate {
+			return applicationJobSpecificationDefectAt(
+				field, target,
+				fmt.Errorf("%s %d duplicates earlier item %d", label, index, earlier),
+			)
+		}
+		seen[value] = index
+	}
+	return nil
+}
+
+func applicationJobSpecificationDefectAt(
+	field ApplicationJobSpecificationField,
+	target string,
 	err error,
 ) *ApplicationJobSpecificationDefect {
-	return &ApplicationJobSpecificationDefect{Field: field, Detail: err.Error()}
+	return &ApplicationJobSpecificationDefect{
+		Field: field, Detail: err.Error(), correctionTarget: target,
+	}
 }

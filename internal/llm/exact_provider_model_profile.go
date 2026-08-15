@@ -10,12 +10,20 @@ import (
 )
 
 const (
-	ExactPreparedTokenizerProfileQwen2Qwen2BOS = "ollama-0.24.0-qwen2-qwen2-bos-boundary-v1"
-	ExactPreparedTokenizerProfileMistral3      = "ollama-0.24.0-mistral3-gpt2-bos-boundary-v1"
-	ExactPreparedTokenizerProfilePhi3GPT4O     = "ollama-0.24.0-phi3-gpt2-gpt4o-boundary-v1"
-	ExactPreparedTokenizerProfilePhi3DBRX      = "ollama-0.24.0-phi3-gpt2-dbrx-boundary-v1"
-	ExactPreparedTokenizerProfileGemma3        = "ollama-0.24.0-gemma3-llama-default-boundary-v1"
-	ExactPreparedTokenizerProfileLlama32       = "ollama-0.24.0-llama-gpt2-llama-bpe-boundary-v1"
+	ExactPreparedTokenizerProfileQwen2Qwen2BOS   = "ollama-0.24.0-qwen2-qwen2-bos-boundary-v1"
+	ExactPreparedTokenizerProfileMistral3        = "ollama-0.24.0-mistral3-gpt2-bos-boundary-v1"
+	ExactPreparedTokenizerProfilePhi3GPT4O       = "ollama-0.24.0-phi3-gpt2-gpt4o-boundary-v1"
+	ExactPreparedTokenizerProfilePhi3DBRX        = "ollama-0.24.0-phi3-gpt2-dbrx-boundary-v1"
+	ExactPreparedTokenizerProfileGemma3          = "ollama-0.24.0-gemma3-llama-default-boundary-v1"
+	ExactPreparedTokenizerProfileLlama32         = "ollama-0.24.0-llama-gpt2-llama-bpe-boundary-v1"
+	ExactPreparedTokenizerProfileQwen25Coder     = "ollama-0.24.0-qwen2-gpt2-qwen2-no-bos-boundary-v1"
+	ExactPreparedTokenizerProfileQwen3Native     = "ollama-0.24.0-qwen3-gpt2-qwen2-no-bos-boundary-v1"
+	ExactPreparedTokenizerProfileCodeQwen        = "ollama-0.24.0-qwen2-llama-default-code-boundary-v1"
+	ExactPreparedTokenizerProfileCodeGemmaFIM    = "ollama-0.24.0-gemma-llama-default-fim-boundary-v1"
+	ExactPreparedTokenizerProfileCodeGemmaChat   = "ollama-0.24.0-gemma-llama-default-chat-boundary-v1"
+	ExactPreparedTokenizerProfileCodeLlama       = "ollama-0.24.0-llama-llama-default-code-boundary-v1"
+	ExactPreparedTokenizerProfileDeepSeekCoder   = "ollama-0.24.0-llama-gpt2-no-pre-deepseek-code-boundary-v1"
+	ExactPreparedTokenizerProfileDeepSeekCoderV2 = "ollama-0.24.0-deepseek2-gpt2-deepseek-llm-code-boundary-v1"
 )
 
 type exactPreparedTransport uint8
@@ -24,6 +32,8 @@ const (
 	exactPreparedTransportRaw exactPreparedTransport = iota + 1
 	exactPreparedTransportNativeThinking
 	exactPreparedTransportNativeSystem
+	exactPreparedTransportNativeSystemThinking
+	exactPreparedTransportNativePrompt
 )
 
 // ExactPreparedTransportSettings exposes only the provider framing decisions
@@ -46,108 +56,10 @@ type exactProviderModelProfile struct {
 	templateSHA256        string
 	parameterSHA256s      []string
 	parameterAssignments  map[string]string
+	exactTokenizerFields  map[string]string
 	transport             exactPreparedTransport
 	requestTemperature    float64
 	requestTemperatureSet bool
-}
-
-var exactProviderModelProfiles = []exactProviderModelProfile{
-	{
-		tokenizerProfile: ExactPreparedTokenizerProfile,
-		architecture:     "qwen35", tokenizerModel: "gpt2", tokenizerPre: "qwen35",
-		capabilities:   []string{"completion", "vision", "tools", "thinking"},
-		explicitAdd:    map[string]bool{"tokenizer.ggml.add_eos_token": false, "tokenizer.ggml.add_padding_token": false},
-		absentAdd:      []string{"tokenizer.ggml.add_bos_token"},
-		templateSHA256: "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
-		parameterAssignments: map[string]string{
-			"presence_penalty": "1.5",
-			"temperature":      "1",
-			"top_k":            "20",
-			"top_p":            "0.95",
-		},
-		transport: exactPreparedTransportRaw, requestTemperature: 0, requestTemperatureSet: true,
-	},
-	{
-		tokenizerProfile: ExactPreparedTokenizerProfileQwen3Qwen2,
-		architecture:     "qwen3", tokenizerModel: "gpt2", tokenizerPre: "qwen2",
-		capabilities:       []string{"completion", "thinking"},
-		explicitAdd:        map[string]bool{"tokenizer.ggml.add_bos_token": false, "tokenizer.ggml.add_eos_token": false},
-		absentAdd:          []string{"tokenizer.ggml.add_padding_token"},
-		templateSHA256:     "c5ad996bda6eed4df6e3b605a9869647624851ac248209d22fd5e2c0cc1121d3",
-		parameterSHA256s:   []string{"b3669fdd1d59cec39ead1d59150e66c4791f54b7ad95d034521d2011670ad2e1"},
-		transport:          exactPreparedTransportNativeThinking,
-		requestTemperature: 0.6, requestTemperatureSet: true,
-	},
-	{
-		tokenizerProfile: ExactPreparedTokenizerProfileQwen2Qwen2BOS,
-		architecture:     "qwen2", tokenizerModel: "gpt2", tokenizerPre: "qwen2",
-		capabilities:       []string{"completion", "thinking"},
-		explicitAdd:        map[string]bool{"tokenizer.ggml.add_bos_token": true, "tokenizer.ggml.add_eos_token": false},
-		absentAdd:          []string{"tokenizer.ggml.add_padding_token"},
-		templateSHA256:     "c5ad996bda6eed4df6e3b605a9869647624851ac248209d22fd5e2c0cc1121d3",
-		parameterSHA256s:   []string{"52cf8b77cb8c5fe26ae7cbb18482e4c5ff22a861b6ee8e6e7a7085e7f6844e2f"},
-		transport:          exactPreparedTransportNativeThinking,
-		requestTemperature: 0.6, requestTemperatureSet: true,
-	},
-	{
-		tokenizerProfile: ExactPreparedTokenizerProfileMistral3,
-		architecture:     "mistral3", tokenizerModel: "gpt2", tokenizerPre: "default",
-		capabilities: []string{"completion", "vision", "tools"},
-		explicitAdd: map[string]bool{
-			"tokenizer.ggml.add_bos_token": true, "tokenizer.ggml.add_eos_token": false,
-			"tokenizer.ggml.add_padding_token": false, "tokenizer.ggml.add_unknown_token": false,
-		},
-		templateSHA256:   "5b74c26b9e0b6358e73d0a7eb2f955105097e7bd10b45fa0d2a50f0a906e0798",
-		parameterSHA256s: []string{"e96fd3cee0f18f63a5df2dc1115f0bdf681fd2c9f75aa0f082f840f974111b9a"},
-		transport:        exactPreparedTransportNativeSystem,
-	},
-	{
-		tokenizerProfile: ExactPreparedTokenizerProfilePhi3GPT4O,
-		architecture:     "phi3", tokenizerModel: "gpt2", tokenizerPre: "gpt-4o",
-		capabilities: []string{"completion", "tools"},
-		explicitAdd: map[string]bool{
-			"tokenizer.ggml.add_bos_token": false, "tokenizer.ggml.add_eos_token": false,
-		},
-		absentAdd:        []string{"tokenizer.ggml.add_padding_token"},
-		templateSHA256:   "813f53fdc6e58d35bb1c3853c93266380e9ca918a993e8eab193e8ede5d3a603",
-		parameterSHA256s: []string{"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
-		transport:        exactPreparedTransportNativeSystem,
-	},
-	{
-		tokenizerProfile: ExactPreparedTokenizerProfilePhi3DBRX,
-		architecture:     "phi3", tokenizerModel: "gpt2", tokenizerPre: "dbrx",
-		capabilities: []string{"completion"},
-		absentAdd: []string{
-			"tokenizer.ggml.add_bos_token", "tokenizer.ggml.add_eos_token", "tokenizer.ggml.add_padding_token",
-		},
-		templateSHA256:   "32695b892af87ef8fca6e13a1a31c67c1441d7398be037e366e2fc763857c06a",
-		parameterSHA256s: []string{"0f21334ec3cf79cbaebd7b2c69ad7a38398074b109076af04b35c7925abe2675"},
-		transport:        exactPreparedTransportNativeSystem,
-	},
-	{
-		tokenizerProfile: ExactPreparedTokenizerProfileGemma3,
-		architecture:     "gemma3", tokenizerModel: "llama", tokenizerPre: "default",
-		capabilities: []string{"completion", "vision"},
-		explicitAdd: map[string]bool{
-			"tokenizer.ggml.add_bos_token": true, "tokenizer.ggml.add_eos_token": false,
-			"tokenizer.ggml.add_padding_token": false, "tokenizer.ggml.add_unknown_token": false,
-		},
-		templateSHA256:   "e0a42594d802e5d31cdc786deb4823edb8adff66094d49de8fffe976d753e348",
-		parameterSHA256s: []string{"82be0d39faf8dbd5f010de5f8619825954ef45533a1df7db4973110e71cef2d6"},
-		transport:        exactPreparedTransportNativeSystem,
-	},
-	{
-		tokenizerProfile: ExactPreparedTokenizerProfileLlama32,
-		architecture:     "llama", tokenizerModel: "gpt2", tokenizerPre: "llama-bpe",
-		capabilities: []string{"completion", "tools"},
-		absentAdd: []string{
-			"tokenizer.ggml.add_bos_token", "tokenizer.ggml.add_eos_token", "tokenizer.ggml.add_padding_token",
-		},
-		templateSHA256:     "966de95ca8a62200913e3f8bfbf84c8494536f1b94b49166851e76644e966396",
-		parameterSHA256s:   []string{"2801e61a8848e505a6e20beeaea63cca1600200f6720e5f916ba7d6da5c3ba39"},
-		transport:          exactPreparedTransportNativeSystem,
-		requestTemperature: 0, requestTemperatureSet: true,
-	},
 }
 
 func ResolveExactPreparedTransport(
@@ -180,6 +92,14 @@ func (profile exactProviderModelProfile) transportSettings() ExactPreparedTransp
 		settings.NativeTemplate = true
 		settings.SeparateSystem = true
 		return settings
+	case exactPreparedTransportNativeSystemThinking:
+		settings.NativeTemplate = true
+		settings.SeparateThinking = true
+		settings.SeparateSystem = true
+		return settings
+	case exactPreparedTransportNativePrompt:
+		settings.NativeTemplate = true
+		return settings
 	default:
 		panic("unregistered exact prepared transport")
 	}
@@ -196,11 +116,8 @@ func deriveExactProviderModelProfile(
 	if err != nil {
 		return exactProviderModelProfile{}, err
 	}
-	tokenizerPre, err := exactTokenizerString(response.ModelInfo, "tokenizer.ggml.pre")
+	tokenizerPre, err := exactTokenizerOptionalString(response.ModelInfo, "tokenizer.ggml.pre")
 	if err != nil {
-		return exactProviderModelProfile{}, err
-	}
-	if err := validateExactTokenizerPayloads(response.ModelInfo); err != nil {
 		return exactProviderModelProfile{}, err
 	}
 	for _, profile := range exactProviderModelProfiles {
@@ -231,7 +148,8 @@ func (profile exactProviderModelProfile) matches(
 		!parametersMatch {
 		return false
 	}
-	return exactTokenizerBoundariesMatch(response.ModelInfo, profile.explicitAdd, profile.absentAdd)
+	return exactTokenizerBoundariesMatch(response.ModelInfo, profile.explicitAdd, profile.absentAdd) &&
+		profile.matchesExactTokenizerFields(response.ModelInfo)
 }
 
 func exactParameterAssignmentsMatch(parameters string, expected map[string]string) bool {
@@ -276,6 +194,13 @@ func exactTokenizerString(info map[string]json.RawMessage, key string) (string, 
 		return "", fmt.Errorf("tokenizer profile field %q is not exact text", key)
 	}
 	return value, nil
+}
+
+func exactTokenizerOptionalString(info map[string]json.RawMessage, key string) (string, error) {
+	if _, exists := info[key]; !exists {
+		return "", nil
+	}
+	return exactTokenizerString(info, key)
 }
 
 func validateExactTokenizerPayloads(info map[string]json.RawMessage) error {

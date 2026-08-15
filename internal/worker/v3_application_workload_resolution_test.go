@@ -199,7 +199,7 @@ func TestApplicationWorkloadResolutionPreservesReviewerNamedLeafRepairs(t *testi
 	}
 }
 
-func TestApplicationWorkloadResolutionDoesNotRepairAnUnreviewedInvalidSpecification(t *testing.T) {
+func TestApplicationWorkloadResolutionRejectsInitialDefectWithoutSingleLeafAuthority(t *testing.T) {
 	t.Parallel()
 
 	specification := workerApplicationSpecification()
@@ -211,11 +211,11 @@ func TestApplicationWorkloadResolutionDoesNotRepairAnUnreviewedInvalidSpecificat
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			kinds = append(kinds, job.Kind)
 			if job.Kind != assemblyline.WorkApplicationJobSpecification {
-				return assemblyline.PortableResult{}, fmt.Errorf("invalid initial candidate dispatched %s", job.Kind)
+				return assemblyline.PortableResult{}, fmt.Errorf("uncorrectable initial candidate dispatched %s", job.Kind)
 			}
 			return workloadPortableCandidate(job, `{
-				"objective":"",
-				"required_behaviors":["Users can group a record."],
+				"objective":"Implement record grouping.",
+				"required_behaviors":[],
 				"acceptance_criteria":["The grouped record is visible."]
 			}`), nil
 		},
@@ -223,13 +223,13 @@ func TestApplicationWorkloadResolutionDoesNotRepairAnUnreviewedInvalidSpecificat
 
 	frozen, err := resolveDirectCodingApplicationWorkload(runtime, "semantic", "semantic-review", input)
 	if err == nil {
-		t.Fatal("structurally invalid unreviewed specification succeeded")
+		t.Fatal("uncorrectable unreviewed specification succeeded")
 	}
 	if !reflect.DeepEqual(kinds, []assemblyline.WorkKind{assemblyline.WorkApplicationJobSpecification}) {
-		t.Fatalf("invalid unreviewed specification triggered a semantic repair/review: %v", kinds)
+		t.Fatalf("uncorrectable unreviewed specification triggered a semantic repair/review: %v", kinds)
 	}
 	if frozen.Schema != "" || frozen.SHA256 != "" || len(frozen.Tasks) != 0 {
-		t.Fatalf("invalid unreviewed specification was frozen: %+v", frozen)
+		t.Fatalf("uncorrectable unreviewed specification was frozen: %+v", frozen)
 	}
 }
 

@@ -7,8 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,11 +14,6 @@ import (
 )
 
 const directCodingTypeScriptInstallTimeout = 3 * time.Minute
-
-var (
-	directCodingTypeScriptColonIssuePattern = regexp.MustCompile(`(?m)(?:^|[ \t])((?:\./)?[A-Za-z0-9_./-]+\.tsx?):([0-9]+):([0-9]+)`)
-	directCodingTypeScriptParenIssuePattern = regexp.MustCompile(`(?m)(?:^|[ \t])((?:\./)?[A-Za-z0-9_./-]+\.tsx?)\(([0-9]+),([0-9]+)\)`)
-)
 
 func writeDirectCodingTypeScriptStage(root string, program directCodingProgram) error {
 	assembly, err := directCodingAssemblyFromProgram(program)
@@ -182,33 +175,6 @@ func runDirectCodingStageCommand(
 		return rendered, err
 	}
 	return rendered, nil
-}
-
-func mapDirectCodingTypeScriptStageDiagnostic(
-	documents []assemblyline.ComposedTypeScriptDocument,
-	output string,
-) (*directCodingStageDiagnostic, bool) {
-	searchable := directCodingANSISequencePattern.ReplaceAllString(output, "")
-	patterns := []*regexp.Regexp{directCodingTypeScriptColonIssuePattern, directCodingTypeScriptParenIssuePattern}
-	for _, pattern := range patterns {
-		for _, match := range pattern.FindAllStringSubmatch(searchable, -1) {
-			path := filepath.ToSlash(strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(match[1]), "./"), "/"))
-			line, err := strconv.Atoi(match[2])
-			if err != nil {
-				continue
-			}
-			column, err := strconv.Atoi(match[3])
-			if err != nil {
-				continue
-			}
-			if diagnostic, mapped := mapDirectCodingTypeScriptDocumentLocation(
-				documents, path, line, column, searchable,
-			); mapped {
-				return diagnostic, true
-			}
-		}
-	}
-	return nil, false
 }
 
 func directCodingUnmappedStageFailure(

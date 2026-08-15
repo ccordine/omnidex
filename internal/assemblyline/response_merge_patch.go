@@ -16,10 +16,12 @@ func responseCorrectionSchema(original PortableJob, targetField string) (map[str
 		return nil, fmt.Errorf("response correction cannot wrap another response correction")
 	}
 	if original.Kind == WorkApplicationRequirements || original.Kind == WorkRepositoryRequirements ||
-		original.Kind == WorkApplicationJobSpecification ||
 		original.Kind == WorkApplicationJobSpecificationReview ||
 		original.Kind == WorkApplicationJobSpecificationRepair {
 		return nil, fmt.Errorf("aggregate requirement interpretation is not response-correctable")
+	}
+	if original.Kind == WorkApplicationJobSpecification {
+		return applicationJobSpecificationResponseCorrectionSchema(targetField)
 	}
 	_, originalSchema, err := RenderPortableJob(original)
 	if err != nil {
@@ -88,6 +90,11 @@ func applyResponseCorrection(
 	mergePatch string,
 	targetField string,
 ) (string, error) {
+	if original.Kind == WorkApplicationJobSpecification {
+		return applyApplicationJobSpecificationResponseCorrection(
+			original, retainedCandidate, mergePatch, targetField,
+		)
+	}
 	schema, err := responseCorrectionSchema(original, targetField)
 	if err != nil {
 		return "", err

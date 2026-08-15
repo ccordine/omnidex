@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -20,11 +21,11 @@ func TestExactTypeScriptConvergenceContinuesBeyondThreeChangingFailures(t *testi
 		convergenceFunction("five"),
 	}
 	diagnostics := map[string]*ExactTypeScriptReplayDiagnostic{
-		input.CurrentDeclaration: convergenceDiagnostic("error TS2304: initial"),
-		sources[0]:               convergenceDiagnostic("error TS2304: first"),
-		sources[1]:               convergenceDiagnostic("error TS2322: second"),
-		sources[2]:               convergenceDiagnostic("error TS2345: third"),
-		sources[3]:               convergenceDiagnostic("error TS2552: fourth"),
+		input.CurrentDeclaration: convergenceDiagnostic("error TS2304: initial", input.CurrentDeclaration),
+		sources[0]:               convergenceDiagnostic("error TS2304: first", sources[0]),
+		sources[1]:               convergenceDiagnostic("error TS2322: second", sources[1]),
+		sources[2]:               convergenceDiagnostic("error TS2345: third", sources[2]),
+		sources[3]:               convergenceDiagnostic("error TS2552: fourth", sources[3]),
 		sources[4]:               nil,
 	}
 	calls := 0
@@ -38,13 +39,13 @@ func TestExactTypeScriptConvergenceContinuesBeyondThreeChangingFailures(t *testi
 			if err := decodeReplayCorrectionInput(job, &correction); err != nil {
 				return ExactStationReplay{}, err
 			}
-			wantCurrent := input.CurrentDeclaration
-			wantDiagnostic := input.Diagnostic
+			wantSource := input.CurrentDeclaration
 			if iteration > 1 {
-				wantCurrent = sources[iteration-2]
-				wantDiagnostic = diagnostics[wantCurrent].ModelFeedback
+				wantSource = sources[iteration-2]
 			}
-			if correction.CurrentDeclaration != wantCurrent || correction.Diagnostic != wantDiagnostic {
+			wantDiagnostic := diagnostics[wantSource].ModelFeedback
+			if correction.CurrentDeclaration != "" || correction.RepairRegion == nil ||
+				correction.RepairRegion.Source != wantSource || correction.Diagnostic != wantDiagnostic {
 				return ExactStationReplay{}, fmt.Errorf("iteration %d correction changed retained authority", iteration)
 			}
 			return convergenceReplay(job, sources[iteration-1]), nil
@@ -78,9 +79,9 @@ func TestExactTypeScriptConvergenceStopsNoOpAndExactCycle(t *testing.T) {
 			runtime := exactTypeScriptConvergenceRuntime{
 				verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
 					if source == convergenceFunction("changed") {
-						return convergenceDiagnostic("error TS2322: changed"), nil
+						return convergenceDiagnostic("error TS2322: changed", source), nil
 					}
-					return convergenceDiagnostic(input.Diagnostic), nil
+					return convergenceDiagnostic(input.Diagnostic, source), nil
 				},
 				replay: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
 					candidate := candidates[calls]
@@ -112,7 +113,7 @@ func TestExactTypeScriptConvergenceRetainsValidSourceAcrossOneMalformedResponse(
 			if source == fixed {
 				return nil, nil
 			}
-			return convergenceDiagnostic(input.Diagnostic), nil
+			return convergenceDiagnostic(input.Diagnostic, source), nil
 		},
 		replay: func(_ context.Context, job assemblyline.PortableJob, iteration int) (ExactStationReplay, error) {
 			calls++
@@ -124,7 +125,8 @@ func TestExactTypeScriptConvergenceRetainsValidSourceAcrossOneMalformedResponse(
 			if err := decodeReplayCorrectionInput(job, &correction); err != nil {
 				return ExactStationReplay{}, err
 			}
-			if correction.CurrentDeclaration != input.CurrentDeclaration ||
+			if correction.CurrentDeclaration != "" || correction.RepairRegion == nil ||
+				correction.RepairRegion.Source != input.CurrentDeclaration ||
 				!strings.Contains(correction.Diagnostic, "CORRECTION_REJECTION: missing required function") {
 				return ExactStationReplay{}, fmt.Errorf("malformed response changed retained source authority")
 			}
@@ -140,6 +142,41 @@ func TestExactTypeScriptConvergenceRetainsValidSourceAcrossOneMalformedResponse(
 	if result.Terminal != ExactTypeScriptConvergenceCompiled || calls != 2 ||
 		len(result.Iterations) != 2 || result.Iterations[0].ArtifactError == "" {
 		t.Fatalf("terminal=%s calls=%d iterations=%+v", result.Terminal, calls, result.Iterations)
+	}
+}
+
+func TestExactTypeScriptConvergenceRetainsDispatchedCandidateWhenVerificationFails(t *testing.T) {
+	point, input := convergenceTestPoint(t)
+	candidate := convergenceFunction("compiler-rejected")
+	verificationErr := fmt.Errorf("compiler receipt could not be projected")
+	verifyCalls := 0
+	runtime := exactTypeScriptConvergenceRuntime{
+		verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
+			verifyCalls++
+			if verifyCalls == 1 && source == input.CurrentDeclaration {
+				return convergenceDiagnostic(input.Diagnostic, source), nil
+			}
+			if verifyCalls == 2 && source == candidate {
+				return nil, verificationErr
+			}
+			return nil, fmt.Errorf("unexpected verification call %d for %q", verifyCalls, source)
+		},
+		replay: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			return convergenceReplay(job, candidate), nil
+		},
+	}
+
+	result, err := convergeExactTypeScriptStationWithRuntime(
+		context.Background(), point, "model:test", runtime,
+	)
+	if !errors.Is(err, verificationErr) {
+		t.Fatalf("error=%v want verification failure", err)
+	}
+	if len(result.Iterations) != 1 || result.Iterations[0].Replay.Artifact.Source != candidate {
+		t.Fatalf("dispatched candidate evidence was lost: %+v", result.Iterations)
+	}
+	if result.FinalSource != candidate || result.FinalSourceSHA256 != replaySHA256(candidate) {
+		t.Fatalf("last candidate source was lost: source=%q sha=%q", result.FinalSource, result.FinalSourceSHA256)
 	}
 }
 
@@ -189,8 +226,8 @@ func TestExactTypeScriptReplayDiagnosticCountDeduplicatesRepeatedCompilerLines(t
 		t.Fatalf("diagnostic count=%d want 2", got)
 	}
 	want := []string{
-		"[source]: error TS2304: Cannot find name 'missingValue'.",
-		"[source]: error TS2322: Type 'string' is not assignable to type 'number'.",
+		"[source]:10:3: error TS2304: Cannot find name 'missingValue'.",
+		"[source]:14:7: error TS2322: Type 'string' is not assignable to type 'number'.",
 	}
 	got := exactTypeScriptReplayDiagnosticLines(raw)
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
@@ -222,10 +259,15 @@ func convergenceFunction(value string) string {
 	return fmt.Sprintf("function Repair(value: string): string { return %q; }", value)
 }
 
-func convergenceDiagnostic(feedback string) *ExactTypeScriptReplayDiagnostic {
+func convergenceDiagnostic(feedback string, source string) *ExactTypeScriptReplayDiagnostic {
+	region := assemblyline.TypeScriptFragmentRepairRegion{
+		Kind:      assemblyline.TypeScriptRepairRegionCompilerOwner,
+		StartLine: 1, EndLine: 1, Source: source,
+	}
 	return &ExactTypeScriptReplayDiagnostic{
+		Stage:         ExactTypeScriptVerificationTypecheck,
 		ModelFeedback: feedback, CompilerDiagnostics: strings.Split(feedback, "\n"),
-		CompilerOutputSHA256: replaySHA256(feedback), Count: 1,
+		CompilerOutputSHA256: replaySHA256(feedback), Count: 1, RepairRegion: &region,
 	}
 }
 

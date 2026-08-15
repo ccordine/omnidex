@@ -83,6 +83,7 @@ func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testi
 	regionCorrection, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: "function apply(): void",
 		RepairRegion: &assemblyline.TypeScriptFragmentRepairRegion{
+			Kind:      assemblyline.TypeScriptRepairRegionSyntaxWindow,
 			StartLine: 2, EndLine: 2, Source: "  broken();",
 		},
 		RequiredChange: "Fix the one syntax error.", Diagnostic: "syntax error at line 2",

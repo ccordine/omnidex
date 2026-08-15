@@ -21,7 +21,7 @@ func TestTypeScriptModelFailureRejectsGenericPathAndFileIdentities(t *testing.T)
 		".ENV",
 	} {
 		raw := "AssertionError: expected " + identity + " to be valid"
-		feedback := directCodingTypeScriptModelFailure(raw)
+		feedback := directCodingTypeScriptTestModelFailure(raw)
 		if strings.Contains(feedback, identity) {
 			t.Fatalf("feedback leaked path or file identity %q: %q", identity, feedback)
 		}
@@ -38,7 +38,7 @@ func TestTypeScriptModelFailurePreservesLegitimatePathFreeDiagnostics(t *testing
 		"TypeError: expected configuration value to be defined",
 		"Error TS2322: Type string is not assignable to type number",
 	} {
-		feedback := directCodingTypeScriptModelFailure(diagnostic)
+		feedback := directCodingTypeScriptTestModelFailure(diagnostic)
 		if feedback != diagnostic {
 			t.Fatalf("path-free diagnostic %q became %q", diagnostic, feedback)
 		}

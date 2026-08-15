@@ -48,8 +48,8 @@ func convergeExactTypeScriptStationWithRuntime(
 	if err != nil {
 		return result, fmt.Errorf("verify TypeScript convergence baseline: %w", err)
 	}
-	if baseline == nil || strings.TrimSpace(baseline.ModelFeedback) != strings.TrimSpace(input.Diagnostic) {
-		return result, fmt.Errorf("TypeScript convergence compiler baseline differs from frozen diagnostic authority")
+	if baseline == nil || strings.TrimSpace(baseline.ModelFeedback) == "" {
+		return result, fmt.Errorf("TypeScript convergence compiler baseline lacks one exact model failure")
 	}
 	expectedDiagnostics := make([]string, 0)
 	for _, line := range strings.Split(strings.TrimSpace(input.Diagnostic), "\n") {
@@ -64,7 +64,8 @@ func convergeExactTypeScriptStationWithRuntime(
 		)
 	}
 	for index, expected := range expectedDiagnostics {
-		if baseline.CompilerDiagnostics[index] != expected {
+		if exactTypeScriptReplayHistoricalDiagnostic(baseline.CompilerDiagnostics[index]) !=
+			exactTypeScriptReplayHistoricalDiagnostic(expected) {
 			return result, fmt.Errorf(
 				"TypeScript convergence compiler diagnostic prefix differs from frozen authority: expected=%q actual=%q",
 				expectedDiagnostics, baseline.CompilerDiagnostics,
@@ -75,8 +76,17 @@ func convergeExactTypeScriptStationWithRuntime(
 	current := input.CurrentDeclaration
 	currentDiagnostic := baseline
 	seen := map[string]struct{}{exactTypeScriptConvergenceState(current, baseline): {}}
-	seenJobs := map[string]struct{}{boundary.Job.ID: {}}
-	job := boundary.Job
+	if baseline.RepairRegion == nil {
+		return result, fmt.Errorf("TypeScript convergence compiler baseline lacks one exact repair region")
+	}
+	input.CurrentDeclaration = ""
+	input.RepairRegion = baseline.RepairRegion
+	input.Diagnostic = baseline.ModelFeedback
+	job, err := assemblyline.NewFragmentCorrectionJob(input)
+	if err != nil {
+		return result, fmt.Errorf("derive initial current-contract TypeScript correction: %w", err)
+	}
+	seenJobs := map[string]struct{}{job.ID: {}}
 	for iteration := 1; ; iteration++ {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -96,7 +106,7 @@ func convergeExactTypeScriptStationWithRuntime(
 				return result, fmt.Errorf("TypeScript convergence stopped on exact rejected-response cycle at iteration %d", iteration)
 			}
 			seen[rejectedState] = struct{}{}
-			input.CurrentDeclaration = current
+			input.CurrentDeclaration = ""
 			input.Diagnostic = directCodingTypeScriptFragmentFailure(
 				currentDiagnostic.ModelFeedback, artifactErr,
 			)
@@ -111,9 +121,18 @@ func convergeExactTypeScriptStationWithRuntime(
 			seenJobs[job.ID] = struct{}{}
 			continue
 		}
-		candidate := replay.Artifact.Source
-		if strings.TrimSpace(candidate) == "" {
+		replacement := replay.Artifact.Source
+		if strings.TrimSpace(replacement) == "" {
 			return result, fmt.Errorf("TypeScript convergence iteration %d returned no exact artifact", iteration)
+		}
+		candidate := replacement
+		if input.RepairRegion != nil {
+			candidate, err = assemblyline.ApplyTypeScriptFragmentRepairRegion(
+				current, *input.RepairRegion, replacement,
+			)
+			if err != nil {
+				return result, fmt.Errorf("apply TypeScript convergence repair region %d: %w", iteration, err)
+			}
 		}
 		if candidate == current {
 			entry.AfterDiagnostic = currentDiagnostic
@@ -122,13 +141,18 @@ func convergeExactTypeScriptStationWithRuntime(
 			result.FinalSource, result.FinalSourceSHA256 = current, replaySHA256(current)
 			return result, fmt.Errorf("TypeScript convergence stopped on exact no-op at iteration %d", iteration)
 		}
+		result.Iterations = append(result.Iterations, entry)
+		result.FinalSource, result.FinalSourceSHA256 = candidate, replaySHA256(candidate)
 		diagnostic, err := runtime.verify(ctx, candidate)
 		if err != nil {
 			return result, fmt.Errorf("verify TypeScript convergence iteration %d: %w", iteration, err)
 		}
-		entry.AfterDiagnostic = diagnostic
-		result.Iterations = append(result.Iterations, entry)
-		result.FinalSource, result.FinalSourceSHA256 = candidate, replaySHA256(candidate)
+		delta, err := exactTypeScriptDiagnosticDelta(currentDiagnostic, diagnostic)
+		if err != nil {
+			return result, fmt.Errorf("score TypeScript convergence iteration %d: %w", iteration, err)
+		}
+		result.Iterations[len(result.Iterations)-1].AfterDiagnostic = diagnostic
+		result.Iterations[len(result.Iterations)-1].DiagnosticDelta = &delta
 		if diagnostic == nil {
 			result.Terminal = ExactTypeScriptConvergenceCompiled
 			return result, nil
@@ -141,7 +165,11 @@ func convergeExactTypeScriptStationWithRuntime(
 		seen[state] = struct{}{}
 		current = candidate
 		currentDiagnostic = diagnostic
-		input.CurrentDeclaration = candidate
+		if diagnostic.RepairRegion == nil {
+			return result, fmt.Errorf("TypeScript convergence iteration %d lacks one exact next repair region", iteration)
+		}
+		input.CurrentDeclaration = ""
+		input.RepairRegion = diagnostic.RepairRegion
 		input.Diagnostic = diagnostic.ModelFeedback
 		job, err = assemblyline.NewFragmentCorrectionJob(input)
 		if err != nil {

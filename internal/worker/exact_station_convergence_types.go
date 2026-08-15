@@ -17,11 +17,42 @@ const (
 )
 
 type ExactTypeScriptReplayDiagnostic struct {
-	ModelFeedback        string   `json:"model_feedback"`
-	ModelFeedbackSHA256  string   `json:"model_feedback_sha256"`
-	CompilerOutputSHA256 string   `json:"compiler_output_sha256"`
-	CompilerDiagnostics  []string `json:"compiler_diagnostics"`
-	Count                int      `json:"count"`
+	Stage                ExactTypeScriptVerificationStage             `json:"stage"`
+	ModelFeedback        string                                       `json:"model_feedback"`
+	ModelFeedbackSHA256  string                                       `json:"model_feedback_sha256"`
+	CompilerOutputSHA256 string                                       `json:"compiler_output_sha256"`
+	CompilerDiagnostics  []string                                     `json:"compiler_diagnostics"`
+	Count                int                                          `json:"count"`
+	RepairRegion         *assemblyline.TypeScriptFragmentRepairRegion `json:"repair_region,omitempty"`
+}
+
+type ExactTypeScriptVerificationStage string
+
+const (
+	ExactTypeScriptVerificationSyntax    ExactTypeScriptVerificationStage = "syntax"
+	ExactTypeScriptVerificationTypecheck ExactTypeScriptVerificationStage = "typecheck"
+	ExactTypeScriptVerificationCompiled  ExactTypeScriptVerificationStage = "compiled"
+)
+
+type ExactTypeScriptConvergenceAssessment string
+
+const (
+	ExactTypeScriptConvergenceCompiledAssessment ExactTypeScriptConvergenceAssessment = "compiled"
+	ExactTypeScriptConvergenceProgress           ExactTypeScriptConvergenceAssessment = "progress"
+	ExactTypeScriptConvergenceMixed              ExactTypeScriptConvergenceAssessment = "mixed"
+	ExactTypeScriptConvergenceUnchanged          ExactTypeScriptConvergenceAssessment = "unchanged"
+	ExactTypeScriptConvergenceRegression         ExactTypeScriptConvergenceAssessment = "regression"
+)
+
+type ExactTypeScriptDiagnosticDelta struct {
+	BeforeStage ExactTypeScriptVerificationStage     `json:"before_stage"`
+	AfterStage  ExactTypeScriptVerificationStage     `json:"after_stage"`
+	Before      int                                  `json:"before"`
+	After       int                                  `json:"after"`
+	Resolved    int                                  `json:"resolved"`
+	Retained    int                                  `json:"retained"`
+	Introduced  int                                  `json:"introduced"`
+	Assessment  ExactTypeScriptConvergenceAssessment `json:"assessment"`
 }
 
 type ExactTypeScriptConvergenceIteration struct {
@@ -29,6 +60,7 @@ type ExactTypeScriptConvergenceIteration struct {
 	Replay          ExactStationReplay               `json:"replay"`
 	ArtifactError   string                           `json:"artifact_error,omitempty"`
 	AfterDiagnostic *ExactTypeScriptReplayDiagnostic `json:"after_diagnostic,omitempty"`
+	DiagnosticDelta *ExactTypeScriptDiagnosticDelta  `json:"diagnostic_delta,omitempty"`
 }
 
 type ExactStationReplayArtifactError struct {

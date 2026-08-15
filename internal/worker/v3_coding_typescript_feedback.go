@@ -1,13 +1,14 @@
 package worker
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
-const maxDirectCodingModelFailureLines = 4
+const maxDirectCodingTestFailureLines = 4
 
 var (
 	directCodingANSISequencePattern       = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
@@ -17,10 +18,10 @@ var (
 	directCodingTypeScriptSourceFramePattern = regexp.MustCompile(`^[0-9]+\s*\|`)
 )
 
-func directCodingTypeScriptModelFailure(raw string) string {
+func directCodingTypeScriptTestModelFailure(raw string) string {
 	clean := directCodingANSISequencePattern.ReplaceAllString(strings.ReplaceAll(raw, "\r", ""), "")
 	clean = directCodingTypeScriptIdentityPattern.ReplaceAllString(clean, "[source]")
-	selected := make([]string, 0, maxDirectCodingModelFailureLines)
+	selected := make([]string, 0, maxDirectCodingTestFailureLines)
 	seen := make(map[string]struct{})
 	focusedFailure := false
 	for _, rawLine := range strings.Split(clean, "\n") {
@@ -50,7 +51,7 @@ func directCodingTypeScriptModelFailure(raw string) string {
 		}
 		seen[line] = struct{}{}
 		selected = append(selected, line)
-		if len(selected) == maxDirectCodingModelFailureLines {
+		if len(selected) == maxDirectCodingTestFailureLines {
 			break
 		}
 	}
@@ -58,6 +59,23 @@ func directCodingTypeScriptModelFailure(raw string) string {
 		return "Validation failed without a concise function-owned diagnostic."
 	}
 	return trimForBudget(strings.Join(selected, "\n"), 360)
+}
+
+func directCodingTypeScriptStageModelFeedback(diagnostic *directCodingStageDiagnostic) (string, error) {
+	if diagnostic == nil {
+		return "", fmt.Errorf("TypeScript stage model feedback requires one diagnostic")
+	}
+	feedback := strings.TrimSpace(diagnostic.ModelFeedback)
+	if feedback == "" {
+		return "", fmt.Errorf(
+			"TypeScript stage diagnostic for block %s lacks one exact path-free model failure",
+			diagnostic.BlockID,
+		)
+	}
+	if directCodingTypeScriptCompilerContainsPathIdentity(feedback) {
+		return "", fmt.Errorf("TypeScript stage diagnostic for block %s contains path identity", diagnostic.BlockID)
+	}
+	return feedback, nil
 }
 
 func directCodingTypeScriptFragmentFailure(original string, rejection error) string {

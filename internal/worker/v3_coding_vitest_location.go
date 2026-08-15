@@ -26,6 +26,7 @@ func mapDirectCodingVitestFailureReceipt(
 			continue
 		}
 		diagnostic.FailureClass = receipt.FailureClass
+		diagnostic.ModelFeedback = directCodingTypeScriptTestModelFailure(receipt.Output)
 		return diagnostic, true
 	}
 	return nil, false

@@ -111,7 +111,7 @@ func TestExactProviderProfileSelectionHasNoModelTagBranches(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, forbidden := range []string{"deepseek-r1", "ministral-3:", "qwen3.5:"} {
+		for _, forbidden := range []string{"deepseek-r1", "ministral-3:", "qwen3.5:", "qwen2.5-coder"} {
 			if strings.Contains(string(raw), forbidden) {
 				t.Fatalf("%s contains model-tag branch %q", name, forbidden)
 			}

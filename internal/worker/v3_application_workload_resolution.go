@@ -60,18 +60,8 @@ func resolveDirectCodingApplicationJobSpecification(
 	if err != nil {
 		return zero, err
 	}
-	retained, err := runApplicationJobSpecificationCall(
-		runtime, plannerModel, subject, job,
-		func(raw string) (assemblyline.ApplicationJobSpecification, error) {
-			candidate, decodeErr := assemblyline.DecodeApplicationJobSpecification(authority, raw)
-			if decodeErr != nil {
-				return zero, decodeErr
-			}
-			if validateErr := assemblyline.ValidateApplicationJobSpecification(candidate); validateErr != nil {
-				return zero, validateErr
-			}
-			return candidate, nil
-		},
+	retained, err := runProgressiveApplicationJobSpecificationDraft(
+		runtime, plannerModel, subject, job, authority,
 	)
 	if err != nil {
 		return zero, err

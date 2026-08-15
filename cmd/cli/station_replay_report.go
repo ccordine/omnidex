@@ -161,17 +161,28 @@ func printStationSpecificationConvergenceRun(run stationSpecificationConvergence
 func printStationConvergenceRun(run stationConvergenceReportRun) {
 	for _, iteration := range run.Convergence.Iterations {
 		fmt.Printf(
-			"convergence model=%s iteration=%d wall_ms=%d prompt_tokens=%d output_tokens=%d artifact_bytes=%d diagnostics_after=%s artifact_error=%q\n",
+			"convergence model=%s iteration=%d wall_ms=%d prompt_tokens=%d output_tokens=%d artifact_bytes=%d diagnostics_after=%s progress=%q artifact_error=%q\n",
 			run.Convergence.Model, iteration.Number, iteration.Replay.WallDuration.Milliseconds(),
 			iteration.Replay.Generation.Usage.PromptEvalCount, iteration.Replay.Generation.Usage.EvalCount,
 			len(iteration.Replay.Artifact.Source), stationConvergenceDiagnosticSummary(iteration),
-			iteration.ArtifactError,
+			stationConvergenceProgressSummary(iteration), iteration.ArtifactError,
 		)
 	}
 	fmt.Printf(
 		"convergence model=%s status=%s terminal=%s iterations=%d wall_ms=%d error=%s\n",
 		run.Convergence.Model, run.Status, run.Convergence.Terminal,
 		len(run.Convergence.Iterations), run.Convergence.WallDuration.Milliseconds(), run.Error,
+	)
+}
+
+func stationConvergenceProgressSummary(iteration worker.ExactTypeScriptConvergenceIteration) string {
+	delta := iteration.DiagnosticDelta
+	if delta == nil {
+		return "not_scored"
+	}
+	return fmt.Sprintf(
+		"before=%d after=%d resolved=%d retained=%d introduced=%d assessment=%s",
+		delta.Before, delta.After, delta.Resolved, delta.Retained, delta.Introduced, delta.Assessment,
 	)
 }
 

@@ -101,6 +101,9 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	acceptanceGroundingReviewStationCount := 0
 	stationResponseSchemaResourceCount := 0
 	codingWorkloadReviewStationCount := 0
+	qwen25CoderTokenizerProfileCount := 0
+	qwen3NativeTokenizerProfileCount := 0
+	legacyCoderTokenizerProfileCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -213,9 +216,18 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == codingWorkloadReviewStationMigration {
 			codingWorkloadReviewStationCount++
 		}
+		if entry.name == qwen25CoderTokenizerProfileMigration {
+			qwen25CoderTokenizerProfileCount++
+		}
+		if entry.name == qwen3NativeTokenizerProfileMigration {
+			qwen3NativeTokenizerProfileCount++
+		}
+		if entry.name == legacyCoderTokenizerProfileMigration {
+			legacyCoderTokenizerProfileCount++
+		}
 	}
-	if len(bundle.entries) != 152 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 152/%d",
+	if len(bundle.entries) != 155 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 155/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -284,13 +296,16 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		portableRendererV3Count != 1 || tokenizerProfileAuthorityCount != 1 ||
 		stationOutputProjectionCount != 1 || stationOutputLimitModeCount != 1 ||
 		stationPromptTransportCount != 1 || acceptanceGroundingReviewStationCount != 1 ||
-		stationResponseSchemaResourceCount != 1 || codingWorkloadReviewStationCount != 1 {
-		t.Fatalf("checked migrations 089..101 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
+		stationResponseSchemaResourceCount != 1 || codingWorkloadReviewStationCount != 1 ||
+		qwen25CoderTokenizerProfileCount != 1 || qwen3NativeTokenizerProfileCount != 1 ||
+		legacyCoderTokenizerProfileCount != 1 {
+		t.Fatalf("checked migrations 089..104 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			scrumChannelMessageRelationCount, scrumChannelOperationReceiptsCount,
 			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count,
 			tokenizerProfileAuthorityCount, stationOutputProjectionCount,
 			stationOutputLimitModeCount, stationPromptTransportCount,
 			acceptanceGroundingReviewStationCount, stationResponseSchemaResourceCount,
-			codingWorkloadReviewStationCount)
+			codingWorkloadReviewStationCount, qwen25CoderTokenizerProfileCount,
+			qwen3NativeTokenizerProfileCount, legacyCoderTokenizerProfileCount)
 	}
 }

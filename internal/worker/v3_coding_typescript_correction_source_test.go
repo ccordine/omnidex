@@ -29,8 +29,10 @@ func TestTypeScriptCorrectionEnvelopeHasNoPathOrWorkflowAuthority(t *testing.T) 
 			t.Fatalf("TypeScript correction envelope contains forbidden authority %q", forbidden)
 		}
 	}
-	if !strings.Contains(source, "directCodingTypeScriptModelFailure(job.failure)") ||
+	if strings.Contains(source, "directCodingTypeScriptTestModelFailure(job.failure)") ||
+		!strings.Contains(source, "diagnostic := strings.TrimSpace(job.failure)") ||
+		!strings.Contains(source, "directCodingTypeScriptCompilerContainsPathIdentity(diagnostic)") ||
 		!strings.Contains(envelope, "Diagnostic:         diagnostic") {
-		t.Fatal("TypeScript correction diagnostic bypasses the path-blind sanitizer")
+		t.Fatal("TypeScript correction diagnostic bypasses exact path-free authority")
 	}
 }

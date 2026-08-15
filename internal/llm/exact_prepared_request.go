@@ -92,7 +92,8 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	if err != nil {
 		return err
 	}
-	wantThinking := profile.transport == exactPreparedTransportNativeThinking
+	wantThinking := profile.transport == exactPreparedTransportNativeThinking ||
+		profile.transport == exactPreparedTransportNativeSystemThinking
 	if prepared.ThinkingEnabled != wantThinking {
 		return fmt.Errorf("prepared reasoning mode differs from its exact provider profile")
 	}

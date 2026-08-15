@@ -47,8 +47,9 @@ func runDirectCodingTypeScriptFragmentWorker(
 		correctionAttempt := lastErr != nil || strings.TrimSpace(job.current) != ""
 		attemptJob := baseJob
 		attemptModel := modelName
-		var repairRegion *assemblyline.TypeScriptFragmentRepairRegion
+		repairRegion := job.repairRegion
 		if lastErr != nil {
+			repairRegion = nil
 			attemptModel = strings.TrimSpace(runtime.CorrectionModel)
 			if attemptModel == "" {
 				return "", failDirectCodingTypeScriptFragmentWorker(
@@ -101,6 +102,9 @@ func runDirectCodingTypeScriptFragmentWorker(
 			return "", failDirectCodingTypeScriptFragmentWorker(runtime, attemptModel, job.block.ID, attempt-1, err)
 		}
 		currentBytes := len(strings.TrimSpace(job.current))
+		if repairRegion != nil {
+			currentBytes = len(repairRegion.Source)
+		}
 		correctionBytes := len(strings.TrimSpace(job.failure))
 		if lastErr != nil {
 			if repairRegion != nil {
@@ -248,11 +252,14 @@ func directCodingCorrectionCandidate(raw string) string {
 
 func newDirectCodingTypeScriptPortableJob(job directCodingTypeScriptFragmentJob) (assemblyline.PortableJob, error) {
 	capabilities := make([]string, 0, 1)
-	if available := strings.TrimSpace(job.available); available != "" && job.repairRegion == nil {
+	compilerRegion := job.repairRegion != nil &&
+		job.repairRegion.Kind == assemblyline.TypeScriptRepairRegionCompilerOwner
+	if available := strings.TrimSpace(job.available); available != "" &&
+		(job.repairRegion == nil || compilerRegion) {
 		capabilities = append(capabilities, available)
 	}
 	permittedSymbols := append([]string(nil), job.block.Globals...)
-	if job.repairRegion != nil {
+	if job.repairRegion != nil && !compilerRegion {
 		permittedSymbols = nil
 	}
 	if strings.TrimSpace(job.current) == "" && job.repairRegion == nil {
@@ -262,15 +269,25 @@ func newDirectCodingTypeScriptPortableJob(job directCodingTypeScriptFragmentJob)
 			PermittedSymbols: permittedSymbols,
 		})
 	}
-	diagnostic := directCodingTypeScriptModelFailure(job.failure)
+	diagnostic := strings.TrimSpace(job.failure)
+	if diagnostic == "" {
+		return assemblyline.PortableJob{}, fmt.Errorf("TypeScript fragment correction requires one exact model failure")
+	}
+	if directCodingTypeScriptCompilerContainsPathIdentity(diagnostic) {
+		return assemblyline.PortableJob{}, fmt.Errorf("TypeScript fragment correction failure must be path-free")
+	}
 	requiredChange := strings.TrimSpace(job.requiredChange)
 	if requiredChange == "" {
 		requiredChange = directCodingTypeScriptRequiredChange
 	}
+	portableCurrent := strings.TrimSpace(job.current)
+	if job.repairRegion != nil {
+		portableCurrent = ""
+	}
 	return assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: strings.TrimSpace(job.block.Signature),
 		Capabilities: capabilities, PermittedSymbols: permittedSymbols,
-		CurrentDeclaration: strings.TrimSpace(job.current),
+		CurrentDeclaration: portableCurrent,
 		RepairRegion:       job.repairRegion,
 		RequiredChange:     requiredChange,
 		Diagnostic:         diagnostic,

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -56,7 +57,7 @@ func (compiler *exactTypeScriptReplayCompiler) Verify(
 		return nil, fmt.Errorf("TypeScript replay compiler is uninitialized")
 	}
 	if _, err := assemblyline.ParseTypeScriptFunction(compiler.contract, source); err != nil {
-		return exactTypeScriptReplayRejectedCandidateDiagnostic(err), nil
+		return exactTypeScriptReplayRejectedCandidateDiagnostic(source, err)
 	}
 	compiler.program.Generated[exactTypeScriptReplayBlockID] = source
 	root := compiler.workspace.Root()
@@ -75,25 +76,50 @@ func (compiler *exactTypeScriptReplayCompiler) Verify(
 	if diagnostic.BlockID != exactTypeScriptReplayBlockID {
 		return nil, fmt.Errorf("TypeScript replay compiler mapped failure to %s", diagnostic.BlockID)
 	}
-	feedback := directCodingTypeScriptModelFailure(diagnostic.Output)
+	feedback, err := directCodingTypeScriptStageModelFeedback(diagnostic)
+	if err != nil {
+		return nil, err
+	}
+	repairRegion, err := assemblyline.NewTypeScriptCompilerRepairRegion(
+		source, compiler.contract.TSX, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("localize TypeScript replay compiler failure: %w", err)
+	}
 	compilerDiagnostics := exactTypeScriptReplayDiagnosticLines(diagnostic.Output)
 	return &ExactTypeScriptReplayDiagnostic{
+		Stage:         ExactTypeScriptVerificationTypecheck,
 		ModelFeedback: feedback, ModelFeedbackSHA256: replaySHA256(feedback),
 		CompilerOutputSHA256: replaySHA256(diagnostic.Output),
 		CompilerDiagnostics:  compilerDiagnostics,
 		Count:                len(compilerDiagnostics),
+		RepairRegion:         &repairRegion,
 	}, nil
 }
 
-func exactTypeScriptReplayRejectedCandidateDiagnostic(err error) *ExactTypeScriptReplayDiagnostic {
+func exactTypeScriptReplayRejectedCandidateDiagnostic(
+	source string,
+	err error,
+) (*ExactTypeScriptReplayDiagnostic, error) {
 	feedback := strings.TrimSpace(err.Error())
-	return &ExactTypeScriptReplayDiagnostic{
+	diagnostic := &ExactTypeScriptReplayDiagnostic{
+		Stage:                ExactTypeScriptVerificationSyntax,
 		ModelFeedback:        feedback,
 		ModelFeedbackSHA256:  replaySHA256(feedback),
 		CompilerOutputSHA256: replaySHA256(feedback),
 		CompilerDiagnostics:  []string{feedback},
 		Count:                1,
 	}
+	failure, localized := assemblyline.TypeScriptSyntaxFailureFromError(err)
+	if !localized {
+		return diagnostic, nil
+	}
+	region, regionErr := assemblyline.NewTypeScriptFragmentRepairRegion(source, failure, 2)
+	if regionErr != nil {
+		return nil, fmt.Errorf("localize TypeScript replay syntax failure: %w", regionErr)
+	}
+	diagnostic.RepairRegion = &region
+	return diagnostic, nil
 }
 
 func exactTypeScriptReplayDiagnosticCount(output string) int {
@@ -103,20 +129,28 @@ func exactTypeScriptReplayDiagnosticCount(output string) int {
 func exactTypeScriptReplayDiagnosticLines(output string) []string {
 	seen := make(map[string]struct{})
 	lines := make([]string, 0)
-	for _, rawLine := range strings.Split(
-		directCodingANSISequencePattern.ReplaceAllString(strings.ReplaceAll(output, "\r", ""), ""), "\n",
-	) {
-		line := strings.TrimSpace(rawLine)
-		if !strings.Contains(line, "error TS") {
+	for _, issue := range directCodingTypeScriptCompilerIssues(output) {
+		if !strings.Contains(issue.message, "error TS") {
 			continue
 		}
-		line = directCodingTypeScriptIdentityPattern.ReplaceAllString(line, "[source]")
+		message := directCodingTypeScriptIdentityPattern.ReplaceAllString(issue.message, "[source]")
+		line := fmt.Sprintf("[source]:%d:%d: %s", issue.line, issue.column, message)
 		if _, duplicate := seen[line]; !duplicate {
 			seen[line] = struct{}{}
 			lines = append(lines, line)
 		}
 	}
 	return lines
+}
+
+var exactTypeScriptReplaySourceLocationPattern = regexp.MustCompile(`^\[source\]:[0-9]+:[0-9]+:\s*`)
+
+func exactTypeScriptReplayHistoricalDiagnostic(line string) string {
+	line = strings.TrimSpace(line)
+	if exactTypeScriptReplaySourceLocationPattern.MatchString(line) {
+		return "[source]: " + exactTypeScriptReplaySourceLocationPattern.ReplaceAllString(line, "")
+	}
+	return line
 }
 
 func exactTypeScriptReplayProgram(

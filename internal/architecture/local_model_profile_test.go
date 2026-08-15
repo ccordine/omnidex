@@ -10,9 +10,10 @@ import (
 
 const (
 	localSemanticModel       = "qwen3.5:9b-q4_K_M"
+	localPlannerModel        = "llama3.2:3b"
 	localFragmentModel       = "qwen3.5:9b-q4_K_M"
 	localReviewModel         = "deepseek-r1:8b"
-	localWorkloadReviewModel = "llama3.2:3b"
+	localWorkloadReviewModel = "qwen3.5:9b-q4_K_M"
 )
 
 func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
@@ -28,8 +29,6 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 		"OMNI_WEB_GROUNDED_SYNTHESIS_MODEL",
 		"OMNI_WEB_GROUNDED_SYNTHESIS_CORRECTION_MODEL",
 		"OMNI_CODING_SURFACE_MODEL",
-		"OMNI_CODING_REQUIREMENTS_MODEL",
-		"OMNI_CODING_WORKLOAD_MODEL",
 		"OMNI_CODING_ARTIFACT_HANDLING_MODEL",
 		"OMNI_CODING_CAPABILITY_RELATION_MODEL",
 		"OMNI_CODING_SKILL_SELECTION_MODEL",
@@ -42,6 +41,14 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 		for _, key := range semanticKeys {
 			if got := values[key]; got != localSemanticModel {
 				t.Errorf("%s: %s=%q, want %q", name, key, got, localSemanticModel)
+			}
+		}
+		for _, key := range []string{
+			"OMNI_CODING_REQUIREMENTS_MODEL",
+			"OMNI_CODING_WORKLOAD_MODEL",
+		} {
+			if got := values[key]; got != localPlannerModel {
+				t.Errorf("%s: %s=%q, want %q", name, key, got, localPlannerModel)
 			}
 		}
 		if got := values["OMNI_CODING_WORKLOAD_REVIEW_MODEL"]; got != localWorkloadReviewModel {

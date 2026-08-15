@@ -106,6 +106,22 @@ func TestStationConvergenceDiagnosticSummaryDoesNotReportUncompiledOutputAsZeroE
 	}
 }
 
+func TestStationConvergenceProgressSummaryReportsExactDiagnosticDelta(t *testing.T) {
+	iteration := worker.ExactTypeScriptConvergenceIteration{
+		DiagnosticDelta: &worker.ExactTypeScriptDiagnosticDelta{
+			Before: 9, After: 9, Resolved: 1, Retained: 8, Introduced: 1,
+			Assessment: worker.ExactTypeScriptConvergenceMixed,
+		},
+	}
+	if got := stationConvergenceProgressSummary(iteration); got !=
+		"before=9 after=9 resolved=1 retained=8 introduced=1 assessment=mixed" {
+		t.Fatalf("progress summary=%q", got)
+	}
+	if got := stationConvergenceProgressSummary(worker.ExactTypeScriptConvergenceIteration{}); got != "not_scored" {
+		t.Fatalf("unverified progress summary=%q", got)
+	}
+}
+
 func TestStationConvergenceReportMeasuresCompilerSetupAndModelLoop(t *testing.T) {
 	started := time.Date(2026, 8, 15, 1, 0, 0, 0, time.UTC)
 	finished := started.Add(7 * time.Second)

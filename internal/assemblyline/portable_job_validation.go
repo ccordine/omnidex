@@ -132,9 +132,10 @@ func (input ResponseCorrectionInput) validate() error {
 	if len(input.ValidationFailure) > 1200 {
 		return fmt.Errorf("response correction validation failure exceeds 1200 bytes")
 	}
-	if input.Original.Kind == WorkApplicationAcceptanceGroundingReview {
+	if input.Original.Kind == WorkApplicationAcceptanceGroundingReview ||
+		input.Original.Kind == WorkApplicationJobSpecification {
 		if input.TargetField == "" || input.TargetField != strings.TrimSpace(input.TargetField) {
-			return fmt.Errorf("acceptance grounding response correction requires one exact target field")
+			return fmt.Errorf("%s response correction requires one exact target field", input.Original.Kind)
 		}
 	} else if input.TargetField != "" {
 		return fmt.Errorf("field-scoped response correction is unsupported for %s", input.Original.Kind)

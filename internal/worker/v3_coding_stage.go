@@ -10,6 +10,7 @@ type directCodingStageDiagnostic struct {
 	BlockID           string
 	Message           string
 	Output            string
+	ModelFeedback     string
 	VerificationStage string
 	FailureClass      directCodingStageFailureClass
 	DeclarationLine   int

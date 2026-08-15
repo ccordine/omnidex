@@ -44,6 +44,15 @@ func TestGeneralLocalModelProfilesAreClosedNativeTemplateProfiles(t *testing.T) 
 			caps: []string{"completion", "tools"},
 			adds: nil, deterministic: true,
 		},
+		{
+			id:           ExactPreparedTokenizerProfileQwen25Coder,
+			architecture: "qwen2", model: "gpt2", pre: "qwen2",
+			caps: []string{"completion", "tools", "insert"},
+			adds: map[string]bool{
+				"tokenizer.ggml.add_bos_token": false,
+			},
+			deterministic: true,
+		},
 	}
 	for _, test := range tests {
 		test := test

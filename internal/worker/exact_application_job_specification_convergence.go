@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -121,7 +122,8 @@ func convergeExactApplicationJobSpecificationWithReplay(
 			result.Calls = append(result.Calls, ExactApplicationJobSpecificationConvergenceCall{
 				Number: number, WorkKind: current.Kind, Model: model, Replay: call,
 			})
-			if callErr != nil {
+			var artifactErr *ExactStationReplayArtifactError
+			if callErr != nil && !errors.As(callErr, &artifactErr) {
 				return assemblyline.PortableResult{}, callErr
 			}
 			if call.Job.ID != current.ID || call.Job.Kind != current.Kind ||
@@ -157,7 +159,8 @@ func exactApplicationJobSpecificationCallModel(
 ) (string, error) {
 	switch kind {
 	case assemblyline.WorkApplicationJobSpecification,
-		assemblyline.WorkApplicationJobSpecificationRepair:
+		assemblyline.WorkApplicationJobSpecificationRepair,
+		assemblyline.WorkResponseCorrection:
 		return plannerModel, nil
 	case assemblyline.WorkApplicationJobSpecificationReview:
 		return reviewModel, nil
