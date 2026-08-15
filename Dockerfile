@@ -21,7 +21,6 @@ WORKDIR /app
 
 COPY --from=build /out/agent-core /usr/local/bin/agent-core
 COPY --from=build /src/migrations /usr/local/migrations
-COPY --from=build /src/database ./database
 
 ENV LISTEN_ADDR=:8090
 # docker compose loads .env via env_file; a host PATH (e.g. for mise/node on the

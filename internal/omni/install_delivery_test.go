@@ -303,6 +303,20 @@ func TestDockerBuilderInstallsBuildScriptInterpreter(t *testing.T) {
 	}
 }
 
+func TestDockerRuntimeCopiesOnlyExistingAuthoritativeInputs(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	dockerfile := readRepoScript(t, root, "Dockerfile")
+	if !strings.Contains(dockerfile, "COPY --from=build /src/migrations /usr/local/migrations") {
+		t.Fatal("Docker runtime must retain the authoritative migration bundle")
+	}
+	if strings.Contains(dockerfile, "COPY --from=build /src/database") {
+		t.Fatal("Docker runtime retains the removed database-directory copy path")
+	}
+	if _, err := os.Stat(filepath.Join(root, "database")); !os.IsNotExist(err) {
+		t.Fatalf("Docker runtime input must be an existing authoritative directory: %v", err)
+	}
+}
+
 type managedInstallFixture struct {
 	source, prefix, home, fakeBin string
 }
