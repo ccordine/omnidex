@@ -57,7 +57,15 @@ func TestPostgresRepositorySnapshotsAreExactAndImmutable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/repository\n\ngo 1.22\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runQueueRepositoryGit(t, root, "add", "main.go", "go.mod")
+	for _, name := range []string{
+		"Zebra.txt", "alpha.txt", // regular files
+		"Zebra.key", "alpha.key", // sensitive exclusions
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runQueueRepositoryGit(t, root, "add", "main.go", "go.mod", "Zebra.txt", "alpha.txt", "Zebra.key", "alpha.key")
 	runQueueRepositoryGit(t, root, "commit", "-m", "initial")
 	snapshot, err := repositoryfacts.BuildGitSnapshot(ctx, root, repositoryfacts.SnapshotOptions{})
 	if err != nil {

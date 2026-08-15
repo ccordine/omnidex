@@ -158,7 +158,7 @@ func loadRepositorySnapshot(
 		       language, manifest_kind, is_test, is_generated, link_target
 		FROM repository_files
 		WHERE snapshot_id=$1
-		ORDER BY path ASC
+		ORDER BY path COLLATE "C" ASC
 	`, snapshotID)
 	if err != nil {
 		return repositoryfacts.Snapshot{}, fmt.Errorf("load repository snapshot files: %w", err)
@@ -187,7 +187,7 @@ func loadRepositorySnapshot(
 		SELECT path, reason
 		FROM repository_exclusions
 		WHERE snapshot_id=$1
-		ORDER BY path ASC
+		ORDER BY path COLLATE "C" ASC
 	`, snapshotID)
 	if err != nil {
 		return repositoryfacts.Snapshot{}, fmt.Errorf("load repository snapshot exclusions: %w", err)
