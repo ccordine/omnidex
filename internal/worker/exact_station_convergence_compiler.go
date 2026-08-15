@@ -76,12 +76,20 @@ func (compiler *exactTypeScriptReplayCompiler) Verify(
 	if diagnostic.BlockID != exactTypeScriptReplayBlockID {
 		return nil, fmt.Errorf("TypeScript replay compiler mapped failure to %s", diagnostic.BlockID)
 	}
+	if !diagnostic.CompilerIssue {
+		return nil, fmt.Errorf("TypeScript replay compiler returned a non-compiler diagnostic")
+	}
 	feedback, err := directCodingTypeScriptStageModelFeedback(diagnostic)
 	if err != nil {
 		return nil, err
 	}
+	scope, err := inspectDirectCodingTypeScriptScope(ctx, root, *diagnostic)
+	if err != nil {
+		return nil, fmt.Errorf("derive TypeScript replay compiler scope: %w", err)
+	}
 	repairRegion, err := assemblyline.NewTypeScriptCompilerRepairRegion(
 		source, compiler.contract.TSX, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
+		scope.Bindings, scope.UnavailableBindings,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("localize TypeScript replay compiler failure: %w", err)

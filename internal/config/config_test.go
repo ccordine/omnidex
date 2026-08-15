@@ -39,6 +39,7 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	t.Setenv("OMNI_CODING_CAPABILITY_RELATION_MODEL", "qwen3:4b-relation")
 	t.Setenv("OMNI_CODING_SKILL_SELECTION_MODEL", "qwen3:4b-skill-selection")
 	t.Setenv("OMNI_CODING_FRAGMENT_MODEL", "qwen3-coder:30b")
+	t.Setenv("OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL", "deepseek-r1:8b-guidance")
 	t.Setenv("OMNI_CODING_FRAGMENT_CORRECTION_MODEL", "qwen2.5-coder:14b-correction")
 
 	cfg, err := Load()
@@ -77,6 +78,9 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	}
 	if got := cfg.StationModels[station.CodingFragment]; got != "qwen3-coder:30b" {
 		t.Fatalf("coding fragment model=%q want dedicated override", got)
+	}
+	if got := cfg.StationModels[station.CodingFragmentRepairGuidance]; got != "deepseek-r1:8b-guidance" {
+		t.Fatalf("coding fragment repair guidance model=%q want dedicated override", got)
 	}
 	if got := cfg.StationModels[station.CodingFragmentCorrection]; got != "qwen2.5-coder:14b-correction" {
 		t.Fatalf("coding fragment correction model=%q want dedicated override", got)

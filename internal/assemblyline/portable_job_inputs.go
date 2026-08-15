@@ -26,8 +26,9 @@ type FragmentCorrectionInput struct {
 	PermittedSymbols   []string                        `json:"permitted_symbols"`
 	CurrentDeclaration string                          `json:"current_declaration,omitempty"`
 	RepairRegion       *TypeScriptFragmentRepairRegion `json:"repair_region,omitempty"`
-	RequiredChange     string                          `json:"required_change"`
-	Diagnostic         string                          `json:"diagnostic"`
+	RequiredChange     string                          `json:"required_change,omitempty"`
+	Diagnostic         string                          `json:"diagnostic,omitempty"`
+	RepairGuidance     string                          `json:"repair_guidance,omitempty"`
 }
 
 type ResponseCorrectionInput struct {

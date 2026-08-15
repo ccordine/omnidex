@@ -108,6 +108,7 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 		"coding_capability_relation_model":        "qwen3:4b-relation",
 		"coding_skill_selection_model":            "qwen3:4b-skill-select",
 		"coding_fragment_model":                   "qwen3-coder:30b-fragment",
+		"coding_fragment_repair_guidance_model":   "deepseek-r1:8b-guidance",
 		"coding_fragment_correction_model":        "qwen2.5-coder:14b-correction",
 	})
 	if got := applied.Stations[station.ObjectiveAdvisory]; got != "qwen3:8b-advisory" {
@@ -169,6 +170,9 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 	}
 	if got := applied.Stations[station.CodingFragment]; got != "qwen3-coder:30b-fragment" {
 		t.Fatalf("coding fragment model=%q", got)
+	}
+	if got := applied.Stations[station.CodingFragmentRepairGuidance]; got != "deepseek-r1:8b-guidance" {
+		t.Fatalf("coding fragment repair guidance model=%q", got)
 	}
 	if got := applied.Stations[station.CodingFragmentCorrection]; got != "qwen2.5-coder:14b-correction" {
 		t.Fatalf("coding fragment correction model=%q", got)

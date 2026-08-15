@@ -57,6 +57,7 @@ const (
 	WorkArtifactCandidateSelection           WorkKind = "artifact_candidate_selection"
 	WorkCapabilityRelation                   WorkKind = "capability_relation"
 	WorkSkillSelection                       WorkKind = "skill_selection"
+	WorkTypeScriptRepairGuidance             WorkKind = "typescript_repair_guidance"
 	WorkFragmentGeneration                   WorkKind = "fragment_generation"
 	WorkFragmentModification                 WorkKind = "fragment_modification"
 	WorkFragmentCorrection                   WorkKind = "fragment_correction"
@@ -261,7 +262,7 @@ func validWorkKind(kind WorkKind) bool {
 		WorkWebGroundedSynthesisCorrection, WorkWebClaimEvidenceReview,
 		WorkArtifactHandling, WorkKnownArtifactTruth,
 		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
-		WorkCapabilityRelation, WorkSkillSelection,
+		WorkCapabilityRelation, WorkSkillSelection, WorkTypeScriptRepairGuidance,
 		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection:
 		return true
 	default:
@@ -285,7 +286,7 @@ func AllWorkKinds() []WorkKind {
 		WorkWebGroundedSynthesisCorrection, WorkWebClaimEvidenceReview,
 		WorkArtifactHandling, WorkKnownArtifactTruth,
 		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
-		WorkCapabilityRelation, WorkSkillSelection,
+		WorkCapabilityRelation, WorkSkillSelection, WorkTypeScriptRepairGuidance,
 		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection,
 	}
 }

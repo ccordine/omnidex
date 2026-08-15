@@ -18,14 +18,14 @@ func TestExactR1PreparedRequestUsesAttestedTemplateAndUncappedThinking(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	zero := 0.0
+	temperature := ExactPreparedTemperature(0.6)
 	prepared := PreparedModel{
 		Protocol:  ExactPreparedProtocolRawTextV1,
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: "return one declaration", PromptHint: MinimalGeneratePrompt,
 		MaxOutputTokens: 1024, ContextTokens: expected.NativeContextLimit,
 		OutputLimitMode: ExactPreparedOutputLimitNatural,
-		ThinkingEnabled: true, Temperature: &zero,
+		ThinkingEnabled: true, Temperature: &temperature,
 		RawTextStopSequence:         ExactPreparedCodeStopV1,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
@@ -79,13 +79,13 @@ func TestExactR114BPreparedRequestUsesTheSameReasoningTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	zero := 0.0
+	temperature := ExactPreparedTemperature(0.6)
 	prepared := PreparedModel{
 		Protocol: ExactPreparedProtocolRawTextV1, BaseModel: expected.Model,
 		ContextModel: expected.Model, Prompt: "return one declaration",
 		PromptHint: MinimalGeneratePrompt, MaxOutputTokens: 1024,
 		OutputLimitMode: ExactPreparedOutputLimitNatural,
-		ContextTokens:   expected.NativeContextLimit, ThinkingEnabled: true, Temperature: &zero,
+		ContextTokens:   expected.NativeContextLimit, ThinkingEnabled: true, Temperature: &temperature,
 		RawTextStopSequence:         ExactPreparedCodeStopV1,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}

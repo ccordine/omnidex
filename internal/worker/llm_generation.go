@@ -118,7 +118,7 @@ func (s *Service) executeExactPortableStation(
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	prepared, err := prepareExactStationCall(gap, contract, modelName, expected)
+	prepared, err := prepareExactStationCall(gap, contract, modelName, expected, nil)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}

@@ -215,6 +215,7 @@ func TestTypeScriptCompilerRepairRegionProjectsOneExactFencedReplacement(t *test
 			region := TypeScriptFragmentRepairRegion{
 				Kind:      TypeScriptRepairRegionCompilerOwner,
 				StartLine: 4, EndLine: 4, Source: "      {value}",
+				Bindings: typeScriptCompilerRepairTestBindings(),
 			}
 			raw := "```" + fixture.language + "\n" + fixture.replacement + "\n```"
 			projected, err := ProjectTypeScriptFragmentRepairResponse(region, raw)
@@ -230,6 +231,7 @@ func TestTypeScriptCompilerRepairRegionProjectsOneExactFencedReplacement(t *test
 	region := TypeScriptFragmentRepairRegion{
 		Kind:      TypeScriptRepairRegionCompilerOwner,
 		StartLine: 2, EndLine: 2, Source: "  return value;",
+		Bindings: typeScriptCompilerRepairTestBindings(),
 	}
 	if _, err := ProjectTypeScriptFragmentRepairResponse(
 		region, "explanation\n```typescript\n  return String(value);\n```",

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -75,7 +76,8 @@ func convergeExactTypeScriptStationWithRuntime(
 	result.Baseline = *baseline
 	current := input.CurrentDeclaration
 	currentDiagnostic := baseline
-	seen := map[string]struct{}{exactTypeScriptConvergenceState(current, baseline): {}}
+	result.FinalSource, result.FinalSourceSHA256 = current, replaySHA256(current)
+	seenAccepted := map[string]struct{}{exactTypeScriptConvergenceState(current, baseline): {}}
 	if baseline.RepairRegion == nil {
 		return result, fmt.Errorf("TypeScript convergence compiler baseline lacks one exact repair region")
 	}
@@ -86,12 +88,12 @@ func convergeExactTypeScriptStationWithRuntime(
 	if err != nil {
 		return result, fmt.Errorf("derive initial current-contract TypeScript correction: %w", err)
 	}
-	seenJobs := map[string]struct{}{job.ID: {}}
+	var temperature *llm.ExactPreparedTemperature
 	for iteration := 1; ; iteration++ {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		replay, replayErr := runtime.replay(ctx, job, iteration)
+		replay, replayErr := runtime.replay(ctx, job, iteration, temperature)
 		var artifactErr *ExactStationReplayArtifactError
 		if replayErr != nil && !errors.As(replayErr, &artifactErr) {
 			return result, replayErr
@@ -99,13 +101,6 @@ func convergeExactTypeScriptStationWithRuntime(
 		entry := ExactTypeScriptConvergenceIteration{Number: iteration, Replay: replay}
 		if artifactErr != nil {
 			entry.ArtifactError = artifactErr.Error()
-			result.Iterations = append(result.Iterations, entry)
-			rejectedState := replaySHA256(current) + ":" + replaySHA256(replay.Generation.Content) + ":" + replaySHA256(artifactErr.Error())
-			if _, repeated := seen[rejectedState]; repeated {
-				result.Terminal = ExactTypeScriptConvergenceCycle
-				return result, fmt.Errorf("TypeScript convergence stopped on exact rejected-response cycle at iteration %d", iteration)
-			}
-			seen[rejectedState] = struct{}{}
 			input.CurrentDeclaration = ""
 			input.Diagnostic = directCodingTypeScriptFragmentFailure(
 				currentDiagnostic.ModelFeedback, artifactErr,
@@ -114,11 +109,21 @@ func convergeExactTypeScriptStationWithRuntime(
 			if err != nil {
 				return result, fmt.Errorf("derive rejected-response correction %d: %w", iteration+1, err)
 			}
-			if _, repeated := seenJobs[job.ID]; repeated {
-				result.Terminal = ExactTypeScriptConvergenceCycle
-				return result, fmt.Errorf("TypeScript convergence stopped on repeated correction packet at iteration %d", iteration)
+			next, available, temperatureErr := exactTypeScriptNextExplorationTemperature(replay)
+			if temperatureErr != nil {
+				return result, temperatureErr
 			}
-			seenJobs[job.ID] = struct{}{}
+			if !available {
+				result.Iterations = append(result.Iterations, entry)
+				result.Terminal = ExactTypeScriptConvergenceExplorationExhausted
+				return result, fmt.Errorf(
+					"TypeScript convergence exhausted profile temperature after rejected artifact at iteration %d",
+					iteration,
+				)
+			}
+			entry.NextTemperature = next
+			result.Iterations = append(result.Iterations, entry)
+			temperature = next
 			continue
 		}
 		replacement := replay.Artifact.Source
@@ -136,35 +141,67 @@ func convergeExactTypeScriptStationWithRuntime(
 		}
 		if candidate == current {
 			entry.AfterDiagnostic = currentDiagnostic
+			next, available, temperatureErr := exactTypeScriptNextExplorationTemperature(replay)
+			if temperatureErr != nil {
+				return result, temperatureErr
+			}
+			if !available {
+				result.Iterations = append(result.Iterations, entry)
+				result.Terminal = ExactTypeScriptConvergenceExplorationExhausted
+				return result, fmt.Errorf(
+					"TypeScript convergence exhausted profile temperature on exact no-op at iteration %d",
+					iteration,
+				)
+			}
+			entry.NextTemperature = next
 			result.Iterations = append(result.Iterations, entry)
-			result.Terminal = ExactTypeScriptConvergenceNoOp
-			result.FinalSource, result.FinalSourceSHA256 = current, replaySHA256(current)
-			return result, fmt.Errorf("TypeScript convergence stopped on exact no-op at iteration %d", iteration)
+			temperature = next
+			continue
 		}
-		result.Iterations = append(result.Iterations, entry)
-		result.FinalSource, result.FinalSourceSHA256 = candidate, replaySHA256(candidate)
+		result.LastCandidate, result.LastCandidateSHA256 = candidate, replaySHA256(candidate)
 		diagnostic, err := runtime.verify(ctx, candidate)
 		if err != nil {
+			result.Iterations = append(result.Iterations, entry)
 			return result, fmt.Errorf("verify TypeScript convergence iteration %d: %w", iteration, err)
 		}
 		delta, err := exactTypeScriptDiagnosticDelta(currentDiagnostic, diagnostic)
 		if err != nil {
 			return result, fmt.Errorf("score TypeScript convergence iteration %d: %w", iteration, err)
 		}
-		result.Iterations[len(result.Iterations)-1].AfterDiagnostic = diagnostic
-		result.Iterations[len(result.Iterations)-1].DiagnosticDelta = &delta
+		entry.AfterDiagnostic = diagnostic
+		entry.DiagnosticDelta = &delta
 		if diagnostic == nil {
+			result.Iterations = append(result.Iterations, entry)
+			result.FinalSource, result.FinalSourceSHA256 = candidate, replaySHA256(candidate)
 			result.Terminal = ExactTypeScriptConvergenceCompiled
 			return result, nil
 		}
 		state := exactTypeScriptConvergenceState(candidate, diagnostic)
-		if _, repeated := seen[state]; repeated {
-			result.Terminal = ExactTypeScriptConvergenceCycle
-			return result, fmt.Errorf("TypeScript convergence stopped on exact cycle at iteration %d", iteration)
+		_, repeatsAccepted := seenAccepted[state]
+		if delta.Assessment != ExactTypeScriptConvergenceProgress || repeatsAccepted {
+			next, available, temperatureErr := exactTypeScriptNextExplorationTemperature(replay)
+			if temperatureErr != nil {
+				return result, temperatureErr
+			}
+			if !available {
+				result.Iterations = append(result.Iterations, entry)
+				result.Terminal = ExactTypeScriptConvergenceExplorationExhausted
+				return result, fmt.Errorf(
+					"TypeScript convergence exhausted profile temperature without verified progress at iteration %d",
+					iteration,
+				)
+			}
+			entry.NextTemperature = next
+			result.Iterations = append(result.Iterations, entry)
+			temperature = next
+			continue
 		}
-		seen[state] = struct{}{}
+		result.Iterations = append(result.Iterations, entry)
 		current = candidate
 		currentDiagnostic = diagnostic
+		result.FinalSource, result.FinalSourceSHA256 = current, replaySHA256(current)
+		seenAccepted = map[string]struct{}{state: {}}
+		temperature = nil
 		if diagnostic.RepairRegion == nil {
 			return result, fmt.Errorf("TypeScript convergence iteration %d lacks one exact next repair region", iteration)
 		}
@@ -175,8 +212,19 @@ func convergeExactTypeScriptStationWithRuntime(
 		if err != nil {
 			return result, fmt.Errorf("derive TypeScript convergence correction %d: %w", iteration+1, err)
 		}
-		seenJobs[job.ID] = struct{}{}
 	}
+}
+
+func exactTypeScriptNextExplorationTemperature(
+	replay ExactStationReplay,
+) (*llm.ExactPreparedTemperature, bool, error) {
+	next, available, err := llm.NextExactPreparedTemperature(
+		replay.ExpectedIdentity, replay.Temperature,
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("advance exact TypeScript convergence temperature: %w", err)
+	}
+	return next, available, nil
 }
 
 func exactTypeScriptConvergenceState(

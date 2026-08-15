@@ -42,24 +42,25 @@ type ExactPreparedTransportSettings struct {
 	NativeTemplate   bool
 	SeparateThinking bool
 	SeparateSystem   bool
-	Temperature      *float64
+	Temperature      *ExactPreparedTemperature
 }
 
 type exactProviderModelProfile struct {
-	tokenizerProfile      string
-	architecture          string
-	tokenizerModel        string
-	tokenizerPre          string
-	capabilities          []string
-	explicitAdd           map[string]bool
-	absentAdd             []string
-	templateSHA256        string
-	parameterSHA256s      []string
-	parameterAssignments  map[string]string
-	exactTokenizerFields  map[string]string
-	transport             exactPreparedTransport
-	requestTemperature    float64
-	requestTemperatureSet bool
+	tokenizerProfile          string
+	architecture              string
+	tokenizerModel            string
+	tokenizerPre              string
+	capabilities              []string
+	explicitAdd               map[string]bool
+	absentAdd                 []string
+	templateSHA256            string
+	parameterSHA256s          []string
+	parameterAssignments      map[string]string
+	exactTokenizerFields      map[string]string
+	transport                 exactPreparedTransport
+	requestTemperature        ExactPreparedTemperature
+	requestTemperatureSet     bool
+	requestTemperatureCeiling ExactPreparedTemperature
 }
 
 func ResolveExactPreparedTransport(
@@ -103,6 +104,66 @@ func (profile exactProviderModelProfile) transportSettings() ExactPreparedTransp
 	default:
 		panic("unregistered exact prepared transport")
 	}
+}
+
+var exactPreparedExplorationTemperatures = [...]ExactPreparedTemperature{
+	0.2, 0.4, 0.6, 0.8, 1,
+}
+
+// NextExactPreparedTemperature advances only through a structural profile's
+// registered sampling authority. The nil baseline preserves a provider's
+// attested native default until deterministic exploration is required.
+func NextExactPreparedTemperature(
+	expected ProviderIdentityExpectation,
+	current *ExactPreparedTemperature,
+) (*ExactPreparedTemperature, bool, error) {
+	if err := ValidateExactPreparedProviderExpectation(expected); err != nil {
+		return nil, false, err
+	}
+	profile, err := exactProviderModelProfileByID(expected.TokenizerProfile)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := profile.validatePreparedTemperature(current); err != nil {
+		return nil, false, err
+	}
+	currentValue := ExactPreparedTemperature(-1)
+	if current != nil {
+		currentValue = *current
+	} else if profile.requestTemperatureSet {
+		return nil, false, fmt.Errorf("exact prepared temperature omitted its registered profile baseline")
+	}
+	for _, candidate := range exactPreparedExplorationTemperatures {
+		if candidate > currentValue && candidate <= profile.requestTemperatureCeiling {
+			next := candidate
+			return &next, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func (profile exactProviderModelProfile) validatePreparedTemperature(
+	temperature *ExactPreparedTemperature,
+) error {
+	if profile.requestTemperatureCeiling <= 0 || profile.requestTemperatureCeiling > 2 {
+		return fmt.Errorf("exact provider model profile has invalid temperature authority")
+	}
+	if temperature == nil {
+		if profile.requestTemperatureSet {
+			return fmt.Errorf("exact prepared request omitted its registered profile temperature")
+		}
+		return nil
+	}
+	if profile.requestTemperatureSet && *temperature == profile.requestTemperature {
+		return nil
+	}
+	for _, candidate := range exactPreparedExplorationTemperatures {
+		if *temperature == candidate && candidate <= profile.requestTemperatureCeiling &&
+			(!profile.requestTemperatureSet || candidate > profile.requestTemperature) {
+			return nil
+		}
+	}
+	return fmt.Errorf("exact prepared temperature %v is outside its registered profile policy", *temperature)
 }
 
 func deriveExactProviderModelProfile(

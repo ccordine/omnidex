@@ -82,6 +82,8 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingCapabilityRelation, nil
 	case assemblyline.WorkSkillSelection:
 		return station.CodingSkillSelection, nil
+	case assemblyline.WorkTypeScriptRepairGuidance:
+		return station.CodingFragmentRepairGuidance, nil
 	case assemblyline.WorkFragmentGeneration, assemblyline.WorkFragmentModification:
 		return station.CodingFragment, nil
 	case assemblyline.WorkFragmentCorrection:

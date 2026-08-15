@@ -7,10 +7,10 @@ import (
 )
 
 type exactPreparedRequestOptions struct {
-	NumCtx      int      `json:"num_ctx"`
-	NumPredict  int      `json:"num_predict,omitempty"`
-	Stop        []string `json:"stop,omitempty"`
-	Temperature *float64 `json:"temperature,omitempty"`
+	NumCtx      int                       `json:"num_ctx"`
+	NumPredict  int                       `json:"num_predict,omitempty"`
+	Stop        []string                  `json:"stop,omitempty"`
+	Temperature *ExactPreparedTemperature `json:"temperature,omitempty"`
 }
 
 type exactPreparedRequest struct {
@@ -56,10 +56,7 @@ func (profile exactProviderModelProfile) preparedRequest(
 	if prepared.OutputLimitMode == ExactPreparedOutputLimitExplicit {
 		request.Options.NumPredict = prepared.MaxOutputTokens
 	}
-	if profile.requestTemperatureSet {
-		temperature := profile.requestTemperature
-		request.Options.Temperature = &temperature
-	}
+	request.Options.Temperature = prepared.Temperature
 	if prepared.Protocol == ExactPreparedProtocolStructuredV1 {
 		request.Format = prepared.ResponseSchema
 	}

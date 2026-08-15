@@ -218,7 +218,7 @@ func stationCallTestPrepared(t *testing.T, gap StationGapOpening) llm.PreparedMo
 	if err := json.Unmarshal(gap.ResponseSchema, &schema); err != nil {
 		t.Fatal(err)
 	}
-	temperature := float64(0)
+	temperature := llm.ExactPreparedTemperature(0)
 	return llm.PreparedModel{
 		Protocol:  llm.ExactPreparedProtocolStructuredV1,
 		BaseModel: expected.Model, ContextModel: expected.Model,

@@ -25,6 +25,7 @@ type ExactStationReplay struct {
 	ExpectedIdentity      llm.ProviderIdentityExpectation
 	PreparedRequest       string
 	PreparedRequestSHA256 string
+	Temperature           *llm.ExactPreparedTemperature
 	WallDuration          time.Duration
 	Generation            llm.PreparedGeneration
 	Artifact              ExactStationReplayArtifact
@@ -97,7 +98,7 @@ func ReplayExactStation(
 	if err != nil {
 		return result, fmt.Errorf("derive station replay provider identity: %w", err)
 	}
-	prepared, err := prepareExactStationCall(point.Gap, boundary.Contract, result.Model, expected)
+	prepared, err := prepareExactStationCall(point.Gap, boundary.Contract, result.Model, expected, nil)
 	if err != nil {
 		return result, fmt.Errorf("prepare station replay request: %w", err)
 	}
@@ -107,6 +108,7 @@ func ReplayExactStation(
 	}
 	result.PreparedRequest, result.PreparedRequestSHA256 = string(request), replaySHA256(string(request))
 	result.ExpectedIdentity = expected
+	result.Temperature = prepared.Temperature
 	return executeExactStationReplayPrepared(
 		ctx, client, result, boundary.Job, point.Gap.ContextTokens, prepared,
 	)

@@ -52,7 +52,9 @@ func TestTypeScriptCompilerRepairRegionSelectsExactASTOwner(t *testing.T) {
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			line, column := typeScriptRepairTestLocation(t, fixture.source, fixture.marker)
-			region, err := NewTypeScriptCompilerRepairRegion(fixture.source, fixture.tsx, line, column)
+			region, err := NewTypeScriptCompilerRepairRegion(
+				fixture.source, fixture.tsx, line, column, typeScriptCompilerRepairTestBindings(),
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,6 +66,10 @@ func TestTypeScriptCompilerRepairRegionSelectsExactASTOwner(t *testing.T) {
 			}
 		})
 	}
+}
+
+func typeScriptCompilerRepairTestBindings() []TypeScriptRepairBinding {
+	return []TypeScriptRepairBinding{{Name: "value", Type: "unknown"}}
 }
 
 func typeScriptRepairTestLocation(t *testing.T, source string, marker string) (int, int) {

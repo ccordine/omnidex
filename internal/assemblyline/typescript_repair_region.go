@@ -22,10 +22,12 @@ var ErrTypeScriptRepairRegionUnrepresentable = errors.New(
 )
 
 type TypeScriptFragmentRepairRegion struct {
-	Kind      TypeScriptFragmentRepairRegionKind `json:"kind"`
-	StartLine int                                `json:"start_line"`
-	EndLine   int                                `json:"end_line"`
-	Source    string                             `json:"source"`
+	Kind                TypeScriptFragmentRepairRegionKind `json:"kind"`
+	StartLine           int                                `json:"start_line"`
+	EndLine             int                                `json:"end_line"`
+	Source              string                             `json:"source"`
+	Bindings            []TypeScriptRepairBinding          `json:"bindings,omitempty"`
+	UnavailableBindings []TypeScriptRepairBinding          `json:"unavailable_bindings,omitempty"`
 }
 
 type TypeScriptFragmentRepairRegionKind string
@@ -110,6 +112,31 @@ func (region TypeScriptFragmentRepairRegion) validate() error {
 	}
 	if strings.TrimSpace(region.Source) == "" {
 		return fmt.Errorf("TypeScript repair region source is required")
+	}
+	if region.Kind == TypeScriptRepairRegionCompilerOwner {
+		if len(region.Bindings) == 0 {
+			return fmt.Errorf("TypeScript compiler repair region requires exact local bindings")
+		}
+		if err := ValidateExactTypeScriptRepairBindings(region.Bindings); err != nil {
+			return err
+		}
+		if err := ValidateExactTypeScriptRepairBindings(region.UnavailableBindings); err != nil {
+			return fmt.Errorf("TypeScript compiler unavailable bindings: %w", err)
+		}
+		available := make(map[string]struct{}, len(region.Bindings))
+		for _, binding := range region.Bindings {
+			available[binding.Name] = struct{}{}
+		}
+		for _, binding := range region.UnavailableBindings {
+			if _, duplicate := available[binding.Name]; duplicate {
+				return fmt.Errorf(
+					"TypeScript compiler binding %q cannot be both available and unavailable",
+					binding.Name,
+				)
+			}
+		}
+	} else if len(region.Bindings) != 0 || len(region.UnavailableBindings) != 0 {
+		return fmt.Errorf("TypeScript syntax repair region cannot carry compiler local bindings")
 	}
 	if region.Kind == TypeScriptRepairRegionSyntaxWindow && len(region.Source) > maxTypeScriptRepairRegionBytes {
 		return fmt.Errorf(

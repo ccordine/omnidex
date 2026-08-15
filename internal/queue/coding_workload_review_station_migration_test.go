@@ -66,7 +66,8 @@ func TestCodingWorkloadReviewMigrationPreservesPlannerAndMovesOnlyReview(t *test
 	assertAppliedMigrationCount(t, pool, codingWorkloadReviewStationMigration, 1)
 
 	for _, kind := range assemblyline.AllWorkKinds() {
-		if kind == assemblyline.WorkResponseCorrection {
+		if kind == assemblyline.WorkResponseCorrection ||
+			kind == assemblyline.WorkTypeScriptRepairGuidance {
 			continue
 		}
 		want, err := stationForPortableWorkKind(kind)

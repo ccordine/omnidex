@@ -73,7 +73,7 @@ func TestQwen25CoderPreparedRequestUsesNaturalNativeTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	zero := 0.0
+	zero := ExactPreparedTemperature(0)
 	prepared := PreparedModel{
 		Protocol: ExactPreparedProtocolRawTextV1, BaseModel: expected.Model,
 		ContextModel: expected.Model, Prompt: "return one declaration",

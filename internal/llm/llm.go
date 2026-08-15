@@ -13,6 +13,10 @@ const ResponseFormatJSON = "json"
 
 type ExactPreparedOutputLimitMode string
 
+// ExactPreparedTemperature is an exact provider sampling value. Callers may
+// use only the profile's registered baseline and exploration sequence.
+type ExactPreparedTemperature float64
+
 const (
 	ExactPreparedOutputLimitExplicit ExactPreparedOutputLimitMode = "explicit"
 	ExactPreparedOutputLimitNatural  ExactPreparedOutputLimitMode = "natural"
@@ -40,7 +44,7 @@ type PreparedModel struct {
 	ResponseFormat               string
 	ResponseSchema               map[string]any
 	ThinkingEnabled              bool
-	Temperature                  *float64
+	Temperature                  *ExactPreparedTemperature
 	RawTextStopSequence          string
 	ProviderIdentityExpectation  *ProviderIdentityExpectation
 	ProviderObservationChallenge string
@@ -48,7 +52,7 @@ type PreparedModel struct {
 
 func ValidateResponseContract(prepared PreparedModel) error {
 	if prepared.Temperature != nil &&
-		(math.IsNaN(*prepared.Temperature) || math.IsInf(*prepared.Temperature, 0) ||
+		(math.IsNaN(float64(*prepared.Temperature)) || math.IsInf(float64(*prepared.Temperature), 0) ||
 			*prepared.Temperature < 0 || *prepared.Temperature > 2) {
 		return fmt.Errorf("temperature must be between 0 and 2")
 	}

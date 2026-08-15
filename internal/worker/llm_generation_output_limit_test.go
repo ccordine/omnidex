@@ -30,7 +30,7 @@ func TestPrepareExactStationCallCarriesNaturalOutputAndNativeThinkingAuthority(t
 		NativeContextLimit: gap.ContextTokens,
 		TokenizerProfile:   llm.ExactPreparedTokenizerProfileQwen3Qwen2,
 	}
-	prepared, err := prepareExactStationCall(gap, contract, expected.Model, expected)
+	prepared, err := prepareExactStationCall(gap, contract, expected.Model, expected, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestPrepareExactStationCallCarriesNaturalOutputAndNativeThinkingAuthority(t
 	}
 	forged := gap
 	forged.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
-	if _, err := prepareExactStationCall(forged, contract, expected.Model, expected); err == nil {
+	if _, err := prepareExactStationCall(forged, contract, expected.Model, expected, nil); err == nil {
 		t.Fatal("prepared call accepted an output mode different from its durable gap")
 	}
 }
@@ -76,7 +76,7 @@ func TestPrepareExactStructuredStationKeepsSchemaWithoutAnOutputCutoff(t *testin
 		NativeContextLimit: gap.ContextTokens,
 		TokenizerProfile:   llm.ExactPreparedTokenizerProfile,
 	}
-	prepared, err := prepareExactStationCall(gap, contract, expected.Model, expected)
+	prepared, err := prepareExactStationCall(gap, contract, expected.Model, expected, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

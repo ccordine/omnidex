@@ -30,6 +30,7 @@ model for raw declaration generation and correction:
 ```dotenv
 # Each named semantic station has its own explicit route.
 OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=deepseek-r1:8b
 OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
 
 INFERENCE_CONTEXT_TOKENS=8192

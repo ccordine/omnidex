@@ -158,7 +158,7 @@ func stationCallNaturalTestAuthority(
 	if err != nil {
 		t.Fatal(err)
 	}
-	temperature := float64(0)
+	temperature := llm.ExactPreparedTemperature(0)
 	prepared := llm.PreparedModel{
 		Protocol:  llm.ExactPreparedProtocolRawTextV1,
 		BaseModel: expected.Model, ContextModel: expected.Model,

@@ -79,13 +79,13 @@ func TestQwen3NativePreparedRequestUsesSystemAndUncappedThinking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	zero := 0.0
+	temperature := ExactPreparedTemperature(0.6)
 	prepared := PreparedModel{
 		Protocol: ExactPreparedProtocolRawTextV1, BaseModel: expected.Model,
 		ContextModel: expected.Model, Prompt: "return one declaration",
 		PromptHint: MinimalGeneratePrompt, MaxOutputTokens: expected.NativeContextLimit,
 		OutputLimitMode: ExactPreparedOutputLimitNatural,
-		ContextTokens:   expected.NativeContextLimit, ThinkingEnabled: true, Temperature: &zero,
+		ContextTokens:   expected.NativeContextLimit, ThinkingEnabled: true, Temperature: &temperature,
 		RawTextStopSequence:         ExactPreparedCodeStopV1,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}

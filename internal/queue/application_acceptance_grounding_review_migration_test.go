@@ -98,7 +98,8 @@ func TestApplicationAcceptanceGroundingReviewMigrationPreservesEveryRegisteredSt
 	assertAppliedMigrationCount(t, pool, applicationAcceptanceGroundingReviewMigration, 1)
 
 	for _, kind := range assemblyline.AllWorkKinds() {
-		if kind == assemblyline.WorkResponseCorrection {
+		if kind == assemblyline.WorkResponseCorrection ||
+			kind == assemblyline.WorkTypeScriptRepairGuidance {
 			continue
 		}
 		want, err := stationForPortableWorkKind(kind)

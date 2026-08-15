@@ -155,7 +155,6 @@ func prepareObjectiveAdvisoryCall(
 	if err != nil {
 		return llm.PreparedModel{}, err
 	}
-	temperature := float64(0)
 	prepared := llm.PreparedModel{
 		Protocol:  llm.ExactPreparedProtocolRawTextV1,
 		BaseModel: selection.Model, ContextModel: selection.Model,
@@ -163,7 +162,7 @@ func prepareObjectiveAdvisoryCall(
 		MaxOutputTokens: request.Source.Budget.MaxOutputTokens,
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 		ContextTokens:   selection.NativeContextLimit,
-		ThinkingEnabled: transport.SeparateThinking, Temperature: &temperature,
+		ThinkingEnabled: transport.SeparateThinking, Temperature: transport.Temperature,
 		RawTextStopSequence:          llm.ExactPreparedObjectiveAdvisoryStopV1,
 		ProviderIdentityExpectation:  &expected,
 		ProviderObservationChallenge: challenge,

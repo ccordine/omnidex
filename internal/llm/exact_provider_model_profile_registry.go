@@ -15,6 +15,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 			"top_p":            "0.95",
 		},
 		transport: exactPreparedTransportRaw, requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileQwen3Qwen2,
@@ -26,6 +27,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		parameterSHA256s:   []string{"b3669fdd1d59cec39ead1d59150e66c4791f54b7ad95d034521d2011670ad2e1"},
 		transport:          exactPreparedTransportNativeThinking,
 		requestTemperature: 0.6, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileQwen2Qwen2BOS,
@@ -37,6 +39,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		parameterSHA256s:   []string{"52cf8b77cb8c5fe26ae7cbb18482e4c5ff22a861b6ee8e6e7a7085e7f6844e2f"},
 		transport:          exactPreparedTransportNativeThinking,
 		requestTemperature: 0.6, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileMistral3,
@@ -46,9 +49,10 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 			"tokenizer.ggml.add_bos_token": true, "tokenizer.ggml.add_eos_token": false,
 			"tokenizer.ggml.add_padding_token": false, "tokenizer.ggml.add_unknown_token": false,
 		},
-		templateSHA256:   "5b74c26b9e0b6358e73d0a7eb2f955105097e7bd10b45fa0d2a50f0a906e0798",
-		parameterSHA256s: []string{"e96fd3cee0f18f63a5df2dc1115f0bdf681fd2c9f75aa0f082f840f974111b9a"},
-		transport:        exactPreparedTransportNativeSystem,
+		templateSHA256:            "5b74c26b9e0b6358e73d0a7eb2f955105097e7bd10b45fa0d2a50f0a906e0798",
+		parameterSHA256s:          []string{"e96fd3cee0f18f63a5df2dc1115f0bdf681fd2c9f75aa0f082f840f974111b9a"},
+		transport:                 exactPreparedTransportNativeSystem,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfilePhi3GPT4O,
@@ -57,10 +61,11 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		explicitAdd: map[string]bool{
 			"tokenizer.ggml.add_bos_token": false, "tokenizer.ggml.add_eos_token": false,
 		},
-		absentAdd:        []string{"tokenizer.ggml.add_padding_token"},
-		templateSHA256:   "813f53fdc6e58d35bb1c3853c93266380e9ca918a993e8eab193e8ede5d3a603",
-		parameterSHA256s: []string{"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
-		transport:        exactPreparedTransportNativeSystem,
+		absentAdd:                 []string{"tokenizer.ggml.add_padding_token"},
+		templateSHA256:            "813f53fdc6e58d35bb1c3853c93266380e9ca918a993e8eab193e8ede5d3a603",
+		parameterSHA256s:          []string{"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+		transport:                 exactPreparedTransportNativeSystem,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfilePhi3DBRX,
@@ -69,9 +74,10 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		absentAdd: []string{
 			"tokenizer.ggml.add_bos_token", "tokenizer.ggml.add_eos_token", "tokenizer.ggml.add_padding_token",
 		},
-		templateSHA256:   "32695b892af87ef8fca6e13a1a31c67c1441d7398be037e366e2fc763857c06a",
-		parameterSHA256s: []string{"0f21334ec3cf79cbaebd7b2c69ad7a38398074b109076af04b35c7925abe2675"},
-		transport:        exactPreparedTransportNativeSystem,
+		templateSHA256:            "32695b892af87ef8fca6e13a1a31c67c1441d7398be037e366e2fc763857c06a",
+		parameterSHA256s:          []string{"0f21334ec3cf79cbaebd7b2c69ad7a38398074b109076af04b35c7925abe2675"},
+		transport:                 exactPreparedTransportNativeSystem,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileGemma3,
@@ -81,9 +87,10 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 			"tokenizer.ggml.add_bos_token": true, "tokenizer.ggml.add_eos_token": false,
 			"tokenizer.ggml.add_padding_token": false, "tokenizer.ggml.add_unknown_token": false,
 		},
-		templateSHA256:   "e0a42594d802e5d31cdc786deb4823edb8adff66094d49de8fffe976d753e348",
-		parameterSHA256s: []string{"82be0d39faf8dbd5f010de5f8619825954ef45533a1df7db4973110e71cef2d6"},
-		transport:        exactPreparedTransportNativeSystem,
+		templateSHA256:            "e0a42594d802e5d31cdc786deb4823edb8adff66094d49de8fffe976d753e348",
+		parameterSHA256s:          []string{"82be0d39faf8dbd5f010de5f8619825954ef45533a1df7db4973110e71cef2d6"},
+		transport:                 exactPreparedTransportNativeSystem,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileLlama32,
@@ -96,6 +103,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		parameterSHA256s:   []string{"2801e61a8848e505a6e20beeaea63cca1600200f6720e5f916ba7d6da5c3ba39"},
 		transport:          exactPreparedTransportNativeSystem,
 		requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileQwen25Coder,
@@ -112,6 +120,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		parameterSHA256s:   []string{"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
 		transport:          exactPreparedTransportNativeSystem,
 		requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileQwen3Native,
@@ -131,6 +140,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		},
 		transport:          exactPreparedTransportNativeSystemThinking,
 		requestTemperature: 0.6, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileCodeQwen,
@@ -148,6 +158,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		templateSHA256:   "62fbfd9ed093d6e5ac83190c86eec5369317919f4b149598d2dbb38900e9faef",
 		parameterSHA256s: []string{"8685c085645e701326881085cfd91cd1fa6f8aff42eba39a99ecf35a60be8eab"},
 		transport:        exactPreparedTransportNativeSystem, requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileCodeGemmaFIM,
@@ -161,6 +172,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		templateSHA256:       "48d9a8140749f940a218cb55fe7074cc6b776b93bac231bd9ef02cf6d26a5964",
 		parameterSHA256s:     []string{"9efccf27502ede559b79c7984480f6e8ef385ced1a109235065c232f2ae6f726"},
 		transport:            exactPreparedTransportNativePrompt, requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileCodeGemmaChat,
@@ -174,6 +186,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		templateSHA256:       "109037bec39c0becc8221222ae23557559bc594290945a2c4221ab4f303b8871",
 		parameterSHA256s:     []string{"52a0f7842b8675f1a9813f4e3d0780f7e279fee53e0df845daa6cdc6a3f64229"},
 		transport:            exactPreparedTransportNativeSystem, requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileCodeLlama,
@@ -191,6 +204,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		templateSHA256:   "2e0493f67d0c8c9c68a8aeacdf6a38a2151cb3c4c1d42accf296e19810527988",
 		parameterSHA256s: []string{"c001ddb709c86fcf3cfbd3a110c659d6f2e71320d2a5245c16192cb744b01750"},
 		transport:        exactPreparedTransportNativeSystem, requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileDeepSeekCoder,
@@ -208,6 +222,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		templateSHA256:   "8893e08fa9f91f7dc39e24d27bdfaece4e9c86bb3269293ff8cea6cba98c872d",
 		parameterSHA256s: []string{"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
 		transport:        exactPreparedTransportNativeSystem, requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 	{
 		tokenizerProfile: ExactPreparedTokenizerProfileDeepSeekCoderV2,
@@ -225,6 +240,7 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		templateSHA256:   "22091531faf0148fb166466743e30b7012ea7a6d13a9af7e3995ccfec3ed4914",
 		parameterSHA256s: []string{"dc3865bacf2e0a222a1720b3ec8dd64dfd7a3fec41eb7de62c208b0e0c99d9bb"},
 		transport:        exactPreparedTransportNativeSystem, requestTemperature: 0, requestTemperatureSet: true,
+		requestTemperatureCeiling: 1,
 	},
 }
 

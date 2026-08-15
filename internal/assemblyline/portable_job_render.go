@@ -251,6 +251,13 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildSkillSelectionPrompt(input)
 		return prompt, SkillSelectionResponseSchema(input), err
+	case WorkTypeScriptRepairGuidance:
+		var input TypeScriptRepairGuidanceInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildTypeScriptRepairGuidancePrompt(input)
+		return prompt, TypeScriptRepairGuidanceResponseSchema(), err
 	case WorkFragmentGeneration:
 		var input FragmentGenerationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -313,6 +320,7 @@ func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, ma
 			RepairRegion:   input.RepairRegion,
 			RequiredChange: input.RequiredChange,
 			Diagnostic:     input.Diagnostic,
+			RepairGuidance: input.RepairGuidance,
 		})
 		return prompt, nil, err
 	default:

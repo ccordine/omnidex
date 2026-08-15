@@ -46,6 +46,7 @@ func TestModelSettingsUsesExactStationCatalog(t *testing.T) {
 		"OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3:4b-relation",
 		"OMNI_CODING_SKILL_SELECTION_MODEL=qwen3:4b-skill-select",
 		"OMNI_CODING_FRAGMENT_MODEL=qwen3-coder:30b-fragment",
+		"OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=deepseek-r1:8b-guidance",
 		"OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen2.5-coder:14b-correction",
 	}, "\n")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -89,6 +90,9 @@ func TestModelSettingsUsesExactStationCatalog(t *testing.T) {
 	}
 	if values["coding_fragment_model"] != "qwen3-coder:30b-fragment" {
 		t.Fatalf("coding_fragment_model=%q", values["coding_fragment_model"])
+	}
+	if values["coding_fragment_repair_guidance_model"] != "deepseek-r1:8b-guidance" {
+		t.Fatalf("coding_fragment_repair_guidance_model=%q", values["coding_fragment_repair_guidance_model"])
 	}
 	if values["coding_fragment_correction_model"] != "qwen2.5-coder:14b-correction" {
 		t.Fatalf("coding_fragment_correction_model=%q", values["coding_fragment_correction_model"])

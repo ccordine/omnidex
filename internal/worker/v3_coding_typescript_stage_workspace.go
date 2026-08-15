@@ -32,6 +32,10 @@ func newDirectCodingTypeScriptStageWorkspace(
 		workspace.Close()
 		return nil, err
 	}
+	if err := writeDirectCodingTypeScriptScopeInspector(root); err != nil {
+		workspace.Close()
+		return nil, err
+	}
 	if err := os.WriteFile(filepath.Join(root, packageFile.Path), []byte(packageFile.Content), 0o600); err != nil {
 		workspace.Close()
 		return nil, fmt.Errorf("write staged TypeScript package manifest: %w", err)
@@ -131,13 +135,14 @@ func (s *directCodingSession) stageTypeScriptProgramIn(
 			))
 			return nil
 		}
-		if err := s.correctDirectCodingTypeScriptStage(program, diagnostic, progress); err != nil {
+		if err := s.correctDirectCodingTypeScriptStage(root, program, diagnostic, progress); err != nil {
 			return err
 		}
 	}
 }
 
 func (s *directCodingSession) correctDirectCodingTypeScriptStage(
+	root string,
 	program *directCodingProgram,
 	diagnostic *directCodingStageDiagnostic,
 	progress *directCodingTypeScriptCorrectionProgress,
@@ -158,11 +163,20 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 		return err
 	}
 	tsx := directCodingTypeScriptBlockIsTSX(program.TypeScript, target.ID)
-	repairRegion, err := assemblyline.NewTypeScriptCompilerRepairRegion(
-		current, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
-	)
-	if err != nil {
-		return fmt.Errorf("localize staged TypeScript compiler failure for block %s: %w", target.ID, err)
+	var repairRegion *assemblyline.TypeScriptFragmentRepairRegion
+	if diagnostic.CompilerIssue {
+		scope, bindingErr := inspectDirectCodingTypeScriptScope(s.runtime.ctx, root, *diagnostic)
+		if bindingErr != nil {
+			return fmt.Errorf("derive staged TypeScript compiler scope for block %s: %w", target.ID, bindingErr)
+		}
+		localized, regionErr := assemblyline.NewTypeScriptCompilerRepairRegion(
+			current, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
+			scope.Bindings, scope.UnavailableBindings,
+		)
+		if regionErr != nil {
+			return fmt.Errorf("localize staged TypeScript compiler failure for block %s: %w", target.ID, regionErr)
+		}
+		repairRegion = &localized
 	}
 	if err := progress.observe(
 		target.ID, current, diagnostic.VerificationStage, failure,
@@ -177,21 +191,41 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	if err != nil {
 		return err
 	}
+	guidanceModel, err := s.workerModel(station.CodingFragmentRepairGuidance)
+	if err != nil {
+		return err
+	}
+	s.runtime.svc.emitStepEvent(
+		s.runtime.claim.Authority,
+		"coding_fragment_repair_guidance_started",
+		fmt.Sprintf(
+			"block=%s exact_failure=%s", target.ID,
+			safeLine(trimForBudget(failure, 500), "unknown"),
+		),
+	)
+	workerRuntime := directCodingWorkerRuntime(s)
+	guidance, err := runDirectCodingTypeScriptRepairGuidance(
+		workerRuntime, guidanceModel, target, available, current, repairRegion, failure,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"derive repair guidance for block %s from staged failure %s: %w",
+			target.ID, safeLine(firstDirectCodingDiagnosticLine(diagnostic.Message), "unknown"), err,
+		)
+	}
 	modelName, err := s.workerModel(station.CodingFragmentCorrection)
 	if err != nil {
 		return err
 	}
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_fragment_correction_started", fmt.Sprintf(
-		"block=%s exact_failure=%s", target.ID,
-		safeLine(trimForBudget(failure, 500), "unknown"),
+		"block=%s guidance_bytes=%d", target.ID, len(guidance),
 	))
-	workerRuntime := directCodingWorkerRuntime(s)
 	workerRuntime.CorrectionModel = modelName
 	source, err := runDirectCodingTypeScriptFragmentWorker(
 		workerRuntime, modelName,
 		directCodingTypeScriptFragmentJob{
 			block: target, tsx: tsx, available: available, current: current,
-			repairRegion: &repairRegion, failure: failure,
+			repairRegion: repairRegion, repairGuidance: guidance,
 		},
 	)
 	if err != nil {

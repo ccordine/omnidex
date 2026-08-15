@@ -32,6 +32,7 @@ const (
 	CodingCapabilityRelation          ID = "coding_capability_relation"
 	CodingSkillSelection              ID = "coding_skill_selection"
 	CodingFragment                    ID = "coding_fragment"
+	CodingFragmentRepairGuidance      ID = "coding_fragment_repair_guidance"
 	CodingFragmentCorrection          ID = "coding_fragment_correction"
 	CodingRepositorySearchTerm        ID = "coding_repository_search_term"
 	CodingRepositoryChange            ID = "coding_repository_change_surface"
@@ -63,6 +64,7 @@ var registered = [...]ID{
 	CodingCapabilityRelation,
 	CodingSkillSelection,
 	CodingFragment,
+	CodingFragmentRepairGuidance,
 	CodingFragmentCorrection,
 	CodingRepositorySearchTerm,
 	CodingRepositoryChange,

@@ -104,7 +104,7 @@ func stationOutputProjectionTestPrepared(
 	if err != nil {
 		t.Fatal(err)
 	}
-	temperature := float64(0)
+	temperature := llm.ExactPreparedTemperature(0)
 	return llm.PreparedModel{
 		Protocol:  llm.ExactPreparedProtocolRawTextV1,
 		BaseModel: expected.Model, ContextModel: expected.Model,

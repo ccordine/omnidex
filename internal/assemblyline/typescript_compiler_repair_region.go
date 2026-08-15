@@ -14,6 +14,8 @@ func NewTypeScriptCompilerRepairRegion(
 	tsx bool,
 	line int,
 	column int,
+	bindings []TypeScriptRepairBinding,
+	unavailableBindings ...[]TypeScriptRepairBinding,
 ) (TypeScriptFragmentRepairRegion, error) {
 	source := strings.TrimSpace(strings.ReplaceAll(current, "\r\n", "\n"))
 	if source == "" || !utf8.ValidString(source) || strings.Contains(source, "\r") {
@@ -62,7 +64,18 @@ func NewTypeScriptCompilerRepairRegion(
 	region := TypeScriptFragmentRepairRegion{
 		Kind:      TypeScriptRepairRegionCompilerOwner,
 		StartLine: start, EndLine: end,
-		Source: strings.Join(lines[start-1:end], "\n"),
+		Source:   strings.Join(lines[start-1:end], "\n"),
+		Bindings: append([]TypeScriptRepairBinding(nil), bindings...),
+	}
+	if len(unavailableBindings) > 1 {
+		return TypeScriptFragmentRepairRegion{}, fmt.Errorf(
+			"TypeScript compiler repair region accepts at most one unavailable-binding inventory",
+		)
+	}
+	if len(unavailableBindings) == 1 {
+		region.UnavailableBindings = append(
+			[]TypeScriptRepairBinding(nil), unavailableBindings[0]...,
+		)
 	}
 	if err := region.validate(); err != nil {
 		return TypeScriptFragmentRepairRegion{}, err

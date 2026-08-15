@@ -11,7 +11,7 @@ import (
 )
 
 func exactPreparedRequest(expected llm.ProviderIdentityExpectation) llm.PreparedModel {
-	zero := 0.0
+	zero := llm.ExactPreparedTemperature(0)
 	challenge, err := llm.DeriveProviderIdentityObservationChallenge("test-policy-call", expected)
 	if err != nil {
 		panic(err)

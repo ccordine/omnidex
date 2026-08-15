@@ -14,7 +14,7 @@ func exactProtocolPrepared(t *testing.T, protocol ExactPreparedProtocol) Prepare
 	if err != nil {
 		t.Fatal(err)
 	}
-	zero := 0.0
+	zero := ExactPreparedTemperature(0)
 	prepared := PreparedModel{
 		Protocol:  protocol,
 		BaseModel: expected.Model, ContextModel: expected.Model,
@@ -122,9 +122,12 @@ func TestExactRawTextProtocolRejectsImplicitOrStructuredAuthority(t *testing.T) 
 		"response schema":  func(value *PreparedModel) { value.ResponseSchema = map[string]any{"type": "object"} },
 		"empty schema":     func(value *PreparedModel) { value.ResponseSchema = map[string]any{} },
 		"prompt hint":      func(value *PreparedModel) { value.PromptHint = "Return TypeScript." },
-		"temperature":      func(value *PreparedModel) { one := 1.0; value.Temperature = &one },
+		"temperature": func(value *PreparedModel) {
+			unregistered := ExactPreparedTemperature(0.3)
+			value.Temperature = &unregistered
+		},
 		"negative zero": func(value *PreparedModel) {
-			negativeZero := math.Copysign(0, -1)
+			negativeZero := ExactPreparedTemperature(math.Copysign(0, -1))
 			value.Temperature = &negativeZero
 		},
 		"missing identity":    func(value *PreparedModel) { value.ProviderIdentityExpectation = nil },

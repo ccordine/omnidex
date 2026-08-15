@@ -15,6 +15,7 @@ type directCodingTypeScriptFragmentJob struct {
 	repairRegion   *assemblyline.TypeScriptFragmentRepairRegion
 	failure        string
 	requiredChange string
+	repairGuidance string
 }
 
 func directCodingTypeScriptAvailableDeclarations(

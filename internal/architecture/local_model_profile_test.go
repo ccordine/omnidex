@@ -68,6 +68,9 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 				t.Errorf("%s: %s=%q, want %q", name, key, got, localFragmentModel)
 			}
 		}
+		if got := values["OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL"]; got != localReviewModel {
+			t.Errorf("%s: repair guidance model=%q, want %q", name, got, localReviewModel)
+		}
 		for _, removed := range []string{
 			"OLLAMA_MODEL_FAST",
 			"OLLAMA_MODEL_GLUE",

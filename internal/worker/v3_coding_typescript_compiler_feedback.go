@@ -40,6 +40,7 @@ func mapDirectCodingTypeScriptStageDiagnostic(
 		diagnostic.ModelFeedback = directCodingTypeScriptLocatedCompilerFailure(
 			diagnostic.DeclarationLine, diagnostic.DeclarationColumn, issue.message,
 		)
+		diagnostic.CompilerIssue = true
 		return diagnostic, true
 	}
 	return nil, false

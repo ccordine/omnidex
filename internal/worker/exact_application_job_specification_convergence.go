@@ -63,7 +63,7 @@ func ConvergeExactApplicationJobSpecification(
 				"application-job-specification-convergence:%d:%d:%s",
 				point.Call.ID, number, job.ID,
 			)
-			return replayCurrentPortableStation(ctx, client, point, job, model, scope)
+			return replayCurrentPortableStation(ctx, client, point, job, model, scope, nil)
 		},
 	)
 }

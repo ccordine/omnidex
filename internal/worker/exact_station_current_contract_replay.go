@@ -25,7 +25,7 @@ func ReplayStationWithCurrentContract(
 		return ExactStationReplay{}, err
 	}
 	scope := fmt.Sprintf("station-current-contract:%d:%s", point.Call.ID, boundary.Job.ID)
-	return replayCurrentPortableStation(ctx, client, point, boundary.Job, modelName, scope)
+	return replayCurrentPortableStation(ctx, client, point, boundary.Job, modelName, scope, nil)
 }
 
 func replayCurrentPortableStation(
@@ -35,6 +35,7 @@ func replayCurrentPortableStation(
 	job assemblyline.PortableJob,
 	modelName string,
 	discoveryScope string,
+	temperature *llm.ExactPreparedTemperature,
 ) (ExactStationReplay, error) {
 	result := ExactStationReplay{
 		SourceOpeningID:    point.Call.ID,
@@ -76,7 +77,7 @@ func replayCurrentPortableStation(
 	if err != nil {
 		return result, fmt.Errorf("derive current-contract station replay identity: %w", err)
 	}
-	prepared, err := prepareExactStationCall(gap, contract, result.Model, expected)
+	prepared, err := prepareExactStationCall(gap, contract, result.Model, expected, temperature)
 	if err != nil {
 		return result, fmt.Errorf("prepare current-contract station replay request: %w", err)
 	}
@@ -85,6 +86,7 @@ func replayCurrentPortableStation(
 		return result, fmt.Errorf("render current-contract station replay request: %w", err)
 	}
 	result.ExpectedIdentity = expected
+	result.Temperature = prepared.Temperature
 	result.PreparedRequest = string(request)
 	result.PreparedRequestSHA256 = replaySHA256(result.PreparedRequest)
 	return executeExactStationReplayPrepared(ctx, client, result, job, gap.ContextTokens, prepared)

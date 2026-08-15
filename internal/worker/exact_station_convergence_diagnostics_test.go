@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestExactTypeScriptReplayCompilerReturnsCandidateSyntaxAsCorrectableDiagnostic(t *testing.T) {
@@ -46,19 +47,20 @@ func TestExactTypeScriptConvergenceRecordsErrorsBeyondBoundedModelFeedback(t *te
 			region := assemblyline.TypeScriptFragmentRepairRegion{
 				Kind:      assemblyline.TypeScriptRepairRegionCompilerOwner,
 				StartLine: 1, EndLine: 1, Source: input.CurrentDeclaration,
+				Bindings: convergenceTestBindings(),
 			}
 			return &ExactTypeScriptReplayDiagnostic{
 				ModelFeedback: input.Diagnostic, CompilerDiagnostics: actual, Count: len(actual),
 				RepairRegion: &region,
 			}, nil
 		},
-		replay: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+		replay: func(_ context.Context, job assemblyline.PortableJob, _ int, temperature *llm.ExactPreparedTemperature) (ExactStationReplay, error) {
 			calls++
-			return convergenceReplay(job, input.CurrentDeclaration), nil
+			return convergenceReplay(job, input.CurrentDeclaration, temperature), nil
 		},
 	}
 	result, err := convergeExactTypeScriptStationWithRuntime(context.Background(), point, "model:test", runtime)
-	if err == nil || !strings.Contains(err.Error(), "no-op") || calls != 1 ||
+	if err == nil || !strings.Contains(err.Error(), "exhausted profile temperature") || calls != 6 ||
 		result.Baseline.Count != 2 || len(result.Baseline.CompilerDiagnostics) != 2 {
 		t.Fatalf("calls=%d baseline=%+v error=%v", calls, result.Baseline, err)
 	}
@@ -74,6 +76,7 @@ func TestExactTypeScriptConvergenceStartsFromCurrentCompilerFeedback(t *testing.
 			region := assemblyline.TypeScriptFragmentRepairRegion{
 				Kind:      assemblyline.TypeScriptRepairRegionCompilerOwner,
 				StartLine: 1, EndLine: 1, Source: input.CurrentDeclaration,
+				Bindings: convergenceTestBindings(),
 			}
 			return &ExactTypeScriptReplayDiagnostic{
 				ModelFeedback: currentFeedback, ModelFeedbackSHA256: replaySHA256(currentFeedback),
@@ -81,7 +84,7 @@ func TestExactTypeScriptConvergenceStartsFromCurrentCompilerFeedback(t *testing.
 				RepairRegion: &region,
 			}, nil
 		},
-		replay: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+		replay: func(_ context.Context, job assemblyline.PortableJob, _ int, temperature *llm.ExactPreparedTemperature) (ExactStationReplay, error) {
 			calls++
 			var correction assemblyline.FragmentCorrectionInput
 			if err := decodeReplayCorrectionInput(job, &correction); err != nil {
@@ -91,11 +94,11 @@ func TestExactTypeScriptConvergenceStartsFromCurrentCompilerFeedback(t *testing.
 				correction.RepairRegion.Source != input.CurrentDeclaration || correction.Diagnostic != currentFeedback {
 				return ExactStationReplay{}, fmt.Errorf("first correction did not use current compiler authority: %+v", correction)
 			}
-			return convergenceReplay(job, input.CurrentDeclaration), nil
+			return convergenceReplay(job, input.CurrentDeclaration, temperature), nil
 		},
 	}
 	result, err := convergeExactTypeScriptStationWithRuntime(context.Background(), point, "model:test", runtime)
-	if err == nil || !strings.Contains(err.Error(), "no-op") || calls != 1 ||
+	if err == nil || !strings.Contains(err.Error(), "exhausted profile temperature") || calls != 6 ||
 		result.Baseline.ModelFeedback != currentFeedback {
 		t.Fatalf("calls=%d baseline=%+v error=%v", calls, result.Baseline, err)
 	}
@@ -111,7 +114,7 @@ func TestExactTypeScriptConvergenceRejectsCompilerPrefixDifferentFromFrozenAutho
 				CompilerDiagnostics: []string{"[source]: error TS2322: different compiler failure"},
 			}, nil
 		},
-		replay: func(_ context.Context, _ assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+		replay: func(_ context.Context, _ assemblyline.PortableJob, _ int, _ *llm.ExactPreparedTemperature) (ExactStationReplay, error) {
 			calls++
 			return ExactStationReplay{}, nil
 		},

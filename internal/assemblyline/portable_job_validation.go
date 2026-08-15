@@ -85,12 +85,39 @@ func (input FragmentCorrectionInput) validate() error {
 	if err := validatePortableFragmentCore(input.Language, input.Signature, input.Capabilities, input.PermittedSymbols); err != nil {
 		return err
 	}
-	for label, value := range map[string]string{
-		"required change": input.RequiredChange,
-		"diagnostic":      input.Diagnostic,
-	} {
-		if value == "" || value != strings.TrimSpace(value) {
-			return fmt.Errorf("fragment correction %s is required and must be trimmed", label)
+	guided := input.RepairGuidance != ""
+	diagnosticCorrection := input.RequiredChange != "" || input.Diagnostic != ""
+	if guided == diagnosticCorrection {
+		return fmt.Errorf(
+			"fragment correction requires exactly one repair guidance or diagnostic correction authority",
+		)
+	}
+	if guided {
+		if input.Language != "typescript" {
+			return fmt.Errorf("guided fragment correction requires TypeScript")
+		}
+		if input.RepairGuidance != strings.TrimSpace(input.RepairGuidance) {
+			return fmt.Errorf("fragment correction repair guidance must be trimmed")
+		}
+		if len(input.RepairGuidance) > maxTypeScriptRepairGuidanceBytes {
+			return fmt.Errorf(
+				"fragment correction repair guidance exceeds %d bytes",
+				maxTypeScriptRepairGuidanceBytes,
+			)
+		}
+		if len(input.Capabilities) != 0 || len(input.PermittedSymbols) != 0 {
+			return fmt.Errorf(
+				"guided fragment correction executor cannot receive diagnostic-analysis context",
+			)
+		}
+	} else {
+		for label, value := range map[string]string{
+			"required change": input.RequiredChange,
+			"diagnostic":      input.Diagnostic,
+		} {
+			if value == "" || value != strings.TrimSpace(value) {
+				return fmt.Errorf("fragment correction %s is required and must be trimmed", label)
+			}
 		}
 	}
 	current := input.CurrentDeclaration
@@ -110,10 +137,10 @@ func (input FragmentCorrectionInput) validate() error {
 			return fmt.Errorf("fragment correction repair region: %w", err)
 		}
 	}
-	if len(input.RequiredChange) > maxTypeScriptRequiredChangeBytes {
+	if !guided && len(input.RequiredChange) > maxTypeScriptRequiredChangeBytes {
 		return fmt.Errorf("fragment correction required change exceeds %d bytes", maxTypeScriptRequiredChangeBytes)
 	}
-	if len(input.Diagnostic) > maxTypeScriptDiagnosticBytes {
+	if !guided && len(input.Diagnostic) > maxTypeScriptDiagnosticBytes {
 		return fmt.Errorf("fragment correction diagnostic exceeds %d bytes", maxTypeScriptDiagnosticBytes)
 	}
 	return nil

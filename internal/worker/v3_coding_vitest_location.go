@@ -82,9 +82,10 @@ func mapDirectCodingTypeScriptDocumentLocation(
 			location := path + ":" + strconv.Itoa(line) + ":" + strconv.Itoa(column)
 			return &directCodingStageDiagnostic{
 				BlockID: blockID, DeclarationLine: line - span.StartLine + 1,
-				DeclarationColumn: column,
-				Message:           location + "\n" + trimForBudget(output, 5000),
-				Output:            output,
+				DeclarationColumn: column, DocumentPath: path,
+				DocumentLine: line, DocumentColumn: column,
+				DocumentBlockStartLine: span.StartLine, DocumentBlockEndLine: span.EndLine,
+				Message: location + "\n" + trimForBudget(output, 5000), Output: output,
 			}, true
 		}
 	}

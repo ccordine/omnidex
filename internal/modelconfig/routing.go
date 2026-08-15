@@ -88,6 +88,9 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("coding_fragment_model"); value != "" {
 		out.Stations[station.CodingFragment] = value
 	}
+	if value := cfg.Get("coding_fragment_repair_guidance_model"); value != "" {
+		out.Stations[station.CodingFragmentRepairGuidance] = value
+	}
 	if value := cfg.Get("coding_fragment_correction_model"); value != "" {
 		out.Stations[station.CodingFragmentCorrection] = value
 	}

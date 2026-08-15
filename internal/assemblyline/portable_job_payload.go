@@ -75,6 +75,10 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[CapabilityRelationInput](payload, CapabilityRelationInput.validate)
 	case WorkSkillSelection:
 		return decodeAndValidatePortablePayload[SkillSelectionInput](payload, SkillSelectionInput.validate)
+	case WorkTypeScriptRepairGuidance:
+		return decodeAndValidatePortablePayload[TypeScriptRepairGuidanceInput](
+			payload, TypeScriptRepairGuidanceInput.validate,
+		)
 	case WorkFragmentGeneration:
 		return decodeAndValidatePortablePayload[FragmentGenerationInput](payload, FragmentGenerationInput.validate)
 	case WorkFragmentModification:

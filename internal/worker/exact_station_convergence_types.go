@@ -5,15 +5,15 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 type ExactTypeScriptConvergenceTerminal string
 
 const (
-	ExactTypeScriptConvergenceCompiled ExactTypeScriptConvergenceTerminal = "compiled"
-	ExactTypeScriptConvergenceNoOp     ExactTypeScriptConvergenceTerminal = "no_op"
-	ExactTypeScriptConvergenceCycle    ExactTypeScriptConvergenceTerminal = "cycle"
-	ExactTypeScriptConvergenceFailed   ExactTypeScriptConvergenceTerminal = "failed"
+	ExactTypeScriptConvergenceCompiled             ExactTypeScriptConvergenceTerminal = "compiled"
+	ExactTypeScriptConvergenceExplorationExhausted ExactTypeScriptConvergenceTerminal = "exploration_exhausted"
+	ExactTypeScriptConvergenceFailed               ExactTypeScriptConvergenceTerminal = "failed"
 )
 
 type ExactTypeScriptReplayDiagnostic struct {
@@ -61,6 +61,7 @@ type ExactTypeScriptConvergenceIteration struct {
 	ArtifactError   string                           `json:"artifact_error,omitempty"`
 	AfterDiagnostic *ExactTypeScriptReplayDiagnostic `json:"after_diagnostic,omitempty"`
 	DiagnosticDelta *ExactTypeScriptDiagnosticDelta  `json:"diagnostic_delta,omitempty"`
+	NextTemperature *llm.ExactPreparedTemperature    `json:"next_temperature,omitempty"`
 }
 
 type ExactStationReplayArtifactError struct {
@@ -82,18 +83,25 @@ func (failure *ExactStationReplayArtifactError) Unwrap() error {
 }
 
 type ExactTypeScriptConvergence struct {
-	SourceOpeningID    int64                                 `json:"source_opening_id"`
-	SourceGapOpeningID int64                                 `json:"source_gap_opening_id"`
-	Model              string                                `json:"model"`
-	Baseline           ExactTypeScriptReplayDiagnostic       `json:"baseline"`
-	Iterations         []ExactTypeScriptConvergenceIteration `json:"iterations"`
-	Terminal           ExactTypeScriptConvergenceTerminal    `json:"terminal"`
-	FinalSource        string                                `json:"final_source"`
-	FinalSourceSHA256  string                                `json:"final_source_sha256"`
-	WallDuration       time.Duration                         `json:"wall_duration"`
+	SourceOpeningID     int64                                 `json:"source_opening_id"`
+	SourceGapOpeningID  int64                                 `json:"source_gap_opening_id"`
+	Model               string                                `json:"model"`
+	Baseline            ExactTypeScriptReplayDiagnostic       `json:"baseline"`
+	Iterations          []ExactTypeScriptConvergenceIteration `json:"iterations"`
+	Terminal            ExactTypeScriptConvergenceTerminal    `json:"terminal"`
+	FinalSource         string                                `json:"final_source"`
+	FinalSourceSHA256   string                                `json:"final_source_sha256"`
+	LastCandidate       string                                `json:"last_candidate"`
+	LastCandidateSHA256 string                                `json:"last_candidate_sha256"`
+	WallDuration        time.Duration                         `json:"wall_duration"`
 }
 
 type exactTypeScriptConvergenceRuntime struct {
 	verify func(context.Context, string) (*ExactTypeScriptReplayDiagnostic, error)
-	replay func(context.Context, assemblyline.PortableJob, int) (ExactStationReplay, error)
+	replay func(
+		context.Context,
+		assemblyline.PortableJob,
+		int,
+		*llm.ExactPreparedTemperature,
+	) (ExactStationReplay, error)
 }

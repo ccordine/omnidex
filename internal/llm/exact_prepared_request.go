@@ -73,9 +73,7 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	if strings.TrimSpace(prepared.BaseModel) == "" ||
 		prepared.ContextModel != prepared.BaseModel || strings.TrimSpace(prepared.Prompt) == "" ||
 		prepared.PromptHint != MinimalGeneratePrompt || prepared.MaxOutputTokens <= 0 ||
-		prepared.ContextTokens <= 0 ||
-		prepared.Temperature == nil || *prepared.Temperature != 0 ||
-		math.Signbit(*prepared.Temperature) {
+		prepared.ContextTokens <= 0 {
 		return fmt.Errorf("prepared request does not satisfy the exact Ollama generation contract")
 	}
 	if prepared.ProviderIdentityExpectation == nil ||
@@ -91,6 +89,12 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	)
 	if err != nil {
 		return err
+	}
+	if err := profile.validatePreparedTemperature(prepared.Temperature); err != nil {
+		return err
+	}
+	if prepared.Temperature != nil && math.Signbit(float64(*prepared.Temperature)) {
+		return fmt.Errorf("prepared request temperature cannot be negative zero")
 	}
 	wantThinking := profile.transport == exactPreparedTransportNativeThinking ||
 		profile.transport == exactPreparedTransportNativeSystemThinking

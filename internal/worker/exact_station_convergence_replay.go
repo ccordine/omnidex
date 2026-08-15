@@ -36,8 +36,13 @@ func ConvergeExactTypeScriptStation(
 	defer compiler.Close()
 	runtime := exactTypeScriptConvergenceRuntime{
 		verify: compiler.Verify,
-		replay: func(callCtx context.Context, job assemblyline.PortableJob, iteration int) (ExactStationReplay, error) {
-			return replayDerivedExactStation(callCtx, client, point, job, modelName, iteration)
+		replay: func(
+			callCtx context.Context,
+			job assemblyline.PortableJob,
+			iteration int,
+			temperature *llm.ExactPreparedTemperature,
+		) (ExactStationReplay, error) {
+			return replayDerivedExactStation(callCtx, client, point, job, modelName, iteration, temperature)
 		},
 	}
 	return convergeExactTypeScriptStationWithRuntime(ctx, point, modelName, runtime)
@@ -50,12 +55,13 @@ func replayDerivedExactStation(
 	job assemblyline.PortableJob,
 	modelName string,
 	iteration int,
+	temperature *llm.ExactPreparedTemperature,
 ) (ExactStationReplay, error) {
 	if iteration < 1 {
 		return ExactStationReplay{}, fmt.Errorf("derived station replay requires one positive iteration")
 	}
 	scope := fmt.Sprintf("station-convergence:%d:%d:%s", point.Call.ID, iteration, job.ID)
-	return replayCurrentPortableStation(ctx, client, point, job, modelName, scope)
+	return replayCurrentPortableStation(ctx, client, point, job, modelName, scope, temperature)
 }
 
 func exactConvergenceGap(

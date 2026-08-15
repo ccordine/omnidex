@@ -81,7 +81,7 @@ func (transport *liveCodingQualificationTransport) execute(
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
-	prepared, err := prepareExactStationCall(gap, contract, modelName, transport.expected)
+	prepared, err := prepareExactStationCall(gap, contract, modelName, transport.expected, nil)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}

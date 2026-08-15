@@ -80,12 +80,40 @@ func TestTypeScriptCompilerFeedbackPreservesOneExactDeclarationLocation(t *testi
 			if diagnostic.ModelFeedback != want {
 				t.Fatalf("model feedback=%q want %q", diagnostic.ModelFeedback, want)
 			}
+			if !diagnostic.CompilerIssue || diagnostic.DocumentPath != fixture.path ||
+				diagnostic.DocumentLine != span.StartLine+fixture.wantLine-1 ||
+				diagnostic.DocumentColumn != fixture.wantColumn ||
+				diagnostic.DocumentBlockStartLine != span.StartLine ||
+				diagnostic.DocumentBlockEndLine != span.EndLine {
+				t.Fatalf("compiler location authority=%+v span=%+v", diagnostic, span)
+			}
 			if strings.Contains(diagnostic.ModelFeedback, fixture.path) ||
 				strings.Contains(diagnostic.ModelFeedback, fixture.other) {
 				t.Fatalf("feedback leaked path or neighbor diagnostic: %q", diagnostic.ModelFeedback)
 			}
 			if len(want) > 360 && len(diagnostic.ModelFeedback) != len(want) {
 				t.Fatalf("compiler feedback was arbitrarily truncated: got=%d want=%d", len(diagnostic.ModelFeedback), len(want))
+			}
+		})
+	}
+}
+
+func TestTypeScriptCompilerScopeReceiptRejectsInexactOrMissingAuthority(t *testing.T) {
+	t.Parallel()
+	valid := `{"schema":"omnidex.typescript-lexical-scope.v1","bindings":[{"name":"value","type":"number"}],"unavailable_bindings":[]}`
+	for name, raw := range map[string]string{
+		"duplicate field":      `{"schema":"omnidex.typescript-lexical-scope.v1","schema":"omnidex.typescript-lexical-scope.v1","bindings":[{"name":"value","type":"number"}],"unavailable_bindings":[]}`,
+		"unknown field":        `{"schema":"omnidex.typescript-lexical-scope.v1","bindings":[{"name":"value","type":"number","path":"private.ts"}],"unavailable_bindings":[]}`,
+		"missing bindings":     `{"schema":"omnidex.typescript-lexical-scope.v1"}`,
+		"missing unavailable":  `{"schema":"omnidex.typescript-lexical-scope.v1","bindings":[{"name":"value","type":"number"}]}`,
+		"empty bindings":       `{"schema":"omnidex.typescript-lexical-scope.v1","bindings":[],"unavailable_bindings":[]}`,
+		"unsorted bindings":    `{"schema":"omnidex.typescript-lexical-scope.v1","bindings":[{"name":"z","type":"number"},{"name":"a","type":"number"}],"unavailable_bindings":[]}`,
+		"overlapping bindings": `{"schema":"omnidex.typescript-lexical-scope.v1","bindings":[{"name":"value","type":"number"}],"unavailable_bindings":[{"name":"value","type":"number"}]}`,
+		"trailing value":       valid + `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeDirectCodingTypeScriptScopeReceipt([]byte(raw)); err == nil {
+				t.Fatalf("accepted invalid scope receipt: %s", raw)
 			}
 		})
 	}
@@ -166,52 +194,95 @@ func TestTypeScriptCompilerCorrectionReceivesAndReplacesOnlyASTOwner(t *testing.
     });
   }, [actions]);`
 	line, column := typeScriptWorkerSourceLocation(t, current, "nextMuted);")
-	region, err := assemblyline.NewTypeScriptCompilerRepairRegion(current, false, line, column)
+	region, err := assemblyline.NewTypeScriptCompilerRepairRegion(
+		current, false, line, column,
+		[]assemblyline.TypeScriptRepairBinding{{Name: "value", Type: "unknown"}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	calls := 0
+	models := make([]string, 0, 2)
+	const instruction = "Move actions.set(selected, nextMuted) into the setMuteList callback immediately before return next, where nextMuted is available; preserve every other statement."
+	block := assemblyline.TypeScriptBlock{
+		ID: "toggle.handler", Signature: "function Toggle(index: number, actions: Actions): void",
+		API: "function Toggle(index: number, actions: Actions): void", Globals: []string{"useCallback", "useState"},
+	}
+	const available = "interface Actions { set(index: number, value: boolean): void }"
+	const failure = "DECLARATION_LOCATION: line 10 column 27\nTYPESCRIPT_DIAGNOSTIC: error TS2304: Cannot find name 'nextMuted'."
 	runtime := typedWorkerRuntime{
-		Context: context.Background(), CorrectionModel: "qwen2.5-coder:7b",
-		Execute: func(portable assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+		Context: context.Background(), MaxAttempts: 1, CorrectionModel: "executor",
+		Execute: func(portable assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			calls++
-			var correction assemblyline.FragmentCorrectionInput
-			if err := json.Unmarshal(portable.Payload, &correction); err != nil {
-				return assemblyline.PortableResult{}, err
-			}
-			if correction.CurrentDeclaration != "" || correction.RepairRegion == nil ||
-				correction.RepairRegion.Source != region.Source {
-				t.Fatalf("correction did not isolate compiler owner: %+v", correction)
-			}
-			if len(correction.Capabilities) != 1 || correction.Capabilities[0] != "interface Actions { set(index: number, value: boolean): void }" ||
-				!strings.Contains(strings.Join(correction.PermittedSymbols, ","), "useCallback") {
-				t.Fatalf("localized correction lost required declarations or symbols: %+v", correction)
-			}
+			models = append(models, model)
 			prompt, _, err := assemblyline.RenderPortableJob(portable)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
-			if strings.Contains(prompt, "const untouched") || !strings.Contains(prompt, "actions.set(selected, nextMuted)") {
-				t.Fatalf("prompt did not expose only the exact failing owner:\n%s", prompt)
+			switch portable.Kind {
+			case assemblyline.WorkTypeScriptRepairGuidance:
+				var analysis assemblyline.TypeScriptRepairGuidanceInput
+				if err := json.Unmarshal(portable.Payload, &analysis); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				if analysis.CurrentDeclaration != "" || analysis.RepairRegion == nil ||
+					analysis.RepairRegion.Source != region.Source || analysis.Diagnostic != failure {
+					t.Fatalf("repair analyst did not receive exact diagnostic authority: %+v", analysis)
+				}
+				if len(analysis.Capabilities) != 1 || analysis.Capabilities[0] != available ||
+					!strings.Contains(strings.Join(analysis.PermittedSymbols, ","), "useCallback") {
+					t.Fatalf("repair analyst lost declarations or symbols: %+v", analysis)
+				}
+				return assemblyline.PortableResult{
+					JobID: portable.ID, Candidate: `{"instruction":"` + instruction + `"}`,
+				}, nil
+			case assemblyline.WorkFragmentCorrection:
+				var correction assemblyline.FragmentCorrectionInput
+				if err := json.Unmarshal(portable.Payload, &correction); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				if correction.CurrentDeclaration != "" || correction.RepairRegion == nil ||
+					correction.RepairRegion.Source != region.Source ||
+					correction.RepairGuidance != instruction || correction.Diagnostic != "" ||
+					correction.RequiredChange != "" || len(correction.Capabilities) != 0 ||
+					len(correction.PermittedSymbols) != 0 {
+					t.Fatalf("repair executor retained analyst responsibility: %+v", correction)
+				}
+				for _, forbidden := range []string{
+					"TYPESCRIPT_DIAGNOSTIC", "Cannot find name", "interface Actions",
+					"LOCAL_BINDINGS", "useCallback", "const untouched",
+				} {
+					if strings.Contains(prompt, forbidden) {
+						t.Fatalf("repair executor prompt retained %q:\n%s", forbidden, prompt)
+					}
+				}
+				if !strings.Contains(prompt, instruction) ||
+					!strings.Contains(prompt, "actions.set(selected, nextMuted)") {
+					t.Fatalf("repair executor did not receive only guidance and owner source:\n%s", prompt)
+				}
+				return assemblyline.PortableResult{JobID: portable.ID, Candidate: fixedRegion}, nil
+			default:
+				return assemblyline.PortableResult{}, fmt.Errorf("unexpected repair work kind %s", portable.Kind)
 			}
-			return assemblyline.PortableResult{JobID: portable.ID, Candidate: fixedRegion}, nil
 		},
 	}
-	source, err := runDirectCodingTypeScriptFragmentWorker(runtime, "qwen2.5-coder:7b", directCodingTypeScriptFragmentJob{
-		block: assemblyline.TypeScriptBlock{
-			ID: "toggle.handler", Signature: "function Toggle(index: number, actions: Actions): void",
-			API: "function Toggle(index: number, actions: Actions): void", Globals: []string{"useCallback", "useState"},
-		},
-		available: "interface Actions { set(index: number, value: boolean): void }",
-		current:   current, repairRegion: &region,
-		failure: "DECLARATION_LOCATION: line 10 column 27\nTYPESCRIPT_DIAGNOSTIC: error TS2304: Cannot find name 'nextMuted'.",
+	guidance, err := runDirectCodingTypeScriptRepairGuidance(
+		runtime, "analyst", block, available, current, &region, failure,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := runDirectCodingTypeScriptFragmentWorker(runtime, "executor", directCodingTypeScriptFragmentJob{
+		block: block, available: available, current: current, repairRegion: &region,
+		repairGuidance: guidance,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 || !strings.Contains(source, "actions.set(selected, nextMuted);\n      return next;") ||
+	if calls != 2 || strings.Join(models, ",") != "analyst,executor" ||
+		!strings.Contains(source, "actions.set(selected, nextMuted);\n      return next;") ||
 		!strings.Contains(source, "const untouched = index;") {
-		t.Fatalf("calls=%d spliced source:\n%s", calls, source)
+		t.Fatalf("calls=%d models=%v spliced source:\n%s", calls, models, source)
 	}
 }
 
@@ -225,26 +296,23 @@ func typeScriptWorkerSourceLocation(t *testing.T, source string, marker string) 
 	return strings.Count(prefix, "\n") + 1, offset - strings.LastIndex(prefix, "\n")
 }
 
-func TestTypeScriptCorrectionRetainsCanonicalCompilerFeedbackBytes(t *testing.T) {
+func TestTypeScriptRepairAnalystRetainsCanonicalCompilerFeedbackBytes(t *testing.T) {
 	t.Parallel()
 	failure := "DECLARATION_LOCATION: line 17 column 9\nTYPESCRIPT_DIAGNOSTIC: error TS2322: " +
 		strings.TrimSpace(strings.Repeat("Type 'RecordedValue' is not assignable to 'VisibleValue'. ", 7))
-	job, err := newDirectCodingTypeScriptPortableJob(directCodingTypeScriptFragmentJob{
-		block: assemblyline.TypeScriptBlock{
-			ID: "records.view", Signature: "function RecordsView(): ReactElement",
-			Contract: "Render records.", API: "function RecordsView(): ReactElement",
-		},
-		tsx: true, current: "function RecordsView(): ReactElement { return <div />; }",
-		failure: failure,
+	job, err := assemblyline.NewTypeScriptRepairGuidanceJob(assemblyline.TypeScriptRepairGuidanceInput{
+		Language: "typescript", Signature: "function RecordsView(): ReactElement",
+		CurrentDeclaration: "function RecordsView(): ReactElement { return <div />; }",
+		Diagnostic:         failure,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var correction assemblyline.FragmentCorrectionInput
-	if err := decodeReplayCorrectionInput(job, &correction); err != nil {
+	var analysis assemblyline.TypeScriptRepairGuidanceInput
+	if err := json.Unmarshal(job.Payload, &analysis); err != nil {
 		t.Fatal(err)
 	}
-	if correction.Diagnostic != failure {
-		t.Fatalf("canonical compiler feedback changed:\nGOT:  %q\nWANT: %q", correction.Diagnostic, failure)
+	if analysis.Diagnostic != failure {
+		t.Fatalf("canonical compiler feedback changed:\nGOT:  %q\nWANT: %q", analysis.Diagnostic, failure)
 	}
 }
