@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -71,10 +72,23 @@ func resolveDirectCodingApplicationJobSpecification(
 		return zero, err
 	}
 
-	for reviewAttempt := 1; ; reviewAttempt++ {
-		reviewInput, inputErr := assemblyline.NewApplicationJobSpecificationReviewInput(
-			authority, retained, reviewAttempt,
-		)
+	reviewCall := 0
+	repairAttempt := 0
+	invalidReviewEvidence := make(map[string]struct{})
+	var validationFailure *assemblyline.ApplicationJobSpecificationReviewEvidenceError
+	for {
+		reviewCall++
+		var reviewInput assemblyline.ApplicationJobSpecificationReviewInput
+		var inputErr error
+		if validationFailure == nil {
+			reviewInput, inputErr = assemblyline.NewApplicationJobSpecificationReviewInput(
+				authority, retained, reviewCall,
+			)
+		} else {
+			reviewInput, inputErr = assemblyline.NewApplicationJobSpecificationReviewRetryInput(
+				authority, retained, reviewCall, *validationFailure,
+			)
+		}
 		if inputErr != nil {
 			return zero, inputErr
 		}
@@ -83,19 +97,35 @@ func resolveDirectCodingApplicationJobSpecification(
 			return zero, jobErr
 		}
 		review, callErr := runApplicationJobSpecificationCall(
-			runtime, reviewModel, fmt.Sprintf("%s_review_%d", subject, reviewAttempt), reviewJob,
+			runtime, reviewModel, fmt.Sprintf("%s_review_%d", subject, reviewCall), reviewJob,
 			func(raw string) (assemblyline.ApplicationJobSpecificationReview, error) {
 				return assemblyline.DecodeApplicationJobSpecificationReview(reviewInput, raw)
 			},
 		)
 		if callErr != nil {
-			return zero, callErr
+			var evidenceErr *assemblyline.ApplicationJobSpecificationReviewEvidenceError
+			if !errors.As(callErr, &evidenceErr) {
+				return zero, callErr
+			}
+			identity := evidenceErr.Identity()
+			if _, repeated := invalidReviewEvidence[identity]; repeated {
+				return zero, fmt.Errorf(
+					"application job specification %s: repeated ungrounded review evidence rejected for unchanged current field",
+					subject,
+				)
+			}
+			invalidReviewEvidence[identity] = struct{}{}
+			copy := *evidenceErr
+			validationFailure = &copy
+			continue
 		}
+		validationFailure = nil
 		if review.Decision == assemblyline.ApplicationJobSpecificationReviewAccept {
 			return retained, nil
 		}
+		repairAttempt++
 		repairInput, inputErr := assemblyline.NewApplicationJobSpecificationRepairInput(
-			authority, retained, review, reviewAttempt,
+			authority, retained, review, repairAttempt,
 		)
 		if inputErr != nil {
 			return zero, inputErr
@@ -106,7 +136,7 @@ func resolveDirectCodingApplicationJobSpecification(
 		}
 		retainedBeforeRepair := retained
 		retained, callErr = runApplicationJobSpecificationCall(
-			runtime, plannerModel, fmt.Sprintf("%s_repair_%d", subject, reviewAttempt), repairJob,
+			runtime, plannerModel, fmt.Sprintf("%s_repair_%d", subject, repairAttempt), repairJob,
 			func(raw string) (assemblyline.ApplicationJobSpecification, error) {
 				patch, decodeErr := assemblyline.DecodeApplicationJobSpecificationRepair(repairInput, raw)
 				if decodeErr != nil {

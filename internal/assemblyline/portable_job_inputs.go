@@ -37,14 +37,24 @@ type ResponseCorrectionInput struct {
 	TargetField       string      `json:"target_field,omitempty"`
 }
 
-func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationClassify, input, input.validate)
+func NewApplicationContextNeedJob(input ApplicationContextNeedInput) (PortableJob, error) {
+	return newValidatedPortableJob(WorkApplicationContextNeeds, input, input.validate)
 }
 
-func NewApplicationRequirementInterpretationJob(
-	input ApplicationRequirementInterpretationInput,
-) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationRequirements, input, input.validate)
+func NewApplicationIntentJob(input ApplicationIntentInput) (PortableJob, error) {
+	return newValidatedPortableJob(WorkApplicationIntent, input, input.validate)
+}
+
+func NewApplicationIntentReviewJob(input ApplicationIntentReviewInput) (PortableJob, error) {
+	return newValidatedPortableJob(WorkApplicationIntentReview, input, input.validate)
+}
+
+func NewApplicationIntentRepairJob(input ApplicationIntentRepairInput) (PortableJob, error) {
+	return newValidatedPortableJob(WorkApplicationIntentRepair, input, input.validate)
+}
+
+func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
+	return newValidatedPortableJob(WorkApplicationClassify, input, input.validate)
 }
 
 func NewApplicationJobSpecificationJob(input ApplicationJobSpecificationInput) (PortableJob, error) {

@@ -15,33 +15,6 @@ func ApplicationClassificationResponseSchema() map[string]any {
 	)
 }
 
-func ApplicationRequirementInterpretationResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "items"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": ApplicationRequirementInterpretationSchemaV1,
-			},
-			"items": map[string]any{
-				"type": "array", "minItems": 2, "maxItems": maxRequirementCount + 1,
-				"items": objectSchema(
-					[]string{"kind", "source_quote"},
-					map[string]any{
-						"kind": enumSchema(
-							ApplicationRequirementProduct,
-							ApplicationRequirementFeature,
-						),
-						"source_quote": map[string]any{
-							"type": "string", "minLength": 1,
-							"maxLength": maxRequirementQuoteBytes,
-						},
-					},
-				),
-			},
-		},
-	)
-}
-
 func RepositoryRequirementInterpretationResponseSchema() map[string]any {
 	return objectSchema(
 		[]string{"schema", "feature_quotes"},

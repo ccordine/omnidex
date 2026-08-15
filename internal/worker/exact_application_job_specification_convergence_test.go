@@ -33,7 +33,7 @@ func TestExactApplicationJobSpecificationConvergenceUsesProductionReviewLoop(t *
 				if model != "reviewer" || job.Kind != assemblyline.WorkApplicationJobSpecificationReview {
 					return ExactStationReplay{}, fmt.Errorf("call 2 model=%s kind=%s", model, job.Kind)
 				}
-				candidate = `{"decision":"repair","field":"acceptance_criteria"}`
+				candidate = `{"decision":"repair","field":"acceptance_criteria","finding":"The check does not distinguish matching inventory from nonmatching inventory.","finding_evidence":"Filtering changes the visible inventory."}`
 			case 3:
 				if model != "planner" || job.Kind != assemblyline.WorkApplicationJobSpecificationRepair {
 					return ExactStationReplay{}, fmt.Errorf("call 3 model=%s kind=%s", model, job.Kind)

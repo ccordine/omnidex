@@ -67,7 +67,8 @@ func TestCodingWorkloadReviewMigrationPreservesPlannerAndMovesOnlyReview(t *test
 
 	for _, kind := range assemblyline.AllWorkKinds() {
 		if kind == assemblyline.WorkResponseCorrection ||
-			kind == assemblyline.WorkTypeScriptRepairGuidance {
+			kind == assemblyline.WorkTypeScriptRepairGuidance ||
+			applicationFrontDoorWorkKind(kind) {
 			continue
 		}
 		want, err := stationForPortableWorkKind(kind)

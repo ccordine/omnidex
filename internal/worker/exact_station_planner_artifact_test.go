@@ -9,30 +9,31 @@ import (
 func TestReplayArtifactUsesProductionPlannerDecoders(t *testing.T) {
 	t.Parallel()
 
-	requirements, err := assemblyline.NewApplicationRequirementInterpretationJob(
-		assemblyline.ApplicationRequirementInterpretationInput{
-			UserRequest: "Build a schedule board with filters.",
-		},
+	request := "Build a schedule board with filters."
+	applicationContext, err := assemblyline.BootstrapApplicationContext(
+		request, assemblyline.ApplicationWorkspaceEmpty, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if artifact, err := replayExactStationArtifact(requirements, `{
-		"schema":"omnidex.application-requirements.v1",
-		"items":[
-			{"kind":"product","source_quote":"schedule board"},
-			{"kind":"feature","source_quote":"filters"}
-		]
-	}`); err != nil || artifact.Kind != "application_requirements" {
-		t.Fatalf("requirements artifact=%+v error=%v", artifact, err)
+	intent, err := assemblyline.NewApplicationIntentJob(
+		assemblyline.ApplicationIntentInput{UserRequest: request, Context: applicationContext},
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := replayExactStationArtifact(requirements, `{
-		"schema":"omnidex.application-requirements.v1",
-		"items":[
-			{"kind":"product","source_quote":"schedule board"},
-			{"kind":"feature","source_quote":"invented"}
-		]
+	if artifact, err := replayExactStationArtifact(intent, `{
+		"schema":"omnidex.application-intent.v1",
+		"product_context":"A schedule board",
+		"requirements":["Allow users to filter the schedule."]
+	}`); err != nil || artifact.Kind != "application_intent" {
+		t.Fatalf("intent artifact=%+v error=%v", artifact, err)
+	}
+	if _, err := replayExactStationArtifact(intent, `{
+		"schema":"omnidex.application-intent.v1",
+		"product_context":"A schedule board",
+		"requirements":[]
 	}`); err == nil {
-		t.Fatal("replay accepted ungrounded planner output")
+		t.Fatal("replay accepted structurally invalid semantic intent")
 	}
 }

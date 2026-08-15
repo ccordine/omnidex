@@ -7,12 +7,24 @@ import (
 
 func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	switch kind {
+	case WorkApplicationContextNeeds:
+		return decodeAndValidatePortablePayload[ApplicationContextNeedInput](
+			payload, ApplicationContextNeedInput.validate,
+		)
+	case WorkApplicationIntent:
+		return decodeAndValidatePortablePayload[ApplicationIntentInput](
+			payload, ApplicationIntentInput.validate,
+		)
+	case WorkApplicationIntentReview:
+		return decodeAndValidatePortablePayload[ApplicationIntentReviewInput](
+			payload, ApplicationIntentReviewInput.validate,
+		)
+	case WorkApplicationIntentRepair:
+		return decodeAndValidatePortablePayload[ApplicationIntentRepairInput](
+			payload, ApplicationIntentRepairInput.validate,
+		)
 	case WorkApplicationClassify:
 		return decodeAndValidatePortablePayload[ApplicationClassificationInput](payload, ApplicationClassificationInput.validate)
-	case WorkApplicationRequirements:
-		return decodeAndValidatePortablePayload[ApplicationRequirementInterpretationInput](
-			payload, ApplicationRequirementInterpretationInput.validate,
-		)
 	case WorkApplicationJobSpecification:
 		return decodeAndValidatePortablePayload[ApplicationJobSpecificationInput](
 			payload, validateApplicationJobSpecificationInput,

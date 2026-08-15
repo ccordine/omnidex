@@ -26,6 +26,11 @@ type applicationJobSpecificationRepairWire struct {
 	AcceptanceCriteria *[]string `json:"acceptance_criteria"`
 }
 
+type applicationJobSpecificationRepairAuthority struct {
+	Surface            ApplicationSurface `json:"surface"`
+	FocusedRequirement string             `json:"focused_requirement"`
+}
+
 func NewApplicationJobSpecificationRepairInput(
 	authority ApplicationJobSpecificationInput,
 	retained ApplicationJobSpecification,
@@ -55,6 +60,18 @@ func (input ApplicationJobSpecificationRepairInput) validate() error {
 	if input.review.Decision != ApplicationJobSpecificationReviewRepair {
 		return fmt.Errorf("application job specification repair requires a repair review")
 	}
+	observedValueSHA256, err := applicationJobSpecificationCurrentFieldSHA256(
+		input.retained, input.review.Field,
+	)
+	if err != nil {
+		return err
+	}
+	if input.review.observedValueSHA256 != observedValueSHA256 {
+		return fmt.Errorf("application job specification repair review is not bound to current named field")
+	}
+	if !applicationJobSpecificationReviewEvidenceApplies(input.retained, input.review) {
+		return fmt.Errorf("application job specification repair review evidence does not apply to current named field")
+	}
 	if input.attempt < 1 {
 		return fmt.Errorf("application job specification repair attempt must be positive")
 	}
@@ -74,27 +91,58 @@ func BuildApplicationJobSpecificationRepairPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
+	currentDerivedValue, err := applicationJobSpecificationCurrentFieldValue(
+		input.retained,
+		input.review.Field,
+	)
+	if err != nil {
+		return "", err
+	}
 	projection := struct {
-		UserAuthority      applicationJobSpecificationAuthority `json:"user_authority"`
-		DerivedCandidate   ApplicationJobSpecification          `json:"derived_candidate"`
-		TargetDerivedField ApplicationJobSpecificationField     `json:"target_derived_field"`
+		UserAuthority       applicationJobSpecificationRepairAuthority `json:"user_authority"`
+		TargetDerivedField  ApplicationJobSpecificationField           `json:"target_derived_field"`
+		CurrentDerivedValue any                                        `json:"current_derived_value"`
+		ReviewFinding       string                                     `json:"review_finding"`
+		FindingEvidence     string                                     `json:"finding_evidence"`
 	}{
-		UserAuthority:    projectApplicationJobSpecificationAuthority(input.authority),
-		DerivedCandidate: input.retained, TargetDerivedField: input.review.Field,
+		UserAuthority: applicationJobSpecificationRepairAuthority{
+			Surface:            input.authority.Surface,
+			FocusedRequirement: input.authority.FocusedRequirement.SourceQuote,
+		},
+		TargetDerivedField:  input.review.Field,
+		CurrentDerivedValue: currentDerivedValue,
+		ReviewFinding:       input.review.Finding,
+		FindingEvidence:     input.review.FindingEvidence,
 	}
 	raw, err := json.Marshal(projection)
 	if err != nil {
 		return "", fmt.Errorf("encode application job specification repair authority: %w", err)
 	}
 	prompt := strings.Join([]string{
-		"Repair exactly target_derived_field using the code-owned instruction: " + applicationJobSpecificationRepairInstruction(input.review.Field),
-		"Only user_authority contains stated requirements. derived_candidate contains derived build decisions, not user facts. Preserve every other derived field. Use the minimum sufficient concrete detail. Observable does not mean numeric. Do not add capabilities, quantities, counts, ranges, timing, defaults, compatibility promises, or constraints absent from user_authority. Return only the one-field JSON replacement.",
+		"Repair exactly target_derived_field so the replacement resolves review_finding. Follow the code-owned field contract: " + applicationJobSpecificationRepairInstruction(input.review.Field),
+		"Only user_authority contains stated requirements. review_finding is a diagnostic of current_derived_value, and finding_evidence is its code-validated exact excerpt from that value; neither is new authority. The other retained fields are code-owned and unavailable. Use the minimum sufficient concrete detail. Observable does not mean numeric. Do not add capabilities, quantities, counts, ranges, timing, defaults, compatibility promises, or constraints absent from user_authority. Return only the one-field JSON replacement.",
 		"APPLICATION_JOB_SPECIFICATION_REPAIR_AUTHORITY_JSON:\n" + string(raw),
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf("application job specification repair prompt exceeds %d bytes", maxPortablePayloadBytes)
 	}
 	return prompt, nil
+}
+
+func applicationJobSpecificationCurrentFieldValue(
+	retained ApplicationJobSpecification,
+	field ApplicationJobSpecificationField,
+) (any, error) {
+	switch field {
+	case ApplicationJobSpecificationObjectiveField:
+		return retained.Objective, nil
+	case ApplicationJobSpecificationRequiredBehaviorsField:
+		return append([]string(nil), retained.RequiredBehaviors...), nil
+	case ApplicationJobSpecificationAcceptanceCriteriaField:
+		return append([]string(nil), retained.AcceptanceCriteria...), nil
+	default:
+		return nil, fmt.Errorf("application job specification field %q is unsupported", field)
+	}
 }
 
 func applicationJobSpecificationRepairInstruction(field ApplicationJobSpecificationField) string {

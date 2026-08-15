@@ -13,6 +13,42 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		return "", nil, err
 	}
 	switch job.Kind {
+	case WorkApplicationContextNeeds:
+		var input ApplicationContextNeedInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationContextNeedPrompt(input)
+		return prompt, ApplicationContextNeedResponseSchema(), err
+	case WorkApplicationIntent:
+		var input ApplicationIntentInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationIntentPrompt(input)
+		return prompt, ApplicationIntentResponseSchema(), err
+	case WorkApplicationIntentReview:
+		var input ApplicationIntentReviewInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationIntentReviewPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := ApplicationIntentReviewResponseSchema(input)
+		return prompt, schema, err
+	case WorkApplicationIntentRepair:
+		var input ApplicationIntentRepairInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationIntentRepairPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := ApplicationIntentRepairResponseSchema(input)
+		return prompt, schema, err
 	case WorkApplicationClassify:
 		var input ApplicationClassificationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -20,13 +56,6 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildApplicationClassificationPrompt(input)
 		return prompt, ApplicationClassificationResponseSchema(), err
-	case WorkApplicationRequirements:
-		var input ApplicationRequirementInterpretationInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildApplicationRequirementInterpretationPrompt(input)
-		return prompt, ApplicationRequirementInterpretationResponseSchema(), err
 	case WorkApplicationJobSpecification:
 		var input ApplicationJobSpecificationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {

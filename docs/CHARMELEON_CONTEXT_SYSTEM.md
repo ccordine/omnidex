@@ -227,14 +227,28 @@ machine passes its executable gates:
 4. **Read-only repository work** — exact snapshot, index, parser, symbol, reference,
    and test providers run under code control; inference can select only among an exact
    bounded semantic remainder.
-5. **Bounded workload compilation** — one intact-request station returns only grounded
-   product and requirement quotes. For each accepted requirement, one local station
-   receives the typed surface, product, complete accepted requirement set, and focused
-   requirement and proposes only a concrete objective, required behaviors, and observable
-   acceptance criteria. A separately routed review model may accept or name one derived field for
-   code-owned repair. Code retains each new canonical specification and repeats review without a
-   numeric correctness limit; acceptance, an exact no-op or repeated state/cycle, lost authority,
-   provider failure, cancellation, or a real resource limit ends that loop. Code preserves user authority separately from derived build decisions,
+5. **Bounded front door and workload compilation** — code first records exact workspace
+   state and bounded accepted durable memory as typed, hashed facts. One context-sufficiency
+   station may return only bounded evidence questions, never operations; code resolves those
+   questions through registered deterministic providers and formalizes selected evidence as
+   compact source-backed facts. One intent station then derives only a product context and
+   semantic requirement statements from the immutable request plus those facts. A separately
+   routed reviewer accepts or names one defective semantic leaf and finding; code retains the
+   candidate and applies only the dynamically schema-bound replacement before review repeats.
+   Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
+   authority checks. For each accepted requirement, one local station receives the typed surface,
+   reviewed product context, complete accepted requirement set, and focused requirement and
+   proposes only a concrete objective, required behaviors, and observable acceptance criteria.
+   A separately routed review model may accept or name one derived field, one bounded
+   diagnostic finding, and one exact excerpt from the current value of that field. Code
+   validates the excerpt and binds the observed value by SHA-256. Absent evidence causes
+   re-review of unchanged state without a repair dispatch; repeated invalid evidence is a
+   cycle failure. The repair station receives focused user authority, that finding and
+   validated evidence, and only the current value of the named field; code retains every
+   other semantic field and revalidates both field and whole-state bindings before dispatch.
+   Code retains each new canonical specification and repeats review without a numeric correctness
+   limit; acceptance, an exact no-op or repeated state/cycle, lost authority, provider failure,
+   cancellation, or a real resource limit ends that loop. Code preserves user authority separately from derived build decisions,
    assigns identity and order, freezes only reviewed state, executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
    static code-owned harness alone renders the exact public feature with its runtime and capability

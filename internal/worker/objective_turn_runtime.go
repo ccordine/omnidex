@@ -58,8 +58,8 @@ func (r *nativeRuntimeV3) runObjectiveWorkspaceMutation(
 		return "", fmt.Errorf("workspace mutation authority does not match the claimed conversation job")
 	}
 	request := directCodingRequest{
-		Instruction:         authority.Instruction,
-		AdditionalAuthority: renderCodingObjectiveAuthority(authority),
+		Instruction:       authority.Instruction,
+		MemoryAuthorities: append([]assemblyline.ObjectiveMemoryAuthority(nil), authority.Context.MemoryAuthorities...),
 	}
 	if request.Instruction != authority.Instruction {
 		return "", fmt.Errorf("direct coding request rewrote exact conversation authority")

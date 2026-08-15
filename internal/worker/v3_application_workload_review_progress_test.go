@@ -59,8 +59,17 @@ func assertApplicationWorkloadReviewProgressesThroughTwelveRepairs(
 				}
 				reviews++
 				if reviews <= 12 {
+					currentObjective := "Implement " + requirement + " in the " + product + "."
+					if repairs > 0 {
+						currentObjective = fmt.Sprintf(
+							"Implement %s revision %d in the %s.", requirement, repairs, product,
+						)
+					}
 					return workloadPortableCandidate(
-						job, `{"decision":"repair","field":"objective"}`,
+						job, fmt.Sprintf(
+							`{"decision":"repair","field":"objective","finding":"The objective does not state the focused local outcome.","finding_evidence":%q}`,
+							currentObjective,
+						),
 					), nil
 				}
 				return workloadPortableCandidate(job, `{"decision":"accept"}`), nil
@@ -113,7 +122,14 @@ func TestApplicationWorkloadReviewStopsAnExactSpecificationStateCycle(t *testing
 				}`), nil
 			case assemblyline.WorkApplicationJobSpecificationReview:
 				reviews++
-				return workloadPortableCandidate(job, `{"decision":"repair","field":"objective"}`), nil
+				currentObjective := "Implement inventory filtering in the inventory console."
+				if repairs == 1 {
+					currentObjective = "Implement reviewed inventory filtering in the inventory console."
+				}
+				return workloadPortableCandidate(job, fmt.Sprintf(
+					`{"decision":"repair","field":"objective","finding":"The objective does not state the focused local outcome.","finding_evidence":%q}`,
+					currentObjective,
+				)), nil
 			case assemblyline.WorkApplicationJobSpecificationRepair:
 				repairs++
 				objective := "Implement reviewed inventory filtering in the inventory console."

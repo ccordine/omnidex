@@ -10,14 +10,12 @@ import (
 func TestPortableJobIdentityDependsOnlyOnImmutableSmallInput(t *testing.T) {
 	t.Parallel()
 
-	input := ApplicationRequirementInterpretationInput{
-		UserRequest: "Build a compact browser catalog with grouped records.",
-	}
-	first, err := NewApplicationRequirementInterpretationJob(input)
+	input := portableApplicationIntentInput(t, "Build a compact browser catalog with grouped records.")
+	first, err := NewApplicationIntentJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewApplicationRequirementInterpretationJob(input)
+	second, err := NewApplicationIntentJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +28,7 @@ func TestPortableJobIdentityDependsOnlyOnImmutableSmallInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, forbidden := range []string{
-		"workspace", "path", "filename", "document", "queue", "lease", "attempt", "worker", "model",
+		"path", "filename", "document", "queue", "lease", "attempt", "worker", "model",
 	} {
 		if strings.Contains(strings.ToLower(string(encoded)), forbidden) {
 			t.Fatalf("portable model job leaked %q: %s", forbidden, encoded)
@@ -40,15 +38,13 @@ func TestPortableJobIdentityDependsOnlyOnImmutableSmallInput(t *testing.T) {
 
 func TestRequirementPortableJobIdentityChangesWithIntactRequest(t *testing.T) {
 	t.Parallel()
-	base := ApplicationRequirementInterpretationInput{
-		UserRequest: "Build a browser catalog with grouped records.",
-	}
-	first, err := NewApplicationRequirementInterpretationJob(base)
+	base := portableApplicationIntentInput(t, "Build a browser catalog with grouped records.")
+	first, err := NewApplicationIntentJob(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	base.UserRequest = "Build a browser catalog with grouped records and saved filters."
-	second, err := NewApplicationRequirementInterpretationJob(base)
+	base = portableApplicationIntentInput(t, "Build a browser catalog with grouped records and saved filters.")
+	second, err := NewApplicationIntentJob(base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,9 +110,9 @@ func TestFragmentCorrectionWirePayloadCannotCarryInitialBehavior(t *testing.T) {
 func TestPortableResultMustAnswerTheExactClaimedJob(t *testing.T) {
 	t.Parallel()
 
-	job, err := NewApplicationRequirementInterpretationJob(ApplicationRequirementInterpretationInput{
-		UserRequest: "Build a small tool with status output.",
-	})
+	job, err := NewApplicationIntentJob(
+		portableApplicationIntentInput(t, "Build a small tool with status output."),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,10 +127,10 @@ func TestPortableResultMustAnswerTheExactClaimedJob(t *testing.T) {
 	}
 }
 
-func TestPortableApplicationRequirementsRejectRetiredPartitionPayload(t *testing.T) {
+func TestPortableApplicationIntentRejectsRetiredPartitionPayload(t *testing.T) {
 	t.Parallel()
 	payload := json.RawMessage(`{"source_text":"Enable grouped records.","mode":"extract_features"}`)
-	job := PortableJob{Schema: PortableJobSchemaV1, Kind: WorkApplicationRequirements, Payload: payload}
+	job := PortableJob{Schema: PortableJobSchemaV1, Kind: WorkApplicationIntent, Payload: payload}
 	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)
 	if err := job.Validate(); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("retired requirement payload error=%v", err)
@@ -164,13 +160,22 @@ func TestPortableJobRejectsUnknownWirePayloadFields(t *testing.T) {
 	payload := json.RawMessage(`{"user_request":"Build a tool.","accepted":[],"workspace":"/secret"}`)
 	job := PortableJob{
 		Schema:  PortableJobSchemaV1,
-		Kind:    WorkApplicationRequirements,
+		Kind:    WorkApplicationIntent,
 		Payload: payload,
 	}
 	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)
 	if err := job.Validate(); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("expected unknown payload field rejection, got %v", err)
 	}
+}
+
+func portableApplicationIntentInput(t *testing.T, request string) ApplicationIntentInput {
+	t.Helper()
+	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ApplicationIntentInput{UserRequest: request, Context: context}
 }
 
 func TestPortableResponseCorrectionExposesOnlyOneFieldPatchAndDirectFailure(t *testing.T) {

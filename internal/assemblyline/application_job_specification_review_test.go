@@ -2,6 +2,7 @@ package assemblyline
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -23,6 +24,7 @@ func TestApplicationJobSpecificationReviewIsBoundToAuthorityAndRetainedState(t *
 		string(authority.Surface), authority.ProductQuote, authority.FocusedRequirement.SourceQuote,
 		retained.Objective, retained.RequiredBehaviors[0], retained.AcceptanceCriteria[0],
 		`"user_authority"`, `"derived_candidate"`, "observable acceptance criteria collectively cover",
+		"one concise diagnostic finding", "finding_evidence",
 	} {
 		if !strings.Contains(prompt, exact) {
 			t.Fatalf("review prompt omitted %q:\n%s", exact, prompt)
@@ -61,7 +63,9 @@ func TestApplicationJobSpecificationReviewWireAcceptsOrNamesOneDerivedField(t *t
 	accept := branches[0].(map[string]any)
 	repairBranch := branches[1].(map[string]any)
 	if !reflect.DeepEqual(accept["required"], []string{"decision"}) ||
-		!reflect.DeepEqual(repairBranch["required"], []string{"decision", "field"}) {
+		!reflect.DeepEqual(repairBranch["required"], []string{
+			"decision", "field", "finding", "finding_evidence",
+		}) {
 		t.Fatalf("review schema branches do not make legal responses complete: %#v", branches)
 	}
 	for _, branch := range []map[string]any{accept, repairBranch} {
@@ -73,22 +77,29 @@ func TestApplicationJobSpecificationReviewWireAcceptsOrNamesOneDerivedField(t *t
 	if err != nil || accepted.Decision != ApplicationJobSpecificationReviewAccept {
 		t.Fatalf("accepted review=%+v error=%v", accepted, err)
 	}
-	repair, err := DecodeApplicationJobSpecificationReview(input, `{"decision":"repair","field":"required_behaviors"}`)
+	repair, err := DecodeApplicationJobSpecificationReview(input, `{"decision":"repair","field":"required_behaviors","finding":"The behaviors do not state the focused user action and observable result.","finding_evidence":"Users can add and remove mixer channels."}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if repair.Decision != ApplicationJobSpecificationReviewRepair ||
-		repair.Field != ApplicationJobSpecificationRequiredBehaviorsField {
+		repair.Field != ApplicationJobSpecificationRequiredBehaviorsField ||
+		repair.Finding != "The behaviors do not state the focused user action and observable result." ||
+		repair.FindingEvidence != "Users can add and remove mixer channels." {
 		t.Fatalf("repair review=%+v", repair)
 	}
 
 	invalid := []string{
 		`{"decision":"accept","field":"objective"}`,
-		`{"decision":"accept","defect":"Unwanted."}`,
+		`{"decision":"accept","finding":"Unwanted."}`,
+		`{"decision":"accept","finding_evidence":"Unwanted."}`,
 		`{"decision":"repair"}`,
-		`{"decision":"repair","field":"path"}`,
-		`{"decision":"repair","field":"objective","defect":"Add at least eight items at 30 Hz."}`,
-		`{"decision":"repair","field":"objective","path":"src/app.tsx"}`,
+		`{"decision":"repair","field":"objective"}`,
+		`{"decision":"repair","field":"objective","finding":"The objective is not local."}`,
+		`{"decision":"repair","field":"path","finding":"The objective is not local.","finding_evidence":"Implement"}`,
+		`{"decision":"repair","field":"objective","finding":"","finding_evidence":"Implement"}`,
+		`{"decision":"repair","field":"objective","finding":"The objective is not local.","finding_evidence":""}`,
+		`{"decision":"repair","field":"objective","finding":"The objective is not local.","finding_evidence":"Implement","replacement":"Write a replacement."}`,
+		`{"decision":"repair","field":"objective","finding":"The objective is not local.","finding_evidence":"Implement","path":"src/app.tsx"}`,
 	}
 	for _, raw := range invalid {
 		if _, err := DecodeApplicationJobSpecificationReview(input, raw); err == nil {
@@ -115,8 +126,8 @@ func TestApplicationJobSpecificationReviewResultDecodesFromItsPortableAuthority(
 		t.Fatal(err)
 	}
 	for raw, want := range map[string]ApplicationJobSpecificationReviewDecision{
-		`{"decision":"accept"}`:                               ApplicationJobSpecificationReviewAccept,
-		`{"decision":"repair","field":"acceptance_criteria"}`: ApplicationJobSpecificationReviewRepair,
+		`{"decision":"accept"}`: ApplicationJobSpecificationReviewAccept,
+		`{"decision":"repair","field":"acceptance_criteria","finding":"The checks do not cover the required behavior.","finding_evidence":"Adding a channel displays"}`: ApplicationJobSpecificationReviewRepair,
 	} {
 		review, err := DecodeApplicationJobSpecificationReviewResult(job, raw)
 		if err != nil {
@@ -169,7 +180,7 @@ func TestApplicationJobSpecificationRepairReplacesExactlyOneTopLevelField(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	review, err := DecodeApplicationJobSpecificationReview(reviewInput, `{"decision":"repair","field":"required_behaviors"}`)
+	review, err := DecodeApplicationJobSpecificationReview(reviewInput, `{"decision":"repair","field":"required_behaviors","finding":"The behaviors do not state how users independently control a channel.","finding_evidence":"Users can add and remove mixer channels."}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,15 +193,23 @@ func TestApplicationJobSpecificationRepairReplacesExactlyOneTopLevelField(t *tes
 		t.Fatal(err)
 	}
 	for _, exact := range []string{
-		retained.Objective, retained.RequiredBehaviors[0],
-		`"user_authority"`, `"derived_candidate"`, `"target_derived_field"`,
+		retained.RequiredBehaviors[0], review.Finding, review.FindingEvidence,
+		`"user_authority"`, `"current_derived_value"`, `"target_derived_field"`,
+		`"review_finding"`, `"finding_evidence"`,
 		"Observable does not mean numeric",
 	} {
 		if !strings.Contains(prompt, exact) {
 			t.Fatalf("repair prompt omitted %q:\n%s", exact, prompt)
 		}
 	}
-	for _, forbidden := range []string{"exact_defect", "at least eight", "30 Hz"} {
+	for _, forbidden := range []string{
+		authority.ProductQuote,
+		authority.AcceptedRequirements[2].SourceQuote,
+		retained.Objective,
+		retained.AcceptanceCriteria[0],
+		"file_path",
+		"tool_catalog",
+	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("repair prompt exposed reviewer-authored authority %q:\n%s", forbidden, prompt)
 		}
@@ -217,6 +236,19 @@ func TestApplicationJobSpecificationRepairReplacesExactlyOneTopLevelField(t *tes
 	}
 	if reflect.DeepEqual(updated.RequiredBehaviors, retained.RequiredBehaviors) {
 		t.Fatal("repair did not replace its named field")
+	}
+	payload, err := newApplicationJobSpecificationRepairPortablePayload(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.ObservedValueSHA256) != 64 ||
+		payload.ObservedValueSHA256 != review.observedValueSHA256 {
+		t.Fatalf("portable repair omitted code-owned current-field binding: %+v", payload)
+	}
+	tampered := payload
+	tampered.ObservedValueSHA256 = strings.Repeat("0", 64)
+	if err := tampered.validate(); err == nil {
+		t.Fatal("portable repair accepted a current-field hash that did not match retained state")
 	}
 }
 
@@ -287,6 +319,8 @@ func TestApplicationJobSpecificationRepairRejectsNoOpRetargetAndAuthorityDrift(t
 	accepted := review
 	accepted.Decision = ApplicationJobSpecificationReviewAccept
 	accepted.Field = ""
+	accepted.Finding = ""
+	accepted.FindingEvidence = ""
 	if _, err := NewApplicationJobSpecificationRepairInput(authority, retained, accepted, 1); err == nil {
 		t.Fatal("constructed repair from accepted review")
 	}
@@ -304,8 +338,10 @@ func applicationJobSpecificationRepairReview(
 		t.Fatal(err)
 	}
 	raw, err := json.Marshal(map[string]string{
-		"decision": string(ApplicationJobSpecificationReviewRepair),
-		"field":    string(field),
+		"decision":         string(ApplicationJobSpecificationReviewRepair),
+		"field":            string(field),
+		"finding":          "The named field does not state the focused user action and observable result.",
+		"finding_evidence": applicationJobSpecificationReviewEvidenceForField(retained, field),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -315,4 +351,68 @@ func applicationJobSpecificationRepairReview(
 		t.Fatal(err)
 	}
 	return review
+}
+
+func TestApplicationJobSpecificationReviewRejectsEvidenceAbsentFromExactCurrentField(t *testing.T) {
+	t.Parallel()
+	authority := applicationJobSpecificationTestInput(1)
+	retained := applicationJobSpecificationTestValue()
+	input, err := NewApplicationJobSpecificationReviewInput(authority, retained, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = DecodeApplicationJobSpecificationReview(input, `{"decision":"repair","field":"objective","finding":"The objective includes an unrelated export capability.","finding_evidence":"export capability"}`)
+	var evidenceErr *ApplicationJobSpecificationReviewEvidenceError
+	if !errors.As(err, &evidenceErr) {
+		t.Fatalf("ungrounded reviewer evidence error=%T %v", err, err)
+	}
+	if evidenceErr.Field != ApplicationJobSpecificationObjectiveField ||
+		evidenceErr.FindingEvidence != "export capability" ||
+		len(evidenceErr.ObservedValueSHA256) != 64 ||
+		len(evidenceErr.RetainedAuthoritySHA256) != 64 {
+		t.Fatalf("evidence error=%+v", evidenceErr)
+	}
+
+	retry, err := NewApplicationJobSpecificationReviewRetryInput(
+		authority, retained, 2, *evidenceErr,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := BuildApplicationJobSpecificationReviewPrompt(retry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, exact := range []string{
+		`"prior_validation_failure"`, `"finding_evidence":"export capability"`,
+		retained.Objective, "does not occur in the exact current named field",
+	} {
+		if !strings.Contains(prompt, exact) {
+			t.Fatalf("review retry prompt omitted %q:\n%s", exact, prompt)
+		}
+	}
+
+	drifted := retained
+	drifted.AcceptanceCriteria = []string{"A different retained criterion."}
+	if _, err := NewApplicationJobSpecificationReviewRetryInput(
+		authority, drifted, 3, *evidenceErr,
+	); err == nil {
+		t.Fatal("review retry accepted a validation failure bound to different field state")
+	}
+}
+
+func applicationJobSpecificationReviewEvidenceForField(
+	retained ApplicationJobSpecification,
+	field ApplicationJobSpecificationField,
+) string {
+	switch field {
+	case ApplicationJobSpecificationObjectiveField:
+		return retained.Objective
+	case ApplicationJobSpecificationRequiredBehaviorsField:
+		return retained.RequiredBehaviors[0]
+	case ApplicationJobSpecificationAcceptanceCriteriaField:
+		return retained.AcceptanceCriteria[0]
+	default:
+		return ""
+	}
 }

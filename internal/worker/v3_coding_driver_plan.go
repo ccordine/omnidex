@@ -48,8 +48,15 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
+	applicationContext, err := assemblyline.BootstrapApplicationContext(
+		redacted, assemblyline.ApplicationWorkspaceEmpty, s.request.MemoryAuthorities,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	specification, err := runDirectCodingApplicationInterpreter(
-		workerRuntime, requirementModel, surfaceModel, artifactModel, redacted, identities,
+		workerRuntime, requirementModel, workloadReviewModel, surfaceModel, artifactModel,
+		redacted, applicationContext, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err

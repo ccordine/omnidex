@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -69,19 +68,42 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				},
 			}
 
-			resolution, err := interpretApplicationRequirements(runtime, modelName, testCase.request, nil)
+			applicationContext, err := assemblyline.BootstrapApplicationContext(
+				testCase.request, assemblyline.ApplicationWorkspaceEmpty, nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			applicationContext, err = resolveDirectCodingApplicationContext(
+				runtime, modelName, testCase.request, applicationContext, nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resolution, err := resolveDirectCodingApplicationIntent(
+				runtime, modelName, modelName,
+				assemblyline.ApplicationIntentInput{
+					UserRequest: testCase.request, Context: applicationContext,
+				}, nil,
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
 			assertLiveCodingRequirementResolution(t, testCase, resolution)
-			resolvedProduct = resolution.ProductQuote
+			resolvedProduct = resolution.ProductContext
 			resolvedFeatures = make([]string, 0, len(resolution.Requirements))
 			for _, requirement := range resolution.Requirements {
-				resolvedFeatures = append(resolvedFeatures, requirement.SourceQuote)
+				resolvedFeatures = append(resolvedFeatures, requirement.Statement)
+			}
+			compiledRequirements := make([]assemblyline.Requirement, len(resolution.Requirements))
+			for index, requirement := range resolution.Requirements {
+				compiledRequirements[index] = assemblyline.Requirement{
+					ID: requirement.ID, SourceQuote: requirement.Statement,
+				}
 			}
 			input := assemblyline.ApplicationWorkloadDraftInput{
 				Surface:      assemblyline.ApplicationSurfaceBrowser,
-				ProductQuote: resolution.ProductQuote, Requirements: resolution.Requirements,
+				ProductQuote: resolution.ProductContext, Requirements: compiledRequirements,
 			}
 			frozen, err := resolveDirectCodingApplicationWorkload(runtime, modelName, modelName, input)
 			if err != nil {
@@ -90,11 +112,11 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 			if err := assemblyline.ValidateFrozenApplicationWorkload(input, frozen); err != nil {
 				t.Fatalf("frozen workload rejected: %v", err)
 			}
-			if len(frozen.Tasks) != len(testCase.features) {
-				t.Fatalf("frozen tasks=%d want=%d", len(frozen.Tasks), len(testCase.features))
+			if len(frozen.Tasks) < 1 || len(frozen.Tasks) > 10 {
+				t.Fatalf("frozen tasks=%d outside front-door bounds", len(frozen.Tasks))
 			}
 			calls := transport.callsFrom(start)
-			assertLiveCodingQualificationCalls(t, calls, len(testCase.features))
+			assertLiveCodingQualificationCalls(t, calls, len(frozen.Tasks))
 			logLiveCodingQualification(t, testCase.name, modelName, frozen.SHA256, calls)
 		})
 	}
@@ -123,20 +145,14 @@ func liveCodingQualificationCases() []liveCodingQualificationCase {
 func assertLiveCodingRequirementResolution(
 	t *testing.T,
 	testCase liveCodingQualificationCase,
-	resolution assemblyline.ApplicationRequirementResolution,
+	resolution assemblyline.ApplicationIntentResolution,
 ) {
 	t.Helper()
-	want := make([]assemblyline.Requirement, len(testCase.features))
-	for index, feature := range testCase.features {
-		want[index] = assemblyline.Requirement{
-			ID: fmt.Sprintf("requirement_%03d", index+1), SourceQuote: feature,
-		}
-	}
-	if !strings.Contains(testCase.request, resolution.ProductQuote) ||
-		!reflect.DeepEqual(resolution.Requirements, want) {
+	if strings.TrimSpace(resolution.ProductContext) == "" ||
+		len(resolution.Requirements) < 1 || len(resolution.Requirements) > 10 {
 		t.Fatalf(
-			"grounded requirement resolution differs from frozen semantic labels: product=%q requirements=%+v want_requirements=%+v",
-			resolution.ProductQuote, resolution.Requirements, want,
+			"reviewed semantic intent is incomplete: product=%q requirements=%+v",
+			resolution.ProductContext, resolution.Requirements,
 		)
 	}
 }
@@ -149,13 +165,27 @@ func validateLiveCodingQualificationProjection(
 	resolvedFeatures []string,
 ) error {
 	switch job.Kind {
-	case assemblyline.WorkApplicationRequirements:
-		var input assemblyline.ApplicationRequirementInterpretationInput
+	case assemblyline.WorkApplicationContextNeeds:
+		var input assemblyline.ApplicationContextNeedInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return err
 		}
 		if input.UserRequest != testCase.request || strings.Count(prompt, testCase.request) != 1 {
-			return fmt.Errorf("requirements station did not receive one intact request")
+			return fmt.Errorf("context-needs station did not receive one intact request")
+		}
+		return nil
+	case assemblyline.WorkApplicationIntent:
+		var input assemblyline.ApplicationIntentInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		if input.UserRequest != testCase.request || strings.Count(prompt, testCase.request) != 1 {
+			return fmt.Errorf("intent station did not receive one intact request")
+		}
+		return nil
+	case assemblyline.WorkApplicationIntentReview, assemblyline.WorkApplicationIntentRepair:
+		if !strings.Contains(prompt, testCase.request) {
+			return fmt.Errorf("intent convergence station omitted immutable request authority")
 		}
 		return nil
 	case assemblyline.WorkApplicationJobSpecification,

@@ -105,6 +105,7 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	qwen3NativeTokenizerProfileCount := 0
 	legacyCoderTokenizerProfileCount := 0
 	codingFragmentRepairGuidanceCount := 0
+	applicationFrontDoorStationCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -229,9 +230,12 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == codingFragmentRepairGuidanceMigration {
 			codingFragmentRepairGuidanceCount++
 		}
+		if entry.name == applicationFrontDoorStationMigration {
+			applicationFrontDoorStationCount++
+		}
 	}
-	if len(bundle.entries) != 156 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 156/%d",
+	if len(bundle.entries) != 157 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 157/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -302,8 +306,9 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		stationPromptTransportCount != 1 || acceptanceGroundingReviewStationCount != 1 ||
 		stationResponseSchemaResourceCount != 1 || codingWorkloadReviewStationCount != 1 ||
 		qwen25CoderTokenizerProfileCount != 1 || qwen3NativeTokenizerProfileCount != 1 ||
-		legacyCoderTokenizerProfileCount != 1 || codingFragmentRepairGuidanceCount != 1 {
-		t.Fatalf("checked migrations 089..105 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
+		legacyCoderTokenizerProfileCount != 1 || codingFragmentRepairGuidanceCount != 1 ||
+		applicationFrontDoorStationCount != 1 {
+		t.Fatalf("checked migrations 089..106 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			scrumChannelMessageRelationCount, scrumChannelOperationReceiptsCount,
 			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count,
 			tokenizerProfileAuthorityCount, stationOutputProjectionCount,
@@ -311,6 +316,6 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 			acceptanceGroundingReviewStationCount, stationResponseSchemaResourceCount,
 			codingWorkloadReviewStationCount, qwen25CoderTokenizerProfileCount,
 			qwen3NativeTokenizerProfileCount, legacyCoderTokenizerProfileCount,
-			codingFragmentRepairGuidanceCount)
+			codingFragmentRepairGuidanceCount, applicationFrontDoorStationCount)
 	}
 }

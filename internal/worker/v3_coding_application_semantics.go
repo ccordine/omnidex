@@ -8,14 +8,22 @@ import (
 
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
-	requirementModel string,
+	intentModel string,
+	reviewModel string,
 	surfaceModel string,
 	artifactModel string,
 	authority string,
+	applicationContext assemblyline.ApplicationContext,
 	identities []assemblyline.ArtifactIdentity,
 ) (assemblyline.ApplicationSpecification, error) {
 	var zero assemblyline.ApplicationSpecification
 
+	formalizedContext, err := resolveDirectCodingApplicationContext(
+		runtime, intentModel, authority, applicationContext, identities,
+	)
+	if err != nil {
+		return zero, err
+	}
 	classification, err := classifyApplicationSurface(runtime, surfaceModel, authority, identities)
 	if err != nil {
 		return zero, err
@@ -26,8 +34,12 @@ func runDirectCodingApplicationInterpreter(
 			classification.Surface,
 		)
 	}
-	resolution, err := interpretApplicationRequirements(
-		runtime, requirementModel, authority, identities,
+	resolution, err := resolveDirectCodingApplicationIntent(
+		runtime, intentModel, reviewModel,
+		assemblyline.ApplicationIntentInput{
+			UserRequest: authority, Context: formalizedContext,
+		},
+		identities,
 	)
 	if err != nil {
 		return zero, err
@@ -36,9 +48,15 @@ func runDirectCodingApplicationInterpreter(
 	if err != nil {
 		return zero, err
 	}
+	requirements := make([]assemblyline.Requirement, len(resolution.Requirements))
+	for index, requirement := range resolution.Requirements {
+		requirements[index] = assemblyline.Requirement{
+			ID: requirement.ID, SourceQuote: requirement.Statement,
+		}
+	}
 	specification := assemblyline.ApplicationSpecification{
-		Surface: classification.Surface, ProductQuote: resolution.ProductQuote,
-		Requirements: resolution.Requirements, Artifacts: artifacts,
+		Surface: classification.Surface, ProductQuote: resolution.ProductContext,
+		Requirements: requirements, Artifacts: artifacts,
 	}
 	if err := specification.Validate(); err != nil {
 		return zero, err
@@ -61,31 +79,4 @@ func classifyApplicationSurface(
 		runtime, modelName, "application_surface", job, identities,
 		func(value assemblyline.ApplicationClassification) error { return value.Validate() },
 	)
-}
-
-func interpretApplicationRequirements(
-	runtime typedWorkerRuntime,
-	modelName string,
-	authority string,
-	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.ApplicationRequirementResolution, error) {
-	var zero assemblyline.ApplicationRequirementResolution
-	input := assemblyline.ApplicationRequirementInterpretationInput{UserRequest: authority}
-	job, err := assemblyline.NewApplicationRequirementInterpretationJob(input)
-	if err != nil {
-		return zero, err
-	}
-	oneCallRuntime := runtime
-	oneCallRuntime.MaxAttempts = 1
-	interpretation, err := runDirectCodingSemanticCall[assemblyline.ApplicationRequirementInterpretation](
-		oneCallRuntime, modelName, "application_requirements", job, identities,
-		func(value assemblyline.ApplicationRequirementInterpretation) error {
-			_, validationErr := assemblyline.ResolveApplicationRequirements(input, value)
-			return validationErr
-		},
-	)
-	if err != nil {
-		return zero, err
-	}
-	return assemblyline.ResolveApplicationRequirements(input, interpretation)
 }

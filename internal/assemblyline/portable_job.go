@@ -29,7 +29,10 @@ const (
 type WorkKind string
 
 const (
-	WorkApplicationRequirements              WorkKind = "application_requirements"
+	WorkApplicationContextNeeds              WorkKind = "application_context_needs"
+	WorkApplicationIntent                    WorkKind = "application_intent"
+	WorkApplicationIntentReview              WorkKind = "application_intent_review"
+	WorkApplicationIntentRepair              WorkKind = "application_intent_repair"
 	WorkApplicationJobSpecification          WorkKind = "application_job_specification"
 	WorkApplicationJobSpecificationReview    WorkKind = "application_job_specification_review"
 	WorkApplicationJobSpecificationRepair    WorkKind = "application_job_specification_repair"
@@ -250,7 +253,9 @@ func decodePortablePayload(payload []byte, target any) error {
 
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
-	case WorkApplicationClassify, WorkApplicationRequirements,
+	case WorkApplicationContextNeeds, WorkApplicationIntent,
+		WorkApplicationIntentReview, WorkApplicationIntentRepair,
+		WorkApplicationClassify,
 		WorkApplicationJobSpecification, WorkApplicationJobSpecificationReview,
 		WorkApplicationJobSpecificationRepair, WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
@@ -274,7 +279,9 @@ func validWorkKind(kind WorkKind) bool {
 // it to prove exhaustive station mappings without inventing string routing.
 func AllWorkKinds() []WorkKind {
 	return []WorkKind{
-		WorkApplicationClassify, WorkApplicationRequirements,
+		WorkApplicationContextNeeds, WorkApplicationIntent,
+		WorkApplicationIntentReview, WorkApplicationIntentRepair,
+		WorkApplicationClassify,
 		WorkApplicationJobSpecification, WorkApplicationJobSpecificationReview,
 		WorkApplicationJobSpecificationRepair, WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,

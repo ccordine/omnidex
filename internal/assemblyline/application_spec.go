@@ -39,6 +39,10 @@ type ApplicationSpecification struct {
 	Artifacts    []ArtifactDirective
 }
 
+func validateApplicationProductQuote(label, value string) error {
+	return validateApplicationIntentText(label, value, maxApplicationProductBytes)
+}
+
 func (classification ApplicationClassification) Validate() error {
 	if classification.Schema != ApplicationClassificationSchemaV1 {
 		return fmt.Errorf("application classification schema must be %q", ApplicationClassificationSchemaV1)

@@ -15,20 +15,6 @@ func BuildApplicationClassificationPrompt(input ApplicationClassificationInput) 
 	}, "\n\n"), nil
 }
 
-func BuildApplicationRequirementInterpretationPrompt(
-	input ApplicationRequirementInterpretationInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	return strings.Join([]string{
-		"Extract the explicit product and requested features from one intact software request.",
-		"Return exactly one product item whose source_quote is the shortest exact contiguous quote naming what is being built. Return between one and ten feature items covering every explicitly requested capability, behavior, user-visible element, or constraint. Each source_quote must be the shortest exact contiguous source text that preserves its meaningful action and modifiers.",
-		"Never paraphrase, infer an unstated requirement, merge unrelated requirements, classify the delivery surface, design architecture, create tasks, choose files, or implement anything.",
-		"CURRENT_REQUEST:\n" + input.UserRequest,
-	}, "\n\n"), nil
-}
-
 func BuildRepositoryRequirementInterpretationPrompt(
 	input RepositoryRequirementInterpretationInput,
 ) (string, error) {

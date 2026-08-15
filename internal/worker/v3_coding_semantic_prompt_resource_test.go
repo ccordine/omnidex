@@ -15,11 +15,18 @@ import (
 func TestPortableSemanticDispatchDoesNotInventSixteenKiBPromptCeiling(t *testing.T) {
 	t.Parallel()
 
-	t.Run("application requirements", func(t *testing.T) {
+	t.Run("application intent", func(t *testing.T) {
 		t.Parallel()
-		job, err := assemblyline.NewApplicationRequirementInterpretationJob(
-			assemblyline.ApplicationRequirementInterpretationInput{
-				UserRequest: "Build an application described by " + strings.Repeat("x", 20*1024),
+		request := "Build an application described by " + strings.Repeat("x", 20*1024)
+		applicationContext, err := assemblyline.BootstrapApplicationContext(
+			request, assemblyline.ApplicationWorkspaceEmpty, nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := assemblyline.NewApplicationIntentJob(
+			assemblyline.ApplicationIntentInput{
+				UserRequest: request, Context: applicationContext,
 			},
 		)
 		if err != nil {
@@ -41,13 +48,13 @@ func TestPortableSemanticDispatchDoesNotInventSixteenKiBPromptCeiling(t *testing
 			},
 		}
 		if _, err := runDirectCodingSemanticCall[map[string]any](
-			runtime, "semantic", "large_application_requirements", job, nil,
+			runtime, "semantic", "large_application_intent", job, nil,
 			func(map[string]any) error { return nil },
 		); err != nil {
 			t.Fatal(err)
 		}
 		if !dispatched {
-			t.Fatal("large application requirements were not dispatched")
+			t.Fatal("large application intent was not dispatched")
 		}
 	})
 

@@ -152,10 +152,24 @@ func replayExactStationArtifact(
 		StartByte: 0, EndByte: len(raw),
 	}
 	switch job.Kind {
-	case assemblyline.WorkApplicationRequirements:
-		artifact.Kind = "application_requirements"
-		if _, err := assemblyline.DecodeApplicationRequirementInterpretationResult(job, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay application requirements: %w", err)
+	case assemblyline.WorkApplicationContextNeeds:
+		artifact.Kind = "application_context_needs"
+		var input assemblyline.ApplicationContextNeedInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return artifact, fmt.Errorf("decode replay application context authority: %w", err)
+		}
+		if _, err := assemblyline.DecodeApplicationContextNeedDecision(input, raw); err != nil {
+			return artifact, fmt.Errorf("decode replay application context needs: %w", err)
+		}
+		return artifact, nil
+	case assemblyline.WorkApplicationIntent:
+		artifact.Kind = "application_intent"
+		var input assemblyline.ApplicationIntentInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return artifact, fmt.Errorf("decode replay application intent authority: %w", err)
+		}
+		if _, err := assemblyline.DecodeApplicationIntentCandidate(input, raw); err != nil {
+			return artifact, fmt.Errorf("decode replay application intent: %w", err)
 		}
 		return artifact, nil
 	case assemblyline.WorkApplicationJobSpecification:

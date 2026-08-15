@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestApplicationRequirementsCutoverRemovesIterativePartitionSource(t *testing.T) {
+func TestApplicationFrontDoorCutoverRemovesQuoteGateAndIterativePartitionSource(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..")
 	for _, name := range []string{
@@ -17,7 +17,10 @@ func TestApplicationRequirementsCutoverRemovesIterativePartitionSource(t *testin
 		"internal/assemblyline/requirement_projection.go",
 		"internal/assemblyline/requirement_quote_validation.go",
 		"internal/assemblyline/requirement_residual.go",
+		"internal/assemblyline/application_requirements.go",
+		"internal/assemblyline/application_requirements_portable.go",
 		"internal/worker/v3_coding_requirement_partition.go",
+		"internal/worker/application_requirement_single_call_test.go",
 	} {
 		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
 			t.Errorf("retired iterative requirement source still exists: %s", name)
@@ -55,6 +58,14 @@ func TestApplicationRequirementsCutoverRemovesIterativePartitionSource(t *testin
 		"partitionCodingRequirements",
 		"requirementExtractionCandidates",
 		"BuildRequirementResidual",
+		"WorkApplicationRequirements",
+		"ApplicationRequirementInterpretation",
+		"ApplicationRequirementInterpretationInput",
+		"ApplicationRequirementInterpretationSchemaV1",
+		"ResolveApplicationRequirements",
+		"NewApplicationRequirementInterpretationJob",
+		"DecodeApplicationRequirementInterpretationResult",
+		"omnidex.application-requirements.v1",
 	}
 	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

@@ -30,9 +30,15 @@ func StationForPortableJob(job assemblyline.PortableJob) (station.ID, error) {
 
 func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) {
 	switch kind {
+	case assemblyline.WorkApplicationContextNeeds,
+		assemblyline.WorkApplicationIntent,
+		assemblyline.WorkApplicationIntentRepair:
+		return station.CodingRequirements, nil
+	case assemblyline.WorkApplicationIntentReview:
+		return station.CodingWorkloadReview, nil
 	case assemblyline.WorkApplicationClassify:
 		return station.CodingSurface, nil
-	case assemblyline.WorkApplicationRequirements, assemblyline.WorkRepositoryRequirements:
+	case assemblyline.WorkRepositoryRequirements:
 		return station.CodingRequirements, nil
 	case assemblyline.WorkApplicationJobSpecification,
 		assemblyline.WorkApplicationJobSpecificationRepair,

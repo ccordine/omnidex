@@ -31,6 +31,39 @@ execute, seal, and recover with no provider configured or contacted and with no
 fabricated provider-bootstrap, activation, projection, or call evidence. Encountering
 a named uncertainty without its required provider authority fails explicitly.
 
+## Application front-door closure
+
+An ordinary coding request enters this same resolver contract. Code first hashes the
+immutable request and bootstraps facts it can establish exactly: whether the workspace
+is empty or existing, bounded accepted durable-memory authorities, and any verified
+repository, runtime, or external evidence already acquired by registered providers.
+It never asks a model what files exist, which command to run, or which provider to use.
+
+Only after deterministic bootstrap may a context-sufficiency station identify zero
+through three unanswered semantic evidence questions. Its output is a question set,
+not an action set. Code maps each question to a registered evidence class, invokes the
+deterministic provider with code-owned arguments, validates the result, and records a
+compact fact with source identity and digest. Provider transcripts and broad search
+results are not planning context. If no provider owns a required question, resolution
+fails loudly. The promoted fresh-workspace vertical accepts only the zero-question
+transition until additional provider mappings are proven in production.
+
+Intent interpretation occurs only after that closure. The intent candidate contains
+one product context and bounded semantic requirement statements, each ultimately bound
+to the immutable request digest. Authority does not depend on reproducing a contiguous
+substring or allocating non-overlapping text intervals. An independent reviewer either
+accepts the retained candidate or names one defective leaf and one finding. A separate
+correction call can return only that leaf; code merges it, rejects no-op or repeated
+state, and reruns review. Neither station sees an operation catalog, repository tree,
+path, task graph, or completion control.
+
+For job-specification review, a repair finding also carries one verbatim excerpt from
+the exact current named field. Code validates that excerpt, hashes the observed field,
+and revalidates both field and whole-state bindings before repair dispatch. An excerpt
+absent from the current field triggers another review of unchanged authoritative state;
+repair is not invoked, and a repeated invalid diagnostic is an explicit cycle failure.
+This is diagnostic-to-state grounding, not natural-language interpretation by substring.
+
 ## Autonomous substrate and subjective meaning
 
 Turning inference off must not stop the world. Code-owned systems continue sensing,

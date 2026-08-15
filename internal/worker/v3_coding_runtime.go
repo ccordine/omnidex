@@ -14,6 +14,7 @@ type directCodingRequest struct {
 	Instruction         string
 	AdditionalAuthority []string
 	Feedback            []string
+	MemoryAuthorities   []assemblyline.ObjectiveMemoryAuthority
 }
 
 type directCodingSession struct {
