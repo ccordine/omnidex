@@ -15,12 +15,19 @@ func TestQwen35ProfileAcceptsClosedEquivalentParameterOrderVariants(t *testing.T
 		"top_k                          20\\ntop_p                          0.95\\npresence_penalty               1.5\\ntemperature                    1",
 		1,
 	)
+	installedQwen9 := strings.Replace(
+		exactProviderQwen35Show,
+		"temperature                    1\\ntop_k                          20\\ntop_p                          0.95\\npresence_penalty               1.5",
+		"presence_penalty               1.5\\ntemperature                    1\\ntop_k                          20\\ntop_p                          0.95",
+		1,
+	)
 	shows := []struct {
 		model string
 		show  string
 	}{
 		{model: "opaque-planner-alpha:local", show: exactProviderQwen35Show},
 		{model: "unrelated-reviewer-beta:local", show: reordered},
+		{model: "installed-worker-gamma:local", show: installedQwen9},
 	}
 
 	if got, want := exactParameterAssignments(t, shows[0].show), exactParameterAssignments(t, shows[1].show); !reflect.DeepEqual(got, want) {
@@ -48,17 +55,17 @@ func TestQwen35ProfileAcceptsClosedEquivalentParameterOrderVariants(t *testing.T
 		}
 	}
 
-	unregisteredOrder := strings.Replace(
+	changedAssignment := strings.Replace(
 		exactProviderQwen35Show,
 		"temperature                    1\\ntop_k                          20\\ntop_p                          0.95\\npresence_penalty               1.5",
-		"temperature                    1\\ntop_p                          0.95\\ntop_k                          20\\npresence_penalty               1.5",
+		"presence_penalty               1.5\\ntemperature                    1\\ntop_k                          20\\ntop_p                          0.94",
 		1,
 	)
 	selection, evidence := exactProviderProfileEvidence(
-		t, "third-opaque-identity:local", unregisteredOrder,
+		t, "changed-qwen-parameter:local", changedAssignment,
 	)
 	if _, err := DeriveExactProviderIdentityExpectation(evidence, selection); err == nil {
-		t.Fatal("unregistered parameter ordering was accepted outside the closed profile")
+		t.Fatal("changed qwen parameter assignment was accepted outside the closed profile")
 	}
 }
 

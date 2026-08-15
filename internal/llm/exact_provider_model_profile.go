@@ -45,6 +45,7 @@ type exactProviderModelProfile struct {
 	absentAdd             []string
 	templateSHA256        string
 	parameterSHA256s      []string
+	parameterAssignments  map[string]string
 	transport             exactPreparedTransport
 	requestTemperature    float64
 	requestTemperatureSet bool
@@ -58,9 +59,11 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		explicitAdd:    map[string]bool{"tokenizer.ggml.add_eos_token": false, "tokenizer.ggml.add_padding_token": false},
 		absentAdd:      []string{"tokenizer.ggml.add_bos_token"},
 		templateSHA256: "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
-		parameterSHA256s: []string{
-			"ca0b0a53ea0ebb617fd0c6d8d2b69bf4b2c65fb8a1af62c7ed69507993cf3ca7",
-			"6290a4f3b88445e37918439f7730e11dfb1e5f5012138755a4c705a4aebe3185",
+		parameterAssignments: map[string]string{
+			"presence_penalty": "1.5",
+			"temperature":      "1",
+			"top_k":            "20",
+			"top_p":            "0.95",
 		},
 		transport: exactPreparedTransportRaw, requestTemperature: 0, requestTemperatureSet: true,
 	},
@@ -217,13 +220,43 @@ func (profile exactProviderModelProfile) matches(
 	tokenizerModel string,
 	tokenizerPre string,
 ) bool {
+	parametersMatch := slices.Contains(profile.parameterSHA256s, exactProfileSHA256(response.Parameters))
+	if len(profile.parameterAssignments) > 0 {
+		parametersMatch = exactParameterAssignmentsMatch(response.Parameters, profile.parameterAssignments)
+	}
 	if architecture != profile.architecture || tokenizerModel != profile.tokenizerModel ||
 		tokenizerPre != profile.tokenizerPre || !slices.Equal(response.Capabilities, profile.capabilities) ||
 		exactProfileSHA256(response.Template) != profile.templateSHA256 ||
-		!slices.Contains(profile.parameterSHA256s, exactProfileSHA256(response.Parameters)) {
+		!parametersMatch {
 		return false
 	}
 	return exactTokenizerBoundariesMatch(response.ModelInfo, profile.explicitAdd, profile.absentAdd)
+}
+
+func exactParameterAssignmentsMatch(parameters string, expected map[string]string) bool {
+	if parameters == "" || parameters != strings.TrimSpace(parameters) {
+		return false
+	}
+	actual := make(map[string]string, len(expected))
+	for _, line := range strings.Split(parameters, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || fields[0] == "" || fields[1] == "" {
+			return false
+		}
+		if _, exists := actual[fields[0]]; exists {
+			return false
+		}
+		actual[fields[0]] = fields[1]
+	}
+	if len(actual) != len(expected) {
+		return false
+	}
+	for key, want := range expected {
+		if actual[key] != want {
+			return false
+		}
+	}
+	return true
 }
 
 func exactProviderModelProfileByID(id string) (exactProviderModelProfile, error) {
