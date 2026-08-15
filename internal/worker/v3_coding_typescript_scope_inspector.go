@@ -73,7 +73,7 @@ func inspectDirectCodingTypeScriptScope(
 	if err != nil {
 		return directCodingTypeScriptScope{}, fmt.Errorf("inspect TypeScript compiler scope: %w\n%s", err, trimForBudget(output, 12_000))
 	}
-	bindings, err := decodeDirectCodingTypeScriptScopeReceipt([]byte(output))
+	scope, err := decodeDirectCodingTypeScriptScopeReceipt([]byte(output))
 	if err != nil {
 		return directCodingTypeScriptScope{}, err
 	}

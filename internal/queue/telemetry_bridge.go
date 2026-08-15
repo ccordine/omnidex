@@ -111,7 +111,7 @@ func isTelemetryOpsEvent(eventType string) bool {
 		"verify_consensus", "verify_test_start", "verify_test_pass", "verify_test_fail",
 		"step_complete", "run_completed", "tool_call_begin", "tool_call_complete",
 		"plan_candidate_ready", "plan_selected",
-		"coding_fragment_correction_started":
+		"coding_fragment_repair_guidance_started", "coding_fragment_correction_started":
 		return true
 	}
 	return false

@@ -24,14 +24,15 @@ second channel. Framework documents two SODIMM slots and support for up to
 
 ## Authoritative two-tier profile
 
-Use one stable model for authoritative small semantic stations and one coding
-model for raw declaration generation and correction:
+Use one stable model for authoritative small semantic stations, one independently
+routed reasoning model for repair guidance, and one coding model for raw declaration
+generation and instruction-only repair execution:
 
 ```dotenv
 # Each named semantic station has its own explicit route.
-OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=deepseek-r1:8b
-OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_FRAGMENT_MODEL=qwen2.5-coder:7b
+OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b
+OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen2.5-coder:7b
 
 INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
@@ -49,9 +50,11 @@ experiment. The separate passive objective advisory defaults to `off` and curren
 uses the exact-compatible Qwen route when explicitly set to `shadow` or `active`.
 It returns plain text only after grounding and cannot plan, mutate, or complete work.
 
-Qwen 3.5 9B is the practical semantic choice because its Q4_K_M Ollama image is
+Qwen 3.5 9B is the practical structured repair-analysis choice because its Q4_K_M Ollama image is
 6.6 GB and Qwen publishes strong instruction following, tool-use, and coding
-results for the 9B checkpoint. DeepSeek R1 8B is restricted to the two
+results for the 9B checkpoint. Qwen 2.5 Coder 7B owns raw fragment generation
+and instruction-only repair execution because the live two-fixture compiler
+qualification terminated promptly and compiled both guided edits. DeepSeek R1 8B is restricted to the two
 independent evidence-review stations; it does not plan, synthesize, correct, or
 select repository operations. Qwen3-Coder 30B is a 30.5B-total, 3.3B-active MoE
 trained primarily on code and is non-thinking by design, which fits Omnidex's
@@ -64,6 +67,51 @@ Primary model sources:
 - https://ollama.com/library/deepseek-r1
 - https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct
 - https://ollama.com/library/qwen3-coder
+
+## Live guided-repair qualification
+
+The checked-in opt-in qualification is an isolated framework-primitive test,
+not an autonomy benchmark. On 2026-08-15 it sent three real TypeScript compiler
+scenarios through the production repair-guidance renderer, the separate
+instruction-only executor renderer, code-owned AST replacement, and the pinned
+TypeScript compiler. The third scenario proves iterative convergence: it began
+with two compiler errors, the first guided repair reduced that set to one, the
+remaining compiler failure produced a new guidance/execution pair, and the
+second repair compiled cleanly.
+
+| Failure class | Guidance tokens in/out | Executor tokens in/out | Compiler result |
+| --- | ---: | ---: | --- |
+| nested lexical scope | 468 / 35 | 160 / 40 | 1 -> 0 |
+| incompatible local value | 356 / 35 | 121 / 9 | 1 -> 0 |
+| successive failures, iteration 1 | 373 / 36 | 122 / 9 | 2 -> 1 |
+| successive failures, iteration 2 | 373 / 30 | 117 / 9 | 1 -> 0 |
+
+The exact prepared requests, raw provider bodies, provider-identity evidence,
+instructions, candidates, and compiler receipts are retained in
+[`evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl`](evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl)
+(SHA-256 `c1970966b4d47194787b528f624d602248d5653a13eb6fd64b54a3d9b799b78c`).
+The synthetic frozen source points in that report were not dispatched; only the
+derived guidance and execution jobs were model calls.
+
+The qualification also rejected two prior routes loudly. `deepseek-r1:8b`
+requires native thinking and cannot accept this station's closed structured
+response contract. The `qwen3.5:9b-q4_K_M` alias could not be attested as the
+active canonical runner, and canonical Qwen 3.5 raw execution then ran for more
+than six minutes without terminating a tiny edit. Neither remains a coding
+repair default.
+
+Re-run the qualification with:
+
+```bash
+OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
+OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
+OMNIDEX_TEST_TYPESCRIPT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b \
+OMNIDEX_TEST_TYPESCRIPT_REPAIR_EXECUTOR_MODEL=qwen2.5-coder:7b \
+OMNIDEX_TEST_TYPESCRIPT_REPAIR_REPORT=/tmp/guided-repair.jsonl \
+go test ./internal/worker \
+  -run '^TestLiveTypeScriptGuidanceExecutorCompilerConvergence$' \
+  -count=1 -v -timeout=15m
+```
 
 ## Local measurements
 
@@ -99,6 +147,8 @@ Run the same exact load check after any model, context, backend, or memory chang
 
 ```bash
 omni ollama:prewarm --model qwen3-coder:30b --num-ctx 16384 --json
+omni ollama:prewarm --model qwen3.5:9b --num-ctx 8192 --json
+omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
 omni ollama:prewarm --model deepseek-r1:8b --num-ctx 16384 --json
 ```
 

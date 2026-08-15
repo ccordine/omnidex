@@ -104,6 +104,7 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	qwen25CoderTokenizerProfileCount := 0
 	qwen3NativeTokenizerProfileCount := 0
 	legacyCoderTokenizerProfileCount := 0
+	codingFragmentRepairGuidanceCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -225,9 +226,12 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == legacyCoderTokenizerProfileMigration {
 			legacyCoderTokenizerProfileCount++
 		}
+		if entry.name == codingFragmentRepairGuidanceMigration {
+			codingFragmentRepairGuidanceCount++
+		}
 	}
-	if len(bundle.entries) != 155 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 155/%d",
+	if len(bundle.entries) != 156 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 156/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -298,14 +302,15 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		stationPromptTransportCount != 1 || acceptanceGroundingReviewStationCount != 1 ||
 		stationResponseSchemaResourceCount != 1 || codingWorkloadReviewStationCount != 1 ||
 		qwen25CoderTokenizerProfileCount != 1 || qwen3NativeTokenizerProfileCount != 1 ||
-		legacyCoderTokenizerProfileCount != 1 {
-		t.Fatalf("checked migrations 089..104 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
+		legacyCoderTokenizerProfileCount != 1 || codingFragmentRepairGuidanceCount != 1 {
+		t.Fatalf("checked migrations 089..105 counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			scrumChannelMessageRelationCount, scrumChannelOperationReceiptsCount,
 			retiredExecutionAuthorityCount, portableRendererV2Count, portableRendererV3Count,
 			tokenizerProfileAuthorityCount, stationOutputProjectionCount,
 			stationOutputLimitModeCount, stationPromptTransportCount,
 			acceptanceGroundingReviewStationCount, stationResponseSchemaResourceCount,
 			codingWorkloadReviewStationCount, qwen25CoderTokenizerProfileCount,
-			qwen3NativeTokenizerProfileCount, legacyCoderTokenizerProfileCount)
+			qwen3NativeTokenizerProfileCount, legacyCoderTokenizerProfileCount,
+			codingFragmentRepairGuidanceCount)
 	}
 }

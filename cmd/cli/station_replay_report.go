@@ -17,7 +17,7 @@ import (
 )
 
 const stationReplayReportSchema = "omnidex.station-replay-report.v1"
-const stationConvergenceReportSchema = "omnidex.station-convergence-report.v1"
+const stationConvergenceReportSchema = "omnidex.guided-typescript-convergence-report.v1"
 const stationCurrentContractReplayReportSchema = "omnidex.station-current-contract-replay-report.v1"
 const stationSpecificationConvergenceReportSchema = "omnidex.application-job-specification-convergence-report.v1"
 
@@ -30,13 +30,16 @@ type stationReplayReportHeader struct {
 	SourceGapOpening            queue.StationGapOpening  `json:"source_gap_opening"`
 	Models                      []string                 `json:"models"`
 	Timeout                     string                   `json:"timeout"`
+	GuidanceModel               string                   `json:"guidance_model,omitempty"`
 	ReviewModel                 string                   `json:"review_model,omitempty"`
 }
 
 type stationConvergenceIterationEvidence struct {
-	Number                        int                          `json:"number"`
-	ProviderResponseCaptureBase64 string                       `json:"provider_response_capture_base64"`
-	ProviderIdentityEvidence      llm.ProviderIdentityEvidence `json:"provider_identity_evidence"`
+	Number                                int                          `json:"number"`
+	GuidanceProviderResponseCaptureBase64 string                       `json:"guidance_provider_response_capture_base64"`
+	GuidanceProviderIdentityEvidence      llm.ProviderIdentityEvidence `json:"guidance_provider_identity_evidence"`
+	ExecutorProviderResponseCaptureBase64 string                       `json:"executor_provider_response_capture_base64"`
+	ExecutorProviderIdentityEvidence      llm.ProviderIdentityEvidence `json:"executor_provider_identity_evidence"`
 }
 
 type stationConvergenceReportRun struct {
@@ -115,9 +118,15 @@ func newStationConvergenceReportRun(
 	}
 	for _, iteration := range convergence.Iterations {
 		run.Evidence = append(run.Evidence, stationConvergenceIterationEvidence{
-			Number:                        iteration.Number,
-			ProviderResponseCaptureBase64: stationReplayBase64(iteration.Replay.Generation.ProviderResponseCapture),
-			ProviderIdentityEvidence:      iteration.Replay.Generation.ProviderIdentityEvidence,
+			Number: iteration.Number,
+			GuidanceProviderResponseCaptureBase64: stationReplayBase64(
+				iteration.GuidanceReplay.Generation.ProviderResponseCapture,
+			),
+			GuidanceProviderIdentityEvidence: iteration.GuidanceReplay.Generation.ProviderIdentityEvidence,
+			ExecutorProviderResponseCaptureBase64: stationReplayBase64(
+				iteration.ExecutionReplay.Generation.ProviderResponseCapture,
+			),
+			ExecutorProviderIdentityEvidence: iteration.ExecutionReplay.Generation.ProviderIdentityEvidence,
 		})
 	}
 	return run
@@ -161,16 +170,24 @@ func printStationSpecificationConvergenceRun(run stationSpecificationConvergence
 func printStationConvergenceRun(run stationConvergenceReportRun) {
 	for _, iteration := range run.Convergence.Iterations {
 		fmt.Printf(
-			"convergence model=%s iteration=%d wall_ms=%d prompt_tokens=%d output_tokens=%d artifact_bytes=%d diagnostics_after=%s progress=%q artifact_error=%q\n",
-			run.Convergence.Model, iteration.Number, iteration.Replay.WallDuration.Milliseconds(),
-			iteration.Replay.Generation.Usage.PromptEvalCount, iteration.Replay.Generation.Usage.EvalCount,
-			len(iteration.Replay.Artifact.Source), stationConvergenceDiagnosticSummary(iteration),
-			stationConvergenceProgressSummary(iteration), iteration.ArtifactError,
+			"guided_convergence guidance_model=%s executor_model=%s iteration=%d guidance_wall_ms=%d guidance_prompt_tokens=%d guidance_output_tokens=%d instruction_bytes=%d executor_wall_ms=%d executor_prompt_tokens=%d executor_output_tokens=%d artifact_bytes=%d diagnostics_after=%s progress=%q guidance_artifact_error=%q executor_artifact_error=%q\n",
+			run.Convergence.GuidanceModel, run.Convergence.ExecutorModel, iteration.Number,
+			iteration.GuidanceReplay.WallDuration.Milliseconds(),
+			iteration.GuidanceReplay.Generation.Usage.PromptEvalCount,
+			iteration.GuidanceReplay.Generation.Usage.EvalCount, len(iteration.Instruction),
+			iteration.ExecutionReplay.WallDuration.Milliseconds(),
+			iteration.ExecutionReplay.Generation.Usage.PromptEvalCount,
+			iteration.ExecutionReplay.Generation.Usage.EvalCount,
+			len(iteration.ExecutionReplay.Artifact.Source),
+			stationConvergenceDiagnosticSummary(iteration),
+			stationConvergenceProgressSummary(iteration),
+			iteration.GuidanceArtifactError, iteration.ExecutionArtifactError,
 		)
 	}
 	fmt.Printf(
-		"convergence model=%s status=%s terminal=%s iterations=%d wall_ms=%d error=%s\n",
-		run.Convergence.Model, run.Status, run.Convergence.Terminal,
+		"guided_convergence guidance_model=%s executor_model=%s status=%s terminal=%s iterations=%d wall_ms=%d error=%s\n",
+		run.Convergence.GuidanceModel, run.Convergence.ExecutorModel,
+		run.Status, run.Convergence.Terminal,
 		len(run.Convergence.Iterations), run.Convergence.WallDuration.Milliseconds(), run.Error,
 	)
 }

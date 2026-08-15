@@ -5,15 +5,14 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 type ExactTypeScriptConvergenceTerminal string
 
 const (
-	ExactTypeScriptConvergenceCompiled             ExactTypeScriptConvergenceTerminal = "compiled"
-	ExactTypeScriptConvergenceExplorationExhausted ExactTypeScriptConvergenceTerminal = "exploration_exhausted"
-	ExactTypeScriptConvergenceFailed               ExactTypeScriptConvergenceTerminal = "failed"
+	ExactTypeScriptConvergenceCompiled ExactTypeScriptConvergenceTerminal = "compiled"
+	ExactTypeScriptConvergenceStalled  ExactTypeScriptConvergenceTerminal = "stalled"
+	ExactTypeScriptConvergenceFailed   ExactTypeScriptConvergenceTerminal = "failed"
 )
 
 type ExactTypeScriptReplayDiagnostic struct {
@@ -56,12 +55,14 @@ type ExactTypeScriptDiagnosticDelta struct {
 }
 
 type ExactTypeScriptConvergenceIteration struct {
-	Number          int                              `json:"number"`
-	Replay          ExactStationReplay               `json:"replay"`
-	ArtifactError   string                           `json:"artifact_error,omitempty"`
-	AfterDiagnostic *ExactTypeScriptReplayDiagnostic `json:"after_diagnostic,omitempty"`
-	DiagnosticDelta *ExactTypeScriptDiagnosticDelta  `json:"diagnostic_delta,omitempty"`
-	NextTemperature *llm.ExactPreparedTemperature    `json:"next_temperature,omitempty"`
+	Number                 int                              `json:"number"`
+	GuidanceReplay         ExactStationReplay               `json:"guidance_replay"`
+	Instruction            string                           `json:"instruction"`
+	GuidanceArtifactError  string                           `json:"guidance_artifact_error,omitempty"`
+	ExecutionReplay        ExactStationReplay               `json:"execution_replay"`
+	ExecutionArtifactError string                           `json:"execution_artifact_error,omitempty"`
+	AfterDiagnostic        *ExactTypeScriptReplayDiagnostic `json:"after_diagnostic,omitempty"`
+	DiagnosticDelta        *ExactTypeScriptDiagnosticDelta  `json:"diagnostic_delta,omitempty"`
 }
 
 type ExactStationReplayArtifactError struct {
@@ -85,7 +86,8 @@ func (failure *ExactStationReplayArtifactError) Unwrap() error {
 type ExactTypeScriptConvergence struct {
 	SourceOpeningID     int64                                 `json:"source_opening_id"`
 	SourceGapOpeningID  int64                                 `json:"source_gap_opening_id"`
-	Model               string                                `json:"model"`
+	GuidanceModel       string                                `json:"guidance_model"`
+	ExecutorModel       string                                `json:"executor_model"`
 	Baseline            ExactTypeScriptReplayDiagnostic       `json:"baseline"`
 	Iterations          []ExactTypeScriptConvergenceIteration `json:"iterations"`
 	Terminal            ExactTypeScriptConvergenceTerminal    `json:"terminal"`
@@ -98,10 +100,10 @@ type ExactTypeScriptConvergence struct {
 
 type exactTypeScriptConvergenceRuntime struct {
 	verify func(context.Context, string) (*ExactTypeScriptReplayDiagnostic, error)
-	replay func(
+	guide  func(
 		context.Context,
 		assemblyline.PortableJob,
 		int,
-		*llm.ExactPreparedTemperature,
 	) (ExactStationReplay, error)
+	execute func(context.Context, assemblyline.PortableJob, int) (ExactStationReplay, error)
 }

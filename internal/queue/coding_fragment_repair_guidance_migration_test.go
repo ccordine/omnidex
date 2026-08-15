@@ -9,7 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-const codingFragmentRepairGuidanceMigration = "102_coding_fragment_repair_guidance_station.sql"
+const codingFragmentRepairGuidanceMigration = "105_coding_fragment_repair_guidance_station.sql"
 
 func TestCodingFragmentRepairGuidanceMigrationAddsOneExplicitOwner(t *testing.T) {
 	t.Parallel()
@@ -39,7 +39,7 @@ func TestCodingFragmentRepairGuidanceMigrationAddsOneExplicitOwner(t *testing.T)
 func TestCodingFragmentRepairGuidanceMigrationMatchesCodeOwnedRouting(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "102")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "105")); err != nil {
 		t.Fatal(err)
 	}
 	assertAppliedMigrationCount(t, pool, codingFragmentRepairGuidanceMigration, 1)

@@ -9,254 +9,172 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func TestExactTypeScriptConvergenceContinuesBeyondThreeChangingFailures(t *testing.T) {
+func TestExactTypeScriptConvergenceUsesGuidanceThenExecutorUntilCompilerPasses(t *testing.T) {
 	point, input := convergenceTestPoint(t)
 	sources := []string{
-		convergenceFunction("one"), convergenceFunction("two"),
-		convergenceFunction("three"), convergenceFunction("four"),
-		convergenceFunction("five"),
+		convergenceFunction("one"), convergenceFunction("two"), convergenceFunction("fixed"),
 	}
 	diagnosticLines := []string{
-		"error TS2304: first",
-		"error TS2322: second",
-		"error TS2345: third",
-		"error TS2552: fourth",
-		"error TS7053: fifth",
+		"error TS2304: first", "error TS2322: second", "error TS2345: third",
 	}
 	diagnostics := map[string]*ExactTypeScriptReplayDiagnostic{
 		input.CurrentDeclaration: convergenceDiagnostics(diagnosticLines, input.CurrentDeclaration),
 		sources[0]:               convergenceDiagnostics(diagnosticLines[1:], sources[0]),
 		sources[1]:               convergenceDiagnostics(diagnosticLines[2:], sources[1]),
-		sources[2]:               convergenceDiagnostics(diagnosticLines[3:], sources[2]),
-		sources[3]:               convergenceDiagnostics(diagnosticLines[4:], sources[3]),
-		sources[4]:               nil,
+		sources[2]:               nil,
 	}
 	input.Diagnostic = diagnosticLines[0]
 	point = convergencePointForInput(t, input)
-	calls := 0
+	guidanceCalls, executionCalls := 0, 0
 	runtime := exactTypeScriptConvergenceRuntime{
 		verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
 			return diagnostics[source], nil
 		},
-		replay: func(_ context.Context, job assemblyline.PortableJob, iteration int, _ *llm.ExactPreparedTemperature) (ExactStationReplay, error) {
-			calls++
-			var correction assemblyline.FragmentCorrectionInput
-			if err := decodeReplayCorrectionInput(job, &correction); err != nil {
+		guide: func(_ context.Context, job assemblyline.PortableJob, iteration int) (ExactStationReplay, error) {
+			guidanceCalls++
+			var guidance assemblyline.TypeScriptRepairGuidanceInput
+			if err := json.Unmarshal(job.Payload, &guidance); err != nil {
 				return ExactStationReplay{}, err
 			}
 			wantSource := input.CurrentDeclaration
 			if iteration > 1 {
 				wantSource = sources[iteration-2]
 			}
-			wantDiagnostic := diagnostics[wantSource].ModelFeedback
-			if correction.CurrentDeclaration != "" || correction.RepairRegion == nil ||
-				correction.RepairRegion.Source != wantSource || correction.Diagnostic != wantDiagnostic {
-				return ExactStationReplay{}, fmt.Errorf("iteration %d correction changed retained authority", iteration)
+			if guidance.CurrentDeclaration != "" || guidance.RepairRegion == nil ||
+				guidance.RepairRegion.Source != wantSource ||
+				guidance.Diagnostic != diagnostics[wantSource].ModelFeedback {
+				return ExactStationReplay{}, fmt.Errorf("iteration %d guidance changed compiler authority", iteration)
+			}
+			return convergenceGuidanceReplay(job, fmt.Sprintf("Apply repair %d.", iteration)), nil
+		},
+		execute: func(_ context.Context, job assemblyline.PortableJob, iteration int) (ExactStationReplay, error) {
+			executionCalls++
+			var correction assemblyline.FragmentCorrectionInput
+			if err := decodeReplayCorrectionInput(job, &correction); err != nil {
+				return ExactStationReplay{}, err
+			}
+			if correction.RepairRegion == nil || correction.RepairGuidance != fmt.Sprintf("Apply repair %d.", iteration) ||
+				correction.Diagnostic != "" || correction.RequiredChange != "" ||
+				len(correction.Capabilities) != 0 || len(correction.PermittedSymbols) != 0 {
+				return ExactStationReplay{}, fmt.Errorf("iteration %d executor retained analyst authority", iteration)
 			}
 			return convergenceReplay(job, sources[iteration-1]), nil
 		},
 	}
 
 	result, err := convergeExactTypeScriptStationWithRuntime(
-		context.Background(), point, "model:test", runtime,
+		context.Background(), point, "analyst:test", "executor:test", runtime,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Terminal != ExactTypeScriptConvergenceCompiled || calls != 5 || len(result.Iterations) != 5 {
-		t.Fatalf("terminal=%s calls=%d iterations=%d", result.Terminal, calls, len(result.Iterations))
-	}
-	if result.FinalSource != sources[4] {
-		t.Fatalf("final source=%q", result.FinalSource)
-	}
-}
-
-func TestExactTypeScriptConvergenceExhaustsTemperatureOnNoOpAndNonImprovingCycle(t *testing.T) {
-	for name, candidates := range map[string][]string{
-		"no-op": {convergenceFunction("initial")},
-		"cycle": {convergenceFunction("changed"), convergenceFunction("initial")},
-	} {
-		t.Run(name, func(t *testing.T) {
-			point, input := convergenceTestPoint(t)
-			input.CurrentDeclaration = convergenceFunction("initial")
-			point = convergencePointForInput(t, input)
-			calls := 0
-			runtime := exactTypeScriptConvergenceRuntime{
-				verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
-					if source == convergenceFunction("changed") {
-						return convergenceDiagnostic("error TS2322: changed", source), nil
-					}
-					return convergenceDiagnostic(input.Diagnostic, source), nil
-				},
-				replay: func(_ context.Context, job assemblyline.PortableJob, _ int, temperature *llm.ExactPreparedTemperature) (ExactStationReplay, error) {
-					candidate := candidates[calls%len(candidates)]
-					calls++
-					return convergenceReplay(job, candidate, temperature), nil
-				},
-			}
-			result, err := convergeExactTypeScriptStationWithRuntime(
-				context.Background(), point, "model:test", runtime,
-			)
-			if err == nil || !strings.Contains(err.Error(), "exhausted profile temperature") ||
-				result.Terminal != ExactTypeScriptConvergenceExplorationExhausted || calls != 6 {
-				t.Fatalf("terminal=%s calls=%d error=%v", result.Terminal, calls, err)
-			}
-			if name == "no-op" && (len(result.Iterations) != 6 ||
-				result.Iterations[0].AfterDiagnostic == nil ||
-				result.Iterations[0].AfterDiagnostic.ModelFeedback != input.Diagnostic) {
-				t.Fatalf("no-op lost its inherited compiler state: %+v", result.Iterations)
-			}
-		})
+	if result.Terminal != ExactTypeScriptConvergenceCompiled || guidanceCalls != 3 ||
+		executionCalls != 3 || len(result.Iterations) != 3 || result.FinalSource != sources[2] {
+		t.Fatalf("terminal=%s guidance=%d execution=%d iterations=%d final=%q",
+			result.Terminal, guidanceCalls, executionCalls, len(result.Iterations), result.FinalSource)
 	}
 }
 
-func TestExactTypeScriptConvergenceRaisesTemperatureAcrossExactNoOpsThenCompiles(t *testing.T) {
+func TestExactTypeScriptConvergenceFailsDeterministicallyOnGuidedNoOp(t *testing.T) {
 	point, input := convergenceTestPoint(t)
-	fixed := convergenceFunction("fixed")
-	wantTemperatures := []float64{0, 0.2, 0.4}
-	calls := 0
+	guidanceCalls, executionCalls := 0, 0
 	runtime := exactTypeScriptConvergenceRuntime{
 		verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
-			if source == fixed {
-				return nil, nil
-			}
 			return convergenceDiagnostic(input.Diagnostic, source), nil
 		},
-		replay: func(
-			_ context.Context,
-			job assemblyline.PortableJob,
-			_ int,
-			temperature *llm.ExactPreparedTemperature,
-		) (ExactStationReplay, error) {
-			if convergenceTemperatureValue(temperature) != wantTemperatures[calls] {
-				return ExactStationReplay{}, fmt.Errorf("call %d temperature=%v", calls+1, temperature)
-			}
-			calls++
-			if calls < len(wantTemperatures) {
-				return convergenceReplay(job, input.CurrentDeclaration, temperature), nil
-			}
-			return convergenceReplay(job, fixed, temperature), nil
+		guide: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			guidanceCalls++
+			return convergenceGuidanceReplay(job, "Change the failing expression."), nil
+		},
+		execute: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			executionCalls++
+			return convergenceReplay(job, input.CurrentDeclaration), nil
 		},
 	}
 
 	result, err := convergeExactTypeScriptStationWithRuntime(
-		context.Background(), point, "model:test", runtime,
+		context.Background(), point, "analyst:test", "executor:test", runtime,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Terminal != ExactTypeScriptConvergenceCompiled || calls != 3 || len(result.Iterations) != 3 {
-		t.Fatalf("terminal=%s calls=%d iterations=%d", result.Terminal, calls, len(result.Iterations))
-	}
-	if result.Iterations[0].NextTemperature == nil ||
-		float64(*result.Iterations[0].NextTemperature) != 0.2 ||
-		result.Iterations[1].NextTemperature == nil ||
-		float64(*result.Iterations[1].NextTemperature) != 0.4 {
-		t.Fatalf("temperature escalation evidence=%+v", result.Iterations)
+	if err == nil || !strings.Contains(err.Error(), "made no source change") ||
+		result.Terminal != ExactTypeScriptConvergenceStalled || guidanceCalls != 1 || executionCalls != 1 {
+		t.Fatalf("terminal=%s guidance=%d execution=%d error=%v",
+			result.Terminal, guidanceCalls, executionCalls, err)
 	}
 }
 
-func TestExactTypeScriptConvergenceResetsTemperatureAfterVerifiedProgress(t *testing.T) {
+func TestExactTypeScriptConvergenceFailsOnNonImprovingCompilerResult(t *testing.T) {
 	point, input := convergenceTestPoint(t)
-	progressed := convergenceFunction("progressed")
-	fixed := convergenceFunction("fixed")
-	wantTemperatures := []float64{0, 0.2, 0}
-	calls := 0
+	changed := convergenceFunction("changed")
 	runtime := exactTypeScriptConvergenceRuntime{
 		verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
-			switch source {
-			case fixed:
-				return nil, nil
-			case progressed:
-				return convergenceDiagnostic("error TS2322: narrower", source), nil
-			default:
-				return &ExactTypeScriptReplayDiagnostic{
-					Stage: ExactTypeScriptVerificationTypecheck, ModelFeedback: input.Diagnostic,
-					ModelFeedbackSHA256:  replaySHA256(input.Diagnostic),
-					CompilerOutputSHA256: replaySHA256(input.Diagnostic),
-					CompilerDiagnostics:  []string{input.Diagnostic, "error TS2322: second"}, Count: 2,
-					RepairRegion: &assemblyline.TypeScriptFragmentRepairRegion{
-						Kind: assemblyline.TypeScriptRepairRegionCompilerOwner, StartLine: 1, EndLine: 1, Source: source,
-						Bindings: convergenceTestBindings(),
-					},
-				}, nil
-			}
-		},
-		replay: func(
-			_ context.Context,
-			job assemblyline.PortableJob,
-			_ int,
-			temperature *llm.ExactPreparedTemperature,
-		) (ExactStationReplay, error) {
-			if convergenceTemperatureValue(temperature) != wantTemperatures[calls] {
-				return ExactStationReplay{}, fmt.Errorf("call %d temperature=%v", calls+1, temperature)
-			}
-			calls++
-			switch calls {
-			case 1:
-				return convergenceReplay(job, input.CurrentDeclaration, temperature), nil
-			case 2:
-				return convergenceReplay(job, progressed, temperature), nil
-			default:
-				return convergenceReplay(job, fixed, temperature), nil
-			}
-		},
-	}
-
-	result, err := convergeExactTypeScriptStationWithRuntime(
-		context.Background(), point, "model:test", runtime,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Terminal != ExactTypeScriptConvergenceCompiled || calls != 3 {
-		t.Fatalf("terminal=%s calls=%d", result.Terminal, calls)
-	}
-}
-
-func TestExactTypeScriptConvergenceRetainsValidSourceAcrossOneMalformedResponse(t *testing.T) {
-	point, input := convergenceTestPoint(t)
-	fixed := convergenceFunction("fixed")
-	calls := 0
-	runtime := exactTypeScriptConvergenceRuntime{
-		verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
-			if source == fixed {
-				return nil, nil
-			}
 			return convergenceDiagnostic(input.Diagnostic, source), nil
 		},
-		replay: func(_ context.Context, job assemblyline.PortableJob, iteration int, temperature *llm.ExactPreparedTemperature) (ExactStationReplay, error) {
-			calls++
-			if iteration == 1 {
-				replay := convergenceReplay(job, "", temperature)
-				replay.Generation = llm.PreparedGeneration{Content: "not a declaration"}
-				return replay, &ExactStationReplayArtifactError{Cause: fmt.Errorf("missing required function")}
-			}
-			var correction assemblyline.FragmentCorrectionInput
-			if err := decodeReplayCorrectionInput(job, &correction); err != nil {
-				return ExactStationReplay{}, err
-			}
-			if correction.CurrentDeclaration != "" || correction.RepairRegion == nil ||
-				correction.RepairRegion.Source != input.CurrentDeclaration ||
-				!strings.Contains(correction.Diagnostic, "CORRECTION_REJECTION: missing required function") {
-				return ExactStationReplay{}, fmt.Errorf("malformed response changed retained source authority")
-			}
-			return convergenceReplay(job, fixed, temperature), nil
+		guide: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			return convergenceGuidanceReplay(job, "Change the failing expression."), nil
+		},
+		execute: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			return convergenceReplay(job, changed), nil
 		},
 	}
 	result, err := convergeExactTypeScriptStationWithRuntime(
-		context.Background(), point, "model:test", runtime,
+		context.Background(), point, "analyst:test", "executor:test", runtime,
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || !strings.Contains(err.Error(), "no verified compiler progress") ||
+		result.Terminal != ExactTypeScriptConvergenceStalled || len(result.Iterations) != 1 ||
+		result.Iterations[0].DiagnosticDelta == nil ||
+		result.Iterations[0].DiagnosticDelta.Assessment != ExactTypeScriptConvergenceUnchanged {
+		t.Fatalf("terminal=%s iterations=%+v error=%v", result.Terminal, result.Iterations, err)
 	}
-	if result.Terminal != ExactTypeScriptConvergenceCompiled || calls != 2 ||
-		len(result.Iterations) != 2 || result.Iterations[0].ArtifactError == "" {
-		t.Fatalf("terminal=%s calls=%d iterations=%+v", result.Terminal, calls, result.Iterations)
+}
+
+func TestExactTypeScriptConvergencePreservesGuidanceArtifactFailure(t *testing.T) {
+	point, input := convergenceTestPoint(t)
+	runtime := exactTypeScriptConvergenceRuntime{
+		verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
+			return convergenceDiagnostic(input.Diagnostic, source), nil
+		},
+		guide: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			replay := convergenceReplay(job, "")
+			return replay, &ExactStationReplayArtifactError{Cause: fmt.Errorf("instruction JSON is invalid")}
+		},
+		execute: func(context.Context, assemblyline.PortableJob, int) (ExactStationReplay, error) {
+			return ExactStationReplay{}, fmt.Errorf("executor must not run")
+		},
+	}
+	result, err := convergeExactTypeScriptStationWithRuntime(
+		context.Background(), point, "analyst:test", "executor:test", runtime,
+	)
+	if err == nil || len(result.Iterations) != 1 ||
+		result.Iterations[0].GuidanceArtifactError != "instruction JSON is invalid" ||
+		result.Iterations[0].ExecutionReplay.Job.ID != "" {
+		t.Fatalf("iterations=%+v error=%v", result.Iterations, err)
+	}
+}
+
+func TestExactTypeScriptConvergencePreservesExecutorArtifactFailure(t *testing.T) {
+	point, input := convergenceTestPoint(t)
+	runtime := exactTypeScriptConvergenceRuntime{
+		verify: func(_ context.Context, source string) (*ExactTypeScriptReplayDiagnostic, error) {
+			return convergenceDiagnostic(input.Diagnostic, source), nil
+		},
+		guide: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			return convergenceGuidanceReplay(job, "Change the failing expression."), nil
+		},
+		execute: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			replay := convergenceReplay(job, "")
+			return replay, &ExactStationReplayArtifactError{Cause: fmt.Errorf("source is not parseable")}
+		},
+	}
+	result, err := convergeExactTypeScriptStationWithRuntime(
+		context.Background(), point, "analyst:test", "executor:test", runtime,
+	)
+	if err == nil || len(result.Iterations) != 1 ||
+		result.Iterations[0].Instruction == "" ||
+		result.Iterations[0].ExecutionArtifactError != "source is not parseable" {
+		t.Fatalf("iterations=%+v error=%v", result.Iterations, err)
 	}
 }
 
@@ -276,23 +194,21 @@ func TestExactTypeScriptConvergenceRetainsDispatchedCandidateWhenVerificationFai
 			}
 			return nil, fmt.Errorf("unexpected verification call %d for %q", verifyCalls, source)
 		},
-		replay: func(_ context.Context, job assemblyline.PortableJob, _ int, temperature *llm.ExactPreparedTemperature) (ExactStationReplay, error) {
-			return convergenceReplay(job, candidate, temperature), nil
+		guide: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			return convergenceGuidanceReplay(job, "Change the failing expression."), nil
+		},
+		execute: func(_ context.Context, job assemblyline.PortableJob, _ int) (ExactStationReplay, error) {
+			return convergenceReplay(job, candidate), nil
 		},
 	}
-
 	result, err := convergeExactTypeScriptStationWithRuntime(
-		context.Background(), point, "model:test", runtime,
+		context.Background(), point, "analyst:test", "executor:test", runtime,
 	)
-	if !errors.Is(err, verificationErr) {
-		t.Fatalf("error=%v want verification failure", err)
-	}
-	if len(result.Iterations) != 1 || result.Iterations[0].Replay.Artifact.Source != candidate {
-		t.Fatalf("dispatched candidate evidence was lost: %+v", result.Iterations)
-	}
-	if result.FinalSource != input.CurrentDeclaration ||
-		result.LastCandidate != candidate || result.LastCandidateSHA256 != replaySHA256(candidate) {
-		t.Fatalf("best/candidate evidence was lost: final=%q candidate=%q", result.FinalSource, result.LastCandidate)
+	if !errors.Is(err, verificationErr) || len(result.Iterations) != 1 ||
+		result.Iterations[0].ExecutionReplay.Artifact.Source != candidate ||
+		result.FinalSource != input.CurrentDeclaration || result.LastCandidate != candidate {
+		t.Fatalf("final=%q candidate=%q iterations=%+v error=%v",
+			result.FinalSource, result.LastCandidate, result.Iterations, err)
 	}
 }
 
@@ -322,12 +238,6 @@ func TestExactTypeScriptReplayProgramUsesOnlyCorrectionAuthority(t *testing.T) {
 			!strings.Contains(program.TypeScript.Documents[0].Header, fixture.Capabilities[0]) {
 			t.Fatalf("program exposed an inexact compiler context: %+v", program)
 		}
-		identity := renderTaskStageIdentity(program)
-		for _, forbidden := range []string{"acceptance", "runtime", "application"} {
-			if strings.Contains(identity, forbidden) {
-				t.Fatalf("compiler context exposed %q: %s", forbidden, identity)
-			}
-		}
 	}
 }
 
@@ -338,15 +248,13 @@ func TestExactTypeScriptReplayDiagnosticCountDeduplicatesRepeatedCompilerLines(t
 		"src/replay.tsx(14,7): error TS2322: Type 'string' is not assignable to type 'number'.",
 		"Found 2 errors.",
 	}, "\n")
-	if got := exactTypeScriptReplayDiagnosticCount(raw); got != 2 {
-		t.Fatalf("diagnostic count=%d want 2", got)
-	}
 	want := []string{
 		"[source]:10:3: error TS2304: Cannot find name 'missingValue'.",
 		"[source]:14:7: error TS2322: Type 'string' is not assignable to type 'number'.",
 	}
 	got := exactTypeScriptReplayDiagnosticLines(raw)
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	if exactTypeScriptReplayDiagnosticCount(raw) != 2 || len(got) != len(want) ||
+		got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("diagnostic lines=%q want %q", got, want)
 	}
 }
@@ -355,6 +263,7 @@ func convergenceTestPoint(t *testing.T) (queue.StationCallReplayPoint, assemblyl
 	t.Helper()
 	input := assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: "function Repair(value: string): string",
+		Capabilities: []string{"type RepairValue = string"}, PermittedSymbols: []string{"String"},
 		CurrentDeclaration: convergenceFunction("initial"), RequiredChange: "Fix the observed failure.",
 		Diagnostic: "error TS2304: initial",
 	}
@@ -382,8 +291,7 @@ func convergenceDiagnostic(feedback string, source string) *ExactTypeScriptRepla
 func convergenceDiagnostics(diagnostics []string, source string) *ExactTypeScriptReplayDiagnostic {
 	region := assemblyline.TypeScriptFragmentRepairRegion{
 		Kind:      assemblyline.TypeScriptRepairRegionCompilerOwner,
-		StartLine: 1, EndLine: 1, Source: source,
-		Bindings: convergenceTestBindings(),
+		StartLine: 1, EndLine: 1, Source: source, Bindings: convergenceTestBindings(),
 	}
 	feedback := diagnostics[0]
 	return &ExactTypeScriptReplayDiagnostic{
@@ -398,36 +306,24 @@ func convergenceTestBindings() []assemblyline.TypeScriptRepairBinding {
 	return []assemblyline.TypeScriptRepairBinding{{Name: "value", Type: "string"}}
 }
 
-func convergenceReplay(
-	job assemblyline.PortableJob,
-	source string,
-	temperatures ...*llm.ExactPreparedTemperature,
-) ExactStationReplay {
-	zero := llm.ExactPreparedTemperature(0)
-	temperature := &zero
-	if len(temperatures) > 0 && temperatures[0] != nil {
-		temperature = temperatures[0]
-	}
+func convergenceReplay(job assemblyline.PortableJob, source string) ExactStationReplay {
 	return ExactStationReplay{
-		Job: job, ExpectedIdentity: convergenceTestProviderIdentity(), Temperature: temperature,
+		Job: job,
 		Artifact: ExactStationReplayArtifact{
-			Kind: "typescript_function", Source: source, SourceSHA256: replaySHA256(source), ChangedFromBase: true,
-		}}
-}
-
-func convergenceTestProviderIdentity() llm.ProviderIdentityExpectation {
-	return llm.ProviderIdentityExpectation{
-		Backend: llm.ExactPreparedProviderBackend, BackendVersion: llm.ExactPreparedProviderVersion,
-		Model: "model:test", Digest: strings.Repeat("a", 64), Quantization: "Q4_K_M",
-		NativeContextLimit: 8192, TokenizerProfile: llm.ExactPreparedTokenizerProfileQwen25Coder,
+			Kind: "typescript_repair_region", Source: source,
+			SourceSHA256: replaySHA256(source), ChangedFromBase: true,
+		},
 	}
 }
 
-func convergenceTemperatureValue(temperature *llm.ExactPreparedTemperature) float64 {
-	if temperature == nil {
-		return 0
+func convergenceGuidanceReplay(job assemblyline.PortableJob, instruction string) ExactStationReplay {
+	return ExactStationReplay{
+		Job: job,
+		Artifact: ExactStationReplayArtifact{
+			Kind: "typescript_repair_guidance", Source: instruction,
+			SourceSHA256: replaySHA256(instruction),
+		},
 	}
-	return float64(*temperature)
 }
 
 func decodeReplayCorrectionInput(job assemblyline.PortableJob, target *assemblyline.FragmentCorrectionInput) error {

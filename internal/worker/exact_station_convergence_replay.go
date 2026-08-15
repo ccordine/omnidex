@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
@@ -19,7 +20,8 @@ func ConvergeExactTypeScriptStation(
 	ctx context.Context,
 	client llm.ExactStationClient,
 	point queue.StationCallReplayPoint,
-	modelName string,
+	guidanceModel string,
+	executorModel string,
 ) (ExactTypeScriptConvergence, error) {
 	boundary, err := validateExactStationReplayPoint(point)
 	if err != nil {
@@ -36,16 +38,28 @@ func ConvergeExactTypeScriptStation(
 	defer compiler.Close()
 	runtime := exactTypeScriptConvergenceRuntime{
 		verify: compiler.Verify,
-		replay: func(
+		guide: func(
 			callCtx context.Context,
 			job assemblyline.PortableJob,
 			iteration int,
-			temperature *llm.ExactPreparedTemperature,
 		) (ExactStationReplay, error) {
-			return replayDerivedExactStation(callCtx, client, point, job, modelName, iteration, temperature)
+			return replayDerivedExactStation(
+				callCtx, client, point, job, guidanceModel, "guidance", iteration,
+			)
+		},
+		execute: func(
+			callCtx context.Context,
+			job assemblyline.PortableJob,
+			iteration int,
+		) (ExactStationReplay, error) {
+			return replayDerivedExactStation(
+				callCtx, client, point, job, executorModel, "executor", iteration,
+			)
 		},
 	}
-	return convergeExactTypeScriptStationWithRuntime(ctx, point, modelName, runtime)
+	return convergeExactTypeScriptStationWithRuntime(
+		ctx, point, guidanceModel, executorModel, runtime,
+	)
 }
 
 func replayDerivedExactStation(
@@ -54,14 +68,19 @@ func replayDerivedExactStation(
 	point queue.StationCallReplayPoint,
 	job assemblyline.PortableJob,
 	modelName string,
+	role string,
 	iteration int,
-	temperature *llm.ExactPreparedTemperature,
 ) (ExactStationReplay, error) {
-	if iteration < 1 {
-		return ExactStationReplay{}, fmt.Errorf("derived station replay requires one positive iteration")
+	role = strings.TrimSpace(role)
+	if iteration < 1 || (role != "guidance" && role != "executor") {
+		return ExactStationReplay{}, fmt.Errorf(
+			"derived station replay requires one registered role and positive iteration",
+		)
 	}
-	scope := fmt.Sprintf("station-convergence:%d:%d:%s", point.Call.ID, iteration, job.ID)
-	return replayCurrentPortableStation(ctx, client, point, job, modelName, scope, temperature)
+	scope := fmt.Sprintf(
+		"station-convergence:%d:%d:%s:%s", point.Call.ID, iteration, role, job.ID,
+	)
+	return replayCurrentPortableStation(ctx, client, point, job, modelName, scope, nil)
 }
 
 func exactConvergenceGap(

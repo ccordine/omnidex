@@ -46,6 +46,11 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 	if schema == nil || schema["additionalProperties"] != false {
 		t.Fatalf("repair guidance schema is not closed: %#v", schema)
 	}
+	properties, _ := schema["properties"].(map[string]any)
+	instructionSchema, _ := properties["instruction"].(map[string]any)
+	if _, providerHostileBound := instructionSchema["maxLength"]; providerHostileBound {
+		t.Fatalf("repair guidance schema contains a provider-hostile grammar repetition: %#v", schema)
+	}
 
 	const instruction = "Move actions.set(index, value) into the values.forEach callback where value is in lexical scope; preserve the callback and all other statements."
 	execution, err := NewFragmentCorrectionJob(FragmentCorrectionInput{

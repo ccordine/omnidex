@@ -173,10 +173,12 @@ version, renderer/spec versions, byte and token estimates, and the exact rendere
 The projection identity is bound to immutable LLM call evidence. If a required selector
 cannot fit or resolve, context construction fails; it does not silently drop authority.
 
-Fragment models retain the strictest contract. They receive only their immutable
-signature, exact local behavior, direct allowed declarations/symbols, accepted local
-invariants, and at most one current path-free diagnostic. They do not gain a ledger,
-repository browser, or free-form attention interface.
+Source models retain the strictest contract. Initial fragment generation receives only
+its immutable signature, exact local behavior, direct allowed declarations/symbols, and
+accepted local invariants. Repair guidance separately receives one exact mutable block,
+the minimum diagnostic-analysis evidence, and at most one current path-free diagnostic.
+Repair execution receives only the resulting instruction and exact mutable block. None
+of these stations gains a ledger, repository browser, or free-form attention interface.
 
 ## Acquisition providers
 

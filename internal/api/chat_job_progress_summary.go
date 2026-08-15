@@ -197,6 +197,8 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		return chatProgressDiagnostic, "Static validation failed: " + boundedChatProgressText(diagnostic), firstChatProgressError(err, fieldErr)
 	case "coding_stage_started", "coding_stage_passed":
 		return summarizeChatCodingStage(event)
+	case "coding_fragment_repair_guidance_started":
+		return summarizeChatCodingRepairGuidance(event.Message)
 	case "coding_fragment_correction_started":
 		return summarizeChatCodingCorrection(event.Message)
 	case "coding_skill_bound":

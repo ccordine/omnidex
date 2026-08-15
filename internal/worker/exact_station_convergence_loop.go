@@ -9,24 +9,29 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
 func convergeExactTypeScriptStationWithRuntime(
 	ctx context.Context,
 	point queue.StationCallReplayPoint,
-	modelName string,
+	guidanceModel string,
+	executorModel string,
 	runtime exactTypeScriptConvergenceRuntime,
 ) (result ExactTypeScriptConvergence, returnErr error) {
 	started := time.Now()
 	result = ExactTypeScriptConvergence{
 		SourceOpeningID: point.Call.ID, SourceGapOpeningID: point.Gap.ID,
-		Model: strings.TrimSpace(modelName), Terminal: ExactTypeScriptConvergenceFailed,
+		GuidanceModel: strings.TrimSpace(guidanceModel),
+		ExecutorModel: strings.TrimSpace(executorModel),
+		Terminal:      ExactTypeScriptConvergenceFailed,
 	}
 	defer func() { result.WallDuration = time.Since(started) }()
-	if ctx == nil || runtime.verify == nil || runtime.replay == nil {
-		return result, fmt.Errorf("TypeScript convergence replay requires context, compiler, and provider")
+	if ctx == nil || runtime.verify == nil || runtime.guide == nil || runtime.execute == nil ||
+		result.GuidanceModel == "" || result.ExecutorModel == "" {
+		return result, fmt.Errorf(
+			"TypeScript convergence replay requires context, compiler, guidance provider, executor provider, and both models",
+		)
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
@@ -44,6 +49,9 @@ func convergeExactTypeScriptStationWithRuntime(
 	}
 	if input.Language != "typescript" || input.RepairRegion != nil {
 		return result, fmt.Errorf("TypeScript convergence replay requires one whole-declaration TypeScript correction")
+	}
+	if strings.TrimSpace(input.RepairGuidance) != "" {
+		return result, fmt.Errorf("TypeScript convergence source opening must contain compiler authority, not prior repair guidance")
 	}
 	baseline, err := runtime.verify(ctx, input.CurrentDeclaration)
 	if err != nil {
@@ -78,85 +86,96 @@ func convergeExactTypeScriptStationWithRuntime(
 	currentDiagnostic := baseline
 	result.FinalSource, result.FinalSourceSHA256 = current, replaySHA256(current)
 	seenAccepted := map[string]struct{}{exactTypeScriptConvergenceState(current, baseline): {}}
-	if baseline.RepairRegion == nil {
-		return result, fmt.Errorf("TypeScript convergence compiler baseline lacks one exact repair region")
-	}
-	input.CurrentDeclaration = ""
-	input.RepairRegion = baseline.RepairRegion
-	input.Diagnostic = baseline.ModelFeedback
-	job, err := assemblyline.NewFragmentCorrectionJob(input)
-	if err != nil {
-		return result, fmt.Errorf("derive initial current-contract TypeScript correction: %w", err)
-	}
-	var temperature *llm.ExactPreparedTemperature
 	for iteration := 1; ; iteration++ {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		replay, replayErr := runtime.replay(ctx, job, iteration, temperature)
-		var artifactErr *ExactStationReplayArtifactError
-		if replayErr != nil && !errors.As(replayErr, &artifactErr) {
-			return result, replayErr
-		}
-		entry := ExactTypeScriptConvergenceIteration{Number: iteration, Replay: replay}
-		if artifactErr != nil {
-			entry.ArtifactError = artifactErr.Error()
-			input.CurrentDeclaration = ""
-			input.Diagnostic = directCodingTypeScriptFragmentFailure(
-				currentDiagnostic.ModelFeedback, artifactErr,
+		if currentDiagnostic.RepairRegion == nil {
+			return result, fmt.Errorf(
+				"TypeScript convergence diagnostic before iteration %d lacks one exact repair region",
+				iteration,
 			)
-			job, err = assemblyline.NewFragmentCorrectionJob(input)
-			if err != nil {
-				return result, fmt.Errorf("derive rejected-response correction %d: %w", iteration+1, err)
-			}
-			next, available, temperatureErr := exactTypeScriptNextExplorationTemperature(replay)
-			if temperatureErr != nil {
-				return result, temperatureErr
-			}
-			if !available {
-				result.Iterations = append(result.Iterations, entry)
-				result.Terminal = ExactTypeScriptConvergenceExplorationExhausted
-				return result, fmt.Errorf(
-					"TypeScript convergence exhausted profile temperature after rejected artifact at iteration %d",
-					iteration,
-				)
-			}
-			entry.NextTemperature = next
-			result.Iterations = append(result.Iterations, entry)
-			temperature = next
-			continue
 		}
-		replacement := replay.Artifact.Source
+		guidanceJob, err := assemblyline.NewTypeScriptRepairGuidanceJob(
+			assemblyline.TypeScriptRepairGuidanceInput{
+				Language: "typescript", Signature: input.Signature,
+				Capabilities:     append([]string(nil), input.Capabilities...),
+				PermittedSymbols: append([]string(nil), input.PermittedSymbols...),
+				RepairRegion:     currentDiagnostic.RepairRegion,
+				Diagnostic:       currentDiagnostic.ModelFeedback,
+			},
+		)
+		if err != nil {
+			return result, fmt.Errorf("derive TypeScript repair guidance %d: %w", iteration, err)
+		}
+		entry := ExactTypeScriptConvergenceIteration{Number: iteration}
+		guidanceReplay, guidanceErr := runtime.guide(ctx, guidanceJob, iteration)
+		entry.GuidanceReplay = guidanceReplay
+		var artifactErr *ExactStationReplayArtifactError
+		if guidanceErr != nil {
+			if errors.As(guidanceErr, &artifactErr) {
+				entry.GuidanceArtifactError = artifactErr.Error()
+			}
+			result.Iterations = append(result.Iterations, entry)
+			return result, fmt.Errorf("execute TypeScript repair guidance %d: %w", iteration, guidanceErr)
+		}
+		instruction := strings.TrimSpace(guidanceReplay.Artifact.Source)
+		if instruction == "" {
+			result.Iterations = append(result.Iterations, entry)
+			return result, fmt.Errorf("TypeScript repair guidance iteration %d returned no exact instruction", iteration)
+		}
+		if directCodingTypeScriptCompilerContainsPathIdentity(instruction) {
+			result.Iterations = append(result.Iterations, entry)
+			return result, fmt.Errorf(
+				"TypeScript repair guidance iteration %d contains path identity",
+				iteration,
+			)
+		}
+		entry.Instruction = instruction
+		executionJob, err := assemblyline.NewFragmentCorrectionJob(
+			assemblyline.FragmentCorrectionInput{
+				Language: "typescript", Signature: input.Signature,
+				RepairRegion:   currentDiagnostic.RepairRegion,
+				RepairGuidance: instruction,
+			},
+		)
+		if err != nil {
+			result.Iterations = append(result.Iterations, entry)
+			return result, fmt.Errorf("derive guided TypeScript correction %d: %w", iteration, err)
+		}
+		executionReplay, executionErr := runtime.execute(ctx, executionJob, iteration)
+		entry.ExecutionReplay = executionReplay
+		artifactErr = nil
+		if executionErr != nil {
+			if errors.As(executionErr, &artifactErr) {
+				entry.ExecutionArtifactError = artifactErr.Error()
+			}
+			result.Iterations = append(result.Iterations, entry)
+			return result, fmt.Errorf("execute guided TypeScript correction %d: %w", iteration, executionErr)
+		}
+		replacement := executionReplay.Artifact.Source
 		if strings.TrimSpace(replacement) == "" {
+			result.Iterations = append(result.Iterations, entry)
 			return result, fmt.Errorf("TypeScript convergence iteration %d returned no exact artifact", iteration)
 		}
 		candidate := replacement
-		if input.RepairRegion != nil {
+		if currentDiagnostic.RepairRegion != nil {
 			candidate, err = assemblyline.ApplyTypeScriptFragmentRepairRegion(
-				current, *input.RepairRegion, replacement,
+				current, *currentDiagnostic.RepairRegion, replacement,
 			)
 			if err != nil {
+				result.Iterations = append(result.Iterations, entry)
 				return result, fmt.Errorf("apply TypeScript convergence repair region %d: %w", iteration, err)
 			}
 		}
 		if candidate == current {
 			entry.AfterDiagnostic = currentDiagnostic
-			next, available, temperatureErr := exactTypeScriptNextExplorationTemperature(replay)
-			if temperatureErr != nil {
-				return result, temperatureErr
-			}
-			if !available {
-				result.Iterations = append(result.Iterations, entry)
-				result.Terminal = ExactTypeScriptConvergenceExplorationExhausted
-				return result, fmt.Errorf(
-					"TypeScript convergence exhausted profile temperature on exact no-op at iteration %d",
-					iteration,
-				)
-			}
-			entry.NextTemperature = next
 			result.Iterations = append(result.Iterations, entry)
-			temperature = next
-			continue
+			result.Terminal = ExactTypeScriptConvergenceStalled
+			return result, fmt.Errorf(
+				"guided TypeScript executor made no source change at iteration %d",
+				iteration,
+			)
 		}
 		result.LastCandidate, result.LastCandidateSHA256 = candidate, replaySHA256(candidate)
 		diagnostic, err := runtime.verify(ctx, candidate)
@@ -179,52 +198,19 @@ func convergeExactTypeScriptStationWithRuntime(
 		state := exactTypeScriptConvergenceState(candidate, diagnostic)
 		_, repeatsAccepted := seenAccepted[state]
 		if delta.Assessment != ExactTypeScriptConvergenceProgress || repeatsAccepted {
-			next, available, temperatureErr := exactTypeScriptNextExplorationTemperature(replay)
-			if temperatureErr != nil {
-				return result, temperatureErr
-			}
-			if !available {
-				result.Iterations = append(result.Iterations, entry)
-				result.Terminal = ExactTypeScriptConvergenceExplorationExhausted
-				return result, fmt.Errorf(
-					"TypeScript convergence exhausted profile temperature without verified progress at iteration %d",
-					iteration,
-				)
-			}
-			entry.NextTemperature = next
 			result.Iterations = append(result.Iterations, entry)
-			temperature = next
-			continue
+			result.Terminal = ExactTypeScriptConvergenceStalled
+			return result, fmt.Errorf(
+				"guided TypeScript repair made no verified compiler progress at iteration %d: assessment=%s repeated=%t",
+				iteration, delta.Assessment, repeatsAccepted,
+			)
 		}
 		result.Iterations = append(result.Iterations, entry)
 		current = candidate
 		currentDiagnostic = diagnostic
 		result.FinalSource, result.FinalSourceSHA256 = current, replaySHA256(current)
-		seenAccepted = map[string]struct{}{state: {}}
-		temperature = nil
-		if diagnostic.RepairRegion == nil {
-			return result, fmt.Errorf("TypeScript convergence iteration %d lacks one exact next repair region", iteration)
-		}
-		input.CurrentDeclaration = ""
-		input.RepairRegion = diagnostic.RepairRegion
-		input.Diagnostic = diagnostic.ModelFeedback
-		job, err = assemblyline.NewFragmentCorrectionJob(input)
-		if err != nil {
-			return result, fmt.Errorf("derive TypeScript convergence correction %d: %w", iteration+1, err)
-		}
+		seenAccepted[state] = struct{}{}
 	}
-}
-
-func exactTypeScriptNextExplorationTemperature(
-	replay ExactStationReplay,
-) (*llm.ExactPreparedTemperature, bool, error) {
-	next, available, err := llm.NextExactPreparedTemperature(
-		replay.ExpectedIdentity, replay.Temperature,
-	)
-	if err != nil {
-		return nil, false, fmt.Errorf("advance exact TypeScript convergence temperature: %w", err)
-	}
-	return next, available, nil
 }
 
 func exactTypeScriptConvergenceState(

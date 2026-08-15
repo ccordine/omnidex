@@ -29,6 +29,7 @@ runs/
 logs/
 *.log
 *.jsonl
+!docs/evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl
 
 # Local databases and scratch data
 *.db

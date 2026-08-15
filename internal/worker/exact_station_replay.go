@@ -174,6 +174,18 @@ func replayExactStationArtifact(
 		artifact.Kind += "_" + string(review.Decision)
 		return artifact, nil
 	}
+	if job.Kind == assemblyline.WorkTypeScriptRepairGuidance {
+		guidance, err := assemblyline.DecodeTypeScriptRepairGuidanceResult(job, raw)
+		artifact.Kind = "typescript_repair_guidance"
+		if err != nil {
+			return artifact, err
+		}
+		artifact.Source = guidance.Instruction
+		artifact.SourceSHA256 = replaySHA256(guidance.Instruction)
+		artifact.StartByte, artifact.EndByte = 0, len(guidance.Instruction)
+		artifact.DiscardedBytes = len(raw) - len(guidance.Instruction)
+		return artifact, nil
+	}
 	if job.Kind != assemblyline.WorkFragmentGeneration && job.Kind != assemblyline.WorkFragmentCorrection {
 		return artifact, nil
 	}

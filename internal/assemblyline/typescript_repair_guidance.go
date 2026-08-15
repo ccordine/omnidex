@@ -36,6 +36,32 @@ func NewTypeScriptRepairGuidanceJob(
 	)
 }
 
+// DecodeTypeScriptRepairGuidanceResult applies the same closed JSON and value
+// validation used by the production semantic worker to one untrusted guidance
+// response. Replay and qualification callers must not invent a weaker decoder.
+func DecodeTypeScriptRepairGuidanceResult(
+	job PortableJob,
+	raw string,
+) (TypeScriptRepairGuidance, error) {
+	var guidance TypeScriptRepairGuidance
+	if err := job.Validate(); err != nil {
+		return guidance, err
+	}
+	if job.Kind != WorkTypeScriptRepairGuidance {
+		return guidance, fmt.Errorf(
+			"TypeScript repair-guidance result requires work kind %q",
+			WorkTypeScriptRepairGuidance,
+		)
+	}
+	if err := decodePortablePayload([]byte(raw), &guidance); err != nil {
+		return guidance, fmt.Errorf("decode TypeScript repair guidance: %w", err)
+	}
+	if err := guidance.Validate(); err != nil {
+		return guidance, err
+	}
+	return guidance, nil
+}
+
 func (input TypeScriptRepairGuidanceInput) validate() error {
 	if input.Language != "typescript" {
 		return fmt.Errorf("TypeScript repair guidance language must be %q", "typescript")
@@ -166,7 +192,6 @@ func TypeScriptRepairGuidanceResponseSchema() map[string]any {
 	return objectSchema([]string{"instruction"}, map[string]any{
 		"instruction": map[string]any{
 			"type": "string", "minLength": 1,
-			"maxLength": maxTypeScriptRepairGuidanceBytes,
 		},
 	})
 }

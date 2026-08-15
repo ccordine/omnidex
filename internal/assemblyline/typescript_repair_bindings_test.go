@@ -8,12 +8,12 @@ import (
 func TestTypeScriptCompilerRepairPromptCarriesExactLocalBindings(t *testing.T) {
 	t.Parallel()
 	fixtures := []struct {
-		name      string
-		signature string
-		source    string
-		bindings  []TypeScriptRepairBinding
-		unavailable []TypeScriptRepairBinding
-		required  []string
+		name                string
+		signature           string
+		source              string
+		bindings            []TypeScriptRepairBinding
+		unavailable         []TypeScriptRepairBinding
+		required            []string
 		unavailableRequired []string
 	}{
 		{
@@ -28,7 +28,7 @@ func TestTypeScriptCompilerRepairPromptCarriesExactLocalBindings(t *testing.T) {
 				{Name: "missingValue", Type: "number"},
 				{Name: "previousValue", Type: "number"},
 			},
-			required:  []string{`"name":"actions"`, `"type":"InventoryActions"`, "commit: (index: number, value: number) => void", `"name":"index"`},
+			required:            []string{`"name":"actions"`, `"type":"InventoryActions"`, "commit: (index: number, value: number) => void", `"name":"index"`},
 			unavailableRequired: []string{`"name":"missingValue"`, `"name":"previousValue"`},
 		},
 		{
@@ -43,7 +43,7 @@ func TestTypeScriptCompilerRepairPromptCarriesExactLocalBindings(t *testing.T) {
 				{Name: "nextDay", Type: "number"},
 				{Name: "priorDay", Type: "number"},
 			},
-			required:  []string{`"name":"day"`, `"name":"schedule"`, "move: (from: number, to: number) => void"},
+			required:            []string{`"name":"day"`, `"name":"schedule"`, "move: (from: number, to: number) => void"},
 			unavailableRequired: []string{`"name":"nextDay"`, `"name":"priorDay"`},
 		},
 	}
@@ -75,7 +75,7 @@ func TestTypeScriptCompilerRepairPromptCarriesExactLocalBindings(t *testing.T) {
 			}
 			bindingsSection := strings.SplitN(
 				strings.SplitN(prompt, "LOCAL_BINDINGS_AVAILABLE_AT_FAILURE_JSON:\n", 2)[1],
-				"\n\nIdentifiers absent", 2,
+				"\n\nNESTED_BINDINGS_UNAVAILABLE_AT_FAILURE_JSON:", 2,
 			)[0]
 			for _, value := range fixture.unavailableRequired {
 				if strings.Contains(bindingsSection, value) {

@@ -11,7 +11,8 @@ import (
 const (
 	localSemanticModel       = "qwen3.5:9b-q4_K_M"
 	localPlannerModel        = "llama3.2:3b"
-	localFragmentModel       = "qwen3.5:9b-q4_K_M"
+	localFragmentModel       = "qwen2.5-coder:7b"
+	localRepairGuidanceModel = "qwen3.5:9b"
 	localReviewModel         = "deepseek-r1:8b"
 	localWorkloadReviewModel = "qwen3.5:9b-q4_K_M"
 )
@@ -68,8 +69,8 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 				t.Errorf("%s: %s=%q, want %q", name, key, got, localFragmentModel)
 			}
 		}
-		if got := values["OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL"]; got != localReviewModel {
-			t.Errorf("%s: repair guidance model=%q, want %q", name, got, localReviewModel)
+		if got := values["OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL"]; got != localRepairGuidanceModel {
+			t.Errorf("%s: repair guidance model=%q, want %q", name, got, localRepairGuidanceModel)
 		}
 		for _, removed := range []string{
 			"OLLAMA_MODEL_FAST",

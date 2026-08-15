@@ -250,7 +250,7 @@ func TestTypeScriptCompilerCorrectionReceivesAndReplacesOnlyASTOwner(t *testing.
 				}
 				for _, forbidden := range []string{
 					"TYPESCRIPT_DIAGNOSTIC", "Cannot find name", "interface Actions",
-					"LOCAL_BINDINGS", "useCallback", "const untouched",
+					"LOCAL_BINDINGS", "ALREADY_IN_SCOPE_IDENTIFIERS", "const untouched",
 				} {
 					if strings.Contains(prompt, forbidden) {
 						t.Fatalf("repair executor prompt retained %q:\n%s", forbidden, prompt)

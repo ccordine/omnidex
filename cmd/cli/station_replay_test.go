@@ -72,6 +72,36 @@ func TestParseStationReplayOptionsSupportsSpecificationConvergenceReviewer(t *te
 	}
 }
 
+func TestParseStationReplayOptionsRequiresGuidanceModelForCompilerConvergence(t *testing.T) {
+	options, err := parseStationReplayOptions([]string{
+		"--opening", "267", "--model", "qwen3.5:9b-q4_K_M",
+		"--guidance-model", "deepseek-r1:8b", "--compiler-converge",
+		"--report", "/tmp/guided-convergence.jsonl",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !options.CompilerConverge || options.GuidanceModel != "deepseek-r1:8b" {
+		t.Fatalf("options=%+v", options)
+	}
+	for name, args := range map[string][]string{
+		"missing guidance model": {
+			"--opening", "267", "--model", "qwen3.5:9b-q4_K_M", "--compiler-converge",
+			"--report", "/tmp/guided-convergence.jsonl",
+		},
+		"guidance outside mode": {
+			"--opening", "267", "--model", "qwen3.5:9b-q4_K_M",
+			"--guidance-model", "deepseek-r1:8b", "--report", "/tmp/guided-convergence.jsonl",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseStationReplayOptions(args); err == nil {
+				t.Fatal("expected option rejection")
+			}
+		})
+	}
+}
+
 func TestStationReplayRuntimeConfigRequiresDirectReadOnlyInputs(t *testing.T) {
 	config, err := stationReplayRuntimeConfig(map[string]string{
 		"DATABASE_URL":    "postgres://agent:secret@127.0.0.1/omnidex",
@@ -95,7 +125,7 @@ func TestStationReplayRuntimeConfigRequiresDirectReadOnlyInputs(t *testing.T) {
 
 func TestStationConvergenceDiagnosticSummaryDoesNotReportUncompiledOutputAsZeroErrors(t *testing.T) {
 	if got := stationConvergenceDiagnosticSummary(worker.ExactTypeScriptConvergenceIteration{
-		ArtifactError: "no required declaration",
+		ExecutionArtifactError: "no required declaration",
 	}); got != "not_compiled" {
 		t.Fatalf("malformed artifact summary=%q", got)
 	}
