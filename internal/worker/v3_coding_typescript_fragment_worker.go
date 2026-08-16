@@ -50,11 +50,12 @@ func runDirectCodingTypeScriptFragmentWorker(
 		attemptModel := modelName
 		repairRegion := job.repairRegion
 		if lastErr != nil {
-			if strings.TrimSpace(job.repairGuidance) != "" {
+			if strings.TrimSpace(job.repairGuidance) != "" &&
+				errors.Is(lastErr, assemblyline.ErrTypeScriptFragmentRepairNoChange) {
 				return "", failDirectCodingTypeScriptFragmentWorker(
 					runtime, attemptModel, job.block.ID, attempt-1,
 					fmt.Errorf(
-						"guided TypeScript repair executor returned invalid source: %w",
+						"guided TypeScript repair produced no source transition: %w",
 						lastErr,
 					),
 				)
@@ -68,6 +69,10 @@ func runDirectCodingTypeScriptFragmentWorker(
 				)
 			}
 			retry := job
+			// The rejected candidate now carries the intended semantic delta.
+			// Correction receives only that candidate and its exact code-owned
+			// validation failure; the superseded guidance is not replayed.
+			retry.repairGuidance = ""
 			if failure, localized := assemblyline.TypeScriptSyntaxFailureFromError(lastErr); localized {
 				if nextSyntaxRepair.wholeDeclaration {
 					retry.current = lastCandidate

@@ -18,6 +18,7 @@ type existingRepositoryChangeSurfaceCall func(
 ) (assemblyline.RepositoryChangeSurfaceDecision, error)
 
 type existingRepositoryEvidenceAcquisition struct {
+	Need             assemblyline.ApplicationEvidenceNeed
 	RequirementQuote string
 	Pack             repositoryretrieval.EvidencePack
 	Query            string
@@ -44,7 +45,13 @@ func acquireExistingRepositoryEvidence(
 		return nil, fmt.Errorf("repository evidence closure requires one code-owned acquisition operation")
 	}
 	seen := make(map[string]struct{}, len(requirementQuotes))
-	for _, query := range requirementQuotes {
+	needs := make([]assemblyline.ApplicationEvidenceNeed, len(requirementQuotes))
+	for index, query := range requirementQuotes {
+		need, err := assemblyline.NewApplicationRepositoryChangeOwnerNeed(index+1, query)
+		if err != nil {
+			return nil, err
+		}
+		needs[index] = need
 		if _, err := repositoryretrieval.NewQueryBinding(
 			repositoryretrieval.OperationSemanticExcerpts, query,
 		); err != nil {
@@ -59,6 +66,7 @@ func acquireExistingRepositoryEvidence(
 	missing := make([]int, 0, len(requirementQuotes))
 	for index, query := range requirementQuotes {
 		results[index] = existingRepositoryEvidenceAcquisition{
+			Need:             needs[index],
 			RequirementQuote: query,
 			Query:            query,
 		}
@@ -71,6 +79,10 @@ func acquireExistingRepositoryEvidence(
 					"repository deterministic acquisition for %q returned invalid evidence: %w",
 					query, err,
 				)
+			}
+			results[index].Need.SearchAnchors = []string{query}
+			if err := results[index].Need.Validate(); err != nil {
+				return results, err
 			}
 			results[index].Pack = pack
 			continue
@@ -96,32 +108,36 @@ func acquireExistingRepositoryEvidence(
 		if err != nil {
 			return results, err
 		}
-		if decision.Schema != assemblyline.RepositorySearchTermSchemaV1 {
-			return results, fmt.Errorf(
-				"repository search term schema must be %q", assemblyline.RepositorySearchTermSchemaV1,
-			)
+		searchInput := assemblyline.RepositorySearchTermInput{
+			UnresolvedConcept: result.RequirementQuote,
 		}
-		if _, err := repositoryretrieval.NewQueryBinding(
-			repositoryretrieval.OperationSemanticExcerpts, decision.Term,
-		); err != nil {
-			return results, fmt.Errorf("repository model search term: %w", err)
+		if err := decision.ValidateFor(searchInput); err != nil {
+			return results, err
 		}
-		pack, err := build(decision.Term)
+		result.Need.SearchAnchors = append([]string(nil), decision.Anchors...)
+		if err := result.Need.Validate(); err != nil {
+			return results, err
+		}
+		query, err := repositoryretrieval.BuildLexicalAnchorQuery(decision.Anchors)
 		if err != nil {
+			return results, err
+		}
+		pack, buildErr := build(query)
+		if buildErr != nil {
 			return results, fmt.Errorf(
-				"repository acquisition for requirement %q bounded model search term: %w",
-				result.RequirementQuote, err,
+				"repository acquisition for requirement %q bounded lexical anchor query: %w",
+				result.RequirementQuote, buildErr,
 			)
 		}
 		if err := pack.ValidateForRequest(
-			repositoryretrieval.OperationSemanticExcerpts, decision.Term,
+			repositoryretrieval.OperationSemanticExcerpts, query,
 		); err != nil {
 			return results, fmt.Errorf(
-				"repository acquisition for requirement %q bounded model search term returned invalid evidence: %w",
+				"repository acquisition for requirement %q bounded lexical anchor query returned invalid evidence: %w",
 				result.RequirementQuote, err,
 			)
 		}
-		result.Pack, result.Query = pack, decision.Term
+		result.Pack, result.Query = pack, query
 	}
 	return results, nil
 }
@@ -157,6 +173,21 @@ func prepareExistingRepositoryRequirementResolutions(
 		if err != nil {
 			return nil, err
 		}
+		surfaceInput := assemblyline.RepositoryChangeSurfaceInput{
+			ResearchNeed: acquisition.RequirementQuote,
+			Requirements: []string{acquisition.RequirementQuote},
+			Evidence:     acquisition.Pack,
+		}
+		unresolved, err := surface.UnresolvedRequirements(surfaceInput)
+		if err != nil {
+			return nil, err
+		}
+		if len(unresolved) != 0 || len(surface.Targets) == 0 {
+			return nil, fmt.Errorf(
+				"application evidence need %q did not satisfy stop condition %q",
+				acquisition.Need.ID, acquisition.Need.StopCondition,
+			)
+		}
 		resolutions = append(resolutions, existingRepositoryRequirementResolution{
 			Acquisition: acquisition,
 			Surface:     surface,
@@ -173,7 +204,18 @@ func validateExistingRepositoryAcquisitionAuthority(
 	}
 	snapshotID := acquisitions[0].Pack.SnapshotID
 	analysisID := acquisitions[0].Pack.AnalysisID
-	for _, acquisition := range acquisitions[1:] {
+	for _, acquisition := range acquisitions {
+		if err := acquisition.Need.Validate(); err != nil {
+			return err
+		}
+		if acquisition.Need.Kind != assemblyline.ApplicationEvidenceChangeOwner ||
+			acquisition.Need.Question != acquisition.RequirementQuote ||
+			acquisition.Need.StopCondition != assemblyline.ApplicationEvidenceOwnerResolved {
+			return fmt.Errorf(
+				"repository requirement evidence need %q does not bind its exact requirement",
+				acquisition.Need.ID,
+			)
+		}
 		if acquisition.Pack.SnapshotID != snapshotID || acquisition.Pack.AnalysisID != analysisID {
 			return fmt.Errorf("repository requirement evidence must share one snapshot and analysis")
 		}

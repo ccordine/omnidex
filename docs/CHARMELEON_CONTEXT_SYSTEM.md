@@ -239,15 +239,16 @@ machine passes its executable gates:
    authority checks. For each accepted requirement, one local station receives the typed surface,
    reviewed product context, complete accepted requirement set, and focused requirement and
    proposes only a concrete objective, required behaviors, and observable acceptance criteria.
-   A separately routed review model may accept or name one derived field, one bounded
-   diagnostic finding, and one exact excerpt from the current value of that field. Code
-   validates the excerpt and binds the observed value by SHA-256. Absent evidence causes
-   re-review of unchanged state without a repair dispatch; repeated invalid evidence is a
-   cycle failure. The repair station receives focused user authority, that finding and
-   validated evidence, and only the current value of the named field; code retains every
+   A separately routed corrective model may accept or name one derived field, one bounded
+   diagnostic finding, and one code-enumerated exact current value: the whole objective or
+   one whole list item owned by that field. Code couples legal evidence to its field in the
+   response schema and binds the observed value by SHA-256. The corrective route also owns
+   semantic repair and one schema-constrained no-op correction; repair never returns through
+   the constructive proposal model. The repair station receives focused user authority, that
+   finding and validated evidence, and only the current value of the named field; code retains every
    other semantic field and revalidates both field and whole-state bindings before dispatch.
    Code retains each new canonical specification and repeats review without a numeric correctness
-   limit; acceptance, an exact no-op or repeated state/cycle, lost authority, provider failure,
+   limit; acceptance, an exact repeated state/cycle, lost authority, provider failure,
    cancellation, or a real resource limit ends that loop. Code preserves user authority separately from derived build decisions,
    assigns identity and order, freezes only reviewed state, executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A

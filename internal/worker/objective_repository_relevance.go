@@ -13,16 +13,16 @@ const maxRepositoryGroundedCitations = 2
 func resolveObjectiveRepositorySearchTerm(
 	exactRequirement string,
 	resolve objectiveRepositorySearchTermCall,
-) (string, objectiveStationReceipt, error) {
+) ([]string, objectiveStationReceipt, error) {
 	input := assemblyline.RepositorySearchTermInput{UnresolvedConcept: exactRequirement}
 	decision, receipt, err := resolve(exactRequirement)
 	if err != nil {
-		return "", receipt, err
+		return nil, receipt, err
 	}
 	if err := decision.ValidateFor(input); err != nil {
-		return "", receipt, err
+		return nil, receipt, err
 	}
-	return decision.Term, receipt, nil
+	return append([]string(nil), decision.Anchors...), receipt, nil
 }
 
 func objectiveRepositoryRelevanceInput(

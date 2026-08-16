@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/station"
 )
 
 type directCodingTypeScriptStageWorkspace struct {
@@ -169,9 +168,9 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 		if bindingErr != nil {
 			return fmt.Errorf("derive staged TypeScript compiler scope for block %s: %w", target.ID, bindingErr)
 		}
-		localized, regionErr := assemblyline.NewTypeScriptCompilerRepairRegion(
+		localized, regionErr := assemblyline.NewTypeScriptCompilerRepairRegionWithEvidence(
 			current, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
-			scope.Bindings, scope.UnavailableBindings,
+			scope.Bindings, scope.ExpressionEvidence, scope.UnavailableBindings,
 		)
 		if regionErr != nil {
 			return fmt.Errorf("localize staged TypeScript compiler failure for block %s: %w", target.ID, regionErr)
@@ -191,42 +190,8 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	if err != nil {
 		return err
 	}
-	guidanceModel, err := s.workerModel(station.CodingFragmentRepairGuidance)
-	if err != nil {
-		return err
-	}
-	s.runtime.svc.emitStepEvent(
-		s.runtime.claim.Authority,
-		"coding_fragment_repair_guidance_started",
-		fmt.Sprintf(
-			"block=%s exact_failure=%s", target.ID,
-			safeLine(trimForBudget(failure, 500), "unknown"),
-		),
-	)
-	workerRuntime := directCodingWorkerRuntime(s)
-	guidance, err := runDirectCodingTypeScriptRepairGuidance(
-		workerRuntime, guidanceModel, target, available, current, repairRegion, failure,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"derive repair guidance for block %s from staged failure %s: %w",
-			target.ID, safeLine(firstDirectCodingDiagnosticLine(diagnostic.Message), "unknown"), err,
-		)
-	}
-	modelName, err := s.workerModel(station.CodingFragmentCorrection)
-	if err != nil {
-		return err
-	}
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_fragment_correction_started", fmt.Sprintf(
-		"block=%s guidance_bytes=%d", target.ID, len(guidance),
-	))
-	workerRuntime.CorrectionModel = modelName
-	source, err := runDirectCodingTypeScriptFragmentWorker(
-		workerRuntime, modelName,
-		directCodingTypeScriptFragmentJob{
-			block: target, tsx: tsx, available: available, current: current,
-			repairRegion: repairRegion, repairGuidance: guidance,
-		},
+	source, err := s.convergeDirectCodingTypeScriptGuidedRepair(
+		target, tsx, available, current, repairRegion, failure,
 	)
 	if err != nil {
 		return fmt.Errorf(

@@ -456,8 +456,8 @@ func assertJobSpecificationReviewSchemaHasNoCodeAuthority(schema map[string]any)
 		return fmt.Errorf("job specification review schema has no object root: %v", schema)
 	}
 	branches, ok := schema["oneOf"].([]any)
-	if !ok || len(branches) != 2 {
-		return fmt.Errorf("job specification review schema is not a two-branch union: %v", schema)
+	if !ok || len(branches) != 4 {
+		return fmt.Errorf("job specification review schema is not one accept plus three field-bound repair branches: %v", schema)
 	}
 	for index, raw := range branches {
 		branch, ok := raw.(map[string]any)
@@ -473,12 +473,27 @@ func assertJobSpecificationReviewSchemaHasNoCodeAuthority(schema map[string]any)
 		}
 	}
 	accept := branches[0].(map[string]any)
-	repairBranch := branches[1].(map[string]any)
-	if !reflect.DeepEqual(accept["required"], []string{"decision"}) ||
-		!reflect.DeepEqual(repairBranch["required"], []string{
+	if !reflect.DeepEqual(accept["required"], []string{"decision"}) {
+		return fmt.Errorf("job specification accept branch permits an incomplete response: %v", schema)
+	}
+	wantFields := []string{"objective", "required_behaviors", "acceptance_criteria"}
+	for index, wantField := range wantFields {
+		repairBranch := branches[index+1].(map[string]any)
+		if !reflect.DeepEqual(repairBranch["required"], []string{
 			"decision", "field", "finding", "finding_evidence",
 		}) {
-		return fmt.Errorf("job specification review branches permit incomplete responses: %v", schema)
+			return fmt.Errorf("job specification repair branch %q permits an incomplete response: %v", wantField, schema)
+		}
+		properties := repairBranch["properties"].(map[string]any)
+		field, ok := properties["field"].(map[string]any)
+		if !ok || field["const"] != wantField {
+			return fmt.Errorf("job specification repair branch %d is not bound to field %q: %v", index+1, wantField, repairBranch)
+		}
+		evidence, ok := properties["finding_evidence"].(map[string]any)
+		values, valuesOK := evidence["enum"].([]string)
+		if !ok || !valuesOK || len(values) == 0 {
+			return fmt.Errorf("job specification repair branch %q has no code-owned evidence choices: %v", wantField, repairBranch)
+		}
 	}
 	return nil
 }

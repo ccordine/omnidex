@@ -6,9 +6,12 @@ func interpretRepositoryRequirements(
 	runtime typedWorkerRuntime,
 	modelName string,
 	authority string,
+	context assemblyline.ApplicationContext,
 	identities []assemblyline.ArtifactIdentity,
 ) ([]string, error) {
-	input := assemblyline.RepositoryRequirementInterpretationInput{UserRequest: authority}
+	input := assemblyline.RepositoryRequirementInterpretationInput{
+		UserRequest: authority, Context: context,
+	}
 	job, err := assemblyline.NewRepositoryRequirementInterpretationJob(input)
 	if err != nil {
 		return nil, err

@@ -33,11 +33,10 @@ func runRepositoryGoVerificationCorrection(
 		return "", fmt.Errorf("repository Go verification correction requires one bounded path-free diagnostic")
 	}
 	capabilities := make([]string, len(target.DirectCapabilities))
-	permitted := make([]string, len(target.DirectCapabilities))
 	for index, capability := range target.DirectCapabilities {
 		capabilities[index] = capability.Signature
-		permitted[index] = capability.Name
 	}
+	permitted := target.PermittedCapabilitySymbols()
 	input := assemblyline.FragmentCorrectionInput{
 		Language: "go", Signature: target.Signature,
 		Capabilities: capabilities, PermittedSymbols: permitted,
@@ -77,7 +76,12 @@ func runRepositoryGoVerificationCorrection(
 		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failRepositoryGoVerificationCorrection(runtime, modelName, target.SymbolID, err)
 	}
-	corrected, err := gofragment.ParseFunction(contract, strings.TrimSpace(result.Candidate))
+	projected, err := gofragment.ProjectFunctionModelResponse(strings.TrimSpace(result.Candidate))
+	if err != nil {
+		err = finalizeTypedWorkerResult(runtime, job, result, err)
+		return "", failRepositoryGoVerificationCorrection(runtime, modelName, target.SymbolID, err)
+	}
+	corrected, err := gofragment.ParseFunction(contract, projected)
 	if err != nil {
 		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failRepositoryGoVerificationCorrection(runtime, modelName, target.SymbolID, err)

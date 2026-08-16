@@ -19,8 +19,16 @@ const (
 )
 
 type ApplicationIntentReviewInput struct {
-	Authority ApplicationIntentInput     `json:"authority"`
-	Candidate ApplicationIntentCandidate `json:"candidate"`
+	Authority      ApplicationIntentInput            `json:"authority"`
+	Candidate      ApplicationIntentCandidate        `json:"candidate"`
+	Target         string                            `json:"target"`
+	PriorRejection *ApplicationIntentReviewRejection `json:"prior_rejection,omitempty"`
+}
+
+type ApplicationIntentReviewRejection struct {
+	Target  string `json:"target"`
+	Finding string `json:"finding"`
+	Reason  string `json:"reason"`
 }
 
 type ApplicationIntentReviewDecision struct {
@@ -34,7 +42,25 @@ func (input ApplicationIntentReviewInput) validate() error {
 	if err := input.Authority.validate(); err != nil {
 		return err
 	}
-	return input.Candidate.Validate()
+	if err := input.Candidate.Validate(); err != nil {
+		return err
+	}
+	if !validApplicationIntentTarget(input.Target, len(input.Candidate.Requirements)) {
+		return fmt.Errorf("application intent review target %q is unsupported", input.Target)
+	}
+	if input.PriorRejection != nil {
+		if input.PriorRejection.Target != input.Target ||
+			input.PriorRejection.Reason != "repair_noop" {
+			return fmt.Errorf("application intent review prior rejection is invalid")
+		}
+		if err := validateApplicationIntentText(
+			"prior rejected finding", input.PriorRejection.Finding,
+			maxApplicationIntentFindingBytes,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (decision ApplicationIntentReviewDecision) ValidateFor(
@@ -53,8 +79,8 @@ func (decision ApplicationIntentReviewDecision) ValidateFor(
 		}
 		return nil
 	case ApplicationIntentReviewRepair:
-		if !validApplicationIntentTarget(decision.Target, len(input.Candidate.Requirements)) {
-			return fmt.Errorf("application intent review target %q is unsupported", decision.Target)
+		if decision.Target != input.Target {
+			return fmt.Errorf("application intent review targeted %q instead of %q", decision.Target, input.Target)
 		}
 		if err := validateApplicationIntentText(
 			"review finding", decision.Finding, maxApplicationIntentFindingBytes,
@@ -71,15 +97,37 @@ func BuildApplicationIntentReviewPrompt(input ApplicationIntentReviewInput) (str
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authorityJSON, err := json.Marshal(input)
+	currentValue, err := applicationIntentTargetValue(input.Candidate, input.Target)
+	if err != nil {
+		return "", err
+	}
+	projection := struct {
+		UserRequest    string                            `json:"immutable_user_request"`
+		CurrentTarget  string                            `json:"current_target"`
+		FieldContract  string                            `json:"field_contract"`
+		CurrentValue   string                            `json:"current_value"`
+		PriorRejection *ApplicationIntentReviewRejection `json:"prior_rejected_review,omitempty"`
+	}{
+		UserRequest: input.Authority.UserRequest, CurrentTarget: input.Target,
+		FieldContract: applicationIntentTargetContract(input.Target), CurrentValue: currentValue,
+		PriorRejection: input.PriorRejection,
+	}
+	authorityJSON, err := json.Marshal(projection)
 	if err != nil {
 		return "", fmt.Errorf("encode application intent review authority: %w", err)
 	}
-	prompt := strings.Join([]string{
-		"Review only whether candidate faithfully interprets the immutable user request under the authoritative context facts.",
-		"Accept only when the product context and requirement statements collectively cover every explicit capability, behavior, user-visible element, and constraint without contradiction or invented scope. On failure, name exactly one defective leaf and one concise finding. Do not write replacement prose, design architecture, name files or paths, choose tools, plan work, implement anything, or claim completion.",
-		"APPLICATION_INTENT_REVIEW_AUTHORITY_JSON:\n" + string(authorityJSON),
-	}, "\n\n")
+	parts := []string{
+		"Determine whether current_value satisfies field_contract under immutable_user_request.",
+		"A repair finding must name a conflict, unsupported addition, or semantic error; repeating current_value is not a finding.",
+		"Return {\"schema\":\"omnidex.application-intent-review.v1\",\"outcome\":\"accept\",\"finding\":\"\"} or {\"schema\":\"omnidex.application-intent-review.v1\",\"outcome\":\"repair\",\"finding\":<the exact semantic problem>}.",
+	}
+	if input.PriorRejection != nil {
+		parts = append(parts,
+			"The prior rejected finding produced a byte-identical replacement for current_value. Re-evaluate current_value; accept it or return a different exact semantic problem.",
+		)
+	}
+	parts = append(parts, "APPLICATION_INTENT_REVIEW_INPUT_JSON:\n"+string(authorityJSON))
+	prompt := strings.Join(parts, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf("application intent review prompt exceeds %d bytes", maxPortablePayloadBytes)
 	}
@@ -90,34 +138,14 @@ func ApplicationIntentReviewResponseSchema(input ApplicationIntentReviewInput) (
 	if err := input.validate(); err != nil {
 		return nil, err
 	}
-	targets := applicationIntentTargets(len(input.Candidate.Requirements))
 	properties := map[string]any{
 		"schema":  map[string]any{"type": "string", "const": ApplicationIntentReviewSchemaV1},
 		"outcome": enumSchema(ApplicationIntentReviewAccept, ApplicationIntentReviewRepair),
-		"target":  enumSchema(targets...),
 		"finding": map[string]any{
-			"type": "string", "minLength": 1, "maxLength": maxApplicationIntentFindingBytes,
+			"type": "string", "minLength": 0, "maxLength": maxApplicationIntentFindingBytes,
 		},
 	}
-	return map[string]any{
-		"type": "object", "properties": properties, "additionalProperties": false,
-		"oneOf": []any{
-			map[string]any{
-				"required": []string{"schema", "outcome"},
-				"properties": map[string]any{
-					"schema":  map[string]any{"const": ApplicationIntentReviewSchemaV1},
-					"outcome": map[string]any{"const": ApplicationIntentReviewAccept},
-				},
-			},
-			map[string]any{
-				"required": []string{"schema", "outcome", "target", "finding"},
-				"properties": map[string]any{
-					"schema":  map[string]any{"const": ApplicationIntentReviewSchemaV1},
-					"outcome": map[string]any{"const": ApplicationIntentReviewRepair},
-				},
-			},
-		},
-	}, nil
+	return objectSchema([]string{"schema", "outcome", "finding"}, properties), nil
 }
 
 func DecodeApplicationIntentReviewDecision(
@@ -135,10 +163,45 @@ func DecodeApplicationIntentReviewDecision(
 	if err := decodePortablePayload([]byte(raw), &decision); err != nil {
 		return zero, fmt.Errorf("decode application intent review: %w", err)
 	}
+	if decision.Outcome == ApplicationIntentReviewRepair {
+		decision.Target = input.Target
+	} else if decision.Outcome == ApplicationIntentReviewAccept {
+		decision.Finding = ""
+	}
 	if err := decision.ValidateFor(input); err != nil {
 		return zero, err
 	}
 	return decision, nil
+}
+
+func applicationIntentTargetValue(
+	candidate ApplicationIntentCandidate,
+	target string,
+) (string, error) {
+	if target == "product_context" {
+		return candidate.ProductContext, nil
+	}
+	index, err := applicationIntentRequirementTargetIndex(target)
+	if err != nil || index >= len(candidate.Requirements) {
+		return "", fmt.Errorf("application intent target %q is outside retained state", target)
+	}
+	return candidate.Requirements[index], nil
+}
+
+// ApplicationIntentReviewTargetValue returns the exact retained leaf selected
+// by code for one review call.
+func ApplicationIntentReviewTargetValue(
+	candidate ApplicationIntentCandidate,
+	target string,
+) (string, error) {
+	return applicationIntentTargetValue(candidate, target)
+}
+
+func applicationIntentTargetContract(target string) string {
+	if target == "product_context" {
+		return "describe the software product requested by the user"
+	}
+	return "state one product obligation explicitly required by the user request without invented precision or scope; sibling obligations do not need to be repeated"
 }
 
 func applicationIntentTargets(requirementCount int) []string {
@@ -148,6 +211,12 @@ func applicationIntentTargets(requirementCount int) []string {
 		targets = append(targets, fmt.Sprintf("requirements_%03d", index+1))
 	}
 	return targets
+}
+
+// ApplicationIntentReviewTargets returns the code-owned semantic-leaf order
+// for one already validated retained intent candidate.
+func ApplicationIntentReviewTargets(candidate ApplicationIntentCandidate) []string {
+	return applicationIntentTargets(len(candidate.Requirements))
 }
 
 func validApplicationIntentTarget(target string, requirementCount int) bool {

@@ -25,18 +25,31 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	if err != nil {
 		return "", err
 	}
+	partitionModel, err := session.workerModel(station.CodingRequirements)
+	if err != nil {
+		return "", err
+	}
+	applicationContext, err := assemblyline.BootstrapApplicationContext(
+		redacted, assemblyline.ApplicationWorkspaceExisting, session.request.MemoryAuthorities,
+	)
+	if err != nil {
+		return "", err
+	}
+	applicationContext, err = resolveDirectCodingApplicationContext(
+		directCodingWorkerRuntime(session), partitionModel, redacted,
+		applicationContext, identities, session.resolveApplicationRepositoryEvidenceNeed,
+	)
+	if err != nil {
+		return "", err
+	}
 	directives, err := classifyExistingRepositoryArtifactDirectives(
 		session, redacted, identities,
 	)
 	if err != nil {
 		return "", err
 	}
-	partitionModel, err := session.workerModel(station.CodingRequirements)
-	if err != nil {
-		return "", err
-	}
 	featureQuotes, err := interpretRepositoryRequirements(
-		directCodingWorkerRuntime(session), partitionModel, redacted, identities,
+		directCodingWorkerRuntime(session), partitionModel, redacted, applicationContext, identities,
 	)
 	if err != nil {
 		return "", err
@@ -115,6 +128,9 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 		}
 		return session.runExistingRepositoryDesiredState(graph, analysis)
 	}
+	if err := session.openExistingRepositoryEvidenceNeeds(featureQuotes); err != nil {
+		return "", err
+	}
 	resolutions, err := prepareExistingRepositoryRequirementResolutions(
 		featureQuotes,
 		func(query string) (repositoryretrieval.EvidencePack, error) {
@@ -135,7 +151,7 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 			)
 		},
 		func(acquisition existingRepositoryEvidenceAcquisition) error {
-			return session.recordExistingRepositoryEvidence(acquisition.Query, acquisition.Pack)
+			return session.recordExistingRepositoryInvestigation(acquisition)
 		},
 		func(acquisition existingRepositoryEvidenceAcquisition) (assemblyline.RepositoryChangeSurfaceDecision, error) {
 			changeModel, modelErr := session.repositorySemanticModel(station.CodingRepositoryChange)
@@ -154,6 +170,11 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	)
 	if err != nil {
 		return "", err
+	}
+	for _, resolution := range resolutions {
+		if err := session.recordExistingRepositoryInvestigationResolution(resolution); err != nil {
+			return "", err
+		}
 	}
 	contract, err := session.buildExistingRepositoryChangeContract(resolutions)
 	if err != nil {

@@ -31,7 +31,7 @@ generation and instruction-only repair execution:
 ```dotenv
 # Each named semantic station has its own explicit route.
 OMNI_CODING_FRAGMENT_MODEL=qwen2.5-coder:7b
-OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b
+OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen2.5-coder:7b
 
 INFERENCE_CONTEXT_TOKENS=8192
@@ -105,7 +105,7 @@ Re-run the qualification with:
 ```bash
 OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
 OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
-OMNIDEX_TEST_TYPESCRIPT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b \
+OMNIDEX_TEST_TYPESCRIPT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M \
 OMNIDEX_TEST_TYPESCRIPT_REPAIR_EXECUTOR_MODEL=qwen2.5-coder:7b \
 OMNIDEX_TEST_TYPESCRIPT_REPAIR_REPORT=/tmp/guided-repair.jsonl \
 go test ./internal/worker \
@@ -147,7 +147,7 @@ Run the same exact load check after any model, context, backend, or memory chang
 
 ```bash
 omni ollama:prewarm --model qwen3-coder:30b --num-ctx 16384 --json
-omni ollama:prewarm --model qwen3.5:9b --num-ctx 8192 --json
+omni ollama:prewarm --model qwen3.5:9b-q4_K_M --num-ctx 8192 --json
 omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
 omni ollama:prewarm --model deepseek-r1:8b --num-ctx 16384 --json
 ```

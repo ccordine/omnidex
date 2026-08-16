@@ -26,7 +26,9 @@ func mapDirectCodingVitestFailureReceipt(
 			continue
 		}
 		diagnostic.FailureClass = receipt.FailureClass
-		diagnostic.ModelFeedback = directCodingTypeScriptTestModelFailure(receipt.Output)
+		diagnostic.ModelFeedback = directCodingTypeScriptTestModelFailure(
+			receipt.Output, diagnostic.AuthorizedRegexLiterals...,
+		)
 		return diagnostic, true
 	}
 	return nil, false
@@ -80,12 +82,19 @@ func mapDirectCodingTypeScriptDocumentLocation(
 				continue
 			}
 			location := path + ":" + strconv.Itoa(line) + ":" + strconv.Itoa(column)
+			regularExpressions, err := assemblyline.TypeScriptRegularExpressionLiterals(
+				document.Source, strings.HasSuffix(strings.ToLower(document.Path), ".tsx"),
+			)
+			if err != nil {
+				return nil, false
+			}
 			return &directCodingStageDiagnostic{
 				BlockID: blockID, DeclarationLine: line - span.StartLine + 1,
 				DeclarationColumn: column, DocumentPath: path,
 				DocumentLine: line, DocumentColumn: column,
 				DocumentBlockStartLine: span.StartLine, DocumentBlockEndLine: span.EndLine,
 				Message: location + "\n" + trimForBudget(output, 5000), Output: output,
+				AuthorizedRegexLiterals: regularExpressions,
 			}, true
 		}
 	}

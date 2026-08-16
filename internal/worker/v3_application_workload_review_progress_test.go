@@ -74,7 +74,7 @@ func assertApplicationWorkloadReviewProgressesThroughTwelveRepairs(
 				}
 				return workloadPortableCandidate(job, `{"decision":"accept"}`), nil
 			case assemblyline.WorkApplicationJobSpecificationRepair:
-				if model != "planner" {
+				if model != "llama-review" {
 					return assemblyline.PortableResult{}, fmt.Errorf("repair model=%q", model)
 				}
 				repairs++

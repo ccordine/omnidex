@@ -65,10 +65,7 @@ func resolveReplacements(input Input) ([]targetReplacement, error) {
 		if err != nil {
 			return nil, err
 		}
-		permitted := make([]string, len(target.DirectCapabilities))
-		for index, capability := range target.DirectCapabilities {
-			permitted[index] = capability.Name
-		}
+		permitted := target.PermittedCapabilitySymbols()
 		fragmentContract := gofragment.Contract{
 			Signature: target.Signature, Current: current.Content,
 			PermittedSymbols: permitted,

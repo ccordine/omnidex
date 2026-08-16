@@ -21,13 +21,20 @@ var ErrTypeScriptRepairRegionUnrepresentable = errors.New(
 	"TypeScript repair region cannot fit its local authority",
 )
 
+// ErrTypeScriptFragmentRepairNoChange identifies a structurally valid
+// replacement that is byte-identical to the exact mutable region.
+var ErrTypeScriptFragmentRepairNoChange = errors.New(
+	"TypeScript fragment repair response made no change",
+)
+
 type TypeScriptFragmentRepairRegion struct {
-	Kind                TypeScriptFragmentRepairRegionKind `json:"kind"`
-	StartLine           int                                `json:"start_line"`
-	EndLine             int                                `json:"end_line"`
-	Source              string                             `json:"source"`
-	Bindings            []TypeScriptRepairBinding          `json:"bindings,omitempty"`
-	UnavailableBindings []TypeScriptRepairBinding          `json:"unavailable_bindings,omitempty"`
+	Kind                TypeScriptFragmentRepairRegionKind   `json:"kind"`
+	StartLine           int                                  `json:"start_line"`
+	EndLine             int                                  `json:"end_line"`
+	Source              string                               `json:"source"`
+	Bindings            []TypeScriptRepairBinding            `json:"bindings,omitempty"`
+	UnavailableBindings []TypeScriptRepairBinding            `json:"unavailable_bindings,omitempty"`
+	ExpressionEvidence  []TypeScriptRepairExpressionEvidence `json:"expression_evidence,omitempty"`
 }
 
 type TypeScriptFragmentRepairRegionKind string
@@ -72,7 +79,7 @@ func ProjectTypeScriptFragmentRepairResponse(
 		}
 	}
 	if replacement == region.Source {
-		return "", fmt.Errorf("TypeScript fragment repair response made no change")
+		return "", ErrTypeScriptFragmentRepairNoChange
 	}
 	return replacement, nil
 }
@@ -123,6 +130,9 @@ func (region TypeScriptFragmentRepairRegion) validate() error {
 		if err := ValidateExactTypeScriptRepairBindings(region.UnavailableBindings); err != nil {
 			return fmt.Errorf("TypeScript compiler unavailable bindings: %w", err)
 		}
+		if err := ValidateTypeScriptRepairExpressionEvidence(region.ExpressionEvidence); err != nil {
+			return err
+		}
 		available := make(map[string]struct{}, len(region.Bindings))
 		for _, binding := range region.Bindings {
 			available[binding.Name] = struct{}{}
@@ -135,8 +145,9 @@ func (region TypeScriptFragmentRepairRegion) validate() error {
 				)
 			}
 		}
-	} else if len(region.Bindings) != 0 || len(region.UnavailableBindings) != 0 {
-		return fmt.Errorf("TypeScript syntax repair region cannot carry compiler local bindings")
+	} else if len(region.Bindings) != 0 || len(region.UnavailableBindings) != 0 ||
+		len(region.ExpressionEvidence) != 0 {
+		return fmt.Errorf("TypeScript syntax repair region cannot carry compiler evidence")
 	}
 	if region.Kind == TypeScriptRepairRegionSyntaxWindow && len(region.Source) > maxTypeScriptRepairRegionBytes {
 		return fmt.Errorf(

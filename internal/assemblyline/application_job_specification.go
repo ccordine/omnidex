@@ -8,10 +8,9 @@ import (
 )
 
 type applicationJobSpecificationAuthority struct {
-	Surface              ApplicationSurface `json:"surface"`
-	ProductQuote         string             `json:"product_quote"`
-	AcceptedRequirements []string           `json:"accepted_requirements"`
-	FocusedRequirement   string             `json:"focused_requirement"`
+	Surface            ApplicationSurface `json:"surface"`
+	ProductQuote       string             `json:"product_quote"`
+	FocusedRequirement string             `json:"focused_requirement"`
 }
 
 type applicationJobSpecificationWire struct {
@@ -56,8 +55,8 @@ func BuildApplicationJobSpecificationPrompt(input ApplicationJobSpecificationInp
 	prompt := strings.Join([]string{
 		"Turn the focused accepted requirement into one independently executable local job specification.",
 		"Only user_authority contains stated requirements. Your objective, required_behaviors, and acceptance_criteria are minimum sufficient derived build decisions for this build; never present them as user-stated facts.",
-		"The objective must say specifically what to implement in the named product; it must not merely repeat the requirement noun or say that it works or is usable. List 1 to 4 required_behaviors that each name a concrete action and result, and 1 to 4 specific observable acceptance_criteria that collectively cover every required behavior. Observable does not require invented numeric precision. Do not add capabilities, quantities, counts, ranges, timing, defaults, compatibility promises, or constraints absent from user_authority. Remain faithful to the focused requirement and use the other accepted requirements only to preserve product meaning and boundaries.",
-		"Do not choose files, paths, tools, dependencies, execution order, or claim execution status. Do not add unrelated product scope. Return only the closed JSON response.",
+		"The objective must say specifically what to implement in the named product; it must not merely repeat the requirement noun or say that it works or is usable. List 1 to 4 required_behaviors that each name a concrete action and result, and 1 to 4 specific observable acceptance_criteria that collectively cover every required behavior. Observable does not require invented numeric precision. Remain faithful to the focused requirement.",
+		"Do not add unrelated product scope. Return one closed JSON response.",
 		"APPLICATION_JOB_SPECIFICATION_AUTHORITY_JSON:\n" + string(raw),
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
@@ -71,11 +70,7 @@ func projectApplicationJobSpecificationAuthority(
 ) applicationJobSpecificationAuthority {
 	authority := applicationJobSpecificationAuthority{
 		Surface: input.Surface, ProductQuote: input.ProductQuote,
-		AcceptedRequirements: make([]string, 0, len(input.AcceptedRequirements)),
-		FocusedRequirement:   input.FocusedRequirement.SourceQuote,
-	}
-	for _, requirement := range input.AcceptedRequirements {
-		authority.AcceptedRequirements = append(authority.AcceptedRequirements, requirement.SourceQuote)
+		FocusedRequirement: input.FocusedRequirement.SourceQuote,
 	}
 	return authority
 }

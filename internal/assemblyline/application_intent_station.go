@@ -16,7 +16,7 @@ func BuildApplicationIntentPrompt(input ApplicationIntentInput) (string, error) 
 	}
 	prompt := strings.Join([]string{
 		"Derive one concise product context and the smallest complete set of explicit software requirements from the immutable user request and authoritative context facts.",
-		"Faithfully paraphrase meaning. Cover every explicitly requested capability, behavior, user-visible element, and constraint. Do not invent scope, architecture, files, paths, tools, dependencies, task order, implementation, or completion state.",
+		"Faithfully paraphrase every explicitly requested capability, behavior, user-visible element, and constraint. Return only product meaning stated by the request; omit inferred implementation detail and unstated product obligations.",
 		"AUTHORITATIVE_CONTEXT_JSON:\n" + string(contextJSON),
 		"IMMUTABLE_USER_REQUEST:\n" + input.UserRequest,
 	}, "\n\n")

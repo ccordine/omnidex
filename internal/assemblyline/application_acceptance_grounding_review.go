@@ -37,11 +37,10 @@ func BuildApplicationAcceptanceGroundingReviewPrompt(
 		return "", fmt.Errorf("encode acceptance grounding leaf fields: %w", err)
 	}
 	return strings.Join([]string{
-		"Review whether each source-free product acceptance observation is authorized by the frozen criteria.",
-		"Code has already bound the exact registered waitFor harness mechanic; that pure site is absent from this review and cannot satisfy criterion coverage. For every listed site/criterion pair, set its exact boolean field true only when the complete site is authorized by that criterion; otherwise set it false. One supported sibling never authorizes an unsupported sibling. Code derives acceptance, the first unsupported site, and the first missing criterion from the complete boolean state.",
-		"Return exactly one JSON object containing every listed boolean field exactly once. Do not return a decision, mappings, repair identifiers, arrays, prose, source, implementation, physical locations, environment operations, or execution status.",
+		"For every listed observation/criterion pair, return true only when the complete observation is authorized by that criterion; otherwise return false. One supported sibling does not authorize another sibling.",
+		"Return one JSON object containing every listed boolean field exactly once.",
 		"ACCEPTANCE_GROUNDING_LEAF_FIELDS_JSON:\n" + string(fieldJSON),
-		"ACCEPTANCE_GROUNDING_AUTHORITY_JSON:\n" + string(raw),
+		"ACCEPTANCE_GROUNDING_INPUT_JSON:\n" + string(raw),
 	}, "\n\n"), nil
 }
 

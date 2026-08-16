@@ -5,6 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/scanner"
+	"go/token"
 	"reflect"
 	"sort"
 	"strings"
@@ -12,7 +16,7 @@ import (
 )
 
 const (
-	ChangeContractSchemaV1    = "omnidex.repository-change-contract.v1"
+	ChangeContractSchemaV2    = "omnidex.repository-change-contract.v2"
 	maxChangeTargets          = 8
 	maxChangeSymbolBytes      = 64 * 1024
 	maxChangeRequirementBytes = 512
@@ -28,10 +32,11 @@ type ChangeRequest struct {
 }
 
 type DirectCapability struct {
-	SymbolID     string `json:"symbol_id"`
-	Name         string `json:"name"`
-	Signature    string `json:"signature"`
-	SourceSHA256 string `json:"source_sha256"`
+	SymbolID         string   `json:"symbol_id"`
+	Name             string   `json:"name"`
+	Signature        string   `json:"signature"`
+	SourceSHA256     string   `json:"source_sha256"`
+	PermittedSymbols []string `json:"permitted_symbols"`
 }
 
 type ChangeTarget struct {
@@ -75,7 +80,7 @@ func BuildChangeContract(snapshot Snapshot, analysis Analysis, requests []Change
 	}
 	seen := make(map[string]struct{}, len(requests))
 	contract := ChangeContract{
-		Schema: ChangeContractSchemaV1, SnapshotID: snapshot.ID, AnalysisID: analysis.ID,
+		Schema: ChangeContractSchemaV2, SnapshotID: snapshot.ID, AnalysisID: analysis.ID,
 		Targets: make([]ChangeTarget, 0, len(requests)),
 	}
 	for _, request := range requests {
@@ -138,7 +143,7 @@ func BuildChangeContract(snapshot Snapshot, analysis Analysis, requests []Change
 }
 
 func (contract ChangeContract) Validate(snapshot Snapshot, analysis Analysis) error {
-	if contract.Schema != ChangeContractSchemaV1 || !validOpaqueID(contract.ID, "change_contract_") ||
+	if contract.Schema != ChangeContractSchemaV2 || !validOpaqueID(contract.ID, "change_contract_") ||
 		contract.SnapshotID != snapshot.ID || contract.AnalysisID != analysis.ID {
 		return fmt.Errorf("repository change contract has invalid identity or source authority")
 	}
@@ -166,10 +171,26 @@ func directChangeCapabilities(targetID string, analysis Analysis, symbols map[st
 		if !exists {
 			continue
 		}
-		byID[dependency.ID] = DirectCapability{
-			SymbolID: dependency.ID, Name: dependency.Name,
-			Signature: dependency.Signature, SourceSHA256: dependency.SourceSHA256,
+		capability, err := newDirectCapability(dependency)
+		if err != nil {
+			return nil, err
 		}
+		byID[dependency.ID] = capability
+	}
+	target, exists := symbols[targetID]
+	if !exists {
+		return nil, fmt.Errorf("repository change target %q is absent while deriving capabilities", targetID)
+	}
+	typeDependencies, err := directSignatureTypeDependencies(target, symbols)
+	if err != nil {
+		return nil, err
+	}
+	for _, dependency := range typeDependencies {
+		capability, capabilityErr := newDirectCapability(dependency)
+		if capabilityErr != nil {
+			return nil, capabilityErr
+		}
+		byID[dependency.ID] = capability
 	}
 	result := make([]DirectCapability, 0, len(byID))
 	for _, capability := range byID {
@@ -179,7 +200,9 @@ func directChangeCapabilities(targetID string, analysis Analysis, symbols map[st
 	capabilityBytes, symbolBytes := 0, 0
 	for _, capability := range result {
 		capabilityBytes += len([]byte(capability.Signature))
-		symbolBytes += len([]byte(capability.Name))
+		for _, symbol := range capability.PermittedSymbols {
+			symbolBytes += len([]byte(symbol))
+		}
 	}
 	if len(result) > maxDirectCapabilities || capabilityBytes > maxDirectCapabilityBytes ||
 		symbolBytes > maxPermittedSymbolBytes {
@@ -189,6 +212,121 @@ func directChangeCapabilities(targetID string, analysis Analysis, symbols map[st
 		)
 	}
 	return result, nil
+}
+
+func newDirectCapability(symbol Symbol) (DirectCapability, error) {
+	permitted := []string{symbol.Name}
+	if symbol.Kind == "type" {
+		permitted = goDeclarationIdentifiers(symbol.Signature)
+	}
+	permitted = canonicalStrings(permitted)
+	if len(permitted) == 0 {
+		return DirectCapability{}, fmt.Errorf("repository direct capability %q has no permitted symbols", symbol.ID)
+	}
+	return DirectCapability{
+		SymbolID: symbol.ID, Name: symbol.Name, Signature: symbol.Signature,
+		SourceSHA256: symbol.SourceSHA256, PermittedSymbols: permitted,
+	}, nil
+}
+
+func directSignatureTypeDependencies(target Symbol, symbols map[string]Symbol) ([]Symbol, error) {
+	file, err := parser.ParseFile(
+		token.NewFileSet(), "", "package capability\n\n"+target.Signature+" {}", parser.AllErrors,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parse repository target %q signature dependencies: %w", target.ID, err)
+	}
+	if len(file.Decls) != 1 {
+		return nil, fmt.Errorf("repository target %q signature produced %d declarations", target.ID, len(file.Decls))
+	}
+	function, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok {
+		return nil, fmt.Errorf("repository target %q signature is not a function declaration", target.ID)
+	}
+	referenced := make(map[string]struct{})
+	nodes := []ast.Node{function.Type}
+	if function.Recv != nil {
+		nodes = append(nodes, function.Recv)
+	}
+	for _, node := range nodes {
+		ast.Inspect(node, func(current ast.Node) bool {
+			if identifier, isIdentifier := current.(*ast.Ident); isIdentifier {
+				referenced[identifier.Name] = struct{}{}
+			}
+			return true
+		})
+	}
+	packageName := qualifiedSymbolPackage(target.QualifiedName)
+	byName := make(map[string]Symbol)
+	for _, symbol := range symbols {
+		if symbol.Kind != "type" || qualifiedSymbolPackage(symbol.QualifiedName) != packageName {
+			continue
+		}
+		if _, used := referenced[symbol.Name]; !used {
+			continue
+		}
+		if prior, duplicate := byName[symbol.Name]; duplicate && prior.ID != symbol.ID {
+			return nil, fmt.Errorf(
+				"repository target %q has ambiguous direct type dependency %q", target.ID, symbol.Name,
+			)
+		}
+		byName[symbol.Name] = symbol
+	}
+	dependencies := make([]Symbol, 0, len(byName))
+	for _, symbol := range byName {
+		dependencies = append(dependencies, symbol)
+	}
+	sort.Slice(dependencies, func(left, right int) bool { return dependencies[left].ID < dependencies[right].ID })
+	return dependencies, nil
+}
+
+func qualifiedSymbolPackage(qualified string) string {
+	if index := strings.LastIndex(qualified, "."); index >= 0 {
+		return qualified[:index]
+	}
+	return ""
+}
+
+func goDeclarationIdentifiers(source string) []string {
+	fileSet := token.NewFileSet()
+	file := fileSet.AddFile("", fileSet.Base(), len(source))
+	var lexer scanner.Scanner
+	lexer.Init(file, []byte(source), nil, 0)
+	identifiers := make([]string, 0, 8)
+	for {
+		_, current, literal := lexer.Scan()
+		if current == token.EOF {
+			return identifiers
+		}
+		if current == token.IDENT {
+			identifiers = append(identifiers, literal)
+		}
+	}
+}
+
+func canonicalStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (target ChangeTarget) PermittedCapabilitySymbols() []string {
+	values := make([]string, 0)
+	for _, capability := range target.DirectCapabilities {
+		values = append(values, capability.PermittedSymbols...)
+	}
+	return canonicalStrings(values)
 }
 
 func directChangeTests(targetID string, analysis Analysis, symbols map[string]Symbol) ([]string, error) {

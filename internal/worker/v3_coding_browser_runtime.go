@@ -34,9 +34,20 @@ func genericBrowserRuntimeAPI(requirements []assemblyline.Requirement) string {
 		"type FeatureState = { readonly [key: string]: SharedValue }",
 		"type CapabilityID = " + genericBrowserCapabilityUnion(requirements),
 		"type CapabilitySnapshot = Readonly<Record<CapabilityID, SharedValue>>",
-		"interface FeatureActions { set(key: string, value: SharedValue): void; toggle(key: string): void; increment(key: string, delta: number, min: number, max: number): void; append(key: string, value: SharedValue): void; removeAt(key: string, index: number): void }",
+		genericBrowserFeatureActionsAPI(),
 		"interface FeatureViewProps { state: FeatureState; capabilities: CapabilitySnapshot; actions: FeatureActions }",
 	}, "\n")
+}
+
+func genericBrowserFeatureActionsAPI() string {
+	return `interface FeatureActions {
+  set(key: string, value: SharedValue): void;
+  toggle(key: string): void;
+  /** Adds delta, then clamps the numeric result to [min, max]. A missing value starts at finite min, otherwise finite max, otherwise zero. */
+  increment(key: string, delta: number, min: number, max: number): void;
+  append(key: string, value: SharedValue): void;
+  removeAt(key: string, index: number): void;
+}`
 }
 
 func genericBrowserCapabilityUnion(requirements []assemblyline.Requirement) string {
@@ -216,9 +227,10 @@ function useFeatureActions(
 			increment(key, delta, min, max) {
 				commit('Adjusted.', () => {
 					assertFeatureStateKey(key);
-					if (![delta, min, max].every(Number.isFinite) || min > max) throw new Error('Invalid numeric action bounds.');
+					if (!Number.isFinite(delta) || Number.isNaN(min) || Number.isNaN(max) || min > max) throw new Error('Invalid numeric action bounds.');
 					const existing = current()[key];
-					const value = typeof existing === 'number' ? existing : min;
+					const baseline = Number.isFinite(min) ? min : Number.isFinite(max) ? max : 0;
+					const value = typeof existing === 'number' && Number.isFinite(existing) ? existing : baseline;
 					return { ...current(), [key]: Math.min(max, Math.max(min, value + delta)) };
 				});
 			},

@@ -12,6 +12,8 @@ import (
 type applicationJobSpecificationReviewPortablePayload struct {
 	Authority         ApplicationJobSpecificationInput                `json:"authority"`
 	Retained          ApplicationJobSpecification                     `json:"retained"`
+	Field             ApplicationJobSpecificationField                `json:"field"`
+	EvidenceID        string                                          `json:"evidence_id"`
 	Attempt           int                                             `json:"attempt"`
 	ValidationFailure *ApplicationJobSpecificationReviewEvidenceError `json:"validation_failure,omitempty"`
 }
@@ -68,9 +70,11 @@ func newApplicationJobSpecificationReviewPortablePayload(
 		return applicationJobSpecificationReviewPortablePayload{}, err
 	}
 	payload := applicationJobSpecificationReviewPortablePayload{
-		Authority: input.authority,
-		Retained:  cloneApplicationJobSpecification(input.retained),
-		Attempt:   input.attempt,
+		Authority:  input.authority,
+		Retained:   cloneApplicationJobSpecification(input.retained),
+		Field:      input.field,
+		EvidenceID: input.evidenceID,
+		Attempt:    input.attempt,
 	}
 	if input.validationFailure != nil {
 		copy := *input.validationFailure
@@ -90,11 +94,14 @@ func (payload applicationJobSpecificationReviewPortablePayload) reviewInput() (
 ) {
 	if payload.ValidationFailure == nil {
 		return NewApplicationJobSpecificationReviewInput(
-			payload.Authority, payload.Retained, payload.Attempt,
+			payload.Authority, payload.Retained, payload.Field, payload.EvidenceID,
+			payload.Attempt,
 		)
 	}
 	return NewApplicationJobSpecificationReviewRetryInput(
-		payload.Authority, payload.Retained, payload.Attempt, *payload.ValidationFailure,
+		payload.Authority, payload.Retained, payload.Field, payload.EvidenceID,
+		payload.Attempt,
+		*payload.ValidationFailure,
 	)
 }
 
@@ -229,6 +236,42 @@ func renderApplicationJobSpecificationRepairPortable(
 		return "", nil, err
 	}
 	return renderApplicationJobSpecificationRepair(input)
+}
+
+// RestoreApplicationJobSpecificationRepairJob restores the exact private
+// input and retained state from one immutable repair envelope. It exists for
+// read-only production-contract replay; callers cannot construct or alter the
+// private authority fields.
+func RestoreApplicationJobSpecificationRepairJob(
+	job PortableJob,
+) (
+	ApplicationJobSpecificationRepairInput,
+	ApplicationJobSpecificationInput,
+	ApplicationJobSpecification,
+	error,
+) {
+	if err := job.Validate(); err != nil {
+		return ApplicationJobSpecificationRepairInput{}, ApplicationJobSpecificationInput{},
+			ApplicationJobSpecification{}, err
+	}
+	if job.Kind != WorkApplicationJobSpecificationRepair {
+		return ApplicationJobSpecificationRepairInput{}, ApplicationJobSpecificationInput{},
+			ApplicationJobSpecification{}, fmt.Errorf(
+				"restore application job specification repair requires work kind %q",
+				WorkApplicationJobSpecificationRepair,
+			)
+	}
+	var payload applicationJobSpecificationRepairPortablePayload
+	if err := decodePortablePayload(job.Payload, &payload); err != nil {
+		return ApplicationJobSpecificationRepairInput{}, ApplicationJobSpecificationInput{},
+			ApplicationJobSpecification{}, err
+	}
+	input, err := payload.repairInput()
+	if err != nil {
+		return ApplicationJobSpecificationRepairInput{}, ApplicationJobSpecificationInput{},
+			ApplicationJobSpecification{}, err
+	}
+	return input, payload.Authority, cloneApplicationJobSpecification(payload.Retained), nil
 }
 
 func renderApplicationJobSpecificationRepair(

@@ -93,11 +93,10 @@ func existingRepositoryGoModificationInput(
 		)
 	}
 	capabilities := make([]string, len(target.DirectCapabilities))
-	permitted := make([]string, len(target.DirectCapabilities))
 	for index, capability := range target.DirectCapabilities {
 		capabilities[index] = capability.Signature
-		permitted[index] = capability.Name
 	}
+	permitted := target.PermittedCapabilitySymbols()
 	input := assemblyline.FragmentModificationInput{
 		Language: "go", Signature: target.Signature,
 		CurrentDeclaration: current, RequirementQuote: target.RequirementQuote,

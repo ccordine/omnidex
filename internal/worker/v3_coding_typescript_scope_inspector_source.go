@@ -3,7 +3,7 @@ package worker
 const directCodingTypeScriptScopeInspectorSource = `import path from 'node:path';
 import ts from 'typescript';
 
-const schema = 'omnidex.typescript-lexical-scope.v1';
+const schema = 'omnidex.typescript-lexical-scope.v2';
 const [relativePath, lineRaw, columnRaw, blockStartRaw, blockEndRaw] = process.argv.slice(2);
 const line = Number(lineRaw);
 const column = Number(columnRaw);
@@ -106,5 +106,82 @@ function collectNestedDeclarations(node) {
 sourceFile.forEachChild(collectNestedDeclarations);
 const unavailableBindings = [...unavailableByName.values()]
   .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-process.stdout.write(JSON.stringify({ schema, bindings, unavailable_bindings: unavailableBindings }));
+
+function isExpressionCandidate(node) {
+  return ts.isIdentifier(node) || ts.isPropertyAccessExpression(node) ||
+    ts.isElementAccessExpression(node) || ts.isCallExpression(node) ||
+    ts.isNewExpression(node) || ts.isParenthesizedExpression(node) ||
+    ts.isBinaryExpression(node) || ts.isConditionalExpression(node) ||
+    ts.isAsExpression(node) || ts.isTypeAssertionExpression(node) ||
+    ts.isNonNullExpression(node) || ts.isTemplateExpression(node) ||
+    ts.isNoSubstitutionTemplateLiteral(node) || ts.isStringLiteral(node) ||
+    ts.isNumericLiteral(node) || ts.isArrayLiteralExpression(node) ||
+    ts.isObjectLiteralExpression(node) || node.kind === ts.SyntaxKind.TrueKeyword ||
+    node.kind === ts.SyntaxKind.FalseKeyword || node.kind === ts.SyntaxKind.NullKeyword;
+}
+
+const expressionCandidates = [];
+function collectExpressionCandidates(node) {
+  const start = node.getStart(sourceFile);
+  const end = node.getEnd();
+  if (start >= blockStart && end <= blockEnd && isExpressionCandidate(node)) {
+    const startLine = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
+    const endLine = sourceFile.getLineAndCharacterOfPosition(Math.max(start, end - 1)).line + 1;
+    const source = node.getText(sourceFile).trim();
+    if (startLine === line && endLine === line && source && !/[\r\n]/.test(source) && source.length <= 2048) {
+      expressionCandidates.push({ node, start, end, source });
+    }
+  }
+  node.forEachChild(collectExpressionCandidates);
+}
+sourceFile.forEachChild(collectExpressionCandidates);
+expressionCandidates.sort((left, right) => {
+  const leftContains = left.start <= position && position < left.end ? 0 : 1;
+  const rightContains = right.start <= position && position < right.end ? 0 : 1;
+  if (leftContains !== rightContains) return leftContains - rightContains;
+  const span = (right.end - right.start) - (left.end - left.start);
+  if (span !== 0) return span;
+  return left.start - right.start;
+});
+const expressionEvidence = [];
+const expressionIdentities = new Set();
+for (const candidate of expressionCandidates) {
+  if (expressionEvidence.length === 8) break;
+  const inferred = checker.getTypeAtLocation(candidate.node);
+  const inferredType = checker.typeToString(inferred, candidate.node, typeFlags);
+  let contextual;
+  try {
+    contextual = checker.getContextualType(candidate.node);
+  } catch {
+    contextual = undefined;
+  }
+  const contextualType = contextual
+    ? checker.typeToString(contextual, candidate.node, typeFlags)
+    : '';
+  const identity = candidate.source + '\u0000' + inferredType + '\u0000' + contextualType;
+  if (!inferredType || expressionIdentities.has(identity)) continue;
+  expressionIdentities.add(identity);
+  const incompatibleTypes = [];
+  if (contextual && typeof checker.isTypeAssignableTo === 'function') {
+    const constituents = inferred.isUnion() ? inferred.types : [inferred];
+    for (const constituent of constituents) {
+      if (!checker.isTypeAssignableTo(constituent, contextual)) {
+        incompatibleTypes.push(checker.typeToString(constituent, candidate.node, typeFlags));
+      }
+    }
+    incompatibleTypes.sort();
+  }
+  expressionEvidence.push({
+    source: candidate.source,
+    inferred_type: inferredType,
+    ...(contextualType ? { contextual_type: contextualType } : {}),
+    ...(incompatibleTypes.length > 0 ? { incompatible_types: [...new Set(incompatibleTypes)] } : {}),
+  });
+}
+process.stdout.write(JSON.stringify({
+  schema,
+  bindings,
+  unavailable_bindings: unavailableBindings,
+  expression_evidence: expressionEvidence,
+}));
 `

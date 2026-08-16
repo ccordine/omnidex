@@ -1,6 +1,8 @@
 package assemblyline
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -21,10 +23,15 @@ func BuildRepositoryRequirementInterpretationPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
+	contextJSON, err := json.Marshal(input.Context)
+	if err != nil {
+		return "", fmt.Errorf("encode repository requirement context: %w", err)
+	}
 	return strings.Join([]string{
-		"Extract the explicit requested changes from one intact existing-repository request.",
-		"Return between one and ten feature_quotes. Each must be the shortest exact contiguous source text that preserves one requested capability, behavior, user-visible change, or constraint and its meaningful modifiers.",
-		"Never paraphrase, infer an unstated change, identify a product, merge unrelated changes, choose artifacts or paths, design architecture, create tasks, or implement anything.",
+		"Translate one intact existing-repository request into the smallest complete ordered set of explicit change requirements.",
+		"Each requirement is one concise semantic statement of requested behavior or constraint. Faithfully paraphrase the request without inventing implementation details or additional obligations.",
+		"The context contains verified current source facts that may clarify the requested change.",
+		"APPLICATION_CONTEXT_JSON:\n" + string(contextJSON),
 		"CURRENT_REQUEST:\n" + input.UserRequest,
 	}, "\n\n"), nil
 }

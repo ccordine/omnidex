@@ -9,16 +9,27 @@ import (
 
 type ApplicationIntentRepairInput struct {
 	Authority ApplicationIntentInput          `json:"authority"`
+	Candidate ApplicationIntentCandidate      `json:"candidate"`
 	Finding   ApplicationIntentReviewDecision `json:"finding"`
 }
 
 type ApplicationIntentRepairDecision struct {
 	Target      string
 	Replacement string
+	Remove      bool
 }
 
 func (input ApplicationIntentRepairInput) validate() error {
 	if err := input.Authority.validate(); err != nil {
+		return err
+	}
+	if err := input.Candidate.Validate(); err != nil {
+		return err
+	}
+	reviewInput := ApplicationIntentReviewInput{
+		Authority: input.Authority, Candidate: input.Candidate, Target: input.Finding.Target,
+	}
+	if err := input.Finding.ValidateFor(reviewInput); err != nil {
 		return err
 	}
 	if input.Finding.Schema != ApplicationIntentReviewSchemaV1 ||
@@ -37,22 +48,30 @@ func BuildApplicationIntentRepairPrompt(input ApplicationIntentRepairInput) (str
 	if err := input.validate(); err != nil {
 		return "", err
 	}
+	currentValue, err := applicationIntentTargetValue(input.Candidate, input.Finding.Target)
+	if err != nil {
+		return "", err
+	}
 	projection := struct {
-		Authority ApplicationIntentInput `json:"authority"`
-		Target    string                 `json:"target"`
-		Finding   string                 `json:"finding"`
+		UserRequest   string `json:"immutable_user_request"`
+		CurrentTarget string `json:"current_target"`
+		CurrentValue  string `json:"current_value"`
+		Problem       string `json:"problem"`
 	}{
-		Authority: input.Authority,
-		Target:    input.Finding.Target,
-		Finding:   input.Finding.Finding,
+		UserRequest: input.Authority.UserRequest, CurrentTarget: input.Finding.Target,
+		CurrentValue: currentValue, Problem: input.Finding.Finding,
 	}
 	authorityJSON, err := json.Marshal(projection)
 	if err != nil {
 		return "", fmt.Errorf("encode application intent repair authority: %w", err)
 	}
+	request := "Return one replacement string for current_value that resolves problem under immutable_user_request."
+	if applicationIntentRepairCanRemove(input) {
+		request = "Return null when current_value is not required by immutable_user_request; otherwise return one replacement string that resolves problem."
+	}
 	prompt := strings.Join([]string{
-		"Replace exactly the named semantic leaf. The retained candidate and every accepted leaf remain code-owned and unavailable.",
-		"Return only the one-field JSON replacement. Derive the minimum faithful replacement from the immutable user request, authoritative context facts, and reviewed finding. Do not alter another requirement, invent scope, plan work, choose files or paths, implement anything, or claim completion.",
+		request,
+		"The response is one JSON object containing only current_target.",
 		"APPLICATION_INTENT_REPAIR_AUTHORITY_JSON:\n" + string(authorityJSON),
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
@@ -71,13 +90,18 @@ func ApplicationIntentRepairResponseSchema(
 	if input.Finding.Target == "product_context" {
 		maximum = maxApplicationProductBytes
 	}
+	definition := any(map[string]any{
+		"type": "string", "minLength": 1, "maxLength": maximum,
+	})
+	if applicationIntentRepairCanRemove(input) {
+		definition = map[string]any{"oneOf": []any{
+			map[string]any{"type": "string", "minLength": 1, "maxLength": maximum},
+			map[string]any{"type": "null"},
+		}}
+	}
 	return objectSchema(
 		[]string{input.Finding.Target},
-		map[string]any{
-			input.Finding.Target: map[string]any{
-				"type": "string", "minLength": 1, "maxLength": maximum,
-			},
-		},
+		map[string]any{input.Finding.Target: definition},
 	), nil
 }
 
@@ -103,9 +127,15 @@ func DecodeApplicationIntentRepairDecision(
 	if !exists {
 		return zero, fmt.Errorf("application intent repair must replace %q", input.Finding.Target)
 	}
+	if value == nil {
+		if !applicationIntentRepairCanRemove(input) {
+			return zero, fmt.Errorf("application intent repair cannot remove the final required value")
+		}
+		return ApplicationIntentRepairDecision{Target: input.Finding.Target, Remove: true}, nil
+	}
 	replacement, ok := value.(string)
 	if !ok {
-		return zero, fmt.Errorf("application intent repair replacement must be a string")
+		return zero, fmt.Errorf("application intent repair replacement must be a string or null")
 	}
 	maximum := maxRequirementQuoteBytes
 	if input.Finding.Target == "product_context" {
@@ -119,6 +149,10 @@ func DecodeApplicationIntentRepairDecision(
 	}, nil
 }
 
+func applicationIntentRepairCanRemove(input ApplicationIntentRepairInput) bool {
+	return input.Finding.Target != "product_context" && len(input.Candidate.Requirements) > 1
+}
+
 func ApplyApplicationIntentRepair(
 	authority ApplicationIntentInput,
 	retained ApplicationIntentCandidate,
@@ -126,7 +160,9 @@ func ApplyApplicationIntentRepair(
 	repair ApplicationIntentRepairDecision,
 ) (ApplicationIntentCandidate, error) {
 	var zero ApplicationIntentCandidate
-	reviewInput := ApplicationIntentReviewInput{Authority: authority, Candidate: retained}
+	reviewInput := ApplicationIntentReviewInput{
+		Authority: authority, Candidate: retained, Target: finding.Target,
+	}
 	if err := finding.ValidateFor(reviewInput); err != nil {
 		return zero, err
 	}
@@ -138,8 +174,11 @@ func ApplyApplicationIntentRepair(
 	}
 	corrected := cloneApplicationIntentCandidate(retained)
 	if repair.Target == "product_context" {
+		if repair.Remove {
+			return zero, fmt.Errorf("application intent product context cannot be removed")
+		}
 		if corrected.ProductContext == repair.Replacement {
-			return zero, fmt.Errorf("application intent repair is a no-op")
+			return zero, NewApplicationIntentRepairNoOpError(finding)
 		}
 		corrected.ProductContext = repair.Replacement
 	} else {
@@ -147,10 +186,15 @@ func ApplyApplicationIntentRepair(
 		if err != nil || index >= len(corrected.Requirements) {
 			return zero, fmt.Errorf("application intent repair target %q is outside retained state", repair.Target)
 		}
-		if corrected.Requirements[index] == repair.Replacement {
-			return zero, fmt.Errorf("application intent repair is a no-op")
+		if repair.Remove {
+			corrected.Requirements = append(
+				corrected.Requirements[:index], corrected.Requirements[index+1:]...,
+			)
+		} else if corrected.Requirements[index] == repair.Replacement {
+			return zero, NewApplicationIntentRepairNoOpError(finding)
+		} else {
+			corrected.Requirements[index] = repair.Replacement
 		}
-		corrected.Requirements[index] = repair.Replacement
 	}
 	if err := corrected.Validate(); err != nil {
 		return zero, err

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -145,8 +146,21 @@ func routeDirectCodingAcceptanceFailure(
 	if !exists || !feature.Generated() || strings.TrimSpace(program.Generated[featureID]) == "" {
 		return nil, fmt.Errorf("grounded acceptance %s targets unavailable implementation %s", diagnostic.BlockID, featureID)
 	}
+	evidence, err := assemblyline.ResolveTypeScriptAcceptanceFailureEvidence(
+		source, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("derive grounded acceptance failure evidence: %w", err)
+	}
 	routed := *diagnostic
 	routed.BlockID = featureID
+	if len(evidence.PrecedingInteraction) > 0 {
+		rawEvidence, encodeErr := json.Marshal(evidence)
+		if encodeErr != nil {
+			return nil, fmt.Errorf("encode grounded acceptance failure evidence: %w", encodeErr)
+		}
+		routed.ModelFeedback = "PUBLIC_BEHAVIOR_DISCREPANCY_JSON:\n" + string(rawEvidence)
+	}
 	return &routed, nil
 }
 

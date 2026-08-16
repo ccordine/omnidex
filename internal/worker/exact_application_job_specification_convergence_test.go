@@ -35,7 +35,7 @@ func TestExactApplicationJobSpecificationConvergenceUsesProductionReviewLoop(t *
 				}
 				candidate = `{"decision":"repair","field":"acceptance_criteria","finding":"The check does not distinguish matching inventory from nonmatching inventory.","finding_evidence":"Filtering changes the visible inventory."}`
 			case 3:
-				if model != "planner" || job.Kind != assemblyline.WorkApplicationJobSpecificationRepair {
+				if model != "reviewer" || job.Kind != assemblyline.WorkApplicationJobSpecificationRepair {
 					return ExactStationReplay{}, fmt.Errorf("call 3 model=%s kind=%s", model, job.Kind)
 				}
 				candidate = `{"acceptance_criteria":["Entering a filter shows matching inventory and excludes nonmatching inventory."]}`
@@ -60,6 +60,93 @@ func TestExactApplicationJobSpecificationConvergenceUsesProductionReviewLoop(t *
 	if result.Specification.AcceptanceCriteria[0] !=
 		"Entering a filter shows matching inventory and excludes nonmatching inventory." {
 		t.Fatalf("specification=%+v", result.Specification)
+	}
+}
+
+func TestExactApplicationJobSpecificationConvergenceRestoresNoOpRepairOpening(t *testing.T) {
+	t.Parallel()
+	requirement := assemblyline.Requirement{
+		ID: "requirement_001", SourceQuote: "Users can archive one completed inventory count.",
+	}
+	authority := assemblyline.ApplicationJobSpecificationInput{
+		Surface: assemblyline.ApplicationSurfaceBrowser, ProductQuote: "inventory console",
+		AcceptedRequirements: []assemblyline.Requirement{requirement}, FocusedRequirement: requirement,
+	}
+	retained := assemblyline.ApplicationJobSpecification{
+		Objective: "Implement completed-count archival and report export.",
+		RequiredBehaviors: []string{
+			"Users archive one completed inventory count.",
+		},
+		AcceptanceCriteria: []string{
+			"The archived count is no longer active.",
+		},
+	}
+	reviewInput, err := assemblyline.NewApplicationJobSpecificationReviewInput(
+		authority, retained, 1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewJob, err := assemblyline.NewApplicationJobSpecificationReviewJob(reviewInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, err := assemblyline.DecodeApplicationJobSpecificationReviewResult(
+		reviewJob,
+		`{"decision":"repair","field":"objective","finding":"The objective includes unrelated report export work.","finding_evidence":"Implement completed-count archival and report export."}`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repairInput, err := assemblyline.NewApplicationJobSpecificationRepairInput(
+		authority, retained, review, 1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repairJob, err := assemblyline.NewApplicationJobSpecificationRepairJob(repairInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := convergeExactApplicationJobSpecificationWithReplay(
+		context.Background(), 71, 73, repairJob, "planner", "reviewer",
+		func(job assemblyline.PortableJob, model string, number int) (ExactStationReplay, error) {
+			switch number {
+			case 1:
+				if model != "reviewer" || job.Kind != assemblyline.WorkApplicationJobSpecificationRepair {
+					return ExactStationReplay{}, fmt.Errorf("call 1 model=%s kind=%s", model, job.Kind)
+				}
+				return exactApplicationSpecificationTestReplay(
+					job, model,
+					`{"objective":"Implement completed-count archival and report export."}`,
+				), nil
+			case 2:
+				if model != "reviewer" || job.Kind != assemblyline.WorkResponseCorrection {
+					return ExactStationReplay{}, fmt.Errorf("call 2 model=%s kind=%s", model, job.Kind)
+				}
+				return exactApplicationSpecificationTestReplay(
+					job, model,
+					`{"objective":"Implement archival of one completed inventory count."}`,
+				), nil
+			case 3:
+				if model != "reviewer" || job.Kind != assemblyline.WorkApplicationJobSpecificationReview {
+					return ExactStationReplay{}, fmt.Errorf("call 3 model=%s kind=%s", model, job.Kind)
+				}
+				return exactApplicationSpecificationTestReplay(
+					job, model, `{"decision":"accept"}`,
+				), nil
+			default:
+				return ExactStationReplay{}, fmt.Errorf("unexpected call %d", number)
+			}
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Terminal != "accepted" || len(result.Calls) != 3 ||
+		result.Specification.Objective != "Implement archival of one completed inventory count." {
+		t.Fatalf("convergence=%+v", result)
 	}
 }
 

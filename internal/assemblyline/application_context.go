@@ -42,6 +42,7 @@ type ApplicationContextFact struct {
 	ID           string                      `json:"id"`
 	Kind         ApplicationContextFactKind  `json:"kind"`
 	Authority    ApplicationContextAuthority `json:"authority"`
+	NeedID       string                      `json:"need_id,omitempty"`
 	Value        string                      `json:"value"`
 	SourceID     string                      `json:"source_id"`
 	SourceSHA256 string                      `json:"source_sha256"`
@@ -207,13 +208,22 @@ func validateApplicationContextFactBoundary(fact ApplicationContextFact) error {
 		if fact.Authority != ApplicationContextCodeAuthority {
 			return fmt.Errorf("workspace state requires code authority")
 		}
+		if fact.NeedID != "" {
+			return fmt.Errorf("workspace state cannot cite an evidence need")
+		}
 	case ApplicationContextAcceptedMemory:
 		if fact.Authority != ApplicationContextMemoryAuthority {
 			return fmt.Errorf("accepted memory requires memory authority")
 		}
+		if fact.NeedID != "" {
+			return fmt.Errorf("accepted memory cannot cite an evidence need")
+		}
 	case ApplicationContextRepositoryFact, ApplicationContextExternalFact, ApplicationContextRuntimeFact:
 		if fact.Authority != ApplicationContextEvidenceAuthority {
 			return fmt.Errorf("acquired fact requires verified evidence authority")
+		}
+		if fact.NeedID == "" || fact.NeedID != strings.TrimSpace(fact.NeedID) {
+			return fmt.Errorf("acquired fact requires one evidence-need identity")
 		}
 	default:
 		return fmt.Errorf("kind %q is unsupported", fact.Kind)

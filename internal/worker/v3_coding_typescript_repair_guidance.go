@@ -16,6 +16,41 @@ func runDirectCodingTypeScriptRepairGuidance(
 	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
 	diagnostic string,
 ) (string, error) {
+	return runDirectCodingTypeScriptRepairGuidanceWithRejection(
+		runtime, modelName, block, available, current, repairRegion, diagnostic, nil,
+	)
+}
+
+func runDirectCodingTypeScriptRepairGuidanceAfterRejection(
+	runtime typedWorkerRuntime,
+	modelName string,
+	block assemblyline.TypeScriptBlock,
+	available string,
+	current string,
+	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
+	diagnostic string,
+	rejectedInstruction string,
+	rejectionKind assemblyline.TypeScriptRepairGuidanceRejectionKind,
+) (string, error) {
+	return runDirectCodingTypeScriptRepairGuidanceWithRejection(
+		runtime, modelName, block, available, current, repairRegion, diagnostic,
+		&assemblyline.TypeScriptRepairGuidanceRejection{
+			Instruction: strings.TrimSpace(rejectedInstruction),
+			Failure:     rejectionKind,
+		},
+	)
+}
+
+func runDirectCodingTypeScriptRepairGuidanceWithRejection(
+	runtime typedWorkerRuntime,
+	modelName string,
+	block assemblyline.TypeScriptBlock,
+	available string,
+	current string,
+	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
+	diagnostic string,
+	priorRejection *assemblyline.TypeScriptRepairGuidanceRejection,
+) (string, error) {
 	capabilities := make([]string, 0, 1)
 	if declaration := strings.TrimSpace(available); declaration != "" {
 		capabilities = append(capabilities, declaration)
@@ -29,7 +64,8 @@ func runDirectCodingTypeScriptRepairGuidance(
 			Language: "typescript", Signature: strings.TrimSpace(block.Signature),
 			Capabilities: capabilities, PermittedSymbols: append([]string(nil), block.Globals...),
 			CurrentDeclaration: portableCurrent, RepairRegion: repairRegion,
-			Diagnostic: strings.TrimSpace(diagnostic),
+			Diagnostic:     strings.TrimSpace(diagnostic),
+			PriorRejection: priorRejection,
 		},
 	)
 	if err != nil {
@@ -38,13 +74,7 @@ func runDirectCodingTypeScriptRepairGuidance(
 	guidance, err := runDirectCodingSemanticCall[assemblyline.TypeScriptRepairGuidance](
 		runtime, modelName, block.ID+":repair_guidance", job, nil,
 		func(candidate assemblyline.TypeScriptRepairGuidance) error {
-			if err := candidate.Validate(); err != nil {
-				return err
-			}
-			if directCodingTypeScriptCompilerContainsPathIdentity(candidate.Instruction) {
-				return fmt.Errorf("TypeScript repair guidance instruction contains path identity")
-			}
-			return nil
+			return candidate.Validate()
 		},
 	)
 	if err != nil {

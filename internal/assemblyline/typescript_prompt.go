@@ -190,17 +190,14 @@ func buildGuidedTypeScriptRepairPrompt(
 	if err != nil {
 		return "", fmt.Errorf("guided TypeScript mutable source: %w", err)
 	}
-	target := "function declaration"
-	output := "Return only the corrected raw TypeScript function declaration."
+	output := "Return one corrected raw TypeScript function declaration."
 	if hasRegion {
-		target = "source region"
-		output = "Return only the raw replacement source for this exact region."
+		output = "Return one raw TypeScript replacement for this exact source region."
 	}
 	prompt := strings.Join([]string{
-		"Apply one repair instruction to one exact TypeScript " + target + ". Do not diagnose or solve a different failure.",
-		output + " Do not return JSON, Markdown, line numbers, explanation, imports, or unrelated declarations.",
+		output + " Return source only: no JSON, Markdown, line numbers, explanation, imports, or unrelated declarations.",
 		"EXACT_MUTABLE_SOURCE_JSON:\n" + encoded,
-		"REPAIR_INSTRUCTION:\n" + repairGuidance,
+		"REQUIRED_SOURCE_TRANSFORMATION:\n" + repairGuidance,
 	}, "\n\n")
 	if len(prompt) > maxTypeScriptFragmentPromptBytes {
 		return "", fmt.Errorf(

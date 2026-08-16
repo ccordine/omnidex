@@ -19,7 +19,7 @@ func runDirectCodingApplicationInterpreter(
 	var zero assemblyline.ApplicationSpecification
 
 	formalizedContext, err := resolveDirectCodingApplicationContext(
-		runtime, intentModel, authority, applicationContext, identities,
+		runtime, intentModel, authority, applicationContext, identities, nil,
 	)
 	if err != nil {
 		return zero, err

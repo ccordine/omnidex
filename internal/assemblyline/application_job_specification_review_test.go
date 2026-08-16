@@ -57,21 +57,34 @@ func TestApplicationJobSpecificationReviewWireAcceptsOrNamesOneDerivedField(t *t
 		t.Fatal(err)
 	}
 	branches, ok := schema["oneOf"].([]any)
-	if schema["type"] != "object" || !ok || len(branches) != 2 {
+	if schema["type"] != "object" || !ok || len(branches) != 4 {
 		t.Fatalf("review schema is not a closed accept-or-repair object: %#v", schema)
 	}
 	accept := branches[0].(map[string]any)
-	repairBranch := branches[1].(map[string]any)
-	if !reflect.DeepEqual(accept["required"], []string{"decision"}) ||
-		!reflect.DeepEqual(repairBranch["required"], []string{
-			"decision", "field", "finding", "finding_evidence",
-		}) {
-		t.Fatalf("review schema branches do not make legal responses complete: %#v", branches)
+	if !reflect.DeepEqual(accept["required"], []string{"decision"}) {
+		t.Fatalf("review accept schema is incomplete: %#v", accept)
 	}
-	for _, branch := range []map[string]any{accept, repairBranch} {
+	for index, value := range branches {
+		branch := value.(map[string]any)
 		if branch["type"] != "object" || branch["additionalProperties"] != false {
 			t.Fatalf("review schema branch is not a complete closed object: %#v", branch)
 		}
+		if index == 0 {
+			continue
+		}
+		if !reflect.DeepEqual(branch["required"], []string{
+			"decision", "field", "finding", "finding_evidence",
+		}) {
+			t.Fatalf("review repair schema is incomplete: %#v", branch)
+		}
+	}
+	requiredBehaviorRepair := branches[2].(map[string]any)["properties"].(map[string]any)
+	evidenceSchema := requiredBehaviorRepair["finding_evidence"].(map[string]any)
+	if !reflect.DeepEqual(
+		evidenceSchema["enum"],
+		[]string{"Users can add and remove mixer channels.", "Channel controls update channel audio state."},
+	) {
+		t.Fatalf("review schema does not bind evidence to one exact current list item: %#v", schema)
 	}
 	accepted, err := DecodeApplicationJobSpecificationReview(input, `{"decision":"accept"}`)
 	if err != nil || accepted.Decision != ApplicationJobSpecificationReviewAccept {
@@ -127,7 +140,7 @@ func TestApplicationJobSpecificationReviewResultDecodesFromItsPortableAuthority(
 	}
 	for raw, want := range map[string]ApplicationJobSpecificationReviewDecision{
 		`{"decision":"accept"}`: ApplicationJobSpecificationReviewAccept,
-		`{"decision":"repair","field":"acceptance_criteria","finding":"The checks do not cover the required behavior.","finding_evidence":"Adding a channel displays"}`: ApplicationJobSpecificationReviewRepair,
+		`{"decision":"repair","field":"acceptance_criteria","finding":"The checks do not cover the required behavior.","finding_evidence":"Adding a channel displays an independently controllable mixer channel."}`: ApplicationJobSpecificationReviewRepair,
 	} {
 		review, err := DecodeApplicationJobSpecificationReviewResult(job, raw)
 		if err != nil {
@@ -292,8 +305,14 @@ func TestApplicationJobSpecificationRepairRejectsNoOpRetargetAndAuthorityDrift(t
 	if err != nil {
 		t.Fatal(err)
 	}
+	noOpRaw := `{"objective":"Implement interactive mixer channels for the browser music studio."}`
+	_, noOpErr := DecodeApplicationJobSpecificationRepair(input, noOpRaw)
+	var typedNoOp *ApplicationJobSpecificationRepairNoOpError
+	if !errors.As(noOpErr, &typedNoOp) ||
+		typedNoOp.Field != ApplicationJobSpecificationObjectiveField {
+		t.Fatalf("no-op error=%T %v", noOpErr, noOpErr)
+	}
 	for _, raw := range []string{
-		`{"objective":"Implement interactive mixer channels for the browser music studio."}`,
 		`{"acceptance_criteria":["Changed."]}`,
 		`{"objective":"Changed.","required_behaviors":["Also changed."]}`,
 	} {
@@ -323,6 +342,79 @@ func TestApplicationJobSpecificationRepairRejectsNoOpRetargetAndAuthorityDrift(t
 	accepted.FindingEvidence = ""
 	if _, err := NewApplicationJobSpecificationRepairInput(authority, retained, accepted, 1); err == nil {
 		t.Fatal("constructed repair from accepted review")
+	}
+}
+
+func TestApplicationJobSpecificationRepairNoOpHasOneBoundedCorrection(t *testing.T) {
+	t.Parallel()
+	authority := applicationJobSpecificationTestInput(1)
+	retained := applicationJobSpecificationTestValue()
+	review := applicationJobSpecificationRepairReview(
+		t, authority, retained, ApplicationJobSpecificationObjectiveField,
+	)
+	input, err := NewApplicationJobSpecificationRepairInput(authority, retained, review, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repair, err := NewApplicationJobSpecificationRepairJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	correction, err := NewResponseCorrectionJob(
+		repair, "application job specification repair is a no-op",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, schema, err := RenderPortableJob(correction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		authority.FocusedRequirement.SourceQuote,
+		retained.Objective,
+		review.Finding,
+		review.FindingEvidence,
+		"application job specification repair is a no-op",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("repair correction prompt omitted %q:\n%s", required, prompt)
+		}
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	if len(properties) != 1 || properties["objective"] == nil {
+		t.Fatalf("repair correction schema is not objective-only: %#v", schema)
+	}
+	objectiveSchema, _ := properties["objective"].(map[string]any)
+	notSchema, _ := objectiveSchema["not"].(map[string]any)
+	if notSchema["const"] != retained.Objective {
+		t.Fatalf("repair correction schema permits the exact no-op: %#v", schema)
+	}
+	corrected, err := ApplyResponseCorrection(
+		repair,
+		`{"objective":"Implement interactive mixer channels for the browser music studio."}`,
+		`{"objective":"Implement independently controllable mixer channels."}`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patch, err := DecodeApplicationJobSpecificationRepair(input, corrected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := ApplyApplicationJobSpecificationRepair(input, retained, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Objective != "Implement independently controllable mixer channels." {
+		t.Fatalf("corrected objective=%q", updated.Objective)
+	}
+	if _, err := ApplyResponseCorrection(
+		repair,
+		`{"objective":"Implement interactive mixer channels for the browser music studio."}`,
+		`{"objective":"Implement interactive mixer channels for the browser music studio."}`,
+	); err == nil {
+		t.Fatal("unchanged repair correction was accepted")
 	}
 }
 
@@ -367,6 +459,7 @@ func TestApplicationJobSpecificationReviewRejectsEvidenceAbsentFromExactCurrentF
 		t.Fatalf("ungrounded reviewer evidence error=%T %v", err, err)
 	}
 	if evidenceErr.Field != ApplicationJobSpecificationObjectiveField ||
+		evidenceErr.Kind != ApplicationJobSpecificationReviewEvidenceAbsent ||
 		evidenceErr.FindingEvidence != "export capability" ||
 		len(evidenceErr.ObservedValueSHA256) != 64 ||
 		len(evidenceErr.RetainedAuthoritySHA256) != 64 {
@@ -385,7 +478,7 @@ func TestApplicationJobSpecificationReviewRejectsEvidenceAbsentFromExactCurrentF
 	}
 	for _, exact := range []string{
 		`"prior_validation_failure"`, `"finding_evidence":"export capability"`,
-		retained.Objective, "does not occur in the exact current named field",
+		retained.Objective, "is not one exact current value owned by the named field",
 	} {
 		if !strings.Contains(prompt, exact) {
 			t.Fatalf("review retry prompt omitted %q:\n%s", exact, prompt)
@@ -398,6 +491,59 @@ func TestApplicationJobSpecificationReviewRejectsEvidenceAbsentFromExactCurrentF
 		authority, drifted, 3, *evidenceErr,
 	); err == nil {
 		t.Fatal("review retry accepted a validation failure bound to different field state")
+	}
+}
+
+func TestApplicationJobSpecificationReviewClassifiesEvidenceContractFailuresForReReview(t *testing.T) {
+	t.Parallel()
+	authority := applicationJobSpecificationTestInput(1)
+	retained := applicationJobSpecificationTestValue()
+	input, err := NewApplicationJobSpecificationReviewInput(authority, retained, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		raw  string
+		kind ApplicationJobSpecificationReviewEvidenceErrorKind
+		want string
+	}{
+		{
+			name: "missing",
+			raw:  `{"decision":"repair","field":"objective","finding":"The objective is too broad."}`,
+			kind: ApplicationJobSpecificationReviewEvidenceMissing,
+			want: "omitted required finding_evidence",
+		},
+		{
+			name: "multiple current list items joined with a newline",
+			raw:  `{"decision":"repair","field":"required_behaviors","finding":"The behaviors are too broad.","finding_evidence":"Users can add and remove mixer channels.\nChannel controls update channel audio state."}`,
+			kind: ApplicationJobSpecificationReviewEvidenceInvalid,
+			want: "must not contain control characters",
+		},
+	}
+	for index, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			_, decodeErr := DecodeApplicationJobSpecificationReview(input, test.raw)
+			var evidenceErr *ApplicationJobSpecificationReviewEvidenceError
+			if !errors.As(decodeErr, &evidenceErr) || evidenceErr.Kind != test.kind {
+				t.Fatalf("evidence error=%T %+v", decodeErr, evidenceErr)
+			}
+			retry, retryErr := NewApplicationJobSpecificationReviewRetryInput(
+				authority, retained, index+2, *evidenceErr,
+			)
+			if retryErr != nil {
+				t.Fatal(retryErr)
+			}
+			prompt, promptErr := BuildApplicationJobSpecificationReviewPrompt(retry)
+			if promptErr != nil {
+				t.Fatal(promptErr)
+			}
+			if !strings.Contains(prompt, test.want) ||
+				!strings.Contains(prompt, `"kind":"`+string(test.kind)+`"`) {
+				t.Fatalf("review retry omitted exact %s failure:\n%s", test.kind, prompt)
+			}
+		})
 	}
 }
 

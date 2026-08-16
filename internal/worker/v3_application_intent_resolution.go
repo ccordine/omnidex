@@ -2,41 +2,11 @@ package worker
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
-
-func resolveDirectCodingApplicationContext(
-	runtime typedWorkerRuntime,
-	modelName string,
-	authority string,
-	context assemblyline.ApplicationContext,
-	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.ApplicationContext, error) {
-	input := assemblyline.ApplicationContextNeedInput{
-		UserRequest: authority, Context: context,
-	}
-	job, err := assemblyline.NewApplicationContextNeedJob(input)
-	if err != nil {
-		return assemblyline.ApplicationContext{}, err
-	}
-	decision, err := runDirectCodingSemanticCall[assemblyline.ApplicationContextNeedDecision](
-		runtime, modelName, "application_context_needs", job, identities,
-		func(value assemblyline.ApplicationContextNeedDecision) error { return value.Validate() },
-	)
-	if err != nil {
-		return assemblyline.ApplicationContext{}, err
-	}
-	if len(decision.Questions) > 0 {
-		return assemblyline.ApplicationContext{}, fmt.Errorf(
-			"application context has %d unresolved evidence needs: %s",
-			len(decision.Questions), strings.Join(decision.Questions, " | "),
-		)
-	}
-	return context, nil
-}
 
 func resolveDirectCodingApplicationIntent(
 	runtime typedWorkerRuntime,
@@ -61,29 +31,71 @@ func resolveDirectCodingApplicationIntent(
 	if err := observeApplicationIntentCandidate(seen, retained); err != nil {
 		return zero, err
 	}
+	reviewIndex := 0
+	var priorRejection *assemblyline.ApplicationIntentReviewRejection
+	rejectedFindings := make(map[string]struct{})
 	for round := 1; ; round++ {
+		targets := assemblyline.ApplicationIntentReviewTargets(retained)
+		if reviewIndex >= len(targets) {
+			return assemblyline.ResolveApplicationIntent(authority, retained)
+		}
 		reviewInput := assemblyline.ApplicationIntentReviewInput{
-			Authority: authority, Candidate: retained,
+			Authority: authority, Candidate: retained, Target: targets[reviewIndex],
+			PriorRejection: priorRejection,
 		}
 		reviewJob, jobErr := assemblyline.NewApplicationIntentReviewJob(reviewInput)
 		if jobErr != nil {
 			return zero, jobErr
 		}
-		review, callErr := runApplicationFrontDoorCall(
+		review, callErr := runDirectCodingSemanticCall[assemblyline.ApplicationIntentReviewDecision](
 			runtime, reviewModel, fmt.Sprintf("application_intent_review_%d", round),
 			reviewJob, identities,
-			func(raw string) (assemblyline.ApplicationIntentReviewDecision, error) {
-				return assemblyline.DecodeApplicationIntentReviewDecision(reviewInput, raw)
+			func(candidate assemblyline.ApplicationIntentReviewDecision) error {
+				if candidate.Outcome == assemblyline.ApplicationIntentReviewRepair {
+					candidate.Target = reviewInput.Target
+				} else if candidate.Outcome == assemblyline.ApplicationIntentReviewAccept {
+					candidate.Finding = ""
+				}
+				return candidate.ValidateFor(reviewInput)
 			},
 		)
 		if callErr != nil {
 			return zero, callErr
 		}
+		if review.Outcome == assemblyline.ApplicationIntentReviewRepair {
+			review.Target = reviewInput.Target
+		} else if review.Outcome == assemblyline.ApplicationIntentReviewAccept {
+			review.Finding = ""
+		}
+		if review.Outcome == assemblyline.ApplicationIntentReviewRepair {
+			currentValue, valueErr := assemblyline.ApplicationIntentReviewTargetValue(
+				retained, review.Target,
+			)
+			if valueErr != nil {
+				return zero, valueErr
+			}
+			identity := review.Target + "\x00" + currentValue + "\x00" + review.Finding
+			if _, disproven := rejectedFindings[identity]; disproven {
+				runtimeEvent := fmt.Sprintf(
+					"target=%s reason=repeated_disproven_finding", review.Target,
+				)
+				emitTypedWorker(runtime, typedWorkerEvent{
+					State: typedWorkerRejected, Kind: typedWorkerSemantic,
+					Subject: "application_intent_review", Model: reviewModel,
+					Attempt: 1, MaxAttempts: 1, Detail: runtimeEvent,
+				})
+				priorRejection = nil
+				reviewIndex++
+				continue
+			}
+		}
 		if review.Outcome == assemblyline.ApplicationIntentReviewAccept {
-			return assemblyline.ResolveApplicationIntent(authority, retained)
+			priorRejection = nil
+			reviewIndex++
+			continue
 		}
 		repairInput := assemblyline.ApplicationIntentRepairInput{
-			Authority: authority, Finding: review,
+			Authority: authority, Candidate: retained, Finding: review,
 		}
 		repairJob, jobErr := assemblyline.NewApplicationIntentRepairJob(repairInput)
 		if jobErr != nil {
@@ -91,7 +103,7 @@ func resolveDirectCodingApplicationIntent(
 		}
 		retainedBeforeRepair := retained
 		retained, callErr = runApplicationFrontDoorCall(
-			runtime, intentModel, fmt.Sprintf("application_intent_repair_%d", round),
+			runtime, reviewModel, fmt.Sprintf("application_intent_repair_%d", round),
 			repairJob, identities,
 			func(raw string) (assemblyline.ApplicationIntentCandidate, error) {
 				repair, decodeErr := assemblyline.DecodeApplicationIntentRepairDecision(repairInput, raw)
@@ -104,11 +116,28 @@ func resolveDirectCodingApplicationIntent(
 			},
 		)
 		if callErr != nil {
-			return zero, callErr
+			var noOp *assemblyline.ApplicationIntentRepairNoOpError
+			if !errors.As(callErr, &noOp) {
+				return zero, callErr
+			}
+			rejection := noOp.ReviewRejection()
+			currentValue, valueErr := assemblyline.ApplicationIntentReviewTargetValue(
+				retainedBeforeRepair, rejection.Target,
+			)
+			if valueErr != nil {
+				return zero, valueErr
+			}
+			identity := rejection.Target + "\x00" + currentValue + "\x00" + rejection.Finding
+			rejectedFindings[identity] = struct{}{}
+			priorRejection = &rejection
+			retained = retainedBeforeRepair
+			continue
 		}
 		if err := observeApplicationIntentCandidate(seen, retained); err != nil {
 			return zero, err
 		}
+		priorRejection = nil
+		reviewIndex = 0
 	}
 }
 

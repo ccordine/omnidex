@@ -31,8 +31,9 @@ func selectExistingRepositoryChangeSurface(
 	identities []assemblyline.ArtifactIdentity,
 ) (assemblyline.RepositoryChangeSurfaceDecision, error) {
 	input := assemblyline.RepositoryChangeSurfaceInput{
-		ResearchNeed: researchNeed, RequirementQuotes: append([]string(nil), requirementQuotes...),
-		Evidence: evidence,
+		ResearchNeed: researchNeed,
+		Requirements: append([]string(nil), requirementQuotes...),
+		Evidence:     evidence,
 	}
 	job, err := assemblyline.NewRepositoryChangeSurfaceJob(input)
 	if err != nil {

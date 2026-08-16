@@ -87,13 +87,21 @@ func runDirectCodingGoFragmentModificationWorker(
 			err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
 			return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt, err)
 		}
-		lastCandidate = strings.TrimSpace(result.Candidate)
+		rawCandidate := strings.TrimSpace(result.Candidate)
+		lastCandidate = rawCandidate
+		projected, projectionErr := gofragment.ProjectFunctionModelResponse(rawCandidate)
+		if projectionErr == nil {
+			lastCandidate = projected
+		}
 		if _, duplicate := seen[lastCandidate]; duplicate {
 			lastErr = fmt.Errorf("repeated identical candidate rejected; the correction made no progress")
 		} else {
 			seen[lastCandidate] = struct{}{}
 			var parsed string
-			parsed, lastErr = gofragment.ParseFunction(contract, lastCandidate)
+			lastErr = projectionErr
+			if lastErr == nil {
+				parsed, lastErr = gofragment.ParseFunction(contract, lastCandidate)
+			}
 			if lastErr == nil {
 				if parsed == currentCanonical {
 					lastErr = fmt.Errorf("unchanged modification rejected; the declaration must satisfy the registered requirement")

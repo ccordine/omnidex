@@ -14,7 +14,7 @@ import (
 const (
 	maxObjectiveRepositoryRequirementBytes   = 4 * 1024
 	maxObjectiveRepositorySearchTermRounds   = 1
-	maxObjectiveRepositoryRelevanceRounds    = 2
+	maxObjectiveRepositoryRelevanceRounds    = 4
 	maxObjectiveRepositoryEvidenceModelCalls = maxTypedWorkerAttempts * (maxObjectiveRepositorySearchTermRounds + maxObjectiveRepositoryRelevanceRounds)
 )
 
@@ -87,20 +87,25 @@ func acquireObjectiveRepositoryEvidenceClosure(
 	if build == nil || searchTerm == nil || relevance == nil {
 		return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read evidence closure requires acquisition, search-term, and relevance authority")
 	}
-	currentQuery := strings.TrimSpace(exactRequirement)
-	expanded := false
+	queries := []string{strings.TrimSpace(exactRequirement)}
+	anchorsResolved := false
 	ledger := objectiveRepositoryAcquisitionCallLedger{}
 	if len(exactRequirement) > 512 {
-		term, receipt, err := resolveObjectiveRepositorySearchTerm(exactRequirement, searchTerm)
+		anchors, receipt, err := resolveObjectiveRepositorySearchTerm(exactRequirement, searchTerm)
 		if err != nil {
 			return objectiveEvidenceAcquisition{}, err
 		}
 		if err := ledger.recordSearchTerm(receipt); err != nil {
 			return objectiveEvidenceAcquisition{}, err
 		}
-		currentQuery, expanded = term, true
+		query, queryErr := repositoryretrieval.BuildLexicalAnchorQuery(anchors)
+		if queryErr != nil {
+			return objectiveEvidenceAcquisition{}, queryErr
+		}
+		queries, anchorsResolved = []string{query}, true
 	}
-	for {
+	for queryIndex := 0; ; {
+		currentQuery := queries[queryIndex]
 		pack, err := build(currentQuery)
 		if err == nil {
 			if err := pack.ValidateForRequest(repositoryretrieval.OperationSemanticExcerpts, currentQuery); err != nil {
@@ -134,20 +139,28 @@ func acquireObjectiveRepositoryEvidenceClosure(
 		} else if !errors.Is(err, repositoryretrieval.ErrInsufficientEvidence) {
 			return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read deterministic acquisition: %w", err)
 		}
-		if expanded {
+		queryIndex++
+		if queryIndex < len(queries) {
+			continue
+		}
+		if anchorsResolved {
 			return objectiveEvidenceAcquisition{}, fmt.Errorf(
-				"%w: repository evidence remained irrelevant after one bounded search-term expansion",
-				repositoryretrieval.ErrInsufficientEvidence,
+				"%w: repository evidence remained insufficient or irrelevant after %d bounded search anchors",
+				repositoryretrieval.ErrInsufficientEvidence, len(queries),
 			)
 		}
-		term, receipt, err := resolveObjectiveRepositorySearchTerm(exactRequirement, searchTerm)
+		anchors, receipt, err := resolveObjectiveRepositorySearchTerm(exactRequirement, searchTerm)
 		if err != nil {
 			return objectiveEvidenceAcquisition{}, err
 		}
 		if err := ledger.recordSearchTerm(receipt); err != nil {
 			return objectiveEvidenceAcquisition{}, err
 		}
-		currentQuery, expanded = term, true
+		query, queryErr := repositoryretrieval.BuildLexicalAnchorQuery(anchors)
+		if queryErr != nil {
+			return objectiveEvidenceAcquisition{}, queryErr
+		}
+		queries, queryIndex, anchorsResolved = []string{query}, 0, true
 	}
 }
 
@@ -215,7 +228,7 @@ func (ledger objectiveRepositoryAcquisitionCallLedger) totalForSuccess() (int, e
 	if len(ledger.relevanceCalls) < 1 || len(ledger.relevanceCalls) > maxObjectiveRepositoryRelevanceRounds {
 		return 0, fmt.Errorf("repository-read acquisition requires 1..%d relevance rounds", maxObjectiveRepositoryRelevanceRounds)
 	}
-	if len(ledger.relevanceCalls) == maxObjectiveRepositoryRelevanceRounds && ledger.searchTermCalls == 0 {
+	if len(ledger.relevanceCalls) > 1 && ledger.searchTermCalls == 0 {
 		return 0, fmt.Errorf("repository-read acquisition cannot repeat relevance without its one search-term round")
 	}
 	total := ledger.searchTermCalls

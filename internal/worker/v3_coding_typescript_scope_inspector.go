@@ -17,18 +17,20 @@ import (
 
 const (
 	directCodingTypeScriptScopeInspectorFile   = ".omnidex-typescript-scope.mjs"
-	directCodingTypeScriptScopeInspectorSchema = "omnidex.typescript-lexical-scope.v1"
+	directCodingTypeScriptScopeInspectorSchema = "omnidex.typescript-lexical-scope.v2"
 )
 
 type directCodingTypeScriptScopeReceipt struct {
-	Schema              *string                                 `json:"schema"`
-	Bindings            *[]assemblyline.TypeScriptRepairBinding `json:"bindings"`
-	UnavailableBindings *[]assemblyline.TypeScriptRepairBinding `json:"unavailable_bindings"`
+	Schema              *string                                            `json:"schema"`
+	Bindings            *[]assemblyline.TypeScriptRepairBinding            `json:"bindings"`
+	UnavailableBindings *[]assemblyline.TypeScriptRepairBinding            `json:"unavailable_bindings"`
+	ExpressionEvidence  *[]assemblyline.TypeScriptRepairExpressionEvidence `json:"expression_evidence"`
 }
 
 type directCodingTypeScriptScope struct {
 	Bindings            []assemblyline.TypeScriptRepairBinding
 	UnavailableBindings []assemblyline.TypeScriptRepairBinding
+	ExpressionEvidence  []assemblyline.TypeScriptRepairExpressionEvidence
 }
 
 func writeDirectCodingTypeScriptScopeInspector(root string) error {
@@ -90,6 +92,19 @@ func inspectDirectCodingTypeScriptScope(
 			}
 		}
 	}
+	for index, item := range scope.ExpressionEvidence {
+		values := append(
+			[]string{item.Source, item.InferredType, item.ContextualType},
+			item.IncompatibleTypes...,
+		)
+		for _, value := range values {
+			if value != "" && directCodingTypeScriptCompilerContainsPathIdentity(value) {
+				return directCodingTypeScriptScope{}, fmt.Errorf(
+					"TypeScript compiler expression evidence %d contains path identity", index+1,
+				)
+			}
+		}
+	}
 	return scope, nil
 }
 
@@ -108,7 +123,8 @@ func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScrip
 		return directCodingTypeScriptScope{}, fmt.Errorf("decode TypeScript compiler scope receipt trailing data")
 	}
 	if receipt.Schema == nil || *receipt.Schema != directCodingTypeScriptScopeInspectorSchema ||
-		receipt.Bindings == nil || receipt.UnavailableBindings == nil {
+		receipt.Bindings == nil || receipt.UnavailableBindings == nil ||
+		receipt.ExpressionEvidence == nil {
 		return directCodingTypeScriptScope{}, fmt.Errorf(
 			"TypeScript compiler scope receipt lacks exact schema and binding inventories",
 		)
@@ -128,6 +144,20 @@ func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScrip
 			"validate TypeScript compiler unavailable scope receipt: %w", err,
 		)
 	}
+	expressionEvidence := append(
+		[]assemblyline.TypeScriptRepairExpressionEvidence(nil),
+		(*receipt.ExpressionEvidence)...,
+	)
+	if len(expressionEvidence) == 0 {
+		return directCodingTypeScriptScope{}, fmt.Errorf(
+			"TypeScript compiler scope receipt contains no expression evidence",
+		)
+	}
+	if err := assemblyline.ValidateTypeScriptRepairExpressionEvidence(expressionEvidence); err != nil {
+		return directCodingTypeScriptScope{}, fmt.Errorf(
+			"validate TypeScript compiler expression evidence: %w", err,
+		)
+	}
 	availableNames := make(map[string]struct{}, len(bindings))
 	for _, binding := range bindings {
 		availableNames[binding.Name] = struct{}{}
@@ -142,5 +172,6 @@ func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScrip
 	}
 	return directCodingTypeScriptScope{
 		Bindings: bindings, UnavailableBindings: unavailable,
+		ExpressionEvidence: expressionEvidence,
 	}, nil
 }

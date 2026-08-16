@@ -17,6 +17,17 @@ func correctDirectCodingAcceptanceGrounding(
 	input assemblyline.ApplicationAcceptanceGroundingReviewInput,
 	review assemblyline.ApplicationAcceptanceGroundingReview,
 ) (string, error) {
+	if review.UnsupportedSiteID != "" {
+		corrected, rewritten, err := assemblyline.RewriteTypeScriptAcceptanceObservationQueryAlias(
+			current, input.TSX, review.UnsupportedSiteID,
+		)
+		if err != nil {
+			return "", err
+		}
+		if rewritten {
+			return corrected, nil
+		}
+	}
 	block, err := directCodingTypeScriptCorrectionBlock(program.TypeScript, acceptanceID)
 	if err != nil {
 		return "", err
@@ -70,7 +81,7 @@ func directCodingAcceptanceGroundingRepairDirective(
 			if err != nil {
 				return "", "", fmt.Errorf("encode acceptance observation literals: %w", err)
 			}
-			return "Remove or replace only the unsupported observation at the exact line and column named in OBSERVED_FAILURE. Match its operation and literals; preserve every other observation and frozen criterion.",
+			return "Delete only the complete statement containing the unsupported observation at the exact line and column named in OBSERVED_FAILURE. Preserve every other statement.",
 				fmt.Sprintf(
 					"UNSUPPORTED_ACCEPTANCE_OBSERVATION; SITE=%s; LINE=%d; COLUMN=%d; OPERATION=%s; LITERALS=%s",
 					site.ID, repairSite.Line, repairSite.Column, repairSite.Operation, literals,

@@ -189,7 +189,7 @@ func genericBrowserFeatureProjectionAPI(
 	return strings.Join([]string{
 		"type SharedValue = null | boolean | number | string | readonly SharedValue[] | { readonly [key: string]: SharedValue }",
 		"type FeatureState = { readonly [key: string]: SharedValue }",
-		"interface FeatureActions { set(key: string, value: SharedValue): void; toggle(key: string): void; increment(key: string, delta: number, min: number, max: number): void; append(key: string, value: SharedValue): void; removeAt(key: string, index: number): void }",
+		genericBrowserFeatureActionsAPI(),
 		fmt.Sprintf(
 			"interface %s { readonly state: FeatureState; readonly capabilities: { %s }; readonly actions: FeatureActions }",
 			name, strings.Join(capabilityFields, "; "),

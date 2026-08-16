@@ -80,15 +80,23 @@ func runDirectCodingGoFragmentGenerationWorker(
 			err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
 			return "", failDirectCodingGoGeneration(runtime, attemptModel, job.Subject, attempt, err)
 		}
-		lastCandidate = strings.TrimSpace(result.Candidate)
+		rawCandidate := strings.TrimSpace(result.Candidate)
+		lastCandidate = rawCandidate
+		projected, projectionErr := gofragment.ProjectFunctionModelResponse(rawCandidate)
+		if projectionErr == nil {
+			lastCandidate = projected
+		}
 		if _, duplicate := seen[lastCandidate]; duplicate {
 			lastErr = fmt.Errorf("repeated identical candidate rejected; the correction made no progress")
 		} else {
 			seen[lastCandidate] = struct{}{}
 			rejectedCandidate := lastCandidate
-			lastCandidate, lastErr = gofragment.ParseNewFunction(
-				job.Input.Signature, job.Input.PermittedSymbols, lastCandidate,
-			)
+			lastErr = projectionErr
+			if lastErr == nil {
+				lastCandidate, lastErr = gofragment.ParseNewFunction(
+					job.Input.Signature, job.Input.PermittedSymbols, lastCandidate,
+				)
+			}
 			if lastErr == nil {
 				if err = finalizeTypedWorkerResult(runtime, attemptJob, result, nil); err != nil {
 					return "", failDirectCodingGoGeneration(runtime, attemptModel, job.Subject, attempt, err)

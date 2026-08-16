@@ -54,9 +54,9 @@ func (session *directCodingSession) buildExistingRepositoryChangeContract(
 			)
 		}
 		surfaceInput := assemblyline.RepositoryChangeSurfaceInput{
-			ResearchNeed:      acquisition.RequirementQuote,
-			RequirementQuotes: []string{acquisition.RequirementQuote},
-			Evidence:          acquisition.Pack,
+			ResearchNeed: acquisition.RequirementQuote,
+			Requirements: []string{acquisition.RequirementQuote},
+			Evidence:     acquisition.Pack,
 		}
 		if err := resolution.Surface.ValidateFor(surfaceInput); err != nil {
 			return repositoryfacts.ChangeContract{}, fmt.Errorf(
@@ -64,7 +64,14 @@ func (session *directCodingSession) buildExistingRepositoryChangeContract(
 				acquisition.RequirementQuote, err,
 			)
 		}
-		if len(resolution.Surface.UnresolvedRequirementQuotes) != 0 {
+		unresolved, err := resolution.Surface.UnresolvedRequirements(surfaceInput)
+		if err != nil {
+			return repositoryfacts.ChangeContract{}, fmt.Errorf(
+				"derive unresolved repository requirements for %q: %w",
+				acquisition.RequirementQuote, err,
+			)
+		}
+		if len(unresolved) != 0 {
 			return repositoryfacts.ChangeContract{}, fmt.Errorf(
 				"repository change surface for requirement %q remains unresolved and requires desired-state compilation",
 				acquisition.RequirementQuote,
@@ -85,7 +92,7 @@ func (session *directCodingSession) buildExistingRepositoryChangeContract(
 			}
 			seenSymbols[target.SymbolID] = acquisition.RequirementQuote
 			requests = append(requests, repositoryfacts.ChangeRequest{
-				SymbolID: target.SymbolID, RequirementQuote: target.RequirementQuote,
+				SymbolID: target.SymbolID, RequirementQuote: target.Requirement,
 			})
 		}
 	}

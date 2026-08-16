@@ -17,6 +17,20 @@ func NewTypeScriptCompilerRepairRegion(
 	bindings []TypeScriptRepairBinding,
 	unavailableBindings ...[]TypeScriptRepairBinding,
 ) (TypeScriptFragmentRepairRegion, error) {
+	return NewTypeScriptCompilerRepairRegionWithEvidence(
+		current, tsx, line, column, bindings, nil, unavailableBindings...,
+	)
+}
+
+func NewTypeScriptCompilerRepairRegionWithEvidence(
+	current string,
+	tsx bool,
+	line int,
+	column int,
+	bindings []TypeScriptRepairBinding,
+	expressionEvidence []TypeScriptRepairExpressionEvidence,
+	unavailableBindings ...[]TypeScriptRepairBinding,
+) (TypeScriptFragmentRepairRegion, error) {
 	source := strings.TrimSpace(strings.ReplaceAll(current, "\r\n", "\n"))
 	if source == "" || !utf8.ValidString(source) || strings.Contains(source, "\r") {
 		return TypeScriptFragmentRepairRegion{}, fmt.Errorf(
@@ -64,8 +78,9 @@ func NewTypeScriptCompilerRepairRegion(
 	region := TypeScriptFragmentRepairRegion{
 		Kind:      TypeScriptRepairRegionCompilerOwner,
 		StartLine: start, EndLine: end,
-		Source:   strings.Join(lines[start-1:end], "\n"),
-		Bindings: append([]TypeScriptRepairBinding(nil), bindings...),
+		Source:             strings.Join(lines[start-1:end], "\n"),
+		Bindings:           append([]TypeScriptRepairBinding(nil), bindings...),
+		ExpressionEvidence: append([]TypeScriptRepairExpressionEvidence(nil), expressionEvidence...),
 	}
 	if len(unavailableBindings) > 1 {
 		return TypeScriptFragmentRepairRegion{}, fmt.Errorf(

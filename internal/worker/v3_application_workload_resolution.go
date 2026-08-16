@@ -67,26 +67,90 @@ func resolveDirectCodingApplicationJobSpecification(
 	if err != nil {
 		return zero, err
 	}
+	return reviewDirectCodingApplicationJobSpecification(
+		runtime, reviewModel, subject, authority, retained,
+	)
+}
+
+func reviewDirectCodingApplicationJobSpecification(
+	runtime typedWorkerRuntime,
+	reviewModel string,
+	subject string,
+	authority assemblyline.ApplicationJobSpecificationInput,
+	retained assemblyline.ApplicationJobSpecification,
+) (assemblyline.ApplicationJobSpecification, error) {
+	return reviewDirectCodingApplicationJobSpecificationAfterFailure(
+		runtime, reviewModel, subject, authority, retained, nil,
+	)
+}
+
+func reviewDirectCodingApplicationJobSpecificationAfterFailure(
+	runtime typedWorkerRuntime,
+	reviewModel string,
+	subject string,
+	authority assemblyline.ApplicationJobSpecificationInput,
+	retained assemblyline.ApplicationJobSpecification,
+	initialValidationFailure *assemblyline.ApplicationJobSpecificationReviewEvidenceError,
+) (assemblyline.ApplicationJobSpecification, error) {
+	var zero assemblyline.ApplicationJobSpecification
+	reviewModel = strings.TrimSpace(reviewModel)
+	if reviewModel == "" {
+		return zero, fmt.Errorf("application job specification review model is required")
+	}
 	progress, err := newApplicationJobSpecificationProgress(retained)
 	if err != nil {
 		return zero, err
+	}
+	reviewTargetIndex := 0
+	if initialValidationFailure != nil {
+		targets := applicationJobSpecificationReviewTargets(retained)
+		evidenceID, exists := assemblyline.ApplicationJobSpecificationReviewEvidenceID(
+			retained, initialValidationFailure.Field, initialValidationFailure.FindingEvidence,
+		)
+		if !exists {
+			return zero, fmt.Errorf(
+				"application job specification initial review failure has no current evidence",
+			)
+		}
+		matched := false
+		for index, target := range targets {
+			if target.field == initialValidationFailure.Field && target.evidenceID == evidenceID {
+				reviewTargetIndex = index
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return zero, fmt.Errorf("application job specification initial review target is unavailable")
+		}
 	}
 
 	reviewCall := 0
 	repairAttempt := 0
 	invalidReviewEvidence := make(map[string]struct{})
 	var validationFailure *assemblyline.ApplicationJobSpecificationReviewEvidenceError
+	if initialValidationFailure != nil {
+		copy := *initialValidationFailure
+		validationFailure = &copy
+		invalidReviewEvidence[copy.Identity()] = struct{}{}
+	}
 	for {
+		targets := applicationJobSpecificationReviewTargets(retained)
+		if reviewTargetIndex >= len(targets) {
+			return retained, nil
+		}
+		currentTarget := targets[reviewTargetIndex]
 		reviewCall++
 		var reviewInput assemblyline.ApplicationJobSpecificationReviewInput
 		var inputErr error
 		if validationFailure == nil {
 			reviewInput, inputErr = assemblyline.NewApplicationJobSpecificationReviewInput(
-				authority, retained, reviewCall,
+				authority, retained, currentTarget.field, currentTarget.evidenceID, reviewCall,
 			)
 		} else {
 			reviewInput, inputErr = assemblyline.NewApplicationJobSpecificationReviewRetryInput(
-				authority, retained, reviewCall, *validationFailure,
+				authority, retained, currentTarget.field, currentTarget.evidenceID,
+				reviewCall, *validationFailure,
 			)
 		}
 		if inputErr != nil {
@@ -110,7 +174,7 @@ func resolveDirectCodingApplicationJobSpecification(
 			identity := evidenceErr.Identity()
 			if _, repeated := invalidReviewEvidence[identity]; repeated {
 				return zero, fmt.Errorf(
-					"application job specification %s: repeated ungrounded review evidence rejected for unchanged current field",
+					"application job specification %s: repeated invalid review evidence rejected for unchanged retained state",
 					subject,
 				)
 			}
@@ -121,7 +185,8 @@ func resolveDirectCodingApplicationJobSpecification(
 		}
 		validationFailure = nil
 		if review.Decision == assemblyline.ApplicationJobSpecificationReviewAccept {
-			return retained, nil
+			reviewTargetIndex++
+			continue
 		}
 		repairAttempt++
 		repairInput, inputErr := assemblyline.NewApplicationJobSpecificationRepairInput(
@@ -135,25 +200,59 @@ func resolveDirectCodingApplicationJobSpecification(
 			return zero, jobErr
 		}
 		retainedBeforeRepair := retained
-		retained, callErr = runApplicationJobSpecificationCall(
-			runtime, plannerModel, fmt.Sprintf("%s_repair_%d", subject, repairAttempt), repairJob,
-			func(raw string) (assemblyline.ApplicationJobSpecification, error) {
-				patch, decodeErr := assemblyline.DecodeApplicationJobSpecificationRepair(repairInput, raw)
-				if decodeErr != nil {
-					return zero, decodeErr
-				}
-				return assemblyline.ApplyApplicationJobSpecificationRepair(
-					repairInput, retainedBeforeRepair, patch,
-				)
-			},
+		retained, callErr = runApplicationJobSpecificationRepair(
+			runtime, reviewModel,
+			fmt.Sprintf("%s_repair_%d", subject, repairAttempt),
+			repairJob, repairInput, retainedBeforeRepair,
 		)
 		if callErr != nil {
-			return zero, callErr
+			var noOp *assemblyline.ApplicationJobSpecificationRepairNoOpError
+			if !errors.As(callErr, &noOp) {
+				return zero, callErr
+			}
+			failure := noOp.ReviewFailure()
+			identity := failure.Identity()
+			if _, repeated := invalidReviewEvidence[identity]; repeated {
+				return zero, fmt.Errorf(
+					"application job specification %s: repeated no-op reviewer verdict rejected for unchanged retained state",
+					subject,
+				)
+			}
+			invalidReviewEvidence[identity] = struct{}{}
+			validationFailure = &failure
+			retained = retainedBeforeRepair
+			continue
 		}
 		if progressErr := progress.Observe(retained); progressErr != nil {
 			return zero, fmt.Errorf("application job specification %s: %w", subject, progressErr)
 		}
+		reviewTargetIndex = 0
 	}
+}
+
+func runApplicationJobSpecificationRepair(
+	runtime typedWorkerRuntime,
+	repairModel string,
+	subject string,
+	repairJob assemblyline.PortableJob,
+	repairInput assemblyline.ApplicationJobSpecificationRepairInput,
+	retained assemblyline.ApplicationJobSpecification,
+) (assemblyline.ApplicationJobSpecification, error) {
+	var zero assemblyline.ApplicationJobSpecification
+	return runApplicationJobSpecificationCall(
+		runtime, repairModel, subject, repairJob,
+		func(raw string) (assemblyline.ApplicationJobSpecification, error) {
+			patch, decodeErr := assemblyline.DecodeApplicationJobSpecificationRepair(
+				repairInput, raw,
+			)
+			if decodeErr != nil {
+				return zero, decodeErr
+			}
+			return assemblyline.ApplyApplicationJobSpecificationRepair(
+				repairInput, retained, patch,
+			)
+		},
+	)
 }
 
 func runApplicationJobSpecificationCall[T any](

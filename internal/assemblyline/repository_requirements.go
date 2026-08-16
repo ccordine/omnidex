@@ -2,22 +2,36 @@ package assemblyline
 
 import (
 	"fmt"
-	"sort"
+	"strings"
+	"unicode/utf8"
 )
 
-const RepositoryRequirementInterpretationSchemaV1 = "omnidex.repository-requirements.v1"
+const RepositoryRequirementInterpretationSchemaV2 = "omnidex.repository-requirements.v2"
 
 type RepositoryRequirementInterpretationInput struct {
-	UserRequest string `json:"user_request"`
+	UserRequest string             `json:"user_request"`
+	Context     ApplicationContext `json:"context"`
 }
 
 type RepositoryRequirementInterpretation struct {
-	Schema        string   `json:"schema"`
-	FeatureQuotes []string `json:"feature_quotes"`
+	Schema       string   `json:"schema"`
+	Requirements []string `json:"requirements"`
 }
 
 func (input RepositoryRequirementInterpretationInput) validate() error {
-	return validateApplicationRequest("repository requirements", input.UserRequest)
+	if err := validateApplicationRequest("repository requirements", input.UserRequest); err != nil {
+		return err
+	}
+	if err := input.Context.Validate(); err != nil {
+		return err
+	}
+	if input.Context.WorkspaceState != ApplicationWorkspaceExisting {
+		return fmt.Errorf("repository requirements require an existing-workspace context")
+	}
+	if input.Context.RequestSHA256 != ExactObjectiveContextSHA(input.UserRequest) {
+		return fmt.Errorf("repository requirements request does not match context authority")
+	}
+	return nil
 }
 
 func ResolveRepositoryRequirements(
@@ -27,54 +41,47 @@ func ResolveRepositoryRequirements(
 	if err := input.validate(); err != nil {
 		return nil, err
 	}
-	if interpretation.Schema != RepositoryRequirementInterpretationSchemaV1 {
+	if interpretation.Schema != RepositoryRequirementInterpretationSchemaV2 {
 		return nil, fmt.Errorf(
 			"repository requirement schema must be %q",
-			RepositoryRequirementInterpretationSchemaV1,
+			RepositoryRequirementInterpretationSchemaV2,
 		)
 	}
-	if interpretation.FeatureQuotes == nil {
-		return nil, fmt.Errorf("repository feature quotes must be an array")
+	if interpretation.Requirements == nil {
+		return nil, fmt.Errorf("repository requirements must be an array")
 	}
-	if len(interpretation.FeatureQuotes) < 1 || len(interpretation.FeatureQuotes) > maxRequirementCount {
+	if len(interpretation.Requirements) < 1 || len(interpretation.Requirements) > maxRequirementCount {
 		return nil, fmt.Errorf(
-			"repository requirements must contain between 1 and %d feature quotes",
+			"repository requirements must contain between 1 and %d statements",
 			maxRequirementCount,
 		)
 	}
 
-	type groundedQuote struct {
-		quote string
-		span  textSpan
-	}
-	grounded := make([]groundedQuote, 0, len(interpretation.FeatureQuotes))
-	seen := make(map[string]struct{}, len(interpretation.FeatureQuotes))
-	for index, quote := range interpretation.FeatureQuotes {
-		label := fmt.Sprintf("repository feature quote %d", index)
-		if err := validateRequirementQuote(label, quote); err != nil {
+	requirements := make([]string, len(interpretation.Requirements))
+	seen := make(map[string]struct{}, len(interpretation.Requirements))
+	for index, requirement := range interpretation.Requirements {
+		label := fmt.Sprintf("repository requirement %d", index)
+		if err := validateRepositoryRequirementStatement(label, requirement); err != nil {
 			return nil, err
 		}
-		if _, duplicate := seen[quote]; duplicate {
-			return nil, fmt.Errorf("%s duplicates %q", label, quote)
+		if _, duplicate := seen[requirement]; duplicate {
+			return nil, fmt.Errorf("%s duplicates %q", label, requirement)
 		}
-		seen[quote] = struct{}{}
-		span, err := uniqueTextSpan(input.UserRequest, quote)
-		if err != nil {
-			return nil, fmt.Errorf("%s %q: %w", label, quote, err)
-		}
-		for _, prior := range grounded {
-			if span.Overlaps(prior.span) {
-				return nil, fmt.Errorf("%s %q overlaps %q", label, quote, prior.quote)
-			}
-		}
-		grounded = append(grounded, groundedQuote{quote: quote, span: span})
+		seen[requirement] = struct{}{}
+		requirements[index] = requirement
 	}
-	sort.SliceStable(grounded, func(left, right int) bool {
-		return grounded[left].span.Start < grounded[right].span.Start
-	})
-	quotes := make([]string, 0, len(grounded))
-	for _, item := range grounded {
-		quotes = append(quotes, item.quote)
+	return requirements, nil
+}
+
+func validateRepositoryRequirementStatement(label, statement string) error {
+	if statement == "" || statement != strings.TrimSpace(statement) {
+		return fmt.Errorf("%s must be one non-empty trimmed statement", label)
 	}
-	return quotes, nil
+	if !utf8.ValidString(statement) || strings.ContainsRune(statement, '\x00') {
+		return fmt.Errorf("%s must be valid UTF-8 without NUL bytes", label)
+	}
+	if len([]byte(statement)) > maxRequirementQuoteBytes {
+		return fmt.Errorf("%s exceeds %d bytes", label, maxRequirementQuoteBytes)
+	}
+	return nil
 }

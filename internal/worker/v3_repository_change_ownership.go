@@ -119,10 +119,7 @@ func locateStagedGoTarget(
 	if err != nil {
 		return repositoryGoTargetOwnership{}, err
 	}
-	permitted := make([]string, len(target.DirectCapabilities))
-	for index, capability := range target.DirectCapabilities {
-		permitted[index] = capability.Name
-	}
+	permitted := target.PermittedCapabilitySymbols()
 	fragmentContract := gofragment.Contract{
 		Signature: target.Signature, Current: span.Content, PermittedSymbols: permitted,
 	}

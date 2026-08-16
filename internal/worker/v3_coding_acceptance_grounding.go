@@ -11,7 +11,7 @@ import (
 func (s *directCodingSession) ensureDirectCodingAcceptanceGrounding(
 	program *directCodingProgram,
 ) error {
-	reviewModel, err := s.workerModel(station.CodingWorkload)
+	reviewModel, err := s.workerModel(station.CodingWorkloadReview)
 	if err != nil {
 		return err
 	}

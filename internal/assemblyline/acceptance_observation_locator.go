@@ -58,7 +58,48 @@ func ResolveTypeScriptAcceptanceObservationSite(
 			selectedWidth = width
 		}
 	}
-	return selected, selected != "", nil
+	if selected != "" {
+		return selected, true, nil
+	}
+	wrapper := AcceptanceObservationLocator{}
+	wrapperWidth := 0
+	for _, locator := range inventory.Locators {
+		site := sites[locator.SiteID]
+		if !acceptanceFailureWrapperSite(site) || offset < locator.StartByte || offset >= locator.EndByte {
+			continue
+		}
+		width := locator.EndByte - locator.StartByte
+		if wrapper.SiteID == "" || width < wrapperWidth {
+			wrapper = locator
+			wrapperWidth = width
+		}
+	}
+	if wrapper.SiteID == "" {
+		return "", false, nil
+	}
+	descendants := make([]AcceptanceObservationLocator, 0, 2)
+	for _, locator := range inventory.Locators {
+		if locator.StartByte < wrapper.StartByte || locator.EndByte > wrapper.EndByte ||
+			locator.SiteID == wrapper.SiteID || !acceptanceFailureRoutableSite(sites[locator.SiteID]) {
+			continue
+		}
+		descendants = append(descendants, locator)
+	}
+	if len(descendants) == 0 {
+		return "", false, nil
+	}
+	root := descendants[0]
+	for _, candidate := range descendants[1:] {
+		if candidate.EndByte-candidate.StartByte > root.EndByte-root.StartByte {
+			root = candidate
+		}
+	}
+	for _, candidate := range descendants {
+		if candidate.StartByte < root.StartByte || candidate.EndByte > root.EndByte {
+			return "", false, nil
+		}
+	}
+	return root.SiteID, true, nil
 }
 
 func ResolveTypeScriptAcceptanceObservationRepairSite(
@@ -123,4 +164,8 @@ func acceptanceFailureRoutableSite(site AcceptanceObservationSite) bool {
 	operation := site.Operations[0]
 	return strings.HasPrefix(operation, "testing_library_query:") ||
 		strings.HasPrefix(operation, "expect_matcher:")
+}
+
+func acceptanceFailureWrapperSite(site AcceptanceObservationSite) bool {
+	return len(site.Operations) == 1 && site.Operations[0] == "harness_call:waitFor"
 }

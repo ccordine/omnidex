@@ -17,12 +17,12 @@ func ApplicationClassificationResponseSchema() map[string]any {
 
 func RepositoryRequirementInterpretationResponseSchema() map[string]any {
 	return objectSchema(
-		[]string{"schema", "feature_quotes"},
+		[]string{"schema", "requirements"},
 		map[string]any{
 			"schema": map[string]any{
-				"type": "string", "const": RepositoryRequirementInterpretationSchemaV1,
+				"type": "string", "const": RepositoryRequirementInterpretationSchemaV2,
 			},
-			"feature_quotes": map[string]any{
+			"requirements": map[string]any{
 				"type": "array", "minItems": 1, "maxItems": maxRequirementCount,
 				"items": map[string]any{
 					"type": "string", "minLength": 1, "maxLength": maxRequirementQuoteBytes,

@@ -57,12 +57,13 @@ correction call can return only that leaf; code merges it, rejects no-op or repe
 state, and reruns review. Neither station sees an operation catalog, repository tree,
 path, task graph, or completion control.
 
-For job-specification review, a repair finding also carries one verbatim excerpt from
-the exact current named field. Code validates that excerpt, hashes the observed field,
-and revalidates both field and whole-state bindings before repair dispatch. An excerpt
-absent from the current field triggers another review of unchanged authoritative state;
-repair is not invoked, and a repeated invalid diagnostic is an explicit cycle failure.
-This is diagnostic-to-state grounding, not natural-language interpretation by substring.
+For job-specification review, code enumerates the whole current objective and every
+whole current list item and couples those values to their owning field in the response
+schema. A repair finding must select one of those exact values. Code hashes the observed
+field and revalidates both field and whole-state bindings before repair dispatch. The
+constructive route owns only the initial proposal; the corrective route owns review,
+semantic repair, and a single schema-constrained no-op correction. This is
+diagnostic-to-state grounding without natural-language substring interpretation.
 
 ## Autonomous substrate and subjective meaning
 
