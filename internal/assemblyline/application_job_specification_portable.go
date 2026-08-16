@@ -160,6 +160,7 @@ func newApplicationJobSpecificationRepairPortablePayload(
 		Retained:  cloneApplicationJobSpecification(input.retained),
 		Review: ApplicationJobSpecificationReview{
 			Decision:        input.review.Decision,
+			Resolution:      input.review.Resolution,
 			Field:           input.review.Field,
 			Finding:         input.review.Finding,
 			FindingEvidence: input.review.FindingEvidence,

@@ -188,6 +188,21 @@ func reviewDirectCodingApplicationJobSpecificationAfterFailure(
 			reviewTargetIndex++
 			continue
 		}
+		if review.Resolution == assemblyline.ApplicationJobSpecificationReviewRemove {
+			retained, inputErr = assemblyline.ApplyApplicationJobSpecificationReviewRemoval(
+				authority, retained, review,
+			)
+			if inputErr != nil {
+				return zero, inputErr
+			}
+			if progressErr := progress.Observe(retained); progressErr != nil {
+				return zero, fmt.Errorf(
+					"application job specification %s: %w", subject, progressErr,
+				)
+			}
+			reviewTargetIndex = 0
+			continue
+		}
 		repairAttempt++
 		repairInput, inputErr := assemblyline.NewApplicationJobSpecificationRepairInput(
 			authority, retained, review, repairAttempt,

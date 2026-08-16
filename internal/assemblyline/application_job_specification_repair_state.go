@@ -5,19 +5,6 @@ import (
 	"reflect"
 )
 
-func applicationJobSpecificationRepairCanRemove(
-	input ApplicationJobSpecificationRepairInput,
-) bool {
-	switch input.review.Field {
-	case ApplicationJobSpecificationRequiredBehaviorsField:
-		return len(input.retained.RequiredBehaviors) > 1
-	case ApplicationJobSpecificationAcceptanceCriteriaField:
-		return len(input.retained.AcceptanceCriteria) > 1
-	default:
-		return false
-	}
-}
-
 func ApplyApplicationJobSpecificationRepair(
 	input ApplicationJobSpecificationRepairInput,
 	retained ApplicationJobSpecification,
@@ -40,11 +27,6 @@ func ApplyApplicationJobSpecificationRepair(
 	updated := cloneApplicationJobSpecification(retained)
 	switch patch.field {
 	case ApplicationJobSpecificationObjectiveField:
-		if patch.remove {
-			return ApplicationJobSpecification{}, fmt.Errorf(
-				"application job specification objective cannot be removed",
-			)
-		}
 		updated.Objective = patch.replacement
 	case ApplicationJobSpecificationRequiredBehaviorsField:
 		var err error
@@ -89,9 +71,6 @@ func applyApplicationJobSpecificationListRepair(
 		return nil, fmt.Errorf("application job specification repair value is no longer retained")
 	}
 	updated := append([]string(nil), values...)
-	if patch.remove {
-		return append(updated[:index], updated[index+1:]...), nil
-	}
 	updated[index] = patch.replacement
 	return updated, nil
 }
@@ -102,10 +81,10 @@ func applicationJobSpecificationRepairIsNoOp(
 ) bool {
 	switch patch.field {
 	case ApplicationJobSpecificationObjectiveField:
-		return patch.remove || retained.Objective == patch.replacement
+		return retained.Objective == patch.replacement
 	case ApplicationJobSpecificationRequiredBehaviorsField,
 		ApplicationJobSpecificationAcceptanceCriteriaField:
-		return !patch.remove && patch.replacement == patch.current
+		return patch.replacement == patch.current
 	default:
 		return true
 	}

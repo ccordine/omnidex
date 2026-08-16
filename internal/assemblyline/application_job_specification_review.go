@@ -6,19 +6,25 @@ import (
 
 type ApplicationJobSpecificationReviewDecision string
 
+type ApplicationJobSpecificationReviewResolution string
+
 const (
 	ApplicationJobSpecificationReviewAccept ApplicationJobSpecificationReviewDecision = "accept"
 	ApplicationJobSpecificationReviewRepair ApplicationJobSpecificationReviewDecision = "repair"
+
+	ApplicationJobSpecificationReviewReplace ApplicationJobSpecificationReviewResolution = "replace"
+	ApplicationJobSpecificationReviewRemove  ApplicationJobSpecificationReviewResolution = "remove"
 
 	maxApplicationJobSpecificationReviewFindingRunes         = 512
 	maxApplicationJobSpecificationReviewFindingEvidenceRunes = 512
 )
 
 type ApplicationJobSpecificationReview struct {
-	Decision        ApplicationJobSpecificationReviewDecision `json:"decision"`
-	Field           ApplicationJobSpecificationField          `json:"field,omitempty"`
-	Finding         string                                    `json:"finding,omitempty"`
-	FindingEvidence string                                    `json:"finding_evidence,omitempty"`
+	Decision        ApplicationJobSpecificationReviewDecision   `json:"decision"`
+	Resolution      ApplicationJobSpecificationReviewResolution `json:"resolution,omitempty"`
+	Field           ApplicationJobSpecificationField            `json:"field,omitempty"`
+	Finding         string                                      `json:"finding,omitempty"`
+	FindingEvidence string                                      `json:"finding_evidence,omitempty"`
 
 	binding             string
 	observedValueSHA256 string
@@ -34,9 +40,10 @@ type ApplicationJobSpecificationReviewInput struct {
 }
 
 type applicationJobSpecificationReviewWire struct {
-	Decision   *ApplicationJobSpecificationReviewDecision `json:"decision"`
-	EvidenceID *string                                    `json:"evidence_id"`
-	Finding    *string                                    `json:"finding"`
+	Decision   *ApplicationJobSpecificationReviewDecision   `json:"decision"`
+	Resolution *ApplicationJobSpecificationReviewResolution `json:"resolution"`
+	EvidenceID *string                                      `json:"evidence_id"`
+	Finding    *string                                      `json:"finding"`
 }
 
 func NewApplicationJobSpecificationReviewInput(
@@ -136,7 +143,12 @@ func DecodeApplicationJobSpecificationReview(
 	if wire.Decision == nil {
 		return zero, fmt.Errorf("application job specification review requires decision")
 	}
-	review := ApplicationJobSpecificationReview{Decision: *wire.Decision}
+	if wire.Resolution == nil {
+		return zero, fmt.Errorf("application job specification review requires resolution")
+	}
+	review := ApplicationJobSpecificationReview{
+		Decision: *wire.Decision, Resolution: *wire.Resolution,
+	}
 	if review.Decision == ApplicationJobSpecificationReviewRepair && wire.Finding != nil {
 		review.Finding = *wire.Finding
 	}
@@ -179,6 +191,12 @@ func DecodeApplicationJobSpecificationReview(
 			return zero, failure(ApplicationJobSpecificationReviewEvidenceInvalid, *wire.EvidenceID)
 		}
 		review.FindingEvidence = evidenceValue
+		if review.Resolution == ApplicationJobSpecificationReviewRemove &&
+			!applicationJobSpecificationReviewCanRemove(input.retained, review.Field) {
+			return zero, fmt.Errorf(
+				"application job specification review cannot remove the final required value",
+			)
+		}
 	} else {
 		if wire.EvidenceID == nil || wire.Finding == nil {
 			return zero, fmt.Errorf(
@@ -196,8 +214,8 @@ func DecodeApplicationJobSpecificationReview(
 func validateApplicationJobSpecificationReview(review ApplicationJobSpecificationReview) error {
 	switch review.Decision {
 	case ApplicationJobSpecificationReviewAccept:
-		if review.Field != "" || review.Finding != "" || review.FindingEvidence != "" {
-			return fmt.Errorf("accepted application job specification review must not name a field, finding, or finding evidence")
+		if review.Resolution != "" || review.Field != "" || review.Finding != "" || review.FindingEvidence != "" {
+			return fmt.Errorf("accepted application job specification review must not name a resolution, field, finding, or finding evidence")
 		}
 		return nil
 	case ApplicationJobSpecificationReviewRepair:
@@ -217,6 +235,13 @@ func validateApplicationJobSpecificationReview(review ApplicationJobSpecificatio
 func validateApplicationJobSpecificationReviewRepairAuthority(
 	review ApplicationJobSpecificationReview,
 ) error {
+	if review.Resolution != ApplicationJobSpecificationReviewReplace &&
+		review.Resolution != ApplicationJobSpecificationReviewRemove {
+		return fmt.Errorf(
+			"application job specification review repair resolution %q is unsupported",
+			review.Resolution,
+		)
+	}
 	if !isApplicationJobSpecificationField(review.Field) {
 		return fmt.Errorf("application job specification review field %q is unsupported", review.Field)
 	}

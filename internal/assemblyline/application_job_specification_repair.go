@@ -17,7 +17,6 @@ type ApplicationJobSpecificationRepairPatch struct {
 	field       ApplicationJobSpecificationField
 	current     string
 	replacement string
-	remove      bool
 }
 
 type applicationJobSpecificationRepairAuthority struct {
@@ -42,39 +41,16 @@ func NewApplicationJobSpecificationRepairInput(
 }
 
 func (input ApplicationJobSpecificationRepairInput) validate() error {
-	if err := validateApplicationJobSpecificationInput(input.authority); err != nil {
+	if err := validateApplicationJobSpecificationBoundReview(
+		input.authority, input.retained, input.review,
+	); err != nil {
 		return err
 	}
-	if err := ValidateApplicationJobSpecification(input.retained); err != nil {
-		return fmt.Errorf("application job specification repair requires valid retained state: %w", err)
-	}
-	if err := validateApplicationJobSpecificationReview(input.review); err != nil {
-		return err
-	}
-	if input.review.Decision != ApplicationJobSpecificationReviewRepair {
-		return fmt.Errorf("application job specification repair requires a repair review")
-	}
-	observedValueSHA256, err := applicationJobSpecificationCurrentFieldSHA256(
-		input.retained, input.review.Field,
-	)
-	if err != nil {
-		return err
-	}
-	if input.review.observedValueSHA256 != observedValueSHA256 {
-		return fmt.Errorf("application job specification repair review is not bound to current named field")
-	}
-	if !applicationJobSpecificationReviewEvidenceApplies(input.retained, input.review) {
-		return fmt.Errorf("application job specification repair review evidence does not apply to current named field")
+	if input.review.Resolution != ApplicationJobSpecificationReviewReplace {
+		return fmt.Errorf("application job specification repair requires replace resolution")
 	}
 	if input.attempt < 1 {
 		return fmt.Errorf("application job specification repair attempt must be positive")
-	}
-	binding, err := applicationJobSpecificationBinding(input.authority, input.retained)
-	if err != nil {
-		return err
-	}
-	if input.review.binding != binding {
-		return fmt.Errorf("application job specification repair review is not bound to retained authority")
 	}
 	return nil
 }
@@ -103,12 +79,8 @@ func BuildApplicationJobSpecificationRepairPrompt(
 	if err != nil {
 		return "", fmt.Errorf("encode application job specification repair authority: %w", err)
 	}
-	request := "Return one replacement string for current_value that resolves problem under authority."
-	if applicationJobSpecificationRepairCanRemove(input) {
-		request = "Return null when current_value is not required by authority.focused_requirement; otherwise return one replacement string that resolves problem."
-	}
 	prompt := strings.Join([]string{
-		request,
+		"Return one replacement string for current_value that resolves problem under authority.",
 		"The response is one JSON object containing only current_field.",
 		"APPLICATION_JOB_SPECIFICATION_REPAIR_INPUT_JSON:\n" + string(raw),
 	}, "\n\n")
@@ -159,17 +131,11 @@ func ApplicationJobSpecificationRepairResponseSchema(
 	} else if input.review.Field == ApplicationJobSpecificationAcceptanceCriteriaField {
 		maximum = maxApplicationCriterionRunes
 	}
-	replacement := applicationJobSpecificationLineSchema(maximum)
-	replacement["not"] = map[string]any{"const": input.review.FindingEvidence}
-	definition := any(replacement)
-	if applicationJobSpecificationRepairCanRemove(input) {
-		definition = map[string]any{"oneOf": []any{
-			replacement,
-			map[string]any{"type": "null"},
-		}}
-	}
 	field := string(input.review.Field)
-	return objectSchema([]string{field}, map[string]any{field: definition}), nil
+	return objectSchema(
+		[]string{field},
+		map[string]any{field: applicationJobSpecificationLineSchema(maximum)},
+	), nil
 }
 
 func DecodeApplicationJobSpecificationRepair(
@@ -198,30 +164,23 @@ func DecodeApplicationJobSpecificationRepair(
 	patch := ApplicationJobSpecificationRepairPatch{
 		field: input.review.Field, current: input.review.FindingEvidence,
 	}
-	if value == nil {
-		if !applicationJobSpecificationRepairCanRemove(input) {
-			return zero, fmt.Errorf("application job specification repair cannot remove the final required value")
-		}
-		patch.remove = true
-	} else {
-		replacement, ok := value.(string)
-		if !ok {
-			return zero, fmt.Errorf("application job specification repair value must be a string or null")
-		}
-		maximum := maxApplicationObjectiveRunes
-		label := "objective repair"
-		if input.review.Field == ApplicationJobSpecificationRequiredBehaviorsField {
-			maximum = maxApplicationBehaviorRunes
-			label = "required behavior repair"
-		} else if input.review.Field == ApplicationJobSpecificationAcceptanceCriteriaField {
-			maximum = maxApplicationCriterionRunes
-			label = "acceptance criterion repair"
-		}
-		if err := validateApplicationWorkloadLine(label, replacement, maximum); err != nil {
-			return zero, err
-		}
-		patch.replacement = replacement
+	replacement, ok := value.(string)
+	if !ok {
+		return zero, fmt.Errorf("application job specification repair value must be a string")
 	}
+	maximum := maxApplicationObjectiveRunes
+	label := "objective repair"
+	if input.review.Field == ApplicationJobSpecificationRequiredBehaviorsField {
+		maximum = maxApplicationBehaviorRunes
+		label = "required behavior repair"
+	} else if input.review.Field == ApplicationJobSpecificationAcceptanceCriteriaField {
+		maximum = maxApplicationCriterionRunes
+		label = "acceptance criterion repair"
+	}
+	if err := validateApplicationWorkloadLine(label, replacement, maximum); err != nil {
+		return zero, err
+	}
+	patch.replacement = replacement
 	if applicationJobSpecificationRepairIsNoOp(input.retained, patch) {
 		return zero, newApplicationJobSpecificationRepairNoOpError(input.review)
 	}
