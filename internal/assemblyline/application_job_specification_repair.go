@@ -159,10 +159,12 @@ func ApplicationJobSpecificationRepairResponseSchema(
 	} else if input.review.Field == ApplicationJobSpecificationAcceptanceCriteriaField {
 		maximum = maxApplicationCriterionRunes
 	}
-	definition := any(applicationJobSpecificationLineSchema(maximum))
+	replacement := applicationJobSpecificationLineSchema(maximum)
+	replacement["not"] = map[string]any{"const": input.review.FindingEvidence}
+	definition := any(replacement)
 	if applicationJobSpecificationRepairCanRemove(input) {
 		definition = map[string]any{"oneOf": []any{
-			applicationJobSpecificationLineSchema(maximum),
+			replacement,
 			map[string]any{"type": "null"},
 		}}
 	}
