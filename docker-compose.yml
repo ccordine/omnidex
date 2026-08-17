@@ -71,6 +71,8 @@ services:
     networks:
       - omnidex-edge
       - omnidex-backend
+      # WorkNet Edge publishes omni.worknet through its declared shared app network.
+      - dev-net
     restart: unless-stopped
 
   postgres:
@@ -118,3 +120,6 @@ networks:
   omnidex-backend:
     driver: bridge
     internal: true
+  dev-net:
+    external: true
+    name: dev-net
