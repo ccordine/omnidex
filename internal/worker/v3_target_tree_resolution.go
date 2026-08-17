@@ -23,7 +23,7 @@ func resolveDirectCodingTargetTree(
 	if err != nil {
 		return zero, err
 	}
-	target, err := runDirectCodingTargetTreeCall(runtime, plannerModel, correctionModel, input)
+	target, err := runDirectCodingTargetTreeCall(runtime, plannerModel, correctionModel, input, stack)
 	if err != nil {
 		return zero, err
 	}
@@ -39,6 +39,7 @@ func runDirectCodingTargetTreeCall(
 	plannerModel string,
 	correctionModel string,
 	input assemblyline.TargetTreeInput,
+	stack directCodingProjectStack,
 ) (assemblyline.TargetTree, error) {
 	var zero assemblyline.TargetTree
 	if runtime.Context == nil || runtime.Execute == nil {
@@ -87,6 +88,9 @@ func runDirectCodingTargetTreeCall(
 		seen[candidate] = struct{}{}
 		target, validationErr := assemblyline.DecodeTargetTreeCandidate(input, candidate)
 		if validationErr == nil {
+			validationErr = validateDirectCodingTargetTreeAdapters(stack, target)
+		}
+		if validationErr == nil {
 			if err := finalizeTypedWorkerResult(runtime, job, result, nil); err != nil {
 				return zero, err
 			}
@@ -99,6 +103,19 @@ func runDirectCodingTargetTreeCall(
 		lastFailure = validationErr
 	}
 	return zero, fmt.Errorf("target tree candidate failed %d bounded replacement attempts: %w", runtime.MaxAttempts, lastFailure)
+}
+
+// validateDirectCodingTargetTreeAdapters keeps a path-only tree inside the
+// selected code-owned project stack before any per-file semantic work starts.
+// A model never chooses adapters; an incompatible path is an invalid tree
+// declaration and is corrected at the tree boundary.
+func validateDirectCodingTargetTreeAdapters(stack directCodingProjectStack, target assemblyline.TargetTree) error {
+	for _, filePath := range target.Paths {
+		if _, _, err := directCodingArtifactAdapterForTreePath(stack, filePath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func persistTargetTreeRejection(
