@@ -161,15 +161,15 @@ func insertTaskLedgerNode(
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO task_nodes (
-			ledger_id, job_id, id, parent_id, objective_id, kind, title, status, priority,
+			ledger_id, job_id, id, parent_id, objective_id, kind, inline_execution, title, status, priority,
 			created_by, assigned_step_id, created_step_id, completed_step_id,
 			acceptance_criteria, metadata, status_reason, created_version, updated_version
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-			$14::jsonb, $15::jsonb, $16, $17, $18
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+			$15::jsonb, $16::jsonb, $17, $18, $19
 		)
 	`, ledgerID, jobID, node.ID, nullableTaskText(string(node.ParentID)), nullableTaskText(string(node.ObjectiveID)),
-		node.Kind, node.Title, node.Status, node.Priority, node.CreatedBy, node.AssignedStepID,
+		node.Kind, node.InlineExecution, node.Title, node.Status, node.Priority, node.CreatedBy, node.AssignedStepID,
 		node.CreatedStepID, node.CompletedStepID, criteria, node.Metadata.Bytes(), node.StatusReason,
 		int64(node.CreatedVersion), int64(node.UpdatedVersion))
 	if err != nil {

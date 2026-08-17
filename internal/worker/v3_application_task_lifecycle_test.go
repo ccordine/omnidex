@@ -81,3 +81,41 @@ func TestApplicationTaskLifecycleGenerationFailureStartsNoLaterTaskOrFinalStage(
 		t.Fatalf("failed task was merged into accepted program: %v", program.Generated)
 	}
 }
+
+func TestApplicationTaskLifecycleWrapsEveryGeneratedTaskInCodeOwnedCognitionTransitions(t *testing.T) {
+	t.Parallel()
+	input, frozen, program := applicationTaskLifecycleFixture(t)
+	var events []string
+	err := runDirectCodingApplicationTaskLifecycle(input, frozen, &program, directCodingApplicationTaskLifecycleHooks{
+		BeginTask: func(context assemblyline.ApplicationTaskContext) error {
+			events = append(events, "begin:"+context.Task.TaskID)
+			return nil
+		},
+		BuildBlock: func(_ assemblyline.ApplicationTaskContext, _ *directCodingProgram, block assemblyline.TypeScriptBlock) (string, error) {
+			events = append(events, "generate:"+block.ID)
+			return block.Signature + " { return 1; }", nil
+		},
+		CompleteTask: func(context assemblyline.ApplicationTaskContext, generated map[string]string) error {
+			events = append(events, "complete:"+context.Task.TaskID)
+			if len(generated) != 2 {
+				t.Fatalf("task %s generated=%v", context.Task.TaskID, generated)
+			}
+			return nil
+		},
+		FinalStage: func(*directCodingProgram) error {
+			events = append(events, "final")
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"begin:task_001", "generate:feature.001", "generate:acceptance.001", "complete:task_001",
+		"begin:task_002", "generate:feature.002", "generate:acceptance.002", "complete:task_002",
+		"final",
+	}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events=%v want=%v", events, want)
+	}
+}

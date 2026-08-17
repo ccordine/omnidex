@@ -41,6 +41,9 @@ func validateProjectedNodeAdded(event Event) error {
 	if node.Kind == NodeGoal && (node.ParentID != "" || node.ObjectiveID != "") {
 		return invalidEvent("goal node cannot have parent or objective identity")
 	}
+	if node.InlineExecution && (node.Kind != NodeTask || node.CreatedStepID == nil) {
+		return invalidEvent("inline task projection has invalid owning-step authority")
+	}
 	if !equalInt64Pointers(node.CreatedStepID, event.StepID) {
 		return invalidEvent("node created step does not match event step")
 	}

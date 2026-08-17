@@ -144,7 +144,7 @@ func restoreTaskLedgerTx(ctx context.Context, tx pgx.Tx, header taskLedgerHeader
 
 func loadTaskLedgerNodes(ctx context.Context, tx pgx.Tx, ledgerID taskstate.LedgerID) ([]taskstate.Node, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id, parent_id, objective_id, kind, title, status, priority, created_by,
+		SELECT id, parent_id, objective_id, kind, inline_execution, title, status, priority, created_by,
 		       assigned_step_id, created_step_id, completed_step_id, acceptance_criteria,
 		       metadata, status_reason, created_version, updated_version
 		FROM task_nodes WHERE ledger_id=$1 ORDER BY id ASC
@@ -162,7 +162,7 @@ func loadTaskLedgerNodes(ctx context.Context, tx pgx.Tx, ledgerID taskstate.Ledg
 		var criteriaRaw, metadataRaw []byte
 		var createdVersion, updatedVersion int64
 		if err := rows.Scan(
-			&node.ID, &parentID, &objectiveID, &kind, &node.Title, &status, &node.Priority, &createdBy,
+			&node.ID, &parentID, &objectiveID, &kind, &node.InlineExecution, &node.Title, &status, &node.Priority, &createdBy,
 			&node.AssignedStepID, &node.CreatedStepID, &node.CompletedStepID, &criteriaRaw,
 			&metadataRaw, &node.StatusReason, &createdVersion, &updatedVersion,
 		); err != nil {

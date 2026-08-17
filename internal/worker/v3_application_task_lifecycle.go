@@ -10,12 +10,14 @@ import (
 )
 
 type directCodingApplicationTaskLifecycleHooks struct {
+	BeginTask  func(assemblyline.ApplicationTaskContext) error
 	BuildBlock func(
 		assemblyline.ApplicationTaskContext,
 		*directCodingProgram,
 		assemblyline.TypeScriptBlock,
 	) (string, error)
-	FinalStage func(*directCodingProgram) error
+	CompleteTask func(assemblyline.ApplicationTaskContext, map[string]string) error
+	FinalStage   func(*directCodingProgram) error
 }
 
 func runDirectCodingApplicationTaskLifecycle(
@@ -46,6 +48,11 @@ func runDirectCodingApplicationTaskLifecycle(
 	err := executeDirectCodingApplicationWorkload(
 		input, frozen,
 		func(context assemblyline.ApplicationTaskContext) error {
+			if hooks.BeginTask != nil {
+				if err := hooks.BeginTask(context); err != nil {
+					return err
+				}
+			}
 			stage, projectErr := projectDirectCodingApplicationTaskStage(*program, context)
 			if projectErr != nil {
 				return projectErr
@@ -73,6 +80,14 @@ func runDirectCodingApplicationTaskLifecycle(
 			}
 			program.Generated[featureID] = stage.Generated[featureID]
 			program.Generated[acceptanceID] = stage.Generated[acceptanceID]
+			if hooks.CompleteTask != nil {
+				if err := hooks.CompleteTask(context, map[string]string{
+					featureID:    stage.Generated[featureID],
+					acceptanceID: stage.Generated[acceptanceID],
+				}); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	)

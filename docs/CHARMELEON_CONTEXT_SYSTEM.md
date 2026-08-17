@@ -69,6 +69,22 @@ mechanics and private evaluation authority may not enter this context substrate.
 
 ## Task Ledger
 
+### Nested direct-coding execution
+
+The queue-owned job root remains the outer lifecycle authority. Once code has
+accepted a bounded workload, it records a child objective and explicit child
+tasks in that same ledger. A direct-coding task may be marked
+`inline_execution` only when it is a `task` node created by the currently
+running queue step. It is not a second queue, an agent, or a model-owned
+transition: code activates it only after persisted dependencies are done,
+records code-validated generated artifacts as its evidence, and marks the
+objective done only after real workspace verification succeeds.
+
+Ordinary queued tasks continue to require their own assigned queue step.
+Inline execution exists solely for bounded child work that is deterministically
+executed inside its already-authorized outer step. Both forms use the same
+Task Ledger, verification requirements, and loud failure behavior.
+
 PostgreSQL is canonical. One transaction updates normalized current state, appends one
 audit event, and increments the ledger version. Optimistic version conflicts fail
 explicitly. Pure event replay is an audit and recovery proof, not the normal read path.

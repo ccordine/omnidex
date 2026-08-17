@@ -103,7 +103,16 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 	return runDirectCodingApplicationTaskLifecycle(
 		input, frozen, program,
 		directCodingApplicationTaskLifecycleHooks{
+			BeginTask: func(context assemblyline.ApplicationTaskContext) error {
+				if s.cognition == nil {
+					return fmt.Errorf("application task lifecycle requires persisted task cognition")
+				}
+				return s.cognition.Begin(context.Task.TaskID)
+			},
 			BuildBlock: s.generateDirectCodingApplicationTaskBlock,
+			CompleteTask: func(context assemblyline.ApplicationTaskContext, generated map[string]string) error {
+				return s.cognition.CompleteTask(context.Task.TaskID, generated)
+			},
 			FinalStage: func(complete *directCodingProgram) error {
 				return s.stageTypeScriptProgramIn(
 					workspace.Root(), complete, directCodingFullStageCommands(), correctionProgress,

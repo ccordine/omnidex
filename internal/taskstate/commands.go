@@ -17,6 +17,7 @@ type AddNodeCommand struct {
 	ParentID           NodeID     `json:"parent_id,omitempty"`
 	ObjectiveID        NodeID     `json:"objective_id,omitempty"`
 	Kind               NodeKind   `json:"kind"`
+	InlineExecution    bool       `json:"inline_execution"`
 	Title              string     `json:"title"`
 	Priority           int        `json:"priority"`
 	CreatedStepID      *int64     `json:"created_step_id,omitempty"`

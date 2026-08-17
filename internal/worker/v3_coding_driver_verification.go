@@ -98,6 +98,12 @@ func (s *directCodingSession) Complete(verification directCodingVerification) (s
 	if err := validateDirectCodingProtectedPaths(s.root, s.protectedPaths); err != nil {
 		return "", err
 	}
+	if s.cognition == nil {
+		return "", fmt.Errorf("coding completion requires persisted task cognition")
+	}
+	if err := s.cognition.CompleteObjective(verification); err != nil {
+		return "", err
+	}
 	summary := fmt.Sprintf(
 		"Completed deterministic coding workflow: planned_files=%d planned_deletes=%d accepted_mutations=%d %s verification=%s",
 		s.plannedFiles,

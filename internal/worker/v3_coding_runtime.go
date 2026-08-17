@@ -31,6 +31,7 @@ type directCodingSession struct {
 	plannedFiles    int
 	plannedDeletes  int
 	mutationJournal []directCodingMutationJournalEntry
+	cognition       *directCodingTaskCognition
 }
 
 type directCodingMutationJournalEntry struct {

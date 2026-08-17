@@ -118,6 +118,14 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	program.TargetTree = targetTree
 	program.StructureTransitions = append([]assemblyline.TargetTreeTransition(nil), structureTransitions...)
+	cognition, err := newDirectCodingTaskCognition(s)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	if err := cognition.Bootstrap(workload); err != nil {
+		return directCodingAssembly{}, err
+	}
+	s.cognition = cognition
 	if err := s.runDirectCodingApplicationTaskLifecycle(workloadInput, workload, &program); err != nil {
 		return directCodingAssembly{}, err
 	}

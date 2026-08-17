@@ -161,10 +161,13 @@ type EntryProvenance struct {
 }
 
 type Node struct {
-	ID                 NodeID     `json:"id"`
-	ParentID           NodeID     `json:"parent_id,omitempty"`
-	ObjectiveID        NodeID     `json:"objective_id,omitempty"`
-	Kind               NodeKind   `json:"kind"`
+	ID          NodeID   `json:"id"`
+	ParentID    NodeID   `json:"parent_id,omitempty"`
+	ObjectiveID NodeID   `json:"objective_id,omitempty"`
+	Kind        NodeKind `json:"kind"`
+	// InlineExecution means this task is executed inside the queue step that
+	// created it. Ordinary queued tasks still require a distinct assigned step.
+	InlineExecution    bool       `json:"inline_execution"`
 	Title              string     `json:"title"`
 	Status             NodeStatus `json:"status"`
 	Priority           int        `json:"priority"`
