@@ -40,6 +40,15 @@ type TargetTreeInput struct {
 	Objective    string                  `json:"objective"`
 	Requirements []TargetTreeRequirement `json:"requirements"`
 	Current      []CurrentTargetArtifact `json:"current"`
+	Correction   *TargetTreeCorrection   `json:"correction,omitempty"`
+}
+
+// TargetTreeCorrection is code-owned feedback for one replacement
+// declaration. It retains the exact rejected candidate and validator failure;
+// no model-authored patch protocol exists for target-tree data.
+type TargetTreeCorrection struct {
+	CandidateJSON string `json:"candidate_json"`
+	Failure       string `json:"failure"`
 }
 
 type TargetTreeCandidate struct {
@@ -94,6 +103,14 @@ func (input TargetTreeInput) Validate() error {
 	}
 	if input.Current == nil {
 		return fmt.Errorf("target tree current artifact inventory must be a non-nil array")
+	}
+	if correction := input.Correction; correction != nil {
+		if err := validateTargetTreeText("correction candidate", correction.CandidateJSON, maxPortableCandidateBytes); err != nil {
+			return err
+		}
+		if err := validateTargetTreeText("correction failure", correction.Failure, 1200); err != nil {
+			return err
+		}
 	}
 	seenIDs := make(map[string]struct{}, len(input.Current))
 	seenPaths := make(map[string]struct{}, len(input.Current))

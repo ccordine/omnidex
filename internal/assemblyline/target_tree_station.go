@@ -22,14 +22,22 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encode target tree current inventory: %w", err)
 	}
-	prompt := strings.Join([]string{
+	sections := []string{
 		"Declare the smallest complete desired file structure for one accepted software objective.",
 		"Return artifact nodes only. Each accepted requirement needs exactly one implementation artifact and exactly one verification artifact. Each node names a desired normalized relative file path, its kind, purpose, and the accepted requirement IDs it serves. Preserve an existing opaque artifact ID when that exact existing artifact belongs in the target tree; use one new key only for a genuinely new artifact.",
 		"The response is a data declaration. Use only the response fields and no explanatory prose.",
 		"ACCEPTED_OBJECTIVE:\n" + input.Objective,
 		"ACCEPTED_REQUIREMENTS_JSON:\n" + string(requirements),
 		"CURRENT_ARTIFACT_INVENTORY_JSON:\n" + string(current),
-	}, "\n\n")
+	}
+	if correction := input.Correction; correction != nil {
+		sections = append(sections,
+			"CURRENT_TARGET_TREE_CANDIDATE_JSON:\n"+correction.CandidateJSON,
+			"VALIDATION_FAILURE:\n"+correction.Failure,
+			"Return one complete replacement target-tree declaration that resolves the validation failure.",
+		)
+	}
+	prompt := strings.Join(sections, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf("target tree prompt exceeds %d bytes", maxPortablePayloadBytes)
 	}
