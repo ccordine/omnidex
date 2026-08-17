@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/taskstate"
@@ -17,7 +18,8 @@ func TestDirectCodingTaskCognitionPersistsObjectiveTaskAndVerificationSequence(t
 	coordinator := &directCodingTaskCognition{
 		ctx: context.Background(), store: store, authority: store.authority,
 		instruction: "Build the operations console.", objectiveID: "direct-coding-objective",
-		taskIDs: map[string]taskstate.NodeID{},
+		taskIDs: map[string]taskstate.NodeID{}, treeTaskIDs: map[string]taskstate.NodeID{},
+		treeFiles: map[string]assemblyline.TargetTreeTransition{}, treeDirs: map[string]assemblyline.TargetTreeTransition{},
 	}
 	if err := coordinator.Bootstrap(workload); err != nil {
 		t.Fatal(err)
@@ -51,6 +53,22 @@ func TestDirectCodingTaskCognitionPersistsObjectiveTaskAndVerificationSequence(t
 			t.Fatalf("complete %s: %v", task.ID, err)
 		}
 	}
+	transitions := []assemblyline.TargetTreeTransition{
+		{Kind: assemblyline.TargetTreeEnsureDirectory, Path: "src"},
+		{Kind: assemblyline.TargetTreeEnsureDirectory, Path: "src/features"},
+		{Kind: assemblyline.TargetTreeCreate, Path: "src/features/Feature.ts"},
+	}
+	if err := coordinator.PlanTreeTransitions(transitions); err != nil {
+		t.Fatal(err)
+	}
+	for _, transition := range transitions {
+		if err := coordinator.BeginTreeTransition(transition); err != nil {
+			t.Fatalf("begin tree %s: %v", transition.Path, err)
+		}
+		if err := coordinator.CompleteTreeTransition(transition, "verified "+transition.Path); err != nil {
+			t.Fatalf("complete tree %s: %v", transition.Path, err)
+		}
+	}
 	if err := coordinator.CompleteObjective(directCodingVerification{
 		Passed: true, TestsPassed: true, Commands: []string{"npm run typecheck", "npm test"},
 	}); err != nil {
@@ -79,7 +97,8 @@ func TestDirectCodingTaskCognitionWillNotStartTaskBeforePersistedDependency(t *t
 	coordinator := &directCodingTaskCognition{
 		ctx: context.Background(), store: store, authority: store.authority,
 		instruction: "Build the operations console.", objectiveID: "direct-coding-objective",
-		taskIDs: map[string]taskstate.NodeID{},
+		taskIDs: map[string]taskstate.NodeID{}, treeTaskIDs: map[string]taskstate.NodeID{},
+		treeFiles: map[string]assemblyline.TargetTreeTransition{}, treeDirs: map[string]assemblyline.TargetTreeTransition{},
 	}
 	if err := coordinator.Bootstrap(workload); err != nil {
 		t.Fatal(err)

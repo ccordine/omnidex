@@ -9,6 +9,40 @@ import (
 	"github.com/gryph/omnidex/internal/operation"
 )
 
+func (s *directCodingSession) EnsureDirectory(path string) (bool, error) {
+	if s.cognition == nil {
+		return false, fmt.Errorf("directory materialization requires persisted task cognition")
+	}
+	if err := s.cognition.BeginTreeDirectory(path); err != nil {
+		return false, err
+	}
+	target, err := resolveV3WorkspaceFile(s.root, path)
+	if err != nil {
+		return false, err
+	}
+	changed := false
+	if info, statErr := os.Stat(target); statErr == nil {
+		if !info.IsDir() {
+			return false, fmt.Errorf("ensure coding directory %s: existing target is not a directory", path)
+		}
+	} else if !os.IsNotExist(statErr) {
+		return false, fmt.Errorf("inspect coding directory %s: %w", path, statErr)
+	} else {
+		if err := os.MkdirAll(target, 0o755); err != nil {
+			return false, fmt.Errorf("ensure coding directory %s: %w", path, err)
+		}
+		changed = true
+		s.recordEnsuredDirectory(path)
+	}
+	if err := s.cognition.CompleteTreeDirectory(path, "directory="+path+" state="+map[bool]string{true: "created", false: "present"}[changed]); err != nil {
+		return false, err
+	}
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_directory_ensured", fmt.Sprintf(
+		"path=%s state=%s", safeLine(path, "unknown"), map[bool]string{true: "created", false: "present"}[changed],
+	))
+	return changed, nil
+}
+
 func (s *directCodingSession) Delete(path string) (bool, error) {
 	if err := rejectDirectCodingProtectedMutation(path, s.protectedPaths); err != nil {
 		return false, err
@@ -45,6 +79,12 @@ func (s *directCodingSession) MaterializeTask(task directCodingFileTask) (bool, 
 	if err := task.validate(); err != nil {
 		return false, err
 	}
+	if s.cognition == nil {
+		return false, fmt.Errorf("file materialization requires persisted task cognition")
+	}
+	if err := s.cognition.BeginTreeFile(task.Path); err != nil {
+		return false, err
+	}
 	if err := rejectDirectCodingProtectedMutation(task.Path, s.protectedPaths); err != nil {
 		return false, err
 	}
@@ -66,7 +106,14 @@ func (s *directCodingSession) MaterializeTask(task directCodingFileTask) (bool, 
 		if err := s.validateProgramSource(task.Path, task.Content); err != nil {
 			return false, err
 		}
-		return s.writeDirectCodingSource(task.Path, operation, current, task.Content)
+		changed, err := s.writeDirectCodingSource(task.Path, operation, current, task.Content)
+		if err != nil {
+			return false, err
+		}
+		if err := s.cognition.CompleteTreeFile(task.Path, "file="+task.Path+" sha256="+directCodingDigest(task.Content)); err != nil {
+			return false, err
+		}
+		return changed, nil
 	}
 	return false, fmt.Errorf("code-owned source %s is empty", task.Path)
 }
@@ -120,6 +167,13 @@ func (s *directCodingSession) recordWrittenSource(path, content string) {
 	s.completion.MutationCount++
 	s.completion.LatestMutationTurn = sequence
 	s.completion.WrittenSource[path] = content
+}
+
+func (s *directCodingSession) recordEnsuredDirectory(path string) {
+	sequence := s.nextSequence()
+	s.completion.MutationCount++
+	s.completion.LatestMutationTurn = sequence
+	s.recordMutation(path, workspaceDirectoryEnsure)
 }
 
 func (s *directCodingSession) recordDeletedSource(path string) {

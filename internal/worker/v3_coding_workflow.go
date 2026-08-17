@@ -76,6 +76,7 @@ func (v directCodingVerification) validate() error {
 type directCodingWorkflowDriver interface {
 	Phase(phase directCodingPhase, detail string)
 	Assemble() (directCodingAssembly, error)
+	EnsureDirectory(path string) (bool, error)
 	Delete(path string) (bool, error)
 	MaterializeTask(task directCodingFileTask) (bool, error)
 	Verify() (directCodingVerification, error)
@@ -95,8 +96,17 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 		return failDirectCodingWorkflow(driver, "validate deterministic assembly", err)
 	}
 
-	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("files=%d deletes=%d", len(assembly.Files), len(assembly.DeletePaths)))
+	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("directories=%d files=%d deletes=%d", len(assembly.Directories), len(assembly.Files), len(assembly.DeletePaths)))
 	mutations := 0
+	for _, path := range assembly.Directories {
+		changed, ensureErr := driver.EnsureDirectory(path)
+		if ensureErr != nil {
+			return failDirectCodingWorkflow(driver, "ensure directory "+path, ensureErr)
+		}
+		if changed {
+			mutations++
+		}
+	}
 	for _, path := range assembly.DeletePaths {
 		changed, deleteErr := driver.Delete(path)
 		if deleteErr != nil {

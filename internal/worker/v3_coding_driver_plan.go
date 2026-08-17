@@ -129,6 +129,9 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err := s.runDirectCodingApplicationTaskLifecycle(workloadInput, workload, &program); err != nil {
 		return directCodingAssembly{}, err
 	}
+	if err := cognition.PlanTreeTransitions(program.StructureTransitions); err != nil {
+		return directCodingAssembly{}, err
+	}
 	protectedPaths, err := snapshotDirectCodingProtectedPathList(s.root, program.ProtectedPaths)
 	if err != nil {
 		return directCodingAssembly{}, err

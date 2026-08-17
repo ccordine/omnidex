@@ -15,18 +15,37 @@ func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingA
 	for _, source := range composed {
 		files = append(files, directCodingFileTask{Path: source.Path, Content: source.Source})
 	}
-	assembly := directCodingAssembly{Files: files}
+	byPath := make(map[string]directCodingFileTask, len(files))
+	for _, file := range files {
+		if _, exists := byPath[file.Path]; exists {
+			return directCodingAssembly{}, fmt.Errorf("compiled program repeats source path %q", file.Path)
+		}
+		byPath[file.Path] = file
+	}
+	assembly := directCodingAssembly{}
 	for _, transition := range program.StructureTransitions {
 		switch transition.Kind {
 		case assemblyline.TargetTreeEnsureDirectory:
-			continue
+			assembly.Directories = append(assembly.Directories, transition.Path)
 		case assemblyline.TargetTreeCreate, assemblyline.TargetTreeReconcile:
+			file, exists := byPath[transition.Path]
+			if !exists {
+				if err := requireDirectCodingTargetTreeLeafContent(transition, files); err != nil {
+					return directCodingAssembly{}, err
+				}
+				return directCodingAssembly{}, fmt.Errorf("target-tree source path %q disappeared from compiled program", transition.Path)
+			}
+			assembly.Files = append(assembly.Files, file)
+			delete(byPath, transition.Path)
 			if err := requireDirectCodingTargetTreeLeafContent(transition, assembly.Files); err != nil {
 				return directCodingAssembly{}, err
 			}
 		default:
 			return directCodingAssembly{}, fmt.Errorf("unsupported target-tree transition %q for path %q", transition.Kind, transition.Path)
 		}
+	}
+	if len(byPath) != 0 {
+		return directCodingAssembly{}, fmt.Errorf("compiled program contains source not declared by the target tree")
 	}
 	if err := assembly.normalize(); err != nil {
 		return directCodingAssembly{}, err

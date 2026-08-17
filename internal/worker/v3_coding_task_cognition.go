@@ -28,6 +28,9 @@ type directCodingTaskCognition struct {
 	instruction string
 	objectiveID taskstate.NodeID
 	taskIDs     map[string]taskstate.NodeID
+	treeTaskIDs map[string]taskstate.NodeID
+	treeFiles   map[string]assemblyline.TargetTreeTransition
+	treeDirs    map[string]assemblyline.TargetTreeTransition
 }
 
 type directCodingTaskCognitionStore interface {
@@ -55,6 +58,9 @@ func newDirectCodingTaskCognition(session *directCodingSession) (*directCodingTa
 		instruction: session.request.Instruction,
 		objectiveID: taskstate.NodeID("direct-coding-objective"),
 		taskIDs:     make(map[string]taskstate.NodeID),
+		treeTaskIDs: make(map[string]taskstate.NodeID),
+		treeFiles:   make(map[string]assemblyline.TargetTreeTransition),
+		treeDirs:    make(map[string]assemblyline.TargetTreeTransition),
 	}, nil
 }
 
@@ -193,6 +199,12 @@ func (c *directCodingTaskCognition) CompleteObjective(verification directCodingV
 		node, exists := ledger.Node(id)
 		if !exists || node.Status != taskstate.NodeDone {
 			return fmt.Errorf("direct coding task cognition task %q is not complete", taskID)
+		}
+	}
+	for leafKey, id := range c.treeTaskIDs {
+		node, exists := ledger.Node(id)
+		if !exists || node.Status != taskstate.NodeDone {
+			return fmt.Errorf("direct coding task cognition tree leaf %q is not complete", leafKey)
 		}
 	}
 	stepID := c.authority.StepID

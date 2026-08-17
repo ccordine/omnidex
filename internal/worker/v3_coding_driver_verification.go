@@ -117,7 +117,7 @@ func (s *directCodingSession) Complete(verification directCodingVerification) (s
 
 func renderDirectCodingMutationJournal(entries []directCodingMutationJournalEntry) string {
 	groups := map[workspaceFileOperation][]string{
-		workspaceFileCreate: {}, workspaceFileReplace: {}, workspaceFileDelete: {},
+		workspaceDirectoryEnsure: {}, workspaceFileCreate: {}, workspaceFileReplace: {}, workspaceFileDelete: {},
 	}
 	for _, entry := range entries {
 		if _, registered := groups[entry.Operation]; !registered {
@@ -129,7 +129,8 @@ func renderDirectCodingMutationJournal(entries []directCodingMutationJournalEntr
 		sort.Strings(groups[operation])
 	}
 	return fmt.Sprintf(
-		"created=[%s] replaced=[%s] deleted=[%s]",
+		"directories=[%s] created=[%s] replaced=[%s] deleted=[%s]",
+		strings.Join(groups[workspaceDirectoryEnsure], ","),
 		strings.Join(groups[workspaceFileCreate], ","),
 		strings.Join(groups[workspaceFileReplace], ","),
 		strings.Join(groups[workspaceFileDelete], ","),

@@ -21,9 +21,10 @@ const (
 type workspaceFileOperation string
 
 const (
-	workspaceFileCreate  workspaceFileOperation = "create"
-	workspaceFileReplace workspaceFileOperation = "replace"
-	workspaceFileDelete  workspaceFileOperation = "delete"
+	workspaceDirectoryEnsure workspaceFileOperation = "ensure_directory"
+	workspaceFileCreate      workspaceFileOperation = "create"
+	workspaceFileReplace     workspaceFileOperation = "replace"
+	workspaceFileDelete      workspaceFileOperation = "delete"
 )
 
 type workspaceFileMutation struct {
