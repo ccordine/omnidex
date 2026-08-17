@@ -1,5 +1,110 @@
 AGENTS.md
 
+
+# PRIME DIRECTIVE
+
+Omnidex is deterministic software that invokes LLMs as small, bounded semantic functions.
+
+Code owns the workflow and must drive the user's objective toward verified completion.
+
+At every step, code MUST perform everything that can be determined mechanically and invoke an LLM only when one specific, necessary semantic question remains unresolved.
+
+Each LLM call MUST have exactly one responsibility, receive only the minimum context required for that responsibility, and return only the semantic result of that responsibility.
+
+The result is returned to code. Code alone validates it, interprets it, applies it, persists it, routes subsequent work, performs tools and side effects, and verifies reality.
+
+LLMs are not agents, workers, orchestrators, tool users, state owners, or authorities. They are byte-in / byte-out semantic functions embedded inside a code-owned machine.
+
+The system exists to complete the user's objective, not to manufacture additional review, challenge, approval, or failure work.
+# PRIME INVARIANT
+
+Every LLM invocation MUST be justified by one named unresolved semantic uncertainty.
+
+Before an LLM may be called, the system MUST be able to state:
+
+1. What exact question remains unresolved?
+2. Why can code not determine the answer exactly?
+3. What exact information does this LLM need?
+4. What single semantic result must it return?
+5. What deterministic code will consume that result afterward?
+
+If those five answers do not exist, the LLM call is forbidden.
+
+If code can compute, search, parse, diff, validate, route, select, persist, execute, inspect, compile, test, or otherwise determine something exactly, code MUST do it.
+
+A model MUST NOT be invoked merely because a workflow stage exists.
+
+A model MUST NOT be invoked merely to approve, accept, review, challenge, retry, or restate something unless a concrete unresolved semantic question requires that judgment.
+
+A model's output MUST NOT become framework authority. Control labels such as "accept", "replace", "repair", "execute", "apply", "search", or similar model-authored workflow decisions have no authority unless the station's single semantic responsibility specifically requires that exact bounded choice and code independently owns the resulting state transition.
+
+One model call = one semantic responsibility.
+
+If another semantic result is required, that is another station and another bounded call. NEVER enlarge the current station's responsibility for convenience.
+
+
+# NON-NEGOTIABLE COROLLARIES
+
+- Code owns state, authority, identity, versions, queues, ordering, routing, retries, persistence, filesystem operations, tools, search execution, parsing, compilation, testing, verification, and completion.
+
+- Models never choose tools. Code invokes repository, memory, web, runtime, compiler, parser, filesystem, and other machinery.
+
+- Models are never prompted to refrain from capabilities they do not possess. Do not put agent/tool/orchestration/state-management language into model context unless that concept is itself the one semantic problem being solved.
+
+- Never spend inference on information code already knows.
+
+- Never make an LLM reconstruct information that a parser, compiler, index, database, filesystem, typechecker, or other deterministic subsystem already possesses.
+
+- Never create a model call merely to obtain permission to continue. Deterministically valid state continues unless a real unresolved semantic uncertainty blocks it.
+
+- Never manufacture adversarial work in the production success path. Guards observe real failures; they do not invent failures to exercise themselves.
+
+- Never treat model prose or control labels as authority over actual returned data. Code evaluates the returned semantic payload and reality.
+
+- Never respond to a failure by broadening the responsible model's job. First reduce the problem further.
+
+- Never solve a downstream need by adding unrelated fields or responsibilities to an upstream model. Add another narrow station if another semantic question genuinely exists.
+
+- Preserve accepted state. Recompute or revisit only what new evidence makes unresolved.
+
+- Progress is measured by verified changes in authoritative reality, not by model activity, retries, reviews, token usage, or changed text.
+
+# CANONICAL EXAMPLE
+
+TREE STATION:
+
+Input:
+- user objective
+- current repository tree when applicable
+- only context required to determine project structure
+
+Question:
+"What file/directory tree should this project have to satisfy the objective?"
+
+Output:
+- the tree
+
+Nothing else.
+
+The tree model does NOT describe file contents, ownership, declarations, implementation, filesystem commands, create/modify/delete operations, or downstream work.
+
+Code parses and diffs the returned tree and creates the filesystem workload.
+
+A separate file-content station receives one file and determines what that file needs.
+
+A separate declaration/source station receives one bounded source responsibility and generates that source.
+
+Each of these is a different semantic function even when the same underlying model is used.
+
+# FUNDAMENTAL TEST
+
+OMNIDEX IS NOT AN LLM WITH CODE AROUND IT.
+
+OMNIDEX IS A CODE-OWNED SOFTWARE SYSTEM THAT MAY INVOKE INTELLIGENCE TO ANSWER ONE NECESSARY SEMANTIC QUESTION AT A TIME.
+
+
+
+
 Prime Directive
 
 This project values correctness, explicit failure, small maintainable architecture, and server-authoritative behavior.
