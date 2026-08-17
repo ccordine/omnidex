@@ -14,21 +14,21 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 	if err := input.Validate(); err != nil {
 		return "", err
 	}
-	requirements, err := json.Marshal(input.Requirements)
+	existing, err := json.Marshal(input.ExistingPaths)
 	if err != nil {
-		return "", fmt.Errorf("encode target tree requirements: %w", err)
+		return "", fmt.Errorf("encode target tree existing paths: %w", err)
 	}
-	current, err := json.Marshal(input.Current)
+	directories, err := json.Marshal(input.ExistingDirs)
 	if err != nil {
-		return "", fmt.Errorf("encode target tree current inventory: %w", err)
+		return "", fmt.Errorf("encode target tree existing directories: %w", err)
 	}
 	sections := []string{
-		"Declare the smallest complete desired file structure for one accepted software objective.",
-		"Return artifact nodes only. Each accepted requirement needs exactly one implementation artifact and exactly one verification artifact. Each node names a desired normalized relative file path, its kind, purpose, and the accepted requirement IDs it serves. Preserve an existing opaque artifact ID when that exact existing artifact belongs in the target tree; use one new key only for a genuinely new artifact.",
-		"The response is a data declaration. Use only the response fields and no explanatory prose.",
+		"Return the normalized relative file paths needed to solve the accepted objective.",
+		"Return paths only. Omitted existing paths remain untouched.",
 		"ACCEPTED_OBJECTIVE:\n" + input.Objective,
-		"ACCEPTED_REQUIREMENTS_JSON:\n" + string(requirements),
-		"CURRENT_ARTIFACT_INVENTORY_JSON:\n" + string(current),
+		"CODE_SELECTED_TECHNICAL_CONTEXT:\n" + input.TechnicalContext,
+		"EXISTING_WORKSPACE_PATHS_JSON:\n" + string(existing),
+		"EXISTING_WORKSPACE_DIRECTORIES_JSON:\n" + string(directories),
 	}
 	if correction := input.Correction; correction != nil {
 		sections = append(sections,
@@ -46,22 +46,12 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 
 func TargetTreeResponseSchema() map[string]any {
 	return objectSchema(
-		[]string{"schema", "artifacts"},
+		[]string{"schema", "paths"},
 		map[string]any{
 			"schema": map[string]any{"type": "string", "const": TargetTreeCandidateSchemaV1},
-			"artifacts": map[string]any{
-				"type": "array", "minItems": 1, "maxItems": maxTargetTreeArtifacts,
-				"items": objectSchema(
-					[]string{"path", "kind", "purpose", "requirement_ids", "existing_artifact_id", "new_key"},
-					map[string]any{
-						"path":                 map[string]any{"type": "string", "minLength": 1, "maxLength": maxTargetTreePathBytes},
-						"kind":                 map[string]any{"type": "string", "enum": []string{string(TargetArtifactImplementation), string(TargetArtifactVerification)}},
-						"purpose":              map[string]any{"type": "string", "minLength": 1, "maxLength": maxTargetTreePurposeBytes},
-						"requirement_ids":      map[string]any{"type": "array", "minItems": 1, "maxItems": maxTargetTreeRequirements, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}},
-						"existing_artifact_id": map[string]any{"type": "string", "maxLength": 128},
-						"new_key":              map[string]any{"type": "string", "maxLength": 128},
-					},
-				),
+			"paths": map[string]any{
+				"type": "array", "minItems": 1, "maxItems": maxTargetTreePaths,
+				"items": map[string]any{"type": "string", "minLength": 1, "maxLength": maxTargetTreePathBytes},
 			},
 		},
 	)

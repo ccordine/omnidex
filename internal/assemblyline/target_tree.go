@@ -10,10 +10,8 @@ import (
 
 const (
 	TargetTreeCandidateSchemaV1 = "omnidex.target-tree.v1"
-	maxTargetTreeArtifacts      = 128
+	maxTargetTreePaths          = 128
 	maxTargetTreePathBytes      = 512
-	maxTargetTreePurposeBytes   = 512
-	maxTargetTreeRequirements   = 16
 )
 
 type TargetArtifactKind string
@@ -23,86 +21,91 @@ const (
 	TargetArtifactVerification   TargetArtifactKind = "verification"
 )
 
-type TargetTreeRequirement struct {
-	ID        string `json:"id"`
-	Statement string `json:"statement"`
-}
-
-type CurrentTargetArtifact struct {
-	ID             string             `json:"id"`
-	Path           string             `json:"path"`
-	Kind           TargetArtifactKind `json:"kind"`
-	Purpose        string             `json:"purpose"`
-	RequirementIDs []string           `json:"requirement_ids"`
-}
-
+// TargetTreeInput is code-owned context for one structural question. Existing
+// paths are evidence supplied to the model; they are not part of its output.
 type TargetTreeInput struct {
-	Objective    string                  `json:"objective"`
-	Requirements []TargetTreeRequirement `json:"requirements"`
-	Current      []CurrentTargetArtifact `json:"current"`
-	Correction   *TargetTreeCorrection   `json:"correction,omitempty"`
+	Objective        string                `json:"objective"`
+	TechnicalContext string                `json:"technical_context"`
+	ExistingPaths    []string              `json:"existing_paths"`
+	ExistingDirs     []string              `json:"existing_dirs"`
+	Correction       *TargetTreeCorrection `json:"correction,omitempty"`
 }
 
-// TargetTreeCorrection is code-owned feedback for one replacement
-// declaration. It retains the exact rejected candidate and validator failure;
-// no model-authored patch protocol exists for target-tree data.
 type TargetTreeCorrection struct {
 	CandidateJSON string `json:"candidate_json"`
 	Failure       string `json:"failure"`
 }
 
+// TargetTreeCandidate is the whole model boundary: a path-only work tree.
+// Path meaning, content, ownership, and operations are intentionally absent.
 type TargetTreeCandidate struct {
-	Schema    string               `json:"schema"`
-	Artifacts []TargetTreeArtifact `json:"artifacts"`
-}
-
-// TargetTreeArtifact declares desired structure only. ExistingArtifactID is an
-// opaque code-issued identity; NewKey is model-local identity for exactly one
-// new file. The model never describes an operation.
-type TargetTreeArtifact struct {
-	Path               string             `json:"path"`
-	Kind               TargetArtifactKind `json:"kind"`
-	Purpose            string             `json:"purpose"`
-	RequirementIDs     []string           `json:"requirement_ids"`
-	ExistingArtifactID string             `json:"existing_artifact_id,omitempty"`
-	NewKey             string             `json:"new_key,omitempty"`
+	Schema string   `json:"schema"`
+	Paths  []string `json:"paths"`
 }
 
 type TargetTree struct {
-	Artifacts []ResolvedTargetArtifact
+	Paths    []string
+	Contents []TargetTreeFileContent
 }
 
-type ResolvedTargetArtifact struct {
-	ID             string
+// TargetTreeFileContent is code-validated output from the later per-file
+// content station. It is deliberately not part of the tree-model schema.
+type TargetTreeFileContent struct {
 	Path           string
 	Kind           TargetArtifactKind
-	Purpose        string
 	RequirementIDs []string
-	Existing       bool
+}
+
+type TargetTreeRequirementFiles struct {
+	ImplementationPath string
+	VerificationPath   string
+}
+
+func (target TargetTree) RequirementFiles(requirementID string) (TargetTreeRequirementFiles, error) {
+	var files TargetTreeRequirementFiles
+	for _, content := range target.Contents {
+		for _, boundRequirementID := range content.RequirementIDs {
+			if boundRequirementID != requirementID {
+				continue
+			}
+			switch content.Kind {
+			case TargetArtifactImplementation:
+				if files.ImplementationPath != "" {
+					return TargetTreeRequirementFiles{}, fmt.Errorf("file-content plans assign multiple implementation files to requirement %q", requirementID)
+				}
+				files.ImplementationPath = content.Path
+			case TargetArtifactVerification:
+				if files.VerificationPath != "" {
+					return TargetTreeRequirementFiles{}, fmt.Errorf("file-content plans assign multiple verification files to requirement %q", requirementID)
+				}
+				files.VerificationPath = content.Path
+			}
+		}
+	}
+	if files.ImplementationPath == "" || files.VerificationPath == "" {
+		return TargetTreeRequirementFiles{}, fmt.Errorf("file-content plans have no complete artifact pair for requirement %q", requirementID)
+	}
+	return files, nil
 }
 
 func (input TargetTreeInput) Validate() error {
-	if err := validateTargetTreeText("objective", input.Objective, maxTargetTreePurposeBytes); err != nil {
+	if err := validateTargetTreeText("objective", input.Objective, maxTargetTreePathBytes); err != nil {
 		return err
 	}
-	if len(input.Requirements) == 0 || len(input.Requirements) > maxTargetTreeRequirements {
-		return fmt.Errorf("target tree requires between 1 and %d accepted requirements", maxTargetTreeRequirements)
+	if err := validateTargetTreeText("technical context", input.TechnicalContext, maxTargetTreePathBytes); err != nil {
+		return err
 	}
-	requirementIDs := make(map[string]struct{}, len(input.Requirements))
-	for index, requirement := range input.Requirements {
-		if err := validateTargetTreeID("requirement ID", requirement.ID); err != nil {
-			return fmt.Errorf("target tree requirement %d: %w", index, err)
-		}
-		if err := validateTargetTreeText("requirement statement", requirement.Statement, maxTargetTreePurposeBytes); err != nil {
-			return fmt.Errorf("target tree requirement %d: %w", index, err)
-		}
-		if _, duplicate := requirementIDs[requirement.ID]; duplicate {
-			return fmt.Errorf("target tree requirement %d duplicates ID %q", index, requirement.ID)
-		}
-		requirementIDs[requirement.ID] = struct{}{}
+	if input.ExistingPaths == nil {
+		return fmt.Errorf("target tree existing workspace paths must be a non-nil array")
 	}
-	if input.Current == nil {
-		return fmt.Errorf("target tree current artifact inventory must be a non-nil array")
+	if input.ExistingDirs == nil {
+		return fmt.Errorf("target tree existing workspace directories must be a non-nil array")
+	}
+	if err := validateTargetTreePaths("existing workspace path", input.ExistingPaths); err != nil {
+		return err
+	}
+	if err := validateTargetTreePaths("existing workspace directory", input.ExistingDirs); err != nil {
+		return err
 	}
 	if correction := input.Correction; correction != nil {
 		if err := validateTargetTreeText("correction candidate", correction.CandidateJSON, maxPortableCandidateBytes); err != nil {
@@ -112,38 +115,7 @@ func (input TargetTreeInput) Validate() error {
 			return err
 		}
 	}
-	seenIDs := make(map[string]struct{}, len(input.Current))
-	seenPaths := make(map[string]struct{}, len(input.Current))
-	for index, artifact := range input.Current {
-		if err := artifact.validate(requirementIDs); err != nil {
-			return fmt.Errorf("target tree current artifact %d: %w", index, err)
-		}
-		if _, duplicate := seenIDs[artifact.ID]; duplicate {
-			return fmt.Errorf("target tree current artifact %d duplicates ID %q", index, artifact.ID)
-		}
-		if _, duplicate := seenPaths[artifact.Path]; duplicate {
-			return fmt.Errorf("target tree current artifact %d duplicates path %q", index, artifact.Path)
-		}
-		seenIDs[artifact.ID] = struct{}{}
-		seenPaths[artifact.Path] = struct{}{}
-	}
 	return nil
-}
-
-func (artifact CurrentTargetArtifact) validate(requirements map[string]struct{}) error {
-	if err := validateTargetTreeID("current artifact ID", artifact.ID); err != nil {
-		return err
-	}
-	if err := validateTargetTreePath(artifact.Path); err != nil {
-		return err
-	}
-	if err := validateTargetArtifactKind(artifact.Kind); err != nil {
-		return err
-	}
-	if err := validateTargetTreeText("current artifact purpose", artifact.Purpose, maxTargetTreePurposeBytes); err != nil {
-		return err
-	}
-	return validateTargetTreeRequirementIDs(artifact.RequirementIDs, requirements)
 }
 
 func (candidate TargetTreeCandidate) ValidateFor(input TargetTreeInput) (TargetTree, error) {
@@ -154,170 +126,36 @@ func (candidate TargetTreeCandidate) ValidateFor(input TargetTreeInput) (TargetT
 	if candidate.Schema != TargetTreeCandidateSchemaV1 {
 		return zero, fmt.Errorf("target tree schema must be %q", TargetTreeCandidateSchemaV1)
 	}
-	if len(candidate.Artifacts) == 0 || len(candidate.Artifacts) > maxTargetTreeArtifacts {
-		return zero, fmt.Errorf("target tree requires between 1 and %d artifacts", maxTargetTreeArtifacts)
+	if len(candidate.Paths) == 0 || len(candidate.Paths) > maxTargetTreePaths {
+		return zero, fmt.Errorf("target tree requires between 1 and %d paths", maxTargetTreePaths)
 	}
-	current := make(map[string]CurrentTargetArtifact, len(input.Current))
-	for _, artifact := range input.Current {
-		current[artifact.ID] = artifact
-	}
-	requirements := make(map[string]struct{}, len(input.Requirements))
-	for _, requirement := range input.Requirements {
-		requirements[requirement.ID] = struct{}{}
-	}
-	seenPaths := make(map[string]struct{}, len(candidate.Artifacts))
-	seenExisting := make(map[string]struct{}, len(candidate.Artifacts))
-	seenNew := make(map[string]struct{}, len(candidate.Artifacts))
-	resolved := make([]ResolvedTargetArtifact, 0, len(candidate.Artifacts))
-	for index, artifact := range candidate.Artifacts {
-		if err := artifact.validate(requirements); err != nil {
-			return zero, fmt.Errorf("target tree artifact %d: %w", index, err)
-		}
-		if _, duplicate := seenPaths[artifact.Path]; duplicate {
-			return zero, fmt.Errorf("target tree artifact %d duplicates path %q", index, artifact.Path)
-		}
-		seenPaths[artifact.Path] = struct{}{}
-		if artifact.ExistingArtifactID != "" {
-			currentArtifact, exists := current[artifact.ExistingArtifactID]
-			if !exists {
-				return zero, fmt.Errorf("target tree artifact %d references unknown current artifact ID %q", index, artifact.ExistingArtifactID)
-			}
-			if _, duplicate := seenExisting[artifact.ExistingArtifactID]; duplicate {
-				return zero, fmt.Errorf("target tree artifact %d duplicates current artifact ID %q", index, artifact.ExistingArtifactID)
-			}
-			if artifact.Kind != currentArtifact.Kind {
-				return zero, fmt.Errorf("target tree artifact %d changes kind of existing artifact %q", index, artifact.ExistingArtifactID)
-			}
-			seenExisting[artifact.ExistingArtifactID] = struct{}{}
-			resolved = append(resolved, ResolvedTargetArtifact{ID: artifact.ExistingArtifactID, Path: artifact.Path, Kind: artifact.Kind, Purpose: artifact.Purpose, RequirementIDs: append([]string(nil), artifact.RequirementIDs...), Existing: true})
-			continue
-		}
-		if _, duplicate := seenNew[artifact.NewKey]; duplicate {
-			return zero, fmt.Errorf("target tree artifact %d duplicates new key %q", index, artifact.NewKey)
-		}
-		seenNew[artifact.NewKey] = struct{}{}
-		resolved = append(resolved, ResolvedTargetArtifact{ID: "new:" + artifact.NewKey, Path: artifact.Path, Kind: artifact.Kind, Purpose: artifact.Purpose, RequirementIDs: append([]string(nil), artifact.RequirementIDs...)})
-	}
-	sort.Slice(resolved, func(left, right int) bool { return resolved[left].Path < resolved[right].Path })
-	target := TargetTree{Artifacts: resolved}
-	if err := target.validateRequirementCoverage(input.Requirements); err != nil {
+	if err := validateTargetTreePaths("work path", candidate.Paths); err != nil {
 		return zero, err
 	}
-	return target, nil
+	paths := append([]string(nil), candidate.Paths...)
+	sort.Strings(paths)
+	return TargetTree{Paths: paths}, nil
 }
 
-func (artifact TargetTreeArtifact) validate(requirements map[string]struct{}) error {
-	if err := validateTargetTreePath(artifact.Path); err != nil {
-		return err
-	}
-	if err := validateTargetArtifactKind(artifact.Kind); err != nil {
-		return err
-	}
-	if err := validateTargetTreeText("purpose", artifact.Purpose, maxTargetTreePurposeBytes); err != nil {
-		return err
-	}
-	if err := validateTargetTreeRequirementIDs(artifact.RequirementIDs, requirements); err != nil {
-		return err
-	}
-	return artifact.validateIdentity()
-}
-
-func validateTargetTreeRequirementIDs(requirementIDs []string, requirements map[string]struct{}) error {
-	if len(requirementIDs) == 0 || len(requirementIDs) > maxTargetTreeRequirements {
-		return fmt.Errorf("requirement IDs must contain between 1 and %d values", maxTargetTreeRequirements)
-	}
-	seenRequirements := make(map[string]struct{}, len(requirementIDs))
-	for _, requirementID := range requirementIDs {
-		if _, exists := requirements[requirementID]; !exists {
-			return fmt.Errorf("references unknown requirement ID %q", requirementID)
+func validateTargetTreePaths(label string, paths []string) error {
+	seen := make(map[string]struct{}, len(paths))
+	for index, value := range paths {
+		if err := validateTargetTreePath(value); err != nil {
+			return fmt.Errorf("target tree %s %d: %w", label, index, err)
 		}
-		if _, duplicate := seenRequirements[requirementID]; duplicate {
-			return fmt.Errorf("duplicates requirement ID %q", requirementID)
+		if _, duplicate := seen[value]; duplicate {
+			return fmt.Errorf("target tree %s %d duplicates %q", label, index, value)
 		}
-		seenRequirements[requirementID] = struct{}{}
+		seen[value] = struct{}{}
 	}
 	return nil
-}
-
-func (artifact TargetTreeArtifact) validateIdentity() error {
-	if (artifact.ExistingArtifactID == "") == (artifact.NewKey == "") {
-		return fmt.Errorf("requires exactly one of existing artifact ID or new key")
-	}
-	if artifact.ExistingArtifactID != "" {
-		return validateTargetTreeID("existing artifact ID", artifact.ExistingArtifactID)
-	}
-	return validateTargetTreeID("new key", artifact.NewKey)
-}
-
-func validateTargetArtifactKind(kind TargetArtifactKind) error {
-	switch kind {
-	case TargetArtifactImplementation, TargetArtifactVerification:
-		return nil
-	default:
-		return fmt.Errorf("artifact kind %q is unsupported", kind)
-	}
-}
-
-func (target TargetTree) validateRequirementCoverage(requirements []TargetTreeRequirement) error {
-	implementation := make(map[string]int, len(requirements))
-	verification := make(map[string]int, len(requirements))
-	for _, artifact := range target.Artifacts {
-		for _, requirementID := range artifact.RequirementIDs {
-			switch artifact.Kind {
-			case TargetArtifactImplementation:
-				implementation[requirementID]++
-			case TargetArtifactVerification:
-				verification[requirementID]++
-			}
-		}
-	}
-	for _, requirement := range requirements {
-		if implementation[requirement.ID] != 1 || verification[requirement.ID] != 1 {
-			return fmt.Errorf("target tree requires exactly one implementation and one verification artifact for requirement %q", requirement.ID)
-		}
-	}
-	return nil
-}
-
-type TargetTreeRequirementFiles struct {
-	ImplementationPath string
-	VerificationPath   string
-}
-
-func (target TargetTree) RequirementFiles(requirementID string) (TargetTreeRequirementFiles, error) {
-	var files TargetTreeRequirementFiles
-	for _, artifact := range target.Artifacts {
-		for _, boundRequirementID := range artifact.RequirementIDs {
-			if boundRequirementID != requirementID {
-				continue
-			}
-			switch artifact.Kind {
-			case TargetArtifactImplementation:
-				files.ImplementationPath = artifact.Path
-			case TargetArtifactVerification:
-				files.VerificationPath = artifact.Path
-			}
-		}
-	}
-	if files.ImplementationPath == "" || files.VerificationPath == "" {
-		return TargetTreeRequirementFiles{}, fmt.Errorf("target tree has no complete artifact pair for requirement %q", requirementID)
-	}
-	return files, nil
 }
 
 func validateTargetTreePath(value string) error {
 	if value == "" || len(value) > maxTargetTreePathBytes || value != path.Clean(value) ||
 		strings.HasPrefix(value, "/") || value == "." || strings.HasPrefix(value, "../") ||
 		strings.Contains(value, "\\") {
-		return fmt.Errorf("artifact path must be one normalized relative slash path")
-	}
-	return nil
-}
-
-func validateTargetTreeID(label, value string) error {
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
-		strings.ContainsRune(value, '\x00') || len(value) > 128 {
-		return fmt.Errorf("%s must be trimmed UTF-8 text of at most 128 bytes", label)
+		return fmt.Errorf("path must be one normalized relative slash path")
 	}
 	return nil
 }

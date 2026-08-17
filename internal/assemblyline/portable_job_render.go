@@ -52,6 +52,13 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildTargetTreePrompt(input)
 		return prompt, TargetTreeResponseSchema(), err
+	case WorkApplicationFileContent:
+		var input FileContentInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildFileContentPrompt(input)
+		return prompt, FileContentResponseSchema(), err
 	case WorkApplicationAcceptanceGroundingReview:
 		var input ApplicationAcceptanceGroundingReviewInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {

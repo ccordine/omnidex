@@ -2,97 +2,73 @@ package assemblyline
 
 import (
 	"fmt"
+	"path"
 	"sort"
+	"strings"
 )
 
 type TargetTreeTransitionKind string
 
 const (
-	TargetTreeCreate TargetTreeTransitionKind = "create"
-	TargetTreeRetain TargetTreeTransitionKind = "retain"
-	TargetTreeModify TargetTreeTransitionKind = "modify"
-	TargetTreeMove   TargetTreeTransitionKind = "move"
-	TargetTreeDelete TargetTreeTransitionKind = "delete"
+	TargetTreeEnsureDirectory TargetTreeTransitionKind = "ensure_directory"
+	TargetTreeCreate          TargetTreeTransitionKind = "create"
+	TargetTreeReconcile       TargetTreeTransitionKind = "reconcile"
 )
 
+// TargetTreeTransition is one code-owned leaf job. Directories are derived
+// from the path by the filesystem layer; no model ever emits operations.
 type TargetTreeTransition struct {
-	Kind       TargetTreeTransitionKind
-	ArtifactID string
-	FromPath   string
-	ToPath     string
-	Target     *ResolvedTargetArtifact
+	Kind TargetTreeTransitionKind
+	Path string
 }
 
-// DiffTargetTree derives all structure work. It does not inspect source or
-// decide declaration content; those are subsequent code-owned stages.
+// DiffTargetTree creates work only for returned paths. Omission is explicitly
+// non-destructive: an existing path absent from the work tree remains untouched.
 func DiffTargetTree(input TargetTreeInput, target TargetTree) ([]TargetTreeTransition, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
-	if len(target.Artifacts) == 0 {
-		return nil, fmt.Errorf("target tree must contain at least one artifact")
+	if len(target.Paths) == 0 {
+		return nil, fmt.Errorf("target tree must contain at least one path")
 	}
-	current := make(map[string]CurrentTargetArtifact, len(input.Current))
-	for _, artifact := range input.Current {
-		current[artifact.ID] = artifact
+	existing := make(map[string]struct{}, len(input.ExistingPaths))
+	for _, value := range input.ExistingPaths {
+		existing[value] = struct{}{}
 	}
-	seen := make(map[string]struct{}, len(target.Artifacts))
-	transitions := make([]TargetTreeTransition, 0, len(input.Current)+len(target.Artifacts))
-	for index := range target.Artifacts {
-		artifact := target.Artifacts[index]
-		if artifact.Existing {
-			currentArtifact, exists := current[artifact.ID]
-			if !exists {
-				return nil, fmt.Errorf("target tree references current artifact %q that is absent", artifact.ID)
+	existingDirectories := make(map[string]struct{}, len(input.ExistingDirs))
+	for _, value := range input.ExistingDirs {
+		existingDirectories[value] = struct{}{}
+	}
+	neededDirectories := make(map[string]struct{})
+	for _, value := range target.Paths {
+		for directory := path.Dir(value); directory != "."; directory = path.Dir(directory) {
+			if _, exists := existingDirectories[directory]; !exists {
+				neededDirectories[directory] = struct{}{}
 			}
-			if _, duplicate := seen[artifact.ID]; duplicate {
-				return nil, fmt.Errorf("target tree duplicates current artifact %q", artifact.ID)
-			}
-			seen[artifact.ID] = struct{}{}
-			if currentArtifact.Path != artifact.Path {
-				transitions = append(transitions, TargetTreeTransition{Kind: TargetTreeMove, ArtifactID: artifact.ID, FromPath: currentArtifact.Path, ToPath: artifact.Path, Target: &artifact})
-			} else if currentArtifact.Purpose == artifact.Purpose && equalTargetTreeRequirementIDs(currentArtifact.RequirementIDs, artifact.RequirementIDs) {
-				transitions = append(transitions, TargetTreeTransition{Kind: TargetTreeRetain, ArtifactID: artifact.ID, FromPath: currentArtifact.Path, ToPath: artifact.Path, Target: &artifact})
-			} else {
-				transitions = append(transitions, TargetTreeTransition{Kind: TargetTreeModify, ArtifactID: artifact.ID, FromPath: currentArtifact.Path, ToPath: artifact.Path, Target: &artifact})
-			}
-			continue
-		}
-		if _, duplicate := seen[artifact.ID]; duplicate {
-			return nil, fmt.Errorf("target tree duplicates new artifact %q", artifact.ID)
-		}
-		seen[artifact.ID] = struct{}{}
-		transitions = append(transitions, TargetTreeTransition{Kind: TargetTreeCreate, ArtifactID: artifact.ID, ToPath: artifact.Path, Target: &artifact})
-	}
-	for _, artifact := range input.Current {
-		if _, present := seen[artifact.ID]; !present {
-			transitions = append(transitions, TargetTreeTransition{Kind: TargetTreeDelete, ArtifactID: artifact.ID, FromPath: artifact.Path})
 		}
 	}
-	sort.Slice(transitions, func(left, right int) bool {
-		leftPath, rightPath := transitions[left].ToPath, transitions[right].ToPath
-		if leftPath == "" {
-			leftPath = transitions[left].FromPath
+	directories := make([]string, 0, len(neededDirectories))
+	for directory := range neededDirectories {
+		directories = append(directories, directory)
+	}
+	sort.Slice(directories, func(left, right int) bool {
+		leftDepth := strings.Count(directories[left], "/")
+		rightDepth := strings.Count(directories[right], "/")
+		if leftDepth != rightDepth {
+			return leftDepth < rightDepth
 		}
-		if rightPath == "" {
-			rightPath = transitions[right].FromPath
-		}
-		if leftPath == rightPath {
-			return transitions[left].Kind < transitions[right].Kind
-		}
-		return leftPath < rightPath
+		return directories[left] < directories[right]
 	})
-	return transitions, nil
-}
-
-func equalTargetTreeRequirementIDs(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
+	transitions := make([]TargetTreeTransition, 0, len(directories)+len(target.Paths))
+	for _, directory := range directories {
+		transitions = append(transitions, TargetTreeTransition{Kind: TargetTreeEnsureDirectory, Path: directory})
 	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
+	for _, value := range target.Paths {
+		kind := TargetTreeCreate
+		if _, exists := existing[value]; exists {
+			kind = TargetTreeReconcile
 		}
+		transitions = append(transitions, TargetTreeTransition{Kind: kind, Path: value})
 	}
-	return true
+	return transitions, nil
 }

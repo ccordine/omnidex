@@ -297,10 +297,12 @@ Whole-file generation, model-owned execution planning, model-owned repair routin
 path-bearing coding/repair/test prompts are forbidden regressions and require
 source-level absence tests. The sole exception is the typed target-tree declaration
 station defined in [docs/TARGET_TREE_PLANNING.md](docs/TARGET_TREE_PLANNING.md): it may
-see a bounded code-built artifact inventory and return desired artifact nodes as data.
-It cannot return filesystem actions, commands, source, declaration contracts, a work
-queue, or completion. Code validates its tree and derives every
-create/move/delete/modify ledger transition.
+see the code-built current tree and return only normalized relative file paths.
+It cannot return artifact metadata, filesystem actions, commands, source, declaration
+contracts, a work queue, or completion. Code derives parent-directory work and every
+create/reconcile transition. A separate file-content station answers the next semantic
+question for exactly one returned file leaf; it is not permitted to enlarge the tree
+station's response.
 
 Product-Specific Workloads Are Not Framework Code
 

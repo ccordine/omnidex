@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/gryph/omnidex/internal/operation"
 )
@@ -50,6 +51,9 @@ func (s *directCodingSession) MaterializeTask(task directCodingFileTask) (bool, 
 	target, err := resolveV3WorkspaceFile(s.root, task.Path)
 	if err != nil {
 		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return false, fmt.Errorf("ensure coding target directory for %s: %w", task.Path, err)
 	}
 	operation := workspaceFileCreate
 	current, readErr := os.ReadFile(target)

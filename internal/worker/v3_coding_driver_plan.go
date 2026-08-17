@@ -75,14 +75,22 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	existingPaths, existingDirs, err := snapshotDirectCodingTargetTreePaths(s.root)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	targetTree, err := resolveDirectCodingTargetTree(
-		workerRuntime, targetTreeModel, targetTreeCorrectionModel, specification, []assemblyline.CurrentTargetArtifact{},
+		workerRuntime, targetTreeModel, targetTreeCorrectionModel, specification, existingPaths, existingDirs,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	targetTree, err = resolveDirectCodingFileContents(workerRuntime, workloadModel, targetTreeCorrectionModel, s.root, specification, targetTree)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	structureTransitions, err := assemblyline.DiffTargetTree(
-		directCodingTargetTreeInput(specification, []assemblyline.CurrentTargetArtifact{}), targetTree,
+		directCodingTargetTreeInput(specification, existingPaths, existingDirs), targetTree,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -131,7 +139,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		}
 	}
 	s.plannedFiles = len(assembly.Files)
-	s.plannedDeletes = 0
+	s.plannedDeletes = len(assembly.DeletePaths)
 	blockCount, waveCount, err := directCodingProgramGraphMetrics(program)
 	if err != nil {
 		return directCodingAssembly{}, err

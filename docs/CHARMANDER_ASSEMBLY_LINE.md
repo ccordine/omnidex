@@ -49,8 +49,8 @@ A model may perform only a bounded task whose semantics cannot be reliably deriv
 No coding, repair, test-generation, or semantic-review model receives a file name,
 path, workspace tree, project plan, queue, phase, block identity, prior application,
 memory transcript, or completion authority. The target-tree declaration station is a
-narrow exception: it receives a bounded code-built inventory and returns desired
-artifact nodes only. Code derives all filesystem actions and work from the validated
+narrow exception: it receives a bounded code-built current tree and returns normalized
+relative file paths only. Code derives parent-directory and file work from the validated
 tree diff; see [TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md).
 
 ## Production flow

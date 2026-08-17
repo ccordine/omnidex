@@ -82,6 +82,7 @@ func genericBrowserFeatureDocuments(
 	targetTree assemblyline.TargetTree,
 ) ([]assemblyline.TypeScriptDocument, error) {
 	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
+	documentByPath := make(map[string]int, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		files, err := targetTree.RequirementFiles(requirement.ID)
 		if err != nil {
@@ -108,46 +109,51 @@ func genericBrowserFeatureDocuments(
 		if err != nil {
 			return nil, err
 		}
-		documents = append(documents, assemblyline.TypeScriptDocument{
-			ID:   fmt.Sprintf("feature_%03d", sequence),
-			Path: files.ImplementationPath,
-			Header: fmt.Sprintf(`import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+		documentIndex, exists := documentByPath[files.ImplementationPath]
+		if !exists {
+			documentIndex = len(documents)
+			documentByPath[files.ImplementationPath] = documentIndex
+			documents = append(documents, assemblyline.TypeScriptDocument{
+				ID:   fmt.Sprintf("feature_%03d", sequence),
+				Path: files.ImplementationPath,
+				Header: fmt.Sprintf(`import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { FeatureBoundary } from '%s';
 import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, FeatureViewProps, SharedValue } from '%s';`,
-				typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx"),
-				typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx")),
-			Blocks: []assemblyline.TypeScriptBlock{
-				{
-					ID: contextID, Static: genericBrowserFeatureProjectionSource(viewPropsName, dependencies),
-					API:       genericBrowserFeatureProjectionAPI(viewPropsName, dependencies),
-					DependsOn: []string{"runtime.api"},
-				},
-				{
-					ID: blockID,
-					Signature: fmt.Sprintf(
-						"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
-					),
-					Contract: genericBrowserFeatureContract(behavior, activeSkill),
-					API: fmt.Sprintf(
-						"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
-					),
-					DependsOn: []string{contextID}, Capabilities: []string{contextID},
-					Globals: []string{
-						"ReactElement", "useCallback", "useEffect", "useMemo", "useRef", "useState",
-					},
-					Policy: genericBrowserFeaturePolicy(),
-				},
-				{
-					ID: wrapperID, Static: fmt.Sprintf(
-						"export function %s({ runtime }: FeatureProps): ReactElement { return <FeatureBoundary runtime={runtime} view={%s} />; }",
-						functionName, viewName,
-					),
-					API:       fmt.Sprintf("function %s({ runtime }: FeatureProps): ReactElement", functionName),
-					DependsOn: []string{"runtime.api", blockID},
-				},
+					typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx"),
+					typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx")),
+			})
+		}
+		documents[documentIndex].Blocks = append(documents[documentIndex].Blocks,
+			assemblyline.TypeScriptBlock{
+				ID: contextID, Static: genericBrowserFeatureProjectionSource(viewPropsName, dependencies),
+				API:       genericBrowserFeatureProjectionAPI(viewPropsName, dependencies),
+				DependsOn: []string{"runtime.api"},
 			},
-		})
+			assemblyline.TypeScriptBlock{
+				ID: blockID,
+				Signature: fmt.Sprintf(
+					"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
+				),
+				Contract: genericBrowserFeatureContract(behavior, activeSkill),
+				API: fmt.Sprintf(
+					"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
+				),
+				DependsOn: []string{contextID}, Capabilities: []string{contextID},
+				Globals: []string{
+					"ReactElement", "useCallback", "useEffect", "useMemo", "useRef", "useState",
+				},
+				Policy: genericBrowserFeaturePolicy(),
+			},
+			assemblyline.TypeScriptBlock{
+				ID: wrapperID, Static: fmt.Sprintf(
+					"export function %s({ runtime }: FeatureProps): ReactElement { return <FeatureBoundary runtime={runtime} view={%s} />; }",
+					functionName, viewName,
+				),
+				API:       fmt.Sprintf("function %s({ runtime }: FeatureProps): ReactElement", functionName),
+				DependsOn: []string{"runtime.api", blockID},
+			},
+		)
 	}
 	return documents, nil
 }

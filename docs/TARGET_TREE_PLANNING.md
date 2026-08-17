@@ -2,109 +2,77 @@
 
 ## Status
 
-This is a normative Charmeleon planning boundary. It defines the one narrow
-exception to path-blind model context. It does not relax the coding assembly-line
-boundary.
+This is the normative structural front-door boundary. It is one narrow
+exception to the path-blind coding-worker rule; it does not make the model a
+planner, filesystem authority, or coding worker.
 
-## Purpose
+## One question, one answer
 
-The target tree is a declaration of desired semantic artifact structure, not an
-execution plan. Registered technical adapters may add their own deterministic
-runtime/manifests/bootstrap artifacts after the declaration; a model never decides
-those adapter artifacts. It lets Omnidex turn a user objective into a finite,
-code-owned workload:
+The target-tree station answers exactly one unresolved semantic question:
 
-```text
-immutable objective + verified context + current artifact inventory
-    -> target-tree declaration
-    -> code validation and structural diff
-    -> code-owned artifact and declaration ledger
-    -> bounded source generation and verification
+> Which normalized relative file paths should exist to satisfy this objective
+> in the code-selected technical format?
+
+Its input is code-built:
+
+* the accepted objective;
+* only the technical context required to choose compatible paths; and
+* the real, bounded current workspace tree (file paths and directory paths).
+
+Its complete response is a path-only tree:
+
+```json
+{"schema":"omnidex.target-tree.v1","paths":["src/counter.tsx","tests/counter.test.tsx"]}
 ```
 
-The sole semantic uncertainty assigned to the target-tree station is: which
-artifacts must exist, remain, move, or cease to exist for the accepted objective.
-It returns typed artifact nodes, never operations.
+The tree station returns no artifact IDs, kinds, purposes, ownership,
+requirement bindings, source, declarations, commands, filesystem operations,
+move/delete instructions, work items, ordering, dependencies, tests, tools, or
+completion state.
 
-## Model boundary
+For a fresh workspace, the existing tree is empty. For an existing workspace,
+the code-built existing tree is input evidence. An omitted existing path means
+untouched; it never implies deletion.
 
-The target-tree declaration station may receive only:
+## Code-owned transition
 
-* the immutable user objective and accepted requirements;
-* compact, source-backed project facts and accepted memories that are relevant;
-* a bounded, code-built inventory of existing artifact opaque IDs, normalized
-  relative paths, and artifact kinds; and
-* the response schema and hard size limits.
+Code parses and validates the returned paths, derives every parent directory,
+and compares paths with the authoritative filesystem snapshot:
 
-For every desired file node it may declare:
+* a missing parent becomes one `ensure_directory` transition;
+* a returned absent file becomes one `create` transition;
+* a returned existing file becomes one `reconcile` transition; and
+* an omitted existing file receives no transition.
 
-* a normalized relative target path;
-* an artifact kind;
-* a concise semantic purpose;
-* opaque requirement IDs that the artifact serves; and
-* either one existing opaque artifact ID or one new planner-local key.
+Directories are derived by code. The model never creates a directory or emits a
+filesystem operation. Transitions are ordered parent directories first, then
+file leaves. A transition is a code-owned ledger item, not a model instruction.
 
-It may not return or choose commands, filesystem operations, directory creation,
-source content, imports, declarations, signatures, work items, ordering,
-dependencies, tools, verification, or completion. It must not receive source,
-workspace snapshots, task ledgers, tool catalogs, operation results, or coding
-paths beyond the bounded artifact inventory.
+## Separate content boundary
 
-All other semantic, coding, review, repair, and test-generation stations remain
-path-blind.
+Each returned file leaf opens a distinct file-content station. That station is
+not the tree station and receives no tree or queue. Code determines the file's
+technical category from the selected adapter and path grammar. The file-content
+station returns only the bounded semantic coverage needed for that one file.
 
-## When it is legal to call
+Code then maps that coverage to declaration/block contracts, schedules the
+already-bounded coding workers, assembles source in memory, writes it to the
+host workspace, parses/compiles/tests it, and verifies that every accepted tree
+path exists on the host filesystem. A single file leaf may contain several
+separate bounded source blocks; grouping those blocks is code assembly, not a
+new responsibility for the tree model.
 
-Code invokes this station only after deterministic bootstrap and context closure.
-It is direct for an empty greenfield workspace because an initial desired structure
-is a necessary unresolved semantic value.
+## Validation and correction
 
-For an existing workspace, code first uses a tiny topology-need station only when
-it cannot determine whether the objective needs a structural artifact change. That
-station returns one Boolean semantic value. A false result retains the current tree;
-a true result opens this declaration station. Code never invokes either station when
-the answer is already deterministic.
+Code accepts a structurally valid tree directly. There is no ceremonial review
+or model-authored accept/reject control plane. Only a concrete schema or path
+validation error permits one bounded replacement of the path-only candidate.
+No-op or repeated candidates are explicit validation failures; they are never
+routed as JSON patching or as an instruction for a different model to invent
+work.
 
-There is no mandatory tree review or accept/reject ritual. A valid tree is accepted
-by code. Only an exact structural validation error can open a one-field semantic
-correction, and that correction returns only the replacement field.
+## Completion evidence
 
-## Code-owned validation and execution
-
-Code owns the current inventory and stable IDs. It rejects a declaration that has
-an invalid path, duplicate target path, ambiguous existing ID, duplicate new key,
-kind collision, missing purpose or requirement binding, forbidden/protected-path
-transition, unsafe deletion, or any size-budget violation. Directory requirements
-are derived from accepted file paths; no model creates directories.
-
-Code compares the accepted target tree with current authoritative inventory and
-derives every transition:
-
-* `create` for a new artifact;
-* `retain` for an unchanged artifact;
-* `modify` when retained identity gains or loses requirement bindings/purpose;
-* `move` for an existing opaque ID with a changed target path; and
-* `delete` only when an existing ID is absent and deletion validation permits it.
-
-The resulting artifact ledger, priorities, dependency order, declaration contracts,
-test placement, writes, parsing, compilation, test commands, retries, and completion
-are all code control flow. A model never sees or manages that ledger.
-
-For each selected artifact, code derives the smallest declaration or block contract
-that still requires semantic/source generation. A test-generation station, where
-needed, receives only that exact test declaration contract; code chooses the test
-artifact and runs the test.
-
-## Completion and evidence
-
-Target-tree success is not a model claim. It requires that the host workspace
-inventory matches the accepted semantic tree plus code-derived registered adapter
-artifacts, every derived artifact/declaration contract has been reconciled, and the
-authoritative final verification succeeds. Container-only or in-memory artifacts are
-not completion evidence.
-
-Autonomy evidence records the untouched user request, the code-built inventory,
-the exact target-tree envelope and response, validation/diff results, every derived
-ledger transition, source/verification evidence, and final host paths. Codex must
-never supply a target tree, path, source hint, or intermediate artifact to a proof
-run.
+Target-tree completion is real only when every returned file path has been
+reconciled and is present in the host workspace, followed by the adapter's
+deterministic verification. In-memory or container-only source is not proof.

@@ -15,10 +15,11 @@ func resolveDirectCodingTargetTree(
 	plannerModel string,
 	correctionModel string,
 	specification assemblyline.ApplicationSpecification,
-	current []assemblyline.CurrentTargetArtifact,
+	existingPaths []string,
+	existingDirs []string,
 ) (assemblyline.TargetTree, error) {
 	var zero assemblyline.TargetTree
-	input := directCodingTargetTreeInput(specification, current)
+	input := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
 	target, err := runDirectCodingTargetTreeCall(runtime, plannerModel, correctionModel, input)
 	if err != nil {
 		return zero, err
@@ -113,15 +114,17 @@ func persistTargetTreeRejection(
 
 func directCodingTargetTreeInput(
 	specification assemblyline.ApplicationSpecification,
-	current []assemblyline.CurrentTargetArtifact,
+	existingPaths []string,
+	existingDirs []string,
 ) assemblyline.TargetTreeInput {
-	requirements := make([]assemblyline.TargetTreeRequirement, len(specification.Requirements))
-	for index, requirement := range specification.Requirements {
-		requirements[index] = assemblyline.TargetTreeRequirement{ID: requirement.ID, Statement: requirement.SourceQuote}
-	}
-	inventory := make([]assemblyline.CurrentTargetArtifact, len(current))
-	copy(inventory, current)
+	paths := make([]string, len(existingPaths))
+	copy(paths, existingPaths)
+	directories := make([]string, len(existingDirs))
+	copy(directories, existingDirs)
 	return assemblyline.TargetTreeInput{
-		Objective: specification.ProductQuote, Requirements: requirements, Current: inventory,
+		Objective:        specification.ProductQuote,
+		TechnicalContext: "The code-selected adapter is a TypeScript React browser project. Return only workload-specific React source and browser-test file paths. The adapter supplies its own runtime, application shell, bootstrap, manifests, styles, and their tests.",
+		ExistingPaths:    paths,
+		ExistingDirs:     directories,
 	}
 }

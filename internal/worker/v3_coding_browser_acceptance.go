@@ -15,6 +15,7 @@ func genericBrowserAcceptanceDocuments(
 	targetTree assemblyline.TargetTree,
 ) ([]assemblyline.TypeScriptDocument, error) {
 	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
+	documentByPath := make(map[string]int, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		files, err := targetTree.RequirementFiles(requirement.ID)
 		if err != nil {
@@ -37,53 +38,58 @@ func genericBrowserAcceptanceDocuments(
 		if err != nil {
 			return nil, err
 		}
-		documents = append(documents, assemblyline.TypeScriptDocument{
-			ID:   fmt.Sprintf("acceptance_%03d", sequence),
-			Path: files.VerificationPath,
-			Header: fmt.Sprintf(`import '@testing-library/jest-dom/vitest';
+		documentIndex, exists := documentByPath[files.VerificationPath]
+		if !exists {
+			documentIndex = len(documents)
+			documentByPath[files.VerificationPath] = documentIndex
+			documents = append(documents, assemblyline.TypeScriptDocument{
+				ID:   fmt.Sprintf("acceptance_%03d", sequence),
+				Path: files.VerificationPath,
+				Header: fmt.Sprintf(`import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { createApplicationRuntime, createFeatureRuntime } from '%s';
-import { %s } from '%s';`,
-				typeScriptRelativeModule(files.VerificationPath, "src/runtime.tsx"),
-				functionName, typeScriptRelativeModule(files.VerificationPath, files.ImplementationPath)),
-			Blocks: []assemblyline.TypeScriptBlock{
-				{
-					ID:        verificationID,
-					Signature: fmt.Sprintf("async function %s(): Promise<void>", verifyName),
-					Contract:  genericBrowserAcceptanceContract(behavior),
-					API:       fmt.Sprintf("async function %s(): Promise<void>", verifyName),
-					Globals:   []string{"fireEvent", "screen", "waitFor", "expect"},
-					Policy: assemblyline.TypeScriptFunctionPolicy{
-						RequiredCalls: []assemblyline.TypeScriptCallRequirement{
-							{Callees: []string{"expect"}},
-						},
-						ForbiddenIdentifiers: append(
-							append([]string(nil), acceptanceForbiddenHostAPIs...),
-							"render", "createApplicationRuntime", "createFeatureRuntime", functionName,
-						),
+			import { createApplicationRuntime, createFeatureRuntime } from '%s';`,
+					typeScriptRelativeModule(files.VerificationPath, "src/runtime.tsx")),
+			})
+		}
+		documents[documentIndex].Header += fmt.Sprintf("\nimport { %s } from '%s';",
+			functionName, typeScriptRelativeModule(files.VerificationPath, files.ImplementationPath))
+		documents[documentIndex].Blocks = append(documents[documentIndex].Blocks,
+			assemblyline.TypeScriptBlock{
+				ID:        verificationID,
+				Signature: fmt.Sprintf("async function %s(): Promise<void>", verifyName),
+				Contract:  genericBrowserAcceptanceContract(behavior),
+				API:       fmt.Sprintf("async function %s(): Promise<void>", verifyName),
+				Globals:   []string{"fireEvent", "screen", "waitFor", "expect"},
+				Policy: assemblyline.TypeScriptFunctionPolicy{
+					RequiredCalls: []assemblyline.TypeScriptCallRequirement{
+						{Callees: []string{"expect"}},
 					},
-				},
-				{
-					ID: harnessID,
-					Static: genericBrowserAcceptanceHarnessSource(
-						harnessName, verifyName, functionName, genericBrowserCapabilityID(sequence),
+					ForbiddenIdentifiers: append(
+						append([]string(nil), acceptanceForbiddenHostAPIs...),
+						"render", "createApplicationRuntime", "createFeatureRuntime", functionName,
 					),
-					API: fmt.Sprintf("async function %s(): Promise<void>", harnessName),
-					DependsOn: []string{
-						"runtime.factory", wrapperID, verificationID,
-					},
-				},
-				{
-					ID: fmt.Sprintf("acceptance.register.%03d", sequence),
-					Static: fmt.Sprintf(
-						"it(%s, %s);", strconv.Quote("delivers "+requirement.SourceQuote), harnessName,
-					),
-					API:       "registered independent acceptance for " + requirement.ID,
-					DependsOn: []string{harnessID},
 				},
 			},
-		})
+			assemblyline.TypeScriptBlock{
+				ID: harnessID,
+				Static: genericBrowserAcceptanceHarnessSource(
+					harnessName, verifyName, functionName, genericBrowserCapabilityID(sequence),
+				),
+				API: fmt.Sprintf("async function %s(): Promise<void>", harnessName),
+				DependsOn: []string{
+					"runtime.factory", wrapperID, verificationID,
+				},
+			},
+			assemblyline.TypeScriptBlock{
+				ID: fmt.Sprintf("acceptance.register.%03d", sequence),
+				Static: fmt.Sprintf(
+					"it(%s, %s);", strconv.Quote("delivers "+requirement.SourceQuote), harnessName,
+				),
+				API:       "registered independent acceptance for " + requirement.ID,
+				DependsOn: []string{harnessID},
+			},
+		)
 	}
 	return documents, nil
 }
