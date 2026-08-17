@@ -60,6 +60,52 @@ func TestApplicationTaskStageProjectionExcludesOtherTasksAndApplicationEntrypoin
 	}
 }
 
+func TestApplicationTaskStageProjectionSupportsMultipleTasksInOneFile(t *testing.T) {
+	t.Parallel()
+
+	input, frozen, program := applicationTaskLifecycleFixture(t)
+	program.TypeScript.Documents = coalesceApplicationTaskFixtureDocuments(t, program.TypeScript.Documents)
+	context, err := assemblyline.ProjectApplicationTaskContext(input, frozen, "task_002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := projectDirectCodingApplicationTaskStage(program, context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := directCodingTypeScriptBlueprintBlock(stage.TypeScript, "feature.002"); !exists {
+		t.Fatal("grouped stage omits feature.002")
+	}
+	if _, exists := directCodingTypeScriptBlueprintBlock(stage.TypeScript, "acceptance.002"); !exists {
+		t.Fatal("grouped stage omits acceptance.002")
+	}
+}
+
+func coalesceApplicationTaskFixtureDocuments(
+	t *testing.T,
+	documents []assemblyline.TypeScriptDocument,
+) []assemblyline.TypeScriptDocument {
+	t.Helper()
+	output := make([]assemblyline.TypeScriptDocument, 0, len(documents)-2)
+	features := assemblyline.TypeScriptDocument{ID: "features", Path: "src/Counter.tsx"}
+	acceptance := assemblyline.TypeScriptDocument{ID: "acceptance", Path: "src/Counter.test.tsx"}
+	for _, document := range documents {
+		switch document.ID {
+		case "feature_001", "feature_002":
+			features.Blocks = append(features.Blocks, document.Blocks...)
+		case "acceptance_001", "acceptance_002":
+			acceptance.Blocks = append(acceptance.Blocks, document.Blocks...)
+		default:
+			output = append(output, document)
+		}
+	}
+	output = append(output, features, acceptance)
+	if err := (assemblyline.TypeScriptBlueprint{Documents: output}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return output
+}
+
 func applicationTaskLifecycleFixture(
 	t *testing.T,
 ) (assemblyline.ApplicationWorkloadDraftInput, assemblyline.FrozenApplicationWorkload, directCodingProgram) {

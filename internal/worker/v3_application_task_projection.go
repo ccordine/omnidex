@@ -23,19 +23,30 @@ func projectDirectCodingApplicationTaskStage(
 	if err != nil {
 		return zero, err
 	}
-	documentIDs := map[string]struct{}{
-		"application_runtime": {},
-		"feature_" + strings.TrimPrefix(featureID, "feature."):          {},
-		"acceptance_" + strings.TrimPrefix(acceptanceID, "acceptance."): {},
-	}
-	documents := make([]assemblyline.TypeScriptDocument, 0, len(documentIDs))
+	documents := make([]assemblyline.TypeScriptDocument, 0, 3)
+	foundRuntime := false
+	foundFeature := false
+	foundAcceptance := false
 	for _, document := range program.TypeScript.Documents {
-		if _, include := documentIDs[document.ID]; include {
+		include := document.ID == "application_runtime"
+		if include {
+			foundRuntime = true
+		}
+		for _, block := range document.Blocks {
+			switch block.ID {
+			case featureID:
+				foundFeature = true
+				include = true
+			case acceptanceID:
+				foundAcceptance = true
+				include = true
+			}
+		}
+		if include {
 			documents = append(documents, document)
-			delete(documentIDs, document.ID)
 		}
 	}
-	if len(documentIDs) != 0 {
+	if !foundRuntime || !foundFeature || !foundAcceptance {
 		return zero, fmt.Errorf("application task %s stage lacks required documents", context.Task.TaskID)
 	}
 

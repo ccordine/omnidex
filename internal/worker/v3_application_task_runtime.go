@@ -104,24 +104,6 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 		input, frozen, program,
 		directCodingApplicationTaskLifecycleHooks{
 			BuildBlock: s.generateDirectCodingApplicationTaskBlock,
-			Verify: func(context assemblyline.ApplicationTaskContext, stage *directCodingProgram) error {
-				commands, commandErr := directCodingApplicationTaskStageCommands(*stage, context)
-				if commandErr != nil {
-					return commandErr
-				}
-				s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_task_verification_started", fmt.Sprintf(
-					"task=%s requirement_bytes=%d", context.Task.TaskID, len(context.Task.RequirementQuote),
-				))
-				if stageErr := s.stageTypeScriptProgramIn(
-					workspace.Root(), stage, commands, correctionProgress,
-				); stageErr != nil {
-					return stageErr
-				}
-				s.runtime.svc.emitStepEvent(
-					s.runtime.claim.Authority, "coding_task_verified", "task="+context.Task.TaskID,
-				)
-				return nil
-			},
 			FinalStage: func(complete *directCodingProgram) error {
 				return s.stageTypeScriptProgramIn(
 					workspace.Root(), complete, directCodingFullStageCommands(), correctionProgress,

@@ -15,7 +15,6 @@ type directCodingApplicationTaskLifecycleHooks struct {
 		*directCodingProgram,
 		assemblyline.TypeScriptBlock,
 	) (string, error)
-	Verify     func(assemblyline.ApplicationTaskContext, *directCodingProgram) error
 	FinalStage func(*directCodingProgram) error
 }
 
@@ -28,7 +27,7 @@ func runDirectCodingApplicationTaskLifecycle(
 	if program == nil {
 		return fmt.Errorf("application task lifecycle requires one program")
 	}
-	if hooks.BuildBlock == nil || hooks.Verify == nil || hooks.FinalStage == nil {
+	if hooks.BuildBlock == nil || hooks.FinalStage == nil {
 		return fmt.Errorf("application task lifecycle requires generation, verification, and final-stage hooks")
 	}
 	if err := assemblyline.ValidateFrozenApplicationWorkload(input, frozen); err != nil {
@@ -68,9 +67,6 @@ func runDirectCodingApplicationTaskLifecycle(
 					return fmt.Errorf("application task block %s generated empty source", blockID)
 				}
 				stage.Generated[blockID] = source
-			}
-			if verifyErr := hooks.Verify(context, &stage); verifyErr != nil {
-				return fmt.Errorf("verify application task %s: %w", context.Task.TaskID, verifyErr)
 			}
 			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, featureID, acceptanceID); validationErr != nil {
 				return validationErr
