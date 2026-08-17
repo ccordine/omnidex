@@ -95,15 +95,12 @@ func convergeExactApplicationJobSpecificationWithReplay(
 	if err := job.Validate(); err != nil {
 		return result, err
 	}
-	if job.Kind != assemblyline.WorkApplicationJobSpecification &&
-		job.Kind != assemblyline.WorkApplicationJobSpecificationRepair {
+	if job.Kind != assemblyline.WorkApplicationJobSpecification {
 		return result, fmt.Errorf("application job specification convergence requires work kind %q", assemblyline.WorkApplicationJobSpecification)
 	}
 	var authority assemblyline.ApplicationJobSpecificationInput
-	if job.Kind == assemblyline.WorkApplicationJobSpecification {
-		if err := json.Unmarshal(job.Payload, &authority); err != nil {
-			return result, fmt.Errorf("decode application job specification convergence authority: %w", err)
-		}
+	if err := json.Unmarshal(job.Payload, &authority); err != nil {
+		return result, fmt.Errorf("decode application job specification convergence authority: %w", err)
 	}
 
 	runtime := typedWorkerRuntime{
@@ -149,45 +146,12 @@ func convergeExactApplicationJobSpecificationWithReplay(
 		specification assemblyline.ApplicationJobSpecification
 		err           error
 	)
-	if job.Kind == assemblyline.WorkApplicationJobSpecificationRepair {
-		repairInput, repairAuthority, retained, restoreErr :=
-			assemblyline.RestoreApplicationJobSpecificationRepairJob(job)
-		if restoreErr != nil {
-			return result, restoreErr
-		}
-		specification, err = runApplicationJobSpecificationRepair(
-			runtime, result.ReviewModel, "frozen_application_job_specification_repair",
-			job, repairInput, retained,
-		)
-		var noOp *assemblyline.ApplicationJobSpecificationRepairNoOpError
-		if errors.As(err, &noOp) {
-			failure := noOp.ReviewFailure()
-			specification, err = reviewDirectCodingApplicationJobSpecificationAfterFailure(
-				runtime, result.ReviewModel,
-				"frozen_application_job_specification_after_noop",
-				repairAuthority, retained, &failure,
-			)
-		}
-		if err == nil {
-			if noOp == nil {
-				specification, err = reviewDirectCodingApplicationJobSpecification(
-					runtime, result.ReviewModel,
-					"frozen_application_job_specification_after_repair",
-					repairAuthority, specification,
-				)
-			}
-		}
-		if err == nil {
-			result.Terminal = "accepted"
-		}
-	} else {
-		specification, err = resolveDirectCodingApplicationJobSpecification(
-			runtime, result.PlannerModel, result.ReviewModel,
-			"frozen_application_job_specification", authority,
-		)
-		if err == nil {
-			result.Terminal = "accepted"
-		}
+	specification, err = resolveDirectCodingApplicationJobSpecification(
+		runtime, result.PlannerModel, result.ReviewModel,
+		"frozen_application_job_specification", authority,
+	)
+	if err == nil {
+		result.Terminal = "accepted"
 	}
 	if err != nil {
 		return result, err
@@ -204,16 +168,12 @@ func exactApplicationJobSpecificationCallModel(
 	switch job.Kind {
 	case assemblyline.WorkApplicationJobSpecification:
 		return plannerModel, nil
-	case assemblyline.WorkApplicationJobSpecificationReview,
-		assemblyline.WorkApplicationJobSpecificationRepair:
+	case assemblyline.WorkApplicationJobSpecificationReview:
 		return reviewModel, nil
 	case assemblyline.WorkResponseCorrection:
 		var correction assemblyline.ResponseCorrectionInput
 		if err := json.Unmarshal(job.Payload, &correction); err != nil {
 			return "", fmt.Errorf("decode application job specification correction routing: %w", err)
-		}
-		if correction.Original.Kind == assemblyline.WorkApplicationJobSpecificationRepair {
-			return "", fmt.Errorf("application job specification repair no-op is semantic stagnation, not response-correctable")
 		}
 		return plannerModel, nil
 	default:

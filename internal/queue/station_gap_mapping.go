@@ -33,8 +33,7 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 	case assemblyline.WorkApplicationContextNeeds,
 		assemblyline.WorkApplicationIntent:
 		return station.CodingRequirements, nil
-	case assemblyline.WorkApplicationIntentReview,
-		assemblyline.WorkApplicationIntentRepair:
+	case assemblyline.WorkApplicationIntentReview:
 		return station.CodingWorkloadReview, nil
 	case assemblyline.WorkApplicationClassify:
 		return station.CodingSurface, nil
@@ -43,7 +42,6 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 	case assemblyline.WorkApplicationJobSpecification:
 		return station.CodingWorkload, nil
 	case assemblyline.WorkApplicationJobSpecificationReview,
-		assemblyline.WorkApplicationJobSpecificationRepair,
 		assemblyline.WorkApplicationAcceptanceGroundingReview:
 		return station.CodingWorkloadReview, nil
 	case assemblyline.WorkRepositorySearchTerm:

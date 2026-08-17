@@ -9,6 +9,7 @@ import (
 )
 
 const applicationFrontDoorStationMigration = "106_application_front_door_stations.sql"
+const directSemanticReviewMigration = "109_direct_semantic_review_candidates.sql"
 
 func TestApplicationFrontDoorMigrationReplacesQuoteGateOwnership(t *testing.T) {
 	t.Parallel()
@@ -74,10 +75,30 @@ func applicationFrontDoorWorkKind(kind assemblyline.WorkKind) bool {
 	switch kind {
 	case assemblyline.WorkApplicationContextNeeds,
 		assemblyline.WorkApplicationIntent,
-		assemblyline.WorkApplicationIntentReview,
-		assemblyline.WorkApplicationIntentRepair:
+		assemblyline.WorkApplicationIntentReview:
 		return true
 	default:
 		return false
+	}
+}
+
+func TestDirectSemanticReviewMigrationRemovesObsoleteRepairWorkKinds(t *testing.T) {
+	t.Parallel()
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "109")); err != nil {
+		t.Fatal(err)
+	}
+	assertAppliedMigrationCount(t, pool, directSemanticReviewMigration, 1)
+	for _, obsolete := range []string{"application_intent_repair", "application_job_specification_repair"} {
+		var accepted bool
+		if err := pool.QueryRow(t.Context(), `
+			SELECT station_owns_portable_work('coding_workload_review',$1,'{}'::jsonb)
+		`, obsolete).Scan(&accepted); err != nil {
+			t.Fatal(err)
+		}
+		if accepted {
+			t.Fatalf("obsolete work kind %q remains routable", obsolete)
+		}
 	}
 }

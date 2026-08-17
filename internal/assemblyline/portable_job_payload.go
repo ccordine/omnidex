@@ -19,10 +19,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationIntentReviewInput](
 			payload, ApplicationIntentReviewInput.validate,
 		)
-	case WorkApplicationIntentRepair:
-		return decodeAndValidatePortablePayload[ApplicationIntentRepairInput](
-			payload, ApplicationIntentRepairInput.validate,
-		)
 	case WorkApplicationClassify:
 		return decodeAndValidatePortablePayload[ApplicationClassificationInput](payload, ApplicationClassificationInput.validate)
 	case WorkApplicationJobSpecification:
@@ -32,10 +28,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	case WorkApplicationJobSpecificationReview:
 		return decodeAndValidatePortablePayload[applicationJobSpecificationReviewPortablePayload](
 			payload, applicationJobSpecificationReviewPortablePayload.validate,
-		)
-	case WorkApplicationJobSpecificationRepair:
-		return decodeAndValidatePortablePayload[applicationJobSpecificationRepairPortablePayload](
-			payload, applicationJobSpecificationRepairPortablePayload.validate,
 		)
 	case WorkApplicationAcceptanceGroundingReview:
 		return decodeAndValidatePortablePayload[ApplicationAcceptanceGroundingReviewInput](

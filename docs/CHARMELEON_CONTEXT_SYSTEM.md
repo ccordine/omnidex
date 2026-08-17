@@ -233,20 +233,19 @@ machine passes its executable gates:
    questions through registered deterministic providers and formalizes selected evidence as
    compact source-backed facts. One intent station then derives only a product context and
    semantic requirement statements from the immutable request plus those facts. A separately
-   routed reviewer accepts or names one defective semantic leaf and finding; code retains the
-   candidate and applies only the dynamically schema-bound replacement before review repeats.
+   routed reviewer accepts, removes a code-permitted list leaf, or returns one complete replacement
+   for the code-selected leaf; code retains the candidate and performs the bound exact splice before
+   review repeats.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
    authority checks. For each accepted requirement, one local station receives the typed surface,
    reviewed product context, complete accepted requirement set, and focused requirement and
    proposes only a concrete objective, required behaviors, and observable acceptance criteria.
    A separately routed corrective model may accept or name one derived field, one bounded
-   diagnostic finding, and one code-enumerated exact current value: the whole objective or
-   one whole list item owned by that field. Code couples legal evidence to its field in the
-   response schema and binds the observed value by SHA-256. The corrective route also owns
-   semantic repair and one schema-constrained no-op correction; repair never returns through
-   the constructive proposal model. The repair station receives focused user authority, that
-   finding and validated evidence, and only the current value of the named field; code retains every
-   other semantic field and revalidates both field and whole-state bindings before dispatch.
+   complete replacement value for the code-enumerated exact current value: the whole objective or
+   one whole list item owned by that field. Code couples legal target evidence to its field in the
+   response schema and binds the observed value by SHA-256. There is no semantic repair station:
+   the reviewer candidate is the only semantic result, while code retains every other field and
+   performs the exact removal or replacement after revalidating field and whole-state bindings.
    Code retains each new canonical specification and repeats review without a numeric correctness
    limit; acceptance, an exact repeated state/cycle, lost authority, provider failure,
    cancellation, or a real resource limit ends that loop. Code preserves user authority separately from derived build decisions,

@@ -2,19 +2,6 @@ package assemblyline
 
 import "fmt"
 
-func applicationJobSpecificationReviewResolutions(
-	retained ApplicationJobSpecification,
-	field ApplicationJobSpecificationField,
-) []ApplicationJobSpecificationReviewResolution {
-	resolutions := []ApplicationJobSpecificationReviewResolution{
-		ApplicationJobSpecificationReviewReplace,
-	}
-	if applicationJobSpecificationReviewCanRemove(retained, field) {
-		resolutions = append(resolutions, ApplicationJobSpecificationReviewRemove)
-	}
-	return resolutions
-}
-
 func applicationJobSpecificationReviewCanRemove(
 	retained ApplicationJobSpecification,
 	field ApplicationJobSpecificationField,
@@ -38,24 +25,20 @@ func validateApplicationJobSpecificationBoundReview(
 		return err
 	}
 	if err := ValidateApplicationJobSpecification(retained); err != nil {
-		return fmt.Errorf(
-			"application job specification review requires valid retained state: %w",
-			err,
-		)
+		return fmt.Errorf("application job specification review requires valid retained state: %w", err)
 	}
-	if err := validateApplicationJobSpecificationReview(review); err != nil {
-		return err
+	if review.Decision != ApplicationJobSpecificationReviewRemove &&
+		review.Decision != ApplicationJobSpecificationReviewReplace {
+		return fmt.Errorf("application job specification state change requires remove or replace review")
 	}
-	if review.Decision != ApplicationJobSpecificationReviewRepair {
-		return fmt.Errorf("application job specification state change requires a repair review")
+	if !isApplicationJobSpecificationField(review.Field) {
+		return fmt.Errorf("application job specification review field %q is unsupported", review.Field)
 	}
-	observedValueSHA256, err := applicationJobSpecificationCurrentFieldSHA256(
-		retained, review.Field,
-	)
+	observed, err := applicationJobSpecificationCurrentFieldSHA256(retained, review.Field)
 	if err != nil {
 		return err
 	}
-	if review.observedValueSHA256 != observedValueSHA256 {
+	if review.observedValueSHA256 != observed {
 		return fmt.Errorf("application job specification review is not bound to current named field")
 	}
 	if !applicationJobSpecificationReviewEvidenceApplies(retained, review) {
@@ -71,9 +54,8 @@ func validateApplicationJobSpecificationBoundReview(
 	return nil
 }
 
-// ApplyApplicationJobSpecificationReviewRemoval lets code perform an exact
-// reviewer-selected list-leaf removal without asking another model to infer
-// deletion from prose.
+// ApplyApplicationJobSpecificationReviewRemoval deletes exactly the bound
+// list value selected by a validated semantic review.
 func ApplyApplicationJobSpecificationReviewRemoval(
 	authority ApplicationJobSpecificationInput,
 	retained ApplicationJobSpecification,
@@ -82,34 +64,64 @@ func ApplyApplicationJobSpecificationReviewRemoval(
 	if err := validateApplicationJobSpecificationBoundReview(authority, retained, review); err != nil {
 		return ApplicationJobSpecification{}, err
 	}
-	if review.Resolution != ApplicationJobSpecificationReviewRemove {
-		return ApplicationJobSpecification{}, fmt.Errorf(
-			"application job specification review removal requires remove resolution",
-		)
-	}
-	if !applicationJobSpecificationReviewCanRemove(retained, review.Field) {
-		return ApplicationJobSpecification{}, fmt.Errorf(
-			"application job specification review cannot remove the final required value",
-		)
+	if review.Decision != ApplicationJobSpecificationReviewRemove ||
+		!applicationJobSpecificationReviewCanRemove(retained, review.Field) {
+		return ApplicationJobSpecification{}, fmt.Errorf("application job specification review removal is unavailable")
 	}
 	updated := cloneApplicationJobSpecification(retained)
 	var err error
 	switch review.Field {
 	case ApplicationJobSpecificationRequiredBehaviorsField:
-		updated.RequiredBehaviors, err = removeApplicationJobSpecificationListValue(
-			updated.RequiredBehaviors, review.FindingEvidence,
-		)
+		updated.RequiredBehaviors, err = removeApplicationJobSpecificationListValue(updated.RequiredBehaviors, review.FindingEvidence)
 	case ApplicationJobSpecificationAcceptanceCriteriaField:
-		updated.AcceptanceCriteria, err = removeApplicationJobSpecificationListValue(
-			updated.AcceptanceCriteria, review.FindingEvidence,
-		)
+		updated.AcceptanceCriteria, err = removeApplicationJobSpecificationListValue(updated.AcceptanceCriteria, review.FindingEvidence)
 	default:
-		err = fmt.Errorf(
-			"application job specification field %q cannot be removed", review.Field,
-		)
+		err = fmt.Errorf("application job specification field %q cannot be removed", review.Field)
 	}
 	if err != nil {
 		return ApplicationJobSpecification{}, err
+	}
+	if err := ValidateApplicationJobSpecification(updated); err != nil {
+		return ApplicationJobSpecification{}, err
+	}
+	return updated, nil
+}
+
+// ApplyApplicationJobSpecificationReviewReplacement replaces exactly the
+// code-bound current leaf with the reviewed candidate value.
+func ApplyApplicationJobSpecificationReviewReplacement(
+	authority ApplicationJobSpecificationInput,
+	retained ApplicationJobSpecification,
+	review ApplicationJobSpecificationReview,
+) (ApplicationJobSpecification, error) {
+	if err := validateApplicationJobSpecificationBoundReview(authority, retained, review); err != nil {
+		return ApplicationJobSpecification{}, err
+	}
+	if review.Decision != ApplicationJobSpecificationReviewReplace {
+		return ApplicationJobSpecification{}, fmt.Errorf("application job specification review replacement requires replace decision")
+	}
+	updated := cloneApplicationJobSpecification(retained)
+	switch review.Field {
+	case ApplicationJobSpecificationObjectiveField:
+		updated.Objective = review.ReplacementValue
+	case ApplicationJobSpecificationRequiredBehaviorsField:
+		var err error
+		updated.RequiredBehaviors, err = replaceApplicationJobSpecificationListValue(
+			updated.RequiredBehaviors, review.FindingEvidence, review.ReplacementValue,
+		)
+		if err != nil {
+			return ApplicationJobSpecification{}, err
+		}
+	case ApplicationJobSpecificationAcceptanceCriteriaField:
+		var err error
+		updated.AcceptanceCriteria, err = replaceApplicationJobSpecificationListValue(
+			updated.AcceptanceCriteria, review.FindingEvidence, review.ReplacementValue,
+		)
+		if err != nil {
+			return ApplicationJobSpecification{}, err
+		}
+	default:
+		return ApplicationJobSpecification{}, fmt.Errorf("application job specification field %q is unsupported", review.Field)
 	}
 	if err := ValidateApplicationJobSpecification(updated); err != nil {
 		return ApplicationJobSpecification{}, err
@@ -122,6 +134,17 @@ func removeApplicationJobSpecificationListValue(values []string, current string)
 		if value == current {
 			updated := append([]string(nil), values...)
 			return append(updated[:index], updated[index+1:]...), nil
+		}
+	}
+	return nil, fmt.Errorf("application job specification review value is no longer retained")
+}
+
+func replaceApplicationJobSpecificationListValue(values []string, current, replacement string) ([]string, error) {
+	for index, value := range values {
+		if value == current {
+			updated := append([]string(nil), values...)
+			updated[index] = replacement
+			return updated, nil
 		}
 	}
 	return nil, fmt.Errorf("application job specification review value is no longer retained")

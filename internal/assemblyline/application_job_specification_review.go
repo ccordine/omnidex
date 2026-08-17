@@ -1,30 +1,22 @@
 package assemblyline
 
-import (
-	"fmt"
-)
+import "fmt"
 
 type ApplicationJobSpecificationReviewDecision string
 
-type ApplicationJobSpecificationReviewResolution string
-
 const (
-	ApplicationJobSpecificationReviewAccept ApplicationJobSpecificationReviewDecision = "accept"
-	ApplicationJobSpecificationReviewRepair ApplicationJobSpecificationReviewDecision = "repair"
+	ApplicationJobSpecificationReviewAccept  ApplicationJobSpecificationReviewDecision = "accept"
+	ApplicationJobSpecificationReviewRemove  ApplicationJobSpecificationReviewDecision = "remove"
+	ApplicationJobSpecificationReviewReplace ApplicationJobSpecificationReviewDecision = "replace"
 
-	ApplicationJobSpecificationReviewReplace ApplicationJobSpecificationReviewResolution = "replace"
-	ApplicationJobSpecificationReviewRemove  ApplicationJobSpecificationReviewResolution = "remove"
-
-	maxApplicationJobSpecificationReviewFindingRunes         = 512
-	maxApplicationJobSpecificationReviewFindingEvidenceRunes = 512
+	maxApplicationJobSpecificationReplacementRunes = 512
 )
 
 type ApplicationJobSpecificationReview struct {
-	Decision        ApplicationJobSpecificationReviewDecision   `json:"decision"`
-	Resolution      ApplicationJobSpecificationReviewResolution `json:"resolution,omitempty"`
-	Field           ApplicationJobSpecificationField            `json:"field,omitempty"`
-	Finding         string                                      `json:"finding,omitempty"`
-	FindingEvidence string                                      `json:"finding_evidence,omitempty"`
+	Decision         ApplicationJobSpecificationReviewDecision `json:"decision"`
+	Field            ApplicationJobSpecificationField          `json:"field,omitempty"`
+	FindingEvidence  string                                    `json:"finding_evidence,omitempty"`
+	ReplacementValue string                                    `json:"replacement_value,omitempty"`
 
 	binding             string
 	observedValueSHA256 string
@@ -40,10 +32,9 @@ type ApplicationJobSpecificationReviewInput struct {
 }
 
 type applicationJobSpecificationReviewWire struct {
-	Decision   *ApplicationJobSpecificationReviewDecision   `json:"decision"`
-	Resolution *ApplicationJobSpecificationReviewResolution `json:"resolution"`
-	EvidenceID *string                                      `json:"evidence_id"`
-	Finding    *string                                      `json:"finding"`
+	Decision         *ApplicationJobSpecificationReviewDecision `json:"decision"`
+	EvidenceID       *string                                    `json:"evidence_id"`
+	ReplacementValue *string                                    `json:"replacement_value"`
 }
 
 func NewApplicationJobSpecificationReviewInput(
@@ -106,10 +97,7 @@ func (input ApplicationJobSpecificationReviewInput) validate() error {
 	if _, exists := applicationJobSpecificationReviewEvidenceValue(
 		input.retained, input.field, input.evidenceID,
 	); !exists {
-		return fmt.Errorf(
-			"application job specification review evidence %q is unavailable for field %q",
-			input.evidenceID, input.field,
-		)
+		return fmt.Errorf("application job specification review evidence %q is unavailable for field %q", input.evidenceID, input.field)
 	}
 	if input.attempt < 1 {
 		return fmt.Errorf("application job specification review attempt must be positive")
@@ -140,116 +128,81 @@ func DecodeApplicationJobSpecificationReview(
 	if err := decodePortablePayload([]byte(raw), &wire); err != nil {
 		return zero, fmt.Errorf("decode application job specification review: %w", err)
 	}
-	if wire.Decision == nil {
-		return zero, fmt.Errorf("application job specification review requires decision")
+	if wire.Decision == nil || wire.EvidenceID == nil || wire.ReplacementValue == nil {
+		return zero, fmt.Errorf("application job specification review requires decision, evidence_id, and replacement_value")
 	}
-	if wire.Resolution == nil {
-		return zero, fmt.Errorf("application job specification review requires resolution")
-	}
-	review := ApplicationJobSpecificationReview{
-		Decision: *wire.Decision, Resolution: *wire.Resolution,
-	}
-	if review.Decision == ApplicationJobSpecificationReviewRepair && wire.Finding != nil {
-		review.Finding = *wire.Finding
-	}
+	review := ApplicationJobSpecificationReview{Decision: *wire.Decision}
 	binding, err := applicationJobSpecificationBinding(input.authority, input.retained)
 	if err != nil {
 		return zero, err
 	}
-	if review.Decision == ApplicationJobSpecificationReviewRepair {
-		review.Field = input.field
-		if err := validateApplicationJobSpecificationReviewRepairAuthority(review); err != nil {
-			return zero, err
+	if review.Decision == ApplicationJobSpecificationReviewAccept {
+		if *wire.EvidenceID != "" || *wire.ReplacementValue != "" {
+			return zero, fmt.Errorf("accepted application job specification review must not name evidence or a replacement")
 		}
-		observedValueSHA256, err := applicationJobSpecificationCurrentFieldSHA256(
-			input.retained, review.Field,
-		)
-		if err != nil {
-			return zero, err
-		}
-		review.observedValueSHA256 = observedValueSHA256
-		failure := func(
-			kind ApplicationJobSpecificationReviewEvidenceErrorKind,
-			evidenceID string,
-		) *ApplicationJobSpecificationReviewEvidenceError {
-			return &ApplicationJobSpecificationReviewEvidenceError{
-				Kind: kind, Field: review.Field, Finding: review.Finding,
-				EvidenceID:          evidenceID,
-				ObservedValueSHA256: observedValueSHA256, RetainedAuthoritySHA256: binding,
-			}
-		}
-		if wire.EvidenceID == nil {
-			return zero, failure(ApplicationJobSpecificationReviewEvidenceMissing, "")
-		}
-		if *wire.EvidenceID != input.evidenceID {
-			return zero, failure(ApplicationJobSpecificationReviewEvidenceInvalid, *wire.EvidenceID)
-		}
-		evidenceValue, exists := applicationJobSpecificationReviewEvidenceValue(
-			input.retained, input.field, *wire.EvidenceID,
-		)
-		if !exists {
-			return zero, failure(ApplicationJobSpecificationReviewEvidenceInvalid, *wire.EvidenceID)
-		}
-		review.FindingEvidence = evidenceValue
-		if review.Resolution == ApplicationJobSpecificationReviewRemove &&
-			!applicationJobSpecificationReviewCanRemove(input.retained, review.Field) {
-			return zero, fmt.Errorf(
-				"application job specification review cannot remove the final required value",
-			)
-		}
-	} else {
-		if wire.EvidenceID == nil || wire.Finding == nil {
-			return zero, fmt.Errorf(
-				"accepted application job specification review requires evidence_id and finding fields",
-			)
-		}
-		if err := validateApplicationJobSpecificationReview(review); err != nil {
-			return zero, err
+		review.binding = binding
+		return review, nil
+	}
+	if review.Decision != ApplicationJobSpecificationReviewRemove &&
+		review.Decision != ApplicationJobSpecificationReviewReplace {
+		return zero, fmt.Errorf("application job specification review decision %q is unsupported", review.Decision)
+	}
+	observed, err := applicationJobSpecificationCurrentFieldSHA256(input.retained, input.field)
+	if err != nil {
+		return zero, err
+	}
+	failure := func(kind ApplicationJobSpecificationReviewEvidenceErrorKind) *ApplicationJobSpecificationReviewEvidenceError {
+		return &ApplicationJobSpecificationReviewEvidenceError{
+			Kind: kind, Field: input.field, EvidenceID: *wire.EvidenceID,
+			ObservedValueSHA256: observed, RetainedAuthoritySHA256: binding,
 		}
 	}
+	if *wire.EvidenceID != input.evidenceID {
+		return zero, failure(ApplicationJobSpecificationReviewEvidenceInvalid)
+	}
+	current, exists := applicationJobSpecificationReviewEvidenceValue(
+		input.retained, input.field, *wire.EvidenceID,
+	)
+	if !exists {
+		return zero, failure(ApplicationJobSpecificationReviewEvidenceInvalid)
+	}
+	review.Field = input.field
+	review.FindingEvidence = current
 	review.binding = binding
+	review.observedValueSHA256 = observed
+	if review.Decision == ApplicationJobSpecificationReviewRemove {
+		if *wire.ReplacementValue != "" {
+			return zero, fmt.Errorf("removed application job specification review must not provide a replacement")
+		}
+		if !applicationJobSpecificationReviewCanRemove(input.retained, input.field) {
+			return zero, fmt.Errorf("application job specification review cannot remove the final required value")
+		}
+		return review, nil
+	}
+	if err := validateApplicationJobSpecificationReplacement(
+		input.field, *wire.ReplacementValue,
+	); err != nil {
+		return zero, err
+	}
+	if *wire.ReplacementValue == current {
+		return zero, failure(ApplicationJobSpecificationReviewReplacementNoOp)
+	}
+	review.ReplacementValue = *wire.ReplacementValue
 	return review, nil
 }
 
-func validateApplicationJobSpecificationReview(review ApplicationJobSpecificationReview) error {
-	switch review.Decision {
-	case ApplicationJobSpecificationReviewAccept:
-		if review.Resolution != "" || review.Field != "" || review.Finding != "" || review.FindingEvidence != "" {
-			return fmt.Errorf("accepted application job specification review must not name a resolution, field, finding, or finding evidence")
-		}
-		return nil
-	case ApplicationJobSpecificationReviewRepair:
-		if err := validateApplicationJobSpecificationReviewRepairAuthority(review); err != nil {
-			return err
-		}
-		return validateApplicationWorkloadLine(
-			"application job specification review finding evidence",
-			review.FindingEvidence,
-			maxApplicationJobSpecificationReviewFindingEvidenceRunes,
-		)
-	default:
-		return fmt.Errorf("application job specification review decision %q is unsupported", review.Decision)
-	}
-}
-
-func validateApplicationJobSpecificationReviewRepairAuthority(
-	review ApplicationJobSpecificationReview,
+func validateApplicationJobSpecificationReplacement(
+	field ApplicationJobSpecificationField,
+	value string,
 ) error {
-	if review.Resolution != ApplicationJobSpecificationReviewReplace &&
-		review.Resolution != ApplicationJobSpecificationReviewRemove {
-		return fmt.Errorf(
-			"application job specification review repair resolution %q is unsupported",
-			review.Resolution,
-		)
+	maximum := maxApplicationObjectiveRunes
+	label := "objective replacement"
+	if field == ApplicationJobSpecificationRequiredBehaviorsField {
+		maximum, label = maxApplicationBehaviorRunes, "required behavior replacement"
+	} else if field == ApplicationJobSpecificationAcceptanceCriteriaField {
+		maximum, label = maxApplicationCriterionRunes, "acceptance criterion replacement"
 	}
-	if !isApplicationJobSpecificationField(review.Field) {
-		return fmt.Errorf("application job specification review field %q is unsupported", review.Field)
-	}
-	return validateApplicationWorkloadLine(
-		"application job specification review finding",
-		review.Finding,
-		maxApplicationJobSpecificationReviewFindingRunes,
-	)
+	return validateApplicationWorkloadLine(label, value, maximum)
 }
 
 func isApplicationJobSpecificationField(field ApplicationJobSpecificationField) bool {

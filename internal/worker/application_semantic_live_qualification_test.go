@@ -183,7 +183,7 @@ func validateLiveCodingQualificationProjection(
 			return fmt.Errorf("intent station did not receive one intact request")
 		}
 		return nil
-	case assemblyline.WorkApplicationIntentReview, assemblyline.WorkApplicationIntentRepair:
+	case assemblyline.WorkApplicationIntentReview:
 		if !strings.Contains(prompt, testCase.request) {
 			return fmt.Errorf("intent convergence station omitted immutable request authority")
 		}

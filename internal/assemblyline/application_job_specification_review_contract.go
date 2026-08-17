@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+type applicationJobSpecificationReviewAuthority struct {
+	Surface            ApplicationSurface `json:"surface"`
+	FocusedRequirement string             `json:"focused_requirement"`
+}
+
 func BuildApplicationJobSpecificationReviewPrompt(
 	input ApplicationJobSpecificationReviewInput,
 ) (string, error) {
@@ -23,37 +28,28 @@ func BuildApplicationJobSpecificationReviewPrompt(
 	}}
 	var priorRejectedReview *applicationJobSpecificationReviewEvidenceFailureProjection
 	if input.validationFailure != nil {
-		evidenceID := input.validationFailure.EvidenceID
-		if evidenceID == "" && input.validationFailure.FindingEvidence != "" {
-			evidenceID, _ = applicationJobSpecificationReviewEvidenceID(
-				input.retained, input.field, input.validationFailure.FindingEvidence,
-			)
-		}
 		priorRejectedReview = &applicationJobSpecificationReviewEvidenceFailureProjection{
-			EvidenceID:      evidenceID,
-			RejectedFinding: input.validationFailure.Finding,
-			Reason:          input.validationFailure.reason(),
+			EvidenceID: input.validationFailure.EvidenceID,
+			Reason:     input.validationFailure.reason(),
 		}
 	}
 	projection := struct {
-		Authority            applicationJobSpecificationRepairAuthority                  `json:"authority"`
+		Authority            applicationJobSpecificationReviewAuthority                  `json:"authority"`
 		CurrentField         ApplicationJobSpecificationField                            `json:"current_field"`
 		FieldContract        string                                                      `json:"field_contract"`
 		CurrentValue         any                                                         `json:"current_value"`
-		LegalRepairs         []ApplicationJobSpecificationReviewResolution               `json:"legal_repairs"`
+		CanRemove            bool                                                        `json:"can_remove"`
 		LegalCurrentEvidence []applicationJobSpecificationReviewEvidence                 `json:"legal_current_evidence"`
 		PriorRejectedReview  *applicationJobSpecificationReviewEvidenceFailureProjection `json:"prior_rejected_review,omitempty"`
 	}{
-		Authority: applicationJobSpecificationRepairAuthority{
+		Authority: applicationJobSpecificationReviewAuthority{
 			Surface:            input.authority.Surface,
 			FocusedRequirement: input.authority.FocusedRequirement.SourceQuote,
 		},
-		CurrentField:  input.field,
-		FieldContract: applicationJobSpecificationRepairInstruction(input.field),
-		CurrentValue:  currentValue,
-		LegalRepairs: applicationJobSpecificationReviewResolutions(
-			input.retained, input.field,
-		),
+		CurrentField:         input.field,
+		FieldContract:        applicationJobSpecificationReviewInstruction(input.field),
+		CurrentValue:         currentValue,
+		CanRemove:            applicationJobSpecificationReviewCanRemove(input.retained, input.field),
 		LegalCurrentEvidence: evidence,
 		PriorRejectedReview:  priorRejectedReview,
 	}
@@ -63,9 +59,10 @@ func BuildApplicationJobSpecificationReviewPrompt(
 	}
 	prompt := strings.Join([]string{
 		"Determine whether current_value satisfies field_contract. It is faithful only when every semantic claim in current_value is required by authority.focused_requirement.",
-		"If it is faithful, return {\"decision\":\"accept\",\"resolution\":\"\",\"evidence_id\":\"\",\"finding\":\"\"}.",
-		"If the whole current_value is outside authority.focused_requirement, use resolution remove. If current_value belongs but must change, use resolution replace. Choose only from legal_repairs.",
-		"A repair returns {\"decision\":\"repair\",\"resolution\":<one legal_repair>,\"evidence_id\":<the legal_current_evidence id>,\"finding\":<the exact semantic problem>}.",
+		"Return accept when current_value is faithful: {\"decision\":\"accept\",\"evidence_id\":\"\",\"replacement_value\":\"\"}.",
+		"Return remove only when can_remove is true and the whole current_value is outside authority.focused_requirement: {\"decision\":\"remove\",\"evidence_id\":<the legal_current_evidence id>,\"replacement_value\":\"\"}.",
+		"Otherwise return replace with one complete corrected value for current_value: {\"decision\":\"replace\",\"evidence_id\":<the legal_current_evidence id>,\"replacement_value\":<complete replacement value>}.",
+		"replacement_value is the semantic leaf itself, not an instruction, plan, explanation, or patch.",
 		"APPLICATION_JOB_SPECIFICATION_REVIEW_INPUT_JSON:\n" + string(raw),
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
@@ -80,23 +77,35 @@ func ApplicationJobSpecificationReviewResponseSchema(
 	if err := input.validate(); err != nil {
 		return nil, err
 	}
-	resolutions := []string{"", string(ApplicationJobSpecificationReviewReplace)}
+	decisions := []string{
+		string(ApplicationJobSpecificationReviewAccept),
+		string(ApplicationJobSpecificationReviewReplace),
+	}
 	if applicationJobSpecificationReviewCanRemove(input.retained, input.field) {
-		resolutions = append(resolutions, string(ApplicationJobSpecificationReviewRemove))
+		decisions = append(decisions, string(ApplicationJobSpecificationReviewRemove))
 	}
 	return objectSchema(
-		[]string{"decision", "resolution", "evidence_id", "finding"},
+		[]string{"decision", "evidence_id", "replacement_value"},
 		map[string]any{
-			"decision": enumSchema(
-				string(ApplicationJobSpecificationReviewAccept),
-				string(ApplicationJobSpecificationReviewRepair),
-			),
-			"resolution":  enumSchema(resolutions...),
+			"decision":    enumSchema(decisions...),
 			"evidence_id": enumSchema("", input.evidenceID),
-			"finding": map[string]any{
+			"replacement_value": map[string]any{
 				"type": "string", "minLength": 0,
-				"maxLength": maxApplicationJobSpecificationReviewFindingRunes,
+				"maxLength": maxApplicationJobSpecificationReplacementRunes,
 			},
 		},
 	), nil
+}
+
+func applicationJobSpecificationReviewInstruction(field ApplicationJobSpecificationField) string {
+	switch field {
+	case ApplicationJobSpecificationObjectiveField:
+		return "state one concrete local product outcome faithful to the focused requirement"
+	case ApplicationJobSpecificationRequiredBehaviorsField:
+		return "state one concrete user action and observable result faithful to the focused requirement"
+	case ApplicationJobSpecificationAcceptanceCriteriaField:
+		return "state one observable check faithful to the focused requirement"
+	default:
+		return "reject the unsupported review target"
+	}
 }

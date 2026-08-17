@@ -52,18 +52,19 @@ Intent interpretation occurs only after that closure. The intent candidate conta
 one product context and bounded semantic requirement statements, each ultimately bound
 to the immutable request digest. Authority does not depend on reproducing a contiguous
 substring or allocating non-overlapping text intervals. An independent reviewer either
-accepts the retained candidate or names one defective leaf and one finding. A separate
-correction call can return only that leaf; code merges it, rejects no-op or repeated
-state, and reruns review. Neither station sees an operation catalog, repository tree,
+accepts the retained candidate, removes a code-permitted list leaf, or returns one complete
+replacement value for the code-selected leaf. Code validates the hash-bound target, splices the
+exact string/list value, rejects no-op or repeated state, and reruns review. The reviewer sees no
+operation catalog, repository tree,
 path, task graph, or completion control.
 
 For job-specification review, code enumerates the whole current objective and every
 whole current list item and couples those values to their owning field in the response
-schema. A repair finding must select one of those exact values. Code hashes the observed
-field and revalidates both field and whole-state bindings before repair dispatch. The
-constructive route owns only the initial proposal; the corrective route owns review,
-semantic repair, and a single schema-constrained no-op correction. This is
-diagnostic-to-state grounding without natural-language substring interpretation.
+schema. A reviewer candidate can only accept, remove a permitted list value, or replace
+one of those exact values. Code hashes the observed field and revalidates both field and
+whole-state bindings before its own exact splice. The constructive route owns only the
+initial proposal; the reviewer returns the only corrective semantic value. This is
+state grounding without natural-language substring interpretation.
 
 ## Autonomous substrate and subjective meaning
 

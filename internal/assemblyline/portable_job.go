@@ -32,10 +32,8 @@ const (
 	WorkApplicationContextNeeds              WorkKind = "application_context_needs"
 	WorkApplicationIntent                    WorkKind = "application_intent"
 	WorkApplicationIntentReview              WorkKind = "application_intent_review"
-	WorkApplicationIntentRepair              WorkKind = "application_intent_repair"
 	WorkApplicationJobSpecification          WorkKind = "application_job_specification"
 	WorkApplicationJobSpecificationReview    WorkKind = "application_job_specification_review"
-	WorkApplicationJobSpecificationRepair    WorkKind = "application_job_specification_repair"
 	WorkApplicationAcceptanceGroundingReview WorkKind = "application_acceptance_grounding_review"
 	WorkRepositoryRequirements               WorkKind = "repository_requirements"
 	WorkRepositorySearchTerm                 WorkKind = "repository_search_term"
@@ -254,10 +252,10 @@ func decodePortablePayload(payload []byte, target any) error {
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
 	case WorkApplicationContextNeeds, WorkApplicationIntent,
-		WorkApplicationIntentReview, WorkApplicationIntentRepair,
+		WorkApplicationIntentReview,
 		WorkApplicationClassify,
 		WorkApplicationJobSpecification, WorkApplicationJobSpecificationReview,
-		WorkApplicationJobSpecificationRepair, WorkApplicationAcceptanceGroundingReview,
+		WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
@@ -280,10 +278,10 @@ func validWorkKind(kind WorkKind) bool {
 func AllWorkKinds() []WorkKind {
 	return []WorkKind{
 		WorkApplicationContextNeeds, WorkApplicationIntent,
-		WorkApplicationIntentReview, WorkApplicationIntentRepair,
+		WorkApplicationIntentReview,
 		WorkApplicationClassify,
 		WorkApplicationJobSpecification, WorkApplicationJobSpecificationReview,
-		WorkApplicationJobSpecificationRepair, WorkApplicationAcceptanceGroundingReview,
+		WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,

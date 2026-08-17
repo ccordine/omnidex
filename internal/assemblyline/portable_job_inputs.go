@@ -49,10 +49,6 @@ func NewApplicationIntentReviewJob(input ApplicationIntentReviewInput) (Portable
 	return newValidatedPortableJob(WorkApplicationIntentReview, input, input.validate)
 }
 
-func NewApplicationIntentRepairJob(input ApplicationIntentRepairInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationIntentRepair, input, input.validate)
-}
-
 func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkApplicationClassify, input, input.validate)
 }
@@ -72,16 +68,6 @@ func NewApplicationJobSpecificationReviewJob(
 		return PortableJob{}, err
 	}
 	return newPortableJob(WorkApplicationJobSpecificationReview, payload)
-}
-
-func NewApplicationJobSpecificationRepairJob(
-	input ApplicationJobSpecificationRepairInput,
-) (PortableJob, error) {
-	payload, err := newApplicationJobSpecificationRepairPortablePayload(input)
-	if err != nil {
-		return PortableJob{}, err
-	}
-	return newPortableJob(WorkApplicationJobSpecificationRepair, payload)
 }
 
 func NewApplicationAcceptanceGroundingReviewJob(

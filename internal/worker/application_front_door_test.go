@@ -52,21 +52,14 @@ func TestApplicationFrontDoorBootstrapsReviewsAndRepairsSemanticIntent(t *testin
 					return assemblyline.PortableResult{}, fmt.Errorf("review model=%q", modelName)
 				}
 				if counts[job.Kind] == 1 {
-					candidate = assemblyline.ApplicationIntentReviewDecision{
-						Schema:  assemblyline.ApplicationIntentReviewSchemaV1,
-						Outcome: assemblyline.ApplicationIntentReviewRepair,
-						Target:  "requirements_002",
-						Finding: "The requirement omits the explicitly requested decrement behavior.",
+					candidate = map[string]any{
+						"schema": "omnidex.application-intent-review.v1", "decision": "replace",
+						"replacement_value": "Provide controls that increment, decrement, and reset the count.",
 					}
 				} else {
-					candidate = assemblyline.ApplicationIntentReviewDecision{
-						Schema:  assemblyline.ApplicationIntentReviewSchemaV1,
-						Outcome: assemblyline.ApplicationIntentReviewAccept,
+					candidate = map[string]any{
+						"schema": "omnidex.application-intent-review.v1", "decision": "accept", "replacement_value": "",
 					}
-				}
-			case assemblyline.WorkApplicationIntentRepair:
-				candidate = map[string]any{
-					"requirements_002": "Provide controls that increment, decrement, and reset the count.",
 				}
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected semantic work kind %q", job.Kind)
@@ -84,8 +77,7 @@ func TestApplicationFrontDoorBootstrapsReviewsAndRepairsSemanticIntent(t *testin
 	}
 	if counts[assemblyline.WorkApplicationContextNeeds] != 1 ||
 		counts[assemblyline.WorkApplicationIntent] != 1 ||
-		counts[assemblyline.WorkApplicationIntentReview] != 2 ||
-		counts[assemblyline.WorkApplicationIntentRepair] != 1 {
+		counts[assemblyline.WorkApplicationIntentReview] != 2 {
 		t.Fatalf("front-door calls=%v", counts)
 	}
 	want := []assemblyline.Requirement{

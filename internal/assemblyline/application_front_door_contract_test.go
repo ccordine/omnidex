@@ -111,7 +111,7 @@ func TestApplicationIntentUsesReviewedSemanticStatementsWithoutSubstringGates(t 
 	}
 }
 
-func TestApplicationIntentReviewNamesOneLeafWithoutReplacementProse(t *testing.T) {
+func TestApplicationIntentReviewReturnsOneBoundReplacementValue(t *testing.T) {
 	t.Parallel()
 	input := applicationIntentContractInput(t)
 	candidate := ApplicationIntentCandidate{
@@ -119,16 +119,7 @@ func TestApplicationIntentReviewNamesOneLeafWithoutReplacementProse(t *testing.T
 		ProductContext: "A browser counter",
 		Requirements:   []string{"Show the count.", "Provide increment and reset controls."},
 	}
-	reviewInput := ApplicationIntentReviewInput{Authority: input, Candidate: candidate}
-	decision := ApplicationIntentReviewDecision{
-		Schema:  ApplicationIntentReviewSchemaV1,
-		Outcome: ApplicationIntentReviewRepair,
-		Target:  "requirements_002",
-		Finding: "The requirement omits the explicitly requested decrement behavior.",
-	}
-	if err := decision.ValidateFor(reviewInput); err != nil {
-		t.Fatal(err)
-	}
+	reviewInput := ApplicationIntentReviewInput{Authority: input, Candidate: candidate, Target: "requirements_002"}
 	job, err := NewApplicationIntentReviewJob(reviewInput)
 	if err != nil {
 		t.Fatal(err)
@@ -138,12 +129,15 @@ func TestApplicationIntentReviewNamesOneLeafWithoutReplacementProse(t *testing.T
 		t.Fatal(err)
 	}
 	properties := schema["properties"].(map[string]any)
-	if _, replacementAuthority := properties["replacement"]; replacementAuthority {
-		t.Fatal("review schema lets the reviewer write replacement requirements")
+	if _, exists := properties["finding"]; exists {
+		t.Fatal("review schema exposes a model-to-model finding protocol")
+	}
+	if properties["replacement_value"] == nil {
+		t.Fatal("review schema omits direct replacement value")
 	}
 }
 
-func TestApplicationIntentRepairChangesOnlyTheReviewedLeaf(t *testing.T) {
+func TestApplicationIntentReviewCandidatesAreSplicedByCode(t *testing.T) {
 	t.Parallel()
 	input := applicationIntentContractInput(t)
 	retained := ApplicationIntentCandidate{
@@ -151,33 +145,15 @@ func TestApplicationIntentRepairChangesOnlyTheReviewedLeaf(t *testing.T) {
 		ProductContext: "A browser counter",
 		Requirements:   []string{"Show the count.", "Provide increment and reset controls."},
 	}
-	finding := ApplicationIntentReviewDecision{
-		Schema:  ApplicationIntentReviewSchemaV1,
-		Outcome: ApplicationIntentReviewRepair,
-		Target:  "requirements_002",
-		Finding: "The requirement omits the explicitly requested decrement behavior.",
-	}
-	repairInput := ApplicationIntentRepairInput{Authority: input, Finding: finding}
-	job, err := NewApplicationIntentRepairJob(repairInput)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, schema, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	properties := schema["properties"].(map[string]any)
-	if len(properties) != 1 || properties["requirements_002"] == nil {
-		t.Fatalf("repair schema=%#v", schema)
-	}
-	repair, err := DecodeApplicationIntentRepairDecision(
-		repairInput,
-		`{"requirements_002":"Provide controls that increment, decrement, and reset the count."}`,
+	reviewInput := ApplicationIntentReviewInput{Authority: input, Candidate: retained, Target: "requirements_002"}
+	review, err := DecodeApplicationIntentReview(
+		reviewInput,
+		`{"schema":"omnidex.application-intent-review.v1","decision":"replace","replacement_value":"Provide controls that increment, decrement, and reset the count."}`,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	corrected, err := ApplyApplicationIntentRepair(input, retained, finding, repair)
+	corrected, err := ApplyApplicationIntentReviewReplacement(input, retained, review)
 	if err != nil {
 		t.Fatal(err)
 	}

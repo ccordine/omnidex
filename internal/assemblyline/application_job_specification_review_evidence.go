@@ -10,17 +10,14 @@ type applicationJobSpecificationReviewEvidence struct {
 type ApplicationJobSpecificationReviewEvidenceErrorKind string
 
 const (
-	ApplicationJobSpecificationReviewEvidenceMissing ApplicationJobSpecificationReviewEvidenceErrorKind = "missing"
 	ApplicationJobSpecificationReviewEvidenceInvalid ApplicationJobSpecificationReviewEvidenceErrorKind = "invalid_evidence_id"
-	ApplicationJobSpecificationReviewRepairNoOp      ApplicationJobSpecificationReviewEvidenceErrorKind = "repair_noop"
+	ApplicationJobSpecificationReviewReplacementNoOp ApplicationJobSpecificationReviewEvidenceErrorKind = "replacement_noop"
 )
 
 type ApplicationJobSpecificationReviewEvidenceError struct {
 	Kind                    ApplicationJobSpecificationReviewEvidenceErrorKind `json:"kind"`
 	Field                   ApplicationJobSpecificationField                   `json:"field"`
-	Finding                 string                                             `json:"finding,omitempty"`
 	EvidenceID              string                                             `json:"evidence_id,omitempty"`
-	FindingEvidence         string                                             `json:"finding_evidence"`
 	ObservedValueSHA256     string                                             `json:"observed_value_sha256"`
 	RetainedAuthoritySHA256 string                                             `json:"retained_authority_sha256"`
 }
@@ -48,8 +45,7 @@ func (failure *ApplicationJobSpecificationReviewEvidenceError) Identity() string
 	}
 	return string(failure.Kind) + "\x00" + string(failure.Field) + "\x00" +
 		failure.ObservedValueSHA256 + "\x00" +
-		failure.RetainedAuthoritySHA256 + "\x00" + failure.EvidenceID + "\x00" + failure.Finding + "\x00" +
-		failure.FindingEvidence
+		failure.RetainedAuthoritySHA256 + "\x00" + failure.EvidenceID
 }
 
 func (failure *ApplicationJobSpecificationReviewEvidenceError) reason() string {
@@ -57,12 +53,10 @@ func (failure *ApplicationJobSpecificationReviewEvidenceError) reason() string {
 		return "evidence failure is unavailable"
 	}
 	switch failure.Kind {
-	case ApplicationJobSpecificationReviewEvidenceMissing:
-		return "repair response omitted evidence_id"
 	case ApplicationJobSpecificationReviewEvidenceInvalid:
 		return "evidence_id is not listed in legal_current_evidence"
-	case ApplicationJobSpecificationReviewRepairNoOp:
-		return "current_value remained byte-identical after this finding"
+	case ApplicationJobSpecificationReviewReplacementNoOp:
+		return "replacement_value was byte-identical to current_value"
 	default:
 		return "evidence failure kind is unsupported"
 	}
@@ -186,10 +180,6 @@ func (failure *ApplicationJobSpecificationReviewEvidenceError) validateForRetry(
 		return fmt.Errorf("application job specification review evidence failure is not bound to current retained authority")
 	}
 	switch failure.Kind {
-	case ApplicationJobSpecificationReviewEvidenceMissing:
-		if failure.EvidenceID != "" || failure.FindingEvidence != "" {
-			return fmt.Errorf("application job specification review missing evidence failure retained evidence authority")
-		}
 	case ApplicationJobSpecificationReviewEvidenceInvalid:
 		if failure.EvidenceID == "" {
 			return fmt.Errorf("application job specification review invalid evidence failure omitted evidence identity")
@@ -199,18 +189,11 @@ func (failure *ApplicationJobSpecificationReviewEvidenceError) validateForRetry(
 		); exists {
 			return fmt.Errorf("application job specification review invalid evidence failure retained a legal evidence identity")
 		}
-	case ApplicationJobSpecificationReviewRepairNoOp:
-		if err := validateApplicationWorkloadLine(
-			"application job specification review no-op finding",
-			failure.Finding,
-			maxApplicationJobSpecificationReviewFindingRunes,
-		); err != nil {
-			return err
-		}
-		if !applicationJobSpecificationReviewEvidenceApplies(retained, ApplicationJobSpecificationReview{
-			Field: failure.Field, FindingEvidence: failure.FindingEvidence,
-		}) {
-			return fmt.Errorf("application job specification review no-op evidence no longer applies to current named field")
+	case ApplicationJobSpecificationReviewReplacementNoOp:
+		if _, exists := applicationJobSpecificationReviewEvidenceValue(
+			retained, failure.Field, failure.EvidenceID,
+		); !exists {
+			return fmt.Errorf("application job specification review no-op evidence is no longer current")
 		}
 	default:
 		return fmt.Errorf("application job specification review evidence failure kind %q is unsupported", failure.Kind)

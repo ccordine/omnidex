@@ -104,17 +104,10 @@ func reviewDirectCodingApplicationJobSpecificationAfterFailure(
 	reviewTargetIndex := 0
 	if initialValidationFailure != nil {
 		targets := applicationJobSpecificationReviewTargets(retained)
-		evidenceID, exists := assemblyline.ApplicationJobSpecificationReviewEvidenceID(
-			retained, initialValidationFailure.Field, initialValidationFailure.FindingEvidence,
-		)
-		if !exists {
-			return zero, fmt.Errorf(
-				"application job specification initial review failure has no current evidence",
-			)
-		}
 		matched := false
 		for index, target := range targets {
-			if target.field == initialValidationFailure.Field && target.evidenceID == evidenceID {
+			if target.field == initialValidationFailure.Field &&
+				target.evidenceID == initialValidationFailure.EvidenceID {
 				reviewTargetIndex = index
 				matched = true
 				break
@@ -126,7 +119,6 @@ func reviewDirectCodingApplicationJobSpecificationAfterFailure(
 	}
 
 	reviewCall := 0
-	repairAttempt := 0
 	invalidReviewEvidence := make(map[string]struct{})
 	var validationFailure *assemblyline.ApplicationJobSpecificationReviewEvidenceError
 	if initialValidationFailure != nil {
@@ -188,7 +180,7 @@ func reviewDirectCodingApplicationJobSpecificationAfterFailure(
 			reviewTargetIndex++
 			continue
 		}
-		if review.Resolution == assemblyline.ApplicationJobSpecificationReviewRemove {
+		if review.Decision == assemblyline.ApplicationJobSpecificationReviewRemove {
 			retained, inputErr = assemblyline.ApplyApplicationJobSpecificationReviewRemoval(
 				authority, retained, review,
 			)
@@ -203,71 +195,17 @@ func reviewDirectCodingApplicationJobSpecificationAfterFailure(
 			reviewTargetIndex = 0
 			continue
 		}
-		repairAttempt++
-		repairInput, inputErr := assemblyline.NewApplicationJobSpecificationRepairInput(
-			authority, retained, review, repairAttempt,
+		retained, inputErr = assemblyline.ApplyApplicationJobSpecificationReviewReplacement(
+			authority, retained, review,
 		)
 		if inputErr != nil {
 			return zero, inputErr
-		}
-		repairJob, jobErr := assemblyline.NewApplicationJobSpecificationRepairJob(repairInput)
-		if jobErr != nil {
-			return zero, jobErr
-		}
-		retainedBeforeRepair := retained
-		retained, callErr = runApplicationJobSpecificationRepair(
-			runtime, reviewModel,
-			fmt.Sprintf("%s_repair_%d", subject, repairAttempt),
-			repairJob, repairInput, retainedBeforeRepair,
-		)
-		if callErr != nil {
-			var noOp *assemblyline.ApplicationJobSpecificationRepairNoOpError
-			if !errors.As(callErr, &noOp) {
-				return zero, callErr
-			}
-			failure := noOp.ReviewFailure()
-			identity := failure.Identity()
-			if _, repeated := invalidReviewEvidence[identity]; repeated {
-				return zero, fmt.Errorf(
-					"application job specification %s: repeated no-op reviewer verdict rejected for unchanged retained state",
-					subject,
-				)
-			}
-			invalidReviewEvidence[identity] = struct{}{}
-			validationFailure = &failure
-			retained = retainedBeforeRepair
-			continue
 		}
 		if progressErr := progress.Observe(retained); progressErr != nil {
 			return zero, fmt.Errorf("application job specification %s: %w", subject, progressErr)
 		}
 		reviewTargetIndex = 0
 	}
-}
-
-func runApplicationJobSpecificationRepair(
-	runtime typedWorkerRuntime,
-	repairModel string,
-	subject string,
-	repairJob assemblyline.PortableJob,
-	repairInput assemblyline.ApplicationJobSpecificationRepairInput,
-	retained assemblyline.ApplicationJobSpecification,
-) (assemblyline.ApplicationJobSpecification, error) {
-	var zero assemblyline.ApplicationJobSpecification
-	return runApplicationJobSpecificationCall(
-		runtime, repairModel, subject, repairJob,
-		func(raw string) (assemblyline.ApplicationJobSpecification, error) {
-			patch, decodeErr := assemblyline.DecodeApplicationJobSpecificationRepair(
-				repairInput, raw,
-			)
-			if decodeErr != nil {
-				return zero, decodeErr
-			}
-			return assemblyline.ApplyApplicationJobSpecificationRepair(
-				repairInput, retained, patch,
-			)
-		},
-	)
 }
 
 func runApplicationJobSpecificationCall[T any](

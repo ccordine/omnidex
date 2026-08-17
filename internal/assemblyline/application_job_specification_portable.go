@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
@@ -16,15 +15,6 @@ type applicationJobSpecificationReviewPortablePayload struct {
 	EvidenceID        string                                          `json:"evidence_id"`
 	Attempt           int                                             `json:"attempt"`
 	ValidationFailure *ApplicationJobSpecificationReviewEvidenceError `json:"validation_failure,omitempty"`
-}
-
-type applicationJobSpecificationRepairPortablePayload struct {
-	Authority           ApplicationJobSpecificationInput  `json:"authority"`
-	Retained            ApplicationJobSpecification       `json:"retained"`
-	Review              ApplicationJobSpecificationReview `json:"review"`
-	Attempt             int                               `json:"attempt"`
-	ReviewBinding       string                            `json:"review_binding"`
-	ObservedValueSHA256 string                            `json:"observed_value_sha256"`
 }
 
 type applicationJobSpecificationRetainedAuthority struct {
@@ -149,143 +139,6 @@ func DecodeApplicationJobSpecificationReviewResult(
 	return DecodeApplicationJobSpecificationReview(input, raw)
 }
 
-func newApplicationJobSpecificationRepairPortablePayload(
-	input ApplicationJobSpecificationRepairInput,
-) (applicationJobSpecificationRepairPortablePayload, error) {
-	if err := input.validate(); err != nil {
-		return applicationJobSpecificationRepairPortablePayload{}, err
-	}
-	payload := applicationJobSpecificationRepairPortablePayload{
-		Authority: input.authority,
-		Retained:  cloneApplicationJobSpecification(input.retained),
-		Review: ApplicationJobSpecificationReview{
-			Decision:        input.review.Decision,
-			Resolution:      input.review.Resolution,
-			Field:           input.review.Field,
-			Finding:         input.review.Finding,
-			FindingEvidence: input.review.FindingEvidence,
-		},
-		Attempt: input.attempt, ReviewBinding: input.review.binding,
-		ObservedValueSHA256: input.review.observedValueSHA256,
-	}
-	if err := payload.validate(); err != nil {
-		return applicationJobSpecificationRepairPortablePayload{}, err
-	}
-	return payload, nil
-}
-
-func (payload applicationJobSpecificationRepairPortablePayload) validate() error {
-	_, err := payload.repairInput()
-	return err
-}
-
-func (payload applicationJobSpecificationRepairPortablePayload) repairInput() (
-	ApplicationJobSpecificationRepairInput,
-	error,
-) {
-	if err := validateApplicationJobSpecificationInput(payload.Authority); err != nil {
-		return ApplicationJobSpecificationRepairInput{}, err
-	}
-	if err := ValidateApplicationJobSpecification(payload.Retained); err != nil {
-		return ApplicationJobSpecificationRepairInput{}, err
-	}
-	if err := validateApplicationJobSpecificationReview(payload.Review); err != nil {
-		return ApplicationJobSpecificationRepairInput{}, err
-	}
-	binding, err := applicationJobSpecificationBinding(payload.Authority, payload.Retained)
-	if err != nil {
-		return ApplicationJobSpecificationRepairInput{}, err
-	}
-	if err := validateApplicationJobSpecificationSHA256(
-		"application job specification review binding", payload.ReviewBinding,
-	); err != nil {
-		return ApplicationJobSpecificationRepairInput{}, err
-	}
-	if payload.ReviewBinding != binding {
-		return ApplicationJobSpecificationRepairInput{}, fmt.Errorf(
-			"application job specification review binding does not match retained authority",
-		)
-	}
-	if err := validateApplicationJobSpecificationSHA256(
-		"application job specification observed value binding", payload.ObservedValueSHA256,
-	); err != nil {
-		return ApplicationJobSpecificationRepairInput{}, err
-	}
-	observedValueSHA256, err := applicationJobSpecificationCurrentFieldSHA256(
-		payload.Retained, payload.Review.Field,
-	)
-	if err != nil {
-		return ApplicationJobSpecificationRepairInput{}, err
-	}
-	if payload.ObservedValueSHA256 != observedValueSHA256 {
-		return ApplicationJobSpecificationRepairInput{}, fmt.Errorf(
-			"application job specification observed value binding does not match current named field",
-		)
-	}
-	payload.Review.binding = binding
-	payload.Review.observedValueSHA256 = observedValueSHA256
-	return NewApplicationJobSpecificationRepairInput(
-		payload.Authority, payload.Retained, payload.Review, payload.Attempt,
-	)
-}
-
-func renderApplicationJobSpecificationRepairPortable(
-	payload applicationJobSpecificationRepairPortablePayload,
-) (string, map[string]any, error) {
-	input, err := payload.repairInput()
-	if err != nil {
-		return "", nil, err
-	}
-	return renderApplicationJobSpecificationRepair(input)
-}
-
-// RestoreApplicationJobSpecificationRepairJob restores the exact private
-// input and retained state from one immutable repair envelope. It exists for
-// read-only production-contract replay; callers cannot construct or alter the
-// private authority fields.
-func RestoreApplicationJobSpecificationRepairJob(
-	job PortableJob,
-) (
-	ApplicationJobSpecificationRepairInput,
-	ApplicationJobSpecificationInput,
-	ApplicationJobSpecification,
-	error,
-) {
-	if err := job.Validate(); err != nil {
-		return ApplicationJobSpecificationRepairInput{}, ApplicationJobSpecificationInput{},
-			ApplicationJobSpecification{}, err
-	}
-	if job.Kind != WorkApplicationJobSpecificationRepair {
-		return ApplicationJobSpecificationRepairInput{}, ApplicationJobSpecificationInput{},
-			ApplicationJobSpecification{}, fmt.Errorf(
-				"restore application job specification repair requires work kind %q",
-				WorkApplicationJobSpecificationRepair,
-			)
-	}
-	var payload applicationJobSpecificationRepairPortablePayload
-	if err := decodePortablePayload(job.Payload, &payload); err != nil {
-		return ApplicationJobSpecificationRepairInput{}, ApplicationJobSpecificationInput{},
-			ApplicationJobSpecification{}, err
-	}
-	input, err := payload.repairInput()
-	if err != nil {
-		return ApplicationJobSpecificationRepairInput{}, ApplicationJobSpecificationInput{},
-			ApplicationJobSpecification{}, err
-	}
-	return input, payload.Authority, cloneApplicationJobSpecification(payload.Retained), nil
-}
-
-func renderApplicationJobSpecificationRepair(
-	input ApplicationJobSpecificationRepairInput,
-) (string, map[string]any, error) {
-	prompt, err := BuildApplicationJobSpecificationRepairPrompt(input)
-	if err != nil {
-		return "", nil, err
-	}
-	schema, err := ApplicationJobSpecificationRepairResponseSchema(input)
-	return prompt, schema, err
-}
-
 func applicationJobSpecificationBinding(
 	authority ApplicationJobSpecificationInput,
 	retained ApplicationJobSpecification,
@@ -316,10 +169,18 @@ func applicationJobSpecificationCurrentFieldSHA256(
 	return hex.EncodeToString(digest[:]), nil
 }
 
-func validateApplicationJobSpecificationSHA256(label string, value string) error {
-	decoded, err := hex.DecodeString(value)
-	if err != nil || len(decoded) != sha256.Size || value != strings.ToLower(value) {
-		return fmt.Errorf("%s must be 64 lowercase hexadecimal characters", label)
+func applicationJobSpecificationCurrentFieldValue(
+	retained ApplicationJobSpecification,
+	field ApplicationJobSpecificationField,
+) (any, error) {
+	switch field {
+	case ApplicationJobSpecificationObjectiveField:
+		return retained.Objective, nil
+	case ApplicationJobSpecificationRequiredBehaviorsField:
+		return append([]string(nil), retained.RequiredBehaviors...), nil
+	case ApplicationJobSpecificationAcceptanceCriteriaField:
+		return append([]string(nil), retained.AcceptanceCriteria...), nil
+	default:
+		return nil, fmt.Errorf("application job specification field %q is unsupported", field)
 	}
-	return nil
 }

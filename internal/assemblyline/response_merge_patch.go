@@ -16,8 +16,7 @@ func responseCorrectionSchema(original PortableJob, targetField string) (map[str
 		return nil, fmt.Errorf("response correction cannot wrap another response correction")
 	}
 	if original.Kind == WorkRepositoryRequirements ||
-		original.Kind == WorkApplicationJobSpecificationReview ||
-		original.Kind == WorkApplicationJobSpecificationRepair {
+		original.Kind == WorkApplicationJobSpecificationReview {
 		return nil, fmt.Errorf("aggregate requirement interpretation is not response-correctable")
 	}
 	if original.Kind == WorkApplicationJobSpecification {

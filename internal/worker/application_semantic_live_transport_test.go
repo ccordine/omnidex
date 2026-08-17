@@ -179,10 +179,9 @@ func assertLiveCodingQualificationCalls(t *testing.T, calls []liveCodingQualific
 		}
 	}
 	repairs := counts[assemblyline.WorkApplicationJobSpecificationRepair]
-	intentRepairs := counts[assemblyline.WorkApplicationIntentRepair]
 	if counts[assemblyline.WorkApplicationContextNeeds] != 1 ||
 		counts[assemblyline.WorkApplicationIntent] != 1 ||
-		counts[assemblyline.WorkApplicationIntentReview] != 1+intentRepairs ||
+		counts[assemblyline.WorkApplicationIntentReview] != 1 ||
 		counts[assemblyline.WorkApplicationJobSpecification] != featureCount ||
 		counts[assemblyline.WorkApplicationJobSpecificationReview] != featureCount+repairs ||
 		repairs > featureCount*2 {
