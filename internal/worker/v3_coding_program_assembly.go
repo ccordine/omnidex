@@ -2,6 +2,9 @@ package worker
 
 import (
 	"fmt"
+	"path"
+	"sort"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -22,42 +25,115 @@ func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingA
 		}
 		byPath[file.Path] = file
 	}
-	assembly := directCodingAssembly{}
 	for _, transition := range program.StructureTransitions {
 		switch transition.Kind {
 		case assemblyline.TargetTreeEnsureDirectory:
-			assembly.Directories = append(assembly.Directories, transition.Path)
+			continue
 		case assemblyline.TargetTreeCreate, assemblyline.TargetTreeReconcile:
-			file, exists := byPath[transition.Path]
-			if !exists {
-				if err := requireDirectCodingTargetTreeLeafContent(transition, files); err != nil {
+			if _, exists := byPath[transition.Path]; !exists {
+				if err := requireDirectCodingTargetTreeLeafSource(transition, files); err != nil {
 					return directCodingAssembly{}, err
 				}
 				return directCodingAssembly{}, fmt.Errorf("target-tree source path %q disappeared from compiled program", transition.Path)
-			}
-			assembly.Files = append(assembly.Files, file)
-			delete(byPath, transition.Path)
-			if err := requireDirectCodingTargetTreeLeafContent(transition, assembly.Files); err != nil {
-				return directCodingAssembly{}, err
 			}
 		default:
 			return directCodingAssembly{}, fmt.Errorf("unsupported target-tree transition %q for path %q", transition.Kind, transition.Path)
 		}
 	}
-	if len(byPath) != 0 {
-		return directCodingAssembly{}, fmt.Errorf("compiled program contains source not declared by the target tree")
-	}
+	// The path-only tree declares workload artifacts only. Runtime shells,
+	// manifests, generated application composition, and adapter tests are
+	// deterministic adapter output, not omissions from the model tree.
+	assembly := directCodingAssembly{Files: files}
 	if err := assembly.normalize(); err != nil {
 		return directCodingAssembly{}, err
 	}
 	return assembly, nil
 }
 
-// requireDirectCodingTargetTreeLeafContent binds one accepted target-tree file
-// leaf to one code-owned content job. The tree decides which artifact exists;
+// directCodingAssemblyFilesystemTransitions turns all code-owned output into
+// one ordered filesystem workload. The target-tree leaves remain mandatory
+// checks, while adapter baseline files are added by code because their paths
+// and bytes are already determined by the selected adapter.
+func directCodingAssemblyFilesystemTransitions(
+	existingPaths []string,
+	existingDirectories []string,
+	targetTransitions []assemblyline.TargetTreeTransition,
+	assembly directCodingAssembly,
+) ([]assemblyline.TargetTreeTransition, error) {
+	if err := assembly.validate(); err != nil {
+		return nil, err
+	}
+	presentFiles := make(map[string]struct{}, len(existingPaths))
+	for _, value := range existingPaths {
+		normalized, err := normalizeDirectCodingPath(value)
+		if err != nil {
+			return nil, fmt.Errorf("existing file path: %w", err)
+		}
+		presentFiles[normalized] = struct{}{}
+	}
+	presentDirectories := make(map[string]struct{}, len(existingDirectories))
+	for _, value := range existingDirectories {
+		normalized, err := normalizeDirectCodingPath(value)
+		if err != nil {
+			return nil, fmt.Errorf("existing directory path: %w", err)
+		}
+		presentDirectories[normalized] = struct{}{}
+	}
+	files := make(map[string]struct{}, len(assembly.Files))
+	for _, file := range assembly.Files {
+		files[file.Path] = struct{}{}
+	}
+	for _, transition := range targetTransitions {
+		switch transition.Kind {
+		case assemblyline.TargetTreeEnsureDirectory:
+			continue
+		case assemblyline.TargetTreeCreate, assemblyline.TargetTreeReconcile:
+			if _, exists := files[transition.Path]; !exists {
+				return nil, fmt.Errorf("target-tree path %q has no code-owned source job", transition.Path)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported target-tree transition %q for path %q", transition.Kind, transition.Path)
+		}
+	}
+	neededDirectories := make(map[string]struct{})
+	for _, file := range assembly.Files {
+		for directory := path.Dir(file.Path); directory != "."; directory = path.Dir(directory) {
+			if _, exists := presentDirectories[directory]; !exists {
+				neededDirectories[directory] = struct{}{}
+			}
+		}
+	}
+	directories := make([]string, 0, len(neededDirectories))
+	for directory := range neededDirectories {
+		directories = append(directories, directory)
+	}
+	sort.Slice(directories, func(left, right int) bool {
+		leftDepth := strings.Count(directories[left], "/")
+		rightDepth := strings.Count(directories[right], "/")
+		if leftDepth != rightDepth {
+			return leftDepth < rightDepth
+		}
+		return directories[left] < directories[right]
+	})
+	transitions := make([]assemblyline.TargetTreeTransition, 0, len(directories)+len(assembly.Files))
+	for _, directory := range directories {
+		transitions = append(transitions, assemblyline.TargetTreeTransition{Kind: assemblyline.TargetTreeEnsureDirectory, Path: directory})
+	}
+	for _, file := range assembly.Files {
+		kind := assemblyline.TargetTreeCreate
+		if _, exists := presentFiles[file.Path]; exists {
+			kind = assemblyline.TargetTreeReconcile
+		}
+		transitions = append(transitions, assemblyline.TargetTreeTransition{Kind: kind, Path: file.Path})
+	}
+	return transitions, nil
+}
+
+// requireDirectCodingTargetTreeLeafSource binds one accepted target-tree file
+// leaf to one code-owned source job. The tree decides which artifact exists;
 // code decides and validates every filesystem mutation. A declared leaf is
 // never silently discarded because the current adapter lacks work for it.
-func requireDirectCodingTargetTreeLeafContent(
+func requireDirectCodingTargetTreeLeafSource(
 	transition assemblyline.TargetTreeTransition,
 	files []directCodingFileTask,
 ) error {
@@ -70,7 +146,7 @@ func requireDirectCodingTargetTreeLeafContent(
 		}
 	}
 	return fmt.Errorf(
-		"target-tree path %q has no code-owned file-content job",
+		"target-tree path %q has no code-owned source job",
 		transition.Path,
 	)
 }

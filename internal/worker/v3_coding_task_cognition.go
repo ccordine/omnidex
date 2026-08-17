@@ -295,16 +295,14 @@ func (c *directCodingTaskCognition) addDependency(taskID, dependencyID string) e
 
 func (c *directCodingTaskCognition) promoteReady() error {
 	return c.apply(func(ledger *taskstate.Ledger) (taskstate.Command, error) {
-		for _, node := range ledger.Nodes() {
-			if node.Status == taskstate.NodePending {
-				commandID, err := c.commandID("promote-ready", strconv.FormatUint(ledger.Version(), 10))
-				if err != nil {
-					return nil, err
-				}
-				return taskstate.PromoteReadyNodesCommand{CommandID: commandID, ExpectedVersion: ledger.Version(), Actor: taskstate.AuthorityCode}, nil
-			}
+		if !ledger.HasPromotableNode() {
+			return nil, nil
 		}
-		return nil, nil
+		commandID, err := c.commandID("promote-ready", strconv.FormatUint(ledger.Version(), 10))
+		if err != nil {
+			return nil, err
+		}
+		return taskstate.PromoteReadyNodesCommand{CommandID: commandID, ExpectedVersion: ledger.Version(), Actor: taskstate.AuthorityCode}, nil
 	})
 }
 

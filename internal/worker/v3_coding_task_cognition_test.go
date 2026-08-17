@@ -108,6 +108,68 @@ func TestDirectCodingTaskCognitionWillNotStartTaskBeforePersistedDependency(t *t
 	}
 }
 
+func TestDirectCodingTaskCognitionQueuesAdapterBaselineAndTreeLeavesAfterSourceTasks(t *testing.T) {
+	_, workload, _ := applicationTaskLifecycleFixture(t)
+	store := newDirectCodingTaskCognitionStore(t)
+	coordinator := &directCodingTaskCognition{
+		ctx: context.Background(), store: store, authority: store.authority,
+		instruction: "Build a browser workspace.", objectiveID: "direct-coding-objective",
+		taskIDs: map[string]taskstate.NodeID{}, treeTaskIDs: map[string]taskstate.NodeID{},
+		treeFiles: map[string]assemblyline.TargetTreeTransition{}, treeDirs: map[string]assemblyline.TargetTreeTransition{},
+	}
+	if err := coordinator.Bootstrap(workload); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range workload.Tasks {
+		if err := coordinator.Begin(task.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := coordinator.CompleteTask(task.ID, map[string]string{"feature": "export {};", "acceptance": "test('feature', () => {});"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assembly := directCodingAssembly{Files: []directCodingFileTask{
+		{Path: "package.json", Content: "{}\n"},
+		{Path: "src/main.tsx", Content: "export {};\n"},
+		{Path: "src/runtime.tsx", Content: "export {};\n"},
+		{Path: "src/features/Feature.tsx", Content: "export {};\n"},
+		{Path: "src/features/Feature.test.tsx", Content: "export {};\n"},
+		{Path: "src/App.tsx", Content: "export {};\n"},
+	}}
+	targetTransitions := []assemblyline.TargetTreeTransition{
+		{Kind: assemblyline.TargetTreeCreate, Path: "src/features/Feature.tsx"},
+		{Kind: assemblyline.TargetTreeCreate, Path: "src/features/Feature.test.tsx"},
+	}
+	transitions, err := directCodingAssemblyFilesystemTransitions(nil, nil, targetTransitions, assembly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.PlanTreeTransitions(transitions); err != nil {
+		t.Fatal(err)
+	}
+	for _, transition := range transitions {
+		if err := coordinator.BeginTreeTransition(transition); err != nil {
+			t.Fatalf("begin %s: %v", transition.Path, err)
+		}
+		if err := coordinator.CompleteTreeTransition(transition, "verified "+transition.Path); err != nil {
+			t.Fatalf("complete %s: %v", transition.Path, err)
+		}
+	}
+	ledger := store.ledger.MaterializedState()
+	for _, path := range []string{"package.json", "src/main.tsx", "src/runtime.tsx", "src/features/Feature.tsx", "src/features/Feature.test.tsx", "src/App.tsx"} {
+		found := false
+		for _, node := range ledger.Nodes {
+			if node.Kind == taskstate.NodeTask && node.Status == taskstate.NodeDone && node.Title != "" && (node.Title == "Create file "+path || node.Title == "Reconcile file "+path) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing completed filesystem leaf for %q", path)
+		}
+	}
+}
+
 type directCodingTaskCognitionTestStore struct {
 	ledger    *taskstate.Ledger
 	set       *workingset.Set
@@ -196,6 +258,9 @@ func taskCognitionTestCommand(t *testing.T, version uint64, command taskstate.Co
 		typed.CommandID, typed.ExpectedVersion, typed.Actor = id, version, taskstate.AuthorityCode
 		return typed
 	case taskstate.TransitionNodeCommand:
+		typed.CommandID, typed.ExpectedVersion, typed.Actor = id, version, taskstate.AuthorityCode
+		return typed
+	case taskstate.AddEntryCommand:
 		typed.CommandID, typed.ExpectedVersion, typed.Actor = id, version, taskstate.AuthorityCode
 		return typed
 	default:

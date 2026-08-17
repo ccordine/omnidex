@@ -30,7 +30,7 @@ func TestOneTreeLeafGroupsSeveralBoundedBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree := assemblyline.TargetTree{Contents: []assemblyline.TargetTreeFileContent{
+	tree := assemblyline.TargetTree{Bindings: []assemblyline.TargetTreeRequirementBinding{
 		{Path: "src/counter.tsx", Kind: assemblyline.TargetArtifactImplementation, RequirementIDs: []string{"requirement_001", "requirement_002"}},
 		{Path: "tests/counter.test.tsx", Kind: assemblyline.TargetArtifactVerification, RequirementIDs: []string{"requirement_001", "requirement_002"}},
 	}}

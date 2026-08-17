@@ -315,6 +315,13 @@ func (ledger *Ledger) promotableNodeIDs() []NodeID {
 	return ids
 }
 
+// HasPromotableNode lets a code-owned coordinator avoid issuing a ledger
+// transition that would make no state change. It exposes no scheduling
+// authority beyond the ledger's existing dependency evaluation.
+func (ledger *Ledger) HasPromotableNode() bool {
+	return ledger != nil && len(ledger.promotableNodeIDs()) > 0
+}
+
 func (ledger *Ledger) dependenciesDone(id NodeID) bool {
 	for _, edge := range ledger.edges {
 		if ledger.nodeSuperseded(edge.From) || ledger.nodeSuperseded(edge.To) {

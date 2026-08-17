@@ -67,6 +67,7 @@ func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 		artifactAdapter("structured_json", []directCodingArtifactCapability{directCodingArtifactParse}, suffixArtifactRecognizer(".json", "")),
 		artifactAdapter("structured_yaml", []directCodingArtifactCapability{directCodingArtifactParse}, yamlArtifactRecognizer),
 		artifactAdapter("environment_example", []directCodingArtifactCapability{directCodingArtifactParse}, environmentArtifactRecognizer),
+		artifactAdapter("plain_text", []directCodingArtifactCapability{directCodingArtifactParse}, plainTextArtifactRecognizer),
 	}
 }
 
@@ -135,6 +136,14 @@ func yamlArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool
 func environmentArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
 	base := strings.ToLower(path.Base(value))
 	return assemblyline.TargetArtifactImplementation, base == ".env.example" || strings.HasSuffix(base, ".env.example")
+}
+
+// plainTextArtifactRecognizer covers code-owned textual project metadata that
+// still belongs in the task-local artifact graph even though it has no richer
+// language parser. It deliberately recognizes only stable text artifacts;
+// an unknown workload path remains a loud adapter-selection failure.
+func plainTextArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
+	return assemblyline.TargetArtifactImplementation, path.Base(value) == ".gitignore"
 }
 
 func directCodingProjectStackForTree(

@@ -194,6 +194,7 @@ Omnidex AI Coding Architecture (Non-Negotiable)
 
 The authoritative coding foundation is [docs/CHARMANDER_ASSEMBLY_LINE.md](docs/CHARMANDER_ASSEMBLY_LINE.md). The authoritative repository-intelligence and software-defined context evolution is [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md).
 The authoritative nested job → objective → task coordination direction is [CHARMELEON-EMERGENT-ORCHESTRATION-INVARIANTS.md](CHARMELEON-EMERGENT-ORCHESTRATION-INVARIANTS.md). It is code-owned persisted state, never a coordinator model: an LLM may fill only the exact unresolved semantic leaf inside one stage.
+The authoritative task-local artifact-graph and adapter-projection direction is [CHARMELEON-CONVERGENT-COGNITIVE-DEVELOPMENT-INVARIANTS.md](CHARMELEON-CONVERGENT-COGNITIVE-DEVELOPMENT-INVARIANTS.md). The tree establishes only the work surface; code derives and persists verified artifact interfaces and relations before dependent leaves are dispatched.
 
 Build Codenames Have No Architectural Meaning
 

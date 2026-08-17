@@ -46,12 +46,13 @@ type TargetTreeCandidate struct {
 type TargetTree struct {
 	StackID  string
 	Paths    []string
-	Contents []TargetTreeFileContent
+	Bindings []TargetTreeRequirementBinding
 }
 
-// TargetTreeFileContent is code-validated output from the later per-file
-// content station. It is deliberately not part of the tree-model schema.
-type TargetTreeFileContent struct {
+// TargetTreeRequirementBinding is code-derived from a topology with one
+// possible implementation and verification owner. It is deliberately not
+// part of the tree-model schema and is never model-authored control data.
+type TargetTreeRequirementBinding struct {
 	Path           string
 	Kind           TargetArtifactKind
 	RequirementIDs []string
@@ -64,27 +65,27 @@ type TargetTreeRequirementFiles struct {
 
 func (target TargetTree) RequirementFiles(requirementID string) (TargetTreeRequirementFiles, error) {
 	var files TargetTreeRequirementFiles
-	for _, content := range target.Contents {
-		for _, boundRequirementID := range content.RequirementIDs {
+	for _, binding := range target.Bindings {
+		for _, boundRequirementID := range binding.RequirementIDs {
 			if boundRequirementID != requirementID {
 				continue
 			}
-			switch content.Kind {
+			switch binding.Kind {
 			case TargetArtifactImplementation:
 				if files.ImplementationPath != "" {
-					return TargetTreeRequirementFiles{}, fmt.Errorf("file-content plans assign multiple implementation files to requirement %q", requirementID)
+					return TargetTreeRequirementFiles{}, fmt.Errorf("target-tree bindings assign multiple implementation files to requirement %q", requirementID)
 				}
-				files.ImplementationPath = content.Path
+				files.ImplementationPath = binding.Path
 			case TargetArtifactVerification:
 				if files.VerificationPath != "" {
-					return TargetTreeRequirementFiles{}, fmt.Errorf("file-content plans assign multiple verification files to requirement %q", requirementID)
+					return TargetTreeRequirementFiles{}, fmt.Errorf("target-tree bindings assign multiple verification files to requirement %q", requirementID)
 				}
-				files.VerificationPath = content.Path
+				files.VerificationPath = binding.Path
 			}
 		}
 	}
 	if files.ImplementationPath == "" || files.VerificationPath == "" {
-		return TargetTreeRequirementFiles{}, fmt.Errorf("file-content plans have no complete artifact pair for requirement %q", requirementID)
+		return TargetTreeRequirementFiles{}, fmt.Errorf("target-tree bindings have no complete artifact pair for requirement %q", requirementID)
 	}
 	return files, nil
 }

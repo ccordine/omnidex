@@ -188,16 +188,6 @@ func replayExactStationArtifact(
 			return artifact, fmt.Errorf("decode replay target tree: %w", err)
 		}
 		return artifact, nil
-	case assemblyline.WorkApplicationFileContent:
-		artifact.Kind = "application_file_content"
-		var input assemblyline.FileContentInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay file-content authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeFileContentCandidate(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay file-content: %w", err)
-		}
-		return artifact, nil
 	}
 	if job.Kind == assemblyline.WorkTypeScriptRepairGuidance {
 		guidance, err := assemblyline.DecodeTypeScriptRepairGuidanceResult(job, raw)

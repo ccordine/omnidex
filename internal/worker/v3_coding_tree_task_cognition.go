@@ -13,6 +13,26 @@ import (
 // PlanTreeTransitions compiles the already accepted path-only tree diff into
 // inline leaf tasks. It never asks a model what to create, order, or run.
 func (c *directCodingTaskCognition) PlanTreeTransitions(transitions []assemblyline.TargetTreeTransition) error {
+	return c.planTreeTransitions(transitions, nil)
+}
+
+// PlanTreeTransitionsWithArtifactGraph persists all code-derived artifact
+// prerequisites before a single filesystem leaf is promoted ready. This is the
+// production entry point once assembled source has a normalized graph.
+func (c *directCodingTaskCognition) PlanTreeTransitionsWithArtifactGraph(
+	transitions []assemblyline.TargetTreeTransition,
+	graph assemblyline.ArtifactGraph,
+) error {
+	if err := graph.Validate(); err != nil {
+		return fmt.Errorf("artifact graph: %w", err)
+	}
+	return c.planTreeTransitions(transitions, &graph)
+}
+
+func (c *directCodingTaskCognition) planTreeTransitions(
+	transitions []assemblyline.TargetTreeTransition,
+	graph *assemblyline.ArtifactGraph,
+) error {
 	if c == nil || len(transitions) == 0 {
 		return fmt.Errorf("direct coding task cognition requires one non-empty target-tree diff")
 	}
@@ -45,6 +65,11 @@ func (c *directCodingTaskCognition) PlanTreeTransitions(transitions []assemblyli
 	}
 	for _, transition := range transitions {
 		if err := c.addTreeDependencies(transition); err != nil {
+			return err
+		}
+	}
+	if graph != nil {
+		if err := c.addArtifactGraphDependencies(*graph); err != nil {
 			return err
 		}
 	}

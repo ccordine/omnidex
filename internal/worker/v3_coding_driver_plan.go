@@ -85,7 +85,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	targetTree, err = resolveDirectCodingFileContents(workerRuntime, workloadModel, targetTreeCorrectionModel, s.root, specification, targetTree)
+	targetTree, err = deriveDirectCodingTargetTreeBindings(specification, targetTree)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -129,9 +129,6 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err := s.runDirectCodingApplicationTaskLifecycle(workloadInput, workload, &program); err != nil {
 		return directCodingAssembly{}, err
 	}
-	if err := cognition.PlanTreeTransitions(program.StructureTransitions); err != nil {
-		return directCodingAssembly{}, err
-	}
 	protectedPaths, err := snapshotDirectCodingProtectedPathList(s.root, program.ProtectedPaths)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -141,6 +138,34 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	s.protectedPaths = protectedPaths
 	assembly, err := directCodingAssemblyFromProgram(program)
 	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	artifactGraph, err := directCodingArtifactGraphFromProgram(program, assembly)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	if err := cognition.RecordArtifactGraph(artifactGraph); err != nil {
+		return directCodingAssembly{}, err
+	}
+	assembly, err = directCodingOrderAssemblyFilesByArtifactGraph(assembly, artifactGraph)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	filesystemTransitions, err := directCodingAssemblyFilesystemTransitions(
+		existingPaths, existingDirs, program.StructureTransitions, assembly,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	for _, transition := range filesystemTransitions {
+		if transition.Kind == assemblyline.TargetTreeEnsureDirectory {
+			assembly.Directories = append(assembly.Directories, transition.Path)
+		}
+	}
+	if err := assembly.normalize(); err != nil {
+		return directCodingAssembly{}, err
+	}
+	if err := cognition.PlanTreeTransitionsWithArtifactGraph(filesystemTransitions, artifactGraph); err != nil {
 		return directCodingAssembly{}, err
 	}
 	if err := validateDirectCodingAssemblyProtection(assembly, s.protectedPaths); err != nil {
@@ -162,8 +187,8 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		specification.Surface, len(specification.Requirements), len(specification.ProductQuote),
 	))
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_assembly_ready", fmt.Sprintf(
-		"adapter=%s files=%d blocks=%d waves=%d",
-		program.Adapter, len(assembly.Files), blockCount, waveCount,
+		"adapter=%s files=%d blocks=%d waves=%d artifact_graph_nodes=%d artifact_graph_relations=%d",
+		program.Adapter, len(assembly.Files), blockCount, waveCount, len(artifactGraph.Artifacts), len(artifactGraph.Relations),
 	))
 	return assembly, nil
 }

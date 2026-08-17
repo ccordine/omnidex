@@ -51,6 +51,7 @@ func TestArtifactAdaptersRecognizeNamedArtifactClassesByPath(t *testing.T) {
 		{"package.json", "structured_json"},
 		{"deploy/values.yaml", "structured_yaml"},
 		{".env.example", "environment_example"},
+		{".gitignore", "plain_text"},
 	} {
 		t.Run(testCase.id, func(t *testing.T) {
 			adapter, _, err := directCodingArtifactAdapterForPath(testCase.path)

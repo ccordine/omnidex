@@ -1,371 +1,159 @@
-I think it'd be 
+# Emergent orchestration invariants
 
-- User has a prompt
-- recent message history / memory ( I maybe be iterating over the last prompt I gave )
-- investigation / current status tree / research / etc
-- planning creates objectives
-- objectives loop per objective
--- cognition loop per task
---- ( this starts a cognition loop given a certain task to complete, then for each task, it does... )
---- cognition investigation/tree loop
---- cognition planning loop
---- cognition execution loop
----- the normal coding loop we have now
-... etc
+This document defines the code-owned coordination hierarchy for Omnidex. It
+does not define a coordinator model, an agent loop, or a tool protocol.
 
-Yes — this hierarchy makes more sense than the architecture I just proposed. I was flattening cognition into a coordinator between tree and files, when what you’re describing is that cognition is the recurring task-solving engine of Omnidex itself.
+## 1. Persisted hierarchy
 
-The tree is only one thing a cognition cycle may need.
+The authoritative state is nested and durable:
 
-I think the architecture is closer to this:
-
-USER REQUEST
-    ↓
-REQUEST CONTEXT
-    current prompt
-    + relevant recent conversation
-    + durable memory
-    + current project/job state
-    ↓
-JOB-LEVEL INVESTIGATION / CONTEXT BOOTSTRAP
-    establish what environment/project/reality we're operating in
-    ↓
-STRATEGIC PLANNING
-    produce OBJECTIVES
-    ↓
-OBJECTIVE QUEUE
-    O1
-    O2
-    O3
-    ...
-    ↓
-for each objective:
-    OBJECTIVE
-        ↓
-    derive / select next TASK
-        ↓
-    ┌─────────────────────────────┐
-    │      COGNITION LOOP         │
-    │                             │
-    │   INVESTIGATE / OBSERVE     │
-    │          ↓                  │
-    │   PLAN THIS TASK            │
-    │          ↓                  │
-    │   EXECUTE                   │
-    │          ↓                  │
-    │   VERIFY REALITY            │
-    │          ↓                  │
-    │   update task state         │
-    │          ↓                  │
-    │   complete? ── no ──────┐   │
-    │      │                  │   │
-    │     yes                 └───┘
-    └──────┼──────────────────────┘
-           ↓
-       TASK COMPLETE
-           ↓
-    objective satisfied?
-       │          │
-      yes        no
-       ↓          ↓
- next objective  next task
-
-And inside that cognition loop, the exact machinery invoked depends on what that task actually needs.
-
-For example, suppose the objective is:
-
-Add the counter feature to the application.
-
-The cognition loop might begin with:
-
-TASK
-integrate counter feature
-
-Then investigation asks:
-
-What do I already know?
-What currently exists?
-What facts are missing before I can sensibly act?
-
-For a greenfield project, that might lead naturally to:
-
-current filesystem tree
-        ↓
-TREE SEMANTIC JOB
-"what tree does this task require?"
-        ↓
-returned tree
-        ↓
-CODE parses/diffs
-        ↓
-concrete filesystem workload
-
-But in a mature existing repository, the same cognition investigation could instead be:
-
-Where is filtering implemented?
-        ↓
-code-owned repository investigation
-        ↓
-three candidate symbols remain
-        ↓
-tiny semantic ownership decision
-        ↓
-verified owner
-
-No tree LLM at all if the task doesn’t need a structural decision.
-
-That is much more consistent with your prime directive.
-
-⸻
-
-There are also two very different kinds of planning here, which I think is important.
-
-At the top:
-
-STRATEGIC PLANNING
-User:
-"Add appointment scheduling to this application."
-→ O1 establish scheduling data/domain behavior
-→ O2 expose scheduling UI
-→ O3 integrate scheduling into existing application
-→ O4 prove accepted scheduling behavior
-
-Those are objectives.
-
-Then inside one cognition loop:
-
-TACTICAL PLANNING
-Task:
-"Expose scheduling UI"
-Known facts:
-- SchedulingService already exists
-- appointments route exists
-- current UI lives under resources/views/appointments
-- Stimulus is already used
-Task plan:
-- determine required view/controller structure
-- establish affected artifacts
-- modify them
-- verify UI behavior
-
-The strategic planner shouldn’t be deciding exact files and functions three levels in advance.
-
-The cognition planner shouldn’t be redesigning the whole project.
-
-Each works at its own level.
-
-⸻
-
-The cognition loop itself
-
-I think the task state wants to look conceptually like:
-
-TASK STATE
-Objective:
-    what must become true
-Known:
-    verified facts relevant to this task
-Unknown:
-    facts that genuinely matter and are unresolved
-Investigation:
-    evidence currently being acquired
-Plan:
-    current bounded approach to completing this task
-Work:
-    concrete executable work derived from that plan
-Results:
-    generated/modified reality
-Verification:
-    what reality now says
-Status:
-    unresolved | ready | executing | blocked | complete
-
-And code owns that entire object.
-
-The LLM never says:
-
-"now enter planning mode"
-"now use repository search"
-"now execute tool X"
-
-Instead code sees:
-
-task has unresolved evidence need
-→ enter investigation workflow
-task has enough evidence but no plan
-→ formulate one bounded planning problem
-task has executable work
-→ enter execution workflow
-execution produced reality
-→ verify
-
-So the cognition loop is a code-owned state machine, with various LLM semantic functions appearing inside it.
-
-⸻
-
-And execution contains the coding machine you’ve already built
-
-This is important because you shouldn’t replace what you’ve already proven.
-
-Inside:
-
-COGNITION EXECUTION
-
-for a coding task, you enter:
-
-concrete artifact/file workload
-        ↓
-file-content semantic station
-        ↓
-declaration / responsibility queue
-        ↓
-coder
-        ↓
-parser/compiler
-        ↓
-acceptance/runtime verifier
-        ↓
-analyst → correction → coder
-        ↓
-verified source
-
-That’s just an execution strategy available to cognition.
-
-Likewise, another task might execute:
-
-filesystem tree transition
-
-or:
-
-configuration mutation
-
-or:
-
-repository investigation
-
-without pretending every operation is “coding.”
-
-⸻
-
-Where the coordinator emerges
-
-So I think you were right to say some coordinator should emerge, but the coordinator isn’t really a separate layer or model.
-
-It’s the nested state hierarchy:
-
+```
 JOB
- ├── Objective 1
- │    ├── Task 1
- │    │    └── cognition loop
- │    ├── Task 2
- │    │    └── cognition loop
- │    └── ...
- │
- ├── Objective 2
- │    └── ...
- │
- └── Objective N
+  objective
+    task
+      cognition cycle
+```
 
-Code knows:
+- A job retains the user authority, accepted context, and lifecycle state.
+- An objective is one bounded outcome necessary for that job.
+- A task is one bounded unit that can be observed, prepared, executed, and
+  verified.
+- The Task Ledger is the authoritative dependency graph and status record.
+- The Working Set contains only the active task's necessary, accepted facts.
 
-what objective is active
-what tasks satisfy it
-what task is currently active
-what the task currently knows
-what remains unknown
-what work is ready
-what reality returned
+Code creates, schedules, transitions, and completes all of these records. A
+model never creates nodes, edges, state transitions, scopes, retries, or
+completion claims.
 
-That is the coordinator.
+## 2. Cognition is a code state machine
 
-No coordinator LLM needs a gigantic prompt describing everything.
+Each active task repeatedly takes the smallest applicable transition:
 
-⸻
+```
+restore authoritative state
+  -> deterministic observation / validation / evidence acquisition
+  -> named unresolved semantic uncertainty? -- no --> next deterministic transition
+                                           -- yes -> one bounded semantic station
+  -> validate and persist the returned typed leaf
+  -> execute code-owned work
+  -> verify reality
+  -> task complete, blocked with an exact missing fact, or continue
+```
 
-And memory/history belongs above cognition
+No model call is permitted until code has exhausted the registered
+deterministic work for that exact task and persisted the precise semantic
+uncertainty. A model result is data for that station, never instructions for
+the coordinator.
 
-I agree with the first part of your outline too:
+## 3. Planning hierarchy
 
-User prompt
-+
-recent relevant conversation
-+
-durable memory
+Strategic planning establishes objectives. It does not decide files,
+declarations, tools, source, or execution order several layers in advance.
 
-because a user’s current request may be:
+Tactical planning occurs inside one task after its available facts are known.
+It establishes only the next bounded semantic artifact that code cannot
+derive. Code turns accepted artifacts into objectives, task dependencies,
+artifact leaves, declaration leaves, and verification work.
 
-“Yeah, do that, but use PostgreSQL instead.”
+## 4. Investigation is conditional
 
-The immutable semantic authority isn’t just that sentence. Code needs to recover the relevant preceding intent.
+Code first restores exact project reality: workspace inventory, project stack,
+manifests, accepted decisions, durable memory, current job state, and known
+repository facts.
 
-But I would still avoid literal:
+If those facts are sufficient, the task proceeds. If they are not, code
+persists an evidence need with its question, relevance, permitted evidence
+classes, and completion criterion. Code selects and runs the appropriate
+repository, memory, web, runtime, or user-evidence workflow. A model may fill
+only a remaining semantic leaf, such as a bounded search phrase or a choice
+between supplied evidence candidates; it never selects or calls a tool.
 
-last 20 messages
+## 5. Path-only target-tree boundary
 
-as the architecture.
+The tree station receives only the objective and necessary structural context.
+It returns exactly one path-only proposed tree. It does not return ownership,
+purpose, requirements, content, declarations, commands, operations, or
+filesystem authority.
 
-More like:
+Code then:
 
-current message
-+
-messages that establish unresolved/current authority
-+
-accepted prior decisions
-+
-relevant durable project/user memory
+1. Parses and validates every returned path.
+2. Selects artifact adapters from the path and accepted project stack.
+3. Diffs returned workload paths against the authoritative workspace tree.
+4. Derives parent directories and creates one persisted leaf task for each
+   directory and file transition.
+5. Preserves the resulting order and requires code-owned filesystem evidence
+   before closing each leaf.
 
-So the initial request context itself is software-defined.
+Tree omission is non-destructive. It never means deletion.
 
-⸻
+## 6. Adapter baseline versus workload tree
 
-Then the overall machine becomes
+An adapter may deterministically require manifests, runtime shells, generated
+composition, bootstrap files, styles, and adapter tests. Those are code-owned
+baseline artifacts, not missing tree-model output. Code adds them to the same
+persisted filesystem workload as tree leaves, validates their exact bytes, and
+records their creation or reconciliation like every other leaf.
 
-CONVERSATION
-    ↓
-REQUEST CONTEXT COMPILATION
-    ↓
-JOB CONTEXT / INVESTIGATION
-    ↓
-OBJECTIVE PLANNER
-    ↓
-OBJECTIVE LEDGER
-    ↓
-TASK SELECTION
-    ↓
-COGNITION LOOP
-    ├── investigate
-    ├── plan
-    ├── execute
-    │     └── coding loop when appropriate
-    ├── verify
-    └── revise
-    ↓
-TASK COMPLETE
-    ↓
-OBJECTIVE COMPLETE
-    ↓
-NEXT OBJECTIVE
-    ↓
-FINAL JOB VERIFICATION
-    ↓
-COMPLETION
+The tree remains the model's entire structural output. Code never asks it to
+restate adapter mechanics it already owns.
 
-That feels much closer to the general-purpose Omnidex architecture, because neither trees nor coding are artificially elevated into the central abstraction.
+## 7. Artifact bindings and cross-artifact coordination
 
-The central abstraction is:
+Code derives every binding that topology and adapter facts force. For example,
+one implementation leaf plus one verification leaf forces every accepted
+requirement to that pair. Calling a model in this situation is prohibited.
 
-Given one task and authoritative state, repeatedly investigate, plan, act, and verify until that task is actually complete.
+When multiple artifacts leave a genuine ownership or interface uncertainty,
+code must persist an explicit artifact-coordination task before any content or
+source work depends on it. That task must state the exact unresolved relation,
+the finite candidate artifacts, required verified interface evidence, and its
+completion condition. It may use one path-blind semantic choice over opaque
+artifact handles and code-projected declarations. It may not use a broad
+requirement-to-path mapper, filename heuristics, a whole-tree prompt, or a
+whole-file worker.
 
-The cognition gauntlet was essentially a toy world for proving exactly that loop.
+Once an artifact's public declaration is generated and parser-validated, code
+records that interface as verified fact. Dependent tasks receive only the
+allowlisted symbol-level interface they require. They do not receive a sibling
+file, project tree, or conversation history.
 
-And then Charizard becomes very natural later: it doesn’t change this loop. It simply gives each cognition cycle better prior state:
+## 8. Execution boundary
 
-Charmeleon:
-solve task from present evidence.
-Charizard:
-solve task from present evidence
-+ verified things previously learned.
+For a coding task, code reduces accepted artifact work into declarations and
+then exact mutable blocks. The coding assembly line owns signatures, paths,
+imports, dependency order, local scopes, staging, writes, and verification.
 
-So I think your hierarchy is stronger than the artifact-coordinator framing I gave before.
+The source model receives one code block's language, signature, local
+behavioral contract, and allowlisted declarations. Repair remains the two
+separate bounded calls defined by the Charmander assembly line: guidance
+receives one exact current failure; the executor receives only the guidance and
+the exact mutable region. Code applies the validated replacement and reruns
+reality.
 
-The tree isn’t the coordinator. The coding pipeline isn’t the coordinator. The LLM isn’t the coordinator. The persisted nested job → objective → task → cognition state machine is the coordinator, and everything else is machinery it invokes.
+## 9. Verification and completion
+
+A generated block is accepted only after code validation. A filesystem leaf is
+complete only after its exact transition is observed. An objective is complete
+only after all prerequisite tasks and filesystem leaves are complete and the
+selected real workspace verification passes.
+
+Compiler, parser, test, runtime, and repository results are authoritative.
+They either close a bounded task or create one exact next failure. They never
+restart a completed project or cause a model to reconstruct accepted state.
+
+## 10. Forbidden regressions
+
+- No coordinator, reviewer, planner, content worker, or coder has tool access
+  or execution authority.
+- No mandatory approval/review call exists merely to emit `accept`.
+- No model is called when code already knows the answer.
+- No model returns filesystem actions, queue operations, state transitions,
+  or completion.
+- No model receives a workspace tree, file path, whole-file responsibility,
+  task ledger, or orchestration state unless a separately specified invariant
+  explicitly permits a narrower non-coding semantic projection.
+- No model-to-model natural-language repair protocol replaces a typed code
+  transition.
+- No unsupported ambiguity is silently guessed. It remains an explicit
+  persisted blocker until the registered task can resolve it.
