@@ -25,13 +25,17 @@ func resolveDirectCodingFileContents(
 	if modelName == "" || correctionModel == "" {
 		return assemblyline.TargetTree{}, fmt.Errorf("file-content resolution requires configured initial and correction models")
 	}
+	stack, err := directCodingProjectStackByID(tree.StackID)
+	if err != nil {
+		return assemblyline.TargetTree{}, err
+	}
 	requirements := make([]assemblyline.FileContentRequirement, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		requirements[index] = assemblyline.FileContentRequirement{ID: requirement.ID, Statement: requirement.SourceQuote}
 	}
 	contents := make([]assemblyline.TargetTreeFileContent, 0, len(tree.Paths))
 	for _, filePath := range tree.Paths {
-		kind, err := directCodingTargetTreeFileKind(specification.Surface, filePath)
+		kind, err := directCodingTargetTreeFileKind(stack, filePath)
 		if err != nil {
 			return assemblyline.TargetTree{}, err
 		}
@@ -59,13 +63,13 @@ func resolveDirectCodingFileContents(
 }
 
 // directCodingTargetTreeFileKind is adapter-owned syntax classification, not a
-// model decision. The selected browser adapter emits React implementation and
-// browser-test leaves only.
+// model decision. The selected project stack constrains which registered
+// artifact adapters may own a returned leaf.
 func directCodingTargetTreeFileKind(
-	surface assemblyline.ApplicationSurface,
+	stack directCodingProjectStack,
 	path string,
 ) (assemblyline.TargetArtifactKind, error) {
-	_, kind, err := directCodingArtifactAdapterForTreePath(surface, path)
+	_, kind, err := directCodingArtifactAdapterForTreePath(stack, path)
 	return kind, err
 }
 

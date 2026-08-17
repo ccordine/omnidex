@@ -44,6 +44,7 @@ type TargetTreeCandidate struct {
 }
 
 type TargetTree struct {
+	StackID  string
 	Paths    []string
 	Contents []TargetTreeFileContent
 }

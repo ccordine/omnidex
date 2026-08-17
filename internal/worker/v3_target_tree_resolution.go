@@ -19,7 +19,7 @@ func resolveDirectCodingTargetTree(
 	existingDirs []string,
 ) (assemblyline.TargetTree, error) {
 	var zero assemblyline.TargetTree
-	input, err := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
+	input, stack, err := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
 	if err != nil {
 		return zero, err
 	}
@@ -30,6 +30,7 @@ func resolveDirectCodingTargetTree(
 	if _, err := assemblyline.DiffTargetTree(input, target); err != nil {
 		return zero, fmt.Errorf("derive target tree transitions: %w", err)
 	}
+	target.StackID = stack.ID
 	return target, nil
 }
 
@@ -119,10 +120,10 @@ func directCodingTargetTreeInput(
 	specification assemblyline.ApplicationSpecification,
 	existingPaths []string,
 	existingDirs []string,
-) (assemblyline.TargetTreeInput, error) {
-	technicalContext, err := directCodingTreeTechnicalContext(specification.Surface)
+) (assemblyline.TargetTreeInput, directCodingProjectStack, error) {
+	stack, technicalContext, err := directCodingTreeTechnicalContext(specification.Surface, existingPaths)
 	if err != nil {
-		return assemblyline.TargetTreeInput{}, err
+		return assemblyline.TargetTreeInput{}, directCodingProjectStack{}, err
 	}
 	paths := make([]string, len(existingPaths))
 	copy(paths, existingPaths)
@@ -133,5 +134,5 @@ func directCodingTargetTreeInput(
 		TechnicalContext: technicalContext,
 		ExistingPaths:    paths,
 		ExistingDirs:     directories,
-	}, nil
+	}, stack, nil
 }

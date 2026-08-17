@@ -311,6 +311,8 @@ path is then recognized, parsed, scoped, validated, repaired, and verified by
 its code-owned artifact adapter. New PHP, Java, NGINX, Dockerfile, Blade, CSS,
 JSON, YAML, or other support is added as a focused adapter with explicit
 capability/verification limits; do not create a universal coder prompt.
+The normative capability contract is
+[docs/ARTIFACT_ADAPTERS.md](docs/ARTIFACT_ADAPTERS.md).
 
 Product-Specific Workloads Are Not Framework Code
 

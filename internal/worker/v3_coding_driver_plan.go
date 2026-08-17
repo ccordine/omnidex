@@ -89,7 +89,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	targetTreeInput, err := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
+	targetTreeInput, _, err := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
