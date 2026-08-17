@@ -84,7 +84,9 @@ func TestAcceptanceGroundingCorrectionHasNoFixedAttemptCount(t *testing.T) {
 	t.Parallel()
 
 	program := directCodingGroundingFixtureProgram(
-		t, "status board", "show records", []string{"The record collection is visible."},
+		t, "status board", "show records", []string{
+			"The record collection is visible.", "The current record state is visible.",
+		},
 		groundingProgressBody("Records 0"),
 	)
 	reviews, corrections := 0, 0
@@ -132,38 +134,24 @@ func TestAcceptanceGroundingStopsRepeatedSourceCycle(t *testing.T) {
 		t, "status board", "show records", []string{"The record collection is visible."},
 		groundingProgressBody("Records A"),
 	)
-	original := program.Generated["acceptance.001"]
-	alternate := directCodingAcceptanceSourceWithBody(program, groundingProgressBody("Records B"))
-	corrections := 0
+	input := directCodingGroundingInput(t, program, "acceptance.001")
+	program.AcceptanceGroundingSeen = map[string]map[string]struct{}{
+		"acceptance.001": {input.SourceSHA256: {}},
+	}
+	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(),
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			switch job.Kind {
-			case assemblyline.WorkApplicationAcceptanceGroundingReview:
-				var input assemblyline.ApplicationAcceptanceGroundingReviewInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
-					return assemblyline.PortableResult{}, err
-				}
-				siteID := directCodingGroundingSiteIDForOperation(t, input, "testing_library_query:getByText")
-				return directCodingPortableCandidate(job, directCodingGroundingMatrixJSON(
-					t, input, func(actualSiteID string, _ string) bool {
-						return actualSiteID != siteID
-					},
-				)), nil
-			case assemblyline.WorkFragmentCorrection:
-				corrections++
-				if corrections == 1 {
-					return directCodingPortableCandidate(job, alternate), nil
-				}
-				return directCodingPortableCandidate(job, original), nil
-			default:
-				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %s", job.Kind)
-			}
+			calls++
+			return assemblyline.PortableResult{}, fmt.Errorf("repeated source reached model work %s", job.Kind)
 		},
 	}
 	err := ensureDirectCodingAcceptanceGrounding(runtime, "reviewer", "corrector", &program)
 	if err == nil || !strings.Contains(err.Error(), "repeated a prior source state") {
 		t.Fatalf("cycle error=%v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("repeated source invoked %d model calls", calls)
 	}
 }
 

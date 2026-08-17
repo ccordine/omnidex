@@ -39,6 +39,9 @@ func ensureDirectCodingAcceptanceGrounding(
 	if program.AcceptanceGrounding == nil {
 		program.AcceptanceGrounding = make(map[string]assemblyline.ApplicationAcceptanceGroundingReceipt)
 	}
+	if program.AcceptanceGroundingSeen == nil {
+		program.AcceptanceGroundingSeen = make(map[string]map[string]struct{})
+	}
 	for _, task := range program.Workload.Tasks {
 		_, acceptanceID, err := applicationTaskBlockIDs(task.ID)
 		if err != nil {
@@ -78,7 +81,6 @@ func ensureOneDirectCodingAcceptanceGrounding(
 	acceptanceID string,
 	program *directCodingProgram,
 ) error {
-	seenSources := make(map[string]struct{})
 	for {
 		if err := runtime.Context.Err(); err != nil {
 			return fmt.Errorf("acceptance grounding stopped by context authority: %w", err)
@@ -96,6 +98,11 @@ func ensureOneDirectCodingAcceptanceGrounding(
 				return nil
 			}
 			delete(program.AcceptanceGrounding, acceptanceID)
+		}
+		seenSources := program.AcceptanceGroundingSeen[acceptanceID]
+		if seenSources == nil {
+			seenSources = make(map[string]struct{})
+			program.AcceptanceGroundingSeen[acceptanceID] = seenSources
 		}
 		if _, repeated := seenSources[input.SourceSHA256]; repeated {
 			return fmt.Errorf("acceptance grounding correction repeated a prior source state for %s", acceptanceID)

@@ -67,6 +67,7 @@ func projectDirectCodingApplicationTaskStage(
 		Adapter: program.Adapter, PackageName: program.PackageName,
 		Workload: program.Workload, TypeScript: assemblyline.TypeScriptBlueprint{Documents: documents},
 		StaticFiles: staticFiles, Generated: generated, AcceptanceGrounding: grounding,
+		AcceptanceGroundingSeen: program.AcceptanceGroundingSeen,
 	}
 	if err := stage.TypeScript.Validate(); err != nil {
 		return zero, fmt.Errorf("validate application task stage: %w", err)

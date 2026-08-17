@@ -8,14 +8,15 @@ import (
 )
 
 type directCodingProgram struct {
-	Adapter             string
-	PackageName         string
-	Workload            assemblyline.FrozenApplicationWorkload
-	TypeScript          assemblyline.TypeScriptBlueprint
-	StaticFiles         []directCodingFileTask
-	Generated           map[string]string
-	AcceptanceGrounding map[string]assemblyline.ApplicationAcceptanceGroundingReceipt
-	ProtectedPaths      []string
+	Adapter                 string
+	PackageName             string
+	Workload                assemblyline.FrozenApplicationWorkload
+	TypeScript              assemblyline.TypeScriptBlueprint
+	StaticFiles             []directCodingFileTask
+	Generated               map[string]string
+	AcceptanceGrounding     map[string]assemblyline.ApplicationAcceptanceGroundingReceipt
+	AcceptanceGroundingSeen map[string]map[string]struct{}
+	ProtectedPaths          []string
 }
 
 func compileDirectCodingProgram(
@@ -55,8 +56,9 @@ func compileDirectCodingProgram(
 	return directCodingProgram{
 		Adapter: adapter, PackageName: moduleSegment, Workload: workload, TypeScript: blueprint,
 		StaticFiles: staticFiles, Generated: map[string]string{},
-		AcceptanceGrounding: map[string]assemblyline.ApplicationAcceptanceGroundingReceipt{},
-		ProtectedPaths:      protected,
+		AcceptanceGrounding:     map[string]assemblyline.ApplicationAcceptanceGroundingReceipt{},
+		AcceptanceGroundingSeen: map[string]map[string]struct{}{},
+		ProtectedPaths:          protected,
 	}, nil
 }
 
