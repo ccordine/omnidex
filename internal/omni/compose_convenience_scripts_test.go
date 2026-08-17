@@ -32,6 +32,14 @@ func TestComposeConvenienceScriptsUseConfiguredDeploymentIdentity(t *testing.T) 
 	if strings.Contains(body, "down -v") || strings.Contains(body, "--volumes") {
 		t.Fatal("compose deployment wrapper must not remove durable volumes")
 	}
+	up := readRepoScript(t, root, "up.sh")
+	for _, required := range []string{
+		"host service start", "ollama.service", "scripts/compose-deployment.sh", "core:status",
+	} {
+		if !strings.Contains(up, required) {
+			t.Fatalf("up.sh omits required dependency orchestration %q", required)
+		}
+	}
 }
 
 func TestComposeDeploymentWrapperUsesConfiguredDockerContextAndProject(t *testing.T) {
@@ -67,7 +75,13 @@ func TestComposeDeploymentWrapperUsesConfiguredDockerContextAndProject(t *testin
 	}
 	logPath := filepath.Join(stage, "docker.log")
 	fakeDocker := filepath.Join(bin, "docker")
-	if err := os.WriteFile(fakeDocker, []byte("#!/usr/bin/env bash\nprintf '%s|%s\\n' \"$DOCKER_CONTEXT\" \"$*\" >>\"$FAKE_DOCKER_LOG\"\n"), 0o755); err != nil {
+	fakeDockerBody := `#!/usr/bin/env bash
+printf '%s|%s\n' "$DOCKER_CONTEXT" "$*" >>"$FAKE_DOCKER_LOG"
+case "$*" in
+  *" ps -q core") printf '%s\n' 'abc123def456' ;;
+esac
+`
+	if err := os.WriteFile(fakeDocker, []byte(fakeDockerBody), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,8 +95,10 @@ func TestComposeDeploymentWrapperUsesConfiguredDockerContextAndProject(t *testin
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(log)), "\n")
-	if len(lines) != 2 || lines[0] != "default|compose version" ||
-		!strings.Contains(lines[1], "default|compose -p exact-project -f "+filepath.Join(stage, "docker-compose.yml")+" up -d --remove-orphans --build") {
+	if len(lines) != 4 || lines[0] != "default|compose version" ||
+		!strings.Contains(lines[1], "default|compose -p exact-project -f "+filepath.Join(stage, "docker-compose.yml")+" up -d --remove-orphans --wait --wait-timeout 180 --build") ||
+		!strings.Contains(lines[2], "default|compose -p exact-project -f "+filepath.Join(stage, "docker-compose.yml")+" ps -q core") ||
+		!strings.Contains(lines[3], "default|exec abc123def456 sh -ec") {
 		t.Fatalf("wrapper docker calls=%q", lines)
 	}
 }

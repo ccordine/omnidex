@@ -68,7 +68,7 @@ case "${action}" in
           ;;
       esac
     done
-    cmd+=(up -d --remove-orphans)
+    cmd+=(up -d --remove-orphans --wait --wait-timeout 180)
     ((build == 0)) || cmd+=(--build)
     ;;
   down)
@@ -79,3 +79,11 @@ esac
 
 cd "${REPO_DIR}"
 "${cmd[@]}"
+
+if [[ "${action}" == "up" ]]; then
+  core_container="$(compose_docker -p "${COMPOSE_PROJECT}" -f "${REPO_DIR}/docker-compose.yml" ps -q core)"
+  [[ "${core_container}" =~ ^[0-9a-f]{12,64}$ ]] ||
+    die "core did not resolve to one running container after compose health wait"
+  context_docker exec "${core_container}" sh -ec 'if [ -n "${HOST_AGENT_URL:-}" ]; then wget -q -O /dev/null "${HOST_AGENT_URL%/}/healthz"; fi; if [ "${LLM_PROVIDER:-}" = "ollama" ] || [ "${EMBEDDING_PROVIDER:-}" = "ollama" ]; then wget -q -O /dev/null "${OLLAMA_BASE_URL%/}/api/tags"; fi' ||
+    die "core cannot reach one or more configured host dependencies"
+fi
