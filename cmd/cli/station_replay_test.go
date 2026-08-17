@@ -38,29 +38,21 @@ func TestParseStationReplayOptionsRequiresOneFrozenPointAndReport(t *testing.T) 
 	}
 }
 
-func TestParseStationReplayOptionsSupportsSpecificationConvergenceReviewer(t *testing.T) {
+func TestParseStationReplayOptionsSupportsSpecificationConvergence(t *testing.T) {
 	options, err := parseStationReplayOptions([]string{
 		"--opening", "266", "--model", "llama3.2:3b",
-		"--review-model", "gemma3:4b", "--specification-converge",
+		"--specification-converge",
 		"--report", "/tmp/specification-convergence.jsonl",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !options.SpecificationConverge || options.ReviewModel != "gemma3:4b" {
+	if !options.SpecificationConverge {
 		t.Fatalf("options=%+v", options)
 	}
 	for name, args := range map[string][]string{
-		"missing reviewer": {
-			"--opening", "266", "--model", "llama3.2:3b", "--specification-converge",
-			"--report", "/tmp/specification-convergence.jsonl",
-		},
-		"reviewer outside mode": {
-			"--opening", "266", "--model", "llama3.2:3b", "--review-model", "gemma3:4b",
-			"--report", "/tmp/specification-convergence.jsonl",
-		},
 		"conflicting replay mode": {
-			"--opening", "266", "--model", "llama3.2:3b", "--review-model", "gemma3:4b",
+			"--opening", "266", "--model", "llama3.2:3b",
 			"--specification-converge", "--current-contract", "--report", "/tmp/specification-convergence.jsonl",
 		},
 	} {

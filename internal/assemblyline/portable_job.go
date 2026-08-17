@@ -31,9 +31,7 @@ type WorkKind string
 const (
 	WorkApplicationContextNeeds              WorkKind = "application_context_needs"
 	WorkApplicationIntent                    WorkKind = "application_intent"
-	WorkApplicationIntentReview              WorkKind = "application_intent_review"
 	WorkApplicationJobSpecification          WorkKind = "application_job_specification"
-	WorkApplicationJobSpecificationReview    WorkKind = "application_job_specification_review"
 	WorkApplicationAcceptanceGroundingReview WorkKind = "application_acceptance_grounding_review"
 	WorkRepositoryRequirements               WorkKind = "repository_requirements"
 	WorkRepositorySearchTerm                 WorkKind = "repository_search_term"
@@ -252,9 +250,8 @@ func decodePortablePayload(payload []byte, target any) error {
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
 	case WorkApplicationContextNeeds, WorkApplicationIntent,
-		WorkApplicationIntentReview,
 		WorkApplicationClassify,
-		WorkApplicationJobSpecification, WorkApplicationJobSpecificationReview,
+		WorkApplicationJobSpecification,
 		WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
@@ -278,9 +275,8 @@ func validWorkKind(kind WorkKind) bool {
 func AllWorkKinds() []WorkKind {
 	return []WorkKind{
 		WorkApplicationContextNeeds, WorkApplicationIntent,
-		WorkApplicationIntentReview,
 		WorkApplicationClassify,
-		WorkApplicationJobSpecification, WorkApplicationJobSpecificationReview,
+		WorkApplicationJobSpecification,
 		WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,

@@ -118,41 +118,6 @@ func TestValidateCurrentContractStationReplayPointRetainsJobWithoutRetiredOutput
 	}
 }
 
-func TestExactStationReplayArtifactUsesBoundReviewDecoder(t *testing.T) {
-	requirement := assemblyline.Requirement{ID: "requirement_001", SourceQuote: "inventory filtering"}
-	authority := assemblyline.ApplicationJobSpecificationInput{
-		Surface: assemblyline.ApplicationSurfaceBrowser, ProductQuote: "inventory dashboard",
-		AcceptedRequirements: []assemblyline.Requirement{requirement}, FocusedRequirement: requirement,
-	}
-	retained := assemblyline.ApplicationJobSpecification{
-		Objective:         "Implement inventory filtering in the inventory dashboard.",
-		RequiredBehaviors: []string{"Users can filter inventory entries by a supplied value."},
-		AcceptanceCriteria: []string{
-			"Entering a filter value shows matching inventory entries and excludes nonmatching entries.",
-		},
-	}
-	input, err := assemblyline.NewApplicationJobSpecificationReviewInput(authority, retained, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	job, err := assemblyline.NewApplicationJobSpecificationReviewJob(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	artifact, err := replayExactStationArtifact(job, `{"decision":"accept"}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if artifact.Kind != "application_job_specification_review_accept" {
-		t.Fatalf("artifact=%+v", artifact)
-	}
-	if _, err := replayExactStationArtifact(
-		job, `{"decision":"accept","field":"objective"}`,
-	); err == nil {
-		t.Fatal("review replay bypassed the bound semantic decoder")
-	}
-}
-
 func replayTestGap(t *testing.T, job assemblyline.PortableJob) queue.StationGapOpening {
 	t.Helper()
 	prompt, schema, err := assemblyline.RenderPortableJob(job)

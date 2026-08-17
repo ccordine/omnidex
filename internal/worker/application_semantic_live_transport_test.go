@@ -178,14 +178,10 @@ func assertLiveCodingQualificationCalls(t *testing.T, calls []liveCodingQualific
 			t.Fatal("live qualification call lacks bounded native metrics")
 		}
 	}
-	repairs := counts[assemblyline.WorkApplicationJobSpecificationRepair]
-	if counts[assemblyline.WorkApplicationContextNeeds] != 1 ||
+	if counts[assemblyline.WorkApplicationContextNeeds] != 0 ||
 		counts[assemblyline.WorkApplicationIntent] != 1 ||
-		counts[assemblyline.WorkApplicationIntentReview] != 1 ||
-		counts[assemblyline.WorkApplicationJobSpecification] != featureCount ||
-		counts[assemblyline.WorkApplicationJobSpecificationReview] != featureCount+repairs ||
-		repairs > featureCount*2 {
-		t.Fatalf("live qualification call shape differs from one specification plus mandatory review and bounded repair per feature: %v", counts)
+		counts[assemblyline.WorkApplicationJobSpecification] != featureCount {
+		t.Fatalf("live qualification call shape differs from one intent and one planning call per feature: %v", counts)
 	}
 }
 

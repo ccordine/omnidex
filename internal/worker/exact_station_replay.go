@@ -179,15 +179,6 @@ func replayExactStationArtifact(
 		}
 		return artifact, nil
 	}
-	if job.Kind == assemblyline.WorkApplicationJobSpecificationReview {
-		review, err := assemblyline.DecodeApplicationJobSpecificationReviewResult(job, raw)
-		artifact.Kind = "application_job_specification_review"
-		if err != nil {
-			return artifact, fmt.Errorf("decode replay application job specification review: %w", err)
-		}
-		artifact.Kind += "_" + string(review.Decision)
-		return artifact, nil
-	}
 	if job.Kind == assemblyline.WorkTypeScriptRepairGuidance {
 		guidance, err := assemblyline.DecodeTypeScriptRepairGuidanceResult(job, raw)
 		artifact.Kind = "typescript_repair_guidance"

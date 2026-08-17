@@ -75,13 +75,13 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				t.Fatal(err)
 			}
 			applicationContext, err = resolveDirectCodingApplicationContext(
-				runtime, modelName, testCase.request, applicationContext, nil,
+				runtime, modelName, testCase.request, applicationContext, nil, nil,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
 			resolution, err := resolveDirectCodingApplicationIntent(
-				runtime, modelName, modelName,
+				runtime, modelName,
 				assemblyline.ApplicationIntentInput{
 					UserRequest: testCase.request, Context: applicationContext,
 				}, nil,
@@ -105,7 +105,7 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				Surface:      assemblyline.ApplicationSurfaceBrowser,
 				ProductQuote: resolution.ProductContext, Requirements: compiledRequirements,
 			}
-			frozen, err := resolveDirectCodingApplicationWorkload(runtime, modelName, modelName, input)
+			frozen, err := resolveDirectCodingApplicationWorkload(runtime, modelName, input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -151,7 +151,7 @@ func assertLiveCodingRequirementResolution(
 	if strings.TrimSpace(resolution.ProductContext) == "" ||
 		len(resolution.Requirements) < 1 || len(resolution.Requirements) > 10 {
 		t.Fatalf(
-			"reviewed semantic intent is incomplete: product=%q requirements=%+v",
+			"semantic intent is incomplete: product=%q requirements=%+v",
 			resolution.ProductContext, resolution.Requirements,
 		)
 	}
@@ -165,15 +165,6 @@ func validateLiveCodingQualificationProjection(
 	resolvedFeatures []string,
 ) error {
 	switch job.Kind {
-	case assemblyline.WorkApplicationContextNeeds:
-		var input assemblyline.ApplicationContextNeedInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return err
-		}
-		if input.UserRequest != testCase.request || strings.Count(prompt, testCase.request) != 1 {
-			return fmt.Errorf("context-needs station did not receive one intact request")
-		}
-		return nil
 	case assemblyline.WorkApplicationIntent:
 		var input assemblyline.ApplicationIntentInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
@@ -183,27 +174,18 @@ func validateLiveCodingQualificationProjection(
 			return fmt.Errorf("intent station did not receive one intact request")
 		}
 		return nil
-	case assemblyline.WorkApplicationIntentReview:
-		if !strings.Contains(prompt, testCase.request) {
-			return fmt.Errorf("intent convergence station omitted immutable request authority")
+	case assemblyline.WorkApplicationJobSpecification:
+		var input assemblyline.ApplicationJobSpecificationInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
 		}
-		return nil
-	case assemblyline.WorkApplicationJobSpecification,
-		assemblyline.WorkApplicationJobSpecificationReview,
-		assemblyline.WorkApplicationJobSpecificationRepair:
-		if job.Kind == assemblyline.WorkApplicationJobSpecification {
-			var input assemblyline.ApplicationJobSpecificationInput
-			if err := json.Unmarshal(job.Payload, &input); err != nil {
-				return err
-			}
-			if input.Surface != assemblyline.ApplicationSurfaceBrowser ||
-				input.ProductQuote != resolvedProduct ||
-				!containsExactString(resolvedFeatures, input.FocusedRequirement.SourceQuote) {
-				return fmt.Errorf("job-specification authority differs from the focused accepted requirement")
-			}
-			if len(input.AcceptedRequirements) != len(resolvedFeatures) {
-				return fmt.Errorf("job-specification authority omitted accepted requirements")
-			}
+		if input.Surface != assemblyline.ApplicationSurfaceBrowser ||
+			input.ProductQuote != resolvedProduct ||
+			!containsExactString(resolvedFeatures, input.FocusedRequirement.SourceQuote) {
+			return fmt.Errorf("job-specification authority differs from the focused accepted requirement")
+		}
+		if len(input.AcceptedRequirements) != len(resolvedFeatures) {
+			return fmt.Errorf("job-specification authority omitted accepted requirements")
 		}
 		if strings.Contains(prompt, testCase.request) ||
 			!strings.Contains(prompt, string(assemblyline.ApplicationSurfaceBrowser)) ||

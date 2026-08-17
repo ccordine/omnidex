@@ -9,7 +9,6 @@ import (
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
 	intentModel string,
-	reviewModel string,
 	surfaceModel string,
 	artifactModel string,
 	authority string,
@@ -35,7 +34,7 @@ func runDirectCodingApplicationInterpreter(
 		)
 	}
 	resolution, err := resolveDirectCodingApplicationIntent(
-		runtime, intentModel, reviewModel,
+		runtime, intentModel,
 		assemblyline.ApplicationIntentInput{
 			UserRequest: authority, Context: formalizedContext,
 		},

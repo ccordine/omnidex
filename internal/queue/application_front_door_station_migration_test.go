@@ -10,6 +10,7 @@ import (
 
 const applicationFrontDoorStationMigration = "106_application_front_door_stations.sql"
 const directSemanticReviewMigration = "109_direct_semantic_review_candidates.sql"
+const removeCeremonialFrontDoorReviewMigration = "110_remove_ceremonial_front_door_reviews.sql"
 
 func TestApplicationFrontDoorMigrationReplacesQuoteGateOwnership(t *testing.T) {
 	t.Parallel()
@@ -23,8 +24,6 @@ func TestApplicationFrontDoorMigrationReplacesQuoteGateOwnership(t *testing.T) {
 		"CREATE OR REPLACE FUNCTION station_owns_portable_work",
 		"WHEN 'application_context_needs' THEN station='coding_requirements'",
 		"WHEN 'application_intent' THEN station='coding_requirements'",
-		"WHEN 'application_intent_review' THEN station='coding_workload_review'",
-		"WHEN 'application_intent_repair' THEN station='coding_requirements'",
 		"WHEN 'response_correction' THEN COALESCE(station_owns_portable_work(",
 		"LANGUAGE SQL IMMUTABLE STRICT",
 	} {
@@ -74,8 +73,7 @@ func TestApplicationFrontDoorMigrationMatchesCompleteCodeOwnedRouting(t *testing
 func applicationFrontDoorWorkKind(kind assemblyline.WorkKind) bool {
 	switch kind {
 	case assemblyline.WorkApplicationContextNeeds,
-		assemblyline.WorkApplicationIntent,
-		assemblyline.WorkApplicationIntentReview:
+		assemblyline.WorkApplicationIntent:
 		return true
 	default:
 		return false
@@ -100,5 +98,22 @@ func TestDirectSemanticReviewMigrationRemovesObsoleteRepairWorkKinds(t *testing.
 		if accepted {
 			t.Fatalf("obsolete work kind %q remains routable", obsolete)
 		}
+	}
+}
+
+func TestCeremonialFrontDoorReviewMigrationRemovesRetiredReviewKinds(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../migrations/" + removeCeremonialFrontDoorReviewMigration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	for _, retired := range []string{"application_intent_review", "application_job_specification_review"} {
+		if strings.Contains(source, retired) {
+			t.Fatalf("migration still routes retired ceremonial kind %q", retired)
+		}
+	}
+	if !strings.Contains(source, "application_acceptance_grounding_review") {
+		t.Fatal("migration removed the independent acceptance-grounding station")
 	}
 }

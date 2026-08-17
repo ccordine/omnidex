@@ -31,7 +31,6 @@ type stationReplayOptions struct {
 	CurrentContract       bool
 	SpecificationConverge bool
 	GuidanceModel         string
-	ReviewModel           string
 }
 
 type stationReplayModels []string
@@ -101,7 +100,6 @@ func runStationReplay(args []string) {
 		SourceCallWireRequestBase64: stationReplayBase64(point.Call.WireRequest),
 		SourceGapOpening:            point.Gap, Models: append([]string(nil), options.Models...),
 		Timeout: options.Timeout.String(), GuidanceModel: options.GuidanceModel,
-		ReviewModel: options.ReviewModel,
 	}
 	if err := writeStationReplayReport(encoder, report, header); err != nil {
 		_ = report.Close()
@@ -115,7 +113,7 @@ func runStationReplay(args []string) {
 		callCtx, cancel := stationReplayContext(options.Timeout)
 		if options.SpecificationConverge {
 			convergence, convergenceErr := worker.ConvergeExactApplicationJobSpecification(
-				callCtx, client, point, modelName, options.ReviewModel,
+				callCtx, client, point, modelName,
 			)
 			cancel()
 			run := newStationSpecificationConvergenceReportRun(
@@ -195,13 +193,11 @@ func parseStationReplayOptions(args []string) (stationReplayOptions, error) {
 	fs.DurationVar(&options.Timeout, "timeout", 0, "per-model timeout; 0 waits for provider completion")
 	fs.BoolVar(&options.CompilerConverge, "compiler-converge", false, "continue one TypeScript correction against code-owned compiler feedback")
 	fs.BoolVar(&options.CurrentContract, "current-contract", false, "preserve the frozen portable packet while using the checked-in transport contract")
-	fs.BoolVar(&options.SpecificationConverge, "specification-converge", false, "run the production retained specification review/repair loop")
+	fs.BoolVar(&options.SpecificationConverge, "specification-converge", false, "replay one production job-specification planner call")
 	fs.StringVar(&options.GuidanceModel, "guidance-model", "", "independently routed TypeScript repair-guidance model")
-	fs.StringVar(&options.ReviewModel, "review-model", "", "independently routed specification review model")
 	if err := fs.Parse(args); err != nil {
 		return options, err
 	}
-	options.ReviewModel = strings.TrimSpace(options.ReviewModel)
 	options.GuidanceModel = strings.TrimSpace(options.GuidanceModel)
 	modes := 0
 	for _, enabled := range []bool{options.CompilerConverge, options.CurrentContract, options.SpecificationConverge} {
@@ -211,7 +207,6 @@ func parseStationReplayOptions(args []string) (stationReplayOptions, error) {
 	}
 	if len(fs.Args()) != 0 || options.Timeout < 0 || (options.OpeningID > 0) == (options.JobID > 0) ||
 		len(models) == 0 || strings.TrimSpace(options.Report) == "" || modes > 1 ||
-		(options.SpecificationConverge != (options.ReviewModel != "")) ||
 		(options.CompilerConverge != (options.GuidanceModel != "")) {
 		return options, errors.New("requires exactly one of --opening or --job, one or more --model values, and --report")
 	}

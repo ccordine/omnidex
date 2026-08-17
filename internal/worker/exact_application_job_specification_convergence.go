@@ -17,7 +17,6 @@ type ExactApplicationJobSpecificationConvergence struct {
 	SourceOpeningID    int64
 	SourceGapOpeningID int64
 	PlannerModel       string
-	ReviewModel        string
 	Terminal           string
 	WallDuration       time.Duration
 	Specification      assemblyline.ApplicationJobSpecification
@@ -46,7 +45,6 @@ func ConvergeExactApplicationJobSpecification(
 	client llm.ExactStationClient,
 	point queue.StationCallReplayPoint,
 	plannerModel string,
-	reviewModel string,
 ) (ExactApplicationJobSpecificationConvergence, error) {
 	boundary, err := loadStationReplayPortableBoundary(point)
 	if err != nil {
@@ -58,7 +56,7 @@ func ConvergeExactApplicationJobSpecification(
 		)
 	}
 	return convergeExactApplicationJobSpecificationWithReplay(
-		ctx, point.Call.ID, point.Gap.ID, boundary.Job, plannerModel, reviewModel,
+		ctx, point.Call.ID, point.Gap.ID, boundary.Job, plannerModel,
 		func(job assemblyline.PortableJob, model string, number int) (ExactStationReplay, error) {
 			scope := fmt.Sprintf(
 				"application-job-specification-convergence:%d:%d:%s",
@@ -75,13 +73,12 @@ func convergeExactApplicationJobSpecificationWithReplay(
 	sourceGapOpeningID int64,
 	job assemblyline.PortableJob,
 	plannerModel string,
-	reviewModel string,
 	replay exactApplicationJobSpecificationReplay,
 ) (ExactApplicationJobSpecificationConvergence, error) {
 	result := ExactApplicationJobSpecificationConvergence{
 		SourceOpeningID: sourceOpeningID, SourceGapOpeningID: sourceGapOpeningID,
-		PlannerModel: strings.TrimSpace(plannerModel), ReviewModel: strings.TrimSpace(reviewModel),
-		Terminal: "failed",
+		PlannerModel: strings.TrimSpace(plannerModel),
+		Terminal:     "failed",
 	}
 	if ctx == nil || replay == nil || sourceOpeningID < 1 || sourceGapOpeningID < 1 {
 		return result, fmt.Errorf("application job specification convergence authority is incomplete")
@@ -89,8 +86,8 @@ func convergeExactApplicationJobSpecificationWithReplay(
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if result.PlannerModel == "" || result.ReviewModel == "" {
-		return result, fmt.Errorf("application job specification convergence requires planner and review models")
+	if result.PlannerModel == "" {
+		return result, fmt.Errorf("application job specification convergence requires a planner model")
 	}
 	if err := job.Validate(); err != nil {
 		return result, err
@@ -107,7 +104,7 @@ func convergeExactApplicationJobSpecificationWithReplay(
 		Context: ctx, MaxAttempts: 1,
 		Execute: func(current assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			expected, err := exactApplicationJobSpecificationCallModel(
-				current, result.PlannerModel, result.ReviewModel,
+				current, result.PlannerModel,
 			)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
@@ -147,7 +144,7 @@ func convergeExactApplicationJobSpecificationWithReplay(
 		err           error
 	)
 	specification, err = resolveDirectCodingApplicationJobSpecification(
-		runtime, result.PlannerModel, result.ReviewModel,
+		runtime, result.PlannerModel,
 		"frozen_application_job_specification", authority,
 	)
 	if err == nil {
@@ -163,13 +160,10 @@ func convergeExactApplicationJobSpecificationWithReplay(
 func exactApplicationJobSpecificationCallModel(
 	job assemblyline.PortableJob,
 	plannerModel string,
-	reviewModel string,
 ) (string, error) {
 	switch job.Kind {
 	case assemblyline.WorkApplicationJobSpecification:
 		return plannerModel, nil
-	case assemblyline.WorkApplicationJobSpecificationReview:
-		return reviewModel, nil
 	case assemblyline.WorkResponseCorrection:
 		var correction assemblyline.ResponseCorrectionInput
 		if err := json.Unmarshal(job.Payload, &correction); err != nil {

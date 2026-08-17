@@ -232,24 +232,16 @@ machine passes its executable gates:
    station may return only bounded evidence questions, never operations; code resolves those
    questions through registered deterministic providers and formalizes selected evidence as
    compact source-backed facts. One intent station then derives only a product context and
-   semantic requirement statements from the immutable request plus those facts. A separately
-   routed reviewer accepts, removes a code-permitted list leaf, or returns one complete replacement
-   for the code-selected leaf; code retains the candidate and performs the bound exact splice before
-   review repeats.
+   semantic requirement statements from the immutable request plus those facts. Code validates the
+   complete candidate directly; a model is not called merely to accept, reject, or restate it.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
    authority checks. For each accepted requirement, one local station receives the typed surface,
-   reviewed product context, complete accepted requirement set, and focused requirement and
-   proposes only a concrete objective, required behaviors, and observable acceptance criteria.
-   A separately routed corrective model may accept or name one derived field, one bounded
-   complete replacement value for the code-enumerated exact current value: the whole objective or
-   one whole list item owned by that field. Code couples legal target evidence to its field in the
-   response schema and binds the observed value by SHA-256. There is no semantic repair station:
-   the reviewer candidate is the only semantic result, while code retains every other field and
-   performs the exact removal or replacement after revalidating field and whole-state bindings.
-   Code retains each new canonical specification and repeats review without a numeric correctness
-   limit; acceptance, an exact repeated state/cycle, lost authority, provider failure,
-   cancellation, or a real resource limit ends that loop. Code preserves user authority separately from derived build decisions,
-   assigns identity and order, freezes only reviewed state, executes one task at a time with
+   product context, complete accepted requirement set, and focused requirement and proposes only a
+   concrete objective, required behaviors, and observable acceptance criteria. Code validates the
+   candidate directly. Only a deterministic invalid-field result creates a correction boundary;
+   code names the field, applies the one-field correction, and proves that exactly one leaf changed.
+   Code preserves user authority separately from derived build decisions, assigns identity and
+   order, freezes only validated state, executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
    static code-owned harness alone renders the exact public feature with its runtime and capability
    identity. The generated acceptance declaration receives no render, JSX, component, runtime, or
@@ -260,11 +252,10 @@ machine passes its executable gates:
    behavior failure to target implementation. Code verifies the grounded artifact before advancing.
 6. **Charmander handoff** — cognition produces one existing bounded declaration job;
    code parses, stitches, formats, stages, tests, applies, and reconciles it.
-7. **Semantic review and correction** — a review station can select at most one
-   code-issued finding; code creates and executes a one-field correction objective, retains
-   each new canonical state, verifies it, and reruns independent review until acceptance or
-   an exact no-op, repeated state/cycle, provider failure, cancellation, or real resource limit.
-   An arbitrary attempt count is not a correctness boundary.
+7. **Semantic correction** — a correction call exists only after code identifies one exact
+   structural validation failure. Code creates the one-field correction boundary, retains the new
+   canonical state, and proves exactly one leaf changed. There is no mandatory semantic-review
+   loop and no model-authored acceptance control plane.
 8. **Incompatible production cutover** — remove the universal model-action path and
    its schemas, recovery consumers, and provider eagerness. There is no fallback or
    feature flag.

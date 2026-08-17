@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestApplicationFrontDoorBootstrapsReviewsAndRepairsSemanticIntent(t *testing.T) {
+func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T) {
 	t.Parallel()
 	const request = "Build a browser counter that shows the count and can increment, decrement, and reset it."
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
@@ -26,13 +26,6 @@ func TestApplicationFrontDoorBootstrapsReviewsAndRepairsSemanticIntent(t *testin
 			counts[job.Kind]++
 			var candidate any
 			switch job.Kind {
-			case assemblyline.WorkApplicationContextNeeds:
-				if modelName != "intent-model" {
-					return assemblyline.PortableResult{}, fmt.Errorf("context model=%q", modelName)
-				}
-				candidate = assemblyline.ApplicationContextNeedDecision{
-					Schema: assemblyline.ApplicationContextNeedSchemaV1, Questions: []string{},
-				}
 			case assemblyline.WorkApplicationClassify:
 				candidate = assemblyline.ApplicationClassification{
 					Schema:  assemblyline.ApplicationClassificationSchemaV1,
@@ -47,20 +40,6 @@ func TestApplicationFrontDoorBootstrapsReviewsAndRepairsSemanticIntent(t *testin
 						"Provide controls that increment and reset the count.",
 					},
 				}
-			case assemblyline.WorkApplicationIntentReview:
-				if modelName != "review-model" {
-					return assemblyline.PortableResult{}, fmt.Errorf("review model=%q", modelName)
-				}
-				if counts[job.Kind] == 1 {
-					candidate = map[string]any{
-						"schema": "omnidex.application-intent-review.v1", "decision": "replace",
-						"replacement_value": "Provide controls that increment, decrement, and reset the count.",
-					}
-				} else {
-					candidate = map[string]any{
-						"schema": "omnidex.application-intent-review.v1", "decision": "accept", "replacement_value": "",
-					}
-				}
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected semantic work kind %q", job.Kind)
 			}
@@ -69,20 +48,20 @@ func TestApplicationFrontDoorBootstrapsReviewsAndRepairsSemanticIntent(t *testin
 		},
 	}
 	specification, err := runDirectCodingApplicationInterpreter(
-		runtime, "intent-model", "review-model", "surface-model", "artifact-model",
+		runtime, "intent-model", "surface-model", "artifact-model",
 		request, applicationContext, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts[assemblyline.WorkApplicationContextNeeds] != 1 ||
+	if counts[assemblyline.WorkApplicationContextNeeds] != 0 ||
 		counts[assemblyline.WorkApplicationIntent] != 1 ||
-		counts[assemblyline.WorkApplicationIntentReview] != 2 {
+		counts[assemblyline.WorkApplicationClassify] != 1 {
 		t.Fatalf("front-door calls=%v", counts)
 	}
 	want := []assemblyline.Requirement{
 		{ID: "requirement_001", SourceQuote: "Show the current count."},
-		{ID: "requirement_002", SourceQuote: "Provide controls that increment, decrement, and reset the count."},
+		{ID: "requirement_002", SourceQuote: "Provide controls that increment and reset the count."},
 	}
 	if specification.ProductQuote != "A browser counter" ||
 		!reflect.DeepEqual(specification.Requirements, want) {
@@ -109,7 +88,7 @@ func TestApplicationFrontDoorFailsLoudlyWhenEvidenceNeedsAreUnresolved(t *testin
 		}),
 	}
 	_, err = runDirectCodingApplicationInterpreter(
-		runtime, "intent-model", "review-model", "surface-model", "artifact-model",
+		runtime, "intent-model", "surface-model", "artifact-model",
 		request, applicationContext, nil,
 	)
 	if err == nil {

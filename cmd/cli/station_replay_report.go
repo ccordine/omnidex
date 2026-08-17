@@ -31,7 +31,6 @@ type stationReplayReportHeader struct {
 	Models                      []string                 `json:"models"`
 	Timeout                     string                   `json:"timeout"`
 	GuidanceModel               string                   `json:"guidance_model,omitempty"`
-	ReviewModel                 string                   `json:"review_model,omitempty"`
 }
 
 type stationConvergenceIterationEvidence struct {
@@ -153,15 +152,15 @@ func printStationSpecificationConvergenceRun(run stationSpecificationConvergence
 	for _, call := range run.Convergence.Calls {
 		generation := call.Replay.Generation
 		fmt.Printf(
-			"specification_convergence planner=%s reviewer=%s call=%d kind=%s model=%s wall_ms=%d prompt_tokens=%d output_tokens=%d artifact=%s\n",
-			run.Convergence.PlannerModel, run.Convergence.ReviewModel, call.Number,
+			"specification_convergence planner=%s call=%d kind=%s model=%s wall_ms=%d prompt_tokens=%d output_tokens=%d artifact=%s\n",
+			run.Convergence.PlannerModel, call.Number,
 			call.WorkKind, call.Model, call.Replay.WallDuration.Milliseconds(),
 			generation.Usage.PromptEvalCount, generation.Usage.EvalCount, call.Replay.Artifact.Kind,
 		)
 	}
 	fmt.Printf(
-		"specification_convergence planner=%s reviewer=%s status=%s terminal=%s calls=%d wall_ms=%d error=%s\n",
-		run.Convergence.PlannerModel, run.Convergence.ReviewModel, run.Status,
+		"specification_convergence planner=%s status=%s terminal=%s calls=%d wall_ms=%d error=%s\n",
+		run.Convergence.PlannerModel, run.Status,
 		run.Convergence.Terminal, len(run.Convergence.Calls),
 		run.Convergence.WallDuration.Milliseconds(), run.Error,
 	)

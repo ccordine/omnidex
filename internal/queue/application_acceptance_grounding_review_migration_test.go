@@ -99,7 +99,6 @@ func TestApplicationAcceptanceGroundingReviewMigrationPreservesEveryRegisteredSt
 
 	for _, kind := range assemblyline.AllWorkKinds() {
 		if kind == assemblyline.WorkResponseCorrection ||
-			kind == assemblyline.WorkApplicationJobSpecificationReview ||
 			kind == assemblyline.WorkTypeScriptRepairGuidance ||
 			applicationFrontDoorWorkKind(kind) {
 			continue

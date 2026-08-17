@@ -27,17 +27,6 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildApplicationIntentPrompt(input)
 		return prompt, ApplicationIntentResponseSchema(), err
-	case WorkApplicationIntentReview:
-		var input ApplicationIntentReviewInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildApplicationIntentReviewPrompt(input)
-		if err != nil {
-			return "", nil, err
-		}
-		schema, err := ApplicationIntentReviewResponseSchema(input)
-		return prompt, schema, err
 	case WorkApplicationClassify:
 		var input ApplicationClassificationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -56,12 +45,6 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		schema, err := ApplicationJobSpecificationResponseSchema(input)
 		return prompt, schema, err
-	case WorkApplicationJobSpecificationReview:
-		var input applicationJobSpecificationReviewPortablePayload
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		return renderApplicationJobSpecificationReviewPortable(input)
 	case WorkApplicationAcceptanceGroundingReview:
 		var input ApplicationAcceptanceGroundingReviewInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
