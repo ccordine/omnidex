@@ -32,6 +32,7 @@ const (
 	WorkApplicationContextNeeds              WorkKind = "application_context_needs"
 	WorkApplicationIntent                    WorkKind = "application_intent"
 	WorkApplicationJobSpecification          WorkKind = "application_job_specification"
+	WorkApplicationTargetTree                WorkKind = "application_target_tree"
 	WorkApplicationAcceptanceGroundingReview WorkKind = "application_acceptance_grounding_review"
 	WorkRepositoryRequirements               WorkKind = "repository_requirements"
 	WorkRepositorySearchTerm                 WorkKind = "repository_search_term"
@@ -252,6 +253,7 @@ func validWorkKind(kind WorkKind) bool {
 	case WorkApplicationContextNeeds, WorkApplicationIntent,
 		WorkApplicationClassify,
 		WorkApplicationJobSpecification,
+		WorkApplicationTargetTree,
 		WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
@@ -277,6 +279,7 @@ func AllWorkKinds() []WorkKind {
 		WorkApplicationContextNeeds, WorkApplicationIntent,
 		WorkApplicationClassify,
 		WorkApplicationJobSpecification,
+		WorkApplicationTargetTree,
 		WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,

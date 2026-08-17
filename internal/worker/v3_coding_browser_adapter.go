@@ -23,6 +23,7 @@ func compileGenericTypeScriptBrowserBlueprint(
 	skills map[string]directCodingSkillBinding,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
+	targetTree assemblyline.TargetTree,
 ) (string, assemblyline.TypeScriptBlueprint, []directCodingFileTask, error) {
 	if err := specification.Validate(); err != nil {
 		return "", assemblyline.TypeScriptBlueprint{}, nil, err
@@ -44,17 +45,21 @@ func compileGenericTypeScriptBrowserBlueprint(
 		return "", assemblyline.TypeScriptBlueprint{}, nil, err
 	}
 	documents := []assemblyline.TypeScriptDocument{genericBrowserRuntimeDocument(specification.Requirements)}
-	featureDocuments, err := genericBrowserFeatureDocuments(specification, skills, contexts, capabilities)
+	featureDocuments, err := genericBrowserFeatureDocuments(specification, skills, contexts, capabilities, targetTree)
 	if err != nil {
 		return "", assemblyline.TypeScriptBlueprint{}, nil, err
 	}
 	documents = append(documents, featureDocuments...)
-	acceptanceDocuments, err := genericBrowserAcceptanceDocuments(specification, contexts, capabilities)
+	acceptanceDocuments, err := genericBrowserAcceptanceDocuments(specification, contexts, capabilities, targetTree)
 	if err != nil {
 		return "", assemblyline.TypeScriptBlueprint{}, nil, err
 	}
 	documents = append(documents, acceptanceDocuments...)
-	documents = append(documents, genericBrowserAppDocument(specification))
+	appDocument, err := genericBrowserAppDocument(specification, targetTree)
+	if err != nil {
+		return "", assemblyline.TypeScriptBlueprint{}, nil, err
+	}
+	documents = append(documents, appDocument)
 	documents = append(documents, genericBrowserSmokeTestDocument(specification))
 	documents = append(documents, genericBrowserRuntimeTestDocument(specification.Requirements))
 	blueprint := assemblyline.TypeScriptBlueprint{Documents: documents}
@@ -74,9 +79,14 @@ func genericBrowserFeatureDocuments(
 	skills map[string]directCodingSkillBinding,
 	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
+	targetTree assemblyline.TargetTree,
 ) ([]assemblyline.TypeScriptDocument, error) {
 	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
+		files, err := targetTree.RequirementFiles(requirement.ID)
+		if err != nil {
+			return nil, err
+		}
 		sequence := index + 1
 		skill, hasSkill := skills[requirement.ID]
 		var activeSkill *directCodingSkillBinding
@@ -100,11 +110,13 @@ func genericBrowserFeatureDocuments(
 		}
 		documents = append(documents, assemblyline.TypeScriptDocument{
 			ID:   fmt.Sprintf("feature_%03d", sequence),
-			Path: fmt.Sprintf("src/features/%s.tsx", functionName),
-			Header: `import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+			Path: files.ImplementationPath,
+			Header: fmt.Sprintf(`import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { FeatureBoundary } from '../runtime';
-import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, FeatureViewProps, SharedValue } from '../runtime';`,
+import { FeatureBoundary } from '%s';
+import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, FeatureViewProps, SharedValue } from '%s';`,
+				typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx"),
+				typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx")),
 			Blocks: []assemblyline.TypeScriptBlock{
 				{
 					ID: contextID, Static: genericBrowserFeatureProjectionSource(viewPropsName, dependencies),

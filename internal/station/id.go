@@ -25,6 +25,7 @@ const (
 	CodingRequirements                ID = "coding_requirements"
 	CodingWorkload                    ID = "coding_workload"
 	CodingWorkloadReview              ID = "coding_workload_review"
+	CodingTargetTree                  ID = "coding_target_tree"
 	CodingArtifactHandling            ID = "coding_artifact_handling"
 	CodingKnownArtifactTruth          ID = "coding_known_artifact_truth"
 	CodingDeclarationArtifactBoundary ID = "coding_declaration_artifact_boundary"
@@ -57,6 +58,7 @@ var registered = [...]ID{
 	CodingRequirements,
 	CodingWorkload,
 	CodingWorkloadReview,
+	CodingTargetTree,
 	CodingArtifactHandling,
 	CodingKnownArtifactTruth,
 	CodingDeclarationArtifactBoundary,

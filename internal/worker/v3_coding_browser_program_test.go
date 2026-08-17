@@ -74,7 +74,7 @@ func TestGenericBrowserTestsRegisterTheCodeOwnedDOMMatcherSurface(t *testing.T) 
 		t.Fatal(err)
 	}
 	acceptance, err := genericBrowserAcceptanceDocuments(
-		specification, contexts, genericBrowserCapabilityBindings(specification),
+		specification, contexts, genericBrowserCapabilityBindings(specification), genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +218,7 @@ func TestGenericBrowserProgramResolvesProtectedOpaqueArtifactsInCode(t *testing.
 	program, err := compileDirectCodingProgram("unseen", specification, []assemblyline.ArtifactIdentity{{
 		Token: "ARTIFACT_1", Value: "REQUEST.md",
 	}}, genericBrowserSkillBindings(specification), genericBrowserWorkload(t, specification),
-		genericBrowserCapabilityBindings(specification))
+		genericBrowserCapabilityBindings(specification), genericBrowserTargetTree(t, specification))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func stubGenericBrowserProgram(t *testing.T) directCodingProgram {
 	program, err := compileDirectCodingProgram(
 		"unseen", specification, nil, genericBrowserSkillBindings(specification),
 		genericBrowserWorkload(t, specification),
-		genericBrowserCapabilityBindings(specification),
+		genericBrowserCapabilityBindings(specification), genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -287,6 +287,25 @@ func genericBrowserSpecification() assemblyline.ApplicationSpecification {
 			{ID: "requirement_002", SourceQuote: "remember my selection"},
 		},
 	}
+}
+
+func genericBrowserTargetTree(t *testing.T, specification assemblyline.ApplicationSpecification) assemblyline.TargetTree {
+	t.Helper()
+	requirements := make([]assemblyline.TargetTreeRequirement, len(specification.Requirements))
+	artifacts := make([]assemblyline.TargetTreeArtifact, 0, len(specification.Requirements)*2)
+	for index, requirement := range specification.Requirements {
+		requirements[index] = assemblyline.TargetTreeRequirement{ID: requirement.ID, Statement: requirement.SourceQuote}
+		sequence := index + 1
+		artifacts = append(artifacts,
+			assemblyline.TargetTreeArtifact{Path: fmt.Sprintf("src/features/Feature%03d.tsx", sequence), Kind: assemblyline.TargetArtifactImplementation, Purpose: "implement " + requirement.SourceQuote, RequirementIDs: []string{requirement.ID}, NewKey: fmt.Sprintf("source_%03d", sequence)},
+			assemblyline.TargetTreeArtifact{Path: fmt.Sprintf("src/features/Feature%03d.test.tsx", sequence), Kind: assemblyline.TargetArtifactVerification, Purpose: "verify " + requirement.SourceQuote, RequirementIDs: []string{requirement.ID}, NewKey: fmt.Sprintf("test_%03d", sequence)},
+		)
+	}
+	target, err := (assemblyline.TargetTreeCandidate{Schema: assemblyline.TargetTreeCandidateSchemaV1, Artifacts: artifacts}).ValidateFor(assemblyline.TargetTreeInput{Objective: specification.ProductQuote, Requirements: requirements, Current: []assemblyline.CurrentTargetArtifact{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return target
 }
 
 func genericBrowserWorkload(

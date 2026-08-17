@@ -11,6 +11,8 @@ type directCodingProgram struct {
 	Adapter                 string
 	PackageName             string
 	Workload                assemblyline.FrozenApplicationWorkload
+	TargetTree              assemblyline.TargetTree
+	StructureTransitions    []assemblyline.TargetTreeTransition
 	TypeScript              assemblyline.TypeScriptBlueprint
 	StaticFiles             []directCodingFileTask
 	Generated               map[string]string
@@ -26,6 +28,7 @@ func compileDirectCodingProgram(
 	skills map[string]directCodingSkillBinding,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
+	targetTree assemblyline.TargetTree,
 ) (directCodingProgram, error) {
 	moduleSegment, err := normalizeDirectCodingModuleSegment(projectName)
 	if err != nil {
@@ -48,7 +51,7 @@ func compileDirectCodingProgram(
 		return directCodingProgram{}, err
 	}
 	adapter, blueprint, staticFiles, err := compileGenericTypeScriptBrowserBlueprint(
-		moduleSegment, specification, skills, workload, capabilities,
+		moduleSegment, specification, skills, workload, capabilities, targetTree,
 	)
 	if err != nil {
 		return directCodingProgram{}, err

@@ -40,6 +40,7 @@ func directCodingGroundingFixtureProgram(
 	program, err := compileDirectCodingProgram(
 		"unseen", specification, nil, genericBrowserSkillBindings(specification), frozen,
 		genericBrowserCapabilityBindings(specification),
+		genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)

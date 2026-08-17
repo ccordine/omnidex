@@ -58,6 +58,7 @@ func TestReviewedChannelsJobRendersBothLeavesWithinTheExactProviderBudget(t *tes
 	}
 	program, err := compileDirectCodingProgram(
 		"music-studio", specification, nil, map[string]directCodingSkillBinding{}, frozen, capabilities,
+		genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)

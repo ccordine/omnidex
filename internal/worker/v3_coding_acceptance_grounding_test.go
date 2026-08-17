@@ -37,6 +37,7 @@ func TestGeneratedAcceptanceHasNoUnconditionalImplementationFailureTarget(t *tes
 				"unseen", specification, genericBrowserSkillBindings(specification),
 				genericBrowserWorkload(t, specification),
 				genericBrowserCapabilityBindings(specification),
+				genericBrowserTargetTree(t, specification),
 			)
 			if err != nil {
 				t.Fatal(err)

@@ -69,6 +69,7 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("coding_workload_model"); value != "" {
 		out.Stations[station.CodingWorkload] = value
+		out.Stations[station.CodingTargetTree] = value
 	}
 	if value := cfg.Get("coding_workload_review_model"); value != "" {
 		out.Stations[station.CodingWorkloadReview] = value

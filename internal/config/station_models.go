@@ -26,6 +26,7 @@ func loadStationModels(_ Config) map[station.ID]string {
 		station.CodingSurface:                     "OMNI_CODING_SURFACE_MODEL",
 		station.CodingRequirements:                "OMNI_CODING_REQUIREMENTS_MODEL",
 		station.CodingWorkload:                    "OMNI_CODING_WORKLOAD_MODEL",
+		station.CodingTargetTree:                  "OMNI_CODING_WORKLOAD_MODEL",
 		station.CodingWorkloadReview:              "OMNI_CODING_WORKLOAD_REVIEW_MODEL",
 		station.CodingArtifactHandling:            "OMNI_CODING_ARTIFACT_HANDLING_MODEL",
 		station.CodingKnownArtifactTruth:          "OMNI_CODING_ARTIFACT_HANDLING_MODEL",

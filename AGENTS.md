@@ -142,7 +142,7 @@ A coding LLM may only fill one explicitly defined code block when deterministic 
 
 Dependency order does not grant model context. Every model-visible declaration must be named in a separate explicit capability allowlist, must be a direct dependency, and must be projected at symbol level rather than through an aggregate domain API. Transitive dependencies are invisible. Capability, current-declaration, repair-guidance, repair-execution, initial-envelope, and total-envelope budgets are hard failures at the final model-call boundary. A compiler or test failure contributes one bounded sanitized diagnostic only to the repair-guidance station; test source is never model context. Guidance has no mutation authority and becomes useful only when ordinary code validates the executor's returned block against the original signature and reruns the exact compiler/test stage.
 
-No coding LLM may receive or choose:
+No coding, repair, test-generation, or semantic-review LLM may receive or choose:
 
 * A file name, path, tree, workspace snapshot, project plan, queue, phase, or job graph.
 * Whole-file or whole-project responsibility.
@@ -188,7 +188,14 @@ Per-job model routing is immutable. Concurrent workers must resolve routing into
 
 Every exposed CLI or API control must have one authoritative runtime consumer and a test proving its effect. Write-only metadata is forbidden. The removed profile, planning-pass, persistent-execution, review, missing-tool, generic reasoning, autonomy, approval, verification, web, workspace, and external-agent toggles must not return under new names; old top-level metadata using them fails explicitly. Keep only typed settings that actually alter execution, such as model routing and the consumed explicit research query.
 
-Whole-file generation, model-owned planning, model-owned repair routing, and path-bearing prompts are forbidden regressions and require source-level absence tests.
+Whole-file generation, model-owned execution planning, model-owned repair routing, and
+path-bearing coding/repair/test prompts are forbidden regressions and require
+source-level absence tests. The sole exception is the typed target-tree declaration
+station defined in [docs/TARGET_TREE_PLANNING.md](docs/TARGET_TREE_PLANNING.md): it may
+see a bounded code-built artifact inventory and return desired artifact nodes as data.
+It cannot return filesystem actions, commands, source, declaration contracts, a work
+queue, or completion. Code validates its tree and derives every
+create/move/delete/modify ledger transition.
 
 Product-Specific Workloads Are Not Framework Code
 

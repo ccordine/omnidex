@@ -23,6 +23,7 @@ func TestGenericBrowserAdapterCreatesOneCapabilityAndBlindAcceptancePerRequireme
 		"unseen-app", specification, genericBrowserSkillBindings(specification),
 		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
+		genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +62,52 @@ func TestGenericBrowserAdapterCreatesOneCapabilityAndBlindAcceptancePerRequireme
 	}
 }
 
+func TestGenericBrowserAdapterUsesValidatedTargetTreePaths(t *testing.T) {
+	configuration := assemblyline.ApplicationSpecification{
+		Surface:      assemblyline.ApplicationSurfaceBrowser,
+		ProductQuote: "single capability workspace",
+		Requirements: []assemblyline.Requirement{{ID: "requirement_001", SourceQuote: "show one capability"}},
+	}
+	target, err := (assemblyline.TargetTreeCandidate{
+		Schema: assemblyline.TargetTreeCandidateSchemaV1,
+		Artifacts: []assemblyline.TargetTreeArtifact{
+			{Path: "ui/capability.tsx", Kind: assemblyline.TargetArtifactImplementation, Purpose: "implement the capability", RequirementIDs: []string{"requirement_001"}, NewKey: "implementation"},
+			{Path: "checks/capability.test.tsx", Kind: assemblyline.TargetArtifactVerification, Purpose: "verify the capability", RequirementIDs: []string{"requirement_001"}, NewKey: "verification"},
+		},
+	}).ValidateFor(assemblyline.TargetTreeInput{
+		Objective:    configuration.ProductQuote,
+		Requirements: []assemblyline.TargetTreeRequirement{{ID: "requirement_001", Statement: "show one capability"}},
+		Current:      []assemblyline.CurrentTargetArtifact{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, blueprint, _, err := compileGenericTypeScriptBrowserBlueprint(
+		"unseen", configuration, genericBrowserSkillBindings(configuration),
+		genericBrowserWorkload(t, configuration), genericBrowserCapabilityBindings(configuration), target,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var feature, verification assemblyline.TypeScriptDocument
+	for _, document := range blueprint.Documents {
+		switch document.ID {
+		case "feature_001":
+			feature = document
+		case "acceptance_001":
+			verification = document
+		}
+	}
+	if feature.Path != "ui/capability.tsx" || verification.Path != "checks/capability.test.tsx" {
+		t.Fatalf("declared paths were not used: feature=%q verification=%q", feature.Path, verification.Path)
+	}
+	for _, required := range []string{"'../src/runtime'", "'../ui/capability'"} {
+		if !strings.Contains(verification.Header, required) {
+			t.Fatalf("verification import %q missing from %s", required, verification.Header)
+		}
+	}
+}
+
 func TestGenericBrowserAdapterContainsNoHeldOutProductImplementation(t *testing.T) {
 	t.Parallel()
 
@@ -74,6 +121,7 @@ func TestGenericBrowserAdapterContainsNoHeldOutProductImplementation(t *testing.
 		"unknown", specification, genericBrowserSkillBindings(specification),
 		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
+		genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -114,6 +162,7 @@ func TestGenericBrowserAdapterOwnsCapabilityChannelsAndAcceptanceFailureRouting(
 		"linked", specification, genericBrowserSkillBindings(specification),
 		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
+		genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -215,6 +264,7 @@ func TestGenericBrowserFeatureDocumentsImportEveryAdvertisedRuntimeTypeWithoutRu
 				"unseen", specification, genericBrowserSkillBindings(specification),
 				genericBrowserWorkload(t, specification),
 				genericBrowserCapabilityBindings(specification),
+				genericBrowserTargetTree(t, specification),
 			)
 			if err != nil {
 				t.Fatal(err)

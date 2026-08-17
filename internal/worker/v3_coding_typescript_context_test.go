@@ -27,6 +27,7 @@ func TestGenericFiveCapabilityWorkerKeepsExecutableAuthorityInsideThePortableEnv
 		"bounded", specification, genericBrowserSkillBindings(specification),
 		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
+		genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +76,7 @@ func TestGenericWorkersReceiveOnlyLocalAuthorityAndCodeOwnedCapabilityAPIs(t *te
 		"unseen", specification, nil, genericBrowserSkillBindings(specification),
 		genericBrowserWorkload(t, specification),
 		genericBrowserCapabilityBindings(specification),
+		genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +191,7 @@ func TestGenerationAndAcceptancePromptsReceiveTheAcceptedExecutableJobAndOnlyRel
 	}
 	program, err := compileDirectCodingProgram(
 		"unseen", specification, nil, genericBrowserSkillBindings(specification), workload, capabilities,
+		genericBrowserTargetTree(t, specification),
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -21,6 +21,8 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationJobSpecificationInput](
 			payload, validateApplicationJobSpecificationInput,
 		)
+	case WorkApplicationTargetTree:
+		return decodeAndValidatePortablePayload[TargetTreeInput](payload, TargetTreeInput.Validate)
 	case WorkApplicationAcceptanceGroundingReview:
 		return decodeAndValidatePortablePayload[ApplicationAcceptanceGroundingReviewInput](
 			payload, ApplicationAcceptanceGroundingReviewInput.validate,

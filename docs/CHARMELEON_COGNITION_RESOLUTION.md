@@ -53,8 +53,11 @@ one product context and bounded semantic requirement statements, each ultimately
 to the immutable request digest. Authority does not depend on reproducing a contiguous
 substring or allocating non-overlapping text intervals. Code validates and retains a valid
 candidate directly: an independent model is never called merely to accept, reject, or
-cosmetically replace a leaf. Models see no operation catalog, repository tree, path, task
-graph, or completion control.
+cosmetically replace a leaf. Models see no operation catalog, task graph, or completion
+control. The sole path boundary is the typed target-tree declaration station defined in
+[TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md): it receives a bounded code-built
+artifact inventory and returns desired artifact nodes only. Coding, review, repair, and
+test-generation stations remain path-blind.
 
 For job specifications, code validates the complete candidate itself. Only an exact
 deterministic schema failure creates a correction boundary. Code names the one mutable

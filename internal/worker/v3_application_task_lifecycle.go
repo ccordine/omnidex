@@ -77,12 +77,6 @@ func runDirectCodingApplicationTaskLifecycle(
 			}
 			program.Generated[featureID] = stage.Generated[featureID]
 			program.Generated[acceptanceID] = stage.Generated[acceptanceID]
-			if receipt, grounded := stage.AcceptanceGrounding[acceptanceID]; grounded {
-				if program.AcceptanceGrounding == nil {
-					program.AcceptanceGrounding = make(map[string]assemblyline.ApplicationAcceptanceGroundingReceipt)
-				}
-				program.AcceptanceGrounding[acceptanceID] = receipt
-			}
 			return nil
 		},
 	)

@@ -12,9 +12,14 @@ func genericBrowserAcceptanceDocuments(
 	specification assemblyline.ApplicationSpecification,
 	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
+	targetTree assemblyline.TargetTree,
 ) ([]assemblyline.TypeScriptDocument, error) {
 	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
+		files, err := targetTree.RequirementFiles(requirement.ID)
+		if err != nil {
+			return nil, err
+		}
 		sequence := index + 1
 		functionName := fmt.Sprintf("Feature%03d", sequence)
 		verifyName := fmt.Sprintf("VerifyFeature%03d", sequence)
@@ -34,12 +39,14 @@ func genericBrowserAcceptanceDocuments(
 		}
 		documents = append(documents, assemblyline.TypeScriptDocument{
 			ID:   fmt.Sprintf("acceptance_%03d", sequence),
-			Path: fmt.Sprintf("src/features/%s.test.tsx", functionName),
+			Path: files.VerificationPath,
 			Header: fmt.Sprintf(`import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { createApplicationRuntime, createFeatureRuntime } from '../runtime';
-import { %s } from './%s';`, functionName, functionName),
+import { createApplicationRuntime, createFeatureRuntime } from '%s';
+import { %s } from '%s';`,
+				typeScriptRelativeModule(files.VerificationPath, "src/runtime.tsx"),
+				functionName, typeScriptRelativeModule(files.VerificationPath, files.ImplementationPath)),
 			Blocks: []assemblyline.TypeScriptBlock{
 				{
 					ID:        verificationID,

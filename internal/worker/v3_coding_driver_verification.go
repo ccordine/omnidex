@@ -22,6 +22,14 @@ func (s *directCodingSession) Verify() (directCodingVerification, error) {
 		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_static_validation_failed", "diagnostic="+safeLine(programDiagnostic.Detail, "unknown"))
 		return directCodingVerification{Diagnostic: programDiagnostic}, nil
 	}
+	targetTreeDiagnostic, err := directCodingTargetTreeWorkspaceDiagnostic(s.root, s.program.TargetTree)
+	if err != nil {
+		return directCodingVerification{}, err
+	}
+	if targetTreeDiagnostic != nil {
+		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_target_tree_validation_failed", "diagnostic="+safeLine(targetTreeDiagnostic.Detail, "unknown"))
+		return directCodingVerification{Diagnostic: targetTreeDiagnostic}, nil
+	}
 	commands, err := directCodingProgramVerificationCommands(*s.specification, *s.program)
 	if err != nil {
 		return directCodingVerification{}, err

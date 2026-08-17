@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -113,55 +112,10 @@ func routeDirectCodingAcceptanceFailure(
 	if !exists {
 		return nil, fmt.Errorf("route acceptance failure: unknown originating block %s", diagnostic.BlockID)
 	}
-	if diagnostic.FailureClass != directCodingStageFailureVitestBehavior {
-		return diagnostic, nil
-	}
-	receipt, reviewed := program.AcceptanceGrounding[diagnostic.BlockID]
-	if !reviewed {
-		return diagnostic, nil
-	}
-	context, featureID, recognized, err := directCodingAcceptanceTaskAuthority(program, diagnostic.BlockID)
-	if err != nil {
-		return nil, err
-	}
-	if !recognized {
-		return diagnostic, nil
-	}
-	source := strings.TrimSpace(program.Generated[diagnostic.BlockID])
-	tsx := directCodingTypeScriptBlockIsTSX(program.TypeScript, diagnostic.BlockID)
-	input, err := assemblyline.NewApplicationAcceptanceGroundingReviewInput(
-		context, source, tsx,
-		directCodingBrowserAcceptancePlatformAuthorities(),
-	)
-	if err != nil {
-		return diagnostic, nil
-	}
-	authorized, err := receipt.AuthorizesFeatureFailureAt(
-		input, source, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
-	)
-	if err != nil || !authorized {
-		return diagnostic, nil
-	}
-	feature, exists := directCodingTypeScriptBlueprintBlock(program.TypeScript, featureID)
-	if !exists || !feature.Generated() || strings.TrimSpace(program.Generated[featureID]) == "" {
-		return nil, fmt.Errorf("grounded acceptance %s targets unavailable implementation %s", diagnostic.BlockID, featureID)
-	}
-	evidence, err := assemblyline.ResolveTypeScriptAcceptanceFailureEvidence(
-		source, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("derive grounded acceptance failure evidence: %w", err)
-	}
-	routed := *diagnostic
-	routed.BlockID = featureID
-	if len(evidence.PrecedingInteraction) > 0 {
-		rawEvidence, encodeErr := json.Marshal(evidence)
-		if encodeErr != nil {
-			return nil, fmt.Errorf("encode grounded acceptance failure evidence: %w", encodeErr)
-		}
-		routed.ModelFeedback = "PUBLIC_BEHAVIOR_DISCREPANCY_JSON:\n" + string(rawEvidence)
-	}
-	return &routed, nil
+	// The acceptance declaration is the smallest block that owns its own test
+	// failure. Runtime evidence routes directly to that block; no second model is
+	// invoked merely to approve or reinterpret generated test source.
+	return diagnostic, nil
 }
 
 func runDirectCodingStageCommand(

@@ -39,6 +39,8 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingRequirements, nil
 	case assemblyline.WorkApplicationJobSpecification:
 		return station.CodingWorkload, nil
+	case assemblyline.WorkApplicationTargetTree:
+		return station.CodingTargetTree, nil
 	case assemblyline.WorkApplicationAcceptanceGroundingReview:
 		return station.CodingWorkloadReview, nil
 	case assemblyline.WorkRepositorySearchTerm:

@@ -39,6 +39,10 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	targetTreeModel, err := s.workerModel(station.CodingTargetTree)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	artifactModel, err := s.workerModel(station.CodingArtifactHandling)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -67,6 +71,18 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	targetTree, err := resolveDirectCodingTargetTree(
+		workerRuntime, targetTreeModel, specification, []assemblyline.CurrentTargetArtifact{},
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	structureTransitions, err := assemblyline.DiffTargetTree(
+		directCodingTargetTreeInput(specification, []assemblyline.CurrentTargetArtifact{}), targetTree,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_workload_frozen", fmt.Sprintf(
 		"tasks=%d sha256=%s", len(workload.Tasks), workload.SHA256,
 	))
@@ -81,11 +97,13 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	program, err := compileDirectCodingProgram(
-		filepath.Base(s.root), specification, identities, skills, workload, capabilities,
+		filepath.Base(s.root), specification, identities, skills, workload, capabilities, targetTree,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	program.TargetTree = targetTree
+	program.StructureTransitions = append([]assemblyline.TargetTreeTransition(nil), structureTransitions...)
 	if err := s.runDirectCodingApplicationTaskLifecycle(workloadInput, workload, &program); err != nil {
 		return directCodingAssembly{}, err
 	}

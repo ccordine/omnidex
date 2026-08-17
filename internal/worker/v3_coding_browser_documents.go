@@ -10,7 +10,8 @@ import (
 
 func genericBrowserAppDocument(
 	specification assemblyline.ApplicationSpecification,
-) assemblyline.TypeScriptDocument {
+	targetTree assemblyline.TargetTree,
+) (assemblyline.TypeScriptDocument, error) {
 	imports := []string{
 		"import { useMemo } from 'react';",
 		"import type { ReactElement } from 'react';",
@@ -18,8 +19,12 @@ func genericBrowserAppDocument(
 	}
 	dependencies := []string{"runtime.factory"}
 	for index := range specification.Requirements {
+		files, err := targetTree.RequirementFiles(specification.Requirements[index].ID)
+		if err != nil {
+			return assemblyline.TypeScriptDocument{}, err
+		}
 		name := fmt.Sprintf("Feature%03d", index+1)
-		imports = append(imports, fmt.Sprintf("import { %s } from './features/%s';", name, name))
+		imports = append(imports, fmt.Sprintf("import { %s } from '%s';", name, typeScriptRelativeModule("src/App.tsx", files.ImplementationPath)))
 		dependencies = append(dependencies, fmt.Sprintf("feature.%03d", index+1))
 	}
 	return assemblyline.TypeScriptDocument{
@@ -28,7 +33,7 @@ func genericBrowserAppDocument(
 			ID: "application.render", Static: genericBrowserAppSource(specification),
 			API: "function App(): ReactElement", DependsOn: dependencies,
 		}},
-	}
+	}, nil
 }
 
 func genericBrowserAppSource(specification assemblyline.ApplicationSpecification) string {
