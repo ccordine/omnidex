@@ -93,6 +93,15 @@ func TestSpecificationReviewCandidatesAreAppliedByCodeAcrossUnrelatedFixtures(t 
 				t.Fatal(err)
 			}
 			assertReviewSchema(t, input)
+			accepted, err := assemblyline.DecodeApplicationJobSpecificationReview(
+				input, fmt.Sprintf(
+					`{"decision":"accept","evidence_id":%q,"replacement_value":"unused"}`,
+					fixture.evidenceID,
+				),
+			)
+			if err != nil || accepted.Decision != assemblyline.ApplicationJobSpecificationReviewAccept {
+				t.Fatalf("acceptance with untrusted non-mutating fields rejected: review=%#v err=%v", accepted, err)
+			}
 
 			replace, err := assemblyline.DecodeApplicationJobSpecificationReview(
 				input, fmt.Sprintf(

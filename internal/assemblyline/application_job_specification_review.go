@@ -137,9 +137,9 @@ func DecodeApplicationJobSpecificationReview(
 		return zero, err
 	}
 	if review.Decision == ApplicationJobSpecificationReviewAccept {
-		if *wire.EvidenceID != "" || *wire.ReplacementValue != "" {
-			return zero, fmt.Errorf("accepted application job specification review must not name evidence or a replacement")
-		}
+		// Accept has no mutation surface. Evidence and replacement bytes therefore
+		// carry no authority and are discarded instead of blocking a state the
+		// reviewer already accepted.
 		review.binding = binding
 		return review, nil
 	}
