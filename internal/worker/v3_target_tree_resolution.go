@@ -19,7 +19,10 @@ func resolveDirectCodingTargetTree(
 	existingDirs []string,
 ) (assemblyline.TargetTree, error) {
 	var zero assemblyline.TargetTree
-	input := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
+	input, err := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
+	if err != nil {
+		return zero, err
+	}
 	target, err := runDirectCodingTargetTreeCall(runtime, plannerModel, correctionModel, input)
 	if err != nil {
 		return zero, err
@@ -116,15 +119,19 @@ func directCodingTargetTreeInput(
 	specification assemblyline.ApplicationSpecification,
 	existingPaths []string,
 	existingDirs []string,
-) assemblyline.TargetTreeInput {
+) (assemblyline.TargetTreeInput, error) {
+	technicalContext, err := directCodingTreeTechnicalContext(specification.Surface)
+	if err != nil {
+		return assemblyline.TargetTreeInput{}, err
+	}
 	paths := make([]string, len(existingPaths))
 	copy(paths, existingPaths)
 	directories := make([]string, len(existingDirs))
 	copy(directories, existingDirs)
 	return assemblyline.TargetTreeInput{
 		Objective:        specification.ProductQuote,
-		TechnicalContext: "The code-selected adapter is a TypeScript React browser project. Return only workload-specific React source and browser-test file paths. The adapter supplies its own runtime, application shell, bootstrap, manifests, styles, and their tests.",
+		TechnicalContext: technicalContext,
 		ExistingPaths:    paths,
 		ExistingDirs:     directories,
-	}
+	}, nil
 }

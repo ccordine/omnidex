@@ -31,7 +31,7 @@ func resolveDirectCodingFileContents(
 	}
 	contents := make([]assemblyline.TargetTreeFileContent, 0, len(tree.Paths))
 	for _, filePath := range tree.Paths {
-		kind, err := directCodingTargetTreeFileKind(filePath)
+		kind, err := directCodingTargetTreeFileKind(specification.Surface, filePath)
 		if err != nil {
 			return assemblyline.TargetTree{}, err
 		}
@@ -61,15 +61,12 @@ func resolveDirectCodingFileContents(
 // directCodingTargetTreeFileKind is adapter-owned syntax classification, not a
 // model decision. The selected browser adapter emits React implementation and
 // browser-test leaves only.
-func directCodingTargetTreeFileKind(path string) (assemblyline.TargetArtifactKind, error) {
-	switch {
-	case strings.HasSuffix(path, ".test.tsx"):
-		return assemblyline.TargetArtifactVerification, nil
-	case strings.HasSuffix(path, ".tsx"):
-		return assemblyline.TargetArtifactImplementation, nil
-	default:
-		return "", fmt.Errorf("target-tree file %q is not supported by the selected TypeScript React adapter", path)
-	}
+func directCodingTargetTreeFileKind(
+	surface assemblyline.ApplicationSurface,
+	path string,
+) (assemblyline.TargetArtifactKind, error) {
+	_, kind, err := directCodingArtifactAdapterForTreePath(surface, path)
+	return kind, err
 }
 
 func resolveDirectCodingFileContent(

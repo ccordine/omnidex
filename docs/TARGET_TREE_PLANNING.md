@@ -16,7 +16,7 @@ The target-tree station answers exactly one unresolved semantic question:
 Its input is code-built:
 
 * the accepted objective;
-* only the technical context required to choose compatible paths; and
+* the code-selected registered artifact stack required to choose compatible paths; and
 * the real, bounded current workspace tree (file paths and directory paths).
 
 Its complete response is a path-only tree:
@@ -29,6 +29,13 @@ The tree station returns no artifact IDs, kinds, purposes, ownership,
 requirement bindings, source, declarations, commands, filesystem operations,
 move/delete instructions, work items, ordering, dependencies, tests, tools, or
 completion state.
+
+The selected stack is explicit technical context, not an instruction to write
+source. A Java browser stack, a TypeScript React browser stack, and a Laravel
+stack are all valid when their registered artifact adapters and verification
+machinery support the selected surface. A path is then resolved by code through
+the matching adapter; the model never chooses an adapter, command, parser, or
+validation operation.
 
 For a fresh workspace, the existing tree is empty. For an existing workspace,
 the code-built existing tree is input evidence. An omitted existing path means

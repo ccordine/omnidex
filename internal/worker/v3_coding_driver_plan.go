@@ -89,9 +89,11 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	structureTransitions, err := assemblyline.DiffTargetTree(
-		directCodingTargetTreeInput(specification, existingPaths, existingDirs), targetTree,
-	)
+	targetTreeInput, err := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	structureTransitions, err := assemblyline.DiffTargetTree(targetTreeInput, targetTree)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}

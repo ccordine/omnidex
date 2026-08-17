@@ -304,6 +304,14 @@ create/reconcile transition. A separate file-content station answers the next se
 question for exactly one returned file leaf; it is not permitted to enlarge the tree
 station's response.
 
+Artifact support is adapter-based, never language-hard-coded into the tree or
+model prompt. Code selects the registered stack from authoritative project
+facts and supplies that exact stack only as technical tree context. A returned
+path is then recognized, parsed, scoped, validated, repaired, and verified by
+its code-owned artifact adapter. New PHP, Java, NGINX, Dockerfile, Blade, CSS,
+JSON, YAML, or other support is added as a focused adapter with explicit
+capability/verification limits; do not create a universal coder prompt.
+
 Product-Specific Workloads Are Not Framework Code
 
 The application named in an autonomy benchmark is a held-out workload. It must not have a product-specific adapter, blueprint, source template, component contract, test suite, repair directive, prompt branch, or domain enum in the framework under test.
