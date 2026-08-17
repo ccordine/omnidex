@@ -43,3 +43,32 @@ func TestFileContentResolutionUsesOneLeafAndExactCorrection(t *testing.T) {
 		t.Fatalf("calls=%d content=%+v", calls, content)
 	}
 }
+
+func TestFileContentResolutionDerivesForcedSinglePairWithoutModelCall(t *testing.T) {
+	specification := assemblyline.ApplicationSpecification{Requirements: []assemblyline.Requirement{
+		{ID: "requirement_001", SourceQuote: "display a count"},
+		{ID: "requirement_002", SourceQuote: "increment the count"},
+	}}
+	tree, err := resolveDirectCodingFileContents(
+		typedWorkerRuntime{}, "", "", "", specification,
+		assemblyline.TargetTree{
+			StackID: genericTypeScriptBrowserAdapter,
+			Paths:   []string{"src/Counter.tsx", "tests/Counter.test.tsx"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Contents) != 2 {
+		t.Fatalf("contents=%+v", tree.Contents)
+	}
+	for _, requirement := range specification.Requirements {
+		files, err := tree.RequirementFiles(requirement.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if files.ImplementationPath != "src/Counter.tsx" || files.VerificationPath != "tests/Counter.test.tsx" {
+			t.Fatalf("requirement %q files=%+v", requirement.ID, files)
+		}
+	}
+}

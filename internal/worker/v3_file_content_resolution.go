@@ -17,14 +17,6 @@ func resolveDirectCodingFileContents(
 	specification assemblyline.ApplicationSpecification,
 	tree assemblyline.TargetTree,
 ) (assemblyline.TargetTree, error) {
-	if runtime.Context == nil || runtime.Execute == nil {
-		return assemblyline.TargetTree{}, fmt.Errorf("file-content resolution requires a portable execution runtime")
-	}
-	modelName = strings.TrimSpace(modelName)
-	correctionModel = strings.TrimSpace(correctionModel)
-	if modelName == "" || correctionModel == "" {
-		return assemblyline.TargetTree{}, fmt.Errorf("file-content resolution requires configured initial and correction models")
-	}
 	stack, err := directCodingProjectStackByID(tree.StackID)
 	if err != nil {
 		return assemblyline.TargetTree{}, err
@@ -32,6 +24,20 @@ func resolveDirectCodingFileContents(
 	requirements := make([]assemblyline.FileContentRequirement, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		requirements[index] = assemblyline.FileContentRequirement{ID: requirement.ID, Statement: requirement.SourceQuote}
+	}
+	if contents, forced, err := directCodingForcedFileContents(stack, tree.Paths, requirements); err != nil {
+		return assemblyline.TargetTree{}, err
+	} else if forced {
+		tree.Contents = contents
+		return tree, nil
+	}
+	if runtime.Context == nil || runtime.Execute == nil {
+		return assemblyline.TargetTree{}, fmt.Errorf("file-content resolution requires a portable execution runtime")
+	}
+	modelName = strings.TrimSpace(modelName)
+	correctionModel = strings.TrimSpace(correctionModel)
+	if modelName == "" || correctionModel == "" {
+		return assemblyline.TargetTree{}, fmt.Errorf("file-content resolution requires configured initial and correction models")
 	}
 	contents := make([]assemblyline.TargetTreeFileContent, 0, len(tree.Paths))
 	for _, filePath := range tree.Paths {
@@ -60,6 +66,53 @@ func resolveDirectCodingFileContents(
 		}
 	}
 	return tree, nil
+}
+
+// directCodingForcedFileContents resolves only the topology that has one
+// possible requirement binding: exactly one implementation leaf and exactly
+// one verification leaf. Asking a model to choose in that state is illegal;
+// each accepted requirement must bind to the sole leaf of each required kind.
+func directCodingForcedFileContents(
+	stack directCodingProjectStack,
+	paths []string,
+	requirements []assemblyline.FileContentRequirement,
+) ([]assemblyline.TargetTreeFileContent, bool, error) {
+	if len(paths) != 2 || len(requirements) == 0 {
+		return nil, false, nil
+	}
+	var implementationPath string
+	var verificationPath string
+	for _, filePath := range paths {
+		_, kind, err := directCodingArtifactAdapterForTreePath(stack, filePath)
+		if err != nil {
+			return nil, false, err
+		}
+		switch kind {
+		case assemblyline.TargetArtifactImplementation:
+			if implementationPath != "" {
+				return nil, false, nil
+			}
+			implementationPath = filePath
+		case assemblyline.TargetArtifactVerification:
+			if verificationPath != "" {
+				return nil, false, nil
+			}
+			verificationPath = filePath
+		default:
+			return nil, false, fmt.Errorf("target-tree file %q has unsupported artifact kind %q", filePath, kind)
+		}
+	}
+	if implementationPath == "" || verificationPath == "" {
+		return nil, false, nil
+	}
+	ids := make([]string, len(requirements))
+	for index, requirement := range requirements {
+		ids[index] = requirement.ID
+	}
+	return []assemblyline.TargetTreeFileContent{
+		{Path: implementationPath, Kind: assemblyline.TargetArtifactImplementation, RequirementIDs: append([]string(nil), ids...)},
+		{Path: verificationPath, Kind: assemblyline.TargetArtifactVerification, RequirementIDs: append([]string(nil), ids...)},
+	}, true, nil
 }
 
 // directCodingTargetTreeFileKind is adapter-owned syntax classification, not a
