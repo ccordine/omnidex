@@ -68,21 +68,21 @@ func TestInventedAcceptanceAssumptionsStayAcceptanceOwnedAndAreCorrected(t *test
 	fixtures := []struct {
 		name, product, requirement, criterion string
 		unsupportedOperation                  string
-		inventedBody, correctedBody           string
+		inventedBody, retainedBody            string
 	}{
 		{
 			name: "inventory count", product: "inventory browser", requirement: "show stock items",
 			criterion:            "The stock-item collection is visible.",
 			unsupportedOperation: "expect_matcher:toHaveLength",
 			inventedBody:         `expect(screen.getAllByRole("row")).toHaveLength(4);`,
-			correctedBody:        `expect(screen.getByText("Stock items")).toBeInTheDocument();`,
+			retainedBody:         `expect(screen.getByText("Stock items")).toBeInTheDocument();`,
 		},
 		{
 			name: "schedule role", product: "appointment schedule", requirement: "show appointments",
 			criterion:            "The appointment schedule is visible.",
 			unsupportedOperation: "testing_library_query:getByRole",
 			inventedBody:         `expect(screen.getByRole("group", { name: "Appointments" })).toBeInTheDocument();`,
-			correctedBody:        `expect(screen.getByText("Appointments")).toBeInTheDocument();`,
+			retainedBody:         `expect(screen.getByText("Appointments")).toBeInTheDocument();`,
 		},
 	}
 	for _, fixture := range fixtures {
@@ -90,10 +90,10 @@ func TestInventedAcceptanceAssumptionsStayAcceptanceOwnedAndAreCorrected(t *test
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 			program := directCodingGroundingFixtureProgram(
-				t, fixture.product, fixture.requirement, []string{fixture.criterion}, fixture.inventedBody,
+				t, fixture.product, fixture.requirement, []string{fixture.criterion},
+				fixture.inventedBody+"\n"+fixture.retainedBody,
 			)
 			featureBefore := program.Generated["feature.001"]
-			correctedSource := strings.Split(program.Generated["acceptance.001"], "{")[0] + "{ " + fixture.correctedBody + " }"
 			before, err := routeDirectCodingAcceptanceFailure(program, &directCodingStageDiagnostic{
 				BlockID: "acceptance.001", FailureClass: directCodingStageFailureVitestBehavior,
 			})
@@ -103,7 +103,6 @@ func TestInventedAcceptanceAssumptionsStayAcceptanceOwnedAndAreCorrected(t *test
 
 			calls := []assemblyline.WorkKind{}
 			reviews := 0
-			correctionPrompt := ""
 			unsupportedSiteID := ""
 			runtime := typedWorkerRuntime{
 				Context: context.Background(),
@@ -125,13 +124,6 @@ func TestInventedAcceptanceAssumptionsStayAcceptanceOwnedAndAreCorrected(t *test
 							)), nil
 						}
 						return directCodingPortableCandidate(job, directCodingAcceptedGroundingJSON(t, input)), nil
-					case assemblyline.WorkFragmentCorrection:
-						var err error
-						correctionPrompt, _, err = assemblyline.RenderPortableJob(job)
-						if err != nil {
-							return assemblyline.PortableResult{}, err
-						}
-						return directCodingPortableCandidate(job, correctedSource), nil
 					default:
 						return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %s", job.Kind)
 					}
@@ -142,23 +134,15 @@ func TestInventedAcceptanceAssumptionsStayAcceptanceOwnedAndAreCorrected(t *test
 			}
 			wantCalls := []assemblyline.WorkKind{
 				assemblyline.WorkApplicationAcceptanceGroundingReview,
-				assemblyline.WorkFragmentCorrection,
 				assemblyline.WorkApplicationAcceptanceGroundingReview,
 			}
 			if !reflect.DeepEqual(calls, wantCalls) {
 				t.Fatalf("calls=%v want=%v", calls, wantCalls)
 			}
-			for _, required := range []string{"SITE=" + unsupportedSiteID, "LINE=", "COLUMN=", "OPERATION="} {
-				if !strings.Contains(correctionPrompt, required) {
-					t.Fatalf("unsupported-site correction omitted %q:\n%s", required, correctionPrompt)
-				}
-			}
-			if strings.Contains(correctionPrompt, "top-level statement") {
-				t.Fatalf("granular site was treated as a statement ordinal:\n%s", correctionPrompt)
-			}
 			if program.Generated["feature.001"] != featureBefore ||
-				strings.TrimSpace(program.Generated["acceptance.001"]) != strings.TrimSpace(correctedSource) {
-				t.Fatalf("grounding repair changed wrong source: feature=%q acceptance=%q", program.Generated["feature.001"], program.Generated["acceptance.001"])
+				strings.Contains(program.Generated["acceptance.001"], fixture.inventedBody) ||
+				!strings.Contains(program.Generated["acceptance.001"], fixture.retainedBody) {
+				t.Fatalf("grounding repair did not make the exact code-owned source transition: feature=%q acceptance=%q", program.Generated["feature.001"], program.Generated["acceptance.001"])
 			}
 		})
 	}

@@ -7,13 +7,6 @@ import (
 	treesitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-type AcceptanceObservationRepairSite struct {
-	Line      int                            `json:"line"`
-	Column    int                            `json:"column"`
-	Operation string                         `json:"operation"`
-	Literals  []AcceptanceObservationLiteral `json:"literals"`
-}
-
 func acceptanceObservationNodeLocator(
 	siteID string,
 	node *treesitter.Node,
@@ -100,41 +93,6 @@ func ResolveTypeScriptAcceptanceObservationSite(
 		}
 	}
 	return root.SiteID, true, nil
-}
-
-func ResolveTypeScriptAcceptanceObservationRepairSite(
-	source string,
-	tsx bool,
-	siteID string,
-) (AcceptanceObservationRepairSite, bool, error) {
-	inventory, err := InventoryTypeScriptAcceptanceObservations(source, tsx)
-	if err != nil {
-		return AcceptanceObservationRepairSite{}, false, err
-	}
-	var site AcceptanceObservationSite
-	foundSite := false
-	for _, candidate := range inventory.Sites {
-		if candidate.ID == siteID {
-			site = candidate
-			foundSite = true
-			break
-		}
-	}
-	if !foundSite {
-		return AcceptanceObservationRepairSite{}, false, nil
-	}
-	for _, locator := range inventory.Locators {
-		if locator.SiteID == siteID {
-			return AcceptanceObservationRepairSite{
-				Line: locator.StartLine, Column: locator.StartColumn,
-				Operation: site.Operations[0],
-				Literals:  append([]AcceptanceObservationLiteral(nil), site.Literals...),
-			}, true, nil
-		}
-	}
-	return AcceptanceObservationRepairSite{}, false, fmt.Errorf(
-		"acceptance observation site %s has no locator", siteID,
-	)
 }
 
 func acceptanceSourceOffset(source string, line int, column int) (int, error) {

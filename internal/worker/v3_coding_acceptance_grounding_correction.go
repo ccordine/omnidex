@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -27,6 +26,19 @@ func correctDirectCodingAcceptanceGrounding(
 		if rewritten {
 			return corrected, nil
 		}
+		corrected, removed, err := assemblyline.RemoveTypeScriptAcceptanceObservationStatement(
+			current, input.TSX, review.UnsupportedSiteID,
+		)
+		if err != nil {
+			return "", err
+		}
+		if removed {
+			return corrected, nil
+		}
+		return "", fmt.Errorf(
+			"acceptance grounding unsupported site %s has no deterministic source correction",
+			review.UnsupportedSiteID,
+		)
 	}
 	block, err := directCodingTypeScriptCorrectionBlock(program.TypeScript, acceptanceID)
 	if err != nil {
@@ -62,32 +74,6 @@ func directCodingAcceptanceGroundingRepairDirective(
 ) (string, string, error) {
 	if review.Decision != assemblyline.AcceptanceGroundingRepair {
 		return "", "", fmt.Errorf("acceptance grounding correction requires one repair review")
-	}
-	if review.UnsupportedSiteID != "" {
-		for _, site := range input.Inventory.Sites {
-			if site.ID != review.UnsupportedSiteID {
-				continue
-			}
-			repairSite, mapped, err := assemblyline.ResolveTypeScriptAcceptanceObservationRepairSite(
-				current, input.TSX, site.ID,
-			)
-			if err != nil {
-				return "", "", err
-			}
-			if !mapped {
-				return "", "", fmt.Errorf("acceptance grounding repair site %s has no current source locator", site.ID)
-			}
-			literals, err := json.Marshal(repairSite.Literals)
-			if err != nil {
-				return "", "", fmt.Errorf("encode acceptance observation literals: %w", err)
-			}
-			return "Delete only the complete statement containing the unsupported observation at the exact line and column named in OBSERVED_FAILURE. Preserve every other statement.",
-				fmt.Sprintf(
-					"UNSUPPORTED_ACCEPTANCE_OBSERVATION; SITE=%s; LINE=%d; COLUMN=%d; OPERATION=%s; LITERALS=%s",
-					site.ID, repairSite.Line, repairSite.Column, repairSite.Operation, literals,
-				), nil
-		}
-		return "", "", fmt.Errorf("acceptance grounding repair cites unknown site %s", review.UnsupportedSiteID)
 	}
 	if review.MissingCriterionID != "" {
 		for _, criterion := range input.Criteria {

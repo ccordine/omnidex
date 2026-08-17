@@ -193,6 +193,77 @@ func TestResolveTypeScriptAcceptanceObservationSiteUsesSmallestNestedFailureSite
 	}
 }
 
+func TestRemoveTypeScriptAcceptanceObservationStatementDeletesOnlyResolvedStatement(t *testing.T) {
+	t.Parallel()
+
+	source := `async function VerifySummary(): Promise<void> {
+  expect(screen.getByText("Unsupported count")).toBeVisible();
+  expect(screen.getByText("Current count")).toBeVisible();
+}`
+	inventory, err := InventoryTypeScriptAcceptanceObservations(source, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	siteID := siteIDForOperation(t, inventory, "testing_library_query:getByText")
+	corrected, removed, err := RemoveTypeScriptAcceptanceObservationStatement(source, true, siteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Fatal("known acceptance observation was not removed")
+	}
+	if strings.Contains(corrected, "Unsupported count") || !strings.Contains(corrected, "Current count") {
+		t.Fatalf("statement removal changed the wrong source:\n%s", corrected)
+	}
+	if _, err := InventoryTypeScriptAcceptanceObservations(corrected, true); err != nil {
+		t.Fatalf("statement removal did not preserve a valid observation declaration: %v", err)
+	}
+}
+
+func TestRemoveTypeScriptAcceptanceObservationStatementRejectsUnknownSite(t *testing.T) {
+	t.Parallel()
+
+	source := `function VerifySummary(): void {
+  expect(screen.getByText("Current count")).toBeVisible();
+}`
+	_, _, err := RemoveTypeScriptAcceptanceObservationStatement(source, true, "site_999")
+	if err == nil || !strings.Contains(err.Error(), "not present in the current declaration") {
+		t.Fatalf("unknown site error=%v", err)
+	}
+}
+
+func TestRemoveTypeScriptAcceptanceObservationStatementRemovesResolvedLexicalDeclaration(t *testing.T) {
+	t.Parallel()
+
+	source := `async function VerifySummary(): Promise<void> {
+  const currentValue = await screen.findByText(/^\\d+$/);
+  expect(currentValue).toBeInTheDocument();
+  expect(screen.getByText("Ready")).toBeVisible();
+}`
+	inventory, err := InventoryTypeScriptAcceptanceObservations(source, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	siteID := ""
+	for _, site := range inventory.Sites {
+		if strings.Contains(strings.Join(site.Operations, ","), "untrusted_call") {
+			siteID = site.ID
+			break
+		}
+	}
+	if siteID == "" {
+		t.Fatalf("fixture lacks an untrusted lexical declaration: %+v", inventory.Sites)
+	}
+	corrected, removed, err := RemoveTypeScriptAcceptanceObservationStatement(source, true, siteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed || strings.Contains(corrected, "const currentValue") ||
+		!strings.Contains(corrected, "expect(currentValue)") || !strings.Contains(corrected, "Ready") {
+		t.Fatalf("lexical statement removal was not exact:\n%s", corrected)
+	}
+}
+
 func siteIDForOperation(t *testing.T, inventory AcceptanceObservationInventory, operation string) string {
 	t.Helper()
 	for _, site := range inventory.Sites {
