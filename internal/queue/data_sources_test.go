@@ -1,10 +1,34 @@
 package queue
 
 import (
+	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestDataSourceRecordSerializationCannotExposePasswordOrDSN(t *testing.T) {
+	t.Parallel()
+	record := DataSourceRecord{
+		ID: "source-1", Password: "credential-password", UseDSN: true,
+		DSN: "postgres://reader:credential-password@database.internal/analytics",
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := strings.ToLower(string(raw))
+	for _, forbidden := range []string{"credential-password", "postgres://", `"password"`, `"dsn"`} {
+		if strings.Contains(serialized, forbidden) {
+			t.Fatalf("serialized data-source record contains %q: %s", forbidden, raw)
+		}
+	}
+	if !strings.Contains(serialized, `"use_dsn":true`) {
+		t.Fatalf("serialized public connection mode is missing: %s", raw)
+	}
+}
 
 func TestBuildPostgresDSNFromFields(t *testing.T) {
 	dsn, err := BuildPostgresDSN(DataSourceRecord{
@@ -28,6 +52,21 @@ func TestBuildPostgresDSNRequiresFields(t *testing.T) {
 	if _, err := BuildPostgresDSN(DataSourceRecord{Host: "localhost"}); err == nil {
 		t.Fatal("expected error for missing database and username")
 	}
+	base := DataSourceRecord{
+		Host: "localhost", Port: 5432, DatabaseName: "app", Username: "reader", SSLMode: "prefer",
+	}
+	for name, mutate := range map[string]func(*DataSourceRecord){
+		"port":     func(record *DataSourceRecord) { record.Port = 0 },
+		"ssl mode": func(record *DataSourceRecord) { record.SSLMode = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			record := base
+			mutate(&record)
+			if _, err := BuildPostgresDSN(record); err == nil {
+				t.Fatalf("invalid connection was accepted: %+v", record)
+			}
+		})
+	}
 }
 
 func TestBuildPostgresDSNFromConnectionString(t *testing.T) {
@@ -43,19 +82,41 @@ func TestBuildPostgresDSNFromConnectionString(t *testing.T) {
 	}
 }
 
-func TestNormalizeDataSourceRecordDefaults(t *testing.T) {
-	record := normalizeDataSourceRecord(DataSourceRecord{})
-	if record.Driver != "postgres" {
-		t.Fatalf("driver = %q", record.Driver)
+func TestDataSourceCanonicalizationDoesNotInventRequiredAuthority(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	valid := DataSourceRecord{
+		ID: "source-1", Name: "Exact source", Driver: "postgres",
+		Host: "localhost", Port: 5432, DatabaseName: "app", Username: "reader",
+		SSLMode: "prefer", ReadOnly: true, CreatedAt: now, UpdatedAt: now,
 	}
-	if record.Port != 5432 {
-		t.Fatalf("port = %d", record.Port)
+	for name, mutate := range map[string]func(*DataSourceRecord){
+		"name":      func(record *DataSourceRecord) { record.Name = " " },
+		"driver":    func(record *DataSourceRecord) { record.Driver = "" },
+		"port":      func(record *DataSourceRecord) { record.Port = 0 },
+		"ssl mode":  func(record *DataSourceRecord) { record.SSLMode = "" },
+		"read only": func(record *DataSourceRecord) { record.ReadOnly = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			record := valid
+			mutate(&record)
+			record = canonicalizeDataSourceRecord(record)
+			if err := validateDataSourceRecord(record); err == nil {
+				t.Fatalf("missing required authority was silently defaulted: %+v", record)
+			}
+		})
 	}
-	if record.SSLMode != "prefer" {
-		t.Fatalf("ssl_mode = %q", record.SSLMode)
+}
+
+func TestDataSourceUpsertExposesOnlyConsumedMutableFields(t *testing.T) {
+	t.Parallel()
+	typeOf := reflect.TypeOf(DataSourceUpsert{})
+	want := []string{"Name", "Driver", "Host", "Port", "DatabaseName", "Username", "Password", "SSLMode", "UseDSN", "DSN"}
+	got := make([]string, typeOf.NumField())
+	for index := range got {
+		got[index] = typeOf.Field(index).Name
 	}
-	if !record.ReadOnly {
-		t.Fatal("expected read-only default")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("data-source mutable fields=%v want %v", got, want)
 	}
 }
 
@@ -84,6 +145,22 @@ func TestDataSourceRepositoryHasNoExportedUnboundedList(t *testing.T) {
 		for _, forbidden := range []string{" ListDataSources(ctx ", " ListDataSourceChannels(ctx "} {
 			if strings.Contains(string(raw), forbidden) {
 				t.Errorf("unbounded repository list %q remains in %s", forbidden, path)
+			}
+		}
+	}
+}
+
+func TestDataSourceRepositoryHasOneRelationalAuthority(t *testing.T) {
+	for _, path := range []string{
+		"data_sources.go", "data_source_rows.go", "data_source_pagination.go", "data_source_schema_snapshot.go",
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{"workspace_settings", "jsonb_array_elements", "DataSourcesWorkspaceKey"} {
+			if strings.Contains(string(raw), forbidden) {
+				t.Errorf("retired data-source authority %q remains in %s", forbidden, path)
 			}
 		}
 	}

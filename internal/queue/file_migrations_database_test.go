@@ -21,12 +21,14 @@ func TestFileMigrationSQLAndLedgerRecordCommitAtomically(t *testing.T) {
 	writeMigrationTestFile(t, dir, "001_committed.sql", `
 		CREATE TABLE committed_migration_probe (id BIGINT PRIMARY KEY);
 	`)
-	writeMigrationTestFile(t, dir, "002_rejected_record.sql", `
-		CREATE TABLE rejected_migration_probe (id BIGINT PRIMARY KEY);
-		ALTER TABLE schema_migrations
-			ADD CONSTRAINT reject_002_ledger_record
-			CHECK (filename <> '002_rejected_record.sql');
-	`)
+	writeMigrationTestFile(t, dir, "002_rejected_record.sql",
+		"BEGIN;\n"+
+			"CREATE TABLE rejected_migration_probe (id BIGINT PRIMARY KEY);\n"+
+			"ALTER TABLE schema_migrations "+
+			"ADD CONSTRAINT reject_002_ledger_record "+
+			"CHECK (filename <> '002_rejected_record.sql');\n"+
+			"COMMIT;\n",
+	)
 	bundle := loadMigrationTestBundle(t, dir)
 
 	err := repo.applyMigrationBundle(context.Background(), bundle)

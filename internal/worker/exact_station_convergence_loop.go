@@ -96,11 +96,17 @@ func convergeExactTypeScriptStationWithRuntime(
 				iteration,
 			)
 		}
+		capabilities := append([]string(nil), input.Capabilities...)
+		permittedSymbols := append([]string(nil), input.PermittedSymbols...)
+		if directCodingTypeScriptRepairRegionHasExactIncompatibility(currentDiagnostic.RepairRegion) {
+			capabilities = nil
+			permittedSymbols = nil
+		}
 		guidanceJob, err := assemblyline.NewTypeScriptRepairGuidanceJob(
 			assemblyline.TypeScriptRepairGuidanceInput{
 				Language: "typescript", Signature: input.Signature,
-				Capabilities:     append([]string(nil), input.Capabilities...),
-				PermittedSymbols: append([]string(nil), input.PermittedSymbols...),
+				Capabilities:     capabilities,
+				PermittedSymbols: permittedSymbols,
 				RepairRegion:     currentDiagnostic.RepairRegion,
 				Diagnostic:       currentDiagnostic.ModelFeedback,
 			},

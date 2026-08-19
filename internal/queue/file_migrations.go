@@ -258,13 +258,17 @@ func applyFileMigration(
 	entry migrationBundleEntry,
 	manifestSHA256 string,
 ) error {
+	body, err := entry.transactionalBody()
+	if err != nil {
+		return err
+	}
 	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin migration %s: %w", entry.name, err)
 	}
 	defer tx.Rollback(context.Background())
 
-	if _, err := tx.Exec(ctx, string(entry.body)); err != nil {
+	if _, err := tx.Exec(ctx, string(body)); err != nil {
 		return fmt.Errorf("apply migration %s: %w", entry.name, err)
 	}
 	if _, err := tx.Exec(ctx, `

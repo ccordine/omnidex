@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/roleplay"
 )
 
 const (
@@ -12,9 +14,10 @@ const (
 )
 
 type ConversationResponseInput struct {
-	Kind             ConversationObjectiveKind `json:"kind"`
-	ExactInstruction string                    `json:"exact_instruction"`
-	Context          ObjectiveContext          `json:"objective_context"`
+	Kind             ConversationObjectiveKind               `json:"kind"`
+	ExactInstruction string                                  `json:"exact_instruction"`
+	Context          ObjectiveContext                        `json:"objective_context"`
+	RoleplayContext  *roleplay.NarrativeSimulationProjection `json:"roleplay_context"`
 }
 
 type ConversationResponseDecision struct {
@@ -29,6 +32,14 @@ func NewConversationResponseJob(input ConversationResponseInput) (PortableJob, e
 func (input ConversationResponseInput) validate() error {
 	if input.Kind != ObjectiveKindAnswer && input.Kind != ObjectiveKindStory {
 		return fmt.Errorf("conversation response kind %q is unsupported", input.Kind)
+	}
+	if input.RoleplayContext != nil {
+		if input.Kind != ObjectiveKindStory {
+			return fmt.Errorf("fictional character authority is valid only for a story response")
+		}
+		if err := input.RoleplayContext.Validate(); err != nil {
+			return fmt.Errorf("roleplay response context: %w", err)
+		}
 	}
 	return (ConversationObjectiveKindInput{
 		ExactInstruction: input.ExactInstruction,
@@ -74,20 +85,26 @@ func BuildConversationResponsePrompt(input ConversationResponseInput) (string, e
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	verb := "Answer"
-	if input.Kind == ObjectiveKindStory {
-		verb = "Write the requested narrative response for"
-	}
 	context, err := json.Marshal(input.Context)
 	if err != nil {
 		return "", fmt.Errorf("encode objective context: %w", err)
 	}
-	return strings.Join([]string{
-		verb + " exactly one user instruction.",
-		"Return only one bounded response leaf. Do not plan, choose capabilities, call tools, manage memory, verify completion, or add objectives.",
-		"OBJECTIVE_CONTEXT_JSON:\n" + string(context),
-		"EXACT_INSTRUCTION:\n" + input.ExactInstruction,
-	}, "\n\n"), nil
+	sections := []string{"Answer exactly one user instruction.",
+		"Return one bounded response text leaf that directly satisfies that instruction using only the supplied context.",
+		"OBJECTIVE_CONTEXT_JSON:\n" + string(context)}
+	if input.RoleplayContext != nil {
+		roleplayContext, err := json.Marshal(input.RoleplayContext)
+		if err != nil {
+			return "", fmt.Errorf("encode roleplay character context: %w", err)
+		}
+		sections = []string{
+			"Write one in-character narrative response to exactly one user turn.",
+			"Keep the prose consistent with the supplied fictional reality and already-applied recent events.",
+			"FICTIONAL_REALITY_JSON:\n" + string(roleplayContext),
+		}
+	}
+	sections = append(sections, "EXACT_INSTRUCTION:\n"+input.ExactInstruction)
+	return strings.Join(sections, "\n\n"), nil
 }
 
 func ConversationResponseSchema() map[string]any {

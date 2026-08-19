@@ -12,6 +12,7 @@ import (
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llmprovider"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/gryph/omnidex/internal/version"
 	"github.com/gryph/omnidex/internal/websearch"
@@ -46,6 +47,7 @@ func main() {
 	defer cancel()
 
 	var repo *queue.Repository
+	var roleplaySimulation *roleplay.Store
 	var migrationBundle queue.MigrationBundle
 	if !cfg.WrapperOnly {
 		migrationBundle, err = loadCoreMigrationBundle()
@@ -59,6 +61,10 @@ func main() {
 		defer pool.Close()
 
 		repo = queue.New(pool)
+		roleplaySimulation, err = roleplay.NewStore(pool)
+		if err != nil {
+			log.Fatalf("roleplay simulation store error: %v", err)
+		}
 		if cfg.MigrateOnStartup {
 			if err := repo.EnsureSchema(ctx, migrationBundle); err != nil {
 				log.Fatalf("schema migration error: %v", err)
@@ -109,6 +115,7 @@ func main() {
 		RedisURL:             cfg.RedisURL,
 		UIRedisRequired:      cfg.UIRedisRequired,
 		UISessionTTL:         cfg.UISessionTTL,
+		RoleplaySimulation:   roleplaySimulation,
 	})
 	if !cfg.WrapperOnly {
 		workerService, err := worker.New(

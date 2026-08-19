@@ -9,6 +9,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/roleplay"
 )
 
 func runObjectiveTurn(
@@ -31,6 +32,15 @@ func runObjectiveTurn(
 	if err != nil {
 		return objectiveTurnResult{}, err
 	}
+	if authority.ChannelMode == model.ChannelModeRoleplay {
+		if authority.RoleplayInputKind == roleplay.SimulationTurnExternalCommand {
+			return runObjectiveRoleplayResearchTurn(ctx, authority, workflows.RoleplayResearch)
+		}
+		return runObjectiveRoleplayTurn(
+			ctx, authority, 0, conversationStation,
+			workflows.RoleplaySimulation, workflows.RoleplayCanon,
+		)
+	}
 	authority, contextCalls, err := resolveObjectiveConversationContext(
 		ctx, job, authority, candidateProvider, contextStation,
 	)
@@ -49,8 +59,9 @@ func runObjectiveTurn(
 		return objectiveTurnResult{}, err
 	}
 	input := assemblyline.ConversationObjectiveKindInput{
-		ExactInstruction: authority.Instruction,
-		Context:          assemblyline.CloneObjectiveContext(authority.Context),
+		ExactInstruction:          authority.Instruction,
+		Context:                   assemblyline.CloneObjectiveContext(authority.Context),
+		DatabaseEvidenceAvailable: authority.DataSourceID != "",
 	}
 	if kindStation == nil {
 		return objectiveTurnResult{}, fmt.Errorf("conversation objective kind station is unavailable")
@@ -87,6 +98,9 @@ func runObjectiveTurn(
 	}
 	if decision.Kind == assemblyline.ObjectiveKindExternalAnswer {
 		return runObjectiveExternalAnswer(ctx, authority, result, workflows.ExternalAnswer)
+	}
+	if decision.Kind == assemblyline.ObjectiveKindDatabaseRead {
+		return runObjectiveDatabaseRead(ctx, authority, result, answerStation, workflows.DatabaseRead)
 	}
 	repositoryStations, ok := answerStation.(objectiveRepositoryGroundingStation)
 	if !ok || repositoryStations == nil {
@@ -139,6 +153,105 @@ func runObjectiveTurn(
 	return result, nil
 }
 
+func runObjectiveRoleplayResearchTurn(
+	ctx context.Context,
+	authority turnAuthority,
+	run func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error),
+) (objectiveTurnResult, error) {
+	result := objectiveTurnResult{
+		ObjectiveID: objectiveTurnID(authority, assemblyline.ObjectiveKindExternalAnswer),
+		Kind:        assemblyline.ObjectiveKindExternalAnswer, InstructionSHA256: authority.SHA256,
+	}
+	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
+	if run == nil {
+		return result, fmt.Errorf("roleplay research workflow is unavailable")
+	}
+	answer, err := run(ctx, authority)
+	if err != nil {
+		return result, err
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	if strings.TrimSpace(answer.Text) == "" || answer.Text != strings.TrimSpace(answer.Text) ||
+		len(answer.Text) > maxObjectiveOutputBytes || answer.ModelCalls != 1 ||
+		answer.Rendered == "" || answer.Rendered != strings.TrimSpace(answer.Rendered) ||
+		len(answer.Rendered) > maxObjectiveOutputBytes ||
+		!validObjectiveTextSHA(answer.Rendered, answer.RenderedSHA256) || len(answer.Paragraphs) == 0 {
+		return result, fmt.Errorf("roleplay research returned invalid bounded completion authority")
+	}
+	if err := validateObjectiveRoleplayResearchTurn(authority, answer.Research); err != nil {
+		return result, err
+	}
+	citations, err := selectObjectiveCitations(answer.Evidence, answer.EvidenceIDs)
+	if err != nil {
+		return result, err
+	}
+	research := answer.Research
+	result.Output = answer.Rendered
+	result.Citations = citations
+	result.CitationsRendered = true
+	result.ModelCalls = answer.ModelCalls
+	result.RoleplayResearch = &research
+	result.Complete = true
+	return result, nil
+}
+
+func runObjectiveDatabaseRead(
+	ctx context.Context,
+	authority turnAuthority,
+	result objectiveTurnResult,
+	answerStation objectiveAnswerStation,
+	resolve func(context.Context, turnAuthority, string) (objectiveEvidenceAcquisition, error),
+) (objectiveTurnResult, error) {
+	if authority.DataSourceID == "" {
+		return result, fmt.Errorf("database-read objective has no explicit data-source binding")
+	}
+	if resolve == nil {
+		return result, fmt.Errorf("database-read workflow is unavailable")
+	}
+	acquisition, err := resolve(ctx, authority, result.RequirementID)
+	if err != nil {
+		return result, err
+	}
+	if acquisition.ModelCalls < 1 {
+		return result, fmt.Errorf("database-read workflow returned no bounded semantic work")
+	}
+	modelEvidence, err := objectiveModelEvidence(acquisition.Evidence)
+	if err != nil {
+		return result, err
+	}
+	if answerStation == nil {
+		return result, fmt.Errorf("database-read objective requires a grounded answer station")
+	}
+	input := assemblyline.GroundedAnswerInput{
+		RequirementID: result.RequirementID, ExactRequirement: authority.Instruction,
+		Context: assemblyline.CloneObjectiveContext(authority.Context), Evidence: modelEvidence,
+	}
+	if _, err := assemblyline.NewGroundedAnswerJob(input); err != nil {
+		return result, err
+	}
+	answer, receipt, err := answerStation.Answer(ctx, input)
+	if err != nil {
+		return result, err
+	}
+	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
+		return result, fmt.Errorf("database grounded answer reported %d calls outside the bounded correction budget", receipt.Calls)
+	}
+	if err := answer.ValidateFor(input); err != nil {
+		return result, err
+	}
+	citations, err := selectObjectiveCitations(acquisition.Evidence, answer.EvidenceIDs)
+	if err != nil {
+		return result, err
+	}
+	result.ModelCalls += acquisition.ModelCalls + receipt.Calls
+	result.Output = answer.Text
+	result.Citations = citations
+	result.Complete = true
+	return result, nil
+}
+
 func runObjectiveExternalAnswer(
 	ctx context.Context,
 	authority turnAuthority,
@@ -177,43 +290,6 @@ func runObjectiveExternalAnswer(
 func validObjectiveTextSHA(value, digest string) bool {
 	sum := sha256.Sum256([]byte(value))
 	return digest == hex.EncodeToString(sum[:])
-}
-
-func runObjectiveConversationResponse(
-	ctx context.Context,
-	authority turnAuthority,
-	result objectiveTurnResult,
-	station objectiveConversationStation,
-) (objectiveTurnResult, error) {
-	if station == nil {
-		return result, fmt.Errorf("conversation response station is unavailable")
-	}
-	input := assemblyline.ConversationResponseInput{
-		Kind: result.Kind, ExactInstruction: authority.Instruction,
-		Context: assemblyline.CloneObjectiveContext(authority.Context),
-	}
-	if _, err := assemblyline.NewConversationResponseJob(input); err != nil {
-		return result, err
-	}
-	decision, receipt, err := station.Respond(ctx, input)
-	if err != nil {
-		return result, err
-	}
-	if err := ctx.Err(); err != nil {
-		return result, err
-	}
-	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
-		return result, fmt.Errorf(
-			"conversation response station reported %d calls outside the bounded correction budget", receipt.Calls,
-		)
-	}
-	if err := decision.ValidateFor(input); err != nil {
-		return result, err
-	}
-	result.ModelCalls += receipt.Calls
-	result.Output = decision.Text
-	result.Complete = true
-	return result, nil
 }
 
 func cloneGroundedAnswerInput(input assemblyline.GroundedAnswerInput) assemblyline.GroundedAnswerInput {

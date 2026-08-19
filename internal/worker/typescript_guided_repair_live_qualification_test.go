@@ -166,6 +166,42 @@ func TestLiveTypeScriptGuidanceExecutorCompilerConvergence(t *testing.T) {
 func liveTypeScriptGuidedRepairCases() []liveTypeScriptGuidedRepairCase {
 	return []liveTypeScriptGuidedRepairCase{
 		{
+			name: "shared numeric state", wantIterations: 1,
+			input: assemblyline.FragmentCorrectionInput{
+				Language:  "typescript",
+				Signature: "function ReadMetric(state: MetricState): number",
+				Capabilities: []string{
+					"type SharedMetric = null | boolean | number | string",
+					"type MetricState = { readonly [key: string]: SharedMetric }",
+				},
+				PermittedSymbols: []string{"useState"},
+				CurrentDeclaration: `function ReadMetric(state: MetricState): number {
+  const [reading] = useState<number>(() => state.reading ?? 0);
+  return reading;
+}`,
+				RequiredChange: "Eliminate the exact compiler failure without changing unrelated statements.",
+				Diagnostic:     "[source]: error TS2345: Argument of type '() => string | number | boolean' is not assignable to parameter of type 'number | (() => number)'.",
+			},
+		},
+		{
+			name: "shared text state", wantIterations: 1,
+			input: assemblyline.FragmentCorrectionInput{
+				Language:  "typescript",
+				Signature: "function ReadLabel(state: LabelState): string",
+				Capabilities: []string{
+					"type SharedLabel = null | boolean | number | string",
+					"type LabelState = { readonly [key: string]: SharedLabel }",
+				},
+				PermittedSymbols: []string{"useState"},
+				CurrentDeclaration: `function ReadLabel(state: LabelState): string {
+  const [label] = useState<string>(() => state.label ?? '');
+  return label;
+}`,
+				RequiredChange: "Eliminate the exact compiler failure without changing unrelated statements.",
+				Diagnostic:     "[source]: error TS2345: Argument of type '() => string | number | boolean' is not assignable to parameter of type 'string | (() => string)'.",
+			},
+		},
+		{
 			name: "nested lexical scope", wantIterations: 1,
 			input: assemblyline.FragmentCorrectionInput{
 				Language:  "typescript",

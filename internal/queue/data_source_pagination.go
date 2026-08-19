@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -49,28 +48,20 @@ func (r *Repository) ListDataSourcesPage(ctx context.Context, request DataSource
 		return DataSourcePage{}, err
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT item.element
-		FROM workspace_settings AS settings
-		CROSS JOIN LATERAL jsonb_array_elements(
-			CASE WHEN jsonb_typeof(settings.value) = 'array' THEN settings.value ELSE '[]'::jsonb END
-		) WITH ORDINALITY AS item(element, ordinal)
-		WHERE settings.key = $1
-		ORDER BY item.ordinal
-		LIMIT $2 OFFSET $3
-	`, DataSourcesWorkspaceKey, request.Limit+1, request.Offset)
+		SELECT `+dataSourceSelectColumns+`
+		FROM data_sources
+		ORDER BY sort_order ASC
+		LIMIT $1 OFFSET $2
+	`, request.Limit+1, request.Offset)
 	if err != nil {
 		return DataSourcePage{}, err
 	}
 	defer rows.Close()
 	items := make([]DataSourceRecord, 0, request.Limit+1)
 	for rows.Next() {
-		var raw json.RawMessage
-		if err := rows.Scan(&raw); err != nil {
+		item, err := scanDataSource(rows)
+		if err != nil {
 			return DataSourcePage{}, err
-		}
-		var item DataSourceRecord
-		if err := json.Unmarshal(raw, &item); err != nil {
-			return DataSourcePage{}, fmt.Errorf("decode data-source page item: %w", err)
 		}
 		items = append(items, item)
 	}

@@ -12,7 +12,12 @@ const (
 	ConversationObjectiveKind         ID = "conversation_objective_kind"
 	ObjectiveAdvisory                 ID = "objective_advisory"
 	ConversationResponse              ID = "conversation_response"
+	RoleplayCanonExtraction           ID = "roleplay_canon_extraction"
 	GroundedAnswer                    ID = "grounded_answer"
+	DatabaseSchemaSelection           ID = "database_schema_selection"
+	DatabaseQueryIntent               ID = "database_query_intent"
+	DatabaseEvidenceGap               ID = "database_evidence_gap"
+	DatabaseJoinPathSelection         ID = "database_join_path_selection"
 	RepositoryEvidenceRelevance       ID = "repository_evidence_relevance"
 	RepositoryGroundedReview          ID = "repository_grounded_review"
 	RepositoryGroundedCorrection      ID = "repository_grounded_correction"
@@ -45,7 +50,12 @@ var registered = [...]ID{
 	ConversationObjectiveKind,
 	ObjectiveAdvisory,
 	ConversationResponse,
+	RoleplayCanonExtraction,
 	GroundedAnswer,
+	DatabaseSchemaSelection,
+	DatabaseQueryIntent,
+	DatabaseEvidenceGap,
+	DatabaseJoinPathSelection,
 	RepositoryEvidenceRelevance,
 	RepositoryGroundedReview,
 	RepositoryGroundedCorrection,

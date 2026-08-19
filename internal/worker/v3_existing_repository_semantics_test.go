@@ -42,13 +42,12 @@ func TestExistingRepositorySemanticsUseOnlyStableTypedCalls(t *testing.T) {
 			switch job.Kind {
 			case assemblyline.WorkRepositorySearchTerm:
 				candidate = assemblyline.RepositorySearchTermDecision{
-					Schema: assemblyline.RepositorySearchTermSchemaV1, Term: "Value",
+					Schema: assemblyline.RepositorySearchTermSchemaV2, Anchors: []string{"Value"},
 				}
 			case assemblyline.WorkRepositoryChangeSurface:
 				candidate = assemblyline.RepositoryChangeSurfaceDecision{
-					Schema:                      assemblyline.RepositoryChangeSurfaceSchemaV1,
-					Targets:                     []assemblyline.RepositoryChangeTarget{{SymbolID: symbolID, RequirementQuote: "return two"}},
-					UnresolvedRequirementQuotes: []string{},
+					Schema:  assemblyline.RepositoryChangeSurfaceSchemaV2,
+					Targets: []assemblyline.RepositoryChangeTarget{{SymbolID: symbolID, Requirement: "return two"}},
 				}
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %s", job.Kind)
@@ -62,7 +61,7 @@ func TestExistingRepositorySemanticsUseOnlyStableTypedCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if searchTerm.Term != "Value" {
+	if !reflect.DeepEqual(searchTerm.Anchors, []string{"Value"}) {
 		t.Fatalf("search term=%#v", searchTerm)
 	}
 	surface, err := selectExistingRepositoryChangeSurface(
@@ -94,11 +93,10 @@ func TestRepositoryRequirementSurfaceReceivesOnlyItsExactGapProjection(t *testin
 				t.Fatal(err)
 			}
 			candidate := assemblyline.RepositoryChangeSurfaceDecision{
-				Schema: assemblyline.RepositoryChangeSurfaceSchemaV1,
+				Schema: assemblyline.RepositoryChangeSurfaceSchemaV2,
 				Targets: []assemblyline.RepositoryChangeTarget{{
-					SymbolID: pack.Symbols[0].ID, RequirementQuote: requirementQuote,
+					SymbolID: pack.Symbols[0].ID, Requirement: requirementQuote,
 				}},
-				UnresolvedRequirementQuotes: []string{},
 			}
 			raw, err := json.Marshal(candidate)
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
@@ -115,7 +113,7 @@ func TestRepositoryRequirementSurfaceReceivesOnlyItsExactGapProjection(t *testin
 		t.Fatal(err)
 	}
 	if input.ResearchNeed != requirementQuote ||
-		!reflect.DeepEqual(input.RequirementQuotes, []string{requirementQuote}) ||
+		!reflect.DeepEqual(input.Requirements, []string{requirementQuote}) ||
 		len(decision.Targets) != 1 {
 		t.Fatalf("surface input=%#v decision=%#v", input, decision)
 	}
@@ -166,7 +164,7 @@ func TestRepositoryEvidenceClosureOpensOneSearchTermGapOnlyAfterExhaustion(t *te
 			if query == "first exact requirement" {
 				return repositoryAcquisitionTestPack(t, query), nil
 			}
-			if query == "alternate term" {
+			if query == `"alternate" OR "term"` {
 				return repositoryAcquisitionTestPack(t, query), nil
 			}
 			return repositoryretrieval.EvidencePack{}, fmt.Errorf(
@@ -181,7 +179,7 @@ func TestRepositoryEvidenceClosureOpensOneSearchTermGapOnlyAfterExhaustion(t *te
 				)
 			}
 			return assemblyline.RepositorySearchTermDecision{
-				Schema: assemblyline.RepositorySearchTermSchemaV1, Term: "alternate term",
+				Schema: assemblyline.RepositorySearchTermSchemaV2, Anchors: []string{"alternate term"},
 			}, nil
 		},
 	)
@@ -189,12 +187,12 @@ func TestRepositoryEvidenceClosureOpensOneSearchTermGapOnlyAfterExhaustion(t *te
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(queries, []string{
-		"first exact requirement", "second exact requirement", "alternate term",
+		"first exact requirement", "second exact requirement", `"alternate" OR "term"`,
 	}) || stationCalls != 1 || len(results) != 2 ||
 		results[0].SearchTermCalls != 0 || results[0].Query != "first exact requirement" ||
-		results[1].SearchTermCalls != 1 || results[1].Query != "alternate term" ||
+		results[1].SearchTermCalls != 1 || results[1].Query != `"alternate" OR "term"` ||
 		results[1].Pack.ValidateForRequest(
-			repositoryretrieval.OperationSemanticExcerpts, "alternate term",
+			repositoryretrieval.OperationSemanticExcerpts, `"alternate" OR "term"`,
 		) != nil {
 		t.Fatalf("results=%#v queries=%v station calls=%d", results, queries, stationCalls)
 	}
@@ -235,7 +233,7 @@ func TestRepositoryEvidenceClosureHasNoGapRetryOrInvalidQueryFallback(t *testing
 				t.Fatalf("unresolved concept=%q", requirementQuote)
 			}
 			return assemblyline.RepositorySearchTermDecision{
-				Schema: assemblyline.RepositorySearchTermSchemaV1, Term: "exact requirement",
+				Schema: assemblyline.RepositorySearchTermSchemaV2, Anchors: []string{"exact requirement"},
 			}, nil
 		},
 	)

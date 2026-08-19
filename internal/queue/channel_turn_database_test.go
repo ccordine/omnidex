@@ -11,7 +11,7 @@ import (
 func TestPostgresChannelTurnCompletesThroughOneAuthoritativeJob(t *testing.T) {
 	ctx, repository := channelTurnTestRepository(t)
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "objective-chat", Scope: model.ChannelScopeUser, Name: "Objective chat",
+		ID: "objective-chat", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant, Name: "Objective chat",
 		WorkspaceRoot: "/srv/workspaces/objective-chat",
 	})
 	if err != nil {
@@ -86,7 +86,7 @@ func TestPostgresChannelTurnCompletesThroughOneAuthoritativeJob(t *testing.T) {
 func TestPostgresChannelCompletionRejectsCrossJobAuthorityAtomically(t *testing.T) {
 	ctx, repository := channelTurnTestRepository(t)
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "cross-job", Scope: model.ChannelScopeUser, Name: "Cross job",
+		ID: "cross-job", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant, Name: "Cross job",
 		WorkspaceRoot: "/srv/workspaces/cross-job",
 	})
 	if err != nil {

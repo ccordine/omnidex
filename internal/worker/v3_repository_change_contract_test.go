@@ -113,11 +113,10 @@ func repositoryRequirementResolution(
 			RequirementQuote: requirementQuote, Query: query, Pack: pack,
 		},
 		Surface: assemblyline.RepositoryChangeSurfaceDecision{
-			Schema: assemblyline.RepositoryChangeSurfaceSchemaV1,
+			Schema: assemblyline.RepositoryChangeSurfaceSchemaV2,
 			Targets: []assemblyline.RepositoryChangeTarget{{
-				SymbolID: symbolID, RequirementQuote: requirementQuote,
+				SymbolID: symbolID, Requirement: requirementQuote,
 			}},
-			UnresolvedRequirementQuotes: []string{},
 		},
 	}
 }

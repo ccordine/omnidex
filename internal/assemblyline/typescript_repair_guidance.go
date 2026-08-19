@@ -207,16 +207,18 @@ func BuildTypeScriptRepairGuidancePrompt(
 				"Every incompatible_types entry must be absent from the replacement expression's possible result type.",
 			)
 		}
-		unavailable, err := encodeTypeScriptRepairGuidanceBindings(
-			input.RepairRegion.UnavailableBindings,
-		)
-		if err != nil {
-			return "", err
+		if len(input.RepairRegion.UnavailableBindings) > 0 {
+			unavailable, err := encodeTypeScriptRepairGuidanceBindings(
+				input.RepairRegion.UnavailableBindings,
+			)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts,
+				"NESTED_BINDINGS_UNAVAILABLE_AT_FAILURE_JSON:\n"+unavailable,
+				"An unavailable binding cannot be referenced at the failing expression. If it owns the needed value, the required transformation must move the consuming operation into its lexical scope or derive the value from an explicitly available binding inside the mutable region.",
+			)
 		}
-		parts = append(parts,
-			"NESTED_BINDINGS_UNAVAILABLE_AT_FAILURE_JSON:\n"+unavailable,
-			"An unavailable binding cannot be referenced at the failing expression. If it owns the needed value, the required transformation must move the consuming operation into its lexical scope or derive the value from an explicitly available binding inside the mutable region.",
-		)
 	}
 	if input.PriorRejection != nil {
 		encoded, err := marshalUntrustedPromptString(input.PriorRejection.Instruction)

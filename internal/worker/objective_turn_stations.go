@@ -81,6 +81,31 @@ type portableObjectiveConversationStation struct {
 	runtime *nativeRuntimeV3
 }
 
+type portableObjectiveRoleplayCanonStation struct {
+	runtime *nativeRuntimeV3
+}
+
+func (adapter portableObjectiveRoleplayCanonStation) ExtractCanon(
+	ctx context.Context,
+	input assemblyline.RoleplayCanonExtractionInput,
+) (assemblyline.RoleplayCanonExtractionDecision, objectiveStationReceipt, error) {
+	model, err := objectiveStationModel(adapter.runtime, station.RoleplayCanonExtraction)
+	if err != nil {
+		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{}, err
+	}
+	job, err := assemblyline.NewRoleplayCanonExtractionJob(input)
+	if err != nil {
+		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{}, err
+	}
+	decision, calls, err := runObjectivePortableCall[assemblyline.RoleplayCanonExtractionDecision](
+		ctx, adapter.runtime, model, "roleplay_canon_extraction", job,
+		func(value assemblyline.RoleplayCanonExtractionDecision) error {
+			return value.ValidateFor(input)
+		},
+	)
+	return decision, objectiveStationReceipt{Calls: calls}, err
+}
+
 func (adapter portableObjectiveConversationStation) Respond(
 	ctx context.Context,
 	input assemblyline.ConversationResponseInput,

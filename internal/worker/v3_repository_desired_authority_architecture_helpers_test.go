@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 type architectureSource struct {
@@ -149,16 +150,74 @@ func normalizeAuthorityName(value string) string {
 }
 
 func forbiddenModelAuthorityIdentifier(value string) bool {
-	normalized := normalizeAuthorityName(value)
-	for _, forbidden := range []string{
-		"writefile", "createfile", "deletefile", "renamefile", "movefile", "removefile",
-		"applypatch", "shellcommand", "runshell", "executeshell",
-		"wholefile", "filecontents", "generatedfile", "filegenerationinput",
-		"filesystemoperation", "fileoperation", "mutationoperation", "artifactaction",
-		"toolcall", "toolschema", "actionschema", "cognitiondecision",
-		"agentruntime", "universalagent", "universalruntime",
+	words := authorityIdentifierWords(value)
+	for _, forbidden := range [][]string{
+		{"write", "file"}, {"create", "file"}, {"delete", "file"}, {"rename", "file"},
+		{"move", "file"}, {"remove", "file"}, {"apply", "patch"}, {"shell", "command"},
+		{"run", "shell"}, {"execute", "shell"}, {"whole", "file"}, {"file", "contents"},
+		{"generated", "file"}, {"file", "generation", "input"}, {"filesystem", "operation"},
+		{"file", "operation"}, {"mutation", "operation"}, {"artifact", "action"},
+		{"tool", "call"}, {"tool", "schema"}, {"action", "schema"},
+		{"cognition", "decision"}, {"agent", "runtime"}, {"universal", "agent"},
+		{"universal", "runtime"},
 	} {
-		if strings.Contains(normalized, forbidden) {
+		if containsAuthorityWordSequence(words, forbidden) {
+			return true
+		}
+	}
+	return false
+}
+
+func authorityIdentifierWords(value string) []string {
+	runes := []rune(value)
+	words := make([]string, 0, 4)
+	current := make([]rune, 0, len(runes))
+	flush := func() {
+		if len(current) == 0 {
+			return
+		}
+		words = append(words, strings.ToLower(string(current)))
+		current = current[:0]
+	}
+	for index, currentRune := range runes {
+		if !unicode.IsLetter(currentRune) && !unicode.IsDigit(currentRune) {
+			flush()
+			continue
+		}
+		if len(current) > 0 && unicode.IsUpper(currentRune) {
+			previousRune := runes[index-1]
+			nextIsLower := index+1 < len(runes) && unicode.IsLower(runes[index+1])
+			if unicode.IsLower(previousRune) || unicode.IsDigit(previousRune) ||
+				(unicode.IsUpper(previousRune) && nextIsLower) {
+				flush()
+			}
+		}
+		current = append(current, currentRune)
+	}
+	flush()
+	return words
+}
+
+func containsAuthorityWordSequence(words, sequence []string) bool {
+	if len(words) == 0 || len(sequence) == 0 {
+		return false
+	}
+	compact := strings.Join(sequence, "")
+	for index, word := range words {
+		if word == compact {
+			return true
+		}
+		if index+len(sequence) > len(words) {
+			continue
+		}
+		matched := true
+		for offset, expected := range sequence {
+			if words[index+offset] != expected {
+				matched = false
+				break
+			}
+		}
+		if matched {
 			return true
 		}
 	}

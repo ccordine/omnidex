@@ -97,6 +97,10 @@ func TestLoadExactConversationAndWebStationModels(t *testing.T) {
 	t.Setenv("OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL", "kind")
 	t.Setenv("OMNI_CONVERSATION_RESPONSE_MODEL", "conversation")
 	t.Setenv("OMNI_GROUNDED_ANSWER_MODEL", "grounded")
+	t.Setenv("OMNI_DATABASE_SCHEMA_SELECTION_MODEL", "database-schema")
+	t.Setenv("OMNI_DATABASE_QUERY_INTENT_MODEL", "database-intent")
+	t.Setenv("OMNI_DATABASE_EVIDENCE_GAP_MODEL", "database-gap")
+	t.Setenv("OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL", "database-join")
 	t.Setenv("OMNI_WEB_SEARCH_TERMS_MODEL", "terms")
 	t.Setenv("OMNI_WEB_RELEVANCE_MODEL", "relevance")
 	t.Setenv("OMNI_WEB_GROUNDED_SYNTHESIS_MODEL", "synthesis")
@@ -111,6 +115,10 @@ func TestLoadExactConversationAndWebStationModels(t *testing.T) {
 		station.ConversationObjectiveKind:      "kind",
 		station.ConversationResponse:           "conversation",
 		station.GroundedAnswer:                 "grounded",
+		station.DatabaseSchemaSelection:        "database-schema",
+		station.DatabaseQueryIntent:            "database-intent",
+		station.DatabaseEvidenceGap:            "database-gap",
+		station.DatabaseJoinPathSelection:      "database-join",
 		station.WebSearchTerms:                 "terms",
 		station.WebRelevance:                   "relevance",
 		station.WebGroundedSynthesis:           "synthesis",

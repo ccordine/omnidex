@@ -10,27 +10,39 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
-	directCodingTypeScriptScopeInspectorFile   = ".omnidex-typescript-scope.mjs"
-	directCodingTypeScriptScopeInspectorSchema = "omnidex.typescript-lexical-scope.v2"
+	directCodingTypeScriptScopeInspectorFile      = ".omnidex-typescript-scope.mjs"
+	directCodingTypeScriptScopeInspectorSchema    = "omnidex.typescript-lexical-scope.v3"
+	maxDirectCodingTypeScriptDeterministicRepairs = 8
 )
 
 type directCodingTypeScriptScopeReceipt struct {
-	Schema              *string                                            `json:"schema"`
-	Bindings            *[]assemblyline.TypeScriptRepairBinding            `json:"bindings"`
-	UnavailableBindings *[]assemblyline.TypeScriptRepairBinding            `json:"unavailable_bindings"`
-	ExpressionEvidence  *[]assemblyline.TypeScriptRepairExpressionEvidence `json:"expression_evidence"`
+	Schema               *string                                            `json:"schema"`
+	Bindings             *[]assemblyline.TypeScriptRepairBinding            `json:"bindings"`
+	UnavailableBindings  *[]assemblyline.TypeScriptRepairBinding            `json:"unavailable_bindings"`
+	ExpressionEvidence   *[]assemblyline.TypeScriptRepairExpressionEvidence `json:"expression_evidence"`
+	DeterministicRepairs *[]directCodingTypeScriptDeterministicRepair       `json:"deterministic_repairs"`
+}
+
+type directCodingTypeScriptDeterministicRepair struct {
+	EvidenceIndex int    `json:"evidence_index"`
+	Source        string `json:"source"`
+	Replacement   string `json:"replacement"`
+	StartByte     int    `json:"start_byte"`
+	EndByte       int    `json:"end_byte"`
 }
 
 type directCodingTypeScriptScope struct {
-	Bindings            []assemblyline.TypeScriptRepairBinding
-	UnavailableBindings []assemblyline.TypeScriptRepairBinding
-	ExpressionEvidence  []assemblyline.TypeScriptRepairExpressionEvidence
+	Bindings             []assemblyline.TypeScriptRepairBinding
+	UnavailableBindings  []assemblyline.TypeScriptRepairBinding
+	ExpressionEvidence   []assemblyline.TypeScriptRepairExpressionEvidence
+	DeterministicRepairs []directCodingTypeScriptDeterministicRepair
 }
 
 func writeDirectCodingTypeScriptScopeInspector(root string) error {
@@ -79,6 +91,119 @@ func inspectDirectCodingTypeScriptScope(
 	if err != nil {
 		return directCodingTypeScriptScope{}, err
 	}
+	if err := validateDirectCodingTypeScriptCompilerScopeModelProjection(scope); err != nil {
+		return directCodingTypeScriptScope{}, err
+	}
+	projected, err := projectDirectCodingTypeScriptCompilerScope(scope)
+	if err != nil {
+		return directCodingTypeScriptScope{}, err
+	}
+	return projected, nil
+}
+
+// projectDirectCodingTypeScriptCompilerScope reduces a compiler-proven union
+// mismatch to the first enclosing expression that the checker proved is not
+// assignable to its contextual type. The inspector orders expressions by the
+// exact diagnostic coordinate. Code also retains only the local bindings that
+// the checker resolved inside that expression. Other compiler failure classes
+// keep their complete scope because no equivalent deterministic projection has
+// been established for them.
+func projectDirectCodingTypeScriptCompilerScope(
+	scope directCodingTypeScriptScope,
+) (directCodingTypeScriptScope, error) {
+	selectedIndex := -1
+	for index, evidence := range scope.ExpressionEvidence {
+		if evidence.ContextualType != "" && len(evidence.IncompatibleTypes) > 0 {
+			selectedIndex = index
+			break
+		}
+	}
+	if selectedIndex < 0 || len(scope.ExpressionEvidence[selectedIndex].ReferencedBindings) == 0 {
+		return scope, nil
+	}
+	selected := scope.ExpressionEvidence[selectedIndex]
+	selectedRepairs := make([]directCodingTypeScriptDeterministicRepair, 0, 1)
+	for _, repair := range scope.DeterministicRepairs {
+		if repair.EvidenceIndex == selectedIndex {
+			selectedRepairs = append(selectedRepairs, repair)
+		}
+	}
+	if len(selectedRepairs) > 1 {
+		return directCodingTypeScriptScope{}, fmt.Errorf(
+			"TypeScript compiler projection found %d deterministic repairs for one expression",
+			len(selectedRepairs),
+		)
+	}
+	wanted := make(map[string]struct{}, len(selected.ReferencedBindings))
+	for _, name := range selected.ReferencedBindings {
+		wanted[name] = struct{}{}
+	}
+	bindings := make([]assemblyline.TypeScriptRepairBinding, 0, len(wanted))
+	for _, binding := range scope.Bindings {
+		if _, required := wanted[binding.Name]; required {
+			bindings = append(bindings, binding)
+		}
+	}
+	if len(bindings) != len(wanted) {
+		return directCodingTypeScriptScope{}, fmt.Errorf(
+			"TypeScript compiler expression references %d bindings but exact scope resolved %d",
+			len(wanted), len(bindings),
+		)
+	}
+	return directCodingTypeScriptScope{
+		Bindings:             bindings,
+		ExpressionEvidence:   []assemblyline.TypeScriptRepairExpressionEvidence{selected},
+		DeterministicRepairs: selectedRepairs,
+	}, nil
+}
+
+func applyDirectCodingTypeScriptDeterministicRepair(
+	current string,
+	scope directCodingTypeScriptScope,
+) (string, bool, error) {
+	if len(scope.DeterministicRepairs) == 0 {
+		return current, false, nil
+	}
+	if len(scope.DeterministicRepairs) != 1 {
+		return "", false, fmt.Errorf(
+			"TypeScript compiler scope contains %d deterministic repairs; expected at most one",
+			len(scope.DeterministicRepairs),
+		)
+	}
+	repair := scope.DeterministicRepairs[0]
+	if repair.StartByte < 0 || repair.EndByte <= repair.StartByte || repair.EndByte > len(current) {
+		return "", false, fmt.Errorf("TypeScript deterministic repair byte range is outside the current declaration")
+	}
+	if current[repair.StartByte:repair.EndByte] != repair.Source {
+		return "", false, fmt.Errorf("TypeScript deterministic repair source no longer matches the current declaration")
+	}
+	candidate := current[:repair.StartByte] + repair.Replacement + current[repair.EndByte:]
+	if candidate == current {
+		return "", false, fmt.Errorf("TypeScript deterministic repair produced no source transition")
+	}
+	return candidate, true, nil
+}
+
+func directCodingTypeScriptRepairRegionHasExactIncompatibility(
+	region *assemblyline.TypeScriptFragmentRepairRegion,
+) bool {
+	return region != nil &&
+		region.Kind == assemblyline.TypeScriptRepairRegionCompilerOwner &&
+		len(region.ExpressionEvidence) == 1 &&
+		region.ExpressionEvidence[0].ContextualType != "" &&
+		len(region.ExpressionEvidence[0].IncompatibleTypes) > 0
+}
+
+// validateDirectCodingTypeScriptCompilerScopeModelProjection verifies the
+// compiler-owned additions to an already-authorized mutable declaration. An
+// expression Source is an exact substring of that declaration, which the
+// repair region already carries as source authority. It is code, not a file
+// identity: it can legitimately contain regular-expression escapes or URL
+// literals. Compiler-rendered type information and binding metadata, however,
+// are new model-visible projections and must remain path-free.
+func validateDirectCodingTypeScriptCompilerScopeModelProjection(
+	scope directCodingTypeScriptScope,
+) error {
 	allBindings := append(
 		append([]assemblyline.TypeScriptRepairBinding(nil), scope.Bindings...),
 		scope.UnavailableBindings...,
@@ -88,24 +213,21 @@ func inspectDirectCodingTypeScriptScope(
 		values = append(values, binding.Members...)
 		for _, value := range values {
 			if directCodingTypeScriptCompilerContainsPathIdentity(value) {
-				return directCodingTypeScriptScope{}, fmt.Errorf("TypeScript compiler scope binding %s contains path identity", binding.Name)
+				return fmt.Errorf("TypeScript compiler scope binding %s contains path identity", binding.Name)
 			}
 		}
 	}
 	for index, item := range scope.ExpressionEvidence {
-		values := append(
-			[]string{item.Source, item.InferredType, item.ContextualType},
-			item.IncompatibleTypes...,
-		)
+		values := append([]string{item.InferredType, item.ContextualType}, item.IncompatibleTypes...)
 		for _, value := range values {
 			if value != "" && directCodingTypeScriptCompilerContainsPathIdentity(value) {
-				return directCodingTypeScriptScope{}, fmt.Errorf(
+				return fmt.Errorf(
 					"TypeScript compiler expression evidence %d contains path identity", index+1,
 				)
 			}
 		}
 	}
-	return scope, nil
+	return nil
 }
 
 func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScriptScope, error) {
@@ -124,7 +246,7 @@ func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScrip
 	}
 	if receipt.Schema == nil || *receipt.Schema != directCodingTypeScriptScopeInspectorSchema ||
 		receipt.Bindings == nil || receipt.UnavailableBindings == nil ||
-		receipt.ExpressionEvidence == nil {
+		receipt.ExpressionEvidence == nil || receipt.DeterministicRepairs == nil {
 		return directCodingTypeScriptScope{}, fmt.Errorf(
 			"TypeScript compiler scope receipt lacks exact schema and binding inventories",
 		)
@@ -170,8 +292,47 @@ func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScrip
 			)
 		}
 	}
+	for evidenceIndex, evidence := range expressionEvidence {
+		for _, name := range evidence.ReferencedBindings {
+			if _, exists := availableNames[name]; !exists {
+				return directCodingTypeScriptScope{}, fmt.Errorf(
+					"TypeScript compiler expression evidence %d references unknown local binding %q",
+					evidenceIndex+1, name,
+				)
+			}
+		}
+	}
+	deterministicRepairs := append(
+		[]directCodingTypeScriptDeterministicRepair(nil), (*receipt.DeterministicRepairs)...,
+	)
+	if len(deterministicRepairs) > maxDirectCodingTypeScriptDeterministicRepairs {
+		return directCodingTypeScriptScope{}, fmt.Errorf(
+			"TypeScript compiler scope receipt contains %d deterministic repairs; maximum is %d",
+			len(deterministicRepairs), maxDirectCodingTypeScriptDeterministicRepairs,
+		)
+	}
+	seenRepairEvidence := make(map[int]struct{}, len(deterministicRepairs))
+	for index, repair := range deterministicRepairs {
+		if repair.Source == "" || repair.Replacement == "" ||
+			!utf8.ValidString(repair.Source) || !utf8.ValidString(repair.Replacement) ||
+			strings.ContainsAny(repair.Source, "\r\n") || strings.ContainsAny(repair.Replacement, "\r\n") ||
+			repair.EvidenceIndex < 0 || repair.EvidenceIndex >= len(expressionEvidence) ||
+			repair.StartByte < 0 || repair.EndByte-repair.StartByte != len(repair.Source) ||
+			expressionEvidence[repair.EvidenceIndex].Source != repair.Source {
+			return directCodingTypeScriptScope{}, fmt.Errorf(
+				"TypeScript compiler deterministic repair %d is invalid", index+1,
+			)
+		}
+		if _, duplicate := seenRepairEvidence[repair.EvidenceIndex]; duplicate {
+			return directCodingTypeScriptScope{}, fmt.Errorf(
+				"TypeScript compiler deterministic repair %d repeats evidence index %d",
+				index+1, repair.EvidenceIndex,
+			)
+		}
+		seenRepairEvidence[repair.EvidenceIndex] = struct{}{}
+	}
 	return directCodingTypeScriptScope{
 		Bindings: bindings, UnavailableBindings: unavailable,
-		ExpressionEvidence: expressionEvidence,
+		ExpressionEvidence: expressionEvidence, DeterministicRepairs: deterministicRepairs,
 	}, nil
 }

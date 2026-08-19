@@ -33,7 +33,8 @@ func TestRepositoryRequirementClosureAcquiresEveryExactQuoteBeforeSurfaceInferen
 		func(acquisition existingRepositoryEvidenceAcquisition) (assemblyline.RepositoryChangeSurfaceDecision, error) {
 			events = append(events, "surface:"+acquisition.RequirementQuote)
 			return assemblyline.RepositoryChangeSurfaceDecision{
-				Schema: assemblyline.RepositoryChangeSurfaceSchemaV1,
+				Schema:  assemblyline.RepositoryChangeSurfaceSchemaV2,
+				Targets: []assemblyline.RepositoryChangeTarget{{SymbolID: acquisition.Pack.Symbols[0].ID, Requirement: acquisition.RequirementQuote}},
 			}, nil
 		},
 	)
@@ -67,7 +68,7 @@ func TestRepositoryRequirementClosureOpensOneGapOnlyForTheMissingRequirement(t *
 		func(query string) (repositoryretrieval.EvidencePack, error) {
 			events = append(events, "acquire:"+query)
 			switch query {
-			case "first exact requirement", "alternate second term":
+			case "first exact requirement", `"alternate" OR "second" OR "term"`:
 				return repositoryAcquisitionTestPack(t, query), nil
 			case "second exact requirement":
 				return repositoryretrieval.EvidencePack{}, repositoryretrieval.ErrInsufficientEvidence
@@ -79,8 +80,8 @@ func TestRepositoryRequirementClosureOpensOneGapOnlyForTheMissingRequirement(t *
 			events = append(events, "search-term:"+requirementQuote)
 			searchTermCalls = append(searchTermCalls, requirementQuote)
 			return assemblyline.RepositorySearchTermDecision{
-				Schema: assemblyline.RepositorySearchTermSchemaV1,
-				Term:   "alternate second term",
+				Schema:  assemblyline.RepositorySearchTermSchemaV2,
+				Anchors: []string{"alternate second term"},
 			}, nil
 		},
 		func(acquisition existingRepositoryEvidenceAcquisition) error {
@@ -90,7 +91,8 @@ func TestRepositoryRequirementClosureOpensOneGapOnlyForTheMissingRequirement(t *
 		func(acquisition existingRepositoryEvidenceAcquisition) (assemblyline.RepositoryChangeSurfaceDecision, error) {
 			events = append(events, "surface:"+acquisition.RequirementQuote)
 			return assemblyline.RepositoryChangeSurfaceDecision{
-				Schema: assemblyline.RepositoryChangeSurfaceSchemaV1,
+				Schema:  assemblyline.RepositoryChangeSurfaceSchemaV2,
+				Targets: []assemblyline.RepositoryChangeTarget{{SymbolID: acquisition.Pack.Symbols[0].ID, Requirement: acquisition.RequirementQuote}},
 			}, nil
 		},
 	)
@@ -101,7 +103,7 @@ func TestRepositoryRequirementClosureOpensOneGapOnlyForTheMissingRequirement(t *
 		"acquire:first exact requirement",
 		"acquire:second exact requirement",
 		"search-term:second exact requirement",
-		"acquire:alternate second term",
+		`acquire:"alternate" OR "second" OR "term"`,
 		"record:first exact requirement",
 		"record:second exact requirement",
 		"surface:first exact requirement",
@@ -111,7 +113,7 @@ func TestRepositoryRequirementClosureOpensOneGapOnlyForTheMissingRequirement(t *
 		!reflect.DeepEqual(searchTermCalls, []string{"second exact requirement"}) ||
 		len(resolutions) != 2 || resolutions[0].Acquisition.SearchTermCalls != 0 ||
 		resolutions[1].Acquisition.SearchTermCalls != 1 ||
-		resolutions[1].Acquisition.Query != "alternate second term" {
+		resolutions[1].Acquisition.Query != `"alternate" OR "second" OR "term"` {
 		t.Fatalf("events=%v search-term calls=%v resolutions=%#v", events, searchTermCalls, resolutions)
 	}
 }

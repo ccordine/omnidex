@@ -1,0 +1,42 @@
+package queue
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/gryph/omnidex/internal/model"
+)
+
+func TestRoleplayFactsRequireExactRoleplayChatAuthority(t *testing.T) {
+	command := CompleteStepCommand{
+		ContextKey:    "objective_result",
+		RoleplayFacts: []string{"A new fictional fact."},
+	}
+	for name, job := range map[string]model.Job{
+		"non-chat": {Pipeline: model.PipelineCoding},
+		"missing binding": {
+			Pipeline: model.PipelineChat,
+			Metadata: json.RawMessage(`{"channel_mode":"roleplay"}`),
+		},
+		"assistant": {
+			Pipeline: model.PipelineChat,
+			Metadata: json.RawMessage(`{
+				"channel_id":"assistant-chat",
+				"session_id":"channel:assistant-chat",
+				"channel_user_message_id":1,
+				"project_id":1,
+				"client_cwd":"/srv/workspaces/assistant-chat",
+				"channel_mode":"assistant",
+				"model_config":{}
+			}`),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := requireRoleplayFactsJobAuthority(job, command); err == nil ||
+				!strings.Contains(err.Error(), "roleplay") {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}

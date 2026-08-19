@@ -12,7 +12,7 @@ const (
 	localSemanticModel       = "qwen3.5:9b-q4_K_M"
 	localPlannerModel        = "llama3.2:3b"
 	localFragmentModel       = "qwen2.5-coder:7b"
-	localRepairGuidanceModel = "qwen3.5:9b"
+	localRepairGuidanceModel = "qwen3.5:9b-q4_K_M"
 	localReviewModel         = "deepseek-r1:8b"
 	localWorkloadReviewModel = "qwen3.5:9b-q4_K_M"
 )
@@ -22,7 +22,12 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 		"OMNI_CONVERSATION_CONTEXT_SELECTION_MODEL",
 		"OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL",
 		"OMNI_CONVERSATION_RESPONSE_MODEL",
+		"OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL",
 		"OMNI_GROUNDED_ANSWER_MODEL",
+		"OMNI_DATABASE_SCHEMA_SELECTION_MODEL",
+		"OMNI_DATABASE_QUERY_INTENT_MODEL",
+		"OMNI_DATABASE_EVIDENCE_GAP_MODEL",
+		"OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL",
 		"OMNI_REPOSITORY_EVIDENCE_RELEVANCE_MODEL",
 		"OMNI_REPOSITORY_GROUNDED_CORRECTION_MODEL",
 		"OMNI_WEB_SEARCH_TERMS_MODEL",

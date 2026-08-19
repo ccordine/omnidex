@@ -83,12 +83,15 @@ func resolveObjectiveConversationContext(
 			}
 		}
 	}
-	probe := assemblyline.ConversationObjectiveKindInput{
-		ExactInstruction: authority.Instruction,
-		Context:          assemblyline.CloneObjectiveContext(authority.Context),
-	}
-	if _, err := assemblyline.NewConversationObjectiveKindJob(probe); err != nil {
-		return turnAuthority{}, 0, err
+	if authority.ChannelMode != model.ChannelModeRoleplay {
+		probe := assemblyline.ConversationObjectiveKindInput{
+			ExactInstruction:          authority.Instruction,
+			Context:                   assemblyline.CloneObjectiveContext(authority.Context),
+			DatabaseEvidenceAvailable: authority.DataSourceID != "",
+		}
+		if _, err := assemblyline.NewConversationObjectiveKindJob(probe); err != nil {
+			return turnAuthority{}, 0, err
+		}
 	}
 	return authority, receipt.Calls, nil
 }

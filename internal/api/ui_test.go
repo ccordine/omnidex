@@ -47,6 +47,83 @@ func TestUIServesChatShell(t *testing.T) {
 	}
 }
 
+func TestChatPanelOffersExplicitCreationModeAndCreationOnlyEvidenceSourceSelection(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	request := httptest.NewRequest(http.MethodGet, "/v1/ui/panel?panel=chat", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		HTML chatComponentHTML `json:"html"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`role="group" aria-label="Create conversation"`,
+		`data-chat-target="newChannelModeSelect"`,
+		`<span>Type</span>`,
+		`<option value="assistant" selected>Assistant</option>`,
+		`<option value="roleplay">Roleplay</option>`,
+		`data-chat-target="newChannelRoleplayFields"`,
+		`data-chat-target="newChannelRoleplayWorldName"`,
+		`data-chat-target="newChannelRoleplayViewpointName"`,
+		`data-chat-target="newChannelDataSourceSelect"`,
+		`data-recyclr-sink="new-channel-data-source-options"`,
+		`<span>Data</span>`,
+		`<option value="" selected>No data</option>`,
+		`<option value="" disabled selected>Choose a conversation</option>`,
+		`<option value="__omnidex_new_conversation__">+ New conversation…</option>`,
+	} {
+		if !strings.Contains(payload.HTML.Bundle, expected) {
+			t.Errorf("chat panel lacks %q: %s", expected, payload.HTML.Bundle)
+		}
+	}
+	for _, forbidden := range []string{
+		`channel-options-pagination`, `new-channel-data-source-pagination`,
+		`Load more channels`, `New conversation evidence source`, `data-action="chat#createChannel"`,
+	} {
+		if strings.Contains(payload.HTML.Bundle, forbidden) {
+			t.Errorf("chat panel retains obsolete bulky control %q: %s", forbidden, payload.HTML.Bundle)
+		}
+	}
+}
+
+func TestChatPanelProvidesOneServerRenderedRoleplaySimulationSink(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	request := httptest.NewRequest(http.MethodGet, "/v1/ui/panel?panel=chat", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		HTML chatComponentHTML `json:"html"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`data-chat-target="roleplayPanel"`,
+		`data-chat-target="roleplayLoading"`,
+		`data-recyclr-sink="roleplay-simulation"`,
+		`aria-label="Roleplay simulation"`,
+	} {
+		if !strings.Contains(payload.HTML.Bundle, expected) {
+			t.Errorf("chat panel lacks roleplay host %q: %s", expected, payload.HTML.Bundle)
+		}
+	}
+	if strings.Count(payload.HTML.Bundle, `data-recyclr-sink="roleplay-simulation"`) != 1 {
+		t.Fatalf("chat panel must contain one roleplay simulation sink: %s", payload.HTML.Bundle)
+	}
+}
+
 func TestLegacyUnbundledStylesheetRouteIsRemoved(t *testing.T) {
 	server := NewServer(nil, &fakeLLMClient{})
 	req := httptest.NewRequest(http.MethodGet, "/ui/styles.css", nil)
@@ -264,10 +341,13 @@ func TestUIServesBuiltBundle(t *testing.T) {
 	for _, want := range []string{
 		"Omni UI is ready",
 		"/v1/ui/chat/channels",
+		"/v1/ui/chat/data-sources",
 		"/v1/ui/chat/jobs",
 		"/v1/ui/chat/memory",
 		"/v1/ui/chat/metrics",
+		"/v1/ui/chat/roleplay",
 		"/v1/ui/chat/timeline",
+		"/web-research",
 		"/messages?",
 	} {
 		if !strings.Contains(bundle, want) {

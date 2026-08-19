@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -212,15 +213,15 @@ func (s *Server) handleDataSourceCatalog(w http.ResponseWriter, r *http.Request,
 		writeDataSourceError(w, err)
 		return
 	}
-	catalog, ok, err := s.repo.GetDataSourceCatalog(r.Context(), id)
+	snapshot, ok, err := s.repo.GetDataSourceSchemaSnapshot(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"source":  dataSourcePublic(record),
-		"catalog": catalog,
-		"ready":   ok && len(catalog.Tables) > 0,
+		"source":          dataSourcePublic(record),
+		"schema_snapshot": snapshot,
+		"ready":           ok && len(snapshot.Relations) > 0,
 	})
 }
 
@@ -234,43 +235,30 @@ func (s *Server) handleDataSourceExplore(w http.ResponseWriter, r *http.Request,
 
 func decodeDataSourceUpsert(r *http.Request) (queue.DataSourceUpsert, error) {
 	var req struct {
-		Name          string `json:"name"`
-		Driver        string `json:"driver"`
-		Domain        string `json:"domain"`
-		ContextPrompt string `json:"context_prompt"`
-		PrivacyMode   string `json:"privacy_mode"`
-		Host          string `json:"host"`
-		Port          int    `json:"port"`
-		DatabaseName  string `json:"database_name"`
-		Username      string `json:"username"`
-		Password      string `json:"password"`
-		SSLMode       string `json:"ssl_mode"`
-		UseDSN        bool   `json:"use_dsn"`
-		DSN           string `json:"dsn"`
-		ReadOnly      *bool  `json:"read_only"`
+		Name         string `json:"name"`
+		Driver       string `json:"driver"`
+		Host         string `json:"host"`
+		Port         int    `json:"port"`
+		DatabaseName string `json:"database_name"`
+		Username     string `json:"username"`
+		Password     string `json:"password"`
+		SSLMode      string `json:"ssl_mode"`
+		UseDSN       bool   `json:"use_dsn"`
+		DSN          string `json:"dsn"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return queue.DataSourceUpsert{}, fmt.Errorf("invalid json body")
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return queue.DataSourceUpsert{}, fmt.Errorf("invalid data-source body: %w", err)
 	}
-	readOnly := true
-	if req.ReadOnly != nil {
-		readOnly = *req.ReadOnly
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return queue.DataSourceUpsert{}, fmt.Errorf("data-source body must contain exactly one JSON object")
 	}
 	return queue.DataSourceUpsert{
-		Name:          req.Name,
-		Driver:        req.Driver,
-		Domain:        req.Domain,
-		ContextPrompt: req.ContextPrompt,
-		PrivacyMode:   req.PrivacyMode,
-		Host:          req.Host,
-		Port:          req.Port,
-		DatabaseName:  req.DatabaseName,
-		Username:      req.Username,
-		Password:      req.Password,
-		SSLMode:       req.SSLMode,
-		UseDSN:        req.UseDSN,
-		DSN:           req.DSN,
-		ReadOnly:      readOnly,
+		Name: req.Name, Driver: req.Driver, Host: req.Host, Port: req.Port,
+		DatabaseName: req.DatabaseName, Username: req.Username, Password: req.Password,
+		SSLMode: req.SSLMode, UseDSN: req.UseDSN, DSN: req.DSN,
 	}, nil
 }
 
@@ -295,9 +283,6 @@ func dataSourcePublic(record queue.DataSourceRecord) map[string]any {
 		"id":                record.ID,
 		"name":              record.Name,
 		"driver":            record.Driver,
-		"domain":            record.Domain,
-		"context_prompt":    record.ContextPrompt,
-		"privacy_mode":      record.PrivacyMode,
 		"host":              record.Host,
 		"port":              record.Port,
 		"database_name":     record.DatabaseName,

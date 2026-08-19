@@ -20,6 +20,7 @@ type Server struct {
 	repo                      *queue.Repository
 	migrationBundle           queue.MigrationBundle
 	channelStore              channelStore
+	roleplaySimulation        RoleplaySimulationStore
 	enqueueChannelTurn        enqueueChannelTurnFunc
 	embeddingClient           llm.EmbeddingClient
 	mux                       *http.ServeMux
@@ -41,6 +42,9 @@ type Server struct {
 	uiSessionTTL              time.Duration
 	uiRedis                   *uiRedisClient
 	uiRedisInitError          string
+	uiMemoryMu                sync.RWMutex
+	uiMemorySessions          map[string]uiMemorySessionRecord
+	roleplaySceneDraftMu      sync.Mutex
 	ollamaURLMu               sync.RWMutex
 	hostAgentURL              string
 	hostAgentToken            string
@@ -72,6 +76,7 @@ type ServerOptions struct {
 	RedisURL             string
 	UIRedisRequired      bool
 	UISessionTTL         time.Duration
+	RoleplaySimulation   RoleplaySimulationStore
 }
 
 type memoryCandidatePromotionRequest struct {
@@ -146,6 +151,7 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 		repo:                 repo,
 		migrationBundle:      options.MigrationBundle,
 		channelStore:         channels,
+		roleplaySimulation:   options.RoleplaySimulation,
 		enqueueChannelTurn:   enqueueChannelTurn,
 		embeddingClient:      embeddingClient,
 		mux:                  http.NewServeMux(),
@@ -164,6 +170,7 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 		redisURL:             strings.TrimSpace(options.RedisURL),
 		uiRedisRequired:      options.UIRedisRequired,
 		uiSessionTTL:         options.UISessionTTL,
+		uiMemorySessions:     make(map[string]uiMemorySessionRecord),
 		hostAgentURL:         strings.TrimSpace(options.HostAgentURL),
 		hostAgentToken:       strings.TrimSpace(options.HostAgentToken),
 	}
@@ -211,6 +218,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/ui/runtime-config", s.handleUIRuntimeConfig)
 	s.mux.HandleFunc("/v1/ui/session", s.handleUISession)
 	s.mux.HandleFunc("/v1/ui/panel", s.handleUIPanel)
+	s.mux.HandleFunc("/v1/ui/chat/roleplay", s.handleChatRoleplaySimulation)
+	s.mux.HandleFunc("/v1/ui/chat/slash-commands", s.handleChatSlashCommands)
 	s.mux.HandleFunc("/v1/ui/admin", s.handleUIAdminComponent)
 	s.mux.HandleFunc("/v1/host/screen/monitors", s.handleHostScreenMonitors)
 	s.mux.HandleFunc("/v1/ui/screen/monitors", s.handleUIScreenMonitors)
@@ -260,6 +269,7 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/metrics/glance", s.handleMetricsGlance)
 		s.mux.HandleFunc("/v1/ui/chat/jobs", s.handleChatJobsComponent)
 		s.mux.HandleFunc("/v1/ui/chat/jobs/", s.handleChatJobStateComponent)
+		s.mux.HandleFunc("/v1/ui/chat/data-sources", s.handleChatDataSourceOptions)
 		s.mux.HandleFunc("/v1/ui/chat/memory", s.handleChatMemoryComponent)
 		s.mux.HandleFunc("/v1/ui/chat/timeline", s.handleChatTimelineComponent)
 		s.mux.HandleFunc("/v1/ui/chat/metrics", s.handleChatMetricsComponent)

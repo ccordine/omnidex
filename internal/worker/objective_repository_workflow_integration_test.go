@@ -67,7 +67,7 @@ func TestObjectiveTurnProductionRepositoryPathConsumesReviewCorrectionAndReRevie
 	)
 	result, err := runObjectiveTurn(
 		context.Background(),
-		model.Job{ID: 901, Pipeline: model.PipelineChat, Instruction: "Which type owns dispatch?"},
+		model.Job{ID: 901, Pipeline: model.PipelineChat, Instruction: "Which type owns dispatch?", Metadata: objectiveAssistantMetadata()},
 		scriptedConversationCandidateProvider{},
 		nil,
 		&scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
@@ -99,7 +99,7 @@ func TestObjectiveTurnRepositoryPathRejectsAnswerOnlyStation(t *testing.T) {
 	evidence := mustObjectiveEvidence(t, "R01", "bounded", "repository_symbol", "pack#symbol")
 	_, err := runObjectiveTurn(
 		context.Background(),
-		model.Job{ID: 902, Pipeline: model.PipelineChat, Instruction: "Explain the owner."},
+		model.Job{ID: 902, Pipeline: model.PipelineChat, Instruction: "Explain the owner.", Metadata: objectiveAssistantMetadata()},
 		scriptedConversationCandidateProvider{}, nil,
 		&scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
 			Schema: assemblyline.ConversationObjectiveKindSchemaV1,
@@ -128,7 +128,7 @@ func TestObjectiveTurnRelationshipQueryRetainsRelationThroughReviewAndCitation(t
 	stations := &workflowRepositoryGroundingStation{}
 	result, err := runObjectiveTurn(
 		context.Background(),
-		model.Job{ID: 903, Pipeline: model.PipelineChat, Instruction: "How does Caller reach Callee?"},
+		model.Job{ID: 903, Pipeline: model.PipelineChat, Instruction: "How does Caller reach Callee?", Metadata: objectiveAssistantMetadata()},
 		scriptedConversationCandidateProvider{}, nil,
 		&scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
 			Schema: assemblyline.ConversationObjectiveKindSchemaV1,

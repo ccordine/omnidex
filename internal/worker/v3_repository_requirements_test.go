@@ -21,21 +21,27 @@ func TestExistingRepositoryRequirementsUseOneAggregateCall(t *testing.T) {
 				t.Fatalf("model=%q kind=%q", model, job.Kind)
 			}
 			candidate := assemblyline.RepositoryRequirementInterpretation{
-				Schema:        assemblyline.RepositoryRequirementInterpretationSchemaV1,
-				FeatureQuotes: []string{"CSV exports", "audit logging"},
+				Schema:       assemblyline.RepositoryRequirementInterpretationSchemaV2,
+				Requirements: []string{"CSV exports", "audit logging"},
 			}
 			raw, err := json.Marshal(candidate)
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
 		},
 	}
-	quotes, err := interpretRepositoryRequirements(runtime, "qwen-stable", request, nil)
+	context, err := assemblyline.BootstrapApplicationContext(
+		request, assemblyline.ApplicationWorkspaceExisting, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quotes, err := interpretRepositoryRequirements(runtime, "qwen-stable", request, context, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {
 		t.Fatalf("semantic calls=%d", calls)
 	}
-	if !reflect.DeepEqual(quotes, []string{"audit logging", "CSV exports"}) {
+	if !reflect.DeepEqual(quotes, []string{"CSV exports", "audit logging"}) {
 		t.Fatalf("requirements=%q", quotes)
 	}
 }
@@ -48,15 +54,22 @@ func TestInvalidExistingRepositoryRequirementsFailWithoutCorrection(t *testing.T
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			calls++
 			candidate := assemblyline.RepositoryRequirementInterpretation{
-				Schema:        assemblyline.RepositoryRequirementInterpretationSchemaV1,
-				FeatureQuotes: []string{"invented change"},
+				Schema:       "omnidex.repository-requirements.invalid",
+				Requirements: []string{"invented change"},
 			}
 			raw, err := json.Marshal(candidate)
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
 		},
 	}
-	_, err := interpretRepositoryRequirements(
-		runtime, "qwen-stable", "Add audit logging to the service.", nil,
+	const request = "Add audit logging to the service."
+	context, err := assemblyline.BootstrapApplicationContext(
+		request, assemblyline.ApplicationWorkspaceExisting, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = interpretRepositoryRequirements(
+		runtime, "qwen-stable", request, context, nil,
 	)
 	if err == nil {
 		t.Fatal("ungrounded repository requirement succeeded")

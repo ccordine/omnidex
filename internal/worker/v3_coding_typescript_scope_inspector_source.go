@@ -3,7 +3,7 @@ package worker
 const directCodingTypeScriptScopeInspectorSource = `import path from 'node:path';
 import ts from 'typescript';
 
-const schema = 'omnidex.typescript-lexical-scope.v2';
+const schema = 'omnidex.typescript-lexical-scope.v3';
 const [relativePath, lineRaw, columnRaw, blockStartRaw, blockEndRaw] = process.argv.slice(2);
 const line = Number(lineRaw);
 const column = Number(columnRaw);
@@ -89,6 +89,7 @@ for (const symbol of symbols) {
 }
 bindings.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
 const availableNames = new Set(bindings.map((binding) => binding.name));
+const availableSymbols = new Set(symbols);
 const unavailableByName = new Map();
 function collectNestedDeclarations(node) {
   if (node.getStart(sourceFile) < blockStart || node.getEnd() > blockEnd) return;
@@ -144,7 +145,102 @@ expressionCandidates.sort((left, right) => {
   return left.start - right.start;
 });
 const expressionEvidence = [];
+const deterministicRepairs = [];
 const expressionIdentities = new Set();
+function referencedLocalBindings(node) {
+  const names = new Set();
+  function collect(current) {
+    if (ts.isIdentifier(current)) {
+      const symbol = checker.getSymbolAtLocation(current);
+      if (symbol && availableSymbols.has(symbol)) names.add(symbol.getName());
+    }
+    current.forEachChild(collect);
+  }
+  collect(node);
+  return [...names].sort();
+}
+function containsAnyType(type, visited = new Set()) {
+  if (!type || visited.has(type)) return false;
+  visited.add(type);
+  if ((type.flags & ts.TypeFlags.Any) !== 0) return true;
+  if (typeof type.isUnionOrIntersection === 'function' && type.isUnionOrIntersection()) {
+    for (const constituent of type.types) {
+      if (containsAnyType(constituent, visited)) return true;
+    }
+  }
+  for (const argument of type.aliasTypeArguments ?? []) {
+    if (containsAnyType(argument, visited)) return true;
+  }
+  for (const argument of type.typeArguments ?? []) {
+    if (containsAnyType(argument, visited)) return true;
+  }
+  if ((type.objectFlags & ts.ObjectFlags.Reference) !== 0 &&
+      typeof checker.getTypeArguments === 'function') {
+    let argumentsForReference = [];
+    try {
+      argumentsForReference = checker.getTypeArguments(type);
+    } catch {
+      argumentsForReference = [];
+    }
+    for (const argument of argumentsForReference) {
+      if (containsAnyType(argument, visited)) return true;
+    }
+  }
+  return false;
+}
+function exactTypeofPrimitive(type) {
+  if (!type) return '';
+  if ((type.flags & ts.TypeFlags.Number) !== 0) return 'number';
+  if ((type.flags & ts.TypeFlags.String) !== 0) return 'string';
+  if ((type.flags & ts.TypeFlags.Boolean) !== 0) return 'boolean';
+  return '';
+}
+function isStableReferenceExpression(node) {
+  if (ts.isIdentifier(node)) return true;
+  if (ts.isParenthesizedExpression(node)) return isStableReferenceExpression(node.expression);
+  if (ts.isPropertyAccessExpression(node)) return isStableReferenceExpression(node.expression);
+  if (ts.isElementAccessExpression(node)) {
+    return isStableReferenceExpression(node.expression) &&
+      (ts.isStringLiteral(node.argumentExpression) || ts.isNumericLiteral(node.argumentExpression));
+  }
+  return false;
+}
+function deterministicPrimitiveNullishRepair(
+  candidate, evidenceIndex, inferred, contextual, incompatibleTypes,
+) {
+  const node = candidate.node;
+  if (!contextual || incompatibleTypes.length === 0 || !ts.isBinaryExpression(node) ||
+      node.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken ||
+      !isStableReferenceExpression(node.left)) return null;
+  const primitive = exactTypeofPrimitive(contextual);
+  if (!primitive) return null;
+  const fallbackType = checker.getTypeAtLocation(node.right);
+  if (!checker.isTypeAssignableTo(fallbackType, contextual)) return null;
+  const leftType = checker.getTypeAtLocation(node.left);
+  const constituents = leftType.isUnion() ? leftType.types : [leftType];
+  let hasCompatible = false;
+  let hasIncompatibleNonNullish = false;
+  for (const constituent of constituents) {
+    if (checker.isTypeAssignableTo(constituent, contextual)) {
+      hasCompatible = true;
+      continue;
+    }
+    if ((constituent.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) === 0) {
+      hasIncompatibleNonNullish = true;
+    }
+  }
+  if (!hasCompatible || !hasIncompatibleNonNullish) return null;
+  const left = node.left.getText(sourceFile).trim();
+  const fallback = node.right.getText(sourceFile).trim();
+  const replacement = 'typeof ' + left + " === '" + primitive + "' ? " + left + ' : ' + fallback;
+  return {
+    evidence_index: evidenceIndex,
+    source: candidate.source,
+    replacement,
+    start_byte: Buffer.byteLength(sourceFile.text.slice(blockStart, candidate.start), 'utf8'),
+    end_byte: Buffer.byteLength(sourceFile.text.slice(blockStart, candidate.end), 'utf8'),
+  };
+}
 for (const candidate of expressionCandidates) {
   if (expressionEvidence.length === 8) break;
   const inferred = checker.getTypeAtLocation(candidate.node);
@@ -162,7 +258,8 @@ for (const candidate of expressionCandidates) {
   if (!inferredType || expressionIdentities.has(identity)) continue;
   expressionIdentities.add(identity);
   const incompatibleTypes = [];
-  if (contextual && typeof checker.isTypeAssignableTo === 'function') {
+  if (contextual && !containsAnyType(contextual) &&
+      typeof checker.isTypeAssignableTo === 'function') {
     const constituents = inferred.isUnion() ? inferred.types : [inferred];
     for (const constituent of constituents) {
       if (!checker.isTypeAssignableTo(constituent, contextual)) {
@@ -171,11 +268,18 @@ for (const candidate of expressionCandidates) {
     }
     incompatibleTypes.sort();
   }
+  const referencedBindings = referencedLocalBindings(candidate.node);
+  const evidenceIndex = expressionEvidence.length;
+  const deterministicRepair = deterministicPrimitiveNullishRepair(
+    candidate, evidenceIndex, inferred, contextual, incompatibleTypes,
+  );
+  if (deterministicRepair) deterministicRepairs.push(deterministicRepair);
   expressionEvidence.push({
     source: candidate.source,
     inferred_type: inferredType,
     ...(contextualType ? { contextual_type: contextualType } : {}),
     ...(incompatibleTypes.length > 0 ? { incompatible_types: [...new Set(incompatibleTypes)] } : {}),
+    ...(referencedBindings.length > 0 ? { referenced_bindings: referencedBindings } : {}),
   });
 }
 process.stdout.write(JSON.stringify({
@@ -183,5 +287,6 @@ process.stdout.write(JSON.stringify({
   bindings,
   unavailable_bindings: unavailableBindings,
   expression_evidence: expressionEvidence,
+  deterministic_repairs: deterministicRepairs,
 }));
 `

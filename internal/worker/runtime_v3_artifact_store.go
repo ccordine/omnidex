@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -30,6 +31,8 @@ func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {
 func (r *nativeRuntimeV3) completeWithEvidence(
 	contextKey, output, contextValue string,
 	records []evidence.Record,
+	roleplayFacts []string,
+	roleplayKnowledgeCharacterIDs []model.RoleplayCharacterID,
 ) error {
 	output = strings.TrimSpace(output)
 	contextValue = strings.TrimSpace(contextValue)
@@ -40,6 +43,10 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 	if err != nil {
 		return err
 	}
+	command.RoleplayFacts = append([]string(nil), roleplayFacts...)
+	command.RoleplayKnowledgeCharacterIDs = append(
+		[]model.RoleplayCharacterID(nil), roleplayKnowledgeCharacterIDs...,
+	)
 	bound := make([]evidence.Record, len(records))
 	for index, record := range records {
 		record.JobID = r.claim.Job.ID

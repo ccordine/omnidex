@@ -11,7 +11,7 @@ import (
 func TestPostgresConversationCandidatesBindPriorUserAndAssistantResult(t *testing.T) {
 	ctx, repository := channelTurnTestRepository(t)
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "candidate-authority", Scope: model.ChannelScopeUser, Name: "Candidate authority",
+		ID: "candidate-authority", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant, Name: "Candidate authority",
 		WorkspaceRoot: "/srv/workspaces/candidate-authority",
 	})
 	if err != nil {
@@ -61,14 +61,14 @@ func TestPostgresConversationCandidatesBindPriorUserAndAssistantResult(t *testin
 func TestPostgresConversationCandidatesRejectForeignFutureAndMissingCurrentAuthority(t *testing.T) {
 	ctx, repository := channelTurnTestRepository(t)
 	first, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "candidate-first", Scope: model.ChannelScopeUser, Name: "Candidate first",
+		ID: "candidate-first", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant, Name: "Candidate first",
 		WorkspaceRoot: "/srv/workspaces/candidate-first",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	second, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "candidate-second", Scope: model.ChannelScopeUser, Name: "Candidate second",
+		ID: "candidate-second", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant, Name: "Candidate second",
 		WorkspaceRoot: "/srv/workspaces/candidate-second",
 	})
 	if err != nil {

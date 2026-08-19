@@ -19,7 +19,7 @@ func TestExistingRepositoryGoModificationInputProjectsOnlyDirectCapabilities(t *
 		ExpectedDeclarationSHA256: hex.EncodeToString(digest[:]), RequirementQuote: "return two",
 		DirectCapabilities: []repositoryfacts.DirectCapability{{
 			SymbolID: "symbol-helper", Name: "Helper", Signature: "func Helper() int",
-			SourceSHA256: strings.Repeat("a", 64),
+			SourceSHA256: strings.Repeat("a", 64), PermittedSymbols: []string{"Helper"},
 		}},
 	}
 	input, err := existingRepositoryGoModificationInput(target, current)

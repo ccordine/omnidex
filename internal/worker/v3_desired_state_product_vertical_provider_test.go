@@ -78,13 +78,13 @@ func desiredStateProductResponse(prepared llm.PreparedModel) (string, string, er
 	switch schema {
 	case assemblyline.ConversationObjectiveKindSchemaV1:
 		return fmt.Sprintf(`{"schema":%q,"kind":"workspace_mutation"}`, schema), schema, nil
-	case assemblyline.RepositoryRequirementInterpretationSchemaV1:
+	case assemblyline.RepositoryRequirementInterpretationSchemaV2:
 		source, err := desiredStateProductRequirementSource(prepared.Prompt)
 		if err != nil {
 			return "", schema, err
 		}
 		response, err := json.Marshal(assemblyline.RepositoryRequirementInterpretation{
-			Schema: schema, FeatureQuotes: []string{source},
+			Schema: schema, Requirements: []string{source},
 		})
 		return string(response), schema, err
 	case assemblyline.DeclarationArtifactBoundarySchemaV1:

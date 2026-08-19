@@ -14,10 +14,11 @@ const (
 // TypeScriptRepairExpressionEvidence is a compiler-checker projection for one
 // expression at the exact diagnostic location. Code derives every field.
 type TypeScriptRepairExpressionEvidence struct {
-	Source            string   `json:"source"`
-	InferredType      string   `json:"inferred_type"`
-	ContextualType    string   `json:"contextual_type,omitempty"`
-	IncompatibleTypes []string `json:"incompatible_types,omitempty"`
+	Source             string   `json:"source"`
+	InferredType       string   `json:"inferred_type"`
+	ContextualType     string   `json:"contextual_type,omitempty"`
+	IncompatibleTypes  []string `json:"incompatible_types,omitempty"`
+	ReferencedBindings []string `json:"referenced_bindings,omitempty"`
 }
 
 func ValidateTypeScriptRepairExpressionEvidence(
@@ -67,6 +68,20 @@ func ValidateTypeScriptRepairExpressionEvidence(
 			return fmt.Errorf(
 				"TypeScript repair expression incompatible types require a contextual type",
 			)
+		}
+		prior = ""
+		for _, name := range item.ReferencedBindings {
+			if err := validateTypeScriptRepairBindingText(
+				"referenced binding", index, name,
+			); err != nil {
+				return err
+			}
+			if prior != "" && name <= prior {
+				return fmt.Errorf(
+					"TypeScript repair expression referenced bindings must be uniquely sorted",
+				)
+			}
+			prior = name
 		}
 	}
 	return nil

@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -13,25 +14,46 @@ func mapDirectCodingVitestFailureReceipt(
 	root string,
 	documents []assemblyline.ComposedTypeScriptDocument,
 	receipt directCodingVitestFailureReceipt,
-) (*directCodingStageDiagnostic, bool) {
-	for _, location := range receipt.Locations {
+) (*directCodingStageDiagnostic, bool, error) {
+	for _, failure := range receipt.Failures {
+		diagnostic, mapped, err := mapDirectCodingVitestFailureEvidence(root, documents, failure)
+		if err != nil {
+			return nil, false, err
+		}
+		if mapped {
+			return diagnostic, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func mapDirectCodingVitestFailureEvidence(
+	root string,
+	documents []assemblyline.ComposedTypeScriptDocument,
+	failure directCodingVitestFailureEvidence,
+) (*directCodingStageDiagnostic, bool, error) {
+	for _, location := range failure.Locations {
 		path, valid := directCodingVitestStagePath(root, location.File)
 		if !valid {
 			continue
 		}
 		diagnostic, mapped := mapDirectCodingTypeScriptDocumentLocation(
-			documents, path, location.Line, location.Column, receipt.Output,
+			documents, path, location.Line, location.Column, failure.Output,
 		)
 		if !mapped {
 			continue
 		}
-		diagnostic.FailureClass = receipt.FailureClass
-		diagnostic.ModelFeedback = directCodingTypeScriptTestModelFailure(
-			receipt.Output, diagnostic.AuthorizedRegexLiterals...,
+		diagnostic.FailureClass = failure.FailureClass
+		feedback, err := directCodingTypeScriptStructuredTestModelFailure(
+			failure, diagnostic.AuthorizedRegexLiterals...,
 		)
-		return diagnostic, true
+		if err != nil {
+			return nil, false, fmt.Errorf("map structured Vitest failure: %w", err)
+		}
+		diagnostic.ModelFeedback = feedback
+		return diagnostic, true, nil
 	}
-	return nil, false
+	return nil, false, nil
 }
 
 func directCodingVitestStagePath(root string, raw string) (string, bool) {

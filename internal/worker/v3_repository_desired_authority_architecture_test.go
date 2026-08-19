@@ -49,6 +49,13 @@ func TestDesiredStateModelContractsExposeOnlySemanticLeaves(t *testing.T) {
 
 func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 	t.Parallel()
+	repositoryRequest := "ARTIFACT_1 must no longer exist"
+	repositoryContext, err := assemblyline.BootstrapApplicationContext(
+		repositoryRequest, assemblyline.ApplicationWorkspaceExisting, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	must := func(job assemblyline.PortableJob, err error) assemblyline.PortableJob {
 		if err != nil {
 			t.Fatal(err)
@@ -57,7 +64,7 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 	}
 	jobs := []assemblyline.PortableJob{
 		must(assemblyline.NewRepositoryRequirementInterpretationJob(assemblyline.RepositoryRequirementInterpretationInput{
-			UserRequest: "ARTIFACT_1 must no longer exist",
+			UserRequest: repositoryRequest, Context: repositoryContext,
 		})),
 		must(assemblyline.NewArtifactHandlingJob(assemblyline.ArtifactHandlingInput{
 			UserRequest: "ARTIFACT_1 must no longer exist", Token: "ARTIFACT_1",
@@ -94,6 +101,24 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 			t.Errorf("%s renderer exposed a code-derived target path", job.Kind)
 		}
 		assertNoPhysicalSchemaAuthority(t, string(job.Kind), schema)
+	}
+}
+
+func TestForbiddenModelAuthorityIdentifierMatchesWholeConceptWords(t *testing.T) {
+	t.Parallel()
+	for _, identifier := range []string{
+		"WriteFile", "SomeToolCallSchema", "ActionSchemaV1", "UniversalAgentRuntime",
+	} {
+		if !forbiddenModelAuthorityIdentifier(identifier) {
+			t.Errorf("forbidden model authority identifier %q was not detected", identifier)
+		}
+	}
+	for _, identifier := range []string{
+		"RoleplayCanonExtractionSchemaV1", "DatabaseQueryIntentSchemaV1", "ApplicationContext",
+	} {
+		if forbiddenModelAuthorityIdentifier(identifier) {
+			t.Errorf("semantic identifier %q was rejected by a cross-word substring match", identifier)
+		}
 	}
 }
 

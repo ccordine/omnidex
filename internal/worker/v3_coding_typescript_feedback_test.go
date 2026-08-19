@@ -3,44 +3,60 @@ package worker
 import (
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
-func TestTypeScriptModelFailureRejectsGenericPathAndFileIdentities(t *testing.T) {
+func TestStructuredTypeScriptTestFailurePreservesExactProblem(t *testing.T) {
 	t.Parallel()
-	for _, identity := range []string{
-		"/tmp/config.yaml",
-		`C:\temp\config.yaml`,
-		"config/settings.yaml",
-		"config.yaml",
-		"go.mod",
-		".env",
-		"runner.js",
-		"CONFIG.YAML",
-		"First.GO",
-		"mixed.JsOn",
-		".ENV",
-	} {
-		raw := "AssertionError: expected " + identity + " to be valid"
-		feedback := directCodingTypeScriptTestModelFailure(raw)
-		if strings.Contains(feedback, identity) {
-			t.Fatalf("feedback leaked path or file identity %q: %q", identity, feedback)
-		}
-		if feedback != "Validation failed without a concise function-owned diagnostic." {
-			t.Fatalf("path-bearing diagnostic %q produced feedback %q", raw, feedback)
-		}
+	feedback, err := directCodingTypeScriptStructuredTestModelFailure(
+		directCodingVitestFailureEvidence{
+			Name:    "TypeError",
+			Message: "Cannot read properties of undefined (reading 'includes')",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "TypeError: Cannot read properties of undefined (reading 'includes')"
+	if feedback != want {
+		t.Fatalf("structured failure=%q want=%q", feedback, want)
 	}
 }
 
-func TestTypeScriptModelFailurePreservesLegitimatePathFreeDiagnostics(t *testing.T) {
+func TestStructuredTypeScriptTestFailureRedactsUnsafeIdentityWithoutDiscardingProblem(t *testing.T) {
 	t.Parallel()
-	for _, diagnostic := range []string{
-		"AssertionError: expected version 1.2.3 to equal 1.2.4",
-		"TypeError: expected configuration value to be defined",
-		"Error TS2322: Type string is not assignable to type number",
+	feedback, err := directCodingTypeScriptStructuredTestModelFailure(
+		directCodingVitestFailureEvidence{
+			Name: "TestingLibraryElementError",
+			Message: `Unable to find an element with the text matcher from /tmp/stage/src/view.test.tsx:12:3: ` +
+				`(value) => value.includes('\\d+')`,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(feedback, "TestingLibraryElementError: Unable to find an element") {
+		t.Fatalf("structured failure discarded the exact problem: %q", feedback)
+	}
+	for _, forbidden := range []string{"/tmp/", "view.test.tsx", `\\d+`} {
+		if strings.Contains(feedback, forbidden) {
+			t.Fatalf("structured failure leaked %q: %q", forbidden, feedback)
+		}
+	}
+	if modelcontext.ContainsPathIdentity(feedback) {
+		t.Fatalf("structured failure retained path identity: %q", feedback)
+	}
+}
+
+func TestStructuredTypeScriptTestFailureRequiresExactNameAndMessage(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []directCodingVitestFailureEvidence{
+		{Message: "observed failure"},
+		{Name: "TypeError"},
 	} {
-		feedback := directCodingTypeScriptTestModelFailure(diagnostic)
-		if feedback != diagnostic {
-			t.Fatalf("path-free diagnostic %q became %q", diagnostic, feedback)
+		if _, err := directCodingTypeScriptStructuredTestModelFailure(failure); err == nil {
+			t.Fatalf("accepted incomplete structured failure: %+v", failure)
 		}
 	}
 }

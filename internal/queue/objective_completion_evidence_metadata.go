@@ -8,13 +8,33 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/roleplay"
 )
+
+var objectiveRoleplayResearchMetadataKeys = []string{
+	"authority_namespace",
+	"roleplay_research_preparation_id",
+	"roleplay_research_world_id",
+	"roleplay_research_character_id",
+	"roleplay_research_question_sha256",
+	"roleplay_research_capability_grant_id",
+}
 
 func validateObjectiveCitationMetadata(record evidence.Record) error {
 	web := record.SourceType == "web_document"
+	database := record.SourceType == "postgres_query"
+	roleplayResearch := hasAnyObjectiveRoleplayResearchMetadata(record.Metadata)
+	if roleplayResearch && !web {
+		return fmt.Errorf("roleplay research authority is valid only for real-world web evidence")
+	}
 	expectedFields := 7
 	if web {
 		expectedFields = 10
+	} else if database {
+		expectedFields = 8
+	}
+	if roleplayResearch {
+		expectedFields += len(objectiveRoleplayResearchMetadataKeys)
 	}
 	if len(record.Metadata) != expectedFields {
 		return fmt.Errorf(
@@ -23,7 +43,7 @@ func validateObjectiveCitationMetadata(record evidence.Record) error {
 		)
 	}
 	for key := range record.Metadata {
-		if objectiveCitationMetadataKeyAllowed(key, web) {
+		if objectiveCitationMetadataKeyAllowed(key, web, database, roleplayResearch) {
 			continue
 		}
 		return fmt.Errorf("objective citation contains unknown metadata field %q", key)
@@ -64,7 +84,25 @@ func validateObjectiveCitationMetadata(record evidence.Record) error {
 		if kind != "external_answer" {
 			return fmt.Errorf("objective web citation requires objective kind %q", "external_answer")
 		}
-		return validateObjectiveWebMetadata(record, requirementID)
+		if err := validateObjectiveWebMetadata(record, requirementID); err != nil {
+			return err
+		}
+		if roleplayResearch {
+			return validateObjectiveRoleplayResearchMetadata(record.Metadata)
+		}
+		return nil
+	}
+	if database {
+		if kind != "database_read" {
+			return fmt.Errorf("objective database citation requires objective kind %q", "database_read")
+		}
+		if err := validateObjectiveDatabaseMetadata(record); err != nil {
+			return err
+		}
+		if len(record.SupportsClaims) != 1 || record.SupportsClaims[0] != requirementID {
+			return fmt.Errorf("objective database citation claim differs from its requirement authority")
+		}
+		return nil
 	}
 	if kind != "repository_read" {
 		return fmt.Errorf("objective non-web citation requires objective kind %q", "repository_read")
@@ -75,16 +113,64 @@ func validateObjectiveCitationMetadata(record evidence.Record) error {
 	return nil
 }
 
-func objectiveCitationMetadataKeyAllowed(key string, web bool) bool {
+func objectiveCitationMetadataKeyAllowed(key string, web, database, roleplayResearch bool) bool {
 	switch key {
 	case "capsule_id", "instruction_sha256", "objective_id", "objective_kind",
 		"requirement_id", "projection_sha256", "source_sha256":
 		return true
 	case "paragraph_indexes", "source_observed_at", "source_truncated":
 		return web
+	case "source_acquired_at":
+		return database
+	case "authority_namespace", "roleplay_research_preparation_id",
+		"roleplay_research_world_id", "roleplay_research_character_id",
+		"roleplay_research_question_sha256", "roleplay_research_capability_grant_id":
+		return roleplayResearch
 	default:
 		return false
 	}
+}
+
+func hasAnyObjectiveRoleplayResearchMetadata(metadata map[string]any) bool {
+	for _, key := range objectiveRoleplayResearchMetadataKeys {
+		if _, exists := metadata[key]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func validateObjectiveRoleplayResearchMetadata(metadata map[string]any) error {
+	namespace, err := objectiveMetadataString(metadata, "authority_namespace", 32)
+	if err != nil {
+		return err
+	}
+	if namespace != string(roleplay.AuthorityRealWorld) {
+		return fmt.Errorf("roleplay research citation requires REAL_WORLD authority")
+	}
+	for _, key := range []string{
+		"roleplay_research_preparation_id", "roleplay_research_world_id",
+		"roleplay_research_character_id", "roleplay_research_capability_grant_id",
+	} {
+		if _, err := objectiveMetadataString(metadata, key, 128); err != nil {
+			return err
+		}
+	}
+	_, err = objectiveMetadataSHA(metadata, "roleplay_research_question_sha256")
+	return err
+}
+
+func validateObjectiveDatabaseMetadata(record evidence.Record) error {
+	acquired, err := objectiveMetadataString(record.Metadata, "source_acquired_at", 35)
+	if err != nil {
+		return err
+	}
+	parsed, parseErr := time.Parse(time.RFC3339Nano, acquired)
+	if parseErr != nil || !strings.HasSuffix(acquired, "Z") ||
+		parsed.Location() != time.UTC || parsed.Format(time.RFC3339Nano) != acquired {
+		return fmt.Errorf("objective database citation acquisition must be exact canonical UTC RFC3339Nano")
+	}
+	return nil
 }
 
 func validateObjectiveWebMetadata(record evidence.Record, requirementID string) error {

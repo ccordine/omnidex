@@ -3,19 +3,23 @@ import { ChatRuntimeController } from "./chat_runtime_controller";
 
 export default class ChatController extends ChatRuntimeController {
   async selectChannel(event: Event): Promise<void> {
-    await this.channel.select(event);
-  }
-
-  async createChannel(event: Event): Promise<void> {
-    await this.channel.create(event);
+    const wasBusy = this.busy;
+    this.setBusy(true);
+    try {
+      await this.channel.select(event);
+      await this.synchronizeSlashCommands(this.channel.selectedID());
+    } finally {
+      this.setBusy(wasBusy);
+    }
   }
 
   async loadOlderChannelMessages(event: Event): Promise<void> {
     await this.channel.loadOlder(event);
   }
 
-  async loadMoreChannels(event: Event): Promise<void> {
-    await this.channel.loadMoreChannels(event);
+  selectNewChannelMode(): void {
+    this.creation.synchronize();
+		this.dataSources.setCreationMode(this.creation.selectedMode());
   }
 
   async submitChannel(prompt: string): Promise<void> {
@@ -31,10 +35,23 @@ export default class ChatController extends ChatRuntimeController {
   }
 
   composerKeydown(event: KeyboardEvent): void {
+    if (event.defaultPrevented) return;
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
       void this.submit(event);
     }
+  }
+
+  composerInput(): void {
+    this.slashPalette.inputChanged();
+  }
+
+  slashCommandKeydown(event: KeyboardEvent): void {
+    this.slashPalette.keydown(event);
+  }
+
+  chooseSlashCommand(event: Event): void {
+    this.slashPalette.choose(event);
   }
 
   async submit(event: Event): Promise<void> {
@@ -45,6 +62,36 @@ export default class ChatController extends ChatRuntimeController {
     }
     const prompt = this.inputTarget.value;
     if (!prompt.trim() || this.busy) return;
+	this.slashPalette.dismiss();
+	if (!this.channel.hasSelection()) {
+		this.activityLabel = "Creating conversation…";
+		this.setBusy(true);
+		this.renderProgressActivity(this.activityLabel);
+		try {
+			const result = await this.channel.createAndSubmit(prompt);
+			if (result === "creation_failed") {
+				this.setBusy(false);
+				return;
+			}
+			if (result === "roleplay_setup_required") {
+				await this.synchronizeSlashCommands(this.channel.selectedID());
+				this.setBusy(false);
+				this.setStatus("roleplay setup required", "error");
+				return;
+			}
+			if (this.inputTarget.value === prompt) this.inputTarget.value = "";
+			await this.synchronizeSlashCommands(this.channel.selectedID());
+			return;
+		} catch (error) {
+			this.reportSubmitFailure(error);
+			return;
+		}
+	}
+	if (!this.roleplay.isConfigured()) {
+		this.setBusy(false);
+		this.setStatus("roleplay setup required", "error");
+		return;
+	}
 
     this.activityLabel = "Sending…";
     this.setBusy(true);
@@ -53,12 +100,17 @@ export default class ChatController extends ChatRuntimeController {
     try {
       await this.submitChannel(prompt);
       if (this.inputTarget.value === prompt) this.inputTarget.value = "";
+      await this.synchronizeSlashCommands(this.channel.selectedID());
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.addEvent("request_failed", { error: message });
-      this.setBusy(false);
-      this.setStatus("failed", "error");
+      this.reportSubmitFailure(error);
     }
+  }
+
+  private reportSubmitFailure(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.addEvent("request_failed", { error: message });
+    this.setBusy(false);
+    this.setStatus("failed", "error");
   }
 
   async loadJobs(options: { quiet?: boolean; strict?: boolean } = {}): Promise<void> {
@@ -154,5 +206,66 @@ export default class ChatController extends ChatRuntimeController {
 
   clearTranscript(): void {
     throw new Error("A server-authoritative channel transcript cannot be cleared from the browser.");
+  }
+
+  async loadRoleplayPage(event: Event): Promise<void> {
+	await this.roleplay.loadPage(event);
+  }
+
+  useRoleplayCommand(event: Event): void {
+	this.roleplay.useCommand(event);
+	this.slashPalette.dismiss();
+  }
+
+  async createRoleplayCharacter(event: Event): Promise<void> {
+	await this.roleplay.createCharacter(event);
+  }
+
+  async saveRoleplayPersona(event: Event): Promise<void> {
+	await this.roleplay.savePersona(event);
+  }
+
+  async createRoleplayScene(event: Event): Promise<void> {
+	await this.roleplay.createScene(event);
+  }
+
+  async updateRoleplayScene(event: Event): Promise<void> {
+	await this.roleplay.updateScene(event);
+  }
+
+  async saveRoleplaySceneDraftParticipant(event: Event): Promise<void> {
+	await this.roleplay.saveSceneDraftParticipant(event);
+  }
+
+  async registerRoleplayMeter(event: Event): Promise<void> {
+	await this.roleplay.registerMeter(event);
+  }
+
+  async setRoleplayMeter(event: Event): Promise<void> {
+	await this.roleplay.setMeter(event);
+  }
+
+  async configureRoleplayResearch(event: Event): Promise<void> {
+	await this.roleplay.configureResearch(event);
+  }
+
+  async registerRoleplayInteraction(event: Event): Promise<void> {
+	await this.roleplay.registerInteraction(event);
+  }
+
+  async registerRoleplayItem(event: Event): Promise<void> {
+	await this.roleplay.registerItem(event);
+  }
+
+  private async synchronizeSlashCommands(channelID: string): Promise<void> {
+    try {
+      await this.slashPalette.activate(channelID);
+    } catch (error) {
+      this.setStatus("command hints unavailable", "error");
+      this.addEvent("slash_commands_refresh_failed", {
+        channel_id: channelID,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

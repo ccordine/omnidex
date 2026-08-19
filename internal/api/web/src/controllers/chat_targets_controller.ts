@@ -5,7 +5,7 @@ export abstract class ChatTargetsController extends Controller {
     "messages", "timeline", "input", "send", "status", "transport", "networkUrl", "job", "liveBadge", "eventCount", "panel",
     "jobFilter", "jobsList", "jobDetails", "memoryCandidates", "memoryList", "memoryKind", "memoryKindFilter", "memoryTags", "memoryContent",
     "statusOutput", "researchStatusOutput", "hostBridgeStatusOutput",
-    "metricsOutput", "progress", "progressState", "progressLoading", "spinner", "modal", "modalPanel", "channelSelect", "transcriptLoading",
+    "metricsOutput", "progress", "progressState", "progressLoading", "spinner", "modal", "modalPanel", "channelSelect", "newChannelDataSourceSelect", "newChannelModeSelect", "newChannelRoleplayFields", "newChannelRoleplayWorldName", "newChannelRoleplayViewpointName", "transcriptLoading", "roleplayPanel", "roleplayLoading", "slashPalette", "slashOptions",
   ];
 
   declare readonly messagesTarget: HTMLElement;
@@ -60,6 +60,22 @@ export abstract class ChatTargetsController extends Controller {
   declare readonly hasJobTarget: boolean;
   declare readonly hasEventCountTarget: boolean;
   declare readonly channelSelectTarget: HTMLSelectElement;
+  declare readonly newChannelDataSourceSelectTarget: HTMLSelectElement;
+  declare readonly hasNewChannelDataSourceSelectTarget: boolean;
+  declare readonly newChannelModeSelectTarget: HTMLSelectElement;
+  declare readonly hasNewChannelModeSelectTarget: boolean;
+  declare readonly newChannelRoleplayFieldsTarget: HTMLElement;
+  declare readonly hasNewChannelRoleplayFieldsTarget: boolean;
+  declare readonly newChannelRoleplayWorldNameTarget: HTMLInputElement;
+  declare readonly hasNewChannelRoleplayWorldNameTarget: boolean;
+  declare readonly newChannelRoleplayViewpointNameTarget: HTMLInputElement;
+  declare readonly hasNewChannelRoleplayViewpointNameTarget: boolean;
   declare readonly transcriptLoadingTarget: HTMLElement;
   declare readonly hasTranscriptLoadingTarget: boolean;
+  declare readonly roleplayPanelTarget: HTMLElement;
+  declare readonly hasRoleplayPanelTarget: boolean;
+  declare readonly roleplayLoadingTarget: HTMLElement;
+  declare readonly hasRoleplayLoadingTarget: boolean;
+  declare readonly slashPaletteTarget: HTMLElement;
+  declare readonly slashOptionsTarget: HTMLElement;
 }

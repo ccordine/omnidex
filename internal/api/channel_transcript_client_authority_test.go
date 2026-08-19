@@ -147,7 +147,9 @@ func TestChatSystemPanelsConsumeServerComponents(t *testing.T) {
 func TestChatOperationalListsConsumePaginatedServerBundles(t *testing.T) {
 	t.Parallel()
 	required := map[string][]string{
-		"web/src/lib/chat_channel_coordinator.ts": {"fetchChannelOptionsPage(", "page.html.bundle", "button.dataset.nextOffset"},
+		"web/src/lib/chat_channel_coordinator.ts": {
+			"fetchChannelOptionsPage(", "page.html.bundle", "page.next_offset", "offset = page.next_offset",
+		},
 		"web/src/lib/chat_jobs_coordinator.ts":    {"fetchChatJobsPage(", "page.html.bundle", "next_offset"},
 		"web/src/lib/chat_memory_coordinator.ts":  {"fetchChatMemoryPage(", "page.html.bundle", "button.dataset.nextOffset"},
 		"web/src/controllers/chat_view_controller.ts": {
@@ -164,5 +166,9 @@ func TestChatOperationalListsConsumePaginatedServerBundles(t *testing.T) {
 				t.Errorf("%s lacks server component pagination token %q", path, token)
 			}
 		}
+	}
+	channel := readFrontendSource(t, "web/src/lib/chat_channel_coordinator.ts")
+	if strings.Contains(channel, "button.dataset.nextOffset") {
+		t.Error("channel pagination still depends on the removed manual next-offset control")
 	}
 }

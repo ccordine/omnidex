@@ -139,19 +139,9 @@ func renderUIDataSourceForm(source queue.DataSourceRecord, editing bool) string 
 	if port == 0 {
 		port = 5432
 	}
-	domain := source.Domain
-	if domain == "" {
-		domain = "generic"
-	}
-	privacy := source.PrivacyMode
-	if privacy == "" {
-		privacy = "strict"
-	}
 	form := `<form data-action="submit->admin-data-sources#saveDataSource" data-ds-source-form class="grid gap-3"><input type="hidden" data-ds-field="id" value="` + uiAttribute(source.ID) + `" />` +
 		uiDSInput("Name", "name", source.Name, "text") +
-		`<div class="grid gap-3 md:grid-cols-2">` + uiDSSelect("Database type", "driver", "postgres", []string{"postgres"}) + uiDSSelect("Domain", "domain", domain, []string{"generic", "healthcare", "gaming", "analytics"}) + `</div>` +
-		`<label class="block"><span class="text-xs text-zinc-500">Context</span><textarea data-ds-field="context_prompt" rows="3" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm">` + uiEscape(source.ContextPrompt) + `</textarea></label>` +
-		uiDSSelect("Privacy", "privacy_mode", privacy, []string{"strict", "standard"}) +
+		uiDSSelect("Database type", "driver", "postgres", []string{"postgres"}) +
 		`<label class="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" data-ds-field="use_dsn" data-action="change->admin-data-sources#toggleDataSourceDSNPanel"` + checked + ` />Use connection string (DSN)</label>` +
 		`<div data-ds-connection-fields class="grid gap-3 md:grid-cols-2">` + uiDSInput("DSN", "dsn", "", "password") + uiDSInput("Host", "host", source.Host, "text") + uiDSInput("Port", "port", strconv.Itoa(port), "number") + uiDSInput("Database", "database_name", source.DatabaseName, "text") + uiDSInput("Username", "username", source.Username, "text") + uiDSInput("Password", "password", "", "password") + uiDSSelect("SSL mode", "ssl_mode", source.SSLMode, []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}) + `</div>` +
 		`<div class="flex gap-2"><button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">` + button + `</button>`

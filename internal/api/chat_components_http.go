@@ -37,6 +37,35 @@ func (s *Server) handleChatChannelOptions(w http.ResponseWriter, r *http.Request
 	writeChatComponentJSON(w, payload)
 }
 
+func (s *Server) handleChatDataSourceOptions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := validateExactQuery(r, "limit", "offset"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, offset, ok := exactChatComponentPage(w, r)
+	if !ok {
+		return
+	}
+	page, err := s.repo.ListDataSourcesPage(r.Context(), queue.DataSourcePageRequest{
+		Limit: limit, Offset: offset,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	next := dataSourceNextOffset(page.Offset, len(page.Items), page.HasMore)
+	payload, err := renderChatDataSourceOptionsPage(page.Items, next, offset > 0)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeChatComponentJSON(w, payload)
+}
+
 func (s *Server) handleChatJobsComponent(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

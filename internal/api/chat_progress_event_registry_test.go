@@ -85,7 +85,11 @@ func sourceExpression(fileSet *token.FileSet, expression ast.Expr) string {
 func readProgressProjectionSource(t *testing.T) string {
 	t.Helper()
 	var source strings.Builder
-	for _, path := range []string{"chat_job_progress_summary.go", "chat_job_progress_stations.go"} {
+	for _, path := range []string{
+		"chat_job_progress_summary.go",
+		"chat_job_progress_stations.go",
+		"chat_job_progress_cognition.go",
+	} {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

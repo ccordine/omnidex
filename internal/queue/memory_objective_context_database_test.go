@@ -118,12 +118,12 @@ func TestPostgresObjectiveContinuityLoadsExactScopeAndCurrentReplan(t *testing.T
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
 	if err := repository.EnsureSchema(
-		t.Context(), loadMigrationBundleThroughPrefix(t, "081"),
+		t.Context(), loadMigrationBundleThroughPrefix(t, "117"),
 	); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateChannel(t.Context(), model.Channel{
-		ID: "objective-continuity", Scope: model.ChannelScopeUser,
+		ID: "objective-continuity", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "Objective continuity", WorkspaceRoot: "/srv/workspaces/objective-continuity",
 	})
 	if err != nil {

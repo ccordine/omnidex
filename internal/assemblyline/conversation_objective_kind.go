@@ -22,11 +22,13 @@ const (
 	ObjectiveKindWorkspaceMutation ConversationObjectiveKind = "workspace_mutation"
 	ObjectiveKindExternalAnswer    ConversationObjectiveKind = "external_answer"
 	ObjectiveKindStory             ConversationObjectiveKind = "story"
+	ObjectiveKindDatabaseRead      ConversationObjectiveKind = "database_read"
 )
 
 type ConversationObjectiveKindInput struct {
-	ExactInstruction string           `json:"exact_instruction"`
-	Context          ObjectiveContext `json:"objective_context"`
+	ExactInstruction          string           `json:"exact_instruction"`
+	Context                   ObjectiveContext `json:"objective_context"`
+	DatabaseEvidenceAvailable bool             `json:"database_evidence_available"`
 }
 
 type ConversationObjectiveKindDecision struct {
@@ -72,6 +74,11 @@ func (decision ConversationObjectiveKindDecision) ValidateFor(input Conversation
 		ObjectiveKindExternalAnswer,
 		ObjectiveKindStory:
 		return nil
+	case ObjectiveKindDatabaseRead:
+		if !input.DatabaseEvidenceAvailable {
+			return fmt.Errorf("database-read objective requires an explicit data-source binding")
+		}
+		return nil
 	default:
 		return fmt.Errorf("conversation objective kind %q is unsupported", decision.Kind)
 	}
@@ -106,33 +113,43 @@ func BuildConversationObjectiveKindPrompt(input ConversationObjectiveKindInput) 
 	if err != nil {
 		return "", fmt.Errorf("encode objective context: %w", err)
 	}
-	return strings.Join([]string{
+	lines := []string{
 		"Classify one exact user instruction into exactly one registered code-owned objective kind.",
 		"answer: answer without inspecting a repository or acquiring current external evidence.",
 		"repository_read: inspect an existing repository without changing it.",
 		"workspace_mutation: change a workspace and verify the change.",
 		"external_answer: answer using current or externally acquired evidence.",
 		"story: produce narrative or roleplay text.",
-		"Classify only. Do not decompose, execute, or add responsibilities.",
-		"OBJECTIVE_CONTEXT_JSON:\n" + string(context),
-		"EXACT_INSTRUCTION:\n" + input.ExactInstruction,
-	}, "\n\n"), nil
+	}
+	if input.DatabaseEvidenceAvailable {
+		lines = append(lines, "database_read: answer using the explicitly bound database when its records are required as evidence.")
+	}
+	lines = append(lines,
+		"Return the one registered semantic objective kind that exactly describes this instruction.",
+		"OBJECTIVE_CONTEXT_JSON:\n"+string(context),
+		"EXACT_INSTRUCTION:\n"+input.ExactInstruction,
+	)
+	return strings.Join(lines, "\n\n"), nil
 }
 
-func ConversationObjectiveKindResponseSchema() map[string]any {
+func ConversationObjectiveKindResponseSchema(input ConversationObjectiveKindInput) map[string]any {
+	kinds := []ConversationObjectiveKind{
+		ObjectiveKindAnswer,
+		ObjectiveKindRepositoryRead,
+		ObjectiveKindWorkspaceMutation,
+		ObjectiveKindExternalAnswer,
+		ObjectiveKindStory,
+	}
+	if input.DatabaseEvidenceAvailable {
+		kinds = append(kinds, ObjectiveKindDatabaseRead)
+	}
 	return objectSchema(
 		[]string{"schema", "kind"},
 		map[string]any{
 			"schema": map[string]any{
 				"type": "string", "const": ConversationObjectiveKindSchemaV1,
 			},
-			"kind": enumSchema(
-				ObjectiveKindAnswer,
-				ObjectiveKindRepositoryRead,
-				ObjectiveKindWorkspaceMutation,
-				ObjectiveKindExternalAnswer,
-				ObjectiveKindStory,
-			),
+			"kind": enumSchema(kinds...),
 		},
 	)
 }

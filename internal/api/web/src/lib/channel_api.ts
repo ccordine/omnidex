@@ -9,6 +9,10 @@ import type {
 
 const JOB_STATUSES = ["pending", "running", "waiting_input", "completed", "failed", "canceled"] as const;
 
+export type ChannelCreationContext =
+  | { mode: "assistant"; roleplay_world_name?: never; roleplay_viewpoint_name?: never }
+  | { mode: "roleplay"; roleplay_world_name: string; roleplay_viewpoint_name: string };
+
 export async function fetchChannelTranscript(
   channelID: string,
   options: { limit?: number; beforeID?: number; requiredMessageID?: number } = {},
@@ -87,13 +91,23 @@ export async function sendChannelMessage(
 export async function createUserChannel(input: {
   id: string;
   name: string;
-  workspace_root: string;
+  workspace_root?: string;
   tags?: string[];
-}): Promise<UserChannel> {
+  data_source_id?: string;
+} & ChannelCreationContext): Promise<UserChannel> {
   requireChannelID(input.id, "Channel create request");
   requireExactText(input.name, "Channel create name");
   requireTags(input.tags ?? [], "Channel create tags");
-  requireWorkspaceRoot(input.workspace_root, "Channel create workspace_root");
+  const workspaceRoot = input.workspace_root === undefined
+    ? undefined
+    : requireWorkspaceRoot(input.workspace_root, "Channel create workspace_root");
+  const dataSourceID = input.data_source_id === undefined
+    ? undefined
+    : requireDataSourceID(input.data_source_id, "Channel create data_source_id");
+  const creation = requireChannelCreationContext(input);
+	if (creation.mode === "roleplay" && dataSourceID !== undefined) {
+		throw new Error("Roleplay channel creation cannot bind a real-world data source.");
+	}
   const response = await fetch("/v1/channels", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -101,13 +115,17 @@ export async function createUserChannel(input: {
       id: input.id,
       name: input.name,
       tags: input.tags ?? [],
-      workspace_root: input.workspace_root,
+      ...(workspaceRoot === undefined ? {} : { workspace_root: workspaceRoot }),
+      ...(dataSourceID === undefined ? {} : { data_source_id: dataSourceID }),
+      ...creation,
     }),
   });
   const payload = await readJSON<{ channel?: unknown }>(response);
   requireStatus(response, 201, "channel create");
   const channel = requireUserChannel(payload.channel, "Channel create response");
-  if (channel.id !== input.id || channel.name !== input.name || channel.workspace_root !== input.workspace_root) {
+  if (channel.id !== input.id || channel.name !== input.name ||
+    (workspaceRoot !== undefined && channel.workspace_root !== workspaceRoot) ||
+    (channel.data_source_id ?? "") !== (dataSourceID ?? "") || channel.mode !== creation.mode) {
     throw new Error("Channel create response changed the requested identity.");
   }
   return channel;
@@ -119,6 +137,22 @@ function requireUserChannel(value: unknown, source: string): UserChannel {
   if (raw.scope !== "user") throw new Error(`${source} scope must be exactly "user".`);
   const name = requireExactText(raw.name, `${source} name`);
   const tags = requireTags(raw.tags, `${source} tags`);
+  const dataSourceID = raw.data_source_id === undefined
+    ? undefined
+    : requireDataSourceID(raw.data_source_id, `${source} data_source_id`);
+  const mode = requireChannelMode(raw.mode, `${source} mode`);
+  const viewpointID = raw.roleplay_viewpoint_character_id === undefined
+    ? undefined
+    : requireRoleplayCharacterID(raw.roleplay_viewpoint_character_id, `${source} roleplay viewpoint`);
+  if (mode === "assistant" && viewpointID !== undefined) {
+    throw new Error(`${source} assistant mode cannot carry a roleplay viewpoint.`);
+  }
+  if (mode === "roleplay" && viewpointID === undefined) {
+    throw new Error(`${source} roleplay mode requires its persisted viewpoint identity.`);
+  }
+	if (mode === "roleplay" && dataSourceID !== undefined) {
+		throw new Error(`${source} roleplay mode cannot carry a real-world data source.`);
+	}
   return {
     id,
     scope: "user",
@@ -126,9 +160,52 @@ function requireUserChannel(value: unknown, source: string): UserChannel {
     tags,
     project_id: requireBoundedInteger(raw.project_id, `${source} project_id`, 1, Number.MAX_SAFE_INTEGER),
     workspace_root: requireWorkspaceRoot(raw.workspace_root, `${source} workspace_root`),
+    ...(dataSourceID === undefined ? {} : { data_source_id: dataSourceID }),
+    mode,
+    ...(viewpointID === undefined ? {} : { roleplay_viewpoint_character_id: viewpointID }),
     created_at: requireTimestamp(raw.created_at, `${source} created_at`),
     updated_at: requireTimestamp(raw.updated_at, `${source} updated_at`),
   };
+}
+
+function requireChannelCreationContext(input: {
+  mode: unknown;
+  roleplay_world_name?: unknown;
+  roleplay_viewpoint_name?: unknown;
+}): ChannelCreationContext {
+  const mode = requireChannelMode(input.mode, "Channel create mode");
+  if (mode === "assistant") {
+    if (input.roleplay_world_name !== undefined || input.roleplay_viewpoint_name !== undefined) {
+      throw new Error("Assistant channel creation cannot carry roleplay names.");
+    }
+    return { mode };
+  }
+  return {
+    mode,
+    roleplay_world_name: requireExactText(input.roleplay_world_name, "Channel create roleplay world name"),
+    roleplay_viewpoint_name: requireExactText(input.roleplay_viewpoint_name, "Channel create roleplay viewpoint name"),
+  };
+}
+
+function requireChannelMode(value: unknown, source: string): "assistant" | "roleplay" {
+  if (value !== "assistant" && value !== "roleplay") {
+    throw new Error(`${source} must be exactly assistant or roleplay.`);
+  }
+  return value;
+}
+
+function requireRoleplayCharacterID(value: unknown, source: string): string {
+  if (typeof value !== "string" || !/^rpc_[0-9a-f]{32}$/.test(value)) {
+    throw new Error(`${source} has an invalid canonical roleplay character id.`);
+  }
+  return value;
+}
+
+function requireDataSourceID(value: unknown, source: string): string {
+  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9_.:-]{0,127}$/.test(value)) {
+    throw new Error(`${source} has an invalid canonical data-source id.`);
+  }
+  return value;
 }
 
 function requireChannelMessage(value: unknown, source: string): ChannelMessage {

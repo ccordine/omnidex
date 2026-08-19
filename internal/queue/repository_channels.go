@@ -7,12 +7,14 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
 const channelSelectColumns = `
-	id, scope, name, tags, project_id, workspace_root, created_at, updated_at
+	id, scope, name, tags, project_id, workspace_root, data_source_id,
+	mode, roleplay_viewpoint_character_id, created_at, updated_at
 `
 
 type channelRowScanner interface {
@@ -21,12 +23,22 @@ type channelRowScanner interface {
 
 func scanChannel(row channelRowScanner) (model.Channel, error) {
 	var channel model.Channel
+	var dataSourceID *string
+	var roleplayViewpointID *string
 	err := row.Scan(
 		&channel.ID, &channel.Scope, &channel.Name, &channel.Tags,
-		&channel.ProjectID, &channel.WorkspaceRoot, &channel.CreatedAt, &channel.UpdatedAt,
+		&channel.ProjectID, &channel.WorkspaceRoot, &dataSourceID,
+		&channel.Mode, &roleplayViewpointID,
+		&channel.CreatedAt, &channel.UpdatedAt,
 	)
 	if err != nil {
 		return model.Channel{}, err
+	}
+	if dataSourceID != nil {
+		channel.DataSourceID = model.DataSourceID(*dataSourceID)
+	}
+	if roleplayViewpointID != nil {
+		channel.RoleplayViewpointCharacterID = model.RoleplayCharacterID(*roleplayViewpointID)
 	}
 	if err := channel.ValidateStored(); err != nil {
 		return model.Channel{}, fmt.Errorf("invalid stored channel %q: %w", channel.ID, err)
@@ -35,6 +47,48 @@ func scanChannel(row channelRowScanner) (model.Channel, error) {
 }
 
 func (r *Repository) CreateChannel(ctx context.Context, channel model.Channel) (model.Channel, error) {
+	if channel.Mode != model.ChannelModeAssistant {
+		return model.Channel{}, fmt.Errorf("assistant channel creation requires exact assistant mode")
+	}
+	return r.createChannel(ctx, channel, nil)
+}
+
+type roleplayChannelBootstrap struct {
+	worldID, worldName         string
+	viewpointID, viewpointName string
+}
+
+func (r *Repository) CreateRoleplayChannel(
+	ctx context.Context,
+	channel model.Channel,
+	worldName, viewpointName string,
+) (model.Channel, error) {
+	if channel.Mode != model.ChannelModeRoleplay {
+		return model.Channel{}, fmt.Errorf("roleplay channel creation requires exact roleplay mode")
+	}
+	if channel.RoleplayViewpointCharacterID != "" {
+		return model.Channel{}, fmt.Errorf("roleplay viewpoint identity is server-resolved and must be omitted on create")
+	}
+	worldID, err := roleplay.NewWorldIdentity()
+	if err != nil {
+		return model.Channel{}, err
+	}
+	viewpointID, err := roleplay.NewCharacterIdentity()
+	if err != nil {
+		return model.Channel{}, err
+	}
+	channel.RoleplayViewpointCharacterID = model.RoleplayCharacterID(viewpointID)
+	return r.createChannel(ctx, channel, &roleplayChannelBootstrap{
+		worldID: worldID, worldName: worldName,
+		viewpointID: viewpointID, viewpointName: viewpointName,
+	})
+}
+
+func (r *Repository) createChannel(
+	ctx context.Context,
+	channel model.Channel,
+	roleplayBootstrap *roleplayChannelBootstrap,
+) (model.Channel, error) {
 	if ctx == nil || r == nil || r.pool == nil {
 		return model.Channel{}, fmt.Errorf("create channel requires PostgreSQL and context")
 	}
@@ -62,10 +116,15 @@ func (r *Repository) CreateChannel(ctx context.Context, channel model.Channel) (
 		return model.Channel{}, fmt.Errorf("channel project binding was not resolved")
 	}
 	out, err := scanChannel(tx.QueryRow(ctx, `
-		INSERT INTO ai_channels (id, scope, name, tags, project_id, workspace_root)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO ai_channels (
+			id, scope, name, tags, project_id, workspace_root, data_source_id,
+			mode, roleplay_viewpoint_character_id
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING `+channelSelectColumns,
 		channel.ID, channel.Scope, channel.Name, channel.Tags, *projectID, channel.WorkspaceRoot,
+		nullableDataSourceID(channel.DataSourceID), channel.Mode,
+		nullableRoleplayCharacterID(channel.RoleplayViewpointCharacterID),
 	))
 	if err != nil {
 		var postgresError *pgconn.PgError
@@ -74,10 +133,36 @@ func (r *Repository) CreateChannel(ctx context.Context, channel model.Channel) (
 		}
 		return model.Channel{}, err
 	}
+	if roleplayBootstrap != nil {
+		if channel.Mode != model.ChannelModeRoleplay ||
+			string(channel.RoleplayViewpointCharacterID) != roleplayBootstrap.viewpointID {
+			return model.Channel{}, fmt.Errorf("roleplay channel bootstrap authority does not match channel binding")
+		}
+		if _, _, err := roleplay.BootstrapWorldTx(
+			ctx, tx, string(channel.ID), roleplayBootstrap.worldID, roleplayBootstrap.worldName,
+			roleplayBootstrap.viewpointID, roleplayBootstrap.viewpointName,
+		); err != nil {
+			return model.Channel{}, fmt.Errorf("bootstrap roleplay channel authority: %w", err)
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return model.Channel{}, err
 	}
 	return out, nil
+}
+
+func nullableRoleplayCharacterID(id model.RoleplayCharacterID) any {
+	if id == "" {
+		return nil
+	}
+	return string(id)
+}
+
+func nullableDataSourceID(id model.DataSourceID) any {
+	if id == "" {
+		return nil
+	}
+	return string(id)
 }
 
 func (r *Repository) GetChannel(ctx context.Context, id model.ChannelID) (model.Channel, error) {

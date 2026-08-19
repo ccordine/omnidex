@@ -137,7 +137,7 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 			return "", nil, err
 		}
 		prompt, err := BuildConversationObjectiveKindPrompt(input)
-		return prompt, ConversationObjectiveKindResponseSchema(), err
+		return prompt, ConversationObjectiveKindResponseSchema(input), err
 	case WorkConversationResponse:
 		var input ConversationResponseInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -145,6 +145,24 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildConversationResponsePrompt(input)
 		return prompt, ConversationResponseSchema(), err
+	case WorkRoleplayGroundedResponse:
+		var input RoleplayGroundedResponseInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRoleplayGroundedResponsePrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := RoleplayGroundedResponseSchema(input)
+		return prompt, schema, err
+	case WorkRoleplayCanonExtraction:
+		var input RoleplayCanonExtractionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildRoleplayCanonExtractionPrompt(input)
+		return prompt, RoleplayCanonExtractionResponseSchema(), err
 	case WorkGroundedAnswer:
 		var input GroundedAnswerInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -155,6 +173,50 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 			return "", nil, err
 		}
 		schema, err := GroundedAnswerResponseSchema(input)
+		return prompt, schema, err
+	case WorkDatabaseSchemaSelection:
+		var input DatabaseSchemaSelectionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildDatabaseSchemaSelectionPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := DatabaseSchemaSelectionResponseSchema(input)
+		return prompt, schema, err
+	case WorkDatabaseQueryIntent:
+		var input DatabaseQueryIntentInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildDatabaseQueryIntentPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := DatabaseQueryIntentResponseSchema(input)
+		return prompt, schema, err
+	case WorkDatabaseEvidenceGap:
+		var input DatabaseEvidenceGapInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildDatabaseEvidenceGapPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := DatabaseEvidenceGapResponseSchema(input)
+		return prompt, schema, err
+	case WorkDatabaseJoinPathSelection:
+		var input DatabaseJoinPathSelectionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildDatabaseJoinPathSelectionPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := DatabaseJoinPathSelectionResponseSchema(input)
 		return prompt, schema, err
 	case WorkWebSearchTerms:
 		var input WebSearchTermsInput

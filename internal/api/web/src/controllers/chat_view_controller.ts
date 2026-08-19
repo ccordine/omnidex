@@ -13,11 +13,13 @@ export abstract class ChatViewController extends ChatTargetsController {
   openedProjectLocation: string | null = null;
   activityLabel = "";
   private transcriptRenderPending = false;
+  private roleplayComposerAvailable = true;
 
   protected initializeViewState(): void {
     this.seenProgress = new Set();
     this.busy = false;
     this.transcriptRenderPending = false;
+    this.roleplayComposerAvailable = true;
   }
 
   addEvent(type: string, details: Record<string, unknown> = {}, full: unknown = null): void {
@@ -101,14 +103,34 @@ export abstract class ChatViewController extends ChatTargetsController {
 
   setBusy(value: boolean): void {
     this.busy = value;
-    if (this.hasInputTarget) this.inputTarget.disabled = value;
-    if (this.hasSendTarget) {
-      this.sendTarget.disabled = value;
-      this.sendTarget.textContent = value ? "Working" : "Send";
-    }
+    this.syncComposerAvailability();
     if (this.hasSpinnerTarget) this.spinnerTarget.classList.toggle("hidden", !value);
     if (!value) this.activityLabel = "";
     this.syncTranscriptLoadingState();
+  }
+
+  setRoleplayComposerAvailable(available: boolean): void {
+    this.roleplayComposerAvailable = available;
+    this.syncComposerAvailability();
+  }
+
+  setComposerText(value: string): void {
+    if (!this.hasInputTarget) throw new Error("The canonical chat composer is unavailable.");
+    this.inputTarget.value = value;
+  }
+
+  focusComposer(): void {
+    if (!this.hasInputTarget) throw new Error("The canonical chat composer is unavailable.");
+    this.inputTarget.focus();
+  }
+
+  private syncComposerAvailability(): void {
+    const disabled = this.busy || !this.roleplayComposerAvailable;
+    if (this.hasInputTarget) this.inputTarget.disabled = disabled;
+    if (this.hasSendTarget) {
+      this.sendTarget.disabled = disabled;
+      this.sendTarget.textContent = this.busy ? "Working" : this.roleplayComposerAvailable ? "Send" : "Configure simulation";
+    }
   }
 
   private syncTranscriptLoadingState(): void {

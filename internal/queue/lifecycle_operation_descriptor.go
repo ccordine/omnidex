@@ -7,6 +7,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/roleplay"
 )
 
 const (
@@ -67,6 +69,51 @@ func normalizeCompleteStepCommand(command CompleteStepCommand) (CompleteStepComm
 	if command.ContextKey == "" && command.ContextValue != "" {
 		return CompleteStepCommand{}, fmt.Errorf("step context value requires a nonempty context key")
 	}
+	if len(command.RoleplayFacts) != 0 && command.ContextKey != "objective_result" {
+		return CompleteStepCommand{}, fmt.Errorf(
+			"roleplay facts require terminal objective-result completion authority",
+		)
+	}
+	if len(command.RoleplayFacts) > roleplay.MaxCanonFactsPerTurn {
+		return CompleteStepCommand{}, fmt.Errorf(
+			"roleplay completion exceeds the %d-fact bound", roleplay.MaxCanonFactsPerTurn,
+		)
+	}
+	facts := make([]string, len(command.RoleplayFacts))
+	seenFacts := make(map[string]struct{}, len(command.RoleplayFacts))
+	for index, fact := range command.RoleplayFacts {
+		if err := roleplay.ValidateCanonFact(fact); err != nil {
+			return CompleteStepCommand{}, fmt.Errorf("roleplay completion fact %d: %w", index, err)
+		}
+		if _, duplicate := seenFacts[fact]; duplicate {
+			return CompleteStepCommand{}, fmt.Errorf("roleplay completion fact %d is duplicated", index)
+		}
+		seenFacts[fact] = struct{}{}
+		facts[index] = fact
+	}
+	command.RoleplayFacts = facts
+	if len(command.RoleplayKnowledgeCharacterIDs) > roleplay.MaxKnowledgeRecipientsPerTurn {
+		return CompleteStepCommand{}, fmt.Errorf(
+			"roleplay completion exceeds the %d-knowledge-recipient bound",
+			roleplay.MaxKnowledgeRecipientsPerTurn,
+		)
+	}
+	if len(command.RoleplayFacts) == 0 && len(command.RoleplayKnowledgeCharacterIDs) != 0 {
+		return CompleteStepCommand{}, fmt.Errorf("roleplay knowledge recipients require new canon facts")
+	}
+	recipients := make([]model.RoleplayCharacterID, len(command.RoleplayKnowledgeCharacterIDs))
+	seenRecipients := make(map[model.RoleplayCharacterID]struct{}, len(command.RoleplayKnowledgeCharacterIDs))
+	for index, recipient := range command.RoleplayKnowledgeCharacterIDs {
+		if err := recipient.Validate(); err != nil {
+			return CompleteStepCommand{}, fmt.Errorf("roleplay knowledge recipient %d: %w", index, err)
+		}
+		if _, duplicate := seenRecipients[recipient]; duplicate {
+			return CompleteStepCommand{}, fmt.Errorf("roleplay knowledge recipient %d is duplicated", index)
+		}
+		seenRecipients[recipient] = struct{}{}
+		recipients[index] = recipient
+	}
+	command.RoleplayKnowledgeCharacterIDs = recipients
 	return command, nil
 }
 

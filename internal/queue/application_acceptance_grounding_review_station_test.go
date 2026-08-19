@@ -8,7 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func TestApplicationAcceptanceGroundingReviewHasCodingWorkloadStationOwner(t *testing.T) {
+func TestApplicationAcceptanceGroundingReviewHasDedicatedReviewStationOwner(t *testing.T) {
 	t.Parallel()
 
 	input, err := assemblyline.NewApplicationAcceptanceGroundingReviewInput(
@@ -36,7 +36,7 @@ func TestApplicationAcceptanceGroundingReviewHasCodingWorkloadStationOwner(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != station.CodingWorkload {
-		t.Fatalf("station=%q want=%q", got, station.CodingWorkload)
+	if got != station.CodingWorkloadReview {
+		t.Fatalf("station=%q want=%q", got, station.CodingWorkloadReview)
 	}
 }

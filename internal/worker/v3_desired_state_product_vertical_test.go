@@ -79,7 +79,7 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 	}
 	ctx, repository, pool := openRepositoryTestDatabase(t)
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "desired-state-product-delete-red", Scope: model.ChannelScopeUser,
+		ID: "desired-state-product-delete-red", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "Desired state product delete RED", WorkspaceRoot: root,
 	})
 	if err != nil {
@@ -141,7 +141,7 @@ func runDesiredStateProductVertical(t *testing.T, test desiredStateProductCase) 
 	}
 	ctx, repository, pool := openRepositoryTestDatabase(t)
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: model.ChannelID("desired-state-product-" + test.name), Scope: model.ChannelScopeUser,
+		ID: model.ChannelID("desired-state-product-" + test.name), Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "Desired state product " + test.name, WorkspaceRoot: root,
 	})
 	if err != nil {

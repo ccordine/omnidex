@@ -43,4 +43,10 @@ func TestGeneralTaskBoundaryReservesQueueOwnedAuthority(t *testing.T) {
 	if err := (generalTaskCommandBoundary{}).validate(ordinary); err != nil {
 		t.Fatalf("ordinary command rejected: %v", err)
 	}
+	childObjective := taskstate.AddNodeCommand{
+		ID: "code-owned-objective", ParentID: initialTaskRootNodeID, Kind: taskstate.NodeObjective,
+	}
+	if err := (generalTaskCommandBoundary{}).validate(childObjective); err != nil {
+		t.Fatalf("code-owned child objective under canonical root rejected: %v", err)
+	}
 }

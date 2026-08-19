@@ -49,8 +49,24 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ConversationObjectiveKindInput](payload, ConversationObjectiveKindInput.validate)
 	case WorkConversationResponse:
 		return decodeAndValidatePortablePayload[ConversationResponseInput](payload, ConversationResponseInput.validate)
+	case WorkRoleplayGroundedResponse:
+		return decodeAndValidatePortablePayload[RoleplayGroundedResponseInput](
+			payload, RoleplayGroundedResponseInput.validate,
+		)
+	case WorkRoleplayCanonExtraction:
+		return decodeAndValidatePortablePayload[RoleplayCanonExtractionInput](
+			payload, RoleplayCanonExtractionInput.validate,
+		)
 	case WorkGroundedAnswer:
 		return decodeAndValidatePortablePayload[GroundedAnswerInput](payload, GroundedAnswerInput.validate)
+	case WorkDatabaseSchemaSelection:
+		return decodeAndValidatePortablePayload[DatabaseSchemaSelectionInput](payload, DatabaseSchemaSelectionInput.validate)
+	case WorkDatabaseQueryIntent:
+		return decodeAndValidatePortablePayload[DatabaseQueryIntentInput](payload, DatabaseQueryIntentInput.validate)
+	case WorkDatabaseEvidenceGap:
+		return decodeAndValidatePortablePayload[DatabaseEvidenceGapInput](payload, DatabaseEvidenceGapInput.validate)
+	case WorkDatabaseJoinPathSelection:
+		return decodeAndValidatePortablePayload[DatabaseJoinPathSelectionInput](payload, DatabaseJoinPathSelectionInput.validate)
 	case WorkWebSearchTerms:
 		return decodeAndValidatePortablePayload[WebSearchTermsInput](payload, WebSearchTermsInput.validate)
 	case WorkWebRelevance:

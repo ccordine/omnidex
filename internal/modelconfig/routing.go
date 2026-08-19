@@ -34,8 +34,23 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("conversation_response_model"); value != "" {
 		out.Stations[station.ConversationResponse] = value
 	}
+	if value := cfg.Get("roleplay_canon_extraction_model"); value != "" {
+		out.Stations[station.RoleplayCanonExtraction] = value
+	}
 	if value := cfg.Get("grounded_answer_model"); value != "" {
 		out.Stations[station.GroundedAnswer] = value
+	}
+	if value := cfg.Get("database_schema_selection_model"); value != "" {
+		out.Stations[station.DatabaseSchemaSelection] = value
+	}
+	if value := cfg.Get("database_query_intent_model"); value != "" {
+		out.Stations[station.DatabaseQueryIntent] = value
+	}
+	if value := cfg.Get("database_evidence_gap_model"); value != "" {
+		out.Stations[station.DatabaseEvidenceGap] = value
+	}
+	if value := cfg.Get("database_join_path_selection_model"); value != "" {
+		out.Stations[station.DatabaseJoinPathSelection] = value
 	}
 	if value := cfg.Get("repository_evidence_relevance_model"); value != "" {
 		out.Stations[station.RepositoryEvidenceRelevance] = value

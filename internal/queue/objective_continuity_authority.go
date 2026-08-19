@@ -58,7 +58,7 @@ func (r *Repository) ObjectiveContinuityAuthorities(
 	if err != nil {
 		return ObjectiveContinuityAuthority{}, err
 	}
-	if providedExists != storedExists || providedBinding != storedBinding {
+	if providedExists != storedExists || !providedBinding.equal(storedBinding) {
 		return ObjectiveContinuityAuthority{}, fmt.Errorf("objective continuity channel binding differs from durable job authority")
 	}
 	authority := ObjectiveContinuityAuthority{}

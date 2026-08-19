@@ -14,7 +14,7 @@ func TestObjectiveMemoryContextZeroCandidatesMakesZeroSelectorCalls(t *testing.T
 	kind := answerObjectiveKindStation()
 	conversation := &scriptedObjectiveConversationStation{}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 901, Pipeline: model.PipelineChat, Instruction: "Answer exactly.", CurrentGeneration: 1,
+		ID: 901, Pipeline: model.PipelineChat, Instruction: "Answer exactly.", CurrentGeneration: 1, Metadata: objectiveAssistantMetadata(),
 	}, scriptedConversationCandidateProvider{}, selector, kind, conversation,
 		&scriptedObjectiveAnswerStation{}, objectiveWorkflows{})
 	if err != nil {
@@ -35,7 +35,7 @@ func TestObjectiveMemorySelectionProjectsOnlyOriginalIDCapsules(t *testing.T) {
 	kind := answerObjectiveKindStation()
 	conversation := &scriptedObjectiveConversationStation{}
 	_, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 902, Pipeline: model.PipelineChat, Instruction: "Use relevant continuity.", CurrentGeneration: 1,
+		ID: 902, Pipeline: model.PipelineChat, Instruction: "Use relevant continuity.", CurrentGeneration: 1, Metadata: objectiveAssistantMetadata(),
 	}, provider, selector, kind, conversation, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{})
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestInvalidMemoryIDFailsBeforeObjectiveClassification(t *testing.T) {
 	}}
 	kind := answerObjectiveKindStation()
 	_, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 903, Pipeline: model.PipelineChat, Instruction: "Continue.", CurrentGeneration: 1,
+		ID: 903, Pipeline: model.PipelineChat, Instruction: "Continue.", CurrentGeneration: 1, Metadata: objectiveAssistantMetadata(),
 	}, provider, selector, kind, &scriptedObjectiveConversationStation{},
 		&scriptedObjectiveAnswerStation{}, objectiveWorkflows{})
 	if err == nil || kind.calls != 0 {
@@ -76,7 +76,7 @@ func TestCurrentGenerationReplanIsSiblingAuthorityAndCodingExcludesMemory(t *tes
 		FeedbackSHA256: assemblyline.ExactObjectiveContextSHA(feedback),
 	}
 	authority, err := newTurnAuthority(model.Job{
-		ID: 904, Pipeline: model.PipelineChat, Instruction: "Original instruction.", CurrentGeneration: 2,
+		ID: 904, Pipeline: model.PipelineChat, Instruction: "Original instruction.", CurrentGeneration: 2, Metadata: objectiveAssistantMetadata(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestObjectiveRepositoryReceivesUnifiedMemoryAndReplanContext(t *testing.T) 
 	stations := &workflowRepositoryGroundingStation{}
 	evidence := mustObjectiveEvidence(t, "R01", "Exact repository evidence.", "repository_symbol", "pack#symbol")
 	_, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 905, Pipeline: model.PipelineChat, Instruction: "Explain the exact repository fact.", CurrentGeneration: 2,
+		ID: 905, Pipeline: model.PipelineChat, Instruction: "Explain the exact repository fact.", CurrentGeneration: 2, Metadata: objectiveAssistantMetadata(),
 	}, provider, selector, kind, &scriptedObjectiveConversationStation{}, stations,
 		objectiveWorkflows{RepositoryRead: func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error) {
 			return objectiveRepositoryTestAcquisition([]objectiveEvidence{evidence}, 1), nil

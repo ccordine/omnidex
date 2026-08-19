@@ -17,7 +17,7 @@ func TestChannelClientUsesTypedExactRoutes(t *testing.T) {
 
 	exactPrompt := "  preserve this prompt\nwith its trailing tab\t "
 	requested := model.Channel{
-		ID: "cli-chat-0123456789abcdef", Scope: model.ChannelScopeUser,
+		ID: "cli-chat-0123456789abcdef", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "CLI chat cli-chat-0123456789abcdef", Tags: []string{"chat", "cli"},
 		WorkspaceRoot: "/work/project",
 	}

@@ -11,11 +11,11 @@ func TestPostgresChannelMessageRoleBoundsAcceptExactMaxima(t *testing.T) {
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "072")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "117")); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "role-bounds", Scope: model.ChannelScopeUser, Name: "Role bounds",
+		ID: "role-bounds", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant, Name: "Role bounds",
 		WorkspaceRoot: "/srv/workspaces/role-bounds",
 	})
 	if err != nil {
@@ -38,11 +38,11 @@ func TestPostgresChannelMessageRoleBoundsRejectMaxPlusOne(t *testing.T) {
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "072")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "117")); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "role-overflow", Scope: model.ChannelScopeUser, Name: "Role overflow",
+		ID: "role-overflow", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant, Name: "Role overflow",
 		WorkspaceRoot: "/srv/workspaces/role-overflow",
 	})
 	if err != nil {
@@ -69,11 +69,18 @@ func TestPostgresChannelMessageRoleBoundsRefuseInvalidHistoryAtomically(t *testi
 	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "071")); err != nil {
 		t.Fatal(err)
 	}
-	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "role-history", Scope: model.ChannelScopeUser, Name: "Role history",
-		WorkspaceRoot: "/srv/workspaces/role-history",
-	})
-	if err != nil {
+	channel := model.Channel{ID: "role-history"}
+	var projectID int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO projects(location,name) VALUES('/srv/workspaces/role-history','Role history')
+		RETURNING id
+	`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO ai_channels(id,scope,name,tags,project_id,workspace_root)
+		VALUES($1,'user','Role history','{}'::text[],$2,'/srv/workspaces/role-history')
+	`, channel.ID, projectID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := insertChannelMessageForTest(
@@ -82,7 +89,7 @@ func TestPostgresChannelMessageRoleBoundsRefuseInvalidHistoryAtomically(t *testi
 	); err != nil {
 		t.Fatal(err)
 	}
-	err = repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "072"))
+	err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "072"))
 	if err == nil || !strings.Contains(err.Error(), "outside its typed role contract") {
 		t.Fatalf("migration error=%v", err)
 	}

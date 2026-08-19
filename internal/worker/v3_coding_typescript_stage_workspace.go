@@ -165,6 +165,38 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 		if bindingErr != nil {
 			return fmt.Errorf("derive staged TypeScript compiler scope for block %s: %w", target.ID, bindingErr)
 		}
+		candidate, repaired, deterministicErr := applyDirectCodingTypeScriptDeterministicRepair(current, scope)
+		if deterministicErr != nil {
+			return fmt.Errorf(
+				"apply deterministic TypeScript compiler repair for block %s: %w",
+				target.ID, deterministicErr,
+			)
+		}
+		if repaired {
+			if _, parseErr := assemblyline.ParseTypeScriptFunction(
+				assemblyline.TypeScriptFunctionContract{
+					Signature: target.Signature, TSX: tsx, Policy: target.Policy,
+				},
+				candidate,
+			); parseErr != nil {
+				return fmt.Errorf(
+					"validate deterministic TypeScript compiler repair for block %s: %w",
+					target.ID, parseErr,
+				)
+			}
+			if err := progress.observe(
+				target.ID, current, diagnostic.VerificationStage, failure,
+			); err != nil {
+				return err
+			}
+			program.Generated[target.ID] = candidate
+			s.runtime.svc.emitStepEvent(
+				s.runtime.claim.Authority,
+				"coding_compiler_repair_applied",
+				fmt.Sprintf("block=%s mechanism=deterministic_primitive_nullish_narrowing", target.ID),
+			)
+			return nil
+		}
 		localized, regionErr := assemblyline.NewTypeScriptCompilerRepairRegionWithEvidence(
 			current, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
 			scope.Bindings, scope.ExpressionEvidence, scope.UnavailableBindings,
@@ -186,6 +218,13 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	available, err := directCodingTypeScriptAvailableDeclarations(target, declarations)
 	if err != nil {
 		return err
+	}
+	if directCodingTypeScriptRepairRegionHasExactIncompatibility(repairRegion) {
+		// The checker has already projected the exact expression, its complete
+		// inferred/contextual types, incompatible constituents, and referenced
+		// local bindings. Broader capability declarations are unrelated to this
+		// one type-narrowing uncertainty.
+		available = ""
 	}
 	source, err := s.convergeDirectCodingTypeScriptGuidedRepair(
 		target, tsx, available, current, repairRegion, failure,

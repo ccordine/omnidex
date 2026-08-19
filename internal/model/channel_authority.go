@@ -17,12 +17,17 @@ const (
 	MaxFreeFormTurnBytes         = 4 * 1024
 	MaxChannelContentBytes       = 32 * 1024
 	MaxChannelWorkspaceRootBytes = 4096
+	MaxDataSourceIDBytes         = 128
+	MaxRoleplayCharacterIDBytes  = 36
 )
 
 type ChannelScope string
+type ChannelMode string
 
 const (
-	ChannelScopeUser ChannelScope = "user"
+	ChannelScopeUser     ChannelScope = "user"
+	ChannelModeAssistant ChannelMode  = "assistant"
+	ChannelModeRoleplay  ChannelMode  = "roleplay"
 )
 
 func (id ChannelID) Validate() error {
@@ -41,9 +46,45 @@ func (id ChannelID) Validate() error {
 	return nil
 }
 
+func (id DataSourceID) Validate() error {
+	value := string(id)
+	if len(value) == 0 || len(value) > MaxDataSourceIDBytes || !utf8.ValidString(value) {
+		return fmt.Errorf("data source id must contain 1..%d valid UTF-8 bytes", MaxDataSourceIDBytes)
+	}
+	for index, character := range []byte(value) {
+		allowed := character >= 'a' && character <= 'z' ||
+			character >= '0' && character <= '9' ||
+			character == '_' || character == '.' || character == ':' || character == '-'
+		if !allowed || index == 0 && !(character >= 'a' && character <= 'z' || character >= '0' && character <= '9') {
+			return fmt.Errorf("data source id %q is not canonical", value)
+		}
+	}
+	return nil
+}
+
+func (id RoleplayCharacterID) Validate() error {
+	value := string(id)
+	if len(value) != MaxRoleplayCharacterIDBytes || !strings.HasPrefix(value, "rpc_") {
+		return fmt.Errorf("roleplay character id must be one code-issued opaque identity")
+	}
+	for _, character := range []byte(value[4:]) {
+		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
+			return fmt.Errorf("roleplay character id must be one code-issued opaque identity")
+		}
+	}
+	return nil
+}
+
 func (scope ChannelScope) Validate() error {
 	if scope != ChannelScopeUser {
 		return fmt.Errorf("channel scope %q is unsupported", scope)
+	}
+	return nil
+}
+
+func (mode ChannelMode) Validate() error {
+	if mode != ChannelModeAssistant && mode != ChannelModeRoleplay {
+		return fmt.Errorf("channel mode %q is unsupported", mode)
 	}
 	return nil
 }
@@ -56,10 +97,20 @@ func (role ChannelMessageRole) Validate() error {
 }
 
 func (channel Channel) ValidateForCreate() error {
+	if channel.ProjectID != 0 {
+		return fmt.Errorf("channel project identity is server-resolved and must be omitted on create")
+	}
+	return channel.validateAuthority()
+}
+
+func (channel Channel) validateAuthority() error {
 	if err := channel.ID.Validate(); err != nil {
 		return err
 	}
 	if err := channel.Scope.Validate(); err != nil {
+		return err
+	}
+	if err := channel.Mode.Validate(); err != nil {
 		return err
 	}
 	if err := validateExactChannelText(channel.Name, "channel name", MaxChannelNameBytes); err != nil {
@@ -81,19 +132,32 @@ func (channel Channel) ValidateForCreate() error {
 		}
 		seen[tag] = struct{}{}
 	}
-	if channel.ProjectID != 0 {
-		return fmt.Errorf("channel project identity is server-resolved and must be omitted on create")
+	if channel.DataSourceID != "" {
+		if err := channel.DataSourceID.Validate(); err != nil {
+			return err
+		}
+	}
+	switch channel.Mode {
+	case ChannelModeAssistant:
+		if channel.RoleplayViewpointCharacterID != "" {
+			return fmt.Errorf("assistant channel cannot carry fictional viewpoint authority")
+		}
+	case ChannelModeRoleplay:
+		if channel.DataSourceID != "" {
+			return fmt.Errorf("roleplay channel cannot bind a real-world data source")
+		}
+		if err := channel.RoleplayViewpointCharacterID.Validate(); err != nil {
+			return err
+		}
 	}
 	return ValidateChannelWorkspaceRoot(channel.WorkspaceRoot)
 }
 
 func (channel Channel) ValidateStored() error {
-	projectID := channel.ProjectID
-	channel.ProjectID = 0
-	if err := channel.ValidateForCreate(); err != nil {
+	if err := channel.validateAuthority(); err != nil {
 		return err
 	}
-	if projectID < 1 {
+	if channel.ProjectID < 1 {
 		return fmt.Errorf("stored channel requires a positive project identity")
 	}
 	return nil

@@ -76,6 +76,15 @@ type directCodingVitestFailureReceipt struct {
 	FailureClass directCodingStageFailureClass
 	Output       string
 	Locations    []directCodingVitestSourceLocation
+	Failures     []directCodingVitestFailureEvidence
+}
+
+type directCodingVitestFailureEvidence struct {
+	FailureClass directCodingStageFailureClass
+	Name         string
+	Message      string
+	Output       string
+	Locations    []directCodingVitestSourceLocation
 }
 
 type directCodingVitestSourceLocation struct {
@@ -194,11 +203,18 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 
 	output := make([]string, 0)
 	locations := make([]directCodingVitestSourceLocation, 0)
+	failures := make([]directCodingVitestFailureEvidence, 0)
 	unhandledCount := len(*report.UnhandledErrors)
 	for index, failure := range *report.UnhandledErrors {
-		if err := appendDirectCodingVitestError(&output, &locations, failure); err != nil {
+		evidence, err := decodeDirectCodingVitestFailureEvidence(
+			failure, directCodingStageFailureUnclassified,
+		)
+		if err != nil {
 			return zero, fmt.Errorf("structured Vitest unhandled error %d: %w", index, err)
 		}
+		failures = append(failures, evidence)
+		output = append(output, evidence.Output)
+		locations = append(locations, evidence.Locations...)
 	}
 	moduleErrorCount := 0
 	failedTests := make([]directCodingVitestTestRecord, 0)
@@ -208,9 +224,15 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 		}
 		for errorIndex, failure := range *module.Errors {
 			moduleErrorCount++
-			if err := appendDirectCodingVitestError(&output, &locations, failure); err != nil {
+			evidence, err := decodeDirectCodingVitestFailureEvidence(
+				failure, directCodingStageFailureUnclassified,
+			)
+			if err != nil {
 				return zero, fmt.Errorf("structured Vitest module error %d.%d: %w", moduleIndex, errorIndex, err)
 			}
+			failures = append(failures, evidence)
+			output = append(output, evidence.Output)
+			locations = append(locations, evidence.Locations...)
 		}
 		for testIndex, test := range *module.Tests {
 			if test.State == nil || test.Errors == nil {
@@ -224,9 +246,18 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 				return zero, fmt.Errorf("structured Vitest test %d.%d has unsupported state %q", moduleIndex, testIndex, *test.State)
 			}
 			for errorIndex, failure := range *test.Errors {
-				if err := appendDirectCodingVitestError(&output, &locations, failure); err != nil {
+				failureClass := directCodingStageFailureUnclassified
+				if *report.Reason == "failed" && *test.State == "failed" &&
+					directCodingVitestBehaviorError(failure) {
+					failureClass = directCodingStageFailureVitestBehavior
+				}
+				evidence, err := decodeDirectCodingVitestFailureEvidence(failure, failureClass)
+				if err != nil {
 					return zero, fmt.Errorf("structured Vitest test error %d.%d.%d: %w", moduleIndex, testIndex, errorIndex, err)
 				}
+				failures = append(failures, evidence)
+				output = append(output, evidence.Output)
+				locations = append(locations, evidence.Locations...)
 			}
 		}
 	}
@@ -240,6 +271,35 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 	}
 	return directCodingVitestFailureReceipt{
 		FailureClass: classification,
+		Output:       strings.Join(output, "\n"),
+		Locations:    locations,
+		Failures:     failures,
+	}, nil
+}
+
+func decodeDirectCodingVitestFailureEvidence(
+	failure directCodingVitestErrorRecord,
+	failureClass directCodingStageFailureClass,
+) (directCodingVitestFailureEvidence, error) {
+	if failure.Name == nil || failure.Message == nil {
+		return directCodingVitestFailureEvidence{}, fmt.Errorf("error record omits name or message")
+	}
+	name := strings.TrimSpace(*failure.Name)
+	message := strings.TrimSpace(*failure.Message)
+	if name == "" || message == "" {
+		return directCodingVitestFailureEvidence{}, fmt.Errorf(
+			"error record name and message must both be non-empty",
+		)
+	}
+	output := make([]string, 0, 2)
+	locations := make([]directCodingVitestSourceLocation, 0)
+	if err := appendDirectCodingVitestError(&output, &locations, failure); err != nil {
+		return directCodingVitestFailureEvidence{}, err
+	}
+	return directCodingVitestFailureEvidence{
+		FailureClass: failureClass,
+		Name:         name,
+		Message:      message,
 		Output:       strings.Join(output, "\n"),
 		Locations:    locations,
 	}, nil

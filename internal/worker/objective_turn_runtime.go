@@ -31,10 +31,14 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 		portableObjectiveConversationStation{runtime: r},
 		repositoryStations,
 		objectiveWorkflows{
-			WorkspaceMutation: r.runObjectiveWorkspaceMutation,
-			RepositoryRead:    r.acquireObjectiveRepositoryEvidence,
-			ExternalAnswer:    r.acquireObjectiveExternalEvidence,
-			ObjectiveAdvisory: objectiveAdvisory,
+			WorkspaceMutation:  r.runObjectiveWorkspaceMutation,
+			RepositoryRead:     r.acquireObjectiveRepositoryEvidence,
+			ExternalAnswer:     r.acquireObjectiveExternalEvidence,
+			DatabaseRead:       r.acquireObjectiveDatabaseEvidence,
+			RoleplaySimulation: r.projectObjectiveRoleplaySimulation,
+			RoleplayCanon:      portableObjectiveRoleplayCanonStation{runtime: r},
+			RoleplayResearch:   r.acquireObjectiveRoleplayResearch,
+			ObjectiveAdvisory:  objectiveAdvisory,
 		},
 	)
 	if err != nil {
@@ -47,7 +51,10 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 	if err != nil {
 		return err
 	}
-	return r.completeWithEvidence("objective_result", output, result.ObjectiveID, records)
+	return r.completeWithEvidence(
+		"objective_result", output, result.ObjectiveID, records, result.RoleplayFacts,
+		result.RoleplayKnowledgeCharacterIDs,
+	)
 }
 
 func (r *nativeRuntimeV3) runObjectiveWorkspaceMutation(

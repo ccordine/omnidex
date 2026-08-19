@@ -12,11 +12,11 @@ func TestPostgresChannelAuthorityIsTypedPaginatedAndSingular(t *testing.T) {
 	ctx := context.Background()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "071")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "117")); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "channel-authority", Scope: model.ChannelScopeUser,
+		ID: "channel-authority", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "Channel authority", Tags: []string{"user-channel"}, WorkspaceRoot: "/srv/workspaces/channel-authority",
 	})
 	if err != nil {
@@ -57,7 +57,9 @@ func TestPostgresChannelAuthorityIsTypedPaginatedAndSingular(t *testing.T) {
 		INSERT INTO ai_channel_messages(channel_id,role,content)
 		VALUES ($1,'tool','forbidden')
 	`, channel.ID)
-	if roleErr == nil || !strings.Contains(roleErr.Error(), "ai_channel_messages_role_check") {
+	if roleErr == nil ||
+		!strings.Contains(roleErr.Error(), "ai_channel_messages_role_check") &&
+			!strings.Contains(roleErr.Error(), "ai_channel_messages_content_check") {
 		t.Fatalf("invalid role error=%v", roleErr)
 	}
 }

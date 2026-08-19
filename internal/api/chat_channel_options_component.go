@@ -9,13 +9,12 @@ import (
 )
 
 const (
-	chatChannelOptionsTarget    = "channel-options"
-	chatChannelPaginationTarget = "channel-options-pagination"
+	chatChannelOptionsTarget       = "channel-options"
+	chatNewConversationOptionValue = "__omnidex_new_conversation__"
 )
 
 type chatChannelOptionsPage struct {
 	chatComponentPage
-	DefaultChannelID *model.ChannelID `json:"default_channel_id,omitempty"`
 }
 
 func renderChatChannelOptionsPage(
@@ -24,33 +23,37 @@ func renderChatChannelOptionsPage(
 	appendOptions bool,
 ) (chatChannelOptionsPage, error) {
 	var options strings.Builder
-	var defaultID *model.ChannelID
+	if !appendOptions {
+		options.WriteString(`<option value="" disabled selected>Choose a conversation</option>`)
+		options.WriteString(`<option value="` + chatNewConversationOptionValue + `">+ New conversation…</option>`)
+	}
 	for index, channel := range channels {
 		if err := channel.ValidateStored(); err != nil {
 			return chatChannelOptionsPage{}, fmt.Errorf("channel option %d: %w", index, err)
 		}
-		if index == 0 && !appendOptions {
-			value := channel.ID
-			defaultID = &value
+		attributes := ` data-channel-mode="` + html.EscapeString(string(channel.Mode)) + `"`
+		label := channel.Name + " · " + string(channel.Mode)
+		if channel.DataSourceID != "" {
+			dataSourceID := html.EscapeString(string(channel.DataSourceID))
+			attributes += ` data-data-source-id="` + dataSourceID + `"`
+			label += " · data connected"
 		}
-		options.WriteString(`<option value="` + html.EscapeString(string(channel.ID)) + `">` +
-			html.EscapeString(channel.Name) + `</option>`)
-	}
-	if len(channels) == 0 && !appendOptions {
-		options.WriteString(`<option value="" disabled selected>Create a workspace-bound channel</option>`)
+		if channel.RoleplayViewpointCharacterID != "" {
+			viewpointID := html.EscapeString(string(channel.RoleplayViewpointCharacterID))
+			attributes += ` data-roleplay-viewpoint-character-id="` + viewpointID + `"`
+			label += " viewpoint " + string(channel.RoleplayViewpointCharacterID)
+		}
+		options.WriteString(`<option value="` + html.EscapeString(string(channel.ID)) + `"` +
+			attributes + `>` + html.EscapeString(label) + `</option>`)
 	}
 	location := "innerHTML"
 	if appendOptions {
 		location = "beforeend"
 	}
-	bundle := renderRecyclrTemplateHTML(chatChannelOptionsTarget, options.String(), location) +
-		renderRecyclrTemplateHTML(chatChannelPaginationTarget, chatPaginationButton(
-			"loadMoreChannels", chatChannelOptionsTarget, "channels", nextOffset, "Load more channels",
-		), "innerHTML")
+	bundle := renderRecyclrTemplateHTML(chatChannelOptionsTarget, options.String(), location)
 	return chatChannelOptionsPage{
 		chatComponentPage: chatComponentPage{
 			NextOffset: nextOffset, HasMore: nextOffset != nil, HTML: chatComponentHTML{Bundle: bundle},
 		},
-		DefaultChannelID: defaultID,
 	}, nil
 }

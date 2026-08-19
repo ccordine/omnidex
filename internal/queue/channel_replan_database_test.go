@@ -9,7 +9,7 @@ import (
 func TestPostgresChannelReplanRetainsTheSameAuthoritativeJob(t *testing.T) {
 	ctx, repository := channelTurnTestRepository(t)
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "channel-replan-authority", Scope: model.ChannelScopeUser,
+		ID: "channel-replan-authority", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "Channel replan authority", WorkspaceRoot: "/srv/workspaces/channel-replan-authority",
 	})
 	if err != nil {

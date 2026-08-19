@@ -67,7 +67,7 @@ func TestConversationWithoutCandidateAuthoritiesMakesZeroContextSelectionCalls(t
 	selector := &scriptedConversationContextStation{}
 	kind := answerObjectiveKindStation()
 	result, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 801, Pipeline: model.PipelineChat, Instruction: "Hello.",
+		ID: 801, Pipeline: model.PipelineChat, Instruction: "Hello.", Metadata: objectiveAssistantMetadata(),
 	}, scriptedConversationCandidateProvider{}, selector, kind,
 		&scriptedObjectiveConversationStation{}, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{})
 	if err != nil {
@@ -96,7 +96,7 @@ func TestConversationSelectsOnlyBoundedPriorUserAuthorityBeforeClassification(t 
 	kind := answerObjectiveKindStation()
 	conversation := &scriptedObjectiveConversationStation{}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
-		ID: 802, Pipeline: model.PipelineChat, Instruction: "Use the first one.",
+		ID: 802, Pipeline: model.PipelineChat, Instruction: "Use the first one.", Metadata: objectiveAssistantMetadata(),
 	}, provider, selector, kind, conversation, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{})
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestInvalidConversationAuthorityReferenceFailsBeforeClassification(t *testi
 		}}
 		kind := answerObjectiveKindStation()
 		_, err := runObjectiveTurn(context.Background(), model.Job{
-			ID: 803, Pipeline: model.PipelineChat, Instruction: "Fix that.",
+			ID: 803, Pipeline: model.PipelineChat, Instruction: "Fix that.", Metadata: objectiveAssistantMetadata(),
 		}, provider, selector, kind, &scriptedObjectiveConversationStation{},
 			&scriptedObjectiveAnswerStation{}, objectiveWorkflows{})
 		if err == nil {

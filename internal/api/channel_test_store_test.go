@@ -12,10 +12,12 @@ import (
 )
 
 type channelTestStore struct {
-	mu       sync.Mutex
-	channels map[string]model.Channel
-	messages map[string][]model.ChannelMessage
-	nextID   int64
+	mu                        sync.Mutex
+	channels                  map[string]model.Channel
+	messages                  map[string][]model.ChannelMessage
+	nextID                    int64
+	lastRoleplayWorldName     string
+	lastRoleplayViewpointName string
 }
 
 func newChannelTestStore() *channelTestStore {
@@ -27,6 +29,32 @@ func newChannelTestStore() *channelTestStore {
 func (s *channelTestStore) CreateChannel(_ context.Context, channel model.Channel) (model.Channel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if channel.Mode != model.ChannelModeAssistant {
+		return model.Channel{}, fmt.Errorf("assistant channel creation requires exact assistant mode")
+	}
+	return s.createChannelLocked(channel)
+}
+
+func (s *channelTestStore) CreateRoleplayChannel(
+	_ context.Context,
+	channel model.Channel,
+	worldName, viewpointName string,
+) (model.Channel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if channel.Mode != model.ChannelModeRoleplay {
+		return model.Channel{}, fmt.Errorf("roleplay channel creation requires exact roleplay mode")
+	}
+	if channel.RoleplayViewpointCharacterID != "" {
+		return model.Channel{}, fmt.Errorf("roleplay viewpoint identity is server-resolved and must be omitted on create")
+	}
+	channel.RoleplayViewpointCharacterID = "rpc_0123456789abcdef0123456789abcdef"
+	s.lastRoleplayWorldName = worldName
+	s.lastRoleplayViewpointName = viewpointName
+	return s.createChannelLocked(channel)
+}
+
+func (s *channelTestStore) createChannelLocked(channel model.Channel) (model.Channel, error) {
 	if err := channel.ValidateForCreate(); err != nil {
 		return model.Channel{}, err
 	}

@@ -64,6 +64,9 @@ export interface UserChannel {
   tags: string[];
   project_id: number;
   workspace_root: string;
+  data_source_id?: string;
+  mode: "assistant" | "roleplay";
+  roleplay_viewpoint_character_id?: string;
   created_at: string;
   updated_at: string;
 }

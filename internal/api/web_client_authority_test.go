@@ -213,9 +213,22 @@ func TestOrdinaryWebChatUsesOnlyServerAuthoritativeChannels(t *testing.T) {
 		}
 	}
 	channel := readFrontendSource(t, "web/src/lib/chat_channel_coordinator.ts")
-	for _, required := range []string{"sendChannelMessage(", "workspaceRoot()"} {
+	for _, required := range []string{
+		"sendChannelMessage(",
+		"new ChatChannelCreationFlow(host, identityFactory)",
+	} {
 		if !strings.Contains(channel, required) {
 			t.Errorf("channel-only chat path is missing %q", required)
+		}
+	}
+	creation := readFrontendSource(t, "web/src/lib/chat_channel_creation_flow.ts")
+	for _, required := range []string{
+		"this.host.workspaceRoot()",
+		"createUserChannel({",
+		"workspaceRoot === null ? {} : { workspace_root: workspaceRoot }",
+	} {
+		if !strings.Contains(creation, required) {
+			t.Errorf("typed channel creation flow is missing %q", required)
 		}
 	}
 }

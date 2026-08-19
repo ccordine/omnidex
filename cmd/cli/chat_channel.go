@@ -19,7 +19,7 @@ func chatChannelForSession(session, workspaceRoot string) (model.Channel, error)
 	sum := sha256.Sum256([]byte(session))
 	id := model.ChannelID(fmt.Sprintf("cli-chat-%x", sum[:8]))
 	channel := model.Channel{
-		ID: id, Scope: model.ChannelScopeUser,
+		ID: id, Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "CLI chat " + string(id), Tags: []string{"chat", "cli"}, WorkspaceRoot: workspaceRoot,
 	}
 	if err := channel.ValidateForCreate(); err != nil {
@@ -64,6 +64,7 @@ func ensureChatChannel(
 
 func validateChatSessionChannel(expected, actual model.Channel) (model.Channel, error) {
 	if actual.ID != expected.ID || actual.Scope != expected.Scope || actual.Name != expected.Name ||
+		actual.Mode != expected.Mode || actual.RoleplayViewpointCharacterID != "" ||
 		actual.WorkspaceRoot != expected.WorkspaceRoot || actual.ProjectID < 1 {
 		return model.Channel{}, fmt.Errorf("session channel %q does not match the exact CLI chat contract", expected.ID)
 	}

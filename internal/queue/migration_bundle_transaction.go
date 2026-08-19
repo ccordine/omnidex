@@ -21,3 +21,12 @@ func (entry migrationBundleEntry) transactionalBody() ([]byte, error) {
 	}
 	return []byte(body), nil
 }
+
+func validateMigrationTransactionControl(entries []migrationBundleEntry) error {
+	for index, entry := range entries {
+		if _, err := entry.transactionalBody(); err != nil {
+			return fmt.Errorf("migration bundle entry %d transaction control: %w", index, err)
+		}
+	}
+	return nil
+}

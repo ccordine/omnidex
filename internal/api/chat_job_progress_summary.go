@@ -8,6 +8,9 @@ import (
 )
 
 func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatProgressKind, string, error) {
+	if kind, summary, matched, err := summarizeChatDeterministicCognitionEvent(event); matched {
+		return kind, summary, err
+	}
 	switch event.Type {
 	case "step_start":
 		fields, err := exactChatEventFields(event.Message, "phase", "action", "worker")

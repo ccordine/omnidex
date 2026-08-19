@@ -44,7 +44,13 @@ const (
 	WorkMemoryContextSelection               WorkKind = "memory_context_selection"
 	WorkConversationObjectiveKind            WorkKind = "conversation_objective_kind"
 	WorkConversationResponse                 WorkKind = "conversation_response"
+	WorkRoleplayGroundedResponse             WorkKind = "roleplay_grounded_response"
+	WorkRoleplayCanonExtraction              WorkKind = "roleplay_canon_extraction"
 	WorkGroundedAnswer                       WorkKind = "grounded_answer"
+	WorkDatabaseSchemaSelection              WorkKind = "database_schema_selection"
+	WorkDatabaseQueryIntent                  WorkKind = "database_query_intent"
+	WorkDatabaseEvidenceGap                  WorkKind = "database_evidence_gap"
+	WorkDatabaseJoinPathSelection            WorkKind = "database_join_path_selection"
 	WorkWebSearchTerms                       WorkKind = "web_search_terms"
 	WorkWebRelevance                         WorkKind = "web_relevance"
 	WorkWebGroundedSynthesis                 WorkKind = "web_grounded_synthesis"
@@ -259,7 +265,10 @@ func validWorkKind(kind WorkKind) bool {
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
 		WorkConversationContextSelection, WorkMemoryContextSelection,
-		WorkConversationObjectiveKind, WorkConversationResponse, WorkGroundedAnswer,
+		WorkConversationObjectiveKind, WorkConversationResponse, WorkRoleplayGroundedResponse,
+		WorkRoleplayCanonExtraction, WorkGroundedAnswer,
+		WorkDatabaseSchemaSelection, WorkDatabaseQueryIntent, WorkDatabaseEvidenceGap,
+		WorkDatabaseJoinPathSelection,
 		WorkWebSearchTerms, WorkWebRelevance, WorkWebGroundedSynthesis,
 		WorkWebGroundedSynthesisCorrection, WorkWebClaimEvidenceReview,
 		WorkArtifactHandling, WorkKnownArtifactTruth,
@@ -285,7 +294,10 @@ func AllWorkKinds() []WorkKind {
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
 		WorkConversationContextSelection, WorkMemoryContextSelection,
-		WorkConversationObjectiveKind, WorkConversationResponse, WorkGroundedAnswer,
+		WorkConversationObjectiveKind, WorkConversationResponse, WorkRoleplayGroundedResponse,
+		WorkRoleplayCanonExtraction, WorkGroundedAnswer,
+		WorkDatabaseSchemaSelection, WorkDatabaseQueryIntent, WorkDatabaseEvidenceGap,
+		WorkDatabaseJoinPathSelection,
 		WorkWebSearchTerms, WorkWebRelevance, WorkWebGroundedSynthesis,
 		WorkWebGroundedSynthesisCorrection, WorkWebClaimEvidenceReview,
 		WorkArtifactHandling, WorkKnownArtifactTruth,

@@ -19,7 +19,7 @@ func TestPostgresMemoryBatchEmbeddingFailureWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateChannel(t.Context(), model.Channel{
-		ID: "api-memory-batch", Scope: model.ChannelScopeUser, Name: "API memory batch",
+		ID: "api-memory-batch", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant, Name: "API memory batch",
 		WorkspaceRoot: "/srv/workspaces/api-memory-batch",
 	})
 	if err != nil {

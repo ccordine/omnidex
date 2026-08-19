@@ -174,17 +174,22 @@ type MemoryCandidatePromotionResult struct {
 }
 
 type Channel struct {
-	ID            ChannelID    `json:"id"`
-	Scope         ChannelScope `json:"scope"`
-	Name          string       `json:"name,omitempty"`
-	Tags          []string     `json:"tags,omitempty"`
-	ProjectID     int64        `json:"project_id"`
-	WorkspaceRoot string       `json:"workspace_root"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
+	ID                           ChannelID           `json:"id"`
+	Scope                        ChannelScope        `json:"scope"`
+	Name                         string              `json:"name,omitempty"`
+	Tags                         []string            `json:"tags,omitempty"`
+	ProjectID                    int64               `json:"project_id"`
+	WorkspaceRoot                string              `json:"workspace_root"`
+	DataSourceID                 DataSourceID        `json:"data_source_id,omitempty"`
+	Mode                         ChannelMode         `json:"mode"`
+	RoleplayViewpointCharacterID RoleplayCharacterID `json:"roleplay_viewpoint_character_id,omitempty"`
+	CreatedAt                    time.Time           `json:"created_at"`
+	UpdatedAt                    time.Time           `json:"updated_at"`
 }
 
 type ChannelID string
+type DataSourceID string
+type RoleplayCharacterID string
 type ChannelMessageRole string
 
 const (

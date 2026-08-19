@@ -87,9 +87,9 @@ func (compiler *exactTypeScriptReplayCompiler) Verify(
 	if err != nil {
 		return nil, fmt.Errorf("derive TypeScript replay compiler scope: %w", err)
 	}
-	repairRegion, err := assemblyline.NewTypeScriptCompilerRepairRegion(
+	repairRegion, err := assemblyline.NewTypeScriptCompilerRepairRegionWithEvidence(
 		source, compiler.contract.TSX, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
-		scope.Bindings, scope.UnavailableBindings,
+		scope.Bindings, scope.ExpressionEvidence, scope.UnavailableBindings,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("localize TypeScript replay compiler failure: %w", err)

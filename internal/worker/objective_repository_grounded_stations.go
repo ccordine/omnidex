@@ -34,9 +34,6 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 			"repository grounding answer station requires runtime authority",
 		)
 	}
-	if err := requireIndependentRepositoryReviewRoutes(adapter.runtime.routing); err != nil {
-		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, err
-	}
 	job, err := assemblyline.NewGroundedAnswerJob(input)
 	if err != nil {
 		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, err
@@ -45,6 +42,13 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 		ctx, adapter, station.GroundedAnswer, "grounded_answer", job,
 		func(value assemblyline.GroundedAnswerDecision) error { return value.ValidateFor(input) },
 	)
+}
+
+func (adapter *portableObjectiveRepositoryGroundingStation) ValidateRepositoryGrounding() error {
+	if adapter == nil || adapter.runtime == nil {
+		return fmt.Errorf("repository grounding preflight requires runtime authority")
+	}
+	return requireIndependentRepositoryReviewRoutes(adapter.runtime.routing)
 }
 
 func (adapter *portableObjectiveRepositoryGroundingStation) Review(

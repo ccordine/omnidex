@@ -1,12 +1,20 @@
 import { readJSON } from "./api";
-import { createUserChannel, fetchChannelTranscript, sendChannelMessage } from "./channel_api";
+import { fetchChannelTranscript, sendChannelMessage } from "./channel_api";
+import {
+  ChatChannelCreationFlow,
+  type ChannelIdentityFactory,
+  type ChatChannelCreationFlowHost,
+} from "./chat_channel_creation_flow";
+import { ChatChannelCreationTransition } from "./chat_channel_creation_transition";
+import { ChatChannelTransitionGate } from "./chat_channel_transition_gate";
 import { fetchChannelOptionsPage } from "./chat_component_api";
 import { t } from "./i18n";
 import type { StatusTone } from "./types";
 
-const SELECTED_CHANNEL_KEY = "omni.chat.selected-channel.v1";
-
-export interface ChatChannelHost {
+const MAX_AUTOMATIC_CHANNEL_PAGES = 100;
+const CANONICAL_CHANNEL_ID = /^[a-z0-9][a-z0-9_.:-]{0,95}$/;
+export const NEW_CONVERSATION_OPTION_VALUE = "__omnidex_new_conversation__";
+export interface ChatChannelHost extends ChatChannelCreationFlowHost {
   hasNetworkURL(): boolean;
   networkURL(): HTMLAnchorElement;
   hasTransport(): boolean;
@@ -19,25 +27,44 @@ export interface ChatChannelHost {
   addEvent(type: string, details?: Record<string, unknown>, full?: unknown): void;
   renderComponentBundle(bundle: string): Promise<void>;
   renderTranscriptBundle(bundle: string, preserveScroll: boolean): Promise<void>;
-  workspaceRoot(): string | null;
   setActivityLabel(label: string): void;
   renderProgressActivity(label: string): void;
   setBusy(value: boolean): void;
   waitForJob(id: number): Promise<void>;
+  synchronizeRoleplay(channelID: string, mode: "assistant" | "roleplay"): Promise<void>;
+  roleplayConfigured(): boolean;
+  refreshRoleplay(): Promise<void>;
 }
+
+export type NeutralChannelSubmitResult = "submitted" | "creation_failed" | "roleplay_setup_required";
 
 export class ChatChannelCoordinator {
   private selectedChannelID = "";
+  private readonly transitions: ChatChannelTransitionGate;
+  private readonly creation: ChatChannelCreationTransition;
 
-  constructor(private readonly host: ChatChannelHost) {}
-
-  selectedID(): string {
-    return this.selectedChannelID;
+  constructor(
+    private readonly host: ChatChannelHost,
+    identityFactory?: ChannelIdentityFactory,
+  ) {
+    this.transitions = new ChatChannelTransitionGate(host);
+    this.creation = new ChatChannelCreationTransition({
+      selectedID: () => this.selectedChannelID,
+      selectedMode: (id) => this.selectedChannelMode(id),
+      restoreSelection: (id) => this.restoreSelection(id),
+      clearSelection: () => { this.selectedChannelID = ""; this.restoreSelection(""); },
+      commitSelection: (id) => { this.selectedChannelID = id; this.host.channelSelect().value = id; this.updateTransportLabel(); },
+      reloadOptions: () => this.loadAllChannelOptions(),
+      hasOption: (id) => this.selectedOption(id) !== null,
+      loadTranscript: (id) => this.loadTranscript(id),
+      synchronizeRoleplay: (id, mode) => this.host.synchronizeRoleplay(id, mode),
+      setStatus: (text, tone) => this.host.setStatus(text, tone),
+      addEvent: (type, details) => this.host.addEvent(type, details),
+    }, new ChatChannelCreationFlow(host, identityFactory));
   }
+  selectedID(): string { return this.selectedChannelID; }
 
-  hasSelection(): boolean {
-    return this.selectedChannelID.length > 0;
-  }
+  hasSelection(): boolean { return this.selectedChannelID.length > 0; }
 
   setNetworkURL(url: string): void {
     if (!this.host.hasNetworkURL()) return;
@@ -80,25 +107,14 @@ export class ChatChannelCoordinator {
       : t("status.offline");
   }
 
-  async loadChannels(offset = 0): Promise<void> {
+  async loadChannels(): Promise<void> {
     if (!this.host.hasChannelSelect()) return;
     try {
-      const page = await fetchChannelOptionsPage(offset);
-      await this.host.renderComponentBundle(page.html.bundle);
-      if (offset > 0) return;
-      const saved = this.selectedChannelID || localStorage.getItem(SELECTED_CHANNEL_KEY) || "";
-      const selected = this.selectedOption(saved)?.value ?? page.default_channel_id ?? "";
-      if (selected) {
-        await this.loadTranscript(selected);
-        this.selectedChannelID = selected;
-        localStorage.setItem(SELECTED_CHANNEL_KEY, selected);
-        this.host.channelSelect().value = selected;
-      } else {
-        this.selectedChannelID = "";
-        localStorage.removeItem(SELECTED_CHANNEL_KEY);
-        this.host.channelSelect().value = "";
-      }
-      this.host.channelSelect().disabled = !selected;
+      await this.loadAllChannelOptions();
+      this.selectedChannelID = "";
+      this.host.channelSelect().value = "";
+      this.host.channelSelect().disabled = false;
+      await this.host.synchronizeRoleplay("", "assistant");
       this.updateTransportLabel();
     } catch (error) {
       this.host.channelSelect().disabled = true;
@@ -108,22 +124,44 @@ export class ChatChannelCoordinator {
   }
 
   async select(event: Event): Promise<void> {
-    const selectedID = (event.currentTarget as HTMLSelectElement).value;
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLSelectElement)) throw new Error("Channel selection requires the canonical select control.");
+    const selectedID = target.value;
+    await this.transitions.run(async () => {
+      if (selectedID === NEW_CONVERSATION_OPTION_VALUE) {
+        await this.creation.create();
+        return;
+      }
+      await this.selectLocked(selectedID);
+    });
+  }
+
+  private async selectLocked(selectedID: string): Promise<void> {
     if (!selectedID) {
-      this.host.channelSelect().value = this.selectedChannelID;
+      this.restoreSelection(this.selectedChannelID);
       throw new Error("A server-authoritative channel selection is required.");
     }
-    if (!this.selectedOption(selectedID)) {
+    if (!CANONICAL_CHANNEL_ID.test(selectedID) || !this.selectedOption(selectedID)) {
+      this.restoreSelection(this.selectedChannelID);
       throw new Error(`Selected channel ${JSON.stringify(selectedID)} is absent from server markup.`);
     }
+    const previousID = this.selectedChannelID;
+    const previousMode = previousID ? this.selectedChannelMode(previousID) : "assistant";
     try {
       await this.loadTranscript(selectedID);
+      await this.host.synchronizeRoleplay(selectedID, this.selectedChannelMode(selectedID));
     } catch (error) {
-      this.host.channelSelect().value = this.selectedChannelID;
+      this.restoreSelection(this.selectedChannelID);
+      try {
+        await this.host.synchronizeRoleplay(previousID, previousMode);
+      } catch (rollbackError) {
+        this.host.addEvent("roleplay_selection_rollback_failed", { error: errorMessage(rollbackError) });
+      }
       throw error;
     }
     this.selectedChannelID = selectedID;
-    localStorage.setItem(SELECTED_CHANNEL_KEY, selectedID);
+    this.creation.acceptSelection(selectedID);
+    this.host.channelSelect().value = selectedID;
     this.updateTransportLabel();
   }
 
@@ -162,53 +200,37 @@ export class ChatChannelCoordinator {
     }
   }
 
-  async loadMoreChannels(event: Event): Promise<void> {
-    const button = requirePaginationButton(event, "channels");
-    await this.withPaginationFeedback(button, () => this.loadChannels(Number(button.dataset.nextOffset)));
-  }
-
-  async create(event: Event): Promise<void> {
-    event.preventDefault();
-    const workspaceRoot = this.host.workspaceRoot();
-    if (!workspaceRoot) {
-      throw new Error("Open a project before creating a workspace-bound channel.");
-    }
-    const id = window.prompt(t("channel.idPrompt"), `chat-${Date.now()}`);
-    if (id === null) return;
-    const name = window.prompt(t("channel.namePrompt"), id);
-    if (name === null) return;
-    this.host.setStatus(t("channel.statusCreating"), "active");
-    try {
-      const channel = await createUserChannel({
-        id, name, tags: ["user-channel"], workspace_root: workspaceRoot,
-      });
-      this.selectedChannelID = channel.id;
-      await this.loadChannels();
-      if (this.selectedChannelID !== channel.id) {
-        throw new Error("The created channel is absent from the authoritative first page.");
-      }
-      this.host.setStatus(t("status.ready"), "ready");
-    } catch (error) {
-      this.host.setStatus(t("status.failed"), "error");
-      this.host.addEvent("channel_create_failed", { error: errorMessage(error) });
-    }
+  async createAndSubmit(prompt: string): Promise<NeutralChannelSubmitResult> {
+    return this.transitions.run(async () => {
+      if (this.selectedChannelID) throw new Error("Neutral channel creation requires neutral channel authority.");
+      if (!await this.creation.create()) return "creation_failed";
+      if (!this.host.roleplayConfigured()) return "roleplay_setup_required";
+      await this.submitLocked(prompt);
+      return "submitted";
+    });
   }
 
   async submit(prompt: string): Promise<void> {
-    if (!this.selectedChannelID) throw new Error("A channel must be selected before sending a channel message.");
+    await this.transitions.run(() => this.submitLocked(prompt));
+  }
+
+  private async submitLocked(prompt: string): Promise<void> {
+    const channelID = this.selectedChannelID;
+    if (!channelID) throw new Error("A channel must be selected before sending a channel message.");
     this.host.setActivityLabel(t("channel.working"));
     this.host.setStatus(t("status.working"), "active");
     this.host.renderProgressActivity(t("channel.working"));
-    const payload = await sendChannelMessage(this.selectedChannelID, prompt);
+    const payload = await sendChannelMessage(channelID, prompt);
     const jobID = requirePositiveJobID(payload.job.id);
     this.host.addEvent("channel_message", {
-      channel_id: this.selectedChannelID,
+      channel_id: channelID,
       message_id: payload.user_message.id,
       job_id: jobID,
     }, payload);
-    await this.loadTranscript(this.selectedChannelID, payload.user_message.id);
+    await this.loadTranscript(channelID, payload.user_message.id);
     await this.host.waitForJob(jobID);
-    await this.loadTranscript(this.selectedChannelID);
+    await this.loadTranscript(channelID);
+    await this.host.refreshRoleplay();
     this.host.setStatus(t("status.ready"), "ready");
     this.host.setBusy(false);
   }
@@ -218,20 +240,51 @@ export class ChatChannelCoordinator {
     return [...this.host.channelSelect().options].find((option) => option.value === id) ?? null;
   }
 
-  private async withPaginationFeedback(button: HTMLButtonElement, operation: () => Promise<void>): Promise<void> {
-    const label = button.textContent;
-    button.disabled = true;
-    button.setAttribute("aria-busy", "true");
-    button.textContent = "Loading channels…";
-    try {
-      await operation();
-    } catch (error) {
-      button.disabled = false;
-      button.setAttribute("aria-busy", "false");
-      button.textContent = label;
-      throw error;
+  private restoreSelection(id: string): void {
+    if (!this.host.hasChannelSelect()) return;
+    this.host.channelSelect().value = id && this.selectedOption(id) ? id : "";
+  }
+
+  private selectedChannelMode(id: string): "assistant" | "roleplay" {
+    const option = this.selectedOption(id);
+    if (!option || (option.dataset.channelMode !== "assistant" && option.dataset.channelMode !== "roleplay")) {
+      throw new Error(`Selected channel ${JSON.stringify(id)} has no exact server-owned mode.`);
+    }
+    return option.dataset.channelMode;
+  }
+
+  private async loadAllChannelOptions(): Promise<void> {
+    let offset = 0;
+    const bundles: string[] = [];
+    for (let pageCount = 0; pageCount < MAX_AUTOMATIC_CHANNEL_PAGES; pageCount += 1) {
+      const page = await fetchChannelOptionsPage(offset);
+      bundles.push(page.html.bundle);
+      if (page.next_offset === undefined) {
+        for (const bundle of bundles) await this.host.renderComponentBundle(bundle);
+        this.validateChannelOptions();
+        return;
+      }
+      if (page.next_offset <= offset) {
+        throw new Error("The server channel page cursor did not advance.");
+      }
+      offset = page.next_offset;
+    }
+    throw new Error(`Channel pagination exceeded ${MAX_AUTOMATIC_CHANNEL_PAGES} server pages.`);
+  }
+
+  private validateChannelOptions(): void {
+    const options = [...this.host.channelSelect().options];
+    const neutral = options.filter((option) => option.value === "");
+    const create = options.filter((option) => option.value === NEW_CONVERSATION_OPTION_VALUE);
+    if (neutral.length !== 1 || !neutral[0].disabled || create.length !== 1 || CANONICAL_CHANNEL_ID.test(NEW_CONVERSATION_OPTION_VALUE)) {
+      throw new Error("Channel options lack the exact neutral and new-conversation controls.");
+    }
+    const firstActionable = options.find((option) => !option.disabled);
+    if (firstActionable !== create[0]) {
+      throw new Error("New conversation must be the first actionable channel option.");
     }
   }
+
 }
 
 function errorMessage(error: unknown): string {
@@ -244,13 +297,4 @@ function requirePositiveJobID(value: number | string): number {
     throw new Error("Channel turn did not return its authoritative job identity.");
   }
   return jobID;
-}
-
-function requirePaginationButton(event: Event, section: string): HTMLButtonElement {
-  const button = event.currentTarget as HTMLButtonElement;
-  const offset = Number(button.dataset.nextOffset ?? "");
-  if (button.dataset.pageSection !== section || !Number.isSafeInteger(offset) || offset < 1) {
-    throw new Error(`The server-rendered ${section} page cursor is invalid.`);
-  }
-  return button;
 }

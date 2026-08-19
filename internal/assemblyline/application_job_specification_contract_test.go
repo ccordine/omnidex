@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestApplicationJobSpecificationPromptContainsCompleteAuthoritativeIntent(t *testing.T) {
+func TestApplicationJobSpecificationPromptContainsOnlyFocusedAuthoritativeIntent(t *testing.T) {
 	t.Parallel()
 	input := applicationJobSpecificationTestInput(1)
 	prompt, err := BuildApplicationJobSpecificationPrompt(input)
@@ -15,8 +15,7 @@ func TestApplicationJobSpecificationPromptContainsCompleteAuthoritativeIntent(t 
 	}
 	for _, required := range []string{
 		string(input.Surface), input.ProductQuote, input.FocusedRequirement.SourceQuote,
-		input.AcceptedRequirements[0].SourceQuote, input.AcceptedRequirements[1].SourceQuote,
-		input.AcceptedRequirements[2].SourceQuote, "required_behaviors", "acceptance_criteria",
+		"required_behaviors", "acceptance_criteria",
 		"concrete action and result", "cover every required behavior", `"user_authority"`,
 		"minimum sufficient derived build decisions", "Observable does not require invented numeric precision",
 	} {
@@ -26,6 +25,7 @@ func TestApplicationJobSpecificationPromptContainsCompleteAuthoritativeIntent(t 
 	}
 	for _, forbidden := range []string{
 		"workspace_snapshot", "file_path", "tool_catalog", "depends_on", "execution_order", "completion",
+		input.AcceptedRequirements[0].SourceQuote, input.AcceptedRequirements[2].SourceQuote,
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("job specification prompt exposes forbidden authority %q", forbidden)

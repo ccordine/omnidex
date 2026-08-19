@@ -50,9 +50,9 @@ func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testi
 		failureClass                     directCodingStageFailureClass
 	}{
 		{
-			name: "tsx ungrounded behavior assertion stays acceptance-owned", path: "src/panels/Grouping.test.tsx",
+			name: "tsx behavior assertion routes to its generated owner", path: "src/panels/Grouping.test.tsx",
 			errorName: "AssertionError", failureClass: directCodingStageFailureVitestBehavior,
-			wantBlock: "acceptance.grouping",
+			wantBlock: "feature.grouping",
 		},
 		{
 			name: "ts runtime exception targets acceptance declaration", path: "src/rules/Normalization.test.ts",
@@ -84,15 +84,22 @@ func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testi
 			}
 			line := composed.Spans[acceptanceID].StartLine
 			receipt := directCodingVitestFailureReceipt{
-				FailureClass: testCase.failureClass,
-				Output:       testCase.errorName + ": observed failure",
-				Locations: []directCodingVitestSourceLocation{{
-					File: filepath.Join(root, filepath.FromSlash(testCase.path)), Line: line, Column: 7,
+				Failures: []directCodingVitestFailureEvidence{{
+					FailureClass: testCase.failureClass,
+					Name:         testCase.errorName,
+					Message:      "observed failure",
+					Output:       testCase.errorName + ": observed failure",
+					Locations: []directCodingVitestSourceLocation{{
+						File: filepath.Join(root, filepath.FromSlash(testCase.path)), Line: line, Column: 7,
+					}},
 				}},
 			}
-			diagnostic, mapped := mapDirectCodingVitestFailureReceipt(
+			diagnostic, mapped, err := mapDirectCodingVitestFailureReceipt(
 				root, []assemblyline.ComposedTypeScriptDocument{composed}, receipt,
 			)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !mapped || diagnostic.BlockID != acceptanceID {
 				t.Fatalf("mapped diagnostic=%+v mapped=%t", diagnostic, mapped)
 			}
@@ -148,7 +155,7 @@ func TestTypeScriptStageNeverDelegatesCodeOwnedFailures(t *testing.T) {
 	}
 }
 
-func TestUngroundedRuntimeAcceptanceFailureStaysWithAcceptance(t *testing.T) {
+func TestRuntimeAcceptanceBehaviorFailureRoutesToExactGeneratedOwner(t *testing.T) {
 	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
 		{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.TypeScriptBlock{{
 			ID: "feature.render", Signature: "function Feature(): ReactElement",
@@ -167,8 +174,34 @@ func TestUngroundedRuntimeAcceptanceFailureStaysWithAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diagnostic.BlockID != "feature.acceptance" {
+	if diagnostic.BlockID != "feature.render" {
 		t.Fatalf("runtime acceptance failure targeted %s", diagnostic.BlockID)
+	}
+}
+
+func TestRuntimeAcceptanceBehaviorFailureRequiresOneExactGeneratedOwner(t *testing.T) {
+	t.Parallel()
+	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
+		{ID: "first", Path: "src/first.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+			ID: "feature.first", Signature: "function First(): ReactElement",
+			Contract: "Render the first result.", API: "function First(): ReactElement",
+		}}},
+		{ID: "second", Path: "src/second.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+			ID: "feature.second", Signature: "function Second(): ReactElement",
+			Contract: "Render the second result.", API: "function Second(): ReactElement",
+		}}},
+		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+			ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
+			Contract: "Verify observable behavior.", API: "async function Verify(): Promise<void>",
+			DependsOn: []string{"feature.first", "feature.second"},
+		}}},
+	}}
+	_, err := routeDirectCodingAcceptanceFailure(directCodingProgram{TypeScript: blueprint}, &directCodingStageDiagnostic{
+		BlockID: "feature.acceptance", Message: "expected working, received idle",
+		FailureClass: directCodingStageFailureVitestBehavior,
+	})
+	if err == nil || !strings.Contains(err.Error(), "exactly one generated direct owner") {
+		t.Fatalf("ambiguous behavior owner error=%v", err)
 	}
 }
 
@@ -192,50 +225,5 @@ func TestUnclassifiedAcceptanceFailureStaysWithAcceptanceBlock(t *testing.T) {
 	}
 	if diagnostic.BlockID != "feature.acceptance" {
 		t.Fatalf("unclassified acceptance failure targeted %s", diagnostic.BlockID)
-	}
-}
-
-func TestTypeScriptModelFailureContainsOnlyTheObservedFailure(t *testing.T) {
-	raw := "\x1b[31m FAIL src/capability.test.tsx > capability > reacts to input\x1b[0m\n" +
-		"AssertionError: expected 1 to be 2\n" +
-		" ❯ src/capability.test.tsx:24:18\n" +
-		" ❯ /tmp/isolated/node_modules/runner.js:9:2\n"
-	feedback := directCodingTypeScriptTestModelFailure(raw)
-	for _, required := range []string{
-		"capability > reacts to input", "expected 1 to be 2",
-	} {
-		if !strings.Contains(feedback, required) {
-			t.Fatalf("feedback omitted %q:\n%s", required, feedback)
-		}
-	}
-	for _, forbidden := range []string{
-		"capability.test.tsx", "/tmp/", "node_modules", "className", "button", "workspace", "filename", "\x1b",
-	} {
-		if strings.Contains(feedback, forbidden) {
-			t.Fatalf("feedback leaked or prescribed %q:\n%s", forbidden, feedback)
-		}
-	}
-}
-
-func TestTypeScriptModelFailureCutsNeighborFailuresAndSourceFrames(t *testing.T) {
-	raw := `
- FAIL  src/checks.test.tsx > first capability > responds
-AssertionError: expected false to be true
- ❯ src/checks.test.tsx:35:93
-     35| expect(secretImplementation()).toBe(true);
-
- FAIL  src/checks.test.tsx > second capability > persists
-TestingLibraryElementError: Unable to find an accessible element
-`
-	feedback := directCodingTypeScriptTestModelFailure(raw)
-	for _, required := range []string{"first capability > responds", "expected false to be true"} {
-		if !strings.Contains(feedback, required) {
-			t.Fatalf("focused feedback omitted %q:\n%s", required, feedback)
-		}
-	}
-	for _, forbidden := range []string{"second capability", "secretImplementation", "checks.test.tsx"} {
-		if strings.Contains(feedback, forbidden) {
-			t.Fatalf("focused feedback leaked %q:\n%s", forbidden, feedback)
-		}
 	}
 }

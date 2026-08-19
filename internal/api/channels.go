@@ -2,13 +2,17 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -18,16 +22,63 @@ const (
 
 type channelStore interface {
 	CreateChannel(ctx context.Context, channel model.Channel) (model.Channel, error)
+	CreateRoleplayChannel(ctx context.Context, channel model.Channel, worldName, viewpointName string) (model.Channel, error)
 	GetChannel(ctx context.Context, id model.ChannelID) (model.Channel, error)
 	ListChannels(ctx context.Context, scope model.ChannelScope, limit, offset int) ([]model.Channel, error)
 	ListChannelMessages(ctx context.Context, channelID model.ChannelID, limit int, beforeID *int64) (model.ChannelMessagePage, error)
 }
 
 type channelCreateRequest struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	Tags          []string `json:"tags"`
-	WorkspaceRoot string   `json:"workspace_root"`
+	ID                    string                     `json:"id"`
+	Name                  string                     `json:"name"`
+	Tags                  []string                   `json:"tags"`
+	WorkspaceRoot         channelCreateWorkspaceRoot `json:"workspace_root,omitempty"`
+	DataSourceID          channelCreateDataSourceID  `json:"data_source_id,omitempty"`
+	Mode                  model.ChannelMode          `json:"mode"`
+	RoleplayWorldName     channelCreateRoleplayName  `json:"roleplay_world_name,omitempty"`
+	RoleplayViewpointName channelCreateRoleplayName  `json:"roleplay_viewpoint_name,omitempty"`
+}
+
+type channelCreateDataSourceID struct {
+	Value model.DataSourceID
+}
+
+func (id *channelCreateDataSourceID) UnmarshalJSON(raw []byte) error {
+	if string(raw) == "null" {
+		return errors.New("channel data_source_id must be omitted or contain one canonical identity")
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("decode channel data_source_id: %w", err)
+	}
+	candidate := model.DataSourceID(value)
+	if err := candidate.Validate(); err != nil {
+		return err
+	}
+	id.Value = candidate
+	return nil
+}
+
+type channelCreateRoleplayName struct {
+	Value   string
+	Present bool
+}
+
+func (name *channelCreateRoleplayName) UnmarshalJSON(raw []byte) error {
+	if string(raw) == "null" {
+		return errors.New("roleplay creation names must be omitted or contain exact nonblank text")
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("decode roleplay creation name: %w", err)
+	}
+	if len(value) == 0 || len(value) > model.MaxChannelNameBytes || !utf8.ValidString(value) ||
+		strings.IndexByte(value, 0) >= 0 || value != strings.TrimSpace(value) {
+		return fmt.Errorf("roleplay creation name must contain 1..%d exact nonblank UTF-8 bytes without NUL", model.MaxChannelNameBytes)
+	}
+	name.Value = value
+	name.Present = true
+	return nil
 }
 
 type channelMessageRequest struct {
@@ -67,10 +118,40 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		writeChannelBodyError(w, err)
 		return
 	}
-	channel, err := s.channelStore.CreateChannel(r.Context(), model.Channel{
+	workspaceRoot, workspaceErr := s.resolveChannelCreateWorkspaceRoot(req.WorkspaceRoot)
+	if workspaceErr != nil {
+		writeError(w, http.StatusServiceUnavailable, workspaceErr.Error())
+		return
+	}
+	channelInput := model.Channel{
 		ID: model.ChannelID(req.ID), Scope: model.ChannelScopeUser, Name: req.Name, Tags: append([]string(nil), req.Tags...),
-		WorkspaceRoot: req.WorkspaceRoot,
-	})
+		WorkspaceRoot: workspaceRoot, DataSourceID: req.DataSourceID.Value, Mode: req.Mode,
+	}
+	var channel model.Channel
+	var err error
+	switch req.Mode {
+	case model.ChannelModeAssistant:
+		if req.RoleplayWorldName.Present || req.RoleplayViewpointName.Present {
+			writeError(w, http.StatusBadRequest, "assistant channel creation cannot carry roleplay names")
+			return
+		}
+		channel, err = s.channelStore.CreateChannel(r.Context(), channelInput)
+	case model.ChannelModeRoleplay:
+		if req.DataSourceID.Value != "" {
+			writeError(w, http.StatusBadRequest, "roleplay channel cannot bind a real-world data source")
+			return
+		}
+		if !req.RoleplayWorldName.Present || !req.RoleplayViewpointName.Present {
+			writeError(w, http.StatusBadRequest, "roleplay channel creation requires exact world and viewpoint names")
+			return
+		}
+		channel, err = s.channelStore.CreateRoleplayChannel(
+			r.Context(), channelInput, req.RoleplayWorldName.Value, req.RoleplayViewpointName.Value,
+		)
+	default:
+		writeError(w, http.StatusBadRequest, "channel mode must be exactly assistant or roleplay")
+		return
+	}
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, queue.ErrChannelAlreadyExists) {
@@ -137,6 +218,10 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) > 1 && parts[1] == "roleplay" {
+		s.handleRoleplaySimulationChannel(w, r, channelID, parts[2:])
+		return
+	}
 	if len(parts) > 1 {
 		writeError(w, http.StatusNotFound, "channel route not found")
 		return
@@ -196,8 +281,16 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 	userMessage, job, err := s.enqueueChannelTurn(r.Context(), channel.ID, prompt)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, queue.ErrChannelTurnActive) {
+		switch {
+		case errors.Is(err, queue.ErrChannelTurnActive),
+			errors.Is(err, roleplay.ErrSimulationNotConfigured),
+			errors.Is(err, roleplay.ErrSimulationStaleRevision),
+			errors.Is(err, roleplay.ErrSimulationConflict):
 			status = http.StatusConflict
+		case errors.Is(err, roleplay.ErrSimulationUnknown),
+			errors.Is(err, roleplay.ErrSimulationAmbiguous),
+			errors.Is(err, roleplay.ErrSimulationIllegal):
+			status = http.StatusBadRequest
 		}
 		writeError(w, status, err.Error())
 		return

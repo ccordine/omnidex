@@ -60,6 +60,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 				Signature: fmt.Sprintf("async function %s(): Promise<void>", verifyName),
 				Contract:  genericBrowserAcceptanceContract(behavior),
 				API:       fmt.Sprintf("async function %s(): Promise<void>", verifyName),
+				DependsOn: []string{fmt.Sprintf("feature.%03d", sequence)},
 				Globals:   []string{"fireEvent", "screen", "waitFor", "expect"},
 				Policy: assemblyline.TypeScriptFunctionPolicy{
 					RequiredCalls: []assemblyline.TypeScriptCallRequirement{

@@ -257,6 +257,10 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 		"conversation_objective_kind":       "Objective classification",
 		"conversation_response":             "Response",
 		"grounded_answer":                   "Grounded answer",
+		"database_schema_selection":         "Database schema selection",
+		"database_query_intent":             "Database relational intent",
+		"database_evidence_gap":             "Database evidence gap",
+		"database_join_path_selection":      "Database relationship selection",
 		"repository_search_term":            "Repository search-term",
 		"repository_change_surface":         "Repository change-surface",
 		"repository_evidence_relevance":     "Repository relevance",
@@ -277,7 +281,8 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 	}
 	category := chatProgressStation
 	switch subject {
-	case "conversation_context_selection", "repository_search_term", "repository_evidence_relevance",
+	case "conversation_context_selection", "database_schema_selection", "database_evidence_gap",
+		"database_join_path_selection", "repository_search_term", "repository_evidence_relevance",
 		"web_search_terms", "web_relevance", "skill_selection":
 		category = chatProgressRetrieval
 	case "repository_grounded_review", "repository_grounded_correction", "web_claim_evidence_review", "response_correction":

@@ -62,14 +62,13 @@ export default class AdminDataSourcesController extends Controller<HTMLElement> 
   async saveDataSource(event: Event): Promise<void> {
     event.preventDefault();
     const useDSN = (this.element.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null)?.checked ?? false;
-    const port = Number.parseInt(this.optionalValue("port") || "5432", 10);
+    const port = Number.parseInt(this.optionalValue("port"), 10);
     if (!Number.isSafeInteger(port) || port < 1) return reportErrorMessage(this.setStatus.bind(this), "Port must be a positive integer.");
     const input = {
-      name: this.value("name"), driver: this.value("driver"), domain: this.value("domain"),
-      context_prompt: this.value("context_prompt"), privacy_mode: this.value("privacy_mode"), use_dsn: useDSN,
+      name: this.value("name"), driver: this.value("driver"), use_dsn: useDSN,
       dsn: this.optionalValue("dsn"), host: this.optionalValue("host"), port,
       database_name: this.optionalValue("database_name"), username: this.optionalValue("username"),
-      password: this.optionalValue("password"), ssl_mode: this.optionalValue("ssl_mode"), read_only: true,
+      password: this.optionalValue("password"), ssl_mode: this.optionalValue("ssl_mode"),
     };
     if (!input.name) return reportErrorMessage(this.setStatus.bind(this), "Data-source name is required.");
     await this.mutate(this.editingID ? "Saving data source…" : "Adding data source…", async () => {

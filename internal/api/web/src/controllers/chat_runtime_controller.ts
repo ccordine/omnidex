@@ -1,8 +1,12 @@
 import { ChatChannelCoordinator } from "../lib/chat_channel_coordinator";
+import { ChatChannelCreationCoordinator } from "../lib/chat_channel_creation_coordinator";
+import { ChatDataSourceCoordinator } from "../lib/chat_data_source_coordinator";
 import { ChatExecutionCoordinator } from "../lib/chat_execution_coordinator";
 import { ChatJobsCoordinator } from "../lib/chat_jobs_coordinator";
 import { ChatMemoryCoordinator } from "../lib/chat_memory_coordinator";
 import { ChatPanelCoordinator } from "../lib/chat_panel_coordinator";
+import { ChatRoleplayCoordinator } from "../lib/chat_roleplay_coordinator";
+import { ChatSlashPaletteCoordinator } from "../lib/chat_slash_palette_coordinator";
 import { ChatSystemCoordinator } from "../lib/chat_system_coordinator";
 import { toastFromError } from "../lib/feedback";
 import { getLocale } from "../lib/i18n";
@@ -13,11 +17,15 @@ import { ChatViewController } from "./chat_view_controller";
 
 export abstract class ChatRuntimeController extends ChatViewController {
   protected channel!: ChatChannelCoordinator;
+  protected creation!: ChatChannelCreationCoordinator;
+  protected dataSources!: ChatDataSourceCoordinator;
   protected jobs!: ChatJobsCoordinator;
   protected memory!: ChatMemoryCoordinator;
   protected system!: ChatSystemCoordinator;
   protected execution!: ChatExecutionCoordinator;
   protected panels!: ChatPanelCoordinator;
+  protected roleplay!: ChatRoleplayCoordinator;
+  protected slashPalette!: ChatSlashPaletteCoordinator;
 
   private memoryChangedHandler: (() => void) | null = null;
   private networkSettingsHandler: ((event: Event) => void) | null = null;
@@ -41,12 +49,15 @@ export abstract class ChatRuntimeController extends ChatViewController {
     if (!this.recyclrController) throw new Error("The page-scoped Recyclr controller is unavailable.");
     this.initializeViewState();
     this.wireCoordinators();
+    this.bindDocumentEvents();
     await this.channel.detectTransport();
     await this.panels.activate(parsePanelFromLocation(), { pushHistory: false });
+    this.creation.synchronize();
+		this.dataSources.setCreationMode(this.creation.selectedMode());
     await this.system.loadStatus();
+    await this.dataSources.load();
     await this.channel.loadChannels();
     await this.memory.loadGlobalActivity();
-    this.bindDocumentEvents();
   }
 
   disconnect(): void {
@@ -61,6 +72,43 @@ export abstract class ChatRuntimeController extends ChatViewController {
   }
 
   private wireCoordinators(): void {
+	this.slashPalette = new ChatSlashPaletteCoordinator({
+		input: () => this.inputTarget,
+		palette: () => this.slashPaletteTarget,
+		options: () => this.slashOptionsTarget,
+		renderComponentBundle: (bundle) => this.renderComponentBundle(bundle),
+	});
+	this.roleplay = new ChatRoleplayCoordinator({
+		hasPanel: () => this.hasRoleplayPanelTarget,
+		panel: () => this.roleplayPanelTarget,
+		hasLoading: () => this.hasRoleplayLoadingTarget,
+		loading: () => this.roleplayLoadingTarget,
+		renderComponentBundle: (bundle) => this.renderComponentBundle(bundle),
+		setComposerAvailable: (available) => this.setRoleplayComposerAvailable(available),
+		setComposerText: (value) => this.setComposerText(value),
+		focusComposer: () => this.focusComposer(),
+		setStatus: (text, mode) => this.setStatus(text, mode),
+		addEvent: (type, details) => this.addEvent(type, details),
+		reportError: (error) => toastFromError(error),
+		refreshSlashCommands: () => this.slashPalette.refresh(),
+	});
+    this.creation = new ChatChannelCreationCoordinator({
+      hasMode: () => this.hasNewChannelModeSelectTarget,
+      mode: () => this.newChannelModeSelectTarget,
+      hasRoleplayFields: () => this.hasNewChannelRoleplayFieldsTarget,
+      roleplayFields: () => this.newChannelRoleplayFieldsTarget,
+      hasWorldName: () => this.hasNewChannelRoleplayWorldNameTarget,
+      worldName: () => this.newChannelRoleplayWorldNameTarget,
+      hasViewpointName: () => this.hasNewChannelRoleplayViewpointNameTarget,
+      viewpointName: () => this.newChannelRoleplayViewpointNameTarget,
+    });
+    this.dataSources = new ChatDataSourceCoordinator({
+      hasSelect: () => this.hasNewChannelDataSourceSelectTarget,
+      select: () => this.newChannelDataSourceSelectTarget,
+      renderComponentBundle: (bundle) => this.renderComponentBundle(bundle),
+      setStatus: (text, mode) => this.setStatus(text, mode),
+      addEvent: (type, details) => this.addEvent(type, details),
+    });
     this.channel = new ChatChannelCoordinator({
       hasNetworkURL: () => this.hasNetworkUrlTarget,
       networkURL: () => this.networkUrlTarget,
@@ -75,10 +123,15 @@ export abstract class ChatRuntimeController extends ChatViewController {
       renderComponentBundle: (bundle) => this.renderComponentBundle(bundle),
       renderTranscriptBundle: (bundle, preserveScroll) => this.renderTranscriptBundle(bundle, preserveScroll),
       workspaceRoot: () => this.openedProjectLocation,
+      newChannelDataSourceID: () => this.dataSources.selectedForCreation(),
+      newChannelCreationContext: () => this.creation.parameters(),
       setActivityLabel: (label) => { this.activityLabel = label; },
       renderProgressActivity: (label) => this.renderProgressActivity(label),
       setBusy: (value) => this.setBusy(value),
       waitForJob: (id) => this.execution.waitForExistingJob(id),
+			synchronizeRoleplay: (channelID, mode) => this.roleplay.activate(channelID, mode),
+			roleplayConfigured: () => this.roleplay.isConfigured(),
+			refreshRoleplay: () => this.roleplay.refresh(),
     });
     this.execution = new ChatExecutionCoordinator({
       currentPanel: () => this.panels.current(),
@@ -189,6 +242,8 @@ export abstract class ChatRuntimeController extends ChatViewController {
     const tasks: Promise<unknown>[] = [this.memory.loadGlobalActivity({ quiet: true, strict: true })];
     if (this.execution.currentJobID() !== null) tasks.push(this.execution.refreshCurrent());
     if (this.channel.hasSelection()) tasks.push(this.channel.loadTranscript(this.channel.selectedID()));
+	if (this.channel.hasSelection()) tasks.push(this.roleplay.refresh());
+    if (this.channel.hasSelection()) tasks.push(this.slashPalette.refresh());
     if (this.panels.isCurrent("jobs")) tasks.push(this.jobs.load({ quiet: true, strict: true }));
     if (this.panels.isCurrent("metrics")) tasks.push(this.system.loadMetrics({ strict: true }));
     await Promise.all(tasks);

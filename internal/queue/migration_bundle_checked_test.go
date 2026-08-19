@@ -106,6 +106,12 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	legacyCoderTokenizerProfileCount := 0
 	codingFragmentRepairGuidanceCount := 0
 	applicationFrontDoorStationCount := 0
+	dataSourceRelationalAuthorityCount := 0
+	databaseCognitionAuthorityCount := 0
+	roleplayCanonAuthorityCount := 0
+	roleplaySimulationAuthorityCount := 0
+	roleplayResearchAuthorityCount := 0
+	roleplayTerminalSimulationPublicationCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -215,7 +221,7 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == stationResponseSchemaResourceMigration {
 			stationResponseSchemaResourceCount++
 		}
-		if entry.name == codingWorkloadReviewStationMigration {
+		if entry.name == "101_coding_workload_review_station.sql" {
 			codingWorkloadReviewStationCount++
 		}
 		if entry.name == qwen25CoderTokenizerProfileMigration {
@@ -233,9 +239,27 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == applicationFrontDoorStationMigration {
 			applicationFrontDoorStationCount++
 		}
+		if entry.name == "115_data_source_relational_authority.sql" {
+			dataSourceRelationalAuthorityCount++
+		}
+		if entry.name == "116_database_cognition_authority.sql" {
+			databaseCognitionAuthorityCount++
+		}
+		if entry.name == "117_roleplay_canon_authority.sql" {
+			roleplayCanonAuthorityCount++
+		}
+		if entry.name == "118_roleplay_simulation_authority.sql" {
+			roleplaySimulationAuthorityCount++
+		}
+		if entry.name == "119_roleplay_research_authority.sql" {
+			roleplayResearchAuthorityCount++
+		}
+		if entry.name == "120_roleplay_terminal_simulation_publication.sql" {
+			roleplayTerminalSimulationPublicationCount++
+		}
 	}
-	if len(bundle.entries) != 157 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 157/%d",
+	if len(bundle.entries) != 171 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 171/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -249,6 +273,19 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	}
 	if retirementCount != 1 {
 		t.Fatalf("checked retirement migration count=%d want 1", retirementCount)
+	}
+	if dataSourceRelationalAuthorityCount != 1 {
+		t.Fatalf("checked relational data-source authority migration count=%d want 1", dataSourceRelationalAuthorityCount)
+	}
+	if databaseCognitionAuthorityCount != 1 || roleplayCanonAuthorityCount != 1 ||
+		roleplaySimulationAuthorityCount != 1 || roleplayResearchAuthorityCount != 1 ||
+		roleplayTerminalSimulationPublicationCount != 1 {
+		t.Fatalf(
+			"checked database/roleplay authority migration counts=%d/%d/%d/%d/%d want all one",
+			databaseCognitionAuthorityCount, roleplayCanonAuthorityCount,
+			roleplaySimulationAuthorityCount, roleplayResearchAuthorityCount,
+			roleplayTerminalSimulationPublicationCount,
+		)
 	}
 	if conversationCutoverCount != 1 {
 		t.Fatalf("checked conversation cutover migration count=%d want 1", conversationCutoverCount)

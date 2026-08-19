@@ -34,7 +34,7 @@ func TestDirectCodingMutationSummaryReportsActualOperationsAndPaths(t *testing.T
 		{Path: "a.ts", Operation: workspaceFileCreate},
 		{Path: "main.ts", Operation: workspaceFileReplace},
 	})
-	if summary != "created=[a.ts,b.ts] replaced=[main.ts] deleted=[z.ts]" {
+	if summary != "directories=[] created=[a.ts,b.ts] replaced=[main.ts] deleted=[z.ts]" {
 		t.Fatalf("summary=%q", summary)
 	}
 }

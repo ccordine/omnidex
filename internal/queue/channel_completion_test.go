@@ -10,7 +10,8 @@ import (
 func TestChannelCompletionBindingRequiresExactChatAuthority(t *testing.T) {
 	metadata, err := json.Marshal(channelTurnMetadata{
 		ChannelID: "channel-one", SessionID: "channel:channel-one", ChannelUserMessageID: 41,
-		ProjectID: 7, ClientCWD: "/srv/workspaces/one", ModelConfig: map[string]string{},
+		ProjectID: 7, ClientCWD: "/srv/workspaces/one", ChannelMode: model.ChannelModeAssistant,
+		ModelConfig: map[string]string{},
 	})
 	if err != nil {
 		t.Fatal(err)

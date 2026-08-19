@@ -55,7 +55,7 @@ func TestApplicationTaskStageProjectionExcludesOtherTasksAndApplicationEntrypoin
 			FailureClass: directCodingStageFailureVitestBehavior,
 		},
 	)
-	if err != nil || routed.BlockID != "acceptance.001" {
+	if err != nil || routed.BlockID != "feature.001" {
 		t.Fatalf("current acceptance routing=%+v error=%v", routed, err)
 	}
 }

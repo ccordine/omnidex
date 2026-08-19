@@ -21,6 +21,11 @@ type uiSessionResponse struct {
 	TTLMS     int64          `json:"ttl_ms"`
 }
 
+type uiMemorySessionRecord struct {
+	State     map[string]any
+	ExpiresAt time.Time
+}
+
 func (s *Server) handleUISession(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -159,6 +164,20 @@ func (s *Server) loadUIState(ctx context.Context, sessionID string) (map[string]
 			return state, "pgsql", nil
 		}
 	}
+	s.uiMemoryMu.RLock()
+	record, ok := s.uiMemorySessions[sessionID]
+	s.uiMemoryMu.RUnlock()
+	if ok && record.ExpiresAt.After(time.Now()) {
+		raw, err := json.Marshal(record.State)
+		if err != nil {
+			return nil, "", err
+		}
+		state, err := decodeUIState(raw)
+		if err != nil {
+			return nil, "", err
+		}
+		return state, "memory", nil
+	}
 	return map[string]any{}, "new", nil
 }
 
@@ -184,6 +203,11 @@ func (s *Server) persistUIState(ctx context.Context, sessionID string, state map
 		}
 		return "pgsql", nil
 	}
+	s.uiMemoryMu.Lock()
+	s.uiMemorySessions[sessionID] = uiMemorySessionRecord{
+		State: sanitizeUIState(state), ExpiresAt: time.Now().Add(s.uiSessionTTL),
+	}
+	s.uiMemoryMu.Unlock()
 	return "memory", nil
 }
 

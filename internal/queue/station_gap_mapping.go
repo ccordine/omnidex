@@ -53,10 +53,20 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.MemoryContextSelection, nil
 	case assemblyline.WorkConversationObjectiveKind:
 		return station.ConversationObjectiveKind, nil
-	case assemblyline.WorkConversationResponse:
+	case assemblyline.WorkConversationResponse, assemblyline.WorkRoleplayGroundedResponse:
 		return station.ConversationResponse, nil
+	case assemblyline.WorkRoleplayCanonExtraction:
+		return station.RoleplayCanonExtraction, nil
 	case assemblyline.WorkGroundedAnswer:
 		return station.GroundedAnswer, nil
+	case assemblyline.WorkDatabaseSchemaSelection:
+		return station.DatabaseSchemaSelection, nil
+	case assemblyline.WorkDatabaseQueryIntent:
+		return station.DatabaseQueryIntent, nil
+	case assemblyline.WorkDatabaseEvidenceGap:
+		return station.DatabaseEvidenceGap, nil
+	case assemblyline.WorkDatabaseJoinPathSelection:
+		return station.DatabaseJoinPathSelection, nil
 	case assemblyline.WorkRepositoryEvidenceRelevance:
 		return station.RepositoryEvidenceRelevance, nil
 	case assemblyline.WorkRepositoryGroundedReview:

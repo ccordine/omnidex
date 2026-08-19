@@ -20,6 +20,10 @@ type objectiveRepositoryGroundingStation interface {
 	)
 }
 
+type objectiveRepositoryGroundingPreflight interface {
+	ValidateRepositoryGrounding() error
+}
+
 type objectiveRepositoryGroundedResult struct {
 	Answer          assemblyline.GroundedAnswerDecision
 	ModelCalls      int
@@ -42,6 +46,11 @@ func runObjectiveRepositoryGroundedClosure(
 	}
 	if _, err := assemblyline.NewGroundedAnswerJob(input); err != nil {
 		return objectiveRepositoryGroundedResult{}, err
+	}
+	if preflight, ok := stations.(objectiveRepositoryGroundingPreflight); ok {
+		if err := preflight.ValidateRepositoryGrounding(); err != nil {
+			return objectiveRepositoryGroundedResult{}, err
+		}
 	}
 	answer, receipt, err := stations.Answer(ctx, cloneGroundedAnswerInput(input))
 	if err != nil {

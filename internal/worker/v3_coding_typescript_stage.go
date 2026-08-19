@@ -65,17 +65,18 @@ func verifyDirectCodingTypeScriptStageCommands(
 			continue
 		}
 		diagnosticOutput := output
-		failureClass := directCodingStageFailureUnclassified
 		if structuredVitest {
 			receipt, receiptErr := readDirectCodingVitestFailureReceipt(root)
 			if receiptErr != nil {
 				return nil, receiptErr
 			}
-			failureClass = receipt.FailureClass
 			diagnosticOutput = strings.TrimSpace(receipt.Output + "\n" + output)
-			if diagnostic, mapped := mapDirectCodingVitestFailureReceipt(root, documents, receipt); mapped {
+			diagnostic, mapped, mapErr := mapDirectCodingVitestFailureReceipt(root, documents, receipt)
+			if mapErr != nil {
+				return nil, mapErr
+			}
+			if mapped {
 				diagnostic.VerificationStage = strings.Join(args, " ")
-				diagnostic.FailureClass = failureClass
 				diagnostic, err = routeDirectCodingAcceptanceFailure(program, diagnostic)
 				if err != nil {
 					return nil, err
@@ -89,7 +90,6 @@ func verifyDirectCodingTypeScriptStageCommands(
 				return nil, directCodingUnmappedStageFailure(args, commandErr, output, diagnosticOutput)
 			}
 			diagnostic.VerificationStage = strings.Join(args, " ")
-			diagnostic.FailureClass = failureClass
 			return diagnostic, nil
 		}
 		return nil, directCodingUnmappedStageFailure(args, commandErr, output, diagnosticOutput)
@@ -108,13 +108,31 @@ func routeDirectCodingAcceptanceFailure(
 	if diagnostic == nil {
 		return nil, fmt.Errorf("route acceptance failure: diagnostic is nil")
 	}
-	_, exists := directCodingTypeScriptBlueprintBlock(program.TypeScript, diagnostic.BlockID)
+	origin, exists := directCodingTypeScriptBlueprintBlock(program.TypeScript, diagnostic.BlockID)
 	if !exists {
 		return nil, fmt.Errorf("route acceptance failure: unknown originating block %s", diagnostic.BlockID)
 	}
-	// The acceptance declaration is the smallest block that owns its own test
-	// failure. Runtime evidence routes directly to that block; no second model is
-	// invoked merely to approve or reinterpret generated test source.
+	if diagnostic.FailureClass != directCodingStageFailureVitestBehavior {
+		return diagnostic, nil
+	}
+	owners := make([]string, 0, len(origin.DependsOn))
+	for _, dependencyID := range origin.DependsOn {
+		dependency, found := directCodingTypeScriptBlueprintBlock(program.TypeScript, dependencyID)
+		if found && dependency.Generated() {
+			owners = append(owners, dependencyID)
+		}
+	}
+	if len(owners) != 1 {
+		return nil, fmt.Errorf(
+			"route acceptance behavior failure from %s requires exactly one generated direct owner, found %d",
+			diagnostic.BlockID, len(owners),
+		)
+	}
+	// A behavior assertion is immutable verification evidence. Its exact
+	// generated implementation dependency owns the observed mismatch; changing
+	// the assertion would only rewrite the oracle. Code performs this graph
+	// transition without a semantic routing call.
+	diagnostic.BlockID = owners[0]
 	return diagnostic, nil
 }
 

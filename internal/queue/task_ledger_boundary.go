@@ -46,11 +46,13 @@ func reservedTaskCommandMutation(command taskstate.Command) bool {
 	case *taskstate.SupersedeNodeGenerationCommand:
 		return typed != nil
 	case taskstate.AddNodeCommand:
-		return reservedTaskNodeID(typed.ID) || reservedTaskNodeID(typed.ParentID) ||
-			reservedTaskNodeID(typed.ObjectiveID)
+		// A code-owned objective must be able to attach beneath the canonical
+		// queue-owned root. Referencing that root as a parent does not mutate
+		// it; only manufacturing a reserved node identity or claiming one as an
+		// objective remains queue-lifecycle authority.
+		return reservedTaskNodeID(typed.ID) || reservedTaskNodeID(typed.ObjectiveID)
 	case *taskstate.AddNodeCommand:
-		return typed != nil && (reservedTaskNodeID(typed.ID) ||
-			reservedTaskNodeID(typed.ParentID) || reservedTaskNodeID(typed.ObjectiveID))
+		return typed != nil && (reservedTaskNodeID(typed.ID) || reservedTaskNodeID(typed.ObjectiveID))
 	case taskstate.AddEdgeCommand:
 		return reservedTaskEdgeID(typed.ID) || reservedTaskNodeID(typed.From) || reservedTaskNodeID(typed.To)
 	case *taskstate.AddEdgeCommand:

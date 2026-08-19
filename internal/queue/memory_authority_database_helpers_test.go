@@ -12,7 +12,7 @@ func createMemoryScopeForTest(t *testing.T, repository *Repository) model.Memory
 	t.Helper()
 	identity := fmt.Sprintf("memory-scope-%d", time.Now().UnixNano())
 	channel, err := repository.CreateChannel(t.Context(), model.Channel{
-		ID: model.ChannelID(identity), Scope: model.ChannelScopeUser,
+		ID: model.ChannelID(identity), Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "Memory scope", WorkspaceRoot: "/srv/workspaces/" + identity,
 	})
 	if err != nil {

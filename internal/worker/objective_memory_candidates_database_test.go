@@ -14,7 +14,7 @@ import (
 func TestPostgresEmptyScopedMemoryNeedsNoConfiguredProvider(t *testing.T) {
 	ctx, repository, pool := openRepositoryTestDatabase(t)
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "empty-memory-no-embedding", Scope: model.ChannelScopeUser,
+		ID: "empty-memory-no-embedding", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "Empty memory", WorkspaceRoot: t.TempDir(),
 	})
 	if err != nil {
@@ -58,7 +58,7 @@ func TestPostgresEmptyScopedMemoryNeedsNoConfiguredProvider(t *testing.T) {
 func TestPostgresScopedMemoryNeedFailsAfterPersistenceWithoutEmbeddingProvider(t *testing.T) {
 	ctx, repository, _ := openRepositoryTestDatabase(t)
 	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "memory-need-no-embedding", Scope: model.ChannelScopeUser,
+		ID: "memory-need-no-embedding", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
 		Name: "Persisted memory need", WorkspaceRoot: t.TempDir(),
 	})
 	if err != nil {

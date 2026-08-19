@@ -20,13 +20,14 @@ func (c *Client) CreateChannel(ctx context.Context, requested model.Channel) (mo
 		return model.Channel{}, err
 	}
 	payload := struct {
-		ID            model.ChannelID `json:"id"`
-		Name          string          `json:"name"`
-		Tags          []string        `json:"tags"`
-		WorkspaceRoot string          `json:"workspace_root"`
+		ID            model.ChannelID   `json:"id"`
+		Name          string            `json:"name"`
+		Tags          []string          `json:"tags"`
+		WorkspaceRoot string            `json:"workspace_root"`
+		Mode          model.ChannelMode `json:"mode"`
 	}{
 		ID: requested.ID, Name: requested.Name, Tags: append([]string(nil), requested.Tags...),
-		WorkspaceRoot: requested.WorkspaceRoot,
+		WorkspaceRoot: requested.WorkspaceRoot, Mode: requested.Mode,
 	}
 	var response struct {
 		Channel model.Channel `json:"channel"`
@@ -38,7 +39,8 @@ func (c *Client) CreateChannel(ctx context.Context, requested model.Channel) (mo
 		return model.Channel{}, err
 	}
 	if response.Channel.Name != requested.Name || !slices.Equal(response.Channel.Tags, requested.Tags) ||
-		response.Channel.WorkspaceRoot != requested.WorkspaceRoot {
+		response.Channel.WorkspaceRoot != requested.WorkspaceRoot ||
+		response.Channel.Mode != requested.Mode || response.Channel.RoleplayViewpointCharacterID != "" {
 		return model.Channel{}, fmt.Errorf("created channel does not match the exact requested contract")
 	}
 	return response.Channel, nil

@@ -39,7 +39,7 @@ func TestConversationObjectiveKindStationHasOneExactSemanticResponsibility(t *te
 		}
 	}
 	assertExactObjectSchemaFields(t, schema, []string{"schema", "kind"})
-	assertExactJSONFields(t, reflect.TypeOf(input), []string{"exact_instruction", "objective_context"})
+	assertExactJSONFields(t, reflect.TypeOf(input), []string{"exact_instruction", "objective_context", "database_evidence_available"})
 	assertExactJSONFields(t, reflect.TypeOf(ConversationObjectiveKindDecision{}), []string{"schema", "kind"})
 
 	encoded, err := json.Marshal(job.Payload)
@@ -98,6 +98,14 @@ func TestConversationObjectiveKindAcceptsOnlyRegisteredKinds(t *testing.T) {
 		if err := decision.ValidateFor(input); err != nil {
 			t.Fatalf("registered kind %q rejected: %v", kind, err)
 		}
+	}
+	database := ConversationObjectiveKindDecision{Schema: ConversationObjectiveKindSchemaV1, Kind: ObjectiveKindDatabaseRead}
+	if err := database.ValidateFor(input); err == nil {
+		t.Fatal("database objective accepted without an explicit source binding")
+	}
+	input.DatabaseEvidenceAvailable = true
+	if err := database.ValidateFor(input); err != nil {
+		t.Fatalf("database objective rejected with source binding: %v", err)
 	}
 	for _, decision := range []ConversationObjectiveKindDecision{
 		{Schema: "wrong", Kind: ObjectiveKindStory},

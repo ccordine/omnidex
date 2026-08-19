@@ -6,27 +6,25 @@ export interface ChatComponentPage {
   html: { bundle: string };
 }
 
-export interface ChatChannelOptionsPage extends ChatComponentPage {
-  default_channel_id?: string;
-}
-
 export interface ChatMemoryPage {
   memory?: { next_offset?: number; has_more: boolean };
   candidates?: { next_offset?: number; has_more: boolean };
   html: { bundle: string };
 }
 
-export async function fetchChannelOptionsPage(offset = 0, limit = 20): Promise<ChatChannelOptionsPage> {
-  const payload = await fetchComponentPage(
+export async function fetchChannelOptionsPage(offset = 0, limit = 20): Promise<ChatComponentPage> {
+  return fetchComponentPage(
     `/v1/ui/chat/channels?limit=${boundedPageInteger(limit, "channel page limit", 1, 50)}` +
       `&offset=${boundedPageInteger(offset, "channel page offset", 0, Number.MAX_SAFE_INTEGER)}`,
     "Channel options",
   );
-  const defaultID = payload.default_channel_id;
-  if (defaultID !== undefined && (typeof defaultID !== "string" || !/^[a-z0-9][a-z0-9_.:-]{0,95}$/.test(defaultID))) {
-    throw new Error("Channel options returned an invalid default channel id.");
-  }
-  return { ...payload, default_channel_id: defaultID as string | undefined };
+}
+
+export async function fetchChatDataSourceOptionsPage(offset = 0, limit = 20): Promise<ChatComponentPage> {
+  return fetchComponentPage(
+    `/v1/ui/chat/data-sources?${componentPageQuery(offset, limit)}`,
+    "Chat data-source options",
+  );
 }
 
 export async function fetchChatJobsPage(status: string, offset = 0, limit = 20): Promise<ChatComponentPage> {

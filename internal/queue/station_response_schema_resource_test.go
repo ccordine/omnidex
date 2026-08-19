@@ -27,7 +27,7 @@ func TestStructuredStationSchemasCrossRetiredThirtyTwoKiBRuler(t *testing.T) {
 		{
 			name:    "acceptance grounding",
 			job:     largeAcceptanceGroundingJob(t, 12),
-			station: station.CodingWorkload,
+			station: station.CodingWorkloadReview,
 		},
 		{
 			name:    "repository change surface",
@@ -83,7 +83,7 @@ func TestStructuredStationStillRejectsGrossProjectionEnvelope(t *testing.T) {
 		t.Fatalf("gross schema fixture=%dB want >%d", len(rawSchema), maxStationRequestResourceBytes)
 	}
 	_, err = validateStationGapOpening(StationGapOpenRecord{
-		Authority: stationResponseSchemaAuthority(), Job: job, Station: station.CodingWorkload,
+		Authority: stationResponseSchemaAuthority(), Job: job, Station: station.CodingWorkloadReview,
 		ContextTokens: 262144, MaxOutputTokens: 262144,
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
@@ -171,8 +171,8 @@ func largeRepositoryChangeSurfaceJob(t *testing.T) assemblyline.PortableJob {
 		t.Fatal(err)
 	}
 	job, err := assemblyline.NewRepositoryChangeSurfaceJob(assemblyline.RepositoryChangeSurfaceInput{
-		ResearchNeed:      "Update the selected behavior.",
-		RequirementQuotes: []string{"selected behavior"}, Evidence: pack,
+		ResearchNeed: "Update the selected behavior.",
+		Requirements: []string{"selected behavior"}, Evidence: pack,
 	})
 	if err != nil {
 		t.Fatal(err)

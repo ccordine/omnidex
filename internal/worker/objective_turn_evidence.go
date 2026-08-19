@@ -12,6 +12,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/roleplay"
 )
 
 func objectiveModelEvidence(
@@ -85,8 +86,12 @@ func validateObjectiveEvidence(item objectiveEvidence) error {
 		if item.ObservedAt.IsZero() || item.ObservedAt.Location() != time.UTC {
 			return fmt.Errorf("objective web evidence %q requires exact UTC observation authority", item.Capsule.ID)
 		}
+	} else if item.SourceType == "postgres_query" {
+		if item.ObservedAt.IsZero() || item.ObservedAt.Location() != time.UTC || item.Truncated {
+			return fmt.Errorf("objective database evidence %q requires exact UTC acquisition authority without truncation", item.Capsule.ID)
+		}
 	} else if !item.ObservedAt.IsZero() || item.Truncated {
-		return fmt.Errorf("objective evidence %q carries web-only freshness authority", item.Capsule.ID)
+		return fmt.Errorf("objective evidence %q carries unsupported freshness authority", item.Capsule.ID)
 	}
 	return nil
 }
@@ -144,6 +149,17 @@ func objectiveCitationRecord(
 	if citation.SourceType == "web_document" {
 		metadata["source_observed_at"] = citation.ObservedAt.Format(time.RFC3339Nano)
 		metadata["source_truncated"] = citation.Truncated
+		if result.RoleplayResearch != nil {
+			research := result.RoleplayResearch
+			metadata["authority_namespace"] = string(roleplay.AuthorityRealWorld)
+			metadata["roleplay_research_preparation_id"] = research.PreparationID
+			metadata["roleplay_research_world_id"] = research.WorldID
+			metadata["roleplay_research_character_id"] = research.CharacterID
+			metadata["roleplay_research_question_sha256"] = research.QuestionSHA256
+			metadata["roleplay_research_capability_grant_id"] = research.CapabilityGrantID
+		}
+	} else if citation.SourceType == "postgres_query" {
+		metadata["source_acquired_at"] = citation.ObservedAt.Format(time.RFC3339Nano)
 	}
 	return evidence.Record{
 		Kind: evidence.KindObjectiveCitation, SourceType: citation.SourceType,
@@ -198,8 +214,22 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 	if err != nil || len(decoded) != sha256.Size || result.InstructionSHA256 != strings.ToLower(result.InstructionSHA256) {
 		return fmt.Errorf("objective result requires an exact instruction SHA-256")
 	}
+	if result.RoleplayResearch != nil {
+		if err := result.RoleplayResearch.Validate(); err != nil {
+			return fmt.Errorf("objective roleplay research authority: %w", err)
+		}
+		exactInstruction := "/research " + strconv.Quote(result.RoleplayResearch.Question)
+		digest := sha256.Sum256([]byte(exactInstruction))
+		if result.Kind != assemblyline.ObjectiveKindExternalAnswer ||
+			result.InstructionSHA256 != hex.EncodeToString(digest[:]) ||
+			result.ModelCalls != 1 || len(result.RoleplayFacts) != 0 ||
+			len(result.RoleplayKnowledgeCharacterIDs) != 0 {
+			return fmt.Errorf("roleplay research result differs from its exact external-answer authority")
+		}
+	}
 	switch result.Kind {
-	case assemblyline.ObjectiveKindRepositoryRead, assemblyline.ObjectiveKindExternalAnswer:
+	case assemblyline.ObjectiveKindRepositoryRead, assemblyline.ObjectiveKindExternalAnswer,
+		assemblyline.ObjectiveKindDatabaseRead:
 		if len(result.Citations) == 0 {
 			return fmt.Errorf("grounded objective result requires cited evidence")
 		}
@@ -219,6 +249,9 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 		for _, citation := range result.Citations {
 			if citation.ParagraphMask == 0 {
 				return fmt.Errorf("external citation %q lost paragraph authority", citation.Capsule.ID)
+			}
+			if result.RoleplayResearch != nil && citation.SourceType != "web_document" {
+				return fmt.Errorf("roleplay research citation %q is not real-world web evidence", citation.Capsule.ID)
 			}
 		}
 	} else if result.CitationsRendered {

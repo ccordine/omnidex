@@ -36,9 +36,6 @@ export type DataSource = {
   id: string;
   name: string;
   driver: string;
-  domain: string;
-  context_prompt: string;
-  privacy_mode: string;
   host: string;
   port: number;
   database_name: string;
@@ -57,10 +54,7 @@ export type DataSource = {
 
 export type DataSourceUpsertPayload = {
   name: string;
-  driver?: string;
-  domain?: string;
-  context_prompt?: string;
-  privacy_mode?: string;
+  driver: string;
   host?: string;
   port?: number;
   database_name?: string;
@@ -69,16 +63,15 @@ export type DataSourceUpsertPayload = {
   ssl_mode?: string;
   use_dsn?: boolean;
   dsn?: string;
-  read_only?: boolean;
 };
 
 export async function createDataSource(input: DataSourceUpsertPayload): Promise<DataSource> {
-  const payload = await readJSON<{ source: DataSource }>(await fetch("/v1/admin/data-sources", jsonRequest({ ...input, driver: input.driver || "postgres", read_only: true })));
+  const payload = await readJSON<{ source: DataSource }>(await fetch("/v1/admin/data-sources", jsonRequest(input)));
   return payload.source;
 }
 
 export async function updateDataSource(id: string, input: DataSourceUpsertPayload): Promise<DataSource> {
-  const payload = await readJSON<{ source: DataSource }>(await fetch(`/v1/admin/data-sources/${encodeURIComponent(id)}`, jsonPut({ ...input, driver: input.driver || "postgres", read_only: true })));
+  const payload = await readJSON<{ source: DataSource }>(await fetch(`/v1/admin/data-sources/${encodeURIComponent(id)}`, jsonPut(input)));
   return payload.source;
 }
 

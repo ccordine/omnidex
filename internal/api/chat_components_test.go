@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -10,27 +11,186 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func TestChatChannelOptionsAreEscapedPaginatedServerComponents(t *testing.T) {
+func TestChatChannelOptionsAreEscapedServerComponentsWithoutVisiblePagination(t *testing.T) {
 	t.Parallel()
 	next := 20
 	page, err := renderChatChannelOptionsPage([]model.Channel{{
 		ID: "chat-42", Scope: model.ChannelScopeUser, Name: `<script>unsafe</script>`,
 		Tags: []string{"user-channel"}, ProjectID: 42, WorkspaceRoot: "/workspace/project",
+		Mode:      model.ChannelModeAssistant,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}}, &next, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		`data-recyclr-target="channel-options"`, `<option value="chat-42">`,
-		`&lt;script&gt;unsafe&lt;/script&gt;`, `data-action="chat#loadMoreChannels"`, `data-next-offset="20"`,
+		`data-recyclr-target="channel-options"`,
+		`<option value="" disabled selected>Choose a conversation</option>`,
+		`<option value="__omnidex_new_conversation__">+ New conversation…</option>`,
+		`<option value="chat-42" data-channel-mode="assistant">`,
+		`&lt;script&gt;unsafe&lt;/script&gt;`, `&lt;/script&gt; · assistant`,
 	} {
 		if !strings.Contains(page.HTML.Bundle, expected) {
 			t.Errorf("channel component lacks %q: %s", expected, page.HTML.Bundle)
 		}
 	}
-	if page.DefaultChannelID == nil || *page.DefaultChannelID != "chat-42" || !page.HasMore {
+	if !page.HasMore {
 		t.Fatalf("channel page=%+v", page)
+	}
+	if err := (model.ChannelID(chatNewConversationOptionValue)).Validate(); err == nil {
+		t.Fatalf("new-conversation option value %q can collide with a canonical channel id", chatNewConversationOptionValue)
+	}
+	for _, forbidden := range []string{"loadMoreChannels", "channel-options-pagination", `data-next-offset=`} {
+		if strings.Contains(page.HTML.Bundle, forbidden) {
+			t.Errorf("channel component exposes obsolete pagination control %q: %s", forbidden, page.HTML.Bundle)
+		}
+	}
+}
+
+func TestChatChannelOptionsKeepCreationActionForEmptyListAndOffAppendedPages(t *testing.T) {
+	t.Parallel()
+	empty, err := renderChatChannelOptionsPage(nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`<option value="" disabled selected>Choose a conversation</option>`,
+		`<option value="__omnidex_new_conversation__">+ New conversation…</option>`,
+	} {
+		if !strings.Contains(empty.HTML.Bundle, expected) {
+			t.Errorf("empty channel component lacks %q: %s", expected, empty.HTML.Bundle)
+		}
+	}
+	if strings.Count(empty.HTML.Bundle, chatNewConversationOptionValue) != 1 {
+		t.Fatalf("empty channel component must render one creation action: %s", empty.HTML.Bundle)
+	}
+
+	appended, err := renderChatChannelOptionsPage([]model.Channel{{
+		ID: "chat-43", Scope: model.ChannelScopeUser, Name: "Next chat",
+		Tags: []string{"user-channel"}, ProjectID: 42, WorkspaceRoot: "/workspace/project",
+		Mode: model.ChannelModeAssistant, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}}, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{chatNewConversationOptionValue, `value=""`, "Choose a conversation"} {
+		if strings.Contains(appended.HTML.Bundle, forbidden) {
+			t.Errorf("appended channel component duplicated reset-only control %q: %s", forbidden, appended.HTML.Bundle)
+		}
+	}
+	if !strings.Contains(appended.HTML.Bundle, `data-recyclr-location="beforeend"`) {
+		t.Fatalf("appended channel component does not append: %s", appended.HTML.Bundle)
+	}
+}
+
+func TestChatChannelOptionCarriesImmutableServerDataSourceBinding(t *testing.T) {
+	t.Parallel()
+	page, err := renderChatChannelOptionsPage([]model.Channel{{
+		ID: "chat-42", Scope: model.ChannelScopeUser, Name: "Evidence chat",
+		Tags: []string{"user-channel"}, ProjectID: 42, WorkspaceRoot: "/workspace/project",
+		DataSourceID: "ds.primary-1", Mode: model.ChannelModeAssistant,
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`data-channel-mode="assistant"`, `data-data-source-id="ds.primary-1"`,
+		`Evidence chat · assistant · data connected`,
+	} {
+		if !strings.Contains(page.HTML.Bundle, expected) {
+			t.Errorf("bound channel option lacks %q: %s", expected, page.HTML.Bundle)
+		}
+	}
+}
+
+func TestChatChannelOptionCarriesPersistedRoleplayModeAndOpaqueViewpoint(t *testing.T) {
+	t.Parallel()
+	page, err := renderChatChannelOptionsPage([]model.Channel{{
+		ID: "story-42", Scope: model.ChannelScopeUser, Name: "Harbor story",
+		Tags: []string{"user-channel"}, ProjectID: 42, WorkspaceRoot: "/workspace/project",
+		Mode:                         model.ChannelModeRoleplay,
+		RoleplayViewpointCharacterID: "rpc_0123456789abcdef0123456789abcdef",
+		CreatedAt:                    time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`data-channel-mode="roleplay"`,
+		`data-roleplay-viewpoint-character-id="rpc_0123456789abcdef0123456789abcdef"`,
+		`Harbor story · roleplay viewpoint rpc_0123456789abcdef0123456789abcdef`,
+	} {
+		if !strings.Contains(page.HTML.Bundle, expected) {
+			t.Errorf("roleplay channel option lacks %q: %s", expected, page.HTML.Bundle)
+		}
+	}
+	if strings.Contains(page.HTML.Bundle, "roleplay_world_name") || strings.Contains(page.HTML.Bundle, "Alice") {
+		t.Fatalf("roleplay channel option exposed creation-only names: %s", page.HTML.Bundle)
+	}
+}
+
+func TestChatDataSourceOptionsExposeOnlyEscapedOpaqueIdentity(t *testing.T) {
+	t.Parallel()
+	next := 20
+	page, err := renderChatDataSourceOptionsPage([]queue.DataSourceRecord{{
+		ID: "ds.primary-1", Name: `<script>Customer DB</script>`, Driver: "postgres",
+		Host: "private.internal", Port: 5432, DatabaseName: "secret_db", Username: "admin",
+		Password: "password-secret", DSN: "postgres://secret-dsn", ReadOnly: true,
+	}}, &next, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`data-recyclr-target="new-channel-data-source-options"`,
+		`<option value="" selected>No data</option>`,
+		`<option value="ds.primary-1">&lt;script&gt;Customer DB&lt;/script&gt;</option>`,
+	} {
+		if !strings.Contains(page.HTML.Bundle, expected) {
+			t.Errorf("data-source component lacks %q: %s", expected, page.HTML.Bundle)
+		}
+	}
+	for _, forbidden := range []string{
+		"private.internal", "secret_db", "admin", "password-secret", "postgres://secret-dsn", "postgres", "5432",
+	} {
+		if strings.Contains(page.HTML.Bundle, forbidden) {
+			t.Errorf("data-source component leaked %q: %s", forbidden, page.HTML.Bundle)
+		}
+	}
+	if !page.HasMore || page.NextOffset == nil || *page.NextOffset != 20 {
+		t.Fatalf("data-source page=%+v", page)
+	}
+	for _, forbidden := range []string{"loadMoreChatDataSources", "new-channel-data-source-pagination", `data-next-offset=`} {
+		if strings.Contains(page.HTML.Bundle, forbidden) {
+			t.Errorf("data-source component exposes obsolete pagination control %q: %s", forbidden, page.HTML.Bundle)
+		}
+	}
+}
+
+func TestChatDataSourceOptionsRejectMalformedStoredIdentity(t *testing.T) {
+	t.Parallel()
+	if _, err := renderChatDataSourceOptionsPage([]queue.DataSourceRecord{{
+		ID: "NOT CANONICAL", Name: "Customer DB",
+	}}, nil, false); err == nil {
+		t.Fatal("malformed stored data-source identity was rendered")
+	}
+}
+
+func TestChatDataSourceComponentRejectsInexactTransportBeforeRepositoryAccess(t *testing.T) {
+	t.Parallel()
+	server := &Server{}
+	for _, test := range []struct {
+		request *http.Request
+		status  int
+	}{
+		{httptest.NewRequest(http.MethodPost, "/v1/ui/chat/data-sources?limit=20&offset=0", nil), http.StatusMethodNotAllowed},
+		{httptest.NewRequest(http.MethodGet, "/v1/ui/chat/data-sources?limit=20&offset=0&unknown=1", nil), http.StatusBadRequest},
+	} {
+		response := httptest.NewRecorder()
+		server.handleChatDataSourceOptions(response, test.request)
+		if response.Code != test.status {
+			t.Errorf("method=%s status=%d want=%d body=%s", test.request.Method, response.Code, test.status, response.Body.String())
+		}
 	}
 }
 

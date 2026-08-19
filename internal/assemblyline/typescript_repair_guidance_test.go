@@ -35,12 +35,18 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"repair analyst", "separate source executor", "EXACT_VALIDATION_FAILURE:",
+		"one self-contained imperative source-transformation instruction", "Resolve only the observed failure",
+		"EXACT_VALIDATION_FAILURE:",
 		"Cannot find name 'value'", "BINDINGS_AVAILABLE_AT_FAILURE_JSON:",
 		"NESTED_BINDINGS_UNAVAILABLE_AT_FAILURE_JSON:", "interface Actions",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("analysis prompt omitted %q:\n%s", required, prompt)
+		}
+	}
+	for _, forbidden := range []string{"repair analyst", "separate source executor"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("analysis prompt retained agent-role language %q:\n%s", forbidden, prompt)
 		}
 	}
 	if schema == nil || schema["additionalProperties"] != false {
@@ -67,7 +73,7 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 	if executionSchema != nil {
 		t.Fatalf("repair execution unexpectedly has a structured schema: %#v", executionSchema)
 	}
-	for _, required := range []string{"EXACT_MUTABLE_SOURCE_JSON:", "REPAIR_INSTRUCTION:", instruction} {
+	for _, required := range []string{"EXACT_MUTABLE_SOURCE_JSON:", "REQUIRED_SOURCE_TRANSFORMATION:", instruction} {
 		if !strings.Contains(executionPrompt, required) {
 			t.Fatalf("execution prompt omitted %q:\n%s", required, executionPrompt)
 		}

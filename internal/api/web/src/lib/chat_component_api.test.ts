@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchChannelOptionsPage,
+  fetchChatDataSourceOptionsPage,
   fetchChatMemoryPage,
   fetchChatTimelinePage,
   requireServerComponentBundle,
@@ -21,7 +22,6 @@ describe("chat server component API", () => {
 
   it("accepts an exact paginated server bundle", async () => {
     const fetchMock = vi.fn(async () => response({
-      default_channel_id: "chat-42",
       has_more: true,
       next_offset: 20,
       html: { bundle: "server-channel-options" },
@@ -29,12 +29,27 @@ describe("chat server component API", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchChannelOptionsPage()).resolves.toEqual({
-      default_channel_id: "chat-42",
       has_more: true,
       next_offset: 20,
       html: { bundle: "server-channel-options" },
     });
     expect(fetchMock).toHaveBeenCalledWith("/v1/ui/chat/channels?limit=20&offset=0");
+  });
+
+  it("loads paginated data connections from the dedicated server component", async () => {
+    const fetchMock = vi.fn(async () => response({
+      has_more: true,
+      next_offset: 40,
+      html: { bundle: "server-data-source-options" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchChatDataSourceOptionsPage(20)).resolves.toEqual({
+      has_more: true,
+      next_offset: 40,
+      html: { bundle: "server-data-source-options" },
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/v1/ui/chat/data-sources?limit=20&offset=20");
   });
 
   it("rejects contradictory pagination and missing component markup", async () => {

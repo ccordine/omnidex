@@ -47,11 +47,25 @@ func (r *Repository) completeStep(
 	if err != nil {
 		return err
 	}
+	if err := requireRoleplayFactsJobAuthority(job, command); err != nil {
+		return err
+	}
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, jobID); err != nil {
 		return err
 	} else if found {
 		if err := requireCompleteStepReplayTx(ctx, tx, existing, command); err != nil {
 			return err
+		}
+		researchHandled, err := requireRoleplayResearchCompletionReplayTx(
+			ctx, tx, job, existing, command,
+		)
+		if err != nil {
+			return err
+		}
+		if !researchHandled {
+			if err := requireRoleplayCompletionReplayTx(ctx, tx, job, existing, command); err != nil {
+				return err
+			}
 		}
 		if objectiveEvidencePayloads != nil {
 			return requireObjectiveCompletionEvidenceReplayTx(
@@ -121,7 +135,7 @@ func (r *Repository) completeStep(
 	}
 
 	if openSteps == 0 {
-		if err := materializeChannelCompletionTx(ctx, tx, job, command.Output); err != nil {
+		if err := materializeChannelCompletionTx(ctx, tx, job, command); err != nil {
 			return err
 		}
 		if err := transitionInitialTaskRootTx(
@@ -153,6 +167,9 @@ func (r *Repository) completeStep(
 			return err
 		}
 	} else {
+		if hasRoleplayCompletionPayload(command) {
+			return fmt.Errorf("roleplay facts require the terminal current-generation step")
+		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE jobs
 			SET updated_at = NOW()

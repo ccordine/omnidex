@@ -59,10 +59,17 @@ func runDirectCodingTypeScriptRepairGuidanceWithRejection(
 	if repairRegion != nil {
 		portableCurrent = ""
 	}
+	permittedSymbols := append([]string(nil), block.Globals...)
+	if directCodingTypeScriptRepairRegionHasExactIncompatibility(repairRegion) {
+		// The compiler-owned expression evidence and referenced-binding slice
+		// completely describe this one mismatch. Block-wide globals would add
+		// unrelated choices to the semantic function.
+		permittedSymbols = nil
+	}
 	job, err := assemblyline.NewTypeScriptRepairGuidanceJob(
 		assemblyline.TypeScriptRepairGuidanceInput{
 			Language: "typescript", Signature: strings.TrimSpace(block.Signature),
-			Capabilities: capabilities, PermittedSymbols: append([]string(nil), block.Globals...),
+			Capabilities: capabilities, PermittedSymbols: permittedSymbols,
 			CurrentDeclaration: portableCurrent, RepairRegion: repairRegion,
 			Diagnostic:     strings.TrimSpace(diagnostic),
 			PriorRejection: priorRejection,

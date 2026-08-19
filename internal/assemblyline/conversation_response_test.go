@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/roleplay"
 )
 
 func TestConversationResponseIsOneBoundedLeaf(t *testing.T) {
@@ -21,12 +23,49 @@ func TestConversationResponseIsOneBoundedLeaf(t *testing.T) {
 		t.Fatalf("job=%#v prompt=%q", job, prompt)
 	}
 	assertExactObjectSchemaFields(t, schema, []string{"schema", "text"})
-	assertExactJSONFields(t, reflect.TypeOf(input), []string{"kind", "exact_instruction", "objective_context"})
+	assertExactJSONFields(t, reflect.TypeOf(input), []string{"kind", "exact_instruction", "objective_context", "roleplay_context"})
 	assertExactJSONFields(t, reflect.TypeOf(ConversationResponseDecision{}), []string{"schema", "text"})
 	for _, forbidden := range []string{"tool", "action", "plan", "memory_write", "completion", "capabilit"} {
 		if strings.Contains(strings.ToLower(string(job.Payload)), `"`+forbidden) {
 			t.Fatalf("payload exposes forbidden field %q: %s", forbidden, job.Payload)
 		}
+	}
+	for _, forbidden := range []string{"call tools", "manage memory", "choose capabilities", "verify completion"} {
+		if strings.Contains(strings.ToLower(prompt), forbidden) {
+			t.Fatalf("conversation response prompt describes unavailable framework capability %q", forbidden)
+		}
+	}
+}
+
+func TestConversationResponseCarriesCharacterKnowledgeOnlyForStory(t *testing.T) {
+	projection := &roleplay.NarrativeSimulationProjection{
+		Schema: roleplay.NarrativeSimulationProjectionSchemaV1,
+		Scene: roleplay.NarrativeScene{
+			Title: "Harbor", Description: "Rain falls over the western quay.", ActiveCharacterName: "Bob",
+		},
+		Participants: []string{"Bob"},
+		Viewpoint: roleplay.NarrativePersona{
+			Name: "Bob", Summary: "The harbor watchman.", Voice: "Quiet.",
+			Traits: []string{}, Goals: []string{},
+		},
+		Meters: []roleplay.NarrativeMeter{}, Inventory: []roleplay.NarrativeInventoryItem{},
+		VisibleFacts: []string{"Rain began over the harbor."},
+		Memories:     []string{}, RecentEvents: []string{},
+	}
+	input := ConversationResponseInput{
+		Kind: ObjectiveKindStory, ExactInstruction: "Continue.", RoleplayContext: projection,
+	}
+	prompt, err := BuildConversationResponsePrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt, `"schema":"omnidex.roleplay-simulation-narrative.v1"`) ||
+		!strings.Contains(prompt, "Rain began over the harbor.") {
+		t.Fatalf("prompt=%s", prompt)
+	}
+	input.Kind = ObjectiveKindAnswer
+	if _, err := NewConversationResponseJob(input); err == nil {
+		t.Fatal("answer station accepted fictional character authority")
 	}
 }
 
