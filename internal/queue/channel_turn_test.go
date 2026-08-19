@@ -14,7 +14,7 @@ import (
 func TestChannelTurnMetadataBindsOneExactChannelMessage(t *testing.T) {
 	raw, err := marshalChannelTurnMetadata(
 		"channel-one", 41, 7, "/srv/workspaces/one",
-		"source-one", model.ChannelModeAssistant,
+		"source-one", "", model.ChannelModeAssistant,
 		modelconfig.Config{"conversation_response_model": "qwen-exact"}, nil,
 	)
 	if err != nil {
@@ -42,7 +42,7 @@ func TestChannelTurnMetadataRejectsMissingAuthority(t *testing.T) {
 	}{{"", 1, 7, "/srv/work"}, {"channel-one", 0, 7, "/srv/work"},
 		{"channel-one", 1, 0, "/srv/work"}, {"channel-one", 1, 7, "relative"}} {
 		if _, err := marshalChannelTurnMetadata(
-			fixture.channel, fixture.message, fixture.project, fixture.root, "",
+			fixture.channel, fixture.message, fixture.project, fixture.root, "", "",
 			model.ChannelModeAssistant, modelconfig.Config{}, nil,
 		); err == nil {
 			t.Fatal("invalid channel turn metadata was accepted")
@@ -53,7 +53,7 @@ func TestChannelTurnMetadataRejectsMissingAuthority(t *testing.T) {
 func TestChannelTurnMetadataRejectsMalformedOptionalDataSourceAuthority(t *testing.T) {
 	if _, err := marshalChannelTurnMetadata(
 		"channel-one", 41, 7, "/srv/workspaces/one", "Invalid Source",
-		model.ChannelModeAssistant, modelconfig.Config{}, nil,
+		"", model.ChannelModeAssistant, modelconfig.Config{}, nil,
 	); err == nil {
 		t.Fatal("malformed data-source snapshot was accepted")
 	}
@@ -63,7 +63,7 @@ func TestChannelTurnMetadataRequiresExactRoleplayViewpoint(t *testing.T) {
 	viewpoint := model.RoleplayCharacterID("rpc_0123456789abcdef0123456789abcdef")
 	simulation := testSimulationTurnAuthority("story-one", 41, viewpoint)
 	raw, err := marshalChannelTurnMetadata(
-		"story-one", 41, 7, "/srv/workspaces/one", "",
+		"story-one", 41, 7, "/srv/workspaces/one", "", "",
 		model.ChannelModeRoleplay, modelconfig.Config{}, &simulation,
 	)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestChannelTurnMetadataRequiresExactRoleplayViewpoint(t *testing.T) {
 		t.Fatalf("metadata=%+v", got)
 	}
 	if _, err := marshalChannelTurnMetadata(
-		"story-one", 41, 7, "/srv/workspaces/one", "",
+		"story-one", 41, 7, "/srv/workspaces/one", "", "",
 		model.ChannelModeRoleplay, modelconfig.Config{}, nil,
 	); err == nil {
 		t.Fatal("roleplay metadata accepted a missing viewpoint")

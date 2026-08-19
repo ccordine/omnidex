@@ -38,7 +38,7 @@ func TestRoleplayChannelTurnPreparationErrorsAreNotAccepted(t *testing.T) {
 			store.channels["authority"] = channel
 			calls := 0
 			server.enqueueChannelTurn = func(
-				context.Context, model.ChannelID, string,
+				context.Context, model.ChannelID, string, string,
 			) (model.ChannelMessage, model.Job, error) {
 				calls++
 				return model.ChannelMessage{}, model.Job{}, test.err

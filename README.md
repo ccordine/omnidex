@@ -207,8 +207,13 @@ The server owns the selected locale. `Accept-Language` seeds the first visit; `?
 - **Projects** — workspace, model, and codebase-map configuration.
 - **Scrum** — review queue, board, typed card channel, and explicit controlled execution surface.
 - **Data** — deterministic read-only data-source queries with recorded SQL and result evidence.
+- **Integration API** — authenticated typed chat, data-source registration, transcript, and job endpoints with SDKs for Go, JavaScript, PHP, Java, and Rust.
 - **Jobs** — live queue, station progress, failures, and final results.
 - **Memory** — scoped reference/preference storage; never hidden prompt authority.
+
+The integration packages and the delegated-data security boundary are documented in
+[sdk/README.md](sdk/README.md). The API remains disabled until an exact
+`OMNIDEX_INTEGRATION_API_TOKEN` of 32–4096 visible ASCII bytes is configured.
 
 ## Quick start
 

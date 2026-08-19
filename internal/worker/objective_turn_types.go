@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -32,6 +33,7 @@ type turnAuthority struct {
 	Instruction                     string
 	SHA256                          string
 	DataSourceID                    model.DataSourceID
+	DelegatedDataAuthorityID        string
 	ChannelID                       model.ChannelID
 	ChannelMode                     model.ChannelMode
 	RoleplayViewpointCharacterID    model.RoleplayCharacterID
@@ -236,6 +238,7 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	var metadata struct {
 		ChannelID                       model.ChannelID                  `json:"channel_id"`
 		DataSourceID                    model.DataSourceID               `json:"data_source_id"`
+		DelegatedDataAuthorityID        string                           `json:"delegated_data_authority_id"`
 		ChannelMode                     model.ChannelMode                `json:"channel_mode"`
 		RoleplayViewpointCharacterID    model.RoleplayCharacterID        `json:"roleplay_viewpoint_character_id"`
 		RoleplaySimulationPreparationID string                           `json:"roleplay_simulation_preparation_id"`
@@ -261,6 +264,14 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	if metadata.DataSourceID != "" {
 		if err := metadata.DataSourceID.Validate(); err != nil {
 			return turnAuthority{}, fmt.Errorf("conversation turn data-source authority: %w", err)
+		}
+	}
+	if metadata.DelegatedDataAuthorityID != "" {
+		if metadata.DataSourceID == "" {
+			return turnAuthority{}, fmt.Errorf("conversation turn delegated authority requires a data source")
+		}
+		if err := datasource.ValidateDelegatedAuthorityID(metadata.DelegatedDataAuthorityID); err != nil {
+			return turnAuthority{}, fmt.Errorf("conversation turn delegated data authority: %w", err)
 		}
 	}
 	switch metadata.ChannelMode {
@@ -307,6 +318,7 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	authority := turnAuthority{
 		JobID: job.ID, Pipeline: pipeline, Instruction: job.Instruction,
 		SHA256: hex.EncodeToString(digest[:]), DataSourceID: metadata.DataSourceID,
+		DelegatedDataAuthorityID:        metadata.DelegatedDataAuthorityID,
 		ChannelID:                       metadata.ChannelID,
 		ChannelMode:                     metadata.ChannelMode,
 		RoleplayViewpointCharacterID:    metadata.RoleplayViewpointCharacterID,
@@ -326,6 +338,7 @@ func objectiveTurnID(authority turnAuthority, kind assemblyline.ConversationObje
 	hash := sha256.New()
 	_, _ = fmt.Fprintf(hash, "%d\x00%s\x00%s\x00%s", authority.JobID, authority.Pipeline, authority.SHA256, kind)
 	_, _ = fmt.Fprintf(hash, "\x00data-source\x00%s", authority.DataSourceID)
+	_, _ = fmt.Fprintf(hash, "\x00delegated-data-authority\x00%s", authority.DelegatedDataAuthorityID)
 	_, _ = fmt.Fprintf(hash, "\x00channel\x00%s\x00channel-mode\x00%s\x00viewpoint\x00%s",
 		authority.ChannelID, authority.ChannelMode, authority.RoleplayViewpointCharacterID)
 	if authority.RoleplayContext != nil {

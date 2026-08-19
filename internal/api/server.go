@@ -48,6 +48,7 @@ type Server struct {
 	ollamaURLMu               sync.RWMutex
 	hostAgentURL              string
 	hostAgentToken            string
+	integrationAPIToken       string
 	realtimeHub               *RealtimeHub
 	jobOutputOnce             sync.Once
 	jobOutputCoalescer        *jobOutputCoalescer
@@ -69,6 +70,7 @@ type ServerOptions struct {
 	ListenAddr           string
 	HostAgentURL         string
 	HostAgentToken       string
+	IntegrationAPIToken  string
 	RealtimeMaxClients   int
 	RealtimeStreamMaxAge time.Duration
 	RealtimeHeartbeat    time.Duration
@@ -138,7 +140,7 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 	var enqueueChannelTurn enqueueChannelTurnFunc
 	if repo != nil {
 		channels = repo
-		enqueueChannelTurn = repo.EnqueueChannelTurn
+		enqueueChannelTurn = repo.EnqueueChannelTurnWithDataAuthority
 	}
 	ollamaModels := providerConfig.ProviderModels["ollama"]
 	ollamaEmbeddingModel := strings.TrimSpace(ollamaModels.Embedding)
@@ -173,6 +175,7 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 		uiMemorySessions:     make(map[string]uiMemorySessionRecord),
 		hostAgentURL:         strings.TrimSpace(options.HostAgentURL),
 		hostAgentToken:       strings.TrimSpace(options.HostAgentToken),
+		integrationAPIToken:  options.IntegrationAPIToken,
 	}
 	if redis, err := newUIRedisClient(s.redisURL); err == nil {
 		s.uiRedis = redis
@@ -267,6 +270,8 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/metrics/operations", s.handleMetricsOperations)
 		s.mux.HandleFunc("/v1/metrics/scrum", s.handleMetricsScrum)
 		s.mux.HandleFunc("/v1/metrics/glance", s.handleMetricsGlance)
+		s.mux.HandleFunc("/v1/integrations/data-sources", s.requireIntegrationAuthentication(s.handleIntegrationDataSources))
+		s.mux.HandleFunc("/v1/integrations/jobs/", s.requireIntegrationAuthentication(s.handleIntegrationJobByID))
 		s.mux.HandleFunc("/v1/ui/chat/jobs", s.handleChatJobsComponent)
 		s.mux.HandleFunc("/v1/ui/chat/jobs/", s.handleChatJobStateComponent)
 		s.mux.HandleFunc("/v1/ui/chat/data-sources", s.handleChatDataSourceOptions)
@@ -278,6 +283,8 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/channels", s.handleChannels)
 		s.mux.HandleFunc("/v1/channels/", s.handleChannelByID)
 		s.mux.HandleFunc("/v1/ui/chat/channels", s.handleChatChannelOptions)
+		s.mux.HandleFunc("/v1/integrations/channels", s.requireIntegrationAuthentication(s.handleIntegrationChannels))
+		s.mux.HandleFunc("/v1/integrations/channels/", s.requireIntegrationAuthentication(s.handleIntegrationChannelByID))
 	}
 	s.registerUIRoutes()
 }

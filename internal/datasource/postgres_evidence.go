@@ -103,6 +103,10 @@ func validateCompiledQuery(snapshot SchemaSnapshot, query CompiledQuery) error {
 }
 
 func validateExecutionLimits(query CompiledQuery, limits ExecutionLimits) error {
+	return validateExecutionBounds(query.Limit, limits)
+}
+
+func validateExecutionBounds(limit int, limits ExecutionLimits) error {
 	if math.IsNaN(limits.MaxTotalCost) || math.IsInf(limits.MaxTotalCost, 0) || limits.MaxTotalCost <= 0 || limits.MaxTotalCost > MaxEvidencePlanCost || limits.MaxPlanRows <= 0 || limits.MaxPlanRows > MaxEvidencePlanRows || limits.MaxRows <= 0 || limits.MaxRows > MaxIntentRows || limits.MaxBytes <= 0 || limits.MaxBytes > MaxEvidenceResultBytes {
 		return fmt.Errorf("execution cost, plan-row, result-row, or byte limit is outside its hard bound")
 	}
@@ -112,8 +116,8 @@ func validateExecutionLimits(query CompiledQuery, limits ExecutionLimits) error 
 	if limits.LockTimeout < time.Millisecond || limits.LockTimeout > 10*time.Second {
 		return fmt.Errorf("lock timeout must be within 1ms..10s")
 	}
-	if query.Limit > limits.MaxRows {
-		return fmt.Errorf("compiled query limit %d exceeds execution row limit %d", query.Limit, limits.MaxRows)
+	if limit <= 0 || limit > limits.MaxRows {
+		return fmt.Errorf("query limit %d exceeds execution row limit %d", limit, limits.MaxRows)
 	}
 	return nil
 }

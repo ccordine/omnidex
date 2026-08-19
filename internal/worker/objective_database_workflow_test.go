@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -123,13 +124,13 @@ func TestDatabaseBoundObjectiveRunsTypedEvidenceLoopAndGroundsAnswer(t *testing.
 		requirementID string,
 	) (objectiveEvidenceAcquisition, error) {
 		return runObjectiveDatabaseEvidenceWorkflow(ctx, authority, requirementID, snapshot, stations,
-			func(_ context.Context, exact datasource.SchemaSnapshot, compiled datasource.CompiledQuery) (datasource.EvidenceResult, error) {
+			func(_ context.Context, exact datasource.SchemaSnapshot, plan datasource.RelationalQueryPlan) (datasource.EvidenceResult, error) {
 				executions++
-				if exact.Fingerprint != snapshot.Fingerprint || compiled.SourceID != snapshot.SourceID ||
-					compiled.SchemaFingerprint != snapshot.Fingerprint || !strings.Contains(compiled.SQL, `COUNT(*)`) {
-					t.Fatalf("compiled authority=%+v", compiled)
+				if exact.Fingerprint != snapshot.Fingerprint || plan.SourceID != snapshot.SourceID ||
+					plan.SchemaFingerprint != snapshot.Fingerprint || plan.Intent.Projections[0].Aggregate != datasource.AggregateCountRows {
+					t.Fatalf("relational plan authority=%+v", plan)
 				}
-				return objectiveDatabaseCountEvidence(compiled, executions), nil
+				return objectiveDatabaseCountEvidence(plan, executions), nil
 			})
 	}
 	kind := &databaseTestKindStation{}
@@ -169,9 +170,9 @@ func TestDatabaseEvidenceLoopAccumulatesOneNamedMissingFactThenStops(t *testing.
 	executions := 0
 	result, err := runObjectiveDatabaseEvidenceWorkflow(
 		context.Background(), authority, "requirement-72", snapshot, stations,
-		func(_ context.Context, _ datasource.SchemaSnapshot, compiled datasource.CompiledQuery) (datasource.EvidenceResult, error) {
+		func(_ context.Context, _ datasource.SchemaSnapshot, plan datasource.RelationalQueryPlan) (datasource.EvidenceResult, error) {
 			executions++
-			return objectiveDatabaseCountEvidence(compiled, executions), nil
+			return objectiveDatabaseCountEvidence(plan, executions), nil
 		},
 	)
 	if err != nil {
@@ -196,20 +197,31 @@ func objectiveDatabaseSingleRelationSnapshot(t *testing.T) datasource.SchemaSnap
 	return snapshot
 }
 
-func objectiveDatabaseCountEvidence(compiled datasource.CompiledQuery, sequence int) datasource.EvidenceResult {
-	resultHash := objectiveDatabaseTestHash("result", sequence)
+func objectiveDatabaseCountEvidence(plan datasource.RelationalQueryPlan, sequence int) datasource.EvidenceResult {
+	columns := []datasource.EvidenceColumn{{
+		Name: plan.Outputs[0].Name, PostgresTypeOID: 20, FieldID: plan.Outputs[0].FieldID,
+		Aggregate: plan.Outputs[0].Aggregate, TypeCategory: plan.Outputs[0].TypeCategory,
+	}}
+	rows := [][]datasource.EvidenceValue{{{Kind: datasource.EvidenceInteger, Value: "3"}}}
+	canonical, _ := json.Marshal(struct {
+		Columns []datasource.EvidenceColumn  `json:"columns"`
+		Rows    [][]datasource.EvidenceValue `json:"rows"`
+	}{Columns: columns, Rows: rows})
+	resultDigest := sha256.Sum256(canonical)
+	resultHash := hex.EncodeToString(resultDigest[:])
+	columnBytes, _ := json.Marshal(columns)
+	rowBytes, _ := json.Marshal(rows[0])
 	return datasource.EvidenceResult{
 		Schema: datasource.EvidenceResultV1,
 		Provenance: datasource.EvidenceProvenance{
-			SourceID: compiled.SourceID, SchemaFingerprint: compiled.SchemaFingerprint,
-			IntentHash: compiled.IntentHash, QueryHash: compiled.QueryHash, ResultHash: resultHash,
+			SourceID: plan.SourceID, SchemaFingerprint: plan.SchemaFingerprint,
+			IntentHash: plan.IntentHash, QueryHash: objectiveDatabaseTestHash("query", sequence), ResultHash: resultHash,
 			Plan:       datasource.ExecutionPlan{TotalCost: 1, EstimatedRows: 1},
 			AcquiredAt: time.Unix(1_700_000_000+int64(sequence), 0).UTC(),
 		},
 		Result: datasource.TypedEvidenceResult{
-			Columns:  []datasource.EvidenceColumn{{Name: "c1", Aggregate: datasource.AggregateCountRows, TypeCategory: datasource.TypeInteger}},
-			Rows:     [][]datasource.EvidenceValue{{{Kind: datasource.EvidenceInteger, Value: "3"}}},
-			RowCount: 1, ByteCount: 32, Hash: resultHash,
+			Columns: columns, Rows: rows,
+			RowCount: 1, ByteCount: len(columnBytes) + len(rowBytes), Hash: resultHash,
 		},
 	}
 }

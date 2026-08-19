@@ -1,0 +1,8 @@
+{
+  "id": "clinical-chat",
+  "name": "Clinical",
+  "tags": ["clinical"],
+  "workspace_root": "/srv/application",
+  "data_source_id": "source-1",
+  "mode": "assistant"
+}

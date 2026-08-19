@@ -21,7 +21,12 @@ func (s *Server) handleUIAdminDataSourceSchema(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	schema, err := datasource.InspectSchema(r.Context(), source.Connection())
+	connection, err := source.DirectConnection()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	schema, err := datasource.InspectSchema(r.Context(), connection)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -51,7 +56,12 @@ func (s *Server) handleUIAdminDataSourceQuery(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "query request contains trailing data")
 		return
 	}
-	result, err := datasource.RunSQL(r.Context(), source.Connection(), request.SQL)
+	connection, err := source.DirectConnection()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := datasource.RunSQL(r.Context(), connection, request.SQL)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

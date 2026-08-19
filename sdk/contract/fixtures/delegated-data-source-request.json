@@ -1,0 +1,15 @@
+{
+  "name": "Clinical",
+  "driver": "postgres",
+  "execution_mode": "delegated",
+  "host": "",
+  "port": 0,
+  "database_name": "",
+  "username": "",
+  "password": "",
+  "ssl_mode": "",
+  "use_dsn": false,
+  "dsn": "",
+  "authority_url": "https://application.internal",
+  "credential_env": "OMNIDEX_DELEGATED_AUTHORITY_APPLICATION_TOKEN"
+}

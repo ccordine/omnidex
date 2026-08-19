@@ -7,6 +7,20 @@ import (
 
 const DriverPostgres = "postgres"
 
+type ExecutionMode string
+
+const (
+	ExecutionModeDirect    ExecutionMode = "direct"
+	ExecutionModeDelegated ExecutionMode = "delegated"
+)
+
+func (mode ExecutionMode) Validate() error {
+	if mode != ExecutionModeDirect && mode != ExecutionModeDelegated {
+		return fmt.Errorf("data source execution mode %q is unsupported", mode)
+	}
+	return nil
+}
+
 type Connection struct {
 	Driver       string
 	Host         string

@@ -8,7 +8,7 @@ import (
 func TestRelationalDataSourceRepositoryRejectsMissingAuthorityWithoutDefaults(t *testing.T) {
 	_, repository := relationalDataSourceTestRepository(t)
 	valid := DataSourceUpsert{
-		Name: "Exact source", Driver: "postgres", Host: "localhost", Port: 5432,
+		Name: "Exact source", Driver: "postgres", ExecutionMode: "direct", Host: "localhost", Port: 5432,
 		DatabaseName: "fixture", Username: "reader", SSLMode: "prefer",
 	}
 	for name, test := range map[string]struct {
@@ -46,7 +46,7 @@ func TestRelationalDataSourceRepositoryRejectsMissingAuthorityWithoutDefaults(t 
 func TestRelationalDataSourceDatabaseRejectsMissingAndMutableAuthority(t *testing.T) {
 	ctx, repository := relationalDataSourceTestRepository(t)
 	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
-		Name: "Exact source", Driver: "postgres", Host: "localhost", Port: 5432,
+		Name: "Exact source", Driver: "postgres", ExecutionMode: "direct", Host: "localhost", Port: 5432,
 		DatabaseName: "fixture", Username: "reader", SSLMode: "prefer",
 	})
 	if err != nil {

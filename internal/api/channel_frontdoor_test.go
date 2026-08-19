@@ -11,19 +11,24 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestChannelTurnPersistsExactUserAuthorityAndEnqueuesOneJob(t *testing.T) {
 	t.Parallel()
 	server, store := newChannelFrontdoorTestServer(t)
 	exact := "  What should happen next?\nKeep this indentation.\t "
-	var captured string
-	server.enqueueChannelTurn = func(_ context.Context, channelID model.ChannelID, instruction string) (model.ChannelMessage, model.Job, error) {
-		captured = instruction
+	delegatedAuthorityID := "dba_" + strings.Repeat("a", 64)
+	var capturedInstruction, capturedAuthority string
+	server.enqueueChannelTurn = func(_ context.Context, channelID model.ChannelID, instruction, authorityID string) (model.ChannelMessage, model.Job, error) {
+		capturedInstruction = instruction
+		capturedAuthority = authorityID
 		message, err := store.appendMessage(channelID, model.ChannelMessageRoleUser, instruction)
 		return message, model.Job{ID: 73, Pipeline: model.PipelineChat, Instruction: instruction}, err
 	}
-	body, _ := json.Marshal(map[string]any{"prompt": exact})
+	body, _ := json.Marshal(map[string]any{
+		"prompt": exact, "delegated_data_authority_id": delegatedAuthorityID,
+	})
 	request := httptest.NewRequest(http.MethodPost, "/v1/channels/authority/messages", bytes.NewReader(body))
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
@@ -34,8 +39,9 @@ func TestChannelTurnPersistsExactUserAuthorityAndEnqueuesOneJob(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if captured != exact || payload.UserMessage.Content != exact || payload.Job.Instruction != exact {
-		t.Fatalf("authority changed: captured=%q payload=%+v", captured, payload)
+	if capturedInstruction != exact || capturedAuthority != delegatedAuthorityID ||
+		payload.UserMessage.Content != exact || payload.Job.Instruction != exact {
+		t.Fatalf("authority changed: instruction=%q delegated=%q payload=%+v", capturedInstruction, capturedAuthority, payload)
 	}
 	if payload.Job.ID != 73 || payload.Job.Pipeline != model.PipelineChat {
 		t.Fatalf("job=%+v", payload.Job)
@@ -55,6 +61,9 @@ func TestChannelTurnRejectsBlankAndRemovedModelControls(t *testing.T) {
 		`{"prompt":"hello","roleplay_world_name":"World"}`,
 		`{"prompt":"hello","roleplay_viewpoint_name":"Alice"}`,
 		`{"prompt":"hello","roleplay_viewpoint_character_id":"rpc_0123456789abcdef0123456789abcdef"}`,
+		`{"prompt":"hello","delegated_data_authority_id":null}`,
+		`{"prompt":"hello","delegated_data_authority_id":""}`,
+		`{"prompt":"hello","delegated_data_authority_id":"not-canonical"}`,
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/v1/channels/authority/messages", bytes.NewBufferString(body))
 		response := httptest.NewRecorder()
@@ -68,11 +77,30 @@ func TestChannelTurnRejectsBlankAndRemovedModelControls(t *testing.T) {
 	}
 }
 
+func TestChannelTurnReportsDataAuthorityMismatchAsBadRequest(t *testing.T) {
+	t.Parallel()
+	server, store := newChannelFrontdoorTestServer(t)
+	server.enqueueChannelTurn = func(
+		context.Context, model.ChannelID, string, string,
+	) (model.ChannelMessage, model.Job, error) {
+		return model.ChannelMessage{}, model.Job{}, queue.ErrChannelDataAuthority
+	}
+	body := `{"prompt":"hello","delegated_data_authority_id":"dba_` + strings.Repeat("a", 64) + `"}`
+	request := httptest.NewRequest(
+		http.MethodPost, "/v1/channels/authority/messages", strings.NewReader(body),
+	)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || len(store.messages["authority"]) != 0 {
+		t.Fatalf("status=%d messages=%d body=%s", response.Code, len(store.messages["authority"]), response.Body.String())
+	}
+}
+
 func TestChannelTurnRejectsOversizedAuthorityBeforeEnqueue(t *testing.T) {
 	t.Parallel()
 	server, _ := newChannelFrontdoorTestServer(t)
 	calls := 0
-	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string) (model.ChannelMessage, model.Job, error) {
+	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string, string) (model.ChannelMessage, model.Job, error) {
 		calls++
 		return model.ChannelMessage{}, model.Job{}, nil
 	}
@@ -268,7 +296,7 @@ func TestChannelMutationsRejectInexactJSONBeforeMutation(t *testing.T) {
 	t.Parallel()
 	server, store := newChannelFrontdoorTestServer(t)
 	enqueueCalls := 0
-	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string) (model.ChannelMessage, model.Job, error) {
+	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string, string) (model.ChannelMessage, model.Job, error) {
 		enqueueCalls++
 		return model.ChannelMessage{}, model.Job{}, nil
 	}
@@ -304,7 +332,7 @@ func TestChannelMutationBodiesRejectTransportOverflowWithoutMutation(t *testing.
 	t.Parallel()
 	server, store := newChannelFrontdoorTestServer(t)
 	enqueueCalls := 0
-	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string) (model.ChannelMessage, model.Job, error) {
+	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string, string) (model.ChannelMessage, model.Job, error) {
 		enqueueCalls++
 		return model.ChannelMessage{}, model.Job{}, nil
 	}
@@ -342,7 +370,7 @@ func TestChannelEndpointsRejectUnknownDuplicateAndMalformedQueryAuthority(t *tes
 	t.Parallel()
 	server, store := newChannelFrontdoorTestServer(t)
 	enqueueCalls := 0
-	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string) (model.ChannelMessage, model.Job, error) {
+	server.enqueueChannelTurn = func(context.Context, model.ChannelID, string, string) (model.ChannelMessage, model.Job, error) {
 		enqueueCalls++
 		return model.ChannelMessage{}, model.Job{}, nil
 	}

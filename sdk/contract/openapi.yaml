@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: Omnidex Integration API
+  version: 1.0.0
+  description: Authenticated server-to-server chat and PostgreSQL data-source control plane.
+security:
+  - bearerAuth: []
+paths:
+  /v1/integrations/data-sources:
+    post:
+      operationId: registerDataSource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./schemas.yaml#/components/schemas/DataSourceRequest
+      responses:
+        "201":
+          description: Data source registered.
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas.yaml#/components/schemas/DataSourceEnvelope
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/integrations/channels:
+    post:
+      operationId: createChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./schemas.yaml#/components/schemas/CreateChannelRequest
+      responses:
+        "201":
+          description: Assistant channel created.
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas.yaml#/components/schemas/ChannelEnvelope
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/integrations/channels/{channel_id}:
+    parameters:
+      - $ref: "#/components/parameters/ChannelID"
+    get:
+      operationId: getChannel
+      responses:
+        "200":
+          description: Current channel authority.
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas.yaml#/components/schemas/ChannelEnvelope
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/integrations/channels/{channel_id}/messages:
+    parameters:
+      - $ref: "#/components/parameters/ChannelID"
+    post:
+      operationId: sendMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./schemas.yaml#/components/schemas/SendMessageRequest
+      responses:
+        "202":
+          description: Message persisted and job enqueued.
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas.yaml#/components/schemas/SendMessageEnvelope
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      operationId: listMessages
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 24
+        - name: before_id
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: One chronological transcript page.
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas.yaml#/components/schemas/MessagePage
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/integrations/jobs/{job_id}:
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    get:
+      operationId: getJob
+      responses:
+        "200":
+          description: Current job, steps, and contexts.
+          content:
+            application/json:
+              schema:
+                $ref: ./schemas.yaml#/components/schemas/JobDetails
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    ChannelID:
+      name: channel_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9_.:-]{0,95}$"
+  responses:
+    Error:
+      description: Explicit authentication, validation, conflict, or server failure.
+      content:
+        application/json:
+          schema:
+            $ref: ./schemas.yaml#/components/schemas/Error

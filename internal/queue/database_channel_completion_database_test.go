@@ -16,11 +16,11 @@ func TestDatabaseBoundChannelCompletionPersistsCitationAndAssistantTranscript(t 
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "117")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "121")); err != nil {
 		t.Fatal(err)
 	}
 	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
-		Name: "Completion evidence", Driver: datasource.DriverPostgres,
+		Name: "Completion evidence", Driver: datasource.DriverPostgres, ExecutionMode: datasource.ExecutionModeDirect,
 		Host: "database.internal", Port: 5432, DatabaseName: "evidence",
 		Username: "reader", Password: "test-only-secret", SSLMode: "require",
 	})

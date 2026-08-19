@@ -19,8 +19,15 @@ const (
 type objectiveDatabaseExecutor func(
 	context.Context,
 	datasource.SchemaSnapshot,
-	datasource.CompiledQuery,
+	datasource.RelationalQueryPlan,
 ) (datasource.EvidenceResult, error)
+
+func objectiveDatabaseExecutionLimits() datasource.ExecutionLimits {
+	limits := datasource.DefaultExecutionLimits()
+	limits.MaxRows = maxObjectiveDatabaseRows
+	limits.MaxBytes = 64 * 1024
+	return limits
+}
 
 func runObjectiveDatabaseEvidenceWorkflow(
 	ctx context.Context,
@@ -90,17 +97,20 @@ func runObjectiveDatabaseEvidenceWorkflow(
 		if err := intent.Validate(snapshot); err != nil {
 			return result, fmt.Errorf("database query intent failed full schema validation: %w", err)
 		}
-		compiled, compilationCalls, err := compileObjectiveDatabaseQuery(
+		plan, planningCalls, err := prepareObjectiveDatabaseQueryPlan(
 			ctx, snapshot, intent, needID, currentNeed,
 			assemblyline.CloneObjectiveContext(authority.Context), stations,
 		)
-		result.ModelCalls += compilationCalls
+		result.ModelCalls += planningCalls
 		if err != nil {
 			return result, err
 		}
-		executed, err := execute(ctx, snapshot, compiled)
+		executed, err := execute(ctx, snapshot, plan)
 		if err != nil {
 			return result, err
+		}
+		if err := executed.ValidateForPlan(snapshot, plan, objectiveDatabaseExecutionLimits()); err != nil {
+			return result, fmt.Errorf("database executor returned invalid evidence: %w", err)
 		}
 		evidence, err := projectObjectiveDatabaseEvidence(round, snapshot, intent, executed)
 		if err != nil {

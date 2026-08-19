@@ -13,11 +13,11 @@ import (
 func TestChatDataSourceOptionsEndpointProjectsOnlyOpaqueIdentity(t *testing.T) {
 	pool := openIsolatedAPIMigrationPool(t)
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundleThroughPrefix(t, "115")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundleThroughPrefix(t, "121")); err != nil {
 		t.Fatal(err)
 	}
 	source, err := repository.CreateDataSource(t.Context(), queue.DataSourceUpsert{
-		Name: "<Customer & Evidence>", Driver: "postgres",
+		Name: "<Customer & Evidence>", Driver: "postgres", ExecutionMode: "direct",
 		Host: "private.internal", Port: 5432, DatabaseName: "secret_database",
 		Username: "secret_reader", Password: "secret_password", SSLMode: "require",
 	})

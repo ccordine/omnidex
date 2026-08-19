@@ -43,7 +43,7 @@ func TestDatabaseEvidenceReceiptPersistsOnlyBoundImmutableHashedAuthority(t *tes
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "116")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "121")); err != nil {
 		t.Fatal(err)
 	}
 	source := createDatabaseEvidenceSource(t, repository, "Bound source", "credential-password")

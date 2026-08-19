@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gryph/omnidex/internal/datasource"
 )
 
 func TestDataSourceRecordSerializationCannotExposePasswordOrDSN(t *testing.T) {
@@ -32,12 +34,13 @@ func TestDataSourceRecordSerializationCannotExposePasswordOrDSN(t *testing.T) {
 
 func TestBuildPostgresDSNFromFields(t *testing.T) {
 	dsn, err := BuildPostgresDSN(DataSourceRecord{
-		Host:         "db.example.com",
-		Port:         5433,
-		DatabaseName: "analytics",
-		Username:     "reader",
-		Password:     "secret",
-		SSLMode:      "require",
+		ExecutionMode: datasource.ExecutionModeDirect,
+		Host:          "db.example.com",
+		Port:          5433,
+		DatabaseName:  "analytics",
+		Username:      "reader",
+		Password:      "secret",
+		SSLMode:       "require",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,11 +52,12 @@ func TestBuildPostgresDSNFromFields(t *testing.T) {
 }
 
 func TestBuildPostgresDSNRequiresFields(t *testing.T) {
-	if _, err := BuildPostgresDSN(DataSourceRecord{Host: "localhost"}); err == nil {
+	if _, err := BuildPostgresDSN(DataSourceRecord{ExecutionMode: datasource.ExecutionModeDirect, Host: "localhost"}); err == nil {
 		t.Fatal("expected error for missing database and username")
 	}
 	base := DataSourceRecord{
-		Host: "localhost", Port: 5432, DatabaseName: "app", Username: "reader", SSLMode: "prefer",
+		ExecutionMode: datasource.ExecutionModeDirect,
+		Host:          "localhost", Port: 5432, DatabaseName: "app", Username: "reader", SSLMode: "prefer",
 	}
 	for name, mutate := range map[string]func(*DataSourceRecord){
 		"port":     func(record *DataSourceRecord) { record.Port = 0 },
@@ -71,8 +75,9 @@ func TestBuildPostgresDSNRequiresFields(t *testing.T) {
 
 func TestBuildPostgresDSNFromConnectionString(t *testing.T) {
 	dsn, err := BuildPostgresDSN(DataSourceRecord{
-		UseDSN: true,
-		DSN:    "postgres://reader:secret@localhost:5432/app",
+		ExecutionMode: datasource.ExecutionModeDirect,
+		UseDSN:        true,
+		DSN:           "postgres://reader:secret@localhost:5432/app",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,12 +91,14 @@ func TestDataSourceCanonicalizationDoesNotInventRequiredAuthority(t *testing.T) 
 	now := time.Unix(1_700_000_000, 0).UTC()
 	valid := DataSourceRecord{
 		ID: "source-1", Name: "Exact source", Driver: "postgres",
-		Host: "localhost", Port: 5432, DatabaseName: "app", Username: "reader",
+		ExecutionMode: datasource.ExecutionModeDirect,
+		Host:          "localhost", Port: 5432, DatabaseName: "app", Username: "reader",
 		SSLMode: "prefer", ReadOnly: true, CreatedAt: now, UpdatedAt: now,
 	}
 	for name, mutate := range map[string]func(*DataSourceRecord){
 		"name":      func(record *DataSourceRecord) { record.Name = " " },
 		"driver":    func(record *DataSourceRecord) { record.Driver = "" },
+		"mode":      func(record *DataSourceRecord) { record.ExecutionMode = "" },
 		"port":      func(record *DataSourceRecord) { record.Port = 0 },
 		"ssl mode":  func(record *DataSourceRecord) { record.SSLMode = "" },
 		"read only": func(record *DataSourceRecord) { record.ReadOnly = false },
@@ -107,10 +114,42 @@ func TestDataSourceCanonicalizationDoesNotInventRequiredAuthority(t *testing.T) 
 	}
 }
 
+func TestDelegatedDataSourceCarriesOnlyHostAuthorityConfiguration(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1_700_000_000, 0).UTC()
+	valid := DataSourceRecord{
+		ID: "source-1", Name: "Clinical host", Driver: "postgres",
+		ExecutionMode: datasource.ExecutionModeDelegated,
+		AuthorityURL:  "https://application.internal",
+		CredentialEnv: "OMNIDEX_DELEGATED_AUTHORITY_APPLICATION_TOKEN",
+		ReadOnly:      true, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := validateDataSourceRecord(valid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := valid.DirectConnection(); err == nil {
+		t.Fatal("delegated source exposed a direct PostgreSQL connection")
+	}
+	for name, mutate := range map[string]func(*DataSourceRecord){
+		"host":           func(record *DataSourceRecord) { record.Host = "database.internal" },
+		"password":       func(record *DataSourceRecord) { record.Password = "forbidden" },
+		"missing URL":    func(record *DataSourceRecord) { record.AuthorityURL = "" },
+		"credential env": func(record *DataSourceRecord) { record.CredentialEnv = "OPENAI_API_KEY" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := valid
+			mutate(&candidate)
+			if err := validateDataSourceRecord(candidate); err == nil {
+				t.Fatal("invalid delegated data-source authority was accepted")
+			}
+		})
+	}
+}
+
 func TestDataSourceUpsertExposesOnlyConsumedMutableFields(t *testing.T) {
 	t.Parallel()
 	typeOf := reflect.TypeOf(DataSourceUpsert{})
-	want := []string{"Name", "Driver", "Host", "Port", "DatabaseName", "Username", "Password", "SSLMode", "UseDSN", "DSN"}
+	want := []string{"Name", "Driver", "ExecutionMode", "Host", "Port", "DatabaseName", "Username", "Password", "SSLMode", "UseDSN", "DSN", "AuthorityURL", "CredentialEnv"}
 	got := make([]string, typeOf.NumField())
 	for index := range got {
 		got[index] = typeOf.Field(index).Name

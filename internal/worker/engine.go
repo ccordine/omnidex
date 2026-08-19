@@ -37,6 +37,7 @@ type Options struct {
 	FragmentConcurrency       int
 	PollInterval              time.Duration
 	InferenceContextTokens    int
+	InferenceProvider         string
 	EmbeddingProvider         string
 	EmbeddingModel            string
 	Models                    ModelRouting
@@ -57,6 +58,7 @@ type Service struct {
 	fragmentConcurrency       int
 	pollInterval              time.Duration
 	inferenceContextTokens    int
+	inferenceProvider         string
 	embeddingProvider         string
 	embeddingModel            string
 	models                    ModelRouting
@@ -116,6 +118,7 @@ func New(
 		fragmentConcurrency:       opts.FragmentConcurrency,
 		pollInterval:              opts.PollInterval,
 		inferenceContextTokens:    opts.InferenceContextTokens,
+		inferenceProvider:         opts.InferenceProvider,
 		embeddingProvider:         opts.EmbeddingProvider,
 		embeddingModel:            opts.EmbeddingModel,
 		models:                    opts.Models,

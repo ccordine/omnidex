@@ -139,7 +139,11 @@ func TestDatabaseEvidenceWorkflowExecutesCompiledIntentAgainstPostgres(t *testin
 		JobID: 1, Pipeline: model.PipelineChat, Instruction: "How many open evidence items exist?",
 		DataSourceID: "worker-proof-source",
 	}, "requirement-postgres-proof", snapshot, stations,
-		func(callContext context.Context, exact datasource.SchemaSnapshot, compiled datasource.CompiledQuery) (datasource.EvidenceResult, error) {
+		func(callContext context.Context, exact datasource.SchemaSnapshot, plan datasource.RelationalQueryPlan) (datasource.EvidenceResult, error) {
+			compiled, err := datasource.CompilePostgresPlan(exact, plan)
+			if err != nil {
+				return datasource.EvidenceResult{}, err
+			}
 			return datasource.ExecuteEvidence(callContext, pool, exact, compiled, limits)
 		})
 	if err != nil {

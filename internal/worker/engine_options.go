@@ -6,11 +6,15 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/station"
 )
 
 func validateWorkerOptions(opts Options) error {
+	if _, ok := catalog.Lookup(opts.InferenceProvider); !ok {
+		return fmt.Errorf("inference_provider %q is unsupported", strings.TrimSpace(opts.InferenceProvider))
+	}
 	if opts.ObjectiveAdvisoryMode != "" {
 		if err := opts.ObjectiveAdvisoryMode.Validate(); err != nil {
 			return err
@@ -69,6 +73,9 @@ func normalizeWorkerOptions(opts Options) Options {
 		opts.ObjectiveAdvisoryMode = objectiveadvisory.ModeOff
 	}
 	opts.EmbeddingProvider = strings.TrimSpace(opts.EmbeddingProvider)
+	if definition, ok := catalog.Lookup(opts.InferenceProvider); ok {
+		opts.InferenceProvider = definition.ID
+	}
 	opts.EmbeddingModel = strings.TrimSpace(opts.EmbeddingModel)
 	opts.ObjectiveAdvisoryProvider = strings.TrimSpace(opts.ObjectiveAdvisoryProvider)
 

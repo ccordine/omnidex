@@ -48,6 +48,7 @@ func validWorkerOptions() Options {
 		FragmentConcurrency:       1,
 		PollInterval:              time.Second,
 		InferenceContextTokens:    32768,
+		InferenceProvider:         "ollama",
 		EmbeddingProvider:         "ollama",
 		EmbeddingModel:            "nomic-embed-text",
 		ObjectiveAdvisoryProvider: "ollama",

@@ -53,7 +53,7 @@ func TestRelationalDataSourceMigrationPreservesConnectionAuthorityAndDropsRetire
 	`, legacyPayload, snapshotPayload); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "115")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "121")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -170,7 +170,7 @@ func TestRelationalDataSourceMigrationRejectsInvalidLegacyAuthorityAtomically(t 
 func TestBoundChatChannelSnapshotsImmutableRelationalDataSourceAuthority(t *testing.T) {
 	ctx, repository := relationalDataSourceTestRepository(t)
 	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
-		Name: "Bound source", Driver: "postgres", Host: "localhost", Port: 5432,
+		Name: "Bound source", Driver: "postgres", ExecutionMode: "direct", Host: "localhost", Port: 5432,
 		DatabaseName: "fixture", Username: "reader", SSLMode: "prefer",
 	})
 	if err != nil {
@@ -208,10 +208,73 @@ func TestBoundChatChannelSnapshotsImmutableRelationalDataSourceAuthority(t *test
 	}
 }
 
+func TestDelegatedChatTurnRequiresAndPersistsCurrentHostAuthority(t *testing.T) {
+	ctx, repository := relationalDataSourceTestRepository(t)
+	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
+		Name: "Clinical host", Driver: "postgres", ExecutionMode: datasource.ExecutionModeDelegated,
+		AuthorityURL:  "https://application.internal",
+		CredentialEnv: "OMNIDEX_DELEGATED_AUTHORITY_APPLICATION_TOKEN",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, err := repository.CreateChannel(ctx, model.Channel{
+		ID: "delegated-database-chat", Scope: model.ChannelScopeUser, Name: "Clinical chat",
+		WorkspaceRoot: "/srv/workspaces/delegated-database-chat",
+		DataSourceID:  model.DataSourceID(source.ID), Mode: model.ChannelModeAssistant,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repository.EnqueueChannelTurn(ctx, channel.ID, "Find the knee collection."); !errors.Is(err, ErrChannelDataAuthority) {
+		t.Fatalf("missing delegated authority error=%v", err)
+	}
+	authorityID := "dba_" + strings.Repeat("a", 64)
+	_, job, err := repository.EnqueueChannelTurnWithDataAuthority(
+		ctx, channel.ID, "Find the knee collection.", authorityID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding channelTurnMetadata
+	if err := json.Unmarshal(job.Metadata, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if binding.DataSourceID != model.DataSourceID(source.ID) ||
+		binding.DelegatedDataAuthorityID != authorityID {
+		t.Fatalf("delegated turn metadata=%+v", binding)
+	}
+}
+
+func TestDirectChatTurnRejectsDelegatedHostAuthority(t *testing.T) {
+	ctx, repository := relationalDataSourceTestRepository(t)
+	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
+		Name: "Direct source", Driver: "postgres", ExecutionMode: datasource.ExecutionModeDirect,
+		Host: "localhost", Port: 5432, DatabaseName: "fixture", Username: "reader", SSLMode: "prefer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, err := repository.CreateChannel(ctx, model.Channel{
+		ID: "direct-database-chat", Scope: model.ChannelScopeUser, Name: "Direct chat",
+		WorkspaceRoot: "/srv/workspaces/direct-database-chat",
+		DataSourceID:  model.DataSourceID(source.ID), Mode: model.ChannelModeAssistant,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = repository.EnqueueChannelTurnWithDataAuthority(
+		ctx, channel.ID, "Count rows.", "dba_"+strings.Repeat("b", 64),
+	)
+	if !errors.Is(err, ErrChannelDataAuthority) {
+		t.Fatalf("direct turn delegated authority error=%v", err)
+	}
+}
+
 func TestRelationalDataSourceSchemaSnapshotLifecycleUsesOneAuthority(t *testing.T) {
 	ctx, repository := relationalDataSourceTestRepository(t)
 	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
-		Name: "Catalog source", Driver: "postgres", Host: "localhost", Port: 5432,
+		Name: "Catalog source", Driver: "postgres", ExecutionMode: "direct", Host: "localhost", Port: 5432,
 		DatabaseName: "fixture", Username: "reader", SSLMode: "prefer",
 	})
 	if err != nil {
@@ -255,14 +318,14 @@ func TestRelationalDataSourceSchemaSnapshotLifecycleUsesOneAuthority(t *testing.
 func TestRelationalDataSourceCRUDMutatesOneExactRow(t *testing.T) {
 	ctx, repository := relationalDataSourceTestRepository(t)
 	created, err := repository.CreateDataSource(ctx, DataSourceUpsert{
-		Name: "Original source", Driver: "postgres", Host: "original.internal", Port: 5432,
+		Name: "Original source", Driver: "postgres", ExecutionMode: "direct", Host: "original.internal", Port: 5432,
 		DatabaseName: "original", Username: "reader", Password: "retained secret", SSLMode: "prefer",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	updated, err := repository.UpdateDataSource(ctx, created.ID, DataSourceUpsert{
-		Name: "Updated source", Driver: "postgres", Host: "updated.internal", Port: 5433,
+		Name: "Updated source", Driver: "postgres", ExecutionMode: "direct", Host: "updated.internal", Port: 5433,
 		DatabaseName: "updated", Username: "reader", Password: "", SSLMode: "prefer",
 	})
 	if err != nil {
@@ -293,7 +356,7 @@ func relationalDataSourceTestRepository(t *testing.T) (context.Context, *Reposit
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "117")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "121")); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, repository

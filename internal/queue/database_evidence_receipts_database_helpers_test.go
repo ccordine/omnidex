@@ -68,7 +68,8 @@ func createDatabaseEvidenceSource(
 ) DataSourceRecord {
 	t.Helper()
 	record, err := repository.CreateDataSource(t.Context(), DataSourceUpsert{
-		Name: name, Driver: datasource.DriverPostgres, Host: "database.internal", Port: 5432,
+		Name: name, Driver: datasource.DriverPostgres, ExecutionMode: datasource.ExecutionModeDirect,
+		Host: "database.internal", Port: 5432,
 		DatabaseName: "analytics", Username: "reader", Password: password,
 		UseDSN: true, DSN: "postgres://reader:" + password + "@database.internal/analytics",
 		SSLMode: "require",

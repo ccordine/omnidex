@@ -108,6 +108,7 @@ func main() {
 		ListenAddr:           cfg.ListenAddr,
 		HostAgentURL:         cfg.HostAgentURL,
 		HostAgentToken:       cfg.HostAgentToken,
+		IntegrationAPIToken:  cfg.IntegrationAPIToken,
 		RealtimeMaxClients:   cfg.RealtimeMaxClients,
 		RealtimeStreamMaxAge: cfg.RealtimeStreamMaxAge,
 		RealtimeHeartbeat:    cfg.RealtimeHeartbeat,
@@ -128,6 +129,7 @@ func main() {
 				FragmentConcurrency:    cfg.CodingFragmentConcurrency,
 				PollInterval:           cfg.WorkerPollInterval,
 				InferenceContextTokens: cfg.InferenceContextTokens,
+				InferenceProvider:      cfg.LLMProvider,
 				EmbeddingProvider:      cfg.EmbeddingProvider,
 				EmbeddingModel:         cfg.EmbeddingModel,
 				Models: worker.ModelRouting{

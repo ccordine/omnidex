@@ -70,11 +70,14 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.writeCurrentJobDetails(w, r, id)
+}
+
+func (s *Server) writeCurrentJobDetails(w http.ResponseWriter, r *http.Request, id int64) {
 	if err := validateExactQuery(r); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	details, err := s.repo.CurrentJobDetails(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

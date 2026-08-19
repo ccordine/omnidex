@@ -59,16 +59,31 @@ export default class AdminDataSourcesController extends Controller<HTMLElement> 
     fields.querySelectorAll("[data-ds-field='dsn']").forEach((node) => node.classList.toggle("ring-1", useDSN.checked));
   }
 
+  toggleDataSourceExecutionPanel(): void {
+    const mode = this.value("execution_mode");
+    const direct = this.element.querySelector("[data-ds-direct-fields]");
+    const delegated = this.element.querySelector("[data-ds-delegated-fields]");
+    if (!direct || !delegated) throw new Error("Data-source execution fields are unavailable.");
+    direct.classList.toggle("hidden", mode !== "direct");
+    delegated.classList.toggle("hidden", mode !== "delegated");
+  }
+
   async saveDataSource(event: Event): Promise<void> {
     event.preventDefault();
-    const useDSN = (this.element.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null)?.checked ?? false;
-    const port = Number.parseInt(this.optionalValue("port"), 10);
-    if (!Number.isSafeInteger(port) || port < 1) return reportErrorMessage(this.setStatus.bind(this), "Port must be a positive integer.");
+    const executionMode = this.value("execution_mode") as "direct" | "delegated";
+    const useDSN = executionMode === "direct" && ((this.element.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null)?.checked ?? false);
+    const port = executionMode === "direct" ? Number.parseInt(this.optionalValue("port"), 10) : 0;
+    if (executionMode === "direct" && (!Number.isSafeInteger(port) || port < 1)) return reportErrorMessage(this.setStatus.bind(this), "Port must be a positive integer.");
     const input = {
-      name: this.value("name"), driver: this.value("driver"), use_dsn: useDSN,
-      dsn: this.optionalValue("dsn"), host: this.optionalValue("host"), port,
-      database_name: this.optionalValue("database_name"), username: this.optionalValue("username"),
-      password: this.optionalValue("password"), ssl_mode: this.optionalValue("ssl_mode"),
+      name: this.value("name"), driver: this.value("driver"), execution_mode: executionMode, use_dsn: useDSN,
+      dsn: executionMode === "direct" ? this.optionalValue("dsn") : "",
+      host: executionMode === "direct" ? this.optionalValue("host") : "", port,
+      database_name: executionMode === "direct" ? this.optionalValue("database_name") : "",
+      username: executionMode === "direct" ? this.optionalValue("username") : "",
+      password: executionMode === "direct" ? this.optionalValue("password") : "",
+      ssl_mode: executionMode === "direct" ? this.optionalValue("ssl_mode") : "",
+      authority_url: executionMode === "delegated" ? this.optionalValue("authority_url") : "",
+      credential_env: executionMode === "delegated" ? this.optionalValue("credential_env") : "",
     };
     if (!input.name) return reportErrorMessage(this.setStatus.bind(this), "Data-source name is required.");
     await this.mutate(this.editingID ? "Saving data source…" : "Adding data source…", async () => {

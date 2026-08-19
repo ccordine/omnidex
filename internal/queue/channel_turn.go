@@ -7,6 +7,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -20,6 +21,7 @@ type channelTurnMetadata struct {
 	ProjectID                       int64                            `json:"project_id"`
 	ClientCWD                       string                           `json:"client_cwd"`
 	DataSourceID                    model.DataSourceID               `json:"data_source_id,omitempty"`
+	DelegatedDataAuthorityID        string                           `json:"delegated_data_authority_id,omitempty"`
 	ChannelMode                     model.ChannelMode                `json:"channel_mode"`
 	RoleplayViewpointCharacterID    model.RoleplayCharacterID        `json:"roleplay_viewpoint_character_id,omitempty"`
 	RoleplaySimulationPreparationID string                           `json:"roleplay_simulation_preparation_id,omitempty"`
@@ -39,6 +41,26 @@ func (r *Repository) EnqueueChannelTurn(
 	channelID model.ChannelID,
 	instruction string,
 ) (model.ChannelMessage, model.Job, error) {
+	return r.enqueueChannelTurn(ctx, channelID, instruction, "")
+}
+
+// EnqueueChannelTurnWithDataAuthority binds one host-issued opaque authority
+// to a delegated database turn. Direct database and non-database turns reject it.
+func (r *Repository) EnqueueChannelTurnWithDataAuthority(
+	ctx context.Context,
+	channelID model.ChannelID,
+	instruction string,
+	delegatedAuthorityID string,
+) (model.ChannelMessage, model.Job, error) {
+	return r.enqueueChannelTurn(ctx, channelID, instruction, delegatedAuthorityID)
+}
+
+func (r *Repository) enqueueChannelTurn(
+	ctx context.Context,
+	channelID model.ChannelID,
+	instruction string,
+	delegatedAuthorityID string,
+) (model.ChannelMessage, model.Job, error) {
 	if ctx == nil || r == nil || r.pool == nil {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel turn requires PostgreSQL and context")
 	}
@@ -47,6 +69,11 @@ func (r *Repository) EnqueueChannelTurn(
 	}
 	if err := model.ValidateChannelMessage(model.ChannelMessageRoleUser, instruction); err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
+	}
+	if delegatedAuthorityID != "" {
+		if err := datasource.ValidateDelegatedAuthorityID(delegatedAuthorityID); err != nil {
+			return model.ChannelMessage{}, model.Job{}, fmt.Errorf("%w: %v", ErrChannelDataAuthority, err)
+		}
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -85,6 +112,9 @@ func (r *Repository) EnqueueChannelTurn(
 	}
 	if err := model.ValidateChannelWorkspaceRoot(workspaceRoot); err != nil {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel %q workspace binding: %w", channelID, err)
+	}
+	if err := validateChannelTurnDataAuthority(ctx, tx, dataSourceID, delegatedAuthorityID); err != nil {
+		return model.ChannelMessage{}, model.Job{}, err
 	}
 	if projectLocation != workspaceRoot {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf(
@@ -159,7 +189,7 @@ func (r *Repository) EnqueueChannelTurn(
 	}
 	metadata, err := marshalChannelTurnMetadata(
 		channelID, message.ID, projectID, workspaceRoot,
-		modelDataSourceID(dataSourceID), channelMode,
+		modelDataSourceID(dataSourceID), delegatedAuthorityID, channelMode,
 		modelSnapshot, simulation,
 	)
 	if err != nil {
@@ -216,6 +246,7 @@ func marshalChannelTurnMetadata(
 	projectID int64,
 	workspaceRoot string,
 	dataSourceID model.DataSourceID,
+	delegatedAuthorityID string,
 	channelMode model.ChannelMode,
 	modelSnapshot modelconfig.Config,
 	simulation *roleplay.SimulationTurnAuthority,
@@ -223,9 +254,10 @@ func marshalChannelTurnMetadata(
 	binding := channelTurnMetadata{
 		ChannelID: channelID, SessionID: "channel:" + string(channelID),
 		ChannelUserMessageID: messageID, ProjectID: projectID, ClientCWD: workspaceRoot,
-		DataSourceID: dataSourceID,
-		ChannelMode:  channelMode,
-		ModelConfig:  modelSnapshot,
+		DataSourceID:             dataSourceID,
+		DelegatedDataAuthorityID: delegatedAuthorityID,
+		ChannelMode:              channelMode,
+		ModelConfig:              modelSnapshot,
 	}
 	if simulation != nil {
 		binding.RoleplayViewpointCharacterID = model.RoleplayCharacterID(simulation.ActiveCharacterID)
@@ -259,6 +291,14 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 			return fmt.Errorf("channel job metadata data-source binding: %w", err)
 		}
 	}
+	if binding.DelegatedDataAuthorityID != "" {
+		if binding.DataSourceID == "" {
+			return fmt.Errorf("channel job delegated data authority requires a bound data source")
+		}
+		if err := datasource.ValidateDelegatedAuthorityID(binding.DelegatedDataAuthorityID); err != nil {
+			return err
+		}
+	}
 	if err := binding.ChannelMode.Validate(); err != nil {
 		return fmt.Errorf("channel job metadata mode: %w", err)
 	}
@@ -288,6 +328,38 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 	}
 	if !maps.Equal(binding.ModelConfig, validated) {
 		return fmt.Errorf("channel model snapshot is not exact")
+	}
+	return nil
+}
+
+func validateChannelTurnDataAuthority(
+	ctx context.Context,
+	tx pgx.Tx,
+	dataSourceID *string,
+	delegatedAuthorityID string,
+) error {
+	if dataSourceID == nil {
+		if delegatedAuthorityID != "" {
+			return fmt.Errorf("%w: delegated data authority requires a bound data source", ErrChannelDataAuthority)
+		}
+		return nil
+	}
+	var mode datasource.ExecutionMode
+	if err := tx.QueryRow(ctx, `SELECT execution_mode FROM data_sources WHERE id=$1`, *dataSourceID).Scan(&mode); err != nil {
+		return fmt.Errorf("resolve bound data-source execution authority: %w", err)
+	}
+	if err := mode.Validate(); err != nil {
+		return err
+	}
+	switch mode {
+	case datasource.ExecutionModeDirect:
+		if delegatedAuthorityID != "" {
+			return fmt.Errorf("%w: direct data-source turn cannot carry delegated data authority", ErrChannelDataAuthority)
+		}
+	case datasource.ExecutionModeDelegated:
+		if err := datasource.ValidateDelegatedAuthorityID(delegatedAuthorityID); err != nil {
+			return fmt.Errorf("%w: delegated data-source turn requires current host authority: %v", ErrChannelDataAuthority, err)
+		}
 	}
 	return nil
 }

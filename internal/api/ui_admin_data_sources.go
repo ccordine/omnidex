@@ -111,12 +111,18 @@ func renderUIDataSourceList(items []queue.DataSourceRecord, selectedID string, o
 		} else if source.LastTestStatus == "failed" {
 			status, statusClass = "Failed", "text-rose-200"
 		}
-		connection := "DSN"
-		if !source.UseDSN {
+		connection := "Host-authorized · " + source.AuthorityURL
+		if source.ExecutionMode == "direct" && source.UseDSN {
+			connection = "Direct PostgreSQL · DSN"
+		} else if source.ExecutionMode == "direct" {
 			connection = fmt.Sprintf("%s:%d/%s", source.Host, source.Port, source.DatabaseName)
 		}
-		body.WriteString(`<article class="rounded-md border ` + border + ` px-3 py-3"><div class="flex flex-wrap items-start justify-between gap-3"><button type="button" data-action="admin-data-sources#selectDataSource" data-source-id="` + uiAttribute(source.ID) + `" class="min-w-0 text-left"><div class="font-medium text-zinc-100">` + uiEscape(source.Name) + `</div><div class="mt-1 font-mono text-[11px] text-zinc-500">` + uiEscape(connection) + ` · ` + uiEscape(source.Username) + `</div></button><div class="flex flex-wrap items-center gap-2"><span class="text-[10px] uppercase ` + statusClass + `">` + status + `</span>`)
-		for _, action := range []struct{ method, label, class string }{{"testDataSource", "Test", "text-zinc-300"}, {"editDataSource", "Edit", "text-zinc-300"}, {"deleteDataSource", "Remove", "text-rose-200"}} {
+		body.WriteString(`<article class="rounded-md border ` + border + ` px-3 py-3"><div class="flex flex-wrap items-start justify-between gap-3"><button type="button" data-action="admin-data-sources#selectDataSource" data-source-id="` + uiAttribute(source.ID) + `" class="min-w-0 text-left"><div class="font-medium text-zinc-100">` + uiEscape(source.Name) + `</div><div class="mt-1 font-mono text-[11px] text-zinc-500">` + uiEscape(connection) + `</div></button><div class="flex flex-wrap items-center gap-2"><span class="text-[10px] uppercase ` + statusClass + `">` + status + `</span>`)
+		actions := []struct{ method, label, class string }{{"editDataSource", "Edit", "text-zinc-300"}, {"deleteDataSource", "Remove", "text-rose-200"}}
+		if source.ExecutionMode == "direct" {
+			actions = append([]struct{ method, label, class string }{{"testDataSource", "Test", "text-zinc-300"}}, actions...)
+		}
+		for _, action := range actions {
 			body.WriteString(`<button type="button" data-action="admin-data-sources#` + action.method + `" data-source-id="` + uiAttribute(source.ID) + `" class="rounded-md border border-white/10 px-2 py-1 text-xs ` + action.class + `">` + action.label + `</button>`)
 		}
 		body.WriteString(`</div></div></article>`)
@@ -135,6 +141,14 @@ func renderUIDataSourceForm(source queue.DataSourceRecord, editing bool) string 
 	if source.UseDSN {
 		checked = " checked"
 	}
+	mode := string(source.ExecutionMode)
+	if mode == "" {
+		mode = "direct"
+	}
+	directClass, delegatedClass := "", " hidden"
+	if mode == "delegated" {
+		directClass, delegatedClass = " hidden", ""
+	}
 	port := source.Port
 	if port == 0 {
 		port = 5432
@@ -142,8 +156,10 @@ func renderUIDataSourceForm(source queue.DataSourceRecord, editing bool) string 
 	form := `<form data-action="submit->admin-data-sources#saveDataSource" data-ds-source-form class="grid gap-3"><input type="hidden" data-ds-field="id" value="` + uiAttribute(source.ID) + `" />` +
 		uiDSInput("Name", "name", source.Name, "text") +
 		uiDSSelect("Database type", "driver", "postgres", []string{"postgres"}) +
-		`<label class="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" data-ds-field="use_dsn" data-action="change->admin-data-sources#toggleDataSourceDSNPanel"` + checked + ` />Use connection string (DSN)</label>` +
-		`<div data-ds-connection-fields class="grid gap-3 md:grid-cols-2">` + uiDSInput("DSN", "dsn", "", "password") + uiDSInput("Host", "host", source.Host, "text") + uiDSInput("Port", "port", strconv.Itoa(port), "number") + uiDSInput("Database", "database_name", source.DatabaseName, "text") + uiDSInput("Username", "username", source.Username, "text") + uiDSInput("Password", "password", "", "password") + uiDSSelect("SSL mode", "ssl_mode", source.SSLMode, []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}) + `</div>` +
+		uiDSSelectWithAction("Execution", "execution_mode", mode, []string{"direct", "delegated"}, "change->admin-data-sources#toggleDataSourceExecutionPanel") +
+		`<div data-ds-direct-fields class="grid gap-3` + directClass + `"><label class="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" data-ds-field="use_dsn" data-action="change->admin-data-sources#toggleDataSourceDSNPanel"` + checked + ` />Use connection string (DSN)</label>` +
+		`<div data-ds-connection-fields class="grid gap-3 md:grid-cols-2">` + uiDSInput("DSN", "dsn", "", "password") + uiDSInput("Host", "host", source.Host, "text") + uiDSInput("Port", "port", strconv.Itoa(port), "number") + uiDSInput("Database", "database_name", source.DatabaseName, "text") + uiDSInput("Username", "username", source.Username, "text") + uiDSInput("Password", "password", "", "password") + uiDSSelect("SSL mode", "ssl_mode", source.SSLMode, []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}) + `</div></div>` +
+		`<div data-ds-delegated-fields class="grid gap-3 md:grid-cols-2` + delegatedClass + `">` + uiDSInput("Host authority URL", "authority_url", source.AuthorityURL, "url") + uiDSInput("Credential environment variable", "credential_env", source.CredentialEnv, "text") + `</div>` +
 		`<div class="flex gap-2"><button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">` + button + `</button>`
 	if editing {
 		form += `<button type="button" data-action="admin-data-sources#cancelEditDataSource" class="rounded-md border border-white/10 px-4 py-2 text-sm">Cancel</button>`
@@ -156,8 +172,16 @@ func uiDSInput(label, field, value, kind string) string {
 }
 
 func uiDSSelect(label, field, value string, options []string) string {
+	return uiDSSelectWithAction(label, field, value, options, "")
+}
+
+func uiDSSelectWithAction(label, field, value string, options []string, action string) string {
 	var body strings.Builder
-	body.WriteString(`<label class="block"><span class="text-xs text-zinc-500">` + uiEscape(label) + `</span><select data-ds-field="` + uiAttribute(field) + `" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm">`)
+	actionAttribute := ""
+	if action != "" {
+		actionAttribute = ` data-action="` + uiAttribute(action) + `"`
+	}
+	body.WriteString(`<label class="block"><span class="text-xs text-zinc-500">` + uiEscape(label) + `</span><select data-ds-field="` + uiAttribute(field) + `"` + actionAttribute + ` class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm">`)
 	for _, option := range options {
 		selected := ""
 		if option == value || (value == "" && option == "prefer") {
@@ -172,6 +196,9 @@ func uiDSSelect(label, field, value string, options []string) string {
 func renderUIDataSourceExplorer(source queue.DataSourceRecord, exists bool) string {
 	if !exists {
 		return `<p class="text-sm text-zinc-500">Add and select a data source to explore it.</p>`
+	}
+	if source.ExecutionMode == "delegated" {
+		return `<p class="text-sm text-zinc-400">Delegated sources expose schema and bounded evidence only inside a turn carrying a current host-issued authority id.</p>`
 	}
 	return `<div class="space-y-4"><div class="flex flex-wrap items-center justify-between gap-2"><div><h4 class="text-sm font-semibold text-zinc-200">` + uiEscape(source.Name) + `</h4><p class="text-xs text-zinc-500">Read-only · maximum 500 rows</p></div><button type="button" data-action="admin-data-sources#loadDataSourceSchema" data-source-id="` + uiAttribute(source.ID) + `" class="rounded-md border border-white/10 px-3 py-1.5 text-xs">Load schema</button></div>` +
 		`<div data-recyclr-sink="data-source-schema" class="scrollbar max-h-[280px] overflow-y-auto"><p class="text-sm text-zinc-500">Load schema to browse tables.</p></div>` +

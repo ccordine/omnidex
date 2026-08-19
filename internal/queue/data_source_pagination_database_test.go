@@ -10,7 +10,7 @@ func TestDataSourcePagesUseDatabaseLimitAndStableOffsets(t *testing.T) {
 	records := make([]DataSourceRecord, 0, 5)
 	for index := 0; index < 5; index++ {
 		record, err := repository.CreateDataSource(ctx, DataSourceUpsert{
-			Name: fmt.Sprintf("Source %d", index), Driver: "postgres",
+			Name: fmt.Sprintf("Source %d", index), Driver: "postgres", ExecutionMode: "direct",
 			Host: "localhost", Port: 5432, DatabaseName: "fixture", Username: "reader",
 			SSLMode: "prefer",
 		})
@@ -45,7 +45,7 @@ func TestDataSourcePagesUseDatabaseLimitAndStableOffsets(t *testing.T) {
 func TestDataSourceChannelPagesUseDatabaseLimitAndStableOffsets(t *testing.T) {
 	ctx, repository := relationalDataSourceTestRepository(t)
 	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
-		Name: "Channel source", Driver: "postgres", Host: "localhost", Port: 5432,
+		Name: "Channel source", Driver: "postgres", ExecutionMode: "direct", Host: "localhost", Port: 5432,
 		DatabaseName: "fixture", Username: "reader", SSLMode: "prefer",
 	})
 	if err != nil {
@@ -81,7 +81,7 @@ func TestDataSourceChannelPagesUseDatabaseLimitAndStableOffsets(t *testing.T) {
 func TestDataSourceMessagePagesReadLatestHistoryWithDatabaseBounds(t *testing.T) {
 	ctx, repository := relationalDataSourceTestRepository(t)
 	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
-		Name: "History source", Driver: "postgres", Host: "localhost", Port: 5432,
+		Name: "History source", Driver: "postgres", ExecutionMode: "direct", Host: "localhost", Port: 5432,
 		DatabaseName: "fixture", Username: "reader", SSLMode: "prefer",
 	})
 	if err != nil {

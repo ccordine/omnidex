@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/datasource"
 )
 
-func compileObjectiveDatabaseQuery(
+func prepareObjectiveDatabaseQueryPlan(
 	ctx context.Context,
 	snapshot datasource.SchemaSnapshot,
 	intent datasource.RelationalIntent,
@@ -18,41 +18,41 @@ func compileObjectiveDatabaseQuery(
 	exactNeed string,
 	objectiveContext assemblyline.ObjectiveContext,
 	stations objectiveDatabaseStations,
-) (datasource.CompiledQuery, int, error) {
+) (datasource.RelationalQueryPlan, int, error) {
 	selected := map[string]string{}
 	totalCalls := 0
 	for attempts := 0; attempts <= datasource.MaxProjectedRelations; attempts++ {
-		compiled, err := datasource.CompilePostgresWithJoinPaths(snapshot, intent, selected)
+		plan, err := datasource.BuildRelationalQueryPlan(snapshot, intent, selected)
 		if err == nil {
-			return compiled, totalCalls, nil
+			return plan, totalCalls, nil
 		}
 		var ambiguous *datasource.AmbiguousJoinPathError
 		if !errors.As(err, &ambiguous) {
-			return datasource.CompiledQuery{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, totalCalls, err
 		}
 		if _, repeated := selected[ambiguous.ToRelationID]; repeated {
-			return datasource.CompiledQuery{}, totalCalls, fmt.Errorf("database join-path selection made no compilation progress")
+			return datasource.RelationalQueryPlan{}, totalCalls, fmt.Errorf("database join-path selection made no planning progress")
 		}
 		input, err := objectiveDatabaseJoinPathInput(
 			snapshot, evidenceNeedID, exactNeed, objectiveContext, ambiguous,
 		)
 		if err != nil {
-			return datasource.CompiledQuery{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, totalCalls, err
 		}
 		decision, receipt, err := stations.SelectJoinPath(ctx, input)
 		totalCalls += receipt.Calls
 		if err != nil {
-			return datasource.CompiledQuery{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, totalCalls, err
 		}
 		if err := validateObjectiveDatabaseStationCalls("join-path selection", receipt); err != nil {
-			return datasource.CompiledQuery{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, totalCalls, err
 		}
 		if err := decision.ValidateFor(input); err != nil {
-			return datasource.CompiledQuery{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, totalCalls, err
 		}
 		selected[ambiguous.ToRelationID] = decision.PathID
 	}
-	return datasource.CompiledQuery{}, totalCalls, fmt.Errorf("database join-path resolution exceeded its bounded relation count")
+	return datasource.RelationalQueryPlan{}, totalCalls, fmt.Errorf("database join-path resolution exceeded its bounded relation count")
 }
 
 func objectiveDatabaseJoinPathInput(

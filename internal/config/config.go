@@ -17,6 +17,7 @@ type Config struct {
 	CoreURL                   string
 	HostAgentURL              string
 	HostAgentToken            string
+	IntegrationAPIToken       string
 	WrapperOnly               bool
 	DatabaseURL               string
 	DatabaseSchema            string
@@ -80,6 +81,7 @@ func Load() (Config, error) {
 		ListenAddr:                getenv("LISTEN_ADDR", "0.0.0.0:8090"),
 		HostAgentURL:              getenv("HOST_AGENT_URL", ""),
 		HostAgentToken:            getenv("HOST_AGENT_TOKEN", ""),
+		IntegrationAPIToken:       os.Getenv("OMNIDEX_INTEGRATION_API_TOKEN"),
 		CoreURL:                   getenv("CORE_URL", "http://192.168.1.102:8090"),
 		WrapperOnly:               getenvBool("WRAPPER_ONLY", false),
 		DatabaseURL:               os.Getenv("DATABASE_URL"),
@@ -157,6 +159,9 @@ func Validate(cfg Config) error {
 }
 
 func validateConfigStructure(cfg Config) error {
+	if err := validateIntegrationAPIToken(cfg.IntegrationAPIToken); err != nil {
+		return err
+	}
 	if !cfg.WrapperOnly && strings.TrimSpace(cfg.DatabaseURL) == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
@@ -166,4 +171,19 @@ func validateConfigStructure(cfg Config) error {
 		}
 	}
 	return validateRuntimeConfig(cfg)
+}
+
+func validateIntegrationAPIToken(token string) error {
+	if token == "" {
+		return nil
+	}
+	if len(token) < 32 || len(token) > 4096 {
+		return fmt.Errorf("OMNIDEX_INTEGRATION_API_TOKEN must contain 32..4096 exact ASCII bytes")
+	}
+	for _, character := range []byte(token) {
+		if character < 0x21 || character > 0x7e {
+			return fmt.Errorf("OMNIDEX_INTEGRATION_API_TOKEN must contain only exact visible ASCII bytes")
+		}
+	}
+	return nil
 }

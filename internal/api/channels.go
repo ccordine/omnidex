@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -82,7 +83,29 @@ func (name *channelCreateRoleplayName) UnmarshalJSON(raw []byte) error {
 }
 
 type channelMessageRequest struct {
-	Prompt string `json:"prompt"`
+	Prompt                   string                          `json:"prompt"`
+	DelegatedDataAuthorityID channelDelegatedDataAuthorityID `json:"delegated_data_authority_id,omitempty"`
+}
+
+type channelDelegatedDataAuthorityID struct {
+	Value   string
+	Present bool
+}
+
+func (id *channelDelegatedDataAuthorityID) UnmarshalJSON(raw []byte) error {
+	if string(raw) == "null" {
+		return errors.New("delegated_data_authority_id must be omitted or contain one canonical identity")
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("decode delegated_data_authority_id: %w", err)
+	}
+	if err := datasource.ValidateDelegatedAuthorityID(value); err != nil {
+		return err
+	}
+	id.Value = value
+	id.Present = true
+	return nil
 }
 
 type channelMessageResponse struct {
@@ -94,6 +117,7 @@ type channelMessageResponse struct {
 type enqueueChannelTurnFunc func(
 	context.Context,
 	model.ChannelID,
+	string,
 	string,
 ) (model.ChannelMessage, model.Job, error)
 
@@ -278,7 +302,9 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		writeError(w, http.StatusServiceUnavailable, "channel job queue is unavailable")
 		return
 	}
-	userMessage, job, err := s.enqueueChannelTurn(r.Context(), channel.ID, prompt)
+	userMessage, job, err := s.enqueueChannelTurn(
+		r.Context(), channel.ID, prompt, req.DelegatedDataAuthorityID.Value,
+	)
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
@@ -287,6 +313,8 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 			errors.Is(err, roleplay.ErrSimulationStaleRevision),
 			errors.Is(err, roleplay.ErrSimulationConflict):
 			status = http.StatusConflict
+		case errors.Is(err, queue.ErrChannelDataAuthority):
+			status = http.StatusBadRequest
 		case errors.Is(err, roleplay.ErrSimulationUnknown),
 			errors.Is(err, roleplay.ErrSimulationAmbiguous),
 			errors.Is(err, roleplay.ErrSimulationIllegal):

@@ -36,12 +36,15 @@ export type DataSource = {
   id: string;
   name: string;
   driver: string;
+  execution_mode: "direct" | "delegated";
   host: string;
   port: number;
   database_name: string;
   username: string;
   ssl_mode: string;
   use_dsn: boolean;
+  authority_url: string;
+  credential_env: string;
   read_only: boolean;
   password_set: boolean;
   password_hint: string;
@@ -55,6 +58,7 @@ export type DataSource = {
 export type DataSourceUpsertPayload = {
   name: string;
   driver: string;
+  execution_mode: "direct" | "delegated";
   host?: string;
   port?: number;
   database_name?: string;
@@ -63,6 +67,8 @@ export type DataSourceUpsertPayload = {
   ssl_mode?: string;
   use_dsn?: boolean;
   dsn?: string;
+  authority_url?: string;
+  credential_env?: string;
 };
 
 export async function createDataSource(input: DataSourceUpsertPayload): Promise<DataSource> {

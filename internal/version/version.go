@@ -10,7 +10,7 @@ var (
 	Codename         = "Charmeleon"
 	Commit           = ""
 	SourceSHA256     = ""
-	MigrationsSHA256 = "2cc16dd13d5c60fd0e0b2100e295ca6644e373433b21de603f1428c0cd0bb78e"
+	MigrationsSHA256 = "540b6b45bae7cc9bb38773cc1c9446d6736cdf6560896666486806adede7e1ea"
 	Date             = ""
 )
 

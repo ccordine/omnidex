@@ -112,6 +112,7 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	roleplaySimulationAuthorityCount := 0
 	roleplayResearchAuthorityCount := 0
 	roleplayTerminalSimulationPublicationCount := 0
+	delegatedDataSourceAuthorityCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -257,9 +258,12 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == "120_roleplay_terminal_simulation_publication.sql" {
 			roleplayTerminalSimulationPublicationCount++
 		}
+		if entry.name == "121_delegated_data_source_authority.sql" {
+			delegatedDataSourceAuthorityCount++
+		}
 	}
-	if len(bundle.entries) != 171 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 171/%d",
+	if len(bundle.entries) != 172 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 172/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -279,12 +283,12 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	}
 	if databaseCognitionAuthorityCount != 1 || roleplayCanonAuthorityCount != 1 ||
 		roleplaySimulationAuthorityCount != 1 || roleplayResearchAuthorityCount != 1 ||
-		roleplayTerminalSimulationPublicationCount != 1 {
+		roleplayTerminalSimulationPublicationCount != 1 || delegatedDataSourceAuthorityCount != 1 {
 		t.Fatalf(
-			"checked database/roleplay authority migration counts=%d/%d/%d/%d/%d want all one",
+			"checked database/roleplay/delegated authority migration counts=%d/%d/%d/%d/%d/%d want all one",
 			databaseCognitionAuthorityCount, roleplayCanonAuthorityCount,
 			roleplaySimulationAuthorityCount, roleplayResearchAuthorityCount,
-			roleplayTerminalSimulationPublicationCount,
+			roleplayTerminalSimulationPublicationCount, delegatedDataSourceAuthorityCount,
 		)
 	}
 	if conversationCutoverCount != 1 {

@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 )
 
 const dataSourceSelectColumns = `
-	id, name, driver, host, port,
+	id, name, driver, execution_mode, host, port,
 	database_name, username, password, ssl_mode, use_dsn, dsn, read_only,
+	authority_url, credential_env,
 	last_test_status, last_test_message, last_test_at, catalog_updated_at,
 	created_at, updated_at
 `
@@ -21,9 +23,10 @@ type dataSourceRowScanner interface {
 func scanDataSource(row dataSourceRowScanner) (DataSourceRecord, error) {
 	var record DataSourceRecord
 	err := row.Scan(
-		&record.ID, &record.Name, &record.Driver, &record.Host, &record.Port,
+		&record.ID, &record.Name, &record.Driver, &record.ExecutionMode, &record.Host, &record.Port,
 		&record.DatabaseName, &record.Username, &record.Password, &record.SSLMode,
-		&record.UseDSN, &record.DSN, &record.ReadOnly, &record.LastTestStatus,
+		&record.UseDSN, &record.DSN, &record.ReadOnly, &record.AuthorityURL, &record.CredentialEnv,
+		&record.LastTestStatus,
 		&record.LastTestMessage, &record.LastTestAt, &record.CatalogUpdatedAt,
 		&record.CreatedAt, &record.UpdatedAt,
 	)
@@ -50,21 +53,41 @@ func validateDataSourceRecord(record DataSourceRecord) error {
 	if record.Driver != "postgres" {
 		return fmt.Errorf("data source driver %q is unsupported", record.Driver)
 	}
-	if record.Port < 1 || record.Port > 65535 {
-		return fmt.Errorf("data source port must be between 1 and 65535")
-	}
-	if !validDataSourceSSLMode(record.SSLMode) {
-		return fmt.Errorf("data source ssl_mode %q is unsupported", record.SSLMode)
+	if err := record.ExecutionMode.Validate(); err != nil {
+		return err
 	}
 	if !record.ReadOnly {
 		return fmt.Errorf("data source must be read-only")
 	}
-	if record.UseDSN {
-		if strings.TrimSpace(record.DSN) == "" {
-			return fmt.Errorf("data source dsn is required when use_dsn is true")
+	switch record.ExecutionMode {
+	case datasource.ExecutionModeDirect:
+		if record.AuthorityURL != "" || record.CredentialEnv != "" {
+			return fmt.Errorf("direct data source cannot carry delegated authority configuration")
 		}
-	} else if record.Host == "" || record.DatabaseName == "" || record.Username == "" {
-		return fmt.Errorf("data source host, database_name, and username are required")
+		if record.Port < 1 || record.Port > 65535 {
+			return fmt.Errorf("data source port must be between 1 and 65535")
+		}
+		if !validDataSourceSSLMode(record.SSLMode) {
+			return fmt.Errorf("data source ssl_mode %q is unsupported", record.SSLMode)
+		}
+		if record.UseDSN {
+			if strings.TrimSpace(record.DSN) == "" {
+				return fmt.Errorf("data source dsn is required when use_dsn is true")
+			}
+		} else if record.Host == "" || record.DatabaseName == "" || record.Username == "" {
+			return fmt.Errorf("data source host, database_name, and username are required")
+		}
+	case datasource.ExecutionModeDelegated:
+		if record.Host != "" || record.Port != 0 || record.DatabaseName != "" || record.Username != "" ||
+			record.Password != "" || record.SSLMode != "" || record.UseDSN || record.DSN != "" {
+			return fmt.Errorf("delegated data source cannot carry direct PostgreSQL credentials")
+		}
+		if err := datasource.ValidateDelegatedBaseURL(record.AuthorityURL); err != nil {
+			return err
+		}
+		if err := datasource.ValidateDelegatedCredentialEnvironmentName(record.CredentialEnv); err != nil {
+			return err
+		}
 	}
 	if record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
 		return fmt.Errorf("data source requires created and updated timestamps")
