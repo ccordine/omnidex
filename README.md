@@ -162,6 +162,209 @@ INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
+### Deployment sizing
+
+The checked-in profile is Qwen-led, but it is not a single-model deployment.
+The active routes use Qwen 3.5 9B for most bounded semantic work, Qwen 2.5
+Coder 7B for source fragments and corrections, Llama 3.2 3B for requirement
+extraction, DeepSeek R1 8B for the independently routed evidence reviews, and
+`nomic-embed-text` for local embeddings. The complete route list is in
+[`default.env`](default.env).
+
+The following values are capacity-planning estimates, not universal performance
+guarantees. Model-file sizes come from the exact local Ollama inventory and agree
+with the current Ollama library entries. Runtime allocation and timing rows were
+measured on 2026-08-19 using `omni ollama:prewarm` and the exact production 8,192-token
+context. Re-run that command on every candidate server before accepting it.
+
+#### Model working set
+
+| Route | Current model | Local model file | Runtime role |
+| --- | --- | ---: | --- |
+| Most semantic, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | Structured semantic result |
+| Fragment generation and correction | `qwen2.5-coder:7b` | 4.7 GB | One bounded source node |
+| Requirement and workload extraction | `llama3.2:3b` | 2.0 GB | Small typed extraction |
+| Independent repository/web evidence review | `deepseek-r1:8b` | 5.2 GB | Separate review identity |
+| Embeddings | `nomic-embed-text` | 0.27 GB | Retrieval vectors |
+
+The exact set occupies about **18.8 GB (17.5 GiB) on disk**. Reserve at least
+50 GB of fast local storage for the model set and runtime files. A practical
+all-in-one host should have 100 GB free before adding workspace checkouts,
+PostgreSQL growth, backups, logs, or Docker build cache.
+
+Qwen 3.5 9B advertises a much larger native context, but Omnidex deliberately
+uses 8,192 tokens. Its station envelopes fit that bound, and larger contexts
+increase KV-cache memory and latency without making code-owned context selection
+less necessary. Ollama also multiplies context memory by `OLLAMA_NUM_PARALLEL`,
+so context and concurrency must be sized together.
+
+#### Measured 8K baseline
+
+The current measurement host is an 8-core/16-thread Ryzen 9 7940HS with 43 GiB
+usable system RAM and an 8 GB Radeon RX 7700S using Ollama's Vulkan backend. One
+model and one request were allowed at a time.
+
+| Model | Runner allocation | GPU allocation | GPU offload | Cold probe | Warm probe | Warm decode |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `qwen3.5:9b-q4_K_M` | 9.3 GiB | 7.0 GiB | 75% | 11.9 s | 2.4 s | 19.1 tok/s |
+| `qwen2.5-coder:7b` | 5.0 GiB | 5.0 GiB | 100% | 14.2 s | 1.9 s | 48.3 tok/s |
+
+The probe is intentionally tiny, so its token rate is directional rather than a
+full workload benchmark. Cold time includes loading the model; warm time is the
+same bounded request with the runner already resident. The 9B model works on an
+8 GB GPU through partial offload. A 12–16 GB GPU should hold that one runner
+entirely, while 24 GB gives useful headroom to retain both Qwen runners and avoid
+many model swaps. Detailed 2K/16K/32K measurements and the verified AMD backend
+configuration are in [`docs/LOCAL_MODEL_PROFILE.md`](docs/LOCAL_MODEL_PROFILE.md)
+and [`docs/OLLAMA_STABILITY.md`](docs/OLLAMA_STABILITY.md).
+
+#### Minimum and recommended hosts
+
+| Deployment | CPU | System RAM | GPU | Fast free storage | Intended load |
+| --- | --- | ---: | ---: | ---: | --- |
+| Control plane with remote Ollama | 4 vCPU | 8–16 GB | None | 30 GB plus PostgreSQL/workspace data | API, workers, PostgreSQL, and Redis only |
+| CPU-only evaluation | 8 modern physical cores with AVX2 | 32 GB minimum | None | 50 GB | One queued turn; batch use, not an interactive latency target |
+| Proven low-cost all-in-one | 8 modern cores | 32–48 GB | 8 GB VRAM | 100 GB | One active inference stream with partial 9B offload |
+| Recommended interactive host | 8–16 modern cores | 64 GB | 16 GB VRAM | 100 GB | One fully offloaded model at a time; individual or small-team pilot |
+| Recommended small-team GPU host | 12–24 modern cores | 64–128 GB | 24 GB VRAM | 150 GB | Two resident Qwen runners or queued multi-user work |
+| Higher-throughput host | 16+ modern cores | 128 GB | 48 GB VRAM | 200 GB | Multiple resident routes and measured parallelism above one |
+
+A GPU is therefore **not required for correctness**. CPU-only inference can run
+the Q4 models if sufficient RAM is available, but multi-stage cognitive work
+contains several sequential model calls. Without acceptable CPU prewarm results,
+it should be treated as asynchronous batch processing. For a new Linux GPU
+server, a supported NVIDIA CUDA GPU is the lowest-friction operational choice.
+AMD ROCm or Vulkan can work, but the current host required explicit device
+selection and Vulkan to avoid the recorded ROCm instability.
+
+The VRAM tier matters more than raw model parameter count:
+
+- 8 GB is viable because the 9B runner partially offloads to system RAM.
+- 16 GB is the sensible floor for consistently interactive single-model use.
+- 24 GB is the preferred value for a small team because the measured Qwen
+  allocations total about 14.3 GiB before scheduler and driver headroom.
+- 48 GB is the safer target before enabling several loaded models or parallel
+  contexts on one Ollama server.
+
+Do not enable parallel inference merely because multiple workers exist. The
+default `WORKER_COUNT=3` permits code-owned jobs to progress and queue; it does
+not make three model contexts free. Start with:
+
+```ini
+OLLAMA_NUM_PARALLEL=1
+OLLAMA_MAX_LOADED_MODELS=1
+OLLAMA_KEEP_ALIVE=5m
+```
+
+Keep `INFERENCE_CONTEXT_TOKENS=8192` and `CODING_FRAGMENT_CONCURRENCY=1`. On a
+24 GB or larger GPU, test `OLLAMA_MAX_LOADED_MODELS=2` to retain the two Qwen
+runners. Increase `OLLAMA_NUM_PARALLEL` only after the exact 8K prewarm and a
+two-request load test prove the resulting allocation, latency, and stability.
+Production station requests carry their own five-minute keep-alive; a server
+default does not override that request-specific value.
+
+#### Expected latency and workload
+
+Use the measured probe instead of estimating from model-file size:
+
+```text
+turn time ≈ cold model loads + prompt evaluation + output tokens / decode rate
+            + database, repository, compiler, and test time
+```
+
+On the measured 8 GB GPU, 100 output tokens take roughly 5 seconds of Qwen 3.5
+decode or 2 seconds of Qwen 2.5 Coder decode after prompt evaluation. A cold or
+swapped model adds roughly 12–14 seconds in the current profile. Larger prompts,
+JSON-constrained retries, and validation repairs add time even when their output
+is short.
+
+These ranges are deployment-planning estimates for one active inference stream:
+
+| Workload | Warm GPU planning range | Main variables |
+| --- | ---: | --- |
+| Short conversational turn | 5–30 s | Context selection, answer length, memory retrieval |
+| Simple database-RAG turn | 20–90 s | Relation count, schema-selection chunks, evidence rounds, answer length |
+| Small bounded coding change | 5–30 min | Requirements, generated declarations, model swaps, compiler/test runs, repairs |
+| Multi-feature repository build | Tens of minutes to hours | Task count, dependency waves, corrections, project build/test cost |
+
+A simple database turn normally needs schema selection, typed query-intent
+construction, an evidence-gap decision, and final grounded synthesis. Schemas
+over 24 relations require additional bounded selection calls; ambiguous joins or
+missing evidence add more rounds. PostgreSQL execution itself is bounded and is
+usually not the dominant latency unless the application authority or database is
+remote or slow.
+
+CPU-only timing is intentionally not guessed. Run the same prewarm command on the
+candidate CPU host and substitute its reported decode rate into the formula. For
+example, a measured 4 tok/s means 100 output tokens require about 25 seconds of
+decode for each sequential call, before prompt evaluation or model loading.
+
+With `OLLAMA_NUM_PARALLEL=1`, simultaneous user turns queue and tail latency grows
+approximately with the number of active model calls. If interactive latency for
+several users matters, prefer more VRAM and measured parallelism rather than
+raising `WORKER_COUNT` alone.
+
+#### Combined or split deployment
+
+An all-in-one host is simplest for one user: Docker runs core, PostgreSQL, and
+Redis while Ollama runs on the host GPU. For a server deployment, separating the
+control plane and inference host is usually cleaner:
+
+```text
+application/API clients -> Omnidex core -> private Ollama GPU host
+                                  |-----> PostgreSQL + Redis
+```
+
+Set the core deployment to the one exact private endpoint:
+
+```dotenv
+OLLAMA_BASE_URL=http://ollama.internal:11434
+```
+
+Configure Ollama to listen on the private interface, permit only the Omnidex core
+host through the firewall, and do not publish port 11434 to the Internet. For PHI,
+keep prompts, evidence, Ollama traffic, PostgreSQL, Redis, logs, backups, and TLS
+termination inside the governed environment. Use a private encrypted network or
+a private TLS proxy when Ollama is on another physical server.
+
+The split control-plane row above does not include application database capacity.
+If PostgreSQL is colocated, add the actual dataset, index, WAL, backup, and growth
+budget separately. Delegated database mode leaves the protected application data
+in its owning application and sends Omnidex only permission-filtered bounded
+evidence.
+
+#### Deployment acceptance check
+
+Pull the exact configured models, then profile each model on the candidate host:
+
+```bash
+ollama pull qwen3.5:9b-q4_K_M
+ollama pull qwen2.5-coder:7b
+ollama pull llama3.2:3b
+ollama pull deepseek-r1:8b
+ollama pull nomic-embed-text
+
+omni ollama:prewarm --model qwen3.5:9b-q4_K_M --num-ctx 8192 --json
+omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
+```
+
+Accept a host only after the probe reports the exact 8,192-token context, memory
+fits without sustained swap, the intended GPU is used, warm latency is acceptable,
+and repeated runs produce no runner restart or GPU error. Then run one ordinary
+chat/database turn and one representative coding job while recording queue time,
+model loads, tokens per second, peak RAM/VRAM, and end-to-end duration. Published
+parameter counts and context windows do not replace that application-level check.
+
+Upstream capacity references: the
+[Qwen 3.5 9B model card](https://huggingface.co/Qwen/Qwen3.5-9B),
+[Ollama Qwen 3.5 tags](https://ollama.com/library/qwen3.5/tags),
+[Ollama Qwen 2.5 Coder tags](https://ollama.com/library/qwen2.5-coder/tags),
+[Ollama Llama 3.2 tags](https://ollama.com/library/llama3.2/tags),
+[Ollama DeepSeek R1 tags](https://ollama.com/library/deepseek-r1/tags),
+[Ollama nomic-embed-text](https://ollama.com/library/nomic-embed-text),
+[Ollama concurrency and memory FAQ](https://docs.ollama.com/faq), and
+[Ollama GPU support matrix](https://docs.ollama.com/gpu).
+
 The surface station classifies only browser, command-line, or service delivery. Before intent interpretation, code hashes the immutable request and records exact workspace state plus bounded accepted durable memory as typed facts. A context-sufficiency station can return only zero through three missing evidence questions, never operations or tool calls; registered code-owned providers resolve those questions and formalize selected results into source-backed facts. The currently promoted fresh-workspace vertical requires zero questions and fails loudly otherwise. An intent station then derives one concise product context plus one through ten semantic requirement statements. A separately routed reviewer either accepts the retained candidate or names exactly one defective leaf and finding; a correction call can replace only that dynamically schema-bound leaf, and code rejects no-ops and repeated states before review repeats. Requirements are bound to the immutable request digest; exact substrings, quote intervals, source order, punctuation, disjointness, and overlap are not authority gates. For each accepted requirement, the constructive route sees the reviewed product context, complete accepted requirement set, and focused requirement and returns one objective, one through four required behaviors, and one through four observable acceptance criteria. The corrective route owns review, semantic repair, and repair no-op correction; a repair is never routed back through the constructive model. Review can accept or name exactly one derived field plus one bounded diagnostic finding and one code-enumerated exact current value: the whole objective or one whole current list item owned by that field. Code couples legal evidence values to their fields in the response schema and binds the observed value by SHA-256 before repair; invalid evidence never reaches repair. The repair station receives only focused user authority, the finding, its validated evidence, the named field, and that field's current value. Code applies the one-field replacement to retained state and repeats corrective review while canonical states remain new. A valid but unchanged replacement receives one exact one-field correction whose schema excludes the current value; it is a passive recovery guard, not an extra production challenge. There is no numeric correctness limit: acceptance, an exact repeated state/cycle, lost authority, provider failure, cancellation, or a real resource limit ends the loop. Code assigns task identity and order, freezes the workload hash, and keeps dependencies, scheduling, tools, paths, and completion outside model authority. Artifact handling remains a separate token-blind classification job. Code may bind one independently accepted PostgreSQL skill and may expose only direct pairwise capability APIs. Each frozen task generates one feature declaration and one blind acceptance declaration, passes an isolated current-task test and typecheck before the next task starts, and then participates in one final whole-application test/typecheck/build stage. A mapped source failure is diagnosed by the separately routed repair-guidance model into one self-contained instruction; the correction model sees only that instruction and the exact mutable source block. Code applies and verifies the result, and any new failure starts a new guidance/execution iteration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. An optional, off-by-default `post_grounding_objective_advisory` source may return inert plain text only after repository grounding; it never supplies evidence, operations, mutation, or completion authority. Local Ollama station models are selected through environment-backed routing, so structurally qualified local models can be measured against the same unchanged gates without application changes. A missing model, context mismatch, or invalid capacity fails explicitly. The two-fixture live compiler qualification and its exact evidence are documented in [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md#live-guided-repair-qualification).
 
 Production station inference currently requires Ollama's exact prepared contract.
